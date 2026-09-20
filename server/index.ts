@@ -52,6 +52,7 @@ async function body(req: IncomingMessage) {
 }
 const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
+  if (await features.downloads.route(req, res, url)) return;
   if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
   const route = url.pathname.split('/').filter(Boolean);
   if (await features.route(req, res, url, body)) return;

@@ -18,7 +18,12 @@ import type { Project } from '../server/workspaces';
 import type { SyncConfig } from '../server/sync';
 import './features.css';
 
-export type Request = <T = any>(path: string, method?: string, body?: unknown) => Promise<T>;
+export type Request = <T = any>(
+  path: string,
+  method?: string,
+  body?: unknown,
+  signal?: AbortSignal,
+) => Promise<T>;
 export type FeatureProps = { vm: VMView; request: Request; token: string; refresh: () => Promise<unknown> };
 export const distroName = (distro?: string) =>
   ({ alpine: 'Alpine 3.23', debian: 'Debian 12', ubuntu: 'Ubuntu 24.04 LTS' })[distro || 'alpine'] || distro;
@@ -34,11 +39,16 @@ export function useRemote<T>(request: Request, path: string, enabled = true, int
       setError('');
       return;
     }
+    const abort = new AbortController();
+    const isVisible = () => document.visibilityState !== 'hidden';
     let alive = true,
+      pending = false,
       timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      if (!alive || pending || !isVisible()) return;
+      pending = true;
       try {
-        const value = await request<T>(path);
+        const value = await request<T>(path, 'GET', undefined, abort.signal);
         if (alive) {
           setData(value);
           setError('');
@@ -46,32 +56,54 @@ export function useRemote<T>(request: Request, path: string, enabled = true, int
       } catch (e) {
         if (alive) setError((e as Error).message);
       } finally {
-        if (alive && interval) timer = setTimeout(poll, interval);
+        pending = false;
+        if (alive && interval && isVisible()) timer = setTimeout(poll, interval);
       }
     };
+    const visible = () => {
+      clearTimeout(timer);
+      if (isVisible()) void poll();
+    };
+    document.addEventListener('visibilitychange', visible);
     void poll();
     return () => {
       alive = false;
+      abort.abort();
+      document.removeEventListener('visibilitychange', visible);
       clearTimeout(timer);
     };
   }, [request, path, enabled, interval, revision]);
   return { data, error, reload: useCallback(() => bump((n) => n + 1), []) };
 }
 export function useAction() {
+  const pending = useRef(false),
+    alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [message, setMessage] = useState('');
   const run = async (action: () => Promise<unknown>, success = '') => {
+    if (pending.current) return;
+    pending.current = true;
     setBusy(true);
     setError('');
     setMessage('');
     try {
       await action();
-      setMessage(success);
+      if (alive.current) setMessage(success);
     } catch (e) {
-      setError((e as Error).message);
+      if (alive.current) {
+        if ((e as Error).name === 'AbortError') setMessage('操作已取消');
+        else setError((e as Error).message);
+      }
     } finally {
-      setBusy(false);
+      pending.current = false;
+      if (alive.current) setBusy(false);
     }
   };
   return { busy, error, message, run };
@@ -109,15 +141,20 @@ export function JobLog({ job }: { job?: JobView | null }) {
     </div>
   ) : null;
 }
-export async function download(requestPath: string, filename: string, token: string) {
-  const response = await fetch('/api' + requestPath, { headers: { 'X-Sakura-Token': token } });
-  if (!response.ok) throw new Error((await response.json()).error || '下载失败');
-  const url = URL.createObjectURL(await response.blob());
+export async function download(
+  request: Request,
+  id: string,
+  target: { type: 'file'; path: string } | { type: 'export' },
+) {
+  const { url } = await request<{ url: string }>(`/vms/${id}/download`, 'POST', target);
+  if (!/^\/api\/downloads\/[a-f0-9]{64}$/.test(url)) throw new Error('无效的下载地址');
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = '';
+  a.referrerPolicy = 'no-referrer';
+  document.body.append(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  a.remove();
 }
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function ready(request: Request, vm: VMView) {
@@ -597,7 +634,7 @@ export function SyncPanel({ vm, request }: FeatureProps) {
   );
 }
 
-export function SnapshotsPanel({ vm, request, token, refresh }: FeatureProps) {
+export function SnapshotsPanel({ vm, request, refresh }: FeatureProps) {
   const [name, setName] = useState(''),
     [cloneName, setCloneName] = useState(vm.name.slice(0, 26) + '-copy'),
     [editing, setEditing] = useState<Snapshot | null>(null),
@@ -754,8 +791,8 @@ export function SnapshotsPanel({ vm, request, token, refresh }: FeatureProps) {
             disabled={!stopped || action.busy}
             onClick={() =>
               void action.run(
-                () => download(`/vms/${vm.id}/export`, `${vm.name}.sakura`, token),
-                '导出文件已下载',
+                () => download(request, vm.id, { type: 'export' }),
+                '导出已交给浏览器处理，准备磁盘可能需要一些时间。请在浏览器查看下载进度。',
               )
             }
           >

@@ -50,7 +50,7 @@ export class Bundles {
     await mkdir(join(DATA, 'transfers'), { recursive: true });
     return mkdtemp(join(DATA, 'transfers', 'bundle-'));
   }
-  async export(id: string, target: Writable, headers: () => void) {
+  async export(id: string, target: Writable, headers: () => void, signal?: AbortSignal) {
     return this.machines.locked(id, async () => {
       this.machines.requireStopped(id);
       const dir = await this.temp();
@@ -59,11 +59,15 @@ export class Bundles {
         await this.machines.engine.run(
           'sakura-img',
           ['convert', '-f', 'qcow2', '-O', 'qcow2', join(vmDir(id), 'disk.qcow2'), disk],
-          { timeoutMs: 1800000 },
+          { timeoutMs: 1800000, signal },
         );
+        signal?.throwIfAborted();
         const hash = createHash('sha256');
         if ((await stat(disk)).size + 300012 > MAX_BUNDLE) throw new AppError('当前导出包上限为 32 GiB');
-        for await (const chunk of createReadStream(disk)) hash.update(chunk);
+        for await (const chunk of createReadStream(disk)) {
+          signal?.throwIfAborted();
+          hash.update(chunk);
+        }
         const { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template } =
           this.machines.get(id);
         const manifest = Buffer.from(
@@ -78,6 +82,7 @@ export class Bundles {
         );
         const length = Buffer.alloc(4);
         length.writeUInt32BE(manifest.length);
+        signal?.throwIfAborted();
         headers();
         async function* contents() {
           yield MAGIC;
@@ -85,7 +90,7 @@ export class Bundles {
           yield manifest;
           yield* createReadStream(disk);
         }
-        await pipeline(Readable.from(contents()), target);
+        await pipeline(Readable.from(contents()), target, { signal });
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

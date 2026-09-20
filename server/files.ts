@@ -21,6 +21,15 @@ export function mutablePath(path: string) {
 }
 export class Files {
   constructor(private machines: Machines) {}
+  private async downloadInfo(ftp: SFTPWrapper, path: string) {
+    const attrs = await ftpStat(ftp, guestPath(path));
+    if (!attrs?.isFile()) throw new AppError('请选择普通文件', 404);
+    if (attrs.size > MAX_TRANSFER) throw new AppError('单文件下载最大 2 GiB', 413);
+    return { size: attrs.size };
+  }
+  info(id: string, path: string) {
+    return this.machines.sftp(id, (ftp) => this.downloadInfo(ftp, path));
+  }
   async upload(id: string, path: string, source: Readable, overwrite = false) {
     path = mutablePath(path);
     return this.machines.sftp(id, async (ftp) => {
@@ -51,14 +60,23 @@ export class Files {
       }
     });
   }
-  async download(id: string, path: string, target: Writable, headers: (size: number) => void) {
-    return this.machines.sftp(id, async (ftp) => {
-      const attrs = await ftpStat(ftp, guestPath(path));
-      if (!attrs?.isFile()) throw new AppError('请选择普通文件', 404);
-      if (attrs.size > MAX_TRANSFER) throw new AppError('单文件下载最大 2 GiB', 413);
-      headers(attrs.size);
-      await pipeline(ftp.createReadStream(path), target);
-    });
+  async download(
+    id: string,
+    path: string,
+    target: Writable,
+    headers: (size: number) => void,
+    signal?: AbortSignal,
+  ) {
+    return this.machines.sftp(
+      id,
+      async (ftp) => {
+        const { size } = await this.downloadInfo(ftp, path);
+        signal?.throwIfAborted();
+        headers(size);
+        await pipeline(ftp.createReadStream(path), target, { signal });
+      },
+      signal,
+    );
   }
   async operation(
     id: string,

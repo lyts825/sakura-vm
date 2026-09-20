@@ -4,7 +4,7 @@ import { checksumFor } from '../server/images.ts';
 import { validateDiskHeader } from '../server/bundles.ts';
 import { safeRelative, validateSyncPaths } from '../server/sync.ts';
 import { mutablePath, quote } from '../server/files.ts';
-import { parseMetrics, projectSchema, provisionScript } from '../server/workspaces.ts';
+import { parseMetrics, projectSchema, provisionScript, setupFingerprint } from '../server/workspaces.ts';
 import { cloudUserData, cloudNetwork } from '../server/seed.ts';
 import { desktopCommands, imeInstall } from '../server/desktop-guest.ts';
 import { Jobs } from '../server/jobs.ts';
@@ -100,6 +100,19 @@ test('cloud-init and systemd desktop adapters retain key-only access and a non-r
     assert.match(scripts.start, /systemctl restart/);
   }
   assert.match(imeInstall('alpine'), /fcitx5-chinese-addons/);
+});
+
+test('setup identity changes only when preparation inputs change', () => {
+  const project = projectSchema.parse({ setup: 'npm ci', command: 'npm run dev', previewPort: 18080 });
+  const original = setupFingerprint(project);
+  assert.equal(setupFingerprint({ ...project, command: 'npm start', previewPort: 19000 }), original);
+  for (const patch of [
+    { directory: '/workspace/other' },
+    { repository: 'https://example.com/repo.git' },
+    { template: 'node' as const },
+    { setup: 'npm install' },
+  ])
+    assert.notEqual(setupFingerprint({ ...project, ...patch }), original);
 });
 test('jobs bound output, reject duplicate work, report failure and allow retry', async () => {
   const jobs = new Jobs();

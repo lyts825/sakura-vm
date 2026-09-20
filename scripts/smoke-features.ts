@@ -123,16 +123,40 @@ try {
     await features.workspaces.save(id, {
       directory: '/workspace/app',
       template: 'python',
-      setup: 'printf prepared > ready.txt',
+      setup: 'printf prepared > ready.txt; printf x >> setup-runs.txt',
       command: 'python3 -m http.server 8088 --bind 0.0.0.0',
     });
     await features.workspaces.run(id, 'start');
     await job(features.workspaces.jobs, id);
     assert.equal((await features.workspaces.runtime(id)).status, 'running');
     assert.equal((await command(id, 'cat /workspace/app/ready.txt')).trim(), 'prepared');
+    const savedProject = await features.workspaces.config(id);
+    await features.workspaces.save(id, { ...savedProject, previewPort: 18088 });
+    await features.workspaces.run(id, 'start');
+    await job(features.workspaces.jobs, id);
+    assert.equal(await machines.readGuestFile(id, '/workspace/app/setup-runs.txt'), 'x');
     await features.workspaces.run(id, 'stop');
     await job(features.workspaces.jobs, id);
     assert.equal((await features.workspaces.runtime(id)).status, 'stopped');
+    await features.workspaces.save(id, {
+      ...savedProject,
+      command: 'python3 -m http.server 8089 --bind 0.0.0.0',
+      previewPort: 18089,
+    });
+    await features.workspaces.run(id, 'start');
+    await job(features.workspaces.jobs, id);
+    assert.equal(await machines.readGuestFile(id, '/workspace/app/setup-runs.txt'), 'x');
+    await features.workspaces.run(id, 'stop');
+    await job(features.workspaces.jobs, id);
+    // Already-running projects must be detected before a newly edited setup command runs.
+    await features.workspaces.run(id, 'start');
+    await job(features.workspaces.jobs, id);
+    await features.workspaces.save(id, { ...savedProject, setup: 'printf unsafe > ready.txt' });
+    await features.workspaces.run(id, 'start');
+    await job(features.workspaces.jobs, id);
+    assert.equal(await machines.readGuestFile(id, '/workspace/app/ready.txt'), 'prepared');
+    await features.workspaces.run(id, 'stop');
+    await job(features.workspaces.jobs, id);
     console.log('PASS template install, project preparation/start/logs/stop');
     if (process.env.SAKURA_TEST_TEMPLATES === '1') {
       for (const template of ['node', 'rust'] as const) {

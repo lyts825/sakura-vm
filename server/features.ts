@@ -10,11 +10,13 @@ import { Workspaces } from './workspaces.ts';
 import { FolderSync } from './sync.ts';
 import { Jobs } from './jobs.ts';
 import { imeInstall } from './desktop-guest.ts';
+import { Downloads } from './downloads.ts';
 
 export class Features {
   files: Files;
   images = new Images();
   bundles: Bundles;
+  downloads: Downloads;
   workspaces: Workspaces;
   sync: FolderSync;
   jobs = new Jobs();
@@ -22,13 +24,15 @@ export class Features {
   constructor(private machines: Machines) {
     this.files = new Files(machines);
     this.bundles = new Bundles(machines);
+    this.downloads = new Downloads(machines, this.files, this.bundles);
     this.workspaces = new Workspaces(machines);
     this.sync = new FolderSync(machines);
   }
   async close() {
     await Promise.all([
+      this.downloads.close(),
       this.images.jobs.close(),
-      this.workspaces.jobs.close(),
+      this.workspaces.close(),
       this.sync.close(),
       this.jobs.close(),
     ]);
@@ -47,13 +51,6 @@ export class Features {
       });
       res.end(JSON.stringify(data));
     };
-    const attachment = (name: string, size?: number) =>
-      res.writeHead(200, {
-        'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
-        'Cache-Control': 'no-store',
-        ...(size === undefined ? {} : { 'Content-Length': size }),
-      });
     if (parts[1] === 'images') {
       if (parts.length === 2 && req.method === 'GET') {
         send(this.images.list());
@@ -102,6 +99,10 @@ export class Features {
       }
     }
     if (parts.length !== 4) return false;
+    if (action === 'download' && req.method === 'POST') {
+      send(await this.downloads.issue(id, await body(req)), 201);
+      return true;
+    }
     if (action === 'terminal-session' && req.method === 'POST') {
       const { session } = z
         .object({ session: z.string().regex(/^[a-z0-9-]{1,48}$/) })
@@ -122,7 +123,7 @@ export class Features {
         return true;
       }
       if (req.method === 'GET') {
-        await this.files.download(id, path, res, (size) => attachment(posix.basename(path), size));
+        await this.downloads.send({ id, type: 'file', path, name: posix.basename(path) }, res);
         return true;
       }
     }
@@ -140,7 +141,7 @@ export class Features {
       return true;
     }
     if (action === 'export' && req.method === 'GET') {
-      await this.bundles.export(id, res, () => attachment(this.machines.get(id).name + '.sakura'));
+      await this.downloads.send({ id, type: 'export', name: this.machines.get(id).name + '.sakura' }, res);
       return true;
     }
     if (action === 'clone' && req.method === 'POST') {

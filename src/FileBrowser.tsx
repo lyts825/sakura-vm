@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Download, FileText, Folder, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
 import { Feedback, download, useAction, type FeatureProps } from './FeaturePanels';
+import { uploadFiles, transferBytes, type UploadProgress } from './transfers';
 
 type Entry = { name: string; size: number; directory: boolean; symlink: boolean; modified: number };
 export function FileBrowser({ vm, request, token }: FeatureProps) {
@@ -11,10 +12,11 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
     [error, setError] = useState('');
   const [edit, setEdit] = useState<{ path: string; content: string; fresh?: boolean } | null>(null);
   const [overwrite, setOverwrite] = useState(false),
-    [progress, setProgress] = useState(''),
+    [progress, setProgress] = useState<UploadProgress | null>(null),
     [dragging, setDragging] = useState(false);
   const upload = useRef<HTMLInputElement>(null),
-    transfer = useRef<XMLHttpRequest | null>(null);
+    transfer = useRef<AbortController | null>(null),
+    alive = useRef(true);
   const action = useAction();
   const requestVersion = useRef(0);
   const refresh = useCallback(async () => {
@@ -39,7 +41,13 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
       requestVersion.current++;
     };
   }, [refresh]);
-  useEffect(() => () => transfer.current?.abort(), []);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      transfer.current?.abort();
+    };
+  }, []);
   const target = (name: string) => `${path.replace(/\/$/, '')}/${name}`;
   const navigate = (next: string) => {
     setPath(next);
@@ -66,42 +74,30 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
         setEdit({ path: target(file.name), content: value.content });
       });
   };
-  const send = (values: FileList | File[]) =>
-    action.run(async () => {
-      for (const file of Array.from(values)) {
-        if (file.size > 2 * 1024 ** 3) throw new Error('单文件传输上限为 2 GiB');
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          transfer.current = xhr;
-          xhr.open(
-            'PUT',
-            `/api/vms/${vm.id}/transfer?path=${encodeURIComponent(target(file.name))}&overwrite=${overwrite ? 1 : 0}`,
-          );
-          xhr.setRequestHeader('X-Sakura-Token', token);
-          xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-          xhr.upload.onprogress = (event) =>
-            setProgress(
-              `${file.name} · ${event.lengthComputable ? Math.round((event.loaded * 100) / event.total) + '%' : '上传中'}`,
-            );
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve();
-            else {
-              let message = '上传失败';
-              try {
-                message = JSON.parse(xhr.responseText).error;
-              } catch {}
-              reject(new Error(message));
-            }
-          };
-          xhr.onerror = () => reject(new Error('上传连接中断'));
-          xhr.onabort = () => reject(new Error('上传已取消'));
-          xhr.send(file);
+  const send = (values: FileList | File[]) => {
+    const files = Array.from(values);
+    if (!files.length) return;
+    return action.run(async () => {
+      const abort = new AbortController();
+      transfer.current = abort;
+      try {
+        await uploadFiles({
+          files,
+          token,
+          signal: abort.signal,
+          url: (name) =>
+            `/api/vms/${vm.id}/transfer?path=${encodeURIComponent(target(name))}&overwrite=${overwrite ? 1 : 0}`,
+          progress: setProgress,
         });
+      } finally {
+        transfer.current = null;
+        if (alive.current) {
+          setProgress(null);
+          await refresh();
+        }
       }
-      setProgress('');
-      transfer.current = null;
-      await refresh();
-    }, '文件已上传');
+    }, `${files.length} 个文件已上传`);
+  };
   if (vm.status !== 'running')
     return (
       <div className="panel-empty">
@@ -128,6 +124,7 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
         <button
           className="icon-button"
           aria-label="上级目录"
+          disabled={action.busy}
           onClick={() => navigate(path.split('/').slice(0, -1).join('/') || '/')}
         >
           <ArrowUp size={17} />
@@ -135,11 +132,16 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            navigate(input);
+            if (!action.busy) navigate(input);
           }}
         >
           <Folder size={15} />
-          <input aria-label="Linux 文件路径" value={input} onChange={(e) => setInput(e.target.value)} />
+          <input
+            aria-label="Linux 文件路径"
+            disabled={action.busy}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+          />
         </form>
         <button className="icon-button" aria-label="刷新文件" onClick={() => void refresh()}>
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
@@ -187,7 +189,12 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
       <Feedback error={action.error || error} message={action.message} />
       {action.busy && progress && (
         <div className="feature-actions" role="status">
-          {progress}
+          <span>
+            {progress.name} · {progress.index}/{progress.count} · {transferBytes(progress.loaded)} /{' '}
+            {transferBytes(progress.total)}
+            {progress.loaded === progress.total ? ' · 正在保存…' : ''}
+          </span>
+          <progress aria-label="上传进度" max={progress.total || 1} value={progress.loaded} />
           <button className="text-button" onClick={() => transfer.current?.abort()}>
             取消上传
           </button>
@@ -201,20 +208,14 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
         </div>
         {files.map((file) => (
           <div className="browser-row" key={file.name}>
-            <button className="file-open" onClick={() => open(file)}>
+            <button className="file-open" disabled={action.busy} onClick={() => open(file)}>
               {file.directory ? <Folder size={17} /> : <FileText size={17} />}
               <span>
                 {file.name}
                 {file.symlink ? ' ↗' : ''}
               </span>
             </button>
-            <span className="muted">
-              {file.directory
-                ? '—'
-                : file.size < 1024
-                  ? `${file.size} B`
-                  : `${(file.size / 1024).toFixed(1)} KiB`}
-            </span>
+            <span className="muted">{file.directory ? '—' : transferBytes(file.size)}</span>
             <div className="feature-actions">
               {!file.directory && !file.symlink && (
                 <button
@@ -222,12 +223,9 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
                   aria-label={`下载 ${file.name}`}
                   disabled={action.busy}
                   onClick={() =>
-                    void action.run(() =>
-                      download(
-                        `/vms/${vm.id}/transfer?path=${encodeURIComponent(target(file.name))}`,
-                        file.name,
-                        token,
-                      ),
+                    void action.run(
+                      () => download(request, vm.id, { type: 'file', path: target(file.name) }),
+                      '下载已开始，请在浏览器查看进度',
                     )
                   }
                 >

@@ -73,7 +73,7 @@ type System = {
   imageBytes: number;
 };
 let token = '';
-async function api<T = any>(path: string, method = 'GET', body?: unknown): Promise<T> {
+async function api<T = any>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api${path}`, {
     method,
     headers: {
@@ -81,6 +81,7 @@ async function api<T = any>(path: string, method = 'GET', body?: unknown): Promi
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || '请求失败');

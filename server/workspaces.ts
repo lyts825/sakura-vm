@@ -32,6 +32,13 @@ export const projectSchema = z
   })
   .strict();
 export type Project = z.infer<typeof projectSchema>;
+export function setupFingerprint(project: Project) {
+  const { directory, template, repository, setup } = project;
+  return createHash('sha256')
+    .update(JSON.stringify({ directory, template, repository, setup }))
+    .digest('hex')
+    .slice(0, 16);
+}
 export function provisionScript(template: Project['template'], distro = 'alpine') {
   const packages =
     distro === 'alpine'
@@ -50,7 +57,7 @@ export function provisionScript(template: Project['template'], distro = 'alpine'
   const install =
     distro === 'alpine'
       ? `apk add --no-cache --timeout 30 ${packages[template]}`
-      : `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y ${packages[template]}`;
+      : `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update &&\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y ${packages[template]}`;
   return `set -eu\nsakura_attempt=0\nuntil (\nset -e\n${install}\n); do\n  sakura_attempt=$((sakura_attempt + 1))\n  [ "$sakura_attempt" -lt 3 ] || exit 1\n  echo '软件源暂时不可用，正在重试…'\n  sleep 2\ndone\nmkdir -p /etc/sakura /workspace\ntouch /etc/sakura/template-${template}\n`;
 }
 export const metricsScript = String.raw`set -eu
@@ -104,36 +111,41 @@ export function parseMetrics(text: string) {
 }
 export class Workspaces {
   jobs = new Jobs();
-  private observed = new Set<string>();
+  private observed = new Map<string, string>();
   private samples = new Map<string, { at: number; promise: Promise<ReturnType<typeof parseMetrics>> }>();
   constructor(private machines: Machines) {
-    machines.on('change', () => {
-      for (const [id, vm] of machines.records) {
-        const live = machines.live.get(id);
-        if (!live || live.status !== 'running') {
-          this.jobs.cancel(id);
-          continue;
-        }
-        const boot = `${id}:${live.startedAt}`;
-        if (vm.template && vm.template !== 'none' && !this.observed.has(boot)) {
-          this.observed.add(boot);
-          if (this.jobs.view(id)?.status === 'running') continue;
-          this.jobs.start(id, async (log, signal) => {
-            const check = await machines.exec(
-              id,
-              `test -f /etc/sakura/template-${vm.template}`,
-              10000,
-              signal,
-            );
-            if (check.code === 0) {
-              log('开发环境已安装。\n');
-              return;
-            }
-            await this.execute(id, provisionScript(vm.template!, vm.distro), log, signal);
-          });
-        }
+    machines.on('change', this.onChange);
+  }
+  private onChange = () => {
+    for (const id of this.observed.keys()) if (!this.machines.records.has(id)) this.observed.delete(id);
+    const machines = this.machines;
+    for (const [id, vm] of machines.records) {
+      const live = machines.live.get(id);
+      if (!live || live.status !== 'running') {
+        this.jobs.cancel(id);
+        this.samples.delete(id);
+        continue;
       }
-    });
+      const boot = `${id}:${live.startedAt}`;
+      if (vm.template && vm.template !== 'none' && this.observed.get(id) !== boot) {
+        if (this.jobs.view(id)?.status === 'running') continue;
+        this.observed.set(id, boot);
+        this.jobs.start(id, async (log, signal) => {
+          const check = await machines.exec(id, `test -f /etc/sakura/template-${vm.template}`, 10000, signal);
+          if (check.code === 0) {
+            log('开发环境已安装。\n');
+            return;
+          }
+          await this.execute(id, provisionScript(vm.template!, vm.distro), log, signal);
+        });
+      }
+    }
+  };
+  async close() {
+    this.machines.off('change', this.onChange);
+    this.samples.clear();
+    this.observed.clear();
+    await this.jobs.close();
   }
   async config(id: string): Promise<Project> {
     const vm = this.machines.get(id);
@@ -187,16 +199,20 @@ export class Workspaces {
       let prepare = `mkdir -p ${quote(project.directory)}\n`;
       if (project.repository)
         prepare += `if [ ! -d ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
-      const fingerprint = createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16);
+      const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
+      const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
       if (project.setup.trim())
-        prepare += `if ${action === 'setup' ? 'true' : `[ ! -f /etc/sakura/project-${fingerprint} ]`}; then\ncd ${quote(project.directory)}\n${project.setup}\ntouch /etc/sakura/project-${fingerprint}\nfi\n`;
+        prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\ncd ${quote(project.directory)}\n${project.setup}\nfi\ntouch ${marker}\n`;
       if (action === 'start') {
         if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
-        prepare += `if tmux has-session -t =sakura-project 2>/dev/null; then echo '项目已经运行'; exit 0; fi\n`;
         prepare += `tmux new-session -d -s sakura-project -c ${quote(project.directory)} ${quote(`sh -lc ${quote(project.command)} > /tmp/sakura-project.log 2>&1`)}\nsleep 1\nif ! tmux has-session -t =sakura-project 2>/dev/null; then tail -c 8192 /tmp/sakura-project.log; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
       }
       log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
-      await this.execute(id, `set -eu\n${install}\n${prepare}`, log, signal);
+      const running =
+        action === 'start'
+          ? "if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then echo '项目已经运行；如需应用新的启动配置，请先停止项目'; exit 0; fi\n"
+          : '';
+      await this.execute(id, `set -eu\n${running}${install}\n${prepare}`, log, signal);
       log('操作完成。\n');
     });
   }
@@ -220,7 +236,7 @@ export class Workspaces {
         return parseMetrics(result.stdout);
       })
       .catch((error) => {
-        this.samples.delete(id);
+        if (this.samples.get(id)?.promise === promise) this.samples.delete(id);
         throw error;
       });
     this.samples.set(id, { at: Date.now(), promise });
