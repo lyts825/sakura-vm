@@ -374,43 +374,74 @@ export class Machines extends EventEmitter {
       }
     });
   }
-  async exec(id: string, command: string, timeout = 30000, signal?: AbortSignal) {
+  async exec(
+    id: string,
+    command: string,
+    timeout = 30000,
+    signal?: AbortSignal,
+    output?: (data: string) => void,
+  ) {
     const client = await this.connect(id, Math.min(timeout, 10000), signal);
     try {
       return await new Promise<{ stdout: string; stderr: string; code: number }>((resolve, reject) => {
         let stdout = '',
           stderr = '',
           size = 0;
+        let settled = false;
+        const outDecoder = new StringDecoder('utf8'),
+          errDecoder = new StringDecoder('utf8');
+        const finish = (error?: Error, code = -1) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          signal?.removeEventListener('abort', abort);
+          client.off('close', closed);
+          error
+            ? reject(error)
+            : resolve({ stdout: stdout + outDecoder.end(), stderr: stderr + errDecoder.end(), code });
+        };
+        const abort = () => {
+          finish(new AppError('Linux 命令已取消', 409));
+          client.destroy();
+        };
+        const closed = () => finish(new Error('SSH connection closed'));
         const timer = setTimeout(() => {
-          client.end();
-          reject(new AppError('Linux 命令执行超时', 408));
+          finish(new AppError('Linux 命令执行超时', 408));
+          client.destroy();
         }, timeout);
+        signal?.addEventListener('abort', abort, { once: true });
+        client.once('close', closed);
+        if (signal?.aborted) {
+          abort();
+          return;
+        }
         client.exec(command, (error, stream) => {
           if (error) {
-            clearTimeout(timer);
-            reject(error);
+            finish(error);
+            return;
+          }
+          if (settled) {
+            stream.close();
             return;
           }
           const collect = (data: Buffer, err = false) => {
+            if (settled) return;
             size += data.length;
             if (size > 1024 * 1024) {
-              clearTimeout(timer);
+              finish(new AppError('输出超过 1 MiB，请使用终端'));
               stream.close();
-              reject(new AppError('输出超过 1 MiB，请使用终端'));
               return;
             }
-            if (err) stderr += data.toString();
-            else stdout += data.toString();
+            const text = (err ? errDecoder : outDecoder).write(data);
+            if (err) stderr += text;
+            else stdout += text;
+            output?.(text);
           };
           stream.on('data', (data: Buffer) => collect(data));
           stream.stderr.on('data', (data: Buffer) => collect(data, true));
-          stream.on('error', (e: Error) => {
-            clearTimeout(timer);
-            reject(e);
-          });
+          stream.on('error', (e: Error) => finish(e));
           stream.on('close', (code: number) => {
-            clearTimeout(timer);
-            resolve({ stdout, stderr, code: code ?? -1 });
+            finish(undefined, code ?? -1);
           });
         });
       });

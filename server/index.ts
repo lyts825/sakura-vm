@@ -10,6 +10,7 @@ import { z, ZodError } from 'zod';
 import { ROOT, PORT, IMAGE, AppError, guestPath } from './model.ts';
 import { createRuntime } from './runtime.ts';
 import { Machines } from './machines.ts';
+import { Desktops } from './desktop.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
 
 const token = randomBytes(32).toString('hex');
@@ -17,6 +18,7 @@ const dev = process.argv.includes('--dev');
 const engine = await createRuntime();
 const machines = new Machines(engine);
 await machines.init();
+const desktops = new Desktops(machines);
 const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
 let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
 const equalToken = (value: unknown) => tokenMatches(value, token);
@@ -97,6 +99,16 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     }
     if (req.method === 'GET' && route[3] === 'logs')
       return send(res, { content: machines.logs.get(id) || '' });
+    if (route[3] === 'desktop' && route.length === 4) {
+      if (req.method === 'GET') return send(res, await desktops.view(id));
+      if (req.method === 'POST') {
+        const { action } = z
+          .object({ action: z.enum(['install', 'start']) })
+          .strict()
+          .parse(await body(req));
+        return send(res, desktops.start(id, action), 202);
+      }
+    }
     if (req.method === 'GET' && route[3] === 'files')
       return send(res, await machines.files(id, guestPath(url.searchParams.get('path') || '/workspace')));
     if (req.method === 'GET' && route[3] === 'file')
@@ -178,7 +190,8 @@ server.on('upgrade', (req, socket, head) => {
   if (
     !allowedRequest(req) ||
     !equalToken(url.searchParams.get('token')) ||
-    (!events && (!machines.records.has(id) || !['terminal', 'logs'].includes(mode)))
+    (!events &&
+      (parts.length !== 4 || !machines.records.has(id) || !['terminal', 'logs', 'desktop'].includes(mode)))
   ) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
@@ -195,6 +208,14 @@ server.on('upgrade', (req, socket, head) => {
       }
     };
     client.on('error', () => {});
+    if (mode === 'desktop') {
+      try {
+        await desktops.attach(id, client);
+      } catch {
+        client.close(1011, 'Desktop unavailable');
+      }
+      return;
+    }
     if (events) {
       const listener = () => sendData('change', null);
       machines.on('change', listener);

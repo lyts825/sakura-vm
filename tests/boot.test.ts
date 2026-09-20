@@ -9,6 +9,8 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Engine } from '../server/runtime.ts';
 import { createSshKey } from '../server/seed.ts';
+import ssh2 from 'ssh2';
+const { Server: SshServer } = ssh2;
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-boot-test-'));
 process.env.SAKURA_DATA_DIR = root;
@@ -158,5 +160,52 @@ test('an SSH peer that never sends its banner is bounded and cancellable', async
   await accepted;
   abort.abort();
   await rejected;
+  await eventually(() => live.clients.size === 0);
+});
+
+test('aborting or timing out a command after SSH is ready closes the session promptly', async (t) => {
+  const { machines, id } = await fixture(t);
+  const exec = machines.exec.bind(machines);
+  machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
+  await machines.start(id);
+  await eventually(() => machines.state(id) === 'running');
+  machines.exec = exec;
+  const peers = new Set<import('ssh2').Connection>();
+  const server = new SshServer({ hostKeys: [key.privateText] }, (peer) => {
+    peers.add(peer);
+    peer.on('error', () => {});
+    peer.on('close', () => peers.delete(peer));
+    peer.on('authentication', (context) => context.accept());
+    peer.on('ready', () =>
+      peer.on('session', (accept) => {
+        accept().on('exec', (acceptCommand) => {
+          const channel = acceptCommand();
+          channel.on('error', () => {});
+          channel.write('command started\n');
+        });
+      }),
+    );
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => {
+    for (const peer of peers) peer.end();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const live = machines.live.get(id)!;
+  live.sshPort = (server.address() as { port: number }).port;
+  const abort = new AbortController();
+  let started = false;
+  const cancelled = assert.rejects(
+    machines.exec(id, 'long command', 10000, abort.signal, () => {
+      started = true;
+    }),
+    /已取消/,
+  );
+  await eventually(() => started);
+  abort.abort();
+  await cancelled;
+  await eventually(() => live.clients.size === 0);
+  await assert.rejects(machines.exec(id, 'long command', 250), /超时/);
   await eventually(() => live.clients.size === 0);
 });

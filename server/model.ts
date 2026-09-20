@@ -33,6 +33,11 @@ export const createSchema = z
   });
 export type VMConfig = z.infer<typeof createSchema>;
 export type VMStatus = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
+export type DesktopView = {
+  status: 'unavailable' | 'not-installed' | 'installing' | 'starting' | 'stopped' | 'ready' | 'error';
+  log: string;
+  error?: string;
+};
 export type Snapshot = { id: string; name: string; createdAt: string };
 export type VMRecord = VMConfig & {
   id: string;

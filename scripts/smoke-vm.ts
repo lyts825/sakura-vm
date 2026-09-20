@@ -11,12 +11,16 @@ process.env.SAKURA_DATA_DIR = testRoot;
 process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
 const { createRuntime } = await import('../server/runtime.ts');
 const { Machines } = await import('../server/machines.ts');
+const { Desktops } = await import('../server/desktop.ts');
 const { freePort } = await import('../server/qmp.ts');
 await mkdir('artifacts', { recursive: true });
 const log = createWriteStream('artifacts/vm-smoke.log', { flags: 'a' });
 const engine = await createRuntime();
 console.log('ENGINE', engine.version, 'via PosixLoom', engine.runtime.info().nativeHost);
 const machines = new Machines(engine);
+const desktops = new Desktops(machines);
+const testDesktop = process.env.SAKURA_TEST_DESKTOP === '1';
+const memoryMiB = testDesktop ? 2048 : 512;
 await machines.init();
 let id = '';
 const bootTimes: number[] = [];
@@ -38,11 +42,49 @@ async function boot() {
   }
   throw new Error('Boot timed out\n' + machines.logs.get(id));
 }
+async function checkDesktop() {
+  const deadline = Date.now() + 180000;
+  while ((await desktops.view(id)).status !== 'ready') {
+    assert.ok(Date.now() < deadline, 'Desktop did not start with the guest');
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  const client = await machines.connect(id);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('VNC banner timed out')), 10000);
+      client.exec('exec nc 127.0.0.1 5901', (error, channel) => {
+        if (error) {
+          clearTimeout(timer);
+          reject(error);
+          return;
+        }
+        let banner = '';
+        channel.on('error', (e: Error) => {
+          clearTimeout(timer);
+          reject(e);
+        });
+        channel.on('data', (data: Buffer) => {
+          banner += data;
+          if (!banner.includes('\n')) return;
+          clearTimeout(timer);
+          channel.close();
+          /^RFB 003\.008\n/.test(banner) ? resolve() : reject(new Error(`Unexpected VNC banner: ${banner}`));
+        });
+      });
+    });
+  } finally {
+    client.end();
+  }
+  const user = await machines.exec(id, 'id -u sakura-desktop; pgrep -u sakura-desktop -x xfce4-session');
+  assert.equal(user.code, 0, user.stderr);
+  assert.notEqual(user.stdout.trim().split('\n')[0], '0');
+  console.log('Xfce session and SSH-tunneled VNC OK');
+}
 try {
   const forwardPort = await freePort();
   const vm = await machines.create({
     name: `verify-${Date.now().toString(36)}`,
-    memoryMiB: 512,
+    memoryMiB,
     cpus: 2,
     diskGiB: 8,
     accelerator: process.env.SAKURA_TEST_ACCELERATOR || 'auto',
@@ -58,6 +100,19 @@ try {
   console.log('\nREAL GUEST', uname.stdout);
   assert.equal(uname.code, 0);
   assert.match(uname.stdout, /Linux/);
+  if (testDesktop) {
+    assert.equal((await desktops.view(id)).status, 'not-installed');
+    desktops.start(id, 'install');
+    const deadline = Date.now() + 930000;
+    while (true) {
+      const desktop = await desktops.view(id);
+      if (desktop.status === 'ready') break;
+      assert.notEqual(desktop.status, 'error', `${desktop.error}\n${desktop.log}`);
+      assert.ok(Date.now() < deadline, `Desktop installation timed out\n${desktop.log}`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    await checkDesktop();
+  }
   const network = await machines.exec(id, 'ip -4 addr show eth0; ip route; cat /etc/resolv.conf');
   assert.equal(network.code, 0);
   assert.match(network.stdout, /10\.0\.2\.15\/24/);
@@ -93,12 +148,14 @@ try {
   const snapshot = await machines.snapshot(id, 'Verified clean state');
   console.log('Boot 2: checking persisted files');
   await boot();
+  if (testDesktop) await checkDesktop();
   assert.equal(await machines.readGuestFile(id, '/workspace/persistence.txt'), 'before snapshot\n');
   await machines.writeGuestFile(id, '/workspace/persistence.txt', 'after snapshot\n');
   await machines.stop(id);
   await machines.restore(id, snapshot.id);
   console.log('Boot 3: checking restored snapshot');
   await boot();
+  if (testDesktop) await checkDesktop();
   assert.equal(await machines.readGuestFile(id, '/workspace/persistence.txt'), 'before snapshot\n');
   // Exercise the real shell migration on a legacy configuration, then ensure
   // subsequent checks preserve a guest owner's custom settings.
@@ -135,7 +192,8 @@ try {
         engine: engine.version,
         accelerator: (await machines.view(id)).activeAccelerator,
         cpus: 2,
-        memoryMiB: 512,
+        memoryMiB,
+        desktop: testDesktop,
         firstBootSeconds: bootTimes[0],
         subsequentBootSeconds: bootTimes.slice(1),
       },

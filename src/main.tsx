@@ -43,6 +43,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { SakuraArt } from './SakuraArt';
+import { DesktopPanel } from './DesktopPanel';
 import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig, Snapshot } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
@@ -212,7 +213,7 @@ function App() {
       const target = event.target;
       if (
         target instanceof Element &&
-        target.closest('input, textarea, select, [contenteditable="true"], .xterm')
+        target.closest('input, textarea, select, [contenteditable="true"], .xterm, .desktop-screen')
       )
         return;
       if (event.key === '/' && page === 'workspace' && !focusMode) {
@@ -708,6 +709,7 @@ function App() {
                       <div className="tabs" role="tablist" aria-label="发行版功能">
                         {[
                           { id: 'terminal', label: '终端', icon: TerminalSquare },
+                          { id: 'desktop', label: '桌面', icon: Monitor },
                           { id: 'files', label: '文件', icon: Folder },
                           { id: 'snapshots', label: '快照', icon: Camera },
                           { id: 'config', label: '配置', icon: Settings2 },
@@ -723,7 +725,7 @@ function App() {
                             className={tab === t.id ? 'active' : ''}
                             onClick={() => setTab(t.id)}
                             onKeyDown={(event) => {
-                              const ids = ['terminal', 'files', 'snapshots', 'config'];
+                              const ids = ['terminal', 'desktop', 'files', 'snapshots', 'config'];
                               const index = ids.indexOf(t.id);
                               const next =
                                 event.key === 'ArrowRight'
@@ -761,6 +763,17 @@ function App() {
                         <div className="terminal-panel-slot" hidden={tab !== 'terminal'}>
                           <TerminalPanel vm={vm} start={start} busy={busy} />
                         </div>
+                        {tab === 'desktop' && (
+                          <DesktopPanel
+                            key={vm.id}
+                            vm={vm}
+                            token={token}
+                            start={start}
+                            busy={busy}
+                            configure={() => setTab('config')}
+                            request={api}
+                          />
+                        )}
                         {tab === 'files' && (
                           <FilesPanel
                             key={vm.id}

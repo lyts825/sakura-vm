@@ -40,11 +40,24 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 - 创建、启动、正常关机、删除多个独立 Alpine Linux 发行版。
 - 每实例独立 QCOW2 增量磁盘，完整 Linux 文件系统在重启后保留。
 - 浏览器 SSH 交互终端：颜色、Ctrl+C、窗口缩放、多终端连接；启动时显示串口日志。
+- 实验性 Xfce 图形桌面：现有 Alpine 实例可按需安装，在浏览器内使用鼠标键盘操作，支持自适应分辨率、全屏和重新连接。
 - SFTP 文件目录浏览，1 MiB 内文本预览、编辑和上传。
 - 离线磁盘快照及恢复；运行中禁止快照、恢复、删除和修改资源。
 - CPU、内存、自动 / TCG / WHPX 与本机 TCP 端口转发配置。
 - 单机控制服务、随机访问凭证、同源及 Host 检查，管理端口和 QEMU 控制端口仅监听回环地址。
 - 同时最多运行 4 个实例，最多 32 个发行版、每实例 20 个快照；日志保留最近 128 KiB。
+
+## Linux 图形桌面（实验性）
+
+创建实例或在停机后的「配置」中将内存设为至少 **1024 MiB**（建议 **2048 MiB**），启动后进入「桌面」标签，点击「安装并启用桌面」。安装会从 Alpine 3.23 官方软件仓库下载 Xfce、TigerVNC、图形终端和中文字体，需要联网及数百 MiB 磁盘空间，页面会显示进度和失败信息；失败后可重试。
+
+安装完成后自动连接桌面，重启实例时桌面服务也会自动启动。浏览器关闭或切换标签后，客户机中的桌面会话继续运行，再次打开即可连接。支持鼠标、键盘、自适应分辨率和全屏；浏览器保留的系统快捷键仍由浏览器处理。
+
+桌面以独立的普通用户 `sakura-desktop` 运行，文件保存在 `/home/sakura-desktop`；原有 SSH 终端继续使用 root。桌面使用 noVNC，经已有鉴权的 WebSocket 和 SSH 隧道连接客户机回环地址，无需添加 VNC 端口转发。图形组件保存在该实例的增量磁盘中，可随离线快照恢复；恢复安装前的快照后，需要重新安装。
+
+目前仅适配内置 Alpine 3.23 的 Xfce / X11 软件渲染桌面，不包含 Ubuntu / Debian 镜像导入、GPU/3D 加速、声音转发、宿主剪贴板同步和 WSLg 的单应用窗口集成。TCG 下桌面响应较慢，建议使用可用的硬件加速。客户机诊断命令：`rc-service sakura-desktop status`，日志：`/var/log/sakura-desktop.log`。安装中断后如提示锁仍被占用，请等待原安装结束或重启实例后重试。
+
+本机 WHPX 验证中出现过 SSH 与桌面同时失联、重启后恢复的情况，长期连接稳定性仍需继续验证；详细范围和已知限制见 [图形桌面验证记录](docs/linux-desktop.md)。
 
 ## 界面与快捷操作
 
@@ -56,7 +69,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 - 在工作空间按 `/` 聚焦发行版搜索；输入框和终端中的按键不会被截获。
 - 发行版列表支持按运行状态筛选，搜索可一键清空；筛选不会关闭当前终端。卡片直接显示 CPU 和内存配置。
 - 终端工具栏可调整 11–18px 字号，点击字号恢复默认 13px；选择会保留，调整时保持 SSH 会话和滚动历史。终端底部持续显示实际连接状态。
-- 终端、文件、快照、配置标签支持左右方向键切换，以及 Home / End 跳转；同一发行版内切换这些标签会保持终端会话与历史输出。
+- 终端、桌面、文件、快照、配置标签支持左右方向键切换，以及 Home / End 跳转；同一发行版内切换这些标签会保持终端会话与历史输出。
 - 窄屏自动使用顶部导航和横向发行版列表，系统的减少动态效果偏好也会生效。
 
 ## 命令行
@@ -82,6 +95,8 @@ server/index.ts         HTTP / WebSocket、鉴权、静态服务
 server/runtime.ts       PosixLoom 原生命令插件，精确 argv 调用 QEMU
 server/machines.ts      发行版生命周期、SSH / SFTP、快照
 server/seed.ts          本地 NoCloud ISO 与每实例 SSH 密钥
+server/desktop.ts       图形桌面安装状态与 SSH / WebSocket 转发
+server/desktop-guest.ts Alpine Xfce 安装及 OpenRC 会话脚本
 server/qmp.ts           QEMU Machine Protocol
 scripts/setup.mjs       固定版本的运行时准备
 scripts/cli.mjs         WSL 风格命令行入口
@@ -120,6 +135,8 @@ npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启
 
 启动耗时写入 `artifacts/boot-timings.json`，分别记录首次初始化和后续启动。设置 `SAKURA_TEST_ACCELERATOR=tcg` 或 `whpx` 可分别验证指定模式；设置 `SAKURA_TEST_NETWORK=1` 可额外验证客户机 DNS 与 HTTPS 联网；默认测试无需互联网。
 
+设置 `SAKURA_TEST_DESKTOP=1` 再运行 `npm run test:vm`，会使用 2 GiB 内存的临时实例，额外验证联网安装 Xfce、非 root 桌面会话、SSH 隧道中的 VNC 协议，以及重启和恢复快照后的桌面自启动。该模式首次运行需要下载图形软件包，耗时较长。
+
 ## 版本管理
 
 项目使用 Git 管理，`main` 保存可运行版本。新功能建议在独立分支开发：
@@ -138,7 +155,7 @@ git commit -m "feat: describe the change"
 
 ## 上游与许可
 
-Sakura 代码采用 MIT 许可。PosixLoom 为 MIT；QEMU 为 GPL-2.0；Alpine 包各自遵循上游许可。运行时与镜像不作为本项目源码提交，`setup` 从原始发布站下载。再分发二进制时应同时履行各组件许可义务。
+Sakura 代码采用 MIT 许可。PosixLoom 为 MIT；QEMU 为 GPL-2.0；noVNC 为 MPL-2.0；Alpine 包各自遵循上游许可。运行时与镜像不作为本项目源码提交，`setup` 从原始发布站下载。再分发二进制时应同时履行各组件许可义务。
 
 随源码提供的字体衍生文件采用 SIL OFL 1.1，保留原始版权和许可。字体来源、校验值及重新裁剪方法见 [字体说明](src/assets/fonts/README.md)。
 
@@ -147,3 +164,5 @@ Sakura 代码采用 MIT 许可。PosixLoom 为 MIT；QEMU 为 GPL-2.0；Alpine �
 - [QEMU WHPX 文档](https://www.qemu.org/docs/master/system/whpx.html)
 - [Alpine 官方云镜像](https://www.alpinelinux.org/cloud/)
 - [Alpine Tiny Cloud](https://gitlab.alpinelinux.org/alpine/cloud/tiny-cloud)
+- [noVNC 浏览器客户端 API](https://novnc.com/noVNC/docs/API.html)
+- [TigerVNC Xvnc 文档](https://tigervnc.org/doc/Xvnc.html)
