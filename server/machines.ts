@@ -242,8 +242,12 @@ export class Machines extends EventEmitter {
           `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,format=qcow2`,
           '-drive',
           `file=${escape(join(dir, 'seed.iso'))},media=cdrom,readonly=on`,
-          '-nic',
-          `user,model=virtio-net-pci,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${forwards.join(',')}`,
+          '-netdev',
+          `user,id=sakura-net,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${forwards.join(',')}`,
+          '-device',
+          // The legacy -nic path can default to vectors=0. Give the virtio NIC
+          // dedicated MSI-X vectors for RX, TX, config and the control queue.
+          'virtio-net-pci,netdev=sakura-net,vectors=4',
           '-device',
           'virtio-rng-pci',
           '-qmp',
@@ -325,10 +329,32 @@ export class Machines extends EventEmitter {
   async connect(id: string, timeout = 10000, signal?: AbortSignal) {
     const live = this.live.get(id);
     if (!live || live.status === 'stopping') throw new AppError('请先启动该发行版', 409);
+    const deadline = performance.now() + timeout;
     const key = await readFile(join(vmDir(id), 'id_rsa'));
-    signal?.throwIfAborted();
-    if (this.live.get(id) !== live || this.live.get(id)?.status === 'stopping')
-      throw new AppError('发行版已停止', 409);
+    for (let attempt = 0; ; attempt++) {
+      signal?.throwIfAborted();
+      if (this.live.get(id) !== live || this.live.get(id)?.status === 'stopping')
+        throw new AppError('发行版已停止', 409);
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) throw new Error('SSH connection timed out');
+      try {
+        return await this.connectOnce(live, key, remaining, signal);
+      } catch (error) {
+        // QEMU's user-network listener can refuse simultaneous TCP connects.
+        // Retry only before a TCP connection exists, never replay a command or
+        // an authentication failure, and stay within the caller's deadline.
+        const wait = 100 * 2 ** attempt;
+        if (
+          (error as NodeJS.ErrnoException).code !== 'ECONNREFUSED' ||
+          attempt >= 3 ||
+          deadline - performance.now() <= wait
+        )
+          throw error;
+        await delay(wait, undefined, { signal });
+      }
+    }
+  }
+  private connectOnce(live: Live, key: Buffer, timeout: number, signal?: AbortSignal) {
     return new Promise<Client>((resolve, reject) => {
       const client = new Client();
       const abort = () => client.destroy();

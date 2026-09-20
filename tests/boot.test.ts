@@ -9,6 +9,7 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Engine } from '../server/runtime.ts';
 import { createSshKey } from '../server/seed.ts';
+import { freePort } from '../server/qmp.ts';
 import ssh2 from 'ssh2';
 const { Server: SshServer } = ssh2;
 
@@ -208,4 +209,53 @@ test('aborting or timing out a command after SSH is ready closes the session pro
   await eventually(() => live.clients.size === 0);
   await assert.rejects(machines.exec(id, 'long command', 250), /超时/);
   await eventually(() => live.clients.size === 0);
+});
+
+test('a briefly refused SSH connection retries within the original deadline', async (t) => {
+  const { machines, id } = await fixture(t);
+  machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
+  await machines.start(id);
+  await eventually(() => machines.state(id) === 'running');
+  const live = machines.live.get(id)!;
+  live.sshPort = await freePort();
+  const peers = new Set<import('ssh2').Connection>();
+  const server = new SshServer({ hostKeys: [key.privateText] }, (peer) => {
+    peers.add(peer);
+    peer.on('error', () => {});
+    peer.on('close', () => peers.delete(peer));
+    peer.on('authentication', (context) => context.accept());
+  });
+  t.after(async () => {
+    for (const peer of peers) peer.end();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const connection = machines.connect(id, 2000);
+  await delay(150);
+  server.listen(live.sshPort, '127.0.0.1');
+  await once(server, 'listening');
+  const client = await connection;
+  assert.equal(live.clients.size, 1, 'failed attempts release their clients');
+  client.end();
+  await eventually(() => live.clients.size === 0);
+});
+
+test('SSH refusal retries honor cancellation and cannot cross a VM restart', async (t) => {
+  const { machines, id } = await fixture(t);
+  machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
+  await machines.start(id);
+  await eventually(() => machines.state(id) === 'running');
+  const live = machines.live.get(id)!;
+  live.sshPort = await freePort();
+  const abort = new AbortController();
+  const cancelled = assert.rejects(machines.connect(id, 2000, abort.signal), { name: 'AbortError' });
+  await delay(50);
+  abort.abort();
+  await cancelled;
+  await eventually(() => live.clients.size === 0);
+  const stopped = assert.rejects(machines.connect(id, 2000), /已停止/);
+  await delay(50);
+  await machines.stop(id, true);
+  await machines.start(id);
+  await stopped;
+  assert.notEqual(machines.live.get(id), live);
 });

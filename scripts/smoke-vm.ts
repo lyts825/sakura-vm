@@ -118,6 +118,9 @@ try {
   assert.match(network.stdout, /10\.0\.2\.15\/24/);
   assert.match(network.stdout, /default via 10\.0\.2\.2/);
   assert.match(network.stdout, /nameserver 10\.0\.2\.3/);
+  const interrupts = await machines.exec(id, 'grep -H . /sys/class/net/eth0/device/../msi_irqs/*');
+  assert.equal(interrupts.code, 0, 'virtio-net must expose dedicated MSI-X interrupts');
+  assert.match(interrupts.stdout, /:msix/);
   await new Promise<void>((resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port: forwardPort });
     let banner = '';
@@ -139,6 +142,18 @@ try {
     );
     assert.equal(internet.code, 0, internet.stderr);
     console.log('DNS and HTTPS egress OK');
+  }
+  if (process.env.SAKURA_TEST_CONNECTIONS === '1') {
+    await Promise.all(
+      Array.from({ length: 6 }, async () => {
+        for (let attempt = 0; attempt < 50; attempt++) {
+          const result = await machines.exec(id, 'head -c 262144 /dev/zero | base64');
+          assert.equal(result.code, 0, result.stderr);
+          assert.ok(Buffer.from(result.stdout, 'base64').equals(Buffer.alloc(262144)));
+        }
+      }),
+    );
+    console.log('300 SSH transfers across 6 concurrent clients OK');
   }
   await machines.writeGuestFile(id, '/workspace/persistence.txt', 'before snapshot\n');
   assert.equal(await machines.readGuestFile(id, '/workspace/persistence.txt'), 'before snapshot\n');

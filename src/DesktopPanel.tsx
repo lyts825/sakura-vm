@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, LoaderCircle, Maximize2, Minimize2, Monitor, Play, RefreshCw } from 'lucide-react';
-import type RFB from '@novnc/novnc';
 import type { DesktopView, VMView } from '../server/model';
+import { connectDesktop } from './desktop-connection';
 import './desktop.css';
 
 type Props = {
@@ -75,7 +75,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   useEffect(() => {
     if (!ready || !screen.current) return;
     let alive = true;
-    let client: RFB | undefined;
+    let disconnect: (() => void) | undefined;
     setConnected(false);
     setError('');
     setConnection('正在连接桌面…');
@@ -84,39 +84,32 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       .then(({ default: RFBClient }) => {
         if (!alive || !screen.current) return;
         const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        client = new RFBClient(
-          screen.current,
-          `${scheme}//${location.host}/ws/${vm.id}/desktop?token=${encodeURIComponent(token)}`,
+        const target = screen.current;
+        disconnect = connectDesktop(
+          () => {
+            const client = new RFBClient(
+              target,
+              `${scheme}//${location.host}/ws/${vm.id}/desktop?token=${encodeURIComponent(token)}`,
+            );
+            client.scaleViewport = true;
+            client.resizeSession = true;
+            client.background = '#201b24';
+            return client;
+          },
+          (state) => {
+            if (!alive) return;
+            setConnected(state.connected);
+            setConnection(state.message);
+            setError(state.error || '');
+          },
         );
-        client.scaleViewport = true;
-        client.resizeSession = true;
-        client.background = '#201b24';
-        client.addEventListener('connect', () => {
-          if (alive) {
-            setConnected(true);
-            setConnection('桌面已连接');
-          }
-        });
-        client.addEventListener('disconnect', () => {
-          if (alive) {
-            setConnected(false);
-            setConnection('连接已断开，可点击「重新连接」');
-          }
-        });
-        client.addEventListener('credentialsrequired', () => {
-          if (alive) setError('桌面认证配置已改变，请检查客户机的 sakura-desktop 服务');
-          client?.disconnect();
-        });
-        client.addEventListener('securityfailure', () => {
-          if (alive) setError('桌面连接认证失败，请检查客户机配置');
-        });
       })
       .catch((e: Error) => {
         if (alive) setError(`桌面客户端加载失败：${e.message}`);
       });
     return () => {
       alive = false;
-      client?.disconnect();
+      disconnect?.();
     };
   }, [vm.id, ready, token, attempt]);
 
