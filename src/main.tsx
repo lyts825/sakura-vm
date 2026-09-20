@@ -40,6 +40,7 @@ import {
   Moon,
   Maximize2,
   Minimize2,
+  Minus,
 } from 'lucide-react';
 import { SakuraArt } from './SakuraArt';
 import sakuraMark from './assets/sakura.svg';
@@ -185,9 +186,14 @@ function App() {
     }
   });
   const [focused, setFocused] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'stopped'>('all');
   const searchRef = useRef<HTMLInputElement>(null);
+  const machineRef = useRef<HTMLElement>(null);
   const vm = vms.find((v) => v.id === selected);
   const focusMode = focused && page === 'workspace' && !!vm;
+  useEffect(() => {
+    if (focusMode) machineRef.current?.scrollIntoView({ block: 'start' });
+  }, [focusMode]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document
@@ -267,6 +273,11 @@ function App() {
   const stop = () =>
     vm && run(() => api(`/vms/${vm.id}/stop`, 'POST', { force: false }), '发行版已停止，磁盘数据已保留');
   const running = vms.filter((v) => v.status === 'running').length;
+  const visibleVms = vms.filter(
+    (v) =>
+      (statusFilter === 'all' || v.status === statusFilter) &&
+      v.name.toLowerCase().includes(query.trim().toLowerCase()),
+  );
   const allocated = vms.filter(active).reduce((sum, v) => sum + v.memoryMiB, 0);
   const engineState = offline ? 'error' : system?.nativeHost ? 'running' : 'starting';
   return (
@@ -311,6 +322,8 @@ function App() {
               onClick={() => {
                 setSelected(v.id);
                 setPage('workspace');
+                setQuery('');
+                setStatusFilter('all');
               }}
               className={selected === v.id && page === 'workspace' ? 'selected-distro' : ''}
             >
@@ -460,7 +473,11 @@ function App() {
                 </span>
               </div>
               <div className="workspace">
-                <section className="distro-panel">
+                <section className="distro-panel" aria-label="发行版列表" aria-busy={loading}>
+                  <div className="distro-panel-heading">
+                    <span>发行版</span>
+                    <span role="status">{loading ? '读取中…' : `${visibleVms.length} / ${vms.length}`}</span>
+                  </div>
                   <div className="search-box">
                     <Search size={15} />
                     <input
@@ -468,52 +485,132 @@ function App() {
                       aria-label="查找发行版"
                       placeholder="查找发行版…"
                       value={query}
+                      disabled={loading}
+                      aria-controls="distro-list"
                       onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape' && query) {
+                          e.stopPropagation();
+                          setQuery('');
+                        }
+                      }}
                     />
-                    <kbd>/</kbd>
+                    {query ? (
+                      <button
+                        className="clear-search"
+                        aria-label="清空发行版搜索"
+                        onClick={() => {
+                          setQuery('');
+                          searchRef.current?.focus();
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    ) : (
+                      <kbd aria-hidden="true">/</kbd>
+                    )}
                   </div>
-                  <div className="distro-list">
-                    {vms
-                      .filter((v) => v.name.toLowerCase().includes(query.toLowerCase()))
-                      .map((v) => (
-                        <button
-                          key={v.id}
-                          className={`distro-card ${vm?.id === v.id ? 'active' : ''}`}
-                          aria-pressed={vm?.id === v.id}
-                          onClick={() => setSelected(v.id)}
-                        >
-                          <div className="distro-card-top">
-                            <Alpine small />
-                            {vm?.id === v.id ? <CircleDot size={16} /> : <ChevronRight size={15} />}
+                  <div className="distro-filters" role="group" aria-label="发行版状态筛选">
+                    {(
+                      [
+                        { id: 'all', label: '全部', count: vms.length },
+                        { id: 'running', label: '运行中', count: running },
+                        {
+                          id: 'stopped',
+                          label: '已停止',
+                          count: vms.filter((v) => v.status === 'stopped').length,
+                        },
+                      ] as const
+                    ).map((filter) => (
+                      <button
+                        key={filter.id}
+                        aria-label={`筛选${filter.label}发行版`}
+                        aria-pressed={statusFilter === filter.id}
+                        aria-controls="distro-list"
+                        onClick={() => setStatusFilter(filter.id)}
+                      >
+                        {filter.label}
+                        <small aria-hidden="true">{filter.count}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="distro-list" id="distro-list">
+                    {loading && (
+                      <div className="distro-skeleton" aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                      </div>
+                    )}
+                    {visibleVms.map((v) => (
+                      <button
+                        key={v.id}
+                        className={`distro-card ${vm?.id === v.id ? 'active' : ''}`}
+                        aria-pressed={vm?.id === v.id}
+                        aria-label={`打开 ${v.name}，${states[v.status]}`}
+                        onClick={() => setSelected(v.id)}
+                      >
+                        <div className="distro-card-top">
+                          <Alpine small />
+                          <div className="distro-identity">
+                            <h3 title={v.name}>{v.name}</h3>
+                            <p>Alpine Linux 3.23</p>
                           </div>
-                          <h3>{v.name}</h3>
-                          <p>
-                            Alpine Linux 3.23 <span>· x86_64</span>
-                          </p>
-                          <div className="distro-card-bottom">
-                            <Badge vm={v} />
-                            <span>{memory(v.memoryMiB)}</span>
-                          </div>
-                        </button>
-                      ))}
+                          {vm?.id === v.id ? <CircleDot size={16} /> : <ChevronRight size={15} />}
+                        </div>
+                        <div className="distro-resources">
+                          <span>
+                            <Cpu size={12} />
+                            {v.cpus} vCPU
+                          </span>
+                          <span>
+                            <MemoryStick size={12} />
+                            {memory(v.memoryMiB)}
+                          </span>
+                        </div>
+                        <div className="distro-card-bottom">
+                          <Badge vm={v} />
+                          <span>{vm?.id === v.id ? '当前空间' : '打开空间'}</span>
+                        </div>
+                      </button>
+                    ))}
                     {!loading && !vms.length && (
                       <div className="empty-list">
                         <Boxes size={26} />
                         <p>从第一个发行版开始</p>
                       </div>
                     )}
-                    {query && !vms.some((v) => v.name.toLowerCase().includes(query.toLowerCase())) && (
-                      <p className="muted">没有匹配的发行版</p>
+                    {!loading && vms.length > 0 && !visibleVms.length && (
+                      <div className="distro-no-results" role="status">
+                        <Search size={24} />
+                        <h3>
+                          {query.trim()
+                            ? '没有匹配的发行版'
+                            : statusFilter === 'running'
+                              ? '暂时没有运行中的空间'
+                              : '暂时没有已停止的空间'}
+                        </h3>
+                        <p>试试其他名称，或查看全部发行版。</p>
+                        <button
+                          onClick={() => {
+                            setQuery('');
+                            setStatusFilter('all');
+                            searchRef.current?.focus();
+                          }}
+                        >
+                          显示全部 <ArrowRight size={13} />
+                        </button>
+                      </div>
                     )}
-                    <button
-                      className="add-distro"
-                      onClick={() => setModal('create')}
-                      disabled={!system?.imageReady}
-                    >
-                      <Plus size={16} />
-                      新的 Linux 空间
-                    </button>
                   </div>
+                  <button
+                    className="add-distro"
+                    onClick={() => setModal('create')}
+                    disabled={loading || !system?.imageReady}
+                  >
+                    <Plus size={16} />
+                    新的 Linux 空间
+                  </button>
                   <div className="workflow-note">
                     <Flower2 size={22} />
                     <h4>停下片刻，灵感继续。</h4>
@@ -527,7 +624,7 @@ function App() {
                     </button>
                   </div>
                 </section>
-                <section className="machine-panel">
+                <section className="machine-panel" ref={machineRef}>
                   {vm ? (
                     <>
                       <div className="machine-head">
@@ -632,7 +729,9 @@ function App() {
                         role="tabpanel"
                         aria-labelledby={`tab-${tab}`}
                       >
-                        {tab === 'terminal' && <TerminalPanel vm={vm} start={start} busy={busy} />}
+                        <div className="terminal-panel-slot" hidden={tab !== 'terminal'}>
+                          <TerminalPanel vm={vm} start={start} busy={busy} />
+                        </div>
                         {tab === 'files' && (
                           <FilesPanel
                             key={vm.id}
@@ -913,6 +1012,8 @@ function App() {
               setSelected(result.id);
               setPage('workspace');
               setTab('terminal');
+              setQuery('');
+              setStatusFilter('all');
               setModal(null);
               if (boot) await api(`/vms/${result.id}/start`, 'POST');
             }, '新的 Linux 空间已创建')
@@ -1034,6 +1135,15 @@ function App() {
 function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; busy: boolean }) {
   const ref = useRef<HTMLDivElement>(null),
     terminal = useRef<Terminal | null>(null);
+  const fitTerminal = useRef<(() => void) | null>(null);
+  const [fontSize, setFontSize] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('sakura-terminal-font-size'));
+      return Number.isInteger(saved) && saved >= 11 && saved <= 18 ? saved : 13;
+    } catch {
+      return 13;
+    }
+  });
   const [retry, setRetry] = useState(0),
     [connection, setConnection] = useState('连接中');
   const mode = vm.status === 'running' ? 'terminal' : 'logs';
@@ -1041,7 +1151,7 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
     if (!ref.current || vm.status === 'stopped') return;
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize,
       fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
       lineHeight: 1.5,
       scrollback: 4000,
@@ -1084,6 +1194,7 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
         socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     };
     const observer = new ResizeObserver(resize);
+    fitTerminal.current = resize;
     observer.observe(ref.current);
     requestAnimationFrame(resize);
     socket.onmessage = (event) => {
@@ -1094,6 +1205,7 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
         setConnection('SSH 已连接');
         resize();
         if (
+          ref.current?.clientWidth &&
           !document.querySelector('dialog[open]') &&
           (document.activeElement === document.body || ref.current?.contains(document.activeElement))
         )
@@ -1116,8 +1228,31 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
       observer.disconnect();
       term.dispose();
       terminal.current = null;
+      fitTerminal.current = null;
     };
   }, [vm.id, vm.status, mode, retry]);
+  // Resize the existing terminal without replacing its SSH connection or scrollback.
+  useEffect(() => {
+    if (terminal.current) {
+      terminal.current.options.fontSize = fontSize;
+      fitTerminal.current?.();
+    }
+    try {
+      localStorage.setItem('sakura-terminal-font-size', String(fontSize));
+    } catch {
+      // The controls also work when browser storage is unavailable.
+    }
+  }, [fontSize]);
+  const connectionTone =
+    vm.status === 'stopped'
+      ? 'stopped'
+      : connection === 'SSH 已连接'
+        ? 'running'
+        : connection === '连接失败'
+          ? 'error'
+          : connection === '连接已关闭'
+            ? 'stopped'
+            : 'starting';
   return (
     <div className="terminal-wrap">
       <div className="terminal-toolbar">
@@ -1130,13 +1265,48 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
           <span>{vm.status === 'running' ? `root@${vm.name}: ~` : 'Linux 启动控制台'}</span>
         </div>
         <div>
-          <span className="terminal-connection" role="status">
-            {vm.status === 'stopped' ? '离线' : connection}
-          </span>
-          <button aria-label="清空终端" title="清空终端" onClick={() => terminal.current?.clear()}>
+          <div className="terminal-font-controls" role="group" aria-label="终端字号">
+            <button
+              aria-label="缩小终端字号"
+              title="缩小字号"
+              disabled={fontSize <= 11}
+              onClick={() => setFontSize((size) => Math.max(11, size - 1))}
+            >
+              <Minus size={12} />
+            </button>
+            <button
+              className="terminal-font-reset"
+              aria-label={`重置终端字号，当前 ${fontSize} 像素`}
+              title="恢复默认 13px"
+              onClick={() => setFontSize(13)}
+            >
+              {fontSize}
+              <small>px</small>
+            </button>
+            <button
+              aria-label="放大终端字号"
+              title="放大字号"
+              disabled={fontSize >= 18}
+              onClick={() => setFontSize((size) => Math.min(18, size + 1))}
+            >
+              <Plus size={12} />
+            </button>
+          </div>
+          <span className="terminal-tool-divider" aria-hidden="true" />
+          <button
+            aria-label="清空终端"
+            title="清空终端"
+            disabled={vm.status === 'stopped'}
+            onClick={() => terminal.current?.clear()}
+          >
             <Trash2 size={14} />
           </button>
-          <button aria-label="重新连接终端" title="重新连接" onClick={() => setRetry((v) => v + 1)}>
+          <button
+            aria-label="重新连接终端"
+            title="重新连接"
+            disabled={vm.status === 'stopped'}
+            onClick={() => setRetry((v) => v + 1)}
+          >
             <RefreshCw size={14} />
           </button>
         </div>
@@ -1155,9 +1325,9 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
         <div ref={ref} className="xterm-container" />
       )}
       <div className="terminal-bottom">
-        <span>
-          <span className={`tiny-dot ${vm.status}`} />
-          {vm.status === 'running' ? '真实 Linux Shell' : states[vm.status]}
+        <span className={`terminal-session ${connectionTone}`} role="status">
+          <span className={`tiny-dot ${connectionTone}`} />
+          {vm.status === 'stopped' ? '发行版已停止' : connection}
         </span>
         <span>
           UTF-8<span className="terminal-separator">/</span>xterm-256color
