@@ -112,6 +112,42 @@ iface eth0 inet static
   gateway 10.0.2.2
 `;
 
+export const cloudNetwork = `version: 2
+ethernets:
+  sakura:
+    match:
+      driver: virtio_net
+    dhcp4: true
+`;
+
+export function cloudUserData(name: string, publicKey: string) {
+  return `#cloud-config
+hostname: ${name}
+manage_etc_hosts: true
+disable_root: false
+ssh_pwauth: false
+users:
+  - name: root
+    lock_passwd: false
+    hashed_passwd: '$6$sakura$${randomBytes(64).toString('base64').replaceAll('+', '.').replaceAll('=', '')}'
+    ssh_authorized_keys:
+      - ${publicKey}
+write_files:
+  - path: /etc/ssh/sshd_config.d/00-sakura.conf
+    permissions: '0600'
+    content: |
+      PermitRootLogin prohibit-password
+      PasswordAuthentication no
+  - path: /etc/profile.d/sakura.sh
+    content: |
+      export TERM=xterm-256color
+runcmd:
+  - [mkdir, -p, /workspace]
+  - [systemctl, restart, ssh]
+  - [sh, -c, "printf 'SAKURA_READY\\n' > /dev/ttyS0"]
+`;
+}
+
 // Every VM has its own QEMU user-mode network, so these addresses never compete
 // with another VM. Supplying ENI metadata avoids dhcpcd's discovery/probe delay.
 export function metaData(id: string, name: string, publicKey: string) {

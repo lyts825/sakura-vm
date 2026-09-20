@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdir, readFile, writeFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, rm, stat, copyFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -10,7 +10,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import {
   AppError,
   DATA,
-  IMAGE,
   VM_ROOT,
   createSchema,
   vmDir,
@@ -19,7 +18,8 @@ import {
   type VMView,
   type VMStatus,
 } from './model.ts';
-import { createSshKey, seedIso, userData, metaData, bootSetup } from './seed.ts';
+import { createSshKey, seedIso, userData, metaData, bootSetup, cloudUserData, cloudNetwork } from './seed.ts';
+import { distroInfo } from './images.ts';
 import { freePort, qmp } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 
@@ -60,6 +60,8 @@ export class Machines extends EventEmitter {
           diskGiB: r.diskGiB,
           accelerator: r.accelerator,
           forwards: r.forwards,
+          distro: r.distro,
+          template: r.template,
         });
         this.records.set(r.id, r);
       }
@@ -133,7 +135,12 @@ export class Machines extends EventEmitter {
       const config = createSchema.parse(input);
       if ([...this.records.values()].some((v) => v.name === config.name))
         throw new AppError('该名称已存在', 409);
-      if (!existsSync(IMAGE)) throw new AppError('Alpine 镜像尚未准备好，请运行 npm run setup', 503);
+      const image = distroInfo(config.distro);
+      if (!existsSync(image.file)) throw new AppError('镜像尚未准备好，请先下载对应发行版镜像', 503);
+      if (config.memoryMiB < image.minimumMemory || config.diskGiB < image.minimumDisk)
+        throw new AppError(
+          `${image.name} 至少需要 ${image.minimumMemory} MiB 内存、${image.minimumDisk} GiB 磁盘`,
+        );
       if (this.records.size >= 32) throw new AppError('最多保留 32 个发行版');
       const vm: VMRecord = {
         ...config,
@@ -150,7 +157,11 @@ export class Machines extends EventEmitter {
           join(dir, 'seed.iso'),
           seedIso({
             'meta-data': metaData(vm.id, vm.name, key.publicText),
-            'user-data': userData(vm.name, key.publicText),
+            'user-data':
+              vm.distro && vm.distro !== 'alpine'
+                ? cloudUserData(vm.name, key.publicText)
+                : userData(vm.name, key.publicText),
+            ...(vm.distro && vm.distro !== 'alpine' ? { 'network-config': cloudNetwork } : {}),
           }),
         );
         await this.engine.run('sakura-img', [
@@ -160,7 +171,7 @@ export class Machines extends EventEmitter {
           '-F',
           'qcow2',
           '-b',
-          IMAGE,
+          image.file,
           join(dir, 'disk.qcow2'),
           `${vm.diskGiB}G`,
         ]);
@@ -219,8 +230,7 @@ export class Machines extends EventEmitter {
           '-nodefaults',
           '-boot',
           'order=c,menu=off',
-          '-smbios',
-          'type=1,serial=ds=nocloud',
+          ...(!vm.distro || vm.distro === 'alpine' ? ['-smbios', 'type=1,serial=ds=nocloud'] : []),
           '-accel',
           // Use an instruction-based clock on Windows TCG: host scheduling can
           // otherwise make Alpine's early PIT/IO-APIC timer check panic. icount
@@ -241,7 +251,7 @@ export class Machines extends EventEmitter {
           '-drive',
           `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,format=qcow2`,
           '-drive',
-          `file=${escape(join(dir, 'seed.iso'))},media=cdrom,readonly=on`,
+          `file=${escape(join(dir, 'seed.iso'))},${vm.distro && vm.distro !== 'alpine' ? 'if=virtio,format=raw' : 'media=cdrom'},readonly=on`,
           '-netdev',
           `user,id=sakura-net,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${forwards.join(',')}`,
           '-device',
@@ -305,11 +315,28 @@ export class Machines extends EventEmitter {
         // expose terminals until Tiny Cloud has finished provisioning the guest.
         const result = await this.exec(
           id,
-          `set -e\ntest -f /var/lib/cloud/.bootstrap-complete\n${bootSetup()}`,
+          this.get(id).distro && this.get(id).distro !== 'alpine'
+            ? 'test -f /var/lib/cloud/instance/boot-finished && test -d /workspace'
+            : `set -e\ntest -f /var/lib/cloud/.bootstrap-complete\n${bootSetup()}`,
           Math.max(1, Math.min(1800, deadline - performance.now())),
           signal,
         );
         if (result.code !== 0) throw new Error('Linux initialization is not finished');
+        const identityFile = join(vmDir(id), 'identity.json');
+        if (existsSync(identityFile)) {
+          const identity = JSON.parse(await readFile(identityFile, 'utf8')) as ReturnType<
+            typeof createSshKey
+          >;
+          const changed = await this.exec(
+            id,
+            `set -e\nprintf '%s\\n' '${identity.publicText}' > /root/.ssh/authorized_keys\nchmod 600 /root/.ssh/authorized_keys\nhostname '${this.get(id).name}'\nprintf '%s\\n' '${this.get(id).name}' > /etc/hostname\n`,
+            10000,
+            signal,
+          );
+          if (changed.code !== 0) throw new Error(changed.stderr);
+          await writeFile(join(vmDir(id), 'id_rsa'), identity.privateText, { mode: 0o600 });
+          await rm(identityFile);
+        }
         if (this.live.get(id) === live && live.status === 'starting') {
           live.status = 'running';
           this.emit('change');
@@ -340,6 +367,20 @@ export class Machines extends EventEmitter {
       try {
         return await this.connectOnce(live, key, remaining, signal);
       } catch (error) {
+        // An interrupted clone rekey may have updated the guest before the host
+        // key file. Recover using the pending key without replaying commands.
+        if (
+          (error as Error).message.includes('authentication') &&
+          existsSync(join(vmDir(id), 'identity.json'))
+        ) {
+          const pending = JSON.parse(await readFile(join(vmDir(id), 'identity.json'), 'utf8'));
+          return this.connectOnce(
+            live,
+            Buffer.from(pending.privateText),
+            Math.max(1, deadline - performance.now()),
+            signal,
+          );
+        }
         // QEMU's user-network listener can refuse simultaneous TCP connects.
         // Retry only before a TCP connection exists, never replay a command or
         // an authentication failure, and stay within the caller's deadline.
@@ -475,14 +516,18 @@ export class Machines extends EventEmitter {
       client.end();
     }
   }
-  private async sftp<T>(id: string, work: (sftp: SFTPWrapper) => Promise<T>) {
-    const client = await this.connect(id);
+  async sftp<T>(id: string, work: (sftp: SFTPWrapper) => Promise<T>, signal?: AbortSignal) {
+    const client = await this.connect(id, 10000, signal);
+    const abort = () => client.destroy();
+    signal?.addEventListener('abort', abort, { once: true });
     try {
+      signal?.throwIfAborted();
       const sftp = await new Promise<SFTPWrapper>((res, rej) =>
         client.sftp((err, ftp) => (err ? rej(err) : res(ftp))),
       );
       return await work(sftp);
     } finally {
+      signal?.removeEventListener('abort', abort);
       client.end();
     }
   }
@@ -569,12 +614,14 @@ export class Machines extends EventEmitter {
       const config = createSchema.parse(input);
       if (config.name !== vm.name) throw new AppError('实例名称创建后不可修改');
       if (config.diskGiB !== vm.diskGiB) throw new AppError('磁盘大小创建后不可修改');
+      if ((config.distro || 'alpine') !== (vm.distro || 'alpine'))
+        throw new AppError('不能更改已有磁盘的发行版');
       Object.assign(vm, config);
       await this.save();
       return this.view(id);
     });
   }
-  private requireStopped(id: string) {
+  requireStopped(id: string) {
     if (this.live.has(id)) throw new AppError('请先停止发行版，再进行此操作', 409);
   }
   async snapshot(id: string, name: string) {
@@ -589,11 +636,18 @@ export class Machines extends EventEmitter {
       return shot;
     });
   }
-  async restore(id: string, snapshotId: string) {
+  async restore(id: string, snapshotId: string, backup = false) {
     return this.locked(id, async () => {
       const vm = this.get(id);
       this.requireStopped(id);
       if (!vm.snapshots.some((s) => s.id === snapshotId)) throw new AppError('快照不存在', 404);
+      if (backup) {
+        if (vm.snapshots.length >= 20) throw new AppError('请先删除一个旧快照，为恢复前备份留出位置');
+        const shot = { id: randomUUID(), name: '恢复前自动备份', createdAt: new Date().toISOString() };
+        await this.engine.run('sakura-img', ['snapshot', '-c', shot.id, join(vmDir(id), 'disk.qcow2')]);
+        vm.snapshots.push(shot);
+        await this.save();
+      }
       await this.engine.run('sakura-img', ['snapshot', '-a', snapshotId, join(vmDir(id), 'disk.qcow2')]);
       delete vm.lastError;
       await this.save();
@@ -610,6 +664,109 @@ export class Machines extends EventEmitter {
       this.records.delete(id);
       this.logs.delete(id);
       await this.save();
+    });
+  }
+  async editSnapshot(id: string, snapshotId: string, patch: { name: string; note: string } | null) {
+    return this.locked(id, async () => {
+      this.requireStopped(id);
+      const vm = this.get(id);
+      const shot = vm.snapshots.find((s) => s.id === snapshotId);
+      if (!shot) throw new AppError('快照不存在', 404);
+      if (patch) Object.assign(shot, patch);
+      else {
+        await this.engine.run('sakura-img', ['snapshot', '-d', shot.id, join(vmDir(id), 'disk.qcow2')]);
+        vm.snapshots = vm.snapshots.filter((s) => s !== shot);
+      }
+      await this.save();
+      this.emit('change');
+      return this.view(id);
+    });
+  }
+  async setForwards(id: string, input: unknown) {
+    return this.locked('launch', () =>
+      this.locked(id, async () => {
+        const vm = this.get(id);
+        const parsed = createSchema.parse({ name: vm.name, forwards: input }).forwards;
+        for (const [otherId, other] of this.records) {
+          if (
+            otherId !== id &&
+            this.live.has(otherId) &&
+            other.forwards.some((p) => parsed.some((n) => n.host === p.host))
+          )
+            throw new AppError('主机端口已被其他运行中的实例使用', 409);
+        }
+        const live = this.live.get(id);
+        if (live && live.status !== 'running') throw new AppError('请等待实例启动或停止完成', 409);
+        if (live) {
+          const removed = vm.forwards.filter(
+            (p) => !parsed.some((n) => n.host === p.host && n.guest === p.guest),
+          );
+          const added = parsed.filter(
+            (p) => !vm.forwards.some((n) => n.host === p.host && n.guest === p.guest),
+          );
+          const applied: typeof parsed = [],
+            taken: typeof parsed = [];
+          const command = async (verb: 'add' | 'remove', p: (typeof parsed)[number]) => {
+            const output = await qmp(live.qmpPort, 'human-monitor-command', {
+              'command-line':
+                verb === 'add'
+                  ? `hostfwd_add sakura-net tcp:127.0.0.1:${p.host}-:${p.guest}`
+                  : `hostfwd_remove sakura-net tcp:127.0.0.1:${p.host}`,
+            });
+            if (typeof output === 'string' && /could not|error|invalid|not found/i.test(output))
+              throw new AppError(output.trim());
+          };
+          try {
+            for (const p of removed) {
+              await command('remove', p);
+              taken.push(p);
+            }
+            for (const p of added) {
+              await command('add', p);
+              applied.push(p);
+            }
+          } catch (error) {
+            for (const p of applied) await command('remove', p).catch(() => {});
+            for (const p of taken) await command('add', p).catch(() => {});
+            throw error;
+          }
+        }
+        vm.forwards = parsed;
+        await this.save();
+        this.emit('change');
+        return this.view(id);
+      }),
+    );
+  }
+  // Publish a validated standalone disk and rotate its controller key at first boot.
+  async adopt(input: unknown, disk: string, key: string, seed: Buffer, project?: unknown) {
+    return this.locked('create', async () => {
+      const config = createSchema.parse(input);
+      if (this.records.size >= 32 || [...this.records.values()].some((v) => v.name === config.name))
+        throw new AppError('名称已存在或已达到 32 个实例上限', 409);
+      const vm: VMRecord = {
+        ...config,
+        id: randomUUID(),
+        createdAt: new Date().toISOString(),
+        snapshots: [],
+      };
+      const dir = vmDir(vm.id);
+      await mkdir(dir);
+      try {
+        await copyFile(disk, join(dir, 'disk.qcow2'));
+        await writeFile(join(dir, 'id_rsa'), key, { mode: 0o600 });
+        await writeFile(join(dir, 'seed.iso'), seed);
+        await writeFile(join(dir, 'identity.json'), JSON.stringify(createSshKey()), { mode: 0o600 });
+        if (project) await writeFile(join(dir, 'project.json'), JSON.stringify(project, null, 2));
+        this.records.set(vm.id, vm);
+        await this.save();
+        this.emit('change');
+        return this.view(vm.id);
+      } catch (error) {
+        this.records.delete(vm.id);
+        await rm(dir, { recursive: true, force: true });
+        throw error;
+      }
     });
   }
   async close() {

@@ -12,6 +12,8 @@ import { createRuntime } from './runtime.ts';
 import { Machines } from './machines.ts';
 import { Desktops } from './desktop.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
+import { Features } from './features.ts';
+import type { ClientChannel } from 'ssh2';
 
 const token = randomBytes(32).toString('hex');
 const dev = process.argv.includes('--dev');
@@ -19,6 +21,7 @@ const engine = await createRuntime();
 const machines = new Machines(engine);
 await machines.init();
 const desktops = new Desktops(machines);
+const features = new Features(machines);
 const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
 let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
 const equalToken = (value: unknown) => tokenMatches(value, token);
@@ -51,6 +54,7 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
   if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
   const route = url.pathname.split('/').filter(Boolean);
+  if (await features.route(req, res, url, body)) return;
   if (req.method === 'GET' && url.pathname === '/api/system')
     return send(res, {
       name: 'Sakura',
@@ -130,8 +134,15 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
         .parse(await body(req));
       return send(res, await machines.snapshot(id, name), 201);
     }
-    if (req.method === 'POST' && route[3] === 'snapshots' && route[4] && route[5] === 'restore')
-      return send(res, await machines.restore(id, route[4]));
+    if (req.method === 'POST' && route[3] === 'snapshots' && route[4] && route[5] === 'restore') {
+      const input = req.headers['content-type']?.startsWith('application/json')
+        ? z
+            .object({ backup: z.boolean().default(true) })
+            .strict()
+            .parse(await body(req))
+        : { backup: false };
+      return send(res, await machines.restore(id, route[4], input.backup));
+    }
   }
   throw new AppError('接口不存在', 404);
 };
@@ -239,7 +250,7 @@ server.on('upgrade', (req, socket, head) => {
         return;
       }
       ssh.on('error', (error) => sendData('error', error.message));
-      ssh.shell({ term: 'xterm-256color', cols: 100, rows: 28 }, (error, stream) => {
+      const connected = (error: Error | undefined, stream: ClientChannel) => {
         if (error) {
           sendData('error', error.message);
           client.close();
@@ -273,7 +284,15 @@ server.on('upgrade', (req, socket, head) => {
             client.close(1008, 'invalid message');
           }
         });
-      });
+      };
+      const session = url.searchParams.get('session');
+      if (session && /^[a-z0-9-]{1,48}$/.test(session)) {
+        ssh.exec(
+          `if command -v tmux >/dev/null; then exec tmux new-session -A -s sakura-terminal-${session}; else printf '安装项目环境后可恢复终端会话。\\r\\n'; exec /bin/sh -l; fi`,
+          { pty: { term: 'xterm-256color', cols: 100, rows: 28 } },
+          connected,
+        );
+      } else ssh.shell({ term: 'xterm-256color', cols: 100, rows: 28 }, connected);
     } catch (error: any) {
       sendData('error', error.message);
       client.close();
@@ -296,6 +315,7 @@ async function close() {
   for (const socket of ws.clients) socket.close();
   ws.close();
   server.close();
+  await features.close();
   await machines.close();
   await vite?.close();
   process.exit(0);

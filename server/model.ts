@@ -19,9 +19,15 @@ export const createSchema = z
     cpus: z.number().int().min(1).max(8).default(2),
     diskGiB: z.number().int().min(2).max(128).default(8),
     accelerator: z.enum(['auto', 'tcg', 'whpx']).default('auto'),
+    distro: z.enum(['alpine', 'debian', 'ubuntu']).optional(),
+    template: z.enum(['none', 'node', 'python', 'rust']).optional(),
     forwards: z
       .array(
-        z.object({ host: z.number().int().min(1024).max(65535), guest: z.number().int().min(1).max(65535) }),
+        z.object({
+          name: z.string().trim().max(40).optional(),
+          host: z.number().int().min(1024).max(65535),
+          guest: z.number().int().min(1).max(65535),
+        }),
       )
       .max(12)
       .default([]),
@@ -38,7 +44,7 @@ export type DesktopView = {
   log: string;
   error?: string;
 };
-export type Snapshot = { id: string; name: string; createdAt: string };
+export type Snapshot = { id: string; name: string; createdAt: string; note?: string };
 export type VMRecord = VMConfig & {
   id: string;
   createdAt: string;

@@ -51,6 +51,7 @@ set -eu
 export DISPLAY=:1 XDG_RUNTIME_DIR=/run/sakura-desktop
 export XAUTHORITY=/run/sakura-desktop/Xauthority
 unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
+[ ! -f /home/sakura-desktop/.sakura-ime ] || . /home/sakura-desktop/.sakura-ime
 xauth -f "$XAUTHORITY" add :1 . "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 Xvnc :1 -geometry 1280x800 -depth 24 -rfbport 5901 -interface 127.0.0.1 \
   -localhost -SecurityTypes None -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" &
@@ -114,3 +115,98 @@ echo 'Starting the desktop session…'
   String.raw`
 echo 'Xfce desktop is ready.'
 SAKURA_INSTALL`;
+
+export function desktopCommands(distro = 'alpine') {
+  if (distro === 'alpine') return { probe: desktopProbe, start: desktopStart, install: desktopInstall };
+  const probe = desktopProbe.replace(
+    'rc-service sakura-desktop status',
+    'systemctl is-active --quiet sakura-desktop',
+  );
+  const start = desktopStart.replace(
+    'rc-service dbus start\nrc-service sakura-desktop restart',
+    'systemctl start dbus\nsystemctl restart sakura-desktop',
+  );
+  const unit = `cat > /etc/systemd/system/sakura-desktop.service <<'SAKURA_SERVICE'
+[Unit]
+Description=Sakura Xfce desktop
+After=network.target dbus.service
+Requires=dbus.service
+[Service]
+Type=simple
+User=sakura-desktop
+Group=sakura-desktop
+RuntimeDirectory=sakura-desktop
+RuntimeDirectoryMode=0700
+ExecStart=/usr/local/libexec/sakura-desktop-session
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/var/log/sakura-desktop.log
+StandardError=append:/var/log/sakura-desktop.log
+[Install]
+WantedBy=multi-user.target
+SAKURA_SERVICE`;
+  const install = desktopInstall
+    .replace(/case "\$\(cat \/etc\/alpine-release\)" in[\s\S]*?esac/, '')
+    .replace(
+      /apk add --no-cache[\s\S]*?xauth xdpyinfo/,
+      'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y --no-install-recommends xfce4 xfce4-terminal tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils netcat-openbsd',
+    )
+    .replace(
+      'adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop',
+      'useradd --user-group --create-home --home-dir /home/sakura-desktop --shell /bin/sh sakura-desktop',
+    )
+    .replace('Xvnc :1', 'Xtigervnc :1')
+    .replace(/cat > \/etc\/init.d\/sakura-desktop[\s\S]*?chmod 755 \/etc\/init.d\/sakura-desktop/, unit)
+    .replace(
+      'rc-update add dbus default\nrc-update add sakura-desktop default',
+      'systemctl daemon-reload\nsystemctl enable sakura-desktop',
+    )
+    .replace(desktopStart, start);
+  return { probe, start, install };
+}
+
+export function imeInstall(distro = 'alpine') {
+  const install =
+    distro === 'alpine'
+      ? 'apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community fcitx5 fcitx5-chinese-addons fcitx5-gtk fcitx5-qt'
+      : 'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5';
+  return (
+    `set -eu\nid sakura-desktop >/dev/null\n${install}\n` +
+    String.raw`
+mkdir -p /home/sakura-desktop/.config/autostart /home/sakura-desktop/.config/fcitx5
+cat > /home/sakura-desktop/.config/autostart/fcitx5.desktop <<'SAKURA_IME'
+[Desktop Entry]
+Type=Application
+Name=Chinese Input
+Exec=fcitx5 -d
+SAKURA_IME
+if [ ! -f /home/sakura-desktop/.config/fcitx5/profile ]; then
+cat > /home/sakura-desktop/.config/fcitx5/profile <<'SAKURA_IME'
+[Groups/0]
+Name=Default
+Default Layout=us
+DefaultIM=pinyin
+[Groups/0/Items/0]
+Name=keyboard-us
+Layout=
+[Groups/0/Items/1]
+Name=pinyin
+Layout=
+[GroupOrder]
+0=Default
+SAKURA_IME
+fi
+cat > /home/sakura-desktop/.sakura-ime <<'SAKURA_IME'
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+SAKURA_IME
+chown -R sakura-desktop:sakura-desktop /home/sakura-desktop/.config /home/sakura-desktop/.sakura-ime
+if ! grep -q '.sakura-ime' /usr/local/libexec/sakura-desktop-session; then
+  sed -i '/^unset SESSION_MANAGER/a [ ! -f /home/sakura-desktop/.sakura-ime ] || . /home/sakura-desktop/.sakura-ime' /usr/local/libexec/sakura-desktop-session
+fi
+echo 'Chinese input installed. Restarting desktop; use Ctrl+Space to switch.'
+` +
+    desktopCommands(distro).start
+  );
+}

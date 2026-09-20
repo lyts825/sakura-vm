@@ -3,6 +3,9 @@ import { Download, LoaderCircle, Maximize2, Minimize2, Monitor, Play, RefreshCw 
 import type { DesktopView, VMView } from '../server/model';
 import { connectDesktop } from './desktop-connection';
 import './desktop.css';
+import type RFB from '@novnc/novnc';
+import { Feedback, JobLog, useAction, useRemote } from './FeaturePanels';
+import type { JobView } from '../server/jobs';
 
 type Props = {
   vm: VMView;
@@ -22,6 +25,12 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const [connected, setConnected] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const clientRef = useRef<RFB | null>(null);
+  const [showClipboard, setShowClipboard] = useState(false);
+  const [outgoing, setOutgoing] = useState('');
+  const [incoming, setIncoming] = useState('');
+  const clipboardAction = useAction();
+  const ime = useRemote<JobView>(request, `/vms/${vm.id}/ime`, vm.status === 'running', 2500);
   const screen = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   const installLog = useRef<HTMLPreElement>(null);
@@ -94,6 +103,10 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             client.scaleViewport = true;
             client.resizeSession = true;
             client.background = '#201b24';
+            clientRef.current = client;
+            client.addEventListener('clipboard', (event) => {
+              if (alive) setIncoming((event as CustomEvent<{ text: string }>).detail.text);
+            });
             return client;
           },
           (state) => {
@@ -110,6 +123,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     return () => {
       alive = false;
       disconnect?.();
+      clientRef.current = null;
     };
   }, [vm.id, ready, token, attempt]);
 
@@ -139,6 +153,26 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         </div>
         {ready && (
           <div>
+            <button
+              className="secondary compact"
+              aria-expanded={showClipboard}
+              onClick={() => setShowClipboard((v) => !v)}
+            >
+              剪贴板
+            </button>
+            <button
+              className="secondary compact"
+              disabled={clipboardAction.busy || ime.data?.status === 'running'}
+              onClick={() => {
+                if (confirm('安装中文输入法会重启图形桌面，请先保存桌面中的工作。继续？'))
+                  void clipboardAction.run(async () => {
+                    await request(`/vms/${vm.id}/ime`, 'POST');
+                    ime.reload();
+                  });
+              }}
+            >
+              中文输入法
+            </button>
             <button className="secondary compact" onClick={() => setAttempt((n) => n + 1)}>
               <RefreshCw size={14} />
               重新连接
@@ -161,6 +195,50 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         <div className="machine-error" role="alert">
           {error || statusError}
         </div>
+      )}
+      <Feedback error={clipboardAction.error} message={clipboardAction.message} />
+      {showClipboard && ready && (
+        <div className="desktop-clipboard">
+          <textarea
+            aria-label="发送到 Linux 的文本"
+            placeholder="粘贴要发送到 Linux 的文本"
+            value={outgoing}
+            onChange={(e) => setOutgoing(e.target.value)}
+          />
+          <button
+            className="secondary compact"
+            disabled={!connected}
+            onClick={() => {
+              clientRef.current?.clipboardPasteFrom(outgoing);
+            }}
+          >
+            发送到 Linux
+          </button>
+          <textarea
+            aria-label="Linux 剪贴板文本"
+            placeholder="在 Linux 中复制后，文本会出现在这里"
+            readOnly
+            value={incoming}
+          />
+          <button
+            className="secondary compact"
+            disabled={!incoming}
+            onClick={() =>
+              void clipboardAction.run(
+                () => navigator.clipboard.writeText(incoming),
+                '已复制到 Windows 剪贴板',
+              )
+            }
+          >
+            复制到 Windows
+          </button>
+        </div>
+      )}
+      {ime.data && (
+        <details className="desktop-ime-log">
+          <summary>中文输入安装 · Ctrl+Space 切换</summary>
+          <JobLog job={ime.data} />
+        </details>
       )}
       {ready ? (
         <>

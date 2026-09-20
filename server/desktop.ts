@@ -2,7 +2,7 @@ import { createWebSocketStream, WebSocket } from 'ws';
 import type { ClientChannel } from 'ssh2';
 import type { Machines } from './machines.ts';
 import { AppError, type DesktopView } from './model.ts';
-import { desktopInstall, desktopProbe, desktopStart } from './desktop-guest.ts';
+import { desktopCommands } from './desktop-guest.ts';
 
 type Operation = {
   startedAt: string;
@@ -29,7 +29,7 @@ export class Desktops {
     if (this.machines.state(id) !== 'running') return { status: 'unavailable', log: '' };
     const operation = this.operations.get(id);
     if (operation) return { ...operation.view };
-    const result = await this.machines.exec(id, desktopProbe, 10000);
+    const result = await this.machines.exec(id, desktopCommands(this.machines.get(id).distro).probe, 10000);
     const status = result.stdout.trim();
     if (result.code !== 0 || !['not-installed', 'starting', 'ready', 'stopped'].includes(status))
       throw new AppError('无法检查桌面状态，请重试', 502);
@@ -54,7 +54,7 @@ export class Desktops {
     void this.machines
       .exec(
         id,
-        action === 'install' ? desktopInstall : desktopStart,
+        action === 'install' ? desktopCommands(vm.distro).install : desktopCommands(vm.distro).start,
         action === 'install' ? 920000 : 150000,
         operation.abort.signal,
         (data) => {

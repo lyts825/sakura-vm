@@ -25,10 +25,12 @@ after(async () => {
 });
 
 async function fixture(t: TestContext, whpxAvailable = false) {
+  const commands: string[][] = [];
   const engine = {
     whpxAvailable,
     runtime: { close: async () => {} },
-    run: async (_tool, _args, options = {}) => {
+    run: async (_tool, args, options = {}) => {
+      commands.push(args);
       await new Promise<void>((resolve) => {
         if (options.signal?.aborted) resolve();
         else options.signal?.addEventListener('abort', () => resolve(), { once: true });
@@ -51,7 +53,7 @@ async function fixture(t: TestContext, whpxAvailable = false) {
     if (machines.live.has(id)) await machines.stop(id, true);
     await machines.close();
   });
-  return { machines, id };
+  return { machines, id, commands };
 }
 
 async function eventually(condition: () => boolean) {
@@ -83,6 +85,29 @@ for (const [available, requested, expected] of [
     await machines.start(id);
     assert.equal((await machines.view(id)).activeAccelerator, expected);
     assert.equal(machines.get(id).accelerator, requested);
+  });
+}
+
+for (const distro of ['alpine', 'debian', 'ubuntu'] as const) {
+  test(`${distro} exposes a readable NoCloud seed and waits for its own initialization marker`, async (t) => {
+    const { machines, id, commands } = await fixture(t);
+    machines.get(id).distro = distro;
+    machines.exec = async (_id, command) => {
+      assert.match(command, distro === 'alpine' ? /\.bootstrap-complete/ : /instance\/boot-finished/);
+      return { stdout: '', stderr: '', code: 0 };
+    };
+    await machines.start(id);
+    const args = commands[0];
+    const seed = args.find((arg) => arg.includes('seed.iso'))!;
+    assert.ok(seed);
+    if (distro === 'alpine') {
+      assert.match(seed, /media=cdrom/);
+      assert.ok(args.includes('type=1,serial=ds=nocloud'));
+    } else {
+      assert.match(seed, /if=virtio,format=raw/);
+      assert.ok(!args.some((arg) => arg.includes('ds=nocloud')));
+    }
+    await eventually(() => machines.state(id) === 'running');
   });
 }
 

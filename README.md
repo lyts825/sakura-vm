@@ -25,7 +25,7 @@ npm start
 
 新实例默认选择「自动」加速：服务启动时通过一台暂停且不挂载磁盘的临时虚拟机检查 WHPX，主机已支持时使用硬件加速，否则使用 TCG。不会启用 Windows 功能或要求重启主机。已有实例保留原来的加速选项；停机后可在「配置」中切换为「自动」。运行时卡片显示实际使用的 TCG / WHPX。
 
-新实例通过 NoCloud 直接配置独立 NAT 网络（`10.0.2.15/24`，网关 `10.0.2.2`，DNS `10.0.2.3`），省去 DHCP 等待。QEMU 只创建需要的设备，并提供 VirtIO 随机数设备。首次初始化后，Alpine 默认引导菜单等待由 10 秒缩短为 1 秒；官方基础镜像保持原样，首次开机仍包含其 10 秒等待。
+新 Alpine 实例通过 NoCloud 直接配置独立 NAT 网络（`10.0.2.15/24`，网关 `10.0.2.2`，DNS `10.0.2.3`），省去 DHCP 等待。QEMU 只创建需要的设备，并提供 VirtIO 随机数设备。首次初始化后，Alpine 默认引导菜单等待由 10 秒缩短为 1 秒；官方基础镜像保持原样，首次开机仍包含其 10 秒等待。
 
 旧实例首次使用新版启动时，会在初始化完成后迁移仍为官方默认值的引导和网络配置，下次启动生效。原文件备份在客户机相同目录下的 `*.sakura-backup`；自定义配置及符号链接会保留。需要自行管理这些设置时，在客户机创建 `/etc/sakura/keep-boot-config`，即可停止后续配置迁移，并按需从备份恢复。
 
@@ -37,25 +37,28 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 ## 已实现
 
-- 创建、启动、正常关机、删除多个独立 Alpine Linux 发行版。
+- 创建、启动、正常关机、删除 Alpine、Debian 12 和 Ubuntu 24.04 实例；镜像库支持官方镜像下载与校验。
 - 每实例独立 QCOW2 增量磁盘，完整 Linux 文件系统在重启后保留。
-- 浏览器 SSH 交互终端：颜色、Ctrl+C、窗口缩放、多终端连接；启动时显示串口日志。
-- 实验性 Xfce 图形桌面：现有 Alpine 实例可按需安装，在浏览器内使用鼠标键盘操作，支持自适应分辨率、全屏和重新连接。
-- SFTP 文件目录浏览，1 MiB 内文本预览、编辑和上传。
+- 浏览器 SSH 交互终端：颜色、Ctrl+C、窗口缩放、多终端标签、分屏和 tmux 会话恢复；启动时显示串口日志。
+- 实验性 Xfce 图形桌面：实例可按需安装，在浏览器内使用鼠标键盘操作，支持自适应分辨率、全屏和重新连接。
+- SFTP 文件管理与二进制上传/下载（单文件最大 2 GiB），1 MiB 内文本编辑，目录创建、重命名和删除。
+- Node.js / Python / Rust 开发模板、可保存的项目配置、初始化与启动命令、运行日志。
+- Windows 文件夹双向同步、冲突检测、可选自动同步；客户机实时资源监控。
+- 快照删除/备注、恢复前备份、实例克隆、带校验的独立导入导出。
 - 离线磁盘快照及恢复；运行中禁止快照、恢复、删除和修改资源。
-- CPU、内存、自动 / TCG / WHPX 与本机 TCP 端口转发配置。
+- CPU、内存、自动 / TCG / WHPX 配置；命名 TCP 端口转发支持运行中修改、监听状态与网页入口。
 - 单机控制服务、随机访问凭证、同源及 Host 检查，管理端口和 QEMU 控制端口仅监听回环地址。
 - 同时最多运行 4 个实例，最多 32 个发行版、每实例 20 个快照；日志保留最近 128 KiB。
 
 ## Linux 图形桌面（实验性）
 
-创建实例或在停机后的「配置」中将内存设为至少 **1024 MiB**（建议 **2048 MiB**），启动后进入「桌面」标签，点击「安装并启用桌面」。安装会从 Alpine 3.23 官方软件仓库下载 Xfce、TigerVNC、图形终端和中文字体，需要联网及数百 MiB 磁盘空间，页面会显示进度和失败信息；失败后可重试。
+创建实例或在停机后的「配置」中将内存设为至少 **1024 MiB**（建议 **2048 MiB**），启动后进入「桌面」标签，点击「安装并启用桌面」。安装会从对应发行版的官方软件仓库下载 Xfce、TigerVNC、图形终端和中文字体，需要联网及数百 MiB 磁盘空间，页面会显示进度和失败信息；失败后可重试。
 
 安装完成后自动连接桌面，重启实例时桌面服务也会自动启动。浏览器关闭或切换标签后，客户机中的桌面会话继续运行，再次打开即可连接。短暂断线会自动重连，最多尝试 5 次；认证失败会停止重试并显示提示，也可手动点击「重新连接」。支持鼠标、键盘、自适应分辨率和全屏；浏览器保留的系统快捷键仍由浏览器处理。
 
 桌面以独立的普通用户 `sakura-desktop` 运行，文件保存在 `/home/sakura-desktop`；原有 SSH 终端继续使用 root。桌面使用 noVNC，经已有鉴权的 WebSocket 和 SSH 隧道连接客户机回环地址，无需添加 VNC 端口转发。图形组件保存在该实例的增量磁盘中，可随离线快照恢复；恢复安装前的快照后，需要重新安装。
 
-目前仅适配内置 Alpine 3.23 的 Xfce / X11 软件渲染桌面，不包含 Ubuntu / Debian 镜像导入、GPU/3D 加速、声音转发、宿主剪贴板同步和 WSLg 的单应用窗口集成。TCG 下桌面响应较慢，建议使用可用的硬件加速。客户机诊断命令：`rc-service sakura-desktop status`，日志：`/var/log/sakura-desktop.log`。安装中断后如提示锁仍被占用，请等待原安装结束或重启实例后重试。
+提供 Alpine / Debian / Ubuntu 的 Xfce / X11 软件渲染桌面，以及文本剪贴板互通和可选中文输入法。仍不包含 GPU/3D 加速、声音转发和 WSLg 的单应用窗口集成。TCG 下桌面响应较慢，建议使用可用的硬件加速。Alpine 客户机诊断命令：`rc-service sakura-desktop status`；Debian / Ubuntu 使用 `systemctl status sakura-desktop`，日志：`/var/log/sakura-desktop.log`。安装中断后如提示锁仍被占用，请等待原安装结束或重启实例后重试。
 
 已修复并发连接时短暂拒绝连接导致的直接失败，并加入桌面自动重连、显式网卡 MSI-X 配置。此前本机 WHPX 曾出现 SSH 与桌面同时长时间失联，本轮未复现该现象，仍不能认定其根因已解决；详细验证与限制见 [图形桌面验证记录](docs/linux-desktop.md)。
 
@@ -71,6 +74,8 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 - 终端工具栏可调整 11–18px 字号，点击字号恢复默认 13px；选择会保留，调整时保持 SSH 会话和滚动历史。终端底部持续显示实际连接状态。
 - 终端、桌面、文件、快照、配置标签支持左右方向键切换，以及 Home / End 跳转；同一发行版内切换这些标签会保持终端会话与历史输出。
 - 窄屏自动使用顶部导航和横向发行版列表，系统的减少动态效果偏好也会生效。
+
+新增工作流、传输限制、项目配置和迁移说明见 [开发工作区与数据互通](docs/development-workspaces.md)。
 
 ## 命令行
 
@@ -96,7 +101,11 @@ server/runtime.ts       PosixLoom 原生命令插件，精确 argv 调用 QEMU
 server/machines.ts      发行版生命周期、SSH / SFTP、快照
 server/seed.ts          本地 NoCloud ISO 与每实例 SSH 密钥
 server/desktop.ts       图形桌面安装状态与 SSH / WebSocket 转发
-server/desktop-guest.ts Alpine Xfce 安装及 OpenRC 会话脚本
+server/desktop-guest.ts Xfce / Fcitx5 安装、OpenRC 与 systemd 会话脚本
+server/features.ts      文件、项目、资源、同步、镜像与迁移 API
+server/workspaces.ts    模板安装、项目任务与客户机采样
+server/sync.ts          Windows / Linux 目录同步与冲突检测
+server/bundles.ts       独立磁盘导入导出与克隆
 server/qmp.ts           QEMU Machine Protocol
 scripts/setup.mjs       固定版本的运行时准备
 scripts/cli.mjs         WSL 风格命令行入口
@@ -111,23 +120,24 @@ scripts/cli.mjs         WSL 风格命令行入口
 
 备份时先停止服务，再复制整个 `.data`。增量磁盘依赖基础镜像：**不要单独删除或移动 `.data/images`**。文件中的 backing 路径为绝对路径；移动项目后需使用 `qemu-img rebase -u -b <新基础镜像绝对路径> -F qcow2 <增量磁盘>` 更新引用，且基础镜像必须是原来相同的文件。
 
-可配置环境变量：`SAKURA_PORT`（默认 7337）、`SAKURA_DATA_DIR`、`SAKURA_QEMU_DIR`。WHPX 需要用户已在 Windows 中启用 Windows Hypervisor Platform；本项目不会修改系统功能或重启主机。自动模式在 WHPX 不可用时使用 TCG。
+可配置环境变量：`SAKURA_PORT`（默认 7337）、`SAKURA_DATA_DIR`、`SAKURA_QEMU_DIR`，以及可选的 `SAKURA_IMAGE_DIR`、`SAKURA_IMAGE_PATH`。WHPX 需要用户已在 Windows 中启用 Windows Hypervisor Platform；本项目不会修改系统功能或重启主机。自动模式在 WHPX 不可用时使用 TCG。
 
 ## 当前范围
 
-- 内置 Alpine Linux 3.23.4 x86_64 官方 Tiny Cloud 镜像；尚未提供 Ubuntu / Debian 导入、发行版包管理界面、WSLg、Windows 驱动器自动挂载、自动内存回收和跨系统进程互操作。
+- 支持 Alpine Linux 3.23.4、Debian 12、Ubuntu 24.04 的官方 x86_64 云镜像；目录互通采用双向同步。尚未提供通用镜像格式导入、包管理界面、WSLg、Windows 驱动器直接挂载、自动内存回收和跨系统进程互操作。
 - TCG 是软件模拟。自动模式会检测本机是否能使用 WHPX；其他主机的启动时间和兼容性仍取决于硬件及系统配置。内存限制是 QEMU 配额，Web 的「已分配内存」不是客户机实时使用量。
 - 快照只包含磁盘，不保存 RAM 或运行中的进程。恢复会覆盖快照之后的数据。
 - TCP 转发仅监听 `127.0.0.1`；客户机使用 NAT 上网。此版本面向受信任的本机开发，不是公网多用户管理平台，也不宣称防御恶意客户机。
 - 停机先执行 `sync; poweroff` / QMP ACPI，等待 15 秒后通过 PosixLoom 取消进程树；超时强制关闭可能丢失未写入的数据。宿主机重启后发行版保持停止状态，不自动恢复进程。
 - PosixLoom 的单命令超时上限约 24.8 天，也限制本版单次 VM 连续运行时长。
-- 文件面板只处理文本，不提供二进制传输和 Windows 目录映射。TTY 使用 SSH PTY，串口页面用于启动日志。
+- 文件面板支持二进制传输；文本预览/编辑仍有 1 MiB 限制。TTY 使用 SSH PTY，串口页面用于启动日志。
 
 ## 验证
 
 ```powershell
 npm test             # 输入边界、ISO、生命周期与 QMP 测试
 npm run build        # TypeScript + 生产构建
+npm run test:features # 新功能真实 VM 集成测试（需联网安装模板）
 npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启、快照与旧配置迁移
 ```
 

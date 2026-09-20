@@ -9,7 +9,7 @@ export async function freePort() {
   await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
   return port;
 }
-export async function qmp(port: number, command: string) {
+export async function qmp(port: number, command: string, args?: Record<string, unknown>) {
   return new Promise<unknown>((resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port });
     let input = '';
@@ -40,7 +40,7 @@ export async function qmp(port: number, command: string) {
         if (msg.QMP) socket.write(JSON.stringify({ execute: 'qmp_capabilities', id: 'hello' }) + '\n');
         if (msg.id === 'hello' && !sent) {
           sent = true;
-          socket.write(JSON.stringify({ execute: command, id: 'command' }) + '\n');
+          socket.write(JSON.stringify({ execute: command, arguments: args, id: 'command' }) + '\n');
         }
         if (msg.id === 'command') finish(msg.error ? new Error(msg.error.desc) : undefined, msg.return);
       }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -19,9 +19,6 @@ import {
   CircleHelp,
   X,
   RefreshCw,
-  ArrowUp,
-  FileText,
-  Upload,
   Save,
   Trash2,
   Camera,
@@ -30,11 +27,9 @@ import {
   LoaderCircle,
   Network,
   ShieldCheck,
-  Download,
   Flower2,
   ArrowRight,
   Monitor,
-  ExternalLink,
   CircleDot,
   Sun,
   Moon,
@@ -44,8 +39,21 @@ import {
 } from 'lucide-react';
 import { SakuraArt } from './SakuraArt';
 import { DesktopPanel } from './DesktopPanel';
+import {
+  ProjectPanel,
+  MetricsPanel,
+  ServicesPanel,
+  SyncPanel,
+  SnapshotsPanel,
+  ImageCatalog,
+  distroName,
+  useRemote,
+  type ImageInfo,
+} from './FeaturePanels';
+import { FileBrowser } from './FileBrowser';
+import { TerminalWorkspace } from './TerminalWorkspace';
 import sakuraMark from './assets/sakura.svg';
-import type { VMView, VMConfig, Snapshot } from '../server/model';
+import type { VMView, VMConfig } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
 import './fonts.css';
 import './style.css';
@@ -176,10 +184,8 @@ function App() {
     [busy, setBusy] = useState(false),
     [query, setQuery] = useState('');
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
-  const [modal, setModal] = useState<'create' | 'help' | 'snapshot' | 'delete' | null>(null);
-  const [restore, setRestore] = useState<Snapshot | null>(null),
-    [confirm, setConfirm] = useState(''),
-    [snapshotName, setSnapshotName] = useState('');
+  const [modal, setModal] = useState<'create' | 'help' | 'delete' | null>(null);
+  const [confirm, setConfirm] = useState('');
   const [theme, setTheme] = useState<'day' | 'night'>(() => {
     try {
       return localStorage.getItem('sakura-theme') === 'night' ? 'night' : 'day';
@@ -224,7 +230,7 @@ function App() {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [page, modal, restore, focusMode]);
+  }, [page, modal, focusMode]);
   const refreshVersion = useRef(0);
   const refresh = useCallback(async () => {
     const version = ++refreshVersion.current;
@@ -580,7 +586,7 @@ function App() {
                           <Alpine small />
                           <div className="distro-identity">
                             <h3 title={v.name}>{v.name}</h3>
-                            <p>Alpine Linux 3.23</p>
+                            <p>{distroName(v.distro)}</p>
                           </div>
                           {vm?.id === v.id ? <CircleDot size={16} /> : <ChevronRight size={15} />}
                         </div>
@@ -662,7 +668,7 @@ function App() {
                               <Badge vm={vm} />
                             </div>
                             <p>
-                              <span>Alpine Linux 3.23</span>
+                              <span>{distroName(vm.distro)}</span>
                               <span>
                                 独立内核 ·{' '}
                                 {vm.activeAccelerator?.toUpperCase() ||
@@ -711,6 +717,10 @@ function App() {
                           { id: 'terminal', label: '终端', icon: TerminalSquare },
                           { id: 'desktop', label: '桌面', icon: Monitor },
                           { id: 'files', label: '文件', icon: Folder },
+                          { id: 'project', label: '项目', icon: Boxes },
+                          { id: 'metrics', label: '资源', icon: Cpu },
+                          { id: 'services', label: '服务', icon: Network },
+                          { id: 'sync', label: '同步', icon: RefreshCw },
                           { id: 'snapshots', label: '快照', icon: Camera },
                           { id: 'config', label: '配置', icon: Settings2 },
                         ].map((t) => (
@@ -725,7 +735,17 @@ function App() {
                             className={tab === t.id ? 'active' : ''}
                             onClick={() => setTab(t.id)}
                             onKeyDown={(event) => {
-                              const ids = ['terminal', 'desktop', 'files', 'snapshots', 'config'];
+                              const ids = [
+                                'terminal',
+                                'desktop',
+                                'files',
+                                'project',
+                                'metrics',
+                                'services',
+                                'sync',
+                                'snapshots',
+                                'config',
+                              ];
                               const index = ids.indexOf(t.id);
                               const next =
                                 event.key === 'ArrowRight'
@@ -761,7 +781,14 @@ function App() {
                         aria-labelledby={`tab-${tab}`}
                       >
                         <div className="terminal-panel-slot" hidden={tab !== 'terminal'}>
-                          <TerminalPanel vm={vm} start={start} busy={busy} />
+                          <TerminalWorkspace
+                            key={vm.id}
+                            id={vm.id}
+                            request={api}
+                            render={(session) => (
+                              <TerminalPanel vm={vm} start={start} busy={busy} session={session} />
+                            )}
+                          />
                         </div>
                         {tab === 'desktop' && (
                           <DesktopPanel
@@ -775,65 +802,22 @@ function App() {
                           />
                         )}
                         {tab === 'files' && (
-                          <FilesPanel
-                            key={vm.id}
-                            vm={vm}
-                            notify={(text, error) => setToast({ text, error })}
-                          />
+                          <FileBrowser key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                        )}
+                        {tab === 'project' && (
+                          <ProjectPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                        )}
+                        {tab === 'metrics' && (
+                          <MetricsPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                        )}
+                        {tab === 'services' && (
+                          <ServicesPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                        )}
+                        {tab === 'sync' && (
+                          <SyncPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
                         )}
                         {tab === 'snapshots' && (
-                          <div className="content-panel">
-                            <div className="panel-heading">
-                              <div>
-                                <h3>磁盘快照</h3>
-                                <p>保存一个可以回到的时间点。创建与恢复前，请停止发行版。</p>
-                              </div>
-                              <button
-                                className="secondary compact"
-                                disabled={busy || active(vm)}
-                                onClick={() => {
-                                  setSnapshotName(`快照 ${vm.snapshots.length + 1}`);
-                                  setModal('snapshot');
-                                }}
-                              >
-                                <Plus size={15} />
-                                创建快照
-                              </button>
-                            </div>
-                            {vm.snapshots.length ? (
-                              <div className="snapshot-list">
-                                {[...vm.snapshots].reverse().map((s) => (
-                                  <div key={s.id}>
-                                    <span className="snapshot-icon">
-                                      <Camera size={19} />
-                                    </span>
-                                    <div>
-                                      <b>{s.name}</b>
-                                      <p>{new Date(s.createdAt).toLocaleString('zh-CN')} · 磁盘状态</p>
-                                    </div>
-                                    <button
-                                      className="secondary compact"
-                                      disabled={busy || active(vm)}
-                                      onClick={() => setRestore(s)}
-                                    >
-                                      恢复
-                                      <RefreshCw size={13} />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="panel-empty">
-                                <Camera size={32} />
-                                <h3>为下一次尝试，留个存档</h3>
-                                <p>开始实验前保存磁盘状态，随时从熟悉的位置重新开始。</p>
-                              </div>
-                            )}
-                            <div className="subtle-note">
-                              <ShieldCheck size={16} />
-                              快照保存 Linux 文件系统，不包含正在运行的进程或内存。
-                            </div>
-                          </div>
+                          <SnapshotsPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
                         )}
                         {tab === 'config' && (
                           <ConfigPanel
@@ -882,7 +866,7 @@ function App() {
                       <span className="eyebrow">YOUR NEXT IDEA STARTS HERE</span>
                       <h2>给灵感一个 Linux 空间。</h2>
                       <p>
-                        无需手动安装系统。一份轻巧的 Alpine，
+                        无需手动安装系统。一份独立的 Linux，
                         <br />
                         一个独立内核，还有完全属于你的终端。
                       </p>
@@ -916,7 +900,7 @@ function App() {
                 <span>
                   <Flower2 size={14} />A little space. A new beginning.
                 </span>
-                <span>PosixLoom 编排 · QEMU 虚拟化 · Alpine Linux</span>
+                <span>PosixLoom 编排 · QEMU 虚拟化 · Linux</span>
               </div>
             </>
           )}
@@ -931,34 +915,11 @@ function App() {
                   <p>共享一份基础镜像，为每个想法创建独立的空间。</p>
                 </div>
               </div>
-              <div className="image-card">
-                <Alpine />
-                <span className="tag">官方云镜像</span>
-                <h2>Alpine Linux</h2>
-                <p className="image-version">3.23.4 / x86_64 / Tiny Cloud</p>
-                <p>
-                  小巧、完整的 Linux 环境，使用 musl libc、BusyBox 和
-                  apk。每个发行版拥有独立的内核与可写磁盘。
-                </p>
-                <div className="image-facts">
-                  <span>
-                    <Download size={15} />
-                    {bytes(system?.imageBytes || 0)} 基础镜像
-                  </span>
-                  <span>
-                    <ShieldCheck size={15} />
-                    SHA-512 校验
-                  </span>
-                </div>
-                <button className="primary" disabled={!system?.imageReady} onClick={() => setModal('create')}>
-                  <Plus size={16} />
-                  从镜像创建
-                </button>
-                <a href="https://www.alpinelinux.org/cloud/" target="_blank" rel="noreferrer">
-                  镜像来源
-                  <ExternalLink size={13} />
-                </a>
-              </div>
+              <ImageCatalog request={api} token={token} refresh={refresh} />
+              <button className="primary" onClick={() => setModal('create')}>
+                <Plus size={16} />
+                创建发行版
+              </button>
               <div className="info-callout">
                 <Layers size={24} />
                 <div>
@@ -1053,7 +1014,7 @@ function App() {
               const result = await api<VMView>('/vms', 'POST', config);
               setSelected(result.id);
               setPage('workspace');
-              setTab('terminal');
+              setTab(config.template && config.template !== 'none' ? 'project' : 'terminal');
               setQuery('');
               setStatusFilter('all');
               setModal(null);
@@ -1078,66 +1039,8 @@ function App() {
             <pre>{`npm run sakura -- list\nnpm run sakura -- shell ${vm?.name || 'alpine-dev'}\nnpm run sakura -- exec ${vm?.name || 'alpine-dev'} -- uname -a\nnpm run sakura -- stop ${vm?.name || 'alpine-dev'}`}</pre>
             <p>首次启动会初始化磁盘、网络和密钥，通常需要几十秒。启动过程中可以直接查看 Linux 日志。</p>
             <div className="subtle-note">
-              当前版本支持 Alpine x86_64、SSH 终端、SFTP 文件和 NAT 端口转发。Windows 目录自动挂载、WSLg
-              和跨系统进程互操作尚未实现。
+              支持 Alpine、Debian、Ubuntu、开发模板、项目启动、目录同步和实例迁移。图形桌面仍为实验性功能。
             </div>
-          </div>
-        </Modal>
-      )}
-      {modal === 'snapshot' && vm && (
-        <Modal title="创建磁盘快照" subtitle="为当前文件系统保存一个恢复点。" onClose={() => setModal(null)}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(async () => {
-                await api(`/vms/${vm.id}/snapshots`, 'POST', { name: snapshotName });
-                setModal(null);
-              }, '磁盘快照已创建');
-            }}
-          >
-            <label>
-              快照名称
-              <input
-                autoFocus
-                required
-                maxLength={60}
-                value={snapshotName}
-                onChange={(e) => setSnapshotName(e.target.value)}
-              />
-            </label>
-            <div className="modal-footer">
-              <button type="button" className="secondary" onClick={() => setModal(null)}>
-                取消
-              </button>
-              <button className="primary" disabled={busy}>
-                保存快照
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-      {restore && vm && (
-        <Modal
-          title={`恢复「${restore.name}」`}
-          subtitle="将覆盖此快照之后的磁盘更改，此操作无法自动撤销。"
-          onClose={() => setRestore(null)}
-        >
-          <div className="modal-footer">
-            <button className="secondary" onClick={() => setRestore(null)}>
-              取消
-            </button>
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await api(`/vms/${vm.id}/snapshots/${restore.id}/restore`, 'POST');
-                  setRestore(null);
-                }, '已恢复磁盘快照')
-              }
-            >
-              确认恢复
-            </button>
           </div>
         </Modal>
       )}
@@ -1174,7 +1077,17 @@ function App() {
   );
 }
 
-function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; busy: boolean }) {
+function TerminalPanel({
+  vm,
+  start,
+  busy,
+  session,
+}: {
+  vm: VMView;
+  start: () => unknown;
+  busy: boolean;
+  session: string;
+}) {
   const ref = useRef<HTMLDivElement>(null),
     terminal = useRef<Terminal | null>(null);
   const fitTerminal = useRef<(() => void) | null>(null);
@@ -1230,7 +1143,7 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
     terminal.current = term;
     let ready = false;
     const socket = new WebSocket(
-      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${vm.id}/${mode}?token=${token}`,
+      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${vm.id}/${mode}?token=${token}&session=${encodeURIComponent(session)}`,
     );
     setConnection(mode === 'logs' ? '启动日志' : '正在连接');
     const resize = () => {
@@ -1289,7 +1202,7 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
       terminal.current = null;
       fitTerminal.current = null;
     };
-  }, [vm.id, vm.status, mode, retry]);
+  }, [vm.id, vm.status, mode, retry, session]);
   // Resize the existing terminal without replacing its SSH connection or scrollback.
   useEffect(() => {
     if (terminal.current) {
@@ -1469,6 +1382,8 @@ function CreateModal({
     forwards: [],
   });
   const [boot, setBoot] = useState(true);
+  const images = useRemote<ImageInfo[]>(api, '/images');
+  const selectedImage = images.data?.find((i) => i.id === (config.distro || 'alpine'));
   return (
     <Modal title="一个新的 Linux 空间" subtitle="选择资源，剩下的交给 Sakura。" onClose={close}>
       <form
@@ -1477,14 +1392,42 @@ function CreateModal({
           submit(config, boot);
         }}
       >
-        <div className="image-option">
-          <Alpine small />
-          <div>
-            <b>Alpine Linux 3.23</b>
-            <small>Tiny Cloud · x86_64 · 独立内核</small>
-          </div>
-          <Check size={18} />
-        </div>
+        <label>
+          发行版
+          <select
+            value={config.distro || 'alpine'}
+            onChange={(e) => {
+              const distro = e.target.value as VMConfig['distro'];
+              const image = images.data?.find((i) => i.id === distro);
+              set({
+                ...config,
+                distro,
+                memoryMiB: Math.max(config.memoryMiB, image?.minimumMemory || 512),
+                diskGiB: Math.max(config.diskGiB, image?.minimumDisk || 4),
+              });
+            }}
+          >
+            {(images.data || [{ id: 'alpine', name: 'Alpine 3.23', ready: true }]).map((image) => (
+              <option key={image.id} value={image.id}>
+                {image.name}
+                {image.ready ? '' : '（请先到镜像库下载）'}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          开发环境模板
+          <select
+            value={config.template || 'none'}
+            onChange={(e) => set({ ...config, template: e.target.value as VMConfig['template'] })}
+          >
+            <option value="none">空白环境</option>
+            <option value="node">Node.js + Git + tmux</option>
+            <option value="python">Python + Git + tmux</option>
+            <option value="rust">Rust + Git + tmux</option>
+          </select>
+          <small>首次启动自动安装所选工具，可在“项目”中查看进度或重试。</small>
+        </label>
         <label>
           发行版名称
           <input
@@ -1520,7 +1463,7 @@ function CreateModal({
           <button type="button" className="secondary" onClick={close}>
             取消
           </button>
-          <button className="primary" disabled={busy}>
+          <button className="primary" disabled={busy || !selectedImage?.ready}>
             {busy ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}创建发行版
           </button>
         </div>
@@ -1546,6 +1489,8 @@ function ConfigPanel({
     accelerator: vm.accelerator,
     diskGiB: vm.diskGiB,
     forwards: vm.forwards,
+    distro: vm.distro,
+    template: vm.template,
   });
   const running = active(vm);
   return (
@@ -1650,195 +1595,6 @@ function ConfigPanel({
     </div>
   );
 }
-type FileEntry = { name: string; size: number; directory: boolean; symlink: boolean; modified: number };
-function FilesPanel({ vm, notify }: { vm: VMView; notify: (text: string, error?: boolean) => void }) {
-  const [path, setPath] = useState('/workspace'),
-    [input, setInput] = useState('/workspace'),
-    [files, setFiles] = useState<FileEntry[]>([]),
-    [loading, setLoading] = useState(false),
-    [error, setError] = useState('');
-  const [edit, setEdit] = useState<{ path: string; content: string } | null>(null),
-    [saving, setSaving] = useState(false),
-    [newFile, setNewFile] = useState(false);
-  const upload = useRef<HTMLInputElement>(null);
-  const refresh = useCallback(async () => {
-    if (vm.status !== 'running') return;
-    setLoading(true);
-    try {
-      setFiles(await api(`/vms/${vm.id}/files?path=${encodeURIComponent(path)}`));
-      setError('');
-    } catch (e: any) {
-      setFiles([]);
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [vm.id, vm.status, path]);
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  const navigate = (to: string) => {
-    setPath(to);
-    setInput(to);
-  };
-  const target = (name: string) => `${path.replace(/\/$/, '')}/${name}`;
-  async function open(file: FileEntry) {
-    if (file.directory) return navigate(target(file.name));
-    try {
-      const value = await api(`/vms/${vm.id}/file?path=${encodeURIComponent(target(file.name))}`);
-      setNewFile(false);
-      setEdit({ path: target(file.name), content: value.content });
-    } catch (e: any) {
-      notify(e.message, true);
-    }
-  }
-  async function save() {
-    if (!edit) return;
-    setSaving(true);
-    try {
-      await api(`/vms/${vm.id}/file`, 'PUT', edit);
-      setEdit(null);
-      await refresh();
-      notify('文件已写入 Linux 磁盘');
-    } catch (e: any) {
-      notify(e.message, true);
-    } finally {
-      setSaving(false);
-    }
-  }
-  if (vm.status !== 'running')
-    return (
-      <div className="panel-empty">
-        <Folder size={32} />
-        <h3>启动 Linux，即可访问文件</h3>
-        <p>文件通过 SFTP 直接读取，不会将宿主机目录自动挂载到虚拟机。</p>
-      </div>
-    );
-  return (
-    <div className="content-panel files-panel">
-      <div className="file-tools">
-        <button
-          className="icon-button"
-          aria-label="上级目录"
-          onClick={() => navigate(path.split('/').slice(0, -1).join('/') || '/')}
-        >
-          <ArrowUp size={17} />
-        </button>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            navigate(input);
-          }}
-        >
-          <Folder size={15} />
-          <input aria-label="Linux 文件路径" value={input} onChange={(e) => setInput(e.target.value)} />
-        </form>
-        <button className="icon-button" aria-label="刷新文件" onClick={() => void refresh()}>
-          <RefreshCw size={16} className={loading ? 'spin' : ''} />
-        </button>
-        <button
-          className="secondary compact"
-          onClick={() => {
-            setNewFile(true);
-            setEdit({ path: target('notes.txt'), content: '' });
-          }}
-        >
-          <Plus size={14} />
-          文件
-        </button>
-        <input
-          ref={upload}
-          type="file"
-          hidden
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            try {
-              if (file.size > 1048576) throw new Error('请上传 1 MiB 以内的文本文件');
-              const content = await file.text();
-              if (content.includes('\0')) throw new Error('当前支持上传文本文件');
-              setEdit({ path: target(file.name), content });
-              setNewFile(true);
-            } catch (error: any) {
-              notify(error.message, true);
-            }
-            e.target.value = '';
-          }}
-        />
-        <button
-          className="icon-button"
-          aria-label="上传文本文件"
-          title="上传文本文件"
-          onClick={() => upload.current?.click()}
-        >
-          <Upload size={16} />
-        </button>
-      </div>
-      {error && <div className="machine-error">{error}</div>}
-      <div className="file-table">
-        <div className="file-table-head">
-          <span>名称</span>
-          <span>大小</span>
-          <span>修改时间</span>
-        </div>
-        {files.map((f) => (
-          <button key={f.name} onClick={() => void open(f)}>
-            <span>
-              {f.directory ? <Folder size={17} /> : <FileText size={17} />}
-              <b>
-                {f.name}
-                {f.symlink ? ' ↗' : ''}
-              </b>
-            </span>
-            <span>
-              {f.directory ? '—' : f.size < 1024 ? `${f.size} B` : `${(f.size / 1024).toFixed(1)} KB`}
-            </span>
-            <span>{new Date(f.modified * 1000).toLocaleDateString('zh-CN')}</span>
-          </button>
-        ))}
-        {!loading && !files.length && !error && (
-          <div className="panel-empty">
-            <Folder size={28} />
-            <p>这个目录还是空的，创建一个文件开始吧。</p>
-          </div>
-        )}
-      </div>
-      <div className="subtle-note">
-        {files.length} 个项目 · Linux 文件系统 · 支持 1 MiB 以内的文本编辑与上传
-      </div>
-      {edit && (
-        <Modal
-          title={newFile ? '写入 Linux 文件' : '编辑文件'}
-          subtitle="保存后直接写入当前发行版。已有同名文件将被覆盖。"
-          onClose={() => setEdit(null)}
-        >
-          <label>
-            文件路径
-            <input
-              value={edit.path}
-              readOnly={!newFile}
-              onChange={(e) => setEdit({ ...edit, path: e.target.value })}
-            />
-          </label>
-          <textarea
-            className="file-editor"
-            aria-label="文件内容"
-            spellCheck={false}
-            value={edit.content}
-            onChange={(e) => setEdit({ ...edit, content: e.target.value })}
-          />
-          <div className="modal-footer">
-            <button className="secondary" onClick={() => setEdit(null)}>
-              取消
-            </button>
-            <button className="primary" disabled={saving} onClick={() => void save()}>
-              <Save size={15} />
-              保存文件
-            </button>
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
-}
-createRoot(document.getElementById('root')!).render(<App />);
+const root = import.meta.hot?.data.root ?? createRoot(document.getElementById('root')!);
+if (import.meta.hot) import.meta.hot.data.root = root;
+root.render(<App />);
