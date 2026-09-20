@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createConnection, type Socket } from 'node:net';
 import { Client, type SFTPWrapper } from 'ssh2';
 import { StringDecoder } from 'node:string_decoder';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   AppError,
   DATA,
@@ -18,18 +19,20 @@ import {
   type VMView,
   type VMStatus,
 } from './model.ts';
-import { createSshKey, seedIso, userData } from './seed.ts';
+import { createSshKey, seedIso, userData, metaData, bootSetup } from './seed.ts';
 import { freePort, qmp } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export const BOOT_TIMEOUT_MS = 270_000;
 type Live = {
   status: VMStatus;
+  accelerator: 'tcg' | 'whpx';
   startedAt: string;
   sshPort: number;
   qmpPort: number;
   serialPort: number;
   abort: AbortController;
+  bootAbort: AbortController;
   done: Promise<void>;
   serial?: Socket;
   clients: Set<Client>;
@@ -104,6 +107,7 @@ export class Machines extends EventEmitter {
       status: this.state(id),
       poweredOn: this.live.has(id),
       startedAt: this.live.get(id)?.startedAt,
+      activeAccelerator: this.live.get(id)?.accelerator,
       diskBytes: disk?.size || 0,
     };
   }
@@ -112,8 +116,17 @@ export class Machines extends EventEmitter {
   }
   log(id: string, data: Buffer | string) {
     const text = data.toString();
-    this.logs.set(id, ((this.logs.get(id) || '') + text).slice(-128 * 1024));
+    const previous = this.logs.get(id) || '';
+    this.logs.set(id, (previous + text).slice(-128 * 1024));
     this.emit(`log:${id}`, text);
+    const live = this.live.get(id);
+    const recent = previous.slice(-128) + text;
+    if (live?.status === 'starting' && recent.includes('Kernel panic - not syncing:')) {
+      live.error = 'Linux 内核启动失败（Kernel panic）；请查看启动日志，然后停止并重试。';
+      live.status = 'error';
+      live.bootAbort.abort();
+      this.emit('change');
+    }
   }
   async create(input: unknown) {
     return this.locked('create', async () => {
@@ -136,7 +149,7 @@ export class Machines extends EventEmitter {
         await writeFile(
           join(dir, 'seed.iso'),
           seedIso({
-            'meta-data': `instance-id: ${vm.id}\nlocal-hostname: ${vm.name}\npublic-keys:\n  - ${key.publicText}\n`,
+            'meta-data': metaData(vm.id, vm.name, key.publicText),
             'user-data': userData(vm.name, key.publicText),
           }),
         );
@@ -174,13 +187,17 @@ export class Machines extends EventEmitter {
         const sshPort = await freePort(),
           qmpPort = await freePort(),
           serialPort = await freePort();
+        const accelerator =
+          vm.accelerator === 'auto' ? (this.engine.whpxAvailable ? 'whpx' : 'tcg') : vm.accelerator;
         const live: Live = {
           status: 'starting',
+          accelerator,
           startedAt: new Date().toISOString(),
           sshPort,
           qmpPort,
           serialPort,
           abort: new AbortController(),
+          bootAbort: new AbortController(),
           done: Promise.resolve(),
           clients: new Set(),
         };
@@ -199,10 +216,19 @@ export class Machines extends EventEmitter {
           `sakura-${vm.name}`,
           '-machine',
           'q35',
+          '-nodefaults',
+          '-boot',
+          'order=c,menu=off',
           '-smbios',
           'type=1,serial=ds=nocloud',
           '-accel',
-          vm.accelerator === 'whpx' ? 'whpx' : 'tcg,thread=multi',
+          // Use an instruction-based clock on Windows TCG: host scheduling can
+          // otherwise make Alpine's early PIT/IO-APIC timer check panic. icount
+          // requires single-threaded TCG; other hosts keep multi-threading.
+          accelerator === 'whpx' ? 'whpx' : `tcg,thread=${process.platform === 'win32' ? 'single' : 'multi'}`,
+          ...(process.platform === 'win32' && accelerator === 'tcg'
+            ? ['-icount', 'shift=auto,sleep=on']
+            : []),
           '-m',
           `${vm.memoryMiB}`,
           '-smp',
@@ -217,7 +243,9 @@ export class Machines extends EventEmitter {
           '-drive',
           `file=${escape(join(dir, 'seed.iso'))},media=cdrom,readonly=on`,
           '-nic',
-          `user,model=virtio-net-pci,${forwards.join(',')}`,
+          `user,model=virtio-net-pci,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${forwards.join(',')}`,
+          '-device',
+          'virtio-rng-pci',
           '-qmp',
           `tcp:127.0.0.1:${qmpPort},server=on,wait=off`,
           '-serial',
@@ -238,6 +266,7 @@ export class Machines extends EventEmitter {
             },
           )
           .finally(async () => {
+            live.bootAbort.abort();
             live.serial?.destroy();
             for (const client of live.clients) client.end();
             this.live.delete(id);
@@ -245,7 +274,7 @@ export class Machines extends EventEmitter {
             this.emit('change');
           });
         void this.watchBoot(id, live).catch((e) => {
-          this.log(id, String(e));
+          if (!live.bootAbort.signal.aborted) this.log(id, String(e));
         });
         this.emit('change');
         return this.view(id);
@@ -253,7 +282,14 @@ export class Machines extends EventEmitter {
     );
   }
   private async watchBoot(id: string, live: Live) {
-    for (let i = 0; i < 150 && this.live.get(id) === live && live.status === 'starting'; i++) {
+    const deadline = performance.now() + BOOT_TIMEOUT_MS;
+    const { signal } = live.bootAbort;
+    while (
+      performance.now() < deadline &&
+      this.live.get(id) === live &&
+      live.status === 'starting' &&
+      !signal.aborted
+    ) {
       if (!live.serial || live.serial.destroyed) {
         const socket = createConnection({ host: '127.0.0.1', port: live.serialPort });
         socket.on('error', () => {});
@@ -261,15 +297,23 @@ export class Machines extends EventEmitter {
         live.serial = socket;
       }
       try {
-        const client = await this.connect(id, 1800);
-        client.end();
+        // The first SSH daemon is reachable before user-data restarts it. Do not
+        // expose terminals until Tiny Cloud has finished provisioning the guest.
+        const result = await this.exec(
+          id,
+          `set -e\ntest -f /var/lib/cloud/.bootstrap-complete\n${bootSetup()}`,
+          Math.max(1, Math.min(1800, deadline - performance.now())),
+          signal,
+        );
+        if (result.code !== 0) throw new Error('Linux initialization is not finished');
         if (this.live.get(id) === live && live.status === 'starting') {
           live.status = 'running';
           this.emit('change');
         }
         return;
       } catch {
-        await delay(1800);
+        if (signal.aborted) return;
+        await delay(Math.min(250, Math.max(0, deadline - performance.now())), undefined, { signal });
       }
     }
     if (this.live.get(id) === live && live.status === 'starting') {
@@ -278,35 +322,60 @@ export class Machines extends EventEmitter {
       this.emit('change');
     }
   }
-  async connect(id: string, timeout = 10000) {
+  async connect(id: string, timeout = 10000, signal?: AbortSignal) {
     const live = this.live.get(id);
     if (!live || live.status === 'stopping') throw new AppError('请先启动该发行版', 409);
     const key = await readFile(join(vmDir(id), 'id_rsa'));
+    signal?.throwIfAborted();
+    if (this.live.get(id) !== live || this.live.get(id)?.status === 'stopping')
+      throw new AppError('发行版已停止', 409);
     return new Promise<Client>((resolve, reject) => {
       const client = new Client();
+      const abort = () => client.destroy();
+      const timer = setTimeout(() => {
+        reject(new Error('SSH connection timed out'));
+        client.destroy();
+      }, timeout);
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
+      };
       live.clients.add(client);
-      client.once('ready', () => resolve(client));
+      signal?.addEventListener('abort', abort, { once: true });
+      client.once('ready', () => {
+        cleanup();
+        resolve(client);
+      });
       client.on('error', (error) => {
+        cleanup();
         reject(error);
         client.end();
       });
       client.once('close', () => {
+        cleanup();
         live.clients.delete(client);
         reject(new Error('SSH connection closed'));
       });
-      client.connect({
-        host: '127.0.0.1',
-        port: live.sshPort,
-        username: 'root',
-        privateKey: key,
-        readyTimeout: timeout,
-        keepaliveInterval: 10000,
-        keepaliveCountMax: 3,
-      });
+      try {
+        client.connect({
+          host: '127.0.0.1',
+          port: live.sshPort,
+          username: 'root',
+          privateKey: key,
+          readyTimeout: timeout,
+          keepaliveInterval: 10000,
+          keepaliveCountMax: 3,
+        });
+      } catch (error) {
+        cleanup();
+        live.clients.delete(client);
+        client.destroy();
+        reject(error);
+      }
     });
   }
-  async exec(id: string, command: string, timeout = 30000) {
-    const client = await this.connect(id);
+  async exec(id: string, command: string, timeout = 30000, signal?: AbortSignal) {
+    const client = await this.connect(id, Math.min(timeout, 10000), signal);
     try {
       return await new Promise<{ stdout: string; stderr: string; code: number }>((resolve, reject) => {
         let stdout = '',
@@ -424,12 +493,13 @@ export class Machines extends EventEmitter {
     this.get(id);
     const live = this.live.get(id);
     if (!live) return this.view(id);
+    live.bootAbort.abort();
     if (!force && live.status === 'running') await this.exec(id, 'sync; poweroff', 5000).catch(() => {});
     live.status = 'stopping';
     this.emit('change');
     if (!force) {
       await qmp(live.qmpPort, 'system_powerdown').catch(() => {});
-      await Promise.race([live.done, delay(15000)]);
+      await Promise.race([live.done, delay(15000, undefined, { ref: false })]);
     }
     if (this.live.has(id)) live.abort.abort();
     await live.done;

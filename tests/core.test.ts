@@ -34,7 +34,7 @@ test('configuration rejects traversal, command injection, invalid limits and dup
     cpus: 2,
     memoryMiB: 512,
     diskGiB: 8,
-    accelerator: 'tcg',
+    accelerator: 'auto',
     forwards: [],
   });
 });

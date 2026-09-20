@@ -103,9 +103,65 @@ export function seedIso(files: Record<string, string>) {
   return iso;
 }
 
+export const guestNetwork = `auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+  address 10.0.2.15/24
+  gateway 10.0.2.2
+`;
+
+// Every VM has its own QEMU user-mode network, so these addresses never compete
+// with another VM. Supplying ENI metadata avoids dhcpcd's discovery/probe delay.
+export function metaData(id: string, name: string, publicKey: string) {
+  return `instance-id: ${id}
+local-hostname: ${name}
+public-keys:
+  - ${publicKey}
+network-interfaces: |
+${guestNetwork
+  .trimEnd()
+  .split('\n')
+  .map((line) => `  ${line}`)
+  .join('\n')}
+resolv_conf:
+  nameservers:
+    - 10.0.2.3
+`;
+}
+
+// Only migrate the stock Alpine settings. Custom boot timeouts, DNS and network
+// configurations remain under the guest user's control. Changes apply next boot.
+export function bootSetup() {
+  return `if [ ! -e /etc/sakura/keep-boot-config ]; then
+if [ -f /etc/update-extlinux.conf ] && [ ! -L /etc/update-extlinux.conf ] && grep -qx 'timeout=10' /etc/update-extlinux.conf; then
+  [ -e /etc/update-extlinux.conf.sakura-backup ] || cp -p /etc/update-extlinux.conf /etc/update-extlinux.conf.sakura-backup
+  sed -i 's/^timeout=10$/timeout=1/' /etc/update-extlinux.conf
+fi
+if [ -f /boot/extlinux.conf ] && [ ! -L /boot/extlinux.conf ] && grep -qx 'TIMEOUT 100' /boot/extlinux.conf; then
+  [ -e /boot/extlinux.conf.sakura-backup ] || cp -p /boot/extlinux.conf /boot/extlinux.conf.sakura-backup
+  sed -i 's/^TIMEOUT 100$/TIMEOUT 10/' /boot/extlinux.conf
+fi
+if [ -f /etc/network/interfaces ] && [ ! -L /etc/network/interfaces ] && [ ! -L /etc/resolv.conf ] && grep -qx 'nameserver 10.0.2.3' /etc/resolv.conf; then
+  current=$(awk 'NF && $1 !~ /^#/ { $1=$1; print }' /etc/network/interfaces)
+  if [ "$current" = 'auto lo
+iface lo inet loopback
+auto eth0
+iface eth0 inet dhcp' ]; then
+    [ -e /etc/network/interfaces.sakura-backup ] || cp -p /etc/network/interfaces /etc/network/interfaces.sakura-backup
+    cat > /etc/network/interfaces <<'SAKURA_NETWORK'
+${guestNetwork}SAKURA_NETWORK
+  fi
+fi
+fi
+true`;
+}
+
 export function userData(name: string, publicKey: string) {
   return `#!/bin/sh
 set -eu
+${bootSetup()}
 hostname ${name}
 printf '%s\n' '${name}' > /etc/hostname
 mkdir -p /root/.ssh /workspace

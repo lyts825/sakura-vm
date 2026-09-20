@@ -174,11 +174,11 @@ server.on('upgrade', (req, socket, head) => {
   const parts = url.pathname.split('/');
   const id = parts[2];
   const mode = parts[3];
+  const events = url.pathname === '/ws/events';
   if (
     !allowedRequest(req) ||
     !equalToken(url.searchParams.get('token')) ||
-    !machines.records.has(id) ||
-    !['terminal', 'logs'].includes(mode)
+    (!events && (!machines.records.has(id) || !['terminal', 'logs'].includes(mode)))
   ) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
@@ -195,6 +195,13 @@ server.on('upgrade', (req, socket, head) => {
       }
     };
     client.on('error', () => {});
+    if (events) {
+      const listener = () => sendData('change', null);
+      machines.on('change', listener);
+      client.on('close', () => machines.off('change', listener));
+      listener();
+      return;
+    }
     if (mode === 'logs') {
       sendData('data', machines.logs.get(id) || '等待 Linux 启动…\r\n');
       const listener = (data: string) => sendData('data', data);

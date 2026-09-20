@@ -224,8 +224,11 @@ function App() {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [page, modal, restore, focusMode]);
+  const refreshVersion = useRef(0);
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     const [data, sys] = await Promise.all([api<VMView[]>('/vms'), api<System>('/system')]);
+    if (version !== refreshVersion.current) return;
     setVms(data);
     setSystem(sys);
     setOffline('');
@@ -233,10 +236,29 @@ function App() {
   }, []);
   useEffect(() => {
     let alive = true;
+    let events: WebSocket | undefined;
+    let reconnect: ReturnType<typeof setTimeout> | undefined;
+    const connectEvents = () => {
+      if (!alive) return;
+      const socket = new WebSocket(
+        `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/events?token=${token}`,
+      );
+      events = socket;
+      socket.onmessage = () => {
+        if (alive) void refresh().catch((e) => setOffline(e.message));
+      };
+      socket.onclose = () => {
+        if (alive) reconnect = setTimeout(connectEvents, 1000);
+      };
+      socket.onerror = () => socket.close();
+    };
     const load = async () => {
       try {
         token = (await api('/bootstrap')).token;
-        if (alive) await refresh();
+        if (alive) {
+          connectEvents();
+          await refresh();
+        }
       } catch (e: any) {
         setOffline(e.message);
       } finally {
@@ -250,6 +272,8 @@ function App() {
     return () => {
       alive = false;
       clearInterval(timer);
+      clearTimeout(reconnect);
+      events?.close();
     };
   }, [refresh]);
   useEffect(() => {
@@ -638,7 +662,11 @@ function App() {
                             </div>
                             <p>
                               <span>Alpine Linux 3.23</span>
-                              <span>独立内核 · {vm.accelerator.toUpperCase()}</span>
+                              <span>
+                                独立内核 ·{' '}
+                                {vm.activeAccelerator?.toUpperCase() ||
+                                  (vm.accelerator === 'auto' ? '自动' : vm.accelerator.toUpperCase())}
+                              </span>
                             </p>
                           </div>
                         </div>
@@ -1398,8 +1426,9 @@ function ResourceFields({
         执行模式
         <select
           value={config.accelerator}
-          onChange={(e) => set({ ...config, accelerator: e.target.value as 'tcg' | 'whpx' })}
+          onChange={(e) => set({ ...config, accelerator: e.target.value as VMConfig['accelerator'] })}
         >
+          <option value="auto">自动 · 优先使用可用的硬件加速</option>
           <option value="tcg">TCG · 兼容模式，无需系统配置</option>
           <option value="whpx">WHPX · 硬件加速，需已启用 Windows Hypervisor Platform</option>
         </select>
@@ -1423,7 +1452,7 @@ function CreateModal({
     memoryMiB: 512,
     cpus: 2,
     diskGiB: 8,
-    accelerator: 'tcg',
+    accelerator: 'auto',
     forwards: [],
   });
   const [boot, setBoot] = useState(true);

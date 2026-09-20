@@ -18,7 +18,7 @@ export const createSchema = z
     memoryMiB: z.number().int().min(256).max(8192).default(512),
     cpus: z.number().int().min(1).max(8).default(2),
     diskGiB: z.number().int().min(2).max(128).default(8),
-    accelerator: z.enum(['tcg', 'whpx']).default('tcg'),
+    accelerator: z.enum(['auto', 'tcg', 'whpx']).default('auto'),
     forwards: z
       .array(
         z.object({ host: z.number().int().min(1024).max(65535), guest: z.number().int().min(1).max(65535) }),
@@ -41,6 +41,7 @@ export type VMRecord = VMConfig & {
   lastError?: string;
 };
 export type VMView = VMRecord & {
+  activeAccelerator?: 'tcg' | 'whpx';
   status: VMStatus;
   poweredOn: boolean;
   startedAt?: string;

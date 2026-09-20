@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { freePort, qmp } from './qmp.ts';
 import {
   RuntimeManager,
   PosixLoomService,
@@ -86,6 +88,49 @@ export async function createRuntime() {
     }
   };
   const version = (await run('sakura-qemu', ['--version'])).split(/\r?\n/)[0];
-  return { runtime, service, run, version };
+  // Probe a paused, diskless VM. A compiled-in accelerator is not sufficient:
+  // the Windows feature and host hypervisor must also be usable by this user.
+  let whpxAvailable = false;
+  if (process.platform === 'win32') {
+    const port = await freePort();
+    const abort = new AbortController();
+    let exited = false;
+    const probe = run(
+      'sakura-qemu',
+      [
+        '-accel',
+        'whpx',
+        '-machine',
+        'q35',
+        '-nodefaults',
+        '-display',
+        'none',
+        '-S',
+        '-qmp',
+        `tcp:127.0.0.1:${port},server=on,wait=off`,
+      ],
+      { signal: abort.signal, timeoutMs: 5000 },
+    )
+      .catch(() => {})
+      .finally(() => {
+        exited = true;
+      });
+    try {
+      const deadline = performance.now() + 3000;
+      while (!exited && performance.now() < deadline) {
+        try {
+          await qmp(port, 'query-status');
+          whpxAvailable = true;
+          break;
+        } catch {
+          if (!exited) await delay(100);
+        }
+      }
+    } finally {
+      abort.abort();
+      await probe;
+    }
+  }
+  return { runtime, service, run, version, whpxAvailable };
 }
 export type Engine = Awaited<ReturnType<typeof createRuntime>>;

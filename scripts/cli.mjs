@@ -46,15 +46,16 @@ async function main() {
       console.error(`Starting ${vm.name}…`);
       await api(`/vms/${vm.id}/start`, 'POST');
       let ready = false;
-      for (let i = 0; i < 180; i++) {
+      const deadline = Date.now() + 270_000;
+      while (Date.now() < deadline) {
         const state = await api(`/vms/${vm.id}`);
         if (state.status === 'running') {
           ready = true;
           break;
         }
-        if (['error', 'stopped'].includes(state.status))
+        if (['error', 'stopped', 'stopping'].includes(state.status))
           throw new Error(state.lastError || 'Guest stopped during boot');
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 250));
       }
       if (!ready) throw new Error('Linux startup timed out; inspect boot logs in the web console.');
     }
