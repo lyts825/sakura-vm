@@ -28,7 +28,6 @@
   --danger-soft: #fff0f3;
   --hero-start: #fbecf2;
   --hero-end: #fcf8f9;
-  --halo: #f6dce7;
   --shadow: 0 4px 20px #57344c06, 0 1px 3px #57344c04;
   --shadow-float: 0 20px 70px #3b203222;
   --terminal: #26212c;
@@ -61,7 +60,6 @@
   --danger-soft: #432832;
   --hero-start: #3b2738;
   --hero-end: #2b2332;
-  --halo: #674050;
   --shadow: 0 4px 20px #0000000d;
   --shadow-float: 0 20px 70px #00000066;
 }
@@ -530,32 +528,6 @@ main {
 }
 .hero-guide:hover {
   color: var(--accent);
-}
-.sakura-art {
-  position: absolute;
-  width: 430px;
-  height: 235px;
-  right: -12px;
-  bottom: -8px;
-  z-index: 0;
-  color: var(--accent);
-  pointer-events: none;
-}
-.sakura-halo {
-  fill: var(--halo);
-  opacity: 0.55;
-}
-.hero-caption {
-  position: absolute;
-  right: 32px;
-  bottom: 18px;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  color: var(--accent);
-  opacity: 0.65;
-}
-:root[data-theme='night'] .sakura-art {
-  opacity: 0.78;
 }
 
 /* Shared controls */
@@ -1918,11 +1890,6 @@ label input {
     min-height: 220px;
     padding: 30px 34px;
   }
-  .sakura-art {
-    width: 485px;
-    height: 265px;
-    right: 6px;
-  }
   .xterm-container,
   .terminal-offline {
     height: 335px;
@@ -1965,14 +1932,6 @@ label input {
   }
   .stat-note {
     font-size: 10px;
-  }
-  .sakura-art {
-    right: -65px;
-    width: 390px;
-    opacity: 0.8;
-  }
-  .hero-caption {
-    display: none;
   }
   .machine-head {
     padding: 18px 16px;
@@ -2037,9 +1996,6 @@ label input {
   .nav-item.selected::before {
     display: none;
   }
-  .sakura-art {
-    right: -30px;
-  }
   .stat-note {
     font-size: 11px;
   }
@@ -2053,14 +2009,6 @@ label input {
   }
   .welcome-banner {
     padding: 24px;
-  }
-  .sakura-art {
-    width: 340px;
-    right: -80px;
-    opacity: 0.45;
-  }
-  :root[data-theme='night'] .sakura-art {
-    opacity: 0.4;
   }
   .welcome-copy {
     max-width: 100%;
@@ -2220,15 +2168,6 @@ label input {
     font-size: 9px;
     letter-spacing: 0.12em;
     margin-bottom: 14px;
-  }
-  .sakura-art {
-    right: -150px;
-    width: 350px;
-    bottom: -20px;
-    opacity: 0.35;
-  }
-  :root[data-theme='night'] .sakura-art {
-    opacity: 0.25;
   }
   .hero-actions {
     gap: 17px;
@@ -2498,8 +2437,5 @@ label input {
     --muted: #e2cfe7;
     --line: #96829e;
     --line-strong: #bba4c4;
-  }
-  .sakura-art {
-    opacity: 0.15;
   }
 }

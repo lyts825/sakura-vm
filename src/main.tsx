@@ -408,9 +408,6 @@ function App() {
                   </div>
                 </div>
                 <SakuraArt />
-                <span className="hero-caption" aria-hidden="true">
-                  小さな空間、無限の可能性。
-                </span>
               </div>
               <div className="stats">
                 <div className="stat">
