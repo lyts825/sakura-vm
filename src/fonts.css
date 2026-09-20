@@ -23,5 +23,6 @@
 :root {
   --font-ui: 'Sakura Sans', 'Segoe UI Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-display: 'Sakura Serif', 'Yu Mincho', 'Songti SC', SimSun, serif;
-  --font-mono: 'Sakura Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+  --font-mono:
+    'Sakura Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, 'Sakura Sans', 'Microsoft YaHei', monospace;
 }

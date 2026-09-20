@@ -354,7 +354,7 @@ kbd {
 }
 .engine-card small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.8;
 }
 .help-link {
@@ -393,7 +393,7 @@ kbd {
 }
 .host-profile small {
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   margin-top: 4px;
   max-width: 118px;
@@ -644,6 +644,7 @@ main {
   align-items: center;
   gap: 8px;
   font-size: 12px;
+  font-weight: 500;
   color: var(--muted);
   margin-bottom: 9px;
 }
@@ -664,6 +665,7 @@ main {
   letter-spacing: -0.035em;
   font-variant-numeric: lining-nums tabular-nums;
   line-height: 1.2;
+  white-space: nowrap;
 }
 .stat strong small {
   font-size: 11px;
@@ -923,7 +925,7 @@ main {
   border-top: 1px solid var(--line);
 }
 .distro-card-bottom > span:last-child {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .distro-no-results {
@@ -969,9 +971,10 @@ main {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 7px;
-  font-size: 10px;
-  line-height: 1;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
   white-space: nowrap;
   border-radius: 6px;
   color: var(--muted);
@@ -1089,13 +1092,15 @@ main {
   text-overflow: ellipsis;
 }
 .machine-title p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
   font-size: 11px;
   margin-top: 5px;
   color: var(--muted);
 }
 .machine-title p > span {
-  color: var(--line-strong);
-  padding: 0 4px;
+  white-space: nowrap;
 }
 .machine-actions {
   display: flex;
@@ -1265,9 +1270,9 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 31px;
+  min-height: 33px;
   padding: 0 14px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--terminal-muted);
   background: #2b2432;
   border-top: 1px solid #3d3144;
@@ -1332,7 +1337,8 @@ main {
   flex-wrap: wrap;
   gap: 6px;
   padding: 12px 16px;
-  font-size: 10px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 .machine-footer > span {
@@ -1342,6 +1348,7 @@ main {
   padding: 5px 7px;
   border-radius: 5px;
   background: var(--surface-soft);
+  white-space: nowrap;
 }
 .machine-footer .footer-network {
   margin-left: auto;
@@ -1672,7 +1679,13 @@ label input {
 .file-table > button {
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
+}
+.file-table-head > span:not(:first-child),
+.file-table > button > span:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .file-table > button:hover {
   background: var(--accent-soft);
@@ -1696,7 +1709,7 @@ label input {
   width: 100%;
   min-height: 270px;
   padding: 14px;
-  font: 12px/1.8 var(--font-mono);
+  font: 13px/1.8 var(--font-mono);
   font-variant-ligatures: none;
   tab-size: 4;
   resize: vertical;
@@ -1820,8 +1833,9 @@ label input {
 .system-card dl {
   display: grid;
   grid-template-columns: 105px minmax(0, 1fr);
-  gap: 23px 16px;
-  font-size: 12px;
+  gap: 20px 16px;
+  font-size: 13px;
+  line-height: 1.75;
   margin-bottom: 0;
 }
 .system-card dt {
@@ -1830,7 +1844,8 @@ label input {
 .system-card dd {
   margin: 0;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
@@ -2102,7 +2117,7 @@ label input {
     padding: 17px 18px;
   }
   .stat-note {
-    font-size: 10px;
+    font-size: 11px;
   }
   .machine-head {
     padding: 18px 16px;
@@ -2114,7 +2129,7 @@ label input {
     font-size: 15px;
   }
   .machine-title p {
-    font-size: 10px;
+    font-size: 11px;
   }
   .machine-actions {
     gap: 2px;
@@ -2369,24 +2384,27 @@ label input {
     margin-bottom: 22px;
   }
   .stat {
-    padding: 14px 9px;
+    padding: 14px 10px;
     border-radius: 10px;
   }
   .stat-label {
-    font-size: 10px;
-    gap: 5px;
-    white-space: nowrap;
+    display: block;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: normal;
   }
   .stat-label svg {
-    width: 13px;
-    height: 13px;
+    display: block;
+    width: 15px;
+    height: 15px;
+    margin-bottom: 8px;
   }
   .stat strong {
     font-size: 23px;
     letter-spacing: -0.6px;
   }
   .stat strong small {
-    font-size: 10px;
+    font-size: 11px;
     margin-left: 4px;
   }
   .workspace-heading h2 {
@@ -2394,7 +2412,7 @@ label input {
     gap: 7px;
   }
   .workspace-heading > span {
-    font-size: 10px;
+    font-size: 11px;
     gap: 4px;
     padding: 5px 7px;
   }
@@ -2433,13 +2451,13 @@ label input {
     font-size: 14px;
   }
   .machine-title p {
-    font-size: 10px;
+    font-size: 11px;
   }
   .machine-title > div > div {
     gap: 6px;
   }
   .machine-title .badge {
-    font-size: 9px;
+    font-size: 11px;
     padding: 4px 5px;
   }
   .machine-actions .settings-shortcut {
@@ -2471,7 +2489,7 @@ label input {
   }
   .terminal-toolbar > div {
     gap: 8px;
-    font-size: 10px;
+    font-size: 11px;
   }
   .terminal-toolbar > div:last-child {
     gap: 1px;
@@ -2483,10 +2501,10 @@ label input {
   .machine-footer {
     padding: 10px 9px;
     gap: 5px;
-    font-size: 10px;
+    font-size: 11px;
   }
   .terminal-bottom {
-    font-size: 9px;
+    font-size: 11px;
     padding: 0 10px;
   }
   .page-foot {
@@ -2506,7 +2524,7 @@ label input {
     font-size: 13px;
   }
   .panel-heading p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .panel-empty {
     padding: 22px 12px;
@@ -2515,7 +2533,7 @@ label input {
     font-size: 15px;
   }
   .panel-empty p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .file-tools {
     gap: 4px;
@@ -2526,19 +2544,19 @@ label input {
     font-size: 11px;
   }
   .file-tools form input {
-    font-size: 11px;
+    font-size: 12px;
     padding: 10px 8px;
   }
   .file-table-head,
   .file-table > button {
-    grid-template-columns: minmax(90px, 1fr) 48px 75px;
+    grid-template-columns: minmax(0, 1fr) 52px 75px;
     gap: 7px;
-    font-size: 10px;
+    font-size: 11px;
     padding-left: 3px;
     padding-right: 3px;
   }
   .file-table b {
-    font-size: 11px;
+    font-size: 12px;
   }
   .welcome-empty {
     min-height: 420px;
@@ -2577,7 +2595,7 @@ label input {
     gap: 12px;
   }
   .info-callout p {
-    font-size: 11px;
+    font-size: 12px;
   }
   .port-row {
     gap: 8px;
@@ -2614,15 +2632,8 @@ label input {
   }
 }
 @media (max-width: 380px) {
-  .stat-label {
-    font-size: 9px;
-    gap: 3px;
-  }
   .stat strong {
-    font-size: 20px;
-  }
-  .stat strong small {
-    font-size: 9px;
+    font-size: 22px;
   }
   .terminal-dots {
     display: none;

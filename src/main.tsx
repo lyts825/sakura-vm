@@ -637,8 +637,8 @@ function App() {
                               <Badge vm={vm} />
                             </div>
                             <p>
-                              Alpine Linux 3.23 <span> / </span>独立内核<span> / </span>
-                              {vm.accelerator.toUpperCase()}
+                              <span>Alpine Linux 3.23</span>
+                              <span>独立内核 · {vm.accelerator.toUpperCase()}</span>
                             </p>
                           </div>
                         </div>
