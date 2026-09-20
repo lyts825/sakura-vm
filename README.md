@@ -35,6 +35,7 @@ npm start
 ## 界面与快捷操作
 
 - 右上角切换「花昼 / 夜樱」主题，选择保存在当前浏览器中。
+- 内置本地字体：Noto Sans SC 用于界面正文，Noto Serif SC 用于标题和题字，JetBrains Mono 用于终端与代码；统一字重、行距与数字排版。裁剪后的 WOFF2 共约 365 KiB，无需外部字体服务，其他字符使用系统字体回退。
 - 日式樱花插图随主题切换日光与月色，支持花瓣飘落和枝条轻摆。插图右下角可暂停动画，选择会保留；滚出可见区域、页面进入后台或系统启用减少动态效果时自动停止动画。
 - 发行版右上角的展开按钮进入专注模式，为终端和文件操作留出更多空间；再次点击可退出。
 - 在工作空间按 `/` 聚焦发行版搜索；输入框和终端中的按键不会被截获。
@@ -121,6 +122,8 @@ git commit -m "feat: describe the change"
 ## 上游与许可
 
 Sakura 代码采用 MIT 许可。PosixLoom 为 MIT；QEMU 为 GPL-2.0；Alpine 包各自遵循上游许可。运行时与镜像不作为本项目源码提交，`setup` 从原始发布站下载。再分发二进制时应同时履行各组件许可义务。
+
+随源码提供的字体衍生文件采用 SIL OFL 1.1，保留原始版权和许可。字体来源、校验值及重新裁剪方法见 [字体说明](src/assets/fonts/README.md)。
 
 - [PosixLoom SDK 与架构](https://github.com/lyts825/posixloom)
 - [QEMU Windows 构建](https://qemu.weilnetz.de/w64/)

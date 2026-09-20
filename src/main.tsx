@@ -46,6 +46,7 @@ import { SakuraArt } from './SakuraArt';
 import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig, Snapshot } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
+import './fonts.css';
 import './style.css';
 
 type System = {
@@ -1149,10 +1150,14 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
   const mode = vm.status === 'running' ? 'terminal' : 'logs';
   useEffect(() => {
     if (!ref.current || vm.status === 'stopped') return;
+    const monoFamily = getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim();
+    let disposed = false;
     const term = new Terminal({
       cursorBlink: true,
       fontSize,
       fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
+      fontWeight: 400,
+      fontWeightBold: 600,
       lineHeight: 1.5,
       scrollback: 4000,
       theme: {
@@ -1197,6 +1202,18 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
     fitTerminal.current = resize;
     observer.observe(ref.current);
     requestAnimationFrame(resize);
+    // Canvas needs fresh character metrics after the local web font finishes loading.
+    void document.fonts
+      .load(`${fontSize}px "Sakura Mono"`)
+      .then((faces) => {
+        if (disposed || !faces.length || !monoFamily) return;
+        term.options.fontFamily = monoFamily;
+        resize();
+        term.refresh(0, term.rows - 1);
+      })
+      .catch(() => {
+        // Keep the system monospace fallback if a font cannot be loaded.
+      });
     socket.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       if (msg.type === 'data') term.write(msg.data);
@@ -1222,6 +1239,7 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
       if (ready && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data }));
     });
     return () => {
+      disposed = true;
       socket.onclose = null;
       socket.close();
       data.dispose();

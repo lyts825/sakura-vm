@@ -1,8 +1,11 @@
 /* Sakura — warm paper, cherry blossoms, and a quiet plum terminal. */
 :root {
   color-scheme: light;
-  font-family: 'Segoe UI Variable', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
+  line-height: 1.6;
+  font-weight: 400;
+  font-kerning: normal;
   font-synthesis: none;
   font-optical-sizing: auto;
   --canvas: #faf7f9;
@@ -70,6 +73,8 @@ body {
   margin: 0;
   background: var(--canvas);
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 body:has(dialog[open]) {
   overflow: hidden;
@@ -79,6 +84,7 @@ input,
 select,
 textarea {
   font: inherit;
+  letter-spacing: inherit;
 }
 button,
 a,
@@ -132,7 +138,8 @@ p {
   margin: 0;
 }
 p {
-  line-height: 1.8;
+  line-height: 1.85;
+  text-wrap: pretty;
 }
 input,
 select,
@@ -166,10 +173,7 @@ select:disabled {
   opacity: 0.65;
 }
 kbd {
-  font:
-    11px 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 10px/1.5 var(--font-mono);
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -215,20 +219,15 @@ kbd {
   border-radius: 12px;
 }
 .brand > span {
-  font:
-    600 30px/1 Georgia,
-    'Times New Roman',
-    serif;
-  letter-spacing: -0.8px;
+  font: 600 30px/1.15 var(--font-display);
+  letter-spacing: -0.055em;
 }
 .brand-dot {
   color: var(--accent);
 }
 .brand small {
   margin-left: auto;
-  font:
-    15px Georgia,
-    serif;
+  font: 500 15px/1.3 var(--font-display);
   color: var(--accent);
   opacity: 0.65;
 }
@@ -255,15 +254,15 @@ kbd {
   padding: 0 13px;
   border-radius: 10px;
   font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.015em;
   color: var(--muted);
 }
 .nav-item small {
   margin-left: auto;
   padding: 2px 6px;
   border-radius: 5px;
-  font:
-    11px Consolas,
-    monospace;
+  font: 10px/1.4 var(--font-mono);
   background: var(--surface);
   color: var(--accent);
 }
@@ -477,18 +476,21 @@ main {
   color: var(--accent);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.17em;
+  letter-spacing: 0.18em;
   margin-bottom: 12px;
 }
 .page-heading h1 {
+  font-family: var(--font-display);
   font-size: 30px;
   font-weight: 600;
-  line-height: 1.45;
-  letter-spacing: -0.6px;
+  line-height: 1.5;
+  letter-spacing: 0.015em;
+  text-wrap: balance;
   margin-bottom: 10px;
 }
 .page-heading p {
   font-size: 13px;
+  letter-spacing: 0.015em;
   color: var(--muted);
 }
 .welcome-banner {
@@ -506,10 +508,10 @@ main {
   z-index: 2;
 }
 .welcome-banner h1 {
-  font-size: clamp(27px, 2.6vw, 36px);
-  font-weight: 550;
-  letter-spacing: 0.025em;
-  line-height: 1.45;
+  font-size: clamp(28px, 2.65vw, 38px);
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  line-height: 1.5;
   margin-bottom: 7px;
 }
 .accent-text {
@@ -659,8 +661,8 @@ main {
 .stat strong {
   font-size: 27px;
   font-weight: 600;
-  letter-spacing: -0.8px;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  font-variant-numeric: lining-nums tabular-nums;
   line-height: 1.2;
 }
 .stat strong small {
@@ -691,6 +693,7 @@ main {
   gap: 10px;
   font-size: 16px;
   font-weight: 600;
+  letter-spacing: 0.015em;
 }
 .workspace-heading h2 span {
   font-size: 11px;
@@ -740,10 +743,7 @@ main {
 }
 .distro-panel-heading > span:last-child {
   color: var(--muted);
-  font:
-    10px 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 10px/1.5 var(--font-mono);
 }
 .search-box {
   display: flex;
@@ -795,7 +795,7 @@ main {
   padding: 6px 3px;
   min-height: 29px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
   border-radius: 5px;
 }
@@ -809,10 +809,7 @@ main {
   font-weight: 600;
 }
 .distro-filters small {
-  font:
-    9px 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 9px/1.5 var(--font-mono);
   opacity: 0.85;
 }
 .distro-list {
@@ -867,7 +864,7 @@ main {
   align-items: center;
   gap: 8px 12px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 .distro-resources > span {
@@ -905,6 +902,7 @@ main {
 .distro-card h3 {
   font-size: 13px;
   font-weight: 600;
+  letter-spacing: -0.015em;
   margin-bottom: 3px;
   line-height: 1.5;
   overflow: hidden;
@@ -912,7 +910,7 @@ main {
   white-space: nowrap;
 }
 .distro-card p {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .distro-card-bottom {
@@ -925,7 +923,7 @@ main {
   border-top: 1px solid var(--line);
 }
 .distro-card-bottom > span:last-child {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--muted);
 }
 .distro-no-results {
@@ -1027,8 +1025,10 @@ main {
   stroke-width: 1.5;
 }
 .workflow-note h4 {
-  font-size: 12px;
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.025em;
   margin-bottom: 9px;
   color: var(--ink);
 }
@@ -1083,6 +1083,7 @@ main {
 .machine-title h2 {
   font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.02em;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1180,10 +1181,7 @@ main {
   align-items: center;
   gap: 12px;
   min-width: 0;
-  font:
-    11px 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 11px/1.5 var(--font-mono);
 }
 .terminal-toolbar > div:first-child > span:last-child {
   white-space: nowrap;
@@ -1257,6 +1255,8 @@ main {
 }
 .xterm {
   height: 100%;
+  font-variant-ligatures: none;
+  font-kerning: none;
 }
 .xterm .xterm-viewport {
   scrollbar-color: #655168 var(--terminal);
@@ -1359,9 +1359,8 @@ main {
   display: flex;
   align-items: center;
   gap: 7px;
-  font:
-    italic 12px Georgia,
-    serif;
+  font: 400 12px/1.6 var(--font-display);
+  letter-spacing: 0.02em;
   color: var(--accent);
 }
 .focus-mode .welcome-banner,
@@ -1409,8 +1408,10 @@ main {
   background: var(--accent-line);
 }
 .welcome-empty h2 {
+  font-family: var(--font-display);
   font-size: 23px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.015em;
   margin: 3px 0 14px;
 }
 .welcome-empty p {
@@ -1481,8 +1482,9 @@ main {
   color: var(--accent-line);
 }
 .panel-empty h3 {
+  font-family: var(--font-display);
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink);
   margin: 18px 0 9px;
 }
@@ -1644,10 +1646,7 @@ label input {
   box-shadow: none;
   background: none;
   width: 100%;
-  font:
-    12px 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 12px/1.5 var(--font-mono);
   padding: 10px;
 }
 .file-table {
@@ -1690,20 +1689,16 @@ label input {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font:
-    12px 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 12px/1.5 var(--font-mono);
   color: var(--ink);
 }
 .file-editor {
   width: 100%;
   min-height: 270px;
   padding: 14px;
-  font:
-    12px/1.8 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 12px/1.8 var(--font-mono);
+  font-variant-ligatures: none;
+  tab-size: 4;
   resize: vertical;
   color: var(--ink);
   background: var(--surface-soft);
@@ -1740,10 +1735,7 @@ label input {
   letter-spacing: -0.6px;
 }
 .image-version {
-  font:
-    12px 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 12px/1.5 var(--font-mono);
   color: var(--muted);
 }
 .image-card > p:not(.image-version) {
@@ -1928,9 +1920,10 @@ label input {
   margin-bottom: 25px;
 }
 .modal-head h2 {
+  font-family: var(--font-display);
   font-size: 22px;
   font-weight: 600;
-  letter-spacing: -0.4px;
+  letter-spacing: 0.015em;
 }
 .modal-head p {
   font-size: 12px;
@@ -2005,10 +1998,8 @@ label input {
   border-radius: 10px;
   background: var(--surface-soft);
   color: var(--ink);
-  font:
-    12px/2 'Cascadia Code',
-    Consolas,
-    monospace;
+  font: 12px/2 var(--font-mono);
+  font-variant-ligatures: none;
 }
 .help-content .subtle-note {
   margin-top: 22px;
@@ -2352,7 +2343,7 @@ label input {
   }
   .welcome-banner h1 {
     font-size: 26px;
-    letter-spacing: -0.03em;
+    letter-spacing: 0.02em;
   }
   .page-heading h1 {
     font-size: 26px;

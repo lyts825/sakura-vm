@@ -192,11 +192,7 @@
   opacity: 0.55;
 }
 .garden-poem {
-  font:
-    12px 'Yu Mincho',
-    'Songti SC',
-    SimSun,
-    serif;
+  font: 500 12px/1.5 var(--font-display);
   writing-mode: vertical-rl;
   letter-spacing: 0.23em;
   fill: var(--branch-ink);
@@ -214,11 +210,7 @@
 }
 .garden-seal text {
   fill: #fff2de;
-  font:
-    16px 'Yu Mincho',
-    'Songti SC',
-    SimSun,
-    serif;
+  font: 600 16px/1 var(--font-display);
 }
 .garden-caption {
   position: absolute;
@@ -232,8 +224,7 @@
   color: var(--muted);
 }
 .garden-caption span {
-  font-family: 'Yu Mincho', 'Songti SC', SimSun, serif;
-  font-size: 11px;
+  font: 500 11px/1.5 var(--font-display);
   letter-spacing: 0.17em;
 }
 .garden-caption i {

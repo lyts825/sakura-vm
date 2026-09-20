@@ -1,0 +1,35 @@
+[
+  {
+    "family": "Sakura Sans",
+    "upstream": "Noto Sans SC",
+    "source": "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+    "sourceGitBlob": "fb0637bafbcd804fe32152370a1225990745b4bc",
+    "file": "sakura-sans-ui.woff2",
+    "bytes": 127848,
+    "glyphs": 621,
+    "weights": [400, 700],
+    "sha256": "2306e5c7a377a7fbc7a3802d7214acb37ba26b86d1ed554cda7caec34437216d"
+  },
+  {
+    "family": "Sakura Serif",
+    "upstream": "Noto Serif SC",
+    "source": "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+    "sourceGitBlob": "eab063faf229160a52d3760f5555150e4eb9e5bf",
+    "file": "sakura-serif-ui.woff2",
+    "bytes": 169576,
+    "glyphs": 621,
+    "weights": [400, 700],
+    "sha256": "76acf50681e0b9baf213818fd7ab23b1b52d05ad88e321ca846e267506453a1f"
+  },
+  {
+    "family": "Sakura Mono",
+    "upstream": "JetBrains Mono",
+    "source": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/19371302b95d218af43299bce79ddbddd0bc364d/fonts/variable/JetBrainsMono%5Bwght%5D.ttf",
+    "sourceGitBlob": "5b7a5266cbdcf79261e02b380dba890c5f38faf2",
+    "file": "sakura-mono.woff2",
+    "bytes": 76104,
+    "glyphs": 1372,
+    "weights": [400, 700],
+    "sha256": "393bf9f95dfd840ebe6dab0e904cdb58e200ef124748e37d44179206fbced9fe"
+  }
+]

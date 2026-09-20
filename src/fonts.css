@@ -1,0 +1,27 @@
+/* Local OFL font subsets. Rebuild with scripts/build-fonts.py when UI copy changes. */
+@font-face {
+  font-family: 'Sakura Sans';
+  src: url('./assets/fonts/sakura-sans-ui.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Sakura Serif';
+  src: url('./assets/fonts/sakura-serif-ui.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Sakura Mono';
+  src: url('./assets/fonts/sakura-mono.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+:root {
+  --font-ui: 'Sakura Sans', 'Segoe UI Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Sakura Serif', 'Yu Mincho', 'Songti SC', SimSun, serif;
+  --font-mono: 'Sakura Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+}
