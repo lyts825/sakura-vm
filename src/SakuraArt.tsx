@@ -3,14 +3,22 @@ import { Pause, Play, Wind } from 'lucide-react';
 import './sakura-art.css';
 
 const blossoms = [
-  [352, 88, -20, 0.56],
-  [401, 114, 14, 0.76],
-  [449, 71, -9, 0.68],
-  [466, 138, 30, 0.96],
-  [517, 168, -17, 0.67],
-  [548, 103, 9, 0.88],
-  [593, 187, 18, 0.78],
-  [634, 150, -5, 0.52],
+  [351, 90, -20, 0.45],
+  [399, 119, 14, 0.61],
+  [446, 68, -9, 0.54],
+  [468, 143, 30, 0.77],
+  [519, 173, -17, 0.54],
+  [550, 100, 9, 0.7],
+  [595, 192, 18, 0.62],
+  [634, 153, -5, 0.42],
+] as const;
+
+const buds = [
+  [378, 66, -18, 0.74],
+  [472, 55, 25, 0.8],
+  [600, 84, 18, 0.7],
+  [339, 63, -32, 0.64],
+  [634, 149, 63, 0.62],
 ] as const;
 
 const petals = [
@@ -82,7 +90,7 @@ export const SakuraArt = memo(function SakuraArt() {
           </mask>
           <radialGradient id={id + '-petal'} cx=".5" cy=".95" r=".95">
             <stop className="petal-center" />
-            <stop offset=".52" className="petal-middle" />
+            <stop offset=".46" className="petal-middle" />
             <stop offset="1" className="petal-edge" />
           </radialGradient>
           <linearGradient id={id + '-land-fade'} x2="0" y2="1">
@@ -111,20 +119,24 @@ export const SakuraArt = memo(function SakuraArt() {
             {[0, 72, 144, 216, 288].map((angle) => (
               <g key={angle} transform={`rotate(${angle})`}>
                 <path
-                  d="M0 3C-7-1-19-12-17-24C-16-30-10-34-5-33L0-27L5-33C10-34 16-30 17-24C19-12 7-1 0 3Z"
+                  d="M0 2C-5-3-14-11-14-21C-14-28-10-33-4-32L0-29L4-32C10-33 14-28 14-21C14-11 5-3 0 2Z"
                   fill={url('petal')}
                   className="blossom-outline"
                 />
-                <path d="M0-3C-3-10-5-16-5-23M1-5C4-11 6-17 7-24" className="petal-vein" />
+                <path d="M-1-5C-4-11-5-17-4-24M2-7C5-13 6-18 5-24" className="petal-vein" />
               </g>
             ))}
             {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
               <g key={angle} transform={`rotate(${angle})`}>
-                <path d="M0 0 1-12" className="flower-filament" />
-                <circle cx="1" cy="-12" r="1.35" className="flower-pollen" />
+                <path d="M0 0Q3-5 1-11" className="flower-filament" />
+                <circle cx="1" cy="-11" r="1.1" className="flower-pollen" />
               </g>
             ))}
-            <circle r="3.6" className="flower-heart" />
+            <circle r="2.6" className="flower-heart" />
+          </g>
+          <g id={id + '-bud'}>
+            <path className="bud-shell" d="M0 0C-7-5-9-15-5-20C-1-24 5-21 6-16C8-9 4-3 0 0Z" />
+            <path className="bud-fold" d="M0-2C-2-8-3-13-1-18" />
           </g>
         </defs>
 
@@ -165,20 +177,25 @@ export const SakuraArt = memo(function SakuraArt() {
             <g className="branch-ink" strokeLinecap="round" strokeLinejoin="round">
               <path
                 d="M701 271C650 235 622 217 585 198S530 163 506 145 446 116 399 105 355 86 325 79"
-                strokeWidth="5.6"
+                strokeWidth="4.6"
               />
               <path
                 d="M584 198c-17-31-23-65-35-91s-27-39-36-56M475 129c-5-19-15-39-28-59s-30-27-52-29M541 171c37-3 64-8 91-22s40-31 51-44"
-                strokeWidth="2.8"
+                strokeWidth="2.2"
               />
               <path
                 d="M399 105c-2-20-10-34-22-42M558 129c20-10 36-24 41-47M451 79l20-26M610 158l-1-25M350 87l-10-26M520 67l19-13M426 114l-6 27"
-                strokeWidth="1.4"
+                strokeWidth="1.1"
+              />
+              <path
+                className="flower-stems"
+                d="M349 86q-1 4 2 8M399 105q-5 9 0 14M448 73l-2-5M474 130q-7 4-6 13M508 147q3 17 11 26M547 109l3-9M584 198q4-7 11-6M631 151l3 2"
+                strokeWidth="1"
               />
               <path
                 className="branch-highlight"
                 d="M690 265c-47-33-65-44-104-64s-61-39-77-49"
-                strokeWidth="1.2"
+                strokeWidth=".85"
               />
             </g>
             <g className="sakura-leaves">
@@ -194,9 +211,13 @@ export const SakuraArt = memo(function SakuraArt() {
                 transform={`translate(${x} ${y}) rotate(${angle}) scale(${scale})`}
               />
             ))}
-            <g className="sakura-buds">
-              <path d="M378 66c-11-5-14-19-6-21s14 13 6 21ZM472 55c-2-13 4-22 11-19s3 17-11 19ZM600 84c-6-12-1-22 6-20s6 17-6 20ZM339 63c-13-3-16-14-9-17s13 8 9 17ZM634 149c10-11 18-11 20-5s-8 11-20 5Z" />
-            </g>
+            {buds.map(([x, y, angle, scale]) => (
+              <use
+                key={x}
+                href={`#${id}-bud`}
+                transform={`translate(${x} ${y}) rotate(${angle}) scale(${scale})`}
+              />
+            ))}
           </g>
 
           <g className="sakura-petal-field">
@@ -218,13 +239,13 @@ export const SakuraArt = memo(function SakuraArt() {
                     } as CSSProperties
                   }
                 >
-                  <path className="petal-flutter" d="M0 6C-12 0-11-11-5-13L-1-9 2-13C10-9 9 1 0 6Z" />
+                  <path className="petal-flutter" d="M0 5C-8 0-8-7-4-10L-1-8 1-10C7-7 7 0 0 5Z" />
                 </g>
               </g>
             ))}
           </g>
           <g className="resting-petals">
-            <path d="M288 236c-3-8 8-11 15-5-4 6-10 8-15 5ZM425 262c-7-4-5-11 2-10s13 7 10 9c-4 2-8 2-12 1Z" />
+            <path d="M288 236c-2-6 6-8 11-4-3 5-7 6-11 4ZM425 262c-5-3-4-8 1-7s10 5 8 6c-3 2-6 2-9 1Z" />
           </g>
         </g>
         <g className="garden-inscription">

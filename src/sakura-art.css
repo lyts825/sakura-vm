@@ -10,10 +10,10 @@
 .sakura-illustration {
   --branch-ink: #71575f;
   --branch-light: #b29391;
-  --flower-center: #d991a6;
-  --flower-middle: #f4cbd2;
-  --flower-edge: #fff7ef;
-  --flower-line: #c5879e;
+  --flower-center: #dea0b1;
+  --flower-middle: #f6d5de;
+  --flower-edge: #fff5ef;
+  --flower-line: #c296a6;
   --pollen: #b98954;
   --leaf: #8e9e8f;
   --ridge: #9aaeb0;
@@ -32,10 +32,10 @@
 :root[data-theme='night'] .sakura-illustration {
   --branch-ink: #a490a3;
   --branch-light: #d1b3c0;
-  --flower-center: #b57191;
-  --flower-middle: #dfb3cd;
-  --flower-edge: #f4e4e8;
-  --flower-line: #ad7897;
+  --flower-center: #ba819f;
+  --flower-middle: #ebcfdb;
+  --flower-edge: #fff0ed;
+  --flower-line: #b897ae;
   --pollen: #d2b480;
   --leaf: #81978f;
   --ridge: #697c99;
@@ -118,6 +118,9 @@
   stroke: var(--branch-light);
   opacity: 0.65;
 }
+.flower-stems {
+  stroke: var(--flower-line);
+}
 .sakura-bough {
   transform-box: view-box;
   transform-origin: 690px 260px;
@@ -134,16 +137,17 @@
 }
 .blossom-outline {
   stroke: var(--flower-line);
-  stroke-width: 0.7;
+  stroke-width: 0.55;
 }
 .petal-vein {
   stroke: var(--flower-line);
-  stroke-width: 0.65;
-  opacity: 0.3;
+  stroke-width: 0.5;
+  opacity: 0.25;
 }
 .flower-filament {
   stroke: var(--flower-line);
-  stroke-width: 0.85;
+  stroke-width: 0.65;
+  stroke-linecap: round;
 }
 .flower-pollen {
   fill: var(--pollen);
@@ -160,10 +164,16 @@
   stroke: var(--mist);
   stroke-width: 0.7;
 }
-.sakura-buds {
+.bud-shell {
   fill: var(--flower-center);
   stroke: var(--flower-line);
-  stroke-width: 0.7;
+  stroke-width: 0.55;
+}
+.bud-fold {
+  stroke: var(--flower-edge);
+  stroke-width: 0.75;
+  stroke-linecap: round;
+  opacity: 0.65;
 }
 .petal-fall {
   opacity: 0;
@@ -172,7 +182,7 @@
 .petal-flutter {
   fill: var(--flower-middle);
   stroke: var(--flower-line);
-  stroke-width: 0.5;
+  stroke-width: 0.4;
   transform-box: fill-box;
   transform-origin: center;
   animation: sakura-petal-flutter var(--flutter-duration) ease-in-out var(--fall-delay) infinite;
