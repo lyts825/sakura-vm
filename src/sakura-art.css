@@ -1,48 +1,37 @@
-/* Sakura garden: woodblock-inspired forms, still paper, a passing breeze. */
+/* Translucent petals, painted branches, and a quiet spring breeze. */
 .welcome-banner {
-  --hero-start: #fbf0ec;
-  --hero-end: #f8f3e7;
+  --hero-start: #fcf0f2;
+  --hero-end: #eef3f6;
 }
 :root[data-theme='night'] .welcome-banner {
-  --hero-start: #352737;
-  --hero-end: #272a38;
+  --hero-start: #342735;
+  --hero-end: #262c3c;
 }
 .sakura-illustration {
-  --branch-ink: #71575f;
-  --branch-light: #b29391;
-  --flower-center: #dea0b1;
-  --flower-middle: #f6d5de;
-  --flower-edge: #fff5ef;
-  --flower-line: #c296a6;
-  --pollen: #b98954;
-  --leaf: #8e9e8f;
-  --ridge: #9aaeb0;
-  --ridge-near: #91a79e;
-  --mist: #f6eee3;
-  --sun: #e6ba9f;
-  --paper-ink: #9c8075;
-  --wave: #b4a08a;
+  --flower-center: #d68da5;
+  --flower-middle: #f6d4e0;
+  --flower-edge: #fff5f1;
+  --flower-line: #c78ea5;
+  --haze-blue: #a8cddd;
+  --haze-rose: #edd3e2;
+  --ridge: #8b9fac;
+  --ridge-near: #adb8bd;
   position: absolute;
   inset: 0 0 0 auto;
-  width: 610px;
-  max-width: 61%;
+  width: 700px;
+  max-width: 70%;
   pointer-events: none;
   z-index: 1;
 }
 :root[data-theme='night'] .sakura-illustration {
-  --branch-ink: #a490a3;
-  --branch-light: #d1b3c0;
-  --flower-center: #ba819f;
-  --flower-middle: #ebcfdb;
-  --flower-edge: #fff0ed;
-  --flower-line: #b897ae;
-  --pollen: #d2b480;
-  --leaf: #81978f;
-  --ridge: #697c99;
+  --flower-center: #c38ba9;
+  --flower-middle: #e7c3d7;
+  --flower-edge: #f4e8f0;
+  --flower-line: #c4a0b9;
+  --haze-blue: #65769a;
+  --haze-rose: #795571;
+  --ridge: #9da9c1;
   --ridge-near: #7d819d;
-  --mist: #32313f;
-  --paper-ink: #d5bac6;
-  --wave: #b0a1b1;
 }
 .sakura-scene {
   display: block;
@@ -50,81 +39,59 @@
   height: 100%;
   overflow: visible;
 }
-.paper-fiber {
-  stroke: var(--paper-ink);
-  stroke-width: 0.6;
-  opacity: 0.17;
+.sky-blue {
+  stop-color: var(--haze-blue);
 }
-.paper-fleck {
-  fill: var(--paper-ink);
-  opacity: 0.13;
+.sky-rose {
+  stop-color: var(--haze-rose);
 }
 .garden-sun {
-  fill: var(--sun);
-  opacity: 0.63;
-  transition: opacity 300ms ease;
+  opacity: 0.85;
+  transition: opacity 400ms ease;
 }
 .garden-moon {
-  fill: #eadbb8;
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity 400ms ease;
 }
-.moon-mark {
-  fill: #b3b5ba;
-  opacity: 0.13;
+.moon-halo {
+  opacity: 0.3;
 }
-.garden-stars {
-  stroke: #e4d6b7;
-  fill: #e4d6b7;
-  stroke-width: 0.8;
-  opacity: 0;
-  transition: opacity 300ms ease;
+.moon-disc {
+  fill: #eeebf4;
+  opacity: 0.46;
 }
 :root[data-theme='night'] .garden-sun {
   opacity: 0;
 }
 :root[data-theme='night'] .garden-moon {
-  opacity: 0.88;
-}
-:root[data-theme='night'] .garden-stars {
-  opacity: 0.65;
+  opacity: 1;
 }
 .distant-ridge {
   fill: var(--ridge);
-  opacity: 0.28;
-}
-.ridge-snow {
-  fill: var(--mist);
-  opacity: 0.85;
+  opacity: 0.16;
 }
 .near-ridge {
   fill: var(--ridge-near);
-  opacity: 0.22;
+  opacity: 0.12;
 }
-.garden-mist {
-  fill: var(--mist);
-  opacity: 0.66;
-}
-.wave-line {
-  fill: none;
-  stroke: var(--wave);
-  stroke-width: 0.65;
-  opacity: 0.33;
-}
-.branch-ink {
-  stroke: var(--branch-ink);
-}
-.branch-highlight {
-  stroke: var(--branch-light);
-  opacity: 0.65;
-}
-.flower-stems {
-  stroke: var(--flower-line);
+.garden-glimmer {
+  opacity: 0.4;
+  animation: sakura-glimmer 16s ease-in-out var(--glimmer-delay) infinite;
 }
 .sakura-bough {
   transform-box: view-box;
-  transform-origin: 690px 260px;
-  animation: sakura-breeze 16s ease-in-out -4s infinite;
+  transform-origin: 680px 16px;
+  animation: sakura-breeze 19s ease-in-out -4s infinite;
+}
+.sakura-painted-bough {
+  opacity: 0.94;
+  transition:
+    filter 400ms ease,
+    opacity 400ms ease;
+}
+:root[data-theme='night'] .sakura-painted-bough {
+  filter: saturate(0.74) brightness(0.86);
+  opacity: 0.85;
 }
 .petal-center {
   stop-color: var(--flower-center);
@@ -135,86 +102,20 @@
 .petal-edge {
   stop-color: var(--flower-edge);
 }
-.blossom-outline {
-  stroke: var(--flower-line);
-  stroke-width: 0.55;
-}
-.petal-vein {
-  stroke: var(--flower-line);
-  stroke-width: 0.5;
-  opacity: 0.25;
-}
-.flower-filament {
-  stroke: var(--flower-line);
-  stroke-width: 0.65;
-  stroke-linecap: round;
-}
-.flower-pollen {
-  fill: var(--pollen);
-}
-.flower-heart {
-  fill: var(--flower-center);
-}
-.sakura-leaves {
-  fill: var(--leaf);
-  opacity: 0.75;
-}
-.leaf-vein {
-  fill: none;
-  stroke: var(--mist);
-  stroke-width: 0.7;
-}
-.bud-shell {
-  fill: var(--flower-center);
-  stroke: var(--flower-line);
-  stroke-width: 0.55;
-}
-.bud-fold {
-  stroke: var(--flower-edge);
-  stroke-width: 0.75;
-  stroke-linecap: round;
-  opacity: 0.65;
-}
 .petal-fall {
   opacity: 0;
   animation: sakura-petal-fall var(--fall-duration) linear var(--fall-delay) infinite both;
 }
 .petal-flutter {
-  fill: var(--flower-middle);
   stroke: var(--flower-line);
-  stroke-width: 0.4;
+  stroke-width: 0.35;
   transform-box: fill-box;
   transform-origin: center;
   animation: sakura-petal-flutter var(--flutter-duration) ease-in-out var(--fall-delay) infinite;
 }
-.resting-petals {
-  fill: var(--flower-center);
-  opacity: 0.55;
-}
-.garden-poem {
-  font: 500 12px/1.5 var(--font-display);
-  writing-mode: vertical-rl;
-  letter-spacing: 0.23em;
-  fill: var(--branch-ink);
-  opacity: 0.72;
-}
-.garden-seal > path:first-child {
-  fill: #b86765;
-  opacity: 0.9;
-}
-.seal-border {
-  fill: none;
-  stroke: #fff2de;
-  stroke-width: 0.6;
-  opacity: 0.55;
-}
-.garden-seal text {
-  fill: #fff2de;
-  font: 600 16px/1 var(--font-display);
-}
 .garden-caption {
   position: absolute;
-  left: 30%;
+  left: 32%;
   bottom: 17px;
   display: flex;
   align-items: center;
@@ -258,57 +159,69 @@
 }
 .sakura-illustration[data-motion='paused'] .sakura-bough,
 .sakura-illustration[data-motion='paused'] .petal-fall,
-.sakura-illustration[data-motion='paused'] .petal-flutter {
+.sakura-illustration[data-motion='paused'] .petal-flutter,
+.sakura-illustration[data-motion='paused'] .garden-glimmer {
   animation-play-state: paused;
 }
 @keyframes sakura-breeze {
   0%,
   100% {
-    transform: rotate(-0.3deg);
+    transform: rotate(-0.35deg) translateY(0);
   }
   50% {
-    transform: rotate(0.45deg);
+    transform: rotate(0.45deg) translateY(1px);
+  }
+}
+@keyframes sakura-glimmer {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 0.2;
+  }
+  50% {
+    transform: translate(-5px, -9px);
+    opacity: 0.55;
   }
 }
 @keyframes sakura-petal-fall {
   0% {
-    transform: translate(0, -6px) rotate(-12deg);
+    transform: translate(0, -6px) rotate(-16deg);
     opacity: 0;
   }
   12% {
-    opacity: 0.88;
+    opacity: 0.83;
   }
   40% {
-    transform: translate(calc(var(--petal-x) * 0.3), calc(var(--petal-y) * 0.36)) rotate(24deg);
-    opacity: 0.88;
+    transform: translate(calc(var(--petal-x) * 0.28), calc(var(--petal-y) * 0.37)) rotate(20deg);
+    opacity: 0.83;
   }
   75% {
-    transform: translate(calc(var(--petal-x) * 0.78), calc(var(--petal-y) * 0.73)) rotate(88deg);
-    opacity: 0.65;
+    transform: translate(calc(var(--petal-x) * 0.82), calc(var(--petal-y) * 0.74)) rotate(73deg);
+    opacity: 0.6;
   }
   100% {
-    transform: translate(var(--petal-x), var(--petal-y)) rotate(125deg);
+    transform: translate(var(--petal-x), var(--petal-y)) rotate(118deg);
     opacity: 0;
   }
 }
 @keyframes sakura-petal-flutter {
   0%,
   100% {
-    transform: rotate(-18deg) scaleX(0.85);
+    transform: rotate(-21deg) scaleX(0.9);
   }
   50% {
-    transform: rotate(23deg) scaleX(0.4);
+    transform: rotate(29deg) scaleX(0.3);
   }
 }
 @media (min-width: 1500px) {
   .sakura-illustration {
-    width: 700px;
-    max-width: 64%;
+    width: 780px;
+    max-width: 68%;
   }
 }
 @media (max-width: 1180px) {
   .sakura-illustration {
-    max-width: 56%;
+    max-width: 64%;
   }
   .garden-caption {
     display: none;
@@ -321,19 +234,21 @@
   }
   .sakura-scene {
     position: absolute;
-    width: 490px;
-    right: -65px;
-    opacity: 0.6;
+    width: 520px;
+    right: -70px;
+    opacity: 0.75;
   }
-  .garden-inscription {
+  .garden-bokeh > g:nth-child(n + 4) {
     display: none;
   }
 }
 @media (max-width: 600px) {
   .sakura-scene {
-    width: 470px;
+    width: 490px;
     right: -155px;
-    opacity: 0.52;
+    top: -38px;
+    opacity: 0.58;
+    mask-image: linear-gradient(90deg, transparent 30%, #000 80%);
   }
   .petal-origin:nth-child(n + 5) {
     display: none;
@@ -355,7 +270,8 @@
 @media (prefers-reduced-motion: reduce) {
   .sakura-bough,
   .petal-fall,
-  .petal-flutter {
+  .petal-flutter,
+  .garden-glimmer {
     animation: none !important;
   }
 }
