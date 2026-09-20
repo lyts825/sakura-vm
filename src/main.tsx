@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -26,19 +26,23 @@ import {
   Trash2,
   Camera,
   Check,
-  Copy,
   Search,
   LoaderCircle,
   Network,
   ShieldCheck,
   Download,
   Flower2,
-  Command,
   ArrowRight,
   Monitor,
   ExternalLink,
   CircleDot,
+  Sun,
+  Moon,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
+import { SakuraArt } from './SakuraArt';
+import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig, Snapshot } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
@@ -73,7 +77,7 @@ async function api<T = any>(path: string, method = 'GET', body?: unknown): Promi
 }
 const bytes = (n: number) =>
   n >= 1073741824 ? `${(n / 1073741824).toFixed(2)} GB` : `${(n / 1048576).toFixed(1)} MB`;
-const memory = (n: number) => (n >= 1024 ? `${n / 1024} GiB` : `${n} MiB`);
+const memory = (n: number) => (n >= 1024 ? `${Number((n / 1024).toFixed(1))} GiB` : `${n} MiB`);
 const states = {
   running: '运行中',
   stopped: '已停止',
@@ -113,21 +117,41 @@ function Modal({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
-    ref.current?.showModal();
+    const dialog = ref.current;
+    if (!dialog) return;
+    const previous = document.activeElement;
+    dialog.showModal();
+    dialog
+      .querySelector<HTMLElement>('input:not([type="hidden"]):not([readonly]), textarea, select')
+      ?.focus();
+    return () => {
+      dialog.close();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
   }, []);
   return (
     <dialog
       ref={ref}
       className="modal"
+      aria-labelledby={titleId}
       onCancel={onClose}
       onClick={(e) => {
-        if (e.target === ref.current) onClose();
+        if (e.target !== ref.current) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (
+          e.clientX < rect.left ||
+          e.clientX > rect.right ||
+          e.clientY < rect.top ||
+          e.clientY > rect.bottom
+        )
+          onClose();
       }}
     >
       <div className="modal-head">
         <div>
-          <h2>{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           {subtitle && <p>{subtitle}</p>}
         </div>
         <button className="icon-button" aria-label="关闭对话框" onClick={onClose}>
@@ -153,7 +177,46 @@ function App() {
   const [restore, setRestore] = useState<Snapshot | null>(null),
     [confirm, setConfirm] = useState(''),
     [snapshotName, setSnapshotName] = useState('');
+  const [theme, setTheme] = useState<'day' | 'night'>(() => {
+    try {
+      return localStorage.getItem('sakura-theme') === 'night' ? 'night' : 'day';
+    } catch {
+      return 'day';
+    }
+  });
+  const [focused, setFocused] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
   const vm = vms.find((v) => v.id === selected);
+  const focusMode = focused && page === 'workspace' && !!vm;
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', theme === 'night' ? '#201b24' : '#faf7f9');
+    try {
+      localStorage.setItem('sakura-theme', theme);
+    } catch {
+      // Theme switching still works when browser storage is unavailable.
+    }
+  }, [theme]);
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]') || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest('input, textarea, select, [contenteditable="true"], .xterm')
+      )
+        return;
+      if (event.key === '/' && page === 'workspace' && !focusMode) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === 'Escape') setFocused(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [page, modal, restore, focusMode]);
   const refresh = useCallback(async () => {
     const [data, sys] = await Promise.all([api<VMView[]>('/vms'), api<System>('/system')]);
     setVms(data);
@@ -205,15 +268,16 @@ function App() {
     vm && run(() => api(`/vms/${vm.id}/stop`, 'POST', { force: false }), '发行版已停止，磁盘数据已保留');
   const running = vms.filter((v) => v.status === 'running').length;
   const allocated = vms.filter(active).reduce((sum, v) => sum + v.memoryMiB, 0);
+  const engineState = offline ? 'error' : system?.nativeHost ? 'running' : 'starting';
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="Sakura 首页">
-          <img src="/favicon.svg" alt="" />
+          <img src={sakuraMark} alt="" />
           <span>
             Sakura<span className="brand-dot">.</span>
           </span>
-          <small>local</small>
+          <small>桜</small>
         </a>
         <div className="side-caption">你的开发空间</div>
         <nav aria-label="主导航">
@@ -225,6 +289,8 @@ function App() {
             <button
               key={n.id}
               aria-label={n.name}
+              aria-current={page === n.id ? 'page' : undefined}
+              title={n.name}
               className={page === n.id ? 'nav-item selected' : 'nav-item'}
               onClick={() => setPage(n.id)}
             >
@@ -261,7 +327,7 @@ function App() {
         <div className="sidebar-bottom">
           <div className="engine-card">
             <div>
-              <span className={`tiny-dot ${offline ? 'error' : 'running'}`} />
+              <span className={`tiny-dot ${engineState}`} />
               本地运行引擎
               <ShieldCheck size={14} />
             </div>
@@ -281,7 +347,7 @@ function App() {
               <b>本地工作空间</b>
               <small>{system?.hostname || '连接本机中'}</small>
             </div>
-            <span className="online-dot" />
+            <span className={`tiny-dot ${engineState}`} />
           </div>
         </div>
       </aside>
@@ -292,10 +358,22 @@ function App() {
             <ChevronRight size={13} />
             <b>{page === 'workspace' ? '工作空间' : page === 'images' ? '镜像库' : '系统设置'}</b>
           </div>
-          <span className="local-badge">
-            <span />
-            仅本机访问<kbd>v0.1</kbd>
-          </span>
+          <div className="topbar-actions">
+            <span className="local-badge">
+              <ShieldCheck size={14} />
+              仅本机访问
+            </span>
+            <span className="topbar-divider" />
+            <button
+              className="theme-toggle"
+              aria-label={theme === 'day' ? '切换到夜樱主题' : '切换到花昼主题'}
+              title={theme === 'day' ? '切换到夜樱主题' : '切换到花昼主题'}
+              onClick={() => setTheme(theme === 'day' ? 'night' : 'day')}
+            >
+              {theme === 'day' ? <Sun size={16} /> : <Moon size={16} />}
+              <span>{theme === 'day' ? '花昼' : '夜樱'}</span>
+            </button>
+          </div>
         </header>
         <main>
           {offline && (
@@ -306,22 +384,33 @@ function App() {
           )}
           {page === 'workspace' && (
             <>
-              <div className="page-heading">
-                <div>
-                  <div className="eyebrow">A LITTLE SPACE. ENDLESS POSSIBILITIES.</div>
+              <div className="page-heading welcome-banner">
+                <div className="welcome-copy">
+                  <div className="eyebrow">
+                    <Flower2 size={14} /> A SPACE TO BLOOM
+                  </div>
                   <h1>
-                    Linux，触手可及<span className="coral">。</span>
+                    让灵感，在此<span className="accent-text">生长。</span>
                   </h1>
-                  <p>轻量启动，专注创造。让熟悉的 Linux 自然融入你的工作流。</p>
+                  <p>一个轻盈的 Linux 空间，让每次创造从容开始。</p>
+                  <div className="hero-actions">
+                    <button
+                      className="primary"
+                      onClick={() => setModal('create')}
+                      disabled={loading || !system?.imageReady}
+                    >
+                      <Plus size={16} />
+                      创建发行版
+                    </button>
+                    <button className="hero-guide" onClick={() => setModal('help')}>
+                      快速上手 <ArrowUpRight size={15} />
+                    </button>
+                  </div>
                 </div>
-                <button
-                  className="primary"
-                  onClick={() => setModal('create')}
-                  disabled={loading || !system?.imageReady}
-                >
-                  <Plus size={17} />
-                  创建发行版
-                </button>
+                <SakuraArt />
+                <span className="hero-caption" aria-hidden="true">
+                  小さな空間、無限の可能性。
+                </span>
               </div>
               <div className="stats">
                 <div className="stat">
@@ -369,8 +458,8 @@ function App() {
                   我的工作空间 <span>{vms.length}</span>
                 </h2>
                 <span>
-                  <span className="tiny-dot running" />{' '}
-                  {system?.nativeHost ? 'Native Host 已连接' : '连接运行时'}
+                  <span className={`tiny-dot ${engineState}`} />{' '}
+                  {offline ? '运行引擎连接中断' : system?.nativeHost ? '运行引擎已连接' : '连接运行时'}
                 </span>
               </div>
               <div className="workspace">
@@ -378,6 +467,7 @@ function App() {
                   <div className="search-box">
                     <Search size={15} />
                     <input
+                      ref={searchRef}
                       aria-label="查找发行版"
                       placeholder="查找发行版…"
                       value={query}
@@ -387,16 +477,17 @@ function App() {
                   </div>
                   <div className="distro-list">
                     {vms
-                      .filter((v) => v.name.includes(query))
+                      .filter((v) => v.name.toLowerCase().includes(query.toLowerCase()))
                       .map((v) => (
                         <button
                           key={v.id}
                           className={`distro-card ${vm?.id === v.id ? 'active' : ''}`}
+                          aria-pressed={vm?.id === v.id}
                           onClick={() => setSelected(v.id)}
                         >
                           <div className="distro-card-top">
                             <Alpine small />
-                            <ChevronRight size={15} />
+                            {vm?.id === v.id ? <CircleDot size={16} /> : <ChevronRight size={15} />}
                           </div>
                           <h3>{v.name}</h3>
                           <p>
@@ -414,7 +505,7 @@ function App() {
                         <p>从第一个发行版开始</p>
                       </div>
                     )}
-                    {query && !vms.some((v) => v.name.includes(query)) && (
+                    {query && !vms.some((v) => v.name.toLowerCase().includes(query.toLowerCase())) && (
                       <p className="muted">没有匹配的发行版</p>
                     )}
                     <button
@@ -427,8 +518,8 @@ function App() {
                     </button>
                   </div>
                   <div className="workflow-note">
-                    <Command size={18} />
-                    <h4>熟悉的操作，更轻的体验。</h4>
+                    <Flower2 size={22} />
+                    <h4>停下片刻，灵感继续。</h4>
                     <p>
                       关闭窗口后，Linux 继续运行。
                       <br />
@@ -473,16 +564,25 @@ function App() {
                             </button>
                           )}
                           <button
-                            className="icon-button"
+                            className="icon-button settings-shortcut"
                             title="发行版设置"
                             aria-label="发行版设置"
                             onClick={() => setTab('config')}
                           >
                             <Settings2 size={18} />
                           </button>
+                          <button
+                            className="icon-button focus-toggle"
+                            aria-label={focusMode ? '退出专注模式' : '进入专注模式'}
+                            title={focusMode ? '退出专注模式' : '专注模式'}
+                            aria-pressed={focusMode}
+                            onClick={() => setFocused(!focused)}
+                          >
+                            {focusMode ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                          </button>
                         </div>
                       </div>
-                      <div className="tabs" role="tablist">
+                      <div className="tabs" role="tablist" aria-label="发行版功能">
                         {[
                           { id: 'terminal', label: '终端', icon: TerminalSquare },
                           { id: 'files', label: '文件', icon: Folder },
@@ -491,10 +591,34 @@ function App() {
                         ].map((t) => (
                           <button
                             role="tab"
+                            id={`tab-${t.id}`}
+                            data-tab={t.id}
+                            aria-controls="machine-content"
+                            tabIndex={tab === t.id ? 0 : -1}
                             aria-selected={tab === t.id}
                             key={t.id}
                             className={tab === t.id ? 'active' : ''}
                             onClick={() => setTab(t.id)}
+                            onKeyDown={(event) => {
+                              const ids = ['terminal', 'files', 'snapshots', 'config'];
+                              const index = ids.indexOf(t.id);
+                              const next =
+                                event.key === 'ArrowRight'
+                                  ? ids[(index + 1) % ids.length]
+                                  : event.key === 'ArrowLeft'
+                                    ? ids[(index + ids.length - 1) % ids.length]
+                                    : event.key === 'Home'
+                                      ? ids[0]
+                                      : event.key === 'End'
+                                        ? ids[ids.length - 1]
+                                        : null;
+                              if (!next) return;
+                              event.preventDefault();
+                              setTab(next);
+                              event.currentTarget.parentElement
+                                ?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)
+                                ?.focus();
+                            }}
                           >
                             <t.icon size={15} />
                             {t.label}
@@ -505,78 +629,92 @@ function App() {
                         ))}
                       </div>
                       {vm.lastError && <div className="machine-error">{vm.lastError}</div>}
-                      {tab === 'terminal' && <TerminalPanel vm={vm} start={start} busy={busy} />}
-                      {tab === 'files' && (
-                        <FilesPanel vm={vm} notify={(text, error) => setToast({ text, error })} />
-                      )}
-                      {tab === 'snapshots' && (
-                        <div className="content-panel">
-                          <div className="panel-heading">
-                            <div>
-                              <h3>磁盘快照</h3>
-                              <p>保存一个可以回到的时间点。创建与恢复前，请停止发行版。</p>
+                      <div
+                        className="machine-content"
+                        id="machine-content"
+                        role="tabpanel"
+                        aria-labelledby={`tab-${tab}`}
+                      >
+                        {tab === 'terminal' && <TerminalPanel vm={vm} start={start} busy={busy} />}
+                        {tab === 'files' && (
+                          <FilesPanel
+                            key={vm.id}
+                            vm={vm}
+                            notify={(text, error) => setToast({ text, error })}
+                          />
+                        )}
+                        {tab === 'snapshots' && (
+                          <div className="content-panel">
+                            <div className="panel-heading">
+                              <div>
+                                <h3>磁盘快照</h3>
+                                <p>保存一个可以回到的时间点。创建与恢复前，请停止发行版。</p>
+                              </div>
+                              <button
+                                className="secondary compact"
+                                disabled={busy || active(vm)}
+                                onClick={() => {
+                                  setSnapshotName(`快照 ${vm.snapshots.length + 1}`);
+                                  setModal('snapshot');
+                                }}
+                              >
+                                <Plus size={15} />
+                                创建快照
+                              </button>
                             </div>
-                            <button
-                              className="secondary compact"
-                              disabled={busy || active(vm)}
-                              onClick={() => {
-                                setSnapshotName(`快照 ${vm.snapshots.length + 1}`);
-                                setModal('snapshot');
-                              }}
-                            >
-                              <Plus size={15} />
-                              创建快照
-                            </button>
-                          </div>
-                          {vm.snapshots.length ? (
-                            <div className="snapshot-list">
-                              {[...vm.snapshots].reverse().map((s) => (
-                                <div key={s.id}>
-                                  <span className="snapshot-icon">
-                                    <Camera size={19} />
-                                  </span>
-                                  <div>
-                                    <b>{s.name}</b>
-                                    <p>{new Date(s.createdAt).toLocaleString('zh-CN')} · 磁盘状态</p>
+                            {vm.snapshots.length ? (
+                              <div className="snapshot-list">
+                                {[...vm.snapshots].reverse().map((s) => (
+                                  <div key={s.id}>
+                                    <span className="snapshot-icon">
+                                      <Camera size={19} />
+                                    </span>
+                                    <div>
+                                      <b>{s.name}</b>
+                                      <p>{new Date(s.createdAt).toLocaleString('zh-CN')} · 磁盘状态</p>
+                                    </div>
+                                    <button
+                                      className="secondary compact"
+                                      disabled={busy || active(vm)}
+                                      onClick={() => setRestore(s)}
+                                    >
+                                      恢复
+                                      <RefreshCw size={13} />
+                                    </button>
                                   </div>
-                                  <button
-                                    className="secondary compact"
-                                    disabled={busy || active(vm)}
-                                    onClick={() => setRestore(s)}
-                                  >
-                                    恢复
-                                    <RefreshCw size={13} />
-                                  </button>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="panel-empty">
+                                <Camera size={32} />
+                                <h3>为下一次尝试，留个存档</h3>
+                                <p>开始实验前保存磁盘状态，随时从熟悉的位置重新开始。</p>
+                              </div>
+                            )}
+                            <div className="subtle-note">
+                              <ShieldCheck size={16} />
+                              快照保存 Linux 文件系统，不包含正在运行的进程或内存。
                             </div>
-                          ) : (
-                            <div className="panel-empty">
-                              <Camera size={32} />
-                              <h3>为下一次尝试，留个存档</h3>
-                              <p>开始实验前保存磁盘状态，随时从熟悉的位置重新开始。</p>
-                            </div>
-                          )}
-                          <div className="subtle-note">
-                            <ShieldCheck size={16} />
-                            快照保存 Linux 文件系统，不包含正在运行的进程或内存。
                           </div>
-                        </div>
-                      )}
-                      {tab === 'config' && (
-                        <ConfigPanel
-                          key={`${vm.id}-${vm.memoryMiB}-${vm.cpus}-${vm.accelerator}`}
-                          vm={vm}
-                          busy={busy}
-                          save={(config) =>
-                            run(() => api(`/vms/${vm.id}`, 'PATCH', config), '资源配置已保存，下次启动时生效')
-                          }
-                          remove={() => {
-                            setConfirm('');
-                            setModal('delete');
-                          }}
-                        />
-                      )}
+                        )}
+                        {tab === 'config' && (
+                          <ConfigPanel
+                            key={`${vm.id}-${vm.memoryMiB}-${vm.cpus}-${vm.accelerator}`}
+                            vm={vm}
+                            busy={busy}
+                            save={(config) =>
+                              run(
+                                () => api(`/vms/${vm.id}`, 'PATCH', config),
+                                '资源配置已保存，下次启动时生效',
+                              )
+                            }
+                            remove={() => {
+                              setConfirm('');
+                              setModal('delete');
+                            }}
+                          />
+                        )}
+                      </div>
                       <div className="machine-footer">
                         <span>
                           <Cpu size={13} />
@@ -638,8 +776,7 @@ function App() {
               </div>
               <div className="page-foot">
                 <span>
-                  <Flower2 size={14} />
-                  Built for your flow.
+                  <Flower2 size={14} />A little space. A new beginning.
                 </span>
                 <span>PosixLoom 编排 · QEMU 虚拟化 · Alpine Linux</span>
               </div>
@@ -649,7 +786,9 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">A SMALL BEGINNING</div>
+                  <div className="eyebrow">
+                    <Layers size={14} /> THE SEEDS OF SOMETHING NEW
+                  </div>
                   <h1>轻装出发。</h1>
                   <p>共享一份基础镜像，为每个想法创建独立的空间。</p>
                 </div>
@@ -695,7 +834,9 @@ function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <div className="eyebrow">LOCAL BY DESIGN</div>
+                  <div className="eyebrow">
+                    <ShieldCheck size={14} /> ROOTED IN YOUR MACHINE
+                  </div>
                   <h1>你的机器，你的空间。</h1>
                   <p>所有系统和文件都存储在这台电脑上。</p>
                 </div>
@@ -908,19 +1049,26 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
       lineHeight: 1.5,
       scrollback: 4000,
       theme: {
-        background: '#202523',
-        foreground: '#d5dfd5',
-        cursor: '#efa78c',
-        selectionBackground: '#556357',
-        black: '#202523',
-        brightBlack: '#78887e',
-        green: '#aad19b',
-        brightGreen: '#b9dcaa',
-        red: '#ed8e86',
-        yellow: '#e8c98f',
-        blue: '#a0bfd5',
-        cyan: '#9ed0c6',
-        white: '#e2e8de',
+        background: '#26212c',
+        foreground: '#eee6ef',
+        cursor: '#f1b1cb',
+        selectionBackground: '#655168',
+        black: '#26212c',
+        brightBlack: '#aa97b0',
+        green: '#b0d5bb',
+        brightGreen: '#c2e6ca',
+        red: '#ed9ca8',
+        brightRed: '#ffb7c4',
+        yellow: '#e9d1a6',
+        brightYellow: '#f4e0b9',
+        blue: '#adc4ea',
+        brightBlue: '#c3d7f5',
+        magenta: '#d2acdf',
+        brightMagenta: '#e6c2ef',
+        cyan: '#a2d4d5',
+        brightCyan: '#bce6e6',
+        white: '#eee6ef',
+        brightWhite: '#fff5fa',
       },
     });
     const fit = new FitAddon();
@@ -948,7 +1096,11 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
         ready = true;
         setConnection('SSH 已连接');
         resize();
-        term.focus();
+        if (
+          !document.querySelector('dialog[open]') &&
+          (document.activeElement === document.body || ref.current?.contains(document.activeElement))
+        )
+          term.focus();
       }
       if (msg.type === 'error') {
         term.writeln(`\r\n连接失败：${msg.data}`);
@@ -981,7 +1133,9 @@ function TerminalPanel({ vm, start, busy }: { vm: VMView; start: () => unknown; 
           <span>{vm.status === 'running' ? `root@${vm.name}: ~` : 'Linux 启动控制台'}</span>
         </div>
         <div>
-          <span className="terminal-connection">{vm.status === 'stopped' ? '离线' : connection}</span>
+          <span className="terminal-connection" role="status">
+            {vm.status === 'stopped' ? '离线' : connection}
+          </span>
           <button aria-label="清空终端" title="清空终端" onClick={() => terminal.current?.clear()}>
             <Trash2 size={14} />
           </button>
