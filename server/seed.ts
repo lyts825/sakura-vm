@@ -1,0 +1,135 @@
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
+
+const field = (b: Buffer) => {
+  const n = Buffer.alloc(4);
+  n.writeUInt32BE(b.length);
+  return Buffer.concat([n, b]);
+};
+export function createSshKey() {
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 3072 });
+  const jwk = publicKey.export({ format: 'jwk' });
+  const mpint = (s: string) => {
+    const b = Buffer.from(s, 'base64url');
+    return field(b[0] & 128 ? Buffer.concat([Buffer.from([0]), b]) : b);
+  };
+  const publicText =
+    'ssh-rsa ' +
+    Buffer.concat([field(Buffer.from('ssh-rsa')), mpint(jwk.e!), mpint(jwk.n!)]).toString('base64') +
+    ' sakura';
+  return { privateText: privateKey.export({ type: 'pkcs1', format: 'pem' }).toString(), publicText };
+}
+
+// Minimal ISO 9660 Level 2 seed. Linux's default ISO name mapping lowercases
+// USER-DATA.;1 and strips the version, exposing the names NoCloud expects.
+export function seedIso(files: Record<string, string>) {
+  const sector = 2048;
+  const entries = Object.entries(files).map(([name, text]) => ({
+    name: `${name.toUpperCase()}.;1`,
+    data: Buffer.from(text),
+    block: 0,
+  }));
+  let next = 21;
+  for (const e of entries) {
+    e.block = next;
+    next += Math.ceil(e.data.length / sector) || 1;
+  }
+  const iso = Buffer.alloc(next * sector);
+  const both32 = (b: Buffer, o: number, v: number) => {
+    b.writeUInt32LE(v, o);
+    b.writeUInt32BE(v, o + 4);
+  };
+  const both16 = (b: Buffer, o: number, v: number) => {
+    b.writeUInt16LE(v, o);
+    b.writeUInt16BE(v, o + 2);
+  };
+  function record(name: Buffer, block: number, size: number, dir = false) {
+    const b = Buffer.alloc(33 + name.length + (name.length % 2 === 0 ? 1 : 0));
+    b[0] = b.length;
+    both32(b, 2, block);
+    both32(b, 10, size);
+    Buffer.from([126, 1, 1, 0, 0, 0, 0]).copy(b, 18);
+    b[25] = dir ? 2 : 0;
+    both16(b, 28, 1);
+    b[32] = name.length;
+    name.copy(b, 33);
+    return b;
+  }
+  const pvd = iso.subarray(16 * sector, 17 * sector);
+  pvd[0] = 1;
+  pvd.write('CD001', 1);
+  pvd[6] = 1;
+  pvd.fill(32, 8, 72);
+  pvd.write('SAKURA', 8);
+  pvd.write('CIDATA', 40);
+  both32(pvd, 80, next);
+  both16(pvd, 120, 1);
+  both16(pvd, 124, 1);
+  both16(pvd, 128, sector);
+  both32(pvd, 132, 10);
+  pvd.writeUInt32LE(18, 140);
+  pvd.writeUInt32BE(19, 148);
+  record(Buffer.from([0]), 20, sector, true).copy(pvd, 156);
+  pvd.fill(32, 190, 813);
+  pvd[881] = 1;
+  for (const off of [813, 830, 847, 864]) pvd.write('2026010100000000', off);
+  const end = iso.subarray(17 * sector);
+  end[0] = 255;
+  end.write('CD001', 1);
+  end[6] = 1;
+  for (const [index, big] of [
+    [18, false],
+    [19, true],
+  ] as const) {
+    const path = iso.subarray(index * sector);
+    path[0] = 1;
+    if (big) {
+      path.writeUInt32BE(20, 2);
+      path.writeUInt16BE(1, 6);
+    } else {
+      path.writeUInt32LE(20, 2);
+      path.writeUInt16LE(1, 6);
+    }
+  }
+  let at = 20 * sector;
+  for (const b of [
+    record(Buffer.from([0]), 20, sector, true),
+    record(Buffer.from([1]), 20, sector, true),
+    ...entries.map((e) => record(Buffer.from(e.name), e.block, e.data.length)),
+  ]) {
+    b.copy(iso, at);
+    at += b.length;
+  }
+  for (const e of entries) e.data.copy(iso, e.block * sector);
+  return iso;
+}
+
+export function userData(name: string, publicKey: string) {
+  return `#!/bin/sh
+set -eu
+hostname ${name}
+printf '%s\n' '${name}' > /etc/hostname
+mkdir -p /root/.ssh /workspace
+chmod 700 /root/.ssh
+cat > /root/.ssh/authorized_keys <<'SAKURA_KEY'
+${publicKey}
+SAKURA_KEY
+chmod 600 /root/.ssh/authorized_keys
+# Public-key authentication only. No shared or blank login password.
+sed -i '/^PermitRootLogin /d; /^PasswordAuthentication /d; /^Subsystem sftp /d' /etc/ssh/sshd_config
+printf '\nPermitRootLogin prohibit-password\nPasswordAuthentication no\nSubsystem sftp internal-sftp\n' >> /etc/ssh/sshd_config
+# Unlock the account with a random, unguessable crypt value for public-key login.
+sed -i 's|^root:[^:]*:|root:$6$sakura$${randomBytes(64).toString('base64').replaceAll('+', '.').replaceAll('=', '')}:|' /etc/shadow
+cat > /etc/profile.d/sakura.sh <<'SAKURA_PROFILE'
+export TERM=xterm-256color
+export PS1='\\[\\033[38;5;209m\\]\\u@\\h\\[\\033[0m\\]:\\w\\$ '
+SAKURA_PROFILE
+cat > /etc/motd <<'SAKURA_MOTD'
+
+  Welcome to Sakura.
+  Your Linux workspace is ready.  /workspace
+
+SAKURA_MOTD
+rc-service sshd restart
+printf 'SAKURA_READY\n' > /dev/ttyS0
+`;
+}

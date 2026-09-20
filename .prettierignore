@@ -1,0 +1,7 @@
+.data
+.tools
+.vendor
+dist
+node_modules
+artifacts
+package-lock.json

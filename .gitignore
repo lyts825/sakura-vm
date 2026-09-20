@@ -1,0 +1,26 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+.vendor/
+.tools/
+
+# Local VM state, images, and test artifacts
+.data/
+artifacts/
+*.qcow
+*.qcow2
+*.img
+*.iso
+*.vhd
+*.vhdx
+*.vmdk
+*.log
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+id_rsa
+id_ed25519
+*.key
+*.pem
