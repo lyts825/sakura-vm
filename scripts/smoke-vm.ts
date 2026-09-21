@@ -157,6 +157,29 @@ try {
   }
   await machines.writeGuestFile(id, '/workspace/persistence.txt', 'before snapshot\n');
   assert.equal(await machines.readGuestFile(id, '/workspace/persistence.txt'), 'before snapshot\n');
+  await assert.rejects(
+    machines.writeGuestFile(id, '/workspace/persistence.txt', 'must not overwrite', false),
+    /已存在/,
+  );
+  await assert.rejects(
+    machines.writeGuestFile(id, '/workspace/persistence.txt', '中'.repeat(Math.ceil(1024 ** 2 / 3))),
+    /1 MiB/,
+  );
+  assert.equal(await machines.readGuestFile(id, '/workspace/persistence.txt'), 'before snapshot\n');
+  const textPath = '/workspace/text-editor.txt';
+  const textContent = '\uFEFF中文 🌸\r\n';
+  await machines.writeGuestFile(id, textPath, '', false);
+  assert.equal(await machines.readGuestFile(id, textPath), '');
+  assert.equal((await machines.exec(id, `chown 1000:1000 ${textPath} && chmod 660 ${textPath}`)).code, 0);
+  await machines.writeGuestFile(id, textPath, textContent);
+  assert.equal(await machines.readGuestFile(id, textPath), textContent);
+  assert.equal((await machines.exec(id, `stat -c %u:%g:%a ${textPath}`)).stdout.trim(), '1000:1000:660');
+  assert.equal(
+    (await machines.exec(id, String.raw`printf '\377\376\101' > /workspace/invalid-utf8.txt`)).code,
+    0,
+  );
+  await assert.rejects(machines.readGuestFile(id, '/workspace/invalid-utf8.txt'), /UTF-8/);
+  console.log('Text editor create protection, UTF-8 validation, byte limit and atomic save OK');
   console.log('SFTP OK', await machines.files(id, '/workspace'));
   await assert.rejects(machines.snapshot(id, 'unsafe'), /停止/);
   await machines.stop(id);

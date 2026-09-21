@@ -7,6 +7,7 @@ import { AppError, guestPath } from './model.ts';
 import type { Machines } from './machines.ts';
 
 export const MAX_TRANSFER = 2 * 1024 ** 3;
+export const MAX_TEXT_BYTES = 1024 ** 2;
 export const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 export const ftpStat = (ftp: SFTPWrapper, path: string) =>
   new Promise<Stats | null>((resolve, reject) =>
@@ -49,6 +50,15 @@ export class Files {
           }),
           ftp.createWriteStream(temp, { flags: 'wx', mode: existing?.mode || 0o644 }),
         );
+        if (existing) {
+          await new Promise<void>((res, rej) =>
+            ftp.chown(temp, existing.uid, existing.gid, (err) => (err ? rej(err) : res())),
+          );
+          // Apply the full permissions after chown, which can clear setuid/setgid bits.
+          await new Promise<void>((res, rej) =>
+            ftp.chmod(temp, existing.mode & 0o7777, (err) => (err ? rej(err) : res())),
+          );
+        }
         if (overwrite)
           await new Promise<void>((res, rej) =>
             ftp.ext_openssh_rename(temp, path, (err) => (err ? rej(err) : res())),

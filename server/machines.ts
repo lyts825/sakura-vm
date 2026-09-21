@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { createConnection, type Socket } from 'node:net';
 import { Client, type SFTPWrapper } from 'ssh2';
 import { StringDecoder } from 'node:string_decoder';
+import { isUtf8 } from 'node:buffer';
+import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   AppError,
@@ -20,6 +22,7 @@ import {
 } from './model.ts';
 import { createSshKey, seedIso, userData, metaData, bootSetup, cloudUserData, cloudNetwork } from './seed.ts';
 import { distroInfo } from './images.ts';
+import { Files, MAX_TEXT_BYTES } from './files.ts';
 import { freePort, qmp } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 
@@ -557,36 +560,35 @@ export class Machines extends EventEmitter {
     );
   }
   async readGuestFile(id: string, path: string) {
-    return this.sftp(
-      id,
-      (ftp) =>
-        new Promise<string>((res, rej) => {
-          let text = '';
-          let size = 0;
-          const decoder = new StringDecoder('utf8');
-          const stream = ftp.createReadStream(guestPath(path));
-          stream.on('data', (data: Buffer) => {
-            size += data.length;
-            if (size > 1024 * 1024) stream.destroy(new AppError('仅支持预览 1 MiB 以内的文本文件'));
-            else if (data.includes(0)) stream.destroy(new AppError('二进制文件不能作为文本编辑'));
-            else text += decoder.write(data);
-          });
-          stream.on('error', rej);
-          stream.on('end', () => res(text + decoder.end()));
-        }),
-    );
+    return this.sftp(id, async (ftp) => {
+      const bytes = await new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        let ended = false;
+        const stream = ftp.createReadStream(guestPath(path));
+        stream.on('data', (data: Buffer) => {
+          size += data.length;
+          if (size > MAX_TEXT_BYTES) stream.destroy(new AppError('仅支持预览 1 MiB 以内的文本文件'));
+          else if (data.includes(0)) stream.destroy(new AppError('二进制文件不能作为文本编辑'));
+          else chunks.push(data);
+        });
+        stream.on('error', reject);
+        stream.on('end', () => {
+          ended = true;
+        });
+        // SFTP closes its remote handle after EOF; keep SSH alive until that completes.
+        stream.on('close', () =>
+          ended ? resolve(Buffer.concat(chunks)) : reject(new AppError('文件读取未完成')),
+        );
+      });
+      if (!isUtf8(bytes)) throw new AppError('文件不是有效的 UTF-8 文本，请下载原文件处理');
+      return bytes.toString('utf8');
+    });
   }
-  async writeGuestFile(id: string, path: string, content: string) {
-    return this.sftp(
-      id,
-      (ftp) =>
-        new Promise<void>((res, rej) => {
-          const stream = ftp.createWriteStream(guestPath(path));
-          stream.on('error', rej);
-          stream.on('close', () => res());
-          stream.end(content);
-        }),
-    );
+  async writeGuestFile(id: string, path: string, content: string, overwrite = true) {
+    const bytes = Buffer.from(content, 'utf8');
+    if (bytes.length > MAX_TEXT_BYTES) throw new AppError('仅支持保存 1 MiB 以内的文本文件', 413);
+    await new Files(this).upload(id, path, Readable.from(bytes), overwrite);
   }
   async stop(id: string, force = false) {
     return this.locked(id, async () => this.stopInternal(id, force));

@@ -13,6 +13,7 @@ import { Machines } from './machines.ts';
 import { Desktops } from './desktop.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
 import { Features } from './features.ts';
+import { MAX_TEXT_BYTES } from './files.ts';
 import type { ClientChannel } from 'ssh2';
 
 const token = randomBytes(32).toString('hex');
@@ -122,10 +123,14 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
       });
     if (req.method === 'PUT' && route[3] === 'file') {
       const value = z
-        .object({ path: z.string(), content: z.string().max(1048576) })
+        .object({
+          path: z.string(),
+          content: z.string().max(MAX_TEXT_BYTES),
+          overwrite: z.boolean().default(true),
+        })
         .strict()
         .parse(await body(req));
-      await machines.writeGuestFile(id, guestPath(value.path), value.content);
+      await machines.writeGuestFile(id, guestPath(value.path), value.content, value.overwrite);
       return send(res, { ok: true });
     }
     if (req.method === 'POST' && route[3] === 'snapshots' && route.length === 4) {

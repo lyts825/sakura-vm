@@ -289,12 +289,17 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
             spellCheck={false}
             onChange={(e) => setEdit({ ...edit, content: e.target.value })}
           />
+          <p className="subtle-note">支持 1 MiB 以内的 UTF-8 文本；新建文件不会覆盖同名文件。</p>
           <button
             className="primary compact"
             disabled={action.busy}
             onClick={() =>
               void action.run(async () => {
-                await request(`/vms/${vm.id}/file`, 'PUT', { path: edit.path, content: edit.content });
+                await request(`/vms/${vm.id}/file`, 'PUT', {
+                  path: edit.path,
+                  content: edit.content,
+                  overwrite: !edit.fresh,
+                });
                 setEdit(null);
                 await refresh();
               }, '文本已保存')
