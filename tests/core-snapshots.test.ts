@@ -41,6 +41,32 @@ async function fixture(t: TestContext) {
   return { machines, id, dir, commands };
 }
 
+test('disk growth creates a recovery snapshot and restores its original capacity metadata', async (t) => {
+  const { machines, id, commands } = await fixture(t);
+  await machines.resize(id, 16);
+  assert.equal(machines.get(id).diskGiB, 16);
+  assert.ok(machines.get(id).pendingResize);
+  const shot = machines.get(id).snapshots[0];
+  assert.equal(shot.diskGiB, 8);
+  assert.equal(commands[0][0], 'snapshot');
+  assert.equal(commands[1][0], 'resize');
+  await assert.rejects(machines.resize(id, 4), /仅支持扩容/);
+  await machines.restore(id, shot.id);
+  assert.equal(machines.get(id).diskGiB, 8);
+  assert.equal(machines.get(id).pendingResize, false);
+});
+
+test('disk growth preserves legacy snapshot capacity across multiple expansions', async (t) => {
+  const { machines, id } = await fixture(t);
+  const legacy = { id: randomUUID(), name: 'legacy', createdAt: new Date().toISOString() };
+  machines.get(id).snapshots.push(legacy);
+  await machines.resize(id, 16);
+  await machines.resize(id, 24);
+  assert.equal(machines.get(id).snapshots.find((shot) => shot.id === legacy.id)?.diskGiB, 8);
+  await machines.restore(id, legacy.id);
+  assert.equal(machines.get(id).diskGiB, 8);
+});
+
 test('restoring a pre-first-boot snapshot restores the matching controller and pending identity', async (t) => {
   const { machines, id, dir } = await fixture(t);
   const pending = JSON.stringify({ privateText: 'new-private-key', publicText: 'new-public-key' });

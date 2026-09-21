@@ -1,11 +1,23 @@
-import test, { type TestContext } from 'node:test';
+import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
 import { createServer, type ServerResponse } from 'node:http';
-import { DownloadTickets, Downloads } from '../server/downloads.ts';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import type { Downloads as DownloadsType } from '../server/downloads.ts';
 import type { Machines } from '../server/machines.ts';
 import type { Files } from '../server/files.ts';
 import type { Bundles } from '../server/bundles.ts';
+
+const root = await mkdtemp(join(tmpdir(), 'sakura-downloads-'));
+process.env.SAKURA_DATA_DIR = root;
+const { DownloadTickets, Downloads } = await import('../server/downloads.ts');
+after(async () => {
+  assert.equal(dirname(root), resolve(tmpdir()));
+  assert.ok(basename(root).startsWith('sakura-downloads-'));
+  await rm(root, { recursive: true, force: true });
+});
 
 test('download tickets are single-use, expire, bind one target and bound abandoned requests', () => {
   let now = 1000;
@@ -51,7 +63,7 @@ function fixture() {
   } as unknown as Bundles;
   return { bytes, machines, files, downloads: new Downloads(machines, files, bundles) };
 }
-async function server(t: TestContext, downloads: Downloads) {
+async function server(t: TestContext, downloads: DownloadsType) {
   const http = createServer(async (req, res) => {
     try {
       if (!(await downloads.route(req, res, new URL(req.url!, 'http://localhost')))) res.writeHead(404).end();

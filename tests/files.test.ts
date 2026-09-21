@@ -6,10 +6,31 @@ import { createServer, request } from 'node:http';
 import type { SFTPWrapper } from 'ssh2';
 import { Machines } from '../server/machines.ts';
 import type { Engine } from '../server/runtime.ts';
-import { Files } from '../server/files.ts';
+import { Files, textVersion } from '../server/files.ts';
 
 const path = '/workspace/notes.txt';
 const original = Buffer.from('原始内容\n');
+
+test('optimistic editing rejects stale saves without altering the remote file', async () => {
+  const { machines, files } = fixture();
+  await assert.rejects(
+    machines.writeGuestFile('vm', path, 'replacement', true, textVersion('outdated')),
+    /其他程序修改/,
+  );
+  assert.deepEqual(files.get(path), original);
+  assert.equal(files.size, 1);
+  await machines.writeGuestFile('vm', path, 'replacement', true, textVersion(original.toString()));
+  assert.equal(files.get(path)?.toString(), 'replacement');
+});
+test('editing detects external changes made while the replacement is uploading', async () => {
+  const { machines, files } = fixture({ onWrite: () => files.set(path, Buffer.from('external edit')) });
+  await assert.rejects(
+    machines.writeGuestFile('vm', path, 'replacement', true, textVersion(original.toString())),
+    /其他程序修改/,
+  );
+  assert.equal(files.get(path)?.toString(), 'external edit');
+  assert.equal(files.size, 1);
+});
 function fixture(
   options: {
     failWrite?: boolean;

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { Readable, Writable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -8,6 +8,7 @@ import type { Machines } from './machines.ts';
 
 export const MAX_TRANSFER = 2 * 1024 ** 3;
 export const MAX_TEXT_BYTES = 1024 ** 2;
+export const textVersion = (content: string) => createHash('sha256').update(content, 'utf8').digest('hex');
 export const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 export const ftpStat = (ftp: SFTPWrapper, path: string) =>
   new Promise<Stats | null>((resolve, reject) =>
@@ -40,7 +41,14 @@ export class Files {
   info(id: string, path: string) {
     return this.machines.sftp(id, (ftp) => this.downloadInfo(ftp, path));
   }
-  async upload(id: string, path: string, source: Readable, overwrite = false, signal?: AbortSignal) {
+  async upload(
+    id: string,
+    path: string,
+    source: Readable,
+    overwrite = false,
+    signal?: AbortSignal,
+    expectedVersion?: string,
+  ) {
     signal?.throwIfAborted();
     path = mutablePath(path);
     const connection = new AbortController();
@@ -62,6 +70,26 @@ export class Files {
           transferSignal?.throwIfAborted();
           if (existing && (!overwrite || !existing.isFile()))
             throw new AppError('目标已存在；需要明确选择覆盖普通文件', 409);
+          const checkVersion = async () => {
+            if (expectedVersion === undefined) return;
+            const current = await ftpStat(ftp, path);
+            if (!current?.isFile() || current.size > MAX_TEXT_BYTES)
+              throw new AppError('文件已被修改或删除，请比较最新版本', 409);
+            const digest = createHash('sha256');
+            await pipeline(
+              ftp.createReadStream(path),
+              new Writable({
+                write(chunk, _encoding, cb) {
+                  digest.update(chunk);
+                  cb();
+                },
+              }),
+              { signal: transferSignal },
+            );
+            if (digest.digest('hex') !== expectedVersion)
+              throw new AppError('文件已被其他程序修改，请比较最新版本', 409);
+          };
+          await checkVersion();
           const temp = posix.join(posix.dirname(path), `.sakura-upload-${randomUUID()}`);
           let bytes = 0;
           try {
@@ -77,6 +105,7 @@ export class Files {
               { signal: transferSignal },
             );
             if (existing) await preserveFileMetadata(ftp, temp, existing);
+            await checkVersion();
             transferSignal?.throwIfAborted();
             if (overwrite)
               await new Promise<void>((res, rej) =>

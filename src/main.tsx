@@ -53,6 +53,8 @@ import {
 import { FileBrowser } from './FileBrowser';
 import { TerminalWorkspace } from './TerminalWorkspace';
 import { ResponseOrder } from './request-order';
+import { mayLeaveEditor } from './file-editor-state';
+import { TasksPanel, LibraryPanel, MaintenancePanel } from './ManagementPanels';
 import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
@@ -178,9 +180,18 @@ function Modal({
 function App() {
   const [vms, setVms] = useState<VMView[]>([]),
     [system, setSystem] = useState<System | null>(null);
-  const [selected, setSelected] = useState(''),
-    [page, setPage] = useState('workspace'),
-    [tab, setTab] = useState('terminal');
+  const [selected, setSelectedRaw] = useState(''),
+    [page, setPageRaw] = useState('workspace'),
+    [tab, setTabRaw] = useState('terminal');
+  const setSelected = async (value: string) => {
+    if (value === selected || (await mayLeaveEditor())) setSelectedRaw(value);
+  };
+  const setPage = async (value: string) => {
+    if (value === page || (await mayLeaveEditor())) setPageRaw(value);
+  };
+  const setTab = async (value: string) => {
+    if (value === tab || (await mayLeaveEditor())) setTabRaw(value);
+  };
   const [loading, setLoading] = useState(true),
     [offline, setOffline] = useState(''),
     [busy, setBusy] = useState(false),
@@ -242,7 +253,7 @@ function App() {
       setVms(data);
       setSystem(sys);
       setOffline('');
-      setSelected((current) => (data.some((v) => v.id === current) ? current : data[0]?.id || ''));
+      setSelectedRaw((current) => (data.some((v) => v.id === current) ? current : data[0]?.id || ''));
     } catch (error) {
       if (refreshOrder.current.accept(version)) throw error;
     }
@@ -313,11 +324,16 @@ function App() {
   const stop = () =>
     vm && run(() => api(`/vms/${vm.id}/stop`, 'POST', { force: false }), '发行版已停止，磁盘数据已保留');
   const running = vms.filter((v) => v.status === 'running').length;
-  const visibleVms = vms.filter(
-    (v) =>
-      (statusFilter === 'all' || v.status === statusFilter) &&
-      v.name.toLowerCase().includes(query.trim().toLowerCase()),
-  );
+  const visibleVms = vms
+    .filter(
+      (v) =>
+        (statusFilter === 'all' || v.status === statusFilter) &&
+        [v.name, v.organization?.group || '', ...(v.organization?.tags || [])]
+          .join(' ')
+          .toLowerCase()
+          .includes(query.trim().toLowerCase()),
+    )
+    .sort((a, b) => Number(!!b.organization?.favorite) - Number(!!a.organization?.favorite));
   const allocated = vms.filter(active).reduce((sum, v) => sum + v.memoryMiB, 0);
   const engineState = offline ? 'error' : system?.nativeHost ? 'running' : 'starting';
   return (
@@ -335,6 +351,8 @@ function App() {
           {[
             { id: 'workspace', icon: TerminalSquare, name: '工作空间' },
             { id: 'images', icon: Layers, name: '镜像库' },
+            { id: 'tasks', icon: CircleDot, name: '任务中心' },
+            { id: 'library', icon: Boxes, name: '实例管理' },
             { id: 'settings', icon: Settings2, name: '系统设置' },
           ].map((n) => (
             <button
@@ -409,7 +427,17 @@ function App() {
           <div>
             <span>Sakura</span>
             <ChevronRight size={13} />
-            <b>{page === 'workspace' ? '工作空间' : page === 'images' ? '镜像库' : '系统设置'}</b>
+            <b>
+              {
+                {
+                  workspace: '工作空间',
+                  images: '镜像库',
+                  tasks: '任务中心',
+                  library: '实例管理',
+                  settings: '系统设置',
+                }[page]
+              }
+            </b>
           </div>
           <div className="topbar-actions">
             <span className="local-badge">
@@ -429,6 +457,8 @@ function App() {
           </div>
         </header>
         <main>
+          {page === 'tasks' && <TasksPanel request={api} vms={vms} />}
+          {page === 'library' && <LibraryPanel request={api} vms={vms} refresh={refresh} />}
           {offline && (
             <div className="error-banner">
               连接出现问题：{offline}
@@ -593,7 +623,10 @@ function App() {
                         <div className="distro-card-top">
                           <Alpine small />
                           <div className="distro-identity">
-                            <h3 title={v.name}>{v.name}</h3>
+                            <h3 title={v.name}>
+                              {v.organization?.favorite ? '★ ' : ''}
+                              {v.name}
+                            </h3>
                             <p>{distroName(v.distro)}</p>
                           </div>
                           {vm?.id === v.id ? <CircleDot size={16} /> : <ChevronRight size={15} />}
@@ -730,6 +763,7 @@ function App() {
                           { id: 'services', label: '服务', icon: Network },
                           { id: 'sync', label: '同步', icon: RefreshCw },
                           { id: 'snapshots', label: '快照', icon: Camera },
+                          { id: 'maintenance', label: '维护', icon: ShieldCheck },
                           { id: 'config', label: '配置', icon: Settings2 },
                         ].map((t) => (
                           <button
@@ -752,6 +786,7 @@ function App() {
                                 'services',
                                 'sync',
                                 'snapshots',
+                                'maintenance',
                                 'config',
                               ];
                               const index = ids.indexOf(t.id);
@@ -826,6 +861,15 @@ function App() {
                         )}
                         {tab === 'snapshots' && (
                           <SnapshotsPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                        )}
+                        {tab === 'maintenance' && (
+                          <MaintenancePanel
+                            key={vm.id}
+                            vm={vm}
+                            request={api}
+                            token={token}
+                            refresh={refresh}
+                          />
                         )}
                         {tab === 'config' && (
                           <ConfigPanel

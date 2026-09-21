@@ -153,6 +153,31 @@ async function finished(sync: InstanceType<typeof FolderSync>, id: string) {
   return sync.jobs.view(id)!;
 }
 
+test('sync preview is read-only and stale previews cannot overwrite subsequent changes', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await writeFile(join(host, 'notes.txt'), 'host edit');
+  const preview = await sync.preview(id);
+  assert.deepEqual(preview.changes, [{ path: 'notes.txt', action: 'conflict' }]);
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'original');
+  await assert.rejects(readFile(join(vmDir(id), 'sync-state.json')), { code: 'ENOENT' });
+  await writeFile(join(host, 'notes.txt'), 'newer host edit');
+  await sync.run(id, 'both', preview.token, { 'notes.txt': 'pull' });
+  assert.match((await finished(sync, id)).error!, /重新预览/);
+  assert.equal(await readFile(join(host, 'notes.txt'), 'utf8'), 'newer host edit');
+});
+test('per-file conflict resolution keeps both versions on both sides', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await writeFile(join(host, 'notes.txt'), 'host edit');
+  const preview = await sync.preview(id);
+  await sync.run(id, 'both', preview.token, { 'notes.txt': 'both' });
+  const result = await finished(sync, id);
+  assert.equal(result.status, 'done', result.error);
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'host edit');
+  const backup = [...remote.keys()].find((v) => v.includes('.linux-conflict-'))!;
+  assert.equal(remote.get(backup)!.bytes.toString(), 'original');
+  assert.equal(await readFile(join(host, backup.split('/').at(-1)!), 'utf8'), 'original');
+});
+
 test('folder sync preserves guest ownership and full permissions when replacing an existing file', async (t) => {
   const { id, host, remote, sync } = await fixture(t);
   await writeFile(join(host, 'notes.txt'), 'updated');
@@ -221,7 +246,7 @@ test('cancelled folder uploads clean their temporary file through the live SFTP 
   await writeFile(join(host, 'notes.txt'), 'updated');
   await sync.run(id, 'push');
   const result = await finished(sync, id);
-  assert.equal(result.status, 'error');
+  assert.equal(result.status, 'cancelled');
   assert.equal(remote.size, 1);
   assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'original');
 });

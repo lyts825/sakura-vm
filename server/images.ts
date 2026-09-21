@@ -49,7 +49,7 @@ export function checksumFor(text: string, filename: string) {
   throw new AppError('官方校验清单中未找到镜像', 502);
 }
 export class Images {
-  jobs = new Jobs();
+  jobs = new Jobs('images');
   list() {
     return Object.entries(distributions).map(([id, info]) => ({
       id,
@@ -64,56 +64,62 @@ export class Images {
     const info = distroInfo(id);
     if (!info.url) throw new AppError('Alpine 镜像请通过 npm run setup 准备');
     if (existsSync(info.file)) throw new AppError('镜像已准备好');
-    return this.jobs.start(id, async (log, signal) => {
-      const timeout = AbortSignal.any([signal, AbortSignal.timeout(30 * 60 * 1000)]);
-      await mkdir(dirname(info.file), { recursive: true });
-      const temp = `${info.file}.${randomUUID()}.part`;
-      try {
-        log('读取官方校验清单…\n');
-        const sums = await fetch(info.sums, { signal: timeout });
-        if (!sums.ok) throw new Error(`校验清单下载失败：${sums.status}`);
-        const expected = checksumFor(await sums.text(), info.url.split('/').at(-1)!);
-        const response = await fetch(info.url, { signal: timeout });
-        if (!response.ok || !response.body) throw new Error(`镜像下载失败：${response.status}`);
-        const hash = createHash(info.algorithm);
-        let size = 0,
-          reported = 0;
-        await pipeline(
-          Readable.fromWeb(response.body as any),
-          new Transform({
-            transform(chunk, _encoding, cb) {
-              size += chunk.length;
-              if (size > 4 * 1024 ** 3) return cb(new Error('镜像超过 4 GiB'));
-              hash.update(chunk);
-              if (size - reported >= 32 * 1024 ** 2) {
-                reported = size;
-                log(`已下载 ${Math.round(size / 1024 ** 2)} MiB\n`);
-              }
-              cb(null, chunk);
-            },
-          }),
-          createWriteStream(temp, { flags: 'wx' }),
-          { signal: timeout },
-        );
-        if (hash.digest('hex') !== expected) throw new Error('镜像校验失败，请重试');
-        await rename(temp, info.file);
-        await writeFile(
-          `${info.file}.source.json`,
-          JSON.stringify(
-            {
-              url: info.url,
-              algorithm: info.algorithm,
-              checksum: expected,
-              downloadedAt: new Date().toISOString(),
-            },
-            null,
-            2,
-          ),
-        );
-        log('校验通过，镜像已就绪。\n');
-      } finally {
-        await rm(temp, { force: true });
-      }
-    });
+    return this.jobs.start(
+      id,
+      async (log, signal, update) => {
+        const timeout = AbortSignal.any([signal, AbortSignal.timeout(30 * 60 * 1000)]);
+        await mkdir(dirname(info.file), { recursive: true });
+        const temp = `${info.file}.${randomUUID()}.part`;
+        try {
+          log('读取官方校验清单…\n');
+          const sums = await fetch(info.sums, { signal: timeout });
+          if (!sums.ok) throw new Error(`校验清单下载失败：${sums.status}`);
+          const expected = checksumFor(await sums.text(), info.url.split('/').at(-1)!);
+          const response = await fetch(info.url, { signal: timeout });
+          if (!response.ok || !response.body) throw new Error(`镜像下载失败：${response.status}`);
+          const hash = createHash(info.algorithm);
+          const total = Number(response.headers.get('content-length'));
+          let size = 0,
+            reported = 0;
+          await pipeline(
+            Readable.fromWeb(response.body as any),
+            new Transform({
+              transform(chunk, _encoding, cb) {
+                size += chunk.length;
+                if (size > 4 * 1024 ** 3) return cb(new Error('镜像超过 4 GiB'));
+                hash.update(chunk);
+                if (size - reported >= 32 * 1024 ** 2) {
+                  reported = size;
+                  log(`已下载 ${Math.round(size / 1024 ** 2)} MiB\n`);
+                  update('下载镜像', total > 0 ? (size / total) * 95 : undefined);
+                }
+                cb(null, chunk);
+              },
+            }),
+            createWriteStream(temp, { flags: 'wx' }),
+            { signal: timeout },
+          );
+          if (hash.digest('hex') !== expected) throw new Error('镜像校验失败，请重试');
+          await rename(temp, info.file);
+          await writeFile(
+            `${info.file}.source.json`,
+            JSON.stringify(
+              {
+                url: info.url,
+                algorithm: info.algorithm,
+                checksum: expected,
+                downloadedAt: new Date().toISOString(),
+              },
+              null,
+              2,
+            ),
+          );
+          log('校验通过，镜像已就绪。\n');
+        } finally {
+          await rm(temp, { force: true });
+        }
+      },
+      { title: `下载 ${info.name}`, action: 'prepare' },
+    );
   }
 }

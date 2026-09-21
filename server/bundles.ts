@@ -202,7 +202,16 @@ export class Bundles {
         const project = await this.project(id);
         signal?.throwIfAborted();
         return await this.machines.adopt(
-          { name, memoryMiB, cpus, diskGiB, accelerator, distro, template, forwards: [] },
+          {
+            name,
+            memoryMiB,
+            cpus,
+            diskGiB: snapshot ? vm.snapshots.find((s) => s.id === snapshot)?.diskGiB || diskGiB : diskGiB,
+            accelerator,
+            distro,
+            template,
+            forwards: [],
+          },
           disk,
           identity.key,
           identity.seed,

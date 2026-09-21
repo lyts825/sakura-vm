@@ -6,6 +6,7 @@ import { AppError, guestPath } from './model.ts';
 import type { Machines } from './machines.ts';
 import type { Files } from './files.ts';
 import type { Bundles } from './bundles.ts';
+import { Jobs } from './jobs.ts';
 
 export const downloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('file'), path: z.string() }).strict(),
@@ -38,6 +39,7 @@ export class DownloadTickets {
 }
 
 export class Downloads {
+  jobs = new Jobs('transfers');
   private tickets = new DownloadTickets();
   private active = new Map<AbortController, Promise<void>>();
   private closed = false;
@@ -89,7 +91,25 @@ export class Downloads {
       abort.signal.throwIfAborted();
       if (target.type === 'file')
         await this.files.download(target.id, target.path, res, headers, abort.signal);
-      else await this.bundles.export(target.id, res, headers, abort.signal);
+      else
+        await this.jobs.track(
+          target.id,
+          async (log, signal, update) => {
+            log('正在生成导出包…\n');
+            update('生成磁盘与校验清单');
+            await this.bundles.export(
+              target.id,
+              res,
+              () => {
+                update('传输到浏览器');
+                headers();
+              },
+              signal,
+            );
+          },
+          { title: '导出实例', vmId: target.id, action: 'export' },
+          abort.signal,
+        );
     })();
     this.active.set(abort, work);
     try {
@@ -104,5 +124,6 @@ export class Downloads {
     this.tickets.clear();
     for (const abort of this.active.keys()) abort.abort();
     await Promise.allSettled(this.active.values());
+    await this.jobs.close();
   }
 }

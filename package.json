@@ -15,6 +15,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:vm": "tsx scripts/smoke-vm.ts",
     "test:features": "tsx scripts/smoke-features.ts",
+    "test:management": "tsx scripts/smoke-management.ts",
     "sakura": "node scripts/cli.mjs"
   },
   "dependencies": {

@@ -60,7 +60,7 @@ export async function executeProjectAction({
   }
   // A boot or installation may finish after the panel has gone away. Never
   // submit that panel's old configuration or start a new job after cancellation.
-  await request(`/vms/${vm.id}/project`, 'PUT', project, signal);
+  if (kind !== 'stop') await request(`/vms/${vm.id}/project`, 'PUT', project, signal);
   signal.throwIfAborted();
   await request(`/vms/${vm.id}/project`, 'POST', { action: kind }, signal);
 }

@@ -15,7 +15,8 @@ import {
 import type { VMView, VMConfig, Snapshot } from '../server/model';
 import type { JobView } from '../server/jobs';
 import type { Project } from '../server/workspaces';
-import type { SyncConfig } from '../server/sync';
+import type { SyncConfig, SyncPreview, SyncDecisions } from '../server/sync';
+import { ServiceEditor, EnvironmentEditor, ProjectConnections, BackupPanel } from './ManagementPanels';
 import { executeProjectAction, type ProjectAction } from './project-action';
 import './features.css';
 
@@ -112,7 +113,11 @@ export function useAction() {
       if (alive.current) setBusy(false);
     }
   };
-  return { busy, error, message, run };
+  const clear = () => {
+    setError('');
+    setMessage('');
+  };
+  return { busy, error, message, run, clear };
 }
 export function Feedback({ error, message }: { error?: string; message?: string }) {
   return (
@@ -136,7 +141,15 @@ export function JobLog({ job }: { job?: JobView | null }) {
       <span
         className={`badge ${job.status === 'running' ? 'starting' : job.status === 'done' ? 'running' : 'error'}`}
       >
-        {job.status === 'running' ? '正在执行' : job.status === 'done' ? '已完成' : '执行失败'}
+        {
+          {
+            running: '正在执行',
+            done: '已完成',
+            error: '执行失败',
+            cancelled: '已取消',
+            interrupted: '已中断',
+          }[job.status]
+        }
       </span>
       <Feedback error={job.error} />
       {job.log && (
@@ -162,18 +175,19 @@ export async function download(
   a.click();
   a.remove();
 }
-export function ProjectPanel({ vm, request, refresh }: FeatureProps) {
+export function ProjectPanel(props: FeatureProps) {
+  const { vm, request, refresh } = props;
   const remote = useRemote<{ project: Project; job: JobView | null }>(
     request,
     `/vms/${vm.id}/project`,
     true,
     2500,
   );
-  const runtime = useRemote<{ status: string; log: string }>(
-    request,
-    `/vms/${vm.id}/project-runtime`,
-    vm.status === 'running',
-  );
+  const runtime = useRemote<{
+    status: string;
+    log: string;
+    services?: { name: string; status: string; log: string }[];
+  }>(request, `/vms/${vm.id}/project-runtime`, vm.status === 'running');
   const [project, setProject] = useState<Project | null>(null);
   const action = useAction();
   useEffect(() => {
@@ -195,7 +209,13 @@ export function ProjectPanel({ vm, request, refresh }: FeatureProps) {
           <h3>项目工作区</h3>
           <p>保存环境、目录与命令，下次直接启动开发。</p>
         </div>
-        <span className="badge">{runtime.data?.status === 'running' ? '项目运行中' : '项目未运行'}</span>
+        <span className="badge">
+          {runtime.data?.status === 'running'
+            ? '项目运行中'
+            : runtime.data?.status === 'partial'
+              ? '部分服务运行中'
+              : '项目未运行'}
+        </span>
       </div>
       <Feedback error={action.error || remote.error} message={action.message} />
       {project && (
@@ -254,6 +274,8 @@ export function ProjectPanel({ vm, request, refresh }: FeatureProps) {
               onChange={(e) => edit({ previewPort: e.target.value ? +e.target.value : undefined })}
             />
           </label>
+          <EnvironmentEditor value={project.environment} change={(environment) => edit({ environment })} />
+          <ServiceEditor project={project} edit={edit} />
           <div className="feature-actions">
             <button
               className="secondary compact"
@@ -315,12 +337,45 @@ export function ProjectPanel({ vm, request, refresh }: FeatureProps) {
         </>
       )}
       <JobLog job={remote.data?.job} />
+      {runtime.data?.services?.map((service) => (
+        <details className="feature-card" key={service.name}>
+          <summary>
+            {service.name} · {service.status === 'running' ? '运行中' : '已停止'}
+          </summary>
+          <div className="feature-actions">
+            {(['start', 'stop'] as const).map((kind) => (
+              <button
+                className="secondary compact"
+                key={kind}
+                disabled={action.busy || remote.data?.job?.status === 'running'}
+                onClick={() =>
+                  void action.run(async () => {
+                    await request(`/vms/${vm.id}/project`, 'POST', { action: kind, service: service.name });
+                    remote.reload();
+                    runtime.reload();
+                  })
+                }
+              >
+                {kind === 'start' ? '启动服务' : '停止服务'}
+              </button>
+            ))}
+          </div>
+          <pre className="feature-log">{service.log || '暂无日志'}</pre>
+        </details>
+      ))}
       {runtime.data?.log && (
         <details>
           <summary>项目运行日志</summary>
           <pre className="feature-log">{runtime.data.log}</pre>
         </details>
       )}
+      <ProjectConnections
+        {...props}
+        applied={(value) => {
+          setProject(value);
+          remote.reload();
+        }}
+      />
     </div>
   );
 }
@@ -516,6 +571,9 @@ export function SyncPanel({ vm, request }: FeatureProps) {
     2500,
   );
   const [config, setConfig] = useState<SyncConfig>({ host: '', guest: '/workspace/shared', auto: false });
+  const [preview, setPreview] = useState<SyncPreview | null>(null),
+    [decisions, setDecisions] = useState<SyncDecisions>({}),
+    [previewQuery, setPreviewQuery] = useState('');
   const loaded = useRef(false);
   const action = useAction();
   useEffect(() => {
@@ -526,7 +584,11 @@ export function SyncPanel({ vm, request }: FeatureProps) {
   }, [remote.data]);
   const sync = (direction: 'both' | 'push' | 'pull') =>
     action.run(async () => {
-      await request(`/vms/${vm.id}/sync`, 'POST', { direction });
+      await request(`/vms/${vm.id}/sync`, 'POST', {
+        direction,
+        ...(direction === 'both' && preview ? { token: preview.token, decisions } : {}),
+      });
+      setPreview(null);
       remote.reload();
     });
   return (
@@ -559,13 +621,26 @@ export function SyncPanel({ vm, request }: FeatureProps) {
         />
         每 15 秒自动双向同步
       </label>
+      <label>
+        自定义忽略规则（每行一个，支持 * 与 **）
+        <textarea
+          rows={3}
+          value={(config.ignore || []).join('\n')}
+          onChange={(e) => setConfig({ ...config, ignore: e.target.value.split('\n') })}
+          placeholder={'*.log\ndist\nbuild/**'}
+        />
+      </label>
       <div className="feature-actions">
         <button
           className="secondary compact"
           disabled={action.busy || remote.data?.job?.status === 'running'}
           onClick={() =>
             void action.run(async () => {
-              await request(`/vms/${vm.id}/sync`, 'PUT', config);
+              await request(`/vms/${vm.id}/sync`, 'PUT', {
+                ...config,
+                ignore: config.ignore?.map((v) => v.trim()).filter(Boolean),
+              });
+              setPreview(null);
               remote.reload();
             }, '同步配置已保存')
           }
@@ -581,11 +656,74 @@ export function SyncPanel({ vm, request }: FeatureProps) {
             remote.data.job?.status === 'running' ||
             vm.status !== 'running'
           }
-          onClick={() => void sync('both')}
+          onClick={() =>
+            void action.run(async (signal) => {
+              setPreview(await request(`/vms/${vm.id}/sync-preview`, 'POST', {}, signal));
+              setDecisions({});
+            })
+          }
         >
-          双向同步
+          预览双向同步
         </button>
       </div>
+      {preview && (
+        <div className="feature-card">
+          <h4>变更预览</h4>
+          <p>
+            {preview.changes.length} 项变更 · {preview.unchanged} 个文件相同
+          </p>
+          <label>
+            筛选文件
+            <input value={previewQuery} onChange={(e) => setPreviewQuery(e.target.value)} />
+          </label>
+          <div className="sync-preview">
+            {preview.changes
+              .filter((entry) => entry.path.includes(previewQuery))
+              .slice(0, 200)
+              .map((entry) => (
+                <div className="sync-change" key={entry.path}>
+                  <code>{entry.path}</code>
+                  <span>
+                    {
+                      {
+                        push: '上传到 Linux',
+                        pull: '下载到 Windows',
+                        conflict: '两端均有修改',
+                        'mkdir-host': '新建 Windows 目录',
+                        'mkdir-guest': '新建 Linux 目录',
+                        skip: '跳过',
+                      }[entry.action]
+                    }
+                  </span>
+                  {entry.action === 'conflict' && (
+                    <select
+                      aria-label={`解决冲突 ${entry.path}`}
+                      value={decisions[entry.path] || 'skip'}
+                      onChange={(e) =>
+                        setDecisions({ ...decisions, [entry.path]: e.target.value as SyncDecisions[string] })
+                      }
+                    >
+                      <option value="skip">暂时跳过</option>
+                      <option value="push">保留 Windows 版本</option>
+                      <option value="pull">保留 Linux 版本</option>
+                      <option value="both">另存 Linux 版本，保留两份</option>
+                    </select>
+                  )}
+                </div>
+              ))}
+          </div>
+          <p className="subtle-note">
+            每次显示前 200 项，可筛选路径。执行前会重新核对文件，发生变化时需要重新预览。
+          </p>
+          <button
+            className="primary compact"
+            disabled={action.busy || remote.data?.job?.status === 'running'}
+            onClick={() => void sync('both')}
+          >
+            应用本次同步
+          </button>
+        </div>
+      )}
       <p className="subtle-note">
         冲突文件保留两边；删除不会传播。跳过符号链接、.git、node_modules 和 Sakura 数据目录。单文件上限 256
         MiB。
@@ -619,7 +757,8 @@ export function SyncPanel({ vm, request }: FeatureProps) {
   );
 }
 
-export function SnapshotsPanel({ vm, request, refresh }: FeatureProps) {
+export function SnapshotsPanel(props: FeatureProps) {
+  const { vm, request, refresh } = props;
   const [name, setName] = useState(''),
     [cloneName, setCloneName] = useState(vm.name.slice(0, 26) + '-copy'),
     [editing, setEditing] = useState<Snapshot | null>(null),
@@ -789,6 +928,7 @@ export function SnapshotsPanel({ vm, request, refresh }: FeatureProps) {
           导出包含当前磁盘和实例连接凭证，请妥善保存。快照历史不随导出迁移；克隆默认清空端口转发，首次启动更新密钥。
         </p>
       </div>
+      <BackupPanel {...props} />
     </div>
   );
 }

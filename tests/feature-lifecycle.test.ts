@@ -1,9 +1,20 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { Features } from '../server/features.ts';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import type { Machines } from '../server/machines.ts';
+
+const root = await mkdtemp(join(tmpdir(), 'sakura-feature-lifecycle-'));
+process.env.SAKURA_DATA_DIR = root;
+const { Features } = await import('../server/features.ts');
+after(async () => {
+  assert.equal(dirname(root), resolve(tmpdir()));
+  assert.ok(basename(root).startsWith('sakura-feature-lifecycle-'));
+  await rm(root, { recursive: true, force: true });
+});
 
 function fixture() {
   const machines = Object.assign(new EventEmitter(), {

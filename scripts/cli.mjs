@@ -11,6 +11,9 @@ async function main() {
     console.log(
       'Sakura — local Linux workspaces\n\n  list\n  images\n  image <alpine|debian|ubuntu>\n  create <name> [alpine|debian|ubuntu] [none|node|python|rust]\n  start <name>\n  stop <name>\n  shell <name>\n  exec <name> -- <command> [args...]\n  metrics <name>\n  clone <name> <new-name>\n  export <name> <file.sakura>\n  import <new-name> <file.sakura>\n  snapshots <name>\n  snapshot <name> <label>\n  project <name> <setup|start|stop|configure> [project.json]\n  sync <name> <both|push|pull|configure> [sync.json]\n\nStart the service with npm start first.',
     );
+    console.log(
+      '\nWorkspace management:\n  tasks\n  task <id> <cancel|retry>\n  storage\n  batch <start|stop> <name...>\n  organize <name> <organization.json>\n  diagnostics <name> [run]\n  resize <name> <GiB|finish>\n  backups <name>\n  backup <name> [run|verify|restore|delete] [backup-id] [new-name]\n  backup <name> configure <policy.json>\n  ide <name> [configure]\n  recipe <name> [read|write|apply] [sakura.json]\n  from-recipe <new-name> <sakura.json>\n  sync-preview <name>\n  sync-apply <name> <decisions.json>\n  project <name> <start|stop> [service-name]',
+    );
     return;
   }
   try {
@@ -27,6 +30,26 @@ async function main() {
     }
     if (action === 'images') {
       console.table(await api('/images'));
+      return;
+    }
+    if (action === 'tasks') {
+      console.log(JSON.stringify(await api('/jobs'), null, 2));
+      return;
+    }
+    if (action === 'task') {
+      if (!['cancel', 'retry'].includes(args[0])) throw new Error('Usage: task <id> <cancel|retry>');
+      console.log(await api(`/jobs/${encodeURIComponent(name)}/${args[0]}`, 'POST'));
+      return;
+    }
+    if (action === 'storage') {
+      console.log(JSON.stringify(await api('/storage'), null, 2));
+      return;
+    }
+    if (action === 'from-recipe') {
+      if (!args[0]) throw new Error('Usage: from-recipe <name> <sakura.json>');
+      console.log(
+        await api('/recipes', 'POST', { name, recipe: JSON.parse(await readFile(args[0], 'utf8')) }),
+      );
       return;
     }
     if (action === 'image') {
@@ -59,6 +82,17 @@ async function main() {
       return;
     }
     const machines = await api('/vms');
+    if (action === 'batch') {
+      if (!['start', 'stop'].includes(name) || !args.length)
+        throw new Error('Usage: batch <start|stop> <name...>');
+      const ids = args.map((name) => {
+        const vm = machines.find((v) => v.name === name || v.id === name);
+        if (!vm) throw new Error(`Distribution not found: ${name}`);
+        return vm.id;
+      });
+      console.log(await api('/vms/batch', 'POST', { ids, action: name }));
+      return;
+    }
     if (action === 'list') {
       console.table(
         machines.map((v) => ({
@@ -84,11 +118,82 @@ async function main() {
         'snapshot',
         'project',
         'sync',
+        'diagnostics',
+        'resize',
+        'backups',
+        'backup',
+        'ide',
+        'recipe',
+        'organize',
+        'sync-preview',
+        'sync-apply',
       ].includes(action)
     )
       throw new Error(`Unknown command: ${action}`);
     const vm = machines.find((v) => v.name === name || v.id === name);
     if (!vm) throw new Error(`Distribution not found: ${name}`);
+    if (action === 'diagnostics') {
+      console.log(await api(`/vms/${vm.id}/diagnostics`, args[0] === 'run' ? 'POST' : 'GET'));
+      return;
+    }
+    if (action === 'resize') {
+      console.log(
+        await api(
+          `/vms/${vm.id}/resize`,
+          'POST',
+          args[0] === 'finish' ? { finish: true } : { diskGiB: Number(args[0]) },
+        ),
+      );
+      return;
+    }
+    if (action === 'backups') {
+      console.log(JSON.stringify(await api(`/vms/${vm.id}/backups`), null, 2));
+      return;
+    }
+    if (action === 'backup') {
+      if (args[0] === 'configure')
+        console.log(await api(`/vms/${vm.id}/backups`, 'PUT', JSON.parse(await readFile(args[1], 'utf8'))));
+      else
+        console.log(
+          await api(`/vms/${vm.id}/backups`, 'POST', {
+            action: args[0] || 'run',
+            backupId: args[1],
+            name: args[2],
+          }),
+        );
+      return;
+    }
+    if (action === 'ide') {
+      console.log(await api(`/vms/${vm.id}/ide`, args[0] === 'configure' ? 'POST' : 'GET'));
+      return;
+    }
+    if (action === 'organize') {
+      console.log(
+        await api(`/vms/${vm.id}/organization`, 'PUT', JSON.parse(await readFile(args[0], 'utf8'))),
+      );
+      return;
+    }
+    if (action === 'recipe') {
+      if (args[0] === 'apply')
+        console.log(await api(`/vms/${vm.id}/recipe`, 'PUT', JSON.parse(await readFile(args[1], 'utf8'))));
+      else if (['read', 'write'].includes(args[0]))
+        console.log(JSON.stringify(await api(`/vms/${vm.id}/recipe`, 'POST', { action: args[0] }), null, 2));
+      else console.log(JSON.stringify(await api(`/vms/${vm.id}/recipe`), null, 2));
+      return;
+    }
+    if (action === 'sync-preview') {
+      console.log(JSON.stringify(await api(`/vms/${vm.id}/sync-preview`, 'POST', {}), null, 2));
+      return;
+    }
+    if (action === 'sync-apply') {
+      console.log(
+        await api(`/vms/${vm.id}/sync`, 'POST', {
+          ...JSON.parse(await readFile(args[0], 'utf8')),
+          direction: 'both',
+        }),
+      );
+      return;
+    }
     if (action === 'clone') {
       console.log(await api(`/vms/${vm.id}/clone`, 'POST', { name: args[0] }));
       return;
@@ -177,7 +282,9 @@ async function main() {
       await api(
         path,
         'POST',
-        action === 'project' ? { action: args[0] || 'start' } : { direction: args[0] || 'both' },
+        action === 'project'
+          ? { action: args[0] || 'start', service: args[1] }
+          : { direction: args[0] || 'both' },
       );
       let displayed = '';
       for (;;) {
@@ -188,7 +295,7 @@ async function main() {
           );
           displayed = state.log;
         }
-        if (state.status === 'error') throw new Error(state.error);
+        if (['error', 'cancelled', 'interrupted'].includes(state.status)) throw new Error(state.error);
         if (state.status === 'done') return;
         await new Promise((r) => setTimeout(r, 1000));
       }

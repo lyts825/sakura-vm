@@ -17,6 +17,7 @@ import {
   checkedId,
   vmDir,
   guestPath,
+  organizationSchema,
   type VMRecord,
   type VMView,
   type VMStatus,
@@ -672,10 +673,18 @@ export class Machines extends EventEmitter {
       return bytes.toString('utf8');
     });
   }
-  async writeGuestFile(id: string, path: string, content: string, overwrite = true) {
+  async writeGuestFile(
+    id: string,
+    path: string,
+    content: string,
+    overwrite = true,
+    expectedVersion?: string,
+  ) {
     const bytes = Buffer.from(content, 'utf8');
     if (bytes.length > MAX_TEXT_BYTES) throw new AppError('仅支持保存 1 MiB 以内的文本文件', 413);
-    await new Files(this).upload(id, path, Readable.from(bytes), overwrite);
+    await this.locked(`text:${id}:${path}`, () =>
+      new Files(this).upload(id, path, Readable.from(bytes), overwrite, undefined, expectedVersion),
+    );
   }
   async stop(id: string, force = false) {
     return this.locked(id, async () => this.stopInternal(id, force));
@@ -709,6 +718,58 @@ export class Machines extends EventEmitter {
       Object.assign(vm, config);
       await this.save();
       return this.view(id);
+    });
+  }
+  async organize(id: string, input: unknown) {
+    const organization = organizationSchema.parse(input);
+    organization.tags = [...new Set(organization.tags)];
+    return this.locked(id, async () => {
+      const vm = this.get(id),
+        before = vm.organization;
+      vm.organization = organization;
+      try {
+        await this.save();
+      } catch (error) {
+        vm.organization = before;
+        throw error;
+      }
+      this.emit('change');
+      return this.view(id);
+    });
+  }
+  async resize(id: string, diskGiB: number, signal?: AbortSignal) {
+    if (!Number.isInteger(diskGiB) || diskGiB > 128) throw new AppError('磁盘容量必须是 2–128 GiB 的整数');
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      this.requireStopped(id);
+      if (diskGiB <= vm.diskGiB) throw new AppError('仅支持扩容，目标容量必须大于当前容量');
+      if (vm.snapshots.length >= 20) throw new AppError('请先删除一个快照，为扩容前备份留出位置');
+      signal?.throwIfAborted();
+      // Before disk growth was supported, all snapshots shared the VM's capacity.
+      // Record that size before the first expansion so legacy restores stay accurate.
+      for (const shot of vm.snapshots) shot.diskGiB ??= vm.diskGiB;
+      await this.createSnapshot(vm, '扩容前自动备份');
+      // QEMU metadata updates are allowed to finish even if the request leaves.
+      await this.engine.run('sakura-img', [
+        'resize',
+        '-f',
+        'qcow2',
+        join(vmDir(id), 'disk.qcow2'),
+        `${diskGiB}G`,
+      ]);
+      vm.diskGiB = diskGiB;
+      vm.pendingResize = true;
+      await this.save();
+      this.emit('change');
+      return this.view(id);
+    });
+  }
+  async completeResize(id: string) {
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      vm.pendingResize = false;
+      await this.save();
+      this.emit('change');
     });
   }
   requireStopped(id: string) {
@@ -751,7 +812,7 @@ export class Machines extends EventEmitter {
     return { key, seed };
   }
   private async createSnapshot(vm: VMRecord, name: string) {
-    const shot = { id: randomUUID(), name, createdAt: new Date().toISOString() };
+    const shot = { id: randomUUID(), name, createdAt: new Date().toISOString(), diskGiB: vm.diskGiB };
     const identity = await this.diskIdentity(vm.id);
     const file = this.snapshotIdentityFile(vm.id, shot.id);
     await writeFile(file, JSON.stringify({ ...identity, seed: identity.seed.toString('base64') }), {
@@ -787,6 +848,9 @@ export class Machines extends EventEmitter {
         await this.createSnapshot(vm, '恢复前自动备份');
       }
       await this.engine.run('sakura-img', ['snapshot', '-a', snapshotId, join(vmDir(id), 'disk.qcow2')]);
+      const restored = vm.snapshots.find((s) => s.id === snapshotId)!;
+      if (restored.diskGiB) vm.diskGiB = restored.diskGiB;
+      vm.pendingResize = false;
       const dir = vmDir(id);
       await writeIdentityFile(join(dir, 'id_rsa'), identity.key);
       await writeIdentityFile(join(dir, 'seed.iso'), identity.seed);

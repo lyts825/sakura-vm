@@ -6,6 +6,15 @@ import { AppError, vmDir, guestPath } from './model.ts';
 import type { Machines } from './machines.ts';
 import { Jobs } from './jobs.ts';
 import { quote } from './files.ts';
+import {
+  serviceSchema,
+  environmentSchema,
+  serviceOrder,
+  runServices,
+  serviceLog,
+  envPrefix,
+} from './project-services.ts';
+import { guestTask } from './guest-task.ts';
 
 export const projectSchema = z
   .object({
@@ -29,13 +38,30 @@ export const projectSchema = z
     setup: z.string().max(8192).default(''),
     command: z.string().max(8192).default(''),
     previewPort: z.number().int().min(1024).max(65535).optional(),
+    environment: environmentSchema.optional(),
+    services: z.array(serviceSchema).max(12).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((project, ctx) => {
+    try {
+      serviceOrder(project.services || []);
+    } catch (error) {
+      ctx.addIssue({ code: 'custom', message: (error as Error).message, path: ['services'] });
+    }
+  });
 export type Project = z.infer<typeof projectSchema>;
 export function setupFingerprint(project: Project) {
-  const { directory, template, repository, setup } = project;
+  const { directory, template, repository, setup, environment } = project;
   return createHash('sha256')
-    .update(JSON.stringify({ directory, template, repository, setup }))
+    .update(
+      JSON.stringify({
+        directory,
+        template,
+        repository,
+        setup,
+        ...(environment && Object.keys(environment).length ? { environment } : {}),
+      }),
+    )
     .digest('hex')
     .slice(0, 16);
 }
@@ -110,7 +136,7 @@ export function parseMetrics(text: string) {
   };
 }
 export class Workspaces {
-  jobs = new Jobs();
+  jobs = new Jobs('projects');
   private observed = new Map<string, string>();
   private samples = new Map<string, { at: number; promise: Promise<ReturnType<typeof parseMetrics>> }>();
   constructor(private machines: Machines) {
@@ -130,14 +156,23 @@ export class Workspaces {
       if (vm.template && vm.template !== 'none' && this.observed.get(id) !== boot) {
         if (this.jobs.view(id)?.status === 'running') continue;
         this.observed.set(id, boot);
-        this.jobs.start(id, async (log, signal) => {
-          const check = await machines.exec(id, `test -f /etc/sakura/template-${vm.template}`, 10000, signal);
-          if (check.code === 0) {
-            log('开发环境已安装。\n');
-            return;
-          }
-          await this.execute(id, provisionScript(vm.template!, vm.distro), log, signal);
-        });
+        this.jobs.start(
+          id,
+          async (log, signal) => {
+            const check = await machines.exec(
+              id,
+              `test -f /etc/sakura/template-${vm.template}`,
+              10000,
+              signal,
+            );
+            if (check.code === 0) {
+              log('开发环境已安装。\n');
+              return;
+            }
+            await this.execute(id, provisionScript(vm.template!, vm.distro), log, signal);
+          },
+          { title: '安装开发环境', vmId: id, action: 'setup' },
+        );
       }
     }
   };
@@ -161,6 +196,21 @@ export class Workspaces {
     return this.machines.locked(id, async () => {
       this.machines.get(id);
       if (this.jobs.view(id)?.status === 'running') throw new AppError('请等待项目操作完成', 409);
+      const previous = await this.config(id);
+      const removed = (previous.services || [])
+        .filter((s) => !project.services?.some((next) => next.name === s.name))
+        .map((s) => `sakura-service-${s.name}`);
+      if (!previous.services?.length && project.services?.length) removed.push('sakura-project');
+      if (removed.length && this.machines.state(id) === 'running') {
+        const check = await this.machines.exec(
+          id,
+          removed
+            .map((name) => `if tmux has-session -t =${name} 2>/dev/null; then echo ${name}; fi`)
+            .join('\n'),
+          10000,
+        );
+        if (check.stdout.trim()) throw new AppError('请先停止要移除或替换的运行服务', 409);
+      }
       const file = join(vmDir(id), 'project.json');
       await writeFile(`${file}.tmp`, JSON.stringify(project, null, 2));
       await rename(`${file}.tmp`, file);
@@ -171,59 +221,103 @@ export class Workspaces {
     return { project: await this.config(id), job: this.jobs.view(id) };
   }
   private async execute(id: string, script: string, log: (text: string) => void, signal: AbortSignal) {
-    const result = await this.machines.exec(id, script, 1200000, signal, log);
+    const result = await guestTask(this.machines, id, script, signal, log);
     if (result.code !== 0) throw new Error(result.stderr.slice(-2000) || `命令退出码 ${result.code}`);
   }
-  async run(id: string, action: 'setup' | 'start' | 'stop' | 'terminal') {
-    return this.machines.locked(id, () => this.runInternal(id, action));
+  async run(id: string, action: 'setup' | 'start' | 'stop' | 'terminal', service?: string) {
+    return this.machines.locked(id, () => this.runInternal(id, action, service));
   }
-  private async runInternal(id: string, action: 'setup' | 'start' | 'stop' | 'terminal') {
+  private async runInternal(id: string, action: 'setup' | 'start' | 'stop' | 'terminal', service?: string) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
     const project = await this.config(id);
     const distro = this.machines.get(id).distro;
-    return this.jobs.start(id, async (log, signal) => {
-      if (action === 'stop') {
+    if (service && !project.services?.some((s) => s.name === service)) throw new AppError('服务不存在');
+    return this.jobs.start(
+      id,
+      async (log, signal) => {
+        if (action === 'stop') {
+          if (project.services?.length) {
+            await runServices(this.machines, id, project, 'stop', log, signal, service);
+            if (service) return;
+          }
+          await this.execute(
+            id,
+            'if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then tmux kill-session -t =sakura-project; fi',
+            log,
+            signal,
+          );
+          return;
+        }
+        if (action === 'terminal') {
+          await this.execute(id, provisionScript('none', distro), log, signal);
+          return;
+        }
+        const install =
+          action === 'setup'
+            ? provisionScript(project.template, distro)
+            : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
+        let prepare = `mkdir -p ${quote(project.directory)}\n`;
+        if (project.repository)
+          prepare += `if [ ! -d ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
+        const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
+        const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
+        if (project.setup.trim())
+          prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\ncd ${quote(project.directory)}\n${project.setup}\nfi\ntouch ${marker}\n`;
+        if (action === 'start' && !project.services?.length) {
+          if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
+          prepare += `tmux new-session -d -s sakura-project -c ${quote(project.directory)} ${quote(`sh -lc ${quote(`${envPrefix(project.environment)}\n${project.command}`)} > /tmp/sakura-project.log 2>&1`)}\nsleep 1\nif ! tmux has-session -t =sakura-project 2>/dev/null; then tail -c 8192 /tmp/sakura-project.log; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
+        }
+        log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
+        const running =
+          action === 'start' && !project.services?.length
+            ? "if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then echo '项目已经运行；如需应用新的启动配置，请先停止项目'; exit 0; fi\n"
+            : '';
         await this.execute(
           id,
-          'if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then tmux kill-session -t =sakura-project; fi',
+          `set -eu\n${running}${envPrefix(project.environment)}\n${install}\n${prepare}`,
           log,
           signal,
         );
-        return;
-      }
-      if (action === 'terminal') {
-        await this.execute(id, provisionScript('none', distro), log, signal);
-        return;
-      }
-      const install =
-        action === 'setup'
-          ? provisionScript(project.template, distro)
-          : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
-      let prepare = `mkdir -p ${quote(project.directory)}\n`;
-      if (project.repository)
-        prepare += `if [ ! -d ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
-      const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
-      const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
-      if (project.setup.trim())
-        prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\ncd ${quote(project.directory)}\n${project.setup}\nfi\ntouch ${marker}\n`;
-      if (action === 'start') {
-        if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
-        prepare += `tmux new-session -d -s sakura-project -c ${quote(project.directory)} ${quote(`sh -lc ${quote(project.command)} > /tmp/sakura-project.log 2>&1`)}\nsleep 1\nif ! tmux has-session -t =sakura-project 2>/dev/null; then tail -c 8192 /tmp/sakura-project.log; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
-      }
-      log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
-      const running =
-        action === 'start'
-          ? "if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then echo '项目已经运行；如需应用新的启动配置，请先停止项目'; exit 0; fi\n"
-          : '';
-      await this.execute(id, `set -eu\n${running}${install}\n${prepare}`, log, signal);
-      log('操作完成。\n');
-    });
+        if (action === 'start' && project.services?.length)
+          await runServices(this.machines, id, project, 'start', log, signal, service);
+        log('操作完成。\n');
+      },
+      {
+        title: `项目${{ setup: '初始化', start: '启动', stop: '停止', terminal: '终端安装' }[action]}${service ? ` · ${service}` : ''}`,
+        vmId: id,
+        action: service ? `${action}:${service}` : action,
+      },
+    );
   }
-  async runtime(id: string) {
+  async runtime(id: string, signal?: AbortSignal) {
+    const project = await this.config(id);
+    if (project.services?.length) {
+      const services = [];
+      for (const service of project.services) {
+        const result = await this.machines.exec(
+          id,
+          `if tmux has-session -t =sakura-service-${service.name} 2>/dev/null; then echo running; else echo stopped; fi; test ! -f ${quote(serviceLog(service.name))} || tail -c 8192 ${quote(serviceLog(service.name))}`,
+          10000,
+          signal,
+        );
+        const [status, ...lines] = result.stdout.split('\n');
+        services.push({ name: service.name, status, log: lines.join('\n') });
+      }
+      return {
+        status: services.every((s) => s.status === 'running')
+          ? 'running'
+          : services.some((s) => s.status === 'running')
+            ? 'partial'
+            : 'stopped',
+        log: '',
+        services,
+      };
+    }
     const result = await this.machines.exec(
       id,
       'if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then echo running; else echo stopped; fi; test ! -f /tmp/sakura-project.log || tail -c 16384 /tmp/sakura-project.log',
       10000,
+      signal,
     );
     const [status, ...lines] = result.stdout.split('\n');
     return { status, log: lines.join('\n') };

@@ -44,12 +44,21 @@ export type DesktopView = {
   log: string;
   error?: string;
 };
-export type Snapshot = { id: string; name: string; createdAt: string; note?: string };
+export type Snapshot = { id: string; name: string; createdAt: string; note?: string; diskGiB?: number };
+export const organizationSchema = z
+  .object({
+    group: z.string().trim().max(40).default(''),
+    tags: z.array(z.string().trim().min(1).max(24)).max(12).default([]),
+    favorite: z.boolean().default(false),
+  })
+  .strict();
 export type VMRecord = VMConfig & {
   id: string;
   createdAt: string;
   snapshots: Snapshot[];
   lastError?: string;
+  organization?: z.infer<typeof organizationSchema>;
+  pendingResize?: boolean;
 };
 export type VMView = VMRecord & {
   activeAccelerator?: 'tcg' | 'whpx';

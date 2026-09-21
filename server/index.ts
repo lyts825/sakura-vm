@@ -13,7 +13,7 @@ import { Machines } from './machines.ts';
 import { Desktops } from './desktop.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
 import { Features } from './features.ts';
-import { MAX_TEXT_BYTES } from './files.ts';
+import { MAX_TEXT_BYTES, textVersion } from './files.ts';
 import { MAX_TEXT_REQUEST_BYTES, readJsonBody as body, requestUrl } from './http.ts';
 import type { ClientChannel } from 'ssh2';
 
@@ -102,21 +102,31 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     }
     if (req.method === 'GET' && route[3] === 'files')
       return send(res, await machines.files(id, guestPath(url.searchParams.get('path') || '/workspace')));
-    if (req.method === 'GET' && route[3] === 'file')
-      return send(res, {
-        content: await machines.readGuestFile(id, guestPath(url.searchParams.get('path'))),
-      });
+    if (req.method === 'GET' && route[3] === 'file') {
+      const content = await machines.readGuestFile(id, guestPath(url.searchParams.get('path')));
+      return send(res, { content, version: textVersion(content) });
+    }
     if (req.method === 'PUT' && route[3] === 'file') {
       const value = z
         .object({
           path: z.string(),
           content: z.string().max(MAX_TEXT_BYTES),
           overwrite: z.boolean().default(true),
+          expectedVersion: z
+            .string()
+            .regex(/^[a-f0-9]{64}$/)
+            .optional(),
         })
         .strict()
         .parse(await body(req, MAX_TEXT_REQUEST_BYTES));
-      await machines.writeGuestFile(id, guestPath(value.path), value.content, value.overwrite);
-      return send(res, { ok: true });
+      await machines.writeGuestFile(
+        id,
+        guestPath(value.path),
+        value.content,
+        value.overwrite,
+        value.expectedVersion,
+      );
+      return send(res, { ok: true, version: textVersion(value.content) });
     }
     if (req.method === 'POST' && route[3] === 'snapshots' && route.length === 4) {
       const { name } = z

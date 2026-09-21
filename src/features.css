@@ -4,6 +4,55 @@
   gap: 16px;
   min-width: 0;
 }
+.management-page {
+  border-radius: 16px;
+  background: var(--surface);
+}
+.management-page > details > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.feature-panel progress {
+  width: 100%;
+  height: 9px;
+  accent-color: var(--accent);
+}
+.backup-row,
+.sync-change {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.sync-change code {
+  min-width: 100px;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.sync-change select {
+  max-width: 230px;
+}
+.sync-preview {
+  max-height: 420px;
+  overflow: auto;
+}
+.diagnostic-row {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.diagnostic-row p {
+  width: 100%;
+}
+.wrap-code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
 .feature-panel h3,
 .feature-panel h4,
 .feature-panel p {
