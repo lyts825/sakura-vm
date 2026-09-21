@@ -1,0 +1,193 @@
+import { useEffect, useRef, useState } from 'react';
+import { Search, X } from 'lucide-react';
+import type { VMView } from '../server/model';
+import type { CommandPreset } from '../server/command-presets';
+import type { ProjectFile } from '../server/project-files';
+import { Feedback, useRemote, type Request } from './FeaturePanels';
+import { PresetRunner } from './DevelopmentPanels';
+
+export type PaletteTarget = { id?: string; page?: string; tab?: string; file?: string };
+export function CommandPalette({
+  vms,
+  vm,
+  request,
+  navigate,
+  close,
+}: {
+  vms: VMView[];
+  vm?: VMView;
+  request: Request;
+  navigate: (target: PaletteTarget) => Promise<void>;
+  close: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null),
+    [query, setQuery] = useState(''),
+    [search, setSearch] = useState(''),
+    [index, setIndex] = useState(0),
+    [preset, setPreset] = useState<CommandPreset | null>(null);
+  const commands = useRemote<{ presets: CommandPreset[] }>(request, `/vms/${vm?.id}/commands`, !!vm, 0);
+  const files = useRemote<{ root: string; files: ProjectFile[]; truncated: boolean }>(
+    request,
+    `/vms/${vm?.id}/project-files?q=${encodeURIComponent(search)}`,
+    vm?.status === 'running' && !!search,
+    0,
+  );
+  useEffect(() => {
+    const previous = document.activeElement;
+    dialog.current?.showModal();
+    dialog.current?.querySelector<HTMLInputElement>('input')?.focus();
+    return () => {
+      dialog.current?.close();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(query.trim()), 250);
+    setIndex(0);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const needle = query.toLocaleLowerCase(),
+    match = (value: string) => value.toLocaleLowerCase().includes(needle);
+  const entries: { key: string; title: string; detail: string; run: () => void }[] = [
+    ...vms
+      .filter((item) => match(item.name))
+      .map((item) => ({
+        key: item.id,
+        title: item.name,
+        detail: '切换实例',
+        run: () => void navigate({ id: item.id, page: 'workspace' }),
+      })),
+    ...[
+      ['terminal', '终端'],
+      ['files', '文件与全文搜索'],
+      ['project', '项目与健康检查'],
+      ['git', 'Git 工作台'],
+      ['development', '开发工具、网络、私密配置与收藏命令'],
+      ['containers', 'Docker / Compose'],
+      ['snapshots', '快照与加密备份'],
+      ['maintenance', '实例维护'],
+    ]
+      .filter(([, label]) => vm && match(label))
+      .map(([tab, title]) => ({
+        key: tab,
+        title,
+        detail: vm?.name || '',
+        run: () => void navigate({ tab, page: 'workspace' }),
+      })),
+    ...[
+      ['tasks', '任务中心与执行记录'],
+      ['settings', '系统设置与数据迁移'],
+      ['images', '镜像与备份导入'],
+    ]
+      .filter(([, label]) => match(label))
+      .map(([page, title]) => ({ key: page, title, detail: '全局操作', run: () => void navigate({ page }) })),
+    ...(commands.data?.presets || [])
+      .filter((item) => vm?.status === 'running' && match(item.name))
+      .map((item) => ({
+        key: item.id,
+        title: item.name,
+        detail: '收藏命令 · 填写参数后执行',
+        run: () => setPreset(item),
+      })),
+    ...(search === query.trim() ? files.data?.files || [] : [])
+      .filter((item) => !item.directory)
+      .slice(0, 30)
+      .map((item) => ({
+        key: 'file:' + item.path,
+        title: item.path,
+        detail: '项目文件',
+        run: () =>
+          void navigate({
+            tab: 'files',
+            page: 'workspace',
+            file: `${files.data!.root.replace(/\/$/, '')}/${item.path}`,
+          }),
+      })),
+  ];
+  const chosen = Math.min(index, Math.max(0, entries.length - 1));
+  useEffect(() => {
+    document.getElementById(`palette-result-${chosen}`)?.scrollIntoView({ block: 'nearest' });
+  }, [chosen]);
+  return (
+    <dialog
+      ref={dialog}
+      className="modal command-palette"
+      aria-labelledby="palette-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+    >
+      <div className="modal-head">
+        <div>
+          <h2 id="palette-title">快速前往</h2>
+          <p>{vm ? `当前实例 · ${vm.name}` : '搜索实例与操作'}</p>
+        </div>
+        <button className="icon-button" aria-label="关闭命令面板" onClick={close}>
+          <X size={18} />
+        </button>
+      </div>
+      <div className="palette-body">
+        {preset && vm ? (
+          <>
+            <button className="text-button" onClick={() => setPreset(null)}>
+              ← 返回搜索
+            </button>
+            <PresetRunner key={preset.id} preset={preset} id={vm.id} request={request} />
+          </>
+        ) : (
+          <>
+            <div className="palette-search">
+              <Search size={18} />
+              <input
+                autoFocus
+                role="combobox"
+                aria-label="搜索实例、文件或操作"
+                aria-autocomplete="list"
+                aria-expanded="true"
+                aria-controls="palette-results"
+                aria-activedescendant={entries.length ? `palette-result-${chosen}` : undefined}
+                value={query}
+                placeholder="实例、项目文件、操作、收藏命令…"
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) {
+                    e.preventDefault();
+                    if (e.key === 'Enter') entries[chosen]?.run();
+                    else
+                      setIndex(
+                        (current) =>
+                          (current + (e.key === 'ArrowDown' ? 1 : -1) + entries.length) %
+                          Math.max(1, entries.length),
+                      );
+                  }
+                }}
+              />
+            </div>
+            <Feedback error={commands.error || files.error} />
+            <div id="palette-results" role="listbox" aria-label="搜索结果" className="palette-results">
+              {entries.map((entry, i) => (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={i === chosen}
+                  id={`palette-result-${i}`}
+                  key={entry.key}
+                  className={i === chosen ? 'selected' : ''}
+                  onClick={entry.run}
+                >
+                  <span>{entry.title}</span>
+                  <small>{entry.detail}</small>
+                </button>
+              ))}
+              {!entries.length && <p className="muted">没有匹配结果。</p>}
+            </div>
+            <p className="subtle-note">
+              ↑ ↓ 选择 · Enter 打开 · Esc 关闭 · 文件搜索使用当前运行实例的项目目录
+            </p>
+          </>
+        )}
+      </div>
+    </dialog>
+  );
+}

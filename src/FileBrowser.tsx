@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Download, FileText, Folder, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
 import { Feedback, download, useAction, type FeatureProps } from './FeaturePanels';
 import { uploadFiles, transferBytes, type UploadProgress } from './transfers';
-import { completeFileSave, dirtyEdit, registerEditorGuard, type FileEdit } from './file-editor-state';
+import { dirtyEdit, registerEditorGuard, type FileEdit } from './file-editor-state';
+import { restoreDrafts, saveDraftResult, anyDirty, type EditorDraft } from './editor-drafts';
+const CodeEditor = lazy(() => import('./CodeEditor').then((module) => ({ default: module.CodeEditor })));
+import { ProjectNavigator } from './ProjectNavigator';
 
 type Entry = { name: string; size: number; directory: boolean; symlink: boolean; modified: number };
 function DraftDialog({
@@ -54,23 +57,53 @@ function DraftDialog({
     </dialog>
   );
 }
-export function FileBrowser({ vm, request, token }: FeatureProps) {
+export function FileBrowser({
+  vm,
+  request,
+  token,
+  openFile,
+}: FeatureProps & { openFile?: { path: string; line?: number; revision: number } }) {
   const [path, setPath] = useState('/workspace'),
     [input, setInput] = useState('/workspace');
   const [files, setFiles] = useState<Entry[]>([]),
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
-  const draftKey = `sakura-draft:${vm.id}`;
-  const [edit, setEdit] = useState<FileEdit | null>(() => {
+  const draftKey = `sakura-drafts:${vm.id}`;
+  const [workspace, setWorkspace] = useState<{ drafts: EditorDraft[]; active: string }>(() => {
     try {
-      const draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
-      return draft && typeof draft.path === 'string' && typeof draft.content === 'string' ? draft : null;
+      const drafts = restoreDrafts(
+        JSON.parse(localStorage.getItem(draftKey) || localStorage.getItem(`sakura-draft:${vm.id}`) || 'null'),
+      );
+      return { drafts, active: drafts[0]?.id || '' };
     } catch {
-      return null;
+      return { drafts: [], active: '' };
     }
   });
+  const edit = workspace.drafts.find((draft) => draft.id === workspace.active) || null;
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
+  const setEdit = (value: FileEdit | null) => {
+    const active = workspaceRef.current.active;
+    setWorkspace((current) => {
+      const drafts = value
+        ? current.drafts.map((draft) => (draft.id === active ? { ...value, id: draft.id } : draft))
+        : current.drafts.filter((draft) => draft.id !== active);
+      return { drafts, active: value ? current.active : drafts[0]?.id || '' };
+    });
+  };
+  const [line, setLine] = useState<{ path: string; number?: number }>({ path: '' });
   const [draftError, setDraftError] = useState(''),
-    [conflict, setConflict] = useState<{ content: string; version: string } | null>(null);
+    [conflicts, setConflicts] = useState<Record<string, { content: string; version: string }>>({});
+  const conflict = edit ? conflicts[edit.id] : null;
+  const setConflict = (value: { content: string; version: string } | null) => {
+    const id = workspaceRef.current.active;
+    setConflicts((current) => {
+      const next = { ...current };
+      if (value) next[id] = value;
+      else delete next[id];
+      return next;
+    });
+  };
   const editRef = useRef(edit);
   editRef.current = edit;
   const [leaveKind, setLeaveKind] = useState<'leave' | 'replace' | 'discard' | null>(null);
@@ -78,7 +111,8 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
     null,
   );
   const leave = (kind: 'leave' | 'replace' | 'discard' = 'leave') => {
-    if (!dirtyEdit(editRef.current)) return Promise.resolve(true);
+    if (!(kind === 'leave' ? anyDirty(workspaceRef.current.drafts) : dirtyEdit(editRef.current)))
+      return Promise.resolve(true);
     if (pendingLeave.current) return pendingLeave.current.promise;
     let resolve!: (allowed: boolean) => void;
     const promise = new Promise<boolean>((done) => {
@@ -98,7 +132,7 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
   useEffect(() => () => pendingLeave.current?.resolve(false), []);
   useEffect(() => {
     const unload = (event: BeforeUnloadEvent) => {
-      if (dirtyEdit(editRef.current)) {
+      if (anyDirty(workspaceRef.current.drafts)) {
         event.preventDefault();
         event.returnValue = '';
       }
@@ -108,13 +142,14 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
   }, []);
   useEffect(() => {
     try {
-      if (edit) localStorage.setItem(draftKey, JSON.stringify(edit));
+      if (workspace.drafts.length) localStorage.setItem(draftKey, JSON.stringify(workspace.drafts));
       else localStorage.removeItem(draftKey);
+      localStorage.removeItem(`sakura-draft:${vm.id}`);
       setDraftError('');
     } catch {
       setDraftError('浏览器无法保存草稿，请及时保存文件。');
     }
-  }, [edit, draftKey]);
+  }, [workspace.drafts, draftKey]);
   const [overwrite, setOverwrite] = useState(false),
     [progress, setProgress] = useState<UploadProgress | null>(null),
     [dragging, setDragging] = useState(false);
@@ -162,7 +197,6 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
   }, []);
   const target = (name: string) => `${path.replace(/\/$/, '')}/${name}`;
   const navigate = async (next: string) => {
-    if (!(await leave())) return;
     requestVersion.current++;
     setFiles([]);
     setError('');
@@ -181,28 +215,45 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
       });
       await refresh();
     }, '文件操作已完成');
-  const open = async (file: Entry) => {
-    if (file.directory) navigate(target(file.name));
-    else {
-      if (!(await leave('replace'))) return;
-      void action.run(async () => {
-        const value = await request<{ content: string; version: string }>(
-          `/vms/${vm.id}/file?path=${encodeURIComponent(target(file.name))}`,
-        );
-        setConflict(null);
-        setEdit({
-          path: target(file.name),
-          content: value.content,
-          baseContent: value.content,
-          version: value.version,
-        });
-      });
+  const openPath = async (filePath: string, jump?: number) => {
+    const existing = workspaceRef.current.drafts.find((draft) => draft.path === filePath);
+    setLine({ path: filePath, number: jump });
+    if (existing) {
+      setWorkspace((current) => ({ ...current, active: existing.id }));
+      return;
     }
+    if (workspaceRef.current.drafts.length >= 20) {
+      setError('最多同时打开 20 个文件，请先关闭部分标签');
+      return;
+    }
+    await action.run(async () => {
+      const value = await request<{ content: string; version: string }>(
+        `/vms/${vm.id}/file?path=${encodeURIComponent(filePath)}`,
+      );
+      const draft: EditorDraft = {
+        id: crypto.randomUUID(),
+        path: filePath,
+        content: value.content,
+        baseContent: value.content,
+        version: value.version,
+      };
+      setWorkspace((current) => ({ drafts: [...current.drafts, draft], active: draft.id }));
+    });
   };
+  const open = (file: Entry) => (file.directory ? navigate(target(file.name)) : openPath(target(file.name)));
+  useEffect(() => {
+    if (openFile && vm.status === 'running') void openPath(openFile.path, openFile.line);
+  }, [openFile?.revision, vm.status]);
   const save = () => {
     const submitted = editRef.current;
     if (!submitted) return;
     return action.run(async () => {
+      if (
+        workspaceRef.current.drafts.some(
+          (draft) => draft.id !== submitted.id && draft.path === submitted.path,
+        )
+      )
+        throw new Error('另一个标签已打开同一路径');
       try {
         const result = await request<{ version: string }>(`/vms/${vm.id}/file`, 'PUT', {
           path: submitted.path,
@@ -210,20 +261,23 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
           overwrite: !submitted.fresh,
           expectedVersion: submitted.version,
         });
-        setEdit((current) => {
-          const next = completeFileSave(current, submitted);
-          return next?.path === submitted.path
-            ? { ...next, baseContent: submitted.content, version: result.version }
-            : next;
+        setWorkspace((current) => ({
+          ...current,
+          drafts: saveDraftResult(current.drafts, submitted, result.version),
+        }));
+        setConflicts((current) => {
+          const next = { ...current };
+          delete next[submitted.id];
+          return next;
         });
-        setConflict(null);
         await refresh();
       } catch (error) {
         if (!submitted.fresh) {
           const latest = await request<{ content: string; version: string }>(
             `/vms/${vm.id}/file?path=${encodeURIComponent(submitted.path)}`,
           ).catch(() => null);
-          if (latest && latest.version !== submitted.version) setConflict(latest);
+          if (latest && latest.version !== submitted.version)
+            setConflicts((current) => ({ ...current, [submitted.id]: latest }));
         }
         throw error;
       }
@@ -276,6 +330,10 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
         if (!action.busy) void send(e.dataTransfer.files);
       }}
     >
+      <details className="feature-card project-tree-disclosure" open>
+        <summary>项目文件树与全文搜索</summary>
+        <ProjectNavigator id={vm.id} request={request} open={(path, line) => void openPath(path, line)} />
+      </details>
       <div className="file-tools">
         <button
           className="icon-button"
@@ -307,11 +365,18 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
         <button
           className="secondary compact"
           disabled={action.busy}
-          onClick={async () => {
-            if (await leave('replace')) {
-              setConflict(null);
-              setEdit({ path: target('notes.txt'), content: '', fresh: true });
+          onClick={() => {
+            if (workspace.drafts.length >= 20) {
+              setError('最多同时打开 20 个文件');
+              return;
             }
+            const draft: EditorDraft = {
+              id: crypto.randomUUID(),
+              path: target(`untitled-${workspace.drafts.length + 1}.txt`),
+              content: '',
+              fresh: true,
+            };
+            setWorkspace((current) => ({ drafts: [...current.drafts, draft], active: draft.id }));
           }}
         >
           <Plus size={14} />
@@ -427,6 +492,23 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
       <p className="subtle-note">
         {files.length} 个项目 · 可拖拽上传 · 文件传输上限 2 GiB · 文本编辑上限 1 MiB
       </p>
+      {!!workspace.drafts.length && (
+        <div className="editor-tabs" role="tablist" aria-label="打开的文件">
+          {workspace.drafts.map((draft) => (
+            <button
+              key={draft.id}
+              role="tab"
+              aria-selected={draft.id === workspace.active}
+              title={draft.path}
+              className={draft.id === workspace.active ? 'active' : ''}
+              onClick={() => setWorkspace((current) => ({ ...current, active: draft.id }))}
+            >
+              {draft.path.split('/').at(-1)}
+              {dirtyEdit(draft) ? ' ●' : ''}
+            </button>
+          ))}
+        </div>
+      )}
       {edit && (
         <div className="feature-card">
           <div className="panel-heading">
@@ -455,19 +537,16 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
               onChange={(e) => setEdit({ ...edit, path: e.target.value })}
             />
           </label>
-          <textarea
-            className="file-editor"
-            aria-label="文件内容"
-            value={edit.content}
-            spellCheck={false}
-            onChange={(e) => setEdit({ ...edit, content: e.target.value })}
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-                e.preventDefault();
-                void save();
-              }
-            }}
-          />
+          <Suspense fallback={<p className="muted">正在加载编辑器…</p>}>
+            <CodeEditor
+              key={edit.id}
+              path={edit.path}
+              value={edit.content}
+              change={(content) => setEdit({ ...edit, content })}
+              save={() => void save()}
+              line={line.path === edit.path ? line.number : undefined}
+            />
+          </Suspense>
           <p className="subtle-note">Ctrl / ⌘ + S 保存 · 草稿保存在本机浏览器 · UTF-8 文本上限 1 MiB</p>
           {conflict && (
             <div className="feature-card" role="alert">

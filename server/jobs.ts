@@ -26,6 +26,7 @@ export class Jobs {
   private queue = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
   private file?: string;
+  private persisted?: string;
   persistenceError?: string;
   constructor(
     private scope?: string,
@@ -58,6 +59,7 @@ export class Jobs {
             }
           : view,
       );
+      this.persisted = JSON.stringify(values);
       this.persist();
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.persistenceError = '任务历史读取失败';
@@ -80,9 +82,11 @@ export class Jobs {
     this.queue = this.queue
       .catch(() => {})
       .then(async () => {
+        if (data === this.persisted && !this.persistenceError) return;
         await mkdir(dirname(file), { recursive: true });
         await writeFile(file + '.tmp', data, { mode: 0o600 });
         await rename(file + '.tmp', file);
+        this.persisted = data;
         this.persistenceError = undefined;
       })
       .catch(() => {
@@ -188,6 +192,9 @@ export class Jobs {
       item.view.phase = '正在取消并清理…';
       item.abort.abort();
     }
+  }
+  async wait(key: string) {
+    await this.items.get(key)?.done;
   }
   async close() {
     this.closed = true;

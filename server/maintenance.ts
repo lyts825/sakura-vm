@@ -81,7 +81,7 @@ export class Maintenance {
     for (const dir of await readdir(backupRoot, { withFileTypes: true }).catch(() => [])) {
       if (!dir.isDirectory() || !/^[0-9a-f-]{36}$/.test(dir.name)) continue;
       for (const file of await readdir(join(backupRoot, dir.name), { withFileTypes: true }))
-        if (file.isFile() && file.name.endsWith('.sakura'))
+        if (file.isFile() && /\.sakura(?:\.enc)?$/.test(file.name))
           backupBytes += (await stat(join(backupRoot, dir.name, file.name))).size;
     }
     return {

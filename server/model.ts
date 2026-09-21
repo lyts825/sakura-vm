@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dataDirectory } from './data-directory.ts';
 
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
-export const DATA = resolve(process.env.SAKURA_DATA_DIR || join(ROOT, '.data'));
+export const DATA = dataDirectory(process.env.SAKURA_DATA_DIR || join(ROOT, '.data'));
 export const VM_ROOT = join(DATA, 'machines');
 export const IMAGE = resolve(process.env.SAKURA_IMAGE_PATH || join(DATA, 'images', 'alpine-3.23.qcow2'));
 export const PORT = Number(process.env.SAKURA_PORT || 7337);

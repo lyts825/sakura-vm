@@ -16,6 +16,16 @@ import { Maintenance } from './maintenance.ts';
 import { Ide } from './ide.ts';
 import { Recipes } from './recipes.ts';
 import { guestTask } from './guest-task.ts';
+import { GitWorkbench } from './git-workbench.ts';
+import { ProjectFiles } from './project-files.ts';
+import { CommandPresets } from './command-presets.ts';
+import { Toolchains } from './toolchains.ts';
+import { NetworkProfiles } from './network-profiles.ts';
+import { Secrets } from './secrets.ts';
+import { ServiceHealth } from './service-health.ts';
+import { Containers } from './containers.ts';
+import { DataMigration } from './data-migration.ts';
+import { importEncrypted } from './encrypted-backups.ts';
 
 export class Features {
   files: Files;
@@ -29,6 +39,16 @@ export class Features {
   maintenance: Maintenance;
   ide: Ide;
   recipes: Recipes;
+  git: GitWorkbench;
+  projectFiles: ProjectFiles;
+  commands: CommandPresets;
+  toolchains: Toolchains;
+  network: NetworkProfiles;
+  secrets: Secrets;
+  health: ServiceHealth;
+  containers: Containers;
+  migration: DataMigration;
+  private mutations = 0;
   private importing = false;
   private closed = false;
   private closing?: Promise<void>;
@@ -37,12 +57,41 @@ export class Features {
     this.files = new Files(machines);
     this.bundles = new Bundles(machines);
     this.downloads = new Downloads(machines, this.files, this.bundles);
-    this.workspaces = new Workspaces(machines);
+    this.secrets = new Secrets(machines);
+    this.network = new NetworkProfiles(machines);
+    this.workspaces = new Workspaces(machines, { secrets: this.secrets, network: this.network });
     this.sync = new FolderSync(machines);
-    this.backups = new Backups(machines, this.bundles);
+    this.backups = new Backups(machines, this.bundles, this.secrets);
     this.maintenance = new Maintenance(machines);
     this.ide = new Ide(machines, this.workspaces);
     this.recipes = new Recipes(machines, this.workspaces);
+    this.git = new GitWorkbench(machines, this.workspaces);
+    this.projectFiles = new ProjectFiles(machines, this.workspaces);
+    this.commands = new CommandPresets(machines, this.workspaces);
+    this.toolchains = new Toolchains(machines, this.workspaces);
+    this.health = new ServiceHealth(machines, this.workspaces);
+    this.containers = new Containers(machines, this.workspaces);
+    this.migration = new DataMigration(machines, () =>
+      this.jobStores().filter((store) => store !== this.migration.jobs),
+    );
+  }
+  private jobStores() {
+    return [
+      this.jobs,
+      this.images.jobs,
+      this.workspaces.jobs,
+      this.sync.jobs,
+      this.downloads.jobs,
+      this.backups.jobs,
+      this.maintenance.jobs,
+      this.git.jobs,
+      this.commands.jobs,
+      this.toolchains.jobs,
+      this.network.jobs,
+      this.health.jobs,
+      this.containers.jobs,
+      this.migration.jobs,
+    ];
   }
   async close() {
     if (!this.closing) {
@@ -57,6 +106,13 @@ export class Features {
         this.backups.close(),
         this.maintenance.close(),
         this.ide.close(),
+        this.git.close(),
+        this.commands.close(),
+        this.toolchains.close(),
+        this.network.close(),
+        this.health.close(),
+        this.containers.close(),
+        this.migration.close(),
         Promise.allSettled([...this.active.values()]),
       ]).then(() => {});
     }
@@ -69,6 +125,8 @@ export class Features {
     body: (req: IncomingMessage, signal?: AbortSignal) => Promise<any>,
   ) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
+    const mutation = req.method !== 'GET' && req.method !== 'HEAD' && url.pathname !== '/api/migration';
+    if (mutation) this.mutations++;
     const abort = new AbortController();
     const disconnected = () => {
       if (!res.writableFinished) abort.abort();
@@ -79,10 +137,22 @@ export class Features {
     const pending = Promise.resolve()
       .then(() => {
         abort.signal.throwIfAborted();
-        return this.routeRequest(req, res, url, (request) => body(request, abort.signal), abort.signal);
+        return this.routeRequest(
+          req,
+          res,
+          url,
+          async (request) => {
+            const value = await body(request, abort.signal);
+            if (mutation && this.migration.blocked && !url.pathname.endsWith('/cancel'))
+              throw new AppError('数据目录迁移维护中', 409);
+            return value;
+          },
+          abort.signal,
+        );
       })
       .finally(() => {
         this.active.delete(abort);
+        if (mutation) this.mutations--;
         req.off('aborted', disconnected);
         res.off('close', disconnected);
       });
@@ -105,15 +175,7 @@ export class Features {
       res.end(JSON.stringify(data));
     };
     if (parts[1] === 'jobs') {
-      const stores = [
-        this.jobs,
-        this.images.jobs,
-        this.workspaces.jobs,
-        this.sync.jobs,
-        this.downloads.jobs,
-        this.backups.jobs,
-        this.maintenance.jobs,
-      ];
+      const stores = this.jobStores();
       if (parts.length === 2 && req.method === 'GET') {
         send({
           jobs: stores
@@ -158,6 +220,31 @@ export class Features {
           else throw new AppError('请回到原功能页面重新执行');
           return true;
         }
+      }
+    }
+    if (parts[1] === 'migration' && parts.length === 2) {
+      if (req.method === 'GET') {
+        send(await this.migration.view());
+        return true;
+      }
+      if (req.method === 'POST') {
+        const input = z
+          .object({
+            action: z.enum(['preview', 'start', 'cancel-activation']),
+            target: z.string().max(4096).optional(),
+            token: z.string().optional(),
+          })
+          .strict()
+          .parse(await body(req));
+        if (input.action === 'cancel-activation') send(await this.migration.cancelActivation());
+        else if (input.action === 'preview') {
+          const { files: _files, ...plan } = await this.migration.plan(input.target || '');
+          send(plan);
+        } else {
+          if (this.mutations || this.importing) throw new AppError('请等待正在执行的请求完成', 409);
+          send(await this.migration.start(input.target || '', input.token || ''), 202);
+        }
+        return true;
       }
     }
     if (parts[1] === 'storage' && parts.length === 2 && req.method === 'GET') {
@@ -208,7 +295,21 @@ export class Features {
         .parse(url.searchParams.get('name'));
       this.importing = true;
       try {
-        send(await this.bundles.import(name, req, signal), 201);
+        const passphrase = req.headers['x-sakura-passphrase'];
+        if (passphrase !== undefined && (typeof passphrase !== 'string' || passphrase.length > 6000))
+          throw new AppError('加密密码格式错误');
+        send(
+          passphrase
+            ? await importEncrypted(
+                this.bundles,
+                name,
+                req,
+                Buffer.from(passphrase, 'base64').toString('utf8'),
+                signal,
+              )
+            : await this.bundles.import(name, req, signal),
+          201,
+        );
       } finally {
         this.importing = false;
       }
@@ -238,6 +339,142 @@ export class Features {
       }
     }
     if (parts.length !== 4) return false;
+    if (action === 'git') {
+      if (req.method === 'GET') {
+        send(
+          url.searchParams.has('path')
+            ? await this.git.diff(
+                id,
+                url.searchParams.get('path')!,
+                url.searchParams.get('staged') === '1',
+                signal,
+              )
+            : await this.git.view(id, signal),
+        );
+        return true;
+      }
+      if (req.method === 'POST') {
+        send(await this.git.run(id, await body(req)), 202);
+        return true;
+      }
+    }
+    if (action === 'project-files' && req.method === 'GET') {
+      send(
+        await this.projectFiles.scan(
+          id,
+          url.searchParams.get('q') || '',
+          url.searchParams.get('content') === '1',
+          signal,
+        ),
+      );
+      return true;
+    }
+    if (action === 'commands') {
+      if (req.method === 'GET') {
+        send({ presets: await this.commands.list(id), job: this.commands.jobs.view(id) });
+        return true;
+      }
+      if (req.method === 'PUT') {
+        send(await this.commands.save(id, await body(req)));
+        return true;
+      }
+      if (req.method === 'DELETE') {
+        const input = z
+          .object({ id: z.uuid() })
+          .strict()
+          .parse(await body(req));
+        send(await this.commands.remove(id, input.id));
+        return true;
+      }
+      if (req.method === 'POST') {
+        const input = z
+          .object({ id: z.uuid(), values: z.record(z.string(), z.string()).default({}) })
+          .strict()
+          .parse(await body(req));
+        send(await this.commands.run(id, input.id, input.values), 202);
+        return true;
+      }
+    }
+    if (action === 'tools') {
+      if (req.method === 'GET') {
+        send(await this.toolchains.view(id, signal));
+        return true;
+      }
+      if (req.method === 'POST') {
+        send(await this.toolchains.install(id, await body(req)), 202);
+        return true;
+      }
+    }
+    if (action === 'network') {
+      if (req.method === 'GET') {
+        send({ ...(await this.network.state(id)), job: this.network.jobs.view(id) });
+        return true;
+      }
+      if (req.method === 'POST') {
+        const input = z
+          .object({
+            action: z.enum(['preview', 'apply', 'restore', 'test']),
+            config: z.unknown().optional(),
+            token: z.string().optional(),
+          })
+          .strict()
+          .parse(await body(req));
+        send(
+          input.action === 'preview'
+            ? await this.network.preview(id, input.config, signal)
+            : input.action === 'apply'
+              ? await this.network.apply(id, input.config, input.token || '')
+              : input.action === 'restore'
+                ? await this.network.restore(id)
+                : this.network.test(id, input.config),
+        );
+        return true;
+      }
+    }
+    if (action === 'secrets') {
+      if (req.method === 'GET') {
+        send({ items: await this.secrets.list(id) });
+        return true;
+      }
+      if (req.method === 'PUT') {
+        send(await this.secrets.save(id, await body(req)));
+        return true;
+      }
+      if (req.method === 'DELETE') {
+        const input = z
+          .object({ name: z.string() })
+          .strict()
+          .parse(await body(req));
+        send(await this.secrets.remove(id, input.name));
+        return true;
+      }
+    }
+    if (action === 'health' && req.method === 'GET') {
+      send(await this.health.view(id));
+      return true;
+    }
+    if (action === 'containers') {
+      if (req.method === 'GET') {
+        send(
+          url.searchParams.has('logs')
+            ? await this.containers.logs(id, url.searchParams.get('logs')!, signal)
+            : await this.containers.view(id, signal),
+        );
+        return true;
+      }
+      if (req.method === 'POST') {
+        send(await this.containers.run(id, await body(req)), 202);
+        return true;
+      }
+    }
+    if (action === 'backup-download' && req.method === 'POST') {
+      const input = z
+        .object({ backupId: z.uuid() })
+        .strict()
+        .parse(await body(req));
+      send(await this.downloads.issueLocal(id, await this.backups.downloadable(id, input.backupId)));
+      return true;
+    }
     if (action === 'organization' && req.method === 'PUT') {
       send(await this.machines.organize(id, await body(req)));
       return true;
@@ -305,13 +542,14 @@ export class Features {
             action: z.enum(['run', 'verify', 'restore', 'delete']),
             backupId: z.string().uuid().optional(),
             name: z.string().optional(),
+            password: z.string().max(1024).optional(),
           })
           .strict()
           .parse(await body(req));
-        if (input.action === 'run') send(await this.backups.run(id), 202);
+        if (input.action === 'run') send(await this.backups.run(id, input.password), 202);
         else {
           if (!input.backupId) throw new AppError('请选择备份');
-          send(await this.backups.operate(id, input.backupId, input.action, input.name));
+          send(await this.backups.operate(id, input.backupId, input.action, input.name, input.password));
         }
         return true;
       }

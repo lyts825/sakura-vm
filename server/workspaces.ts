@@ -15,6 +15,8 @@ import {
   envPrefix,
 } from './project-services.ts';
 import { guestTask } from './guest-task.ts';
+import { secretRefsSchema, privateLog, redactValues, type Secrets } from './secrets.ts';
+import type { NetworkProfiles } from './network-profiles.ts';
 
 export const projectSchema = z
   .object({
@@ -39,6 +41,7 @@ export const projectSchema = z
     command: z.string().max(8192).default(''),
     previewPort: z.number().int().min(1024).max(65535).optional(),
     environment: environmentSchema.optional(),
+    secrets: secretRefsSchema.optional(),
     services: z.array(serviceSchema).max(12).optional(),
   })
   .strict()
@@ -50,6 +53,14 @@ export const projectSchema = z
     }
   });
 export type Project = z.infer<typeof projectSchema>;
+export function projectPrivateValues(project: Project) {
+  return [
+    ...Object.keys(project.secrets || {}).map((key) => project.environment?.[key] || ''),
+    ...(project.services || []).flatMap((service) =>
+      Object.keys(service.secrets || {}).map((key) => service.environment?.[key] || ''),
+    ),
+  ].filter(Boolean);
+}
 export function setupFingerprint(project: Project) {
   const { directory, template, repository, setup, environment } = project;
   return createHash('sha256')
@@ -139,7 +150,11 @@ export class Workspaces {
   jobs = new Jobs('projects');
   private observed = new Map<string, string>();
   private samples = new Map<string, { at: number; promise: Promise<ReturnType<typeof parseMetrics>> }>();
-  constructor(private machines: Machines) {
+  onAction?: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>;
+  constructor(
+    private machines: Machines,
+    private context?: { secrets: Secrets; network: NetworkProfiles },
+  ) {
     machines.on('change', this.onChange);
   }
   private onChange = () => {
@@ -191,6 +206,29 @@ export class Workspaces {
       return projectSchema.parse({ template: vm.template || 'none' });
     }
   }
+  networkEnvironment(id: string) {
+    return this.context?.network.environment(id) || Promise.resolve({});
+  }
+  async resolvedConfig(id: string): Promise<Project> {
+    const project = await this.config(id);
+    const environment = {
+      ...(await this.networkEnvironment(id)),
+      ...project.environment,
+      ...(await this.context?.secrets.resolve(id, project.secrets)),
+    };
+    const services = project.services
+      ? await Promise.all(
+          project.services.map(async (service) => ({
+            ...service,
+            environment: {
+              ...service.environment,
+              ...(await this.context?.secrets.resolve(id, service.secrets)),
+            },
+          })),
+        )
+      : undefined;
+    return { ...project, environment, ...(services ? { services } : {}) };
+  }
   async save(id: string, input: unknown) {
     const project = projectSchema.parse(input);
     return this.machines.locked(id, async () => {
@@ -224,63 +262,91 @@ export class Workspaces {
     const result = await guestTask(this.machines, id, script, signal, log);
     if (result.code !== 0) throw new Error(result.stderr.slice(-2000) || `命令退出码 ${result.code}`);
   }
-  async run(id: string, action: 'setup' | 'start' | 'stop' | 'terminal', service?: string) {
-    return this.machines.locked(id, () => this.runInternal(id, action, service));
+  async run(
+    id: string,
+    action: 'setup' | 'start' | 'stop' | 'terminal',
+    service?: string,
+    automatic = false,
+  ) {
+    return this.machines.locked(id, async () => {
+      const finish =
+        !automatic && (action === 'start' || action === 'stop')
+          ? await this.onAction?.(id, action, service)
+          : undefined;
+      try {
+        const job = await this.runInternal(id, action, service);
+        if (finish) void this.jobs.wait(id).then(() => finish(job.status === 'done'));
+        return job;
+      } catch (error) {
+        finish?.(false);
+        throw error;
+      }
+    });
   }
   private async runInternal(id: string, action: 'setup' | 'start' | 'stop' | 'terminal', service?: string) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
-    const project = await this.config(id);
+    const project =
+      action === 'stop' || action === 'terminal' ? await this.config(id) : await this.resolvedConfig(id);
     const distro = this.machines.get(id).distro;
     if (service && !project.services?.some((s) => s.name === service)) throw new AppError('服务不存在');
     return this.jobs.start(
       id,
-      async (log, signal) => {
-        if (action === 'stop') {
-          if (project.services?.length) {
-            await runServices(this.machines, id, project, 'stop', log, signal, service);
-            if (service) return;
+      async (rawLog, signal) => {
+        const privateValues = projectPrivateValues(project);
+        const output = privateLog(rawLog, privateValues),
+          log = output.write;
+        try {
+          if (action === 'stop') {
+            if (project.services?.length) {
+              await runServices(this.machines, id, project, 'stop', log, signal, service);
+              if (service) return;
+            }
+            await this.execute(
+              id,
+              'if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then tmux kill-session -t =sakura-project; fi',
+              log,
+              signal,
+            );
+            return;
           }
+          if (action === 'terminal') {
+            await this.execute(id, provisionScript('none', distro), log, signal);
+            return;
+          }
+          const install =
+            action === 'setup'
+              ? provisionScript(project.template, distro)
+              : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
+          let prepare = `mkdir -p ${quote(project.directory)}\n`;
+          if (project.repository)
+            prepare += `if [ ! -d ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
+          const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
+          const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
+          if (project.setup.trim())
+            prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\ncd ${quote(project.directory)}\n${project.setup}\nfi\ntouch ${marker}\n`;
+          if (action === 'start' && !project.services?.length) {
+            if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
+            prepare += `tmux new-session -d -s sakura-project -c ${quote(project.directory)} ${quote(`sh -lc ${quote(`${envPrefix(project.environment)}\n${project.command}`)} > /tmp/sakura-project.log 2>&1`)}\nsleep 1\nif ! tmux has-session -t =sakura-project 2>/dev/null; then tail -c 8192 /tmp/sakura-project.log; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
+          }
+          log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
+          const running =
+            action === 'start' && !project.services?.length
+              ? "if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then echo '项目已经运行；如需应用新的启动配置，请先停止项目'; exit 0; fi\n"
+              : '';
           await this.execute(
             id,
-            'if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then tmux kill-session -t =sakura-project; fi',
+            `set -eu\n${running}${envPrefix(project.environment)}\n${install}\n${prepare}`,
             log,
             signal,
           );
-          return;
+          if (action === 'start' && project.services?.length)
+            await runServices(this.machines, id, project, 'start', log, signal, service);
+          log('操作完成。\n');
+        } catch (error) {
+          throw new AppError(redactValues((error as Error).message, privateValues));
+        } finally {
+          output.flush();
         }
-        if (action === 'terminal') {
-          await this.execute(id, provisionScript('none', distro), log, signal);
-          return;
-        }
-        const install =
-          action === 'setup'
-            ? provisionScript(project.template, distro)
-            : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
-        let prepare = `mkdir -p ${quote(project.directory)}\n`;
-        if (project.repository)
-          prepare += `if [ ! -d ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
-        const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
-        const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
-        if (project.setup.trim())
-          prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\ncd ${quote(project.directory)}\n${project.setup}\nfi\ntouch ${marker}\n`;
-        if (action === 'start' && !project.services?.length) {
-          if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
-          prepare += `tmux new-session -d -s sakura-project -c ${quote(project.directory)} ${quote(`sh -lc ${quote(`${envPrefix(project.environment)}\n${project.command}`)} > /tmp/sakura-project.log 2>&1`)}\nsleep 1\nif ! tmux has-session -t =sakura-project 2>/dev/null; then tail -c 8192 /tmp/sakura-project.log; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
-        }
-        log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
-        const running =
-          action === 'start' && !project.services?.length
-            ? "if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then echo '项目已经运行；如需应用新的启动配置，请先停止项目'; exit 0; fi\n"
-            : '';
-        await this.execute(
-          id,
-          `set -eu\n${running}${envPrefix(project.environment)}\n${install}\n${prepare}`,
-          log,
-          signal,
-        );
-        if (action === 'start' && project.services?.length)
-          await runServices(this.machines, id, project, 'start', log, signal, service);
-        log('操作完成。\n');
       },
       {
         title: `项目${{ setup: '初始化', start: '启动', stop: '停止', terminal: '终端安装' }[action]}${service ? ` · ${service}` : ''}`,
@@ -290,7 +356,8 @@ export class Workspaces {
     );
   }
   async runtime(id: string, signal?: AbortSignal) {
-    const project = await this.config(id);
+    const project = await this.resolvedConfig(id);
+    const privateValues = projectPrivateValues(project);
     if (project.services?.length) {
       const services = [];
       for (const service of project.services) {
@@ -301,7 +368,7 @@ export class Workspaces {
           signal,
         );
         const [status, ...lines] = result.stdout.split('\n');
-        services.push({ name: service.name, status, log: lines.join('\n') });
+        services.push({ name: service.name, status, log: redactValues(lines.join('\n'), privateValues) });
       }
       return {
         status: services.every((s) => s.status === 'running')
@@ -320,7 +387,7 @@ export class Workspaces {
       signal,
     );
     const [status, ...lines] = result.stdout.split('\n');
-    return { status, log: lines.join('\n') };
+    return { status, log: redactValues(lines.join('\n'), privateValues) };
   }
   metrics(id: string) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);

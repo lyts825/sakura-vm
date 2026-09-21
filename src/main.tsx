@@ -36,6 +36,8 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  GitBranch,
+  Wrench,
 } from 'lucide-react';
 import { SakuraArt } from './SakuraArt';
 import { DesktopPanel } from './DesktopPanel';
@@ -55,11 +57,14 @@ import { TerminalWorkspace } from './TerminalWorkspace';
 import { ResponseOrder } from './request-order';
 import { mayLeaveEditor } from './file-editor-state';
 import { TasksPanel, LibraryPanel, MaintenancePanel } from './ManagementPanels';
+import { GitPanel, DevelopmentPanel, ContainersPanel, MigrationPanel } from './DevelopmentPanels';
+import { CommandPalette, type PaletteTarget } from './CommandPalette';
 import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
 import './fonts.css';
 import './style.css';
+import './development.css';
 
 type System = {
   version: string;
@@ -199,6 +204,27 @@ function App() {
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [modal, setModal] = useState<'create' | 'help' | 'delete' | null>(null);
   const [confirm, setConfirm] = useState('');
+  const [palette, setPalette] = useState(false);
+  const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
+  const navigatePalette = async (target: PaletteTarget) => {
+    setPalette(false);
+    if (!(await mayLeaveEditor())) return;
+    if (target.id) setSelectedRaw(target.id);
+    if (target.page) setPageRaw(target.page);
+    if (target.tab) setTabRaw(target.tab);
+    if (target.file) setOpenFile({ id: target.id || selected, path: target.file, revision: Date.now() });
+  };
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.altKey) {
+        if (document.querySelector('dialog[open]')) return;
+        event.preventDefault();
+        setPalette(true);
+      }
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
   const [theme, setTheme] = useState<'day' | 'night'>(() => {
     try {
       return localStorage.getItem('sakura-theme') === 'night' ? 'night' : 'day';
@@ -440,6 +466,15 @@ function App() {
             </b>
           </div>
           <div className="topbar-actions">
+            <button
+              className="text-button command-shortcut"
+              onClick={() => setPalette(true)}
+              aria-label="打开命令面板"
+            >
+              <Search size={16} />
+              <span>快速前往</span>
+              <kbd>Ctrl K</kbd>
+            </button>
             <span className="local-badge">
               <ShieldCheck size={14} />
               仅本机访问
@@ -759,6 +794,9 @@ function App() {
                           { id: 'desktop', label: '桌面', icon: Monitor },
                           { id: 'files', label: '文件', icon: Folder },
                           { id: 'project', label: '项目', icon: Boxes },
+                          { id: 'git', label: 'Git', icon: GitBranch },
+                          { id: 'development', label: '开发', icon: Wrench },
+                          { id: 'containers', label: '容器', icon: Boxes },
                           { id: 'metrics', label: '资源', icon: Cpu },
                           { id: 'services', label: '服务', icon: Network },
                           { id: 'sync', label: '同步', icon: RefreshCw },
@@ -782,6 +820,9 @@ function App() {
                                 'desktop',
                                 'files',
                                 'project',
+                                'git',
+                                'development',
+                                'containers',
                                 'metrics',
                                 'services',
                                 'sync',
@@ -845,10 +886,38 @@ function App() {
                           />
                         )}
                         {tab === 'files' && (
-                          <FileBrowser key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                          <FileBrowser
+                            key={vm.id}
+                            vm={vm}
+                            request={api}
+                            token={token}
+                            refresh={refresh}
+                            openFile={openFile?.id === vm.id ? openFile : undefined}
+                          />
                         )}
                         {tab === 'project' && (
                           <ProjectPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                        )}
+                        {tab === 'git' && (
+                          <GitPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                        )}
+                        {tab === 'development' && (
+                          <DevelopmentPanel
+                            key={vm.id}
+                            vm={vm}
+                            request={api}
+                            token={token}
+                            refresh={refresh}
+                          />
+                        )}
+                        {tab === 'containers' && (
+                          <ContainersPanel
+                            key={vm.id}
+                            vm={vm}
+                            request={api}
+                            token={token}
+                            refresh={refresh}
+                          />
                         )}
                         {tab === 'metrics' && (
                           <MetricsPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
@@ -1033,6 +1102,7 @@ function App() {
                   </dl>
                 </div>
               </div>
+              <MigrationPanel request={api} />
               <div className="info-callout">
                 <ShieldCheck size={24} />
                 <div>
@@ -1047,6 +1117,15 @@ function App() {
           )}
         </main>
       </div>
+      {palette && (
+        <CommandPalette
+          vms={vms}
+          vm={vm}
+          request={api}
+          navigate={navigatePalette}
+          close={() => setPalette(false)}
+        />
+      )}
       {toast && (
         <div role="status" className={`toast ${toast.error ? 'error' : ''}`}>
           {toast.error ? <CircleHelp size={18} /> : <Check size={18} />}

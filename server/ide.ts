@@ -1,9 +1,10 @@
 import { mkdir, readFile, writeFile, rename, copyFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { DATA, vmDir, AppError } from './model.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
+import { readStore, regularDirectory } from './local-store.ts';
 
 export const sshPath = (value: string) =>
   '"' + value.replaceAll('\\', '/').replaceAll('%', '%%').replaceAll('"', '\\"') + '"';
@@ -33,6 +34,28 @@ export class Ide {
         await mkdir(join(DATA, 'ssh'), { recursive: true });
         await writeFile(this.file + '.tmp', text, { mode: 0o600 });
         await rename(this.file + '.tmp', this.file);
+        // Existing user SSH Include directives may still point at an earlier data root.
+        let directory = DATA;
+        const seen = new Set<string>();
+        for (let step = 0; step < 32; step++) {
+          const marker = await readStore<{ source: string; id: string } | null>(
+            join(directory, '.sakura-migration.json'),
+            () => null,
+          );
+          if (!marker || !isAbsolute(marker.source) || seen.has(resolve(marker.source))) break;
+          const redirect = await readStore<{ target: string; id: string } | null>(
+            join(marker.source, '.sakura-redirect.json'),
+            () => null,
+          );
+          if (!redirect || redirect.id !== marker.id || resolve(redirect.target) !== resolve(directory))
+            break;
+          seen.add(resolve(marker.source));
+          const folder = await regularDirectory(join(marker.source, 'ssh'));
+          await mkdir(folder, { recursive: true });
+          await writeFile(join(folder, 'config.tmp'), `Include ${sshPath(this.file)}\n`, { mode: 0o600 });
+          await rename(join(folder, 'config.tmp'), join(folder, 'config'));
+          directory = marker.source;
+        }
       });
     await this.queue;
   }

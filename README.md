@@ -37,6 +37,8 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 ## 已实现
 
+- **开发工作台与安全维护**：Git、多文件代码编辑器、Ctrl / ⌘ + K 命令面板、开发工具与网络管理、服务持续健康检查、Windows 私密配置、Docker / Compose、数据目录迁移、加密和外部目录备份。入口、CLI 与验证方法见 [开发工作台说明](docs/development-workbench.md)。
+
 - 创建、启动、正常关机、删除 Alpine、Debian 12 和 Ubuntu 24.04 实例；镜像库支持官方镜像下载与校验。
 - 每实例独立 QCOW2 增量磁盘，完整 Linux 文件系统在重启后保留。
 - 浏览器 SSH 交互终端：颜色、Ctrl+C、窗口缩放、多终端标签、分屏和 tmux 会话恢复；启动时显示串口日志。
@@ -124,13 +126,13 @@ scripts/cli.mjs         WSL 风格命令行入口
 
 调用链：`Web/CLI → 本地 API → PosixLoom Service → Rust Native Host / Job Object → QEMU → Linux`。SSH 仅连接到 QEMU 分配的本机随机端口，默认不对外开放 SSH，不生成共享密码。浏览器获得的是短期服务访问凭证，不会收到实例 SSH 私钥。
 
-备份时先停止服务，再复制整个 `.data`。增量磁盘依赖基础镜像：**不要单独删除或移动 `.data/images`**。文件中的 backing 路径为绝对路径；移动项目后需使用 `qemu-img rebase -u -b <新基础镜像绝对路径> -F qcow2 <增量磁盘>` 更新引用，且基础镜像必须是原来相同的文件。
+可在「系统设置 → 数据目录迁移」执行停机复制、校验与路径修复，重启服务后切换到新目录。手动备份时先停止服务，再复制整个数据目录。增量磁盘依赖基础镜像：**不要单独删除或移动 `.data/images`**。手动移动项目后仍需修复 backing 路径，且基础镜像必须保持相同内容，详见 [迁移说明](docs/development-workbench.md#数据目录迁移)。
 
 可配置环境变量：`SAKURA_PORT`（默认 7337）、`SAKURA_DATA_DIR`、`SAKURA_QEMU_DIR`，以及可选的 `SAKURA_IMAGE_DIR`、`SAKURA_IMAGE_PATH`。WHPX 需要用户已在 Windows 中启用 Windows Hypervisor Platform；本项目不会修改系统功能或重启主机。自动模式在 WHPX 不可用时使用 TCG。
 
 ## 当前范围
 
-- 支持 Alpine Linux 3.23.4、Debian 12、Ubuntu 24.04 的官方 x86_64 云镜像；目录互通采用双向同步。尚未提供通用镜像格式导入、包管理界面、WSLg、Windows 驱动器直接挂载、自动内存回收和跨系统进程互操作。
+- 支持 Alpine Linux 3.23.4、Debian 12、Ubuntu 24.04 的官方 x86_64 云镜像；目录互通采用双向同步。提供常用开发工具安装，尚未提供通用镜像格式导入、完整发行版包管理界面、WSLg、Windows 驱动器直接挂载、自动内存回收和跨系统进程互操作。
 - TCG 是软件模拟。自动模式会检测本机是否能使用 WHPX；其他主机的启动时间和兼容性仍取决于硬件及系统配置。内存限制是 QEMU 配额，Web 的「已分配内存」不是客户机实时使用量。
 - 快照只包含磁盘，不保存 RAM 或运行中的进程。恢复会覆盖快照之后的数据。
 - TCP 转发仅监听 `127.0.0.1`；客户机使用 NAT 上网。此版本面向受信任的本机开发，不是公网多用户管理平台，也不宣称防御恶意客户机。

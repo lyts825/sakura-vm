@@ -18,6 +18,7 @@ import type { Project } from '../server/workspaces';
 import type { SyncConfig, SyncPreview, SyncDecisions } from '../server/sync';
 import { ServiceEditor, EnvironmentEditor, ProjectConnections, BackupPanel } from './ManagementPanels';
 import { executeProjectAction, type ProjectAction } from './project-action';
+import { HealthPanel, SecretReferences } from './DevelopmentPanels';
 import './features.css';
 
 export type Request = <T = any>(
@@ -275,6 +276,7 @@ export function ProjectPanel(props: FeatureProps) {
             />
           </label>
           <EnvironmentEditor value={project.environment} change={(environment) => edit({ environment })} />
+          <SecretReferences value={project.secrets} change={(secrets) => edit({ secrets })} />
           <ServiceEditor project={project} edit={edit} />
           <div className="feature-actions">
             <button
@@ -337,6 +339,7 @@ export function ProjectPanel(props: FeatureProps) {
         </>
       )}
       <JobLog job={remote.data?.job} />
+      <HealthPanel {...props} />
       {runtime.data?.services?.map((service) => (
         <details className="feature-card" key={service.name}>
           <summary>
@@ -953,6 +956,7 @@ export function ImageCatalog({
   const remote = useRemote<ImageInfo[]>(request, '/images', true, 2500);
   const action = useAction();
   const [name, setName] = useState('imported-linux');
+  const [password, setPassword] = useState('');
   const file = useRef<HTMLInputElement>(null);
   return (
     <div className="feature-panel">
@@ -987,7 +991,18 @@ export function ImageCatalog({
       </div>
       <div className="feature-card">
         <h3>导入 Sakura 实例</h3>
-        <p>从 .sakura 文件恢复到新实例，端口转发默认清空。</p>
+        <p>从 .sakura 或 .sakura.enc 文件恢复到新实例，端口转发默认清空。</p>
+        <label>
+          加密备份密码
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            maxLength={1024}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="普通备份可留空"
+          />
+        </label>
         <div className="inline-form">
           <input
             aria-label="导入实例名称"
@@ -1004,19 +1019,34 @@ export function ImageCatalog({
         <input
           ref={file}
           type="file"
-          accept=".sakura"
+          accept=".sakura,.enc"
           hidden
           onChange={(e) => {
             const value = e.target.files?.[0];
             if (value)
-              void action.run(async () => {
+              void action.run(async (signal) => {
+                if (value.name.endsWith('.enc') && !password) throw new Error('请输入加密备份密码');
                 const response = await fetch(`/api/import?name=${encodeURIComponent(name)}`, {
                   method: 'POST',
-                  headers: { 'X-Sakura-Token': token, 'Content-Type': 'application/octet-stream' },
+                  headers: {
+                    'X-Sakura-Token': token,
+                    'Content-Type': 'application/octet-stream',
+                    ...(value.name.endsWith('.enc')
+                      ? {
+                          'X-Sakura-Passphrase': btoa(
+                            Array.from(new TextEncoder().encode(password), (byte) =>
+                              String.fromCharCode(byte),
+                            ).join(''),
+                          ),
+                        }
+                      : {}),
+                  },
                   body: value,
+                  signal,
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error);
+                setPassword('');
                 await refresh();
               }, '实例已导入，可在工作空间启动');
             e.target.value = '';

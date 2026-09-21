@@ -7,12 +7,18 @@ import type { Machines } from './machines.ts';
 import type { Files } from './files.ts';
 import type { Bundles } from './bundles.ts';
 import { Jobs } from './jobs.ts';
+import { lstat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 
 export const downloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('file'), path: z.string() }).strict(),
   z.object({ type: z.literal('export') }).strict(),
 ]);
-type DownloadTarget = z.infer<typeof downloadSchema> & { id: string; name: string };
+type DownloadTarget = (z.infer<typeof downloadSchema> | { type: 'local'; path: string }) & {
+  id: string;
+  name: string;
+};
 
 // A ticket grants one download only; it never contains the controller token.
 export class DownloadTickets {
@@ -61,6 +67,12 @@ export class Downloads {
     this.machines.requireStopped(id);
     return this.tickets.issue({ id, type: 'export', name: vm.name + '.sakura' });
   }
+  async issueLocal(id: string, file: { path: string; name: string }) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    this.machines.get(id);
+    if (!(await lstat(file.path)).isFile()) throw new AppError('备份文件不可用');
+    return this.tickets.issue({ id, type: 'local', ...file });
+  }
   async route(req: IncomingMessage, res: ServerResponse, url: URL) {
     const match = /^\/api\/downloads\/([a-f0-9]{64})$/.exec(url.pathname);
     if (!match) return false;
@@ -89,7 +101,14 @@ export class Downloads {
     const work = (async () => {
       if (res.destroyed) abort.abort();
       abort.signal.throwIfAborted();
-      if (target.type === 'file')
+      if (target.type === 'local') {
+        const info = await lstat(target.path);
+        if (!info.isFile()) throw new AppError('备份文件不可用');
+        headers(info.size);
+        await pipeline(createReadStream(target.path, { end: Math.max(0, info.size - 1) }), res, {
+          signal: abort.signal,
+        });
+      } else if (target.type === 'file')
         await this.files.download(target.id, target.path, res, headers, abort.signal);
       else
         await this.jobs.track(

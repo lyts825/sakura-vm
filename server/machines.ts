@@ -64,6 +64,12 @@ export class Machines extends EventEmitter {
   private operations = new Set<Promise<void>>();
   private closeTask?: Promise<void>;
   closing = false;
+  maintenance = false;
+  enterMaintenance() {
+    if (this.closing || this.maintenance || this.operations.size || this.live.size)
+      throw new AppError('请停止全部实例并等待正在执行的操作完成', 409);
+    this.maintenance = true;
+  }
   constructor(public engine: Engine) {
     super();
   }
@@ -104,6 +110,7 @@ export class Machines extends EventEmitter {
   }
   async locked<T>(id: string, action: () => Promise<T>): Promise<T> {
     if (this.closing) throw new AppError('服务正在关闭', 503);
+    if (this.maintenance) throw new AppError('数据目录迁移维护中，请等待完成并重启服务', 409);
     if (this.locks.has(id)) throw new AppError('该实例的另一项操作正在进行', 409);
     this.locks.add(id);
     let complete!: () => void;

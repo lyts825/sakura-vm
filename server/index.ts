@@ -24,6 +24,7 @@ const machines = new Machines(engine);
 await machines.init();
 const desktops = new Desktops(machines);
 const features = new Features(machines);
+await features.ide.update();
 const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
 let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
 const equalToken = (value: unknown) => tokenMatches(value, token);
@@ -40,6 +41,13 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
   if (await features.downloads.route(req, res, url)) return;
   if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
+  if (
+    features.migration.blocked &&
+    req.method !== 'GET' &&
+    url.pathname !== '/api/migration' &&
+    !/^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname)
+  )
+    throw new AppError('数据目录迁移维护中，请等待完成并重启服务', 409);
   const route = url.pathname.split('/').filter(Boolean);
   if (await features.route(req, res, url, (request, signal) => body(request, undefined, signal))) return;
   if (req.method === 'GET' && url.pathname === '/api/system')

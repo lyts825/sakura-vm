@@ -5,6 +5,7 @@ import { quote } from './files.ts';
 import type { Machines } from './machines.ts';
 import type { Project } from './workspaces.ts';
 import { guestTask } from './guest-task.ts';
+import { secretRefsSchema } from './secrets.ts';
 
 export const environmentSchema = z
   .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(4096))
@@ -17,6 +18,19 @@ export const serviceSchema = z
     ready: z.string().max(2048).default(''),
     timeout: z.number().int().min(5).max(300).default(30),
     environment: environmentSchema.optional(),
+    secrets: secretRefsSchema.optional(),
+    health: z
+      .object({
+        command: z.string().trim().min(1).max(2048),
+        interval: z.number().int().min(5).max(3600).default(30),
+        timeout: z.number().int().min(1).max(30).default(5),
+        failures: z.number().int().min(1).max(10).default(3),
+        restart: z.boolean().default(false),
+        maxRestarts: z.number().int().min(0).max(5).default(3),
+        backoff: z.number().int().min(5).max(300).default(10),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type ProjectService = z.infer<typeof serviceSchema>;

@@ -4,6 +4,7 @@ import { createReadStream } from 'node:fs';
 import { readFile, open, lstat, unlink } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { developmentCommand, developmentHelp } from './development-cli.mjs';
 const base = `http://127.0.0.1:${process.env.SAKURA_PORT || 7337}`;
 const [action = 'help', name, ...args] = process.argv.slice(2);
 async function main() {
@@ -14,6 +15,7 @@ async function main() {
     console.log(
       '\nWorkspace management:\n  tasks\n  task <id> <cancel|retry>\n  storage\n  batch <start|stop> <name...>\n  organize <name> <organization.json>\n  diagnostics <name> [run]\n  resize <name> <GiB|finish>\n  backups <name>\n  backup <name> [run|verify|restore|delete] [backup-id] [new-name]\n  backup <name> configure <policy.json>\n  ide <name> [configure]\n  recipe <name> [read|write|apply] [sakura.json]\n  from-recipe <new-name> <sakura.json>\n  sync-preview <name>\n  sync-apply <name> <decisions.json>\n  project <name> <start|stop> [service-name]',
     );
+    console.log(developmentHelp);
     return;
   }
   try {
@@ -27,6 +29,11 @@ async function main() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
       return result;
+    }
+    const development = await developmentCommand(action, name, args, api, base);
+    if (development.handled) {
+      console.log(JSON.stringify(development.value, null, 2));
+      return;
     }
     if (action === 'images') {
       console.table(await api('/images'));
@@ -72,7 +79,13 @@ async function main() {
       if (!args[0]) throw new Error('Specify a .sakura file');
       const response = await fetch(`${base}/api/import?name=${encodeURIComponent(name)}`, {
         method: 'POST',
-        headers: { 'X-Sakura-Token': bootstrap.token, 'Content-Type': 'application/octet-stream' },
+        headers: {
+          'X-Sakura-Token': bootstrap.token,
+          'Content-Type': 'application/octet-stream',
+          ...(process.env.SAKURA_BACKUP_PASSWORD
+            ? { 'X-Sakura-Passphrase': Buffer.from(process.env.SAKURA_BACKUP_PASSWORD).toString('base64') }
+            : {}),
+        },
         body: createReadStream(args[0]),
         duplex: 'half',
       });
@@ -159,6 +172,7 @@ async function main() {
             action: args[0] || 'run',
             backupId: args[1],
             name: args[2],
+            password: process.env.SAKURA_BACKUP_PASSWORD || undefined,
           }),
         );
       return;
