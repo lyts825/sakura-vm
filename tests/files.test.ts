@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable, Writable } from 'node:stream';
+import { once } from 'node:events';
+import { createServer, request } from 'node:http';
 import type { SFTPWrapper } from 'ssh2';
 import { Machines } from '../server/machines.ts';
 import type { Engine } from '../server/runtime.ts';
+import { Files } from '../server/files.ts';
 
 const path = '/workspace/notes.txt';
 const original = Buffer.from('原始内容\n');
@@ -14,11 +17,13 @@ function fixture(
     failMetadata?: boolean;
     failRename?: boolean;
     collide?: boolean;
+    onWrite?: () => void;
   } = {},
 ) {
   const files = new Map<string, Buffer>([[path, original]]);
   const modes = new Map<string, number>([[path, 0o100660]]);
   const owners = new Map([[path, { uid: 1000, gid: 1000 }]]);
+  let connected = true;
   const missing = () => Object.assign(new Error('No such file'), { code: 2 });
   const rename = (from: string, to: string, replace: boolean, cb: (error?: Error) => void) => {
     if (options.collide) files.set(to, original);
@@ -53,6 +58,7 @@ function fixture(
         emitClose: false,
         write(chunk: Buffer, _encoding, cb) {
           files.set(target, Buffer.concat([files.get(target)!, chunk]));
+          options.onWrite?.();
           cb(options.failWrite ? new Error('connection lost during write') : undefined);
         },
         final(cb) {
@@ -88,7 +94,8 @@ function fixture(
     ext_openssh_rename(from: string, to: string, cb: (error?: Error) => void) {
       rename(from, to, true, cb);
     },
-    unlink(target: string, cb: () => void) {
+    unlink(target: string, cb: (error?: Error) => void) {
+      if (!connected) return cb(new Error('SFTP connection closed'));
       files.delete(target);
       modes.delete(target);
       owners.delete(target);
@@ -96,7 +103,17 @@ function fixture(
     },
   } as unknown as SFTPWrapper;
   const machines = new Machines({} as Engine);
-  machines.sftp = async (_id, work) => work(ftp);
+  machines.sftp = async (_id, work, signal) => {
+    const abort = () => {
+      connected = false;
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      return await work(ftp);
+    } finally {
+      signal?.removeEventListener('abort', abort);
+    }
+  };
   return { machines, files, modes, owners };
 }
 
@@ -186,4 +203,122 @@ test('text previews wait for SFTP handle closure and report delayed close failur
     return work({ createReadStream: () => stream } as unknown as SFTPWrapper);
   };
   await assert.rejects(machines.readGuestFile('vm', path), /read handle close failed/);
+});
+
+test('cancelled uploads never publish partial content and retain the original file', async () => {
+  const { machines, files } = fixture();
+  const abort = new AbortController();
+  const source = Readable.from(
+    (async function* () {
+      yield Buffer.from('partial');
+      abort.abort();
+      yield Buffer.from('more');
+    })(),
+  );
+  await assert.rejects(new Files(machines).upload('vm', path, source, true, abort.signal), {
+    name: 'AbortError',
+  });
+  assert.deepEqual(files.get(path), original);
+  assert.equal(files.size, 1);
+});
+
+test('uploads can still cancel while establishing the SFTP connection', async () => {
+  const { machines, files } = fixture();
+  const abort = new AbortController();
+  let connectionSignal: AbortSignal | undefined;
+  machines.sftp = async (_id, _work, signal) => {
+    connectionSignal = signal;
+    return new Promise((_resolve, reject) => {
+      signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+    });
+  };
+  const uploading = new Files(machines).upload('vm', path, Readable.from(['content']), true, abort.signal);
+  abort.abort();
+  await assert.rejects(uploading, { name: 'AbortError' });
+  assert.equal(connectionSignal?.aborted, true);
+  assert.deepEqual(files.get(path), original);
+  assert.equal(files.size, 1);
+});
+
+test(
+  'an interrupted HTTP upload retains its SFTP connection long enough to remove partial files',
+  { timeout: 5000 },
+  async (t) => {
+    let wrote!: () => void;
+    const written = new Promise<void>((resolve) => {
+      wrote = resolve;
+    });
+    let finished!: (error: unknown) => void;
+    const completed = new Promise<unknown>((resolve) => {
+      finished = resolve;
+    });
+    const { machines, files } = fixture({ onWrite: wrote });
+    const http = createServer((req, res) => {
+      const abort = new AbortController();
+      req.once('aborted', () => abort.abort());
+      res.once('close', () => {
+        if (!res.writableFinished) abort.abort();
+      });
+      void new Files(machines).upload('vm', path, req, true, abort.signal).then(
+        () => {
+          res.end();
+          finished(undefined);
+        },
+        (error) => {
+          res.destroy();
+          finished(error);
+        },
+      );
+    });
+    t.after(async () => {
+      http.closeAllConnections();
+      await new Promise<void>((resolve) => http.close(() => resolve()));
+    });
+    http.listen(0, '127.0.0.1');
+    await once(http, 'listening');
+    const upload = request({
+      host: '127.0.0.1',
+      port: (http.address() as { port: number }).port,
+      method: 'PUT',
+    });
+    upload.on('error', () => {});
+    upload.write('partial body');
+    await written;
+    upload.destroy();
+    const error = await completed;
+    assert.match((error as Error).message, /aborted/i);
+    assert.deepEqual(files.get(path), original);
+    assert.equal(files.size, 1);
+  },
+);
+
+test('downloads keep their declared length when the source grows after stat, including empty files', async () => {
+  for (const initial of [Buffer.from('original'), Buffer.alloc(0)]) {
+    const { machines } = fixture();
+    machines.sftp = async (_id, work) =>
+      work({
+        lstat(_path: string, cb: (error: undefined, attrs: unknown) => void) {
+          cb(undefined, { size: initial.length, isFile: () => true });
+        },
+        createReadStream(_path: string, options?: { start?: number; end?: number }) {
+          const grown = Buffer.concat([initial, Buffer.from('appended while downloading')]);
+          return Readable.from([
+            grown.subarray(options?.start ?? 0, options?.end === undefined ? undefined : options.end + 1),
+          ]);
+        },
+      } as unknown as SFTPWrapper);
+    const chunks: Buffer[] = [];
+    const target = new Writable({
+      write(chunk: Buffer, _encoding, cb) {
+        chunks.push(chunk);
+        cb();
+      },
+    });
+    let declaredSize: number | undefined;
+    await new Files(machines).download('vm', path, target, (size) => {
+      declaredSize = size;
+    });
+    assert.equal(declaredSize, initial.length);
+    assert.deepEqual(Buffer.concat(chunks), initial);
+  }
 });

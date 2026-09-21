@@ -12,20 +12,23 @@ export async function freePort() {
 export async function qmp(port: number, command: string, args?: Record<string, unknown>) {
   return new Promise<unknown>((resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port });
+    socket.setEncoding('utf8');
     let input = '';
     let sent = false;
+    let settled = false;
     const timer = setTimeout(() => finish(new Error('QMP response timed out')), 5000);
     function finish(error?: Error, data?: unknown) {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       socket.destroy();
       error ? reject(error) : resolve(data);
     }
     socket.on('error', (e) => finish(e));
-    socket.on('close', () => {
-      if (!socket.readableEnded) finish(new Error('QMP closed'));
-    });
+    socket.on('close', () => finish(new Error('QMP closed')));
     socket.on('data', (data) => {
-      input += data.toString();
+      if (settled) return;
+      input += data;
       let index: number;
       while ((index = input.indexOf('\n')) >= 0) {
         const line = input.slice(0, index);
@@ -37,12 +40,16 @@ export async function qmp(port: number, command: string, args?: Record<string, u
         } catch {
           return finish(new Error('Invalid QMP response'));
         }
+        if (msg === null || typeof msg !== 'object' || Array.isArray(msg))
+          return finish(new Error('Invalid QMP response'));
         if (msg.QMP) socket.write(JSON.stringify({ execute: 'qmp_capabilities', id: 'hello' }) + '\n');
         if (msg.id === 'hello' && !sent) {
+          if (msg.error) return finish(new Error(msg.error.desc || 'QMP negotiation failed'));
           sent = true;
           socket.write(JSON.stringify({ execute: command, arguments: args, id: 'command' }) + '\n');
         }
-        if (msg.id === 'command') finish(msg.error ? new Error(msg.error.desc) : undefined, msg.return);
+        if (msg.id === 'command')
+          return finish(msg.error ? new Error(msg.error.desc) : undefined, msg.return);
       }
     });
   });

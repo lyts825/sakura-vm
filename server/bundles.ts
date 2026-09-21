@@ -70,13 +70,14 @@ export class Bundles {
         }
         const { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template } =
           this.machines.get(id);
+        const identity = await this.machines.snapshotIdentity(id);
         const manifest = Buffer.from(
           JSON.stringify({
             version: 1,
             config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template },
             project: await this.project(id),
-            key: await readFile(join(vmDir(id), 'id_rsa'), 'utf8'),
-            seed: (await readFile(join(vmDir(id), 'seed.iso'))).toString('base64'),
+            key: identity.key,
+            seed: identity.seed.toString('base64'),
             sha256: hash.digest('hex'),
           }),
         );
@@ -96,7 +97,8 @@ export class Bundles {
       }
     });
   }
-  async import(name: string, source: Readable) {
+  async import(name: string, source: Readable, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const dir = await this.temp();
     const disk = join(dir, 'disk.qcow2');
     try {
@@ -132,7 +134,9 @@ export class Bundles {
           },
         }),
         createWriteStream(disk, { flags: 'wx' }),
+        { signal },
       );
+      signal?.throwIfAborted();
       if (!manifest || hash.digest('hex') !== manifest.sha256)
         throw new AppError('导入包不完整或磁盘校验失败');
       const handle = await open(disk, 'r');
@@ -144,15 +148,21 @@ export class Bundles {
         await handle.close();
       }
       const info = JSON.parse(
-        await this.machines.engine.run('sakura-img', ['info', '-f', 'qcow2', '--output=json', disk]),
+        await this.machines.engine.run('sakura-img', ['info', '-f', 'qcow2', '--output=json', disk], {
+          signal,
+        }),
       );
       if (info['backing-filename'] || info['format-specific']?.data?.['data-file'])
         throw new AppError('导入磁盘含外部依赖');
       const key = manifest.key;
-      if (ssh2.utils.parseKey(key) instanceof Error) throw new AppError('导入包缺少有效实例身份');
+      const parsedKey = ssh2.utils.parseKey(key);
+      const identity = Array.isArray(parsedKey) ? parsedKey[0] : parsedKey;
+      if (!identity || identity instanceof Error || !identity.getPrivatePEM())
+        throw new AppError('导入包缺少有效实例身份私钥');
       const seed = Buffer.from(manifest.seed, 'base64');
       if (seed.length < 34816 || seed.toString('ascii', 32769, 32774) !== 'CD001')
         throw new AppError('初始化镜像已损坏');
+      signal?.throwIfAborted();
       return await this.machines.adopt(
         { ...manifest.config, name, forwards: [] },
         disk,
@@ -164,8 +174,9 @@ export class Bundles {
       await rm(dir, { recursive: true, force: true });
     }
   }
-  async clone(id: string, name: string, snapshot?: string) {
+  async clone(id: string, name: string, snapshot?: string, signal?: AbortSignal) {
     return this.machines.locked(id, async () => {
+      signal?.throwIfAborted();
       this.machines.requireStopped(id);
       const vm = this.machines.get(id);
       if (snapshot && !vm.snapshots.some((s) => s.id === snapshot)) throw new AppError('快照不存在', 404);
@@ -184,15 +195,18 @@ export class Bundles {
             join(vmDir(id), 'disk.qcow2'),
             disk,
           ],
-          { timeoutMs: 1800000 },
+          { timeoutMs: 1800000, signal },
         );
+        const identity = await this.machines.snapshotIdentity(id, snapshot);
         const { memoryMiB, cpus, diskGiB, accelerator, distro, template } = vm;
+        const project = await this.project(id);
+        signal?.throwIfAborted();
         return await this.machines.adopt(
           { name, memoryMiB, cpus, diskGiB, accelerator, distro, template, forwards: [] },
           disk,
-          await readFile(join(vmDir(id), 'id_rsa'), 'utf8'),
-          await readFile(join(vmDir(id), 'seed.iso')),
-          await this.project(id),
+          identity.key,
+          identity.seed,
+          project,
         );
       } finally {
         await rm(dir, { recursive: true, force: true });

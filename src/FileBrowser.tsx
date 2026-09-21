@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Download, FileText, Folder, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
 import { Feedback, download, useAction, type FeatureProps } from './FeaturePanels';
 import { uploadFiles, transferBytes, type UploadProgress } from './transfers';
+import { completeFileSave, type FileEdit } from './file-editor-state';
 
 type Entry = { name: string; size: number; directory: boolean; symlink: boolean; modified: number };
 export function FileBrowser({ vm, request, token }: FeatureProps) {
@@ -10,7 +11,7 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
   const [files, setFiles] = useState<Entry[]>([]),
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
-  const [edit, setEdit] = useState<{ path: string; content: string; fresh?: boolean } | null>(null);
+  const [edit, setEdit] = useState<FileEdit | null>(null);
   const [overwrite, setOverwrite] = useState(false),
     [progress, setProgress] = useState<UploadProgress | null>(null),
     [dragging, setDragging] = useState(false);
@@ -21,7 +22,12 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
   const requestVersion = useRef(0);
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
-    if (vm.status !== 'running') return;
+    if (vm.status !== 'running') {
+      setFiles([]);
+      setLoading(false);
+      transfer.current?.abort();
+      return;
+    }
     setLoading(true);
     try {
       const values = await request<Entry[]>(`/vms/${vm.id}/files?path=${encodeURIComponent(path)}`);
@@ -30,7 +36,10 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
         setError('');
       }
     } catch (e) {
-      if (version === requestVersion.current) setError((e as Error).message);
+      if (version === requestVersion.current) {
+        setFiles([]);
+        setError((e as Error).message);
+      }
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
@@ -50,9 +59,14 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
   }, []);
   const target = (name: string) => `${path.replace(/\/$/, '')}/${name}`;
   const navigate = (next: string) => {
+    requestVersion.current++;
+    setFiles([]);
+    setError('');
+    setLoading(true);
     setPath(next);
     setInput(next);
     setEdit(null);
+    if (next === path) void refresh();
   };
   const operation = (kind: string, filePath: string, destination?: string, recursive = false) =>
     action.run(async () => {
@@ -261,7 +275,7 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
             </div>
           </div>
         ))}
-        {!files.length && !loading && <p className="muted">目录为空，可拖拽文件到此处上传。</p>}
+        {!files.length && !loading && !error && <p className="muted">目录为空，可拖拽文件到此处上传。</p>}
       </div>
       <p className="subtle-note">
         {files.length} 个项目 · 可拖拽上传 · 文件传输上限 2 GiB · 文本编辑上限 1 MiB
@@ -300,7 +314,7 @@ export function FileBrowser({ vm, request, token }: FeatureProps) {
                   content: edit.content,
                   overwrite: !edit.fresh,
                 });
-                setEdit(null);
+                setEdit((current) => completeFileSave(current, edit));
                 await refresh();
               }, '文本已保存')
             }

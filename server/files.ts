@@ -20,6 +20,15 @@ export function mutablePath(path: string) {
   if (normalized === '/') throw new AppError('不能修改根目录');
   return normalized;
 }
+export async function preserveFileMetadata(ftp: SFTPWrapper, path: string, attrs: Stats) {
+  await new Promise<void>((resolve, reject) =>
+    ftp.chown(path, attrs.uid, attrs.gid, (error) => (error ? reject(error) : resolve())),
+  );
+  // Ownership changes can clear setuid/setgid bits, so restore permissions last.
+  await new Promise<void>((resolve, reject) =>
+    ftp.chmod(path, attrs.mode & 0o7777, (error) => (error ? reject(error) : resolve())),
+  );
+}
 export class Files {
   constructor(private machines: Machines) {}
   private async downloadInfo(ftp: SFTPWrapper, path: string) {
@@ -31,44 +40,63 @@ export class Files {
   info(id: string, path: string) {
     return this.machines.sftp(id, (ftp) => this.downloadInfo(ftp, path));
   }
-  async upload(id: string, path: string, source: Readable, overwrite = false) {
+  async upload(id: string, path: string, source: Readable, overwrite = false, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     path = mutablePath(path);
-    return this.machines.sftp(id, async (ftp) => {
-      const existing = await ftpStat(ftp, path);
-      if (existing && (!overwrite || !existing.isFile()))
-        throw new AppError('目标已存在；需要明确选择覆盖普通文件', 409);
-      const temp = posix.join(posix.dirname(path), `.sakura-upload-${randomUUID()}`);
-      let bytes = 0;
-      try {
-        await pipeline(
-          source,
-          new Transform({
-            transform(chunk, _encoding, cb) {
-              bytes += chunk.length;
-              cb(bytes > MAX_TRANSFER ? new AppError('文件超过 2 GiB', 413) : null, chunk);
-            },
-          }),
-          ftp.createWriteStream(temp, { flags: 'wx', mode: existing?.mode || 0o644 }),
-        );
-        if (existing) {
-          await new Promise<void>((res, rej) =>
-            ftp.chown(temp, existing.uid, existing.gid, (err) => (err ? rej(err) : res())),
-          );
-          // Apply the full permissions after chown, which can clear setuid/setgid bits.
-          await new Promise<void>((res, rej) =>
-            ftp.chmod(temp, existing.mode & 0o7777, (err) => (err ? rej(err) : res())),
-          );
-        }
-        if (overwrite)
-          await new Promise<void>((res, rej) =>
-            ftp.ext_openssh_rename(temp, path, (err) => (err ? rej(err) : res())),
-          );
-        else await new Promise<void>((res, rej) => ftp.rename(temp, path, (err) => (err ? rej(err) : res())));
-        return { bytes };
-      } finally {
-        await new Promise<void>((resolve) => ftp.unlink(temp, () => resolve()));
-      }
-    });
+    const connection = new AbortController();
+    const abortConnection = () => connection.abort(signal?.reason);
+    signal?.addEventListener('abort', abortConnection, { once: true });
+    try {
+      return await this.machines.sftp(
+        id,
+        async (ftp, transportSignal) => {
+          // Once connected, pipeline handles cancellation while SSH stays alive
+          // long enough to close the upload handle and remove its temporary file.
+          signal?.removeEventListener('abort', abortConnection);
+          const transferSignal =
+            transportSignal && signal
+              ? AbortSignal.any([signal, transportSignal])
+              : transportSignal || signal;
+          transferSignal?.throwIfAborted();
+          const existing = await ftpStat(ftp, path);
+          transferSignal?.throwIfAborted();
+          if (existing && (!overwrite || !existing.isFile()))
+            throw new AppError('目标已存在；需要明确选择覆盖普通文件', 409);
+          const temp = posix.join(posix.dirname(path), `.sakura-upload-${randomUUID()}`);
+          let bytes = 0;
+          try {
+            await pipeline(
+              source,
+              new Transform({
+                transform(chunk, _encoding, cb) {
+                  bytes += chunk.length;
+                  cb(bytes > MAX_TRANSFER ? new AppError('文件超过 2 GiB', 413) : null, chunk);
+                },
+              }),
+              ftp.createWriteStream(temp, { flags: 'wx', mode: existing?.mode || 0o644 }),
+              { signal: transferSignal },
+            );
+            if (existing) await preserveFileMetadata(ftp, temp, existing);
+            transferSignal?.throwIfAborted();
+            if (overwrite)
+              await new Promise<void>((res, rej) =>
+                ftp.ext_openssh_rename(temp, path, (err) => (err ? rej(err) : res())),
+              );
+            else
+              await new Promise<void>((res, rej) =>
+                ftp.rename(temp, path, (err) => (err ? rej(err) : res())),
+              );
+            return { bytes };
+          } finally {
+            if (!transportSignal?.aborted)
+              await new Promise<void>((resolve) => ftp.unlink(temp, () => resolve()));
+          }
+        },
+        connection.signal,
+      );
+    } finally {
+      signal?.removeEventListener('abort', abortConnection);
+    }
   }
   async download(
     id: string,
@@ -83,7 +111,10 @@ export class Files {
         const { size } = await this.downloadInfo(ftp, path);
         signal?.throwIfAborted();
         headers(size);
-        await pipeline(ftp.createReadStream(path), target, { signal });
+        // Bound reads to the stat result so appends cannot exceed Content-Length
+        // or the transfer limit after the response headers have been selected.
+        const source = size ? ftp.createReadStream(path, { start: 0, end: size - 1 }) : Readable.from([]);
+        await pipeline(source, target, { signal });
       },
       signal,
     );

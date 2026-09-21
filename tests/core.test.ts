@@ -1,6 +1,6 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:net';
+import { createServer, type Socket } from 'node:net';
 import { once } from 'node:events';
 import { createSchema, checkedId, guestPath } from '../server/model.ts';
 import { seedIso, createSshKey, userData } from '../server/seed.ts';
@@ -127,4 +127,64 @@ test('QMP handles fragmented greeting, capabilities, async events and command er
   } finally {
     await new Promise<void>((res) => server.close(() => res()));
   }
+});
+
+async function qmpPeer(t: TestContext, connected: (socket: Socket) => void) {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on('error', () => {});
+    socket.on('close', () => sockets.delete(socket));
+    connected(socket);
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  return (server.address() as { port: number }).port;
+}
+
+test('QMP rejects malformed JSON values without throwing outside its promise', async (t) => {
+  const port = await qmpPeer(t, (socket) => socket.write('null\n'));
+  await assert.rejects(qmp(port, 'query-status'), /Invalid QMP response/);
+});
+
+test('QMP capability errors stop negotiation before sending the requested command', async (t) => {
+  const received: string[] = [];
+  const port = await qmpPeer(t, (socket) => {
+    socket.write('{"QMP":{"version":{}}}\n');
+    socket.on('data', (data) => {
+      const request = JSON.parse(data.toString());
+      received.push(request.execute);
+      socket.write(JSON.stringify({ error: { desc: 'capabilities denied' }, id: request.id }) + '\n');
+    });
+  });
+  await assert.rejects(qmp(port, 'query-status'), /capabilities denied/);
+  assert.deepEqual(received, ['qmp_capabilities']);
+});
+
+test('QMP reports a graceful disconnect immediately instead of waiting for timeout', async (t) => {
+  const port = await qmpPeer(t, (socket) => socket.end());
+  const began = performance.now();
+  await assert.rejects(qmp(port, 'query-status'), /QMP closed/);
+  assert.ok(performance.now() - began < 1000);
+});
+
+test('QMP preserves multibyte text split across TCP reads', async (t) => {
+  const port = await qmpPeer(t, (socket) => {
+    socket.write('{"QMP":{"version":{}}}\n');
+    socket.on('data', (data) => {
+      const request = JSON.parse(data.toString());
+      if (request.id === 'hello') socket.write('{"return":{},"id":"hello"}\n');
+      else {
+        const response = Buffer.from('{"return":"你好","id":"command"}\n');
+        const split = response.indexOf(Buffer.from('你')) + 1;
+        socket.write(response.subarray(0, split));
+        setTimeout(() => socket.write(response.subarray(split)), 20);
+      }
+    });
+  });
+  assert.equal(await qmp(port, 'human-monitor-command'), '你好');
 });

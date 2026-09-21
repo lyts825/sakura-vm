@@ -16,6 +16,10 @@
   border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
+.desktop-toolbar > div {
+  flex-wrap: wrap;
+  min-width: 0;
+}
 .desktop-preview-label {
   font-size: 11px;
   color: var(--muted);

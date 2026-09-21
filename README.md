@@ -6,7 +6,7 @@
 
 ## 快速启动
 
-目前验证的平台：Windows x64、Node.js 22+、Git、Rust stable（需要 MSVC C++ 构建工具）。无需管理员权限或安装 WSL。TCG 回退模式无需启用系统虚拟化组件。
+目前验证的平台：Windows x64、Node.js 22.12+、Git、Rust stable（需要 MSVC C++ 构建工具）。无需管理员权限或安装 WSL。TCG 回退模式无需启用系统虚拟化组件。
 
 ```powershell
 npm ci

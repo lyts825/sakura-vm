@@ -1,7 +1,7 @@
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createServer, type Socket } from 'node:net';
@@ -134,7 +134,12 @@ test('stopping during a readiness probe cancels it and cannot revive the guest',
   let signal: AbortSignal | undefined;
   machines.exec = async (_id, _command, _timeout, bootSignal) => {
     signal = bootSignal;
-    return probe.promise;
+    return Promise.race([
+      probe.promise,
+      new Promise<never>((_resolve, reject) =>
+        bootSignal?.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }),
+      ),
+    ]);
   };
   await machines.start(id);
   await machines.stop(id, true);
@@ -283,4 +288,57 @@ test('SSH refusal retries honor cancellation and cannot cross a VM restart', asy
   await machines.start(id);
   await stopped;
   assert.notEqual(machines.live.get(id), live);
+});
+
+test('interrupting a clone rekey preserves the old key until the new host identity is durable', async (t) => {
+  const { machines, id } = await fixture(t);
+  const pending = createSshKey();
+  await writeFile(join(vmDir(id), 'identity.json'), JSON.stringify(pending));
+  const authorized = new Set([key.publicText]);
+  let prepared = false;
+  machines.exec = async (_id, command, _timeout, signal) => {
+    if (!command.includes('authorized_keys')) return { stdout: '', stderr: '', code: 0 };
+    if (!command.includes('>> /root/.ssh/authorized_keys')) authorized.clear();
+    authorized.add(pending.publicText);
+    prepared = true;
+    return new Promise((_resolve, reject) =>
+      signal?.addEventListener('abort', () => reject(new Error('interrupted')), { once: true }),
+    );
+  };
+  await machines.start(id);
+  await eventually(() => prepared);
+  await machines.stop(id, true);
+  assert.equal(authorized.has(key.publicText), true, 'the on-disk controller key must still authenticate');
+  assert.equal(await readFile(join(vmDir(id), 'id_rsa'), 'utf8'), key.privateText);
+  assert.equal(
+    JSON.parse(await readFile(join(vmDir(id), 'identity.json'), 'utf8')).privateText,
+    pending.privateText,
+  );
+});
+
+test('a completed clone rekey publishes the host key before removing guest access through the old key', async (t) => {
+  const { machines, id } = await fixture(t);
+  const pending = createSshKey();
+  await writeFile(join(vmDir(id), 'identity.json'), JSON.stringify(pending));
+  const stages: string[] = [];
+  let correctOrder = true;
+  machines.exec = async (_id, command) => {
+    if (command.includes('authorized_keys')) {
+      const stored = await readFile(join(vmDir(id), 'id_rsa'), 'utf8');
+      if (command.includes('>> /root/.ssh/authorized_keys')) {
+        stages.push('add');
+        correctOrder &&= stored === key.privateText;
+      } else {
+        stages.push('remove');
+        correctOrder &&= stored === pending.privateText;
+      }
+    }
+    return { stdout: '', stderr: '', code: 0 };
+  };
+  await machines.start(id);
+  await eventually(() => machines.state(id) === 'running');
+  assert.deepEqual(stages, ['add', 'remove']);
+  assert.equal(correctOrder, true);
+  assert.equal(await readFile(join(vmDir(id), 'id_rsa'), 'utf8'), pending.privateText);
+  await assert.rejects(readFile(join(vmDir(id), 'identity.json')), { code: 'ENOENT' });
 });

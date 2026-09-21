@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import { AppError, vmDir } from './model.ts';
-import { ftpStat, mutablePath } from './files.ts';
+import { ftpStat, mutablePath, preserveFileMetadata } from './files.ts';
 import { Jobs } from './jobs.ts';
 import type { Machines } from './machines.ts';
 
@@ -57,19 +57,42 @@ export function validateSyncPaths(paths: Iterable<string>) {
     names.set(key, path);
   }
 }
-async function hash(stream: Readable) {
-  const digest = createHash('sha256');
-  for await (const data of stream) digest.update(data);
-  return digest.digest('hex');
+async function hash(stream: Readable, signal: AbortSignal) {
+  return new Promise<string>((resolve, reject) => {
+    const digest = createHash('sha256');
+    let ended = false;
+    const abort = () => stream.destroy(signal.reason);
+    const cleanup = () => signal.removeEventListener('abort', abort);
+    stream.on('data', (data: Buffer) => digest.update(data));
+    stream.on('end', () => {
+      ended = true;
+    });
+    stream.on('error', (error) => {
+      cleanup();
+      reject(error);
+    });
+    // SFTP reaches EOF before its remote close request completes. Keep SSH alive
+    // and its error handler attached until that final callback has finished.
+    stream.on('close', () => {
+      cleanup();
+      if (signal.aborted) reject(signal.reason);
+      else if (ended) resolve(digest.digest('hex'));
+      else reject(new AppError('文件读取未完成'));
+    });
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+  });
 }
 export class FolderSync {
   jobs = new Jobs();
   private timer: ReturnType<typeof setInterval>;
   private ticking = false;
+  private onChange = () => {
+    for (const id of this.machines.records.keys())
+      if (this.machines.state(id) !== 'running') this.jobs.cancel(id);
+  };
   constructor(private machines: Machines) {
-    machines.on('change', () => {
-      for (const id of machines.records.keys()) if (machines.state(id) !== 'running') this.jobs.cancel(id);
-    });
+    machines.on('change', this.onChange);
     this.timer = setInterval(() => {
       if (!this.ticking) {
         this.ticking = true;
@@ -82,6 +105,7 @@ export class FolderSync {
   }
   async close() {
     clearInterval(this.timer);
+    this.machines.off('change', this.onChange);
     await this.jobs.close();
   }
   async config(id: string): Promise<SyncConfig | null> {
@@ -152,8 +176,8 @@ export class FolderSync {
         guestFiles = new Map<string, string>();
       const hostDirs = new Set<string>(),
         guestDirs = new Set<string>();
-      const check = () => {
-        signal.throwIfAborted();
+      const check = (operationSignal = signal) => {
+        operationSignal.throwIfAborted();
         if (++count > 20000) throw new AppError('一次同步最多扫描 20000 个条目');
       };
       const hostPath = async (name: string) => {
@@ -185,142 +209,168 @@ export class FolderSync {
             const file = await hostPath(name);
             if ((await lstat(file)).size > 256 * 1024 ** 2)
               throw new AppError(`${name} 超过同步单文件 256 MiB 限制`);
-            hostFiles.set(name, await hash(createReadStream(file)));
+            hostFiles.set(name, await hash(createReadStream(file), signal));
           }
         }
       };
       log('正在比较两个目录…\n');
       await scanHost();
-      await this.machines.sftp(
-        id,
-        async (ftp) => {
-          const ensureGuest = async (path: string) => {
-            let current = '';
-            for (const part of posix.normalize(path).split('/').filter(Boolean)) {
-              current += '/' + part;
-              const attrs = await ftpStat(ftp, current);
-              if (attrs && !attrs.isDirectory()) throw new AppError(`目标不是普通目录：${current}`);
-              if (!attrs)
-                await new Promise<void>((res, rej) => ftp.mkdir(current, (err) => (err ? rej(err) : res())));
-            }
-          };
-          await ensureGuest(config.guest);
-          const scanGuest = async (base = ''): Promise<void> => {
-            const entries = await new Promise<import('ssh2').FileEntry[]>((res, rej) =>
-              ftp.readdir(posix.join(config.guest, base), (err, entries) => (err ? rej(err) : res(entries))),
-            );
-            for (const entry of entries) {
-              if (
-                excluded.has(entry.filename.toLowerCase()) ||
-                entry.filename.toLowerCase().startsWith('.sakura-')
-              )
-                continue;
-              check();
-              const kind = entry.attrs.mode & 0xf000;
-              if (kind === 0xa000) continue;
-              const name = safeRelative(base ? base + '/' + entry.filename : entry.filename);
-              if (kind === 0x4000) {
-                guestDirs.add(name);
-                await scanGuest(name);
-              } else if (kind === 0x8000) {
-                if (entry.attrs.size > 256 * 1024 ** 2)
-                  throw new AppError(`${name} 超过同步单文件 256 MiB 限制`);
-                guestFiles.set(name, await hash(ftp.createReadStream(posix.join(config.guest, name))));
+      const connection = new AbortController();
+      const abortConnection = () => connection.abort(signal.reason);
+      signal.addEventListener('abort', abortConnection, { once: true });
+      if (signal.aborted) abortConnection();
+      try {
+        await this.machines.sftp(
+          id,
+          async (ftp, transportSignal) => {
+            signal.removeEventListener('abort', abortConnection);
+            const transferSignal = transportSignal ? AbortSignal.any([signal, transportSignal]) : signal;
+            transferSignal.throwIfAborted();
+            const ensureGuest = async (path: string) => {
+              let current = '';
+              for (const part of posix.normalize(path).split('/').filter(Boolean)) {
+                transferSignal.throwIfAborted();
+                current += '/' + part;
+                const attrs = await ftpStat(ftp, current);
+                if (attrs && !attrs.isDirectory()) throw new AppError(`目标不是普通目录：${current}`);
+                if (!attrs)
+                  await new Promise<void>((res, rej) =>
+                    ftp.mkdir(current, (err) => (err ? rej(err) : res())),
+                  );
               }
-            }
-          };
-          await scanGuest();
-          validateSyncPaths([...hostDirs, ...guestDirs, ...hostFiles.keys(), ...guestFiles.keys()]);
-          if (direction !== 'pull')
-            for (const name of hostDirs) {
-              signal.throwIfAborted();
-              await ensureGuest(posix.join(config.guest, name));
-            }
-          if (direction !== 'push')
-            for (const name of guestDirs) {
-              signal.throwIfAborted();
-              await mkdir(await hostPath(name), { recursive: true });
-            }
-          for (const name of new Set([...hostFiles.keys(), ...guestFiles.keys()])) {
-            signal.throwIfAborted();
-            const hostHash = hostFiles.get(name),
-              guestHash = guestFiles.get(name);
-            if (hostHash === guestHash) {
-              next[name] = hostHash!;
-              continue;
-            }
-            let way = direction;
-            if (way === 'both') {
-              if (hostHash && !guestHash) way = 'push';
-              else if (guestHash && !hostHash) way = 'pull';
-              else if (previous[name] && previous[name] === guestHash) way = 'push';
-              else if (previous[name] && previous[name] === hostHash) way = 'pull';
-              else {
-                conflicts++;
-                if (previous[name]) next[name] = previous[name];
-                log(`冲突，保留两边：${name}\n`);
-                continue;
-              }
-            }
-            const local = await hostPath(name),
-              remote = posix.join(config.guest, name);
-            if (way === 'push' && hostHash) {
-              await ensureGuest(posix.dirname(remote));
-              const attrs = await ftpStat(ftp, remote);
-              if (attrs && !attrs.isFile()) throw new AppError(`目标不是普通文件：${remote}`);
-              const temp = posix.join(posix.dirname(remote), '.sakura-sync-' + randomUUID());
-              try {
-                await pipeline(
-                  createReadStream(local),
-                  ftp.createWriteStream(temp, { flags: 'wx', mode: attrs?.mode || 0o644 }),
-                  { signal },
-                );
-                const uploaded = await hash(ftp.createReadStream(temp));
-                if (uploaded !== hostHash) throw new AppError(`文件在同步中改变，请重试：${name}`);
-                const current = await ftpStat(ftp, remote);
+            };
+            await ensureGuest(config.guest);
+            const scanGuest = async (base = ''): Promise<void> => {
+              transferSignal.throwIfAborted();
+              const entries = await new Promise<import('ssh2').FileEntry[]>((res, rej) =>
+                ftp.readdir(posix.join(config.guest, base), (err, entries) =>
+                  err ? rej(err) : res(entries),
+                ),
+              );
+              for (const entry of entries) {
                 if (
-                  direction === 'both' &&
-                  (current ? await hash(ftp.createReadStream(remote)) : undefined) !== guestHash
+                  excluded.has(entry.filename.toLowerCase()) ||
+                  entry.filename.toLowerCase().startsWith('.sakura-')
                 )
-                  throw new AppError(`目标在同步中改变，已保留原文件：${name}`);
-                await new Promise<void>((res, rej) =>
-                  ftp.ext_openssh_rename(temp, remote, (err) => (err ? rej(err) : res())),
-                );
-                next[name] = hostHash;
-              } finally {
-                await new Promise<void>((res) => ftp.unlink(temp, () => res()));
+                  continue;
+                check(transferSignal);
+                const kind = entry.attrs.mode & 0xf000;
+                if (kind === 0xa000) continue;
+                const name = safeRelative(base ? base + '/' + entry.filename : entry.filename);
+                if (kind === 0x4000) {
+                  guestDirs.add(name);
+                  await scanGuest(name);
+                } else if (kind === 0x8000) {
+                  if (entry.attrs.size > 256 * 1024 ** 2)
+                    throw new AppError(`${name} 超过同步单文件 256 MiB 限制`);
+                  guestFiles.set(
+                    name,
+                    await hash(ftp.createReadStream(posix.join(config.guest, name)), transferSignal),
+                  );
+                }
               }
-            } else if (way === 'pull' && guestHash) {
-              await mkdir(dirname(local), { recursive: true });
-              await hostPath(name);
-              const temp = join(dirname(local), '.sakura-sync-' + randomUUID());
-              try {
-                await pipeline(ftp.createReadStream(remote), createWriteStream(temp, { flags: 'wx' }), {
-                  signal,
-                });
-                if ((await hash(createReadStream(temp))) !== guestHash)
-                  throw new AppError(`文件在同步中改变，请重试：${name}`);
-                const current = await lstat(await hostPath(name)).catch((e: NodeJS.ErrnoException) => {
-                  if (e.code !== 'ENOENT') throw e;
-                  return null;
-                });
-                if (
-                  direction === 'both' &&
-                  (current ? await hash(createReadStream(local)) : undefined) !== hostHash
-                )
-                  throw new AppError(`目标在同步中改变，已保留原文件：${name}`);
-                await rename(temp, local);
-                next[name] = guestHash;
-              } finally {
-                await rm(temp, { force: true });
+            };
+            await scanGuest();
+            validateSyncPaths([...hostDirs, ...guestDirs, ...hostFiles.keys(), ...guestFiles.keys()]);
+            if (direction !== 'pull')
+              for (const name of hostDirs) {
+                transferSignal.throwIfAborted();
+                await ensureGuest(posix.join(config.guest, name));
               }
-            } else continue;
-            changed++;
-            log(`${way === 'push' ? '上传' : '下载'}：${name}\n`);
-          }
-        },
-        signal,
-      );
+            if (direction !== 'push')
+              for (const name of guestDirs) {
+                transferSignal.throwIfAborted();
+                await mkdir(await hostPath(name), { recursive: true });
+              }
+            for (const name of new Set([...hostFiles.keys(), ...guestFiles.keys()])) {
+              transferSignal.throwIfAborted();
+              const hostHash = hostFiles.get(name),
+                guestHash = guestFiles.get(name);
+              if (hostHash === guestHash) {
+                next[name] = hostHash!;
+                continue;
+              }
+              let way = direction;
+              if (way === 'both') {
+                if (hostHash && !guestHash) way = 'push';
+                else if (guestHash && !hostHash) way = 'pull';
+                else if (previous[name] && previous[name] === guestHash) way = 'push';
+                else if (previous[name] && previous[name] === hostHash) way = 'pull';
+                else {
+                  conflicts++;
+                  if (previous[name]) next[name] = previous[name];
+                  log(`冲突，保留两边：${name}\n`);
+                  continue;
+                }
+              }
+              const local = await hostPath(name),
+                remote = posix.join(config.guest, name);
+              if (way === 'push' && hostHash) {
+                await ensureGuest(posix.dirname(remote));
+                const attrs = await ftpStat(ftp, remote);
+                if (attrs && !attrs.isFile()) throw new AppError(`目标不是普通文件：${remote}`);
+                const temp = posix.join(posix.dirname(remote), '.sakura-sync-' + randomUUID());
+                try {
+                  await pipeline(
+                    createReadStream(local),
+                    ftp.createWriteStream(temp, { flags: 'wx', mode: attrs?.mode || 0o644 }),
+                    { signal: transferSignal },
+                  );
+                  const uploaded = await hash(ftp.createReadStream(temp), transferSignal);
+                  if (uploaded !== hostHash) throw new AppError(`文件在同步中改变，请重试：${name}`);
+                  if (attrs) await preserveFileMetadata(ftp, temp, attrs);
+                  const current = await ftpStat(ftp, remote);
+                  if (
+                    direction === 'both' &&
+                    (current ? await hash(ftp.createReadStream(remote), transferSignal) : undefined) !==
+                      guestHash
+                  )
+                    throw new AppError(`目标在同步中改变，已保留原文件：${name}`);
+                  transferSignal.throwIfAborted();
+                  await new Promise<void>((res, rej) =>
+                    ftp.ext_openssh_rename(temp, remote, (err) => (err ? rej(err) : res())),
+                  );
+                  next[name] = hostHash;
+                } finally {
+                  if (!transportSignal?.aborted)
+                    await new Promise<void>((res) => ftp.unlink(temp, () => res()));
+                }
+              } else if (way === 'pull' && guestHash) {
+                await mkdir(dirname(local), { recursive: true });
+                await hostPath(name);
+                const temp = join(dirname(local), '.sakura-sync-' + randomUUID());
+                try {
+                  await pipeline(ftp.createReadStream(remote), createWriteStream(temp, { flags: 'wx' }), {
+                    signal: transferSignal,
+                  });
+                  if ((await hash(createReadStream(temp), transferSignal)) !== guestHash)
+                    throw new AppError(`文件在同步中改变，请重试：${name}`);
+                  const current = await lstat(await hostPath(name)).catch((e: NodeJS.ErrnoException) => {
+                    if (e.code !== 'ENOENT') throw e;
+                    return null;
+                  });
+                  if (
+                    direction === 'both' &&
+                    (current ? await hash(createReadStream(local), transferSignal) : undefined) !== hostHash
+                  )
+                    throw new AppError(`目标在同步中改变，已保留原文件：${name}`);
+                  transferSignal.throwIfAborted();
+                  await rename(temp, local);
+                  next[name] = guestHash;
+                } finally {
+                  await rm(temp, { force: true });
+                }
+              } else continue;
+              changed++;
+              log(`${way === 'push' ? '上传' : '下载'}：${name}\n`);
+            }
+          },
+          connection.signal,
+        );
+      } finally {
+        signal.removeEventListener('abort', abortConnection);
+      }
+      signal.throwIfAborted();
       await writeFile(stateFile, JSON.stringify(next));
       log(`完成：${changed} 个文件已同步，${conflicts} 个冲突。删除操作不会传播。\n`);
     });

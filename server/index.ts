@@ -14,6 +14,7 @@ import { Desktops } from './desktop.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
 import { Features } from './features.ts';
 import { MAX_TEXT_BYTES } from './files.ts';
+import { MAX_TEXT_REQUEST_BYTES, readJsonBody as body, requestUrl } from './http.ts';
 import type { ClientChannel } from 'ssh2';
 
 const token = randomBytes(32).toString('hex');
@@ -35,28 +36,12 @@ function send(res: ServerResponse, data: unknown, status = 200) {
   });
   res.end(JSON.stringify(data));
 }
-async function body(req: IncomingMessage) {
-  if (!req.headers['content-type']?.startsWith('application/json'))
-    throw new AppError('需要 application/json 请求', 415);
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const data of req) {
-    size += data.length;
-    if (size > 1500000) throw new AppError('请求内容过大', 413);
-    chunks.push(data);
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString());
-  } catch {
-    throw new AppError('JSON 格式错误');
-  }
-}
 const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
   if (await features.downloads.route(req, res, url)) return;
   if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
   const route = url.pathname.split('/').filter(Boolean);
-  if (await features.route(req, res, url, body)) return;
+  if (await features.route(req, res, url, (request, signal) => body(request, undefined, signal))) return;
   if (req.method === 'GET' && url.pathname === '/api/system')
     return send(res, {
       name: 'Sakura',
@@ -129,7 +114,7 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
           overwrite: z.boolean().default(true),
         })
         .strict()
-        .parse(await body(req));
+        .parse(await body(req, MAX_TEXT_REQUEST_BYTES));
       await machines.writeGuestFile(id, guestPath(value.path), value.content, value.overwrite);
       return send(res, { ok: true });
     }
@@ -156,7 +141,8 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
 const server = createServer(async (req, res) => {
   try {
     if (!allowedRequest(req)) throw new AppError('仅接受本机同源访问', 403);
-    const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
+    const url = requestUrl(req.url, PORT);
+    if (!url) throw new AppError('无效的请求地址', 400);
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     if (vite) return vite.middlewares(req, res);
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new AppError('不支持此方法', 405);
@@ -195,7 +181,11 @@ const server = createServer(async (req, res) => {
 });
 
 server.on('upgrade', (req, socket, head) => {
-  const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
+  const url = requestUrl(req.url, PORT);
+  if (!url) {
+    socket.destroy();
+    return;
+  }
   if (!url.pathname.startsWith('/ws/')) {
     if (!dev) socket.destroy();
     return;

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { WebSocket } from 'ws';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { readFile, open, lstat, unlink } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 const base = `http://127.0.0.1:${process.env.SAKURA_PORT || 7337}`;
@@ -103,14 +103,34 @@ async function main() {
     }
     if (action === 'export') {
       if (!args[0]) throw new Error('Specify an output file');
-      const response = await fetch(`${base}/api/vms/${vm.id}/export`, {
-        headers: { 'X-Sakura-Token': bootstrap.token },
-      });
-      if (!response.ok) throw new Error((await response.json()).error);
-      await pipeline(
-        Readable.fromWeb(response.body),
-        createWriteStream(args[0], { flags: 'wx', mode: 0o600 }),
-      );
+      // Reserve the destination before asking the server to prepare a large disk.
+      const file = await open(args[0], 'wx', 0o600);
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      let complete = false;
+      let identity;
+      process.once('SIGINT', cancel);
+      process.once('SIGTERM', cancel);
+      try {
+        identity = await file.stat();
+        const response = await fetch(`${base}/api/vms/${vm.id}/export`, {
+          headers: { 'X-Sakura-Token': bootstrap.token },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error((await response.json()).error);
+        await pipeline(Readable.fromWeb(response.body), file.createWriteStream(), {
+          signal: controller.signal,
+        });
+        complete = true;
+      } finally {
+        process.off('SIGINT', cancel);
+        process.off('SIGTERM', cancel);
+        await file.close();
+        if (!complete && identity) {
+          const current = await lstat(args[0]).catch(() => null);
+          if (current?.dev === identity.dev && current.ino === identity.ino) await unlink(args[0]);
+        }
+      }
       console.log(`Exported to ${args[0]}`);
       return;
     }

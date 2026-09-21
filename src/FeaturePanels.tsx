@@ -16,6 +16,7 @@ import type { VMView, VMConfig, Snapshot } from '../server/model';
 import type { JobView } from '../server/jobs';
 import type { Project } from '../server/workspaces';
 import type { SyncConfig } from '../server/sync';
+import { executeProjectAction, type ProjectAction } from './project-action';
 import './features.css';
 
 export type Request = <T = any>(
@@ -77,24 +78,28 @@ export function useRemote<T>(request: Request, path: string, enabled = true, int
 }
 export function useAction() {
   const pending = useRef(false),
-    alive = useRef(true);
+    alive = useRef(true),
+    controller = useRef<AbortController | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
+      controller.current?.abort();
     };
   }, []);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [message, setMessage] = useState('');
-  const run = async (action: () => Promise<unknown>, success = '') => {
-    if (pending.current) return;
+  const run = async (action: (signal: AbortSignal) => Promise<unknown>, success = '') => {
+    if (!alive.current || pending.current) return;
     pending.current = true;
+    const abort = new AbortController();
+    controller.current = abort;
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      await action();
+      await action(abort.signal);
       if (alive.current) setMessage(success);
     } catch (e) {
       if (alive.current) {
@@ -103,6 +108,7 @@ export function useAction() {
       }
     } finally {
       pending.current = false;
+      if (controller.current === abort) controller.current = null;
       if (alive.current) setBusy(false);
     }
   };
@@ -156,20 +162,6 @@ export async function download(
   a.click();
   a.remove();
 }
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function ready(request: Request, vm: VMView) {
-  if (vm.status !== 'running') await request(`/vms/${vm.id}/start`, 'POST');
-  const deadline = Date.now() + 300000;
-  while (Date.now() < deadline) {
-    const state = await request<VMView>(`/vms/${vm.id}`);
-    if (state.status === 'running') return;
-    if (['stopped', 'error', 'stopping'].includes(state.status))
-      throw new Error(state.lastError || '启动未完成');
-    await pause(1000);
-  }
-  throw new Error('启动超时');
-}
-
 export function ProjectPanel({ vm, request, refresh }: FeatureProps) {
   const remote = useRemote<{ project: Project; job: JobView | null }>(
     request,
@@ -188,18 +180,11 @@ export function ProjectPanel({ vm, request, refresh }: FeatureProps) {
     if (!project && remote.data) setProject(remote.data.project);
   }, [remote.data, project]);
   const edit = (patch: Partial<Project>) => setProject((p) => p && { ...p, ...patch });
-  const execute = (kind: 'setup' | 'start' | 'stop' | 'terminal') =>
-    action.run(async () => {
+  const execute = (kind: ProjectAction) =>
+    action.run(async (signal) => {
       if (!project) return;
-      await ready(request, vm);
-      await refresh();
-      const until = Date.now() + 1200000;
-      while ((await request<{ job: JobView | null }>(`/vms/${vm.id}/project`)).job?.status === 'running') {
-        if (Date.now() > until) throw new Error('请等待当前安装结束');
-        await pause(2000);
-      }
-      await request(`/vms/${vm.id}/project`, 'PUT', project);
-      await request(`/vms/${vm.id}/project`, 'POST', { action: kind });
+      await executeProjectAction({ request, vm, project, kind, refresh, signal });
+      signal.throwIfAborted();
       remote.reload();
       runtime.reload();
     });
@@ -753,7 +738,7 @@ export function SnapshotsPanel({ vm, request, refresh }: FeatureProps) {
                     name: editing.name,
                     note: editing.note || '',
                   });
-                  setEditing(null);
+                  setEditing((current) => (current === editing ? null : current));
                   await refresh();
                 })
               }

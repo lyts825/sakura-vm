@@ -52,6 +52,7 @@ import {
 } from './FeaturePanels';
 import { FileBrowser } from './FileBrowser';
 import { TerminalWorkspace } from './TerminalWorkspace';
+import { ResponseOrder } from './request-order';
 import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
@@ -232,15 +233,19 @@ function App() {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [page, modal, focusMode]);
-  const refreshVersion = useRef(0);
+  const refreshOrder = useRef(new ResponseOrder());
   const refresh = useCallback(async () => {
-    const version = ++refreshVersion.current;
-    const [data, sys] = await Promise.all([api<VMView[]>('/vms'), api<System>('/system')]);
-    if (version !== refreshVersion.current) return;
-    setVms(data);
-    setSystem(sys);
-    setOffline('');
-    setSelected((current) => (data.some((v) => v.id === current) ? current : data[0]?.id || ''));
+    const version = refreshOrder.current.start();
+    try {
+      const [data, sys] = await Promise.all([api<VMView[]>('/vms'), api<System>('/system')]);
+      if (!refreshOrder.current.accept(version)) return;
+      setVms(data);
+      setSystem(sys);
+      setOffline('');
+      setSelected((current) => (data.some((v) => v.id === current) ? current : data[0]?.id || ''));
+    } catch (error) {
+      if (refreshOrder.current.accept(version)) throw error;
+    }
   }, []);
   useEffect(() => {
     let alive = true;
@@ -279,6 +284,7 @@ function App() {
     }, 3500);
     return () => {
       alive = false;
+      refreshOrder.current.invalidate();
       clearInterval(timer);
       clearTimeout(reconnect);
       events?.close();
@@ -293,6 +299,7 @@ function App() {
     setBusy(true);
     try {
       await action();
+      refreshOrder.current.invalidate();
       await refresh();
       if (message) setToast({ text: message });
     } catch (e: any) {
@@ -1013,6 +1020,8 @@ function App() {
           submit={(config, boot) =>
             run(async () => {
               const result = await api<VMView>('/vms', 'POST', config);
+              refreshOrder.current.invalidate();
+              setVms((current) => [...current.filter((entry) => entry.id !== result.id), result]);
               setSelected(result.id);
               setPage('workspace');
               setTab(config.template && config.template !== 'none' ? 'project' : 'terminal');
@@ -1148,7 +1157,7 @@ function TerminalPanel({
     );
     setConnection(mode === 'logs' ? '启动日志' : '正在连接');
     const resize = () => {
-      if (!ref.current?.clientWidth) return;
+      if (disposed || !ref.current?.clientWidth) return;
       fit.fit();
       if (ready && socket.readyState === WebSocket.OPEN && mode === 'terminal')
         socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
@@ -1156,7 +1165,7 @@ function TerminalPanel({
     const observer = new ResizeObserver(resize);
     fitTerminal.current = resize;
     observer.observe(ref.current);
-    requestAnimationFrame(resize);
+    const frame = requestAnimationFrame(resize);
     // Canvas needs fresh character metrics after the local web font finishes loading.
     void document.fonts
       .load(`${fontSize}px "Sakura Mono"`)
@@ -1170,6 +1179,7 @@ function TerminalPanel({
         // Keep the system monospace fallback if a font cannot be loaded.
       });
     socket.onmessage = (event) => {
+      if (disposed) return;
       const msg = JSON.parse(event.data);
       if (msg.type === 'data') term.write(msg.data);
       if (msg.type === 'ready') {
@@ -1195,7 +1205,8 @@ function TerminalPanel({
     });
     return () => {
       disposed = true;
-      socket.onclose = null;
+      cancelAnimationFrame(frame);
+      socket.onmessage = socket.onerror = socket.onclose = null;
       socket.close();
       data.dispose();
       observer.disconnect();

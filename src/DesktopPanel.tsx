@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, LoaderCircle, Maximize2, Minimize2, Monitor, Play, RefreshCw } from 'lucide-react';
 import type { DesktopView, VMView } from '../server/model';
 import { connectDesktop } from './desktop-connection';
+import { ResponseOrder } from './request-order';
 import './desktop.css';
 import type RFB from '@novnc/novnc';
-import { Feedback, JobLog, useAction, useRemote } from './FeaturePanels';
+import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
 import type { JobView } from '../server/jobs';
 
 type Props = {
@@ -13,7 +14,7 @@ type Props = {
   start: () => unknown;
   busy: boolean;
   configure: () => void;
-  request: <T>(path: string, method?: string, body?: unknown) => Promise<T>;
+  request: Request;
 };
 
 export function DesktopPanel({ vm, token, start, busy, configure, request }: Props) {
@@ -21,6 +22,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const [error, setError] = useState('');
   const [statusError, setStatusError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const enabling = useRef<AbortController | null>(null);
+  const statusOrder = useRef(new ResponseOrder());
   const [connection, setConnection] = useState('正在连接桌面…');
   const [connected, setConnected] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -46,6 +49,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   }, []);
 
   useEffect(() => {
+    statusOrder.current.invalidate();
+    setSubmitting(false);
     if (!running) {
       setDesktop(null);
       setError('');
@@ -53,18 +58,24 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       return;
     }
     let alive = true;
+    const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      if (enabling.current) {
+        timer = setTimeout(poll, 2500);
+        return;
+      }
+      const version = statusOrder.current.start();
       let interval = 2500;
       try {
-        const view = await request<DesktopView>(`/vms/${vm.id}/desktop`);
-        if (alive) {
+        const view = await request<DesktopView>(`/vms/${vm.id}/desktop`, 'GET', undefined, abort.signal);
+        if (alive && statusOrder.current.accept(version)) {
           setDesktop(view);
           setStatusError('');
         }
         if (view.status === 'ready') interval = 10000;
       } catch (e) {
-        if (alive) setStatusError((e as Error).message);
+        if (alive && statusOrder.current.accept(version)) setStatusError((e as Error).message);
       } finally {
         if (alive) timer = setTimeout(poll, interval);
       }
@@ -72,6 +83,10 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     void poll();
     return () => {
       alive = false;
+      abort.abort();
+      enabling.current?.abort();
+      enabling.current = null;
+      statusOrder.current.invalidate();
       clearTimeout(timer);
     };
   }, [vm.id, running, request]);
@@ -129,17 +144,29 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
 
   const enable = useCallback(
     async (action: 'install' | 'start') => {
+      if (!running || enabling.current) return;
+      const abort = new AbortController();
+      enabling.current = abort;
+      statusOrder.current.invalidate();
+      const version = statusOrder.current.start();
       setSubmitting(true);
       setError('');
       try {
-        setDesktop(await request<DesktopView>(`/vms/${vm.id}/desktop`, 'POST', { action }));
+        const view = await request<DesktopView>(`/vms/${vm.id}/desktop`, 'POST', { action }, abort.signal);
+        if (enabling.current === abort && statusOrder.current.accept(version)) {
+          setDesktop(view);
+          setStatusError('');
+        }
       } catch (e) {
-        setError((e as Error).message);
+        if (enabling.current === abort && statusOrder.current.accept(version)) setError((e as Error).message);
       } finally {
-        setSubmitting(false);
+        if (enabling.current === abort) {
+          enabling.current = null;
+          setSubmitting(false);
+        }
       }
     },
-    [request, vm.id],
+    [request, vm.id, running],
   );
 
   const installing = desktop?.status === 'installing' || desktop?.status === 'starting';

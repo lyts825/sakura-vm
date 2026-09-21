@@ -175,6 +175,9 @@ export class Workspaces {
     if (result.code !== 0) throw new Error(result.stderr.slice(-2000) || `命令退出码 ${result.code}`);
   }
   async run(id: string, action: 'setup' | 'start' | 'stop' | 'terminal') {
+    return this.machines.locked(id, () => this.runInternal(id, action));
+  }
+  private async runInternal(id: string, action: 'setup' | 'start' | 'stop' | 'terminal') {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
     const project = await this.config(id);
     const distro = this.machines.get(id).distro;

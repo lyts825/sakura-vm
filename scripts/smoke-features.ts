@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { Readable, Writable } from 'node:stream';
+import { join, resolve, dirname, basename } from 'node:path';
+import { PassThrough, Readable, Writable } from 'node:stream';
 const root = await mkdtemp(join(tmpdir(), 'sakura-features-'));
 process.env.SAKURA_DATA_DIR = root;
 process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
@@ -88,6 +88,33 @@ try {
       /interrupted/,
     );
     assert.deepEqual(Buffer.from(await command(id, 'base64 /workspace/files/test.bin'), 'base64'), binary);
+    const uploadAbort = new AbortController();
+    const uploadSource = new PassThrough();
+    const uploadResult = features.files
+      .upload(id, '/workspace/files/test.bin', uploadSource, true, uploadAbort.signal)
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    try {
+      uploadSource.write(Buffer.alloc(64 * 1024, 'x'));
+      const deadline = Date.now() + 10000;
+      let temporary = '';
+      while (!temporary && Date.now() < deadline) {
+        temporary = await command(id, "find /workspace/files -name '.sakura-upload-*'");
+        if (!temporary) await sleep(100);
+      }
+      assert.ok(temporary, 'The upload must have opened its remote temporary file before cancellation');
+      uploadAbort.abort();
+      assert.equal(((await uploadResult) as Error)?.name, 'AbortError');
+      assert.deepEqual(Buffer.from(await command(id, 'base64 /workspace/files/test.bin'), 'base64'), binary);
+      assert.equal(await command(id, "find /workspace/files -name '.sakura-upload-*'"), '');
+    } finally {
+      uploadAbort.abort();
+      uploadSource.destroy();
+      await uploadResult;
+    }
+    console.log('PASS canceled SFTP upload preserves the original and removes its temporary file');
     await features.files.operation(id, 'rename', '/workspace/files/test.bin', '/workspace/files/renamed.bin');
     await features.files.operation(id, 'delete', '/workspace/files/renamed.bin');
     await features.files.operation(id, 'delete', '/workspace/files');
@@ -221,6 +248,7 @@ try {
     assert.equal(machines.get(id).snapshots.length, 1);
     const clone = await features.bundles.clone(id, 'clone-test');
     ids.push(clone.id);
+    const beforeFirstBoot = await machines.snapshot(clone.id, 'before-first-boot');
     await boot(clone.id);
     assert.equal((await features.workspaces.config(clone.id)).directory, '/workspace/app');
     assert.equal(await machines.readGuestFile(clone.id, '/workspace/shared/hello.txt'), 'host-conflict');
@@ -232,6 +260,19 @@ try {
     await machines.stop(clone.id);
     await boot(clone.id);
     await machines.stop(clone.id);
+    const historicalClone = await features.bundles.clone(clone.id, 'snapshot-clone-test', beforeFirstBoot.id);
+    ids.push(historicalClone.id);
+    await boot(historicalClone.id);
+    assert.equal(
+      await machines.readGuestFile(historicalClone.id, '/workspace/shared/hello.txt'),
+      'host-conflict',
+    );
+    await machines.stop(historicalClone.id);
+    await machines.restore(clone.id, beforeFirstBoot.id);
+    await boot(clone.id);
+    assert.equal(await machines.readGuestFile(clone.id, '/workspace/shared/hello.txt'), 'host-conflict');
+    await machines.stop(clone.id);
+    console.log('PASS pre-first-boot snapshot clone and restore preserve a usable SSH identity');
     const bundle = join(root, 'portable.sakura');
     await features.bundles.export(id, createWriteStream(bundle), () => {});
     const imported = await features.bundles.import('import-test', createReadStream(bundle));
@@ -286,5 +327,7 @@ try {
     await machines.delete(id).catch(() => {});
   }
   await machines.close();
+  assert.equal(dirname(root), resolve(tmpdir()));
+  assert.ok(basename(root).startsWith('sakura-features-'));
   await rm(root, { recursive: true, force: true });
 }

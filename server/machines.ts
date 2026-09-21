@@ -14,6 +14,7 @@ import {
   DATA,
   VM_ROOT,
   createSchema,
+  checkedId,
   vmDir,
   guestPath,
   type VMRecord,
@@ -27,6 +28,18 @@ import { freePort, qmp } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
+type DiskIdentity = { key: string; seed: Buffer; pending?: string };
+
+async function writeIdentityFile(file: string, contents: string | Buffer) {
+  const temporary = `${file}.tmp`;
+  try {
+    await writeFile(temporary, contents, { mode: 0o600, flush: true });
+    await rename(temporary, file);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
 type Live = {
   status: VMStatus;
   accelerator: 'tcg' | 'whpx';
@@ -37,6 +50,7 @@ type Live = {
   abort: AbortController;
   bootAbort: AbortController;
   done: Promise<void>;
+  bootDone?: Promise<void>;
   serial?: Socket;
   clients: Set<Client>;
   error?: string;
@@ -46,6 +60,8 @@ export class Machines extends EventEmitter {
   live = new Map<string, Live>();
   logs = new Map<string, string>();
   private locks = new Set<string>();
+  private operations = new Set<Promise<void>>();
+  private closeTask?: Promise<void>;
   closing = false;
   constructor(public engine: Engine) {
     super();
@@ -89,10 +105,17 @@ export class Machines extends EventEmitter {
     if (this.closing) throw new AppError('服务正在关闭', 503);
     if (this.locks.has(id)) throw new AppError('该实例的另一项操作正在进行', 409);
     this.locks.add(id);
+    let complete!: () => void;
+    const operation = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    this.operations.add(operation);
     try {
       return await action();
     } finally {
       this.locks.delete(id);
+      this.operations.delete(operation);
+      complete();
     }
   }
   get(id: string) {
@@ -216,9 +239,16 @@ export class Machines extends EventEmitter {
           clients: new Set(),
         };
         this.live.set(id, live);
+        const previousError = vm.lastError;
         delete vm.lastError;
         this.logs.set(id, '');
-        await this.save();
+        try {
+          await this.save();
+        } catch (error) {
+          this.live.delete(id);
+          if (previousError !== undefined) vm.lastError = previousError;
+          throw error;
+        }
         const dir = vmDir(id);
         const escape = (s: string) => s.replaceAll(',', ',,');
         const forwards = [
@@ -286,11 +316,12 @@ export class Machines extends EventEmitter {
             live.bootAbort.abort();
             live.serial?.destroy();
             for (const client of live.clients) client.end();
+            await live.bootDone;
             this.live.delete(id);
-            await this.save();
+            await this.save().catch((error) => this.log(id, `\r\n保存实例状态失败：${String(error)}\r\n`));
             this.emit('change');
           });
-        void this.watchBoot(id, live).catch((e) => {
+        live.bootDone = this.watchBoot(id, live).catch((e) => {
           if (!live.bootAbort.signal.aborted) this.log(id, String(e));
         });
         this.emit('change');
@@ -325,19 +356,29 @@ export class Machines extends EventEmitter {
           signal,
         );
         if (result.code !== 0) throw new Error('Linux initialization is not finished');
+        signal.throwIfAborted();
         const identityFile = join(vmDir(id), 'identity.json');
         if (existsSync(identityFile)) {
           const identity = JSON.parse(await readFile(identityFile, 'utf8')) as ReturnType<
             typeof createSshKey
           >;
+          // Keep the existing key usable until the new host key is durable.
+          // Power loss between these steps can then be retried with either key.
+          const prepared = await this.exec(
+            id,
+            `set -e\ngrep -qxF '${identity.publicText}' /root/.ssh/authorized_keys || printf '\\n%s\\n' '${identity.publicText}' >> /root/.ssh/authorized_keys\nchmod 600 /root/.ssh/authorized_keys\nsync\n`,
+            10000,
+            signal,
+          );
+          if (prepared.code !== 0) throw new Error(prepared.stderr);
+          await writeIdentityFile(join(vmDir(id), 'id_rsa'), identity.privateText);
           const changed = await this.exec(
             id,
-            `set -e\nprintf '%s\\n' '${identity.publicText}' > /root/.ssh/authorized_keys\nchmod 600 /root/.ssh/authorized_keys\nhostname '${this.get(id).name}'\nprintf '%s\\n' '${this.get(id).name}' > /etc/hostname\n`,
+            `set -e\nprintf '%s\\n' '${identity.publicText}' > /root/.ssh/authorized_keys.sakura-tmp\nchmod 600 /root/.ssh/authorized_keys.sakura-tmp\nmv /root/.ssh/authorized_keys.sakura-tmp /root/.ssh/authorized_keys\nhostname '${this.get(id).name}'\nprintf '%s\\n' '${this.get(id).name}' > /etc/hostname\n`,
             10000,
             signal,
           );
           if (changed.code !== 0) throw new Error(changed.stderr);
-          await writeFile(join(vmDir(id), 'id_rsa'), identity.privateText, { mode: 0o600 });
           await rm(identityFile);
         }
         if (this.live.get(id) === live && live.status === 'starting') {
@@ -377,6 +418,9 @@ export class Machines extends EventEmitter {
           existsSync(join(vmDir(id), 'identity.json'))
         ) {
           const pending = JSON.parse(await readFile(join(vmDir(id), 'identity.json'), 'utf8'));
+          signal?.throwIfAborted();
+          if (this.live.get(id) !== live || this.live.get(id)?.status === 'stopping')
+            throw new AppError('发行版已停止', 409);
           return this.connectOnce(
             live,
             Buffer.from(pending.privateText),
@@ -399,6 +443,7 @@ export class Machines extends EventEmitter {
     }
   }
   private connectOnce(live: Live, key: Buffer, timeout: number, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     return new Promise<Client>((resolve, reject) => {
       const client = new Client();
       const abort = () => client.destroy();
@@ -519,18 +564,60 @@ export class Machines extends EventEmitter {
       client.end();
     }
   }
-  async sftp<T>(id: string, work: (sftp: SFTPWrapper) => Promise<T>, signal?: AbortSignal) {
+  async sftp<T>(
+    id: string,
+    work: (sftp: SFTPWrapper, transportSignal?: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+  ) {
     const client = await this.connect(id, 10000, signal);
-    const abort = () => client.destroy();
-    signal?.addEventListener('abort', abort, { once: true });
+    const transport = new AbortController();
+    let finish!: (error: unknown, result?: T) => void;
+    const failed = (error: Error) => {
+      transport.abort(error);
+      finish(error);
+      client.destroy();
+    };
+    const closed = () => failed(new Error('SFTP connection closed'));
+    const abort = () => failed(signal?.reason || new AppError('文件操作已取消', 409));
     try {
-      signal?.throwIfAborted();
-      const sftp = await new Promise<SFTPWrapper>((res, rej) =>
-        client.sftp((err, ftp) => (err ? rej(err) : res(ftp))),
-      );
-      return await work(sftp);
+      return await new Promise<T>((resolve, reject) => {
+        let settled = false;
+        finish = (error, result) => {
+          if (settled) return;
+          settled = true;
+          error ? reject(error) : resolve(result as T);
+        };
+        signal?.addEventListener('abort', abort, { once: true });
+        client.once('close', closed);
+        client.on('error', failed);
+        if (signal?.aborted) {
+          abort();
+          return;
+        }
+        client.sftp((error, ftp) => {
+          if (error) {
+            failed(error);
+            return;
+          }
+          // ssh2 may leave requests queued forever if a finally block submits
+          // cleanup after disconnection. Transport failure must settle this
+          // operation independently of those request callbacks.
+          ftp.on('error', failed);
+          ftp.once('close', closed);
+          ftp.once('end', closed);
+          if (settled) {
+            ftp.end();
+            return;
+          }
+          Promise.resolve()
+            .then(() => work(ftp, transport.signal))
+            .then((result) => finish(undefined, result), failed);
+        });
+      });
     } finally {
       signal?.removeEventListener('abort', abort);
+      client.off('close', closed);
+      client.off('error', failed);
       client.end();
     }
   }
@@ -599,6 +686,7 @@ export class Machines extends EventEmitter {
     if (!live) return this.view(id);
     live.bootAbort.abort();
     if (!force && live.status === 'running') await this.exec(id, 'sync; poweroff', 5000).catch(() => {});
+    if (this.live.get(id) !== live) return this.view(id);
     live.status = 'stopping';
     this.emit('change');
     if (!force) {
@@ -626,16 +714,66 @@ export class Machines extends EventEmitter {
   requireStopped(id: string) {
     if (this.live.has(id)) throw new AppError('请先停止发行版，再进行此操作', 409);
   }
+  private snapshotIdentityFile(id: string, snapshotId: string) {
+    return join(vmDir(id), `.snapshot-${checkedId(snapshotId)}.json`);
+  }
+  private async diskIdentity(id: string, snapshotId?: string): Promise<DiskIdentity> {
+    const vm = this.get(id);
+    if (snapshotId) {
+      if (!vm.snapshots.some((shot) => shot.id === snapshotId)) throw new AppError('快照不存在', 404);
+      try {
+        const identity = JSON.parse(await readFile(this.snapshotIdentityFile(id, snapshotId), 'utf8'));
+        if (
+          typeof identity.key !== 'string' ||
+          typeof identity.seed !== 'string' ||
+          (identity.pending !== undefined && typeof identity.pending !== 'string')
+        )
+          throw new AppError('快照身份数据损坏');
+        return { key: identity.key, seed: Buffer.from(identity.seed, 'base64'), pending: identity.pending };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        // Older snapshots predate identity metadata and retain their current key.
+      }
+    }
+    const dir = vmDir(id);
+    const [key, seed, pending] = await Promise.all([
+      readFile(join(dir, 'id_rsa'), 'utf8'),
+      readFile(join(dir, 'seed.iso')),
+      readFile(join(dir, 'identity.json'), 'utf8').catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+        return undefined;
+      }),
+    ]);
+    return { key, seed, pending };
+  }
+  async snapshotIdentity(id: string, snapshotId?: string): Promise<{ key: string; seed: Buffer }> {
+    const { key, seed } = await this.diskIdentity(id, snapshotId);
+    return { key, seed };
+  }
+  private async createSnapshot(vm: VMRecord, name: string) {
+    const shot = { id: randomUUID(), name, createdAt: new Date().toISOString() };
+    const identity = await this.diskIdentity(vm.id);
+    const file = this.snapshotIdentityFile(vm.id, shot.id);
+    await writeFile(file, JSON.stringify({ ...identity, seed: identity.seed.toString('base64') }), {
+      flag: 'wx',
+      mode: 0o600,
+    });
+    try {
+      await this.engine.run('sakura-img', ['snapshot', '-c', shot.id, join(vmDir(vm.id), 'disk.qcow2')]);
+    } catch (error) {
+      await rm(file, { force: true });
+      throw error;
+    }
+    vm.snapshots.push(shot);
+    await this.save();
+    return shot;
+  }
   async snapshot(id: string, name: string) {
     return this.locked(id, async () => {
       const vm = this.get(id);
       this.requireStopped(id);
       if (vm.snapshots.length >= 20) throw new AppError('最多保留 20 个磁盘快照');
-      const shot = { id: randomUUID(), name, createdAt: new Date().toISOString() };
-      await this.engine.run('sakura-img', ['snapshot', '-c', shot.id, join(vmDir(id), 'disk.qcow2')]);
-      vm.snapshots.push(shot);
-      await this.save();
-      return shot;
+      return this.createSnapshot(vm, name);
     });
   }
   async restore(id: string, snapshotId: string, backup = false) {
@@ -643,14 +781,18 @@ export class Machines extends EventEmitter {
       const vm = this.get(id);
       this.requireStopped(id);
       if (!vm.snapshots.some((s) => s.id === snapshotId)) throw new AppError('快照不存在', 404);
+      const identity = await this.diskIdentity(id, snapshotId);
       if (backup) {
         if (vm.snapshots.length >= 20) throw new AppError('请先删除一个旧快照，为恢复前备份留出位置');
-        const shot = { id: randomUUID(), name: '恢复前自动备份', createdAt: new Date().toISOString() };
-        await this.engine.run('sakura-img', ['snapshot', '-c', shot.id, join(vmDir(id), 'disk.qcow2')]);
-        vm.snapshots.push(shot);
-        await this.save();
+        await this.createSnapshot(vm, '恢复前自动备份');
       }
       await this.engine.run('sakura-img', ['snapshot', '-a', snapshotId, join(vmDir(id), 'disk.qcow2')]);
+      const dir = vmDir(id);
+      await writeIdentityFile(join(dir, 'id_rsa'), identity.key);
+      await writeIdentityFile(join(dir, 'seed.iso'), identity.seed);
+      if (identity.pending !== undefined)
+        await writeIdentityFile(join(dir, 'identity.json'), identity.pending);
+      else await rm(join(dir, 'identity.json'), { force: true });
       delete vm.lastError;
       await this.save();
       return this.view(id);
@@ -678,6 +820,7 @@ export class Machines extends EventEmitter {
       else {
         await this.engine.run('sakura-img', ['snapshot', '-d', shot.id, join(vmDir(id), 'disk.qcow2')]);
         vm.snapshots = vm.snapshots.filter((s) => s !== shot);
+        await rm(this.snapshotIdentityFile(id, shot.id), { force: true });
       }
       await this.save();
       this.emit('change');
@@ -772,8 +915,15 @@ export class Machines extends EventEmitter {
     });
   }
   async close() {
+    if (this.closeTask) return this.closeTask;
     this.closing = true;
-    await Promise.allSettled([...this.live.keys()].map((id) => this.stopInternal(id, false)));
-    await this.engine.runtime.close();
+    this.closeTask = (async () => {
+      // Launch and disk operations admitted before shutdown must settle before
+      // taking the final live-process snapshot or releasing their runtime.
+      await Promise.allSettled([...this.operations]);
+      await Promise.allSettled([...this.live.keys()].map((id) => this.stopInternal(id, false)));
+      await this.engine.runtime.close();
+    })();
+    return this.closeTask;
   }
 }

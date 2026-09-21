@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Plus, X, Columns2 } from 'lucide-react';
 import type { Request } from './FeaturePanels';
+import { getTerminalStore } from './terminal-store';
 
-type Tab = { id: string; name: string };
 export function TerminalWorkspace({
   id,
   request,
@@ -12,27 +12,10 @@ export function TerminalWorkspace({
   request: Request;
   render: (session: string) => ReactNode;
 }) {
-  const [tabs, setTabs] = useState<Tab[]>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(`sakura-terminals-${id}`) || 'null');
-      if (
-        Array.isArray(saved) &&
-        saved.length > 0 &&
-        saved.length <= 8 &&
-        saved.every((t) => /^[a-z0-9-]{1,48}$/.test(t.id) && typeof t.name === 'string')
-      )
-        return saved;
-    } catch {}
-    return [{ id: 'main', name: '终端 1' }];
-  });
-  const [active, setActive] = useState(tabs[0].id),
-    [split, setSplit] = useState(false),
-    [error, setError] = useState('');
-  useEffect(() => {
-    try {
-      localStorage.setItem(`sakura-terminals-${id}`, JSON.stringify(tabs));
-    } catch {}
-  }, [tabs, id]);
+  const store = getTerminalStore(id);
+  const { tabs, active, closing, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const dispatch = store.dispatch;
+  const [split, setSplit] = useState(false);
   const second = tabs.find((t) => t.id !== active)?.id;
   return (
     <div className="terminal-workspace">
@@ -41,12 +24,31 @@ export function TerminalWorkspace({
           <div className={`terminal-tab ${t.id === active ? 'active' : ''}`} key={t.id}>
             <button
               role="tab"
+              id={`${id}-terminal-tab-${t.id}`}
+              aria-controls={`${id}-terminal-pane-${t.id}`}
+              tabIndex={t.id === active ? 0 : -1}
               aria-selected={t.id === active}
-              onClick={() => setActive(t.id)}
+              onClick={() => dispatch({ type: 'select', id: t.id })}
+              onKeyDown={(event) => {
+                const index = tabs.findIndex((tab) => tab.id === t.id);
+                const next =
+                  event.key === 'ArrowRight'
+                    ? tabs[(index + 1) % tabs.length]
+                    : event.key === 'ArrowLeft'
+                      ? tabs[(index + tabs.length - 1) % tabs.length]
+                      : event.key === 'Home'
+                        ? tabs[0]
+                        : event.key === 'End'
+                          ? tabs[tabs.length - 1]
+                          : null;
+                if (!next) return;
+                event.preventDefault();
+                dispatch({ type: 'select', id: next.id });
+                document.getElementById(`${id}-terminal-tab-${next.id}`)?.focus();
+              }}
               onDoubleClick={() => {
                 const name = prompt('终端名称', t.name);
-                if (name?.trim())
-                  setTabs((list) => list.map((n) => (n.id === t.id ? { ...n, name: name.slice(0, 32) } : n)));
+                if (name?.trim()) dispatch({ type: 'rename', id: t.id, name });
               }}
             >
               {t.name}
@@ -54,15 +56,12 @@ export function TerminalWorkspace({
             {tabs.length > 1 && (
               <button
                 aria-label={`关闭 ${t.name}`}
-                onClick={async () => {
-                  try {
-                    await request(`/vms/${id}/terminal-session`, 'POST', { session: t.id });
-                    setTabs((list) => list.filter((n) => n.id !== t.id));
-                    if (active === t.id) setActive(tabs.find((n) => n.id !== t.id)!.id);
-                  } catch (e) {
-                    setError((e as Error).message);
-                  }
-                }}
+                disabled={Boolean(closing)}
+                onClick={() =>
+                  void store.close(t.id, () =>
+                    request(`/vms/${id}/terminal-session`, 'POST', { session: t.id }),
+                  )
+                }
               >
                 <X size={12} />
               </button>
@@ -73,9 +72,7 @@ export function TerminalWorkspace({
           aria-label="新建终端"
           disabled={tabs.length >= 8}
           onClick={() => {
-            const session = crypto.randomUUID();
-            setTabs((list) => [...list, { id: session, name: `终端 ${list.length + 1}` }]);
-            setActive(session);
+            dispatch({ type: 'add', id: crypto.randomUUID() });
           }}
         >
           <Plus size={14} />
@@ -92,7 +89,14 @@ export function TerminalWorkspace({
       )}
       <div className={`terminal-panes ${split && second ? 'split' : ''}`}>
         {tabs.map((t) => (
-          <div className="terminal-pane" hidden={t.id !== active && !(split && t.id === second)} key={t.id}>
+          <div
+            className="terminal-pane"
+            id={`${id}-terminal-pane-${t.id}`}
+            role="tabpanel"
+            aria-labelledby={`${id}-terminal-tab-${t.id}`}
+            hidden={t.id !== active && !(split && t.id === second)}
+            key={t.id}
+          >
             {render(t.id)}
           </div>
         ))}

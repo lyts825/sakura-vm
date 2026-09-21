@@ -21,6 +21,9 @@ export class Features {
   sync: FolderSync;
   jobs = new Jobs();
   private importing = false;
+  private closed = false;
+  private closing?: Promise<void>;
+  private active = new Map<AbortController, Promise<boolean>>();
   constructor(private machines: Machines) {
     this.files = new Files(machines);
     this.bundles = new Bundles(machines);
@@ -29,19 +32,53 @@ export class Features {
     this.sync = new FolderSync(machines);
   }
   async close() {
-    await Promise.all([
-      this.downloads.close(),
-      this.images.jobs.close(),
-      this.workspaces.close(),
-      this.sync.close(),
-      this.jobs.close(),
-    ]);
+    if (!this.closing) {
+      this.closed = true;
+      for (const abort of this.active.keys()) abort.abort();
+      this.closing = Promise.all([
+        this.downloads.close(),
+        this.images.jobs.close(),
+        this.workspaces.close(),
+        this.sync.close(),
+        this.jobs.close(),
+        Promise.allSettled([...this.active.values()]),
+      ]).then(() => {});
+    }
+    await this.closing;
   }
   async route(
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
+    body: (req: IncomingMessage, signal?: AbortSignal) => Promise<any>,
+  ) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    const abort = new AbortController();
+    const disconnected = () => {
+      if (!res.writableFinished) abort.abort();
+    };
+    req.once('aborted', disconnected);
+    res.once('close', disconnected);
+    if (req.aborted || res.destroyed) abort.abort();
+    const pending = Promise.resolve()
+      .then(() => {
+        abort.signal.throwIfAborted();
+        return this.routeRequest(req, res, url, (request) => body(request, abort.signal), abort.signal);
+      })
+      .finally(() => {
+        this.active.delete(abort);
+        req.off('aborted', disconnected);
+        res.off('close', disconnected);
+      });
+    this.active.set(abort, pending);
+    return pending;
+  }
+  private async routeRequest(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
     body: (req: IncomingMessage) => Promise<any>,
+    signal: AbortSignal,
   ) {
     const parts = url.pathname.split('/').filter(Boolean);
     const send = (data: unknown, status = 200) => {
@@ -69,7 +106,7 @@ export class Features {
         .parse(url.searchParams.get('name'));
       this.importing = true;
       try {
-        send(await this.bundles.import(name, req), 201);
+        send(await this.bundles.import(name, req, signal), 201);
       } finally {
         this.importing = false;
       }
@@ -119,7 +156,7 @@ export class Features {
     if (action === 'transfer') {
       const path = guestPath(url.searchParams.get('path'));
       if (req.method === 'PUT') {
-        send(await this.files.upload(id, path, req, url.searchParams.get('overwrite') === '1'));
+        send(await this.files.upload(id, path, req, url.searchParams.get('overwrite') === '1', signal));
         return true;
       }
       if (req.method === 'GET') {
@@ -149,7 +186,7 @@ export class Features {
         .object({ name: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/), snapshot: z.string().uuid().optional() })
         .strict()
         .parse(await body(req));
-      send(await this.bundles.clone(id, name, snapshot), 201);
+      send(await this.bundles.clone(id, name, snapshot, signal), 201);
       return true;
     }
     if (action === 'metrics' && req.method === 'GET') {
