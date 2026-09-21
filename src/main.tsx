@@ -38,6 +38,7 @@ import {
   Minus,
   GitBranch,
   Wrench,
+  Sparkles,
 } from 'lucide-react';
 import { SakuraArt } from './SakuraArt';
 import { DesktopPanel } from './DesktopPanel';
@@ -58,6 +59,7 @@ import { ResponseOrder } from './request-order';
 import { mayLeaveEditor } from './file-editor-state';
 import { TasksPanel, LibraryPanel, MaintenancePanel } from './ManagementPanels';
 import { GitPanel, DevelopmentPanel, ContainersPanel, MigrationPanel } from './DevelopmentPanels';
+import { FeatureSuitePanel } from './FeatureSuitePanel';
 import { CommandPalette, type PaletteTarget } from './CommandPalette';
 import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig } from '../server/model';
@@ -81,7 +83,7 @@ type System = {
   imageBytes: number;
 };
 type SessionState = { selected: string; page: string; tab: string };
-const sessionPages = new Set(['workspace', 'tasks', 'library', 'images', 'settings']);
+const sessionPages = new Set(['workspace', 'tasks', 'library', 'images', 'features', 'settings']);
 const sessionTabs = new Set([
   'terminal',
   'desktop',
@@ -416,6 +418,7 @@ function App() {
             { id: 'images', icon: Layers, name: '镜像库' },
             { id: 'tasks', icon: CircleDot, name: '任务中心' },
             { id: 'library', icon: Boxes, name: '实例管理' },
+            { id: 'features', icon: Sparkles, name: '能力中心' },
             { id: 'settings', icon: Settings2, name: '系统设置' },
           ].map((n) => (
             <button
@@ -497,6 +500,7 @@ function App() {
                   images: '镜像库',
                   tasks: '任务中心',
                   library: '实例管理',
+                  features: '能力中心',
                   settings: '系统设置',
                 }[page]
               }
@@ -531,6 +535,7 @@ function App() {
         <main>
           {page === 'tasks' && <TasksPanel request={api} vms={vms} />}
           {page === 'library' && <LibraryPanel request={api} vms={vms} refresh={refresh} />}
+          {page === 'features' && <FeatureSuitePanel request={api} vms={vms} selected={selected} onSelected={(id) => void setSelected(id)} />}
           {offline && (
             <div className="error-banner">
               连接出现问题：{offline}

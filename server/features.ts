@@ -30,6 +30,7 @@ import { FileHistory } from './file-history.ts';
 import { Pipelines } from './pipelines.ts';
 import { RuntimeVersions } from './runtime-versions.ts';
 import { CodeIntelligence } from './code-intelligence.ts';
+import { FeatureSuite } from './feature-suite.ts';
 
 export class Features {
   files: Files;
@@ -56,6 +57,7 @@ export class Features {
   pipelines: Pipelines;
   runtimes: RuntimeVersions;
   intelligence: CodeIntelligence;
+  suite: FeatureSuite;
   private mutations = 0;
   private importing = false;
   private closed = false;
@@ -89,6 +91,7 @@ export class Features {
     this.pipelines = new Pipelines(machines, this.workspaces, this.files);
     this.runtimes = new RuntimeVersions(machines, this.workspaces);
     this.intelligence = new CodeIntelligence(machines, this.workspaces);
+    this.suite = new FeatureSuite(machines, this.workspaces);
   }
   private jobStores() {
     return [
@@ -108,6 +111,7 @@ export class Features {
       this.migration.jobs,
       this.pipelines.jobs,
       this.runtimes.jobs,
+      this.suite.jobs,
     ];
   }
   async close() {
@@ -132,6 +136,7 @@ export class Features {
         this.migration.close(),
         this.pipelines.close(),
         this.runtimes.close(),
+        this.suite.close(),
         Promise.allSettled([...this.active.values()]),
       ]).then(() => {});
     }
@@ -188,6 +193,7 @@ export class Features {
           'pipeline-artifact',
           'runtimes',
           'code-diagnostics',
+          'advanced',
           'projects',
         ]);
         return vm && scoped.has(url.pathname.split('/').filter(Boolean)[3]) && /^[0-9a-f-]{36}$/i.test(vm)
@@ -273,6 +279,10 @@ export class Features {
           else if (store === this.runtimes.jobs && job.action?.startsWith('install:')) {
             const [, tool, version] = job.action.split(':');
             send(await withProject(() => this.runtimes.install(id, { tool, version })));
+          } else if (store === this.suite.jobs && job.action?.startsWith('package:')) {
+            const [operationValue, ...nameParts] = job.action.slice(8).split(':');
+            const operation = z.enum(['list', 'search', 'install', 'remove', 'update']).parse(operationValue);
+            send(this.suite.package(id, { operation, name: nameParts.join(':') || undefined }));
           } else if (store === this.jobs) send(this.installIme(id));
           else throw new AppError('请回到原功能页面重新执行');
           return true;
@@ -296,6 +306,10 @@ export class Features {
           })),
       );
       send({ events: events.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100) });
+      return true;
+    }
+    if (parts[1] === 'feature-suite' && parts.length === 2 && req.method === 'GET') {
+      send(await this.suite.catalog());
       return true;
     }
     if (parts[1] === 'migration' && parts.length === 2) {
@@ -566,6 +580,20 @@ export class Features {
     if (action === 'code-diagnostics' && req.method === 'GET') {
       send(await this.intelligence.diagnose(id, url.searchParams.get('path') || '', signal));
       return true;
+    }
+    if (action === 'advanced') {
+      if (req.method === 'GET') {
+        send(await this.suite.view(id, Number(url.searchParams.get('limit') || 120)));
+        return true;
+      }
+      if (req.method === 'PUT') {
+        send(await this.suite.update(id, await body(req)));
+        return true;
+      }
+      if (req.method === 'POST') {
+        send(await this.suite.action(id, await body(req), signal), 202);
+        return true;
+      }
     }
     if (action === 'commands') {
       if (req.method === 'GET') {

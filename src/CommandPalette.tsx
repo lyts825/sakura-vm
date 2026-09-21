@@ -78,6 +78,7 @@ export function CommandPalette({
       ['tasks', '任务中心与执行记录'],
       ['settings', '系统设置与数据迁移'],
       ['images', '镜像与备份导入'],
+      ['features', '能力中心与自动化'],
     ]
       .filter(([, label]) => match(label))
       .map(([page, title]) => ({ key: page, title, detail: '全局操作', run: () => void navigate({ page }) })),
