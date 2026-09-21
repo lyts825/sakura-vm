@@ -127,6 +127,7 @@ try {
   features.maintenance.resize(id, 8);
   await done(features.maintenance.jobs, id);
   assert.equal(machines.get(id).diskGiB, 8);
+  const pendingResize = await machines.snapshot(id, 'filesystem-growth-pending');
   await boot(id);
   const resizeJob = await done(features.maintenance.jobs, id);
   assert.equal(machines.get(id).pendingResize, false);
@@ -137,6 +138,19 @@ try {
   );
   console.log('Real QCOW2, partition and filesystem growth passed');
   await machines.stop(id);
+  const resizeClone = await features.bundles.clone(id, 'pending-resize-clone', pendingResize.id);
+  ids.push(resizeClone.id);
+  assert.equal(resizeClone.pendingResize, true);
+  await boot(resizeClone.id);
+  await done(features.maintenance.jobs, resizeClone.id);
+  assert.equal(machines.get(resizeClone.id).pendingResize, false);
+  assert.ok(
+    Number((await command(resizeClone.id, "df -Pk / | awk 'NR==2 { print $2 }'")).trim()) > 6 * 1024 ** 2,
+  );
+  await machines.stop(resizeClone.id);
+  await machines.restore(id, pendingResize.id);
+  assert.equal(machines.get(id).pendingResize, true);
+  console.log('Pending filesystem growth survives snapshot restore and clone boot');
   await features.backups.policy(id, { enabled: true, intervalHours: 1, keep: 1, maxGiB: 4 });
   await features.backups.tick();
   await done(features.backups.jobs, id);
@@ -152,7 +166,13 @@ try {
   await done(features.backups.jobs, id);
   const restored = [...machines.records.values()].find((v) => v.name === 'backup-restored')!;
   ids.push(restored.id);
+  assert.equal(restored.pendingResize, true);
   await boot(restored.id);
+  await done(features.maintenance.jobs, restored.id);
+  assert.equal(machines.get(restored.id).pendingResize, false);
+  assert.ok(
+    Number((await command(restored.id, "df -Pk / | awk 'NR==2 { print $2 }'")).trim()) > 6 * 1024 ** 2,
+  );
   assert.equal(await machines.readGuestFile(restored.id, '/workspace/app/notes.txt'), 'Windows version');
   await machines.stop(restored.id);
   console.log('Scheduled backups, retention, integrity and real restore boot passed');

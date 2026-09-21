@@ -44,7 +44,14 @@ export type DesktopView = {
   log: string;
   error?: string;
 };
-export type Snapshot = { id: string; name: string; createdAt: string; note?: string; diskGiB?: number };
+export type Snapshot = {
+  id: string;
+  name: string;
+  createdAt: string;
+  note?: string;
+  diskGiB?: number;
+  pendingResize?: boolean;
+};
 export const organizationSchema = z
   .object({
     group: z.string().trim().max(40).default(''),

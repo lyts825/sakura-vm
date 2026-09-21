@@ -17,6 +17,7 @@ const manifestSchema = z
     version: z.literal(1),
     config: createSchema,
     project: projectSchema.optional(),
+    pendingResize: z.boolean().default(false),
     key: z.string().max(16384),
     seed: z.string().max(262144),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -68,7 +69,7 @@ export class Bundles {
           signal?.throwIfAborted();
           hash.update(chunk);
         }
-        const { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template } =
+        const { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template, pendingResize } =
           this.machines.get(id);
         const identity = await this.machines.snapshotIdentity(id);
         const manifest = Buffer.from(
@@ -76,6 +77,7 @@ export class Bundles {
             version: 1,
             config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template },
             project: await this.project(id),
+            ...(pendingResize ? { pendingResize: true } : {}),
             key: identity.key,
             seed: identity.seed.toString('base64'),
             sha256: hash.digest('hex'),
@@ -169,6 +171,7 @@ export class Bundles {
         key,
         seed,
         manifest.project,
+        manifest.pendingResize,
       );
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -179,7 +182,8 @@ export class Bundles {
       signal?.throwIfAborted();
       this.machines.requireStopped(id);
       const vm = this.machines.get(id);
-      if (snapshot && !vm.snapshots.some((s) => s.id === snapshot)) throw new AppError('快照不存在', 404);
+      const shot = snapshot ? vm.snapshots.find((s) => s.id === snapshot) : undefined;
+      if (snapshot && !shot) throw new AppError('快照不存在', 404);
       const dir = await this.temp();
       try {
         const disk = join(dir, 'disk.qcow2');
@@ -206,7 +210,7 @@ export class Bundles {
             name,
             memoryMiB,
             cpus,
-            diskGiB: snapshot ? vm.snapshots.find((s) => s.id === snapshot)?.diskGiB || diskGiB : diskGiB,
+            diskGiB: shot?.diskGiB || diskGiB,
             accelerator,
             distro,
             template,
@@ -216,6 +220,7 @@ export class Bundles {
           identity.key,
           identity.seed,
           project,
+          !!(shot ? shot.pendingResize : vm.pendingResize),
         );
       } finally {
         await rm(dir, { recursive: true, force: true });

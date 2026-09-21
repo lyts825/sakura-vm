@@ -812,7 +812,13 @@ export class Machines extends EventEmitter {
     return { key, seed };
   }
   private async createSnapshot(vm: VMRecord, name: string) {
-    const shot = { id: randomUUID(), name, createdAt: new Date().toISOString(), diskGiB: vm.diskGiB };
+    const shot = {
+      id: randomUUID(),
+      name,
+      createdAt: new Date().toISOString(),
+      diskGiB: vm.diskGiB,
+      pendingResize: !!vm.pendingResize,
+    };
     const identity = await this.diskIdentity(vm.id);
     const file = this.snapshotIdentityFile(vm.id, shot.id);
     await writeFile(file, JSON.stringify({ ...identity, seed: identity.seed.toString('base64') }), {
@@ -850,7 +856,7 @@ export class Machines extends EventEmitter {
       await this.engine.run('sakura-img', ['snapshot', '-a', snapshotId, join(vmDir(id), 'disk.qcow2')]);
       const restored = vm.snapshots.find((s) => s.id === snapshotId)!;
       if (restored.diskGiB) vm.diskGiB = restored.diskGiB;
-      vm.pendingResize = false;
+      vm.pendingResize = !!restored.pendingResize;
       const dir = vmDir(id);
       await writeIdentityFile(join(dir, 'id_rsa'), identity.key);
       await writeIdentityFile(join(dir, 'seed.iso'), identity.seed);
@@ -948,7 +954,14 @@ export class Machines extends EventEmitter {
     );
   }
   // Publish a validated standalone disk and rotate its controller key at first boot.
-  async adopt(input: unknown, disk: string, key: string, seed: Buffer, project?: unknown) {
+  async adopt(
+    input: unknown,
+    disk: string,
+    key: string,
+    seed: Buffer,
+    project?: unknown,
+    pendingResize = false,
+  ) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);
       if (this.records.size >= 32 || [...this.records.values()].some((v) => v.name === config.name))
@@ -958,6 +971,7 @@ export class Machines extends EventEmitter {
         id: randomUUID(),
         createdAt: new Date().toISOString(),
         snapshots: [],
+        pendingResize,
       };
       const dir = vmDir(vm.id);
       await mkdir(dir);

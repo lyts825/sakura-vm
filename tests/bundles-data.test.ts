@@ -1,16 +1,18 @@
-import test, { after } from 'node:test';
+import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
 import ssh2 from 'ssh2';
 import type { Machines } from '../server/machines.ts';
+import type { Engine } from '../server/runtime.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-bundle-test-'));
 process.env.SAKURA_DATA_DIR = root;
 const { Bundles } = await import('../server/bundles.ts');
+const { Machines: MachineManager } = await import('../server/machines.ts');
 const { vmDir, createSchema } = await import('../server/model.ts');
 const { createSshKey, seedIso } = await import('../server/seed.ts');
 after(() => rm(root, { recursive: true, force: true }));
@@ -150,4 +152,77 @@ test('cloning an older snapshot uses its controller identity instead of the curr
   await new Bundles(machines).clone(id, 'copy', snapshot);
   assert.equal(adoptedKey, key.privateText);
   assert.deepEqual(adoptedSeed, seed);
+});
+
+async function resizeFixture(t: TestContext) {
+  const machines = new MachineManager({
+    runtime: { close: async () => {} },
+    run: async (_tool, args) => {
+      if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
+      return '{}';
+    },
+  } as Engine);
+  await machines.init();
+  t.after(() => machines.close());
+  const id = randomUUID();
+  machines.records.set(id, {
+    ...createSchema.parse({ name: `original-${id.slice(0, 8)}` }),
+    id,
+    createdAt: new Date().toISOString(),
+    snapshots: [],
+  });
+  await mkdir(vmDir(id), { recursive: true });
+  await writeFile(join(vmDir(id), 'disk.qcow2'), disk);
+  await writeFile(join(vmDir(id), 'id_rsa'), key.privateText);
+  await writeFile(join(vmDir(id), 'seed.iso'), seed);
+  return { machines, id, bundles: new Bundles(machines) };
+}
+
+test('clones use the filesystem resize state of their source disk or selected snapshot', async (t) => {
+  const { machines, id, bundles } = await resizeFixture(t);
+  await machines.resize(id, 16);
+  const before = machines.get(id).snapshots[0];
+  const pending = await machines.snapshot(id, 'pending');
+  const current = await bundles.clone(id, 'pending-current');
+  assert.equal(current.pendingResize, true);
+
+  await machines.completeResize(id);
+  const historical = await bundles.clone(id, 'pending-snapshot', pending.id);
+  assert.equal(historical.diskGiB, 16);
+  assert.equal(historical.pendingResize, true);
+  const original = await bundles.clone(id, 'before-resize', before.id);
+  assert.equal(original.diskGiB, 8);
+  assert.equal(original.pendingResize, false);
+  const completed = await bundles.clone(id, 'completed-current');
+  assert.equal(completed.pendingResize, false);
+});
+
+test('portable backup round trips persist pending filesystem growth across service restarts', async (t) => {
+  const { machines, id, bundles } = await resizeFixture(t);
+  await machines.resize(id, 16);
+  const chunks: Buffer[] = [];
+  await bundles.export(
+    id,
+    new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    }),
+    () => {},
+  );
+  const restored = await bundles.import('pending-backup', Readable.from([Buffer.concat(chunks)]));
+  assert.equal(restored.diskGiB, 16);
+  assert.equal(restored.pendingResize, true);
+
+  const reopened = new MachineManager(machines.engine);
+  await reopened.init();
+  t.after(() => reopened.close());
+  assert.equal(reopened.get(restored.id).pendingResize, true);
+});
+
+test('legacy portable backups without resize metadata remain importable', async (t) => {
+  const { bundles } = await resizeFixture(t);
+  const restored = await bundles.import('legacy-backup', bundle());
+  assert.equal(!!restored.pendingResize, false);
 });

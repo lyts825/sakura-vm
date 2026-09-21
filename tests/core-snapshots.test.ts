@@ -67,6 +67,23 @@ test('disk growth preserves legacy snapshot capacity across multiple expansions'
   assert.equal(machines.get(id).diskGiB, 8);
 });
 
+test('snapshots restore unfinished filesystem growth and preserve it in recovery backups', async (t) => {
+  const { machines, id } = await fixture(t);
+  await machines.resize(id, 16);
+  const pending = await machines.snapshot(id, 'filesystem-growth-pending');
+  await machines.completeResize(id);
+  const completed = await machines.snapshot(id, 'filesystem-growth-complete');
+
+  await machines.restore(id, pending.id);
+  assert.equal(machines.get(id).diskGiB, 16);
+  assert.equal(machines.get(id).pendingResize, true);
+  await machines.restore(id, completed.id, true);
+  assert.equal(machines.get(id).pendingResize, false);
+  const recovery = machines.get(id).snapshots.find((shot) => shot.name === '恢复前自动备份')!;
+  await machines.restore(id, recovery.id);
+  assert.equal(machines.get(id).pendingResize, true);
+});
+
 test('restoring a pre-first-boot snapshot restores the matching controller and pending identity', async (t) => {
   const { machines, id, dir } = await fixture(t);
   const pending = JSON.stringify({ privateText: 'new-private-key', publicText: 'new-public-key' });
