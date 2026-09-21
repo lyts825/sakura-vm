@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 
 export const developmentHelp = `
 Development tools:
-  git <name> [status|diff|stage|unstage|commit|switch|branch|init] [arguments...]
+  git <name> [status|diff|stage|unstage|commit|switch|branch|init|remote-add|remote-remove|fetch|pull|push|merge] [arguments...]
   git <name> diff <path> [--staged]
   project-files <name> [query] [--content]
   commands <name> [list|save|remove|run] [preset.json|id] [values.json]
@@ -109,7 +109,22 @@ export async function developmentCommand(action, name, args, api, base) {
     else if (['switch', 'branch'].includes(kind))
       value = await api(path, 'POST', { action: kind, branch: target });
     else if (kind === 'init') value = await api(path, 'POST', { action: kind });
-    else throw new Error('Unknown Git action');
+    else if (kind === 'remote-add') {
+      if (!target || !extra) throw new Error('Usage: git <name> remote-add <remote-name> <url>');
+      value = await api(path, 'POST', { action: kind, name: target, url: extra });
+    } else if (kind === 'remote-remove') {
+      if (!target) throw new Error('Usage: git <name> remote-remove <remote-name>');
+      value = await api(path, 'POST', { action: kind, name: target });
+    } else if (['fetch', 'pull', 'push'].includes(kind))
+      value = await api(path, 'POST', {
+        action: kind,
+        remote: target || undefined,
+        branch: extra || undefined,
+      });
+    else if (kind === 'merge') {
+      if (!target) throw new Error('Usage: git <name> merge <branch>');
+      value = await api(path, 'POST', { action: kind, branch: target });
+    } else throw new Error('Unknown Git action');
   } else if (action === 'commands') {
     if (!kind || kind === 'list') value = await api(path);
     else if (kind === 'save') value = await api(path, 'PUT', await jsonFile(target));

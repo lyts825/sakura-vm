@@ -62,8 +62,9 @@ export function serviceOrder(services: ProjectService[], only?: string) {
   include(only);
   return order.filter((s) => needed.has(s.name));
 }
-const session = (name: string) => `sakura-service-${name}`;
-export const serviceLog = (name: string) => `/tmp/sakura-service-${name}.log`;
+export const serviceSession = (name: string, project?: Project) =>
+  `sakura-service-${project?._workspace ? project._workspace + '-' : ''}${name}`;
+export const serviceLog = (name: string, project?: Project) => `/tmp/${serviceSession(name, project)}.log`;
 export function envPrefix(values: Record<string, string> = {}) {
   return Object.entries(values)
     .map(([name, value]) => `export ${name}=${quote(value)}`)
@@ -83,7 +84,7 @@ export async function runServices(
   const stop = async (name: string) => {
     const result = await machines.exec(
       id,
-      `if tmux has-session -t =${session(name)} 2>/dev/null; then tmux kill-session -t =${session(name)}; fi`,
+      `if tmux has-session -t =${serviceSession(name, project)} 2>/dev/null; then tmux kill-session -t =${serviceSession(name, project)}; fi`,
       10000,
     );
     if (result.code !== 0) throw new AppError(result.stderr || '停止服务失败');
@@ -96,7 +97,7 @@ export async function runServices(
       for (const dependent of dependents) {
         const live = await machines.exec(
           id,
-          `tmux has-session -t =${session(dependent.name)} 2>/dev/null`,
+          `tmux has-session -t =${serviceSession(dependent.name, project)} 2>/dev/null`,
           5000,
           signal,
         );
@@ -116,7 +117,7 @@ export async function runServices(
       signal.throwIfAborted();
       const live = await machines.exec(
         id,
-        `tmux has-session -t =${session(service.name)} 2>/dev/null`,
+        `tmux has-session -t =${serviceSession(service.name, project)} 2>/dev/null`,
         5000,
         signal,
       );
@@ -126,7 +127,7 @@ export async function runServices(
         started.push(service.name);
         const result = await machines.exec(
           id,
-          `tmux new-session -d -s ${session(service.name)} -c ${quote(project.directory)} ${quote(`sh -lc ${quote(script)} > ${quote(serviceLog(service.name))} 2>&1`)}`,
+          `tmux new-session -d -s ${serviceSession(service.name, project)} -c ${quote(project.directory)} ${quote(`sh -lc ${quote(script)} > ${quote(serviceLog(service.name, project))} 2>&1`)}`,
           10000,
           signal,
         );
@@ -138,7 +139,7 @@ export async function runServices(
         await delay(300, undefined, { signal });
         const alive = await machines.exec(
           id,
-          `tmux has-session -t =${session(service.name)} 2>/dev/null`,
+          `tmux has-session -t =${serviceSession(service.name, project)} 2>/dev/null`,
           5000,
           signal,
         );

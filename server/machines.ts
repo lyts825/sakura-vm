@@ -57,6 +57,7 @@ type Live = {
   error?: string;
 };
 export class Machines extends EventEmitter {
+  fileBeforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
   records = new Map<string, VMRecord>();
   live = new Map<string, Live>();
   logs = new Map<string, string>();
@@ -689,9 +690,11 @@ export class Machines extends EventEmitter {
   ) {
     const bytes = Buffer.from(content, 'utf8');
     if (bytes.length > MAX_TEXT_BYTES) throw new AppError('仅支持保存 1 MiB 以内的文本文件', 413);
-    await this.locked(`text:${id}:${path}`, () =>
-      new Files(this).upload(id, path, Readable.from(bytes), overwrite, undefined, expectedVersion),
-    );
+    await this.locked(`text:${id}:${path}`, () => {
+      const files = new Files(this);
+      files.beforeReplace = this.fileBeforeReplace;
+      return files.upload(id, path, Readable.from(bytes), overwrite, undefined, expectedVersion);
+    });
   }
   async stop(id: string, force = false) {
     return this.locked(id, async () => this.stopInternal(id, force));
@@ -968,6 +971,7 @@ export class Machines extends EventEmitter {
     seed: Buffer,
     project?: unknown,
     pendingResize = false,
+    projects?: { active: string; projects: { id: string; name: string }[]; configs: Record<string, unknown> },
   ) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);
@@ -987,7 +991,18 @@ export class Machines extends EventEmitter {
         await writeFile(join(dir, 'id_rsa'), key, { mode: 0o600 });
         await writeFile(join(dir, 'seed.iso'), seed);
         await writeFile(join(dir, 'identity.json'), JSON.stringify(createSshKey()), { mode: 0o600 });
-        if (project) await writeFile(join(dir, 'project.json'), JSON.stringify(project, null, 2));
+        if (projects) {
+          await writeFile(
+            join(dir, 'projects.json'),
+            JSON.stringify({ active: projects.active, projects: projects.projects }, null, 2),
+          );
+          for (const entry of projects.projects)
+            if (projects.configs[entry.id])
+              await writeFile(
+                join(dir, entry.id === 'default' ? 'project.json' : `project-${entry.id}.json`),
+                JSON.stringify(projects.configs[entry.id], null, 2),
+              );
+        } else if (project) await writeFile(join(dir, 'project.json'), JSON.stringify(project, null, 2));
         this.records.set(vm.id, vm);
         await this.save();
         this.emit('change');

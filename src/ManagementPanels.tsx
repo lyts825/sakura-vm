@@ -33,6 +33,12 @@ const taskLabels = {
 };
 export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }) {
   const remote = useRemote<{ jobs: JobView[]; warnings: string[] }>(request, '/jobs', true, 2000),
+    events = useRemote<{ events: { title?: string; status: string; message?: string; at: string }[] }>(
+      request,
+      '/events',
+      true,
+      5000,
+    ),
     action = useAction();
   const [filter, setFilter] = useState('all'),
     [machine, setMachine] = useState('all');
@@ -71,6 +77,17 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
         </label>
       </div>
       <Feedback error={action.error || remote.error || remote.data?.warnings.join('；')} />
+      {events.data?.events.length ? (
+        <details className="feature-card">
+          <summary>需要关注的事件（{events.data.events.length}）</summary>
+          {events.data.events.slice(0, 20).map((event, index) => (
+            <p className="subtle-note" key={`${event.at}-${index}`}>
+              {new Date(event.at).toLocaleString()} · {event.title || '后台任务'} ·{' '}
+              {event.message || event.status}
+            </p>
+          ))}
+        </details>
+      ) : null}
       {!jobs.length && <p className="muted">暂无任务记录。</p>}
       {jobs.map((job) => (
         <details className="feature-card" key={job.id} open={job.status === 'running'}>
@@ -974,6 +991,25 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
             </button>
           </>
         )}
+      </div>
+      <div className="feature-card">
+        <h3>整理磁盘空间</h3>
+        <p className="subtle-note">
+          停机后重建稀疏 QCOW2 镜像，移除未使用块。内部快照存在时需先保留或导出快照。
+        </p>
+        <button
+          className="secondary compact"
+          disabled={busy || vm.poweredOn || vm.snapshots.length > 0}
+          onClick={() =>
+            void action.run(async () => {
+              await request(`/vms/${vm.id}/compact`, 'POST');
+              remote.reload();
+              await refresh();
+            })
+          }
+        >
+          整理未使用空间
+        </button>
       </div>
       <Feedback error={action.error || remote.error} message={action.message} />
       <JobLog job={remote.data?.job} />

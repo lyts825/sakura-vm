@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, vmDir } from './model.ts';
+import { AppError } from './model.ts';
 import type { Machines } from './machines.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
@@ -10,6 +9,8 @@ import { quote } from './files.ts';
 import { envPrefix } from './project-services.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { join } from 'node:path';
+import { vmDir } from './model.ts';
 
 export const presetSchema = z
   .object({
@@ -47,25 +48,34 @@ export class CommandPresets {
   ) {}
   async list(id: string) {
     this.machines.get(id);
-    return readStore<CommandPreset[]>(join(vmDir(id), 'commands.json'), () => []);
+    return readStore<CommandPreset[]>(
+      this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+      () => [],
+    );
   }
   async save(id: string, input: unknown) {
     const preset = presetSchema.parse(input);
-    return this.machines.locked(`commands:${id}`, async () => {
+    return this.machines.locked(`commands:${this.workspaces.projects?.key(id) || id}`, async () => {
       const records = await this.list(id),
         value = { ...preset, id: preset.id || randomUUID() };
       if (records.length >= 50 && !records.some((v) => v.id === value.id))
         throw new AppError('最多收藏 50 个命令');
       const next = [...records.filter((v) => v.id !== value.id), value];
-      await writeStore(join(vmDir(id), 'commands.json'), next);
+      await writeStore(
+        this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+        next,
+      );
       return next;
     });
   }
   async remove(id: string, presetId: string) {
     z.uuid().parse(presetId);
-    return this.machines.locked(`commands:${id}`, async () => {
+    return this.machines.locked(`commands:${this.workspaces.projects?.key(id) || id}`, async () => {
       const next = (await this.list(id)).filter((v) => v.id !== presetId);
-      await writeStore(join(vmDir(id), 'commands.json'), next);
+      await writeStore(
+        this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+        next,
+      );
       return next;
     });
   }
@@ -77,7 +87,7 @@ export class CommandPresets {
     const project = await this.workspaces.resolvedConfig(id);
     const script = presetScript(preset, values);
     return this.jobs.start(
-      id,
+      this.workspaces.projects?.key(id) || id,
       async (log, signal) => {
         const output = privateLog(log, projectPrivateValues(project));
         try {
@@ -96,7 +106,7 @@ export class CommandPresets {
           output.flush();
         }
       },
-      { title: `收藏命令 · ${preset.name}`, vmId: id },
+      { title: `收藏命令 · ${preset.name}`, vmId: id, projectId: this.workspaces.projects?.current(id) },
     );
   }
   close() {

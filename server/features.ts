@@ -26,6 +26,10 @@ import { ServiceHealth } from './service-health.ts';
 import { Containers } from './containers.ts';
 import { DataMigration } from './data-migration.ts';
 import { importEncrypted } from './encrypted-backups.ts';
+import { FileHistory } from './file-history.ts';
+import { Pipelines } from './pipelines.ts';
+import { RuntimeVersions } from './runtime-versions.ts';
+import { CodeIntelligence } from './code-intelligence.ts';
 
 export class Features {
   files: Files;
@@ -48,6 +52,10 @@ export class Features {
   health: ServiceHealth;
   containers: Containers;
   migration: DataMigration;
+  history: FileHistory;
+  pipelines: Pipelines;
+  runtimes: RuntimeVersions;
+  intelligence: CodeIntelligence;
   private mutations = 0;
   private importing = false;
   private closed = false;
@@ -55,12 +63,16 @@ export class Features {
   private active = new Map<AbortController, Promise<boolean>>();
   constructor(private machines: Machines) {
     this.files = new Files(machines);
+    this.history = new FileHistory(machines, this.files);
+    this.files.beforeReplace = (id, path, ftp, signal) => this.history.capture(id, path, ftp, signal);
+    this.files.trash = (id, path, recursive) => this.history.trash(id, path, recursive);
+    this.machines.fileBeforeReplace = this.files.beforeReplace;
     this.bundles = new Bundles(machines);
     this.downloads = new Downloads(machines, this.files, this.bundles);
     this.secrets = new Secrets(machines);
     this.network = new NetworkProfiles(machines);
     this.workspaces = new Workspaces(machines, { secrets: this.secrets, network: this.network });
-    this.sync = new FolderSync(machines);
+    this.sync = new FolderSync(machines, this.workspaces.projects);
     this.backups = new Backups(machines, this.bundles, this.secrets);
     this.maintenance = new Maintenance(machines);
     this.ide = new Ide(machines, this.workspaces);
@@ -74,6 +86,9 @@ export class Features {
     this.migration = new DataMigration(machines, () =>
       this.jobStores().filter((store) => store !== this.migration.jobs),
     );
+    this.pipelines = new Pipelines(machines, this.workspaces, this.files);
+    this.runtimes = new RuntimeVersions(machines, this.workspaces);
+    this.intelligence = new CodeIntelligence(machines, this.workspaces);
   }
   private jobStores() {
     return [
@@ -91,6 +106,8 @@ export class Features {
       this.health.jobs,
       this.containers.jobs,
       this.migration.jobs,
+      this.pipelines.jobs,
+      this.runtimes.jobs,
     ];
   }
   async close() {
@@ -113,6 +130,8 @@ export class Features {
         this.health.close(),
         this.containers.close(),
         this.migration.close(),
+        this.pipelines.close(),
+        this.runtimes.close(),
         Promise.allSettled([...this.active.values()]),
       ]).then(() => {});
     }
@@ -137,18 +156,43 @@ export class Features {
     const pending = Promise.resolve()
       .then(() => {
         abort.signal.throwIfAborted();
-        return this.routeRequest(
-          req,
-          res,
-          url,
-          async (request) => {
-            const value = await body(request, abort.signal);
-            if (mutation && this.migration.blocked && !url.pathname.endsWith('/cancel'))
-              throw new AppError('数据目录迁移维护中', 409);
-            return value;
-          },
-          abort.signal,
-        );
+        const route = () =>
+          this.routeRequest(
+            req,
+            res,
+            url,
+            async (request) => {
+              const value = await body(request, abort.signal);
+              if (mutation && this.migration.blocked && !url.pathname.endsWith('/cancel'))
+                throw new AppError('数据目录迁移维护中', 409);
+              return value;
+            },
+            abort.signal,
+          );
+        const vm = /^\/api\/vms\/([^/]+)\//.exec(url.pathname)?.[1];
+        const scoped = new Set([
+          'git',
+          'project-files',
+          'commands',
+          'tools',
+          'network',
+          'secrets',
+          'health',
+          'containers',
+          'project',
+          'project-runtime',
+          'sync',
+          'sync-preview',
+          'history',
+          'pipelines',
+          'pipeline-artifact',
+          'runtimes',
+          'code-diagnostics',
+          'projects',
+        ]);
+        return vm && scoped.has(url.pathname.split('/').filter(Boolean)[3]) && /^[0-9a-f-]{36}$/i.test(vm)
+          ? this.workspaces.projects.with(vm, url.searchParams.get('project'), route)
+          : route();
       })
       .finally(() => {
         this.active.delete(abort);
@@ -198,29 +242,61 @@ export class Features {
         if (parts[3] === 'retry') {
           if (job.status === 'running') throw new AppError('任务仍在执行', 409);
           const id = job.vmId || job.key!;
+          const withProject = <T>(action: () => Promise<T>) =>
+            this.workspaces.projects
+              ? this.workspaces.projects.inScope(id, job.projectId || 'default', action)
+              : action();
           if (store === this.images.jobs) send(this.images.prepare(job.key!));
           else if (store === this.workspaces.jobs && job.action) {
             const [action, service] = job.action.split(':');
             send(
-              await this.workspaces.run(
-                id,
-                z.enum(['setup', 'start', 'stop', 'terminal']).parse(action),
-                service,
+              await withProject(() =>
+                this.workspaces.run(
+                  id,
+                  z.enum(['setup', 'start', 'stop', 'terminal']).parse(action),
+                  service,
+                ),
               ),
             );
           } else if (store === this.sync.jobs && job.action)
-            send(await this.sync.run(id, z.enum(['both', 'push', 'pull']).parse(job.action)));
+            send(
+              await withProject(() => this.sync.run(id, z.enum(['both', 'push', 'pull']).parse(job.action))),
+            );
           else if (store === this.downloads.jobs) send(await this.downloads.issue(id, { type: 'export' }));
           else if (store === this.backups.jobs && job.action === 'run') send(await this.backups.run(id));
           else if (store === this.maintenance.jobs && job.action === 'diagnose')
             send(this.maintenance.diagnose(id));
           else if (store === this.maintenance.jobs && job.action === 'finish-resize')
             send(this.maintenance.finishResize(id));
-          else if (store === this.jobs) send(this.installIme(id));
+          else if (store === this.pipelines.jobs && job.action?.startsWith('run:'))
+            send(await withProject(() => this.pipelines.run(id, job.action!.slice(4))));
+          else if (store === this.runtimes.jobs && job.action?.startsWith('install:')) {
+            const [, tool, version] = job.action.split(':');
+            send(await withProject(() => this.runtimes.install(id, { tool, version })));
+          } else if (store === this.jobs) send(this.installIme(id));
           else throw new AppError('请回到原功能页面重新执行');
           return true;
         }
       }
+    }
+    if (parts[1] === 'events' && parts.length === 2 && req.method === 'GET') {
+      const events = this.jobStores().flatMap((store) =>
+        store
+          .list()
+          .filter((job) => ['error', 'cancelled', 'interrupted'].includes(job.status))
+          .map((job) => ({
+            type: 'job',
+            id: job.id,
+            vmId: job.vmId,
+            projectId: job.projectId,
+            title: job.title,
+            status: job.status,
+            message: job.error || job.phase,
+            at: job.finishedAt || job.startedAt,
+          })),
+      );
+      send({ events: events.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100) });
+      return true;
     }
     if (parts[1] === 'migration' && parts.length === 2) {
       if (req.method === 'GET') {
@@ -339,6 +415,124 @@ export class Features {
       }
     }
     if (parts.length !== 4) return false;
+    if (action === 'projects') {
+      if (req.method === 'GET') {
+        send(await this.workspaces.projects.list(id));
+        return true;
+      }
+      if (req.method === 'POST') {
+        const input = z
+          .discriminatedUnion('action', [
+            z.object({ action: z.literal('create'), name: z.string(), config: z.unknown() }).strict(),
+            z.object({ action: z.literal('select'), projectId: z.string() }).strict(),
+            z.object({ action: z.literal('rename'), projectId: z.string(), name: z.string() }).strict(),
+          ])
+          .parse(await body(req));
+        send(
+          input.action === 'create'
+            ? await this.workspaces.projects.create(id, input.name, async () => {
+                await this.workspaces.save(id, input.config);
+              })
+            : await this.workspaces.projects.update(
+                id,
+                input.projectId,
+                input.action === 'rename' ? input.name : undefined,
+              ),
+        );
+        return true;
+      }
+    }
+    if (action === 'history') {
+      if (req.method === 'GET') {
+        if (url.searchParams.has('content'))
+          send(await this.history.content(id, url.searchParams.get('content')!));
+        else send({ items: await this.history.list(id, url.searchParams.get('path') || undefined) });
+        return true;
+      }
+      if (req.method === 'POST') {
+        const input = z
+          .object({
+            action: z.enum(['restore', 'purge']),
+            id: z.uuid(),
+            expectedVersion: z
+              .string()
+              .regex(/^[a-f0-9]{64}$/)
+              .optional(),
+          })
+          .strict()
+          .parse(await body(req));
+        send(
+          input.action === 'restore'
+            ? await this.history.restore(id, input.id, input.expectedVersion)
+            : await this.history.purge(id, input.id),
+        );
+        return true;
+      }
+    }
+    if (action === 'pipelines') {
+      if (req.method === 'GET') {
+        send(await this.pipelines.view(id));
+        return true;
+      }
+      if (req.method === 'PUT') {
+        send(await this.pipelines.save(id, await body(req)));
+        return true;
+      }
+      if (req.method === 'DELETE') {
+        const input = z
+          .object({ id: z.uuid() })
+          .strict()
+          .parse(await body(req));
+        send(await this.pipelines.remove(id, input.id));
+        return true;
+      }
+      if (req.method === 'POST') {
+        const input = z
+          .object({ action: z.literal('run'), pipelineId: z.uuid() })
+          .strict()
+          .parse(await body(req));
+        send(await this.pipelines.run(id, input.pipelineId), 202);
+        return true;
+      }
+    }
+    if (action === 'pipeline-artifact' && req.method === 'POST') {
+      const input = z
+        .object({ runId: z.uuid(), index: z.number().int().min(0).max(19) })
+        .strict()
+        .parse(await body(req));
+      const target = await this.pipelines.artifact(id, input.runId, input.index);
+      send(await this.downloads.issueLocal(id, { path: target.file, name: target.name }));
+      return true;
+    }
+    if (action === 'runtimes') {
+      if (req.method === 'GET') {
+        send(await this.runtimes.view(id, signal));
+        return true;
+      }
+      if (req.method === 'POST') {
+        const input = z
+          .discriminatedUnion('action', [
+            z
+              .object({
+                action: z.literal('select'),
+                node: z.string().optional(),
+                python: z.string().optional(),
+              })
+              .strict(),
+            z
+              .object({ action: z.literal('install'), tool: z.enum(['node', 'python']), version: z.string() })
+              .strict(),
+          ])
+          .parse(await body(req));
+        send(
+          input.action === 'select'
+            ? await this.runtimes.select(id, { node: input.node, python: input.python })
+            : await this.runtimes.install(id, input),
+          input.action === 'install' ? 202 : 200,
+        );
+        return true;
+      }
+    }
     if (action === 'git') {
       if (req.method === 'GET') {
         send(
@@ -369,9 +563,17 @@ export class Features {
       );
       return true;
     }
+    if (action === 'code-diagnostics' && req.method === 'GET') {
+      send(await this.intelligence.diagnose(id, url.searchParams.get('path') || '', signal));
+      return true;
+    }
     if (action === 'commands') {
       if (req.method === 'GET') {
-        send({ presets: await this.commands.list(id), job: this.commands.jobs.view(id) });
+        send({
+          projectId: this.workspaces.projects.current(id),
+          presets: await this.commands.list(id),
+          job: this.commands.jobs.view(this.workspaces.projects.key(id)),
+        });
         return true;
       }
       if (req.method === 'PUT') {
@@ -497,6 +699,10 @@ export class Features {
       if (value.finish) send(this.maintenance.finishResize(id), 202);
       else if (value.diskGiB) send(this.maintenance.resize(id, value.diskGiB), 202);
       else throw new AppError('请输入目标磁盘容量');
+      return true;
+    }
+    if (action === 'compact' && req.method === 'POST') {
+      send(this.maintenance.compact(id), 202);
       return true;
     }
     if (action === 'ide') {
@@ -689,7 +895,21 @@ export class Features {
               .string()
               .regex(/^[a-f0-9]{64}$/)
               .optional(),
-            decisions: z.record(z.string().max(4096), z.enum(['push', 'pull', 'both', 'skip'])).optional(),
+            decisions: z
+              .record(
+                z.string().max(4096),
+                z.enum([
+                  'push',
+                  'pull',
+                  'both',
+                  'skip',
+                  'delete-host',
+                  'delete-guest',
+                  'restore-host',
+                  'restore-guest',
+                ]),
+              )
+              .optional(),
           })
           .strict()
           .parse(await body(req));

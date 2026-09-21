@@ -1,8 +1,7 @@
 import { readFile, writeFile, rename } from 'node:fs/promises';
-import { join } from 'node:path';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
-import { AppError, vmDir, guestPath } from './model.ts';
+import { AppError, guestPath } from './model.ts';
 import type { Machines } from './machines.ts';
 import { Jobs } from './jobs.ts';
 import { quote } from './files.ts';
@@ -17,6 +16,8 @@ import {
 import { guestTask } from './guest-task.ts';
 import { secretRefsSchema, privateLog, redactValues, type Secrets } from './secrets.ts';
 import type { NetworkProfiles } from './network-profiles.ts';
+import { ProjectCatalog } from './project-catalog.ts';
+import { runtimesSchema, runtimeEnvironment } from './runtime-versions.ts';
 
 export const projectSchema = z
   .object({
@@ -42,6 +43,7 @@ export const projectSchema = z
     previewPort: z.number().int().min(1024).max(65535).optional(),
     environment: environmentSchema.optional(),
     secrets: secretRefsSchema.optional(),
+    runtimes: runtimesSchema.optional(),
     services: z.array(serviceSchema).max(12).optional(),
   })
   .strict()
@@ -52,7 +54,10 @@ export const projectSchema = z
       ctx.addIssue({ code: 'custom', message: (error as Error).message, path: ['services'] });
     }
   });
-export type Project = z.infer<typeof projectSchema>;
+export type Project = z.infer<typeof projectSchema> & { _workspace?: string };
+export const projectSession = (project: Project) =>
+  project._workspace ? `sakura-project-${project._workspace}` : 'sakura-project';
+export const projectLog = (project: Project) => `/tmp/${projectSession(project)}.log`;
 export function projectPrivateValues(project: Project) {
   return [
     ...Object.keys(project.secrets || {}).map((key) => project.environment?.[key] || ''),
@@ -148,6 +153,7 @@ export function parseMetrics(text: string) {
 }
 export class Workspaces {
   jobs = new Jobs('projects');
+  projects: ProjectCatalog;
   private observed = new Map<string, string>();
   private samples = new Map<string, { at: number; promise: Promise<ReturnType<typeof parseMetrics>> }>();
   onAction?: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>;
@@ -155,6 +161,7 @@ export class Workspaces {
     private machines: Machines,
     private context?: { secrets: Secrets; network: NetworkProfiles },
   ) {
+    this.projects = new ProjectCatalog(machines);
     machines.on('change', this.onChange);
   }
   private onChange = () => {
@@ -163,16 +170,17 @@ export class Workspaces {
     for (const [id, vm] of machines.records) {
       const live = machines.live.get(id);
       if (!live || live.status !== 'running') {
-        this.jobs.cancel(id);
+        for (const job of this.jobs.list())
+          if (job.vmId === id && job.status === 'running') this.jobs.cancel(job.id!);
         this.samples.delete(id);
         continue;
       }
       const boot = `${id}:${live.startedAt}`;
       if (vm.template && vm.template !== 'none' && this.observed.get(id) !== boot) {
-        if (this.jobs.view(id)?.status === 'running') continue;
+        if (this.jobs.view(this.projects.key(id))?.status === 'running') continue;
         this.observed.set(id, boot);
         this.jobs.start(
-          id,
+          this.projects.key(id),
           async (log, signal) => {
             const check = await machines.exec(
               id,
@@ -199,11 +207,17 @@ export class Workspaces {
   }
   async config(id: string): Promise<Project> {
     const vm = this.machines.get(id);
+    const scope = this.projects.current(id);
+    const contextual = (project: Project) =>
+      Object.defineProperty(project, '_workspace', {
+        value: scope === 'default' ? undefined : scope,
+        enumerable: false,
+      });
     try {
-      return projectSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'project.json'), 'utf8')));
+      return contextual(projectSchema.parse(JSON.parse(await readFile(this.projects.file(id), 'utf8'))));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      return projectSchema.parse({ template: vm.template || 'none' });
+      return contextual(projectSchema.parse({ template: vm.template || 'none' }));
     }
   }
   networkEnvironment(id: string) {
@@ -215,6 +229,7 @@ export class Workspaces {
       ...(await this.networkEnvironment(id)),
       ...project.environment,
       ...(await this.context?.secrets.resolve(id, project.secrets)),
+      ...runtimeEnvironment(project.runtimes, project.environment?.PATH),
     };
     const services = project.services
       ? await Promise.all(
@@ -227,18 +242,19 @@ export class Workspaces {
           })),
         )
       : undefined;
-    return { ...project, environment, ...(services ? { services } : {}) };
+    return { ...project, _workspace: project._workspace, environment, ...(services ? { services } : {}) };
   }
   async save(id: string, input: unknown) {
     const project = projectSchema.parse(input);
     return this.machines.locked(id, async () => {
       this.machines.get(id);
-      if (this.jobs.view(id)?.status === 'running') throw new AppError('请等待项目操作完成', 409);
+      if (this.jobs.view(this.projects.key(id))?.status === 'running')
+        throw new AppError('请等待项目操作完成', 409);
       const previous = await this.config(id);
       const removed = (previous.services || [])
         .filter((s) => !project.services?.some((next) => next.name === s.name))
-        .map((s) => `sakura-service-${s.name}`);
-      if (!previous.services?.length && project.services?.length) removed.push('sakura-project');
+        .map((s) => `sakura-service-${previous._workspace ? previous._workspace + '-' : ''}${s.name}`);
+      if (!previous.services?.length && project.services?.length) removed.push(projectSession(previous));
       if (removed.length && this.machines.state(id) === 'running') {
         const check = await this.machines.exec(
           id,
@@ -249,14 +265,18 @@ export class Workspaces {
         );
         if (check.stdout.trim()) throw new AppError('请先停止要移除或替换的运行服务', 409);
       }
-      const file = join(vmDir(id), 'project.json');
+      const file = this.projects.file(id);
       await writeFile(`${file}.tmp`, JSON.stringify(project, null, 2));
       await rename(`${file}.tmp`, file);
       return project;
     });
   }
   async view(id: string) {
-    return { project: await this.config(id), job: this.jobs.view(id) };
+    return {
+      project: await this.config(id),
+      projectId: this.projects.current(id),
+      job: this.jobs.view(this.projects.key(id)),
+    };
   }
   private async execute(id: string, script: string, log: (text: string) => void, signal: AbortSignal) {
     const result = await guestTask(this.machines, id, script, signal, log);
@@ -275,7 +295,7 @@ export class Workspaces {
           : undefined;
       try {
         const job = await this.runInternal(id, action, service);
-        if (finish) void this.jobs.wait(id).then(() => finish(job.status === 'done'));
+        if (finish) void this.jobs.wait(this.projects.key(id)).then(() => finish(job.status === 'done'));
         return job;
       } catch (error) {
         finish?.(false);
@@ -290,7 +310,7 @@ export class Workspaces {
     const distro = this.machines.get(id).distro;
     if (service && !project.services?.some((s) => s.name === service)) throw new AppError('服务不存在');
     return this.jobs.start(
-      id,
+      this.projects.key(id),
       async (rawLog, signal) => {
         const privateValues = projectPrivateValues(project);
         const output = privateLog(rawLog, privateValues),
@@ -303,7 +323,7 @@ export class Workspaces {
             }
             await this.execute(
               id,
-              'if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then tmux kill-session -t =sakura-project; fi',
+              `if command -v tmux >/dev/null && tmux has-session -t =${projectSession(project)} 2>/dev/null; then tmux kill-session -t =${projectSession(project)}; fi`,
               log,
               signal,
             );
@@ -319,19 +339,19 @@ export class Workspaces {
               : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
           let prepare = `mkdir -p ${quote(project.directory)}\n`;
           if (project.repository)
-            prepare += `if [ ! -d ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
+            prepare += `if [ ! -e ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
           const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
           const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
           if (project.setup.trim())
             prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\ncd ${quote(project.directory)}\n${project.setup}\nfi\ntouch ${marker}\n`;
           if (action === 'start' && !project.services?.length) {
             if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
-            prepare += `tmux new-session -d -s sakura-project -c ${quote(project.directory)} ${quote(`sh -lc ${quote(`${envPrefix(project.environment)}\n${project.command}`)} > /tmp/sakura-project.log 2>&1`)}\nsleep 1\nif ! tmux has-session -t =sakura-project 2>/dev/null; then tail -c 8192 /tmp/sakura-project.log; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
+            prepare += `tmux new-session -d -s ${projectSession(project)} -c ${quote(project.directory)} ${quote(`sh -lc ${quote(`${envPrefix(project.environment)}\n${project.command}`)} > ${projectLog(project)} 2>&1`)}\nsleep 1\nif ! tmux has-session -t =${projectSession(project)} 2>/dev/null; then tail -c 8192 ${projectLog(project)}; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
           }
           log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
           const running =
             action === 'start' && !project.services?.length
-              ? "if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then echo '项目已经运行；如需应用新的启动配置，请先停止项目'; exit 0; fi\n"
+              ? `if command -v tmux >/dev/null && tmux has-session -t =${projectSession(project)} 2>/dev/null; then echo '项目已经运行；如需应用新的启动配置，请先停止项目'; exit 0; fi\n`
               : '';
           await this.execute(
             id,
@@ -351,6 +371,7 @@ export class Workspaces {
       {
         title: `项目${{ setup: '初始化', start: '启动', stop: '停止', terminal: '终端安装' }[action]}${service ? ` · ${service}` : ''}`,
         vmId: id,
+        projectId: this.projects.current(id),
         action: service ? `${action}:${service}` : action,
       },
     );
@@ -363,7 +384,7 @@ export class Workspaces {
       for (const service of project.services) {
         const result = await this.machines.exec(
           id,
-          `if tmux has-session -t =sakura-service-${service.name} 2>/dev/null; then echo running; else echo stopped; fi; test ! -f ${quote(serviceLog(service.name))} || tail -c 8192 ${quote(serviceLog(service.name))}`,
+          `if tmux has-session -t =sakura-service-${project._workspace ? project._workspace + '-' : ''}${service.name} 2>/dev/null; then echo running; else echo stopped; fi; test ! -f ${quote(serviceLog(service.name, project))} || tail -c 8192 ${quote(serviceLog(service.name, project))}`,
           10000,
           signal,
         );
@@ -382,7 +403,7 @@ export class Workspaces {
     }
     const result = await this.machines.exec(
       id,
-      'if command -v tmux >/dev/null && tmux has-session -t =sakura-project 2>/dev/null; then echo running; else echo stopped; fi; test ! -f /tmp/sakura-project.log || tail -c 16384 /tmp/sakura-project.log',
+      `if command -v tmux >/dev/null && tmux has-session -t =${projectSession(project)} 2>/dev/null; then echo running; else echo stopped; fi; test ! -f ${projectLog(project)} || tail -c 16384 ${projectLog(project)}`,
       10000,
       signal,
     );

@@ -9,6 +9,7 @@ import { AppError, vmDir } from './model.ts';
 import { ftpStat, mutablePath, preserveFileMetadata } from './files.ts';
 import { Jobs } from './jobs.ts';
 import type { Machines } from './machines.ts';
+import type { ProjectCatalog } from './project-catalog.ts';
 
 export const syncSchema = z
   .object({
@@ -44,10 +45,14 @@ export const syncSchema = z
 export type SyncConfig = z.infer<typeof syncSchema>;
 export type SyncChange = {
   path: string;
-  action: 'push' | 'pull' | 'conflict' | 'mkdir-host' | 'mkdir-guest' | 'skip';
+  action:
+    'push' | 'pull' | 'conflict' | 'mkdir-host' | 'mkdir-guest' | 'delete-host' | 'delete-guest' | 'skip';
 };
 export type SyncPreview = { token: string; changes: SyncChange[]; unchanged: number };
-export type SyncDecisions = Record<string, 'push' | 'pull' | 'both' | 'skip'>;
+export type SyncDecisions = Record<
+  string,
+  'push' | 'pull' | 'both' | 'skip' | 'delete-host' | 'delete-guest' | 'restore-host' | 'restore-guest'
+>;
 export function ignored(path: string, patterns: string[] = []) {
   return patterns.some((pattern) => {
     const value = pattern.replace(/\/$/, '');
@@ -134,9 +139,14 @@ export class FolderSync {
   private ticking = false;
   private onChange = () => {
     for (const id of this.machines.records.keys())
-      if (this.machines.state(id) !== 'running') this.jobs.cancel(id);
+      if (this.machines.state(id) !== 'running')
+        for (const job of this.jobs.list())
+          if (job.vmId === id && job.status === 'running') this.jobs.cancel(job.id!);
   };
-  constructor(private machines: Machines) {
+  constructor(
+    private machines: Machines,
+    private projects?: ProjectCatalog,
+  ) {
     machines.on('change', this.onChange);
     this.timer = setInterval(() => {
       if (!this.ticking) {
@@ -148,6 +158,18 @@ export class FolderSync {
     }, 15000);
     this.timer.unref();
   }
+  private key(id: string) {
+    return this.projects?.key(id) || id;
+  }
+  private file(id: string, name: string) {
+    return this.projects?.file(id, name) || join(vmDir(id), `${name}.json`);
+  }
+  private async eachProject(id: string, action: (projectId: string) => Promise<void>) {
+    if (!this.projects) return action('default');
+    const index = await this.projects.list(id);
+    for (const project of index.projects)
+      await this.projects.inScope(id, project.id, () => action(project.id));
+  }
   async close() {
     clearInterval(this.timer);
     this.machines.off('change', this.onChange);
@@ -156,56 +178,61 @@ export class FolderSync {
   async config(id: string): Promise<SyncConfig | null> {
     this.machines.get(id);
     try {
-      return syncSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'sync.json'), 'utf8')));
+      return syncSchema.parse(JSON.parse(await readFile(this.file(id, 'sync'), 'utf8')));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
     }
   }
   async save(id: string, input: unknown) {
-    return this.machines.locked(`sync:${id}`, async () => {
-      if (this.jobs.view(id)?.status === 'running') throw new AppError('请等待同步完成', 409);
+    return this.machines.locked(`sync:${this.key(id)}`, async () => {
+      if (this.jobs.view(this.key(id))?.status === 'running') throw new AppError('请等待同步完成', 409);
       const config = syncSchema.parse(input);
       if (!isAbsolute(config.host)) throw new AppError('请选择 Windows 文件夹的绝对路径');
       config.host = await realpath(config.host);
       if (!(await lstat(config.host)).isDirectory()) throw new AppError('本机路径不是目录');
       this.machines.get(id);
       const previous = await this.config(id);
-      const file = join(vmDir(id), 'sync.json');
+      const file = this.file(id, 'sync');
       await writeFile(`${file}.tmp`, JSON.stringify(config));
       await rename(`${file}.tmp`, file);
       if (previous?.host !== config.host || previous?.guest !== config.guest)
-        await rm(join(vmDir(id), 'sync-state.json'), { force: true });
+        await rm(this.file(id, 'sync-state'), { force: true });
       return config;
     });
   }
   async view(id: string) {
-    return { config: await this.config(id), job: this.jobs.view(id) };
+    return {
+      projectId: this.projects?.current(id) || 'default',
+      config: await this.config(id),
+      job: this.jobs.view(this.key(id)),
+    };
   }
   private async tick() {
     for (const id of this.machines.records.keys()) {
       try {
-        if (
-          this.machines.state(id) === 'running' &&
-          this.jobs.view(id)?.status !== 'running' &&
-          (await this.config(id))?.auto
-        )
-          await this.run(id, 'both');
+        if (this.machines.state(id) !== 'running') continue;
+        await this.eachProject(id, async () => {
+          if (this.jobs.view(this.key(id))?.status !== 'running' && (await this.config(id))?.auto)
+            await this.run(id, 'both');
+        });
       } catch {
         /* A manual retry exposes the error. */
       }
     }
   }
   async preview(id: string, signal: AbortSignal = new AbortController().signal) {
-    return this.machines.locked(`sync:${id}`, async () => {
-      if (this.jobs.view(id)?.status === 'running') throw new AppError('请等待同步完成', 409);
+    return this.machines.locked(`sync:${this.key(id)}`, async () => {
+      if (this.jobs.view(this.key(id))?.status === 'running') throw new AppError('请等待同步完成', 409);
       const config = await this.config(id);
       if (!config) throw new AppError('请先保存同步目录');
       return this.execute(id, config, 'both', () => {}, signal, true);
     });
   }
   async run(id: string, direction: 'both' | 'push' | 'pull', token?: string, decisions: SyncDecisions = {}) {
-    return this.machines.locked(`sync:${id}`, () => this.runInternal(id, direction, token, decisions));
+    return this.machines.locked(`sync:${this.key(id)}`, () =>
+      this.runInternal(id, direction, token, decisions),
+    );
   }
   private async runInternal(
     id: string,
@@ -218,11 +245,11 @@ export class FolderSync {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
     if (Object.keys(decisions).length && !token) throw new AppError('处理冲突前请先预览');
     return this.jobs.start(
-      id,
+      this.key(id),
       async (log, signal) => {
         await this.execute(id, config, direction, log, signal, false, token, decisions);
       },
-      { title: '目录同步', vmId: id, action: direction },
+      { title: '目录同步', vmId: id, action: direction, projectId: this.projects?.current(id) },
     );
   }
   private async execute(
@@ -238,7 +265,7 @@ export class FolderSync {
     let plan: SyncPreview = { token: '', changes: [], unchanged: 0 };
     const root = await realpath(config.host);
     if (root !== config.host) throw new AppError('本机目录位置已改变，请重新保存');
-    const stateFile = join(vmDir(id), 'sync-state.json');
+    const stateFile = this.file(id, 'sync-state');
     let previous: Record<string, string> = Object.create(null);
     try {
       previous = Object.assign(Object.create(null), JSON.parse(await readFile(stateFile, 'utf8')));
@@ -368,6 +395,20 @@ export class FolderSync {
           for (const name of new Set([...hostFiles.keys(), ...guestFiles.keys()])) {
             const way = syncDirection(hostFiles.get(name), guestFiles.get(name), previous[name]);
             if (way === 'same') unchanged++;
+            else if (
+              previous[name] &&
+              !hostFiles.has(name) &&
+              guestFiles.has(name) &&
+              previous[name] === guestFiles.get(name)
+            )
+              changes.push({ path: name, action: 'delete-host' });
+            else if (
+              previous[name] &&
+              hostFiles.has(name) &&
+              !guestFiles.has(name) &&
+              previous[name] === hostFiles.get(name)
+            )
+              changes.push({ path: name, action: 'delete-guest' });
             else changes.push({ path: name, action: way });
           }
           for (const name of hostDirs)
@@ -403,7 +444,7 @@ export class FolderSync {
               transferSignal.throwIfAborted();
               await mkdir(await hostPath(name), { recursive: true });
             }
-          for (const name of new Set([...hostFiles.keys(), ...guestFiles.keys()])) {
+          for (const name of new Set([...hostFiles.keys(), ...guestFiles.keys(), ...Object.keys(previous)])) {
             transferSignal.throwIfAborted();
             const hostHash = hostFiles.get(name),
               guestHash = guestFiles.get(name);
@@ -411,7 +452,22 @@ export class FolderSync {
               next[name] = hostHash!;
               continue;
             }
-            let way = direction;
+            let way: 'both' | 'push' | 'pull' | 'delete-host' | 'delete-guest' | 'skip' = direction;
+            if (!hostHash && guestHash && previous[name] === guestHash)
+              way =
+                decisions[name] === 'delete-guest'
+                  ? 'delete-guest'
+                  : decisions[name] === 'restore-host' || direction === 'pull'
+                    ? 'pull'
+                    : 'skip';
+            if (hostHash && !guestHash && previous[name] === hostHash)
+              way =
+                decisions[name] === 'delete-host'
+                  ? 'delete-host'
+                  : decisions[name] === 'restore-guest' || direction === 'push'
+                    ? 'push'
+                    : 'skip';
+            if (!hostHash && !guestHash) continue;
             if (way === 'both') {
               if (hostHash && !guestHash) way = 'push';
               else if (guestHash && !hostHash) way = 'pull';
@@ -420,6 +476,9 @@ export class FolderSync {
               else {
                 const decision = decisions[name];
                 if (decision === 'push' || decision === 'pull') way = decision;
+                else if (decision === 'restore-host') way = 'pull';
+                else if (decision === 'restore-guest') way = 'push';
+                else if (decision === 'delete-host' || decision === 'delete-guest') way = decision;
                 else if (decision === 'both') {
                   const backup = `${name}.linux-conflict-${randomUUID().slice(0, 8)}`;
                   const localBackup = await hostPath(backup),
@@ -458,7 +517,15 @@ export class FolderSync {
             }
             const local = await hostPath(name),
               remote = posix.join(config.guest, name);
-            if (way === 'push' && hostHash) {
+            if (way === 'delete-host' && !hostHash && guestHash) {
+              await new Promise<void>((resolve, reject) =>
+                ftp.unlink(posix.join(config.guest, name), (error) => (error ? reject(error) : resolve())),
+              );
+              delete next[name];
+            } else if (way === 'delete-guest' && hostHash && !guestHash) {
+              await rm(local, { force: true });
+              delete next[name];
+            } else if (way === 'push' && hostHash) {
               await ensureGuest(posix.dirname(remote));
               const attrs = await ftpStat(ftp, remote);
               if (attrs && !attrs.isFile()) throw new AppError(`目标不是普通文件：${remote}`);
@@ -513,7 +580,10 @@ export class FolderSync {
               } finally {
                 await rm(temp, { force: true });
               }
-            } else continue;
+            } else {
+              if (previous[name]) next[name] = previous[name];
+              continue;
+            }
             changed++;
             log(`${way === 'push' ? '上传' : '下载'}：${name}\n`);
           }

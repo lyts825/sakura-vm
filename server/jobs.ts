@@ -4,7 +4,7 @@ import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { AppError, DATA } from './model.ts';
 
-export type JobMeta = { title?: string; vmId?: string; action?: string };
+export type JobMeta = { title?: string; vmId?: string; action?: string; projectId?: string };
 export type JobView = JobMeta & {
   id?: string;
   key?: string;

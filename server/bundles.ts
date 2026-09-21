@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { AppError, DATA, createSchema, vmDir } from './model.ts';
 import type { Machines } from './machines.ts';
 import { projectSchema } from './workspaces.ts';
+import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
 import ssh2 from 'ssh2';
 
 const MAGIC = Buffer.from('SAKURA01');
@@ -17,6 +18,24 @@ const manifestSchema = z
     version: z.literal(1),
     config: createSchema,
     project: projectSchema.optional(),
+    projects: z
+      .object({
+        active: z.string().regex(/^(default|[a-f0-9]{16})$/),
+        projects: z
+          .array(z.object({ id: projectIdSchema, name: z.string().trim().min(1).max(64) }).strict())
+          .min(1)
+          .max(20),
+        configs: z.record(z.string(), projectSchema),
+      })
+      .strict()
+      .refine(
+        (value) =>
+          new Set(value.projects.map((entry) => entry.id)).size === value.projects.length &&
+          value.projects.some((entry) => entry.id === 'default') &&
+          value.projects.some((entry) => entry.id === value.active),
+        '项目目录损坏',
+      )
+      .optional(),
     pendingResize: z.boolean().default(false),
     key: z.string().max(16384),
     seed: z.string().max(262144),
@@ -42,6 +61,26 @@ export class Bundles {
   private async project(id: string) {
     try {
       return projectSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'project.json'), 'utf8')));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return undefined;
+    }
+  }
+  private async projectCatalog(id: string) {
+    try {
+      const index = projectIndexSchema.parse(
+        JSON.parse(await readFile(join(vmDir(id), 'projects.json'), 'utf8')),
+      );
+      const configs: Record<string, ReturnType<typeof projectSchema.parse>> = {};
+      for (const entry of index.projects) {
+        const file = entry.id === 'default' ? 'project.json' : `project-${entry.id}.json`;
+        try {
+          configs[entry.id] = projectSchema.parse(JSON.parse(await readFile(join(vmDir(id), file), 'utf8')));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+      }
+      return { active: index.active, projects: index.projects, configs };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       return undefined;
@@ -77,6 +116,7 @@ export class Bundles {
             version: 1,
             config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template },
             project: await this.project(id),
+            projects: await this.projectCatalog(id),
             ...(pendingResize ? { pendingResize: true } : {}),
             key: identity.key,
             seed: identity.seed.toString('base64'),
@@ -172,6 +212,7 @@ export class Bundles {
         seed,
         manifest.project,
         manifest.pendingResize,
+        manifest.projects,
       );
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -204,6 +245,7 @@ export class Bundles {
         const identity = await this.machines.snapshotIdentity(id, snapshot);
         const { memoryMiB, cpus, diskGiB, accelerator, distro, template } = vm;
         const project = await this.project(id);
+        const projects = await this.projectCatalog(id);
         signal?.throwIfAborted();
         return await this.machines.adopt(
           {
@@ -221,6 +263,7 @@ export class Bundles {
           identity.seed,
           project,
           !!(shot ? shot.pendingResize : vm.pendingResize),
+          projects,
         );
       } finally {
         await rm(dir, { recursive: true, force: true });

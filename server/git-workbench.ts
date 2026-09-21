@@ -43,6 +43,37 @@ export const gitActionSchema = z.discriminatedUnion('action', [
     })
     .strict(),
   z.object({ action: z.literal('init') }).strict(),
+  z
+    .object({
+      action: z.enum(['remote-add', 'remote-remove']),
+      name: z.string().regex(/^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/),
+      url: z
+        .string()
+        .url()
+        .refine((v) => v.startsWith('https://'), '远程仓库只接受 HTTPS')
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.enum(['fetch', 'pull', 'push']),
+      remote: z
+        .string()
+        .regex(/^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/)
+        .default('origin'),
+      branch: z
+        .string()
+        .regex(/^(?!-)[A-Za-z0-9_./-]{1,128}$/)
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('merge'),
+      branch: z.string().regex(/^(?!-)[A-Za-z0-9_./-]{1,128}$/),
+      ffOnly: z.boolean().default(true),
+    })
+    .strict(),
 ]);
 const git =
   'git --no-pager --literal-pathspecs -c core.hooksPath=/dev/null -c core.fsmonitor=false -c color.ui=false';
@@ -65,18 +96,23 @@ export class GitWorkbench {
     const check = await this.command(id, 'rev-parse --is-inside-work-tree', signal);
     if (check.code !== 0)
       return {
+        projectId: this.workspaces.projects.current(id),
         repository: false,
         error: check.stderr,
         changes: [],
         branches: [],
         history: [],
-        job: this.jobs.view(id),
+        job: this.jobs.view(this.workspaces.projects.key(id)),
       };
     const status = await this.command(id, 'status --porcelain=v1 -z --untracked-files=all', signal);
     if (status.code !== 0) throw new AppError(status.stderr);
     const branch = await this.command(id, 'symbolic-ref --short -q HEAD', signal);
     const branches = await this.command(id, "for-each-ref --format='%(refname:short)' refs/heads", signal);
     const history = await this.command(id, "log -30 --format='%H%x00%h%x00%s%x00%an%x00%aI%x00'", signal);
+    const remotes = await this.command(id, 'remote -v', signal);
+    const divergence = branch.stdout.trim()
+      ? await this.command(id, `rev-list --left-right --count @{upstream}...HEAD`, signal)
+      : { stdout: '' };
     const records =
       history.code === 0
         ? history.stdout
@@ -88,12 +124,28 @@ export class GitWorkbench {
             })
         : [];
     return {
+      projectId: this.workspaces.projects.current(id),
       repository: true,
       branch: branch.stdout.trim() || '(detached HEAD)',
       changes: parseStatus(status.stdout),
       branches: branches.stdout.trim().split('\n').filter(Boolean),
       history: records,
-      job: this.jobs.view(id),
+      remotes:
+        remotes.code === 0
+          ? [
+              ...new Map(
+                remotes.stdout
+                  .split('\n')
+                  .filter(Boolean)
+                  .map((row) => {
+                    const [name, url, kind] = row.split(/\s+/);
+                    return [`${name}:${kind}`, { name, url, kind }];
+                  }),
+              ).values(),
+            ]
+          : [],
+      divergence: divergence.stdout.trim().split(/\s+/).map(Number).filter(Number.isFinite),
+      job: this.jobs.view(this.workspaces.projects.key(id)),
     };
   }
   async diff(id: string, path: string, staged: boolean, signal?: AbortSignal) {
@@ -113,12 +165,13 @@ export class GitWorkbench {
   }
   async run(id: string, input: unknown) {
     const value = gitActionSchema.parse(input);
-    return this.machines.locked(`git:${id}`, async () => {
+    return this.machines.locked(`git:${this.workspaces.projects.key(id)}`, async () => {
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
       return this.jobs.start(
-        id,
+        this.workspaces.projects.key(id),
         async (log, signal) => {
           let command: string;
+          if (value.action === 'remote-add' && !value.url) throw new AppError('新增远程仓库需要 HTTPS 地址');
           switch (value.action) {
             case 'stage':
               command = `add -A -- ${value.paths.map(quote).join(' ')}`;
@@ -145,6 +198,24 @@ export class GitWorkbench {
               command = `switch ${value.action === 'branch' ? '-c ' : '-- '}${quote(value.branch)}`;
               break;
             }
+            case 'remote-add':
+              command = `remote add ${quote(value.name)} ${quote(value.url!)}`;
+              break;
+            case 'remote-remove':
+              command = `remote remove ${quote(value.name)}`;
+              break;
+            case 'fetch':
+              command = `fetch --prune ${quote(value.remote)}`;
+              break;
+            case 'pull':
+              command = `pull --ff-only ${quote(value.remote)}${value.branch ? ` ${quote(value.branch)}` : ''}`;
+              break;
+            case 'push':
+              command = `push ${quote(value.remote)} ${value.branch ? quote(value.branch) : 'HEAD'}`;
+              break;
+            case 'merge':
+              command = `merge ${value.ffOnly ? '--ff-only' : '--no-edit'} ${quote(value.branch)}`;
+              break;
             default:
               command = 'init';
           }
@@ -152,7 +223,7 @@ export class GitWorkbench {
           log(result.stdout + result.stderr);
           if (result.code !== 0) throw new AppError(result.stderr || `Git 操作失败（${result.code}）`);
         },
-        { title: `Git · ${value.action}`, vmId: id },
+        { title: `Git · ${value.action}`, vmId: id, projectId: this.workspaces.projects.current(id) },
       );
     });
   }

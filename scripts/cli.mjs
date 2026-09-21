@@ -10,6 +10,9 @@ const [action = 'help', name, ...args] = process.argv.slice(2);
 async function main() {
   if (action === 'help') {
     console.log(
+      '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
+    );
+    console.log(
       'Sakura — local Linux workspaces\n\n  list\n  images\n  image <alpine|debian|ubuntu>\n  create <name> [alpine|debian|ubuntu] [none|node|python|rust]\n  start <name>\n  stop <name>\n  shell <name>\n  exec <name> -- <command> [args...]\n  metrics <name>\n  clone <name> <new-name>\n  export <name> <file.sakura>\n  import <new-name> <file.sakura>\n  snapshots <name>\n  snapshot <name> <label>\n  project <name> <setup|start|stop|configure> [project.json]\n  sync <name> <both|push|pull|configure> [sync.json]\n\nStart the service with npm start first.',
     );
     console.log(
@@ -41,6 +44,10 @@ async function main() {
     }
     if (action === 'tasks') {
       console.log(JSON.stringify(await api('/jobs'), null, 2));
+      return;
+    }
+    if (action === 'events') {
+      console.log(JSON.stringify(await api('/events'), null, 2));
       return;
     }
     if (action === 'task') {
@@ -140,6 +147,12 @@ async function main() {
         'organize',
         'sync-preview',
         'sync-apply',
+        'projects',
+        'history',
+        'pipeline',
+        'runtimes',
+        'code-check',
+        'compact',
       ].includes(action)
     )
       throw new Error(`Unknown command: ${action}`);
@@ -193,6 +206,95 @@ async function main() {
       else if (['read', 'write'].includes(args[0]))
         console.log(JSON.stringify(await api(`/vms/${vm.id}/recipe`, 'POST', { action: args[0] }), null, 2));
       else console.log(JSON.stringify(await api(`/vms/${vm.id}/recipe`), null, 2));
+      return;
+    }
+    if (action === 'projects') {
+      const kind = args[0] || 'list';
+      if (kind === 'list') console.log(JSON.stringify(await api(`/vms/${vm.id}/projects`), null, 2));
+      else if (kind === 'create') {
+        if (!args[1] || !args[2])
+          throw new Error('Usage: projects <name> create <project-name> <config.json>');
+        console.log(
+          await api(`/vms/${vm.id}/projects`, 'POST', {
+            action: kind,
+            name: args[1],
+            config: JSON.parse(await readFile(args[2], 'utf8')),
+          }),
+        );
+      } else if (kind === 'select') {
+        if (!args[1]) throw new Error('Usage: projects <name> select <project-id>');
+        console.log(await api(`/vms/${vm.id}/projects`, 'POST', { action: kind, projectId: args[1] }));
+      } else if (kind === 'rename') {
+        if (!args[1] || !args[2]) throw new Error('Usage: projects <name> rename <project-id> <name>');
+        console.log(
+          await api(`/vms/${vm.id}/projects`, 'POST', { action: kind, projectId: args[1], name: args[2] }),
+        );
+      } else throw new Error('Unknown project action');
+      return;
+    }
+    if (action === 'history') {
+      const kind = args[0] || '';
+      if (!kind || !['restore', 'purge'].includes(kind)) {
+        const path = kind ? `?path=${encodeURIComponent(kind)}` : '';
+        console.log(JSON.stringify(await api(`/vms/${vm.id}/history${path}`), null, 2));
+      } else {
+        if (!args[1]) throw new Error(`Usage: history <name> ${kind} <history-id>`);
+        console.log(
+          await api(`/vms/${vm.id}/history`, 'POST', {
+            action: kind,
+            id: args[1],
+            ...(args[2] ? { expectedVersion: args[2] } : {}),
+          }),
+        );
+      }
+      return;
+    }
+    if (action === 'pipeline') {
+      const kind = args[0] || 'list';
+      if (kind === 'list') console.log(JSON.stringify(await api(`/vms/${vm.id}/pipelines`), null, 2));
+      else if (kind === 'save') {
+        if (!args[1]) throw new Error('Usage: pipeline <name> save <pipeline.json>');
+        console.log(await api(`/vms/${vm.id}/pipelines`, 'PUT', JSON.parse(await readFile(args[1], 'utf8'))));
+      } else if (kind === 'run') {
+        if (!args[1]) throw new Error('Usage: pipeline <name> run <pipeline-id>');
+        console.log(await api(`/vms/${vm.id}/pipelines`, 'POST', { action: kind, pipelineId: args[1] }));
+      } else if (kind === 'remove') {
+        if (!args[1]) throw new Error('Usage: pipeline <name> remove <pipeline-id>');
+        console.log(await api(`/vms/${vm.id}/pipelines`, 'DELETE', { id: args[1] }));
+      } else throw new Error('Unknown pipeline action');
+      return;
+    }
+    if (action === 'runtimes') {
+      const kind = args[0] || 'inspect';
+      if (kind === 'inspect') console.log(JSON.stringify(await api(`/vms/${vm.id}/runtimes`), null, 2));
+      else if (kind === 'select') {
+        if (!args[1]) throw new Error('Usage: runtimes <name> select <runtime.json>');
+        console.log(
+          await api(`/vms/${vm.id}/runtimes`, 'POST', {
+            action: kind,
+            ...JSON.parse(await readFile(args[1], 'utf8')),
+          }),
+        );
+      } else if (kind === 'install') {
+        if (!args[1] || !args[2]) throw new Error('Usage: runtimes <name> install <node|python> <version>');
+        console.log(
+          await api(`/vms/${vm.id}/runtimes`, 'POST', { action: kind, tool: args[1], version: args[2] }),
+        );
+      } else throw new Error('Unknown runtime action');
+      return;
+    }
+    if (action === 'code-check') {
+      console.log(
+        JSON.stringify(
+          await api(`/vms/${vm.id}/code-diagnostics${args[0] ? `?path=${encodeURIComponent(args[0])}` : ''}`),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (action === 'compact') {
+      console.log(await api(`/vms/${vm.id}/compact`, 'POST', {}));
       return;
     }
     if (action === 'sync-preview') {

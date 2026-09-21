@@ -31,6 +31,8 @@ export async function preserveFileMetadata(ftp: SFTPWrapper, path: string, attrs
   );
 }
 export class Files {
+  beforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
+  trash?: (id: string, path: string, recursive: boolean) => Promise<unknown>;
   constructor(private machines: Machines) {}
   private async downloadInfo(ftp: SFTPWrapper, path: string) {
     const attrs = await ftpStat(ftp, guestPath(path));
@@ -105,6 +107,7 @@ export class Files {
               { signal: transferSignal },
             );
             if (existing) await preserveFileMetadata(ftp, temp, existing);
+            if (existing) await this.beforeReplace?.(id, path, ftp, transferSignal);
             await checkVersion();
             transferSignal?.throwIfAborted();
             if (overwrite)
@@ -156,6 +159,7 @@ export class Files {
     recursive = false,
   ) {
     path = mutablePath(path);
+    if (action === 'delete' && this.trash) return this.trash(id, path, recursive);
     return this.machines.sftp(id, async (ftp) => {
       if (action === 'mkdir')
         await new Promise<void>((res, rej) => ftp.mkdir(path, (err) => (err ? rej(err) : res())));

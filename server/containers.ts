@@ -123,7 +123,8 @@ export class Containers {
         else {
           const operation =
             value.action === 'compose-up' ? 'up -d' : value.action === 'compose-down' ? 'down' : 'restart';
-          command = `cd ${quote(project.directory)}\nif docker compose version >/dev/null 2>&1; then docker compose -p sakura-${id.slice(0, 8)} -f ${quote(value.file)} ${operation}; else docker-compose -p sakura-${id.slice(0, 8)} -f ${quote(value.file)} ${operation}; fi`;
+          const workspace = '_workspace' in project ? project._workspace : undefined;
+          command = `cd ${quote(project.directory)}\nif docker compose version >/dev/null 2>&1; then docker compose -p ${quote(`sakura-${id.slice(0, 8)}-${workspace || 'default'}`)} -f ${quote(value.file)} ${operation}; else docker-compose -p ${quote(`sakura-${id.slice(0, 8)}-${workspace || 'default'}`)} -f ${quote(value.file)} ${operation}; fi`;
         }
         const values =
           'secrets' in project

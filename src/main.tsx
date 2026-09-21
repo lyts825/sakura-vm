@@ -80,6 +80,35 @@ type System = {
   imageReady: boolean;
   imageBytes: number;
 };
+type SessionState = { selected: string; page: string; tab: string };
+const sessionPages = new Set(['workspace', 'tasks', 'library', 'images', 'settings']);
+const sessionTabs = new Set([
+  'terminal',
+  'desktop',
+  'files',
+  'project',
+  'git',
+  'development',
+  'containers',
+  'metrics',
+  'services',
+  'sync',
+  'snapshots',
+  'maintenance',
+  'config',
+]);
+function readSessionState(): SessionState {
+  try {
+    const saved = JSON.parse(localStorage.getItem('sakura-session') || '{}') as Partial<SessionState>;
+    return {
+      selected: typeof saved.selected === 'string' ? saved.selected : '',
+      page: typeof saved.page === 'string' && sessionPages.has(saved.page) ? saved.page : 'workspace',
+      tab: typeof saved.tab === 'string' && sessionTabs.has(saved.tab) ? saved.tab : 'terminal',
+    };
+  } catch {
+    return { selected: '', page: 'workspace', tab: 'terminal' };
+  }
+}
 let token = '';
 async function api<T = any>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api${path}`, {
@@ -183,11 +212,12 @@ function Modal({
   );
 }
 function App() {
+  const [initialSession] = useState(readSessionState);
   const [vms, setVms] = useState<VMView[]>([]),
     [system, setSystem] = useState<System | null>(null);
-  const [selected, setSelectedRaw] = useState(''),
-    [page, setPageRaw] = useState('workspace'),
-    [tab, setTabRaw] = useState('terminal');
+  const [selected, setSelectedRaw] = useState(initialSession.selected),
+    [page, setPageRaw] = useState(initialSession.page),
+    [tab, setTabRaw] = useState(initialSession.tab);
   const setSelected = async (value: string) => {
     if (value === selected || (await mayLeaveEditor())) setSelectedRaw(value);
   };
@@ -238,6 +268,13 @@ function App() {
   const machineRef = useRef<HTMLElement>(null);
   const vm = vms.find((v) => v.id === selected);
   const focusMode = focused && page === 'workspace' && !!vm;
+  useEffect(() => {
+    try {
+      localStorage.setItem('sakura-session', JSON.stringify({ selected, page, tab }));
+    } catch {
+      // The workspace remains usable when browser storage is unavailable.
+    }
+  }, [selected, page, tab]);
   useEffect(() => {
     if (focusMode) machineRef.current?.scrollIntoView({ block: 'start' });
   }, [focusMode]);

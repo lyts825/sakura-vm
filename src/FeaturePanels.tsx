@@ -178,22 +178,34 @@ export async function download(
 }
 export function ProjectPanel(props: FeatureProps) {
   const { vm, request, refresh } = props;
-  const remote = useRemote<{ project: Project; job: JobView | null }>(
+  const remote = useRemote<{ project: Project; projectId?: string; job: JobView | null }>(
     request,
     `/vms/${vm.id}/project`,
     true,
     2500,
+  );
+  const projects = useRemote<{ active: string; projects: { id: string; name: string }[] }>(
+    request,
+    `/vms/${vm.id}/projects`,
+    true,
+    5000,
   );
   const runtime = useRemote<{
     status: string;
     log: string;
     services?: { name: string; status: string; log: string }[];
   }>(request, `/vms/${vm.id}/project-runtime`, vm.status === 'running');
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<Project | null>(null),
+    [projectId, setProjectId] = useState('');
   const action = useAction();
   useEffect(() => {
-    if (!project && remote.data) setProject(remote.data.project);
-  }, [remote.data, project]);
+    if (!remote.data) return;
+    const nextId = remote.data.projectId || 'default';
+    if (!project || projectId !== nextId) {
+      setProject(remote.data.project);
+      setProjectId(nextId);
+    }
+  }, [remote.data, project, projectId]);
   const edit = (patch: Partial<Project>) => setProject((p) => p && { ...p, ...patch });
   const execute = (kind: ProjectAction) =>
     action.run(async (signal) => {
@@ -218,6 +230,73 @@ export function ProjectPanel(props: FeatureProps) {
               : '项目未运行'}
         </span>
       </div>
+      {projects.data && (
+        <div className="feature-actions">
+          <label>
+            工作项目
+            <select
+              value={projects.data.active}
+              onChange={(e) =>
+                void action.run(async (signal) => {
+                  await request(
+                    `/vms/${vm.id}/projects`,
+                    'POST',
+                    { action: 'select', projectId: e.target.value },
+                    signal,
+                  );
+                  remote.reload();
+                  projects.reload();
+                })
+              }
+            >
+              {projects.data.projects.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="secondary compact"
+            disabled={action.busy}
+            onClick={() => {
+              const name = prompt('新项目名称');
+              if (name?.trim())
+                void action.run(async (signal) => {
+                  await request(
+                    `/vms/${vm.id}/projects`,
+                    'POST',
+                    { action: 'create', name, config: project },
+                    signal,
+                  );
+                  projects.reload();
+                  remote.reload();
+                });
+            }}
+          >
+            新增项目
+          </button>
+          <button
+            className="text-button"
+            disabled={action.busy}
+            onClick={() => {
+              const name = prompt('项目新名称');
+              if (name?.trim())
+                void action.run(async (signal) => {
+                  await request(
+                    `/vms/${vm.id}/projects`,
+                    'POST',
+                    { action: 'rename', projectId: projects.data!.active, name },
+                    signal,
+                  );
+                  projects.reload();
+                });
+            }}
+          >
+            重命名
+          </button>
+        </div>
+      )}
       <Feedback error={action.error || remote.error} message={action.message} />
       {project && (
         <>
@@ -567,7 +646,7 @@ export function ServicesPanel({ vm, request, refresh }: FeatureProps) {
 }
 
 export function SyncPanel({ vm, request }: FeatureProps) {
-  const remote = useRemote<{ config: SyncConfig | null; job: JobView | null }>(
+  const remote = useRemote<{ projectId?: string; config: SyncConfig | null; job: JobView | null }>(
     request,
     `/vms/${vm.id}/sync`,
     true,
@@ -577,14 +656,18 @@ export function SyncPanel({ vm, request }: FeatureProps) {
   const [preview, setPreview] = useState<SyncPreview | null>(null),
     [decisions, setDecisions] = useState<SyncDecisions>({}),
     [previewQuery, setPreviewQuery] = useState('');
-  const loaded = useRef(false);
+  const [loadedProject, setLoadedProject] = useState('');
   const action = useAction();
   useEffect(() => {
-    if (remote.data && !loaded.current) {
-      loaded.current = true;
+    const projectId = remote.data?.projectId || 'default';
+    if (remote.data && projectId !== loadedProject) {
+      setLoadedProject(projectId);
       if (remote.data.config) setConfig(remote.data.config);
+      else setConfig({ host: '', guest: '/workspace/shared', auto: false });
+      setPreview(null);
+      setDecisions({});
     }
-  }, [remote.data]);
+  }, [remote.data, loadedProject]);
   const sync = (direction: 'both' | 'push' | 'pull') =>
     action.run(async () => {
       await request(`/vms/${vm.id}/sync`, 'POST', {
@@ -694,11 +777,15 @@ export function SyncPanel({ vm, request }: FeatureProps) {
                         conflict: '两端均有修改',
                         'mkdir-host': '新建 Windows 目录',
                         'mkdir-guest': '新建 Linux 目录',
+                        'delete-host': '删除 Windows 文件（需确认）',
+                        'delete-guest': '删除 Linux 文件（需确认）',
                         skip: '跳过',
                       }[entry.action]
                     }
                   </span>
-                  {entry.action === 'conflict' && (
+                  {(entry.action === 'conflict' ||
+                    entry.action === 'delete-host' ||
+                    entry.action === 'delete-guest') && (
                     <select
                       aria-label={`解决冲突 ${entry.path}`}
                       value={decisions[entry.path] || 'skip'}
@@ -710,6 +797,10 @@ export function SyncPanel({ vm, request }: FeatureProps) {
                       <option value="push">保留 Windows 版本</option>
                       <option value="pull">保留 Linux 版本</option>
                       <option value="both">另存 Linux 版本，保留两份</option>
+                      <option value="restore-host">恢复 Windows 文件</option>
+                      <option value="restore-guest">恢复 Linux 文件</option>
+                      <option value="delete-host">确认删除 Windows 文件</option>
+                      <option value="delete-guest">确认删除 Linux 文件</option>
                     </select>
                   )}
                 </div>
@@ -728,8 +819,8 @@ export function SyncPanel({ vm, request }: FeatureProps) {
         </div>
       )}
       <p className="subtle-note">
-        冲突文件保留两边；删除不会传播。跳过符号链接、.git、node_modules 和 Sakura 数据目录。单文件上限 256
-        MiB。
+        冲突文件默认保留两边；删除只有在预览中明确选择后才会传播。跳过符号链接、.git、node_modules 和 Sakura
+        数据目录。单文件上限 256 MiB。
       </p>
       <details>
         <summary>解决冲突</summary>

@@ -1,7 +1,7 @@
-import { stat, statfs, readdir } from 'node:fs/promises';
+import { stat, statfs, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
-import { DATA, AppError } from './model.ts';
+import { DATA, AppError, vmDir } from './model.ts';
 import type { Machines } from './machines.ts';
 import { distributions } from './images.ts';
 import { Jobs } from './jobs.ts';
@@ -99,6 +99,47 @@ export class Maintenance {
       })),
       warning: filesystem.bavail / filesystem.blocks < 0.1 ? 'Sakura 所在磁盘剩余空间不足 10%' : '',
     };
+  }
+  compact(id: string) {
+    return this.machines.locked(`compact:${id}`, async () => {
+      const vm = this.machines.get(id);
+      this.machines.requireStopped(id);
+      if (vm.snapshots.length) throw new AppError('请先删除或导出内部快照后再整理磁盘', 409);
+      const source = join(vmDir(id), 'disk.qcow2'),
+        temp = join(vmDir(id), '.disk.compact.qcow2'),
+        backup = join(vmDir(id), 'disk.qcow2.before-compact');
+      return this.jobs.start(
+        id,
+        async (log, signal, update) => {
+          let moved = false;
+          try {
+            update('正在扫描未使用扇区', 10);
+            const base = distributions[vm.distro || 'alpine'].file;
+            await this.machines.engine.run(
+              'sakura-img',
+              ['convert', '-p', '-f', 'qcow2', '-O', 'qcow2', '-B', base, '-F', 'qcow2', source, temp],
+              { timeoutMs: 1800000, signal },
+            );
+            signal.throwIfAborted();
+            update('正在替换磁盘', 80);
+            await rename(source, backup);
+            moved = true;
+            await rename(temp, source);
+            await rm(backup, { force: true });
+            log('磁盘整理完成，已移除未使用的稀疏块。\n');
+            update('已完成', 100);
+          } catch (error) {
+            await rm(temp, { force: true });
+            if (moved) {
+              await rm(source, { force: true });
+              await rename(backup, source).catch(() => {});
+            }
+            throw error;
+          }
+        },
+        { title: '整理磁盘', vmId: id, action: 'compact' },
+      );
+    });
   }
   report(id: string) {
     this.machines.get(id);

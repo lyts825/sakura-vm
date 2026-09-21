@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Download, FileText, Folder, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
-import { Feedback, download, useAction, type FeatureProps } from './FeaturePanels';
+import { Feedback, download, useAction, useRemote, type FeatureProps } from './FeaturePanels';
 import { uploadFiles, transferBytes, type UploadProgress } from './transfers';
 import { dirtyEdit, registerEditorGuard, type FileEdit } from './file-editor-state';
 import { restoreDrafts, saveDraftResult, anyDirty, type EditorDraft } from './editor-drafts';
@@ -94,6 +94,7 @@ export function FileBrowser({
   const [line, setLine] = useState<{ path: string; number?: number }>({ path: '' });
   const [draftError, setDraftError] = useState(''),
     [conflicts, setConflicts] = useState<Record<string, { content: string; version: string }>>({});
+  const [diagnostics, setDiagnostics] = useState<{ message: string; line?: number; column?: number }[]>([]);
   const conflict = edit ? conflicts[edit.id] : null;
   const setConflict = (value: { content: string; version: string } | null) => {
     const id = workspaceRef.current.active;
@@ -107,6 +108,16 @@ export function FileBrowser({
   const editRef = useRef(edit);
   editRef.current = edit;
   const [leaveKind, setLeaveKind] = useState<'leave' | 'replace' | 'discard' | null>(null);
+  const history = useRemote<{
+    items: {
+      id: string;
+      path: string;
+      kind: 'version' | 'trash';
+      createdAt: string;
+      bytes: number;
+      version?: string;
+    }[];
+  }>(request, `/vms/${vm.id}/history`, vm.status === 'running', 10000);
   const pendingLeave = useRef<{ promise: Promise<boolean>; resolve: (allowed: boolean) => void } | null>(
     null,
   );
@@ -413,6 +424,69 @@ export function FileBrowser({
         />
       </div>
       <Feedback error={action.error || error || draftError} message={action.message} />
+      {history.data?.items.length ? (
+        <details className="feature-card">
+          <summary>文件历史与回收站（{history.data.items.length}）</summary>
+          {history.data.items
+            .slice()
+            .reverse()
+            .slice(0, 50)
+            .map((item) => (
+              <div className="development-row" key={item.id}>
+                <div>
+                  <code>{item.kind === 'trash' ? '回收站' : '历史版本'}</code> <b>{item.path}</b>
+                  <small> · {new Date(item.createdAt).toLocaleString()}</small>
+                </div>
+                <div className="feature-actions">
+                  <button
+                    className="text-button"
+                    disabled={action.busy}
+                    onClick={() =>
+                      void action.run(async (signal) => {
+                        let expectedVersion: string | undefined;
+                        if (item.kind === 'version') {
+                          const current = await request<{ version: string }>(
+                            `/vms/${vm.id}/file?path=${encodeURIComponent(item.path)}`,
+                            'GET',
+                            undefined,
+                            signal,
+                          ).catch(() => null);
+                          expectedVersion = current?.version;
+                        }
+                        await request(
+                          `/vms/${vm.id}/history`,
+                          'POST',
+                          { action: 'restore', id: item.id, ...(expectedVersion ? { expectedVersion } : {}) },
+                          signal,
+                        );
+                        history.reload();
+                      })
+                    }
+                  >
+                    恢复
+                  </button>
+                  <button
+                    className="text-button danger-text"
+                    disabled={action.busy}
+                    onClick={() =>
+                      void action.run(async (signal) => {
+                        await request(
+                          `/vms/${vm.id}/history`,
+                          'POST',
+                          { action: 'purge', id: item.id },
+                          signal,
+                        );
+                        history.reload();
+                      })
+                    }
+                  >
+                    清理
+                  </button>
+                </div>
+              </div>
+            ))}
+        </details>
+      ) : null}
       {action.busy && progress && (
         <div className="feature-actions" role="status">
           <span>
@@ -547,6 +621,38 @@ export function FileBrowser({
               line={line.path === edit.path ? line.number : undefined}
             />
           </Suspense>
+          <div className="feature-actions">
+            <button
+              className="secondary compact"
+              disabled={action.busy}
+              onClick={() =>
+                void action.run(async (signal) => {
+                  const result = await request<{
+                    diagnostics: { message: string; line?: number; column?: number }[];
+                  }>(
+                    `/vms/${vm.id}/code-diagnostics?path=${encodeURIComponent(edit.path)}`,
+                    'GET',
+                    undefined,
+                    signal,
+                  );
+                  setDiagnostics(result.diagnostics);
+                }, '检查完成')
+              }
+            >
+              运行代码检查
+            </button>
+          </div>
+          {diagnostics.length > 0 && (
+            <div className="feature-card" role="status">
+              <b>代码检查</b>
+              {diagnostics.map((item, index) => (
+                <p className="machine-error" key={index}>
+                  {item.line ? `${item.line}:${item.column || 1} ` : ''}
+                  {item.message}
+                </p>
+              ))}
+            </div>
+          )}
           <p className="subtle-note">Ctrl / ⌘ + S 保存 · 草稿保存在本机浏览器 · UTF-8 文本上限 1 MiB</p>
           {conflict && (
             <div className="feature-card" role="alert">

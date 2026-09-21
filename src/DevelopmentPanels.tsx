@@ -19,12 +19,15 @@ import {
 const stopped = <p className="subtle-note">启动实例后可使用此功能。</p>;
 export function GitPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<{
+    projectId?: string;
     repository: boolean;
     error?: string;
     branch: string;
     changes: GitChange[];
     branches: string[];
     history: { id: string; short: string; subject: string; author: string; date: string }[];
+    remotes?: { name: string; url: string; kind: string }[];
+    divergence?: number[];
     job: JobView | null;
   }>(request, `/vms/${vm.id}/git`, vm.status === 'running');
   const action = useAction(),
@@ -32,7 +35,17 @@ export function GitPanel({ vm, request }: FeatureProps) {
     [branch, setBranch] = useState(''),
     [author, setAuthor] = useState(''),
     [email, setEmail] = useState('');
+  const [remoteName, setRemoteName] = useState('origin'),
+    [remoteUrl, setRemoteUrl] = useState('');
   const [selection, setSelection] = useState<{ path: string; staged: boolean } | null>(null);
+  const [loadedProject, setLoadedProject] = useState('');
+  useEffect(() => {
+    const projectId = remote.data?.projectId || 'default';
+    if (remote.data && projectId !== loadedProject) {
+      setLoadedProject(projectId);
+      setSelection(null);
+    }
+  }, [remote.data, loadedProject]);
   const diff = useRemote<{ diff: string; truncated: boolean }>(
     request,
     `/vms/${vm.id}/git?path=${encodeURIComponent(selection?.path || '')}&staged=${selection?.staged ? 1 : 0}`,
@@ -116,6 +129,59 @@ export function GitPanel({ vm, request }: FeatureProps) {
                     >
                       创建并切换
                     </button>
+                    <div className="feature-actions">
+                      <input
+                        value={remoteName}
+                        onChange={(e) => setRemoteName(e.target.value)}
+                        placeholder="origin"
+                      />
+                      <input
+                        value={remoteUrl}
+                        onChange={(e) => setRemoteUrl(e.target.value)}
+                        placeholder="https://git.example/repo.git"
+                      />
+                      <button
+                        className="secondary compact"
+                        disabled={busy || !remoteUrl}
+                        onClick={() => void run({ action: 'remote-add', name: remoteName, url: remoteUrl })}
+                      >
+                        添加远程
+                      </button>
+                      <button
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => void run({ action: 'fetch', remote: remoteName })}
+                      >
+                        获取更新
+                      </button>
+                      <button
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => void run({ action: 'pull', remote: remoteName })}
+                      >
+                        快进合并
+                      </button>
+                      <button
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => void run({ action: 'push', remote: remoteName })}
+                      >
+                        推送
+                      </button>
+                    </div>
+                    {remote.data.remotes?.length ? (
+                      <p className="subtle-note">
+                        远程：
+                        {[...new Set(remote.data.remotes.map((item) => `${item.name} · ${item.url}`))].join(
+                          '；',
+                        )}{' '}
+                        {remote.data.divergence?.length === 2
+                          ? `（落后 ${remote.data.divergence[0]}，领先 ${remote.data.divergence[1]}）`
+                          : ''}
+                      </p>
+                    ) : (
+                      <p className="subtle-note">尚未配置远程仓库。</p>
+                    )}
                   </div>
                   {!remote.data.changes.length && <p className="muted">工作区干净，没有待提交改动。</p>}
                   {remote.data.changes.map((change) => (
@@ -263,6 +329,8 @@ export function DevelopmentPanel(props: FeatureProps) {
           ['network', '网络配置'],
           ['secrets', '私密配置'],
           ['commands', '收藏命令'],
+          ['pipelines', '流水线'],
+          ['runtimes', '版本'],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -278,7 +346,199 @@ export function DevelopmentPanel(props: FeatureProps) {
       {section === 'network' && <NetworkPanel {...props} />}
       {section === 'secrets' && <SecretsPanel {...props} />}
       {section === 'commands' && <CommandsPanel {...props} />}
+      {section === 'pipelines' && <PipelinePanel {...props} />}
+      {section === 'runtimes' && <RuntimePanel {...props} />}
     </div>
+  );
+}
+function PipelinePanel({ vm, request }: FeatureProps) {
+  const remote = useRemote<{
+    projectId?: string;
+    pipelines: {
+      id: string;
+      name: string;
+      steps: { name: string; command: string }[];
+      artifacts: string[];
+    }[];
+    runs: any[];
+    job: JobView | null;
+  }>(request, `/vms/${vm.id}/pipelines`, vm.status === 'running', 3000);
+  const action = useAction();
+  const [name, setName] = useState('检查与构建');
+  const [command, setCommand] = useState('npm test && npm run build');
+  const [artifact, setArtifact] = useState('dist');
+  const [loadedProject, setLoadedProject] = useState('');
+  useEffect(() => {
+    const projectId = remote.data?.projectId || 'default';
+    if (remote.data && projectId !== loadedProject) {
+      setLoadedProject(projectId);
+      setName('检查与构建');
+      setCommand('npm test && npm run build');
+      setArtifact('dist');
+    }
+  }, [remote.data, loadedProject]);
+  const save = () =>
+    void action.run(async (signal) => {
+      await request(
+        `/vms/${vm.id}/pipelines`,
+        'PUT',
+        {
+          name,
+          steps: [{ name: '检查与构建', command, timeout: 600 }],
+          artifacts: artifact ? [artifact] : [],
+        },
+        signal,
+      );
+      remote.reload();
+    }, '流水线已保存');
+  return (
+    <>
+      <Feedback error={action.error || remote.error} message={action.message} />
+      <div className="feature-grid">
+        <label>
+          流水线名称
+          <input value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label>
+          产物路径（相对项目目录）
+          <input value={artifact} onChange={(e) => setArtifact(e.target.value)} placeholder="dist" />
+        </label>
+      </div>
+      <label>
+        步骤命令
+        <textarea rows={3} value={command} onChange={(e) => setCommand(e.target.value)} />
+      </label>
+      <div className="feature-actions">
+        <button className="secondary compact" disabled={action.busy} onClick={save}>
+          <Save size={14} />
+          保存流水线
+        </button>
+        {remote.data?.pipelines.map((p) => (
+          <button
+            className="primary compact"
+            disabled={action.busy}
+            key={p.id}
+            onClick={() =>
+              void action.run(async (signal) => {
+                await request(`/vms/${vm.id}/pipelines`, 'POST', { action: 'run', pipelineId: p.id }, signal);
+                remote.reload();
+              })
+            }
+          >
+            <Play size={14} />
+            运行 {p.name}
+          </button>
+        ))}
+      </div>
+      <JobLog job={remote.data?.job} />
+      {remote.data?.runs.map((run) => (
+        <details className="feature-card" key={run.id}>
+          <summary>
+            {run.name} · {run.status} · {new Date(run.startedAt).toLocaleString()}
+          </summary>
+          {run.steps.map((step: any) => (
+            <div className="development-row" key={step.name}>
+              <span>
+                {step.name} · {step.status}
+              </span>
+              <pre className="feature-log">{step.log}</pre>
+            </div>
+          ))}
+          <div className="feature-actions">
+            {run.artifacts.map((a: any) => (
+              <button
+                className="text-button"
+                key={a.index}
+                onClick={() =>
+                  void action.run(async (signal) => {
+                    const { url } = await request(
+                      `/vms/${vm.id}/pipeline-artifact`,
+                      'POST',
+                      { runId: run.id, index: a.index },
+                      signal,
+                    );
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                  })
+                }
+              >
+                下载 {a.name}
+              </button>
+            ))}
+          </div>
+        </details>
+      ))}
+    </>
+  );
+}
+function RuntimePanel({ vm, request }: FeatureProps) {
+  const remote = useRemote<{
+    selected: { node?: string; python?: string };
+    declared: Record<string, string>;
+    actual: Record<string, string>;
+    mismatches: string[];
+    job: JobView | null;
+  }>(request, `/vms/${vm.id}/runtimes`, vm.status === 'running', 10000);
+  const action = useAction();
+  const [tool, setTool] = useState<'node' | 'python'>('node');
+  const [version, setVersion] = useState('22.12.0');
+  return (
+    <>
+      <Feedback error={action.error || remote.error} message={action.message} />
+      <div className="feature-card">
+        <p>
+          项目声明：Node {remote.data?.declared.node || '—'} · Python {remote.data?.declared.python || '—'}
+        </p>
+        <p>
+          当前版本：Node {remote.data?.actual.node || '—'} · Python {remote.data?.actual.python || '—'}
+        </p>
+        {remote.data?.mismatches.length ? (
+          <p className="machine-error">版本不匹配：{remote.data.mismatches.join('、')}</p>
+        ) : (
+          <p className="feature-success">版本匹配</p>
+        )}
+      </div>
+      <div className="feature-actions">
+        <select value={tool} onChange={(e) => setTool(e.target.value as 'node' | 'python')}>
+          <option value="node">Node.js</option>
+          <option value="python">Python</option>
+        </select>
+        <input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="22.12.0" />
+        <button
+          className="secondary compact"
+          disabled={action.busy}
+          onClick={() =>
+            void action.run(async (signal) => {
+              await request(`/vms/${vm.id}/runtimes`, 'POST', { action: 'install', tool, version }, signal);
+              remote.reload();
+            })
+          }
+        >
+          安装版本
+        </button>
+        <button
+          className="primary compact"
+          disabled={action.busy || !remote.data}
+          onClick={() =>
+            void action.run(async (signal) => {
+              await request(
+                `/vms/${vm.id}/runtimes`,
+                'POST',
+                {
+                  action: 'select',
+                  node: tool === 'node' ? version : remote.data?.selected.node,
+                  python: tool === 'python' ? version : remote.data?.selected.python,
+                },
+                signal,
+              );
+              remote.reload();
+            }, '项目版本已选择')
+          }
+        >
+          应用到项目
+        </button>
+      </div>
+      <JobLog job={remote.data?.job} />
+    </>
   );
 }
 function ToolsPanel({ vm, request }: FeatureProps) {
@@ -759,7 +1019,7 @@ export function PresetRunner({
   );
 }
 function CommandsPanel({ vm, request }: FeatureProps) {
-  const remote = useRemote<{ presets: CommandPreset[]; job: JobView | null }>(
+  const remote = useRemote<{ projectId?: string; presets: CommandPreset[]; job: JobView | null }>(
       request,
       `/vms/${vm.id}/commands`,
       true,
@@ -770,7 +1030,19 @@ function CommandsPanel({ vm, request }: FeatureProps) {
     [command, setCommand] = useState(''),
     [parameters, setParameters] = useState(''),
     [selected, setSelected] = useState<CommandPreset | null>(null),
-    [editing, setEditing] = useState<string | undefined>();
+    [editing, setEditing] = useState<string | undefined>(),
+    [loadedProject, setLoadedProject] = useState('');
+  useEffect(() => {
+    const projectId = remote.data?.projectId || 'default';
+    if (remote.data && projectId !== loadedProject) {
+      setLoadedProject(projectId);
+      setSelected(null);
+      setEditing(undefined);
+      setName('');
+      setCommand('');
+      setParameters('');
+    }
+  }, [remote.data, loadedProject]);
   return (
     <>
       <p className="subtle-note">
