@@ -41,6 +41,7 @@ function shellLiteral(value: string) {
 function desktopConfigScript(input: DesktopPreferences) {
   const p = desktopPreferencesSchema.parse(input);
   const factor = (p.scale / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  const rgb = [1, 3, 5].map((offset) => Number.parseInt(p.accent.slice(offset, offset + 2), 16)).join(',');
   return String.raw`mkdir -p /etc/sakura
 cat > /etc/sakura/desktop-preferences <<'SAKURA_PREFERENCES'
 DESKTOP=kde-plasma
@@ -50,6 +51,7 @@ QT_SCALE_FACTOR=${shellLiteral(factor)}
 THEME=${shellLiteral(p.theme)}
 WALLPAPER=${shellLiteral(p.wallpaper)}
 ACCENT=${shellLiteral(p.accent.toLowerCase())}
+ACCENT_RGB=${shellLiteral(rgb)}
 PANEL=${shellLiteral(p.panel)}
 AUTO_HIDE_PANEL=${shellLiteral(String(p.autoHidePanel))}
 ANIMATIONS=${shellLiteral(String(p.animations))}
@@ -91,13 +93,16 @@ export XDG_CURRENT_DESKTOP=KDE DESKTOP_SESSION=plasma KDE_FULL_SESSION=true
 unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
 [ ! -f /home/sakura-desktop/.sakura-ime ] || . /home/sakura-desktop/.sakura-ime
 [ ! -f /etc/sakura/desktop-preferences ] || . /etc/sakura/desktop-preferences
-: "\${RESOLUTION:=1280x800}"
-: "\${QT_SCALE_FACTOR:=1}"
-: "\${THEME:=sakura}"
-: "\${ACCENT:=#c75b86}"
-: "\${PANEL:=bottom}"
-: "\${AUTO_HIDE_PANEL:=false}"
-: "\${ANIMATIONS:=true}"
+RESOLUTION=1280x800
+QT_SCALE_FACTOR=1
+THEME=sakura
+ACCENT=#c75b86
+PANEL=bottom
+AUTO_HIDE_PANEL=false
+ANIMATIONS=true
+WALLPAPER=sakura
+ACCENT_RGB=199,91,134
+export RESOLUTION QT_SCALE_FACTOR THEME ACCENT PANEL AUTO_HIDE_PANEL ANIMATIONS WALLPAPER ACCENT_RGB
 write_kde() {
   if command -v kwriteconfig6 >/dev/null 2>&1; then kwriteconfig6 "$@"
   elif command -v kwriteconfig5 >/dev/null 2>&1; then kwriteconfig5 "$@"; fi
@@ -107,7 +112,7 @@ apply_preferences() {
     midnight) scheme=BreezeDark ;; paper) scheme=BreezeLight ;; *) scheme=Breeze ;;
   esac
   write_kde --file kdeglobals --group General --key ColorScheme "$scheme" || true
-  write_kde --file kdeglobals --group General --key AccentColor "$ACCENT" || true
+  write_kde --file kdeglobals --group General --key AccentColor "$ACCENT_RGB" || true
   write_kde --file kwinrc --group Compositing --key Enabled "$ANIMATIONS" || true
   write_kde --file plasmashellrc --group PlasmaViews --group Panel --key Location "$PANEL" || true
   write_kde --file plasmashellrc --group PlasmaViews --group Panel --key panelAutoHide "$AUTO_HIDE_PANEL" || true
@@ -137,9 +142,9 @@ for attempt in $(seq 1 40); do
 done
 xdpyinfo >/dev/null
 if command -v startplasma-x11 >/dev/null 2>&1; then
-  dbus-run-session -- startplasma-x11 &
+  dbus-run-session -- sh -c 'if [ "$WALLPAPER" != plain ] && command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then (sleep 6; plasma-apply-wallpaperimage "/home/sakura-desktop/.local/share/wallpapers/$WALLPAPER.svg" >/dev/null 2>&1 || true) & fi; exec startplasma-x11' &
 else
-  dbus-run-session -- startplasma &
+  dbus-run-session -- sh -c 'if [ "$WALLPAPER" != plain ] && command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then (sleep 6; plasma-apply-wallpaperimage "/home/sakura-desktop/.local/share/wallpapers/$WALLPAPER.svg" >/dev/null 2>&1 || true) & fi; exec startplasma' &
 fi
 session_pid=$!
 wait "$session_pid"
@@ -165,6 +170,15 @@ start_pre() {
 }
 SAKURA_SERVICE
 chmod 755 /etc/init.d/sakura-desktop
+cat > /home/sakura-desktop/.local/share/wallpapers/sakura.svg <<'SAKURA_WALLPAPER'
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2b2032"/><stop offset=".58" stop-color="#8d4b72"/><stop offset="1" stop-color="#e3a7c5"/></linearGradient></defs><rect width="1920" height="1080" fill="url(#g)"/><circle cx="1540" cy="170" r="260" fill="#fff" opacity=".08"/><path d="M-80 900C390 600 520 740 900 420s620-320 1110-510" fill="none" stroke="#ffdce9" stroke-width="18" opacity=".42"/><g fill="#fff1f7" opacity=".8"><circle cx="520" cy="240" r="11"/><circle cx="680" cy="330" r="8"/><circle cx="1240" cy="520" r="12"/><circle cx="1460" cy="390" r="7"/></g></svg>
+SAKURA_WALLPAPER
+cat > /home/sakura-desktop/.local/share/wallpapers/midnight.svg <<'MIDNIGHT_WALLPAPER'
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#151526"/><stop offset=".6" stop-color="#332548"/><stop offset="1" stop-color="#8c597f"/></linearGradient></defs><rect width="1920" height="1080" fill="url(#g)"/><circle cx="1480" cy="210" r="130" fill="#f5d9ea" opacity=".18"/><path d="M-120 980C360 720 560 850 980 470s650-340 1080-560" fill="none" stroke="#d8b4de" stroke-width="14" opacity=".32"/><g fill="#fce4f2" opacity=".7"><circle cx="410" cy="210" r="5"/><circle cx="830" cy="180" r="8"/><circle cx="1280" cy="480" r="5"/><circle cx="1600" cy="690" r="8"/></g></svg>
+MIDNIGHT_WALLPAPER
+cat > /home/sakura-desktop/.local/share/wallpapers/paper.svg <<'PAPER_WALLPAPER'
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fffaf3"/><stop offset=".62" stop-color="#f2e7ec"/><stop offset="1" stop-color="#d4d9ec"/></linearGradient></defs><rect width="1920" height="1080" fill="url(#g)"/><path d="M-60 940C360 700 610 800 980 500s610-360 1080-590" fill="none" stroke="#9ba7cf" stroke-width="18" opacity=".34"/><circle cx="1530" cy="210" r="190" fill="#fff" opacity=".45"/></svg>
+PAPER_WALLPAPER
 chown -R sakura-desktop:sakura-desktop /home/sakura-desktop/.config /home/sakura-desktop/.local
 rc-update add dbus default
 rc-update add sakura-desktop default

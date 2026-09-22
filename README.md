@@ -47,7 +47,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 - 创建、启动、正常关机、删除 Alpine、Debian 12 和 Ubuntu 24.04 实例；镜像库支持官方镜像下载与校验。
 - 每实例独立 QCOW2 增量磁盘，完整 Linux 文件系统在重启后保留。
 - 浏览器 SSH 交互终端：颜色、Ctrl+C、窗口缩放、多终端标签、分屏和 tmux 会话恢复；启动时显示串口日志。
-- 实验性 Xfce 图形桌面：实例可按需安装，在浏览器内使用鼠标键盘操作，支持自适应分辨率、全屏和重新连接。
+- 实验性 KDE Plasma 图形桌面：实例可按需安装，在浏览器内使用鼠标键盘操作，支持自适应分辨率、全屏、重新连接和外观布局自定义。
 - SFTP 文件管理与二进制上传/下载（单文件最大 2 GiB），1 MiB 内文本编辑，目录创建、重命名和删除。
 - Node.js / Python / Rust 开发模板、可保存的项目配置、初始化与启动命令、运行日志。
 - Windows 文件夹双向同步、冲突检测、可选自动同步；客户机实时资源监控。
@@ -65,13 +65,13 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 ## Linux 图形桌面（实验性）
 
-创建实例或在停机后的「配置」中将内存设为至少 **1024 MiB**（建议 **2048 MiB**），启动后进入「桌面」标签，点击「安装并启用桌面」。安装会从对应发行版的官方软件仓库下载 Xfce、TigerVNC、图形终端和中文字体，需要联网及数百 MiB 磁盘空间，页面会显示进度和失败信息；失败后可重试。
+创建实例或在停机后的「配置」中将内存设为至少 **1024 MiB**（建议 **2048 MiB**），启动后进入「桌面」标签，点击「安装并启用桌面」。安装会从对应发行版的官方软件仓库下载 KDE Plasma、TigerVNC、Dolphin、Konsole 和中文字体，需要联网及数百 MiB 磁盘空间，页面会显示进度和失败信息；失败后可重试。
 
 安装完成后自动连接桌面，重启实例时桌面服务也会自动启动。浏览器关闭或切换标签后，客户机中的桌面会话继续运行，再次打开即可连接。短暂断线会自动重连，最多尝试 5 次；认证失败会停止重试并显示提示，也可手动点击「重新连接」。支持鼠标、键盘、自适应分辨率和全屏；浏览器保留的系统快捷键仍由浏览器处理。
 
 桌面以独立的普通用户 `sakura-desktop` 运行，文件保存在 `/home/sakura-desktop`；原有 SSH 终端继续使用 root。桌面使用 noVNC，经已有鉴权的 WebSocket 和 SSH 隧道连接客户机回环地址，无需添加 VNC 端口转发。图形组件保存在该实例的增量磁盘中，可随离线快照恢复；恢复安装前的快照后，需要重新安装。
 
-提供 Alpine / Debian / Ubuntu 的 Xfce / X11 软件渲染桌面，以及文本剪贴板互通和可选中文输入法。仍不包含 GPU/3D 加速、声音转发和 WSLg 的单应用窗口集成。TCG 下桌面响应较慢，建议使用可用的硬件加速。Alpine 客户机诊断命令：`rc-service sakura-desktop status`；Debian / Ubuntu 使用 `systemctl status sakura-desktop`，日志：`/var/log/sakura-desktop.log`。安装中断后如提示锁仍被占用，请等待原安装结束或重启实例后重试。
+提供 Alpine / Debian / Ubuntu 的 KDE Plasma / X11 软件渲染桌面，以及文本剪贴板互通和可选中文输入法。桌面标签的「外观与布局」支持分辨率、缩放、主题、壁纸、强调色、面板位置、自动隐藏和动画偏好，配置写入实例并在重启后恢复。仍不包含 GPU/3D 加速、声音转发和 WSLg 的单应用窗口集成。TCG 下桌面响应较慢，建议使用可用的硬件加速。Alpine 客户机诊断命令：`rc-service sakura-desktop status`；Debian / Ubuntu 使用 `systemctl status sakura-desktop`，日志：`/var/log/sakura-desktop.log`。安装中断后如提示锁仍被占用，请等待原安装结束或重启实例后重试。
 
 已修复并发连接时短暂拒绝连接导致的直接失败，并加入桌面自动重连、显式网卡 MSI-X 配置。此前本机 WHPX 曾出现 SSH 与桌面同时长时间失联，本轮未复现该现象，仍不能认定其根因已解决；详细验证与限制见 [图形桌面验证记录](docs/linux-desktop.md)。
 
@@ -114,7 +114,7 @@ server/runtime.ts       PosixLoom 原生命令插件，精确 argv 调用 QEMU
 server/machines.ts      发行版生命周期、SSH / SFTP、快照
 server/seed.ts          本地 NoCloud ISO 与每实例 SSH 密钥
 server/desktop.ts       图形桌面安装状态与 SSH / WebSocket 转发
-server/desktop-guest.ts Xfce / Fcitx5 安装、OpenRC 与 systemd 会话脚本
+server/desktop-guest.ts KDE Plasma / Fcitx5 安装、OpenRC 与 systemd 会话脚本
 server/features.ts      文件、项目、资源、同步、镜像与迁移 API
 server/workspaces.ts    模板安装、项目任务与客户机采样
 server/sync.ts          Windows / Linux 目录同步与冲突检测
@@ -158,7 +158,7 @@ npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启
 
 启动耗时写入 `artifacts/boot-timings.json`，分别记录首次初始化和后续启动。设置 `SAKURA_TEST_ACCELERATOR=tcg` 或 `whpx` 可分别验证指定模式；设置 `SAKURA_TEST_NETWORK=1` 可额外验证客户机 DNS 与 HTTPS 联网；默认测试无需互联网。
 
-设置 `SAKURA_TEST_DESKTOP=1` 再运行 `npm run test:vm`，会使用 2 GiB 内存的临时实例，额外验证联网安装 Xfce、非 root 桌面会话、SSH 隧道中的 VNC 协议，以及重启和恢复快照后的桌面自启动。该模式首次运行需要下载图形软件包，耗时较长。
+设置 `SAKURA_TEST_DESKTOP=1` 再运行 `npm run test:vm`，会使用 2 GiB 内存的临时实例，额外验证联网安装 KDE Plasma、非 root 桌面会话、SSH 隧道中的 VNC 协议，以及重启和恢复快照后的桌面自启动。该模式首次运行需要下载图形软件包，耗时较长。
 
 设置 `SAKURA_TEST_CONNECTIONS=1` 可追加 6 路并发、共 300 次 SSH 数据传输，验证集中连接时的短暂拒绝重试。真实 VM 测试也会检查客户机网卡是否启用 MSI-X。
 

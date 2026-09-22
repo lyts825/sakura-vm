@@ -24,7 +24,7 @@
 
 桌面工具栏的「剪贴板」提供发送文本到 Linux、接收 Linux 复制文本和复制到 Windows 的操作。包含中文的文本可双向传输，浏览器的剪贴板权限与用户手势要求仍然适用。
 
-「中文输入法」安装 Fcitx 5 与拼音组件，随后重启 Xfce；先保存桌面中的工作。使用 `Ctrl+Space` 切换输入法。安装脚本为已有用户保留输入法配置，失败可重试。
+「中文输入法」安装 Fcitx 5 与拼音组件，随后重启 KDE Plasma；先保存桌面中的工作。使用 `Ctrl+Space` 切换输入法。安装脚本为已有用户保留输入法配置，失败可重试。
 
 Alpine 使用 OpenRC 桌面服务，Debian / Ubuntu 使用 systemd 桌面服务；后者诊断命令为 `systemctl status sakura-desktop`。桌面仍以 `sakura-desktop` 普通用户运行，仅通过原有鉴权 WebSocket / SSH 隧道访问。
 
@@ -113,7 +113,7 @@ npm run test:features
 
 新增集成测试使用临时数据目录和专用实例，覆盖二进制传输、中断保留原文件、符号链接删除边界、实时监控、端口热更新、项目安装/启动/停止、同步与冲突、快照备份/删除、克隆身份更新和独立导入导出。默认会安装 Python 模板，需要联网。
 
-`SAKURA_TEST_TEMPLATES=1` 追加 Node.js / Rust 模板；`SAKURA_TEST_DISTROS=1` 追加 Debian / Ubuntu 启动与重启验证，需要先在镜像库下载对应镜像。`SAKURA_TEST_DISTROS_ONLY=1` 只跑额外发行版；`SAKURA_TEST_DISTRO=debian` 或 `ubuntu` 选择一个发行版；`SAKURA_TEST_DISTRO_DESKTOP=1` 追加其 Xfce 与中文输入安装。
+`SAKURA_TEST_TEMPLATES=1` 追加 Node.js / Rust 模板；`SAKURA_TEST_DISTROS=1` 追加 Debian / Ubuntu 启动与重启验证，需要先在镜像库下载对应镜像。`SAKURA_TEST_DISTROS_ONLY=1` 只跑额外发行版；`SAKURA_TEST_DISTRO=debian` 或 `ubuntu` 选择一个发行版；`SAKURA_TEST_DISTRO_DESKTOP=1` 追加其 KDE Plasma 与中文输入安装。
 
 独立测试服务可通过 `SAKURA_IMAGE_DIR` 复用 Debian / Ubuntu 基础镜像目录，`SAKURA_IMAGE_PATH` 指向 Alpine 基础镜像；实例数据仍由 `SAKURA_DATA_DIR` 隔离。
 
@@ -129,7 +129,7 @@ npm run test:features
 | Windows 目录同步               | 双向复制、空目录、双侧修改冲突、大小写冲突拦截、显式解决冲突通过                                                       |
 | 快照与迁移                     | 恢复前备份、删除、克隆身份更新与重启、独立导出/导入及项目配置保留通过                                                  |
 | 开发模板                       | Alpine 中 Node.js、Python、Rust 安装及版本检查通过；下载添加超时和有限重试                                             |
-| Debian / Ubuntu                | 官方镜像校验、首次启动、重启持久化、Xfce 安装、Fcitx5 安装与进程启动通过                                               |
+| Debian / Ubuntu                | 官方镜像校验、首次启动、重启持久化、KDE Plasma 安装、Fcitx5 安装与进程启动通过                                               |
 | 浏览器交互                     | 多终端及分屏、项目启动、服务状态、资源图表、文件/同步/镜像入口通过；中文文本剪贴板双向传输及终端断开后恢复环境变量通过 |
 
 验证不代表长期稳定性或所有硬件兼容性。中文输入法验证覆盖安装、配置及进程启动，未穷举各图形应用的输入行为。
