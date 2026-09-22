@@ -75,10 +75,13 @@ async function checkDesktop() {
   } finally {
     client.end();
   }
-  const user = await machines.exec(id, 'id -u sakura-desktop; pgrep -u sakura-desktop -x xfce4-session');
+  const user = await machines.exec(
+    id,
+    'id -u sakura-desktop; pgrep -u sakura-desktop -x plasmashell; pgrep -u sakura-desktop -x kwin_x11 || pgrep -u sakura-desktop -x kwin_wayland',
+  );
   assert.equal(user.code, 0, user.stderr);
   assert.notEqual(user.stdout.trim().split('\n')[0], '0');
-  console.log('Xfce session and SSH-tunneled VNC OK');
+  console.log('KDE Plasma session and SSH-tunneled VNC OK');
 }
 try {
   const forwardPort = await freePort();

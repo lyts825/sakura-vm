@@ -309,7 +309,7 @@ try {
           console.log(distro, view.status, view.log.slice(-180));
           await sleep(15000);
         }
-        console.log('PASS', distro, 'Xfce desktop');
+        console.log('PASS', distro, 'KDE Plasma desktop');
         const result = await machines.exec(other.id, imeInstall(distro), 1200000);
         assert.equal(result.code, 0, result.stderr + result.stdout.slice(-3000));
         await command(other.id, 'pgrep -u sakura-desktop fcitx5');
