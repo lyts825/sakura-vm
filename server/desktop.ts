@@ -1,7 +1,11 @@
 import { createWebSocketStream, WebSocket } from 'ws';
 import type { ClientChannel } from 'ssh2';
 import type { Machines } from './machines.ts';
-import { AppError, type DesktopView } from './model.ts';
+import {
+  AppError,
+  type DesktopView,
+} from './model.ts';
+import { defaultDesktopPreferences, desktopPreferencesSchema, type DesktopPreferences } from './desktop-preferences.ts';
 import { desktopCommands } from './desktop-guest.ts';
 
 type Operation = {
@@ -25,37 +29,79 @@ export class Desktops {
   }
 
   async view(id: string): Promise<DesktopView> {
-    this.machines.get(id);
-    if (this.machines.state(id) !== 'running') return { status: 'unavailable', log: '' };
+    const vm = this.machines.get(id);
+    if (this.machines.state(id) !== 'running')
+      return { status: 'unavailable', log: '', preferences: defaultDesktopPreferences };
     const operation = this.operations.get(id);
     if (operation) return { ...operation.view };
-    const result = await this.machines.exec(id, desktopCommands(this.machines.get(id).distro).probe, 10000);
+    const commands = desktopCommands(vm.distro);
+    const result = await this.machines.exec(id, commands.probe, 10000);
     const status = result.stdout.trim();
     if (result.code !== 0 || !['not-installed', 'starting', 'ready', 'stopped'].includes(status))
       throw new AppError('无法检查桌面状态，请重试', 502);
-    return { status: status as DesktopView['status'], log: '' };
+    let preferences = defaultDesktopPreferences;
+    try {
+      const config = await this.machines.exec(id, commands.preferencesProbe, 10000);
+      const values: Record<string, string> = {};
+      for (const line of config.stdout.split(/\r?\n/)) {
+        const match = /^(RESOLUTION|SCALE|THEME|WALLPAPER|ACCENT|PANEL|AUTO_HIDE_PANEL|ANIMATIONS)=(.*)$/.exec(
+          line.trim(),
+        );
+        if (match) values[match[1]] = match[2].replace(/^'(.*)'$/, '$1');
+      }
+      const parsed = desktopPreferencesSchema.safeParse({
+        resolution: values.RESOLUTION,
+        scale: values.SCALE ? Number(values.SCALE) : undefined,
+        theme: values.THEME,
+        wallpaper: values.WALLPAPER,
+        accent: values.ACCENT,
+        panel: values.PANEL,
+        autoHidePanel: values.AUTO_HIDE_PANEL === undefined ? undefined : values.AUTO_HIDE_PANEL === 'true',
+        animations: values.ANIMATIONS === undefined ? undefined : values.ANIMATIONS === 'true',
+      });
+      if (parsed.success) preferences = parsed.data;
+    } catch {
+      // A status check remains useful when an older desktop has no preferences file.
+    }
+    return { status: status as DesktopView['status'], log: '', preferences };
   }
 
-  start(id: string, action: 'install' | 'start'): DesktopView {
+  start(
+    id: string,
+    action: 'install' | 'start' | 'configure',
+    input?: Partial<DesktopPreferences>,
+  ): DesktopView {
     const vm = this.machines.get(id);
     const live = this.machines.live.get(id);
     if (this.machines.closing || live?.status !== 'running')
       throw new AppError('请等待发行版启动完成，再启用桌面', 409);
     const previous = this.operations.get(id);
-    if (previous?.view.status === 'installing') return { ...previous.view };
+    if (previous && ['installing', 'starting'].includes(previous.view.status)) return { ...previous.view };
     if (vm.memoryMiB < 1024)
       throw new AppError('图形桌面至少需要 1024 MiB 内存；请停机后在「配置」中调整，建议 2048 MiB', 409);
+    const preferences = desktopPreferencesSchema.parse(input || {});
+    const commands = desktopCommands(vm.distro, preferences);
+    const status = action === 'install' ? 'installing' : 'starting';
     const operation: Operation = {
       startedAt: live.startedAt,
       abort: new AbortController(),
-      view: { status: 'installing', log: action === 'install' ? '正在准备桌面安装…\n' : '正在启动桌面…\n' },
+      view: {
+        status,
+        preferences,
+        log:
+          action === 'install'
+            ? '正在准备 KDE Plasma 桌面安装…\n'
+            : action === 'configure'
+              ? '正在应用 KDE Plasma 外观配置…\n'
+              : '正在启动 KDE Plasma 桌面…\n',
+      },
     };
     this.operations.set(id, operation);
     void this.machines
       .exec(
         id,
-        action === 'install' ? desktopCommands(vm.distro).install : desktopCommands(vm.distro).start,
-        action === 'install' ? 920000 : 150000,
+        action === 'install' ? commands.install : action === 'configure' ? commands.configure : commands.start,
+        action === 'install' ? 920000 : action === 'configure' ? 180000 : 150000,
         operation.abort.signal,
         (data) => {
           operation.view.log = (operation.view.log + data).slice(-16384);

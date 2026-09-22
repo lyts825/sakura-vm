@@ -11,19 +11,59 @@ import {
   Minimize2,
   Monitor,
   MousePointer2,
+  Palette,
+  PanelTop,
+  RotateCcw,
+  Save,
+  SlidersHorizontal,
+  WandSparkles,
   Play,
   RefreshCw,
   Send,
   Sparkles,
   Wifi,
 } from 'lucide-react';
-import type { DesktopView, VMView } from '../server/model';
+import type { DesktopPreferences, DesktopView, VMView } from '../server/model';
 import { connectDesktop } from './desktop-connection';
 import { ResponseOrder } from './request-order';
 import './desktop.css';
 import type RFB from '@novnc/novnc';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
 import type { JobView } from '../server/jobs';
+
+const desktopPreferenceDefaults: DesktopPreferences = {
+  resolution: '1280x800',
+  scale: 100,
+  theme: 'sakura',
+  wallpaper: 'sakura',
+  accent: '#c75b86',
+  panel: 'bottom',
+  autoHidePanel: false,
+  animations: true,
+};
+
+function savedDesktopPreferences(id: string): DesktopPreferences {
+  try {
+    const value = JSON.parse(localStorage.getItem(`sakura-desktop-preferences:${id}`) || 'null');
+    if (value && typeof value === 'object') {
+      const candidate = { ...desktopPreferenceDefaults, ...value } as DesktopPreferences;
+      if (
+        ['1280x800', '1440x900', '1600x1000', '1920x1080'].includes(candidate.resolution) &&
+        [100, 125, 150, 175, 200].includes(candidate.scale) &&
+        ['sakura', 'midnight', 'paper', 'lavender'].includes(candidate.theme) &&
+        ['sakura', 'midnight', 'paper', 'plain'].includes(candidate.wallpaper) &&
+        /^#[0-9a-f]{6}$/i.test(candidate.accent) &&
+        ['bottom', 'top', 'floating'].includes(candidate.panel) &&
+        typeof candidate.autoHidePanel === 'boolean' &&
+        typeof candidate.animations === 'boolean'
+      )
+        return candidate;
+    }
+  } catch {
+    // Browser storage is optional; the guest defaults remain usable.
+  }
+  return { ...desktopPreferenceDefaults };
+}
 
 type Props = {
   vm: VMView;
@@ -47,6 +87,9 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const [attempt, setAttempt] = useState(0);
   const clientRef = useRef<RFB | null>(null);
   const [showClipboard, setShowClipboard] = useState(false);
+  const [showCustomizer, setShowCustomizer] = useState(false);
+  const [preferences, setPreferences] = useState<DesktopPreferences>(() => savedDesktopPreferences(vm.id));
+  const preferencesDirty = useRef(false);
   const [outgoing, setOutgoing] = useState('');
   const [incoming, setIncoming] = useState('');
   const clipboardAction = useAction();
@@ -82,6 +125,12 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   }[desktopState];
 
   useEffect(() => {
+    preferencesDirty.current = false;
+    setPreferences(savedDesktopPreferences(vm.id));
+    setShowCustomizer(false);
+  }, [vm.id]);
+
+  useEffect(() => {
     const changed = () => setFullscreen(document.fullscreenElement === frame.current);
     document.addEventListener('fullscreenchange', changed);
     return () => document.removeEventListener('fullscreenchange', changed);
@@ -110,6 +159,17 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         const view = await request<DesktopView>(`/vms/${vm.id}/desktop`, 'GET', undefined, abort.signal);
         if (alive && statusOrder.current.accept(version)) {
           setDesktop(view);
+          if (!preferencesDirty.current && view.preferences) {
+            setPreferences(view.preferences);
+            try {
+              localStorage.setItem(
+                `sakura-desktop-preferences:${vm.id}`,
+                JSON.stringify(view.preferences),
+              );
+            } catch {
+              // The guest remains the source of truth when storage is unavailable.
+            }
+          }
           setStatusError('');
         }
         if (view.status === 'ready') interval = 10000;
@@ -182,7 +242,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   }, [vm.id, ready, token, attempt]);
 
   const enable = useCallback(
-    async (action: 'install' | 'start') => {
+    async (action: 'install' | 'start' | 'configure') => {
       if (!running || enabling.current) return;
       const abort = new AbortController();
       enabling.current = abort;
@@ -191,9 +251,16 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       setSubmitting(true);
       setError('');
       try {
-        const view = await request<DesktopView>(`/vms/${vm.id}/desktop`, 'POST', { action }, abort.signal);
+        const view = await request<DesktopView>(
+          `/vms/${vm.id}/desktop`,
+          'POST',
+          { action, preferences },
+          abort.signal,
+        );
         if (enabling.current === abort && statusOrder.current.accept(version)) {
           setDesktop(view);
+          preferencesDirty.current = false;
+          if (action === 'configure') setShowCustomizer(false);
           setStatusError('');
         }
       } catch (e) {
@@ -205,8 +272,35 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         }
       }
     },
-    [request, vm.id, running],
+    [preferences, request, vm.id, running],
   );
+
+  const updatePreferences = (patch: Partial<DesktopPreferences>) => {
+    preferencesDirty.current = true;
+    setPreferences((current) => {
+      const next = { ...current, ...patch };
+      try {
+        localStorage.setItem(`sakura-desktop-preferences:${vm.id}`, JSON.stringify(next));
+      } catch {
+        // Preferences are also sent to the guest when applied.
+      }
+      return next;
+    });
+  };
+  const applyPreferences = () => {
+    preferencesDirty.current = false;
+    try {
+      localStorage.setItem(`sakura-desktop-preferences:${vm.id}`, JSON.stringify(preferences));
+    } catch {
+      // The API call below is still authoritative.
+    }
+    if (desktop?.status === 'ready' || desktop?.status === 'stopped') {
+      void enable('configure');
+    } else {
+      setShowCustomizer(false);
+    }
+  };
+  const resetPreferences = () => updatePreferences({ ...desktopPreferenceDefaults });
 
   return (
     <div className="desktop-panel" ref={frame}>
@@ -215,13 +309,24 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
           <span className={`desktop-state-dot ${desktopState}`} aria-hidden="true" />
           <Monitor size={17} />
           <div className="desktop-title-copy">
-            <b>Xfce 桌面</b>
+            <b>KDE Plasma 桌面</b>
             <span>{desktopStateLabel}</span>
           </div>
-          <span className="desktop-preview-label">实验性 · Xfce</span>
+          <span className="desktop-preview-label">KDE Plasma · 可自定义</span>
         </div>
-        {ready && (
+        {(ready || running) && (
           <div className="desktop-toolbar-actions">
+            <button
+              className={`secondary compact ${showCustomizer ? 'is-active' : ''}`}
+              aria-expanded={showCustomizer}
+              title="自定义 KDE Plasma 桌面"
+              onClick={() => setShowCustomizer((value) => !value)}
+            >
+              <SlidersHorizontal size={14} />
+              外观与布局
+            </button>
+            {ready && (
+              <>
             <button
               className="secondary compact"
               aria-expanded={showClipboard}
@@ -265,6 +370,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
               {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
               {fullscreen ? '退出全屏' : '全屏'}
             </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -272,6 +379,156 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         <div className="machine-error" role="alert">
           {error || statusError}
         </div>
+      )}
+      {showCustomizer && (
+        <section className="desktop-customizer" aria-label="KDE Plasma 桌面自定义">
+          <div className="desktop-customizer-head">
+            <div>
+              <span className="desktop-customizer-kicker">
+                <Palette size={13} /> KDE Plasma
+              </span>
+              <h3>把桌面调成你的工作台</h3>
+              <p>偏好会写入实例磁盘，重启后仍然保留。应用外观会重启图形会话。</p>
+            </div>
+            <span className="desktop-customizer-status">
+              <span className="desktop-state-dot connected" />
+              {preferencesDirty.current ? '有未应用的更改' : '配置已同步'}
+            </span>
+          </div>
+          <div className="desktop-presets" role="list" aria-label="外观预设">
+            {(
+              [
+                {
+                  id: 'sakura',
+                  name: '樱花晨光',
+                  hint: '柔和浅色 · 专注',
+                  patch: { theme: 'sakura', wallpaper: 'sakura', accent: '#c75b86' },
+                },
+                {
+                  id: 'midnight',
+                  name: '夜樱深色',
+                  hint: '低亮度 · 长时间工作',
+                  patch: { theme: 'midnight', wallpaper: 'midnight', accent: '#e6a6cb' },
+                },
+                {
+                  id: 'paper',
+                  name: '纸张留白',
+                  hint: '清爽明亮 · 阅读',
+                  patch: { theme: 'paper', wallpaper: 'paper', accent: '#6d7fb3' },
+                },
+              ] as const
+            ).map((preset) => (
+              <button
+                key={preset.id}
+                className={`desktop-preset ${preferences.theme === preset.id ? 'selected' : ''} preset-${preset.id}`}
+                role="listitem"
+                onClick={() => updatePreferences(preset.patch)}
+              >
+                <span className="desktop-preset-swatch" />
+                <span>
+                  <b>{preset.name}</b>
+                  <small>{preset.hint}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="desktop-customizer-grid">
+            <label>
+              <span>虚拟屏幕</span>
+              <select
+                value={preferences.resolution}
+                onChange={(event) =>
+                  updatePreferences({ resolution: event.target.value as DesktopPreferences['resolution'] })
+                }
+              >
+                <option value="1280x800">1280 × 800 · 轻量</option>
+                <option value="1440x900">1440 × 900 · 宽屏</option>
+                <option value="1600x1000">1600 × 1000 · 细节</option>
+                <option value="1920x1080">1920 × 1080 · 高清</option>
+              </select>
+            </label>
+            <label>
+              <span>界面缩放</span>
+              <select
+                value={preferences.scale}
+                onChange={(event) => updatePreferences({ scale: Number(event.target.value) })}
+              >
+                <option value={100}>100% · 紧凑</option>
+                <option value={125}>125% · 舒适</option>
+                <option value={150}>150% · 大字</option>
+                <option value={175}>175% · 触控</option>
+                <option value={200}>200% · 高可读</option>
+              </select>
+            </label>
+            <label>
+              <span><PanelTop size={13} /> 面板位置</span>
+              <select
+                value={preferences.panel}
+                onChange={(event) =>
+                  updatePreferences({ panel: event.target.value as DesktopPreferences['panel'] })
+                }
+              >
+                <option value="bottom">底部 · 经典</option>
+                <option value="top">顶部 · 浏览器式</option>
+                <option value="floating">悬浮 · 极简</option>
+              </select>
+            </label>
+            <label>
+              <span>壁纸氛围</span>
+              <select
+                value={preferences.wallpaper}
+                onChange={(event) =>
+                  updatePreferences({ wallpaper: event.target.value as DesktopPreferences['wallpaper'] })
+                }
+              >
+                <option value="sakura">樱花枝影</option>
+                <option value="midnight">月色夜幕</option>
+                <option value="paper">暖白纸面</option>
+                <option value="plain">纯色留白</option>
+              </select>
+            </label>
+            <label className="desktop-color-field">
+              <span>强调色</span>
+              <span className="desktop-color-input">
+                <input
+                  type="color"
+                  value={preferences.accent}
+                  aria-label="KDE Plasma 强调色"
+                  onChange={(event) => updatePreferences({ accent: event.target.value })}
+                />
+                <code>{preferences.accent.toUpperCase()}</code>
+              </span>
+            </label>
+            <label className="desktop-check-field">
+              <input
+                type="checkbox"
+                checked={preferences.autoHidePanel}
+                onChange={(event) => updatePreferences({ autoHidePanel: event.target.checked })}
+              />
+              <span>面板自动隐藏</span>
+            </label>
+            <label className="desktop-check-field">
+              <input
+                type="checkbox"
+                checked={preferences.animations}
+                onChange={(event) => updatePreferences({ animations: event.target.checked })}
+              />
+              <span>保留窗口动画</span>
+            </label>
+          </div>
+          <div className="desktop-customizer-foot">
+            <span><WandSparkles size={13} /> KDE 设置会在下次会话启动时完整加载</span>
+            <div>
+              <button className="text-button" onClick={resetPreferences} disabled={submitting}>
+                <RotateCcw size={13} /> 恢复默认
+              </button>
+              <button className="primary compact" onClick={applyPreferences} disabled={submitting || installing}>
+                {submitting ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}
+                {desktop?.status === 'ready' || desktop?.status === 'stopped' ? '应用并重启桌面' : '保存桌面偏好'}
+              </button>
+            </div>
+          </div>
+        </section>
       )}
       <Feedback error={clipboardAction.error} message={clipboardAction.message} />
       {showClipboard && ready && (
@@ -401,7 +658,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
               {!running
                 ? '启动 Linux，进入图形桌面'
                 : installing
-                  ? '正在准备 Xfce 桌面'
+                  ? '正在准备 KDE Plasma 桌面'
                   : desktop?.status === 'stopped'
                     ? '桌面会话已停止'
                     : desktop?.status === 'error'
@@ -409,8 +666,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
                       : '给 Linux 添一个桌面'}
             </h3>
             <p>
-              轻量 Xfce
-              桌面，包含文件管理器和图形终端。首次安装需要联网，之后随发行版启动，文件保存在实例磁盘中。
+              KDE Plasma 桌面，包含 Dolphin 文件管理器和 Konsole 图形终端。首次安装需要联网，之后随发行版启动，文件保存在实例磁盘中。
             </p>
           </div>
           <div className="desktop-spec-grid">
@@ -424,8 +680,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             <div>
               <Monitor size={16} />
               <span>
-                <b>轻量 Xfce</b>
-                <small>文件管理器 · 图形终端</small>
+                <b>KDE Plasma</b>
+                <small>Dolphin · Konsole · KWin</small>
               </span>
             </div>
             <div>

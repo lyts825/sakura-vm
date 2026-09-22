@@ -8,6 +8,7 @@ test('the second feature tranche has 100 unique, categorized entries', () => {
   assert.equal(new Set(extendedFeatureCatalog.map(([id]) => id)).size, 100);
   assert.ok(new Set(extendedFeatureCatalog.map(([, , category]) => category)).size >= 8);
   assert.ok(extendedFeatureCatalog.every(([, , , priority]) => ['P0', 'P1', 'P2'].includes(priority)));
+  assert.ok(extendedFeatureCatalog.every(([, , , , , state]) => state === 'available'));
 });
 
 test('engineering operations expose JSON schemas and reject unsafe project paths', () => {
@@ -22,6 +23,10 @@ test('engineering operations expose JSON schemas and reject unsafe project paths
   assert.throws(
     () => validateOperation({ operation: 'missing', parameters: {} }),
     /操作不存在/,
+  );
+  assert.equal(
+    validateOperation({ operation: 'feature-run', parameters: { featureId: 'session-lock', mode: 'check' } }).operation,
+    'feature-run',
   );
   assert.ok(engineeringOperations['command-risk'].writes === false);
 });

@@ -46,6 +46,7 @@ export const engineeringOperations = {
   'command-risk': op('命令风险预检', 'command-risk', { command }, { command: 'rm -rf build' }, '启发式标记删除、提权、下载执行与外部传输；不能作为安全沙箱。'),
   'command-macros': op('执行条件命令宏', 'command-macros', { steps: z.array(z.object({ name: label, argv, when: z.enum(['always','success','failure']).default('success'), timeout: z.number().int().min(1).max(120).default(60) }).strict()).min(1).max(20) }, { steps: [{ name: '环境', argv: ['uname','-a'], when: 'always', timeout: 60 }] }, '每一步直接传 argv；只在明确指定 sh -c 时使用 Shell。', true),
   'runbooks': op('运行运维手册', 'runbooks', { steps: z.array(z.object({ name: label, command, timeout: z.number().int().min(1).max(120).default(60) }).strict()).min(1).max(20) }, { steps: [{ name: '空间检查', command: 'df -h', timeout: 10 }] }, '依次运行诊断和修复；首个失败停止，保留结果。', true),
+  'feature-run': op('扩展能力适配器', 'extended-features', { featureId: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/), mode: z.enum(['check', 'run']).default('run'), options: z.record(z.string(), z.unknown()).default({}) }, { featureId: 'session-lock', mode: 'run', options: {} }, '统一执行任意扩展能力的检查或便携适配器。'),
 } as const;
 
 export type EngineeringOperation = keyof typeof engineeringOperations;

@@ -63,6 +63,13 @@
   background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
 
+.desktop-toolbar-actions .secondary.is-active {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .desktop-state-dot,
 .desktop-footer-dot {
   display: inline-block;
@@ -108,6 +115,233 @@
 
 .machine-error {
   margin: 12px 20px 0;
+}
+
+.desktop-customizer {
+  position: relative;
+  margin: 14px 20px 0;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid var(--accent-line);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--accent) 14%, transparent), transparent 38%),
+    linear-gradient(135deg, var(--accent-soft), var(--surface));
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: desktop-panel-in 180ms ease-out both;
+}
+
+.desktop-customizer-head,
+.desktop-customizer-foot,
+.desktop-customizer-foot > div,
+.desktop-customizer-status,
+.desktop-customizer-kicker,
+.desktop-color-input,
+.desktop-check-field {
+  display: flex;
+  align-items: center;
+}
+
+.desktop-customizer-head,
+.desktop-customizer-foot {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.desktop-customizer-kicker {
+  gap: 6px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.desktop-customizer-head h3 {
+  margin-top: 5px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.desktop-customizer-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.desktop-customizer-status {
+  flex: 0 0 auto;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  font-size: 10px;
+}
+
+.desktop-customizer-status .desktop-state-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+
+.desktop-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.desktop-preset {
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: left;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.desktop-preset:hover,
+.desktop-preset.selected {
+  border-color: var(--accent-line);
+  background: var(--surface);
+  box-shadow: 0 5px 15px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.desktop-preset.selected {
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 5px 15px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.desktop-preset-swatch {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #ffe9f3 10%, #c75b86 52%, #82507f 100%);
+  box-shadow: inset 0 0 0 1px #ffffff6b;
+}
+
+.preset-midnight .desktop-preset-swatch {
+  background: linear-gradient(145deg, #4f385f, #201b35 58%, #b26b9a);
+}
+
+.preset-paper .desktop-preset-swatch {
+  background: linear-gradient(145deg, #fffdf3 8%, #d8d9eb 52%, #6d7fb3);
+}
+
+.desktop-preset span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.desktop-preset b,
+.desktop-preset small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-preset b {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.desktop-preset small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.desktop-customizer-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.desktop-customizer-grid label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.desktop-customizer-grid label > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.desktop-customizer-grid select {
+  padding: 8px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.desktop-color-field {
+  grid-column: span 2;
+}
+
+.desktop-color-input {
+  gap: 8px;
+}
+
+.desktop-color-input input[type='color'] {
+  width: 34px;
+  height: 29px;
+  padding: 3px;
+  cursor: pointer;
+}
+
+.desktop-color-input code {
+  color: var(--ink);
+  font: 10px var(--font-mono);
+}
+
+.desktop-check-field {
+  align-self: end;
+  flex-direction: row !important;
+  gap: 8px !important;
+  min-height: 29px;
+  color: var(--ink) !important;
+}
+
+.desktop-check-field input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.desktop-customizer-foot {
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.desktop-customizer-foot > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.desktop-customizer-foot > span svg {
+  color: var(--accent);
+}
+
+.desktop-customizer-foot > div {
+  gap: 8px;
 }
 
 .desktop-clipboard {
@@ -645,9 +879,38 @@
   }
 
   .desktop-clipboard,
-  .desktop-ime-log {
+  .desktop-ime-log,
+  .desktop-customizer {
     margin-left: 14px;
     margin-right: 14px;
+  }
+
+  .desktop-customizer {
+    padding: 16px;
+  }
+
+  .desktop-customizer-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .desktop-presets,
+  .desktop-customizer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop-color-field {
+    grid-column: auto;
+  }
+
+  .desktop-customizer-foot {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .desktop-customizer-foot > div {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .desktop-clipboard-grid {
@@ -706,5 +969,15 @@
   .desktop-screen-badge {
     top: 9px;
     right: 9px;
+  }
+
+  .desktop-presets,
+  .desktop-customizer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .desktop-customizer-foot > div {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

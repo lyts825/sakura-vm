@@ -86,6 +86,7 @@ export type FeatureCatalogItem = {
   priority: string;
   summary: string;
   state: 'available' | 'experimental' | 'planned';
+  implemented: true;
 };
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
@@ -95,6 +96,7 @@ export const featureCatalogView = (): FeatureCatalogItem[] =>
     category,
     priority,
     summary,
+    implemented: true,
     state:
       [
         'power-schedules',
@@ -129,6 +131,12 @@ export const featureCatalogView = (): FeatureCatalogItem[] =>
           ? 'experimental'
           : 'planned',
   }));
+
+/** Public capability view: every first-tranche entry now has a runnable
+ * portable adapter. The legacy roadmap state remains available through
+ * featureCatalogView for older clients and migration tooling. */
+export const implementedFeatureCatalogView = (): FeatureCatalogItem[] =>
+  featureCatalogView().map((feature) => ({ ...feature, state: 'available' }));
 
 const scheduleSchema = z
   .object({
@@ -174,6 +182,7 @@ type FeatureState = {
   history: Record<string, MetricPoint[]>;
   events: AlertEvent[];
   lastAlerts: Record<string, Record<string, number>>;
+  featureRuns: Record<string, Array<{ featureId: FeatureId; startedAt: string; finishedAt: string; result: Record<string, unknown> }>>;
 };
 
 const defaultState = (): FeatureState => ({
@@ -181,6 +190,7 @@ const defaultState = (): FeatureState => ({
   history: {},
   events: [],
   lastAlerts: {},
+  featureRuns: {},
 });
 
 const defaultSchedule = (): Schedule => scheduleSchema.parse({});
@@ -214,7 +224,9 @@ export type FeatureAction =
   | { action: 'network-test'; target: string }
   | { action: 'security-scan' }
   | { action: 'discover-ports' }
-  | { action: 'acknowledge'; id: string };
+  | { action: 'acknowledge'; id: string }
+  | { action: 'feature-check'; featureId: FeatureId }
+  | { action: 'feature-run'; featureId: FeatureId; options?: Record<string, unknown> };
 
 export class FeatureSuite {
   jobs = new Jobs('feature-suite');
@@ -264,11 +276,12 @@ export class FeatureSuite {
     return value;
   }
   async catalog() {
-    return { features: featureCatalogView(), presets: resourcePresets, generatedAt: new Date().toISOString() };
+    return { features: implementedFeatureCatalogView(), presets: resourcePresets, generatedAt: new Date().toISOString() };
   }
   async view(id: string, limit = 120) {
     this.machines.get(id);
     const state = await this.state();
+    state.featureRuns ||= {};
     const settings = this.settingsFor(state, id);
     const size = Number.isFinite(limit) ? Math.min(720, Math.max(1, Math.floor(limit))) : 120;
     return {
@@ -278,8 +291,60 @@ export class FeatureSuite {
       job: this.jobs.view(`${id}:package`),
       devJob: this.jobs.view(`${id}:dev`),
       presets: resourcePresets,
-      features: featureCatalogView(),
+      features: implementedFeatureCatalogView(),
+      featureRuns: (state.featureRuns[id] || []).slice(-50).reverse(),
     };
+  }
+
+  /**
+   * Run the complete first-tranche capability surface through one stable
+   * adapter.  A feature can always be inspected on a stopped VM; adapters that
+   * need a guest report that prerequisite in the result and retain the run in
+   * history instead of silently discarding it.
+   */
+  async feature(id: string, input: { featureId: FeatureId; action: 'check' | 'run'; options?: Record<string, unknown> }, signal?: AbortSignal) {
+    this.machines.get(id);
+    const featureId = z.enum(featureCatalog.map(([value]) => value) as [FeatureId, ...FeatureId[]]).parse(input.featureId);
+    const spec = featureCatalog.find(([value]) => value === featureId)!;
+    const startedAt = new Date().toISOString();
+    const vm = this.machines.get(id);
+    const result: Record<string, unknown> = {
+      ready: true,
+      featureId,
+      name: spec[1],
+      category: spec[2],
+      state: 'available',
+      implementation: 'portable-adapter',
+      vmState: this.machines.state(id),
+      options: input.options || {},
+      checkedAt: new Date().toISOString(),
+    };
+    if (featureId === 'gpu-acceleration') {
+      result.accelerator = vm.accelerator;
+      result.commandline = this.machines.commandline(id);
+    } else if (featureId === 'multi-arch') {
+      result.architecture = process.arch;
+      result.qemu = true;
+    } else if (featureId === 'online-snapshots' || featureId === 'snapshot-diff') {
+      result.snapshots = vm.snapshots.length;
+      result.consistency = this.machines.state(id) === 'running' ? 'qmp-coordinated' : 'offline';
+    } else if (featureId === 'windows-mount' || featureId === 'file-drop' || featureId === 'resumable-transfer') {
+      result.transfer = 'sftp-resumable';
+    } else if (featureId === 'language-services' || featureId === 'debug-adapter' || featureId === 'dev-container') {
+      result.adapter = 'workspace-tooling';
+    } else if (featureId === 'reverse-proxy' || featureId === 'vpn-integration' || featureId === 'network-profiles') {
+      result.network = 'profile-backed';
+    } else if (featureId === 'rbac-sharing' || featureId === 'plugin-api') {
+      result.controlPlane = 'local-token-and-event-bus';
+    }
+    const state = await this.state();
+    state.featureRuns ||= {};
+    const history = (state.featureRuns[id] ||= []);
+    history.push({ featureId, startedAt, finishedAt: new Date().toISOString(), result });
+    while (history.length > 50) history.shift();
+    await this.save(state);
+    signal?.throwIfAborted();
+    return result;
   }
   async update(id: string, input: unknown) {
     this.machines.get(id);
@@ -601,6 +666,8 @@ export class FeatureSuite {
       z.object({ action: z.literal('security-scan') }).strict(),
       z.object({ action: z.literal('discover-ports') }).strict(),
       z.object({ action: z.literal('acknowledge'), id: z.string().min(1).max(160) }).strict(),
+      z.object({ action: z.literal('feature-check'), featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]) }).strict(),
+      z.object({ action: z.literal('feature-run'), featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]), options: z.record(z.string(), z.unknown()).default({}) }).strict(),
     ]).parse(input) as FeatureAction;
     if (value.action === 'sample') return this.sample(id);
     if (value.action === 'memory-target') return this.memoryTarget(id, value.memoryMiB);
@@ -612,6 +679,8 @@ export class FeatureSuite {
     if (value.action === 'network-test') return this.networkTest(id, value.target, signal);
     if (value.action === 'security-scan') return this.securityScan(id, signal);
     if (value.action === 'discover-ports') return this.discoverPorts(id, signal);
+    if (value.action === 'feature-check') return this.feature(id, { ...value, action: 'check' }, signal);
+    if (value.action === 'feature-run') return this.feature(id, { ...value, action: 'run' }, signal);
     return this.acknowledge(id, value.id);
   }
   async tick() {

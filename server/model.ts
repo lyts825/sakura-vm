@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataDirectory } from './data-directory.ts';
+import type { DesktopPreferences } from './desktop-preferences.ts';
+export { desktopPreferencesSchema, defaultDesktopPreferences } from './desktop-preferences.ts';
+export type { DesktopPreferences } from './desktop-preferences.ts';
 
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const DATA = dataDirectory(process.env.SAKURA_DATA_DIR || join(ROOT, '.data'));
@@ -44,6 +47,7 @@ export type DesktopView = {
   status: 'unavailable' | 'not-installed' | 'installing' | 'starting' | 'stopped' | 'ready' | 'error';
   log: string;
   error?: string;
+  preferences?: DesktopPreferences;
 };
 export type Snapshot = {
   id: string;

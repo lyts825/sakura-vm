@@ -103,11 +103,26 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (route[3] === 'desktop' && route.length === 4) {
       if (req.method === 'GET') return send(res, await desktops.view(id));
       if (req.method === 'POST') {
-        const { action } = z
-          .object({ action: z.enum(['install', 'start']) })
+        const { action, preferences } = z
+          .object({
+            action: z.enum(['install', 'start', 'configure']),
+            preferences: z
+              .object({
+                resolution: z.enum(['1280x800', '1440x900', '1600x1000', '1920x1080']).optional(),
+                scale: z.number().int().min(100).max(200).optional(),
+                theme: z.enum(['sakura', 'midnight', 'paper', 'lavender']).optional(),
+                wallpaper: z.enum(['sakura', 'midnight', 'paper', 'plain']).optional(),
+                accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+                panel: z.enum(['bottom', 'top', 'floating']).optional(),
+                autoHidePanel: z.boolean().optional(),
+                animations: z.boolean().optional(),
+              })
+              .strict()
+              .optional(),
+          })
           .strict()
           .parse(await body(req));
-        return send(res, desktops.start(id, action), 202);
+        return send(res, desktops.start(id, action, preferences), 202);
       }
     }
     if (req.method === 'GET' && route[3] === 'files')
