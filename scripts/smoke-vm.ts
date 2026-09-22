@@ -77,7 +77,7 @@ async function checkDesktop() {
   }
   const user = await machines.exec(
     id,
-    'id -u sakura-desktop; pgrep -u sakura-desktop -x plasmashell; pgrep -u sakura-desktop -x kwin_x11 || pgrep -u sakura-desktop -x kwin_wayland',
+    "set -e; id -u sakura-desktop; pgrep -u sakura-desktop -f '(^|/)plasmashell( |$)'; pgrep -u sakura-desktop -f '(^|/)kwin_(x11|wayland)( |$)'",
   );
   assert.equal(user.code, 0, user.stderr);
   assert.notEqual(user.stdout.trim().split('\n')[0], '0');

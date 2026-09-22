@@ -71,7 +71,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 桌面以独立的普通用户 `sakura-desktop` 运行，文件保存在 `/home/sakura-desktop`；原有 SSH 终端继续使用 root。桌面使用 noVNC，经已有鉴权的 WebSocket 和 SSH 隧道连接客户机回环地址，无需添加 VNC 端口转发。图形组件保存在该实例的增量磁盘中，可随离线快照恢复；恢复安装前的快照后，需要重新安装。
 
-提供 Alpine / Debian / Ubuntu 的 KDE Plasma / X11 软件渲染桌面，以及文本剪贴板互通和可选中文输入法。桌面标签的「外观与布局」支持分辨率、缩放、主题、壁纸、强调色、面板位置、自动隐藏和动画偏好，配置写入实例并在重启后恢复。仍不包含 GPU/3D 加速、声音转发和 WSLg 的单应用窗口集成。TCG 下桌面响应较慢，建议使用可用的硬件加速。Alpine 客户机诊断命令：`rc-service sakura-desktop status`；Debian / Ubuntu 使用 `systemctl status sakura-desktop`，日志：`/var/log/sakura-desktop.log`。安装中断后如提示锁仍被占用，请等待原安装结束或重启实例后重试。
+提供 Alpine / Debian / Ubuntu 的 KDE Plasma 软件渲染桌面；Alpine 在 TigerVNC 的 X11 画布中运行嵌套 KWin/Wayland，Debian / Ubuntu 使用发行版可用的 Plasma 会话入口。桌面支持文本剪贴板互通和可选中文输入法；「外观与布局」支持分辨率、缩放、主题、壁纸、强调色、面板位置、自动隐藏和动画偏好，配置写入实例并在重启后恢复。仍不包含 GPU/3D 加速、声音转发和 WSLg 的单应用窗口集成。TCG 下桌面响应较慢，建议使用可用的硬件加速。Alpine 客户机诊断命令：`rc-service sakura-desktop status`；Debian / Ubuntu 使用 `systemctl status sakura-desktop`，日志：`/var/log/sakura-desktop.log`。安装中断后如提示锁仍被占用，请等待原安装结束或重启实例后重试。
 
 已修复并发连接时短暂拒绝连接导致的直接失败，并加入桌面自动重连、显式网卡 MSI-X 配置。此前本机 WHPX 曾出现 SSH 与桌面同时长时间失联，本轮未复现该现象，仍不能认定其根因已解决；详细验证与限制见 [图形桌面验证记录](docs/linux-desktop.md)。
 
