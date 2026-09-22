@@ -63,6 +63,7 @@ export class Machines extends EventEmitter {
   live = new Map<string, Live>();
   logs = new Map<string, string>();
   private locks = new Set<string>();
+  private startAttempts = new Map<string, number[]>();
   private operations = new Set<Promise<void>>();
   private closeTask?: Promise<void>;
   closing = false;
@@ -150,6 +151,18 @@ export class Machines extends EventEmitter {
       diskBytes: disk?.size || 0,
     };
   }
+  commandline(id: string) {
+    const vm = this.get(id);
+    return {
+      name: `sakura-${vm.name}`,
+      machine: 'q35',
+      memoryMiB: vm.memoryMiB,
+      cpus: vm.cpus,
+      accelerator: vm.accelerator,
+      disk: join(vmDir(id), 'disk.qcow2'),
+      forwards: vm.forwards,
+    };
+  }
   async list() {
     return Promise.all([...this.records.keys()].map((id) => this.view(id)));
   }
@@ -227,6 +240,12 @@ export class Machines extends EventEmitter {
       this.locked(id, async () => {
         const vm = this.get(id);
         if (this.live.has(id)) return this.view(id);
+        const now = Date.now();
+        const attempts = (this.startAttempts.get(id) || []).filter((at) => now - at < 5 * 60_000);
+        if (attempts.length >= 5)
+          throw new AppError('该发行版在 5 分钟内连续启动失败，请检查启动日志后再试', 409);
+        attempts.push(now);
+        this.startAttempts.set(id, attempts);
         if (this.live.size >= 4) throw new AppError('轻量模式最多同时运行 4 个发行版', 409);
         for (const otherId of this.live.keys())
           for (const p of this.get(otherId).forwards)
@@ -396,6 +415,7 @@ export class Machines extends EventEmitter {
         }
         if (this.live.get(id) === live && live.status === 'starting') {
           live.status = 'running';
+          this.startAttempts.delete(id);
           this.emit('change');
         }
         return;
@@ -412,7 +432,8 @@ export class Machines extends EventEmitter {
   }
   async connect(id: string, timeout = 10000, signal?: AbortSignal) {
     const live = this.live.get(id);
-    if (!live || live.status === 'stopping') throw new AppError('请先启动该发行版', 409);
+    if (!live || live.status === 'stopping' || live.status === 'paused')
+      throw new AppError(live?.status === 'paused' ? '发行版已暂停，请先恢复' : '请先启动该发行版', 409);
     const deadline = performance.now() + timeout;
     const key = await readFile(join(vmDir(id), 'id_rsa'));
     for (let attempt = 0; ; attempt++) {
@@ -703,11 +724,35 @@ export class Machines extends EventEmitter {
   async stop(id: string, force = false) {
     return this.locked(id, async () => this.stopInternal(id, force));
   }
+  async suspend(id: string) {
+    return this.locked(id, async () => {
+      const live = this.live.get(id);
+      if (!live || live.status !== 'running') throw new AppError('只有运行中的发行版可以暂停', 409);
+      await qmp(live.qmpPort, 'stop');
+      live.status = 'paused';
+      this.emit('change');
+      return this.view(id);
+    });
+  }
+  async resume(id: string) {
+    return this.locked(id, async () => {
+      const live = this.live.get(id);
+      if (!live || live.status !== 'paused') throw new AppError('只有已暂停的发行版可以恢复', 409);
+      await qmp(live.qmpPort, 'cont');
+      live.status = 'running';
+      this.emit('change');
+      return this.view(id);
+    });
+  }
   private async stopInternal(id: string, force: boolean) {
     this.get(id);
     const live = this.live.get(id);
     if (!live) return this.view(id);
     live.bootAbort.abort();
+    if (!force && live.status === 'paused') {
+      await qmp(live.qmpPort, 'cont').catch(() => {});
+      live.status = 'running';
+    }
     if (!force && live.status === 'running') await this.exec(id, 'sync; poweroff', 5000).catch(() => {});
     if (this.live.get(id) !== live) return this.view(id);
     live.status = 'stopping';

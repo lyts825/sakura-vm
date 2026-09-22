@@ -990,6 +990,10 @@ main {
   color: var(--green);
   background: var(--green-soft);
 }
+.badge.paused {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
 .badge.starting,
 .badge.stopping {
   color: var(--warning);

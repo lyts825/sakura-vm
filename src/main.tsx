@@ -131,12 +131,13 @@ const bytes = (n: number) =>
 const memory = (n: number) => (n >= 1024 ? `${Number((n / 1024).toFixed(1))} GiB` : `${n} MiB`);
 const states = {
   running: '运行中',
+  paused: '已暂停',
   stopped: '已停止',
   starting: '启动中',
   stopping: '停止中',
   error: '需要检查',
 };
-const active = (vm: VMView) => vm.poweredOn || ['running', 'starting', 'stopping'].includes(vm.status);
+const active = (vm: VMView) => vm.poweredOn || ['running', 'paused', 'starting', 'stopping'].includes(vm.status);
 function Alpine({ small = false }: { small?: boolean }) {
   return (
     <span className={`alpine-mark ${small ? 'small' : ''}`}>
@@ -265,7 +266,7 @@ function App() {
     }
   });
   const [focused, setFocused] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'stopped'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
   const searchRef = useRef<HTMLInputElement>(null);
   const machineRef = useRef<HTMLElement>(null);
   const vm = vms.find((v) => v.id === selected);
@@ -388,6 +389,10 @@ function App() {
     vm && run(() => api(`/vms/${vm.id}/start`, 'POST'), '正在启动 Linux，终端将在就绪后连接');
   const stop = () =>
     vm && run(() => api(`/vms/${vm.id}/stop`, 'POST', { force: false }), '发行版已停止，磁盘数据已保留');
+  const suspend = () =>
+    vm && run(() => api(`/vms/${vm.id}/suspend`, 'POST'), '发行版已暂停，可随时恢复');
+  const resume = () =>
+    vm && run(() => api(`/vms/${vm.id}/resume`, 'POST'), '发行版已恢复');
   const running = vms.filter((v) => v.status === 'running').length;
   const visibleVms = vms
     .filter(
@@ -670,6 +675,7 @@ function App() {
                       [
                         { id: 'all', label: '全部', count: vms.length },
                         { id: 'running', label: '运行中', count: running },
+                        { id: 'paused', label: '已暂停', count: vms.filter((v) => v.status === 'paused').length },
                         {
                           id: 'stopped',
                           label: '已停止',
@@ -804,7 +810,21 @@ function App() {
                           </div>
                         </div>
                         <div className="machine-actions">
-                          {active(vm) ? (
+                          {vm.status === 'running' ? (
+                            <>
+                              <button className="secondary compact" disabled={busy} onClick={suspend}>暂停</button>
+                              <button className="secondary compact" disabled={busy} onClick={stop}>
+                                <Square size={13} />停止
+                              </button>
+                            </>
+                          ) : vm.status === 'paused' ? (
+                            <>
+                              <button className="primary compact" disabled={busy} onClick={resume}>恢复</button>
+                              <button className="secondary compact" disabled={busy} onClick={stop}>
+                                <Square size={13} />停止
+                              </button>
+                            </>
+                          ) : active(vm) ? (
                             <button
                               className="secondary compact"
                               disabled={busy || vm.status === 'stopping'}

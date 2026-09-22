@@ -13,7 +13,7 @@ async function main() {
       '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
     );
     console.log(
-      'Sakura — local Linux workspaces\n\n  list\n  images\n  image <alpine|debian|ubuntu>\n  create <name> [alpine|debian|ubuntu] [none|node|python|rust]\n  start <name>\n  stop <name>\n  shell <name>\n  exec <name> -- <command> [args...]\n  metrics <name>\n  clone <name> <new-name>\n  export <name> <file.sakura>\n  import <new-name> <file.sakura>\n  snapshots <name>\n  snapshot <name> <label>\n  project <name> <setup|start|stop|configure> [project.json]\n  sync <name> <both|push|pull|configure> [sync.json]\n\nStart the service with npm start first.',
+      'Sakura — local Linux workspaces\n\n  list\n  images\n  image <alpine|debian|ubuntu>\n  create <name> [alpine|debian|ubuntu] [none|node|python|rust]\n  start <name>\n  stop <name>\n  suspend <name>\n  resume <name>\n  extended <name> [view|check|operation]\n  shell <name>\n  exec <name> -- <command> [args...]\n  metrics <name>\n  clone <name> <new-name>\n  export <name> <file.sakura>\n  import <new-name> <file.sakura>\n  snapshots <name>\n  snapshot <name> <label>\n  project <name> <setup|start|stop|configure> [project.json]\n  sync <name> <both|push|pull|configure> [sync.json]\n\nStart the service with npm start first.',
     );
     console.log(
       '\nWorkspace management:\n  tasks\n  task <id> <cancel|retry>\n  storage\n  batch <start|stop> <name...>\n  organize <name> <organization.json>\n  diagnostics <name> [run]\n  resize <name> <GiB|finish>\n  backups <name>\n  backup <name> [run|verify|restore|delete] [backup-id] [new-name]\n  backup <name> configure <policy.json>\n  ide <name> [configure]\n  recipe <name> [read|write|apply] [sakura.json]\n  from-recipe <new-name> <sakura.json>\n  sync-preview <name>\n  sync-apply <name> <decisions.json>\n  project <name> <start|stop> [service-name]',
@@ -129,6 +129,9 @@ async function main() {
       ![
         'start',
         'stop',
+        'suspend',
+        'resume',
+        'extended',
         'shell',
         'exec',
         'metrics',
@@ -297,6 +300,19 @@ async function main() {
       console.log(await api(`/vms/${vm.id}/compact`, 'POST', {}));
       return;
     }
+    if (action === 'extended') {
+      const kind = args[0] || 'view';
+      if (kind === 'catalog') console.log(JSON.stringify(await api('/extended-features'), null, 2));
+      else if (kind === 'view') console.log(JSON.stringify(await api(`/vms/${vm.id}/extended-features`), null, 2));
+      else if (kind === 'check') {
+        if (!args[1]) throw new Error('Usage: extended <name> check <feature-id>');
+        console.log(await api(`/vms/${vm.id}/extended-features`, 'POST', { action: 'check', featureId: args[1] }));
+      } else if (kind === 'operation') {
+        if (!args[1]) throw new Error('Usage: extended <name> operation <operation.json>');
+        console.log(await api(`/vms/${vm.id}/extended-features`, 'POST', { action: 'operation', ...JSON.parse(await readFile(args[1], 'utf8')) }));
+      } else throw new Error('Unknown extended action');
+      return;
+    }
     if (action === 'sync-preview') {
       console.log(JSON.stringify(await api(`/vms/${vm.id}/sync-preview`, 'POST', {}), null, 2));
       return;
@@ -363,6 +379,11 @@ async function main() {
     if (action === 'stop') {
       await api(`/vms/${vm.id}/stop`, 'POST', { force: false });
       console.log(`${vm.name} stopped`);
+      return;
+    }
+    if (action === 'suspend' || action === 'resume') {
+      await api(`/vms/${vm.id}/${action}`, 'POST');
+      console.log(`${vm.name} ${action === 'suspend' ? 'suspended' : 'resumed'}`);
       return;
     }
     if (vm.status !== 'running') {

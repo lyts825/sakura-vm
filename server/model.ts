@@ -39,7 +39,7 @@ export const createSchema = z
       ctx.addIssue({ code: 'custom', message: '主机端口不能重复', path: ['forwards'] });
   });
 export type VMConfig = z.infer<typeof createSchema>;
-export type VMStatus = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
+export type VMStatus = 'stopped' | 'starting' | 'running' | 'paused' | 'stopping' | 'error';
 export type DesktopView = {
   status: 'unavailable' | 'not-installed' | 'installing' | 'starting' | 'stopped' | 'ready' | 'error';
   log: string;

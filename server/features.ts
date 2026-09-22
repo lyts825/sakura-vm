@@ -31,6 +31,7 @@ import { Pipelines } from './pipelines.ts';
 import { RuntimeVersions } from './runtime-versions.ts';
 import { CodeIntelligence } from './code-intelligence.ts';
 import { FeatureSuite } from './feature-suite.ts';
+import { ExtendedFeatures } from './extended-features.ts';
 
 export class Features {
   files: Files;
@@ -58,6 +59,7 @@ export class Features {
   runtimes: RuntimeVersions;
   intelligence: CodeIntelligence;
   suite: FeatureSuite;
+  extended: ExtendedFeatures;
   private mutations = 0;
   private importing = false;
   private closed = false;
@@ -92,6 +94,7 @@ export class Features {
     this.runtimes = new RuntimeVersions(machines, this.workspaces);
     this.intelligence = new CodeIntelligence(machines, this.workspaces);
     this.suite = new FeatureSuite(machines, this.workspaces);
+    this.extended = new ExtendedFeatures(machines, this.workspaces);
   }
   private jobStores() {
     return [
@@ -112,6 +115,7 @@ export class Features {
       this.pipelines.jobs,
       this.runtimes.jobs,
       this.suite.jobs,
+      this.extended.jobs,
     ];
   }
   async close() {
@@ -137,6 +141,7 @@ export class Features {
         this.pipelines.close(),
         this.runtimes.close(),
         this.suite.close(),
+        this.extended.close(),
         Promise.allSettled([...this.active.values()]),
       ]).then(() => {});
     }
@@ -194,6 +199,7 @@ export class Features {
           'runtimes',
           'code-diagnostics',
           'advanced',
+          'extended-features',
           'projects',
         ]);
         return vm && scoped.has(url.pathname.split('/').filter(Boolean)[3]) && /^[0-9a-f-]{36}$/i.test(vm)
@@ -317,6 +323,10 @@ export class Features {
     }
     if (parts[1] === 'feature-suite' && parts.length === 2 && req.method === 'GET') {
       send(await this.suite.catalog());
+      return true;
+    }
+    if (parts[1] === 'extended-features' && parts.length === 2 && req.method === 'GET') {
+      send(await this.extended.catalog());
       return true;
     }
     if (parts[1] === 'migration' && parts.length === 2) {
@@ -599,6 +609,16 @@ export class Features {
       }
       if (req.method === 'POST') {
         send(await this.suite.action(id, await body(req), signal), 202);
+        return true;
+      }
+    }
+    if (action === 'extended-features') {
+      if (req.method === 'GET') {
+        send(await this.extended.view(id));
+        return true;
+      }
+      if (req.method === 'POST') {
+        send(await this.extended.action(id, await body(req), signal), 202);
         return true;
       }
     }

@@ -172,6 +172,11 @@
   gap: 8px 16px;
   padding-top: 10px;
 }
+.extended-catalog {
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 4px;
+}
 .catalog-item {
   display: flex;
   align-items: flex-start;

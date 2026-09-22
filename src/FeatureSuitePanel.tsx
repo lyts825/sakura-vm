@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Activity, Bell, CheckCircle2, Compass, HardDrive, Package, Play, Search, ShieldCheck, Wifi } from 'lucide-react';
 import type { VMView } from '../server/model';
 import type { FeatureCatalogItem, Schedule, AlertConfig, ResourcePreset, ResourcePresetId } from '../server/feature-suite';
+import type { ExtendedFeature } from '../server/extended-features';
 import type { JobView } from '../server/jobs';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
 
@@ -31,6 +32,12 @@ type SuiteView = {
   features: FeatureCatalogItem[];
 };
 type Props = { request: Request; vms: VMView[]; selected: string; onSelected: (id: string) => void };
+type ExtendedView = {
+  features: ExtendedFeature[];
+  operations: Array<{ id: string; name: string; feature: string; example: Record<string, unknown>; note: string; writes: boolean }>;
+  settings: Record<string, { enabled: boolean; updatedAt: string }>;
+  jobs: JobView[];
+};
 
 const fallbackPresets: Record<ResourcePresetId, ResourcePreset> = {
   light: { name: '轻量命令行', memoryMiB: 512, cpus: 1 },
@@ -45,6 +52,7 @@ const bytes = (value: number) =>
 export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props) {
   const active = vms.find((vm) => vm.id === selected) || vms[0];
   const remote = useRemote<SuiteView>(request, active ? `/vms/${active.id}/advanced` : '/feature-suite', !!active, 5000);
+  const extended = useRemote<ExtendedView>(request, active ? `/vms/${active.id}/extended-features` : '/extended-features', !!active, 10000);
   const action = useAction();
   const [schedule, setSchedule] = useState<Schedule>({ enabled: false, idleMinutes: 0, idleAction: 'stop' });
   const [alerts, setAlerts] = useState<AlertConfig>({
@@ -75,6 +83,8 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
   const [databasePassword, setDatabasePassword] = useState('');
   const [diskPath, setDiskPath] = useState('/workspace');
   const [diskEntries, setDiskEntries] = useState<DiskEntry[]>([]);
+  const [extendedResult, setExtendedResult] = useState('');
+  const [extendedOperation, setExtendedOperation] = useState('');
 
   useEffect(() => {
     if (!remote.data) return;
@@ -179,6 +189,16 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
       const result = await request<{ ports: number[] }>(`/vms/${active.id}/advanced`, 'POST', { action: 'discover-ports' });
       setPorts(result.ports);
     });
+  const checkExtended = (featureId: string) => action.run(async () => {
+    const result = await request(`/vms/${active.id}/extended-features`, 'POST', { action: 'check', featureId });
+    setExtendedResult(JSON.stringify(result, null, 2));
+  });
+  const runExtendedOperation = () => action.run(async () => {
+    const item = extended.data?.operations.find((value) => value.id === extendedOperation);
+    if (!item) return;
+    await request(`/vms/${active.id}/extended-features`, 'POST', { action: 'operation', operation: item.id, parameters: item.example });
+    extended.reload();
+  }, '扩展操作已提交，请在任务中心查看结果');
 
   return (
     <div className="content-panel feature-panel management-page">
@@ -194,7 +214,7 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
           </select>
         </label>
       </div>
-      <Feedback error={remote.error || action.error} message={action.message} />
+      <Feedback error={remote.error || extended.error || action.error} message={action.message} />
 
       <div className="feature-grid">
         <section className="feature-card">
@@ -265,6 +285,22 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
           <JobLog job={remote.data?.job} />
         </section>
       </div>
+
+      <section className="feature-card">
+        <div className="panel-heading"><h3><Compass size={17} />100 项扩展能力</h3><span className="subtle-note">{extended.data?.features.length || 100} 项 · 可检查前置条件</span></div>
+        <p className="muted">已接入的能力会直接运行检查或任务；需要宿主驱动、外部服务或客户机工具的项目会显示明确依赖。</p>
+        <div className="feature-actions">
+          <select value={extendedOperation} onChange={(event) => setExtendedOperation(event.target.value)} aria-label="扩展工程操作">
+            <option value="">选择工程操作</option>
+            {extended.data?.operations.map((operation) => <option key={operation.id} value={operation.id}>{operation.name}{operation.writes ? ' · 写入' : ''}</option>)}
+          </select>
+          <button className="secondary compact" disabled={action.busy || active.status !== 'running' || !extendedOperation} onClick={runExtendedOperation}>提交操作</button>
+        </div>
+        <div className="feature-catalog extended-catalog">
+          {(extended.data?.features || []).map((feature) => <div className="catalog-item" key={feature.id}><div><b>{feature.name}</b><p>{feature.summary}</p></div><span className={`badge ${feature.state === 'available' ? 'running' : feature.state === 'experimental' ? 'starting' : 'stopped'}`}>{feature.state === 'available' ? '可检查' : feature.state === 'experimental' ? '实验性' : '依赖中'}</span><button className="secondary compact" disabled={action.busy || (feature.state !== 'available' && active.status !== 'running')} onClick={() => checkExtended(feature.id)}>检查</button></div>)}
+        </div>
+        {extendedResult && <pre className="feature-log">{extendedResult}</pre>}
+      </section>
 
       <section className="feature-card">
         <h3><HardDrive size={17} />开发任务</h3>

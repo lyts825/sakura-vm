@@ -82,6 +82,8 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
       }
     }
     if (req.method === 'POST' && route[3] === 'start') return send(res, await machines.start(id));
+    if (req.method === 'POST' && route[3] === 'suspend') return send(res, await machines.suspend(id));
+    if (req.method === 'POST' && route[3] === 'resume') return send(res, await machines.resume(id));
     if (req.method === 'POST' && route[3] === 'stop') {
       const options = z
         .object({ force: z.boolean().default(false) })

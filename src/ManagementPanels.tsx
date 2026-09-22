@@ -200,7 +200,7 @@ function OrganizationCard({
       <p className="subtle-note">
         {vm.cpus} vCPU · {vm.memoryMiB} MiB ·{' '}
         {
-          { running: '运行中', stopped: '已停止', starting: '启动中', stopping: '停止中', error: '需要检查' }[
+          { running: '运行中', paused: '已暂停', stopped: '已停止', starting: '启动中', stopping: '停止中', error: '需要检查' }[
             vm.status
           ]
         }
