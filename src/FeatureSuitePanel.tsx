@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, Bell, CheckCircle2, Compass, HardDrive, Package, Play, Search, ShieldCheck, Wifi } from 'lucide-react';
 import type { VMView } from '../server/model';
-import type { FeatureCatalogItem, Schedule, AlertConfig } from '../server/feature-suite';
+import type { FeatureCatalogItem, Schedule, AlertConfig, ResourcePreset, ResourcePresetId } from '../server/feature-suite';
 import type { JobView } from '../server/jobs';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
 
@@ -20,14 +20,24 @@ type FeatureEvent = {
   createdAt: string;
   acknowledged: boolean;
 };
+type DiskEntry = { path: string; bytes: number };
 type SuiteView = {
   settings: { schedule: Schedule; alerts: AlertConfig; updatedAt: string };
   history: MetricPoint[];
   events: FeatureEvent[];
   job: JobView | null;
+  devJob: JobView | null;
+  presets: Record<ResourcePresetId, ResourcePreset>;
   features: FeatureCatalogItem[];
 };
 type Props = { request: Request; vms: VMView[]; selected: string; onSelected: (id: string) => void };
+
+const fallbackPresets: Record<ResourcePresetId, ResourcePreset> = {
+  light: { name: '轻量命令行', memoryMiB: 512, cpus: 1 },
+  development: { name: '日常开发', memoryMiB: 2048, cpus: 2 },
+  build: { name: '编译构建', memoryMiB: 4096, cpus: 4 },
+  desktop: { name: '图形桌面', memoryMiB: 2048, cpus: 2 },
+};
 
 const bytes = (value: number) =>
   value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GiB` : `${(value / 1024 ** 2).toFixed(0)} MiB`;
@@ -54,14 +64,29 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
   const [networkResult, setNetworkResult] = useState('');
   const [securityResult, setSecurityResult] = useState<{ findings: string[]; output: string } | null>(null);
   const [ports, setPorts] = useState<number[]>([]);
+  const [memoryTarget, setMemoryTarget] = useState(active.memoryTargetMiB || active.memoryMiB);
+  const [preset, setPreset] = useState<ResourcePresetId>('development');
+  const [devOperation, setDevOperation] = useState<'test' | 'test-discover' | 'lint' | 'format' | 'dependencies' | 'lock' | 'lock-check' | 'install-locked' | 'worktree-list' | 'worktree-add' | 'worktree-remove' | 'database'>('test');
+  const [worktreeBranch, setWorktreeBranch] = useState('');
+  const [worktreePath, setWorktreePath] = useState('');
+  const [database, setDatabase] = useState<'postgres' | 'redis' | 'mysql'>('postgres');
+  const [databaseName, setDatabaseName] = useState('');
+  const [databasePort, setDatabasePort] = useState('');
+  const [databasePassword, setDatabasePassword] = useState('');
+  const [diskPath, setDiskPath] = useState('/workspace');
+  const [diskEntries, setDiskEntries] = useState<DiskEntry[]>([]);
 
   useEffect(() => {
     if (!remote.data) return;
     setSchedule(remote.data.settings.schedule);
     setAlerts(remote.data.settings.alerts);
   }, [remote.data]);
+  useEffect(() => {
+    setMemoryTarget(active.memoryTargetMiB || active.memoryMiB);
+  }, [active.id, active.memoryMiB, active.memoryTargetMiB]);
 
   const latest = remote.data?.history.at(-1);
+  const presets = remote.data?.presets || fallbackPresets;
   const groups = useMemo(() => {
     const map = new Map<string, FeatureCatalogItem[]>();
     for (const feature of remote.data?.features || []) map.set(feature.category, [...(map.get(feature.category) || []), feature]);
@@ -86,6 +111,14 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
     await request(`/vms/${active.id}/advanced`, 'POST', { action: 'sample' });
     remote.reload();
   });
+  const applyMemoryTarget = () => action.run(async () => {
+    await request(`/vms/${active.id}/advanced`, 'POST', { action: 'memory-target', memoryMiB: memoryTarget });
+    await remote.reload();
+  }, '动态内存目标已更新');
+  const applyPreset = () => action.run(async () => {
+    await request(`/vms/${active.id}/advanced`, 'POST', { action: 'apply-preset', preset });
+    await remote.reload();
+  }, '资源预设已应用，请重新启动发行版');
   const runSearch = () =>
     action.run(async () => {
       const result = await request<{ matches: string[] }>(`/vms/${active.id}/advanced`, 'POST', {
@@ -96,6 +129,14 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
       });
       setSearchResult(result.matches);
     });
+  const runDiskAnalysis = () =>
+    action.run(async () => {
+      const result = await request<{ entries: DiskEntry[] }>(`/vms/${active.id}/advanced`, 'POST', {
+        action: 'disk-analysis',
+        path: diskPath,
+      });
+      setDiskEntries(result.entries);
+    });
   const runPackage = () =>
     action.run(async () => {
       await request(`/vms/${active.id}/advanced`, 'POST', {
@@ -104,6 +145,20 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
         ...(packageName.trim() ? { name: packageName.trim() } : {}),
       });
     }, '软件包任务已提交，请在任务中心查看日志');
+  const runDev = () =>
+    action.run(async () => {
+      await request(`/vms/${active.id}/advanced`, 'POST', {
+        action: 'dev',
+        operation: devOperation,
+        ...(worktreeBranch ? { branch: worktreeBranch } : {}),
+        ...(worktreePath ? { path: worktreePath } : {}),
+        ...(devOperation === 'database' ? { database } : {}),
+        ...(devOperation === 'database' && databaseName.trim() ? { name: databaseName.trim() } : {}),
+        ...(devOperation === 'database' && databasePort ? { port: Number(databasePort) } : {}),
+        ...(devOperation === 'database' ? { password: databasePassword } : {}),
+      });
+      remote.reload();
+    }, '开发任务已提交，请查看日志');
   const runNetwork = () =>
     action.run(async () => {
       const result = await request<{ output: string }>(`/vms/${active.id}/advanced`, 'POST', {
@@ -157,6 +212,15 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
               <p className="subtle-note">最近采样：{new Date(latest.sampledAt).toLocaleString()} · 磁盘 {bytes(latest.diskUsed)} / {bytes(latest.diskTotal)}</p>
             </>
           ) : <p className="muted">启动发行版后点击“立即采样”，或等待自动采样。</p>}
+          <label>动态内存目标：{memoryTarget} MiB<input type="range" min={256} max={active.memoryMiB} step={128} value={memoryTarget} disabled={active.status !== 'running'} onChange={(event) => setMemoryTarget(Number(event.target.value))} /></label>
+          <button className="secondary compact" disabled={action.busy || active.status !== 'running'} onClick={applyMemoryTarget}>应用内存目标</button>
+          <div className="feature-actions">
+            <label>资源预设<select value={preset} onChange={(event) => setPreset(event.target.value as ResourcePresetId)}>
+              {Object.entries(presets).map(([id, value]) => <option key={id} value={id}>{value.name} · {value.memoryMiB} MiB · {value.cpus} vCPU</option>)}
+            </select></label>
+            <button className="secondary compact" disabled={action.busy || active.status !== 'stopped'} onClick={applyPreset}>应用预设</button>
+          </div>
+          {active.status !== 'stopped' && <p className="subtle-note">资源预设需要先停止发行版；动态内存目标可在运行中调整。</p>}
         </section>
         <section className="feature-card">
           <h3><Bell size={17} />自动化与告警</h3>
@@ -187,6 +251,11 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
           {searchResult.length > 0 && <pre className="feature-log search-results">{searchResult.join('\n')}</pre>}
         </section>
         <section className="feature-card">
+          <h3><HardDrive size={17} />磁盘分析</h3>
+          <div className="feature-actions"><input value={diskPath} onChange={(event) => setDiskPath(event.target.value)} aria-label="磁盘分析目录" /><button className="secondary compact" disabled={action.busy || active.status !== 'running'} onClick={runDiskAnalysis}>分析目录</button></div>
+          {diskEntries.length > 0 && <div className="disk-analysis-list">{diskEntries.slice(0, 12).map((entry) => <div key={entry.path}><span>{entry.path}</span><b>{bytes(entry.bytes)}</b></div>)}</div>}
+        </section>
+        <section className="feature-card">
           <h3><Package size={17} />软件包</h3>
           <div className="feature-grid compact-grid">
             <label>操作<select value={packageOperation} onChange={(event) => setPackageOperation(event.target.value as typeof packageOperation)}><option value="list">列出已安装</option><option value="search">搜索</option><option value="install">安装</option><option value="remove">卸载</option><option value="update">更新索引</option></select></label>
@@ -196,6 +265,17 @@ export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props)
           <JobLog job={remote.data?.job} />
         </section>
       </div>
+
+      <section className="feature-card">
+        <h3><HardDrive size={17} />开发任务</h3>
+        <div className="feature-grid compact-grid">
+          <label>操作<select value={devOperation} onChange={(event) => setDevOperation(event.target.value as typeof devOperation)}><option value="test">运行测试</option><option value="test-discover">发现测试文件</option><option value="lint">代码检查</option><option value="format">格式化</option><option value="dependencies">依赖报告</option><option value="lock">生成环境锁文件</option><option value="lock-check">校验环境锁文件</option><option value="install-locked">按锁文件安装依赖</option><option value="worktree-list">列出 Git Worktree</option><option value="worktree-add">创建 Git Worktree</option><option value="worktree-remove">删除 Git Worktree</option><option value="database">创建数据库容器</option></select></label>
+          {(devOperation === 'worktree-add' || devOperation === 'worktree-remove') && <><label>分支<input value={worktreeBranch} onChange={(event) => setWorktreeBranch(event.target.value)} placeholder="feature/example" /></label><label>工作树路径<input value={worktreePath} onChange={(event) => setWorktreePath(event.target.value)} placeholder=".worktrees/example" /></label></>}
+          {devOperation === 'database' && <><label>数据库<select value={database} onChange={(event) => setDatabase(event.target.value as typeof database)}><option value="postgres">PostgreSQL</option><option value="redis">Redis</option><option value="mysql">MySQL</option></select></label><label>容器名称<input value={databaseName} onChange={(event) => setDatabaseName(event.target.value)} placeholder="可选，如 sakura-postgres" /></label><label>客户机端口<input type="number" min={1024} max={65535} value={databasePort} onChange={(event) => setDatabasePort(event.target.value)} placeholder="默认数据库端口" /></label><label>数据库密码<input type="password" minLength={12} maxLength={128} value={databasePassword} onChange={(event) => setDatabasePassword(event.target.value)} placeholder="至少 12 个可打印字符" /></label></>}
+        </div>
+        <button className="secondary compact" disabled={action.busy || active.status !== 'running' || (devOperation === 'database' && databasePassword.length < 12)} onClick={runDev}>提交开发任务</button>
+        <JobLog job={remote.data?.devJob} />
+      </section>
 
       <div className="feature-grid">
         <section className="feature-card">

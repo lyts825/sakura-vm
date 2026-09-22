@@ -7,6 +7,9 @@ import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
 import { quote } from './files.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { distroInfo } from './images.ts';
+import { envPrefix } from './project-services.ts';
+import { privateLog, redactValues } from './secrets.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -19,7 +22,7 @@ export const featureCatalog = [
   ['multi-arch', '多架构实例', '实例与资源', 'P2', '为 ARM64 等架构提供 QEMU 兼容运行入口。'],
   ['power-schedules', '开机与关机计划', '实例与资源', 'P0', '按本机时间自动启动或停止实例。'],
   ['idle-shutdown', '空闲自动暂停或关机', '实例与资源', 'P1', '连续空闲时自动释放实例资源。'],
-  ['dynamic-memory', '动态内存回收', '实例与资源', 'P1', '按客户机压力动态调整内存配额。'],
+  ['dynamic-memory', '动态内存目标', '实例与资源', 'P1', '通过 virtio-balloon 在运行中调整客户机内存目标。'],
   ['online-snapshots', '一致性在线快照', '实例与资源', 'P2', '通过文件系统冻结创建一致性快照。'],
   ['snapshot-diff', '快照时间线与差异', '实例与资源', 'P1', '比较快照的文件和磁盘变化。'],
   ['disk-maintenance', 'TRIM、压缩与稀疏回收', '实例与资源', 'P1', '计划执行客户机 TRIM 和磁盘整理。'],
@@ -34,7 +37,7 @@ export const featureCatalog = [
   ['binary-preview', '二进制文件预览', '文件与数据', 'P0', '预览图片、PDF、CSV 和常见归档文件。'],
   ['language-services', 'LSP 语言服务', '开发工作台', 'P1', '提供补全、跳转、重命名和诊断。'],
   ['debug-adapter', 'DAP 调试器', '开发工作台', 'P2', '提供断点、单步、调用栈和变量查看。'],
-  ['test-explorer', '测试资源管理器', '开发工作台', 'P1', '发现测试、运行测试并查看覆盖率。'],
+  ['test-explorer', '测试资源管理器', '开发工作台', 'P1', '发现测试文件、运行测试并查看任务日志。'],
   ['format-lint', '格式化与代码检查', '开发工作台', 'P0', '统一执行格式化、Lint 和自动修复。'],
   ['git-worktrees', 'Git Worktree 管理', '开发工作台', 'P0', '创建和切换多个分支工作树。'],
   ['merge-editor', '三方合并编辑器', '开发工作台', 'P0', '图形化解决 Git 和同步冲突。'],
@@ -66,6 +69,15 @@ export const featureCatalog = [
   ['plugin-api', '插件 API 与自动化触发器', '运维与安全', 'P1', '开放事件、定时任务、Webhook 和扩展面板。'],
 ] as const;
 
+export const resourcePresets = {
+  light: { name: '轻量命令行', memoryMiB: 512, cpus: 1 },
+  development: { name: '日常开发', memoryMiB: 2048, cpus: 2 },
+  build: { name: '编译构建', memoryMiB: 4096, cpus: 4 },
+  desktop: { name: '图形桌面', memoryMiB: 2048, cpus: 2 },
+} as const;
+export type ResourcePresetId = keyof typeof resourcePresets;
+export type ResourcePreset = (typeof resourcePresets)[ResourcePresetId];
+
 export type FeatureId = (typeof featureCatalog)[number][0];
 export type FeatureCatalogItem = {
   id: FeatureId;
@@ -87,14 +99,21 @@ export const featureCatalogView = (): FeatureCatalogItem[] =>
       [
         'power-schedules',
         'idle-shutdown',
+        'dynamic-memory',
+        'file-drop',
         'workspace-search',
         'disk-analyzer',
         'binary-preview',
+        'three-way-sync',
+        'test-explorer',
         'format-lint',
         'git-worktrees',
         'merge-editor',
+        'dependency-report',
         'package-manager',
+        'reproducible-env',
         'browser-preview',
+        'database-presets',
         'port-discovery',
         'network-diagnostics',
         'service-dashboard',
@@ -102,9 +121,11 @@ export const featureCatalogView = (): FeatureCatalogItem[] =>
         'metrics-history',
         'alerts',
         'security-scan',
+        'resource-presets',
+        'network-profiles',
       ].includes(id)
         ? 'available'
-        : ['network-profiles', 'test-explorer', 'language-services', 'dev-container', 'database-presets'].includes(id)
+        : ['language-services', 'dev-container'].includes(id)
           ? 'experimental'
           : 'planned',
   }));
@@ -175,6 +196,19 @@ const hostTarget = z
 
 export type FeatureAction =
   | { action: 'sample' }
+  | { action: 'memory-target'; memoryMiB: number }
+  | { action: 'apply-preset'; preset: ResourcePresetId }
+  | { action: 'disk-analysis'; path?: string }
+  | {
+      action: 'dev';
+      operation: 'test' | 'test-discover' | 'lint' | 'format' | 'dependencies' | 'lock' | 'lock-check' | 'install-locked' | 'worktree-list' | 'worktree-add' | 'worktree-remove' | 'database';
+      branch?: string;
+      path?: string;
+      database?: 'postgres' | 'redis' | 'mysql';
+      name?: string;
+      port?: number;
+      password?: string;
+    }
   | { action: 'search'; query: string; path?: string; content?: boolean }
   | { action: 'package'; operation: 'list' | 'search' | 'install' | 'remove' | 'update'; name?: string }
   | { action: 'network-test'; target: string }
@@ -230,7 +264,7 @@ export class FeatureSuite {
     return value;
   }
   async catalog() {
-    return { features: featureCatalogView(), generatedAt: new Date().toISOString() };
+    return { features: featureCatalogView(), presets: resourcePresets, generatedAt: new Date().toISOString() };
   }
   async view(id: string, limit = 120) {
     this.machines.get(id);
@@ -242,6 +276,8 @@ export class FeatureSuite {
       history: (state.history[id] || []).slice(-size),
       events: state.events.filter((event) => event.vmId === id).slice(-50).reverse(),
       job: this.jobs.view(`${id}:package`),
+      devJob: this.jobs.view(`${id}:dev`),
+      presets: resourcePresets,
       features: featureCatalogView(),
     };
   }
@@ -275,6 +311,147 @@ export class FeatureSuite {
     await this.save(state);
     await this.checkAlerts(id, point, state);
     return point;
+  }
+  async memoryTarget(id: string, memoryMiB: number) {
+    const target = z.number().int().min(256).max(8192).parse(memoryMiB);
+    return this.machines.setMemoryTarget(id, target);
+  }
+  async applyPreset(id: string, preset: ResourcePresetId) {
+    const key = z.enum(['light', 'development', 'build', 'desktop']).parse(preset) as ResourcePresetId;
+    const vm = this.machines.get(id);
+    const target = resourcePresets[key];
+    const distro = distroInfo(vm.distro);
+    const minimumMemory = distro.minimumMemory;
+    if (target.memoryMiB < minimumMemory)
+      throw new AppError(`${target.name} 预设的内存低于 ${distro.name} 的最低要求（${minimumMemory} MiB）`);
+    return this.machines.update(id, {
+      name: vm.name,
+      memoryMiB: target.memoryMiB,
+      cpus: target.cpus,
+      diskGiB: vm.diskGiB,
+      accelerator: vm.accelerator,
+      distro: vm.distro,
+      template: vm.template,
+      forwards: vm.forwards,
+    });
+  }
+  async diskAnalysis(id: string, input: { path?: string }, signal?: AbortSignal) {
+    this.machines.get(id);
+    const path = guestPath(input.path || '/workspace');
+    const result = await this.machines.exec(
+      id,
+      `set +e\ndu -x -k -d 2 ${quote(path)} 2>/dev/null | sort -nr | head -n 100`,
+      30_000,
+      signal,
+    );
+    if (result.code !== 0 && !result.stdout.trim()) throw new AppError(result.stderr.trim() || '磁盘分析失败', 502);
+    const entries = result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.match(/^(\d+)\s+(.+)$/))
+      .filter((match): match is RegExpMatchArray => !!match)
+      .map((match) => ({ path: match[2], bytes: Number(match[1]) * 1024 }))
+      .filter((entry) => Number.isSafeInteger(entry.bytes) && entry.bytes >= 0);
+    return { path, entries, checkedAt: new Date().toISOString() };
+  }
+  dev(
+    id: string,
+    input: Omit<Extract<FeatureAction, { action: 'dev' }>, 'action'>,
+    signal?: AbortSignal,
+  ) {
+    const operation = z
+      .enum(['test', 'test-discover', 'lint', 'format', 'dependencies', 'lock', 'lock-check', 'install-locked', 'worktree-list', 'worktree-add', 'worktree-remove', 'database'])
+      .parse(input.operation);
+    const branch = input.branch?.trim();
+    const path = input.path?.trim();
+    const database = input.database;
+    if (operation === 'worktree-add' && (!branch || !/^(?!-)[A-Za-z0-9_./-]{1,128}$/.test(branch)))
+      throw new AppError('分支名称无效');
+    if (['worktree-add', 'worktree-remove'].includes(operation)) {
+      if (!path || path.startsWith('/') || path.split('/').includes('..') || !/^[A-Za-z0-9_./-]{1,160}$/.test(path))
+        throw new AppError('工作树路径必须是仓库内的相对路径');
+    }
+    if (operation === 'database') {
+      if (!database) throw new AppError('请选择数据库类型');
+      if (!input.password || input.password.length < 12 || input.password.length > 128 || !/^[\x21-\x7e]+$/.test(input.password))
+        throw new AppError('数据库密码需要 12–128 个不含空格的可打印 ASCII 字符');
+      if (input.name !== undefined && !/^[a-z][a-z0-9-]{0,31}$/.test(input.name.trim()))
+        throw new AppError('数据库容器名称无效');
+      if (input.port !== undefined && (!Number.isInteger(input.port) || input.port < 1024 || input.port > 65535))
+        throw new AppError('数据库端口需要在 1024–65535 之间');
+    }
+    const vm = this.machines.get(id);
+    return this.jobs.start(
+      `${id}:dev`,
+      async (log, taskSignal) => {
+        const combined = taskSignal && signal ? AbortSignal.any([taskSignal, signal]) : taskSignal;
+        const project = await this.workspaces.resolvedConfig(id);
+        const directory = quote(project.directory);
+        const worktreePath = path ? quote(`${project.directory}/${path}`) : '';
+        const environment = envPrefix(project.environment);
+        let command: string;
+        switch (operation) {
+          case 'test':
+            command = `cd ${directory}\nif [ -f package.json ]; then npm test; elif [ -f pyproject.toml ] || [ -f pytest.ini ]; then python3 -m pytest; elif [ -f Cargo.toml ]; then cargo test; elif [ -f go.mod ]; then go test ./...; else echo '没有识别到测试项目'; fi`;
+            break;
+          case 'test-discover':
+            command = `cd ${directory}\nfind . -type d \( -name .git -o -name node_modules -o -name .venv -o -name target -o -name .worktrees \) -prune -o -type f \( -name '*.test.*' -o -name '*.spec.*' -o -name 'test_*.py' -o -name '*_test.py' -o -name '*_test.go' \) -print | head -n 300`;
+            break;
+          case 'lint':
+            command = `cd ${directory}\nif [ -f package.json ] && (npm run | grep -qE '\\blint\\b'); then npm run lint; elif command -v ruff >/dev/null; then ruff check .; elif [ -f Cargo.toml ]; then cargo clippy --all-targets --all-features -- -D warnings; elif command -v gofmt >/dev/null && [ -f go.mod ]; then test -z "$(gofmt -l .)"; else echo '没有识别到代码检查工具'; fi`;
+            break;
+          case 'format':
+            command = `cd ${directory}\nif command -v prettier >/dev/null; then prettier --write .; elif command -v ruff >/dev/null; then ruff format .; elif [ -f Cargo.toml ] && command -v cargo >/dev/null; then cargo fmt --all; elif [ -f go.mod ] && command -v gofmt >/dev/null; then find . -name '*.go' -print0 | xargs -0 -r gofmt -w; else echo '没有找到已安装的格式化工具'; fi`;
+            break;
+          case 'dependencies':
+            command = `cd ${directory}\nset +e\nprintf 'NODE\\n'; test ! -f package.json || npm outdated --json\nprintf 'PYTHON\\n'; command -v pip3 >/dev/null && pip3 list --outdated --format=json\nprintf 'RUST\\n'; test ! -f Cargo.toml || cargo tree --depth 1`;
+            break;
+          case 'lock':
+            command = `cd ${directory}\nmkdir -p .sakura\nprintf '%s\\n' '# Generated by Sakura' "project=${project.directory}" "node=$(node --version 2>/dev/null || true)" "python=$(python3 --version 2>/dev/null || true)" "rust=$(rustc --version 2>/dev/null || true)" > .sakura/environment.lock\ncat .sakura/environment.lock`;
+            break;
+          case 'lock-check':
+            command = `cd ${directory}\ntest -f .sakura/environment.lock || { echo '环境锁文件不存在，请先生成锁文件' >&2; exit 1; }\nsakura_lock=$(mktemp)\ntrap 'rm -f "$sakura_lock"' EXIT\nprintf '%s\\n' '# Generated by Sakura' "project=${project.directory}" "node=$(node --version 2>/dev/null || true)" "python=$(python3 --version 2>/dev/null || true)" "rust=$(rustc --version 2>/dev/null || true)" > "$sakura_lock"\ndiff -u .sakura/environment.lock "$sakura_lock"`;
+            break;
+          case 'install-locked':
+            command = `cd ${directory}\nif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then npm ci; elif [ -f yarn.lock ] && command -v yarn >/dev/null; then yarn install --frozen-lockfile; elif [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null; then pnpm install --frozen-lockfile; elif [ -f requirements.txt ]; then python3 -m pip install -r requirements.txt; elif [ -f Cargo.lock ]; then cargo fetch --locked; elif [ -f go.sum ]; then go mod download; else echo '没有识别到受支持的锁文件' >&2; exit 1; fi`;
+            break;
+          case 'worktree-list':
+            command = `cd ${directory}\ngit worktree list --porcelain`;
+            break;
+          case 'worktree-add':
+            command = `cd ${directory}\ngit worktree add -- ${worktreePath} ${quote(branch!)}`;
+            break;
+          case 'worktree-remove':
+            command = `cd ${directory}\ngit worktree remove --force -- ${worktreePath}`;
+            break;
+          case 'database': {
+            const image = database === 'postgres' ? 'postgres:16-alpine' : database === 'redis' ? 'redis:7-alpine' : 'mysql:8';
+            const container = input.name?.trim() || `sakura-${database}`;
+            const settings = database === 'postgres'
+              ? [`POSTGRES_USER=sakura`, `POSTGRES_DB=sakura`, `POSTGRES_PASSWORD=${input.password}`]
+              : database === 'mysql'
+                ? [`MYSQL_DATABASE=sakura`, `MYSQL_USER=sakura`, `MYSQL_PASSWORD=${input.password}`, `MYSQL_ROOT_PASSWORD=${input.password}`]
+                : [];
+            const guestPort = database === 'postgres' ? 5432 : database === 'mysql' ? 3306 : 6379;
+            const publishedPort = input.port || guestPort;
+            const volumePath = database === 'redis' ? '/data' : database === 'postgres' ? '/var/lib/postgresql/data' : '/var/lib/mysql';
+            const imageCommand = database === 'redis' ? ` redis-server --appendonly yes --requirepass ${quote(input.password!)}` : '';
+            command = `if ! command -v docker >/dev/null; then echo '客户机尚未安装 Docker' >&2; exit 1; fi\nif docker container inspect ${quote(container)} >/dev/null 2>&1; then echo '同名数据库容器已存在' >&2; exit 1; fi\ndocker run -d --restart unless-stopped --label sakura.managed=database --name ${quote(container)} --publish ${quote(`127.0.0.1:${publishedPort}:${guestPort}`)} --volume ${quote(`${container}-data:${volumePath}`)} ${settings.map((value) => `--env ${quote(value)}`).join(' ')} ${image}${imageCommand}\nprintf '%s\\n' ${quote(`${container} 已启动 · 客户机 127.0.0.1:${publishedPort} · 数据卷 ${container}-data`)}`;
+            break;
+          }
+        }
+        const secrets = [input.password || '', ...Object.values(project.environment || {})];
+        const output = privateLog(log, secrets);
+        try {
+          const result = await guestTask(this.machines, id, `${environment}\nset -eu\n${command}`, combined, output.write, 600_000);
+          if (result.code !== 0) throw new AppError(redactValues(result.stderr.trim(), secrets) || `开发操作失败（${result.code}）`);
+        } catch (error) {
+          throw new AppError(redactValues((error as Error).message, secrets));
+        } finally {
+          output.flush();
+        }
+      },
+      { title: `开发工具 · ${operation}`, vmId: id, projectId: this.workspaces.projects.current(id), action: `dev:${operation}` },
+    );
   }
   private async checkAlerts(id: string, point: MetricPoint, state: FeatureState) {
     const settings = this.settingsFor(state, id).alerts;
@@ -414,6 +591,10 @@ export class FeatureSuite {
   async action(id: string, input: unknown, signal?: AbortSignal) {
     const value = z.discriminatedUnion('action', [
       z.object({ action: z.literal('sample') }).strict(),
+      z.object({ action: z.literal('memory-target'), memoryMiB: z.number().int().min(256).max(8192) }).strict(),
+      z.object({ action: z.literal('apply-preset'), preset: z.enum(['light', 'development', 'build', 'desktop']) }).strict(),
+      z.object({ action: z.literal('disk-analysis'), path: z.string().optional() }).strict(),
+      z.object({ action: z.literal('dev'), operation: z.enum(['test', 'test-discover', 'lint', 'format', 'dependencies', 'lock', 'lock-check', 'install-locked', 'worktree-list', 'worktree-add', 'worktree-remove', 'database']), branch: z.string().optional(), path: z.string().optional(), database: z.enum(['postgres', 'redis', 'mysql']).optional(), name: z.string().optional(), port: z.number().int().min(1024).max(65535).optional(), password: z.string().optional() }).strict(),
       z.object({ action: z.literal('search'), query: z.string(), path: z.string().optional(), content: z.boolean().optional() }).strict(),
       z.object({ action: z.literal('package'), operation: z.enum(['list', 'search', 'install', 'remove', 'update']), name: z.string().optional() }).strict(),
       z.object({ action: z.literal('network-test'), target: z.string() }).strict(),
@@ -422,6 +603,10 @@ export class FeatureSuite {
       z.object({ action: z.literal('acknowledge'), id: z.string().min(1).max(160) }).strict(),
     ]).parse(input) as FeatureAction;
     if (value.action === 'sample') return this.sample(id);
+    if (value.action === 'memory-target') return this.memoryTarget(id, value.memoryMiB);
+    if (value.action === 'apply-preset') return this.applyPreset(id, value.preset);
+    if (value.action === 'disk-analysis') return this.diskAnalysis(id, value, signal);
+    if (value.action === 'dev') return this.dev(id, value, signal);
     if (value.action === 'search') return this.search(id, value, signal);
     if (value.action === 'package') return this.package(id, value, signal);
     if (value.action === 'network-test') return this.networkTest(id, value.target, signal);

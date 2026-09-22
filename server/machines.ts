@@ -54,6 +54,7 @@ type Live = {
   bootDone?: Promise<void>;
   serial?: Socket;
   clients: Set<Client>;
+  memoryTargetMiB?: number;
   error?: string;
 };
 export class Machines extends EventEmitter {
@@ -145,6 +146,7 @@ export class Machines extends EventEmitter {
       poweredOn: this.live.has(id),
       startedAt: this.live.get(id)?.startedAt,
       activeAccelerator: this.live.get(id)?.accelerator,
+      memoryTargetMiB: this.live.get(id)?.memoryTargetMiB,
       diskBytes: disk?.size || 0,
     };
   }
@@ -302,6 +304,8 @@ export class Machines extends EventEmitter {
           'virtio-net-pci,netdev=sakura-net,vectors=4',
           '-device',
           'virtio-rng-pci',
+          '-device',
+          'virtio-balloon-pci',
           '-qmp',
           `tcp:127.0.0.1:${qmpPort},server=on,wait=off`,
           '-serial',
@@ -962,6 +966,19 @@ export class Machines extends EventEmitter {
         return this.view(id);
       }),
     );
+  }
+  async setMemoryTarget(id: string, memoryMiB: number) {
+    return this.locked(id, async () => {
+      const vm = this.get(id),
+        live = this.live.get(id);
+      if (!live || live.status !== 'running') throw new AppError('请先启动发行版', 409);
+      if (!Number.isInteger(memoryMiB) || memoryMiB < 256 || memoryMiB > vm.memoryMiB)
+        throw new AppError(`动态内存目标必须在 256 MiB 到 ${vm.memoryMiB} MiB 之间`);
+      await qmp(live.qmpPort, 'balloon', { value: memoryMiB * 1024 * 1024 });
+      live.memoryTargetMiB = memoryMiB;
+      this.emit('change');
+      return this.view(id);
+    });
   }
   // Publish a validated standalone disk and rotate its controller key at first boot.
   async adopt(

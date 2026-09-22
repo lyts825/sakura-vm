@@ -98,6 +98,7 @@ for (const distro of ['alpine', 'debian', 'ubuntu'] as const) {
     };
     await machines.start(id);
     const args = commands[0];
+    assert.ok(args.includes('virtio-balloon-pci'));
     const seed = args.find((arg) => arg.includes('seed.iso'))!;
     assert.ok(seed);
     if (distro === 'alpine') {

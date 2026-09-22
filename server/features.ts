@@ -283,6 +283,13 @@ export class Features {
             const [operationValue, ...nameParts] = job.action.slice(8).split(':');
             const operation = z.enum(['list', 'search', 'install', 'remove', 'update']).parse(operationValue);
             send(this.suite.package(id, { operation, name: nameParts.join(':') || undefined }));
+          } else if (store === this.suite.jobs && job.action?.startsWith('dev:')) {
+            const operation = z
+              .enum(['test', 'test-discover', 'lint', 'format', 'dependencies', 'lock', 'lock-check', 'install-locked', 'worktree-list', 'worktree-add', 'worktree-remove', 'database'])
+              .parse(job.action.slice(4));
+            if (operation === 'worktree-add' || operation === 'worktree-remove' || operation === 'database')
+              throw new AppError('此开发任务包含参数，请回到能力中心重新执行');
+            send(this.suite.dev(id, { operation }));
           } else if (store === this.jobs) send(this.installIme(id));
           else throw new AppError('请回到原功能页面重新执行');
           return true;

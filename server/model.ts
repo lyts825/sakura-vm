@@ -70,6 +70,7 @@ export type VMRecord = VMConfig & {
 };
 export type VMView = VMRecord & {
   activeAccelerator?: 'tcg' | 'whpx';
+  memoryTargetMiB?: number;
   status: VMStatus;
   poweredOn: boolean;
   startedAt?: string;

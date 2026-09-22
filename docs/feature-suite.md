@@ -7,11 +7,16 @@
 - 计划启动、计划停止和空闲停止；
 - CPU、内存、磁盘历史采样与阈值告警；
 - Linux 工作区内容搜索；
+- 按目录查看客户机磁盘占用；
 - apk / apt 软件包查询、安装、卸载和索引更新；
 - 监听端口发现；
 - DNS、HTTPS 和监听端口诊断；
 - SSH 设置、待更新软件包和可写系统文件的只读安全检查；
-- 任务中心中的软件包任务日志、取消和重试。
+- 任务中心中的软件包任务日志、取消和重试；
+- 运行中的 virtio-balloon 动态内存目标；
+- 停止实例后应用轻量命令行、日常开发、编译构建和图形桌面资源预设；
+- 测试发现与执行、Lint、格式化、依赖报告、环境锁文件校验、按锁文件安装依赖和 Git Worktree 开发任务；
+- 通过 Docker 创建带持久化数据卷和本机回环端口的 PostgreSQL、Redis 或 MySQL 开发服务（密码不会写入任务日志）。
 
 服务端接口为：
 
@@ -22,6 +27,6 @@ PUT  /api/vms/:id/advanced
 POST /api/vms/:id/advanced
 ```
 
-`POST` 的动作包括 `sample`、`search`、`package`、`network-test`、`discover-ports`、`security-scan` 和 `acknowledge`。所有客户机命令都经过参数校验和单引号数据引用；软件包安装、卸载和更新走任务中心，不会占用 HTTP 请求直到命令结束。
+`POST` 的动作包括 `sample`、`memory-target`、`apply-preset`、`disk-analysis`、`dev`、`search`、`package`、`network-test`、`discover-ports`、`security-scan` 和 `acknowledge`。所有客户机命令都经过参数校验和单引号数据引用；软件包与开发任务走任务中心，不会占用 HTTP 请求直到命令结束。资源预设只修改实例配置，不会在运行中的实例上强制关机。
 
 能力中心同时展示 50 项能力路线图。已有模块（项目服务、网络配置、容器、运行时、Git、同步、快照、维护和桌面）会在路线图中标记为可用或实验性；需要宿主机驱动、QEMU 设备或多用户认证的能力保留为规划状态，不会伪装成已经启用的功能。
