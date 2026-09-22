@@ -36,6 +36,7 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  MoreHorizontal,
   GitBranch,
   Wrench,
   Sparkles,
@@ -99,6 +100,23 @@ const sessionTabs = new Set([
   'maintenance',
   'config',
 ]);
+const workspaceTabs = [
+  { id: 'terminal', label: '终端', icon: TerminalSquare },
+  { id: 'desktop', label: '桌面', icon: Monitor },
+  { id: 'files', label: '文件', icon: Folder },
+  { id: 'project', label: '项目', icon: Boxes },
+  { id: 'git', label: 'Git', icon: GitBranch },
+  { id: 'development', label: '开发', icon: Wrench },
+  { id: 'containers', label: '容器', icon: Boxes },
+  { id: 'metrics', label: '资源', icon: Cpu },
+  { id: 'services', label: '服务', icon: Network },
+  { id: 'sync', label: '同步', icon: RefreshCw },
+  { id: 'snapshots', label: '快照', icon: Camera },
+  { id: 'maintenance', label: '维护', icon: ShieldCheck },
+  { id: 'config', label: '配置', icon: Settings2 },
+] as const;
+const primaryWorkspaceTabs = workspaceTabs.slice(0, 4);
+const advancedWorkspaceTabs = workspaceTabs.slice(4);
 function readSessionState(): SessionState {
   try {
     const saved = JSON.parse(localStorage.getItem('sakura-session') || '{}') as Partial<SessionState>;
@@ -137,7 +155,8 @@ const states = {
   stopping: '停止中',
   error: '需要检查',
 };
-const active = (vm: VMView) => vm.poweredOn || ['running', 'paused', 'starting', 'stopping'].includes(vm.status);
+const active = (vm: VMView) =>
+  vm.poweredOn || ['running', 'paused', 'starting', 'stopping'].includes(vm.status);
 function Alpine({ small = false }: { small?: boolean }) {
   return (
     <span className={`alpine-mark ${small ? 'small' : ''}`}>
@@ -269,6 +288,8 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
   const searchRef = useRef<HTMLInputElement>(null);
   const machineRef = useRef<HTMLElement>(null);
+  const tabMoreRef = useRef<HTMLDivElement>(null);
+  const [moreTabsOpen, setMoreTabsOpen] = useState(false);
   const vm = vms.find((v) => v.id === selected);
   const focusMode = focused && page === 'workspace' && !!vm;
   useEffect(() => {
@@ -281,6 +302,24 @@ function App() {
   useEffect(() => {
     if (focusMode) machineRef.current?.scrollIntoView({ block: 'start' });
   }, [focusMode]);
+  useEffect(() => {
+    if (!moreTabsOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (event.target instanceof Node && !tabMoreRef.current?.contains(event.target)) setMoreTabsOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMoreTabsOpen(false);
+        tabMoreRef.current?.querySelector<HTMLButtonElement>('.tabs-more-trigger')?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [moreTabsOpen]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document
@@ -389,10 +428,8 @@ function App() {
     vm && run(() => api(`/vms/${vm.id}/start`, 'POST'), '正在启动 Linux，终端将在就绪后连接');
   const stop = () =>
     vm && run(() => api(`/vms/${vm.id}/stop`, 'POST', { force: false }), '发行版已停止，磁盘数据已保留');
-  const suspend = () =>
-    vm && run(() => api(`/vms/${vm.id}/suspend`, 'POST'), '发行版已暂停，可随时恢复');
-  const resume = () =>
-    vm && run(() => api(`/vms/${vm.id}/resume`, 'POST'), '发行版已恢复');
+  const suspend = () => vm && run(() => api(`/vms/${vm.id}/suspend`, 'POST'), '发行版已暂停，可随时恢复');
+  const resume = () => vm && run(() => api(`/vms/${vm.id}/resume`, 'POST'), '发行版已恢复');
   const running = vms.filter((v) => v.status === 'running').length;
   const visibleVms = vms
     .filter(
@@ -406,6 +443,23 @@ function App() {
     .sort((a, b) => Number(!!b.organization?.favorite) - Number(!!a.organization?.favorite));
   const allocated = vms.filter(active).reduce((sum, v) => sum + v.memoryMiB, 0);
   const engineState = offline ? 'error' : system?.nativeHost ? 'running' : 'starting';
+  const focusWorkspaceTab = (id: string) => {
+    setMoreTabsOpen(false);
+    void setTab(id);
+    requestAnimationFrame(() => {
+      tabMoreRef.current?.querySelector<HTMLButtonElement>(`[data-tab="${id}"]`)?.focus();
+    });
+  };
+  const openAdvancedTabs = (focusFirst = false) => {
+    setMoreTabsOpen(true);
+    if (focusFirst) {
+      requestAnimationFrame(() => {
+        tabMoreRef.current
+          ?.querySelector<HTMLButtonElement>(`[data-tab="${advancedWorkspaceTabs[0].id}"]`)
+          ?.focus();
+      });
+    }
+  };
   return (
     <div className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
       <aside className="sidebar">
@@ -675,7 +729,11 @@ function App() {
                       [
                         { id: 'all', label: '全部', count: vms.length },
                         { id: 'running', label: '运行中', count: running },
-                        { id: 'paused', label: '已暂停', count: vms.filter((v) => v.status === 'paused').length },
+                        {
+                          id: 'paused',
+                          label: '已暂停',
+                          count: vms.filter((v) => v.status === 'paused').length,
+                        },
                         {
                           id: 'stopped',
                           label: '已停止',
@@ -812,16 +870,22 @@ function App() {
                         <div className="machine-actions">
                           {vm.status === 'running' ? (
                             <>
-                              <button className="secondary compact" disabled={busy} onClick={suspend}>暂停</button>
+                              <button className="secondary compact" disabled={busy} onClick={suspend}>
+                                暂停
+                              </button>
                               <button className="secondary compact" disabled={busy} onClick={stop}>
-                                <Square size={13} />停止
+                                <Square size={13} />
+                                停止
                               </button>
                             </>
                           ) : vm.status === 'paused' ? (
                             <>
-                              <button className="primary compact" disabled={busy} onClick={resume}>恢复</button>
+                              <button className="primary compact" disabled={busy} onClick={resume}>
+                                恢复
+                              </button>
                               <button className="secondary compact" disabled={busy} onClick={stop}>
-                                <Square size={13} />停止
+                                <Square size={13} />
+                                停止
                               </button>
                             </>
                           ) : active(vm) ? (
@@ -858,74 +922,138 @@ function App() {
                           </button>
                         </div>
                       </div>
-                      <div className="tabs" role="tablist" aria-label="发行版功能">
-                        {[
-                          { id: 'terminal', label: '终端', icon: TerminalSquare },
-                          { id: 'desktop', label: '桌面', icon: Monitor },
-                          { id: 'files', label: '文件', icon: Folder },
-                          { id: 'project', label: '项目', icon: Boxes },
-                          { id: 'git', label: 'Git', icon: GitBranch },
-                          { id: 'development', label: '开发', icon: Wrench },
-                          { id: 'containers', label: '容器', icon: Boxes },
-                          { id: 'metrics', label: '资源', icon: Cpu },
-                          { id: 'services', label: '服务', icon: Network },
-                          { id: 'sync', label: '同步', icon: RefreshCw },
-                          { id: 'snapshots', label: '快照', icon: Camera },
-                          { id: 'maintenance', label: '维护', icon: ShieldCheck },
-                          { id: 'config', label: '配置', icon: Settings2 },
-                        ].map((t) => (
+                      <div className="tab-navigation" ref={tabMoreRef}>
+                        <div className="tabs" role="tablist" aria-label="发行版常用功能">
+                          {primaryWorkspaceTabs.map((t) => (
+                            <button
+                              role="tab"
+                              id={`tab-${t.id}`}
+                              data-tab={t.id}
+                              aria-controls="machine-content"
+                              tabIndex={tab === t.id ? 0 : -1}
+                              aria-selected={tab === t.id}
+                              key={t.id}
+                              className={tab === t.id ? 'active' : ''}
+                              onClick={() => {
+                                setMoreTabsOpen(false);
+                                void setTab(t.id);
+                              }}
+                              onKeyDown={(event) => {
+                                const ids = [...primaryWorkspaceTabs.map((item) => item.id), 'more'];
+                                const index = ids.indexOf(t.id);
+                                const next =
+                                  event.key === 'ArrowRight'
+                                    ? ids[(index + 1) % ids.length]
+                                    : event.key === 'ArrowLeft'
+                                      ? ids[(index + ids.length - 1) % ids.length]
+                                      : event.key === 'Home'
+                                        ? ids[0]
+                                        : event.key === 'End'
+                                          ? ids[ids.length - 1]
+                                          : null;
+                                if (!next) return;
+                                event.preventDefault();
+                                if (next === 'more') {
+                                  openAdvancedTabs();
+                                  tabMoreRef.current
+                                    ?.querySelector<HTMLButtonElement>('.tabs-more-trigger')
+                                    ?.focus();
+                                } else {
+                                  focusWorkspaceTab(next);
+                                }
+                              }}
+                            >
+                              <t.icon size={15} />
+                              {t.label}
+                            </button>
+                          ))}
                           <button
-                            role="tab"
-                            id={`tab-${t.id}`}
-                            data-tab={t.id}
-                            aria-controls="machine-content"
-                            tabIndex={tab === t.id ? 0 : -1}
-                            aria-selected={tab === t.id}
-                            key={t.id}
-                            className={tab === t.id ? 'active' : ''}
-                            onClick={() => setTab(t.id)}
+                            type="button"
+                            id="tab-more"
+                            className={`tabs-more-trigger ${advancedWorkspaceTabs.some((item) => item.id === tab) ? 'active' : ''}`}
+                            aria-expanded={moreTabsOpen}
+                            aria-haspopup="menu"
+                            onClick={() => setMoreTabsOpen((open) => !open)}
                             onKeyDown={(event) => {
-                              const ids = [
-                                'terminal',
-                                'desktop',
-                                'files',
-                                'project',
-                                'git',
-                                'development',
-                                'containers',
-                                'metrics',
-                                'services',
-                                'sync',
-                                'snapshots',
-                                'maintenance',
-                                'config',
-                              ];
-                              const index = ids.indexOf(t.id);
-                              const next =
-                                event.key === 'ArrowRight'
-                                  ? ids[(index + 1) % ids.length]
-                                  : event.key === 'ArrowLeft'
-                                    ? ids[(index + ids.length - 1) % ids.length]
-                                    : event.key === 'Home'
-                                      ? ids[0]
-                                      : event.key === 'End'
-                                        ? ids[ids.length - 1]
-                                        : null;
-                              if (!next) return;
-                              event.preventDefault();
-                              setTab(next);
-                              event.currentTarget.parentElement
-                                ?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)
-                                ?.focus();
+                              if (event.key === 'ArrowLeft') {
+                                event.preventDefault();
+                                focusWorkspaceTab(primaryWorkspaceTabs[primaryWorkspaceTabs.length - 1].id);
+                              }
+                              if (event.key === 'ArrowRight' || event.key === 'Home') {
+                                event.preventDefault();
+                                focusWorkspaceTab(primaryWorkspaceTabs[0].id);
+                              }
+                              if (event.key === 'ArrowDown') {
+                                event.preventDefault();
+                                openAdvancedTabs(true);
+                              }
                             }}
                           >
-                            <t.icon size={15} />
-                            {t.label}
-                            {t.id === 'snapshots' && vm.snapshots.length > 0 && (
-                              <small>{vm.snapshots.length}</small>
-                            )}
+                            <MoreHorizontal size={15} />
+                            <span>更多</span>
+                            <ChevronRight
+                              size={13}
+                              className={moreTabsOpen ? 'tabs-more-chevron open' : 'tabs-more-chevron'}
+                            />
                           </button>
-                        ))}
+                        </div>
+                        <div
+                          className="tabs-menu"
+                          role="menu"
+                          aria-label="更多发行版功能"
+                          hidden={!moreTabsOpen}
+                        >
+                          <div className="tabs-menu-label">高级工具</div>
+                          {advancedWorkspaceTabs.map((t) => (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              id={`tab-${t.id}`}
+                              data-tab={t.id}
+                              key={t.id}
+                              className={tab === t.id ? 'selected' : ''}
+                              onClick={() => {
+                                setMoreTabsOpen(false);
+                                void setTab(t.id);
+                              }}
+                              onKeyDown={(event) => {
+                                const ids = advancedWorkspaceTabs.map((item) => item.id);
+                                const index = ids.indexOf(t.id);
+                                const next =
+                                  event.key === 'ArrowDown' || event.key === 'ArrowRight'
+                                    ? ids[(index + 1) % ids.length]
+                                    : event.key === 'ArrowUp' || event.key === 'ArrowLeft'
+                                      ? ids[(index + ids.length - 1) % ids.length]
+                                      : event.key === 'Home'
+                                        ? ids[0]
+                                        : event.key === 'End'
+                                          ? ids[ids.length - 1]
+                                          : null;
+                                if (event.key === 'Escape') {
+                                  event.preventDefault();
+                                  setMoreTabsOpen(false);
+                                  tabMoreRef.current
+                                    ?.querySelector<HTMLButtonElement>('.tabs-more-trigger')
+                                    ?.focus();
+                                  return;
+                                }
+                                if (!next) return;
+                                event.preventDefault();
+                                void setTab(next);
+                                tabMoreRef.current
+                                  ?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)
+                                  ?.focus();
+                              }}
+                            >
+                              <t.icon size={15} />
+                              <span>{t.label}</span>
+                              {t.id === 'snapshots' && vm.snapshots.length > 0 && (
+                                <small>{vm.snapshots.length}</small>
+                              )}
+                              {tab === t.id && <Check size={14} className="tabs-menu-check" />}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       {vm.lastError && <div className="machine-error">{vm.lastError}</div>}
                       <div

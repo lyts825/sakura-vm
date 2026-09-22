@@ -1123,16 +1123,20 @@ main {
   gap: 5px;
   flex-shrink: 0;
 }
+.tab-navigation {
+  min-width: 0;
+  margin: 0 16px;
+}
 .tabs {
   display: flex;
+  min-width: 0;
   gap: 4px;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 4px;
-  margin: 0 16px;
   background: var(--surface-soft);
 }
-.tabs button {
+.tabs > button {
   flex: 1;
   position: relative;
   font-size: 12px;
@@ -1142,15 +1146,34 @@ main {
   gap: 7px;
   color: var(--muted);
 }
-.tabs button:hover {
+.tabs > button:hover {
   color: var(--accent);
   background: var(--surface);
 }
-.tabs button.active {
+.tabs > button.active {
   color: var(--accent);
   font-weight: 600;
   background: var(--surface);
   box-shadow: 0 1px 4px #57344c12;
+}
+.tabs .tabs-more-trigger {
+  flex: 0 0 auto;
+  min-width: 72px;
+  color: var(--muted);
+}
+.tabs .tabs-more-trigger.active,
+.tabs .tabs-more-trigger[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--surface);
+}
+.tabs-more-trigger span {
+  white-space: nowrap;
+}
+.tabs-more-chevron {
+  transition: transform 160ms ease;
+}
+.tabs-more-chevron.open {
+  transform: rotate(90deg);
 }
 .tabs small {
   font-size: 10px;
@@ -1158,6 +1181,72 @@ main {
   padding: 2px 5px;
   color: var(--accent);
   background: var(--accent-soft);
+}
+.tabs-menu {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 8px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  animation: tabs-menu-in 140ms ease-out;
+}
+.tabs-menu[hidden] {
+  display: none;
+}
+.tabs-menu-label {
+  grid-column: 1 / -1;
+  padding: 4px 8px 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.tabs-menu button {
+  position: relative;
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 34px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+.tabs-menu button:hover,
+.tabs-menu button.selected {
+  color: var(--accent);
+  background: var(--surface);
+}
+.tabs-menu button.selected {
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.tabs-menu button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tabs-menu button small {
+  margin-left: auto;
+}
+.tabs-menu-check {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+@keyframes tabs-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .machine-content {
   display: flex;
@@ -2625,14 +2714,20 @@ label input {
   .machine-actions {
     margin-left: auto;
   }
-  .tabs {
+  .tab-navigation {
     margin: 0 9px;
+  }
+  .tabs {
+    margin: 0;
     padding: 3px;
     gap: 3px;
   }
-  .tabs button {
+  .tabs > button {
     font-size: 12px;
     gap: 6px;
+  }
+  .tabs-menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .terminal-wrap {
     margin: 12px 9px 0;
