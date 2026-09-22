@@ -535,7 +535,15 @@ function App() {
         <main>
           {page === 'tasks' && <TasksPanel request={api} vms={vms} />}
           {page === 'library' && <LibraryPanel request={api} vms={vms} refresh={refresh} />}
-          {page === 'features' && <FeatureSuitePanel request={api} vms={vms} selected={selected} onSelected={(id) => void setSelected(id)} />}
+          {page === 'features' && (
+            <FeatureSuitePanel
+              key={selected || vms[0]?.id || 'no-instance'}
+              request={api}
+              vms={vms}
+              selected={selected}
+              onSelected={(id) => void setSelected(id)}
+            />
+          )}
           {offline && (
             <div className="error-banner">
               连接出现问题：{offline}

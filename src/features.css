@@ -370,27 +370,6 @@
   background: var(--terminal-chrome);
   font-size: 11px;
 }
-.desktop-clipboard {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 14px;
-  background: var(--surface-soft);
-}
-.desktop-clipboard textarea {
-  flex: 1;
-  min-width: 140px;
-  height: 56px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
-  padding: 7px;
-}
-.desktop-clipboard button {
-  font-size: 12px;
-}
 .feature-panel details > summary {
   cursor: pointer;
   color: var(--accent);
