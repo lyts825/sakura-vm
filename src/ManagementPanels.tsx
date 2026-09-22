@@ -1,5 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Download, Play, Save, Square, Star, Plus, Trash2, ExternalLink } from 'lucide-react';
+import {
+  Boxes,
+  ClipboardList,
+  Download,
+  Inbox,
+  Play,
+  Save,
+  Square,
+  Star,
+  Plus,
+  Trash2,
+  ExternalLink,
+} from 'lucide-react';
 import type { VMView } from '../server/model';
 import type { JobView } from '../server/jobs';
 import type { Project } from '../server/workspaces';
@@ -46,13 +58,27 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
     remote.data?.jobs.filter(
       (job) => (filter === 'all' || job.status === filter) && (machine === 'all' || job.vmId === machine),
     ) || [];
+  const taskStatus = remote.error
+    ? { tone: 'error', label: '暂时离线' }
+    : remote.data
+      ? { tone: 'running', label: '实时更新' }
+      : { tone: 'starting', label: '正在连接' };
   return (
     <div className="content-panel feature-panel management-page">
-      <div>
-        <h2>任务中心</h2>
-        <p className="muted">查看执行阶段、日志与历史。服务重启后，未完成的任务会标记为中断。</p>
+      <div className="management-header">
+        <div>
+          <div className="eyebrow">
+            <ClipboardList size={14} /> BACKGROUND WORK
+          </div>
+          <h2>任务中心</h2>
+          <p className="muted">查看执行阶段、日志与历史。服务重启后，未完成的任务会标记为中断。</p>
+        </div>
+        <span className="page-status">
+          <span className={`tiny-dot ${taskStatus.tone}`} />
+          {taskStatus.label}
+        </span>
       </div>
-      <div className="feature-grid">
+      <div className="feature-grid management-filters">
         <label>
           任务状态
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
@@ -88,7 +114,22 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
           ))}
         </details>
       ) : null}
-      {!jobs.length && <p className="muted">暂无任务记录。</p>}
+      {remote.data && !jobs.length && (
+        <div className="management-empty">
+          <span className="empty-icon">
+            <Inbox size={24} />
+          </span>
+          <h3>暂无任务记录</h3>
+          <p>启动、同步或维护实例后，后台任务会显示在这里。</p>
+        </div>
+      )}
+      {!remote.data && !remote.error && (
+        <div className="management-loading" aria-label="正在读取任务">
+          <span />
+          <span />
+          <span />
+        </div>
+      )}
       {jobs.map((job) => (
         <details className="feature-card" key={job.id} open={job.status === 'running'}>
           <summary>
@@ -200,9 +241,14 @@ function OrganizationCard({
       <p className="subtle-note">
         {vm.cpus} vCPU · {vm.memoryMiB} MiB ·{' '}
         {
-          { running: '运行中', paused: '已暂停', stopped: '已停止', starting: '启动中', stopping: '停止中', error: '需要检查' }[
-            vm.status
-          ]
+          {
+            running: '运行中',
+            paused: '已暂停',
+            stopped: '已停止',
+            starting: '启动中',
+            stopping: '停止中',
+            error: '需要检查',
+          }[vm.status]
         }
       </p>
       <label>
@@ -253,8 +299,20 @@ export function LibraryPanel({
     });
   return (
     <div className="content-panel feature-panel management-page">
-      <h2>实例管理</h2>
-      <div className="feature-grid">
+      <div className="management-header">
+        <div>
+          <div className="eyebrow">
+            <Boxes size={14} /> WORKSPACE ORGANIZER
+          </div>
+          <h2>实例管理</h2>
+          <p className="muted">用分组、标签和批量操作整理本机 Linux 工作空间。</p>
+        </div>
+        <span className="page-status">
+          <span className="tiny-dot" />
+          {vms.length} 个实例
+        </span>
+      </div>
+      <div className="feature-grid management-filters">
         <label>
           搜索名称或标签
           <input value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -314,7 +372,7 @@ export function LibraryPanel({
         ))}
         <Feedback error={action.error} />
       </div>
-      <div className="feature-grid">
+      <div className="feature-grid library-grid">
         {visible.map((vm) => (
           <OrganizationCard
             key={vm.id}
@@ -330,6 +388,15 @@ export function LibraryPanel({
           />
         ))}
       </div>
+      {!visible.length && (
+        <div className="management-empty">
+          <span className="empty-icon">
+            <Inbox size={24} />
+          </span>
+          <h3>没有匹配的实例</h3>
+          <p>调整搜索、项目分组或收藏筛选后再试。</p>
+        </div>
+      )}
       <RecipeImporter request={request} refresh={refresh} />
     </div>
   );
