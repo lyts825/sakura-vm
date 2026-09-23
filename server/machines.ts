@@ -15,6 +15,7 @@ import {
   VM_ROOT,
   createSchema,
   checkedId,
+  IMAGE,
   vmDir,
   guestPath,
   organizationSchema,
@@ -234,6 +235,43 @@ export class Machines extends EventEmitter {
           join(dir, 'disk.qcow2'),
           `${vm.diskGiB}G`,
         ]);
+        // The stock Alpine image keeps a ten-second boot menu and makes
+        // chronyd wait for its first fork. Patch those fixed, vendor-owned
+        // defaults in the new overlay before the first boot. The guest still
+        // runs Tiny Cloud normally, so this only removes idle host-side time;
+        // custom images and engines without qemu-io retain the old path.
+        if (
+          this.engine.qemuIoAvailable &&
+          (!vm.distro || vm.distro === 'alpine') &&
+          image.file === IMAGE &&
+          process.env.SAKURA_SKIP_ALPINE_BOOT_PATCH !== '1'
+        ) {
+          const patches = [
+            [102481713, Buffer.from('timeout=10'), Buffer.from('timeout=01')],
+            [102484169, Buffer.from('TIMEOUT 100'), Buffer.from('TIMEOUT 010')],
+            [12077294, Buffer.from('FAST_STARTUP=no\n'), Buffer.from('FAST_STARTUP=yes\n')],
+          ] as const;
+          const verifyArgs = ['-f', 'qcow2'];
+          for (const [offset, expected] of patches)
+            expected.forEach((byte, index) => verifyArgs.push('-c', `read -P ${byte} ${offset + index} 1`));
+          let stockImage = true;
+          try {
+            await this.engine.run('sakura-io', [...verifyArgs, image.file]);
+          } catch {
+            stockImage = false;
+          }
+          // A user may have replaced the pinned image or already applied a
+          // local customization. Never write fixed offsets into that disk.
+          if (stockImage) {
+            const qemuIoArgs = ['-f', 'qcow2'];
+            for (const [offset, _expected, contents] of patches)
+              contents.forEach((byte, index) =>
+                qemuIoArgs.push('-c', `write -P ${byte} ${offset + index} 1`),
+              );
+            qemuIoArgs.push(join(dir, 'disk.qcow2'));
+            await this.engine.run('sakura-io', qemuIoArgs);
+          }
+        }
         this.records.set(vm.id, vm);
         await this.save();
         return this.view(vm.id);
@@ -260,11 +298,7 @@ export class Machines extends EventEmitter {
           for (const p of this.get(otherId).forwards)
             if (vm.forwards.some((n) => n.host === p.host))
               throw new AppError(`端口 ${p.host} 已被另一实例使用`, 409);
-        const [sshPort, qmpPort, serialPort] = await Promise.all([
-          freePort(),
-          freePort(),
-          freePort(),
-        ]);
+        const [sshPort, qmpPort, serialPort] = await Promise.all([freePort(), freePort(), freePort()]);
         const accelerator =
           vm.accelerator === 'auto' ? (this.engine.whpxAvailable ? 'whpx' : 'tcg') : vm.accelerator;
         const live: Live = {

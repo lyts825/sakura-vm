@@ -49,7 +49,9 @@ await npm(['run', 'build:all'], vendor);
 if (
   process.platform === 'win32' &&
   !process.env.SAKURA_QEMU_DIR &&
-  !existsSync('.tools/qemu/qemu-system-x86_64.exe')
+  (!existsSync('.tools/qemu/qemu-system-x86_64.exe') ||
+    !existsSync('.tools/qemu/qemu-img.exe') ||
+    !existsSync('.tools/qemu/qemu-io.exe'))
 ) {
   // Extract portable binaries; no installer, registry changes or administrator privileges.
   if (!existsSync('.tools/7zip/7z.exe')) {
@@ -78,6 +80,7 @@ if (
     '-y',
     'qemu-system-x86_64.exe',
     'qemu-img.exe',
+    'qemu-io.exe',
     '*.dll',
     'share/*',
     'lib/*',

@@ -17,9 +17,11 @@ export async function createRuntime() {
   const binaries = {
     'sakura-qemu': join(qemuDir, `qemu-system-x86_64${suffix}`),
     'sakura-img': join(qemuDir, `qemu-img${suffix}`),
+    'sakura-io': join(qemuDir, `qemu-io${suffix}`),
   };
-  for (const binary of Object.values(binaries))
+  for (const binary of [binaries['sakura-qemu'], binaries['sakura-img']])
     if (!existsSync(binary)) throw new AppError(`缺少 QEMU：${binary}。请运行 npm run setup。`, 503);
+  const qemuIoAvailable = existsSync(binaries['sakura-io']);
   const data = join(DATA, 'posixloom');
   await mkdir(join(data, 'config'), { recursive: true });
   await writeFile(
@@ -45,12 +47,13 @@ export async function createRuntime() {
             adapt: (argv) => ({ argv: [...argv], decisions: [] }),
           });
           for (const [name, executable] of Object.entries(binaries))
-            context.provide(NATIVE_COMMANDS, {
-              name,
-              executable,
-              adapterId: 'sakura-exact-argv',
-              shellEquivalent: true,
-            });
+            if (existsSync(executable))
+              context.provide(NATIVE_COMMANDS, {
+                name,
+                executable,
+                adapterId: 'sakura-exact-argv',
+                shellEquivalent: true,
+              });
         },
       },
     ],
@@ -131,6 +134,6 @@ export async function createRuntime() {
       await probe;
     }
   }
-  return { runtime, service, run, version, whpxAvailable };
+  return { runtime, service, run, version, whpxAvailable, qemuIoAvailable };
 }
 export type Engine = Awaited<ReturnType<typeof createRuntime>>;
