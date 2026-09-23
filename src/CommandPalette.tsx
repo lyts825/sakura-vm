@@ -5,20 +5,31 @@ import type { CommandPreset } from '../server/command-presets';
 import type { ProjectFile } from '../server/project-files';
 import { Feedback, useRemote, type Request } from './FeaturePanels';
 import { PresetRunner } from './DevelopmentPanels';
+import { nextSelection } from './keyboard-navigation';
 
 export type PaletteTarget = { id?: string; page?: string; tab?: string; file?: string };
+export type PaletteAction = {
+  key: string;
+  title: string;
+  detail: string;
+  keywords?: string[];
+  run: () => void;
+  disabled?: boolean;
+};
 export function CommandPalette({
   vms,
   vm,
   request,
   navigate,
   close,
+  actions = [],
 }: {
   vms: VMView[];
   vm?: VMView;
   request: Request;
   navigate: (target: PaletteTarget) => Promise<void>;
   close: () => void;
+  actions?: PaletteAction[];
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     [query, setQuery] = useState(''),
@@ -46,17 +57,23 @@ export function CommandPalette({
     setIndex(0);
     return () => clearTimeout(timer);
   }, [query]);
-  const needle = query.toLocaleLowerCase(),
-    match = (value: string) => value.toLocaleLowerCase().includes(needle);
-  const entries: { key: string; title: string; detail: string; run: () => void }[] = [
-    ...vms
-      .filter((item) => match(item.name))
-      .map((item) => ({
-        key: item.id,
-        title: item.name,
-        detail: '切换实例',
-        run: () => void navigate({ id: item.id, page: 'workspace' }),
-      })),
+  const needle = query.trim().toLocaleLowerCase(),
+    match = (value: string, values: string[] = []) =>
+      [value, ...values].some((item) => item.toLocaleLowerCase().includes(needle));
+  const hasWorkspaceSwitchActions = actions.some((item) => item.key.endsWith(':switch'));
+  const entries: PaletteAction[] = [
+    ...actions.filter((item) => match(item.title, [item.detail, ...(item.keywords || [])])),
+    ...(hasWorkspaceSwitchActions
+      ? []
+      : vms
+          .filter((item) => match(item.name, ['切换', '打开', 'switch', 'open', item.status]))
+          .map((item) => ({
+            key: `switch:${item.id}`,
+            title: `切换到 ${item.name}`,
+            detail: `工作空间 · ${item.status === 'running' ? '运行中' : item.status === 'paused' ? '已暂停' : '已停止'}`,
+            keywords: ['实例', '工作空间', '切换', item.name],
+            run: () => void navigate({ id: item.id, page: 'workspace' }),
+          }))),
     ...[
       ['terminal', '终端'],
       ['files', '文件与全文搜索'],
@@ -67,11 +84,12 @@ export function CommandPalette({
       ['snapshots', '快照与加密备份'],
       ['maintenance', '实例维护'],
     ]
-      .filter(([, label]) => vm && match(label))
+      .filter(([tab, label]) => vm && match(label, ['功能', 'workspace', tab]))
       .map(([tab, title]) => ({
-        key: tab,
+        key: `tab:${tab}`,
         title,
         detail: vm?.name || '',
+        keywords: ['功能', '打开', vm?.name || ''],
         run: () => void navigate({ tab, page: 'workspace' }),
       })),
     ...[
@@ -80,14 +98,21 @@ export function CommandPalette({
       ['images', '镜像与备份导入'],
       ['features', '能力中心与自动化'],
     ]
-      .filter(([, label]) => match(label))
-      .map(([page, title]) => ({ key: page, title, detail: '全局操作', run: () => void navigate({ page }) })),
+      .filter(([page, label]) => match(label, ['全局', '导航', page]))
+      .map(([page, title]) => ({
+        key: `page:${page}`,
+        title,
+        detail: '全局操作',
+        keywords: ['全局', '导航', title],
+        run: () => void navigate({ page }),
+      })),
     ...(commands.data?.presets || [])
       .filter((item) => vm?.status === 'running' && match(item.name))
       .map((item) => ({
-        key: item.id,
+        key: `preset:${item.id}`,
         title: item.name,
         detail: '收藏命令 · 填写参数后执行',
+        keywords: ['命令', '收藏', 'preset', item.name],
         run: () => setPreset(item),
       })),
     ...(search === query.trim() ? files.data?.files || [] : [])
@@ -97,6 +122,7 @@ export function CommandPalette({
         key: 'file:' + item.path,
         title: item.path,
         detail: '项目文件',
+        keywords: ['文件', '项目', item.path],
         run: () =>
           void navigate({
             tab: 'files',
@@ -105,7 +131,12 @@ export function CommandPalette({
           }),
       })),
   ];
-  const chosen = Math.min(index, Math.max(0, entries.length - 1));
+  const selectable = entries.reduce<number[]>((result, entry, entryIndex) => {
+    if (!entry.disabled) result.push(entryIndex);
+    return result;
+  }, []);
+  const selectedSlot = Math.min(index, Math.max(0, selectable.length - 1));
+  const chosen = selectable[selectedSlot] ?? Math.min(index, Math.max(0, entries.length - 1));
   useEffect(() => {
     document.getElementById(`palette-result-${chosen}`)?.scrollIntoView({ block: 'nearest' });
   }, [chosen]);
@@ -152,15 +183,19 @@ export function CommandPalette({
                 placeholder="实例、项目文件、操作、收藏命令…"
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) {
+                  if (e.key === 'Escape') {
                     e.preventDefault();
-                    if (e.key === 'Enter') entries[chosen]?.run();
-                    else
-                      setIndex(
-                        (current) =>
-                          (current + (e.key === 'ArrowDown' ? 1 : -1) + entries.length) %
-                          Math.max(1, entries.length),
-                      );
+                    close();
+                    return;
+                  }
+                  if (['ArrowDown', 'ArrowUp'].includes(e.key)) {
+                    e.preventDefault();
+                    const next = nextSelection(selectedSlot, selectable.length, e.key);
+                    if (next !== null) setIndex(next);
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const entry = entries[chosen];
+                    if (!entry?.disabled) entry?.run();
                   }
                 }}
               />
@@ -175,6 +210,7 @@ export function CommandPalette({
                   id={`palette-result-${i}`}
                   key={entry.key}
                   className={i === chosen ? 'selected' : ''}
+                  disabled={entry.disabled}
                   onClick={entry.run}
                 >
                   <span>{entry.title}</span>

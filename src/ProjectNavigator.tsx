@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Folder, FileText, Search, RefreshCw } from 'lucide-react';
 import type { ProjectFile, SearchMatch } from '../server/project-files';
 import { type Request, Feedback } from './FeaturePanels';
+import { nextSelection } from './keyboard-navigation';
 
 export function ProjectNavigator({
   id,
@@ -16,6 +17,7 @@ export function ProjectNavigator({
     [content, setContent] = useState(false),
     [expanded, setExpanded] = useState(new Set<string>()),
     [revision, setRevision] = useState(0);
+  const treeRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<{
       root: string;
       files: ProjectFile[];
@@ -69,6 +71,53 @@ export function ProjectNavigator({
       .every((_segment, index, parts) => expanded.has(parts.slice(0, index + 1).join('/')));
   const openFile = (path: string, line?: number) =>
     data && open(`${data.root.replace(/\/$/, '')}/${path}`, line);
+  const files = !content
+    ? (data?.files || []).filter((file) => visible(file.path)).sort((a, b) => a.path.localeCompare(b.path))
+    : [];
+  const focusTreeEntry = (index: number, key: string) => {
+    const entries = Array.from(
+      treeRef.current?.querySelectorAll<HTMLButtonElement>('[data-project-entry]') || [],
+    );
+    const next = nextSelection(index, entries.length, key);
+    if (next !== null) entries[next]?.focus();
+  };
+  const onTreeKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number, file: ProjectFile) => {
+    const directory = file.directory;
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      focusTreeEntry(index, event.key);
+      return;
+    }
+    if (event.key === 'ArrowRight' && directory) {
+      event.preventDefault();
+      if (!expanded.has(file.path)) {
+        setExpanded((current) => new Set(current).add(file.path));
+        return;
+      }
+      const entries = Array.from(
+        treeRef.current?.querySelectorAll<HTMLButtonElement>('[data-project-entry]') || [],
+      );
+      const child = entries.findIndex((entry) => entry.dataset.projectPath?.startsWith(`${file.path}/`));
+      if (child >= 0) entries[child]?.focus();
+      return;
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      if (directory && expanded.has(file.path)) {
+        setExpanded((current) => {
+          const next = new Set(current);
+          next.delete(file.path);
+          return next;
+        });
+        return;
+      }
+      const parent = file.path.split('/').slice(0, -1).join('/');
+      const entries = Array.from(
+        treeRef.current?.querySelectorAll<HTMLButtonElement>('[data-project-entry]') || [],
+      );
+      entries.find((entry) => entry.dataset.projectPath === parent)?.focus();
+    }
+  };
   return (
     <aside className="project-navigator" aria-label="项目文件树">
       <div className="panel-heading">
@@ -85,9 +134,23 @@ export function ProjectNavigator({
         <Search size={14} />
         <input
           aria-label="搜索项目"
+          aria-controls="project-tree"
           placeholder="文件名或内容"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && query) {
+              event.preventDefault();
+              setQuery('');
+            }
+            if (event.key === 'ArrowDown') {
+              const first = treeRef.current?.querySelector<HTMLButtonElement>('[data-project-entry]');
+              if (first) {
+                event.preventDefault();
+                first.focus();
+              }
+            }
+          }}
         />
       </label>
       <label className="checkbox-label">
@@ -96,36 +159,56 @@ export function ProjectNavigator({
       </label>
       <Feedback error={error} />
       {busy && <p className="muted">正在搜索…</p>}
-      <div className="project-tree">
+      <div
+        ref={treeRef}
+        id="project-tree"
+        className="project-tree"
+        role={content ? 'listbox' : 'tree'}
+        aria-label={content ? '项目内容搜索结果' : '项目文件'}
+      >
         {!content &&
-          data?.files
-            .filter((file) => visible(file.path))
-            .sort((a, b) => a.path.localeCompare(b.path))
-            .map((file) => (
-              <button
-                className="tree-entry"
-                key={file.path}
-                style={{ paddingLeft: query ? 8 : 8 + (file.path.split('/').length - 1) * 14 }}
-                onClick={() =>
-                  file.directory
-                    ? setExpanded((current) => {
-                        const next = new Set(current);
-                        next.has(file.path) ? next.delete(file.path) : next.add(file.path);
-                        return next;
-                      })
-                    : openFile(file.path)
-                }
-                title={file.path}
-              >
-                {file.directory ? <Folder size={14} /> : <FileText size={14} />}
-                <span>{query ? file.path : file.path.split('/').at(-1)}</span>
-              </button>
-            ))}
-        {content &&
-          data?.matches.map((match) => (
+          files.map((file, index) => (
             <button
+              type="button"
+              role="treeitem"
+              data-project-entry
+              data-project-path={file.path}
+              aria-level={file.path.split('/').length}
+              aria-expanded={file.directory ? expanded.has(file.path) : undefined}
+              className="tree-entry"
+              key={file.path}
+              style={{ paddingLeft: query ? 8 : 8 + (file.path.split('/').length - 1) * 14 }}
+              onKeyDown={(event) => onTreeKeyDown(event, index, file)}
+              onClick={() =>
+                file.directory
+                  ? setExpanded((current) => {
+                      const next = new Set(current);
+                      next.has(file.path) ? next.delete(file.path) : next.add(file.path);
+                      return next;
+                    })
+                  : openFile(file.path)
+              }
+              title={file.path}
+            >
+              {file.directory ? <Folder size={14} /> : <FileText size={14} />}
+              <span>{query ? file.path : file.path.split('/').at(-1)}</span>
+            </button>
+          ))}
+        {content &&
+          data?.matches.map((match, index) => (
+            <button
+              type="button"
+              role="option"
+              data-project-entry
+              data-project-path={match.path}
               className="search-match"
               key={`${match.path}:${match.line}`}
+              onKeyDown={(event) => {
+                if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                  event.preventDefault();
+                  focusTreeEntry(index, event.key);
+                }
+              }}
               onClick={() => openFile(match.path, match.line)}
             >
               <b>

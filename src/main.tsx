@@ -62,8 +62,9 @@ import { mayLeaveEditor } from './file-editor-state';
 import { TasksPanel, LibraryPanel, MaintenancePanel } from './ManagementPanels';
 import { GitPanel, DevelopmentPanel, ContainersPanel, MigrationPanel } from './DevelopmentPanels';
 import { FeatureSuitePanel } from './FeatureSuitePanel';
-import { CommandPalette, type PaletteTarget } from './CommandPalette';
+import { CommandPalette, type PaletteAction, type PaletteTarget } from './CommandPalette';
 import { workspacePath } from './workspace-request';
+import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from './workspace-navigation';
 import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
@@ -273,9 +274,10 @@ function App() {
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.altKey) {
-        if (document.querySelector('dialog[open]')) return;
+        const openDialog = document.querySelector('dialog[open]');
+        if (openDialog && !openDialog.classList.contains('command-palette')) return;
         event.preventDefault();
-        setPalette(true);
+        setPalette((open) => !open);
       }
     };
     window.addEventListener('keydown', key);
@@ -466,6 +468,56 @@ function App() {
     vm && run(() => api(`/vms/${vm.id}/stop`, 'POST', { force: false }), '发行版已停止，磁盘数据已保留');
   const suspend = () => vm && run(() => api(`/vms/${vm.id}/suspend`, 'POST'), '发行版已暂停，可随时恢复');
   const resume = () => vm && run(() => api(`/vms/${vm.id}/resume`, 'POST'), '发行版已恢复');
+  const executeWorkspaceCommand = (command: WorkspaceCommandDefinition) => {
+    if (command.disabled) return;
+    const id = command.target?.id || selected;
+    setPalette(false);
+    if (command.action === 'create') {
+      setModal('create');
+      return;
+    }
+    if (command.action === 'delete') {
+      if (!id || id !== selected) return;
+      setConfirm('');
+      setModal('delete');
+      return;
+    }
+    if (command.action === 'navigate') {
+      if (command.target) void navigatePalette(command.target);
+      return;
+    }
+    if (!id) return;
+    const operation =
+      command.action === 'start'
+        ? () => api(`/vms/${id}/start`, 'POST')
+        : command.action === 'stop'
+          ? () => api(`/vms/${id}/stop`, 'POST', { force: false })
+          : command.action === 'suspend'
+            ? () => api(`/vms/${id}/suspend`, 'POST')
+            : () => api(`/vms/${id}/resume`, 'POST');
+    const message =
+      command.action === 'start'
+        ? '正在启动 Linux，终端将在就绪后连接'
+        : command.action === 'stop'
+          ? '发行版已停止，磁盘数据已保留'
+          : command.action === 'suspend'
+            ? '发行版已暂停，可随时恢复'
+            : '发行版已恢复';
+    void run(operation, message);
+  };
+  const workspaceActions: PaletteAction[] = workspaceCommandDefinitions({
+    vms,
+    currentId: selected,
+    canCreate: !loading && !!system?.imageReady,
+    busy,
+  }).map((command) => ({
+    key: command.key,
+    title: command.title,
+    detail: command.detail,
+    keywords: command.keywords,
+    disabled: command.disabled,
+    run: () => executeWorkspaceCommand(command),
+  }));
   const running = vms.filter((v) => v.status === 'running').length;
   const visibleVms = vms
     .filter(
@@ -1403,6 +1455,7 @@ function App() {
           vms={vms}
           vm={vm}
           request={api}
+          actions={workspaceActions}
           navigate={navigatePalette}
           close={() => setPalette(false)}
         />
