@@ -109,6 +109,8 @@ try {
   );
   assert.equal(cloudHooks.code, 0, cloudHooks.stderr);
   assert.equal(cloudHooks.stdout.trim(), '', 'Tiny Cloud hooks should not run after provisioning');
+  const chrony = await machines.exec(id, "grep -qx 'FAST_STARTUP=yes' /etc/conf.d/chronyd");
+  assert.equal(chrony.code, 0, 'chronyd should start asynchronously after provisioning');
   if (testDesktop) {
     assert.equal((await desktops.view(id)).status, 'not-installed');
     desktops.start(id, 'install');

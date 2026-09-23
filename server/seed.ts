@@ -190,6 +190,10 @@ iface eth0 inet dhcp' ]; then
 ${guestNetwork}SAKURA_NETWORK
   fi
 fi
+if [ -f /etc/conf.d/chronyd ] && [ ! -L /etc/conf.d/chronyd ] && grep -qx 'FAST_STARTUP=no' /etc/conf.d/chronyd; then
+  [ -e /etc/conf.d/chronyd.sakura-backup ] || cp -p /etc/conf.d/chronyd /etc/conf.d/chronyd.sakura-backup
+  sed -i 's/^FAST_STARTUP=no$/FAST_STARTUP=yes/' /etc/conf.d/chronyd
+fi
 # Tiny Cloud is only needed to provision a fresh disk. Leaving its four
 # OpenRC hooks enabled makes every later boot wait through the cloud phases
 # again, even though the instance already has its persistent configuration.
