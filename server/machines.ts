@@ -50,6 +50,10 @@ type Live = {
   serialPort: number;
   abort: AbortController;
   bootAbort: AbortController;
+  bootstrapKnown?: boolean;
+  serialConnected?: boolean;
+  serialReady?: boolean;
+  serialTail?: string;
   done: Promise<void>;
   bootDone?: Promise<void>;
   serial?: Socket;
@@ -172,6 +176,10 @@ export class Machines extends EventEmitter {
     this.logs.set(id, (previous + text).slice(-128 * 1024));
     this.emit(`log:${id}`, text);
     const live = this.live.get(id);
+    if (live?.status === 'starting' && live.bootstrapKnown === false && !live.serialReady) {
+      live.serialTail = ((live.serialTail || '') + text).slice(-128);
+      if (live.serialTail.includes('SAKURA_READY')) live.serialReady = true;
+    }
     const recent = previous.slice(-128) + text;
     if (live?.status === 'starting' && recent.includes('Kernel panic - not syncing:')) {
       live.error = 'Linux 内核启动失败（Kernel panic）；请查看启动日志，然后停止并重试。';
@@ -197,6 +205,7 @@ export class Machines extends EventEmitter {
         id: randomUUID(),
         createdAt: new Date().toISOString(),
         snapshots: [],
+        bootstrapped: false,
       };
       const dir = vmDir(vm.id);
       await mkdir(dir);
@@ -251,9 +260,11 @@ export class Machines extends EventEmitter {
           for (const p of this.get(otherId).forwards)
             if (vm.forwards.some((n) => n.host === p.host))
               throw new AppError(`端口 ${p.host} 已被另一实例使用`, 409);
-        const sshPort = await freePort(),
-          qmpPort = await freePort(),
-          serialPort = await freePort();
+        const [sshPort, qmpPort, serialPort] = await Promise.all([
+          freePort(),
+          freePort(),
+          freePort(),
+        ]);
         const accelerator =
           vm.accelerator === 'auto' ? (this.engine.whpxAvailable ? 'whpx' : 'tcg') : vm.accelerator;
         const live: Live = {
@@ -265,6 +276,10 @@ export class Machines extends EventEmitter {
           serialPort,
           abort: new AbortController(),
           bootAbort: new AbortController(),
+          bootstrapKnown: vm.bootstrapped !== false,
+          serialConnected: false,
+          serialReady: false,
+          serialTail: '',
           done: Promise.resolve(),
           clients: new Set(),
         };
@@ -373,8 +388,23 @@ export class Machines extends EventEmitter {
       if (!live.serial || live.serial.destroyed) {
         const socket = createConnection({ host: '127.0.0.1', port: live.serialPort });
         socket.on('error', () => {});
+        socket.on('connect', () => {
+          live.serialConnected = true;
+        });
+        socket.on('close', () => {
+          live.serialConnected = false;
+        });
         socket.on('data', (data) => this.log(id, data));
         live.serial = socket;
+      }
+      // A newly created disk emits SAKURA_READY only after its one-time cloud
+      // provisioning has completed. Once the serial channel is connected,
+      // wait for that marker instead of repeatedly creating SSH sessions that
+      // can only fail while Tiny Cloud is still running. If the serial channel
+      // is unavailable, retain the SSH probe fallback for older images.
+      if (!live.bootstrapKnown && live.serialConnected && !live.serialReady) {
+        await delay(100, undefined, { signal });
+        continue;
       }
       try {
         // The first SSH daemon is reachable before user-data restarts it. Do not
@@ -415,6 +445,7 @@ export class Machines extends EventEmitter {
         }
         if (this.live.get(id) === live && live.status === 'starting') {
           live.status = 'running';
+          this.get(id).bootstrapped = true;
           this.startAttempts.delete(id);
           this.emit('change');
         }
@@ -1044,6 +1075,7 @@ export class Machines extends EventEmitter {
         id: randomUUID(),
         createdAt: new Date().toISOString(),
         snapshots: [],
+        bootstrapped: true,
         pendingResize,
       };
       const dir = vmDir(vm.id);

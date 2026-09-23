@@ -96,6 +96,7 @@ test('per-instance SSH keys match and bootstrap never enables password login', (
     assert.deepEqual(privateKey.getPublicSSH(), publicKey.getPublicSSH());
   const script = userData('alpine', pair.publicText);
   assert.match(script, /PasswordAuthentication no/);
+  assert.match(script, /rc-update del tiny-cloud-main default/);
   assert.ok(!script.includes(pair.privateText));
 });
 test('QMP handles fragmented greeting, capabilities, async events and command errors', async () => {

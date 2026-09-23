@@ -190,6 +190,17 @@ iface eth0 inet dhcp' ]; then
 ${guestNetwork}SAKURA_NETWORK
   fi
 fi
+# Tiny Cloud is only needed to provision a fresh disk. Leaving its four
+# OpenRC hooks enabled makes every later boot wait through the cloud phases
+# again, even though the instance already has its persistent configuration.
+# Remove the hooks after provisioning so the next boot can go straight from
+# networking to sshd. These commands are best-effort for older Alpine images.
+if command -v rc-update >/dev/null 2>&1; then
+  rc-update del tiny-cloud-boot boot >/dev/null 2>&1 || true
+  rc-update del tiny-cloud-early default >/dev/null 2>&1 || true
+  rc-update del tiny-cloud-main default >/dev/null 2>&1 || true
+  rc-update del tiny-cloud-final default >/dev/null 2>&1 || true
+fi
 fi
 true`;
 }

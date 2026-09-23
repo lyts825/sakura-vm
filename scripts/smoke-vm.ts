@@ -103,6 +103,12 @@ try {
   console.log('\nREAL GUEST', uname.stdout);
   assert.equal(uname.code, 0);
   assert.match(uname.stdout, /Linux/);
+  const cloudHooks = await machines.exec(
+    id,
+    "find /etc/runlevels/boot /etc/runlevels/default -type l -name 'tiny-cloud-*' -print",
+  );
+  assert.equal(cloudHooks.code, 0, cloudHooks.stderr);
+  assert.equal(cloudHooks.stdout.trim(), '', 'Tiny Cloud hooks should not run after provisioning');
   if (testDesktop) {
     assert.equal((await desktops.view(id)).status, 'not-installed');
     desktops.start(id, 'install');

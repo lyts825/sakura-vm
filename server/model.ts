@@ -68,6 +68,9 @@ export type VMRecord = VMConfig & {
   id: string;
   createdAt: string;
   snapshots: Snapshot[];
+  // New disks use the serial readiness marker before the first SSH probe.
+  // It remains optional so older records keep their existing startup path.
+  bootstrapped?: boolean;
   lastError?: string;
   organization?: z.infer<typeof organizationSchema>;
   pendingResize?: boolean;
