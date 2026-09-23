@@ -176,15 +176,22 @@ chmod 755 /usr/local/libexec/sakura-plasma-session
 cat > /usr/local/libexec/sakura-apply-layout <<'SAKURA_LAYOUT'
 #!/bin/sh
 set -eu
-# Wait for actual containments before applying panel and wallpaper preferences.
+# Wait for actual Plasma containments before applying panel and wallpaper preferences.
+ready_script='string:if (!desktops().length || !panels().length) throw "plasma-not-ready";'
+ready=0
 for attempt in $(seq 1 90); do
-  if dbus-send --session --reply-timeout=1000 --print-reply --dest=org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript 'string:if (desktops().length) panels()[0].height = panels()[0].height;' >/dev/null 2>&1; then break; fi
+  if dbus-send --session --reply-timeout=1000 --print-reply --dest=org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$ready_script" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
   sleep 1
 done
-dbus-send --session --reply-timeout=1000 --print-reply --dest=org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript 'string:if (desktops().length) panels()[0].height = panels()[0].height;' >/dev/null 2>&1
+[ "$ready" -eq 1 ]
 if ! cmp -s /etc/sakura/desktop-preferences /home/sakura-desktop/.config/sakura-applied-preferences; then
   case "$THEME" in midnight) scheme=BreezeDark ;; *) scheme=BreezeLight ;; esac
-  plasma-apply-colorscheme "$scheme" --accent-color "$ACCENT"
+  if command -v plasma-apply-colorscheme >/dev/null 2>&1; then
+    plasma-apply-colorscheme "$scheme" --accent-color "$ACCENT" || true
+  fi
   dbus-send --session --print-reply --dest=org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "string:
     var ps = panels();
     for (var i = 0; i < ps.length; i++) {
@@ -198,6 +205,7 @@ if ! cmp -s /etc/sakura/desktop-preferences /home/sakura-desktop/.config/sakura-
       ds[i].currentConfigGroup = ['Wallpaper', ds[i].wallpaperPlugin, 'General'];
       if ('$WALLPAPER' === 'plain') ds[i].writeConfig('Color', '$ACCENT');
       else ds[i].writeConfig('Image', 'file:///home/sakura-desktop/.local/share/wallpapers/$WALLPAPER.svg');
+      ds[i].reloadConfig();
     }"
   cp /etc/sakura/desktop-preferences /home/sakura-desktop/.config/sakura-applied-preferences
 fi
@@ -247,6 +255,9 @@ SAKURA_INSTALL`;
 
 export function desktopCommands(distro = 'alpine', input = defaultDesktopPreferences) {
   const preferences = desktopPreferencesSchema.parse(input);
+  const startWithPreferences = (start: string) => String.raw`set -eu
+${desktopConfigScript(preferences)}
+${start}`;
   const configure = (start: string) =>
     String.raw`set -eu
 test -f /etc/sakura/desktop-version
@@ -263,6 +274,7 @@ echo 'KDE Plasma preferences applied.'`;
       probe: desktopProbe,
       preferencesProbe: desktopPreferencesProbe,
       start: desktopStart,
+      startWithPreferences: startWithPreferences(desktopStart),
       install: customizedInstall,
       configure: configure(desktopStart),
       preferences,
@@ -311,7 +323,15 @@ SAKURA_SERVICE`;
       'systemctl daemon-reload\nsystemctl enable sakura-desktop',
     )
     .replace(desktopStart, start);
-  return { probe, preferencesProbe: desktopPreferencesProbe, start, install, configure: configure(start), preferences };
+  return {
+    probe,
+    preferencesProbe: desktopPreferencesProbe,
+    start,
+    startWithPreferences: startWithPreferences(start),
+    install,
+    configure: configure(start),
+    preferences,
+  };
 }
 
 export function imeInstall(distro = 'alpine') {

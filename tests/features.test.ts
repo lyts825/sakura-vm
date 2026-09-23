@@ -119,12 +119,13 @@ test('KDE desktop adapters expose validated appearance preferences for every dis
     assert.match(commands.install, /RESOLUTION='1440x900'/);
     assert.match(commands.install, /SCALE='125'/);
     assert.match(commands.configure, /desktop-preferences/);
+    assert.match(commands.install, /ready_script=.*plasma-not-ready/);
+    assert.match(commands.install, /WALLPAPER='midnight'/);
+    assert.match(commands.install, /ps\[i\]\.hiding/);
+    assert.match(commands.install, /sakura-applied-preferences/);
     assert.doesNotMatch(commands.install, /xfce4|xfwm4|xfdesktop/);
   }
-  assert.throws(
-    () => desktopCommands('alpine', { ...preferences, accent: 'red' } as never),
-    /6 位十六进制/,
-  );
+  assert.throws(() => desktopCommands('alpine', { ...preferences, accent: 'red' } as never), /6 位十六进制/);
 });
 
 test('setup identity changes only when preparation inputs change', () => {

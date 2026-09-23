@@ -46,6 +46,32 @@ test('a disconnected desktop reconnects without replacing the guest session', (t
   assert.equal(states.at(-1)?.connected, true);
 });
 
+test('a connection constructor failure uses the same bounded reconnect path', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const clients: Client[] = [];
+  const states: { connected: boolean; message: string; error?: string }[] = [];
+  let attempts = 0;
+  const dispose = connectDesktop(
+    () => {
+      attempts++;
+      if (attempts === 1) throw new Error('socket unavailable');
+      const client = new Client();
+      clients.push(client);
+      return client;
+    },
+    (state) => states.push(state),
+  );
+  t.after(dispose);
+  assert.equal(clients.length, 0);
+  assert.ok(states.some((state) => /socket unavailable/.test(state.error || '')));
+  t.mock.timers.tick(999);
+  assert.equal(attempts, 1);
+  t.mock.timers.tick(1);
+  assert.equal(attempts, 2);
+  clients[0].emit('connect');
+  assert.equal(states.at(-1)?.connected, true);
+});
+
 test('silent RFB handshakes time out and retries stop after five attempts', (t) => {
   const { clients, states } = fixture(t);
   for (const wait of [1000, 2000, 4000, 8000, 15000]) {

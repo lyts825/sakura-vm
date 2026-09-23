@@ -33,6 +33,7 @@ export function connectDesktop(create: () => DesktopClient, report: (state: Conn
       client = create();
     } catch (error) {
       report({ connected: false, message: '桌面连接失败', error: (error as Error).message });
+      reconnect();
       return;
     }
     let ended = false;

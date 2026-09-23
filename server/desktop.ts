@@ -1,11 +1,13 @@
 import { createWebSocketStream, WebSocket } from 'ws';
 import type { ClientChannel } from 'ssh2';
 import type { Machines } from './machines.ts';
+import { AppError, type DesktopView } from './model.ts';
 import {
-  AppError,
-  type DesktopView,
-} from './model.ts';
-import { defaultDesktopPreferences, desktopPreferencesSchema, type DesktopPreferences } from './desktop-preferences.ts';
+  defaultDesktopPreferences,
+  desktopPreferencesSchema,
+  parseDesktopPreferencesFile,
+  type DesktopPreferences,
+} from './desktop-preferences.ts';
 import { desktopCommands } from './desktop-guest.ts';
 
 type Operation = {
@@ -42,24 +44,7 @@ export class Desktops {
     let preferences = defaultDesktopPreferences;
     try {
       const config = await this.machines.exec(id, commands.preferencesProbe, 10000);
-      const values: Record<string, string> = {};
-      for (const line of config.stdout.split(/\r?\n/)) {
-        const match = /^(RESOLUTION|SCALE|THEME|WALLPAPER|ACCENT|PANEL|AUTO_HIDE_PANEL|ANIMATIONS)=(.*)$/.exec(
-          line.trim(),
-        );
-        if (match) values[match[1]] = match[2].replace(/^'(.*)'$/, '$1');
-      }
-      const parsed = desktopPreferencesSchema.safeParse({
-        resolution: values.RESOLUTION,
-        scale: values.SCALE ? Number(values.SCALE) : undefined,
-        theme: values.THEME,
-        wallpaper: values.WALLPAPER,
-        accent: values.ACCENT,
-        panel: values.PANEL,
-        autoHidePanel: values.AUTO_HIDE_PANEL === undefined ? undefined : values.AUTO_HIDE_PANEL === 'true',
-        animations: values.ANIMATIONS === undefined ? undefined : values.ANIMATIONS === 'true',
-      });
-      if (parsed.success) preferences = parsed.data;
+      if (config.code === 0) preferences = parseDesktopPreferencesFile(config.stdout);
     } catch {
       // A status check remains useful when an older desktop has no preferences file.
     }
@@ -100,7 +85,13 @@ export class Desktops {
     void this.machines
       .exec(
         id,
-        action === 'install' ? commands.install : action === 'configure' ? commands.configure : commands.start,
+        action === 'install'
+          ? commands.install
+          : action === 'configure'
+            ? commands.configure
+            : input === undefined
+              ? commands.start
+              : commands.startWithPreferences,
         action === 'install' ? 920000 : action === 'configure' ? 180000 : 150000,
         operation.abort.signal,
         (data) => {

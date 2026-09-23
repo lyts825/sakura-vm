@@ -6,6 +6,8 @@ import { createServer, createConnection, type Socket } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Desktops } from '../server/desktop.ts';
+import { defaultDesktopPreferences, parseDesktopPreferencesFile } from '../server/desktop-preferences.ts';
+import { desktopPreferencesProbe } from '../server/desktop-guest.ts';
 import type { Machines } from '../server/machines.ts';
 
 function fixture() {
@@ -35,6 +37,78 @@ test('desktop discovery reads the guest disk and does not connect before boot co
   }
   machines.exec = async () => ({ stdout: 'unexpected', stderr: '', code: 0 });
   await assert.rejects(desktops.view('vm'), /检查桌面状态/);
+});
+
+test('desktop discovery restores persisted preferences and tolerates one bad field', async () => {
+  const { desktops, machines } = fixture();
+  let probe = true;
+  machines.exec = async (_id, command) => {
+    if (probe) {
+      probe = false;
+      return { stdout: 'ready\n', stderr: '', code: 0 };
+    }
+    assert.equal(command, desktopPreferencesProbe);
+    return {
+      stdout:
+        "RESOLUTION='1920x1080'\nSCALE='not-a-number'\nTHEME='midnight'\nWALLPAPER='midnight'\nACCENT='#e6a6cb'\nPANEL='top'\nAUTO_HIDE_PANEL='true'\nANIMATIONS='false'\n",
+      stderr: '',
+      code: 0,
+    };
+  };
+  const view = await desktops.view('vm');
+  assert.deepEqual(view.preferences, {
+    ...defaultDesktopPreferences,
+    resolution: '1920x1080',
+    theme: 'midnight',
+    wallpaper: 'midnight',
+    accent: '#e6a6cb',
+    panel: 'top',
+    autoHidePanel: true,
+    animations: false,
+  });
+  assert.equal(parseDesktopPreferencesFile("THEME='paper'\nBROKEN='ignored'\n").theme, 'paper');
+});
+
+test('configure operations carry the full preference set into the guest restart', async () => {
+  const { desktops, machines } = fixture();
+  const preferences = {
+    resolution: '1600x1000' as const,
+    scale: 150,
+    theme: 'paper' as const,
+    wallpaper: 'plain' as const,
+    accent: '#6d7fb3',
+    panel: 'floating' as const,
+    autoHidePanel: true,
+    animations: false,
+  };
+  let command = '';
+  machines.exec = async (_id, value) => {
+    command = value;
+    return { stdout: '', stderr: '', code: 0 };
+  };
+  const view = desktops.start('vm', 'configure', preferences);
+  assert.deepEqual(view.preferences, preferences);
+  assert.match(command, /RESOLUTION='1600x1000'/);
+  assert.match(command, /WALLPAPER='plain'/);
+  assert.match(command, /PANEL='floating'/);
+  assert.match(command, /AUTO_HIDE_PANEL='true'/);
+  assert.match(command, /ANIMATIONS='false'/);
+  await delay(0);
+});
+
+test('starting a stopped desktop reapplies requested preferences before reconnecting', async () => {
+  const { desktops, machines } = fixture();
+  const preferences = { theme: 'midnight' as const, wallpaper: 'midnight' as const, panel: 'top' as const };
+  let command = '';
+  machines.exec = async (_id, value) => {
+    command = value;
+    return { stdout: '', stderr: '', code: 0 };
+  };
+  desktops.start('vm', 'start', preferences);
+  assert.match(command, /THEME='midnight'/);
+  assert.match(command, /WALLPAPER='midnight'/);
+  assert.match(command, /PANEL='top'/);
+  await delay(0);
 });
 
 test('installation enforces memory, deduplicates concurrent requests, and makes failures retryable', async () => {

@@ -23,6 +23,13 @@ import {
   Sparkles,
   Wifi,
 } from 'lucide-react';
+import {
+  desktopPreferenceDefaults,
+  editDesktopPreferences,
+  loadDesktopPreferences,
+  receiveDesktopPreferences,
+  saveDesktopPreferences,
+} from './desktop-preferences';
 import type { DesktopPreferences, DesktopView, VMView } from '../server/model';
 import { connectDesktop } from './desktop-connection';
 import { ResponseOrder } from './request-order';
@@ -30,40 +37,6 @@ import './desktop.css';
 import type RFB from '@novnc/novnc';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
 import type { JobView } from '../server/jobs';
-
-const desktopPreferenceDefaults: DesktopPreferences = {
-  resolution: '1280x800',
-  scale: 100,
-  theme: 'sakura',
-  wallpaper: 'sakura',
-  accent: '#c75b86',
-  panel: 'bottom',
-  autoHidePanel: false,
-  animations: true,
-};
-
-function savedDesktopPreferences(id: string): DesktopPreferences {
-  try {
-    const value = JSON.parse(localStorage.getItem(`sakura-desktop-preferences:${id}`) || 'null');
-    if (value && typeof value === 'object') {
-      const candidate = { ...desktopPreferenceDefaults, ...value } as DesktopPreferences;
-      if (
-        ['1280x800', '1440x900', '1600x1000', '1920x1080'].includes(candidate.resolution) &&
-        [100, 125, 150, 175, 200].includes(candidate.scale) &&
-        ['sakura', 'midnight', 'paper', 'lavender'].includes(candidate.theme) &&
-        ['sakura', 'midnight', 'paper', 'plain'].includes(candidate.wallpaper) &&
-        /^#[0-9a-f]{6}$/i.test(candidate.accent) &&
-        ['bottom', 'top', 'floating'].includes(candidate.panel) &&
-        typeof candidate.autoHidePanel === 'boolean' &&
-        typeof candidate.animations === 'boolean'
-      )
-        return candidate;
-    }
-  } catch {
-    // Browser storage is optional; the guest defaults remain usable.
-  }
-  return { ...desktopPreferenceDefaults };
-}
 
 type Props = {
   vm: VMView;
@@ -88,8 +61,10 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const clientRef = useRef<RFB | null>(null);
   const [showClipboard, setShowClipboard] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
-  const [preferences, setPreferences] = useState<DesktopPreferences>(() => savedDesktopPreferences(vm.id));
-  const preferencesDirty = useRef(false);
+  const [preferenceState, setPreferenceState] = useState(() =>
+    loadDesktopPreferences(vm.id, () => localStorage),
+  );
+  const preferences = preferenceState.preferences;
   const [outgoing, setOutgoing] = useState('');
   const [incoming, setIncoming] = useState('');
   const clipboardAction = useAction();
@@ -125,10 +100,13 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   }[desktopState];
 
   useEffect(() => {
-    preferencesDirty.current = false;
-    setPreferences(savedDesktopPreferences(vm.id));
+    setPreferenceState(loadDesktopPreferences(vm.id, () => localStorage));
     setShowCustomizer(false);
   }, [vm.id]);
+
+  useEffect(() => {
+    saveDesktopPreferences(vm.id, preferenceState, () => localStorage);
+  }, [vm.id, preferenceState]);
 
   useEffect(() => {
     const changed = () => setFullscreen(document.fullscreenElement === frame.current);
@@ -159,17 +137,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         const view = await request<DesktopView>(`/vms/${vm.id}/desktop`, 'GET', undefined, abort.signal);
         if (alive && statusOrder.current.accept(version)) {
           setDesktop(view);
-          if (!preferencesDirty.current && view.preferences) {
-            setPreferences(view.preferences);
-            try {
-              localStorage.setItem(
-                `sakura-desktop-preferences:${vm.id}`,
-                JSON.stringify(view.preferences),
-              );
-            } catch {
-              // The guest remains the source of truth when storage is unavailable.
-            }
-          }
+          setPreferenceState((current) => receiveDesktopPreferences(current, view));
           setStatusError('');
         }
         if (view.status === 'ready') interval = 10000;
@@ -259,7 +227,6 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         );
         if (enabling.current === abort && statusOrder.current.accept(version)) {
           setDesktop(view);
-          preferencesDirty.current = false;
           if (action === 'configure') setShowCustomizer(false);
           setStatusError('');
         }
@@ -276,24 +243,9 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   );
 
   const updatePreferences = (patch: Partial<DesktopPreferences>) => {
-    preferencesDirty.current = true;
-    setPreferences((current) => {
-      const next = { ...current, ...patch };
-      try {
-        localStorage.setItem(`sakura-desktop-preferences:${vm.id}`, JSON.stringify(next));
-      } catch {
-        // Preferences are also sent to the guest when applied.
-      }
-      return next;
-    });
+    setPreferenceState((current) => editDesktopPreferences(current, patch));
   };
   const applyPreferences = () => {
-    preferencesDirty.current = false;
-    try {
-      localStorage.setItem(`sakura-desktop-preferences:${vm.id}`, JSON.stringify(preferences));
-    } catch {
-      // The API call below is still authoritative.
-    }
     if (desktop?.status === 'ready' || desktop?.status === 'stopped') {
       void enable('configure');
     } else {
@@ -327,49 +279,51 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             </button>
             {ready && (
               <>
-            <button
-              className="secondary compact"
-              aria-expanded={showClipboard}
-              title="打开 Windows 与 Linux 的文本剪贴板"
-              onClick={() => setShowClipboard((v) => !v)}
-            >
-              <Clipboard size={14} />
-              剪贴板
-            </button>
-            <button
-              className="secondary compact"
-              disabled={clipboardAction.busy || ime.data?.status === 'running'}
-              title="安装中文输入法，安装期间会重启图形桌面"
-              onClick={() => {
-                if (confirm('安装中文输入法会重启图形桌面，请先保存桌面中的工作。继续？'))
-                  void clipboardAction.run(async () => {
-                    await request(`/vms/${vm.id}/ime`, 'POST');
-                    ime.reload();
-                  });
-              }}
-            >
-              中文输入法
-            </button>
-            <button
-              className="secondary compact"
-              title="重新建立桌面连接"
-              onClick={() => setAttempt((n) => n + 1)}
-            >
-              <RefreshCw size={14} />
-              重新连接
-            </button>
-            <button
-              className="secondary compact"
-              title={fullscreen ? '退出全屏' : '让桌面占满当前窗口'}
-              onClick={() => {
-                void (
-                  document.fullscreenElement ? document.exitFullscreen() : frame.current?.requestFullscreen()
-                )?.catch(() => setError('当前浏览器无法进入全屏，请使用发行版的专注模式'));
-              }}
-            >
-              {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              {fullscreen ? '退出全屏' : '全屏'}
-            </button>
+                <button
+                  className="secondary compact"
+                  aria-expanded={showClipboard}
+                  title="打开 Windows 与 Linux 的文本剪贴板"
+                  onClick={() => setShowClipboard((v) => !v)}
+                >
+                  <Clipboard size={14} />
+                  剪贴板
+                </button>
+                <button
+                  className="secondary compact"
+                  disabled={clipboardAction.busy || ime.data?.status === 'running'}
+                  title="安装中文输入法，安装期间会重启图形桌面"
+                  onClick={() => {
+                    if (confirm('安装中文输入法会重启图形桌面，请先保存桌面中的工作。继续？'))
+                      void clipboardAction.run(async () => {
+                        await request(`/vms/${vm.id}/ime`, 'POST');
+                        ime.reload();
+                      });
+                  }}
+                >
+                  中文输入法
+                </button>
+                <button
+                  className="secondary compact"
+                  title="重新建立桌面连接"
+                  onClick={() => setAttempt((n) => n + 1)}
+                >
+                  <RefreshCw size={14} />
+                  重新连接
+                </button>
+                <button
+                  className="secondary compact"
+                  title={fullscreen ? '退出全屏' : '让桌面占满当前窗口'}
+                  onClick={() => {
+                    void (
+                      document.fullscreenElement
+                        ? document.exitFullscreen()
+                        : frame.current?.requestFullscreen()
+                    )?.catch(() => setError('当前浏览器无法进入全屏，请使用发行版的专注模式'));
+                  }}
+                >
+                  {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                  {fullscreen ? '退出全屏' : '全屏'}
+                </button>
               </>
             )}
           </div>
@@ -392,7 +346,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             </div>
             <span className="desktop-customizer-status">
               <span className="desktop-state-dot connected" />
-              {preferencesDirty.current ? '有未应用的更改' : '配置已同步'}
+              {preferenceState.pending ? '有未应用的更改' : '配置已同步'}
             </span>
           </div>
           <div className="desktop-presets" role="list" aria-label="外观预设">
@@ -461,7 +415,9 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
               </select>
             </label>
             <label>
-              <span><PanelTop size={13} /> 面板位置</span>
+              <span>
+                <PanelTop size={13} /> 面板位置
+              </span>
               <select
                 value={preferences.panel}
                 onChange={(event) =>
@@ -517,14 +473,22 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             </label>
           </div>
           <div className="desktop-customizer-foot">
-            <span><WandSparkles size={13} /> KDE 设置会在下次会话启动时完整加载</span>
+            <span>
+              <WandSparkles size={13} /> KDE 设置会在下次会话启动时完整加载
+            </span>
             <div>
               <button className="text-button" onClick={resetPreferences} disabled={submitting}>
                 <RotateCcw size={13} /> 恢复默认
               </button>
-              <button className="primary compact" onClick={applyPreferences} disabled={submitting || installing}>
+              <button
+                className="primary compact"
+                onClick={applyPreferences}
+                disabled={submitting || installing}
+              >
                 {submitting ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}
-                {desktop?.status === 'ready' || desktop?.status === 'stopped' ? '应用并重启桌面' : '保存桌面偏好'}
+                {desktop?.status === 'ready' || desktop?.status === 'stopped'
+                  ? '应用并重启桌面'
+                  : '保存桌面偏好'}
               </button>
             </div>
           </div>
@@ -666,7 +630,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
                       : '给 Linux 添一个桌面'}
             </h3>
             <p>
-              KDE Plasma 桌面，包含 Dolphin 文件管理器和 Konsole 图形终端。首次安装需要联网，之后随发行版启动，文件保存在实例磁盘中。
+              KDE Plasma 桌面，包含 Dolphin 文件管理器和 Konsole
+              图形终端。首次安装需要联网，之后随发行版启动，文件保存在实例磁盘中。
             </p>
           </div>
           <div className="desktop-spec-grid">
