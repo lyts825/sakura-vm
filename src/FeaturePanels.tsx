@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Play,
@@ -19,6 +19,7 @@ import type { SyncConfig, SyncPreview, SyncDecisions } from '../server/sync';
 import { ServiceEditor, EnvironmentEditor, ProjectConnections, BackupPanel } from './ManagementPanels';
 import { executeProjectAction, type ProjectAction } from './project-action';
 import { HealthPanel, SecretReferences } from './DevelopmentPanels';
+import { workspaceRequest } from './workspace-request';
 import './features.css';
 
 export type Request = <T = any>(
@@ -27,7 +28,14 @@ export type Request = <T = any>(
   body?: unknown,
   signal?: AbortSignal,
 ) => Promise<T>;
-export type FeatureProps = { vm: VMView; request: Request; token: string; refresh: () => Promise<unknown> };
+export type FeatureProps = {
+  vm: VMView;
+  request: Request;
+  token: string;
+  refresh: () => Promise<unknown>;
+  projectId?: string;
+  onProjectChange?: (projectId: string) => void;
+};
 export const distroName = (distro?: string) =>
   ({ alpine: 'Alpine 3.23', debian: 'Debian 12', ubuntu: 'Ubuntu 24.04 LTS' })[distro || 'alpine'] || distro;
 export const formatBytes = (value: number) =>
@@ -177,7 +185,11 @@ export async function download(
   a.remove();
 }
 export function ProjectPanel(props: FeatureProps) {
-  const { vm, request, refresh } = props;
+  const { vm, request: baseRequest, refresh, projectId: selectedProjectId, onProjectChange } = props;
+  const request = useMemo(
+    () => workspaceRequest(baseRequest, selectedProjectId),
+    [baseRequest, selectedProjectId],
+  );
   const remote = useRemote<{ project: Project; projectId?: string; job: JobView | null }>(
     request,
     `/vms/${vm.id}/project`,
@@ -196,16 +208,20 @@ export function ProjectPanel(props: FeatureProps) {
     services?: { name: string; status: string; log: string }[];
   }>(request, `/vms/${vm.id}/project-runtime`, vm.status === 'running');
   const [project, setProject] = useState<Project | null>(null),
-    [projectId, setProjectId] = useState('');
+    [loadedProjectId, setLoadedProjectId] = useState('');
   const action = useAction();
   useEffect(() => {
     if (!remote.data) return;
     const nextId = remote.data.projectId || 'default';
-    if (!project || projectId !== nextId) {
+    onProjectChange?.(nextId);
+    if (!project || loadedProjectId !== nextId) {
       setProject(remote.data.project);
-      setProjectId(nextId);
+      setLoadedProjectId(nextId);
     }
-  }, [remote.data, project, projectId]);
+  }, [loadedProjectId, onProjectChange, project, remote.data]);
+  useEffect(() => {
+    if (projects.data) onProjectChange?.(projects.data.active);
+  }, [onProjectChange, projects.data]);
   const edit = (patch: Partial<Project>) => setProject((p) => p && { ...p, ...patch });
   const execute = (kind: ProjectAction) =>
     action.run(async (signal) => {
@@ -238,12 +254,13 @@ export function ProjectPanel(props: FeatureProps) {
               value={projects.data.active}
               onChange={(e) =>
                 void action.run(async (signal) => {
-                  await request(
+                  const next = await request<{ active: string; projects: { id: string; name: string }[] }>(
                     `/vms/${vm.id}/projects`,
                     'POST',
                     { action: 'select', projectId: e.target.value },
                     signal,
                   );
+                  onProjectChange?.(next.active);
                   remote.reload();
                   projects.reload();
                 })
@@ -263,12 +280,13 @@ export function ProjectPanel(props: FeatureProps) {
               const name = prompt('新项目名称');
               if (name?.trim())
                 void action.run(async (signal) => {
-                  await request(
+                  const next = await request<{ active: string; projects: { id: string; name: string }[] }>(
                     `/vms/${vm.id}/projects`,
                     'POST',
                     { action: 'create', name, config: project },
                     signal,
                   );
+                  onProjectChange?.(next.active);
                   projects.reload();
                   remote.reload();
                 });
@@ -418,7 +436,7 @@ export function ProjectPanel(props: FeatureProps) {
         </>
       )}
       <JobLog job={remote.data?.job} />
-      <HealthPanel {...props} />
+      <HealthPanel {...props} request={request} />
       {runtime.data?.services?.map((service) => (
         <details className="feature-card" key={service.name}>
           <summary>
@@ -453,6 +471,7 @@ export function ProjectPanel(props: FeatureProps) {
       )}
       <ProjectConnections
         {...props}
+        request={request}
         applied={(value) => {
           setProject(value);
           remote.reload();

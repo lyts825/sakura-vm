@@ -288,14 +288,27 @@ export class Features {
           } else if (store === this.suite.jobs && job.action?.startsWith('package:')) {
             const [operationValue, ...nameParts] = job.action.slice(8).split(':');
             const operation = z.enum(['list', 'search', 'install', 'remove', 'update']).parse(operationValue);
-            send(this.suite.package(id, { operation, name: nameParts.join(':') || undefined }));
+            send(
+              await withProject(() =>
+                Promise.resolve(this.suite.package(id, { operation, name: nameParts.join(':') || undefined })),
+              ),
+            );
           } else if (store === this.suite.jobs && job.action?.startsWith('dev:')) {
             const operation = z
               .enum(['test', 'test-discover', 'lint', 'format', 'dependencies', 'lock', 'lock-check', 'install-locked', 'worktree-list', 'worktree-add', 'worktree-remove', 'database'])
               .parse(job.action.slice(4));
             if (operation === 'worktree-add' || operation === 'worktree-remove' || operation === 'database')
               throw new AppError('此开发任务包含参数，请回到能力中心重新执行');
-            send(this.suite.dev(id, { operation }));
+            send(await withProject(() => Promise.resolve(this.suite.dev(id, { operation }))));
+          } else if (store === this.extended.jobs && job.action?.startsWith('extended:')) {
+            const featureId = job.action.slice('extended:'.length);
+            send(
+              await withProject(() =>
+                Promise.resolve(this.extended.action(id, { action: 'run', featureId })),
+              ),
+            );
+          } else if (store === this.extended.jobs && job.action?.startsWith('operation:')) {
+            throw new AppError('此工程操作包含参数，请回到能力中心重新执行');
           } else if (store === this.jobs) send(this.installIme(id));
           else throw new AppError('请回到原功能页面重新执行');
           return true;

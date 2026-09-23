@@ -5,6 +5,7 @@ import type { FeatureCatalogItem, Schedule, AlertConfig, ResourcePreset, Resourc
 import type { ExtendedFeature } from '../server/extended-features';
 import type { JobView } from '../server/jobs';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
+import { workspaceRequest } from './workspace-request';
 
 type MetricPoint = {
   sampledAt: string;
@@ -23,6 +24,7 @@ type FeatureEvent = {
 };
 type DiskEntry = { path: string; bytes: number };
 type SuiteView = {
+  projectId?: string;
   settings: { schedule: Schedule; alerts: AlertConfig; updatedAt: string };
   history: MetricPoint[];
   events: FeatureEvent[];
@@ -31,8 +33,15 @@ type SuiteView = {
   presets: Record<ResourcePresetId, ResourcePreset>;
   features: FeatureCatalogItem[];
 };
-type Props = { request: Request; vms: VMView[]; selected: string; onSelected: (id: string) => void };
+type Props = {
+  request: Request;
+  vms: VMView[];
+  selected: string;
+  onSelected: (id: string) => void;
+  projectId?: string;
+};
 type ExtendedView = {
+  projectId?: string;
   features: ExtendedFeature[];
   operations: Array<{ id: string; name: string; feature: string; example: Record<string, unknown>; note: string; writes: boolean }>;
   settings: Record<string, { enabled: boolean; options?: Record<string, unknown>; updatedAt: string }>;
@@ -50,7 +59,8 @@ const fallbackPresets: Record<ResourcePresetId, ResourcePreset> = {
 const bytes = (value: number) =>
   value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GiB` : `${(value / 1024 ** 2).toFixed(0)} MiB`;
 
-export function FeatureSuitePanel({ request, vms, selected, onSelected }: Props) {
+export function FeatureSuitePanel({ request: baseRequest, vms, selected, onSelected, projectId }: Props) {
+  const request = useMemo(() => workspaceRequest(baseRequest, projectId), [baseRequest, projectId]);
   const active = vms.find((vm) => vm.id === selected) || vms[0];
   const remote = useRemote<SuiteView>(request, active ? `/vms/${active.id}/advanced` : '/feature-suite', !!active, 5000);
   const extended = useRemote<ExtendedView>(request, active ? `/vms/${active.id}/extended-features` : '/extended-features', !!active, 10000);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { GitBranch, RefreshCw, Play, Save, Trash2, Download } from 'lucide-react';
 import type { JobView } from '../server/jobs';
 import type { GitChange } from '../server/git-workbench';
@@ -15,9 +15,11 @@ import {
   type FeatureProps,
   type Request,
 } from './FeaturePanels';
+import { workspaceRequest } from './workspace-request';
 
 const stopped = <p className="subtle-note">启动实例后可使用此功能。</p>;
-export function GitPanel({ vm, request }: FeatureProps) {
+export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) {
+  const request = useMemo(() => workspaceRequest(baseRequest, projectId), [baseRequest, projectId]);
   const remote = useRemote<{
     projectId?: string;
     repository: boolean;
@@ -314,6 +316,11 @@ export function GitPanel({ vm, request }: FeatureProps) {
 }
 
 export function DevelopmentPanel(props: FeatureProps) {
+  const scopedRequest = useMemo(
+    () => workspaceRequest(props.request, props.projectId),
+    [props.projectId, props.request],
+  );
+  const scopedProps = { ...props, request: scopedRequest };
   const [section, setSection] = useState('tools');
   return (
     <div className="content-panel feature-panel">
@@ -342,12 +349,12 @@ export function DevelopmentPanel(props: FeatureProps) {
           </button>
         ))}
       </div>
-      {section === 'tools' && <ToolsPanel {...props} />}
-      {section === 'network' && <NetworkPanel {...props} />}
-      {section === 'secrets' && <SecretsPanel {...props} />}
-      {section === 'commands' && <CommandsPanel {...props} />}
-      {section === 'pipelines' && <PipelinePanel {...props} />}
-      {section === 'runtimes' && <RuntimePanel {...props} />}
+      {section === 'tools' && <ToolsPanel {...scopedProps} />}
+      {section === 'network' && <NetworkPanel {...scopedProps} />}
+      {section === 'secrets' && <SecretsPanel {...scopedProps} />}
+      {section === 'commands' && <CommandsPanel {...scopedProps} />}
+      {section === 'pipelines' && <PipelinePanel {...scopedProps} />}
+      {section === 'runtimes' && <RuntimePanel {...scopedProps} />}
     </div>
   );
 }

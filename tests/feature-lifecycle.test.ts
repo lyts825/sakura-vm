@@ -2,7 +2,7 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Machines } from '../server/machines.ts';
@@ -32,8 +32,86 @@ function fixture() {
       this.writableFinished = true;
     },
   }) as unknown as ServerResponse;
-  return { features, req, res };
+  return { features, machines, req, res };
 }
+
+test('scoped feature endpoints hand the selected project through to views and jobs', async () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const projectId = '0123456789abcdef';
+  const directory = join(root, 'machines', id);
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, 'projects.json'),
+    JSON.stringify({
+      active: 'default',
+      projects: [
+        { id: 'default', name: '默认项目' },
+        { id: projectId, name: 'Selected project' },
+      ],
+    }),
+  );
+  await writeFile(
+    join(directory, `project-${projectId}.json`),
+    JSON.stringify({ directory: '/workspace/selected', template: 'none' }),
+  );
+  const { features, machines } = fixture();
+  const commands: string[] = [];
+  machines.live.set(id, {} as any);
+  machines.exec = async (_vmId: string, command: string) => {
+    commands.push(command);
+    return { stdout: '', stderr: '', code: 0 };
+  };
+  const request = Object.assign(new EventEmitter(), { method: 'GET', headers: {} }) as IncomingMessage;
+  const response = () =>
+    Object.assign(new EventEmitter(), {
+      writableFinished: false,
+      status: 0,
+      payload: undefined as unknown,
+      writeHead(status: number) {
+        this.status = status;
+      },
+      end(value: string) {
+        this.payload = JSON.parse(value);
+        this.writableFinished = true;
+      },
+    }) as unknown as ServerResponse & {
+      status: number;
+      payload: { projectId: string; key?: string; status?: string };
+    };
+  const viewResponse = response();
+  try {
+    assert.equal(
+      await features.route(
+        request,
+        viewResponse,
+        new URL(`http://localhost/api/vms/${id}/advanced?project=${projectId}`),
+        async () => undefined,
+      ),
+      true,
+    );
+    assert.equal(viewResponse.status, 200);
+    assert.equal(viewResponse.payload.projectId, projectId);
+
+    request.method = 'POST';
+    const jobResponse = response();
+    assert.equal(
+      await features.route(
+        request,
+        jobResponse,
+        new URL(`http://localhost/api/vms/${id}/advanced?project=${projectId}`),
+        async () => ({ action: 'dev', operation: 'test' }),
+      ),
+      true,
+    );
+    assert.equal(jobResponse.status, 202);
+    assert.equal(jobResponse.payload.projectId, projectId);
+    assert.equal(jobResponse.payload.key, `${id}:${projectId}:dev`);
+    await features.suite.jobs.wait(jobResponse.payload.key);
+    assert.ok(commands.some((command) => command.includes('/workspace/selected')));
+  } finally {
+    await features.close();
+  }
+});
 
 test('disconnect cancels an active import and permits a new import after cleanup', async () => {
   const { features, req, res } = fixture();

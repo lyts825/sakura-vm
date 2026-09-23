@@ -53,6 +53,7 @@ import {
   distroName,
   useRemote,
   type ImageInfo,
+  type Request,
 } from './FeaturePanels';
 import { FileBrowser } from './FileBrowser';
 import { TerminalWorkspace } from './TerminalWorkspace';
@@ -62,6 +63,7 @@ import { TasksPanel, LibraryPanel, MaintenancePanel } from './ManagementPanels';
 import { GitPanel, DevelopmentPanel, ContainersPanel, MigrationPanel } from './DevelopmentPanels';
 import { FeatureSuitePanel } from './FeatureSuitePanel';
 import { CommandPalette, type PaletteTarget } from './CommandPalette';
+import { workspacePath } from './workspace-request';
 import sakuraMark from './assets/sakura.svg';
 import type { VMView, VMConfig } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
@@ -83,6 +85,7 @@ type System = {
   imageReady: boolean;
   imageBytes: number;
 };
+type ProjectIndex = { active: string; projects: { id: string; name: string }[] };
 type SessionState = { selected: string; page: string; tab: string };
 const sessionPages = new Set(['workspace', 'tasks', 'library', 'images', 'features', 'settings']);
 const sessionTabs = new Set([
@@ -240,6 +243,7 @@ function App() {
   const [selected, setSelectedRaw] = useState(initialSession.selected),
     [page, setPageRaw] = useState(initialSession.page),
     [tab, setTabRaw] = useState(initialSession.tab);
+  const [projectSelections, setProjectSelections] = useState<Record<string, string>>({});
   const setSelected = async (value: string) => {
     if (value === selected || (await mayLeaveEditor())) setSelectedRaw(value);
   };
@@ -291,6 +295,38 @@ function App() {
   const tabMoreRef = useRef<HTMLDivElement>(null);
   const [moreTabsOpen, setMoreTabsOpen] = useState(false);
   const vm = vms.find((v) => v.id === selected);
+  const projectId = projectSelections[selected];
+  const workspaceApi = useCallback<Request>(
+    (path, method = 'GET', body, signal) => api(workspacePath(path, projectId), method, body, signal),
+    [projectId],
+  );
+  const onProjectChange = useCallback(
+    (next: string) => {
+      if (!selected) return;
+      setProjectSelections((current) =>
+        current[selected] === next ? current : { ...current, [selected]: next },
+      );
+    },
+    [selected],
+  );
+  useEffect(() => {
+    if (!selected) return;
+    const abort = new AbortController();
+    let alive = true;
+    void api<ProjectIndex>(`/vms/${selected}/projects`, 'GET', undefined, abort.signal)
+      .then((data) => {
+        if (alive)
+          setProjectSelections((current) => ({
+            ...current,
+            [selected]: data.active,
+          }));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      abort.abort();
+    };
+  }, [selected]);
   const focusMode = focused && page === 'workspace' && !!vm;
   useEffect(() => {
     try {
@@ -597,10 +633,11 @@ function App() {
           {page === 'features' && (
             <FeatureSuitePanel
               key={selected || vms[0]?.id || 'no-instance'}
-              request={api}
+              request={workspaceApi}
               vms={vms}
               selected={selected}
               onSelected={(id) => void setSelected(id)}
+              projectId={projectId}
             />
           )}
           {offline && (
@@ -1087,55 +1124,101 @@ function App() {
                           <FileBrowser
                             key={vm.id}
                             vm={vm}
-                            request={api}
+                            request={workspaceApi}
                             token={token}
                             refresh={refresh}
                             openFile={openFile?.id === vm.id ? openFile : undefined}
                           />
                         )}
                         {tab === 'project' && (
-                          <ProjectPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                          <ProjectPanel
+                            key={vm.id}
+                            vm={vm}
+                            request={workspaceApi}
+                            token={token}
+                            refresh={refresh}
+                            projectId={projectId}
+                            onProjectChange={onProjectChange}
+                          />
                         )}
                         {tab === 'git' && (
-                          <GitPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                          <GitPanel
+                            key={vm.id}
+                            vm={vm}
+                            request={workspaceApi}
+                            token={token}
+                            refresh={refresh}
+                            projectId={projectId}
+                          />
                         )}
                         {tab === 'development' && (
                           <DevelopmentPanel
                             key={vm.id}
                             vm={vm}
-                            request={api}
+                            request={workspaceApi}
                             token={token}
                             refresh={refresh}
+                            projectId={projectId}
                           />
                         )}
                         {tab === 'containers' && (
                           <ContainersPanel
                             key={vm.id}
                             vm={vm}
-                            request={api}
+                            request={workspaceApi}
                             token={token}
                             refresh={refresh}
+                            projectId={projectId}
                           />
                         )}
                         {tab === 'metrics' && (
-                          <MetricsPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                          <MetricsPanel
+                            key={vm.id}
+                            vm={vm}
+                            request={workspaceApi}
+                            token={token}
+                            refresh={refresh}
+                            projectId={projectId}
+                          />
                         )}
                         {tab === 'services' && (
-                          <ServicesPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                          <ServicesPanel
+                            key={vm.id}
+                            vm={vm}
+                            request={workspaceApi}
+                            token={token}
+                            refresh={refresh}
+                            projectId={projectId}
+                          />
                         )}
                         {tab === 'sync' && (
-                          <SyncPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                          <SyncPanel
+                            key={vm.id}
+                            vm={vm}
+                            request={workspaceApi}
+                            token={token}
+                            refresh={refresh}
+                            projectId={projectId}
+                          />
                         )}
                         {tab === 'snapshots' && (
-                          <SnapshotsPanel key={vm.id} vm={vm} request={api} token={token} refresh={refresh} />
+                          <SnapshotsPanel
+                            key={vm.id}
+                            vm={vm}
+                            request={workspaceApi}
+                            token={token}
+                            refresh={refresh}
+                            projectId={projectId}
+                          />
                         )}
                         {tab === 'maintenance' && (
                           <MaintenancePanel
                             key={vm.id}
                             vm={vm}
-                            request={api}
+                            request={workspaceApi}
                             token={token}
                             refresh={refresh}
+                            projectId={projectId}
                           />
                         )}
                         {tab === 'config' && (

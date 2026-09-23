@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { executeProjectAction } from '../src/project-action.ts';
+import { workspacePath, workspaceRequest } from '../src/workspace-request.ts';
 import type { VMView } from '../server/model.ts';
 import type { Project } from '../server/workspaces.ts';
 import type { Request } from '../src/FeaturePanels.tsx';
@@ -13,6 +14,42 @@ const project: Project = {
   setup: 'npm install',
   command: 'npm start',
 };
+
+test('workspace-scoped requests carry the selected development project', async () => {
+  assert.equal(
+    workspacePath('/vms/test-vm/advanced', '0123456789abcdef'),
+    '/vms/test-vm/advanced?project=0123456789abcdef',
+  );
+  assert.equal(
+    workspacePath('/vms/test-vm/git?path=src%2Fmain.ts&staged=1', 'fedcba9876543210'),
+    '/vms/test-vm/git?path=src%2Fmain.ts&staged=1&project=fedcba9876543210',
+  );
+  assert.equal(
+    workspacePath('/vms/test-vm/project?project=default', '0123456789abcdef'),
+    '/vms/test-vm/project?project=0123456789abcdef',
+  );
+  assert.equal(workspacePath('/vms/test-vm/advanced', undefined), '/vms/test-vm/advanced');
+
+  const calls: { path: string; method?: string; body?: unknown; signal?: AbortSignal }[] = [];
+  const base = async <T>(path: string, method?: string, body?: unknown, signal?: AbortSignal) => {
+    calls.push({ path, method, body, signal });
+    return { ok: true } as T;
+  };
+  const signal = new AbortController().signal;
+  await workspaceRequest(base, '0123456789abcdef')(
+    '/vms/test-vm/advanced',
+    'POST',
+    { action: 'sample' },
+    signal,
+  );
+  assert.deepEqual(calls[0], {
+    path: '/vms/test-vm/advanced?project=0123456789abcdef',
+    method: 'POST',
+    body: { action: 'sample' },
+    signal,
+  });
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {

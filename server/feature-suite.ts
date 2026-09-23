@@ -285,11 +285,12 @@ export class FeatureSuite {
     const settings = this.settingsFor(state, id);
     const size = Number.isFinite(limit) ? Math.min(720, Math.max(1, Math.floor(limit))) : 120;
     return {
+      projectId: this.workspaces.projects.current(id),
       settings,
       history: (state.history[id] || []).slice(-size),
       events: state.events.filter((event) => event.vmId === id).slice(-50).reverse(),
-      job: this.jobs.view(`${id}:package`),
-      devJob: this.jobs.view(`${id}:dev`),
+      job: this.jobs.view(`${this.workspaces.projects.key(id)}:package`),
+      devJob: this.jobs.view(`${this.workspaces.projects.key(id)}:dev`),
       presets: resourcePresets,
       features: implementedFeatureCatalogView(),
       featureRuns: (state.featureRuns[id] || []).slice(-50).reverse(),
@@ -446,7 +447,7 @@ export class FeatureSuite {
     }
     const vm = this.machines.get(id);
     return this.jobs.start(
-      `${id}:dev`,
+      `${this.workspaces.projects.key(id)}:dev`,
       async (log, taskSignal) => {
         const combined = taskSignal && signal ? AbortSignal.any([taskSignal, signal]) : taskSignal;
         const project = await this.workspaces.resolvedConfig(id);
@@ -515,7 +516,12 @@ export class FeatureSuite {
           output.flush();
         }
       },
-      { title: `开发工具 · ${operation}`, vmId: id, projectId: this.workspaces.projects.current(id), action: `dev:${operation}` },
+      {
+        title: `开发工具 · ${operation}`,
+        vmId: id,
+        projectId: this.workspaces.projects.current(id),
+        action: `dev:${operation}`,
+      },
     );
   }
   private async checkAlerts(id: string, point: MetricPoint, state: FeatureState) {
@@ -604,13 +610,18 @@ export class FeatureSuite {
           update: 'apt-get update',
         }[operation];
     return this.jobs.start(
-      `${id}:package`,
+      `${this.workspaces.projects.key(id)}:package`,
       async (log, taskSignal) => {
         const combined = taskSignal && signal ? AbortSignal.any([taskSignal, signal]) : taskSignal;
         const result = await guestTask(this.machines, id, `set -eu\n${command}`, combined, log, 300_000);
         if (result.code !== 0) throw new AppError(result.stderr.trim() || `软件包操作失败（${result.code}）`);
       },
-      { title: `软件包${{ list: '列表', search: '搜索', install: '安装', remove: '卸载', update: '更新' }[operation]}`, vmId: id, action: `package:${operation}${name ? `:${name}` : ''}` },
+      {
+        title: `软件包${{ list: '列表', search: '搜索', install: '安装', remove: '卸载', update: '更新' }[operation]}`,
+        vmId: id,
+        projectId: this.workspaces.projects.current(id),
+        action: `package:${operation}${name ? `:${name}` : ''}`,
+      },
     );
   }
   async networkTest(id: string, target: string, signal?: AbortSignal) {

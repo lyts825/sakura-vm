@@ -198,13 +198,18 @@ export class ExtendedFeatures {
     this.machines.get(id);
     const state = await this.state();
     state.executions ||= {};
+    const projectId = this.workspaces.projects.current(id);
     return {
+      projectId,
       features: catalog,
       operations: operationViews(),
       settings: state.settings[id] || {},
       manifest: state.manifests[id],
       executions: (state.executions[id] || []).slice(-50).reverse(),
-      jobs: this.jobs.list().filter((job) => job.vmId === id).slice(0, 30),
+      jobs: this.jobs
+        .list()
+        .filter((job) => job.vmId === id && (job.projectId || 'default') === projectId)
+        .slice(0, 30),
     };
   }
   async configure(id: string, input: unknown) {
@@ -544,24 +549,31 @@ export class ExtendedFeatures {
     if (value.action === 'configure') return this.configure(id, value);
     if (value.action === 'operation') {
       const validated = validateOperation(value);
+      const projectId = this.workspaces.projects.current(id);
       return this.jobs.start(
-        id + ':operation:' + validated.operation,
+        `${this.workspaces.projects.key(id)}:operation:${validated.operation}`,
         async (log, taskSignal) => {
           const result = await this.runOperation(id, validated.operation, validated.parameters, taskSignal);
           log(JSON.stringify(result) + '\n');
         },
-        { title: '工程操作 · ' + engineeringOperations[validated.operation].name, vmId: id, action: 'operation:' + validated.operation },
+        {
+          title: '工程操作 · ' + engineeringOperations[validated.operation].name,
+          vmId: id,
+          projectId,
+          action: 'operation:' + validated.operation,
+        },
       );
     }
     const spec = this.spec(value.featureId);
     if (value.action === 'check') return this.executeFeature(id, spec, 'check', signal);
+    const projectId = this.workspaces.projects.current(id);
     return this.jobs.start(
-      `${id}:${spec.id}`,
+      `${this.workspaces.projects.key(id)}:${spec.id}`,
       async (log, taskSignal) => {
         const result = await this.executeFeature(id, spec, 'run', taskSignal, { ...value.options, ...(value.path ? { path: value.path } : {}) });
         log(`${JSON.stringify(result)}\n`);
       },
-      { title: `扩展能力 · ${spec.name}`, vmId: id, action: `extended:${spec.id}` },
+      { title: `扩展能力 · ${spec.name}`, vmId: id, projectId, action: `extended:${spec.id}` },
     );
   }
   close() {
