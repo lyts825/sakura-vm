@@ -163,59 +163,76 @@ test('stopping cancels installation and stale completions cannot overwrite a new
   assert.equal((await desktops.view('vm')).status, 'not-installed');
 });
 
-test('desktop bridge preserves binary data, pins the guest target, and releases SSH on disconnect', async (t) => {
-  const tcpSockets = new Set<Socket>();
-  const tcp = createServer((socket) => {
-    tcpSockets.add(socket);
-    socket.on('close', () => tcpSockets.delete(socket));
-    socket.on('error', () => {});
-    socket.write('RFB 003.008\n');
-    socket.pipe(socket);
+for (const loss of ['browser', 'SSH then VNC', 'VNC then SSH']) {
+  test(`desktop bridge preserves binary data and releases the tunnel on ${loss} loss`, async (t) => {
+    const tcpSockets = new Set<Socket>();
+    const tcp = createServer((socket) => {
+      tcpSockets.add(socket);
+      socket.on('close', () => tcpSockets.delete(socket));
+      socket.on('error', () => {});
+      socket.write('RFB 003.008\n');
+      socket.pipe(socket);
+    });
+    tcp.listen(0, '127.0.0.1');
+    await once(tcp, 'listening');
+    const http = createHttpServer();
+    const wss = new WebSocketServer({ server: http });
+    http.listen(0, '127.0.0.1');
+    await once(http, 'listening');
+    t.after(async () => {
+      for (const socket of wss.clients) socket.terminate();
+      for (const socket of tcpSockets) socket.destroy();
+      wss.close();
+      await Promise.all([
+        new Promise<void>((resolve) => http.close(() => resolve())),
+        new Promise<void>((resolve) => tcp.close(() => resolve())),
+      ]);
+    });
+    const { machines, desktops } = fixture();
+    let destroyed = false;
+    let channel: Socket;
+    let ssh: EventEmitter;
+    let connections = 0;
+    machines.connect = async () =>
+      Object.assign((ssh = new EventEmitter()), {
+        destroy: () => {
+          destroyed = true;
+          channel?.destroy();
+        },
+        exec: (command: string, callback: Function) => {
+          connections++;
+          assert.equal(command, 'exec nc 127.0.0.1 5901');
+          channel = createConnection({ host: '127.0.0.1', port: (tcp.address() as { port: number }).port });
+          channel.once('connect', () => callback(null, channel));
+        },
+      }) as unknown as Awaited<ReturnType<Machines['connect']>>;
+    wss.on('connection', (socket) => {
+      void desktops.attach('vm', socket).catch(() => socket.close());
+    });
+    const client = new WebSocket(`ws://127.0.0.1:${(http.address() as { port: number }).port}`);
+    t.after(() => client.terminate());
+    const [banner, binary] = await once(client, 'message');
+    assert.equal(binary, true);
+    assert.equal(banner.toString(), 'RFB 003.008\n');
+    const reply = once(client, 'message');
+    const payload = Buffer.from([0, 1, 128, 255, 0, 37]);
+    client.send(payload);
+    assert.deepEqual((await reply)[0], payload);
+    const closed = once(client, 'close');
+    if (loss === 'browser') client.close();
+    else if (loss === 'SSH then VNC') {
+      ssh!.emit('close');
+      channel!.destroy();
+    } else {
+      channel!.destroy();
+      ssh!.emit('close');
+    }
+    await closed;
+    await delay(10);
+    assert.equal(destroyed, true);
+    const recovered = new WebSocket(`ws://127.0.0.1:${(http.address() as { port: number }).port}`);
+    t.after(() => recovered.terminate());
+    assert.equal((await once(recovered, 'message'))[0].toString(), 'RFB 003.008\n');
+    assert.equal(connections, 2, 'reconnection opens a fresh tunnel to the same guest service');
   });
-  tcp.listen(0, '127.0.0.1');
-  await once(tcp, 'listening');
-  const http = createHttpServer();
-  const wss = new WebSocketServer({ server: http });
-  http.listen(0, '127.0.0.1');
-  await once(http, 'listening');
-  t.after(async () => {
-    for (const socket of wss.clients) socket.terminate();
-    for (const socket of tcpSockets) socket.destroy();
-    wss.close();
-    await Promise.all([
-      new Promise<void>((resolve) => http.close(() => resolve())),
-      new Promise<void>((resolve) => tcp.close(() => resolve())),
-    ]);
-  });
-  const { machines, desktops } = fixture();
-  let destroyed = false;
-  let channel: Socket;
-  machines.connect = async () =>
-    Object.assign(new EventEmitter(), {
-      destroy: () => {
-        destroyed = true;
-        channel?.destroy();
-      },
-      exec: (command: string, callback: Function) => {
-        assert.equal(command, 'exec nc 127.0.0.1 5901');
-        channel = createConnection({ host: '127.0.0.1', port: (tcp.address() as { port: number }).port });
-        channel.once('connect', () => callback(null, channel));
-      },
-    }) as unknown as Awaited<ReturnType<Machines['connect']>>;
-  wss.on('connection', (socket) => {
-    void desktops.attach('vm', socket).catch(() => socket.close());
-  });
-  const client = new WebSocket(`ws://127.0.0.1:${(http.address() as { port: number }).port}`);
-  t.after(() => client.terminate());
-  const [banner, binary] = await once(client, 'message');
-  assert.equal(binary, true);
-  assert.equal(banner.toString(), 'RFB 003.008\n');
-  const reply = once(client, 'message');
-  const payload = Buffer.from([0, 1, 128, 255, 0, 37]);
-  client.send(payload);
-  assert.deepEqual((await reply)[0], payload);
-  client.close();
-  await once(client, 'close');
-  await delay(10);
-  assert.equal(destroyed, true);
-});
+}

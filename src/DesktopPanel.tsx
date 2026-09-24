@@ -59,6 +59,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const [fullscreen, setFullscreen] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const clientRef = useRef<RFB | null>(null);
+  const connectionRef = useRef<ReturnType<typeof connectDesktop> | null>(null);
+  const guestAvailable = useRef(true);
   const [showClipboard, setShowClipboard] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [preferenceState, setPreferenceState] = useState(() =>
@@ -118,6 +120,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
     statusOrder.current.invalidate();
     setSubmitting(false);
     if (!running) {
+      guestAvailable.current = false;
       setDesktop(null);
       setError('');
       setStatusError('');
@@ -136,13 +139,19 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       try {
         const view = await request<DesktopView>(`/vms/${vm.id}/desktop`, 'GET', undefined, abort.signal);
         if (alive && statusOrder.current.accept(version)) {
+          guestAvailable.current = view.status === 'ready';
+          connectionRef.current?.setAvailable(guestAvailable.current);
           setDesktop(view);
           setPreferenceState((current) => receiveDesktopPreferences(current, view));
           setStatusError('');
         }
         if (view.status === 'ready') interval = 10000;
       } catch (e) {
-        if (alive && statusOrder.current.accept(version)) setStatusError((e as Error).message);
+        if (alive && statusOrder.current.accept(version)) {
+          guestAvailable.current = false;
+          connectionRef.current?.setAvailable(false);
+          setStatusError((e as Error).message);
+        }
       } finally {
         if (alive) timer = setTimeout(poll, interval);
       }
@@ -156,7 +165,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       statusOrder.current.invalidate();
       clearTimeout(timer);
     };
-  }, [vm.id, running, request]);
+  }, [vm.id, vm.startedAt, running, request, attempt]);
 
   useEffect(() => {
     if (installLog.current && followLog.current)
@@ -164,10 +173,10 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   }, [desktop?.log]);
 
   useEffect(() => {
+    setConnected(false);
     if (!ready || !screen.current) return;
     let alive = true;
-    let disconnect: (() => void) | undefined;
-    setConnected(false);
+    let controller: ReturnType<typeof connectDesktop> | undefined;
     setError('');
     setConnection('正在连接桌面…');
     // Load the graphics client only when the desktop is used.
@@ -176,7 +185,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         if (!alive || !screen.current) return;
         const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const target = screen.current;
-        disconnect = connectDesktop(
+        controller = connectDesktop(
           () => {
             const client = new RFBClient(
               target,
@@ -187,27 +196,32 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             client.background = '#201b24';
             clientRef.current = client;
             client.addEventListener('clipboard', (event) => {
-              if (alive) setIncoming((event as CustomEvent<{ text: string }>).detail.text);
+              if (alive && clientRef.current === client)
+                setIncoming((event as CustomEvent<{ text: string }>).detail.text);
             });
             return client;
           },
           (state) => {
             if (!alive) return;
+            if (!state.connected) clientRef.current = null;
             setConnected(state.connected);
             setConnection(state.message);
             setError(state.error || '');
           },
+          guestAvailable.current,
         );
+        connectionRef.current = controller;
       })
       .catch((e: Error) => {
         if (alive) setError(`桌面客户端加载失败：${e.message}`);
       });
     return () => {
       alive = false;
-      disconnect?.();
+      controller?.dispose();
+      connectionRef.current = null;
       clientRef.current = null;
     };
-  }, [vm.id, ready, token, attempt]);
+  }, [vm.id, vm.startedAt, ready, token, attempt]);
 
   const enable = useCallback(
     async (action: 'install' | 'start' | 'configure') => {
@@ -305,6 +319,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
                 <button
                   className="secondary compact"
                   title="重新建立桌面连接"
+                  disabled={submitting}
                   onClick={() => setAttempt((n) => n + 1)}
                 >
                   <RefreshCw size={14} />

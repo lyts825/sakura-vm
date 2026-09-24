@@ -17,7 +17,7 @@ function fixture(t: TestContext) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const clients: Client[] = [];
   const states: { connected: boolean; message: string; error?: string }[] = [];
-  const dispose = connectDesktop(
+  const controller = connectDesktop(
     () => {
       const client = new Client();
       clients.push(client);
@@ -25,8 +25,8 @@ function fixture(t: TestContext) {
     },
     (state) => states.push(state),
   );
-  t.after(dispose);
-  return { clients, states, dispose };
+  t.after(controller.dispose);
+  return { clients, states, ...controller };
 }
 
 test('a disconnected desktop reconnects without replacing the guest session', (t) => {
@@ -51,7 +51,7 @@ test('a connection constructor failure uses the same bounded reconnect path', (t
   const clients: Client[] = [];
   const states: { connected: boolean; message: string; error?: string }[] = [];
   let attempts = 0;
-  const dispose = connectDesktop(
+  const { dispose } = connectDesktop(
     () => {
       attempts++;
       if (attempts === 1) throw new Error('socket unavailable');
@@ -106,7 +106,7 @@ test('leaving the desktop cancels pending retries and releases active clients', 
   // Start another controller under the same clock, as when switching VMs.
   const client = new Client();
   let updates = 0;
-  const dispose = connectDesktop(
+  const { dispose } = connectDesktop(
     () => client,
     () => {
       updates++;
@@ -133,3 +133,109 @@ test('rapid disconnects retain backoff while a stable session resets it', (t) =>
   clients[2].emit('disconnect');
   assert.match(states.at(-1)!.message, /1 秒后自动重连（1\/5）/);
 });
+
+for (const order of ['SSH first', 'VNC first']) {
+  test(`simultaneous SSH and VNC loss waits for the guest and reconnects (${order})`, (t) => {
+    const { clients, states, setAvailable } = fixture(t);
+    clients[0].emit('connect');
+    if (order === 'SSH first') setAvailable(false);
+    clients[0].emit('disconnect');
+    setAvailable(false);
+    assert.match(states.at(-1)!.message, /等待客户机连接恢复/);
+    t.mock.timers.tick(300000);
+    assert.equal(clients.length, 1, 'an SSH outage must not consume retries or create more tunnels');
+    // DesktopPanel receives `ready` again, without changing its cached desktop status.
+    setAvailable(true);
+    assert.equal(clients.length, 2);
+    clients[1].emit('connect');
+    assert.equal(states.at(-1)?.connected, true);
+    setAvailable(true);
+    assert.equal(clients.length, 2, 'ordinary status polls must not replace the session');
+    clients[1].emit('disconnect');
+    assert.match(states.at(-1)!.message, /1 秒后自动重连（1\/5）/);
+  });
+}
+
+test('SSH recovery revives an exhausted retry loop even when the desktop remains ready', (t) => {
+  const { clients, states, setAvailable } = fixture(t);
+  for (const wait of [1000, 2000, 4000, 8000, 15000]) {
+    clients.at(-1)!.emit('disconnect');
+    t.mock.timers.tick(wait);
+  }
+  clients.at(-1)!.emit('disconnect');
+  assert.match(states.at(-1)!.message, /自动重连未成功/);
+  setAvailable(true);
+  t.mock.timers.tick(60000);
+  assert.equal(clients.length, 6, 'healthy polls cannot bypass the retry limit');
+  setAvailable(false);
+  t.mock.timers.tick(300000);
+  setAvailable(true);
+  assert.equal(clients.length, 7);
+  clients[6].emit('connect');
+  assert.equal(states.at(-1)?.connected, true);
+});
+
+test('SSH status failures preserve a working RFB client and an in-flight handshake', (t) => {
+  const { clients, states, setAvailable } = fixture(t);
+  setAvailable(false);
+  setAvailable(true);
+  assert.equal(clients.length, 1, 'recovery during a handshake must not open a second client');
+  clients[0].emit('connect');
+  setAvailable(false);
+  t.mock.timers.tick(60000);
+  assert.equal(clients[0].disconnects, 0);
+  assert.equal(states.at(-1)?.connected, true);
+  setAvailable(true);
+  assert.equal(clients.length, 1);
+});
+
+test('a handshake lost with SSH is released before waiting for recovery', (t) => {
+  const { clients, states, setAvailable } = fixture(t);
+  setAvailable(false);
+  t.mock.timers.tick(30000);
+  assert.equal(clients[0].disconnects, 1);
+  assert.match(states.at(-1)!.message, /等待客户机连接恢复/);
+  setAvailable(true);
+  assert.equal(clients.length, 2);
+  clients[1].emit('connect');
+  clients[0].emit('connect');
+  clients[0].emit('securityfailure');
+  assert.equal(states.at(-1)?.connected, true);
+});
+
+test('manual reconnect during an SSH outage waits, and disposal ignores late recovery', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const clients: Client[] = [];
+  const controller = connectDesktop(
+    () => {
+      const client = new Client();
+      clients.push(client);
+      return client;
+    },
+    () => {},
+    false,
+  );
+  t.after(controller.dispose);
+  t.mock.timers.tick(60000);
+  assert.equal(clients.length, 0);
+  controller.setAvailable(true);
+  assert.equal(clients.length, 1);
+  controller.setAvailable(false);
+  clients[0].emit('disconnect');
+  controller.dispose();
+  controller.setAvailable(true);
+  t.mock.timers.tick(60000);
+  assert.equal(clients.length, 1);
+});
+
+for (const event of ['credentialsrequired', 'securityfailure']) {
+  test(`SSH recovery cannot retry ${event}`, (t) => {
+    const { clients, states, setAvailable } = fixture(t);
+    setAvailable(false);
+    clients[0].emit(event);
+    setAvailable(true);
+    t.mock.timers.tick(120000);
+    assert.equal(clients.length, 1);
+    assert.match(states.at(-1)!.error!, /认证配置/);
+  });
+}

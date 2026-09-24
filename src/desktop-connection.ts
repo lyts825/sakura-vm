@@ -6,27 +6,50 @@ type DesktopClient = {
 };
 type ConnectionState = { connected: boolean; message: string; error?: string };
 
-// Own one RFB client at a time. A short outage should recover without losing the
-// guest session, while repeated failures must stop instead of hammering sshd.
-export function connectDesktop(create: () => DesktopClient, report: (state: ConnectionState) => void) {
+// SSH status polling gates retries independently of the last desktop status:
+// an outage can end with another `ready` response after the retry budget ran out.
+export function connectDesktop(
+  create: () => DesktopClient,
+  report: (state: ConnectionState) => void,
+  available = true,
+) {
   let stopped = false;
+  let denied = false;
+  let waiting = false;
   let failures = 0;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let release: (() => void) | undefined;
 
+  const waitForGuest = () => {
+    waiting = true;
+    report({ connected: false, message: '等待客户机连接恢复，恢复后将自动重连…' });
+  };
+
   const reconnect = () => {
-    if (stopped) return;
+    if (stopped || denied) return;
+    if (!available) {
+      waitForGuest();
+      return;
+    }
     if (failures === 5) {
       report({ connected: false, message: '自动重连未成功，可点击「重新连接」重试' });
       return;
     }
     const wait = Math.min(1000 * 2 ** failures++, 15000);
     report({ connected: false, message: `连接已断开，${wait / 1000} 秒后自动重连（${failures}/5）` });
-    retry = setTimeout(open, wait);
+    retry = setTimeout(() => {
+      retry = undefined;
+      open();
+    }, wait);
   };
 
   function open() {
-    if (stopped) return;
+    if (stopped || denied) return;
+    if (!available) {
+      waitForGuest();
+      return;
+    }
+    waiting = false;
     report({ connected: false, message: '正在连接桌面…' });
     let client: DesktopClient;
     try {
@@ -50,8 +73,9 @@ export function connectDesktop(create: () => DesktopClient, report: (state: Conn
       for (const [event, listener] of listeners) client.removeEventListener(event, listener);
       release = undefined;
     };
-    const denied = () => {
+    const deny = () => {
       if (stopped || ended) return;
+      denied = true;
       cleanup();
       client.disconnect();
       report({
@@ -81,8 +105,8 @@ export function connectDesktop(create: () => DesktopClient, report: (state: Conn
           reconnect();
         },
       ],
-      ['credentialsrequired', denied],
-      ['securityfailure', denied],
+      ['credentialsrequired', deny],
+      ['securityfailure', deny],
     ];
     for (const [event, listener] of listeners) client.addEventListener(event, listener);
     release = () => {
@@ -92,9 +116,26 @@ export function connectDesktop(create: () => DesktopClient, report: (state: Conn
   }
 
   open();
-  return () => {
-    stopped = true;
-    clearTimeout(retry);
-    release?.();
+  return {
+    setAvailable(value: boolean) {
+      if (stopped || available === value) return;
+      available = value;
+      // A healthy SSH probe cannot fix an RFB authentication failure.
+      if (denied) return;
+      if (!available) {
+        clearTimeout(retry);
+        retry = undefined;
+        // A failed status request must not interrupt a working RFB connection.
+        if (!release) waitForGuest();
+      } else if (waiting) {
+        failures = 0;
+        open();
+      }
+    },
+    dispose() {
+      stopped = true;
+      clearTimeout(retry);
+      release?.();
+    },
   };
 }

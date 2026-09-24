@@ -8,7 +8,7 @@ import {
 // TigerVNC owns the outer X server. Wayland-only distros nest KWin inside it.
 // BusyBox pgrep matches argv[0], which KDE launches with an absolute path.
 const plasmaReady =
-  "test -f /run/sakura-desktop/ready && pgrep -u sakura-desktop -f '(^|/)plasmashell( |$)' >/dev/null 2>&1 && pgrep -u sakura-desktop -f '(^|/)kwin_(x11|wayland)( |$)' >/dev/null 2>&1";
+  "test -f /run/sakura-desktop/ready && pgrep -u sakura-desktop -f '(^|/)plasmashell( |$)' >/dev/null 2>&1 && pgrep -u sakura-desktop -f '(^|/)kwin_(x11|wayland)( |$)' >/dev/null 2>&1 && timeout 3 env DISPLAY=:1 XAUTHORITY=/run/sakura-desktop/Xauthority xdpyinfo >/dev/null 2>&1";
 export const desktopProbe = String.raw`if [ ! -f /etc/sakura/desktop-version ]; then
   printf 'not-installed\n'
 elif rc-service sakura-desktop status >/dev/null 2>&1; then
@@ -132,6 +132,7 @@ vnc_pid=$!
 session_pid=''
 cleanup() {
   trap - EXIT HUP INT TERM
+  rm -f /run/sakura-desktop/ready
   [ -z "$session_pid" ] || kill "$session_pid" 2>/dev/null || true
   kill "$vnc_pid" 2>/dev/null || true
   wait || true
@@ -146,7 +147,12 @@ done
 xdpyinfo >/dev/null
 dbus-run-session -- /usr/local/libexec/sakura-plasma-session &
 session_pid=$!
-wait "$session_pid"
+# Either child can fail while the other is still alive (notably nested Wayland).
+# Exit with failure so both OpenRC and systemd restart the complete session.
+while kill -0 "$vnc_pid" 2>/dev/null && kill -0 "$session_pid" 2>/dev/null; do
+  sleep 1
+done
+exit 1
 SAKURA_SESSION
 chmod 755 /usr/local/libexec/sakura-desktop-session
 mkdir -p /usr/local/libexec/sakura-plasma
