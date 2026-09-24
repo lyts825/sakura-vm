@@ -32,6 +32,7 @@ import { RuntimeVersions } from './runtime-versions.ts';
 import { CodeIntelligence } from './code-intelligence.ts';
 import { FeatureSuite } from './feature-suite.ts';
 import { ExtendedFeatures } from './extended-features.ts';
+import { NextFeatures } from './next-features.ts';
 
 export class Features {
   files: Files;
@@ -60,6 +61,7 @@ export class Features {
   intelligence: CodeIntelligence;
   suite: FeatureSuite;
   extended: ExtendedFeatures;
+  next: NextFeatures;
   private mutations = 0;
   private importing = false;
   private closed = false;
@@ -95,6 +97,7 @@ export class Features {
     this.intelligence = new CodeIntelligence(machines, this.workspaces);
     this.suite = new FeatureSuite(machines, this.workspaces);
     this.extended = new ExtendedFeatures(machines, this.workspaces);
+    this.next = new NextFeatures(machines, this.workspaces);
   }
   private jobStores() {
     return [
@@ -116,6 +119,7 @@ export class Features {
       this.runtimes.jobs,
       this.suite.jobs,
       this.extended.jobs,
+      this.next.jobs,
     ];
   }
   async close() {
@@ -142,6 +146,7 @@ export class Features {
         this.runtimes.close(),
         this.suite.close(),
         this.extended.close(),
+        this.next.close(),
         Promise.allSettled([...this.active.values()]),
       ]).then(() => {});
     }
@@ -200,6 +205,7 @@ export class Features {
           'code-diagnostics',
           'advanced',
           'extended-features',
+          'next-features',
           'projects',
         ]);
         return vm && scoped.has(url.pathname.split('/').filter(Boolean)[3]) && /^[0-9a-f-]{36}$/i.test(vm)
@@ -309,6 +315,13 @@ export class Features {
             );
           } else if (store === this.extended.jobs && job.action?.startsWith('operation:')) {
             throw new AppError('此工程操作包含参数，请回到能力中心重新执行');
+          } else if (store === this.next.jobs && job.action?.startsWith('next:')) {
+            const featureId = job.action.slice('next:'.length);
+            send(
+              await withProject(() =>
+                Promise.resolve(this.next.action(id, { action: 'run', featureId })),
+              ),
+            );
           } else if (store === this.jobs) send(this.installIme(id));
           else throw new AppError('请回到原功能页面重新执行');
           return true;
@@ -340,6 +353,10 @@ export class Features {
     }
     if (parts[1] === 'extended-features' && parts.length === 2 && req.method === 'GET') {
       send(await this.extended.catalog());
+      return true;
+    }
+    if (parts[1] === 'next-features' && parts.length === 2 && req.method === 'GET') {
+      send(await this.next.catalog());
       return true;
     }
     if (parts[1] === 'migration' && parts.length === 2) {
@@ -632,6 +649,16 @@ export class Features {
       }
       if (req.method === 'POST') {
         send(await this.extended.action(id, await body(req), signal), 202);
+        return true;
+      }
+    }
+    if (action === 'next-features') {
+      if (req.method === 'GET') {
+        send(await this.next.view(id));
+        return true;
+      }
+      if (req.method === 'POST') {
+        send(await this.next.action(id, await body(req), signal), 202);
         return true;
       }
     }

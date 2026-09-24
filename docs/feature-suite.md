@@ -59,3 +59,31 @@ npm run sakura -- extended my-dev view
 npm run sakura -- extended my-dev check qcow2-scrub
 npm run sakura -- extended my-dev operation operation.json
 ```
+
+## 第三批 100 项平台能力
+
+第三批目录覆盖远程主机与集群、虚拟硬件、存储灾备、网络治理、安全合规、可观测性、开发与 AI、团队协作、操作系统集成以及平台扩展。每项都通过统一的配置、检查和执行接口接入，执行记录和任务日志使用独立的 `next-features` 存储，因此可以和第二批能力分别重试、审计和清理。
+
+```text
+GET  /api/next-features
+GET  /api/vms/:id/next-features
+POST /api/vms/:id/next-features
+```
+
+POST 示例：
+
+```json
+{ "action": "check", "featureId": "multi-host-inventory" }
+{ "action": "run", "featureId": "rpo-rto-planner", "options": { "backupGiB": 20, "bandwidthMbps": 200 } }
+{ "action": "configure", "featureId": "feature-rollout", "enabled": true, "options": { "percentage": 25 } }
+```
+
+CLI：
+
+```powershell
+npm run sakura -- next my-dev view
+npm run sakura -- next my-dev check multi-host-inventory
+npm run sakura -- next my-dev run rpo-rto-planner plan.json
+```
+
+本批功能会优先执行安全的宿主机或客户机探测；需要外部主机、驱动、认证服务或云端目标时，适配器会返回 `ready`、`executed` 和原因，并持久化请求与配置，不会自动安装驱动、发送凭据或执行未经确认的自然语言命令。

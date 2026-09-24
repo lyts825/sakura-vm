@@ -13,7 +13,7 @@ async function main() {
       '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
     );
     console.log(
-      'Sakura — local Linux workspaces\n\n  list\n  images\n  image <alpine|debian|ubuntu>\n  create <name> [alpine|debian|ubuntu] [none|node|python|rust]\n  start <name>\n  stop <name>\n  suspend <name>\n  resume <name>\n  extended <name> [view|check|run|configure|operation]\n  shell <name>\n  exec <name> -- <command> [args...]\n  metrics <name>\n  clone <name> <new-name>\n  export <name> <file.sakura>\n  import <new-name> <file.sakura>\n  snapshots <name>\n  snapshot <name> <label>\n  project <name> <setup|start|stop|configure> [project.json]\n  sync <name> <both|push|pull|configure> [sync.json]\n\nStart the service with npm start first.',
+      'Sakura — local Linux workspaces\n\n  list\n  images\n  image <alpine|debian|ubuntu>\n  create <name> [alpine|debian|ubuntu] [none|node|python|rust]\n  start <name>\n  stop <name>\n  suspend <name>\n  resume <name>\n  extended <name> [view|check|run|configure|operation]\n  next <name> [view|check|run|configure]\n  shell <name>\n  exec <name> -- <command> [args...]\n  metrics <name>\n  clone <name> <new-name>\n  export <name> <file.sakura>\n  import <new-name> <file.sakura>\n  snapshots <name>\n  snapshot <name> <label>\n  project <name> <setup|start|stop|configure> [project.json]\n  sync <name> <both|push|pull|configure> [sync.json]\n\nStart the service with npm start first.',
     );
     console.log(
       '\nWorkspace management:\n  tasks\n  task <id> <cancel|retry>\n  storage\n  batch <start|stop> <name...>\n  organize <name> <organization.json>\n  diagnostics <name> [run]\n  resize <name> <GiB|finish>\n  backups <name>\n  backup <name> [run|verify|restore|delete] [backup-id] [new-name]\n  backup <name> configure <policy.json>\n  ide <name> [configure]\n  recipe <name> [read|write|apply] [sakura.json]\n  from-recipe <new-name> <sakura.json>\n  sync-preview <name>\n  sync-apply <name> <decisions.json>\n  project <name> <start|stop> [service-name]',
@@ -101,6 +101,10 @@ async function main() {
       console.log(result);
       return;
     }
+    if (action === 'next' && name === 'catalog') {
+      console.log(JSON.stringify(await api('/next-features'), null, 2));
+      return;
+    }
     const machines = await api('/vms');
     if (action === 'batch') {
       if (!['start', 'stop'].includes(name) || !args.length)
@@ -132,6 +136,7 @@ async function main() {
         'suspend',
         'resume',
         'extended',
+        'next',
         'shell',
         'exec',
         'metrics',
@@ -320,6 +325,25 @@ async function main() {
         if (!args[1]) throw new Error('Usage: extended <name> operation <operation.json>');
         console.log(await api(`/vms/${vm.id}/extended-features`, 'POST', { action: 'operation', ...JSON.parse(await readFile(args[1], 'utf8')) }));
       } else throw new Error('Unknown extended action');
+      return;
+    }
+    if (action === 'next') {
+      const kind = args[0] || 'view';
+      if (kind === 'catalog') console.log(JSON.stringify(await api('/next-features'), null, 2));
+      else if (kind === 'view') console.log(JSON.stringify(await api(`/vms/${vm.id}/next-features`), null, 2));
+      else if (kind === 'check') {
+        if (!args[1]) throw new Error('Usage: next <name> check <feature-id> [options.json]');
+        const options = args[2] ? JSON.parse(await readFile(args[2], 'utf8')) : {};
+        console.log(await api(`/vms/${vm.id}/next-features`, 'POST', { action: 'check', featureId: args[1], options }));
+      } else if (kind === 'run') {
+        if (!args[1]) throw new Error('Usage: next <name> run <feature-id> [options.json]');
+        const options = args[2] ? JSON.parse(await readFile(args[2], 'utf8')) : {};
+        console.log(await api(`/vms/${vm.id}/next-features`, 'POST', { action: 'run', featureId: args[1], options }));
+      } else if (kind === 'configure') {
+        if (!args[1] || !['true', 'false'].includes(args[2] || '')) throw new Error('Usage: next <name> configure <feature-id> <true|false> [options.json]');
+        const options = args[3] ? JSON.parse(await readFile(args[3], 'utf8')) : {};
+        console.log(await api(`/vms/${vm.id}/next-features`, 'POST', { action: 'configure', featureId: args[1], enabled: args[2] === 'true', options }));
+      } else throw new Error('Unknown next action');
       return;
     }
     if (action === 'sync-preview') {

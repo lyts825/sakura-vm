@@ -11,6 +11,7 @@ import {
 import { gitActionSchema } from '../server/git-workbench.ts';
 import { syncDirection } from '../server/sync.ts';
 import { projectSchema } from '../server/workspaces.ts';
+import { nextFeatureCatalog } from '../server/next-features.ts';
 
 test('project catalog keeps a default project and rejects duplicate identities', () => {
   assert.equal(
@@ -81,4 +82,13 @@ test('sync baseline distinguishes safe deletion from a new file', () => {
   assert.equal(syncDirection('old', undefined, 'old'), 'push');
   assert.equal(syncDirection(undefined, 'new', 'old'), 'pull');
   assert.equal(projectSchema.safeParse({ runtimes: { node: '22.12.0' } }).success, true);
+});
+
+test('the third feature tranche has 100 unique, runnable entries', () => {
+  assert.equal(nextFeatureCatalog.length, 100);
+  assert.equal(new Set(nextFeatureCatalog.map(([id]) => id)).size, 100);
+  assert.equal(new Set(nextFeatureCatalog.map(([, , category]) => category)).size, 10);
+  assert.ok(nextFeatureCatalog.every(([, , , priority]) => ['P0', 'P1', 'P2'].includes(priority)));
+  assert.ok(nextFeatureCatalog.every(([, , , , , state]) => state === 'available'));
+  assert.ok(nextFeatureCatalog.every(([id]) => /^[a-z][a-z0-9-]+$/.test(id)));
 });

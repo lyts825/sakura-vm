@@ -3,6 +3,7 @@ import { Activity, Bell, CheckCircle2, Compass, HardDrive, Package, Play, Search
 import type { VMView } from '../server/model';
 import type { FeatureCatalogItem, Schedule, AlertConfig, ResourcePreset, ResourcePresetId } from '../server/feature-suite';
 import type { ExtendedFeature } from '../server/extended-features';
+import type { NextFeature } from '../server/next-features';
 import type { JobView } from '../server/jobs';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
 import { workspaceRequest } from './workspace-request';
@@ -48,6 +49,13 @@ type ExtendedView = {
   executions?: Array<{ featureId: string; action: string; ready: boolean; finishedAt: string }>;
   jobs: JobView[];
 };
+type NextView = {
+  projectId?: string;
+  features: NextFeature[];
+  settings: Record<string, { enabled: boolean; options?: Record<string, unknown>; updatedAt: string }>;
+  executions?: Array<{ featureId: string; action: string; ready: boolean; executed: boolean; finishedAt: string }>;
+  jobs: JobView[];
+};
 
 const fallbackPresets: Record<ResourcePresetId, ResourcePreset> = {
   light: { name: '轻量命令行', memoryMiB: 512, cpus: 1 },
@@ -64,6 +72,7 @@ export function FeatureSuitePanel({ request: baseRequest, vms, selected, onSelec
   const active = vms.find((vm) => vm.id === selected) || vms[0];
   const remote = useRemote<SuiteView>(request, active ? `/vms/${active.id}/advanced` : '/feature-suite', !!active, 5000);
   const extended = useRemote<ExtendedView>(request, active ? `/vms/${active.id}/extended-features` : '/extended-features', !!active, 10000);
+  const next = useRemote<NextView>(request, active ? `/vms/${active.id}/next-features` : '/next-features', !!active, 10000);
   const action = useAction();
   const [schedule, setSchedule] = useState<Schedule>({ enabled: false, idleMinutes: 0, idleAction: 'stop' });
   const [alerts, setAlerts] = useState<AlertConfig>({
@@ -96,6 +105,8 @@ export function FeatureSuitePanel({ request: baseRequest, vms, selected, onSelec
   const [diskEntries, setDiskEntries] = useState<DiskEntry[]>([]);
   const [extendedResult, setExtendedResult] = useState('');
   const [extendedOperation, setExtendedOperation] = useState('');
+  const [nextResult, setNextResult] = useState('');
+  const [nextSearch, setNextSearch] = useState('');
 
   useEffect(() => {
     if (!remote.data) return;
@@ -215,6 +226,20 @@ export function FeatureSuitePanel({ request: baseRequest, vms, selected, onSelec
     await request(`/vms/${active.id}/extended-features`, 'POST', { action: 'operation', operation: item.id, parameters: item.example });
     extended.reload();
   }, '扩展操作已提交，请在任务中心查看结果');
+  const nextFeatures = useMemo(() => {
+    const query = nextSearch.trim().toLocaleLowerCase();
+    return (next.data?.features || []).filter((feature) => !query || `${feature.id} ${feature.name} ${feature.category} ${feature.summary}`.toLocaleLowerCase().includes(query));
+  }, [next.data?.features, nextSearch]);
+  const checkNext = (featureId: string) => action.run(async () => {
+    const result = await request(`/vms/${active.id}/next-features`, 'POST', { action: 'check', featureId });
+    setNextResult(JSON.stringify(result, null, 2));
+    next.reload();
+  });
+  const runNext = (featureId: string) => action.run(async () => {
+    const result = await request(`/vms/${active.id}/next-features`, 'POST', { action: 'run', featureId });
+    setNextResult(JSON.stringify(result, null, 2));
+    next.reload();
+  }, '第三批能力任务已提交');
 
   return (
     <div className="content-panel feature-panel management-page">
@@ -230,7 +255,7 @@ export function FeatureSuitePanel({ request: baseRequest, vms, selected, onSelec
           </select>
         </label>
       </div>
-      <Feedback error={remote.error || extended.error || action.error} message={action.message} />
+      <Feedback error={remote.error || extended.error || next.error || action.error} message={action.message} />
 
       <div className="feature-grid">
         <section className="feature-card">
@@ -316,6 +341,16 @@ export function FeatureSuitePanel({ request: baseRequest, vms, selected, onSelec
           {(extended.data?.features || []).map((feature) => <div className="catalog-item" key={feature.id}><div><b>{feature.name}</b><p>{feature.summary}</p></div><span className="badge running">已接入</span><button className="secondary compact" disabled={action.busy} onClick={() => checkExtended(feature.id)}>检查</button><button className="secondary compact" disabled={action.busy} onClick={() => runExtended(feature.id)}>运行</button></div>)}
         </div>
         {extendedResult && <pre className="feature-log">{extendedResult}</pre>}
+      </section>
+
+      <section className="feature-card">
+        <div className="panel-heading"><h3><Compass size={17} />第三批 100 项能力</h3><span className="subtle-note">{next.data?.features.length || 100} 项 · 配置、检查、执行均有记录</span></div>
+        <p className="muted">每项功能都已接入统一适配器。主机、客户机或外部服务缺失时，检查结果会明确说明原因并保留配置。</p>
+        <input value={nextSearch} onChange={(event) => setNextSearch(event.target.value)} placeholder="搜索功能、分类或说明…" aria-label="搜索第三批能力" />
+        <div className="feature-catalog extended-catalog next-catalog">
+          {nextFeatures.map((feature) => <div className="catalog-item" key={feature.id}><div><b>{feature.name}</b><p>{feature.category} · {feature.summary}</p></div><span className="badge running">已接入</span><button className="secondary compact" disabled={action.busy} onClick={() => checkNext(feature.id)}>检查</button><button className="secondary compact" disabled={action.busy} onClick={() => runNext(feature.id)}>运行</button></div>)}
+        </div>
+        {nextResult && <pre className="feature-log">{nextResult}</pre>}
       </section>
 
       <section className="feature-card">
