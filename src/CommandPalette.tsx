@@ -6,6 +6,8 @@ import type { ProjectFile } from '../server/project-files';
 import { Feedback, useRemote, type Request } from './FeaturePanels';
 import { PresetRunner } from './DevelopmentPanels';
 import { nextSelection } from './keyboard-navigation';
+import { usePlugins } from './plugin-context';
+import { pluginSurfaceEnabled } from '../shared/plugins';
 
 export type PaletteTarget = { id?: string; page?: string; tab?: string; file?: string };
 export type PaletteAction = {
@@ -31,16 +33,23 @@ export function CommandPalette({
   close: () => void;
   actions?: PaletteAction[];
 }) {
+  const plugins = usePlugins();
+  const development = plugins.includes('development');
   const dialog = useRef<HTMLDialogElement>(null),
     [query, setQuery] = useState(''),
     [search, setSearch] = useState(''),
     [index, setIndex] = useState(0),
     [preset, setPreset] = useState<CommandPreset | null>(null);
-  const commands = useRemote<{ presets: CommandPreset[] }>(request, `/vms/${vm?.id}/commands`, !!vm, 0);
+  const commands = useRemote<{ presets: CommandPreset[] }>(
+    request,
+    `/vms/${vm?.id}/commands`,
+    !!vm && development,
+    0,
+  );
   const files = useRemote<{ root: string; files: ProjectFile[]; truncated: boolean }>(
     request,
     `/vms/${vm?.id}/project-files?q=${encodeURIComponent(search)}`,
-    vm?.status === 'running' && !!search,
+    vm?.status === 'running' && !!search && development,
     0,
   );
   useEffect(() => {
@@ -84,7 +93,10 @@ export function CommandPalette({
       ['snapshots', '快照与加密备份'],
       ['maintenance', '实例维护'],
     ]
-      .filter(([tab, label]) => vm && match(label, ['功能', 'workspace', tab]))
+      .filter(
+        ([tab, label]) =>
+          vm && pluginSurfaceEnabled(plugins, 'tabs', tab) && match(label, ['功能', 'workspace', tab]),
+      )
       .map(([tab, title]) => ({
         key: `tab:${tab}`,
         title,
@@ -93,12 +105,16 @@ export function CommandPalette({
         run: () => void navigate({ tab, page: 'workspace' }),
       })),
     ...[
+      ['plugins', '插件与整合包'],
       ['tasks', '任务中心与执行记录'],
       ['settings', '系统设置与数据迁移'],
       ['images', '镜像与备份导入'],
       ['features', '能力中心与自动化'],
     ]
-      .filter(([page, label]) => match(label, ['全局', '导航', page]))
+      .filter(
+        ([page, label]) =>
+          pluginSurfaceEnabled(plugins, 'pages', page) && match(label, ['全局', '导航', page]),
+      )
       .map(([page, title]) => ({
         key: `page:${page}`,
         title,

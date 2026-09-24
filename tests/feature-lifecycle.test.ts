@@ -1,3 +1,4 @@
+import { PLUGINS } from '../shared/plugins.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -16,14 +17,17 @@ after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-function fixture() {
+async function fixture() {
   const machines = Object.assign(new EventEmitter(), {
     records: new Map(),
     live: new Map(),
     get: () => ({ name: 'vm' }),
     state: () => 'running',
   }) as unknown as Machines;
-  const features = new Features(machines);
+  const features = await Features.create(
+    machines,
+    PLUGINS.map((item) => item.id),
+  );
   const req = Object.assign(new EventEmitter(), { method: 'POST', headers: {} }) as IncomingMessage;
   const res = Object.assign(new EventEmitter(), {
     writableFinished: false,
@@ -54,7 +58,7 @@ test('scoped feature endpoints hand the selected project through to views and jo
     join(directory, `project-${projectId}.json`),
     JSON.stringify({ directory: '/workspace/selected', template: 'none' }),
   );
-  const { features, machines } = fixture();
+  const { features, machines } = await fixture();
   const commands: string[] = [];
   machines.live.set(id, {} as any);
   machines.exec = async (_vmId: string, command: string) => {
@@ -114,7 +118,7 @@ test('scoped feature endpoints hand the selected project through to views and jo
 });
 
 test('disconnect cancels an active import and permits a new import after cleanup', async () => {
-  const { features, req, res } = fixture();
+  const { features, req, res } = await fixture();
   let signal: AbortSignal | undefined;
   let started!: () => void;
   const began = new Promise<void>((resolve) => {
@@ -150,7 +154,7 @@ test('disconnect cancels an active import and permits a new import after cleanup
 });
 
 test('shutdown waits for request cleanup and rejects new feature operations', async () => {
-  const { features, req, res } = fixture();
+  const { features, req, res } = await fixture();
   let release!: () => void;
   let started!: () => void;
   let signal: AbortSignal | undefined;
@@ -189,7 +193,7 @@ test('shutdown waits for request cleanup and rejects new feature operations', as
 });
 
 test('shutdown also waits for in-flight read operations before releasing the runtime', async () => {
-  const { features, req, res } = fixture();
+  const { features, req, res } = await fixture();
   req.method = 'GET';
   let started!: () => void;
   let release!: () => void;

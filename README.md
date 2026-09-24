@@ -1,8 +1,31 @@
 # Sakura
 
-参考 WSL 交互方式的本地 Linux 工作空间：通过 Web 或命令行创建发行版、启动终端、编辑文件和管理磁盘快照。
+一个从基础终端开始、通过插件扩展的本地 Linux 工作空间。
 
 **真正运行 Linux 内核。** [PosixLoom](https://github.com/lyts825/posixloom) 负责命令编排、会话与 Windows 进程树管理，[QEMU](https://www.qemu.org/) 负责虚拟化。当前不是 WSL 的替代实现，也不依赖现有的 WSL 发行版。
+
+## 基础版与插件
+
+初始版本只提供 **Alpine 实例创建/启停/删除、持久磁盘、单终端与启动日志、基础资源配置、插件管理**。本机鉴权、SSH 密钥、操作锁与安全关机始终有效。
+
+文件、桌面、多终端、项目、Git、同步、备份、监控等均为可选插件。**默认不启用任何插件或整合包**，也不运行它们的后台任务。默认导航为「工作空间 / 插件中心 / 系统设置」，实例标签为「终端 / 配置」。
+
+在「插件中心」单独选择插件，或按场景选择整合包：
+
+| 整合包                  | 内容                                            |
+| ----------------------- | ----------------------------------------------- |
+| `essentials` 日常使用   | 文件、镜像、快照与多终端                        |
+| `developer` 开发工作台  | 项目、代码、Git、工具、网络、私密配置与快捷命令 |
+| `operations` 运维与备份 | 备份、同步、监控、诊断、整理与数据迁移          |
+| `desktop` 图形桌面      | KDE Plasma、文件与快照；桌面仍为实验性          |
+| `lab` 实验室            | 自动化、容器及扩展能力适配器                    |
+| `complete` 完整兼容     | 此前全部可选能力，包括实验功能                  |
+
+依赖自动补齐并去重。选择保存后，**退出并重新启动 Sakura 服务才会生效**，仅刷新浏览器无效；重启会停止当前实例。移除整合包时，其他整合包或独立选择仍需要的插件继续保留。
+
+旧版本升级后同样默认进入基础版，已有实例和插件数据保留。需要原来的自动备份、同步等后台行为时，请选择对应插件并重启；可使用 `complete` 恢复全部入口。停用插件不会卸载客户机软件或撤销已经写入客户机的配置。
+
+当前只加载随源码交付的内置插件，按需激活服务与加载浏览器入口；尚不提供远程市场、独立插件下载或热卸载。完整设计、插件归属和扩展约束见 [插件架构](docs/plugin-architecture.md)。
 
 ## 快速启动
 
@@ -35,7 +58,9 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 本机 WHPX 实测新实例首启 6.81 秒，后续启动 5.96–7.22 秒；没有 `qemu-io` 或使用自定义 Alpine 镜像时会保留兼容回退路径。测量条件、TCG 回退的取舍及验证记录见 [启动性能验证](docs/boot-performance.md)。
 
-## 已实现
+## 可选插件能力（启用后可用）
+
+以下能力由插件提供，界面入口、API 与后台服务随插件激活。具体插件标识见 [插件清单](docs/plugin-architecture.md#插件划分)。
 
 - **开发工作台与安全维护**：Git、多文件代码编辑器、Ctrl / ⌘ + K 命令面板、开发工具与网络管理、服务持续健康检查、Windows 私密配置、Docker / Compose、数据目录迁移、加密和外部目录备份。入口、CLI 与验证方法见 [开发工作台说明](docs/development-workbench.md)。
 - **工作区恢复与自动化**：会话恢复、多项目隔离、文件历史与回收站、流水线产物、远程 Git、运行时版本、代码检查、同步删除决策、任务事件和 QCOW2 磁盘整理。入口与 API 索引见 [工作区恢复与自动化](docs/development-next.md)。
@@ -67,6 +92,8 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 ## Linux 图形桌面（实验性）
 
+先在插件中心启用 `desktop` 插件或「图形桌面」整合包，并重启服务。
+
 创建实例或在停机后的「配置」中将内存设为至少 **1024 MiB**（建议 **2048 MiB**），启动后进入「桌面」标签，点击「安装并启用桌面」。安装会从对应发行版的官方软件仓库下载 KDE Plasma、TigerVNC、Dolphin、Konsole 和中文字体，需要联网及数百 MiB 磁盘空间，页面会显示进度和失败信息；失败后可重试。
 
 安装完成后自动连接桌面，重启实例时桌面服务也会自动启动。浏览器关闭或切换标签后，客户机中的桌面会话继续运行，再次打开即可连接。短暂断线会自动重连，最多尝试 5 次；认证失败会停止重试并显示提示，也可手动点击「重新连接」。支持鼠标、键盘、自适应分辨率和全屏；浏览器保留的系统快捷键仍由浏览器处理。
@@ -78,6 +105,8 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 已修复并发连接时短暂拒绝连接导致的直接失败，并加入桌面自动重连、显式网卡 MSI-X 配置。此前本机 WHPX 曾出现 SSH 与桌面同时长时间失联，本轮未复现该现象，仍不能认定其根因已解决；详细验证与限制见 [图形桌面验证记录](docs/linux-desktop.md)。
 
 ## 界面与快捷操作
+
+下述文件、多终端、桌面及快捷命令面板操作要求启用对应插件；基础终端、主题与实例导航始终可用。
 
 - 右上角切换「花昼 / 夜樱」主题，选择保存在当前浏览器中。
 - 内置本地字体：Noto Sans SC 用于界面正文，Noto Serif SC 用于标题和题字，JetBrains Mono 用于终端与代码；统一字重、行距与数字排版。裁剪后的 WOFF2 共约 365 KiB，无需外部字体服务，其他字符使用系统字体回退。
@@ -103,21 +132,32 @@ npm run sakura -- shell alpine-dev
 npm run sakura -- exec alpine-dev -- uname -a
 npm run sakura -- exec alpine-dev -- sh -lc 'cd /workspace; ls -la'
 npm run sakura -- stop alpine-dev
+
+npm run sakura -- plugins
+npm run sakura -- plugin enable files
+npm run sakura -- pack enable developer
+npm run sakura -- pack disable developer
+npm run sakura -- help all
 ```
 
 `shell` 和 `exec` 会按需启动发行版。命令在 Linux 内执行，不会送入 Windows Shell。
+
+默认帮助只列基础与插件管理命令；`help all` 列出全部可选命令。可选命令要求对应插件已经生效。
 
 ## 结构与数据
 
 ```text
 src/                    React + xterm.js 控制台
+shared/plugins.ts       插件与整合包声明、依赖解析、界面入口
+server/plugin-manager.ts 插件选择持久化与运行状态
+server/plugins/         各插件服务注册与 API
 server/index.ts         HTTP / WebSocket、鉴权、静态服务
 server/runtime.ts       PosixLoom 原生命令插件，精确 argv 调用 QEMU
 server/machines.ts      发行版生命周期、SSH / SFTP、快照
 server/seed.ts          本地 NoCloud ISO 与每实例 SSH 密钥
 server/desktop.ts       图形桌面安装状态与 SSH / WebSocket 转发
 server/desktop-guest.ts KDE Plasma / Fcitx5 安装、OpenRC 与 systemd 会话脚本
-server/features.ts      文件、项目、资源、同步、镜像与迁移 API
+server/features.ts      按需加载插件、请求取消与资源清理
 server/workspaces.ts    模板安装、项目任务与客户机采样
 server/sync.ts          Windows / Linux 目录同步与冲突检测
 server/bundles.ts       独立磁盘导入导出与克隆
@@ -129,6 +169,7 @@ scripts/cli.mjs         WSL 风格命令行入口
 .data/images/           只读基础镜像
 .data/machines/<id>/    增量磁盘、NoCloud 种子、私有 SSH 密钥
 .data/machines.json     发行版与快照元数据
+.data/plugins.json      独立选择与整合包；缺少文件表示基础版
 ```
 
 调用链：`Web/CLI → 本地 API → PosixLoom Service → Rust Native Host / Job Object → QEMU → Linux`。SSH 仅连接到 QEMU 分配的本机随机端口，默认不对外开放 SSH，不生成共享密码。浏览器获得的是短期服务访问凭证，不会收到实例 SSH 私钥。
@@ -157,6 +198,8 @@ npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启
 ```
 
 真实 VM 测试需要先完成 `setup`；测试实例及其磁盘会在结束时删除。
+
+插件回归还覆盖空配置、依赖/版本检查、组合引用、并发保存、API 拦截、配置兼容、按需初始化、失败隔离、关闭清理与数据保留。可选功能集成脚本显式加载插件，不会修改用户的插件选择。
 
 启动耗时写入 `artifacts/boot-timings.json`，分别记录首次初始化和后续启动。设置 `SAKURA_TEST_ACCELERATOR=tcg` 或 `whpx` 可分别验证指定模式；设置 `SAKURA_TEST_NETWORK=1` 可额外验证客户机 DNS 与 HTTPS 联网；默认测试无需互联网。
 

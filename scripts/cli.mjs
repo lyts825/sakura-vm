@@ -4,11 +4,17 @@ import { createReadStream } from 'node:fs';
 import { readFile, open, lstat, unlink } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { developmentCommand, developmentHelp } from './development-cli.mjs';
 const base = `http://127.0.0.1:${process.env.SAKURA_PORT || 7337}`;
 const [action = 'help', name, ...args] = process.argv.slice(2);
 async function main() {
   if (action === 'help') {
+    if (name !== 'all') {
+      console.log(
+        'Sakura — minimal Linux workspace\n\n  list\n  create <name>\n  start <name>\n  stop <name>\n  shell <name>\n  exec <name> -- <command> [args...]\n  plugins\n  plugin <enable|disable> <id>\n  pack <enable|disable> <id>\n  help all\n\nOptional commands require their plugin. Plugin changes take effect after restarting the service.',
+      );
+      return;
+    }
+    const { developmentHelp } = await import('./development-cli.mjs');
     console.log(
       '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
     );
@@ -33,7 +39,26 @@ async function main() {
       if (!response.ok) throw new Error(result.error);
       return result;
     }
-    const development = await developmentCommand(action, name, args, api, base);
+    if (action === 'plugins') {
+      console.log(JSON.stringify(await api('/plugins'), null, 2));
+      return;
+    }
+    if (action === 'plugin' || action === 'pack') {
+      if (!['enable', 'disable'].includes(name) || !args[0] || args.length !== 1)
+        throw new Error(`Usage: ${action} <enable|disable> <id>`);
+      const status = await api('/plugins', 'PATCH', {
+        kind: action,
+        id: args[0],
+        enabled: name === 'enable',
+      });
+      console.log(
+        JSON.stringify({ planned: status.planned, restartRequired: status.restartRequired }, null, 2),
+      );
+      return;
+    }
+    const development = ['list', 'create', 'start', 'stop', 'shell', 'exec'].includes(action)
+      ? { handled: false }
+      : await (await import('./development-cli.mjs')).developmentCommand(action, name, args, api, base);
     if (development.handled) {
       console.log(JSON.stringify(development.value, null, 2));
       return;
@@ -308,41 +333,77 @@ async function main() {
     if (action === 'extended') {
       const kind = args[0] || 'view';
       if (kind === 'catalog') console.log(JSON.stringify(await api('/extended-features'), null, 2));
-      else if (kind === 'view') console.log(JSON.stringify(await api(`/vms/${vm.id}/extended-features`), null, 2));
+      else if (kind === 'view')
+        console.log(JSON.stringify(await api(`/vms/${vm.id}/extended-features`), null, 2));
       else if (kind === 'check') {
         if (!args[1]) throw new Error('Usage: extended <name> check <feature-id>');
-        console.log(await api(`/vms/${vm.id}/extended-features`, 'POST', { action: 'check', featureId: args[1] }));
+        console.log(
+          await api(`/vms/${vm.id}/extended-features`, 'POST', { action: 'check', featureId: args[1] }),
+        );
       } else if (kind === 'run') {
         if (!args[1]) throw new Error('Usage: extended <name> run <feature-id> [options.json]');
         const options = args[2] ? JSON.parse(await readFile(args[2], 'utf8')) : {};
         const { path, ...featureOptions } = options;
-        console.log(await api(`/vms/${vm.id}/extended-features`, 'POST', { action: 'run', featureId: args[1], ...(path ? { path } : {}), options: featureOptions }));
+        console.log(
+          await api(`/vms/${vm.id}/extended-features`, 'POST', {
+            action: 'run',
+            featureId: args[1],
+            ...(path ? { path } : {}),
+            options: featureOptions,
+          }),
+        );
       } else if (kind === 'configure') {
-        if (!args[1] || !['true', 'false'].includes(args[2] || '')) throw new Error('Usage: extended <name> configure <feature-id> <true|false> [options.json]');
+        if (!args[1] || !['true', 'false'].includes(args[2] || ''))
+          throw new Error('Usage: extended <name> configure <feature-id> <true|false> [options.json]');
         const options = args[3] ? JSON.parse(await readFile(args[3], 'utf8')) : {};
-        console.log(await api(`/vms/${vm.id}/extended-features`, 'POST', { action: 'configure', featureId: args[1], enabled: args[2] === 'true', options }));
+        console.log(
+          await api(`/vms/${vm.id}/extended-features`, 'POST', {
+            action: 'configure',
+            featureId: args[1],
+            enabled: args[2] === 'true',
+            options,
+          }),
+        );
       } else if (kind === 'operation') {
         if (!args[1]) throw new Error('Usage: extended <name> operation <operation.json>');
-        console.log(await api(`/vms/${vm.id}/extended-features`, 'POST', { action: 'operation', ...JSON.parse(await readFile(args[1], 'utf8')) }));
+        console.log(
+          await api(`/vms/${vm.id}/extended-features`, 'POST', {
+            action: 'operation',
+            ...JSON.parse(await readFile(args[1], 'utf8')),
+          }),
+        );
       } else throw new Error('Unknown extended action');
       return;
     }
     if (action === 'next') {
       const kind = args[0] || 'view';
       if (kind === 'catalog') console.log(JSON.stringify(await api('/next-features'), null, 2));
-      else if (kind === 'view') console.log(JSON.stringify(await api(`/vms/${vm.id}/next-features`), null, 2));
+      else if (kind === 'view')
+        console.log(JSON.stringify(await api(`/vms/${vm.id}/next-features`), null, 2));
       else if (kind === 'check') {
         if (!args[1]) throw new Error('Usage: next <name> check <feature-id> [options.json]');
         const options = args[2] ? JSON.parse(await readFile(args[2], 'utf8')) : {};
-        console.log(await api(`/vms/${vm.id}/next-features`, 'POST', { action: 'check', featureId: args[1], options }));
+        console.log(
+          await api(`/vms/${vm.id}/next-features`, 'POST', { action: 'check', featureId: args[1], options }),
+        );
       } else if (kind === 'run') {
         if (!args[1]) throw new Error('Usage: next <name> run <feature-id> [options.json]');
         const options = args[2] ? JSON.parse(await readFile(args[2], 'utf8')) : {};
-        console.log(await api(`/vms/${vm.id}/next-features`, 'POST', { action: 'run', featureId: args[1], options }));
+        console.log(
+          await api(`/vms/${vm.id}/next-features`, 'POST', { action: 'run', featureId: args[1], options }),
+        );
       } else if (kind === 'configure') {
-        if (!args[1] || !['true', 'false'].includes(args[2] || '')) throw new Error('Usage: next <name> configure <feature-id> <true|false> [options.json]');
+        if (!args[1] || !['true', 'false'].includes(args[2] || ''))
+          throw new Error('Usage: next <name> configure <feature-id> <true|false> [options.json]');
         const options = args[3] ? JSON.parse(await readFile(args[3], 'utf8')) : {};
-        console.log(await api(`/vms/${vm.id}/next-features`, 'POST', { action: 'configure', featureId: args[1], enabled: args[2] === 'true', options }));
+        console.log(
+          await api(`/vms/${vm.id}/next-features`, 'POST', {
+            action: 'configure',
+            featureId: args[1],
+            enabled: args[2] === 'true',
+            options,
+          }),
+        );
       } else throw new Error('Unknown next action');
       return;
     }

@@ -18,16 +18,26 @@ type Operation = {
 
 export class Desktops {
   private operations = new Map<string, Operation>();
+  private pending = new Set<Promise<void>>();
+  private closed = false;
   constructor(private machines: Machines) {
-    machines.on('change', () => {
-      for (const [id, operation] of this.operations) {
-        const live = machines.live.get(id);
-        if (live?.status !== 'running' || live.startedAt !== operation.startedAt) {
-          operation.abort.abort();
-          this.operations.delete(id);
-        }
+    machines.on('change', this.onChange);
+  }
+  private onChange = () => {
+    for (const [id, operation] of this.operations) {
+      const live = this.machines.live.get(id);
+      if (live?.status !== 'running' || live.startedAt !== operation.startedAt) {
+        operation.abort.abort();
+        this.operations.delete(id);
       }
-    });
+    }
+  };
+  async close() {
+    this.closed = true;
+    this.machines.off('change', this.onChange);
+    for (const operation of this.operations.values()) operation.abort.abort();
+    await Promise.allSettled([...this.pending]);
+    this.operations.clear();
   }
 
   async view(id: string): Promise<DesktopView> {
@@ -58,7 +68,7 @@ export class Desktops {
   ): DesktopView {
     const vm = this.machines.get(id);
     const live = this.machines.live.get(id);
-    if (this.machines.closing || live?.status !== 'running')
+    if (this.closed || this.machines.closing || live?.status !== 'running')
       throw new AppError('请等待发行版启动完成，再启用桌面', 409);
     const previous = this.operations.get(id);
     if (previous && ['installing', 'starting'].includes(previous.view.status)) return { ...previous.view };
@@ -82,7 +92,7 @@ export class Desktops {
       },
     };
     this.operations.set(id, operation);
-    void this.machines
+    const pending = this.machines
       .exec(
         id,
         action === 'install'
@@ -109,6 +119,8 @@ export class Desktops {
           operation.view.error = error.message;
         }
       });
+    this.pending.add(pending);
+    void pending.finally(() => this.pending.delete(pending));
     return { ...operation.view };
   }
 

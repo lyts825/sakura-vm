@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Play,
@@ -12,7 +12,7 @@ import {
   Copy,
   FolderSync as SyncIcon,
 } from 'lucide-react';
-import type { VMView, VMConfig, Snapshot } from '../server/model';
+import type { VMConfig, Snapshot } from '../server/model';
 import type { JobView } from '../server/jobs';
 import type { Project } from '../server/workspaces';
 import type { SyncConfig, SyncPreview, SyncDecisions } from '../server/sync';
@@ -22,168 +22,19 @@ import { HealthPanel, SecretReferences } from './DevelopmentPanels';
 import { workspaceRequest } from './workspace-request';
 import './features.css';
 
-export type Request = <T = any>(
-  path: string,
-  method?: string,
-  body?: unknown,
-  signal?: AbortSignal,
-) => Promise<T>;
-export type FeatureProps = {
-  vm: VMView;
-  request: Request;
-  token: string;
-  refresh: () => Promise<unknown>;
-  projectId?: string;
-  onProjectChange?: (projectId: string) => void;
-};
-export const distroName = (distro?: string) =>
-  ({ alpine: 'Alpine 3.23', debian: 'Debian 12', ubuntu: 'Ubuntu 24.04 LTS' })[distro || 'alpine'] || distro;
-export const formatBytes = (value: number) =>
-  value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GiB` : `${(value / 1024 ** 2).toFixed(1)} MiB`;
-export function useRemote<T>(request: Request, path: string, enabled = true, interval = 5000) {
-  const [data, setData] = useState<T | null>(null),
-    [error, setError] = useState(''),
-    [revision, bump] = useState(0);
-  useEffect(() => {
-    if (!enabled) {
-      setData(null);
-      setError('');
-      return;
-    }
-    const abort = new AbortController();
-    const isVisible = () => document.visibilityState !== 'hidden';
-    let alive = true,
-      pending = false,
-      timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      if (!alive || pending || !isVisible()) return;
-      pending = true;
-      try {
-        const value = await request<T>(path, 'GET', undefined, abort.signal);
-        if (alive) {
-          setData(value);
-          setError('');
-        }
-      } catch (e) {
-        if (alive) setError((e as Error).message);
-      } finally {
-        pending = false;
-        if (alive && interval && isVisible()) timer = setTimeout(poll, interval);
-      }
-    };
-    const visible = () => {
-      clearTimeout(timer);
-      if (isVisible()) void poll();
-    };
-    document.addEventListener('visibilitychange', visible);
-    void poll();
-    return () => {
-      alive = false;
-      abort.abort();
-      document.removeEventListener('visibilitychange', visible);
-      clearTimeout(timer);
-    };
-  }, [request, path, enabled, interval, revision]);
-  return { data, error, reload: useCallback(() => bump((n) => n + 1), []) };
-}
-export function useAction() {
-  const pending = useRef(false),
-    alive = useRef(true),
-    controller = useRef<AbortController | null>(null);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      controller.current?.abort();
-    };
-  }, []);
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [message, setMessage] = useState('');
-  const run = async (action: (signal: AbortSignal) => Promise<unknown>, success = '') => {
-    if (!alive.current || pending.current) return;
-    pending.current = true;
-    const abort = new AbortController();
-    controller.current = abort;
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      await action(abort.signal);
-      if (alive.current) setMessage(success);
-    } catch (e) {
-      if (alive.current) {
-        if ((e as Error).name === 'AbortError') setMessage('操作已取消');
-        else setError((e as Error).message);
-      }
-    } finally {
-      pending.current = false;
-      if (controller.current === abort) controller.current = null;
-      if (alive.current) setBusy(false);
-    }
-  };
-  const clear = () => {
-    setError('');
-    setMessage('');
-  };
-  return { busy, error, message, run, clear };
-}
-export function Feedback({ error, message }: { error?: string; message?: string }) {
-  return (
-    <>
-      {error && (
-        <p role="alert" className="machine-error">
-          {error}
-        </p>
-      )}
-      {message && (
-        <p role="status" className="feature-success">
-          {message}
-        </p>
-      )}
-    </>
-  );
-}
-export function JobLog({ job }: { job?: JobView | null }) {
-  return job ? (
-    <div className="job-block">
-      <span
-        className={`badge ${job.status === 'running' ? 'starting' : job.status === 'done' ? 'running' : 'error'}`}
-      >
-        {
-          {
-            running: '正在执行',
-            done: '已完成',
-            error: '执行失败',
-            cancelled: '已取消',
-            interrupted: '已中断',
-          }[job.status]
-        }
-      </span>
-      <Feedback error={job.error} />
-      {job.log && (
-        <pre className="feature-log" aria-label="操作日志">
-          {job.log}
-        </pre>
-      )}
-    </div>
-  ) : null;
-}
-export async function download(
-  request: Request,
-  id: string,
-  target: { type: 'file'; path: string } | { type: 'export' },
-) {
-  const { url } = await request<{ url: string }>(`/vms/${id}/download`, 'POST', target);
-  if (!/^\/api\/downloads\/[a-f0-9]{64}$/.test(url)) throw new Error('无效的下载地址');
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = '';
-  a.referrerPolicy = 'no-referrer';
-  document.body.append(a);
-  a.click();
-  a.remove();
-}
+export { distroName, formatBytes, useRemote, useAction, Feedback, JobLog, download } from './feature-shared';
+export type { Request, FeatureProps } from './feature-shared';
+import {
+  formatBytes,
+  useRemote,
+  useAction,
+  Feedback,
+  JobLog,
+  download,
+  type FeatureProps,
+  type Request,
+} from './feature-shared';
+import { PluginGate } from './plugin-context';
 export function ProjectPanel(props: FeatureProps) {
   const { vm, request: baseRequest, refresh, projectId: selectedProjectId, onProjectChange } = props;
   const request = useMemo(
@@ -373,7 +224,9 @@ export function ProjectPanel(props: FeatureProps) {
             />
           </label>
           <EnvironmentEditor value={project.environment} change={(environment) => edit({ environment })} />
-          <SecretReferences value={project.secrets} change={(secrets) => edit({ secrets })} />
+          <PluginGate id="secrets">
+            <SecretReferences value={project.secrets} change={(secrets) => edit({ secrets })} />
+          </PluginGate>
           <ServiceEditor project={project} edit={edit} />
           <div className="feature-actions">
             <button
@@ -436,7 +289,9 @@ export function ProjectPanel(props: FeatureProps) {
         </>
       )}
       <JobLog job={remote.data?.job} />
-      <HealthPanel {...props} request={request} />
+      <PluginGate id="monitoring">
+        <HealthPanel {...props} request={request} />
+      </PluginGate>
       {runtime.data?.services?.map((service) => (
         <details className="feature-card" key={service.name}>
           <summary>
@@ -469,14 +324,16 @@ export function ProjectPanel(props: FeatureProps) {
           <pre className="feature-log">{runtime.data.log}</pre>
         </details>
       )}
-      <ProjectConnections
-        {...props}
-        request={request}
-        applied={(value) => {
-          setProject(value);
-          remote.reload();
-        }}
-      />
+      <PluginGate id="environment">
+        <ProjectConnections
+          {...props}
+          request={request}
+          applied={(value) => {
+            setProject(value);
+            remote.reload();
+          }}
+        />
+      </PluginGate>
     </div>
   );
 }
@@ -1041,7 +898,9 @@ export function SnapshotsPanel(props: FeatureProps) {
           导出包含当前磁盘和实例连接凭证，请妥善保存。快照历史不随导出迁移；克隆默认清空端口转发，首次启动更新密钥。
         </p>
       </div>
-      <BackupPanel {...props} />
+      <PluginGate id="backups">
+        <BackupPanel {...props} />
+      </PluginGate>
     </div>
   );
 }
@@ -1099,70 +958,78 @@ export function ImageCatalog({
           </div>
         ))}
       </div>
-      <div className="feature-card">
-        <h3>导入 Sakura 实例</h3>
-        <p>从 .sakura 或 .sakura.enc 文件恢复到新实例，端口转发默认清空。</p>
-        <label>
-          加密备份密码
+      <PluginGate id="snapshots">
+        <div className="feature-card">
+          <h3>导入 Sakura 实例</h3>
+          <p>从 .sakura 或 .sakura.enc 文件恢复到新实例，端口转发默认清空。</p>
+          <PluginGate id="backups">
+            <label>
+              加密备份密码
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                maxLength={1024}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="普通备份可留空"
+              />
+            </label>
+          </PluginGate>
+          <div className="inline-form">
+            <input
+              aria-label="导入实例名称"
+              pattern="[a-z][a-z0-9-]*"
+              maxLength={32}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <button
+              className="secondary compact"
+              disabled={action.busy}
+              onClick={() => file.current?.click()}
+            >
+              <Upload size={14} />
+              {action.busy ? '正在处理…' : '选择导出文件'}
+            </button>
+          </div>
           <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            maxLength={1024}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="普通备份可留空"
+            ref={file}
+            type="file"
+            accept=".sakura,.enc"
+            hidden
+            onChange={(e) => {
+              const value = e.target.files?.[0];
+              if (value)
+                void action.run(async (signal) => {
+                  if (value.name.endsWith('.enc') && !password) throw new Error('请输入加密备份密码');
+                  const response = await fetch(`/api/import?name=${encodeURIComponent(name)}`, {
+                    method: 'POST',
+                    headers: {
+                      'X-Sakura-Token': token,
+                      'Content-Type': 'application/octet-stream',
+                      ...(value.name.endsWith('.enc')
+                        ? {
+                            'X-Sakura-Passphrase': btoa(
+                              Array.from(new TextEncoder().encode(password), (byte) =>
+                                String.fromCharCode(byte),
+                              ).join(''),
+                            ),
+                          }
+                        : {}),
+                    },
+                    body: value,
+                    signal,
+                  });
+                  const result = await response.json();
+                  if (!response.ok) throw new Error(result.error);
+                  setPassword('');
+                  await refresh();
+                }, '实例已导入，可在工作空间启动');
+              e.target.value = '';
+            }}
           />
-        </label>
-        <div className="inline-form">
-          <input
-            aria-label="导入实例名称"
-            pattern="[a-z][a-z0-9-]*"
-            maxLength={32}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button className="secondary compact" disabled={action.busy} onClick={() => file.current?.click()}>
-            <Upload size={14} />
-            {action.busy ? '正在处理…' : '选择导出文件'}
-          </button>
         </div>
-        <input
-          ref={file}
-          type="file"
-          accept=".sakura,.enc"
-          hidden
-          onChange={(e) => {
-            const value = e.target.files?.[0];
-            if (value)
-              void action.run(async (signal) => {
-                if (value.name.endsWith('.enc') && !password) throw new Error('请输入加密备份密码');
-                const response = await fetch(`/api/import?name=${encodeURIComponent(name)}`, {
-                  method: 'POST',
-                  headers: {
-                    'X-Sakura-Token': token,
-                    'Content-Type': 'application/octet-stream',
-                    ...(value.name.endsWith('.enc')
-                      ? {
-                          'X-Sakura-Passphrase': btoa(
-                            Array.from(new TextEncoder().encode(password), (byte) =>
-                              String.fromCharCode(byte),
-                            ).join(''),
-                          ),
-                        }
-                      : {}),
-                  },
-                  body: value,
-                  signal,
-                });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error);
-                setPassword('');
-                await refresh();
-              }, '实例已导入，可在工作空间启动');
-            e.target.value = '';
-          }}
-        />
-      </div>
+      </PluginGate>
     </div>
   );
 }

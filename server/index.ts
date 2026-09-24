@@ -7,24 +7,24 @@ import { StringDecoder } from 'node:string_decoder';
 import { totalmem, freemem, cpus, hostname } from 'node:os';
 import { WebSocketServer, WebSocket } from 'ws';
 import { z, ZodError } from 'zod';
-import { ROOT, PORT, IMAGE, AppError, guestPath } from './model.ts';
+import { ROOT, PORT, IMAGE, AppError } from './model.ts';
 import { createRuntime } from './runtime.ts';
 import { Machines } from './machines.ts';
-import { Desktops } from './desktop.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
 import { Features } from './features.ts';
-import { MAX_TEXT_BYTES, textVersion } from './files.ts';
-import { MAX_TEXT_REQUEST_BYTES, readJsonBody as body, requestUrl } from './http.ts';
+import { PluginManager } from './plugin-manager.ts';
+import { readJsonBody as body, requestUrl } from './http.ts';
 import type { ClientChannel } from 'ssh2';
 
 const token = randomBytes(32).toString('hex');
 const dev = process.argv.includes('--dev');
+const plugins = new PluginManager();
+const selectedPlugins = await plugins.init();
 const engine = await createRuntime();
 const machines = new Machines(engine);
 await machines.init();
-const desktops = new Desktops(machines);
-const features = new Features(machines);
-await features.ide.update();
+const features = await Features.create(machines, selectedPlugins);
+plugins.activated(features.enabled, features.errors);
 const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
 let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
 const equalToken = (value: unknown) => tokenMatches(value, token);
@@ -39,16 +39,30 @@ function send(res: ServerResponse, data: unknown, status = 200) {
 }
 const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
   if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
-  if (await features.downloads.route(req, res, url)) return;
+  if (await features.downloads?.route(req, res, url)) return;
   if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
   if (
-    features.migration.blocked &&
+    features.migration?.blocked &&
     req.method !== 'GET' &&
     url.pathname !== '/api/migration' &&
     !/^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname)
   )
     throw new AppError('数据目录迁移维护中，请等待完成并重启服务', 409);
   const route = url.pathname.split('/').filter(Boolean);
+  if (url.pathname === '/api/plugins') {
+    if (req.method === 'GET') return send(res, plugins.view());
+    if (req.method === 'PATCH') {
+      features.mutations++;
+      try {
+        const input = await body(req);
+        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+        return send(res, await plugins.change(input));
+      } finally {
+        features.mutations--;
+      }
+    }
+    throw new AppError('不支持此方法', 405);
+  }
   if (await features.route(req, res, url, (request, signal) => body(request, undefined, signal))) return;
   if (req.method === 'GET' && url.pathname === '/api/system')
     return send(res, {
@@ -65,110 +79,49 @@ const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
       controllerMemoryMiB: Math.round(process.memoryUsage().rss / 1048576),
       imageReady: existsSync(IMAGE),
       imageBytes: (await stat(IMAGE).catch(() => null))?.size || 0,
+      plugins: [...features.enabled],
     });
   if (route[1] === 'vms' && route.length === 2) {
     if (req.method === 'GET') return send(res, await machines.list());
-    if (req.method === 'POST') return send(res, await machines.create(await body(req)), 201);
+    if (req.method === 'POST') {
+      const input = await body(req);
+      features.validateConfig(input);
+      return send(res, await machines.create(input), 201);
+    }
   }
   if (route[1] === 'vms' && route[2]) {
     const id = route[2];
     machines.get(id);
     if (route.length === 3) {
       if (req.method === 'GET') return send(res, await machines.view(id));
-      if (req.method === 'PATCH') return send(res, await machines.update(id, await body(req)));
+      if (req.method === 'PATCH') {
+        const input = await body(req);
+        features.validateConfig(input, machines.get(id));
+        return send(res, await machines.update(id, input));
+      }
       if (req.method === 'DELETE') {
         await machines.delete(id);
         return send(res, { ok: true });
       }
     }
-    if (req.method === 'POST' && route[3] === 'start') return send(res, await machines.start(id));
-    if (req.method === 'POST' && route[3] === 'suspend') return send(res, await machines.suspend(id));
-    if (req.method === 'POST' && route[3] === 'resume') return send(res, await machines.resume(id));
-    if (req.method === 'POST' && route[3] === 'stop') {
+    if (req.method === 'POST' && route.length === 4 && route[3] === 'start')
+      return send(res, await machines.start(id));
+    if (req.method === 'POST' && route.length === 4 && route[3] === 'stop') {
       const options = z
         .object({ force: z.boolean().default(false) })
         .strict()
         .parse(await body(req));
       return send(res, await machines.stop(id, options.force));
     }
-    if (req.method === 'POST' && route[3] === 'exec') {
+    if (req.method === 'POST' && route.length === 4 && route[3] === 'exec') {
       const { command } = z
         .object({ command: z.string().min(1).max(65536) })
         .strict()
         .parse(await body(req));
       return send(res, await machines.exec(id, command));
     }
-    if (req.method === 'GET' && route[3] === 'logs')
+    if (req.method === 'GET' && route.length === 4 && route[3] === 'logs')
       return send(res, { content: machines.logs.get(id) || '' });
-    if (route[3] === 'desktop' && route.length === 4) {
-      if (req.method === 'GET') return send(res, await desktops.view(id));
-      if (req.method === 'POST') {
-        const { action, preferences } = z
-          .object({
-            action: z.enum(['install', 'start', 'configure']),
-            preferences: z
-              .object({
-                resolution: z.enum(['1280x800', '1440x900', '1600x1000', '1920x1080']).optional(),
-                scale: z.number().int().min(100).max(200).optional(),
-                theme: z.enum(['sakura', 'midnight', 'paper', 'lavender']).optional(),
-                wallpaper: z.enum(['sakura', 'midnight', 'paper', 'plain']).optional(),
-                accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-                panel: z.enum(['bottom', 'top', 'floating']).optional(),
-                autoHidePanel: z.boolean().optional(),
-                animations: z.boolean().optional(),
-              })
-              .strict()
-              .optional(),
-          })
-          .strict()
-          .parse(await body(req));
-        return send(res, desktops.start(id, action, preferences), 202);
-      }
-    }
-    if (req.method === 'GET' && route[3] === 'files')
-      return send(res, await machines.files(id, guestPath(url.searchParams.get('path') || '/workspace')));
-    if (req.method === 'GET' && route[3] === 'file') {
-      const content = await machines.readGuestFile(id, guestPath(url.searchParams.get('path')));
-      return send(res, { content, version: textVersion(content) });
-    }
-    if (req.method === 'PUT' && route[3] === 'file') {
-      const value = z
-        .object({
-          path: z.string(),
-          content: z.string().max(MAX_TEXT_BYTES),
-          overwrite: z.boolean().default(true),
-          expectedVersion: z
-            .string()
-            .regex(/^[a-f0-9]{64}$/)
-            .optional(),
-        })
-        .strict()
-        .parse(await body(req, MAX_TEXT_REQUEST_BYTES));
-      await machines.writeGuestFile(
-        id,
-        guestPath(value.path),
-        value.content,
-        value.overwrite,
-        value.expectedVersion,
-      );
-      return send(res, { ok: true, version: textVersion(value.content) });
-    }
-    if (req.method === 'POST' && route[3] === 'snapshots' && route.length === 4) {
-      const { name } = z
-        .object({ name: z.string().trim().min(1).max(60) })
-        .strict()
-        .parse(await body(req));
-      return send(res, await machines.snapshot(id, name), 201);
-    }
-    if (req.method === 'POST' && route[3] === 'snapshots' && route[4] && route[5] === 'restore') {
-      const input = req.headers['content-type']?.startsWith('application/json')
-        ? z
-            .object({ backup: z.boolean().default(true) })
-            .strict()
-            .parse(await body(req))
-        : { backup: false };
-      return send(res, await machines.restore(id, route[4], input.backup));
-    }
   }
   throw new AppError('接口不存在', 404);
 };
@@ -232,6 +185,8 @@ server.on('upgrade', (req, socket, head) => {
   if (
     !allowedRequest(req) ||
     !equalToken(url.searchParams.get('token')) ||
+    (mode === 'desktop' && !features.enabled.has('desktop')) ||
+    (url.searchParams.has('session') && !features.enabled.has('terminal-workspace')) ||
     (!events &&
       (parts.length !== 4 || !machines.records.has(id) || !['terminal', 'logs', 'desktop'].includes(mode)))
   ) {
@@ -252,7 +207,7 @@ server.on('upgrade', (req, socket, head) => {
     client.on('error', () => {});
     if (mode === 'desktop') {
       try {
-        await desktops.attach(id, client);
+        await features.desktops.attach(id, client);
       } catch {
         client.close(1011, 'Desktop unavailable');
       }
@@ -346,10 +301,16 @@ async function close() {
   for (const socket of ws.clients) socket.close();
   ws.close();
   server.close();
-  await features.close();
-  await machines.close();
-  await vite?.close();
-  process.exit(0);
+  let failed = false;
+  for (const dispose of [() => features.close(), () => machines.close(), () => vite?.close()]) {
+    try {
+      await dispose();
+    } catch (error) {
+      failed = true;
+      console.error('Shutdown cleanup failed:', error);
+    }
+  }
+  process.exit(failed ? 1 : 0);
 }
 process.on('SIGINT', () => void close());
 process.on('SIGTERM', () => void close());

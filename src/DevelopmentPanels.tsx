@@ -16,6 +16,8 @@ import {
   type Request,
 } from './FeaturePanels';
 import { workspaceRequest } from './workspace-request';
+import { usePlugin } from './plugin-context';
+import './development.css';
 
 const stopped = <p className="subtle-note">启动实例后可使用此功能。</p>;
 export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) {
@@ -316,12 +318,15 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
 }
 
 export function DevelopmentPanel(props: FeatureProps) {
+  const development = usePlugin('development'),
+    network = usePlugin('network'),
+    secrets = usePlugin('secrets');
   const scopedRequest = useMemo(
     () => workspaceRequest(props.request, props.projectId),
     [props.projectId, props.request],
   );
   const scopedProps = { ...props, request: scopedRequest };
-  const [section, setSection] = useState('tools');
+  const [section, setSection] = useState(development ? 'tools' : network ? 'network' : 'secrets');
   return (
     <div className="content-panel feature-panel">
       <div className="panel-heading">
@@ -338,16 +343,18 @@ export function DevelopmentPanel(props: FeatureProps) {
           ['commands', '收藏命令'],
           ['pipelines', '流水线'],
           ['runtimes', '版本'],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            className={`${section === id ? 'primary' : 'secondary'} compact`}
-            aria-pressed={section === id}
-            onClick={() => setSection(id)}
-          >
-            {label}
-          </button>
-        ))}
+        ]
+          .filter(([id]) => (id === 'network' ? network : id === 'secrets' ? secrets : development))
+          .map(([id, label]) => (
+            <button
+              key={id}
+              className={`${section === id ? 'primary' : 'secondary'} compact`}
+              aria-pressed={section === id}
+              onClick={() => setSection(id)}
+            >
+              {label}
+            </button>
+          ))}
       </div>
       {section === 'tools' && <ToolsPanel {...scopedProps} />}
       {section === 'network' && <NetworkPanel {...scopedProps} />}

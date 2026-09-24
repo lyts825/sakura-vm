@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { PluginGate } from './plugin-context';
 import {
   Boxes,
   ClipboardList,
@@ -397,7 +398,9 @@ export function LibraryPanel({
           <p>调整搜索、项目分组或收藏筛选后再试。</p>
         </div>
       )}
-      <RecipeImporter request={request} refresh={refresh} />
+      <PluginGate id="environment">
+        <RecipeImporter request={request} refresh={refresh} />
+      </PluginGate>
     </div>
   );
 }
@@ -476,8 +479,12 @@ export function ServiceEditor({
             value={service.environment}
             change={(environment) => change(index, { environment })}
           />
-          <SecretReferences value={service.secrets} change={(secrets) => change(index, { secrets })} />
-          <HealthEditor value={service.health} change={(health) => change(index, { health })} />
+          <PluginGate id="secrets">
+            <SecretReferences value={service.secrets} change={(secrets) => change(index, { secrets })} />
+          </PluginGate>
+          <PluginGate id="monitoring">
+            <HealthEditor value={service.health} change={(health) => change(index, { health })} />
+          </PluginGate>
           <button
             className="text-button danger-text"
             onClick={() => edit({ services: services.filter((_, i) => i !== index) })}

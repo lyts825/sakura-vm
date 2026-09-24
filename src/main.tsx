@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -42,27 +42,14 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { SakuraArt } from './SakuraArt';
-import { DesktopPanel } from './DesktopPanel';
-import {
-  ProjectPanel,
-  MetricsPanel,
-  ServicesPanel,
-  SyncPanel,
-  SnapshotsPanel,
-  ImageCatalog,
-  distroName,
-  useRemote,
-  type ImageInfo,
-  type Request,
-} from './FeaturePanels';
-import { FileBrowser } from './FileBrowser';
-import { TerminalWorkspace } from './TerminalWorkspace';
+
+import { distroName, useRemote, type Request } from './feature-shared';
+import type { ImageInfo } from './FeaturePanels';
+
 import { ResponseOrder } from './request-order';
 import { mayLeaveEditor } from './file-editor-state';
-import { TasksPanel, LibraryPanel, MaintenancePanel } from './ManagementPanels';
-import { GitPanel, DevelopmentPanel, ContainersPanel, MigrationPanel } from './DevelopmentPanels';
-import { FeatureSuitePanel } from './FeatureSuitePanel';
-import { CommandPalette, type PaletteAction, type PaletteTarget } from './CommandPalette';
+
+import type { PaletteAction, PaletteTarget } from './CommandPalette';
 import { workspacePath } from './workspace-request';
 import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from './workspace-navigation';
 import sakuraMark from './assets/sakura.svg';
@@ -70,9 +57,63 @@ import type { VMView, VMConfig } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
 import './fonts.css';
 import './style.css';
-import './development.css';
+import { PluginContext, usePlugin } from './plugin-context';
+import { pluginSurfaceEnabled } from '../shared/plugins';
+
+const DesktopPanel = lazy(() =>
+  import('./DesktopPanel').then((module) => ({ default: module.DesktopPanel })),
+);
+const FileBrowser = lazy(() => import('./FileBrowser').then((module) => ({ default: module.FileBrowser })));
+const TerminalWorkspace = lazy(() =>
+  import('./TerminalWorkspace').then((module) => ({ default: module.TerminalWorkspace })),
+);
+const FeatureSuitePanel = lazy(() =>
+  import('./FeatureSuitePanel').then((module) => ({ default: module.FeatureSuitePanel })),
+);
+const CommandPalette = lazy(() =>
+  import('./CommandPalette').then((module) => ({ default: module.CommandPalette })),
+);
+const PluginCenter = lazy(() =>
+  import('./PluginCenter').then((module) => ({ default: module.PluginCenter })),
+);
+const ProjectPanel = lazy(() =>
+  import('./FeaturePanels').then((module) => ({ default: module.ProjectPanel })),
+);
+const MetricsPanel = lazy(() =>
+  import('./FeaturePanels').then((module) => ({ default: module.MetricsPanel })),
+);
+const ServicesPanel = lazy(() =>
+  import('./FeaturePanels').then((module) => ({ default: module.ServicesPanel })),
+);
+const SyncPanel = lazy(() => import('./FeaturePanels').then((module) => ({ default: module.SyncPanel })));
+const SnapshotsPanel = lazy(() =>
+  import('./FeaturePanels').then((module) => ({ default: module.SnapshotsPanel })),
+);
+const ImageCatalog = lazy(() =>
+  import('./FeaturePanels').then((module) => ({ default: module.ImageCatalog })),
+);
+const TasksPanel = lazy(() =>
+  import('./ManagementPanels').then((module) => ({ default: module.TasksPanel })),
+);
+const LibraryPanel = lazy(() =>
+  import('./ManagementPanels').then((module) => ({ default: module.LibraryPanel })),
+);
+const MaintenancePanel = lazy(() =>
+  import('./ManagementPanels').then((module) => ({ default: module.MaintenancePanel })),
+);
+const GitPanel = lazy(() => import('./DevelopmentPanels').then((module) => ({ default: module.GitPanel })));
+const DevelopmentPanel = lazy(() =>
+  import('./DevelopmentPanels').then((module) => ({ default: module.DevelopmentPanel })),
+);
+const ContainersPanel = lazy(() =>
+  import('./DevelopmentPanels').then((module) => ({ default: module.ContainersPanel })),
+);
+const MigrationPanel = lazy(() =>
+  import('./DevelopmentPanels').then((module) => ({ default: module.MigrationPanel })),
+);
 
 type System = {
+  plugins: string[];
   version: string;
   engine: string;
   posixloom: string;
@@ -88,7 +129,7 @@ type System = {
 };
 type ProjectIndex = { active: string; projects: { id: string; name: string }[] };
 type SessionState = { selected: string; page: string; tab: string };
-const sessionPages = new Set(['workspace', 'tasks', 'library', 'images', 'features', 'settings']);
+const sessionPages = new Set(['workspace', 'plugins', 'tasks', 'library', 'images', 'features', 'settings']);
 const sessionTabs = new Set([
   'terminal',
   'desktop',
@@ -119,8 +160,7 @@ const workspaceTabs = [
   { id: 'maintenance', label: '维护', icon: ShieldCheck },
   { id: 'config', label: '配置', icon: Settings2 },
 ] as const;
-const primaryWorkspaceTabs = workspaceTabs.slice(0, 4);
-const advancedWorkspaceTabs = workspaceTabs.slice(4);
+
 function readSessionState(): SessionState {
   try {
     const saved = JSON.parse(localStorage.getItem('sakura-session') || '{}') as Partial<SessionState>;
@@ -242,8 +282,17 @@ function App() {
   const [vms, setVms] = useState<VMView[]>([]),
     [system, setSystem] = useState<System | null>(null);
   const [selected, setSelectedRaw] = useState(initialSession.selected),
-    [page, setPageRaw] = useState(initialSession.page),
-    [tab, setTabRaw] = useState(initialSession.tab);
+    [requestedPage, setPageRaw] = useState(initialSession.page),
+    [requestedTab, setTabRaw] = useState(initialSession.tab);
+  const enabled = system?.plugins || [];
+  const has = (id: string) => enabled.includes(id);
+  const page = pluginSurfaceEnabled(enabled, 'pages', requestedPage) ? requestedPage : 'workspace';
+  const tab = pluginSurfaceEnabled(enabled, 'tabs', requestedTab) ? requestedTab : 'terminal';
+  const visibleWorkspaceTabs = workspaceTabs.filter((item) => pluginSurfaceEnabled(enabled, 'tabs', item.id));
+  const primaryWorkspaceTabs = visibleWorkspaceTabs.slice(0, 4);
+  const advancedWorkspaceTabs = visibleWorkspaceTabs.slice(4);
+  const hasProjects = has('projects'),
+    hasPalette = has('command-palette');
   const [projectSelections, setProjectSelections] = useState<Record<string, string>>({});
   const setSelected = async (value: string) => {
     if (value === selected || (await mayLeaveEditor())) setSelectedRaw(value);
@@ -272,6 +321,7 @@ function App() {
     if (target.file) setOpenFile({ id: target.id || selected, path: target.file, revision: Date.now() });
   };
   useEffect(() => {
+    if (!hasPalette) return;
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.altKey) {
         const openDialog = document.querySelector('dialog[open]');
@@ -282,7 +332,7 @@ function App() {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, []);
+  }, [hasPalette]);
   const [theme, setTheme] = useState<'day' | 'night'>(() => {
     try {
       return localStorage.getItem('sakura-theme') === 'night' ? 'night' : 'day';
@@ -312,7 +362,7 @@ function App() {
     [selected],
   );
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || !hasProjects) return;
     const abort = new AbortController();
     let alive = true;
     void api<ProjectIndex>(`/vms/${selected}/projects`, 'GET', undefined, abort.signal)
@@ -328,7 +378,7 @@ function App() {
       alive = false;
       abort.abort();
     };
-  }, [selected]);
+  }, [selected, hasProjects]);
   const focusMode = focused && page === 'workspace' && !!vm;
   useEffect(() => {
     try {
@@ -510,14 +560,20 @@ function App() {
     currentId: selected,
     canCreate: !loading && !!system?.imageReady,
     busy,
-  }).map((command) => ({
-    key: command.key,
-    title: command.title,
-    detail: command.detail,
-    keywords: command.keywords,
-    disabled: command.disabled,
-    run: () => executeWorkspaceCommand(command),
-  }));
+  })
+    .filter(
+      (command) =>
+        (!['suspend', 'resume'].includes(command.action) || has('automation')) &&
+        (!command.target?.page || pluginSurfaceEnabled(enabled, 'pages', command.target.page)),
+    )
+    .map((command) => ({
+      key: command.key,
+      title: command.title,
+      detail: command.detail,
+      keywords: command.keywords,
+      disabled: command.disabled,
+      run: () => executeWorkspaceCommand(command),
+    }));
   const running = vms.filter((v) => v.status === 'running').length;
   const visibleVms = vms
     .filter(
@@ -548,7 +604,7 @@ function App() {
       });
     }
   };
-  return (
+  const content = (
     <div className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="Sakura 首页">
@@ -562,25 +618,28 @@ function App() {
         <nav aria-label="主导航">
           {[
             { id: 'workspace', icon: TerminalSquare, name: '工作空间' },
+            { id: 'plugins', icon: Boxes, name: '插件中心' },
             { id: 'images', icon: Layers, name: '镜像库' },
             { id: 'tasks', icon: CircleDot, name: '任务中心' },
             { id: 'library', icon: Boxes, name: '实例管理' },
             { id: 'features', icon: Sparkles, name: '能力中心' },
             { id: 'settings', icon: Settings2, name: '系统设置' },
-          ].map((n) => (
-            <button
-              key={n.id}
-              aria-label={n.name}
-              aria-current={page === n.id ? 'page' : undefined}
-              title={n.name}
-              className={page === n.id ? 'nav-item selected' : 'nav-item'}
-              onClick={() => setPage(n.id)}
-            >
-              <n.icon size={18} />
-              <span>{n.name}</span>
-              {n.id === 'workspace' && <small>{vms.length.toString().padStart(2, '0')}</small>}
-            </button>
-          ))}
+          ]
+            .filter((n) => pluginSurfaceEnabled(enabled, 'pages', n.id))
+            .map((n) => (
+              <button
+                key={n.id}
+                aria-label={n.name}
+                aria-current={page === n.id ? 'page' : undefined}
+                title={n.name}
+                className={page === n.id ? 'nav-item selected' : 'nav-item'}
+                onClick={() => setPage(n.id)}
+              >
+                <n.icon size={18} />
+                <span>{n.name}</span>
+                {n.id === 'workspace' && <small>{vms.length.toString().padStart(2, '0')}</small>}
+              </button>
+            ))}
         </nav>
         <div className="side-divider" />
         <div className="side-caption">
@@ -644,6 +703,7 @@ function App() {
               {
                 {
                   workspace: '工作空间',
+                  plugins: '插件中心',
                   images: '镜像库',
                   tasks: '任务中心',
                   library: '实例管理',
@@ -654,15 +714,17 @@ function App() {
             </b>
           </div>
           <div className="topbar-actions">
-            <button
-              className="text-button command-shortcut"
-              onClick={() => setPalette(true)}
-              aria-label="打开命令面板"
-            >
-              <Search size={16} />
-              <span>快速前往</span>
-              <kbd>Ctrl K</kbd>
-            </button>
+            {hasPalette && (
+              <button
+                className="text-button command-shortcut"
+                onClick={() => setPalette(true)}
+                aria-label="打开命令面板"
+              >
+                <Search size={16} />
+                <span>快速前往</span>
+                <kbd>Ctrl K</kbd>
+              </button>
+            )}
             <span className="local-badge">
               <ShieldCheck size={14} />
               仅本机访问
@@ -680,6 +742,7 @@ function App() {
           </div>
         </header>
         <main>
+          {page === 'plugins' && system && <PluginCenter request={api} />}
           {page === 'tasks' && <TasksPanel request={api} vms={vms} />}
           {page === 'library' && <LibraryPanel request={api} vms={vms} refresh={refresh} />}
           {page === 'features' && (
@@ -959,9 +1022,11 @@ function App() {
                         <div className="machine-actions">
                           {vm.status === 'running' ? (
                             <>
-                              <button className="secondary compact" disabled={busy} onClick={suspend}>
-                                暂停
-                              </button>
+                              {has('automation') && (
+                                <button className="secondary compact" disabled={busy} onClick={suspend}>
+                                  暂停
+                                </button>
+                              )}
                               <button className="secondary compact" disabled={busy} onClick={stop}>
                                 <Square size={13} />
                                 停止
@@ -969,9 +1034,11 @@ function App() {
                             </>
                           ) : vm.status === 'paused' ? (
                             <>
-                              <button className="primary compact" disabled={busy} onClick={resume}>
-                                恢复
-                              </button>
+                              {has('automation') && (
+                                <button className="primary compact" disabled={busy} onClick={resume}>
+                                  恢复
+                                </button>
+                              )}
                               <button className="secondary compact" disabled={busy} onClick={stop}>
                                 <Square size={13} />
                                 停止
@@ -1028,7 +1095,10 @@ function App() {
                                 void setTab(t.id);
                               }}
                               onKeyDown={(event) => {
-                                const ids = [...primaryWorkspaceTabs.map((item) => item.id), 'more'];
+                                const ids = [
+                                  ...primaryWorkspaceTabs.map((item) => item.id),
+                                  ...(advancedWorkspaceTabs.length ? ['more'] : []),
+                                ];
                                 const index = ids.indexOf(t.id);
                                 const next =
                                   event.key === 'ArrowRight'
@@ -1056,35 +1126,37 @@ function App() {
                               {t.label}
                             </button>
                           ))}
-                          <button
-                            type="button"
-                            id="tab-more"
-                            className={`tabs-more-trigger ${advancedWorkspaceTabs.some((item) => item.id === tab) ? 'active' : ''}`}
-                            aria-expanded={moreTabsOpen}
-                            aria-haspopup="menu"
-                            onClick={() => setMoreTabsOpen((open) => !open)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'ArrowLeft') {
-                                event.preventDefault();
-                                focusWorkspaceTab(primaryWorkspaceTabs[primaryWorkspaceTabs.length - 1].id);
-                              }
-                              if (event.key === 'ArrowRight' || event.key === 'Home') {
-                                event.preventDefault();
-                                focusWorkspaceTab(primaryWorkspaceTabs[0].id);
-                              }
-                              if (event.key === 'ArrowDown') {
-                                event.preventDefault();
-                                openAdvancedTabs(true);
-                              }
-                            }}
-                          >
-                            <MoreHorizontal size={15} />
-                            <span>更多</span>
-                            <ChevronRight
-                              size={13}
-                              className={moreTabsOpen ? 'tabs-more-chevron open' : 'tabs-more-chevron'}
-                            />
-                          </button>
+                          {advancedWorkspaceTabs.length > 0 && (
+                            <button
+                              type="button"
+                              id="tab-more"
+                              className={`tabs-more-trigger ${advancedWorkspaceTabs.some((item) => item.id === tab) ? 'active' : ''}`}
+                              aria-expanded={moreTabsOpen}
+                              aria-haspopup="menu"
+                              onClick={() => setMoreTabsOpen((open) => !open)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'ArrowLeft') {
+                                  event.preventDefault();
+                                  focusWorkspaceTab(primaryWorkspaceTabs[primaryWorkspaceTabs.length - 1].id);
+                                }
+                                if (event.key === 'ArrowRight' || event.key === 'Home') {
+                                  event.preventDefault();
+                                  focusWorkspaceTab(primaryWorkspaceTabs[0].id);
+                                }
+                                if (event.key === 'ArrowDown') {
+                                  event.preventDefault();
+                                  openAdvancedTabs(true);
+                                }
+                              }}
+                            >
+                              <MoreHorizontal size={15} />
+                              <span>更多</span>
+                              <ChevronRight
+                                size={13}
+                                className={moreTabsOpen ? 'tabs-more-chevron open' : 'tabs-more-chevron'}
+                              />
+                            </button>
+                          )}
                         </div>
                         <div
                           className="tabs-menu"
@@ -1152,14 +1224,18 @@ function App() {
                         aria-labelledby={`tab-${tab}`}
                       >
                         <div className="terminal-panel-slot" hidden={tab !== 'terminal'}>
-                          <TerminalWorkspace
-                            key={vm.id}
-                            id={vm.id}
-                            request={api}
-                            render={(session) => (
-                              <TerminalPanel vm={vm} start={start} busy={busy} session={session} />
-                            )}
-                          />
+                          {has('terminal-workspace') ? (
+                            <TerminalWorkspace
+                              key={vm.id}
+                              id={vm.id}
+                              request={api}
+                              render={(session) => (
+                                <TerminalPanel vm={vm} start={start} busy={busy} session={session} />
+                              )}
+                            />
+                          ) : (
+                            <TerminalPanel key={vm.id} vm={vm} start={start} busy={busy} />
+                          )}
                         </div>
                         {tab === 'desktop' && (
                           <DesktopPanel
@@ -1435,7 +1511,7 @@ function App() {
                   </dl>
                 </div>
               </div>
-              <MigrationPanel request={api} />
+              {has('migration') && <MigrationPanel request={api} />}
               <div className="info-callout">
                 <ShieldCheck size={24} />
                 <div>
@@ -1450,7 +1526,7 @@ function App() {
           )}
         </main>
       </div>
-      {palette && (
+      {palette && hasPalette && (
         <CommandPalette
           vms={vms}
           vm={vm}
@@ -1499,14 +1575,14 @@ function App() {
           <div className="help-content">
             <h3>从浏览器开始</h3>
             <p>
-              创建发行版后，启动系统并自动连接终端。文件保存在 Linux 磁盘中，重启后仍然存在；“文件”标签通过
-              SFTP 直接查看和编辑。
+              创建发行版后，启动系统并自动连接终端。文件保存在 Linux
+              磁盘中，重启后仍然存在。需要文件、桌面或开发工具时，在插件中心按需启用。
             </p>
             <h3>也可以在命令行使用</h3>
             <pre>{`npm run sakura -- list\nnpm run sakura -- shell ${vm?.name || 'alpine-dev'}\nnpm run sakura -- exec ${vm?.name || 'alpine-dev'} -- uname -a\nnpm run sakura -- stop ${vm?.name || 'alpine-dev'}`}</pre>
             <p>首次启动会初始化磁盘、网络和密钥，通常需要几十秒。启动过程中可以直接查看 Linux 日志。</p>
             <div className="subtle-note">
-              支持 Alpine、Debian、Ubuntu、开发模板、项目启动、目录同步和实例迁移。图形桌面仍为实验性功能。
+              基础版提供 Alpine 与单终端。整合包可以组合文件、开发、运维或桌面插件；选择后重启服务生效。
             </div>
           </div>
         </Modal>
@@ -1542,6 +1618,11 @@ function App() {
       )}
     </div>
   );
+  return (
+    <PluginContext.Provider value={enabled}>
+      <Suspense fallback={<p role="status">正在加载功能…</p>}>{content}</Suspense>
+    </PluginContext.Provider>
+  );
 }
 
 function TerminalPanel({
@@ -1553,7 +1634,7 @@ function TerminalPanel({
   vm: VMView;
   start: () => unknown;
   busy: boolean;
-  session: string;
+  session?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null),
     terminal = useRef<Terminal | null>(null);
@@ -1610,7 +1691,7 @@ function TerminalPanel({
     terminal.current = term;
     let ready = false;
     const socket = new WebSocket(
-      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${vm.id}/${mode}?token=${token}&session=${encodeURIComponent(session)}`,
+      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${vm.id}/${mode}?token=${token}${session ? `&session=${encodeURIComponent(session)}` : ''}`,
     );
     setConnection(mode === 'logs' ? '启动日志' : '正在连接');
     const resize = () => {
@@ -1851,8 +1932,12 @@ function CreateModal({
     forwards: [],
   });
   const [boot, setBoot] = useState(true);
-  const images = useRemote<ImageInfo[]>(api, '/images');
-  const selectedImage = images.data?.find((i) => i.id === (config.distro || 'alpine'));
+  const hasImages = usePlugin('images'),
+    hasProjects = usePlugin('projects');
+  const images = useRemote<ImageInfo[]>(api, '/images', hasImages);
+  const selectedImage = hasImages
+    ? images.data?.find((i) => i.id === (config.distro || 'alpine'))
+    : { ready: true };
   return (
     <Modal title="一个新的 Linux 空间" subtitle="选择资源，剩下的交给 Sakura。" onClose={close}>
       <form
@@ -1884,19 +1969,21 @@ function CreateModal({
             ))}
           </select>
         </label>
-        <label>
-          开发环境模板
-          <select
-            value={config.template || 'none'}
-            onChange={(e) => set({ ...config, template: e.target.value as VMConfig['template'] })}
-          >
-            <option value="none">空白环境</option>
-            <option value="node">Node.js + Git + tmux</option>
-            <option value="python">Python + Git + tmux</option>
-            <option value="rust">Rust + Git + tmux</option>
-          </select>
-          <small>首次启动自动安装所选工具，可在“项目”中查看进度或重试。</small>
-        </label>
+        {hasProjects && (
+          <label>
+            开发环境模板
+            <select
+              value={config.template || 'none'}
+              onChange={(e) => set({ ...config, template: e.target.value as VMConfig['template'] })}
+            >
+              <option value="none">空白环境</option>
+              <option value="node">Node.js + Git + tmux</option>
+              <option value="python">Python + Git + tmux</option>
+              <option value="rust">Rust + Git + tmux</option>
+            </select>
+            <small>首次启动自动安装所选工具，可在“项目”中查看进度或重试。</small>
+          </label>
+        )}
         <label>
           发行版名称
           <input
@@ -1962,6 +2049,7 @@ function ConfigPanel({
     template: vm.template,
   });
   const running = active(vm);
+  const hasNetwork = usePlugin('network');
   return (
     <div className="content-panel config-panel">
       <div className="panel-heading">
@@ -1977,74 +2065,82 @@ function ConfigPanel({
         }}
       >
         <ResourceFields config={config} set={set} disabled={running} />
-        <div className="panel-heading port-heading">
-          <h3>
-            <Network size={16} />
-            本机端口转发
-          </h3>
-          <button
-            type="button"
-            className="text-button"
-            disabled={running || config.forwards.length >= 12}
-            onClick={() => set({ ...config, forwards: [...config.forwards, { host: 8080, guest: 80 }] })}
-          >
-            <Plus size={14} />
-            添加
-          </button>
-        </div>
-        {config.forwards.length === 0 && (
-          <p className="muted small-text">
-            尚无转发规则。添加后，可从 Windows 的 localhost 访问 Linux 服务。
-          </p>
+        {hasNetwork && (
+          <>
+            <div className="panel-heading port-heading">
+              <h3>
+                <Network size={16} />
+                本机端口转发
+              </h3>
+              <button
+                type="button"
+                className="text-button"
+                disabled={running || config.forwards.length >= 12}
+                onClick={() => set({ ...config, forwards: [...config.forwards, { host: 8080, guest: 80 }] })}
+              >
+                <Plus size={14} />
+                添加
+              </button>
+            </div>
+            {config.forwards.length === 0 && (
+              <p className="muted small-text">
+                尚无转发规则。添加后，可从 Windows 的 localhost 访问 Linux 服务。
+              </p>
+            )}
+            {config.forwards.map((p, i) => (
+              <div className="port-row" key={i}>
+                <label>
+                  Windows 端口
+                  <input
+                    type="number"
+                    min={1024}
+                    max={65535}
+                    required
+                    value={p.host}
+                    disabled={running}
+                    onChange={(e) =>
+                      set({
+                        ...config,
+                        forwards: config.forwards.map((f, j) =>
+                          j === i ? { ...f, host: +e.target.value } : f,
+                        ),
+                      })
+                    }
+                  />
+                </label>
+                <ArrowRight size={17} />
+                <label>
+                  Linux 端口
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    required
+                    value={p.guest}
+                    disabled={running}
+                    onChange={(e) =>
+                      set({
+                        ...config,
+                        forwards: config.forwards.map((f, j) =>
+                          j === i ? { ...f, guest: +e.target.value } : f,
+                        ),
+                      })
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="删除端口规则"
+                  disabled={running}
+                  onClick={() => set({ ...config, forwards: config.forwards.filter((_, j) => j !== i) })}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </>
         )}
-        {config.forwards.map((p, i) => (
-          <div className="port-row" key={i}>
-            <label>
-              Windows 端口
-              <input
-                type="number"
-                min={1024}
-                max={65535}
-                required
-                value={p.host}
-                disabled={running}
-                onChange={(e) =>
-                  set({
-                    ...config,
-                    forwards: config.forwards.map((f, j) => (j === i ? { ...f, host: +e.target.value } : f)),
-                  })
-                }
-              />
-            </label>
-            <ArrowRight size={17} />
-            <label>
-              Linux 端口
-              <input
-                type="number"
-                min={1}
-                max={65535}
-                required
-                value={p.guest}
-                disabled={running}
-                onChange={(e) =>
-                  set({
-                    ...config,
-                    forwards: config.forwards.map((f, j) => (j === i ? { ...f, guest: +e.target.value } : f)),
-                  })
-                }
-              />
-            </label>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="删除端口规则"
-              disabled={running}
-              onClick={() => set({ ...config, forwards: config.forwards.filter((_, j) => j !== i) })}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        ))}
         <div className="config-actions">
           <button className="primary compact" disabled={busy || running}>
             <Save size={14} />

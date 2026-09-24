@@ -1,3 +1,4 @@
+import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, copyFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,10 @@ const { textVersion } = await import('../server/files.ts');
 const engine = await createRuntime(),
   machines = new Machines(engine);
 await machines.init();
-const features = new Features(machines);
+const features = await Features.create(
+  machines,
+  PLUGINS.map((item) => item.id),
+);
 async function boot(id: string) {
   await machines.start(id);
   const until = Date.now() + 300000;

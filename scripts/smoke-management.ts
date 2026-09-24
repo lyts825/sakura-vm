@@ -1,3 +1,4 @@
+import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,7 +19,10 @@ const { guestTask } = await import('../server/guest-task.ts');
 const engine = await createRuntime(),
   machines = new Machines(engine);
 await machines.init();
-const features = new Features(machines);
+const features = await Features.create(
+  machines,
+  PLUGINS.map((item) => item.id),
+);
 const ids: string[] = [];
 async function boot(id: string) {
   await machines.start(id);

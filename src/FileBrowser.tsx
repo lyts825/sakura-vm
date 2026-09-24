@@ -6,6 +6,7 @@ import { dirtyEdit, registerEditorGuard, type FileEdit } from './file-editor-sta
 import { restoreDrafts, saveDraftResult, anyDirty, type EditorDraft } from './editor-drafts';
 const CodeEditor = lazy(() => import('./CodeEditor').then((module) => ({ default: module.CodeEditor })));
 import { ProjectNavigator } from './ProjectNavigator';
+import { PluginGate } from './plugin-context';
 
 type Entry = { name: string; size: number; directory: boolean; symlink: boolean; modified: number };
 function DraftDialog({
@@ -341,10 +342,12 @@ export function FileBrowser({
         if (!action.busy) void send(e.dataTransfer.files);
       }}
     >
-      <details className="feature-card project-tree-disclosure" open>
-        <summary>项目文件树与全文搜索</summary>
-        <ProjectNavigator id={vm.id} request={request} open={(path, line) => void openPath(path, line)} />
-      </details>
+      <PluginGate id="development">
+        <details className="feature-card project-tree-disclosure" open>
+          <summary>项目文件树与全文搜索</summary>
+          <ProjectNavigator id={vm.id} request={request} open={(path, line) => void openPath(path, line)} />
+        </details>
+      </PluginGate>
       <div className="file-tools">
         <button
           className="icon-button"
@@ -622,25 +625,27 @@ export function FileBrowser({
             />
           </Suspense>
           <div className="feature-actions">
-            <button
-              className="secondary compact"
-              disabled={action.busy}
-              onClick={() =>
-                void action.run(async (signal) => {
-                  const result = await request<{
-                    diagnostics: { message: string; line?: number; column?: number }[];
-                  }>(
-                    `/vms/${vm.id}/code-diagnostics?path=${encodeURIComponent(edit.path)}`,
-                    'GET',
-                    undefined,
-                    signal,
-                  );
-                  setDiagnostics(result.diagnostics);
-                }, '检查完成')
-              }
-            >
-              运行代码检查
-            </button>
+            <PluginGate id="development">
+              <button
+                className="secondary compact"
+                disabled={action.busy}
+                onClick={() =>
+                  void action.run(async (signal) => {
+                    const result = await request<{
+                      diagnostics: { message: string; line?: number; column?: number }[];
+                    }>(
+                      `/vms/${vm.id}/code-diagnostics?path=${encodeURIComponent(edit.path)}`,
+                      'GET',
+                      undefined,
+                      signal,
+                    );
+                    setDiagnostics(result.diagnostics);
+                  }, '检查完成')
+                }
+              >
+                运行代码检查
+              </button>
+            </PluginGate>
           </div>
           {diagnostics.length > 0 && (
             <div className="feature-card" role="status">

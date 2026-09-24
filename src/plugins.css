@@ -1,0 +1,58 @@
+.plugins-page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+.plugins-page h2 {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 32px;
+}
+.plugin-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 18px 0;
+}
+.plugin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.plugin-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.plugin-card h3,
+.plugin-card p {
+  margin: 0;
+}
+.plugin-card p {
+  line-height: 1.75;
+}
+.plugin-card code,
+.plugin-card small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.plugin-card button {
+  align-self: flex-start;
+  margin-top: auto;
+}
+.plugin-card details {
+  line-height: 1.8;
+}
+.plugin-card summary {
+  cursor: pointer;
+}
+.plugin-state {
+  font-size: 12px;
+}

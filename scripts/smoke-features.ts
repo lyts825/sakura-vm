@@ -1,3 +1,4 @@
+import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
@@ -16,7 +17,10 @@ const { vmDir } = await import('../server/model.ts');
 const engine = await createRuntime();
 const machines = new Machines(engine);
 await machines.init();
-const features = new Features(machines);
+const features = await Features.create(
+  machines,
+  PLUGINS.map((item) => item.id),
+);
 const ids: string[] = [];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function boot(id: string) {

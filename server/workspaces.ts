@@ -159,7 +159,7 @@ export class Workspaces {
   onAction?: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>;
   constructor(
     private machines: Machines,
-    private context?: { secrets: Secrets; network: NetworkProfiles },
+    private context?: { secrets?: Secrets; network?: NetworkProfiles },
   ) {
     this.projects = new ProjectCatalog(machines);
     machines.on('change', this.onChange);
@@ -221,14 +221,19 @@ export class Workspaces {
     }
   }
   networkEnvironment(id: string) {
-    return this.context?.network.environment(id) || Promise.resolve({});
+    return this.context?.network?.environment(id) || Promise.resolve({});
   }
   async resolvedConfig(id: string): Promise<Project> {
     const project = await this.config(id);
+    if (
+      !this.context?.secrets &&
+      (project.secrets?.length || project.services?.some((service) => service.secrets?.length))
+    )
+      throw new AppError('项目引用了私密配置，请先启用 secrets 插件', 409);
     const environment = {
       ...(await this.networkEnvironment(id)),
       ...project.environment,
-      ...(await this.context?.secrets.resolve(id, project.secrets)),
+      ...(await this.context?.secrets?.resolve(id, project.secrets)),
       ...runtimeEnvironment(project.runtimes, project.environment?.PATH),
     };
     const services = project.services
@@ -237,7 +242,7 @@ export class Workspaces {
             ...service,
             environment: {
               ...service.environment,
-              ...(await this.context?.secrets.resolve(id, service.secrets)),
+              ...(await this.context?.secrets?.resolve(id, service.secrets)),
             },
           })),
         )
