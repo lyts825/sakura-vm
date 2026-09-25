@@ -474,6 +474,108 @@
               },
               "startedAt": {
                 "type": "string"
+              },
+              "execution": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "timeoutSeconds": {
+                    "type": "number"
+                  },
+                  "requestedArtifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "path",
+                        "bytes",
+                        "sha256"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "exitCode": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "success",
+                      "failed",
+                      "timeout",
+                      "cancelled",
+                      "expired",
+                      "interrupted"
+                    ]
+                  },
+                  "timings": {
+                    "type": "object",
+                    "properties": {
+                      "bootMs": {
+                        "type": "number"
+                      },
+                      "commandMs": {
+                        "type": "number"
+                      },
+                      "artifactsMs": {
+                        "type": "number"
+                      },
+                      "shutdownMs": {
+                        "type": "number"
+                      },
+                      "totalMs": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "command",
+                  "cwd",
+                  "timeoutSeconds",
+                  "requestedArtifacts",
+                  "artifacts",
+                  "timings"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -492,6 +594,51 @@
       "required": [
         "sandboxes",
         "runs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "sandbox.artifact": {
+    "id": "artifact",
+    "method": "GET",
+    "path": "/api/sandboxes/artifact",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "base64": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "path",
+        "bytes",
+        "sha256",
+        "base64"
       ],
       "additionalProperties": false
     }
@@ -837,12 +984,23 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 3600
+        },
+        "artifacts": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
         }
       },
       "required": [
         "command",
         "cwd",
-        "timeoutSeconds"
+        "timeoutSeconds",
+        "artifacts"
       ],
       "additionalProperties": false
     },
@@ -868,6 +1026,108 @@
         },
         "startedAt": {
           "type": "string"
+        },
+        "execution": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "type": "number"
+            },
+            "requestedArtifacts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "artifacts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "bytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "path",
+                  "bytes",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "exitCode": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "success",
+                "failed",
+                "timeout",
+                "cancelled",
+                "expired",
+                "interrupted"
+              ]
+            },
+            "timings": {
+              "type": "object",
+              "properties": {
+                "bootMs": {
+                  "type": "number"
+                },
+                "commandMs": {
+                  "type": "number"
+                },
+                "artifactsMs": {
+                  "type": "number"
+                },
+                "shutdownMs": {
+                  "type": "number"
+                },
+                "totalMs": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "command",
+            "cwd",
+            "timeoutSeconds",
+            "requestedArtifacts",
+            "artifacts",
+            "timings"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

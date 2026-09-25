@@ -1,10 +1,10 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { executeProjectAction } from '../src/project-action.ts';
-import { workspacePath, workspaceRequest } from '../src/workspace-request.ts';
+import test from 'node:test';
 import type { VMView } from '../server/model.ts';
 import type { Project } from '../server/workspaces.ts';
-import type { Request } from '../src/FeaturePanels.tsx';
+import type { Request } from '../src/feature-shared.tsx';
+import { executeProjectAction } from '../src/project-action.ts';
+import { workspacePath, workspaceRequest } from '../src/workspace-request.ts';
 
 const vm = { id: 'test-vm', status: 'running' } as VMView;
 const project: Project = {

@@ -1,10 +1,16 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
-import { AppError, createSchema, type VMView } from './model.ts';
-import { Machines, BOOT_TIMEOUT_MS } from './machines.ts';
-import { Jobs, type JobView } from './jobs.ts';
+import {
+  sandboxExpired,
+  sandboxPolicySchema,
+  type SandboxExecution,
+  type SandboxPolicy,
+} from '../shared/sandbox.ts';
 import { quote } from './files.ts';
-import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
+import { Jobs, type JobView } from './jobs.ts';
+import { BOOT_TIMEOUT_MS, Machines } from './machines.ts';
+import { AppError, createSchema, type VMView } from './model.ts';
+import { SandboxArtifacts, artifactPathSchema } from './sandbox-artifacts.ts';
 
 export const sandboxCreateSchema = z
   .object({
@@ -35,6 +41,11 @@ export const sandboxRunSchema = z
       .regex(/^\/[^\x00-\x1f]*$/, '需要 Linux 绝对路径')
       .default('/workspace'),
     timeoutSeconds: z.number().int().min(1).max(3600).default(60),
+    artifacts: z
+      .array(artifactPathSchema)
+      .max(8)
+      .default([])
+      .refine((paths) => new Set(paths).size === paths.length, '产物路径不能重复'),
   })
   .strict();
 
@@ -49,8 +60,16 @@ export class Sandboxes {
   constructor(
     private machines: Machines,
     jobs = new Jobs('sandbox'),
+    private artifacts = new SandboxArtifacts(machines),
   ) {
     this.jobs = jobs;
+  }
+  async init() {
+    await this.artifacts.prune(this.jobs.list());
+  }
+  async artifact(runId: string, artifactId: string) {
+    z.uuid().parse(runId);
+    return this.artifacts.download(this.jobs.get(runId), artifactId);
   }
   private get(id: string) {
     const vm = this.machines.get(id);
@@ -118,10 +137,27 @@ export class Sandboxes {
     if (this.busy.has(id)) throw new AppError('另一项沙箱操作正在进行', 409);
     if (['paused', 'stopping'].includes(this.machines.state(id)))
       throw new AppError('请先停止沙箱后再执行命令', 409);
-    return this.jobs.start(
+    const execution: SandboxExecution = {
+      command: config.command,
+      cwd: config.cwd,
+      timeoutSeconds: config.timeoutSeconds,
+      requestedArtifacts: config.artifacts,
+      artifacts: [],
+      timings: {},
+    };
+    const job: JobView = this.jobs.start(
       id,
       async (log, signal, update) => {
         let runtime: ReturnType<Machines['live']['get']>;
+        const started = performance.now();
+        let phase: 'bootMs' | 'commandMs' | 'artifactsMs' = 'bootMs';
+        let phaseAt = started;
+        const advance = (next: typeof phase, label: string) => {
+          execution.timings[phase] = Math.round(performance.now() - phaseAt);
+          phase = next;
+          phaseAt = performance.now();
+          update(label);
+        };
         try {
           signal.throwIfAborted();
           this.available(id);
@@ -140,7 +176,7 @@ export class Sandboxes {
           }
           this.available(id);
           signal.throwIfAborted();
-          update('执行命令');
+          advance('commandMs', '执行命令');
           const remaining = Date.parse(vm.sandbox.expiresAt) - Date.now();
           const timeoutMs = Math.max(1, Math.min(config.timeoutSeconds * 1000, remaining));
           const timeout = new AbortController();
@@ -155,30 +191,61 @@ export class Sandboxes {
               combined,
               log,
             );
+            execution.exitCode = result.code;
+            advance('artifactsMs', '同步磁盘与保存产物');
             log('\n退出码：' + result.code + '\n');
             // Flush completed file writes before powering off, within the same host deadline.
             const synced = await this.machines.exec(id, 'sync', Math.min(3000, timeoutMs), combined);
             if (synced.code !== 0) throw new AppError('沙箱磁盘同步失败');
+            await this.artifacts.collect(
+              id,
+              job.id!,
+              config.cwd,
+              config.artifacts,
+              (artifact) => {
+                execution.artifacts.push(artifact);
+                update('已保存产物：' + artifact.path);
+              },
+              combined,
+            );
             if (result.code !== 0) throw new AppError('命令执行失败，退出码 ' + result.code);
             update('关闭沙箱');
           } catch (error) {
-            if (timeout.signal.aborted && !signal.aborted)
+            if (timeout.signal.aborted && !signal.aborted) {
+              execution.outcome = 'timeout';
               throw new AppError('沙箱命令执行超时，已终止虚拟机', 408);
+            }
             throw error;
           } finally {
             clearTimeout(timer);
           }
         } catch (error) {
-          if (!signal.aborted && sandboxExpired(vm.sandbox))
+          if (!signal.aborted && sandboxExpired(vm.sandbox)) {
+            execution.outcome = 'expired';
             throw new AppError('沙箱已到期，虚拟机已终止', 409, 'SANDBOX_EXPIRED');
+          }
+          execution.outcome ||= signal.aborted ? 'cancelled' : 'failed';
           throw error;
         } finally {
+          execution.timings[phase] = Math.round(performance.now() - phaseAt);
+          const shutdown = performance.now();
           // Stopping the entire VM also terminates detached or re-parented guest processes.
-          if (runtime && this.machines.live.get(id) === runtime) await this.machines.terminateSandbox(id);
+          try {
+            if (runtime && this.machines.live.get(id) === runtime) await this.machines.terminateSandbox(id);
+            execution.outcome ||= 'success';
+          } catch (error) {
+            execution.outcome = 'failed';
+            throw error;
+          } finally {
+            execution.timings.shutdownMs = Math.round(performance.now() - shutdown);
+            execution.timings.totalMs = Math.round(performance.now() - started);
+          }
+          await this.artifacts.prune(this.jobs.list());
         }
       },
-      { vmId: id, title: vm.name + ' · 沙箱命令', action: 'sandbox-run' },
+      { vmId: id, title: vm.name + ' · 沙箱命令', action: 'sandbox-run', execution },
     );
+    return job;
   }
   async close() {
     this.closed = true;

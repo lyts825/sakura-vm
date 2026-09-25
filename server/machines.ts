@@ -29,6 +29,7 @@ import { Files, MAX_TEXT_BYTES } from './files.ts';
 import { freePort, qmp } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
+import { readStore, writeStore } from './local-store.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
@@ -76,6 +77,41 @@ export class Machines extends EventEmitter {
   private sandboxSweep?: Promise<void>;
   closing = false;
   maintenance = false;
+  private incidentLocks = new Set<string>();
+  private incidentWrites = Promise.resolve();
+  incidentLocked(id: string) {
+    return this.incidentLocks.has(id);
+  }
+  requireUnlocked(id: string) {
+    if (this.incidentLocked(id))
+      throw new AppError('实例处于应急锁定；请先显式解除锁定', 423, 'INCIDENT_LOCKED');
+  }
+  async setIncidentLockdown(id: string, locked: boolean) {
+    this.get(id);
+    const write = this.incidentWrites
+      .catch(() => {})
+      .then(async () => {
+        const previous = this.incidentLocked(id);
+        if (locked) this.incidentLocks.add(id);
+        else this.incidentLocks.delete(id);
+        try {
+          await writeStore(join(DATA, 'incident-lockdown.json'), [...this.incidentLocks]);
+        } catch (error) {
+          if (previous) this.incidentLocks.add(id);
+          else this.incidentLocks.delete(id);
+          throw error;
+        }
+        if (locked) {
+          this.emit('incident-lockdown', id);
+          for (const client of this.live.get(id)?.clients || []) client.destroy();
+          await this.stopInternal(id, false);
+        }
+        this.emit('change');
+      });
+    this.incidentWrites = write;
+    await write;
+    return { locked: this.incidentLocked(id), stopped: !this.live.has(id) };
+  }
   enterMaintenance() {
     if (this.closing || this.maintenance || this.operations.size || this.live.size)
       throw new AppError('请停止全部实例并等待正在执行的操作完成', 409);
@@ -86,6 +122,10 @@ export class Machines extends EventEmitter {
   }
   async init() {
     await mkdir(VM_ROOT, { recursive: true });
+    const locks = await readStore<string[]>(join(DATA, 'incident-lockdown.json'), () => []);
+    if (!Array.isArray(locks) || locks.some((id) => typeof id !== 'string'))
+      throw new Error('应急锁定状态损坏');
+    this.incidentLocks = new Set(locks);
     try {
       const records = JSON.parse(await readFile(join(DATA, 'machines.json'), 'utf8')) as VMRecord[];
       for (const r of records) {
@@ -123,7 +163,9 @@ export class Machines extends EventEmitter {
   expireSandboxes(now = Date.now()): Promise<void> {
     if (this.sandboxSweep) return this.sandboxSweep;
     this.sandboxSweep = (async () => {
-      const expired = [...this.records.values()].filter((vm) => vm.sandbox && sandboxExpired(vm.sandbox, now));
+      const expired = [...this.records.values()].filter(
+        (vm) => vm.sandbox && sandboxExpired(vm.sandbox, now),
+      );
       await Promise.all(
         expired.map(async (vm) => {
           if (this.closing) return;
@@ -171,8 +213,9 @@ export class Machines extends EventEmitter {
     this.saveQueue = operation;
     await operation;
   }
-  async locked<T>(id: string, action: () => Promise<T>): Promise<T> {
+  async locked<T>(id: string, action: () => Promise<T>, allowIncident = false): Promise<T> {
     if (this.closing) throw new AppError('服务正在关闭', 503);
+    if (!allowIncident) for (const part of id.split(':')) this.requireUnlocked(part);
     if (this.maintenance) throw new AppError('数据目录迁移维护中，请等待完成并重启服务', 409);
     if (this.locks.has(id)) throw new AppError('该实例的另一项操作正在进行', 409);
     this.locks.add(id);
@@ -566,12 +609,14 @@ export class Machines extends EventEmitter {
     }
   }
   async connect(id: string, timeout = 10000, signal?: AbortSignal) {
+    this.requireUnlocked(id);
     const live = this.live.get(id);
     if (!live || live.status === 'stopping' || live.status === 'paused')
       throw new AppError(live?.status === 'paused' ? '发行版已暂停，请先恢复' : '请先启动该发行版', 409);
     const deadline = performance.now() + timeout;
     const key = await readFile(join(vmDir(id), 'id_rsa'));
     for (let attempt = 0; ; attempt++) {
+      this.requireUnlocked(id);
       signal?.throwIfAborted();
       if (this.live.get(id) !== live || this.live.get(id)?.status === 'stopping')
         throw new AppError('发行版已停止', 409);
@@ -857,7 +902,7 @@ export class Machines extends EventEmitter {
     });
   }
   async stop(id: string, force = false) {
-    return this.locked(id, async () => this.stopInternal(id, force));
+    return this.locked(id, async () => this.stopInternal(id, force), true);
   }
   async suspend(id: string) {
     return this.locked(id, async () => {
@@ -1222,6 +1267,7 @@ export class Machines extends EventEmitter {
     clearInterval(this.sandboxTimer);
     this.closeTask = (async () => {
       await this.sandboxSweep;
+      await this.incidentWrites.catch(() => {});
       // Launch and disk operations admitted before shutdown must settle before
       // taking the final live-process snapshot or releasing their runtime.
       await Promise.allSettled([...this.operations]);

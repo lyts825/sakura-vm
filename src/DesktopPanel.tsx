@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import type RFB from '@novnc/novnc';
 import {
   CircleCheck,
   Clipboard,
@@ -13,16 +13,20 @@ import {
   MousePointer2,
   Palette,
   PanelTop,
-  RotateCcw,
-  Save,
-  SlidersHorizontal,
-  WandSparkles,
   Play,
   RefreshCw,
+  RotateCcw,
+  Save,
   Send,
+  SlidersHorizontal,
   Sparkles,
+  WandSparkles,
   Wifi,
 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { JobView } from '../server/jobs';
+import type { DesktopPreferences, DesktopView, VMView } from '../server/model';
+import { connectDesktop } from './desktop-connection';
 import {
   desktopPreferenceDefaults,
   editDesktopPreferences,
@@ -30,13 +34,9 @@ import {
   receiveDesktopPreferences,
   saveDesktopPreferences,
 } from './desktop-preferences';
-import type { DesktopPreferences, DesktopView, VMView } from '../server/model';
-import { connectDesktop } from './desktop-connection';
-import { ResponseOrder } from './request-order';
 import './desktop.css';
-import type RFB from '@novnc/novnc';
-import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
-import type { JobView } from '../server/jobs';
+import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-shared';
+import { ResponseOrder } from './request-order';
 
 type Props = {
   vm: VMView;

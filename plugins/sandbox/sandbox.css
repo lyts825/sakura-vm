@@ -136,3 +136,35 @@
     font-size: 22px;
   }
 }
+.sandbox-execution {
+  min-width: 0;
+  margin-top: 16px;
+}
+.sandbox-execution dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+  font-size: 13px;
+}
+.sandbox-execution dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sandbox-execution dt {
+  color: var(--text-muted, #81747c);
+}
+.sandbox-execution .feature-log {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sandbox-execution .feature-actions {
+  flex-wrap: wrap;
+}
+.sandbox-execution .feature-actions button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.sandbox-execution .feature-actions button svg {
+  flex-shrink: 0;
+}

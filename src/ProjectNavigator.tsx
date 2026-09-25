@@ -1,7 +1,7 @@
+import { FileText, Folder, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Folder, FileText, Search, RefreshCw } from 'lucide-react';
 import type { ProjectFile, SearchMatch } from '../server/project-files';
-import { type Request, Feedback } from './FeaturePanels';
+import { Feedback, type Request } from './feature-shared';
 import { nextSelection } from './keyboard-navigation';
 
 export function ProjectNavigator({

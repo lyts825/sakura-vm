@@ -1,10 +1,18 @@
-import { useEffect, useState } from 'react';
 import { Play, Save } from 'lucide-react';
-import type { JobView } from '../../server/jobs.ts';
+import { useEffect, useState } from 'react';
 import type { CommandPreset } from '../../server/command-presets.ts';
-import { Feedback, JobLog, useAction, useRemote, type FeatureProps, type Request } from '../../src/feature-shared';
-import { usePlugins } from '../../src/plugin-context';
+import type { JobView } from '../../server/jobs.ts';
 import '../../src/development.css';
+import {
+  Feedback,
+  JobLog,
+  useAction,
+  useRemote,
+  type FeatureProps,
+  type Request,
+} from '../../src/feature-shared';
+import '../../src/features.css';
+import { usePlugins } from '../../src/plugin-context';
 export function PresetRunner({
   preset,
   id,
@@ -212,6 +220,5 @@ export function CommandsPanel({ vm, request }: FeatureProps) {
     </>
   );
 }
-
 
 export const developmentSections = { commands: CommandsPanel };

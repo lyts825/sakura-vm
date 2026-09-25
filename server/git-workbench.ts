@@ -185,6 +185,24 @@ export class GitWorkbench {
               break;
             }
             case 'commit':
+              {
+                const pattern =
+                  '-----BEGIN ([A-Z0-9 ]+ )?PRIVATE KEY-----|\\b(AKIA|ASIA)[A-Z0-9]{16}\\b|\\bgh[pousr]_[A-Za-z0-9]{30,}\\b|\\bgithub_pat_[A-Za-z0-9_]{40,}\\b';
+                const scan = await this.command(
+                  id,
+                  'grep --cached -I -n -z -E -e ' + quote(pattern) + ' --',
+                  signal,
+                );
+                if (scan.code !== 0 && scan.code !== 1) throw new AppError('无法检查 Git 暂存区，提交已停止');
+                if (scan.code === 0) {
+                  const locations = scan.stdout.split('\n').flatMap((line) => {
+                    const match = /^([^\0]+)\0(\d+)\0/.exec(line);
+                    return match ? [match[1] + ':' + match[2]] : [];
+                  });
+                  log('暂存区发现疑似密钥：\n' + locations.join('\n') + '\n');
+                  throw new AppError('暂存区包含疑似密钥，请移除后重新提交');
+                }
+              }
               command = `${value.author ? `-c user.name=${quote(value.author)} ` : ''}${value.email ? `-c user.email=${quote(value.email)} ` : ''}commit -m ${quote(value.message)}`;
               break;
             case 'branch':

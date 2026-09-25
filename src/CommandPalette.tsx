@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
-import type { VMView } from '../server/model';
-import type { CommandPreset } from '../server/command-presets';
-import type { ProjectFile } from '../server/project-files';
-import { Feedback, useRemote, type Request } from './FeaturePanels';
+import { useEffect, useRef, useState } from 'react';
 import { PresetRunner } from '../plugins/commands/client';
+import type { CommandPreset } from '../server/command-presets';
+import type { VMView } from '../server/model';
+import type { ProjectFile } from '../server/project-files';
+import { pluginSurfaceEnabled } from '../shared/plugins';
+import { Feedback, useRemote, type Request } from './feature-shared';
 import { nextSelection } from './keyboard-navigation';
 import { usePlugins } from './plugin-context';
-import { pluginSurfaceEnabled } from '../shared/plugins';
 
 export type PaletteTarget = { id?: string; page?: string; tab?: string; file?: string };
 export type PaletteAction = {

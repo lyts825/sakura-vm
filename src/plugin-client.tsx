@@ -1,16 +1,26 @@
-import { lazy, type ComponentType } from 'react';
-import type { FeatureProps, Request } from './feature-shared';
+import { lazy, Suspense, type ComponentType } from 'react';
 import type { VMView } from '../server/model';
 import { PLUGINS } from '../shared/plugins';
+import type { FeatureProps, Request } from './feature-shared';
 
 export type PluginPageProps = {
   request: Request;
   vms: VMView[];
   selected: string;
   refresh: () => Promise<unknown>;
+  token: string;
+  onSelected: (id: string) => void;
+  onCreate: () => void;
+  projectId?: string;
+};
+export type PluginTabProps = FeatureProps & {
+  start: () => unknown;
+  busy: boolean;
+  configure: () => unknown;
+  openFile?: { path: string; revision: number };
 };
 type ClientModule = {
-  tabs?: Record<string, ComponentType<FeatureProps>>;
+  tabs?: Record<string, ComponentType<PluginTabProps>>;
   pages?: Record<string, ComponentType<PluginPageProps>>;
   developmentSections?: Record<string, ComponentType<FeatureProps>>;
 };
@@ -34,17 +44,29 @@ function component(owner: string, kind: keyof ClientModule, id: string) {
   return value;
 }
 
-export function PluginTab({ owner, id, ...props }: FeatureProps & { owner: string; id: string }) {
+export function PluginTab({ owner, id, ...props }: PluginTabProps & { owner: string; id: string }) {
   const Component = component(owner, 'tabs', id);
-  return <Component {...props} />;
+  return (
+    <Suspense fallback={<p role="status">正在加载功能…</p>}>
+      <Component {...props} />
+    </Suspense>
+  );
 }
 export function PluginPage({ owner, id, ...props }: PluginPageProps & { owner: string; id: string }) {
   const Component = component(owner, 'pages', id);
-  return <Component {...props} />;
+  return (
+    <Suspense fallback={<p role="status">正在加载功能…</p>}>
+      <Component {...props} />
+    </Suspense>
+  );
 }
 export function PluginDevelopmentSection({ id, ...props }: FeatureProps & { id: string }) {
   const owner = PLUGINS.find((plugin) => plugin.contributes.developmentSections.includes(id))?.id;
   if (!owner) return null;
   const Component = component(owner, 'developmentSections', id);
-  return <Component {...props} />;
+  return (
+    <Suspense fallback={<p role="status">正在加载功能…</p>}>
+      <Component {...props} />
+    </Suspense>
+  );
 }

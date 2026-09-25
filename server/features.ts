@@ -1,56 +1,61 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
-import { AppError, type VMConfig } from './model.ts';
-import type { Machines } from './machines.ts';
+import type { Bundles } from './bundles.ts';
 import type { Files } from './files.ts';
 import type { Images } from './images.ts';
-import type { Bundles } from './bundles.ts';
-import type { Workspaces } from './workspaces.ts';
-import type { FolderSync } from './sync.ts';
 import type { Jobs, JobView } from './jobs.ts';
+import type { Machines } from './machines.ts';
+import { AppError, type VMConfig } from './model.ts';
+import type { FolderSync } from './sync.ts';
+import type { Workspaces } from './workspaces.ts';
 
-import type { Downloads } from './downloads.ts';
 import type { Backups } from './backups.ts';
-import type { Maintenance } from './maintenance.ts';
+import type { Downloads } from './downloads.ts';
 import type { Ide } from './ide.ts';
+import type { Maintenance } from './maintenance.ts';
 import type { Recipes } from './recipes.ts';
 
-import type { GitWorkbench } from './git-workbench.ts';
-import type { ProjectFiles } from './project-files.ts';
 import type { CommandPresets } from './command-presets.ts';
-import type { Toolchains } from './toolchains.ts';
-import type { NetworkProfiles } from './network-profiles.ts';
-import type { Secrets } from './secrets.ts';
-import type { ServiceHealth } from './service-health.ts';
 import type { Containers } from './containers.ts';
 import type { DataMigration } from './data-migration.ts';
+import type { GitWorkbench } from './git-workbench.ts';
+import type { NetworkProfiles } from './network-profiles.ts';
+import type { ProjectFiles } from './project-files.ts';
+import type { Secrets } from './secrets.ts';
+import type { ServiceHealth } from './service-health.ts';
+import type { Toolchains } from './toolchains.ts';
 
+import type { CodeIntelligence } from './code-intelligence.ts';
+import type { ExtendedFeatures } from './extended-features.ts';
+import type { FeatureSuite } from './feature-suite.ts';
 import type { FileHistory } from './file-history.ts';
+import type { NextFeatures } from './next-features.ts';
 import type { Pipelines } from './pipelines.ts';
 import type { RuntimeVersions } from './runtime-versions.ts';
-import type { CodeIntelligence } from './code-intelligence.ts';
-import type { FeatureSuite } from './feature-suite.ts';
-import type { ExtendedFeatures } from './extended-features.ts';
-import type { NextFeatures } from './next-features.ts';
 
+import { resolvePlugins } from '../shared/plugin-selection.ts';
+import { emptySelection, PLUGINS } from '../shared/plugins.ts';
 import type { Desktops } from './desktop.ts';
 import type { Metrics } from './metrics.ts';
-import { PLUGINS, emptySelection } from '../shared/plugins.ts';
-import { resolvePlugins } from '../shared/plugin-selection.ts';
+import { pluginContext, SERVICE_KEYS, type PluginContext } from './plugin-api.ts';
+import { PluginScope, withinDeadline } from './plugin-scope.ts';
 import {
   loaders,
   routeContribution,
-  validateRegistry,
   socketOwner,
+  validateRegistry,
   type PluginModule,
 } from './plugins/registry.ts';
-import { pluginContext, SERVICE_KEYS, type PluginContext, type ServiceKey } from './plugin-api.ts';
-import { PluginScope, withinDeadline } from './plugin-scope.ts';
 
 function matchesOperation(pattern: string, pathname: string) {
-  const declared = pattern.split('/').filter(Boolean), actual = pathname.split('/').filter(Boolean);
-  return declared.length === actual.length && declared.every((part, index) =>
-    part === ':vmId' ? !!actual[index] && actual[index] !== 'batch' : part === actual[index]);
+  const declared = pattern.split('/').filter(Boolean),
+    actual = pathname.split('/').filter(Boolean);
+  return (
+    declared.length === actual.length &&
+    declared.every((part, index) =>
+      part === ':vmId' ? !!actual[index] && actual[index] !== 'batch' : part === actual[index],
+    )
+  );
 }
 
 /** Optional plugin host. No plugin services are constructed until explicitly selected. */
@@ -92,7 +97,10 @@ export class Features {
   private contexts = new Map<string, PluginContext>();
   private scopes = new Map<string, PluginScope>();
   private services = new Map<string, unknown>();
-  private pluginJobs = new Map<Jobs, { owner: string; retry: (job: JobView) => Promise<unknown> | unknown }>();
+  private pluginJobs = new Map<
+    Jobs,
+    { owner: string; retry: (job: JobView) => Promise<unknown> | unknown }
+  >();
   mutations = 0;
   importing = false;
   private closed = false;
@@ -109,10 +117,13 @@ export class Features {
   }
   registerPluginJobs(owner: string, store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown) {
     const manifest = PLUGINS.find((item) => item.id === owner);
-    if (!manifest?.services.some((key) => {
-      const service = this.serviceValue(key) as { jobs?: Jobs } | undefined;
-      return service === store || service?.jobs === store;
-    })) throw new Error(`插件 ${owner} 只能注册自有任务存储`);
+    if (
+      !manifest?.services.some((key) => {
+        const service = this.serviceValue(key) as { jobs?: Jobs } | undefined;
+        return service === store || service?.jobs === store;
+      })
+    )
+      throw new Error(`插件 ${owner} 只能注册自有任务存储`);
     if (this.pluginJobs.has(store)) throw new Error(`任务存储已注册：${owner}`);
     this.pluginJobs.set(store, { owner, retry });
   }
@@ -142,17 +153,23 @@ export class Features {
           throw new Error(`插件入口与声明不一致：${id}`);
         const declaredOperations = manifest.contributes.operations.map((item) => item.id).sort();
         const implementedOperations = Object.keys(module.operations || {}).sort();
-        if (!isDeepStrictEqual(declaredOperations, implementedOperations) ||
-            implementedOperations.some((key) =>
+        if (
+          !isDeepStrictEqual(declaredOperations, implementedOperations) ||
+          implementedOperations.some(
+            (key) =>
               typeof module!.operations![key].execute !== 'function' ||
-              typeof module!.operations![key].response?.parse !== 'function'))
+              typeof module!.operations![key].response?.parse !== 'function',
+          )
+        )
           throw new Error(`插件操作实现与声明不一致：${id}`);
         const scope = new PluginScope();
         host.scopes.set(id, scope);
         const context = pluginContext(host, manifest, PLUGINS, scope);
         host.contexts.set(id, context);
         started = true;
-        await withinDeadline(module.activate(context), manifest.lifecycle.activateMs, `${id} 激活`, () => scope.abort());
+        await withinDeadline(module.activate(context), manifest.lifecycle.activateMs, `${id} 激活`, () =>
+          scope.abort(),
+        );
         for (const key of manifest.services)
           if (host.serviceValue(key) === undefined) throw new Error(`插件未注册声明的服务：${id}.${key}`);
         host.modules.set(id, module);
@@ -218,8 +235,7 @@ export class Features {
       errors.push(error);
     }
     for (const key of [...module.manifest.services].reverse()) {
-      const service = this.serviceValue(key) as
-        { close?: () => Promise<void>; jobs?: Jobs } | undefined;
+      const service = this.serviceValue(key) as { close?: () => Promise<void>; jobs?: Jobs } | undefined;
       try {
         if (service?.close) await withinDeadline(service.close(), closeMs, `${id}.${key} 关闭`);
         else if (service?.jobs) await withinDeadline(service.jobs.close(), closeMs, `${id}.${key} 任务关闭`);
@@ -275,11 +291,15 @@ export class Features {
     const handler =
       owner === 'tasks' ? (await import('./plugins/tasks.ts')).route : this.modules.get(owner)!.route;
     const module = owner === 'tasks' ? undefined : this.modules.get(owner)!;
-    const declaredOperation = module?.manifest.contributes.operations.find((item) =>
-      item.method === req.method && matchesOperation(item.path, url.pathname));
+    const declaredOperation = module?.manifest.contributes.operations.find(
+      (item) => item.method === req.method && matchesOperation(item.path, url.pathname),
+    );
     const operation = declaredOperation && module?.operations?.[declaredOperation.id];
     if (this.closed) throw new AppError('服务正在关闭', 503);
     const mutation = req.method !== 'GET' && req.method !== 'HEAD' && url.pathname !== '/api/migration';
+    const targetVm = /^\/api\/vms\/([^/]+)/.exec(url.pathname)?.[1];
+    if (mutation && targetVm && !url.pathname.endsWith('/next-features'))
+      this.machines.requireUnlocked?.(targetVm);
     if (mutation) this.mutations++;
     const abort = new AbortController();
     const disconnected = () => {
@@ -296,9 +316,16 @@ export class Features {
         const route = () =>
           operation && declaredOperation
             ? (async () => {
-                const raw = req.method === 'GET' ? undefined : await body(req, abort.signal);
+                // Operations without a request schema have no body (for example DELETE).
+                const raw =
+                  req.method === 'GET' || !operation.request ? undefined : await body(req, abort.signal);
                 const input = operation.request ? operation.request.parse(raw) : raw;
-                const output = await operation.execute.call(this.contexts.get(owner)!, url, input, abort.signal);
+                const output = await operation.execute.call(
+                  this.contexts.get(owner)!,
+                  url,
+                  input,
+                  abort.signal,
+                );
                 abort.signal.throwIfAborted();
                 const parsed = operation.response.safeParse(output);
                 if (!parsed.success)
@@ -313,18 +340,18 @@ export class Features {
                 return true;
               })()
             : handler.call(
-            owner === 'tasks' ? (this as unknown as PluginContext) : this.contexts.get(owner)!,
-            req,
-            res,
-            url,
-            async (request) => {
-              const value = await body(request, abort.signal);
-              if (mutation && this.migration?.blocked && !url.pathname.endsWith('/cancel'))
-                throw new AppError('数据目录迁移维护中', 409);
-              return value;
-            },
-            abort.signal,
-          );
+                owner === 'tasks' ? (this as unknown as PluginContext) : this.contexts.get(owner)!,
+                req,
+                res,
+                url,
+                async (request) => {
+                  const value = await body(request, abort.signal);
+                  if (mutation && this.migration?.blocked && !url.pathname.endsWith('/cancel'))
+                    throw new AppError('数据目录迁移维护中', 409);
+                  return value;
+                },
+                abort.signal,
+              );
         const vm = /^\/api\/vms\/([^/]+)\//.exec(url.pathname)?.[1];
         return this.workspaces && vm && contribution.projectScoped && /^[0-9a-f-]{36}$/i.test(vm)
           ? this.workspaces.projects.with(vm, url.searchParams.get('project'), route)

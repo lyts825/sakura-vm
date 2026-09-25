@@ -14,6 +14,7 @@ export const manifest = definePlugin({
     ],
     operations: [
       operation('list', 'GET', '/api/sandboxes'),
+      operation('artifact', 'GET', '/api/sandboxes/artifact'),
       operation('create', 'POST', '/api/sandboxes', 201),
       operation('inspect', 'GET', '/api/vms/:vmId/sandbox'),
       operation('control', 'POST', '/api/vms/:vmId/sandbox'),

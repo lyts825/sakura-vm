@@ -1,10 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, writeFile, rename } from 'node:fs/promises';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import type { SandboxExecution } from '../shared/sandbox.ts';
 import { AppError, DATA } from './model.ts';
 
-export type JobMeta = { title?: string; vmId?: string; action?: string; projectId?: string };
+export type JobMeta = {
+  title?: string;
+  vmId?: string;
+  action?: string;
+  projectId?: string;
+  execution?: SandboxExecution;
+};
 export type JobView = JobMeta & {
   id?: string;
   key?: string;
@@ -54,6 +61,9 @@ export class Jobs {
           ? {
               ...view,
               status: 'interrupted',
+              ...(view.execution
+                ? { execution: { ...view.execution, outcome: 'interrupted' as const } }
+                : {}),
               finishedAt: new Date().toISOString(),
               error: '服务已重启，任务中断，请检查结果后重试',
             }
@@ -152,6 +162,12 @@ export class Jobs {
         view.status = abort.signal.aborted ? 'cancelled' : 'error';
         view.error = abort.signal.aborted ? '操作已取消' : error.message;
         view.phase = view.error;
+        if (view.execution)
+          view.execution.outcome = abort.signal.aborted
+            ? 'cancelled'
+            : view.execution.outcome && view.execution.outcome !== 'success'
+              ? view.execution.outcome
+              : 'failed';
       })
       .finally(async () => {
         view.finishedAt = new Date().toISOString();

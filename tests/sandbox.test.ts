@@ -1,11 +1,11 @@
-import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import type { Engine } from '../server/runtime.ts';
+import test, { after, type TestContext } from 'node:test';
 import type { VMRecord } from '../server/model.ts';
+import type { Engine } from '../server/runtime.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-sandbox-test-'));
 process.env.SAKURA_DATA_DIR = root;
@@ -42,7 +42,8 @@ async function fixture(t: TestContext) {
   const machines = new Machines(engine);
   await mkdir(join(root, 'machines'), { recursive: true });
   machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
-  const jobs = new Jobs('sandbox', join(root, randomUUID()));
+  const jobsDirectory = join(root, randomUUID());
+  const jobs = new Jobs('sandbox', jobsDirectory);
   const service = new Sandboxes(machines, jobs);
   t.after(async () => {
     await service.close();
@@ -72,7 +73,7 @@ async function fixture(t: TestContext) {
     await mkdir(vmDir(id));
     return vm;
   };
-  return { machines, service, add, launches, jobs };
+  return { machines, service, add, launches, jobs, jobsDirectory };
 }
 
 test('sandbox inputs default to isolated disposable environments and reject policy escape fields', () => {
@@ -97,6 +98,10 @@ test('sandbox inputs default to isolated disposable environments and reject poli
     { command: 'pwd', cwd: '../host' },
     { command: 'pwd', timeoutSeconds: 0 },
     { command: 'pwd', timeoutSeconds: 3601 },
+    { command: 'pwd', artifacts: ['../private'] },
+    { command: 'pwd', artifacts: ['/etc/shadow'] },
+    { command: 'pwd', artifacts: ['ok', 'ok'] },
+    { command: 'pwd', artifacts: ['dir\\file'] },
   ])
     assert.equal(sandboxRunSchema.safeParse(value).success, false);
 });
@@ -230,7 +235,38 @@ test('nonzero exits, timeouts and cancellation all stop the entire guest', async
       outcome === 'failure' ? /退出码 7/ : outcome === 'timeout' ? /超时/ : /取消/,
     );
     assert.equal(machines.live.has(vm.id), false);
+    assert.equal(
+      job.execution?.outcome,
+      outcome === 'failure' ? 'failed' : outcome === 'cancel' ? 'cancelled' : 'timeout',
+    );
+    if (outcome === 'failure') assert.equal(job.execution?.exitCode, 7);
   }
+});
+
+test('command metadata survives truncated output, destruction and history reload', async (t) => {
+  const { machines, service, add, jobs, jobsDirectory } = await fixture(t);
+  const vm = await add();
+  machines.exec = async (_id, command, _timeout, _signal, output) => {
+    if (command.startsWith('cd ')) {
+      output?.('x'.repeat(50000));
+      return { stdout: '', stderr: '', code: 9 };
+    }
+    return { stdout: '', stderr: '', code: 0 };
+  };
+  const job = service.run(vm.id, {
+    command: 'original-command --quoted "value"',
+    cwd: '/workspace',
+    timeoutSeconds: 5,
+  });
+  await jobs.wait(vm.id);
+  assert.doesNotMatch(job.log, /original-command/);
+  assert.equal(job.execution?.command, 'original-command --quoted "value"');
+  assert.equal(job.execution?.exitCode, 9);
+  assert.ok(job.execution?.timings.commandMs! >= 0);
+  await service.control(vm.id, 'destroy');
+  const restored = new Jobs('sandbox', jobsDirectory);
+  assert.deepEqual(restored.get(job.id!)?.execution, job.execution);
+  await restored.close();
 });
 
 test('sandbox plugin activates by itself, owns its routes and registers execution history', async (t) => {

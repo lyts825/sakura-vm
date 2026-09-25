@@ -41,40 +41,40 @@ flowchart TB
 
 当前有 **32 个插件、9 个整合包**。每个插件在 `plugins/<id>/` 内维护 `manifest.ts`、`server.ts` 和可选的 `client.tsx`。运行 `npm run plugins:sync` 从目录生成共享声明与可信加载器；路由和项目作用域直接从声明生成。插件标识不会与磁盘导入导出的 `.sakura` 包混用。协议和 JSON Schema 见 [插件协议](plugin-protocol.md)。
 
-| 插件标识             | 业务范围                                              | 直接依赖                      |
-| -------------------- | ----------------------------------------------------- | ----------------------------- |
-| `transfers`          | 文件、磁盘包及本地文件的传输基础；任务记录            | 无                            |
-| `files`              | SFTP 浏览、上传下载、编辑器、历史与回收站             | transfers                     |
-| `images`             | 发行版镜像目录、下载与校验                            | 无                            |
-| `terminal-workspace` | 多终端、分屏与 tmux 会话恢复                          | 无                            |
-| `snapshots`          | 快照、恢复、克隆、普通磁盘包导入导出                  | transfers                     |
-| `backups`            | 定时、保留策略、加密与外部目录备份                    | snapshots、secrets、transfers |
-| `projects`           | 多项目、开发模板、初始化与项目服务                    | 无                            |
-| `recipes`            | 环境配方的导入、导出和应用                            | projects                      |
-| `ide`                | VS Code Remote-SSH 配置和项目连接                     | projects                      |
-| `toolchains`         | 工具检查和安装                                        | projects                      |
-| `project-search`     | 项目文件名与内容搜索                                  | projects、files               |
-| `code-checks`        | 按文件进行代码诊断                                    | projects、files               |
-| `commands`           | 参数化收藏命令、执行和日志                            | projects                      |
-| `pipelines`          | 构建步骤、运行记录和产物下载                          | projects、files、transfers    |
-| `runtimes`           | 项目运行时版本选择和安装                              | projects                      |
-| `git`                | Git 操作与远程仓库                                    | projects                      |
-| `containers`         | Docker / Compose                                      | projects                      |
-| `sandbox`            | 隔离虚拟机、限时命令、执行历史和到期清理              | 无                            |
-| `sync`               | 双向目录同步与冲突决策                                | projects                      |
-| `network`            | 端口转发、代理、软件源与诊断                          | 无                            |
-| `secrets`            | 私密配置及环境变量引用                                | 无                            |
-| `metrics`            | 按请求采样客户机资源                                  | 无                            |
-| `service-health`     | 项目服务持续健康检查                                  | projects                      |
-| `desktop`            | KDE Plasma、noVNC 与输入法，实验性                    | 无                            |
-| `library`            | 分组、标签、收藏与批量启停                            | 无                            |
-| `maintenance`        | 故障诊断、磁盘扩容与整理                              | 无                            |
-| `migration`          | 数据目录迁移                                          | 无                            |
-| `automation`         | 暂停/恢复、资源策略、包管理与开发任务及计划配置       | projects                      |
-| `automation-scheduler` | 计划启停、定期采样与阈值告警后台调度               | automation                    |
-| `extensions`         | 工程扩展能力与操作适配器，实验性                      | projects                      |
-| `platform`           | 远程、灾备、安全与协作适配器，实验性                  | projects                      |
-| `command-palette`    | 全局导航与已启用能力的搜索                            | 无                            |
+| 插件标识               | 业务范围                                        | 直接依赖                      |
+| ---------------------- | ----------------------------------------------- | ----------------------------- |
+| `transfers`            | 文件、磁盘包及本地文件的传输基础；任务记录      | 无                            |
+| `files`                | SFTP 浏览、上传下载、编辑器、历史与回收站       | transfers                     |
+| `images`               | 发行版镜像目录、下载与校验                      | 无                            |
+| `terminal-workspace`   | 多终端、分屏与 tmux 会话恢复                    | 无                            |
+| `snapshots`            | 快照、恢复、克隆、普通磁盘包导入导出            | transfers                     |
+| `backups`              | 定时、保留策略、加密与外部目录备份              | snapshots、secrets、transfers |
+| `projects`             | 多项目、开发模板、初始化与项目服务              | 无                            |
+| `recipes`              | 环境配方的导入、导出和应用                      | projects                      |
+| `ide`                  | VS Code Remote-SSH 配置和项目连接               | projects                      |
+| `toolchains`           | 工具检查和安装                                  | projects                      |
+| `project-search`       | 项目文件名与内容搜索                            | projects、files               |
+| `code-checks`          | 按文件进行代码诊断                              | projects、files               |
+| `commands`             | 参数化收藏命令、执行和日志                      | projects                      |
+| `pipelines`            | 构建步骤、运行记录和产物下载                    | projects、files、transfers    |
+| `runtimes`             | 项目运行时版本选择和安装                        | projects                      |
+| `git`                  | Git 操作与远程仓库                              | projects                      |
+| `containers`           | Docker / Compose                                | projects                      |
+| `sandbox`              | 隔离虚拟机、限时命令、执行历史和到期清理        | 无                            |
+| `sync`                 | 双向目录同步与冲突决策                          | projects                      |
+| `network`              | 端口转发、代理、软件源与诊断                    | 无                            |
+| `secrets`              | 私密配置及环境变量引用                          | 无                            |
+| `metrics`              | 按请求采样客户机资源                            | 无                            |
+| `service-health`       | 项目服务持续健康检查                            | projects                      |
+| `desktop`              | KDE Plasma、noVNC 与输入法，实验性              | 无                            |
+| `library`              | 分组、标签、收藏与批量启停                      | 无                            |
+| `maintenance`          | 故障诊断、磁盘扩容与整理                        | 无                            |
+| `migration`            | 数据目录迁移                                    | 无                            |
+| `automation`           | 暂停/恢复、资源策略、包管理与开发任务及计划配置 | projects                      |
+| `automation-scheduler` | 计划启停、定期采样与阈值告警后台调度            | automation                    |
+| `extensions`           | 工程扩展能力与操作适配器，实验性                | projects                      |
+| `platform`             | 远程、灾备、安全与协作适配器，实验性            | projects                      |
+| `command-palette`      | 全局导航与已启用能力的搜索                      | 无                            |
 
 `transfers` 只拥有下载票据、流式传输与任务服务。`Files` 和文件历史属于 `files`，`Bundles` 属于 `snapshots`；传输服务通过延迟读取的可选提供者复用它们，单独启用传输不会创建文件或磁盘包服务。下载票据签发再次检查具体业务所属插件；已有导出任务的重试也必须启用 `snapshots`。
 
@@ -161,6 +161,10 @@ CLI 默认帮助只列基础与插件管理命令；`help all` 列出可选命�
 前述市场与分发能力若加入，应以独立提案定义来源校验、包完整性、隔离执行、权限与版本迁移后再实现，不能直接把当前受信任模块加载器用于第三方代码。
 
 ## 验收
+
+前端的文件、项目、Git、同步、快照、镜像、运维和开发子面板由各自插件目录维护。宿主通过 `src/plugin-client.tsx` 按声明加载页面、标签和开发区块；共享开发标签由 `src/DevelopmentPanel.tsx` 装配。备份、私密引用、IDE 与健康检查等可选配套采用独立懒加载入口。插件检查要求所有声明独立界面贡献的包提供 `client.tsx`，加载过程在对应内容区显示进度。
+
+CI 分为 Windows/Linux 的常规验证和独立的真实虚拟机验收。常规任务运行 `npm run verify`；真实任务运行 `npm run verify:vm`，包含 VM、沙箱和连接真实编译版服务的浏览器流程。后者验证实例创建、SSH、文件面板、快照、服务重启恢复、沙箱命令、销毁和产物下载。测试使用独立临时数据目录；CI 使用 TCG，本机默认按实际硬件选择加速。
 
 - 空选择下，基础实例与单终端可用，不构建可选服务，不注册其监听器或任务存储。
 - 单独启用文件/快照等插件能完成自身操作，不请求未选择的配套插件。

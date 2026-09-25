@@ -1,12 +1,15 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Download, FileText, Folder, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
-import { Feedback, download, useAction, useRemote, type FeatureProps } from './FeaturePanels';
-import { uploadFiles, transferBytes, type UploadProgress } from './transfers';
-import { dirtyEdit, registerEditorGuard, type FileEdit } from './file-editor-state';
-import { restoreDrafts, saveDraftResult, anyDirty, type EditorDraft } from './editor-drafts';
-const CodeEditor = lazy(() => import('./CodeEditor').then((module) => ({ default: module.CodeEditor })));
-import { ProjectNavigator } from './ProjectNavigator';
-import { PluginGate } from './plugin-context';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { anyDirty, restoreDrafts, saveDraftResult, type EditorDraft } from '../../src/editor-drafts';
+import { download, Feedback, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
+import '../../src/features.css';
+import { dirtyEdit, registerEditorGuard, type FileEdit } from '../../src/file-editor-state';
+import { PluginGate } from '../../src/plugin-context';
+import { ProjectNavigator } from '../../src/ProjectNavigator';
+import { transferBytes, uploadFiles, type UploadProgress } from '../../src/transfers';
+const CodeEditor = lazy(() =>
+  import('../../src/CodeEditor').then((module) => ({ default: module.CodeEditor })),
+);
 
 type Entry = { name: string; size: number; directory: boolean; symlink: boolean; modified: number };
 function DraftDialog({
@@ -706,3 +709,5 @@ export function FileBrowser({
     </div>
   );
 }
+
+export const tabs = { files: FileBrowser };

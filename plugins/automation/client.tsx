@@ -1,35 +1,29 @@
-import { usePlugin } from './plugin-context';
+import { Activity, Bell, Compass, HardDrive, Package, Play, Search, ShieldCheck, Wifi } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Activity,
-  Bell,
-  CheckCircle2,
-  Compass,
-  HardDrive,
-  Package,
-  Play,
-  Search,
-  ShieldCheck,
-  Wifi,
-} from 'lucide-react';
-import type { VMView } from '../server/model';
+import type { ExtendedFeature } from '../../server/extended-features';
 import type {
-  FeatureCatalogItem,
-  Schedule,
   AlertConfig,
+  FeatureCatalogItem,
   ResourcePreset,
   ResourcePresetId,
-} from '../server/feature-suite';
-import type { ExtendedFeature } from '../server/extended-features';
-import type { NextFeature } from '../server/next-features';
-import type { JobView } from '../server/jobs';
-import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
-import { workspaceRequest } from './workspace-request';
-import { featureReadiness, type FeatureExecutionState } from './feature-readiness';
+  Schedule,
+} from '../../server/feature-suite';
+import type { JobView } from '../../server/jobs';
+import type { VMView } from '../../server/model';
+import type { NextFeature } from '../../server/next-features';
+import { featureReadiness, type FeatureExecutionState } from '../../src/feature-readiness';
+import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';
+import '../../src/features.css';
+import { usePlugin } from '../../src/plugin-context';
+import { workspaceRequest } from '../../src/workspace-request';
 
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
-  return <span className={status.className} title={status.title}>{status.label}</span>;
+  return (
+    <span className={status.className} title={status.title}>
+      {status.label}
+    </span>
+  );
 }
 
 type MetricPoint = {
@@ -77,7 +71,13 @@ type ExtendedView = {
     writes: boolean;
   }>;
   settings: Record<string, { enabled: boolean; options?: Record<string, unknown>; updatedAt: string }>;
-  executions?: Array<{ featureId: string; action: string; ready: boolean; finishedAt: string; result?: { executed?: boolean; reason?: string; message?: string } }>;
+  executions?: Array<{
+    featureId: string;
+    action: string;
+    ready: boolean;
+    finishedAt: string;
+    result?: { executed?: boolean; reason?: string; message?: string };
+  }>;
   jobs: JobView[];
 };
 type NextView = {
@@ -187,8 +187,14 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const [diskEntries, setDiskEntries] = useState<DiskEntry[]>([]);
   const [extendedResult, setExtendedResult] = useState('');
   const [extendedOperation, setExtendedOperation] = useState('');
+  const [operationParameters, setOperationParameters] = useState('{}');
   const [nextResult, setNextResult] = useState('');
   const [nextSearch, setNextSearch] = useState('');
+  const lockdown = useRemote<{ locked: boolean }>(request, '/vms/' + active.id + '/lockdown');
+  useEffect(() => {
+    const selected = extended.data?.operations.find((item) => item.id === extendedOperation);
+    setOperationParameters(JSON.stringify(selected?.example || {}, null, 2));
+  }, [extendedOperation]);
 
   useEffect(() => {
     if (!remote.data) return;
@@ -316,9 +322,17 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runExtended = (featureId: string) =>
     action.run(async () => {
+      const operation = extended.data?.operations.find((item) => item.feature === featureId);
+      if (operation) {
+        setExtendedOperation(operation.id);
+        return;
+      }
       const result = await request(`/vms/${active.id}/extended-features`, 'POST', {
         action: 'run',
         featureId,
+        ...(featureId === 'vm-suspend'
+          ? { options: { mode: active.status === 'paused' ? 'resume' : 'pause' } }
+          : {}),
       });
       setExtendedResult(JSON.stringify(result, null, 2));
       extended.reload();
@@ -330,7 +344,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       await request(`/vms/${active.id}/extended-features`, 'POST', {
         action: 'operation',
         operation: item.id,
-        parameters: item.example,
+        parameters: JSON.parse(operationParameters),
       });
       extended.reload();
     }, '扩展操作已提交，请在任务中心查看结果');
@@ -379,6 +393,21 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
         error={remote.error || extended.error || next.error || action.error}
         message={action.message}
       />
+      <div className="feature-actions">
+        <span>{lockdown.data?.locked ? '实例已应急锁定' : '应急锁定会停止实例并阻止执行新操作'}</span>
+        <button
+          className="secondary compact"
+          disabled={action.busy || !lockdown.data}
+          onClick={() =>
+            action.run(async () => {
+              await request('/vms/' + active.id + '/lockdown', 'POST', { locked: !lockdown.data?.locked });
+              lockdown.reload();
+            })
+          }
+        >
+          {lockdown.data?.locked ? '解除应急锁定' : '停止并锁定实例'}
+        </button>
+      </div>
 
       {hasAutomation && (
         <>
@@ -482,106 +511,110 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 <p className="subtle-note">资源预设需要先停止发行版；动态内存目标可在运行中调整。</p>
               )}
             </section>
-            {hasScheduler && <section className="feature-card">
-              <h3>
-                <Bell size={17} />
-                自动化与告警
-              </h3>
-              <div className="feature-grid compact-grid">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={schedule.enabled}
-                    onChange={(event) => setSchedule({ ...schedule, enabled: event.target.checked })}
-                  />
-                  启用计划
-                </label>
-                <label>
-                  自动启动时间
-                  <input
-                    type="time"
-                    value={schedule.startAt || ''}
-                    onChange={(event) =>
-                      setSchedule({ ...schedule, startAt: event.target.value || undefined })
-                    }
-                  />
-                </label>
-                <label>
-                  自动停止时间
-                  <input
-                    type="time"
-                    value={schedule.stopAt || ''}
-                    onChange={(event) =>
-                      setSchedule({ ...schedule, stopAt: event.target.value || undefined })
-                    }
-                  />
-                </label>
-                <label>
-                  空闲停止（分钟）
-                  <input
-                    type="number"
-                    min={0}
-                    max={10080}
-                    value={schedule.idleMinutes}
-                    onChange={(event) =>
-                      setSchedule({ ...schedule, idleMinutes: Number(event.target.value) || 0 })
-                    }
-                  />
-                </label>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={alerts.enabled}
-                    onChange={(event) => setAlerts({ ...alerts, enabled: event.target.checked })}
-                  />
-                  启用资源告警
-                </label>
-                <label>
-                  CPU 阈值
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={alerts.cpuPercent}
-                    onChange={(event) => setAlerts({ ...alerts, cpuPercent: Number(event.target.value) })}
-                  />
-                </label>
-                <label>
-                  内存阈值
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={alerts.memoryPercent}
-                    onChange={(event) => setAlerts({ ...alerts, memoryPercent: Number(event.target.value) })}
-                  />
-                </label>
-                <label>
-                  磁盘阈值
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={alerts.diskPercent}
-                    onChange={(event) => setAlerts({ ...alerts, diskPercent: Number(event.target.value) })}
-                  />
-                </label>
-              </div>
-              <button className="primary compact" disabled={action.busy} onClick={saveSettings}>
-                保存自动化设置
-              </button>
-              {!!remote.data?.events.length && (
-                <div className="event-list">
-                  {remote.data.events.slice(0, 5).map((event) => (
-                    <p key={event.id}>
-                      <span className="tiny-dot error" />
-                      {event.message}
-                      <small>{new Date(event.createdAt).toLocaleString()}</small>
-                    </p>
-                  ))}
+            {hasScheduler && (
+              <section className="feature-card">
+                <h3>
+                  <Bell size={17} />
+                  自动化与告警
+                </h3>
+                <div className="feature-grid compact-grid">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={schedule.enabled}
+                      onChange={(event) => setSchedule({ ...schedule, enabled: event.target.checked })}
+                    />
+                    启用计划
+                  </label>
+                  <label>
+                    自动启动时间
+                    <input
+                      type="time"
+                      value={schedule.startAt || ''}
+                      onChange={(event) =>
+                        setSchedule({ ...schedule, startAt: event.target.value || undefined })
+                      }
+                    />
+                  </label>
+                  <label>
+                    自动停止时间
+                    <input
+                      type="time"
+                      value={schedule.stopAt || ''}
+                      onChange={(event) =>
+                        setSchedule({ ...schedule, stopAt: event.target.value || undefined })
+                      }
+                    />
+                  </label>
+                  <label>
+                    空闲停止（分钟）
+                    <input
+                      type="number"
+                      min={0}
+                      max={10080}
+                      value={schedule.idleMinutes}
+                      onChange={(event) =>
+                        setSchedule({ ...schedule, idleMinutes: Number(event.target.value) || 0 })
+                      }
+                    />
+                  </label>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={alerts.enabled}
+                      onChange={(event) => setAlerts({ ...alerts, enabled: event.target.checked })}
+                    />
+                    启用资源告警
+                  </label>
+                  <label>
+                    CPU 阈值
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={alerts.cpuPercent}
+                      onChange={(event) => setAlerts({ ...alerts, cpuPercent: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    内存阈值
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={alerts.memoryPercent}
+                      onChange={(event) =>
+                        setAlerts({ ...alerts, memoryPercent: Number(event.target.value) })
+                      }
+                    />
+                  </label>
+                  <label>
+                    磁盘阈值
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={alerts.diskPercent}
+                      onChange={(event) => setAlerts({ ...alerts, diskPercent: Number(event.target.value) })}
+                    />
+                  </label>
                 </div>
-              )}
-            </section>}
+                <button className="primary compact" disabled={action.busy} onClick={saveSettings}>
+                  保存自动化设置
+                </button>
+                {!!remote.data?.events.length && (
+                  <div className="event-list">
+                    {remote.data.events.slice(0, 5).map((event) => (
+                      <p key={event.id}>
+                        <span className="tiny-dot error" />
+                        {event.message}
+                        <small>{new Date(event.createdAt).toLocaleString()}</small>
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
           </div>
 
           <div className="feature-grid">
@@ -702,9 +735,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
             </h3>
             <span className="subtle-note">{extended.data?.features.length || 100} 项 · 可检查前置条件</span>
           </div>
-          <p className="muted">
-            检查结果会区分实际可用、仅保存本地记录和缺少实现或依赖。
-          </p>
+          <p className="muted">检查结果会区分实际可用、仅保存本地记录和缺少实现或依赖。</p>
           <div className="feature-actions">
             <select
               value={extendedOperation}
@@ -735,6 +766,13 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   <p>{feature.summary}</p>
                 </div>
                 <ReadinessBadge records={extended.data?.executions} id={feature.id} />
+                <span className="badge">
+                  {feature.state === 'available'
+                    ? '已实现入口'
+                    : feature.state === 'experimental'
+                      ? '部分实现'
+                      : '规划中'}
+                </span>
                 <button
                   className="secondary compact"
                   disabled={action.busy}
@@ -744,14 +782,32 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 </button>
                 <button
                   className="secondary compact"
-                  disabled={action.busy}
+                  disabled={action.busy || feature.state !== 'available'}
                   onClick={() => runExtended(feature.id)}
                 >
-                  运行
+                  {extended.data?.operations.some((item) => item.feature === feature.id)
+                    ? '设置参数'
+                    : '运行'}
                 </button>
               </div>
             ))}
           </div>
+          {extendedOperation && (
+            <label>
+              操作参数（JSON）
+              <textarea
+                rows={10}
+                aria-label="工程操作参数"
+                value={operationParameters}
+                onChange={(event) => setOperationParameters(event.target.value)}
+              />
+              <small>
+                {extended.data?.operations.find((item) => item.id === extendedOperation)?.note} 客户机需要
+                Python 3。
+              </small>
+            </label>
+          )}
+          <JobLog job={extended.data?.jobs?.find((job) => job.action === 'operation:' + extendedOperation)} />
           {extendedResult && <pre className="feature-log">{extendedResult}</pre>}
         </section>
       )}
@@ -767,9 +823,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
               {next.data?.features.length || 100} 项 · 配置、检查、执行均有记录
             </span>
           </div>
-          <p className="muted">
-            检查后显示当前环境中的可用状态；本地记录不会标记为实际能力已就绪。
-          </p>
+          <p className="muted">检查后显示当前环境中的可用状态；本地记录不会标记为实际能力已就绪。</p>
           <input
             value={nextSearch}
             onChange={(event) => setNextSearch(event.target.value)}
@@ -786,6 +840,13 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   </p>
                 </div>
                 <ReadinessBadge records={next.data?.executions} id={feature.id} />
+                <span className="badge">
+                  {feature.state === 'available'
+                    ? '已实现入口'
+                    : feature.state === 'experimental'
+                      ? '部分实现'
+                      : '规划中'}
+                </span>
                 <button
                   className="secondary compact"
                   disabled={action.busy}
@@ -795,7 +856,9 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 </button>
                 <button
                   className="secondary compact"
-                  disabled={action.busy}
+                  disabled={
+                    action.busy || feature.state !== 'available' || feature.id === 'incident-lockdown'
+                  }
                   onClick={() => runNext(feature.id)}
                 >
                   运行
@@ -1013,3 +1076,5 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     </div>
   );
 }
+
+export const pages = { features: FeatureSuitePanel };

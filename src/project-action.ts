@@ -1,7 +1,7 @@
-import type { VMView } from '../server/model';
 import type { JobView } from '../server/jobs';
+import type { VMView } from '../server/model';
 import type { Project } from '../server/workspaces';
-import type { Request } from './FeaturePanels';
+import type { Request } from './feature-shared';
 
 export type ProjectAction = 'setup' | 'start' | 'stop' | 'terminal';
 

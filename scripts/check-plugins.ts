@@ -1,8 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { existsSync } from 'node:fs';
-import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
-import { resolvePlugins } from '../shared/plugin-selection.ts';
 import { loaders, validateRegistry } from '../server/plugins/registry.ts';
+import { resolvePlugins } from '../shared/plugin-selection.ts';
+import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 import { syncPluginCatalog } from './sync-plugin-catalog.ts';
 
 await syncPluginCatalog(true);
@@ -12,16 +12,24 @@ for (const plugin of PLUGINS) {
   assert.deepEqual(module.manifest, plugin, `${plugin.id}: manifest and entry point must agree`);
   assert.equal(typeof module.activate, 'function', `${plugin.id}: missing activate`);
   assert.equal(typeof module.route, 'function', `${plugin.id}: missing route`);
-  assert.deepEqual(Object.keys(module.operations || {}).sort(), plugin.contributes.operations.map((item) => item.id).sort(), `${plugin.id}: operation entry points differ`);
+  assert.deepEqual(
+    Object.keys(module.operations || {}).sort(),
+    plugin.contributes.operations.map((item) => item.id).sort(),
+    `${plugin.id}: operation entry points differ`,
+  );
   for (const operation of Object.values(module.operations || {})) {
     assert.equal(typeof operation.execute, 'function', `${plugin.id}: missing operation handler`);
     assert.equal(typeof operation.response?.parse, 'function', `${plugin.id}: missing response schema`);
   }
-  const customSurface = plugin.contributes.pages.some((id) => !['images', 'library', 'features'].includes(id)) ||
-    plugin.contributes.tabs.some((id) => !['files', 'snapshots', 'project', 'git', 'containers', 'sync', 'services', 'development', 'metrics', 'desktop', 'maintenance'].includes(id)) ||
-    plugin.contributes.developmentSections.some((id) => !['tools', 'network', 'secrets', 'commands', 'pipelines', 'runtimes'].includes(id));
+  const customSurface =
+    plugin.contributes.pages.length > 0 ||
+    plugin.contributes.tabs.some((id) => id !== 'development') ||
+    plugin.contributes.developmentSections.length > 0;
   if (customSurface)
-    assert.ok(existsSync(new URL(`../plugins/${plugin.id}/client.tsx`, import.meta.url)), `${plugin.id}: missing client.tsx`);
+    assert.ok(
+      existsSync(new URL(`../plugins/${plugin.id}/client.tsx`, import.meta.url)),
+      `${plugin.id}: missing client.tsx`,
+    );
 }
 assert.deepEqual(resolvePlugins(emptySelection()), []);
 for (const pack of PLUGIN_PACKS) resolvePlugins({ ...emptySelection(), packs: [pack.id] });

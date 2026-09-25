@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { Shield, Plus, Play, Square, Trash2, Clock, TerminalSquare } from 'lucide-react';
-import type { PluginPageProps } from '../../src/plugin-client';
+import { Clock, Play, Plus, Shield, Square, TerminalSquare, Trash2 } from 'lucide-react';
+import { Fragment, useState } from 'react';
 import type { SandboxOverview, SandboxView } from '../../server/sandboxes';
+import type { SandboxArtifact } from '../../shared/sandbox';
+import { saveBlob, saveText } from '../../src/export-file';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
+import type { PluginPageProps } from '../../src/plugin-client';
 import './sandbox.css';
 
 const presets = {
@@ -35,6 +37,7 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
   const [command, setCommand] = useState('uname -a\npwd');
   const [cwd, setCwd] = useState('/workspace');
   const [timeoutSeconds, setTimeoutSeconds] = useState(60);
+  const [artifactPaths, setArtifactPaths] = useState('');
   const [logId, setLogId] = useState('');
   const vms = remote.data?.sandboxes || [],
     runs = remote.data?.runs || [];
@@ -315,7 +318,15 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
                   const result = await request<{ id: string }>(
                     '/vms/' + vm.id + '/sandbox/run',
                     'POST',
-                    { command, cwd, timeoutSeconds },
+                    {
+                      command,
+                      cwd,
+                      timeoutSeconds,
+                      artifacts: artifactPaths
+                        .split('\n')
+                        .map((path) => path.trim())
+                        .filter(Boolean),
+                    },
                     signal,
                   );
                   setLogId(result.id);
@@ -364,6 +375,20 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
                 以沙箱内的 root
                 用户执行；需要时自动启动。命令结束、超时或取消后，整台沙箱关闭，后台进程一并终止。
               </p>
+              <label>
+                保存产物（可选，每行一个相对路径）
+                <textarea
+                  rows={2}
+                  maxLength={4096}
+                  value={artifactPaths}
+                  placeholder={'test-results.json\ndist/report.html'}
+                  onChange={(event) => setArtifactPaths(event.target.value)}
+                />
+              </label>
+              <p className="subtle-note">
+                从工作目录取回最多 8 个普通文件，总量不超过 8
+                MiB。产物随执行记录保留，销毁沙箱后仍可下载；超时或取消时可能无法取回。
+              </p>
               <div className="feature-actions">
                 <button
                   className="primary compact"
@@ -401,6 +426,67 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
                     ))}
                   </select>
                 </label>
+                {job?.execution && (
+                  <div className="sandbox-execution">
+                    <dl>
+                      <dt>工作目录</dt>
+                      <dd>{job.execution.cwd}</dd>
+                      <dt>退出码</dt>
+                      <dd>{job.execution.exitCode ?? '未取得'}</dd>
+                      <dt>超时设置</dt>
+                      <dd>{job.execution.timeoutSeconds} 秒</dd>
+                      {Object.entries({
+                        bootMs: '启动耗时',
+                        commandMs: '命令耗时',
+                        artifactsMs: '同步与产物',
+                        shutdownMs: '关闭耗时',
+                        totalMs: '总耗时',
+                      }).map(([key, label]) => {
+                        const value = job.execution!.timings[key as keyof typeof job.execution.timings];
+                        return value === undefined ? null : (
+                          <Fragment key={key}>
+                            <dt>{label}</dt>
+                            <dd>{(value / 1000).toFixed(2)} 秒</dd>
+                          </Fragment>
+                        );
+                      })}
+                    </dl>
+                    <pre className="feature-log" aria-label="执行命令">
+                      {job.execution.command}
+                    </pre>
+                    <div className="feature-actions">
+                      <button
+                        className="secondary compact"
+                        onClick={() => saveText(`sandbox-run-${job.id}.json`, job)}
+                      >
+                        导出执行记录
+                      </button>
+                      {job.execution.artifacts.map((artifact) => (
+                        <button
+                          key={artifact.id}
+                          className="secondary compact"
+                          disabled={action.busy}
+                          onClick={() =>
+                            void action.run(async (signal) => {
+                              const value = await request<SandboxArtifact & { base64: string }>(
+                                `/sandboxes/artifact?run=${job.id}&artifact=${artifact.id}`,
+                                'GET',
+                                undefined,
+                                signal,
+                              );
+                              const bytes = Uint8Array.from(atob(value.base64), (character) =>
+                                character.charCodeAt(0),
+                              );
+                              saveBlob(value.name, new Blob([bytes], { type: 'application/octet-stream' }));
+                            })
+                          }
+                        >
+                          下载 {artifact.name} · {(artifact.bytes / 1024).toFixed(1)} KiB
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <JobLog job={job} />
               </>
             ) : (

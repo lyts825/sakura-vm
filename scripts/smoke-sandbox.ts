@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { once } from 'node:events';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -29,7 +29,8 @@ const record = (message: string) => {
   console.log(message);
 };
 try {
-  const vm = await sandboxes.create({ name: 'sandbox-smoke', lifetimeMinutes: 5 });
+  const accelerator = process.env.SAKURA_TEST_ACCELERATOR === 'tcg' ? 'tcg' : 'auto';
+  const vm = await sandboxes.create({ name: 'sandbox-smoke', lifetimeMinutes: 5, accelerator });
   const id = vm.id;
   record('Created isolated sandbox: ' + id);
   const checks = [
@@ -44,15 +45,23 @@ try {
     'printf persisted > /workspace/sandbox-marker',
     'echo ISOLATION_OK',
   ].join('\n');
-  const run = sandboxes.run(id, { command: checks, timeoutSeconds: 30 });
+  const run = sandboxes.run(id, { command: checks, timeoutSeconds: 30, artifacts: ['sandbox-marker'] });
   await sandboxes.jobs.wait(id);
   record(run.log);
   assert.equal(run.status, 'done', run.error + '\n' + (machines.logs.get(id) || ''));
   assert.match(run.log, /ISOLATION_OK/);
   assert.equal(connections, 0, 'The isolated guest must not reach the host listener');
   assert.equal(machines.live.has(id), false, 'Completion must stop detached processes with the VM');
+  assert.equal(run.execution?.exitCode, 0);
+  assert.ok(run.execution?.timings.totalMs! >= 0);
+  assert.equal(run.execution?.artifacts.length, 1);
   record('Real QEMU: SSH, host/internet/DNS isolation and whole-VM shutdown passed.');
-  const nat = await sandboxes.create({ name: 'sandbox-nat-smoke', network: 'nat', lifetimeMinutes: 5 });
+  const nat = await sandboxes.create({
+    name: 'sandbox-nat-smoke',
+    network: 'nat',
+    lifetimeMinutes: 5,
+    accelerator,
+  });
   const online = sandboxes.run(nat.id, {
     command: 'nc -w 3 10.0.2.2 ' + hostPort,
     timeoutSeconds: 10,
@@ -91,6 +100,9 @@ try {
   assert.equal(machines.live.has(id), false);
   assert.equal(machines.records.has(id), false);
   assert.equal(sandboxes.jobs.list().length, 4);
+  const artifact = await sandboxes.artifact(run.id!, run.execution!.artifacts[0].id);
+  assert.equal(Buffer.from(artifact.base64, 'base64').toString(), 'persisted');
+  record('Real QEMU: structured execution metadata and exported artifacts survive disk destruction.');
   record('Real QEMU: expiration removed the disk and preserved all four execution records.');
 } finally {
   await sandboxes.close();

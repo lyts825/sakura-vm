@@ -90,32 +90,39 @@ export type FeatureCatalogItem = {
 };
 
 const availableFeatureIds = new Set<FeatureId>([
-        'power-schedules',
-        'idle-shutdown',
-        'dynamic-memory',
-        'file-drop',
-        'workspace-search',
-        'disk-analyzer',
-        'binary-preview',
-        'three-way-sync',
-        'test-explorer',
-        'format-lint',
-        'git-worktrees',
-        'merge-editor',
-        'dependency-report',
-        'package-manager',
-        'reproducible-env',
-        'browser-preview',
-        'database-presets',
-        'port-discovery',
-        'network-diagnostics',
-        'service-dashboard',
-        'native-integration',
-        'metrics-history',
-        'alerts',
-        'security-scan',
-        'resource-presets',
-        'network-profiles',
+  'power-schedules',
+  'idle-shutdown',
+  'dynamic-memory',
+  'test-explorer',
+  'package-manager',
+  'browser-preview',
+  'database-presets',
+  'port-discovery',
+  'service-dashboard',
+]);
+const partialFeatureIds = new Set<FeatureId>([
+  'golden-images',
+  'disk-maintenance',
+  'resource-presets',
+  'file-drop',
+  'workspace-search',
+  'disk-analyzer',
+  'three-way-sync',
+  'directory-history',
+  'language-services',
+  'format-lint',
+  'git-worktrees',
+  'merge-editor',
+  'dependency-report',
+  'runtime-matrix',
+  'reproducible-env',
+  'network-profiles',
+  'network-diagnostics',
+  'native-integration',
+  'multi-monitor',
+  'metrics-history',
+  'alerts',
+  'security-scan',
 ]);
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
@@ -126,22 +133,23 @@ export const featureCatalogView = (): FeatureCatalogItem[] =>
     priority,
     summary,
     implemented: availableFeatureIds.has(id),
-    state: availableFeatureIds.has(id)
-      ? 'available'
-      : ['language-services', 'dev-container'].includes(id)
-        ? 'experimental'
-        : 'planned',
+    state: availableFeatureIds.has(id) ? 'available' : partialFeatureIds.has(id) ? 'experimental' : 'planned',
   }));
 
 /** The public catalog describes implemented entry points and planned work. */
-export const implementedFeatureCatalogView = (): FeatureCatalogItem[] =>
-  featureCatalogView();
+export const implementedFeatureCatalogView = (): FeatureCatalogItem[] => featureCatalogView();
 
 const scheduleSchema = z
   .object({
     enabled: z.boolean().default(false),
-    startAt: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).optional(),
-    stopAt: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).optional(),
+    startAt: z
+      .string()
+      .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
+    stopAt: z
+      .string()
+      .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
     idleMinutes: z.number().int().min(0).max(10080).default(0),
     idleAction: z.enum(['stop']).default('stop'),
   })
@@ -174,14 +182,14 @@ type MetricPoint = {
   diskTotal: number;
 };
 type FeatureState = {
-  settings: Record<
-    string,
-    { schedule: Schedule; alerts: AlertConfig; updatedAt: string }
-  >;
+  settings: Record<string, { schedule: Schedule; alerts: AlertConfig; updatedAt: string }>;
   history: Record<string, MetricPoint[]>;
   events: AlertEvent[];
   lastAlerts: Record<string, Record<string, number>>;
-  featureRuns: Record<string, Array<{ featureId: FeatureId; startedAt: string; finishedAt: string; result: Record<string, unknown> }>>;
+  featureRuns: Record<
+    string,
+    Array<{ featureId: FeatureId; startedAt: string; finishedAt: string; result: Record<string, unknown> }>
+  >;
 };
 
 const defaultState = (): FeatureState => ({
@@ -195,7 +203,12 @@ const defaultState = (): FeatureState => ({
 const defaultSchedule = (): Schedule => scheduleSchema.parse({});
 const defaultAlerts = (): AlertConfig => alertSchema.parse({});
 const packageName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9+_.:@/-]{0,127}$/, '软件包名称无效');
-const searchText = z.string().trim().min(1).max(200).refine((v) => !/[\x00-\x1f]/.test(v), '搜索内容包含控制字符');
+const searchText = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((v) => !/[\x00-\x1f]/.test(v), '搜索内容包含控制字符');
 const hostTarget = z
   .string()
   .trim()
@@ -210,7 +223,19 @@ export type FeatureAction =
   | { action: 'disk-analysis'; path?: string }
   | {
       action: 'dev';
-      operation: 'test' | 'test-discover' | 'lint' | 'format' | 'dependencies' | 'lock' | 'lock-check' | 'install-locked' | 'worktree-list' | 'worktree-add' | 'worktree-remove' | 'database';
+      operation:
+        | 'test'
+        | 'test-discover'
+        | 'lint'
+        | 'format'
+        | 'dependencies'
+        | 'lock'
+        | 'lock-check'
+        | 'install-locked'
+        | 'worktree-list'
+        | 'worktree-add'
+        | 'worktree-remove'
+        | 'database';
       branch?: string;
       path?: string;
       database?: 'postgres' | 'redis' | 'mysql';
@@ -232,6 +257,9 @@ export class FeatureSuite {
   private stateValue?: FeatureState;
   private backgroundEnabled = false;
   private closed = false;
+  private idleSince = new Map<string, number>();
+  private lastSampleAt = new Map<string, number>();
+  private ticking = false;
 
   constructor(
     private machines: Machines,
@@ -239,7 +267,9 @@ export class FeatureSuite {
   ) {}
   enableBackground() {
     this.backgroundEnabled = true;
-    return () => { this.backgroundEnabled = false; };
+    return () => {
+      this.backgroundEnabled = false;
+    };
   }
   private file() {
     return join(DATA, 'feature-suite.json');
@@ -263,7 +293,11 @@ export class FeatureSuite {
     return value;
   }
   async catalog() {
-    return { features: implementedFeatureCatalogView(), presets: resourcePresets, generatedAt: new Date().toISOString() };
+    return {
+      features: implementedFeatureCatalogView(),
+      presets: resourcePresets,
+      generatedAt: new Date().toISOString(),
+    };
   }
   async view(id: string, limit = 120) {
     this.machines.get(id);
@@ -275,7 +309,10 @@ export class FeatureSuite {
       projectId: this.workspaces.projects.current(id),
       settings,
       history: (state.history[id] || []).slice(-size),
-      events: state.events.filter((event) => event.vmId === id).slice(-50).reverse(),
+      events: state.events
+        .filter((event) => event.vmId === id)
+        .slice(-50)
+        .reverse(),
       job: this.jobs.view(`${this.workspaces.projects.key(id)}:package`),
       devJob: this.jobs.view(`${this.workspaces.projects.key(id)}:dev`),
       presets: resourcePresets,
@@ -285,9 +322,15 @@ export class FeatureSuite {
   }
 
   /** Record generic capability checks without claiming their named actions ran. */
-  async feature(id: string, input: { featureId: FeatureId; action: 'check' | 'run'; options?: Record<string, unknown> }, signal?: AbortSignal) {
+  async feature(
+    id: string,
+    input: { featureId: FeatureId; action: 'check' | 'run'; options?: Record<string, unknown> },
+    signal?: AbortSignal,
+  ) {
     this.machines.get(id);
-    const featureId = z.enum(featureCatalog.map(([value]) => value) as [FeatureId, ...FeatureId[]]).parse(input.featureId);
+    const featureId = z
+      .enum(featureCatalog.map(([value]) => value) as [FeatureId, ...FeatureId[]])
+      .parse(input.featureId);
     const spec = featureCatalog.find(([value]) => value === featureId)!;
     const startedAt = new Date().toISOString();
     const vm = this.machines.get(id);
@@ -313,11 +356,23 @@ export class FeatureSuite {
     } else if (featureId === 'online-snapshots' || featureId === 'snapshot-diff') {
       result.snapshots = vm.snapshots.length;
       result.consistency = this.machines.state(id) === 'running' ? 'qmp-coordinated' : 'offline';
-    } else if (featureId === 'windows-mount' || featureId === 'file-drop' || featureId === 'resumable-transfer') {
+    } else if (
+      featureId === 'windows-mount' ||
+      featureId === 'file-drop' ||
+      featureId === 'resumable-transfer'
+    ) {
       result.transfer = 'sftp-resumable';
-    } else if (featureId === 'language-services' || featureId === 'debug-adapter' || featureId === 'dev-container') {
+    } else if (
+      featureId === 'language-services' ||
+      featureId === 'debug-adapter' ||
+      featureId === 'dev-container'
+    ) {
       result.adapter = 'workspace-tooling';
-    } else if (featureId === 'reverse-proxy' || featureId === 'vpn-integration' || featureId === 'network-profiles') {
+    } else if (
+      featureId === 'reverse-proxy' ||
+      featureId === 'vpn-integration' ||
+      featureId === 'network-profiles'
+    ) {
       result.network = 'profile-backed';
     } else if (featureId === 'rbac-sharing' || featureId === 'plugin-api') {
       result.controlPlane = 'local-token-and-event-bus';
@@ -339,7 +394,11 @@ export class FeatureSuite {
       .parse(input);
     const state = await this.state();
     const settings = this.settingsFor(state, id);
-    if (value.schedule) settings.schedule = value.schedule;
+    if (value.schedule) {
+      settings.schedule = value.schedule;
+      this.idleSince.delete(id);
+      this.lastSampleAt.delete(id);
+    }
     if (value.alerts) settings.alerts = value.alerts;
     settings.updatedAt = new Date().toISOString();
     await this.save(state);
@@ -394,7 +453,8 @@ export class FeatureSuite {
       30_000,
       signal,
     );
-    if (result.code !== 0 && !result.stdout.trim()) throw new AppError(result.stderr.trim() || '磁盘分析失败', 502);
+    if (result.code !== 0 && !result.stdout.trim())
+      throw new AppError(result.stderr.trim() || '磁盘分析失败', 502);
     const entries = result.stdout
       .split(/\r?\n/)
       .map((line) => line.match(/^(\d+)\s+(.+)$/))
@@ -403,13 +463,22 @@ export class FeatureSuite {
       .filter((entry) => Number.isSafeInteger(entry.bytes) && entry.bytes >= 0);
     return { path, entries, checkedAt: new Date().toISOString() };
   }
-  dev(
-    id: string,
-    input: Omit<Extract<FeatureAction, { action: 'dev' }>, 'action'>,
-    signal?: AbortSignal,
-  ) {
+  dev(id: string, input: Omit<Extract<FeatureAction, { action: 'dev' }>, 'action'>, signal?: AbortSignal) {
     const operation = z
-      .enum(['test', 'test-discover', 'lint', 'format', 'dependencies', 'lock', 'lock-check', 'install-locked', 'worktree-list', 'worktree-add', 'worktree-remove', 'database'])
+      .enum([
+        'test',
+        'test-discover',
+        'lint',
+        'format',
+        'dependencies',
+        'lock',
+        'lock-check',
+        'install-locked',
+        'worktree-list',
+        'worktree-add',
+        'worktree-remove',
+        'database',
+      ])
       .parse(input.operation);
     const branch = input.branch?.trim();
     const path = input.path?.trim();
@@ -417,16 +486,29 @@ export class FeatureSuite {
     if (operation === 'worktree-add' && (!branch || !/^(?!-)[A-Za-z0-9_./-]{1,128}$/.test(branch)))
       throw new AppError('分支名称无效');
     if (['worktree-add', 'worktree-remove'].includes(operation)) {
-      if (!path || path.startsWith('/') || path.split('/').includes('..') || !/^[A-Za-z0-9_./-]{1,160}$/.test(path))
+      if (
+        !path ||
+        path.startsWith('/') ||
+        path.split('/').includes('..') ||
+        !/^[A-Za-z0-9_./-]{1,160}$/.test(path)
+      )
         throw new AppError('工作树路径必须是仓库内的相对路径');
     }
     if (operation === 'database') {
       if (!database) throw new AppError('请选择数据库类型');
-      if (!input.password || input.password.length < 12 || input.password.length > 128 || !/^[\x21-\x7e]+$/.test(input.password))
+      if (
+        !input.password ||
+        input.password.length < 12 ||
+        input.password.length > 128 ||
+        !/^[\x21-\x7e]+$/.test(input.password)
+      )
         throw new AppError('数据库密码需要 12–128 个不含空格的可打印 ASCII 字符');
       if (input.name !== undefined && !/^[a-z][a-z0-9-]{0,31}$/.test(input.name.trim()))
         throw new AppError('数据库容器名称无效');
-      if (input.port !== undefined && (!Number.isInteger(input.port) || input.port < 1024 || input.port > 65535))
+      if (
+        input.port !== undefined &&
+        (!Number.isInteger(input.port) || input.port < 1024 || input.port > 65535)
+      )
         throw new AppError('数据库端口需要在 1024–65535 之间');
     }
     const vm = this.machines.get(id);
@@ -474,17 +556,36 @@ export class FeatureSuite {
             command = `cd ${directory}\ngit worktree remove --force -- ${worktreePath}`;
             break;
           case 'database': {
-            const image = database === 'postgres' ? 'postgres:16-alpine' : database === 'redis' ? 'redis:7-alpine' : 'mysql:8';
+            const image =
+              database === 'postgres'
+                ? 'postgres:16-alpine'
+                : database === 'redis'
+                  ? 'redis:7-alpine'
+                  : 'mysql:8';
             const container = input.name?.trim() || `sakura-${database}`;
-            const settings = database === 'postgres'
-              ? [`POSTGRES_USER=sakura`, `POSTGRES_DB=sakura`, `POSTGRES_PASSWORD=${input.password}`]
-              : database === 'mysql'
-                ? [`MYSQL_DATABASE=sakura`, `MYSQL_USER=sakura`, `MYSQL_PASSWORD=${input.password}`, `MYSQL_ROOT_PASSWORD=${input.password}`]
-                : [];
+            const settings =
+              database === 'postgres'
+                ? [`POSTGRES_USER=sakura`, `POSTGRES_DB=sakura`, `POSTGRES_PASSWORD=${input.password}`]
+                : database === 'mysql'
+                  ? [
+                      `MYSQL_DATABASE=sakura`,
+                      `MYSQL_USER=sakura`,
+                      `MYSQL_PASSWORD=${input.password}`,
+                      `MYSQL_ROOT_PASSWORD=${input.password}`,
+                    ]
+                  : [];
             const guestPort = database === 'postgres' ? 5432 : database === 'mysql' ? 3306 : 6379;
             const publishedPort = input.port || guestPort;
-            const volumePath = database === 'redis' ? '/data' : database === 'postgres' ? '/var/lib/postgresql/data' : '/var/lib/mysql';
-            const imageCommand = database === 'redis' ? ` redis-server --appendonly yes --requirepass ${quote(input.password!)}` : '';
+            const volumePath =
+              database === 'redis'
+                ? '/data'
+                : database === 'postgres'
+                  ? '/var/lib/postgresql/data'
+                  : '/var/lib/mysql';
+            const imageCommand =
+              database === 'redis'
+                ? ` redis-server --appendonly yes --requirepass ${quote(input.password!)}`
+                : '';
             command = `if ! command -v docker >/dev/null; then echo '客户机尚未安装 Docker' >&2; exit 1; fi\nif docker container inspect ${quote(container)} >/dev/null 2>&1; then echo '同名数据库容器已存在' >&2; exit 1; fi\ndocker run -d --restart unless-stopped --label sakura.managed=database --name ${quote(container)} --publish ${quote(`127.0.0.1:${publishedPort}:${guestPort}`)} --volume ${quote(`${container}-data:${volumePath}`)} ${settings.map((value) => `--env ${quote(value)}`).join(' ')} ${image}${imageCommand}\nprintf '%s\\n' ${quote(`${container} 已启动 · 客户机 127.0.0.1:${publishedPort} · 数据卷 ${container}-data`)}`;
             break;
           }
@@ -492,8 +593,18 @@ export class FeatureSuite {
         const secrets = [input.password || '', ...Object.values(project.environment || {})];
         const output = privateLog(log, secrets);
         try {
-          const result = await guestTask(this.machines, id, `${environment}\nset -eu\n${command}`, combined, output.write, 600_000);
-          if (result.code !== 0) throw new AppError(redactValues(result.stderr.trim(), secrets) || `开发操作失败（${result.code}）`);
+          const result = await guestTask(
+            this.machines,
+            id,
+            `${environment}\nset -eu\n${command}`,
+            combined,
+            output.write,
+            600_000,
+          );
+          if (result.code !== 0)
+            throw new AppError(
+              redactValues(result.stderr.trim(), secrets) || `开发操作失败（${result.code}）`,
+            );
         } catch (error) {
           throw new AppError(redactValues((error as Error).message, secrets));
         } finally {
@@ -559,9 +670,10 @@ export class FeatureSuite {
     this.machines.get(id);
     const query = searchText.parse(input.query);
     const path = guestPath(input.path || '/workspace');
-    const command = input.content === false
-      ? `find ${quote(path)} -maxdepth 5 -type f -iname ${quote(`*${query}*`)} -print | head -n 200`
-      : `if command -v rg >/dev/null; then rg -F -n --hidden --glob '!.git' --max-count 20 ${quote(query)} ${quote(path)} 2>/dev/null | head -n 200; else grep -RInF --exclude-dir=.git ${quote(query)} ${quote(path)} 2>/dev/null | head -n 200; fi`;
+    const command =
+      input.content === false
+        ? `find ${quote(path)} -maxdepth 5 -type f -iname ${quote(`*${query}*`)} -print | head -n 200`
+        : `if command -v rg >/dev/null; then rg -F -n --hidden --glob '!.git' --max-count 20 ${quote(query)} ${quote(path)} 2>/dev/null | head -n 200; else grep -RInF --exclude-dir=.git ${quote(query)} ${quote(path)} 2>/dev/null | head -n 200; fi`;
     const result = await this.machines.exec(id, command, 30_000, signal);
     if (result.code && !result.stdout.trim()) throw new AppError(result.stderr.trim() || '搜索失败', 502);
     return {
@@ -571,28 +683,33 @@ export class FeatureSuite {
       matches: result.stdout.split(/\r?\n/).filter(Boolean).slice(0, 200),
     };
   }
-  package(id: string, input: Omit<Extract<FeatureAction, { action: 'package' }>, 'action'>, signal?: AbortSignal) {
+  package(
+    id: string,
+    input: Omit<Extract<FeatureAction, { action: 'package' }>, 'action'>,
+    signal?: AbortSignal,
+  ) {
     const operation = z.enum(['list', 'search', 'install', 'remove', 'update']).parse(input.operation);
     const name = input.name ? packageName.parse(input.name) : undefined;
     if (['search', 'install', 'remove'].includes(operation) && !name)
       throw new AppError('此操作需要软件包名称');
     const vm = this.machines.get(id);
     const manager = vm.distro === 'alpine' ? 'apk' : 'apt-get';
-    const command = manager === 'apk'
-      ? {
-          list: 'apk info',
-          search: `apk search -v ${quote(name!)}`,
-          install: `apk add --no-cache --timeout 30 ${quote(name!)}`,
-          remove: `apk del ${quote(name!)}`,
-          update: 'apk update',
-        }[operation]
-      : {
-          list: "dpkg-query -W -f='${Package}\\t${Version}\\n'",
-          search: `apt-cache search ${quote(name!)}`,
-          install: `DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 install -y ${quote(name!)}`,
-          remove: `DEBIAN_FRONTEND=noninteractive apt-get remove -y ${quote(name!)}`,
-          update: 'apt-get update',
-        }[operation];
+    const command =
+      manager === 'apk'
+        ? {
+            list: 'apk info',
+            search: `apk search -v ${quote(name!)}`,
+            install: `apk add --no-cache --timeout 30 ${quote(name!)}`,
+            remove: `apk del ${quote(name!)}`,
+            update: 'apk update',
+          }[operation]
+        : {
+            list: "dpkg-query -W -f='${Package}\\t${Version}\\n'",
+            search: `apt-cache search ${quote(name!)}`,
+            install: `DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 install -y ${quote(name!)}`,
+            remove: `DEBIAN_FRONTEND=noninteractive apt-get remove -y ${quote(name!)}`,
+            update: 'apt-get update',
+          }[operation];
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:package`,
       async (log, taskSignal) => {
@@ -616,7 +733,11 @@ export class FeatureSuite {
       30_000,
       signal,
     );
-    return { target: host, output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''}`.trim(), code: result.code };
+    return {
+      target: host,
+      output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''}`.trim(),
+      code: result.code,
+    };
   }
   async discoverPorts(id: string, signal?: AbortSignal) {
     const result = await this.machines.exec(
@@ -649,21 +770,78 @@ export class FeatureSuite {
     return { checkedAt: new Date().toISOString(), findings, output, code: result.code };
   }
   async action(id: string, input: unknown, signal?: AbortSignal) {
-    const value = z.discriminatedUnion('action', [
-      z.object({ action: z.literal('sample') }).strict(),
-      z.object({ action: z.literal('memory-target'), memoryMiB: z.number().int().min(256).max(8192) }).strict(),
-      z.object({ action: z.literal('apply-preset'), preset: z.enum(['light', 'development', 'build', 'desktop']) }).strict(),
-      z.object({ action: z.literal('disk-analysis'), path: z.string().optional() }).strict(),
-      z.object({ action: z.literal('dev'), operation: z.enum(['test', 'test-discover', 'lint', 'format', 'dependencies', 'lock', 'lock-check', 'install-locked', 'worktree-list', 'worktree-add', 'worktree-remove', 'database']), branch: z.string().optional(), path: z.string().optional(), database: z.enum(['postgres', 'redis', 'mysql']).optional(), name: z.string().optional(), port: z.number().int().min(1024).max(65535).optional(), password: z.string().optional() }).strict(),
-      z.object({ action: z.literal('search'), query: z.string(), path: z.string().optional(), content: z.boolean().optional() }).strict(),
-      z.object({ action: z.literal('package'), operation: z.enum(['list', 'search', 'install', 'remove', 'update']), name: z.string().optional() }).strict(),
-      z.object({ action: z.literal('network-test'), target: z.string() }).strict(),
-      z.object({ action: z.literal('security-scan') }).strict(),
-      z.object({ action: z.literal('discover-ports') }).strict(),
-      z.object({ action: z.literal('acknowledge'), id: z.string().min(1).max(160) }).strict(),
-      z.object({ action: z.literal('feature-check'), featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]) }).strict(),
-      z.object({ action: z.literal('feature-run'), featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]), options: z.record(z.string(), z.unknown()).default({}) }).strict(),
-    ]).parse(input) as FeatureAction;
+    const value = z
+      .discriminatedUnion('action', [
+        z.object({ action: z.literal('sample') }).strict(),
+        z
+          .object({ action: z.literal('memory-target'), memoryMiB: z.number().int().min(256).max(8192) })
+          .strict(),
+        z
+          .object({
+            action: z.literal('apply-preset'),
+            preset: z.enum(['light', 'development', 'build', 'desktop']),
+          })
+          .strict(),
+        z.object({ action: z.literal('disk-analysis'), path: z.string().optional() }).strict(),
+        z
+          .object({
+            action: z.literal('dev'),
+            operation: z.enum([
+              'test',
+              'test-discover',
+              'lint',
+              'format',
+              'dependencies',
+              'lock',
+              'lock-check',
+              'install-locked',
+              'worktree-list',
+              'worktree-add',
+              'worktree-remove',
+              'database',
+            ]),
+            branch: z.string().optional(),
+            path: z.string().optional(),
+            database: z.enum(['postgres', 'redis', 'mysql']).optional(),
+            name: z.string().optional(),
+            port: z.number().int().min(1024).max(65535).optional(),
+            password: z.string().optional(),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('search'),
+            query: z.string(),
+            path: z.string().optional(),
+            content: z.boolean().optional(),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('package'),
+            operation: z.enum(['list', 'search', 'install', 'remove', 'update']),
+            name: z.string().optional(),
+          })
+          .strict(),
+        z.object({ action: z.literal('network-test'), target: z.string() }).strict(),
+        z.object({ action: z.literal('security-scan') }).strict(),
+        z.object({ action: z.literal('discover-ports') }).strict(),
+        z.object({ action: z.literal('acknowledge'), id: z.string().min(1).max(160) }).strict(),
+        z
+          .object({
+            action: z.literal('feature-check'),
+            featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('feature-run'),
+            featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]),
+            options: z.record(z.string(), z.unknown()).default({}),
+          })
+          .strict(),
+      ])
+      .parse(input) as FeatureAction;
     if (value.action === 'sample') return this.sample(id);
     if (value.action === 'memory-target') return this.memoryTarget(id, value.memoryMiB);
     if (value.action === 'apply-preset') return this.applyPreset(id, value.preset);
@@ -679,25 +857,65 @@ export class FeatureSuite {
     return this.acknowledge(id, value.id);
   }
   async tick() {
-    if (this.closed) return;
-    const state = await this.state();
-    const now = new Date();
-    const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    for (const vm of this.machines.records.values()) {
-      const settings = this.settingsFor(state, vm.id);
-      const schedule = settings.schedule;
-      if (this.machines.state(vm.id) === 'running') await this.sample(vm.id).catch(() => {});
-      if (!schedule.enabled) continue;
-      if (schedule.startAt === clock && this.machines.state(vm.id) === 'stopped') void this.machines.start(vm.id).catch(() => {});
-      if (schedule.stopAt === clock && this.machines.state(vm.id) === 'running') void this.machines.stop(vm.id, false).catch(() => {});
-      if (schedule.idleMinutes > 0 && this.machines.state(vm.id) === 'running') {
-        const history = state.history[vm.id] || [];
-        const last = history.at(-1);
-        if (last && Date.now() - Date.parse(last.sampledAt) >= schedule.idleMinutes * 60_000 && last.cpuPercent < 5)
+    if (this.closed || this.ticking) return;
+    this.ticking = true;
+    try {
+      const state = await this.state();
+      const now = new Date();
+      const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      for (const vm of this.machines.records.values()) {
+        const settings = this.settingsFor(state, vm.id);
+        const schedule = settings.schedule;
+        let sampled = false;
+        if (this.machines.state(vm.id) === 'running') {
+          try {
+            await this.sample(vm.id);
+            sampled = true;
+          } catch {
+            /* Missing samples break the idle interval. */
+          }
+        }
+        const point = state.history[vm.id]?.at(-1);
+        const sampledAt = point ? Date.parse(point.sampledAt) : NaN;
+        const previous = this.lastSampleAt.get(vm.id);
+        const fresh =
+          sampled &&
+          Number.isFinite(sampledAt) &&
+          sampledAt <= Date.now() &&
+          Date.now() - sampledAt < 120_000 &&
+          (previous === undefined || sampledAt > previous);
+        if (
+          !fresh ||
+          !Number.isFinite(point?.cpuPercent) ||
+          point!.cpuPercent >= 5 ||
+          !schedule.enabled ||
+          !schedule.idleMinutes
+        ) {
+          this.idleSince.delete(vm.id);
+        } else {
+          if (previous === undefined || sampledAt - previous > 120_000) this.idleSince.delete(vm.id);
+          if (!this.idleSince.has(vm.id)) this.idleSince.set(vm.id, sampledAt);
+        }
+        if (fresh) this.lastSampleAt.set(vm.id, sampledAt);
+        else this.lastSampleAt.delete(vm.id);
+        if (!schedule.enabled) continue;
+        if (schedule.startAt === clock && this.machines.state(vm.id) === 'stopped')
+          void this.machines.start(vm.id).catch(() => {});
+        if (schedule.stopAt === clock && this.machines.state(vm.id) === 'running')
           void this.machines.stop(vm.id, false).catch(() => {});
+        if (schedule.idleMinutes > 0 && this.machines.state(vm.id) === 'running') {
+          const since = this.idleSince.get(vm.id);
+          if (since !== undefined && sampledAt - since >= schedule.idleMinutes * 60_000) {
+            await this.machines.stop(vm.id, false).catch(() => {});
+            this.idleSince.delete(vm.id);
+            this.lastSampleAt.delete(vm.id);
+          }
+        }
       }
+      await this.save(state);
+    } finally {
+      this.ticking = false;
     }
-    await this.save(state);
   }
   async close() {
     this.closed = true;

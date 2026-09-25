@@ -18,16 +18,16 @@ Alpine 镜像通过 `npm run setup` 准备。Debian / Ubuntu 需要提前在镜�
 
 ## 策略
 
-| 项目 | 默认值 | 范围与行为 |
-| --- | --- | --- |
-| CPU | 1 vCPU | 1–4 个虚拟 CPU |
-| 内存 | 512 MiB | 256–4096 MiB；Debian / Ubuntu 至少 1024 MiB |
-| 磁盘 | 4 GiB | 2–32 GiB；发行版最低容量仍由镜像规则检查 |
-| 存活时间 | 60 分钟 | 从创建开始计时，5–1440 分钟，停机和服务退出期间继续计算 |
-| 网络 | 隔离 | `isolated` 或允许联网的 `nat`，创建后固定 |
-| 到期处理 | 停止并销毁 | `delete` 删除磁盘和密钥；`stop` 保留磁盘供检查或导出，禁止再次启动 |
-| 命令超时 | 60 秒 | 1–3600 秒，从系统就绪开始计算，不能超过沙箱剩余存活时间 |
-| 工作目录 | `/workspace` | 已存在的 Linux 绝对目录 |
+| 项目     | 默认值       | 范围与行为                                                         |
+| -------- | ------------ | ------------------------------------------------------------------ |
+| CPU      | 1 vCPU       | 1–4 个虚拟 CPU                                                     |
+| 内存     | 512 MiB      | 256–4096 MiB；Debian / Ubuntu 至少 1024 MiB                        |
+| 磁盘     | 4 GiB        | 2–32 GiB；发行版最低容量仍由镜像规则检查                           |
+| 存活时间 | 60 分钟      | 从创建开始计时，5–1440 分钟，停机和服务退出期间继续计算            |
+| 网络     | 隔离         | `isolated` 或允许联网的 `nat`，创建后固定                          |
+| 到期处理 | 停止并销毁   | `delete` 删除磁盘和密钥；`stop` 保留磁盘供检查或导出，禁止再次启动 |
+| 命令超时 | 60 秒        | 1–3600 秒，从系统就绪开始计算，不能超过沙箱剩余存活时间            |
+| 工作目录 | `/workspace` | 已存在的 Linux 绝对目录                                            |
 
 资源和网络策略创建后不能通过普通实例配置、磁盘扩容或端口管理接口修改。沙箱共用现有的最多 32 个实例、同时运行 4 个实例的全局限制。vCPU 数量控制虚拟硬件配置；磁盘容量指虚拟磁盘容量，QCOW2 元数据及可选快照仍占用额外宿主机空间。
 
@@ -45,6 +45,12 @@ NAT 模式允许客户机访问互联网及宿主机可达的网络，适合安�
 
 「停止」会取消当前任务并终止虚拟机；「销毁」还会删除沙箱磁盘及密钥。销毁前界面会说明删除范围。执行记录独立保留在任务历史中，包含命令、工作目录、输出、退出码或错误；最多保存最近 200 条，每条日志保留最近 32 KiB。服务重启会把未完成任务标记为中断，不自动重放命令。任务中心的通用重试入口会要求回到工作台检查命令后重新执行。
 
+新记录的 `execution` 字段独立保存命令、工作目录、超时设置、退出码、结束原因和启动/执行/同步及产物/关机/总耗时。日志截断不会影响这些字段；旧记录继续显示其已有日志。工作台支持将整条记录导出为 JSON。
+
+执行时可在 `artifacts` 中指定工作目录内的相对文件路径。最多 8 个普通文件，总量不超过 8 MiB；支持二进制文件。命令返回后，在原超时预算内同步磁盘并通过 SFTP 取回产物，再终止整台虚拟机。非零退出的命令也会尝试收集产物；超时、取消或到期可能中断收集。越界路径、指向工作目录外的链接、超出大小限制和不完整读取会报告失败，已经完整保存的产物仍可下载。
+
+产物保存在宿主数据目录的 `plugins/sandbox/artifacts`，下载时验证 SHA-256，销毁实例不删除产物。产物跟随最近 200 条任务记录保留；插件启动和后续执行时清理已淘汰记录的文件。
+
 该功能面向本机开发工作流。实例内命令拥有客户机 root 权限；Sakura 管理凭证仍属于受信任的本机用户，其他已启用插件可能按该用户的操作访问沙箱。它不提供第三方 Node.js 插件隔离、多租户权限系统、宿主 QEMU 进程的 OS 级沙箱，也不承诺防御虚拟化逃逸。
 
 ## CLI
@@ -58,7 +64,22 @@ npm run sakura -- sandbox start sandbox-demo
 npm run sakura -- shell sandbox-demo
 npm run sakura -- sandbox stop sandbox-demo
 npm run sakura -- sandbox destroy sandbox-demo
+npm run sakura -- sandbox run-config sandbox-demo run.json
+npm run sakura -- sandbox artifact <run-id> <artifact-id> report.txt
 ```
+
+`run-config` 接受执行配置，例如：
+
+```json
+{
+  "command": "printf hello > report.txt",
+  "cwd": "/workspace",
+  "timeoutSeconds": 60,
+  "artifacts": ["report.txt"]
+}
+```
+
+`logs` 返回的 `execution.artifacts` 包含产物 ID。CLI 下载校验内容后独占创建目标文件，已有同名文件会报错。
 
 `run` 返回后台任务 ID，使用 `logs` 查看状态和输出。销毁后仍可按沙箱名称或原实例 ID 查看执行记录。命令行参数逐个引用后交给客户机，需要管道、重定向等 Shell 语法时使用 `sh -lc`。
 
@@ -84,14 +105,15 @@ npm run sakura -- sandbox create sandbox-demo sandbox.json
 
 接口使用现有本机鉴权和同源检查。请求及响应由插件的逐操作 Schema 验证，未启用插件返回 403；普通实例不能作为沙箱操作目标。
 
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| GET | `/api/sandboxes` | 沙箱列表、是否到期、执行历史和历史存储错误 |
-| POST | `/api/sandboxes` | 创建，201；字段同配置示例并包含 `name` |
-| GET | `/api/vms/:vmId/sandbox` | 查看单个沙箱 |
-| POST | `/api/vms/:vmId/sandbox` | `{"action":"start"}` 或 `{"action":"stop"}` |
-| DELETE | `/api/vms/:vmId/sandbox` | 取消任务、终止并销毁沙箱 |
-| POST | `/api/vms/:vmId/sandbox/run` | 提交命令，202；`command`、`cwd`、`timeoutSeconds` |
+| 方法   | 路径                                                          | 用途                                                                |
+| ------ | ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| GET    | `/api/sandboxes`                                              | 沙箱列表、是否到期、执行历史和历史存储错误                          |
+| GET    | `/api/sandboxes/artifact?run=<run-id>&artifact=<artifact-id>` | 返回产物元数据和 Base64 二进制内容，销毁实例后仍可调用              |
+| POST   | `/api/sandboxes`                                              | 创建，201；字段同配置示例并包含 `name`                              |
+| GET    | `/api/vms/:vmId/sandbox`                                      | 查看单个沙箱                                                        |
+| POST   | `/api/vms/:vmId/sandbox`                                      | `{"action":"start"}` 或 `{"action":"stop"}`                         |
+| DELETE | `/api/vms/:vmId/sandbox`                                      | 取消任务、终止并销毁沙箱                                            |
+| POST   | `/api/vms/:vmId/sandbox/run`                                  | 提交命令，202；`command`、`cwd`、`timeoutSeconds`、可选 `artifacts` |
 
 策略保存在实例元数据的 `sandbox` 字段中，普通创建接口不接受此字段。API 未开放延期或撤销策略，避免清理期限被配置保存或重启隐式重置。
 
@@ -100,6 +122,7 @@ npm run sakura -- sandbox create sandbox-demo sandbox.json
 ```powershell
 npm run verify
 npm run test:sandbox
+npm run test:integration
 ```
 
 单元测试覆盖输入约束、普通实例保护、策略持久化、配置绕过、QEMU 参数、到期强制停止、停用插件后的启动清理、引号处理、失败/超时/取消、历史保留及独立激活。浏览器测试覆盖创建、执行、取消、销毁后查看日志、创建错误和手机宽度。

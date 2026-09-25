@@ -1,75 +1,78 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
 import {
-  Boxes,
-  TerminalSquare,
-  Folder,
-  HardDrive,
-  Cpu,
-  MemoryStick,
-  Plus,
-  Play,
-  Square,
-  ChevronRight,
+  ArrowRight,
   ArrowUpRight,
-  Settings2,
-  Layers,
-  CircleHelp,
-  X,
-  RefreshCw,
-  Save,
-  Trash2,
+  Boxes,
   Camera,
   Check,
-  Search,
-  LoaderCircle,
-  Network,
-  ShieldCheck,
-  Flower2,
-  ArrowRight,
-  Monitor,
+  ChevronRight,
   CircleDot,
-  Sun,
-  Moon,
-  Maximize2,
-  Minimize2,
-  Minus,
-  MoreHorizontal,
+  CircleHelp,
+  Cpu,
+  Flower2,
+  Folder,
   GitBranch,
-  Wrench,
+  HardDrive,
+  Layers,
+  LoaderCircle,
+  Maximize2,
+  MemoryStick,
+  Minimize2,
+  Monitor,
+  Moon,
+  MoreHorizontal,
+  Network,
+  Play,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Settings2,
+  ShieldCheck,
   Sparkles,
+  Square,
+  Sun,
+  TerminalSquare,
+  Trash2,
+  Wrench,
+  X,
 } from 'lucide-react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
+import { createRoot } from 'react-dom/client';
 import { SakuraArt } from './SakuraArt';
+import { TerminalPanel } from './TerminalPanel';
+import { api, controllerSession, RefreshQueue } from './controller-session';
+import { watchController } from './controller-watch';
 
+import type { ImageInfo } from '../plugins/images/client';
 import { distroName, useRemote, type Request } from './feature-shared';
-import type { ImageInfo } from './FeaturePanels';
 
-import { ResponseOrder } from './request-order';
 import { mayLeaveEditor } from './file-editor-state';
+import { ResponseOrder } from './request-order';
 
-import type { PaletteAction, PaletteTarget } from './CommandPalette';
-import { workspacePath } from './workspace-request';
-import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from './workspace-navigation';
-import sakuraMark from './assets/sakura.svg';
-import type { VMView, VMConfig } from '../server/model';
 import '@xterm/xterm/css/xterm.css';
-import './fonts.css';
-import './style.css';
-import { PluginContext, usePlugin } from './plugin-context';
+import type { VMConfig, VMView } from '../server/model';
 import { PLUGINS, pluginSurfaceEnabled } from '../shared/plugins';
+import type { PaletteAction, PaletteTarget } from './CommandPalette';
+import sakuraMark from './assets/sakura.svg';
+import './fonts.css';
 import { PluginPage, PluginTab } from './plugin-client';
+import { PluginContext, usePlugin } from './plugin-context';
+import './style.css';
+import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from './workspace-navigation';
+import { workspacePath } from './workspace-request';
 
-const DesktopPanel = lazy(() =>
-  import('./DesktopPanel').then((module) => ({ default: module.DesktopPanel })),
-);
-const FileBrowser = lazy(() => import('./FileBrowser').then((module) => ({ default: module.FileBrowser })));
 const TerminalWorkspace = lazy(() =>
   import('./TerminalWorkspace').then((module) => ({ default: module.TerminalWorkspace })),
-);
-const FeatureSuitePanel = lazy(() =>
-  import('./FeatureSuitePanel').then((module) => ({ default: module.FeatureSuitePanel })),
 );
 const CommandPalette = lazy(() =>
   import('./CommandPalette').then((module) => ({ default: module.CommandPalette })),
@@ -77,37 +80,12 @@ const CommandPalette = lazy(() =>
 const PluginCenter = lazy(() =>
   import('./PluginCenter').then((module) => ({ default: module.PluginCenter })),
 );
-const ProjectPanel = lazy(() =>
-  import('./FeaturePanels').then((module) => ({ default: module.ProjectPanel })),
-);
-const ServicesPanel = lazy(() =>
-  import('./FeaturePanels').then((module) => ({ default: module.ServicesPanel })),
-);
-const SyncPanel = lazy(() => import('./FeaturePanels').then((module) => ({ default: module.SyncPanel })));
-const SnapshotsPanel = lazy(() =>
-  import('./FeaturePanels').then((module) => ({ default: module.SnapshotsPanel })),
-);
-const ImageCatalog = lazy(() =>
-  import('./FeaturePanels').then((module) => ({ default: module.ImageCatalog })),
-);
-const TasksPanel = lazy(() =>
-  import('./ManagementPanels').then((module) => ({ default: module.TasksPanel })),
-);
-const LibraryPanel = lazy(() =>
-  import('./ManagementPanels').then((module) => ({ default: module.LibraryPanel })),
-);
-const MaintenancePanel = lazy(() =>
-  import('./ManagementPanels').then((module) => ({ default: module.MaintenancePanel })),
-);
-const GitPanel = lazy(() => import('./DevelopmentPanels').then((module) => ({ default: module.GitPanel })));
+const TasksPanel = lazy(() => import('./TasksPanel').then((module) => ({ default: module.TasksPanel })));
 const DevelopmentPanel = lazy(() =>
-  import('./DevelopmentPanels').then((module) => ({ default: module.DevelopmentPanel })),
-);
-const ContainersPanel = lazy(() =>
-  import('./DevelopmentPanels').then((module) => ({ default: module.ContainersPanel })),
+  import('./DevelopmentPanel').then((module) => ({ default: module.DevelopmentPanel })),
 );
 const MigrationPanel = lazy(() =>
-  import('./DevelopmentPanels').then((module) => ({ default: module.MigrationPanel })),
+  import('../plugins/migration/client').then((module) => ({ default: module.MigrationPanel })),
 );
 
 type System = {
@@ -127,7 +105,16 @@ type System = {
 };
 type ProjectIndex = { active: string; projects: { id: string; name: string }[] };
 type SessionState = { selected: string; page: string; tab: string };
-const sessionPages = new Set(['workspace', 'plugins', 'tasks', 'library', 'images', 'features', 'settings', ...PLUGINS.flatMap((plugin) => plugin.contributes.pages)]);
+const sessionPages = new Set([
+  'workspace',
+  'plugins',
+  'tasks',
+  'library',
+  'images',
+  'features',
+  'settings',
+  ...PLUGINS.flatMap((plugin) => plugin.contributes.pages),
+]);
 const sessionTabs = new Set([
   'terminal',
   'desktop',
@@ -167,8 +154,9 @@ const workspaceTabs = [
       .map((id) => ({ id, label: plugin.name, icon: Boxes })),
   ),
 ];
-const builtInPageIds = new Set(['workspace', 'plugins', 'images', 'tasks', 'library', 'features', 'settings']);
-const builtInTabIds = new Set<string>(builtInWorkspaceTabs.map((tab) => tab.id).filter((id) => id !== 'metrics'));
+const builtInPageIds = new Set(['workspace', 'plugins', 'tasks', 'settings']);
+const namedPageIds = new Set(['workspace', 'plugins', 'images', 'tasks', 'library', 'features', 'settings']);
+const builtInTabIds = new Set(['terminal', 'config', 'development']);
 
 function readSessionState(): SessionState {
   try {
@@ -181,21 +169,6 @@ function readSessionState(): SessionState {
   } catch {
     return { selected: '', page: 'workspace', tab: 'terminal' };
   }
-}
-let token = '';
-async function api<T = any>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    method,
-    headers: {
-      'X-Sakura-Token': token,
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || '请求失败');
-  return data;
 }
 const bytes = (n: number) =>
   n >= 1073741824 ? `${(n / 1073741824).toFixed(2)} GB` : `${(n / 1048576).toFixed(1)} MB`;
@@ -287,6 +260,7 @@ function Modal({
   );
 }
 function App() {
+  const token = useSyncExternalStore(controllerSession.subscribe, controllerSession.getToken);
   const [initialSession] = useState(readSessionState);
   const [vms, setVms] = useState<VMView[]>([]),
     [system, setSystem] = useState<System | null>(null);
@@ -298,8 +272,12 @@ function App() {
   const page = pluginSurfaceEnabled(enabled, 'pages', requestedPage) ? requestedPage : 'workspace';
   const tab = pluginSurfaceEnabled(enabled, 'tabs', requestedTab) ? requestedTab : 'terminal';
   const visibleWorkspaceTabs = workspaceTabs.filter((item) => pluginSurfaceEnabled(enabled, 'tabs', item.id));
-  const pluginPageOwner = PLUGINS.find((plugin) => enabled.includes(plugin.id) && plugin.contributes.pages.includes(page))?.id;
-  const pluginTabOwner = PLUGINS.find((plugin) => enabled.includes(plugin.id) && plugin.contributes.tabs.includes(tab))?.id;
+  const pluginPageOwner = PLUGINS.find(
+    (plugin) => enabled.includes(plugin.id) && plugin.contributes.pages.includes(page),
+  )?.id;
+  const pluginTabOwner = PLUGINS.find(
+    (plugin) => enabled.includes(plugin.id) && plugin.contributes.tabs.includes(tab),
+  )?.id;
   const primaryWorkspaceTabs = visibleWorkspaceTabs.slice(0, 4);
   const advancedWorkspaceTabs = visibleWorkspaceTabs.slice(4);
   const hasProjects = has('projects'),
@@ -389,7 +367,7 @@ function App() {
       alive = false;
       abort.abort();
     };
-  }, [selected, hasProjects]);
+  }, [selected, hasProjects, token]);
   const focusMode = focused && page === 'workspace' && !!vm;
   useEffect(() => {
     try {
@@ -449,60 +427,50 @@ function App() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [page, modal, focusMode]);
   const refreshOrder = useRef(new ResponseOrder());
-  const refresh = useCallback(async () => {
-    const version = refreshOrder.current.start();
-    try {
-      const [data, sys] = await Promise.all([api<VMView[]>('/vms'), api<System>('/system')]);
-      if (!refreshOrder.current.accept(version)) return;
-      setVms(data);
-      setSystem(sys);
-      setOffline('');
-      setSelectedRaw((current) => (data.some((v) => v.id === current) ? current : data[0]?.id || ''));
-    } catch (error) {
-      if (refreshOrder.current.accept(version)) throw error;
-    }
-  }, []);
-  useEffect(() => {
-    let alive = true;
-    let events: WebSocket | undefined;
-    let reconnect: ReturnType<typeof setTimeout> | undefined;
-    const connectEvents = () => {
-      if (!alive) return;
-      const socket = new WebSocket(
-        `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/events?token=${token}`,
-      );
-      events = socket;
-      socket.onmessage = () => {
-        if (alive) void refresh().catch((e) => setOffline(e.message));
-      };
-      socket.onclose = () => {
-        if (alive) reconnect = setTimeout(connectEvents, 1000);
-      };
-      socket.onerror = () => socket.close();
-    };
-    const load = async () => {
-      try {
-        token = (await api('/bootstrap')).token;
-        if (alive) {
-          connectEvents();
-          await refresh();
+  const refreshQueue = useRef(new RefreshQueue());
+  const refreshAbort = useRef(new AbortController());
+  const watcher = useRef<ReturnType<typeof watchController> | null>(null);
+  const refresh = useCallback(
+    () =>
+      refreshQueue.current.run(async () => {
+        const version = refreshOrder.current.start();
+        const signal = AbortSignal.any([refreshAbort.current.signal, AbortSignal.timeout(15000)]);
+        try {
+          const [data, sys] = await Promise.all([
+            api<VMView[]>('/vms', 'GET', undefined, signal),
+            api<System>('/system', 'GET', undefined, signal),
+          ]);
+          if (!refreshOrder.current.accept(version)) return;
+          setVms(data);
+          setSystem(sys);
+          setOffline('');
+          setSelectedRaw((current) => (data.some((v) => v.id === current) ? current : data[0]?.id || ''));
+        } catch (error) {
+          if (refreshOrder.current.accept(version)) throw error;
         }
-      } catch (e: any) {
-        setOffline(e.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    void load();
-    const timer = setInterval(() => {
-      if (alive && token) void refresh().catch((e) => setOffline(e.message));
-    }, 3500);
+      }),
+    [],
+  );
+  useEffect(() => {
+    refreshAbort.current = new AbortController();
+    const connection = watchController({
+      session: controllerSession,
+      refresh,
+      error: setOffline,
+      settled: () => setLoading(false),
+      document,
+      window,
+      socket: (credential) =>
+        new WebSocket(
+          `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/events?token=${encodeURIComponent(credential)}`,
+        ),
+    });
+    watcher.current = connection;
     return () => {
-      alive = false;
+      connection.close();
+      watcher.current = null;
       refreshOrder.current.invalidate();
-      clearInterval(timer);
-      clearTimeout(reconnect);
-      events?.close();
+      refreshAbort.current.abort();
     };
   }, [refresh]);
   useEffect(() => {
@@ -635,9 +603,11 @@ function App() {
             { id: 'library', icon: Boxes, name: '实例管理' },
             { id: 'features', icon: Sparkles, name: '能力中心' },
             { id: 'settings', icon: Settings2, name: '系统设置' },
-            ...PLUGINS.flatMap((plugin) => plugin.contributes.pages
-              .filter((id) => !builtInPageIds.has(id))
-              .map((id) => ({ id, icon: Boxes, name: plugin.name }))),
+            ...PLUGINS.flatMap((plugin) =>
+              plugin.contributes.pages
+                .filter((id) => !namedPageIds.has(id))
+                .map((id) => ({ id, icon: Boxes, name: plugin.name })),
+            ),
           ]
             .filter((n) => pluginSurfaceEnabled(enabled, 'pages', n.id))
             .map((n) => (
@@ -758,24 +728,25 @@ function App() {
         <main>
           {page === 'plugins' && system && <PluginCenter request={api} />}
           {page === 'tasks' && <TasksPanel request={api} vms={vms} />}
-          {page === 'library' && <LibraryPanel request={api} vms={vms} refresh={refresh} />}
-          {page === 'features' && (
-            <FeatureSuitePanel
-              key={selected || vms[0]?.id || 'no-instance'}
+          {pluginPageOwner && !builtInPageIds.has(page) && (
+            <PluginPage
+              key={page}
+              owner={pluginPageOwner}
+              id={page}
               request={workspaceApi}
               vms={vms}
               selected={selected}
-              onSelected={(id) => void setSelected(id)}
+              refresh={refresh}
+              token={token}
               projectId={projectId}
+              onSelected={(id) => void setSelected(id)}
+              onCreate={() => setModal('create')}
             />
-          )}
-          {pluginPageOwner && !builtInPageIds.has(page) && (
-            <PluginPage owner={pluginPageOwner} id={page} request={api} vms={vms} selected={selected} refresh={refresh} />
           )}
           {offline && (
             <div className="error-banner">
               连接出现问题：{offline}
-              <button onClick={() => location.reload()}>重新连接</button>
+              <button onClick={() => watcher.current?.reconnect()}>重新连接</button>
             </div>
           )}
           {page === 'workspace' && (
@@ -1254,48 +1225,6 @@ function App() {
                             <TerminalPanel key={vm.id} vm={vm} start={start} busy={busy} />
                           )}
                         </div>
-                        {tab === 'desktop' && (
-                          <DesktopPanel
-                            key={vm.id}
-                            vm={vm}
-                            token={token}
-                            start={start}
-                            busy={busy}
-                            configure={() => setTab('config')}
-                            request={api}
-                          />
-                        )}
-                        {tab === 'files' && (
-                          <FileBrowser
-                            key={vm.id}
-                            vm={vm}
-                            request={workspaceApi}
-                            token={token}
-                            refresh={refresh}
-                            openFile={openFile?.id === vm.id ? openFile : undefined}
-                          />
-                        )}
-                        {tab === 'project' && (
-                          <ProjectPanel
-                            key={vm.id}
-                            vm={vm}
-                            request={workspaceApi}
-                            token={token}
-                            refresh={refresh}
-                            projectId={projectId}
-                            onProjectChange={onProjectChange}
-                          />
-                        )}
-                        {tab === 'git' && (
-                          <GitPanel
-                            key={vm.id}
-                            vm={vm}
-                            request={workspaceApi}
-                            token={token}
-                            refresh={refresh}
-                            projectId={projectId}
-                          />
-                        )}
                         {tab === 'development' && (
                           <DevelopmentPanel
                             key={vm.id}
@@ -1306,19 +1235,9 @@ function App() {
                             projectId={projectId}
                           />
                         )}
-                        {tab === 'containers' && (
-                          <ContainersPanel
-                            key={vm.id}
-                            vm={vm}
-                            request={workspaceApi}
-                            token={token}
-                            refresh={refresh}
-                            projectId={projectId}
-                          />
-                        )}
                         {pluginTabOwner && !builtInTabIds.has(tab) && (
                           <PluginTab
-                            key={`${pluginTabOwner}-${tab}-${vm.id}`}
+                            key={pluginTabOwner + '-' + tab + '-' + vm.id}
                             owner={pluginTabOwner}
                             id={tab}
                             vm={vm}
@@ -1327,46 +1246,10 @@ function App() {
                             refresh={refresh}
                             projectId={projectId}
                             onProjectChange={onProjectChange}
-                          />
-                        )}
-                        {tab === 'services' && (
-                          <ServicesPanel
-                            key={vm.id}
-                            vm={vm}
-                            request={workspaceApi}
-                            token={token}
-                            refresh={refresh}
-                            projectId={projectId}
-                          />
-                        )}
-                        {tab === 'sync' && (
-                          <SyncPanel
-                            key={vm.id}
-                            vm={vm}
-                            request={workspaceApi}
-                            token={token}
-                            refresh={refresh}
-                            projectId={projectId}
-                          />
-                        )}
-                        {tab === 'snapshots' && (
-                          <SnapshotsPanel
-                            key={vm.id}
-                            vm={vm}
-                            request={workspaceApi}
-                            token={token}
-                            refresh={refresh}
-                            projectId={projectId}
-                          />
-                        )}
-                        {tab === 'maintenance' && (
-                          <MaintenancePanel
-                            key={vm.id}
-                            vm={vm}
-                            request={workspaceApi}
-                            token={token}
-                            refresh={refresh}
-                            projectId={projectId}
+                            start={start}
+                            busy={busy}
+                            configure={() => setTab('config')}
+                            openFile={openFile?.id === vm.id ? openFile : undefined}
                           />
                         )}
                         {tab === 'config' && (
@@ -1451,31 +1334,6 @@ function App() {
                   <Flower2 size={14} />A little space. A new beginning.
                 </span>
                 <span>PosixLoom 编排 · QEMU 虚拟化 · Linux</span>
-              </div>
-            </>
-          )}
-          {page === 'images' && (
-            <>
-              <div className="page-heading">
-                <div>
-                  <div className="eyebrow">
-                    <Layers size={14} /> THE SEEDS OF SOMETHING NEW
-                  </div>
-                  <h1>轻装出发。</h1>
-                  <p>共享一份基础镜像，为每个想法创建独立的空间。</p>
-                </div>
-              </div>
-              <ImageCatalog request={api} token={token} refresh={refresh} />
-              <button className="primary" onClick={() => setModal('create')}>
-                <Plus size={16} />
-                创建发行版
-              </button>
-              <div className="info-callout">
-                <Layers size={24} />
-                <div>
-                  <h3>一个基础，多个可能。</h3>
-                  <p>基础镜像保持只读。新发行版使用 QCOW2 增量磁盘，只有实际写入的数据占用额外空间。</p>
-                </div>
               </div>
             </>
           )}
@@ -1642,240 +1500,6 @@ function App() {
     <PluginContext.Provider value={enabled}>
       <Suspense fallback={<p role="status">正在加载功能…</p>}>{content}</Suspense>
     </PluginContext.Provider>
-  );
-}
-
-function TerminalPanel({
-  vm,
-  start,
-  busy,
-  session,
-}: {
-  vm: VMView;
-  start: () => unknown;
-  busy: boolean;
-  session?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null),
-    terminal = useRef<Terminal | null>(null);
-  const fitTerminal = useRef<(() => void) | null>(null);
-  const [fontSize, setFontSize] = useState(() => {
-    try {
-      const saved = Number(localStorage.getItem('sakura-terminal-font-size'));
-      return Number.isInteger(saved) && saved >= 11 && saved <= 18 ? saved : 13;
-    } catch {
-      return 13;
-    }
-  });
-  const [retry, setRetry] = useState(0),
-    [connection, setConnection] = useState('连接中');
-  const mode = vm.status === 'running' ? 'terminal' : 'logs';
-  useEffect(() => {
-    if (!ref.current || vm.status === 'stopped') return;
-    const monoFamily = getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim();
-    let disposed = false;
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize,
-      fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
-      fontWeight: 400,
-      fontWeightBold: 600,
-      lineHeight: 1.5,
-      scrollback: 4000,
-      theme: {
-        background: '#26212c',
-        foreground: '#eee6ef',
-        cursor: '#f1b1cb',
-        selectionBackground: '#655168',
-        black: '#26212c',
-        brightBlack: '#aa97b0',
-        green: '#b0d5bb',
-        brightGreen: '#c2e6ca',
-        red: '#ed9ca8',
-        brightRed: '#ffb7c4',
-        yellow: '#e9d1a6',
-        brightYellow: '#f4e0b9',
-        blue: '#adc4ea',
-        brightBlue: '#c3d7f5',
-        magenta: '#d2acdf',
-        brightMagenta: '#e6c2ef',
-        cyan: '#a2d4d5',
-        brightCyan: '#bce6e6',
-        white: '#eee6ef',
-        brightWhite: '#fff5fa',
-      },
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.open(ref.current);
-    terminal.current = term;
-    let ready = false;
-    const socket = new WebSocket(
-      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${vm.id}/${mode}?token=${token}${session ? `&session=${encodeURIComponent(session)}` : ''}`,
-    );
-    setConnection(mode === 'logs' ? '启动日志' : '正在连接');
-    const resize = () => {
-      if (disposed || !ref.current?.clientWidth) return;
-      fit.fit();
-      if (ready && socket.readyState === WebSocket.OPEN && mode === 'terminal')
-        socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-    };
-    const observer = new ResizeObserver(resize);
-    fitTerminal.current = resize;
-    observer.observe(ref.current);
-    const frame = requestAnimationFrame(resize);
-    // Canvas needs fresh character metrics after the local web font finishes loading.
-    void document.fonts
-      .load(`${fontSize}px "Sakura Mono"`)
-      .then((faces) => {
-        if (disposed || !faces.length || !monoFamily) return;
-        term.options.fontFamily = monoFamily;
-        resize();
-        term.refresh(0, term.rows - 1);
-      })
-      .catch(() => {
-        // Keep the system monospace fallback if a font cannot be loaded.
-      });
-    socket.onmessage = (event) => {
-      if (disposed) return;
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'data') term.write(msg.data);
-      if (msg.type === 'ready') {
-        ready = true;
-        setConnection('SSH 已连接');
-        resize();
-        if (
-          ref.current?.clientWidth &&
-          !document.querySelector('dialog[open]') &&
-          (document.activeElement === document.body || ref.current?.contains(document.activeElement))
-        )
-          term.focus();
-      }
-      if (msg.type === 'error') {
-        term.writeln(`\r\n连接失败：${msg.data}`);
-        setConnection('连接失败');
-      }
-    };
-    socket.onclose = () => setConnection('连接已关闭');
-    socket.onerror = () => setConnection('连接失败');
-    const data = term.onData((data) => {
-      if (ready && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'input', data }));
-    });
-    return () => {
-      disposed = true;
-      cancelAnimationFrame(frame);
-      socket.onmessage = socket.onerror = socket.onclose = null;
-      socket.close();
-      data.dispose();
-      observer.disconnect();
-      term.dispose();
-      terminal.current = null;
-      fitTerminal.current = null;
-    };
-  }, [vm.id, vm.status, mode, retry, session]);
-  // Resize the existing terminal without replacing its SSH connection or scrollback.
-  useEffect(() => {
-    if (terminal.current) {
-      terminal.current.options.fontSize = fontSize;
-      fitTerminal.current?.();
-    }
-    try {
-      localStorage.setItem('sakura-terminal-font-size', String(fontSize));
-    } catch {
-      // The controls also work when browser storage is unavailable.
-    }
-  }, [fontSize]);
-  const connectionTone =
-    vm.status === 'stopped'
-      ? 'stopped'
-      : connection === 'SSH 已连接'
-        ? 'running'
-        : connection === '连接失败'
-          ? 'error'
-          : connection === '连接已关闭'
-            ? 'stopped'
-            : 'starting';
-  return (
-    <div className="terminal-wrap">
-      <div className="terminal-toolbar">
-        <div>
-          <span className="terminal-dots">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span>{vm.status === 'running' ? `root@${vm.name}: ~` : 'Linux 启动控制台'}</span>
-        </div>
-        <div>
-          <div className="terminal-font-controls" role="group" aria-label="终端字号">
-            <button
-              aria-label="缩小终端字号"
-              title="缩小字号"
-              disabled={fontSize <= 11}
-              onClick={() => setFontSize((size) => Math.max(11, size - 1))}
-            >
-              <Minus size={12} />
-            </button>
-            <button
-              className="terminal-font-reset"
-              aria-label={`重置终端字号，当前 ${fontSize} 像素`}
-              title="恢复默认 13px"
-              onClick={() => setFontSize(13)}
-            >
-              {fontSize}
-              <small>px</small>
-            </button>
-            <button
-              aria-label="放大终端字号"
-              title="放大字号"
-              disabled={fontSize >= 18}
-              onClick={() => setFontSize((size) => Math.min(18, size + 1))}
-            >
-              <Plus size={12} />
-            </button>
-          </div>
-          <span className="terminal-tool-divider" aria-hidden="true" />
-          <button
-            aria-label="清空终端"
-            title="清空终端"
-            disabled={vm.status === 'stopped'}
-            onClick={() => terminal.current?.clear()}
-          >
-            <Trash2 size={14} />
-          </button>
-          <button
-            aria-label="重新连接终端"
-            title="重新连接"
-            disabled={vm.status === 'stopped'}
-            onClick={() => setRetry((v) => v + 1)}
-          >
-            <RefreshCw size={14} />
-          </button>
-        </div>
-      </div>
-      {vm.status === 'stopped' ? (
-        <div className="terminal-offline">
-          <TerminalSquare size={38} />
-          <h3>终端正在等你。</h3>
-          <p>启动 {vm.name}，继续上次的工作。</p>
-          <button className="terminal-start" onClick={start} disabled={busy}>
-            <Play size={14} />
-            启动并连接
-          </button>
-        </div>
-      ) : (
-        <div ref={ref} className="xterm-container" />
-      )}
-      <div className="terminal-bottom">
-        <span className={`terminal-session ${connectionTone}`} role="status">
-          <span className={`tiny-dot ${connectionTone}`} />
-          {vm.status === 'stopped' ? '发行版已停止' : connection}
-        </span>
-        <span>
-          UTF-8<span className="terminal-separator">/</span>xterm-256color
-        </span>
-      </div>
-    </div>
   );
 }
 

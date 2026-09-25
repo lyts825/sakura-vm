@@ -7,6 +7,8 @@ test-results/
 release/
 .vendor/
 .tools/
+__pycache__/
+*.pyc
 
 # Local VM state, images, and test artifacts
 .data/

@@ -1,6 +1,6 @@
+import { Columns2, Plus, X } from 'lucide-react';
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Plus, X, Columns2 } from 'lucide-react';
-import type { Request } from './FeaturePanels';
+import type { Request } from './feature-shared';
 import { getTerminalStore } from './terminal-store';
 
 export function TerminalWorkspace({

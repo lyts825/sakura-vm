@@ -84,11 +84,12 @@ test('sync baseline distinguishes safe deletion from a new file', () => {
   assert.equal(projectSchema.safeParse({ runtimes: { node: '22.12.0' } }).success, true);
 });
 
-test('the third feature tranche has 100 unique, runnable entries', () => {
+test('the third feature tranche has 100 unique entries with implementation states', () => {
   assert.equal(nextFeatureCatalog.length, 100);
   assert.equal(new Set(nextFeatureCatalog.map(([id]) => id)).size, 100);
   assert.equal(new Set(nextFeatureCatalog.map(([, , category]) => category)).size, 10);
   assert.ok(nextFeatureCatalog.every(([, , , priority]) => ['P0', 'P1', 'P2'].includes(priority)));
-  assert.ok(nextFeatureCatalog.every(([, , , , , state]) => state === 'available'));
+  assert.equal(nextFeatureCatalog.find(([id]) => id === 'incident-lockdown')?.[5], 'available');
+  assert.equal(nextFeatureCatalog.find(([id]) => id === 'desktop-recording')?.[5], 'planned');
   assert.ok(nextFeatureCatalog.every(([id]) => /^[a-z][a-z0-9-]+$/.test(id)));
 });
