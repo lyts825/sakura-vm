@@ -39,7 +39,7 @@ flowchart TB
 
 ## 插件划分
 
-当前有 **31 个插件、9 个整合包**。每个插件在 `plugins/<id>/` 内维护 `manifest.ts`、`server.ts` 和可选的 `client.tsx`。运行 `npm run plugins:sync` 从目录生成共享声明与可信加载器；路由和项目作用域直接从声明生成。插件标识不会与磁盘导入导出的 `.sakura` 包混用。协议和 JSON Schema 见 [插件协议](plugin-protocol.md)。
+当前有 **32 个插件、9 个整合包**。每个插件在 `plugins/<id>/` 内维护 `manifest.ts`、`server.ts` 和可选的 `client.tsx`。运行 `npm run plugins:sync` 从目录生成共享声明与可信加载器；路由和项目作用域直接从声明生成。插件标识不会与磁盘导入导出的 `.sakura` 包混用。协议和 JSON Schema 见 [插件协议](plugin-protocol.md)。
 
 | 插件标识             | 业务范围                                              | 直接依赖                      |
 | -------------------- | ----------------------------------------------------- | ----------------------------- |
@@ -60,6 +60,7 @@ flowchart TB
 | `runtimes`           | 项目运行时版本选择和安装                              | projects                      |
 | `git`                | Git 操作与远程仓库                                    | projects                      |
 | `containers`         | Docker / Compose                                      | projects                      |
+| `sandbox`            | 隔离虚拟机、限时命令、执行历史和到期清理              | 无                            |
 | `sync`               | 双向目录同步与冲突决策                                | projects                      |
 | `network`            | 端口转发、代理、软件源与诊断                          | 无                            |
 | `secrets`            | 私密配置及环境变量引用                                | 无                            |
@@ -89,7 +90,7 @@ flowchart TB
 | `developer` 开发工作台     | 项目与代码开发        | files、projects、git、network、secrets、terminal-workspace、command-palette；子包 environment、development |
 | `operations` 运维与备份    | 日常维护与数据保护    | backups、sync、maintenance、library、migration；子包 monitoring                                            |
 | `desktop` 图形桌面         | 图形 Linux            | desktop、files、snapshots、images                                                                          |
-| `lab` 实验室               | 主动试用进阶能力      | automation、automation-scheduler、extensions、platform、containers                                         |
+| `lab` 实验室               | 主动试用进阶能力      | automation、automation-scheduler、extensions、platform、containers、sandbox                                |
 | `complete` 完整兼容        | 恢复此前所有扩展入口  | 当前所有插件，包括实验插件                                                                                 |
 | `development` 开发工具组合 | 可独立选择的开发能力  | toolchains、project-search、code-checks、commands、pipelines、runtimes                                     |
 | `environment` 环境互通组合 | 项目环境与 IDE        | recipes、ide                                                                                               |

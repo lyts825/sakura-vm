@@ -2075,7 +2075,13 @@ function ConfigPanel({
       <div className="panel-heading">
         <div>
           <h3>为你的工作，分配刚好的资源</h3>
-          <p>{running ? '停止发行版后，可以修改配置。' : '配置将在下次启动时生效。'}</p>
+          <p>
+            {vm.sandbox
+              ? '沙箱的资源和网络策略已固定；需要调整时请创建新沙箱。'
+              : running
+                ? '停止发行版后，可以修改配置。'
+                : '配置将在下次启动时生效。'}
+          </p>
         </div>
       </div>
       <form
@@ -2084,8 +2090,8 @@ function ConfigPanel({
           save(config);
         }}
       >
-        <ResourceFields config={config} set={set} disabled={running} />
-        {hasNetwork && (
+        <ResourceFields config={config} set={set} disabled={running || !!vm.sandbox} />
+        {hasNetwork && !vm.sandbox && (
           <>
             <div className="panel-heading port-heading">
               <h3>
@@ -2162,7 +2168,7 @@ function ConfigPanel({
           </>
         )}
         <div className="config-actions">
-          <button className="primary compact" disabled={busy || running}>
+          <button className="primary compact" disabled={busy || running || !!vm.sandbox}>
             <Save size={14} />
             保存配置
           </button>

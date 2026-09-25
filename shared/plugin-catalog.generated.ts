@@ -23,6 +23,7 @@ import { manifest as project_search } from '../plugins/project-search/manifest.t
 import { manifest as projects } from '../plugins/projects/manifest.ts';
 import { manifest as recipes } from '../plugins/recipes/manifest.ts';
 import { manifest as runtimes } from '../plugins/runtimes/manifest.ts';
+import { manifest as sandbox } from '../plugins/sandbox/manifest.ts';
 import { manifest as secrets } from '../plugins/secrets/manifest.ts';
 import { manifest as service_health } from '../plugins/service-health/manifest.ts';
 import { manifest as snapshots } from '../plugins/snapshots/manifest.ts';
@@ -40,5 +41,5 @@ import { pack as pack_lab } from '../plugins/packs/lab.ts';
 import { pack as pack_monitoring } from '../plugins/packs/monitoring.ts';
 import { pack as pack_operations } from '../plugins/packs/operations.ts';
 import type { PluginManifest, PluginPack } from './plugin-protocol.ts';
-export const PLUGINS: PluginManifest[] = [automation, automation_scheduler, backups, code_checks, command_palette, commands, containers, desktop, extensions, files, git, ide, images, library, maintenance, metrics, migration, network, pipelines, platform, project_search, projects, recipes, runtimes, secrets, service_health, snapshots, sync, terminal_workspace, toolchains, transfers];
+export const PLUGINS: PluginManifest[] = [automation, automation_scheduler, backups, code_checks, command_palette, commands, containers, desktop, extensions, files, git, ide, images, library, maintenance, metrics, migration, network, pipelines, platform, project_search, projects, recipes, runtimes, sandbox, secrets, service_health, snapshots, sync, terminal_workspace, toolchains, transfers];
 export const PLUGIN_PACKS: PluginPack[] = [pack_complete, pack_desktop, pack_developer, pack_development, pack_environment, pack_essentials, pack_lab, pack_monitoring, pack_operations];

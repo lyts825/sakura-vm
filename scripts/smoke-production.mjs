@@ -51,7 +51,17 @@ async function probe(selected, expected) {
     assert.deepEqual([...system.plugins].sort(), [...expected].sort());
     assert.deepEqual([...plugins.active].sort(), [...expected].sort());
     assert.deepEqual(plugins.errors, {});
-    assert.equal(plugins.plugins.length, 31);
+    assert.equal(plugins.plugins.length, 32);
+    const sandboxResponse = await fetch(origin + '/api/sandboxes', { headers });
+    assert.equal(sandboxResponse.status, expected.includes('sandbox') ? 200 : 403);
+    if (expected.includes('sandbox')) {
+      assert.deepEqual(await sandboxResponse.json(), { sandboxes: [], runs: [] });
+      const invalid = await fetch(origin + '/api/sandboxes', {
+        method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ name: '../invalid', forwards: [{ host: 8080, guest: 80 }] }),
+      });
+      assert.equal(invalid.status, 400);
+    }
     assert.match(html, /<div id="root"><\/div>/);
     console.log(`Compiled server passed: ${expected.length} active plugins, static UI.`);
   } finally {
@@ -66,3 +76,4 @@ await probe([], []);
 await probe(['metrics'], ['metrics']);
 await probe(['commands'], ['projects', 'commands']);
 await probe(['commands', 'metrics'], ['projects', 'commands', 'metrics']);
+await probe(['sandbox'], ['sandbox']);

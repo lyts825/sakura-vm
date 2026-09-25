@@ -2548,13 +2548,18 @@ label input {
   }
   .sidebar nav {
     flex-direction: row;
-    justify-content: flex-end;
+    justify-content: flex-start;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
     gap: 5px;
   }
   .nav-item {
     height: 38px;
     padding: 9px;
     gap: 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
   .nav-item span {
     display: inline;

@@ -25,6 +25,7 @@ export const loaders: Record<string, () => Promise<PluginModule>> = {
   'projects': () => import('../../plugins/projects/server.ts'),
   'recipes': () => import('../../plugins/recipes/server.ts'),
   'runtimes': () => import('../../plugins/runtimes/server.ts'),
+  'sandbox': () => import('../../plugins/sandbox/server.ts'),
   'secrets': () => import('../../plugins/secrets/server.ts'),
   'service-health': () => import('../../plugins/service-health/server.ts'),
   'snapshots': () => import('../../plugins/snapshots/server.ts'),

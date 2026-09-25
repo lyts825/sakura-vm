@@ -356,5 +356,527 @@
       ],
       "additionalProperties": false
     }
+  },
+  "sandbox.list": {
+    "id": "list",
+    "method": "GET",
+    "path": "/api/sandboxes",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "sandboxes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sandbox": {
+                "type": "object",
+                "properties": {
+                  "network": {
+                    "type": "string",
+                    "enum": [
+                      "isolated",
+                      "nat"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "onExpire": {
+                    "type": "string",
+                    "enum": [
+                      "stop",
+                      "delete"
+                    ]
+                  }
+                },
+                "required": [
+                  "network",
+                  "expiresAt",
+                  "onExpire"
+                ],
+                "additionalProperties": false
+              },
+              "expired": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "stopped",
+                  "starting",
+                  "running",
+                  "paused",
+                  "stopping",
+                  "error"
+                ]
+              },
+              "poweredOn": {
+                "type": "boolean"
+              },
+              "memoryMiB": {
+                "type": "number"
+              },
+              "cpus": {
+                "type": "number"
+              },
+              "diskGiB": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "sandbox",
+              "expired",
+              "status",
+              "poweredOn",
+              "memoryMiB",
+              "cpus",
+              "diskGiB"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "done",
+                  "error",
+                  "cancelled",
+                  "interrupted"
+                ]
+              },
+              "log": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "log",
+              "startedAt"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "persistenceError": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sandboxes",
+        "runs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "sandbox.create": {
+    "id": "create",
+    "method": "POST",
+    "path": "/api/sandboxes",
+    "status": 201,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "distro": {
+          "type": "string",
+          "enum": [
+            "alpine",
+            "debian",
+            "ubuntu"
+          ]
+        },
+        "accelerator": {
+          "default": "auto",
+          "type": "string",
+          "enum": [
+            "auto",
+            "tcg",
+            "whpx"
+          ]
+        },
+        "memoryMiB": {
+          "default": 512,
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 4096
+        },
+        "cpus": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "diskGiB": {
+          "default": 4,
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 32
+        },
+        "lifetimeMinutes": {
+          "default": 60,
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 1440
+        },
+        "network": {
+          "default": "isolated",
+          "type": "string",
+          "enum": [
+            "isolated",
+            "nat"
+          ]
+        },
+        "onExpire": {
+          "default": "delete",
+          "type": "string",
+          "enum": [
+            "stop",
+            "delete"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "accelerator",
+        "memoryMiB",
+        "cpus",
+        "diskGiB",
+        "lifetimeMinutes",
+        "network",
+        "onExpire"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sandbox": {
+          "type": "object",
+          "properties": {
+            "network": {
+              "type": "string",
+              "enum": [
+                "isolated",
+                "nat"
+              ]
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "onExpire": {
+              "type": "string",
+              "enum": [
+                "stop",
+                "delete"
+              ]
+            }
+          },
+          "required": [
+            "network",
+            "expiresAt",
+            "onExpire"
+          ],
+          "additionalProperties": false
+        },
+        "expired": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "stopped",
+            "starting",
+            "running",
+            "paused",
+            "stopping",
+            "error"
+          ]
+        },
+        "poweredOn": {
+          "type": "boolean"
+        },
+        "memoryMiB": {
+          "type": "number"
+        },
+        "cpus": {
+          "type": "number"
+        },
+        "diskGiB": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "sandbox",
+        "expired",
+        "status",
+        "poweredOn",
+        "memoryMiB",
+        "cpus",
+        "diskGiB"
+      ],
+      "additionalProperties": {}
+    }
+  },
+  "sandbox.inspect": {
+    "id": "inspect",
+    "method": "GET",
+    "path": "/api/vms/:vmId/sandbox",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sandbox": {
+          "type": "object",
+          "properties": {
+            "network": {
+              "type": "string",
+              "enum": [
+                "isolated",
+                "nat"
+              ]
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "onExpire": {
+              "type": "string",
+              "enum": [
+                "stop",
+                "delete"
+              ]
+            }
+          },
+          "required": [
+            "network",
+            "expiresAt",
+            "onExpire"
+          ],
+          "additionalProperties": false
+        },
+        "expired": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "stopped",
+            "starting",
+            "running",
+            "paused",
+            "stopping",
+            "error"
+          ]
+        },
+        "poweredOn": {
+          "type": "boolean"
+        },
+        "memoryMiB": {
+          "type": "number"
+        },
+        "cpus": {
+          "type": "number"
+        },
+        "diskGiB": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "sandbox",
+        "expired",
+        "status",
+        "poweredOn",
+        "memoryMiB",
+        "cpus",
+        "diskGiB"
+      ],
+      "additionalProperties": {}
+    }
+  },
+  "sandbox.control": {
+    "id": "control",
+    "method": "POST",
+    "path": "/api/vms/:vmId/sandbox",
+    "status": 200,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "start",
+            "stop"
+          ]
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "sandbox.destroy": {
+    "id": "destroy",
+    "method": "DELETE",
+    "path": "/api/vms/:vmId/sandbox",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "sandbox.run": {
+    "id": "run",
+    "method": "POST",
+    "path": "/api/vms/:vmId/sandbox/run",
+    "status": 202,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "cwd": {
+          "default": "/workspace",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^\\/[^\\x00-\\x1f]*$"
+        },
+        "timeoutSeconds": {
+          "default": 60,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      },
+      "required": [
+        "command",
+        "cwd",
+        "timeoutSeconds"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "done",
+            "error",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "log": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "log",
+        "startedAt"
+      ],
+      "additionalProperties": {}
+    }
   }
 }

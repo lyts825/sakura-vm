@@ -28,6 +28,7 @@ import { distroInfo } from './images.ts';
 import { Files, MAX_TEXT_BYTES } from './files.ts';
 import { freePort, qmp } from './qmp.ts';
 import type { Engine } from './runtime.ts';
+import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
@@ -71,6 +72,8 @@ export class Machines extends EventEmitter {
   private startAttempts = new Map<string, number[]>();
   private operations = new Set<Promise<void>>();
   private closeTask?: Promise<void>;
+  private sandboxTimer?: ReturnType<typeof setInterval>;
+  private sandboxSweep?: Promise<void>;
   closing = false;
   maintenance = false;
   enterMaintenance() {
@@ -97,11 +100,63 @@ export class Machines extends EventEmitter {
           distro: r.distro,
           template: r.template,
         });
+        if (r.sandbox !== undefined) {
+          r.sandbox = sandboxPolicySchema.parse(r.sandbox);
+          if (r.forwards.length) throw new Error('沙箱不允许额外端口转发');
+        }
         this.records.set(r.id, r);
       }
     } catch (e: any) {
       if (e.code !== 'ENOENT') throw e;
     }
+    if ([...this.records.values()].some((vm) => vm.sandbox)) {
+      await this.expireSandboxes();
+      this.watchSandboxes();
+    }
+  }
+  private watchSandboxes() {
+    if (this.sandboxTimer || this.closing) return;
+    this.sandboxTimer = setInterval(() => void this.expireSandboxes(), 1000);
+    this.sandboxTimer.unref();
+  }
+  // Host-side enforcement remains active even when the optional UI plugin is disabled.
+  expireSandboxes(now = Date.now()): Promise<void> {
+    if (this.sandboxSweep) return this.sandboxSweep;
+    this.sandboxSweep = (async () => {
+      const expired = [...this.records.values()].filter((vm) => vm.sandbox && sandboxExpired(vm.sandbox, now));
+      await Promise.all(
+        expired.map(async (vm) => {
+          if (this.closing) return;
+          try {
+            await this.terminateSandbox(vm.id);
+            if (vm.sandbox!.onExpire === 'delete' && !this.maintenance && !this.locks.has(vm.id))
+              await this.delete(vm.id);
+          } catch (error) {
+            this.log(vm.id, '\r\n沙箱到期清理失败：' + String(error) + '\r\n');
+          }
+        }),
+      );
+    })().finally(() => {
+      this.sandboxSweep = undefined;
+    });
+    return this.sandboxSweep;
+  }
+  async terminateSandbox(id: string) {
+    if (!this.get(id).sandbox) throw new AppError('该实例不是沙箱', 409);
+    const live = this.live.get(id);
+    if (!live) return;
+    // Cancellation must not wait on a guest command or an unrelated instance lock.
+    live.bootAbort.abort();
+    live.abort.abort();
+    await live.done;
+  }
+  private requireSandboxLifetime(vm: VMRecord) {
+    if (vm.sandbox && sandboxExpired(vm.sandbox))
+      throw new AppError('沙箱已到期，请销毁后创建新沙箱', 409, 'SANDBOX_EXPIRED');
+  }
+  private requireMutableConfig(vm: VMRecord) {
+    if (vm.sandbox)
+      throw new AppError('沙箱资源和网络策略创建后不可修改，请创建新沙箱', 409, 'SANDBOX_POLICY_LOCKED');
   }
   private saveQueue = Promise.resolve();
   private async save() {
@@ -189,9 +244,15 @@ export class Machines extends EventEmitter {
       this.emit('change');
     }
   }
-  async create(input: unknown) {
+  async create(input: unknown, sandbox?: SandboxPolicy) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);
+      if (sandbox !== undefined) {
+        sandbox = sandboxPolicySchema.parse(sandbox);
+        if (sandboxExpired(sandbox)) throw new AppError('沙箱期限必须晚于当前时间');
+        if (config.forwards.length || (config.template && config.template !== 'none'))
+          throw new AppError('沙箱不允许额外端口转发或自动安装模板');
+      }
       if ([...this.records.values()].some((v) => v.name === config.name))
         throw new AppError('该名称已存在', 409);
       const image = distroInfo(config.distro);
@@ -207,6 +268,7 @@ export class Machines extends EventEmitter {
         createdAt: new Date().toISOString(),
         snapshots: [],
         bootstrapped: false,
+        ...(sandbox ? { sandbox } : {}),
       };
       const dir = vmDir(vm.id);
       await mkdir(dir);
@@ -274,6 +336,7 @@ export class Machines extends EventEmitter {
         }
         this.records.set(vm.id, vm);
         await this.save();
+        if (vm.sandbox) this.watchSandboxes();
         return this.view(vm.id);
       } catch (e) {
         this.records.delete(vm.id);
@@ -286,6 +349,7 @@ export class Machines extends EventEmitter {
     return this.locked('launch', () =>
       this.locked(id, async () => {
         const vm = this.get(id);
+        this.requireSandboxLifetime(vm);
         if (this.live.has(id)) return this.view(id);
         const now = Date.now();
         const attempts = (this.startAttempts.get(id) || []).filter((at) => now - at < 5 * 60_000);
@@ -329,6 +393,11 @@ export class Machines extends EventEmitter {
           throw error;
         }
         const dir = vmDir(id);
+        // The deadline can pass while reserving ports or persisting startup state.
+        if (vm.sandbox && sandboxExpired(vm.sandbox)) {
+          this.live.delete(id);
+          this.requireSandboxLifetime(vm);
+        }
         const escape = (s: string) => s.replaceAll(',', ',,');
         const forwards = [
           `hostfwd=tcp:127.0.0.1:${sshPort}-:22`,
@@ -340,6 +409,7 @@ export class Machines extends EventEmitter {
           '-machine',
           'q35',
           '-nodefaults',
+          ...(vm.sandbox ? ['-no-user-config'] : []),
           '-boot',
           'order=c,menu=off',
           ...(!vm.distro || vm.distro === 'alpine' ? ['-smbios', 'type=1,serial=ds=nocloud'] : []),
@@ -365,7 +435,7 @@ export class Machines extends EventEmitter {
           '-drive',
           `file=${escape(join(dir, 'seed.iso'))},${vm.distro && vm.distro !== 'alpine' ? 'if=virtio,format=raw' : 'media=cdrom'},readonly=on`,
           '-netdev',
-          `user,id=sakura-net,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${forwards.join(',')}`,
+          `user,id=sakura-net,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${vm.sandbox?.network === 'isolated' ? 'restrict=on,ipv6=off,' : ''}${forwards.join(',')}`,
           '-device',
           // The legacy -nic path can default to vectors=0. Give the virtio NIC
           // dedicated MSI-X vectors for RX, TX, config and the control queue.
@@ -801,6 +871,7 @@ export class Machines extends EventEmitter {
   }
   async resume(id: string) {
     return this.locked(id, async () => {
+      this.requireSandboxLifetime(this.get(id));
       const live = this.live.get(id);
       if (!live || live.status !== 'paused') throw new AppError('只有已暂停的发行版可以恢复', 409);
       await qmp(live.qmpPort, 'cont');
@@ -833,6 +904,7 @@ export class Machines extends EventEmitter {
   async update(id: string, input: unknown) {
     return this.locked(id, async () => {
       const vm = this.get(id);
+      this.requireMutableConfig(vm);
       this.requireStopped(id);
       const config = createSchema.parse(input);
       if (config.name !== vm.name) throw new AppError('实例名称创建后不可修改');
@@ -865,6 +937,7 @@ export class Machines extends EventEmitter {
     if (!Number.isInteger(diskGiB) || diskGiB > 128) throw new AppError('磁盘容量必须是 2–128 GiB 的整数');
     return this.locked(id, async () => {
       const vm = this.get(id);
+      this.requireMutableConfig(vm);
       this.requireStopped(id);
       if (diskGiB <= vm.diskGiB) throw new AppError('仅支持扩容，目标容量必须大于当前容量');
       if (vm.snapshots.length >= 20) throw new AppError('请先删除一个快照，为扩容前备份留出位置');
@@ -1025,6 +1098,7 @@ export class Machines extends EventEmitter {
     return this.locked('launch', () =>
       this.locked(id, async () => {
         const vm = this.get(id);
+        this.requireMutableConfig(vm);
         const parsed = createSchema.parse({ name: vm.name, forwards: input }).forwards;
         for (const [otherId, other] of this.records) {
           if (
@@ -1145,11 +1219,14 @@ export class Machines extends EventEmitter {
   async close() {
     if (this.closeTask) return this.closeTask;
     this.closing = true;
+    clearInterval(this.sandboxTimer);
     this.closeTask = (async () => {
+      await this.sandboxSweep;
       // Launch and disk operations admitted before shutdown must settle before
       // taking the final live-process snapshot or releasing their runtime.
       await Promise.allSettled([...this.operations]);
       await Promise.allSettled([...this.live.keys()].map((id) => this.stopInternal(id, false)));
+      await this.saveQueue.catch(() => {});
       await this.engine.runtime.close();
     })();
     return this.closeTask;

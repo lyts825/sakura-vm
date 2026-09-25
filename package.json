@@ -17,6 +17,7 @@
     "test:e2e": "playwright test",
     "test:production": "node scripts/smoke-production.mjs",
     "test:vm": "tsx scripts/smoke-vm.ts",
+    "test:sandbox": "tsx scripts/smoke-sandbox.ts",
     "test:features": "tsx scripts/smoke-features.ts",
     "test:management": "tsx scripts/smoke-management.ts",
     "test:development": "tsx scripts/smoke-development.ts",

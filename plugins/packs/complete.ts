@@ -22,6 +22,7 @@ export const pack = definePack({
     member('runtimes'),
     member('git'),
     member('containers'),
+    member('sandbox'),
     member('sync'),
     member('network'),
     member('secrets'),

@@ -3,6 +3,7 @@ import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataDirectory } from './data-directory.ts';
 import type { DesktopPreferences } from './desktop-preferences.ts';
+import type { SandboxPolicy } from '../shared/sandbox.ts';
 export { desktopPreferencesSchema, defaultDesktopPreferences } from './desktop-preferences.ts';
 export type { DesktopPreferences } from './desktop-preferences.ts';
 
@@ -66,6 +67,7 @@ export const organizationSchema = z
   .strict();
 export type VMRecord = VMConfig & {
   id: string;
+  sandbox?: SandboxPolicy;
   createdAt: string;
   snapshots: Snapshot[];
   // New disks use the serial readiness marker before the first SSH probe.

@@ -1,0 +1,138 @@
+.sandbox-page {
+  padding: 28px;
+}
+.sandbox-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-bottom: 12px;
+}
+.sandbox-heading h2 {
+  margin: 0 0 5px;
+  font-size: 24px;
+}
+.sandbox-emblem {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: var(--surface-soft);
+  color: var(--accent);
+}
+.sandbox-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+}
+.sandbox-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.sandbox-page .feature-card {
+  gap: 16px;
+}
+.sandbox-page label {
+  margin: 0;
+}
+.sandbox-page .subtle-note {
+  font-size: 12px;
+}
+.sandbox-heading .subtle-note {
+  padding: 0;
+  background: none;
+}
+.sandbox-page h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.sandbox-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sandbox-resources {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr 1fr;
+  gap: 10px;
+}
+.sandbox-empty {
+  padding: 28px 16px;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+.sandbox-row {
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.sandbox-row.selected {
+  border-color: var(--accent);
+  background: var(--surface-soft);
+}
+.sandbox-select {
+  flex: 1 1 220px;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.sandbox-select > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.sandbox-select b {
+  overflow-wrap: anywhere;
+}
+.sandbox-select small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.sandbox-page .feature-log {
+  max-height: 340px;
+  overflow: auto;
+}
+.sandbox-workspace {
+  min-width: 0;
+}
+@media (max-width: 1050px) {
+  .sandbox-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sandbox-page {
+    padding: 20px;
+  }
+}
+@media (max-width: 520px) {
+  .sandbox-page {
+    padding: 14px;
+  }
+  .sandbox-count {
+    width: 100%;
+    margin: 0;
+  }
+  .sandbox-heading h2 {
+    font-size: 22px;
+  }
+}

@@ -15,6 +15,7 @@ async function main() {
       return;
     }
     const { developmentHelp } = await import('./development-cli.mjs');
+    const { sandboxHelp } = await import('./sandbox-cli.mjs');
     console.log(
       '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
     );
@@ -25,6 +26,7 @@ async function main() {
       '\nWorkspace management:\n  tasks\n  task <id> <cancel|retry>\n  storage\n  batch <start|stop> <name...>\n  organize <name> <organization.json>\n  diagnostics <name> [run]\n  resize <name> <GiB|finish>\n  backups <name>\n  backup <name> [run|verify|restore|delete] [backup-id] [new-name]\n  backup <name> configure <policy.json>\n  ide <name> [configure]\n  recipe <name> [read|write|apply] [sakura.json]\n  from-recipe <new-name> <sakura.json>\n  sync-preview <name>\n  sync-apply <name> <decisions.json>\n  project <name> <start|stop> [service-name]',
     );
     console.log(developmentHelp);
+    console.log(sandboxHelp);
     return;
   }
   try {
@@ -54,6 +56,11 @@ async function main() {
       console.log(
         JSON.stringify({ planned: status.planned, restartRequired: status.restartRequired }, null, 2),
       );
+      return;
+    }
+    if (action === 'sandbox' || action === 'sandboxes') {
+      const result = await (await import('./sandbox-cli.mjs')).sandboxCommand(action, name, args, api);
+      console.log(JSON.stringify(result.value, null, 2));
       return;
     }
     const development = ['list', 'create', 'start', 'stop', 'shell', 'exec'].includes(action)
