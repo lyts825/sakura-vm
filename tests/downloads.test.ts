@@ -61,7 +61,7 @@ function fixture() {
       throw new Error('Unexpected export');
     },
   } as unknown as Bundles;
-  return { bytes, machines, files, downloads: new Downloads(machines, files, bundles) };
+  return { bytes, machines, files, downloads: new Downloads(machines, { files, bundles }) };
 }
 async function server(t: TestContext, downloads: DownloadsType) {
   const http = createServer(async (req, res) => {

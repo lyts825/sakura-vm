@@ -86,19 +86,10 @@ export type FeatureCatalogItem = {
   priority: string;
   summary: string;
   state: 'available' | 'experimental' | 'planned';
-  implemented: true;
+  implemented: boolean;
 };
 
-export const featureCatalogView = (): FeatureCatalogItem[] =>
-  featureCatalog.map(([id, name, category, priority, summary]) => ({
-    id,
-    name,
-    category,
-    priority,
-    summary,
-    implemented: true,
-    state:
-      [
+const availableFeatureIds = new Set<FeatureId>([
         'power-schedules',
         'idle-shutdown',
         'dynamic-memory',
@@ -125,18 +116,26 @@ export const featureCatalogView = (): FeatureCatalogItem[] =>
         'security-scan',
         'resource-presets',
         'network-profiles',
-      ].includes(id)
-        ? 'available'
-        : ['language-services', 'dev-container'].includes(id)
-          ? 'experimental'
-          : 'planned',
+]);
+
+export const featureCatalogView = (): FeatureCatalogItem[] =>
+  featureCatalog.map(([id, name, category, priority, summary]) => ({
+    id,
+    name,
+    category,
+    priority,
+    summary,
+    implemented: availableFeatureIds.has(id),
+    state: availableFeatureIds.has(id)
+      ? 'available'
+      : ['language-services', 'dev-container'].includes(id)
+        ? 'experimental'
+        : 'planned',
   }));
 
-/** Public capability view: every first-tranche entry now has a runnable
- * portable adapter. The legacy roadmap state remains available through
- * featureCatalogView for older clients and migration tooling. */
+/** The public catalog describes implemented entry points and planned work. */
 export const implementedFeatureCatalogView = (): FeatureCatalogItem[] =>
-  featureCatalogView().map((feature) => ({ ...feature, state: 'available' }));
+  featureCatalogView();
 
 const scheduleSchema = z
   .object({
@@ -231,28 +230,16 @@ export type FeatureAction =
 export class FeatureSuite {
   jobs = new Jobs('feature-suite');
   private stateValue?: FeatureState;
-  private timer: ReturnType<typeof setInterval>;
-  private tickPromise?: Promise<void>;
+  private backgroundEnabled = false;
   private closed = false;
 
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
-  ) {
-    this.timer = setInterval(() => {
-      if (!this.tickPromise) this.startTick();
-    }, 30_000);
-    this.timer.unref();
-    this.startTick();
-  }
-  private startTick() {
-    const task = this.tick()
-      .catch(() => {})
-      .finally(() => {
-        if (this.tickPromise === task) this.tickPromise = undefined;
-      });
-    this.tickPromise = task;
-    return task;
+  ) {}
+  enableBackground() {
+    this.backgroundEnabled = true;
+    return () => { this.backgroundEnabled = false; };
   }
   private file() {
     return join(DATA, 'feature-suite.json');
@@ -297,12 +284,7 @@ export class FeatureSuite {
     };
   }
 
-  /**
-   * Run the complete first-tranche capability surface through one stable
-   * adapter.  A feature can always be inspected on a stopped VM; adapters that
-   * need a guest report that prerequisite in the result and retain the run in
-   * history instead of silently discarding it.
-   */
+  /** Record generic capability checks without claiming their named actions ran. */
   async feature(id: string, input: { featureId: FeatureId; action: 'check' | 'run'; options?: Record<string, unknown> }, signal?: AbortSignal) {
     this.machines.get(id);
     const featureId = z.enum(featureCatalog.map(([value]) => value) as [FeatureId, ...FeatureId[]]).parse(input.featureId);
@@ -310,12 +292,14 @@ export class FeatureSuite {
     const startedAt = new Date().toISOString();
     const vm = this.machines.get(id);
     const result: Record<string, unknown> = {
-      ready: true,
+      ready: false,
+      executed: false,
       featureId,
       name: spec[1],
       category: spec[2],
-      state: 'available',
-      implementation: 'portable-adapter',
+      state: featureCatalogView().find((feature) => feature.id === featureId)?.state,
+      implementation: 'catalog-context',
+      reason: '此入口仅记录功能目录与基础环境信息；请使用对应插件的实际操作检查能力。',
       vmState: this.machines.state(id),
       options: input.options || {},
       checkedAt: new Date().toISOString(),
@@ -375,7 +359,7 @@ export class FeatureSuite {
     });
     while (history.length > 720) history.shift();
     await this.save(state);
-    await this.checkAlerts(id, point, state);
+    if (this.backgroundEnabled) await this.checkAlerts(id, point, state);
     return point;
   }
   async memoryTarget(id: string, memoryMiB: number) {
@@ -717,8 +701,7 @@ export class FeatureSuite {
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
-    await this.tickPromise;
+    this.backgroundEnabled = false;
     await this.jobs.close();
   }
 }

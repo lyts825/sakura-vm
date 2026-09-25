@@ -9,6 +9,7 @@ import { quote } from './files.ts';
 import { envPrefix } from './project-services.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { readVersionedStore, writeVersionedStore } from './plugin-data.ts';
 import { join } from 'node:path';
 import { vmDir } from './model.ts';
 
@@ -32,6 +33,7 @@ export const presetSchema = z
   .strict()
   .refine((p) => new Set(p.parameters.map((v) => v.name)).size === p.parameters.length, '参数名称不能重复');
 export type CommandPreset = z.infer<typeof presetSchema> & { id: string };
+const savedPresets = z.array(presetSchema.safeExtend({ id: z.uuid() }));
 export function presetScript(preset: CommandPreset, values: Record<string, string>) {
   const parameters = Object.fromEntries(
     preset.parameters.map((param) => [param.name, values[param.name] ?? param.value]),
@@ -48,9 +50,12 @@ export class CommandPresets {
   ) {}
   async list(id: string) {
     this.machines.get(id);
-    return readStore<CommandPreset[]>(
+    return readVersionedStore(
       this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+      1,
+      savedPresets,
       () => [],
+      { 0: (records) => savedPresets.parse(records) },
     );
   }
   async save(id: string, input: unknown) {
@@ -61,8 +66,10 @@ export class CommandPresets {
       if (records.length >= 50 && !records.some((v) => v.id === value.id))
         throw new AppError('最多收藏 50 个命令');
       const next = [...records.filter((v) => v.id !== value.id), value];
-      await writeStore(
+      await writeVersionedStore(
         this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+        1,
+        savedPresets,
         next,
       );
       return next;
@@ -72,8 +79,10 @@ export class CommandPresets {
     z.uuid().parse(presetId);
     return this.machines.locked(`commands:${this.workspaces.projects?.key(id) || id}`, async () => {
       const next = (await this.list(id)).filter((v) => v.id !== presetId);
-      await writeStore(
+      await writeVersionedStore(
         this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+        1,
+        savedPresets,
         next,
       );
       return next;

@@ -233,7 +233,7 @@ export class ExtendedFeatures {
         const result = await this.machines.engine.run('sakura-img', ['check', '-f', 'qcow2', join(vmDir(id), 'disk.qcow2')], { signal, timeoutMs: 120000 });
         return { ready: true, state: spec.state, adapter, output: result.trim() || 'QCOW2 检查通过' };
       } catch (error) {
-        return { ready: true, state: spec.state, adapter, executed: false, message: `便携巡检已登记：${String((error as Error).message || error)}` };
+        return { ready: false, state: spec.state, adapter, executed: false, reason: String((error as Error).message || error) };
       }
     }
     if (spec.id === 'hash-manifest') {
@@ -243,9 +243,9 @@ export class ExtendedFeatures {
         const state = await this.state();
         state.manifests[id] = { createdAt: new Date().toISOString(), path: '/workspace', entries: value.stdout.split(/\r?\n/).filter(Boolean).length, checksum };
         await this.save(state);
-        return { ready: true, state: spec.state, adapter, executed: value.code === 0, checksum, entries: state.manifests[id].entries, output: value.stdout.slice(0, 100000) };
+        return { ready: value.code === 0, state: spec.state, adapter, executed: value.code === 0, checksum, entries: state.manifests[id].entries, output: value.stdout.slice(0, 100000), ...(value.code === 0 ? {} : { reason: `客户机命令退出码：${value.code}` }) };
       } catch (error) {
-        return { ready: true, state: spec.state, adapter, executed: false, message: `清单任务已登记：${String((error as Error).message || error)}` };
+        return { ready: false, state: spec.state, adapter, executed: false, reason: String((error as Error).message || error) };
       }
     }
     if (spec.id === 'process-history') {
@@ -253,11 +253,11 @@ export class ExtendedFeatures {
         const point = await this.workspaces.metrics(id);
         return { ready: true, state: spec.state, adapter, sampledAt: point.sampledAt, processes: point.processes };
       } catch (error) {
-        return { ready: true, state: spec.state, adapter, executed: false, message: `进程指标任务已登记：${String((error as Error).message || error)}` };
+        return { ready: false, state: spec.state, adapter, executed: false, reason: String((error as Error).message || error) };
       }
     }
     if (spec.id === 'terminal-layouts' || spec.id === 'api-explorer' || spec.id === 'session-lock')
-      return { ready: true, state: spec.state, adapter, executed: true, message: '控制面板适配器已启用。' };
+      return { ready: false, state: spec.state, adapter, executed: false, reason: '当前仅提供适配器入口，尚无对应的控制面板实现。' };
     const commands: Partial<Record<ExtendedFeatureId, string>> = {
       'guest-clock-policy': 'date -Is; (command -v chronyc >/dev/null && chronyc tracking) || true',
       'archive-wizard': 'tar --version 2>/dev/null | head -n 1 || echo "客户机未安装 tar"',
@@ -284,18 +284,18 @@ export class ExtendedFeatures {
     if (command) {
       try {
         const result = await this.runGuest(id, command, signal);
-        return { ready: true, state: spec.state, adapter, executed: result.code === 0, output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''}`.slice(0, 100000) };
+        return { ready: result.code === 0, state: spec.state, adapter, executed: result.code === 0, output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''}`.slice(0, 100000) };
       } catch (error) {
-        return { ready: true, state: spec.state, adapter, executed: false, message: `便携检查已启用：${String((error as Error).message || error)}` };
+        return { ready: false, state: spec.state, adapter, executed: false, reason: String((error as Error).message || error) };
       }
     }
     return {
-      ready: true,
+      ready: false,
       state: spec.state,
       adapter,
-      executed: true,
+      executed: false,
       liveProbe: false,
-      message: '便携适配器已执行；可选的客户机或宿主增强组件将在存在时自动使用。',
+      reason: '当前仅提供配置和记录，尚无可执行的客户机或宿主实现。',
       checkedAt: new Date().toISOString(),
     };
   }

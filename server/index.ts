@@ -13,18 +13,21 @@ import { Machines } from './machines.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
 import { Features } from './features.ts';
 import { PluginManager } from './plugin-manager.ts';
+import { validateRegistry } from './plugins/registry.ts';
 import { readJsonBody as body, requestUrl } from './http.ts';
 import type { ClientChannel } from 'ssh2';
 
+async function main() {
 const token = randomBytes(32).toString('hex');
 const dev = process.argv.includes('--dev');
+validateRegistry();
 const plugins = new PluginManager();
 const selectedPlugins = await plugins.init();
 const engine = await createRuntime();
 const machines = new Machines(engine);
 await machines.init();
 const features = await Features.create(machines, selectedPlugins);
-plugins.activated(features.enabled, features.errors);
+plugins.activated(features.enabled, features.errors, features.lifecycle);
 const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
 let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
 const equalToken = (value: unknown) => tokenMatches(value, token);
@@ -164,7 +167,13 @@ const server = createServer(async (req, res) => {
       error instanceof ZodError
         ? error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('；')
         : error.message;
-    send(res, { error: message || '操作失败' }, error instanceof ZodError ? 400 : error.status || 500);
+    const status = error instanceof ZodError ? 400 : error.status || 500;
+    const code = error instanceof ZodError ? 'INVALID_INPUT' : error.code || ({
+      400: 'INVALID_INPUT', 401: 'UNAUTHORIZED', 403: 'FORBIDDEN', 404: 'NOT_FOUND',
+      405: 'METHOD_NOT_ALLOWED', 409: 'CONFLICT', 413: 'PAYLOAD_TOO_LARGE',
+      415: 'UNSUPPORTED_MEDIA_TYPE', 503: 'UNAVAILABLE',
+    } as Record<number, string>)[status] || 'INTERNAL_ERROR';
+    send(res, { error: message || '操作失败', code }, status);
   }
 });
 
@@ -185,8 +194,8 @@ server.on('upgrade', (req, socket, head) => {
   if (
     !allowedRequest(req) ||
     !equalToken(url.searchParams.get('token')) ||
-    (mode === 'desktop' && !features.enabled.has('desktop')) ||
-    (url.searchParams.has('session') && !features.enabled.has('terminal-workspace')) ||
+    (mode === 'desktop' && !features.socketEnabled('desktop')) ||
+    (url.searchParams.has('session') && !features.socketEnabled('terminal-session')) ||
     (!events &&
       (parts.length !== 4 || !machines.records.has(id) || !['terminal', 'logs', 'desktop'].includes(mode)))
   ) {
@@ -314,3 +323,9 @@ async function close() {
 }
 process.on('SIGINT', () => void close());
 process.on('SIGTERM', () => void close());
+}
+
+void main().catch((error) => {
+  console.error('Sakura 启动失败：', error);
+  process.exitCode = 1;
+});

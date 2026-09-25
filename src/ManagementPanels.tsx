@@ -398,7 +398,7 @@ export function LibraryPanel({
           <p>调整搜索、项目分组或收藏筛选后再试。</p>
         </div>
       )}
-      <PluginGate id="environment">
+      <PluginGate id="recipes">
         <RecipeImporter request={request} refresh={refresh} />
       </PluginGate>
     </div>
@@ -482,7 +482,7 @@ export function ServiceEditor({
           <PluginGate id="secrets">
             <SecretReferences value={service.secrets} change={(secrets) => change(index, { secrets })} />
           </PluginGate>
-          <PluginGate id="monitoring">
+          <PluginGate id="service-health">
             <HealthEditor value={service.health} change={(health) => change(index, { health })} />
           </PluginGate>
           <button
@@ -561,11 +561,19 @@ export function EnvironmentEditor({
   );
 }
 
-export function ProjectConnections({
-  vm,
-  request,
-  applied,
-}: FeatureProps & { applied: (project: Project) => void }) {
+export function ProjectConnections(props: FeatureProps & { applied: (project: Project) => void }) {
+  return (
+    <>
+      <PluginGate id="ide">
+        <IdeConnection {...props} />
+      </PluginGate>
+      <PluginGate id="recipes">
+        <RecipeConnection {...props} />
+      </PluginGate>
+    </>
+  );
+}
+function IdeConnection({ vm, request }: FeatureProps) {
   const ide = useRemote<{
     supported: boolean;
     running: boolean;
@@ -573,8 +581,7 @@ export function ProjectConnections({
     command: string;
     url: string;
   }>(request, `/vms/${vm.id}/ide`);
-  const [recipe, setRecipe] = useState(''),
-    [link, setLink] = useState('');
+  const [link, setLink] = useState('');
   const action = useAction();
   return (
     <>
@@ -612,6 +619,15 @@ export function ProjectConnections({
           </p>
         )}
       </div>
+      <Feedback error={action.error || ide.error} message={action.message} />
+    </>
+  );
+}
+function RecipeConnection({ vm, request, applied }: FeatureProps & { applied: (project: Project) => void }) {
+  const [recipe, setRecipe] = useState('');
+  const action = useAction();
+  return (
+    <>
       <details className="feature-card">
         <summary>分享与导入项目环境</summary>
         <p className="subtle-note">
@@ -680,7 +696,7 @@ export function ProjectConnections({
         </button>
         <p className="subtle-note">应用到现有实例会更新项目配置；资源参数在创建新实例时使用。</p>
       </details>
-      <Feedback error={action.error || ide.error} message={action.message} />
+      <Feedback error={action.error} message={action.message} />
     </>
   );
 }

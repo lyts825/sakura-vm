@@ -91,4 +91,6 @@ await writeFile(
   '.data/images/alpine-3.23.source.json',
   JSON.stringify({ url: ALPINE_URL, sha512: ALPINE_SHA512 }, null, 2),
 );
-console.log('\nSakura is ready. Run npm run build, then npm start.');
+console.log(existsSync('.sakura-server/index.js')
+  ? '\nSakura is ready. Run npm start.'
+  : '\nSakura is ready. Run npm run build, then npm start.');

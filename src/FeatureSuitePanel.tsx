@@ -25,6 +25,12 @@ import type { NextFeature } from '../server/next-features';
 import type { JobView } from '../server/jobs';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './FeaturePanels';
 import { workspaceRequest } from './workspace-request';
+import { featureReadiness, type FeatureExecutionState } from './feature-readiness';
+
+function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
+  const status = featureReadiness(records, id);
+  return <span className={status.className} title={status.title}>{status.label}</span>;
+}
 
 type MetricPoint = {
   sampledAt: string;
@@ -71,7 +77,7 @@ type ExtendedView = {
     writes: boolean;
   }>;
   settings: Record<string, { enabled: boolean; options?: Record<string, unknown>; updatedAt: string }>;
-  executions?: Array<{ featureId: string; action: string; ready: boolean; finishedAt: string }>;
+  executions?: Array<{ featureId: string; action: string; ready: boolean; finishedAt: string; result?: { executed?: boolean; reason?: string; message?: string } }>;
   jobs: JobView[];
 };
 type NextView = {
@@ -84,6 +90,7 @@ type NextView = {
     ready: boolean;
     executed: boolean;
     finishedAt: string;
+    result?: { reason?: string; message?: string };
   }>;
   jobs: JobView[];
 };
@@ -109,14 +116,16 @@ export function FeatureSuitePanel(props: Props) {
   return <ActiveFeatureSuitePanel {...props} />;
 }
 function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelected, projectId }: Props) {
-  const hasExtensions = usePlugin('extensions'),
+  const hasAutomation = usePlugin('automation'),
+    hasScheduler = usePlugin('automation-scheduler'),
+    hasExtensions = usePlugin('extensions'),
     hasPlatform = usePlugin('platform');
   const request = useMemo(() => workspaceRequest(baseRequest, projectId), [baseRequest, projectId]);
   const active = vms.find((vm) => vm.id === selected) || vms[0];
   const remote = useRemote<SuiteView>(
     request,
     active ? `/vms/${active.id}/advanced` : '/feature-suite',
-    !!active,
+    !!active && hasAutomation,
     5000,
   );
   const extended = useRemote<ExtendedView>(
@@ -353,7 +362,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       <div className="panel-heading">
         <div>
           <h2>能力中心</h2>
-          <p className="muted">把自动化、搜索、软件包和运行状态集中到一个工作台。</p>
+          <p className="muted">查看当前已启用的扩展能力与操作。</p>
         </div>
         <label>
           当前发行版
@@ -371,304 +380,319 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
         message={action.message}
       />
 
-      <div className="feature-grid">
-        <section className="feature-card">
-          <div className="panel-heading">
-            <h3>
-              <Activity size={17} />
-              资源趋势
-            </h3>
-            <button
-              className="secondary compact"
-              disabled={action.busy || active.status !== 'running'}
-              onClick={sample}
-            >
-              <Play size={13} />
-              立即采样
-            </button>
-          </div>
-          {latest ? (
-            <>
-              <div className="metric-strip">
-                <span>
-                  CPU <b>{latest.cpuPercent.toFixed(1)}%</b>
-                </span>
-                <span>
-                  内存{' '}
-                  <b>
-                    {latest.memoryTotal ? ((latest.memoryUsed / latest.memoryTotal) * 100).toFixed(1) : '0'}%
-                  </b>
-                </span>
-                <span>
-                  磁盘{' '}
-                  <b>{latest.diskTotal ? ((latest.diskUsed / latest.diskTotal) * 100).toFixed(1) : '0'}%</b>
-                </span>
+      {hasAutomation && (
+        <>
+          <div className="feature-grid">
+            <section className="feature-card">
+              <div className="panel-heading">
+                <h3>
+                  <Activity size={17} />
+                  资源趋势
+                </h3>
+                <button
+                  className="secondary compact"
+                  disabled={action.busy || active.status !== 'running'}
+                  onClick={sample}
+                >
+                  <Play size={13} />
+                  立即采样
+                </button>
               </div>
-              <div className="metric-bars" aria-label="最近资源采样">
-                {remote.data?.history.slice(-24).map((point) => (
-                  <i
-                    key={point.sampledAt}
-                    style={{ height: `${Math.max(3, point.cpuPercent)}%` }}
-                    title={`${point.cpuPercent.toFixed(1)}%`}
-                  />
-                ))}
-              </div>
-              <p className="subtle-note">
-                最近采样：{new Date(latest.sampledAt).toLocaleString()} · 磁盘 {bytes(latest.diskUsed)} /{' '}
-                {bytes(latest.diskTotal)}
-              </p>
-            </>
-          ) : (
-            <p className="muted">启动发行版后点击“立即采样”，或等待自动采样。</p>
-          )}
-          <label>
-            动态内存目标：{memoryTarget} MiB
-            <input
-              type="range"
-              min={256}
-              max={active.memoryMiB}
-              step={128}
-              value={memoryTarget}
-              disabled={active.status !== 'running'}
-              onChange={(event) => setMemoryTarget(Number(event.target.value))}
-            />
-          </label>
-          <button
-            className="secondary compact"
-            disabled={action.busy || active.status !== 'running'}
-            onClick={applyMemoryTarget}
-          >
-            应用内存目标
-          </button>
-          <div className="feature-actions">
-            <label>
-              资源预设
-              <select value={preset} onChange={(event) => setPreset(event.target.value as ResourcePresetId)}>
-                {Object.entries(presets).map(([id, value]) => (
-                  <option key={id} value={id}>
-                    {value.name} · {value.memoryMiB} MiB · {value.cpus} vCPU
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="secondary compact"
-              disabled={action.busy || active.status !== 'stopped'}
-              onClick={applyPreset}
-            >
-              应用预设
-            </button>
-          </div>
-          {active.status !== 'stopped' && (
-            <p className="subtle-note">资源预设需要先停止发行版；动态内存目标可在运行中调整。</p>
-          )}
-        </section>
-        <section className="feature-card">
-          <h3>
-            <Bell size={17} />
-            自动化与告警
-          </h3>
-          <div className="feature-grid compact-grid">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={schedule.enabled}
-                onChange={(event) => setSchedule({ ...schedule, enabled: event.target.checked })}
-              />
-              启用计划
-            </label>
-            <label>
-              自动启动时间
-              <input
-                type="time"
-                value={schedule.startAt || ''}
-                onChange={(event) => setSchedule({ ...schedule, startAt: event.target.value || undefined })}
-              />
-            </label>
-            <label>
-              自动停止时间
-              <input
-                type="time"
-                value={schedule.stopAt || ''}
-                onChange={(event) => setSchedule({ ...schedule, stopAt: event.target.value || undefined })}
-              />
-            </label>
-            <label>
-              空闲停止（分钟）
-              <input
-                type="number"
-                min={0}
-                max={10080}
-                value={schedule.idleMinutes}
-                onChange={(event) =>
-                  setSchedule({ ...schedule, idleMinutes: Number(event.target.value) || 0 })
-                }
-              />
-            </label>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={alerts.enabled}
-                onChange={(event) => setAlerts({ ...alerts, enabled: event.target.checked })}
-              />
-              启用资源告警
-            </label>
-            <label>
-              CPU 阈值
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={alerts.cpuPercent}
-                onChange={(event) => setAlerts({ ...alerts, cpuPercent: Number(event.target.value) })}
-              />
-            </label>
-            <label>
-              内存阈值
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={alerts.memoryPercent}
-                onChange={(event) => setAlerts({ ...alerts, memoryPercent: Number(event.target.value) })}
-              />
-            </label>
-            <label>
-              磁盘阈值
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={alerts.diskPercent}
-                onChange={(event) => setAlerts({ ...alerts, diskPercent: Number(event.target.value) })}
-              />
-            </label>
-          </div>
-          <button className="primary compact" disabled={action.busy} onClick={saveSettings}>
-            保存自动化设置
-          </button>
-          {!!remote.data?.events.length && (
-            <div className="event-list">
-              {remote.data.events.slice(0, 5).map((event) => (
-                <p key={event.id}>
-                  <span className="tiny-dot error" />
-                  {event.message}
-                  <small>{new Date(event.createdAt).toLocaleString()}</small>
-                </p>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <div className="feature-grid">
-        <section className="feature-card">
-          <h3>
-            <Search size={17} />
-            工作区搜索
-          </h3>
-          <div className="feature-grid compact-grid">
-            <label>
-              搜索内容
-              <input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="函数名、错误信息…"
-              />
-            </label>
-            <label>
-              目录
-              <input value={searchPath} onChange={(event) => setSearchPath(event.target.value)} />
-            </label>
-          </div>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={searchContent}
-              onChange={(event) => setSearchContent(event.target.checked)}
-            />
-            搜索文件内容
-          </label>
-          <button
-            className="secondary compact"
-            disabled={action.busy || active.status !== 'running' || !searchQuery.trim()}
-            onClick={runSearch}
-          >
-            搜索
-          </button>
-          {searchResult.length > 0 && (
-            <pre className="feature-log search-results">{searchResult.join('\n')}</pre>
-          )}
-        </section>
-        <section className="feature-card">
-          <h3>
-            <HardDrive size={17} />
-            磁盘分析
-          </h3>
-          <div className="feature-actions">
-            <input
-              value={diskPath}
-              onChange={(event) => setDiskPath(event.target.value)}
-              aria-label="磁盘分析目录"
-            />
-            <button
-              className="secondary compact"
-              disabled={action.busy || active.status !== 'running'}
-              onClick={runDiskAnalysis}
-            >
-              分析目录
-            </button>
-          </div>
-          {diskEntries.length > 0 && (
-            <div className="disk-analysis-list">
-              {diskEntries.slice(0, 12).map((entry) => (
-                <div key={entry.path}>
-                  <span>{entry.path}</span>
-                  <b>{bytes(entry.bytes)}</b>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-        <section className="feature-card">
-          <h3>
-            <Package size={17} />
-            软件包
-          </h3>
-          <div className="feature-grid compact-grid">
-            <label>
-              操作
-              <select
-                value={packageOperation}
-                onChange={(event) => setPackageOperation(event.target.value as typeof packageOperation)}
+              {latest ? (
+                <>
+                  <div className="metric-strip">
+                    <span>
+                      CPU <b>{latest.cpuPercent.toFixed(1)}%</b>
+                    </span>
+                    <span>
+                      内存{' '}
+                      <b>
+                        {latest.memoryTotal
+                          ? ((latest.memoryUsed / latest.memoryTotal) * 100).toFixed(1)
+                          : '0'}
+                        %
+                      </b>
+                    </span>
+                    <span>
+                      磁盘{' '}
+                      <b>
+                        {latest.diskTotal ? ((latest.diskUsed / latest.diskTotal) * 100).toFixed(1) : '0'}%
+                      </b>
+                    </span>
+                  </div>
+                  <div className="metric-bars" aria-label="最近资源采样">
+                    {remote.data?.history.slice(-24).map((point) => (
+                      <i
+                        key={point.sampledAt}
+                        style={{ height: `${Math.max(3, point.cpuPercent)}%` }}
+                        title={`${point.cpuPercent.toFixed(1)}%`}
+                      />
+                    ))}
+                  </div>
+                  <p className="subtle-note">
+                    最近采样：{new Date(latest.sampledAt).toLocaleString()} · 磁盘 {bytes(latest.diskUsed)} /{' '}
+                    {bytes(latest.diskTotal)}
+                  </p>
+                </>
+              ) : (
+                <p className="muted">启动发行版后点击“立即采样”{hasScheduler ? '，或等待自动采样' : ''}。</p>
+              )}
+              <label>
+                动态内存目标：{memoryTarget} MiB
+                <input
+                  type="range"
+                  min={256}
+                  max={active.memoryMiB}
+                  step={128}
+                  value={memoryTarget}
+                  disabled={active.status !== 'running'}
+                  onChange={(event) => setMemoryTarget(Number(event.target.value))}
+                />
+              </label>
+              <button
+                className="secondary compact"
+                disabled={action.busy || active.status !== 'running'}
+                onClick={applyMemoryTarget}
               >
-                <option value="list">列出已安装</option>
-                <option value="search">搜索</option>
-                <option value="install">安装</option>
-                <option value="remove">卸载</option>
-                <option value="update">更新索引</option>
-              </select>
-            </label>
-            <label>
-              软件包名称
-              <input
-                value={packageName}
-                onChange={(event) => setPackageName(event.target.value)}
-                placeholder="可选"
-              />
-            </label>
+                应用内存目标
+              </button>
+              <div className="feature-actions">
+                <label>
+                  资源预设
+                  <select
+                    value={preset}
+                    onChange={(event) => setPreset(event.target.value as ResourcePresetId)}
+                  >
+                    {Object.entries(presets).map(([id, value]) => (
+                      <option key={id} value={id}>
+                        {value.name} · {value.memoryMiB} MiB · {value.cpus} vCPU
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="secondary compact"
+                  disabled={action.busy || active.status !== 'stopped'}
+                  onClick={applyPreset}
+                >
+                  应用预设
+                </button>
+              </div>
+              {active.status !== 'stopped' && (
+                <p className="subtle-note">资源预设需要先停止发行版；动态内存目标可在运行中调整。</p>
+              )}
+            </section>
+            {hasScheduler && <section className="feature-card">
+              <h3>
+                <Bell size={17} />
+                自动化与告警
+              </h3>
+              <div className="feature-grid compact-grid">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={schedule.enabled}
+                    onChange={(event) => setSchedule({ ...schedule, enabled: event.target.checked })}
+                  />
+                  启用计划
+                </label>
+                <label>
+                  自动启动时间
+                  <input
+                    type="time"
+                    value={schedule.startAt || ''}
+                    onChange={(event) =>
+                      setSchedule({ ...schedule, startAt: event.target.value || undefined })
+                    }
+                  />
+                </label>
+                <label>
+                  自动停止时间
+                  <input
+                    type="time"
+                    value={schedule.stopAt || ''}
+                    onChange={(event) =>
+                      setSchedule({ ...schedule, stopAt: event.target.value || undefined })
+                    }
+                  />
+                </label>
+                <label>
+                  空闲停止（分钟）
+                  <input
+                    type="number"
+                    min={0}
+                    max={10080}
+                    value={schedule.idleMinutes}
+                    onChange={(event) =>
+                      setSchedule({ ...schedule, idleMinutes: Number(event.target.value) || 0 })
+                    }
+                  />
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={alerts.enabled}
+                    onChange={(event) => setAlerts({ ...alerts, enabled: event.target.checked })}
+                  />
+                  启用资源告警
+                </label>
+                <label>
+                  CPU 阈值
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={alerts.cpuPercent}
+                    onChange={(event) => setAlerts({ ...alerts, cpuPercent: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  内存阈值
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={alerts.memoryPercent}
+                    onChange={(event) => setAlerts({ ...alerts, memoryPercent: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  磁盘阈值
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={alerts.diskPercent}
+                    onChange={(event) => setAlerts({ ...alerts, diskPercent: Number(event.target.value) })}
+                  />
+                </label>
+              </div>
+              <button className="primary compact" disabled={action.busy} onClick={saveSettings}>
+                保存自动化设置
+              </button>
+              {!!remote.data?.events.length && (
+                <div className="event-list">
+                  {remote.data.events.slice(0, 5).map((event) => (
+                    <p key={event.id}>
+                      <span className="tiny-dot error" />
+                      {event.message}
+                      <small>{new Date(event.createdAt).toLocaleString()}</small>
+                    </p>
+                  ))}
+                </div>
+              )}
+            </section>}
           </div>
-          <button
-            className="secondary compact"
-            disabled={action.busy || active.status !== 'running'}
-            onClick={runPackage}
-          >
-            提交软件包任务
-          </button>
-          <JobLog job={remote.data?.job} />
-        </section>
-      </div>
 
+          <div className="feature-grid">
+            <section className="feature-card">
+              <h3>
+                <Search size={17} />
+                工作区搜索
+              </h3>
+              <div className="feature-grid compact-grid">
+                <label>
+                  搜索内容
+                  <input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="函数名、错误信息…"
+                  />
+                </label>
+                <label>
+                  目录
+                  <input value={searchPath} onChange={(event) => setSearchPath(event.target.value)} />
+                </label>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={searchContent}
+                  onChange={(event) => setSearchContent(event.target.checked)}
+                />
+                搜索文件内容
+              </label>
+              <button
+                className="secondary compact"
+                disabled={action.busy || active.status !== 'running' || !searchQuery.trim()}
+                onClick={runSearch}
+              >
+                搜索
+              </button>
+              {searchResult.length > 0 && (
+                <pre className="feature-log search-results">{searchResult.join('\n')}</pre>
+              )}
+            </section>
+            <section className="feature-card">
+              <h3>
+                <HardDrive size={17} />
+                磁盘分析
+              </h3>
+              <div className="feature-actions">
+                <input
+                  value={diskPath}
+                  onChange={(event) => setDiskPath(event.target.value)}
+                  aria-label="磁盘分析目录"
+                />
+                <button
+                  className="secondary compact"
+                  disabled={action.busy || active.status !== 'running'}
+                  onClick={runDiskAnalysis}
+                >
+                  分析目录
+                </button>
+              </div>
+              {diskEntries.length > 0 && (
+                <div className="disk-analysis-list">
+                  {diskEntries.slice(0, 12).map((entry) => (
+                    <div key={entry.path}>
+                      <span>{entry.path}</span>
+                      <b>{bytes(entry.bytes)}</b>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+            <section className="feature-card">
+              <h3>
+                <Package size={17} />
+                软件包
+              </h3>
+              <div className="feature-grid compact-grid">
+                <label>
+                  操作
+                  <select
+                    value={packageOperation}
+                    onChange={(event) => setPackageOperation(event.target.value as typeof packageOperation)}
+                  >
+                    <option value="list">列出已安装</option>
+                    <option value="search">搜索</option>
+                    <option value="install">安装</option>
+                    <option value="remove">卸载</option>
+                    <option value="update">更新索引</option>
+                  </select>
+                </label>
+                <label>
+                  软件包名称
+                  <input
+                    value={packageName}
+                    onChange={(event) => setPackageName(event.target.value)}
+                    placeholder="可选"
+                  />
+                </label>
+              </div>
+              <button
+                className="secondary compact"
+                disabled={action.busy || active.status !== 'running'}
+                onClick={runPackage}
+              >
+                提交软件包任务
+              </button>
+              <JobLog job={remote.data?.job} />
+            </section>
+          </div>
+        </>
+      )}
       {hasExtensions && (
         <section className="feature-card">
           <div className="panel-heading">
@@ -679,7 +703,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
             <span className="subtle-note">{extended.data?.features.length || 100} 项 · 可检查前置条件</span>
           </div>
           <p className="muted">
-            每项能力都可以检查或运行；客户机工具不可用时会使用便携适配器并保留执行记录。
+            检查结果会区分实际可用、仅保存本地记录和缺少实现或依赖。
           </p>
           <div className="feature-actions">
             <select
@@ -710,7 +734,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   <b>{feature.name}</b>
                   <p>{feature.summary}</p>
                 </div>
-                <span className="badge running">已接入</span>
+                <ReadinessBadge records={extended.data?.executions} id={feature.id} />
                 <button
                   className="secondary compact"
                   disabled={action.busy}
@@ -744,7 +768,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
             </span>
           </div>
           <p className="muted">
-            每项功能都已接入统一适配器。主机、客户机或外部服务缺失时，检查结果会明确说明原因并保留配置。
+            检查后显示当前环境中的可用状态；本地记录不会标记为实际能力已就绪。
           </p>
           <input
             value={nextSearch}
@@ -761,7 +785,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                     {feature.category} · {feature.summary}
                   </p>
                 </div>
-                <span className="badge running">已接入</span>
+                <ReadinessBadge records={next.data?.executions} id={feature.id} />
                 <button
                   className="secondary compact"
                   disabled={action.busy}
@@ -783,204 +807,209 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
         </section>
       )}
 
-      <section className="feature-card">
-        <h3>
-          <HardDrive size={17} />
-          开发任务
-        </h3>
-        <div className="feature-grid compact-grid">
-          <label>
-            操作
-            <select
-              value={devOperation}
-              onChange={(event) => setDevOperation(event.target.value as typeof devOperation)}
-            >
-              <option value="test">运行测试</option>
-              <option value="test-discover">发现测试文件</option>
-              <option value="lint">代码检查</option>
-              <option value="format">格式化</option>
-              <option value="dependencies">依赖报告</option>
-              <option value="lock">生成环境锁文件</option>
-              <option value="lock-check">校验环境锁文件</option>
-              <option value="install-locked">按锁文件安装依赖</option>
-              <option value="worktree-list">列出 Git Worktree</option>
-              <option value="worktree-add">创建 Git Worktree</option>
-              <option value="worktree-remove">删除 Git Worktree</option>
-              <option value="database">创建数据库容器</option>
-            </select>
-          </label>
-          {(devOperation === 'worktree-add' || devOperation === 'worktree-remove') && (
-            <>
+      {hasAutomation && (
+        <>
+          <section className="feature-card">
+            <h3>
+              <HardDrive size={17} />
+              开发任务
+            </h3>
+            <div className="feature-grid compact-grid">
               <label>
-                分支
-                <input
-                  value={worktreeBranch}
-                  onChange={(event) => setWorktreeBranch(event.target.value)}
-                  placeholder="feature/example"
-                />
-              </label>
-              <label>
-                工作树路径
-                <input
-                  value={worktreePath}
-                  onChange={(event) => setWorktreePath(event.target.value)}
-                  placeholder=".worktrees/example"
-                />
-              </label>
-            </>
-          )}
-          {devOperation === 'database' && (
-            <>
-              <label>
-                数据库
+                操作
                 <select
-                  value={database}
-                  onChange={(event) => setDatabase(event.target.value as typeof database)}
+                  value={devOperation}
+                  onChange={(event) => setDevOperation(event.target.value as typeof devOperation)}
                 >
-                  <option value="postgres">PostgreSQL</option>
-                  <option value="redis">Redis</option>
-                  <option value="mysql">MySQL</option>
+                  <option value="test">运行测试</option>
+                  <option value="test-discover">发现测试文件</option>
+                  <option value="lint">代码检查</option>
+                  <option value="format">格式化</option>
+                  <option value="dependencies">依赖报告</option>
+                  <option value="lock">生成环境锁文件</option>
+                  <option value="lock-check">校验环境锁文件</option>
+                  <option value="install-locked">按锁文件安装依赖</option>
+                  <option value="worktree-list">列出 Git Worktree</option>
+                  <option value="worktree-add">创建 Git Worktree</option>
+                  <option value="worktree-remove">删除 Git Worktree</option>
+                  <option value="database">创建数据库容器</option>
                 </select>
               </label>
-              <label>
-                容器名称
-                <input
-                  value={databaseName}
-                  onChange={(event) => setDatabaseName(event.target.value)}
-                  placeholder="可选，如 sakura-postgres"
-                />
-              </label>
-              <label>
-                客户机端口
-                <input
-                  type="number"
-                  min={1024}
-                  max={65535}
-                  value={databasePort}
-                  onChange={(event) => setDatabasePort(event.target.value)}
-                  placeholder="默认数据库端口"
-                />
-              </label>
-              <label>
-                数据库密码
-                <input
-                  type="password"
-                  minLength={12}
-                  maxLength={128}
-                  value={databasePassword}
-                  onChange={(event) => setDatabasePassword(event.target.value)}
-                  placeholder="至少 12 个可打印字符"
-                />
-              </label>
-            </>
-          )}
-        </div>
-        <button
-          className="secondary compact"
-          disabled={
-            action.busy ||
-            active.status !== 'running' ||
-            (devOperation === 'database' && databasePassword.length < 12)
-          }
-          onClick={runDev}
-        >
-          提交开发任务
-        </button>
-        <JobLog job={remote.data?.devJob} />
-      </section>
-
-      <div className="feature-grid">
-        <section className="feature-card">
-          <h3>
-            <Wifi size={17} />
-            网络诊断与端口
-          </h3>
-          <div className="feature-actions">
-            <input
-              value={networkTarget}
-              onChange={(event) => setNetworkTarget(event.target.value)}
-              aria-label="网络诊断目标"
-            />
-            <button
-              className="secondary compact"
-              disabled={action.busy || active.status !== 'running'}
-              onClick={runNetwork}
-            >
-              测试网络
-            </button>
-            <button
-              className="secondary compact"
-              disabled={action.busy || active.status !== 'running'}
-              onClick={discoverPorts}
-            >
-              发现端口
-            </button>
-          </div>
-          {networkResult && <pre className="feature-log">{networkResult}</pre>}
-          {ports.length > 0 && <p className="subtle-note">正在监听：{ports.join('、')}</p>}
-        </section>
-        <section className="feature-card">
-          <h3>
-            <ShieldCheck size={17} />
-            安全扫描
-          </h3>
-          <p className="muted">只读检查 SSH 设置、待更新软件包和可写系统文件。</p>
-          <button
-            className="secondary compact"
-            disabled={action.busy || active.status !== 'running'}
-            onClick={runSecurity}
-          >
-            开始扫描
-          </button>
-          {securityResult && (
-            <>
-              <p className={securityResult.findings.length ? 'machine-error' : 'feature-success'}>
-                {securityResult.findings.length ? securityResult.findings.join('；') : '未发现明显问题'}
-              </p>
-              <details>
-                <summary>查看原始检查结果</summary>
-                <pre className="feature-log">{securityResult.output}</pre>
-              </details>
-            </>
-          )}
-        </section>
-      </div>
-
-      <section className="feature-card">
-        <div className="panel-heading">
-          <h3>
-            <Compass size={17} />
-            功能路线图
-          </h3>
-          <span className="subtle-note">共 {remote.data?.features.length || 50} 项</span>
-        </div>
-        {groups.map(([category, features]) => (
-          <details key={category} open>
-            <summary>
-              {category}（{features.length}）
-            </summary>
-            <div className="feature-catalog">
-              {features.map((feature) => (
-                <div className="catalog-item" key={feature.id}>
-                  <div>
-                    <b>{feature.name}</b>
-                    <p>{feature.summary}</p>
-                  </div>
-                  <span
-                    className={`badge ${feature.state === 'available' ? 'running' : feature.state === 'experimental' ? 'starting' : 'stopped'}`}
-                  >
-                    {feature.state === 'available'
-                      ? '可用'
-                      : feature.state === 'experimental'
-                        ? '实验性'
-                        : '规划中'}
-                  </span>
-                </div>
-              ))}
+              {(devOperation === 'worktree-add' || devOperation === 'worktree-remove') && (
+                <>
+                  <label>
+                    分支
+                    <input
+                      value={worktreeBranch}
+                      onChange={(event) => setWorktreeBranch(event.target.value)}
+                      placeholder="feature/example"
+                    />
+                  </label>
+                  <label>
+                    工作树路径
+                    <input
+                      value={worktreePath}
+                      onChange={(event) => setWorktreePath(event.target.value)}
+                      placeholder=".worktrees/example"
+                    />
+                  </label>
+                </>
+              )}
+              {devOperation === 'database' && (
+                <>
+                  <label>
+                    数据库
+                    <select
+                      value={database}
+                      onChange={(event) => setDatabase(event.target.value as typeof database)}
+                    >
+                      <option value="postgres">PostgreSQL</option>
+                      <option value="redis">Redis</option>
+                      <option value="mysql">MySQL</option>
+                    </select>
+                  </label>
+                  <label>
+                    容器名称
+                    <input
+                      value={databaseName}
+                      onChange={(event) => setDatabaseName(event.target.value)}
+                      placeholder="可选，如 sakura-postgres"
+                    />
+                  </label>
+                  <label>
+                    客户机端口
+                    <input
+                      type="number"
+                      min={1024}
+                      max={65535}
+                      value={databasePort}
+                      onChange={(event) => setDatabasePort(event.target.value)}
+                      placeholder="默认数据库端口"
+                    />
+                  </label>
+                  <label>
+                    数据库密码
+                    <input
+                      type="password"
+                      minLength={12}
+                      maxLength={128}
+                      value={databasePassword}
+                      onChange={(event) => setDatabasePassword(event.target.value)}
+                      placeholder="至少 12 个可打印字符"
+                    />
+                  </label>
+                </>
+              )}
             </div>
-          </details>
-        ))}
-      </section>
+            <button
+              className="secondary compact"
+              disabled={
+                action.busy ||
+                active.status !== 'running' ||
+                (devOperation === 'database' && databasePassword.length < 12)
+              }
+              onClick={runDev}
+            >
+              提交开发任务
+            </button>
+            <JobLog job={remote.data?.devJob} />
+          </section>
+
+          <div className="feature-grid">
+            <section className="feature-card">
+              <h3>
+                <Wifi size={17} />
+                网络诊断与端口
+              </h3>
+              <div className="feature-actions">
+                <input
+                  value={networkTarget}
+                  onChange={(event) => setNetworkTarget(event.target.value)}
+                  aria-label="网络诊断目标"
+                />
+                <button
+                  className="secondary compact"
+                  disabled={action.busy || active.status !== 'running'}
+                  onClick={runNetwork}
+                >
+                  测试网络
+                </button>
+                <button
+                  className="secondary compact"
+                  disabled={action.busy || active.status !== 'running'}
+                  onClick={discoverPorts}
+                >
+                  发现端口
+                </button>
+              </div>
+              {networkResult && <pre className="feature-log">{networkResult}</pre>}
+              {ports.length > 0 && <p className="subtle-note">正在监听：{ports.join('、')}</p>}
+            </section>
+            <section className="feature-card">
+              <h3>
+                <ShieldCheck size={17} />
+                安全扫描
+              </h3>
+              <p className="muted">只读检查 SSH 设置、待更新软件包和可写系统文件。</p>
+              <button
+                className="secondary compact"
+                disabled={action.busy || active.status !== 'running'}
+                onClick={runSecurity}
+              >
+                开始扫描
+              </button>
+              {securityResult && (
+                <>
+                  <p className={securityResult.findings.length ? 'machine-error' : 'feature-success'}>
+                    {securityResult.findings.length ? securityResult.findings.join('；') : '未发现明显问题'}
+                  </p>
+                  <details>
+                    <summary>查看原始检查结果</summary>
+                    <pre className="feature-log">{securityResult.output}</pre>
+                  </details>
+                </>
+              )}
+            </section>
+          </div>
+
+          <section className="feature-card">
+            <div className="panel-heading">
+              <h3>
+                <Compass size={17} />
+                功能路线图
+              </h3>
+              <span className="subtle-note">共 {remote.data?.features.length || 50} 项</span>
+            </div>
+            <p className="muted">这里显示开发路线图；已有入口的状态仍需在对应插件中检查。</p>
+            {groups.map(([category, features]) => (
+              <details key={category} open>
+                <summary>
+                  {category}（{features.length}）
+                </summary>
+                <div className="feature-catalog">
+                  {features.map((feature) => (
+                    <div className="catalog-item" key={feature.id}>
+                      <div>
+                        <b>{feature.name}</b>
+                        <p>{feature.summary}</p>
+                      </div>
+                      <span
+                        className={`badge ${feature.state === 'available' ? 'running' : feature.state === 'experimental' ? 'starting' : 'stopped'}`}
+                      >
+                        {feature.state === 'available'
+                          ? '已有入口'
+                          : feature.state === 'experimental'
+                            ? '实验性'
+                            : '规划中'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </section>
+        </>
+      )}
     </div>
   );
 }

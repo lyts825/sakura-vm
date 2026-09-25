@@ -58,7 +58,8 @@ import '@xterm/xterm/css/xterm.css';
 import './fonts.css';
 import './style.css';
 import { PluginContext, usePlugin } from './plugin-context';
-import { pluginSurfaceEnabled } from '../shared/plugins';
+import { PLUGINS, pluginSurfaceEnabled } from '../shared/plugins';
+import { PluginPage, PluginTab } from './plugin-client';
 
 const DesktopPanel = lazy(() =>
   import('./DesktopPanel').then((module) => ({ default: module.DesktopPanel })),
@@ -78,9 +79,6 @@ const PluginCenter = lazy(() =>
 );
 const ProjectPanel = lazy(() =>
   import('./FeaturePanels').then((module) => ({ default: module.ProjectPanel })),
-);
-const MetricsPanel = lazy(() =>
-  import('./FeaturePanels').then((module) => ({ default: module.MetricsPanel })),
 );
 const ServicesPanel = lazy(() =>
   import('./FeaturePanels').then((module) => ({ default: module.ServicesPanel })),
@@ -129,7 +127,7 @@ type System = {
 };
 type ProjectIndex = { active: string; projects: { id: string; name: string }[] };
 type SessionState = { selected: string; page: string; tab: string };
-const sessionPages = new Set(['workspace', 'plugins', 'tasks', 'library', 'images', 'features', 'settings']);
+const sessionPages = new Set(['workspace', 'plugins', 'tasks', 'library', 'images', 'features', 'settings', ...PLUGINS.flatMap((plugin) => plugin.contributes.pages)]);
 const sessionTabs = new Set([
   'terminal',
   'desktop',
@@ -144,8 +142,9 @@ const sessionTabs = new Set([
   'snapshots',
   'maintenance',
   'config',
+  ...PLUGINS.flatMap((plugin) => plugin.contributes.tabs),
 ]);
-const workspaceTabs = [
+const builtInWorkspaceTabs = [
   { id: 'terminal', label: '终端', icon: TerminalSquare },
   { id: 'desktop', label: '桌面', icon: Monitor },
   { id: 'files', label: '文件', icon: Folder },
@@ -160,6 +159,16 @@ const workspaceTabs = [
   { id: 'maintenance', label: '维护', icon: ShieldCheck },
   { id: 'config', label: '配置', icon: Settings2 },
 ] as const;
+const workspaceTabs = [
+  ...builtInWorkspaceTabs,
+  ...PLUGINS.flatMap((plugin) =>
+    plugin.contributes.tabs
+      .filter((id) => !builtInWorkspaceTabs.some((tab) => tab.id === id))
+      .map((id) => ({ id, label: plugin.name, icon: Boxes })),
+  ),
+];
+const builtInPageIds = new Set(['workspace', 'plugins', 'images', 'tasks', 'library', 'features', 'settings']);
+const builtInTabIds = new Set<string>(builtInWorkspaceTabs.map((tab) => tab.id).filter((id) => id !== 'metrics'));
 
 function readSessionState(): SessionState {
   try {
@@ -289,6 +298,8 @@ function App() {
   const page = pluginSurfaceEnabled(enabled, 'pages', requestedPage) ? requestedPage : 'workspace';
   const tab = pluginSurfaceEnabled(enabled, 'tabs', requestedTab) ? requestedTab : 'terminal';
   const visibleWorkspaceTabs = workspaceTabs.filter((item) => pluginSurfaceEnabled(enabled, 'tabs', item.id));
+  const pluginPageOwner = PLUGINS.find((plugin) => enabled.includes(plugin.id) && plugin.contributes.pages.includes(page))?.id;
+  const pluginTabOwner = PLUGINS.find((plugin) => enabled.includes(plugin.id) && plugin.contributes.tabs.includes(tab))?.id;
   const primaryWorkspaceTabs = visibleWorkspaceTabs.slice(0, 4);
   const advancedWorkspaceTabs = visibleWorkspaceTabs.slice(4);
   const hasProjects = has('projects'),
@@ -624,6 +635,9 @@ function App() {
             { id: 'library', icon: Boxes, name: '实例管理' },
             { id: 'features', icon: Sparkles, name: '能力中心' },
             { id: 'settings', icon: Settings2, name: '系统设置' },
+            ...PLUGINS.flatMap((plugin) => plugin.contributes.pages
+              .filter((id) => !builtInPageIds.has(id))
+              .map((id) => ({ id, icon: Boxes, name: plugin.name }))),
           ]
             .filter((n) => pluginSurfaceEnabled(enabled, 'pages', n.id))
             .map((n) => (
@@ -754,6 +768,9 @@ function App() {
               onSelected={(id) => void setSelected(id)}
               projectId={projectId}
             />
+          )}
+          {pluginPageOwner && !builtInPageIds.has(page) && (
+            <PluginPage owner={pluginPageOwner} id={page} request={api} vms={vms} selected={selected} refresh={refresh} />
           )}
           {offline && (
             <div className="error-banner">
@@ -1299,14 +1316,17 @@ function App() {
                             projectId={projectId}
                           />
                         )}
-                        {tab === 'metrics' && (
-                          <MetricsPanel
-                            key={vm.id}
+                        {pluginTabOwner && !builtInTabIds.has(tab) && (
+                          <PluginTab
+                            key={`${pluginTabOwner}-${tab}-${vm.id}`}
+                            owner={pluginTabOwner}
+                            id={tab}
                             vm={vm}
                             request={workspaceApi}
                             token={token}
                             refresh={refresh}
                             projectId={projectId}
+                            onProjectChange={onProjectChange}
                           />
                         )}
                         {tab === 'services' && (

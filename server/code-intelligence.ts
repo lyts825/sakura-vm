@@ -1,8 +1,9 @@
-import { z } from 'zod';
+import { posix } from 'node:path';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { quote } from './files.ts';
+import { guestPath } from './model.ts';
 
 export type Diagnostic = {
   severity: 'error' | 'warning' | 'info';
@@ -16,9 +17,13 @@ export class CodeIntelligence {
     private workspaces: Workspaces,
   ) {}
   async diagnose(id: string, path: string, signal?: AbortSignal) {
-    repositoryPath.parse(path);
-    const project = await this.workspaces.config(id),
-      target = `${project.directory}/${path}`;
+    const project = await this.workspaces.config(id);
+    // The file editor uses absolute guest paths; CLI callers use project-relative paths.
+    // Both forms must stay inside the currently selected project directory.
+    path = repositoryPath.parse(
+      path.startsWith('/') ? posix.relative(project.directory, guestPath(path)) : path,
+    );
+    const target = posix.join(project.directory, path);
     const ext = path.split('.').pop()?.toLowerCase();
     let command: string;
     if (['js', 'jsx', 'mjs', 'cjs'].includes(ext || '')) command = `node --check ${quote(target)}`;

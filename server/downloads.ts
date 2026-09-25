@@ -51,9 +51,16 @@ export class Downloads {
   private closed = false;
   constructor(
     private machines: Machines,
-    private files: Files,
-    private bundles: Bundles,
+    private providers: { files?: Files; bundles?: Bundles },
   ) {}
+  private get files() {
+    if (!this.providers.files) throw new AppError('文件插件未启用', 403);
+    return this.providers.files;
+  }
+  private get bundles() {
+    if (!this.providers.bundles) throw new AppError('快照插件未启用', 403);
+    return this.providers.bundles;
+  }
   async issue(id: string, input: unknown) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
     const value = downloadSchema.parse(input);

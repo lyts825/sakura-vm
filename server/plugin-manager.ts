@@ -6,18 +6,11 @@ import {
   PLUGINS,
   PLUGIN_PACKS,
   emptySelection,
-  resolvePlugins,
   type PluginSelection,
   type PluginStatus,
 } from '../shared/plugins.ts';
+import { migratePlugins, explainPlugins, resolvePlugins } from '../shared/plugin-selection.ts';
 
-const selectionSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    plugins: z.array(z.string()).max(100),
-    packs: z.array(z.string()).max(100),
-  })
-  .strict();
 const changeSchema = z
   .object({
     kind: z.enum(['plugin', 'pack']),
@@ -31,15 +24,20 @@ export class PluginManager {
   private selection = emptySelection();
   private active: string[] = [];
   private errors: Record<string, string> = {};
+  private lifecycle: PluginStatus['lifecycle'] = {};
+  private migrations: string[] = [];
   private queue: Promise<unknown> = Promise.resolve();
   constructor(private file = join(DATA, 'plugins.json')) {}
   async init() {
-    this.selection = selectionSchema.parse(await readStore(this.file, emptySelection));
+    const migrated = migratePlugins(await readStore(this.file, emptySelection));
+    this.selection = migrated.selection;
+    this.migrations = migrated.migrations;
     return resolvePlugins(this.selection);
   }
-  activated(active: Iterable<string>, errors: Record<string, string> = {}) {
+  activated(active: Iterable<string>, errors: Record<string, string> = {}, lifecycle: PluginStatus['lifecycle'] = {}) {
     this.active = [...active];
     this.errors = { ...errors };
+    this.lifecycle = { ...lifecycle };
   }
   view(): PluginStatus {
     const planned = resolvePlugins(this.selection);
@@ -47,15 +45,25 @@ export class PluginManager {
       selection: structuredClone(this.selection),
       active: [...this.active],
       planned,
+      reasons: explainPlugins(this.selection),
+      migrations: [...this.migrations],
       restartRequired:
         planned.length !== this.active.length || planned.some((id) => !this.active.includes(id)),
       errors: { ...this.errors },
+      lifecycle: structuredClone(this.lifecycle),
       plugins: PLUGINS,
       packs: PLUGIN_PACKS,
     };
   }
   change(input: unknown) {
     const change = changeSchema.parse(input);
+    // Keep old CLI/API calls useful after an aggregate plugin becomes a pack.
+    const replacement =
+      change.kind === 'plugin' && PLUGIN_PACKS.find((pack) => pack.replacesPlugins.includes(change.id));
+    if (replacement) {
+      change.kind = 'pack';
+      change.id = replacement.id;
+    }
     const operation = this.queue
       .catch(() => {})
       .then(async () => {
@@ -80,6 +88,7 @@ export class PluginManager {
         }
         await writeStore(this.file, next);
         this.selection = next;
+        this.migrations = [];
         return this.view();
       });
     this.queue = operation;

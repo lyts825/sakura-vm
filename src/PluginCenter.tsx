@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Boxes, Puzzle, RefreshCw } from 'lucide-react';
-import type { PluginStatus } from '../shared/plugins';
+import { emptySelection, type PluginStatus } from '../shared/plugins';
+import { resolvePlugins } from '../shared/plugin-selection';
 import type { Request } from './feature-shared';
 import './plugins.css';
 
@@ -8,6 +9,7 @@ export function PluginCenter({ request }: { request: Request }) {
   const [status, setStatus] = useState<PluginStatus | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [category, setCategory] = useState('all');
   useEffect(() => {
     const abort = new AbortController();
     void request<PluginStatus>('/plugins', 'GET', undefined, abort.signal)
@@ -71,6 +73,11 @@ export function PluginCenter({ request }: { request: Request }) {
               {id} 启动失败：{error}
             </p>
           ))}
+          {status.migrations.map((message) => (
+            <p key={message} className="subtle-note">
+              {message}
+            </p>
+          ))}
           <h2>
             <Boxes size={20} /> 插件整合包
           </h2>
@@ -80,6 +87,11 @@ export function PluginCenter({ request }: { request: Request }) {
           <div className="plugin-grid">
             {status.packs.map((pack) => {
               const selected = status.selection.packs.includes(pack.id);
+              const resolved = resolvePlugins(
+                { ...emptySelection(), packs: [pack.id] },
+                status.plugins,
+                status.packs,
+              );
               return (
                 <article className="plugin-card" key={pack.id}>
                   <div className="panel-heading">
@@ -88,11 +100,16 @@ export function PluginCenter({ request }: { request: Request }) {
                   </div>
                   <p>{pack.description}</p>
                   <details>
-                    <summary>{pack.plugins.length} 个直接成员</summary>
+                    <summary>
+                      {pack.members.length} 个直接成员 · 含依赖共 {resolved.length} 个插件
+                    </summary>
                     <ul>
-                      {pack.plugins.map((pin) => (
-                        <li key={pin.id}>
-                          {status.plugins.find((p) => p.id === pin.id)?.name || pin.id}{' '}
+                      {pack.members.map((pin) => (
+                        <li key={`${pin.kind}:${pin.id}`}>
+                          {(pin.kind === 'plugin' ? status.plugins : status.packs).find(
+                            (p) => p.id === pin.id,
+                          )?.name || pin.id}{' '}
+                          {pin.kind === 'pack' && <small>整合包 · </small>}
                           <small>{pin.version}</small>
                         </li>
                       ))}
@@ -113,36 +130,79 @@ export function PluginCenter({ request }: { request: Request }) {
             <Puzzle size={20} /> 独立插件
           </h2>
           <p className="muted">依赖会自动加入。所有插件均随当前版本提供，实验插件会明确标识。</p>
+          <label>
+            按用途查看
+            <select value={category} onChange={(event) => setCategory(event.target.value)}>
+              {Object.entries({
+                all: '全部插件',
+                foundation: '基础配套',
+                workspace: '工作空间',
+                development: '项目开发',
+                operations: '运维管理',
+                experimental: '实验扩展',
+              }).map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="plugin-grid">
-            {status.plugins.map((plugin) => {
-              const selected = status.selection.plugins.includes(plugin.id);
-              const planned = status.planned.includes(plugin.id);
-              const active = status.active.includes(plugin.id);
-              return (
-                <article className="plugin-card" key={plugin.id}>
-                  <div className="panel-heading">
-                    <h3>{plugin.name}</h3>
-                    <small>{plugin.experimental ? '实验' : `v${plugin.version}`}</small>
-                  </div>
-                  <p>{plugin.description}</p>
-                  <code>{plugin.id}</code>
-                  <small>
-                    {plugin.requires.length ? `依赖：${plugin.requires.join('、')}` : '无插件依赖'}
-                  </small>
-                  <span className="plugin-state">
-                    {active ? '运行中' : '未运行'} ·{' '}
-                    {planned ? (selected ? '已单独选择' : '由整合包或依赖引入') : '下次启动不加载'}
-                  </span>
-                  <button
-                    className={`${selected ? 'secondary' : 'primary'} compact`}
-                    disabled={busy}
-                    onClick={() => void change('plugin', plugin.id, !selected)}
-                  >
-                    {selected ? '停用独立选择' : planned ? '保留为独立选择' : '启用插件'}
-                  </button>
-                </article>
-              );
-            })}
+            {status.plugins
+              .filter((plugin) => category === 'all' || plugin.category === category)
+              .map((plugin) => {
+                const selected = status.selection.plugins.includes(plugin.id);
+                const planned = status.planned.includes(plugin.id);
+                const active = status.active.includes(plugin.id);
+                return (
+                  <article className="plugin-card" key={plugin.id}>
+                    <div className="panel-heading">
+                      <h3>{plugin.name}</h3>
+                      <small>{plugin.experimental ? '实验' : `v${plugin.version}`}</small>
+                    </div>
+                    <p>{plugin.description}</p>
+                    <code>{plugin.id}</code>
+                    <small>
+                      {plugin.requires.length
+                        ? `依赖：${plugin.requires.map((pin) => status.plugins.find((item) => item.id === pin.id)?.name || pin.id).join('、')}`
+                        : '无插件依赖'}
+                    </small>
+                    {plugin.optional.length > 0 && (
+                      <small>
+                        可选配套（不会自动启用）：
+                        {plugin.optional
+                          .map((pin) => status.plugins.find((item) => item.id === pin.id)?.name || pin.id)
+                          .join('、')}
+                      </small>
+                    )}
+                    {planned && !selected && (
+                      <small>
+                        由{' '}
+                        {(status.reasons[plugin.id] || [])
+                          .map(
+                            (root) =>
+                              (root.kind === 'plugin' ? status.plugins : status.packs).find(
+                                (item) => item.id === root.id,
+                              )?.name || root.id,
+                          )
+                          .join('、')}{' '}
+                        引入
+                      </small>
+                    )}
+                    <span className="plugin-state">
+                      {active ? `运行中 · 启动 ${status.lifecycle?.[plugin.id]?.activationMs ?? 0} ms` : '未运行'} ·{' '}
+                      {planned ? (selected ? '已单独选择' : '由整合包或依赖引入') : '下次启动不加载'}
+                    </span>
+                    <button
+                      className={`${selected ? 'secondary' : 'primary'} compact`}
+                      disabled={busy}
+                      onClick={() => void change('plugin', plugin.id, !selected)}
+                    >
+                      {selected ? '停用独立选择' : planned ? '保留为独立选择' : '启用插件'}
+                    </button>
+                  </article>
+                );
+              })}
           </div>
         </>
       )}

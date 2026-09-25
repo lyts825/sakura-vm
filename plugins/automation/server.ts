@@ -1,0 +1,82 @@
+export { manifest } from './manifest.ts';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { PluginContext } from '../../server/plugin-api.ts';
+
+import { FeatureSuite } from '../../server/feature-suite.ts';
+import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
+import { AppError } from '../../server/model.ts';
+import { z } from 'zod';
+
+export async function activate(host: PluginContext) {
+  const m = host.machines;
+  host.suite = new FeatureSuite(m, host.workspaces);
+  host.registerJobs(host.suite.jobs, (job) => {
+    const id = retryTarget(job);
+    if (job.action?.startsWith('package:')) {
+      const [operationValue, ...nameParts] = job.action.slice(8).split(':');
+      const operation = z.enum(['list', 'search', 'install', 'remove', 'update']).parse(operationValue);
+      return retryInProject(host, job, () => Promise.resolve(host.suite.package(id, {
+        operation, name: nameParts.join(':') || undefined,
+      })));
+    }
+    if (job.action?.startsWith('dev:')) {
+      const operation = z.enum([
+        'test', 'test-discover', 'lint', 'format', 'dependencies', 'lock', 'lock-check',
+        'install-locked', 'worktree-list', 'worktree-add', 'worktree-remove', 'database',
+      ]).parse(job.action.slice(4));
+      if (['worktree-add', 'worktree-remove', 'database'].includes(operation))
+        throw new AppError('此开发任务包含参数，请回到能力中心重新执行');
+      return retryInProject(host, job, () => Promise.resolve(host.suite.dev(id, { operation })));
+    }
+    throw new AppError('请回到原功能页面重新执行');
+  });
+}
+export async function route(
+  this: PluginContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  body: (req: IncomingMessage) => Promise<any>,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const parts = url.pathname.split('/').filter(Boolean);
+  const send = (data: unknown, status = 200) => {
+    res.writeHead(status, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    res.end(JSON.stringify(data));
+    return true;
+  };
+  if (parts[1] === 'feature-suite' && parts.length === 2 && req.method === 'GET') {
+    send(await this.suite.catalog());
+    return true;
+  }
+  if (parts[1] !== 'vms' || !parts[2]) return false;
+  const id = parts[2],
+    action = parts[3];
+  this.machines.get(id);
+  if (parts.length === 4 && req.method === 'POST' && action === 'suspend')
+    return send(await this.machines.suspend(id));
+  if (parts.length === 4 && req.method === 'POST' && action === 'resume')
+    return send(await this.machines.resume(id));
+  if (parts.length === 4) {
+    if (action === 'advanced') {
+      if (req.method === 'GET') {
+        send(await this.suite.view(id, Number(url.searchParams.get('limit') || 120)));
+        return true;
+      }
+      if (req.method === 'PUT') {
+        const input = await body(req);
+        if (input?.schedule || input?.alerts) this.require('automation-scheduler');
+        send(await this.suite.update(id, input));
+        return true;
+      }
+      if (req.method === 'POST') {
+        send(await this.suite.action(id, await body(req), signal), 202);
+        return true;
+      }
+    }
+  }
+  return false;
+}

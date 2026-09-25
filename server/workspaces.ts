@@ -1,3 +1,5 @@
+import { Metrics } from './metrics.ts';
+export { metricsScript, parseMetrics } from './metrics.ts';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
@@ -102,65 +104,17 @@ export function provisionScript(template: Project['template'], distro = 'alpine'
       : `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update &&\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y ${packages[template]}`;
   return `set -eu\nsakura_attempt=0\nuntil (\nset -e\n${install}\n); do\n  sakura_attempt=$((sakura_attempt + 1))\n  [ "$sakura_attempt" -lt 3 ] || exit 1\n  echo '软件源暂时不可用，正在重试…'\n  sleep 2\ndone\nmkdir -p /etc/sakura /workspace\ntouch /etc/sakura/template-${template}\n`;
 }
-export const metricsScript = String.raw`set -eu
-echo CPU
-head -n 1 /proc/stat
-sleep 0.25
-head -n 1 /proc/stat
-echo MEMORY
-cat /proc/meminfo
-echo DISK
-df -Pk / | tail -n 1
-echo PROCESSES
-for p in /proc/[0-9]*; do
-  [ -r "$p/status" ] || continue
-  awk '/^Name:/ {n=$2} /^VmRSS:/ {m=$2} END {if(m) print m, n}' "$p/status" 2>/dev/null || true
-done | sort -nr | head -n 8
-echo UPTIME
-cat /proc/uptime`;
-export function parseMetrics(text: string) {
-  const section = (name: string, next: string) => text.split(name + '\n')[1]?.split(next + '\n')[0] || '';
-  const cpu = section('CPU', 'MEMORY')
-    .trim()
-    .split('\n')
-    .map((s) => s.trim().split(/\s+/).slice(1, 9).map(Number));
-  if (cpu.length !== 2 || cpu.some((row) => row.length !== 8 || row.some((n) => !Number.isFinite(n))))
-    throw new AppError('无法解析 CPU 采样');
-  const totals = cpu.map((row) => row.reduce((a, b) => a + b, 0));
-  const total = totals[1] - totals[0],
-    idle = cpu[1][3] + cpu[1][4] - cpu[0][3] - cpu[0][4];
-  const mem = Object.fromEntries(
-    [...section('MEMORY', 'DISK').matchAll(/^(\w+):\s+(\d+)/gm)].map((m) => [m[1], Number(m[2]) * 1024]),
-  );
-  const disk = section('DISK', 'PROCESSES').trim().split(/\s+/);
-  return {
-    cpuPercent: total > 0 ? Math.max(0, Math.min(100, (100 * (total - idle)) / total)) : 0,
-    memoryUsed: mem.MemTotal - (mem.MemAvailable ?? mem.MemFree),
-    memoryTotal: mem.MemTotal,
-    diskUsed: Number(disk[2]) * 1024,
-    diskTotal: Number(disk[1]) * 1024,
-    processes: section('PROCESSES', 'UPTIME')
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((s) => {
-        const [rss, ...name] = s.trim().split(/\s+/);
-        return { name: name.join(' '), memory: Number(rss) * 1024 };
-      }),
-    uptime: Number(text.split('UPTIME\n')[1]?.trim().split(' ')[0]),
-    sampledAt: new Date().toISOString(),
-  };
-}
 export class Workspaces {
   jobs = new Jobs('projects');
   projects: ProjectCatalog;
   private observed = new Map<string, string>();
-  private samples = new Map<string, { at: number; promise: Promise<ReturnType<typeof parseMetrics>> }>();
+  private sampler: Metrics;
   onAction?: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>;
   constructor(
     private machines: Machines,
     private context?: { secrets?: Secrets; network?: NetworkProfiles },
   ) {
+    this.sampler = new Metrics(machines);
     this.projects = new ProjectCatalog(machines);
     machines.on('change', this.onChange);
   }
@@ -172,7 +126,7 @@ export class Workspaces {
       if (!live || live.status !== 'running') {
         for (const job of this.jobs.list())
           if (job.vmId === id && job.status === 'running') this.jobs.cancel(job.id!);
-        this.samples.delete(id);
+        this.sampler.forget(id);
         continue;
       }
       const boot = `${id}:${live.startedAt}`;
@@ -201,9 +155,8 @@ export class Workspaces {
   };
   async close() {
     this.machines.off('change', this.onChange);
-    this.samples.clear();
     this.observed.clear();
-    await this.jobs.close();
+    await Promise.all([this.jobs.close(), this.sampler.close()]);
   }
   async config(id: string): Promise<Project> {
     const vm = this.machines.get(id);
@@ -416,20 +369,6 @@ export class Workspaces {
     return { status, log: redactValues(lines.join('\n'), privateValues) };
   }
   metrics(id: string) {
-    if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
-    const previous = this.samples.get(id);
-    if (previous && Date.now() - previous.at < 3000) return previous.promise;
-    const promise = this.machines
-      .exec(id, metricsScript, 10000)
-      .then((result) => {
-        if (result.code !== 0) throw new AppError('客户机采样失败', 502);
-        return parseMetrics(result.stdout);
-      })
-      .catch((error) => {
-        if (this.samples.get(id)?.promise === promise) this.samples.delete(id);
-        throw error;
-      });
-    this.samples.set(id, { at: Date.now(), promise });
-    return promise;
+    return this.sampler.sample(id);
   }
 }

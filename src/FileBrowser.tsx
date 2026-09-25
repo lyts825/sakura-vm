@@ -342,7 +342,7 @@ export function FileBrowser({
         if (!action.busy) void send(e.dataTransfer.files);
       }}
     >
-      <PluginGate id="development">
+      <PluginGate id="project-search">
         <details className="feature-card project-tree-disclosure" open>
           <summary>项目文件树与全文搜索</summary>
           <ProjectNavigator id={vm.id} request={request} open={(path, line) => void openPath(path, line)} />
@@ -625,7 +625,7 @@ export function FileBrowser({
             />
           </Suspense>
           <div className="feature-actions">
-            <PluginGate id="development">
+            <PluginGate id="code-checks">
               <button
                 className="secondary compact"
                 disabled={action.busy}

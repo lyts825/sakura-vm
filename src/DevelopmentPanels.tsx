@@ -16,7 +16,10 @@ import {
   type Request,
 } from './FeaturePanels';
 import { workspaceRequest } from './workspace-request';
-import { usePlugin } from './plugin-context';
+import { usePlugins } from './plugin-context';
+import { developmentSections } from '../shared/plugins';
+import { PLUGINS } from '../shared/plugins';
+import { PluginDevelopmentSection } from './plugin-client';
 import './development.css';
 
 const stopped = <p className="subtle-note">启动实例后可使用此功能。</p>;
@@ -318,21 +321,20 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
 }
 
 export function DevelopmentPanel(props: FeatureProps) {
-  const development = usePlugin('development'),
-    network = usePlugin('network'),
-    secrets = usePlugin('secrets');
+  const available = developmentSections(usePlugins());
   const scopedRequest = useMemo(
     () => workspaceRequest(props.request, props.projectId),
     [props.projectId, props.request],
   );
   const scopedProps = { ...props, request: scopedRequest };
-  const [section, setSection] = useState(development ? 'tools' : network ? 'network' : 'secrets');
+  const [choice, setSection] = useState<string>(available[0] || '');
+  const section = available.some((id) => id === choice) ? choice : available[0];
   return (
     <div className="content-panel feature-panel">
       <div className="panel-heading">
         <div>
           <h3>开发设置</h3>
-          <p>管理工具、网络、私密配置和常用命令。</p>
+          <p>管理当前已启用的开发配套。</p>
         </div>
       </div>
       <div className="feature-actions development-sections" aria-label="开发设置分类">
@@ -343,8 +345,13 @@ export function DevelopmentPanel(props: FeatureProps) {
           ['commands', '收藏命令'],
           ['pipelines', '流水线'],
           ['runtimes', '版本'],
+          ...PLUGINS.flatMap((plugin) =>
+            plugin.contributes.developmentSections
+              .filter((id) => !['tools', 'network', 'secrets', 'commands', 'pipelines', 'runtimes'].includes(id))
+              .map((id) => [id, plugin.name]),
+          ),
         ]
-          .filter(([id]) => (id === 'network' ? network : id === 'secrets' ? secrets : development))
+          .filter(([id]) => available.some((section) => section === id))
           .map(([id, label]) => (
             <button
               key={id}
@@ -359,9 +366,11 @@ export function DevelopmentPanel(props: FeatureProps) {
       {section === 'tools' && <ToolsPanel {...scopedProps} />}
       {section === 'network' && <NetworkPanel {...scopedProps} />}
       {section === 'secrets' && <SecretsPanel {...scopedProps} />}
-      {section === 'commands' && <CommandsPanel {...scopedProps} />}
+      {section === 'commands' && <PluginDevelopmentSection id="commands" {...scopedProps} />}
       {section === 'pipelines' && <PipelinePanel {...scopedProps} />}
       {section === 'runtimes' && <RuntimePanel {...scopedProps} />}
+      {!['tools', 'network', 'secrets', 'commands', 'pipelines', 'runtimes'].includes(section) &&
+        section && <PluginDevelopmentSection id={section} {...scopedProps} />}
     </div>
   );
 }
@@ -982,212 +991,6 @@ export function HealthPanel({ vm, request }: FeatureProps) {
           <JobLog job={remote.data.job} />
         </div>
       )}
-    </>
-  );
-}
-
-export function PresetRunner({
-  preset,
-  id,
-  request,
-  executed,
-}: {
-  preset: CommandPreset;
-  id: string;
-  request: Request;
-  executed?: () => void;
-}) {
-  const [values, setValues] = useState<Record<string, string>>(() =>
-      Object.fromEntries(preset.parameters.map((p) => [p.name, p.value])),
-    ),
-    action = useAction();
-  return (
-    <form
-      className="feature-card"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void action.run(async (signal) => {
-          await request(`/vms/${id}/commands`, 'POST', { id: preset.id, values }, signal);
-          executed?.();
-        }, '命令已加入任务中心');
-      }}
-    >
-      <h4>{preset.name}</h4>
-      <pre className="feature-log">{preset.command}</pre>
-      {preset.parameters.map((parameter) => (
-        <label key={parameter.name}>
-          {parameter.name}
-          <input
-            value={values[parameter.name] || ''}
-            maxLength={4096}
-            onChange={(e) => setValues({ ...values, [parameter.name]: e.target.value })}
-          />
-        </label>
-      ))}
-      <button className="primary compact" disabled={action.busy}>
-        <Play size={14} />
-        执行命令
-      </button>
-      <Feedback error={action.error} message={action.message} />
-    </form>
-  );
-}
-function CommandsPanel({ vm, request }: FeatureProps) {
-  const remote = useRemote<{ projectId?: string; presets: CommandPreset[]; job: JobView | null }>(
-      request,
-      `/vms/${vm.id}/commands`,
-      true,
-      2500,
-    ),
-    action = useAction();
-  const [name, setName] = useState(''),
-    [command, setCommand] = useState(''),
-    [parameters, setParameters] = useState(''),
-    [selected, setSelected] = useState<CommandPreset | null>(null),
-    [editing, setEditing] = useState<string | undefined>(),
-    [loadedProject, setLoadedProject] = useState('');
-  useEffect(() => {
-    const projectId = remote.data?.projectId || 'default';
-    if (remote.data && projectId !== loadedProject) {
-      setLoadedProject(projectId);
-      setSelected(null);
-      setEditing(undefined);
-      setName('');
-      setCommand('');
-      setParameters('');
-    }
-  }, [remote.data, loadedProject]);
-  return (
-    <>
-      <p className="subtle-note">
-        收藏命令可用 Ctrl / ⌘ + K 快速找到。参数以环境变量传入，在命令中使用 $NAME；执行记录保存在任务中心。
-      </p>
-      <Feedback error={action.error || remote.error} />
-      <div className="feature-card">
-        <h4>{editing ? '编辑收藏命令' : '收藏新命令'}</h4>
-        <label>
-          命令名称
-          <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <label>
-          命令
-          <textarea
-            rows={3}
-            value={command}
-            maxLength={8192}
-            onChange={(e) => setCommand(e.target.value)}
-            placeholder={'npm run test -- "$TARGET"'}
-          />
-        </label>
-        <label>
-          参数默认值（每行 NAME=value）
-          <textarea
-            rows={2}
-            value={parameters}
-            onChange={(e) => setParameters(e.target.value)}
-            placeholder="TARGET=unit"
-          />
-        </label>
-        <div className="feature-actions">
-          <button
-            className="primary compact"
-            disabled={action.busy || !name.trim() || !command.trim()}
-            onClick={() =>
-              void action.run(async (signal) => {
-                const params = parameters
-                  .split('\n')
-                  .filter((row) => row.trim())
-                  .map((row) => {
-                    const index = row.indexOf('=');
-                    return {
-                      name: (index < 0 ? row : row.slice(0, index)).trim(),
-                      value: index < 0 ? '' : row.slice(index + 1),
-                    };
-                  });
-                await request(
-                  `/vms/${vm.id}/commands`,
-                  'PUT',
-                  { id: editing, name, command, parameters: params },
-                  signal,
-                );
-                setName('');
-                setCommand('');
-                setParameters('');
-                setEditing(undefined);
-                remote.reload();
-              })
-            }
-          >
-            <Save size={14} />
-            保存收藏
-          </button>
-          {editing && (
-            <button
-              className="text-button"
-              onClick={() => {
-                setEditing(undefined);
-                setName('');
-                setCommand('');
-                setParameters('');
-              }}
-            >
-              取消编辑
-            </button>
-          )}
-        </div>
-      </div>
-      {remote.data?.presets.map((preset) => (
-        <div className="development-row" key={preset.id}>
-          <b>{preset.name}</b>
-          <div className="feature-actions">
-            <button
-              className="text-button"
-              disabled={vm.status !== 'running' || remote.data?.job?.status === 'running'}
-              onClick={() => setSelected(preset)}
-            >
-              填写参数并执行
-            </button>
-            <button
-              className="text-button"
-              onClick={() => {
-                setEditing(preset.id);
-                setName(preset.name);
-                setCommand(preset.command);
-                setParameters(preset.parameters.map((p) => `${p.name}=${p.value}`).join('\n'));
-              }}
-            >
-              编辑
-            </button>
-            <button
-              className="text-button danger-text"
-              disabled={action.busy}
-              onClick={() => {
-                if (confirm(`删除收藏命令 ${preset.name}？`))
-                  void action.run(async (signal) => {
-                    await request(`/vms/${vm.id}/commands`, 'DELETE', { id: preset.id }, signal);
-                    if (selected?.id === preset.id) setSelected(null);
-                    remote.reload();
-                  });
-              }}
-            >
-              删除
-            </button>
-          </div>
-        </div>
-      ))}
-      {selected && vm.status === 'running' && (
-        <PresetRunner
-          key={selected.id + selected.command}
-          preset={selected}
-          id={vm.id}
-          request={request}
-          executed={() => {
-            setSelected(null);
-            remote.reload();
-          }}
-        />
-      )}
-      <JobLog job={remote.data?.job} />
     </>
   );
 }

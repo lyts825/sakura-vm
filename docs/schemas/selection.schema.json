@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 3
+    },
+    "plugins": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+      }
+    },
+    "packs": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "plugins",
+    "packs"
+  ],
+  "additionalProperties": false
+}

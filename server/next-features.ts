@@ -315,7 +315,7 @@ export class NextFeatures {
       signal?.throwIfAborted();
       const result = await this.machines.exec(id, `set +e\n${command}`, 60000, signal);
       return {
-        ready: true,
+        ready: result.code === 0,
         executed: result.code === 0,
         output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''}`.slice(0, 100000),
         exitCode: result.code,
@@ -341,9 +341,11 @@ export class NextFeatures {
       const pairing = { code, createdAt: now(), expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() };
       state.records[id] = { ...(state.records[id] || {}), pairing };
       await this.save(state);
-      return { ready: true, executed: true, adapter, pairing, host: this.hostSnapshot() };
+      return { ready: false, executed: true, adapter, pairing, host: this.hostSnapshot(), reason: '已生成本地配对码，尚未建立远程主机连接。' };
     }
-    if (spec.id === 'multi-host-inventory' || spec.id === 'hardware-compatibility')
+    if (spec.id === 'multi-host-inventory')
+      return { ready: false, executed: true, adapter, host: this.hostSnapshot(), reason: '仅采集本地主机信息，尚未连接其他主机。' };
+    if (spec.id === 'hardware-compatibility')
       return { ready: true, executed: true, adapter, host: this.hostSnapshot(), capabilities: { qemu: true, qmp: true, localAdapter: true } };
     if (spec.id === 'host-disk-health' || spec.id === 'storage-pools') {
       try {
@@ -378,21 +380,21 @@ export class NextFeatures {
       const percentage = Math.min(100, Math.max(0, Number(options.percentage ?? 0)));
       state.records[id] = { ...(state.records[id] || {}), percentage, version: String(options.version || 'local'), updatedAt: now() };
       await this.save(state);
-      return { ready: true, executed: true, adapter, rollout: state.records[id] };
+      return { ready: false, executed: true, adapter, rollout: state.records[id], reason: '仅保存本地灰度配置，尚未将开关应用到运行中的服务。' };
     }
     if (localRecordIds.has(spec.id)) {
       state.records[id] = { ...(state.records[id] || {}), lastInput: options, checkedAt: now() };
       await this.save(state);
-      return { ready: true, executed: true, adapter, record: state.records[id], message: '便携适配器已保存配置并完成安全检查。' };
+      return { ready: false, executed: true, adapter, record: state.records[id], reason: '仅保存本地配置记录，尚未执行对应的远程或客户机能力。' };
     }
     const command = guestChecks[spec.id];
     if (command) return { adapter, ...(await this.guestProbe(id, command, signal)) };
     return {
-      ready: true,
-      executed: true,
+      ready: false,
+      executed: false,
       adapter,
       liveProbe: false,
-      message: '便携适配器已执行；可选的宿主、客户机或外部服务组件将在存在时自动使用。',
+      reason: '当前仅提供适配器入口，尚无可执行的宿主、客户机或外部服务实现。',
       checkedAt: now(),
     };
   }

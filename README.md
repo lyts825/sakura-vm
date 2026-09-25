@@ -10,22 +10,25 @@
 
 文件、桌面、多终端、项目、Git、同步、备份、监控等均为可选插件。**默认不启用任何插件或整合包**，也不运行它们的后台任务。默认导航为「工作空间 / 插件中心 / 系统设置」，实例标签为「终端 / 配置」。
 
-在「插件中心」单独选择插件，或按场景选择整合包：
+当前有 **31 个插件、9 个整合包**。在「插件中心」单独选择插件，或按场景选择整合包：
 
-| 整合包                  | 内容                                            |
-| ----------------------- | ----------------------------------------------- |
-| `essentials` 日常使用   | 文件、镜像、快照与多终端                        |
-| `developer` 开发工作台  | 项目、代码、Git、工具、网络、私密配置与快捷命令 |
-| `operations` 运维与备份 | 备份、同步、监控、诊断、整理与数据迁移          |
-| `desktop` 图形桌面      | KDE Plasma、文件与快照；桌面仍为实验性          |
-| `lab` 实验室            | 自动化、容器及扩展能力适配器                    |
-| `complete` 完整兼容     | 此前全部可选能力，包括实验功能                  |
+| 整合包                     | 内容                                                   |
+| -------------------------- | ------------------------------------------------------ |
+| `essentials` 日常使用      | 文件、镜像、快照与多终端                               |
+| `developer` 开发工作台     | 项目、代码、Git、工具、网络、私密配置与快捷命令        |
+| `operations` 运维与备份    | 备份、同步、监控、诊断、整理与数据迁移                 |
+| `desktop` 图形桌面         | KDE Plasma、文件与快照；桌面仍为实验性                 |
+| `lab` 实验室               | 自动化、独立调度器、容器及扩展能力适配器                 |
+| `complete` 完整兼容        | 此前全部可选能力，包括实验功能                         |
+| `development` 开发工具组合 | 工具安装、项目搜索、代码检查、收藏命令、流水线、运行时 |
+| `environment` 环境互通组合 | 环境配方与 IDE 接入，可分别启用                        |
+| `monitoring` 监控组合      | 资源采样与项目服务健康检查，可分别启用                 |
 
-依赖自动补齐并去重。选择保存后，**退出并重新启动 Sakura 服务才会生效**，仅刷新浏览器无效；重启会停止当前实例。移除整合包时，其他整合包或独立选择仍需要的插件继续保留。
+整合包可引用子整合包；必需依赖自动补齐并去重，可选配套不会自动启用。选择保存后，**退出并重新启动 Sakura 服务才会生效**，仅刷新浏览器无效；重启会停止当前实例。移除整合包时，其他整合包或独立选择仍需要的插件继续保留。
 
-旧版本升级后同样默认进入基础版，已有实例和插件数据保留。需要原来的自动备份、同步等后台行为时，请选择对应插件并重启；可使用 `complete` 恢复全部入口。停用插件不会卸载客户机软件或撤销已经写入客户机的配置。
+没有保存插件选择的旧版本升级后进入基础版，已有实例和插件数据保留。已有选择则继续保留；原 `development`、`environment`、`monitoring` 插件选择迁移为同名整合包，旧版单独选中的 `automation` 会保留后台调度，旧 CLI 标识仍可用。需要恢复全部入口可选择 `complete`。停用插件不会卸载客户机软件或撤销已经写入客户机的配置。
 
-当前只加载随源码交付的内置插件，按需激活服务与加载浏览器入口；尚不提供远程市场、独立插件下载或热卸载。完整设计、插件归属和扩展约束见 [插件架构](docs/plugin-architecture.md)。
+当前只加载随源码交付的内置插件，按需激活服务与加载浏览器入口；尚不提供远程市场、独立插件下载或热卸载。完整设计见 [插件架构](docs/plugin-architecture.md)，声明格式、生命周期和 JSON Schema 见 [插件协议](docs/plugin-protocol.md)。
 
 ## 快速启动
 
@@ -67,9 +70,9 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 - **能力中心**：集中管理实例计划启动/停止、空闲停止、资源历史与阈值告警、动态内存目标、资源预设、Linux 工作区搜索、apk/apt 软件包任务、测试与格式化开发任务、Git Worktree、数据库容器、端口发现、网络诊断和只读安全扫描；同时提供 50 项新能力路线图。入口与接口说明见 [能力中心](docs/feature-suite.md)。
 
-- **扩展能力工作台**：登记并执行第二批 100 项虚拟机、存储、同步、开发、Git、质量、网络、安全、运维和集成功能；每项都有实时检查或便携适配器，宿主组件或外部服务不可用时会保留执行记录和明确原因。支持暂停/恢复运行中的实例，以及扩展能力的 CLI/API 操作。详见 [能力中心](docs/feature-suite.md#第二批-100-项扩展能力)。
+- **扩展能力工作台**：登记第二批 100 项虚拟机、存储、同步、开发、Git、质量、网络、安全、运维和集成功能。已实现的操作会执行检查；其余入口会明确返回未实现或缺少依赖，保留执行记录。支持暂停/恢复运行中的实例及扩展能力的 CLI/API 操作。详见 [能力中心](docs/feature-suite.md#第二批-100-项扩展能力)。
 
-- **第三批平台能力**：接入远程主机与集群、虚拟硬件、灾备、网络治理、安全合规、可观测性、开发与 AI、团队协作、桌面集成和插件扩展共 100 项能力；每项都支持配置、检查、任务执行、持久记录与 CLI/API 调用，需要外部依赖时返回明确适配状态。详见 [能力中心](docs/feature-suite.md#第三批-100-项平台能力)。
+- **第三批平台能力**：提供远程主机与集群、虚拟硬件、灾备、网络治理、安全合规、可观测性、开发与 AI、团队协作、桌面集成和插件扩展共 100 项目录及统一接口。部分操作已实现；本地记录和待实现入口会明确标记。详见 [能力中心](docs/feature-suite.md#第三批-100-项平台能力)。
 
 - 创建、启动、正常关机、删除 Alpine、Debian 12 和 Ubuntu 24.04 实例；镜像库支持官方镜像下载与校验。
 - 每实例独立 QCOW2 增量磁盘，完整 Linux 文件系统在重启后保留。
@@ -148,9 +151,16 @@ npm run sakura -- help all
 
 ```text
 src/                    React + xterm.js 控制台
-shared/plugins.ts       插件与整合包声明、依赖解析、界面入口
+plugins/<id>/           同包维护 manifest.ts、server.ts 与可选 client.tsx
+plugins/packs/          可嵌套整合包清单
+shared/plugin-protocol.ts 纯声明类型、辅助函数与协议版本
+shared/plugin-schema.ts 严格声明 Schema 与 JSON Schema 来源
+shared/plugin-resolver.ts 依赖/组合解析、冲突检查、选择迁移
+shared/plugins.ts       从自动生成的目录导出插件声明
 server/plugin-manager.ts 插件选择持久化与运行状态
-server/plugins/         各插件服务注册与 API
+server/plugin-api.ts    生命周期协议、服务归属与依赖访问检查
+server/plugins/         生成的可信入口、路由归属与任务聚合
+server/plugin-data.ts   插件私有数据路径与逐版迁移
 server/index.ts         HTTP / WebSocket、鉴权、静态服务
 server/runtime.ts       PosixLoom 原生命令插件，精确 argv 调用 QEMU
 server/machines.ts      发行版生命周期、SSH / SFTP、快照
@@ -158,10 +168,12 @@ server/seed.ts          本地 NoCloud ISO 与每实例 SSH 密钥
 server/desktop.ts       图形桌面安装状态与 SSH / WebSocket 转发
 server/desktop-guest.ts KDE Plasma / Fcitx5 安装、OpenRC 与 systemd 会话脚本
 server/features.ts      按需加载插件、请求取消与资源清理
-server/workspaces.ts    模板安装、项目任务与客户机采样
+server/workspaces.ts    模板安装、项目任务与项目作用域
+server/metrics.ts       独立的客户机按需资源采样
 server/sync.ts          Windows / Linux 目录同步与冲突检测
 server/bundles.ts       独立磁盘导入导出与克隆
 server/qmp.ts           QEMU Machine Protocol
+scripts/sync-plugin-catalog.ts 从包目录生成声明和可信入口
 scripts/setup.mjs       固定版本的运行时准备
 scripts/cli.mjs         WSL 风格命令行入口
 .vendor/posixloom/      固定到 92688083ff25d98f44194356f9ec93df0f1f0027
@@ -192,14 +204,20 @@ scripts/cli.mjs         WSL 风格命令行入口
 
 ```powershell
 npm test             # 输入边界、ISO、生命周期与 QMP 测试
+npm run plugins:check # 插件/整合包声明、可信入口及 JSON Schema 一致性
 npm run build        # TypeScript + 生产构建
+npm run dist:check   # 编译产物与入口体积检查
+npm run test:production # 使用隔离数据目录启动编译后的服务
+npm run test:e2e     # 浏览器插件入口回归（先安装 Playwright Chromium）
+npm run verify       # 声明、单测、生产构建、分发和浏览器全套检查
+npm run release:prepare # 在 release/ 下生成独立运行包
 npm run test:features # 新功能真实 VM 集成测试（需联网安装模板）
 npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启、快照与旧配置迁移
 ```
 
 真实 VM 测试需要先完成 `setup`；测试实例及其磁盘会在结束时删除。
 
-插件回归还覆盖空配置、依赖/版本检查、组合引用、并发保存、API 拦截、配置兼容、按需初始化、失败隔离、关闭清理与数据保留。可选功能集成脚本显式加载插件，不会修改用户的插件选择。
+插件回归覆盖空配置、分包独立激活、嵌套组合、版本与循环、声明冲突、服务越界、HTTP/WS 拦截、旧选择迁移、并发保存、异步清理与数据保留。可选功能集成脚本显式加载插件，不会修改用户的插件选择。
 
 启动耗时写入 `artifacts/boot-timings.json`，分别记录首次初始化和后续启动。设置 `SAKURA_TEST_ACCELERATOR=tcg` 或 `whpx` 可分别验证指定模式；设置 `SAKURA_TEST_NETWORK=1` 可额外验证客户机 DNS 与 HTTPS 联网；默认测试无需互联网。
 

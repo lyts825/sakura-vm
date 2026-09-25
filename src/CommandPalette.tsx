@@ -4,7 +4,7 @@ import type { VMView } from '../server/model';
 import type { CommandPreset } from '../server/command-presets';
 import type { ProjectFile } from '../server/project-files';
 import { Feedback, useRemote, type Request } from './FeaturePanels';
-import { PresetRunner } from './DevelopmentPanels';
+import { PresetRunner } from '../plugins/commands/client';
 import { nextSelection } from './keyboard-navigation';
 import { usePlugins } from './plugin-context';
 import { pluginSurfaceEnabled } from '../shared/plugins';
@@ -34,7 +34,6 @@ export function CommandPalette({
   actions?: PaletteAction[];
 }) {
   const plugins = usePlugins();
-  const development = plugins.includes('development');
   const dialog = useRef<HTMLDialogElement>(null),
     [query, setQuery] = useState(''),
     [search, setSearch] = useState(''),
@@ -43,13 +42,13 @@ export function CommandPalette({
   const commands = useRemote<{ presets: CommandPreset[] }>(
     request,
     `/vms/${vm?.id}/commands`,
-    !!vm && development,
+    !!vm && plugins.includes('commands'),
     0,
   );
   const files = useRemote<{ root: string; files: ProjectFile[]; truncated: boolean }>(
     request,
     `/vms/${vm?.id}/project-files?q=${encodeURIComponent(search)}`,
-    vm?.status === 'running' && !!search && development,
+    vm?.status === 'running' && !!search && plugins.includes('project-search'),
     0,
   );
   useEffect(() => {
