@@ -19,6 +19,7 @@ export type JobView = JobMeta & {
   status: 'running' | 'done' | 'error' | 'cancelled' | 'interrupted';
   log: string;
   error?: string;
+  errorCode?: string;
   startedAt: string;
   finishedAt?: string;
   phase?: string;
@@ -161,6 +162,7 @@ export class Jobs {
       .catch((error: Error) => {
         view.status = abort.signal.aborted ? 'cancelled' : 'error';
         view.error = abort.signal.aborted ? '操作已取消' : error.message;
+        view.errorCode = !abort.signal.aborted && error instanceof AppError ? error.code : undefined;
         view.phase = view.error;
         if (view.execution)
           view.execution.outcome = abort.signal.aborted

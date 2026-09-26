@@ -66,6 +66,7 @@ export async function route(
           title: job.title,
           status: job.status,
           message: job.error || job.phase,
+          errorCode: job.errorCode,
           at: job.finishedAt || job.startedAt,
         })),
     );

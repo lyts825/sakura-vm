@@ -2,6 +2,7 @@ import { GitBranch, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { GitChange } from '../../server/git-workbench';
 import type { JobView } from '../../server/jobs';
+import { isGitConflict, type GitUpstream } from '../../shared/git';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';
@@ -9,7 +10,11 @@ import '../../src/features.css';
 import { stopped } from '../../src/guest-state';
 import { workspaceRequest } from '../../src/workspace-request';
 
-export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) {
+export function GitPanel(props: FeatureProps) {
+  return <GitWorkspacePanel key={`${props.vm.id}:${props.projectId || 'default'}`} {...props} />;
+}
+
+function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps) {
   const request = useMemo(() => workspaceRequest(baseRequest, projectId), [baseRequest, projectId]);
   const remote = useRemote<{
     projectId?: string;
@@ -21,6 +26,11 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
     history: { id: string; short: string; subject: string; author: string; date: string }[];
     remotes?: { name: string; url: string; kind: string }[];
     divergence?: number[];
+    detached: boolean;
+    hasCommits: boolean;
+    conflicts: string[];
+    operation: string | null;
+    upstream: GitUpstream | null;
     job: JobView | null;
   }>(request, `/vms/${vm.id}/git`, vm.status === 'running');
   const action = useAction(),
@@ -30,6 +40,9 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
     [email, setEmail] = useState('');
   const [remoteName, setRemoteName] = useState('origin'),
     [remoteUrl, setRemoteUrl] = useState('');
+  const [selectedRemote, setSelectedRemote] = useState(''),
+    [targetBranch, setTargetBranch] = useState(''),
+    [submittedJob, setSubmittedJob] = useState<JobView | null>(null);
   const [selection, setSelection] = useState<{ path: string; staged: boolean } | null>(null);
   const [loadedProject, setLoadedProject] = useState('');
   useEffect(() => {
@@ -45,10 +58,53 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
     vm.status === 'running' && !!selection,
     5000,
   );
-  const busy = action.busy || remote.data?.job?.status === 'running';
+  const remoteNames = [...new Set(remote.data?.remotes?.map((item) => item.name) || [])];
+  const namesKey = remoteNames.join('\0');
+  useEffect(() => {
+    setSelectedRemote((selected) =>
+      remoteNames.includes(selected)
+        ? selected
+        : remoteNames.includes(remote.data?.upstream?.remote || '')
+          ? remote.data!.upstream!.remote
+          : remoteNames.includes('origin')
+            ? 'origin'
+            : remoteNames[0] || '',
+    );
+  }, [namesKey, remote.data?.upstream?.remote]);
+  useEffect(() => {
+    setTargetBranch(
+      remote.data?.upstream?.remote === selectedRemote
+        ? remote.data.upstream.branch
+        : remote.data?.detached
+          ? ''
+          : remote.data?.branch || '',
+    );
+  }, [
+    selectedRemote,
+    remote.data?.branch,
+    remote.data?.detached,
+    remote.data?.upstream?.remote,
+    remote.data?.upstream?.branch,
+  ]);
+  const job =
+    submittedJob &&
+    submittedJob.id !== remote.data?.job?.id &&
+    (!remote.data?.job || submittedJob.startedAt >= remote.data.job.startedAt)
+      ? submittedJob
+      : remote.data?.job;
+  const busy = action.busy || job?.status === 'running';
+  useEffect(() => {
+    if (job && job.status !== 'running') diff.reload();
+  }, [job?.id, job?.status, diff.reload]);
+  const conflicts = remote.data?.changes.filter(isGitConflict) || [];
+  const blocked =
+    !!conflicts.length || !!remote.data?.operation || remote.data?.detached || !remote.data?.hasCommits;
+  const hasRemote = remoteNames.includes(selectedRemote);
   const run = (value: unknown) =>
     action.run(async (signal) => {
-      await request(`/vms/${vm.id}/git`, 'POST', value, signal);
+      const accepted = await request<JobView>(`/vms/${vm.id}/git`, 'POST', value, signal);
+      if (signal.aborted) return;
+      setSubmittedJob(accepted);
       remote.reload();
       diff.reload();
     });
@@ -57,7 +113,7 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
       <div className="panel-heading">
         <div>
           <h3>Git 工作台</h3>
-          <p>检查改动、暂存、提交与管理本地分支。</p>
+          <p>检查改动、暂存、提交，以及安全获取、快进拉取与推送远程分支。</p>
         </div>
         <button className="icon-button" aria-label="刷新 Git" onClick={remote.reload}>
           <RefreshCw size={16} />
@@ -122,59 +178,149 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
                     >
                       创建并切换
                     </button>
+                  </div>
+                  {(conflicts.length > 0 || remote.data.operation) && (
+                    <div className="feature-card" role="alert">
+                      <h4>
+                        {conflicts.length
+                          ? `存在 ${conflicts.length} 个未解决的文件冲突`
+                          : 'Git 操作尚未结束'}
+                      </h4>
+                      <p>
+                        请编辑冲突文件并暂存解决结果，再在终端完成或中止当前合并 /
+                        变基。解决前暂停拉取与推送。
+                      </p>
+                      {remote.data.operation && (
+                        <p className="subtle-note">当前状态：{remote.data.operation}</p>
+                      )}
+                      {conflicts.map((change) => (
+                        <p key={change.path}>
+                          <code>{change.path}</code>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="feature-card">
+                    <h4>远程同步</h4>
+                    <div className="feature-grid">
+                      <label>
+                        远程仓库
+                        <select
+                          value={selectedRemote}
+                          disabled={busy || !remoteNames.length}
+                          onChange={(e) => setSelectedRemote(e.target.value)}
+                        >
+                          {!remoteNames.length && <option value="">尚未配置远程仓库</option>}
+                          {remoteNames.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        目标远程分支
+                        <input
+                          value={targetBranch}
+                          disabled={busy}
+                          onChange={(e) => setTargetBranch(e.target.value)}
+                          placeholder="main"
+                        />
+                      </label>
+                    </div>
+                    {remote.data.remotes
+                      ?.filter((item) => item.name === selectedRemote)
+                      .map((item) => (
+                        <p className="subtle-note" key={`${item.name}:${item.kind}`}>
+                          {item.kind === '(push)' ? '推送地址' : '获取地址'}：{item.url}
+                        </p>
+                      ))}
+                    {remote.data.upstream && (
+                      <p className="subtle-note">
+                        当前上游：{remote.data.upstream.name}
+                        {remote.data.divergence?.length === 2
+                          ? `（落后 ${remote.data.divergence[0]}，领先 ${remote.data.divergence[1]}；基于上次获取）`
+                          : ''}
+                      </p>
+                    )}
+                    {remote.data.divergence?.length === 2 &&
+                      remote.data.divergence.every((count) => count > 0) && (
+                        <p role="alert">
+                          本地与上游历史已分叉。请获取更新后在终端手动合并或变基，再重试；快进拉取不会合并分叉。
+                        </p>
+                      )}
+                    {remote.data.detached ? (
+                      <p className="subtle-note">detached HEAD：请先切换到本地分支再拉取或推送。</p>
+                    ) : (
+                      !remote.data.hasCommits && (
+                        <p className="subtle-note">请先创建首次提交，再拉取或推送。</p>
+                      )
+                    )}
+                    {!!remote.data.changes.length && (
+                      <p className="subtle-note">
+                        拉取前请提交或自行 stash 工作区与暂存区的改动（含未跟踪文件）。推送仅发送已有提交。
+                      </p>
+                    )}
+                    <p className="subtle-note">
+                      获取更新只更新远程跟踪分支。拉取仅允许快进；推送将当前分支的提交发送到所选目标，不会强制覆盖远程历史。
+                    </p>
                     <div className="feature-actions">
-                      <input
-                        value={remoteName}
-                        onChange={(e) => setRemoteName(e.target.value)}
-                        placeholder="origin"
-                      />
-                      <input
-                        value={remoteUrl}
-                        onChange={(e) => setRemoteUrl(e.target.value)}
-                        placeholder="https://git.example/repo.git"
-                      />
                       <button
                         className="secondary compact"
-                        disabled={busy || !remoteUrl}
-                        onClick={() => void run({ action: 'remote-add', name: remoteName, url: remoteUrl })}
-                      >
-                        添加远程
-                      </button>
-                      <button
-                        className="text-button"
-                        disabled={busy}
-                        onClick={() => void run({ action: 'fetch', remote: remoteName })}
+                        disabled={busy || !hasRemote}
+                        onClick={() => void run({ action: 'fetch', remote: selectedRemote })}
                       >
                         获取更新
                       </button>
                       <button
-                        className="text-button"
-                        disabled={busy}
-                        onClick={() => void run({ action: 'pull', remote: remoteName })}
+                        className="secondary compact"
+                        disabled={
+                          busy ||
+                          !hasRemote ||
+                          !targetBranch.trim() ||
+                          blocked ||
+                          !!remote.data.changes.length
+                        }
+                        onClick={() =>
+                          void run({ action: 'pull', remote: selectedRemote, branch: targetBranch.trim() })
+                        }
                       >
-                        快进合并
+                        快进拉取
                       </button>
                       <button
-                        className="text-button"
-                        disabled={busy}
-                        onClick={() => void run({ action: 'push', remote: remoteName })}
+                        className="secondary compact"
+                        disabled={busy || !hasRemote || !targetBranch.trim() || blocked}
+                        onClick={() =>
+                          void run({ action: 'push', remote: selectedRemote, branch: targetBranch.trim() })
+                        }
                       >
-                        推送
+                        推送当前分支
                       </button>
                     </div>
-                    {remote.data.remotes?.length ? (
-                      <p className="subtle-note">
-                        远程：
-                        {[...new Set(remote.data.remotes.map((item) => `${item.name} · ${item.url}`))].join(
-                          '；',
-                        )}{' '}
-                        {remote.data.divergence?.length === 2
-                          ? `（落后 ${remote.data.divergence[0]}，领先 ${remote.data.divergence[1]}）`
-                          : ''}
-                      </p>
-                    ) : (
-                      <p className="subtle-note">尚未配置远程仓库。</p>
-                    )}
+                    <details>
+                      <summary>添加远程仓库</summary>
+                      <div className="feature-actions">
+                        <input
+                          aria-label="新远程名称"
+                          value={remoteName}
+                          onChange={(e) => setRemoteName(e.target.value)}
+                          placeholder="origin"
+                        />
+                        <input
+                          aria-label="新远程 HTTPS 地址"
+                          value={remoteUrl}
+                          onChange={(e) => setRemoteUrl(e.target.value)}
+                          placeholder="https://git.example/repo.git"
+                        />
+                        <button
+                          className="secondary compact"
+                          disabled={busy || !remoteUrl}
+                          onClick={() => void run({ action: 'remote-add', name: remoteName, url: remoteUrl })}
+                        >
+                          添加远程
+                        </button>
+                      </div>
+                    </details>
                   </div>
                   {!remote.data.changes.length && <p className="muted">工作区干净，没有待提交改动。</p>}
                   {remote.data.changes.map((change) => (
@@ -185,6 +331,7 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
                           {change.worktree}
                         </code>{' '}
                         <b>{change.path}</b>
+                        {isGitConflict(change) && <span className="badge error">未解决冲突</span>}
                         {change.previous && <small> ← {change.previous}</small>}
                       </div>
                       <div className="feature-actions">
@@ -212,7 +359,7 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
                             })
                           }
                         >
-                          暂存
+                          {isGitConflict(change) ? '标记已解决（暂存）' : '暂存'}
                         </button>
                         {change.index !== ' ' && change.index !== '?' && (
                           <button
@@ -272,7 +419,7 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
                   </details>
                   <button
                     className="primary compact"
-                    disabled={busy || !message.trim()}
+                    disabled={busy || !message.trim() || !!conflicts.length}
                     onClick={() =>
                       void run({
                         action: 'commit',
@@ -299,7 +446,21 @@ export function GitPanel({ vm, request: baseRequest, projectId }: FeatureProps) 
                   </details>
                 </>
               )}
-              <JobLog job={remote.data.job} />
+              <JobLog job={job} />
+              {job?.status === 'running' && job.id && (
+                <button
+                  className="secondary compact"
+                  disabled={action.busy}
+                  onClick={() =>
+                    void action.run(async (signal) => {
+                      await baseRequest(`/jobs/${job.id}/cancel`, 'POST', undefined, signal);
+                      remote.reload();
+                    })
+                  }
+                >
+                  取消 Git 任务
+                </button>
+              )}
             </>
           )}
     </div>

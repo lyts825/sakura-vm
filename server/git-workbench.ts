@@ -4,8 +4,9 @@ import type { Workspaces } from './workspaces.ts';
 import { AppError } from './model.ts';
 import { quote } from './files.ts';
 import { Jobs } from './jobs.ts';
+import { isGitConflict, type GitChange, type GitUpstream } from '../shared/git.ts';
 
-export type GitChange = { path: string; previous?: string; index: string; worktree: string };
+export type { GitChange } from '../shared/git.ts';
 export function parseStatus(text: string): GitChange[] {
   const parts = text.split('\0'),
     items: GitChange[] = [];
@@ -26,6 +27,60 @@ export const repositoryPath = z
     (path) => !path.startsWith('/') && !path.split('/').includes('..') && !/[\x00-\x1f]/.test(path),
     '需要仓库内的相对文件路径',
   );
+const branchName = z
+  .string()
+  .regex(/^(?!-)[A-Za-z0-9_./-]{1,128}$/)
+  .refine(
+    (name) =>
+      name !== 'HEAD' &&
+      !name.includes('..') &&
+      !name.includes('//') &&
+      !name
+        .split('/')
+        .some((part) => !part || part.startsWith('.') || part.endsWith('.') || part.endsWith('.lock')),
+    '分支名称不符合 Git 规则',
+  );
+const remoteName = z
+  .string()
+  .regex(/^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/)
+  .refine(
+    (name) => !name.includes('..') && !name.endsWith('.') && !name.endsWith('.lock'),
+    '远程仓库名称不符合 Git 规则',
+  );
+const remoteUrl = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        url.protocol === 'https:' &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash &&
+        !/[\s\x00-\x1f]/.test(value)
+      );
+    } catch {
+      return false;
+    }
+  }, '远程仓库只接受不含凭证、查询参数或片段的 HTTPS 地址');
+
+export function redactGitOutput(text: string) {
+  return text.replace(/https?:\/\/[^\s<>"']+/gi, (value) => {
+    try {
+      const url = new URL(value);
+      url.username = '';
+      url.password = '';
+      url.search = '';
+      url.hash = '';
+      return url.toString();
+    } catch {
+      return '[远程地址已隐藏]';
+    }
+  });
+}
+
 export const gitActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.enum(['stage', 'unstage']), paths: z.array(repositoryPath).min(1).max(200) }).strict(),
   z
@@ -39,80 +94,138 @@ export const gitActionSchema = z.discriminatedUnion('action', [
   z
     .object({
       action: z.enum(['switch', 'branch']),
-      branch: z.string().regex(/^(?!-)[A-Za-z0-9_./-]{1,128}$/),
+      branch: branchName,
     })
     .strict(),
   z.object({ action: z.literal('init') }).strict(),
   z
     .object({
       action: z.enum(['remote-add', 'remote-remove']),
-      name: z.string().regex(/^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/),
-      url: z
-        .string()
-        .url()
-        .refine((v) => v.startsWith('https://'), '远程仓库只接受 HTTPS')
-        .optional(),
+      name: remoteName,
+      url: remoteUrl.optional(),
     })
     .strict(),
   z
     .object({
       action: z.enum(['fetch', 'pull', 'push']),
-      remote: z
-        .string()
-        .regex(/^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/)
-        .default('origin'),
-      branch: z
-        .string()
-        .regex(/^(?!-)[A-Za-z0-9_./-]{1,128}$/)
-        .optional(),
+      remote: remoteName.default('origin'),
+      branch: branchName.optional(),
     })
     .strict(),
   z
     .object({
       action: z.literal('merge'),
-      branch: z.string().regex(/^(?!-)[A-Za-z0-9_./-]{1,128}$/),
+      branch: branchName,
       ffOnly: z.boolean().default(true),
     })
     .strict(),
 ]);
 const git =
   'git --no-pager --literal-pathspecs -c core.hooksPath=/dev/null -c core.fsmonitor=false -c color.ui=false';
+type GitCommand = (
+  command: string,
+  network?: boolean,
+) => Promise<{ stdout: string; stderr: string; code: number }>;
+
+async function repositoryState(command: GitCommand) {
+  const status = await command('status --porcelain=v1 -z --untracked-files=all');
+  if (status.code !== 0) throw new AppError(redactGitOutput(status.stderr));
+  const branch = await command('symbolic-ref --quiet HEAD');
+  const head = await command('rev-parse --verify HEAD');
+  // --git-path also works for linked worktrees, whose .git is a file.
+  const operation = await command(
+    `rev-parse --git-dir >/dev/null && for state in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD sequencer; do if test -e "$(${git} rev-parse --git-path "$state")"; then printf '%s\\n' "$state"; fi; done`,
+  );
+  if (operation.code !== 0) throw new AppError('无法检查 Git 合并状态');
+  const changes = parseStatus(status.stdout);
+  let upstream: GitUpstream | null = null;
+  if (branch.code === 0) {
+    const tracking = await command(
+      `for-each-ref --format='%(upstream:short)%00%(upstream:remotename)%00%(upstream:remoteref)' -- ${quote(branch.stdout.trim())}`,
+    );
+    if (tracking.code !== 0) throw new AppError(redactGitOutput(tracking.stderr));
+    const [name, remote, ref] = tracking.stdout.trim().split('\0');
+    if (name && remote && ref?.startsWith('refs/heads/')) upstream = { name, remote, branch: ref.slice(11) };
+  }
+  return {
+    branch: branch.code === 0 ? branch.stdout.trim().replace(/^refs\/heads\//, '') : null,
+    head: head.code === 0 ? head.stdout.trim() : null,
+    changes,
+    conflicts: changes.filter(isGitConflict).map((change) => change.path),
+    operation: operation.stdout.trim().split('\n').filter(Boolean)[0] || null,
+    upstream,
+  };
+}
+
+function requireSettled(state: Awaited<ReturnType<typeof repositoryState>>, clean = false) {
+  if (state.conflicts.length)
+    throw new AppError(
+      `存在未解决的文件冲突：${state.conflicts.join('、')}。请编辑冲突文件并暂存解决结果，再完成或中止当前合并 / 变基。`,
+      409,
+      'git_conflict',
+    );
+  if (state.operation)
+    throw new AppError(
+      `Git 操作尚未结束（${state.operation}），请先在终端完成或中止该操作。`,
+      409,
+      'git_operation_in_progress',
+    );
+  if (!state.branch)
+    throw new AppError('当前处于 detached HEAD，请先切换到本地分支。', 409, 'git_detached_head');
+  if (!state.head) throw new AppError('当前分支还没有提交，请先创建首次提交。', 409, 'git_unborn_branch');
+  if (clean && state.changes.length)
+    throw new AppError(
+      '工作区或暂存区存在未提交改动（含未跟踪文件），请先提交或自行暂存到 stash 后再拉取。',
+      409,
+      'git_dirty_worktree',
+    );
+}
 export class GitWorkbench {
   jobs = new Jobs('git');
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
   ) {}
-  private async command(id: string, command: string, signal?: AbortSignal) {
-    const project = await this.workspaces.config(id);
-    return this.machines.exec(
+  private async command(
+    id: string,
+    command: string,
+    signal?: AbortSignal,
+    directory?: string,
+    network = false,
+  ) {
+    directory ??= (await this.workspaces.config(id)).directory;
+    signal?.throwIfAborted();
+    const result = await this.machines.exec(
       id,
-      `cd ${quote(project.directory)} && GIT_TERMINAL_PROMPT=0 ${git} ${command}`,
-      30000,
+      `cd ${quote(directory)} && LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false GCM_INTERACTIVE=never ${network ? 'GIT_ALLOW_PROTOCOL=https ' : ''}${git} ${command}`,
+      network ? 120000 : 30000,
       signal,
     );
+    signal?.throwIfAborted();
+    return result;
   }
   async view(id: string, signal?: AbortSignal) {
-    const check = await this.command(id, 'rev-parse --is-inside-work-tree', signal);
+    const { directory } = await this.workspaces.config(id);
+    const command: GitCommand = (value) => this.command(id, value, signal, directory);
+    const check = await command('rev-parse --is-inside-work-tree');
     if (check.code !== 0)
       return {
         projectId: this.workspaces.projects.current(id),
         repository: false,
-        error: check.stderr,
+        error: redactGitOutput(check.stderr),
         changes: [],
         branches: [],
         history: [],
         job: this.jobs.view(this.workspaces.projects.key(id)),
       };
-    const status = await this.command(id, 'status --porcelain=v1 -z --untracked-files=all', signal);
-    if (status.code !== 0) throw new AppError(status.stderr);
-    const branch = await this.command(id, 'symbolic-ref --short -q HEAD', signal);
-    const branches = await this.command(id, "for-each-ref --format='%(refname:short)' refs/heads", signal);
-    const history = await this.command(id, "log -30 --format='%H%x00%h%x00%s%x00%an%x00%aI%x00'", signal);
-    const remotes = await this.command(id, 'remote -v', signal);
-    const divergence = branch.stdout.trim()
-      ? await this.command(id, `rev-list --left-right --count @{upstream}...HEAD`, signal)
-      : { stdout: '' };
+    const state = await repositoryState(command);
+    const branches = await command("for-each-ref --format='%(refname:short)' refs/heads");
+    const history = await command("log -30 --format='%H%x00%h%x00%s%x00%an%x00%aI%x00'");
+    const remotes = await command('remote -v');
+    const divergence =
+      state.upstream && state.head
+        ? await command('rev-list --left-right --count @{upstream}...HEAD')
+        : { stdout: '', code: 1 };
     const records =
       history.code === 0
         ? history.stdout
@@ -126,8 +239,13 @@ export class GitWorkbench {
     return {
       projectId: this.workspaces.projects.current(id),
       repository: true,
-      branch: branch.stdout.trim() || '(detached HEAD)',
-      changes: parseStatus(status.stdout),
+      branch: state.branch || '(detached HEAD)',
+      detached: !state.branch,
+      hasCommits: !!state.head,
+      changes: state.changes,
+      conflicts: state.conflicts,
+      operation: state.operation,
+      upstream: state.upstream,
       branches: branches.stdout.trim().split('\n').filter(Boolean),
       history: records,
       remotes:
@@ -139,12 +257,15 @@ export class GitWorkbench {
                   .filter(Boolean)
                   .map((row) => {
                     const [name, url, kind] = row.split(/\s+/);
-                    return [`${name}:${kind}`, { name, url, kind }];
+                    return [`${name}:${kind}`, { name, url: redactGitOutput(url), kind }];
                   }),
               ).values(),
             ]
           : [],
-      divergence: divergence.stdout.trim().split(/\s+/).map(Number).filter(Number.isFinite),
+      divergence:
+        divergence.code === 0 && /^\d+\s+\d+$/.test(divergence.stdout.trim())
+          ? divergence.stdout.trim().split(/\s+/).map(Number)
+          : [],
       job: this.jobs.view(this.workspaces.projects.key(id)),
     };
   }
@@ -167,9 +288,22 @@ export class GitWorkbench {
     const value = gitActionSchema.parse(input);
     return this.machines.locked(`git:${this.workspaces.projects.key(id)}`, async () => {
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
+      // Keep the accepted job in the same directory even if project settings change while it runs.
+      const { directory } = await this.workspaces.config(id);
       return this.jobs.start(
         this.workspaces.projects.key(id),
-        async (log, signal) => {
+        async (log, signal, update) => {
+          const execute: GitCommand = (command, network) =>
+            this.command(id, command, signal, directory, network);
+          if (value.action === 'fetch' || value.action === 'pull' || value.action === 'push') {
+            try {
+              await this.remoteAction(value, execute, log, update);
+            } catch (error) {
+              if (error instanceof Error) error.message = redactGitOutput(error.message);
+              throw error;
+            }
+            return;
+          }
           let command: string;
           if (value.action === 'remote-add' && !value.url) throw new AppError('新增远程仓库需要 HTTPS 地址');
           switch (value.action) {
@@ -177,7 +311,7 @@ export class GitWorkbench {
               command = `add -A -- ${value.paths.map(quote).join(' ')}`;
               break;
             case 'unstage': {
-              const head = await this.command(id, 'rev-parse --verify HEAD', signal);
+              const head = await execute('rev-parse --verify HEAD');
               command =
                 head.code === 0
                   ? `reset -q HEAD -- ${value.paths.map(quote).join(' ')}`
@@ -188,11 +322,10 @@ export class GitWorkbench {
               {
                 const pattern =
                   '-----BEGIN ([A-Z0-9 ]+ )?PRIVATE KEY-----|\\b(AKIA|ASIA)[A-Z0-9]{16}\\b|\\bgh[pousr]_[A-Za-z0-9]{30,}\\b|\\bgithub_pat_[A-Za-z0-9_]{40,}\\b';
-                const scan = await this.command(
-                  id,
-                  'grep --cached -I -n -z -E -e ' + quote(pattern) + ' --',
-                  signal,
-                );
+                const state = await repositoryState(execute);
+                if (state.conflicts.length)
+                  throw new AppError('请先解决所有文件冲突并暂存，再提交。', 409, 'git_conflict');
+                const scan = await execute('grep --cached -I -n -z -E -e ' + quote(pattern) + ' --');
                 if (scan.code !== 0 && scan.code !== 1) throw new AppError('无法检查 Git 暂存区，提交已停止');
                 if (scan.code === 0) {
                   const locations = scan.stdout.split('\n').flatMap((line) => {
@@ -207,11 +340,7 @@ export class GitWorkbench {
               break;
             case 'branch':
             case 'switch': {
-              const check = await this.command(
-                id,
-                `check-ref-format --branch ${quote(value.branch)}`,
-                signal,
-              );
+              const check = await execute(`check-ref-format --branch ${quote(value.branch)}`);
               if (check.code !== 0) throw new AppError('分支名称不符合 Git 规则');
               command = `switch ${value.action === 'branch' ? '-c ' : '-- '}${quote(value.branch)}`;
               break;
@@ -222,28 +351,141 @@ export class GitWorkbench {
             case 'remote-remove':
               command = `remote remove ${quote(value.name)}`;
               break;
-            case 'fetch':
-              command = `fetch --prune ${quote(value.remote)}`;
-              break;
-            case 'pull':
-              command = `pull --ff-only ${quote(value.remote)}${value.branch ? ` ${quote(value.branch)}` : ''}`;
-              break;
-            case 'push':
-              command = `push ${quote(value.remote)} ${value.branch ? quote(value.branch) : 'HEAD'}`;
-              break;
             case 'merge':
-              command = `merge ${value.ffOnly ? '--ff-only' : '--no-edit'} ${quote(value.branch)}`;
+              requireSettled(await repositoryState(execute), true);
+              command = `merge --no-autostash --no-overwrite-ignore --no-rerere-autoupdate ${value.ffOnly ? '--ff-only' : '--no-edit'} -- ${quote(value.branch)}`;
               break;
             default:
               command = 'init';
           }
-          const result = await this.command(id, command, signal);
-          log(result.stdout + result.stderr);
-          if (result.code !== 0) throw new AppError(result.stderr || `Git 操作失败（${result.code}）`);
+          const result = await execute(command);
+          log(redactGitOutput(result.stdout + result.stderr));
+          if (result.code !== 0) {
+            if (value.action === 'merge') {
+              const state = await repositoryState(execute);
+              if (state.conflicts.length) requireSettled(state);
+            }
+            throw new AppError(redactGitOutput(result.stderr) || `Git 操作失败（${result.code}）`);
+          }
         },
-        { title: `Git · ${value.action}`, vmId: id, projectId: this.workspaces.projects.current(id) },
+        {
+          title: `Git · ${value.action}${'remote' in value ? ' · ' + value.remote + (value.branch ? '/' + value.branch : '') : ''}`,
+          vmId: id,
+          projectId: this.workspaces.projects.current(id),
+        },
       );
     });
+  }
+  private async remoteAction(
+    value: { action: 'fetch' | 'pull' | 'push'; remote: string; branch?: string },
+    execute: GitCommand,
+    log: (text: string) => void,
+    update: (phase: string) => void,
+  ) {
+    update('检查仓库与远程目标');
+    const state = await repositoryState(execute);
+    if (value.action !== 'fetch') requireSettled(state, value.action === 'pull');
+    const remotes = await execute('remote');
+    if (remotes.code !== 0 || !remotes.stdout.trim().split('\n').includes(value.remote))
+      throw new AppError('远程仓库不存在，请刷新并选择已配置的远程。', 409, 'git_remote_missing');
+    const urls = await execute(
+      `remote get-url ${value.action === 'push' ? '--push ' : ''}--all -- ${quote(value.remote)}`,
+    );
+    const targets = urls.stdout.trim().split('\n');
+    if (urls.code !== 0 || targets.some((url) => !remoteUrl.safeParse(url).success))
+      throw new AppError(
+        '远程目标必须使用不含凭证的 HTTPS 地址；请检查远程地址及 URL 重写配置。',
+        409,
+        'git_unsafe_remote',
+      );
+    if (targets.length !== 1)
+      throw new AppError('远程配置了多个目标地址，请先在终端选择唯一目标。', 409, 'git_ambiguous_remote');
+    const branch =
+      value.action === 'fetch'
+        ? value.branch
+        : value.branch || (state.upstream?.remote === value.remote ? state.upstream.branch : state.branch);
+    if (branch) {
+      if (
+        !branchName.safeParse(branch).success ||
+        (await execute(`check-ref-format ${quote(`refs/heads/${branch}`)}`)).code !== 0
+      )
+        throw new AppError('目标分支名称不符合 Git 规则。', 400, 'git_invalid_branch');
+    } else if (value.action !== 'fetch') {
+      throw new AppError('请选择目标分支。', 409, 'git_invalid_branch');
+    }
+    // Override repository defaults: only HTTPS, no recursive submodule operations,
+    // no configured refspecs, implicit tags, pruning, mirroring or force pushes.
+    const network = '-c protocol.allow=never -c protocol.https.allow=always -c http.followRedirects=false';
+    const run = async (command: string) => {
+      const result = await execute(`${network} ${command}`, true);
+      log(redactGitOutput(result.stdout + result.stderr));
+      if (result.code !== 0) {
+        const output = result.stdout + result.stderr;
+        if (/\[rejected\].*(non-fast-forward|fetch first)/i.test(output))
+          throw new AppError(
+            '推送被拒绝：远程分支包含本地尚未整合的提交。请获取更新并手动整合分叉后重试；不会强制推送。',
+            409,
+            'git_push_rejected',
+          );
+        if (/couldn't find remote ref/i.test(output))
+          throw new AppError(`远程分支 ${branch} 不存在，请检查目标分支。`, 409, 'git_remote_branch_missing');
+        throw new AppError(
+          redactGitOutput(result.stderr || result.stdout) || `Git 网络操作失败（${result.code}）`,
+          400,
+          'git_remote_failed',
+        );
+      }
+    };
+    if (value.action === 'push') {
+      update(`推送当前提交到 ${value.remote}/${branch}`);
+      log(`推送 ${state.branch} → ${value.remote}/${branch}\n`);
+      await run(
+        `-c push.followTags=false -c remote.${value.remote}.mirror=false push --porcelain --no-force --no-mirror --no-follow-tags --recurse-submodules=no -- ${quote(value.remote)} ${quote(`${state.head}:refs/heads/${branch}`)}`,
+      );
+      return;
+    }
+    // Fetch without an explicit branch updates all remote-tracking branches.
+    const fetchBranch = value.action === 'pull' ? branch! : value.branch;
+    const tracking = `refs/remotes/${value.remote}/${fetchBranch || '*'}`;
+    update(`获取 ${value.remote}${fetchBranch ? '/' + fetchBranch : ''}`);
+    await run(
+      `fetch --atomic --no-tags --no-prune --no-prune-tags --no-recurse-submodules --refmap= -- ${quote(value.remote)} ${quote(`+refs/heads/${fetchBranch || '*'}:${tracking}`)}`,
+    );
+    if (value.action === 'fetch') return;
+    const fetched = await execute(`rev-parse --verify ${quote(tracking + '^{commit}')}`);
+    if (fetched.code !== 0)
+      throw new AppError('无法读取获取的提交，请重新获取更新。', 409, 'git_remote_failed');
+    const target = fetched.stdout.trim();
+    const current = await repositoryState(execute);
+    requireSettled(current, true);
+    if (current.head !== state.head || current.branch !== state.branch)
+      throw new AppError('获取更新期间本地分支发生变化，请刷新并重试。', 409, 'git_branch_changed');
+    const ancestor = await execute(`merge-base --is-ancestor ${quote(state.head!)} ${quote(target)}`);
+    if (ancestor.code === 1) {
+      const ahead = await execute(`merge-base --is-ancestor ${quote(target)} ${quote(state.head!)}`);
+      if (ahead.code === 0) {
+        log('当前分支已包含远程提交，无需快进。\n');
+        return;
+      }
+      if (ahead.code !== 1) throw new AppError(redactGitOutput(ahead.stderr) || '无法比较提交历史');
+      throw new AppError(
+        '本地与远程历史已分叉，无法快进拉取。本地提交和文件保持不变；请在终端手动合并或变基，解决冲突后重试。',
+        409,
+        'git_diverged',
+      );
+    }
+    if (ancestor.code !== 0) throw new AppError(redactGitOutput(ancestor.stderr) || '无法比较提交历史');
+    update(`快进 ${state.branch} ← ${value.remote}/${branch}`);
+    const merged = await execute(
+      `-c submodule.recurse=false -c ${quote(`branch.${state.branch}.mergeOptions=`)} merge --ff-only --no-squash --no-autostash --no-overwrite-ignore --no-edit -- ${quote(target)}`,
+    );
+    log(redactGitOutput(merged.stdout + merged.stderr));
+    if (merged.code !== 0)
+      throw new AppError(
+        '快进拉取已停止，请检查工作区和冲突后重试。\n' + redactGitOutput(merged.stderr),
+        409,
+        'git_pull_blocked',
+      );
   }
   close() {
     return this.jobs.close();
