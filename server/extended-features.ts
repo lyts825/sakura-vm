@@ -124,7 +124,7 @@ export const extendedFeatureCatalog = [
   ['audit-log', '防篡改审计日志', '安全', 'P0', '记录关键操作并保护日志链。', 'available'],
   ['clipboard-redaction', '剪贴板敏感检测', '安全', 'P1', '识别并阻止疑似密钥复制。', 'available'],
   ['secret-rotation', '密钥轮换提醒', '安全', 'P1', '追踪密钥年龄并提示轮换。', 'available'],
-  ['signed-bundles', '签名实例包策略', '安全', 'P1', '只允许受信任签名的导入包。', 'planned'],
+  ['signed-bundles', '签名实例包策略', '安全', 'P1', '只允许受信任签名的导入包。', 'available'],
   [
     'immutable-backups',
     '不可修改备份锁',
@@ -405,6 +405,14 @@ export class ExtendedFeatures {
         state: spec.state,
         adapter,
         reason: '已接入快照页的备份策略；启用本机内容块去重后创建备份，在全局去重能力中查看占用及回收。',
+      };
+    if (spec.id === 'signed-bundles')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '打开镜像库或实例快照页的“签名实例包”，启用严格导入并管理受信任 Ed25519 公钥。',
       };
     if (spec.id === 'secret-rotation' || spec.id === 'clipboard-redaction')
       return {

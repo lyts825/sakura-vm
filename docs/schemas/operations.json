@@ -1698,6 +1698,259 @@
       "additionalProperties": false
     }
   },
+  "snapshots.signed-bundles-view": {
+    "id": "signed-bundles-view",
+    "method": "GET",
+    "path": "/api/signed-bundles",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "requireTrustedOnImport": {
+          "type": "boolean"
+        },
+        "localKey": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "publicKey": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "name",
+                "fingerprint",
+                "publicKey"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trustedKeys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "publicKey": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "name",
+              "fingerprint",
+              "publicKey"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "requireTrustedOnImport",
+        "localKey",
+        "trustedKeys"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "snapshots.signed-bundles-action": {
+    "id": "signed-bundles-action",
+    "method": "POST",
+    "path": "/api/signed-bundles",
+    "status": 200,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "configure"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "requireTrustedOnImport": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "action",
+            "revision",
+            "requireTrustedOnImport"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "trust"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "publicKey": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "action",
+            "revision",
+            "name",
+            "publicKey"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "forget"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "action",
+            "revision",
+            "fingerprint"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "requireTrustedOnImport": {
+          "type": "boolean"
+        },
+        "localKey": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "publicKey": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "name",
+                "fingerprint",
+                "publicKey"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trustedKeys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "fingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "publicKey": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "name",
+              "fingerprint",
+              "publicKey"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "requireTrustedOnImport",
+        "localKey",
+        "trustedKeys"
+      ],
+      "additionalProperties": false
+    }
+  },
   "snapshots.golden-action": {
     "id": "golden-action",
     "method": "POST",

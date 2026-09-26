@@ -132,7 +132,7 @@ test('encrypted uploads are authenticated before import and temporary uploads ar
   const bytes = await readFile(file);
   let imports = 0;
   const bundles = {
-    import: async (_name: string, stream: Readable) => {
+    importExternal: async (_name: string, stream: Readable) => {
       imports++;
       const chunks: Buffer[] = [];
       for await (const chunk of stream) chunks.push(Buffer.from(chunk));

@@ -11,6 +11,11 @@ import { GoldenImages } from '../../server/golden-images.ts';
 import { goldenActionSchema, goldenEntrySchema, goldenResultSchema } from '../../shared/golden-images.ts';
 import { Rescue } from '../../server/rescue.ts';
 import {
+  SignedBundles,
+  signedBundleActionSchema,
+  signedBundleViewSchema,
+} from '../../server/signed-bundles.ts';
+import {
   rescueArtifactSchema,
   rescueJobSchema,
   rescueRunSchema,
@@ -18,7 +23,9 @@ import {
 } from '../../shared/rescue.ts';
 
 export async function activate(host: PluginContext) {
-  host.bundles = new Bundles(host.machines);
+  const signatures = host.provide('signedBundles', new SignedBundles(host.dataFile('signed-bundles')));
+  await signatures.init();
+  host.bundles = new Bundles(host.machines, signatures);
   const golden = host.provide('goldenImages', new GoldenImages(host.machines, host.bundles));
   host.registerJobs(golden.jobs, () => {
     throw new AppError('请先刷新黄金镜像库核对结果，再明确发起操作', 409);
@@ -30,6 +37,19 @@ export async function activate(host: PluginContext) {
   });
 }
 export const operations: Record<string, PluginOperation> = {
+  'signed-bundles-view': {
+    response: signedBundleViewSchema,
+    execute() {
+      return this.use<SignedBundles>('snapshots', 'signedBundles').view();
+    },
+  },
+  'signed-bundles-action': {
+    request: signedBundleActionSchema,
+    response: signedBundleViewSchema,
+    execute(_url, input) {
+      return this.use<SignedBundles>('snapshots', 'signedBundles').action(input);
+    },
+  },
   'rescue-view': {
     response: rescueViewSchema,
     execute(url) {
@@ -116,7 +136,7 @@ export async function route(
               Buffer.from(passphrase, 'base64').toString('utf8'),
               signal,
             )
-          : await this.bundles.import(name, req, signal),
+          : await this.bundles.importExternal(name, req, signal),
         201,
       );
     } finally {

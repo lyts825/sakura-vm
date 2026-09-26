@@ -124,7 +124,7 @@ test('disconnect cancels an active import and permits a new import after cleanup
   const began = new Promise<void>((resolve) => {
     started = resolve;
   });
-  features.bundles.import = async (_name, _source, currentSignal) => {
+  features.bundles.importExternal = async (_name, _source, currentSignal) => {
     signal = currentSignal;
     started();
     await new Promise<void>((resolve) => {
@@ -145,7 +145,7 @@ test('disconnect cancels an active import and permits a new import after cleanup
   assert.equal(signal?.aborted, true);
   await rejected;
   assert.equal(res.listenerCount('close'), 0);
-  features.bundles.import = async () => ({ id: 'new-vm' }) as any;
+  features.bundles.importExternal = async () => ({ id: 'new-vm' }) as any;
   assert.equal(
     await features.route(req, res, new URL('http://localhost/api/import?name=retry'), async () => ({})),
     true,

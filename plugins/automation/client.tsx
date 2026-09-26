@@ -355,6 +355,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
         'sync-window': '打开工作空间 → 同步，设置允许时间窗、时区和传输限速后保存。',
         'backup-dedup':
           '打开实例 → 备份，启用本机内容块去重。新备份跨实例复用相同块，下载和恢复会重组并校验；平台能力中的全局去重统计可清理无引用块。',
+        'signed-bundles': '打开镜像库或实例快照页的“签名实例包”，启用严格导入并管理受信任 Ed25519 公钥。',
         'watch-sync':
           '打开工作空间 → 同步，启用自动同步和文件变化事件。可查看两端监听状态；Linux 需要 inotify-tools。',
         'rename-detection':

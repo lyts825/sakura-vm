@@ -7,19 +7,22 @@ export const manifest = definePlugin({
   category: 'workspace',
   requires: [pin('transfers')],
   optional: [pin('backups')],
-  services: ['bundles', 'goldenImages', 'rescue'],
+  services: ['bundles', 'signedBundles', 'goldenImages', 'rescue'],
   lifecycle: { activateMs: 30000, closeMs: 180000 },
   contributes: {
     http: [
       http('/api/golden-images', ['GET', 'POST']),
       http('/api/vms/:vmId/rescue', ['GET', 'POST']),
       http('/api/import', ['POST']),
+      http('/api/signed-bundles', ['GET', 'POST']),
       http('/api/vms/:vmId/snapshots', ['POST', 'PATCH', 'DELETE']),
       http('/api/vms/:vmId/export', ['GET']),
       http('/api/vms/:vmId/clone', ['POST']),
     ],
     operations: [
       operation('golden-list', 'GET', '/api/golden-images'),
+      operation('signed-bundles-view', 'GET', '/api/signed-bundles'),
+      operation('signed-bundles-action', 'POST', '/api/signed-bundles'),
       operation('golden-action', 'POST', '/api/golden-images'),
       operation('rescue-view', 'GET', '/api/vms/:vmId/rescue'),
       operation('rescue-artifact', 'GET', '/api/vms/:vmId/rescue/artifact'),

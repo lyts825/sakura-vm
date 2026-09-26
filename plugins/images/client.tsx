@@ -8,6 +8,9 @@ import { PluginGate } from '../../src/plugin-context';
 const GoldenImageLibrary = lazy(() =>
   import('../snapshots/GoldenImages').then((module) => ({ default: module.GoldenImageLibrary })),
 );
+const SignedBundlesPanel = lazy(() =>
+  import('../snapshots/SignedBundles').then((module) => ({ default: module.SignedBundlesPanel })),
+);
 
 export type ImageInfo = {
   id: 'alpine' | 'debian' | 'ubuntu';
@@ -134,6 +137,7 @@ export function ImageCatalog({
             }}
           />
         </div>
+        <SignedBundlesPanel request={request} />
       </PluginGate>
     </div>
   );

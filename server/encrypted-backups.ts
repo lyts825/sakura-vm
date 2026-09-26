@@ -127,7 +127,7 @@ export async function importEncrypted(
     return await withDecrypted(
       file,
       password,
-      (plain) => bundles.import(name, createReadStream(plain), signal),
+      (plain) => bundles.importExternal(name, createReadStream(plain), signal),
       signal,
     );
   } finally {

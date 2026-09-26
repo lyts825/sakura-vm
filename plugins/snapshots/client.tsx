@@ -6,6 +6,7 @@ import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';
 import { GoldenImageLibrary } from './GoldenImages';
 import { RescuePanel } from './RescuePanel';
+import { SignedBundlesPanel } from './SignedBundles';
 const BackupPanel = lazy(() =>
   import('../backups/client').then((module) => ({ default: module.BackupPanel })),
 );
@@ -181,6 +182,7 @@ export function SnapshotsPanel(props: FeatureProps) {
           导出包含当前磁盘和实例连接凭证，请妥善保存。快照历史不随导出迁移；克隆默认清空端口转发，首次启动更新密钥。
         </p>
       </div>
+      <SignedBundlesPanel request={request} />
       <PluginGate id="backups">
         <BackupPanel {...props} />
       </PluginGate>

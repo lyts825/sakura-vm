@@ -22,6 +22,7 @@ import { Rescue } from '../server/rescue';
 import { setTimeout as delay } from 'node:timers/promises';
 import { EventEmitter } from 'node:events';
 import { BackupRecovery } from '../server/backup-recovery';
+import { SignedBundles } from '../server/signed-bundles';
 
 test('backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile', async ({
   page,
@@ -361,6 +362,51 @@ test('golden image library saves templates, verifies, restores after refresh, cr
     expect(derived).toHaveLength(1);
   } finally {
     await library.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('signed bundle policy manages trusted keys on snapshot and image pages at desktop and mobile widths', async ({
+  page,
+}) => {
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-signed-browser-'));
+  const policy = new SignedBundles(join(directory, 'policy.json'));
+  const foreign = new SignedBundles(join(directory, 'foreign.json'));
+  await policy.init();
+  await foreign.init();
+  await foreign.action({ action: 'configure', revision: 0, requireTrustedOnImport: true });
+  try {
+    await app(page, ['snapshots', 'transfers', 'images'], true);
+    await page.route('**/api/images', (route) => route.fulfill({ json: [] }));
+    await page.route('**/api/signed-bundles', async (route) => {
+      try {
+        const result =
+          route.request().method() === 'GET'
+            ? policy.view()
+            : await policy.action(route.request().postDataJSON());
+        await route.fulfill({ json: result });
+      } catch (error) {
+        await route.fulfill({ status: 400, json: { error: (error as Error).message } });
+      }
+    });
+    await page.getByRole('tab', { name: '快照', exact: true }).click();
+    const panel = page.getByRole('heading', { name: '签名实例包' }).locator('..');
+    await expect(panel.getByText('允许旧格式导入')).toBeVisible();
+    await panel.getByRole('button', { name: '启用严格导入' }).click();
+    await expect(panel.getByText('仅允许受信任签名导入')).toBeVisible();
+    await expect(panel.getByRole('textbox', { name: '本机签名公钥' })).toContainText('BEGIN PUBLIC KEY');
+    await panel.getByRole('textbox', { name: '受信任公钥名称' }).fill('另一台主机');
+    await panel.getByRole('textbox', { name: '粘贴 Ed25519 公钥' }).fill(foreign.view().localKey!.publicKey);
+    await panel.getByRole('button', { name: '信任公钥' }).click();
+    await expect(panel.getByText('另一台主机')).toBeVisible();
+    const foreignRow = panel.locator('.snapshot-list > div').filter({ hasText: '另一台主机' });
+    await foreignRow.getByRole('button', { name: '移除' }).click();
+    await expect(panel.getByText('另一台主机')).toHaveCount(0);
+    await page.getByRole('button', { name: '镜像库', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '签名实例包' })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -2331,6 +2377,8 @@ async function app(page: Page, active: string[] = [], withVm = false) {
                     limits: { count: 16, bytes: 128 * 1024 ** 3, imageBytes: 32 * 1024 ** 3 },
                     job: null,
                   }
+                : path === '/api/signed-bundles'
+                  ? { revision: 0, requireTrustedOnImport: false, localKey: null, trustedKeys: [] }
                 : path.endsWith('/rescue') || path.endsWith('/backup-recovery')
                   ? { runs: [] }
                   : path.endsWith('/projects')

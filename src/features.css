@@ -225,6 +225,9 @@
   gap: 12px;
   min-width: 0;
 }
+.signed-bundles-fingerprint {
+  overflow-wrap: anywhere;
+}
 .feature-log {
   margin: 8px 0 0;
   padding: 14px;

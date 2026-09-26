@@ -11,6 +11,7 @@ import { projectSchema } from './workspaces.ts';
 import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
 import ssh2 from 'ssh2';
 import { ByteRate } from './byte-rate.ts';
+import { bundleSignatureSchema, verifySignedManifest, type SignedBundles } from './signed-bundles.ts';
 
 const MAGIC = Buffer.from('SAKURA01');
 const MAX_BUNDLE = 32 * 1024 ** 3;
@@ -41,6 +42,7 @@ const manifestSchema = z
     key: z.string().max(16384),
     seed: z.string().max(262144),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    signature: bundleSignatureSchema.optional(),
   })
   .strict();
 export function validateDiskHeader(header: Buffer) {
@@ -58,7 +60,10 @@ export function validateDiskHeader(header: Buffer) {
   if (header.readBigUInt64BE(24) > 128n * 1024n ** 3n) throw new AppError('虚拟磁盘不能超过 128 GiB');
 }
 export class Bundles {
-  constructor(private machines: Machines) {}
+  constructor(
+    private machines: Machines,
+    private signatures?: SignedBundles,
+  ) {}
   private async project(id: string) {
     try {
       return projectSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'project.json'), 'utf8')));
@@ -122,18 +127,17 @@ export class Bundles {
           pendingResize,
         } = this.machines.get(id);
         const identity = await this.machines.snapshotIdentity(id);
-        const manifest = Buffer.from(
-          JSON.stringify({
-            version: 1,
-            config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template, hardware },
-            project: await this.project(id),
-            projects: await this.projectCatalog(id),
-            ...(pendingResize ? { pendingResize: true } : {}),
-            key: identity.key,
-            seed: identity.seed.toString('base64'),
-            sha256: hash.digest('hex'),
-          }),
-        );
+        const unsigned = manifestSchema.parse({
+          version: 1,
+          config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template, hardware },
+          project: await this.project(id),
+          projects: await this.projectCatalog(id),
+          ...(pendingResize ? { pendingResize: true } : {}),
+          key: identity.key,
+          seed: identity.seed.toString('base64'),
+          sha256: hash.digest('hex'),
+        });
+        const manifest = Buffer.from(JSON.stringify(this.signatures?.signManifest(unsigned) || unsigned));
         const length = Buffer.alloc(4);
         length.writeUInt32BE(manifest.length);
         signal?.throwIfAborted();
@@ -156,17 +160,35 @@ export class Bundles {
     });
   }
   async import(name: string, source: Readable, signal?: AbortSignal, beforeAdopt?: () => void) {
+    return this.importCore(name, source, signal, beforeAdopt, false);
+  }
+  async importExternal(name: string, source: Readable, signal?: AbortSignal) {
+    return this.importCore(name, source, signal, undefined, true);
+  }
+  private async importCore(
+    name: string,
+    source: Readable,
+    signal?: AbortSignal,
+    beforeAdopt?: () => void,
+    external = false,
+  ) {
     return this.withContents(source, signal, async (disk, manifest, seed) => {
-      beforeAdopt?.();
-      return this.machines.adopt(
-        { ...manifest.config, name, forwards: [] },
-        disk,
-        manifest.key,
-        seed,
-        manifest.project,
-        manifest.pendingResize,
-        manifest.projects,
-      );
+      const publish = () => {
+        signal?.throwIfAborted();
+        beforeAdopt?.();
+        return this.machines.adopt(
+          { ...manifest.config, name, forwards: [] },
+          disk,
+          manifest.key,
+          seed,
+          manifest.project,
+          manifest.pendingResize,
+          manifest.projects,
+        );
+      };
+      return external && this.signatures
+        ? this.signatures.withAuthorizedExternal(manifest.signature, publish)
+        : publish();
     });
   }
   /** A verified standalone disk exists only for the duration of the callback. */
@@ -219,6 +241,7 @@ export class Bundles {
       signal?.throwIfAborted();
       if (!manifest || hash.digest('hex') !== manifest.sha256)
         throw new AppError('导入包不完整或磁盘校验失败');
+      verifySignedManifest(manifest);
       const handle = await open(disk, 'r');
       try {
         const b = Buffer.alloc(104);
