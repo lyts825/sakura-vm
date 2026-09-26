@@ -510,3 +510,20 @@
     grid-template-columns: 1fr;
   }
 }
+.metric-history-table {
+  overflow: auto;
+  max-height: 24rem;
+  margin-top: 12px;
+}
+.metric-history-table table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.metric-history-table th,
+.metric-history-table td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}

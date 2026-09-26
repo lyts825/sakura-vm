@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { DATA, AppError, guestPath } from './model.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
-import { Jobs } from './jobs.ts';
+import { Jobs, type JobView } from './jobs.ts';
+import type { HealthView } from './service-health.ts';
+import { randomUUID } from 'node:crypto';
 import { guestTask } from './guest-task.ts';
 import { quote } from './files.ts';
 import { readStore, writeStore } from './local-store.ts';
@@ -118,6 +120,8 @@ const availableFeatureIds = new Set<FeatureId>([
   'runtime-matrix',
   'reproducible-env',
   'disk-maintenance',
+  'metrics-history',
+  'alerts',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'golden-images',
@@ -127,8 +131,6 @@ const partialFeatureIds = new Set<FeatureId>([
   'network-diagnostics',
   'native-integration',
   'multi-monitor',
-  'metrics-history',
-  'alerts',
   'security-scan',
 ]);
 
@@ -169,30 +171,39 @@ const alertSchema = z
     memoryPercent: z.number().min(0).max(100).default(90),
     diskPercent: z.number().min(0).max(100).default(90),
     cooldownMinutes: z.number().int().min(1).max(10080).default(30),
+    taskFailures: z.boolean().default(true),
+    serviceFailures: z.boolean().default(true),
   })
   .strict();
 export type AlertConfig = z.infer<typeof alertSchema>;
 export type AlertEvent = {
   id: string;
   vmId: string;
-  kind: 'cpu' | 'memory' | 'disk' | 'service';
+  kind: 'cpu' | 'memory' | 'disk' | 'service' | 'backup' | 'task';
   message: string;
   createdAt: string;
   acknowledged: boolean;
+  projectId?: string;
+  jobId?: string;
 };
-type MetricPoint = {
+export type MetricPoint = {
   sampledAt: string;
   cpuPercent: number;
   memoryUsed: number;
   memoryTotal: number;
   diskUsed: number;
   diskTotal: number;
+  networkReceivedBytes?: number | null;
+  networkTransmittedBytes?: number | null;
+  networkReceiveBytesPerSecond?: number | null;
+  networkTransmitBytesPerSecond?: number | null;
 };
 type FeatureState = {
   settings: Record<string, { schedule: Schedule; alerts: AlertConfig; updatedAt: string }>;
   history: Record<string, MetricPoint[]>;
   events: AlertEvent[];
   lastAlerts: Record<string, Record<string, number>>;
+  notifiedJobs?: Record<string, string[]>;
   featureRuns: Record<
     string,
     Array<{ featureId: FeatureId; startedAt: string; finishedAt: string; result: Record<string, unknown> }>
@@ -262,6 +273,8 @@ export type FeatureAction =
 export class FeatureSuite {
   jobs = new Jobs('feature-suite');
   private stateValue?: FeatureState;
+  private loading?: Promise<FeatureState>;
+  private writes: Promise<void> = Promise.resolve();
   private backgroundEnabled = false;
   private closed = false;
   private idleSince = new Map<string, number>();
@@ -271,6 +284,10 @@ export class FeatureSuite {
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
+    private observations: {
+      jobs?: () => JobView[];
+      services?: (id: string) => Array<HealthView & { projectId: string }>;
+    } = {},
   ) {}
   enableBackground() {
     this.backgroundEnabled = true;
@@ -282,11 +299,19 @@ export class FeatureSuite {
     return join(DATA, 'feature-suite.json');
   }
   private async state() {
-    return (this.stateValue ||= await readStore(this.file(), defaultState));
+    if (this.stateValue) return this.stateValue;
+    return (this.loading ||= readStore(this.file(), defaultState)
+      .then((state) => (this.stateValue = state))
+      .finally(() => {
+        this.loading = undefined;
+      }));
   }
   private async save(state: FeatureState) {
     this.stateValue = state;
-    await writeStore(this.file(), state);
+    const snapshot = structuredClone(state);
+    const write = this.writes.catch(() => {}).then(() => writeStore(this.file(), snapshot));
+    this.writes = write;
+    await write;
   }
   private settingsFor(state: FeatureState, id: string) {
     const value = state.settings[id] || {
@@ -319,7 +344,7 @@ export class FeatureSuite {
       history: (state.history[id] || []).slice(-size),
       events: state.events
         .filter((event) => event.vmId === id)
-        .slice(-50)
+        .slice(-500)
         .reverse(),
       job: this.jobs.view(`${this.workspaces.projects.key(id)}:package`),
       devJob: this.jobs.view(`${this.workspaces.projects.key(id)}:dev`),
@@ -388,6 +413,9 @@ export class FeatureSuite {
     if (featureId === 'disk-maintenance') {
       result.ready = true;
       result.reason = '已接入工作空间 → 维护；启用磁盘与诊断插件后可计划 TRIM、离线压缩和稀疏回收。';
+    } else if (featureId === 'metrics-history' || featureId === 'alerts') {
+      result.ready = true;
+      result.reason = '已接入能力中心的资源趋势与通知中心；自动采样和告警需启用自动化调度插件。';
     } else if (featureId === 'gpu-acceleration') {
       result.accelerator = vm.accelerator;
       result.commandline = this.machines.commandline(id);
@@ -449,6 +477,7 @@ export class FeatureSuite {
     const point = await this.workspaces.metrics(id);
     const state = await this.state();
     const history = (state.history[id] ||= []);
+    if (history.some((entry) => entry.sampledAt === point.sampledAt)) return point;
     history.push({
       sampledAt: point.sampledAt,
       cpuPercent: point.cpuPercent,
@@ -456,6 +485,10 @@ export class FeatureSuite {
       memoryTotal: point.memoryTotal,
       diskUsed: point.diskUsed,
       diskTotal: point.diskTotal,
+      networkReceivedBytes: point.networkReceivedBytes,
+      networkTransmittedBytes: point.networkTransmittedBytes,
+      networkReceiveBytesPerSecond: point.networkReceiveBytesPerSecond,
+      networkTransmitBytesPerSecond: point.networkTransmitBytesPerSecond,
     });
     while (history.length > 720) history.shift();
     await this.save(state);
@@ -687,7 +720,7 @@ export class FeatureSuite {
     const previous = (state.lastAlerts[id] ||= {});
     let changed = false;
     for (const [kind, value, threshold, message] of values) {
-      if (value < threshold) continue;
+      if (!Number.isFinite(value) || value < threshold) continue;
       const last = previous[kind] || 0;
       if (Date.now() - last < settings.cooldownMinutes * 60_000) continue;
       previous[kind] = Date.now();
@@ -703,6 +736,60 @@ export class FeatureSuite {
     }
     if (state.events.length > 500) state.events.splice(0, state.events.length - 500);
     if (changed) await this.save(state);
+  }
+  private async checkOperationalAlerts(id: string, state: FeatureState) {
+    const settings = this.settingsFor(state, id);
+    if (!settings.alerts.enabled) return;
+    const now = Date.now(),
+      previous = (state.lastAlerts[id] ||= {});
+    const jobs = this.observations.jobs?.().filter((job) => job.vmId === id) || [];
+    state.notifiedJobs ||= {};
+    const seen = new Set(state.notifiedJobs[id] || []);
+    for (const job of jobs) {
+      if (!job.id || seen.has(job.id) || !['error', 'interrupted'].includes(job.status)) continue;
+      seen.add(job.id);
+      const service = job.scope === 'health';
+      if (
+        !(service ? settings.alerts.serviceFailures : settings.alerts.taskFailures) ||
+        !Number.isFinite(Date.parse(job.finishedAt || '')) ||
+        Date.parse(job.finishedAt!) < Date.parse(settings.updatedAt)
+      )
+        continue;
+      const kind = job.scope === 'backups' ? 'backup' : service ? 'service' : 'task';
+      state.events.push({
+        id: randomUUID(),
+        vmId: id,
+        kind,
+        jobId: job.id,
+        projectId: job.projectId,
+        message: `${kind === 'backup' ? '备份' : kind === 'service' ? '服务' : '后台'}任务${job.status === 'interrupted' ? '中断' : '失败'}：${job.title || job.scope || '未命名任务'}，请查看任务详情。`,
+        createdAt: new Date(now).toISOString(),
+        acknowledged: false,
+      });
+    }
+    state.notifiedJobs[id] = [...seen].slice(-10000);
+    if (settings.alerts.serviceFailures)
+      for (const service of this.observations.services?.(id) || []) {
+        if (
+          !service.desired ||
+          !['unhealthy', 'exhausted', 'restarting'].includes(service.status) ||
+          !service.checkedAt
+        )
+          continue;
+        const key = `service:${service.projectId}:${service.name}`;
+        if (now - (previous[key] || 0) < settings.alerts.cooldownMinutes * 60000) continue;
+        previous[key] = now;
+        state.events.push({
+          id: randomUUID(),
+          vmId: id,
+          kind: 'service',
+          projectId: service.projectId,
+          message: `服务 ${service.name} ${service.status === 'exhausted' ? '已耗尽自动重启次数' : service.status === 'restarting' ? '健康检查失败，正在重启' : '健康检查失败'}。`,
+          createdAt: new Date(now).toISOString(),
+          acknowledged: false,
+        });
+      }
+    if (state.events.length > 500) state.events.splice(0, state.events.length - 500);
   }
   async acknowledge(id: string, eventId: string) {
     this.machines.get(id);
@@ -915,12 +1002,10 @@ export class FeatureSuite {
         (a, b) => (policy.priorities[b.id] || 0) - (policy.priorities[a.id] || 0),
       );
       for (const vm of scheduled) {
-        if (await inMaintenance(vm.id, now)) {
-          this.idleSince.delete(vm.id);
-          this.lastSampleAt.delete(vm.id);
-          continue;
-        }
+        if (this.closed) break;
+        const maintenance = await inMaintenance(vm.id, now);
         const settings = this.settingsFor(state, vm.id);
+        if (this.backgroundEnabled) await this.checkOperationalAlerts(vm.id, state);
         const schedule = settings.schedule;
         let sampled = false;
         if (this.machines.state(vm.id) === 'running') {
@@ -954,6 +1039,11 @@ export class FeatureSuite {
         }
         if (fresh) this.lastSampleAt.set(vm.id, sampledAt);
         else this.lastSampleAt.delete(vm.id);
+        if (maintenance) {
+          this.idleSince.delete(vm.id);
+          this.lastSampleAt.delete(vm.id);
+          continue;
+        }
         if (!schedule.enabled) continue;
         if (schedule.startAt === clock && this.machines.state(vm.id) === 'stopped')
           await this.machines.start(vm.id).catch(() => {});
@@ -977,5 +1067,6 @@ export class FeatureSuite {
     this.closed = true;
     this.backgroundEnabled = false;
     await this.jobs.close();
+    await this.writes;
   }
 }

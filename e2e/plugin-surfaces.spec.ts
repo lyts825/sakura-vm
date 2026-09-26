@@ -380,6 +380,96 @@ test('disk maintenance saves a schedule and only offers TRIM while running', asy
   await expect.poll(() => requested).toEqual({ mode: 'trim' });
 });
 
+test('resource history exports samples and the notification center acknowledges persisted events', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).notifications = [];
+    (window as any).Notification = class {
+      static permission = 'default';
+      static async requestPermission() {
+        this.permission = 'granted';
+        return 'granted';
+      }
+      constructor(title: string, options: unknown) {
+        (window as any).notifications.push({ title, options });
+      }
+    };
+  });
+  await app(page, ['projects', 'automation', 'automation-scheduler'], true);
+  const events = [
+    {
+      id: 'backup-alert',
+      kind: 'backup',
+      message: '备份任务失败：创建备份',
+      createdAt: new Date().toISOString(),
+      acknowledged: false,
+    },
+  ];
+  let acknowledged: string | undefined;
+  await page.route('**/api/vms/*/advanced*', (route) => {
+    if (route.request().method() === 'POST') {
+      acknowledged = route.request().postDataJSON().id;
+      events.find((event) => event.id === acknowledged)!.acknowledged = true;
+    }
+    return route.fulfill({
+      json: {
+        settings: {
+          schedule: { enabled: false, idleMinutes: 0, idleAction: 'stop' },
+          alerts: {
+            enabled: true,
+            cpuPercent: 90,
+            memoryPercent: 90,
+            diskPercent: 90,
+            cooldownMinutes: 30,
+            taskFailures: true,
+            serviceFailures: true,
+          },
+        },
+        features: [],
+        presets: {},
+        events,
+        history: [
+          {
+            sampledAt: new Date().toISOString(),
+            cpuPercent: 25,
+            memoryUsed: 512,
+            memoryTotal: 1024,
+            diskUsed: 2048,
+            diskTotal: 4096,
+            networkReceiveBytesPerSecond: 1024,
+            networkTransmitBytesPerSecond: 2048,
+          },
+        ],
+      },
+    });
+  });
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('趋势指标').selectOption('receive');
+  await expect(page.getByRole('img', { name: '网络接收速率历史趋势' })).toBeVisible();
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出指标 CSV', exact: true }).click();
+  expect((await downloaded).suggestedFilename()).toBe('sakura-metrics.csv');
+  const center = page.getByRole('region', { name: '通知中心', exact: true });
+  await center.getByRole('button', { name: '启用浏览器告警通知', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).notifications.length)).toBe(0);
+  await center.getByRole('button', { name: '确认告警：备份任务失败：创建备份', exact: true }).click();
+  await expect.poll(() => acknowledged).toBe('backup-alert');
+  await expect(center.getByText('没有符合条件的告警。')).toBeVisible();
+  await center.getByLabel('仅显示未确认告警').uncheck();
+  await expect(center.getByText('已确认', { exact: true })).toBeVisible();
+  events.unshift({
+    id: 'new-alert',
+    kind: 'backup',
+    message: '新的备份任务失败',
+    createdAt: new Date().toISOString(),
+    acknowledged: false,
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).notifications.length), { timeout: 10000 })
+    .toBe(1);
+});
+
 async function app(page: Page, active: string[] = [], withVm = false) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;

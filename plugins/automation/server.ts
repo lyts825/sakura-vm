@@ -6,24 +6,45 @@ import { FeatureSuite } from '../../server/feature-suite.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../server/model.ts';
 import { z } from 'zod';
+import type { ServiceHealth } from '../../server/service-health.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.suite = new FeatureSuite(m, host.workspaces);
+  host.suite = new FeatureSuite(m, host.workspaces, {
+    jobs: () => host.jobStores().flatMap((store) => store.list()),
+    services: (id) => host.optional<ServiceHealth>('service-health', 'health')?.observed(id) || [],
+  });
   host.registerJobs(host.suite.jobs, (job) => {
     const id = retryTarget(job);
     if (job.action?.startsWith('package:')) {
       const [operationValue, ...nameParts] = job.action.slice(8).split(':');
       const operation = z.enum(['list', 'search', 'install', 'remove', 'update']).parse(operationValue);
-      return retryInProject(host, job, () => Promise.resolve(host.suite.package(id, {
-        operation, name: nameParts.join(':') || undefined,
-      })));
+      return retryInProject(host, job, () =>
+        Promise.resolve(
+          host.suite.package(id, {
+            operation,
+            name: nameParts.join(':') || undefined,
+          }),
+        ),
+      );
     }
     if (job.action?.startsWith('dev:')) {
-      const operation = z.enum([
-        'test', 'test-discover', 'lint', 'format', 'dependencies', 'lock', 'lock-check',
-        'install-locked', 'worktree-list', 'worktree-add', 'worktree-remove', 'database',
-      ]).parse(job.action.slice(4));
+      const operation = z
+        .enum([
+          'test',
+          'test-discover',
+          'lint',
+          'format',
+          'dependencies',
+          'lock',
+          'lock-check',
+          'install-locked',
+          'worktree-list',
+          'worktree-add',
+          'worktree-remove',
+          'database',
+        ])
+        .parse(job.action.slice(4));
       if (['worktree-add', 'worktree-remove', 'database'].includes(operation))
         throw new AppError('此开发任务包含参数，请回到能力中心重新执行');
       return retryInProject(host, job, () => Promise.resolve(host.suite.dev(id, { operation })));

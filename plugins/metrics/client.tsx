@@ -11,6 +11,8 @@ type Metrics = {
   uptime: number;
   processes: { name: string; memory: number }[];
   sampledAt: string;
+  networkReceiveBytesPerSecond?: number | null;
+  networkTransmitBytesPerSecond?: number | null;
 };
 export function MetricsPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<Metrics>(request, `/vms/${vm.id}/metrics`, vm.status === 'running');
@@ -56,6 +58,16 @@ export function MetricsPanel({ vm, request }: FeatureProps) {
               </div>
             ))}
           </div>
+          <p>
+            网络接收：
+            {m.networkReceiveBytesPerSecond == null
+              ? '等待连续采样'
+              : formatBytes(m.networkReceiveBytesPerSecond) + '/s'}{' '}
+            · 发送：
+            {m.networkTransmitBytesPerSecond == null
+              ? '等待连续采样'
+              : formatBytes(m.networkTransmitBytesPerSecond) + '/s'}
+          </p>
           <svg className="cpu-history" viewBox="0 0 600 100" role="img" aria-label="最近 30 次 CPU 使用率">
             <path d="M0 95H600 M0 50H600 M0 5H600" stroke="var(--line)" fill="none" />
             <polyline
@@ -83,6 +95,5 @@ export function MetricsPanel({ vm, request }: FeatureProps) {
     </div>
   );
 }
-
 
 export const tabs = { metrics: MetricsPanel };

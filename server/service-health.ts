@@ -110,6 +110,12 @@ export class ServiceHealth {
       job: this.jobs.view(key),
     };
   }
+  observed(id: string) {
+    return [...this.states].flatMap(([key, states]) => {
+      const [vmId, projectId = 'default'] = key.split(':');
+      return vmId === id ? [...states.values()].map((state) => ({ ...state, projectId })) : [];
+    });
+  }
   async tick(now = Date.now()) {
     for (const [key, states] of this.states) {
       const [id, projectId = 'default'] = key.split(':');

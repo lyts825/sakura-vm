@@ -7,6 +7,8 @@ import type {
   ResourcePreset,
   ResourcePresetId,
   Schedule,
+  MetricPoint,
+  AlertEvent,
 } from '../../server/feature-suite';
 import type { JobView } from '../../server/jobs';
 import type { VMView } from '../../server/model';
@@ -18,6 +20,8 @@ import { usePlugin } from '../../src/plugin-context';
 import { workspaceRequest } from '../../src/workspace-request';
 import { CapabilityActionsPanel } from '../../src/CapabilityActionsPanel';
 import type { CapabilityActionView } from '../../shared/capability-actions';
+import { MetricHistory } from '../../src/MetricHistory';
+import { NotificationCenter } from '../../src/NotificationCenter';
 
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
@@ -28,20 +32,14 @@ function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id
   );
 }
 
-type MetricPoint = {
-  sampledAt: string;
-  cpuPercent: number;
-  memoryUsed: number;
-  memoryTotal: number;
-  diskUsed: number;
-  diskTotal: number;
-};
 type FeatureEvent = {
   id: string;
-  kind: string;
+  kind: AlertEvent['kind'];
   message: string;
   createdAt: string;
   acknowledged: boolean;
+  jobId?: string;
+  projectId?: string;
 };
 type DiskEntry = { path: string; bytes: number };
 type SuiteView = {
@@ -130,7 +128,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const active = vms.find((vm) => vm.id === selected) || vms[0];
   const remote = useRemote<SuiteView>(
     request,
-    active ? `/vms/${active.id}/advanced` : '/feature-suite',
+    active ? `/vms/${active.id}/advanced?limit=720` : '/feature-suite',
     !!active && hasAutomation,
     5000,
   );
@@ -154,6 +152,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     memoryPercent: 90,
     diskPercent: 90,
     cooldownMinutes: 30,
+    taskFailures: true,
+    serviceFailures: true,
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchPath, setSearchPath] = useState('/workspace');
@@ -209,7 +209,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     if (!remote.data) return;
     setSchedule(remote.data.settings.schedule);
     setAlerts(remote.data.settings.alerts);
-  }, [remote.data]);
+  }, [active.id, !!remote.data, remote.data?.settings.updatedAt]);
   useEffect(() => {
     setMemoryTarget(active.memoryTargetMiB || active.memoryMiB);
   }, [active.id, active.memoryMiB, active.memoryTargetMiB]);
@@ -494,15 +494,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                       </b>
                     </span>
                   </div>
-                  <div className="metric-bars" aria-label="最近资源采样">
-                    {remote.data?.history.slice(-24).map((point) => (
-                      <i
-                        key={point.sampledAt}
-                        style={{ height: `${Math.max(3, point.cpuPercent)}%` }}
-                        title={`${point.cpuPercent.toFixed(1)}%`}
-                      />
-                    ))}
-                  </div>
+                  <MetricHistory history={remote.data?.history || []} />
                   <p className="subtle-note">
                     最近采样：{new Date(latest.sampledAt).toLocaleString()} · 磁盘 {bytes(latest.diskUsed)} /{' '}
                     {bytes(latest.diskTotal)}
@@ -647,20 +639,42 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 <button className="primary compact" disabled={action.busy} onClick={saveSettings}>
                   保存自动化设置
                 </button>
-                {!!remote.data?.events.length && (
-                  <div className="event-list">
-                    {remote.data.events.slice(0, 5).map((event) => (
-                      <p key={event.id}>
-                        <span className="tiny-dot error" />
-                        {event.message}
-                        <small>{new Date(event.createdAt).toLocaleString()}</small>
-                      </p>
-                    ))}
-                  </div>
-                )}
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={alerts.taskFailures ?? true}
+                    onChange={(event) => setAlerts({ ...alerts, taskFailures: event.target.checked })}
+                  />
+                  备份和后台任务失败告警
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={alerts.serviceFailures ?? true}
+                    onChange={(event) => setAlerts({ ...alerts, serviceFailures: event.target.checked })}
+                  />
+                  服务健康检查失败告警
+                </label>
+                <p className="subtle-note">
+                  服务异常来自已启用的服务健康检查；后台任务失败只提醒一次，已确认状态会持久保存。
+                </p>
               </section>
             )}
           </div>
+
+          {remote.data && (
+            <NotificationCenter
+              key={active.id}
+              events={remote.data.events}
+              busy={action.busy}
+              onAcknowledge={(id) =>
+                void action.run(async () => {
+                  await request(`/vms/${active.id}/advanced`, 'POST', { action: 'acknowledge', id });
+                  remote.reload();
+                })
+              }
+            />
+          )}
 
           <div className="feature-grid">
             <section className="feature-card">
