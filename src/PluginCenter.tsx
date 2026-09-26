@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   Boxes,
   Check,
+  ChevronDown,
   CircleAlert,
   CircleDot,
   Clock3,
@@ -15,6 +16,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   TerminalSquare,
   Wrench,
   X,
@@ -34,6 +36,12 @@ const categories = {
 };
 type View = 'plugins' | 'packs' | 'selected';
 type StateFilter = 'all' | 'active' | 'pending' | 'errors';
+const stateLabels: Record<StateFilter, string> = {
+  all: '全部状态',
+  active: '运行中',
+  pending: '待重启生效',
+  errors: '启动异常',
+};
 const packOrder = [
   'essentials',
   'developer',
@@ -79,6 +87,7 @@ export function PluginCenter({ request }: { request: Request }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
   const pending = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
     if (pending.current) return;
@@ -146,7 +155,14 @@ export function PluginCenter({ request }: { request: Request }) {
     setQuery('');
     setCategory('all');
     setStateFilter('all');
+    setMoreOptionsOpen(false);
   };
+  const filterSummary = [
+    category !== 'all' ? categories[category as keyof typeof categories].label : '',
+    stateFilter !== 'all' ? stateLabels[stateFilter] : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const pluginName = (id: string) => status?.plugins.find((plugin) => plugin.id === id)?.name || id;
   const added = status?.planned.filter((id) => !status.active.includes(id)) || [];
   const removed = status?.active.filter((id) => !status.planned.includes(id)) || [];
@@ -250,8 +266,8 @@ export function PluginCenter({ request }: { request: Request }) {
           </p>
         )}
         <details className="plugin-details">
-          <summary>
-            功能与依赖 <span>{categories[plugin.category].label}</span>
+          <summary aria-label={`${plugin.name}的更多选项`}>
+            更多选项 <span>功能与依赖</span>
           </summary>
           <dl>
             <dt>功能入口</dt>
@@ -281,26 +297,50 @@ export function PluginCenter({ request }: { request: Request }) {
               <code>{plugin.id}</code> · v{plugin.version}
             </dd>
           </dl>
+          {planned && !selected && (
+            <div className="plugin-independent-option">
+              <p>需要在移除整合包或来源插件后继续使用？可以保留为独立选择。</p>
+              <button
+                className="secondary compact"
+                disabled={!!busy}
+                onClick={() => void change('plugin', plugin.id, true)}
+              >
+                {busy === `plugin:${plugin.id}` ? (
+                  <LoaderCircle size={14} className="spin" />
+                ) : (
+                  <Plus size={14} />
+                )}
+                保留为独立选择
+              </button>
+            </div>
+          )}
         </details>
         <div className="plugin-card-footer">
           {blocked && <small>先移除引用来源：{rootNames.join('、')}。</small>}
-          <button
-            className={`${planned ? 'secondary' : 'primary'} compact`}
-            disabled={!!busy || blocked}
-            onClick={() => void change('plugin', plugin.id, !selected)}
-          >
-            {busy === `plugin:${plugin.id}` ? (
-              <LoaderCircle size={14} className="spin" />
-            ) : selected ? (
+          {planned && !selected ? (
+            <span className="plugin-included-note">
               <Check size={14} />
-            ) : (
-              <Plus size={14} />
-            )}
-            {blocked ? '被其他选择引用' : selected ? '取消独立选择' : planned ? '保留为独立选择' : '启用插件'}
-          </button>
+              随来源启用
+            </span>
+          ) : (
+            <button
+              className={`${planned ? 'secondary' : 'primary'} compact`}
+              disabled={!!busy || blocked}
+              onClick={() => void change('plugin', plugin.id, !selected)}
+            >
+              {busy === `plugin:${plugin.id}` ? (
+                <LoaderCircle size={14} className="spin" />
+              ) : selected ? (
+                <Check size={14} />
+              ) : (
+                <Plus size={14} />
+              )}
+              {blocked ? '被其他选择引用' : selected ? '取消独立选择' : '启用插件'}
+            </button>
+          )}
           {!blocked && (
             <small>
-              {selected ? '停用后保留数据' : planned ? '移除整合包后仍保留' : `v${plugin.version}`}
+              {selected ? '停用后保留数据' : planned ? '可在更多选项中独立保留' : `v${plugin.version}`}
             </small>
           )}
         </div>
@@ -358,8 +398,8 @@ export function PluginCenter({ request }: { request: Request }) {
           {pack.members.length > 5 && <span>另 {pack.members.length - 5} 项</span>}
         </div>
         <details className="plugin-details">
-          <summary>
-            含依赖共 {resolved.length} 个插件 <span>查看清单</span>
+          <summary aria-label={`${pack.name}的更多选项`}>
+            更多选项 <span>含依赖共 {resolved.length} 个插件</span>
           </summary>
           <p>{resolved.map(pluginName).join('、')}</p>
           {selected && retained.length > 0 && (
@@ -510,6 +550,7 @@ export function PluginCenter({ request }: { request: Request }) {
                 onClick={() => {
                   chooseView('plugins');
                   setStateFilter('errors');
+                  setMoreOptionsOpen(true);
                 }}
               >
                 查看异常
@@ -554,26 +595,56 @@ export function PluginCenter({ request }: { request: Request }) {
             </label>
           </div>
           {view !== 'packs' && (
-            <div className="plugin-filters">
-              <div className="plugin-categories" role="group" aria-label="按用途查看">
-                {[['all', '全部'], ...Object.entries(categories).map(([id, item]) => [id, item.label])].map(
-                  ([id, label]) => (
-                    <button key={id} aria-pressed={category === id} onClick={() => setCategory(id)}>
-                      {label}
-                    </button>
-                  ),
-                )}
-              </div>
-              <select
-                value={stateFilter}
-                aria-label="按插件状态筛选"
-                onChange={(event) => setStateFilter(event.target.value as StateFilter)}
+            <div className="plugin-more-options">
+              <button
+                className="plugin-options-trigger"
+                aria-label="插件筛选更多选项"
+                aria-expanded={moreOptionsOpen}
+                aria-controls="plugin-filters"
+                onClick={() => setMoreOptionsOpen((open) => !open)}
               >
-                <option value="all">全部状态</option>
-                <option value="active">运行中</option>
-                <option value="pending">待重启生效</option>
-                <option value="errors">启动异常</option>
-              </select>
+                <SlidersHorizontal size={14} />
+                更多选项
+                <span className={filterSummary ? 'has-filters' : ''}>
+                  {filterSummary || '用途与运行状态'}
+                </span>
+                <ChevronDown size={14} className="plugin-options-chevron" />
+              </button>
+              <div className="plugin-filters" id="plugin-filters" hidden={!moreOptionsOpen}>
+                <div className="plugin-categories" role="group" aria-label="按用途查看">
+                  {[['all', '全部'], ...Object.entries(categories).map(([id, item]) => [id, item.label])].map(
+                    ([id, label]) => (
+                      <button key={id} aria-pressed={category === id} onClick={() => setCategory(id)}>
+                        {label}
+                      </button>
+                    ),
+                  )}
+                </div>
+                <div className="plugin-filter-actions">
+                  <select
+                    value={stateFilter}
+                    aria-label="按插件状态筛选"
+                    onChange={(event) => setStateFilter(event.target.value as StateFilter)}
+                  >
+                    {Object.entries(stateLabels).map(([id, label]) => (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  {filterSummary && (
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        setCategory('all');
+                        setStateFilter('all');
+                      }}
+                    >
+                      重置筛选
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
           <div className="plugin-results-heading">

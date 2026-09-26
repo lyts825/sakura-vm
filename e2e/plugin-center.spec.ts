@@ -97,21 +97,34 @@ test('plugin catalog searches, combines filters, and keeps the base configuratio
 }) => {
   await setup(page);
   await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
+  const filters = page.getByRole('button', { name: '插件筛选更多选项' });
+  await expect(filters).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByLabel('按插件状态筛选')).toBeHidden();
   await page.getByRole('searchbox').fill('FILES');
   await expect(page.getByRole('article')).toHaveCount(1);
   await expect(page.getByRole('article', { name: '文件工作台', exact: true })).toBeVisible();
+  await filters.focus();
+  await filters.press('Enter');
+  await expect(filters).toHaveAttribute('aria-expanded', 'true');
   await page
     .getByRole('group', { name: '按用途查看' })
     .getByRole('button', { name: '项目开发', exact: true })
     .click();
   await expect(page.getByRole('heading', { name: '没有找到匹配的插件' })).toBeVisible();
+  await filters.click();
+  await expect(page.getByLabel('按插件状态筛选')).toBeHidden();
+  await expect(filters).toContainText('项目开发');
+  await expect(page.getByRole('article')).toHaveCount(0);
   await page.getByRole('button', { name: '清除筛选', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
   await view(page, '我的配置').click();
   await expect(page.getByRole('heading', { name: '从基础版开始，也很好。' })).toBeVisible();
   await page.getByRole('button', { name: '浏览插件目录' }).click();
+  await filters.click();
   await page.getByLabel('按插件状态筛选').selectOption('active');
   await expect(page.getByRole('article')).toHaveCount(0);
+  await page.getByRole('button', { name: '重置筛选', exact: true }).click();
+  await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
 });
 
 test('pack selection, independent retention and removal preserve shared dependencies without activating navigation', async ({
@@ -129,6 +142,8 @@ test('pack selection, independent retention and removal preserve shared dependen
   const files = page.getByRole('article', { name: '文件工作台', exact: true });
   await expect(files).toContainText('由 日常使用 引入');
   await expect(files.locator('.plugin-state')).toHaveText('待启用');
+  await expect(files.getByRole('button', { name: '保留为独立选择' })).toBeHidden();
+  await files.getByLabel('文件工作台的更多选项').click();
   await files.getByRole('button', { name: '保留为独立选择' }).click();
   await expect(files.getByRole('button', { name: '被其他选择引用' })).toBeDisabled();
   await expect(files).toContainText('先移除引用来源：日常使用');
@@ -160,6 +175,10 @@ test('runtime, pending removal and dependency failures remain distinct', async (
   const images = page.getByRole('article', { name: '发行版镜像', exact: true });
   await expect(images.locator('.plugin-state')).toHaveText('待停用');
   await page.getByRole('button', { name: '查看异常' }).click();
+  await expect(page.getByRole('button', { name: '插件筛选更多选项' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
   await expect(page.getByRole('article')).toHaveCount(2);
   await expect(
     page.getByRole('article', { name: '文件工作台', exact: true }).locator('.plugin-state'),
@@ -207,10 +226,20 @@ test('catalog and packs fit desktop, mobile and night theme', async ({ page }) =
   await page.getByRole('button', { name: '切换到花昼主题' }).click();
   await view(page, '插件目录').click();
   await page.getByRole('searchbox').fill('files');
-  await page.getByText('功能与依赖', { exact: false }).click();
+  await page.getByRole('button', { name: '插件筛选更多选项' }).click();
+  await expect(page.getByLabel('按插件状态筛选')).toBeVisible();
+  await page.getByLabel('文件工作台的更多选项').click();
+  await expect(page.getByRole('button', { name: '保留为独立选择' })).toBeVisible();
+  await page.screenshot({
+    path: 'artifacts/plugins-more-options-mobile.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.setViewportSize({ width: 320, height: 700 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.getByLabel('文件工作台的更多选项').click();
+  await expect(page.getByRole('button', { name: '保留为独立选择' })).toBeHidden();
 });
 
 test('manifest pages are discoverable through navigation and command palette', async ({ page }) => {

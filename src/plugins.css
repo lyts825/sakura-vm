@@ -230,12 +230,65 @@
   padding: 5px;
   border-radius: 4px;
 }
+.plugin-more-options {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.plugin-options-trigger {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: 11px 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.plugin-options-trigger:hover,
+.plugin-options-trigger[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--surface-soft);
+}
+.plugin-options-trigger:focus-visible {
+  outline-offset: -3px;
+}
+.plugin-options-trigger > span {
+  min-width: 0;
+  flex: 1;
+  text-align: right;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.plugin-options-trigger > .has-filters {
+  color: var(--accent);
+}
+.plugin-options-chevron {
+  transition: transform 160ms ease;
+}
+.plugin-options-trigger[aria-expanded='true'] .plugin-options-chevron {
+  transform: rotate(180deg);
+}
 .plugin-filters {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 20px;
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+.plugin-filters[hidden] {
+  display: none;
+}
+.plugin-filter-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.plugin-filter-actions > button {
+  white-space: nowrap;
+  font-size: 11px;
 }
 .plugin-categories {
   display: flex;
@@ -434,6 +487,23 @@
 .plugin-details p {
   margin-top: 10px;
   overflow-wrap: anywhere;
+}
+.plugin-independent-option {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+.plugin-independent-option p {
+  margin: 0 0 10px;
+}
+.plugin-included-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  color: var(--green);
+  font-size: 12px;
 }
 .plugin-card-footer {
   display: flex;
