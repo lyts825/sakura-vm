@@ -30,6 +30,7 @@ import { freePort, qmp } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { bootGuardStatus, recordBootAttempt, resetBootGuard } from './boot-guard.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
@@ -70,7 +71,6 @@ export class Machines extends EventEmitter {
   live = new Map<string, Live>();
   logs = new Map<string, string>();
   private locks = new Set<string>();
-  private startAttempts = new Map<string, number[]>();
   private operations = new Set<Promise<void>>();
   private closeTask?: Promise<void>;
   private sandboxTimer?: ReturnType<typeof setInterval>;
@@ -394,18 +394,13 @@ export class Machines extends EventEmitter {
         const vm = this.get(id);
         this.requireSandboxLifetime(vm);
         if (this.live.has(id)) return this.view(id);
-        const now = Date.now();
-        const attempts = (this.startAttempts.get(id) || []).filter((at) => now - at < 5 * 60_000);
-        if (attempts.length >= 5)
-          throw new AppError('该发行版在 5 分钟内连续启动失败，请检查启动日志后再试', 409);
-        attempts.push(now);
-        this.startAttempts.set(id, attempts);
         if (this.live.size >= 4) throw new AppError('轻量模式最多同时运行 4 个发行版', 409);
         for (const otherId of this.live.keys())
           for (const p of this.get(otherId).forwards)
             if (vm.forwards.some((n) => n.host === p.host))
               throw new AppError(`端口 ${p.host} 已被另一实例使用`, 409);
         const [sshPort, qmpPort, serialPort] = await Promise.all([freePort(), freePort(), freePort()]);
+        await recordBootAttempt(id);
         const accelerator =
           vm.accelerator === 'auto' ? (this.engine.whpxAvailable ? 'whpx' : 'tcg') : vm.accelerator;
         const live: Live = {
@@ -593,7 +588,7 @@ export class Machines extends EventEmitter {
         if (this.live.get(id) === live && live.status === 'starting') {
           live.status = 'running';
           this.get(id).bootstrapped = true;
-          this.startAttempts.delete(id);
+          await resetBootGuard(id);
           this.emit('change');
         }
         return;
@@ -903,6 +898,15 @@ export class Machines extends EventEmitter {
   }
   async stop(id: string, force = false) {
     return this.locked(id, async () => this.stopInternal(id, force), true);
+  }
+  async bootGuard(id: string, reset = false) {
+    this.get(id);
+    if (reset)
+      await this.locked(id, async () => {
+        this.requireStopped(id);
+        await resetBootGuard(id);
+      });
+    return bootGuardStatus(id);
   }
   async suspend(id: string) {
     return this.locked(id, async () => {

@@ -184,7 +184,7 @@ async function main() {
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': candidate.endsWith('index.html') ? 'no-cache' : 'public, max-age=3600',
         'Content-Security-Policy':
-          "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'",
+          "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: blob:; object-src blob:; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'",
       });
       res.end(req.method === 'HEAD' ? undefined : data);
     } catch (error: any) {

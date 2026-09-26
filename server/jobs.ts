@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { SandboxExecution } from '../shared/sandbox.ts';
 import { AppError, DATA } from './model.ts';
@@ -24,9 +24,15 @@ export type JobView = JobMeta & {
   finishedAt?: string;
   phase?: string;
   progress?: number;
+  result?: { bytes: number; sha256: string };
 };
 export type JobUpdate = (phase: string, progress?: number) => void;
-type Work = (log: (text: string) => void, signal: AbortSignal, update: JobUpdate) => Promise<void>;
+type Work = (
+  log: (text: string) => void,
+  signal: AbortSignal,
+  update: JobUpdate,
+  result: (value: unknown) => Promise<void>,
+) => Promise<void>;
 export class Jobs {
   private closed = false;
   private items = new Map<string, { view: JobView; abort: AbortController; done: Promise<void> }>();
@@ -35,6 +41,7 @@ export class Jobs {
   private timer?: ReturnType<typeof setTimeout>;
   private file?: string;
   private persisted?: string;
+  private results = new Map<string, string>();
   persistenceError?: string;
   constructor(
     private scope?: string,
@@ -114,6 +121,20 @@ export class Jobs {
   get(id: string) {
     return this.history.find((v) => v.id === id);
   }
+  async result(id: string) {
+    const job = this.get(id);
+    if (!job?.result || !/^[a-f0-9-]{36}$/.test(id)) throw new AppError('任务没有保存结果', 404);
+    const data = this.file
+      ? await readFile(join(this.file + '.results', id + '.json'), 'utf8')
+      : this.results.get(id);
+    if (
+      data === undefined ||
+      Buffer.byteLength(data) !== job.result.bytes ||
+      createHash('sha256').update(data).digest('hex') !== job.result.sha256
+    )
+      throw new AppError('任务结果校验失败', 409);
+    return JSON.parse(data);
+  }
   start(key: string, work: Work, meta: JobMeta = {}) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
     if (this.items.get(key)?.view.status === 'running') throw new AppError('另一项操作仍在进行', 409);
@@ -134,6 +155,9 @@ export class Jobs {
       if (index < 0) break;
       const [removed] = this.history.splice(index, 1);
       if (removed.key && this.items.get(removed.key)?.view === removed) this.items.delete(removed.key);
+      this.results.delete(removed.id!);
+      if (this.file && removed.result && /^[a-f0-9-]{36}$/.test(removed.id || ''))
+        void rm(join(this.file + '.results', removed.id! + '.json'), { force: true }).catch(() => {});
     }
     this.persist();
     const done = Promise.resolve()
@@ -151,6 +175,20 @@ export class Jobs {
           (phase, progress) => {
             view.phase = phase;
             view.progress = progress === undefined ? undefined : Math.min(100, Math.max(0, progress));
+            this.persist();
+          },
+          async (value) => {
+            const data = JSON.stringify(value),
+              bytes = Buffer.byteLength(data);
+            if (bytes > 8 * 1024 * 1024) throw new AppError('任务结果超过 8 MiB，请缩小操作范围');
+            if (this.file) {
+              const folder = this.file + '.results',
+                path = join(folder, view.id! + '.json');
+              await mkdir(folder, { recursive: true });
+              await writeFile(path + '.tmp', data, { mode: 0o600 });
+              await rename(path + '.tmp', path);
+            } else this.results.set(view.id!, data);
+            view.result = { bytes, sha256: createHash('sha256').update(data).digest('hex') };
             this.persist();
           },
         );

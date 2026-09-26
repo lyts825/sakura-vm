@@ -6,6 +6,8 @@ import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { CapabilityActions } from './capability-actions.ts';
+import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -180,7 +182,14 @@ export const nextFeatureCatalog = [
     'planned',
   ],
   ['global-dedup', '全局备份去重', '存储与灾备', 'P1', '计算本地备份索引的去重统计。', 'planned'],
-  ['backup-throttle', '备份带宽限速', '存储与灾备', 'P2', '保存备份带宽和并发限制。', 'planned'],
+  [
+    'backup-throttle',
+    '备份带宽限速',
+    '存储与灾备',
+    'P2',
+    '限制备份输出速率；每个实例串行备份。',
+    'available',
+  ],
   [
     'rpo-rto-planner',
     'RPO/RTO 计算器',
@@ -238,9 +247,9 @@ export const nextFeatureCatalog = [
     '保存服务间双向 TLS 策略和证书轮换时间。',
     'planned',
   ],
-  ['network-topology', '网络拓扑图', '网络与服务治理', 'P1', '记录客户机接口、路由和转发拓扑。', 'planned'],
+  ['network-topology', '网络拓扑图', '网络与服务治理', 'P1', '记录客户机接口、路由和转发拓扑。', 'available'],
   ['nat-hairpin', 'NAT 回流', '网络与服务治理', 'P2', '保存端口回流规则并检查当前转发配置。', 'planned'],
-  ['proxy-pac', 'PAC 代理策略', '网络与服务治理', 'P2', '保存按域名分流的 PAC 规则。', 'planned'],
+  ['proxy-pac', 'PAC 代理策略', '网络与服务治理', 'P2', '保存按域名分流的 PAC 规则。', 'available'],
   [
     'network-emulation',
     '延迟丢包模拟',
@@ -284,7 +293,7 @@ export const nextFeatureCatalog = [
     '安全与合规',
     'P1',
     '导出当前能力和操作记录的证据摘要。',
-    'planned',
+    'available',
   ],
   [
     'pii-classification',
@@ -292,7 +301,7 @@ export const nextFeatureCatalog = [
     '安全与合规',
     'P1',
     '对输入路径和字段声明生成隐私分类结果。',
-    'planned',
+    'available',
   ],
   [
     'incident-lockdown',
@@ -325,19 +334,26 @@ export const nextFeatureCatalog = [
     '可观测性与自动运维',
     'P0',
     '保存日志索引字段和最近一次索引状态。',
-    'planned',
+    'available',
   ],
   ['log-retention', '日志保留策略', '可观测性与自动运维', 'P0', '保存日志保留天数和容量上限。', 'planned'],
   ['alert-routing', '告警路由', '可观测性与自动运维', 'P0', '保存按标签匹配的告警通知路由。', 'planned'],
-  ['slo-dashboard', 'SLO 仪表盘', '可观测性与自动运维', 'P1', '根据任务历史生成可用性指标摘要。', 'planned'],
-  ['error-budget', '错误预算', '可观测性与自动运维', 'P1', '根据目标 SLO 计算剩余错误预算。', 'planned'],
+  [
+    'slo-dashboard',
+    'SLO 仪表盘',
+    '可观测性与自动运维',
+    'P1',
+    '根据任务历史生成可用性指标摘要。',
+    'available',
+  ],
+  ['error-budget', '错误预算', '可观测性与自动运维', 'P1', '根据目标 SLO 计算剩余错误预算。', 'available'],
   [
     'capacity-forecast',
     '容量预测',
     '可观测性与自动运维',
     'P1',
     '根据宿主机当前资源生成容量预测快照。',
-    'planned',
+    'available',
   ],
   [
     'auto-remediation',
@@ -347,7 +363,7 @@ export const nextFeatureCatalog = [
     '保存带审批和预览的自动修复步骤。',
     'planned',
   ],
-  ['build-cache', '构建缓存', '开发与 AI', 'P1', '检查客户机缓存目录和构建工具。', 'planned'],
+  ['build-cache', '构建缓存', '开发与 AI', 'P1', '检查客户机缓存目录和构建工具。', 'available'],
   ['build-farm', '分布式构建农场', '开发与 AI', 'P2', '保存构建节点和队列调度元数据。', 'planned'],
   [
     'language-server-catalog',
@@ -355,7 +371,7 @@ export const nextFeatureCatalog = [
     '开发与 AI',
     'P0',
     '检查客户机常见语言服务器并返回版本。',
-    'planned',
+    'available',
   ],
   [
     'devcontainer-marketplace',
@@ -365,8 +381,15 @@ export const nextFeatureCatalog = [
     '登记 DevContainer 模板和来源校验状态。',
     'planned',
   ],
-  ['branch-preview', '分支预览环境', '开发与 AI', 'P1', '保存分支预览环境的生命周期状态。', 'planned'],
-  ['test-sharding', '测试分片', '开发与 AI', 'P1', '根据分片数量生成稳定的测试分片计划。', 'experimental'],
+  ['branch-preview', '分支预览环境', '开发与 AI', 'P1', '保存分支预览环境的生命周期状态。', 'available'],
+  [
+    'test-sharding',
+    '测试分片',
+    '开发与 AI',
+    'P1',
+    '稳定分片并实际执行测试，保留每片日志、耗时与退出码。',
+    'available',
+  ],
   ['dependency-bot', '依赖升级机器人', '开发与 AI', 'P1', '保存依赖升级检查计划和安全限制。', 'planned'],
   [
     'code-search-index',
@@ -374,7 +397,7 @@ export const nextFeatureCatalog = [
     '开发与 AI',
     'P0',
     '检查 ripgrep/索引工具并保存索引状态。',
-    'planned',
+    'available',
   ],
   [
     'local-ai-assistant',
@@ -396,12 +419,12 @@ export const nextFeatureCatalog = [
   ['shared-desktop-view', '共享桌面视图', '协作与团队', 'P1', '保存只读桌面查看会话。', 'planned'],
   ['session-handoff', '会话交接', '协作与团队', 'P0', '保存可恢复的会话交接令牌元数据。', 'planned'],
   ['file-locks', '文件锁', '协作与团队', 'P0', '登记项目文件锁和过期时间。', 'planned'],
-  ['review-threads', '行级评审线程', '协作与团队', 'P1', '保存文件、行号和评审意见线程。', 'planned'],
+  ['review-threads', '行级评审线程', '协作与团队', 'P1', '保存文件、行号和评审意见线程。', 'available'],
   ['project-permissions', '项目权限', '协作与团队', 'P0', '保存项目成员和角色权限。', 'planned'],
   ['team-templates', '团队模板', '协作与团队', 'P1', '保存可复制的项目和资源模板。', 'planned'],
-  ['onboarding-checklist', '入门清单', '协作与团队', 'P1', '保存团队成员入门步骤和完成状态。', 'planned'],
+  ['onboarding-checklist', '入门清单', '协作与团队', 'P1', '保存团队成员入门步骤和完成状态。', 'available'],
   ['change-approval', '变更审批', '协作与团队', 'P0', '保存变更摘要、审批人和审批状态。', 'planned'],
-  ['activity-digest', '活动摘要', '协作与团队', 'P2', '从任务和执行历史生成活动摘要。', 'planned'],
+  ['activity-digest', '活动摘要', '协作与团队', 'P2', '从任务和执行历史生成活动摘要。', 'available'],
   [
     'process-interop',
     'Windows/Linux 进程互操作',
@@ -477,7 +500,7 @@ export const nextFeatureCatalog = [
     '计算插件摘要并记录签名与沙箱策略。',
     'planned',
   ],
-  ['schema-panels', 'Schema 驱动面板', '平台与扩展', 'P1', '保存面板 Schema 版本和校验状态。', 'planned'],
+  ['schema-panels', 'Schema 驱动面板', '平台与扩展', 'P1', '保存面板 Schema 版本和校验状态。', 'available'],
   ['graphql-api', 'GraphQL API', '平台与扩展', 'P1', '登记 GraphQL API 版本和查询限制。', 'planned'],
   ['webhook-events', 'Webhook 事件', '平台与扩展', 'P0', '保存 Webhook 订阅和最近投递状态。', 'planned'],
   [
@@ -587,7 +610,12 @@ export class NextFeatures {
     return catalog.find((item) => item.id === id)!;
   }
   async catalog() {
-    return { features: catalog, count: catalog.length, generatedAt: now() };
+    return {
+      features: catalog,
+      capabilities: capabilityViews('next'),
+      count: catalog.length,
+      generatedAt: now(),
+    };
   }
   async view(id: string) {
     this.machines.get(id);
@@ -596,6 +624,7 @@ export class NextFeatures {
     return {
       projectId,
       features: catalog,
+      capabilities: capabilityViews('next'),
       settings: state.settings[id] || {},
       records: state.records[id] || {},
       executions: (state.executions[id] || []).slice(-80).reverse(),
@@ -670,6 +699,12 @@ export class NextFeatures {
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
+    if (hasCapability(spec.id)) {
+      const runner = new CapabilityActions(this.machines, this.workspaces);
+      return action === 'run'
+        ? runner.run(id, spec.id, merged, signal || new AbortController().signal)
+        : runner.check(id, spec.id, signal);
+    }
     if (spec.id === 'incident-lockdown') {
       if (action === 'check')
         return { ready: true, executed: false, adapter, locked: this.machines.incidentLocked(id) };
@@ -796,11 +831,16 @@ export class NextFeatures {
     if (value.action === 'check' || spec.id === 'incident-lockdown')
       return this.executeFeature(id, spec, value.action, signal, value.options);
     if (spec.state !== 'available') throw new AppError('此功能尚未完成实现', 501);
+    if (hasCapability(spec.id)) {
+      const configured = (await this.state()).settings[id]?.[spec.id]?.options || {};
+      capabilityParameters(spec.id, { ...configured, ...value.options });
+    }
     const projectId = this.workspaces.projects.current(id);
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:${spec.id}`,
-      async (log, taskSignal) => {
+      async (log, taskSignal, _update, saveResult) => {
         const result = await this.executeFeature(id, spec, 'run', taskSignal, value.options);
+        await saveResult(result);
         log(`${JSON.stringify(result)}\n`);
         if (!result.ready) throw new AppError('能力尚未就绪或执行失败', 409);
       },

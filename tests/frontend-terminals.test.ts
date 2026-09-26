@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTerminalStores } from '../src/terminal-store.ts';
+import { applyTerminalLayout, restoreLayouts } from '../src/terminal-layouts.ts';
 
 function deferred() {
   let resolve!: () => void;
@@ -26,6 +27,41 @@ function fixture() {
   store.dispatch({ type: 'add', id: 'logs' });
   return { getStore, store, storage, saved };
 }
+
+test('saved layouts restore names, ordering and selection without losing active sessions', () => {
+  const { store, storage } = fixture();
+  const layout = {
+    id: 'dev-layout',
+    name: 'Development',
+    tabs: [
+      { id: 'main', name: 'Shell' },
+      { id: 'build', name: 'Build' },
+    ],
+    active: 'build',
+    split: true,
+    secondary: 'main',
+  };
+  assert.equal(restoreLayouts([layout]).length, 1);
+  store.applyLayout(layout);
+  assert.deepEqual(
+    store.getSnapshot().tabs.map((tab) => tab.id),
+    ['main', 'build', 'logs'],
+  );
+  assert.equal(store.getSnapshot().active, 'build');
+  assert.equal(createTerminalStores(() => storage)('first-vm').getSnapshot().tabs[0].name, 'Shell');
+  assert.deepEqual(restoreLayouts([{ ...layout, active: 'missing' }]), []);
+  assert.throws(
+    () =>
+      applyTerminalLayout(
+        {
+          tabs: Array.from({ length: 8 }, (_, index) => ({ id: 'existing-' + index, name: 'Existing' })),
+          active: 'existing-0',
+        },
+        layout,
+      ),
+    /8/,
+  );
+});
 
 test('a terminal closed after all views unmount stays removed when restored from storage', async () => {
   const { store, storage, saved } = fixture();

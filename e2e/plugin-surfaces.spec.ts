@@ -1,5 +1,239 @@
 import { expect, test, type Page } from '@playwright/test';
+import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
+
+test('schema forms submit typed parameters and download a persisted report independently of logs', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'platform'], true);
+  let submitted: any,
+    jobs: any[] = [];
+  await page.route('**/api/vms/*/next-features*', (route) => {
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON();
+      jobs = [
+        {
+          id: 'large-report',
+          action: 'next:slo-dashboard',
+          status: 'done',
+          log: 'truncated log',
+          startedAt: new Date().toISOString(),
+          result: { bytes: 100, sha256: 'a'.repeat(64) },
+        },
+      ];
+      return route.fulfill({ json: jobs[0] });
+    }
+    return route.fulfill({
+      json: {
+        projectId: 'default',
+        settings: {},
+        records: {},
+        executions: [],
+        jobs,
+        capabilities: capabilityViews('next'),
+        features: [],
+      },
+    });
+  });
+  await page.route('**/api/jobs/large-report/result*', (route) =>
+    route.fulfill({
+      json: {
+        jobId: 'large-report',
+        result: {
+          basis: 'completed-tasks',
+          actualPercent: 90,
+          samples: 10,
+          failed: 1,
+          remainingFailures: 0,
+          download: { filename: 'report.json', mime: 'application/json', content: '{"complete":true}' },
+        },
+      },
+    }),
+  );
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('next 功能操作').selectOption('slo-dashboard');
+  await page.getByText('填写参数表单', { exact: true }).click();
+  await page.getByLabel('targetPercent *', { exact: true }).fill('90');
+  await page.getByLabel('hours *', { exact: true }).fill('48');
+  await page.getByRole('button', { name: '提交任务 SLO 仪表盘' }).click();
+  await expect
+    .poll(() => submitted)
+    .toEqual({ action: 'run', featureId: 'slo-dashboard', options: { targetPercent: 90, hours: 48 } });
+  await expect(page.getByText('成功率：90.00%')).toBeVisible();
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下载 report.json' }).click();
+  expect((await downloaded).suggestedFilename()).toBe('report.json');
+});
+
+test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
+  await app(page, ['files', 'transfers', 'terminal-workspace'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  await page.route('**/api/vms/*/files?*', (route) =>
+    route.fulfill({
+      json: [{ name: 'table.csv', size: 100, directory: false, symlink: false, modified: 0 }],
+    }),
+  );
+  await page.route('**/api/vms/*/history*', (route) => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/vms/*/file-preview?*', (route) =>
+    route.fulfill({
+      json: {
+        kind: 'table',
+        name: 'table.csv',
+        rows: [
+          ['name', 'value'],
+          ['<script>alert(1)</script>', '=1+1'],
+        ],
+        truncated: false,
+      },
+    }),
+  );
+  await page.reload();
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '预览 table.csv' }).click();
+  const preview = page.getByRole('dialog', { name: '预览 /workspace/table.csv' });
+  await expect(preview.getByRole('cell', { name: '<script>alert(1)</script>', exact: true })).toBeVisible();
+  await expect(preview.getByRole('cell', { name: '=1+1', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '关闭预览' }).click();
+  await page.getByRole('tab', { name: '终端', exact: true }).click();
+  await page.getByRole('button', { name: '新建终端' }).click();
+  await page.getByRole('button', { name: '分屏', exact: true }).click();
+  await page.getByText('终端布局预设', { exact: true }).click();
+  await page.getByLabel('布局名称').fill('开发与日志');
+  await page.getByRole('button', { name: '保存当前布局' }).click();
+  await page.reload();
+  await page.getByRole('tab', { name: '终端', exact: true }).click();
+  await page.getByText('终端布局预设', { exact: true }).click();
+  await expect(page.getByText('开发与日志 · 2 个终端 · 分屏')).toBeVisible();
+  await page.getByRole('button', { name: '应用布局', exact: true }).click();
+  await expect(page.getByRole('tablist', { name: '终端会话' }).getByRole('tab')).toHaveCount(2);
+  await expect(page.locator('.terminal-panes')).toHaveClass(/split/);
+});
+
+test('file conflict editor combines independent changes and saves against the latest version', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'sakura-drafts:11111111-1111-4111-8111-111111111111',
+      JSON.stringify([
+        {
+          id: 'draft',
+          path: '/workspace/file.txt',
+          baseContent: 'one\ntwo\nthree\n',
+          content: 'ONE\ntwo\nthree\n',
+          version: 'old-version',
+        },
+      ]),
+    ),
+  );
+  await app(page, ['files', 'transfers'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  await page.route('**/api/vms/*/history*', (route) => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/vms/*/files?*', (route) => route.fulfill({ json: [] }));
+  let saved: any;
+  await page.route('**/api/vms/*/file', (route) => {
+    const input = route.request().postDataJSON();
+    if (input.expectedVersion !== 'new-version')
+      return route.fulfill({ status: 409, json: { error: '文件已变化' } });
+    saved = input;
+    return route.fulfill({ json: { version: 'saved-version' } });
+  });
+  await page.route('**/api/vms/*/file?*', (route) =>
+    route.fulfill({ json: { content: 'one\ntwo\nTHREE\n', version: 'new-version' } }),
+  );
+  await page.reload();
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await page.getByRole('button', { name: '保存文件', exact: true }).click();
+  await page.getByRole('button', { name: '三方合并', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '共同版本', exact: true })).toHaveValue('one\ntwo\nthree\n');
+  await page.getByRole('button', { name: '应用合并结果' }).click();
+  await page.getByRole('button', { name: '保存文件', exact: true }).click();
+  await expect
+    .poll(() => saved)
+    .toEqual({
+      path: '/workspace/file.txt',
+      content: 'ONE\ntwo\nTHREE\n',
+      overwrite: true,
+      expectedVersion: 'new-version',
+    });
+});
+
+test('pasting clipboard images uploads uniquely named files without reading the clipboard in the background', async ({
+  page,
+}) => {
+  await app(page, ['files', 'transfers'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  await page.route('**/api/vms/*/history*', (route) => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/vms/*/files?*', (route) => route.fulfill({ json: [] }));
+  const uploads: { path: string; content: string }[] = [];
+  await page.route('**/api/vms/*/transfer?*', (route) => {
+    uploads.push({
+      path: new URL(route.request().url()).searchParams.get('path')!,
+      content: route.request().postDataBuffer()!.toString(),
+    });
+    return route.fulfill({ json: { bytes: 12 } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  const browser = page.getByRole('region', { name: 'Linux 文件浏览器' });
+  for (let index = 0; index < 2; index++) {
+    await browser.evaluate((element) => {
+      const data = new DataTransfer();
+      data.items.add(new File(['image content'], 'image.png', { type: 'image/png' }));
+      element.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+    });
+    await expect.poll(() => uploads.length).toBe(index + 1);
+    await expect(page.getByRole('button', { name: '上传文件', exact: true })).toBeEnabled();
+  }
+  expect(uploads[0].path).toMatch(/^\/workspace\/clipboard-.*\.png$/);
+  expect(uploads[0].path).not.toBe(uploads[1].path);
+  expect(uploads[0].content).toBe('image content');
+});
+
+test('sync controls save timezone and bandwidth and support offline enqueue and cancellation', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'sync'], true);
+  let saved: any = { host: 'D:\\sync', guest: '/workspace/shared', auto: false },
+    queue: any = null;
+  await page.route('**/api/vms/*/sync*', (route) => {
+    const request = route.request();
+    if (new URL(request.url()).pathname.endsWith('/sync-queue')) {
+      queue =
+        request.method() === 'POST'
+          ? { id: 'q', attempts: 0, nextAttemptAt: 0, requestedAt: new Date().toISOString() }
+          : null;
+      return route.fulfill({ json: { queue } });
+    }
+    if (request.method() === 'PUT') {
+      saved = request.postDataJSON();
+      return route.fulfill({ json: saved });
+    }
+    return route.fulfill({ json: { projectId: 'default', config: saved, queue, job: null } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '同步', exact: true }).click();
+  await page.getByLabel('限定后台同步时间窗').check();
+  await page.getByLabel('时区', { exact: true }).fill('Asia/Shanghai');
+  await page.getByLabel('开始时间', { exact: true }).fill('22:00');
+  await page.getByLabel('结束时间', { exact: true }).fill('02:00');
+  await page.getByLabel('同步传输限速', { exact: false }).fill('2');
+  await page.getByRole('button', { name: '保存配置', exact: true }).click();
+  await expect.poll(() => saved.bandwidthMiBps).toBe(2);
+  expect(saved.window).toMatchObject({ timeZone: 'Asia/Shanghai', start: '22:00', end: '02:00' });
+  await page.getByRole('button', { name: '排队同步', exact: true }).click();
+  await expect(page.getByRole('button', { name: '取消排队', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '取消排队', exact: true }).click();
+  await expect.poll(() => queue).toBeNull();
+});
 
 const vm = {
   id: '11111111-1111-4111-8111-111111111111',

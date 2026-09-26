@@ -13,8 +13,9 @@ export async function activate(host: PluginContext) {
   host.sync = new FolderSync(m, host.workspaces.projects);
   host.registerJobs(host.sync.jobs, (job) => {
     if (!job.action) throw new AppError('请回到原功能页面重新执行');
-    return retryInProject(host, job, () => host.sync.run(
-      retryTarget(job), z.enum(['both', 'push', 'pull']).parse(job.action)));
+    return retryInProject(host, job, () =>
+      host.sync.run(retryTarget(job), z.enum(['both', 'push', 'pull']).parse(job.action)),
+    );
   });
 }
 export async function route(
@@ -38,6 +39,12 @@ export async function route(
   const id = parts[2],
     action = parts[3];
   this.machines.get(id);
+  if (parts.length === 4 && action === 'sync-queue' && ['POST', 'DELETE'].includes(req.method || '')) {
+    return send(
+      { queue: await this.sync.queue(id, req.method === 'DELETE') },
+      req.method === 'POST' ? 202 : 200,
+    );
+  }
   if (parts.length === 4) {
     if (action === 'sync-preview' && req.method === 'POST') {
       send(await this.sync.preview(id, signal));
@@ -70,6 +77,7 @@ export async function route(
                   'pull',
                   'both',
                   'skip',
+                  'merge',
                   'delete-host',
                   'delete-guest',
                   'restore-host',

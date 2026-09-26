@@ -18,7 +18,14 @@ manifest.scripts = {
 delete manifest.devDependencies;
 await writeFile(join(output, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
 await mkdir(join(output, 'scripts'));
-for (const file of ['setup.mjs', 'versions.mjs', 'cli.mjs', 'development-cli.mjs', 'sandbox-cli.mjs'])
+for (const file of [
+  'setup.mjs',
+  'versions.mjs',
+  'cli.mjs',
+  'development-cli.mjs',
+  'sandbox-cli.mjs',
+  'resumable-download.mjs',
+])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
 const readme = [
   '# Sakura 运行包',

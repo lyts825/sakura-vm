@@ -35,11 +35,15 @@ try {
   console.log('Installing guest test tools');
   const install = await machines.exec(
     id,
-    'apk add --no-cache python3 git coreutils iproute2 acl && mkdir -p /workspace/regression/server /workspace/regression/tests /workspace/app',
-    180000,
+    'apk add --no-cache python3 git coreutils iproute2 acl openssl nodejs npm && mkdir -p /workspace/regression/server /workspace/regression/tests /workspace/app',
+    600000,
   );
   assert.equal(install.code, 0, install.stderr);
-  for (const file of ['server/engineering-runner.py', 'tests/engineering_runner_test.py'])
+  for (const file of [
+    'server/engineering-runner.py',
+    'tests/engineering_runner_test.py',
+    'tests/capability_runner_test.py',
+  ])
     await machines.writeGuestFile(
       id,
       '/workspace/regression/' + file,
@@ -49,7 +53,7 @@ try {
   console.log('Running guest executor regression suite');
   const suite = await machines.exec(
     id,
-    'cd /workspace/regression && python3 tests/engineering_runner_test.py',
+    'cd /workspace/regression && python3 tests/engineering_runner_test.py && python3 tests/capability_runner_test.py',
     180000,
   );
   console.log(suite.stdout + suite.stderr);
@@ -106,6 +110,39 @@ try {
     30000,
   );
   assert.equal(gitSetup.code, 0, gitSetup.stderr);
+  console.log('Checking worktree project switching');
+  const { CapabilityActions } = await import('../server/capability-actions.ts');
+  const capabilities = new CapabilityActions(machines, features.workspaces);
+  const capabilitySignal = new AbortController().signal;
+  const created = await capabilities.run(
+    id,
+    'git-worktrees',
+    { mode: 'create', path: '.worktrees/topic', branch: 'feature/topic' },
+    capabilitySignal,
+  );
+  assert.equal(created.code, 0, JSON.stringify(created));
+  const opened = await capabilities.run(
+    id,
+    'git-worktrees',
+    { mode: 'open', directory: '/workspace/app/.worktrees/topic', projectName: 'Topic' },
+    capabilitySignal,
+  );
+  assert.equal(opened.code, 0, JSON.stringify(opened));
+  assert.equal((await features.workspaces.projects.list(id)).active, (opened as any).projectId);
+  const selected = await features.workspaces.projects.with(id, (opened as any).projectId, () =>
+    features.workspaces.config(id!),
+  );
+  assert.equal(selected.directory, '/workspace/app/.worktrees/topic');
+  await assert.rejects(
+    capabilities.run(
+      id,
+      'git-worktrees',
+      { mode: 'remove', directory: selected.directory },
+      capabilitySignal,
+    ),
+    /项目引用/,
+  );
+  await features.workspaces.projects.update(id, 'default');
   const secret = 'AKIA' + 'A'.repeat(16);
   await machines.writeGuestFile(id, '/workspace/app/credentials.txt', secret, false);
   await machines.exec(id, 'cd /workspace/app && git add credentials.txt');

@@ -7,6 +7,7 @@ import { AppError, guestPath } from '../../server/model.ts';
 import { readJsonBody, MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 import { Files, MAX_TEXT_BYTES, textVersion } from '../../server/files.ts';
 import { FileHistory } from '../../server/file-history.ts';
+import { downloadManifest } from '../../server/file-chunks.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
@@ -44,6 +45,33 @@ export async function route(
   const id = parts[2],
     action = parts[3];
   this.machines.get(id);
+  if (parts.length === 4 && action === 'download-chunks' && req.method === 'GET') {
+    const path = guestPath(url.searchParams.get('path'));
+    return send(
+      url.searchParams.has('chunk')
+        ? await this.files.chunk(id, path, Number(url.searchParams.get('chunk')), signal)
+        : await downloadManifest(this.files, id, path, signal),
+    );
+  }
+  if (parts.length === 4 && action === 'file-preview' && req.method === 'GET')
+    return send(await this.files.preview(id, guestPath(url.searchParams.get('path')), signal));
+  if (parts.length === 4 && action === 'uploads') {
+    this.machines.requireUnlocked(id);
+    if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+    const uploadId = url.searchParams.get('id');
+    if (req.method === 'POST' && !uploadId)
+      return send(await this.files.uploads.create(id, await body(req)), 201);
+    if (!uploadId) throw new AppError('需要上传会话标识');
+    if (req.method === 'GET') return send(await this.files.uploads.view(id, uploadId));
+    if (req.method === 'DELETE') return send(await this.files.uploads.remove(id, uploadId));
+    if (req.method === 'PUT') {
+      if (!url.searchParams.has('chunk')) throw new AppError('需要分块索引');
+      return send(
+        await this.files.uploads.chunk(id, uploadId, Number(url.searchParams.get('chunk')), req, signal),
+      );
+    }
+    if (req.method === 'POST') return send(await this.files.uploads.commit(id, uploadId, signal));
+  }
   if (req.method === 'GET' && parts.length === 4 && parts[3] === 'files')
     return send(await this.machines.files(id, guestPath(url.searchParams.get('path') || '/workspace')));
   if (req.method === 'GET' && parts.length === 4 && parts[3] === 'file') {

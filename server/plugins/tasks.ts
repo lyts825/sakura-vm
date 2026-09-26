@@ -22,6 +22,11 @@ export async function route(
   };
   if (parts[1] === 'jobs') {
     const stores = this.jobStores();
+    if (parts.length === 4 && parts[3] === 'result' && req.method === 'GET') {
+      const store = stores.find((item) => item.get(parts[2]));
+      if (!store) throw new AppError('任务不存在', 404);
+      return send({ jobId: parts[2], result: await store.result(parts[2]) });
+    }
     if (parts.length === 2 && req.method === 'GET') {
       send({
         jobs: stores

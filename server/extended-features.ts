@@ -6,6 +6,8 @@ import type { Workspaces } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { runEngineeringOperation, requireSuccessfulResult } from './engineering-runner.ts';
+import { CapabilityActions } from './capability-actions.ts';
+import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import {
   engineeringOperations,
   operationViews,
@@ -19,8 +21,8 @@ import {
  */
 export const extendedFeatureCatalog = [
   ['vm-suspend', '挂起与恢复', '虚拟机', 'P0', '暂停运行中的虚拟机并恢复其 CPU 状态。', 'available'],
-  ['vm-dependency-start', '多实例依赖启动', '虚拟机', 'P0', '按依赖关系启动多个实例。', 'planned'],
-  ['crash-loop-guard', '崩溃循环熔断', '虚拟机', 'P0', '连续启动失败后阻止无限重试。', 'planned'],
+  ['vm-dependency-start', '多实例依赖启动', '虚拟机', 'P0', '按依赖关系启动多个实例。', 'available'],
+  ['crash-loop-guard', '崩溃循环熔断', '虚拟机', 'P0', '连续启动失败后阻止无限重试。', 'available'],
   ['rescue-boot', '救援模式启动', '虚拟机', 'P1', '用临时系统检查故障实例磁盘。', 'planned'],
   ['qemu-commandline', 'QEMU 参数预览', '虚拟机', 'P0', '显示实例将使用的设备和启动参数。', 'available'],
   ['cpu-topology', 'CPU 拓扑与 NUMA', '虚拟机', 'P2', '配置 vCPU 拓扑和 NUMA 布局。', 'planned'],
@@ -45,12 +47,12 @@ export const extendedFeatureCatalog = [
   ['posix-acl', 'POSIX ACL 管理', '存储', 'P1', '查看和修改文件 ACL。', 'available'],
   ['secure-erase', '安全擦除证明', '存储', 'P2', '擦除文件并记录操作证明。', 'planned'],
   ['hash-manifest', '文件哈希清单', '存储', 'P0', '生成可校验的文件哈希清单。', 'available'],
-  ['cross-vm-copy', '跨实例复制', '文件同步', 'P0', '在两个运行中的实例之间复制文件。', 'planned'],
+  ['cross-vm-copy', '跨实例复制', '文件同步', 'P0', '在两个运行中的实例之间复制文件。', 'available'],
   ['watch-sync', '事件驱动增量同步', '文件同步', 'P1', '监听变化并只同步受影响的文件。', 'planned'],
-  ['sync-window', '同步时间窗', '文件同步', 'P1', '按时段和带宽执行同步。', 'planned'],
+  ['sync-window', '同步时间窗', '文件同步', 'P1', '按时段和带宽执行同步。', 'available'],
   ['rename-detection', '同步重命名识别', '文件同步', 'P1', '识别移动或重命名而不是重新上传。', 'planned'],
   ['case-conflict-report', '名称冲突预检', '文件同步', 'P0', '预先报告大小写和非法名称冲突。', 'available'],
-  ['sync-queue', '离线同步队列', '文件同步', 'P1', '网络中断后排队并重试同步作业。', 'planned'],
+  ['sync-queue', '离线同步队列', '文件同步', 'P1', '网络中断后排队并重试同步作业。', 'available'],
   ['path-sync-policy', '路径同步策略', '文件同步', 'P1', '对路径设置只读、单向和权限策略。', 'planned'],
   ['sync-rollback', '同步回滚点', '文件同步', 'P1', '撤销一轮已应用的同步变更。', 'planned'],
   ['merge-drivers', '自定义合并驱动', '文件同步', 'P2', '为文本和二进制类型选择合并方式。', 'planned'],
@@ -66,10 +68,10 @@ export const extendedFeatureCatalog = [
   ['task-import', '任务自动导入', '开发环境', 'P0', '导入 npm、Make、Just 和 Taskfile 任务。', 'available'],
   ['env-schema', '环境变量 Schema', '开发环境', 'P0', '校验必填变量、类型和继承关系。', 'available'],
   ['shell-profiles', '项目 Shell profile', '开发环境', 'P1', '为每个项目保存独立登录环境。', 'available'],
-  ['command-forms', '命令参数表单', '开发环境', 'P0', '从参数声明生成安全输入表单。', 'planned'],
-  ['environment-parity', '环境一致性报告', '开发环境', 'P1', '比较多个实例的工具链和配置。', 'planned'],
+  ['command-forms', '命令参数表单', '开发环境', 'P0', '从参数声明生成安全输入表单。', 'available'],
+  ['environment-parity', '环境一致性报告', '开发环境', 'P1', '比较多个实例的工具链和配置。', 'available'],
   ['toolchain-check', '工具链兼容检查', '开发环境', 'P1', '检查项目所需工具和版本。', 'available'],
-  ['environment-recreate', '环境清理重建', '开发环境', 'P1', '按锁文件重新创建开发环境。', 'planned'],
+  ['environment-recreate', '环境清理重建', '开发环境', 'P1', '按锁文件重新创建开发环境。', 'available'],
   ['bootstrap-dry-run', '初始化预演', '开发环境', 'P0', '在写入客户机前检查初始化步骤。', 'available'],
   ['project-template-pack', '项目模板打包', '开发环境', 'P1', '从现有项目生成可复用模板。', 'available'],
   ['git-stash', 'Git Stash 管理', 'Git', 'P0', '查看、应用和删除 stash。', 'available'],
@@ -77,12 +79,12 @@ export const extendedFeatureCatalog = [
   ['git-rebase', '交互式 Rebase', 'Git', 'P1', '可视化调整提交顺序和消息。', 'available'],
   ['git-bisect', 'Git Bisect 向导', 'Git', 'P1', '用测试结果定位引入回归的提交。', 'available'],
   ['git-cherry-pick', 'Cherry-pick 助手', 'Git', 'P1', '安全地选择并应用提交。', 'available'],
-  ['patch-bundle', '补丁签名包', 'Git', 'P1', '导出带校验和签名的补丁包。', 'planned'],
-  ['review-comments', '本地代码评审', 'Git', 'P1', '为差异添加行级评论和线程。', 'planned'],
+  ['patch-bundle', '补丁签名包', 'Git', 'P1', '导出带校验和签名的补丁包。', 'available'],
+  ['review-comments', '本地代码评审', 'Git', 'P1', '为差异添加行级评论和线程。', 'available'],
   ['git-policy', '提交与分支策略', 'Git', 'P0', '校验提交信息和分支命名。', 'available'],
   ['precommit-secrets', '提交前密钥扫描', 'Git', 'P0', '提交前阻止疑似密钥进入仓库。', 'available'],
   ['code-ownership', '代码所有权映射', 'Git', 'P2', '根据路径分配评审责任。', 'available'],
-  ['test-matrix', '跨发行版测试矩阵', '质量发布', 'P1', '在多个客户机环境运行同一组测试。', 'planned'],
+  ['test-matrix', '跨发行版测试矩阵', '质量发布', 'P1', '在多个客户机环境运行同一组测试。', 'available'],
   ['flaky-tests', '不稳定测试识别', '质量发布', 'P1', '记录重复运行中的偶发失败。', 'available'],
   ['coverage-history', '覆盖率趋势', '质量发布', 'P1', '保存并比较覆盖率历史。', 'available'],
   ['benchmark-regression', '性能回归基准', '质量发布', 'P1', '比较构建和测试基准结果。', 'available'],
@@ -109,22 +111,36 @@ export const extendedFeatureCatalog = [
   ['clipboard-redaction', '剪贴板敏感检测', '安全', 'P1', '识别并阻止疑似密钥复制。', 'planned'],
   ['secret-rotation', '密钥轮换提醒', '安全', 'P1', '追踪密钥年龄并提示轮换。', 'planned'],
   ['signed-bundles', '签名实例包策略', '安全', 'P1', '只允许受信任签名的导入包。', 'planned'],
-  ['immutable-backups', '不可修改备份锁', '安全', 'P1', '防止保留期内的备份被删除。', 'planned'],
+  [
+    'immutable-backups',
+    '不可修改备份锁',
+    '安全',
+    'P1',
+    '通过 Sakura 保留锁阻止备份删除与自动清理。',
+    'available',
+  ],
   ['syscall-profile', '系统调用隔离', '安全', 'P2', '为客户机应用应用受限策略。', 'planned'],
   ['command-risk', '高风险命令评估', '安全', 'P0', '对破坏性命令提供预览和确认。', 'available'],
-  ['metrics-export', '指标导出', '运维', 'P0', '导出 Prometheus 或 OpenTelemetry 指标。', 'planned'],
+  ['metrics-export', '指标导出', '运维', 'P0', '导出 Prometheus 或 OpenTelemetry 指标。', 'available'],
   ['process-history', '进程历史指标', '运维', 'P0', '保存进程级 CPU 和内存趋势。', 'available'],
   ['disk-io-metrics', '磁盘 I/O 指标', '运维', 'P1', '记录磁盘吞吐、延迟和队列。', 'available'],
   ['network-metrics', '网络流量指标', '运维', 'P1', '记录客户机网络流量历史。', 'available'],
-  ['event-timeline', '事件关联时间线', '运维', 'P0', '关联任务、服务、启动和告警事件。', 'planned'],
-  ['anomaly-detection', '异常基线检测', '运维', 'P1', '根据历史指标发现异常变化。', 'planned'],
+  ['event-timeline', '事件关联时间线', '运维', 'P0', '关联任务、服务、启动和告警事件。', 'available'],
+  ['anomaly-detection', '异常基线检测', '运维', 'P1', '根据历史指标发现异常变化。', 'available'],
   ['runbooks', '运维 Runbook', '运维', 'P1', '将诊断和修复步骤保存为可执行流程。', 'available'],
-  ['maintenance-windows', '维护窗口', '运维', 'P1', '在指定时段暂停自动任务。', 'planned'],
+  ['maintenance-windows', '维护窗口', '运维', 'P1', '在指定时段暂停自动任务。', 'available'],
   ['multi-host-health', '多主机健康管理', '运维', 'P2', '集中查看多个宿主节点健康状态。', 'planned'],
   ['availability-report', '可用性报告', '运维', 'P1', '生成实例运行时长和可用性报告。', 'experimental'],
   ['explorer-integration', '资源管理器集成', '体验集成', 'P0', '从 Windows 资源管理器打开项目。', 'planned'],
-  ['editor-profiles', '编辑器连接档案', '体验集成', 'P1', '生成 JetBrains 和 Neovim 连接配置。', 'planned'],
-  ['terminal-layouts', '终端布局预设', '体验集成', 'P0', '保存和恢复多终端布局。', 'planned'],
+  ['editor-profiles', '编辑器连接档案', '体验集成', 'P1', '生成 JetBrains 和 Neovim 连接配置。', 'available'],
+  [
+    'terminal-layouts',
+    '终端布局预设',
+    '体验集成',
+    'P0',
+    '在终端面板保存和恢复标签名称、顺序、分屏和布局预设。',
+    'available',
+  ],
   ['shortcut-editor', '快捷键编辑器', '体验集成', 'P1', '自定义全局和项目快捷键。', 'planned'],
   ['command-macros', '条件命令宏', '体验集成', 'P1', '组合带条件和参数的操作。', 'available'],
   ['offline-pwa', '离线监控 PWA', '体验集成', 'P1', '离线查看最近状态和事件。', 'planned'],
@@ -221,6 +237,7 @@ export class ExtendedFeatures {
     return {
       features: catalog,
       operations: operationViews(),
+      capabilities: capabilityViews('extended'),
       count: catalog.length,
       generatedAt: new Date().toISOString(),
     };
@@ -234,6 +251,7 @@ export class ExtendedFeatures {
       projectId,
       features: catalog,
       operations: operationViews(),
+      capabilities: capabilityViews('extended'),
       settings: state.settings[id] || {},
       manifest: state.manifests[id],
       executions: (state.executions[id] || []).slice(-50).reverse(),
@@ -339,7 +357,13 @@ export class ExtendedFeatures {
       ([_, value]) => value.feature === spec.id,
     )?.[0] as EngineeringOperation | undefined;
     let result: Record<string, unknown> & { ready: boolean };
-    if (action === 'run' && operation) {
+    if (hasCapability(spec.id)) {
+      const runner = new CapabilityActions(this.machines, this.workspaces);
+      result =
+        action === 'run'
+          ? await runner.run(id, spec.id, merged, signal || new AbortController().signal)
+          : await runner.check(id, spec.id, signal);
+    } else if (action === 'run' && operation) {
       const validated = validateOperation({ operation, parameters: merged });
       const executed = await this.runOperation(id, operation, validated.parameters, signal);
       result = { ...executed, ready: executed.code === 0, executed: true };
@@ -467,8 +491,9 @@ export class ExtendedFeatures {
       const projectId = this.workspaces.projects.current(id);
       return this.jobs.start(
         `${this.workspaces.projects.key(id)}:operation:${validated.operation}`,
-        async (log, taskSignal) => {
+        async (log, taskSignal, _update, saveResult) => {
           const result = await this.runOperation(id, validated.operation, validated.parameters, taskSignal);
+          await saveResult(result);
           log(JSON.stringify(result) + '\n');
           requireSuccessfulResult(result);
         },
@@ -482,14 +507,19 @@ export class ExtendedFeatures {
     }
     const spec = this.spec(value.featureId);
     if (value.action === 'check') return this.executeFeature(id, spec, 'check', signal);
+    if (hasCapability(spec.id)) {
+      const configured = (await this.state()).settings[id]?.[spec.id]?.options || {};
+      capabilityParameters(spec.id, { ...configured, ...value.options });
+    }
     const projectId = this.workspaces.projects.current(id);
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:${spec.id}`,
-      async (log, taskSignal) => {
+      async (log, taskSignal, _update, saveResult) => {
         const result = await this.executeFeature(id, spec, 'run', taskSignal, {
           ...value.options,
           ...(value.path ? { path: value.path } : {}),
         });
+        await saveResult(result);
         log(`${JSON.stringify(result)}\n`);
         if (!result.ready) throw new AppError('能力尚未就绪或执行失败', 409);
       },

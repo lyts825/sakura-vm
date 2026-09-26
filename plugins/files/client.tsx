@@ -7,6 +7,9 @@ import { dirtyEdit, registerEditorGuard, type FileEdit } from '../../src/file-ed
 import { PluginGate } from '../../src/plugin-context';
 import { ProjectNavigator } from '../../src/ProjectNavigator';
 import { transferBytes, uploadFiles, type UploadProgress } from '../../src/transfers';
+import { BinaryPreview } from '../../src/BinaryPreview';
+import { ThreeWayMerge } from '../../src/ThreeWayMerge';
+import { clipboardFiles } from '../../src/clipboard-files';
 const CodeEditor = lazy(() =>
   import('../../src/CodeEditor').then((module) => ({ default: module.CodeEditor })),
 );
@@ -69,6 +72,8 @@ export function FileBrowser({
 }: FeatureProps & { openFile?: { path: string; line?: number; revision: number } }) {
   const [path, setPath] = useState('/workspace'),
     [input, setInput] = useState('/workspace');
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
   const [files, setFiles] = useState<Entry[]>([]),
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
@@ -334,6 +339,21 @@ export function FileBrowser({
   return (
     <div
       className={`content-panel feature-panel file-browser ${dragging ? 'dragging' : ''}`}
+      role="region"
+      aria-label="Linux 文件浏览器"
+      tabIndex={0}
+      onPaste={(event) => {
+        if (
+          action.busy ||
+          (event.target instanceof Element &&
+            event.target.closest('input,textarea,[contenteditable="true"],.cm-editor'))
+        )
+          return;
+        const values = clipboardFiles(event.clipboardData);
+        if (!values.length) return;
+        event.preventDefault();
+        void send(values);
+      }}
       onDragOver={(e) => {
         e.preventDefault();
         if (!action.busy) setDragging(true);
@@ -345,6 +365,7 @@ export function FileBrowser({
         if (!action.busy) void send(e.dataTransfer.files);
       }}
     >
+      <p className="muted">拖入文件即可上传；聚焦此面板后按 Ctrl+V 可粘贴剪贴板中的文件或图片。</p>
       <PluginGate id="project-search">
         <details className="feature-card project-tree-disclosure" open>
           <summary>项目文件树与全文搜索</summary>
@@ -498,6 +519,7 @@ export function FileBrowser({
           <span>
             {progress.name} · {progress.index}/{progress.count} · {transferBytes(progress.loaded)} /{' '}
             {transferBytes(progress.total)}
+            {progress.phase ? ' · ' + progress.phase : ''}
             {progress.loaded === progress.total ? ' · 正在保存…' : ''}
           </span>
           <progress aria-label="上传进度" max={progress.total || 1} value={progress.loaded} />
@@ -507,6 +529,7 @@ export function FileBrowser({
         </div>
       )}
       <div className="browser-table">
+        <p className="muted">8 MiB 以上文件支持分块续传；中断后在 24 小时内重新选择同一文件即可继续。</p>
         <div className="browser-header">
           <span>名称</span>
           <span>大小</span>
@@ -523,6 +546,16 @@ export function FileBrowser({
             </button>
             <span className="muted">{file.directory ? '—' : transferBytes(file.size)}</span>
             <div className="feature-actions">
+              {!file.directory && !file.symlink && (
+                <button
+                  className="text-button"
+                  disabled={action.busy}
+                  aria-label={`预览 ${file.name}`}
+                  onClick={() => setPreviewPath(target(file.name))}
+                >
+                  预览
+                </button>
+              )}
               {!file.directory && !file.symlink && (
                 <button
                   className="icon-button"
@@ -673,6 +706,13 @@ export function FileBrowser({
               <div className="feature-actions">
                 <button
                   className="secondary compact"
+                  disabled={edit.baseContent === undefined}
+                  onClick={() => setMerging(true)}
+                >
+                  三方合并
+                </button>
+                <button
+                  className="secondary compact"
                   onClick={() => {
                     setEdit({
                       ...edit,
@@ -697,6 +737,21 @@ export function FileBrowser({
                   保留草稿继续合并
                 </button>
               </div>
+              {merging && edit.baseContent !== undefined && (
+                <ThreeWayMerge
+                  key={edit.id + conflict.version}
+                  base={edit.baseContent}
+                  ours={edit.content}
+                  theirs={conflict.content}
+                  cancel={() => setMerging(false)}
+                  apply={(content) => {
+                    setEdit({ ...edit, content, baseContent: conflict.content, version: conflict.version });
+                    setConflict(null);
+                    setMerging(false);
+                    action.clear();
+                  }}
+                />
+              )}
             </div>
           )}
           <button className="primary compact" disabled={action.busy} onClick={() => void save()}>
@@ -704,6 +759,9 @@ export function FileBrowser({
             保存文件
           </button>
         </div>
+      )}
+      {previewPath && (
+        <BinaryPreview request={request} id={vm.id} path={previewPath} close={() => setPreviewPath(null)} />
       )}
       {draftDialog}
     </div>

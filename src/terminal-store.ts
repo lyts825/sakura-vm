@@ -1,4 +1,5 @@
 import { restoreTerminals, terminalReducer, type TerminalAction, type TerminalState } from './terminal-state';
+import { applyTerminalLayout, type TerminalLayout } from './terminal-layouts';
 
 type TerminalStorage = Pick<Storage, 'getItem' | 'setItem'>;
 type Snapshot = TerminalState & { closing: string | null; error: string };
@@ -10,11 +11,21 @@ function createStore(id: string, storage: () => TerminalStorage) {
     saved = JSON.parse(storage().getItem(key) || 'null');
   } catch {}
   let snapshot: Snapshot = { ...restoreTerminals(saved), closing: null, error: '' };
+  try {
+    const selected = storage().getItem(key + '-active');
+    if (snapshot.tabs.some((tab) => tab.id === selected)) snapshot.active = selected!;
+  } catch {}
   const listeners = new Set<() => void>();
 
   const update = (next: Snapshot) => {
     const tabsChanged = next.tabs !== snapshot.tabs;
+    const activeChanged = next.active !== snapshot.active;
     snapshot = next;
+    if (activeChanged || tabsChanged) {
+      try {
+        storage().setItem(key + '-active', snapshot.active);
+      } catch {}
+    }
     if (tabsChanged) {
       try {
         storage().setItem(key, JSON.stringify(snapshot.tabs));
@@ -38,6 +49,10 @@ function createStore(id: string, storage: () => TerminalStorage) {
       };
     },
     dispatch,
+    applyLayout(layout: TerminalLayout) {
+      if (snapshot.closing) throw new Error('请等待终端关闭操作结束');
+      update({ ...snapshot, ...applyTerminalLayout(snapshot, layout), error: '' });
+    },
     async close(session: string, remove: () => Promise<unknown>) {
       if (snapshot.closing || snapshot.tabs.length < 2 || !snapshot.tabs.some((tab) => tab.id === session))
         return;

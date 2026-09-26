@@ -23,10 +23,13 @@ async function main() {
       'Sakura — local Linux workspaces\n\n  list\n  images\n  image <alpine|debian|ubuntu>\n  create <name> [alpine|debian|ubuntu] [none|node|python|rust]\n  start <name>\n  stop <name>\n  suspend <name>\n  resume <name>\n  extended <name> [view|check|run|configure|operation]\n  next <name> [view|check|run|configure]\n  shell <name>\n  exec <name> -- <command> [args...]\n  metrics <name>\n  clone <name> <new-name>\n  export <name> <file.sakura>\n  import <new-name> <file.sakura>\n  snapshots <name>\n  snapshot <name> <label>\n  project <name> <setup|start|stop|configure> [project.json]\n  sync <name> <both|push|pull|configure> [sync.json]\n\nStart the service with npm start first.',
     );
     console.log(
-      '\nWorkspace management:\n  tasks\n  task <id> <cancel|retry>\n  storage\n  batch <start|stop> <name...>\n  organize <name> <organization.json>\n  diagnostics <name> [run]\n  resize <name> <GiB|finish>\n  backups <name>\n  backup <name> [run|verify|restore|delete] [backup-id] [new-name]\n  backup <name> configure <policy.json>\n  ide <name> [configure]\n  recipe <name> [read|write|apply] [sakura.json]\n  from-recipe <new-name> <sakura.json>\n  sync-preview <name>\n  sync-apply <name> <decisions.json>\n  project <name> <start|stop> [service-name]',
+      '\nWorkspace management:\n  tasks\n  task <id> <cancel|retry|result>\n  storage\n  batch <start|stop> <name...>\n  organize <name> <organization.json>\n  diagnostics <name> [run]\n  resize <name> <GiB|finish>\n  backups <name>\n  backup <name> [run|verify|restore|delete] [backup-id] [new-name]\n  backup <name> configure <policy.json>\n  ide <name> [configure]\n  recipe <name> [read|write|apply] [sakura.json]\n  from-recipe <new-name> <sakura.json>\n  sync-preview <name>\n  sync-apply <name> <decisions.json>\n  project <name> <start|stop> [service-name]',
     );
     console.log(developmentHelp);
     console.log(sandboxHelp);
+    console.log(
+      '\nFile transfers:\n  download <name> <guest-file> <output-file>  (SHA-256 verified; automatically resumes interrupted downloads)',
+    );
     return;
   }
   try {
@@ -83,7 +86,11 @@ async function main() {
       return;
     }
     if (action === 'task') {
-      if (!['cancel', 'retry'].includes(args[0])) throw new Error('Usage: task <id> <cancel|retry>');
+      if (args[0] === 'result') {
+        console.log(JSON.stringify(await api(`/jobs/${encodeURIComponent(name)}/result`), null, 2));
+        return;
+      }
+      if (!['cancel', 'retry'].includes(args[0])) throw new Error('Usage: task <id> <cancel|retry|result>');
       console.log(await api(`/jobs/${encodeURIComponent(name)}/${args[0]}`, 'POST'));
       return;
     }
@@ -174,6 +181,7 @@ async function main() {
         'metrics',
         'clone',
         'export',
+        'download',
         'snapshots',
         'snapshot',
         'project',
@@ -437,6 +445,12 @@ async function main() {
     }
     if (action === 'snapshot') {
       console.log(await api(`/vms/${vm.id}/snapshots`, 'POST', { name: args[0] }));
+      return;
+    }
+    if (action === 'download') {
+      if (args.length !== 2) throw new Error('Usage: download <name> <guest-file> <output-file>');
+      const { resumableDownload } = await import('./resumable-download.mjs');
+      console.log(JSON.stringify(await resumableDownload(api, vm.id, args[0], args[1]), null, 2));
       return;
     }
     if (action === 'export') {

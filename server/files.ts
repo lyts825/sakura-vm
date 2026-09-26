@@ -5,6 +5,8 @@ import { pipeline } from 'node:stream/promises';
 import type { SFTPWrapper, Stats } from 'ssh2';
 import { AppError, guestPath } from './model.ts';
 import type { Machines } from './machines.ts';
+import { ResumableUploads } from './resumable-uploads.ts';
+import { previewFile } from './file-preview.ts';
 
 export const MAX_TRANSFER = 2 * 1024 ** 3;
 export const MAX_TEXT_BYTES = 1024 ** 2;
@@ -31,6 +33,7 @@ export async function preserveFileMetadata(ftp: SFTPWrapper, path: string, attrs
   );
 }
 export class Files {
+  readonly uploads = new ResumableUploads(this);
   beforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
   trash?: (id: string, path: string, recursive: boolean) => Promise<unknown>;
   constructor(private machines: Machines) {}
@@ -42,6 +45,65 @@ export class Files {
   }
   info(id: string, path: string) {
     return this.machines.sftp(id, (ftp) => this.downloadInfo(ftp, path));
+  }
+  async chunk(id: string, path: string, index: number, signal: AbortSignal) {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= 2048) throw new AppError('分块索引无效');
+    return this.machines.sftp(
+      id,
+      async (ftp) => {
+        const { size } = await this.downloadInfo(ftp, path),
+          start = index * 1024 ** 2;
+        if (start >= size) throw new AppError('下载分块超出文件范围', 416);
+        const end = Math.min(size, start + 1024 ** 2),
+          chunks: Buffer[] = [];
+        let received = 0;
+        await pipeline(
+          ftp.createReadStream(path, { start, end: end - 1 }),
+          new Writable({
+            write(chunk, _encoding, done) {
+              received += chunk.length;
+              if (received > end - start) return done(new AppError('分块超过声明长度'));
+              chunks.push(Buffer.from(chunk));
+              done();
+            },
+          }),
+          { signal },
+        );
+        const data = Buffer.concat(chunks);
+        if (data.length !== end - start) throw new AppError('下载期间文件长度变化', 409);
+        return {
+          index,
+          bytes: data.length,
+          data: data.toString('base64'),
+          sha256: createHash('sha256').update(data).digest('hex'),
+        };
+      },
+      signal,
+    );
+  }
+  async preview(id: string, path: string, signal?: AbortSignal) {
+    return this.machines.sftp(
+      id,
+      async (ftp) => {
+        const info = await ftpStat(ftp, guestPath(path));
+        if (!info?.isFile()) throw new AppError('请选择普通文件', 404);
+        const maximum = info.size <= 16 * 1024 ** 2 ? info.size : 4096;
+        const chunks: Buffer[] = [];
+        if (maximum)
+          await pipeline(
+            ftp.createReadStream(path, { start: 0, end: maximum - 1 }),
+            new Writable({
+              write(chunk, _encoding, done) {
+                chunks.push(Buffer.from(chunk));
+                done();
+              },
+            }),
+            { signal },
+          );
+        return previewFile(path, Buffer.concat(chunks), info.size);
+      },
+      signal,
+    );
   }
   async upload(
     id: string,

@@ -8,7 +8,6 @@ import { guestTask } from './guest-task.ts';
 import { quote } from './files.ts';
 import { redactValues } from './secrets.ts';
 import { CommandPresets } from './command-presets.ts';
-import type { EngineeringOperation } from './engineering-operations.ts';
 
 let source: Promise<string> | undefined;
 export function engineeringSource() {
@@ -29,7 +28,7 @@ export async function runEngineeringOperation(
   machines: Machines,
   workspaces: Workspaces,
   id: string,
-  operation: EngineeringOperation,
+  operation: string,
   parameters: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<EngineeringResult> {
@@ -42,7 +41,7 @@ export async function runEngineeringOperation(
   });
   const payload = Buffer.from(request).toString('base64');
   const script = await engineeringSource();
-  const seconds = Number(parameters.timeout || 60) * Number(parameters.repeats || 1);
+  const seconds = Number(parameters.timeout || 60) * Number(parameters.repeats || parameters.shards || 1);
   const steps = (parameters.steps || parameters.checks || []) as Array<{ timeout?: number }>;
   const timeout = Math.max(
     120_000,

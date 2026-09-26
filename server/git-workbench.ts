@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
 import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import { quote, textVersion } from './files.ts';
+import { posix } from 'node:path';
 import { Jobs } from './jobs.ts';
 import { isGitConflict, type GitChange, type GitUpstream } from '../shared/git.ts';
 
@@ -82,6 +83,15 @@ export function redactGitOutput(text: string) {
 }
 
 export const gitActionSchema = z.discriminatedUnion('action', [
+  z
+    .object({
+      action: z.literal('resolve'),
+      path: repositoryPath,
+      content: z.string().max(1024 * 1024),
+      expectedVersion: z.string().regex(/^[a-f0-9]{64}$/),
+      expectedIndex: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict(),
   z.object({ action: z.enum(['stage', 'unstage']), paths: z.array(repositoryPath).min(1).max(200) }).strict(),
   z
     .object({
@@ -284,6 +294,51 @@ export class GitWorkbench {
     if (result.code !== 0 && !(untracked && result.code === 1)) throw new AppError(result.stderr);
     return { diff: result.stdout.slice(0, 200000), truncated: result.stdout.length > 200000 };
   }
+  async mergeInputs(id: string, path: string, signal?: AbortSignal, directory?: string) {
+    repositoryPath.parse(path);
+    directory ??= (await this.workspaces.config(id)).directory;
+    const components = path.split('/').filter(Boolean);
+    const safe = await this.machines.exec(
+      id,
+      components
+        .map((_, index) => `test ! -L ${quote(posix.join(directory!, ...components.slice(0, index + 1)))}`)
+        .join(' && '),
+      10000,
+      signal,
+    );
+    if (safe.code !== 0) throw new AppError('冲突路径不能穿过符号链接');
+    const index = await this.command(id, `ls-files --unmerged -z -- ${quote(path)}`, signal, directory);
+    if (index.code !== 0) throw new AppError(index.stderr);
+    const entries = index.stdout
+      .split('\0')
+      .filter(Boolean)
+      .map((line) => line.match(/^(100644|100755) ([a-f0-9]{40,64}) ([123])\t/));
+    if (
+      entries.some((entry) => !entry) ||
+      !entries.some((entry) => entry?.[3] === '2') ||
+      !entries.some((entry) => entry?.[3] === '3')
+    )
+      throw new AppError('此文件不是可合并的普通文本冲突；删除、链接或子模块冲突请在终端处理', 409);
+    const values: Record<string, string> = { '1': '', '2': '', '3': '' };
+    for (const entry of entries) {
+      const size = await this.command(id, `cat-file -s ${entry![2]}`, signal, directory);
+      if (size.code !== 0 || !/^\d+\s*$/.test(size.stdout) || Number(size.stdout) > 1024 ** 2)
+        throw new AppError('冲突版本超过 1 MiB 或无法读取');
+      const content = await this.command(id, `cat-file blob ${entry![2]}`, signal, directory);
+      if (content.code !== 0 || content.stdout.includes('\0') || content.stdout.includes('\uFFFD'))
+        throw new AppError('三方编辑器需要 UTF-8 文本');
+      values[entry![3]] = content.stdout;
+    }
+    const current = await this.machines.readGuestFile(id, posix.join(directory, path));
+    return {
+      path,
+      base: values['1'],
+      ours: values['2'],
+      theirs: values['3'],
+      expectedVersion: textVersion(current),
+      expectedIndex: textVersion(index.stdout),
+    };
+  }
   async run(id: string, input: unknown) {
     const value = gitActionSchema.parse(input);
     return this.machines.locked(`git:${this.workspaces.projects.key(id)}`, async () => {
@@ -307,6 +362,23 @@ export class GitWorkbench {
           let command: string;
           if (value.action === 'remote-add' && !value.url) throw new AppError('新增远程仓库需要 HTTPS 地址');
           switch (value.action) {
+            case 'resolve': {
+              const current = await this.mergeInputs(id, value.path, signal, directory);
+              if (
+                current.expectedIndex !== value.expectedIndex ||
+                current.expectedVersion !== value.expectedVersion
+              )
+                throw new AppError('冲突或文件已变化，请重新打开三方合并', 409);
+              await this.machines.writeGuestFile(
+                id,
+                posix.join(directory, value.path),
+                value.content,
+                true,
+                value.expectedVersion,
+              );
+              command = `add -- ${quote(value.path)}`;
+              break;
+            }
             case 'stage':
               command = `add -A -- ${value.paths.map(quote).join(' ')}`;
               break;

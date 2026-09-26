@@ -10,6 +10,7 @@ import type { Machines } from './machines.ts';
 import { projectSchema } from './workspaces.ts';
 import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
 import ssh2 from 'ssh2';
+import { ByteRate } from './byte-rate.ts';
 
 const MAGIC = Buffer.from('SAKURA01');
 const MAX_BUNDLE = 32 * 1024 ** 3;
@@ -90,7 +91,7 @@ export class Bundles {
     await mkdir(join(DATA, 'transfers'), { recursive: true });
     return mkdtemp(join(DATA, 'transfers', 'bundle-'));
   }
-  async export(id: string, target: Writable, headers: () => void, signal?: AbortSignal) {
+  async export(id: string, target: Writable, headers: () => void, signal?: AbortSignal, bytesPerSecond = 0) {
     return this.machines.locked(id, async () => {
       this.machines.requireStopped(id);
       const dir = await this.temp();
@@ -133,7 +134,12 @@ export class Bundles {
           yield manifest;
           yield* createReadStream(disk);
         }
-        await pipeline(Readable.from(contents()), target, { signal });
+        await pipeline(
+          Readable.from(contents()),
+          new ByteRate(bytesPerSecond).stream(signal || new AbortController().signal),
+          target,
+          { signal },
+        );
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

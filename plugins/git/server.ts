@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { GitWorkbench } from '../../server/git-workbench.ts';
+import { readJsonBody, MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
@@ -33,19 +34,21 @@ export async function route(
     if (action === 'git') {
       if (req.method === 'GET') {
         send(
-          url.searchParams.has('path')
-            ? await this.git.diff(
-                id,
-                url.searchParams.get('path')!,
-                url.searchParams.get('staged') === '1',
-                signal,
-              )
-            : await this.git.view(id, signal),
+          url.searchParams.has('merge')
+            ? await this.git.mergeInputs(id, url.searchParams.get('merge')!, signal)
+            : url.searchParams.has('path')
+              ? await this.git.diff(
+                  id,
+                  url.searchParams.get('path')!,
+                  url.searchParams.get('staged') === '1',
+                  signal,
+                )
+              : await this.git.view(id, signal),
         );
         return true;
       }
       if (req.method === 'POST') {
-        send(await this.git.run(id, await body(req)), 202);
+        send(await this.git.run(id, await readJsonBody(req, MAX_TEXT_REQUEST_BYTES, signal)), 202);
         return true;
       }
     }

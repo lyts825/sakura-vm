@@ -23,6 +23,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import uuid
 from urllib.parse import urlparse
 
 MAX_FILES = 20000
@@ -917,13 +918,626 @@ def execute(root, operation, p):
     raise Failure("没有此操作的执行器：" + operation)
 
 
+CAPABILITY_OPERATIONS = {
+    "test-sharding", "directory-history", "disk-analyzer", "review-comments", "command-forms",
+    "capability-command", "environment-fingerprint", "network-topology", "code-search-index",
+    "language-server-catalog", "pii-classification",
+    "patch-bundle", "environment-recreate", "format-lint",
+    "build-cache", "branch-preview", "onboarding-checklist", "review-threads",
+    "workspace-search", "git-worktrees",
+}
+
+
+def compact_command(result):
+    """Bound each command's displayed output; preserve its exit status and truncation flag."""
+    return dict(result, stdout=result.get("stdout", "")[-16000:], stderr=result.get("stderr", "")[-16000:],
+                outputTruncated=any(len(result.get(key, "")) > 16000 for key in ("stdout", "stderr")))
+
+
+def text_inventory(root):
+    ignored = {".git", ".sakura", "node_modules", ".venv", "venv", "target", "__pycache__", "dist", "build"}
+    entries, size, visited = [], 0, 0
+    for directory, folders, files in os.walk(root, followlinks=False):
+        folders[:] = sorted(name for name in folders if name not in ignored and not (Path(directory) / name).is_symlink())
+        for name in sorted(files):
+            visited += 1
+            if visited > MAX_FILES:
+                raise Failure("索引超过 20,000 个文件")
+            file = Path(directory) / name
+            if file.is_symlink() or not file.is_file():
+                continue
+            before = file.stat()
+            if before.st_size > 1024 * 1024:
+                continue
+            raw = file.read_bytes()
+            if b"\x00" in raw:
+                continue
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            after = file.stat()
+            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                raise Failure("扫描期间文件发生变化：" + str(file))
+            size += len(raw)
+            if size > 32 * 1024 * 1024:
+                raise Failure("文本索引超过 32 MiB")
+            entries.append(dict(path=file.relative_to(root).as_posix(), size=before.st_size,
+                                mtime=before.st_mtime_ns, sha256=hashlib.sha256(raw).hexdigest(), text=text))
+    return entries
+
+
+def directory_revision(root, p):
+    base = safe_path(root, ".sakura/directory-history")
+    mode = p["mode"]
+    if mode == "list":
+        records = []
+        if base.exists():
+            for file in sorted(base.glob("*/manifest.json")):
+                safe_path(root, file.relative_to(root).as_posix(), True)
+                data = json.loads(file.read_text("utf-8"))
+                if data["path"] == p["path"]:
+                    records.append({key: data[key] for key in ("revision", "path", "label", "createdAt", "bytes", "files")})
+        return dict(revisions=records)
+    if mode == "snapshot":
+        source = safe_path(root, p["path"], True)
+        if not source.is_dir() or ".sakura" in source.relative_to(root).parts:
+            raise Failure("请选择项目内的普通目录，不能备份内部状态目录")
+        if base.exists() and len(list(base.iterdir())) >= 100:
+            raise Failure("最多保存 100 个目录版本")
+        entries = manifest(root, p["path"], (".sakura",))
+        directories = []
+        for directory, folders, _ in os.walk(source, followlinks=False):
+            folders[:] = sorted(name for name in folders if name != ".sakura")
+            for name in folders:
+                child = Path(directory) / name
+                safe_path(root, child.relative_to(root).as_posix(), True)
+                directories.append(child.relative_to(source).as_posix())
+                if len(directories) > MAX_FILES:
+                    raise Failure("目录数量超过上限")
+        revision = uuid.uuid4().hex
+        folder = safe_path(root, ".sakura/directory-history/" + revision)
+        folder.mkdir(parents=True)
+        stored = []
+        try:
+            for entry in entries:
+                file = safe_path(root, entry["path"], True)
+                relative = file.relative_to(source).as_posix()
+                destination = folder / "files" / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(file, destination)
+                if hashlib.sha256(destination.read_bytes()).hexdigest() != entry["sha256"]:
+                    raise Failure("保存时源文件内容发生变化：" + relative)
+                stored.append(dict(path=relative, sha256=entry["sha256"], size=entry["size"], mode=file.stat().st_mode & 0o777))
+            result = dict(revision=revision, path=p["path"], label=p["label"], createdAt=time.time(),
+                          bytes=sum(item["size"] for item in stored), files=len(stored), entries=stored, directories=directories)
+            atomic_json(root, ".sakura/directory-history/" + revision + "/manifest.json", result)
+            return {key: value for key, value in result.items() if key not in ("entries", "directories")}
+        except BaseException:
+            shutil.rmtree(folder)
+            raise
+    revision = p.get("revision", "")
+    if not re.fullmatch(r"[a-f0-9]{32}", revision):
+        raise Failure("请选择目录版本 revision")
+    relative = ".sakura/directory-history/" + revision
+    data = json.loads(read_text(root, relative + "/manifest.json"))
+    if data["path"] != p["path"]:
+        raise Failure("版本不属于所选目录")
+    if mode == "diff":
+        current = {Path(item["path"]).relative_to(Path(p["path"])).as_posix(): item for item in manifest(root, p["path"], (".sakura",))}
+        previous = {item["path"]: item for item in data["entries"]}
+        added = sorted(current.keys() - previous.keys())
+        removed = sorted(previous.keys() - current.keys())
+        changed = sorted(name for name in current.keys() & previous.keys() if current[name]["sha256"] != previous[name]["sha256"])
+        return dict(revision=revision, added=added, removed=removed, changed=changed, equal=not (added or removed or changed))
+    if not p.get("target"):
+        raise Failure("恢复需要新的目标目录 target")
+    target = safe_path(root, p["target"])
+    if target.exists() or ".sakura" in target.relative_to(root).parts:
+        raise Failure("恢复目标必须是新的项目目录")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".sakura-restore-", dir=target.parent) as temporary:
+        stage = Path(temporary)
+        for name in data["directories"]:
+            safe_path(stage, name).mkdir(parents=True, exist_ok=True)
+        for entry in data["entries"]:
+            source = safe_path(root, relative + "/files/" + entry["path"], True)
+            destination = safe_path(stage, entry["path"])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+            if hashlib.sha256(destination.read_bytes()).hexdigest() != entry["sha256"]:
+                raise Failure("版本文件校验失败：" + entry["path"])
+            destination.chmod(entry["mode"] & 0o777)
+        if target.exists():
+            raise Failure("目标目录已存在")
+        os.rename(stage, target)
+    return dict(revision=revision, target=p["target"], files=len(data["entries"]))
+
+
+def capability_execute(root, operation, p):
+    if operation == 'git-worktrees':
+        def worktrees():
+            output = run(['git', 'worktree', 'list', '--porcelain', '-z'], root)['stdout']
+            records = []
+            for block in output.split('\0\0'):
+                entry = {}
+                for line in block.split('\0'):
+                    if not line:
+                        continue
+                    key, _, value = line.partition(' ')
+                    entry[key] = value or True
+                if entry.get('worktree'):
+                    entry['directory'] = str(Path(entry.pop('worktree')))
+                    entry['current'] = Path(entry['directory']) == root
+                    records.append(entry)
+            return records
+        mode = p['mode']
+        records = worktrees()
+        if mode == 'list':
+            return dict(worktrees=records)
+        if mode == 'create':
+            if not p.get('path') or '.git' in PurePosixPath(p['path']).parts or '.sakura' in PurePosixPath(p['path']).parts:
+                raise Failure('需要普通项目子目录 path')
+            destination = safe_path(root, p['path'])
+            if destination.exists() or len(records) >= 20:
+                raise Failure('目标必须不存在，每个仓库最多管理 20 个工作树')
+            commit = run(['git', 'rev-parse', '--verify', p.get('ref', 'HEAD') + '^{commit}'], root)['stdout'].strip()
+            arguments = ['git', 'worktree', 'add']
+            if p.get('branch'):
+                run(['git', 'check-ref-format', '--branch', p['branch']], root)
+                arguments += ['-b', p['branch']]
+            else:
+                arguments += ['--detach']
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            run([*arguments, str(destination), commit], root)
+            return dict(directory=str(destination), worktrees=worktrees())
+        entry = next((item for item in records if item['directory'] == p.get('directory')), None)
+        if not entry:
+            raise Failure('请选择 Git 已登记的工作树目录')
+        target = Path(entry['directory'])
+        if not target.is_dir() or any(part.is_symlink() for part in [target, *target.parents]):
+            raise Failure('工作树目录必须存在且不经过符号链接')
+        expected = Path(run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], root)['stdout'].strip()).resolve()
+        actual = Path(run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], target)['stdout'].strip()).resolve()
+        if expected != actual:
+            raise Failure('目标工作树所属仓库不匹配')
+        if mode == 'remove':
+            if target == root:
+                raise Failure('不能删除当前工作树')
+            run(['git', 'worktree', 'remove', str(target)], root)
+            return dict(removed=str(target), worktrees=worktrees())
+        return dict(directory=str(target), worktrees=records)
+    if operation == 'workspace-search':
+        query = p['query'] if p['caseSensitive'] else p['query'].casefold()
+        matches, total = [], 0
+        entries = text_inventory(root)
+        for entry in entries:
+            for number, line in enumerate(entry['text'].splitlines(), 1):
+                if query in (line if p['caseSensitive'] else line.casefold()):
+                    total += 1
+                    if len(matches) < p['limit']:
+                        matches.append(dict(path=entry['path'], line=number, text=line[:1000]))
+        return dict(matches=matches, totalMatches=total, files=len(entries))
+    if operation == 'review-threads':
+        return capability_execute(root, 'review-comments', p)
+    if operation == 'build-cache':
+        inputs = []
+        for name in sorted(set(p['inputs'])):
+            file = safe_path(root, name, True)
+            if not file.is_file():
+                raise Failure('缓存输入必须是普通文件：' + name)
+            inputs.extend(manifest(root, name))
+        fingerprint = dict(namespace=p['namespace'], path=p['path'],
+                           inputs=[dict(path=item['path'], sha256=item['sha256']) for item in inputs])
+        key = hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()
+        relative = '.sakura/build-cache/' + key + '.json'
+        index = safe_path(root, relative)
+        record = json.loads(read_text(root, relative)) if index.exists() else None
+        if p['mode'] == 'inspect':
+            return dict(key=key, hit=record is not None, record=record)
+        if p['mode'] == 'save':
+            if record:
+                return dict(key=key, hit=True, record=record, saved=False)
+            snapshot = directory_revision(root, dict(mode='snapshot', path=p['path'], label='构建缓存 ' + key[:12]))
+            record = dict(key=key, fingerprint=fingerprint, **snapshot)
+            atomic_json(root, relative, record)
+            return dict(key=key, hit=False, saved=True, record=record)
+        if not record:
+            raise Failure('没有匹配输入指纹的构建缓存')
+        if not p.get('target'):
+            raise Failure('恢复缓存需要新的 target 目录')
+        result = directory_revision(root, dict(mode='restore', path=p['path'], revision=record['revision'], target=p['target']))
+        return dict(key=key, hit=True, **result)
+    if operation == 'onboarding-checklist':
+        relative = '.sakura/onboarding.json'
+        file = safe_path(root, relative)
+        data = json.loads(read_text(root, relative)) if file.exists() else dict(steps=[])
+        mode, member = p['mode'], p['member']
+        if mode == 'add':
+            if not p.get('title') or len(data['steps']) >= 300:
+                raise Failure('需要步骤标题，且最多保存 300 个步骤')
+            data['steps'].append(dict(id=str(uuid.uuid4()), title=p['title'], createdAt=time.time(), completed={}))
+        elif mode != 'list':
+            step = next((item for item in data['steps'] if item['id'] == p.get('stepId')), None)
+            if step is None:
+                raise Failure('入门步骤不存在')
+            if mode == 'remove':
+                data['steps'].remove(step)
+            elif mode == 'complete':
+                if member not in step['completed'] and len(step['completed']) >= 200:
+                    raise Failure('每个步骤最多记录 200 位成员')
+                step['completed'][member] = time.time()
+            elif mode == 'reopen':
+                step['completed'].pop(member, None)
+        if mode != 'list':
+            atomic_json(root, relative, data)
+        steps = [dict(item, done=member in item['completed']) for item in data['steps']]
+        return dict(member=member, steps=steps, completed=sum(item['done'] for item in steps), total=len(steps))
+    if operation == 'branch-preview':
+        relative = '.sakura/branch-previews.json'
+        file = safe_path(root, relative)
+        records = json.loads(read_text(root, relative)) if file.exists() else []
+        if p['mode'] == 'create':
+            if len(records) >= 30:
+                raise Failure('最多保留 30 个分支预览')
+            commit = run(['git', 'rev-parse', '--verify', p['ref'] + '^{commit}'], root)['stdout'].strip()
+            identifier = str(uuid.uuid4())
+            path = '.sakura/previews/' + identifier
+            target = safe_path(root, path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            run(['git', 'worktree', 'add', '--detach', str(target), commit], root)
+            record = dict(id=identifier, ref=p['ref'], commit=commit, path=path, createdAt=time.time())
+            records.append(record)
+            try:
+                atomic_json(root, relative, records)
+            except BaseException:
+                run(['git', 'worktree', 'remove', str(target)], root, check=False)
+                raise
+            return dict(preview=record, directory=str(target))
+        if p['mode'] == 'remove':
+            record = next((item for item in records if item['id'] == p.get('previewId')), None)
+            if not record:
+                raise Failure('分支预览不存在')
+            target = safe_path(root, record['path'], True)
+            # Git itself rejects untracked/dirty worktrees. Never force removal.
+            run(['git', 'worktree', 'remove', str(target)], root)
+            records.remove(record)
+            atomic_json(root, relative, records)
+        return dict(previews=[dict(item, exists=safe_path(root, item['path']).is_dir()) for item in records])
+    if operation == "patch-bundle":
+        if p["mode"] == "keygen":
+            private = safe_path(root, p["target"])
+            public = safe_path(root, p.get("publicKey") or p["target"] + '.pub')
+            if private.exists() or public.exists() or private == public:
+                raise Failure("密钥目标必须是两个不存在的文件")
+            private.parent.mkdir(parents=True, exist_ok=True)
+            public.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix=".sakura-key-", dir=private.parent) as temporary:
+                key = Path(temporary) / "private.pem"
+                pub = Path(temporary) / "public.pem"
+                run(["openssl", "genpkey", "-algorithm", "Ed25519", "-out", str(key)])
+                key.chmod(0o600)
+                run(["openssl", "pkey", "-in", str(key), "-pubout", "-out", str(pub)])
+                with os.fdopen(os.open(private, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as stream:
+                    stream.write(key.read_bytes())
+                private.chmod(0o600)
+                try:
+                    with public.open('xb') as stream:
+                        stream.write(pub.read_bytes())
+                except BaseException:
+                    private.unlink()
+                    raise
+            return dict(privateKey=p["target"], publicKey=public.relative_to(root).as_posix())
+        if p["mode"] == "create":
+            if not p.get("from") or not p.get("privateKey"):
+                raise Failure("导出需要 from 和 privateKey")
+            destination = safe_path(root, p["target"])
+            if destination.exists():
+                raise Failure("补丁包目标已存在")
+            key = safe_path(root, p["privateKey"], True)
+            start = run(["git", "rev-parse", "--verify", p["from"] + "^{commit}"], root)["stdout"].strip()
+            end = run(["git", "rev-parse", "--verify", p["to"] + "^{commit}"], root)["stdout"].strip()
+            patch = run(["git", "format-patch", "--stdout", start + ".." + end, "--"], root)["stdout"].encode()
+            if not patch:
+                raise Failure("提交区间没有可导出的补丁")
+            envelope = dict(format="sakura-signed-patch-v1", algorithm="Ed25519", start=start, end=end,
+                            sha256=hashlib.sha256(patch).hexdigest(), patch=base64.b64encode(patch).decode())
+            payload = json.dumps(envelope, sort_keys=True, separators=(',', ':')).encode()
+            with tempfile.TemporaryDirectory(prefix="sakura-patch-") as temporary:
+                message, signature = Path(temporary) / "payload", Path(temporary) / "signature"
+                public_der = Path(temporary) / 'public.der'
+                run(['openssl', 'pkey', '-in', str(key), '-pubout', '-outform', 'DER', '-out', str(public_der)])
+                raw_public = public_der.read_bytes()
+                if len(raw_public) != 44 or not raw_public.startswith(bytes.fromhex('302a300506032b6570032100')):
+                    raise Failure('补丁签名只接受 Ed25519 密钥')
+                message.write_bytes(payload)
+                run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(key), "-in", str(message), "-out", str(signature)])
+                envelope["signature"] = base64.b64encode(signature.read_bytes()).decode()
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with destination.open('x', encoding='utf-8') as output:
+                json.dump(envelope, output, ensure_ascii=False)
+            return dict(target=p["target"], sha256=envelope["sha256"], start=start, end=end, bytes=len(patch))
+        if not p.get("publicKey"):
+            raise Failure("验证必须指定独立受信任的 publicKey")
+        envelope = json.loads(read_text(root, p["target"]))
+        if set(envelope) != {"format", "algorithm", "start", "end", "sha256", "patch", "signature"} or envelope["format"] != 'sakura-signed-patch-v1' or envelope["algorithm"] != 'Ed25519':
+            raise Failure("补丁包格式无效")
+        signature = base64.b64decode(envelope.pop("signature"), validate=True)
+        patch = base64.b64decode(envelope["patch"], validate=True)
+        if hashlib.sha256(patch).hexdigest() != envelope["sha256"]:
+            raise Failure("补丁校验和不一致")
+        key = safe_path(root, p["publicKey"], True)
+        with tempfile.TemporaryDirectory(prefix='sakura-patch-verify-') as temporary:
+            message, signature_file = Path(temporary) / 'payload', Path(temporary) / 'signature'
+            public_der = Path(temporary) / 'public.der'
+            run(['openssl', 'pkey', '-pubin', '-in', str(key), '-pubout', '-outform', 'DER', '-out', str(public_der)])
+            raw_public = public_der.read_bytes()
+            if len(raw_public) != 44 or not raw_public.startswith(bytes.fromhex('302a300506032b6570032100')):
+                raise Failure('补丁验签只接受 Ed25519 公钥')
+            message.write_bytes(json.dumps(envelope, sort_keys=True, separators=(',', ':')).encode())
+            signature_file.write_bytes(signature)
+            run(["openssl", "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(key), "-in", str(message), "-sigfile", str(signature_file)])
+        return dict(verified=True, sha256=envelope['sha256'], start=envelope['start'], end=envelope['end'])
+    if operation == "format-lint":
+        tool = p["tool"]
+        if tool == 'auto':
+            tool = 'npm' if safe_path(root, 'package.json').exists() else 'cargo' if safe_path(root, 'Cargo.toml').exists() else 'go' if safe_path(root, 'go.mod').exists() else 'ruff'
+        mode = p['mode']
+        if tool == 'npm':
+            package = json.loads(read_text(root, 'package.json'))
+            script = 'format' if mode == 'format' else 'lint:fix' if mode == 'fix' and 'lint:fix' in package.get('scripts', {}) else 'lint'
+            if script not in package.get('scripts', {}):
+                raise Failure('package.json 缺少脚本：' + script)
+            args = ['npm', 'run', script] + (['--', '--fix'] if mode == 'fix' and script == 'lint' else [])
+        elif tool == 'ruff':
+            args = ['ruff', 'format', '.'] if mode == 'format' else ['ruff', 'check', '.'] + (['--fix'] if mode == 'fix' else [])
+        elif tool == 'cargo':
+            args = ['cargo', 'fmt', '--all'] if mode == 'format' else ['cargo', 'clippy', '--all-targets'] + (['--fix', '--allow-dirty', '--allow-staged'] if mode == 'fix' else ['--', '-D', 'warnings'])
+        else:
+            if mode == 'lint':
+                args = ['go', 'vet', './...']
+            else:
+                files = [name for name, _ in files_under(root, '.', ('vendor', '.git', '.sakura')) if name.endswith('.go')]
+                if not files:
+                    raise Failure('项目没有 Go 源文件')
+                args = ['gofmt', '-w', *files]
+        return dict(tool=tool, mode=mode, **compact_command(run(args, root, timeout=p['timeout'], check=False)))
+    if operation == "environment-recreate":
+        target = safe_path(root, p['target'])
+        if target.exists() or '.sakura' in target.relative_to(root).parts:
+            raise Failure('重建目标必须是新的项目目录')
+        commit = run(['git', 'rev-parse', 'HEAD'], root)['stdout'].strip()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='sakura-environment-') as temporary:
+            archive_path = Path(temporary) / 'source.tar'
+            run(['git', 'archive', '--format=tar', '--output=' + str(archive_path), commit], root)
+            with tarfile.open(archive_path) as archive:
+                entries = archive_members(archive)
+                target.mkdir()
+                for member in entries:
+                    destination = safe_path(target, member.name)
+                    if member.isdir():
+                        destination.mkdir(parents=True, exist_ok=True)
+                    else:
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        with archive.extractfile(member) as source, destination.open('xb') as output:
+                            shutil.copyfileobj(source, output)
+                        destination.chmod(member.mode & 0o777)
+        candidates = [('package-lock.json', ['npm', 'ci']), ('pnpm-lock.yaml', ['pnpm', 'install', '--frozen-lockfile']),
+                      ('yarn.lock', ['yarn', 'install', '--frozen-lockfile']), ('uv.lock', ['uv', 'sync', '--frozen']),
+                      ('poetry.lock', ['poetry', 'install', '--sync']), ('Cargo.lock', ['cargo', 'fetch', '--locked']),
+                      ('go.sum', ['go', 'mod', 'download'])]
+        selected = next(((name, args) for name, args in candidates if (target / name).is_file()), None)
+        if selected is None:
+            raise Failure('新目录已创建，但没有支持的锁文件；原项目未修改', target=p['target'], commit=commit)
+        name, args = selected
+        result = run(args, target, timeout=p['timeout'], check=False)
+        return dict(target=p['target'], commit=commit, lockfile=name, **compact_command(result))
+    if operation == "capability-command":
+        started = time.monotonic()
+        result = run(p["argv"], root, timeout=p["timeout"], check=False)
+        return dict(compact_command(result), durationMs=(time.monotonic() - started) * 1000)
+    if operation == "test-sharding":
+        if len(set(p["files"])) != len(p["files"]):
+            raise Failure("测试文件不能重复")
+        buckets = [[] for _ in range(p["shards"])]
+        for value in sorted(p["files"]):
+            file = safe_path(root, value, True)
+            if not file.is_file():
+                raise Failure("测试目标不是文件：" + value)
+            index = int(hashlib.sha256(value.encode()).hexdigest(), 16) % p["shards"]
+            buckets[index].append(value)
+        plan = [dict(index=index, files=files) for index, files in enumerate(buckets)]
+        if p["mode"] == "plan":
+            return dict(shards=plan, totalFiles=len(p["files"]))
+        if not p.get("argv") or "{files}" not in p["argv"]:
+            raise Failure("run 的 argv 必须包含独立的 {files} 参数")
+        results = []
+        for shard in plan:
+            if not shard["files"]:
+                results.append(dict(shard, skipped=True, code=0))
+                continue
+            args = [part for arg in p["argv"] for part in (shard["files"] if arg == "{files}" else [arg])]
+            started = time.monotonic()
+            environment = dict(os.environ, SAKURA_SHARD_INDEX=str(shard["index"]), SAKURA_SHARD_TOTAL=str(p["shards"]))
+            result = run(args, root, timeout=p["timeout"], env=environment, check=False)
+            results.append(dict(shard, durationMs=(time.monotonic() - started) * 1000, **compact_command(result)))
+        value = dict(code=1 if any(item["code"] for item in results) else 0, shards=results, totalFiles=len(p["files"]))
+        history(root, operation, value)
+        return value
+    if operation == "directory-history":
+        return directory_revision(root, p)
+    if operation == "disk-analyzer":
+        source = safe_path(root, p["path"], True)
+        entries = files_under(root, p["path"], (".sakura",))
+        types, directories, largest, total = {}, {}, [], 0
+        for name, file in entries:
+            size = file.stat().st_size
+            extension = file.suffix.lower() or "(无扩展名)"
+            item = types.setdefault(extension, dict(type=extension, bytes=0, files=0))
+            item["bytes"] += size
+            item["files"] += 1
+            total += size
+            largest.append(dict(path=name, bytes=size))
+            relative = file.relative_to(source) if source.is_dir() else Path(file.name)
+            for depth in range(min(len(relative.parts), p["depth"] + 1)):
+                key = "/".join(relative.parts[:depth]) or "."
+                directories[key] = directories.get(key, 0) + size
+        return dict(path=p["path"], totalBytes=total, files=len(entries),
+                    types=sorted(types.values(), key=lambda item: (-item["bytes"], item["type"])),
+                    directories=[dict(path=name, bytes=size) for name, size in sorted(directories.items())],
+                    largest=sorted(largest, key=lambda item: -item["bytes"])[:30])
+    if operation == "review-comments":
+        relative = ".sakura/review-threads.json"
+        file = safe_path(root, relative)
+        threads = json.loads(read_text(root, relative)) if file.exists() else []
+        if p["mode"] == "list":
+            return dict(threads=[item for item in threads if not p.get("path") or item["path"] == p["path"]])
+        if p["mode"] == "comment":
+            if not p.get("path") or not p.get("line") or not p.get("body"):
+                raise Failure("新评论需要 path、line 和 body")
+            if len(threads) >= 1000:
+                raise Failure("当前项目最多保存 1000 个评审线程")
+            text = read_text(root, p["path"])
+            if p["line"] > max(1, len(text.splitlines())):
+                raise Failure("评论行号超出文件范围")
+            commit = run(["git", "rev-parse", "HEAD"], root, check=False)["stdout"].strip() if shutil.which("git") else ""
+            thread = dict(id=str(uuid.uuid4()), path=p["path"], line=p["line"], resolved=False, createdAt=time.time(),
+                          commit=commit, fileSha256=hashlib.sha256(text.encode()).hexdigest(), comments=[])
+            threads.append(thread)
+        else:
+            thread = next((item for item in threads if item["id"] == p.get("threadId")), None)
+            if thread is None:
+                raise Failure("评审线程不存在")
+        if p["mode"] in ("comment", "reply"):
+            if not p.get("body"):
+                raise Failure("评论内容不能为空")
+            if len(thread["comments"]) >= 100:
+                raise Failure("每个线程最多 100 条回复")
+            thread["comments"].append(dict(id=str(uuid.uuid4()), body=p["body"], author=p["author"], createdAt=time.time()))
+        elif p["mode"] in ("resolve", "reopen"):
+            thread["resolved"] = p["mode"] == "resolve"
+        thread["updatedAt"] = time.time()
+        if len(json.dumps(threads).encode()) > MAX_OUTPUT:
+            raise Failure("评审记录超过 2 MiB")
+        atomic_json(root, relative, threads)
+        return dict(thread=thread)
+    if operation == "command-forms":
+        fields = {field["name"]: field for field in p["fields"]}
+        if len(fields) != len(p["fields"]) or set(p["values"]) - fields.keys():
+            raise Failure("字段重复或包含未声明的参数")
+        values = {}
+        for name, field in fields.items():
+            value = p["values"].get(name)
+            if value is None or value == "":
+                if field["required"]:
+                    raise Failure("必填参数缺失：" + name)
+                values[name] = ""
+                continue
+            kind = field["type"]
+            if kind == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
+                raise Failure("参数必须是整数：" + name)
+            if kind == "boolean" and not isinstance(value, bool):
+                raise Failure("参数必须是布尔值：" + name)
+            if kind in ("string", "choice") and not isinstance(value, str):
+                raise Failure("参数必须是文本：" + name)
+            if kind == "choice" and value not in field.get("choices", []):
+                raise Failure("参数不在可选值中：" + name)
+            values[name] = str(value).lower() if isinstance(value, bool) else str(value)
+        def substitute(match):
+            if match[1] not in values:
+                raise Failure("命令引用未声明参数：" + match[1])
+            return values[match[1]]
+        args = [re.sub(r"\$\{([A-Z_][A-Z0-9_]*)\}", substitute, value) for value in p["argv"]]
+        if not args[0] or "\x00" in "".join(args):
+            raise Failure("命令参数无效")
+        if p["mode"] == "preview":
+            return dict(argv=args, display=shlex.join(args), fields=p["fields"])
+        return dict(argv=args, **compact_command(run(args, root, timeout=p["timeout"], check=False)))
+    if operation == "environment-fingerprint":
+        tools = {}
+        for tool, args in (("node", ["node", "--version"]), ("python", ["python3", "--version"]),
+                           ("rust", ["rustc", "--version"]), ("go", ["go", "version"]), ("git", ["git", "--version"])):
+            tools[tool] = run(args, root, check=False)["stdout"].strip() if shutil.which(args[0]) else None
+        locks = {}
+        for name in ("package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock", "requirements.txt", "Cargo.lock", "go.sum"):
+            file = safe_path(root, name)
+            if file.exists():
+                if file.stat().st_size > 16 * 1024 * 1024:
+                    raise Failure("锁文件过大：" + name)
+                locks[name] = hashlib.sha256(file.read_bytes()).hexdigest()
+        system = Path("/etc/os-release").read_text() if Path("/etc/os-release").exists() else sys.platform
+        return dict(fingerprint=dict(system=system, tools=tools, locks=locks))
+    if operation == "network-topology":
+        interfaces = json.loads(run(["ip", "-j", "address", "show"])["stdout"])
+        routes = json.loads(run(["ip", "-j", "route", "show", "table", "all"])["stdout"])
+        sockets = run(["ss", "-H", "-lntu"])["stdout"].splitlines()
+        return dict(interfaces=interfaces, routes=routes, listeners=sockets)
+    if operation == "language-server-catalog":
+        servers = []
+        for name, command in (("TypeScript", "typescript-language-server"), ("Python", "pyright-langserver"),
+                              ("Python Ruff", "ruff"), ("Rust", "rust-analyzer"), ("Go", "gopls"), ("C/C++", "clangd")):
+            executable = shutil.which(command)
+            result = run([executable, "--version"], root, timeout=5, check=False) if executable else None
+            servers.append(dict(name=name, command=command, path=executable, installed=bool(executable),
+                                version=((result["stdout"] or result["stderr"]).strip()[:1000] if result else None),
+                                versionExitCode=result["code"] if result else None))
+        return dict(servers=servers, installed=sum(item["installed"] for item in servers))
+    if operation == "code-search-index":
+        relative = ".sakura/code-index.json"
+        if p["mode"] == "build":
+            entries = text_inventory(root)
+            value = dict(createdAt=time.time(), entries=entries)
+            atomic_json(root, relative, value)
+            return dict(createdAt=value["createdAt"], files=len(entries), bytes=sum(item["size"] for item in entries))
+        if not p.get("query"):
+            raise Failure("搜索需要 query")
+        index_file = safe_path(root, relative, True)
+        if index_file.stat().st_size > 256 * 1024 * 1024:
+            raise Failure("索引文件超出上限")
+        data = json.loads(index_file.read_text("utf-8"))
+        query = p["query"] if p["caseSensitive"] else p["query"].casefold()
+        matches, stale, count = [], [], 0
+        for entry in data["entries"]:
+            file = safe_path(root, entry["path"])
+            if not file.is_file() or (file.stat().st_size, file.stat().st_mtime_ns) != (entry["size"], entry["mtime"]):
+                stale.append(entry["path"])
+            for number, line in enumerate(entry["text"].splitlines(), 1):
+                candidate = line if p["caseSensitive"] else line.casefold()
+                if query in candidate:
+                    count += 1
+                    if len(matches) < p["limit"]:
+                        matches.append(dict(path=entry["path"], line=number, text=line[:1000]))
+        return dict(matches=matches, totalMatches=count, stale=stale, createdAt=data["createdAt"],
+                    message="搜索使用索引快照；新增文件需重建索引。")
+    if operation == "pii-classification":
+        rules = [("email", r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"),
+                 ("phone", r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)"),
+                 ("identity-number", r"(?<!\d)\d{17}[\dXx](?!\d)"),
+                 ("ipv4", r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)"),
+                 ("private-key", r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"),
+                 ("credential", r"(?i)(?:api[_-]?key|password|secret|token)\s*[:=]\s*['\"]?[^\s'\"]{8,}")]
+        findings = []
+        for name in p["paths"]:
+            text = read_text(root, name)
+            for number, line in enumerate(text.splitlines(), 1):
+                for kind, pattern in rules:
+                    if re.search(pattern, line):
+                        findings.append(dict(path=name, line=number, type=kind))
+                        if len(findings) > 5000:
+                            raise Failure("敏感数据匹配超过 5000 项")
+        return dict(findings=findings, files=len(p["paths"]), classification="sensitive" if findings else "no-rule-match")
+    raise Failure("没有此能力的执行器：" + operation)
+
+
 def main():
     request = json.load(sys.stdin)
     root = Path(request["directory"]).resolve(strict=True)
     if not root.is_dir():
         raise Failure("项目目录不存在")
     os.environ.update(request.get("environment", {}))
-    result = execute(root, request["operation"], request.get("parameters", {}))
+    executor = capability_execute if request["operation"] in CAPABILITY_OPERATIONS else execute
+    result = executor(root, request["operation"], request.get("parameters", {}))
     result.setdefault("code", 0)
     result["operation"] = request["operation"]
     return result

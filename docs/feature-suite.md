@@ -29,7 +29,7 @@ POST /api/vms/:id/advanced
 
 `POST` 的动作包括 `sample`、`memory-target`、`apply-preset`、`disk-analysis`、`dev`、`search`、`package`、`network-test`、`discover-ports`、`security-scan`、`feature-check`、`feature-run` 和 `acknowledge`。所有客户机命令都经过参数校验和单引号数据引用；软件包与开发任务走任务中心，不会占用 HTTP 请求直到命令结束。资源预设只修改实例配置，不会在运行中的实例上强制关机。
 
-能力中心同时展示 50 项路线图。目录中的「已有入口」说明相关操作存在于对应模块，不代表当前实例已具备依赖；规划中的项目不会被标为可用。通用 `feature-check` / `feature-run` 只记录目录和基础环境信息，返回 `ready: false`、`executed: false`，请通过对应插件的实际操作检查或执行能力。需要宿主机驱动、QEMU 设备或多用户认证的项目也不会因生成了本地记录就标为就绪。
+能力中心同时展示 50 项路线图。目录中的「已有入口」说明相关操作存在于对应模块，不代表当前实例已具备依赖；规划中的项目不会被标为可用。`capabilities` 列出的功能通过 `feature-check` / `feature-run` 验证参数并执行真实操作；未登记执行器的目录项返回 `ready: false`、`executed: false`，需使用相应插件页面。执行器覆盖范围、参数表单及操作示例见 [功能实现记录](capability-completion.md)。
 
 ## 第二批 100 项扩展能力
 

@@ -2,6 +2,8 @@ import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
+import { Readable } from 'node:stream';
+import { textVersion } from '../server/files.ts';
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -157,6 +159,52 @@ async function fixture(t: TestContext) {
     },
   };
 }
+
+test('three-way Git editor reads index stages, rejects stale edits and stages the resolved content', async (t) => {
+  const f = await fixture(t);
+  (f.host.machines as any).readGuestFile = async (_id: string, path: string) => readFile(path, 'utf8');
+  (f.host.machines as any).writeGuestFile = async (
+    _id: string,
+    path: string,
+    content: string,
+    _overwrite: boolean,
+    version: string,
+  ) => {
+    assert.equal(textVersion(await readFile(path, 'utf8')), version);
+    await writeFile(path, content);
+  };
+  await git(f.local, 'switch', '-c', 'topic');
+  await commit(f.local, 'shared.txt', 'theirs\n');
+  await git(f.local, 'switch', 'main');
+  await commit(f.local, 'shared.txt', 'ours\n');
+  await assert.rejects(git(f.local, 'merge', 'topic'));
+  const versions = await f.scope(() => f.service.mergeInputs(id, 'shared.txt'));
+  assert.equal(versions.base, 'base\n');
+  assert.equal(versions.ours, 'ours\n');
+  assert.equal(versions.theirs, 'theirs\n');
+  await writeFile(join(f.local, 'shared.txt'), 'new edit\n');
+  const stale = await f.run({
+    action: 'resolve',
+    path: versions.path,
+    expectedVersion: versions.expectedVersion,
+    expectedIndex: versions.expectedIndex,
+    content: 'stale\n',
+  });
+  assert.equal(stale.status, 'error');
+  assert.match(stale.error!, /已变化/);
+  assert.equal(await readFile(join(f.local, 'shared.txt'), 'utf8'), 'new edit\n');
+  const fresh = await f.scope(() => f.service.mergeInputs(id, 'shared.txt'));
+  const saved = await f.run({
+    action: 'resolve',
+    path: fresh.path,
+    expectedVersion: fresh.expectedVersion,
+    expectedIndex: fresh.expectedIndex,
+    content: 'merged\n',
+  });
+  assert.equal(saved.status, 'done', saved.error);
+  assert.equal(await git(f.local, 'show', ':shared.txt'), 'merged');
+  assert.equal(await git(f.local, 'ls-files', '--unmerged'), '');
+});
 
 test('remote inputs reject refspecs, revisions, flags, shell syntax and credential URLs', () => {
   for (const action of ['fetch', 'pull', 'push']) {
@@ -460,8 +508,10 @@ test('accepted Git jobs serialize per project, keep their directory, and cancel 
       this.payload = JSON.parse(value);
     },
   });
-  const req = { method: 'POST' } as IncomingMessage,
-    res = response();
+  const req = Readable.from([Buffer.from(JSON.stringify({ action: 'pull' }))]) as IncomingMessage;
+  req.method = 'POST';
+  req.headers = { 'content-type': 'application/json' };
+  const res = response();
   const requestAbort = new AbortController();
   assert.equal(
     await f.scope(() =>

@@ -9,6 +9,7 @@ import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared
 import '../../src/features.css';
 import { stopped } from '../../src/guest-state';
 import { workspaceRequest } from '../../src/workspace-request';
+import { ThreeWayMerge } from '../../src/ThreeWayMerge';
 
 export function GitPanel(props: FeatureProps) {
   return <GitWorkspacePanel key={`${props.vm.id}:${props.projectId || 'default'}`} {...props} />;
@@ -44,6 +45,14 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
     [targetBranch, setTargetBranch] = useState(''),
     [submittedJob, setSubmittedJob] = useState<JobView | null>(null);
   const [selection, setSelection] = useState<{ path: string; staged: boolean } | null>(null);
+  const [merge, setMerge] = useState<{
+    path: string;
+    base: string;
+    ours: string;
+    theirs: string;
+    expectedVersion: string;
+    expectedIndex: string;
+  } | null>(null);
   const [loadedProject, setLoadedProject] = useState('');
   useEffect(() => {
     const projectId = remote.data?.projectId || 'default';
@@ -95,6 +104,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
   const busy = action.busy || job?.status === 'running';
   useEffect(() => {
     if (job && job.status !== 'running') diff.reload();
+    if (job?.status === 'done' && job.action === 'resolve') setMerge(null);
   }, [job?.id, job?.status, diff.reload]);
   const conflicts = remote.data?.changes.filter(isGitConflict) || [];
   const blocked =
@@ -196,8 +206,45 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                       {conflicts.map((change) => (
                         <p key={change.path}>
                           <code>{change.path}</code>
+                          <button
+                            disabled={busy}
+                            onClick={() =>
+                              void action.run(async (signal) => {
+                                setMerge(
+                                  await request(
+                                    `/vms/${vm.id}/git?merge=${encodeURIComponent(change.path)}`,
+                                    'GET',
+                                    undefined,
+                                    signal,
+                                  ),
+                                );
+                              })
+                            }
+                          >
+                            三方合并 {change.path}
+                          </button>
                         </p>
                       ))}
+                      {merge && (
+                        <fieldset disabled={busy}>
+                          <ThreeWayMerge
+                            key={merge.path + merge.expectedIndex + merge.expectedVersion}
+                            base={merge.base}
+                            ours={merge.ours}
+                            theirs={merge.theirs}
+                            cancel={() => setMerge(null)}
+                            apply={(content) => {
+                              void run({
+                                action: 'resolve',
+                                path: merge.path,
+                                content,
+                                expectedVersion: merge.expectedVersion,
+                                expectedIndex: merge.expectedIndex,
+                              });
+                            }}
+                          />
+                        </fieldset>
+                      )}
                     </div>
                   )}
                   <div className="feature-card">

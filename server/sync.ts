@@ -3,13 +3,18 @@ import { lstat, readdir, realpath, mkdir, rename, readFile, writeFile, rm } from
 import { join, resolve, relative, isAbsolute, sep, dirname, posix } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
-import type { Readable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
 import { z } from 'zod';
 import { AppError, vmDir } from './model.ts';
 import { ftpStat, mutablePath, preserveFileMetadata } from './files.ts';
 import { Jobs } from './jobs.ts';
 import type { Machines } from './machines.ts';
 import type { ProjectCatalog } from './project-catalog.ts';
+import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge.ts';
+import { inMaintenance, timeWindowSchema } from './automation-policy.ts';
+import { withinWindow } from '../shared/time-windows.ts';
+import { readStore, writeStore } from './local-store.ts';
+import { ByteRate } from './byte-rate.ts';
 
 export const syncSchema = z
   .object({
@@ -26,6 +31,14 @@ export const syncSchema = z
       }, '需要有效的非根目录路径')
       .transform(mutablePath),
     auto: z.boolean().default(false),
+    mergeText: z.boolean().optional(),
+    window: timeWindowSchema.optional(),
+    bandwidthMiBps: z
+      .number()
+      .min(0)
+      .max(10240)
+      .refine((value) => value === 0 || value >= 0.1)
+      .optional(),
     ignore: z
       .array(
         z
@@ -43,6 +56,17 @@ export const syncSchema = z
   })
   .strict();
 export type SyncConfig = z.infer<typeof syncSchema>;
+const queueSchema = z
+  .object({
+    id: z.uuid(),
+    requestedAt: z.iso.datetime(),
+    attempts: z.number().int().min(0),
+    nextAttemptAt: z.number().nonnegative(),
+    jobId: z.uuid().optional(),
+    lastError: z.string().optional(),
+  })
+  .strict();
+export type SyncQueue = z.infer<typeof queueSchema>;
 export type SyncChange = {
   path: string;
   action:
@@ -51,7 +75,15 @@ export type SyncChange = {
 export type SyncPreview = { token: string; changes: SyncChange[]; unchanged: number };
 export type SyncDecisions = Record<
   string,
-  'push' | 'pull' | 'both' | 'skip' | 'delete-host' | 'delete-guest' | 'restore-host' | 'restore-guest'
+  | 'push'
+  | 'pull'
+  | 'both'
+  | 'skip'
+  | 'merge'
+  | 'delete-host'
+  | 'delete-guest'
+  | 'restore-host'
+  | 'restore-guest'
 >;
 export function ignored(path: string, patterns: string[] = []) {
   return patterns.some((pattern) => {
@@ -136,7 +168,8 @@ async function hash(stream: Readable, signal: AbortSignal) {
 export class FolderSync {
   jobs = new Jobs('sync');
   private timer: ReturnType<typeof setInterval>;
-  private ticking = false;
+  private ticking?: Promise<void>;
+  private closed = false;
   private onChange = () => {
     for (const id of this.machines.records.keys())
       if (this.machines.state(id) !== 'running')
@@ -150,9 +183,8 @@ export class FolderSync {
     machines.on('change', this.onChange);
     this.timer = setInterval(() => {
       if (!this.ticking) {
-        this.ticking = true;
-        void this.tick().finally(() => {
-          this.ticking = false;
+        this.ticking = this.tick().finally(() => {
+          this.ticking = undefined;
         });
       }
     }, 15000);
@@ -171,8 +203,10 @@ export class FolderSync {
       await this.projects.inScope(id, project.id, () => action(project.id));
   }
   async close() {
+    this.closed = true;
     clearInterval(this.timer);
     this.machines.off('change', this.onChange);
+    await this.ticking;
     await this.jobs.close();
   }
   async config(id: string): Promise<SyncConfig | null> {
@@ -196,8 +230,12 @@ export class FolderSync {
       const file = this.file(id, 'sync');
       await writeFile(`${file}.tmp`, JSON.stringify(config));
       await rename(`${file}.tmp`, file);
-      if (previous?.host !== config.host || previous?.guest !== config.guest)
+      if (previous?.host !== config.host || previous?.guest !== config.guest) {
         await rm(this.file(id, 'sync-state'), { force: true });
+        await rm(this.file(id, 'sync-base'), { force: true });
+        await rm(this.file(id, 'sync-queue'), { force: true });
+      }
+      if (!config.mergeText && previous?.mergeText) await rm(this.file(id, 'sync-base'), { force: true });
       return config;
     });
   }
@@ -206,15 +244,85 @@ export class FolderSync {
       projectId: this.projects?.current(id) || 'default',
       config: await this.config(id),
       job: this.jobs.view(this.key(id)),
+      queue: await this.queued(id),
+      maintenance: await inMaintenance(id),
     };
   }
-  private async tick() {
+  private async queued(id: string) {
+    const value = await readStore<unknown>(this.file(id, 'sync-queue'), () => null);
+    return value === null ? null : queueSchema.parse(value);
+  }
+  async queue(id: string, cancel = false) {
+    return this.machines.locked(`sync:${this.key(id)}`, async () => {
+      this.machines.get(id);
+      const pending = await this.queued(id);
+      if (cancel) {
+        if (pending?.jobId) this.jobs.cancel(pending.jobId);
+        await rm(this.file(id, 'sync-queue'), { force: true });
+        return null;
+      }
+      if (!(await this.config(id))) throw new AppError('请先保存同步目录');
+      if (pending) return pending;
+      const entry: SyncQueue = {
+        id: randomUUID(),
+        requestedAt: new Date().toISOString(),
+        attempts: 0,
+        nextAttemptAt: 0,
+      };
+      await writeStore(this.file(id, 'sync-queue'), entry);
+      return entry;
+    });
+  }
+  async tick(now = Date.now()) {
     for (const id of this.machines.records.keys()) {
+      if (this.closed) return;
       try {
-        if (this.machines.state(id) !== 'running') continue;
         await this.eachProject(id, async () => {
-          if (this.jobs.view(this.key(id))?.status !== 'running' && (await this.config(id))?.auto)
-            await this.run(id, 'both');
+          try {
+            await this.machines.locked(`sync:${this.key(id)}`, async () => {
+              const config = await this.config(id);
+              if (!config) return;
+              let pending = await this.queued(id);
+              if (pending?.jobId) {
+                const job = this.jobs.get(pending.jobId);
+                if (job?.status === 'running') return;
+                if (job?.status === 'done') {
+                  await rm(this.file(id, 'sync-queue'), { force: true });
+                  pending = null;
+                } else {
+                  delete pending.jobId;
+                  pending.lastError = (job?.error || '同步中断，将重新比较文件后重试').slice(0, 1000);
+                  pending.nextAttemptAt = now + Math.min(600000, 15000 * 2 ** Math.min(6, pending.attempts));
+                  await writeStore(this.file(id, 'sync-queue'), pending);
+                }
+              }
+              if (this.jobs.view(this.key(id))?.status === 'running') return;
+              if (!pending && !config.auto) return;
+              if ((await inMaintenance(id, now)) || (config.window && !withinWindow(config.window, now)))
+                return;
+              if (!pending) {
+                pending = {
+                  id: randomUUID(),
+                  requestedAt: new Date(now).toISOString(),
+                  attempts: 0,
+                  nextAttemptAt: 0,
+                };
+                await writeStore(this.file(id, 'sync-queue'), pending);
+              }
+              if (this.machines.state(id) !== 'running' || now < pending.nextAttemptAt) return;
+              try {
+                pending.attempts++;
+                const job = await this.runInternal(id, 'both');
+                pending.jobId = job.id;
+              } catch (error) {
+                pending.lastError = (error as Error).message.slice(0, 1000);
+                pending.nextAttemptAt = now + Math.min(600000, 15000 * 2 ** Math.min(6, pending.attempts));
+              }
+              await writeStore(this.file(id, 'sync-queue'), pending);
+            });
+          } catch {
+            /* Each project retains its previous queued request on transient failures. */
+          }
         });
       } catch {
         /* A manual retry exposes the error. */
@@ -273,6 +381,27 @@ export class FolderSync {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     }
     const next: Record<string, string> = Object.create(null);
+    const baseFile = this.file(id, 'sync-base');
+    let bases: Record<string, string> = Object.create(null);
+    if (config.mergeText) {
+      try {
+        if ((await lstat(baseFile)).size > 32 * 1024 ** 2) throw new AppError('同步共同版本文件超过限制');
+        bases = Object.assign(Object.create(null), JSON.parse(await readFile(baseFile, 'utf8')));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+    const rate = new ByteRate((config.bandwidthMiBps || 0) * 1024 ** 2);
+    const decodeText = (bytes: Buffer) => {
+      if (bytes.length > 1024 ** 2 || bytes.includes(0))
+        throw new AppError('三方同步只支持 1 MiB 以内的 UTF-8 文本');
+      try {
+        return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+      } catch {
+        throw new AppError('三方同步需要 UTF-8 文本');
+      }
+    };
     let count = 0,
       changed = 0,
       conflicts = 0;
@@ -475,6 +604,96 @@ export class FolderSync {
               else if (previous[name] && previous[name] === hostHash) way = 'pull';
               else {
                 const decision = decisions[name];
+                if (decision === 'merge') {
+                  const base = bases[name];
+                  if (!config.mergeText || typeof base !== 'string' || digest(base) !== previous[name])
+                    throw new AppError('没有可校验的共同版本，请先启用文本版本保存并完成一次同步：' + name);
+                  const local = await hostPath(name),
+                    remote = posix.join(config.guest, name);
+                  const attrs = await ftpStat(ftp, remote),
+                    localAttrs = await lstat(local);
+                  if (!attrs?.isFile() || attrs.size > 1024 ** 2 || localAttrs.size > 1024 ** 2)
+                    throw new AppError('三方同步只支持 1 MiB 以内的普通文件');
+                  const ours = await readFile(local),
+                    chunks: Buffer[] = [];
+                  let bytes = 0;
+                  await new Promise<void>((resolve, reject) => {
+                    const stream = ftp.createReadStream(remote);
+                    let ended = false;
+                    const abort = () => stream.destroy(transferSignal.reason);
+                    const cleanup = () => transferSignal.removeEventListener('abort', abort);
+                    stream.on('data', (chunk: Buffer) => {
+                      bytes += chunk.length;
+                      if (bytes > 1024 ** 2) stream.destroy(new AppError('远端文本超过 1 MiB'));
+                      else chunks.push(Buffer.from(chunk));
+                    });
+                    stream.once('end', () => {
+                      ended = true;
+                    });
+                    stream.once('error', (error: Error) => {
+                      cleanup();
+                      reject(error);
+                    });
+                    stream.once('close', () => {
+                      cleanup();
+                      if (transferSignal.aborted) reject(transferSignal.reason);
+                      else if (ended) resolve();
+                      else reject(new AppError('文本读取未完成'));
+                    });
+                    transferSignal.addEventListener('abort', abort, { once: true });
+                    if (transferSignal.aborted) abort();
+                  });
+                  const theirs = Buffer.concat(chunks);
+                  if (digest(ours) !== hostHash || digest(theirs) !== guestHash)
+                    throw new AppError('合并期间文件发生变化，请重新预览', 409);
+                  const parts = threeWayMerge(base, decodeText(ours), decodeText(theirs));
+                  if (parts.some((part) => part.kind === 'conflict')) {
+                    conflicts++;
+                    next[name] = previous[name];
+                    log('三方合并存在重叠修改，保留两端供手动处理：' + name + '\n');
+                    continue;
+                  }
+                  const merged = Buffer.from(resolvedMerge(parts, {}));
+                  const hostTemp = join(dirname(local), '.sakura-sync-' + randomUUID());
+                  const guestTemp = posix.join(posix.dirname(remote), '.sakura-sync-' + randomUUID());
+                  try {
+                    await writeFile(hostTemp, merged, { flag: 'wx', mode: localAttrs.mode });
+                    await pipeline(
+                      Readable.from([merged]),
+                      rate.stream(transferSignal),
+                      ftp.createWriteStream(guestTemp, { flags: 'wx', mode: attrs.mode }),
+                      { signal: transferSignal },
+                    );
+                    await preserveFileMetadata(ftp, guestTemp, attrs);
+                    if (
+                      (await hash(ftp.createReadStream(guestTemp), transferSignal)) !== digest(merged) ||
+                      (await hash(ftp.createReadStream(remote), transferSignal)) !== guestHash ||
+                      (await hash(createReadStream(await hostPath(name)), transferSignal)) !== hostHash
+                    )
+                      throw new AppError('合并提交前文件变化或校验失败，已保留原文件', 409);
+                    transferSignal.throwIfAborted();
+                    await new Promise<void>((resolve, reject) =>
+                      ftp.ext_openssh_rename(guestTemp, remote, (error) =>
+                        error ? reject(error) : resolve(),
+                      ),
+                    );
+                    try {
+                      await rename(hostTemp, local);
+                    } catch (error) {
+                      log('Linux 端已保存合并内容，Windows 端保留原文件，请重新预览：' + name + '\n');
+                      throw error;
+                    }
+                    next[name] = digest(merged);
+                    bases[name] = merged.toString('utf8');
+                    changed++;
+                    log('已完成三方文本合并：' + name + '\n');
+                  } finally {
+                    await rm(hostTemp, { force: true });
+                    if (!transportSignal?.aborted)
+                      await new Promise<void>((resolve) => ftp.unlink(guestTemp, () => resolve()));
+                  }
+                  continue;
+                }
                 if (decision === 'push' || decision === 'pull') way = decision;
                 else if (decision === 'restore-host') way = 'pull';
                 else if (decision === 'restore-guest') way = 'push';
@@ -488,6 +707,7 @@ export class FolderSync {
                   try {
                     await pipeline(
                       ftp.createReadStream(remoteOriginal),
+                      rate.stream(transferSignal),
                       createWriteStream(temp, { flags: 'wx' }),
                       { signal: transferSignal },
                     );
@@ -496,6 +716,7 @@ export class FolderSync {
                     // Exclusive creation preserves any existing conflict copies.
                     await pipeline(
                       createReadStream(temp),
+                      rate.stream(transferSignal),
                       ftp.createWriteStream(remoteBackup, { flags: 'wx', mode: 0o644 }),
                       { signal: transferSignal },
                     );
@@ -533,6 +754,7 @@ export class FolderSync {
               try {
                 await pipeline(
                   createReadStream(local),
+                  rate.stream(transferSignal),
                   ftp.createWriteStream(temp, { flags: 'wx', mode: attrs?.mode || 0o644 }),
                   { signal: transferSignal },
                 );
@@ -560,9 +782,14 @@ export class FolderSync {
               await hostPath(name);
               const temp = join(dirname(local), '.sakura-sync-' + randomUUID());
               try {
-                await pipeline(ftp.createReadStream(remote), createWriteStream(temp, { flags: 'wx' }), {
-                  signal: transferSignal,
-                });
+                await pipeline(
+                  ftp.createReadStream(remote),
+                  rate.stream(transferSignal),
+                  createWriteStream(temp, { flags: 'wx' }),
+                  {
+                    signal: transferSignal,
+                  },
+                );
                 if ((await hash(createReadStream(temp), transferSignal)) !== guestHash)
                   throw new AppError(`文件在同步中改变，请重试：${name}`);
                 const current = await lstat(await hostPath(name)).catch((e: NodeJS.ErrnoException) => {
@@ -595,7 +822,46 @@ export class FolderSync {
     }
     signal.throwIfAborted();
     if (preview) return plan;
-    await writeFile(stateFile, JSON.stringify(next));
+    if (config.mergeText) {
+      const retained: Record<string, string> = Object.create(null);
+      let total = 0,
+        serializedBytes = 2;
+      for (const [name, sha] of Object.entries(next)) {
+        let text = typeof bases[name] === 'string' && digest(bases[name]) === sha ? bases[name] : undefined;
+        if (text === undefined) {
+          const file = await hostPath(name);
+          const info = await lstat(file).catch((error) => {
+            if (error.code !== 'ENOENT') throw error;
+            return null;
+          });
+          if (info?.isFile() && info.size <= 1024 ** 2) {
+            const bytes = await readFile(file);
+            if (digest(bytes) === sha) {
+              try {
+                text = decodeText(bytes);
+              } catch {}
+            }
+          }
+        }
+        const cost =
+          text === undefined
+            ? 0
+            : Buffer.byteLength(JSON.stringify(name)) + Buffer.byteLength(JSON.stringify(text)) + 2;
+        if (
+          text !== undefined &&
+          total + Buffer.byteLength(text) <= 16 * 1024 ** 2 &&
+          serializedBytes + cost <= 32 * 1024 ** 2
+        ) {
+          retained[name] = text;
+          total += Buffer.byteLength(text);
+          serializedBytes += cost;
+        }
+      }
+      await writeFile(baseFile + '.tmp', JSON.stringify(retained), { mode: 0o600 });
+      await rename(baseFile + '.tmp', baseFile);
+    }
+    await writeFile(stateFile + '.tmp', JSON.stringify(next), { mode: 0o600 });
+    await rename(stateFile + '.tmp', stateFile);
     log(`完成：${changed} 个文件已同步，${conflicts} 个冲突。删除操作不会传播。\n`);
     return plan;
   }

@@ -1,4 +1,12 @@
-export type UploadProgress = { name: string; index: number; count: number; loaded: number; total: number };
+import { resumableUpload } from './resumable-upload';
+export type UploadProgress = {
+  name: string;
+  index: number;
+  count: number;
+  loaded: number;
+  total: number;
+  phase?: string;
+};
 export const transferBytes = (value: number) => {
   const unit = value >= 1024 ** 3 ? 3 : value >= 1024 ** 2 ? 2 : value >= 1024 ? 1 : 0;
   return `${unit ? (value / 1024 ** unit).toFixed(1) : value} ${['B', 'KiB', 'MiB', 'GiB'][unit]}`;
@@ -20,6 +28,20 @@ export async function uploadFiles({ files, url, token, signal, progress }: Optio
     const report = (loaded: number) =>
       progress({ name: file.name, index: index + 1, count: files.length, loaded: completed + loaded, total });
     report(0);
+    if (file.size >= 8 * 1024 ** 2) {
+      await resumableUpload(file, url(file.name), token, signal, (loaded, phase) =>
+        progress({
+          name: file.name,
+          index: index + 1,
+          count: files.length,
+          loaded: completed + loaded,
+          total,
+          phase,
+        }),
+      );
+      completed += file.size;
+      continue;
+    }
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       let settled = false;

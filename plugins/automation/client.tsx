@@ -16,6 +16,8 @@ import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/
 import '../../src/features.css';
 import { usePlugin } from '../../src/plugin-context';
 import { workspaceRequest } from '../../src/workspace-request';
+import { CapabilityActionsPanel } from '../../src/CapabilityActionsPanel';
+import type { CapabilityActionView } from '../../shared/capability-actions';
 
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
@@ -43,6 +45,8 @@ type FeatureEvent = {
 };
 type DiskEntry = { path: string; bytes: number };
 type SuiteView = {
+  capabilities?: CapabilityActionView[];
+  capabilityJobs?: JobView[];
   projectId?: string;
   settings: { schedule: Schedule; alerts: AlertConfig; updatedAt: string };
   history: MetricPoint[];
@@ -60,6 +64,7 @@ type Props = {
   projectId?: string;
 };
 type ExtendedView = {
+  capabilities?: CapabilityActionView[];
   projectId?: string;
   features: ExtendedFeature[];
   operations: Array<{
@@ -81,6 +86,7 @@ type ExtendedView = {
   jobs: JobView[];
 };
 type NextView = {
+  capabilities?: CapabilityActionView[];
   projectId?: string;
   features: NextFeature[];
   settings: Record<string, { enabled: boolean; options?: Record<string, unknown>; updatedAt: string }>;
@@ -190,6 +196,9 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const [operationParameters, setOperationParameters] = useState('{}');
   const [nextResult, setNextResult] = useState('');
   const [nextSearch, setNextSearch] = useState('');
+  const [suiteCapability, setSuiteCapability] = useState('');
+  const [extendedCapability, setExtendedCapability] = useState('');
+  const [nextCapability, setNextCapability] = useState('');
   const lockdown = useRemote<{ locked: boolean }>(request, '/vms/' + active.id + '/lockdown');
   useEffect(() => {
     const selected = extended.data?.operations.find((item) => item.id === extendedOperation);
@@ -322,6 +331,25 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runExtended = (featureId: string) =>
     action.run(async () => {
+      const instructions: Record<string, string> = {
+        'sync-window': '打开工作空间 → 同步，设置允许时间窗、时区和传输限速后保存。',
+        'sync-queue':
+          '打开工作空间 → 同步 → 排队同步。离线请求会持久保存，连接恢复后重新比较并重试；取消排队可停止后续重试。',
+        'immutable-backups':
+          '打开实例 → 备份，设置新备份保留锁。到期前，Sakura 的删除和自动清理均保留该备份。',
+      };
+      if (instructions[featureId]) {
+        setExtendedResult(instructions[featureId]);
+        return;
+      }
+      if (featureId === 'terminal-layouts') {
+        setExtendedResult('打开工作空间 → 终端 → 终端布局预设，可保存、应用和删除布局。');
+        return;
+      }
+      if (extended.data?.capabilities?.some((item) => item.id === featureId)) {
+        setExtendedCapability(featureId);
+        return;
+      }
       const operation = extended.data?.operations.find((item) => item.feature === featureId);
       if (operation) {
         setExtendedOperation(operation.id);
@@ -366,6 +394,14 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'backup-throttle') {
+        setNextResult('打开实例 → 备份，设置备份输出限速（MiB/s）。每个实例串行创建备份；0 表示不限制速率。');
+        return;
+      }
+      if (next.data?.capabilities?.some((item) => item.id === featureId)) {
+        setNextCapability(featureId);
+        return;
+      }
       const result = await request(`/vms/${active.id}/next-features`, 'POST', { action: 'run', featureId });
       setNextResult(JSON.stringify(result, null, 2));
       next.reload();
@@ -726,6 +762,22 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
           </div>
         </>
       )}
+      {hasAutomation && (
+        <section className="feature-card">
+          <h3>文件与项目操作</h3>
+          <CapabilityActionsPanel
+            request={request}
+            path={`/vms/${active.id}/advanced`}
+            scope="suite"
+            definitions={remote.data?.capabilities}
+            jobs={remote.data?.capabilityJobs}
+            selected={suiteCapability}
+            onSelected={setSuiteCapability}
+            running={active.status === 'running'}
+            reload={remote.reload}
+          />
+        </section>
+      )}
       {hasExtensions && (
         <section className="feature-card">
           <div className="panel-heading">
@@ -736,6 +788,17 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
             <span className="subtle-note">{extended.data?.features.length || 100} 项 · 可检查前置条件</span>
           </div>
           <p className="muted">检查结果会区分实际可用、仅保存本地记录和缺少实现或依赖。</p>
+          <CapabilityActionsPanel
+            request={request}
+            path={`/vms/${active.id}/extended-features`}
+            scope="extended"
+            definitions={extended.data?.capabilities}
+            jobs={extended.data?.jobs}
+            selected={extendedCapability}
+            onSelected={setExtendedCapability}
+            running={active.status === 'running'}
+            reload={extended.reload}
+          />
           <div className="feature-actions">
             <select
               value={extendedOperation}
@@ -785,9 +848,11 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   disabled={action.busy || feature.state !== 'available'}
                   onClick={() => runExtended(feature.id)}
                 >
-                  {extended.data?.operations.some((item) => item.feature === feature.id)
-                    ? '设置参数'
-                    : '运行'}
+                  {['terminal-layouts', 'sync-window', 'sync-queue', 'immutable-backups'].includes(feature.id)
+                    ? '使用说明'
+                    : extended.data?.operations.some((item) => item.feature === feature.id)
+                      ? '设置参数'
+                      : '运行'}
                 </button>
               </div>
             ))}
@@ -824,6 +889,17 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
             </span>
           </div>
           <p className="muted">检查后显示当前环境中的可用状态；本地记录不会标记为实际能力已就绪。</p>
+          <CapabilityActionsPanel
+            request={request}
+            path={`/vms/${active.id}/next-features`}
+            scope="next"
+            definitions={next.data?.capabilities}
+            jobs={next.data?.jobs}
+            selected={nextCapability}
+            onSelected={setNextCapability}
+            running={active.status === 'running'}
+            reload={next.reload}
+          />
           <input
             value={nextSearch}
             onChange={(event) => setNextSearch(event.target.value)}
@@ -861,7 +937,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   }
                   onClick={() => runNext(feature.id)}
                 >
-                  运行
+                  {feature.id === 'backup-throttle' ? '使用说明' : '运行'}
                 </button>
               </div>
             ))}

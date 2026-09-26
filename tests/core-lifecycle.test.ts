@@ -67,6 +67,30 @@ test('closing waits for an admitted launch before releasing the runtime', async 
   await assert.rejects(machines.start(id), /关闭/);
 });
 
+test('boot circuit persists failed launches across controller restarts and explicitly resets', async (t) => {
+  const { machines, id } = await fixture(t);
+  machines.exec = async () => {
+    throw new Error('SSH unavailable');
+  };
+  machines.engine.run = async () => {
+    throw new Error('QEMU failed');
+  };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await machines.start(id);
+    await machines.live.get(id)?.done;
+  }
+  assert.equal((await machines.bootGuard(id)).blocked, true);
+  const reloaded = new Machines(machines.engine);
+  await reloaded.init();
+  t.after(() => reloaded.close());
+  assert.equal((await reloaded.bootGuard(id)).failures, 5);
+  await assert.rejects(reloaded.start(id), { code: 'BOOT_CIRCUIT_OPEN' });
+  await reloaded.bootGuard(id, true);
+  assert.equal((await reloaded.bootGuard(id)).blocked, false);
+  await reloaded.start(id);
+  await reloaded.live.get(id)?.done;
+});
+
 test('closing waits for existing disk operations and rejects new work', async (t) => {
   const { machines, events } = await fixture(t);
   let release!: () => void;

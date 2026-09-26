@@ -10,6 +10,7 @@ import { Jobs } from './jobs.ts';
 import { Secrets, secretName } from './secrets.ts';
 import { fileHash, regularDirectory } from './local-store.ts';
 import { encryptFile, withDecrypted, passwordSchema } from './encrypted-backups.ts';
+import { inMaintenance } from './automation-policy.ts';
 
 export const backupPolicySchema = z
   .object({
@@ -17,6 +18,13 @@ export const backupPolicySchema = z
     intervalHours: z.number().int().min(1).max(720).default(24),
     keep: z.number().int().min(1).max(30).default(7),
     maxGiB: z.number().min(1).max(512).default(32),
+    lockDays: z.number().int().min(0).max(3650).optional(),
+    bandwidthMiBps: z
+      .number()
+      .min(0)
+      .max(10240)
+      .refine((value) => value === 0 || value >= 0.1)
+      .optional(),
     directory: z
       .string()
       .max(4096)
@@ -36,6 +44,7 @@ export type BackupRecord = {
   directory?: string;
   encrypted?: boolean;
   passwordSecret?: string;
+  retainUntil?: string;
 };
 type BackupState = { policy: BackupPolicy; items: BackupRecord[]; lastSuccess?: string };
 export async function verifyBackup(file: string, signal: AbortSignal) {
@@ -139,6 +148,7 @@ export class Backups {
       bytes: state.items.reduce((sum, v) => sum + v.bytes, 0),
       job: this.jobs.view(id),
       waitingForShutdown: state.policy.enabled && this.machines.live.has(id),
+      maintenance: await inMaintenance(id),
     };
   }
   async policy(id: string, value: unknown) {
@@ -157,6 +167,7 @@ export class Backups {
     for (const id of this.machines.records.keys()) {
       if (this.closed || this.machines.live.has(id) || this.jobs.view(id)?.status === 'running') continue;
       try {
+        if (await inMaintenance(id, now)) continue;
         const state = await this.state(id);
         if (
           state.policy.enabled &&
@@ -198,7 +209,13 @@ export class Backups {
             const output = createWriteStream(encrypted ? plainTemp : temp, { flags: 'wx', mode: 0o600 });
             output.on('error', () => {});
             try {
-              await this.bundles.export(id, output, () => {}, signal);
+              await this.bundles.export(
+                id,
+                output,
+                () => {},
+                signal,
+                (state.policy.bandwidthMiBps || 0) * 1024 ** 2,
+              );
             } finally {
               output.destroy();
             }
@@ -226,6 +243,9 @@ export class Backups {
               directory: state.policy.directory || undefined,
               encrypted,
               passwordSecret: encrypted && !password ? state.policy.passwordSecret : undefined,
+              retainUntil: state.policy.lockDays
+                ? new Date(Date.now() + state.policy.lockDays * 86400000).toISOString()
+                : undefined,
             };
             state.items.unshift(record);
             state.lastSuccess = record.createdAt;
@@ -235,9 +255,13 @@ export class Backups {
               state.items.length > state.policy.keep ||
               state.items.reduce((sum, v) => sum + v.bytes, 0) > state.policy.maxGiB * 1024 ** 3
             ) {
-              const old = state.items.at(-1)!;
+              const old = state.items.findLast((item) => item.id !== backupId && !backupLocked(item));
+              if (!old) {
+                log('保留期内的备份受到保护，暂时超过份数或总容量上限；到期后再清理。\n');
+                break;
+              }
               await rm(this.recordFile(id, old), { force: true });
-              state.items.pop();
+              state.items = state.items.filter((item) => item.id !== old.id);
               await this.saveState(id, state);
             }
             log(`备份已完成并校验，保留 ${state.items.length} 份。\n`);
@@ -270,6 +294,8 @@ export class Backups {
         item = state.items.find((v) => v.id === backupId);
       if (!item) throw new AppError('备份不存在', 404);
       if (action === 'delete') {
+        if (backupLocked(item))
+          throw new AppError('备份在保留锁定期内，不能删除：' + item.retainUntil, 423, 'BACKUP_LOCKED');
         await rm(this.recordFile(id, item), { force: true });
         state.items = state.items.filter((v) => v !== item);
         await this.saveState(id, state);
@@ -310,4 +336,11 @@ export class Backups {
     await this.ticking;
     await this.jobs.close();
   }
+}
+
+export function backupLocked(item: Pick<BackupRecord, 'retainUntil'>, now = Date.now()) {
+  return (
+    !!item.retainUntil &&
+    (!Number.isFinite(Date.parse(item.retainUntil)) || Date.parse(item.retainUntil) > now)
+  );
 }

@@ -10,6 +10,10 @@ import { readStore, writeStore } from './local-store.ts';
 import { distroInfo } from './images.ts';
 import { envPrefix } from './project-services.ts';
 import { privateLog, redactValues } from './secrets.ts';
+import { CapabilityActions } from './capability-actions.ts';
+import { requireSuccessfulResult } from './engineering-runner.ts';
+import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
+import { inMaintenance } from './automation-policy.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -99,19 +103,21 @@ const availableFeatureIds = new Set<FeatureId>([
   'database-presets',
   'port-discovery',
   'service-dashboard',
+  'directory-history',
+  'disk-analyzer',
+  'format-lint',
+  'workspace-search',
+  'binary-preview',
+  'three-way-sync',
+  'resumable-transfer',
+  'file-drop',
+  'git-worktrees',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'golden-images',
   'disk-maintenance',
   'resource-presets',
-  'file-drop',
-  'workspace-search',
-  'disk-analyzer',
-  'three-way-sync',
-  'directory-history',
   'language-services',
-  'format-lint',
-  'git-worktrees',
   'merge-editor',
   'dependency-report',
   'runtime-matrix',
@@ -295,6 +301,7 @@ export class FeatureSuite {
   async catalog() {
     return {
       features: implementedFeatureCatalogView(),
+      capabilities: capabilityViews('suite'),
       presets: resourcePresets,
       generatedAt: new Date().toISOString(),
     };
@@ -318,6 +325,15 @@ export class FeatureSuite {
       presets: resourcePresets,
       features: implementedFeatureCatalogView(),
       featureRuns: (state.featureRuns[id] || []).slice(-50).reverse(),
+      capabilities: capabilityViews('suite'),
+      capabilityJobs: this.jobs
+        .list()
+        .filter(
+          (job) =>
+            job.vmId === id &&
+            (job.projectId || 'default') === this.workspaces.projects.current(id) &&
+            job.action?.startsWith('capability:'),
+        ),
     };
   }
 
@@ -332,6 +348,27 @@ export class FeatureSuite {
       .enum(featureCatalog.map(([value]) => value) as [FeatureId, ...FeatureId[]])
       .parse(input.featureId);
     const spec = featureCatalog.find(([value]) => value === featureId)!;
+    if (hasCapability(featureId)) {
+      const runner = new CapabilityActions(this.machines, this.workspaces);
+      if (input.action === 'check') return runner.check(id, featureId, signal);
+      this.machines.requireUnlocked(id);
+      const parameters = capabilityParameters(featureId, input.options || {});
+      return this.jobs.start(
+        this.workspaces.projects.key(id) + ':capability:' + featureId,
+        async (log, taskSignal, _update, saveResult) => {
+          const result = await runner.run(id, featureId, parameters, taskSignal);
+          await saveResult(result);
+          log(JSON.stringify(result) + '\n');
+          if (!result.ready) throw new AppError('能力执行失败', 409);
+        },
+        {
+          vmId: id,
+          projectId: this.workspaces.projects.current(id),
+          title: spec[1],
+          action: 'capability:' + featureId,
+        },
+      );
+    }
     const startedAt = new Date().toISOString();
     const vm = this.machines.get(id);
     const result: Record<string, unknown> = {
@@ -514,8 +551,20 @@ export class FeatureSuite {
     const vm = this.machines.get(id);
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:dev`,
-      async (log, taskSignal) => {
+      async (log, taskSignal, _update, saveResult) => {
         const combined = taskSignal && signal ? AbortSignal.any([taskSignal, signal]) : taskSignal;
+        if (operation === 'lint' || operation === 'format') {
+          const result = await new CapabilityActions(this.machines, this.workspaces).run(
+            id,
+            'format-lint',
+            { mode: operation },
+            combined,
+          );
+          await saveResult(result);
+          log(JSON.stringify(result) + '\n');
+          requireSuccessfulResult(result);
+          return;
+        }
         const project = await this.workspaces.resolvedConfig(id);
         const directory = quote(project.directory);
         const worktreePath = path ? quote(`${project.directory}/${path}`) : '';
@@ -527,12 +576,6 @@ export class FeatureSuite {
             break;
           case 'test-discover':
             command = `cd ${directory}\nfind . -type d \( -name .git -o -name node_modules -o -name .venv -o -name target -o -name .worktrees \) -prune -o -type f \( -name '*.test.*' -o -name '*.spec.*' -o -name 'test_*.py' -o -name '*_test.py' -o -name '*_test.go' \) -print | head -n 300`;
-            break;
-          case 'lint':
-            command = `cd ${directory}\nif [ -f package.json ] && (npm run | grep -qE '\\blint\\b'); then npm run lint; elif command -v ruff >/dev/null; then ruff check .; elif [ -f Cargo.toml ]; then cargo clippy --all-targets --all-features -- -D warnings; elif command -v gofmt >/dev/null && [ -f go.mod ]; then test -z "$(gofmt -l .)"; else echo '没有识别到代码检查工具'; fi`;
-            break;
-          case 'format':
-            command = `cd ${directory}\nif command -v prettier >/dev/null; then prettier --write .; elif command -v ruff >/dev/null; then ruff format .; elif [ -f Cargo.toml ] && command -v cargo >/dev/null; then cargo fmt --all; elif [ -f go.mod ] && command -v gofmt >/dev/null; then find . -name '*.go' -print0 | xargs -0 -r gofmt -w; else echo '没有找到已安装的格式化工具'; fi`;
             break;
           case 'dependencies':
             command = `cd ${directory}\nset +e\nprintf 'NODE\\n'; test ! -f package.json || npm outdated --json\nprintf 'PYTHON\\n'; command -v pip3 >/dev/null && pip3 list --outdated --format=json\nprintf 'RUST\\n'; test ! -f Cargo.toml || cargo tree --depth 1`;
@@ -553,7 +596,7 @@ export class FeatureSuite {
             command = `cd ${directory}\ngit worktree add -- ${worktreePath} ${quote(branch!)}`;
             break;
           case 'worktree-remove':
-            command = `cd ${directory}\ngit worktree remove --force -- ${worktreePath}`;
+            command = `cd ${directory}\ngit worktree remove -- ${worktreePath}`;
             break;
           case 'database': {
             const image =
@@ -864,6 +907,11 @@ export class FeatureSuite {
       const now = new Date();
       const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       for (const vm of this.machines.records.values()) {
+        if (await inMaintenance(vm.id, now)) {
+          this.idleSince.delete(vm.id);
+          this.lastSampleAt.delete(vm.id);
+          continue;
+        }
         const settings = this.settingsFor(state, vm.id);
         const schedule = settings.schedule;
         let sampled = false;

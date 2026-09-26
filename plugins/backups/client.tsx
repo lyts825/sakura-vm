@@ -12,6 +12,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
     bytes: number;
     job: JobView | null;
     waitingForShutdown: boolean;
+    maintenance?: boolean;
   }>(request, `/vms/${vm.id}/backups`, true, 2500);
   const [policy, setPolicy] = useState<BackupPolicy | null>(null),
     action = useAction();
@@ -86,6 +87,27 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
               />
             </label>
             <label>
+              新备份保留锁（天，0 表示不锁定）
+              <input
+                type="number"
+                min={0}
+                max={3650}
+                value={policy.lockDays || 0}
+                onChange={(event) => setPolicy({ ...policy, lockDays: +event.target.value })}
+              />
+            </label>
+            <label>
+              备份输出限速（MiB/s，0 表示不限）
+              <input
+                type="number"
+                min={0}
+                max={10240}
+                step={0.1}
+                value={policy.bandwidthMiBps || 0}
+                onChange={(event) => setPolicy({ ...policy, bandwidthMiBps: +event.target.value })}
+              />
+            </label>
+            <label>
               自动加密密码引用（可选）
               <input
                 value={policy.passwordSecret || ''}
@@ -95,7 +117,8 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
             </label>
           </div>
           <p className="subtle-note">
-            加密密码引用来自“开发 → 私密配置”，至少 10 个字符。修改目录只影响新备份。
+            加密密码引用来自“开发 → 私密配置”，至少 10 个字符。保留锁仅影响新备份，到期前禁止通过 Sakura
+            删除或自动清理；修改策略不会缩短已有锁定期。
           </p>
           <label>
             本次加密 / 解密密码（可选）
@@ -132,6 +155,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
         </>
       )}
       {remote.data?.waitingForShutdown && <p className="subtle-note">计划备份将在实例停止后检查并执行。</p>}
+      {remote.data?.maintenance && <p className="subtle-note">当前处于维护窗口，暂停启动自动备份。</p>}
       <p>已用 {formatBytes(remote.data?.bytes || 0)}</p>
       {remote.data?.items.map((item) => (
         <div className="backup-row" key={item.id}>
@@ -142,6 +166,9 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
               {formatBytes(item.bytes)} · {item.error || (item.verifiedAt ? '已通过校验' : '待校验')}
             </p>
             {item.directory && <p className="subtle-note wrap-path">{item.directory}</p>}
+            {item.retainUntil && (
+              <p className="subtle-note">保留锁到期：{new Date(item.retainUntil).toLocaleString()}</p>
+            )}
           </div>
           <div className="feature-actions">
             <button
@@ -183,7 +210,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
             </button>
             <button
               className="text-button danger-text"
-              disabled={busy}
+              disabled={busy || (!!item.retainUntil && Date.parse(item.retainUntil) > Date.now())}
               onClick={() => {
                 if (confirm('删除这份备份？')) void run('delete', item.id);
               }}

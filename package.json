@@ -27,6 +27,7 @@
     "plugins:check": "tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",
     "plugins:schema": "tsx scripts/plugin-schema.ts",
     "plugins:sync": "tsx scripts/sync-plugin-catalog.ts",
+    "features:audit": "tsx scripts/audit-features.ts",
     "verify": "npm run plugins:check && npm test && npm run build && npm run dist:check && npm run test:production && npm run test:e2e",
     "dist:check": "node scripts/check-distribution.mjs",
     "release:prepare": "node scripts/package-release.mjs",

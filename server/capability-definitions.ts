@@ -1,0 +1,546 @@
+import { z } from 'zod';
+import type { CapabilityActionView } from '../shared/capability-actions.ts';
+import { timeWindowSchema } from './automation-policy.ts';
+
+export const relativePath = z
+  .string()
+  .min(1)
+  .max(512)
+  .refine(
+    (value) =>
+      !value.startsWith('/') &&
+      !value.includes('\\') &&
+      !value.includes(':') &&
+      !value.split('/').includes('..') &&
+      !/[\x00-\x1f]/.test(value),
+    '需要项目内的相对路径',
+  );
+const label = z.string().trim().min(1).max(120);
+const argv = z.array(z.string().max(4096)).min(1).max(80);
+const timeout = z.number().int().min(1).max(1800).default(60);
+const uuid = z.uuid();
+const projectId = z
+  .string()
+  .regex(/^(default|[a-f0-9]{16})$/)
+  .default('default');
+const target = z.object({ vmId: uuid, projectId }).strict();
+const action = <T extends z.ZodRawShape>(
+  name: string,
+  scope: CapabilityActionView['scope'],
+  shape: T,
+  example: Record<string, unknown>,
+  note: string,
+  requiresGuest = true,
+  writes = false,
+) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
+
+export const capabilityDefinitions = {
+  'git-worktrees': action(
+    'Git 工作树管理',
+    'suite',
+    {
+      mode: z.enum(['list', 'create', 'open', 'remove']).default('list'),
+      path: relativePath.optional(),
+      directory: z.string().min(1).max(4096).optional(),
+      ref: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9_./~^{}@-]{0,127}$/)
+        .default('HEAD'),
+      branch: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}$/)
+        .optional(),
+      projectName: label.optional(),
+    },
+    { mode: 'list' },
+    '列出真实 Git worktree；create 用项目内 path 创建，可指定新 branch；open 用列表中的 directory 打开为独立项目；remove 拒绝脏工作树和仍被项目引用的目录。',
+    true,
+    true,
+  ),
+  'crash-loop-guard': action(
+    '启动失败熔断',
+    'extended',
+    { mode: z.enum(['status', 'reset']).default('status') },
+    { mode: 'status' },
+    '5 分钟内连续 5 次启动失败后拒绝再次启动；状态跨服务重启保存。客户机启动就绪后清零，停止实例后可手动重置。',
+    false,
+    true,
+  ),
+  'maintenance-windows': action(
+    '自动任务维护窗口',
+    'extended',
+    {
+      mode: z.enum(['view', 'save']).default('view'),
+      enabled: z.boolean().default(false),
+      windows: z.array(timeWindowSchema).max(32).default([]),
+    },
+    { mode: 'view' },
+    '按时区与星期暂停新启动的计划启停、自动同步和定期备份；运行中的任务与手动操作继续。跨午夜窗口归属开始日。',
+    false,
+    true,
+  ),
+  'workspace-search': action(
+    '跨实例与项目全文搜索',
+    'suite',
+    {
+      query: z.string().min(1).max(256),
+      caseSensitive: z.boolean().default(false),
+      targets: z.array(target).max(32).default([]),
+      limit: z.number().int().min(1).max(500).default(100),
+    },
+    { query: 'TODO', targets: [], caseSensitive: false, limit: 100 },
+    '实时搜索所选实例与项目；targets 为空时遍历当前运行实例的全部项目。结果附实例、项目、文件和行号，失败目标单独列出。',
+    false,
+  ),
+  'schema-panels': action(
+    'Schema 表单目录',
+    'next',
+    {},
+    {},
+    '导出所有可执行功能的参数 Schema；各功能面板可展开参数表单，填写枚举、数值、开关和结构化参数。',
+    false,
+  ),
+  'compliance-evidence': action(
+    '操作证据导出',
+    'next',
+    {
+      hours: z.number().int().min(1).max(8760).default(24),
+    },
+    { hours: 24 },
+    '导出当前项目任务结果摘要、结果哈希和能力 Schema 指纹；不包含日志正文或凭据。',
+    false,
+  ),
+  'proxy-pac': action(
+    'PAC 代理规则生成',
+    'next',
+    {
+      rules: z
+        .array(
+          z
+            .object({
+              domain: z.string().regex(/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/),
+              subdomains: z.boolean().default(true),
+              proxy: z.string().regex(/^(DIRECT|(?:PROXY|HTTPS|SOCKS5) [A-Za-z0-9.-]+:[0-9]{1,5})$/),
+            })
+            .strict(),
+        )
+        .max(200),
+      fallback: z.literal('DIRECT').default('DIRECT'),
+    },
+    {
+      rules: [{ domain: 'example.com', subdomains: true, proxy: 'PROXY 127.0.0.1:8080' }],
+      fallback: 'DIRECT',
+    },
+    '生成浏览器可用的 PAC 文件；严格匹配域名边界，按规则顺序选择代理。下载后可导入系统或浏览器。',
+    false,
+  ),
+  'build-cache': action(
+    '可校验构建缓存',
+    'next',
+    {
+      mode: z.enum(['save', 'restore', 'inspect']),
+      path: relativePath.default('dist'),
+      inputs: z.array(relativePath).min(1).max(100),
+      target: relativePath.optional(),
+      namespace: label.default('default'),
+    },
+    { mode: 'save', path: 'dist', inputs: ['package-lock.json'], namespace: 'default' },
+    '由输入文件哈希和命名空间生成缓存键，保存构建目录；恢复时校验每个文件，只写入新的目标目录。',
+    true,
+    true,
+  ),
+  'branch-preview': action(
+    '分支预览工作区',
+    'next',
+    {
+      mode: z.enum(['create', 'list', 'remove']).default('list'),
+      ref: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9_./~^{}@-]{0,127}$/)
+        .default('HEAD'),
+      previewId: z.uuid().optional(),
+    },
+    { mode: 'list' },
+    '创建独立 Git worktree 并记录提交；列出预览目录，清理时拒绝删除有未提交改动的工作树。',
+    true,
+    true,
+  ),
+  'onboarding-checklist': action(
+    '项目入门清单',
+    'next',
+    {
+      mode: z.enum(['list', 'add', 'complete', 'reopen', 'remove']).default('list'),
+      member: label.default('本地用户'),
+      title: label.optional(),
+      stepId: z.uuid().optional(),
+    },
+    { mode: 'list', member: '本地用户' },
+    '保存项目入门步骤及每位成员的完成时间；成员名称是本地记录标签，不代表身份认证。',
+    true,
+    true,
+  ),
+  'review-threads': action(
+    '行级评审线程',
+    'next',
+    {
+      mode: z.enum(['list', 'comment', 'reply', 'resolve', 'reopen']).default('list'),
+      threadId: z.uuid().optional(),
+      path: relativePath.optional(),
+      line: z.number().int().positive().max(1000000).optional(),
+      body: z.string().trim().min(1).max(12000).optional(),
+      author: label.default('本地用户'),
+    },
+    { mode: 'list' },
+    '与本地代码评审共用项目线程，支持行级评论、回复、解决和重新打开。',
+    true,
+    true,
+  ),
+  'patch-bundle': action(
+    '补丁签名包',
+    'extended',
+    {
+      mode: z.enum(['keygen', 'create', 'verify']),
+      target: relativePath,
+      from: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9_./~^{}@-]{0,127}$/)
+        .optional(),
+      to: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9_./~^{}@-]{0,127}$/)
+        .default('HEAD'),
+      privateKey: relativePath.optional(),
+      publicKey: relativePath.optional(),
+    },
+    {
+      mode: 'create',
+      from: 'HEAD~1',
+      to: 'HEAD',
+      target: 'change.sakura-patch.json',
+      privateKey: '.sakura/keys/patch.pem',
+    },
+    '使用 Ed25519 签名完整 Git 补丁；verify 必须指定独立受信任公钥，不能信任包内自带的密钥。',
+    true,
+    true,
+  ),
+  'format-lint': action(
+    '格式化、检查与自动修复',
+    'suite',
+    {
+      mode: z.enum(['lint', 'format', 'fix']),
+      tool: z.enum(['auto', 'npm', 'ruff', 'cargo', 'go']).default('auto'),
+      timeout,
+    },
+    { mode: 'lint', tool: 'auto', timeout: 60 },
+    '统一执行项目脚本或语言工具；缺工具和检查失败都返回失败。',
+    true,
+    true,
+  ),
+  'environment-recreate': action(
+    '按锁文件重建项目环境',
+    'extended',
+    {
+      target: relativePath,
+      timeout: z.number().int().min(1).max(1800).default(600),
+    },
+    { target: 'rebuilt-environment', timeout: 600 },
+    '从当前 Git 提交导出到新目录，识别锁文件并实际安装依赖；保留原项目，失败保留新目录便于检查。',
+    true,
+    true,
+  ),
+  'editor-profiles': action(
+    '编辑器连接档案',
+    'extended',
+    {
+      editor: z.enum(['jetbrains', 'neovim', 'vscode']).default('neovim'),
+    },
+    { editor: 'neovim' },
+    '生成当前实例的 SSH 档案与编辑器启动命令，可下载；不改写宿主现有 SSH 配置。',
+    false,
+  ),
+  'metrics-export': action(
+    '指标导出',
+    'extended',
+    {
+      format: z.enum(['prometheus', 'otlp-json']).default('prometheus'),
+    },
+    { format: 'prometheus' },
+    '从真实客户机采样生成 Prometheus 文本或 OTLP JSON，可保存为文件。',
+  ),
+  'event-timeline': action(
+    '事件关联时间线',
+    'extended',
+    {
+      limit: z.number().int().min(1).max(500).default(100),
+    },
+    { limit: 100 },
+    '关联当前实例的任务起止、失败和资源告警，按时间排序。',
+    false,
+  ),
+  'activity-digest': action(
+    '活动摘要',
+    'next',
+    {
+      hours: z.number().int().min(1).max(8760).default(24),
+    },
+    { hours: 24 },
+    '从任务和告警历史生成时段摘要、失败列表和耗时统计。',
+    false,
+  ),
+  'slo-dashboard': action(
+    '任务 SLO 仪表盘',
+    'next',
+    {
+      targetPercent: z.number().gt(0).lte(100).default(99.9),
+      hours: z.number().int().min(1).max(8760).default(24),
+    },
+    { targetPercent: 99.9, hours: 24 },
+    '按已完成任务计算成功率、目标达成情况和失败预算；无样本时不推断可用性。',
+    false,
+  ),
+  'error-budget': action(
+    '任务错误预算',
+    'next',
+    {
+      targetPercent: z.number().gt(0).lte(100).default(99.9),
+      hours: z.number().int().min(1).max(8760).default(24),
+    },
+    { targetPercent: 99.9, hours: 24 },
+    '按任务 SLO 计算允许失败数、已消耗预算及剩余预算。',
+    false,
+  ),
+  'capacity-forecast': action(
+    '宿主容量预测',
+    'next',
+    {
+      memoryMiB: z.number().int().min(256).max(8192).default(1024),
+      cpus: z.number().int().min(1).max(8).default(1),
+      reservePercent: z.number().min(0).max(90).default(20),
+    },
+    { memoryMiB: 1024, cpus: 1, reservePercent: 20 },
+    '依据宿主可用内存、CPU 及已运行实例资源，估算指定规格还能启动的实例数；不是未来负载承诺。',
+    false,
+  ),
+  'anomaly-detection': action(
+    '资源异常基线检测',
+    'extended',
+    {
+      window: z.number().int().min(5).max(500).default(30),
+      sigma: z.number().min(1).max(10).default(3),
+    },
+    { window: 30, sigma: 3 },
+    '使用已有采样历史建立 CPU、内存及磁盘基线，返回最新点的偏差与异常原因。',
+    false,
+  ),
+  'log-index': action(
+    '任务日志索引',
+    'next',
+    {
+      mode: z.enum(['build', 'search']).default('build'),
+      query: z.string().min(1).max(256).optional(),
+      limit: z.number().int().min(1).max(200).default(50),
+    },
+    { mode: 'build' },
+    '索引当前实例与项目的持久任务日志，按文本检索并定位任务及日志行。',
+    false,
+    true,
+  ),
+  'test-sharding': action(
+    '测试分片',
+    'next',
+    {
+      mode: z.enum(['plan', 'run']).default('plan'),
+      files: z.array(relativePath).min(1).max(20000),
+      shards: z.number().int().min(1).max(16).default(2),
+      argv: argv.optional(),
+      timeout,
+    },
+    { mode: 'plan', files: ['tests/example.test.js'], shards: 2 },
+    '按文件名稳定分片；run 要求 argv，{files} 展开为该片文件参数。各片有独立退出码、耗时和日志。',
+    true,
+    true,
+  ),
+  'directory-history': action(
+    '目录版本与恢复',
+    'suite',
+    {
+      mode: z.enum(['snapshot', 'list', 'diff', 'restore']),
+      path: relativePath.default('src'),
+      revision: z
+        .string()
+        .regex(/^[a-f0-9]{32}$/)
+        .optional(),
+      target: relativePath.optional(),
+      label: label.default('目录版本'),
+    },
+    { mode: 'snapshot', path: 'src', label: '修改前' },
+    '保存目录内容与哈希；diff 与当前目录比较；restore 恢复到新的目标目录，保留当前内容。',
+    true,
+    true,
+  ),
+  'disk-analyzer': action(
+    '磁盘类型与目录分析',
+    'suite',
+    {
+      path: relativePath.default('.'),
+      depth: z.number().int().min(1).max(8).default(3),
+    },
+    { path: '.', depth: 3 },
+    '返回目录树、文件类型占用、最大文件；不跟随符号链接。',
+  ),
+  'review-comments': action(
+    '本地代码评审',
+    'extended',
+    {
+      mode: z.enum(['list', 'comment', 'reply', 'resolve', 'reopen']).default('list'),
+      threadId: z.uuid().optional(),
+      path: relativePath.optional(),
+      line: z.number().int().positive().max(1000000).optional(),
+      body: z.string().trim().min(1).max(12000).optional(),
+      author: label.default('本地用户'),
+    },
+    { mode: 'list' },
+    '在当前项目保存文件行级线程、回复和解决状态；记录提交及文件哈希。',
+    true,
+    true,
+  ),
+  'command-forms': action(
+    '命令参数表单',
+    'extended',
+    {
+      mode: z.enum(['preview', 'run']).default('preview'),
+      argv,
+      fields: z
+        .array(
+          z
+            .object({
+              name: z.string().regex(/^[A-Z_][A-Z0-9_]{0,63}$/),
+              label,
+              type: z.enum(['string', 'integer', 'boolean', 'choice']).default('string'),
+              required: z.boolean().default(true),
+              choices: z.array(z.string()).max(100).optional(),
+            })
+            .strict(),
+        )
+        .max(40),
+      values: z
+        .record(z.string(), z.union([z.string().max(4096), z.number().int(), z.boolean()]))
+        .default({}),
+      timeout,
+    },
+    {
+      mode: 'preview',
+      argv: ['python3', '-m', 'pytest', '${TARGET}'],
+      fields: [{ name: 'TARGET', label: '测试目录', type: 'string', required: true }],
+      values: { TARGET: 'tests' },
+    },
+    '按声明生成字段并校验输入；占位符作为单个 argv 参数替换，命令不会经过 Shell。',
+    true,
+    true,
+  ),
+  'vm-dependency-start': action(
+    '按依赖启动实例',
+    'extended',
+    {
+      dependencies: z.record(uuid, z.array(uuid).max(32)),
+      timeoutSeconds: z.number().int().min(1).max(900).default(300),
+    },
+    { dependencies: {} },
+    '验证完整依赖图，按顺序等待每台实例就绪；失败即停止后续启动。',
+    false,
+    true,
+  ),
+  'environment-parity': action(
+    '环境一致性报告',
+    'extended',
+    {
+      targets: z.array(target).min(2).max(16),
+    },
+    { targets: [] },
+    '实际读取每个目标的系统、工具版本及项目锁文件哈希，逐项比较，不收集环境变量值。',
+    false,
+  ),
+  'test-matrix': action(
+    '跨实例测试矩阵',
+    'extended',
+    {
+      targets: z.array(target).min(1).max(16),
+      argv,
+      timeout,
+    },
+    { targets: [], argv: ['npm', 'test'], timeout: 60 },
+    '在所选实例与项目中实际执行同一测试；保存每个目标的退出码、日志和耗时，任一失败即失败。',
+    false,
+    true,
+  ),
+  'cross-vm-copy': action(
+    '跨实例文件复制',
+    'extended',
+    {
+      source: relativePath,
+      target: relativePath,
+      targetVmId: uuid,
+      targetProjectId: projectId,
+    },
+    { source: 'README.md', target: 'README.copy.md', targetVmId: '' },
+    '通过 SFTP 流式复制普通文件，拒绝覆盖现有目标，并核对源文件变更与 SHA-256。',
+    true,
+    true,
+  ),
+  'network-topology': action(
+    '客户机网络拓扑',
+    'next',
+    {},
+    {},
+    '读取真实接口、地址、路由和监听端口，连同实例端口转发生成拓扑。',
+  ),
+  'code-search-index': action(
+    '代码搜索索引',
+    'next',
+    {
+      mode: z.enum(['build', 'search']).default('build'),
+      query: z.string().min(1).max(256).optional(),
+      caseSensitive: z.boolean().default(false),
+      limit: z.number().int().min(1).max(500).default(100),
+    },
+    { mode: 'build' },
+    '建立项目文本索引；搜索返回文件、行号、内容及索引是否过期。',
+    true,
+    true,
+  ),
+  'language-server-catalog': action(
+    '语言服务器目录',
+    'next',
+    {},
+    {},
+    '实际探测 TypeScript、Python、Rust、Go、Clang 等语言服务器位置与版本；没有服务器时报告缺失。',
+  ),
+  'pii-classification': action(
+    '敏感数据分类',
+    'next',
+    {
+      paths: z.array(relativePath).min(1).max(100),
+    },
+    { paths: ['README.md'] },
+    '按规则扫描邮件、电话、IP、身份号码及常见密钥，仅返回类型、文件和行号，不返回匹配值。',
+  ),
+} as const;
+export type CapabilityId = keyof typeof capabilityDefinitions;
+export const hasCapability = (id: string): id is CapabilityId => Object.hasOwn(capabilityDefinitions, id);
+export function capabilityViews(scope: CapabilityActionView['scope']): CapabilityActionView[] {
+  return Object.entries(capabilityDefinitions)
+    .filter(([, value]) => value.scope === scope)
+    .map(([id, value]) => ({
+      id,
+      name: value.name,
+      scope: value.scope,
+      example: value.example,
+      note: value.note,
+      requiresGuest: value.requiresGuest,
+      writes: value.writes,
+      schema: z.toJSONSchema(value.schema) as Record<string, unknown>,
+    }));
+}
+export function capabilityParameters(id: CapabilityId, input: unknown): Record<string, unknown> {
+  return capabilityDefinitions[id].schema.parse(input) as Record<string, unknown>;
+}
