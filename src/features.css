@@ -228,6 +228,9 @@
 .signed-bundles-fingerprint {
   overflow-wrap: anywhere;
 }
+.hardware-matrix-report {
+  overflow-wrap: anywhere;
+}
 .feature-log {
   margin: 8px 0 0;
   padding: 14px;

@@ -13,6 +13,7 @@ import type {
 import type { JobView } from '../../server/jobs';
 import type { VMView } from '../../server/model';
 import type { NextFeature } from '../../server/next-features';
+import type { hardwareCompatibility } from '../../server/hardware-compatibility';
 import { featureReadiness, type FeatureExecutionState } from '../../src/feature-readiness';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';
 import '../../src/features.css';
@@ -29,6 +30,40 @@ function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id
     <span className={status.className} title={status.title}>
       {status.label}
     </span>
+  );
+}
+
+type HardwareReport = Awaited<ReturnType<typeof hardwareCompatibility>>;
+function HardwareMatrix({ report }: { report: HardwareReport }) {
+  const rows = [...report.matrix.machines, ...report.matrix.accelerators, ...report.matrix.devices];
+  return (
+    <section className="feature-card hardware-matrix-report" aria-label="宿主硬件兼容矩阵">
+      <h4>宿主硬件兼容矩阵</h4>
+      <p className="subtle-note">
+        {report.qemuVersion} · {report.host.platform}/{report.host.arch}
+      </p>
+      <div className="snapshot-list">
+        {rows.map((row) => (
+          <div key={row.id}>
+            <div>
+              <b>{row.name}</b>
+              <p>
+                {row.evidence}
+                {row.reason ? ` · ${row.reason}` : ''}
+              </p>
+            </div>
+            <span className={`badge ${row.available ? 'running' : ''}`}>
+              {row.available ? '可用' : '不可用'}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p>
+        <b>当前实例：</b>
+        {report.current.compatible ? '配置与宿主探测相容' : report.current.issues.join('；')}
+      </p>
+      <p className="subtle-note">{report.limitation}</p>
+    </section>
   );
 }
 
@@ -196,6 +231,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const [extendedOperation, setExtendedOperation] = useState('');
   const [operationParameters, setOperationParameters] = useState('{}');
   const [nextResult, setNextResult] = useState('');
+  const [hardwareReport, setHardwareReport] = useState<HardwareReport | null>(null);
   const [nextSearch, setNextSearch] = useState('');
   const [suiteCapability, setSuiteCapability] = useState('');
   const [extendedCapability, setExtendedCapability] = useState('');
@@ -419,7 +455,12 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const checkNext = (featureId: string) =>
     action.run(async () => {
       const result = await request(`/vms/${active.id}/next-features`, 'POST', { action: 'check', featureId });
-      setNextResult(JSON.stringify(result, null, 2));
+      setHardwareReport(
+        featureId === 'hardware-compatibility' && result?.matrix ? (result as HardwareReport) : null,
+      );
+      setNextResult(
+        featureId === 'hardware-compatibility' && result?.matrix ? '' : JSON.stringify(result, null, 2),
+      );
       next.reload();
     });
   const runNext = (featureId: string) =>
@@ -1047,6 +1088,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
             ))}
           </div>
           {nextResult && <pre className="feature-log">{nextResult}</pre>}
+          {hardwareReport && <HardwareMatrix report={hardwareReport} />}
         </section>
       )}
 

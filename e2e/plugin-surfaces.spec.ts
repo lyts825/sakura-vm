@@ -2379,13 +2379,13 @@ async function app(page: Page, active: string[] = [], withVm = false) {
                   }
                 : path === '/api/signed-bundles'
                   ? { revision: 0, requireTrustedOnImport: false, localKey: null, trustedKeys: [] }
-                : path.endsWith('/rescue') || path.endsWith('/backup-recovery')
-                  ? { runs: [] }
-                  : path.endsWith('/projects')
-                    ? { active: 'default', projects: [{ id: 'default', name: '默认项目' }] }
-                    : path.endsWith('/commands')
-                      ? { projectId: 'default', presets: [], job: null }
-                      : {};
+                  : path.endsWith('/rescue') || path.endsWith('/backup-recovery')
+                    ? { runs: [] }
+                    : path.endsWith('/projects')
+                      ? { active: 'default', projects: [{ id: 'default', name: '默认项目' }] }
+                      : path.endsWith('/commands')
+                        ? { projectId: 'default', presets: [], job: null }
+                        : {};
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
   });
   await page.goto('/');
@@ -2508,6 +2508,80 @@ test('capability center edits operation parameters, disables planned runs and ex
   await page.getByRole('button', { name: '解除应急锁定' }).click();
   await expect(page.getByRole('button', { name: '停止并锁定实例' })).toBeEnabled();
   expect(locked).toBe(false);
+});
+
+test('hardware compatibility check displays probed devices and current configuration on mobile', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'platform'], true);
+  await page.route('**/api/vms/*/next-features*', (route) => {
+    if (route.request().method() === 'GET')
+      return route.fulfill({
+        json: {
+          projectId: 'default',
+          settings: {},
+          records: {},
+          executions: [],
+          jobs: [],
+          capabilities: [],
+          features: [
+            {
+              id: 'hardware-compatibility',
+              name: '硬件兼容矩阵',
+              category: '虚拟硬件与固件',
+              summary: '按宿主机能力生成矩阵',
+              state: 'available',
+            },
+          ],
+        },
+      });
+    expect(route.request().postDataJSON()).toEqual({ action: 'check', featureId: 'hardware-compatibility' });
+    return route.fulfill({
+      json: {
+        ready: true,
+        executed: false,
+        checkedAt: new Date().toISOString(),
+        qemuVersion: 'QEMU 11.1',
+        host: { platform: 'win32', arch: 'x64' },
+        probes: { devices: true, accelerators: true, machines: true },
+        matrix: {
+          devices: [
+            {
+              id: 'e1000',
+              name: 'Intel e1000 网卡',
+              available: false,
+              evidence: 'QEMU -device help',
+              reason: '未列出',
+            },
+          ],
+          accelerators: [
+            { id: 'whpx', name: 'WHPX 宿主加速器', available: true, evidence: '启动时暂停虚机探测' },
+          ],
+          machines: [{ id: 'q35', name: 'Q35 机器类型', available: true, evidence: 'QEMU -machine help' }],
+        },
+        current: {
+          accelerator: 'whpx',
+          networkCard: 'virtio-net-pci',
+          selectedDevices: ['virtio-net-pci'],
+          cpuTopology: null,
+          memoryHotplug: null,
+          compatible: true,
+          issues: [],
+        },
+        limitation: '客户机驱动和应用行为未在此矩阵中验证。',
+      },
+    });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const row = page.locator('.catalog-item').filter({ hasText: '硬件兼容矩阵' });
+  await row.getByRole('button', { name: '检查' }).click();
+  const matrix = page.getByRole('region', { name: '宿主硬件兼容矩阵' });
+  await expect(matrix).toContainText('WHPX 宿主加速器');
+  await expect(matrix).toContainText('Intel e1000 网卡');
+  await expect(matrix).toContainText('配置与宿主探测相容');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test('sandbox workbench creates isolated environments, executes, cancels and preserves logs after destruction', async ({

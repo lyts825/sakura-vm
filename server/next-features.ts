@@ -8,6 +8,7 @@ import { Jobs } from './jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
+import { hardwareCompatibility } from './hardware-compatibility.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -160,7 +161,7 @@ export const nextFeatureCatalog = [
     '虚拟硬件与固件',
     'P0',
     '按宿主机能力生成可用硬件功能矩阵。',
-    'experimental',
+    'available',
   ],
   [
     'storage-pools',
@@ -809,6 +810,12 @@ export class NextFeatures {
         adapter,
         message: '请在系统设置 → 任务日志保留中预览并保存主机级策略；服务每分钟执行已启用的清理策略。',
       };
+    if (spec.id === 'hardware-compatibility')
+      return {
+        ...(await hardwareCompatibility(this.machines, id, signal)),
+        executed: action === 'run',
+        adapter,
+      };
     if (hasCapability(spec.id)) {
       const runner = new CapabilityActions(this.machines, this.workspaces);
       return action === 'run'
@@ -858,7 +865,7 @@ export class NextFeatures {
         reason: '这里只检查工具或环境；对应功能尚无完整执行器。',
       };
     }
-    if (['hardware-compatibility', 'multi-host-inventory', 'storage-pools'].includes(spec.id))
+    if (['multi-host-inventory', 'storage-pools'].includes(spec.id))
       return {
         ready: false,
         executed: false,
