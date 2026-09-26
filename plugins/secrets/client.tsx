@@ -4,6 +4,7 @@ import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
+import type { SecretRotationItem } from '../../server/secret-rotation';
 
 export function SecretsPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<{ items: { name: string; updatedAt: string }[] }>(
@@ -11,8 +12,13 @@ export function SecretsPanel({ vm, request }: FeatureProps) {
       `/vms/${vm.id}/secrets`,
     ),
     action = useAction();
+  const rotation = useRemote<{ items: SecretRotationItem[] }>(request, `/vms/${vm.id}/secret-rotation`);
   const [name, setName] = useState(''),
     [value, setValue] = useState('');
+  useEffect(() => {
+    setName('');
+    setValue('');
+  }, [vm.id]);
   return (
     <>
       <p className="subtle-note">
@@ -27,6 +33,7 @@ export function SecretsPanel({ vm, request }: FeatureProps) {
             setValue('');
             setName('');
             remote.reload();
+            rotation.reload();
           }, '私密配置已保存');
         }}
       >
@@ -63,6 +70,20 @@ export function SecretsPanel({ vm, request }: FeatureProps) {
           <div>
             <b>{item.name}</b>
             <p className="subtle-note">更新于 {new Date(item.updatedAt).toLocaleString()}</p>
+            {rotation.data?.items.find((entry) => entry.name === item.name) && (
+              <RotationEditor
+                key={
+                  vm.id +
+                  item.name +
+                  JSON.stringify(rotation.data.items.find((entry) => entry.name === item.name)!.policy)
+                }
+                item={rotation.data.items.find((entry) => entry.name === item.name)!}
+                save={async (policy) => {
+                  await request(`/vms/${vm.id}/secret-rotation`, 'PATCH', { name: item.name, policy });
+                  rotation.reload();
+                }}
+              />
+            )}
           </div>
           <div className="feature-actions">
             <button
@@ -82,6 +103,7 @@ export function SecretsPanel({ vm, request }: FeatureProps) {
                   void action.run(async (signal) => {
                     await request(`/vms/${vm.id}/secrets`, 'DELETE', { name: item.name }, signal);
                     remote.reload();
+                    rotation.reload();
                   });
               }}
             >
@@ -90,7 +112,78 @@ export function SecretsPanel({ vm, request }: FeatureProps) {
           </div>
         </div>
       ))}
+      <Feedback error={rotation.error} />
+      <p className="subtle-note">
+        轮换年龄从 Sakura 中最后一次实际修改值起计算；重复保存相同值不重置。后台提醒需启用自动化调度及告警。
+      </p>
     </>
+  );
+}
+
+function RotationEditor({
+  item,
+  save,
+}: {
+  item: SecretRotationItem;
+  save: (policy: SecretRotationItem['policy']) => Promise<void>;
+}) {
+  const [policy, setPolicy] = useState(item.policy),
+    action = useAction();
+  const states = {
+    disabled: '提醒未启用',
+    unknown: '更新时间未知',
+    current: '期限内',
+    'due-soon': '即将到期',
+    overdue: '需要轮换',
+  };
+  return (
+    <details className="feature-card">
+      <summary>
+        {states[item.status]}
+        {item.ageDays === null ? '' : ` · 已使用 ${item.ageDays} 天`}
+      </summary>
+      {item.dueAt && item.policy.enabled && (
+        <p className="subtle-note">轮换期限：{new Date(item.dueAt).toLocaleString()}</p>
+      )}
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={policy.enabled}
+          onChange={(event) => setPolicy({ ...policy, enabled: event.target.checked })}
+        />
+        启用 {item.name} 的轮换提醒
+      </label>
+      <div className="feature-grid">
+        <label>
+          轮换周期（天）
+          <input
+            type="number"
+            min={1}
+            max={3650}
+            value={policy.maxAgeDays}
+            onChange={(event) => setPolicy({ ...policy, maxAgeDays: Number(event.target.value) })}
+          />
+        </label>
+        <label>
+          提前提醒（天）
+          <input
+            type="number"
+            min={0}
+            max={365}
+            value={policy.remindBeforeDays}
+            onChange={(event) => setPolicy({ ...policy, remindBeforeDays: Number(event.target.value) })}
+          />
+        </label>
+      </div>
+      <button
+        className="secondary compact"
+        disabled={action.busy}
+        onClick={() => void action.run(() => save(policy), '轮换策略已保存')}
+      >
+        保存轮换策略
+      </button>
+      <Feedback error={action.error} message={action.message} />
+    </details>
   );
 }
 

@@ -72,6 +72,8 @@ import { pluginNavigation } from './plugin-navigation';
 import './style.css';
 import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from './workspace-navigation';
 import { workspacePath } from './workspace-request';
+import { ClipboardSettings } from './ClipboardSettings';
+import { installClipboardProtection } from './clipboard-protection';
 
 const TerminalWorkspace = lazy(() =>
   import('./TerminalWorkspace').then((module) => ({ default: module.TerminalWorkspace })),
@@ -315,6 +317,7 @@ function App() {
     [busy, setBusy] = useState(false),
     [query, setQuery] = useState('');
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+  useEffect(() => installClipboardProtection(document, (text) => setToast({ text, error: true })), []);
   const [modal, setModal] = useState<'create' | 'help' | 'delete' | null>(null);
   const [confirm, setConfirm] = useState('');
   const [palette, setPalette] = useState(false);
@@ -1370,6 +1373,7 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <ClipboardSettings />
                 <div className="system-card">
                   <div className="panel-heading">
                     <h3>

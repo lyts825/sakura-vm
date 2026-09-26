@@ -37,6 +37,7 @@ import {
 import './desktop.css';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-shared';
 import { ResponseOrder } from './request-order';
+import { assertClipboardSafe, writeProtectedClipboard } from './clipboard-protection';
 
 type Props = {
   vm: VMView;
@@ -545,6 +546,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
                 onClick={() =>
                   void clipboardAction.run(async () => {
                     if (!clientRef.current) throw new Error('桌面连接尚未就绪');
+                    assertClipboardSafe(outgoing);
                     clientRef.current.clipboardPasteFrom(outgoing);
                   }, '文本已发送到 Linux')
                 }
@@ -570,10 +572,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
               className="secondary compact desktop-clipboard-copy"
               disabled={!incoming}
               onClick={() =>
-                void clipboardAction.run(
-                  () => navigator.clipboard.writeText(incoming),
-                  '已复制到 Windows 剪贴板',
-                )
+                void clipboardAction.run(() => writeProtectedClipboard(incoming), '已复制到 Windows 剪贴板')
               }
             >
               <Copy size={14} />

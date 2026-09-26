@@ -4,12 +4,19 @@ import { z } from 'zod';
 import { AppError, DATA, checkedId } from './model.ts';
 import type { Machines } from './machines.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { rotationPolicySchema, secretRotation, type RotationPolicy } from './secret-rotation.ts';
 
 export const secretName = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,59}$/);
 export const secretRefsSchema = z
   .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), secretName)
   .refine((value) => Object.keys(value).length <= 32, '最多引用 32 个私密配置');
-type SecretRecord = { name: string; ciphertext: string; updatedAt: string };
+type SecretRecord = {
+  name: string;
+  ciphertext: string;
+  updatedAt: string;
+  lastChangedAt?: string;
+  rotation?: RotationPolicy;
+};
 export type Protector = (operation: 'protect' | 'unprotect', value: string) => Promise<string>;
 const dpapiScript = `$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Security; $request=[Console]::In.ReadToEnd() | ConvertFrom-Json; $bytes=[Convert]::FromBase64String($request.value); $entropy=[Text.Encoding]::UTF8.GetBytes('Sakura private configuration v1'); $scope=[Security.Cryptography.DataProtectionScope]::CurrentUser; if ($request.operation -eq 'protect') { $result=[Security.Cryptography.ProtectedData]::Protect($bytes,$entropy,$scope) } else { $result=[Security.Cryptography.ProtectedData]::Unprotect($bytes,$entropy,$scope) }; [Console]::Out.Write([Convert]::ToBase64String($result))`;
 export const dpapi: Protector = async (operation, value) => {
@@ -67,6 +74,22 @@ export class Secrets {
   async list(id: string) {
     return (await this.records(id)).map(({ name, updatedAt }) => ({ name, updatedAt }));
   }
+  async rotation(id: string) {
+    return (await this.records(id)).map((item) =>
+      secretRotation(item.name, item.lastChangedAt || item.updatedAt, item.rotation),
+    );
+  }
+  async setRotation(id: string, input: unknown) {
+    const value = z.object({ name: secretName, policy: rotationPolicySchema }).strict().parse(input);
+    return this.machines.locked(`secrets:${id}`, async () => {
+      const records = await this.records(id),
+        item = records.find((record) => record.name === value.name);
+      if (!item) throw new AppError('私密配置不存在', 404);
+      item.rotation = value.policy;
+      await writeStore(this.file(id), records);
+      return this.rotation(id);
+    });
+  }
   async save(id: string, input: unknown) {
     const value = z
       .object({ name: secretName, value: z.string().min(1).max(8192) })
@@ -76,10 +99,22 @@ export class Secrets {
       const records = await this.records(id);
       if (records.length >= 64 && !records.some((item) => item.name === value.name))
         throw new AppError('最多保存 64 个私密配置');
+      const previous = records.find((item) => item.name === value.name);
+      const unchanged =
+        previous &&
+        Buffer.from(await this.protect('unprotect', previous.ciphertext), 'base64').toString('utf8') ===
+          value.value;
+      const now = new Date(Date.now()).toISOString();
       const ciphertext = await this.protect('protect', Buffer.from(value.value).toString('base64'));
       await writeStore(this.file(id), [
         ...records.filter((item) => item.name !== value.name),
-        { name: value.name, ciphertext, updatedAt: new Date().toISOString() },
+        {
+          name: value.name,
+          ciphertext,
+          updatedAt: now,
+          lastChangedAt: unchanged ? previous.lastChangedAt || previous.updatedAt : now,
+          ...(previous?.rotation ? { rotation: previous.rotation } : {}),
+        },
       ]);
       return this.list(id);
     });

@@ -8,7 +8,10 @@ export const manifest = definePlugin({
   optional: [pin('projects')],
   services: ['secrets'],
   contributes: {
-    http: [http('/api/vms/:vmId/secrets', ['GET', 'PUT', 'DELETE'], true)],
+    http: [
+      http('/api/vms/:vmId/secrets', ['GET', 'PUT', 'DELETE'], true),
+      http('/api/vms/:vmId/secret-rotation', ['GET', 'PATCH'], true),
+    ],
     tabs: ['development'],
     developmentSections: ['secrets'],
   },

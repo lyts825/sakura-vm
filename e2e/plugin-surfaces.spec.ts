@@ -307,6 +307,109 @@ const vm = {
   poweredOn: false,
 };
 
+test('clipboard protection blocks sensitive selections and editor payloads locally, preserves cuts and persists settings', async ({
+  page,
+}) => {
+  await app(page);
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  await page.getByLabel('阻止复制疑似密钥和令牌').check();
+  await page.reload();
+  await expect(page.getByLabel('阻止复制疑似密钥和令牌')).toBeChecked();
+  const sensitive = 'ghp_' + 'x'.repeat(36);
+  const result = await page.evaluate((text) => {
+    const input = document.createElement('textarea');
+    document.body.append(input);
+    input.value = text;
+    input.focus();
+    input.select();
+    const cut = new ClipboardEvent('cut', {
+      clipboardData: new DataTransfer(),
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(cut);
+    const cutBlocked = cut.defaultPrevented,
+      preserved = input.value;
+    input.value = 'ordinary project note';
+    input.select();
+    const copy = new ClipboardEvent('copy', {
+      clipboardData: new DataTransfer(),
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(copy);
+    const ordinaryAllowed = !copy.defaultPrevented;
+    input.value = '';
+    input.select();
+    input.addEventListener(
+      'copy',
+      (event) => {
+        event.clipboardData!.setData('text/plain', text);
+        event.clipboardData!.setData('text/html', '<b>' + text + '</b>');
+        event.preventDefault();
+      },
+      { once: true },
+    );
+    const payload = new ClipboardEvent('copy', {
+      clipboardData: new DataTransfer(),
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(payload);
+    input.remove();
+    return { cutBlocked, preserved, ordinaryAllowed, formats: Array.from(payload.clipboardData!.types) };
+  }, sensitive);
+  expect(result).toEqual({ cutBlocked: true, preserved: sensitive, ordinaryAllowed: true, formats: [] });
+  await expect(page.getByRole('status').filter({ hasText: '剪贴板传递已阻止' })).toBeVisible();
+  await expect(page.getByText(sensitive, { exact: true })).not.toBeVisible();
+  await page.getByLabel('阻止复制疑似密钥和令牌').uncheck();
+  const allowed = await page.evaluate((text) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', text);
+    const event = new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(event);
+    return !event.defaultPrevented && data.getData('text/plain') === text;
+  }, sensitive);
+  expect(allowed).toBe(true);
+});
+
+test('secret rotation controls show age and save only policy metadata', async ({ page }) => {
+  await app(page, ['secrets'], true);
+  const item: any = {
+    name: 'api-token',
+    lastChangedAt: '2026-01-01T00:00:00.000Z',
+    ageDays: 25,
+    dueAt: '2026-01-31T00:00:00.000Z',
+    daysRemaining: 5,
+    status: 'due-soon',
+    policy: { enabled: true, maxAgeDays: 30, remindBeforeDays: 7 },
+  };
+  let submitted: any;
+  await page.route('**/api/vms/*/secrets*', (route) =>
+    route.fulfill({ json: { items: [{ name: item.name, updatedAt: item.lastChangedAt }] } }),
+  );
+  await page.route('**/api/vms/*/secret-rotation*', (route) => {
+    if (route.request().method() === 'PATCH') {
+      submitted = route.request().postDataJSON();
+      item.policy = submitted.policy;
+    }
+    return route.fulfill({ json: { items: [item] } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '开发', exact: true }).click();
+  await page.getByText('即将到期 · 已使用 25 天', { exact: true }).click();
+  await page.getByLabel('轮换周期（天）').fill('60');
+  await page.getByLabel('提前提醒（天）').fill('10');
+  await page.getByRole('button', { name: '保存轮换策略' }).click();
+  await expect
+    .poll(() => submitted)
+    .toEqual({ name: 'api-token', policy: { enabled: true, maxAgeDays: 60, remindBeforeDays: 10 } });
+  await page.reload();
+  await page.getByRole('tab', { name: '开发', exact: true }).click();
+  await page.getByText('即将到期 · 已使用 25 天', { exact: true }).click();
+  await expect(page.getByLabel('轮换周期（天）')).toHaveValue('60');
+});
+
 test('network profiles preserve DNS and NAT form edits, then preview, apply and restore', async ({
   page,
 }) => {

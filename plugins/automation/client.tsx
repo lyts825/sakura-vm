@@ -154,6 +154,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     cooldownMinutes: 30,
     taskFailures: true,
     serviceFailures: true,
+    secretRotation: true,
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchPath, setSearchPath] = useState('/workspace');
@@ -332,6 +333,9 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'secret-rotation':
+          '打开工作空间 → 开发 → 私密配置，为每个条目启用轮换提醒、设置周期与提前天数。后台通知需启用自动化调度及告警。',
+        'clipboard-redaction': '打开设置 → 剪贴板敏感检测，启用本浏览器的复制与桌面传递检查。',
         'sync-window': '打开工作空间 → 同步，设置允许时间窗、时区和传输限速后保存。',
         'backup-dedup':
           '打开实例 → 备份，启用本机内容块去重。新备份跨实例复用相同块，下载和恢复会重组并校验；平台能力中的全局去重统计可清理无引用块。',
@@ -654,6 +658,14 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                     onChange={(event) => setAlerts({ ...alerts, serviceFailures: event.target.checked })}
                   />
                   服务健康检查失败告警
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={alerts.secretRotation ?? true}
+                    onChange={(event) => setAlerts({ ...alerts, secretRotation: event.target.checked })}
+                  />
+                  私密配置轮换提醒
                 </label>
                 <p className="subtle-note">
                   服务异常来自已启用的服务健康检查；后台任务失败只提醒一次，已确认状态会持久保存。

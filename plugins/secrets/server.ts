@@ -31,6 +31,10 @@ export async function route(
   const id = parts[2],
     action = parts[3];
   this.machines.get(id);
+  if (parts.length === 4 && action === 'secret-rotation') {
+    if (req.method === 'GET') return send({ items: await this.secrets.rotation(id) });
+    if (req.method === 'PATCH') return send({ items: await this.secrets.setRotation(id, await body(req)) });
+  }
   if (parts.length === 4) {
     if (action === 'secrets') {
       if (req.method === 'GET') {

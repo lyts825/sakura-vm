@@ -10,6 +10,7 @@ const { parseMetrics, networkRates } = await import('../server/metrics.ts');
 const { FeatureSuite } = await import('../server/feature-suite.ts');
 const { saveMaintenancePolicy } = await import('../server/automation-policy.ts');
 const { CapabilityActions } = await import('../server/capability-actions.ts');
+const { secretRotation } = await import('../server/secret-rotation.ts');
 after(async () => {
   assert.equal(dirname(root), resolve(tmpdir()));
   assert.ok(basename(root).startsWith('sakura-observability-'));
@@ -69,6 +70,59 @@ function fixture() {
     },
   };
 }
+
+test('rotation notices persist once per stage, survive plugin absence and refresh only for a new value', async () => {
+  const f = fixture(),
+    policy = { enabled: true, maxAgeDays: 30, remindBeforeDays: 7 },
+    day = 86400000;
+  let changed = Date.now() - 25 * day,
+    now = Date.now(),
+    available = true;
+  const observations = {
+    secrets: async (id: string) =>
+      available
+        ? id === f.id
+          ? [secretRotation('api-token', new Date(changed).toISOString(), policy, now)]
+          : []
+        : undefined,
+  };
+  let suite = new FeatureSuite(f.machines, f.workspaces, observations);
+  suite.enableBackground();
+  await suite.update(f.id, { alerts: { enabled: true } });
+  try {
+    await suite.tick();
+    let events = (await suite.view(f.id)).events;
+    assert.equal(events.length, 1);
+    assert.equal(events[0].kind, 'secret');
+    await suite.acknowledge(f.id, events[0].id);
+    await suite.close();
+    suite = new FeatureSuite(f.machines, f.workspaces, observations);
+    suite.enableBackground();
+    available = false;
+    await suite.tick();
+    available = true;
+    await suite.tick();
+    assert.equal((await suite.view(f.id)).events.length, 1);
+    now += 7 * day;
+    await suite.tick();
+    assert.equal((await suite.view(f.id)).events.length, 2);
+    changed = now;
+    await suite.tick();
+    assert.equal((await suite.view(f.id)).events.length, 2);
+    now += 25 * day;
+    await suite.tick();
+    events = (await suite.view(f.id)).events;
+    assert.equal(events.length, 3);
+    assert.equal(events.filter((event) => event.acknowledged).length, 1);
+    assert.equal((await suite.view(f.secondId)).events.length, 0);
+    await suite.update(f.id, { alerts: { enabled: true, secretRotation: false } });
+    now += 7 * day;
+    await suite.tick();
+    assert.equal((await suite.view(f.id)).events.length, 3);
+  } finally {
+    await suite.close();
+  }
+});
 
 test('concurrent first samples persist both VMs, cached samples are unique and network history survives restart', async () => {
   const f = fixture(),

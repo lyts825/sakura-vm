@@ -18,6 +18,7 @@ import { capabilityViews, capabilityParameters, hasCapability } from './capabili
 import { inMaintenance } from './automation-policy.ts';
 import { resourcePolicy } from './resource-policies.ts';
 import { observeAvailability, type AvailabilitySpan } from './availability.ts';
+import type { SecretRotationItem } from './secret-rotation.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -174,13 +175,14 @@ const alertSchema = z
     cooldownMinutes: z.number().int().min(1).max(10080).default(30),
     taskFailures: z.boolean().default(true),
     serviceFailures: z.boolean().default(true),
+    secretRotation: z.boolean().default(true),
   })
   .strict();
 export type AlertConfig = z.infer<typeof alertSchema>;
 export type AlertEvent = {
   id: string;
   vmId: string;
-  kind: 'cpu' | 'memory' | 'disk' | 'service' | 'backup' | 'task';
+  kind: 'cpu' | 'memory' | 'disk' | 'service' | 'backup' | 'task' | 'secret';
   message: string;
   createdAt: string;
   acknowledged: boolean;
@@ -205,6 +207,7 @@ type FeatureState = {
   events: AlertEvent[];
   lastAlerts: Record<string, Record<string, number>>;
   notifiedJobs?: Record<string, string[]>;
+  notifiedSecretRotations?: Record<string, Record<string, string>>;
   availability?: Record<string, AvailabilitySpan[]>;
   featureRuns: Record<
     string,
@@ -289,6 +292,7 @@ export class FeatureSuite {
     private observations: {
       jobs?: () => JobView[];
       services?: (id: string) => Array<HealthView & { projectId: string }>;
+      secrets?: (id: string) => Promise<SecretRotationItem[] | undefined>;
     } = {},
   ) {}
   enableBackground() {
@@ -773,6 +777,29 @@ export class FeatureSuite {
       });
     }
     state.notifiedJobs[id] = [...seen].slice(-10000);
+    if (settings.alerts.secretRotation !== false) {
+      const secrets = await this.observations.secrets?.(id);
+      if (secrets) {
+        state.notifiedSecretRotations ||= {};
+        const notified = (state.notifiedSecretRotations[id] ||= {});
+        for (const name of Object.keys(notified))
+          if (!secrets.some((item) => item.name === name)) delete notified[name];
+        for (const item of secrets) {
+          if (!['due-soon', 'overdue'].includes(item.status)) continue;
+          const key = `${item.lastChangedAt}:${item.dueAt}:${item.status}`;
+          if (notified[item.name] === key) continue;
+          notified[item.name] = key;
+          state.events.push({
+            id: randomUUID(),
+            vmId: id,
+            kind: 'secret',
+            acknowledged: false,
+            createdAt: new Date(now).toISOString(),
+            message: `私密配置 ${item.name} ${item.status === 'overdue' ? '已到轮换期限' : '即将到轮换期限'}；请在开发设置中更新值。`,
+          });
+        }
+      }
+    }
     if (settings.alerts.serviceFailures)
       for (const service of this.observations.services?.(id) || []) {
         if (

@@ -7,12 +7,14 @@ import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../server/model.ts';
 import { z } from 'zod';
 import type { ServiceHealth } from '../../server/service-health.ts';
+import type { Secrets } from '../../server/secrets.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.suite = new FeatureSuite(m, host.workspaces, {
     jobs: () => host.jobStores().flatMap((store) => store.list()),
     services: (id) => host.optional<ServiceHealth>('service-health', 'health')?.observed(id) || [],
+    secrets: async (id) => host.optional<Secrets>('secrets', 'secrets')?.rotation(id),
   });
   host.registerJobs(host.suite.jobs, (job) => {
     const id = retryTarget(job);

@@ -108,8 +108,8 @@ export const extendedFeatureCatalog = [
   ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2', '使用宿主机安全凭据解锁密钥。', 'planned'],
   ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'planned'],
   ['audit-log', '防篡改审计日志', '安全', 'P0', '记录关键操作并保护日志链。', 'available'],
-  ['clipboard-redaction', '剪贴板敏感检测', '安全', 'P1', '识别并阻止疑似密钥复制。', 'planned'],
-  ['secret-rotation', '密钥轮换提醒', '安全', 'P1', '追踪密钥年龄并提示轮换。', 'planned'],
+  ['clipboard-redaction', '剪贴板敏感检测', '安全', 'P1', '识别并阻止疑似密钥复制。', 'available'],
+  ['secret-rotation', '密钥轮换提醒', '安全', 'P1', '追踪密钥年龄并提示轮换。', 'available'],
   ['signed-bundles', '签名实例包策略', '安全', 'P1', '只允许受信任签名的导入包。', 'planned'],
   [
     'immutable-backups',
@@ -310,6 +310,17 @@ export class ExtendedFeatures {
         state: spec.state,
         adapter,
         reason: '已接入快照页的备份策略；启用本机内容块去重后创建备份，在全局去重能力中查看占用及回收。',
+      };
+    if (spec.id === 'secret-rotation' || spec.id === 'clipboard-redaction')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason:
+          spec.id === 'secret-rotation'
+            ? '开发 → 私密配置中为每个条目设置轮换周期，提醒进入能力中心的通知列表。'
+            : '设置 → 剪贴板敏感检测，启用后检查本页面复制/剪切和桌面双向文本传递。',
       };
     if (
       [
