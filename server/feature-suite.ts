@@ -129,9 +129,9 @@ const availableFeatureIds = new Set<FeatureId>([
   'network-profiles',
   'ai-assistant',
   'native-integration',
+  'golden-images',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
-  'golden-images',
   'language-services',
   'merge-editor',
   'multi-monitor',
@@ -430,6 +430,10 @@ export class FeatureSuite {
       result.ready = true;
       result.reason =
         '系统设置 → 本地 AI 助手，连接本机 Ollama，审阅脱敏上下文后获取解释、测试或修复建议。需要已下载的本地模型。';
+    } else if (featureId === 'golden-images') {
+      result.ready = true;
+      result.reason =
+        '启用磁盘快照插件后，在实例 → 快照 → 黄金镜像库保存、校验和删除模板，并创建独立实例。镜像库页面也可管理所有模板。';
     } else if (featureId === 'disk-maintenance') {
       result.ready = true;
       result.reason = '已接入工作空间 → 维护；启用磁盘与诊断插件后可计划 TRIM、离线压缩和稀疏回收。';

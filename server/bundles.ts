@@ -155,7 +155,7 @@ export class Bundles {
       }
     });
   }
-  async import(name: string, source: Readable, signal?: AbortSignal) {
+  async import(name: string, source: Readable, signal?: AbortSignal, beforeAdopt?: () => void) {
     signal?.throwIfAborted();
     const dir = await this.temp();
     const disk = join(dir, 'disk.qcow2');
@@ -221,6 +221,7 @@ export class Bundles {
       if (seed.length < 34816 || seed.toString('ascii', 32769, 32774) !== 'CD001')
         throw new AppError('初始化镜像已损坏');
       signal?.throwIfAborted();
+      beforeAdopt?.();
       return await this.machines.adopt(
         { ...manifest.config, name, forwards: [] },
         disk,

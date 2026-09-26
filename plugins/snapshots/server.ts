@@ -1,16 +1,48 @@
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
 import { AppError } from '../../server/model.ts';
 
 import { importEncrypted } from '../../server/encrypted-backups.ts';
 import { Bundles } from '../../server/bundles.ts';
+import { GoldenImages } from '../../server/golden-images.ts';
+import { goldenActionSchema, goldenEntrySchema, goldenResultSchema } from '../../shared/golden-images.ts';
 
 export async function activate(host: PluginContext) {
   host.bundles = new Bundles(host.machines);
+  const golden = host.provide('goldenImages', new GoldenImages(host.machines, host.bundles));
+  host.registerJobs(golden.jobs, () => {
+    throw new AppError('请先刷新黄金镜像库核对结果，再明确发起操作', 409);
+  });
 }
+export const operations: Record<string, PluginOperation> = {
+  'golden-list': {
+    response: z
+      .object({
+        templates: z.array(goldenEntrySchema),
+        issues: z.array(z.object({ id: z.uuid(), error: z.string() }).strict()),
+        limits: z.object({ count: z.number(), bytes: z.number(), imageBytes: z.number() }).strict(),
+        job: z
+          .object({ status: z.string(), log: z.string(), startedAt: z.string() })
+          .passthrough()
+          .nullable(),
+        persistenceError: z.string().optional(),
+      })
+      .strict(),
+    execute() {
+      return this.use<GoldenImages>('snapshots', 'goldenImages').view();
+    },
+  },
+  'golden-action': {
+    request: goldenActionSchema,
+    response: goldenResultSchema,
+    execute(_url, input, signal) {
+      return this.use<GoldenImages>('snapshots', 'goldenImages').action(input, signal);
+    },
+  },
+};
 export async function route(
   this: PluginContext,
   req: IncomingMessage,

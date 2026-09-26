@@ -527,3 +527,34 @@
   text-align: left;
   border-bottom: 1px solid var(--line);
 }
+.golden-images fieldset {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+  min-width: 0;
+}
+.golden-images label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.golden-images label.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+}
+.golden-images input,
+.golden-images select,
+.golden-images textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+.golden-image-list {
+  padding: 0;
+  list-style: none;
+}
+.golden-image-list li {
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}

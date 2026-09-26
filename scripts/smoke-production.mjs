@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { randomUUID, createHmac } from 'node:crypto';
+import { randomUUID, createHmac, createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -81,6 +81,51 @@ async function probe(selected, expected) {
     );
     const sdk = new SakuraClient();
     assert.deepEqual(await sdk.call('core.vms.list'), []);
+    if (expected.includes('snapshots')) {
+      assert.deepEqual((await sdk.call('snapshots.golden-list')).templates, []);
+      const id = randomUUID(),
+        folder = join(data, 'golden-images', id),
+        bytes = Buffer.from('Production template integrity fixture');
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, 'template.sakura'), bytes);
+      await writeFile(
+        join(folder, 'manifest.json'),
+        JSON.stringify({
+          version: 1,
+          id,
+          name: 'Production fixture',
+          note: '',
+          createdAt: new Date().toISOString(),
+          sourceId: randomUUID(),
+          sourceName: 'fixture',
+          distro: 'alpine',
+          diskGiB: 2,
+          bytes: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        }),
+      );
+      assert.equal((await sdk.call('snapshots.golden-list')).templates[0].id, id);
+      assert.equal(
+        (await sdk.call('snapshots.golden-action', { body: { action: 'verify', id } })).kind,
+        'verified',
+      );
+      await assert.rejects(
+        sdk.call('snapshots.golden-action', {
+          body: { action: 'instantiate', id, name: 'invalid-template' },
+        }),
+      );
+      assert.deepEqual(await sdk.call('core.vms.list'), []);
+      assert.equal(
+        (await sdk.call('snapshots.golden-action', { body: { action: 'delete', id } })).kind,
+        'deleted',
+      );
+      assert.deepEqual((await sdk.call('snapshots.golden-list')).templates, []);
+      console.log(
+        'Production golden-image routes list, verify, reject malformed instances, and delete through the generated SDK.',
+      );
+    } else {
+      assert.equal((await fetch(origin + '/api/golden-images', { headers })).status, 403);
+    }
     assert.equal((await sdk.call('core.monitor')).version, 1);
     assert.equal(
       (
@@ -562,3 +607,4 @@ await probe(['metrics'], ['metrics']);
 await probe(['commands'], ['projects', 'commands']);
 await probe(['commands', 'metrics'], ['projects', 'commands', 'metrics']);
 await probe(['sandbox'], ['sandbox']);
+await probe(['snapshots'], ['transfers', 'snapshots']);

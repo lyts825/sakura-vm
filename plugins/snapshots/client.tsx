@@ -4,6 +4,7 @@ import type { Snapshot } from '../../server/model';
 import { Feedback, download, useAction, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';
+import { GoldenImageLibrary } from './GoldenImages';
 const BackupPanel = lazy(() =>
   import('../backups/client').then((module) => ({ default: module.BackupPanel })),
 );
@@ -182,6 +183,7 @@ export function SnapshotsPanel(props: FeatureProps) {
       <PluginGate id="backups">
         <BackupPanel {...props} />
       </PluginGate>
+      <GoldenImageLibrary key={vm.id} request={request} refresh={refresh} vms={[vm]} sourceId={vm.id} />
     </div>
   );
 }

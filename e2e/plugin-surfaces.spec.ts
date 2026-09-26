@@ -13,6 +13,92 @@ import { graphqlInfo, GraphApi, querySnapshot } from '../server/graphql-api.ts';
 import type { Machines } from '../server/machines.ts';
 import { NativeIntegration } from '../server/native-integration.ts';
 import { WebSocketServer, type WebSocket as NodeWebSocket } from 'ws';
+import { GoldenImages } from '../server/golden-images.ts';
+import { Jobs } from '../server/jobs.ts';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { randomUUID } from 'node:crypto';
+
+test('golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile', async ({
+  page,
+}) => {
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-golden-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const derived: any[] = [];
+  const machines = {
+    records: new Map([[vm.id, vm]]),
+    get: () => vm,
+    requireUnlocked: () => {},
+    requireStopped: () => {},
+  } as unknown as Machines;
+  const library = new GoldenImages(
+    machines,
+    {
+      export: async (_id: string, target: any, headers: () => void, signal: AbortSignal) => {
+        headers();
+        await pipeline(Readable.from(['golden-browser-content']), target, { signal });
+      },
+      import: async (name: string, source: any, _signal: AbortSignal, beforeAdopt: () => void) => {
+        let bytes = '';
+        for await (const chunk of source) bytes += chunk;
+        expect(bytes).toBe('golden-browser-content');
+        beforeAdopt();
+        const created = { ...vm, id: randomUUID(), name };
+        derived.push(created);
+        return created;
+      },
+    } as any,
+    directory,
+    new Jobs(),
+  );
+  try {
+    await app(page, ['snapshots', 'transfers', 'images'], true);
+    await page.route('**/api/images', (route) => route.fulfill({ json: [] }));
+    await page.route('**/api/vms', (route) => route.fulfill({ json: [vm, ...derived] }));
+    await page.route('**/api/golden-images', async (route) => {
+      try {
+        await route.fulfill({
+          json:
+            route.request().method() === 'GET'
+              ? await library.view()
+              : await library.action(route.request().postDataJSON()),
+        });
+      } catch (error) {
+        await route.fulfill({ status: 400, json: { error: (error as Error).message } });
+      }
+    });
+    await page.getByRole('tab', { name: '快照', exact: true }).click();
+    const panel = page.getByRole('region', { name: '黄金镜像库', exact: true });
+    await panel.getByLabel('模板名称', { exact: true }).fill('浏览器模板');
+    await panel.getByLabel('模板备注', { exact: true }).fill('准备好的开发环境');
+    await expect(panel.getByRole('button', { name: '保存黄金镜像', exact: true })).toBeDisabled();
+    await panel.getByLabel('已检查源实例内容，确认可复制为模板', { exact: true }).check();
+    await panel.getByRole('button', { name: '保存黄金镜像', exact: true }).click();
+    await expect(panel.getByRole('heading', { name: '浏览器模板', exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: '校验 浏览器模板' }).click();
+    await expect(panel.getByRole('status')).toContainText('SHA-256 校验通过');
+    await page.reload();
+    await expect(panel.getByText('准备好的开发环境', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '镜像库', exact: true }).click();
+    await expect(panel.getByRole('heading', { name: '浏览器模板', exact: true })).toBeVisible();
+    await panel.getByLabel('从模板创建的实例名称').fill('from-template');
+    await panel.getByRole('button', { name: '从 浏览器模板 创建实例' }).click();
+    await expect(panel.getByRole('status')).toContainText('from-template 已创建');
+    expect(derived).toHaveLength(1);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await panel.getByRole('button', { name: '删除模板 浏览器模板' }).click();
+    expect((await library.view()).templates).toHaveLength(1);
+    page.once('dialog', (dialog) => dialog.accept());
+    await panel.getByRole('button', { name: '删除模板 浏览器模板' }).click();
+    await expect(panel.getByText('尚未保存黄金镜像。', { exact: true })).toBeVisible();
+    expect(derived).toHaveLength(1);
+  } finally {
+    await library.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('clipboard policy remains enforced in memory when browser persistence is unavailable', async ({
   page,
@@ -1973,11 +2059,18 @@ async function app(page: Page, active: string[] = [], withVm = false) {
                   plugins: PLUGINS,
                   packs: PLUGIN_PACKS,
                 }
-              : path.endsWith('/projects')
-                ? { active: 'default', projects: [{ id: 'default', name: '默认项目' }] }
-                : path.endsWith('/commands')
-                  ? { projectId: 'default', presets: [], job: null }
-                  : {};
+              : path === '/api/golden-images'
+                ? {
+                    templates: [],
+                    issues: [],
+                    limits: { count: 16, bytes: 128 * 1024 ** 3, imageBytes: 32 * 1024 ** 3 },
+                    job: null,
+                  }
+                : path.endsWith('/projects')
+                  ? { active: 'default', projects: [{ id: 'default', name: '默认项目' }] }
+                  : path.endsWith('/commands')
+                    ? { projectId: 'default', presets: [], job: null }
+                    : {};
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
   });
   await page.goto('/');

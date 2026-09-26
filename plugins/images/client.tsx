@@ -1,10 +1,13 @@
 import { Download, Layers, Plus, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { lazy, useRef, useState } from 'react';
 import type { JobView } from '../../server/jobs';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';
 import '../../src/features.css';
 import type { PluginPageProps } from '../../src/plugin-client';
 import { PluginGate } from '../../src/plugin-context';
+const GoldenImageLibrary = lazy(() =>
+  import('../snapshots/GoldenImages').then((module) => ({ default: module.GoldenImageLibrary })),
+);
 
 export type ImageInfo = {
   id: 'alpine' | 'debian' | 'ubuntu';
@@ -136,7 +139,7 @@ export function ImageCatalog({
   );
 }
 
-function ImagesPage({ request, token, refresh, onCreate }: PluginPageProps) {
+function ImagesPage({ request, token, refresh, onCreate, vms }: PluginPageProps) {
   return (
     <>
       <div className="page-heading">
@@ -149,6 +152,9 @@ function ImagesPage({ request, token, refresh, onCreate }: PluginPageProps) {
         </div>
       </div>
       <ImageCatalog request={request} token={token} refresh={refresh} />
+      <PluginGate id="snapshots">
+        <GoldenImageLibrary request={request} refresh={refresh} vms={vms} />
+      </PluginGate>
       <button className="primary" onClick={onCreate}>
         <Plus size={16} />
         创建发行版
