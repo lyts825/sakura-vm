@@ -56,6 +56,7 @@ import { api, controllerSession, RefreshQueue } from './controller-session';
 import { watchController } from './controller-watch';
 import { SessionBoundary, SessionLockButton, SessionLockSettings } from './SessionLock';
 import type { SessionLockView } from '../shared/session-lock';
+import type { NativeHandoff } from '../shared/native-integration';
 
 import type { ImageInfo } from '../plugins/images/client';
 import { distroName, useRemote, type Request } from './feature-shared';
@@ -110,6 +111,9 @@ const WebhookSettings = lazy(() =>
 );
 const LocalAssistant = lazy(() =>
   import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
+);
+const NativeIntegrationSettings = lazy(() =>
+  import('./NativeIntegration').then((module) => ({ default: module.NativeIntegrationSettings })),
 );
 const AccessibilityAudit = lazy(() =>
   import('./AccessibilityAudit').then((module) => ({ default: module.AccessibilityAudit })),
@@ -359,7 +363,13 @@ function App() {
   const [showSessionLock, setShowSessionLock] = useState(false);
   const [showWebhooks, setShowWebhooks] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
-  const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
+  const [showNative, setShowNative] = useState(false);
+  const [openFile, setOpenFile] = useState<{
+    id: string;
+    path: string;
+    revision: number;
+    directory?: boolean;
+  }>();
   const navigatePalette = async (target: PaletteTarget) => {
     setPalette(false);
     if (!(await mayLeaveEditor())) return;
@@ -409,7 +419,9 @@ function App() {
         if (alive)
           setProjectSelections((current) => ({
             ...current,
-            [selected]: data.active,
+            [selected]: data.projects.some((p) => p.id === current[selected])
+              ? current[selected]
+              : data.active,
           }));
       })
       .catch(() => {});
@@ -418,6 +430,55 @@ function App() {
       abort.abort();
     };
   }, [selected, hasProjects, token]);
+  useEffect(() => {
+    if (!token || !system) return;
+    let alive = true,
+      handling = false;
+    const abort = new AbortController();
+    const receive = async () => {
+      if (handling) return;
+      const params = new URLSearchParams(location.hash.slice(1));
+      const ticket = params.get('native'),
+        error = params.get('native-error');
+      if (!ticket && !error) return;
+      handling = true;
+      try {
+        if (error) throw new Error(error.slice(0, 500));
+        if (!/^[a-f0-9-]{36}$/.test(ticket || '')) throw new Error('无效的 Windows 打开请求');
+        const target = await api<NativeHandoff>(
+          '/native-integration',
+          'POST',
+          { action: 'resolve', ticket },
+          abort.signal,
+        );
+        if (!alive || !(await mayLeaveEditor())) return;
+        if (!has('files') || !hasProjects) throw new Error('请启用项目和文件插件后重新打开');
+        setProjectSelections((current) => ({ ...current, [target.vmId]: target.projectId }));
+        setSelectedRaw(target.vmId);
+        setPageRaw('workspace');
+        setTabRaw('files');
+        setOpenFile({
+          id: target.vmId,
+          path: target.path,
+          directory: target.directory,
+          revision: Date.now(),
+        });
+        setToast({ text: '已定位 Windows 对应工作区；文件需已同步到 Linux' });
+      } catch (e) {
+        if (alive) setToast({ text: (e as Error).message, error: true });
+      } finally {
+        if (alive) history.replaceState(history.state, '', location.pathname + location.search);
+        handling = false;
+      }
+    };
+    void receive();
+    window.addEventListener('hashchange', receive);
+    return () => {
+      alive = false;
+      abort.abort();
+      window.removeEventListener('hashchange', receive);
+    };
+  }, [token, !!system, hasProjects]);
   const focusMode = focused && page === 'workspace' && !!vm;
   useEffect(() => {
     try {
@@ -1509,6 +1570,18 @@ function App() {
                   projectName={projectId ? `${vm?.name || ''} / ${projectId}` : undefined}
                 />
                 <ClipboardSettings />
+                <section className="system-card">
+                  <h3>Windows 工作区集成</h3>
+                  <p>管理资源管理器右键菜单、文件关联及宿主编辑器。</p>
+                  <button className="secondary compact" onClick={() => setShowNative(!showNative)}>
+                    {showNative ? '收起 Windows 集成' : '管理 Windows 集成'}
+                  </button>
+                </section>
+                {showNative && (
+                  <Suspense fallback={<p>正在读取 Windows 集成…</p>}>
+                    <NativeIntegrationSettings request={api} />
+                  </Suspense>
+                )}
                 <div className="system-card">
                   <div className="panel-heading">
                     <h3>

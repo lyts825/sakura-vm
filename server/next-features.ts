@@ -462,7 +462,7 @@ export const nextFeatureCatalog = [
     '保存宿主目录挂载的只读和路径策略。',
     'planned',
   ],
-  ['file-associations', '文件关联', '操作系统与桌面', 'P2', '保存扩展名到 Sakura 工作区的关联。', 'planned'],
+  ['file-associations', '文件关联', '操作系统与桌面', 'P2', '保存扩展名到 Sakura 工作区的关联。', 'available'],
   [
     'clipboard-policy',
     '按应用剪贴板策略',
@@ -720,6 +720,10 @@ export class NextFeatures {
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
+    if (spec.id === 'file-associations') return {
+      ready: process.platform === 'win32', executed: false, adapter,
+      message: '系统设置 → 管理 Windows 集成，选择扩展名与已配置同步的工作区，保存后添加到 Windows 打开方式；仅接受映射目录中的文件。',
+    };
     if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner') return {
       ready: true, executed: false, adapter,
       message: '系统设置 → 本地 AI 助手，保存本机模型连接；审阅脱敏发送内容后生成建议或命令计划。需要运行中的 Ollama 和已下载的本地模型。',

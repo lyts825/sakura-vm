@@ -2,15 +2,15 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 134 条有实现入口，**116 条仍未完成**（105 条规划、11 条部分实现）。按标识去重后为 115 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 137 条有实现入口，**113 条仍未完成**（103 条规划、10 条部分实现）。按标识去重后为 112 个未完成标识；不同条目仍有范围重叠。
 
-本轮已接通 84 条原未完成目录记录，另完善了文本三方合并。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
+本轮已接通 87 条原未完成目录记录，另完善了文本三方合并。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 第一批 | 50 | 28 | 6 | 16 | 22 |
-| 第二批 | 100 | 76 | 1 | 23 | 24 |
-| 第三批 | 100 | 30 | 4 | 66 | 70 |
+| 第一批 | 50 | 29 | 5 | 16 | 21 |
+| 第二批 | 100 | 77 | 1 | 22 | 23 |
+| 第三批 | 100 | 31 | 4 | 65 | 69 |
 
 ## 第一批
 
@@ -45,14 +45,13 @@
 - [ ] **音频与摄像头转发**（P2 · 规划） · [`audio-video`](../server/feature-suite.ts#L70) — 让 Linux 图形应用使用宿主机设备。 对应完整流程尚未实现。
 - [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L71) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
 - [ ] **Windows 进程互操作**（P2 · 规划） · [`process-interop`](../server/feature-suite.ts#L72) — 允许 Linux 命令调用受控的 Windows 程序。 对应完整流程尚未实现。
-- [ ] **宿主机原生集成**（P0 · 部分实现） · [`native-integration`](../server/feature-suite.ts#L73) — 在资源管理器或宿主编辑器中打开文件。 对应完整流程尚未实现。
 - [ ] **多显示器与无障碍**（P1 · 部分实现） · [`multi-monitor`](../server/feature-suite.ts#L74) — 保存分辨率、缩放和多屏布局。 对应完整流程尚未实现。
 
 ### 运维与安全
 
 - [ ] **镜像与软件包安全扫描**（P1 · 部分实现） · [`security-scan`](../server/feature-suite.ts#L77) — 检查 CVE、弱配置和过期组件。 对应完整流程尚未实现。
 - [ ] **多用户与只读分享**（P2 · 规划） · [`rbac-sharing`](../server/feature-suite.ts#L78) — 提供角色、短期令牌和审计日志。 对应完整流程尚未实现。
-- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L79) — 内置插件框架已存在；Webhook、第三方隔离插件及完整事件触发器仍未实现。
+- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L79) — 内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。
 
 ## 第二批
 
@@ -97,7 +96,6 @@
 
 ### 体验集成
 
-- [ ] **资源管理器集成**（P0 · 规划） · [`explorer-integration`](../server/extended-features.ts#L141) — 从 Windows 资源管理器打开项目。 对应完整流程尚未实现。
 - [ ] **语言与区域包**（P2 · 规划） · [`locale-packs`](../server/extended-features.ts#L162) — 支持界面语言、时区和数字格式。 对应完整流程尚未实现。
 
 ### 平台
@@ -187,7 +185,6 @@
 
 - [ ] **Windows/Linux 进程互操作**（P1 · 规划） · [`process-interop`](../server/next-features.ts#L450) — 检查客户机进程工具和宿主平台。 对应完整流程尚未实现。
 - [ ] **宿主盘挂载策略**（P0 · 规划） · [`host-drive-policy`](../server/next-features.ts#L458) — 保存宿主目录挂载的只读和路径策略。 对应完整流程尚未实现。
-- [ ] **文件关联**（P2 · 规划） · [`file-associations`](../server/next-features.ts#L465) — 保存扩展名到 Sakura 工作区的关联。 对应完整流程尚未实现。
 - [ ] **按应用剪贴板策略**（P0 · 规划） · [`clipboard-policy`](../server/next-features.ts#L467) — 保存剪贴板按应用的读写和敏感内容策略。 对应完整流程尚未实现。
 - [ ] **音频摄像头麦克风直通**（P1 · 规划） · [`media-passthrough`](../server/next-features.ts#L475) — 检查客户机音视频设备和直通声明。 对应完整流程尚未实现。
 - [ ] **USB 热插拔**（P1 · 规划） · [`usb-hotplug`](../server/next-features.ts#L482) — 保存 USB 设备热插拔事件和规则。 对应完整流程尚未实现。

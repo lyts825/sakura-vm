@@ -138,7 +138,7 @@ export const extendedFeatureCatalog = [
     '基于持续采样生成运行、停止、探测失败及未知时段报告。',
     'available',
   ],
-  ['explorer-integration', '资源管理器集成', '体验集成', 'P0', '从 Windows 资源管理器打开项目。', 'planned'],
+  ['explorer-integration', '资源管理器集成', '体验集成', 'P0', '从 Windows 资源管理器打开项目。', 'available'],
   ['editor-profiles', '编辑器连接档案', '体验集成', 'P1', '生成 JetBrains 和 Neovim 连接配置。', 'available'],
   [
     'terminal-layouts',
@@ -318,6 +318,10 @@ export class ExtendedFeatures {
         adapter,
         reason: '系统设置 → 开发接口，浏览 OpenAPI、试读状态并下载 JavaScript SDK。',
       };
+    if (spec.id === 'explorer-integration') return {
+      ready: process.platform === 'win32', executed: false, state: spec.state, adapter,
+      reason: '系统设置 → 管理 Windows 集成，注册当前用户右键菜单；根据已保存的同步目录定位项目。需启用项目、文件与目录同步插件。',
+    };
     if (spec.id === 'session-lock')
       return {
         ready: true,

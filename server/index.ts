@@ -26,6 +26,7 @@ import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from './graphql-a
 import { SessionLock } from './session-lock.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
+import { NativeIntegration, nativeMappings } from './native-integration.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -52,6 +53,22 @@ async function main() {
       work,
     );
   const features = await Features.create(machines, selectedPlugins);
+  const native = new NativeIntegration(
+    () => nativeMappings(features),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    (id?: string) => {
+      session.requireUnlocked();
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      if (id) {
+        machines.get(id);
+        machines.requireUnlocked(id);
+      }
+    },
+  );
+  await native.init();
   const assistant = new LocalAssistant();
   await assistant.init();
   const webhooks = new Webhooks(
@@ -87,6 +104,7 @@ async function main() {
   sessionChanged = (locked, transitioned) => {
     if (transitioned) token = randomBytes(32).toString('hex');
     if (locked) {
+      native.revoke();
       assistant.revoke();
       for (const client of ws.clients) client.terminate();
       for (const response of protectedResponses) response.destroy();
@@ -229,6 +247,16 @@ async function main() {
       if (req.method === 'GET') return send(res, webhooks.view());
       if (req.method === 'POST') return send(res, await webhooks.configure(await authorizedBody(req, 32768)));
       throw new AppError('不支持此方法', 405);
+    }
+    if (url.pathname === '/api/native-integration') {
+      if (req.method === 'GET') return send(res, await native.view());
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      features.mutations++;
+      try {
+        return send(res, await native.action(await authorizedBody(req, 32768)));
+      } finally {
+        features.mutations--;
+      }
     }
     if (url.pathname === '/api/assistant') {
       if (req.method === 'GET') return send(res, assistant.view());
@@ -607,6 +635,7 @@ async function main() {
     for (const dispose of [
       () => session.close(),
       () => assistant.close(),
+      () => native.close(),
       () => webhooks.close(),
       () => retention.close(),
       () => graph.close(),

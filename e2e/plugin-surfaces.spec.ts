@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { SessionLock } from '../server/session-lock';
@@ -11,6 +11,145 @@ import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
 import { graphqlInfo, GraphApi, querySnapshot } from '../server/graphql-api.ts';
 import type { Machines } from '../server/machines.ts';
+import { NativeIntegration } from '../server/native-integration.ts';
+
+test('Windows integration settings save and remove real registration plans without replacing defaults, and fit mobile', async ({
+  page,
+}) => {
+  await app(page);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-native-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const registrations: any[] = [];
+  const native = new NativeIntegration(
+    async () => [
+      { vmId: vm.id, projectId: 'default', name: 'demo / 默认项目', host: directory, guest: '/workspace' },
+    ],
+    join(directory, 'native.json'),
+    async (previous, next) => {
+      registrations.push({ previous, next });
+    },
+  );
+  await native.init();
+  await page.route('**/api/native-integration*', async (route) => {
+    try {
+      await route.fulfill({
+        json:
+          route.request().method() === 'GET'
+            ? await native.view()
+            : await native.action(route.request().postDataJSON()),
+      });
+    } catch (e: any) {
+      await route.fulfill({ status: e.status || 400, json: { error: e.message } });
+    }
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理 Windows 集成', exact: true }).click();
+    const panel = page.getByRole('region', { name: 'Windows 工作区集成' });
+    await panel.getByLabel('添加“在 Sakura 工作区中打开”右键菜单').check();
+    await panel.getByLabel('关联工作区').selectOption(`${vm.id}:default`);
+    await panel.getByRole('button', { name: '添加扩展名关联' }).click();
+    await panel.getByRole('button', { name: '保存 Windows 集成' }).click();
+    await expect(panel.getByRole('status')).toHaveText('Windows 集成设置已保存');
+    expect(registrations[0].next.some((entry: any) => entry.path === '.txt\\OpenWithProgids')).toBe(true);
+    expect(registrations[0].next.some((entry: any) => entry.path === '.txt')).toBe(false);
+    await page.reload();
+    await page.getByRole('button', { name: '管理 Windows 集成', exact: true }).click();
+    await expect(panel.getByLabel('添加“在 Sakura 工作区中打开”右键菜单')).toBeChecked();
+    await expect(panel.getByRole('button', { name: '移除 .txt 关联' })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: 'artifacts/native-integration-mobile.png', fullPage: true });
+    await panel.getByRole('button', { name: '移除菜单与文件关联' }).click();
+    await expect(panel.getByLabel('添加“在 Sakura 工作区中打开”右键菜单')).not.toBeChecked();
+    await expect(panel.getByRole('button', { name: '移除 .txt 关联' })).toHaveCount(0);
+    expect(registrations.at(-1).next).toEqual([]);
+  } finally {
+    await native.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Explorer handoffs preserve explicit project selection, open directories and files, and launch mapped host copies', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'files', 'sync'], true);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-native-handoff-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const file = join(directory, 'hello.txt');
+  await writeFile(file, 'hello from Linux');
+  const projectId = 'aaaaaaaaaaaaaaaa',
+    launches: any[] = [],
+    reads: string[] = [];
+  const native = new NativeIntegration(
+    async () => [{ vmId: vm.id, projectId, name: '第二项目', host: directory, guest: '/workspace/second' }],
+    join(directory, 'native.json'),
+    async () => {},
+    async (file, args) => {
+      launches.push({ file, args });
+    },
+  );
+  await native.init();
+  await native.action({
+    action: 'configure',
+    version: 1,
+    settings: { contextMenu: true, editor: 'notepad', associations: [] },
+  });
+  await page.route('**/api/native-integration*', async (route) => {
+    try {
+      await route.fulfill({
+        json:
+          route.request().method() === 'GET'
+            ? await native.view()
+            : await native.action(route.request().postDataJSON()),
+      });
+    } catch (e: any) {
+      await route.fulfill({ status: e.status || 400, json: { error: e.message } });
+    }
+  });
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  await page.route('**/api/vms/*/projects*', (route) =>
+    route.fulfill({
+      json: {
+        active: 'default',
+        projects: [
+          { id: 'default', name: '默认项目' },
+          { id: projectId, name: '第二项目' },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/vms/*/files?*', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/vms/*/history*', (route) => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/vms/*/file?*', (route) => {
+    reads.push(route.request().url());
+    return route.fulfill({ json: { content: 'hello from Linux', version: 'a'.repeat(64) } });
+  });
+  try {
+    const folder: any = await native.action({ action: 'receive', path: directory });
+    await page.goto('/#native=' + folder.ticket);
+    await expect(page.getByLabel('Linux 文件路径', { exact: true })).toHaveValue('/workspace/second');
+    const ticket: any = await native.action({ action: 'receive', path: file });
+    await page.evaluate((ticket) => {
+      location.hash = 'native=' + ticket;
+    }, ticket.ticket);
+    await expect(page.locator('.cm-content')).toContainText('hello from Linux');
+    expect(reads.some((value) => new URL(value).searchParams.get('project') === projectId)).toBe(true);
+    await page.getByRole('button', { name: '用宿主编辑器打开' }).click();
+    await expect.poll(() => launches.length).toBe(1);
+    expect(launches[0].args).toEqual([file]);
+    expect(new URL(page.url()).hash).toBe('');
+    await page.evaluate(() => {
+      location.hash = 'native-error=' + encodeURIComponent('<script>bad()</script>');
+    });
+    await expect(page.getByRole('status').filter({ hasText: '<script>bad()</script>' })).toBeVisible();
+  } finally {
+    await native.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('local assistant requires a reviewed redacted preview, renders model text safely and exports an unexecuted command plan', async ({
   page,

@@ -293,6 +293,7 @@ async function probe(selected, expected) {
       '/graphql-schema',
       '/webhooks',
       '/assistant',
+      '/native-integration',
     ]) {
       const response = await fetch(origin + '/api' + path, {
         headers: { 'x-sakura-token': beforeLock.token },
@@ -367,6 +368,12 @@ async function probe(selected, expected) {
     assert.equal((await fetch(origin + '/api/assistant')).status, 401);
     assert.equal((await sdk.call('core.assistant.get')).settings.enabled, false);
     assert.deepEqual((await sdk.call('core.webhooks.get')).subscriptions, []);
+    assert.equal((await fetch(origin + '/api/native-integration')).status, 401);
+    const native = await sdk.call('core.native.get');
+    assert.equal(native.settings.contextMenu, false);
+    assert.deepEqual(native.settings.associations, []);
+    assert.deepEqual(native.mappings, []);
+    await assert.rejects(sdk.call('core.native.action', { body: { action: 'receive', path: root } }), /未启用|仅支持 Windows/);
     if (!expected.length) {
       const deliveries = [];
       const receiver = createHttpServer(async (req, res) => {

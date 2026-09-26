@@ -128,12 +128,12 @@ const availableFeatureIds = new Set<FeatureId>([
   'network-diagnostics',
   'network-profiles',
   'ai-assistant',
+  'native-integration',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'golden-images',
   'language-services',
   'merge-editor',
-  'native-integration',
   'multi-monitor',
   'security-scan',
 ]);

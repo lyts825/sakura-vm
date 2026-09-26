@@ -10,6 +10,7 @@ import { transferBytes, uploadFiles, type UploadProgress } from '../../src/trans
 import { BinaryPreview } from '../../src/BinaryPreview';
 import { ThreeWayMerge } from '../../src/ThreeWayMerge';
 import { clipboardFiles } from '../../src/clipboard-files';
+import { NativeOpenButtons } from '../../src/NativeIntegration';
 const CodeEditor = lazy(() =>
   import('../../src/CodeEditor').then((module) => ({ default: module.CodeEditor })),
 );
@@ -69,7 +70,8 @@ export function FileBrowser({
   request,
   token,
   openFile,
-}: FeatureProps & { openFile?: { path: string; line?: number; revision: number } }) {
+  projectId,
+}: FeatureProps & { openFile?: { path: string; line?: number; revision: number; directory?: boolean } }) {
   const [path, setPath] = useState('/workspace'),
     [input, setInput] = useState('/workspace');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
@@ -262,7 +264,10 @@ export function FileBrowser({
   };
   const open = (file: Entry) => (file.directory ? navigate(target(file.name)) : openPath(target(file.name)));
   useEffect(() => {
-    if (openFile && vm.status === 'running') void openPath(openFile.path, openFile.line);
+    if (openFile && vm.status === 'running') {
+      if (openFile.directory) void navigate(openFile.path);
+      else void openPath(openFile.path, openFile.line);
+    }
   }, [openFile?.revision, vm.status]);
   const save = () => {
     const submitted = editRef.current;
@@ -451,6 +456,9 @@ export function FileBrowser({
         />
       </div>
       <Feedback error={action.error || error || draftError} message={action.message} />
+      <PluginGate id="sync">
+        <NativeOpenButtons request={request} vmId={vm.id} projectId={projectId} path={edit?.path || path} />
+      </PluginGate>
       {history.data?.items.length ? (
         <details className="feature-card">
           <summary>文件历史与回收站（{history.data.items.length}）</summary>

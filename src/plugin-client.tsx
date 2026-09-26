@@ -17,7 +17,7 @@ export type PluginTabProps = FeatureProps & {
   start: () => unknown;
   busy: boolean;
   configure: () => unknown;
-  openFile?: { path: string; revision: number };
+  openFile?: { path: string; revision: number; directory?: boolean };
 };
 type ClientModule = {
   tabs?: Record<string, ComponentType<PluginTabProps>>;

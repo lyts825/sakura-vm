@@ -7,6 +7,7 @@ import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
 import { webhookRequest } from './webhooks.ts';
 import { assistantRequest } from './local-assistant.ts';
+import { nativeRequest } from './native-integration.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
 
 const response = (schema: Record<string, unknown> = {}, media = 'application/json') => ({
@@ -38,6 +39,20 @@ const core: {
   },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
+  {
+    id: 'native.get',
+    method: 'GET',
+    path: '/api/native-integration',
+    title: 'Windows 工作区映射与集成设置',
+    inspect: true,
+  },
+  {
+    id: 'native.action',
+    method: 'POST',
+    path: '/api/native-integration',
+    title: '配置资源管理器入口、文件关联或打开本机副本',
+    body: request(nativeRequest),
+  },
   {
     id: 'assistant.get',
     method: 'GET',
