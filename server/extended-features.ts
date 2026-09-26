@@ -157,7 +157,7 @@ export const extendedFeatureCatalog = [
     '体验集成',
     'P1',
     '检查对比度、焦点和屏幕阅读器语义。',
-    'planned',
+    'available',
   ],
   ['locale-packs', '语言与区域包', '体验集成', 'P2', '支持界面语言、时区和数字格式。', 'planned'],
   ['self-update', '自更新与回滚', '平台', 'P0', '灰度升级 Sakura 并支持回滚。', 'planned'],
@@ -303,6 +303,14 @@ export class ExtendedFeatures {
     };
     if (spec.id === 'qemu-commandline')
       return { ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) };
+    if (spec.id === 'accessibility-audit')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '顶栏无障碍检查模式：实际扫描当前页面、定位元素、查看键盘焦点并导出报告。',
+      };
     if (spec.id === 'shortcut-editor')
       return {
         ready: true,

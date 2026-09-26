@@ -1,6 +1,62 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
+
+test('accessibility mode audits actual DOM, locates failures and exports no HTML or input values', async ({
+  page,
+}) => {
+  await app(page);
+  await page.evaluate(() => {
+    const fixture = document.createElement('section');
+    fixture.id = 'audit-fixture';
+    fixture.setAttribute('aria-label', 'Audit fixture');
+    fixture.style.cssText =
+      'position:fixed;top:90px;left:10px;width:140px;background:white;padding:12px;z-index:60';
+    fixture.innerHTML =
+      '<button id="audit-broken-button" style="width:80px;height:32px"></button><p style="color:#eeeeee;background:white;font-size:16px">Contrast sample</p><img style="width:20px;height:20px" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E"><input type="password" value="do-not-export-this-value">';
+    document.body.append(fixture);
+  });
+  await page.getByRole('button', { name: '无障碍检查模式', exact: true }).click();
+  const panel = page.getByRole('region', { name: '无障碍检查面板', exact: true });
+  await panel.getByRole('button', { name: '检查当前页面', exact: true }).click();
+  await expect(panel.getByRole('status')).toContainText('检查完成');
+  await expect(panel.locator('[data-audit-rule="color-contrast"]').first()).toBeVisible();
+  await expect(panel.locator('[data-audit-rule="image-alt"]').first()).toBeVisible();
+  const rule = panel.locator('[data-audit-rule="button-name"]').first();
+  await rule.locator('summary').click();
+  await rule
+    .getByRole('button', { name: /定位.*button/ })
+    .first()
+    .click();
+  await expect(page.locator('#audit-broken-button')).toHaveAttribute('data-sakura-audit-target', 'true');
+  await panel.getByLabel('突出显示键盘焦点').check();
+  await page.locator('#audit-broken-button').focus();
+  await page.keyboard.press('Tab');
+  await expect(panel.locator('summary').filter({ hasText: '焦点轨迹' })).not.toHaveText(
+    '焦点轨迹（最近 0 次）',
+  );
+  const saved = page.waitForEvent('download');
+  await panel.getByRole('button', { name: '导出无障碍报告' }).click();
+  const file = await saved;
+  const report = await readFile((await file.path())!, 'utf8');
+  expect(report).toContain('button-name');
+  expect(report).not.toContain('do-not-export-this-value');
+  expect(report).not.toContain('"html"');
+  expect(report).not.toContain('"target"');
+  await page.evaluate(() => document.getElementById('audit-fixture')?.remove());
+  await panel.getByRole('button', { name: '检查当前页面', exact: true }).click();
+  await expect(panel.getByRole('status')).toContainText('检查完成');
+  await expect(panel.locator('[data-audit-rule="button-name"]')).toHaveCount(0);
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  await expect(panel.getByRole('button', { name: '导出无障碍报告' })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await panel.getByRole('button', { name: '关闭检查模式' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator('html')).not.toHaveAttribute('data-sakura-audit-focus');
+  await expect(page.getByRole('button', { name: '无障碍检查模式', exact: true })).toBeFocused();
+});
 
 test('custom shortcuts reject conflicts, persist project overrides and leave text and terminal input alone', async ({
   page,

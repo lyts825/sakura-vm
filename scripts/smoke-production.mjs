@@ -88,6 +88,23 @@ async function probe(selected, expected) {
       assert.equal(invalid.status, 400);
     }
     assert.match(html, /<div id="root"><\/div>/);
+    if (!expected.length) {
+      const { chromium } = await import('@playwright/test');
+      const browser = await chromium.launch();
+      try {
+        const page = await browser.newPage();
+        const document = await page.goto(origin);
+        assert.match(document.headers()['content-security-policy'], /script-src 'self';/);
+        await page.getByRole('button', { name: '无障碍检查模式', exact: true }).click();
+        const panel = page.getByRole('region', { name: '无障碍检查面板', exact: true });
+        await panel.getByRole('button', { name: '检查当前页面', exact: true }).click();
+        await panel.getByRole('status').filter({ hasText: '检查完成' }).waitFor({ timeout: 30_000 });
+        assert.equal(await panel.getByRole('alert').count(), 0);
+        console.log('Accessibility audit runs under the production CSP without unsafe-eval.');
+      } finally {
+        await browser.close();
+      }
+    }
     console.log(`Compiled server passed: ${expected.length} active plugins, static UI.`);
   } finally {
     if (server.exitCode === null && server.signalCode === null) server.kill('SIGTERM');

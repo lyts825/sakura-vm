@@ -1,0 +1,50 @@
+.accessibility-audit {
+  position: fixed;
+  z-index: 50;
+  right: 16px;
+  bottom: 16px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(620px, calc(100dvh - 100px));
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 18px;
+  color: var(--ink);
+  background: var(--canvas);
+  box-shadow: 0 8px 36px #21142833;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.accessibility-audit h2 {
+  font-size: 17px;
+  margin: 0;
+}
+.accessibility-audit h3 {
+  font-size: 14px;
+  margin: 14px 0 8px;
+}
+.accessibility-audit p {
+  margin: 10px 0;
+  line-height: 1.6;
+}
+.accessibility-audit .checkbox-row {
+  margin: 12px 0;
+}
+.accessibility-audit details {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.accessibility-audit summary {
+  cursor: pointer;
+}
+.accessibility-audit a {
+  color: var(--accent);
+}
+[data-sakura-audit-focus='true'] :focus-visible {
+  outline: 3px solid #b83dff !important;
+  outline-offset: 3px !important;
+}
+[data-sakura-audit-target] {
+  outline: 3px dashed #b83dff !important;
+  outline-offset: 4px !important;
+}

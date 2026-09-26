@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  Accessibility,
   ArrowUpRight,
   Boxes,
   Camera,
@@ -95,6 +96,9 @@ const PluginCenter = lazy(() =>
   import('./PluginCenter').then((module) => ({ default: module.PluginCenter })),
 );
 const TasksPanel = lazy(() => import('./TasksPanel').then((module) => ({ default: module.TasksPanel })));
+const AccessibilityAudit = lazy(() =>
+  import('./AccessibilityAudit').then((module) => ({ default: module.AccessibilityAudit })),
+);
 const DevelopmentPanel = lazy(() =>
   import('./DevelopmentPanel').then((module) => ({ default: module.DevelopmentPanel })),
 );
@@ -331,6 +335,8 @@ function App() {
   const [modal, setModal] = useState<'create' | 'help' | 'delete' | null>(null);
   const [confirm, setConfirm] = useState('');
   const [palette, setPalette] = useState(false);
+  const [auditMode, setAuditMode] = useState(false);
+  const [auditLoaded, setAuditLoaded] = useState(false);
   const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
   const navigatePalette = async (target: PaletteTarget) => {
     setPalette(false);
@@ -718,6 +724,20 @@ function App() {
             <b>{visiblePages.find((item) => item.id === page)?.label}</b>
           </div>
           <div className="topbar-actions">
+            <button
+              id="accessibility-mode-toggle"
+              data-audit-tools
+              className="icon-button"
+              aria-label="无障碍检查模式"
+              aria-pressed={auditMode}
+              title="无障碍检查模式"
+              onClick={() => {
+                setAuditLoaded(true);
+                setAuditMode(!auditMode);
+              }}
+            >
+              <Accessibility size={18} />
+            </button>
             {hasPalette && (
               <button
                 className="text-button command-shortcut"
@@ -1454,6 +1474,19 @@ function App() {
           navigate={navigatePalette}
           close={() => setPalette(false)}
         />
+      )}
+      {auditLoaded && (
+        <Suspense fallback={null}>
+          <AccessibilityAudit
+            enabled={auditMode}
+            pageKey={JSON.stringify([page, tab, selected, projectId, theme, modal, palette])}
+            pageName={page + (page === 'workspace' ? ':' + tab : '')}
+            close={() => {
+              setAuditMode(false);
+              document.getElementById('accessibility-mode-toggle')?.focus();
+            }}
+          />
+        </Suspense>
       )}
       {toast && (
         <div role="status" className={`toast ${toast.error ? 'error' : ''}`}>

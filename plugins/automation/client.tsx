@@ -333,6 +333,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'accessibility-audit':
+          '点击顶栏的无障碍检查模式，再检查当前页面。可定位问题元素、辅助检查键盘焦点并导出报告。',
         'shortcut-editor':
           '打开系统设置 → 快捷键编辑器，保存页面全局快捷键或当前项目覆盖；可停用单项并恢复默认。',
         'secret-rotation':
