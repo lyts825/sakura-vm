@@ -19,6 +19,7 @@ import { inMaintenance } from './automation-policy.ts';
 import { resourcePolicy } from './resource-policies.ts';
 import { observeAvailability, type AvailabilitySpan } from './availability.ts';
 import type { SecretRotationItem } from './secret-rotation.ts';
+import { hostPower, powerPolicy, powerDecision, type PowerSample } from './power-policy.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -285,6 +286,7 @@ export class FeatureSuite {
   private idleSince = new Map<string, number>();
   private lastSampleAt = new Map<string, number>();
   private ticking = false;
+  private powerAbort = new AbortController();
 
   constructor(
     private machines: Machines,
@@ -293,12 +295,16 @@ export class FeatureSuite {
       jobs?: () => JobView[];
       services?: (id: string) => Array<HealthView & { projectId: string }>;
       secrets?: (id: string) => Promise<SecretRotationItem[] | undefined>;
+      power?: (signal: AbortSignal) => Promise<PowerSample>;
     } = {},
   ) {}
   enableBackground() {
+    if (this.powerAbort.signal.aborted) this.powerAbort = new AbortController();
+    const controller = this.powerAbort;
     this.backgroundEnabled = true;
     return () => {
-      this.backgroundEnabled = false;
+      if (this.powerAbort === controller) this.backgroundEnabled = false;
+      controller.abort();
     };
   }
   private file() {
@@ -1026,17 +1032,20 @@ export class FeatureSuite {
   }
   async tick() {
     if (this.closed || this.ticking) return;
+    const signal = this.powerAbort.signal;
+    if (signal.aborted) return;
     this.ticking = true;
     try {
       const state = await this.state();
       const now = new Date();
       const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const policy = await resourcePolicy();
+      let powerSample: PowerSample | undefined;
       const scheduled = [...this.machines.records.values()].sort(
         (a, b) => (policy.priorities[b.id] || 0) - (policy.priorities[a.id] || 0),
       );
       for (const vm of scheduled) {
-        if (this.closed) break;
+        if (this.closed || signal.aborted) break;
         const maintenance = await inMaintenance(vm.id, now);
         const settings = this.settingsFor(state, vm.id);
         if (this.backgroundEnabled) await this.checkOperationalAlerts(vm.id, state);
@@ -1087,11 +1096,24 @@ export class FeatureSuite {
           this.lastSampleAt.delete(vm.id);
           continue;
         }
+        const electricity = await powerPolicy(vm.id);
+        let allowStart = true;
+        if (electricity.enabled) {
+          powerSample ||= await (this.observations.power?.(signal) || hostPower(signal));
+          if (this.closed || signal.aborted) break;
+          const decision = powerDecision(electricity, powerSample);
+          allowStart = decision.allowStart;
+          if (decision.stop && this.machines.state(vm.id) === 'running') {
+            await this.machines.stop(vm.id, false).catch(() => {});
+            continue;
+          }
+        }
+        if (this.closed || signal.aborted) break;
         if (!schedule.enabled) continue;
-        if (schedule.startAt === clock && this.machines.state(vm.id) === 'stopped')
+        if (allowStart && schedule.startAt === clock && this.machines.state(vm.id) === 'stopped')
           await this.machines.start(vm.id).catch(() => {});
         if (schedule.stopAt === clock && this.machines.state(vm.id) === 'running')
-          void this.machines.stop(vm.id, false).catch(() => {});
+          await this.machines.stop(vm.id, false).catch(() => {});
         if (schedule.idleMinutes > 0 && this.machines.state(vm.id) === 'running') {
           const since = this.idleSince.get(vm.id);
           if (since !== undefined && sampledAt - since >= schedule.idleMinutes * 60_000) {
@@ -1101,13 +1123,14 @@ export class FeatureSuite {
           }
         }
       }
-      await this.save(state);
+      if (!this.closed && !signal.aborted) await this.save(state);
     } finally {
       this.ticking = false;
     }
   }
   async close() {
     this.closed = true;
+    this.powerAbort.abort();
     this.backgroundEnabled = false;
     await this.jobs.close();
     await this.writes;

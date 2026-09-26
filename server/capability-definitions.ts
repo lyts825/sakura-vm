@@ -4,6 +4,7 @@ import { timeWindowSchema } from './automation-policy.ts';
 import { cpuTopologySchema, deviceProfileSchema } from '../shared/hardware.ts';
 import { reservationSchema } from './resource-policies.ts';
 import { diskHealthThresholds } from './host-disk-health.ts';
+import { powerPolicySchema } from './power-policy.ts';
 
 export const relativePath = z
   .string()
@@ -38,6 +39,18 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'power-aware-schedule': action(
+    '宿主电源感知调度',
+    'extended',
+    { mode: z.enum(['inspect', 'save']).default('inspect'), policy: powerPolicySchema.optional() },
+    {
+      mode: 'inspect',
+      policy: { enabled: false, allowBatteryStarts: false, minimumBatteryPercent: 30, stopBelowPercent: 0 },
+    },
+    '按实例保存电源策略。启用自动化调度后，依据交流电、电池电量限制计划开机；stopBelowPercent 大于零时在低电量下调用停止流程（请求关机，15 秒后仍未退出则结束虚拟机）。状态未知不关机，暂停自动开机；维护窗口内暂停操作，手动操作不受影响。',
+    false,
+    true,
+  ),
   'host-disk-health': action(
     '主机数据磁盘健康报告',
     'next',

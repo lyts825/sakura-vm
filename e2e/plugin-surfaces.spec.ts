@@ -2,6 +2,63 @@ import { expect, test, type Page } from '@playwright/test';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 
+test('power policy saves while the guest is stopped and displays the actual scheduling decision', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'extensions'], true);
+  let submitted: any,
+    jobs: any[] = [];
+  await page.route('**/api/vms/*/extended-features*', (route) => {
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON();
+      jobs = [
+        {
+          id: 'power-policy',
+          action: 'extended:power-aware-schedule',
+          status: 'done',
+          log: '',
+          startedAt: new Date().toISOString(),
+          result: { bytes: 100, sha256: 'a'.repeat(64) },
+        },
+      ];
+      return route.fulfill({ json: jobs[0] });
+    }
+    return route.fulfill({
+      json: {
+        projectId: 'default',
+        settings: {},
+        jobs,
+        executions: [],
+        features: [],
+        operations: [],
+        capabilities: capabilityViews('extended'),
+      },
+    });
+  });
+  await page.route('**/api/jobs/power-policy/result*', (route) =>
+    route.fulfill({
+      json: {
+        jobId: 'power-policy',
+        result: {
+          sample: { batteryPercent: 25 },
+          decision: { allowStart: false, stop: false, reason: '电池电量低于自动开机阈值' },
+        },
+      },
+    }),
+  );
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('extended 功能操作').selectOption('power-aware-schedule');
+  const options = {
+    mode: 'save',
+    policy: { enabled: true, allowBatteryStarts: true, minimumBatteryPercent: 30, stopBelowPercent: 0 },
+  };
+  await page.getByLabel('extended 功能参数').fill(JSON.stringify(options));
+  await page.getByRole('button', { name: '提交宿主电源感知调度' }).click();
+  await expect.poll(() => submitted).toEqual({ action: 'run', featureId: 'power-aware-schedule', options });
+  await expect(page.getByText('电源调度：电池电量低于自动开机阈值', { exact: true })).toBeVisible();
+  await expect(page.getByText('电池电量：25%', { exact: true })).toBeVisible();
+});
+
 test('schema forms submit typed parameters and download a persisted report independently of logs', async ({
   page,
 }) => {

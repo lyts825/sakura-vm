@@ -27,7 +27,7 @@ export const extendedFeatureCatalog = [
   ['qemu-commandline', 'QEMU 参数预览', '虚拟机', 'P0', '显示实例将使用的设备和启动参数。', 'available'],
   ['cpu-topology', 'CPU 拓扑与 NUMA', '虚拟机', 'P2', '配置 vCPU 拓扑和 NUMA 布局。', 'available'],
   ['guest-clock-policy', '客户机时钟策略', '虚拟机', 'P1', '检查和配置客户机时钟同步。', 'available'],
-  ['power-aware-schedule', '电源感知调度', '虚拟机', 'P1', '根据宿主机电池和交流电状态调度。', 'planned'],
+  ['power-aware-schedule', '电源感知调度', '虚拟机', 'P1', '根据宿主机电池和交流电状态调度。', 'available'],
   [
     'resource-reservation',
     '资源预留与公平调度',

@@ -2,65 +2,64 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 121 条有实现入口，**129 条仍未完成**（118 条规划、11 条部分实现）。按标识去重后为 128 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 122 条有实现入口，**128 条仍未完成**（117 条规划、11 条部分实现）。按标识去重后为 127 个未完成标识；不同条目仍有范围重叠。
 
-本轮已接通 71 条原未完成目录记录，另完善了文本三方合并。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
+本轮已接通 72 条原未完成目录记录，另完善了文本三方合并。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 第一批 | 50 | 27 | 6 | 17 | 23 |
-| 第二批 | 100 | 70 | 1 | 29 | 30 |
+| 第二批 | 100 | 71 | 1 | 28 | 29 |
 | 第三批 | 100 | 24 | 4 | 72 | 76 |
 
 ## 第一批
 
 ### 实例与资源
 
-- [ ] **通用镜像导入**（P1 · 规划） · [`image-import`](../server/feature-suite.ts#L29) — 支持 VHDX、VMDK、RAW、OVA 等格式的导入校验。 对应完整流程尚未实现。
-- [ ] **黄金镜像制作**（P1 · 部分实现） · [`golden-images`](../server/feature-suite.ts#L30) — 将干净的实例固化为可复用模板。 对应完整流程尚未实现。
-- [ ] **多架构实例**（P2 · 规划） · [`multi-arch`](../server/feature-suite.ts#L31) — 为 ARM64 等架构提供 QEMU 兼容运行入口。 对应完整流程尚未实现。
-- [ ] **一致性在线快照**（P2 · 规划） · [`online-snapshots`](../server/feature-suite.ts#L35) — 通过文件系统冻结创建一致性快照。 对应完整流程尚未实现。
-- [ ] **快照时间线与差异**（P1 · 规划） · [`snapshot-diff`](../server/feature-suite.ts#L36) — 比较快照的文件和磁盘变化。 对应完整流程尚未实现。
+- [ ] **通用镜像导入**（P1 · 规划） · [`image-import`](../server/feature-suite.ts#L30) — 支持 VHDX、VMDK、RAW、OVA 等格式的导入校验。 对应完整流程尚未实现。
+- [ ] **黄金镜像制作**（P1 · 部分实现） · [`golden-images`](../server/feature-suite.ts#L31) — 将干净的实例固化为可复用模板。 对应完整流程尚未实现。
+- [ ] **多架构实例**（P2 · 规划） · [`multi-arch`](../server/feature-suite.ts#L32) — 为 ARM64 等架构提供 QEMU 兼容运行入口。 对应完整流程尚未实现。
+- [ ] **一致性在线快照**（P2 · 规划） · [`online-snapshots`](../server/feature-suite.ts#L36) — 通过文件系统冻结创建一致性快照。 对应完整流程尚未实现。
+- [ ] **快照时间线与差异**（P1 · 规划） · [`snapshot-diff`](../server/feature-suite.ts#L37) — 比较快照的文件和磁盘变化。 对应完整流程尚未实现。
 
 ### 文件与数据
 
-- [ ] **Windows 文件系统直挂**（P1 · 规划） · [`windows-mount`](../server/feature-suite.ts#L39) — 通过受控共享挂载宿主机目录。 对应完整流程尚未实现。
+- [ ] **Windows 文件系统直挂**（P1 · 规划） · [`windows-mount`](../server/feature-suite.ts#L40) — 通过受控共享挂载宿主机目录。 对应完整流程尚未实现。
 
 ### 开发工作台
 
-- [ ] **LSP 语言服务**（P1 · 部分实现） · [`language-services`](../server/feature-suite.ts#L47) — 提供补全、跳转、重命名和诊断。 对应完整流程尚未实现。
-- [ ] **DAP 调试器**（P2 · 规划） · [`debug-adapter`](../server/feature-suite.ts#L48) — 提供断点、单步、调用栈和变量查看。 对应完整流程尚未实现。
-- [ ] **三方合并编辑器**（P0 · 部分实现） · [`merge-editor`](../server/feature-suite.ts#L52) — 已有文件草稿及 Git 普通文本三方编辑、版本校验和暂存；仍缺同步冲突的图形编辑及删除、链接、子模块、二进制冲突工作流。
-- [ ] **Dev Container 支持**（P1 · 规划） · [`dev-container`](../server/feature-suite.ts#L57) — 从 Dockerfile 或 devcontainer 配置创建环境。 对应完整流程尚未实现。
-- [ ] **隐私优先 AI 编程助手**（P2 · 规划） · [`ai-assistant`](../server/feature-suite.ts#L60) — 在脱敏后提供解释、测试和修复建议。 对应完整流程尚未实现。
+- [ ] **LSP 语言服务**（P1 · 部分实现） · [`language-services`](../server/feature-suite.ts#L48) — 提供补全、跳转、重命名和诊断。 对应完整流程尚未实现。
+- [ ] **DAP 调试器**（P2 · 规划） · [`debug-adapter`](../server/feature-suite.ts#L49) — 提供断点、单步、调用栈和变量查看。 对应完整流程尚未实现。
+- [ ] **三方合并编辑器**（P0 · 部分实现） · [`merge-editor`](../server/feature-suite.ts#L53) — 已有文件草稿及 Git 普通文本三方编辑、版本校验和暂存；仍缺同步冲突的图形编辑及删除、链接、子模块、二进制冲突工作流。
+- [ ] **Dev Container 支持**（P1 · 规划） · [`dev-container`](../server/feature-suite.ts#L58) — 从 Dockerfile 或 devcontainer 配置创建环境。 对应完整流程尚未实现。
+- [ ] **隐私优先 AI 编程助手**（P2 · 规划） · [`ai-assistant`](../server/feature-suite.ts#L61) — 在脱敏后提供解释、测试和修复建议。 对应完整流程尚未实现。
 
 ### 网络与服务
 
-- [ ] **HTTPS 反向代理**（P1 · 规划） · [`reverse-proxy`](../server/feature-suite.ts#L62) — 生成本地域名、证书和服务路由。 对应完整流程尚未实现。
-- [ ] **VPN 集成**（P1 · 规划） · [`vpn-integration`](../server/feature-suite.ts#L64) — 管理 WireGuard 或 Tailscale 连接。 对应完整流程尚未实现。
-- [ ] **离线软件包缓存**（P1 · 规划） · [`package-cache`](../server/feature-suite.ts#L66) — 缓存常用软件源和项目依赖。 对应完整流程尚未实现。
+- [ ] **HTTPS 反向代理**（P1 · 规划） · [`reverse-proxy`](../server/feature-suite.ts#L63) — 生成本地域名、证书和服务路由。 对应完整流程尚未实现。
+- [ ] **VPN 集成**（P1 · 规划） · [`vpn-integration`](../server/feature-suite.ts#L65) — 管理 WireGuard 或 Tailscale 连接。 对应完整流程尚未实现。
+- [ ] **离线软件包缓存**（P1 · 规划） · [`package-cache`](../server/feature-suite.ts#L67) — 缓存常用软件源和项目依赖。 对应完整流程尚未实现。
 
 ### 桌面与跨系统
 
-- [ ] **GPU 与 3D 加速**（P2 · 规划） · [`gpu-acceleration`](../server/feature-suite.ts#L68) — 支持 virtio-gpu 和 VirGL 等方案。 对应完整流程尚未实现。
-- [ ] **音频与摄像头转发**（P2 · 规划） · [`audio-video`](../server/feature-suite.ts#L69) — 让 Linux 图形应用使用宿主机设备。 对应完整流程尚未实现。
-- [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L70) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
-- [ ] **Windows 进程互操作**（P2 · 规划） · [`process-interop`](../server/feature-suite.ts#L71) — 允许 Linux 命令调用受控的 Windows 程序。 对应完整流程尚未实现。
-- [ ] **宿主机原生集成**（P0 · 部分实现） · [`native-integration`](../server/feature-suite.ts#L72) — 在资源管理器或宿主编辑器中打开文件。 对应完整流程尚未实现。
-- [ ] **多显示器与无障碍**（P1 · 部分实现） · [`multi-monitor`](../server/feature-suite.ts#L73) — 保存分辨率、缩放和多屏布局。 对应完整流程尚未实现。
+- [ ] **GPU 与 3D 加速**（P2 · 规划） · [`gpu-acceleration`](../server/feature-suite.ts#L69) — 支持 virtio-gpu 和 VirGL 等方案。 对应完整流程尚未实现。
+- [ ] **音频与摄像头转发**（P2 · 规划） · [`audio-video`](../server/feature-suite.ts#L70) — 让 Linux 图形应用使用宿主机设备。 对应完整流程尚未实现。
+- [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L71) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
+- [ ] **Windows 进程互操作**（P2 · 规划） · [`process-interop`](../server/feature-suite.ts#L72) — 允许 Linux 命令调用受控的 Windows 程序。 对应完整流程尚未实现。
+- [ ] **宿主机原生集成**（P0 · 部分实现） · [`native-integration`](../server/feature-suite.ts#L73) — 在资源管理器或宿主编辑器中打开文件。 对应完整流程尚未实现。
+- [ ] **多显示器与无障碍**（P1 · 部分实现） · [`multi-monitor`](../server/feature-suite.ts#L74) — 保存分辨率、缩放和多屏布局。 对应完整流程尚未实现。
 
 ### 运维与安全
 
-- [ ] **镜像与软件包安全扫描**（P1 · 部分实现） · [`security-scan`](../server/feature-suite.ts#L76) — 检查 CVE、弱配置和过期组件。 对应完整流程尚未实现。
-- [ ] **多用户与只读分享**（P2 · 规划） · [`rbac-sharing`](../server/feature-suite.ts#L77) — 提供角色、短期令牌和审计日志。 对应完整流程尚未实现。
-- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L78) — 内置插件框架已存在；Webhook、第三方隔离插件及完整事件触发器仍未实现。
+- [ ] **镜像与软件包安全扫描**（P1 · 部分实现） · [`security-scan`](../server/feature-suite.ts#L77) — 检查 CVE、弱配置和过期组件。 对应完整流程尚未实现。
+- [ ] **多用户与只读分享**（P2 · 规划） · [`rbac-sharing`](../server/feature-suite.ts#L78) — 提供角色、短期令牌和审计日志。 对应完整流程尚未实现。
+- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L79) — 内置插件框架已存在；Webhook、第三方隔离插件及完整事件触发器仍未实现。
 
 ## 第二批
 
 ### 虚拟机
 
 - [ ] **救援模式启动**（P1 · 规划） · [`rescue-boot`](../server/extended-features.ts#L26) — 用临时系统检查故障实例磁盘。 对应完整流程尚未实现。
-- [ ] **电源感知调度**（P1 · 规划） · [`power-aware-schedule`](../server/extended-features.ts#L30) — 根据宿主机电池和交流电状态调度。 对应完整流程尚未实现。
 
 ### 存储
 

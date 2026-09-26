@@ -16,6 +16,7 @@ import { hostAudit, traceExport } from './audit.ts';
 import { backupBlocks } from './backup-blocks.ts';
 import { readAvailabilityReport } from './availability.ts';
 import { hostDiskHealth } from './host-disk-health.ts';
+import { hostPower, powerDecision, powerPolicy, savePowerPolicy } from './power-policy.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -79,6 +80,23 @@ export class CapabilityActions {
     this.machines.requireUnlocked(id);
     const parameters = capabilityParameters(featureId, input);
     signal.throwIfAborted();
+    if (featureId === 'power-aware-schedule') {
+      const p = capabilityDefinitions[featureId].schema.parse(parameters);
+      if (p.mode === 'save' && !p.policy) throw new AppError('保存时需要提供电源策略');
+      const policy =
+        p.mode === 'save'
+          ? await this.machines.locked(`power-policy:${id}`, () => savePowerPolicy(id, p.policy))
+          : await powerPolicy(id);
+      const sample = await hostPower(signal);
+      return {
+        code: 0,
+        ready: true,
+        executed: true,
+        policy,
+        sample,
+        decision: powerDecision(policy, sample),
+      };
+    }
     if (featureId === 'host-disk-health') {
       const report = await hostDiskHealth(parameters, signal);
       return {

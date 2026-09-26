@@ -213,6 +213,18 @@ export function CapabilityActionsPanel({
               </p>
             </div>
           )}
+          {selected === 'power-aware-schedule' && result?.decision && (
+            <div className="feature-card">
+              <p>电源调度：{result.decision.reason}</p>
+              <p>
+                电池电量：
+                {result.sample.batteryPercent === null
+                  ? '未知或未安装电池'
+                  : result.sample.batteryPercent + '%'}
+              </p>
+              {result.sample.error && <p className="subtle-note">{result.sample.error}</p>}
+            </div>
+          )}
           {selected === 'host-disk-health' && result?.provider === 'Windows Storage' && (
             <HostDiskHealthReport report={result} />
           )}
