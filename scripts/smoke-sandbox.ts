@@ -11,6 +11,8 @@ process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
 const { createRuntime } = await import('../server/runtime.ts');
 const { Machines } = await import('../server/machines.ts');
 const { Sandboxes } = await import('../server/sandboxes.ts');
+const { vmDir } = await import('../server/model.ts');
+const { fileHash } = await import('../server/local-store.ts');
 const engine = await createRuntime();
 const machines = new Machines(engine);
 const sandboxes = new Sandboxes(machines);
@@ -104,6 +106,51 @@ try {
   assert.equal(Buffer.from(artifact.base64, 'base64').toString(), 'persisted');
   record('Real QEMU: structured execution metadata and exported artifacts survive disk destruction.');
   record('Real QEMU: expiration removed the disk and preserved all four execution records.');
+  const cow = await sandboxes.create({
+    name: 'sandbox-cow-smoke',
+    storage: 'discard-on-stop',
+    lifetimeMinutes: 10,
+    onExpire: 'stop',
+    accelerator,
+  });
+  const before = await fileHash(join(vmDir(cow.id), 'disk.qcow2'));
+  const transient = sandboxes.run(cow.id, {
+    command: 'set -eu\nprintf keep-export > /workspace/cow-marker\nsync',
+    artifacts: ['cow-marker'],
+    timeoutSeconds: 20,
+  });
+  await sandboxes.jobs.wait(cow.id);
+  assert.equal(transient.status, 'done', transient.error + '\n' + machines.logs.get(cow.id));
+  assert.equal(await fileHash(join(vmDir(cow.id), 'disk.qcow2')), before);
+  const clean = sandboxes.run(cow.id, {
+    command:
+      'set -eu\ntest ! -e /workspace/cow-marker\nprintf late > /workspace/cow-cancelled\necho COW_CLEAN\nsleep 3600',
+    timeoutSeconds: 30,
+  });
+  const cowDeadline = Date.now() + 270000;
+  while (!clean.log.includes('\nCOW_CLEAN\n') && clean.status === 'running') {
+    assert.ok(Date.now() < cowDeadline, 'Transient guest did not restart cleanly');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(clean.status, 'running', clean.error + '\n' + machines.logs.get(cow.id));
+  await sandboxes.control(cow.id, 'stop');
+  assert.equal(clean.status, 'cancelled');
+  assert.equal(await fileHash(join(vmDir(cow.id), 'disk.qcow2')), before);
+  const afterCancel = sandboxes.run(cow.id, {
+    command:
+      'set -eu\ntest ! -e /workspace/cow-marker\ntest ! -e /workspace/cow-cancelled\necho COW_RESET_OK',
+    timeoutSeconds: 20,
+  });
+  await sandboxes.jobs.wait(cow.id);
+  assert.equal(afterCancel.status, 'done', afterCancel.error + '\n' + machines.logs.get(cow.id));
+  assert.match(afterCancel.log, /\nCOW_RESET_OK\n/);
+  assert.equal(await fileHash(join(vmDir(cow.id), 'disk.qcow2')), before);
+  const kept = await sandboxes.artifact(transient.id!, transient.execution!.artifacts[0].id);
+  assert.equal(Buffer.from(kept.base64, 'base64').toString(), 'keep-export');
+  await sandboxes.control(cow.id, 'destroy');
+  record(
+    'Real QEMU: transient COW survives three boots with an unchanged baseline; completed/cancelled writes vanish, explicit artifacts and logs remain.',
+  );
 } finally {
   await sandboxes.close();
   await machines.close();

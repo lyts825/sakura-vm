@@ -5,6 +5,7 @@ export const sandboxPolicySchema = z
     network: z.enum(['isolated', 'nat']),
     expiresAt: z.iso.datetime(),
     onExpire: z.enum(['stop', 'delete']),
+    storage: z.enum(['persistent', 'discard-on-stop']).optional(),
   })
   .strict();
 

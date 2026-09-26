@@ -119,6 +119,31 @@ test('creation persists immutable policy and produces independent sandboxes', as
   await assert.rejects(machines.resize(vm.id, 16), /沙箱资源/);
 });
 
+test('temporary COW policy persists and puts only its writable drive in snapshot mode', async (t) => {
+  const { machines, service, launches, add } = await fixture(t);
+  const vm = await service.create({ name: 'transient-cow', storage: 'discard-on-stop' });
+  assert.equal(vm.sandbox.storage, 'discard-on-stop');
+  const saved = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8'));
+  assert.equal(saved.find((row: VMRecord) => row.id === vm.id).sandbox.storage, 'discard-on-stop');
+  assert.match(machines.commandline(vm.id).diskOptions, /,snapshot=on$/);
+  await machines.start(vm.id);
+  assert.equal(launches[0].filter((arg) => arg.includes('snapshot=on')).length, 1);
+  assert.match(
+    launches[0].find((arg) => arg.includes('snapshot=on'))!,
+    /disk\.qcow2/,
+  );
+  assert.ok(!launches[0].find((arg) => arg.includes('seed.iso'))!.includes('snapshot=on'));
+  await machines.terminateSandbox(vm.id);
+  const ordinary = await add(false);
+  await machines.start(ordinary.id);
+  assert.equal(
+    launches[1].some((arg) => arg.includes('snapshot=on')),
+    false,
+  );
+  assert.equal(sandboxCreateSchema.safeParse({ name: 'bad', storage: 'commit' }).success, false);
+  assert.equal(createSchema.safeParse({ name: 'ordinary', storage: 'discard-on-stop' }).success, false);
+});
+
 test('sandbox operations cannot target ordinary instances', async (t) => {
   const { service, add, machines } = await fixture(t);
   const vm = await add(false);

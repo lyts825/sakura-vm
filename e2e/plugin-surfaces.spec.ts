@@ -2205,6 +2205,7 @@ test('sandbox workbench creates isolated environments, executes, cancels and pre
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON();
       expect(input.network).toBe('isolated');
+      expect(input.storage).toBe('discard-on-stop');
       expect(input.onExpire).toBe('delete');
       expect(input.lifetimeMinutes).toBe(60);
       const created = {
@@ -2215,6 +2216,7 @@ test('sandbox workbench creates isolated environments, executes, cancels and pre
         sandbox: {
           network: input.network,
           onExpire: input.onExpire,
+          storage: input.storage,
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
         },
       };
@@ -2253,8 +2255,11 @@ test('sandbox workbench creates isolated environments, executes, cancels and pre
   await page.getByRole('button', { name: '沙箱工作台', exact: true }).click();
   await expect(page.getByRole('heading', { name: '还没有沙箱' })).toBeVisible();
   await page.getByLabel('沙箱名称', { exact: true }).fill('sandbox-demo');
+  await page.getByRole('combobox', { name: '磁盘写入策略', exact: true }).selectOption('discard-on-stop');
+  await expect(page.getByText('每次沙箱停止都会丢弃本次磁盘改动', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: '创建沙箱', exact: true }).click();
   await expect(page.getByRole('heading', { name: '在 sandbox-demo 中执行' })).toBeVisible();
+  await expect(page.getByText('临时 COW 工作区：此命令结束后丢弃磁盘改动', { exact: false })).toBeVisible();
   await page.getByRole('textbox', { name: 'Linux 命令', exact: true }).fill('printf sandbox-output');
   await page.getByRole('button', { name: '执行命令', exact: true }).click();
   await expect(page.getByLabel('操作日志')).toContainText('sandbox-output');

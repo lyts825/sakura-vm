@@ -398,6 +398,13 @@
                       "stop",
                       "delete"
                     ]
+                  },
+                  "storage": {
+                    "type": "string",
+                    "enum": [
+                      "persistent",
+                      "discard-on-stop"
+                    ]
                   }
                 },
                 "required": [
@@ -711,6 +718,13 @@
             "stop",
             "delete"
           ]
+        },
+        "storage": {
+          "type": "string",
+          "enum": [
+            "persistent",
+            "discard-on-stop"
+          ]
         }
       },
       "required": [
@@ -750,6 +764,13 @@
               "enum": [
                 "stop",
                 "delete"
+              ]
+            },
+            "storage": {
+              "type": "string",
+              "enum": [
+                "persistent",
+                "discard-on-stop"
               ]
             }
           },
@@ -839,6 +860,13 @@
               "enum": [
                 "stop",
                 "delete"
+              ]
+            },
+            "storage": {
+              "type": "string",
+              "enum": [
+                "persistent",
+                "discard-on-stop"
               ]
             }
           },

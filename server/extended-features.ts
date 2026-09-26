@@ -42,7 +42,14 @@ export const extendedFeatureCatalog = [
   ['backup-dedup', '备份块级去重', '存储', 'P1', '减少重复备份的磁盘占用。', 'available'],
   ['project-quota', '项目磁盘配额', '存储', 'P1', '限制单个项目可使用的空间。', 'planned'],
   ['guest-quota', '客户机目录配额', '存储', 'P1', '查看和设置 Linux 用户与目录配额。', 'experimental'],
-  ['cow-workspace', '临时 COW 工作区', '存储', 'P1', '创建退出即丢弃的隔离工作区。', 'planned'],
+  [
+    'cow-workspace',
+    '临时 COW 工作区',
+    '存储',
+    'P1',
+    '沙箱的临时磁盘写入在停止后丢弃，主动提取的产物和任务日志保留。',
+    'available',
+  ],
   ['archive-wizard', '归档与解压向导', '存储', 'P0', '安全地创建和解压常见归档文件。', 'available'],
   ['posix-acl', 'POSIX ACL 管理', '存储', 'P1', '查看和修改文件 ACL。', 'available'],
   ['secure-erase', '安全擦除证明', '存储', 'P2', '擦除文件并记录操作证明。', 'planned'],
@@ -138,7 +145,14 @@ export const extendedFeatureCatalog = [
     '基于持续采样生成运行、停止、探测失败及未知时段报告。',
     'available',
   ],
-  ['explorer-integration', '资源管理器集成', '体验集成', 'P0', '从 Windows 资源管理器打开项目。', 'available'],
+  [
+    'explorer-integration',
+    '资源管理器集成',
+    '体验集成',
+    'P0',
+    '从 Windows 资源管理器打开项目。',
+    'available',
+  ],
   ['editor-profiles', '编辑器连接档案', '体验集成', 'P1', '生成 JetBrains 和 Neovim 连接配置。', 'available'],
   [
     'terminal-layouts',
@@ -310,6 +324,15 @@ export class ExtendedFeatures {
     };
     if (spec.id === 'qemu-commandline')
       return { ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) };
+    if (spec.id === 'cow-workspace')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason:
+          '启用沙箱插件，在沙箱工作台创建时选择“临时 COW：停止即丢弃”。每次停止恢复初始磁盘，任务日志和明确提取的产物保留。',
+      };
     if (spec.id === 'api-explorer')
       return {
         ready: true,
@@ -318,10 +341,15 @@ export class ExtendedFeatures {
         adapter,
         reason: '系统设置 → 开发接口，浏览 OpenAPI、试读状态并下载 JavaScript SDK。',
       };
-    if (spec.id === 'explorer-integration') return {
-      ready: process.platform === 'win32', executed: false, state: spec.state, adapter,
-      reason: '系统设置 → 管理 Windows 集成，注册当前用户右键菜单；根据已保存的同步目录定位项目。需启用项目、文件与目录同步插件。',
-    };
+    if (spec.id === 'explorer-integration')
+      return {
+        ready: process.platform === 'win32',
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason:
+          '系统设置 → 管理 Windows 集成，注册当前用户右键菜单；根据已保存的同步目录定位项目。需启用项目、文件与目录同步插件。',
+      };
     if (spec.id === 'session-lock')
       return {
         ready: true,

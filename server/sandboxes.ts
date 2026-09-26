@@ -23,6 +23,7 @@ export const sandboxCreateSchema = z
     lifetimeMinutes: z.number().int().min(5).max(1440).default(60),
     network: sandboxPolicySchema.shape.network.default('isolated'),
     onExpire: sandboxPolicySchema.shape.onExpire.default('delete'),
+    storage: sandboxPolicySchema.shape.storage,
   })
   .strict();
 
@@ -97,12 +98,13 @@ export class Sandboxes {
   }
   async create(input: unknown) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
-    const { network, lifetimeMinutes, onExpire, ...config } = sandboxCreateSchema.parse(input);
+    const { network, lifetimeMinutes, onExpire, storage, ...config } = sandboxCreateSchema.parse(input);
     const vm = await this.machines.create(
       { ...config, template: 'none', forwards: [] },
       {
         network,
         onExpire,
+        ...(storage ? { storage } : {}),
         expiresAt: new Date(Date.now() + lifetimeMinutes * 60_000).toISOString(),
       },
     );
@@ -162,6 +164,8 @@ export class Sandboxes {
           signal.throwIfAborted();
           this.available(id);
           log('工作目录：' + config.cwd + '\n命令：' + config.command + '\n');
+          if (vm.sandbox.storage === 'discard-on-stop')
+            log('临时 COW 工作区：停止时丢弃磁盘写入，仅保留日志和已提取产物。\n');
           update('启动沙箱');
           await this.machines.start(id);
           runtime = this.machines.live.get(id);

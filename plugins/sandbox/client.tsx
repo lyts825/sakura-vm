@@ -33,6 +33,7 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
   const [network, setNetwork] = useState<'isolated' | 'nat'>('isolated');
   const [lifetimeMinutes, setLifetime] = useState(60);
   const [onExpire, setOnExpire] = useState<'delete' | 'stop'>('delete');
+  const [storage, setStorage] = useState<'persistent' | 'discard-on-stop'>('persistent');
   const [selected, setSelected] = useState('');
   const [command, setCommand] = useState('uname -a\npwd');
   const [cwd, setCwd] = useState('/workspace');
@@ -91,7 +92,7 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
               const created = await request<SandboxView>(
                 '/sandboxes',
                 'POST',
-                { name, distro, ...resources, network, lifetimeMinutes, onExpire },
+                { name, distro, ...resources, network, lifetimeMinutes, onExpire, storage },
                 signal,
               );
               setSelected(created.id);
@@ -202,6 +203,13 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
           </p>
           <div className="feature-grid compact-grid">
             <label>
+              磁盘写入策略
+              <select value={storage} onChange={(event) => setStorage(event.target.value as typeof storage)}>
+                <option value="persistent">停止后保留写入</option>
+                <option value="discard-on-stop">临时 COW：停止即丢弃</option>
+              </select>
+            </label>
+            <label>
               存活时间（分钟）
               <input
                 type="number"
@@ -216,11 +224,18 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
               到期处理
               <select value={onExpire} onChange={(e) => setOnExpire(e.target.value as typeof onExpire)}>
                 <option value="delete">停止并销毁磁盘</option>
-                <option value="stop">停止并保留磁盘</option>
+                <option value="stop">停止并保留实例记录</option>
               </select>
             </label>
           </div>
-          <p className="subtle-note">期限从创建时开始计算。到期后不能重新启动；资源与网络策略创建后固定。</p>
+          <p className="subtle-note">
+            期限从创建时开始计算。到期后不能重新启动；资源、磁盘与网络策略创建后固定。
+          </p>
+          {storage === 'discard-on-stop' && (
+            <p className="subtle-note">
+              每次沙箱停止都会丢弃本次磁盘改动，下次启动回到创建时的基础环境。命令执行结束也会停止；日志和明确提取的产物继续保留。
+            </p>
+          )}
           <button className="primary" disabled={creation.busy}>
             <Plus size={16} />
             {creation.busy ? '正在创建…' : '创建沙箱'}
@@ -264,6 +279,8 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
                   <small>
                     {item.cpus} 核 · {item.memoryMiB} MiB · {item.diskGiB} GiB ·{' '}
                     {item.sandbox.network === 'isolated' ? '隔离网络' : '允许联网'}
+                    {' · '}
+                    {item.sandbox.storage === 'discard-on-stop' ? '临时 COW' : '保留磁盘写入'}
                   </small>
                   <small>
                     <Clock size={12} /> {date(item.sandbox.expiresAt)}{' '}
@@ -337,6 +354,11 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
               <h3>
                 <TerminalSquare size={18} /> 在 {vm.name} 中执行
               </h3>
+              {vm.sandbox.storage === 'discard-on-stop' && (
+                <p className="subtle-note">
+                  临时 COW 工作区：此命令结束后丢弃磁盘改动；需要保留的文件请填写到下方产物列表。
+                </p>
+              )}
               <label>
                 Linux 命令
                 <textarea

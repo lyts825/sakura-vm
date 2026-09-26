@@ -333,6 +333,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'cow-workspace':
+          '打开沙箱工作台，创建时将磁盘写入策略设为“临时 COW：停止即丢弃”。每次命令结束或停止后回到初始磁盘；需要保留的文件请列入产物。',
         'explorer-integration':
           '打开系统设置 → 管理 Windows 集成，注册右键菜单。目录或文件会按项目的 Windows 同步映射定位到 Sakura 工作区。',
         'session-lock':
