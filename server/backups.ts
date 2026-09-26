@@ -11,6 +11,8 @@ import { Secrets, secretName } from './secrets.ts';
 import { fileHash, regularDirectory } from './local-store.ts';
 import { encryptFile, withDecrypted, passwordSchema } from './encrypted-backups.ts';
 import { inMaintenance } from './automation-policy.ts';
+import { backupBlocks } from './backup-blocks.ts';
+import type { Writable } from 'node:stream';
 
 export const backupPolicySchema = z
   .object({
@@ -19,6 +21,7 @@ export const backupPolicySchema = z
     keep: z.number().int().min(1).max(30).default(7),
     maxGiB: z.number().min(1).max(512).default(32),
     lockDays: z.number().int().min(0).max(3650).optional(),
+    deduplicate: z.boolean().optional(),
     bandwidthMiBps: z
       .number()
       .min(0)
@@ -32,7 +35,11 @@ export const backupPolicySchema = z
       .optional(),
     passwordSecret: secretName.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => !value.deduplicate || (!value.directory && !value.passwordSecret),
+    '块级去重仅用于本机未加密备份；请清空外部目录和加密密码引用',
+  );
 export type BackupPolicy = z.infer<typeof backupPolicySchema>;
 export type BackupRecord = {
   id: string;
@@ -45,8 +52,17 @@ export type BackupRecord = {
   encrypted?: boolean;
   passwordSecret?: string;
   retainUntil?: string;
+  storage?: 'blocks';
 };
 type BackupState = { policy: BackupPolicy; items: BackupRecord[]; lastSuccess?: string };
+export type BackupDownload =
+  | { type: 'file'; path: string; name: string }
+  | {
+      type: 'stream';
+      name: string;
+      bytes: number;
+      write: (output: Writable, signal: AbortSignal) => Promise<void>;
+    };
 export async function verifyBackup(file: string, signal: AbortSignal) {
   const handle = await open(file, 'r');
   let length: number, expected: string;
@@ -104,11 +120,27 @@ export class Backups {
   private recordFile(id: string, item: BackupRecord) {
     return this.file(id, item.id, item.directory, item.encrypted);
   }
-  async downloadable(id: string, backupId: string) {
+  private removeFile(id: string, item: BackupRecord) {
+    return item.storage === 'blocks'
+      ? backupBlocks().remove(id, item.id)
+      : rm(this.recordFile(id, item), { force: true });
+  }
+  async downloadable(id: string, backupId: string): Promise<BackupDownload> {
     const state = await this.state(id),
       item = state.items.find((v) => v.id === checkedId(backupId));
     if (!item) throw new AppError('备份不存在', 404);
+    if (item.storage === 'blocks') {
+      const manifest = await backupBlocks().read(id, item.id, item.checksum);
+      return {
+        type: 'stream',
+        name: `${this.machines.get(id).name}-${item.id}.sakura`,
+        bytes: manifest.bytes,
+        write: (output: Writable, signal: AbortSignal) =>
+          backupBlocks().writeTo(id, item.id, item.checksum, output, signal),
+      };
+    }
     return {
+      type: 'file',
       path: this.recordFile(id, item),
       name: `${this.machines.get(id).name}-${item.id}${item.encrypted ? '.sakura.enc' : '.sakura'}`,
     };
@@ -120,6 +152,10 @@ export class Backups {
     signal: AbortSignal,
     work: (file: string) => Promise<T>,
   ) {
+    if (item.storage === 'blocks') {
+      if (item.encrypted) throw new AppError('加密备份不能使用块存储');
+      return backupBlocks().withFile(id, item.id, item.checksum, signal, work);
+    }
     const file = this.recordFile(id, item);
     if (!item.encrypted) return work(file);
     const value = password || (item.passwordSecret ? await this.secrets.value(id, item.passwordSecret) : '');
@@ -190,6 +226,8 @@ export class Backups {
         password ||
         (state.policy.passwordSecret ? await this.secrets.value(id, state.policy.passwordSecret) : undefined);
       if (encryptionPassword) passwordSchema.parse(encryptionPassword);
+      if (encryptionPassword && state.policy.deduplicate)
+        throw new AppError('加密备份不支持内容去重，请先关闭块级去重策略');
       if (state.policy.directory) await regularDirectory(state.policy.directory);
       return this.jobs.start(
         id,
@@ -202,7 +240,8 @@ export class Backups {
           await mkdir(this.directory(id), { recursive: true });
           if (state.policy.directory)
             await mkdir(join(state.policy.directory, 'sakura-backups', id), { recursive: true });
-          let published = false;
+          let published = false,
+            indexed = false;
           try {
             log('正在生成独立备份包…\n');
             update('导出磁盘', 10);
@@ -232,7 +271,10 @@ export class Backups {
             if (bytes > state.policy.maxGiB * 1024 ** 3)
               throw new AppError('单个备份超过容量上限，请提高备份容量限制');
             signal.throwIfAborted();
-            await rename(temp, file);
+            if (state.policy.deduplicate) {
+              update('校验并复用内容块', 95);
+              await backupBlocks().pack(id, backupId, temp, checksum, signal);
+            } else await rename(temp, file);
             published = true;
             const record: BackupRecord = {
               id: backupId,
@@ -242,6 +284,7 @@ export class Backups {
               verifiedAt: new Date().toISOString(),
               directory: state.policy.directory || undefined,
               encrypted,
+              ...(state.policy.deduplicate ? { storage: 'blocks' as const } : {}),
               passwordSecret: encrypted && !password ? state.policy.passwordSecret : undefined,
               retainUntil: state.policy.lockDays
                 ? new Date(Date.now() + state.policy.lockDays * 86400000).toISOString()
@@ -251,6 +294,7 @@ export class Backups {
             state.lastSuccess = record.createdAt;
             // Publish the verified backup before pruning any previous good copy.
             await this.saveState(id, state);
+            indexed = true;
             while (
               state.items.length > state.policy.keep ||
               state.items.reduce((sum, v) => sum + v.bytes, 0) > state.policy.maxGiB * 1024 ** 3
@@ -260,13 +304,16 @@ export class Backups {
                 log('保留期内的备份受到保护，暂时超过份数或总容量上限；到期后再清理。\n');
                 break;
               }
-              await rm(this.recordFile(id, old), { force: true });
               state.items = state.items.filter((item) => item.id !== old.id);
               await this.saveState(id, state);
+              await this.removeFile(id, old);
             }
             log(`备份已完成并校验，保留 ${state.items.length} 份。\n`);
           } catch (error) {
-            if (published && !state.items.some((v) => v.id === backupId)) await rm(file, { force: true });
+            if (published && !indexed) {
+              if (state.policy.deduplicate) await backupBlocks().remove(id, backupId);
+              else await rm(file, { force: true });
+            }
             throw error;
           } finally {
             await rm(temp, { force: true });
@@ -296,9 +343,9 @@ export class Backups {
       if (action === 'delete') {
         if (backupLocked(item))
           throw new AppError('备份在保留锁定期内，不能删除：' + item.retainUntil, 423, 'BACKUP_LOCKED');
-        await rm(this.recordFile(id, item), { force: true });
         state.items = state.items.filter((v) => v !== item);
         await this.saveState(id, state);
+        await this.removeFile(id, item);
         return { ok: true };
       }
       if (action === 'restore' && !/^[a-z][a-z0-9-]{0,31}$/.test(name || ''))
@@ -307,23 +354,26 @@ export class Backups {
         id,
         async (log, signal) => {
           try {
-            const checksum = await fileHash(this.recordFile(id, item), signal);
-            if (checksum !== item.checksum) throw new AppError('备份包与记录的校验值不符');
-            await this.plain(id, item, password, signal, (file) => verifyBackup(file, signal));
-            item.verifiedAt = new Date().toISOString();
-            delete item.error;
-            await this.saveState(id, state);
-            log('备份完整性校验通过。\n');
+            if (
+              item.storage !== 'blocks' &&
+              (await fileHash(this.recordFile(id, item), signal)) !== item.checksum
+            )
+              throw new AppError('备份包与记录的校验值不符');
+            await this.plain(id, item, password, signal, async (file) => {
+              await verifyBackup(file, signal);
+              item.verifiedAt = new Date().toISOString();
+              delete item.error;
+              await this.saveState(id, state);
+              log('备份完整性校验通过。\n');
+              if (action === 'restore') {
+                const vm = await this.bundles.import(name!, createReadStream(file), signal);
+                log(`已恢复为新实例 ${vm.name}。\n`);
+              }
+            });
           } catch (error) {
             item.error = (error as Error).message;
             await this.saveState(id, state);
             throw error;
-          }
-          if (action === 'restore') {
-            const vm = await this.plain(id, item, password, signal, (file) =>
-              this.bundles.import(name!, createReadStream(file), signal),
-            );
-            log(`已恢复为新实例 ${vm.name}。\n`);
           }
         },
         { title: action === 'verify' ? '校验备份' : '恢复备份为新实例', vmId: id },

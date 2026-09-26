@@ -37,6 +37,17 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'global-dedup': action(
+    '全局备份去重统计与清理',
+    'next',
+    {
+      mode: z.enum(['inspect', 'collect']).default('inspect'),
+    },
+    { mode: 'inspect' },
+    '统计本机全部实例的备份内容块、逻辑大小和共享节省量。collect 在校验全部清单引用后清理无引用块；被任何备份引用的内容均保留。',
+    false,
+    true,
+  ),
   'audit-log': action(
     '审计日志链校验与导出',
     'extended',

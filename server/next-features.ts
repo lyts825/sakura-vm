@@ -188,7 +188,14 @@ export const nextFeatureCatalog = [
     '保存文件级恢复请求和目标路径校验结果。',
     'planned',
   ],
-  ['global-dedup', '全局备份去重', '存储与灾备', 'P1', '计算本地备份索引的去重统计。', 'planned'],
+  [
+    'global-dedup',
+    '全局备份去重',
+    '存储与灾备',
+    'P1',
+    '复用跨实例备份内容块，统计实际占用并清理无引用块。',
+    'available',
+  ],
   [
     'backup-throttle',
     '备份带宽限速',

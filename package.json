@@ -22,6 +22,7 @@
     "test:sandbox": "tsx scripts/smoke-sandbox.ts",
     "test:features": "tsx scripts/smoke-features.ts",
     "test:engineering": "tsx scripts/smoke-engineering.ts",
+    "test:storage": "tsx scripts/smoke-storage.ts",
     "test:management": "tsx scripts/smoke-management.ts",
     "test:development": "tsx scripts/smoke-development.ts",
     "plugins:check": "tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",

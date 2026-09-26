@@ -47,6 +47,17 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
             />
             启用自动备份
           </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={!!policy.deduplicate}
+              onChange={(event) => setPolicy({ ...policy, deduplicate: event.target.checked })}
+            />
+            本机备份使用全局内容块去重
+          </label>
+          <p className="subtle-note">
+            适用于未加密、本机目录的备份。下载时重组为独立实例包；共享块保留到最后一个引用删除。加密或外部目录备份需先关闭此项。
+          </p>
           <div className="feature-grid">
             <label>
               间隔（小时）
@@ -163,6 +174,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
             <b>{new Date(item.createdAt).toLocaleString()}</b>
             <p className="subtle-note">
               {item.encrypted ? '已加密 · ' : ''}
+              {item.storage === 'blocks' ? '内容块去重 · ' : ''}
               {formatBytes(item.bytes)} · {item.error || (item.verifiedAt ? '已通过校验' : '待校验')}
             </p>
             {item.directory && <p className="subtle-note wrap-path">{item.directory}</p>}

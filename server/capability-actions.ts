@@ -13,6 +13,7 @@ import { reportCapabilities, runReport } from './capability-reports.ts';
 import { maintenancePolicy, saveMaintenancePolicy, inMaintenance } from './automation-policy.ts';
 import { resourceCapabilities, resourceAction } from './resource-actions.ts';
 import { hostAudit, traceExport } from './audit.ts';
+import { backupBlocks } from './backup-blocks.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -76,6 +77,15 @@ export class CapabilityActions {
     this.machines.requireUnlocked(id);
     const parameters = capabilityParameters(featureId, input);
     signal.throwIfAborted();
+    if (featureId === 'global-dedup') {
+      const p = capabilityDefinitions[featureId].schema.parse(parameters);
+      return {
+        code: 0,
+        ready: true,
+        executed: true,
+        ...(await backupBlocks().inspect(p.mode === 'collect', signal)),
+      };
+    }
     if (featureId === 'audit-log' || featureId === 'otel-tracing') {
       const p = capabilityDefinitions[featureId].schema.parse(parameters);
       const report = await hostAudit().read(p.limit, p.allMachines ? undefined : id);

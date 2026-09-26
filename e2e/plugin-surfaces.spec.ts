@@ -307,6 +307,35 @@ const vm = {
   poweredOn: false,
 };
 
+test('backup policies enable block deduplication and show how each backup is stored', async ({ page }) => {
+  await app(page, ['snapshots', 'backups', 'transfers', 'secrets'], true);
+  let policy: any = { enabled: false, intervalHours: 24, keep: 7, maxGiB: 32 };
+  await page.route('**/api/vms/*/backups*', (route) => {
+    if (route.request().method() === 'PUT') policy = route.request().postDataJSON();
+    return route.fulfill({
+      json: {
+        policy,
+        bytes: 4096,
+        items: [
+          {
+            id: 'backup',
+            storage: 'blocks',
+            bytes: 4096,
+            createdAt: new Date().toISOString(),
+            verifiedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '快照', exact: true }).click();
+  await page.getByLabel('本机备份使用全局内容块去重').check();
+  await page.getByRole('button', { name: '保存策略', exact: true }).click();
+  await expect.poll(() => policy.deduplicate).toBe(true);
+  await expect(page.getByText(/内容块去重 ·/)).toBeVisible();
+});
+
 async function app(page: Page, active: string[] = [], withVm = false) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;

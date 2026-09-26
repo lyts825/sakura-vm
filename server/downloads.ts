@@ -10,12 +10,16 @@ import { Jobs } from './jobs.ts';
 import { lstat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
+import type { Writable } from 'node:stream';
 
 export const downloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('file'), path: z.string() }).strict(),
   z.object({ type: z.literal('export') }).strict(),
 ]);
-type DownloadTarget = (z.infer<typeof downloadSchema> | { type: 'local'; path: string }) & {
+type StreamDownload = { bytes: number; write: (output: Writable, signal: AbortSignal) => Promise<void> };
+type DownloadTarget = (
+  z.infer<typeof downloadSchema> | { type: 'local'; path: string } | ({ type: 'stream' } & StreamDownload)
+) & {
   id: string;
   name: string;
 };
@@ -78,7 +82,19 @@ export class Downloads {
     if (this.closed) throw new AppError('服务正在关闭', 503);
     this.machines.get(id);
     if (!(await lstat(file.path)).isFile()) throw new AppError('备份文件不可用');
-    return this.tickets.issue({ id, type: 'local', ...file });
+    return this.tickets.issue({ id, type: 'local', path: file.path, name: file.name });
+  }
+  issueStream(id: string, content: StreamDownload & { name: string }) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    this.machines.get(id);
+    if (!Number.isSafeInteger(content.bytes) || content.bytes < 0) throw new AppError('下载大小无效');
+    return this.tickets.issue({
+      id,
+      type: 'stream',
+      name: content.name,
+      bytes: content.bytes,
+      write: content.write,
+    });
   }
   async route(req: IncomingMessage, res: ServerResponse, url: URL) {
     const match = /^\/api\/downloads\/([a-f0-9]{64})$/.exec(url.pathname);
@@ -108,7 +124,12 @@ export class Downloads {
     const work = (async () => {
       if (res.destroyed) abort.abort();
       abort.signal.throwIfAborted();
-      if (target.type === 'local') {
+      if (target.type === 'stream') {
+        // The producer verifies its whole-file hash before ending the stream.
+        // Chunked transfer must remain incomplete if that final check fails.
+        headers();
+        await target.write(res, abort.signal);
+      } else if (target.type === 'local') {
         const info = await lstat(target.path);
         if (!info.isFile()) throw new AppError('备份文件不可用');
         headers(info.size);

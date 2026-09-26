@@ -43,7 +43,12 @@ export async function route(
         .object({ backupId: z.uuid() })
         .strict()
         .parse(await body(req));
-      send(await this.downloads.issueLocal(id, await this.backups.downloadable(id, input.backupId)));
+      const content = await this.backups.downloadable(id, input.backupId);
+      send(
+        content.type === 'stream'
+          ? this.downloads.issueStream(id, content)
+          : await this.downloads.issueLocal(id, { path: content.path, name: content.name }),
+      );
       return true;
     }
   }

@@ -12,6 +12,5 @@ export const manifest = definePlugin({
       http('/api/vms/:vmId/backups', ['GET', 'PUT', 'POST']),
       http('/api/vms/:vmId/backup-download', ['POST']),
     ],
-    tabs: ['snapshots'],
   },
 });

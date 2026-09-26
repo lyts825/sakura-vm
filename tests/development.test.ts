@@ -105,7 +105,9 @@ test('encrypted backup jobs never retry as plaintext and wrong passwords do not 
     assert.equal(job.action, undefined);
     const item = (await backups.view(id)).items[0];
     assert.equal(item.encrypted, true);
-    assert.match((await backups.downloadable(id, item.id)).path, /external-backups/);
+    const download = await backups.downloadable(id, item.id);
+    assert.equal(download.type, 'file');
+    assert.match(download.path, /external-backups/);
     await backups.operate(id, item.id, 'restore', 'restored', 'wrong-password');
     await backups.jobs.wait(id);
     assert.equal(backups.jobs.view(id)?.status, 'error');

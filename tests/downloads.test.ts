@@ -9,6 +9,8 @@ import type { Downloads as DownloadsType } from '../server/downloads.ts';
 import type { Machines } from '../server/machines.ts';
 import type { Files } from '../server/files.ts';
 import type { Bundles } from '../server/bundles.ts';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-downloads-'));
 process.env.SAKURA_DATA_DIR = root;
@@ -110,6 +112,35 @@ test('preflight rejects failed downloads and export while running without issuin
   await assert.rejects(downloads.issue('vm', { type: 'export', path: '/etc/other' }));
   downloads.close();
   await assert.rejects(downloads.issue('vm', { type: 'export' }), /关闭/);
+});
+
+test('generated backup downloads only finish after integrity verification and reject an invalid final hash', async (t) => {
+  const { downloads } = fixture(),
+    base = await server(t, downloads);
+  for (const valid of [true, false]) {
+    const bytes = Buffer.alloc(1024, 7);
+    const ticket = downloads.issueStream('vm', {
+      name: 'backup.sakura',
+      bytes: bytes.length,
+      write: async (output, signal) =>
+        pipeline(
+          Readable.from(
+            (async function* () {
+              yield bytes;
+              await new Promise((resolve) => setTimeout(resolve, 20));
+              if (!valid) throw new Error('whole-file hash mismatch');
+            })(),
+          ),
+          output,
+          { signal },
+        ),
+    });
+    const response = await fetch(base + ticket.url);
+    assert.equal(response.headers.get('content-length'), null);
+    if (valid) assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+    else await assert.rejects(response.arrayBuffer());
+    assert.equal((await fetch(base + ticket.url)).status, 410);
+  }
 });
 
 test('disconnect and shutdown cancel active download work', async () => {
