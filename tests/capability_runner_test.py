@@ -6,6 +6,9 @@ import subprocess
 import shutil
 import sys
 import tempfile
+import socket
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -32,6 +35,62 @@ class Capabilities(unittest.TestCase):
 
     def execute(self, operation, **parameters):
         return runner.capability_execute(self.root, operation, parameters)
+
+    def test_network_diagnostics_probe_real_dns_tcp_tls_failure_and_closed_port(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            port = listener.getsockname()[1]
+            listener.listen(4)
+            listener.settimeout(5)
+
+            def refuse_tls():
+                for _ in range(2):
+                    connection, _ = listener.accept()
+                    with connection:
+                        connection.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n')
+
+            worker = threading.Thread(target=refuse_tls, daemon=True)
+            worker.start()
+            result = self.execute('network-diagnostics', target='localhost', port=port,
+                                  probes=['dns', 'tcp', 'https'], timeout=3)
+            worker.join(6)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual([row['code'] for row in result['results']], [0, 0, 1], result)
+            self.assertEqual(result['code'], 1)
+            self.assertIn('127.0.0.1', result['results'][0]['addresses'])
+            self.assertNotIn('HTTP/1.1', json.dumps(result))
+        closed = self.execute('network-diagnostics', target='127.0.0.1', port=port, probes=['tcp'], timeout=2)
+        self.assertEqual(closed['code'], 1)
+
+    def test_network_diagnostics_deadline_terminates_stalled_https(self):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen(1)
+            listener.settimeout(4)
+            release = threading.Event()
+
+            def stall():
+                connection, _ = listener.accept()
+                with connection:
+                    release.wait(4)
+
+            worker = threading.Thread(target=stall, daemon=True)
+            worker.start()
+            started = time.monotonic()
+            try:
+                result = self.execute('network-diagnostics', target='127.0.0.1', port=listener.getsockname()[1],
+                                      probes=['https'], timeout=1)
+                self.assertEqual(result['code'], 1)
+                self.assertLess(time.monotonic() - started, 3)
+            finally:
+                release.set()
+                worker.join(5)
+
+    @unittest.skipUnless(shutil.which('ip'), 'requires Linux iproute2 or BusyBox ip')
+    def test_network_diagnostics_resolves_a_real_local_route(self):
+        result = self.execute('network-diagnostics', target='127.0.0.1', probes=['route'], timeout=3)
+        self.assertEqual(result['code'], 0, result)
+        self.assertIn('127.0.0.1', result['results'][0]['routes'][0]['output'])
 
     def test_dependency_graph_resolves_nested_and_shared_packages_without_running_scripts(self):
         self.write('package.json', '{"name":"fixture"}')

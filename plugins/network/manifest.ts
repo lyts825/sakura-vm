@@ -9,6 +9,7 @@ export const manifest = definePlugin({
   services: ['network'],
   contributes: {
     http: [
+      http('/api/network-profiles', ['GET', 'POST', 'DELETE']),
       http('/api/vms/:vmId/network', ['GET', 'POST'], true),
       http('/api/vms/:vmId/services', ['GET', 'PATCH']),
     ],

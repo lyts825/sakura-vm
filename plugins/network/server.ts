@@ -10,6 +10,9 @@ import { NetworkProfiles } from '../../server/network-profiles.ts';
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.network = new NetworkProfiles(m);
+  host.registerJobs(host.network.jobs, () => {
+    throw new AppError('请在网络配置中重新测试当前设置');
+  });
 }
 export async function route(
   this: PluginContext,
@@ -28,6 +31,19 @@ export async function route(
     res.end(JSON.stringify(data));
     return true;
   };
+  if (parts[1] === 'network-profiles') {
+    if (parts.length === 2 && req.method === 'GET') return send(await this.network.profiles());
+    if (parts.length === 2 && req.method === 'POST')
+      return send(await this.network.saveProfile(await body(req)));
+    if (parts.length === 2 && req.method === 'DELETE') {
+      const { id } = z
+        .object({ id: z.uuid() })
+        .strict()
+        .parse(await body(req));
+      return send(await this.network.removeProfile(id));
+    }
+    return false;
+  }
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];

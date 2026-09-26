@@ -20,6 +20,7 @@ import {
   guestPath,
   organizationSchema,
   type VMRecord,
+  type VMConfig,
   type VMView,
   type VMStatus,
 } from './model.ts';
@@ -1360,11 +1361,15 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
-  async setForwards(id: string, input: unknown) {
+  async setForwards(id: string, input: unknown, expected?: VMConfig['forwards']) {
     return this.locked('launch', () =>
       this.locked(id, async () => {
         const vm = this.get(id);
         this.requireMutableConfig(vm);
+        if (expected && JSON.stringify(vm.forwards) !== JSON.stringify(expected))
+          throw new AppError('端口映射已变化，请重新预览', 409);
+        const previous = vm.forwards;
+        let rollback = async () => {};
         const parsed = createSchema.parse({ name: vm.name, forwards: input }).forwards;
         for (const [otherId, other] of this.records) {
           if (
@@ -1395,6 +1400,13 @@ export class Machines extends EventEmitter {
             if (typeof output === 'string' && /could not|error|invalid|not found/i.test(output))
               throw new AppError(output.trim());
           };
+          rollback = async () => {
+            const failures: string[] = [];
+            for (const p of [...applied].reverse())
+              await command('remove', p).catch((error) => failures.push(String(error)));
+            for (const p of taken) await command('add', p).catch((error) => failures.push(String(error)));
+            if (failures.length) throw new AppError('端口修改失败，回滚未完成：' + failures.join('；'), 409);
+          };
           try {
             for (const p of removed) {
               await command('remove', p);
@@ -1405,13 +1417,18 @@ export class Machines extends EventEmitter {
               applied.push(p);
             }
           } catch (error) {
-            for (const p of applied) await command('remove', p).catch(() => {});
-            for (const p of taken) await command('add', p).catch(() => {});
+            await rollback();
             throw error;
           }
         }
         vm.forwards = parsed;
-        await this.save();
+        try {
+          await this.save();
+        } catch (error) {
+          vm.forwards = previous;
+          await rollback();
+          throw error;
+        }
         this.emit('change');
         return this.view(id);
       }),

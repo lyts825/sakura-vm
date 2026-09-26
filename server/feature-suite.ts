@@ -13,7 +13,7 @@ import { distroInfo } from './images.ts';
 import { envPrefix } from './project-services.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { CapabilityActions } from './capability-actions.ts';
-import { requireSuccessfulResult } from './engineering-runner.ts';
+import { requireSuccessfulResult, runEngineeringOperation } from './engineering-runner.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { inMaintenance } from './automation-policy.ts';
 import { resourcePolicy } from './resource-policies.ts';
@@ -123,13 +123,13 @@ const availableFeatureIds = new Set<FeatureId>([
   'disk-maintenance',
   'metrics-history',
   'alerts',
+  'network-diagnostics',
+  'network-profiles',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'golden-images',
   'language-services',
   'merge-editor',
-  'network-profiles',
-  'network-diagnostics',
   'native-integration',
   'multi-monitor',
   'security-scan',
@@ -415,6 +415,10 @@ export class FeatureSuite {
     if (featureId === 'disk-maintenance') {
       result.ready = true;
       result.reason = '已接入工作空间 → 维护；启用磁盘与诊断插件后可计划 TRIM、离线压缩和稀疏回收。';
+    } else if (featureId === 'network-profiles') {
+      result.ready = true;
+      result.reason =
+        '已接入工作空间 → 开发 → 网络配置：保存、加载 DNS、代理、镜像源与 NAT 端口档案，预览后应用，支持恢复原配置。';
     } else if (featureId === 'metrics-history' || featureId === 'alerts') {
       result.ready = true;
       result.reason = '已接入能力中心的资源趋势与通知中心；自动采样和告警需启用自动化调度插件。';
@@ -439,11 +443,7 @@ export class FeatureSuite {
       featureId === 'dev-container'
     ) {
       result.adapter = 'workspace-tooling';
-    } else if (
-      featureId === 'reverse-proxy' ||
-      featureId === 'vpn-integration' ||
-      featureId === 'network-profiles'
-    ) {
+    } else if (featureId === 'reverse-proxy' || featureId === 'vpn-integration') {
       result.network = 'profile-backed';
     } else if (featureId === 'rbac-sharing' || featureId === 'plugin-api') {
       result.controlPlane = 'local-token-and-event-bus';
@@ -866,15 +866,17 @@ export class FeatureSuite {
   }
   async networkTest(id: string, target: string, signal?: AbortSignal) {
     const host = hostTarget.parse(target);
-    const result = await this.machines.exec(
+    const result = await runEngineeringOperation(
+      this.machines,
+      this.workspaces,
       id,
-      `set +e\nprintf 'DNS\\n'; getent hosts ${quote(host)} 2>&1\nprintf 'HTTPS\\n'; if command -v curl >/dev/null; then curl -fsSIL --max-time 10 https://${quote(host)} 2>&1 | head -n 8; else wget -q --spider -T 10 https://${quote(host)} 2>&1; fi\nprintf 'PORTS\\n'; (command -v ss >/dev/null && ss -ltnH) || true`,
-      30_000,
-      signal,
+      'network-diagnostics',
+      capabilityParameters('network-diagnostics', { target: host }),
+      signal || new AbortController().signal,
     );
     return {
       target: host,
-      output: `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''}`.trim(),
+      output: JSON.stringify(result, null, 2),
       code: result.code,
     };
   }

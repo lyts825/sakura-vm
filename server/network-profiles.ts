@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
-import { AppError, vmDir } from './model.ts';
+import { AppError, DATA, vmDir, type VMConfig } from './model.ts';
 import type { Machines } from './machines.ts';
 import { Files, ftpStat, quote, textVersion } from './files.ts';
 import { envPrefix } from './project-services.ts';
@@ -29,8 +30,28 @@ const networkUrl = z
       return false;
     }
   }, '请输入不含凭证、查询参数的 HTTP(S) 地址');
+const forwardsSchema = z
+  .array(
+    z
+      .object({
+        name: z.string().trim().max(40).optional(),
+        host: z.number().int().min(1024).max(65535),
+        guest: z.number().int().min(1).max(65535),
+      })
+      .strict(),
+  )
+  .max(12)
+  .refine((values) => new Set(values.map((item) => item.host)).size === values.length, '主机端口不能重复');
 export const networkSchema = z
   .object({
+    dnsServers: z
+      .array(
+        z.string().refine((value) => isIP(value) !== 0 && !value.includes('%'), 'DNS 需要 IPv4 或 IPv6 地址'),
+      )
+      .max(3)
+      .refine((values) => new Set(values).size === values.length, 'DNS 地址不能重复')
+      .default([]),
+    forwards: forwardsSchema.optional(),
     httpProxy: networkUrl,
     httpsProxy: networkUrl,
     noProxy: z
@@ -47,7 +68,26 @@ export const networkSchema = z
   .strict();
 export type NetworkProfile = z.infer<typeof networkSchema>;
 export type NetworkChange = { path: string; before: string | null; after: string };
-type NetworkState = { config: NetworkProfile; changes: NetworkChange[]; appliedAt?: string };
+export type ForwardChange = { before: VMConfig['forwards']; after: VMConfig['forwards'] };
+type NetworkState = {
+  config: NetworkProfile;
+  changes: NetworkChange[];
+  forwards?: ForwardChange;
+  dnsBackend?: 'resolved';
+  appliedAt?: string;
+};
+const savedProfileSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string().trim().min(1).max(60),
+    config: networkSchema,
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export type SavedNetworkProfile = z.infer<typeof savedProfileSchema>;
+const sameForwards = (left: VMConfig['forwards'], right: VMConfig['forwards']) =>
+  JSON.stringify(left) === JSON.stringify(right);
+const canonicalIp = (value: string) => (isIP(value) === 6 ? new URL(`http://[${value}]/`).hostname : value);
 export function networkEnvironment(value: NetworkProfile): Record<string, string> {
   const values: Record<string, string> = {};
   for (const [name, setting] of [
@@ -96,8 +136,52 @@ export class NetworkProfiles {
     this.machines.get(id);
     return join(vmDir(id), 'network.json');
   }
-  state(id: string) {
-    return readStore<NetworkState>(this.file(id), () => ({ config: networkSchema.parse({}), changes: [] }));
+  async state(id: string) {
+    const state = await readStore<NetworkState>(this.file(id), () => ({
+      config: networkSchema.parse({}),
+      changes: [],
+    }));
+    return { ...state, config: networkSchema.parse(state.config) };
+  }
+  async profiles() {
+    return z
+      .array(savedProfileSchema)
+      .max(40)
+      .parse(await readStore(join(DATA, 'network-profiles.json'), () => []));
+  }
+  async saveProfile(input: unknown) {
+    const value = savedProfileSchema
+      .omit({ id: true, updatedAt: true })
+      .extend({ id: z.uuid().optional() })
+      .parse(input);
+    return this.machines.locked('network-profiles', async () => {
+      const profiles = await this.profiles();
+      const existing = value.id ? profiles.find((item) => item.id === value.id) : undefined;
+      if (value.id && !existing) throw new AppError('网络档案不存在', 404);
+      if (!existing && profiles.length >= 40) throw new AppError('最多保存 40 个网络档案');
+      if (
+        profiles.some(
+          (item) => item.id !== existing?.id && item.name.toLowerCase() === value.name.toLowerCase(),
+        )
+      )
+        throw new AppError('网络档案名称已存在', 409);
+      const saved = { ...value, id: existing?.id || randomUUID(), updatedAt: new Date().toISOString() };
+      const next = [...profiles.filter((item) => item.id !== saved.id), saved];
+      await writeStore(join(DATA, 'network-profiles.json'), next);
+      return saved;
+    });
+  }
+  async removeProfile(id: string) {
+    z.uuid().parse(id);
+    return this.machines.locked('network-profiles', async () => {
+      const profiles = await this.profiles();
+      if (!profiles.some((item) => item.id === id)) throw new AppError('网络档案不存在', 404);
+      await writeStore(
+        join(DATA, 'network-profiles.json'),
+        profiles.filter((item) => item.id !== id),
+      );
+      return { removed: id };
+    });
   }
   async environment(id: string) {
     const state = await this.state(id);
@@ -113,15 +197,59 @@ export class NetworkProfiles {
     const config = networkSchema.parse(input),
       vm = this.machines.get(id);
     const previous = await this.state(id);
-    if (previous.appliedAt || previous.changes.length)
+    if (previous.appliedAt || previous.changes.length || previous.forwards || previous.dnsBackend)
       throw new AppError('请先恢复原配置，再应用新的网络设置');
     const changes: NetworkChange[] = [];
+    let dnsBackend: 'resolved' | undefined;
+    const forwards =
+      config.forwards && !sameForwards(vm.forwards, config.forwards)
+        ? { before: structuredClone(vm.forwards), after: config.forwards }
+        : undefined;
     const add = async (path: string, after: (before: string | null) => string) => {
       signal?.throwIfAborted();
       const before = await this.read(id, path),
         next = after(before);
       if (next !== before) changes.push({ path, before, after: next });
     };
+    if (config.dnsServers.length) {
+      if (!vm.distro || vm.distro === 'alpine') {
+        const interfaces = await this.read(id, '/etc/network/interfaces');
+        if (
+          !interfaces ||
+          !/^\s*iface\s+eth0\s+inet\s+static\s*$/m.test(interfaces) ||
+          /\binet6?\s+(?:dhcp|auto)\b/.test(interfaces)
+        )
+          throw new AppError('自定义 DNS 需要 Alpine 静态网络，当前解析器由其他网络管理器维护');
+        await add(
+          '/etc/resolv.conf',
+          (before) =>
+            (before || '')
+              .split('\n')
+              .filter((line) => !/^\s*nameserver\s/.test(line) && line !== '# Managed by Sakura')
+              .join('\n')
+              .trimEnd() +
+            '\n# Managed by Sakura\n' +
+            config.dnsServers.map((address) => `nameserver ${address}`).join('\n') +
+            '\n',
+        );
+      } else {
+        const resolver = await this.machines.exec(
+          id,
+          'systemctl is-active --quiet systemd-resolved && readlink -f /etc/resolv.conf',
+          10000,
+          signal,
+        );
+        if (resolver.code !== 0 || resolver.stdout.trim() !== '/run/systemd/resolve/stub-resolv.conf')
+          throw new AppError(
+            '此实例的 DNS 后端不受支持：需要 systemd-resolved 的本地 stub 解析器；可清空 DNS 地址沿用系统设置',
+          );
+        dnsBackend = 'resolved';
+        await add(
+          '/etc/systemd/resolved.conf.d/90-sakura.conf',
+          () => `[Resolve]\nDNS=\nDNS=${config.dnsServers.join(' ')}\nDomains=\nDomains=~.\n`,
+        );
+      }
+    }
     await add(
       '/etc/profile.d/sakura-network.sh',
       () => '# Managed by Sakura\n' + envPrefix(networkEnvironment(config)) + '\n',
@@ -157,16 +285,44 @@ export class NetworkProfiles {
         }
       }
     }
-    const token = createHash('sha256').update(JSON.stringify({ id, config, changes })).digest('hex');
-    return { config, changes, token };
+    const token = createHash('sha256')
+      .update(JSON.stringify({ id, config, changes, forwards, dnsBackend }))
+      .digest('hex');
+    return { config, changes, forwards, dnsBackend, token };
+  }
+  private async reloadDns(id: string, expected?: string[]) {
+    const result = await this.machines.exec(
+      id,
+      'set -eu\nsystemctl restart systemd-resolved\nLC_ALL=C resolvectl dns',
+      30000,
+    );
+    if (result.code !== 0) throw new AppError('重新加载 DNS 失败，请恢复原配置后检查解析器');
+    if (expected) {
+      const global =
+        result.stdout
+          .split('\n')
+          .find((line) => /^Global:/.test(line))
+          ?.slice(7)
+          .trim()
+          .split(/\s+/) || [];
+      if (!expected.every((address) => global.map(canonicalIp).includes(canonicalIp(address))))
+        throw new AppError('DNS 服务没有使用所选地址，请恢复原配置后检查解析器');
+    }
   }
   async apply(id: string, input: unknown, token: string) {
     return this.machines.locked(`network:${id}`, async () => {
       const preview = await this.preview(id, input);
       if (preview.token !== token) throw new AppError('配置已变化，请重新预览', 409);
       // Persist the complete rollback plan before the first guest write.
-      const state: NetworkState = { config: preview.config, changes: preview.changes };
+      const state: NetworkState = {
+        config: preview.config,
+        changes: preview.changes,
+        forwards: preview.forwards,
+        dnsBackend: preview.dnsBackend,
+      };
       await writeStore(this.file(id), state);
+      if (preview.forwards)
+        await this.machines.setForwards(id, preview.forwards.after, preview.forwards.before);
       for (const change of preview.changes) {
         await this.machines.exec(id, `mkdir -p ${quote(posix.dirname(change.path))}`);
         await this.machines.writeGuestFile(
@@ -177,6 +333,7 @@ export class NetworkProfiles {
           change.before === null ? undefined : textVersion(change.before),
         );
       }
+      if (preview.dnsBackend) await this.reloadDns(id, preview.config.dnsServers);
       state.appliedAt = new Date().toISOString();
       await writeStore(this.file(id), state);
       return state;
@@ -190,6 +347,16 @@ export class NetworkProfiles {
         const current = await this.read(id, change.path);
         if (current !== change.after && current !== change.before)
           throw new AppError(`配置被外部修改，恢复前请处理：${change.path}`, 409);
+      }
+      if (state.forwards) {
+        const current = this.machines.get(id).forwards;
+        if (!sameForwards(current, state.forwards.before)) {
+          if (!sameForwards(current, state.forwards.after))
+            throw new AppError('端口映射被外部修改，恢复前请处理', 409);
+          await this.machines.setForwards(id, state.forwards.before, state.forwards.after);
+        }
+        delete state.forwards;
+        await writeStore(this.file(id), state);
       }
       const files = new Files(this.machines);
       while (state.changes.length) {
@@ -207,6 +374,10 @@ export class NetworkProfiles {
         }
         state.changes.pop();
         await writeStore(this.file(id), state);
+      }
+      if (state.dnsBackend) {
+        await this.reloadDns(id);
+        delete state.dnsBackend;
       }
       delete state.appliedAt;
       await writeStore(this.file(id), state);

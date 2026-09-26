@@ -928,8 +928,92 @@ CAPABILITY_OPERATIONS = {
     "patch-bundle", "environment-recreate", "format-lint",
     "build-cache", "branch-preview", "onboarding-checklist", "review-threads",
     "workspace-search", "git-worktrees",
-    "dependency-report", "runtime-matrix", "reproducible-env",
+    "dependency-report", "runtime-matrix", "reproducible-env", "network-diagnostics",
 }
+
+# Each probe runs in a killable process: the OS resolver and TLS/header reads can
+# otherwise exceed a socket timeout. No shell, credentials, body or redirects.
+NETWORK_PROBE = r'''
+import http.client, json, socket, ssl, sys, time
+p = json.loads(sys.argv[1])
+start = time.monotonic()
+try:
+    if p['probe'] == 'dns':
+        addresses = list(dict.fromkeys(item[4][0] for item in socket.getaddrinfo(p['target'], p['port'], type=socket.SOCK_STREAM)))
+        if not addresses:
+            raise OSError('解析器未返回地址')
+        result = dict(addresses=addresses[:32])
+    elif p['probe'] == 'tcp':
+        with socket.create_connection((p['target'], p['port']), timeout=p['timeout']) as connection:
+            result = dict(peer=connection.getpeername()[0], port=p['port'])
+    else:
+        connection = http.client.HTTPSConnection(p['target'], p['port'], timeout=p['timeout'], context=ssl.create_default_context())
+        try:
+            connection.request('HEAD', '/', headers={'User-Agent': 'Sakura-Network-Diagnostics', 'Connection': 'close'})
+            response = connection.getresponse()
+            result = dict(status=response.status, certificateVerified=True)
+            if response.status >= 400:
+                result.update(code=1, error='HTTPS 返回 HTTP ' + str(response.status))
+        finally:
+            connection.close()
+    result.setdefault('code', 0)
+except Exception as error:
+    result = dict(code=1, error=str(error)[:1000])
+result['durationMs'] = round((time.monotonic() - start) * 1000)
+print(json.dumps(result))
+'''
+
+
+def network_diagnostics(root, p):
+    target, port = p.get('target', 'example.com'), p.get('port', 443)
+    probes, timeout = p.get('probes', ['dns', 'tcp', 'https', 'route']), p.get('timeout', 10)
+    if (not isinstance(target, str) or not re.fullmatch(r'[A-Za-z0-9:][A-Za-z0-9.:-]{0,252}', target)
+            or not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535
+            or not isinstance(timeout, int) or isinstance(timeout, bool) or not 1 <= timeout <= 30
+            or not isinstance(probes, list) or not 1 <= len(probes) <= 4
+            or any(probe not in ['dns', 'tcp', 'https', 'route'] for probe in probes) or len(set(probes)) != len(probes)):
+        raise Failure('网络诊断参数无效')
+    results = []
+
+    def probe(kind):
+        command = run([sys.executable, '-c', NETWORK_PROBE, json.dumps(dict(
+            probe=kind, target=target, port=port, timeout=timeout))], root, timeout=timeout, check=False)
+        if command['code']:
+            raise Failure(command['stderr'].strip() or '检查进程未成功完成')
+        return json.loads(command['stdout'])
+
+    dns = None
+    for kind in probes:
+        started = time.monotonic()
+        try:
+            if kind != 'route':
+                result = probe(kind)
+                if kind == 'dns':
+                    dns = result
+            else:
+                if dns is None:
+                    dns = probe('dns')
+                if dns['code']:
+                    raise Failure('路由检查无法解析目标：' + dns.get('error', 'DNS 失败'))
+                routes = []
+                deadline = started + timeout
+                for address in dns['addresses'][:8]:
+                    version = ipaddress.ip_address(address).version
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise Failure('路由检查超时')
+                    command = run(['ip', '-' + str(version), 'route', 'get', address], root,
+                                  timeout=remaining, check=False)
+                    routes.append(dict(address=address, code=command['code'], output=(command['stdout'] + command['stderr']).strip()[:2000]))
+                # An unreachable IPv6 route does not invalidate a usable IPv4 route.
+                result = dict(code=0 if any(route['code'] == 0 for route in routes) else 1, routes=routes)
+                if result['code']:
+                    result['error'] = '所有已解析地址均无可用路由'
+        except Exception as error:
+            result = dict(code=1, error=str(error)[:1000])
+        results.append(dict(probe=kind, **result, elapsedMs=round((time.monotonic() - started) * 1000)))
+    return dict(code=0 if all(item['code'] == 0 for item in results) else 1,
+                target=target, port=port, results=results)
 
 RUNTIME_TOOLS = {
     'go': ['go', 'version'], 'java': ['java', '-version'], 'dotnet': ['dotnet', '--list-sdks'], 'php': ['php', '--version'],
@@ -1243,6 +1327,8 @@ def directory_revision(root, p):
 
 
 def capability_execute(root, operation, p):
+    if operation == 'network-diagnostics':
+        return network_diagnostics(root, p)
     if operation == 'dependency-report':
         return dependency_report(root, p)
     if operation == 'runtime-matrix':

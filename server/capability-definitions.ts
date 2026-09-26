@@ -37,6 +37,29 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'network-diagnostics': action(
+    'DNS、TCP、HTTPS 与路由诊断',
+    'suite',
+    {
+      target: z
+        .string()
+        .trim()
+        .min(1)
+        .max(253)
+        .regex(/^[A-Za-z0-9:][A-Za-z0-9.:-]*$/)
+        .default('example.com'),
+      port: z.number().int().min(1).max(65535).default(443),
+      probes: z
+        .array(z.enum(['dns', 'tcp', 'https', 'route']))
+        .min(1)
+        .max(4)
+        .refine((values) => new Set(values).size === values.length, '检查项不能重复')
+        .default(['dns', 'tcp', 'https', 'route']),
+      timeout: z.number().int().min(1).max(30).default(10),
+    },
+    { target: 'example.com', port: 443, probes: ['dns', 'tcp', 'https', 'route'], timeout: 10 },
+    '在客户机逐项执行 DNS 解析、TCP 连接、验证证书的 HTTPS HEAD 和实际路由查询。每项独立限时，任一失败则整体失败；返回地址、状态码、耗时及原因。不跟随重定向，不读取响应正文。',
+  ),
   'availability-report': action(
     '实例可用性报告',
     'extended',

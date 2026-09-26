@@ -307,6 +307,97 @@ const vm = {
   poweredOn: false,
 };
 
+test('network profiles preserve DNS and NAT form edits, then preview, apply and restore', async ({
+  page,
+}) => {
+  await app(page, ['network'], true);
+  const config = {
+    dnsServers: [],
+    httpProxy: '',
+    httpsProxy: '',
+    noProxy: 'localhost,127.0.0.1,::1',
+    npmRegistry: '',
+    pipIndex: '',
+    apkMirror: '',
+    aptMirror: '',
+    aptSecurityMirror: '',
+  };
+  let profiles: any[] = [],
+    state: any = { config, changes: [], job: null },
+    submitted: any;
+  let forwards: any[] = [];
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, forwards, status: 'running', poweredOn: true }] }),
+  );
+  await page.route('**/api/network-profiles*', (route) => {
+    const method = route.request().method();
+    if (method === 'POST') {
+      const value = route.request().postDataJSON();
+      profiles = [{ ...value, id: vm.id, updatedAt: new Date().toISOString() }];
+      return route.fulfill({ json: profiles[0] });
+    }
+    if (method === 'DELETE') profiles = [];
+    return route.fulfill({ json: profiles });
+  });
+  await page.route('**/api/vms/*/network*', (route) => {
+    if (route.request().method() === 'POST') {
+      const value = route.request().postDataJSON();
+      submitted = value;
+      const change = { path: '/etc/resolv.conf', before: 'nameserver 10.0.2.3', after: 'nameserver 1.1.1.1' };
+      if (value.action === 'preview')
+        return route.fulfill({
+          json: {
+            config: value.config,
+            changes: [change],
+            forwards: { before: [], after: value.config.forwards },
+            token: 'reviewed',
+          },
+        });
+      if (value.action === 'apply') {
+        expect(value.token).toBe('reviewed');
+        forwards = value.config.forwards;
+        state = {
+          config: value.config,
+          changes: [change],
+          forwards: { before: [], after: forwards },
+          appliedAt: new Date().toISOString(),
+        };
+      }
+      if (value.action === 'restore') {
+        forwards = [];
+        state = { config, changes: [], job: null };
+      }
+    }
+    return route.fulfill({ json: state });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '开发', exact: true }).click();
+  await page.getByLabel('DNS 地址（逗号分隔，留空沿用系统设置）').fill('1.1.1.1, 8.8.8.8');
+  await page.getByRole('button', { name: '添加映射到档案' }).click();
+  await page.getByLabel('Windows 端口', { exact: true }).fill('8090');
+  await page.getByLabel('Linux 端口', { exact: true }).fill('3000');
+  await page.getByLabel('档案名称', { exact: true }).fill('开发网络');
+  await page.getByRole('button', { name: '保存档案', exact: true }).click();
+  await expect.poll(() => profiles[0]?.config.dnsServers).toEqual(['1.1.1.1', '8.8.8.8']);
+  await expect(page.getByLabel('加载已保存的档案')).toHaveValue(vm.id);
+  await page.getByRole('button', { name: '预览修改' }).click();
+  await expect(page.getByText('即将修改 1 个文件')).toBeVisible();
+  await page.getByRole('button', { name: '应用以上修改' }).click();
+  await expect.poll(() => submitted?.action).toBe('apply');
+  await expect(page.getByText('配置已应用', { exact: true })).toBeVisible();
+  expect(forwards[0]).toMatchObject({ host: 8090, guest: 3000 });
+  await page.reload();
+  await page.getByRole('tab', { name: '开发', exact: true }).click();
+  await expect(page.getByLabel('DNS 地址（逗号分隔，留空沿用系统设置）')).toHaveValue('1.1.1.1, 8.8.8.8');
+  await page.getByRole('button', { name: '恢复原配置' }).click();
+  await expect(page.getByText('配置已应用', { exact: true })).not.toBeVisible();
+  expect(forwards).toEqual([]);
+  await page.getByLabel('加载已保存的档案').selectOption(vm.id);
+  await expect(page.getByLabel('Windows 端口', { exact: true })).toHaveValue('8090');
+  await page.getByRole('button', { name: '删除档案', exact: true }).click();
+  await expect.poll(() => profiles.length).toBe(0);
+});
+
 test('backup policies enable block deduplication and show how each backup is stored', async ({ page }) => {
   await app(page, ['snapshots', 'backups', 'transfers', 'secrets'], true);
   let policy: any = { enabled: false, intervalHours: 24, keep: 7, maxGiB: 32 };
