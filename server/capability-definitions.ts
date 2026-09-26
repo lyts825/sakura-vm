@@ -3,6 +3,7 @@ import type { CapabilityActionView } from '../shared/capability-actions.ts';
 import { timeWindowSchema } from './automation-policy.ts';
 import { cpuTopologySchema, deviceProfileSchema } from '../shared/hardware.ts';
 import { reservationSchema } from './resource-policies.ts';
+import { diskHealthThresholds } from './host-disk-health.ts';
 
 export const relativePath = z
   .string()
@@ -37,6 +38,14 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'host-disk-health': action(
+    '主机数据磁盘健康报告',
+    'next',
+    diskHealthThresholds.shape,
+    { minimumFreeGiB: 10, minimumFreePercent: 5, maximumTemperatureC: 70, maximumWearPercent: 90 },
+    '读取数据目录所在卷及磁盘的 Windows 健康状态、容量、温度、寿命消耗和读写错误。设备或权限不提供计数器时明确显示未知；只读检查，可导出报告。',
+    false,
+  ),
   'network-diagnostics': action(
     'DNS、TCP、HTTPS 与路由诊断',
     'suite',

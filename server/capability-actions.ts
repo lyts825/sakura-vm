@@ -15,6 +15,7 @@ import { resourceCapabilities, resourceAction } from './resource-actions.ts';
 import { hostAudit, traceExport } from './audit.ts';
 import { backupBlocks } from './backup-blocks.ts';
 import { readAvailabilityReport } from './availability.ts';
+import { hostDiskHealth } from './host-disk-health.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -78,6 +79,20 @@ export class CapabilityActions {
     this.machines.requireUnlocked(id);
     const parameters = capabilityParameters(featureId, input);
     signal.throwIfAborted();
+    if (featureId === 'host-disk-health') {
+      const report = await hostDiskHealth(parameters, signal);
+      return {
+        code: 0,
+        ready: true,
+        executed: true,
+        ...report,
+        download: {
+          filename: 'sakura-disk-health.json',
+          mime: 'application/json',
+          content: JSON.stringify(report, null, 2),
+        },
+      };
+    }
     if (featureId === 'availability-report') {
       const p = capabilityDefinitions[featureId].schema.parse(parameters);
       const report = await readAvailabilityReport(id, p.hours);

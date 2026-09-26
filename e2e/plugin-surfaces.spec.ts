@@ -65,6 +65,93 @@ test('schema forms submit typed parameters and download a persisted report indep
   expect((await downloaded).suggestedFilename()).toBe('report.json');
 });
 
+test('host disk health remains usable while the guest is stopped and keeps unknown counters distinct from zero', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'platform'], true);
+  let jobs: any[] = [];
+  await page.route('**/api/vms/*/next-features*', (route) => {
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON().featureId).toBe('host-disk-health');
+      jobs = [
+        {
+          id: 'disk-health',
+          action: 'next:host-disk-health',
+          status: 'done',
+          log: '',
+          startedAt: new Date().toISOString(),
+          result: { bytes: 100, sha256: 'a'.repeat(64) },
+        },
+      ];
+      return route.fulfill({ json: jobs[0] });
+    }
+    return route.fulfill({
+      json: {
+        projectId: 'default',
+        settings: {},
+        records: {},
+        executions: [],
+        jobs,
+        capabilities: capabilityViews('next'),
+        features: [],
+      },
+    });
+  });
+  await page.route('**/api/jobs/disk-health/result*', (route) =>
+    route.fulfill({
+      json: {
+        jobId: 'disk-health',
+        result: {
+          provider: 'Windows Storage',
+          status: 'unknown',
+          directory: 'D:\\Sakura\\.data',
+          volume: { health: 'Healthy' },
+          capacity: { availableBytes: 50 * 1024 ** 3, freePercent: 50 },
+          findings: [{ severity: 'unknown', disk: 1, message: '可靠性计数器不可用：设备未提供' }],
+          disks: [
+            {
+              number: 1,
+              name: 'disk one',
+              bus: 'NVMe',
+              health: 'Healthy',
+              operational: ['Online'],
+              counters: null,
+            },
+            {
+              number: 2,
+              name: 'disk two',
+              bus: 'SATA',
+              health: 'Healthy',
+              operational: ['Online'],
+              counters: {
+                temperatureC: 35,
+                wearPercent: 0,
+                powerOnHours: 1,
+                readErrorsUncorrected: 0,
+                writeErrorsUncorrected: 0,
+              },
+            },
+          ],
+          download: {
+            filename: 'sakura-disk-health.json',
+            mime: 'application/json',
+            content: '{"status":"unknown"}',
+          },
+        },
+      },
+    }),
+  );
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('next 功能操作').selectOption('host-disk-health');
+  await page.getByRole('button', { name: '提交主机数据磁盘健康报告' }).click();
+  await expect(page.getByRole('heading', { name: '健康数据不完整' })).toBeVisible();
+  await expect(page.getByText('不可纠正读错误：未知', { exact: true })).toBeVisible();
+  await expect(page.getByText('不可纠正读错误：0', { exact: true })).toBeVisible();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下载 sakura-disk-health.json' }).click();
+  expect((await download).suggestedFilename()).toBe('sakura-disk-health.json');
+});
+
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>

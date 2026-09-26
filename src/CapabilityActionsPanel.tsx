@@ -4,6 +4,7 @@ import type { JobView } from '../server/jobs';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-shared';
 import { saveBlob } from './export-file';
 import { SchemaFields } from './SchemaFields';
+import { HostDiskHealthReport } from './HostDiskHealthReport';
 
 type Props = {
   request: Request;
@@ -211,6 +212,9 @@ export function CapabilityActionsPanel({
                 90 秒的采集空白计为未知。
               </p>
             </div>
+          )}
+          {selected === 'host-disk-health' && result?.provider === 'Windows Storage' && (
+            <HostDiskHealthReport report={result} />
           )}
           {result?.download && (
             <button

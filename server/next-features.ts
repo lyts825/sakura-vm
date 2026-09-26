@@ -218,7 +218,7 @@ export const nextFeatureCatalog = [
     '存储与灾备',
     'P0',
     '检查数据目录所在磁盘的可访问性和基本容量信息。',
-    'experimental',
+    'available',
   ],
   ['disaster-recovery-drill', '灾备演练', '存储与灾备', 'P1', '保存可审计的灾备演练计划和结果。', 'planned'],
   [
@@ -762,11 +762,7 @@ export class NextFeatures {
         reason: '这里只检查工具或环境；对应功能尚无完整执行器。',
       };
     }
-    if (
-      ['hardware-compatibility', 'multi-host-inventory', 'host-disk-health', 'storage-pools'].includes(
-        spec.id,
-      )
-    )
+    if (['hardware-compatibility', 'multi-host-inventory', 'storage-pools'].includes(spec.id))
       return {
         ready: false,
         executed: false,
