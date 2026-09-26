@@ -4,12 +4,113 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { SessionLock } from '../server/session-lock';
 import { Webhooks } from '../server/webhooks';
+import { LocalAssistant, assistantRequest } from '../server/local-assistant';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
 import { graphqlInfo, GraphApi, querySnapshot } from '../server/graphql-api.ts';
 import type { Machines } from '../server/machines.ts';
+
+test('local assistant requires a reviewed redacted preview, renders model text safely and exports an unexecuted command plan', async ({
+  page,
+}) => {
+  await app(page);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-assistant-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const chats: any[] = [];
+  const assistant = new LocalAssistant(join(directory, 'assistant.json'), async (url, init) => {
+    if (String(url).endsWith('/api/tags'))
+      return Response.json({
+        models: [{ name: 'fixture:local', size: 1048576, details: { format: 'gguf' } }],
+      });
+    if (String(url).endsWith('/api/show'))
+      return Response.json({
+        details: { format: 'gguf' },
+        model_info: { 'general.architecture': 'fixture' },
+      });
+    const body = JSON.parse(String(init?.body));
+    chats.push(body);
+    const content = body.format
+      ? JSON.stringify({
+          goal: '查看项目状态',
+          assumptions: [],
+          steps: [
+            { purpose: '读取 Git 状态', command: 'git status --short', risk: 'read', verify: '检查退出状态' },
+          ],
+        })
+      : '<script>window.MODEL_EXECUTED = true</script>\nUse an assertion.';
+    return Response.json({ model: 'fixture:local', done: true, message: { role: 'assistant', content } });
+  });
+  await assistant.init();
+  await page.route('**/api/assistant', async (route) => {
+    try {
+      if (route.request().method() === 'GET') return route.fulfill({ json: assistant.view() });
+      const input = assistantRequest.parse(route.request().postDataJSON());
+      const value =
+        input.action === 'configure'
+          ? await assistant.configure(input.version, input.settings)
+          : input.action === 'models'
+            ? await assistant.models()
+            : input.action === 'preview'
+              ? assistant.preview(input.input)
+              : await assistant.generate(input.previewId);
+      return route.fulfill({ json: value });
+    } catch (error: any) {
+      return route.fulfill({ status: error.status || 400, json: { error: error.message } });
+    }
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '打开本地助手', exact: true }).click();
+    const panel = page.getByRole('region', { name: '本地 AI 编程助手' });
+    await panel.getByLabel('启用本地模型连接').check();
+    await panel.getByLabel('模型名称', { exact: true }).fill('fixture:local');
+    await panel.getByRole('button', { name: '保存模型设置' }).click();
+    await panel.getByRole('button', { name: '读取本地模型' }).click();
+    await expect(panel.getByRole('status')).toContainText('1 个本地模型');
+    await panel.getByLabel('助手任务').selectOption('tests');
+    await panel.getByLabel('问题或目标').fill('Create a test');
+    await panel
+      .getByLabel('代码或上下文（可选）')
+      .fill('const total = 3;\npassword = PRIVATE_BROWSER_SECRET');
+    await panel.getByRole('button', { name: '预览发送内容' }).click();
+    await expect(panel.getByLabel('脱敏发送内容')).toContainText('[REDACTED]');
+    await expect(panel.getByLabel('脱敏发送内容')).not.toContainText('PRIVATE_BROWSER_SECRET');
+    expect(chats).toHaveLength(0);
+    await panel.getByLabel('问题或目标').fill('Create two tests');
+    await expect(panel.getByRole('button', { name: '发送到本地模型' })).toHaveCount(0);
+    await panel.getByRole('button', { name: '预览发送内容' }).click();
+    await panel.getByRole('button', { name: '发送到本地模型' }).click();
+    await expect(panel.getByLabel('模型返回内容')).toContainText('<script>');
+    expect(await page.evaluate(() => (window as any).MODEL_EXECUTED)).toBeUndefined();
+    expect(JSON.stringify(chats)).not.toContain('PRIVATE_BROWSER_SECRET');
+    await panel.getByLabel('助手任务').selectOption('plan');
+    await panel.getByRole('button', { name: '预览发送内容' }).click();
+    await panel.getByRole('button', { name: '发送到本地模型' }).click();
+    await expect(panel.getByRole('heading', { name: '命令计划 · 等待人工审阅' })).toBeVisible();
+    await expect(panel.locator('.assistant-result')).toContainText('git status --short');
+    const download = page.waitForEvent('download');
+    await panel.getByRole('button', { name: '下载本次结果' }).click();
+    const output = JSON.parse(await readFile((await (await download).path())!, 'utf8'));
+    expect(output.executed).toBe(false);
+    expect(output.requiresReview).toBe(true);
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain(
+      'PRIVATE_BROWSER_SECRET',
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.reload();
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '打开本地助手', exact: true }).click();
+    await expect(panel.getByLabel('代码或上下文（可选）')).toHaveValue('');
+    await expect(panel.locator('.assistant-result')).toHaveCount(0);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await assistant.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('webhook settings save real routes, show one-time secrets, deliver tests, preserve edits and cancel on disable', async ({
   page,

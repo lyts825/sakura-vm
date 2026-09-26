@@ -127,6 +127,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'alerts',
   'network-diagnostics',
   'network-profiles',
+  'ai-assistant',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'golden-images',
@@ -425,7 +426,11 @@ export class FeatureSuite {
       options: input.options || {},
       checkedAt: new Date().toISOString(),
     };
-    if (featureId === 'disk-maintenance') {
+    if (featureId === 'ai-assistant') {
+      result.ready = true;
+      result.reason =
+        '系统设置 → 本地 AI 助手，连接本机 Ollama，审阅脱敏上下文后获取解释、测试或修复建议。需要已下载的本地模型。';
+    } else if (featureId === 'disk-maintenance') {
       result.ready = true;
       result.reason = '已接入工作空间 → 维护；启用磁盘与诊断插件后可计划 TRIM、离线压缩和稀疏回收。';
     } else if (featureId === 'network-profiles') {

@@ -417,6 +417,12 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'local-ai-assistant' || featureId === 'natural-command-planner') {
+        setNextResult(
+          '打开系统设置 → 本地 AI 助手，连接已有的本机模型；预览脱敏上下文后生成编程建议或结构化命令计划。',
+        );
+        return;
+      }
       if (featureId === 'webhook-events' || featureId === 'alert-routing') {
         setNextResult(
           '打开系统设置 → 管理事件通知，按实例、项目、标签和类型配置接收端；支持签名投递、测试、失败重试和记录查看。',

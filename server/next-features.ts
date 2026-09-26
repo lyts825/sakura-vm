@@ -425,16 +425,16 @@ export const nextFeatureCatalog = [
     '本地 AI 助手',
     '开发与 AI',
     'P2',
-    '保存本地模型端点和上下文策略，不执行隐式命令。',
-    'planned',
+    '连接本机 Ollama 的本地模型，审阅脱敏文本后生成编程建议，可取消并导出结果。',
+    'available',
   ],
   [
     'natural-command-planner',
     '自然语言命令规划',
     '开发与 AI',
     'P0',
-    '把自然语言请求保存为可审阅的命令预览。',
-    'planned',
+    '使用本机模型生成含命令、用途、影响与验证方式的结构化计划，供人工审阅和导出。',
+    'available',
   ],
   ['shared-terminal', '共享终端', '协作与团队', 'P0', '保存共享终端会话和成员访问状态。', 'planned'],
   ['shared-desktop-view', '共享桌面视图', '协作与团队', 'P1', '保存只读桌面查看会话。', 'planned'],
@@ -720,6 +720,10 @@ export class NextFeatures {
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
+    if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner') return {
+      ready: true, executed: false, adapter,
+      message: '系统设置 → 本地 AI 助手，保存本机模型连接；审阅脱敏发送内容后生成建议或命令计划。需要运行中的 Ollama 和已下载的本地模型。',
+    };
     if (spec.id === 'webhook-events' || spec.id === 'alert-routing') return {
       ready: true, executed: false, adapter,
       message: '系统设置 → 管理事件通知，配置接收端和标签条件，可测试签名投递、查看结果、重试或取消。',

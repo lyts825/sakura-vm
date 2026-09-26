@@ -25,6 +25,7 @@ import { LogRetention, logRetentionRequest } from './log-retention.ts';
 import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from './graphql-api.ts';
 import { SessionLock } from './session-lock.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
+import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -51,6 +52,8 @@ async function main() {
       work,
     );
   const features = await Features.create(machines, selectedPlugins);
+  const assistant = new LocalAssistant();
+  await assistant.init();
   const webhooks = new Webhooks(
     async () =>
       collectWebhookEvents(
@@ -84,6 +87,7 @@ async function main() {
   sessionChanged = (locked, transitioned) => {
     if (transitioned) token = randomBytes(32).toString('hex');
     if (locked) {
+      assistant.revoke();
       for (const client of ws.clients) client.terminate();
       for (const response of protectedResponses) response.destroy();
     }
@@ -225,6 +229,39 @@ async function main() {
       if (req.method === 'GET') return send(res, webhooks.view());
       if (req.method === 'POST') return send(res, await webhooks.configure(await authorizedBody(req, 32768)));
       throw new AppError('不支持此方法', 405);
+    }
+    if (url.pathname === '/api/assistant') {
+      if (req.method === 'GET') return send(res, assistant.view());
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      const abort = new AbortController();
+      const cancel = () => {
+        if (!res.writableFinished) abort.abort();
+      };
+      req.once('aborted', cancel);
+      res.once('close', cancel);
+      if (req.aborted || res.destroyed) cancel();
+      try {
+        const input = assistantRequest.parse(await authorizedBody(req, 128 * 1024, abort.signal));
+        if (input.action === 'configure') {
+          features.mutations++;
+          try {
+            if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+            return send(res, await assistant.configure(input.version, input.settings));
+          } finally {
+            features.mutations--;
+          }
+        }
+        if (input.action === 'preview') return send(res, assistant.preview(input.input));
+        return send(
+          res,
+          input.action === 'models'
+            ? await assistant.models(abort.signal)
+            : await assistant.generate(input.previewId, abort.signal),
+        );
+      } finally {
+        req.off('aborted', cancel);
+        res.off('close', cancel);
+      }
     }
     const route = url.pathname.split('/').filter(Boolean);
     if (route[1] === 'vms' && route[2] && route[3] === 'lockdown' && route.length === 4) {
@@ -569,6 +606,7 @@ async function main() {
     let failed = false;
     for (const dispose of [
       () => session.close(),
+      () => assistant.close(),
       () => webhooks.close(),
       () => retention.close(),
       () => graph.close(),

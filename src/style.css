@@ -3123,6 +3123,43 @@ label input {
   display: grid;
   gap: 8px;
 }
+.local-assistant {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.local-assistant fieldset {
+  border: 0;
+  min-width: 0;
+  padding: 0;
+  margin: 16px 0;
+}
+.local-assistant label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.local-assistant label.check {
+  display: flex;
+}
+.local-assistant input:not([type='checkbox']),
+.local-assistant textarea,
+.local-assistant select {
+  min-width: 0;
+  width: 100%;
+}
+.local-assistant textarea {
+  resize: vertical;
+}
+.local-assistant .button-row {
+  margin: 15px 0;
+}
+.assistant-preview,
+.assistant-result {
+  border-top: 1px solid var(--line);
+  margin-top: 18px;
+  padding-top: 16px;
+  overflow-wrap: anywhere;
+}
 .shortcut-field .checkbox-row {
   margin-top: 6px;
 }

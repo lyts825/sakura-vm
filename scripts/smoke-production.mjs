@@ -285,7 +285,15 @@ async function probe(selected, expected) {
     await delay(100);
     assert.equal((await sdk.call('core.session.lock', { body: {} })).locked, true);
     await Promise.all([disconnected, cutOff]);
-    for (const path of ['/bootstrap', '/vms', '/monitor', '/downloads/unknown', '/graphql-schema']) {
+    for (const path of [
+      '/bootstrap',
+      '/vms',
+      '/monitor',
+      '/downloads/unknown',
+      '/graphql-schema',
+      '/webhooks',
+      '/assistant',
+    ]) {
       const response = await fetch(origin + '/api' + path, {
         headers: { 'x-sakura-token': beforeLock.token },
       });
@@ -356,6 +364,8 @@ async function probe(selected, expected) {
     assert.ok(!(await readFile(join(data, 'session-lock.json'), 'utf8')).includes(password));
     assert.ok(!JSON.stringify(await sdk.call('core.audit')).includes(password));
     assert.equal((await fetch(origin + '/api/webhooks')).status, 401);
+    assert.equal((await fetch(origin + '/api/assistant')).status, 401);
+    assert.equal((await sdk.call('core.assistant.get')).settings.enabled, false);
     assert.deepEqual((await sdk.call('core.webhooks.get')).subscriptions, []);
     if (!expected.length) {
       const deliveries = [];
@@ -404,6 +414,70 @@ async function probe(selected, expected) {
         console.log('Production webhook worker delivers a signed event to an actual HTTP receiver.');
       } finally {
         await new Promise((done) => receiver.close(done));
+      }
+      const modelCalls = [];
+      const modelServer = createHttpServer(async (req, res) => {
+        let raw = '';
+        for await (const chunk of req) raw += chunk;
+        modelCalls.push({ path: req.url, body: raw ? JSON.parse(raw) : undefined });
+        const body =
+          req.url === '/api/show'
+            ? { details: { format: 'gguf' }, model_info: { 'general.architecture': 'fixture' } }
+            : req.url === '/api/tags'
+              ? { models: [{ name: 'fixture:local', size: 100, details: { format: 'gguf' } }] }
+              : {
+                  model: 'fixture:local',
+                  done: true,
+                  message: {
+                    role: 'assistant',
+                    content: 'Protocol fixture response, not a model inference.',
+                  },
+                };
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+      });
+      await new Promise((done) => modelServer.listen(0, '127.0.0.1', done));
+      try {
+        const settings = {
+          enabled: true,
+          endpoint: `http://127.0.0.1:${modelServer.address().port}`,
+          model: 'fixture:local',
+          timeoutSeconds: 10,
+          maxTokens: 1024,
+        };
+        await sdk.call('core.assistant.action', { body: { action: 'configure', version: 1, settings } });
+        assert.equal(
+          (await sdk.call('core.assistant.action', { body: { action: 'models' } })).models[0].name,
+          'fixture:local',
+        );
+        const preview = await sdk.call('core.assistant.action', {
+          body: {
+            action: 'preview',
+            input: {
+              mode: 'fix',
+              instruction: 'Suggest a correction',
+              context: 'password = PRIVATE_MODEL_CONTEXT',
+            },
+          },
+        });
+        assert.ok(!preview.content.includes('PRIVATE_MODEL_CONTEXT'));
+        assert.equal(modelCalls.length, 1);
+        const result = await sdk.call('core.assistant.action', {
+          body: { action: 'generate', previewId: preview.id },
+        });
+        assert.equal(result.model, 'fixture:local');
+        assert.ok(!JSON.stringify(modelCalls).includes('PRIVATE_MODEL_CONTEXT'));
+        assert.ok(!JSON.stringify(await sdk.call('core.audit')).includes('PRIVATE_MODEL_CONTEXT'));
+        const stored = await readFile(join(data, 'local-assistant.json'), 'utf8');
+        assert.ok(!stored.includes('PRIVATE_MODEL_CONTEXT'));
+        assert.ok(!stored.includes(result.content));
+        await sdk.call('core.assistant.action', {
+          body: { action: 'configure', version: 2, settings: { ...settings, enabled: false } },
+        });
+        console.log(
+          'Production local assistant validates the model protocol and sends only previewed, redacted context.',
+        );
+      } finally {
+        await new Promise((done) => modelServer.close(done));
       }
     }
     console.log(`Compiled server passed: ${expected.length} active plugins, static UI.`);

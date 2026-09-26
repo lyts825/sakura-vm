@@ -6,6 +6,7 @@ import { logRetentionRequest } from './log-retention.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
 import { webhookRequest } from './webhooks.ts';
+import { assistantRequest } from './local-assistant.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
 
 const response = (schema: Record<string, unknown> = {}, media = 'application/json') => ({
@@ -37,6 +38,20 @@ const core: {
   },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
+  {
+    id: 'assistant.get',
+    method: 'GET',
+    path: '/api/assistant',
+    title: '本地 AI 设置与请求状态',
+    inspect: true,
+  },
+  {
+    id: 'assistant.action',
+    method: 'POST',
+    path: '/api/assistant',
+    title: '模型设置、脱敏预览、编程建议或命令规划',
+    body: request(assistantRequest),
+  },
   {
     id: 'webhooks.get',
     method: 'GET',

@@ -108,6 +108,9 @@ const LogRetentionSettings = lazy(() =>
 const WebhookSettings = lazy(() =>
   import('./WebhookSettings').then((module) => ({ default: module.WebhookSettings })),
 );
+const LocalAssistant = lazy(() =>
+  import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
+);
 const AccessibilityAudit = lazy(() =>
   import('./AccessibilityAudit').then((module) => ({ default: module.AccessibilityAudit })),
 );
@@ -355,6 +358,7 @@ function App() {
   const [showRetention, setShowRetention] = useState(false);
   const [showSessionLock, setShowSessionLock] = useState(false);
   const [showWebhooks, setShowWebhooks] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
   const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
   const navigatePalette = async (target: PaletteTarget) => {
     setPalette(false);
@@ -1424,6 +1428,18 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <section className="system-card">
+                  <h3>本地 AI 助手与命令规划</h3>
+                  <p>使用本机模型解释代码、生成测试与修复建议，或预览命令计划。</p>
+                  <button className="secondary compact" onClick={() => setShowAssistant(!showAssistant)}>
+                    {showAssistant ? '收起本地助手' : '打开本地助手'}
+                  </button>
+                </section>
+                {showAssistant && (
+                  <Suspense fallback={<p>正在读取本地助手…</p>}>
+                    <LocalAssistant request={api} />
+                  </Suspense>
+                )}
                 <section className="system-card">
                   <h3>事件与告警通知</h3>
                   <p>将任务事件和按标签筛选的告警发送到已配置的 Webhook 接收端。</p>
