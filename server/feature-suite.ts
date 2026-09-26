@@ -17,6 +17,7 @@ import { requireSuccessfulResult } from './engineering-runner.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { inMaintenance } from './automation-policy.ts';
 import { resourcePolicy } from './resource-policies.ts';
+import { observeAvailability, type AvailabilitySpan } from './availability.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -204,6 +205,7 @@ type FeatureState = {
   events: AlertEvent[];
   lastAlerts: Record<string, Record<string, number>>;
   notifiedJobs?: Record<string, string[]>;
+  availability?: Record<string, AvailabilitySpan[]>;
   featureRuns: Record<
     string,
     Array<{ featureId: FeatureId; startedAt: string; finishedAt: string; result: Record<string, unknown> }>
@@ -474,7 +476,10 @@ export class FeatureSuite {
     return settings;
   }
   async sample(id: string) {
+    const boot = this.machines.live?.get(id)?.startedAt;
     const point = await this.workspaces.metrics(id);
+    if (boot !== this.machines.live?.get(id)?.startedAt)
+      throw new AppError('实例已重启，本次采样已失效', 409);
     const state = await this.state();
     const history = (state.history[id] ||= []);
     if (history.some((entry) => entry.sampledAt === point.sampledAt)) return point;
@@ -1019,12 +1024,21 @@ export class FeatureSuite {
         const point = state.history[vm.id]?.at(-1);
         const sampledAt = point ? Date.parse(point.sampledAt) : NaN;
         const previous = this.lastSampleAt.get(vm.id);
-        const fresh =
+        const probeHealthy =
           sampled &&
           Number.isFinite(sampledAt) &&
           sampledAt <= Date.now() &&
-          Date.now() - sampledAt < 120_000 &&
-          (previous === undefined || sampledAt > previous);
+          Date.now() - sampledAt < 120_000;
+        const fresh = probeHealthy && (previous === undefined || sampledAt > previous);
+        if (this.backgroundEnabled) {
+          state.availability ||= {};
+          const status = this.machines.state(vm.id);
+          observeAvailability(
+            (state.availability[vm.id] ||= []),
+            status === 'running' && !probeHealthy ? 'unreachable' : status,
+            Date.now(),
+          );
+        }
         if (
           !fresh ||
           !Number.isFinite(point?.cpuPercent) ||

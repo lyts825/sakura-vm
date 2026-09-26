@@ -130,7 +130,14 @@ export const extendedFeatureCatalog = [
   ['runbooks', '运维 Runbook', '运维', 'P1', '将诊断和修复步骤保存为可执行流程。', 'available'],
   ['maintenance-windows', '维护窗口', '运维', 'P1', '在指定时段暂停自动任务。', 'available'],
   ['multi-host-health', '多主机健康管理', '运维', 'P2', '集中查看多个宿主节点健康状态。', 'planned'],
-  ['availability-report', '可用性报告', '运维', 'P1', '生成实例运行时长和可用性报告。', 'experimental'],
+  [
+    'availability-report',
+    '可用性报告',
+    '运维',
+    'P1',
+    '基于持续采样生成运行、停止、探测失败及未知时段报告。',
+    'available',
+  ],
   ['explorer-integration', '资源管理器集成', '体验集成', 'P0', '从 Windows 资源管理器打开项目。', 'planned'],
   ['editor-profiles', '编辑器连接档案', '体验集成', 'P1', '生成 JetBrains 和 Neovim 连接配置。', 'available'],
   [
@@ -342,7 +349,6 @@ export class ExtendedFeatures {
     }
     const commands: Partial<Record<ExtendedFeatureId, string>> = {
       'guest-quota': 'command -v quota >/dev/null && quota -s',
-      'availability-report': 'cat /proc/uptime',
     };
     if (commands[spec.id]) {
       const result = await this.runGuest(id, commands[spec.id]!, signal).catch(() => null);

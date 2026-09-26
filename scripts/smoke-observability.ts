@@ -11,6 +11,7 @@ process.env.SAKURA_IMAGE_PATH = join(directory, 'images/alpine-3.23.qcow2');
 const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
 const { Features } = await import('../server/features.ts');
+const { readAvailabilityReport } = await import('../server/availability.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const plugins = ['automation', 'automation-scheduler', 'backups'];
@@ -30,11 +31,13 @@ try {
   });
   const first = await features.suite.sample(vm.id);
   assert.ok(first.networkReceivedBytes! > 0);
+  await features.suite.tick();
   await machines.writeGuestFile(vm.id, '/workspace/traffic.txt', 'a'.repeat(65536), false);
   await delay(3500);
   const second = await features.suite.sample(vm.id);
   assert.ok(second.networkReceiveBytesPerSecond! > 0, JSON.stringify(second));
   assert.ok(second.networkTransmitBytesPerSecond! > 0, JSON.stringify(second));
+  await features.suite.tick();
   console.log('Real Linux interface counters and traffic rates were persisted');
   await machines.stop(vm.id, false);
   await features.backups.run(vm.id);
@@ -69,6 +72,10 @@ try {
   assert.equal(restored.events.filter((item) => item.kind === 'backup').length, 1);
   assert.equal(restored.events.find((item) => item.id === event.id)!.acknowledged, true);
   assert.ok(restored.history.some((point) => point.networkReceiveBytesPerSecond! > 0));
+  const availability = await readAvailabilityReport(vm.id, 1);
+  assert.ok(availability.durationsSeconds.running > 0, JSON.stringify(availability));
+  assert.equal(availability.lastStatus, 'stopped');
+  console.log('Observed uptime and stopped state survived restart; unsampled time remains unknown');
   console.log(
     'Actual backup failure, notification acknowledgement and metric history survived controller restart',
   );

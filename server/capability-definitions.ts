@@ -37,6 +37,14 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'availability-report': action(
+    '实例可用性报告',
+    'extended',
+    { hours: z.number().min(1).max(720).default(24) },
+    { hours: 24 },
+    '基于自动化调度的持续采样，统计运行、停止、探测失败与未知时段。超过 90 秒的采集空白不算正常运行；显示观测覆盖率，可导出报告。需启用自动化调度来积累记录。',
+    false,
+  ),
   'global-dedup': action(
     '全局备份去重统计与清理',
     'next',

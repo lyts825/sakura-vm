@@ -14,6 +14,7 @@ import { maintenancePolicy, saveMaintenancePolicy, inMaintenance } from './autom
 import { resourceCapabilities, resourceAction } from './resource-actions.ts';
 import { hostAudit, traceExport } from './audit.ts';
 import { backupBlocks } from './backup-blocks.ts';
+import { readAvailabilityReport } from './availability.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -77,6 +78,21 @@ export class CapabilityActions {
     this.machines.requireUnlocked(id);
     const parameters = capabilityParameters(featureId, input);
     signal.throwIfAborted();
+    if (featureId === 'availability-report') {
+      const p = capabilityDefinitions[featureId].schema.parse(parameters);
+      const report = await readAvailabilityReport(id, p.hours);
+      return {
+        code: 0,
+        ready: true,
+        executed: true,
+        ...report,
+        download: {
+          filename: 'sakura-availability.json',
+          mime: 'application/json',
+          content: JSON.stringify(report, null, 2),
+        },
+      };
+    }
     if (featureId === 'global-dedup') {
       const p = capabilityDefinitions[featureId].schema.parse(parameters);
       return {

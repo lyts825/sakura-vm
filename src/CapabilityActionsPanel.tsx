@@ -196,6 +196,22 @@ export function CapabilityActionsPanel({
               导出完整结果
             </button>
           )}
+          {selected === 'availability-report' && result && typeof result.coveragePercent === 'number' && (
+            <div className="feature-card">
+              <p>
+                已观测时段可用率：
+                {result.availablePercent === null ? '暂无样本' : result.availablePercent.toFixed(2) + '%'}
+              </p>
+              <p>
+                观测覆盖率：{result.coveragePercent.toFixed(2)}% · 未知时长：
+                {Math.round(result.unknownSeconds)} 秒
+              </p>
+              <p className="subtle-note">
+                运行且 Linux 探测成功计为可用；停止、暂停和探测失败计为已观测的不可用。采样间隔约 30 秒，超过
+                90 秒的采集空白计为未知。
+              </p>
+            </div>
+          )}
           {result?.download && (
             <button
               className="secondary compact"

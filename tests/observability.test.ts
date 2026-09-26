@@ -9,6 +9,7 @@ process.env.SAKURA_DATA_DIR = root;
 const { parseMetrics, networkRates } = await import('../server/metrics.ts');
 const { FeatureSuite } = await import('../server/feature-suite.ts');
 const { saveMaintenancePolicy } = await import('../server/automation-policy.ts');
+const { CapabilityActions } = await import('../server/capability-actions.ts');
 after(async () => {
   assert.equal(dirname(root), resolve(tmpdir()));
   assert.ok(basename(root).startsWith('sakura-observability-'));
@@ -185,6 +186,50 @@ test('resource thresholds respect cooldown and disabled operational categories d
       events.map((entry) => entry.kind),
       ['cpu'],
     );
+  } finally {
+    await suite.close();
+  }
+});
+
+test('the scheduler records successful probes, failed probes and stopped time for an exportable availability report', async (t) => {
+  const f = fixture(),
+    suite = new FeatureSuite(f.machines, f.workspaces);
+  let now = Date.UTC(2026, 0, 1),
+    status = 'running',
+    failed = false;
+  t.mock.method(Date, 'now', () => now);
+  f.machines.state = () => status;
+  f.workspaces.metrics = async () => {
+    if (failed) throw new Error('SSH unavailable');
+    return { ...sample(), sampledAt: new Date(now).toISOString() };
+  };
+  suite.enableBackground();
+  try {
+    await suite.tick();
+    now += 30000;
+    await suite.tick();
+    now += 30000;
+    failed = true;
+    await suite.tick();
+    now += 30000;
+    await suite.tick();
+    now += 30000;
+    status = 'stopped';
+    await suite.tick();
+    now += 30000;
+    await suite.tick();
+    const result = (await new CapabilityActions(f.machines, f.workspaces).run(
+      f.id,
+      'availability-report',
+      { hours: 1 },
+      new AbortController().signal,
+    )) as any;
+    assert.equal(result.code, 0);
+    assert.equal(result.availablePercent, 40);
+    assert.equal(result.durationsSeconds.running, 60);
+    assert.equal(result.durationsSeconds.unreachable, 60);
+    assert.equal(result.durationsSeconds.stopped, 30);
+    assert.equal(JSON.parse(result.download.content).lastStatus, 'stopped');
   } finally {
     await suite.close();
   }
