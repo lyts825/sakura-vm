@@ -1,11 +1,96 @@
 import { expect, test, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
+import { SessionLock } from '../server/session-lock';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
 import { graphqlInfo, GraphApi, querySnapshot } from '../server/graphql-api.ts';
 import type { Machines } from '../server/machines.ts';
+
+test('session locking removes private UI, idle polling does not renew access, and passwords stay out of browser storage', async ({
+  page,
+}) => {
+  await app(page, [], true);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-lock-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  let now = Date.now(),
+    activities = 0;
+  const lock = new SessionLock(undefined, join(directory, 'session.json'), () => now);
+  await lock.init(false);
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    try {
+      if (path === '/api/session') return route.fulfill({ json: lock.view() });
+      if (path === '/api/session/unlock')
+        return route.fulfill({ json: await lock.unlock(route.request().postDataJSON()) });
+      lock.requireUnlocked();
+      if (path === '/api/session/settings')
+        return route.fulfill({
+          json:
+            route.request().method() === 'GET'
+              ? lock.view()
+              : await lock.configure(route.request().postDataJSON()),
+        });
+      if (path === '/api/session/lock') return route.fulfill({ json: lock.lock() });
+      if (path === '/api/session/activity') {
+        activities++;
+        return route.fulfill({ json: lock.activity() });
+      }
+      return route.fallback();
+    } catch (error: any) {
+      return route.fulfill({
+        status: error.status || 400,
+        json: { error: error.message, session: lock.view() },
+      });
+    }
+  });
+  const password = 'Browser test passphrase';
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理会话锁定', exact: true }).click();
+    const settings = page.getByRole('region', { name: '会话自动锁定设置' });
+    await settings.getByLabel('启用空闲自动锁定').check();
+    await settings.getByLabel('空闲分钟数').fill('1');
+    await settings.getByLabel('设置解锁密码', { exact: true }).fill(password);
+    await settings.getByLabel('确认新解锁密码').fill(password);
+    await settings.getByRole('button', { name: '保存锁定策略' }).click();
+    await expect(settings.getByText('会话锁定策略已保存')).toBeVisible();
+    await expect(settings.getByLabel('当前解锁密码')).toHaveValue('');
+    await page.mouse.move(20, 20);
+    await expect.poll(() => activities).toBeGreaterThan(0);
+    const expiry = lock.view().expiresAt;
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' })));
+    now += 61000;
+    await expect(page.getByRole('heading', { name: 'Sakura 已锁定' })).toBeVisible();
+    expect(expiry).toBeDefined();
+    await expect(page.getByRole('navigation', { name: '主导航' })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: '会话自动锁定设置' })).toHaveCount(0);
+    await page.getByLabel('解锁密码', { exact: true }).fill('incorrect');
+    await page.getByRole('button', { name: '解锁控制面' }).click();
+    await expect(page.getByRole('alert')).toContainText('不正确');
+    await expect(page.getByLabel('解锁密码', { exact: true })).toHaveValue('');
+    await page.getByLabel('解锁密码', { exact: true }).fill(password);
+    await page.getByRole('button', { name: '解锁控制面' }).click();
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+    await page.getByRole('button', { name: '立即锁定控制面' }).click();
+    await expect(page.getByRole('heading', { name: 'Sakura 已锁定' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Sakura 已锁定' })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain(
+      password,
+    );
+    expect(page.url()).not.toContain(password);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await lock.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('GraphQL workbench executes real typed queries, reports validation errors and exports its schema', async ({
   page,

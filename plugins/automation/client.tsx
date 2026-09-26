@@ -333,6 +333,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'session-lock':
+          '打开系统设置 → 管理会话锁定，设置密码和空闲时间。启用后可点击顶栏锁定按钮；本机所有控制入口共用锁定状态。',
         'api-explorer':
           '打开系统设置 → 开发接口，浏览核心及已声明插件操作的 OpenAPI 文档，可执行只读查询并下载 JavaScript SDK。',
         'offline-pwa':
@@ -416,7 +418,9 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runNext = (featureId: string) =>
     action.run(async () => {
       if (featureId === 'graphql-api') {
-        setNextResult('打开系统设置 → GraphQL 查询，可查询主机、实例、任务元数据和插件状态，支持变量、分页及 Schema 下载。');
+        setNextResult(
+          '打开系统设置 → GraphQL 查询，可查询主机、实例、任务元数据和插件状态，支持变量、分页及 Schema 下载。',
+        );
         return;
       }
       if (featureId === 'log-retention') {

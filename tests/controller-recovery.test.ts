@@ -17,6 +17,73 @@ const deferred = () => {
   };
 };
 
+const sessionView = (locked: boolean) => ({
+  configured: true,
+  enabled: true,
+  locked,
+  idleMinutes: 1,
+  retryAfterSeconds: 0,
+});
+test('a locked bootstrap displays the gate and never admits a pending mutation or replays it on unlock', async () => {
+  let locked = true,
+    mutations = 0,
+    bootstraps = 0;
+  const session = new ControllerSession(async (url) => {
+    if (url === '/api/bootstrap') {
+      bootstraps++;
+      return locked
+        ? Response.json({ error: 'locked', session: sessionView(true) }, { status: 423 })
+        : Response.json({ token: 'new', session: sessionView(false) });
+    }
+    mutations++;
+    return Response.json({ ok: true });
+  });
+  await assert.rejects(session.request('/vms', 'POST', {}), /locked/);
+  assert.equal(session.getSession().locked, true);
+  assert.equal(session.getToken(), '');
+  locked = false;
+  session.updateSession(sessionView(false));
+  assert.equal(mutations, 0);
+  await session.request('/vms', 'POST', {});
+  assert.equal(mutations, 1);
+  assert.equal(bootstraps, 2);
+});
+
+test('a private 423 clears credentials and stale bootstrap completion cannot restore a locked session', async () => {
+  const gate = deferred();
+  let auth = 0;
+  const session = new ControllerSession(async (url) => {
+    if (url === '/api/bootstrap') {
+      auth++;
+      if (auth === 2) await gate.promise;
+      return Response.json({ token: String(auth) });
+    }
+    return Response.json({ error: 'locked', session: sessionView(true) }, { status: 423 });
+  });
+  await session.authenticate();
+  const stale = session.authenticate();
+  await assert.rejects(session.request('/vms'), /locked/);
+  gate.resolve();
+  await assert.rejects(stale, /会话状态/);
+  assert.equal(session.getToken(), '');
+  assert.equal(session.getSession().locked, true);
+});
+
+test('private data received after locking is discarded even when the old request succeeded', async () => {
+  const gate = deferred();
+  const session = new ControllerSession(async (url) => {
+    if (url === '/api/bootstrap') return Response.json({ token: 'before' });
+    await gate.promise;
+    return Response.json({ secret: 'must not return to the private view' });
+  });
+  await session.authenticate();
+  const pending = session.request('/vms');
+  session.updateSession(sessionView(true));
+  gate.resolve();
+  await assert.rejects(pending, /会话状态/);
+  assert.equal(session.getToken(), '');
+});
+
 test('concurrent expired requests obtain one new credential and retry only the rejected operation', async () => {
   let bootstraps = 0,
     writes = 0;

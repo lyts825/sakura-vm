@@ -24,8 +24,8 @@ export class SakuraClient {
   }
   async authenticate(signal) {
     const response = await this.#fetch(this.#base + '/api/bootstrap', { cache: 'no-store', redirect: 'error', signal });
-    if (!response.ok) throw new SakuraApiError('Authentication failed', response.status, 'UNAUTHORIZED');
     const value = await response.json();
+    if (!response.ok) { this.#token = ''; throw new SakuraApiError(value.error || 'Authentication failed', response.status, value.code || 'UNAUTHORIZED'); }
     if (typeof value.token !== 'string' || !value.token) throw new Error('Invalid controller credential');
     this.#token = value.token;
   }
@@ -58,7 +58,7 @@ export class SakuraClient {
     if (body !== undefined) headers['Content-Type'] = binary ? contentType : 'application/json';
     const response = await this.#fetch(url.href, { method, headers, signal, cache: 'no-store', redirect: 'error', body: body === undefined ? undefined : binary ? body : JSON.stringify(body) });
     if (!response.ok) {
-      if (response.status === 401) this.#token = '';
+      if (response.status === 401 || response.status === 423) this.#token = '';
       let failure = {}; try { failure = await response.json(); } catch {}
       const message = failure.error || (Array.isArray(failure.errors) ? failure.errors.slice(0, 10).map(error => error.message).filter(Boolean).join('; ') : '') || 'Request failed';
       throw new SakuraApiError(message, response.status, failure.code);

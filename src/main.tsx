@@ -54,6 +54,8 @@ import { SakuraArt } from './SakuraArt';
 import { TerminalPanel } from './TerminalPanel';
 import { api, controllerSession, RefreshQueue } from './controller-session';
 import { watchController } from './controller-watch';
+import { SessionBoundary, SessionLockButton, SessionLockSettings } from './SessionLock';
+import type { SessionLockView } from '../shared/session-lock';
 
 import type { ImageInfo } from '../plugins/images/client';
 import { distroName, useRemote, type Request } from './feature-shared';
@@ -114,6 +116,7 @@ const MigrationPanel = lazy(() =>
 );
 
 type System = {
+  session?: SessionLockView;
   plugins: string[];
   version: string;
   engine: string;
@@ -347,6 +350,7 @@ function App() {
   const [showApi, setShowApi] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [showRetention, setShowRetention] = useState(false);
+  const [showSessionLock, setShowSessionLock] = useState(false);
   const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
   const navigatePalette = async (target: PaletteTarget) => {
     setPalette(false);
@@ -491,6 +495,7 @@ function App() {
           if (!refreshOrder.current.accept(version)) return;
           setVms(data);
           setSystem(sys);
+          if (sys.session) controllerSession.updateSession(sys.session);
           setOffline('');
           setSelectedRaw((current) => (data.some((v) => v.id === current) ? current : data[0]?.id || ''));
         } catch (error) {
@@ -734,6 +739,7 @@ function App() {
             <b>{visiblePages.find((item) => item.id === page)?.label}</b>
           </div>
           <div className="topbar-actions">
+            <SessionLockButton />
             <button
               id="accessibility-mode-toggle"
               data-audit-tools
@@ -1415,6 +1421,14 @@ function App() {
               </div>
               <div className="system-grid">
                 <section className="system-card">
+                  <h3>控制面锁定</h3>
+                  <p>设置解锁密码和自动锁定的空闲时间。</p>
+                  <button className="secondary compact" onClick={() => setShowSessionLock(!showSessionLock)}>
+                    {showSessionLock ? '收起锁定设置' : '管理会话锁定'}
+                  </button>
+                </section>
+                {showSessionLock && <SessionLockSettings request={api} />}
+                <section className="system-card">
                   <h3>GraphQL 查询</h3>
                   <p>选择需要的实例和任务字段，读取本机状态。</p>
                   <button className="secondary compact" onClick={() => setShowGraph(!showGraph)}>
@@ -1939,4 +1953,8 @@ function ConfigPanel({
 }
 const root = import.meta.hot?.data.root ?? createRoot(document.getElementById('root')!);
 if (import.meta.hot) import.meta.hot.data.root = root;
-root.render(<App />);
+root.render(
+  <SessionBoundary>
+    <App />
+  </SessionBoundary>,
+);

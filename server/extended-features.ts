@@ -106,7 +106,7 @@ export const extendedFeatureCatalog = [
   ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为受控调试创建一次性入口。', 'planned'],
   ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2', '检测并配置 TPM 和安全启动链。', 'planned'],
   ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2', '使用宿主机安全凭据解锁密钥。', 'planned'],
-  ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'planned'],
+  ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'available'],
   ['audit-log', '防篡改审计日志', '安全', 'P0', '记录关键操作并保护日志链。', 'available'],
   ['clipboard-redaction', '剪贴板敏感检测', '安全', 'P1', '识别并阻止疑似密钥复制。', 'available'],
   ['secret-rotation', '密钥轮换提醒', '安全', 'P1', '追踪密钥年龄并提示轮换。', 'available'],
@@ -317,6 +317,14 @@ export class ExtendedFeatures {
         state: spec.state,
         adapter,
         reason: '系统设置 → 开发接口，浏览 OpenAPI、试读状态并下载 JavaScript SDK。',
+      };
+    if (spec.id === 'session-lock')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '系统设置 → 管理会话锁定，设置解锁密码和空闲时间；锁定会拒绝控制请求并断开终端与桌面。',
       };
     if (spec.id === 'offline-pwa')
       return {

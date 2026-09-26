@@ -4,6 +4,7 @@ import { PLUGINS } from '../shared/plugins.ts';
 import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { logRetentionRequest } from './log-retention.ts';
 import { graphqlRequest } from './graphql-api.ts';
+import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
 
 const response = (schema: Record<string, unknown> = {}, media = 'application/json') => ({
@@ -35,6 +36,50 @@ const core: {
   },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
+  {
+    id: 'session.status',
+    method: 'GET',
+    path: '/api/session',
+    title: '会话锁定状态',
+    inspect: true,
+    public: true,
+  },
+  {
+    id: 'session.settings',
+    method: 'GET',
+    path: '/api/session/settings',
+    title: '会话锁定配置',
+    inspect: true,
+  },
+  {
+    id: 'session.configure',
+    method: 'PATCH',
+    path: '/api/session/settings',
+    title: '保存会话锁定配置',
+    body: request(sessionLockConfiguration),
+  },
+  {
+    id: 'session.unlock',
+    method: 'POST',
+    path: '/api/session/unlock',
+    title: '验证密码并解锁',
+    public: true,
+    body: request(sessionUnlockRequest),
+  },
+  {
+    id: 'session.lock',
+    method: 'POST',
+    path: '/api/session/lock',
+    title: '立即锁定控制面',
+    body: request(z.object({}).strict()),
+  },
+  {
+    id: 'session.activity',
+    method: 'POST',
+    path: '/api/session/activity',
+    title: '报告用户操作并延长空闲期限',
+    body: request(z.object({}).strict()),
+  },
   {
     id: 'graphql.schema',
     method: 'GET',

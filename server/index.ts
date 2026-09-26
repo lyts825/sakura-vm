@@ -23,9 +23,13 @@ import { apiDocument } from './openapi.ts';
 import { generateSdk } from './sdk.ts';
 import { LogRetention, logRetentionRequest } from './log-retention.ts';
 import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from './graphql-api.ts';
+import { SessionLock } from './session-lock.ts';
 
 async function main() {
-  const token = randomBytes(32).toString('hex');
+  let token = randomBytes(32).toString('hex');
+  let sessionChanged = (_locked: boolean, _transitioned: boolean) => {};
+  const session = new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned));
+  await session.init();
   const dev = process.argv.includes('--dev');
   validateRegistry();
   const plugins = new PluginManager();
@@ -59,6 +63,15 @@ async function main() {
   const graph = new GraphApi(async () => querySnapshot(machines, features.jobStores(), features.enabled));
   plugins.activated(features.enabled, features.errors, features.lifecycle);
   const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
+  const protectedResponses = new Set<ServerResponse>();
+  sessionChanged = (locked, transitioned) => {
+    if (transitioned) token = randomBytes(32).toString('hex');
+    if (locked) {
+      for (const client of ws.clients) client.terminate();
+      for (const response of protectedResponses) response.destroy();
+    }
+    machines.emit('change');
+  };
   const socketVms = new WeakMap<WebSocket, string>();
   machines.on('incident-lockdown', (id: string) => {
     for (const store of features.jobStores())
@@ -70,6 +83,15 @@ async function main() {
   let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
   const equalToken = (value: unknown) => tokenMatches(value, token);
   const allowedRequest = (req: IncomingMessage) => sameOrigin(req.headers, PORT);
+  const authorized = (req: IncomingMessage) => {
+    session.requireUnlocked();
+    if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
+  };
+  const authorizedBody = async (req: IncomingMessage, limit?: number, signal?: AbortSignal) => {
+    const input = await body(req, limit, signal);
+    authorized(req);
+    return input;
+  };
   function send(res: ServerResponse, data: unknown, status = 200) {
     res.writeHead(status, {
       'Content-Type': 'application/json; charset=utf-8',
@@ -79,9 +101,45 @@ async function main() {
     res.end(JSON.stringify(data));
   }
   const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
-    if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
+    if (url.pathname === '/api/session') {
+      if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
+      return send(res, session.view());
+    }
+    if (url.pathname === '/api/session/unlock') {
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      return send(res, await session.unlock(await body(req, 4096)));
+    }
+    session.requireUnlocked();
+    if (req.method === 'GET' && url.pathname === '/api/bootstrap')
+      return send(res, { token, session: session.view() });
+    // End already admitted streams when a lock takes effect. The lock response itself must survive.
+    if (url.pathname !== '/api/session/lock') {
+      protectedResponses.add(res);
+      const remove = () => protectedResponses.delete(res);
+      res.once('finish', remove);
+      res.once('close', remove);
+    }
     if (await features.downloads?.route(req, res, url)) return;
-    if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
+    authorized(req);
+    if (url.pathname === '/api/session/lock' || url.pathname === '/api/session/activity') {
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      z.object({})
+        .strict()
+        .parse(await authorizedBody(req, 4096));
+      return send(res, url.pathname.endsWith('/lock') ? session.lock() : session.activity());
+    }
+    if (url.pathname === '/api/session/settings') {
+      if (req.method === 'GET') return send(res, session.view());
+      if (req.method !== 'PATCH') throw new AppError('不支持此方法', 405);
+      features.mutations++;
+      try {
+        const input = await authorizedBody(req, 4096);
+        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+        return send(res, await session.configure(input));
+      } finally {
+        features.mutations--;
+      }
+    }
     if (url.pathname === '/api/graphql-schema') {
       if (req.method !== 'GET') throw new AppError('Schema 接口仅支持读取', 405);
       return send(res, graphqlInfo());
@@ -97,7 +155,7 @@ async function main() {
       if (req.aborted || res.destroyed) cancel();
       try {
         const result = await graph.query(
-          await body(req, graphqlLimits.requestBytes, abort.signal),
+          await authorizedBody(req, graphqlLimits.requestBytes, abort.signal),
           abort.signal,
         );
         res.writeHead(result.status, {
@@ -136,7 +194,7 @@ async function main() {
     if (url.pathname === '/api/log-retention') {
       if (req.method === 'GET') return send(res, retention.view());
       if (req.method === 'POST') {
-        const input = logRetentionRequest.parse(await body(req));
+        const input = logRetentionRequest.parse(await authorizedBody(req));
         return send(
           res,
           input.action === 'preview'
@@ -154,7 +212,7 @@ async function main() {
         const input = z
           .object({ locked: z.boolean() })
           .strict()
-          .parse(await body(req));
+          .parse(await authorizedBody(req));
         return send(res, await machines.setIncidentLockdown(route[2], input.locked));
       }
       throw new AppError('不支持此方法', 405);
@@ -173,7 +231,7 @@ async function main() {
       if (req.method === 'PATCH') {
         features.mutations++;
         try {
-          const input = await body(req);
+          const input = await authorizedBody(req);
           if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
           return send(res, await plugins.change(input));
         } finally {
@@ -182,7 +240,8 @@ async function main() {
       }
       throw new AppError('不支持此方法', 405);
     }
-    if (await features.route(req, res, url, (request, signal) => body(request, undefined, signal))) return;
+    if (await features.route(req, res, url, (request, signal) => authorizedBody(request, undefined, signal)))
+      return;
     if (req.method === 'GET' && url.pathname === '/api/system')
       return send(res, {
         name: 'Sakura',
@@ -199,11 +258,12 @@ async function main() {
         imageReady: existsSync(IMAGE),
         imageBytes: (await stat(IMAGE).catch(() => null))?.size || 0,
         plugins: [...features.enabled],
+        session: session.view(),
       });
     if (route[1] === 'vms' && route.length === 2) {
       if (req.method === 'GET') return send(res, await machines.list());
       if (req.method === 'POST') {
-        const input = await body(req);
+        const input = await authorizedBody(req);
         features.validateConfig(input);
         return send(res, await machines.create(input), 201);
       }
@@ -214,7 +274,7 @@ async function main() {
       if (route.length === 3) {
         if (req.method === 'GET') return send(res, await machines.view(id));
         if (req.method === 'PATCH') {
-          const input = await body(req);
+          const input = await authorizedBody(req);
           features.validateConfig(input, machines.get(id));
           return send(res, await machines.update(id, input));
         }
@@ -229,14 +289,14 @@ async function main() {
         const options = z
           .object({ force: z.boolean().default(false) })
           .strict()
-          .parse(await body(req));
+          .parse(await authorizedBody(req));
         return send(res, await machines.stop(id, options.force));
       }
       if (req.method === 'POST' && route.length === 4 && route[3] === 'exec') {
         const { command } = z
           .object({ command: z.string().min(1).max(65536) })
           .strict()
-          .parse(await body(req));
+          .parse(await authorizedBody(req));
         return send(res, await machines.exec(id, command));
       }
       if (req.method === 'GET' && route.length === 4 && route[3] === 'logs')
@@ -296,6 +356,7 @@ async function main() {
       });
       res.end(req.method === 'HEAD' ? undefined : data);
     } catch (error: any) {
+      if (res.destroyed) return;
       if (res.headersSent) {
         res.end();
         return;
@@ -323,7 +384,11 @@ async function main() {
               } as Record<number, string>
             )[status] ||
             'INTERNAL_ERROR';
-      send(res, { error: message || '操作失败', code }, status);
+      send(
+        res,
+        { error: message || '操作失败', code, ...(status === 423 ? { session: session.view() } : {}) },
+        status,
+      );
     }
   });
 
@@ -335,6 +400,12 @@ async function main() {
     }
     if (!url.pathname.startsWith('/ws/')) {
       if (!dev) socket.destroy();
+      return;
+    }
+    try {
+      session.requireUnlocked();
+    } catch {
+      socket.end('HTTP/1.1 423 Locked\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
       return;
     }
     const parts = url.pathname.split('/');
@@ -355,6 +426,12 @@ async function main() {
       return;
     }
     ws.handleUpgrade(req, socket, head, async (client) => {
+      try {
+        session.requireUnlocked();
+      } catch {
+        client.terminate();
+        return;
+      }
       if (!events) socketVms.set(client, id);
       if (!events && mode !== 'logs' && machines.incidentLocked(id)) {
         client.close(1008, 'Incident lockdown');
@@ -421,6 +498,7 @@ async function main() {
           });
           client.on('message', (raw) => {
             try {
+              session.requireUnlocked();
               const msg = JSON.parse(raw.toString());
               if (msg.type === 'input' && typeof msg.data === 'string' && msg.data.length <= 32768)
                 stream.write(msg.data);
@@ -436,10 +514,10 @@ async function main() {
             }
           });
         };
-        const session = url.searchParams.get('session');
-        if (session && /^[a-z0-9-]{1,48}$/.test(session)) {
+        const terminalSession = url.searchParams.get('session');
+        if (terminalSession && /^[a-z0-9-]{1,48}$/.test(terminalSession)) {
           ssh.exec(
-            `if command -v tmux >/dev/null; then exec tmux new-session -A -s sakura-terminal-${session}; else printf '安装项目环境后可恢复终端会话。\\r\\n'; exec /bin/sh -l; fi`,
+            `if command -v tmux >/dev/null; then exec tmux new-session -A -s sakura-terminal-${terminalSession}; else printf '安装项目环境后可恢复终端会话。\\r\\n'; exec /bin/sh -l; fi`,
             { pty: { term: 'xterm-256color', cols: 100, rows: 28 } },
             connected,
           );
@@ -468,6 +546,7 @@ async function main() {
     server.close();
     let failed = false;
     for (const dispose of [
+      () => session.close(),
       () => retention.close(),
       () => graph.close(),
       () => features.close(),

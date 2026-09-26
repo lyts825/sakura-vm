@@ -26,7 +26,7 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
       );
       assert.ok(Object.keys(operation.responses).length);
     }
-  assert.equal(ids.size, 40);
+  assert.equal(ids.size, 46);
   assert.equal(spec.paths['/api/vms/{vmId}/commands'].get['x-sakura-enabled'], true);
   assert.equal(spec.paths['/api/vms/{vmId}/metrics'].get['x-sakura-enabled'], false);
   assert.ok(
@@ -37,6 +37,8 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   const body = spec.paths['/api/vms'].post.requestBody!.content['application/json'].schema;
   assert.deepEqual(body.required, ['name']);
   assert.deepEqual(spec.paths['/api/bootstrap'].get.security, []);
+  assert.deepEqual(spec.paths['/api/session/unlock'].post.security, []);
+  assert.equal(spec.paths['/api/session/settings'].patch.security, undefined);
   assert.ok(!spec.paths['/api/images']); // This declaration is a dispatcher prefix, not a POST endpoint.
   assert.ok(spec['x-sakura-route-prefixes'].some((item) => item.path === '/api/images'));
   assert.equal(

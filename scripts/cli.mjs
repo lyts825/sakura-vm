@@ -33,7 +33,10 @@ async function main() {
     return;
   }
   try {
-    const bootstrap = await fetch(`${base}/api/bootstrap`).then((r) => r.json());
+    const authentication = await fetch(`${base}/api/bootstrap`);
+    const bootstrap = await authentication.json();
+    if (!authentication.ok) throw new Error(bootstrap.error || '无法获取控制凭证');
+    if (typeof bootstrap.token !== 'string' || !bootstrap.token) throw new Error('服务返回了无效的访问凭证');
     async function api(path, method = 'GET', data) {
       const response = await fetch(`${base}/api${path}`, {
         method,

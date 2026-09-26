@@ -6,6 +6,8 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { WebSocket } from 'ws';
+import { request as httpRequest } from 'node:http';
 
 const root = process.cwd();
 async function probe(selected, expected) {
@@ -191,7 +193,8 @@ async function probe(selected, expected) {
       const { chromium } = await import('@playwright/test');
       const browser = await chromium.launch();
       try {
-        const page = await browser.newPage();
+        const context = await browser.newContext();
+        const page = await context.newPage();
         const document = await page.goto(origin);
         assert.match(document.headers()['content-security-policy'], /script-src 'self';/);
         await page.getByRole('button', { name: '无障碍检查模式', exact: true }).click();
@@ -212,10 +215,146 @@ async function probe(selected, expected) {
         await page.getByRole('button', { name: '清除离线数据' }).click();
         await page.waitForFunction(async () => (await caches.keys()).length === 0);
         console.log('Read-only monitoring survives an offline reload under the production CSP.');
+        await page.context().setOffline(false);
+        await page.goto(origin);
+        await page.getByRole('button', { name: '系统设置', exact: true }).click();
+        await page.getByRole('button', { name: '管理会话锁定', exact: true }).click();
+        const settings = page.getByRole('region', { name: '会话自动锁定设置' });
+        await settings.getByLabel('启用空闲自动锁定').check();
+        await settings.getByLabel('设置解锁密码', { exact: true }).fill('production-lock-test-password');
+        await settings.getByLabel('确认新解锁密码').fill('production-lock-test-password');
+        await settings.getByRole('button', { name: '保存锁定策略' }).click();
+        await settings.getByText('会话锁定策略已保存').waitFor();
+        const second = await page.context().newPage();
+        await second.goto(origin);
+        await second.getByRole('button', { name: '立即锁定控制面' }).waitFor();
+        await page.getByRole('button', { name: '立即锁定控制面' }).click();
+        await second.getByRole('heading', { name: 'Sakura 已锁定' }).waitFor();
+        await page.getByRole('heading', { name: 'Sakura 已锁定' }).waitFor();
+        assert.equal(await second.getByRole('navigation', { name: '主导航' }).count(), 0);
+        await page.getByLabel('解锁密码', { exact: true }).fill('production-lock-test-password');
+        await page.getByRole('button', { name: '解锁控制面' }).click();
+        await second.getByRole('button', { name: '立即锁定控制面' }).waitFor();
+        console.log('Session locking removes private UI and synchronizes unlock across real browser tabs.');
       } finally {
         await browser.close();
       }
     }
+    await sdk.authenticate();
+    const password = 'production-lock-test-password';
+    const configured = await sdk.call('core.session.configure', {
+      body: {
+        enabled: true,
+        idleMinutes: 1,
+        password,
+        ...(!expected.length ? {} : { newPassword: password }),
+      },
+    });
+    assert.equal(configured.enabled, true);
+    const beforeLock = await fetch(origin + '/api/bootstrap').then((response) => response.json());
+    const eventSocket = new WebSocket(
+      origin.replace('http:', 'ws:') + '/ws/events?token=' + beforeLock.token,
+      { handshakeTimeout: 3000 },
+    );
+    await new Promise((done, fail) => eventSocket.once('open', done).once('error', fail));
+    const disconnected = new Promise((done, fail) => {
+      eventSocket.once('close', done);
+      eventSocket.once('error', fail);
+    });
+    // A request waiting for its JSON body must not execute after a lock, even with a once-valid token.
+    const partial = httpRequest(origin + '/api/vms', {
+      method: 'POST',
+      headers: {
+        'x-sakura-token': beforeLock.token,
+        'content-type': 'application/json',
+        'content-length': '64',
+      },
+    });
+    const cutOff = new Promise((done, fail) => {
+      partial.once('error', done);
+      partial.once('response', (response) => {
+        response.resume();
+        fail(new Error('An incomplete protected request unexpectedly completed'));
+      });
+      partial.setTimeout(5000, () => {
+        partial.destroy();
+        fail(new Error('Locked request was not disconnected'));
+      });
+    });
+    partial.write('{"name":');
+    await delay(100);
+    assert.equal((await sdk.call('core.session.lock', { body: {} })).locked, true);
+    await Promise.all([disconnected, cutOff]);
+    for (const path of ['/bootstrap', '/vms', '/monitor', '/downloads/unknown', '/graphql-schema']) {
+      const response = await fetch(origin + '/api' + path, {
+        headers: { 'x-sakura-token': beforeLock.token },
+      });
+      assert.equal(response.status, 423, path);
+      assert.equal((await response.json()).code, 'SESSION_LOCKED');
+    }
+    assert.equal(
+      (await fetch(origin + '/api/session', { headers: { origin: 'https://example.invalid' } })).status,
+      403,
+    );
+    assert.equal((await sdk.call('core.session.status')).locked, true);
+    await assert.rejects(
+      sdk.call('core.vms.list'),
+      (error) => error.status === 423 && error.code === 'SESSION_LOCKED',
+    );
+    await assert.rejects(
+      new SakuraClient().call('core.vms.list'),
+      (error) => error.status === 423 && error.code === 'SESSION_LOCKED',
+    );
+    const denied = new WebSocket(origin.replace('http:', 'ws:') + '/ws/events?token=' + beforeLock.token, {
+      handshakeTimeout: 3000,
+    });
+    denied.on('error', () => {});
+    const handshake = await new Promise((done, fail) => {
+      denied.once('unexpected-response', (_request, response) => {
+        response.resume();
+        done(response.statusCode);
+        denied.terminate();
+      });
+      denied.once('open', () => {
+        denied.close();
+        fail(new Error('Locked WebSocket connected'));
+      });
+      denied.once('error', fail);
+    });
+    assert.equal(handshake, 423);
+    const cli = spawn(process.execPath, ['scripts/cli.mjs', 'list'], {
+      cwd: root,
+      env: { ...process.env, SAKURA_PORT: String(port) },
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let cliError = '';
+    cli.stdout.resume();
+    cli.stderr.on('data', (chunk) => {
+      cliError += chunk;
+    });
+    const cliExit = await new Promise((done) => cli.once('exit', done));
+    assert.equal(cliExit, 1);
+    assert.match(cliError, /锁定/);
+    await assert.rejects(
+      sdk.call('core.session.unlock', { body: { password: 'incorrect' } }),
+      (error) => error.status === 403,
+    );
+    assert.equal((await sdk.call('core.session.unlock', { body: { password } })).locked, false);
+    const afterLock = await fetch(origin + '/api/bootstrap').then((response) => response.json());
+    assert.notEqual(afterLock.token, beforeLock.token);
+    assert.equal(
+      (await fetch(origin + '/api/vms', { headers: { 'x-sakura-token': beforeLock.token } })).status,
+      401,
+    );
+    assert.deepEqual(await sdk.call('core.vms.list'), []);
+    assert.equal(
+      (await sdk.call('core.session.configure', { body: { enabled: false, idleMinutes: 1, password } }))
+        .enabled,
+      false,
+    );
+    assert.ok(!(await readFile(join(data, 'session-lock.json'), 'utf8')).includes(password));
+    assert.ok(!JSON.stringify(await sdk.call('core.audit')).includes(password));
     console.log(`Compiled server passed: ${expected.length} active plugins, static UI.`);
   } finally {
     if (server.exitCode === null && server.signalCode === null) server.kill('SIGTERM');
