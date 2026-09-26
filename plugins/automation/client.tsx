@@ -333,6 +333,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'shortcut-editor':
+          '打开系统设置 → 快捷键编辑器，保存页面全局快捷键或当前项目覆盖；可停用单项并恢复默认。',
         'secret-rotation':
           '打开工作空间 → 开发 → 私密配置，为每个条目启用轮换提醒、设置周期与提前天数。后台通知需启用自动化调度及告警。',
         'clipboard-redaction': '打开设置 → 剪贴板敏感检测，启用本浏览器的复制与桌面传递检查。',

@@ -148,7 +148,7 @@ export const extendedFeatureCatalog = [
     '在终端面板保存和恢复标签名称、顺序、分屏和布局预设。',
     'available',
   ],
-  ['shortcut-editor', '快捷键编辑器', '体验集成', 'P1', '自定义全局和项目快捷键。', 'planned'],
+  ['shortcut-editor', '快捷键编辑器', '体验集成', 'P1', '自定义页面全局和项目快捷键。', 'available'],
   ['command-macros', '条件命令宏', '体验集成', 'P1', '组合带条件和参数的操作。', 'available'],
   ['offline-pwa', '离线监控 PWA', '体验集成', 'P1', '离线查看最近状态和事件。', 'planned'],
   [
@@ -303,6 +303,14 @@ export class ExtendedFeatures {
     };
     if (spec.id === 'qemu-commandline')
       return { ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) };
+    if (spec.id === 'shortcut-editor')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '系统设置 → 快捷键编辑器，保存本浏览器的全局按键及当前实例项目覆盖；冲突会阻止保存。',
+      };
     if (spec.id === 'backup-dedup')
       return {
         ready: true,

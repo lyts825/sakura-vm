@@ -74,6 +74,16 @@ import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from './
 import { workspacePath } from './workspace-request';
 import { ClipboardSettings } from './ClipboardSettings';
 import { installClipboardProtection } from './clipboard-protection';
+import { ShortcutSettings } from './ShortcutSettings';
+import {
+  effectiveShortcuts,
+  eventShortcut,
+  readShortcuts,
+  shortcutCommands,
+  shortcutContext,
+  shortcutInputTarget,
+  watchShortcuts,
+} from './shortcuts';
 
 const TerminalWorkspace = lazy(() =>
   import('./TerminalWorkspace').then((module) => ({ default: module.TerminalWorkspace })),
@@ -330,19 +340,6 @@ function App() {
     if (target.tab) setTabRaw(target.tab);
     if (target.file) setOpenFile({ id: target.id || selected, path: target.file, revision: Date.now() });
   };
-  useEffect(() => {
-    if (!hasPalette) return;
-    const key = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.altKey) {
-        const openDialog = document.querySelector('dialog[open]');
-        if (openDialog && !openDialog.classList.contains('command-palette')) return;
-        event.preventDefault();
-        setPalette((open) => !open);
-      }
-    };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, [hasPalette]);
   const [theme, setTheme] = useState<'day' | 'night'>(() => {
     try {
       return localStorage.getItem('sakura-theme') === 'night' ? 'night' : 'day';
@@ -358,6 +355,10 @@ function App() {
   const [moreTabsOpen, setMoreTabsOpen] = useState(false);
   const vm = vms.find((v) => v.id === selected);
   const projectId = projectSelections[selected];
+  const [shortcuts, setShortcuts] = useState(readShortcuts);
+  useEffect(() => watchShortcuts(() => setShortcuts(readShortcuts())), []);
+  const shortcutScope = shortcutContext(selected, hasProjects ? projectId : undefined);
+  const bindings = effectiveShortcuts(shortcuts, shortcutScope);
   const workspaceApi = useCallback<Request>(
     (path, method = 'GET', body, signal) => api(workspacePath(path, projectId), method, body, signal),
     [projectId],
@@ -431,22 +432,32 @@ function App() {
   }, [theme]);
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (document.querySelector('dialog[open]') || event.ctrlKey || event.metaKey || event.altKey) return;
-      const target = event.target;
+      if (document.querySelector('dialog[open]') || shortcutInputTarget(event.target)) return;
+      if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.altKey) setFocused(false);
+      const key = eventShortcut(event);
+      const command = key && shortcutCommands.find((command) => bindings[command.id] === key)?.id;
+      if (!command) return;
       if (
-        target instanceof Element &&
-        target.closest('input, textarea, select, [contenteditable="true"], .xterm, .desktop-screen')
+        (command === 'palette' && !hasPalette) ||
+        (command === 'search' && (page !== 'workspace' || focusMode)) ||
+        (command === 'focus' && (page !== 'workspace' || !vm)) ||
+        (['terminal', 'files', 'project'].includes(command) && !vm) ||
+        (['files', 'project'].includes(command) && !pluginSurfaceEnabled(enabled, 'tabs', command)) ||
+        (command === 'tasks' && !pluginSurfaceEnabled(enabled, 'pages', 'tasks'))
       )
         return;
-      if (event.key === '/' && page === 'workspace' && !focusMode) {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (event.key === 'Escape') setFocused(false);
+      event.preventDefault();
+      if (command === 'palette') setPalette(true);
+      else if (command === 'search') searchRef.current?.focus();
+      else if (command === 'theme') setTheme((value) => (value === 'day' ? 'night' : 'day'));
+      else if (command === 'focus') setFocused((value) => !value);
+      else if (['terminal', 'files', 'project'].includes(command))
+        void navigatePalette({ page: 'workspace', tab: command });
+      else void navigatePalette({ page: command });
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [page, modal, focusMode]);
+  }, [bindings, page, focusMode, vm, hasPalette, enabled, navigatePalette]);
   const refreshOrder = useRef(new ResponseOrder());
   const refreshQueue = useRef(new RefreshQueue());
   const refreshAbort = useRef(new AbortController());
@@ -715,7 +726,7 @@ function App() {
               >
                 <Search size={16} />
                 <span>快速前往</span>
-                <kbd>Ctrl K</kbd>
+                <kbd>{bindings.palette.replace('Mod', 'Ctrl / ⌘') || '未设置'}</kbd>
               </button>
             )}
             <span className="local-badge">
@@ -1373,6 +1384,11 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <ShortcutSettings
+                  preferences={shortcuts}
+                  context={shortcutScope}
+                  projectName={projectId ? `${vm?.name || ''} / ${projectId}` : undefined}
+                />
                 <ClipboardSettings />
                 <div className="system-card">
                   <div className="panel-heading">

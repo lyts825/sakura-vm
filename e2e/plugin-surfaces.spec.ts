@@ -2,6 +2,55 @@ import { expect, test, type Page } from '@playwright/test';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 
+test('custom shortcuts reject conflicts, persist project overrides and leave text and terminal input alone', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'command-palette'], true);
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  const editor = page.getByRole('region', { name: '快捷键编辑器' });
+  await editor.getByLabel('切换主题快捷键', { exact: true }).fill('Mod+K');
+  await editor.getByRole('button', { name: '保存快捷键', exact: true }).click();
+  await expect(editor.getByRole('alert')).toContainText('快捷键冲突');
+  await editor.getByLabel('命令面板快捷键', { exact: true }).fill('Mod+Shift+K');
+  await editor.getByLabel('切换主题快捷键', { exact: true }).fill('Mod+Shift+M');
+  await editor.getByRole('button', { name: '保存快捷键', exact: true }).click();
+  await expect(editor.getByRole('status')).toHaveText('快捷键已保存');
+  await page.keyboard.press('Control+Shift+M');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
+  await editor.getByLabel('快捷键配置范围').selectOption('project');
+  await editor.getByLabel('覆盖切换主题快捷键', { exact: true }).check();
+  await editor.getByLabel('切换主题快捷键', { exact: true }).fill('Mod+Shift+Y');
+  await editor.getByRole('button', { name: '保存快捷键', exact: true }).click();
+  await page.keyboard.press('Control+Shift+M');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
+  await page.keyboard.press('Control+Shift+Y');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'day');
+  await editor.getByLabel('切换主题快捷键', { exact: true }).focus();
+  await page.keyboard.press('Control+Shift+Y');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'day');
+  await page.evaluate(() => {
+    const terminal = document.createElement('div');
+    terminal.className = 'xterm';
+    terminal.tabIndex = 0;
+    document.body.append(terminal);
+    terminal.focus();
+  });
+  await page.keyboard.press('Control+Shift+Y');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'day');
+  await page.reload();
+  await editor.getByLabel('快捷键配置范围').selectOption('project');
+  await expect(editor.getByLabel('切换主题快捷键', { exact: true })).toHaveValue('Mod+Shift+Y');
+  await editor.getByRole('heading', { name: '快捷键编辑器', exact: true }).click();
+  await page.keyboard.press('Control+Shift+K');
+  await expect(page.locator('dialog.command-palette')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await editor.getByRole('button', { name: '恢复全局快捷键', exact: true }).click();
+  await page.keyboard.press('Control+Shift+M');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test('power policy saves while the guest is stopped and displays the actual scheduling decision', async ({
   page,
 }) => {
