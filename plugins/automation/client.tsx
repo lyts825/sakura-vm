@@ -333,6 +333,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'api-explorer':
+          '打开系统设置 → 开发接口，浏览核心及已声明插件操作的 OpenAPI 文档，可执行只读查询并下载 JavaScript SDK。',
         'offline-pwa':
           '打开系统设置 → 离线监控 PWA，查看独立只读监控页，可启用最近状态与任务事件的离线缓存。',
         'accessibility-audit':

@@ -116,8 +116,7 @@
               }
             },
             "required": [
-              "name",
-              "value"
+              "name"
             ],
             "additionalProperties": false
           }
@@ -125,8 +124,7 @@
       },
       "required": [
         "name",
-        "command",
-        "parameters"
+        "command"
       ],
       "additionalProperties": false
     },
@@ -270,8 +268,7 @@
         }
       },
       "required": [
-        "id",
-        "values"
+        "id"
       ],
       "additionalProperties": false
     },
@@ -717,14 +714,7 @@
         }
       },
       "required": [
-        "name",
-        "accelerator",
-        "memoryMiB",
-        "cpus",
-        "diskGiB",
-        "lifetimeMinutes",
-        "network",
-        "onExpire"
+        "name"
       ],
       "additionalProperties": false
     },
@@ -997,10 +987,7 @@
         }
       },
       "required": [
-        "command",
-        "cwd",
-        "timeoutSeconds",
-        "artifacts"
+        "command"
       ],
       "additionalProperties": false
     },

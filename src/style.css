@@ -2957,6 +2957,36 @@ label input {
   gap: 12px 16px;
   margin: 16px 0;
 }
+.api-explorer {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.api-explorer > label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.api-explorer input,
+.api-explorer select {
+  width: 100%;
+  min-width: 0;
+}
+.api-explorer details {
+  margin-top: 14px;
+}
+.api-explorer li {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.api-json {
+  max-height: 420px;
+  padding: 14px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--canvas);
+  border-radius: 10px;
+}
 .shortcut-field {
   min-width: 0;
 }

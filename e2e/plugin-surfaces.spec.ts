@@ -2,6 +2,53 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
+import { apiDocument } from '../server/openapi.ts';
+import { generateSdk } from '../server/sdk.ts';
+
+test('API explorer filters declared operations, sends safe reads and downloads a usable specification and SDK', async ({
+  page,
+}) => {
+  await app(page, ['metrics'], true);
+  const specification = apiDocument(['metrics'], 7337);
+  await page.route('**/api/openapi', (route) => route.fulfill({ json: specification }));
+  await page.route('**/api/sdk', (route) =>
+    route.fulfill({
+      json: { filename: 'sakura-client.mjs', mime: 'text/javascript', content: generateSdk(specification) },
+    }),
+  );
+  let reads = 0;
+  await page.route('**/api/monitor', (route) => {
+    reads++;
+    return route.fulfill({ json: { host: 'API_READ_OK' } });
+  });
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  await page.getByRole('button', { name: '打开 API 浏览器', exact: true }).click();
+  const explorer = page.getByRole('region', { name: 'API 浏览器', exact: true });
+  await expect(explorer.getByLabel('API 操作')).toHaveValue('core.monitor');
+  await explorer.getByRole('button', { name: '执行只读查询' }).click();
+  await expect(explorer.getByLabel('API 查询结果')).toContainText('API_READ_OK');
+  expect(reads).toBe(1);
+  await explorer.getByLabel('搜索 API 接口').fill('vms.start');
+  await explorer.getByLabel('API 操作').selectOption('core.vms.start');
+  await explorer.getByLabel('API vmId').fill(vm.id);
+  await expect(explorer.getByRole('button', { name: '执行只读查询' })).toBeDisabled();
+  await explorer.getByLabel('搜索 API 接口').fill('');
+  await explorer.getByLabel('API 操作').selectOption('metrics.sample');
+  await explorer.getByLabel('API vmId').fill('../escape');
+  await explorer.getByRole('button', { name: '执行只读查询' }).click();
+  await expect(explorer.getByRole('alert')).toContainText('路径参数 vmId 无效');
+  const openapi = page.waitForEvent('download');
+  await explorer.getByRole('button', { name: '下载 OpenAPI', exact: true }).click();
+  const specFile = await openapi;
+  expect(JSON.parse(await readFile((await specFile.path())!, 'utf8')).openapi).toBe('3.1.1');
+  const client = page.waitForEvent('download');
+  await explorer.getByRole('button', { name: '下载 JavaScript SDK' }).click();
+  const sdkFile = await client;
+  expect(sdkFile.suggestedFilename()).toBe('sakura-client.mjs');
+  expect(await readFile((await sdkFile.path())!, 'utf8')).toContain('export class SakuraClient');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
 
 test('offline monitor reopens without a network, excludes credentials and clears only its own cache', async ({
   page,

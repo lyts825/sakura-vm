@@ -51,6 +51,22 @@ async function probe(selected, expected) {
     }
     assert.ok(bootstrap?.token, `编译版服务未启动：${output}`);
     const headers = { 'x-sakura-token': bootstrap.token };
+    const specification = await fetch(origin + '/api/openapi', { headers }).then((response) =>
+      response.json(),
+    );
+    assert.equal(specification.openapi, '3.1.1');
+    assert.equal(
+      specification.paths['/api/vms/{vmId}/metrics'].get['x-sakura-enabled'],
+      expected.includes('metrics'),
+    );
+    const sdkFile = await fetch(origin + '/api/sdk', { headers }).then((response) => response.json());
+    assert.ok(!sdkFile.content.includes(bootstrap.token));
+    const { SakuraClient } = await import(
+      'data:text/javascript;base64,' + Buffer.from(sdkFile.content).toString('base64')
+    );
+    const sdk = new SakuraClient();
+    assert.deepEqual(await sdk.call('core.vms.list'), []);
+    assert.equal((await sdk.call('core.monitor')).version, 1);
     const [system, plugins, html] = await Promise.all([
       fetch(`${origin}/api/system`, { headers }).then((response) => response.json()),
       fetch(`${origin}/api/plugins`, { headers }).then((response) => response.json()),

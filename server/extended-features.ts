@@ -161,7 +161,14 @@ export const extendedFeatureCatalog = [
   ],
   ['locale-packs', '语言与区域包', '体验集成', 'P2', '支持界面语言、时区和数字格式。', 'planned'],
   ['self-update', '自更新与回滚', '平台', 'P0', '灰度升级 Sakura 并支持回滚。', 'planned'],
-  ['api-explorer', 'OpenAPI 与 SDK', '平台', 'P1', '提供 API 浏览器和生成客户端。', 'planned'],
+  [
+    'api-explorer',
+    'OpenAPI 与 SDK',
+    '平台',
+    'P1',
+    '浏览核心与已声明插件操作的 OpenAPI，生成 JavaScript 客户端。',
+    'available',
+  ],
 ] as const;
 
 export type ExtendedFeatureId = (typeof extendedFeatureCatalog)[number][0];
@@ -303,6 +310,14 @@ export class ExtendedFeatures {
     };
     if (spec.id === 'qemu-commandline')
       return { ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) };
+    if (spec.id === 'api-explorer')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '系统设置 → 开发接口，浏览 OpenAPI、试读状态并下载 JavaScript SDK。',
+      };
     if (spec.id === 'offline-pwa')
       return {
         ready: true,

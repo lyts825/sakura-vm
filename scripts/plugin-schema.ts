@@ -28,7 +28,7 @@ for (const plugin of PLUGINS) {
     if (!implementation) throw new Error(`Missing operation implementation: ${plugin.id}.${declaration.id}`);
     operations[`${plugin.id}.${declaration.id}`] = {
       ...declaration,
-      request: implementation.request ? z.toJSONSchema(implementation.request) : null,
+      request: implementation.request ? z.toJSONSchema(implementation.request, { io: 'input' }) : null,
       response: z.toJSONSchema(implementation.response),
     };
   }
@@ -40,5 +40,7 @@ if (checking) {
     throw new Error(`Operation contracts are stale: ${operationsFile.pathname}`);
 } else await writeFile(operationsFile, operationsText);
 console.log(
-  checking ? 'Plugin schemas and operations are up to date.' : 'Generated plugin, pack, selection and operation schemas.',
+  checking
+    ? 'Plugin schemas and operations are up to date.'
+    : 'Generated plugin, pack, selection and operation schemas.',
 );

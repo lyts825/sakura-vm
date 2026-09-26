@@ -96,6 +96,7 @@ const PluginCenter = lazy(() =>
   import('./PluginCenter').then((module) => ({ default: module.PluginCenter })),
 );
 const TasksPanel = lazy(() => import('./TasksPanel').then((module) => ({ default: module.TasksPanel })));
+const ApiExplorer = lazy(() => import('./ApiExplorer').then((module) => ({ default: module.ApiExplorer })));
 const AccessibilityAudit = lazy(() =>
   import('./AccessibilityAudit').then((module) => ({ default: module.AccessibilityAudit })),
 );
@@ -337,6 +338,7 @@ function App() {
   const [palette, setPalette] = useState(false);
   const [auditMode, setAuditMode] = useState(false);
   const [auditLoaded, setAuditLoaded] = useState(false);
+  const [showApi, setShowApi] = useState(false);
   const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
   const navigatePalette = async (target: PaletteTarget) => {
     setPalette(false);
@@ -1404,6 +1406,18 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <section className="system-card">
+                  <h3>开发接口</h3>
+                  <p>查看接口文档、试读状态并下载 JavaScript 客户端。</p>
+                  <button className="secondary compact" onClick={() => setShowApi(!showApi)}>
+                    {showApi ? '收起 API 浏览器' : '打开 API 浏览器'}
+                  </button>
+                </section>
+                {showApi && (
+                  <Suspense fallback={<p>正在加载 API 文档…</p>}>
+                    <ApiExplorer request={api} />
+                  </Suspense>
+                )}
                 <section className="system-card">
                   <h3>离线监控 PWA</h3>
                   <p>查看最近的实例状态和任务事件。可在独立监控页启用离线缓存，并通过浏览器安装。</p>

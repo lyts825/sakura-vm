@@ -19,6 +19,8 @@ import type { ClientChannel } from 'ssh2';
 import { hostAudit } from './audit.ts';
 import { Jobs } from './jobs.ts';
 import { monitorSnapshot } from './monitor.ts';
+import { apiDocument } from './openapi.ts';
+import { generateSdk } from './sdk.ts';
 
 async function main() {
   const token = randomBytes(32).toString('hex');
@@ -67,6 +69,16 @@ async function main() {
     if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
     if (await features.downloads?.route(req, res, url)) return;
     if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
+    if (url.pathname === '/api/openapi' || url.pathname === '/api/sdk') {
+      if (req.method !== 'GET') throw new AppError('文档接口仅支持读取', 405);
+      const specification = apiDocument(features.enabled, PORT);
+      return send(
+        res,
+        url.pathname === '/api/openapi'
+          ? specification
+          : { filename: 'sakura-client.mjs', mime: 'text/javascript', content: generateSdk(specification) },
+      );
+    }
     if (url.pathname === '/api/monitor') {
       if (req.method !== 'GET') throw new AppError('监控接口仅支持读取', 405);
       return send(res, await monitorSnapshot(machines, features.jobStores()));
