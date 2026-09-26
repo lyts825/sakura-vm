@@ -1404,6 +1404,13 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <section className="system-card">
+                  <h3>离线监控 PWA</h3>
+                  <p>查看最近的实例状态和任务事件。可在独立监控页启用离线缓存，并通过浏览器安装。</p>
+                  <a href="/monitor/index.html" target="_blank" rel="noreferrer">
+                    打开只读监控 ↗
+                  </a>
+                </section>
                 <ShortcutSettings
                   preferences={shortcuts}
                   context={shortcutScope}

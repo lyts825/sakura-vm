@@ -1,0 +1,162 @@
+:root {
+  font-family: system-ui, 'Microsoft YaHei', sans-serif;
+  color: #3b303f;
+  background: #faf7f9;
+  color-scheme: light;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 28px;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+header a {
+  margin-left: auto;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font-size: 26px;
+}
+h2 {
+  font-size: 19px;
+  margin: 22px 0 12px;
+}
+h3 {
+  font-size: 17px;
+}
+p {
+  margin: 10px 0;
+  line-height: 1.65;
+}
+a {
+  color: #953761;
+}
+.eyebrow {
+  margin: 0 0 3px;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.muted,
+footer {
+  color: #6b5c70;
+  font-size: 13px;
+}
+.card {
+  padding: 22px;
+  border: 1px solid #ddcfda;
+  border-radius: 16px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.card h2 {
+  margin-top: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+button {
+  border: 1px solid #c7b3c1;
+  background: #fff;
+  color: #79304e;
+  border-radius: 9px;
+  padding: 10px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover {
+  background: #f8edf3;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+:focus-visible {
+  outline: 3px solid #963169;
+  outline-offset: 3px;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 14px;
+}
+.state {
+  display: inline-block;
+  margin: 12px 0 4px;
+  border-radius: 20px;
+  padding: 4px 10px;
+  background: #f6edf3;
+  font-size: 13px;
+}
+.events {
+  padding: 0;
+  list-style: none;
+}
+.events li {
+  padding: 16px 0;
+  border-bottom: 1px solid #ddcfda;
+  overflow-wrap: anywhere;
+}
+footer {
+  padding: 25px 0;
+  line-height: 1.7;
+}
+#error {
+  color: #a7193e;
+}
+@media (max-width: 600px) {
+  body {
+    padding: 18px;
+  }
+  header {
+    flex-wrap: wrap;
+  }
+  header a {
+    font-size: 13px;
+  }
+  .card {
+    padding: 16px;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #eee4ed;
+    background: #201b24;
+    color-scheme: dark;
+  }
+  .card,
+  button {
+    background: #2d2632;
+    border-color: #756279;
+  }
+  .muted,
+  footer {
+    color: #c4b6c9;
+  }
+  a,
+  button {
+    color: #f2b4d1;
+  }
+  button:hover,
+  .state {
+    background: #463548;
+  }
+  #error {
+    color: #ffb1c3;
+  }
+}

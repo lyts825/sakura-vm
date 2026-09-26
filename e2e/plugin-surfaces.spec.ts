@@ -3,6 +3,128 @@ import { readFile } from 'node:fs/promises';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 
+test('offline monitor reopens without a network, excludes credentials and clears only its own cache', async ({
+  page,
+  context,
+}) => {
+  await app(page);
+  const sample = {
+    version: 1,
+    capturedAt: new Date().toISOString(),
+    host: 'monitor-test-host',
+    totalVms: 1,
+    totalJobs: 1,
+    vms: [
+      {
+        id: 'test-vm',
+        name: 'offline-linux',
+        status: 'running',
+        cpus: 2,
+        memoryMiB: 512,
+        privateKey: 'MUST_NOT_CACHE_VM_KEY',
+      },
+    ],
+    jobs: [
+      {
+        id: 'job',
+        vmId: 'test-vm',
+        scope: 'backups',
+        action: 'create',
+        status: 'done',
+        startedAt: new Date().toISOString(),
+        log: 'MUST_NOT_CACHE_JOB_LOG',
+      },
+    ],
+  };
+  await page.route('**/api/monitor', (route) => route.fulfill({ json: sample }));
+  await page.goto('/monitor/index.html');
+  await expect(page.locator('#vms')).toContainText('offline-linux');
+  await expect(page.locator('#jobs')).toContainText('backups / create');
+  expect(await page.evaluate(() => caches.keys())).toEqual([]);
+  await page.getByRole('button', { name: '启用离线缓存' }).click();
+  await expect(page.locator('#cache-state')).toContainText('离线缓存已启用');
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const response = await (
+          await caches.open('sakura-monitor-snapshots-v1')
+        ).match(new URL('./snapshot.json', location.href).href);
+        return response?.text();
+      }),
+    )
+    .toContain('offline-linux');
+  const contents = await page.evaluate(async () => {
+    const values = [];
+    for (const name of await caches.keys()) {
+      const cache = await caches.open(name);
+      for (const request of await cache.keys()) {
+        if (new URL(request.url).pathname.startsWith('/api/')) throw new Error('API response was cached');
+        const response = await cache.match(request);
+        if (response) values.push(await response.text());
+      }
+    }
+    return values.join('\n') + JSON.stringify(localStorage);
+  });
+  expect(contents).not.toContain('test-token');
+  expect(contents).not.toContain('MUST_NOT_CACHE_VM_KEY');
+  expect(contents).not.toContain('MUST_NOT_CACHE_JOB_LOG');
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+  await page.unroute('**/api/monitor');
+  await page.unroute('**/api/**');
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator('#connection')).toContainText('缓存快照');
+  await expect(page.locator('#vms')).toContainText('offline-linux');
+  await expect(page.locator('#sample-time')).toContainText('采样于');
+  sample.vms[0].status = 'stopped';
+  sample.capturedAt = new Date().toISOString();
+  await page.route('**/api/bootstrap', (route) => route.fulfill({ json: { token: 'fresh-private-token' } }));
+  await page.route('**/api/monitor', (route) => route.fulfill({ json: sample }));
+  await context.setOffline(false);
+  await page.getByRole('button', { name: '立即刷新' }).click();
+  await expect(page.locator('#vms')).toContainText('已停止');
+  await page.evaluate(() => caches.open('unrelated-cache'));
+  await page.getByRole('button', { name: '清除离线数据' }).click();
+  await expect(page.locator('#cache-state')).toHaveText('离线缓存未启用');
+  await expect.poll(() => page.evaluate(() => caches.keys())).toEqual(['unrelated-cache']);
+  await expect
+    .poll(() => page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length))
+    .toBe(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test('monitor cache failure rolls back consent and registration instead of claiming offline readiness', async ({
+  page,
+}) => {
+  await app(page);
+  await page.route('**/api/monitor', (route) =>
+    route.fulfill({
+      json: {
+        version: 1,
+        capturedAt: new Date().toISOString(),
+        host: 'test',
+        totalVms: 0,
+        totalJobs: 0,
+        vms: [],
+        jobs: [],
+      },
+    }),
+  );
+  await page.goto('/monitor/index.html');
+  await expect(page.locator('#connection')).toContainText('已连接');
+  await page.evaluate(() => {
+    Cache.prototype.put = async () => {
+      throw new DOMException('storage denied', 'QuotaExceededError');
+    };
+  });
+  await page.getByRole('button', { name: '启用离线缓存' }).click();
+  await expect(page.getByRole('alert')).toContainText('storage denied');
+  await expect(page.locator('#cache-state')).toHaveText('离线缓存未启用');
+  expect(await page.evaluate(() => caches.keys())).toEqual([]);
+  expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length)).toBe(0);
+});
+
 test('accessibility mode audits actual DOM, locates failures and exports no HTML or input values', async ({
   page,
 }) => {

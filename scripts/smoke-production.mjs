@@ -59,6 +59,19 @@ async function probe(selected, expected) {
     assert.deepEqual([...system.plugins].sort(), [...expected].sort());
     assert.deepEqual([...plugins.active].sort(), [...expected].sort());
     assert.deepEqual(plugins.errors, {});
+    const monitor = await fetch(origin + '/api/monitor', { headers });
+    assert.equal(monitor.status, 200);
+    const monitoring = await monitor.json();
+    assert.equal(monitoring.version, 1);
+    assert.deepEqual(monitoring.vms, []);
+    assert.equal((await fetch(origin + '/api/monitor')).status, 401);
+    assert.equal((await fetch(origin + '/api/monitor', { method: 'POST', headers })).status, 405);
+    const manifest = await fetch(origin + '/monitor/manifest.webmanifest');
+    assert.match(manifest.headers.get('content-type'), /application\/manifest\+json/);
+    assert.equal((await manifest.json()).scope, '/monitor/');
+    const worker = await fetch(origin + '/monitor/sw.js');
+    assert.equal(worker.headers.get('cache-control'), 'no-cache');
+    assert.ok(!(await worker.text()).includes('__MONITOR_REVISION__'));
     assert.equal(plugins.plugins.length, 32);
     const auditBefore = await fetch(origin + '/api/audit', { headers }).then((response) => response.json());
     assert.equal(auditBefore.valid, true);
@@ -101,6 +114,18 @@ async function probe(selected, expected) {
         await panel.getByRole('status').filter({ hasText: '检查完成' }).waitFor({ timeout: 30_000 });
         assert.equal(await panel.getByRole('alert').count(), 0);
         console.log('Accessibility audit runs under the production CSP without unsafe-eval.');
+        await page.goto(origin + '/monitor/index.html');
+        await page.locator('#connection').filter({ hasText: '已连接' }).waitFor();
+        await page.getByRole('button', { name: '启用离线缓存' }).click();
+        await page.locator('#cache-state').filter({ hasText: '离线缓存已启用' }).waitFor();
+        await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+        await page.context().setOffline(true);
+        await page.reload();
+        await page.locator('#connection').filter({ hasText: '缓存快照' }).waitFor();
+        assert.match(await page.locator('#sample-time').textContent(), /采样于/);
+        await page.getByRole('button', { name: '清除离线数据' }).click();
+        await page.waitForFunction(async () => (await caches.keys()).length === 0);
+        console.log('Read-only monitoring survives an offline reload under the production CSP.');
       } finally {
         await browser.close();
       }

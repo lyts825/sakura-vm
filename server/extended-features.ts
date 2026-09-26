@@ -150,7 +150,7 @@ export const extendedFeatureCatalog = [
   ],
   ['shortcut-editor', '快捷键编辑器', '体验集成', 'P1', '自定义页面全局和项目快捷键。', 'available'],
   ['command-macros', '条件命令宏', '体验集成', 'P1', '组合带条件和参数的操作。', 'available'],
-  ['offline-pwa', '离线监控 PWA', '体验集成', 'P1', '离线查看最近状态和事件。', 'planned'],
+  ['offline-pwa', '离线监控 PWA', '体验集成', 'P1', '离线查看最近状态和事件。', 'available'],
   [
     'accessibility-audit',
     '无障碍检查模式',
@@ -303,6 +303,14 @@ export class ExtendedFeatures {
     };
     if (spec.id === 'qemu-commandline')
       return { ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) };
+    if (spec.id === 'offline-pwa')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '系统设置 → 离线监控 PWA，打开独立只读页面并启用浏览器离线缓存。',
+      };
     if (spec.id === 'accessibility-audit')
       return {
         ready: true,

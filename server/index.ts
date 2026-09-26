@@ -18,6 +18,7 @@ import { readJsonBody as body, requestUrl } from './http.ts';
 import type { ClientChannel } from 'ssh2';
 import { hostAudit } from './audit.ts';
 import { Jobs } from './jobs.ts';
+import { monitorSnapshot } from './monitor.ts';
 
 async function main() {
   const token = randomBytes(32).toString('hex');
@@ -66,6 +67,10 @@ async function main() {
     if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
     if (await features.downloads?.route(req, res, url)) return;
     if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
+    if (url.pathname === '/api/monitor') {
+      if (req.method !== 'GET') throw new AppError('监控接口仅支持读取', 405);
+      return send(res, await monitorSnapshot(machines, features.jobStores()));
+    }
     if (url.pathname === '/api/audit' && req.method === 'GET') return send(res, await audit.read(200));
     if (
       features.migration?.blocked &&
@@ -207,11 +212,18 @@ async function main() {
         '.svg': 'image/svg+xml',
         '.webp': 'image/webp',
         '.woff2': 'font/woff2',
+        '.png': 'image/png',
+        '.webmanifest': 'application/manifest+json',
       };
       res.writeHead(200, {
         'Content-Type': mime[extname(candidate)] || 'application/octet-stream',
         'X-Content-Type-Options': 'nosniff',
-        'Cache-Control': candidate.endsWith('index.html') ? 'no-cache' : 'public, max-age=3600',
+        'Cache-Control':
+          candidate.endsWith('index.html') ||
+          candidate.endsWith('sw.js') ||
+          candidate.endsWith('.webmanifest')
+            ? 'no-cache'
+            : 'public, max-age=3600',
         'Content-Security-Policy':
           "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: blob:; object-src blob:; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'",
       });

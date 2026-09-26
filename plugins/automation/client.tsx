@@ -333,6 +333,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'offline-pwa':
+          '打开系统设置 → 离线监控 PWA，查看独立只读监控页，可启用最近状态与任务事件的离线缓存。',
         'accessibility-audit':
           '点击顶栏的无障碍检查模式，再检查当前页面。可定位问题元素、辅助检查键盘焦点并导出报告。',
         'shortcut-editor':

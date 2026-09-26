@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#faf7f9" />
+    <meta name="description" content="Sakura 的只读实例监控，可离线查看最近一次快照。" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon-192.png" />
+    <link rel="stylesheet" href="./monitor.css" />
+    <title>Sakura · 离线监控</title>
+    <script type="module" src="./monitor.js"></script>
+  </head>
+  <body>
+    <header>
+      <img src="./icon-192.png" width="42" height="42" alt="" />
+      <div>
+        <p class="eyebrow">SAKURA MONITOR</p>
+        <h1>离线监控</h1>
+      </div>
+      <a href="/" target="_blank" rel="noreferrer">打开控制台 ↗</a>
+    </header>
+    <main>
+      <section class="card" aria-label="连接和缓存状态">
+        <h2 id="connection" role="status">正在连接…</h2>
+        <p id="sample-time">尚无采样记录</p>
+        <p class="muted">
+          页面可见时约每 30 秒更新；离线或控制服务不可达时只显示最近快照。本页面只有读取功能。
+        </p>
+        <div class="actions">
+          <button id="refresh">立即刷新</button><button id="offline">启用离线缓存</button
+          ><button id="clear">清除离线数据</button><button id="install" hidden>安装监控应用</button>
+        </div>
+        <p id="cache-state">离线缓存未启用</p>
+        <p class="muted">
+          启用后，本浏览器会保存实例名称、状态、CPU/内存规格与最近任务的类型、状态和时间；不保存凭证、命令或日志。安装选项由浏览器提供。
+        </p>
+        <p id="error" role="alert" hidden></p>
+      </section>
+      <section aria-labelledby="vm-heading">
+        <h2 id="vm-heading">实例状态</h2>
+        <p id="vm-count" class="muted"></p>
+        <div id="vms" class="cards"><p>等待采样</p></div>
+      </section>
+      <section aria-labelledby="job-heading">
+        <h2 id="job-heading">最近任务事件</h2>
+        <p id="job-count" class="muted"></p>
+        <ol id="jobs" class="events">
+          <li>等待采样</li>
+        </ol>
+      </section>
+    </main>
+    <footer>快照中的“运行中”代表采样时状态，无法证明实例现在仍在线。</footer>
+  </body>
+</html>
