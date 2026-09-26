@@ -22,6 +22,7 @@ import { monitorSnapshot } from './monitor.ts';
 import { apiDocument } from './openapi.ts';
 import { generateSdk } from './sdk.ts';
 import { LogRetention, logRetentionRequest } from './log-retention.ts';
+import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from './graphql-api.ts';
 
 async function main() {
   const token = randomBytes(32).toString('hex');
@@ -55,6 +56,7 @@ async function main() {
     },
   );
   await retention.init();
+  const graph = new GraphApi(async () => querySnapshot(machines, features.jobStores(), features.enabled));
   plugins.activated(features.enabled, features.errors, features.lifecycle);
   const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
   const socketVms = new WeakMap<WebSocket, string>();
@@ -80,6 +82,35 @@ async function main() {
     if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
     if (await features.downloads?.route(req, res, url)) return;
     if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
+    if (url.pathname === '/api/graphql-schema') {
+      if (req.method !== 'GET') throw new AppError('Schema 接口仅支持读取', 405);
+      return send(res, graphqlInfo());
+    }
+    if (url.pathname === '/api/graphql') {
+      if (req.method !== 'POST') throw new AppError('GraphQL 查询使用 POST JSON', 405);
+      const abort = new AbortController();
+      const cancel = () => {
+        if (!res.writableFinished) abort.abort();
+      };
+      req.once('aborted', cancel);
+      res.once('close', cancel);
+      if (req.aborted || res.destroyed) cancel();
+      try {
+        const result = await graph.query(
+          await body(req, graphqlLimits.requestBytes, abort.signal),
+          abort.signal,
+        );
+        res.writeHead(result.status, {
+          'Content-Type': 'application/graphql-response+json; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        return res.end(JSON.stringify(result.body));
+      } finally {
+        req.off('aborted', cancel);
+        res.off('close', cancel);
+      }
+    }
     if (url.pathname === '/api/openapi' || url.pathname === '/api/sdk') {
       if (req.method !== 'GET') throw new AppError('文档接口仅支持读取', 405);
       const specification = apiDocument(features.enabled, PORT);
@@ -438,6 +469,7 @@ async function main() {
     let failed = false;
     for (const dispose of [
       () => retention.close(),
+      () => graph.close(),
       () => features.close(),
       () => machines.close(),
       () => audit.close(),

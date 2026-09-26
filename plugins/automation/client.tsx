@@ -415,6 +415,10 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'graphql-api') {
+        setNextResult('打开系统设置 → GraphQL 查询，可查询主机、实例、任务元数据和插件状态，支持变量、分页及 Schema 下载。');
+        return;
+      }
       if (featureId === 'log-retention') {
         setNextResult(
           '打开系统设置 → 任务日志保留，预览并保存保留天数与容量上限。运行中任务受保护；清理日志正文，保留任务记录、结果和审计。',

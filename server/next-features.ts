@@ -522,7 +522,7 @@ export const nextFeatureCatalog = [
     'planned',
   ],
   ['schema-panels', 'Schema 驱动面板', '平台与扩展', 'P1', '保存面板 Schema 版本和校验状态。', 'available'],
-  ['graphql-api', 'GraphQL API', '平台与扩展', 'P1', '登记 GraphQL API 版本和查询限制。', 'planned'],
+  ['graphql-api', 'GraphQL API', '平台与扩展', 'P1', '按 Schema 查询主机、实例、任务元数据与插件状态，限制查询大小和展开成本。', 'available'],
   ['webhook-events', 'Webhook 事件', '平台与扩展', 'P0', '保存 Webhook 订阅和最近投递状态。', 'planned'],
   [
     'automation-dsl',
@@ -720,6 +720,10 @@ export class NextFeatures {
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
+    if (spec.id === 'graphql-api') return {
+      ready: true, executed: false, adapter,
+      message: '打开系统设置 → GraphQL 查询，执行只读查询或下载 Schema；POST /api/graphql 继续使用本机控制凭证。',
+    };
     if (spec.id === 'log-retention')
       return {
         ready: true,

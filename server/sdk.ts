@@ -60,13 +60,15 @@ export class SakuraClient {
     if (!response.ok) {
       if (response.status === 401) this.#token = '';
       let failure = {}; try { failure = await response.json(); } catch {}
-      throw new SakuraApiError(failure.error || 'Request failed', response.status, failure.code);
+      const message = failure.error || (Array.isArray(failure.errors) ? failure.errors.slice(0, 10).map(error => error.message).filter(Boolean).join('; ') : '') || 'Request failed';
+      throw new SakuraApiError(message, response.status, failure.code);
     }
     // Never replay requests after an HTTP rejection, a disconnect, or cancellation.
     if (method === 'HEAD' || response.status === 204) return undefined;
     if (result === 'stream') return response;
     if (result === 'buffer') return response.arrayBuffer();
-    return result === 'json' || response.headers.get('content-type')?.includes('application/json') ? response.json() : response;
+    const mime = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
+    return result === 'json' || mime === 'application/json' || mime?.endsWith('+json') ? response.json() : response;
   }
 }
 `.replace('__ORIGIN__', JSON.stringify(document.servers[0].url))

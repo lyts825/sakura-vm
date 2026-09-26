@@ -4,6 +4,66 @@ import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
+import { graphqlInfo, GraphApi, querySnapshot } from '../server/graphql-api.ts';
+import type { Machines } from '../server/machines.ts';
+
+test('GraphQL workbench executes real typed queries, reports validation errors and exports its schema', async ({
+  page,
+}) => {
+  await app(page, ['metrics'], true);
+  const graph = new GraphApi(async () =>
+    querySnapshot(
+      { records: new Map([[vm.id, vm]]), state: () => 'running' } as unknown as Machines,
+      [],
+      ['metrics'],
+    ),
+  );
+  await page.route('**/api/graphql-schema', (route) => route.fulfill({ json: graphqlInfo() }));
+  let requests = 0;
+  await page.route('**/api/graphql', async (route) => {
+    requests++;
+    const result = await graph.query(route.request().postDataJSON());
+    return route.fulfill({
+      status: result.status,
+      contentType: 'application/graphql-response+json',
+      body: JSON.stringify(result.body),
+    });
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '打开 GraphQL 查询', exact: true }).click();
+    const panel = page.getByRole('region', { name: 'GraphQL 查询面板' });
+    await panel
+      .getByLabel('GraphQL 查询文本')
+      .fill('query Read($state:String!){ selected: vms(status:$state){ name status } }');
+    await panel.getByLabel('GraphQL 查询变量').fill('{"state":"running"}');
+    await panel.getByRole('button', { name: '执行 GraphQL 查询', exact: true }).click();
+    await expect(panel.getByLabel('GraphQL 查询结果')).toContainText(vm.name);
+    await panel.getByLabel('GraphQL 查询变量').fill('invalid');
+    await panel.getByRole('button', { name: '执行 GraphQL 查询', exact: true }).click();
+    await expect(panel.getByRole('alert')).toContainText('有效 JSON');
+    expect(requests).toBe(1);
+    await panel.getByLabel('GraphQL 查询变量').fill('{}');
+    await panel.getByLabel('GraphQL 查询文本').fill('{ unknownField }');
+    await panel.getByRole('button', { name: '执行 GraphQL 查询', exact: true }).click();
+    await expect(panel.getByRole('alert')).toContainText('unknownField');
+    await panel.getByLabel('GraphQL 查询文本').fill('query A { apiVersion } query B { host { totalVms } }');
+    await panel.getByLabel('GraphQL 操作名称').fill('B');
+    await panel.getByRole('button', { name: '执行 GraphQL 查询', exact: true }).click();
+    await expect(panel.getByLabel('GraphQL 查询结果')).toContainText('"totalVms": 1');
+    const download = page.waitForEvent('download');
+    await panel.getByRole('button', { name: '下载 GraphQL Schema' }).click();
+    expect(await readFile((await (await download).path())!, 'utf8')).toContain('type VirtualMachine');
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.reload();
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '打开 GraphQL 查询', exact: true }).click();
+    await expect(panel.getByLabel('GraphQL 查询文本')).toContainText('query Overview');
+  } finally {
+    await graph.close();
+  }
+});
 
 test('log retention requires a fresh preview, preserves drafts and displays durable cleanup feedback', async ({
   page,

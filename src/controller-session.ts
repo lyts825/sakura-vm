@@ -65,7 +65,18 @@ export class ControllerSession {
         continue;
       }
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`);
+      if (!response.ok)
+        throw new Error(
+          data.error ||
+            (path === '/graphql' && Array.isArray(data.errors)
+              ? data.errors
+                  .slice(0, 10)
+                  .map((item: { message?: string }) => item.message)
+                  .filter(Boolean)
+                  .join('；')
+              : '') ||
+            `请求失败（${response.status}）`,
+        );
       return data as T;
     }
   };

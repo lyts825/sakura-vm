@@ -122,7 +122,7 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
       const parts = segments(route.path);
       const global =
         parts.length === 2 &&
-        !['bootstrap', 'system', 'plugins', 'jobs', 'events', 'downloads', 'vms', 'audit', 'monitor', 'openapi', 'sdk', 'log-retention'].includes(parts[1]);
+        !['bootstrap', 'system', 'plugins', 'jobs', 'events', 'downloads', 'vms', 'audit', 'monitor', 'openapi', 'sdk', 'log-retention', 'graphql', 'graphql-schema'].includes(parts[1]);
       const vm =
         parts.length === 4 &&
         parts[1] === 'vms' &&

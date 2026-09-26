@@ -80,6 +80,46 @@ async function probe(selected, expected) {
     const sdk = new SakuraClient();
     assert.deepEqual(await sdk.call('core.vms.list'), []);
     assert.equal((await sdk.call('core.monitor')).version, 1);
+    assert.equal(
+      (
+        await fetch(origin + '/api/graphql', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{"query":"{ apiVersion }"}',
+        })
+      ).status,
+      401,
+    );
+    const graphSchema = await sdk.call('core.graphql.schema');
+    assert.ok(graphSchema.sdl.includes('type Query'));
+    const graphResult = await sdk.call('core.graphql.query', {
+      body: {
+        query:
+          'query Inventory($n:Int!){ apiVersion host { totalVms } vms(limit:$n){ id } plugins { id enabled } }',
+        variables: { n: 10 },
+      },
+    });
+    assert.equal(graphResult.data.apiVersion, '1');
+    assert.equal(graphResult.data.host.totalVms, 0);
+    assert.deepEqual(graphResult.data.vms, []);
+    assert.deepEqual(
+      graphResult.data.plugins
+        .filter((plugin) => plugin.enabled)
+        .map((plugin) => plugin.id)
+        .sort(),
+      [...expected].sort(),
+    );
+    await assert.rejects(
+      sdk.call('core.graphql.query', { body: { query: '{ forbiddenField }' } }),
+      /forbiddenField/,
+    );
+    assert.equal((await fetch(origin + '/api/graphql', { headers })).status, 405);
+    const oversizedGraph = await fetch(origin + '/api/graphql', {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ apiVersion }', variables: { oversized: 'x'.repeat(65536) } }),
+    });
+    assert.equal(oversizedGraph.status, 413);
     assert.equal((await fetch(origin + '/api/log-retention')).status, 401);
     const retentionPolicy = { enabled: true, days: 7, maxMiB: 1 };
     const retentionPreview = await sdk.call('core.log-retention.change', {

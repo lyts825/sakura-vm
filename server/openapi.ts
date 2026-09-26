@@ -3,11 +3,12 @@ import { createSchema } from './model.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { logRetentionRequest } from './log-retention.ts';
+import { graphqlRequest } from './graphql-api.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
 
-const response = (schema: Record<string, unknown> = {}) => ({
+const response = (schema: Record<string, unknown> = {}, media = 'application/json') => ({
   description: '成功；结构未完整声明的字段由实际接口决定。',
-  content: { 'application/json': { schema } },
+  content: { [media]: { schema } },
 });
 const request = (schema: z.ZodType) => z.toJSONSchema(schema, { io: 'input' });
 const string = { type: 'string' };
@@ -20,6 +21,7 @@ const core: {
   body?: Record<string, unknown>;
   response?: Record<string, unknown>;
   status?: number;
+  media?: string;
   inspect?: boolean;
   public?: boolean;
 }[] = [
@@ -33,6 +35,21 @@ const core: {
   },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
+  {
+    id: 'graphql.schema',
+    method: 'GET',
+    path: '/api/graphql-schema',
+    title: 'GraphQL Schema 和查询限制',
+    inspect: true,
+  },
+  {
+    id: 'graphql.query',
+    method: 'POST',
+    path: '/api/graphql',
+    title: '执行只读 GraphQL 查询',
+    body: request(graphqlRequest),
+    media: 'application/graphql-response+json',
+  },
   {
     id: 'log-retention.get',
     method: 'GET',
@@ -184,7 +201,7 @@ export function apiDocument(active: Iterable<string>, port: number): ApiDocument
         ? { requestBody: { required: true, content: { 'application/json': { schema: item.body } } } }
         : {}),
       responses: {
-        [item.status || 200]: response(item.response),
+        [item.status || 200]: response(item.response, item.media),
         default: { description: '接口错误，返回 error 和 code 字段。' },
       },
     });

@@ -2961,6 +2961,22 @@ label input {
   grid-column: 1 / -1;
   min-width: 0;
 }
+.api-explorer fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.api-explorer textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+}
+.api-explorer .button-row {
+  flex-wrap: wrap;
+}
 
 .log-retention {
   min-width: 0;

@@ -97,6 +97,9 @@ const PluginCenter = lazy(() =>
 );
 const TasksPanel = lazy(() => import('./TasksPanel').then((module) => ({ default: module.TasksPanel })));
 const ApiExplorer = lazy(() => import('./ApiExplorer').then((module) => ({ default: module.ApiExplorer })));
+const GraphQLExplorer = lazy(() =>
+  import('./GraphQLExplorer').then((module) => ({ default: module.GraphQLExplorer })),
+);
 const LogRetentionSettings = lazy(() =>
   import('./LogRetentionSettings').then((module) => ({ default: module.LogRetentionSettings })),
 );
@@ -342,6 +345,7 @@ function App() {
   const [auditMode, setAuditMode] = useState(false);
   const [auditLoaded, setAuditLoaded] = useState(false);
   const [showApi, setShowApi] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
   const [showRetention, setShowRetention] = useState(false);
   const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
   const navigatePalette = async (target: PaletteTarget) => {
@@ -1410,6 +1414,18 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <section className="system-card">
+                  <h3>GraphQL 查询</h3>
+                  <p>选择需要的实例和任务字段，读取本机状态。</p>
+                  <button className="secondary compact" onClick={() => setShowGraph(!showGraph)}>
+                    {showGraph ? '收起 GraphQL 查询' : '打开 GraphQL 查询'}
+                  </button>
+                </section>
+                {showGraph && (
+                  <Suspense fallback={<p>正在读取 GraphQL Schema…</p>}>
+                    <GraphQLExplorer request={api} />
+                  </Suspense>
+                )}
                 <section className="system-card">
                   <h3>日志保留策略</h3>
                   <p>设置已结束任务的日志保留天数和容量上限。</p>
