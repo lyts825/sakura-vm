@@ -21,6 +21,7 @@ import { Jobs } from './jobs.ts';
 import { monitorSnapshot } from './monitor.ts';
 import { apiDocument } from './openapi.ts';
 import { generateSdk } from './sdk.ts';
+import { LogRetention, logRetentionRequest } from './log-retention.ts';
 
 async function main() {
   const token = randomBytes(32).toString('hex');
@@ -44,6 +45,16 @@ async function main() {
       work,
     );
   const features = await Features.create(machines, selectedPlugins);
+  const retention = new LogRetention(
+    () => features.jobStores(),
+    undefined,
+    () => !!features.migration?.blocked,
+    undefined,
+    (delta) => {
+      features.mutations += delta;
+    },
+  );
+  await retention.init();
   plugins.activated(features.enabled, features.errors, features.lifecycle);
   const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
   const socketVms = new WeakMap<WebSocket, string>();
@@ -91,6 +102,19 @@ async function main() {
       !/^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname)
     )
       throw new AppError('数据目录迁移维护中，请等待完成并重启服务', 409);
+    if (url.pathname === '/api/log-retention') {
+      if (req.method === 'GET') return send(res, retention.view());
+      if (req.method === 'POST') {
+        const input = logRetentionRequest.parse(await body(req));
+        return send(
+          res,
+          input.action === 'preview'
+            ? retention.preview(input.policy)
+            : await retention.save(input.policy, input.token),
+        );
+      }
+      throw new AppError('不支持此方法', 405);
+    }
     const route = url.pathname.split('/').filter(Boolean);
     if (route[1] === 'vms' && route[2] && route[3] === 'lockdown' && route.length === 4) {
       machines.get(route[2]);
@@ -413,6 +437,7 @@ async function main() {
     server.close();
     let failed = false;
     for (const dispose of [
+      () => retention.close(),
       () => features.close(),
       () => machines.close(),
       () => audit.close(),

@@ -140,6 +140,9 @@ export function JobLog({ job }: { job?: JobView | null }) {
         }
       </span>
       <Feedback error={job.error} />
+      {job.logPruned && !job.log && (
+        <p className="subtle-note">日志已按保留策略清理（{new Date(job.logPruned.at).toLocaleString()}）。</p>
+      )}
       {job.log && (
         <pre className="feature-log" aria-label="操作日志">
           {job.log}

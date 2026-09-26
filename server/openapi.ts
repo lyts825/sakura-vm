@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createSchema } from './model.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 import contracts from '../docs/schemas/operations.json' with { type: 'json' };
+import { logRetentionRequest } from './log-retention.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
 
 const response = (schema: Record<string, unknown> = {}) => ({
@@ -32,6 +33,20 @@ const core: {
   },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
+  {
+    id: 'log-retention.get',
+    method: 'GET',
+    path: '/api/log-retention',
+    title: '任务日志保留策略与用量',
+    inspect: true,
+  },
+  {
+    id: 'log-retention.change',
+    method: 'POST',
+    path: '/api/log-retention',
+    title: '预览或保存并应用日志保留策略',
+    body: request(logRetentionRequest),
+  },
   { id: 'audit', method: 'GET', path: '/api/audit', title: '审计链记录' },
   { id: 'plugins.list', method: 'GET', path: '/api/plugins', title: '插件目录与启用状态', inspect: true },
   {

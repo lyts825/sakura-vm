@@ -25,6 +25,7 @@ export type JobView = JobMeta & {
   phase?: string;
   progress?: number;
   result?: { bytes: number; sha256: string };
+  logPruned?: { at: string; bytes: number };
 };
 export type JobUpdate = (phase: string, progress?: number) => void;
 type Work = (
@@ -121,6 +122,37 @@ export class Jobs {
   }
   get(id: string) {
     return this.history.find((v) => v.id === id);
+  }
+  async clearCompletedLogs(entries: { id: string; signature: string }[], at: string) {
+    if (this.closed) throw new AppError('任务服务正在关闭', 503);
+    const removed: { view: JobView; log: string; previous: JobView['logPruned'] }[] = [];
+    let removedBytes = 0;
+    for (const entry of entries) {
+      const view = this.get(entry.id);
+      if (
+        !view ||
+        view.status === 'running' ||
+        !view.log ||
+        createHash('sha256').update(view.log).digest('hex') !== entry.signature
+      )
+        continue;
+      removed.push({ view, log: view.log, previous: view.logPruned });
+      const bytes = Buffer.byteLength(view.log);
+      removedBytes += bytes;
+      view.log = '';
+      view.logPruned = { at, bytes };
+    }
+    await this.flush();
+    if (this.persistenceError) {
+      for (const item of removed)
+        if (item.view.log === '' && item.view.logPruned?.at === at) {
+          item.view.log = item.log;
+          item.view.logPruned = item.previous;
+        }
+      this.persist();
+      throw new AppError('任务日志清理保存失败', 500);
+    }
+    return { removedLogs: removed.length, removedBytes };
   }
   async result(id: string) {
     const job = this.get(id);

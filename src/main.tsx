@@ -97,6 +97,9 @@ const PluginCenter = lazy(() =>
 );
 const TasksPanel = lazy(() => import('./TasksPanel').then((module) => ({ default: module.TasksPanel })));
 const ApiExplorer = lazy(() => import('./ApiExplorer').then((module) => ({ default: module.ApiExplorer })));
+const LogRetentionSettings = lazy(() =>
+  import('./LogRetentionSettings').then((module) => ({ default: module.LogRetentionSettings })),
+);
 const AccessibilityAudit = lazy(() =>
   import('./AccessibilityAudit').then((module) => ({ default: module.AccessibilityAudit })),
 );
@@ -339,6 +342,7 @@ function App() {
   const [auditMode, setAuditMode] = useState(false);
   const [auditLoaded, setAuditLoaded] = useState(false);
   const [showApi, setShowApi] = useState(false);
+  const [showRetention, setShowRetention] = useState(false);
   const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
   const navigatePalette = async (target: PaletteTarget) => {
     setPalette(false);
@@ -1406,6 +1410,18 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <section className="system-card">
+                  <h3>日志保留策略</h3>
+                  <p>设置已结束任务的日志保留天数和容量上限。</p>
+                  <button className="secondary compact" onClick={() => setShowRetention(!showRetention)}>
+                    {showRetention ? '收起日志策略' : '管理任务日志'}
+                  </button>
+                </section>
+                {showRetention && (
+                  <Suspense fallback={<p>正在读取日志策略…</p>}>
+                    <LogRetentionSettings request={api} />
+                  </Suspense>
+                )}
                 <section className="system-card">
                   <h3>开发接口</h3>
                   <p>查看接口文档、试读状态并下载 JavaScript 客户端。</p>

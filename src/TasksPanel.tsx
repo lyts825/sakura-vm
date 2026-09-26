@@ -121,7 +121,14 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
           <p role="status">{job.phase}</p>
           {job.status === 'running' && <progress aria-label="任务进度" max={100} value={job.progress} />}
           <Feedback error={job.error} />
-          <pre className="feature-log">{job.log || '等待任务输出…'}</pre>
+          <pre className="feature-log">
+            {job.log ||
+              (job.logPruned
+                ? `日志已按保留策略清理（${new Date(job.logPruned.at).toLocaleString()}）`
+                : job.status === 'running'
+                  ? '等待任务输出…'
+                  : '任务没有日志输出。')}
+          </pre>
           <div className="feature-actions">
             {job.status === 'running' && (
               <button

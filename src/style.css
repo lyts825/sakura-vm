@@ -2961,6 +2961,19 @@ label input {
   grid-column: 1 / -1;
   min-width: 0;
 }
+
+.log-retention {
+  min-width: 0;
+}
+.log-retention fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.log-retention .button-row {
+  flex-wrap: wrap;
+}
 .api-explorer > label {
   display: grid;
   gap: 6px;

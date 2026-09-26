@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -10,6 +11,18 @@ const root = process.cwd();
 async function probe(selected, expected) {
   const data = await mkdtemp(join(tmpdir(), 'sakura-production-'));
   if (!resolve(data).startsWith(resolve(tmpdir()) + sep)) throw new Error('临时数据目录越界');
+  await mkdir(join(data, 'jobs'));
+  const logRecord = {
+    id: randomUUID(),
+    key: 'retention-smoke',
+    scope: 'commands',
+    status: 'done',
+    startedAt: '2020-01-01T00:00:00.000Z',
+    finishedAt: '2020-01-01T00:01:00.000Z',
+    log: 'EXPIRED_TASK_LOG',
+    title: 'Retention smoke task',
+  };
+  await writeFile(join(data, 'jobs', 'commands.json'), JSON.stringify([logRecord]));
   if (selected.length)
     await writeFile(
       join(data, 'plugins.json'),
@@ -67,6 +80,23 @@ async function probe(selected, expected) {
     const sdk = new SakuraClient();
     assert.deepEqual(await sdk.call('core.vms.list'), []);
     assert.equal((await sdk.call('core.monitor')).version, 1);
+    assert.equal((await fetch(origin + '/api/log-retention')).status, 401);
+    const retentionPolicy = { enabled: true, days: 7, maxMiB: 1 };
+    const retentionPreview = await sdk.call('core.log-retention.change', {
+      body: { action: 'preview', policy: retentionPolicy },
+    });
+    assert.equal(retentionPreview.removeLogs, expected.includes('commands') ? 1 : 0);
+    const retained = await sdk.call('core.log-retention.change', {
+      body: { action: 'save', policy: retentionPolicy, token: retentionPreview.token },
+    });
+    assert.equal(retained.policy.enabled, true);
+    const storedLog = JSON.parse(await readFile(join(data, 'jobs', 'commands.json'), 'utf8'))[0];
+    assert.equal(storedLog.log, expected.includes('commands') ? '' : 'EXPIRED_TASK_LOG');
+    assert.equal(storedLog.title, logRecord.title);
+    assert.equal(
+      (await sdk.call('core.log-retention.get')).lastRun.removedLogs,
+      expected.includes('commands') ? 1 : 0,
+    );
     const [system, plugins, html] = await Promise.all([
       fetch(`${origin}/api/system`, { headers }).then((response) => response.json()),
       fetch(`${origin}/api/plugins`, { headers }).then((response) => response.json()),

@@ -455,6 +455,8 @@ test('manifest schemas and catalog checks reject ambiguous or unsupported contra
   const withHttp = (path: string, projectScoped = false) =>
     change({ contributes: { ...files.contributes, http: [{ path, projectScoped, methods: ['GET'] }] } });
   assert.throws(() => validateCatalog(withHttp('/api/plugins'), PLUGIN_PACKS), /核心入口/);
+  for (const path of ['/api/audit', '/api/monitor', '/api/openapi', '/api/sdk', '/api/log-retention', '/api/vms/:vmId/lockdown'])
+    assert.throws(() => validateCatalog(withHttp(path), PLUGIN_PACKS), /核心入口/);
   assert.throws(() => validateCatalog(withHttp('/api/vms/:vmId/stop'), PLUGIN_PACKS), /核心入口/);
   assert.throws(() => validateCatalog(withHttp('/api/images'), PLUGIN_PACKS), /路由归属冲突/);
   assert.throws(

@@ -5,6 +5,89 @@ import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
 
+test('log retention requires a fresh preview, preserves drafts and displays durable cleanup feedback', async ({
+  page,
+}) => {
+  await app(page);
+  const summary = {
+    stores: 2,
+    completedLogs: 3,
+    completedBytes: 1500000,
+    protectedLogs: 1,
+    protectedBytes: 100,
+    removeLogs: 0,
+    removeBytes: 0,
+    expiredLogs: 0,
+    capacityLogs: 0,
+    remainingBytes: 1500000,
+  };
+  let saved: any = { policy: { enabled: false, days: 30, maxMiB: 64 }, summary };
+  const requests: any[] = [];
+  let stale = true;
+  await page.route('**/api/log-retention', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: saved });
+    const input = route.request().postDataJSON();
+    requests.push(input);
+    if (input.action === 'preview')
+      return route.fulfill({
+        json: {
+          ...summary,
+          removeLogs: input.policy.enabled ? 2 : 0,
+          removeBytes: 900000,
+          remainingBytes: 600000,
+          expiredLogs: 1,
+          capacityLogs: 1,
+          token: 'a'.repeat(64),
+        },
+      });
+    if (stale) {
+      stale = false;
+      return route.fulfill({ status: 409, json: { error: '任务日志或策略已变化，请重新预览后保存' } });
+    }
+    saved = {
+      policy: input.policy,
+      summary: { ...summary, completedLogs: 1, completedBytes: 600000 },
+      lastRun: { at: new Date().toISOString(), removedLogs: 2, removedBytes: 900000 },
+    };
+    return route.fulfill({ json: saved });
+  });
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  await page.getByRole('button', { name: '管理任务日志', exact: true }).click();
+  const panel = page.getByRole('region', { name: '任务日志保留设置' });
+  await panel.getByLabel('自动清理任务日志').check();
+  await panel.getByLabel('日志保留天数').fill('7');
+  await panel.getByLabel('任务日志容量（MiB）').fill('1');
+  const save = panel.getByRole('button', { name: '保存策略并清理' });
+  await expect(save).toBeDisabled();
+  await panel.getByRole('button', { name: '预览日志清理' }).click();
+  await expect(panel.getByRole('status')).toContainText('将清理 2 份日志');
+  await panel.getByLabel('日志保留天数').fill('8');
+  await expect(save).toBeDisabled();
+  await panel.getByRole('button', { name: '预览日志清理' }).click();
+  await save.click();
+  await expect(panel.getByRole('alert')).toContainText('重新预览');
+  await expect(panel.getByLabel('日志保留天数')).toHaveValue('8');
+  await expect(save).toBeDisabled();
+  await panel.getByRole('button', { name: '预览日志清理' }).click();
+  await save.click();
+  await expect(panel.getByRole('status')).toContainText('策略已保存并应用');
+  expect(requests.at(-1)).toEqual({
+    action: 'save',
+    policy: { enabled: true, days: 8, maxMiB: 1 },
+    token: 'a'.repeat(64),
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  await page.getByRole('button', { name: '管理任务日志', exact: true }).click();
+  await expect(panel.getByLabel('日志保留天数')).toHaveValue('8');
+  await panel.getByLabel('自动清理任务日志').uncheck();
+  await panel.getByRole('button', { name: '预览日志清理' }).click();
+  await panel.getByRole('button', { name: '保存停用策略' }).click();
+  await expect(panel.getByRole('status')).toContainText('自动清理已停用');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test('API explorer filters declared operations, sends safe reads and downloads a usable specification and SDK', async ({
   page,
 }) => {

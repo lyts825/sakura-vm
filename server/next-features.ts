@@ -350,7 +350,14 @@ export const nextFeatureCatalog = [
     '保存日志索引字段和最近一次索引状态。',
     'available',
   ],
-  ['log-retention', '日志保留策略', '可观测性与自动运维', 'P0', '保存日志保留天数和容量上限。', 'planned'],
+  [
+    'log-retention',
+    '日志保留策略',
+    '可观测性与自动运维',
+    'P0',
+    '按保留天数和总容量清理已结束任务的日志正文，保护运行中任务。',
+    'available',
+  ],
   ['alert-routing', '告警路由', '可观测性与自动运维', 'P0', '保存按标签匹配的告警通知路由。', 'planned'],
   [
     'slo-dashboard',
@@ -713,6 +720,13 @@ export class NextFeatures {
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
+    if (spec.id === 'log-retention')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '请在系统设置 → 任务日志保留中预览并保存主机级策略；服务每分钟执行已启用的清理策略。',
+      };
     if (hasCapability(spec.id)) {
       const runner = new CapabilityActions(this.machines, this.workspaces);
       return action === 'run'

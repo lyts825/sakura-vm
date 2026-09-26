@@ -415,6 +415,12 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'log-retention') {
+        setNextResult(
+          '打开系统设置 → 任务日志保留，预览并保存保留天数与容量上限。运行中任务受保护；清理日志正文，保留任务记录、结果和审计。',
+        );
+        return;
+      }
       if (featureId === 'backup-throttle') {
         setNextResult('打开实例 → 备份，设置备份输出限速（MiB/s）。每个实例串行创建备份；0 表示不限制速率。');
         return;

@@ -122,12 +122,12 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
       const parts = segments(route.path);
       const global =
         parts.length === 2 &&
-        !['bootstrap', 'system', 'plugins', 'jobs', 'events', 'downloads', 'vms'].includes(parts[1]);
+        !['bootstrap', 'system', 'plugins', 'jobs', 'events', 'downloads', 'vms', 'audit', 'monitor', 'openapi', 'sdk', 'log-retention'].includes(parts[1]);
       const vm =
         parts.length === 4 &&
         parts[1] === 'vms' &&
         parts[2] === ':vmId' &&
-        !['start', 'stop', 'exec', 'logs'].includes(parts[3]);
+        !['start', 'stop', 'exec', 'logs', 'lockdown'].includes(parts[3]);
       if (!global && !vm && route.path !== '/api/vms/batch')
         throw new Error(`路由占用核心入口或路径不支持：${route.path}`);
       if (routes.some((path) => overlaps(path, route.path))) throw new Error(`路由归属冲突：${route.path}`);
