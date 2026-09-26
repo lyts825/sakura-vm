@@ -90,7 +90,7 @@ export class Sandboxes {
   async list(): Promise<SandboxOverview> {
     return {
       sandboxes: (await this.machines.list())
-        .filter((vm) => vm.sandbox)
+        .filter((vm) => vm.sandbox && !vm.rescueOf)
         .map((vm) => ({ ...vm, sandbox: vm.sandbox!, expired: sandboxExpired(vm.sandbox!) })),
       runs: this.jobs.list(),
       persistenceError: this.jobs.persistenceError,

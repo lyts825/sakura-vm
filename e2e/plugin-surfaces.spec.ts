@@ -18,6 +18,119 @@ import { Jobs } from '../server/jobs.ts';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
+import { Rescue } from '../server/rescue';
+import { setTimeout as delay } from 'node:timers/promises';
+
+test('read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile', async ({
+  page,
+}) => {
+  let hold = false,
+    cleaned = 0;
+  const commands: string[] = [];
+  const machines = {
+    get: () => vm,
+    requireUnlocked: () => {},
+    requireStopped: () => {},
+    isBusy: () => false,
+    withRescue: async (
+      _id: string,
+      signal: AbortSignal,
+      phase: (text: string) => void,
+      run: (id: string, signal: AbortSignal) => Promise<void>,
+    ) => {
+      phase('启动临时救援系统');
+      try {
+        await run('rescue-test', signal);
+      } finally {
+        cleaned++;
+      }
+    },
+    exec: async (
+      _id: string,
+      command: string,
+      _timeout: number,
+      signal: AbortSignal,
+      log: (text: string) => void,
+    ) => {
+      if (command.startsWith('cd /workspace')) {
+        commands.push(command);
+        log('救援诊断已执行\n');
+        if (hold) await delay(60000, undefined, { signal });
+      }
+      return { code: 0, stdout: '', stderr: '' };
+    },
+  } as unknown as Machines;
+  const artifactId = randomUUID();
+  const service = new Rescue(machines, new Jobs(), {
+    prune: async () => {},
+    collect: async (
+      _id: string,
+      _run: string,
+      _cwd: string,
+      paths: string[],
+      saved: (item: unknown) => void,
+    ) => {
+      for (const path of paths) saved({ id: artifactId, name: path, path, bytes: 9, sha256: 'a'.repeat(64) });
+    },
+    download: async () => ({
+      id: artifactId,
+      name: 'report.txt',
+      path: 'report.txt',
+      bytes: 9,
+      sha256: 'a'.repeat(64),
+      base64: Buffer.from('recovered').toString('base64'),
+    }),
+  } as any);
+  try {
+    await app(page, ['snapshots', 'transfers'], true);
+    await page.route('**/api/vms/*/rescue**', async (route) => {
+      const url = new URL(route.request().url());
+      try {
+        const json = url.pathname.endsWith('/artifact')
+          ? await service.artifact(vm.id, url.searchParams.get('run')!, url.searchParams.get('artifact')!)
+          : route.request().method() === 'GET'
+            ? service.view(vm.id)
+            : service.run(vm.id, route.request().postDataJSON());
+        await route.fulfill({ json });
+      } catch (error) {
+        await route.fulfill({ status: 400, json: { error: (error as Error).message } });
+      }
+    });
+    await page.route('**/api/jobs/*/cancel', async (route) => {
+      service.jobs.cancel(vm.id);
+      await service.jobs.wait(vm.id);
+      await route.fulfill({ json: { ok: true } });
+    });
+    await page.getByRole('tab', { name: '快照', exact: true }).click();
+    const panel = page.getByRole('region', { name: '只读救援', exact: true });
+    await panel
+      .getByRole('textbox', { name: '检查命令', exact: true })
+      .fill('cp /mnt/source/etc/os-release /workspace/report.txt');
+    await panel.getByLabel('保存产物（每行一个相对路径）', { exact: true }).fill('report.txt');
+    await panel.getByRole('button', { name: '启动只读救援', exact: true }).click();
+    await expect(panel.getByText('已完成', { exact: true })).toBeVisible();
+    expect(commands[0]).toContain('cp /mnt/source/etc/os-release /workspace/report.txt');
+    const downloaded = page.waitForEvent('download');
+    await panel.getByRole('button', { name: /下载 report.txt/ }).click();
+    const file = await downloaded;
+    expect(file.suggestedFilename()).toBe('report.txt');
+    expect((await readFile((await file.path())!)).toString()).toBe('recovered');
+    await page.reload();
+    await expect(panel.getByText('已完成', { exact: true })).toBeVisible();
+    hold = true;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await panel.getByLabel('自动只读挂载源文件系统', { exact: true }).uncheck();
+    await panel.getByRole('textbox', { name: '检查命令', exact: true }).fill('sleep 600');
+    await panel.getByRole('button', { name: '启动只读救援', exact: true }).click();
+    await expect(panel.getByRole('button', { name: '取消救援', exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: '取消救援', exact: true }).click();
+    await expect(panel.getByText('已取消', { exact: true })).toBeVisible();
+    expect(cleaned).toBe(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  } finally {
+    await service.close();
+  }
+});
 
 test('golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile', async ({
   page,
@@ -2066,11 +2179,13 @@ async function app(page: Page, active: string[] = [], withVm = false) {
                     limits: { count: 16, bytes: 128 * 1024 ** 3, imageBytes: 32 * 1024 ** 3 },
                     job: null,
                   }
-                : path.endsWith('/projects')
-                  ? { active: 'default', projects: [{ id: 'default', name: '默认项目' }] }
-                  : path.endsWith('/commands')
-                    ? { projectId: 'default', presets: [], job: null }
-                    : {};
+                : path.endsWith('/rescue')
+                  ? { runs: [] }
+                  : path.endsWith('/projects')
+                    ? { active: 'default', projects: [{ id: 'default', name: '默认项目' }] }
+                    : path.endsWith('/commands')
+                      ? { projectId: 'default', presets: [], job: null }
+                      : {};
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
   });
   await page.goto('/');

@@ -23,7 +23,14 @@ export const extendedFeatureCatalog = [
   ['vm-suspend', '挂起与恢复', '虚拟机', 'P0', '暂停运行中的虚拟机并恢复其 CPU 状态。', 'available'],
   ['vm-dependency-start', '多实例依赖启动', '虚拟机', 'P0', '按依赖关系启动多个实例。', 'available'],
   ['crash-loop-guard', '崩溃循环熔断', '虚拟机', 'P0', '连续启动失败后阻止无限重试。', 'available'],
-  ['rescue-boot', '救援模式启动', '虚拟机', 'P1', '用临时系统检查故障实例磁盘。', 'planned'],
+  [
+    'rescue-boot',
+    '救援模式启动',
+    '虚拟机',
+    'P1',
+    '使用网络隔离的临时 Alpine 系统，只读检查停机源盘并提取选定文件。',
+    'available',
+  ],
   ['qemu-commandline', 'QEMU 参数预览', '虚拟机', 'P0', '显示实例将使用的设备和启动参数。', 'available'],
   ['cpu-topology', 'CPU 拓扑与 NUMA', '虚拟机', 'P2', '配置 vCPU 拓扑和 NUMA 布局。', 'available'],
   ['guest-clock-policy', '客户机时钟策略', '虚拟机', 'P1', '检查和配置客户机时钟同步。', 'available'],
@@ -332,6 +339,15 @@ export class ExtendedFeatures {
         adapter,
         reason:
           '启用沙箱插件，在沙箱工作台创建时选择“临时 COW：停止即丢弃”。每次停止恢复初始磁盘，任务日志和明确提取的产物保留。',
+      };
+    if (spec.id === 'rescue-boot')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason:
+          '启用磁盘快照插件，在实例快照页使用“只读救援”，检查分区、执行限时命令并保存选定产物。源实例必须停止。',
       };
     if (spec.id === 'api-explorer')
       return {

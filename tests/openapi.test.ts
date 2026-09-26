@@ -26,7 +26,7 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
       );
       assert.ok(Object.keys(operation.responses).length);
     }
-  assert.equal(ids.size, 54);
+  assert.equal(ids.size, 57);
   assert.equal(spec.paths['/api/vms/{vmId}/commands'].get['x-sakura-enabled'], true);
   assert.equal(spec.paths['/api/vms/{vmId}/metrics'].get['x-sakura-enabled'], false);
   assert.ok(

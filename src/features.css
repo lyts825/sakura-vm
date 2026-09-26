@@ -527,25 +527,30 @@
   text-align: left;
   border-bottom: 1px solid var(--line);
 }
-.golden-images fieldset {
+.golden-images fieldset,
+.rescue-panel fieldset {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
   margin: 16px 0;
   min-width: 0;
 }
-.golden-images label {
+.golden-images label,
+.rescue-panel label {
   display: grid;
   gap: 6px;
   margin: 12px 0;
 }
-.golden-images label.checkbox-row {
+.golden-images label.checkbox-row,
+.rescue-panel label.checkbox-row {
   display: flex;
   align-items: flex-start;
 }
 .golden-images input,
 .golden-images select,
-.golden-images textarea {
+.golden-images textarea,
+.rescue-panel input,
+.rescue-panel textarea {
   max-width: 100%;
   min-width: 0;
 }

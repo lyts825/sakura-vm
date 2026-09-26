@@ -71,6 +71,8 @@ export const organizationSchema = z
 export type VMRecord = VMConfig & {
   id: string;
   sandbox?: SandboxPolicy;
+  // Only the rescue executor creates these disposable guests. They cannot be restarted.
+  rescueOf?: string;
   createdAt: string;
   snapshots: Snapshot[];
   // New disks use the serial readiness marker before the first SSH probe.

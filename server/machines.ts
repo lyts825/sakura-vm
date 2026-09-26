@@ -83,11 +83,15 @@ export class Machines extends EventEmitter {
   maintenance = false;
   private incidentLocks = new Set<string>();
   private incidentWrites = Promise.resolve();
+  private rescueControllers = new Set<AbortController>();
   incidentLocked(id: string) {
     return this.incidentLocks.has(id);
   }
   requireUnlocked(id: string) {
-    if (this.incidentLocked(id))
+    if (
+      this.incidentLocked(id) ||
+      (this.records.get(id)?.rescueOf && this.incidentLocked(this.records.get(id)!.rescueOf!))
+    )
       throw new AppError('实例处于应急锁定；请先显式解除锁定', 423, 'INCIDENT_LOCKED');
   }
   async setIncidentLockdown(id: string, locked: boolean) {
@@ -149,6 +153,18 @@ export class Machines extends EventEmitter {
           r.sandbox = sandboxPolicySchema.parse(r.sandbox);
           if (r.forwards.length) throw new Error('沙箱不允许额外端口转发');
         }
+        if (r.rescueOf !== undefined) {
+          checkedId(r.rescueOf);
+          if (
+            !r.sandbox ||
+            r.sandbox.network !== 'isolated' ||
+            r.sandbox.storage !== 'discard-on-stop' ||
+            r.sandbox.onExpire !== 'delete'
+          )
+            throw new Error('救援实例策略损坏');
+          // A host restart never resumes a disk attachment or an old rescue command.
+          r.sandbox.expiresAt = new Date(0).toISOString();
+        }
         this.records.set(r.id, r);
       }
     } catch (e: any) {
@@ -177,7 +193,7 @@ export class Machines extends EventEmitter {
           try {
             await this.terminateSandbox(vm.id);
             if (vm.sandbox!.onExpire === 'delete' && !this.maintenance && !this.locks.has(vm.id))
-              await this.delete(vm.id);
+              await this.deleteInternal(vm.id, !!vm.rescueOf);
           } catch (error) {
             this.log(vm.id, '\r\n沙箱到期清理失败：' + String(error) + '\r\n');
           }
@@ -301,6 +317,9 @@ export class Machines extends EventEmitter {
     }
   }
   async create(input: unknown, sandbox?: SandboxPolicy) {
+    return this.createInternal(input, sandbox);
+  }
+  private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);
       if (sandbox !== undefined) {
@@ -325,6 +344,7 @@ export class Machines extends EventEmitter {
         snapshots: [],
         bootstrapped: false,
         ...(sandbox ? { sandbox } : {}),
+        ...(rescueOf ? { rescueOf } : {}),
       };
       const dir = vmDir(vm.id);
       await mkdir(dir);
@@ -402,9 +422,14 @@ export class Machines extends EventEmitter {
     });
   }
   async start(id: string) {
+    return this.startInternal(id);
+  }
+  private async startInternal(id: string, rescueOf?: string) {
     return this.locked('launch', () =>
       this.locked(id, async () => {
         const vm = this.get(id);
+        if (vm.rescueOf && (vm.rescueOf !== rescueOf || !this.locks.has(rescueOf)))
+          throw new AppError('临时救援实例只能由救援任务启动，请重新提交救援任务', 409);
         this.requireSandboxLifetime(vm);
         if (this.live.has(id)) return this.view(id);
         validateAdmission(
@@ -478,6 +503,7 @@ export class Machines extends EventEmitter {
             ? ['-icount', 'shift=auto,sleep=on']
             : []),
           ...hardwareArguments(vm),
+          ...(vm.rescueOf ? ['-device', 'pcie-root-port,id=sakura-rescue-port,slot=1,chassis=1'] : []),
           '-display',
           'none',
           '-monitor',
@@ -1240,6 +1266,107 @@ export class Machines extends EventEmitter {
   requireStopped(id: string) {
     if (this.live.has(id)) throw new AppError('请先停止发行版，再进行此操作', 409);
   }
+  /** Holds the source lock until the read-only attachment's QEMU process has exited. */
+  async withRescue<T>(
+    sourceId: string,
+    signal: AbortSignal,
+    phase: (text: string) => void,
+    work: (rescueId: string, signal: AbortSignal) => Promise<T>,
+    diagnostic: (text: string) => void = () => {},
+  ) {
+    const controller = new AbortController();
+    const combined = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(35 * 60_000)]);
+    this.rescueControllers.add(controller);
+    let rescueId: string | undefined;
+    const lockdown = (id: string) => {
+      if (id === sourceId || id === rescueId) controller.abort();
+    };
+    this.on('incident-lockdown', lockdown);
+    try {
+      return await this.locked(sourceId, async () => {
+        const source = this.get(sourceId);
+        this.requireStopped(sourceId);
+        if (source.sandbox) throw new AppError('救援目标必须是普通实例', 409);
+        combined.throwIfAborted();
+        try {
+          phase('创建临时救援系统');
+          const rescue = await this.createInternal(
+            {
+              name: 'rescue-' + randomUUID().slice(0, 12),
+              distro: 'alpine',
+              memoryMiB: 512,
+              cpus: 1,
+              diskGiB: 4,
+              accelerator: source.accelerator,
+              forwards: [],
+              template: 'none',
+            },
+            {
+              network: 'isolated',
+              storage: 'discard-on-stop',
+              onExpire: 'delete',
+              expiresAt: new Date(Date.now() + 40 * 60_000).toISOString(),
+            },
+            sourceId,
+          );
+          rescueId = rescue.id;
+          combined.throwIfAborted();
+          phase('启动临时救援系统');
+          await this.startInternal(rescueId, sourceId);
+          const deadline = Date.now() + BOOT_TIMEOUT_MS;
+          while (this.state(rescueId) !== 'running') {
+            combined.throwIfAborted();
+            if (this.state(rescueId) !== 'starting' || Date.now() >= deadline) {
+              diagnostic((this.logs.get(rescueId) || '').slice(-8000));
+              throw new AppError('临时救援系统启动失败，启动日志已附在任务记录', 409);
+            }
+            await delay(100, undefined, { signal: combined });
+          }
+          combined.throwIfAborted();
+          this.requireUnlocked(sourceId);
+          this.requireStopped(sourceId);
+          phase('只读连接源磁盘');
+          const port = this.live.get(rescueId)!.qmpPort;
+          // Attach only after boot: the source may share the rescue image's filesystem UUID.
+          await qmp(port, 'blockdev-add', {
+            driver: 'qcow2',
+            'node-name': 'sakura-rescue-source',
+            'read-only': true,
+            file: { driver: 'file', filename: join(vmDir(sourceId), 'disk.qcow2'), 'read-only': true },
+          });
+          combined.throwIfAborted();
+          await qmp(port, 'device_add', {
+            driver: 'virtio-blk-pci',
+            drive: 'sakura-rescue-source',
+            id: 'sakura-rescue-disk',
+            bus: 'sakura-rescue-port',
+            serial: 'sakura-source',
+          });
+          const nodes = (await qmp(port, 'query-named-block-nodes')) as {
+            'node-name': string;
+            ro: boolean;
+          }[];
+          if (
+            !Array.isArray(nodes) ||
+            !nodes.some((node) => node['node-name'] === 'sakura-rescue-source' && node.ro === true)
+          )
+            throw new AppError('救援磁盘未确认只读，已终止任务', 409);
+          combined.throwIfAborted();
+          return await work(rescueId, combined);
+        } finally {
+          if (rescueId && this.records.has(rescueId)) {
+            phase('停止并清理临时救援系统');
+            await this.terminateSandbox(rescueId);
+            // During host close, init will clean the expired rescue record next time.
+            if (!this.closing) await this.deleteInternal(rescueId, true);
+          }
+        }
+      });
+    } finally {
+      this.off('incident-lockdown', lockdown);
+      this.rescueControllers.delete(controller);
+    }
+  }
   private snapshotIdentityFile(id: string, snapshotId: string) {
     return join(vmDir(id), `.snapshot-${checkedId(snapshotId)}.json`);
   }
@@ -1334,16 +1461,23 @@ export class Machines extends EventEmitter {
     });
   }
   async delete(id: string) {
-    return this.locked(id, async () => {
-      this.get(id);
-      this.requireStopped(id);
-      const dir = vmDir(id);
-      // checkedId + fixed VM_ROOT keep recursive operations inside machine storage.
-      await rm(dir, { recursive: true, force: true });
-      this.records.delete(id);
-      this.logs.delete(id);
-      await this.save();
-    });
+    return this.deleteInternal(id);
+  }
+  private async deleteInternal(id: string, allowIncident = false) {
+    return this.locked(
+      id,
+      async () => {
+        this.get(id);
+        this.requireStopped(id);
+        const dir = vmDir(id);
+        // checkedId + fixed VM_ROOT keep recursive operations inside machine storage.
+        await rm(dir, { recursive: true, force: true });
+        this.records.delete(id);
+        this.logs.delete(id);
+        await this.save();
+      },
+      allowIncident,
+    );
   }
   async editSnapshot(id: string, snapshotId: string, patch: { name: string; note: string } | null) {
     return this.locked(id, async () => {
@@ -1503,6 +1637,7 @@ export class Machines extends EventEmitter {
   async close() {
     if (this.closeTask) return this.closeTask;
     this.closing = true;
+    for (const controller of this.rescueControllers) controller.abort();
     clearInterval(this.sandboxTimer);
     this.closeTask = (async () => {
       await this.sandboxSweep;

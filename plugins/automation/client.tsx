@@ -333,6 +333,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'rescue-boot':
+          '启用磁盘快照插件，在停止实例的快照页使用“只读救援”。临时系统只读检查源盘，执行结束后清理；需要保留的文件请复制到 /workspace 并列为产物。',
         'cow-workspace':
           '打开沙箱工作台，创建时将磁盘写入策略设为“临时 COW：停止即丢弃”。每次命令结束或停止后回到初始磁盘；需要保留的文件请列入产物。',
         'explorer-integration':

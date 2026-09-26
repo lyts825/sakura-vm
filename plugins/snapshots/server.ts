@@ -9,6 +9,13 @@ import { importEncrypted } from '../../server/encrypted-backups.ts';
 import { Bundles } from '../../server/bundles.ts';
 import { GoldenImages } from '../../server/golden-images.ts';
 import { goldenActionSchema, goldenEntrySchema, goldenResultSchema } from '../../shared/golden-images.ts';
+import { Rescue } from '../../server/rescue.ts';
+import {
+  rescueArtifactSchema,
+  rescueJobSchema,
+  rescueRunSchema,
+  rescueViewSchema,
+} from '../../shared/rescue.ts';
 
 export async function activate(host: PluginContext) {
   host.bundles = new Bundles(host.machines);
@@ -16,8 +23,36 @@ export async function activate(host: PluginContext) {
   host.registerJobs(golden.jobs, () => {
     throw new AppError('请先刷新黄金镜像库核对结果，再明确发起操作', 409);
   });
+  const rescue = host.provide('rescue', new Rescue(host.machines));
+  await rescue.init();
+  host.registerJobs(rescue.jobs, () => {
+    throw new AppError('请在快照页检查救援命令后重新执行', 409);
+  });
 }
 export const operations: Record<string, PluginOperation> = {
+  'rescue-view': {
+    response: rescueViewSchema,
+    execute(url) {
+      return this.use<Rescue>('snapshots', 'rescue').view(url.pathname.split('/')[3]);
+    },
+  },
+  'rescue-artifact': {
+    response: rescueArtifactSchema,
+    execute(url) {
+      return this.use<Rescue>('snapshots', 'rescue').artifact(
+        url.pathname.split('/')[3],
+        z.uuid().parse(url.searchParams.get('run')),
+        z.uuid().parse(url.searchParams.get('artifact')),
+      );
+    },
+  },
+  'rescue-run': {
+    request: rescueRunSchema,
+    response: rescueJobSchema,
+    execute(url, input) {
+      return this.use<Rescue>('snapshots', 'rescue').run(url.pathname.split('/')[3], input);
+    },
+  },
   'golden-list': {
     response: z
       .object({

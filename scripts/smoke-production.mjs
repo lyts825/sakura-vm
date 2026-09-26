@@ -82,6 +82,23 @@ async function probe(selected, expected) {
     const sdk = new SakuraClient();
     assert.deepEqual(await sdk.call('core.vms.list'), []);
     if (expected.includes('snapshots')) {
+      const absent = randomUUID();
+      assert.equal(specification.paths['/api/vms/{vmId}/rescue'].post['x-sakura-enabled'], true);
+      await assert.rejects(
+        sdk.call('snapshots.rescue-view', { path: { vmId: absent } }),
+        (error) => error.status === 404,
+      );
+      await assert.rejects(
+        sdk.call('snapshots.rescue-run', {
+          path: { vmId: absent },
+          body: { command: 'blkid', partition: -1 },
+        }),
+        (error) => error.status === 400,
+      );
+      await assert.rejects(
+        sdk.call('snapshots.rescue-run', { path: { vmId: absent }, body: { command: 'blkid' } }),
+        (error) => error.status === 404,
+      );
       assert.deepEqual((await sdk.call('snapshots.golden-list')).templates, []);
       const id = randomUUID(),
         folder = join(data, 'golden-images', id),
@@ -125,6 +142,7 @@ async function probe(selected, expected) {
       );
     } else {
       assert.equal((await fetch(origin + '/api/golden-images', { headers })).status, 403);
+      assert.equal((await fetch(origin + '/api/vms/' + randomUUID() + '/rescue', { headers })).status, 403);
     }
     assert.equal((await sdk.call('core.monitor')).version, 1);
     assert.equal(
