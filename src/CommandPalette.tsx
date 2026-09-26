@@ -4,7 +4,7 @@ import { PresetRunner } from '../plugins/commands/client';
 import type { CommandPreset } from '../server/command-presets';
 import type { VMView } from '../server/model';
 import type { ProjectFile } from '../server/project-files';
-import { pluginSurfaceEnabled } from '../shared/plugins';
+import { pluginNavigation } from './plugin-navigation';
 import { Feedback, useRemote, type Request } from './feature-shared';
 import { nextSelection } from './keyboard-navigation';
 import { usePlugins } from './plugin-context';
@@ -82,44 +82,23 @@ export function CommandPalette({
             keywords: ['实例', '工作空间', '切换', item.name],
             run: () => void navigate({ id: item.id, page: 'workspace' }),
           }))),
-    ...[
-      ['terminal', '终端'],
-      ['files', '文件与全文搜索'],
-      ['project', '项目与健康检查'],
-      ['git', 'Git 工作台'],
-      ['development', '开发工具、网络、私密配置与收藏命令'],
-      ['containers', 'Docker / Compose'],
-      ['snapshots', '快照与加密备份'],
-      ['maintenance', '实例维护'],
-    ]
-      .filter(
-        ([tab, label]) =>
-          vm && pluginSurfaceEnabled(plugins, 'tabs', tab) && match(label, ['功能', 'workspace', tab]),
-      )
-      .map(([tab, title]) => ({
-        key: `tab:${tab}`,
-        title,
+    ...pluginNavigation(plugins, 'tabs')
+      .filter(({ id, label }) => vm && match(label, ['功能', 'workspace', id]))
+      .map(({ id, label }) => ({
+        key: `tab:${id}`,
+        title: label,
         detail: vm?.name || '',
         keywords: ['功能', '打开', vm?.name || ''],
-        run: () => void navigate({ tab, page: 'workspace' }),
+        run: () => void navigate({ tab: id, page: 'workspace' }),
       })),
-    ...[
-      ['plugins', '插件与整合包'],
-      ['tasks', '任务中心与执行记录'],
-      ['settings', '系统设置与数据迁移'],
-      ['images', '镜像与备份导入'],
-      ['features', '能力中心与自动化'],
-    ]
-      .filter(
-        ([page, label]) =>
-          pluginSurfaceEnabled(plugins, 'pages', page) && match(label, ['全局', '导航', page]),
-      )
-      .map(([page, title]) => ({
-        key: `page:${page}`,
-        title,
+    ...pluginNavigation(plugins, 'pages')
+      .filter(({ id, label }) => match(label, ['全局', '导航', id]))
+      .map(({ id, label }) => ({
+        key: `page:${id}`,
+        title: label,
         detail: '全局操作',
-        keywords: ['全局', '导航', title],
-        run: () => void navigate({ page }),
+        keywords: ['全局', '导航', label],
+        run: () => void navigate({ page: id }),
       })),
     ...(commands.data?.presets || [])
       .filter((item) => vm?.status === 'running' && match(item.name))

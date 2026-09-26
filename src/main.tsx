@@ -23,6 +23,7 @@ import {
   Network,
   Play,
   Plus,
+  Puzzle,
   RefreshCw,
   Save,
   Search,
@@ -67,6 +68,7 @@ import sakuraMark from './assets/sakura.svg';
 import './fonts.css';
 import { PluginPage, PluginTab } from './plugin-client';
 import { PluginContext, usePlugin } from './plugin-context';
+import { pluginNavigation } from './plugin-navigation';
 import './style.css';
 import { workspaceCommandDefinitions, type WorkspaceCommandDefinition } from './workspace-navigation';
 import { workspacePath } from './workspace-request';
@@ -131,31 +133,32 @@ const sessionTabs = new Set([
   'config',
   ...PLUGINS.flatMap((plugin) => plugin.contributes.tabs),
 ]);
-const builtInWorkspaceTabs = [
-  { id: 'terminal', label: '终端', icon: TerminalSquare },
-  { id: 'desktop', label: '桌面', icon: Monitor },
-  { id: 'files', label: '文件', icon: Folder },
-  { id: 'project', label: '项目', icon: Boxes },
-  { id: 'git', label: 'Git', icon: GitBranch },
-  { id: 'development', label: '开发', icon: Wrench },
-  { id: 'containers', label: '容器', icon: Boxes },
-  { id: 'metrics', label: '资源', icon: Cpu },
-  { id: 'services', label: '服务', icon: Network },
-  { id: 'sync', label: '同步', icon: RefreshCw },
-  { id: 'snapshots', label: '快照', icon: Camera },
-  { id: 'maintenance', label: '维护', icon: ShieldCheck },
-  { id: 'config', label: '配置', icon: Settings2 },
-] as const;
-const workspaceTabs = [
-  ...builtInWorkspaceTabs,
-  ...PLUGINS.flatMap((plugin) =>
-    plugin.contributes.tabs
-      .filter((id) => !builtInWorkspaceTabs.some((tab) => tab.id === id))
-      .map((id) => ({ id, label: plugin.name, icon: Boxes })),
-  ),
-];
+const workspaceTabIcons = {
+  terminal: TerminalSquare,
+  desktop: Monitor,
+  files: Folder,
+  project: Boxes,
+  git: GitBranch,
+  development: Wrench,
+  containers: Boxes,
+  metrics: Cpu,
+  services: Network,
+  sync: RefreshCw,
+  snapshots: Camera,
+  maintenance: ShieldCheck,
+  config: Settings2,
+};
 const builtInPageIds = new Set(['workspace', 'plugins', 'tasks', 'settings']);
-const namedPageIds = new Set(['workspace', 'plugins', 'images', 'tasks', 'library', 'features', 'settings']);
+const corePageIds = new Set(['workspace', 'plugins', 'settings']);
+const pageIcons = {
+  workspace: TerminalSquare,
+  plugins: Puzzle,
+  settings: Settings2,
+  images: Layers,
+  tasks: CircleDot,
+  library: Boxes,
+  features: Sparkles,
+};
 const builtInTabIds = new Set(['terminal', 'config', 'development']);
 
 function readSessionState(): SessionState {
@@ -271,15 +274,30 @@ function App() {
   const has = (id: string) => enabled.includes(id);
   const page = pluginSurfaceEnabled(enabled, 'pages', requestedPage) ? requestedPage : 'workspace';
   const tab = pluginSurfaceEnabled(enabled, 'tabs', requestedTab) ? requestedTab : 'terminal';
-  const visibleWorkspaceTabs = workspaceTabs.filter((item) => pluginSurfaceEnabled(enabled, 'tabs', item.id));
+  const visiblePages = pluginNavigation(enabled, 'pages').map((item) => ({
+    ...item,
+    icon: pageIcons[item.id as keyof typeof pageIcons] || Boxes,
+  }));
+  const visibleWorkspaceTabs = pluginNavigation(enabled, 'tabs').map((item) => ({
+    ...item,
+    icon: workspaceTabIcons[item.id as keyof typeof workspaceTabIcons] || Boxes,
+  }));
   const pluginPageOwner = PLUGINS.find(
     (plugin) => enabled.includes(plugin.id) && plugin.contributes.pages.includes(page),
   )?.id;
   const pluginTabOwner = PLUGINS.find(
     (plugin) => enabled.includes(plugin.id) && plugin.contributes.tabs.includes(tab),
   )?.id;
-  const primaryWorkspaceTabs = visibleWorkspaceTabs.slice(0, 4);
-  const advancedWorkspaceTabs = visibleWorkspaceTabs.slice(4);
+  const primaryWorkspaceTabs =
+    visibleWorkspaceTabs.length <= 4
+      ? visibleWorkspaceTabs
+      : [
+          ...visibleWorkspaceTabs.filter((item) => item.id !== 'config').slice(0, 3),
+          visibleWorkspaceTabs.find((item) => item.id === 'config')!,
+        ];
+  const advancedWorkspaceTabs = visibleWorkspaceTabs.filter(
+    (item) => !primaryWorkspaceTabs.some((primary) => primary.id === item.id),
+  );
   const hasProjects = has('projects'),
     hasPalette = has('command-palette');
   const [projectSelections, setProjectSelections] = useState<Record<string, string>>({});
@@ -593,37 +611,37 @@ function App() {
           </span>
           <small>桜</small>
         </a>
-        <div className="side-caption">你的开发空间</div>
+        <div className="side-caption">你的工作空间</div>
         <nav aria-label="主导航">
-          {[
-            { id: 'workspace', icon: TerminalSquare, name: '工作空间' },
-            { id: 'plugins', icon: Boxes, name: '插件中心' },
-            { id: 'images', icon: Layers, name: '镜像库' },
-            { id: 'tasks', icon: CircleDot, name: '任务中心' },
-            { id: 'library', icon: Boxes, name: '实例管理' },
-            { id: 'features', icon: Sparkles, name: '能力中心' },
-            { id: 'settings', icon: Settings2, name: '系统设置' },
-            ...PLUGINS.flatMap((plugin) =>
-              plugin.contributes.pages
-                .filter((id) => !namedPageIds.has(id))
-                .map((id) => ({ id, icon: Boxes, name: plugin.name })),
-            ),
-          ]
-            .filter((n) => pluginSurfaceEnabled(enabled, 'pages', n.id))
-            .map((n) => (
-              <button
-                key={n.id}
-                aria-label={n.name}
-                aria-current={page === n.id ? 'page' : undefined}
-                title={n.name}
-                className={page === n.id ? 'nav-item selected' : 'nav-item'}
-                onClick={() => setPage(n.id)}
+          {['core', 'extensions'].map((group) => {
+            const items = visiblePages.filter((item) => corePageIds.has(item.id) === (group === 'core'));
+            if (!items.length) return null;
+            return (
+              <div
+                className="nav-group"
+                key={group}
+                role="group"
+                aria-label={group === 'core' ? '基础功能' : '已启用的扩展'}
               >
-                <n.icon size={18} />
-                <span>{n.name}</span>
-                {n.id === 'workspace' && <small>{vms.length.toString().padStart(2, '0')}</small>}
-              </button>
-            ))}
+                {group === 'extensions' && <div className="nav-group-caption">已启用的扩展</div>}
+                {items.map((n) => (
+                  <button
+                    key={n.id}
+                    aria-label={n.label}
+                    aria-current={page === n.id ? 'page' : undefined}
+                    title={n.label}
+                    className={page === n.id ? 'nav-item selected' : 'nav-item'}
+                    onClick={() => setPage(n.id)}
+                  >
+                    <n.icon size={18} />
+                    <span>{n.label}</span>
+                    {n.id === 'workspace' && <small>{vms.length.toString().padStart(2, '0')}</small>}
+                    {n.id === 'plugins' && <small>{enabled.length}</small>}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="side-divider" />
         <div className="side-caption">
@@ -683,19 +701,7 @@ function App() {
           <div>
             <span>Sakura</span>
             <ChevronRight size={13} />
-            <b>
-              {
-                {
-                  workspace: '工作空间',
-                  plugins: '插件中心',
-                  images: '镜像库',
-                  tasks: '任务中心',
-                  library: '实例管理',
-                  features: '能力中心',
-                  settings: '系统设置',
-                }[page]
-              }
-            </b>
+            <b>{visiblePages.find((item) => item.id === page)?.label}</b>
           </div>
           <div className="topbar-actions">
             {hasPalette && (
@@ -769,8 +775,8 @@ function App() {
                       <Plus size={16} />
                       创建发行版
                     </button>
-                    <button className="hero-guide" onClick={() => setModal('help')}>
-                      快速上手 <ArrowUpRight size={15} />
+                    <button className="hero-guide" onClick={() => void setPage('plugins')}>
+                      <Puzzle size={15} /> 按需添加插件 <ArrowUpRight size={15} />
                     </button>
                   </div>
                 </div>
@@ -1067,6 +1073,18 @@ function App() {
                         </div>
                       </div>
                       <div className="tab-navigation" ref={tabMoreRef}>
+                        <div className="workspace-plugin-tools">
+                          <span>
+                            {visibleWorkspaceTabs.length > 2
+                              ? `${visibleWorkspaceTabs.length - 2} 项插件功能可用`
+                              : '终端与配置已就绪'}
+                          </span>
+                          <button onClick={() => void setPage('plugins')}>
+                            <Puzzle size={13} />
+                            管理插件
+                            <ArrowUpRight size={12} />
+                          </button>
+                        </div>
                         <div className="tabs" role="tablist" aria-label="发行版常用功能">
                           {primaryWorkspaceTabs.map((t) => (
                             <button
@@ -1118,6 +1136,7 @@ function App() {
                             <button
                               type="button"
                               id="tab-more"
+                              aria-label="更多插件功能"
                               className={`tabs-more-trigger ${advancedWorkspaceTabs.some((item) => item.id === tab) ? 'active' : ''}`}
                               aria-expanded={moreTabsOpen}
                               aria-haspopup="menu"
@@ -1138,7 +1157,9 @@ function App() {
                               }}
                             >
                               <MoreHorizontal size={15} />
-                              <span>更多</span>
+                              <span>
+                                {advancedWorkspaceTabs.find((item) => item.id === tab)?.label || '更多'}
+                              </span>
                               <ChevronRight
                                 size={13}
                                 className={moreTabsOpen ? 'tabs-more-chevron open' : 'tabs-more-chevron'}
@@ -1152,7 +1173,7 @@ function App() {
                           aria-label="更多发行版功能"
                           hidden={!moreTabsOpen}
                         >
-                          <div className="tabs-menu-label">高级工具</div>
+                          <div className="tabs-menu-label">已启用的插件功能</div>
                           {advancedWorkspaceTabs.map((t) => (
                             <button
                               type="button"

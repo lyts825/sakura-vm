@@ -6,6 +6,7 @@ import './features.css';
 import { PluginDevelopmentSection } from './plugin-client';
 import { usePlugins } from './plugin-context';
 import { workspaceRequest } from './workspace-request';
+import { sectionLabels } from './plugin-navigation';
 
 export function DevelopmentPanel(props: FeatureProps) {
   const available = developmentSections(usePlugins());
@@ -25,32 +26,18 @@ export function DevelopmentPanel(props: FeatureProps) {
         </div>
       </div>
       <div className="feature-actions development-sections" aria-label="开发设置分类">
-        {[
-          ['tools', '开发工具'],
-          ['network', '网络配置'],
-          ['secrets', '私密配置'],
-          ['commands', '收藏命令'],
-          ['pipelines', '流水线'],
-          ['runtimes', '版本'],
-          ...PLUGINS.flatMap((plugin) =>
-            plugin.contributes.developmentSections
-              .filter(
-                (id) => !['tools', 'network', 'secrets', 'commands', 'pipelines', 'runtimes'].includes(id),
-              )
-              .map((id) => [id, plugin.name]),
-          ),
-        ]
-          .filter(([id]) => available.some((section) => section === id))
-          .map(([id, label]) => (
-            <button
-              key={id}
-              className={`${section === id ? 'primary' : 'secondary'} compact`}
-              aria-pressed={section === id}
-              onClick={() => setSection(id)}
-            >
-              {label}
-            </button>
-          ))}
+        {available.map((id) => (
+          <button
+            key={id}
+            className={`${section === id ? 'primary' : 'secondary'} compact`}
+            aria-pressed={section === id}
+            onClick={() => setSection(id)}
+          >
+            {sectionLabels[id] ||
+              PLUGINS.find((plugin) => plugin.contributes.developmentSections.includes(id))?.name ||
+              id}
+          </button>
+        ))}
       </div>
       {section && <PluginDevelopmentSection id={section} {...scopedProps} />}
     </div>

@@ -254,6 +254,22 @@ kbd {
   flex-direction: column;
   gap: 6px;
 }
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nav-group + .nav-group {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.nav-group-caption {
+  padding: 2px 13px 5px;
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
 .nav-item {
   position: relative;
   height: 44px;
@@ -1126,6 +1142,21 @@ main {
 .tab-navigation {
   min-width: 0;
   margin: 0 16px;
+}
+.workspace-plugin-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.workspace-plugin-tools button {
+  padding: 3px 0;
+  color: var(--accent);
+  font-size: 11px;
+  gap: 5px;
 }
 .tabs {
   display: flex;
@@ -2400,6 +2431,7 @@ label input {
   .brand > span,
   .brand small,
   .side-caption,
+  .nav-group-caption,
   .side-divider,
   .side-distros,
   .sidebar-bottom,
@@ -2553,6 +2585,9 @@ label input {
     min-width: 0;
     overflow-x: auto;
     gap: 5px;
+  }
+  .nav-group {
+    display: contents;
   }
   .nav-item {
     height: 38px;

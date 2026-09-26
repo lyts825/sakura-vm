@@ -71,13 +71,20 @@ test('the empty install shows the core and the current plugin catalog', async ({
   await app(page);
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button')).toHaveCount(3);
   await page.getByRole('button', { name: '插件中心' }).click();
-  await expect(page.locator('.plugin-summary')).toContainText('0 个插件运行中');
-  await expect(page.locator('.plugin-card')).toHaveCount(PLUGINS.length + PLUGIN_PACKS.length);
+  await expect(page.locator('.plugin-summary')).toContainText(/0\s*个插件运行中/);
+  await expect(page.locator('.plugin-card')).toHaveCount(PLUGINS.length);
+  await page
+    .getByRole('group', { name: '插件浏览方式' })
+    .getByRole('button', { name: /整合包/ })
+    .click();
+  await expect(page.locator('.plugin-card')).toHaveCount(PLUGIN_PACKS.length);
 });
 
 test('metrics and commands load their own client entries when selected', async ({ page }) => {
   await app(page, ['projects', 'metrics', 'commands'], true);
-  await page.getByRole('tab', { name: '资源', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '配置', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '更多插件功能' }).click();
+  await page.getByRole('menuitem', { name: '资源', exact: true }).click();
   await expect(page.getByRole('heading', { name: '实时资源' })).toBeVisible();
   await page.getByRole('tab', { name: '开发', exact: true }).click();
   await page.getByRole('button', { name: '收藏命令' }).click();
