@@ -31,6 +31,9 @@ import type { Engine } from './runtime.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { bootGuardStatus, recordBootAttempt, resetBootGuard } from './boot-guard.ts';
+import { hardwareArguments, deviceArguments, diskOptions, hardwareSchema } from '../shared/hardware.ts';
+import { resourcePolicy, validateAdmission } from './resource-policies.ts';
+import { cpuSetSize } from './guest-hardware.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
@@ -139,6 +142,7 @@ export class Machines extends EventEmitter {
           forwards: r.forwards,
           distro: r.distro,
           template: r.template,
+          hardware: r.hardware,
         });
         if (r.sandbox !== undefined) {
           r.sandbox = sandboxPolicySchema.parse(r.sandbox);
@@ -261,6 +265,10 @@ export class Machines extends EventEmitter {
       machine: 'q35',
       memoryMiB: vm.memoryMiB,
       cpus: vm.cpus,
+      hardware: vm.hardware,
+      resourceArguments: hardwareArguments(vm),
+      deviceArguments: deviceArguments(vm),
+      diskOptions: diskOptions(vm),
       accelerator: vm.accelerator,
       disk: join(vmDir(id), 'disk.qcow2'),
       forwards: vm.forwards,
@@ -394,6 +402,11 @@ export class Machines extends EventEmitter {
         const vm = this.get(id);
         this.requireSandboxLifetime(vm);
         if (this.live.has(id)) return this.view(id);
+        validateAdmission(
+          await resourcePolicy(),
+          vm,
+          [...this.live.keys()].map((key) => this.get(key)),
+        );
         if (this.live.size >= 4) throw new AppError('轻量模式最多同时运行 4 个发行版', 409);
         for (const otherId of this.live.keys())
           for (const p of this.get(otherId).forwards)
@@ -459,29 +472,19 @@ export class Machines extends EventEmitter {
           ...(process.platform === 'win32' && accelerator === 'tcg'
             ? ['-icount', 'shift=auto,sleep=on']
             : []),
-          '-m',
-          `${vm.memoryMiB}`,
-          '-smp',
-          `${vm.cpus}`,
+          ...hardwareArguments(vm),
           '-display',
           'none',
           '-monitor',
           'none',
           '-no-reboot',
           '-drive',
-          `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,format=qcow2`,
+          `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,format=qcow2,${diskOptions(vm)}`,
           '-drive',
           `file=${escape(join(dir, 'seed.iso'))},${vm.distro && vm.distro !== 'alpine' ? 'if=virtio,format=raw' : 'media=cdrom'},readonly=on`,
           '-netdev',
-          `user,id=sakura-net,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${vm.sandbox?.network === 'isolated' ? 'restrict=on,ipv6=off,' : ''}${forwards.join(',')}`,
-          '-device',
-          // The legacy -nic path can default to vectors=0. Give the virtio NIC
-          // dedicated MSI-X vectors for RX, TX, config and the control queue.
-          'virtio-net-pci,netdev=sakura-net,vectors=4',
-          '-device',
-          'virtio-rng-pci',
-          '-device',
-          'virtio-balloon-pci',
+          `user,id=sakura-net,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${vm.sandbox?.network === 'isolated' ? 'restrict=on,ipv6=off,' : vm.hardware?.ipv6 === undefined ? '' : `ipv6=${vm.hardware.ipv6 ? 'on' : 'off'},`}${forwards.join(',')}`,
+          ...deviceArguments(vm),
           '-qmp',
           `tcp:127.0.0.1:${qmpPort},server=on,wait=off`,
           '-serial',
@@ -960,10 +963,221 @@ export class Machines extends EventEmitter {
       if (config.diskGiB !== vm.diskGiB) throw new AppError('磁盘大小创建后不可修改');
       if ((config.distro || 'alpine') !== (vm.distro || 'alpine'))
         throw new AppError('不能更改已有磁盘的发行版');
+      const before = { ...vm };
+      if (config.memoryMiB < distroInfo(vm.distro).minimumMemory)
+        throw new AppError('内存低于发行版最低要求');
+      createSchema.parse({ ...config, hardware: config.hardware ?? vm.hardware });
       Object.assign(vm, config);
-      await this.save();
+      try {
+        await this.save();
+      } catch (error) {
+        for (const key of Object.keys(config) as Array<keyof typeof config>)
+          if (!Object.hasOwn(before, key)) delete (vm as any)[key];
+        Object.assign(vm, before);
+        throw error;
+      }
+      this.emit('change');
       return this.view(id);
     });
+  }
+  async configureHardware(id: string, input: unknown) {
+    const hardware = hardwareSchema.parse(input),
+      vm = this.get(id);
+    return this.update(id, {
+      name: vm.name,
+      memoryMiB: vm.memoryMiB,
+      cpus: vm.cpus,
+      diskGiB: vm.diskGiB,
+      accelerator: vm.accelerator,
+      distro: vm.distro,
+      template: vm.template,
+      forwards: vm.forwards,
+      hardware,
+    });
+  }
+  async hotplug(id: string, kind: 'cpu' | 'memory', target?: number, signal?: AbortSignal) {
+    return this.locked('launch', () =>
+      this.locked(id, async () => {
+        const vm = this.get(id),
+          live = this.live.get(id);
+        this.requireMutableConfig(vm);
+        if (!live || live.status !== 'running') throw new AppError('请先启动发行版', 409);
+        signal?.throwIfAborted();
+        if (target !== undefined && live.accelerator === 'whpx')
+          throw new AppError(
+            '当前 Windows QEMU 的 WHPX 热插拔不可靠，请停止后切换到 TCG 兼容模式或离线调整资源',
+            409,
+            'HOTPLUG_ACCELERATOR_UNSUPPORTED',
+          );
+        if (kind === 'cpu') {
+          const slots = (await qmp(live.qmpPort, 'query-hotpluggable-cpus')) as Array<{
+            type: string;
+            props: Record<string, number>;
+            'qom-path'?: string;
+            'vcpus-count': number;
+          }>;
+          let current = slots
+            .filter((slot) => slot['qom-path'])
+            .reduce((sum, slot) => sum + slot['vcpus-count'], 0);
+          const maximum = slots.reduce((sum, slot) => sum + slot['vcpus-count'], 0);
+          const possible = await this.exec(id, 'cat /sys/devices/system/cpu/possible', 10000, signal);
+          const guestPossible = possible.code === 0 ? cpuSetSize(possible.stdout) : 0;
+          if (target === undefined)
+            return {
+              kind,
+              current,
+              maximum,
+              slots,
+              canAdd: live.accelerator !== 'whpx' && guestPossible > current,
+              accelerator: live.accelerator,
+              guestPossible,
+            };
+          if (!Number.isInteger(target) || target <= current || target > maximum || target > 8)
+            throw new AppError('仅支持在线增加到预留的 CPU 插槽数量');
+          if (guestPossible < target)
+            throw new AppError(
+              '当前客户机内核没有识别 QEMU 预留的 CPU；请离线调整 CPU 数量，或使用支持当前加速器热插拔的内核',
+              409,
+              'GUEST_CPU_SLOTS',
+            );
+          validateAdmission(
+            await resourcePolicy(),
+            { ...vm, cpus: target },
+            [...this.live.keys()].map((key) => this.get(key)),
+          );
+          const additions = [];
+          for (const slot of slots
+            .filter((slot) => !slot['qom-path'])
+            .sort(
+              (a, b) =>
+                (a.props['socket-id'] || 0) - (b.props['socket-id'] || 0) ||
+                (a.props['core-id'] || 0) - (b.props['core-id'] || 0) ||
+                (a.props['thread-id'] || 0) - (b.props['thread-id'] || 0),
+            )) {
+            if (current === target) break;
+            if (current + slot['vcpus-count'] > target) continue;
+            additions.push(slot);
+            current += slot['vcpus-count'];
+          }
+          if (current !== target) throw new AppError('目标数量无法匹配可用 CPU 插槽');
+          for (const slot of additions) {
+            signal?.throwIfAborted();
+            await qmp(live.qmpPort, 'device_add', {
+              ...slot.props,
+              driver: slot.type,
+              id: 'sakura-cpu-' + randomUUID(),
+            });
+            const present = (await qmp(live.qmpPort, 'query-cpus-fast')) as unknown[];
+            vm.cpus = present.length;
+            await this.save();
+          }
+          const guest = await this.exec(
+            id,
+            `set -e; i=0; while [ "$i" -lt 40 ]; do for cpu in /sys/devices/system/cpu/cpu[0-9]*/online; do [ ! -f "$cpu" ] || echo 1 > "$cpu"; done; n=$(grep -c '^processor' /proc/cpuinfo); [ "$n" -lt ${target} ] || { echo "$n"; exit 0; }; i=$((i+1)); sleep 0.25; done; echo "$n"; exit 1`,
+            30000,
+            signal,
+          );
+          this.emit('change');
+          return {
+            kind,
+            code: guest.code,
+            ready: guest.code === 0,
+            current: vm.cpus,
+            maximum,
+            guestOnline: Number(guest.stdout.trim()) || null,
+            guestCode: guest.code,
+            ...(guest.code ? { warning: 'CPU 已添加；客户机未确认全部上线：' + guest.stderr } : {}),
+          };
+        }
+        const size = (await qmp(live.qmpPort, 'query-memory-size-summary')) as {
+          'base-memory': number;
+          'plugged-memory'?: number;
+        };
+        const devices = (await qmp(live.qmpPort, 'query-memory-devices')) as Array<{
+          type: string;
+          data: { slot?: number; size?: number; id?: string };
+        }>;
+        const current = (size['base-memory'] + (size['plugged-memory'] || 0)) / 1024 ** 2;
+        const maximum = vm.hardware?.memory?.maxMiB || current;
+        if (target === undefined)
+          return {
+            kind,
+            current,
+            maximum,
+            devices,
+            canAdd: live.accelerator !== 'whpx',
+            accelerator: live.accelerator,
+          };
+        if (
+          !vm.hardware?.memory ||
+          !Number.isInteger(target) ||
+          target % 128 ||
+          target <= current ||
+          target > maximum
+        )
+          throw new AppError('请先在停止状态预留内存插槽；目标需要按 128 MiB 对齐并大于当前内存');
+        validateAdmission(
+          await resourcePolicy(),
+          { ...vm, memoryMiB: target },
+          [...this.live.keys()].map((key) => this.get(key)),
+        );
+        const used = new Set(devices.map((device) => device.data.slot));
+        const slot = Array.from({ length: vm.hardware.memory.slots }, (_, index) => index).find(
+          (value) => !used.has(value),
+        );
+        if (slot === undefined) throw new AppError('没有空闲内存插槽，请停止后调整配置');
+        const online = await this.exec(
+          id,
+          "test -w /sys/devices/system/memory/auto_online_blocks && echo online > /sys/devices/system/memory/auto_online_blocks && awk '/MemTotal:/ { print $2 }' /proc/meminfo",
+          15000,
+          signal,
+        );
+        if (online.code) throw new AppError('客户机内核未提供自动上线内存支持');
+        const beforeKiB = Number(online.stdout.trim());
+        if (!Number.isSafeInteger(beforeKiB) || beforeKiB <= 0) throw new AppError('无法确认客户机当前内存');
+        signal?.throwIfAborted();
+        const objectId = 'sakura-ram-' + randomUUID();
+        await qmp(live.qmpPort, 'object-add', {
+          'qom-type': 'memory-backend-ram',
+          id: objectId,
+          size: (target - current) * 1024 ** 2,
+        });
+        try {
+          await qmp(live.qmpPort, 'device_add', {
+            driver: 'pc-dimm',
+            id: 'sakura-dimm-' + slot,
+            memdev: objectId,
+            slot,
+          });
+        } catch (error) {
+          await qmp(live.qmpPort, 'object-del', { id: objectId }).catch(() => {});
+          throw error;
+        }
+        const actual = (await qmp(live.qmpPort, 'query-memory-size-summary')) as typeof size;
+        vm.memoryMiB = (actual['base-memory'] + (actual['plugged-memory'] || 0)) / 1024 ** 2;
+        await this.save();
+        this.emit('change');
+        const expectedKiB = Math.floor(beforeKiB + (target - current) * 1024 * 0.95);
+        const guest = await this.exec(
+          id,
+          `i=0; while [ "$i" -lt 40 ]; do n=$(awk '/MemTotal:/ { print $2 }' /proc/meminfo); [ "$n" -lt ${expectedKiB} ] || { echo "$n"; exit 0; }; i=$((i+1)); sleep 0.25; done; echo "$n"; exit 1`,
+          30000,
+          signal,
+        );
+        return {
+          kind,
+          code: guest.code,
+          ready: guest.code === 0,
+          guestMemoryKiB: Number(guest.stdout.trim()) || null,
+          ...(guest.code
+            ? { warning: '内存设备已添加；客户机未确认新内存上线，离线重启后使用新增容量。' }
+            : {}),
+          current: vm.memoryMiB,
+          maximum,
+          devices: await qmp(live.qmpPort, 'query-memory-devices'),
+        };
+      }),
+    );
   }
   async organize(id: string, input: unknown) {
     const organization = organizationSchema.parse(input);

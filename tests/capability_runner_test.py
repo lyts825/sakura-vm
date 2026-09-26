@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 source = Path(__file__).resolve().parents[1] / 'server/engineering-runner.py'
@@ -31,6 +32,62 @@ class Capabilities(unittest.TestCase):
 
     def execute(self, operation, **parameters):
         return runner.capability_execute(self.root, operation, parameters)
+
+    def test_dependency_graph_resolves_nested_and_shared_packages_without_running_scripts(self):
+        self.write('package.json', '{"name":"fixture"}')
+        lock = dict(name='fixture', lockfileVersion=3, packages={
+            '': dict(dependencies={'a': '^1', 'b': '^2'}),
+            'node_modules/a': dict(version='1.0.0', dependencies={'b': '^1', 'optional-missing': '^1'}),
+            'node_modules/b': dict(version='2.0.0'),
+            'node_modules/a/node_modules/b': dict(version='1.2.0')})
+        self.write('package-lock.json', json.dumps(lock))
+        report = self.execute('dependency-report', manager='auto', updates=False)
+        self.assertEqual(len(report['nodes']), 4)
+        edge = next(item for item in report['edges'] if item['source'] == 'node_modules/a' and item['name'] == 'b')
+        self.assertEqual(edge['target'], 'node_modules/a/node_modules/b')
+        self.assertIsNone(next(item for item in report['edges'] if item['name'] == 'optional-missing')['target'])
+        self.assertFalse(report['updatesChecked'])
+
+    def test_environment_lock_verifies_changes_and_rejects_unsafe_packages_before_install(self):
+        sample = dict(version=1, system={'ID': 'alpine', 'VERSION_ID': '3.23', 'architecture': 'x86_64', 'manager': 'apk'},
+                      packages={'nodejs': '24.1-r0'}, tools={'node': 'v24.1'}, locks={'package-lock.json': 'a' * 64})
+        with patch.object(runner, 'environment_snapshot', return_value=sample):
+            self.execute('reproducible-env', mode='capture')
+            self.assertEqual(self.execute('reproducible-env', mode='verify')['code'], 0)
+            changed = dict(sample, locks={'package-lock.json': 'b' * 64})
+            with patch.object(runner, 'environment_snapshot', return_value=changed):
+                self.assertEqual(self.execute('reproducible-env', mode='verify')['code'], 1)
+                with self.assertRaises(runner.Failure), patch.object(runner, 'run') as command:
+                    self.execute('reproducible-env', mode='install', installSystem=True)
+                command.assert_not_called()
+            tampered = dict(sample, packages={'--allow-untrusted': '1'})
+            self.write('.sakura/environment.lock.json', json.dumps(tampered))
+            with self.assertRaises(runner.Failure), patch.object(runner, 'run') as command:
+                self.execute('reproducible-env', mode='install', installSystem=True)
+            command.assert_not_called()
+
+    def test_runtime_install_validates_family_and_explicit_pin_before_executing(self):
+        with patch.object(runner.shutil, 'which', return_value='/sbin/apk'), patch.object(runner, 'run') as command:
+            with self.assertRaises(runner.Failure):
+                self.execute('runtime-matrix', mode='install', runtime='go', package='curl', version='1')
+            with self.assertRaises(runner.Failure):
+                self.execute('runtime-matrix', mode='install', runtime='go', package='go')
+            with self.assertRaises(runner.Failure):
+                self.execute('runtime-matrix', mode='install', runtime='go', package='go', version='$(touch escaped)')
+            command.assert_not_called()
+
+    @unittest.skipUnless(shutil.which('apk') or shutil.which('dpkg-query'), 'requires a Linux package database')
+    def test_actual_environment_lock_and_frozen_dependency_install(self):
+        self.write('package.json', json.dumps(dict(name='locked-fixture', version='1.0.0', scripts={'install': 'touch escaped'})))
+        runner.run(['npm', 'install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'], self.root)
+        captured = self.execute('reproducible-env', mode='capture')
+        self.assertGreater(captured['packages'], 0)
+        self.assertEqual(self.execute('reproducible-env', mode='verify')['code'], 0)
+        installed = self.execute('reproducible-env', mode='install', installSystem=False, timeout=60)
+        self.assertEqual(installed['code'], 0, installed)
+        self.assertFalse((self.root / 'escaped').exists())
+        self.write('package.json', '{"name":"changed"}')
+        self.assertEqual(self.execute('reproducible-env', mode='verify')['code'], 1)
 
     def test_build_cache_uses_input_fingerprint_and_verifies_content(self):
         self.write('lock.json', 'v1')

@@ -129,8 +129,15 @@ export const nextFeatureCatalog = [
     '检测嵌套虚拟化能力并记录结果。',
     'planned',
   ],
-  ['vcpu-hotplug', '在线 vCPU 热插拔', '虚拟硬件与固件', 'P1', '保存在线 vCPU 调整计划和目标值。', 'planned'],
-  ['memory-hotplug', '在线内存热插拔', '虚拟硬件与固件', 'P1', '保存在线内存调整计划和目标值。', 'planned'],
+  [
+    'vcpu-hotplug',
+    '在线 vCPU 热插拔',
+    '虚拟硬件与固件',
+    'P1',
+    '保存在线 vCPU 调整计划和目标值。',
+    'experimental',
+  ],
+  ['memory-hotplug', '在线内存热插拔', '虚拟硬件与固件', 'P1', '保存在线内存调整计划和目标值。', 'available'],
   [
     'virtio-fs',
     'Virtio-FS 共享目录',
@@ -317,7 +324,7 @@ export const nextFeatureCatalog = [
     '可观测性与自动运维',
     'P1',
     '生成当前 Sakura 请求和任务的链路适配状态。',
-    'planned',
+    'available',
   ],
   [
     'ebpf-profiler',

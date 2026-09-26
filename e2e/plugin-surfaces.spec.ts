@@ -226,13 +226,68 @@ test('sync controls save timezone and bandwidth and support offline enqueue and 
   await page.getByLabel('开始时间', { exact: true }).fill('22:00');
   await page.getByLabel('结束时间', { exact: true }).fill('02:00');
   await page.getByLabel('同步传输限速', { exact: false }).fill('2');
+  await page.getByLabel('识别内容未变化的文件重命名').check();
+  await page.getByLabel('同步前保存可校验的回滚点').check();
+  await page.getByLabel('优先使用文件变化事件触发同步').check();
+  await page.getByText('按路径设置同步方向与 Linux 权限', { exact: true }).click();
+  await page.getByRole('button', { name: '添加路径规则', exact: true }).click();
+  await page.getByLabel('路径规则 1', { exact: true }).fill('private/**');
+  await page.getByLabel('同步方向 1', { exact: true }).selectOption('readonly');
+  await page.getByLabel('Linux 权限 1', { exact: false }).fill('600');
   await page.getByRole('button', { name: '保存配置', exact: true }).click();
   await expect.poll(() => saved.bandwidthMiBps).toBe(2);
   expect(saved.window).toMatchObject({ timeZone: 'Asia/Shanghai', start: '22:00', end: '02:00' });
+  expect(saved).toMatchObject({
+    detectRenames: true,
+    rollback: true,
+    watch: true,
+    policies: [{ pattern: 'private/**', direction: 'readonly', guestMode: '600' }],
+  });
   await page.getByRole('button', { name: '排队同步', exact: true }).click();
   await expect(page.getByRole('button', { name: '取消排队', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '取消排队', exact: true }).click();
   await expect.poll(() => queue).toBeNull();
+});
+
+test('sync rollback requires explicit confirmation and only offers the newest outstanding checkpoint', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'sync'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  const checkpoints = [
+    { id: 'new', createdAt: new Date().toISOString(), status: 'done', changes: 2, bytes: 10 },
+    { id: 'old', createdAt: new Date(Date.now() - 1000).toISOString(), status: 'done', changes: 1, bytes: 5 },
+  ];
+  let requested: any;
+  await page.route('**/api/vms/*/sync*', (route) => {
+    if (new URL(route.request().url()).pathname.endsWith('/sync-rollback')) {
+      requested = route.request().postDataJSON();
+      checkpoints[0].status = 'rolled-back';
+      return route.fulfill({ json: { status: 'done' } });
+    }
+    return route.fulfill({
+      json: {
+        projectId: 'default',
+        config: { host: 'D:\\sync', guest: '/workspace/shared', auto: true },
+        history: checkpoints,
+        watching: { host: 'watching', guest: 'polling', reason: 'Linux 未安装 inotify-tools，保留轮询' },
+      },
+    });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '同步', exact: true }).click();
+  await expect(page.getByText(/Linux 未安装 inotify-tools/)).toBeVisible();
+  await page.getByText('同步回滚点（2）', { exact: true }).click();
+  await expect(page.getByRole('button', { name: '回滚此轮同步', exact: true })).toHaveCount(1);
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.getByRole('button', { name: '回滚此轮同步', exact: true }).click();
+  expect(requested).toBeUndefined();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: '回滚此轮同步', exact: true }).click();
+  await expect.poll(() => requested).toEqual({ checkpoint: 'new' });
+  await expect(page.getByText(/已回滚/)).toBeVisible();
 });
 
 const vm = {

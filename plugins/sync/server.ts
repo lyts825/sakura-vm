@@ -14,7 +14,9 @@ export async function activate(host: PluginContext) {
   host.registerJobs(host.sync.jobs, (job) => {
     if (!job.action) throw new AppError('请回到原功能页面重新执行');
     return retryInProject(host, job, () =>
-      host.sync.run(retryTarget(job), z.enum(['both', 'push', 'pull']).parse(job.action)),
+      job.action!.startsWith('rollback:')
+        ? host.sync.rollback(retryTarget(job), z.uuid().parse(job.action!.slice(9)))
+        : host.sync.run(retryTarget(job), z.enum(['both', 'push', 'pull']).parse(job.action)),
     );
   });
 }
@@ -39,6 +41,13 @@ export async function route(
   const id = parts[2],
     action = parts[3];
   this.machines.get(id);
+  if (parts.length === 4 && action === 'sync-rollback' && req.method === 'POST') {
+    const { checkpoint } = z
+      .object({ checkpoint: z.uuid() })
+      .strict()
+      .parse(await body(req));
+    return send(await this.sync.rollback(id, checkpoint), 202);
+  }
   if (parts.length === 4 && action === 'sync-queue' && ['POST', 'DELETE'].includes(req.method || '')) {
     return send(
       { queue: await this.sync.queue(id, req.method === 'DELETE') },

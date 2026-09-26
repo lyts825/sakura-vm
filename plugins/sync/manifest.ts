@@ -12,6 +12,7 @@ export const manifest = definePlugin({
       http('/api/vms/:vmId/sync', ['GET', 'PUT', 'POST'], true),
       http('/api/vms/:vmId/sync-preview', ['POST'], true),
       http('/api/vms/:vmId/sync-queue', ['POST', 'DELETE'], true),
+      http('/api/vms/:vmId/sync-rollback', ['POST'], true),
     ],
     tabs: ['sync'],
   },

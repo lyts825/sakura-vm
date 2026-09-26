@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { CapabilityActionView } from '../shared/capability-actions.ts';
 import { timeWindowSchema } from './automation-policy.ts';
+import { cpuTopologySchema, deviceProfileSchema } from '../shared/hardware.ts';
+import { reservationSchema } from './resource-policies.ts';
 
 export const relativePath = z
   .string()
@@ -35,6 +37,166 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'audit-log': action(
+    '审计日志链校验与导出',
+    'extended',
+    { limit: z.number().int().min(1).max(2000).default(200), allMachines: z.boolean().default(false) },
+    { limit: 200, allMachines: false },
+    '记录控制面写操作和后台任务的开始、结果，按 HMAC 链和独立封印检查篡改或截断。仅包含操作元数据；保护依赖本机审计密钥。',
+    false,
+  ),
+  'otel-tracing': action(
+    'OpenTelemetry 请求与任务链路',
+    'next',
+    { limit: z.number().int().min(10).max(2000).default(1000), allMachines: z.boolean().default(false) },
+    { limit: 1000, allMachines: false },
+    '从真实控制面写请求与后台任务事件生成 OTLP JSON，保留 trace/span 父子关系、时长和结果码；可下载导入采集器，不发送到外部服务。',
+    false,
+  ),
+  'dependency-report': action(
+    '依赖关系与更新报告',
+    'suite',
+    {
+      manager: z.enum(['auto', 'npm', 'python']).default('auto'),
+      updates: z.boolean().default(false),
+      timeout,
+    },
+    { manager: 'auto', updates: false, timeout: 60 },
+    '读取 npm 锁文件的直接与传递依赖图，或当前 Python 环境的安装元数据。updates 显式查询包源并列出可升级版本；不修改依赖。',
+  ),
+  'runtime-matrix': action(
+    '运行时版本管理',
+    'suite',
+    {
+      mode: z.enum(['list', 'versions', 'install']).default('list'),
+      runtime: z.enum(['go', 'java', 'dotnet', 'php']).default('go'),
+      package: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9+._-]{0,100}$/)
+        .optional(),
+      version: z
+        .string()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9.+:~_-]{0,100}$/)
+        .optional(),
+      timeout: z.number().int().min(30).max(1800).default(600),
+    },
+    { mode: 'list', runtime: 'go', timeout: 600 },
+    '探测 Go、Java、.NET 和 PHP；versions 查询 apk/apt 实际包版本，install 需要明确 package 和 version，先模拟依赖变化再安装指定版本。',
+    true,
+    true,
+  ),
+  'reproducible-env': action(
+    '环境锁定、校验与安装',
+    'suite',
+    {
+      mode: z.enum(['capture', 'verify', 'install']).default('verify'),
+      installSystem: z.boolean().default(false),
+      timeout: z.number().int().min(30).max(1800).default(600),
+    },
+    { mode: 'verify', installSystem: false, timeout: 600 },
+    '锁定 OS、架构、系统包精确版本、工具版本和项目依赖文件哈希；安装前校验锁文件，依赖使用 frozen/locked 模式。installSystem 显式安装精确系统包；不同发行版拒绝重建。',
+    true,
+    true,
+  ),
+  'resource-presets': action(
+    '资源预设与宿主机推荐',
+    'suite',
+    {
+      mode: z.enum(['list', 'save', 'delete', 'apply']).default('list'),
+      name: label.optional(),
+      workload: z.enum(['light', 'development', 'build', 'desktop']).default('development'),
+      growDisk: z.boolean().default(false),
+      preset: z
+        .object({
+          name: label,
+          memoryMiB: z.number().int().min(256).max(8192),
+          cpus: z.number().int().min(1).max(8),
+          diskGiB: z.number().int().min(2).max(128),
+        })
+        .strict()
+        .optional(),
+    },
+    { mode: 'list', workload: 'development' },
+    '列出、保存、应用资源预设，按宿主 CPU、内存和发行版最低要求推荐资源。停止后应用；growDisk 显式扩容且不会缩小磁盘。',
+    false,
+    true,
+  ),
+  'cpu-topology': action(
+    'CPU 拓扑与 NUMA',
+    'extended',
+    {
+      mode: z.enum(['view', 'save', 'reset']).default('view'),
+      topology: cpuTopologySchema.optional(),
+    },
+    { mode: 'view' },
+    '停止后保存 sockets/cores/threads 与可选 NUMA 节点；启动参数实际应用并随实例包导出。NUMA 必须完整分配 CPU 与内存。',
+    false,
+    true,
+  ),
+  'device-profiles': action(
+    '虚拟设备档案',
+    'extended',
+    {
+      mode: z.enum(['list', 'save', 'apply', 'delete']).default('list'),
+      name: label.optional(),
+      profile: deviceProfileSchema.optional(),
+    },
+    { mode: 'list' },
+    '保存和应用网卡、随机数、内存气球、磁盘缓存与 TRIM 设备组合；停止后应用，下次启动生效。',
+    false,
+    true,
+  ),
+  'resource-reservation': action(
+    '资源预算与启动优先级',
+    'extended',
+    {
+      mode: z.enum(['view', 'save']).default('view'),
+      policy: reservationSchema.optional(),
+    },
+    { mode: 'view' },
+    '限制运行实例的总 vCPU 和物理内存预算，并为宿主机预留内存。启动与热插拔均执行预算检查；计划启动按 priorities 从高到低。',
+    false,
+    true,
+  ),
+  ipv6: action(
+    '客户机 IPv6',
+    'extended',
+    {
+      mode: z.enum(['view', 'save']).default('view'),
+      enabled: z.boolean().default(true),
+    },
+    { mode: 'view' },
+    '停止后启用或关闭 QEMU 用户网络 IPv6；运行时读取客户机 IPv6 地址与路由。公网连通性取决于宿主网络。',
+    false,
+    true,
+  ),
+  'vcpu-hotplug': action(
+    '在线添加 vCPU',
+    'next',
+    {
+      mode: z.enum(['view', 'configure', 'add']).default('view'),
+      maximum: z.number().int().min(1).max(8).default(8),
+      target: z.number().int().min(1).max(8).optional(),
+    },
+    { mode: 'view' },
+    'configure 在停止时预留插槽；TCG 模式下 add 添加到 target 个 vCPU 并确认 Linux 上线。执行前检查内核预留数量；当前 Alpine 6.18 内核未识别 TCG 预留 CPU 时拒绝添加，WHPX 也拒绝在线修改。',
+    false,
+    true,
+  ),
+  'memory-hotplug': action(
+    '在线添加内存',
+    'next',
+    {
+      mode: z.enum(['view', 'configure', 'add']).default('view'),
+      maximum: z.number().int().min(256).max(8192).default(8192),
+      slots: z.number().int().min(1).max(8).default(4),
+      target: z.number().int().min(256).max(8192).optional(),
+    },
+    { mode: 'view' },
+    'configure 在停止时预留最大内存与插槽；TCG 模式下 add 添加 pc-dimm 并核验实际容量。需要客户机内核自动上线支持，按 128 MiB 对齐，仅支持增加；WHPX 拒绝在线修改。',
+    false,
+    true,
+  ),
   'git-worktrees': action(
     'Git 工作树管理',
     'suite',

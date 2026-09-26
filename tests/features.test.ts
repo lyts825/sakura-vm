@@ -91,7 +91,8 @@ test('cloud-init and systemd desktop adapters retain key-only access and a non-r
   assert.match(cloud, /disable_root: false/);
   assert.match(cloud, /PasswordAuthentication no/);
   assert.match(cloud, /ssh_authorized_keys/);
-  assert.match(cloudNetwork, /virtio_net/);
+  assert.match(cloudNetwork, /name: "e\*"/);
+  assert.match(cloudNetwork, /dhcp6: true/);
   for (const distro of ['debian', 'ubuntu']) {
     const scripts = desktopCommands(distro);
     assert.doesNotMatch(scripts.install, /apk add|rc-service|rc-update/);

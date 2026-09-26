@@ -116,8 +116,10 @@ export const cloudNetwork = `version: 2
 ethernets:
   sakura:
     match:
-      driver: virtio_net
+      name: "e*"
     dhcp4: true
+    dhcp6: true
+    accept-ra: true
 `;
 
 export function cloudUserData(name: string, publicKey: string) {

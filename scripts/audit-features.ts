@@ -20,6 +20,8 @@ const groups = [
 const all = groups.flatMap((group) => group.rows),
   unfinished = all.filter((item) => item.state !== 'available');
 const notes: Record<string, string> = {
+  'vcpu-hotplug':
+    '已实现预留插槽、QMP 添加和客户机上线校验。当前 WHPX 拒绝在线添加；Alpine 6.18 在 TCG 下未识别预留 CPU，正常添加流程仍待兼容内核验证。',
   'merge-editor':
     '已有文件草稿及 Git 普通文本三方编辑、版本校验和暂存；仍缺同步冲突的图形编辑及删除、链接、子模块、二进制冲突工作流。',
   'plugin-api': '内置插件框架已存在；Webhook、第三方隔离插件及完整事件触发器仍未实现。',

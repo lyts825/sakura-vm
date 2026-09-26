@@ -109,13 +109,23 @@ export class Bundles {
           signal?.throwIfAborted();
           hash.update(chunk);
         }
-        const { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template, pendingResize } =
-          this.machines.get(id);
+        const {
+          name,
+          memoryMiB,
+          cpus,
+          diskGiB,
+          accelerator,
+          forwards,
+          distro,
+          template,
+          hardware,
+          pendingResize,
+        } = this.machines.get(id);
         const identity = await this.machines.snapshotIdentity(id);
         const manifest = Buffer.from(
           JSON.stringify({
             version: 1,
-            config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template },
+            config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template, hardware },
             project: await this.project(id),
             projects: await this.projectCatalog(id),
             ...(pendingResize ? { pendingResize: true } : {}),
@@ -249,7 +259,7 @@ export class Bundles {
           { timeoutMs: 1800000, signal },
         );
         const identity = await this.machines.snapshotIdentity(id, snapshot);
-        const { memoryMiB, cpus, diskGiB, accelerator, distro, template } = vm;
+        const { memoryMiB, cpus, diskGiB, accelerator, distro, template, hardware } = vm;
         const project = await this.project(id);
         const projects = await this.projectCatalog(id);
         signal?.throwIfAborted();
@@ -262,6 +272,7 @@ export class Bundles {
             accelerator,
             distro,
             template,
+            hardware,
             forwards: [],
           },
           disk,

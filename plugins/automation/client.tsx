@@ -333,6 +333,13 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     action.run(async () => {
       const instructions: Record<string, string> = {
         'sync-window': '打开工作空间 → 同步，设置允许时间窗、时区和传输限速后保存。',
+        'watch-sync':
+          '打开工作空间 → 同步，启用自动同步和文件变化事件。可查看两端监听状态；Linux 需要 inotify-tools。',
+        'rename-detection':
+          '打开工作空间 → 同步，启用重命名识别并预览变化。只移动内容未变化且匹配唯一的文件。',
+        'path-sync-policy':
+          '打开工作空间 → 同步 → 按路径设置同步方向与 Linux 权限，可添加只读、上传、下载和权限规则。',
+        'sync-rollback': '打开工作空间 → 同步，启用回滚点；完成同步后在回滚记录中恢复最近一轮变更。',
         'sync-queue':
           '打开工作空间 → 同步 → 排队同步。离线请求会持久保存，连接恢复后重新比较并重试；取消排队可停止后续重试。',
         'immutable-backups':
@@ -848,7 +855,16 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   disabled={action.busy || feature.state !== 'available'}
                   onClick={() => runExtended(feature.id)}
                 >
-                  {['terminal-layouts', 'sync-window', 'sync-queue', 'immutable-backups'].includes(feature.id)
+                  {[
+                    'terminal-layouts',
+                    'sync-window',
+                    'sync-queue',
+                    'watch-sync',
+                    'rename-detection',
+                    'path-sync-policy',
+                    'sync-rollback',
+                    'immutable-backups',
+                  ].includes(feature.id)
                     ? '使用说明'
                     : extended.data?.operations.some((item) => item.feature === feature.id)
                       ? '设置参数'

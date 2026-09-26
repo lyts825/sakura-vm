@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dataDirectory } from './data-directory.ts';
 import type { DesktopPreferences } from './desktop-preferences.ts';
 import type { SandboxPolicy } from '../shared/sandbox.ts';
+import { hardwareSchema, hardwareIssues } from '../shared/hardware.ts';
 export { desktopPreferencesSchema, defaultDesktopPreferences } from './desktop-preferences.ts';
 export type { DesktopPreferences } from './desktop-preferences.ts';
 
@@ -26,6 +27,7 @@ export const createSchema = z
     accelerator: z.enum(['auto', 'tcg', 'whpx']).default('auto'),
     distro: z.enum(['alpine', 'debian', 'ubuntu']).optional(),
     template: z.enum(['none', 'node', 'python', 'rust']).optional(),
+    hardware: hardwareSchema.optional(),
     forwards: z
       .array(
         z.object({
@@ -39,6 +41,7 @@ export const createSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
+    for (const message of hardwareIssues(v)) ctx.addIssue({ code: 'custom', message, path: ['hardware'] });
     if (new Set(v.forwards.map((p) => p.host)).size !== v.forwards.length)
       ctx.addIssue({ code: 'custom', message: '主机端口不能重复', path: ['forwards'] });
   });

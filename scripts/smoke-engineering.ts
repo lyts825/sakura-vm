@@ -21,7 +21,13 @@ try {
     name: 'engineering-smoke',
     memoryMiB: 1024,
     diskGiB: 4,
-    accelerator: process.env.SAKURA_TEST_ACCELERATOR || 'auto',
+    cpus: 1,
+    hardware: {
+      cpu: { sockets: 1, cores: 4, threads: 1 },
+      memory: { maxMiB: 2048, slots: 4 },
+      devices: { discard: true },
+    },
+    accelerator: process.env.SAKURA_TEST_ACCELERATOR || 'tcg',
   });
   id = vm.id;
   console.log('Booting isolated engineering VM');
@@ -31,6 +37,50 @@ try {
     if (Date.now() > deadline || ['error', 'stopped'].includes(machines.state(id)))
       throw new Error(machines.logs.get(id));
     await delay(250);
+  }
+  console.log('Checking real QMP CPU and memory hotplug');
+  const cpuSupport = await machines.hotplug(id, 'cpu');
+  if ('canAdd' in cpuSupport && cpuSupport.canAdd) {
+    const cpu = await machines.hotplug(id, 'cpu', 2);
+    assert.equal(cpu.current, 2, JSON.stringify(cpu));
+    assert.equal((cpu as any).guestOnline, 2, JSON.stringify(cpu));
+  } else {
+    await assert.rejects(machines.hotplug(id, 'cpu', 2), {
+      code:
+        process.env.SAKURA_TEST_ACCELERATOR === 'whpx'
+          ? 'HOTPLUG_ACCELERATOR_UNSUPPORTED'
+          : 'GUEST_CPU_SLOTS',
+    });
+    console.log(
+      'CPU hotplug rejected before mutation: guest kernel/accelerator does not expose usable reserved CPUs',
+    );
+  }
+  const memory = await machines.hotplug(id, 'memory', 1152);
+  assert.equal(memory.current, 1152, JSON.stringify(memory));
+  assert.equal('ready' in memory && memory.ready, true, JSON.stringify(memory));
+  const actualMemory = await machines.exec(id, "awk '/MemTotal:/ { print $2 }' /proc/meminfo");
+  assert.ok(Number(actualMemory.stdout.trim()) > 1024 * 1024, actualMemory.stdout);
+  // Keep the longer engineering suite fast, and verify the new resources survive a cold boot.
+  if (!process.env.SAKURA_TEST_ACCELERATOR) {
+    console.log('Restarting with host acceleration after hotplug verification');
+    await machines.stop(id, false);
+    const current = machines.get(id);
+    await machines.update(id, {
+      name: current.name,
+      cpus: current.cpus,
+      memoryMiB: current.memoryMiB,
+      diskGiB: current.diskGiB,
+      accelerator: 'auto',
+      hardware: current.hardware,
+      forwards: current.forwards,
+    });
+    await machines.start(id);
+    const restartDeadline = Date.now() + 300000;
+    while (machines.state(id) !== 'running') {
+      if (Date.now() > restartDeadline || ['error', 'stopped'].includes(machines.state(id)))
+        throw new Error(machines.logs.get(id));
+      await delay(250);
+    }
   }
   console.log('Installing guest test tools');
   const install = await machines.exec(
@@ -184,6 +234,9 @@ try {
   await assert.rejects(machines.start(id), /应急锁定/);
   await machines.setIncidentLockdown(id, false);
   console.log('Engineering VM validation passed');
+} catch (error) {
+  if (id) console.error('Guest/QEMU diagnostic tail:\n' + (machines.logs.get(id) || '').slice(-12000));
+  throw error;
 } finally {
   await features.close();
   await machines.close();

@@ -34,6 +34,7 @@ type Work = (
   result: (value: unknown) => Promise<void>,
 ) => Promise<void>;
 export class Jobs {
+  static instrument?: (view: JobView, work: () => Promise<void>) => Promise<void>;
   private closed = false;
   private items = new Map<string, { view: JobView; abort: AbortController; done: Promise<void> }>();
   private history: JobView[] = [];
@@ -164,35 +165,39 @@ export class Jobs {
       .then(async () => {
         await this.flush();
         abort.signal.throwIfAborted();
-        await work(
-          (text) => {
-            view.log = (view.log + text).slice(-32768);
-            const line = text.trim().split('\n').at(-1);
-            if (line) view.phase = line.slice(0, 120);
-            this.persist();
-          },
-          abort.signal,
-          (phase, progress) => {
-            view.phase = phase;
-            view.progress = progress === undefined ? undefined : Math.min(100, Math.max(0, progress));
-            this.persist();
-          },
-          async (value) => {
-            const data = JSON.stringify(value),
-              bytes = Buffer.byteLength(data);
-            if (bytes > 8 * 1024 * 1024) throw new AppError('任务结果超过 8 MiB，请缩小操作范围');
-            if (this.file) {
-              const folder = this.file + '.results',
-                path = join(folder, view.id! + '.json');
-              await mkdir(folder, { recursive: true });
-              await writeFile(path + '.tmp', data, { mode: 0o600 });
-              await rename(path + '.tmp', path);
-            } else this.results.set(view.id!, data);
-            view.result = { bytes, sha256: createHash('sha256').update(data).digest('hex') };
-            this.persist();
-          },
-        );
-        abort.signal.throwIfAborted();
+        const execute = async () => {
+          await work(
+            (text) => {
+              view.log = (view.log + text).slice(-32768);
+              const line = text.trim().split('\n').at(-1);
+              if (line) view.phase = line.slice(0, 120);
+              this.persist();
+            },
+            abort.signal,
+            (phase, progress) => {
+              view.phase = phase;
+              view.progress = progress === undefined ? undefined : Math.min(100, Math.max(0, progress));
+              this.persist();
+            },
+            async (value) => {
+              const data = JSON.stringify(value),
+                bytes = Buffer.byteLength(data);
+              if (bytes > 8 * 1024 * 1024) throw new AppError('任务结果超过 8 MiB，请缩小操作范围');
+              if (this.file) {
+                const folder = this.file + '.results',
+                  path = join(folder, view.id! + '.json');
+                await mkdir(folder, { recursive: true });
+                await writeFile(path + '.tmp', data, { mode: 0o600 });
+                await rename(path + '.tmp', path);
+              } else this.results.set(view.id!, data);
+              view.result = { bytes, sha256: createHash('sha256').update(data).digest('hex') };
+              this.persist();
+            },
+          );
+          abort.signal.throwIfAborted();
+        };
+        if (Jobs.instrument) await Jobs.instrument(view, execute);
+        else await execute();
         view.status = 'done';
         view.phase = '已完成';
         view.progress = 100;

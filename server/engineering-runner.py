@@ -9,8 +9,11 @@ import hashlib
 import io
 import ipaddress
 import itertools
+import importlib.metadata
 import json
 import os
+import platform
+import posixpath
 from pathlib import Path, PurePosixPath
 import re
 import shlex
@@ -925,7 +928,192 @@ CAPABILITY_OPERATIONS = {
     "patch-bundle", "environment-recreate", "format-lint",
     "build-cache", "branch-preview", "onboarding-checklist", "review-threads",
     "workspace-search", "git-worktrees",
+    "dependency-report", "runtime-matrix", "reproducible-env",
 }
+
+RUNTIME_TOOLS = {
+    'go': ['go', 'version'], 'java': ['java', '-version'], 'dotnet': ['dotnet', '--list-sdks'], 'php': ['php', '--version'],
+    'node': ['node', '--version'], 'npm': ['npm', '--version'], 'python': ['python3', '--version'], 'rust': ['rustc', '--version'],
+}
+LOCK_COMMANDS = [('package-lock.json', ['npm', 'ci', '--ignore-scripts']),
+                 ('npm-shrinkwrap.json', ['npm', 'ci', '--ignore-scripts']),
+                 ('pnpm-lock.yaml', ['pnpm', 'install', '--frozen-lockfile', '--ignore-scripts']),
+                 ('yarn.lock', ['yarn', 'install', '--frozen-lockfile', '--ignore-scripts']),
+                 ('uv.lock', ['uv', 'sync', '--frozen']), ('poetry.lock', ['poetry', 'install', '--sync']),
+                 ('Cargo.lock', ['cargo', 'fetch', '--locked']), ('go.sum', ['go', 'mod', 'download'])]
+
+
+def runtime_versions(root):
+    result = {}
+    for name, args in RUNTIME_TOOLS.items():
+        if shutil.which(args[0]):
+            command = run(args, root, timeout=10, check=False)
+            result[name] = dict(path=shutil.which(args[0]), version=(command['stdout'] or command['stderr']).strip()[:2000], code=command['code'])
+        else:
+            result[name] = None
+    return result
+
+
+def system_packages(root):
+    if shutil.which('apk'):
+        records = run(['apk', 'info', '-v'], root)['stdout'].splitlines()
+        packages = {}
+        for line in records:
+            match = re.fullmatch(r'(.+)-(\d[^/ ]*)', line)
+            if match:
+                packages[match[1]] = match[2]
+        return 'apk', packages
+    if shutil.which('dpkg-query'):
+        records = run(['dpkg-query', '-W', '-f=${binary:Package}\t${Version}\t${db:Status-Status}\n'], root)['stdout'].splitlines()
+        return 'apt', {parts[0]: parts[1] for line in records if len(parts := line.split('\t')) == 3 and parts[2] == 'installed'}
+    raise Failure('环境锁定需要 apk 或 apt/dpkg')
+
+
+def environment_snapshot(root):
+    manager, packages = system_packages(root)
+    os_info = {}
+    for line in Path('/etc/os-release').read_text().splitlines():
+        if '=' in line:
+            key, value = line.split('=', 1)
+            if key in ('ID', 'VERSION_ID'):
+                os_info[key] = value.strip('"')
+    locks = {}
+    for name in ['package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', *[name for name, _ in LOCK_COMMANDS]]:
+        file = safe_path(root, name)
+        if file.exists():
+            if not file.is_file() or file.stat().st_size > 16 * 1024 * 1024:
+                raise Failure('依赖文件类型或大小不受支持：' + name)
+            locks[name] = hashlib.sha256(file.read_bytes()).hexdigest()
+    tools = {name: value['version'] if value else None for name, value in runtime_versions(root).items()}
+    return dict(version=1, system=dict(os_info, architecture=platform.machine(), manager=manager), packages=packages, tools=tools, locks=locks)
+
+
+def dependency_report(root, p):
+    manager = p.get('manager', 'auto')
+    if manager == 'auto':
+        manager = 'npm' if safe_path(root, 'package.json').is_file() else 'python'
+    nodes, edges, updates = [], [], []
+    if manager == 'npm':
+        lockfile = 'npm-shrinkwrap.json' if safe_path(root, 'npm-shrinkwrap.json').is_file() else 'package-lock.json'
+        data = json.loads(read_text(root, lockfile, 16 * 1024 * 1024))
+        packages = data.get('packages')
+        if not isinstance(packages, dict):
+            raise Failure('需要 npm lockfileVersion 2 或 3 的锁文件')
+        if len(packages) > MAX_FILES:
+            raise Failure('依赖图超过 20,000 个节点')
+        for key, item in packages.items():
+            if not isinstance(item, dict):
+                raise Failure('依赖锁文件格式错误')
+            name = item.get('name') or key.rsplit('node_modules/', 1)[-1] or data.get('name', 'project')
+            nodes.append(dict(id=key or '.', name=name, version=item.get('version'), dev=bool(item.get('dev')), link=bool(item.get('link'))))
+            for kind in ('dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'):
+                if key and kind == 'devDependencies':
+                    continue
+                for dependency, wanted in item.get(kind, {}).items():
+                    context, target = key, None
+                    while True:
+                        candidate = posixpath.join(context, 'node_modules', dependency)
+                        if candidate in packages:
+                            target = candidate
+                            break
+                        if not context:
+                            break
+                        context = posixpath.dirname(context)
+                    edges.append(dict(source=key or '.', target=target, name=dependency, requested=wanted, kind=kind))
+                    if len(edges) > 100000:
+                        raise Failure('依赖图超过 100,000 条边')
+        if p.get('updates'):
+            result = run(['npm', 'outdated', '--json', '--ignore-scripts'], root, timeout=p.get('timeout', 60), check=False)
+            if result['code'] not in (0, 1):
+                raise Failure('npm 更新查询失败', **result)
+            outdated = json.loads(result['stdout'] or '{}')
+            if 'error' in outdated:
+                raise Failure('npm 更新查询失败', details=outdated['error'])
+            updates = [dict(name=name, **value) for name, value in outdated.items()]
+    else:
+        for distribution in importlib.metadata.distributions():
+            name = distribution.metadata.get('Name', '')
+            if not name:
+                continue
+            key = re.sub(r'[-_.]+', '-', name).lower()
+            nodes.append(dict(id=key, name=name, version=distribution.version))
+            for requirement in distribution.requires or []:
+                match = re.match(r'([A-Za-z0-9_.-]+)', requirement)
+                if match:
+                    edges.append(dict(source=key, target=re.sub(r'[-_.]+', '-', match[1]).lower(), requirement=requirement))
+        if p.get('updates'):
+            updates = json.loads(run(['python3', '-m', 'pip', 'list', '--outdated', '--format=json'], root, timeout=p.get('timeout', 60))['stdout'])
+    return dict(manager=manager, nodes=nodes, edges=edges, updates=updates, updatesChecked=bool(p.get('updates')), generatedAt=time.time())
+
+
+def runtime_matrix(root, p):
+    if p['mode'] == 'list':
+        return dict(runtimes={name: value for name, value in runtime_versions(root).items() if name in ('go', 'java', 'dotnet', 'php')})
+    runtime = p['runtime']
+    manager = 'apk' if shutil.which('apk') else 'apt' if shutil.which('apt-cache') else None
+    if not manager:
+        raise Failure('运行时安装需要 apk 或 apt')
+    patterns = {'go': r'(go|golang(?:-[a-z0-9.+]+)*)', 'java': r'(openjdk[0-9]+(?:-jdk)?|openjdk-[0-9]+-jdk(?:-headless)?|default-jdk(?:-headless)?)',
+                'dotnet': r'(dotnet[0-9]+-sdk|dotnet-sdk-[0-9.]+)', 'php': r'(php[0-9]*(?:-cli)?|php[0-9.]+-cli)'}
+    package = p.get('package') or {'apk': {'go': 'go', 'java': 'openjdk17-jdk', 'dotnet': 'dotnet8-sdk', 'php': 'php84'},
+                                 'apt': {'go': 'golang-go', 'java': 'openjdk-17-jdk', 'dotnet': 'dotnet-sdk-8.0', 'php': 'php-cli'}}[manager][runtime]
+    if not re.fullmatch(patterns[runtime], package):
+        raise Failure('包名称不属于所选运行时')
+    if p['mode'] == 'versions':
+        args = ['apk', 'policy', package] if manager == 'apk' else ['apt-cache', 'madison', package]
+        return dict(manager=manager, package=package, **run(args, root))
+    version = p.get('version', '')
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+:~_-]{0,100}', version) or not p.get('package'):
+        raise Failure('安装需要明确的 package 和 version，请先查询可用版本')
+    pin = package + '=' + version
+    simulation = run(['apk', 'add', '--simulate', pin] if manager == 'apk' else ['apt-get', '-s', 'install', pin], root, timeout=60)
+    result = run(['apk', 'add', pin] if manager == 'apk' else ['apt-get', '-y', '--no-remove', 'install', pin], root,
+                 timeout=p.get('timeout', 600), env=dict(os.environ, DEBIAN_FRONTEND='noninteractive'), check=False)
+    return dict(manager=manager, package=package, version=version, simulation=compact_command(simulation),
+                runtime=runtime_versions(root)[runtime], **compact_command(result))
+
+
+def reproducible_environment(root, p):
+    relative = '.sakura/environment.lock.json'
+    actual = environment_snapshot(root)
+    if p['mode'] == 'capture':
+        atomic_json(root, relative, actual)
+        return dict(lockfile=relative, fingerprint=hashlib.sha256(json.dumps(actual, sort_keys=True).encode()).hexdigest(),
+                    packages=len(actual['packages']), tools=actual['tools'], locks=actual['locks'])
+    expected = json.loads(read_text(root, relative, 4 * 1024 * 1024))
+    if expected.get('version') != 1 or any(not isinstance(expected.get(key), dict) for key in ('system', 'packages', 'tools', 'locks')):
+        raise Failure('环境锁文件格式错误')
+    if expected['system'] != actual['system']:
+        raise Failure('发行版、版本、架构或包管理器与锁文件不匹配', expected=expected['system'], actual=actual['system'])
+    packages = expected['packages']
+    if len(packages) > 5000 or any(not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9+._:-]{0,120}', name) or
+                                  not isinstance(version, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+:~_-]{0,120}', version)
+                                  for name, version in packages.items()):
+        raise Failure('环境锁文件包含非法系统包版本')
+    drift = lambda before, after: [dict(name=name, expected=value, actual=after.get(name)) for name, value in before.items() if after.get(name) != value]
+    lock_drift = drift(expected['locks'], actual['locks'])
+    package_drift, tool_drift = drift(packages, actual['packages']), drift(expected['tools'], actual['tools'])
+    if p['mode'] == 'verify':
+        return dict(code=1 if lock_drift or package_drift or tool_drift else 0, lockfile=relative,
+                    differences=dict(locks=lock_drift, packages=package_drift, tools=tool_drift), verifiedAt=time.time())
+    if lock_drift:
+        raise Failure('依赖文件已改变，拒绝按旧锁文件安装', differences=lock_drift)
+    if package_drift and not p.get('installSystem'):
+        raise Failure('系统包版本不匹配，请使用对应环境或显式 installSystem', differences=package_drift)
+    installs = []
+    if package_drift:
+        pins = [item['name'] + '=' + item['expected'] for item in package_drift]
+        args = ['apk', 'add', *pins] if actual['system']['manager'] == 'apk' else ['apt-get', '-y', '--no-remove', 'install', *pins]
+        installs.append(compact_command(run(args, root, timeout=p.get('timeout', 600), env=dict(os.environ, DEBIAN_FRONTEND='noninteractive'))))
+    installed_families = set()
+    for name, args in LOCK_COMMANDS:
+        family = 'node' if args[0] in ('npm', 'pnpm', 'yarn') else 'python' if args[0] in ('uv', 'poetry') else args[0]
+        if name in expected['locks'] and family not in installed_families:
+            installs.append(dict(lockfile=name, **compact_command(run(args, root, timeout=p.get('timeout', 600)))))
+            installed_families.add(family)
+    refreshed = environment_snapshot(root)
+    remaining = dict(packages=drift(packages, refreshed['packages']), tools=drift(expected['tools'], refreshed['tools']), locks=drift(expected['locks'], refreshed['locks']))
+    return dict(code=1 if any(remaining.values()) else 0, installs=installs, differences=remaining, verifiedAt=time.time())
 
 
 def compact_command(result):
@@ -1055,6 +1243,12 @@ def directory_revision(root, p):
 
 
 def capability_execute(root, operation, p):
+    if operation == 'dependency-report':
+        return dependency_report(root, p)
+    if operation == 'runtime-matrix':
+        return runtime_matrix(root, p)
+    if operation == 'reproducible-env':
+        return reproducible_environment(root, p)
     if operation == 'git-worktrees':
         def worktrees():
             output = run(['git', 'worktree', 'list', '--porcelain', '-z'], root)['stdout']

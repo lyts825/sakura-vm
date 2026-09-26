@@ -14,6 +14,7 @@ import { CapabilityActions } from './capability-actions.ts';
 import { requireSuccessfulResult } from './engineering-runner.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { inMaintenance } from './automation-policy.ts';
+import { resourcePolicy } from './resource-policies.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -112,16 +113,16 @@ const availableFeatureIds = new Set<FeatureId>([
   'resumable-transfer',
   'file-drop',
   'git-worktrees',
+  'resource-presets',
+  'dependency-report',
+  'runtime-matrix',
+  'reproducible-env',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'golden-images',
   'disk-maintenance',
-  'resource-presets',
   'language-services',
   'merge-editor',
-  'dependency-report',
-  'runtime-matrix',
-  'reproducible-env',
   'network-profiles',
   'network-diagnostics',
   'native-integration',
@@ -906,7 +907,11 @@ export class FeatureSuite {
       const state = await this.state();
       const now = new Date();
       const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      for (const vm of this.machines.records.values()) {
+      const policy = await resourcePolicy();
+      const scheduled = [...this.machines.records.values()].sort(
+        (a, b) => (policy.priorities[b.id] || 0) - (policy.priorities[a.id] || 0),
+      );
+      for (const vm of scheduled) {
         if (await inMaintenance(vm.id, now)) {
           this.idleSince.delete(vm.id);
           this.lastSampleAt.delete(vm.id);
@@ -948,7 +953,7 @@ export class FeatureSuite {
         else this.lastSampleAt.delete(vm.id);
         if (!schedule.enabled) continue;
         if (schedule.startAt === clock && this.machines.state(vm.id) === 'stopped')
-          void this.machines.start(vm.id).catch(() => {});
+          await this.machines.start(vm.id).catch(() => {});
         if (schedule.stopAt === clock && this.machines.state(vm.id) === 'running')
           void this.machines.stop(vm.id, false).catch(() => {});
         if (schedule.idleMinutes > 0 && this.machines.state(vm.id) === 'running') {

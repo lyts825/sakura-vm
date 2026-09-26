@@ -16,6 +16,8 @@ import { PluginManager } from './plugin-manager.ts';
 import { validateRegistry } from './plugins/registry.ts';
 import { readJsonBody as body, requestUrl } from './http.ts';
 import type { ClientChannel } from 'ssh2';
+import { hostAudit } from './audit.ts';
+import { Jobs } from './jobs.ts';
 
 async function main() {
   const token = randomBytes(32).toString('hex');
@@ -26,6 +28,18 @@ async function main() {
   const engine = await createRuntime();
   const machines = new Machines(engine);
   await machines.init();
+  const audit = hostAudit();
+  Jobs.instrument = (job, work) =>
+    audit.span(
+      {
+        kind: 'job',
+        name: (job.scope || 'task') + ':' + (job.action || 'run'),
+        vmId: job.vmId,
+        projectId: job.projectId,
+        jobId: job.id,
+      },
+      work,
+    );
   const features = await Features.create(machines, selectedPlugins);
   plugins.activated(features.enabled, features.errors, features.lifecycle);
   const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
@@ -52,6 +66,7 @@ async function main() {
     if (req.method === 'GET' && url.pathname === '/api/bootstrap') return send(res, { token });
     if (await features.downloads?.route(req, res, url)) return;
     if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
+    if (url.pathname === '/api/audit' && req.method === 'GET') return send(res, await audit.read(200));
     if (
       features.migration?.blocked &&
       req.method !== 'GET' &&
@@ -163,7 +178,21 @@ async function main() {
       if (!allowedRequest(req)) throw new AppError('仅接受本机同源访问', 403);
       const url = requestUrl(req.url, PORT);
       if (!url) throw new AppError('无效的请求地址', 400);
-      if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+      if (url.pathname.startsWith('/api/')) {
+        if (!['GET', 'HEAD'].includes(req.method || '') && equalToken(req.headers['x-sakura-token'])) {
+          const vmId = /^\/api\/vms\/([a-f0-9-]{36})(?:\/|$)/.exec(url.pathname)?.[1];
+          return await audit.span(
+            {
+              kind: 'request',
+              name: (req.method + ' ' + url.pathname).slice(0, 200),
+              ...(vmId && z.uuid().safeParse(vmId).success ? { vmId } : {}),
+            },
+            () => api(req, res, url),
+            () => res.statusCode,
+          );
+        }
+        return await api(req, res, url);
+      }
       if (vite) return vite.middlewares(req, res);
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new AppError('不支持此方法', 405);
       const dist = join(ROOT, 'dist');
@@ -359,7 +388,12 @@ async function main() {
     ws.close();
     server.close();
     let failed = false;
-    for (const dispose of [() => features.close(), () => machines.close(), () => vite?.close()]) {
+    for (const dispose of [
+      () => features.close(),
+      () => machines.close(),
+      () => audit.close(),
+      () => vite?.close(),
+    ]) {
       try {
         await dispose();
       } catch (error) {

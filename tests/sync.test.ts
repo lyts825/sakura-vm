@@ -2,7 +2,7 @@ import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -23,6 +23,7 @@ async function fixture(
     failReadClose?: boolean;
     disconnectAfterRead?: number;
     cancelOnWrite?: boolean;
+    onRead?: (path: string, number: number, remote: Map<string, RemoteFile>) => void;
   } = {},
 ) {
   const id = randomUUID();
@@ -52,8 +53,8 @@ async function fixture(
     readdir(path: string, cb: (error: Error | undefined, entries: unknown[]) => void) {
       cb(
         undefined,
-        [...remote.keys()]
-          .filter((name) => name.startsWith(path + '/'))
+        [...remote.keys(), ...directories]
+          .filter((name) => name.startsWith(path + '/') && !name.slice(path.length + 1).includes('/'))
           .map((name) => ({
             filename: name.slice(path.length + 1),
             attrs: attrs(name),
@@ -63,6 +64,7 @@ async function fixture(
     createReadStream(path: string) {
       openReadHandles++;
       const readNumber = ++reads;
+      options.onRead?.(path, readNumber, remote);
       const stream = new Readable({
         autoDestroy: false,
         emitClose: false,
@@ -113,6 +115,17 @@ async function fixture(
       remote.delete(from);
       cb();
     },
+    rename(from: string, to: string, cb: (error?: Error) => void) {
+      if (remote.has(to)) return cb(new Error('File exists'));
+      if (!remote.has(from)) return cb(missing());
+      remote.set(to, remote.get(from)!);
+      remote.delete(from);
+      cb();
+    },
+    mkdir(path: string, cb: () => void) {
+      directories.add(path);
+      cb();
+    },
     unlink(path: string, cb: () => void) {
       if (!transport.signal.aborted) remote.delete(path);
       cb();
@@ -152,6 +165,172 @@ async function finished(sync: InstanceType<typeof FolderSync>, id: string) {
   }
   return sync.jobs.view(id)!;
 }
+
+test('deletion decisions remove exactly the selected peer and default to keeping the survivor', async (t) => {
+  for (const side of ['host', 'guest'] as const) {
+    const { id, host, remote, sync } = await fixture(t);
+    await writeFile(join(host, 'notes.txt'), 'original');
+    await sync.run(id, 'both');
+    assert.equal((await finished(sync, id)).status, 'done');
+    if (side === 'host') await rm(join(host, 'notes.txt'));
+    else remote.delete('/workspace/notes.txt');
+    const preview = await sync.preview(id);
+    const action = side === 'host' ? 'delete-guest' : 'delete-host';
+    assert.deepEqual(preview.changes, [{ path: 'notes.txt', action }]);
+    await sync.run(id, 'both');
+    assert.equal((await finished(sync, id)).status, 'done');
+    if (side === 'host') assert.equal(remote.has('/workspace/notes.txt'), true);
+    else assert.equal(await readFile(join(host, 'notes.txt'), 'utf8'), 'original');
+    await sync.run(id, 'both', preview.token, { 'notes.txt': action });
+    assert.equal((await finished(sync, id)).status, 'done');
+    assert.equal(remote.has('/workspace/notes.txt'), false);
+    await assert.rejects(readFile(join(host, 'notes.txt')), { code: 'ENOENT' });
+  }
+});
+
+test('path policies constrain forced sync, conflict resolution and Linux permissions', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await writeFile(join(host, 'notes.txt'), 'private host');
+  await sync.save(id, { host, guest: '/workspace', policies: [{ pattern: '*.txt', direction: 'readonly' }] });
+  assert.deepEqual((await sync.preview(id)).changes, [{ path: 'notes.txt', action: 'skip' }]);
+  await sync.run(id, 'push');
+  assert.equal((await finished(sync, id)).status, 'done');
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'original');
+  await sync.save(id, {
+    host,
+    guest: '/workspace',
+    policies: [{ pattern: '*.txt', direction: 'push', guestMode: '600' }],
+  });
+  const preview = await sync.preview(id);
+  await sync.run(id, 'both', preview.token, { 'notes.txt': 'pull' });
+  assert.match((await finished(sync, id)).error!, /路径策略/);
+  await sync.run(id, 'push');
+  assert.equal((await finished(sync, id)).status, 'done');
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'private host');
+  assert.equal(remote.get('/workspace/notes.txt')!.mode & 0o777, 0o600);
+  assert.equal(remote.get('/workspace/notes.txt')!.uid, 1000);
+});
+
+test('sync rollback restores originals, metadata, conflict copies and the shared baseline', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await sync.save(id, { host, guest: '/workspace', rollback: true, mergeText: true });
+  await writeFile(join(host, 'notes.txt'), 'original');
+  await sync.run(id, 'both');
+  assert.equal((await finished(sync, id)).status, 'done');
+  const baseline = await readFile(join(vmDir(id), 'sync-state.json'), 'utf8');
+  await writeFile(join(host, 'notes.txt'), 'host edit');
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('guest edit');
+  const preview = await sync.preview(id);
+  await sync.run(id, 'both', preview.token, { 'notes.txt': 'both' });
+  let result = await finished(sync, id);
+  assert.equal(result.status, 'done', result.error);
+  const point = (await sync.view(id)).history[0];
+  assert.equal(point.changes, 3);
+  assert.equal(point.status, 'done');
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'host edit');
+  await sync.rollback(id, point.id);
+  result = await finished(sync, id);
+  assert.equal(result.status, 'done', result.error);
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'guest edit');
+  assert.equal(remote.get('/workspace/notes.txt')!.mode & 0o777, 0o660);
+  assert.equal(remote.get('/workspace/notes.txt')!.uid, 1000);
+  assert.equal(await readFile(join(host, 'notes.txt'), 'utf8'), 'host edit');
+  assert.equal(
+    [...remote.keys()].some((key) => key.includes('.linux-conflict-')),
+    false,
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(join(vmDir(id), 'sync-state.json'), 'utf8')),
+    JSON.parse(baseline),
+  );
+  assert.equal((await sync.view(id)).history[0].status, 'rolled-back');
+});
+
+test('rollback refuses newer edits before any restoration and checks stored file hashes', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await sync.save(id, { host, guest: '/workspace', rollback: true });
+  await writeFile(join(host, 'notes.txt'), 'new host');
+  await sync.run(id, 'push');
+  assert.equal((await finished(sync, id)).status, 'done');
+  const point = (await sync.view(id)).history[0];
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('edited after sync');
+  await sync.rollback(id, point.id);
+  assert.match((await finished(sync, id)).error!, /同步后文件已被修改/);
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'edited after sync');
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('new host');
+  const directory = join(vmDir(id), 'sync-history.json.d', point.id);
+  const record = JSON.parse(await readFile(join(directory, 'checkpoint.json'), 'utf8'));
+  await writeFile(join(directory, record.entries[0].before.sha), 'tampered');
+  await sync.rollback(id, point.id);
+  assert.match((await finished(sync, id)).error!, /回滚文件校验失败/);
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'new host');
+});
+
+test('rollback can undo detected renames and explicit deletion without touching the originating side', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await sync.save(id, { host, guest: '/workspace', rollback: true, detectRenames: true });
+  await writeFile(join(host, 'notes.txt'), 'original');
+  await sync.run(id, 'both');
+  await finished(sync, id);
+  await rename(join(host, 'notes.txt'), join(host, 'moved.txt'));
+  await sync.run(id, 'both');
+  assert.equal((await finished(sync, id)).status, 'done');
+  await sync.rollback(id, (await sync.view(id)).history[0].id);
+  let job = await finished(sync, id);
+  assert.equal(job.status, 'done', job.error);
+  assert.equal(remote.has('/workspace/notes.txt'), true);
+  assert.equal(remote.has('/workspace/moved.txt'), false);
+  assert.equal(await readFile(join(host, 'moved.txt'), 'utf8'), 'original');
+  await sync.save(id, { host, guest: '/workspace', rollback: true });
+  const preview = await sync.preview(id);
+  await sync.run(id, 'both', preview.token, { 'notes.txt': 'delete-guest' });
+  assert.equal((await finished(sync, id)).status, 'done');
+  assert.equal(remote.has('/workspace/notes.txt'), false);
+  await sync.rollback(id, (await sync.view(id)).history[0].id);
+  job = await finished(sync, id);
+  assert.equal(job.status, 'done', job.error);
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'original');
+  assert.equal(remote.has('/workspace/moved.txt'), false);
+});
+
+test('unique unchanged renames move the peer in either direction and ambiguous matches remain decisions', async (t) => {
+  for (const side of ['host', 'guest'] as const) {
+    const { id, host, remote, sync } = await fixture(t);
+    await sync.save(id, { host, guest: '/workspace', detectRenames: true });
+    await writeFile(join(host, 'notes.txt'), 'original');
+    await sync.run(id, 'both');
+    assert.equal((await finished(sync, id)).status, 'done');
+    if (side === 'host') await rename(join(host, 'notes.txt'), join(host, 'renamed.txt'));
+    else {
+      remote.set('/workspace/renamed.txt', remote.get('/workspace/notes.txt')!);
+      remote.delete('/workspace/notes.txt');
+    }
+    const preview = await sync.preview(id);
+    assert.deepEqual(preview.changes, [
+      { from: 'notes.txt', path: 'renamed.txt', action: side === 'host' ? 'rename-guest' : 'rename-host' },
+    ]);
+    await sync.run(id, 'both', preview.token);
+    const result = await finished(sync, id);
+    assert.equal(result.status, 'done', result.error);
+    assert.equal(remote.has('/workspace/notes.txt'), false);
+    await assert.rejects(readFile(join(host, 'notes.txt')), { code: 'ENOENT' });
+    assert.equal(await readFile(join(host, 'renamed.txt'), 'utf8'), 'original');
+    assert.equal(remote.get('/workspace/renamed.txt')!.mode & 0o777, 0o660);
+    assert.equal((await sync.preview(id)).changes.length, 0);
+  }
+  const { detectSyncRenames } = await import('../shared/sync-policy.ts');
+  assert.deepEqual(
+    detectSyncRenames(
+      new Map([['new', 'x']]),
+      new Map([
+        ['a', 'x'],
+        ['b', 'x'],
+      ]),
+      { a: 'x', b: 'x' },
+    ),
+    [],
+  );
+});
 
 test('sync preview is read-only and stale previews cannot overwrite subsequent changes', async (t) => {
   const { id, host, remote, sync } = await fixture(t);

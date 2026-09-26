@@ -11,6 +11,8 @@ import { runEngineeringOperation } from './engineering-runner.ts';
 import { capabilityDefinitions, capabilityParameters, type CapabilityId } from './capability-definitions.ts';
 import { reportCapabilities, runReport } from './capability-reports.ts';
 import { maintenancePolicy, saveMaintenancePolicy, inMaintenance } from './automation-policy.ts';
+import { resourceCapabilities, resourceAction } from './resource-actions.ts';
+import { hostAudit, traceExport } from './audit.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -74,6 +76,27 @@ export class CapabilityActions {
     this.machines.requireUnlocked(id);
     const parameters = capabilityParameters(featureId, input);
     signal.throwIfAborted();
+    if (featureId === 'audit-log' || featureId === 'otel-tracing') {
+      const p = capabilityDefinitions[featureId].schema.parse(parameters);
+      const report = await hostAudit().read(p.limit, p.allMachines ? undefined : id);
+      if (!report.valid) throw new AppError('审计完整性校验失败：' + report.error, 409);
+      const content = featureId === 'otel-tracing' ? traceExport(report.records) : report;
+      return {
+        code: 0,
+        ready: true,
+        executed: true,
+        ...report,
+        download: {
+          filename: featureId + '.json',
+          mime: 'application/json',
+          content: JSON.stringify(content, null, 2),
+        },
+      };
+    }
+    if (resourceCapabilities.has(featureId)) {
+      const result = await resourceAction(this.machines, id, featureId, parameters, signal);
+      return { code: 0, ready: true, executed: true, ...result };
+    }
     if (featureId === 'crash-loop-guard') {
       const p = capabilityDefinitions[featureId].schema.parse(parameters);
       return {

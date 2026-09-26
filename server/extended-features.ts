@@ -25,7 +25,7 @@ export const extendedFeatureCatalog = [
   ['crash-loop-guard', '崩溃循环熔断', '虚拟机', 'P0', '连续启动失败后阻止无限重试。', 'available'],
   ['rescue-boot', '救援模式启动', '虚拟机', 'P1', '用临时系统检查故障实例磁盘。', 'planned'],
   ['qemu-commandline', 'QEMU 参数预览', '虚拟机', 'P0', '显示实例将使用的设备和启动参数。', 'available'],
-  ['cpu-topology', 'CPU 拓扑与 NUMA', '虚拟机', 'P2', '配置 vCPU 拓扑和 NUMA 布局。', 'planned'],
+  ['cpu-topology', 'CPU 拓扑与 NUMA', '虚拟机', 'P2', '配置 vCPU 拓扑和 NUMA 布局。', 'available'],
   ['guest-clock-policy', '客户机时钟策略', '虚拟机', 'P1', '检查和配置客户机时钟同步。', 'available'],
   ['power-aware-schedule', '电源感知调度', '虚拟机', 'P1', '根据宿主机电池和交流电状态调度。', 'planned'],
   [
@@ -34,9 +34,9 @@ export const extendedFeatureCatalog = [
     '虚拟机',
     'P1',
     '为实例设置资源预留和启动优先级。',
-    'planned',
+    'available',
   ],
-  ['device-profiles', '设备能力档案', '虚拟机', 'P1', '保存可复用的虚拟设备组合。', 'planned'],
+  ['device-profiles', '设备能力档案', '虚拟机', 'P1', '保存可复用的虚拟设备组合。', 'available'],
   ['disk-encryption', '虚拟磁盘加密', '存储', 'P1', '保护宿主机上的实例磁盘文件。', 'planned'],
   ['qcow2-scrub', 'QCOW2 完整性巡检', '存储', 'P0', '检查虚拟磁盘链和坏块。', 'available'],
   ['backup-dedup', '备份块级去重', '存储', 'P1', '减少重复备份的磁盘占用。', 'planned'],
@@ -48,13 +48,13 @@ export const extendedFeatureCatalog = [
   ['secure-erase', '安全擦除证明', '存储', 'P2', '擦除文件并记录操作证明。', 'planned'],
   ['hash-manifest', '文件哈希清单', '存储', 'P0', '生成可校验的文件哈希清单。', 'available'],
   ['cross-vm-copy', '跨实例复制', '文件同步', 'P0', '在两个运行中的实例之间复制文件。', 'available'],
-  ['watch-sync', '事件驱动增量同步', '文件同步', 'P1', '监听变化并只同步受影响的文件。', 'planned'],
+  ['watch-sync', '事件驱动增量同步', '文件同步', 'P1', '监听变化并只同步受影响的文件。', 'available'],
   ['sync-window', '同步时间窗', '文件同步', 'P1', '按时段和带宽执行同步。', 'available'],
-  ['rename-detection', '同步重命名识别', '文件同步', 'P1', '识别移动或重命名而不是重新上传。', 'planned'],
+  ['rename-detection', '同步重命名识别', '文件同步', 'P1', '识别移动或重命名而不是重新上传。', 'available'],
   ['case-conflict-report', '名称冲突预检', '文件同步', 'P0', '预先报告大小写和非法名称冲突。', 'available'],
   ['sync-queue', '离线同步队列', '文件同步', 'P1', '网络中断后排队并重试同步作业。', 'available'],
-  ['path-sync-policy', '路径同步策略', '文件同步', 'P1', '对路径设置只读、单向和权限策略。', 'planned'],
-  ['sync-rollback', '同步回滚点', '文件同步', 'P1', '撤销一轮已应用的同步变更。', 'planned'],
+  ['path-sync-policy', '路径同步策略', '文件同步', 'P1', '对路径设置只读、单向和权限策略。', 'available'],
+  ['sync-rollback', '同步回滚点', '文件同步', 'P1', '撤销一轮已应用的同步变更。', 'available'],
   ['merge-drivers', '自定义合并驱动', '文件同步', 'P2', '为文本和二进制类型选择合并方式。', 'planned'],
   ['multi-host-view', '多主机统一视图', '文件同步', 'P2', '登记多个 Sakura 主机并集中查看状态。', 'planned'],
   [
@@ -94,7 +94,7 @@ export const extendedFeatureCatalog = [
   ['artifact-provenance', '产物来源证明', '质量发布', 'P1', '记录构建输入、工具和校验值。', 'available'],
   ['changelog', '变更日志生成', '质量发布', 'P1', '从 Git 历史生成发布说明。', 'available'],
   ['reproducible-build', '可复现构建验证', '质量发布', 'P2', '比较独立构建产生的产物。', 'available'],
-  ['ipv6', 'IPv6 客户机网络', '网络', 'P1', '为客户机提供 IPv6 网络能力。', 'planned'],
+  ['ipv6', 'IPv6 客户机网络', '网络', 'P1', '为客户机提供 IPv6 网络能力。', 'available'],
   ['static-routes', '静态租约与路由', '网络', 'P1', '保存 DHCP 租约和自定义路由。', 'available'],
   ['network-isolation', '项目网络隔离', '网络', 'P1', '按项目隔离网络命名空间。', 'planned'],
   ['egress-policy', '出站白名单', '网络', 'P1', '限制客户机可访问的目标。', 'planned'],
@@ -107,7 +107,7 @@ export const extendedFeatureCatalog = [
   ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2', '检测并配置 TPM 和安全启动链。', 'planned'],
   ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2', '使用宿主机安全凭据解锁密钥。', 'planned'],
   ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'planned'],
-  ['audit-log', '防篡改审计日志', '安全', 'P0', '记录关键操作并保护日志链。', 'planned'],
+  ['audit-log', '防篡改审计日志', '安全', 'P0', '记录关键操作并保护日志链。', 'available'],
   ['clipboard-redaction', '剪贴板敏感检测', '安全', 'P1', '识别并阻止疑似密钥复制。', 'planned'],
   ['secret-rotation', '密钥轮换提醒', '安全', 'P1', '追踪密钥年龄并提示轮换。', 'planned'],
   ['signed-bundles', '签名实例包策略', '安全', 'P1', '只允许受信任签名的导入包。', 'planned'],
@@ -296,6 +296,23 @@ export class ExtendedFeatures {
     };
     if (spec.id === 'qemu-commandline')
       return { ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) };
+    if (
+      [
+        'watch-sync',
+        'rename-detection',
+        'path-sync-policy',
+        'sync-rollback',
+        'sync-window',
+        'sync-queue',
+      ].includes(spec.id)
+    )
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '已接入同步面板；打开工作空间 → 同步配置并执行。',
+      };
     if (spec.id === 'qcow2-scrub') {
       try {
         this.machines.requireStopped(id);
