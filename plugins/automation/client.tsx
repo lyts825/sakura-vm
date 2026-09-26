@@ -417,6 +417,12 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'webhook-events' || featureId === 'alert-routing') {
+        setNextResult(
+          '打开系统设置 → 管理事件通知，按实例、项目、标签和类型配置接收端；支持签名投递、测试、失败重试和记录查看。',
+        );
+        return;
+      }
       if (featureId === 'graphql-api') {
         setNextResult(
           '打开系统设置 → GraphQL 查询，可查询主机、实例、任务元数据和插件状态，支持变量、分页及 Schema 下载。',

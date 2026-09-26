@@ -3079,6 +3079,50 @@ label input {
   min-width: 0;
   width: 100%;
 }
+.webhook-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.webhook-settings fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 16px 0;
+}
+.webhook-settings legend {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.webhook-settings .shortcut-fields label {
+  min-width: 0;
+}
+.webhook-settings .shortcut-fields input,
+.webhook-secret input {
+  width: 100%;
+  min-width: 0;
+}
+.webhook-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin: 16px 0;
+}
+.webhook-subscription,
+.webhook-delivery,
+.webhook-secret {
+  border-top: 1px solid var(--line);
+  margin-top: 18px;
+  padding-top: 16px;
+  overflow-wrap: anywhere;
+}
+.webhook-delivery summary {
+  cursor: pointer;
+  line-height: 1.7;
+}
+.webhook-secret label {
+  display: grid;
+  gap: 8px;
+}
 .shortcut-field .checkbox-row {
   margin-top: 6px;
 }

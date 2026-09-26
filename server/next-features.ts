@@ -358,7 +358,7 @@ export const nextFeatureCatalog = [
     '按保留天数和总容量清理已结束任务的日志正文，保护运行中任务。',
     'available',
   ],
-  ['alert-routing', '告警路由', '可观测性与自动运维', 'P0', '保存按标签匹配的告警通知路由。', 'planned'],
+  ['alert-routing', '告警路由', '可观测性与自动运维', 'P0', '按实例、项目、标签和告警类型匹配 Webhook 接收端，签名投递并记录结果。', 'available'],
   [
     'slo-dashboard',
     'SLO 仪表盘',
@@ -523,7 +523,7 @@ export const nextFeatureCatalog = [
   ],
   ['schema-panels', 'Schema 驱动面板', '平台与扩展', 'P1', '保存面板 Schema 版本和校验状态。', 'available'],
   ['graphql-api', 'GraphQL API', '平台与扩展', 'P1', '按 Schema 查询主机、实例、任务元数据与插件状态，限制查询大小和展开成本。', 'available'],
-  ['webhook-events', 'Webhook 事件', '平台与扩展', 'P0', '保存 Webhook 订阅和最近投递状态。', 'planned'],
+  ['webhook-events', 'Webhook 事件', '平台与扩展', 'P0', '持久排队并签名投递任务完成与告警事件，支持失败重试、取消和密钥轮换。', 'available'],
   [
     'automation-dsl',
     '事件自动化 DSL',
@@ -720,6 +720,10 @@ export class NextFeatures {
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
+    if (spec.id === 'webhook-events' || spec.id === 'alert-routing') return {
+      ready: true, executed: false, adapter,
+      message: '系统设置 → 管理事件通知，配置接收端和标签条件，可测试签名投递、查看结果、重试或取消。',
+    };
     if (spec.id === 'graphql-api') return {
       ready: true, executed: false, adapter,
       message: '打开系统设置 → GraphQL 查询，执行只读查询或下载 Schema；POST /api/graphql 继续使用本机控制凭证。',

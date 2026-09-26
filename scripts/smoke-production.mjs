@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHmac } from 'node:crypto';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
-import { request as httpRequest } from 'node:http';
+import { request as httpRequest, createServer as createHttpServer } from 'node:http';
 
 const root = process.cwd();
 async function probe(selected, expected) {
@@ -355,6 +355,57 @@ async function probe(selected, expected) {
     );
     assert.ok(!(await readFile(join(data, 'session-lock.json'), 'utf8')).includes(password));
     assert.ok(!JSON.stringify(await sdk.call('core.audit')).includes(password));
+    assert.equal((await fetch(origin + '/api/webhooks')).status, 401);
+    assert.deepEqual((await sdk.call('core.webhooks.get')).subscriptions, []);
+    if (!expected.length) {
+      const deliveries = [];
+      const receiver = createHttpServer(async (req, res) => {
+        let body = '';
+        for await (const chunk of req) body += chunk;
+        deliveries.push({ headers: req.headers, body });
+        res.writeHead(204).end();
+      });
+      await new Promise((done) => receiver.listen(0, '127.0.0.1', done));
+      try {
+        const saved = await sdk.call('core.webhooks.change', {
+          body: {
+            action: 'save',
+            subscription: {
+              name: 'Production smoke',
+              url: `http://127.0.0.1:${receiver.address().port}/events`,
+              enabled: false,
+              types: ['alert.raised'],
+            },
+          },
+        });
+        const subscription = saved.subscriptions[0];
+        assert.ok(saved.secret);
+        await sdk.call('core.webhooks.change', {
+          body: { action: 'test', id: subscription.id, version: subscription.version },
+        });
+        const deadline = Date.now() + 15000;
+        let history;
+        while (Date.now() < deadline) {
+          history = await sdk.call('core.webhooks.get');
+          if (history.deliveries[0]?.status === 'delivered') break;
+          await delay(200);
+        }
+        assert.equal(history.deliveries[0]?.status, 'delivered');
+        assert.equal(deliveries.length, 1);
+        assert.equal(JSON.parse(deliveries[0].body).type, 'test');
+        const signature = createHmac('sha256', Buffer.from(saved.secret, 'hex'))
+          .update(`${deliveries[0].headers['x-sakura-timestamp']}.${deliveries[0].body}`)
+          .digest('hex');
+        assert.equal(deliveries[0].headers['x-sakura-signature'], 'sha256=' + signature);
+        assert.ok(!JSON.stringify(history).includes(saved.secret));
+        await sdk.call('core.webhooks.change', {
+          body: { action: 'remove', id: subscription.id, version: subscription.version },
+        });
+        console.log('Production webhook worker delivers a signed event to an actual HTTP receiver.');
+      } finally {
+        await new Promise((done) => receiver.close(done));
+      }
+    }
     console.log(`Compiled server passed: ${expected.length} active plugins, static UI.`);
   } finally {
     if (server.exitCode === null && server.signalCode === null) server.kill('SIGTERM');

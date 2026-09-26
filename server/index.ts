@@ -24,6 +24,7 @@ import { generateSdk } from './sdk.ts';
 import { LogRetention, logRetentionRequest } from './log-retention.ts';
 import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from './graphql-api.ts';
 import { SessionLock } from './session-lock.ts';
+import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -50,6 +51,22 @@ async function main() {
       work,
     );
   const features = await Features.create(machines, selectedPlugins);
+  const webhooks = new Webhooks(
+    async () =>
+      collectWebhookEvents(
+        machines,
+        features.jobStores().flatMap((store) => store.list()),
+        (await features.suite?.alertEvents()) || [],
+      ),
+    undefined,
+    undefined,
+    undefined,
+    () => !!features.migration?.blocked,
+    (delta) => {
+      features.mutations += delta;
+    },
+  );
+  await webhooks.init();
   const retention = new LogRetention(
     () => features.jobStores(),
     undefined,
@@ -202,6 +219,11 @@ async function main() {
             : await retention.save(input.policy, input.token),
         );
       }
+      throw new AppError('不支持此方法', 405);
+    }
+    if (url.pathname === '/api/webhooks') {
+      if (req.method === 'GET') return send(res, webhooks.view());
+      if (req.method === 'POST') return send(res, await webhooks.configure(await authorizedBody(req, 32768)));
       throw new AppError('不支持此方法', 405);
     }
     const route = url.pathname.split('/').filter(Boolean);
@@ -547,6 +569,7 @@ async function main() {
     let failed = false;
     for (const dispose of [
       () => session.close(),
+      () => webhooks.close(),
       () => retention.close(),
       () => graph.close(),
       () => features.close(),

@@ -344,6 +344,9 @@ export class FeatureSuite {
       generatedAt: new Date().toISOString(),
     };
   }
+  async alertEvents() {
+    return structuredClone((await this.state()).events);
+  }
   async view(id: string, limit = 120) {
     this.machines.get(id);
     const state = await this.state();

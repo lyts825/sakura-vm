@@ -3,12 +3,88 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { SessionLock } from '../server/session-lock';
+import { Webhooks } from '../server/webhooks';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
 import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
 import { graphqlInfo, GraphApi, querySnapshot } from '../server/graphql-api.ts';
 import type { Machines } from '../server/machines.ts';
+
+test('webhook settings save real routes, show one-time secrets, deliver tests, preserve edits and cancel on disable', async ({
+  page,
+}) => {
+  await app(page);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-webhook-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const received: string[] = [];
+  const webhooks = new Webhooks(
+    async () => [],
+    join(directory, 'webhooks.json'),
+    async (_url, init) => {
+      received.push(String(init?.body));
+      return new Response(null, { status: 204 });
+    },
+  );
+  await webhooks.init(false);
+  await page.route('**/api/webhooks', async (route) => {
+    try {
+      if (route.request().method() === 'GET') return route.fulfill({ json: webhooks.view() });
+      const value = await webhooks.configure(route.request().postDataJSON());
+      await webhooks.tick();
+      return route.fulfill({
+        json: { ...webhooks.view(), ...('secret' in value ? { secret: value.secret } : {}) },
+      });
+    } catch (error: any) {
+      return route.fulfill({ status: error.status || 400, json: { error: error.message } });
+    }
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理事件通知', exact: true }).click();
+    const panel = page.getByRole('region', { name: '事件与告警通知设置' });
+    await panel.getByLabel('接收端名称', { exact: true }).fill('Production receiver');
+    await panel.getByLabel('Webhook 接收地址').fill('https://receiver.example/events');
+    await panel.getByLabel('匹配全部标签').fill('production, api');
+    await panel.getByLabel('启用自动投递').check();
+    await panel.getByLabel('备份', { exact: true }).check();
+    await panel.getByRole('button', { name: '添加接收端', exact: true }).click();
+    const receiver = panel.getByRole('article', { name: '接收端 Production receiver' });
+    await expect(receiver).toContainText('production、api');
+    const secret = await panel.getByLabel('本次签名密钥（仅显示一次）').inputValue();
+    expect(secret).toMatch(/^[a-f0-9]{64}$/);
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain(
+      secret,
+    );
+    await receiver.getByRole('button', { name: '测试投递' }).click();
+    await expect(panel.locator('.webhook-delivery')).toContainText('已送达');
+    expect(received).toHaveLength(1);
+    expect(JSON.parse(received[0]).type).toBe('test');
+    await receiver.getByRole('button', { name: '编辑接收端' }).click();
+    await expect(panel.getByLabel('匹配全部标签')).toHaveValue('production, api');
+    await panel.getByLabel('接收端名称', { exact: true }).fill('Draft survives polling');
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await expect(panel.getByLabel('接收端名称', { exact: true })).toHaveValue('Draft survives polling');
+    await panel.getByLabel('启用自动投递').uncheck();
+    await panel.getByRole('button', { name: '保存接收端' }).click();
+    await expect(panel.getByRole('article', { name: '接收端 Draft survives polling' })).toContainText(
+      '已停用',
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.reload();
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理事件通知', exact: true }).click();
+    await expect(panel.getByRole('article', { name: '接收端 Draft survives polling' })).toBeVisible();
+    await expect(panel.getByLabel('本次签名密钥（仅显示一次）')).toHaveCount(0);
+    await panel.getByRole('button', { name: '移除接收端' }).click();
+    await expect(panel.getByRole('article')).toHaveCount(0);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await webhooks.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('session locking removes private UI, idle polling does not renew access, and passwords stay out of browser storage', async ({
   page,

@@ -105,6 +105,9 @@ const GraphQLExplorer = lazy(() =>
 const LogRetentionSettings = lazy(() =>
   import('./LogRetentionSettings').then((module) => ({ default: module.LogRetentionSettings })),
 );
+const WebhookSettings = lazy(() =>
+  import('./WebhookSettings').then((module) => ({ default: module.WebhookSettings })),
+);
 const AccessibilityAudit = lazy(() =>
   import('./AccessibilityAudit').then((module) => ({ default: module.AccessibilityAudit })),
 );
@@ -351,6 +354,7 @@ function App() {
   const [showGraph, setShowGraph] = useState(false);
   const [showRetention, setShowRetention] = useState(false);
   const [showSessionLock, setShowSessionLock] = useState(false);
+  const [showWebhooks, setShowWebhooks] = useState(false);
   const [openFile, setOpenFile] = useState<{ id: string; path: string; revision: number }>();
   const navigatePalette = async (target: PaletteTarget) => {
     setPalette(false);
@@ -1420,6 +1424,18 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <section className="system-card">
+                  <h3>事件与告警通知</h3>
+                  <p>将任务事件和按标签筛选的告警发送到已配置的 Webhook 接收端。</p>
+                  <button className="secondary compact" onClick={() => setShowWebhooks(!showWebhooks)}>
+                    {showWebhooks ? '收起事件通知' : '管理事件通知'}
+                  </button>
+                </section>
+                {showWebhooks && (
+                  <Suspense fallback={<p>正在读取通知配置…</p>}>
+                    <WebhookSettings request={api} />
+                  </Suspense>
+                )}
                 <section className="system-card">
                   <h3>控制面锁定</h3>
                   <p>设置解锁密码和自动锁定的空闲时间。</p>

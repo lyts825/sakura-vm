@@ -5,6 +5,7 @@ import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { logRetentionRequest } from './log-retention.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
+import { webhookRequest } from './webhooks.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
 
 const response = (schema: Record<string, unknown> = {}, media = 'application/json') => ({
@@ -36,6 +37,20 @@ const core: {
   },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
+  {
+    id: 'webhooks.get',
+    method: 'GET',
+    path: '/api/webhooks',
+    title: '事件订阅、告警路由与投递记录',
+    inspect: true,
+  },
+  {
+    id: 'webhooks.change',
+    method: 'POST',
+    path: '/api/webhooks',
+    title: '管理订阅、测试或处理投递记录',
+    body: request(webhookRequest),
+  },
   {
     id: 'session.status',
     method: 'GET',
