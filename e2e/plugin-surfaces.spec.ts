@@ -336,6 +336,50 @@ test('backup policies enable block deduplication and show how each backup is sto
   await expect(page.getByText(/内容块去重 ·/)).toBeVisible();
 });
 
+test('disk maintenance saves a schedule and only offers TRIM while running', async ({ page }) => {
+  await app(page, ['maintenance'], true);
+  let policy: any = { enabled: false, mode: 'both', compress: true, intervalHours: 168 },
+    requested: any;
+  await page.route('**/api/storage', (route) =>
+    route.fulfill({
+      json: {
+        total: 10000,
+        available: 5000,
+        backupBytes: 0,
+        images: [],
+        machines: [],
+        warning: '',
+      },
+    }),
+  );
+  await page.route('**/api/vms/*/diagnostics', (route) =>
+    route.fulfill({ json: { report: null, job: null } }),
+  );
+  await page.route('**/api/vms/*/disk-maintenance', (route) => {
+    if (route.request().method() === 'PUT') policy = route.request().postDataJSON();
+    if (route.request().method() === 'POST') requested = route.request().postDataJSON();
+    return route.fulfill({ json: { policy, attempts: {}, successes: {}, maintenance: false } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '维护', exact: true }).click();
+  await expect(page.getByRole('button', { name: '立即执行 TRIM', exact: true })).toBeDisabled();
+  await page.getByLabel('启用定期磁盘维护').check();
+  await page.getByLabel('磁盘维护间隔（小时）').fill('24');
+  await page.getByLabel('自动维护操作').selectOption('compact');
+  await page.getByRole('button', { name: '保存磁盘维护策略', exact: true }).click();
+  await expect
+    .poll(() => policy)
+    .toEqual({ enabled: true, mode: 'compact', compress: true, intervalHours: 24 });
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  await page.reload();
+  await page.getByRole('tab', { name: '维护', exact: true }).click();
+  await expect(page.getByRole('button', { name: '整理未使用空间', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '立即执行 TRIM', exact: true }).click();
+  await expect.poll(() => requested).toEqual({ mode: 'trim' });
+});
+
 async function app(page: Page, active: string[] = [], withVm = false) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;

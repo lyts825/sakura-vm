@@ -12,6 +12,7 @@ export const manifest = definePlugin({
       http('/api/vms/:vmId/diagnostics', ['GET', 'POST']),
       http('/api/vms/:vmId/resize', ['POST']),
       http('/api/vms/:vmId/compact', ['POST']),
+      http('/api/vms/:vmId/disk-maintenance', ['GET', 'PUT', 'POST']),
     ],
     tabs: ['maintenance'],
   },

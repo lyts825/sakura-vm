@@ -217,6 +217,9 @@ export class Machines extends EventEmitter {
     this.saveQueue = operation;
     await operation;
   }
+  isBusy(id: string) {
+    return this.locks.has(id);
+  }
   async locked<T>(id: string, action: () => Promise<T>, allowIncident = false): Promise<T> {
     if (this.closing) throw new AppError('服务正在关闭', 503);
     if (!allowIncident) for (const part of id.split(':')) this.requireUnlocked(part);

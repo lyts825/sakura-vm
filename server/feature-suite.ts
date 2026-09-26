@@ -117,10 +117,10 @@ const availableFeatureIds = new Set<FeatureId>([
   'dependency-report',
   'runtime-matrix',
   'reproducible-env',
+  'disk-maintenance',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'golden-images',
-  'disk-maintenance',
   'language-services',
   'merge-editor',
   'network-profiles',
@@ -385,7 +385,10 @@ export class FeatureSuite {
       options: input.options || {},
       checkedAt: new Date().toISOString(),
     };
-    if (featureId === 'gpu-acceleration') {
+    if (featureId === 'disk-maintenance') {
+      result.ready = true;
+      result.reason = '已接入工作空间 → 维护；启用磁盘与诊断插件后可计划 TRIM、离线压缩和稀疏回收。';
+    } else if (featureId === 'gpu-acceleration') {
       result.accelerator = vm.accelerator;
       result.commandline = this.machines.commandline(id);
     } else if (featureId === 'multi-arch') {

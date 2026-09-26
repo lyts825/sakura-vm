@@ -17,7 +17,7 @@ const { Features } = await import('../server/features.ts');
 const { backupBlocks } = await import('../server/backup-blocks.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
-const features = await Features.create(machines, ['backups']);
+const features = await Features.create(machines, ['backups', 'maintenance']);
 async function boot(id: string) {
   await machines.start(id);
   const until = Date.now() + 300000;
@@ -62,7 +62,32 @@ try {
   assert.match(topology.stdout, /node1/);
   assert.match(topology.stdout, /inet6/);
   await machines.writeGuestFile(vm.id, '/workspace/storage-proof.txt', 'deduplicated restore proof', false);
+  const prepare = await machines.exec(
+    vm.id,
+    'set -eu\ncommand -v fstrim >/dev/null || apk add --no-cache util-linux\ndd if=/dev/urandom of=/workspace/trim-test bs=1048576 count=16\nsync\nrm /workspace/trim-test',
+    180000,
+  );
+  assert.equal(prepare.code, 0, prepare.stderr);
+  await features.maintenance.diskPolicy(vm.id, {
+    enabled: true,
+    mode: 'both',
+    intervalHours: 24,
+    compress: true,
+  });
+  await features.maintenance.tick();
+  await features.maintenance.jobs.wait(vm.id);
+  const trim = features.maintenance.jobs.view(vm.id)!;
+  assert.equal(trim.status, 'done', trim.error + '\n' + trim.log);
+  assert.ok((await features.maintenance.diskView(vm.id)).successes.trim);
+  console.log('Scheduled TRIM passed on the running root filesystem');
   await machines.stop(vm.id, false);
+  await features.maintenance.tick();
+  await features.maintenance.jobs.wait(vm.id);
+  const compact = features.maintenance.jobs.view(vm.id)!;
+  assert.equal(compact.status, 'done', compact.error + '\n' + compact.log);
+  assert.ok((await features.maintenance.diskView(vm.id)).successes.compact);
+  await features.maintenance.diskPolicy(vm.id, { enabled: false });
+  console.log('Scheduled offline compression passed QCOW2 check and full disk comparison');
   console.log('Creating two real block-deduplicated disk backups');
   await features.backups.policy(vm.id, { deduplicate: true });
   for (let i = 0; i < 2; i++) {

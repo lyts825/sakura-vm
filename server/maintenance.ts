@@ -1,11 +1,20 @@
-import { stat, statfs, readdir, rename, rm } from 'node:fs/promises';
+import { stat, statfs, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
-import { DATA, AppError, vmDir } from './model.ts';
+import { DATA, AppError } from './model.ts';
 import type { Machines } from './machines.ts';
 import { distributions } from './images.ts';
 import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
+import {
+  diskMaintenanceDue,
+  diskMaintenanceState,
+  runDiskMaintenance,
+  saveDiskMaintenancePolicy,
+  type DiskOperation,
+} from './disk-maintenance.ts';
+import { inMaintenance } from './automation-policy.ts';
+import { backupBlocks } from './backup-blocks.ts';
 
 export type DiagnosticCheck = {
   name: string;
@@ -63,8 +72,15 @@ export class Maintenance {
     }
   };
   private resizeAttempted = new Set<string>();
+  private closed = false;
+  private ticking?: Promise<void>;
+  private timer: ReturnType<typeof setInterval>;
   constructor(private machines: Machines) {
     machines.on('change', this.onChange);
+    this.timer = setInterval(() => {
+      void this.tick().catch(() => {});
+    }, 60000);
+    this.timer.unref();
   }
   async storage() {
     const filesystem = await statfs(DATA);
@@ -89,6 +105,7 @@ export class Maintenance {
       available: filesystem.bavail * filesystem.bsize,
       images,
       backupBytes,
+      deduplicatedBackups: await backupBlocks().inspect(),
       machines: machines.map((v) => ({
         id: v.id,
         name: v.name,
@@ -101,45 +118,53 @@ export class Maintenance {
     };
   }
   compact(id: string) {
-    return this.machines.locked(`compact:${id}`, async () => {
-      const vm = this.machines.get(id);
-      this.machines.requireStopped(id);
-      if (vm.snapshots.length) throw new AppError('请先删除或导出内部快照后再整理磁盘', 409);
-      const source = join(vmDir(id), 'disk.qcow2'),
-        temp = join(vmDir(id), '.disk.compact.qcow2'),
-        backup = join(vmDir(id), 'disk.qcow2.before-compact');
-      return this.jobs.start(
-        id,
-        async (log, signal, update) => {
-          let moved = false;
-          try {
-            update('正在扫描未使用扇区', 10);
-            const base = distributions[vm.distro || 'alpine'].file;
-            await this.machines.engine.run(
-              'sakura-img',
-              ['convert', '-p', '-f', 'qcow2', '-O', 'qcow2', '-B', base, '-F', 'qcow2', source, temp],
-              { timeoutMs: 1800000, signal },
-            );
-            signal.throwIfAborted();
-            update('正在替换磁盘', 80);
-            await rename(source, backup);
-            moved = true;
-            await rename(temp, source);
-            await rm(backup, { force: true });
-            log('磁盘整理完成，已移除未使用的稀疏块。\n');
-            update('已完成', 100);
-          } catch (error) {
-            await rm(temp, { force: true });
-            if (moved) {
-              await rm(source, { force: true });
-              await rename(backup, source).catch(() => {});
-            }
-            throw error;
-          }
-        },
-        { title: '整理磁盘', vmId: id, action: 'compact' },
-      );
+    this.machines.requireStopped(id);
+    return this.diskRun(id, 'compact');
+  }
+  async diskView(id: string) {
+    this.machines.get(id);
+    return {
+      ...(await diskMaintenanceState(id)),
+      job: this.jobs.view(id),
+      maintenance: await inMaintenance(id),
+    };
+  }
+  diskPolicy(id: string, input: unknown) {
+    if (this.jobs.view(id)?.status === 'running') throw new AppError('请等待磁盘维护任务完成', 409);
+    return saveDiskMaintenancePolicy(this.machines, id, input);
+  }
+  diskRun(id: string, operation: DiskOperation) {
+    this.machines.get(id);
+    this.machines.requireUnlocked(id);
+    return this.jobs.start(
+      id,
+      async (log, signal, update, saveResult) => {
+        await saveResult(await runDiskMaintenance(this.machines, id, operation, signal, log, update));
+      },
+      { title: operation === 'trim' ? '回收 Linux 未使用块' : '压缩与整理磁盘', vmId: id, action: operation },
+    );
+  }
+  tick(now = Date.now()): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    if (this.ticking) return this.ticking;
+    this.ticking = (async () => {
+      for (const vm of this.machines.records.values()) {
+        if (this.closed) break;
+        if (this.jobs.view(vm.id)?.status === 'running' || this.machines.isBusy(vm.id)) continue;
+        try {
+          if (await inMaintenance(vm.id, now)) continue;
+          const state = await diskMaintenanceState(vm.id),
+            operation = diskMaintenanceDue(state, this.machines.state(vm.id), now);
+          if (!operation || (operation === 'compact' && (vm.snapshots.length || vm.pendingResize))) continue;
+          this.diskRun(vm.id, operation);
+        } catch {
+          /* Failed jobs retain their error; unavailable/locked VMs wait for the next tick. */
+        }
+      }
+    })().finally(() => {
+      this.ticking = undefined;
     });
+    return this.ticking;
   }
   report(id: string) {
     this.machines.get(id);
@@ -266,7 +291,10 @@ export class Maintenance {
     );
   }
   async close() {
+    this.closed = true;
+    clearInterval(this.timer);
     this.machines.off('change', this.onChange);
+    await this.ticking;
     await this.jobs.close();
   }
 }

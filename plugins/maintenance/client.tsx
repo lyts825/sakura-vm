@@ -1,7 +1,8 @@
 import { Download } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { JobView } from '../../server/jobs';
 import type { DiagnosticCheck } from '../../server/maintenance';
+import type { DiskMaintenancePolicy, DiskMaintenanceState } from '../../server/disk-maintenance';
 import { saveText } from '../../src/export-file';
 import type { FeatureProps, Request } from '../../src/feature-shared';
 import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/feature-shared';
@@ -12,6 +13,7 @@ export function StoragePanel({ request }: { request: Request }) {
     total: number;
     available: number;
     backupBytes: number;
+    deduplicatedBackups?: { physicalBytes: number; savedBytes: number; orphanBytes: number };
     warning: string;
     images: { id: string; name: string; bytes: number }[];
     machines: { id: string; name: string; bytes: number; snapshots: number }[];
@@ -49,6 +51,13 @@ export function StoragePanel({ request }: { request: Request }) {
             </div>
           </div>
           <p>独立备份：{formatBytes(remote.data.backupBytes)}</p>
+          {remote.data.deduplicatedBackups && (
+            <p>
+              去重备份块：{formatBytes(remote.data.deduplicatedBackups.physicalBytes)} · 已节省{' '}
+              {formatBytes(remote.data.deduplicatedBackups.savedBytes)} · 待回收{' '}
+              {formatBytes(remote.data.deduplicatedBackups.orphanBytes)}
+            </p>
+          )}
           <p className="subtle-note">内部快照与实例共享磁盘文件，占用合并显示。</p>
         </>
       )}
@@ -61,6 +70,19 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
     report: { createdAt: string; checks: DiagnosticCheck[]; log: string } | null;
     job: JobView | null;
   }>(request, `/vms/${vm.id}/diagnostics`, true, 2500);
+  const disk = useRemote<DiskMaintenanceState & { maintenance: boolean }>(
+    request,
+    `/vms/${vm.id}/disk-maintenance`,
+    true,
+    2500,
+  );
+  const [policy, setPolicy] = useState<DiskMaintenancePolicy | null>(null);
+  useEffect(() => {
+    setPolicy(null);
+  }, [vm.id]);
+  useEffect(() => {
+    if (!policy && disk.data) setPolicy(disk.data.policy);
+  }, [policy, disk.data]);
   const [size, setSize] = useState(Math.min(128, vm.diskGiB * 2)),
     action = useAction();
   const busy = action.busy || remote.data?.job?.status === 'running';
@@ -152,23 +174,111 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
       <div className="feature-card">
         <h3>整理磁盘空间</h3>
         <p className="subtle-note">
-          停机后重建稀疏 QCOW2 镜像，移除未使用块。内部快照存在时需先保留或导出快照。
+          运行时 TRIM 回收根文件系统的空闲块；停机后整理并校验磁盘内容。内部快照或未完成扩容会阻止整理。
         </p>
-        <button
-          className="secondary compact"
-          disabled={busy || vm.poweredOn || vm.snapshots.length > 0}
-          onClick={() =>
-            void action.run(async () => {
-              await request(`/vms/${vm.id}/compact`, 'POST');
-              remote.reload();
-              await refresh();
-            })
-          }
-        >
-          整理未使用空间
-        </button>
+        {policy && (
+          <>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={policy.enabled}
+                onChange={(event) => setPolicy({ ...policy, enabled: event.target.checked })}
+              />
+              启用定期磁盘维护
+            </label>
+            <div className="feature-grid">
+              <label>
+                磁盘维护间隔（小时）
+                <input
+                  type="number"
+                  min={1}
+                  max={8760}
+                  value={policy.intervalHours}
+                  onChange={(event) => setPolicy({ ...policy, intervalHours: +event.target.value })}
+                />
+              </label>
+              <label>
+                自动维护操作
+                <select
+                  value={policy.mode}
+                  onChange={(event) =>
+                    setPolicy({ ...policy, mode: event.target.value as DiskMaintenancePolicy['mode'] })
+                  }
+                >
+                  <option value="both">运行时 TRIM，停机后整理</option>
+                  <option value="trim">仅 TRIM</option>
+                  <option value="compact">仅停机整理</option>
+                </select>
+              </label>
+            </div>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={policy.compress}
+                onChange={(event) => setPolicy({ ...policy, compress: event.target.checked })}
+              />
+              整理时压缩磁盘块
+            </label>
+            <button
+              className="secondary compact"
+              disabled={busy}
+              onClick={() =>
+                void action.run(async () => {
+                  await request(`/vms/${vm.id}/disk-maintenance`, 'PUT', policy);
+                  disk.reload();
+                }, '磁盘维护策略已保存')
+              }
+            >
+              保存磁盘维护策略
+            </button>
+          </>
+        )}
+        <p className="subtle-note">
+          TRIM 需要启用设备档案中的 discard，并安装 fstrim。每分钟检查到期任务，TRIM
+          与整理各自计算间隔；不会为维护自动关机，维护窗口内暂停自动执行。
+        </p>
+        {disk.data?.maintenance && <p className="subtle-note">当前处于维护窗口，自动磁盘维护已暂停。</p>}
+        {(['trim', 'compact'] as const).map((mode) => {
+          const attempt = disk.data?.attempts[mode];
+          return (
+            attempt && (
+              <p key={mode} className={attempt.error ? 'machine-error' : 'subtle-note'}>
+                {mode === 'trim' ? 'TRIM' : '磁盘整理'} · {new Date(attempt.startedAt).toLocaleString()} ·{' '}
+                {attempt.error || (attempt.finishedAt ? '完成' : '执行中或上次执行中断')}
+              </p>
+            )
+          );
+        })}
+        <div className="feature-actions">
+          <button
+            className="secondary compact"
+            disabled={busy || vm.status !== 'running'}
+            onClick={() =>
+              void action.run(async () => {
+                await request(`/vms/${vm.id}/disk-maintenance`, 'POST', { mode: 'trim' });
+                remote.reload();
+                disk.reload();
+              })
+            }
+          >
+            立即执行 TRIM
+          </button>
+          <button
+            className="secondary compact"
+            disabled={busy || vm.poweredOn || vm.snapshots.length > 0 || vm.pendingResize}
+            onClick={() =>
+              void action.run(async () => {
+                await request(`/vms/${vm.id}/compact`, 'POST');
+                remote.reload();
+                await refresh();
+              })
+            }
+          >
+            整理未使用空间
+          </button>
+        </div>
       </div>
-      <Feedback error={action.error || remote.error} message={action.message} />
+      <Feedback error={action.error || remote.error || disk.error} message={action.message} />
       <JobLog job={remote.data?.job} />
       <StoragePanel request={request} />
     </div>
