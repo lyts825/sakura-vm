@@ -2998,6 +2998,43 @@ label input {
   margin-bottom: 14px;
 }
 
+.desktop-recording {
+  padding: 18px;
+  margin: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.desktop-recording > label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.desktop-recording video,
+.recording-library video {
+  display: block;
+  width: 100%;
+  max-height: 480px;
+  background: #16131a;
+  margin-block: 12px;
+}
+.recording-library {
+  margin-top: 18px;
+  overflow-wrap: anywhere;
+}
+.recording-library ul {
+  padding: 0;
+  list-style: none;
+}
+.recording-library li {
+  padding-block: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.recording-library p,
+.desktop-recording p {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .clipboard-policies {
   margin-top: 18px;
 }

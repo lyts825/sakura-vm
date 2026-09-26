@@ -358,7 +358,14 @@ export const nextFeatureCatalog = [
     '按保留天数和总容量清理已结束任务的日志正文，保护运行中任务。',
     'available',
   ],
-  ['alert-routing', '告警路由', '可观测性与自动运维', 'P0', '按实例、项目、标签和告警类型匹配 Webhook 接收端，签名投递并记录结果。', 'available'],
+  [
+    'alert-routing',
+    '告警路由',
+    '可观测性与自动运维',
+    'P0',
+    '按实例、项目、标签和告警类型匹配 Webhook 接收端，签名投递并记录结果。',
+    'available',
+  ],
   [
     'slo-dashboard',
     'SLO 仪表盘',
@@ -462,7 +469,14 @@ export const nextFeatureCatalog = [
     '保存宿主目录挂载的只读和路径策略。',
     'planned',
   ],
-  ['file-associations', '文件关联', '操作系统与桌面', 'P2', '保存扩展名到 Sakura 工作区的关联。', 'available'],
+  [
+    'file-associations',
+    '文件关联',
+    '操作系统与桌面',
+    'P2',
+    '保存扩展名到 Sakura 工作区的关联。',
+    'available',
+  ],
   [
     'clipboard-policy',
     '按应用剪贴板策略',
@@ -509,8 +523,8 @@ export const nextFeatureCatalog = [
     '桌面录制与回放',
     '操作系统与桌面',
     'P2',
-    '检查客户机录制工具并保存回放索引。',
-    'planned',
+    '录制 Linux 桌面画面、保存回放索引并导出视频。',
+    'available',
   ],
   ['plugin-marketplace', '插件市场', '平台与扩展', 'P0', '保存插件目录、来源和安装状态。', 'planned'],
   [
@@ -522,8 +536,22 @@ export const nextFeatureCatalog = [
     'planned',
   ],
   ['schema-panels', 'Schema 驱动面板', '平台与扩展', 'P1', '保存面板 Schema 版本和校验状态。', 'available'],
-  ['graphql-api', 'GraphQL API', '平台与扩展', 'P1', '按 Schema 查询主机、实例、任务元数据与插件状态，限制查询大小和展开成本。', 'available'],
-  ['webhook-events', 'Webhook 事件', '平台与扩展', 'P0', '持久排队并签名投递任务完成与告警事件，支持失败重试、取消和密钥轮换。', 'available'],
+  [
+    'graphql-api',
+    'GraphQL API',
+    '平台与扩展',
+    'P1',
+    '按 Schema 查询主机、实例、任务元数据与插件状态，限制查询大小和展开成本。',
+    'available',
+  ],
+  [
+    'webhook-events',
+    'Webhook 事件',
+    '平台与扩展',
+    'P0',
+    '持久排队并签名投递任务完成与告警事件，支持失败重试、取消和密钥轮换。',
+    'available',
+  ],
   [
     'automation-dsl',
     '事件自动化 DSL',
@@ -595,7 +623,6 @@ const guestChecks: Partial<Record<NextFeatureId, string>> = {
     'if command -v nvidia-smi >/dev/null; then nvidia-smi --query-gpu=name --format=csv,noheader; else command -v rocminfo >/dev/null && rocminfo; fi',
   'notebook-environment':
     'if command -v jupyter >/dev/null; then jupyter --version; else command -v marimo >/dev/null && marimo --version; fi',
-  'desktop-recording': 'command -v ffmpeg >/dev/null && ffmpeg -version',
 };
 
 const now = () => new Date().toISOString();
@@ -720,26 +747,53 @@ export class NextFeatures {
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
-    if (spec.id === 'file-associations') return {
-      ready: process.platform === 'win32', executed: false, adapter,
-      message: '系统设置 → 管理 Windows 集成，选择扩展名与已配置同步的工作区，保存后添加到 Windows 打开方式；仅接受映射目录中的文件。',
-    };
-    if (spec.id === 'clipboard-policy') return {
-      ready: true, executed: false, adapter,
-      message: '系统设置 → 剪贴板敏感检测 → 按应用剪贴板策略，管理网页终端、文件和桌面入口的复制/粘贴、实例覆盖与文本检测。当前不管理 Windows/Linux 独立应用进程的系统剪贴板权限。',
-    };
-    if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner') return {
-      ready: true, executed: false, adapter,
-      message: '系统设置 → 本地 AI 助手，保存本机模型连接；审阅脱敏发送内容后生成建议或命令计划。需要运行中的 Ollama 和已下载的本地模型。',
-    };
-    if (spec.id === 'webhook-events' || spec.id === 'alert-routing') return {
-      ready: true, executed: false, adapter,
-      message: '系统设置 → 管理事件通知，配置接收端和标签条件，可测试签名投递、查看结果、重试或取消。',
-    };
-    if (spec.id === 'graphql-api') return {
-      ready: true, executed: false, adapter,
-      message: '打开系统设置 → GraphQL 查询，执行只读查询或下载 Schema；POST /api/graphql 继续使用本机控制凭证。',
-    };
+    if (spec.id === 'desktop-recording')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message:
+          '实例 → 桌面 → 录制与回放，在浏览器中录制、暂停、停止、回放并导出 WebM。系统设置中的录制库可管理已主动保存的本浏览器视频；无需客户机录制工具。',
+      };
+    if (spec.id === 'file-associations')
+      return {
+        ready: process.platform === 'win32',
+        executed: false,
+        adapter,
+        message:
+          '系统设置 → 管理 Windows 集成，选择扩展名与已配置同步的工作区，保存后添加到 Windows 打开方式；仅接受映射目录中的文件。',
+      };
+    if (spec.id === 'clipboard-policy')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message:
+          '系统设置 → 剪贴板敏感检测 → 按应用剪贴板策略，管理网页终端、文件和桌面入口的复制/粘贴、实例覆盖与文本检测。当前不管理 Windows/Linux 独立应用进程的系统剪贴板权限。',
+      };
+    if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message:
+          '系统设置 → 本地 AI 助手，保存本机模型连接；审阅脱敏发送内容后生成建议或命令计划。需要运行中的 Ollama 和已下载的本地模型。',
+      };
+    if (spec.id === 'webhook-events' || spec.id === 'alert-routing')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '系统设置 → 管理事件通知，配置接收端和标签条件，可测试签名投递、查看结果、重试或取消。',
+      };
+    if (spec.id === 'graphql-api')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message:
+          '打开系统设置 → GraphQL 查询，执行只读查询或下载 Schema；POST /api/graphql 继续使用本机控制凭证。',
+      };
     if (spec.id === 'log-retention')
       return {
         ready: true,

@@ -45,6 +45,8 @@ import {
 } from './clipboard-protection';
 import { getClipboardPolicies, subscribeClipboardPolicies } from './clipboard-policy';
 import { effectiveClipboardRule } from '../shared/clipboard-policy';
+import { DesktopRecording } from './DesktopRecording';
+import { mayLeaveEditor } from './file-editor-state';
 
 type Props = {
   vm: VMView;
@@ -70,6 +72,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const connectionRef = useRef<ReturnType<typeof connectDesktop> | null>(null);
   const guestAvailable = useRef(true);
   const [showClipboard, setShowClipboard] = useState(false);
+  const [showRecording, setShowRecording] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [preferenceState, setPreferenceState] = useState(() =>
     loadDesktopPreferences(vm.id, () => localStorage),
@@ -329,6 +332,16 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         {(ready || running) && (
           <div className="desktop-toolbar-actions">
             <button
+              className="secondary compact"
+              aria-expanded={showRecording}
+              onClick={async () => {
+                if (showRecording && !(await mayLeaveEditor())) return;
+                setShowRecording((value) => !value);
+              }}
+            >
+              录制与回放
+            </button>
+            <button
               className={`secondary compact ${showCustomizer ? 'is-active' : ''}`}
               aria-expanded={showCustomizer}
               title="自定义 KDE Plasma 桌面"
@@ -395,6 +408,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
           {error || statusError}
         </div>
       )}
+      {showRecording && <DesktopRecording vm={vm} connected={connected} screen={screen} />}
       {showCustomizer && (
         <section className="desktop-customizer" aria-label="KDE Plasma 桌面自定义">
           <div className="desktop-customizer-head">

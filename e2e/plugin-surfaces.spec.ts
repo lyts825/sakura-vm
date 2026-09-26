@@ -117,7 +117,7 @@ test('clipboard policies enforce per-app directions and instance overrides befor
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('real noVNC clipboard traffic follows live cross-tab policy changes and revokes cached outbound text', async ({
+test('real noVNC obeys clipboard policy and records, decodes, exports and persists desktop video', async ({
   page,
   context,
 }) => {
@@ -154,6 +154,16 @@ test('real noVNC clipboard traffic follows live cross-tab policy changes and rev
         init.writeUInt16BE(64, 2);
         Buffer.from([32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0]).copy(init, 4);
         socket.send(init);
+        const frame = Buffer.alloc(16 + 64 * 64 * 4);
+        frame.writeUInt16BE(1, 2);
+        frame.writeUInt16BE(64, 8);
+        frame.writeUInt16BE(64, 10);
+        for (let offset = 16; offset < frame.length; offset += 4) {
+          frame[offset] = 40;
+          frame[offset + 1] = 100;
+          frame[offset + 2] = 180;
+        }
+        socket.send(frame);
       } else if (bytes[0] === 6 && bytes.length >= 8) sent.push(bytes.subarray(8).toString());
     });
     socket.send(Buffer.from('RFB 003.008\n'));
@@ -205,6 +215,86 @@ test('real noVNC clipboard traffic follows live cross-tab policy changes and rev
     await expect(incoming).toHaveValue('');
     expect(sent).not.toContain('');
     await settings.close();
+    await page.bringToFront();
+    await page.getByRole('button', { name: '录制与回放', exact: true }).click();
+    const recording = page.getByRole('region', { name: '桌面录制', exact: true });
+    await recording.getByLabel('录制名称').fill('desktop-fixture');
+    await recording.getByRole('button', { name: '开始录制', exact: true }).click();
+    await expect(recording.getByRole('status').filter({ hasText: '正在录制' })).toContainText('0:01');
+    await recording.getByRole('button', { name: '暂停录制', exact: true }).click();
+    await expect(recording.getByRole('status').filter({ hasText: '已暂停' })).toBeVisible();
+    await recording.getByRole('button', { name: '继续录制', exact: true }).click();
+    await recording.getByRole('button', { name: '停止录制', exact: true }).click();
+    await expect(recording.getByRole('button', { name: '下载本次录制' })).toBeVisible();
+    await expect
+      .poll(() =>
+        recording.locator('.recording-current video').evaluate((video: HTMLVideoElement) => ({
+          width: video.videoWidth,
+          error: video.error?.code || 0,
+        })),
+      )
+      .toEqual({ width: 64, error: 0 });
+    await recording.getByLabel('回放位置', { exact: true }).fill('0.5');
+    await expect
+      .poll(() =>
+        recording
+          .locator('.recording-current video')
+          .evaluate((video: HTMLVideoElement) => video.currentTime),
+      )
+      .toBeGreaterThan(0.4);
+    const download = page.waitForEvent('download');
+    await recording.getByRole('button', { name: '下载本次录制' }).click();
+    const video = await download;
+    const bytes = await readFile((await video.path())!);
+    expect(bytes.subarray(0, 4).toString('hex')).toBe('1a45dfa3');
+    expect(video.suggestedFilename()).toBe('sakura-desktop-fixture.webm');
+    // A storage failure must leave the completed, downloadable capture intact.
+    await page.evaluate(() => {
+      const original = IDBObjectStore.prototype.add;
+      IDBObjectStore.prototype.add = function (value, key) {
+        if (this.name === 'content') {
+          IDBObjectStore.prototype.add = original;
+          throw new DOMException('quota', 'QuotaExceededError');
+        }
+        return original.call(this, value, key);
+      };
+    });
+    await recording.getByRole('button', { name: '保存到录制库', exact: true }).click();
+    await expect(recording.getByRole('alert')).toContainText('浏览器空间');
+    await expect(recording.getByRole('button', { name: '下载本次录制' })).toBeVisible();
+    await recording.getByRole('button', { name: '保存到录制库', exact: true }).click();
+    await expect(recording.getByRole('button', { name: '已保存到录制库', exact: true })).toBeDisabled();
+    await page.reload();
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理录制库' }).click();
+    const library = page.getByRole('region', { name: '本浏览器录制库' });
+    await library.getByRole('button', { name: '回放 desktop-fixture' }).click();
+    await expect
+      .poll(() => library.locator('video').evaluate((video: HTMLVideoElement) => video.videoWidth))
+      .toBe(64);
+    const savedDownload = page.waitForEvent('download');
+    await library.getByRole('button', { name: '下载 desktop-fixture' }).click();
+    expect(await readFile((await (await savedDownload).path())!)).toEqual(bytes);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    page.once('dialog', (dialog) => dialog.accept());
+    await library.getByRole('button', { name: '删除 desktop-fixture' }).click();
+    await expect(library.getByText('尚未保存录制。')).toBeVisible();
+    await expect(library.locator('video')).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole('button', { name: '工作空间', exact: true }).click();
+    await page.getByRole('button', { name: vm.name, exact: true }).click();
+    await page.getByRole('tab', { name: '桌面', exact: true }).click();
+    await page.getByRole('button', { name: '录制与回放', exact: true }).click();
+    await recording.getByRole('button', { name: '开始录制', exact: true }).click();
+    await expect(recording.getByRole('button', { name: '停止录制', exact: true })).toBeEnabled();
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await expect(recording.getByRole('button', { name: '停止录制', exact: true })).toBeVisible();
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '你的机器，你的空间。' })).toBeVisible();
+    await expect(library.getByText('尚未保存录制。')).toBeVisible();
   } finally {
     for (const socket of server.clients) socket.terminate();
     await new Promise<void>((done) => server.close(() => done()));

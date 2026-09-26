@@ -203,6 +203,64 @@ async function probe(selected, expected) {
         await panel.getByRole('status').filter({ hasText: '检查完成' }).waitFor({ timeout: 30_000 });
         assert.equal(await panel.getByRole('alert').count(), 0);
         console.log('Accessibility audit runs under the production CSP without unsafe-eval.');
+        assert.match(document.headers()['content-security-policy'], /media-src 'self' blob:;/);
+        const videoCheck = await page.evaluate(async () => {
+          const canvas = window.document.createElement('canvas');
+          canvas.width = canvas.height = 64;
+          const paint = canvas.getContext('2d');
+          paint.fillStyle = '#ab385b';
+          paint.fillRect(0, 0, 64, 64);
+          const stream = canvas.captureStream(15),
+            recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+          const draw = setInterval(() => paint.fillRect(0, 0, 64, 64), 50);
+          let url, video;
+          try {
+            const blob = await new Promise((resolve, reject) => {
+              const parts = [],
+                timeout = setTimeout(() => reject(new Error('Encoder timeout')), 5000);
+              recorder.ondataavailable = (event) => {
+                if (event.data.size) parts.push(event.data);
+              };
+              recorder.onerror = () => {
+                clearTimeout(timeout);
+                reject(new Error('Encoder failed'));
+              };
+              recorder.onstop = () => {
+                clearTimeout(timeout);
+                resolve(new Blob(parts, { type: recorder.mimeType }));
+              };
+              recorder.start();
+              setTimeout(() => recorder.stop(), 300);
+            });
+            video = window.document.createElement('video');
+            video.muted = true;
+            video.preload = 'auto';
+            url = URL.createObjectURL(blob);
+            const decoded = new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => reject(new Error('Video decode timeout')), 5000);
+              video.onloadeddata = () => {
+                clearTimeout(timeout);
+                resolve(video.videoWidth);
+              };
+              video.onerror = () => {
+                clearTimeout(timeout);
+                reject(new Error('CSP or decoder rejected video'));
+              };
+            });
+            video.src = url;
+            window.document.body.append(video);
+            return { bytes: blob.size, width: await decoded };
+          } finally {
+            clearInterval(draw);
+            if (recorder.state !== 'inactive') recorder.stop();
+            for (const track of stream.getTracks()) track.stop();
+            video?.remove();
+            if (url) URL.revokeObjectURL(url);
+          }
+        });
+        assert.equal(videoCheck.width, 64);
+        assert.ok(videoCheck.bytes > 0);
+        console.log('Canvas recordings encode and decode WebM under the production media CSP.');
         await page.goto(origin + '/monitor/index.html');
         await page.locator('#connection').filter({ hasText: '已连接' }).waitFor();
         await page.getByRole('button', { name: '启用离线缓存' }).click();
@@ -373,7 +431,10 @@ async function probe(selected, expected) {
     assert.equal(native.settings.contextMenu, false);
     assert.deepEqual(native.settings.associations, []);
     assert.deepEqual(native.mappings, []);
-    await assert.rejects(sdk.call('core.native.action', { body: { action: 'receive', path: root } }), /未启用|仅支持 Windows/);
+    await assert.rejects(
+      sdk.call('core.native.action', { body: { action: 'receive', path: root } }),
+      /未启用|仅支持 Windows/,
+    );
     if (!expected.length) {
       const deliveries = [];
       const receiver = createHttpServer(async (req, res) => {

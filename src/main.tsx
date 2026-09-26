@@ -115,6 +115,9 @@ const LocalAssistant = lazy(() =>
 const NativeIntegrationSettings = lazy(() =>
   import('./NativeIntegration').then((module) => ({ default: module.NativeIntegrationSettings })),
 );
+const RecordingLibrary = lazy(() =>
+  import('./DesktopRecording').then((module) => ({ default: module.RecordingLibrary })),
+);
 const AccessibilityAudit = lazy(() =>
   import('./AccessibilityAudit').then((module) => ({ default: module.AccessibilityAudit })),
 );
@@ -364,6 +367,7 @@ function App() {
   const [showWebhooks, setShowWebhooks] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
+  const [showRecordings, setShowRecordings] = useState(false);
   const [openFile, setOpenFile] = useState<{
     id: string;
     path: string;
@@ -1574,6 +1578,18 @@ function App() {
                   projectName={projectId ? `${vm?.name || ''} / ${projectId}` : undefined}
                 />
                 <ClipboardSettings vms={vms} />
+                <section className="system-card">
+                  <h3>桌面录制库</h3>
+                  <p>回放、下载或删除保存在此浏览器的录制。</p>
+                  <button className="secondary compact" onClick={() => setShowRecordings((value) => !value)}>
+                    {showRecordings ? '收起录制库' : '管理录制库'}
+                  </button>
+                  {showRecordings && (
+                    <Suspense fallback={<p>正在读取录制库…</p>}>
+                      <RecordingLibrary />
+                    </Suspense>
+                  )}
+                </section>
                 <section className="system-card">
                   <h3>Windows 工作区集成</h3>
                   <p>管理资源管理器右键菜单、文件关联及宿主编辑器。</p>

@@ -333,7 +333,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
-        'explorer-integration': '打开系统设置 → 管理 Windows 集成，注册右键菜单。目录或文件会按项目的 Windows 同步映射定位到 Sakura 工作区。',
+        'explorer-integration':
+          '打开系统设置 → 管理 Windows 集成，注册右键菜单。目录或文件会按项目的 Windows 同步映射定位到 Sakura 工作区。',
         'session-lock':
           '打开系统设置 → 管理会话锁定，设置密码和空闲时间。启用后可点击顶栏锁定按钮；本机所有控制入口共用锁定状态。',
         'api-explorer':
@@ -418,8 +419,16 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'desktop-recording') {
+        setNextResult(
+          '打开实例 → 桌面 → 录制与回放，开始录制后可暂停、停止、回放、下载 WebM 或保存到本浏览器录制库。系统设置可管理所有实例的已保存录制。',
+        );
+        return;
+      }
       if (featureId === 'file-associations') {
-        setNextResult('打开系统设置 → 管理 Windows 集成，选择文件扩展名及关联项目并保存。在 Windows 打开方式中选择 Sakura；文件需要位于该项目的同步目录。');
+        setNextResult(
+          '打开系统设置 → 管理 Windows 集成，选择文件扩展名及关联项目并保存。在 Windows 打开方式中选择 Sakura；文件需要位于该项目的同步目录。',
+        );
         return;
       }
       if (featureId === 'local-ai-assistant' || featureId === 'natural-command-planner') {

@@ -148,15 +148,19 @@ test('checks do not lock machines or claim probe-only features are implemented',
       false,
     );
     assert.equal(machines.incidentLocked(id), false);
-    const missing: any = await next.action(id, { action: 'check', featureId: 'desktop-recording' });
+    const missing: any = await next.action(id, { action: 'check', featureId: 'notebook-environment' });
     assert.equal(missing.ready, false);
     assert.equal(missing.probePassed, false);
     machines.exec = async () => ({ stdout: 'version', stderr: '', code: 0 });
     assert.equal(
-      ((await next.action(id, { action: 'check', featureId: 'desktop-recording' })) as any).ready,
+      ((await next.action(id, { action: 'check', featureId: 'notebook-environment' })) as any).ready,
       false,
     );
-    await assert.rejects(next.action(id, { action: 'run', featureId: 'desktop-recording' }), /实现/);
+    await assert.rejects(next.action(id, { action: 'run', featureId: 'notebook-environment' }), /实现/);
+    const recording: any = await next.action(id, { action: 'check', featureId: 'desktop-recording' });
+    assert.equal(recording.ready, true);
+    assert.equal(recording.executed, false);
+    assert.match(recording.message, /录制与回放/);
     await assert.rejects(next.action(id, { action: 'run', featureId: 'incident-lockdown' }));
     await next.action(id, { action: 'run', featureId: 'incident-lockdown', options: { locked: true } });
     assert.equal(machines.incidentLocked(id), true);

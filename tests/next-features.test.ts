@@ -90,6 +90,6 @@ test('the third feature tranche has 100 unique entries with implementation state
   assert.equal(new Set(nextFeatureCatalog.map(([, , category]) => category)).size, 10);
   assert.ok(nextFeatureCatalog.every(([, , , priority]) => ['P0', 'P1', 'P2'].includes(priority)));
   assert.equal(nextFeatureCatalog.find(([id]) => id === 'incident-lockdown')?.[5], 'available');
-  assert.equal(nextFeatureCatalog.find(([id]) => id === 'desktop-recording')?.[5], 'planned');
+  assert.equal(nextFeatureCatalog.find(([id]) => id === 'desktop-recording')?.[5], 'available');
   assert.ok(nextFeatureCatalog.every(([id]) => /^[a-z][a-z0-9-]+$/.test(id)));
 });

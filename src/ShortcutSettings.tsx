@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import {
   effectiveShortcuts,
   saveShortcuts,
@@ -21,7 +21,7 @@ export function ShortcutSettings({
   const [draft, setDraft] = useState<ShortcutMap>({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  useEffect(() => {
+  useLayoutEffect(() => {
     setDraft({ ...(project ? preferences.projects[context!] || {} : effectiveShortcuts(preferences)) });
     setError('');
   }, [preferences, project, context]);
