@@ -156,6 +156,28 @@ export class Bundles {
     });
   }
   async import(name: string, source: Readable, signal?: AbortSignal, beforeAdopt?: () => void) {
+    return this.withContents(source, signal, async (disk, manifest, seed) => {
+      beforeAdopt?.();
+      return this.machines.adopt(
+        { ...manifest.config, name, forwards: [] },
+        disk,
+        manifest.key,
+        seed,
+        manifest.project,
+        manifest.pendingResize,
+        manifest.projects,
+      );
+    });
+  }
+  /** A verified standalone disk exists only for the duration of the callback. */
+  async withDisk<T>(source: Readable, signal: AbortSignal, work: (disk: string) => Promise<T>) {
+    return this.withContents(source, signal, (disk) => work(disk));
+  }
+  private async withContents<T>(
+    source: Readable,
+    signal: AbortSignal | undefined,
+    work: (disk: string, manifest: z.infer<typeof manifestSchema>, seed: Buffer) => Promise<T>,
+  ) {
     signal?.throwIfAborted();
     const dir = await this.temp();
     const disk = join(dir, 'disk.qcow2');
@@ -191,7 +213,7 @@ export class Bundles {
             cb(null, chunk);
           },
         }),
-        createWriteStream(disk, { flags: 'wx' }),
+        createWriteStream(disk, { flags: 'wx', mode: 0o600 }),
         { signal },
       );
       signal?.throwIfAborted();
@@ -221,16 +243,7 @@ export class Bundles {
       if (seed.length < 34816 || seed.toString('ascii', 32769, 32774) !== 'CD001')
         throw new AppError('初始化镜像已损坏');
       signal?.throwIfAborted();
-      beforeAdopt?.();
-      return await this.machines.adopt(
-        { ...manifest.config, name, forwards: [] },
-        disk,
-        key,
-        seed,
-        manifest.project,
-        manifest.pendingResize,
-        manifest.projects,
-      );
+      return await work(disk, manifest, seed);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

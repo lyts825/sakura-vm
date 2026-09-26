@@ -1273,6 +1273,7 @@ export class Machines extends EventEmitter {
     phase: (text: string) => void,
     work: (rescueId: string, signal: AbortSignal) => Promise<T>,
     diagnostic: (text: string) => void = () => {},
+    readOnlyDisk = join(vmDir(sourceId), 'disk.qcow2'),
   ) {
     const controller = new AbortController();
     const combined = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(35 * 60_000)]);
@@ -1332,7 +1333,7 @@ export class Machines extends EventEmitter {
             driver: 'qcow2',
             'node-name': 'sakura-rescue-source',
             'read-only': true,
-            file: { driver: 'file', filename: join(vmDir(sourceId), 'disk.qcow2'), 'read-only': true },
+            file: { driver: 'file', filename: readOnlyDisk, 'read-only': true },
           });
           combined.throwIfAborted();
           await qmp(port, 'device_add', {

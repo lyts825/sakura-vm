@@ -185,8 +185,8 @@ export const nextFeatureCatalog = [
     '文件级恢复',
     '存储与灾备',
     'P0',
-    '保存文件级恢复请求和目标路径校验结果。',
-    'planned',
+    '从普通、加密或内容块备份中，只读提取指定文件并校验下载。',
+    'available',
   ],
   [
     'global-dedup',
@@ -747,6 +747,14 @@ export class NextFeatures {
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
+    if (spec.id === 'file-level-restore')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message:
+          '启用备份策略插件，在停止实例的快照页使用“备份文件恢复”，选择备份、分区和文件；提取后下载，不覆盖当前磁盘。',
+      };
     if (spec.id === 'desktop-recording')
       return {
         ready: true,

@@ -423,6 +423,12 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'file-level-restore') {
+        setNextResult(
+          '启用备份策略插件，在停止实例的快照页使用“备份文件恢复”。选择备份、分区与相对根目录的文件路径；完成后下载提取的文件，当前磁盘保持原样。',
+        );
+        return;
+      }
       if (featureId === 'desktop-recording') {
         setNextResult(
           '打开实例 → 桌面 → 录制与回放，开始录制后可暂停、停止、回放、下载 WebM 或保存到本浏览器录制库。系统设置可管理所有实例的已保存录制。',

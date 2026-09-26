@@ -380,6 +380,32 @@ export class Backups {
       );
     });
   }
+  /** Keep the selected backup and its content blocks stable throughout a reader's operation. */
+  async withVerifiedFile<T>(
+    id: string,
+    backupId: string,
+    password: string | undefined,
+    signal: AbortSignal,
+    work: (file: string) => Promise<T>,
+  ) {
+    if (this.closed) throw new AppError('备份服务正在关闭', 503);
+    return this.machines.locked(`backups:${id}`, async () => {
+      signal.throwIfAborted();
+      if (this.jobs.view(id)?.status === 'running') throw new AppError('请等待备份操作完成', 409);
+      const state = await this.state(id),
+        item = state.items.find((value) => value.id === checkedId(backupId));
+      if (!item) throw new AppError('备份不存在', 404);
+      if (item.storage !== 'blocks' && (await fileHash(this.recordFile(id, item), signal)) !== item.checksum)
+        throw new AppError('备份包与记录的校验值不符');
+      return this.plain(id, item, password, signal, async (file) => {
+        const checksum = await verifyBackup(file, signal);
+        if (!item.encrypted && checksum !== item.checksum) throw new AppError('备份包与记录的校验值不符');
+        signal.throwIfAborted();
+        this.machines.requireUnlocked(id);
+        return work(file);
+      });
+    });
+  }
   async close() {
     this.closed = true;
     clearInterval(this.timer);

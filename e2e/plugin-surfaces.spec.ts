@@ -20,6 +20,158 @@ import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
 import { Rescue } from '../server/rescue';
 import { setTimeout as delay } from 'node:timers/promises';
+import { EventEmitter } from 'node:events';
+import { BackupRecovery } from '../server/backup-recovery';
+
+test('backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile', async ({
+  page,
+}) => {
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-recovery-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const file = join(directory, 'backup.sakura');
+  await writeFile(file, 'fixture');
+  const backupId = randomUUID(),
+    artifactId = randomUUID();
+  const item = {
+    id: backupId,
+    createdAt: new Date().toISOString(),
+    bytes: 123,
+    checksum: 'a'.repeat(64),
+    encrypted: true,
+  };
+  let hold = false,
+    cleaned = 0;
+  const machines = Object.assign(new EventEmitter(), {
+    get: () => vm,
+    requireUnlocked: () => {},
+    requireStopped: () => {},
+    withRescue: async (
+      _id: string,
+      signal: AbortSignal,
+      phase: (value: string) => void,
+      run: (id: string, signal: AbortSignal) => Promise<void>,
+    ) => {
+      phase('只读连接备份磁盘');
+      try {
+        if (hold) await delay(60000, undefined, { signal });
+        return await run('temporary', signal);
+      } finally {
+        cleaned++;
+      }
+    },
+    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
+  }) as unknown as Machines;
+  const service = new BackupRecovery(
+    machines,
+    {
+      withVerifiedFile: async (
+        _id: string,
+        backup: string,
+        password: string,
+        _signal: AbortSignal,
+        work: (file: string) => Promise<void>,
+      ) => {
+        expect(backup).toBe(backupId);
+        if (password !== 'browser-password') throw new Error('备份解密密码不正确');
+        return work(file);
+      },
+    } as any,
+    {
+      withDisk: async (input: Readable, _signal: AbortSignal, work: (disk: string) => Promise<void>) => {
+        for await (const _chunk of input) {
+        }
+        return work('temporary-disk');
+      },
+    } as any,
+    new Jobs(),
+    {
+      prune: async () => {},
+      collect: async (
+        _id: string,
+        _run: string,
+        cwd: string,
+        paths: string[],
+        save: (value: unknown) => void,
+      ) => {
+        expect(cwd).toBe('/mnt/source');
+        for (const path of paths)
+          save({ id: artifactId, name: 'readme.txt', path, bytes: 8, sha256: 'a'.repeat(64) });
+      },
+      download: async () => ({
+        id: artifactId,
+        name: 'readme.txt',
+        path: 'workspace/readme.txt',
+        bytes: 8,
+        sha256: 'a'.repeat(64),
+        base64: Buffer.from('restored').toString('base64'),
+      }),
+    } as any,
+  );
+  try {
+    await app(page, ['snapshots', 'transfers', 'backups', 'secrets'], true);
+    await page.route('**/api/vms/*/backups', (route) =>
+      route.fulfill({
+        json: {
+          policy: { enabled: false, intervalHours: 24, keep: 7, maxGiB: 32 },
+          items: [item],
+          bytes: 123,
+          job: null,
+          waitingForShutdown: false,
+        },
+      }),
+    );
+    await page.route('**/api/vms/*/backup-recovery**', async (route) => {
+      const url = new URL(route.request().url());
+      const json = url.pathname.endsWith('/artifact')
+        ? await service.artifact(vm.id, url.searchParams.get('run')!, url.searchParams.get('artifact')!)
+        : route.request().method() === 'GET'
+          ? service.view(vm.id)
+          : service.run(vm.id, route.request().postDataJSON());
+      await route.fulfill({ json });
+    });
+    await page.route('**/api/jobs/*/cancel', async (route) => {
+      service.jobs.cancel(vm.id);
+      await service.jobs.wait(vm.id);
+      await route.fulfill({ json: { ok: true } });
+    });
+    await page.getByRole('tab', { name: '快照', exact: true }).click();
+    const panel = page.getByRole('region', { name: '备份文件恢复', exact: true });
+    await panel.getByRole('combobox', { name: '恢复来源备份', exact: true }).selectOption(backupId);
+    await panel
+      .getByRole('textbox', { name: '要恢复的文件（每行一个相对根目录的路径）', exact: true })
+      .fill('workspace/readme.txt');
+    await panel.getByLabel('文件恢复解密密码', { exact: true }).fill('wrong-password');
+    await panel.getByRole('button', { name: '提取备份文件', exact: true }).click();
+    await expect(panel.getByText('备份解密密码不正确', { exact: true })).toBeVisible();
+    await expect(panel.getByLabel('文件恢复解密密码', { exact: true })).toHaveValue('');
+    await panel.getByLabel('文件恢复解密密码', { exact: true }).fill('browser-password');
+    await panel.getByRole('button', { name: '提取备份文件', exact: true }).click();
+    await expect(panel.getByText('已完成', { exact: true })).toBeVisible();
+    expect(JSON.stringify(service.view(vm.id))).not.toContain('browser-password');
+    const download = page.waitForEvent('download');
+    await panel.getByRole('button', { name: /下载恢复文件 workspace\/readme.txt/ }).click();
+    const saved = await download;
+    expect((await readFile((await saved.path())!)).toString()).toBe('restored');
+    await page.reload();
+    await expect(panel.getByText('已完成', { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    hold = true;
+    await panel.getByRole('combobox', { name: '恢复来源备份', exact: true }).selectOption(backupId);
+    await panel
+      .getByRole('textbox', { name: '要恢复的文件（每行一个相对根目录的路径）', exact: true })
+      .fill('workspace/' + 'long-name-'.repeat(25) + '.txt');
+    await panel.getByLabel('文件恢复解密密码', { exact: true }).fill('browser-password');
+    await panel.getByRole('button', { name: '提取备份文件', exact: true }).click();
+    await expect(panel.getByRole('button', { name: '取消文件恢复', exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: '取消文件恢复', exact: true }).click();
+    await expect(panel.getByText('已取消', { exact: true })).toBeVisible();
+    expect(cleaned).toBe(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  } finally {
+    await service.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('read-only rescue runs reviewed commands, retains downloadable artifacts, refreshes history and cancels on mobile', async ({
   page,
@@ -2179,7 +2331,7 @@ async function app(page: Page, active: string[] = [], withVm = false) {
                     limits: { count: 16, bytes: 128 * 1024 ** 3, imageBytes: 32 * 1024 ** 3 },
                     job: null,
                   }
-                : path.endsWith('/rescue')
+                : path.endsWith('/rescue') || path.endsWith('/backup-recovery')
                   ? { runs: [] }
                   : path.endsWith('/projects')
                     ? { active: 'default', projects: [{ id: 'default', name: '默认项目' }] }

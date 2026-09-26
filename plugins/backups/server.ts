@@ -1,12 +1,15 @@
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
 import { AppError } from '../../server/model.ts';
 
 import { Backups } from '../../server/backups.ts';
 import { retryTarget } from '../../server/plugins/retry.ts';
+import { BackupRecovery } from '../../server/backup-recovery.ts';
+import { backupRecoverySchema } from '../../shared/backup-recovery.ts';
+import { rescueArtifactSchema, rescueJobSchema, rescueViewSchema } from '../../shared/rescue.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
@@ -15,7 +18,37 @@ export async function activate(host: PluginContext) {
     if (job.action !== 'run') throw new AppError('请回到原功能页面重新执行');
     return host.backups.run(retryTarget(job));
   });
+  const recovery = host.provide('backupRecovery', new BackupRecovery(m, host.backups, host.bundles));
+  await recovery.init();
+  host.registerJobs(recovery.jobs, () => {
+    throw new AppError('请在备份文件恢复面板重新选择备份和文件', 409);
+  });
 }
+export const operations: Record<string, PluginOperation> = {
+  'recovery-view': {
+    response: rescueViewSchema,
+    execute(url) {
+      return this.use<BackupRecovery>('backups', 'backupRecovery').view(url.pathname.split('/')[3]);
+    },
+  },
+  'recovery-run': {
+    request: backupRecoverySchema,
+    response: rescueJobSchema,
+    execute(url, input) {
+      return this.use<BackupRecovery>('backups', 'backupRecovery').run(url.pathname.split('/')[3], input);
+    },
+  },
+  'recovery-artifact': {
+    response: rescueArtifactSchema,
+    execute(url) {
+      return this.use<BackupRecovery>('backups', 'backupRecovery').artifact(
+        url.pathname.split('/')[3],
+        z.uuid().parse(url.searchParams.get('run')),
+        z.uuid().parse(url.searchParams.get('artifact')),
+      );
+    },
+  },
+};
 export async function route(
   this: PluginContext,
   req: IncomingMessage,

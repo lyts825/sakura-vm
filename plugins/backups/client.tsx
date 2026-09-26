@@ -4,6 +4,7 @@ import type { JobView } from '../../server/jobs';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';
+import { FileRecovery } from './FileRecovery';
 
 export function BackupPanel({ vm, request, refresh }: FeatureProps) {
   const remote = useRemote<{
@@ -234,6 +235,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
       ))}
       <Feedback error={action.error || remote.error} message={action.message} />
       <JobLog job={remote.data?.job} />
+      <FileRecovery key={vm.id} vm={vm} request={request} refresh={refresh} items={remote.data?.items || []} />
     </div>
   );
 }

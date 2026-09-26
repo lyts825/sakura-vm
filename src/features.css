@@ -550,9 +550,15 @@
 .golden-images select,
 .golden-images textarea,
 .rescue-panel input,
+.rescue-panel select,
 .rescue-panel textarea {
   max-width: 100%;
   min-width: 0;
+}
+.rescue-panel .feature-actions button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .golden-image-list {
   padding: 0;

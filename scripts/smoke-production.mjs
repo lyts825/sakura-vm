@@ -81,6 +81,33 @@ async function probe(selected, expected) {
     );
     const sdk = new SakuraClient();
     assert.deepEqual(await sdk.call('core.vms.list'), []);
+    if (expected.includes('backups')) {
+      const absent = randomUUID();
+      assert.equal(specification.paths['/api/vms/{vmId}/backup-recovery'].post['x-sakura-enabled'], true);
+      await assert.rejects(
+        sdk.call('backups.recovery-view', { path: { vmId: absent } }),
+        (error) => error.status === 404,
+      );
+      await assert.rejects(
+        sdk.call('backups.recovery-run', {
+          path: { vmId: absent },
+          body: { backupId: randomUUID(), paths: ['../outside'] },
+        }),
+        (error) => error.status === 400,
+      );
+      await assert.rejects(
+        sdk.call('backups.recovery-run', {
+          path: { vmId: absent },
+          body: { backupId: randomUUID(), paths: ['workspace/readme'] },
+        }),
+        (error) => error.status === 404,
+      );
+    } else {
+      assert.equal(
+        (await fetch(origin + '/api/vms/' + randomUUID() + '/backup-recovery', { headers })).status,
+        403,
+      );
+    }
     if (expected.includes('snapshots')) {
       const absent = randomUUID();
       assert.equal(specification.paths['/api/vms/{vmId}/rescue'].post['x-sakura-enabled'], true);
@@ -625,4 +652,4 @@ await probe(['metrics'], ['metrics']);
 await probe(['commands'], ['projects', 'commands']);
 await probe(['commands', 'metrics'], ['projects', 'commands', 'metrics']);
 await probe(['sandbox'], ['sandbox']);
-await probe(['snapshots'], ['transfers', 'snapshots']);
+await probe(['backups'], ['transfers', 'snapshots', 'secrets', 'backups']);
