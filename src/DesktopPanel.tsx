@@ -23,7 +23,7 @@ import {
   WandSparkles,
   Wifi,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { JobView } from '../server/jobs';
 import type { DesktopPreferences, DesktopView, VMView } from '../server/model';
 import { connectDesktop } from './desktop-connection';
@@ -37,7 +37,14 @@ import {
 import './desktop.css';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-shared';
 import { ResponseOrder } from './request-order';
-import { assertClipboardSafe, writeProtectedClipboard } from './clipboard-protection';
+import {
+  assertClipboardTransfer,
+  clipboardProtectionEnabled,
+  subscribeClipboardProtection,
+  writeProtectedClipboard,
+} from './clipboard-protection';
+import { getClipboardPolicies, subscribeClipboardPolicies } from './clipboard-policy';
+import { effectiveClipboardRule } from '../shared/clipboard-policy';
 
 type Props = {
   vm: VMView;
@@ -70,7 +77,35 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const preferences = preferenceState.preferences;
   const [outgoing, setOutgoing] = useState('');
   const [incoming, setIncoming] = useState('');
+  const sentClipboard = useRef('');
   const clipboardAction = useAction();
+  const clipboardPolicies = useSyncExternalStore(subscribeClipboardPolicies, getClipboardPolicies);
+  const detectSensitive = useSyncExternalStore(subscribeClipboardProtection, clipboardProtectionEnabled);
+  const clipboardContext = { app: 'desktop' as const, vmId: vm.id };
+  const clipboardRule = effectiveClipboardRule(clipboardPolicies.policies, clipboardContext);
+  const [clipboardError, setClipboardError] = useState('');
+  useEffect(() => {
+    try {
+      assertClipboardTransfer(clipboardContext, 'copy', incoming);
+    } catch {
+      setIncoming('');
+    }
+    try {
+      assertClipboardTransfer(clipboardContext, 'paste', outgoing);
+    } catch {
+      setOutgoing('');
+    }
+    if (sentClipboard.current) {
+      try {
+        assertClipboardTransfer(clipboardContext, 'paste', sentClipboard.current);
+      } catch {
+        // noVNC may answer delayed extended-clipboard requests from its cache.
+        // Reconnect to release that cache without changing the guest clipboard.
+        sentClipboard.current = '';
+        setAttempt((value) => value + 1);
+      }
+    }
+  }, [clipboardPolicies, detectSensitive, vm.id]);
   const ime = useRemote<JobView>(request, `/vms/${vm.id}/ime`, vm.status === 'running', 2500);
   const screen = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -197,8 +232,17 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             client.background = '#201b24';
             clientRef.current = client;
             client.addEventListener('clipboard', (event) => {
-              if (alive && clientRef.current === client)
-                setIncoming((event as CustomEvent<{ text: string }>).detail.text);
+              if (alive && clientRef.current === client) {
+                const text = (event as CustomEvent<{ text: string }>).detail.text;
+                try {
+                  assertClipboardTransfer({ app: 'desktop', vmId: vm.id }, 'copy', text);
+                  setIncoming(text);
+                  setClipboardError('');
+                } catch (error) {
+                  setIncoming('');
+                  setClipboardError((error as Error).message);
+                }
+              }
             });
             return client;
           },
@@ -221,6 +265,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       controller?.dispose();
       connectionRef.current = null;
       clientRef.current = null;
+      sentClipboard.current = '';
     };
   }, [vm.id, vm.startedAt, ready, token, attempt]);
 
@@ -270,7 +315,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const resetPreferences = () => updatePreferences({ ...desktopPreferenceDefaults });
 
   return (
-    <div className="desktop-panel" ref={frame}>
+    <div className="desktop-panel" ref={frame} data-clipboard-app="desktop" data-clipboard-vm={vm.id}>
       <div className="desktop-toolbar">
         <div className="desktop-toolbar-title">
           <span className={`desktop-state-dot ${desktopState}`} aria-hidden="true" />
@@ -510,7 +555,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
           </div>
         </section>
       )}
-      <Feedback error={clipboardAction.error} message={clipboardAction.message} />
+      <Feedback error={clipboardAction.error || clipboardError} message={clipboardAction.message} />
       {showClipboard && ready && (
         <div className="desktop-clipboard" aria-label="桌面剪贴板桥接">
           <div className="desktop-clipboard-head">
@@ -534,6 +579,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
               </span>
               <textarea
                 aria-label="发送到 Linux 的文本"
+                disabled={!clipboardRule.paste}
                 placeholder="粘贴要发送到 Linux 的文本"
                 value={outgoing}
                 onChange={(e) => setOutgoing(e.target.value)}
@@ -542,12 +588,13 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             <div className="desktop-clipboard-actions">
               <button
                 className="secondary compact"
-                disabled={!connected}
+                disabled={!connected || !clipboardRule.paste}
                 onClick={() =>
                   void clipboardAction.run(async () => {
                     if (!clientRef.current) throw new Error('桌面连接尚未就绪');
-                    assertClipboardSafe(outgoing);
+                    assertClipboardTransfer(clipboardContext, 'paste', outgoing);
                     clientRef.current.clipboardPasteFrom(outgoing);
+                    sentClipboard.current = outgoing;
                   }, '文本已发送到 Linux')
                 }
               >
@@ -570,9 +617,12 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             </label>
             <button
               className="secondary compact desktop-clipboard-copy"
-              disabled={!incoming}
+              disabled={!incoming || !clipboardRule.copy}
               onClick={() =>
-                void clipboardAction.run(() => writeProtectedClipboard(incoming), '已复制到 Windows 剪贴板')
+                void clipboardAction.run(
+                  () => writeProtectedClipboard(incoming, clipboardContext),
+                  '已复制到 Windows 剪贴板',
+                )
               }
             >
               <Copy size={14} />

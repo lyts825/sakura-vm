@@ -706,7 +706,11 @@ function App() {
     }
   };
   const content = (
-    <div className={`app-shell ${focusMode ? 'focus-mode' : ''}`}>
+    <div
+      className={`app-shell ${focusMode ? 'focus-mode' : ''}`}
+      data-clipboard-app="workbench"
+      data-clipboard-vm={selected || undefined}
+    >
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="Sakura 首页">
           <img src={sakuraMark} alt="" />
@@ -1569,7 +1573,7 @@ function App() {
                   context={shortcutScope}
                   projectName={projectId ? `${vm?.name || ''} / ${projectId}` : undefined}
                 />
-                <ClipboardSettings />
+                <ClipboardSettings vms={vms} />
                 <section className="system-card">
                   <h3>Windows 工作区集成</h3>
                   <p>管理资源管理器右键菜单、文件关联及宿主编辑器。</p>

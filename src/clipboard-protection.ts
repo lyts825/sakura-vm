@@ -1,3 +1,5 @@
+import type { ClipboardContext } from '../shared/clipboard-policy';
+import { assertClipboardPolicy, clipboardContext, currentClipboardRule } from './clipboard-policy';
 const key = 'sakura-clipboard-protection';
 const changeEvent = 'sakura-clipboard-protection-change';
 let fallback = false;
@@ -59,30 +61,58 @@ export function assertClipboardSafe(text: string, enabled = clipboardProtectionE
   const reason = enabled ? sensitiveClipboardReason(text) : null;
   if (reason) throw new Error(`剪贴板传递已阻止：${reason}。可在设置中调整剪贴板敏感检测。`);
 }
-export async function writeProtectedClipboard(text: string) {
-  assertClipboardSafe(text);
+export function assertClipboardTransfer(
+  context: ClipboardContext,
+  direction: 'copy' | 'paste',
+  text: string,
+  hasFiles = false,
+) {
+  assertClipboardPolicy(context, direction, text, hasFiles);
+  assertClipboardSafe(text, clipboardProtectionEnabled() || currentClipboardRule(context).sensitive);
+}
+export async function writeProtectedClipboard(
+  text: string,
+  context: ClipboardContext = { app: 'workbench' },
+) {
+  assertClipboardTransfer(context, 'copy', text);
   await navigator.clipboard.writeText(text);
 }
 
 export function installClipboardProtection(document: Document, blocked: (message: string) => void) {
   const check = (event: ClipboardEvent, capture: boolean) => {
-    if (!clipboardProtectionEnabled()) return;
     const target = event.target;
+    const context = clipboardContext(target);
+    const direction = event.type === 'paste' ? 'paste' : 'copy';
     const input = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ? target : null;
     const selected =
       input && input.selectionStart !== null && input.selectionEnd !== null
         ? input.value.slice(input.selectionStart, input.selectionEnd)
         : document.getSelection()?.toString() || '';
-    const supplied = event.clipboardData?.getData('text/plain') || '';
-    const reason =
-      input instanceof HTMLInputElement && input.type === 'password' && selected
-        ? '密码输入框中的内容'
-        : sensitiveClipboardReason(supplied || selected);
-    if (!reason) return;
+    const supplied =
+      event.clipboardData?.getData('text/plain') || event.clipboardData?.getData('text/html') || '';
+    let reason = '';
+    try {
+      const text = direction === 'paste' ? supplied : supplied || selected;
+      assertClipboardTransfer(context, direction, text, !!event.clipboardData?.files.length);
+      // Some editors supply rich content alongside plain text. Check both.
+      const html = event.clipboardData?.getData('text/html');
+      if (html) assertClipboardTransfer(context, direction, html);
+      if (
+        (clipboardProtectionEnabled() || currentClipboardRule(context).sensitive) &&
+        direction === 'copy' &&
+        input instanceof HTMLInputElement &&
+        input.type === 'password' &&
+        selected
+      )
+        throw new Error('剪贴板传递已阻止：密码输入框中的内容。');
+      return;
+    } catch (error) {
+      reason = (error as Error).message;
+    }
     event.preventDefault();
     event.clipboardData?.clearData();
     if (capture) event.stopImmediatePropagation();
-    blocked(`剪贴板传递已阻止：${reason}。可在设置中调整剪贴板敏感检测。`);
+    blocked(reason);
   };
   const capture = (event: ClipboardEvent) => check(event, true),
     bubble = (event: ClipboardEvent) => check(event, false);
@@ -90,10 +120,12 @@ export function installClipboardProtection(document: Document, blocked: (message
     document.addEventListener(type, capture, true);
     document.addEventListener(type, bubble);
   }
+  document.addEventListener('paste', capture, true);
   return () => {
     for (const type of ['copy', 'cut'] as const) {
       document.removeEventListener(type, capture, true);
       document.removeEventListener(type, bubble);
     }
+    document.removeEventListener('paste', capture, true);
   };
 }

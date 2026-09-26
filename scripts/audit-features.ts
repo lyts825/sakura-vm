@@ -20,6 +20,7 @@ const groups = [
 const all = groups.flatMap((group) => group.rows),
   unfinished = all.filter((item) => item.state !== 'available');
 const notes: Record<string, string> = {
+  'clipboard-policy': '已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。',
   'vcpu-hotplug':
     '已实现预留插槽、QMP 添加和客户机上线校验。当前 WHPX 拒绝在线添加；Alpine 6.18 在 TCG 下未识别预留 CPU，正常添加流程仍待兼容内核验证。',
   'merge-editor':

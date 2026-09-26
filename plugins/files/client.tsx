@@ -346,6 +346,8 @@ export function FileBrowser({
       className={`content-panel feature-panel file-browser ${dragging ? 'dragging' : ''}`}
       role="region"
       aria-label="Linux 文件浏览器"
+      data-clipboard-app="files"
+      data-clipboard-vm={vm.id}
       tabIndex={0}
       onPaste={(event) => {
         if (

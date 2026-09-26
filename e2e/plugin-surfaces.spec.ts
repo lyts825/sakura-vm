@@ -12,6 +12,204 @@ import { generateSdk } from '../server/sdk.ts';
 import { graphqlInfo, GraphApi, querySnapshot } from '../server/graphql-api.ts';
 import type { Machines } from '../server/machines.ts';
 import { NativeIntegration } from '../server/native-integration.ts';
+import { WebSocketServer, type WebSocket as NodeWebSocket } from 'ws';
+
+test('clipboard policy remains enforced in memory when browser persistence is unavailable', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'sakura-clipboard-policies') throw new DOMException('Unavailable', 'QuotaExceededError');
+      original.call(this, key, value);
+    };
+  });
+  await app(page, [], true);
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  const panel = page.locator('.clipboard-policies');
+  await panel.locator('summary').click();
+  await panel.getByLabel('允许从宿主粘贴', { exact: true }).uncheck();
+  await expect(panel.getByRole('status')).toContainText('当前标签页仍生效');
+  await page.getByRole('button', { name: '工作空间', exact: true }).click();
+  expect(
+    await page.locator('.terminal-wrap').evaluate((element) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', 'not sent');
+      const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+  ).toBe(true);
+  expect(await page.evaluate(() => localStorage.getItem('sakura-clipboard-policies'))).toBeNull();
+});
+
+test('clipboard policies enforce per-app directions and instance overrides before terminal input, persist and reject corrupt state', async ({
+  page,
+}) => {
+  const input: string[] = [];
+  await page.routeWebSocket(/\/ws\/[^/]+\/terminal\?/, (socket) => {
+    socket.send(JSON.stringify({ type: 'ready', data: true }));
+    socket.onMessage((raw) => {
+      const msg = JSON.parse(String(raw));
+      if (msg.type === 'input') input.push(msg.data);
+    });
+  });
+  await app(page, [], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  await page.reload();
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  const panel = page.locator('.clipboard-policies');
+  await panel.locator('summary').click();
+  await panel.getByLabel('允许从宿主粘贴', { exact: true }).uncheck();
+  await panel.getByLabel('允许复制与剪切到宿主').uncheck();
+  await page.getByRole('button', { name: '工作空间', exact: true }).click();
+  const terminal = page.locator('.xterm-helper-textarea');
+  const paste = () =>
+    terminal.evaluate((element) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', 'CLIPBOARD_FIXTURE');
+      const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  await expect(terminal).toBeAttached();
+  expect(await paste()).toBe(true);
+  expect(input.join('')).not.toContain('CLIPBOARD_FIXTURE');
+  await terminal.focus();
+  await page.keyboard.type('typed');
+  await expect.poll(() => input.join('')).toContain('typed');
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  await panel.locator('summary').click();
+  await panel.getByLabel('策略范围').selectOption(vm.id);
+  await panel.getByLabel('为此实例单独设置').check();
+  await panel.getByLabel('允许从宿主粘贴', { exact: true }).check();
+  await panel.getByLabel('此应用始终检查敏感文本').check();
+  await page.reload();
+  await page.locator('.clipboard-policies summary').click();
+  await panel.getByLabel('策略范围').selectOption(vm.id);
+  await expect(panel.getByLabel('为此实例单独设置')).toBeChecked();
+  await expect(panel.getByLabel('允许从宿主粘贴', { exact: true })).toBeChecked();
+  await page.getByRole('button', { name: '工作空间', exact: true }).click();
+  await paste();
+  await expect.poll(() => input.join('')).toContain('CLIPBOARD_FIXTURE');
+  const secret = 'ghp_' + 'z'.repeat(36);
+  const blocked = await terminal.evaluate((element, secret) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', secret);
+    const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    return event.defaultPrevented;
+  }, secret);
+  expect(blocked).toBe(true);
+  expect(input.join('')).not.toContain(secret);
+  expect(await page.evaluate(() => localStorage.getItem('sakura-clipboard-policies'))).not.toContain(secret);
+  await page.evaluate(() => localStorage.setItem('sakura-clipboard-policies', '{invalid'));
+  await page.reload();
+  expect(await paste()).toBe(true);
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  await page.locator('.clipboard-policies summary').click();
+  await expect(panel.getByRole('alert')).toContainText('策略损坏');
+  await panel.getByRole('button', { name: '恢复全部剪贴板默认策略' }).click();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test('real noVNC clipboard traffic follows live cross-tab policy changes and revokes cached outbound text', async ({
+  page,
+  context,
+}) => {
+  const sockets: NodeWebSocket[] = [],
+    sent: string[] = [];
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  await new Promise<void>((done) => server.once('listening', done));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Expected local port');
+  await page.addInitScript((port) => {
+    const Native = window.WebSocket;
+    const Redirect = function (url: string | URL, protocols?: string | string[]) {
+      return new Native(String(url).includes('/desktop?') ? `ws://127.0.0.1:${port}` : url, protocols);
+    };
+    Object.setPrototypeOf(Redirect, Native);
+    Redirect.prototype = Native.prototype;
+    window.WebSocket = Redirect as unknown as typeof WebSocket;
+  }, address.port);
+  server.on('connection', (socket) => {
+    sockets.push(socket);
+    let stage = 0;
+    socket.on('message', (raw) => {
+      const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+      if (stage === 0) {
+        stage++;
+        socket.send(Buffer.from([1, 1]));
+      } else if (stage === 1) {
+        stage++;
+        socket.send(Buffer.alloc(4));
+      } else if (stage === 2) {
+        stage++;
+        const init = Buffer.alloc(24);
+        init.writeUInt16BE(64, 0);
+        init.writeUInt16BE(64, 2);
+        Buffer.from([32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0]).copy(init, 4);
+        socket.send(init);
+      } else if (bytes[0] === 6 && bytes.length >= 8) sent.push(bytes.subarray(8).toString());
+    });
+    socket.send(Buffer.from('RFB 003.008\n'));
+  });
+  try {
+    await app(page, ['desktop'], true);
+    await page.route('**/api/vms', (route) =>
+      route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+    );
+    await page.route('**/api/vms/*/desktop*', (route) =>
+      route.fulfill({ json: { status: 'ready', log: '' } }),
+    );
+    await page.route('**/api/vms/*/ime*', (route) => route.fulfill({ json: null }));
+    await page.reload();
+    await page.getByRole('tab', { name: '桌面', exact: true }).click();
+    await page.getByRole('button', { name: '剪贴板', exact: true }).click();
+    await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
+    const incoming = page.getByRole('textbox', { name: 'Linux 剪贴板文本' });
+    const serverClipboard = (text: string) => {
+      const data = Buffer.from(text),
+        header = Buffer.alloc(8);
+      header[0] = 3;
+      header.writeUInt32BE(data.length, 4);
+      sockets.at(-1)!.send(Buffer.concat([header, data]));
+    };
+    serverClipboard('guest text');
+    await expect(incoming).toHaveValue('guest text');
+    await page.getByLabel('发送到 Linux 的文本').fill('host text');
+    await page.getByRole('button', { name: '发送', exact: true }).click();
+    await expect.poll(() => sent).toContain('host text');
+    const settings = await context.newPage();
+    await app(settings, [], true);
+    await settings.getByRole('button', { name: '系统设置', exact: true }).click();
+    const panel = settings.locator('.clipboard-policies');
+    await panel.locator('summary').click();
+    await panel.getByLabel('应用入口').selectOption('desktop');
+    await panel.getByLabel('允许复制与剪切到宿主').uncheck();
+    await expect(incoming).toHaveValue('');
+    serverClipboard('must remain hidden');
+    await expect(incoming).toHaveValue('');
+    await panel.getByLabel('允许从宿主粘贴', { exact: true }).uncheck();
+    await expect(page.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
+    await expect.poll(() => sockets.length).toBe(2);
+    await panel.getByLabel('允许复制与剪切到宿主').check();
+    await panel.getByLabel('此应用始终检查敏感文本').check();
+    await expect(page.getByLabel('桌面剪贴板桥接').getByText('桌面已连接', { exact: true })).toBeVisible();
+    serverClipboard('ghp_' + 'z'.repeat(36));
+    await expect(page.getByRole('alert')).toContainText('疑似访问令牌');
+    await expect(incoming).toHaveValue('');
+    expect(sent).not.toContain('');
+    await settings.close();
+  } finally {
+    for (const socket of server.clients) socket.terminate();
+    await new Promise<void>((done) => server.close(() => done()));
+  }
+});
 
 test('Windows integration settings save and remove real registration plans without replacing defaults, and fit mobile', async ({
   page,
@@ -1158,6 +1356,26 @@ test('pasting clipboard images uploads uniquely named files without reading the 
   expect(uploads[0].path).toMatch(/^\/workspace\/clipboard-.*\.png$/);
   expect(uploads[0].path).not.toBe(uploads[1].path);
   expect(uploads[0].content).toBe('image content');
+  await page.getByRole('button', { name: '系统设置', exact: true }).click();
+  const policy = page.locator('.clipboard-policies');
+  await policy.locator('summary').click();
+  await policy.getByLabel('应用入口').selectOption('files');
+  await policy.getByLabel('允许剪贴板文件与图片').uncheck();
+  await page.getByRole('button', { name: '工作空间', exact: true }).click();
+  const prevented = await browser.evaluate((element) => {
+    const data = new DataTransfer();
+    data.items.add(new File(['blocked'], 'secret.png', { type: 'image/png' }));
+    const event = new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(prevented).toBe(true);
+  expect(uploads.length).toBe(2);
+  await browser
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'manual.txt', mimeType: 'text/plain', buffer: Buffer.from('explicit upload') });
+  await expect.poll(() => uploads.length).toBe(3);
+  expect(uploads[2].path).toBe('/workspace/manual.txt');
 });
 
 test('sync controls save timezone and bandwidth and support offline enqueue and cancellation', async ({

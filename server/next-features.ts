@@ -469,7 +469,7 @@ export const nextFeatureCatalog = [
     '操作系统与桌面',
     'P0',
     '保存剪贴板按应用的读写和敏感内容策略。',
-    'planned',
+    'experimental',
   ],
   [
     'media-passthrough',
@@ -723,6 +723,10 @@ export class NextFeatures {
     if (spec.id === 'file-associations') return {
       ready: process.platform === 'win32', executed: false, adapter,
       message: '系统设置 → 管理 Windows 集成，选择扩展名与已配置同步的工作区，保存后添加到 Windows 打开方式；仅接受映射目录中的文件。',
+    };
+    if (spec.id === 'clipboard-policy') return {
+      ready: true, executed: false, adapter,
+      message: '系统设置 → 剪贴板敏感检测 → 按应用剪贴板策略，管理网页终端、文件和桌面入口的复制/粘贴、实例覆盖与文本检测。当前不管理 Windows/Linux 独立应用进程的系统剪贴板权限。',
     };
     if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner') return {
       ready: true, executed: false, adapter,

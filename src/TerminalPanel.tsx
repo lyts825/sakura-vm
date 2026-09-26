@@ -145,7 +145,7 @@ export function TerminalPanel({
             ? 'stopped'
             : 'starting';
   return (
-    <div className="terminal-wrap">
+    <div className="terminal-wrap" data-clipboard-app="terminal" data-clipboard-vm={vm.id}>
       <div className="terminal-toolbar">
         <div>
           <span className="terminal-dots">
