@@ -27,6 +27,7 @@
     "test:signed-bundles": "tsx scripts/smoke-signed-bundles.ts",
     "test:hardware-matrix": "tsx scripts/smoke-hardware-matrix.ts",
     "test:nested-virtualization": "tsx scripts/smoke-nested-virtualization.ts",
+    "test:guest-dns": "tsx scripts/smoke-guest-dns.ts",
     "test:image-import": "tsx scripts/smoke-image-import.ts",
     "test:uefi": "tsx scripts/smoke-uefi.ts",
     "test:rescue": "tsx scripts/smoke-rescue.ts",

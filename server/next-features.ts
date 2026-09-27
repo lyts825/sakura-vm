@@ -11,6 +11,7 @@ import { capabilityViews, capabilityParameters, hasCapability } from './capabili
 import { hardwareCompatibility } from './hardware-compatibility.ts';
 import { firmwareSupport } from './firmware.ts';
 import { networkEmulation } from './network-emulation.ts';
+import { guestDnsDiagnostics } from './guest-dns.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -237,8 +238,8 @@ export const nextFeatureCatalog = [
     '私有 DNS 与 DNSSEC',
     '网络与服务治理',
     'P1',
-    '检查客户机解析器和 DNSSEC 工具。',
-    'planned',
+    '读取客户机解析器配置并检测 DNSSEC 工具和解析状态。',
+    'available',
   ],
   [
     'http-ingress',
@@ -610,7 +611,6 @@ const defaultState = (): NextState => ({ settings: {}, executions: {}, records: 
 const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'virtio-fs': 'mount | grep -E "virtiofs|9p"',
   'wireguard-overlay': 'command -v wg >/dev/null && wg show',
-  'private-dns-dnssec': 'command -v resolvectl >/dev/null && resolvectl status',
   'acme-renewal':
     'if command -v certbot >/dev/null; then certbot --version; else command -v lego >/dev/null && lego --version; fi',
   'network-topology': 'command -v ip >/dev/null && ip addr && ip route',
@@ -848,6 +848,11 @@ export class NextFeatures {
     if (spec.id === 'network-emulation')
       return {
         ...(await networkEmulation(this.machines, id, merged, action, signal)),
+        adapter,
+      };
+    if (spec.id === 'private-dns-dnssec')
+      return {
+        ...(await guestDnsDiagnostics(this.machines, id, action, signal)),
         adapter,
       };
     if (spec.id === 'nested-virtualization') {
