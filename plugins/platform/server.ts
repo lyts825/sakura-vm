@@ -27,6 +27,7 @@ export const operations: Record<string, PluginOperation> = {
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.next = new NextFeatures(m, host.workspaces);
+  await host.next.init();
   host.registerJobs(host.next.jobs, (job) => {
     if (!job.action?.startsWith('next:')) throw new AppError('请回到原功能页面重新执行');
     const featureId = job.action.slice('next:'.length);

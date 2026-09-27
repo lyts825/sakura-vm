@@ -2949,6 +2949,51 @@ test('new instances can register and select an external storage pool', async ({ 
   await expect.poll(() => createdVm?.storagePoolId).toBe(poolId);
 });
 
+test('tiering shows the reviewed destination and submits an explicit stopped-instance move', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'platform'], true);
+  const poolId = '0123456789abcdef';
+  let submitted: any;
+  await page.route('**/api/vms/*/next-features*', (route) => {
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ json: { status: 'running' } });
+    }
+    return route.fulfill({ json: {
+      projectId: 'default', settings: {}, records: {}, executions: [],
+      jobs: [{ id: 'tiering-job', action: 'next:storage-tiering', status: 'done',
+        log: '', startedAt: new Date().toISOString(),
+        result: { bytes: 100, sha256: 'a'.repeat(64) } }],
+      capabilities: capabilityViews('next'),
+      features: [{ id: 'storage-tiering', name: 'SSD/HDD 分层',
+        category: '存储与灾备', summary: '按最近使用时间迁移', state: 'available' }],
+    } });
+  });
+  await page.route('**/api/jobs/tiering-job/result*', (route) => route.fulfill({ json: {
+    jobId: 'tiering-job', result: {
+      policy: { enabled: false, hotPoolId: poolId, coldPoolId: 'default',
+        idleHours: 168, intervalHours: 24 },
+      current: { vmId: vm.id, name: vm.name, currentPoolId: 'default',
+        targetPoolId: poolId, lastUsedAt: new Date().toISOString(), ready: true, reason: '' },
+      candidates: [{ vmId: vm.id, name: vm.name, currentPoolId: 'default',
+        targetPoolId: poolId, lastUsedAt: new Date().toISOString(), ready: true, reason: '' }],
+      pools: [{ id: 'default', name: '默认池', available: true, freeBytes: 1000 },
+        { id: poolId, name: '热池', available: true, freeBytes: 1000 }],
+      history: [], running: false,
+    },
+  } }));
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('next 功能操作').selectOption('storage-tiering');
+  await expect(page.getByText('最近未使用 168 小时后进入冷池。')).toBeVisible();
+  await page.getByRole('button', { name: `准备迁移当前实例到 ${poolId}` }).click();
+  await expect(page.getByLabel('next 功能参数')).toHaveValue(/"mode": "apply"/);
+  await page.getByRole('button', { name: '提交SSD/HDD 分层' }).click();
+  await expect.poll(() => submitted).toEqual({ action: 'run',
+    featureId: 'storage-tiering', options: { mode: 'apply' } });
+});
+
 test('metrics and commands load their own client entries when selected', async ({ page }) => {
   await app(page, ['projects', 'metrics', 'commands'], true);
   await expect(page.getByRole('tab', { name: '配置', exact: true })).toBeVisible();

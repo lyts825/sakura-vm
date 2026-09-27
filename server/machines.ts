@@ -570,12 +570,15 @@ export class Machines extends EventEmitter {
         };
         this.live.set(id, live);
         const previousError = vm.lastError;
+        const previousUsedAt = vm.lastUsedAt;
+        vm.lastUsedAt = live.startedAt;
         delete vm.lastError;
         this.logs.set(id, '');
         try {
           await this.save();
         } catch (error) {
           this.live.delete(id);
+          vm.lastUsedAt = previousUsedAt;
           if (previousError !== undefined) vm.lastError = previousError;
           throw error;
         }
@@ -662,6 +665,7 @@ export class Machines extends EventEmitter {
             for (const client of live.clients) client.end();
             await live.bootDone;
             this.live.delete(id);
+            vm.lastUsedAt = new Date().toISOString();
             await this.save().catch((error) => this.log(id, `\r\n保存实例状态失败：${String(error)}\r\n`));
             this.emit('change');
           });

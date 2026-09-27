@@ -357,6 +357,41 @@ export function CapabilityActionsPanel({
               </p>}
             </div>
           )}
+          {selected === 'storage-tiering' && Array.isArray(result?.candidates) && (
+            <div className="feature-card">
+              <p>{result.policy ? `分层策略${result.policy.enabled ? '已启用定期检查' : '仅手动执行'}；`
+                + `最近未使用 ${result.policy.idleHours} 小时后进入冷池。`
+                : '尚未设置热池与冷池。'}</p>
+              <p className="subtle-note">池角色由你指定；Sakura 按实例最近使用时间迁移整个停机实例。</p>
+              <button className="secondary compact" onClick={() => setParameters(JSON.stringify({
+                mode: 'save', enabled: result.policy?.enabled || false,
+                hotPoolId: result.policy?.hotPoolId || 'default',
+                coldPoolId: result.policy?.coldPoolId || result.pools.find((pool: any) =>
+                  pool.id !== 'default')?.id || 'default',
+                idleHours: result.policy?.idleHours || 168,
+                intervalHours: result.policy?.intervalHours || 24,
+              }, null, 2))}>编辑分层策略</button>
+              {result.current?.ready && <button className="secondary compact"
+                onClick={() => setParameters(JSON.stringify({ mode: 'apply' }, null, 2))}>
+                准备迁移当前实例到 {result.current.targetPoolId}
+              </button>}
+              <button className="secondary compact"
+                disabled={!result.policy || result.running}
+                onClick={() => setParameters(JSON.stringify({ mode: 'rebalance' }, null, 2))}>
+                准备重平衡全部停机实例
+              </button>
+              <div style={{ overflowX: 'auto' }}>
+                <table><thead><tr><th>实例</th><th>当前池</th><th>建议池</th><th>最近使用</th><th>状态</th></tr></thead>
+                  <tbody>{result.candidates.map((item: any) => <tr key={item.vmId}>
+                    <td>{item.name}</td><td><code>{item.currentPoolId}</code></td>
+                    <td><code>{item.targetPoolId || '—'}</code></td>
+                    <td>{new Date(item.lastUsedAt).toLocaleString('zh-CN')}</td>
+                    <td>{item.ready ? '可迁移' : item.reason}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
             typeof result?.samples === 'number' && (
               <div className="feature-card">

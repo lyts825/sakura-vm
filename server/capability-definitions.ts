@@ -13,6 +13,7 @@ import { snapshotReplicationInput } from './snapshot-replications.ts';
 import { notebookInput } from './notebook-environments.ts';
 import { browserIdeInput } from './browser-ide.ts';
 import { storagePoolInput } from './storage-pools.ts';
+import { tieringInput } from './storage-tiering.ts';
 
 export const relativePath = z
   .string()
@@ -55,6 +56,12 @@ export const capabilityDefinitions = {
     '注册本机目录为存储池，创建实例时选择池；停机后可校验并迁移实例目录。删除池前需迁出实例并清理旧副本。',
     false,
     true,
+  ),
+  'storage-tiering': action(
+    'SSD/HDD 分层', 'next', tieringInput.shape,
+    { mode: 'status' },
+    '指定两个已注册池的热/冷角色，按实例最近使用时间预览或迁移；启用后按小时定期检查停机实例。',
+    false, true,
   ),
   'authenticated-ide-preview': action(
     '认证浏览器 IDE',

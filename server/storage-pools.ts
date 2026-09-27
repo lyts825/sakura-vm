@@ -194,7 +194,7 @@ export class StoragePools {
   }
 
   hasPendingCleanup(vmId: string) {
-    return this.state!.pendingCleanup.some((item) => item.vmId === vmId);
+    return this.state?.pendingCleanup.some((item) => item.vmId === vmId) || false;
   }
 
   async registerCleanup(vmId: string, sourcePoolId: string, targetPoolId: string) {

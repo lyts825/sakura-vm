@@ -17,6 +17,7 @@ import type { ColdMigrations } from './cold-migration.ts';
 import type { SnapshotReplications } from './snapshot-replications.ts';
 import type { NotebookEnvironments } from './notebook-environments.ts';
 import type { BrowserIde } from './browser-ide.ts';
+import { StorageTiering } from './storage-tiering.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -180,7 +181,8 @@ export const nextFeatureCatalog = [
     '创建本机存储池、分配新实例并在停机后校验迁移已有实例。',
     'available',
   ],
-  ['storage-tiering', 'SSD/HDD 分层', '存储与灾备', 'P1', '保存热数据与冷数据的分层策略。', 'planned'],
+  ['storage-tiering', 'SSD/HDD 分层', '存储与灾备', 'P1',
+    '按最近使用时间将停机实例在指定热池和冷池间迁移，并定期重平衡。', 'available'],
   [
     'object-backup',
     'S3/MinIO 备份目标',
@@ -641,6 +643,7 @@ function compactProfileResult(result: Record<string, unknown>) {
 
 export class NextFeatures {
   jobs = new Jobs('next-features');
+  storageTiering: StorageTiering;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private coldMigrations?: ColdMigrations;
   private snapshotReplications?: SnapshotReplications;
@@ -652,7 +655,9 @@ export class NextFeatures {
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
-  ) {}
+  ) { this.storageTiering = new StorageTiering(machines); }
+
+  async init() { await this.storageTiering.init(); }
 
   setResourceScheduler(score: (input: HostScoreInput) => ReturnType<HostPeers['score']>) {
     this.scoreHosts = score;
@@ -928,6 +933,8 @@ export class NextFeatures {
     if (spec.id === 'storage-pools')
       return { ...(await this.machines.storagePools.run(id, merged, action,
         signal, log)), adapter };
+    if (spec.id === 'storage-tiering')
+      return { ...(await this.storageTiering.run(id, merged, action, signal, log)), adapter };
     if (spec.id === 'graphql-api')
       return {
         ready: true,
@@ -1169,7 +1176,7 @@ export class NextFeatures {
     );
   }
 
-  close() {
-    return this.jobs.close();
+  async close() {
+    await Promise.all([this.jobs.close(), this.storageTiering.close()]);
   }
 }

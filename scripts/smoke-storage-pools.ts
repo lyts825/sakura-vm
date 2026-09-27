@@ -12,7 +12,9 @@ process.env.SAKURA_DATA_DIR = join(root, 'data');
 process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
 const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
+const { StorageTiering } = await import('../server/storage-tiering.ts');
 const machines = new Machines(await createRuntime());
+const tiering = new StorageTiering(machines);
 
 async function boot(id: string) {
   await machines.start(id);
@@ -26,6 +28,7 @@ async function boot(id: string) {
 
 try {
   await machines.init();
+  await tiering.init();
   const pool = await machines.storagePools.create('pool-smoke', external);
   const vm = await machines.create({ name: 'pool-smoke', storagePoolId: pool.id });
   const pooledDisk = join(external, 'sakura-machines', vm.id, 'disk.qcow2');
@@ -33,6 +36,7 @@ try {
   await boot(vm.id);
   await machines.writeGuestFile(vm.id, '/workspace/pool-proof.txt', 'persistent-pool-proof', false);
   await machines.stop(vm.id, false);
+  assert.ok(Date.parse(machines.get(vm.id).lastUsedAt || '') > 0);
 
   const toDefault = await machines.moveStoragePool(vm.id, 'default');
   assert.equal(toDefault.cleanupPending, false);
@@ -44,8 +48,13 @@ try {
     'persistent-pool-proof');
   await machines.stop(vm.id, false);
 
-  const toExternal = await machines.moveStoragePool(vm.id, pool.id);
-  assert.equal(toExternal.cleanupPending, false);
+  await tiering.run(vm.id, { mode: 'save', enabled: false, hotPoolId: pool.id,
+    coldPoolId: 'default', idleHours: 24, intervalHours: 1 }, 'run');
+  const decision = await tiering.run(vm.id, { mode: 'status' }, 'check');
+  assert.equal(decision.current?.targetPoolId, pool.id);
+  const toExternal = await tiering.run(vm.id, { mode: 'apply' }, 'run');
+  assert.ok('applied' in toExternal);
+  assert.equal(toExternal.applied.moved, true);
   assert.ok((await stat(pooledDisk)).size > 0);
   await boot(vm.id);
   assert.equal(await machines.readGuestFile(vm.id, '/workspace/pool-proof.txt'),
@@ -55,8 +64,9 @@ try {
   await machines.storagePools.remove(pool.id);
   assert.deepEqual((await machines.storagePools.view()).pools.map((item) => item.id),
     ['default']);
-  console.log('External pool allocation, both moves and three real guest boots passed.');
+  console.log('External pool allocation, tiering move and three real guest boots passed.');
 } finally {
+  await tiering.close();
   await machines.close();
   await rm(root, { recursive: true, force: true });
 }
