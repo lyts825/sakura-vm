@@ -1,19 +1,37 @@
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
 import { AppError } from '../../server/model.ts';
 
 import { NetworkProfiles } from '../../server/network-profiles.ts';
+import { HttpIngress } from '../../server/http-ingress.ts';
+import { ingressActionSchema, ingressViewSchema } from '../../shared/http-ingress.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.network = new NetworkProfiles(m);
+  await host.provide('ingress', new HttpIngress(m, host.dataFile('ingress'))).init();
   host.registerJobs(host.network.jobs, () => {
     throw new AppError('请在网络配置中重新测试当前设置');
   });
 }
+export const operations: Record<string, PluginOperation> = {
+  'ingress-view': {
+    response: ingressViewSchema,
+    execute() {
+      return this.use<HttpIngress>('network', 'ingress').view();
+    },
+  },
+  'ingress-action': {
+    request: ingressActionSchema,
+    response: ingressViewSchema,
+    execute(_url, input) {
+      return this.use<HttpIngress>('network', 'ingress').action(input);
+    },
+  },
+};
 export async function route(
   this: PluginContext,
   req: IncomingMessage,

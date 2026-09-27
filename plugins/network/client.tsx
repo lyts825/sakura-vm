@@ -12,8 +12,10 @@ import '../../src/development.css';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { stopped } from '../../src/guest-state';
+import { IngressPanel } from './IngressPanel';
 
-export function ServicesPanel({ vm, request, refresh }: FeatureProps) {
+export function ServicesPanel(props: FeatureProps) {
+  const { vm, request, refresh } = props;
   const remote = useRemote<{
     forwards: (VMConfig['forwards'][number] & { listening: boolean })[];
     listening: number[];
@@ -25,6 +27,7 @@ export function ServicesPanel({ vm, request, refresh }: FeatureProps) {
   const patch = (i: number, value: Partial<VMConfig['forwards'][number]>) =>
     setForwards((list) => list.map((v, n) => (n === i ? { ...v, ...value } : v)));
   return (
+    <>
     <div className="content-panel feature-panel">
       <div className="panel-heading">
         <div>
@@ -113,6 +116,8 @@ export function ServicesPanel({ vm, request, refresh }: FeatureProps) {
         <p className="subtle-note">客户机监听端口：{remote.data.listening.join('、')}</p>
       )}
     </div>
+    <IngressPanel key={vm.id} {...props} />
+    </>
   );
 }
 

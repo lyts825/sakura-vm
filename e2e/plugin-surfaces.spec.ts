@@ -2309,6 +2309,52 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await expect.poll(() => profiles.length).toBe(0);
 });
 
+test('service tab saves, checks and removes a local HTTP ingress route', async ({ page }) => {
+  await app(page, ['network'], true);
+  const forwards = [{ name: 'Web', host: 8090, guest: 3000 }];
+  let entries: any[] = [], submitted: any;
+  await page.route('**/api/vms', (route) => route.fulfill({
+    json: [{ ...vm, forwards, status: 'running', poweredOn: true }],
+  }));
+  await page.route('**/api/vms/*/services', (route) => route.fulfill({
+    json: { forwards: forwards.map((forward) => ({ ...forward, listening: true })), listening: [3000] },
+  }));
+  await page.route('**/api/ingress', (route) => {
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON();
+      if (submitted.action === 'save') {
+        const item = submitted.entry;
+        entries = [{ ...item, id: item.id || vm.id, createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(), url: `http://127.0.0.1:${item.listenPort}${item.pathPrefix}`,
+          health: { status: 'checking' } }];
+      } else if (submitted.action === 'check') {
+        entries[0].health = { status: 'healthy', httpStatus: 200 };
+      } else if (submitted.action === 'delete') entries = [];
+    }
+    return route.fulfill({ json: { entries, listenerErrors: {} } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '服务', exact: true }).click();
+  const editor = page.locator('.feature-card').filter({ has: page.getByRole('heading', { name: '新建入口' }) });
+  await editor.getByLabel('名称').fill('开发网站');
+  await editor.getByLabel('入口端口').fill('8900');
+  await editor.getByLabel('入口路径', { exact: true }).fill('/app');
+  await editor.getByLabel('健康检查路径').fill('/health');
+  await editor.getByLabel('转发前移除入口路径前缀').check();
+  await editor.getByRole('button', { name: '保存入口' }).click();
+  await expect.poll(() => submitted).toMatchObject({ action: 'save', entry: {
+    name: '开发网站', listenPort: 8900, pathPrefix: '/app', upstreamPort: 8090,
+    healthPath: '/health', stripPrefix: true,
+  } });
+  await expect(page.getByRole('link', { name: /127\.0\.0\.1:8900\/app/ })).toBeVisible();
+  await page.getByRole('button', { name: '检查', exact: true }).click();
+  await expect(page.getByText(/健康：正常/)).toBeVisible();
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '编辑入口' })).toBeVisible();
+  await page.getByRole('button', { name: '删除入口 开发网站' }).click();
+  await expect.poll(() => entries.length).toBe(0);
+});
+
 test('backup policies enable block deduplication and show how each backup is stored', async ({ page }) => {
   await app(page, ['snapshots', 'backups', 'transfers', 'secrets'], true);
   let policy: any = { enabled: false, intervalHours: 24, keep: 7, maxGiB: 32 };

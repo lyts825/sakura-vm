@@ -1,4 +1,4 @@
-import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
+import { definePlugin, pin, http, operation } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({
   id: 'network',
@@ -6,12 +6,17 @@ export const manifest = definePlugin({
   description: '端口转发、代理、软件源与网络诊断。',
   category: 'operations',
   optional: [pin('projects')],
-  services: ['network'],
+  services: ['network', 'ingress'],
   contributes: {
     http: [
       http('/api/network-profiles', ['GET', 'POST', 'DELETE']),
       http('/api/vms/:vmId/network', ['GET', 'POST'], true),
       http('/api/vms/:vmId/services', ['GET', 'PATCH']),
+      http('/api/ingress', ['GET', 'POST']),
+    ],
+    operations: [
+      operation('ingress-view', 'GET', '/api/ingress'),
+      operation('ingress-action', 'POST', '/api/ingress'),
     ],
     tabs: ['services', 'development'],
     developmentSections: ['network'],

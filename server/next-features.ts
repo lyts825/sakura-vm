@@ -244,8 +244,8 @@ export const nextFeatureCatalog = [
     'HTTP 反向代理',
     '网络与服务治理',
     'P0',
-    '保存服务入口、路径和上游健康检查配置。',
-    'planned',
+    '在本机回环地址发布路径路由，并转发到实例端口映射和检查上游健康。',
+    'available',
   ],
   [
     'acme-renewal',
@@ -830,6 +830,14 @@ export class NextFeatures {
           : support.reason,
       };
     }
+    if (spec.id === 'http-ingress')
+      return {
+        ready: this.machines.get(id).forwards.length > 0,
+        executed: false,
+        adapter,
+        forwards: this.machines.get(id).forwards,
+        message: '在实例的“服务与端口”页先配置端口转发，再创建本机 HTTP 入口、路径规则与健康检查。',
+      };
     if (hasCapability(spec.id)) {
       const runner = new CapabilityActions(this.machines, this.workspaces);
       return action === 'run'

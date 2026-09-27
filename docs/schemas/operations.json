@@ -730,6 +730,374 @@
       "additionalProperties": false
     }
   },
+  "network.ingress-view": {
+    "id": "ingress-view",
+    "method": "GET",
+    "path": "/api/ingress",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "listenPort": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 65535
+              },
+              "pathPrefix": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "pattern": "^\\/(?:[a-zA-Z0-9._~!$&'()+,;=:@%-]+(?:\\/[a-zA-Z0-9._~!$&'()+,;=:@%-]+)*)?$"
+              },
+              "vmId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "upstreamPort": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 65535
+              },
+              "healthPath": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "pattern": "^\\/(?:[a-zA-Z0-9._~!$&'()+,;=:@%-]+(?:\\/[a-zA-Z0-9._~!$&'()+,;=:@%-]+)*)?$"
+              },
+              "stripPrefix": {
+                "type": "boolean"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "health": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "healthy",
+                      "unhealthy",
+                      "stopped",
+                      "unconfigured",
+                      "checking"
+                    ]
+                  },
+                  "checkedAt": {
+                    "type": "string"
+                  },
+                  "httpStatus": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "error": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "listenPort",
+              "pathPrefix",
+              "vmId",
+              "upstreamPort",
+              "healthPath",
+              "stripPrefix",
+              "createdAt",
+              "updatedAt",
+              "health",
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "listenerErrors": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "entries",
+        "listenerErrors"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "network.ingress-action": {
+    "id": "ingress-action",
+    "method": "POST",
+    "path": "/api/ingress",
+    "status": 200,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "save"
+            },
+            "entry": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "listenPort": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 65535
+                },
+                "pathPrefix": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "^\\/(?:[a-zA-Z0-9._~!$&'()+,;=:@%-]+(?:\\/[a-zA-Z0-9._~!$&'()+,;=:@%-]+)*)?$"
+                },
+                "vmId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "upstreamPort": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 65535
+                },
+                "healthPath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "^\\/(?:[a-zA-Z0-9._~!$&'()+,;=:@%-]+(?:\\/[a-zA-Z0-9._~!$&'()+,;=:@%-]+)*)?$"
+                },
+                "stripPrefix": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "listenPort",
+                "pathPrefix",
+                "vmId",
+                "upstreamPort",
+                "healthPath",
+                "stripPrefix"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "action",
+            "entry"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "delete"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "action",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "check"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "listenPort": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 65535
+              },
+              "pathPrefix": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "pattern": "^\\/(?:[a-zA-Z0-9._~!$&'()+,;=:@%-]+(?:\\/[a-zA-Z0-9._~!$&'()+,;=:@%-]+)*)?$"
+              },
+              "vmId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "upstreamPort": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 65535
+              },
+              "healthPath": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "pattern": "^\\/(?:[a-zA-Z0-9._~!$&'()+,;=:@%-]+(?:\\/[a-zA-Z0-9._~!$&'()+,;=:@%-]+)*)?$"
+              },
+              "stripPrefix": {
+                "type": "boolean"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "health": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "healthy",
+                      "unhealthy",
+                      "stopped",
+                      "unconfigured",
+                      "checking"
+                    ]
+                  },
+                  "checkedAt": {
+                    "type": "string"
+                  },
+                  "httpStatus": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "error": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "listenPort",
+              "pathPrefix",
+              "vmId",
+              "upstreamPort",
+              "healthPath",
+              "stripPrefix",
+              "createdAt",
+              "updatedAt",
+              "health",
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "listenerErrors": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "entries",
+        "listenerErrors"
+      ],
+      "additionalProperties": false
+    }
+  },
   "sandbox.list": {
     "id": "list",
     "method": "GET",

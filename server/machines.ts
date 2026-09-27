@@ -86,6 +86,26 @@ export class Machines extends EventEmitter {
   private incidentLocks = new Set<string>();
   private incidentWrites = Promise.resolve();
   private rescueControllers = new Set<AbortController>();
+  private hostPortReservations = new Map<string, Set<number>>();
+  reserveHostPorts(owner: string, ports: Iterable<number>) {
+    const next = new Set(ports);
+    for (const port of next) {
+      if (!Number.isInteger(port) || port < 1024 || port > 65535)
+        throw new AppError('保留的主机端口无效');
+      if ([...this.records.values()].some((vm) => vm.forwards.some((forward) => forward.host === port)))
+        throw new AppError(`端口 ${port} 已被实例转发使用`, 409);
+      for (const [key, values] of this.hostPortReservations)
+        if (key !== owner && values.has(port)) throw new AppError(`端口 ${port} 已被其他服务保留`, 409);
+    }
+    if (next.size) this.hostPortReservations.set(owner, next);
+    else this.hostPortReservations.delete(owner);
+  }
+  private requireUnreservedPorts(forwards: VMConfig['forwards']) {
+    for (const forward of forwards)
+      for (const values of this.hostPortReservations.values())
+        if (values.has(forward.host))
+          throw new AppError(`端口 ${forward.host} 已被宿主服务保留`, 409);
+  }
   incidentLocked(id: string) {
     return this.incidentLocks.has(id);
   }
@@ -324,6 +344,7 @@ export class Machines extends EventEmitter {
   private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);
+      this.requireUnreservedPorts(config.forwards);
       if (config.firmware === 'uefi') await requireUefiSupport();
       if (sandbox !== undefined) {
         sandbox = sandboxPolicySchema.parse(sandbox);
@@ -413,6 +434,7 @@ export class Machines extends EventEmitter {
             await this.engine.run('sakura-io', qemuIoArgs);
           }
         }
+        this.requireUnreservedPorts(vm.forwards);
         this.records.set(vm.id, vm);
         await this.save();
         if (vm.sandbox) this.watchSandboxes();
@@ -445,6 +467,7 @@ export class Machines extends EventEmitter {
           for (const p of this.get(otherId).forwards)
             if (vm.forwards.some((n) => n.host === p.host))
               throw new AppError(`端口 ${p.host} 已被另一实例使用`, 409);
+        this.requireUnreservedPorts(vm.forwards);
         const firmware = vm.firmware === 'uefi' ? await ensureUefiFirmware(id) : null;
         const [sshPort, qmpPort, serialPort] = await Promise.all([freePort(), freePort(), freePort()]);
         await recordBootAttempt(id);
@@ -1009,6 +1032,7 @@ export class Machines extends EventEmitter {
       this.requireMutableConfig(vm);
       this.requireStopped(id);
       const config = createSchema.parse(input);
+      this.requireUnreservedPorts(config.forwards);
       if (config.firmware === 'uefi') await requireUefiSupport();
       if (config.name !== vm.name) throw new AppError('实例名称创建后不可修改');
       if (config.diskGiB !== vm.diskGiB) throw new AppError('磁盘大小创建后不可修改');
@@ -1018,6 +1042,7 @@ export class Machines extends EventEmitter {
       if (config.memoryMiB < distroInfo(vm.distro).minimumMemory)
         throw new AppError('内存低于发行版最低要求');
       createSchema.parse({ ...config, hardware: config.hardware ?? vm.hardware });
+      this.requireUnreservedPorts(config.forwards);
       Object.assign(vm, config);
       try {
         await this.save();
@@ -1534,6 +1559,7 @@ export class Machines extends EventEmitter {
         const previous = vm.forwards;
         let rollback = async () => {};
         const parsed = createSchema.parse({ name: vm.name, forwards: input }).forwards;
+        this.requireUnreservedPorts(parsed);
         for (const [otherId, other] of this.records) {
           if (
             otherId !== id &&
