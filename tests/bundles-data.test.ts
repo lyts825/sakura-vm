@@ -226,3 +226,36 @@ test('legacy portable backups without resize metadata remain importable', async 
   const restored = await bundles.import('legacy-backup', bundle());
   assert.equal(!!restored.pendingResize, false);
 });
+
+test('UEFI firmware choice survives portable export, import, and clone', async () => {
+  const id = randomUUID();
+  const vm = {
+    ...createSchema.parse({ name: 'firmware-source', firmware: 'uefi' }),
+    id, createdAt: new Date().toISOString(), snapshots: [],
+  };
+  const adopted: unknown[] = [];
+  const machines = {
+    locked: async (_id: string, work: () => Promise<unknown>) => work(),
+    requireStopped: () => {},
+    get: () => vm,
+    snapshotIdentity: async () => ({ key: key.privateText, seed }),
+    engine: { run: async (_tool: string, args: string[]) => {
+      if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
+      return '{}';
+    } },
+    adopt: async (config: unknown) => { adopted.push(config); return { id: randomUUID() }; },
+  } as unknown as Machines;
+  const bundles = new Bundles(machines);
+  const chunks: Buffer[] = [];
+  await bundles.export(id, new Writable({
+    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
+  }), () => {});
+  const contents = Buffer.concat(chunks);
+  const length = contents.readUInt32BE(8);
+  const manifest = JSON.parse(contents.subarray(12, 12 + length).toString('utf8'));
+  assert.equal(manifest.config.firmware, 'uefi');
+  await bundles.import('firmware-copy', Readable.from([contents]));
+  await bundles.clone(id, 'firmware-clone');
+  assert.equal((adopted[0] as any).firmware, 'uefi');
+  assert.equal((adopted[1] as any).firmware, 'uefi');
+});

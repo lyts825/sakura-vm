@@ -124,12 +124,13 @@ export class Bundles {
           distro,
           template,
           hardware,
+          firmware,
           pendingResize,
         } = this.machines.get(id);
         const identity = await this.machines.snapshotIdentity(id);
         const unsigned = manifestSchema.parse({
           version: 1,
-          config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template, hardware },
+          config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template, hardware, firmware },
           project: await this.project(id),
           projects: await this.projectCatalog(id),
           ...(pendingResize ? { pendingResize: true } : {}),
@@ -296,7 +297,7 @@ export class Bundles {
           { timeoutMs: 1800000, signal },
         );
         const identity = await this.machines.snapshotIdentity(id, snapshot);
-        const { memoryMiB, cpus, diskGiB, accelerator, distro, template, hardware } = vm;
+        const { memoryMiB, cpus, diskGiB, accelerator, distro, template, hardware, firmware } = vm;
         const project = await this.project(id);
         const projects = await this.projectCatalog(id);
         signal?.throwIfAborted();
@@ -310,6 +311,7 @@ export class Bundles {
             distro,
             template,
             hardware,
+            firmware,
             forwards: [],
           },
           disk,

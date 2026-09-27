@@ -283,7 +283,7 @@ vCPU 热插拔仍标记为部分实现：已接通 QMP 添加和上线检查，�
 
 ## 验证
 
-UEFI/OVMF 批次：`npm run verify` 全部通过，包括 438 项 Node 测试、50 个浏览器场景、生产构建、分发检查与 6 种编译后插件组合；真实 `npm run test:uefi` 验证 Debian 客户机从 OVMF 启动、NVRAM 持久化和再次启动。
+UEFI/OVMF 批次：439 项 Node 测试、50 个浏览器场景、生产构建、分发检查与 6 种编译后插件组合通过；真实 `npm run test:uefi` 验证 Debian 客户机从 OVMF 启动、NVRAM 持久化和再次启动。新增包测试验证 UEFI 选择在导出、导入与克隆中保留。
 
 通用镜像导入批次：435 项 Node 测试、49 个浏览器场景、生产构建、分发检查与 6 种编译后插件组合通过；真实 `npm run test:image-import` 验证 RAW、VMDK、VHDX、streamOptimized OVA 和小容量云镜像均可导入并启动。一次与 QEMU 并行的浏览器全集运行中 Chromium 新页面崩溃，QEMU 结束后单进程重跑 49/49 全部通过。
 
