@@ -5,6 +5,7 @@ import { join, resolve, sep } from 'node:path';
 import { SessionLock } from '../server/session-lock';
 import { Webhooks } from '../server/webhooks';
 import { AutomationRules } from '../server/automation-rules';
+import { FeatureRollouts } from '../server/feature-rollouts';
 import { LocalAssistant, assistantRequest } from '../server/local-assistant';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
@@ -1212,6 +1213,44 @@ test('automation rules preview events before explicitly enabling a real VM actio
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
     await rules.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('plugin rollout previews a host cohort, persists a policy and explains next startup', async ({ page }) => {
+  await app(page);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-rollout-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const rollouts = new FeatureRollouts(join(directory, 'rollouts.json'));
+  await rollouts.init();
+  await page.route('**/api/feature-rollouts', async (route) => {
+    try {
+      if (route.request().method() === 'GET') return route.fulfill({ json: {
+        ...rollouts.view(), selected: ['metrics'], active: ['metrics'],
+      } });
+      return route.fulfill({ json: await rollouts.configure(route.request().postDataJSON()) });
+    } catch (error: any) {
+      return route.fulfill({ status: error.status || 400, json: { error: error.message } });
+    }
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理插件灰度' }).click();
+    const panel = page.getByRole('region', { name: '插件功能灰度' });
+    await panel.getByLabel('插件', { exact: true }).selectOption('metrics');
+    await panel.getByLabel(/放行比例/).fill('0');
+    await panel.getByRole('button', { name: '预览当前主机' }).click();
+    await expect(panel.getByText(/当前草稿预览：将跳过/)).toBeVisible();
+    await panel.getByRole('button', { name: '保存灰度策略' }).click();
+    await expect(panel.getByText(/已保存策略的下次启动分桶：未命中/)).toBeVisible();
+    expect(rollouts.decision('metrics').allowed).toBe(false);
+    await panel.getByRole('button', { name: '刷新' }).click();
+    await expect(panel.getByLabel(/放行比例/)).toHaveValue('0');
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await rollouts.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

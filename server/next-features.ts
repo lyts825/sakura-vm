@@ -567,7 +567,8 @@ export const nextFeatureCatalog = [
   ['mobile-companion', '移动伴侣', '平台与扩展', 'P2', '保存移动设备配对和只读通知策略。', 'planned'],
   ['browser-extension', '浏览器扩展', '平台与扩展', 'P2', '保存浏览器扩展连接状态和权限摘要。', 'planned'],
   ['tray-companion', 'Windows 托盘伴侣', '平台与扩展', 'P1', '保存托盘进程连接和启动策略。', 'planned'],
-  ['feature-rollout', '功能开关与灰度', '平台与扩展', 'P0', '保存功能开关、目标比例和灰度版本。', 'planned'],
+  ['feature-rollout', '功能开关与灰度', '平台与扩展', 'P0',
+    '按稳定主机分桶和版本化比例控制所选插件下次启动时是否激活。', 'available'],
 ] as const;
 
 export type NextFeatureId = (typeof nextFeatureCatalog)[number][0];
@@ -809,6 +810,13 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '系统设置 → 事件自动化规则，按任务或告警筛选实例，先预览再启用实际执行；规则持久去重并记录每次操作。',
+      };
+    if (spec.id === 'feature-rollout')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '系统设置 → 插件功能灰度，预览当前主机分桶并保存插件、版本和放行比例；下次启动按策略实际选择插件。',
       };
     if (spec.id === 'graphql-api')
       return {

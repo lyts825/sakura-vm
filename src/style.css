@@ -3252,6 +3252,21 @@ label input {
   gap: 8px;
   overflow-wrap: anywhere;
 }
+.feature-rollout-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.feature-rollout-settings .shortcut-fields label,
+.feature-rollout-settings .shortcut-fields input,
+.feature-rollout-settings .shortcut-fields select {
+  min-width: 0;
+  width: 100%;
+}
+.feature-rollout-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
 .webhook-secret label {
   display: grid;
   gap: 8px;

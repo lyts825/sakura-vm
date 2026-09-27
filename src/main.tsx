@@ -112,6 +112,9 @@ const WebhookSettings = lazy(() =>
 const AutomationRuleSettings = lazy(() =>
   import('./AutomationRuleSettings').then((module) => ({ default: module.AutomationRuleSettings })),
 );
+const FeatureRolloutSettings = lazy(() =>
+  import('./FeatureRolloutSettings').then((module) => ({ default: module.FeatureRolloutSettings })),
+);
 const LocalAssistant = lazy(() =>
   import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
@@ -369,6 +372,7 @@ function App() {
   const [showSessionLock, setShowSessionLock] = useState(false);
   const [showWebhooks, setShowWebhooks] = useState(false);
   const [showAutomationRules, setShowAutomationRules] = useState(false);
+  const [showFeatureRollouts, setShowFeatureRollouts] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -1535,6 +1539,18 @@ function App() {
                 {showAutomationRules && (
                   <Suspense fallback={<p>正在读取自动化规则…</p>}>
                     <AutomationRuleSettings request={api} />
+                  </Suspense>
+                )}
+                <section className="system-card">
+                  <h3>插件功能灰度</h3>
+                  <p>按稳定主机分桶控制已选择插件在下次服务启动时是否激活。</p>
+                  <button className="secondary compact" onClick={() => setShowFeatureRollouts(!showFeatureRollouts)}>
+                    {showFeatureRollouts ? '收起插件灰度' : '管理插件灰度'}
+                  </button>
+                </section>
+                {showFeatureRollouts && (
+                  <Suspense fallback={<p>正在读取插件灰度…</p>}>
+                    <FeatureRolloutSettings request={api} />
                   </Suspense>
                 )}
                 <section className="system-card">

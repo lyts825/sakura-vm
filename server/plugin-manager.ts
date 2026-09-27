@@ -23,6 +23,7 @@ const changeSchema = z
 export class PluginManager {
   private selection = emptySelection();
   private active: string[] = [];
+  private startupPlanned: string[] = [];
   private errors: Record<string, string> = {};
   private lifecycle: PluginStatus['lifecycle'] = {};
   private migrations: string[] = [];
@@ -32,7 +33,8 @@ export class PluginManager {
     const migrated = migratePlugins(await readStore(this.file, emptySelection));
     this.selection = migrated.selection;
     this.migrations = migrated.migrations;
-    return resolvePlugins(this.selection);
+    this.startupPlanned = resolvePlugins(this.selection);
+    return [...this.startupPlanned];
   }
   activated(active: Iterable<string>, errors: Record<string, string> = {}, lifecycle: PluginStatus['lifecycle'] = {}) {
     this.active = [...active];
@@ -48,7 +50,8 @@ export class PluginManager {
       reasons: explainPlugins(this.selection),
       migrations: [...this.migrations],
       restartRequired:
-        planned.length !== this.active.length || planned.some((id) => !this.active.includes(id)),
+        planned.length !== this.startupPlanned.length ||
+        planned.some((id) => !this.startupPlanned.includes(id)),
       errors: { ...this.errors },
       lifecycle: structuredClone(this.lifecycle),
       plugins: PLUGINS,

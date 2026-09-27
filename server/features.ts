@@ -132,12 +132,18 @@ export class Features {
   retryHandler(store: Jobs) {
     return this.pluginJobs.get(store)?.retry;
   }
-  static async create(machines: Machines, selected: string[] = []) {
+  static async create(machines: Machines, selected: string[] = [],
+    rolloutAllowed: (pluginId: string) => boolean = () => true) {
     validateRegistry();
     const host = new Features(machines);
     for (const id of resolvePlugins({ ...emptySelection(), plugins: selected })) {
       const startedAt = performance.now();
       const manifest = PLUGINS.find((item) => item.id === id)!;
+      if (!rolloutAllowed(id)) {
+        host.errors[id] = '当前主机未命中功能灰度策略；请在系统设置中调整并重启 Sakura 服务';
+        host.lifecycle[id] = { phase: 'skipped', activationMs: 0 };
+        continue;
+      }
       if (manifest.requires.some((dependency) => !host.enabled.has(dependency.id))) {
         host.errors[id] = '依赖插件启动失败';
         host.lifecycle[id] = { phase: 'skipped', activationMs: 0 };

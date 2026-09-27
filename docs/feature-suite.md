@@ -77,8 +77,10 @@ POST 示例：
 ```json
 { "action": "check", "featureId": "multi-host-inventory" }
 { "action": "run", "featureId": "rpo-rto-planner", "options": { "backupGiB": 20, "bandwidthMbps": 200 } }
-{ "action": "configure", "featureId": "feature-rollout", "enabled": true, "options": { "percentage": 25 } }
+{ "action": "check", "featureId": "feature-rollout" }
 ```
+
+插件功能灰度通过系统设置或 `POST /api/feature-rollouts` 管理，可预览本机分桶并在下次服务启动时实际决定插件是否激活；见 [插件功能灰度](feature-rollouts.md)。
 
 CLI：
 

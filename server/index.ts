@@ -26,6 +26,7 @@ import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from './graphql-a
 import { SessionLock } from './session-lock.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { AutomationRules } from './automation-rules.ts';
+import { FeatureRollouts } from './feature-rollouts.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 
@@ -53,7 +54,13 @@ async function main() {
       },
       work,
     );
-  const features = await Features.create(machines, selectedPlugins);
+  let features: Features;
+  const rollouts = new FeatureRollouts(undefined,
+    () => !!features?.migration?.blocked,
+    (delta) => { if (features) features.mutations += delta; });
+  await rollouts.init();
+  features = await Features.create(machines, selectedPlugins,
+    (id) => rollouts.decision(id).allowed);
   const native = new NativeIntegration(
     () => nativeMappings(features),
     undefined,
@@ -257,6 +264,14 @@ async function main() {
       if (req.method === 'GET') return send(res, automationRules.view());
       if (req.method === 'POST') return send(res,
         await automationRules.configure(await authorizedBody(req, 32768)));
+      throw new AppError('不支持此方法', 405);
+    }
+    if (url.pathname === '/api/feature-rollouts') {
+      if (req.method === 'GET') return send(res, {
+        ...rollouts.view(), selected: selectedPlugins, active: [...features.enabled],
+      });
+      if (req.method === 'POST') return send(res,
+        await rollouts.configure(await authorizedBody(req, 32768)));
       throw new AppError('不支持此方法', 405);
     }
     if (url.pathname === '/api/native-integration') {
@@ -649,6 +664,7 @@ async function main() {
       () => native.close(),
       () => webhooks.close(),
       () => automationRules.close(),
+      () => rollouts.close(),
       () => retention.close(),
       () => graph.close(),
       () => features.close(),
