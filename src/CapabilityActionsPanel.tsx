@@ -392,6 +392,34 @@ export function CapabilityActionsPanel({
               </div>
             </div>
           )}
+          {selected === 'disaster-recovery-drill' && Array.isArray(result?.backups) && (
+            <div className="feature-card">
+              <p>选择一份已有备份进行临时恢复与启动验证；可在参数中补充检查路径和预期 SHA-256。</p>
+              {result.backups.length ? <div style={{ overflowX: 'auto' }}>
+                <table><thead><tr><th>备份</th><th>时间</th><th>大小</th><th>操作</th></tr></thead>
+                  <tbody>{result.backups.map((backup: any) => <tr key={backup.id}>
+                    <td><code>{backup.id}</code>{backup.encrypted ? ' · 已加密' : ''}</td>
+                    <td>{new Date(backup.createdAt).toLocaleString('zh-CN')}</td>
+                    <td>{(backup.bytes / 1024 ** 2).toFixed(1)} MiB</td>
+                    <td><button className="secondary compact" onClick={() =>
+                      setParameters(JSON.stringify({ mode: 'run', backupId: backup.id }, null, 2))
+                    }>准备演练</button></td>
+                  </tr>)}</tbody>
+                </table>
+              </div> : <p className="muted">当前实例还没有可演练的备份。</p>}
+            </div>
+          )}
+          {selected === 'disaster-recovery-drill' && result?.executed && result?.backupId && (
+            <div className="feature-card">
+              <p>{result.ready ? '备份恢复、客户机启动和路径验证均通过。' :
+                `演练未通过：${result.error || result.cleanupError || '请查看任务日志'}`}</p>
+              <p>恢复 {result.restoreMs ?? '—'} ms · 启动 {result.bootMs ?? '—'} ms ·
+                总计 {result.totalMs} ms</p>
+              {result.temporaryVmId && !result.temporaryVmRemoved && <p role="alert">
+                临时实例 {result.restoredName} 清理未完成，请检查后手动删除。
+              </p>}
+            </div>
+          )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
             typeof result?.samples === 'number' && (
               <div className="feature-card">

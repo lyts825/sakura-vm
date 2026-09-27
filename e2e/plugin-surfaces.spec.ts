@@ -2994,6 +2994,43 @@ test('tiering shows the reviewed destination and submits an explicit stopped-ins
     featureId: 'storage-tiering', options: { mode: 'apply' } });
 });
 
+test('disaster drill selects a verified backup before requesting a temporary restore', async ({
+  page,
+}) => {
+  await app(page, ['projects', 'platform', 'snapshots', 'backups'], true);
+  const backupId = randomUUID();
+  let submitted: any;
+  await page.route('**/api/vms/*/next-features*', (route) => {
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ json: { status: 'running' } });
+    }
+    return route.fulfill({ json: {
+      projectId: 'default', settings: {}, records: {}, executions: [],
+      jobs: [{ id: 'drill-job', action: 'next:disaster-recovery-drill', status: 'done',
+        log: '', startedAt: new Date().toISOString(),
+        result: { bytes: 100, sha256: 'a'.repeat(64) } }],
+      capabilities: capabilityViews('next'),
+      features: [{ id: 'disaster-recovery-drill', name: '灾备演练',
+        category: '存储与灾备', summary: '恢复并启动', state: 'available' }],
+    } });
+  });
+  await page.route('**/api/jobs/drill-job/result*', (route) => route.fulfill({ json: {
+    jobId: 'drill-job', result: { backups: [{ id: backupId,
+      createdAt: new Date().toISOString(), bytes: 1024 * 1024,
+      encrypted: false, storage: 'file' }] },
+  } }));
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('next 功能操作').selectOption('disaster-recovery-drill');
+  await expect(page.getByText(backupId)).toBeVisible();
+  await page.getByRole('button', { name: '准备演练' }).click();
+  await expect(page.getByLabel('next 功能参数')).toHaveValue(new RegExp(backupId));
+  await page.getByRole('button', { name: '提交灾备演练' }).click();
+  await expect.poll(() => submitted).toEqual({ action: 'run',
+    featureId: 'disaster-recovery-drill', options: { mode: 'run', backupId } });
+});
+
 test('metrics and commands load their own client entries when selected', async ({ page }) => {
   await app(page, ['projects', 'metrics', 'commands'], true);
   await expect(page.getByRole('tab', { name: '配置', exact: true })).toBeVisible();

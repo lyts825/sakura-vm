@@ -14,6 +14,7 @@ import { notebookInput } from './notebook-environments.ts';
 import { browserIdeInput } from './browser-ide.ts';
 import { storagePoolInput } from './storage-pools.ts';
 import { tieringInput } from './storage-tiering.ts';
+import { disasterRecoveryInput } from './disaster-recovery-drill.ts';
 
 export const relativePath = z
   .string()
@@ -61,6 +62,12 @@ export const capabilityDefinitions = {
     'SSD/HDD 分层', 'next', tieringInput.shape,
     { mode: 'status' },
     '指定两个已注册池的热/冷角色，按实例最近使用时间预览或迁移；启用后按小时定期检查停机实例。',
+    false, true,
+  ),
+  'disaster-recovery-drill': action(
+    '灾备演练', 'next', disasterRecoveryInput.shape,
+    { mode: 'status' },
+    '选择已有备份，临时恢复并启动客户机，可检查指定路径和 SHA-256；结束后删除临时实例并记录耗时。',
     false, true,
   ),
   'authenticated-ide-preview': action(

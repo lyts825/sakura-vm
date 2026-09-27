@@ -33,6 +33,7 @@ import { SnapshotReplications } from './snapshot-replications.ts';
 import { NotebookEnvironments } from './notebook-environments.ts';
 import { BrowserIde } from './browser-ide.ts';
 import { storagePoolInput } from './storage-pools.ts';
+import { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 
@@ -124,6 +125,9 @@ async function main() {
     await snapshotReplications.init();
     features.next.setSnapshotReplications(snapshotReplications);
   }
+  if (features.next && features.backups && features.bundles)
+    features.next.setDisasterRecovery(new DisasterRecoveryDrill(
+      machines, features.backups, features.bundles));
   const native = new NativeIntegration(
     () => nativeMappings(features),
     undefined,

@@ -18,6 +18,7 @@ import type { SnapshotReplications } from './snapshot-replications.ts';
 import type { NotebookEnvironments } from './notebook-environments.ts';
 import type { BrowserIde } from './browser-ide.ts';
 import { StorageTiering } from './storage-tiering.ts';
+import type { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -232,7 +233,8 @@ export const nextFeatureCatalog = [
     '检查数据目录所在磁盘的可访问性和基本容量信息。',
     'available',
   ],
-  ['disaster-recovery-drill', '灾备演练', '存储与灾备', 'P1', '保存可审计的灾备演练计划和结果。', 'planned'],
+  ['disaster-recovery-drill', '灾备演练', '存储与灾备', 'P1',
+    '校验备份、临时恢复并启动客户机，验证路径后清理实例并记录耗时。', 'available'],
   [
     'wireguard-overlay',
     'WireGuard 覆盖网络',
@@ -649,6 +651,7 @@ export class NextFeatures {
   private snapshotReplications?: SnapshotReplications;
   private notebookEnvironments?: NotebookEnvironments;
   private browserIde?: BrowserIde;
+  private disasterRecovery?: DisasterRecoveryDrill;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -683,6 +686,10 @@ export class NextFeatures {
 
   setBrowserIde(service: BrowserIde) {
     this.browserIde = service;
+  }
+
+  setDisasterRecovery(service: DisasterRecoveryDrill) {
+    this.disasterRecovery = service;
   }
 
   browserIdeLink(id: string) {
@@ -935,6 +942,12 @@ export class NextFeatures {
         signal, log)), adapter };
     if (spec.id === 'storage-tiering')
       return { ...(await this.storageTiering.run(id, merged, action, signal, log)), adapter };
+    if (spec.id === 'disaster-recovery-drill') {
+      if (!this.disasterRecovery)
+        return { ready: false, executed: false, adapter,
+          reason: '请启用备份与快照实例包插件，才能执行恢复演练。' };
+      return { ...(await this.disasterRecovery.run(id, merged, action, signal, log)), adapter };
+    }
     if (spec.id === 'graphql-api')
       return {
         ready: true,
