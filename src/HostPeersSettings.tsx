@@ -109,7 +109,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
     </div>
     <div className="feature-card">
       <h4>冷迁移队列</h4>
-      <p>停止来源实例后，在该实例的能力中心选择“跨主机冷迁移”，填入下方目标 ID。先传输并检查目标，再明确确认移除源实例。</p>
+      <p>停止来源实例后，在该实例的能力中心选择“跨主机冷迁移”，填入下方目标 ID。先传输并检查目标，再明确确认移除源实例。要处理本机所有实例，可在任意实例的能力中心选择“主机维护排空”；批量移除前须先完成整批复制并逐台验证。</p>
       {!migrations.data?.enabled && <p className="subtle-note">需要启用平台与快照插件。</p>}
       {migrations.data?.enabled && !migrations.data.entries.length &&
         <p className="subtle-note">尚无迁移任务。</p>}

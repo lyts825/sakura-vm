@@ -93,8 +93,8 @@ export const nextFeatureCatalog = [
     '主机维护排空',
     '远程主机与集群',
     'P0',
-    '在维护前登记排空计划并追踪实例迁移状态。',
-    'planned',
+    '将当前停止实例分批复制到已授权目标；确认全部目标副本后逐台复核并移除源实例。',
+    'available',
   ],
   [
     'uefi-ovmf',
@@ -861,6 +861,14 @@ export class NextFeatures {
       return { ...(action === 'run'
         ? await this.coldMigrations.run(id, merged, signal || new AbortController().signal)
         : await this.coldMigrations.preview(id, merged)), adapter };
+    }
+    if (spec.id === 'maintenance-drain') {
+      if (!this.coldMigrations)
+        return { ready: false, executed: false, adapter,
+          reason: '请启用快照与实例包插件，并完成主机配对。' };
+      return { ...(action === 'run'
+        ? await this.coldMigrations.runDrain(merged, signal || new AbortController().signal)
+        : await this.coldMigrations.previewDrain(merged)), adapter };
     }
     if (spec.id === 'graphql-api')
       return {

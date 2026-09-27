@@ -122,3 +122,91 @@ test('an interrupted transfer becomes reviewable and retryable after restart', a
   assert.equal(service.view().entries[0].status, 'review');
   assert.match(service.view().entries[0].error || '', /服务重启/);
 });
+
+test('maintenance drain copies every stopped VM before allowing a reviewed removal pass', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'sakura-maintenance-drain-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const peerId = randomUUID();
+  const remoteId = randomUUID();
+  const firstId = randomUUID();
+  const secondId = randomUUID();
+  const records = new Map<string, { id: string; name: string; cpus: number; memoryMiB: number }>([
+    [firstId, { id: firstId, name: 'alpha', cpus: 2, memoryMiB: 1024 }],
+    [secondId, { id: secondId, name: 'beta', cpus: 2, memoryMiB: 1024 }],
+  ]);
+  let running: string = secondId;
+  let failBeta = true;
+  let changedBeta = false;
+  const receipts = new Map<string, { id: string; name: string }>();
+  const transfers = new Map<string, string[]>();
+  const deleted: string[] = [];
+  const machines = {
+    records,
+    get: (id: string) => {
+      const vm = records.get(id);
+      if (!vm) throw new Error('missing');
+      return vm;
+    },
+    requireStopped: (id: string) => {
+      if (id === running) throw new Error('请先停止实例');
+    },
+    migrationFingerprint: async (id: string) => ({ recordHash: id === secondId && changedBeta
+      ? 'a'.repeat(64) : id.replaceAll('-', '').padEnd(64, '0'),
+      diskSize: 1024, diskMtimeMs: 1234 }),
+    delete: async (id: string) => {
+      deleted.push(id);
+      records.delete(id);
+    },
+  } as unknown as Machines;
+  const peers = {
+    view: () => ({ outbound: [{ id: peerId, remoteId, name: 'Remote' }] }),
+    score: async () => ({ candidates: [{ id: remoteId, source: 'peer', eligible: true,
+      score: 90, reasons: [], status: { platform: 'win32', arch: 'x64' } }] }),
+    status: async () => ({ platform: 'win32', arch: 'x64' }),
+    upload: async (_peer: string, transferId: string, name: string) => {
+      transfers.set(name, [...(transfers.get(name) || []), transferId]);
+      if (name === 'beta' && failBeta) throw new Error('temporary transfer failure');
+      if (!receipts.has(transferId)) receipts.set(transferId, { id: randomUUID(), name });
+      return receipts.get(transferId)!;
+    },
+    importStatus: async (_peer: string, transferId: string) => receipts.get(transferId) || null,
+  } as unknown as HostPeers;
+  const service = new ColdMigrations(machines, {} as Bundles, peers, join(root, 'queue.json'));
+  await service.init();
+  const copy = { peerId, confirmSourceRemoval: false };
+  const remove = { peerId, confirmSourceRemoval: true };
+  assert.equal((await service.previewDrain({ ...copy,
+    targetNames: { [randomUUID()]: 'unused' } })).ready, false);
+  assert.equal((await service.previewDrain({ ...copy,
+    targetNames: { [secondId]: 'alpha' } })).ready, false);
+  const blocked = await service.previewDrain(copy);
+  assert.equal(blocked.ready, false);
+  assert.match(JSON.stringify(blocked.machines), /请先停止实例/);
+  running = '';
+  await assert.rejects(service.runDrain(remove, new AbortController().signal), /尚无已确认/);
+  assert.equal(deleted.length, 0);
+  await assert.rejects(service.runDrain(copy, new AbortController().signal), /temporary transfer failure/);
+  assert.equal(deleted.length, 0);
+  failBeta = false;
+  const copied = await service.runDrain(copy, new AbortController().signal);
+  assert.equal(copied.phase, 'copied');
+  assert.equal(copied.remainingSourceVms, 2);
+  assert.equal(deleted.length, 0);
+  assert.equal(new Set(transfers.get('beta')).size, 1);
+  assert.equal(new Set(transfers.get('alpha')).size, 1);
+  changedBeta = true;
+  assert.equal((await service.previewDrain(copy)).ready, false);
+  const namedCopy = { ...copy, targetNames: { [secondId]: 'beta-updated' } };
+  const namedRemove = { ...remove, targetNames: namedCopy.targetNames };
+  assert.equal((await service.previewDrain(namedCopy)).ready, true);
+  await service.runDrain(namedCopy, new AbortController().signal);
+  const betaTransfer = transfers.get('beta-updated')![0];
+  const betaReceipt = receipts.get(betaTransfer)!;
+  receipts.delete(betaTransfer);
+  assert.equal((await service.previewDrain(namedRemove)).ready, false);
+  receipts.set(betaTransfer, betaReceipt);
+  const moved = await service.runDrain(namedRemove, new AbortController().signal);
+  assert.equal(moved.phase, 'moved');
+  assert.equal(moved.remainingSourceVms, 0);
+  assert.deepEqual(new Set(deleted), new Set([firstId, secondId]));
+});

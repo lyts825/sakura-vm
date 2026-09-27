@@ -1320,6 +1320,7 @@ test('host pairing connects over pinned TLS and shows remote resources and revoc
     await expect(ranking.locator('.host-peer-row').first()).toContainText('评分');
     await expect(panel.getByText(/migrated.*目标已导入，源仍保留/)).toBeVisible();
     await expect(panel.getByText(/迁移目标 ID/)).toBeVisible();
+    await expect(panel.getByText(/主机维护排空/)).toBeVisible();
     await target.configure({ operation: 'revoke-inbound', id: target.view().incoming[0].id });
     await panel.getByRole('button', { name: '检查全部主机' }).click();
     await expect(panel.getByText(/连接失败：远端返回 HTTP 401/)).toBeVisible();

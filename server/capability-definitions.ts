@@ -8,7 +8,7 @@ import { powerPolicySchema } from './power-policy.ts';
 import { networkEmulationShape } from './network-emulation.ts';
 import { flamegraphOptions } from './flamegraph.ts';
 import { ebpfProfileOptions } from './ebpf-profiler.ts';
-import { coldMigrationInput } from './cold-migration.ts';
+import { coldMigrationInput, maintenanceDrainInput } from './cold-migration.ts';
 
 export const relativePath = z
   .string()
@@ -43,6 +43,15 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'maintenance-drain': action(
+    '主机维护排空',
+    'next',
+    maintenanceDrainInput.shape,
+    { peerId: '', confirmSourceRemoval: false, targetNames: {} },
+    '在任意实例的能力中心检查本机全部实例。先停止所有实例并复制到同一已授权目标；逐台验证目标后再明确确认移除源实例。目标名称冲突或源实例变化时，可用 targetNames 按实例 ID 指定新目标名。',
+    false,
+    true,
+  ),
   'cold-migration': action(
     '跨主机冷迁移',
     'next',

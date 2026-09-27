@@ -13,6 +13,10 @@ export const coldMigrationInput = z.object({
   confirmSourceRemoval: z.boolean().default(false),
 }).strict();
 type Input = z.infer<typeof coldMigrationInput>;
+export const maintenanceDrainInput = z.object({
+  peerId: z.uuid(), confirmSourceRemoval: z.boolean().default(false),
+  targetNames: z.record(z.uuid(), createSchema.shape.name).default({}),
+}).strict();
 
 const fingerprintSchema = z.object({
   recordHash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -34,6 +38,8 @@ const sameFingerprint = (a: MigrationFingerprint, b: MigrationFingerprint) =>
 export class ColdMigrations {
   private queue?: Queue;
   private writes: Promise<unknown> = Promise.resolve();
+  private activeRuns = new Set<string>();
+  private draining = false;
   constructor(private machines: Machines, private bundles: Bundles, private peers: HostPeers,
     private file = join(DATA, 'cold-migrations.json')) {}
 
@@ -106,6 +112,8 @@ export class ColdMigrations {
         parsed.data.targetName);
       const { peer, candidate } = await this.target(id, parsed.data, !receipt);
       const fingerprint = await this.machines.migrationFingerprint(id);
+      if (prior && !sameFingerprint(prior.fingerprint, fingerprint))
+        throw new AppError('源实例与之前的迁移队列记录不同；请改用新的目标名称重新迁移', 409);
       return { ready: true, executed: false, target: { id: peer.id, name: peer.name,
         hostId: peer.remoteId, score: candidate.score }, fingerprint,
         sourceRemovalRequested: parsed.data.confirmSourceRemoval,
@@ -118,6 +126,13 @@ export class ColdMigrations {
   }
 
   async run(id: string, input: unknown, signal: AbortSignal) {
+    if (this.activeRuns.has(id)) throw new AppError('此实例已有迁移任务正在进行', 409);
+    this.activeRuns.add(id);
+    try { return await this.runOne(id, input, signal); }
+    finally { this.activeRuns.delete(id); }
+  }
+
+  private async runOne(id: string, input: unknown, signal: AbortSignal) {
     const options = coldMigrationInput.parse(input);
     signal.throwIfAborted();
     const fingerprint = await this.machines.migrationFingerprint(id);
@@ -182,5 +197,85 @@ export class ColdMigrations {
         await update('review', prior?.remoteVmId, (error as Error).message).catch(() => {});
       throw error;
     }
+  }
+
+  async previewDrain(input: unknown) {
+    const parsed = maintenanceDrainInput.safeParse(input);
+    if (!parsed.success) return { ready: false, executed: false,
+      reason: '请选择已配对目标主机，并填写源实例移除确认。', machines: [] };
+    const ids = [...this.machines.records.keys()].sort();
+    if (Object.keys(parsed.data.targetNames).some((id) => !ids.includes(id)))
+      return { ready: false, executed: false,
+        reason: '目标名称映射包含本机不存在的实例 ID', machines: [] };
+    const names = ids.map((id) => parsed.data.targetNames[id] || this.machines.get(id).name);
+    if (new Set(names).size !== names.length)
+      return { ready: false, executed: false,
+        reason: '同一批次不能为多个实例使用相同目标名称', machines: [] };
+    const machines = [];
+    for (const id of ids) {
+      const name = this.machines.get(id).name;
+      const targetName = parsed.data.targetNames[id] || name;
+      const options = { peerId: parsed.data.peerId,
+        confirmSourceRemoval: parsed.data.confirmSourceRemoval, targetName };
+      const entry = this.queue!.entries.findLast((item) => item.vmId === id &&
+        item.peerId === options.peerId && item.targetName === targetName && item.status !== 'moved');
+      if (parsed.data.confirmSourceRemoval &&
+          (entry?.status !== 'copied' || !entry.remoteVmId)) {
+        machines.push({ id, name, targetName, ready: false,
+          reason: '尚无已确认的目标副本，请先复制整个批次' });
+        continue;
+      }
+      if (parsed.data.confirmSourceRemoval) {
+        try {
+          if (!await this.existingReceipt(entry, options.peerId, targetName)) {
+            machines.push({ id, name, targetName, ready: false,
+              reason: '目标副本回执已失效，保留源实例' });
+            continue;
+          }
+        } catch (error) {
+          machines.push({ id, name, targetName, ready: false, reason: (error as Error).message });
+          continue;
+        }
+      }
+      const result = await this.preview(id, options);
+      machines.push({ id, name, targetName, ready: result.ready,
+        ...(result.ready ? { remoteVmId: entry?.remoteVmId } : { reason: result.reason }) });
+    }
+    const ready = machines.every((item) => item.ready);
+    return { ready, executed: false, machines,
+      ...(ready ? { message: parsed.data.confirmSourceRemoval
+        ? '所有当前实例已有目标副本；执行后逐台复核并移除源实例。'
+        : '执行后逐台复制当前停止实例，保留所有源实例供目标验证。' }
+        : { reason: '部分实例未停止、目标不可用或缺少已确认副本' }) };
+  }
+
+  async runDrain(input: unknown, signal: AbortSignal) {
+    const options = maintenanceDrainInput.parse(input);
+    if (this.draining) throw new AppError('已有主机排空任务正在进行', 409);
+    this.draining = true;
+    try {
+      signal.throwIfAborted();
+      const preview = await this.previewDrain(options);
+      if (!preview.ready) throw new AppError(preview.machines
+        .filter((item) => !item.ready).map((item) => `${item.name}：${'reason' in item
+          ? item.reason : '检查失败'}`).join('；').slice(0, 500) ||
+        ('reason' in preview ? preview.reason : '主机排空检查失败'), 409);
+      const completed = [];
+      for (const vm of preview.machines) {
+        signal.throwIfAborted();
+        const result = await this.run(vm.id, { peerId: options.peerId,
+          confirmSourceRemoval: options.confirmSourceRemoval,
+          targetName: vm.targetName }, signal);
+        completed.push({ sourceVmId: vm.id, name: vm.name, targetName: vm.targetName,
+          remoteVmId: result.remoteVmId,
+          sourceRemoved: result.sourceRemoved });
+      }
+      return { ready: true, executed: true,
+        phase: options.confirmSourceRemoval ? 'moved' : 'copied', completed,
+        remainingSourceVms: this.machines.records.size,
+        message: options.confirmSourceRemoval
+          ? '批次已逐台复核并移除源实例；若有新建实例，请再次检查。'
+          : '当前实例已复制到目标，源实例仍保留；验证目标后再次执行并确认移除。' };
+    } finally { this.draining = false; }
   }
 }

@@ -237,6 +237,17 @@ export function CapabilityActionsPanel({
                 <p className="subtle-note">迁移已完成，但队列状态保存失败；请检查目标实例。</p>}
             </div>
           )}
+          {selected === 'maintenance-drain' && Array.isArray(result?.completed) && (
+            <div className="feature-card">
+              <p>{result.phase === 'moved' ? '排空批次已复核并移除来源实例。' :
+                '排空批次已复制；来源实例仍保留。请逐台验证目标后，用相同目标 ID 再次执行并确认移除。'}</p>
+              <p>已处理 {result.completed.length} 台 · 本机剩余 {result.remainingSourceVms} 台</p>
+              {result.completed.map((item: any) => <p key={item.sourceVmId}>
+                {item.name} → {item.targetName}：目标 <code>{item.remoteVmId}</code> ·
+                {item.sourceRemoved ? '来源已移除' : '来源保留'}
+              </p>)}
+            </div>
+          )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
             typeof result?.samples === 'number' && (
               <div className="feature-card">
