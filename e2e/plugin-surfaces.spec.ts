@@ -3030,6 +3030,53 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
+test('security scan shows OSV package matches and never reports an incomplete lookup as clean', async ({ page }) => {
+  await app(page, ['projects', 'automation'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  let complete = true;
+  let submitted = 0;
+  await page.route('**/api/vms/*/advanced*', (route) => {
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON()).toEqual({ action: 'security-scan' });
+      submitted++;
+      return route.fulfill({ json: complete ? {
+        findings: ['OSV 发现 1 个受影响软件包（1 个漏洞编号）'],
+        output: 'CVE\nOSV: Alpine:v3.23',
+        vulnerabilityScan: {
+          status: 'complete', ecosystem: 'Alpine:v3.23', packagesChecked: 52,
+          affectedPackages: 1, vulnerabilityCount: 1,
+          matches: [{ name: 'curl', version: '8.0-r0', ids: ['ALPINE-CVE-2026-80231'] }],
+        },
+      } : {
+        findings: ['漏洞库匹配未完成，结果不能视为无漏洞'], output: 'OSV 不可达',
+        vulnerabilityScan: {
+          status: 'unavailable', ecosystem: 'Alpine:v3.23', packagesChecked: 52,
+          affectedPackages: 0, vulnerabilityCount: 0, matches: [], error: 'OSV 不可达',
+        },
+      } });
+    }
+    return route.fulfill({ json: {
+      settings: { schedule: { enabled: false, idleMinutes: 0, idleAction: 'stop' },
+        alerts: { enabled: false, cpuPercent: 90, memoryPercent: 90, diskPercent: 90,
+          cooldownMinutes: 30, taskFailures: true, serviceFailures: true } },
+      features: [], presets: {}, events: [], history: [], job: null,
+    } });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByRole('button', { name: '开始扫描', exact: true }).click();
+  await expect(page.getByText('Alpine:v3.23：已核对 52 个源包', { exact: false })).toBeVisible();
+  await page.getByText('查看已匹配的软件包和漏洞编号').click();
+  await expect(page.getByRole('link', { name: 'ALPINE-CVE-2026-80231' })).toHaveAttribute(
+    'href', 'https://osv.dev/vulnerability/ALPINE-CVE-2026-80231');
+  complete = false;
+  await page.getByRole('button', { name: '开始扫描', exact: true }).click();
+  await expect.poll(() => submitted).toBe(2);
+  await expect(page.getByText('漏洞匹配未完成：OSV 不可达')).toBeVisible();
+  await expect(page.getByText('未发现明显问题')).toHaveCount(0);
+});
+
 test('the empty install shows the core and the current plugin catalog', async ({ page }) => {
   await app(page);
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button')).toHaveCount(3);

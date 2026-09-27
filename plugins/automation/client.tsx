@@ -202,7 +202,16 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   >('list');
   const [networkTarget, setNetworkTarget] = useState('example.com');
   const [networkResult, setNetworkResult] = useState('');
-  const [securityResult, setSecurityResult] = useState<{ findings: string[]; output: string } | null>(null);
+  const [securityResult, setSecurityResult] = useState<{
+    findings: string[];
+    output: string;
+    vulnerabilityScan?: {
+      status: 'complete' | 'unavailable'; ecosystem: string | null; packagesChecked: number;
+      affectedPackages: number; vulnerabilityCount: number;
+      matches: Array<{ name: string; version: string; ids: string[] }>;
+      error?: string;
+    };
+  } | null>(null);
   const [ports, setPorts] = useState<number[]>([]);
   const [memoryTarget, setMemoryTarget] = useState(active.memoryTargetMiB || active.memoryMiB);
   const [preset, setPreset] = useState<ResourcePresetId>('development');
@@ -344,7 +353,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runSecurity = () =>
     action.run(async () => {
-      const result = await request<{ findings: string[]; output: string }>(
+      const result = await request<NonNullable<typeof securityResult>>(
         `/vms/${active.id}/advanced`,
         'POST',
         {
@@ -1249,7 +1258,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 <ShieldCheck size={17} />
                 安全扫描
               </h3>
-              <p className="muted">只读检查 SSH 设置、待更新软件包和可写系统文件。</p>
+              <p className="muted">只读检查 SSH 设置、待更新软件包和可写系统文件；开始扫描会把已安装源包名称及版本发送给 OSV 漏洞库匹配。</p>
               <button
                 className="secondary compact"
                 disabled={action.busy || active.status !== 'running'}
@@ -1262,6 +1271,30 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   <p className={securityResult.findings.length ? 'machine-error' : 'feature-success'}>
                     {securityResult.findings.length ? securityResult.findings.join('；') : '未发现明显问题'}
                   </p>
+                  {securityResult.vulnerabilityScan && (
+                    <p className="subtle-note">
+                      {securityResult.vulnerabilityScan.status === 'complete'
+                        ? `${securityResult.vulnerabilityScan.ecosystem}：已核对 ${securityResult.vulnerabilityScan.packagesChecked} 个源包，${securityResult.vulnerabilityScan.affectedPackages} 个包匹配已知漏洞，共 ${securityResult.vulnerabilityScan.vulnerabilityCount} 个漏洞编号。`
+                        : `漏洞匹配未完成：${securityResult.vulnerabilityScan.error || '请重试'}`}
+                    </p>
+                  )}
+                  {securityResult.vulnerabilityScan?.status === 'complete' &&
+                    securityResult.vulnerabilityScan.matches.length > 0 && (
+                      <details>
+                        <summary>查看已匹配的软件包和漏洞编号</summary>
+                        <div className="feature-list">
+                          {securityResult.vulnerabilityScan.matches.slice(0, 20).map((match) => (
+                            <div key={`${match.name}@${match.version}`}>
+                              <strong>{match.name}@{match.version}</strong>{' '}
+                              {match.ids.slice(0, 5).map((id) => (
+                                <a key={id} href={`https://osv.dev/vulnerability/${id}`}
+                                  target="_blank" rel="noopener noreferrer">{id}{' '}</a>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                   <details>
                     <summary>查看原始检查结果</summary>
                     <pre className="feature-log">{securityResult.output}</pre>

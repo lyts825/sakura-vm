@@ -133,7 +133,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 多显示器与无障碍 / `multi-monitor` | 部分实现 | 有单桌面分辨率、自适应缩放与全屏；缺多屏拓扑和布局持久化。 | [server/feature-suite.ts:64](D:/27247/Desktop/Sakura/server/feature-suite.ts:64) |
 | 历史资源指标 / `metrics-history` | 部分实现 | CPU/内存/磁盘采样历史已保存；未保存目录承诺的网络趋势。 | [server/feature-suite.ts:354](D:/27247/Desktop/Sakura/server/feature-suite.ts:354) |
 | 阈值告警与通知中心 / `alerts` | 部分实现 | 有资源阈值事件与确认；缺服务/备份统一告警及外部通知投递。 | [server/feature-suite.ts:511](D:/27247/Desktop/Sakura/server/feature-suite.ts:511) |
-| 镜像与软件包安全扫描 / `security-scan` | 部分实现 | 只有 SSH 设置、升级列表和可写系统文件检查；没有 CVE 数据源和漏洞匹配。 | [server/feature-suite.ts:635](D:/27247/Desktop/Sakura/server/feature-suite.ts:635) |
+| 镜像与软件包安全扫描 / `security-scan` | 已有专用操作 | 检查 SSH 设置、升级与可写系统文件，并按已安装源包版本实际匹配 OSV 漏洞；扫描失败明确显示未完成。 | [docs/security-scan.md](security-scan.md) |
 | 多用户与只读分享 / `rbac-sharing` | 未实现 | 只有本机共享管理令牌与同源检查；没有多用户、角色及只读短期分享。 | [server/index.ts:46](D:/27247/Desktop/Sakura/server/index.ts:46) |
 | 插件 API 与自动化触发器 / `plugin-api` | 部分实现 | 内置插件声明、生命周期、事件及独立调度器已实现；缺外部 Webhook、任意第三方隔离插件和完整触发器系统。 | [server/plugin-api.ts:46](D:/27247/Desktop/Sakura/server/plugin-api.ts:46) |
 

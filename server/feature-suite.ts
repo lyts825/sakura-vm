@@ -21,6 +21,7 @@ import { observeAvailability, type AvailabilitySpan } from './availability.ts';
 import type { SecretRotationItem } from './secret-rotation.ts';
 import { hostPower, powerPolicy, powerDecision, type PowerSample } from './power-policy.ts';
 import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
+import { scanGuestVulnerabilities } from './security-vulnerabilities.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -137,11 +138,11 @@ const availableFeatureIds = new Set<FeatureId>([
   'snapshot-diff',
   'online-snapshots',
   'package-cache',
+  'security-scan',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'language-services',
   'multi-monitor',
-  'security-scan',
 ]);
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
@@ -469,6 +470,9 @@ export class FeatureSuite {
     } else if (featureId === 'package-cache') {
       result.ready = true;
       result.reason = '工作空间 → 软件包：预取软件包和依赖到客户机磁盘缓存，查看缓存后可完全禁止网络地安装。';
+    } else if (featureId === 'security-scan') {
+      result.ready = this.machines.state(id) === 'running';
+      result.reason = '工作空间 → 安全扫描：检查客户机 SSH 和系统文件，并用 OSV 匹配已安装源包的漏洞；查询失败会明确显示未完成。';
     } else if (
       featureId === 'windows-mount' ||
       featureId === 'file-drop' ||
@@ -971,14 +975,28 @@ export class FeatureSuite {
       30_000,
       signal,
     );
-    const output = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''}`.trim();
+    const localOutput = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ''}`.trim();
+    const vulnerabilityScan = await scanGuestVulnerabilities(this.machines, id, signal);
+    const vulnerabilityDetails = vulnerabilityScan.status === 'complete'
+      ? [
+          `OSV: ${vulnerabilityScan.ecosystem}，检查 ${vulnerabilityScan.packagesChecked} 个源包，${vulnerabilityScan.affectedPackages} 个受影响包，${vulnerabilityScan.vulnerabilityCount} 个不同漏洞编号`,
+          ...vulnerabilityScan.matches.map((item) =>
+            `${item.name}@${item.version}: ${item.ids.join(', ')}`),
+        ].join('\n')
+      : `OSV 漏洞匹配未完成：${vulnerabilityScan.error || '未知错误'}`;
+    const output = `${localOutput}\nCVE\n${vulnerabilityDetails}`.trim();
     const findings = [
-      ...(output.includes('passwordauthentication yes') ? ['SSH 允许密码认证'] : []),
-      ...(output.includes('permitrootlogin yes') ? ['SSH 允许 root 密码登录'] : []),
-      ...(output.split('UPDATES\n')[1]?.split('WORLD-WRITABLE\n')[0].trim() ? ['存在待更新的软件包'] : []),
-      ...(output.split('WORLD-WRITABLE\n')[1]?.trim() ? ['发现可写系统文件'] : []),
+      ...(localOutput.includes('passwordauthentication yes') ? ['SSH 允许密码认证'] : []),
+      ...(localOutput.includes('permitrootlogin yes') ? ['SSH 允许 root 密码登录'] : []),
+      ...(localOutput.split('UPDATES\n')[1]?.split('WORLD-WRITABLE\n')[0].trim() ? ['存在待更新的软件包'] : []),
+      ...(localOutput.split('WORLD-WRITABLE\n')[1]?.trim() ? ['发现可写系统文件'] : []),
+      ...(vulnerabilityScan.status === 'complete' && vulnerabilityScan.vulnerabilityCount
+        ? [`OSV 发现 ${vulnerabilityScan.affectedPackages} 个受影响软件包（${vulnerabilityScan.vulnerabilityCount} 个漏洞编号）`]
+        : []),
+      ...(vulnerabilityScan.status !== 'complete' ? ['漏洞库匹配未完成，结果不能视为无漏洞'] : []),
     ];
-    return { checkedAt: new Date().toISOString(), findings, output, code: result.code };
+    return { checkedAt: new Date().toISOString(), findings, output, code: result.code,
+      vulnerabilityScan };
   }
   async action(id: string, input: unknown, signal?: AbortSignal) {
     const value = z
