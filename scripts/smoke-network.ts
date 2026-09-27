@@ -16,6 +16,7 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { Features } = await import('../server/features.ts');
 const { freePort } = await import('../server/qmp.ts');
 const { networkSchema } = await import('../server/network-profiles.ts');
+const { networkEmulation } = await import('../server/network-emulation.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 let features: FeaturesType | undefined;
@@ -52,6 +53,17 @@ try {
     300000,
   );
   assert.equal(installed.code, 0, installed.stderr);
+  const netemOptions = { mode: 'apply', interface: 'lo', delayMs: 15, jitterMs: 0, lossPercent: 0 };
+  const netemPreview = await networkEmulation(machines, vm.id, netemOptions, 'check');
+  assert.equal(netemPreview.ready, true);
+  assert.equal(netemPreview.executed, false);
+  const netemApplied = await networkEmulation(machines, vm.id, netemOptions, 'run');
+  assert.equal(netemApplied.executed, true);
+  assert.match(String(netemApplied.current), /qdisc netem .* root.*delay 15ms/);
+  const netemCleared = await networkEmulation(machines, vm.id, { mode: 'clear', interface: 'lo' }, 'run');
+  assert.equal(netemCleared.executed, true);
+  assert.equal(netemCleared.netemActive, false);
+  console.log('Real guest tc/netem preview, delay application and cleanup passed');
   await features.workspaces.save(vm.id, { directory: '/workspace/app' });
   const before = await machines.readGuestFile(vm.id, '/etc/resolv.conf');
   const port = await freePort();

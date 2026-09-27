@@ -5,6 +5,7 @@ import { cpuTopologySchema, deviceProfileSchema } from '../shared/hardware.ts';
 import { reservationSchema } from './resource-policies.ts';
 import { diskHealthThresholds } from './host-disk-health.ts';
 import { powerPolicySchema } from './power-policy.ts';
+import { networkEmulationShape } from './network-emulation.ts';
 
 export const relativePath = z
   .string()
@@ -39,6 +40,15 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'network-emulation': action(
+    '客户机延迟与丢包模拟',
+    'next',
+    networkEmulationShape,
+    { mode: 'inspect', interface: 'eth0', delayMs: 50, jitterMs: 0, lossPercent: 0 },
+    '检查客户机 tc 队列规则，预览指定网卡上的延迟、抖动和丢包参数；apply 实际设置 netem，clear 仅清除当前根 netem 规则。规则由 Linux 内核管理，客户机重启后需重新应用。',
+    true,
+    true,
+  ),
   'power-aware-schedule': action(
     '宿主电源感知调度',
     'extended',

@@ -10,6 +10,7 @@ import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { hardwareCompatibility } from './hardware-compatibility.ts';
 import { firmwareSupport } from './firmware.ts';
+import { networkEmulation } from './network-emulation.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -271,8 +272,8 @@ export const nextFeatureCatalog = [
     '延迟丢包模拟',
     '网络与服务治理',
     'P1',
-    '检查 tc/netem 工具并预览网络仿真参数。',
-    'planned',
+    '检查并实际设置或清除客户机网卡的 tc/netem 延迟、抖动和丢包规则。',
+    'available',
   ],
   ['service-mesh', '服务网格边车', '网络与服务治理', 'P2', '登记服务边车策略和可选代理检测结果。', 'planned'],
   [
@@ -613,7 +614,6 @@ const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'acme-renewal':
     'if command -v certbot >/dev/null; then certbot --version; else command -v lego >/dev/null && lego --version; fi',
   'network-topology': 'command -v ip >/dev/null && ip addr && ip route',
-  'network-emulation': 'command -v tc >/dev/null && tc qdisc show',
   'ebpf-profiler': 'command -v bpftool >/dev/null && bpftool feature probe',
   flamegraph: 'command -v perf >/dev/null && perf --version',
   'build-cache': 'test -d /workspace/.cache || test -d /workspace/target',
@@ -844,6 +844,11 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '在实例的“服务与端口”页管理本机 HTTPS 主机证书、自动轮换策略和下一次轮换时间；远程主机配对仍由独立功能负责。',
+      };
+    if (spec.id === 'network-emulation')
+      return {
+        ...(await networkEmulation(this.machines, id, merged, action, signal)),
+        adapter,
       };
     if (spec.id === 'nested-virtualization') {
       if (this.machines.state(id) !== 'running')
