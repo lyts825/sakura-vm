@@ -2,14 +2,14 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 176 条有实现入口，**74 条仍未完成**（68 条规划、6 条部分实现）。按标识去重后为 73 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 177 条有实现入口，**73 条仍未完成**（67 条规划、6 条部分实现）。按标识去重后为 72 个未完成标识；不同条目仍有范围重叠。
 
-本轮已接通 126 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
+本轮已接通 127 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 第一批 | 50 | 34 | 3 | 13 | 16 |
-| 第二批 | 100 | 85 | 1 | 14 | 15 |
+| 第二批 | 100 | 86 | 1 | 13 | 14 |
 | 第三批 | 100 | 57 | 2 | 41 | 43 |
 
 ## 第一批
@@ -52,33 +52,32 @@
 
 ### 存储
 
-- [ ] **虚拟磁盘加密**（P1 · 规划） · [`disk-encryption`](../server/extended-features.ts#L47) — 保护宿主机上的实例磁盘文件。 对应完整流程尚未实现。
-- [ ] **项目磁盘配额**（P1 · 规划） · [`project-quota`](../server/extended-features.ts#L50) — 限制单个项目可使用的空间。 对应完整流程尚未实现。
-- [ ] **客户机目录配额**（P1 · 部分实现） · [`guest-quota`](../server/extended-features.ts#L51) — 目前为 quota 探测，尚无完整配额设置与管理流程。
-- [ ] **安全擦除证明**（P2 · 规划） · [`secure-erase`](../server/extended-features.ts#L62) — 擦除文件并记录操作证明。 对应完整流程尚未实现。
+- [ ] **虚拟磁盘加密**（P1 · 规划） · [`disk-encryption`](../server/extended-features.ts#L48) — 保护宿主机上的实例磁盘文件。 对应完整流程尚未实现。
+- [ ] **项目磁盘配额**（P1 · 规划） · [`project-quota`](../server/extended-features.ts#L51) — 限制单个项目可使用的空间。 对应完整流程尚未实现。
+- [ ] **客户机目录配额**（P1 · 部分实现） · [`guest-quota`](../server/extended-features.ts#L52) — 目前为 quota 探测，尚无完整配额设置与管理流程。
+- [ ] **安全擦除证明**（P2 · 规划） · [`secure-erase`](../server/extended-features.ts#L63) — 擦除文件并记录操作证明。 对应完整流程尚未实现。
 
 ### 网络
 
-- [ ] **项目网络隔离**（P1 · 规划） · [`network-isolation`](../server/extended-features.ts#L113) — 按项目隔离网络命名空间。 对应完整流程尚未实现。
-- [ ] **出站白名单**（P1 · 规划） · [`egress-policy`](../server/extended-features.ts#L114) — 限制客户机可访问的目标。 对应完整流程尚未实现。
-- [ ] **网络带宽配额**（P2 · 规划） · [`network-quota`](../server/extended-features.ts#L115) — 限制带宽、连接数和请求速率。 对应完整流程尚未实现。
-- [ ] **SSH Agent 转发**（P1 · 规划） · [`ssh-agent-forward`](../server/extended-features.ts#L116) — 在确认后转发宿主机 Agent。 对应完整流程尚未实现。
-- [ ] **GPG Agent 转发**（P2 · 规划） · [`gpg-agent-forward`](../server/extended-features.ts#L117) — 在确认后转发签名 Agent。 对应完整流程尚未实现。
-- [ ] **临时反向隧道**（P2 · 规划） · [`reverse-tunnel`](../server/extended-features.ts#L121) — 为受控调试创建一次性入口。 对应完整流程尚未实现。
+- [ ] **项目网络隔离**（P1 · 规划） · [`network-isolation`](../server/extended-features.ts#L114) — 按项目隔离网络命名空间。 对应完整流程尚未实现。
+- [ ] **出站白名单**（P1 · 规划） · [`egress-policy`](../server/extended-features.ts#L115) — 限制客户机可访问的目标。 对应完整流程尚未实现。
+- [ ] **网络带宽配额**（P2 · 规划） · [`network-quota`](../server/extended-features.ts#L116) — 限制带宽、连接数和请求速率。 对应完整流程尚未实现。
+- [ ] **SSH Agent 转发**（P1 · 规划） · [`ssh-agent-forward`](../server/extended-features.ts#L117) — 在确认后转发宿主机 Agent。 对应完整流程尚未实现。
+- [ ] **GPG Agent 转发**（P2 · 规划） · [`gpg-agent-forward`](../server/extended-features.ts#L118) — 在确认后转发签名 Agent。 对应完整流程尚未实现。
 
 ### 安全
 
-- [ ] **TPM 与安全启动**（P2 · 规划） · [`tpm-secure-boot`](../server/extended-features.ts#L122) — 检测并配置 TPM 和安全启动链。 对应完整流程尚未实现。
-- [ ] **Windows Hello 解锁**（P2 · 规划） · [`hello-unlock`](../server/extended-features.ts#L123) — 使用宿主机安全凭据解锁密钥。 对应完整流程尚未实现。
-- [ ] **系统调用隔离**（P2 · 规划） · [`syscall-profile`](../server/extended-features.ts#L137) — 为客户机应用应用受限策略。 对应完整流程尚未实现。
+- [ ] **TPM 与安全启动**（P2 · 规划） · [`tpm-secure-boot`](../server/extended-features.ts#L123) — 检测并配置 TPM 和安全启动链。 对应完整流程尚未实现。
+- [ ] **Windows Hello 解锁**（P2 · 规划） · [`hello-unlock`](../server/extended-features.ts#L124) — 使用宿主机安全凭据解锁密钥。 对应完整流程尚未实现。
+- [ ] **系统调用隔离**（P2 · 规划） · [`syscall-profile`](../server/extended-features.ts#L138) — 为客户机应用应用受限策略。 对应完整流程尚未实现。
 
 ### 体验集成
 
-- [ ] **语言与区域包**（P2 · 规划） · [`locale-packs`](../server/extended-features.ts#L184) — 支持界面语言、时区和数字格式。 对应完整流程尚未实现。
+- [ ] **语言与区域包**（P2 · 规划） · [`locale-packs`](../server/extended-features.ts#L185) — 支持界面语言、时区和数字格式。 对应完整流程尚未实现。
 
 ### 平台
 
-- [ ] **自更新与回滚**（P0 · 规划） · [`self-update`](../server/extended-features.ts#L185) — 灰度升级 Sakura 并支持回滚。 对应完整流程尚未实现。
+- [ ] **自更新与回滚**（P0 · 规划） · [`self-update`](../server/extended-features.ts#L186) — 灰度升级 Sakura 并支持回滚。 对应完整流程尚未实现。
 
 ## 第三批
 

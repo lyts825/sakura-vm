@@ -7,7 +7,7 @@ import { createConnection, type Socket } from 'node:net';
 import { Client, type SFTPWrapper } from 'ssh2';
 import { StringDecoder } from 'node:string_decoder';
 import { isUtf8 } from 'node:buffer';
-import { Readable, Transform } from 'node:stream';
+import { Readable, Transform, type Duplex } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
@@ -930,6 +930,68 @@ export class Machines extends EventEmitter {
       });
     } finally {
       client.end();
+    }
+  }
+  async openGuestTcpStream(id: string, port: number, signal?: AbortSignal): Promise<Duplex> {
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+      throw new AppError('客户机端口无效');
+    const script = [
+      'import socket,sys,threading',
+      `sock=socket.create_connection(("127.0.0.1",${port}),5)`,
+      'def upstream():',
+      '  try:',
+      '    while True:',
+      '      data=sys.stdin.buffer.read1(16384)',
+      '      if not data: break',
+      '      sock.sendall(data)',
+      '  finally:',
+      '    try: sock.shutdown(socket.SHUT_WR)',
+      '    except OSError: pass',
+      'threading.Thread(target=upstream,daemon=True).start()',
+      'try:',
+      '  while True:',
+      '    data=sock.recv(16384)',
+      '    if not data: break',
+      '    sys.stdout.buffer.write(data)',
+      '    sys.stdout.buffer.flush()',
+      'finally: sock.close()',
+    ].join('\n');
+    const payload = Buffer.from(script).toString('base64');
+    const command = `python3 -u -c "import base64;exec(base64.b64decode('${payload}'))"`;
+    const client = await this.connect(id, 10000, signal);
+    try {
+      const channel = await new Promise<Duplex>((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: Error, stream?: Duplex) => {
+          if (settled) {
+            stream?.destroy();
+            return;
+          }
+          settled = true;
+          signal?.removeEventListener('abort', abortPending);
+          client.off('close', closedPending);
+          error ? reject(error) : resolve(stream!);
+        };
+        const abortPending = () => finish(new AppError('临时隧道连接已取消', 409));
+        const closedPending = () => finish(new Error('SSH connection closed'));
+        signal?.addEventListener('abort', abortPending, { once: true });
+        client.once('close', closedPending);
+        if (signal?.aborted) return abortPending();
+        client.exec(command, (error, stream) => finish(error || undefined, stream));
+      });
+      channel.on('error', () => channel.destroy());
+      (channel as typeof channel & { stderr?: { resume(): void } }).stderr?.resume();
+      const abort = () => { channel.destroy(); client.destroy(); };
+      signal?.addEventListener('abort', abort, { once: true });
+      channel.once('close', () => {
+        signal?.removeEventListener('abort', abort);
+        client.end();
+      });
+      if (signal?.aborted) abort();
+      return channel;
+    } catch (error) {
+      client.destroy();
+      throw error;
     }
   }
   async sftp<T>(

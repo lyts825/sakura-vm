@@ -430,6 +430,18 @@ export function CapabilityActionsPanel({
               <p className="subtle-note">结果只包含协议、时间桶和临时匿名流标识。可使用“导出完整结果”保存诊断报告。</p>
             </div>
           )}
+          {selected === 'reverse-tunnel' && typeof result?.active === 'boolean' && (
+            <div className="feature-card">
+              <p>{result.active
+                ? `本机 TCP 入口：127.0.0.1:${result.localPort} → 客户机 127.0.0.1:${result.guestPort}`
+                : '当前没有临时 TCP 入口。'}</p>
+              {result.active && <p>到期时间：{new Date(result.expiresAt).toLocaleString('zh-CN')}
+                {' · '}当前连接：{result.connections}</p>}
+              {result.active && <button className="secondary compact" onClick={() =>
+                setParameters(JSON.stringify({ mode: 'close' }, null, 2))
+              }>准备关闭入口</button>}
+            </div>
+          )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
             typeof result?.samples === 'number' && (
               <div className="feature-card">

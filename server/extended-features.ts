@@ -8,6 +8,7 @@ import { readStore, writeStore } from './local-store.ts';
 import { runEngineeringOperation, requireSuccessfulResult } from './engineering-runner.ts';
 import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
+import { ReverseTunnels } from './reverse-tunnels.ts';
 import {
   engineeringOperations,
   operationViews,
@@ -118,7 +119,7 @@ export const extendedFeatureCatalog = [
   ['local-dns-alias', '本地域名别名', '网络', 'P0',
     '为本机入口生成稳定别名，按需同步到 Windows hosts 系统解析。', 'available'],
   ['packet-capture', '数据包捕获', '网络', 'P1', '在客户机限时抓包，导出无地址与载荷的匿名流量诊断报告。', 'available'],
-  ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为受控调试创建一次性入口。', 'planned'],
+  ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为客户机 TCP 服务创建限时、本机回环地址上的调试入口。', 'available'],
   ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2', '检测并配置 TPM 和安全启动链。', 'planned'],
   ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2', '使用宿主机安全凭据解锁密钥。', 'planned'],
   ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'available'],
@@ -245,13 +246,16 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
 
 export class ExtendedFeatures {
   jobs = new Jobs('extended-features');
+  private tunnels: ReverseTunnels;
   private stateValue?: ExtendedState;
   private stateLoading?: Promise<ExtendedState>;
   private writes = Promise.resolve();
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
-  ) {}
+  ) {
+    this.tunnels = new ReverseTunnels(machines);
+  }
 
   private file() {
     return join(DATA, 'extended-features.json');
@@ -520,7 +524,19 @@ export class ExtendedFeatures {
       ([_, value]) => value.feature === spec.id,
     )?.[0] as EngineeringOperation | undefined;
     let result: Record<string, unknown> & { ready: boolean };
-    if (hasCapability(spec.id)) {
+    if (spec.id === 'reverse-tunnel') {
+      if (action === 'check') result = await this.tunnels.check(id, signal);
+      else {
+        const p = capabilityParameters('reverse-tunnel', merged);
+        if (p.mode === 'open') {
+          if (!p.guestPort) throw new AppError('开启隧道需要客户机端口');
+          result = await this.tunnels.open(id, Number(p.guestPort), Number(p.durationSeconds), signal);
+        } else if (p.mode === 'close') {
+          const closed = await this.tunnels.stop(id);
+          result = { code: 0, ready: true, executed: true, closed, ...this.tunnels.status(id) };
+        } else result = { code: 0, ready: true, executed: true, ...this.tunnels.status(id) };
+      }
+    } else if (hasCapability(spec.id)) {
       const runner = new CapabilityActions(this.machines, this.workspaces);
       result =
         action === 'run'
@@ -689,7 +705,11 @@ export class ExtendedFeatures {
       { title: `扩展能力 · ${spec.name}`, vmId: id, projectId, action: `extended:${spec.id}` },
     );
   }
-  close() {
-    return this.jobs.close();
+  async close() {
+    try {
+      await this.jobs.close();
+    } finally {
+      await this.tunnels.close();
+    }
   }
 }

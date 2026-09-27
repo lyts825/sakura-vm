@@ -178,6 +178,55 @@ try {
   assert.equal(captured.payloadIncluded, false);
   assert.doesNotMatch(JSON.stringify(captured), /\b(?:\d{1,3}\.){3}\d{1,3}\b/);
   console.log('PASS bounded guest tcpdump capture with anonymous flows');
+  const httpServer = await machines.exec(id,
+    'cd /workspace/app\nnohup python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/sakura-tunnel-http.log 2>&1 </dev/null &\necho $!');
+  assert.equal(httpServer.code, 0, httpServer.stderr);
+  const httpPid = Number(httpServer.stdout.trim());
+  assert.ok(Number.isInteger(httpPid) && httpPid > 1, httpServer.stdout);
+  const { ReverseTunnels } = await import('../server/reverse-tunnels.ts');
+  const tunnels = new ReverseTunnels(machines);
+  try {
+    await delay(500);
+    const guestResponse = await machines.exec(id, 'wget -qO- http://127.0.0.1:8765/file.txt');
+    assert.equal(guestResponse.code, 0, guestResponse.stderr);
+    assert.equal(guestResponse.stdout, 'hello');
+    const openedTunnel = await tunnels.open(id, 8765, 10);
+    assert.equal(openedTunnel.active, true);
+    const address = `http://127.0.0.1:${openedTunnel.localPort}/file.txt`;
+    const response = await fetch(address, { headers: { connection: 'close' } });
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), 'hello');
+    assert.equal(await tunnels.stop(id), true);
+    await assert.rejects(fetch(address));
+    const expiringTunnel = await tunnels.open(id, 8765, 10);
+    await delay(10300);
+    assert.equal(tunnels.status(id).active, false);
+    await assert.rejects(fetch(`http://127.0.0.1:${expiringTunnel.localPort}/file.txt`));
+    console.log('PASS expiring localhost TCP tunnel reaches the guest and closes');
+  } finally {
+    await tunnels.close();
+  }
+  const tunnelCheck: any = await features.extended.action(id,
+    { action: 'check', featureId: 'reverse-tunnel' });
+  assert.equal(tunnelCheck.ready, true);
+  const tunnelJob: any = await features.extended.action(id, {
+    action: 'run', featureId: 'reverse-tunnel',
+    options: { mode: 'open', guestPort: 8765, durationSeconds: 10 },
+  });
+  await features.extended.jobs.wait(tunnelJob.key);
+  assert.equal(features.extended.jobs.view(tunnelJob.key)?.status, 'done');
+  const tunnelResult: any = await features.extended.jobs.result(tunnelJob.id);
+  assert.equal(tunnelResult.active, true);
+  const routed = await fetch(`http://127.0.0.1:${tunnelResult.localPort}/file.txt`,
+    { headers: { connection: 'close' } });
+  assert.equal(await routed.text(), 'hello');
+  const closeJob: any = await features.extended.action(id, {
+    action: 'run', featureId: 'reverse-tunnel', options: { mode: 'close' },
+  });
+  await features.extended.jobs.wait(closeJob.key);
+  assert.equal(features.extended.jobs.view(closeJob.key)?.status, 'done');
+  await assert.rejects(fetch(`http://127.0.0.1:${tunnelResult.localPort}/file.txt`));
+  await machines.exec(id, `kill ${httpPid} 2>/dev/null || true`);
   const created = await capabilities.run(
     id,
     'git-worktrees',

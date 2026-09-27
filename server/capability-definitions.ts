@@ -832,6 +832,18 @@ export const capabilityDefinitions = {
     { interface: 'eth0', durationSeconds: 5, maxPackets: 100, protocol: 'any' },
     '在客户机使用 tcpdump 捕获限量数据包；报告仅含协议、时间桶和一次性匿名流标识，不保存原始载荷或 IP/MAC 地址。需要 tcpdump 与抓包权限。',
   ),
+  'reverse-tunnel': action(
+    '临时反向隧道',
+    'extended',
+    {
+      mode: z.enum(['open', 'status', 'close']).default('status'),
+      guestPort: z.number().int().min(1).max(65535).optional(),
+      durationSeconds: z.number().int().min(10).max(600).default(300),
+    },
+    { mode: 'status' },
+    '将客户机 127.0.0.1 上的 TCP 服务限时映射到宿主机 127.0.0.1 的随机端口；最多四个并发连接。关闭或到期即撤销。',
+    false,
+  ),
   'code-search-index': action(
     '代码搜索索引',
     'next',

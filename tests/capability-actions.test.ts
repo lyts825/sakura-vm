@@ -175,6 +175,7 @@ function fixture() {
   let result = { code: 0, shards: [] },
     calls = 0;
   const machines: any = {
+    on() {}, off() {},
     get: (id: string) => ({ id, forwards: [], distro: 'alpine' }),
     requireUnlocked() {},
     state: () => 'running',

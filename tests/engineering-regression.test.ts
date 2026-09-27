@@ -25,6 +25,7 @@ function fixture() {
     fail = false,
     locked = false;
   const machines: any = {
+    on() {}, off() {},
     records: new Map([[id, { id }]]),
     live: new Map(),
     get: () => ({ id }),
