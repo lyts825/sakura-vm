@@ -2313,6 +2313,9 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
   await app(page, ['network'], true);
   const forwards = [{ name: 'Web', host: 8090, guest: 3000 }];
   let entries: any[] = [], submitted: any;
+  let certificatePolicy = { autoRotate: true, renewBeforeDays: 30 };
+  let certificate: any = null;
+  let certificateAction: any;
   await page.route('**/api/vms', (route) => route.fulfill({
     json: [{ ...vm, forwards, status: 'running', poweredOn: true }],
   }));
@@ -2325,13 +2328,30 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
       if (submitted.action === 'save') {
         const item = submitted.entry;
         entries = [{ ...item, id: item.id || vm.id, createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(), url: `http://127.0.0.1:${item.listenPort}${item.pathPrefix}`,
+          updatedAt: new Date().toISOString(), url: `${item.protocol}://127.0.0.1:${item.listenPort}${item.pathPrefix}`,
           health: { status: 'checking' } }];
+        if (item.protocol === 'https') certificate = {
+          pem: '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----',
+          fingerprint256: 'AA:BB', validFrom: new Date().toISOString(),
+          validTo: new Date(Date.now() + 86400000).toISOString(), generatedAt: new Date().toISOString(),
+        };
       } else if (submitted.action === 'check') {
         entries[0].health = { status: 'healthy', httpStatus: 200 };
       } else if (submitted.action === 'delete') entries = [];
     }
     return route.fulfill({ json: { entries, listenerErrors: {} } });
+  });
+  await page.route('**/api/ingress-certificate', (route) => {
+    if (route.request().method() === 'POST') {
+      certificateAction = route.request().postDataJSON();
+      if (certificateAction.action === 'configure') certificatePolicy = certificateAction.policy;
+      if (certificateAction.action === 'rotate') certificate = {
+        pem: '-----BEGIN CERTIFICATE-----\nrotated\n-----END CERTIFICATE-----',
+        fingerprint256: 'CC:DD', validFrom: new Date().toISOString(),
+        validTo: new Date(Date.now() + 86400000).toISOString(), generatedAt: new Date().toISOString(),
+      };
+    }
+    return route.fulfill({ json: { policy: certificatePolicy, certificate, nextRotationAt: null } });
   });
   await page.reload();
   await page.getByRole('tab', { name: '服务', exact: true }).click();
@@ -2353,6 +2373,23 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
   await expect(page.getByRole('heading', { name: '编辑入口' })).toBeVisible();
   await page.getByRole('button', { name: '删除入口 开发网站' }).click();
   await expect.poll(() => entries.length).toBe(0);
+  await editor.getByLabel('名称').fill('加密网站');
+  await editor.getByLabel('入口端口').fill('8901');
+  await editor.getByLabel('协议').selectOption('https');
+  await editor.getByRole('button', { name: '保存入口' }).click();
+  await expect.poll(() => submitted).toMatchObject({ action: 'save', entry: {
+    name: '加密网站', protocol: 'https', listenPort: 8901,
+  } });
+  await expect(page.getByRole('link', { name: /https:\/\/127\.0\.0\.1:8901/ })).toBeVisible();
+  const certCard = page.locator('.feature-card').filter({ has: page.getByRole('heading', { name: '本机 HTTPS 证书' }) });
+  await expect(certCard.getByText(/SHA-256 指纹/)).toBeVisible();
+  await certCard.getByLabel('自动轮换').uncheck();
+  await certCard.getByLabel('到期前轮换（天）').fill('14');
+  await certCard.getByRole('button', { name: '保存证书策略' }).click();
+  await expect.poll(() => certificatePolicy).toEqual({ autoRotate: false, renewBeforeDays: 14 });
+  await certCard.getByRole('button', { name: '立即轮换' }).click();
+  await expect.poll(() => certificateAction).toMatchObject({ action: 'rotate' });
+  await expect(certCard.getByText('CC:DD')).toBeVisible();
 });
 
 test('backup policies enable block deduplication and show how each backup is stored', async ({ page }) => {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { request as secureRequest } from 'node:https';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const directory = await mkdtemp(join(tmpdir(), 'sakura-http-ingress-smoke-'));
@@ -11,15 +12,34 @@ process.env.SAKURA_DATA_DIR = directory;
 process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
 const { Machines } = await import('../server/machines.ts');
 const { HttpIngress } = await import('../server/http-ingress.ts');
+const { IngressCertificates } = await import('../server/ingress-certificates.ts');
 const { createRuntime } = await import('../server/runtime.ts');
 const { freePort } = await import('../server/qmp.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
-const ingress = new HttpIngress(machines);
+const certificates = new IngressCertificates(join(directory, 'certificates.json'));
+await certificates.init();
+const ingress = new HttpIngress(machines, join(directory, 'ingress.json'), certificates);
+async function secureGet(port: number, ca: string) {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const req = secureRequest(
+      { hostname: '127.0.0.1', port, path: '/app', ca, rejectUnauthorized: true, agent: false },
+      async (response) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of response) chunks.push(chunk);
+        resolve({ status: response.statusCode || 0, body: Buffer.concat(chunks).toString() });
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
 try {
   let forward = await freePort(),
-    listener = await freePort();
+    listener = await freePort(),
+    secureListener = await freePort();
   while (listener === forward) listener = await freePort();
+  while (secureListener === forward || secureListener === listener) secureListener = await freePort();
   const vm = await machines.create({
     name: 'http-ingress-smoke',
     memoryMiB: 512,
@@ -66,13 +86,35 @@ try {
   const response = await fetch(`http://127.0.0.1:${listener}/app`);
   assert.equal(response.status, 200);
   assert.equal(await response.text(), 'Sakura ingress proof');
+  const secureView = await ingress.action({
+    action: 'save',
+    entry: {
+      name: 'secure-web', protocol: 'https', listenPort: secureListener, pathPrefix: '/app',
+      vmId: vm.id, upstreamPort: forward, healthPath: '/', stripPrefix: true,
+    },
+  });
+  assert.equal(secureView.entries.length, 2);
+  const firstCertificate = certificates.view().certificate;
+  assert.ok(firstCertificate);
+  assert.deepEqual(await secureGet(secureListener, firstCertificate.pem), {
+    status: 200, body: 'Sakura ingress proof',
+  });
+  const rotatedCertificate = (await certificates.action({ action: 'rotate' })).certificate;
+  assert.ok(rotatedCertificate);
+  assert.notEqual(rotatedCertificate.fingerprint256, firstCertificate.fingerprint256);
+  assert.deepEqual(await secureGet(secureListener, rotatedCertificate.pem), {
+    status: 200, body: 'Sakura ingress proof',
+  });
+  await assert.rejects(secureGet(secureListener, firstCertificate.pem));
   const checked = await ingress.action({ action: 'check', id: view.entries[0].id });
   assert.equal(checked.entries[0].health.status, 'healthy');
   await machines.stop(vm.id);
   assert.equal((await fetch(`http://127.0.0.1:${listener}/app`)).status, 503);
-  console.log('Real QEMU NAT to HTTP ingress, health check and stopped-instance refusal passed.');
+  assert.equal((await secureGet(secureListener, rotatedCertificate.pem)).status, 503);
+  console.log('Real QEMU NAT to HTTP/HTTPS ingress, certificate rotation, health check and stopped-instance refusal passed.');
 } finally {
   await ingress.close();
+  await certificates.close();
   await machines.close();
   await rm(directory, { recursive: true, force: true });
 }

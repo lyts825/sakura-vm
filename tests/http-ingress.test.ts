@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createServer, request, type Server } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { request as secureRequest } from 'node:https';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +14,7 @@ import type { Engine } from '../server/runtime.ts';
 const root = await mkdtemp(join(tmpdir(), 'sakura-ingress-test-'));
 process.env.SAKURA_DATA_DIR = root;
 const { HttpIngress } = await import('../server/http-ingress.ts');
+const { IngressCertificates } = await import('../server/ingress-certificates.ts');
 const { Machines } = await import('../server/machines.ts');
 const { createSchema } = await import('../server/model.ts');
 after(async () => {
@@ -37,6 +39,21 @@ async function serve(server: Server) {
 
 async function stop(server: Server) {
   await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
+async function secureGet(port: number, path: string, ca: string) {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const req = secureRequest(
+      { hostname: '127.0.0.1', port, path, ca, rejectUnauthorized: true, agent: false },
+      async (res) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of res) chunks.push(chunk);
+        resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString() });
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 test('HTTP ingress routes requests, checks health, rejects port collisions and restores saved routes', async () => {
@@ -237,11 +254,87 @@ test('HTTP ingress forwards WebSocket upgrades and releases the listener on dele
   }
 });
 
+test('HTTPS ingress routes verified TLS and WebSocket connections through live certificate rotation', async () => {
+  const upstream = createServer((req, res) => {
+    res.writeHead(200).end(`${req.url}:${req.headers['x-forwarded-proto']}`);
+  });
+  const wsServer = new WebSocketServer({ server: upstream });
+  wsServer.on('connection', (socket, req) =>
+    socket.on('message', () => socket.send(`${req.url}:${req.headers['x-forwarded-proto']}`)),
+  );
+  const upstreamPort = await serve(upstream),
+    listenPort = await port();
+  const machines = new Machines({} as Engine),
+    id = randomUUID();
+  machines.records.set(id, {
+    ...createSchema.parse({ name: 'tls-test', forwards: [{ host: upstreamPort, guest: 8080 }] }),
+    id,
+    createdAt: new Date().toISOString(),
+    snapshots: [],
+  });
+  machines.live.set(id, { status: 'running' } as any);
+  const certificates = new IngressCertificates(join(root, 'https-certificates.json'));
+  const file = join(root, 'https-ingress.json');
+  const ingress = new HttpIngress(machines, file, certificates);
+  let restored: InstanceType<typeof HttpIngress> | undefined;
+  try {
+    await certificates.init();
+    await ingress.init();
+    const saved = await ingress.action({
+      action: 'save',
+      entry: {
+        name: 'Secure', protocol: 'https', listenPort, pathPrefix: '/secure', vmId: id,
+        upstreamPort, healthPath: '/', stripPrefix: true,
+      },
+    });
+    assert.equal(saved.entries[0].url, `https://127.0.0.1:${listenPort}/secure`);
+    const first = certificates.view().certificate;
+    assert.ok(first);
+    assert.deepEqual(await secureGet(listenPort, '/secure/item?q=1', first.pem), {
+      status: 200, body: '/item?q=1:https',
+    });
+    const socket = new WebSocket(`wss://127.0.0.1:${listenPort}/secure/stream`, {
+      ca: first.pem, rejectUnauthorized: true,
+    });
+    const echoed = new Promise<string>((resolve, reject) => {
+      socket.on('open', () => socket.send('ping'));
+      socket.on('message', (message) => resolve(String(message)));
+      socket.on('error', reject);
+    });
+    assert.equal(await echoed, '/stream:https');
+    socket.close();
+    await assert.rejects(ingress.action({
+      action: 'save',
+      entry: { name: 'Plain', protocol: 'http', listenPort, pathPrefix: '/plain', vmId: id,
+        upstreamPort, healthPath: '/', stripPrefix: true },
+    }), /同一端口不能混用/);
+    const rotated = certificates.view().certificate;
+    assert.ok(rotated);
+    const second = (await certificates.action({ action: 'rotate' })).certificate;
+    assert.ok(second);
+    assert.notEqual(second.fingerprint256, rotated.fingerprint256);
+    assert.equal((await secureGet(listenPort, '/secure', second.pem)).body, '/:https');
+    await assert.rejects(secureGet(listenPort, '/secure', first.pem));
+    await ingress.close();
+    restored = new HttpIngress(machines, file, certificates);
+    await restored.init();
+    assert.equal((await secureGet(listenPort, '/secure/restored', second.pem)).body, '/restored:https');
+    await restored.action({ action: 'delete', id: saved.entries[0].id });
+    await assert.rejects(secureGet(listenPort, '/secure', second.pem));
+  } finally {
+    await restored?.close();
+    await ingress.close();
+    await certificates.close();
+    await new Promise<void>((resolve) => wsServer.close(() => resolve()));
+    await stop(upstream);
+  }
+});
+
 test('network plugin exposes typed ingress operations and rejects unknown instances', async () => {
   const { Features } = await import('../server/features.ts');
   const machines = new Machines({} as Engine);
   const features = await Features.create(machines, ['network']);
-  const invoke = async (method: string, input?: unknown) => {
+  const invoke = async (method: string, input?: unknown, path = '/api/ingress') => {
     let status = 0,
       result: any;
     const req = Object.assign(new EventEmitter(), { method, headers: {} }) as IncomingMessage;
@@ -255,7 +348,7 @@ test('network plugin exposes typed ingress operations and rejects unknown instan
         this.writableFinished = true;
       },
     }) as unknown as ServerResponse;
-    await features.route(req, res, new URL('http://localhost/api/ingress'), async () => input);
+    await features.route(req, res, new URL(`http://localhost${path}`), async () => input);
     return { status, result };
   };
   try {
@@ -264,6 +357,18 @@ test('network plugin exposes typed ingress operations and rejects unknown instan
       status: 200,
       result: { entries: [], listenerErrors: {} },
     });
+    const initialCertificate = await invoke('GET', undefined, '/api/ingress-certificate');
+    assert.equal(initialCertificate.status, 200);
+    assert.equal(initialCertificate.result.certificate, null);
+    const issuedCertificate = await invoke('POST', { action: 'rotate' }, '/api/ingress-certificate');
+    assert.equal(issuedCertificate.status, 200);
+    assert.match(issuedCertificate.result.certificate.pem, /BEGIN CERTIFICATE/);
+    assert.ok(!JSON.stringify(issuedCertificate.result).includes('PRIVATE KEY'));
+    const configuredCertificate = await invoke('POST', {
+      action: 'configure', policy: { autoRotate: false, renewBeforeDays: 14 },
+    }, '/api/ingress-certificate');
+    assert.equal(configuredCertificate.result.nextRotationAt, null);
+    assert.deepEqual(configuredCertificate.result.policy, { autoRotate: false, renewBeforeDays: 14 });
     await assert.rejects(
       invoke('POST', {
         action: 'save',

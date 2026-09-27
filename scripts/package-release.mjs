@@ -40,11 +40,11 @@ const readme = [
   'npm start',
   '```',
   '',
-  '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行时依赖 graphql、ssh2、ws、zod。',
+  '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行时依赖 graphql、selfsigned、ssh2、ws、zod。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
   '',
 ].join('\n');
 await writeFile(join(output, 'README.md'), readme);
-if (Object.keys(manifest.dependencies).sort().join(',') !== 'graphql,ssh2,ws,zod')
+if (Object.keys(manifest.dependencies).sort().join(',') !== 'graphql,selfsigned,ssh2,ws,zod')
   throw new Error('运行依赖与预期不一致');
 console.log(output);

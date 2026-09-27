@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import {
-  createServer,
+  createServer as createHttpServer,
   request,
   type ClientRequest,
   type IncomingMessage,
   type Server,
   type ServerResponse,
 } from 'node:http';
+import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
 import type { Duplex } from 'node:stream';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -21,6 +22,7 @@ import {
 import { readStore, writeStore } from './local-store.ts';
 import { AppError, DATA, PORT } from './model.ts';
 import type { Machines } from './machines.ts';
+import type { IngressCertificates } from './ingress-certificates.ts';
 
 const OWNER = 'http-ingress';
 const storedSchema = z.array(ingressEntrySchema).max(24);
@@ -73,19 +75,35 @@ export class HttpIngress {
   private listenerErrors: Record<string, string> = {};
   private health = new Map<string, IngressHealth>();
   private timer?: NodeJS.Timeout;
+  private unsubscribe?: () => void;
   private closed = false;
 
   constructor(
     private machines: Machines,
     private file = join(DATA, 'plugins', 'network', 'ingress.json'),
+    private certificates?: IngressCertificates,
   ) {}
 
   async init() {
     this.entries = storedSchema.parse(await readStore(this.file, () => []));
+    if (this.certificates)
+      this.unsubscribe = this.certificates.onChange((certificate) => {
+        for (const [port, server] of this.listeners)
+          if (this.entries.some((entry) => entry.listenPort === port && entry.protocol === 'https'))
+            (server as HttpsServer).setSecureContext({ key: certificate.key, cert: certificate.cert });
+      });
     for (const port of new Set(this.entries.map((entry) => entry.listenPort))) {
       try {
+        const protocols = new Set(
+          this.entries.filter((entry) => entry.listenPort === port).map((entry) => entry.protocol),
+        );
+        if (protocols.size !== 1) throw new AppError('同一端口不能混用 HTTP 与 HTTPS', 409);
         this.machines.reserveHostPorts(OWNER, [...this.listeners.keys(), port]);
-        this.listeners.set(port, await this.listen(port));
+        if (protocols.has('https')) {
+          if (!this.certificates) throw new AppError('HTTPS 证书服务未启用', 503);
+          await this.certificates.ensure();
+        }
+        this.listeners.set(port, await this.listen(port, [...protocols][0]));
       } catch (error) {
         this.machines.reserveHostPorts(OWNER, this.listeners.keys());
         this.listenerErrors[String(port)] = (error as Error).message;
@@ -100,7 +118,7 @@ export class HttpIngress {
     return {
       entries: this.entries.map((entry) => ({
         ...entry,
-        url: `http://127.0.0.1:${entry.listenPort}${entry.pathPrefix}`,
+        url: `${entry.protocol}://127.0.0.1:${entry.listenPort}${entry.pathPrefix}`,
         health: this.availability(entry) || this.health.get(entry.id) || { status: 'checking' },
       })),
       listenerErrors: { ...this.listenerErrors },
@@ -143,6 +161,15 @@ export class HttpIngress {
         throw new AppError('最多保存 24 条入口规则和 4 个监听端口', 409);
       const keys = next.map((entry) => `${entry.listenPort}:${entry.pathPrefix}`);
       if (new Set(keys).size !== keys.length) throw new AppError('监听端口与路径组合不能重复', 409);
+      for (const port of new Set(next.map((entry) => entry.listenPort))) {
+        const protocol = new Set(next.filter((entry) => entry.listenPort === port).map((entry) => entry.protocol));
+        if (protocol.size !== 1) throw new AppError('同一端口不能混用 HTTP 与 HTTPS', 409);
+        const active = this.entries.find((entry) => entry.listenPort === port)?.protocol;
+        if (this.listeners.has(port) && active !== [...protocol][0])
+          throw new AppError('切换 HTTP/HTTPS 时请先删除旧入口，或使用新的监听端口', 409);
+      }
+      if (next.some((entry) => entry.protocol === 'https') && !this.certificates)
+        throw new AppError('HTTPS 证书服务未启用', 503);
       await this.apply(next);
       return this.view();
     });
@@ -156,7 +183,9 @@ export class HttpIngress {
     try {
       for (const port of nextPorts) {
         if (this.listeners.has(port)) continue;
-        added.set(port, await this.listen(port));
+        const protocol = next.find((entry) => entry.listenPort === port)!.protocol;
+        if (protocol === 'https') await this.certificates!.ensure();
+        added.set(port, await this.listen(port, protocol));
       }
       await writeStore(this.file, next);
     } catch (error) {
@@ -176,8 +205,12 @@ export class HttpIngress {
     void this.checkAll().catch(() => {});
   }
 
-  private listen(port: number) {
-    const server = createServer((req, res) => this.proxy(req, res, port));
+  private listen(port: number, protocol: 'http' | 'https') {
+    const listener = (req: IncomingMessage, res: ServerResponse) => this.proxy(req, res, port);
+    const server: Server =
+      protocol === 'https'
+        ? createHttpsServer(this.certificates!.tlsOptions(), listener)
+        : createHttpServer(listener);
     server.on('error', (error) => {
       this.listenerErrors[String(port)] = error.message;
     });
@@ -260,7 +293,7 @@ export class HttpIngress {
     headers.host = `127.0.0.1:${target.entry.upstreamPort}`;
     headers['x-forwarded-for'] = '127.0.0.1';
     headers['x-forwarded-host'] = `127.0.0.1:${port}`;
-    headers['x-forwarded-proto'] = 'http';
+    headers['x-forwarded-proto'] = target.entry.protocol;
     if (target.entry.pathPrefix !== '/') headers['x-forwarded-prefix'] = target.entry.pathPrefix;
     const upstream = request(
       {
@@ -273,9 +306,9 @@ export class HttpIngress {
       },
       (response) => {
         const responseHeaders = cleanHeaders(response.headers);
-      res.writeHead(response.statusCode || 502, responseHeaders);
-      response.on('aborted', () => res.destroy());
-      response.pipe(res);
+        res.writeHead(response.statusCode || 502, responseHeaders);
+        response.on('aborted', () => res.destroy());
+        response.pipe(res);
       },
     );
     upstream.on('error', () => {
@@ -308,7 +341,7 @@ export class HttpIngress {
     headers.upgrade = 'websocket';
     headers['x-forwarded-for'] = '127.0.0.1';
     headers['x-forwarded-host'] = `127.0.0.1:${port}`;
-    headers['x-forwarded-proto'] = 'http';
+    headers['x-forwarded-proto'] = target.entry.protocol;
     const upstream = request({
       hostname: '127.0.0.1',
       port: target.entry.upstreamPort,
@@ -390,5 +423,6 @@ export class HttpIngress {
     await Promise.all([...this.listeners].map(([port, server]) => this.closeListener(port, server)));
     this.listeners.clear();
     if (hadListeners) this.machines.reserveHostPorts(OWNER, []);
+    this.unsubscribe?.();
   }
 }

@@ -134,6 +134,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'snapshot-diff',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
+  'reverse-proxy',
   'language-services',
   'merge-editor',
   'multi-monitor',
@@ -472,7 +473,11 @@ export class FeatureSuite {
       featureId === 'dev-container'
     ) {
       result.adapter = 'workspace-tooling';
-    } else if (featureId === 'reverse-proxy' || featureId === 'vpn-integration') {
+    } else if (featureId === 'reverse-proxy') {
+      result.ready = true;
+      result.network = 'localhost-https-ingress';
+      result.reason = '已接入实例 → 服务与端口的本机 HTTPS 路由和证书轮换；自动生成并解析本地域名尚未实现。';
+    } else if (featureId === 'vpn-integration') {
       result.network = 'profile-backed';
     } else if (featureId === 'rbac-sharing' || featureId === 'plugin-api') {
       result.controlPlane = 'local-token-and-event-bus';

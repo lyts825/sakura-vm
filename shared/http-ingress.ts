@@ -17,6 +17,7 @@ export const ingressInputSchema = z
   .object({
     id: z.uuid().optional(),
     name: z.string().trim().min(1).max(60),
+    protocol: z.enum(['http', 'https']).default('http'),
     listenPort: z.number().int().min(1024).max(65535),
     pathPrefix: pathSchema,
     vmId: z.uuid(),

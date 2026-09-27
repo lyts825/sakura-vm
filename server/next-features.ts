@@ -32,7 +32,7 @@ export const nextFeatureCatalog = [
     '远程主机与集群',
     'P0',
     '登记主机证书的轮换策略和下一次轮换时间。',
-    'planned',
+    'available',
   ],
   [
     'multi-host-inventory',
@@ -836,7 +836,14 @@ export class NextFeatures {
         executed: false,
         adapter,
         forwards: this.machines.get(id).forwards,
-        message: '在实例的“服务与端口”页先配置端口转发，再创建本机 HTTP 入口、路径规则与健康检查。',
+        message: '在实例的“服务与端口”页先配置端口转发，再创建本机 HTTP/HTTPS 入口、路径规则与健康检查。',
+      };
+    if (spec.id === 'host-cert-rotation')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '在实例的“服务与端口”页管理本机 HTTPS 主机证书、自动轮换策略和下一次轮换时间；远程主机配对仍由独立功能负责。',
       };
     if (spec.id === 'nested-virtualization') {
       if (this.machines.state(id) !== 'running')

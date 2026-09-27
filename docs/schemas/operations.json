@@ -755,6 +755,14 @@
                 "minLength": 1,
                 "maxLength": 60
               },
+              "protocol": {
+                "default": "http",
+                "type": "string",
+                "enum": [
+                  "http",
+                  "https"
+                ]
+              },
               "listenPort": {
                 "type": "integer",
                 "minimum": 1024,
@@ -828,6 +836,7 @@
             "required": [
               "id",
               "name",
+              "protocol",
               "listenPort",
               "pathPrefix",
               "vmId",
@@ -886,6 +895,14 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 60
+                },
+                "protocol": {
+                  "default": "http",
+                  "type": "string",
+                  "enum": [
+                    "http",
+                    "https"
+                  ]
                 },
                 "listenPort": {
                   "type": "integer",
@@ -994,6 +1011,14 @@
                 "minLength": 1,
                 "maxLength": 60
               },
+              "protocol": {
+                "default": "http",
+                "type": "string",
+                "enum": [
+                  "http",
+                  "https"
+                ]
+              },
               "listenPort": {
                 "type": "integer",
                 "minimum": 1024,
@@ -1067,6 +1092,7 @@
             "required": [
               "id",
               "name",
+              "protocol",
               "listenPort",
               "pathPrefix",
               "vmId",
@@ -1094,6 +1120,217 @@
       "required": [
         "entries",
         "listenerErrors"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "network.ingress-certificate-view": {
+    "id": "ingress-certificate-view",
+    "method": "GET",
+    "path": "/api/ingress-certificate",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "object",
+          "properties": {
+            "autoRotate": {
+              "type": "boolean"
+            },
+            "renewBeforeDays": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90
+            }
+          },
+          "required": [
+            "autoRotate",
+            "renewBeforeDays"
+          ],
+          "additionalProperties": false
+        },
+        "certificate": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "pem": {
+                  "type": "string"
+                },
+                "fingerprint256": {
+                  "type": "string"
+                },
+                "validFrom": {
+                  "type": "string"
+                },
+                "validTo": {
+                  "type": "string"
+                },
+                "generatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "pem",
+                "fingerprint256",
+                "validFrom",
+                "validTo",
+                "generatedAt"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextRotationAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rotationError": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy",
+        "certificate",
+        "nextRotationAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "network.ingress-certificate-action": {
+    "id": "ingress-certificate-action",
+    "method": "POST",
+    "path": "/api/ingress-certificate",
+    "status": 200,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "configure"
+            },
+            "policy": {
+              "type": "object",
+              "properties": {
+                "autoRotate": {
+                  "type": "boolean"
+                },
+                "renewBeforeDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 90
+                }
+              },
+              "required": [
+                "autoRotate",
+                "renewBeforeDays"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "action",
+            "policy"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "rotate"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "object",
+          "properties": {
+            "autoRotate": {
+              "type": "boolean"
+            },
+            "renewBeforeDays": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90
+            }
+          },
+          "required": [
+            "autoRotate",
+            "renewBeforeDays"
+          ],
+          "additionalProperties": false
+        },
+        "certificate": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "pem": {
+                  "type": "string"
+                },
+                "fingerprint256": {
+                  "type": "string"
+                },
+                "validFrom": {
+                  "type": "string"
+                },
+                "validTo": {
+                  "type": "string"
+                },
+                "generatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "pem",
+                "fingerprint256",
+                "validFrom",
+                "validTo",
+                "generatedAt"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextRotationAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rotationError": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy",
+        "certificate",
+        "nextRotationAt"
       ],
       "additionalProperties": false
     }

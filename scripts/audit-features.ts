@@ -32,6 +32,7 @@ const notes: Record<string, string> = {
   'hardware-compatibility': '目前返回本机信息，尚未建立经验证的硬件兼容矩阵。',
   'storage-pools': '目前返回本机信息，尚未实现存储池管理。',
   'host-disk-health': '目前返回本机信息，尚未实现实际磁盘健康检查。',
+  'reverse-proxy': '已有本机 HTTPS 路由、WebSocket 转发与自签名证书轮换；仍缺自动生成并解析本地域名。',
 };
 const count = (rows: typeof all, state: string) => rows.filter((item) => item.state === state).length;
 let output = `# 未完成功能清单\n\n根据当前工作区源码生成。最初基线为 \`c669881\`，其目录中有 200 条未完成记录。\n\n目前共 ${all.length} 条目录记录，其中 ${count(all, 'available')} 条有实现入口，**${unfinished.length} 条仍未完成**（${count(all, 'planned')} 条规划、${count(all, 'experimental')} 条部分实现）。按标识去重后为 ${new Set(unfinished.map((item) => item.id)).size} 个未完成标识；不同条目仍有范围重叠。\n\n本轮已接通 ${200 - unfinished.length} 条原未完成目录记录，另完善了文本三方合并。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。\n\n| 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n`;

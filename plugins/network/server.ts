@@ -8,16 +8,33 @@ import { AppError } from '../../server/model.ts';
 import { NetworkProfiles } from '../../server/network-profiles.ts';
 import { HttpIngress } from '../../server/http-ingress.ts';
 import { ingressActionSchema, ingressViewSchema } from '../../shared/http-ingress.ts';
+import { IngressCertificates } from '../../server/ingress-certificates.ts';
+import { certificateActionSchema, certificateViewSchema } from '../../shared/ingress-certificates.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.network = new NetworkProfiles(m);
-  await host.provide('ingress', new HttpIngress(m, host.dataFile('ingress'))).init();
+  const certificates = host.provide('certificates', new IngressCertificates(host.dataFile('certificates')));
+  await certificates.init();
+  await host.provide('ingress', new HttpIngress(m, host.dataFile('ingress'), certificates)).init();
   host.registerJobs(host.network.jobs, () => {
     throw new AppError('请在网络配置中重新测试当前设置');
   });
 }
 export const operations: Record<string, PluginOperation> = {
+  'ingress-certificate-view': {
+    response: certificateViewSchema,
+    execute() {
+      return this.use<IngressCertificates>('network', 'certificates').view();
+    },
+  },
+  'ingress-certificate-action': {
+    request: certificateActionSchema,
+    response: certificateViewSchema,
+    execute(_url, input) {
+      return this.use<IngressCertificates>('network', 'certificates').action(input);
+    },
+  },
   'ingress-view': {
     response: ingressViewSchema,
     execute() {
