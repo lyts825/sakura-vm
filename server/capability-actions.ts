@@ -18,6 +18,7 @@ import { readAvailabilityReport } from './availability.ts';
 import { hostDiskHealth } from './host-disk-health.ts';
 import { hostPower, powerDecision, powerPolicy, savePowerPolicy } from './power-policy.ts';
 import { checkFlamegraph, runFlamegraph } from './flamegraph.ts';
+import { checkEbpfProfiler, runEbpfProfiler } from './ebpf-profiler.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -61,6 +62,8 @@ export class CapabilityActions {
       return { ready: false, executed: false, featureId, reason: '请先启动发行版。' };
     if (featureId === 'flamegraph')
       return { featureId, ...await checkFlamegraph(this.machines, id, signal) };
+    if (featureId === 'ebpf-profiler')
+      return { featureId, ...await checkEbpfProfiler(this.machines, id, signal) };
     if (reportCapabilities.has(featureId) || featureId === 'cross-vm-copy')
       return { ready: true, executed: false, featureId, reason: '实例已运行；执行时检查目标与采样结果。' };
     const probe = await this.machines.exec(
@@ -85,6 +88,8 @@ export class CapabilityActions {
     signal.throwIfAborted();
     if (featureId === 'flamegraph')
       return runFlamegraph(this.machines, id, parameters, signal);
+    if (featureId === 'ebpf-profiler')
+      return runEbpfProfiler(this.machines, id, parameters, signal);
     if (featureId === 'power-aware-schedule') {
       const p = capabilityDefinitions[featureId].schema.parse(parameters);
       if (p.mode === 'save' && !p.policy) throw new AppError('保存时需要提供电源策略');

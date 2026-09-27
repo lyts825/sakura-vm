@@ -7,6 +7,7 @@ import { diskHealthThresholds } from './host-disk-health.ts';
 import { powerPolicySchema } from './power-policy.ts';
 import { networkEmulationShape } from './network-emulation.ts';
 import { flamegraphOptions } from './flamegraph.ts';
+import { ebpfProfileOptions } from './ebpf-profiler.ts';
 
 export const relativePath = z
   .string()
@@ -41,6 +42,13 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'ebpf-profiler': action(
+    'eBPF 内核性能分析',
+    'next',
+    ebpfProfileOptions.shape,
+    { durationSeconds: 5, frequencyHz: 49 },
+    '在运行中的客户机用 bpftrace 的 profile 探针采样内核调用栈，统计热点函数并下载完整报告。需要客户机安装 bpftrace，且内核与权限允许 eBPF。',
+  ),
   flamegraph: action(
     '客户机性能火焰图',
     'next',

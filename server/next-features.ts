@@ -343,8 +343,8 @@ export const nextFeatureCatalog = [
     'eBPF 性能分析',
     '可观测性与自动运维',
     'P2',
-    '检查客户机 eBPF 工具和内核能力。',
-    'planned',
+    '在运行中的客户机用 bpftrace 采样内核调用栈并统计热点函数。',
+    'available',
   ],
   ['flamegraph', '火焰图生成', '可观测性与自动运维', 'P2', '在运行中的客户机用 perf 采样调用栈并生成可下载的 SVG 火焰图。', 'available'],
   [
@@ -616,7 +616,6 @@ const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'acme-renewal':
     'if command -v certbot >/dev/null; then certbot --version; else command -v lego >/dev/null && lego --version; fi',
   'network-topology': 'command -v ip >/dev/null && ip addr && ip route',
-  'ebpf-profiler': 'command -v bpftool >/dev/null && bpftool feature probe',
   'build-cache': 'test -d /workspace/.cache || test -d /workspace/target',
   'language-server-catalog':
     'found=0; for c in typescript-language-server pyright rust-analyzer gopls; do if command -v "$c" >/dev/null; then printf "%s\\n" "$c"; found=1; fi; done; test "$found" = 1',
@@ -630,7 +629,7 @@ const guestChecks: Partial<Record<NextFeatureId, string>> = {
 
 const now = () => new Date().toISOString();
 
-function compactFlamegraphResult(result: Record<string, unknown>) {
+function compactProfileResult(result: Record<string, unknown>) {
   const download = result.download as Record<string, unknown> | undefined;
   if (!download || typeof download.content !== 'string') return result;
   const { content, ...metadata } = download;
@@ -1023,7 +1022,8 @@ export class NextFeatures {
   ) {
     const startedAt = now();
     const result = await this.probe(id, spec, signal, options, action);
-    const historyResult = spec.id === 'flamegraph' ? compactFlamegraphResult(result) : result;
+    const historyResult = spec.id === 'flamegraph' || spec.id === 'ebpf-profiler'
+      ? compactProfileResult(result) : result;
     const state = await this.state();
     const history = (state.executions[id] ||= []);
     history.push({
@@ -1087,7 +1087,8 @@ export class NextFeatures {
       async (log, taskSignal, _update, saveResult) => {
         const result = await this.executeFeature(id, spec, 'run', taskSignal, value.options);
         await saveResult(result);
-        log(`${JSON.stringify(spec.id === 'flamegraph' ? compactFlamegraphResult(result) : result)}\n`);
+        log(`${JSON.stringify(spec.id === 'flamegraph' || spec.id === 'ebpf-profiler'
+          ? compactProfileResult(result) : result)}\n`);
         if (!result.ready) throw new AppError('能力尚未就绪或执行失败', 409);
       },
       { title: `第三批能力 · ${spec.name}`, vmId: id, projectId, action: `next:${spec.id}` },

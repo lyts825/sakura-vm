@@ -228,6 +228,23 @@ export function CapabilityActionsPanel({
           {selected === 'host-disk-health' && result?.provider === 'Windows Storage' && (
             <HostDiskHealthReport report={result} />
           )}
+          {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
+            typeof result?.samples === 'number' && (
+              <div className="feature-card">
+                <p>已采集 {result.samples} 次样本
+                  {typeof result.stackCount === 'number' ? ` · ${result.stackCount} 条内核调用栈` : ''}。</p>
+                {result.clipped && <p className="subtle-note">输出超过采样上限；下载报告仅包含已解析部分。</p>}
+                {selected === 'ebpf-profiler' && Array.isArray(result.topSymbols) && (
+                  <table>
+                    <thead><tr><th>内核函数</th><th>样本数</th><th>占比</th></tr></thead>
+                    <tbody>{result.topSymbols.slice(0, 10).map((item: any) => (
+                      <tr key={item.name}><td>{item.name}</td><td>{item.count}</td>
+                        <td>{item.percent}%</td></tr>
+                    ))}</tbody>
+                  </table>
+                )}
+              </div>
+            )}
           {result?.download && (
             <button
               className="secondary compact"
