@@ -17,6 +17,7 @@ import { backupBlocks } from './backup-blocks.ts';
 import { readAvailabilityReport } from './availability.ts';
 import { hostDiskHealth } from './host-disk-health.ts';
 import { hostPower, powerDecision, powerPolicy, savePowerPolicy } from './power-policy.ts';
+import { checkFlamegraph, runFlamegraph } from './flamegraph.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -58,6 +59,8 @@ export class CapabilityActions {
       };
     if (this.machines.state(id) !== 'running')
       return { ready: false, executed: false, featureId, reason: '请先启动发行版。' };
+    if (featureId === 'flamegraph')
+      return { featureId, ...await checkFlamegraph(this.machines, id, signal) };
     if (reportCapabilities.has(featureId) || featureId === 'cross-vm-copy')
       return { ready: true, executed: false, featureId, reason: '实例已运行；执行时检查目标与采样结果。' };
     const probe = await this.machines.exec(
@@ -80,6 +83,8 @@ export class CapabilityActions {
     this.machines.requireUnlocked(id);
     const parameters = capabilityParameters(featureId, input);
     signal.throwIfAborted();
+    if (featureId === 'flamegraph')
+      return runFlamegraph(this.machines, id, parameters, signal);
     if (featureId === 'power-aware-schedule') {
       const p = capabilityDefinitions[featureId].schema.parse(parameters);
       if (p.mode === 'save' && !p.policy) throw new AppError('保存时需要提供电源策略');

@@ -6,6 +6,7 @@ import { reservationSchema } from './resource-policies.ts';
 import { diskHealthThresholds } from './host-disk-health.ts';
 import { powerPolicySchema } from './power-policy.ts';
 import { networkEmulationShape } from './network-emulation.ts';
+import { flamegraphOptions } from './flamegraph.ts';
 
 export const relativePath = z
   .string()
@@ -40,6 +41,13 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  flamegraph: action(
+    '客户机性能火焰图',
+    'next',
+    flamegraphOptions.shape,
+    { durationSeconds: 5, frequencyHz: 49 },
+    '在运行中的客户机用 perf 对所有 CPU 采样调用栈，聚合为可下载的 SVG 火焰图。需要客户机安装 perf 并允许性能采样；最长 10 秒，最多分析 2000 次采样。',
+  ),
   'network-emulation': action(
     '客户机延迟与丢包模拟',
     'next',
