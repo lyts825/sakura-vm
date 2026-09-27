@@ -1819,6 +1819,18 @@ function ResourceFields({
           <option value="whpx">WHPX · 硬件加速，需已启用 Windows Hypervisor Platform</option>
         </select>
       </label>
+      <label>
+        启动固件
+        <select
+          aria-label="启动固件"
+          value={config.firmware || 'bios'}
+          onChange={(e) => set({ ...config, firmware: e.target.value as VMConfig['firmware'] })}
+        >
+          <option value="bios">BIOS · 兼容现有磁盘</option>
+          <option value="uefi">UEFI · OVMF 固件</option>
+        </select>
+        <small>切换已有实例前，请确认磁盘包含对应固件可启动的系统。</small>
+      </label>
     </fieldset>
   );
 }
@@ -1957,6 +1969,7 @@ function ConfigPanel({
     forwards: vm.forwards,
     distro: vm.distro,
     template: vm.template,
+    firmware: vm.firmware,
   });
   const running = active(vm);
   const hasNetwork = usePlugin('network');

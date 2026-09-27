@@ -429,6 +429,7 @@ test('image library uploads a selected disk format with provisioning choices and
   await panel.getByLabel('镜像导入实例名称').fill('from-vmdk');
   await panel.getByLabel('镜像文件格式').selectOption('vmdk');
   await panel.getByLabel('镜像源发行版').selectOption('debian');
+  await panel.getByLabel('导入实例固件').selectOption('uefi');
   await panel.getByLabel('导入实例内存').fill('2048');
   await panel.getByLabel('导入镜像 SHA-256').fill('bad');
   await panel.locator('input[type=file]').setInputFiles({ name: 'disk.vmdk', mimeType: 'application/octet-stream', buffer: Buffer.alloc(1024) });
@@ -439,11 +440,29 @@ test('image library uploads a selected disk format with provisioning choices and
   await expect(page.getByRole('status')).toContainText('镜像已导入');
   expect(submitted?.searchParams.get('format')).toBe('vmdk');
   expect(submitted?.searchParams.get('distro')).toBe('debian');
+  expect(submitted?.searchParams.get('firmware')).toBe('uefi');
   expect(submitted?.searchParams.get('memoryMiB')).toBe('2048');
   expect(submitted?.searchParams.get('sha256')).toBe('a'.repeat(64));
   await expect(panel).toContainText('a'.repeat(64));
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test('new Linux instance submits UEFI firmware selection with its resource configuration', async ({ page }) => {
+  await app(page);
+  let created: any;
+  await page.route('**/api/vms', (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: [] });
+    created = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { ...vm, ...created, id: randomUUID(), status: 'stopped', poweredOn: false, snapshots: [] } });
+  });
+  await page.getByRole('button', { name: '创建发行版', exact: true }).click();
+  await page.getByLabel('启动固件').selectOption('uefi');
+  await page.getByLabel('创建后立即启动').uncheck();
+  await page.getByRole('button', { name: '创建发行版', exact: true }).last().click();
+  await expect.poll(() => created?.firmware).toBe('uefi');
+  await expect(page.getByLabel('启动固件')).toHaveCount(0);
+  expect(created.firmware).toBe('uefi');
 });
 
 test('clipboard policy remains enforced in memory when browser persistence is unavailable', async ({

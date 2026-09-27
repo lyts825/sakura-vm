@@ -9,6 +9,7 @@ import { readStore, writeStore } from './local-store.ts';
 import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { hardwareCompatibility } from './hardware-compatibility.ts';
+import { firmwareSupport } from './firmware.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -96,7 +97,7 @@ export const nextFeatureCatalog = [
     '虚拟硬件与固件',
     'P1',
     '检测宿主机是否有 UEFI/OVMF 固件并保存选择。',
-    'planned',
+    'available',
   ],
   [
     'vtpm-key-enrollment',
@@ -816,6 +817,19 @@ export class NextFeatures {
         executed: action === 'run',
         adapter,
       };
+    if (spec.id === 'uefi-ovmf') {
+      const support = await firmwareSupport();
+      return {
+        ready: support.available,
+        executed: action === 'run',
+        adapter,
+        support,
+        selected: this.machines.get(id).firmware || 'bios',
+        message: support.available
+          ? '在创建实例或停止实例后的资源配置中选择 UEFI；启动时使用独立的 OVMF NVRAM 文件。'
+          : support.reason,
+      };
+    }
     if (hasCapability(spec.id)) {
       const runner = new CapabilityActions(this.machines, this.workspaces);
       return action === 'run'

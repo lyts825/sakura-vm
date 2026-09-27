@@ -277,7 +277,13 @@ vCPU 热插拔仍标记为部分实现：已接通 QMP 添加和上线检查，�
 
 该入口面向与 Sakura 首次启动配置兼容的 Alpine、Debian、Ubuntu Linux 云镜像，需按源镜像选择发行版；不承诺启动任意操作系统或没有云初始化代理的已有虚拟机。实例包 `.sakura` 仍由原导入入口恢复。接口为 `POST /api/image-import?name=...&format=raw|vmdk|vhdx|ova&distro=alpine|debian|ubuntu&memoryMiB=...&cpus=...`，请求体是二进制文件，可附 `sha256` 查询参数；响应包含新实例与源文件哈希。
 
+## UEFI 与 OVMF 固件
+
+实例创建、停止状态下的资源配置和通用镜像导入现在可选择 BIOS 或 UEFI。能力中心会检查本机 QEMU 目录中的 x86_64 OVMF 代码与变量模板；缺失时拒绝保存 UEFI 实例配置。UEFI 实例首次启动时在自身目录生成独立 NVRAM 文件，后续重启沿用该文件，QEMU 通过只读代码 pflash 和可写变量 pflash 启动。切换固件不转换现有磁盘分区或引导程序；Sakura 包导出与克隆当前仅保留磁盘，恢复后的 UEFI NVRAM 从模板重新生成，自定义 EFI 启动项可能需要重建。
+
 ## 验证
+
+UEFI/OVMF 批次：`npm run verify` 全部通过，包括 438 项 Node 测试、50 个浏览器场景、生产构建、分发检查与 6 种编译后插件组合；真实 `npm run test:uefi` 验证 Debian 客户机从 OVMF 启动、NVRAM 持久化和再次启动。
 
 通用镜像导入批次：435 项 Node 测试、49 个浏览器场景、生产构建、分发检查与 6 种编译后插件组合通过；真实 `npm run test:image-import` 验证 RAW、VMDK、VHDX、streamOptimized OVA 和小容量云镜像均可导入并启动。一次与 QEMU 并行的浏览器全集运行中 Chromium 新页面崩溃，QEMU 结束后单进程重跑 49/49 全部通过。
 

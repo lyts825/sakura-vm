@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { DATA, AppError } from './model.ts';
 import { distroInfo } from './images.ts';
+import { requireUefiSupport } from './firmware.ts';
 import { regularDirectory, within } from './local-store.ts';
 import { validateDiskHeader } from './bundles.ts';
 import type { Machines } from './machines.ts';
@@ -21,6 +22,7 @@ export const diskImportSchema = z.object({
   memoryMiB: z.number().int().min(256).max(8192),
   cpus: z.number().int().min(1).max(8),
   accelerator: z.enum(['auto', 'tcg', 'whpx']).default('auto'),
+  firmware: z.enum(['bios', 'uefi']).default('bios'),
   sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 }).strict();
 export type DiskImportInput = z.infer<typeof diskImportSchema>;
@@ -153,6 +155,7 @@ export class DiskImports {
   constructor(private machines: Machines) {}
   async import(input: unknown, source: Readable, signal?: AbortSignal) {
     const request = diskImportSchema.parse(input);
+    if (request.firmware === 'uefi') await requireUefiSupport();
     await regularDirectory(DATA);
     const transfers = join(DATA, 'transfers');
     await mkdir(transfers, { recursive: true });
@@ -236,6 +239,7 @@ export class DiskImports {
         memoryMiB: request.memoryMiB,
         cpus: request.cpus,
         accelerator: request.accelerator,
+        firmware: request.firmware,
         diskGiB,
         forwards: [],
       }, disk, { signal, pendingResize: virtual < diskGiB * GiB });

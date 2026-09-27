@@ -37,6 +37,7 @@ export async function route(
       memoryMiB: Number(url.searchParams.get('memoryMiB')),
       cpus: Number(url.searchParams.get('cpus')),
       accelerator: url.searchParams.get('accelerator') || 'auto',
+      firmware: url.searchParams.get('firmware') || 'bios',
       ...(url.searchParams.has('sha256') ? { sha256: url.searchParams.get('sha256') } : {}),
     });
     this.importing = true;

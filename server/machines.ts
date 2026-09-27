@@ -36,6 +36,7 @@ import { bootGuardStatus, recordBootAttempt, resetBootGuard } from './boot-guard
 import { hardwareArguments, deviceArguments, diskOptions, hardwareSchema } from '../shared/hardware.ts';
 import { resourcePolicy, validateAdmission } from './resource-policies.ts';
 import { cpuSetSize } from './guest-hardware.ts';
+import { ensureUefiFirmware, requireUefiSupport } from './firmware.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
@@ -323,6 +324,7 @@ export class Machines extends EventEmitter {
   private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);
+      if (config.firmware === 'uefi') await requireUefiSupport();
       if (sandbox !== undefined) {
         sandbox = sandboxPolicySchema.parse(sandbox);
         if (sandboxExpired(sandbox)) throw new AppError('沙箱期限必须晚于当前时间');
@@ -443,6 +445,7 @@ export class Machines extends EventEmitter {
           for (const p of this.get(otherId).forwards)
             if (vm.forwards.some((n) => n.host === p.host))
               throw new AppError(`端口 ${p.host} 已被另一实例使用`, 409);
+        const firmware = vm.firmware === 'uefi' ? await ensureUefiFirmware(id) : null;
         const [sshPort, qmpPort, serialPort] = await Promise.all([freePort(), freePort(), freePort()]);
         await recordBootAttempt(id);
         const accelerator =
@@ -510,6 +513,10 @@ export class Machines extends EventEmitter {
           '-monitor',
           'none',
           '-no-reboot',
+          ...(firmware ? [
+            '-drive', `if=pflash,unit=0,format=raw,readonly=on,file=${escape(firmware.code)}`,
+            '-drive', `if=pflash,unit=1,format=raw,file=${escape(firmware.vars)}`,
+          ] : []),
           '-drive',
           `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,format=qcow2,${diskOptions(vm)}${vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''}`,
           '-drive',
@@ -991,6 +998,7 @@ export class Machines extends EventEmitter {
       this.requireMutableConfig(vm);
       this.requireStopped(id);
       const config = createSchema.parse(input);
+      if (config.firmware === 'uefi') await requireUefiSupport();
       if (config.name !== vm.name) throw new AppError('实例名称创建后不可修改');
       if (config.diskGiB !== vm.diskGiB) throw new AppError('磁盘大小创建后不可修改');
       if ((config.distro || 'alpine') !== (vm.distro || 'alpine'))
@@ -1023,6 +1031,7 @@ export class Machines extends EventEmitter {
       accelerator: vm.accelerator,
       distro: vm.distro,
       template: vm.template,
+      firmware: vm.firmware,
       forwards: vm.forwards,
       hardware,
     });
@@ -1589,6 +1598,7 @@ export class Machines extends EventEmitter {
     return this.locked('create', async () => {
       const { signal, pendingResize } = options;
       const config = createSchema.parse(input);
+      if (config.firmware === 'uefi') await requireUefiSupport();
       if (!config.distro || (config.template && config.template !== 'none'))
         throw new AppError('导入镜像需要选择 Linux 发行版，且不能自动安装模板');
       const image = distroInfo(config.distro);
@@ -1651,6 +1661,7 @@ export class Machines extends EventEmitter {
   ) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);
+      if (config.firmware === 'uefi') await requireUefiSupport();
       if (this.records.size >= 32 || [...this.records.values()].some((v) => v.name === config.name))
         throw new AppError('名称已存在或已达到 32 个实例上限', 409);
       const vm: VMRecord = {

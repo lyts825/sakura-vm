@@ -41,6 +41,7 @@ export function ImageCatalog({
   const [diskDistro, setDiskDistro] = useState<'alpine' | 'debian' | 'ubuntu'>('alpine');
   const [diskMemory, setDiskMemory] = useState(1024);
   const [diskCpus, setDiskCpus] = useState(2);
+  const [diskFirmware, setDiskFirmware] = useState<'bios' | 'uefi'>('bios');
   const [diskSha256, setDiskSha256] = useState('');
   const [importedHash, setImportedHash] = useState('');
   return (
@@ -97,6 +98,11 @@ export function ImageCatalog({
           <label>CPU
             <input aria-label="导入实例 CPU" type="number" min={1} max={8} value={diskCpus} onChange={(event) => setDiskCpus(Number(event.target.value))} />
           </label>
+          <label>启动固件
+            <select aria-label="导入实例固件" value={diskFirmware} onChange={(event) => setDiskFirmware(event.target.value as typeof diskFirmware)}>
+              <option value="bios">BIOS</option><option value="uefi">UEFI / OVMF</option>
+            </select>
+          </label>
         </div>
         <label>预期 SHA-256（可选）
           <input aria-label="导入镜像 SHA-256" placeholder="留空则仅计算并显示校验值" value={diskSha256} maxLength={64} onChange={(event) => setDiskSha256(event.target.value.toLowerCase().trim())} />
@@ -110,7 +116,7 @@ export function ImageCatalog({
             if (!/^[a-z][a-z0-9-]{0,31}$/.test(diskName)) throw new Error('实例名称格式不正确');
             if (selected.size > 8 * 1024 ** 3) throw new Error('镜像文件超过 8 GiB');
             if (diskSha256 && !/^[a-f0-9]{64}$/.test(diskSha256)) throw new Error('SHA-256 必须为 64 位十六进制');
-            const query = new URLSearchParams({ name: diskName, format: diskFormat, distro: diskDistro, memoryMiB: String(diskMemory), cpus: String(diskCpus) });
+            const query = new URLSearchParams({ name: diskName, format: diskFormat, distro: diskDistro, memoryMiB: String(diskMemory), cpus: String(diskCpus), firmware: diskFirmware });
             if (diskSha256) query.set('sha256', diskSha256);
             const response = await fetch(`/api/image-import?${query}`, {
               method: 'POST',

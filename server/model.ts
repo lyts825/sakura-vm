@@ -25,6 +25,7 @@ export const createSchema = z
     cpus: z.number().int().min(1).max(8).default(2),
     diskGiB: z.number().int().min(2).max(128).default(8),
     accelerator: z.enum(['auto', 'tcg', 'whpx']).default('auto'),
+    firmware: z.enum(['bios', 'uefi']).optional(),
     distro: z.enum(['alpine', 'debian', 'ubuntu']).optional(),
     template: z.enum(['none', 'node', 'python', 'rust']).optional(),
     hardware: hardwareSchema.optional(),

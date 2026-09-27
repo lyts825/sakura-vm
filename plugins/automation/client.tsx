@@ -512,6 +512,10 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
         setNextResult('打开实例 → 备份，设置备份输出限速（MiB/s）。每个实例串行创建备份；0 表示不限制速率。');
         return;
       }
+      if (featureId === 'uefi-ovmf') {
+        setNextResult('创建实例或停止现有实例后，在资源配置中把启动固件设为 UEFI。Sakura 会检测 OVMF 文件，并为该实例持久保存独立 NVRAM；已有磁盘需要包含 UEFI 启动环境。');
+        return;
+      }
       if (next.data?.capabilities?.some((item) => item.id === featureId)) {
         setNextCapability(featureId);
         return;
