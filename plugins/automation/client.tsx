@@ -369,6 +369,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'image-import': '打开镜像库 → 导入其他镜像，选择 RAW、VMDK、VHDX 或 OVA 文件及对应 Linux 发行版。镜像须支持 NoCloud/Tiny Cloud 初始化。',
         'rescue-boot':
           '启用磁盘快照插件，在停止实例的快照页使用“只读救援”。临时系统只读检查源盘，执行结束后清理；需要保留的文件请复制到 /workspace 并列为产物。',
         'cow-workspace':

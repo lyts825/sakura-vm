@@ -255,6 +255,14 @@
   align-items: center;
   gap: 10px;
 }
+.disk-import-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.disk-import-hash {
+  overflow-wrap: anywhere;
+}
 .inline-form > input {
   flex: 1;
 }

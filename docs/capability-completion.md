@@ -271,7 +271,15 @@ vCPU 热插拔仍标记为部分实现：已接通 QMP 添加和上线检查，�
 
 能力中心的“硬件兼容矩阵”现在执行 QEMU `-device help`、`-accel help` 和 `-machine help` 探测，显示 Q35、TCG、WHPX、Virtio/e1000 网卡、随机数、内存气球和内存热插拔设备。WHPX 还使用服务启动时的暂停虚机探测结果，区分编译进二进制与宿主真正可用。报告逐项比对当前实例选择的加速器、网卡和设备，并指出缺失设备或 CPU/NUMA 配置冲突。矩阵描述宿主与 QEMU 能力，不推断客户机驱动是否正常；真实 `npm run test:hardware-matrix` 已在本机 QEMU 11.1 完成探测。
 
+## 通用镜像导入
+
+镜像库新增“导入其他镜像”，可上传 RAW、独立单文件 VMDK、VHDX 或单磁盘 OVA。服务流式计算 SHA-256，可按用户提供的预期值拒绝损坏或错误文件；上传不超过 8 GiB，虚拟容量最大 128 GiB。低于所选发行版最低容量的源磁盘自动扩容，并将客户机文件系统标记为待扩展。OVA 校验 TAR 条目与 OVF 文件引用，只提取单个 VMDK 到受控临时目录。QEMU 转换为独立 QCOW2 后再次检查容量、外部依赖、加密与文件头；成功后复制为新实例，生成新的 SSH 密钥和 NoCloud 种子，清空端口转发。失败或取消时清除临时文件，不发布实例。
+
+该入口面向与 Sakura 首次启动配置兼容的 Alpine、Debian、Ubuntu Linux 云镜像，需按源镜像选择发行版；不承诺启动任意操作系统或没有云初始化代理的已有虚拟机。实例包 `.sakura` 仍由原导入入口恢复。接口为 `POST /api/image-import?name=...&format=raw|vmdk|vhdx|ova&distro=alpine|debian|ubuntu&memoryMiB=...&cpus=...`，请求体是二进制文件，可附 `sha256` 查询参数；响应包含新实例与源文件哈希。
+
 ## 验证
+
+通用镜像导入批次：435 项 Node 测试、49 个浏览器场景、生产构建、分发检查与 6 种编译后插件组合通过；真实 `npm run test:image-import` 验证 RAW、VMDK、VHDX、streamOptimized OVA 和小容量云镜像均可导入并启动。一次与 QEMU 并行的浏览器全集运行中 Chromium 新页面崩溃，QEMU 结束后单进程重跑 49/49 全部通过。
 
 签名实例包批次：428 项 Node 测试、47 个浏览器场景、生产构建与分发检查、6 种编译后插件组合通过；真实 Alpine 虚拟机的签名包导入和启动通过。
 

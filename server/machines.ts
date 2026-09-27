@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { mkdir, readFile, writeFile, rename, rm, stat, copyFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, createReadStream, createWriteStream } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createConnection, type Socket } from 'node:net';
@@ -8,6 +8,7 @@ import { Client, type SFTPWrapper } from 'ssh2';
 import { StringDecoder } from 'node:string_decoder';
 import { isUtf8 } from 'node:buffer';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   AppError,
@@ -1581,6 +1582,61 @@ export class Machines extends EventEmitter {
       live.memoryTargetMiB = memoryMiB;
       this.emit('change');
       return this.view(id);
+    });
+  }
+  // Provision a converted cloud image with a new controller identity on its first boot.
+  async importDisk(input: unknown, disk: string, options: { signal?: AbortSignal; pendingResize?: boolean } = {}) {
+    return this.locked('create', async () => {
+      const { signal, pendingResize } = options;
+      const config = createSchema.parse(input);
+      if (!config.distro || (config.template && config.template !== 'none'))
+        throw new AppError('导入镜像需要选择 Linux 发行版，且不能自动安装模板');
+      const image = distroInfo(config.distro);
+      if (config.memoryMiB < image.minimumMemory || config.diskGiB < image.minimumDisk)
+        throw new AppError(`${image.name} 至少需要 ${image.minimumMemory} MiB 内存、${image.minimumDisk} GiB 磁盘`);
+      if (this.records.size >= 32 || [...this.records.values()].some((vm) => vm.name === config.name))
+        throw new AppError('名称已存在或已达到 32 个实例上限', 409);
+      const vm: VMRecord = {
+        ...config,
+        id: randomUUID(),
+        createdAt: new Date().toISOString(),
+        snapshots: [],
+        bootstrapped: false,
+        pendingResize: !!pendingResize,
+      };
+      const dir = vmDir(vm.id);
+      await mkdir(dir);
+      let saved = false;
+      try {
+        signal?.throwIfAborted();
+        const key = createSshKey();
+        const seed = seedIso({
+          'meta-data': metaData(vm.id, vm.name, key.publicText),
+          'user-data': vm.distro === 'alpine'
+            ? userData(vm.name, key.publicText)
+            : cloudUserData(vm.name, key.publicText),
+          ...(vm.distro === 'alpine' ? {} : { 'network-config': cloudNetwork }),
+        });
+        await pipeline(
+          createReadStream(disk),
+          createWriteStream(join(dir, 'disk.qcow2'), { flags: 'wx', mode: 0o600 }),
+          { signal },
+        );
+        await writeFile(join(dir, 'id_rsa'), key.privateText, { mode: 0o600 });
+        await writeFile(join(dir, 'seed.iso'), seed);
+        signal?.throwIfAborted();
+        this.records.set(vm.id, vm);
+        await this.save();
+        saved = true;
+        signal?.throwIfAborted();
+        this.emit('change');
+        return this.view(vm.id);
+      } catch (error) {
+        this.records.delete(vm.id);
+        if (saved) await this.save();
+        await rm(dir, { recursive: true, force: true });
+        throw error;
+      }
     });
   }
   // Publish a validated standalone disk and rotate its controller key at first boot.

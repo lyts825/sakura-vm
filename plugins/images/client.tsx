@@ -35,6 +35,14 @@ export function ImageCatalog({
   const [name, setName] = useState('imported-linux');
   const [password, setPassword] = useState('');
   const file = useRef<HTMLInputElement>(null);
+  const diskFile = useRef<HTMLInputElement>(null);
+  const [diskName, setDiskName] = useState('imported-disk');
+  const [diskFormat, setDiskFormat] = useState<'raw' | 'vmdk' | 'vhdx' | 'ova'>('raw');
+  const [diskDistro, setDiskDistro] = useState<'alpine' | 'debian' | 'ubuntu'>('alpine');
+  const [diskMemory, setDiskMemory] = useState(1024);
+  const [diskCpus, setDiskCpus] = useState(2);
+  const [diskSha256, setDiskSha256] = useState('');
+  const [importedHash, setImportedHash] = useState('');
   return (
     <div className="feature-panel">
       <Feedback error={action.error || remote.error} message={action.message} />
@@ -65,6 +73,59 @@ export function ImageCatalog({
             <JobLog job={img.job} />
           </div>
         ))}
+      </div>
+      <div className="feature-card">
+        <h3>导入其他镜像</h3>
+        <p>导入独立的 RAW、VMDK、VHDX 或单磁盘 OVA，转换成 Sakura 管理的 QCOW2 实例。源镜像应是支持 NoCloud/Tiny Cloud 初始化的 Linux 云镜像；最多上传 8 GiB，虚拟磁盘最大 128 GiB。较小镜像会扩容到所选发行版的最低容量。</p>
+        <div className="disk-import-form">
+          <label>实例名称
+            <input aria-label="镜像导入实例名称" pattern="[a-z][a-z0-9-]*" maxLength={32} value={diskName} onChange={(event) => setDiskName(event.target.value)} />
+          </label>
+          <label>文件格式
+            <select aria-label="镜像文件格式" value={diskFormat} onChange={(event) => setDiskFormat(event.target.value as typeof diskFormat)}>
+              <option value="raw">RAW</option><option value="vmdk">VMDK</option><option value="vhdx">VHDX</option><option value="ova">OVA</option>
+            </select>
+          </label>
+          <label>源发行版
+            <select aria-label="镜像源发行版" value={diskDistro} onChange={(event) => setDiskDistro(event.target.value as typeof diskDistro)}>
+              <option value="alpine">Alpine</option><option value="debian">Debian</option><option value="ubuntu">Ubuntu</option>
+            </select>
+          </label>
+          <label>内存 MiB
+            <input aria-label="导入实例内存" type="number" min={diskDistro === 'alpine' ? 256 : 1024} max={8192} value={diskMemory} onChange={(event) => setDiskMemory(Number(event.target.value))} />
+          </label>
+          <label>CPU
+            <input aria-label="导入实例 CPU" type="number" min={1} max={8} value={diskCpus} onChange={(event) => setDiskCpus(Number(event.target.value))} />
+          </label>
+        </div>
+        <label>预期 SHA-256（可选）
+          <input aria-label="导入镜像 SHA-256" placeholder="留空则仅计算并显示校验值" value={diskSha256} maxLength={64} onChange={(event) => setDiskSha256(event.target.value.toLowerCase().trim())} />
+        </label>
+        <button className="secondary compact" disabled={action.busy} onClick={() => diskFile.current?.click()}>
+          <Upload size={14} />{action.busy ? '正在处理…' : '选择镜像文件'}
+        </button>
+        <input ref={diskFile} type="file" accept=".raw,.img,.vmdk,.vhdx,.ova" hidden onChange={(event) => {
+          const selected = event.target.files?.[0];
+          if (selected) void action.run(async (signal) => {
+            if (!/^[a-z][a-z0-9-]{0,31}$/.test(diskName)) throw new Error('实例名称格式不正确');
+            if (selected.size > 8 * 1024 ** 3) throw new Error('镜像文件超过 8 GiB');
+            if (diskSha256 && !/^[a-f0-9]{64}$/.test(diskSha256)) throw new Error('SHA-256 必须为 64 位十六进制');
+            const query = new URLSearchParams({ name: diskName, format: diskFormat, distro: diskDistro, memoryMiB: String(diskMemory), cpus: String(diskCpus) });
+            if (diskSha256) query.set('sha256', diskSha256);
+            const response = await fetch(`/api/image-import?${query}`, {
+              method: 'POST',
+              headers: { 'X-Sakura-Token': token, 'Content-Type': 'application/octet-stream' },
+              body: selected,
+              signal,
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || '导入失败');
+            setImportedHash(result.source.sha256);
+            await refresh();
+          }, '镜像已导入，可在工作空间启动');
+          event.target.value = '';
+        }} />
+        {importedHash && <p className="disk-import-hash">最近导入文件 SHA-256：<code>{importedHash}</code></p>}
       </div>
       <PluginGate id="snapshots">
         <div className="feature-card">

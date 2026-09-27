@@ -100,6 +100,7 @@ export type FeatureCatalogItem = {
 };
 
 const availableFeatureIds = new Set<FeatureId>([
+  'image-import',
   'power-schedules',
   'idle-shutdown',
   'dynamic-memory',

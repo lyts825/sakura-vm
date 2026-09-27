@@ -411,6 +411,41 @@ test('signed bundle policy manages trusted keys on snapshot and image pages at d
   }
 });
 
+test('image library uploads a selected disk format with provisioning choices and shows integrity result', async ({ page }) => {
+  await app(page, ['images']);
+  await page.route('**/api/images', (route) => route.fulfill({ json: [] }));
+  let submitted: URL | undefined;
+  await page.route('**/api/image-import*', (route) => {
+    submitted = new URL(route.request().url());
+    expect(route.request().postDataBuffer()?.length).toBe(1024);
+    expect(route.request().headers()['x-sakura-token']).toBe('test-token');
+    return route.fulfill({ status: 201, json: {
+      vm: { id: randomUUID(), name: 'from-vmdk' },
+      source: { format: 'vmdk', bytes: 1024, sha256: 'a'.repeat(64), virtualBytes: 2 * 1024 ** 3 },
+    } });
+  });
+  await page.getByRole('button', { name: '镜像库', exact: true }).click();
+  const panel = page.getByRole('heading', { name: '导入其他镜像' }).locator('..');
+  await panel.getByLabel('镜像导入实例名称').fill('from-vmdk');
+  await panel.getByLabel('镜像文件格式').selectOption('vmdk');
+  await panel.getByLabel('镜像源发行版').selectOption('debian');
+  await panel.getByLabel('导入实例内存').fill('2048');
+  await panel.getByLabel('导入镜像 SHA-256').fill('bad');
+  await panel.locator('input[type=file]').setInputFiles({ name: 'disk.vmdk', mimeType: 'application/octet-stream', buffer: Buffer.alloc(1024) });
+  await expect(page.getByRole('alert')).toContainText('SHA-256 必须为 64 位十六进制');
+  expect(submitted).toBeUndefined();
+  await panel.getByLabel('导入镜像 SHA-256').fill('a'.repeat(64));
+  await panel.locator('input[type=file]').setInputFiles({ name: 'disk.vmdk', mimeType: 'application/octet-stream', buffer: Buffer.alloc(1024) });
+  await expect(page.getByRole('status')).toContainText('镜像已导入');
+  expect(submitted?.searchParams.get('format')).toBe('vmdk');
+  expect(submitted?.searchParams.get('distro')).toBe('debian');
+  expect(submitted?.searchParams.get('memoryMiB')).toBe('2048');
+  expect(submitted?.searchParams.get('sha256')).toBe('a'.repeat(64));
+  await expect(panel).toContainText('a'.repeat(64));
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test('clipboard policy remains enforced in memory when browser persistence is unavailable', async ({
   page,
 }) => {
