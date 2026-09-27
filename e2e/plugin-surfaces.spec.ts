@@ -3053,6 +3053,46 @@ test('notebook session opens its authenticated local link from the capability ce
   expect(linkRequests).toBe(1);
 });
 
+test('browser IDE reveals a bounded password only after opening its local session', async ({ page }) => {
+  await app(page, ['projects', 'platform'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }),
+  );
+  const expiresAt = new Date(Date.now() + 3600000).toISOString();
+  await page.route('**/api/vms/*/next-features*', (route) => route.fulfill({
+    json: {
+      projectId: 'default', settings: {}, records: {}, executions: [],
+      jobs: [{ id: 'browser-ide-job', action: 'next:authenticated-ide-preview',
+        status: 'done', log: '', startedAt: new Date().toISOString(),
+        result: { bytes: 100, sha256: 'b'.repeat(64) } }],
+      capabilities: capabilityViews('next'), features: [],
+    },
+  }));
+  await page.route('**/api/jobs/browser-ide-job/result*', (route) => route.fulfill({
+    json: { jobId: 'browser-ide-job', result: { message: '浏览器 IDE 已启动',
+      session: { status: 'running', hostPort: 49123, guestPort: 8080, expiresAt } } },
+  }));
+  const password = 'c'.repeat(64);
+  let linkRequests = 0;
+  await page.route('**/api/vms/*/browser-ide-link*', (route) => {
+    linkRequests++;
+    return route.fulfill({ json: { url: 'http://127.0.0.1:49123/', password, expiresAt } });
+  });
+  await page.context().route('http://127.0.0.1:49123/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<h1>code-server login</h1>' }),
+  );
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('next 功能操作').selectOption('authenticated-ide-preview');
+  await expect(page.getByText(password)).toHaveCount(0);
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('button', { name: '打开浏览器 IDE' }).click();
+  const popup = await popupPromise;
+  await expect(popup.getByRole('heading', { name: 'code-server login' })).toBeVisible();
+  await expect(page.getByText(password)).toBeVisible();
+  expect(linkRequests).toBe(1);
+});
+
 test('hardware compatibility check displays probed devices and current configuration on mobile', async ({
   page,
 }) => {

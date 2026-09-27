@@ -35,6 +35,10 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.equal(notebookLink.operationId, 'platform.notebook-link');
   assert.deepEqual(notebookLink.responses[200].content!['application/json'].schema.required,
     ['provider', 'url']);
+  const browserIdeLink = spec.paths['/api/vms/{vmId}/browser-ide-link'].get;
+  assert.equal(browserIdeLink.operationId, 'platform.browser-ide-link');
+  assert.deepEqual(browserIdeLink.responses[200].content!['application/json'].schema.required,
+    ['url', 'password', 'expiresAt']);
   assert.equal(spec.paths['/api/vms/{vmId}/metrics'].get['x-sakura-enabled'], false);
   assert.ok(
     spec.paths['/api/vms/{vmId}/commands'].get.parameters.some(

@@ -1522,6 +1522,39 @@
       "additionalProperties": false
     }
   },
+  "platform.browser-ide-link": {
+    "id": "browser-ide-link",
+    "method": "GET",
+    "path": "/api/vms/:vmId/browser-ide-link",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "password": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        }
+      },
+      "required": [
+        "url",
+        "password",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    }
+  },
   "sandbox.list": {
     "id": "list",
     "method": "GET",

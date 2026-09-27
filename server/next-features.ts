@@ -16,6 +16,7 @@ import { hostScoreInput, type HostScoreInput, type HostPeers } from './host-peer
 import type { ColdMigrations } from './cold-migration.ts';
 import type { SnapshotReplications } from './snapshot-replications.ts';
 import type { NotebookEnvironments } from './notebook-environments.ts';
+import type { BrowserIde } from './browser-ide.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -524,8 +525,8 @@ export const nextFeatureCatalog = [
     '认证浏览器 IDE',
     '操作系统与桌面',
     'P0',
-    '保存浏览器 IDE 会话和认证过期时间。',
-    'planned',
+    '在 Debian/Ubuntu 项目中启动带密码和到期时间的浏览器 IDE。',
+    'available',
   ],
   [
     'desktop-recording',
@@ -644,6 +645,7 @@ export class NextFeatures {
   private coldMigrations?: ColdMigrations;
   private snapshotReplications?: SnapshotReplications;
   private notebookEnvironments?: NotebookEnvironments;
+  private browserIde?: BrowserIde;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -672,6 +674,16 @@ export class NextFeatures {
     if (!this.notebookEnvironments) throw new AppError('Notebook 服务尚未启用', 503);
     this.machines.requireUnlocked(id);
     return this.notebookEnvironments.link(id);
+  }
+
+  setBrowserIde(service: BrowserIde) {
+    this.browserIde = service;
+  }
+
+  browserIdeLink(id: string) {
+    if (!this.browserIde) throw new AppError('浏览器 IDE 服务尚未启用', 503);
+    this.machines.requireUnlocked(id);
+    return this.browserIde.link(id);
   }
 
   private file() {
@@ -903,6 +915,15 @@ export class NextFeatures {
         ? await this.notebookEnvironments.run(id, merged,
           signal || new AbortController().signal, log)
         : await this.notebookEnvironments.view(id, merged, signal)), adapter };
+    }
+    if (spec.id === 'authenticated-ide-preview') {
+      if (!this.browserIde)
+        return { ready: false, executed: false, adapter,
+          reason: '浏览器 IDE 服务尚未启动。' };
+      return { ...(action === 'run'
+        ? await this.browserIde.run(id, merged,
+          signal || new AbortController().signal, log)
+        : await this.browserIde.view(id, merged, signal)), adapter };
     }
     if (spec.id === 'graphql-api')
       return {

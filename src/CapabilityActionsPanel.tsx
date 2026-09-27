@@ -31,6 +31,7 @@ export function CapabilityActionsPanel({
 }: Props) {
   const action = useAction();
   const [parameters, setParameters] = useState('{}');
+  const [ideAccess, setIdeAccess] = useState<{ password: string; expiresAt: string } | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, boolean>>({});
   const reportFormError = useCallback(
     (key: string, invalid: boolean) =>
@@ -43,7 +44,14 @@ export function CapabilityActionsPanel({
   const vmId = /^\/vms\/([^/]+)\/next-features$/.exec(path)?.[1];
   useEffect(() => {
     setParameters(JSON.stringify(definition?.example || {}, null, 2));
+    setIdeAccess(null);
   }, [selected, path, request]);
+  useEffect(() => {
+    if (!ideAccess) return;
+    const timer = setTimeout(() => setIdeAccess(null),
+      Math.max(0, new Date(ideAccess.expiresAt).getTime() - Date.now()));
+    return () => clearTimeout(timer);
+  }, [ideAccess]);
   const parsed = useMemo(() => {
     try {
       const value = JSON.parse(parameters);
@@ -278,6 +286,42 @@ export function CapabilityActionsPanel({
                   }, 'Notebook 已在新标签页打开');
                 }}
               >打开 Notebook</button>}
+            </div>
+          )}
+          {selected === 'authenticated-ide-preview' && result && (
+            <div className="feature-card">
+              <p>{result.message || '浏览器 IDE 会话状态'}</p>
+              {result.session && <p>
+                {result.session.status === 'running' ? '运行中' :
+                  result.session.status === 'expired' ? '已过期' :
+                    result.session.status === 'unhealthy' ? '入口未就绪' : '已停止'} ·
+                本机端口 {result.session.hostPort} ·
+                到期 {new Date(result.session.expiresAt).toLocaleString('zh-CN')}
+              </p>}
+              {result.session?.status === 'running' && vmId && <button
+                className="secondary compact"
+                disabled={action.busy}
+                onClick={() => {
+                  const tab = window.open('about:blank', '_blank');
+                  if (tab) tab.opener = null;
+                  void action.run(async () => {
+                    if (!tab) throw new Error('浏览器阻止了新标签页，请允许弹窗后重试');
+                    try {
+                      const link = await request<{ url: string; password: string; expiresAt: string }>(
+                        `/vms/${vmId}/browser-ide-link`);
+                      setIdeAccess({ password: link.password, expiresAt: link.expiresAt });
+                      tab.location.replace(link.url);
+                    } catch (error) { tab.close(); throw error; }
+                  }, '浏览器 IDE 已在新标签页打开，请输入下方密码');
+                }}
+              >打开浏览器 IDE</button>}
+              {ideAccess && <p>访问密码：<code>{ideAccess.password}</code>
+                <button className="secondary compact" onClick={() =>
+                  void action.run(async () => navigator.clipboard.writeText(ideAccess.password),
+                    '访问密码已复制')
+                }>复制访问密码</button>
+                <span className="subtle-note">到期 {new Date(ideAccess.expiresAt).toLocaleString('zh-CN')}</span>
+              </p>}
             </div>
           )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&

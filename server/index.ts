@@ -31,6 +31,7 @@ import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
 import { NotebookEnvironments } from './notebook-environments.ts';
+import { BrowserIde } from './browser-ide.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 
@@ -105,10 +106,14 @@ async function main() {
   });
   let coldMigrations: ColdMigrations | undefined;
   let snapshotReplications: SnapshotReplications | undefined;
+  let browserIde: BrowserIde | undefined;
   if (features.next) {
     const notebooks = new NotebookEnvironments(machines, features.workspaces);
     await notebooks.init();
     features.next.setNotebookEnvironments(notebooks);
+    browserIde = new BrowserIde(machines, features.workspaces);
+    await browserIde.init();
+    features.next.setBrowserIde(browserIde);
   }
   if (features.next && features.bundles) {
     coldMigrations = new ColdMigrations(machines, features.bundles, hostPeers);
@@ -740,6 +745,7 @@ async function main() {
       () => hostPeers.close(),
       () => retention.close(),
       () => graph.close(),
+      () => browserIde?.close(),
       () => features.close(),
       () => machines.close(),
       () => audit.close(),

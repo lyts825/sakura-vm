@@ -11,8 +11,12 @@ export const manifest = definePlugin({
   contributes: {
     http: [http('/api/next-features', ['GET']),
       http('/api/vms/:vmId/next-features', ['GET', 'POST'], true),
-      http('/api/vms/:vmId/notebook-link', ['GET'], true)],
-    operations: [operation('notebook-link', 'GET', '/api/vms/:vmId/notebook-link')],
+      http('/api/vms/:vmId/notebook-link', ['GET'], true),
+      http('/api/vms/:vmId/browser-ide-link', ['GET'], true)],
+    operations: [
+      operation('notebook-link', 'GET', '/api/vms/:vmId/notebook-link'),
+      operation('browser-ide-link', 'GET', '/api/vms/:vmId/browser-ide-link'),
+    ],
     pages: ['features'],
   },
 });

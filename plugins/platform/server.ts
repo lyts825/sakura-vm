@@ -9,6 +9,13 @@ import { z } from 'zod';
 import type { PluginOperation } from '../../server/plugin-api.ts';
 
 export const operations: Record<string, PluginOperation> = {
+  'browser-ide-link': {
+    response: z.object({ url: z.url(), password: z.string().length(64),
+      expiresAt: z.iso.datetime() }).strict(),
+    execute(url) {
+      return this.next.browserIdeLink(url.pathname.split('/')[3]);
+    },
+  },
   'notebook-link': {
     response: z.object({ provider: z.enum(['jupyter', 'marimo']), url: z.url() }).strict(),
     execute(url) {

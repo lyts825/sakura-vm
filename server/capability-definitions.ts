@@ -11,6 +11,7 @@ import { ebpfProfileOptions } from './ebpf-profiler.ts';
 import { coldMigrationInput, maintenanceDrainInput } from './cold-migration.ts';
 import { snapshotReplicationInput } from './snapshot-replications.ts';
 import { notebookInput } from './notebook-environments.ts';
+import { browserIdeInput } from './browser-ide.ts';
 
 export const relativePath = z
   .string()
@@ -45,6 +46,15 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'authenticated-ide-preview': action(
+    '认证浏览器 IDE',
+    'next',
+    browserIdeInput.shape,
+    { mode: 'status', guestPort: 8080, hostPort: 8080, ttlMinutes: 60 },
+    'Debian/Ubuntu 客户机可安装并启动 code-server。入口只转发到本机回环地址，随机密码通过单独接口取得，到期会停止会话。',
+    false,
+    true,
+  ),
   'notebook-environment': action(
     'Jupyter/Marimo 环境',
     'next',
