@@ -396,6 +396,8 @@ test('generated local domains isolate same-path virtual hosts and use a verified
     assert.ok(certificate);
     const secureAlias = ingressAlias(secure.id);
     assert.equal(secure.url, `https://${secureAlias}:${httpsPort}/`);
+    assert.deepEqual(new Set(ingress.aliasNames()),
+      new Set([firstAlias, secondAlias, secureAlias]));
     assert.deepEqual(await hostedGet(httpsPort, secureAlias, certificate.pem), {
       status: 200, body: `first:${secureAlias}:${httpsPort}`,
     });

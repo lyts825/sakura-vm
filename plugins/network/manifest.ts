@@ -6,7 +6,7 @@ export const manifest = definePlugin({
   description: '端口转发、代理、软件源与网络诊断。',
   category: 'operations',
   optional: [pin('projects')],
-  services: ['network', 'certificates', 'ingress'],
+  services: ['network', 'certificates', 'ingress', 'localAliases'],
   contributes: {
     http: [
       http('/api/network-profiles', ['GET', 'POST', 'DELETE']),
@@ -14,12 +14,15 @@ export const manifest = definePlugin({
       http('/api/vms/:vmId/services', ['GET', 'PATCH']),
       http('/api/ingress', ['GET', 'POST']),
       http('/api/ingress-certificate', ['GET', 'POST']),
+      http('/api/local-aliases', ['GET', 'POST']),
     ],
     operations: [
       operation('ingress-view', 'GET', '/api/ingress'),
       operation('ingress-action', 'POST', '/api/ingress'),
       operation('ingress-certificate-view', 'GET', '/api/ingress-certificate'),
       operation('ingress-certificate-action', 'POST', '/api/ingress-certificate'),
+      operation('local-aliases-view', 'GET', '/api/local-aliases'),
+      operation('local-aliases-action', 'POST', '/api/local-aliases'),
     ],
     tabs: ['services', 'development'],
     developmentSections: ['network'],

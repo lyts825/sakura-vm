@@ -115,7 +115,8 @@ export const extendedFeatureCatalog = [
   ['network-quota', '网络带宽配额', '网络', 'P2', '限制带宽、连接数和请求速率。', 'planned'],
   ['ssh-agent-forward', 'SSH Agent 转发', '网络', 'P1', '在确认后转发宿主机 Agent。', 'planned'],
   ['gpg-agent-forward', 'GPG Agent 转发', '网络', 'P2', '在确认后转发签名 Agent。', 'planned'],
-  ['local-dns-alias', '本地域名别名', '网络', 'P0', '为服务生成本地域名和通配别名。', 'experimental'],
+  ['local-dns-alias', '本地域名别名', '网络', 'P0',
+    '为本机入口生成稳定别名，按需同步到 Windows hosts 系统解析。', 'available'],
   ['packet-capture', '数据包捕获', '网络', 'P1', '采集脱敏网络诊断包。', 'planned'],
   ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为受控调试创建一次性入口。', 'planned'],
   ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2', '检测并配置 TPM 和安全启动链。', 'planned'],
@@ -388,7 +389,7 @@ export class ExtendedFeatures {
         executed: false,
         state: spec.state,
         adapter,
-        reason: '网络插件 → 服务与端口可生成 .sakura.localhost 入口别名，并用 HTTPS 通配证书提供路由；浏览器已验证可访问，系统级解析器仍需另行适配。',
+        reason: '网络插件 → 服务与端口可生成 .sakura.localhost 入口别名；明确启用 Windows 系统域名解析后同步 Sakura 管理的 hosts 区块，需以管理员身份运行。',
       };
     if (spec.id === 'multi-host-view' || spec.id === 'multi-host-health')
       return {

@@ -10,13 +10,18 @@ import { HttpIngress } from '../../server/http-ingress.ts';
 import { ingressActionSchema, ingressViewSchema } from '../../shared/http-ingress.ts';
 import { IngressCertificates } from '../../server/ingress-certificates.ts';
 import { certificateActionSchema, certificateViewSchema } from '../../shared/ingress-certificates.ts';
+import { LocalAliases } from '../../server/local-aliases.ts';
+import { localAliasActionSchema, localAliasViewSchema } from '../../shared/local-aliases.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.network = new NetworkProfiles(m);
   const certificates = host.provide('certificates', new IngressCertificates(host.dataFile('certificates')));
   await certificates.init();
-  await host.provide('ingress', new HttpIngress(m, host.dataFile('ingress'), certificates)).init();
+  const ingress = host.provide('ingress', new HttpIngress(m, host.dataFile('ingress'), certificates));
+  await ingress.init();
+  await host.provide('localAliases', new LocalAliases(() => ingress.aliasNames(),
+    undefined, host.dataFile('local-aliases'))).init();
   host.registerJobs(host.network.jobs, () => {
     throw new AppError('请在网络配置中重新测试当前设置');
   });
@@ -44,8 +49,23 @@ export const operations: Record<string, PluginOperation> = {
   'ingress-action': {
     request: ingressActionSchema,
     response: ingressViewSchema,
+    async execute(_url, input) {
+      const view = await this.use<HttpIngress>('network', 'ingress').action(input);
+      await this.use<LocalAliases>('network', 'localAliases').refresh();
+      return view;
+    },
+  },
+  'local-aliases-view': {
+    response: localAliasViewSchema,
+    execute() {
+      return this.use<LocalAliases>('network', 'localAliases').view();
+    },
+  },
+  'local-aliases-action': {
+    request: localAliasActionSchema,
+    response: localAliasViewSchema,
     execute(_url, input) {
-      return this.use<HttpIngress>('network', 'ingress').action(input);
+      return this.use<LocalAliases>('network', 'localAliases').action(input);
     },
   },
 };

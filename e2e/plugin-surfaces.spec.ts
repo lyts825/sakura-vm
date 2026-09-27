@@ -2563,6 +2563,7 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
   let certificatePolicy = { autoRotate: true, renewBeforeDays: 30 };
   let certificate: any = null;
   let certificateAction: any;
+  let aliasesEnabled = false, aliasAction: any;
   await page.route('**/api/vms', (route) => route.fulfill({
     json: [{ ...vm, forwards, status: 'running', poweredOn: true }],
   }));
@@ -2599,6 +2600,15 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
       };
     }
     return route.fulfill({ json: { policy: certificatePolicy, certificate, nextRotationAt: null } });
+  });
+  await page.route('**/api/local-aliases', (route) => {
+    if (route.request().method() === 'POST') {
+      aliasAction = route.request().postDataJSON();
+      if (aliasAction.action === 'set-enabled') aliasesEnabled = aliasAction.enabled;
+    }
+    const aliases = entries.filter((item) => item.domainAlias).map((item) => ingressAlias(item.id));
+    return route.fulfill({ json: { enabled: aliasesEnabled, supported: true,
+      aliases, installed: aliasesEnabled ? aliases : [], missing: [], stale: [] } });
   });
   await page.reload();
   await page.getByRole('tab', { name: '服务', exact: true }).click();
@@ -2643,6 +2653,12 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
   await aliasEditor.getByRole('button', { name: '保存入口' }).click();
   await expect.poll(() => submitted).toMatchObject({ action: 'save', entry: { domainAlias: true } });
   await expect(page.getByRole('link', { name: /\.sakura\.localhost:8901/ })).toBeVisible();
+  const systemAliasCard = page.locator('.feature-card').filter({
+    has: page.getByRole('heading', { name: 'Windows 系统域名解析' }),
+  });
+  await systemAliasCard.getByRole('button', { name: '启用系统解析' }).click();
+  await expect.poll(() => aliasAction).toEqual({ action: 'set-enabled', enabled: true });
+  await expect(systemAliasCard.getByText(/已安装 1 个/)).toBeVisible();
 });
 
 test('backup policies enable block deduplication and show how each backup is stored', async ({ page }) => {

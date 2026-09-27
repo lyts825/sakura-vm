@@ -2,6 +2,7 @@ import { ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { IngressInput, IngressView } from '../../shared/http-ingress.ts';
 import type { CertificatePolicy, CertificateView } from '../../shared/ingress-certificates.ts';
+import type { LocalAliasView } from '../../shared/local-aliases.ts';
 import { Feedback, useAction, useRemote, type FeatureProps } from '../../src/feature-shared.tsx';
 
 function blank(vmId: string, upstreamPort: number): IngressInput {
@@ -21,6 +22,7 @@ function blank(vmId: string, upstreamPort: number): IngressInput {
 export function IngressPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<IngressView>(request, '/ingress');
   const certificates = useRemote<CertificateView>(request, '/ingress-certificate');
+  const aliases = useRemote<LocalAliasView>(request, '/local-aliases');
   const action = useAction();
   const [form, setForm] = useState<IngressInput>(() => blank(vm.id, vm.forwards[0]?.host || 8080));
   const [policy, setPolicy] = useState<CertificatePolicy | null>(null);
@@ -45,7 +47,8 @@ export function IngressPanel({ vm, request }: FeatureProps) {
           新建
         </button>
       </div>
-      <Feedback error={action.error || remote.error || certificates.error} message={action.message} />
+      <Feedback error={action.error || remote.error || certificates.error || aliases.error}
+        message={action.message} />
       {entries.map((entry) => (
         <div className="feature-card" key={entry.id}>
           <div className="panel-heading">
@@ -111,6 +114,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
                     await request('/ingress', 'POST', { action: 'delete', id: entry.id }, signal);
                     if (form.id === entry.id) setForm(blank(vm.id, vm.forwards[0]?.host || 8080));
                     refresh();
+                    aliases.reload();
                   }, '服务入口已删除')
                 }
               >
@@ -220,12 +224,37 @@ export function IngressPanel({ vm, request }: FeatureProps) {
                 setForm(blank(vm.id, vm.forwards[0]?.host || 8080));
                 refresh();
                 certificates.reload();
+                aliases.reload();
               }, '服务入口已生效')
             }
           >
             <Save size={14} />
             保存入口
           </button>
+        </div>
+      </div>
+      <div className="feature-card">
+        <h4>Windows 系统域名解析</h4>
+        <p className="subtle-note">启用后，Sakura 仅管理系统 hosts 文件中带标记的入口别名，使浏览器外的本机程序也能解析。修改 hosts 文件需要以管理员身份运行 Sakura；关闭时会移除 Sakura 管理的记录。</p>
+        {aliases.data && <p>状态：{aliases.data.enabled ? '已启用' : '未启用'} ·
+          已安装 {aliases.data.installed.length} 个 · 待同步 {aliases.data.missing.length} 个
+          {aliases.data.stale.length > 0 && ` · 待移除 ${aliases.data.stale.length} 个`}</p>}
+        {aliases.data?.error && <p role="alert" className="machine-error">{aliases.data.error}</p>}
+        {!aliases.data?.supported && <p className="subtle-note">仅 Windows 支持系统 hosts 别名。</p>}
+        <div className="feature-actions">
+          <button className="secondary compact" disabled={action.busy || !aliases.data?.supported}
+            onClick={() => void action.run(async (signal) => {
+              try { await request('/local-aliases', 'POST',
+                { action: 'set-enabled', enabled: !aliases.data?.enabled }, signal); }
+              finally { aliases.reload(); }
+            }, aliases.data?.enabled ? '系统别名已关闭' : '系统别名已启用')}>
+            {aliases.data?.enabled ? '关闭系统解析' : '启用系统解析'}
+          </button>
+          <button className="secondary compact" disabled={action.busy || !aliases.data?.supported}
+            onClick={() => void action.run(async (signal) => {
+              try { await request('/local-aliases', 'POST', { action: 'sync' }, signal); }
+              finally { aliases.reload(); }
+            }, '系统别名已同步')}>重新同步</button>
         </div>
       </div>
       <div className="feature-card">

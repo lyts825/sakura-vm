@@ -1349,6 +1349,150 @@
       "additionalProperties": false
     }
   },
+  "network.local-aliases-view": {
+    "id": "local-aliases-view",
+    "method": "GET",
+    "path": "/api/local-aliases",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "supported": {
+          "type": "boolean"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "installed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stale": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "supported",
+        "aliases",
+        "installed",
+        "missing",
+        "stale"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "network.local-aliases-action": {
+    "id": "local-aliases-action",
+    "method": "POST",
+    "path": "/api/local-aliases",
+    "status": 200,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "set-enabled"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "action",
+            "enabled"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "sync"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "supported": {
+          "type": "boolean"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "installed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stale": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "supported",
+        "aliases",
+        "installed",
+        "missing",
+        "stale"
+      ],
+      "additionalProperties": false
+    }
+  },
   "sandbox.list": {
     "id": "list",
     "method": "GET",

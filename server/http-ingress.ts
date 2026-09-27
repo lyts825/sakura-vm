@@ -129,6 +129,10 @@ export class HttpIngress {
     };
   }
 
+  aliasNames() {
+    return this.entries.filter((entry) => entry.domainAlias).map((entry) => ingressAlias(entry.id));
+  }
+
   async action(input: unknown): Promise<IngressView> {
     const action = ingressActionSchema.parse(input) as IngressAction;
     if (action.action === 'check') {

@@ -129,13 +129,13 @@ const availableFeatureIds = new Set<FeatureId>([
   'alerts',
   'network-diagnostics',
   'network-profiles',
+  'reverse-proxy',
   'ai-assistant',
   'native-integration',
   'golden-images',
   'snapshot-diff',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
-  'reverse-proxy',
   'language-services',
   'multi-monitor',
   'security-scan',
@@ -476,7 +476,7 @@ export class FeatureSuite {
     } else if (featureId === 'reverse-proxy') {
       result.ready = true;
       result.network = 'localhost-https-ingress';
-      result.reason = '已接入实例 → 服务与端口的本机 HTTPS 路由、证书轮换和浏览器可访问的 .sakura.localhost 别名；系统级域名解析仍未实现。';
+      result.reason = '实例 → 服务与端口提供 HTTPS 路由、WebSocket 与证书轮换；可明确启用 Windows hosts 系统解析，使 .sakura.localhost 别名供本机程序访问。';
     } else if (featureId === 'vpn-integration') {
       result.network = 'profile-backed';
     } else if (featureId === 'rbac-sharing' || featureId === 'plugin-api') {
