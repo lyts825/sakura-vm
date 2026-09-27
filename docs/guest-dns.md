@@ -1,7 +1,9 @@
-# 客户机 DNS 与 DNSSEC 诊断
+# 私有 DNS 与 DNSSEC
 
-在实例运行后，进入“能力中心”，选择“私有 DNS 与 DNSSEC”进行检查或运行。Sakura 在客户机内读取 `/etc/resolv.conf`，报告实际文件来源、名称服务器和搜索域；同时检测 `resolvectl`、`dig`、`delv`、`drill`、`unbound-host` 是否可用。如果客户机安装了 `resolvectl`，还显示它报告的 DNSSEC 状态。运行会生成可在任务历史中查看的诊断结果。
+实例运行后，在“开发 → 网络配置”输入 DNS 服务器和私有路由域名，例如 `corp.example`；可选择沿用系统 DNSSEC 设置、强制验证、允许降级或关闭验证。私有路由或 DNSSEC 策略都需要明确指定 DNS 服务器。先预览，再应用。私有路由域名会写入 systemd-resolved 的 `Domains=~...` 配置，未指定路由域名时自定义 DNS 沿用 `~.` 全局路由。应用后 Sakura 读取 `resolvectl dns`、`resolvectl domain` 和 `resolvectl dnssec`，逐项确认所选配置已经生效。强制 DNSSEC 可能拒绝未签名的私有域名。
 
-诊断不修改 DNS 设置，也不向外部域名发送测试查询。工具存在和解析器配置可读并不等于 DNSSEC 验证已生效，所以结果中的 `dnssecValidation` 固定为 `not-verified`。客户机停机或配置不可读时不会报告就绪；错误输出不保存在诊断结果中。
+私有路由与 DNSSEC 策略要求客户机启用 systemd-resolved，且 `/etc/resolv.conf` 由它管理。如果链接原先指向直连上游文件，Sakura 会在预览中列出链接变更，应用时切到本地 stub，使普通解析器经过 systemd-resolved；恢复操作会还原原始链接和配置文件。回滚计划在首次写入前保存。外部程序修改过配置文件或链接时，恢复会拒绝覆盖并提示先处理冲突。Alpine 当前只支持静态 DNS 地址，不支持这两项策略。
 
-`npx tsx --test tests/guest-dns.test.ts` 覆盖结构化结果、停机、失败和任务历史；`npm run test:guest-dns` 在真实 Alpine/QEMU 客户机上运行诊断。缺少 DNSSEC 工具时会如实返回空列表。
+能力中心的“私有 DNS 与 DNSSEC”可读取客户机当前解析器来源、名称服务器、搜索域、路由域名和 DNSSEC 模式。它还检测可用工具，但不发送外部 DNS 查询，`dnssecValidation` 因而保持 `not-verified`；策略显示为 `yes` 也不等于已证明某次查询的签名有效。
+
+`npx tsx --test tests/network-profiles.test.ts tests/guest-dns.test.ts` 覆盖配置验证、状态核对、链接冲突与回滚。`npm run test:guest-dns` 验证真实 Alpine/QEMU 诊断；`npm run test:private-dns` 在真实 Debian/QEMU 客户机上验证路由查询、DNSSEC 策略和恢复。路由域名与 DNSSEC 模式遵循 [systemd-resolved 的接口语义](https://www.freedesktop.org/software/systemd/man/247/org.freedesktop.resolve1.html)。

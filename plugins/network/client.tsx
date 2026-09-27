@@ -121,7 +121,7 @@ export function ServicesPanel(props: FeatureProps) {
   );
 }
 
-export const networkFields: [Exclude<keyof NetworkProfile, 'dnsServers' | 'forwards'>, string, string][] = [
+export const networkFields: [Exclude<keyof NetworkProfile, 'dnsServers' | 'dnsDomains' | 'dnssec' | 'forwards'>, string, string][] = [
   ['httpProxy', 'HTTP 代理', 'http://10.0.2.2:7890'],
   ['httpsProxy', 'HTTPS 代理', 'http://10.0.2.2:7890'],
   ['noProxy', '不使用代理的地址', 'localhost,127.0.0.1,::1'],
@@ -142,6 +142,7 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
       changes: NetworkChange[];
       forwards?: ForwardChange;
       dnsBackend?: string;
+      resolverLink?: { before: string; after: string };
       appliedAt?: string;
       job: JobView | null;
     }>(request, `/vms/${vm.id}/network`),
@@ -149,21 +150,33 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
   const profiles = useRemote<SavedNetworkProfile[]>(request, '/network-profiles');
   const [selected, setSelected] = useState(''),
     [profileName, setProfileName] = useState(''),
-    [dnsText, setDnsText] = useState('');
+    [dnsText, setDnsText] = useState(''),
+    [domainText, setDomainText] = useState('');
   const [config, setConfig] = useState<NetworkProfile | null>(null),
     [preview, setPreview] = useState<{
       config: NetworkProfile;
       changes: NetworkChange[];
       forwards?: ForwardChange;
+      resolverLink?: { before: string; after: string };
       token: string;
     } | null>(null);
   useEffect(() => {
     if (!config && remote.data) {
-      setConfig({ ...remote.data.config, forwards: remote.data.config.forwards || vm.forwards });
+      setConfig({
+        ...remote.data.config,
+        dnsDomains: remote.data.config.dnsDomains || [],
+        dnssec: remote.data.config.dnssec || 'inherit',
+        forwards: remote.data.config.forwards || vm.forwards,
+      });
       setDnsText((remote.data.config.dnsServers || []).join(', '));
+      setDomainText((remote.data.config.dnsDomains || []).join(', '));
     }
   }, [config, remote.data, vm.forwards]);
-  const edited = () => ({ ...config!, dnsServers: dnsText.split(/[,\s]+/).filter(Boolean) });
+  const edited = () => ({
+    ...config!,
+    dnsServers: dnsText.split(/[,\s]+/).filter(Boolean),
+    dnsDomains: domainText.split(/[,\s]+/).filter(Boolean),
+  });
   const run = (kind: string) =>
     action.run(async (signal) => {
       const value = await request(
@@ -183,7 +196,8 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
       !!remote.data?.appliedAt ||
       !!remote.data?.changes.length ||
       !!remote.data?.forwards ||
-      !!remote.data?.dnsBackend,
+      !!remote.data?.dnsBackend ||
+      !!remote.data?.resolverLink,
     busy = action.busy || vm.status !== 'running';
   return (
     <>
@@ -208,8 +222,13 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
                 setProfileName(saved?.name || '');
                 setPreview(null);
                 if (saved) {
-                  setConfig(saved.config);
+                  setConfig({
+                    ...saved.config,
+                    dnsDomains: saved.config.dnsDomains || [],
+                    dnssec: saved.config.dnssec || 'inherit',
+                  });
                   setDnsText(saved.config.dnsServers.join(', '));
+                  setDomainText((saved.config.dnsDomains || []).join(', '));
                 }
               }}
             >
@@ -281,6 +300,34 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
                 }}
               />
             </label>
+            <label>
+              私有 DNS 路由域名（逗号分隔）
+              <input
+                value={domainText}
+                placeholder="corp.example"
+                disabled={applied || action.busy}
+                onChange={(event) => {
+                  setDomainText(event.target.value);
+                  setPreview(null);
+                }}
+              />
+            </label>
+            <label>
+              DNSSEC 策略
+              <select
+                value={config.dnssec}
+                disabled={applied || action.busy}
+                onChange={(event) => {
+                  setConfig({ ...config, dnssec: event.target.value as NetworkProfile['dnssec'] });
+                  setPreview(null);
+                }}
+              >
+                <option value="inherit">沿用系统设置</option>
+                <option value="yes">强制验证</option>
+                <option value="allow-downgrade">允许降级</option>
+                <option value="no">关闭验证</option>
+              </select>
+            </label>
             {networkFields
               .filter(([key]) =>
                 (vm.distro || 'alpine') === 'alpine' ? !key.startsWith('apt') : key !== 'apkMirror',
@@ -301,7 +348,7 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
               ))}
           </div>
           <p className="subtle-note">
-            自定义 DNS 支持 Alpine 静态网络和 systemd-resolved stub；解析器不兼容时会在预览阶段提示。
+            自定义 DNS 地址支持 Alpine 静态网络和 systemd-resolved；私有域名路由和 DNSSEC 策略需要 systemd-resolved 及指定 DNS 服务器，应用后会核对实际状态。强制 DNSSEC 可能拒绝未签名的私有域名。
           </p>
           <div className="feature-card">
             <label>
@@ -411,6 +458,15 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
               <div className="feature-grid">
                 <pre className="feature-log">{JSON.stringify(preview.forwards.before, null, 2)}</pre>
                 <pre className="feature-log">{JSON.stringify(preview.forwards.after, null, 2)}</pre>
+              </div>
+            </details>
+          )}
+          {preview.resolverLink && (
+            <details open>
+              <summary>/etc/resolv.conf 解析器链接</summary>
+              <div className="feature-grid">
+                <pre className="feature-log">{preview.resolverLink.before}</pre>
+                <pre className="feature-log">{preview.resolverLink.after}</pre>
               </div>
             </details>
           )}

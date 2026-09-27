@@ -13,12 +13,13 @@ for tool in resolvectl dig delv drill unbound-host; do
   if command -v "$tool" >/dev/null 2>&1; then printf 'TOOL=%s\n' "$tool"; fi
 done
 if command -v resolvectl >/dev/null 2>&1; then
+  resolvectl domain 2>/dev/null | awk '$1 == "Global:" { for (i = 2; i <= NF; i++) print "ROUTE_DOMAIN=" $i }' || true
   state="$(resolvectl dnssec 2>/dev/null | head -n 8 | tr '\n' ' ' | cut -c 1-300 || true)"
   printf 'DNSSEC_STATE=%s\n' "$state"
 fi`;
 
 export function parseGuestDns(output: string) {
-  const nameservers: string[] = [], searchDomains: string[] = [], dnssecTools: string[] = [];
+  const nameservers: string[] = [], searchDomains: string[] = [], routingDomains: string[] = [], dnssecTools: string[] = [];
   let source = '/etc/resolv.conf', dnssecState: string | null = null;
   for (const line of output.slice(0, 16000).split(/\r?\n/)) {
     const index = line.indexOf('=');
@@ -28,6 +29,7 @@ export function parseGuestDns(output: string) {
     if (key === 'SOURCE') source = value.slice(0, 500);
     if (key === 'NAMESERVER' && nameservers.length < 16) nameservers.push(value.slice(0, 256));
     if (key === 'DOMAIN' && searchDomains.length < 32) searchDomains.push(value.slice(0, 256));
+    if (key === 'ROUTE_DOMAIN' && routingDomains.length < 32) routingDomains.push(value.slice(0, 256));
     if (key === 'TOOL' && dnssecTools.length < 5) dnssecTools.push(value);
     if (key === 'DNSSEC_STATE') dnssecState = value.slice(0, 300);
   }
@@ -35,6 +37,7 @@ export function parseGuestDns(output: string) {
     source,
     nameservers,
     searchDomains,
+    routingDomains,
     dnssecTools,
     dnssecState,
     dnssecValidation: 'not-verified' as const,
@@ -64,6 +67,6 @@ export async function guestDnsDiagnostics(
     executed: action === 'run',
     checkedAt: new Date().toISOString(),
     ...parseGuestDns(result.stdout),
-    message: '已读取客户机解析器配置并检测 DNSSEC 工具；未执行外部 DNS 查询，因此不声称 DNSSEC 验证已生效。',
+    message: '已读取客户机解析器配置、域名路由和 DNSSEC 状态；可在开发 → 网络配置预览、应用和恢复策略。此诊断未执行外部 DNS 查询，因此不声称 DNSSEC 验证已生效。',
   };
 }

@@ -2225,6 +2225,8 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await app(page, ['network'], true);
   const config = {
     dnsServers: [],
+    dnsDomains: [],
+    dnssec: 'inherit',
     httpProxy: '',
     httpsProxy: '',
     noProxy: 'localhost,127.0.0.1,::1',
@@ -2239,7 +2241,7 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
     submitted: any;
   let forwards: any[] = [];
   await page.route('**/api/vms', (route) =>
-    route.fulfill({ json: [{ ...vm, forwards, status: 'running', poweredOn: true }] }),
+    route.fulfill({ json: [{ ...vm, distro: 'ubuntu', forwards, status: 'running', poweredOn: true }] }),
   );
   await page.route('**/api/network-profiles*', (route) => {
     const method = route.request().method();
@@ -2285,12 +2287,16 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await page.reload();
   await page.getByRole('tab', { name: '开发', exact: true }).click();
   await page.getByLabel('DNS 地址（逗号分隔，留空沿用系统设置）').fill('1.1.1.1, 8.8.8.8');
+  await page.getByLabel('私有 DNS 路由域名（逗号分隔）').fill('corp.example');
+  await page.getByLabel('DNSSEC 策略').selectOption('yes');
   await page.getByRole('button', { name: '添加映射到档案' }).click();
   await page.getByLabel('Windows 端口', { exact: true }).fill('8090');
   await page.getByLabel('Linux 端口', { exact: true }).fill('3000');
   await page.getByLabel('档案名称', { exact: true }).fill('开发网络');
   await page.getByRole('button', { name: '保存档案', exact: true }).click();
   await expect.poll(() => profiles[0]?.config.dnsServers).toEqual(['1.1.1.1', '8.8.8.8']);
+  await expect.poll(() => profiles[0]?.config.dnsDomains).toEqual(['corp.example']);
+  await expect.poll(() => profiles[0]?.config.dnssec).toBe('yes');
   await expect(page.getByLabel('加载已保存的档案')).toHaveValue(vm.id);
   await page.getByRole('button', { name: '预览修改' }).click();
   await expect(page.getByText('即将修改 1 个文件')).toBeVisible();
@@ -2301,6 +2307,8 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await page.reload();
   await page.getByRole('tab', { name: '开发', exact: true }).click();
   await expect(page.getByLabel('DNS 地址（逗号分隔，留空沿用系统设置）')).toHaveValue('1.1.1.1, 8.8.8.8');
+  await expect(page.getByLabel('私有 DNS 路由域名（逗号分隔）')).toHaveValue('corp.example');
+  await expect(page.getByLabel('DNSSEC 策略')).toHaveValue('yes');
   await page.getByRole('button', { name: '恢复原配置' }).click();
   await expect(page.getByText('配置已应用', { exact: true })).not.toBeVisible();
   expect(forwards).toEqual([]);

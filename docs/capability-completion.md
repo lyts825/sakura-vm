@@ -4,7 +4,7 @@
 
 ## 客户机 DNS 与 DNSSEC 诊断
 
-能力中心的“私有 DNS 与 DNSSEC”现可从运行中的客户机读取实际解析器来源、名称服务器和搜索域，并检测 DNSSEC 工具及 `resolvectl` 报告的状态。检查和运行结果进入任务历史；未执行外部 DNS 查询时明确标记验证状态为 `not-verified`。真实 Alpine/QEMU 客户机完成读取与任务验证；细节见 [客户机 DNS 诊断说明](guest-dns.md)。
+“开发 → 网络配置”现可为 systemd-resolved 客户机预览、应用和恢复私有域名路由及 DNSSEC 策略。应用后核对名称服务器、路由域名与 DNSSEC 模式；若原来的 `/etc/resolv.conf` 绕过本地 stub，保存恢复计划后切换链接，恢复时改回原值。能力中心读取实际解析器来源、名称服务器、搜索域、路由域名和 DNSSEC 状态；未执行外部验证查询时将验证状态标记为 `not-verified`。真实 Debian/QEMU 客户机验证了域名解析、策略切换与恢复；Alpine/QEMU 验证了基础诊断。细节见 [客户机 DNS 说明](guest-dns.md)。
 
 ## 客户机网络仿真
 

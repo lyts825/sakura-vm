@@ -42,6 +42,10 @@ const forwardsSchema = z
   )
   .max(12)
   .refine((values) => new Set(values.map((item) => item.host)).size === values.length, '主机端口不能重复');
+const dnsDomain = z.string().trim().toLowerCase().max(253)
+  .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/, '请输入完整 DNS 域名')
+  .refine((value) => !value.endsWith('.local') && !value.endsWith('.localhost'),
+    '.local 和 .localhost 不作为单播私有 DNS 路由域名');
 export const networkSchema = z
   .object({
     dnsServers: z
@@ -51,6 +55,10 @@ export const networkSchema = z
       .max(3)
       .refine((values) => new Set(values).size === values.length, 'DNS 地址不能重复')
       .default([]),
+    dnsDomains: z.array(dnsDomain).max(8)
+      .refine((values) => new Set(values).size === values.length, 'DNS 域名不能重复')
+      .default([]),
+    dnssec: z.enum(['inherit', 'yes', 'allow-downgrade', 'no']).default('inherit'),
     forwards: forwardsSchema.optional(),
     httpProxy: networkUrl,
     httpsProxy: networkUrl,
@@ -74,6 +82,7 @@ type NetworkState = {
   changes: NetworkChange[];
   forwards?: ForwardChange;
   dnsBackend?: 'resolved';
+  resolverLink?: { before: string; after: string };
   appliedAt?: string;
 };
 const savedProfileSchema = z
@@ -197,10 +206,11 @@ export class NetworkProfiles {
     const config = networkSchema.parse(input),
       vm = this.machines.get(id);
     const previous = await this.state(id);
-    if (previous.appliedAt || previous.changes.length || previous.forwards || previous.dnsBackend)
+    if (previous.appliedAt || previous.changes.length || previous.forwards || previous.dnsBackend || previous.resolverLink)
       throw new AppError('请先恢复原配置，再应用新的网络设置');
     const changes: NetworkChange[] = [];
     let dnsBackend: 'resolved' | undefined;
+    let resolverLink: NetworkState['resolverLink'];
     const forwards =
       config.forwards && !sameForwards(vm.forwards, config.forwards)
         ? { before: structuredClone(vm.forwards), after: config.forwards }
@@ -211,8 +221,14 @@ export class NetworkProfiles {
         next = after(before);
       if (next !== before) changes.push({ path, before, after: next });
     };
-    if (config.dnsServers.length) {
+    if (config.dnsDomains.length && !config.dnsServers.length)
+      throw new AppError('私有域名路由需要指定 DNS 服务器');
+    if (config.dnssec !== 'inherit' && !config.dnsServers.length)
+      throw new AppError('DNSSEC 策略需要同时指定 DNS 服务器，避免沿用未受该策略控制的链路 DNS');
+    if (config.dnsServers.length || config.dnssec !== 'inherit') {
       if (!vm.distro || vm.distro === 'alpine') {
+        if (config.dnsDomains.length || config.dnssec !== 'inherit')
+          throw new AppError('私有域名路由和 DNSSEC 策略需要 systemd-resolved；Alpine 当前仅支持静态 DNS 地址');
         const interfaces = await this.read(id, '/etc/network/interfaces');
         if (
           !interfaces ||
@@ -239,14 +255,34 @@ export class NetworkProfiles {
           10000,
           signal,
         );
-        if (resolver.code !== 0 || resolver.stdout.trim() !== '/run/systemd/resolve/stub-resolv.conf')
+        const target = resolver.stdout.trim();
+        if (resolver.code !== 0 ||
+            !['/run/systemd/resolve/stub-resolv.conf', '/run/systemd/resolve/resolv.conf'].includes(target))
           throw new AppError(
-            '此实例的 DNS 后端不受支持：需要 systemd-resolved 的本地 stub 解析器；可清空 DNS 地址沿用系统设置',
+            '此实例的 DNS 后端不受支持：需要 systemd-resolved 管理 /etc/resolv.conf；可清空 DNS 地址沿用系统设置',
           );
+        if (target === '/run/systemd/resolve/resolv.conf' &&
+            (config.dnsDomains.length || config.dnssec !== 'inherit')) {
+          const link = await this.machines.exec(id, 'readlink /etc/resolv.conf', 10000, signal);
+          const before = link.stdout.trim();
+          if (link.code !== 0 || posix.resolve('/etc', before) !== target)
+            throw new AppError('无法安全切换客户机解析器链接');
+          resolverLink = { before, after: '/run/systemd/resolve/stub-resolv.conf' };
+        }
         dnsBackend = 'resolved';
         await add(
           '/etc/systemd/resolved.conf.d/90-sakura.conf',
-          () => `[Resolve]\nDNS=\nDNS=${config.dnsServers.join(' ')}\nDomains=\nDomains=~.\n`,
+          () => [
+            '[Resolve]',
+            ...(config.dnsServers.length ? [
+              'DNS=',
+              `DNS=${config.dnsServers.join(' ')}`,
+              'Domains=',
+              `Domains=${config.dnsDomains.length ? config.dnsDomains.map((domain) => `~${domain}`).join(' ') : '~.'}`,
+            ] : []),
+            ...(config.dnssec !== 'inherit' ? [`DNSSEC=${config.dnssec}`] : []),
+            '',
+          ].join('\n'),
         );
       }
     }
@@ -286,18 +322,37 @@ export class NetworkProfiles {
       }
     }
     const token = createHash('sha256')
-      .update(JSON.stringify({ id, config, changes, forwards, dnsBackend }))
+      .update(JSON.stringify({ id, config, changes, forwards, dnsBackend, resolverLink }))
       .digest('hex');
-    return { config, changes, forwards, dnsBackend, token };
+    return { config, changes, forwards, dnsBackend, resolverLink, token };
   }
-  private async reloadDns(id: string, expected?: string[]) {
+  private async readResolverLink(id: string) {
+    const result = await this.machines.exec(id, 'readlink /etc/resolv.conf', 10000);
+    if (result.code !== 0) throw new AppError('客户机解析器链接不可读取', 409);
+    return result.stdout.trim();
+  }
+  private async switchResolverLink(id: string, before: string, after: string) {
+    const temp = `/etc/.sakura-resolv-${randomUUID()}`;
+    const command = [
+      'set -eu',
+      `test "$(readlink /etc/resolv.conf)" = ${quote(before)}`,
+      `temp=${quote(temp)}`,
+      'trap \'rm -f "$temp"\' EXIT',
+      `ln -s ${quote(after)} "$temp"`,
+      'mv -Tf "$temp" /etc/resolv.conf',
+      `test "$(readlink /etc/resolv.conf)" = ${quote(after)}`,
+    ].join('\n');
+    const result = await this.machines.exec(id, command, 10000);
+    if (result.code !== 0) throw new AppError('客户机解析器链接切换失败，请恢复原配置', 409);
+  }
+  private async reloadDns(id: string, expected?: Pick<NetworkProfile, 'dnsServers' | 'dnsDomains' | 'dnssec'>) {
     const result = await this.machines.exec(
       id,
       'set -eu\nsystemctl restart systemd-resolved\nLC_ALL=C resolvectl dns',
       30000,
     );
     if (result.code !== 0) throw new AppError('重新加载 DNS 失败，请恢复原配置后检查解析器');
-    if (expected) {
+    if (expected?.dnsServers.length) {
       const global =
         result.stdout
           .split('\n')
@@ -305,8 +360,24 @@ export class NetworkProfiles {
           ?.slice(7)
           .trim()
           .split(/\s+/) || [];
-      if (!expected.every((address) => global.map(canonicalIp).includes(canonicalIp(address))))
+      if (!expected.dnsServers.every((address) => global.map(canonicalIp).includes(canonicalIp(address))))
         throw new AppError('DNS 服务没有使用所选地址，请恢复原配置后检查解析器');
+    }
+    if (expected?.dnsServers.length) {
+      const domain = await this.machines.exec(id, 'LC_ALL=C resolvectl domain', 10000);
+      if (domain.code !== 0) throw new AppError('无法核对私有域名路由，请恢复原配置后检查解析器');
+      const global = domain.stdout.split('\n').find((line) => /^Global:/.test(line))?.slice(7).trim().split(/\s+/) || [];
+      const required = expected.dnsDomains.length
+        ? expected.dnsDomains.map((value) => `~${value}`)
+        : ['~.'];
+      if (!required.every((value) => global.includes(value)))
+        throw new AppError('DNS 服务没有使用所选域名路由，请恢复原配置后检查解析器');
+    }
+    if (expected?.dnssec !== undefined && expected.dnssec !== 'inherit') {
+      const dnssec = await this.machines.exec(id, 'LC_ALL=C resolvectl dnssec', 10000);
+      if (dnssec.code !== 0 ||
+          !dnssec.stdout.split('\n').some((line) => line.trim() === `Global: ${expected.dnssec}`))
+        throw new AppError('DNSSEC 策略没有生效，请恢复原配置后检查解析器');
     }
   }
   async apply(id: string, input: unknown, token: string) {
@@ -319,6 +390,7 @@ export class NetworkProfiles {
         changes: preview.changes,
         forwards: preview.forwards,
         dnsBackend: preview.dnsBackend,
+        resolverLink: preview.resolverLink,
       };
       await writeStore(this.file(id), state);
       if (preview.forwards)
@@ -333,7 +405,9 @@ export class NetworkProfiles {
           change.before === null ? undefined : textVersion(change.before),
         );
       }
-      if (preview.dnsBackend) await this.reloadDns(id, preview.config.dnsServers);
+      if (preview.dnsBackend) await this.reloadDns(id, preview.config);
+      if (preview.resolverLink)
+        await this.switchResolverLink(id, preview.resolverLink.before, preview.resolverLink.after);
       state.appliedAt = new Date().toISOString();
       await writeStore(this.file(id), state);
       return state;
@@ -347,6 +421,11 @@ export class NetworkProfiles {
         const current = await this.read(id, change.path);
         if (current !== change.after && current !== change.before)
           throw new AppError(`配置被外部修改，恢复前请处理：${change.path}`, 409);
+      }
+      if (state.resolverLink) {
+        const current = await this.readResolverLink(id);
+        if (current !== state.resolverLink.before && current !== state.resolverLink.after)
+          throw new AppError('解析器链接被外部修改，恢复前请处理', 409);
       }
       if (state.forwards) {
         const current = this.machines.get(id).forwards;
@@ -378,6 +457,11 @@ export class NetworkProfiles {
       if (state.dnsBackend) {
         await this.reloadDns(id);
         delete state.dnsBackend;
+      }
+      if (state.resolverLink) {
+        if ((await this.readResolverLink(id)) === state.resolverLink.after)
+          await this.switchResolverLink(id, state.resolverLink.after, state.resolverLink.before);
+        delete state.resolverLink;
       }
       delete state.appliedAt;
       await writeStore(this.file(id), state);

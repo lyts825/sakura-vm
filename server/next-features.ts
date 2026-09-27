@@ -238,7 +238,7 @@ export const nextFeatureCatalog = [
     '私有 DNS 与 DNSSEC',
     '网络与服务治理',
     'P1',
-    '读取客户机解析器配置并检测 DNSSEC 工具和解析状态。',
+    '配置、验证和恢复私有 DNS 路由及 DNSSEC 策略，并读取客户机解析器状态。',
     'available',
   ],
   [
