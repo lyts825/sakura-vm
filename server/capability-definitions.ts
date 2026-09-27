@@ -6,6 +6,8 @@ import { reservationSchema } from './resource-policies.ts';
 import { diskHealthThresholds } from './host-disk-health.ts';
 import { powerPolicySchema } from './power-policy.ts';
 import { networkEmulationShape } from './network-emulation.ts';
+import { networkQuotaShape } from './network-quota.ts';
+import { egressPolicyShape } from './egress-policy.ts';
 import { flamegraphOptions } from './flamegraph.ts';
 import { ebpfProfileOptions } from './ebpf-profiler.ts';
 import { coldMigrationInput, maintenanceDrainInput } from './cold-migration.ts';
@@ -135,6 +137,24 @@ export const capabilityDefinitions = {
     networkEmulationShape,
     { mode: 'inspect', interface: 'eth0', delayMs: 50, jitterMs: 0, lossPercent: 0 },
     '检查客户机 tc 队列规则，预览指定网卡上的延迟、抖动和丢包参数；apply 实际设置 netem，clear 仅清除当前根 netem 规则。规则由 Linux 内核管理，客户机重启后需重新应用。',
+    true,
+    true,
+  ),
+  'network-quota': action(
+    '客户机出站带宽配额',
+    'extended',
+    networkQuotaShape,
+    { mode: 'status', interface: 'eth0', egressKbps: 1024, burstKiB: 32, latencyMs: 200 },
+    '使用 Linux tc TBF 检查、设置或清除客户机网卡的出站带宽上限。只管理 Sakura 的 42: 根规则，拒绝覆盖其他队列；客户机重启后需重新应用。并发连接与请求速率限制仍待实现。',
+    true,
+    true,
+  ),
+  'egress-policy': action(
+    '客户机出站目标白名单',
+    'extended',
+    egressPolicyShape,
+    { mode: 'status', interface: 'eth0', allowedDestinations: ['10.0.2.2/32', '10.0.2.3/32'] },
+    '在客户机指定网卡上限制新建 IPv4 出站连接，仅允许列出的地址或 CIDR；新建 IPv6 出站连接全部拒绝。现有连接和 DHCP 保持可用。需要 iptables/ip6tables；重启后需重新应用。',
     true,
     true,
   ),
