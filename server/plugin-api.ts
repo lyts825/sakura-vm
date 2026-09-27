@@ -58,7 +58,7 @@ export type PluginRoute = (
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (request: IncomingMessage) => Promise<any>,
+  body: (request: IncomingMessage, signal?: AbortSignal, limit?: number) => Promise<any>,
   signal: AbortSignal,
 ) => Promise<boolean>;
 export type PluginOperation = {

@@ -1,13 +1,14 @@
 import { Save, FolderSync as SyncIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { JobView } from '../../server/jobs';
-import type { SyncConfig, SyncDecisions, SyncPreview, SyncQueue } from '../../server/sync';
+import type { SyncConfig, SyncDecisions, SyncManualMerges, SyncPreview, SyncQueue } from '../../server/sync';
 import type { SyncHistoryView } from '../../server/sync-history';
 import type { SyncWatchView } from '../../server/sync-watch';
 import { TimeWindowFields } from '../../src/TimeWindowFields';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { policyAllows } from '../../shared/sync-policy';
+import { ThreeWayMerge } from '../../src/ThreeWayMerge';
 
 export function SyncPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<{
@@ -22,6 +23,10 @@ export function SyncPanel({ vm, request }: FeatureProps) {
   const [config, setConfig] = useState<SyncConfig>({ host: '', guest: '/workspace/shared', auto: false });
   const [preview, setPreview] = useState<SyncPreview | null>(null),
     [decisions, setDecisions] = useState<SyncDecisions>({}),
+    [manualMerges, setManualMerges] = useState<SyncManualMerges>({}),
+    [mergeContext, setMergeContext] = useState<{
+      path: string; token: string; base: string; ours: string; theirs: string;
+    } | null>(null),
     [previewQuery, setPreviewQuery] = useState('');
   const [loadedProject, setLoadedProject] = useState('');
   const action = useAction();
@@ -33,17 +38,28 @@ export function SyncPanel({ vm, request }: FeatureProps) {
       else setConfig({ host: '', guest: '/workspace/shared', auto: false });
       setPreview(null);
       setDecisions({});
+      setManualMerges({});
+      setMergeContext(null);
     }
   }, [remote.data, loadedProject]);
   const sync = (direction: 'both' | 'push' | 'pull') =>
     action.run(async () => {
       await request(`/vms/${vm.id}/sync`, 'POST', {
         direction,
-        ...(direction === 'both' && preview ? { token: preview.token, decisions } : {}),
+        ...(direction === 'both' && preview ? { token: preview.token, decisions, merges: manualMerges } : {}),
       });
       setPreview(null);
+      setManualMerges({});
+      setMergeContext(null);
       remote.reload();
     });
+  const openMerge = (path: string) => action.run(async (signal) => {
+    if (!preview) throw new Error('请先预览同步变更');
+    const context = await request<typeof mergeContext>(`/vms/${vm.id}/sync-merge`, 'POST',
+      { path, token: preview.token }, signal);
+    if (!context || context.token !== preview.token) throw new Error('合并预览已过期，请重新预览');
+    setMergeContext(context);
+  });
   return (
     <div className="content-panel feature-panel">
       <div className="panel-heading">
@@ -294,6 +310,8 @@ export function SyncPanel({ vm, request }: FeatureProps) {
                 ignore: config.ignore?.map((v) => v.trim()).filter(Boolean),
               });
               setPreview(null);
+              setManualMerges({});
+              setMergeContext(null);
               remote.reload();
             }, '同步配置已保存')
           }
@@ -313,6 +331,8 @@ export function SyncPanel({ vm, request }: FeatureProps) {
             void action.run(async (signal) => {
               setPreview(await request(`/vms/${vm.id}/sync-preview`, 'POST', {}, signal));
               setDecisions({});
+              setManualMerges({});
+              setMergeContext(null);
             })
           }
         >
@@ -367,11 +387,19 @@ export function SyncPanel({ vm, request }: FeatureProps) {
                     <select
                       aria-label={`解决冲突 ${entry.path}`}
                       value={decisions[entry.path] || 'skip'}
-                      onChange={(e) =>
-                        setDecisions({ ...decisions, [entry.path]: e.target.value as SyncDecisions[string] })
-                      }
+                      onChange={(e) => {
+                        const decision = e.target.value as SyncDecisions[string];
+                        setDecisions({ ...decisions, [entry.path]: decision });
+                        if (decision !== 'manual') setManualMerges((current) => {
+                          const next = { ...current };
+                          delete next[entry.path];
+                          return next;
+                        });
+                      }}
                     >
                       <option value="skip">暂时跳过</option>
+                      {Object.hasOwn(manualMerges, entry.path) &&
+                        <option value="manual">使用已审阅的手动合并</option>}
                       {remote.data?.config?.mergeText &&
                         entry.action === 'conflict' &&
                         policyAllows(entry.path, 'merge', remote.data.config.policies) && (
@@ -408,11 +436,37 @@ export function SyncPanel({ vm, request }: FeatureProps) {
                       )}
                     </select>
                   )}
+                  {entry.action === 'conflict' && remote.data?.config?.mergeText &&
+                    policyAllows(entry.path, 'merge', remote.data.config.policies) && (
+                      <button className="secondary compact" disabled={action.busy}
+                        onClick={() => void openMerge(entry.path)}>
+                        手动三方合并
+                      </button>
+                    )}
                 </div>
               ))}
           </div>
+          {mergeContext && (
+            <div className="feature-card">
+              <h4>手动合并：{mergeContext.path}</h4>
+              <ThreeWayMerge
+                key={`${mergeContext.path}:${mergeContext.token}`}
+                base={mergeContext.base}
+                ours={mergeContext.ours}
+                theirs={mergeContext.theirs}
+                oursLabel="Windows 内容"
+                theirsLabel="Linux 内容"
+                cancel={() => setMergeContext(null)}
+                apply={(content) => {
+                  setManualMerges((current) => ({ ...current, [mergeContext.path]: content }));
+                  setDecisions((current) => ({ ...current, [mergeContext.path]: 'manual' }));
+                  setMergeContext(null);
+                }}
+              />
+            </div>
+          )}
           <p className="subtle-note">
-            每次显示前 200 项，可筛选路径。执行前会重新核对文件，发生变化时需要重新预览。
+            每次显示前 200 项，可筛选路径。手动合并内容合计最多 1 MiB；执行前会重新核对文件，发生变化时需要重新预览。
           </p>
           <button
             className="primary compact"

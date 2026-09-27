@@ -327,7 +327,7 @@ async function main() {
       }
       throw new AppError('不支持此方法', 405);
     }
-    if (await features.route(req, res, url, (request, signal) => authorizedBody(request, undefined, signal)))
+    if (await features.route(req, res, url, (request, signal, limit) => authorizedBody(request, limit, signal)))
       return;
     if (req.method === 'GET' && url.pathname === '/api/system')
       return send(res, {

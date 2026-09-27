@@ -11,6 +11,7 @@ import type { Machines } from '../server/machines.ts';
 const root = await mkdtemp(join(tmpdir(), 'sakura-feature-lifecycle-'));
 process.env.SAKURA_DATA_DIR = root;
 const { Features } = await import('../server/features.ts');
+const { MAX_TEXT_REQUEST_BYTES } = await import('../server/http.ts');
 after(async () => {
   assert.equal(dirname(root), resolve(tmpdir()));
   assert.ok(basename(root).startsWith('sakura-feature-lifecycle-'));
@@ -23,6 +24,7 @@ async function fixture() {
     live: new Map(),
     get: () => ({ name: 'vm' }),
     state: () => 'running',
+    locked: async (_key: string, work: () => Promise<unknown>) => work(),
   }) as unknown as Machines;
   const features = await Features.create(
     machines,
@@ -38,6 +40,27 @@ async function fixture() {
   }) as unknown as ServerResponse;
   return { features, machines, req, res };
 }
+
+test('sync accepts manual text through the authorized body callback with its larger limit', async () => {
+  const { features, req, res } = await fixture();
+  let limit: number | undefined;
+  let signal: AbortSignal | undefined;
+  try {
+    await assert.rejects(features.route(
+      req, res,
+      new URL('http://localhost/api/vms/22222222-2222-4222-8222-222222222222/sync'),
+      async (_request, requestSignal, requestLimit) => {
+        signal = requestSignal;
+        limit = requestLimit;
+        return { direction: 'both' };
+      },
+    ), /请先保存同步目录/);
+    assert.equal(limit, MAX_TEXT_REQUEST_BYTES);
+    assert.ok(signal instanceof AbortSignal);
+  } finally {
+    await features.close();
+  }
+});
 
 test('scoped feature endpoints hand the selected project through to views and jobs', async () => {
   const id = '11111111-1111-4111-8111-111111111111';

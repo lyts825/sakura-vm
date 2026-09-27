@@ -446,6 +446,44 @@ test('three-way sync uses a persisted common version and preserves overlapping c
   await assert.rejects(readFile(join(vmDir(id), 'sync-base.json')), { code: 'ENOENT' });
 });
 
+test('manual sync merge reads reviewed sides and commits only against the current preview', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await sync.save(id, { host, guest: '/workspace', mergeText: true, rollback: true });
+  await writeFile(join(host, 'notes.txt'), 'one\ntwo\n');
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('one\ntwo\n');
+  await sync.run(id, 'both');
+  assert.equal((await finished(sync, id)).status, 'done');
+  await writeFile(join(host, 'notes.txt'), 'ONE\ntwo\n');
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('UNO\ntwo\n');
+  const preview = await sync.preview(id);
+  assert.deepEqual(preview.changes, [{ path: 'notes.txt', action: 'conflict' }]);
+  const context = await sync.mergePreview(id, 'notes.txt', preview.token);
+  assert.deepEqual(context, {
+    path: 'notes.txt', token: preview.token,
+    base: 'one\ntwo\n', ours: 'ONE\ntwo\n', theirs: 'UNO\ntwo\n',
+  });
+  await assert.rejects(sync.run(id, 'both', preview.token, { 'notes.txt': 'manual' }),
+    /缺少已审阅的文本内容/);
+  await sync.run(id, 'both', preview.token, { 'notes.txt': 'manual' },
+    { 'notes.txt': 'ONE + UNO\ntwo\n' });
+  const merged = await finished(sync, id);
+  assert.equal(merged.status, 'done', merged.error);
+  assert.equal(await readFile(join(host, 'notes.txt'), 'utf8'), 'ONE + UNO\ntwo\n');
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'ONE + UNO\ntwo\n');
+  assert.equal(remote.get('/workspace/notes.txt')!.uid, 1000);
+  await writeFile(join(host, 'notes.txt'), 'new host\n');
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('new guest\n');
+  const stale = await sync.preview(id);
+  await sync.mergePreview(id, 'notes.txt', stale.token);
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('changed again\n');
+  await assert.rejects(sync.mergePreview(id, 'notes.txt', stale.token), /重新预览/);
+  await sync.run(id, 'both', stale.token, { 'notes.txt': 'manual' },
+    { 'notes.txt': 'stale result\n' });
+  assert.match((await finished(sync, id)).error!, /重新预览/);
+  assert.equal(await readFile(join(host, 'notes.txt'), 'utf8'), 'new host\n');
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'changed again\n');
+});
+
 test('three-way sync rejects a tampered baseline without replacing either side', async (t) => {
   const { id, host, remote, sync } = await fixture(t);
   await sync.save(id, { host, guest: '/workspace', mergeText: true });

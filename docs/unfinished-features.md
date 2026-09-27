@@ -27,7 +27,7 @@
 
 - [ ] **LSP 语言服务**（P1 · 部分实现） · [`language-services`](../server/feature-suite.ts#L48) — 提供补全、跳转、重命名和诊断。 对应完整流程尚未实现。
 - [ ] **DAP 调试器**（P2 · 规划） · [`debug-adapter`](../server/feature-suite.ts#L49) — 提供断点、单步、调用栈和变量查看。 对应完整流程尚未实现。
-- [ ] **三方合并编辑器**（P0 · 部分实现） · [`merge-editor`](../server/feature-suite.ts#L53) — 已有文件草稿及 Git 普通文本三方编辑、版本校验和暂存；仍缺同步冲突的图形编辑及删除、链接、子模块、二进制冲突工作流。
+- [ ] **三方合并编辑器**（P0 · 部分实现） · [`merge-editor`](../server/feature-suite.ts#L53) — 已有文件草稿、Git 普通文本冲突及目录同步文本冲突的三方编辑；仍缺 Git 删除、链接、子模块和二进制冲突工作流。
 - [ ] **Dev Container 支持**（P1 · 规划） · [`dev-container`](../server/feature-suite.ts#L58) — 从 Dockerfile 或 devcontainer 配置创建环境。 对应完整流程尚未实现。
 
 ### 网络与服务

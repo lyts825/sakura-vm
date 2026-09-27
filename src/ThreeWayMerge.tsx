@@ -7,12 +7,16 @@ export function ThreeWayMerge({
   theirs,
   apply,
   cancel,
+  oursLabel = '当前草稿',
+  theirsLabel = '外部修改',
 }: {
   base: string;
   ours: string;
   theirs: string;
   apply: (content: string) => void;
   cancel: () => void;
+  oursLabel?: string;
+  theirsLabel?: string;
 }) {
   const [resolution, setResolution] = useState({ base, ours, theirs, values: {} as Record<number, string> });
   const choices =
@@ -35,8 +39,8 @@ export function ThreeWayMerge({
       <div className="merge-columns">
         {[
           ['共同版本', base],
-          ['当前草稿', ours],
-          ['外部修改', theirs],
+          [oursLabel, ours],
+          [theirsLabel, theirs],
         ].map(([name, text]) => (
           <label key={name}>
             {name}

@@ -2109,6 +2109,53 @@ test('sync rollback requires explicit confirmation and only offers the newest ou
   await expect(page.getByText(/已回滚/)).toBeVisible();
 });
 
+test('sync conflict editor reviews a shared base and submits manual text with its preview token', async ({ page }) => {
+  await app(page, ['projects', 'sync'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  const token = 'a'.repeat(64);
+  let submitted: any;
+  await page.route('**/api/vms/*/sync*', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/sync-preview'))
+      return route.fulfill({ json: {
+        token, changes: [{ path: 'notes.txt', action: 'conflict' }], unchanged: 0,
+      } });
+    if (path.endsWith('/sync-merge')) {
+      expect(route.request().postDataJSON()).toEqual({ path: 'notes.txt', token });
+      return route.fulfill({ json: {
+        path: 'notes.txt', token, base: 'one\n', ours: 'ONE\n', theirs: 'UNO\n',
+      } });
+    }
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ json: { id: 'sync-job' } });
+    }
+    return route.fulfill({ json: {
+      projectId: 'default',
+      config: { host: 'D:\\sync', guest: '/workspace/shared', auto: false, mergeText: true },
+      job: null, history: [],
+    } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '同步', exact: true }).click();
+  await page.getByRole('button', { name: '预览双向同步' }).click();
+  await page.getByRole('button', { name: '手动三方合并' }).click();
+  const editor = page.getByRole('region', { name: '三方合并编辑器' });
+  await expect(editor.getByRole('textbox', { name: '共同版本' })).toHaveValue('one\n');
+  await expect(editor.getByRole('textbox', { name: 'Windows 内容' })).toHaveValue('ONE\n');
+  await expect(editor.getByRole('textbox', { name: 'Linux 内容' })).toHaveValue('UNO\n');
+  await editor.getByRole('textbox', { name: /冲突 1 的合并内容/ }).fill('ONE + UNO\n');
+  await editor.getByRole('button', { name: '应用合并结果' }).click();
+  await expect(page.getByLabel('解决冲突 notes.txt')).toHaveValue('manual');
+  await page.getByRole('button', { name: '应用本次同步' }).click();
+  await expect.poll(() => submitted).toMatchObject({
+    direction: 'both', token, decisions: { 'notes.txt': 'manual' },
+    merges: { 'notes.txt': 'ONE + UNO\n' },
+  });
+});
+
 const vm = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'example',

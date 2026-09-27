@@ -91,11 +91,39 @@ export type SyncDecisions = Record<
   | 'both'
   | 'skip'
   | 'merge'
+  | 'manual'
   | 'delete-host'
   | 'delete-guest'
   | 'restore-host'
   | 'restore-guest'
 >;
+export type SyncManualMerges = Record<string, string>;
+
+const SYNC_TEXT_BYTES = 1024 ** 2;
+function decodeSyncText(bytes: Buffer) {
+  if (bytes.length > SYNC_TEXT_BYTES || bytes.includes(0))
+    throw new AppError('三方同步只支持 1 MiB 以内的 UTF-8 文本');
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw new AppError('三方同步需要 UTF-8 文本');
+  }
+}
+async function readSyncText(stream: Readable, signal: AbortSignal) {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  await pipeline(stream, new Writable({
+    write(chunk: Buffer, _encoding, done) {
+      bytes += chunk.length;
+      if (bytes > SYNC_TEXT_BYTES) done(new AppError('三方同步只支持 1 MiB 以内的 UTF-8 文本'));
+      else {
+        chunks.push(Buffer.from(chunk));
+        done();
+      }
+    },
+  }), { signal });
+  return decodeSyncText(Buffer.concat(chunks));
+}
 export const ignored = matchesSyncPattern;
 export function syncDirection(
   host: string | undefined,
@@ -367,9 +395,61 @@ export class FolderSync {
       return this.execute(id, config, 'both', () => {}, signal, true);
     });
   }
-  async run(id: string, direction: 'both' | 'push' | 'pull', token?: string, decisions: SyncDecisions = {}) {
+  async mergePreview(id: string, inputPath: string, token: string, signal: AbortSignal = new AbortController().signal) {
+    const name = safeRelative(inputPath);
+    return this.machines.locked(`sync:${this.key(id)}`, async () => {
+      if (this.jobs.view(this.key(id))?.status === 'running') throw new AppError('请等待同步完成', 409);
+      const config = await this.config(id);
+      if (!config?.mergeText) throw new AppError('请先启用共同文本版本并完成一次同步', 409);
+      const plan = await this.execute(id, config, 'both', () => {}, signal, true);
+      if (plan.token !== token) throw new AppError('预览后文件或配置已变化，请重新预览', 409);
+      if (!plan.changes.some((change) => change.path === name && change.action === 'conflict') ||
+          !policyAllows(name, 'merge', config.policies))
+        throw new AppError('此路径没有可合并的文本冲突', 409);
+      const root = await realpath(config.host);
+      if (root !== config.host) throw new AppError('本机目录位置已改变，请重新保存', 409);
+      const local = resolve(root, ...name.split('/'));
+      const rel = relative(root, local);
+      if (isAbsolute(rel) || rel === '..' || rel.startsWith('..' + sep)) throw new AppError('同步路径越界');
+      let current = root;
+      for (const part of rel.split(sep)) {
+        current = join(current, part);
+        const attrs = await lstat(current);
+        if (attrs.isSymbolicLink()) throw new AppError('同步不会穿过符号链接或目录联接');
+      }
+      if (!(await lstat(local)).isFile()) throw new AppError('Windows 冲突路径不是普通文件', 409);
+      const stateFile = this.file(id, 'sync-state'), baseFile = this.file(id, 'sync-base');
+      if ((await lstat(baseFile)).size > 32 * 1024 ** 2) throw new AppError('同步共同版本文件超过限制');
+      const previous = JSON.parse(await readFile(stateFile, 'utf8')) as Record<string, string>;
+      const bases = JSON.parse(await readFile(baseFile, 'utf8')) as Record<string, string>;
+      const base = bases[name];
+      if (typeof base !== 'string' ||
+          createHash('sha256').update(base).digest('hex') !== previous[name])
+        throw new AppError('没有可校验的共同版本，请重新建立同步基线', 409);
+      decodeSyncText(Buffer.from(base));
+      const ours = await readSyncText(createReadStream(local), signal);
+      const theirs = await this.machines.sftp(id, async (ftp, transportSignal) => {
+        const active = transportSignal ? AbortSignal.any([signal, transportSignal]) : signal;
+        const remote = posix.join(config.guest, name);
+        let path = '';
+        for (const part of posix.dirname(remote).split('/').filter(Boolean)) {
+          path += '/' + part;
+          if (!(await ftpStat(ftp, path))?.isDirectory())
+            throw new AppError('Linux 冲突路径包含非普通目录', 409);
+        }
+        if (!(await ftpStat(ftp, remote))?.isFile())
+          throw new AppError('Linux 冲突路径不是普通文件', 409);
+        return readSyncText(ftp.createReadStream(remote), active);
+      }, signal);
+      const after = await this.execute(id, config, 'both', () => {}, signal, true);
+      if (after.token !== token) throw new AppError('读取合并内容时文件发生变化，请重新预览', 409);
+      return { path: name, token, base, ours, theirs };
+    });
+  }
+  async run(id: string, direction: 'both' | 'push' | 'pull', token?: string,
+    decisions: SyncDecisions = {}, merges: SyncManualMerges = {}) {
     return this.machines.locked(`sync:${this.key(id)}`, () =>
-      this.runInternal(id, direction, token, decisions),
+      this.runInternal(id, direction, token, decisions, merges),
     );
   }
   async rollback(id: string, checkpoint: string) {
@@ -526,15 +606,32 @@ export class FolderSync {
     direction: 'both' | 'push' | 'pull',
     token?: string,
     decisions: SyncDecisions = {},
+    merges: SyncManualMerges = {},
   ) {
     const config = await this.config(id);
     if (!config) throw new AppError('请先保存同步目录');
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
     if (Object.keys(decisions).length && !token) throw new AppError('处理冲突前请先预览');
+    const mergeEntries = Object.entries(merges);
+    if (mergeEntries.length && (direction !== 'both' || !token)) throw new AppError('手动合并需要双向同步预览', 409);
+    if (mergeEntries.length > 8) throw new AppError('一次最多手动合并 8 个文件');
+    let mergeBytes = 0;
+    for (const [name, content] of mergeEntries) {
+      safeRelative(name);
+      if (decisions[name] !== 'manual' || typeof content !== 'string')
+        throw new AppError('手动合并内容与冲突决策不匹配');
+      mergeBytes += Buffer.byteLength(content, 'utf8');
+      if (mergeBytes > SYNC_TEXT_BYTES) throw new AppError('手动合并内容合计不能超过 1 MiB');
+      if (content.includes('\0') || Buffer.from(content, 'utf8').toString('utf8') !== content)
+        throw new AppError('手动合并需要有效的 UTF-8 文本');
+    }
+    if (Object.entries(decisions).some(([name, decision]) => decision === 'manual' &&
+        !Object.hasOwn(merges, name)))
+      throw new AppError('手动合并缺少已审阅的文本内容');
     return this.jobs.start(
       this.key(id),
       async (log, signal) => {
-        await this.execute(id, config, direction, log, signal, false, token, decisions);
+        await this.execute(id, config, direction, log, signal, false, token, decisions, merges);
       },
       { title: '目录同步', vmId: id, action: direction, projectId: this.projects?.current(id) },
     );
@@ -548,6 +645,7 @@ export class FolderSync {
     preview = false,
     token?: string,
     decisions: SyncDecisions = {},
+    merges: SyncManualMerges = {},
   ) {
     let plan: SyncPreview = { token: '', changes: [], unchanged: 0 };
     const root = await realpath(config.host);
@@ -573,15 +671,6 @@ export class FolderSync {
     }
     const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
     const rate = new ByteRate((config.bandwidthMiBps || 0) * 1024 ** 2);
-    const decodeText = (bytes: Buffer) => {
-      if (bytes.length > 1024 ** 2 || bytes.includes(0))
-        throw new AppError('三方同步只支持 1 MiB 以内的 UTF-8 文本');
-      try {
-        return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-      } catch {
-        throw new AppError('三方同步需要 UTF-8 文本');
-      }
-    };
     let count = 0,
       changed = 0,
       conflicts = 0;
@@ -761,6 +850,14 @@ export class FolderSync {
           };
           if (preview) return;
           if (token && token !== plan.token) throw new AppError('预览后文件或配置已变化，请重新预览', 409);
+          for (const name of Object.keys(merges)) {
+            if (!changes.some((change) => change.path === name && change.action === 'conflict'))
+              throw new AppError('手动合并只允许处理当前预览中的冲突：' + name, 409);
+            if (!config.mergeText || !allowed(name, 'merge') || typeof bases[name] !== 'string' ||
+                digest(bases[name]) !== previous[name])
+              throw new AppError('没有可校验的共同版本或路径策略禁止合并：' + name, 409);
+            decodeSyncText(Buffer.from(bases[name]));
+          }
           if (config.rollback && changes.some((change) => change.action !== 'skip')) {
             log('保存同步回滚点…\n');
             journal = await this.history(id).begin(
@@ -895,7 +992,7 @@ export class FolderSync {
                   decision === 'restore-host' ? 'pull' : decision === 'restore-guest' ? 'push' : decision;
                 if (requested && requested !== 'skip' && !allowed(name, requested))
                   throw new AppError('路径策略禁止此同步方向：' + name, 409);
-                if (decision === 'merge') {
+                if (decision === 'merge' || decision === 'manual') {
                   const base = bases[name];
                   if (!config.mergeText || typeof base !== 'string' || digest(base) !== previous[name])
                     throw new AppError('没有可校验的共同版本，请先启用文本版本保存并完成一次同步：' + name);
@@ -937,14 +1034,14 @@ export class FolderSync {
                   const theirs = Buffer.concat(chunks);
                   if (digest(ours) !== hostHash || digest(theirs) !== guestHash)
                     throw new AppError('合并期间文件发生变化，请重新预览', 409);
-                  const parts = threeWayMerge(base, decodeText(ours), decodeText(theirs));
-                  if (parts.some((part) => part.kind === 'conflict')) {
+                  const parts = threeWayMerge(base, decodeSyncText(ours), decodeSyncText(theirs));
+                  if (decision === 'merge' && parts.some((part) => part.kind === 'conflict')) {
                     conflicts++;
                     next[name] = previous[name];
                     log('三方合并存在重叠修改，保留两端供手动处理：' + name + '\n');
                     continue;
                   }
-                  const merged = Buffer.from(resolvedMerge(parts, {}));
+                  const merged = Buffer.from(decision === 'manual' ? merges[name] : resolvedMerge(parts, {}));
                   await journal?.prepare([
                     { side: 'host', path: name, after: digest(merged) },
                     { side: 'guest', path: name, after: digest(merged) },
@@ -1177,7 +1274,7 @@ export class FolderSync {
               const bytes = await readFile(file);
               if (digest(bytes) === sha) {
                 try {
-                  text = decodeText(bytes);
+                  text = decodeSyncText(bytes);
                 } catch {}
               }
             }

@@ -7,6 +7,7 @@ import { AppError } from '../../server/model.ts';
 import { z } from 'zod';
 
 import { FolderSync } from '../../server/sync.ts';
+import { MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
@@ -25,7 +26,7 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: (req: IncomingMessage, signal?: AbortSignal, limit?: number) => Promise<any>,
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -47,6 +48,13 @@ export async function route(
       .strict()
       .parse(await body(req));
     return send(await this.sync.rollback(id, checkpoint), 202);
+  }
+  if (parts.length === 4 && action === 'sync-merge' && req.method === 'POST') {
+    const { path, token } = z.object({
+      path: z.string().min(1).max(4096),
+      token: z.string().regex(/^[a-f0-9]{64}$/),
+    }).strict().parse(await body(req));
+    return send(await this.sync.mergePreview(id, path, token, signal));
   }
   if (parts.length === 4 && action === 'sync-queue' && ['POST', 'DELETE'].includes(req.method || '')) {
     return send(
@@ -71,7 +79,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const { direction, token, decisions } = z
+        const { direction, token, decisions, merges } = z
           .object({
             direction: z.enum(['both', 'push', 'pull']),
             token: z
@@ -87,6 +95,7 @@ export async function route(
                   'both',
                   'skip',
                   'merge',
+                  'manual',
                   'delete-host',
                   'delete-guest',
                   'restore-host',
@@ -94,10 +103,11 @@ export async function route(
                 ]),
               )
               .optional(),
+            merges: z.record(z.string().max(4096), z.string().max(1024 ** 2)).optional(),
           })
           .strict()
-          .parse(await body(req));
-        send(await this.sync.run(id, direction, token, decisions), 202);
+          .parse(await body(req, signal, MAX_TEXT_REQUEST_BYTES));
+        send(await this.sync.run(id, direction, token, decisions, merges), 202);
         return true;
       }
     }

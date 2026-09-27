@@ -281,7 +281,7 @@ export class Features {
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
-    body: (req: IncomingMessage, signal?: AbortSignal) => Promise<any>,
+    body: (req: IncomingMessage, signal?: AbortSignal, limit?: number) => Promise<any>,
   ) {
     const contribution = routeContribution(url.pathname);
     if (this.closed) throw new AppError('服务正在关闭', 503);
@@ -346,8 +346,8 @@ export class Features {
                 req,
                 res,
                 url,
-                async (request) => {
-                  const value = await body(request, abort.signal);
+                async (request, signal, limit) => {
+                  const value = await body(request, signal || abort.signal, limit);
                   if (mutation && this.migration?.blocked && !url.pathname.endsWith('/cancel'))
                     throw new AppError('数据目录迁移维护中', 409);
                   return value;
