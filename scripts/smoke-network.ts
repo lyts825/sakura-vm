@@ -80,9 +80,62 @@ try {
   const quotaTraffic = await machines.exec(vm.id, 'ping -c 1 -W 2 10.0.2.2 >/dev/null; tc -s qdisc show dev eth0');
   assert.equal(quotaTraffic.code, 0, quotaTraffic.stderr);
   assert.match(quotaTraffic.stdout, /Sent [1-9][0-9]* bytes/);
+  const rateQuota = await networkQuota(machines, vm.id,
+    { ...quota, newTcpConnectionsPerSecond: 1, connectionBurst: 1 }, 'run');
+  assert.equal(rateQuota.ready, true);
+  const rateTraffic = await machines.exec(vm.id, `python3 - <<'PY'
+import socket
+target = socket.gethostbyname('example.com')
+first = socket.create_connection((target, 443), 5)
+try:
+    second = socket.socket()
+    second.settimeout(3)
+    try:
+        second.connect((target, 443))
+    except OSError:
+        print('second connection rejected')
+    else:
+        raise AssertionError('rate limiter did not reject the second connection')
+    finally:
+        second.close()
+finally:
+    first.close()
+PY`, 15000);
+  assert.equal(rateTraffic.code, 0, rateTraffic.stdout + rateTraffic.stderr);
+  assert.match(rateTraffic.stdout, /second connection rejected/);
+  const connectionQuota = await networkQuota(machines, vm.id,
+    { ...quota, maxTcpConnections: 3, newTcpConnectionsPerSecond: 2, connectionBurst: 2 }, 'run');
+  assert.equal(connectionQuota.ready, true);
+  assert.equal(connectionQuota.connectionPolicyActive, true);
+  if (!('connectionRules' in connectionQuota)) throw new Error('Connection policy rules missing');
+  assert.equal(connectionQuota.connectionRules.length, 2);
+  assert.ok(connectionQuota.connectionRules.every((rule) => rule.rules?.some((line) => line.includes('--connlimit-above 3'))));
+  assert.ok(connectionQuota.connectionRules.every((rule) => rule.rules?.some((line) => line.includes('-m limit'))));
+  const countQuota = await networkQuota(machines, vm.id,
+    { ...quota, maxTcpConnections: 5 }, 'run');
+  assert.equal(countQuota.ready, true);
+  const countTraffic = await machines.exec(vm.id, `python3 - <<'PY'
+import socket
+target = socket.gethostbyname('example.com')
+opened = []
+rejected = 0
+try:
+    for _ in range(8):
+        try:
+            opened.append(socket.create_connection((target, 443), 5))
+        except OSError:
+            rejected += 1
+    print('open', len(opened), 'rejected', rejected)
+    assert opened and rejected
+finally:
+    for connection in opened:
+        connection.close()
+PY`, 45000);
+  assert.equal(countTraffic.code, 0, countTraffic.stdout + countTraffic.stderr);
   const quotaCleared = await networkQuota(machines, vm.id, { mode: 'clear', interface: 'eth0' }, 'run');
   assert.equal(quotaCleared.active, false);
-  console.log('Real guest outbound bandwidth quota preview, application and cleanup passed');
+  assert.equal(quotaCleared.connectionPolicyActive, false);
+  console.log('Real guest bandwidth, TCP connection count/rate limits and cleanup passed');
   const policy = await egressPolicy(machines, vm.id,
     { mode: 'apply', interface: 'eth0', allowedDestinations: ['10.0.2.2/32', '10.0.2.3/32'] },
     'run');

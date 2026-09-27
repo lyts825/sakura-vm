@@ -141,11 +141,11 @@ export const capabilityDefinitions = {
     true,
   ),
   'network-quota': action(
-    '客户机出站带宽配额',
+    '客户机网络配额',
     'extended',
     networkQuotaShape,
     { mode: 'status', interface: 'eth0', egressKbps: 1024, burstKiB: 32, latencyMs: 200 },
-    '使用 Linux tc TBF 检查、设置或清除客户机网卡的出站带宽上限。只管理 Sakura 的 42: 根规则，拒绝覆盖其他队列；客户机重启后需重新应用。并发连接与请求速率限制仍待实现。',
+    '使用 tc TBF 限制出站字节速率；可选地用 iptables/ip6tables 限制并发 TCP 连接与每秒新建 TCP 连接数（0 表示不限制）。只管理 Sakura 的规则，不覆盖其他根队列。客户机重启后需重新应用；不统计复用连接中的 HTTP 请求。',
     true,
     true,
   ),
