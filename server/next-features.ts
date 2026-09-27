@@ -19,6 +19,7 @@ import type { NotebookEnvironments } from './notebook-environments.ts';
 import type { BrowserIde } from './browser-ide.ts';
 import { StorageTiering } from './storage-tiering.ts';
 import type { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
+import type { ObjectBackup } from './object-backup.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -189,8 +190,8 @@ export const nextFeatureCatalog = [
     'S3/MinIO 备份目标',
     '存储与灾备',
     'P1',
-    '校验对象存储目标配置并保存脱敏连接信息。',
-    'planned',
+    '上传和验证备份到 S3/MinIO，并从远端校验恢复。',
+    'available',
   ],
   ['snapshot-merge', '快照分支合并', '存储与灾备', 'P1', '生成快照分支合并预览并记录来源。', 'planned'],
   [
@@ -652,6 +653,7 @@ export class NextFeatures {
   private notebookEnvironments?: NotebookEnvironments;
   private browserIde?: BrowserIde;
   private disasterRecovery?: DisasterRecoveryDrill;
+  private objectBackup?: ObjectBackup;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -690,6 +692,10 @@ export class NextFeatures {
 
   setDisasterRecovery(service: DisasterRecoveryDrill) {
     this.disasterRecovery = service;
+  }
+
+  setObjectBackup(service: ObjectBackup) {
+    this.objectBackup = service;
   }
 
   browserIdeLink(id: string) {
@@ -901,6 +907,13 @@ export class NextFeatures {
       return { ...score, ready: score.candidates.some((item) => item.eligible),
         executed: action === 'run', adapter,
         message: '此结果是按最近资源观测计算的放置建议，不会迁移或启动实例。' };
+    }
+    if (spec.id === 'object-backup') {
+      if (!this.objectBackup)
+        return { ready: false, executed: false, adapter,
+          reason: '对象备份服务尚未启用。' };
+      return { ...await this.objectBackup.action(id, merged, action,
+        signal || new AbortController().signal), adapter };
     }
     if (spec.id === 'cold-migration') {
       if (!this.coldMigrations)

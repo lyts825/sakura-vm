@@ -7,6 +7,7 @@ export const manifest = definePlugin({
   category: 'experimental',
   experimental: true,
   requires: [pin('projects')],
+  optional: [pin('snapshots'), pin('backups'), pin('secrets')],
   services: ['next'],
   contributes: {
     http: [http('/api/next-features', ['GET']),

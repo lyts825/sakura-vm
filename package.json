@@ -25,6 +25,7 @@
     "test:storage": "tsx scripts/smoke-storage.ts",
     "test:storage-pools": "tsx scripts/smoke-storage-pools.ts",
     "test:disaster-recovery": "tsx scripts/smoke-disaster-recovery.ts",
+    "test:object-backup": "tsx scripts/smoke-object-backup.ts",
     "test:golden-images": "tsx scripts/smoke-golden-images.ts",
     "test:signed-bundles": "tsx scripts/smoke-signed-bundles.ts",
     "test:hardware-matrix": "tsx scripts/smoke-hardware-matrix.ts",
@@ -60,6 +61,8 @@
     "sakura": "node scripts/cli.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1141.0",
+    "@aws-sdk/lib-storage": "^3.1141.0",
     "graphql": "16.14.2",
     "selfsigned": "^5.5.0",
     "ssh2": "^1.17.0",

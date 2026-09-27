@@ -3,6 +3,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { NextFeatures } from '../../server/next-features.ts';
+import { ObjectBackup } from '../../server/object-backup.ts';
+import type { Backups } from '../../server/backups.ts';
+import type { Bundles } from '../../server/bundles.ts';
+import type { Secrets } from '../../server/secrets.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../server/model.ts';
 import { z } from 'zod';
@@ -27,6 +31,11 @@ export const operations: Record<string, PluginOperation> = {
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.next = new NextFeatures(m, host.workspaces);
+  host.next.setObjectBackup(new ObjectBackup(m, () => ({
+    backups: host.optional<Backups>('backups', 'backups'),
+    bundles: host.optional<Bundles>('snapshots', 'bundles'),
+    secrets: host.optional<Secrets>('secrets', 'secrets'),
+  })));
   await host.next.init();
   host.registerJobs(host.next.jobs, (job) => {
     if (!job.action?.startsWith('next:')) throw new AppError('请回到原功能页面重新执行');

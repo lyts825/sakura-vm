@@ -20,6 +20,7 @@ import { browserIdeInput } from './browser-ide.ts';
 import { storagePoolInput } from './storage-pools.ts';
 import { tieringInput } from './storage-tiering.ts';
 import { disasterRecoveryInput } from './disaster-recovery-drill.ts';
+import { objectBackupInput } from './object-backup.ts';
 
 export const relativePath = z
   .string()
@@ -54,6 +55,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'object-backup': action(
+    'S3/MinIO 备份目标', 'next', objectBackupInput.shape,
+    { mode: 'status' },
+    '保存对象存储目标并用私密配置引用访问密钥；可列出、上传、下载校验、恢复或删除远端备份。上传前验证本机备份，发布清单前重读远端数据并核对 SHA-256。',
+    false, true,
+  ),
   'project-quota': action(
     '项目磁盘配额', 'extended', projectQuotaShape,
     { mode: 'status', limitMiB: 512 },
