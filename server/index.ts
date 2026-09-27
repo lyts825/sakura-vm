@@ -71,6 +71,7 @@ async function main() {
   () => !!features.migration?.blocked,
   (delta) => { features.mutations += delta; });
   await hostPeers.init();
+  features.next?.setResourceScheduler((input) => hostPeers.score(input));
   const native = new NativeIntegration(
     () => nativeMappings(features),
     undefined,

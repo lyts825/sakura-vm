@@ -25,16 +25,20 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
   t.after(() => rm(root, { recursive: true, force: true }));
   const port = await freePort();
   const targetFile = join(root, 'target.json');
-  const first = new HostPeers(status, targetFile, 'Target');
+  let targetMetrics = { ...await status(), cpus: 2, memoryFree: 512 * 1024 ** 2 };
+  const targetStatus = async () => targetMetrics;
+  const first = new HostPeers(targetStatus, targetFile, 'Target');
   await first.init(false);
   await first.configure({ operation: 'listener', listener: {
     enabled: true, host: '127.0.0.1', port,
   } });
   await first.close();
-  let target = new HostPeers(status, targetFile, 'Target');
+  let target = new HostPeers(targetStatus, targetFile, 'Target');
   await target.init(true);
   assert.equal(target.view().listener.active, true);
-  const code = (await target.configure({ operation: 'create-code' })).pairing!.value;
+  const issued = await target.configure({ operation: 'create-code' });
+  assert.ok('pairing' in issued);
+  const code = issued.pairing!.value;
   const address = `https://127.0.0.1:${port}/`;
   const initiatorFile = join(root, 'initiator.json');
   const initiator = new HostPeers(status, initiatorFile, 'Initiator');
@@ -52,6 +56,15 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     assert.equal(initiator.view().outbound[0].observation?.status?.runningVms, 2);
     assert.equal(target.view().incoming.length, 1);
     assert.equal(target.view().pairing, null);
+    const constrained = await initiator.score({ cpus: 4, memoryMiB: 1024 });
+    assert.equal(constrained.candidates[0].source, 'local');
+    assert.equal(constrained.candidates[1].eligible, false);
+    assert.match(constrained.candidates[1].reasons.join(' '), /处理器不足.*空闲内存不足/);
+    targetMetrics = { ...targetMetrics, cpus: 16, memoryFree: 32 * 1024 ** 3,
+      load: [0, 0, 0] };
+    const recommended = await initiator.score({ cpus: 4, memoryMiB: 1024 });
+    assert.equal(recommended.candidates[0].source, 'peer');
+    assert.equal(recommended.candidates[0].eligible, true);
     const third = new HostPeers(status, join(root, 'third.json'), 'Third');
     await third.init(false);
     try {
@@ -59,13 +72,16 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
         fingerprint: target.view().fingerprint, code }), /HTTP 403/);
     } finally { await third.close(); }
     await target.close();
-    target = new HostPeers(status, targetFile, 'Target');
+    target = new HostPeers(targetStatus, targetFile, 'Target');
     await target.init(true);
     await initiator.refresh();
     assert.equal(initiator.view().outbound[0].observation?.status?.runningVms, 2);
     await target.configure({ operation: 'revoke-inbound', id: target.view().incoming[0].id });
     await initiator.refresh();
     assert.match(initiator.view().outbound[0].observation?.error || '', /HTTP 401/);
+    const unavailable = await initiator.score({ cpus: 4, memoryMiB: 1024 });
+    assert.equal(unavailable.candidates[0].source, 'local');
+    assert.equal(unavailable.candidates[1].eligible, false);
     await initiator.close();
     const restored = new HostPeers(status, initiatorFile, 'Initiator');
     await restored.init(false);

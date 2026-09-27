@@ -57,6 +57,11 @@ type Observation = { status?: PeerStatus; error?: string; checkedAt: number; las
 const pairInput = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/),
   requesterId: z.uuid(), name: hostName }).strict();
 const pairResponse = z.object({ id: z.uuid(), name: hostName, token: tokenSchema }).strict();
+export const hostScoreInput = z.object({
+  cpus: z.number().int().min(1).max(128),
+  memoryMiB: z.number().int().min(256).max(131072),
+}).strict();
+export type HostScoreInput = z.infer<typeof hostScoreInput>;
 export const hostPeerRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('listener'), listener: listenerSchema }).strict(),
   z.object({ operation: z.literal('create-code') }).strict(),
@@ -66,6 +71,7 @@ export const hostPeerRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('remove-outbound'), id: z.uuid() }).strict(),
   z.object({ operation: z.literal('revoke-inbound'), id: z.uuid() }).strict(),
   z.object({ operation: z.literal('refresh') }).strict(),
+  z.object({ operation: z.literal('score'), requirements: hostScoreInput }).strict(),
 ]);
 
 async function initial(name: string): Promise<Store> {
@@ -297,11 +303,58 @@ export class HostPeers {
       checkedAt: new Date(this.now()).toISOString() });
   }
 
+  async score(input: unknown) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    const requirements = hostScoreInput.parse(input);
+    await this.refresh();
+    const local = await this.status();
+    const entries: Array<{ id: string; name: string; source: 'local' | 'peer';
+      status?: PeerStatus; error?: string; observedAt?: number }> = [
+      { id: local.id, name: local.name, source: 'local', status: local,
+        observedAt: this.now() },
+      ...this.state.outbound.map((peer) => {
+        const observation = this.observations.get(peer.id);
+        return { id: peer.remoteId, name: peer.name, source: 'peer' as const,
+          status: observation?.status, error: observation?.error,
+          observedAt: observation?.lastSuccessAt };
+      }),
+    ];
+    const requiredBytes = requirements.memoryMiB * 1024 ** 2;
+    const candidates = entries.map((entry) => {
+      const status = entry.status;
+      const reasons: string[] = [];
+      if (entry.error) reasons.push(`连接失败：${entry.error}`);
+      if (!status || !entry.observedAt || this.now() - entry.observedAt > 90_000)
+        reasons.push('没有 90 秒内的有效资源观测');
+      if (status && status.cpus < requirements.cpus)
+        reasons.push(`逻辑处理器不足：${status.cpus} < ${requirements.cpus}`);
+      if (status && status.memoryFree < requiredBytes)
+        reasons.push(`空闲内存不足：${Math.floor(status.memoryFree / 1024 ** 2)} MiB < ${requirements.memoryMiB} MiB`);
+      const eligible = reasons.length === 0;
+      const memoryHeadroom = status ? Math.min(1, Math.max(0,
+        (status.memoryFree / requiredBytes - 1) / 3)) : 0;
+      const cpuHeadroom = status ? Math.max(0, 1 - status.load[0] / status.cpus) : 0;
+      const density = status ? 1 / (1 + status.runningVms / status.cpus) : 0;
+      const components = { memory: Math.round(memoryHeadroom * 100),
+        cpuLoad: Math.round(cpuHeadroom * 100),
+        instanceDensity: Math.round(density * 100) };
+      const score = eligible ? Math.round(100 *
+        (0.45 * memoryHeadroom + 0.45 * cpuHeadroom + 0.10 * density)) : null;
+      return { id: entry.id, name: entry.name, source: entry.source,
+        eligible, score, components, reasons, status: status || null,
+        observedAt: entry.observedAt || null };
+    }).sort((left, right) => Number(right.eligible) - Number(left.eligible) ||
+      (right.score ?? -1) - (left.score ?? -1) || left.id.localeCompare(right.id));
+    return { requirements, scoredAt: new Date(this.now()).toISOString(), candidates };
+  }
+
   async configure(input: unknown) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
     if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
     const value = hostPeerRequest.parse(input);
     if (value.operation === 'refresh') { await this.refresh(); return this.view(); }
+    if (value.operation === 'score') return this.score(value.requirements);
     if (value.operation === 'create-code') return this.codeChange(() => {
       if (!this.server) throw new AppError('请先启用同伴入口并重启 Sakura 服务', 409);
       this.code = { value: randomBytes(5).toString('hex').toUpperCase(),

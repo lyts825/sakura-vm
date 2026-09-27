@@ -1270,16 +1270,20 @@ test('host pairing connects over pinned TLS and shows remote resources and revoc
   const sample = async () => ({ platform: 'win32', arch: 'x64', cpus: 8,
     memoryTotal: 16 * 1024 ** 3, memoryFree: 8 * 1024 ** 3,
     load: [0.1, 0.2, 0.3], vmCount: 3, runningVms: 2 });
+  const remoteSample = async () => ({ ...await sample(), cpus: 16,
+    memoryFree: 32 * 1024 ** 3, load: [0, 0, 0] });
   const targetFile = join(directory, 'target.json');
-  const setup = new HostPeers(sample, targetFile, 'Remote');
+  const setup = new HostPeers(remoteSample, targetFile, 'Remote');
   await setup.init(false);
   await setup.configure({ operation: 'listener', listener: {
     enabled: true, host: '127.0.0.1', port,
   } });
   await setup.close();
-  const target = new HostPeers(sample, targetFile, 'Remote');
+  const target = new HostPeers(remoteSample, targetFile, 'Remote');
   await target.init(true);
   const pairing = await target.configure({ operation: 'create-code' });
+  expect('pairing' in pairing).toBe(true);
+  if (!('pairing' in pairing)) throw new Error('Pairing code was not issued');
   const local = new HostPeers(sample, join(directory, 'local.json'), 'Local');
   await local.init(false);
   await page.route('**/api/host-peers', async (route) => {
@@ -1302,6 +1306,10 @@ test('host pairing connects over pinned TLS and shows remote resources and revoc
     await panel.getByRole('button', { name: '连接并配对' }).click();
     await expect(panel.locator('.host-peer-resource')).toHaveCount(2);
     await expect(panel.locator('.host-peer-resource').last()).toContainText('实例 2 运行 / 3 总数');
+    await panel.getByRole('button', { name: '计算主机评分' }).click();
+    const ranking = panel.getByLabel('主机评分结果');
+    await expect(ranking.locator('.host-peer-row').first()).toContainText('Remote');
+    await expect(ranking.locator('.host-peer-row').first()).toContainText('评分');
     await target.configure({ operation: 'revoke-inbound', id: target.view().incoming[0].id });
     await panel.getByRole('button', { name: '检查全部主机' }).click();
     await expect(panel.getByText(/连接失败：远端返回 HTTP 401/)).toBeVisible();

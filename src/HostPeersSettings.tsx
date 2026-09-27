@@ -14,6 +14,10 @@ type HostPeersView = {
   outbound: Array<{ id: string; remoteId: string; name: string; url: string;
     fingerprint: string; createdAt: number; observation: Observation | null }>;
 };
+type ScoreView = { scoredAt: string; requirements: { cpus: number; memoryMiB: number };
+  candidates: Array<{ id: string; name: string; source: 'local' | 'peer';
+    eligible: boolean; score: number | null; reasons: string[]; status: PeerStatus | null;
+    components: { memory: number; cpuLoad: number; instanceDensity: number } }> };
 const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1) + ' GiB';
 
 function ResourceCard({ title, status, error, checkedAt }: {
@@ -36,11 +40,14 @@ export function HostPeersSettings({ request }: { request: Request }) {
   const [address, setAddress] = useState('');
   const [fingerprint, setFingerprint] = useState('');
   const [code, setCode] = useState('');
+  const [requirements, setRequirements] = useState({ cpus: 2, memoryMiB: 2048 });
+  const [scores, setScores] = useState<ScoreView | null>(null);
   const listener = listenerDraft || remote.data?.listener ||
     { enabled: false, host: '127.0.0.1' as const, port: 7443 };
   const apply = (operation: string, data: Record<string, unknown> = {}, message?: string) =>
     void action.run(async (signal) => {
       await request('/host-peers', 'POST', { operation, ...data }, signal);
+      setScores(null);
       remote.reload();
     }, message);
   const saveListener = () => {
@@ -51,8 +58,13 @@ export function HostPeersSettings({ request }: { request: Request }) {
     await request('/host-peers', 'POST', { operation: 'connect', url: address.trim(),
       fingerprint: fingerprint.trim().toUpperCase(), code: code.trim().toUpperCase() }, signal);
     setAddress(''); setFingerprint(''); setCode('');
+    setScores(null);
     remote.reload();
   }, '主机已配对');
+  const score = () => void action.run(async (signal) => {
+    setScores(await request<ScoreView>('/host-peers', 'POST',
+      { operation: 'score', requirements }, signal));
+  }, '主机评分已更新');
   return <section className="system-card host-peers-settings" aria-label="主机配对与多主机状态">
     <div className="panel-heading">
       <div><h3>主机配对与多主机状态</h3><p>通过短码和证书指纹连接另一台 Sakura，集中查看资源与连通性。</p></div>
@@ -64,6 +76,32 @@ export function HostPeersSettings({ request }: { request: Request }) {
     {remote.data?.outbound.map((peer) => <ResourceCard key={peer.id}
       title={`${peer.name} · ${peer.url}`} status={peer.observation?.status}
       error={peer.observation?.error} checkedAt={peer.observation?.checkedAt} />)}
+    <div className="feature-card">
+      <h4>资源评分调度</h4>
+      <p>按最近的 CPU、空闲内存与负载为计划中的实例排序；评分不会迁移或启动实例。</p>
+      <div className="shortcut-fields">
+        <label>所需逻辑处理器<input type="number" min={1} max={128}
+          value={requirements.cpus} onChange={(event) => {
+            setRequirements({ ...requirements, cpus: Number(event.target.value) }); setScores(null);
+          }} /></label>
+        <label>所需内存（MiB）<input type="number" min={256} max={131072}
+          value={requirements.memoryMiB} onChange={(event) => {
+            setRequirements({ ...requirements, memoryMiB: Number(event.target.value) }); setScores(null);
+          }} /></label>
+      </div>
+      <button className="primary compact" disabled={action.busy || !Number.isInteger(requirements.cpus) ||
+        requirements.cpus < 1 || requirements.cpus > 128 ||
+        !Number.isInteger(requirements.memoryMiB) || requirements.memoryMiB < 256 ||
+        requirements.memoryMiB > 131072} onClick={score}>计算主机评分</button>
+      {scores && <div className="host-peer-scores" aria-label="主机评分结果">
+        <p className="subtle-note">评分时间：{new Date(scores.scoredAt).toLocaleString()}</p>
+        {scores.candidates.map((item) => <div className="host-peer-row" key={item.id}>
+          <span><strong>{item.name}</strong> · {item.source === 'local' ? '本机' : '远端'} ·
+            {item.eligible ? `评分 ${item.score} / 100（内存 ${item.components.memory}、CPU 负载 ${item.components.cpuLoad}、实例密度 ${item.components.instanceDensity}）` :
+              `不可选：${item.reasons.join('；')}`}</span>
+        </div>)}
+      </div>}
+    </div>
     <div className="feature-card">
       <h4>同伴入口</h4>
       <p>当前入口：{remote.data?.listener.active ? '正在监听' : '未监听'}。

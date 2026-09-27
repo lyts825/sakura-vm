@@ -12,6 +12,7 @@ import { hardwareCompatibility } from './hardware-compatibility.ts';
 import { firmwareSupport } from './firmware.ts';
 import { networkEmulation } from './network-emulation.ts';
 import { guestDnsDiagnostics } from './guest-dns.ts';
+import { hostScoreInput, type HostScoreInput, type HostPeers } from './host-peers.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -58,8 +59,8 @@ export const nextFeatureCatalog = [
     '资源评分调度',
     '远程主机与集群',
     'P1',
-    '根据 CPU、内存和负载为实例计算主机选择分数。',
-    'planned',
+    '依据已配对主机的空闲内存、CPU 和负载为实例计算可解释的主机排序。',
+    'available',
   ],
   [
     'ha-failover',
@@ -632,6 +633,7 @@ const now = () => new Date().toISOString();
 
 export class NextFeatures {
   jobs = new Jobs('next-features');
+  private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -639,6 +641,10 @@ export class NextFeatures {
     private machines: Machines,
     private workspaces: Workspaces,
   ) {}
+
+  setResourceScheduler(score: (input: HostScoreInput) => ReturnType<HostPeers['score']>) {
+    this.scoreHosts = score;
+  }
 
   private file() {
     return join(DATA, 'next-features.json');
@@ -825,6 +831,17 @@ export class NextFeatures {
         adapter,
         message: '系统设置 → 主机配对与多主机状态，启用独立 TLS 同伴入口后使用一次性短码和证书指纹配对；可查看远端资源与连通性。',
       };
+    if (spec.id === 'resource-scheduler') {
+      if (!this.scoreHosts)
+        return { ready: false, executed: false, adapter, reason: '主机资源评分服务尚未启动。' };
+      const vm = this.machines.get(id);
+      const override = hostScoreInput.partial().strict().parse(merged);
+      const score = await this.scoreHosts({ cpus: override.cpus ?? vm.cpus,
+        memoryMiB: override.memoryMiB ?? vm.memoryMiB });
+      return { ...score, ready: score.candidates.some((item) => item.eligible),
+        executed: action === 'run', adapter,
+        message: '此结果是按最近资源观测计算的放置建议，不会迁移或启动实例。' };
+    }
     if (spec.id === 'graphql-api')
       return {
         ready: true,
