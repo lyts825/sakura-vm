@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { SessionLock } from '../server/session-lock';
 import { Webhooks } from '../server/webhooks';
+import { AutomationRules } from '../server/automation-rules';
 import { LocalAssistant, assistantRequest } from '../server/local-assistant';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
@@ -1149,6 +1150,68 @@ test('webhook settings save real routes, show one-time secrets, deliver tests, p
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
     await webhooks.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('automation rules preview events before explicitly enabling a real VM action', async ({ page }) => {
+  await app(page);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-automation-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  let now = Date.now();
+  const events: Array<{ id: string; type: 'job.finished'; occurredAt: string; vmId: string;
+    status: 'error'; tags: string[] }> = [];
+  const started: string[] = [];
+  const machine = {
+    get: () => vm, requireUnlocked: () => {},
+    start: async (id: string) => { started.push(id); },
+    stop: async () => {}, suspend: async () => {}, resume: async () => {},
+  } as unknown as Machines;
+  const rules = new AutomationRules(async () => events, machine,
+    join(directory, 'rules.json'), () => now);
+  await rules.init(false);
+  await page.route('**/api/automation-rules', async (route) => {
+    try {
+      if (route.request().method() === 'GET') return route.fulfill({ json: rules.view() });
+      return route.fulfill({ json: await rules.configure(route.request().postDataJSON()) });
+    } catch (error: any) {
+      return route.fulfill({ status: error.status || 400, json: { error: error.message } });
+    }
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理自动化规则' }).click();
+    const panel = page.getByRole('region', { name: '事件自动化规则' });
+    await panel.getByLabel('规则名称').fill('失败后启动');
+    await panel.getByLabel('新告警').uncheck();
+    await panel.getByLabel('任务完成').check();
+    await panel.getByLabel('失败').check();
+    await panel.getByLabel('启用规则').check();
+    await panel.getByRole('button', { name: '保存规则' }).click();
+    await expect(panel.locator('.automation-rule-row')).toContainText('预览中');
+    now += 1000;
+    events.push({ id: 'a'.repeat(64), type: 'job.finished', occurredAt: new Date(now).toISOString(),
+      vmId: vm.id, status: 'error', tags: [] });
+    await rules.tick();
+    await panel.getByRole('button', { name: '刷新' }).click();
+    await expect(panel.getByText(/仅预览/)).toBeVisible();
+    expect(started).toEqual([]);
+    await panel.locator('.automation-rule-row').getByRole('button', { name: '编辑' }).click();
+    await panel.getByLabel(/实际执行实例操作/).check();
+    await panel.getByRole('button', { name: '保存规则' }).click();
+    await expect(panel.locator('.automation-rule-row')).toContainText('实际执行');
+    now += 1000;
+    events.push({ id: 'b'.repeat(64), type: 'job.finished', occurredAt: new Date(now).toISOString(),
+      vmId: vm.id, status: 'error', tags: [] });
+    await rules.tick();
+    expect(started).toEqual([vm.id]);
+    await panel.getByRole('button', { name: '刷新' }).click();
+    await expect(panel.getByText(/启动实例.*成功/)).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await rules.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

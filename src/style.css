@@ -3221,6 +3221,37 @@ label input {
   cursor: pointer;
   line-height: 1.7;
 }
+.automation-rule-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.automation-rule-settings fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 16px 0;
+}
+.automation-rule-settings legend {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.automation-rule-settings .shortcut-fields label {
+  min-width: 0;
+}
+.automation-rule-settings .shortcut-fields input,
+.automation-rule-settings .shortcut-fields select {
+  width: 100%;
+  min-width: 0;
+}
+.automation-rule-row {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
 .webhook-secret label {
   display: grid;
   gap: 8px;

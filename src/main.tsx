@@ -109,6 +109,9 @@ const LogRetentionSettings = lazy(() =>
 const WebhookSettings = lazy(() =>
   import('./WebhookSettings').then((module) => ({ default: module.WebhookSettings })),
 );
+const AutomationRuleSettings = lazy(() =>
+  import('./AutomationRuleSettings').then((module) => ({ default: module.AutomationRuleSettings })),
+);
 const LocalAssistant = lazy(() =>
   import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
@@ -365,6 +368,7 @@ function App() {
   const [showRetention, setShowRetention] = useState(false);
   const [showSessionLock, setShowSessionLock] = useState(false);
   const [showWebhooks, setShowWebhooks] = useState(false);
+  const [showAutomationRules, setShowAutomationRules] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -1519,6 +1523,18 @@ function App() {
                 {showWebhooks && (
                   <Suspense fallback={<p>正在读取通知配置…</p>}>
                     <WebhookSettings request={api} />
+                  </Suspense>
+                )}
+                <section className="system-card">
+                  <h3>事件自动化规则</h3>
+                  <p>匹配任务与告警事件，先预览，再按规则启动、停止或暂停实例。</p>
+                  <button className="secondary compact" onClick={() => setShowAutomationRules(!showAutomationRules)}>
+                    {showAutomationRules ? '收起自动化规则' : '管理自动化规则'}
+                  </button>
+                </section>
+                {showAutomationRules && (
+                  <Suspense fallback={<p>正在读取自动化规则…</p>}>
+                    <AutomationRuleSettings request={api} />
                   </Suspense>
                 )}
                 <section className="system-card">

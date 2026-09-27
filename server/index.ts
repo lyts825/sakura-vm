@@ -25,6 +25,7 @@ import { LogRetention, logRetentionRequest } from './log-retention.ts';
 import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from './graphql-api.ts';
 import { SessionLock } from './session-lock.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
+import { AutomationRules } from './automation-rules.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 
@@ -71,13 +72,13 @@ async function main() {
   await native.init();
   const assistant = new LocalAssistant();
   await assistant.init();
+  const eventSource = async () => collectWebhookEvents(
+    machines,
+    features.jobStores().flatMap((store) => store.list()),
+    (await features.suite?.alertEvents()) || [],
+  );
   const webhooks = new Webhooks(
-    async () =>
-      collectWebhookEvents(
-        machines,
-        features.jobStores().flatMap((store) => store.list()),
-        (await features.suite?.alertEvents()) || [],
-      ),
+    eventSource,
     undefined,
     undefined,
     undefined,
@@ -87,6 +88,10 @@ async function main() {
     },
   );
   await webhooks.init();
+  const automationRules = new AutomationRules(eventSource, machines, undefined, undefined,
+    () => !!features.migration?.blocked,
+    (delta) => { features.mutations += delta; });
+  await automationRules.init();
   const retention = new LogRetention(
     () => features.jobStores(),
     undefined,
@@ -246,6 +251,12 @@ async function main() {
     if (url.pathname === '/api/webhooks') {
       if (req.method === 'GET') return send(res, webhooks.view());
       if (req.method === 'POST') return send(res, await webhooks.configure(await authorizedBody(req, 32768)));
+      throw new AppError('不支持此方法', 405);
+    }
+    if (url.pathname === '/api/automation-rules') {
+      if (req.method === 'GET') return send(res, automationRules.view());
+      if (req.method === 'POST') return send(res,
+        await automationRules.configure(await authorizedBody(req, 32768)));
       throw new AppError('不支持此方法', 405);
     }
     if (url.pathname === '/api/native-integration') {
@@ -637,6 +648,7 @@ async function main() {
       () => assistant.close(),
       () => native.close(),
       () => webhooks.close(),
+      () => automationRules.close(),
       () => retention.close(),
       () => graph.close(),
       () => features.close(),

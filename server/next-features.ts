@@ -561,8 +561,8 @@ export const nextFeatureCatalog = [
     '事件自动化 DSL',
     '平台与扩展',
     'P0',
-    '校验并保存事件自动化规则，默认只预览。',
-    'planned',
+    '按任务和告警事件执行带去重、冷却与预览模式的实例操作。',
+    'available',
   ],
   ['mobile-companion', '移动伴侣', '平台与扩展', 'P2', '保存移动设备配对和只读通知策略。', 'planned'],
   ['browser-extension', '浏览器扩展', '平台与扩展', 'P2', '保存浏览器扩展连接状态和权限摘要。', 'planned'],
@@ -802,6 +802,13 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '系统设置 → 管理事件通知，配置接收端和标签条件，可测试签名投递、查看结果、重试或取消。',
+      };
+    if (spec.id === 'automation-dsl')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '系统设置 → 事件自动化规则，按任务或告警筛选实例，先预览再启用实际执行；规则持久去重并记录每次操作。',
       };
     if (spec.id === 'graphql-api')
       return {

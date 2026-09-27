@@ -6,6 +6,7 @@ import { logRetentionRequest } from './log-retention.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
 import { webhookRequest } from './webhooks.ts';
+import { automationRequest } from './automation-rules.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
@@ -80,6 +81,14 @@ const core: {
     path: '/api/webhooks',
     title: '管理订阅、测试或处理投递记录',
     body: request(webhookRequest),
+  },
+  {
+    id: 'automation-rules.get', method: 'GET', path: '/api/automation-rules',
+    title: '事件自动化规则与执行记录', inspect: true,
+  },
+  {
+    id: 'automation-rules.change', method: 'POST', path: '/api/automation-rules',
+    title: '保存、预览或删除事件自动化规则', body: request(automationRequest),
   },
   {
     id: 'session.status',
