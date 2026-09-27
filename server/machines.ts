@@ -507,16 +507,27 @@ export class Machines extends EventEmitter {
             ? ['-icount', 'shift=auto,sleep=on']
             : []),
           ...hardwareArguments(vm),
-          ...(vm.rescueOf ? ['-device', 'pcie-root-port,id=sakura-rescue-port,slot=1,chassis=1'] : []),
+          ...(vm.rescueOf
+            ? [
+                '-device',
+                'pcie-root-port,id=sakura-rescue-port,slot=1,chassis=1',
+                '-device',
+                'pcie-root-port,id=sakura-rescue-compare-port,slot=2,chassis=2',
+              ]
+            : []),
           '-display',
           'none',
           '-monitor',
           'none',
           '-no-reboot',
-          ...(firmware ? [
-            '-drive', `if=pflash,unit=0,format=raw,readonly=on,file=${escape(firmware.code)}`,
-            '-drive', `if=pflash,unit=1,format=raw,file=${escape(firmware.vars)}`,
-          ] : []),
+          ...(firmware
+            ? [
+                '-drive',
+                `if=pflash,unit=0,format=raw,readonly=on,file=${escape(firmware.code)}`,
+                '-drive',
+                `if=pflash,unit=1,format=raw,file=${escape(firmware.vars)}`,
+              ]
+            : []),
           '-drive',
           `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,format=qcow2,${diskOptions(vm)}${vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''}`,
           '-drive',
@@ -1284,6 +1295,7 @@ export class Machines extends EventEmitter {
     work: (rescueId: string, signal: AbortSignal) => Promise<T>,
     diagnostic: (text: string) => void = () => {},
     readOnlyDisk = join(vmDir(sourceId), 'disk.qcow2'),
+    comparisonDisk?: string,
   ) {
     const controller = new AbortController();
     const combined = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(35 * 60_000)]);
@@ -1339,29 +1351,34 @@ export class Machines extends EventEmitter {
           phase('只读连接源磁盘');
           const port = this.live.get(rescueId)!.qmpPort;
           // Attach only after boot: the source may share the rescue image's filesystem UUID.
-          await qmp(port, 'blockdev-add', {
-            driver: 'qcow2',
-            'node-name': 'sakura-rescue-source',
-            'read-only': true,
-            file: { driver: 'file', filename: readOnlyDisk, 'read-only': true },
-          });
-          combined.throwIfAborted();
-          await qmp(port, 'device_add', {
-            driver: 'virtio-blk-pci',
-            drive: 'sakura-rescue-source',
-            id: 'sakura-rescue-disk',
-            bus: 'sakura-rescue-port',
-            serial: 'sakura-source',
-          });
-          const nodes = (await qmp(port, 'query-named-block-nodes')) as {
-            'node-name': string;
-            ro: boolean;
-          }[];
-          if (
-            !Array.isArray(nodes) ||
-            !nodes.some((node) => node['node-name'] === 'sakura-rescue-source' && node.ro === true)
-          )
-            throw new AppError('救援磁盘未确认只读，已终止任务', 409);
+          const attach = async (file: string, role: 'source' | 'compare') => {
+            const node = `sakura-rescue-${role}`;
+            await qmp(port, 'blockdev-add', {
+              driver: 'qcow2',
+              'node-name': node,
+              'read-only': true,
+              file: { driver: 'file', filename: file, 'read-only': true },
+            });
+            combined.throwIfAborted();
+            await qmp(port, 'device_add', {
+              driver: 'virtio-blk-pci',
+              drive: node,
+              id: `sakura-rescue-${role === 'source' ? 'disk' : 'compare-disk'}`,
+              bus: role === 'source' ? 'sakura-rescue-port' : 'sakura-rescue-compare-port',
+              serial: `sakura-${role}`,
+            });
+            const nodes = (await qmp(port, 'query-named-block-nodes')) as {
+              'node-name': string;
+              ro: boolean;
+            }[];
+            if (
+              !Array.isArray(nodes) ||
+              !nodes.some((entry) => entry['node-name'] === node && entry.ro === true)
+            )
+              throw new AppError('救援磁盘未确认只读，已终止任务', 409);
+          };
+          await attach(readOnlyDisk, 'source');
+          if (comparisonDisk) await attach(comparisonDisk, 'compare');
           combined.throwIfAborted();
           return await work(rescueId, combined);
         } finally {
@@ -1594,7 +1611,11 @@ export class Machines extends EventEmitter {
     });
   }
   // Provision a converted cloud image with a new controller identity on its first boot.
-  async importDisk(input: unknown, disk: string, options: { signal?: AbortSignal; pendingResize?: boolean } = {}) {
+  async importDisk(
+    input: unknown,
+    disk: string,
+    options: { signal?: AbortSignal; pendingResize?: boolean } = {},
+  ) {
     return this.locked('create', async () => {
       const { signal, pendingResize } = options;
       const config = createSchema.parse(input);
@@ -1603,7 +1624,9 @@ export class Machines extends EventEmitter {
         throw new AppError('导入镜像需要选择 Linux 发行版，且不能自动安装模板');
       const image = distroInfo(config.distro);
       if (config.memoryMiB < image.minimumMemory || config.diskGiB < image.minimumDisk)
-        throw new AppError(`${image.name} 至少需要 ${image.minimumMemory} MiB 内存、${image.minimumDisk} GiB 磁盘`);
+        throw new AppError(
+          `${image.name} 至少需要 ${image.minimumMemory} MiB 内存、${image.minimumDisk} GiB 磁盘`,
+        );
       if (this.records.size >= 32 || [...this.records.values()].some((vm) => vm.name === config.name))
         throw new AppError('名称已存在或已达到 32 个实例上限', 409);
       const vm: VMRecord = {
@@ -1622,9 +1645,10 @@ export class Machines extends EventEmitter {
         const key = createSshKey();
         const seed = seedIso({
           'meta-data': metaData(vm.id, vm.name, key.publicText),
-          'user-data': vm.distro === 'alpine'
-            ? userData(vm.name, key.publicText)
-            : cloudUserData(vm.name, key.publicText),
+          'user-data':
+            vm.distro === 'alpine'
+              ? userData(vm.name, key.publicText)
+              : cloudUserData(vm.name, key.publicText),
           ...(vm.distro === 'alpine' ? {} : { 'network-config': cloudNetwork }),
         });
         await pipeline(

@@ -131,6 +131,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'ai-assistant',
   'native-integration',
   'golden-images',
+  'snapshot-diff',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'language-services',
@@ -451,7 +452,12 @@ export class FeatureSuite {
     } else if (featureId === 'multi-arch') {
       result.architecture = process.arch;
       result.qemu = true;
-    } else if (featureId === 'online-snapshots' || featureId === 'snapshot-diff') {
+    } else if (featureId === 'snapshot-diff') {
+      result.ready = true;
+      result.reason =
+        '启用磁盘快照插件后，在实例 → 快照选择起点和终点，离线比较整个磁盘及指定路径中的普通文件和符号链接。';
+      result.snapshots = vm.snapshots.length;
+    } else if (featureId === 'online-snapshots') {
       result.snapshots = vm.snapshots.length;
       result.consistency = this.machines.state(id) === 'running' ? 'qmp-coordinated' : 'offline';
     } else if (

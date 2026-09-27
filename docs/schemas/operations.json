@@ -2468,5 +2468,117 @@
       ],
       "additionalProperties": {}
     }
+  },
+  "snapshots.snapshot-diff-view": {
+    "id": "snapshot-diff-view",
+    "method": "GET",
+    "path": "/api/vms/:vmId/snapshot-diff",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "startedAt"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "persistenceError": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "snapshots.snapshot-diff-run": {
+    "id": "snapshot-diff-run",
+    "method": "POST",
+    "path": "/api/vms/:vmId/snapshot-diff",
+    "status": 202,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "to": {
+          "default": "current",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "current"
+            },
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          ]
+        },
+        "partition": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "path": {
+          "default": "/workspace",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^\\/(?:[^/\\\\\\x00-\\x1f]+(?:\\/[^/\\\\\\x00-\\x1f]+)*)?$"
+        }
+      },
+      "required": [
+        "from"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "startedAt"
+      ],
+      "additionalProperties": {}
+    }
   }
 }

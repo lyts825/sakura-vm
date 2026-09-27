@@ -9,12 +9,13 @@ import { rescueRunSchema } from '../shared/rescue.ts';
 import type { SandboxExecution } from '../shared/sandbox.ts';
 
 /** Only supported filesystems receive an automatic mount; never replay a journal. */
-export function rescueSetup(partition: number | null) {
+export function rescueSetup(partition: number | null, role: 'source' | 'compare' = 'source') {
+  const mountPoint = role === 'source' ? '/mnt/source' : '/mnt/compare';
   return `set -eu
 device=
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
   for serial in /sys/block/vd*/serial; do
-    if test "$(cat "$serial" 2>/dev/null || true)" = sakura-source; then
+    if test "$(cat "$serial" 2>/dev/null || true)" = sakura-${role}; then
       device=/dev/$(basename "$(dirname "$serial")")
       break
     fi
@@ -24,8 +25,8 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 test -n "$device" || { echo '未发现救援磁盘' >&2; exit 1; }
 test "$(cat /sys/block/$(basename "$device")/ro)" = 1 || { echo '救援磁盘不是只读设备' >&2; exit 1; }
-printf '%s\n' "$device" > /run/sakura-source-device
-mkdir -p /workspace /mnt/source
+printf '%s\n' "$device" > /run/sakura-${role}-device
+mkdir -p /workspace ${mountPoint}
 echo "源磁盘：$device（QEMU 只读）"
 cat /proc/partitions
 ${
@@ -43,8 +44,8 @@ case "$kind" in
   ext3|ext4) options=ro,noload ;;
   *) echo "自动挂载仅支持 ext2/ext3/ext4，检测到：$kind。请选择仅检查分区后手动诊断。" >&2; exit 1 ;;
 esac
-mount -t "$kind" -o "$options" "$target" /mnt/source
-echo '源分区已只读挂载到 /mnt/source（不重放日志）'`
+mount -t "$kind" -o "$options" "$target" ${mountPoint}
+echo '源分区已只读挂载到 ${mountPoint}（不重放日志）'`
 }
 `;
 }

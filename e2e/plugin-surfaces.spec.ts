@@ -285,6 +285,79 @@ test('read-only rescue runs reviewed commands, retains downloadable artifacts, r
   }
 });
 
+test('snapshot comparison selects historical and current states, shows file changes and downloads the report', async ({
+  page,
+}) => {
+  await app(page, ['snapshots', 'transfers'], true);
+  const snapshotId = randomUUID(),
+    jobId = randomUUID();
+  const result = {
+    from: snapshotId,
+    to: 'current',
+    partition: 0,
+    path: '/workspace',
+    diskChanged: true,
+    counts: { before: 2, after: 2, added: 1, removed: 1, modified: 1 },
+    added: [{ path: '/workspace/new.txt', type: 'file', bytes: 3, sha256: 'a'.repeat(64) }],
+    removed: [{ path: '/workspace/old.txt', type: 'file', bytes: 3, sha256: 'b'.repeat(64) }],
+    modified: [
+      {
+        path: '/workspace/change.txt',
+        before: { path: '/workspace/change.txt', type: 'file', bytes: 3, sha256: 'c'.repeat(64) },
+        after: { path: '/workspace/change.txt', type: 'file', bytes: 4, sha256: 'd'.repeat(64) },
+      },
+    ],
+    checkedAt: new Date().toISOString(),
+  };
+  let submitted: any;
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({
+      json: [
+        { ...vm, snapshots: [{ id: snapshotId, name: 'baseline', createdAt: new Date().toISOString() }] },
+      ],
+    }),
+  );
+  await page.route('**/api/vms/*/snapshot-diff', (route) => {
+    if (route.request().method() === 'POST') submitted = route.request().postDataJSON();
+    return route.fulfill({
+      json:
+        route.request().method() === 'POST'
+          ? { id: jobId, status: 'running', startedAt: new Date().toISOString() }
+          : {
+              runs: submitted
+                ? [
+                    {
+                      id: jobId,
+                      status: 'done',
+                      log: '比较完成',
+                      startedAt: new Date().toISOString(),
+                      result: { bytes: 100, sha256: 'a'.repeat(64) },
+                    },
+                  ]
+                : [],
+            },
+    });
+  });
+  await page.route('**/api/jobs/*/result', (route) => route.fulfill({ json: result }));
+  await page.reload();
+  await page.getByRole('tab', { name: '快照', exact: true }).click();
+  const panel = page.getByRole('region', { name: '快照差异' });
+  await expect(panel.getByLabel('起点快照')).toHaveValue(snapshotId);
+  await panel.getByRole('button', { name: '比较快照', exact: true }).click();
+  await expect
+    .poll(() => submitted)
+    .toEqual({ from: snapshotId, to: 'current', path: '/workspace', partition: 0 });
+  await expect(panel.getByText(/磁盘内容：不同/)).toBeVisible();
+  await panel.getByText('修改文件（1）').click();
+  await expect(panel.getByText('/workspace/change.txt')).toBeVisible();
+  const download = page.waitForEvent('download');
+  await panel.getByRole('button', { name: '下载完整差异 JSON' }).click();
+  const file = await download;
+  expect(JSON.parse((await readFile((await file.path())!)).toString()).counts.modified).toBe(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile', async ({
   page,
 }) => {
@@ -411,7 +484,9 @@ test('signed bundle policy manages trusted keys on snapshot and image pages at d
   }
 });
 
-test('image library uploads a selected disk format with provisioning choices and shows integrity result', async ({ page }) => {
+test('image library uploads a selected disk format with provisioning choices and shows integrity result', async ({
+  page,
+}) => {
   await app(page, ['images']);
   await page.route('**/api/images', (route) => route.fulfill({ json: [] }));
   let submitted: URL | undefined;
@@ -419,10 +494,13 @@ test('image library uploads a selected disk format with provisioning choices and
     submitted = new URL(route.request().url());
     expect(route.request().postDataBuffer()?.length).toBe(1024);
     expect(route.request().headers()['x-sakura-token']).toBe('test-token');
-    return route.fulfill({ status: 201, json: {
-      vm: { id: randomUUID(), name: 'from-vmdk' },
-      source: { format: 'vmdk', bytes: 1024, sha256: 'a'.repeat(64), virtualBytes: 2 * 1024 ** 3 },
-    } });
+    return route.fulfill({
+      status: 201,
+      json: {
+        vm: { id: randomUUID(), name: 'from-vmdk' },
+        source: { format: 'vmdk', bytes: 1024, sha256: 'a'.repeat(64), virtualBytes: 2 * 1024 ** 3 },
+      },
+    });
   });
   await page.getByRole('button', { name: '镜像库', exact: true }).click();
   const panel = page.getByRole('heading', { name: '导入其他镜像' }).locator('..');
@@ -432,11 +510,15 @@ test('image library uploads a selected disk format with provisioning choices and
   await panel.getByLabel('导入实例固件').selectOption('uefi');
   await panel.getByLabel('导入实例内存').fill('2048');
   await panel.getByLabel('导入镜像 SHA-256').fill('bad');
-  await panel.locator('input[type=file]').setInputFiles({ name: 'disk.vmdk', mimeType: 'application/octet-stream', buffer: Buffer.alloc(1024) });
+  await panel
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'disk.vmdk', mimeType: 'application/octet-stream', buffer: Buffer.alloc(1024) });
   await expect(page.getByRole('alert')).toContainText('SHA-256 必须为 64 位十六进制');
   expect(submitted).toBeUndefined();
   await panel.getByLabel('导入镜像 SHA-256').fill('a'.repeat(64));
-  await panel.locator('input[type=file]').setInputFiles({ name: 'disk.vmdk', mimeType: 'application/octet-stream', buffer: Buffer.alloc(1024) });
+  await panel
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'disk.vmdk', mimeType: 'application/octet-stream', buffer: Buffer.alloc(1024) });
   await expect(page.getByRole('status')).toContainText('镜像已导入');
   expect(submitted?.searchParams.get('format')).toBe('vmdk');
   expect(submitted?.searchParams.get('distro')).toBe('debian');
@@ -448,13 +530,18 @@ test('image library uploads a selected disk format with provisioning choices and
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('new Linux instance submits UEFI firmware selection with its resource configuration', async ({ page }) => {
+test('new Linux instance submits UEFI firmware selection with its resource configuration', async ({
+  page,
+}) => {
   await app(page);
   let created: any;
   await page.route('**/api/vms', (route) => {
     if (route.request().method() !== 'POST') return route.fulfill({ json: [] });
     created = route.request().postDataJSON();
-    return route.fulfill({ status: 201, json: { ...vm, ...created, id: randomUUID(), status: 'stopped', poweredOn: false, snapshots: [] } });
+    return route.fulfill({
+      status: 201,
+      json: { ...vm, ...created, id: randomUUID(), status: 'stopped', poweredOn: false, snapshots: [] },
+    });
   });
   await page.getByRole('button', { name: '创建发行版', exact: true }).click();
   await page.getByLabel('启动固件').selectOption('uefi');
@@ -2433,7 +2520,9 @@ async function app(page: Page, active: string[] = [], withVm = false) {
                   }
                 : path === '/api/signed-bundles'
                   ? { revision: 0, requireTrustedOnImport: false, localKey: null, trustedKeys: [] }
-                  : path.endsWith('/rescue') || path.endsWith('/backup-recovery')
+                  : path.endsWith('/rescue') ||
+                      path.endsWith('/backup-recovery') ||
+                      path.endsWith('/snapshot-diff')
                     ? { runs: [] }
                     : path.endsWith('/projects')
                       ? { active: 'default', projects: [{ id: 'default', name: '默认项目' }] }

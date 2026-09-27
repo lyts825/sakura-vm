@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
 import { apiPath } from '../shared/api-document.ts';
+import { PLUGINS } from '../shared/plugins.ts';
 const sdk = async (port = 7337) =>
   import(
     'data:text/javascript;base64,' +
@@ -26,7 +27,9 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
       );
       assert.ok(Object.keys(operation.responses).length);
     }
-  assert.equal(ids.size, 62);
+  for (const plugin of PLUGINS)
+    for (const operation of plugin.contributes.operations)
+      assert.ok(ids.has(`${plugin.id}.${operation.id}`), `${plugin.id}.${operation.id}`);
   assert.equal(spec.paths['/api/vms/{vmId}/commands'].get['x-sakura-enabled'], true);
   assert.equal(spec.paths['/api/vms/{vmId}/metrics'].get['x-sakura-enabled'], false);
   assert.ok(

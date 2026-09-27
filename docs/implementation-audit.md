@@ -93,7 +93,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 空闲自动暂停或关机 / `idle-shutdown` | 实现有缺陷 | 先刷新最新采样再计算其时间差，正常采样时无法累计空闲时长；隔离复现未触发停止。 | [server/feature-suite.ts:696](D:/27247/Desktop/Sakura/server/feature-suite.ts:696) |
 | 动态内存目标 / `dynamic-memory` | 已有专用操作 | 通过 QMP 设置 balloon 内存目标；不是内存设备热插拔。 | [server/machines.ts:1154](D:/27247/Desktop/Sakura/server/machines.ts:1154) |
 | 一致性在线快照 / `online-snapshots` | 未实现 | 实际快照入口强制实例停止；没有文件系统冻结与在线一致性流程。 | [server/machines.ts:1035](D:/27247/Desktop/Sakura/server/machines.ts:1035) |
-| 快照时间线与差异 / `snapshot-diff` | 未实现 | 已有离线快照列表、备注与恢复；目录检查只读取快照数量，无文件/磁盘差异计算。 | [server/feature-suite.ts:313](D:/27247/Desktop/Sakura/server/feature-suite.ts:313) |
+| 快照时间线与差异 / `snapshot-diff` | 已实现 | 离线提取快照后以只读救援系统计算普通文件和符号链接差异，QEMU 比较整盘逻辑内容；快照页与后台任务可操作。 | [server/snapshot-diff.ts](D:/27247/Desktop/Sakura/server/snapshot-diff.ts) |
 | TRIM、压缩与稀疏回收 / `disk-maintenance` | 部分实现 | 停机 QCOW2 整理已实现，不能全算未实现；缺计划 TRIM、完整稀疏回收编排。 | [server/maintenance.ts:103](D:/27247/Desktop/Sakura/server/maintenance.ts:103) |
 | 资源预设与推荐 / `resource-presets` | 部分实现 | 四个固定 CPU/内存预设可应用；缺按工作负载推荐及磁盘推荐。 | [server/feature-suite.ts:369](D:/27247/Desktop/Sakura/server/feature-suite.ts:369) |
 | Windows 文件系统直挂 / `windows-mount` | 未实现 | 现有同步是文件复制；无宿主目录直挂/virtio-fs 设备配置。 | [server/feature-suite.ts:316](D:/27247/Desktop/Sakura/server/feature-suite.ts:316) |

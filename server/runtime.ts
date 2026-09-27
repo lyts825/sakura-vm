@@ -63,6 +63,32 @@ export async function createRuntime() {
     throw new AppError('请先构建 PosixLoom Native Host：npm run setup', 503);
   }
   const service = new PosixLoomService(runtime);
+  const runStatus = async (
+    tool: keyof typeof binaries,
+    args: string[],
+    options: { signal?: AbortSignal; timeoutMs?: number } = {},
+  ) => {
+    const sessionId = service.createSession();
+    try {
+      const result = await service.execute({
+        sessionId,
+        kind: 'argv',
+        argv: [tool, ...args],
+        statePolicy: 'isolated',
+        timeoutMs: options.timeoutMs || 30000,
+        signal: options.signal,
+      });
+      if (result.command.kind !== 'exited')
+        throw new Error(result.stderr.toString().trim() || `QEMU: ${JSON.stringify(result.command)}`);
+      return {
+        code: result.command.exitCode,
+        stdout: result.stdout.toString(),
+        stderr: result.stderr.toString(),
+      };
+    } finally {
+      service.sessions.close(sessionId);
+    }
+  };
   const run = async (
     tool: keyof typeof binaries,
     args: string[],
@@ -134,6 +160,6 @@ export async function createRuntime() {
       await probe;
     }
   }
-  return { runtime, service, run, version, whpxAvailable, qemuIoAvailable };
+  return { runtime, service, run, runStatus, version, whpxAvailable, qemuIoAvailable };
 }
 export type Engine = Awaited<ReturnType<typeof createRuntime>>;

@@ -111,6 +111,25 @@ async function probe(selected, expected) {
     if (expected.includes('snapshots')) {
       const absent = randomUUID();
       assert.equal(specification.paths['/api/vms/{vmId}/rescue'].post['x-sakura-enabled'], true);
+      assert.equal(specification.paths['/api/vms/{vmId}/snapshot-diff'].post['x-sakura-enabled'], true);
+      await assert.rejects(
+        sdk.call('snapshots.snapshot-diff-view', { path: { vmId: absent } }),
+        (error) => error.status === 404,
+      );
+      await assert.rejects(
+        sdk.call('snapshots.snapshot-diff-run', {
+          path: { vmId: absent },
+          body: { from: randomUUID(), partition: -1 },
+        }),
+        (error) => error.status === 400,
+      );
+      await assert.rejects(
+        sdk.call('snapshots.snapshot-diff-run', {
+          path: { vmId: absent },
+          body: { from: randomUUID() },
+        }),
+        (error) => error.status === 404,
+      );
       await assert.rejects(
         sdk.call('snapshots.rescue-view', { path: { vmId: absent } }),
         (error) => error.status === 404,
@@ -170,6 +189,10 @@ async function probe(selected, expected) {
     } else {
       assert.equal((await fetch(origin + '/api/golden-images', { headers })).status, 403);
       assert.equal((await fetch(origin + '/api/vms/' + randomUUID() + '/rescue', { headers })).status, 403);
+      assert.equal(
+        (await fetch(origin + '/api/vms/' + randomUUID() + '/snapshot-diff', { headers })).status,
+        403,
+      );
     }
     assert.equal((await sdk.call('core.monitor')).version, 1);
     assert.equal(

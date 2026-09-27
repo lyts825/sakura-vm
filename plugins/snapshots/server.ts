@@ -10,6 +10,12 @@ import { Bundles } from '../../server/bundles.ts';
 import { GoldenImages } from '../../server/golden-images.ts';
 import { goldenActionSchema, goldenEntrySchema, goldenResultSchema } from '../../shared/golden-images.ts';
 import { Rescue } from '../../server/rescue.ts';
+import { SnapshotDiff } from '../../server/snapshot-diff.ts';
+import {
+  snapshotDiffInputSchema,
+  snapshotDiffJobSchema,
+  snapshotDiffViewSchema,
+} from '../../shared/snapshot-diff.ts';
 import {
   SignedBundles,
   signedBundleActionSchema,
@@ -35,8 +41,25 @@ export async function activate(host: PluginContext) {
   host.registerJobs(rescue.jobs, () => {
     throw new AppError('请在快照页检查救援命令后重新执行', 409);
   });
+  const snapshotDiff = host.provide('snapshotDiff', new SnapshotDiff(host.machines));
+  host.registerJobs(snapshotDiff.jobs, () => {
+    throw new AppError('请在快照页选择快照后重新比较', 409);
+  });
 }
 export const operations: Record<string, PluginOperation> = {
+  'snapshot-diff-view': {
+    response: snapshotDiffViewSchema,
+    execute(url) {
+      return this.use<SnapshotDiff>('snapshots', 'snapshotDiff').view(url.pathname.split('/')[3]);
+    },
+  },
+  'snapshot-diff-run': {
+    request: snapshotDiffInputSchema,
+    response: snapshotDiffJobSchema,
+    execute(url, input) {
+      return this.use<SnapshotDiff>('snapshots', 'snapshotDiff').run(url.pathname.split('/')[3], input);
+    },
+  },
   'signed-bundles-view': {
     response: signedBundleViewSchema,
     execute() {
