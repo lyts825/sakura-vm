@@ -6,6 +6,8 @@ import { SessionLock } from '../server/session-lock';
 import { Webhooks } from '../server/webhooks';
 import { AutomationRules } from '../server/automation-rules';
 import { FeatureRollouts } from '../server/feature-rollouts';
+import { HostPeers } from '../server/host-peers';
+import { createServer as createTcpServer } from 'node:net';
 import { LocalAssistant, assistantRequest } from '../server/local-assistant';
 import { capabilityViews } from '../server/capability-definitions';
 import { PLUGINS, PLUGIN_PACKS, emptySelection } from '../shared/plugins.ts';
@@ -1251,6 +1253,64 @@ test('plugin rollout previews a host cohort, persists a policy and explains next
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
     await rollouts.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('host pairing connects over pinned TLS and shows remote resources and revocation', async ({ page }) => {
+  await app(page);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-peers-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const probe = createTcpServer();
+  await new Promise<void>((done) => probe.listen(0, '127.0.0.1', done));
+  const address = probe.address();
+  if (!address || typeof address === 'string') throw new Error('No test port');
+  const port = address.port;
+  await new Promise<void>((done) => probe.close(() => done()));
+  const sample = async () => ({ platform: 'win32', arch: 'x64', cpus: 8,
+    memoryTotal: 16 * 1024 ** 3, memoryFree: 8 * 1024 ** 3,
+    load: [0.1, 0.2, 0.3], vmCount: 3, runningVms: 2 });
+  const targetFile = join(directory, 'target.json');
+  const setup = new HostPeers(sample, targetFile, 'Remote');
+  await setup.init(false);
+  await setup.configure({ operation: 'listener', listener: {
+    enabled: true, host: '127.0.0.1', port,
+  } });
+  await setup.close();
+  const target = new HostPeers(sample, targetFile, 'Remote');
+  await target.init(true);
+  const pairing = await target.configure({ operation: 'create-code' });
+  const local = new HostPeers(sample, join(directory, 'local.json'), 'Local');
+  await local.init(false);
+  await page.route('**/api/host-peers', async (route) => {
+    try {
+      if (route.request().method() === 'GET') return route.fulfill({ json: {
+        ...local.view(), local: await local.status(),
+      } });
+      return route.fulfill({ json: await local.configure(route.request().postDataJSON()) });
+    } catch (error: any) {
+      return route.fulfill({ status: error.status || 400, json: { error: error.message } });
+    }
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理主机配对' }).click();
+    const panel = page.getByRole('region', { name: '主机配对与多主机状态' });
+    await panel.getByLabel(/HTTPS 地址/).fill(`https://127.0.0.1:${port}/`);
+    await panel.getByLabel('远端 TLS 指纹').fill(target.view().fingerprint);
+    await panel.getByLabel('远端一次性配对码').fill(pairing.pairing!.value);
+    await panel.getByRole('button', { name: '连接并配对' }).click();
+    await expect(panel.locator('.host-peer-resource')).toHaveCount(2);
+    await expect(panel.locator('.host-peer-resource').last()).toContainText('实例 2 运行 / 3 总数');
+    await target.configure({ operation: 'revoke-inbound', id: target.view().incoming[0].id });
+    await panel.getByRole('button', { name: '检查全部主机' }).click();
+    await expect(panel.getByText(/连接失败：远端返回 HTTP 401/)).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await local.close();
+    await target.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

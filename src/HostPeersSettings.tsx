@@ -1,0 +1,129 @@
+import { useState } from 'react';
+import type { PeerStatus } from '../server/host-peers';
+import { Feedback, useAction, useRemote, type Request } from './feature-shared';
+import './features.css';
+
+type Listener = { enabled: boolean; host: '127.0.0.1' | '0.0.0.0'; port: number;
+  active: boolean; error?: string };
+type Observation = { status?: PeerStatus; error?: string; checkedAt: number;
+  lastSuccessAt?: number };
+type HostPeersView = {
+  hostId: string; name: string; fingerprint: string; local: PeerStatus;
+  listener: Listener; pairing: { value: string; expiresAt: number } | null;
+  incoming: Array<{ id: string; requesterId: string; name: string; createdAt: number }>;
+  outbound: Array<{ id: string; remoteId: string; name: string; url: string;
+    fingerprint: string; createdAt: number; observation: Observation | null }>;
+};
+const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1) + ' GiB';
+
+function ResourceCard({ title, status, error, checkedAt }: {
+  title: string; status?: PeerStatus; error?: string; checkedAt?: number;
+}) {
+  return <div className="feature-card host-peer-resource">
+    <h4>{title}</h4>
+    <p>{error ? `连接失败：${error}` : status ? '可访问' : '等待检查'}</p>
+    {status && <p>{status.platform} / {status.arch} · {status.cpus} 核 ·
+      可用内存 {gib(status.memoryFree)} / {gib(status.memoryTotal)} ·
+      实例 {status.runningVms} 运行 / {status.vmCount} 总数</p>}
+    {checkedAt && <p className="subtle-note">上次检查：{new Date(checkedAt).toLocaleString()}</p>}
+  </div>;
+}
+
+export function HostPeersSettings({ request }: { request: Request }) {
+  const remote = useRemote<HostPeersView>(request, '/host-peers', true, 5000);
+  const action = useAction();
+  const [listenerDraft, setListenerDraft] = useState<Pick<Listener, 'enabled' | 'host' | 'port'> | null>(null);
+  const [address, setAddress] = useState('');
+  const [fingerprint, setFingerprint] = useState('');
+  const [code, setCode] = useState('');
+  const listener = listenerDraft || remote.data?.listener ||
+    { enabled: false, host: '127.0.0.1' as const, port: 7443 };
+  const apply = (operation: string, data: Record<string, unknown> = {}, message?: string) =>
+    void action.run(async (signal) => {
+      await request('/host-peers', 'POST', { operation, ...data }, signal);
+      remote.reload();
+    }, message);
+  const saveListener = () => {
+    apply('listener', { listener: { enabled: listener.enabled, host: listener.host,
+      port: listener.port } }, '入口配置已保存，重启 Sakura 服务后生效');
+  };
+  const connect = () => void action.run(async (signal) => {
+    await request('/host-peers', 'POST', { operation: 'connect', url: address.trim(),
+      fingerprint: fingerprint.trim().toUpperCase(), code: code.trim().toUpperCase() }, signal);
+    setAddress(''); setFingerprint(''); setCode('');
+    remote.reload();
+  }, '主机已配对');
+  return <section className="system-card host-peers-settings" aria-label="主机配对与多主机状态">
+    <div className="panel-heading">
+      <div><h3>主机配对与多主机状态</h3><p>通过短码和证书指纹连接另一台 Sakura，集中查看资源与连通性。</p></div>
+      <button className="secondary compact" onClick={() =>
+        apply('refresh', {}, '主机状态已检查')}>检查全部主机</button>
+    </div>
+    <Feedback error={action.error || remote.error} message={action.message} />
+    <ResourceCard title={`本机 · ${remote.data?.name || 'Sakura'}`} status={remote.data?.local} />
+    {remote.data?.outbound.map((peer) => <ResourceCard key={peer.id}
+      title={`${peer.name} · ${peer.url}`} status={peer.observation?.status}
+      error={peer.observation?.error} checkedAt={peer.observation?.checkedAt} />)}
+    <div className="feature-card">
+      <h4>同伴入口</h4>
+      <p>当前入口：{remote.data?.listener.active ? '正在监听' : '未监听'}。
+        {remote.data?.listener.error && ` ${remote.data.listener.error}`}</p>
+      <div className="shortcut-fields">
+        <label className="check"><input type="checkbox" checked={listener.enabled}
+          onChange={(event) => setListenerDraft({ ...listener, enabled: event.target.checked })} />
+          启用同伴入口</label>
+        <div className="host-peer-field"><label htmlFor="peer-host">监听地址</label>
+          <select id="peer-host" value={listener.host}
+            onChange={(event) => setListenerDraft({ ...listener,
+              host: event.target.value as Listener['host'] })}>
+            <option value="127.0.0.1">仅本机 / SSH 隧道</option>
+            <option value="0.0.0.0">所有网卡 / 局域网</option>
+          </select></div>
+        <label>监听端口<input type="number" min={1024} max={65535} value={listener.port}
+          onChange={(event) => setListenerDraft({ ...listener, port: Number(event.target.value) })} /></label>
+      </div>
+      <p>本机 TLS 指纹（在另一台主机配对时核对）：<code className="host-peer-fingerprint">
+        {remote.data?.fingerprint || '读取中'}</code></p>
+      <div className="feature-actions">
+        <button className="primary compact" disabled={action.busy || listener.port < 1024 ||
+          listener.port > 65535} onClick={saveListener}>保存入口配置</button>
+        <button className="secondary compact" disabled={action.busy || !remote.data?.listener.active}
+          onClick={() => apply('create-code')}>生成一次性配对码</button>
+        {remote.data?.pairing && <button className="secondary compact" disabled={action.busy}
+          onClick={() => apply('revoke-code')}>撤销配对码</button>}
+      </div>
+      {remote.data?.pairing && <p>配对码：<strong>{remote.data.pairing.value}</strong> ·
+        有效至 {new Date(remote.data.pairing.expiresAt).toLocaleString()}</p>}
+      <p className="subtle-note">入口配置在重启服务后生效。局域网访问请使用这台主机的 IP、所设端口、上方指纹和一次性配对码。</p>
+    </div>
+    <div className="feature-card">
+      <h4>加入远端主机</h4>
+      <div className="shortcut-fields">
+        <label>HTTPS 地址（含端口）<input value={address} placeholder="https://192.168.1.10:7443/"
+          onChange={(event) => setAddress(event.target.value)} /></label>
+        <label>远端 TLS 指纹<input value={fingerprint} placeholder="AA:BB:…"
+          onChange={(event) => setFingerprint(event.target.value)} /></label>
+        <label>远端一次性配对码<input value={code} maxLength={10}
+          onChange={(event) => setCode(event.target.value)} /></label>
+      </div>
+      <button className="primary compact" disabled={action.busy || !address.trim() ||
+        !fingerprint.trim() || code.trim().length !== 10} onClick={connect}>连接并配对</button>
+    </div>
+    <div className="feature-card"><h4>已配对主机</h4>
+      {!remote.data?.outbound.length && <p className="subtle-note">尚未加入远端主机。</p>}
+      {remote.data?.outbound.map((peer) => <div className="host-peer-row" key={peer.id}>
+        <span><strong>{peer.name}</strong> · {peer.url}</span>
+        <button className="secondary compact" disabled={action.busy}
+          onClick={() => apply('remove-outbound', { id: peer.id }, '远端主机已移除')}>移除</button>
+      </div>)}
+    </div>
+    <div className="feature-card"><h4>允许读取本机状态的主机</h4>
+      {!remote.data?.incoming.length && <p className="subtle-note">尚无入站配对。</p>}
+      {remote.data?.incoming.map((peer) => <div className="host-peer-row" key={peer.id}>
+        <span><strong>{peer.name}</strong> · {peer.requesterId}</span>
+        <button className="secondary compact" disabled={action.busy}
+          onClick={() => apply('revoke-inbound', { id: peer.id }, '读取权限已撤销')}>撤销访问</button>
+      </div>)}
+    </div>
+  </section>;
+}

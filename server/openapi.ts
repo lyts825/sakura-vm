@@ -8,6 +8,7 @@ import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.t
 import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
+import { hostPeerRequest } from './host-peers.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
@@ -98,6 +99,14 @@ const core: {
   {
     id: 'feature-rollouts.change', method: 'POST', path: '/api/feature-rollouts',
     title: '保存、预览或删除插件灰度策略', body: request(featureRolloutRequest),
+  },
+  {
+    id: 'host-peers.get', method: 'GET', path: '/api/host-peers',
+    title: '主机配对、资源和健康状态', inspect: true,
+  },
+  {
+    id: 'host-peers.change', method: 'POST', path: '/api/host-peers',
+    title: '管理同伴入口、短码和已配对主机', body: request(hostPeerRequest),
   },
   {
     id: 'session.status',

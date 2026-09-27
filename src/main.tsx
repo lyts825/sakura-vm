@@ -115,6 +115,9 @@ const AutomationRuleSettings = lazy(() =>
 const FeatureRolloutSettings = lazy(() =>
   import('./FeatureRolloutSettings').then((module) => ({ default: module.FeatureRolloutSettings })),
 );
+const HostPeersSettings = lazy(() =>
+  import('./HostPeersSettings').then((module) => ({ default: module.HostPeersSettings })),
+);
 const LocalAssistant = lazy(() =>
   import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
@@ -373,6 +376,7 @@ function App() {
   const [showWebhooks, setShowWebhooks] = useState(false);
   const [showAutomationRules, setShowAutomationRules] = useState(false);
   const [showFeatureRollouts, setShowFeatureRollouts] = useState(false);
+  const [showHostPeers, setShowHostPeers] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -1551,6 +1555,18 @@ function App() {
                 {showFeatureRollouts && (
                   <Suspense fallback={<p>正在读取插件灰度…</p>}>
                     <FeatureRolloutSettings request={api} />
+                  </Suspense>
+                )}
+                <section className="system-card">
+                  <h3>主机配对与多主机状态</h3>
+                  <p>通过一次性短码和 TLS 指纹连接另一台 Sakura，查看资源与连通性。</p>
+                  <button className="secondary compact" onClick={() => setShowHostPeers(!showHostPeers)}>
+                    {showHostPeers ? '收起主机配对' : '管理主机配对'}
+                  </button>
+                </section>
+                {showHostPeers && (
+                  <Suspense fallback={<p>正在读取主机状态…</p>}>
+                    <HostPeersSettings request={api} />
                   </Suspense>
                 )}
                 <section className="system-card">

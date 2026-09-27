@@ -25,8 +25,8 @@ export const nextFeatureCatalog = [
     '短代码主机配对',
     '远程主机与集群',
     'P0',
-    '生成可撤销的短代码，把另一台 Sakura 主机加入当前控制面。',
-    'planned',
+    '生成一次性短码，经 TLS 指纹校验后将另一台 Sakura 加入本机主机列表。',
+    'available',
   ],
   [
     'host-cert-rotation',
@@ -41,8 +41,8 @@ export const nextFeatureCatalog = [
     '多主机资源总览',
     '远程主机与集群',
     'P0',
-    '汇总当前主机的系统、CPU、内存和 Sakura 运行时信息。',
-    'experimental',
+    '经配对认证汇总本机与远端主机的 CPU、内存和实例数量。',
+    'available',
   ],
   [
     'live-migration',
@@ -818,6 +818,13 @@ export class NextFeatures {
         adapter,
         message: '系统设置 → 插件功能灰度，预览当前主机分桶并保存插件、版本和放行比例；下次启动按策略实际选择插件。',
       };
+    if (spec.id === 'host-pairing' || spec.id === 'multi-host-inventory')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '系统设置 → 主机配对与多主机状态，启用独立 TLS 同伴入口后使用一次性短码和证书指纹配对；可查看远端资源与连通性。',
+      };
     if (spec.id === 'graphql-api')
       return {
         ready: true,
@@ -967,7 +974,7 @@ export class NextFeatures {
         reason: '这里只检查工具或环境；对应功能尚无完整执行器。',
       };
     }
-    if (['multi-host-inventory', 'storage-pools'].includes(spec.id))
+    if (spec.id === 'storage-pools')
       return {
         ready: false,
         executed: false,

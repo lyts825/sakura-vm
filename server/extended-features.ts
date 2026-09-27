@@ -70,7 +70,7 @@ export const extendedFeatureCatalog = [
   ['path-sync-policy', '路径同步策略', '文件同步', 'P1', '对路径设置只读、单向和权限策略。', 'available'],
   ['sync-rollback', '同步回滚点', '文件同步', 'P1', '撤销一轮已应用的同步变更。', 'available'],
   ['merge-drivers', '自定义合并驱动', '文件同步', 'P2', '为文本和二进制类型选择合并方式。', 'planned'],
-  ['multi-host-view', '多主机统一视图', '文件同步', 'P2', '登记多个 Sakura 主机并集中查看状态。', 'planned'],
+  ['multi-host-view', '多主机统一视图', '文件同步', 'P2', '登记多个 Sakura 主机并集中查看状态。', 'available'],
   [
     'project-onboarding',
     '项目 onboarding',
@@ -143,7 +143,7 @@ export const extendedFeatureCatalog = [
   ['anomaly-detection', '异常基线检测', '运维', 'P1', '根据历史指标发现异常变化。', 'available'],
   ['runbooks', '运维 Runbook', '运维', 'P1', '将诊断和修复步骤保存为可执行流程。', 'available'],
   ['maintenance-windows', '维护窗口', '运维', 'P1', '在指定时段暂停自动任务。', 'available'],
-  ['multi-host-health', '多主机健康管理', '运维', 'P2', '集中查看多个宿主节点健康状态。', 'planned'],
+  ['multi-host-health', '多主机健康管理', '运维', 'P2', '集中查看多个宿主节点健康状态。', 'available'],
   [
     'availability-report',
     '可用性报告',
@@ -389,6 +389,14 @@ export class ExtendedFeatures {
         state: spec.state,
         adapter,
         reason: '网络插件 → 服务与端口可生成 .sakura.localhost 入口别名，并用 HTTPS 通配证书提供路由；浏览器已验证可访问，系统级解析器仍需另行适配。',
+      };
+    if (spec.id === 'multi-host-view' || spec.id === 'multi-host-health')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '系统设置 → 主机配对与多主机状态，查看已配对主机的资源、最近检查时间和连接错误，并可撤销访问。',
       };
     if (spec.id === 'accessibility-audit')
       return {

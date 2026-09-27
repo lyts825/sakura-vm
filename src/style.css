@@ -3267,6 +3267,35 @@ label input {
   gap: 8px;
   min-width: 0;
 }
+.host-peers-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.host-peers-settings .shortcut-fields label,
+.host-peers-settings .shortcut-fields input,
+.host-peers-settings .shortcut-fields select {
+  min-width: 0;
+  width: 100%;
+}
+.host-peer-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.host-peer-fingerprint {
+  overflow-wrap: anywhere;
+  display: block;
+}
+.host-peer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.host-peer-row span { flex: 1; min-width: 0; }
 .webhook-secret label {
   display: grid;
   gap: 8px;

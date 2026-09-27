@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve, extname, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
-import { totalmem, freemem, cpus, hostname } from 'node:os';
+import { totalmem, freemem, cpus, hostname, platform, arch, loadavg } from 'node:os';
 import { WebSocketServer, WebSocket } from 'ws';
 import { z, ZodError } from 'zod';
 import { ROOT, PORT, IMAGE, AppError } from './model.ts';
@@ -27,6 +27,7 @@ import { SessionLock } from './session-lock.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { AutomationRules } from './automation-rules.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
+import { HostPeers } from './host-peers.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 
@@ -61,6 +62,15 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
+  const hostPeers = new HostPeers(async () => {
+    const vms = await machines.list();
+    return { platform: platform(), arch: arch(), cpus: Math.max(1, cpus().length),
+      memoryTotal: totalmem(), memoryFree: freemem(), load: loadavg().map((value) => Math.max(0, value)),
+      vmCount: vms.length, runningVms: vms.filter((vm) => vm.status === 'running').length };
+  }, undefined, hostname().slice(0, 128),
+  () => !!features.migration?.blocked,
+  (delta) => { features.mutations += delta; });
+  await hostPeers.init();
   const native = new NativeIntegration(
     () => nativeMappings(features),
     undefined,
@@ -272,6 +282,13 @@ async function main() {
       });
       if (req.method === 'POST') return send(res,
         await rollouts.configure(await authorizedBody(req, 32768)));
+      throw new AppError('不支持此方法', 405);
+    }
+    if (url.pathname === '/api/host-peers') {
+      if (req.method === 'GET') return send(res,
+        { ...hostPeers.view(), local: await hostPeers.status() });
+      if (req.method === 'POST') return send(res,
+        await hostPeers.configure(await authorizedBody(req, 32768)));
       throw new AppError('不支持此方法', 405);
     }
     if (url.pathname === '/api/native-integration') {
@@ -665,6 +682,7 @@ async function main() {
       () => webhooks.close(),
       () => automationRules.close(),
       () => rollouts.close(),
+      () => hostPeers.close(),
       () => retention.close(),
       () => graph.close(),
       () => features.close(),
