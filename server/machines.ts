@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { mkdir, readFile, writeFile, rename, rm, stat, copyFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, rename, rm, stat, copyFile } from 'node:fs/promises';
 import { existsSync, createReadStream, createWriteStream } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createConnection, type Socket } from 'node:net';
 import { Client, type SFTPWrapper } from 'ssh2';
@@ -39,6 +39,7 @@ import { cpuSetSize } from './guest-hardware.ts';
 import { ensureUefiFirmware, requireUefiSupport } from './firmware.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
+export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
 
 async function writeIdentityFile(file: string, contents: string | Buffer) {
@@ -1513,15 +1514,44 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
-  async delete(id: string) {
-    return this.deleteInternal(id);
+  private async fingerprint(id: string): Promise<MigrationFingerprint> {
+    const dir = vmDir(id);
+    const disk = await stat(join(dir, 'disk.qcow2'));
+    if (!disk.isFile()) throw new AppError('实例磁盘文件无效', 409);
+    const metadata = createHash('sha256').update(JSON.stringify(this.get(id)));
+    const names = (await readdir(dir)).filter((name) =>
+      ['id_rsa', 'seed.iso', 'project.json', 'projects.json'].includes(name) ||
+      /^project-[a-f0-9]{16}\.json$/.test(name)).sort();
+    for (const name of names) {
+      const contents = await readFile(join(dir, name));
+      metadata.update(name).update(String(contents.length)).update(contents);
+    }
+    return { recordHash: metadata.digest('hex'),
+      diskSize: disk.size, diskMtimeMs: disk.mtimeMs };
   }
-  private async deleteInternal(id: string, allowIncident = false) {
+  async migrationFingerprint(id: string) {
+    return this.locked(id, async () => {
+      this.requireStopped(id);
+      return this.fingerprint(id);
+    });
+  }
+  async delete(id: string, expected?: MigrationFingerprint) {
+    return this.deleteInternal(id, false, expected);
+  }
+  private async deleteInternal(id: string, allowIncident = false,
+    expected?: MigrationFingerprint) {
     return this.locked(
       id,
       async () => {
         this.get(id);
         this.requireStopped(id);
+        if (expected) {
+          const current = await this.fingerprint(id);
+          if (current.recordHash !== expected.recordHash ||
+              current.diskSize !== expected.diskSize ||
+              current.diskMtimeMs !== expected.diskMtimeMs)
+            throw new AppError('源实例在迁移后已变化，保留源实例，请重新预览', 409);
+        }
         const dir = vmDir(id);
         // checkedId + fixed VM_ROOT keep recursive operations inside machine storage.
         await rm(dir, { recursive: true, force: true });
@@ -1708,9 +1738,14 @@ export class Machines extends EventEmitter {
     project?: unknown,
     pendingResize = false,
     projects?: { active: string; projects: { id: string; name: string }[]; configs: Record<string, unknown> },
+    migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string },
   ) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);
+      if (migrationOrigin && [...this.records.values()].some((vm) =>
+        vm.migrationOrigin?.sourceHostId === migrationOrigin.sourceHostId &&
+        vm.migrationOrigin.transferId === migrationOrigin.transferId))
+        throw new AppError('此迁移任务已经导入', 409);
       if (config.firmware === 'uefi') await requireUefiSupport();
       if (this.records.size >= 32 || [...this.records.values()].some((v) => v.name === config.name))
         throw new AppError('名称已存在或已达到 32 个实例上限', 409);
@@ -1721,6 +1756,7 @@ export class Machines extends EventEmitter {
         snapshots: [],
         bootstrapped: true,
         pendingResize,
+        ...(migrationOrigin ? { migrationOrigin } : {}),
       };
       const dir = vmDir(vm.id);
       await mkdir(dir);

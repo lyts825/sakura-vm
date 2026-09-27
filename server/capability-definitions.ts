@@ -8,6 +8,7 @@ import { powerPolicySchema } from './power-policy.ts';
 import { networkEmulationShape } from './network-emulation.ts';
 import { flamegraphOptions } from './flamegraph.ts';
 import { ebpfProfileOptions } from './ebpf-profiler.ts';
+import { coldMigrationInput } from './cold-migration.ts';
 
 export const relativePath = z
   .string()
@@ -42,6 +43,15 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'cold-migration': action(
+    '跨主机冷迁移',
+    'next',
+    coldMigrationInput.shape,
+    { peerId: '', targetName: 'migrated-vm', confirmSourceRemoval: false },
+    '停止实例后，通过已配对且明确授权导入的主机传送校验后的完整实例包；队列保留重试标识。默认保留源实例，确认目标可用后才勾选移除源实例。',
+    false,
+    true,
+  ),
   'ebpf-profiler': action(
     'eBPF 内核性能分析',
     'next',

@@ -10,7 +10,8 @@ type Observation = { status?: PeerStatus; error?: string; checkedAt: number;
 type HostPeersView = {
   hostId: string; name: string; fingerprint: string; local: PeerStatus;
   listener: Listener; pairing: { value: string; expiresAt: number } | null;
-  incoming: Array<{ id: string; requesterId: string; name: string; createdAt: number }>;
+  incoming: Array<{ id: string; requesterId: string; name: string;
+    createdAt: number; allowImport: boolean }>;
   outbound: Array<{ id: string; remoteId: string; name: string; url: string;
     fingerprint: string; createdAt: number; observation: Observation | null }>;
 };
@@ -18,6 +19,9 @@ type ScoreView = { scoredAt: string; requirements: { cpus: number; memoryMiB: nu
   candidates: Array<{ id: string; name: string; source: 'local' | 'peer';
     eligible: boolean; score: number | null; reasons: string[]; status: PeerStatus | null;
     components: { memory: number; cpuLoad: number; instanceDensity: number } }> };
+type MigrationView = { enabled: boolean; entries: Array<{ vmId: string; transferId: string;
+  peerId: string; targetName: string; status: 'queued' | 'transferring' | 'copied' | 'moved' | 'review';
+  remoteVmId?: string; error?: string; updatedAt: string }> };
 const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1) + ' GiB';
 
 function ResourceCard({ title, status, error, checkedAt }: {
@@ -35,6 +39,7 @@ function ResourceCard({ title, status, error, checkedAt }: {
 
 export function HostPeersSettings({ request }: { request: Request }) {
   const remote = useRemote<HostPeersView>(request, '/host-peers', true, 5000);
+  const migrations = useRemote<MigrationView>(request, '/cold-migrations', true, 15000);
   const action = useAction();
   const [listenerDraft, setListenerDraft] = useState<Pick<Listener, 'enabled' | 'host' | 'port'> | null>(null);
   const [address, setAddress] = useState('');
@@ -103,6 +108,21 @@ export function HostPeersSettings({ request }: { request: Request }) {
       </div>}
     </div>
     <div className="feature-card">
+      <h4>冷迁移队列</h4>
+      <p>停止来源实例后，在该实例的能力中心选择“跨主机冷迁移”，填入下方目标 ID。先传输并检查目标，再明确确认移除源实例。</p>
+      {!migrations.data?.enabled && <p className="subtle-note">需要启用平台与快照插件。</p>}
+      {migrations.data?.enabled && !migrations.data.entries.length &&
+        <p className="subtle-note">尚无迁移任务。</p>}
+      {migrations.data?.entries.map((entry) => <div className="host-peer-row" key={entry.transferId}>
+        <span><strong>{entry.targetName}</strong> ·
+          {entry.status === 'queued' ? '等待传输' : entry.status === 'transferring' ? '传输中' :
+            entry.status === 'copied' ? '目标已导入，源仍保留' :
+              entry.status === 'moved' ? '已移除源实例' : '需要复核'} ·
+          来源 {entry.vmId} · 目标 {entry.remoteVmId || entry.peerId}
+          {entry.error && ` · ${entry.error}`}</span>
+      </div>)}
+    </div>
+    <div className="feature-card">
       <h4>同伴入口</h4>
       <p>当前入口：{remote.data?.listener.active ? '正在监听' : '未监听'}。
         {remote.data?.listener.error && ` ${remote.data.listener.error}`}</p>
@@ -150,15 +170,21 @@ export function HostPeersSettings({ request }: { request: Request }) {
     <div className="feature-card"><h4>已配对主机</h4>
       {!remote.data?.outbound.length && <p className="subtle-note">尚未加入远端主机。</p>}
       {remote.data?.outbound.map((peer) => <div className="host-peer-row" key={peer.id}>
-        <span><strong>{peer.name}</strong> · {peer.url}</span>
+        <span><strong>{peer.name}</strong> · {peer.url} · 迁移目标 ID <code>{peer.id}</code></span>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('remove-outbound', { id: peer.id }, '远端主机已移除')}>移除</button>
       </div>)}
     </div>
-    <div className="feature-card"><h4>允许读取本机状态的主机</h4>
+    <div className="feature-card"><h4>已授权的入站主机</h4>
       {!remote.data?.incoming.length && <p className="subtle-note">尚无入站配对。</p>}
       {remote.data?.incoming.map((peer) => <div className="host-peer-row" key={peer.id}>
-        <span><strong>{peer.name}</strong> · {peer.requesterId}</span>
+        <span><strong>{peer.name}</strong> · {peer.requesterId} ·
+          实例包导入：{peer.allowImport ? '已允许' : '未允许'}</span>
+        <button className="secondary compact" disabled={action.busy}
+          onClick={() => apply('allow-import', { id: peer.id, enabled: !peer.allowImport },
+            peer.allowImport ? '实例包导入权限已关闭' : '实例包导入权限已开启')}>
+          {peer.allowImport ? '关闭导入' : '允许导入'}
+        </button>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('revoke-inbound', { id: peer.id }, '读取权限已撤销')}>撤销访问</button>
       </div>)}

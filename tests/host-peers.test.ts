@@ -4,6 +4,9 @@ import { createServer } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { HostPeers } from '../server/host-peers.ts';
 
 async function freePort() {
@@ -56,6 +59,66 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     assert.equal(initiator.view().outbound[0].observation?.status?.runningVms, 2);
     assert.equal(target.view().incoming.length, 1);
     assert.equal(target.view().pairing, null);
+    const transferId = randomUUID();
+    const importedId = randomUUID();
+    let imported = '';
+    let receipt: { id: string; name: string } | null = null;
+    target.setImportReceiver({
+      status: async () => receipt,
+      receive: async ({ source, name }) => {
+        for await (const chunk of source) imported += chunk.toString();
+        return (receipt = { id: importedId, name });
+      },
+    });
+    const produce = async (stream: NodeJS.WritableStream) =>
+      pipeline(Readable.from(['verified ', 'bundle']), stream);
+    const outboundId = initiator.view().outbound[0].id;
+    await assert.rejects(initiator.upload(outboundId, transferId, 'migrated', produce,
+      new AbortController().signal));
+    assert.equal(imported, '');
+    const inboundId = target.view().incoming[0].id;
+    await target.configure({ operation: 'allow-import', id: inboundId, enabled: true });
+    const importedView = await initiator.upload(outboundId, transferId, 'migrated', produce,
+      new AbortController().signal);
+    assert.deepEqual(importedView, { id: importedId, name: 'migrated' });
+    assert.equal(imported, 'verified bundle');
+    assert.deepEqual(await initiator.importStatus(outboundId, transferId), importedView);
+    await initiator.upload(outboundId, transferId, 'migrated', async () => {
+      throw new Error('重试不得再次上传');
+    }, new AbortController().signal);
+    assert.equal(imported, 'verified bundle');
+    let checks = 0;
+    target.setImportReceiver({
+      status: async () => ++checks === 1 ? null : { id: importedId, name: 'migrated' },
+      receive: async () => { throw new Error('重复传输不得再次导入'); },
+    });
+    assert.deepEqual(await initiator.upload(outboundId, randomUUID(), 'migrated', produce,
+      new AbortController().signal), { id: importedId, name: 'migrated' });
+    await target.configure({ operation: 'allow-import', id: inboundId, enabled: false });
+    await assert.rejects(initiator.upload(outboundId, randomUUID(), 'migrated', produce,
+      new AbortController().signal));
+    assert.equal(imported, 'verified bundle');
+    let started!: () => void;
+    const receiving = new Promise<void>((resolve) => { started = resolve; });
+    let aborted = false;
+    target.setImportReceiver({
+      status: async () => null,
+      receive: async ({ source, signal }) => {
+        for await (const _chunk of source) { /* consume the bounded test stream */ }
+        started();
+        return await new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => {
+          aborted = true;
+          reject(new Error('transfer revoked'));
+        }, { once: true }));
+      },
+    });
+    await target.configure({ operation: 'allow-import', id: inboundId, enabled: true });
+    const inFlight = initiator.upload(outboundId, randomUUID(), 'migrated', produce,
+      new AbortController().signal);
+    await receiving;
+    await target.configure({ operation: 'allow-import', id: inboundId, enabled: false });
+    await assert.rejects(inFlight);
+    assert.equal(aborted, true);
     const constrained = await initiator.score({ cpus: 4, memoryMiB: 1024 });
     assert.equal(constrained.candidates[0].source, 'local');
     assert.equal(constrained.candidates[1].eligible, false);

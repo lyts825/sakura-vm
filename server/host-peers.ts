@@ -4,11 +4,12 @@ import { request as httpsRequest, createServer as createHttpsServer, type Server
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { createSecureContext, type TLSSocket } from 'node:tls';
+import type { Writable } from 'node:stream';
 import { generate } from 'selfsigned';
 import { z } from 'zod';
 import { readJsonBody } from './http.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError, createSchema, DATA } from './model.ts';
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
@@ -32,6 +33,7 @@ const certificateSchema = z.object({
 const incomingSchema = z.object({
   id: z.uuid(), requesterId: z.uuid(), name: hostName,
   tokenHash: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.number().int().nonnegative(),
+  allowImport: z.boolean().default(false),
 }).strict();
 const outboundSchema = z.object({
   id: z.uuid(), remoteId: z.uuid(), name: hostName, url: peerUrl,
@@ -54,6 +56,13 @@ const statusSchema = z.object({
 export type PeerStatus = z.infer<typeof statusSchema>;
 type Store = z.infer<typeof storeSchema>;
 type Observation = { status?: PeerStatus; error?: string; checkedAt: number; lastSuccessAt?: number };
+type ImportReceipt = { id: string; name: string };
+type ImportIdentity = { transferId: string; requesterId: string };
+type ImportReceiver = {
+  status: (identity: ImportIdentity) => Promise<ImportReceipt | null>;
+  receive: (input: ImportIdentity & { name: string; source: IncomingMessage;
+    signal: AbortSignal }) => Promise<ImportReceipt>;
+};
 const pairInput = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/),
   requesterId: z.uuid(), name: hostName }).strict();
 const pairResponse = z.object({ id: z.uuid(), name: hostName, token: tokenSchema }).strict();
@@ -70,6 +79,7 @@ export const hostPeerRequest = z.discriminatedUnion('operation', [
     code: pairInput.shape.code }).strict(),
   z.object({ operation: z.literal('remove-outbound'), id: z.uuid() }).strict(),
   z.object({ operation: z.literal('revoke-inbound'), id: z.uuid() }).strict(),
+  z.object({ operation: z.literal('allow-import'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ operation: z.literal('refresh') }).strict(),
   z.object({ operation: z.literal('score'), requirements: hostScoreInput }).strict(),
 ]);
@@ -90,6 +100,16 @@ async function initial(name: string): Promise<Store> {
     listener: { enabled: false, host: '127.0.0.1', port: 7443 },
     incoming: [], outbound: [],
   };
+}
+
+function checkPinnedCertificate(socket: TLSSocket, pin: string) {
+  const raw = socket.getPeerCertificate(true)?.raw;
+  const certificate = raw ? new X509Certificate(raw) : null;
+  if (certificate?.fingerprint256 !== pin)
+    throw new AppError('远端证书指纹不匹配', 409);
+  if (Date.parse(certificate.validFrom) > Date.now() ||
+      Date.parse(certificate.validTo) <= Date.now())
+    throw new AppError('远端证书尚未生效或已过期', 409);
 }
 
 function requestPeer(urlText: string, pin: string, path: string, method: 'GET' | 'POST',
@@ -122,14 +142,8 @@ function requestPeer(urlText: string, pin: string, path: string, method: 'GET' |
     });
     request.once('socket', (socket) => {
       socket.once('secureConnect', () => {
-        const raw = (socket as TLSSocket).getPeerCertificate(true)?.raw;
-        const certificate = raw ? new X509Certificate(raw) : null;
-        const actual = certificate?.fingerprint256 || '';
-        if (actual !== pin) request.destroy(new AppError('远端证书指纹不匹配', 409));
-        else if (Date.parse(certificate!.validFrom) > Date.now() ||
-            Date.parse(certificate!.validTo) <= Date.now())
-          request.destroy(new AppError('远端证书尚未生效或已过期', 409));
-        else request.end(body);
+        try { checkPinnedCertificate(socket as TLSSocket, pin); request.end(body); }
+        catch (error) { request.destroy(error as Error); }
       });
     });
     request.on('error', reject);
@@ -147,6 +161,9 @@ export class HostPeers {
   private refreshing?: Promise<void>;
   private closed = false;
   private listenerError?: string;
+  private importReceiver?: ImportReceiver;
+  private activeImports = new Map<string, Set<AbortController>>();
+  private transferIds = new Set<string>();
   constructor(
     private snapshot: () => Promise<Omit<PeerStatus, 'version' | 'id' | 'name' | 'checkedAt'>>,
     private file = join(DATA, 'host-peers.json'),
@@ -237,7 +254,8 @@ export class HostPeers {
             if (next.incoming.length >= 16) throw new AppError('已达到入站配对上限', 409);
             const token = randomBytes(32).toString('hex');
             next.incoming.push({ id: randomUUID(), requesterId: value.requesterId,
-              name: value.name, tokenHash: hash(token), createdAt: this.now() });
+              name: value.name, tokenHash: hash(token), createdAt: this.now(),
+              allowImport: false });
             return { id: next.hostId, name: next.name, token };
           });
           this.code = undefined;
@@ -245,18 +263,93 @@ export class HostPeers {
         } finally { this.mutation(-1); }
       }
       if (request.method === 'GET' && request.url === '/peer/status') {
-        const credential = /^Bearer ([a-f0-9]{64})$/.exec(String(request.headers.authorization || ''))?.[1];
-        const digest = credential ? Buffer.from(hash(credential), 'hex') : null;
-        if (!digest || !this.state.incoming.some((entry) =>
-          timingSafeEqual(digest, Buffer.from(entry.tokenHash, 'hex'))))
-          throw new AppError('同伴凭证无效', 401);
+        this.inbound(request);
         return this.send(response, await this.status());
+      }
+      if (request.method === 'GET' && request.url?.startsWith('/peer/import-status?')) {
+        const peer = this.inbound(request);
+        if (!peer.allowImport) throw new AppError('此同伴未获导入权限', 403);
+        if (!this.importReceiver) throw new AppError('目标主机尚未启用迁移接收器', 503);
+        const url = new URL(request.url, 'https://peer.invalid');
+        if (url.pathname !== '/peer/import-status' ||
+            [...url.searchParams.keys()].some((key) => key !== 'id') ||
+            url.searchParams.getAll('id').length !== 1)
+          throw new AppError('无效的迁移状态请求');
+        const transferId = z.uuid().parse(url.searchParams.get('id'));
+        return this.send(response, await this.importReceiver.status({
+          transferId, requesterId: peer.requesterId }));
+      }
+      if (request.method === 'POST' && request.url === '/peer/import') {
+        const peer = this.inbound(request);
+        if (!peer.allowImport) throw new AppError('此同伴未获导入权限', 403);
+        if (!this.importReceiver) throw new AppError('目标主机尚未启用迁移接收器', 503);
+        if (request.headers['content-type'] !== 'application/octet-stream')
+          throw new AppError('需要二进制导出包', 415);
+        const transferId = z.uuid().parse(request.headers['x-sakura-transfer-id']);
+        const name = createSchema.shape.name.parse(request.headers['x-sakura-target-name']);
+        const identity = { transferId, requesterId: peer.requesterId };
+        const previous = await this.importReceiver.status(identity);
+        if (previous) {
+          if (previous.name !== name) throw new AppError('迁移标识已用于其他实例名称', 409);
+          return this.send(response, previous);
+        }
+        const key = `${peer.requesterId}:${transferId}`;
+        if (this.transferIds.has(key)) throw new AppError('此迁移任务仍在导入', 409);
+        this.transferIds.add(key);
+        const controller = new AbortController();
+        const active = this.activeImports.get(peer.id) || new Set<AbortController>();
+        active.add(controller);
+        this.activeImports.set(peer.id, active);
+        const abort = () => controller.abort(new AppError('同伴传输已中断', 409));
+        request.once('aborted', abort);
+        const closed = () => { if (!response.writableEnded) abort(); };
+        response.once('close', closed);
+        this.mutation(1);
+        try {
+          const result = await this.importReceiver.receive({ ...identity, name, source: request,
+            signal: controller.signal });
+          controller.signal.throwIfAborted();
+          return this.send(response, result);
+        } finally {
+          request.off('aborted', abort);
+          response.off('close', closed);
+          active.delete(controller);
+          if (!active.size) this.activeImports.delete(peer.id);
+          this.transferIds.delete(key);
+          this.mutation(-1);
+        }
       }
       throw new AppError('未找到同伴接口', 404);
     } catch (error) {
       const status = error instanceof AppError ? error.status : 400;
-      this.send(response, { error: status >= 500 ? '同伴请求失败' : (error as Error).message }, status);
+      if (!response.destroyed && !response.headersSent)
+        this.send(response, { error: status >= 500 ? '同伴请求失败' : (error as Error).message }, status);
     }
+  }
+
+  private inbound(request: IncomingMessage) {
+    const credential = /^Bearer ([a-f0-9]{64})$/.exec(String(request.headers.authorization || ''))?.[1];
+    const digest = credential ? Buffer.from(hash(credential), 'hex') : null;
+    const peer = digest && this.state.incoming.find((entry) =>
+      timingSafeEqual(digest, Buffer.from(entry.tokenHash, 'hex')));
+    if (!peer) throw new AppError('同伴凭证无效', 401);
+    return peer;
+  }
+
+  setImportReceiver(receiver: ImportReceiver) {
+    this.importReceiver = receiver;
+  }
+
+  async importStatus(peerId: string, transferId: string) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    z.uuid().parse(transferId);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const result = await requestPeer(peer.url, peer.fingerprint,
+      `/peer/import-status?id=${transferId}`, 'GET', undefined, peer.token);
+    return result === null ? null : z.object({ id: z.uuid(), name: createSchema.shape.name })
+      .strict().parse(result);
   }
 
   private change<T>(edit: (next: Store) => T): Promise<T> {
@@ -349,6 +442,87 @@ export class HostPeers {
     return { requirements, scoredAt: new Date(this.now()).toISOString(), candidates };
   }
 
+  async upload(peerId: string, transferId: string, name: string,
+    produce: (target: Writable, signal: AbortSignal) => Promise<void>, signal: AbortSignal) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    z.uuid().parse(transferId);
+    createSchema.shape.name.parse(name);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const previous = await this.importStatus(peerId, transferId);
+    if (previous) {
+      if (previous.name !== name) throw new AppError('迁移标识已用于其他实例名称', 409);
+      return previous;
+    }
+    const operationSignal = AbortSignal.any([signal, AbortSignal.timeout(30 * 60_000)]);
+    operationSignal.throwIfAborted();
+    const url = new URL('/peer/import', peer.url);
+    this.mutation(1);
+    try {
+      return await new Promise<{ id: string; name: string }>((resolve, reject) => {
+        let settled = false;
+        let producerDone = false;
+        let reply: { id: string; name: string } | undefined;
+        const complete = () => {
+          if (!settled && producerDone && reply) {
+            settled = true;
+            resolve(reply);
+          }
+        };
+        const fail = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          request.destroy();
+          reject(error);
+        };
+        const request = httpsRequest(url, {
+          method: 'POST', agent: false, rejectUnauthorized: false, signal: operationSignal,
+          headers: { authorization: `Bearer ${peer.token}`,
+            'content-type': 'application/octet-stream',
+            'x-sakura-transfer-id': transferId, 'x-sakura-target-name': name },
+        }, (response) => {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          response.on('data', (chunk: Buffer) => {
+            size += chunk.length;
+            if (size > 64 * 1024) fail(new AppError('远端响应超过上限', 502));
+            else chunks.push(chunk);
+          });
+          response.on('end', () => {
+            if (settled) return;
+            try {
+              if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300)
+                throw new AppError(`远端返回 HTTP ${response.statusCode || 0}`, 502);
+              const result = z.object({ id: z.uuid(), name: createSchema.shape.name }).strict()
+                .parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+              reply = result;
+              complete();
+            } catch (error) { fail(error as Error); }
+          });
+          response.on('error', fail);
+        });
+        request.on('error', (error) => { if (!reply) fail(error); });
+        request.once('socket', (socket) => {
+          socket.once('secureConnect', () => {
+            try {
+              checkPinnedCertificate(socket as TLSSocket, peer.fingerprint);
+              void produce(request, operationSignal).then(() => {
+                producerDone = true;
+                if (!reply && !request.writableEnded) request.end();
+                complete();
+              }).catch((error) => {
+                producerDone = true;
+                if (reply) complete();
+                else fail(error as Error);
+              });
+            } catch (error) { fail(error as Error); }
+          });
+        });
+      });
+    } finally { this.mutation(-1); }
+  }
+
   async configure(input: unknown) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
     if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
@@ -395,9 +569,17 @@ export class HostPeers {
           if (!next.incoming.some((item) => item.id === value.id))
             throw new AppError('入站配对不存在', 404);
           next.incoming = next.incoming.filter((item) => item.id !== value.id);
+        } else if (value.operation === 'allow-import') {
+          const peer = next.incoming.find((item) => item.id === value.id);
+          if (!peer) throw new AppError('入站配对不存在', 404);
+          peer.allowImport = value.enabled;
         }
       });
       if (value.operation === 'remove-outbound') this.observations.delete(value.id);
+      if (value.operation === 'revoke-inbound' ||
+          (value.operation === 'allow-import' && !value.enabled))
+        for (const controller of this.activeImports.get(value.id) || [])
+          controller.abort(new AppError('导入权限已撤销', 403));
       return this.view();
     } finally { this.mutation(-1); }
   }
@@ -429,6 +611,8 @@ export class HostPeers {
   async close() {
     this.closed = true;
     this.code = undefined;
+    for (const active of this.activeImports.values())
+      for (const controller of active) controller.abort(new AppError('服务正在关闭', 503));
     if (this.timer) clearInterval(this.timer);
     if (this.server) {
       const closing = new Promise<void>((resolve) => this.server!.close(() => resolve()));

@@ -228,6 +228,15 @@ export function CapabilityActionsPanel({
           {selected === 'host-disk-health' && result?.provider === 'Windows Storage' && (
             <HostDiskHealthReport report={result} />
           )}
+          {selected === 'cold-migration' && result?.phase && (
+            <div className="feature-card">
+              <p>{result.phase === 'moved' ? '源实例已移除，冷迁移完成。' :
+                '目标实例已导入，源实例仍保留。请在目标主机确认可用后，用相同目标 ID 和名称重试并明确勾选移除源实例。'}</p>
+              <p>目标实例 ID：<code>{result.remoteVmId}</code></p>
+              {!result.queuePersisted && result.phase === 'moved' &&
+                <p className="subtle-note">迁移已完成，但队列状态保存失败；请检查目标实例。</p>}
+            </div>
+          )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
             typeof result?.samples === 'number' && (
               <div className="feature-card">

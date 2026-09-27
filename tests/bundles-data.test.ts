@@ -221,6 +221,34 @@ test('portable backup round trips persist pending filesystem growth across servi
   assert.equal(reopened.get(restored.id).pendingResize, true);
 });
 
+test('peer bundle imports persist an origin that prevents duplicate transfer adoption', async (t) => {
+  const { machines, bundles } = await resizeFixture(t);
+  const migrationOrigin = { sourceHostId: randomUUID(), transferId: randomUUID(),
+    targetName: 'migrated' };
+  const imported = await bundles.import('migrated', bundle(), undefined, undefined, migrationOrigin);
+  assert.deepEqual(imported.migrationOrigin, migrationOrigin);
+  await assert.rejects(bundles.import('duplicate', bundle(), undefined, undefined, migrationOrigin),
+    /已经导入/);
+  const reopened = new MachineManager(machines.engine);
+  await reopened.init();
+  t.after(() => reopened.close());
+  assert.deepEqual(reopened.get(imported.id).migrationOrigin, migrationOrigin);
+});
+
+test('cold migration deletion rechecks the source disk under its machine lock', async (t) => {
+  const { machines, id } = await resizeFixture(t);
+  const expected = await machines.migrationFingerprint(id);
+  await writeFile(join(vmDir(id), 'disk.qcow2'), Buffer.concat([disk, Buffer.from('changed')]));
+  await assert.rejects(machines.delete(id, expected), /源实例在迁移后已变化/);
+  assert.ok(machines.records.has(id));
+  const afterDiskChange = await machines.migrationFingerprint(id);
+  await writeFile(join(vmDir(id), 'project.json'), '{"changed":true}');
+  await assert.rejects(machines.delete(id, afterDiskChange), /源实例在迁移后已变化/);
+  const current = await machines.migrationFingerprint(id);
+  await machines.delete(id, current);
+  assert.equal(machines.records.has(id), false);
+});
+
 test('legacy portable backups without resize metadata remain importable', async (t) => {
   const { bundles } = await resizeFixture(t);
   const restored = await bundles.import('legacy-backup', bundle());

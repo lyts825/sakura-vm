@@ -28,6 +28,7 @@ import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { AutomationRules } from './automation-rules.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
 import { HostPeers } from './host-peers.ts';
+import { ColdMigrations } from './cold-migration.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 
@@ -72,6 +73,33 @@ async function main() {
   (delta) => { features.mutations += delta; });
   await hostPeers.init();
   features.next?.setResourceScheduler((input) => hostPeers.score(input));
+  const importedPeerVm = (requesterId: string, transferId: string) =>
+    [...machines.records.values()].find((vm) =>
+      vm.migrationOrigin?.sourceHostId === requesterId &&
+      vm.migrationOrigin.transferId === transferId);
+  hostPeers.setImportReceiver({
+    status: async ({ requesterId, transferId }) => {
+      if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
+      const vm = importedPeerVm(requesterId, transferId);
+      return vm ? { id: vm.id, name: vm.migrationOrigin!.targetName } : null;
+    },
+    receive: async ({ requesterId, transferId, name, source, signal }) => {
+      session.requireUnlocked();
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
+      const imported = await features.bundles.import(name, source, signal, () => {
+        session.requireUnlocked();
+        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      }, { sourceHostId: requesterId, transferId, targetName: name });
+      return { id: imported.id, name };
+    },
+  });
+  let coldMigrations: ColdMigrations | undefined;
+  if (features.next && features.bundles) {
+    coldMigrations = new ColdMigrations(machines, features.bundles, hostPeers);
+    await coldMigrations.init();
+    features.next.setColdMigrations(coldMigrations);
+  }
   const native = new NativeIntegration(
     () => nativeMappings(features),
     undefined,
@@ -291,6 +319,10 @@ async function main() {
       if (req.method === 'POST') return send(res,
         await hostPeers.configure(await authorizedBody(req, 32768)));
       throw new AppError('不支持此方法', 405);
+    }
+    if (url.pathname === '/api/cold-migrations') {
+      if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
+      return send(res, coldMigrations?.view() || { enabled: false, entries: [] });
     }
     if (url.pathname === '/api/native-integration') {
       if (req.method === 'GET') return send(res, await native.view());

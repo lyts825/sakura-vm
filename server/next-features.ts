@@ -13,6 +13,7 @@ import { firmwareSupport } from './firmware.ts';
 import { networkEmulation } from './network-emulation.ts';
 import { guestDnsDiagnostics } from './guest-dns.ts';
 import { hostScoreInput, type HostScoreInput, type HostPeers } from './host-peers.ts';
+import type { ColdMigrations } from './cold-migration.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -53,7 +54,8 @@ export const nextFeatureCatalog = [
     '检查在线迁移前置条件并生成迁移计划。',
     'planned',
   ],
-  ['cold-migration', '冷迁移队列', '远程主机与集群', 'P1', '为停止状态的实例保存可重试迁移队列。', 'planned'],
+  ['cold-migration', '冷迁移队列', '远程主机与集群', 'P1',
+    '将停止实例的校验包传至已授权远端，持久记录重试任务，确认后移除源实例。', 'available'],
   [
     'resource-scheduler',
     '资源评分调度',
@@ -639,6 +641,7 @@ function compactProfileResult(result: Record<string, unknown>) {
 export class NextFeatures {
   jobs = new Jobs('next-features');
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
+  private coldMigrations?: ColdMigrations;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -649,6 +652,10 @@ export class NextFeatures {
 
   setResourceScheduler(score: (input: HostScoreInput) => ReturnType<HostPeers['score']>) {
     this.scoreHosts = score;
+  }
+
+  setColdMigrations(service: ColdMigrations) {
+    this.coldMigrations = service;
   }
 
   private file() {
@@ -846,6 +853,14 @@ export class NextFeatures {
       return { ...score, ready: score.candidates.some((item) => item.eligible),
         executed: action === 'run', adapter,
         message: '此结果是按最近资源观测计算的放置建议，不会迁移或启动实例。' };
+    }
+    if (spec.id === 'cold-migration') {
+      if (!this.coldMigrations)
+        return { ready: false, executed: false, adapter,
+          reason: '请启用快照与实例包插件，并完成主机配对。' };
+      return { ...(action === 'run'
+        ? await this.coldMigrations.run(id, merged, signal || new AbortController().signal)
+        : await this.coldMigrations.preview(id, merged)), adapter };
     }
     if (spec.id === 'graphql-api')
       return {

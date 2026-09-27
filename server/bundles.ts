@@ -160,8 +160,9 @@ export class Bundles {
       }
     });
   }
-  async import(name: string, source: Readable, signal?: AbortSignal, beforeAdopt?: () => void) {
-    return this.importCore(name, source, signal, beforeAdopt, false);
+  async import(name: string, source: Readable, signal?: AbortSignal, beforeAdopt?: () => void,
+    migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string }) {
+    return this.importCore(name, source, signal, beforeAdopt, false, migrationOrigin);
   }
   async importExternal(name: string, source: Readable, signal?: AbortSignal) {
     return this.importCore(name, source, signal, undefined, true);
@@ -172,6 +173,7 @@ export class Bundles {
     signal?: AbortSignal,
     beforeAdopt?: () => void,
     external = false,
+    migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string },
   ) {
     return this.withContents(source, signal, async (disk, manifest, seed) => {
       const publish = () => {
@@ -185,6 +187,7 @@ export class Bundles {
           manifest.project,
           manifest.pendingResize,
           manifest.projects,
+          migrationOrigin,
         );
       };
       return external && this.signatures

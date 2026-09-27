@@ -109,6 +109,10 @@ const core: {
     title: '管理同伴入口、短码和已配对主机', body: request(hostPeerRequest),
   },
   {
+    id: 'cold-migrations.get', method: 'GET', path: '/api/cold-migrations',
+    title: '跨主机冷迁移队列及状态', inspect: true,
+  },
+  {
     id: 'session.status',
     method: 'GET',
     path: '/api/session',
