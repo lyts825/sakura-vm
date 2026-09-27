@@ -1738,7 +1738,7 @@ export class Machines extends EventEmitter {
     project?: unknown,
     pendingResize = false,
     projects?: { active: string; projects: { id: string; name: string }[]; configs: Record<string, unknown> },
-    migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string },
+    migrationOrigin?: VMRecord['migrationOrigin'],
   ) {
     return this.locked('create', async () => {
       const config = createSchema.parse(input);

@@ -226,13 +226,53 @@ test('peer bundle imports persist an origin that prevents duplicate transfer ado
   const migrationOrigin = { sourceHostId: randomUUID(), transferId: randomUUID(),
     targetName: 'migrated' };
   const imported = await bundles.import('migrated', bundle(), undefined, undefined, migrationOrigin);
-  assert.deepEqual(imported.migrationOrigin, migrationOrigin);
+  const persistedOrigin = { ...migrationOrigin,
+    diskSha256: createHash('sha256').update(disk).digest('hex') };
+  assert.deepEqual(imported.migrationOrigin, persistedOrigin);
   await assert.rejects(bundles.import('duplicate', bundle(), undefined, undefined, migrationOrigin),
     /已经导入/);
   const reopened = new MachineManager(machines.engine);
   await reopened.init();
   t.after(() => reopened.close());
-  assert.deepEqual(reopened.get(imported.id).migrationOrigin, migrationOrigin);
+  assert.deepEqual(reopened.get(imported.id).migrationOrigin, persistedOrigin);
+});
+
+test('bundle export selects historical snapshot disk, identity, and resize state', async (t) => {
+  const { machines, id, bundles } = await resizeFixture(t);
+  const snapshot = randomUUID();
+  const historicalDisk = Buffer.from(disk);
+  historicalDisk[103] = 0x5a;
+  const olderKey = ssh2.utils.generateKeyPairSync('ed25519').private;
+  const olderSeed = seedIso({ 'user-data': 'historical' });
+  const vm = machines.get(id);
+  vm.snapshots.push({ id: snapshot, name: 'historical', createdAt: new Date().toISOString(),
+    diskGiB: 8, pendingResize: false });
+  vm.diskGiB = 16;
+  vm.pendingResize = true;
+  await writeFile(join(vmDir(id), `.snapshot-${snapshot}.json`), JSON.stringify({
+    key: olderKey, seed: olderSeed.toString('base64'),
+  }));
+  const calls: string[][] = [];
+  machines.engine.run = async (_tool, args) => {
+    calls.push(args);
+    if (args[0] === 'convert') await writeFile(args.at(-1)!, args.includes('-l') ? historicalDisk : disk);
+    return '{}';
+  };
+  const chunks: Buffer[] = [];
+  const sha256 = await bundles.export(id, new Writable({
+    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
+  }), () => {}, undefined, 0, snapshot);
+  assert.deepEqual(calls[0].slice(5, 7), ['-l', snapshot]);
+  assert.equal(sha256, createHash('sha256').update(historicalDisk).digest('hex'));
+  const contents = Buffer.concat(chunks);
+  const length = contents.readUInt32BE(8);
+  const manifest = JSON.parse(contents.subarray(12, 12 + length).toString('utf8'));
+  assert.equal(manifest.config.diskGiB, 8);
+  assert.equal(manifest.pendingResize, false);
+  assert.equal(manifest.key, olderKey);
+  assert.equal(manifest.seed, olderSeed.toString('base64'));
+  assert.deepEqual(contents.subarray(12 + length), historicalDisk);
+  assert.deepEqual(await readFile(join(vmDir(id), 'disk.qcow2')), disk);
 });
 
 test('cold migration deletion rechecks the source disk under its machine lock', async (t) => {

@@ -64,6 +64,7 @@ export function SnapshotsPanel(props: FeatureProps) {
                 {new Date(s.createdAt).toLocaleString()}
                 {s.note ? ` · ${s.note}` : ''}
               </p>
+              <p className="subtle-note">快照 ID（跨主机复制使用）：<code>{s.id}</code></p>
             </div>
             <div className="feature-actions">
               <button

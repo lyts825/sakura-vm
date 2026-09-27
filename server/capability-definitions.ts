@@ -9,6 +9,7 @@ import { networkEmulationShape } from './network-emulation.ts';
 import { flamegraphOptions } from './flamegraph.ts';
 import { ebpfProfileOptions } from './ebpf-profiler.ts';
 import { coldMigrationInput, maintenanceDrainInput } from './cold-migration.ts';
+import { snapshotReplicationInput } from './snapshot-replications.ts';
 
 export const relativePath = z
   .string()
@@ -43,6 +44,15 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'cross-host-snapshots': action(
+    '跨主机快照复制',
+    'next',
+    snapshotReplicationInput.shape,
+    { peerId: '', snapshotId: '', targetName: 'snapshot-replica' },
+    '停止实例后，把所选历史快照的磁盘和身份校验并传至已授权主机，作为独立实例导入。来源不变；持久回执可重试。快照 ID 可在快照页查看。',
+    false,
+    true,
+  ),
   'maintenance-drain': action(
     '主机维护排空',
     'next',

@@ -248,6 +248,13 @@ export function CapabilityActionsPanel({
               </p>)}
             </div>
           )}
+          {selected === 'cross-host-snapshots' && result?.remoteVmId && (
+            <div className="feature-card">
+              <p>历史快照已复制到目标主机，来源实例和快照保持不变。</p>
+              <p>目标实例 ID：<code>{result.remoteVmId}</code></p>
+              <p>磁盘 SHA-256：<code>{result.sha256}</code></p>
+            </div>
+          )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
             typeof result?.samples === 'number' && (
               <div className="feature-card">

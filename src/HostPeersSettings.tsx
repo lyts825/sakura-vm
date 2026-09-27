@@ -22,6 +22,10 @@ type ScoreView = { scoredAt: string; requirements: { cpus: number; memoryMiB: nu
 type MigrationView = { enabled: boolean; entries: Array<{ vmId: string; transferId: string;
   peerId: string; targetName: string; status: 'queued' | 'transferring' | 'copied' | 'moved' | 'review';
   remoteVmId?: string; error?: string; updatedAt: string }> };
+type ReplicationView = { enabled: boolean; entries: Array<{ vmId: string; snapshotId: string;
+  transferId: string; peerId: string; targetName: string;
+  status: 'queued' | 'transferring' | 'replicated' | 'review';
+  remoteVmId?: string; sha256?: string; error?: string; updatedAt: string }> };
 const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1) + ' GiB';
 
 function ResourceCard({ title, status, error, checkedAt }: {
@@ -40,6 +44,9 @@ function ResourceCard({ title, status, error, checkedAt }: {
 export function HostPeersSettings({ request }: { request: Request }) {
   const remote = useRemote<HostPeersView>(request, '/host-peers', true, 5000);
   const migrations = useRemote<MigrationView>(request, '/cold-migrations', true, 15000);
+  const replications = useRemote<ReplicationView>(request, '/snapshot-replications', true, 15000);
+  const replicationEntries = Array.isArray(replications.data?.entries)
+    ? replications.data.entries : [];
   const action = useAction();
   const [listenerDraft, setListenerDraft] = useState<Pick<Listener, 'enabled' | 'host' | 'port'> | null>(null);
   const [address, setAddress] = useState('');
@@ -123,6 +130,22 @@ export function HostPeersSettings({ request }: { request: Request }) {
       </div>)}
     </div>
     <div className="feature-card">
+      <h4>跨主机快照复制</h4>
+      <p>停止来源实例后，在“快照”页查看快照 ID，再到该实例的能力中心选择“跨主机快照复制”。填写下方目标 ID、快照 ID 和新实例名称。目标会收到选定历史快照的独立实例。</p>
+      {!replications.data?.enabled && <p className="subtle-note">需要启用平台与快照插件。</p>}
+      {replications.data?.enabled && !replicationEntries.length &&
+        <p className="subtle-note">尚无快照复制任务。</p>}
+      {replicationEntries.map((entry) => <div className="host-peer-row" key={entry.transferId}>
+        <span><strong>{entry.targetName}</strong> ·
+          {entry.status === 'queued' ? '等待传输' : entry.status === 'transferring' ? '传输中' :
+            entry.status === 'replicated' ? '已校验并导入' : '需要复核'} ·
+          来源快照 <code>{entry.snapshotId}</code> ·
+          目标实例 <code>{entry.remoteVmId || '尚未返回'}</code>
+          {entry.sha256 && <> · SHA-256 <code>{entry.sha256}</code></>}
+          {entry.error && ` · ${entry.error}`}</span>
+      </div>)}
+    </div>
+    <div className="feature-card">
       <h4>同伴入口</h4>
       <p>当前入口：{remote.data?.listener.active ? '正在监听' : '未监听'}。
         {remote.data?.listener.error && ` ${remote.data.listener.error}`}</p>
@@ -170,7 +193,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
     <div className="feature-card"><h4>已配对主机</h4>
       {!remote.data?.outbound.length && <p className="subtle-note">尚未加入远端主机。</p>}
       {remote.data?.outbound.map((peer) => <div className="host-peer-row" key={peer.id}>
-        <span><strong>{peer.name}</strong> · {peer.url} · 迁移目标 ID <code>{peer.id}</code></span>
+        <span><strong>{peer.name}</strong> · {peer.url} · 迁移目标 ID / 快照复制目标 ID <code>{peer.id}</code></span>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('remove-outbound', { id: peer.id }, '远端主机已移除')}>移除</button>
       </div>)}

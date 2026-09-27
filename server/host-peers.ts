@@ -56,11 +56,17 @@ const statusSchema = z.object({
 export type PeerStatus = z.infer<typeof statusSchema>;
 type Store = z.infer<typeof storeSchema>;
 type Observation = { status?: PeerStatus; error?: string; checkedAt: number; lastSuccessAt?: number };
-type ImportReceipt = { id: string; name: string };
+const importReceiptSchema = z.object({
+  id: z.uuid(), name: createSchema.shape.name,
+  sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  sourceVmId: z.uuid().optional(), snapshotId: z.uuid().optional(),
+}).strict();
+type ImportReceipt = z.infer<typeof importReceiptSchema>;
 type ImportIdentity = { transferId: string; requesterId: string };
 type ImportReceiver = {
   status: (identity: ImportIdentity) => Promise<ImportReceipt | null>;
-  receive: (input: ImportIdentity & { name: string; source: IncomingMessage;
+  receive: (input: ImportIdentity & { name: string; sourceVmId?: string; snapshotId?: string;
+    source: IncomingMessage;
     signal: AbortSignal }) => Promise<ImportReceipt>;
 };
 const pairInput = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/),
@@ -287,10 +293,16 @@ export class HostPeers {
           throw new AppError('需要二进制导出包', 415);
         const transferId = z.uuid().parse(request.headers['x-sakura-transfer-id']);
         const name = createSchema.shape.name.parse(request.headers['x-sakura-target-name']);
+        const sourceVmId = z.uuid().optional().parse(request.headers['x-sakura-source-vm-id']);
+        const snapshotId = z.uuid().optional().parse(request.headers['x-sakura-snapshot-id']);
+        if (!!sourceVmId !== !!snapshotId)
+          throw new AppError('快照来源必须同时包含实例与快照标识');
         const identity = { transferId, requesterId: peer.requesterId };
         const previous = await this.importReceiver.status(identity);
         if (previous) {
-          if (previous.name !== name) throw new AppError('迁移标识已用于其他实例名称', 409);
+          if (previous.name !== name || previous.sourceVmId !== sourceVmId ||
+              previous.snapshotId !== snapshotId)
+            throw new AppError('迁移标识已用于其他来源或实例名称', 409);
           return this.send(response, previous);
         }
         const key = `${peer.requesterId}:${transferId}`;
@@ -306,8 +318,9 @@ export class HostPeers {
         response.once('close', closed);
         this.mutation(1);
         try {
-          const result = await this.importReceiver.receive({ ...identity, name, source: request,
-            signal: controller.signal });
+          const result = await this.importReceiver.receive({ ...identity, name,
+            ...(sourceVmId ? { sourceVmId } : {}), ...(snapshotId ? { snapshotId } : {}),
+            source: request, signal: controller.signal });
           controller.signal.throwIfAborted();
           return this.send(response, result);
         } finally {
@@ -348,8 +361,7 @@ export class HostPeers {
     if (!peer) throw new AppError('远端主机不存在', 404);
     const result = await requestPeer(peer.url, peer.fingerprint,
       `/peer/import-status?id=${transferId}`, 'GET', undefined, peer.token);
-    return result === null ? null : z.object({ id: z.uuid(), name: createSchema.shape.name })
-      .strict().parse(result);
+    return result === null ? null : importReceiptSchema.parse(result);
   }
 
   private change<T>(edit: (next: Store) => T): Promise<T> {
@@ -443,16 +455,23 @@ export class HostPeers {
   }
 
   async upload(peerId: string, transferId: string, name: string,
-    produce: (target: Writable, signal: AbortSignal) => Promise<void>, signal: AbortSignal) {
+    produce: (target: Writable, signal: AbortSignal) => Promise<unknown>, signal: AbortSignal,
+    origin?: { sourceVmId: string; snapshotId: string }) {
     if (this.closed) throw new AppError('服务正在关闭', 503);
     if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
     z.uuid().parse(transferId);
     createSchema.shape.name.parse(name);
+    if (origin) {
+      z.uuid().parse(origin.sourceVmId);
+      z.uuid().parse(origin.snapshotId);
+    }
     const peer = this.state.outbound.find((item) => item.id === peerId);
     if (!peer) throw new AppError('远端主机不存在', 404);
     const previous = await this.importStatus(peerId, transferId);
     if (previous) {
-      if (previous.name !== name) throw new AppError('迁移标识已用于其他实例名称', 409);
+      if (previous.name !== name || previous.sourceVmId !== origin?.sourceVmId ||
+          previous.snapshotId !== origin?.snapshotId)
+        throw new AppError('迁移标识已用于其他来源或实例名称', 409);
       return previous;
     }
     const operationSignal = AbortSignal.any([signal, AbortSignal.timeout(30 * 60_000)]);
@@ -460,10 +479,10 @@ export class HostPeers {
     const url = new URL('/peer/import', peer.url);
     this.mutation(1);
     try {
-      return await new Promise<{ id: string; name: string }>((resolve, reject) => {
+      return await new Promise<ImportReceipt>((resolve, reject) => {
         let settled = false;
         let producerDone = false;
-        let reply: { id: string; name: string } | undefined;
+        let reply: ImportReceipt | undefined;
         const complete = () => {
           if (!settled && producerDone && reply) {
             settled = true;
@@ -480,7 +499,9 @@ export class HostPeers {
           method: 'POST', agent: false, rejectUnauthorized: false, signal: operationSignal,
           headers: { authorization: `Bearer ${peer.token}`,
             'content-type': 'application/octet-stream',
-            'x-sakura-transfer-id': transferId, 'x-sakura-target-name': name },
+            'x-sakura-transfer-id': transferId, 'x-sakura-target-name': name,
+            ...(origin ? { 'x-sakura-source-vm-id': origin.sourceVmId,
+              'x-sakura-snapshot-id': origin.snapshotId } : {}) },
         }, (response) => {
           const chunks: Buffer[] = [];
           let size = 0;
@@ -494,8 +515,7 @@ export class HostPeers {
             try {
               if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300)
                 throw new AppError(`远端返回 HTTP ${response.statusCode || 0}`, 502);
-              const result = z.object({ id: z.uuid(), name: createSchema.shape.name }).strict()
-                .parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+              const result = importReceiptSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
               reply = result;
               complete();
             } catch (error) { fail(error as Error); }

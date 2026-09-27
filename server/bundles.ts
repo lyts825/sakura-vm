@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
-import { AppError, DATA, createSchema, vmDir } from './model.ts';
+import { AppError, DATA, createSchema, vmDir, type VMRecord } from './model.ts';
 import type { Machines } from './machines.ts';
 import { projectSchema } from './workspaces.ts';
 import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
@@ -96,15 +96,20 @@ export class Bundles {
     await mkdir(join(DATA, 'transfers'), { recursive: true });
     return mkdtemp(join(DATA, 'transfers', 'bundle-'));
   }
-  async export(id: string, target: Writable, headers: () => void, signal?: AbortSignal, bytesPerSecond = 0) {
+  async export(id: string, target: Writable, headers: () => void, signal?: AbortSignal,
+    bytesPerSecond = 0, snapshotId?: string) {
     return this.machines.locked(id, async () => {
       this.machines.requireStopped(id);
+      const vm = this.machines.get(id);
+      const snapshot = snapshotId ? vm.snapshots.find((item) => item.id === snapshotId) : undefined;
+      if (snapshotId && !snapshot) throw new AppError('快照不存在', 404);
       const dir = await this.temp();
       try {
         const disk = join(dir, 'disk.qcow2');
         await this.machines.engine.run(
           'sakura-img',
-          ['convert', '-f', 'qcow2', '-O', 'qcow2', join(vmDir(id), 'disk.qcow2'), disk],
+          ['convert', '-f', 'qcow2', '-O', 'qcow2',
+            ...(snapshotId ? ['-l', snapshotId] : []), join(vmDir(id), 'disk.qcow2'), disk],
           { timeoutMs: 1800000, signal },
         );
         signal?.throwIfAborted();
@@ -127,13 +132,14 @@ export class Bundles {
           firmware,
           pendingResize,
         } = this.machines.get(id);
-        const identity = await this.machines.snapshotIdentity(id);
+        const identity = await this.machines.snapshotIdentity(id, snapshotId);
         const unsigned = manifestSchema.parse({
           version: 1,
-          config: { name, memoryMiB, cpus, diskGiB, accelerator, forwards, distro, template, hardware, firmware },
+          config: { name, memoryMiB, cpus, diskGiB: snapshot?.diskGiB || diskGiB,
+            accelerator, forwards, distro, template, hardware, firmware },
           project: await this.project(id),
           projects: await this.projectCatalog(id),
-          ...(pendingResize ? { pendingResize: true } : {}),
+          ...((snapshot ? snapshot.pendingResize : pendingResize) ? { pendingResize: true } : {}),
           key: identity.key,
           seed: identity.seed.toString('base64'),
           sha256: hash.digest('hex'),
@@ -155,13 +161,14 @@ export class Bundles {
           target,
           { signal },
         );
+        return unsigned.sha256;
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
     });
   }
   async import(name: string, source: Readable, signal?: AbortSignal, beforeAdopt?: () => void,
-    migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string }) {
+    migrationOrigin?: VMRecord['migrationOrigin']) {
     return this.importCore(name, source, signal, beforeAdopt, false, migrationOrigin);
   }
   async importExternal(name: string, source: Readable, signal?: AbortSignal) {
@@ -173,7 +180,7 @@ export class Bundles {
     signal?: AbortSignal,
     beforeAdopt?: () => void,
     external = false,
-    migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string },
+    migrationOrigin?: VMRecord['migrationOrigin'],
   ) {
     return this.withContents(source, signal, async (disk, manifest, seed) => {
       const publish = () => {
@@ -187,7 +194,7 @@ export class Bundles {
           manifest.project,
           manifest.pendingResize,
           manifest.projects,
-          migrationOrigin,
+          migrationOrigin ? { ...migrationOrigin, diskSha256: manifest.sha256 } : undefined,
         );
       };
       return external && this.signatures

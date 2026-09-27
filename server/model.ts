@@ -82,7 +82,8 @@ export type VMRecord = VMConfig & {
   lastError?: string;
   organization?: z.infer<typeof organizationSchema>;
   pendingResize?: boolean;
-  migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string };
+  migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string;
+    sourceVmId?: string; snapshotId?: string; diskSha256?: string };
 };
 export type VMView = VMRecord & {
   activeAccelerator?: 'tcg' | 'whpx';

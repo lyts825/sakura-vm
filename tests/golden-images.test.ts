@@ -123,6 +123,7 @@ test('golden image operations reject running and sandbox sources, require review
     await new Promise<void>((_resolve, reject) =>
       signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }),
     );
+    return '0'.repeat(64);
   };
   const abort = new AbortController();
   const pending = f.service.action(

@@ -1304,6 +1304,15 @@ test('host pairing connects over pinned TLS and shows remote resources and revoc
       remoteVmId: '00000000-0000-4000-8000-000000000004',
       updatedAt: new Date().toISOString() }],
   } }));
+  await page.route('**/api/snapshot-replications', (route) => route.fulfill({ json: {
+    enabled: true, entries: [{ vmId: '00000000-0000-4000-8000-000000000001',
+      snapshotId: '00000000-0000-4000-8000-000000000005',
+      transferId: '00000000-0000-4000-8000-000000000006',
+      peerId: '00000000-0000-4000-8000-000000000003',
+      targetName: 'historical-copy', status: 'replicated',
+      remoteVmId: '00000000-0000-4000-8000-000000000007', sha256: 'a'.repeat(64),
+      updatedAt: new Date().toISOString() }],
+  } }));
   try {
     await page.getByRole('button', { name: '系统设置', exact: true }).click();
     await page.getByRole('button', { name: '管理主机配对' }).click();
@@ -1319,6 +1328,7 @@ test('host pairing connects over pinned TLS and shows remote resources and revoc
     await expect(ranking.locator('.host-peer-row').first()).toContainText('Remote');
     await expect(ranking.locator('.host-peer-row').first()).toContainText('评分');
     await expect(panel.getByText(/migrated.*目标已导入，源仍保留/)).toBeVisible();
+    await expect(panel.getByText(/historical-copy.*已校验并导入/)).toBeVisible();
     await expect(panel.getByText(/迁移目标 ID/)).toBeVisible();
     await expect(panel.getByText(/主机维护排空/)).toBeVisible();
     await target.configure({ operation: 'revoke-inbound', id: target.view().incoming[0].id });

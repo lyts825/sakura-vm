@@ -113,6 +113,10 @@ const core: {
     title: '跨主机冷迁移队列及状态', inspect: true,
   },
   {
+    id: 'snapshot-replications.get', method: 'GET', path: '/api/snapshot-replications',
+    title: '跨主机快照复制队列、校验值及重试状态', inspect: true,
+  },
+  {
     id: 'session.status',
     method: 'GET',
     path: '/api/session',

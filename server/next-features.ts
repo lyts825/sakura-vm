@@ -14,6 +14,7 @@ import { networkEmulation } from './network-emulation.ts';
 import { guestDnsDiagnostics } from './guest-dns.ts';
 import { hostScoreInput, type HostScoreInput, type HostPeers } from './host-peers.ts';
 import type { ColdMigrations } from './cold-migration.ts';
+import type { SnapshotReplications } from './snapshot-replications.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -77,8 +78,8 @@ export const nextFeatureCatalog = [
     '跨主机快照复制',
     '远程主机与集群',
     'P1',
-    '记录快照复制目标、校验和与重试状态。',
-    'planned',
+    '将选定历史快照校验后复制为远端独立实例，持久记录目标、校验和与重试状态。',
+    'available',
   ],
   [
     'fleet-policy-rollout',
@@ -642,6 +643,7 @@ export class NextFeatures {
   jobs = new Jobs('next-features');
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private coldMigrations?: ColdMigrations;
+  private snapshotReplications?: SnapshotReplications;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -656,6 +658,10 @@ export class NextFeatures {
 
   setColdMigrations(service: ColdMigrations) {
     this.coldMigrations = service;
+  }
+
+  setSnapshotReplications(service: SnapshotReplications) {
+    this.snapshotReplications = service;
   }
 
   private file() {
@@ -869,6 +875,14 @@ export class NextFeatures {
       return { ...(action === 'run'
         ? await this.coldMigrations.runDrain(merged, signal || new AbortController().signal)
         : await this.coldMigrations.previewDrain(merged)), adapter };
+    }
+    if (spec.id === 'cross-host-snapshots') {
+      if (!this.snapshotReplications)
+        return { ready: false, executed: false, adapter,
+          reason: '请启用快照与实例包插件，并完成主机配对。' };
+      return { ...(action === 'run'
+        ? await this.snapshotReplications.run(id, merged, signal || new AbortController().signal)
+        : await this.snapshotReplications.preview(id, merged)), adapter };
     }
     if (spec.id === 'graphql-api')
       return {
