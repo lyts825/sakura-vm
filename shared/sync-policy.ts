@@ -21,6 +21,12 @@ export const syncPolicySchema = z
   .strict();
 export type SyncPolicy = z.infer<typeof syncPolicySchema>;
 
+export const syncMergeDriverSchema = z.object({
+  pattern: syncPattern,
+  mode: z.enum(['manual', 'keep-both', 'prefer-host', 'prefer-guest', 'merge-text']),
+}).strict();
+export type SyncMergeDriver = z.infer<typeof syncMergeDriverSchema>;
+
 export function matchesSyncPattern(path: string, patterns: string[] = []) {
   return patterns.some((pattern) => {
     const value = pattern.replace(/\/$/, '');
@@ -39,6 +45,10 @@ export function matchesSyncPattern(path: string, patterns: string[] = []) {
 
 export function pathPolicy(path: string, policies: SyncPolicy[] = []) {
   return policies.find((policy) => matchesSyncPattern(path, [policy.pattern]));
+}
+
+export function mergeDriver(path: string, drivers: SyncMergeDriver[] = []) {
+  return drivers.find((driver) => matchesSyncPattern(path, [driver.pattern]));
 }
 
 export function policyAllows(path: string, action: string, policies: SyncPolicy[] = []) {

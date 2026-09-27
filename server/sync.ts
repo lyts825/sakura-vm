@@ -19,6 +19,9 @@ import {
   matchesSyncPattern,
   syncPattern,
   syncPolicySchema,
+  syncMergeDriverSchema,
+  mergeDriver,
+  type SyncMergeDriver,
   policyAllows,
   pathPolicy,
   detectSyncRenames,
@@ -46,6 +49,7 @@ export const syncSchema = z
     rollback: z.boolean().optional(),
     watch: z.boolean().optional(),
     policies: z.array(syncPolicySchema).max(64).optional(),
+    drivers: z.array(syncMergeDriverSchema).max(64).optional(),
     window: timeWindowSchema.optional(),
     bandwidthMiBps: z
       .number()
@@ -71,6 +75,8 @@ export type SyncQueue = z.infer<typeof queueSchema>;
 export type SyncChange = {
   path: string;
   from?: string;
+  driver?: SyncMergeDriver['mode'];
+  suggestedDecision?: 'skip' | 'push' | 'pull' | 'both' | 'merge';
   action:
     | 'push'
     | 'pull'
@@ -98,6 +104,17 @@ export type SyncDecisions = Record<
   | 'restore-guest'
 >;
 export type SyncManualMerges = Record<string, string>;
+
+function configuredDriver(path: string, config: SyncConfig) {
+  const driver = mergeDriver(path, config.drivers);
+  if (!driver) return null;
+  const requested = {
+    manual: 'skip', 'keep-both': 'both', 'prefer-host': 'push',
+    'prefer-guest': 'pull', 'merge-text': 'merge',
+  }[driver.mode] as NonNullable<SyncChange['suggestedDecision']>;
+  const permitted = requested === 'skip' || policyAllows(path, requested, config.policies);
+  return { driver: driver.mode, decision: permitted ? requested : 'skip' as const };
+}
 
 const SYNC_TEXT_BYTES = 1024 ** 2;
 function decodeSyncText(bytes: Buffer) {
@@ -270,6 +287,8 @@ export class FolderSync {
     return this.machines.locked(`sync:${this.key(id)}`, async () => {
       if (this.jobs.view(this.key(id))?.status === 'running') throw new AppError('请等待同步完成', 409);
       const config = syncSchema.parse(input);
+      if (config.drivers?.some((driver) => driver.mode === 'merge-text') && !config.mergeText)
+        throw new AppError('自动文本合并需要启用共同文本版本', 409);
       if (!isAbsolute(config.host)) throw new AppError('请选择 Windows 文件夹的绝对路径');
       config.host = await realpath(config.host);
       if (!(await lstat(config.host)).isDirectory()) throw new AppError('本机路径不是目录');
@@ -815,7 +834,8 @@ export class FolderSync {
               previous[name] === hostFiles.get(name)
             )
               changes.push({ path: name, action: allowed(name, 'delete-host') ? 'delete-host' : 'skip' });
-            else
+            else {
+              const selected = way === 'conflict' ? configuredDriver(name, config) : null;
               changes.push({
                 path: name,
                 action: (
@@ -823,7 +843,9 @@ export class FolderSync {
                 )
                   ? way
                   : 'skip',
+                ...(selected ? { driver: selected.driver, suggestedDecision: selected.decision } : {}),
               });
+            }
           }
           changes.push(...renames.map(({ from, path, action }) => ({ from, path, action })));
           for (const name of hostDirs)
@@ -987,21 +1009,39 @@ export class FolderSync {
               else if (previous[name] && previous[name] === guestHash) way = 'push';
               else if (previous[name] && previous[name] === hostHash) way = 'pull';
               else {
-                const decision = decisions[name];
+                const selected = configuredDriver(name, config);
+                const automatic = !Object.hasOwn(decisions, name) && !!selected;
+                const decision = Object.hasOwn(decisions, name)
+                  ? decisions[name]
+                  : selected?.decision;
                 const requested =
                   decision === 'restore-host' ? 'pull' : decision === 'restore-guest' ? 'push' : decision;
                 if (requested && requested !== 'skip' && !allowed(name, requested))
                   throw new AppError('路径策略禁止此同步方向：' + name, 409);
                 if (decision === 'merge' || decision === 'manual') {
                   const base = bases[name];
-                  if (!config.mergeText || typeof base !== 'string' || digest(base) !== previous[name])
+                  if (!config.mergeText || typeof base !== 'string' || digest(base) !== previous[name]) {
+                    if (automatic) {
+                      conflicts++;
+                      if (previous[name]) next[name] = previous[name];
+                      log('自动文本合并缺少共同版本，保留两端：' + name + '\n');
+                      continue;
+                    }
                     throw new AppError('没有可校验的共同版本，请先启用文本版本保存并完成一次同步：' + name);
+                  }
                   const local = await hostPath(name),
                     remote = posix.join(config.guest, name);
                   const attrs = await ftpStat(ftp, remote),
                     localAttrs = await lstat(local);
-                  if (!attrs?.isFile() || attrs.size > 1024 ** 2 || localAttrs.size > 1024 ** 2)
+                  if (!attrs?.isFile() || attrs.size > 1024 ** 2 || localAttrs.size > 1024 ** 2) {
+                    if (automatic) {
+                      conflicts++;
+                      next[name] = previous[name];
+                      log('自动文本合并不支持此文件，保留两端：' + name + '\n');
+                      continue;
+                    }
                     throw new AppError('三方同步只支持 1 MiB 以内的普通文件');
+                  }
                   const ours = await readFile(local),
                     chunks: Buffer[] = [];
                   let bytes = 0;
@@ -1034,7 +1074,18 @@ export class FolderSync {
                   const theirs = Buffer.concat(chunks);
                   if (digest(ours) !== hostHash || digest(theirs) !== guestHash)
                     throw new AppError('合并期间文件发生变化，请重新预览', 409);
-                  const parts = threeWayMerge(base, decodeSyncText(ours), decodeSyncText(theirs));
+                  let oursText: string, theirsText: string;
+                  try {
+                    oursText = decodeSyncText(ours);
+                    theirsText = decodeSyncText(theirs);
+                  } catch (error) {
+                    if (!automatic) throw error;
+                    conflicts++;
+                    next[name] = previous[name];
+                    log('自动文本合并遇到二进制文件，保留两端：' + name + '\n');
+                    continue;
+                  }
+                  const parts = threeWayMerge(base, oursText, theirsText);
                   if (decision === 'merge' && parts.some((part) => part.kind === 'conflict')) {
                     conflicts++;
                     next[name] = previous[name];

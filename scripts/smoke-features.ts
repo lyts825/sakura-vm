@@ -121,7 +121,7 @@ try {
     console.log('PASS canceled SFTP upload preserves the original and removes its temporary file');
     await features.files.operation(id, 'rename', '/workspace/files/test.bin', '/workspace/files/renamed.bin');
     await features.files.operation(id, 'delete', '/workspace/files/renamed.bin');
-    await features.files.operation(id, 'delete', '/workspace/files');
+    await features.files.operation(id, 'delete', '/workspace/files', undefined, true);
     await command(
       id,
       'mkdir -p /workspace/remove-me/nested; printf keep > /workspace/keep.txt; ln -s /workspace/keep.txt /workspace/remove-me/link; printf remove > /workspace/remove-me/nested/file',
@@ -239,7 +239,20 @@ try {
     await features.sync.run(id, 'push');
     await job(features.sync.jobs, id);
     assert.equal(await machines.readGuestFile(id, '/workspace/shared/hello.txt'), 'host-conflict');
-    console.log('PASS two-way folder sync, conflicts and explicit resolution');
+    await features.sync.save(id, { host, guest: '/workspace/shared', auto: false,
+      drivers: [{ pattern: 'hello.txt', mode: 'prefer-guest' }] });
+    await writeFile(join(host, 'hello.txt'), 'host-second');
+    await machines.writeGuestFile(id, '/workspace/shared/hello.txt', 'guest-second');
+    const driven = await features.sync.preview(id);
+    assert.equal(driven.changes.find((change) => change.path === 'hello.txt')?.suggestedDecision, 'pull');
+    await features.sync.run(id, 'both');
+    await job(features.sync.jobs, id);
+    assert.equal(await readFile(join(host, 'hello.txt'), 'utf8'), 'guest-second');
+    await writeFile(join(host, 'hello.txt'), 'host-conflict');
+    await features.sync.run(id, 'push');
+    await job(features.sync.jobs, id);
+    assert.equal(await machines.readGuestFile(id, '/workspace/shared/hello.txt'), 'host-conflict');
+    console.log('PASS two-way folder sync, conflicts, explicit resolution and path merge drivers');
     await machines.stop(id);
     const snapshot = await machines.snapshot(id, 'baseline');
     await machines.editSnapshot(id, snapshot.id, { name: 'baseline-note', note: 'verified' });

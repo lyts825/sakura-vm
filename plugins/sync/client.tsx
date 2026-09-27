@@ -10,6 +10,14 @@ import '../../src/features.css';
 import { policyAllows } from '../../shared/sync-policy';
 import { ThreeWayMerge } from '../../src/ThreeWayMerge';
 
+const driverNames = {
+  manual: '手动处理',
+  'keep-both': '两端都保留（另存 Linux 版本）',
+  'prefer-host': '保留 Windows 版本',
+  'prefer-guest': '保留 Linux 版本',
+  'merge-text': '尝试三方文本合并',
+} as const;
+
 export function SyncPanel({ vm, request }: FeatureProps) {
   const remote = useRemote<{
     projectId?: string;
@@ -151,13 +159,49 @@ export function SyncPanel({ vm, request }: FeatureProps) {
         <input
           type="checkbox"
           checked={config.mergeText === true}
-          onChange={(event) => setConfig({ ...config, mergeText: event.target.checked })}
+          onChange={(event) => setConfig({
+            ...config,
+            mergeText: event.target.checked,
+            drivers: event.target.checked ? config.drivers : config.drivers?.map((driver) =>
+              driver.mode === 'merge-text' ? { ...driver, mode: 'manual' } : driver),
+          })}
         />
         保存共同文本版本，支持三方合并
       </label>
       <p className="muted">
         每个文本文件最多 1 MiB，共同版本合计最多 16 MiB。首次同步建立基线；重叠修改保留两端。
       </p>
+      <details>
+        <summary>按路径设置冲突合并驱动</summary>
+        <p className="muted">从上到下使用第一条匹配规则，支持 * 与 **。驱动在手动和后台双向同步时生效；本次预览的单文件决策可覆盖规则。自动文本合并遇到重叠修改、二进制文件或缺少共同版本时保留两端原文件。</p>
+        {(config.drivers || []).map((driver, index) => (
+          <div className="feature-card" key={index}>
+            <label>合并路径 {index + 1}
+              <input value={driver.pattern} placeholder="*.lock"
+                onChange={(event) => setConfig({ ...config, drivers: config.drivers!.map((item, i) =>
+                  i === index ? { ...item, pattern: event.target.value } : item) })} />
+            </label>
+            <label>合并方式 {index + 1}
+              <select value={driver.mode}
+                onChange={(event) => setConfig({ ...config, drivers: config.drivers!.map((item, i) =>
+                  i === index ? { ...item, mode: event.target.value as typeof driver.mode } : item) })}>
+                {Object.entries(driverNames).map(([value, label]) =>
+                  <option key={value} value={value} disabled={value === 'merge-text' && !config.mergeText}>{label}</option>)}
+              </select>
+            </label>
+            <button className="secondary compact"
+              onClick={() => setConfig({ ...config, drivers: config.drivers!.filter((_, i) => i !== index) })}>
+              删除合并驱动 {index + 1}
+            </button>
+          </div>
+        ))}
+        <button className="secondary compact" disabled={(config.drivers?.length || 0) >= 64}
+          onClick={() => setConfig({ ...config, drivers: [
+            ...(config.drivers || []), { pattern: '', mode: 'manual' },
+          ] })}>
+          添加合并驱动
+        </button>
+      </details>
       <label className="checkbox-label">
         <input
           type="checkbox"
@@ -381,12 +425,16 @@ export function SyncPanel({ vm, request }: FeatureProps) {
                       }[entry.action]
                     }
                   </span>
+                  {entry.driver && <span className="subtle-note">
+                    路径驱动：{driverNames[entry.driver]}
+                    {entry.suggestedDecision === 'skip' && entry.driver !== 'manual' && '（路径策略限制，暂时跳过）'}
+                  </span>}
                   {(entry.action === 'conflict' ||
                     entry.action === 'delete-host' ||
                     entry.action === 'delete-guest') && (
                     <select
                       aria-label={`解决冲突 ${entry.path}`}
-                      value={decisions[entry.path] || 'skip'}
+                      value={decisions[entry.path] || entry.suggestedDecision || 'skip'}
                       onChange={(e) => {
                         const decision = e.target.value as SyncDecisions[string];
                         setDecisions({ ...decisions, [entry.path]: decision });

@@ -2347,6 +2347,48 @@ test('sync conflict editor reviews a shared base and submits manual text with it
   });
 });
 
+test('sync merge drivers save path rules and expose automatic conflict decisions in preview', async ({ page }) => {
+  await app(page, ['projects', 'sync'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  const token = 'b'.repeat(64);
+  let config: any = { host: 'D:\\sync', guest: '/workspace/shared', auto: false, mergeText: true };
+  let submitted: any;
+  await page.route('**/api/vms/*/sync*', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/sync-preview')) return route.fulfill({ json: {
+      token, changes: [{ path: 'package.lock', action: 'conflict',
+        driver: 'prefer-host', suggestedDecision: 'push' }], unchanged: 0,
+    } });
+    if (route.request().method() === 'PUT') {
+      config = route.request().postDataJSON();
+      return route.fulfill({ json: config });
+    }
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ json: { id: 'sync-job' } });
+    }
+    return route.fulfill({ json: { projectId: 'default', config, job: null, history: [] } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '同步', exact: true }).click();
+  await page.getByText('按路径设置冲突合并驱动').click();
+  await page.getByRole('button', { name: '添加合并驱动' }).click();
+  await page.getByLabel('合并路径 1').fill('*.lock');
+  await page.getByLabel('合并方式 1').selectOption('prefer-host');
+  await page.getByRole('button', { name: '保存配置' }).click();
+  await expect.poll(() => config.drivers).toEqual([{ pattern: '*.lock', mode: 'prefer-host' }]);
+  await page.getByRole('button', { name: '预览双向同步' }).click();
+  await expect(page.getByText('路径驱动：保留 Windows 版本')).toBeVisible();
+  await expect(page.getByLabel('解决冲突 package.lock')).toHaveValue('push');
+  await page.getByLabel('解决冲突 package.lock').selectOption('skip');
+  await page.getByRole('button', { name: '应用本次同步' }).click();
+  await expect.poll(() => submitted).toMatchObject({
+    direction: 'both', token, decisions: { 'package.lock': 'skip' },
+  });
+});
+
 const vm = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'example',

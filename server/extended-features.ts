@@ -69,7 +69,7 @@ export const extendedFeatureCatalog = [
   ['sync-queue', '离线同步队列', '文件同步', 'P1', '网络中断后排队并重试同步作业。', 'available'],
   ['path-sync-policy', '路径同步策略', '文件同步', 'P1', '对路径设置只读、单向和权限策略。', 'available'],
   ['sync-rollback', '同步回滚点', '文件同步', 'P1', '撤销一轮已应用的同步变更。', 'available'],
-  ['merge-drivers', '自定义合并驱动', '文件同步', 'P2', '为文本和二进制类型选择合并方式。', 'planned'],
+  ['merge-drivers', '自定义合并驱动', '文件同步', 'P2', '按路径选择手动处理、保留两份、两端优先或自动三方文本合并。', 'available'],
   ['multi-host-view', '多主机统一视图', '文件同步', 'P2', '登记多个 Sakura 主机并集中查看状态。', 'available'],
   [
     'project-onboarding',
@@ -450,6 +450,7 @@ export class ExtendedFeatures {
         'sync-rollback',
         'sync-window',
         'sync-queue',
+        'merge-drivers',
       ].includes(spec.id)
     )
       return {
@@ -457,7 +458,7 @@ export class ExtendedFeatures {
         executed: false,
         state: spec.state,
         adapter,
-        reason: '已接入同步面板；打开工作空间 → 同步配置并执行。',
+        reason: '已接入同步面板；打开工作空间 → 同步配置，按路径设置驱动并预览冲突处理后执行。',
       };
     if (spec.id === 'qcow2-scrub') {
       try {

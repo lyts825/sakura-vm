@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import type { SFTPWrapper } from 'ssh2';
 import type { Machines } from '../server/machines.ts';
+import { mergeDriver } from '../shared/sync-policy.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-sync-test-'));
 process.env.SAKURA_DATA_DIR = join(root, 'data');
@@ -412,6 +413,87 @@ test('per-file conflict resolution keeps both versions on both sides', async (t)
   const backup = [...remote.keys()].find((v) => v.includes('.linux-conflict-'))!;
   assert.equal(remote.get(backup)!.bytes.toString(), 'original');
   assert.equal(await readFile(join(host, backup.split('/').at(-1)!), 'utf8'), 'original');
+});
+
+test('merge drivers apply the first matching rule to binary conflicts and allow preview overrides', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  assert.equal(mergeDriver('notes.txt', [
+    { pattern: '*.txt', mode: 'manual' },
+    { pattern: 'notes.txt', mode: 'prefer-host' },
+  ])?.mode, 'manual');
+  await sync.save(id, { host, guest: '/workspace', drivers: [
+    { pattern: '*.txt', mode: 'prefer-host' },
+  ] });
+  const hostBytes = Buffer.from([0, 1, 2, 3]);
+  await writeFile(join(host, 'notes.txt'), hostBytes);
+  const preview = await sync.preview(id);
+  assert.deepEqual(preview.changes, [{
+    path: 'notes.txt', action: 'conflict', driver: 'prefer-host', suggestedDecision: 'push',
+  }]);
+  await sync.run(id, 'both', preview.token, { 'notes.txt': 'skip' });
+  assert.equal((await finished(sync, id)).status, 'done');
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'original');
+  await sync.run(id, 'both');
+  assert.equal((await finished(sync, id)).status, 'done');
+  assert.deepEqual(remote.get('/workspace/notes.txt')!.bytes, hostBytes);
+  assert.deepEqual((await sync.config(id))?.drivers, [{ pattern: '*.txt', mode: 'prefer-host' }]);
+});
+
+test('keep-both driver preserves binary versions and stale driver previews cannot be applied', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await sync.save(id, { host, guest: '/workspace', drivers: [
+    { pattern: '*.txt', mode: 'keep-both' },
+  ] });
+  await writeFile(join(host, 'notes.txt'), Buffer.from([0, 10, 20]));
+  const preview = await sync.preview(id);
+  assert.equal(preview.changes[0].suggestedDecision, 'both');
+  await sync.save(id, { host, guest: '/workspace', drivers: [
+    { pattern: '*.txt', mode: 'prefer-guest' },
+  ] });
+  await sync.run(id, 'both', preview.token);
+  assert.match((await finished(sync, id)).error || '', /重新预览/);
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'original');
+  await sync.save(id, { host, guest: '/workspace', drivers: [
+    { pattern: '*.txt', mode: 'keep-both' },
+  ] });
+  await sync.run(id, 'both');
+  assert.equal((await finished(sync, id)).status, 'done');
+  assert.deepEqual(remote.get('/workspace/notes.txt')!.bytes, Buffer.from([0, 10, 20]));
+  const backup = [...remote.keys()].find((path) => path.includes('.linux-conflict-'))!;
+  assert.equal(remote.get(backup)!.bytes.toString(), 'original');
+  assert.equal(await readFile(join(host, backup.split('/').at(-1)!), 'utf8'), 'original');
+});
+
+test('automatic text merge combines independent edits and retains overlapping or binary changes', async (t) => {
+  const { id, host, remote, sync } = await fixture(t);
+  await assert.rejects(sync.save(id, { host, guest: '/workspace', drivers: [
+    { pattern: '*.txt', mode: 'merge-text' },
+  ] }), /需要启用共同文本版本/);
+  await sync.save(id, { host, guest: '/workspace', mergeText: true, drivers: [
+    { pattern: '*.txt', mode: 'merge-text' },
+  ] });
+  const base = 'one\ntwo\nthree\n';
+  await writeFile(join(host, 'notes.txt'), base);
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from(base);
+  await sync.run(id, 'both');
+  assert.equal((await finished(sync, id)).status, 'done');
+  await writeFile(join(host, 'notes.txt'), 'ONE\ntwo\nthree\n');
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('one\ntwo\nTHREE\n');
+  assert.equal((await sync.preview(id)).changes[0].suggestedDecision, 'merge');
+  await sync.run(id, 'both');
+  assert.equal((await finished(sync, id)).status, 'done');
+  assert.equal(await readFile(join(host, 'notes.txt'), 'utf8'), 'ONE\ntwo\nTHREE\n');
+  await writeFile(join(host, 'notes.txt'), 'host\n');
+  remote.get('/workspace/notes.txt')!.bytes = Buffer.from('guest\n');
+  await sync.run(id, 'both');
+  assert.match((await finished(sync, id)).log, /重叠修改/);
+  assert.equal(await readFile(join(host, 'notes.txt'), 'utf8'), 'host\n');
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'guest\n');
+  await writeFile(join(host, 'notes.txt'), Buffer.from([0, 4, 5]));
+  await sync.run(id, 'both');
+  assert.match((await finished(sync, id)).log, /二进制文件/);
+  assert.deepEqual(await readFile(join(host, 'notes.txt')), Buffer.from([0, 4, 5]));
+  assert.equal(remote.get('/workspace/notes.txt')!.bytes.toString(), 'guest\n');
 });
 
 test('three-way sync uses a persisted common version and preserves overlapping changes', async (t) => {
