@@ -324,6 +324,39 @@ export function CapabilityActionsPanel({
               </p>}
             </div>
           )}
+          {selected === 'storage-pools' && Array.isArray(result?.pools) && (
+            <div className="feature-card">
+              <p>当前实例存储池：<code>{result.currentPoolId}</code></p>
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead><tr><th>存储池</th><th>目录</th><th>可用容量</th><th>实例</th><th>操作</th></tr></thead>
+                  <tbody>{result.pools.map((pool: any) => <tr key={pool.id}>
+                    <td>{pool.name}<br /><code>{pool.id}</code></td>
+                    <td><code>{pool.root}</code></td>
+                    <td>{pool.freeBytes === null ? '目录不可用' :
+                      (pool.freeBytes / 1024 ** 3).toFixed(1) + ' GiB'}</td>
+                    <td>{pool.vms?.map((vm: any) => vm.name).join('、') || '无'}</td>
+                    <td>
+                      {pool.available && !running && pool.id !== result.currentPoolId && <button
+                        className="secondary compact" onClick={() => setParameters(JSON.stringify({
+                          mode: 'move', poolId: pool.id,
+                        }, null, 2))}>迁移到此池</button>}
+                      {pool.id !== 'default' && !pool.vms?.length && <button
+                        className="secondary compact" onClick={() => setParameters(JSON.stringify({
+                          mode: 'remove', poolId: pool.id,
+                        }, null, 2))}>移除池</button>}
+                    </td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+              {!!result.pendingCleanup?.length && <p role="alert">
+                有 {result.pendingCleanup.length} 处迁移旧副本待清理。
+                <button className="secondary compact" onClick={() =>
+                  setParameters(JSON.stringify({ mode: 'cleanup' }, null, 2))
+                }>准备重试清理</button>
+              </p>}
+            </div>
+          )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
             typeof result?.samples === 'number' && (
               <div className="feature-card">

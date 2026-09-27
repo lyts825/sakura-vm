@@ -2909,6 +2909,46 @@ test('the empty install shows the core and the current plugin catalog', async ({
   await expect(page.locator('.plugin-card')).toHaveCount(PLUGIN_PACKS.length);
 });
 
+test('new instances can register and select an external storage pool', async ({ page }) => {
+  await app(page);
+  const poolId = '0123456789abcdef';
+  let createdPool = false;
+  let createdVm: any;
+  await page.route('**/api/storage-pools', (route) => {
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON()).toMatchObject({
+        mode: 'create', name: 'fast-disk', path: 'C:\\SakuraPool',
+      });
+      createdPool = true;
+      return route.fulfill({ json: { created: { id: poolId } } });
+    }
+    return route.fulfill({ json: { pools: [
+      { id: 'default', name: '默认数据目录', available: true, freeBytes: 1000 },
+      ...(createdPool ? [{ id: poolId, name: 'fast-disk', available: true,
+        freeBytes: 1000 }] : []),
+    ] } });
+  });
+  await page.route('**/api/vms', (route) => {
+    if (route.request().method() === 'POST') {
+      createdVm = route.request().postDataJSON();
+      return route.fulfill({ json: { ...vm, id: randomUUID(), ...createdVm,
+        status: 'stopped', poweredOn: false } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.getByRole('button', { name: '创建发行版' }).first().click();
+  await expect(page.getByRole('heading', { name: '一个新的 Linux 空间' })).toBeVisible();
+  await page.getByText('新增本机存储池').click();
+  const poolForm = page.locator('details').filter({ hasText: '新增本机存储池' });
+  await poolForm.getByLabel('名称', { exact: true }).fill('fast-disk');
+  await poolForm.getByLabel('已存在的绝对目录').fill('C:\\SakuraPool');
+  await page.getByRole('button', { name: '创建存储池' }).click();
+  await expect(page.getByRole('combobox', { name: '新实例存储池' })).toHaveValue(poolId);
+  await page.getByLabel('创建后立即启动').uncheck();
+  await page.getByRole('dialog').getByRole('button', { name: '创建发行版' }).click();
+  await expect.poll(() => createdVm?.storagePoolId).toBe(poolId);
+});
+
 test('metrics and commands load their own client entries when selected', async ({ page }) => {
   await app(page, ['projects', 'metrics', 'commands'], true);
   await expect(page.getByRole('tab', { name: '配置', exact: true })).toBeVisible();

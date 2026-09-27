@@ -12,6 +12,7 @@ import { coldMigrationInput, maintenanceDrainInput } from './cold-migration.ts';
 import { snapshotReplicationInput } from './snapshot-replications.ts';
 import { notebookInput } from './notebook-environments.ts';
 import { browserIdeInput } from './browser-ide.ts';
+import { storagePoolInput } from './storage-pools.ts';
 
 export const relativePath = z
   .string()
@@ -46,6 +47,15 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'storage-pools': action(
+    '存储池管理',
+    'next',
+    storagePoolInput.shape,
+    { mode: 'list', name: '', path: '', poolId: 'default' },
+    '注册本机目录为存储池，创建实例时选择池；停机后可校验并迁移实例目录。删除池前需迁出实例并清理旧副本。',
+    false,
+    true,
+  ),
   'authenticated-ide-preview': action(
     '认证浏览器 IDE',
     'next',

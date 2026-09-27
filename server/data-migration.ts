@@ -62,6 +62,11 @@ export class DataMigration {
     const source = await realpath(await regularDirectory(this.source));
     if (within(source, target) || within(target, source))
       throw new AppError('目标目录不能与当前数据目录相同或相互包含');
+    if (this.machines.storagePools.conflictsWithDataTarget(target))
+      throw new AppError('目标目录不能与已注册存储池相互包含', 409);
+    if ([...this.machines.records.values()].some((vm) =>
+      vm.storagePoolId && vm.storagePoolId !== 'default'))
+      throw new AppError('请先将外部存储池的实例迁回默认池，再迁移数据目录', 409);
     const exists = await lstat(target).catch((error) => {
       if (error.code !== 'ENOENT') throw error;
       return null;

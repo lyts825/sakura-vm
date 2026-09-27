@@ -28,7 +28,6 @@ const notes: Record<string, string> = {
   'availability-report': '目前为 uptime 探测，尚无持续可用性记录与完整报告。',
   'multi-host-inventory': '目前返回本机信息，尚未实现多主机汇总。',
   'hardware-compatibility': '目前返回本机信息，尚未建立经验证的硬件兼容矩阵。',
-  'storage-pools': '目前返回本机信息，尚未实现存储池管理。',
   'host-disk-health': '目前返回本机信息，尚未实现实际磁盘健康检查。',
 };
 const count = (rows: typeof all, state: string) => rows.filter((item) => item.state === state).length;

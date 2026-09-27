@@ -11,6 +11,12 @@ export type { DesktopPreferences } from './desktop-preferences.ts';
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const DATA = dataDirectory(process.env.SAKURA_DATA_DIR || join(ROOT, '.data'));
 export const VM_ROOT = join(DATA, 'machines');
+const vmStorageRoots = new Map<string, string>();
+export function setVmStorageRoot(id: string, root?: string) {
+  checkedId(id);
+  if (root) vmStorageRoots.set(id, resolve(root));
+  else vmStorageRoots.delete(id);
+}
 export const IMAGE = resolve(process.env.SAKURA_IMAGE_PATH || join(DATA, 'images', 'alpine-3.23.qcow2'));
 export const PORT = Number(process.env.SAKURA_PORT || 7337);
 export const createSchema = z
@@ -24,6 +30,7 @@ export const createSchema = z
     memoryMiB: z.number().int().min(256).max(8192).default(512),
     cpus: z.number().int().min(1).max(8).default(2),
     diskGiB: z.number().int().min(2).max(128).default(8),
+    storagePoolId: z.string().regex(/^(default|[a-f0-9]{16})$/).optional(),
     accelerator: z.enum(['auto', 'tcg', 'whpx']).default('auto'),
     firmware: z.enum(['bios', 'uefi']).optional(),
     distro: z.enum(['alpine', 'debian', 'ubuntu']).optional(),
@@ -108,7 +115,8 @@ export function checkedId(id: string) {
   return id;
 }
 export function vmDir(id: string) {
-  return join(VM_ROOT, checkedId(id));
+  const checked = checkedId(id);
+  return join(vmStorageRoots.get(checked) || VM_ROOT, checked);
 }
 export function guestPath(value: unknown): string {
   if (typeof value !== 'string' || !value.startsWith('/') || value.length > 4096 || /[\x00-\x1f]/.test(value))

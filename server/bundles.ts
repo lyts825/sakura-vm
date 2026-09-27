@@ -307,7 +307,8 @@ export class Bundles {
           { timeoutMs: 1800000, signal },
         );
         const identity = await this.machines.snapshotIdentity(id, snapshot);
-        const { memoryMiB, cpus, diskGiB, accelerator, distro, template, hardware, firmware } = vm;
+        const { memoryMiB, cpus, diskGiB, accelerator, distro, template, hardware, firmware,
+          storagePoolId } = vm;
         const project = await this.project(id);
         const projects = await this.projectCatalog(id);
         signal?.throwIfAborted();
@@ -322,6 +323,7 @@ export class Bundles {
             template,
             hardware,
             firmware,
+            storagePoolId,
             forwards: [],
           },
           disk,

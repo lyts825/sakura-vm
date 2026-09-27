@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdir, readFile, readdir, writeFile, rename, rm, stat, copyFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, rename, rm, stat, copyFile, lstat } from 'node:fs/promises';
 import { existsSync, createReadStream, createWriteStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -7,7 +7,7 @@ import { createConnection, type Socket } from 'node:net';
 import { Client, type SFTPWrapper } from 'ssh2';
 import { StringDecoder } from 'node:string_decoder';
 import { isUtf8 } from 'node:buffer';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
@@ -31,12 +31,13 @@ import { Files, MAX_TEXT_BYTES } from './files.ts';
 import { freePort, qmp } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
-import { readStore, writeStore } from './local-store.ts';
+import { readStore, writeStore, fileHash, regularDirectory, within } from './local-store.ts';
 import { bootGuardStatus, recordBootAttempt, resetBootGuard } from './boot-guard.ts';
 import { hardwareArguments, deviceArguments, diskOptions, hardwareSchema } from '../shared/hardware.ts';
 import { resourcePolicy, validateAdmission } from './resource-policies.ts';
 import { cpuSetSize } from './guest-hardware.ts';
 import { ensureUefiFirmware, requireUefiSupport } from './firmware.ts';
+import { StoragePools } from './storage-pools.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
@@ -50,6 +51,59 @@ async function writeIdentityFile(file: string, contents: string | Buffer) {
   } finally {
     await rm(temporary, { force: true });
   }
+}
+
+async function directoryEntries(root: string): Promise<string[]> {
+  const found: string[] = [];
+  const visit = async (folder: string, prefix: string) => {
+    for (const entry of await readdir(folder, { withFileTypes: true })) {
+      const relativePath = prefix + entry.name;
+      if (entry.isDirectory()) {
+        found.push(relativePath + '/');
+        await visit(join(folder, entry.name), relativePath + '/');
+      } else if (entry.isFile()) found.push(relativePath);
+      else throw new AppError('实例目录包含无法迁移的链接或特殊文件', 409);
+    }
+  };
+  await visit(root, '');
+  return found.sort();
+}
+
+async function copyDirectoryVerified(source: string, destination: string, signal?: AbortSignal,
+  progress: (text: string) => void = () => {}) {
+  const before = await directoryEntries(source);
+  await mkdir(destination);
+  const visit = async (folder: string, target: string) => {
+    for (const entry of await readdir(folder, { withFileTypes: true })) {
+      signal?.throwIfAborted();
+      const input = join(folder, entry.name), output = join(target, entry.name);
+      if (entry.isDirectory()) {
+        await mkdir(output);
+        await visit(input, output);
+      } else if (entry.isFile()) {
+        const sourceInfo = await lstat(input);
+        const checksum = createHash('sha256');
+        await pipeline(createReadStream(input, { signal }),
+          new Transform({ transform(chunk, _encoding, callback) {
+            checksum.update(chunk);
+            callback(null, chunk);
+          } }),
+          createWriteStream(output, { flags: 'wx', mode: sourceInfo.mode & 0o777 }),
+          { signal });
+        const destinationHash = await fileHash(output, signal);
+        if (checksum.digest('hex') !== destinationHash)
+          throw new AppError(`存储池迁移校验失败：${entry.name}`, 409);
+        const after = await lstat(input);
+        if (after.size !== sourceInfo.size || after.mtimeMs !== sourceInfo.mtimeMs)
+          throw new AppError(`迁移期间源文件发生变化：${entry.name}`, 409);
+        progress(`已校验 ${entry.name}（${after.size} 字节）\n`);
+      } else throw new AppError('实例目录包含无法迁移的链接或特殊文件', 409);
+    }
+  };
+  await visit(source, destination);
+  if (JSON.stringify(before) !== JSON.stringify(await directoryEntries(source)) ||
+      JSON.stringify(before) !== JSON.stringify(await directoryEntries(destination)))
+    throw new AppError('迁移期间实例目录发生变化', 409);
 }
 
 type Live = {
@@ -73,6 +127,7 @@ type Live = {
   error?: string;
 };
 export class Machines extends EventEmitter {
+  storagePools = new StoragePools(this);
   fileBeforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
   records = new Map<string, VMRecord>();
   live = new Map<string, Live>();
@@ -153,6 +208,7 @@ export class Machines extends EventEmitter {
   }
   async init() {
     await mkdir(VM_ROOT, { recursive: true });
+    await this.storagePools.init();
     const locks = await readStore<string[]>(join(DATA, 'incident-lockdown.json'), () => []);
     if (!Array.isArray(locks) || locks.some((id) => typeof id !== 'string'))
       throw new Error('应急锁定状态损坏');
@@ -166,6 +222,7 @@ export class Machines extends EventEmitter {
           memoryMiB: r.memoryMiB,
           cpus: r.cpus,
           diskGiB: r.diskGiB,
+          storagePoolId: r.storagePoolId,
           accelerator: r.accelerator,
           forwards: r.forwards,
           distro: r.distro,
@@ -188,6 +245,7 @@ export class Machines extends EventEmitter {
           // A host restart never resumes a disk attachment or an old rescue command.
           r.sandbox.expiresAt = new Date(0).toISOString();
         }
+        this.storagePools.bind(r.id, r.storagePoolId);
         this.records.set(r.id, r);
       }
     } catch (e: any) {
@@ -342,8 +400,28 @@ export class Machines extends EventEmitter {
   async create(input: unknown, sandbox?: SandboxPolicy) {
     return this.createInternal(input, sandbox);
   }
+  private async prepareVmDirectory(vm: VMRecord) {
+    const root = await this.storagePools.ensure(vm.storagePoolId);
+    this.storagePools.bind(vm.id, vm.storagePoolId);
+    const dir = vmDir(vm.id);
+    if (!within(root, dir)) throw new AppError('实例目录超出存储池', 409);
+    try { await mkdir(dir); }
+    catch (error) {
+      this.storagePools.unbind(vm.id);
+      throw error;
+    }
+    return dir;
+  }
+  private async removeVmDirectory(vm: VMRecord) {
+    const root = await this.storagePools.ensure(vm.storagePoolId);
+    const dir = this.storagePools.directory(vm.id, vm.storagePoolId);
+    if (!within(root, dir) || dir === root)
+      throw new AppError('实例目录超出存储池', 409);
+    await regularDirectory(dir);
+    await rm(dir, { recursive: true, force: true });
+  }
   private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string) {
-    return this.locked('create', async () => {
+    return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
       this.requireUnreservedPorts(config.forwards);
       if (config.firmware === 'uefi') await requireUefiSupport();
@@ -371,8 +449,7 @@ export class Machines extends EventEmitter {
         ...(sandbox ? { sandbox } : {}),
         ...(rescueOf ? { rescueOf } : {}),
       };
-      const dir = vmDir(vm.id);
-      await mkdir(dir);
+      const dir = await this.prepareVmDirectory(vm);
       try {
         const key = createSshKey();
         await writeFile(join(dir, 'id_rsa'), key.privateText, { mode: 0o600 });
@@ -442,10 +519,11 @@ export class Machines extends EventEmitter {
         return this.view(vm.id);
       } catch (e) {
         this.records.delete(vm.id);
-        await rm(dir, { recursive: true, force: true });
+        await this.removeVmDirectory(vm);
+        this.storagePools.unbind(vm.id);
         throw e;
       }
-    });
+    }));
   }
   async start(id: string) {
     return this.startInternal(id);
@@ -1037,6 +1115,9 @@ export class Machines extends EventEmitter {
       if (config.firmware === 'uefi') await requireUefiSupport();
       if (config.name !== vm.name) throw new AppError('实例名称创建后不可修改');
       if (config.diskGiB !== vm.diskGiB) throw new AppError('磁盘大小创建后不可修改');
+      if (config.storagePoolId !== undefined &&
+          config.storagePoolId !== (vm.storagePoolId || 'default'))
+        throw new AppError('请使用存储池迁移操作移动已有实例', 409);
       if ((config.distro || 'alpine') !== (vm.distro || 'alpine'))
         throw new AppError('不能更改已有磁盘的发行版');
       const before = { ...vm };
@@ -1535,16 +1616,86 @@ export class Machines extends EventEmitter {
       return this.fingerprint(id);
     });
   }
+  async moveStoragePool(id: string, targetPoolId: string, signal?: AbortSignal,
+    log: (text: string) => void = () => {}) {
+    return this.locked('storage-pools', () => this.locked(id, async () => {
+      const vm = this.get(id);
+      this.requireStopped(id);
+      this.requireMutableConfig(vm);
+      signal?.throwIfAborted();
+      const sourcePoolId = vm.storagePoolId || 'default';
+      if (this.storagePools.hasPendingCleanup(id))
+        throw new AppError('请先清理此前存储池迁移的旧副本', 409);
+      if (sourcePoolId === targetPoolId)
+        return { moved: false, from: sourcePoolId, to: targetPoolId, vm: await this.view(id) };
+      const sourceRoot = await this.storagePools.ensure(sourcePoolId);
+      const targetRoot = await this.storagePools.ensure(targetPoolId);
+      const source = await regularDirectory(vmDir(id));
+      const target = this.storagePools.directory(id, targetPoolId);
+      const stage = join(targetRoot, `.move-${checkedId(id)}-${randomUUID()}`);
+      if (!within(sourceRoot, source) || !within(targetRoot, target) ||
+          !within(targetRoot, stage))
+        throw new AppError('存储池迁移路径超出受控目录', 409);
+      const existing = await lstat(target).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw error;
+      });
+      if (existing) throw new AppError('目标存储池中已有同标识目录，请先检查', 409);
+      log('正在复制并校验实例目录…\n');
+      try {
+        await copyDirectoryVerified(source, stage, signal, log);
+        signal?.throwIfAborted();
+        await rename(stage, target);
+      } catch (error) {
+        await regularDirectory(stage);
+        await rm(stage, { recursive: true, force: true });
+        throw error;
+      }
+      try {
+        await this.storagePools.registerCleanup(id, sourcePoolId, targetPoolId);
+      } catch (error) {
+        await regularDirectory(target);
+        await rm(target, { recursive: true, force: true });
+        throw error;
+      }
+      vm.storagePoolId = targetPoolId === 'default' ? undefined : targetPoolId;
+      this.storagePools.bind(id, targetPoolId);
+      try {
+        await this.save();
+      } catch (error) {
+        vm.storagePoolId = sourcePoolId === 'default' ? undefined : sourcePoolId;
+        this.storagePools.bind(id, sourcePoolId);
+        await regularDirectory(target);
+        await rm(target, { recursive: true, force: true });
+        await this.storagePools.clearCleanup(id, sourcePoolId, targetPoolId);
+        throw error;
+      }
+      let cleanupPending = false;
+      try {
+        await regularDirectory(source);
+        await rm(source, { recursive: true, force: true });
+        await this.storagePools.clearCleanup(id, sourcePoolId, targetPoolId);
+      } catch (error) {
+        cleanupPending = true;
+        log(`旧存储池目录待清理：${String((error as Error).message || error)}\n`);
+      }
+      this.emit('change');
+      return { moved: true, from: sourcePoolId, to: targetPoolId, cleanupPending,
+        vm: await this.view(id) };
+    }));
+  }
   async delete(id: string, expected?: MigrationFingerprint) {
     return this.deleteInternal(id, false, expected);
   }
   private async deleteInternal(id: string, allowIncident = false,
     expected?: MigrationFingerprint) {
-    return this.locked(
+    return this.locked('storage-pools', () => this.locked(
       id,
       async () => {
         this.get(id);
         this.requireStopped(id);
+        if (this.storagePools.hasPendingCleanup(id))
+          throw new AppError('请先清理存储池迁移的旧副本，再删除实例', 409);
         if (expected) {
           const current = await this.fingerprint(id);
           if (current.recordHash !== expected.recordHash ||
@@ -1552,15 +1703,15 @@ export class Machines extends EventEmitter {
               current.diskMtimeMs !== expected.diskMtimeMs)
             throw new AppError('源实例在迁移后已变化，保留源实例，请重新预览', 409);
         }
-        const dir = vmDir(id);
-        // checkedId + fixed VM_ROOT keep recursive operations inside machine storage.
-        await rm(dir, { recursive: true, force: true });
+        const vm = this.get(id);
+        await this.removeVmDirectory(vm);
         this.records.delete(id);
         this.logs.delete(id);
         await this.save();
+        this.storagePools.unbind(id);
       },
       allowIncident,
-    );
+    ));
   }
   async editSnapshot(id: string, snapshotId: string, patch: { name: string; note: string } | null) {
     return this.locked(id, async () => {
@@ -1672,7 +1823,7 @@ export class Machines extends EventEmitter {
     disk: string,
     options: { signal?: AbortSignal; pendingResize?: boolean } = {},
   ) {
-    return this.locked('create', async () => {
+    return this.locked('storage-pools', () => this.locked('create', async () => {
       const { signal, pendingResize } = options;
       const config = createSchema.parse(input);
       if (config.firmware === 'uefi') await requireUefiSupport();
@@ -1693,8 +1844,7 @@ export class Machines extends EventEmitter {
         bootstrapped: false,
         pendingResize: !!pendingResize,
       };
-      const dir = vmDir(vm.id);
-      await mkdir(dir);
+      const dir = await this.prepareVmDirectory(vm);
       let saved = false;
       try {
         signal?.throwIfAborted();
@@ -1724,10 +1874,11 @@ export class Machines extends EventEmitter {
       } catch (error) {
         this.records.delete(vm.id);
         if (saved) await this.save();
-        await rm(dir, { recursive: true, force: true });
+        await this.removeVmDirectory(vm);
+        this.storagePools.unbind(vm.id);
         throw error;
       }
-    });
+    }));
   }
   // Publish a validated standalone disk and rotate its controller key at first boot.
   async adopt(
@@ -1740,7 +1891,7 @@ export class Machines extends EventEmitter {
     projects?: { active: string; projects: { id: string; name: string }[]; configs: Record<string, unknown> },
     migrationOrigin?: VMRecord['migrationOrigin'],
   ) {
-    return this.locked('create', async () => {
+    return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
       if (migrationOrigin && [...this.records.values()].some((vm) =>
         vm.migrationOrigin?.sourceHostId === migrationOrigin.sourceHostId &&
@@ -1758,8 +1909,7 @@ export class Machines extends EventEmitter {
         pendingResize,
         ...(migrationOrigin ? { migrationOrigin } : {}),
       };
-      const dir = vmDir(vm.id);
-      await mkdir(dir);
+      const dir = await this.prepareVmDirectory(vm);
       try {
         await copyFile(disk, join(dir, 'disk.qcow2'));
         await writeFile(join(dir, 'id_rsa'), key, { mode: 0o600 });
@@ -1783,10 +1933,11 @@ export class Machines extends EventEmitter {
         return this.view(vm.id);
       } catch (error) {
         this.records.delete(vm.id);
-        await rm(dir, { recursive: true, force: true });
+        await this.removeVmDirectory(vm);
+        this.storagePools.unbind(vm.id);
         throw error;
       }
-    });
+    }));
   }
   async close() {
     if (this.closeTask) return this.closeTask;

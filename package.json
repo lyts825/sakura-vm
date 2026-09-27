@@ -23,6 +23,7 @@
     "test:features": "tsx scripts/smoke-features.ts",
     "test:engineering": "tsx scripts/smoke-engineering.ts",
     "test:storage": "tsx scripts/smoke-storage.ts",
+    "test:storage-pools": "tsx scripts/smoke-storage-pools.ts",
     "test:golden-images": "tsx scripts/smoke-golden-images.ts",
     "test:signed-bundles": "tsx scripts/smoke-signed-bundles.ts",
     "test:hardware-matrix": "tsx scripts/smoke-hardware-matrix.ts",

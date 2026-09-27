@@ -1902,9 +1902,15 @@ function CreateModal({
     forwards: [],
   });
   const [boot, setBoot] = useState(true);
+  const [poolName, setPoolName] = useState('');
+  const [poolPath, setPoolPath] = useState('');
+  const [poolBusy, setPoolBusy] = useState(false);
+  const [poolError, setPoolError] = useState('');
   const hasImages = usePlugin('images'),
     hasProjects = usePlugin('projects');
   const images = useRemote<ImageInfo[]>(api, '/images', hasImages);
+  const pools = useRemote<{ pools: { id: string; name: string; available: boolean;
+    freeBytes: number | null }[] }>(api, '/storage-pools');
   const selectedImage = hasImages
     ? images.data?.find((i) => i.id === (config.distro || 'alpine'))
     : { ready: true };
@@ -1981,6 +1987,43 @@ function CreateModal({
           </span>
           <small>按实际写入占用空间，无需预先分配全部容量。</small>
         </label>
+        <label>
+          存储池
+          <select aria-label="新实例存储池" value={config.storagePoolId || 'default'}
+            onChange={(e) => set({ ...config,
+              storagePoolId: e.target.value === 'default' ? undefined : e.target.value })}>
+            {(pools.data?.pools || [{ id: 'default', name: '默认数据目录', available: true,
+              freeBytes: null }]).map((pool) =>
+              <option key={pool.id} value={pool.id} disabled={!pool.available}>
+                {pool.name}{pool.available ? '' : '（目录不可用）'}
+              </option>)}
+          </select>
+          <small>实例磁盘和随附文件写入所选目录；控制记录仍保存在 Sakura 数据目录。</small>
+        </label>
+        <details>
+          <summary>新增本机存储池</summary>
+          <label>名称<input value={poolName} maxLength={60}
+            onChange={(event) => setPoolName(event.target.value)} /></label>
+          <label>已存在的绝对目录<input value={poolPath}
+            onChange={(event) => setPoolPath(event.target.value)} /></label>
+          <button type="button" className="secondary compact"
+            disabled={poolBusy || !poolName.trim() || !poolPath.trim()}
+            onClick={() => {
+              setPoolBusy(true);
+              setPoolError('');
+              void api<{ created: { id: string } }>('/storage-pools', 'POST',
+                { mode: 'create', name: poolName, path: poolPath })
+                .then((result) => {
+                  set({ ...config, storagePoolId: result.created.id });
+                  pools.reload();
+                  setPoolName('');
+                  setPoolPath('');
+                })
+                .catch((error) => setPoolError((error as Error).message))
+                .finally(() => setPoolBusy(false));
+            }}>创建存储池</button>
+          {poolError && <p role="alert">{poolError}</p>}
+        </details>
         <label className="checkbox-label">
           <input type="checkbox" checked={boot} onChange={(e) => setBoot(e.target.checked)} />
           创建后立即启动
@@ -2014,6 +2057,7 @@ function ConfigPanel({
     memoryMiB: vm.memoryMiB,
     accelerator: vm.accelerator,
     diskGiB: vm.diskGiB,
+    storagePoolId: vm.storagePoolId,
     forwards: vm.forwards,
     distro: vm.distro,
     template: vm.template,

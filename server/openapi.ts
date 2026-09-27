@@ -11,6 +11,7 @@ import { featureRolloutRequest } from './feature-rollouts.ts';
 import { hostPeerRequest } from './host-peers.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
+import { storagePoolInput } from './storage-pools.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
 
 const response = (schema: Record<string, unknown> = {}, media = 'application/json') => ({
@@ -42,6 +43,10 @@ const core: {
   },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
+  { id: 'storage-pools.get', method: 'GET', path: '/api/storage-pools',
+    title: '本机存储池容量、实例分配与迁移清理状态', inspect: true },
+  { id: 'storage-pools.action', method: 'POST', path: '/api/storage-pools',
+    title: '创建、移除或清理存储池以及迁移停机实例', body: request(storagePoolInput) },
   {
     id: 'native.get',
     method: 'GET',

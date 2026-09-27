@@ -177,8 +177,8 @@ export const nextFeatureCatalog = [
     '存储池管理',
     '存储与灾备',
     'P0',
-    '登记 Sakura 数据目录和可用存储池元数据。',
-    'experimental',
+    '创建本机存储池、分配新实例并在停机后校验迁移已有实例。',
+    'available',
   ],
   ['storage-tiering', 'SSD/HDD 分层', '存储与灾备', 'P1', '保存热数据与冷数据的分层策略。', 'planned'],
   [
@@ -925,6 +925,9 @@ export class NextFeatures {
           signal || new AbortController().signal, log)
         : await this.browserIde.view(id, merged, signal)), adapter };
     }
+    if (spec.id === 'storage-pools')
+      return { ...(await this.machines.storagePools.run(id, merged, action,
+        signal, log)), adapter };
     if (spec.id === 'graphql-api')
       return {
         ready: true,
@@ -1074,14 +1077,6 @@ export class NextFeatures {
         reason: '这里只检查工具或环境；对应功能尚无完整执行器。',
       };
     }
-    if (spec.id === 'storage-pools')
-      return {
-        ready: false,
-        executed: false,
-        adapter,
-        host: this.hostSnapshot(),
-        reason: '当前只提供本机信息；不代表硬件验证、多主机管理或存储池已经实现。',
-      };
     return {
       ready: false,
       executed: false,

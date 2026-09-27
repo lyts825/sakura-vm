@@ -32,6 +32,7 @@ import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
 import { NotebookEnvironments } from './notebook-environments.ts';
 import { BrowserIde } from './browser-ide.ts';
+import { storagePoolInput } from './storage-pools.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 
@@ -450,6 +451,12 @@ async function main() {
         plugins: [...features.enabled],
         session: session.view(),
       });
+    if (route[1] === 'storage-pools' && route.length === 2) {
+      if (req.method === 'GET') return send(res, await machines.storagePools.view());
+      if (req.method === 'POST')
+        return send(res, await machines.storagePools.run(undefined,
+          storagePoolInput.parse(await authorizedBody(req)), 'run'));
+    }
     if (route[1] === 'vms' && route.length === 2) {
       if (req.method === 'GET') return send(res, await machines.list());
       if (req.method === 'POST') {
