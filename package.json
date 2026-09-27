@@ -41,6 +41,7 @@
     "test:auto-remediation": "tsx scripts/smoke-auto-remediation.ts",
     "test:package-cache": "tsx scripts/smoke-package-cache.ts",
     "test:security-scan": "tsx scripts/smoke-security-scan.ts",
+    "test:project-cache": "tsx scripts/smoke-project-cache.ts",
     "test:backup-recovery": "tsx scripts/smoke-backup-recovery.ts",
     "test:observability": "tsx scripts/smoke-observability.ts",
     "test:network": "tsx scripts/smoke-network.ts",

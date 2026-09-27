@@ -22,6 +22,7 @@ import type { SecretRotationItem } from './secret-rotation.ts';
 import { hostPower, powerPolicy, powerDecision, type PowerSample } from './power-policy.ts';
 import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
 import { scanGuestVulnerabilities } from './security-vulnerabilities.ts';
+import { dependencyManagerSchema, projectDependencyCacheScript } from './project-dependency-cache.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -264,6 +265,8 @@ export type FeatureAction =
         | 'lock'
         | 'lock-check'
         | 'install-locked'
+        | 'prefetch-dependencies'
+        | 'install-cached-dependencies'
         | 'worktree-list'
         | 'worktree-add'
         | 'worktree-remove'
@@ -274,6 +277,7 @@ export type FeatureAction =
       name?: string;
       port?: number;
       password?: string;
+      manager?: 'npm' | 'pip';
     }
   | { action: 'search'; query: string; path?: string; content?: boolean }
   | { action: 'package'; operation: 'list' | 'search' | 'install' | 'remove' | 'update' |
@@ -469,7 +473,7 @@ export class FeatureSuite {
       result.snapshots = vm.snapshots.length;
     } else if (featureId === 'package-cache') {
       result.ready = true;
-      result.reason = '工作空间 → 软件包：预取软件包和依赖到客户机磁盘缓存，查看缓存后可完全禁止网络地安装。';
+      result.reason = '工作空间 → 软件包可预取并离线安装系统包；开发任务支持按 npm 锁文件或固定版本 requirements.txt 缓存项目依赖。';
     } else if (featureId === 'security-scan') {
       result.ready = this.machines.state(id) === 'running';
       result.reason = '工作空间 → 安全扫描：检查客户机 SSH 和系统文件，并用 OSV 匹配已安装源包的漏洞；查询失败会明确显示未完成。';
@@ -599,6 +603,8 @@ export class FeatureSuite {
         'lock',
         'lock-check',
         'install-locked',
+        'prefetch-dependencies',
+        'install-cached-dependencies',
         'worktree-list',
         'worktree-add',
         'worktree-remove',
@@ -608,6 +614,8 @@ export class FeatureSuite {
     const branch = input.branch?.trim();
     const path = input.path?.trim();
     const database = input.database;
+    const cacheManager = ['prefetch-dependencies', 'install-cached-dependencies'].includes(operation)
+      ? dependencyManagerSchema.parse(input.manager) : undefined;
     if (operation === 'worktree-add' && (!branch || !/^(?!-)[A-Za-z0-9_./-]{1,128}$/.test(branch)))
       throw new AppError('分支名称无效');
     if (['worktree-add', 'worktree-remove'].includes(operation)) {
@@ -676,6 +684,11 @@ export class FeatureSuite {
             break;
           case 'install-locked':
             command = `cd ${directory}\nif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then npm ci; elif [ -f yarn.lock ] && command -v yarn >/dev/null; then yarn install --frozen-lockfile; elif [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null; then pnpm install --frozen-lockfile; elif [ -f requirements.txt ]; then python3 -m pip install -r requirements.txt; elif [ -f Cargo.lock ]; then cargo fetch --locked; elif [ -f go.sum ]; then go mod download; else echo '没有识别到受支持的锁文件' >&2; exit 1; fi`;
+            break;
+          case 'prefetch-dependencies':
+          case 'install-cached-dependencies':
+            command = projectDependencyCacheScript(project.directory,
+              this.workspaces.projects.current(id), cacheManager!, operation);
             break;
           case 'worktree-list':
             command = `cd ${directory}\ngit worktree list --porcelain`;
@@ -746,7 +759,7 @@ export class FeatureSuite {
         title: `开发工具 · ${operation}`,
         vmId: id,
         projectId: this.workspaces.projects.current(id),
-        action: `dev:${operation}`,
+        action: `dev:${operation}${cacheManager ? `:${cacheManager}` : ''}`,
       },
     );
   }
@@ -1024,6 +1037,8 @@ export class FeatureSuite {
               'lock',
               'lock-check',
               'install-locked',
+              'prefetch-dependencies',
+              'install-cached-dependencies',
               'worktree-list',
               'worktree-add',
               'worktree-remove',
@@ -1035,6 +1050,7 @@ export class FeatureSuite {
             name: z.string().optional(),
             port: z.number().int().min(1024).max(65535).optional(),
             password: z.string().optional(),
+            manager: dependencyManagerSchema.optional(),
           })
           .strict(),
         z

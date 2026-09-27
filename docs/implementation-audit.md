@@ -123,7 +123,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 网络配置档案 / `network-profiles` | 部分实现 | 实际 Schema 只有代理和软件源；缺目录承诺的 DNS/NAT 档案管理。 | [server/network-profiles.ts:32](D:/27247/Desktop/Sakura/server/network-profiles.ts:32) |
 | VPN 集成 / `vpn-integration` | 未实现 | 没有 WireGuard/Tailscale 连接管理；相关平台项仅检查客户机工具。 | [server/feature-suite.ts:320](D:/27247/Desktop/Sakura/server/feature-suite.ts:320) |
 | 网络诊断工具箱 / `network-diagnostics` | 部分实现 | 有 DNS、HTTPS、监听端口检查；缺完整路由诊断及结构化故障定位。 | [server/feature-suite.ts:611](D:/27247/Desktop/Sakura/server/feature-suite.ts:611) |
-| 离线软件包缓存 / `package-cache` | 已有专用操作 | 支持 Alpine/APT 系统软件包预取、清单、校验、离线安装和定向清理；项目级 npm/pip 缓存尚未包含。 | [docs/package-cache.md](package-cache.md) |
+| 离线软件包缓存 / `package-cache` | 已有专用操作 | 支持 Alpine/APT 系统软件包及 npm/pip 项目依赖的预取、校验和离线安装；系统包缓存还支持清单和定向清理。 | [docs/package-cache.md](package-cache.md) |
 | 服务运行面板 / `service-dashboard` | 已有专用操作 | 项目服务依赖、日志、启停与健康检查有实际服务实现。 | [server/workspaces.ts:107](D:/27247/Desktop/Sakura/server/workspaces.ts:107) |
 | GPU 与 3D 加速 / `gpu-acceleration` | 未实现 | 没有 GPU/3D 转发；WHPX 是 CPU 虚拟化加速，不能代替 GPU 功能。 | [docs/linux-desktop.md:57](D:/27247/Desktop/Sakura/docs/linux-desktop.md:57) |
 | 音频与摄像头转发 / `audio-video` | 未实现 | 现有 noVNC 桌面未实现声音、摄像头或麦克风转发。 | [docs/linux-desktop.md:57](D:/27247/Desktop/Sakura/docs/linux-desktop.md:57) |

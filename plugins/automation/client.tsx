@@ -224,11 +224,14 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     | 'lock'
     | 'lock-check'
     | 'install-locked'
+    | 'prefetch-dependencies'
+    | 'install-cached-dependencies'
     | 'worktree-list'
     | 'worktree-add'
     | 'worktree-remove'
     | 'database'
   >('test');
+  const [dependencyManager, setDependencyManager] = useState<'npm' | 'pip'>('npm');
   const [worktreeBranch, setWorktreeBranch] = useState('');
   const [worktreePath, setWorktreePath] = useState('');
   const [database, setDatabase] = useState<'postgres' | 'redis' | 'mysql'>('postgres');
@@ -334,6 +337,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       await request(`/vms/${active.id}/advanced`, 'POST', {
         action: 'dev',
         operation: devOperation,
+        ...(['prefetch-dependencies', 'install-cached-dependencies'].includes(devOperation)
+          ? { manager: dependencyManager } : {}),
         ...(worktreeBranch ? { branch: worktreeBranch } : {}),
         ...(worktreePath ? { path: worktreePath } : {}),
         ...(devOperation === 'database' ? { database } : {}),
@@ -1137,12 +1142,24 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   <option value="lock">生成环境锁文件</option>
                   <option value="lock-check">校验环境锁文件</option>
                   <option value="install-locked">按锁文件安装依赖</option>
+                  <option value="prefetch-dependencies">预取项目依赖到离线缓存</option>
+                  <option value="install-cached-dependencies">从缓存离线安装项目依赖</option>
                   <option value="worktree-list">列出 Git Worktree</option>
                   <option value="worktree-add">创建 Git Worktree</option>
                   <option value="worktree-remove">删除 Git Worktree</option>
                   <option value="database">创建数据库容器</option>
                 </select>
               </label>
+              {['prefetch-dependencies', 'install-cached-dependencies'].includes(devOperation) && (
+                <label>
+                  项目依赖类型
+                  <select value={dependencyManager}
+                    onChange={(event) => setDependencyManager(event.target.value as typeof dependencyManager)}>
+                    <option value="npm">npm 锁文件</option>
+                    <option value="pip">Python 固定版本 requirements.txt</option>
+                  </select>
+                </label>
+              )}
               {(devOperation === 'worktree-add' || devOperation === 'worktree-remove') && (
                 <>
                   <label>
@@ -1209,6 +1226,9 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 </>
               )}
             </div>
+            {['prefetch-dependencies', 'install-cached-dependencies'].includes(devOperation) && (
+              <p className="subtle-note">预取需联网；离线安装校验依赖文件和缓存，不运行 npm 安装脚本。Python 依赖安装到项目的 .sakura/venv。</p>
+            )}
             <button
               className="secondary compact"
               disabled={

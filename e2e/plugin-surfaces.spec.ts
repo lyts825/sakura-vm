@@ -3077,6 +3077,38 @@ test('security scan shows OSV package matches and never reports an incomplete lo
   await expect(page.getByText('未发现明显问题')).toHaveCount(0);
 });
 
+test('development tasks submit a selected npm or pip dependency cache operation', async ({ page }) => {
+  await app(page, ['projects', 'automation'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  const submissions: unknown[] = [];
+  await page.route('**/api/vms/*/advanced*', (route) => {
+    if (route.request().method() === 'POST') {
+      submissions.push(route.request().postDataJSON());
+      return route.fulfill({ json: {} });
+    }
+    return route.fulfill({ json: {
+      settings: { schedule: { enabled: false, idleMinutes: 0, idleAction: 'stop' },
+        alerts: { enabled: false, cpuPercent: 90, memoryPercent: 90, diskPercent: 90,
+          cooldownMinutes: 30, taskFailures: true, serviceFailures: true } },
+      features: [], presets: {}, events: [], history: [], job: null, devJob: null,
+    } });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const section = page.locator('.feature-card').filter({ has: page.getByRole('heading', { name: '开发任务' }) });
+  await section.getByRole('combobox', { name: '操作' }).selectOption('prefetch-dependencies');
+  await section.getByRole('combobox', { name: '项目依赖类型' }).selectOption('pip');
+  await section.getByRole('button', { name: '提交开发任务' }).click();
+  await expect.poll(() => submissions.length).toBe(1);
+  expect(submissions[0]).toEqual({ action: 'dev', operation: 'prefetch-dependencies', manager: 'pip' });
+  await section.getByRole('combobox', { name: '操作' }).selectOption('install-cached-dependencies');
+  await section.getByRole('combobox', { name: '项目依赖类型' }).selectOption('npm');
+  await section.getByRole('button', { name: '提交开发任务' }).click();
+  await expect.poll(() => submissions.length).toBe(2);
+  expect(submissions[1]).toEqual({ action: 'dev', operation: 'install-cached-dependencies', manager: 'npm' });
+});
+
 test('the empty install shows the core and the current plugin catalog', async ({ page }) => {
   await app(page);
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button')).toHaveCount(3);

@@ -8,7 +8,7 @@
 
 ## 离线软件包缓存
 
-工作空间的软件包面板可对 Alpine APK 及 Debian/Ubuntu APT 软件包预取、查看、离线安装和定向清理。每项缓存保存 SHA-256 清单，安装前校验；真实 Alpine 和 Debian/QEMU 客户机均验证了完整路径，详见 [离线软件包缓存](package-cache.md)。
+工作空间的软件包面板可对 Alpine APK 及 Debian/Ubuntu APT 软件包预取、查看、离线安装和定向清理。开发任务还可预取 npm 锁文件依赖及 Python 固定版本 wheel，再以禁用联网的模式安装。缓存绑定依赖文件并校验 SHA-256；真实 Alpine 和 Debian/QEMU 客户机均验证了系统包路径，Alpine/QEMU 也验证了 npm、pip 项目依赖，详见 [离线软件包缓存](package-cache.md)。
 
 ## 自动修复 Runbook
 

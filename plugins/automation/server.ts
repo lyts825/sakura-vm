@@ -32,6 +32,7 @@ export async function activate(host: PluginContext) {
       );
     }
     if (job.action?.startsWith('dev:')) {
+      const [operationValue, managerValue] = job.action.slice(4).split(':');
       const operation = z
         .enum([
           'test',
@@ -42,15 +43,19 @@ export async function activate(host: PluginContext) {
           'lock',
           'lock-check',
           'install-locked',
+          'prefetch-dependencies',
+          'install-cached-dependencies',
           'worktree-list',
           'worktree-add',
           'worktree-remove',
           'database',
         ])
-        .parse(job.action.slice(4));
+        .parse(operationValue);
       if (['worktree-add', 'worktree-remove', 'database'].includes(operation))
         throw new AppError('此开发任务包含参数，请回到能力中心重新执行');
-      return retryInProject(host, job, () => Promise.resolve(host.suite.dev(id, { operation })));
+      const manager = ['prefetch-dependencies', 'install-cached-dependencies'].includes(operation)
+        ? z.enum(['npm', 'pip']).parse(managerValue) : undefined;
+      return retryInProject(host, job, () => Promise.resolve(host.suite.dev(id, { operation, manager })));
     }
     throw new AppError('请回到原功能页面重新执行');
   });
