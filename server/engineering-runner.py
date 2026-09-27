@@ -929,6 +929,7 @@ CAPABILITY_OPERATIONS = {
     "build-cache", "branch-preview", "onboarding-checklist", "review-threads",
     "workspace-search", "git-worktrees",
     "dependency-report", "runtime-matrix", "reproducible-env", "network-diagnostics",
+    "packet-capture",
 }
 
 # Each probe runs in a killable process: the OS resolver and TLS/header reads can
@@ -1326,7 +1327,81 @@ def directory_revision(root, p):
     return dict(revision=revision, target=p["target"], files=len(data["entries"]))
 
 
+def packet_capture(root, p):
+    interface = p.get('interface', 'eth0')
+    protocol = p.get('protocol', 'any')
+    duration = p.get('durationSeconds', 5)
+    limit = p.get('maxPackets', 100)
+    port = p.get('port')
+    if not re.fullmatch(r'(?:any|[A-Za-z][A-Za-z0-9_.-]{0,14})', interface):
+        raise Failure('网卡名称无效')
+    if protocol not in ('any', 'tcp', 'udp', 'icmp') or not isinstance(duration, int) or not 1 <= duration <= 20 \
+            or not isinstance(limit, int) or not 1 <= limit <= 200:
+        raise Failure('抓包参数超出限制')
+    if port is not None and (not isinstance(port, int) or not 1 <= port <= 65535 or protocol == 'icmp'):
+        raise Failure('端口过滤参数无效')
+    if not shutil.which('tcpdump'):
+        raise Failure('客户机缺少 tcpdump', 127)
+    command = ['tcpdump', '-i', interface, '-p', '-nn', '-tt', '-l', '-q', '-s', '96', '-c', str(limit)]
+    if protocol != 'any':
+        command.append(protocol)
+    if port is not None:
+        if protocol != 'any':
+            command.append('and')
+        command.extend(['port', str(port)])
+    started = time.monotonic()
+    capture = run(command, root, timeout=duration, check=False)
+    elapsed_ms = round((time.monotonic() - started) * 1000)
+    if capture['code'] not in (0, 124):
+        raise Failure('抓包失败，请检查网卡名称与 tcpdump 权限')
+    peers, flows, buckets, protocols = {}, {}, {}, {}
+    first_second = None
+    for line in capture['stdout'].splitlines():
+        match = re.match(r'^(\d{9,}(?:\.\d+)?)\s+(IP6?|ARP)\s+(.+)$', line)
+        if not match:
+            continue
+        second = int(float(match.group(1)))
+        if first_second is None:
+            first_second = second
+        offset = max(0, second - first_second)
+        buckets[offset] = buckets.get(offset, 0) + 1
+        body = match.group(3)
+        if match.group(2) == 'ARP':
+            kind = 'arp'
+        elif re.search(r'\bICMP6?\b', body):
+            kind = 'icmp'
+        elif re.search(r'\bUDP\b', body):
+            kind = 'udp'
+        elif re.search(r'\b(?:tcp|Flags)\b', body):
+            kind = 'tcp'
+        else:
+            kind = 'other'
+        protocols[kind] = protocols.get(kind, 0) + 1
+        if match.group(2) == 'ARP' or ' > ' not in body:
+            continue
+        source, tail = body.split(' > ', 1)
+        if ': ' not in tail:
+            continue
+        destination = tail.split(': ', 1)[0]
+        if not source or not destination:
+            continue
+        for endpoint in (source, destination):
+            if endpoint not in peers:
+                peers[endpoint] = 'peer-' + str(len(peers) + 1)
+        key = (peers[source], peers[destination], kind)
+        flows[key] = flows.get(key, 0) + 1
+    return dict(code=0, interface=interface, filter=dict(protocol=protocol, port=port),
+                elapsedMs=elapsed_ms, stopReason='packet-limit' if capture['code'] == 0 else 'duration',
+                capturedPackets=sum(protocols.values()), protocolCounts=protocols,
+                packetsBySecond=[dict(second=second, packets=count) for second, count in sorted(buckets.items())],
+                flows=[dict(source=source, destination=destination, protocol=kind, packets=count)
+                       for (source, destination, kind), count in sorted(flows.items(), key=lambda item: -item[1])[:20]],
+                redacted=True, payloadIncluded=False, addressesIncluded=False)
+
+
 def capability_execute(root, operation, p):
+    if operation == 'packet-capture':
+        return packet_capture(root, p)
     if operation == 'network-diagnostics':
         return network_diagnostics(root, p)
     if operation == 'dependency-report':

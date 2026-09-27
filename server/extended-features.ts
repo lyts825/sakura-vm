@@ -117,7 +117,7 @@ export const extendedFeatureCatalog = [
   ['gpg-agent-forward', 'GPG Agent 转发', '网络', 'P2', '在确认后转发签名 Agent。', 'planned'],
   ['local-dns-alias', '本地域名别名', '网络', 'P0',
     '为本机入口生成稳定别名，按需同步到 Windows hosts 系统解析。', 'available'],
-  ['packet-capture', '数据包捕获', '网络', 'P1', '采集脱敏网络诊断包。', 'planned'],
+  ['packet-capture', '数据包捕获', '网络', 'P1', '在客户机限时抓包，导出无地址与载荷的匿名流量诊断报告。', 'available'],
   ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为受控调试创建一次性入口。', 'planned'],
   ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2', '检测并配置 TPM 和安全启动链。', 'planned'],
   ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2', '使用宿主机安全凭据解锁密钥。', 'planned'],

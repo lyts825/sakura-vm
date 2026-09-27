@@ -64,6 +64,14 @@ export class CapabilityActions {
       return { featureId, ...await checkFlamegraph(this.machines, id, signal) };
     if (featureId === 'ebpf-profiler')
       return { featureId, ...await checkEbpfProfiler(this.machines, id, signal) };
+    if (featureId === 'packet-capture') {
+      const probe = await this.machines.exec(id,
+        'python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)" && command -v tcpdump >/dev/null && tcpdump -D >/dev/null',
+        10000, signal);
+      return { ready: probe.code === 0, executed: false, featureId,
+        reason: probe.code === 0 ? 'tcpdump 与 Python 已就绪；执行时验证网卡和抓包权限。' :
+          '需要在客户机安装 tcpdump 与 Python 3.9+，并允许抓包。' };
+    }
     if (reportCapabilities.has(featureId) || featureId === 'cross-vm-copy')
       return { ready: true, executed: false, featureId, reason: '实例已运行；执行时检查目标与采样结果。' };
     const probe = await this.machines.exec(

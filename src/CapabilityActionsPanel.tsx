@@ -420,6 +420,16 @@ export function CapabilityActionsPanel({
               </p>}
             </div>
           )}
+          {selected === 'packet-capture' && typeof result?.capturedPackets === 'number' && (
+            <div className="feature-card">
+              <p>已捕获 {result.capturedPackets} 个数据包 ·
+                {result.stopReason === 'packet-limit' ? '达到包数上限' : '达到采集时限'}</p>
+              <p>协议分布：{Object.entries(result.protocolCounts || {})
+                .map(([protocol, count]) => `${protocol} ${count}`)
+                .join(' · ') || '无匹配数据包'}</p>
+              <p className="subtle-note">结果只包含协议、时间桶和临时匿名流标识。可使用“导出完整结果”保存诊断报告。</p>
+            </div>
+          )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&
             typeof result?.samples === 'number' && (
               <div className="feature-card">

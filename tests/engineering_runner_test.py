@@ -59,6 +59,38 @@ class Engineering(unittest.TestCase):
             with self.assertRaises(runner.Failure):
                 self.execute("hash-manifest", path="src")
 
+    def test_packet_capture_returns_only_anonymous_metadata_and_bounds_its_command(self):
+        captured = {"code": 124, "stdout": (
+            "1780000000.100 IP 192.0.2.10.50123 > 198.51.100.20.443: tcp 0\n"
+            "1780000001.200 IP 192.0.2.10.50123 > 198.51.100.20.443: tcp 22 secret-query.example\n"
+            "1780000001.300 IP 198.51.100.20.443 > 192.0.2.10.50123: tcp 0\n"
+        ), "stderr": "listening on eth0"}
+        with patch.object(runner.shutil, 'which', return_value='/usr/bin/tcpdump'), \
+                patch.object(runner, 'run', return_value=captured) as invoke:
+            result = runner.capability_execute(self.root, 'packet-capture', {
+                'interface': 'eth0', 'durationSeconds': 2, 'maxPackets': 3,
+                'protocol': 'tcp', 'port': 443,
+            })
+        args = invoke.call_args.args[0]
+        self.assertEqual(args[:3], ['tcpdump', '-i', 'eth0'])
+        self.assertEqual(args[-4:], ['tcp', 'and', 'port', '443'])
+        self.assertEqual(invoke.call_args.kwargs['timeout'], 2)
+        self.assertEqual(result['capturedPackets'], 3)
+        self.assertEqual(result['protocolCounts'], {'tcp': 3})
+        self.assertEqual(result['packetsBySecond'], [
+            {'second': 0, 'packets': 1}, {'second': 1, 'packets': 2},
+        ])
+        self.assertEqual(result['stopReason'], 'duration')
+        self.assertEqual(result['flows'][0]['source'], 'peer-1')
+        report = json.dumps(result)
+        for secret in ('192.0.2.10', '198.51.100.20', 'secret-query.example', '50123'):
+            self.assertNotIn(secret, report)
+        self.assertFalse(result['payloadIncluded'])
+        with self.assertRaises(runner.Failure):
+            runner.packet_capture(self.root, {'interface': '../eth0'})
+        with self.assertRaises(runner.Failure):
+            runner.packet_capture(self.root, {'protocol': 'icmp', 'port': 80})
+
     @unittest.skipIf(os.name == "nt", "Linux filename and symlink semantics are verified in the guest")
     def test_windows_conflicts_and_symlinks_are_reported_or_rejected(self):
         self.write("src/Readme", "one")

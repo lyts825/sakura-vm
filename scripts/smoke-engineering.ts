@@ -85,7 +85,7 @@ try {
   console.log('Installing guest test tools');
   const install = await machines.exec(
     id,
-    'apk add --no-cache python3 git coreutils iproute2 acl openssl nodejs npm && mkdir -p /workspace/regression/server /workspace/regression/tests /workspace/app',
+    'apk add --no-cache python3 git coreutils iproute2 acl openssl nodejs npm tcpdump && mkdir -p /workspace/regression/server /workspace/regression/tests /workspace/app',
     600000,
   );
   assert.equal(install.code, 0, install.stderr);
@@ -164,6 +164,20 @@ try {
   const { CapabilityActions } = await import('../server/capability-actions.ts');
   const capabilities = new CapabilityActions(machines, features.workspaces);
   const capabilitySignal = new AbortController().signal;
+  const capture = capabilities.run(id, 'packet-capture', {
+    interface: 'eth0', durationSeconds: 3, maxPackets: 200, protocol: 'tcp', port: 22,
+  }, capabilitySignal);
+  await delay(500);
+  await machines.exec(id, 'echo capture-trigger');
+  const captured = await capture;
+  assert.equal(captured.code, 0, JSON.stringify(captured));
+  assert.ok('capturedPackets' in captured, JSON.stringify(captured));
+  assert.ok('redacted' in captured && 'payloadIncluded' in captured, JSON.stringify(captured));
+  assert.ok(Number(captured.capturedPackets) > 0, JSON.stringify(captured));
+  assert.equal(captured.redacted, true);
+  assert.equal(captured.payloadIncluded, false);
+  assert.doesNotMatch(JSON.stringify(captured), /\b(?:\d{1,3}\.){3}\d{1,3}\b/);
+  console.log('PASS bounded guest tcpdump capture with anonymous flows');
   const created = await capabilities.run(
     id,
     'git-worktrees',

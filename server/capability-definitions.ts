@@ -819,6 +819,19 @@ export const capabilityDefinitions = {
     {},
     '读取真实接口、地址、路由和监听端口，连同实例端口转发生成拓扑。',
   ),
+  'packet-capture': action(
+    '脱敏数据包捕获',
+    'extended',
+    {
+      interface: z.string().regex(/^(?:any|[a-zA-Z][a-zA-Z0-9_.-]{0,14})$/).default('eth0'),
+      durationSeconds: z.number().int().min(1).max(20).default(5),
+      maxPackets: z.number().int().min(1).max(200).default(100),
+      protocol: z.enum(['any', 'tcp', 'udp', 'icmp']).default('any'),
+      port: z.number().int().min(1).max(65535).optional(),
+    },
+    { interface: 'eth0', durationSeconds: 5, maxPackets: 100, protocol: 'any' },
+    '在客户机使用 tcpdump 捕获限量数据包；报告仅含协议、时间桶和一次性匿名流标识，不保存原始载荷或 IP/MAC 地址。需要 tcpdump 与抓包权限。',
+  ),
   'code-search-index': action(
     '代码搜索索引',
     'next',
