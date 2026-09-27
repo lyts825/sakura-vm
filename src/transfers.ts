@@ -15,10 +15,11 @@ type Options = {
   files: File[];
   url: (name: string) => string;
   token: string;
+  fileLockToken?: (name: string) => string | undefined;
   signal: AbortSignal;
   progress: (value: UploadProgress) => void;
 };
-export async function uploadFiles({ files, url, token, signal, progress }: Options) {
+export async function uploadFiles({ files, url, token, fileLockToken, signal, progress }: Options) {
   for (const file of files)
     if (file.size > 2 * 1024 ** 3) throw new Error(`${file.name} 超过单文件 2 GiB 上限`);
   const total = files.reduce((sum, file) => sum + file.size, 0);
@@ -29,8 +30,9 @@ export async function uploadFiles({ files, url, token, signal, progress }: Optio
       progress({ name: file.name, index: index + 1, count: files.length, loaded: completed + loaded, total });
     report(0);
     if (file.size >= 8 * 1024 ** 2) {
-      await resumableUpload(file, url(file.name), token, signal, (loaded, phase) =>
-        progress({
+      await resumableUpload(
+        file, url(file.name), token, signal,
+        (loaded, phase) => progress({
           name: file.name,
           index: index + 1,
           count: files.length,
@@ -38,6 +40,7 @@ export async function uploadFiles({ files, url, token, signal, progress }: Optio
           total,
           phase,
         }),
+        fileLockToken?.(file.name),
       );
       completed += file.size;
       continue;
@@ -62,6 +65,8 @@ export async function uploadFiles({ files, url, token, signal, progress }: Optio
       try {
         xhr.open('PUT', url(file.name));
         xhr.setRequestHeader('X-Sakura-Token', token);
+        const lease = fileLockToken?.(file.name);
+        if (lease) xhr.setRequestHeader('X-Sakura-File-Lock', lease);
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.upload.onprogress = (event) => report(Math.min(file.size, event.loaded));
         xhr.onload = () => {

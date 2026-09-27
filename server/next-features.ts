@@ -450,7 +450,7 @@ export const nextFeatureCatalog = [
   ['shared-terminal', '共享终端', '协作与团队', 'P0', '保存共享终端会话和成员访问状态。', 'planned'],
   ['shared-desktop-view', '共享桌面视图', '协作与团队', 'P1', '保存只读桌面查看会话。', 'planned'],
   ['session-handoff', '会话交接', '协作与团队', 'P0', '保存可恢复的会话交接令牌元数据。', 'planned'],
-  ['file-locks', '文件锁', '协作与团队', 'P0', '登记项目文件锁和过期时间。', 'planned'],
+  ['file-locks', '文件锁', '协作与团队', 'P0', '在文件工作台获取、续租和释放文件锁，并阻止其他文件工作台写入修改锁定路径。', 'available'],
   ['review-threads', '行级评审线程', '协作与团队', 'P1', '保存文件、行号和评审意见线程。', 'available'],
   ['project-permissions', '项目权限', '协作与团队', 'P0', '保存项目成员和角色权限。', 'planned'],
   ['team-templates', '团队模板', '协作与团队', 'P1', '保存可复制的项目和资源模板。', 'planned'],
@@ -756,6 +756,13 @@ export class NextFeatures {
         adapter,
         message:
           '启用备份策略插件，在停止实例的快照页使用“备份文件恢复”，选择备份、分区和文件；提取后下载，不覆盖当前磁盘。',
+      };
+    if (spec.id === 'file-locks')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '启用文件工作台插件，在编辑器中获取文件锁。锁定后自动续租；保存、恢复、上传和文件操作会检查冲突，关闭编辑器可释放锁。',
       };
     if (spec.id === 'desktop-recording')
       return {

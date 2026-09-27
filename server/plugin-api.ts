@@ -9,6 +9,7 @@ import { pluginDataFile } from './plugin-data.ts';
 // Only service slots belong here. Host lifecycle methods can never be owned by a plugin.
 export const SERVICE_KEYS = [
   'files',
+  'fileLocks',
   'images',
   'bundles',
   'downloads',

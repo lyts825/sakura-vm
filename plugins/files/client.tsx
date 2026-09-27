@@ -105,6 +105,10 @@ export function FileBrowser({
   const [line, setLine] = useState<{ path: string; number?: number }>({ path: '' });
   const [draftError, setDraftError] = useState(''),
     [conflicts, setConflicts] = useState<Record<string, { content: string; version: string }>>({});
+  const [leases, setLeases] = useState<Record<string, { token: string; expiresAt: string }>>({});
+  const leaseRef = useRef(leases), requestRef = useRef(request);
+  leaseRef.current = leases;
+  requestRef.current = request;
   const [diagnostics, setDiagnostics] = useState<{ message: string; line?: number; column?: number }[]>([]);
   const conflict = edit ? conflicts[edit.id] : null;
   const setConflict = (value: { content: string; version: string } | null) => {
@@ -172,6 +176,44 @@ export function FileBrowser({
       setDraftError('浏览器无法保存草稿，请及时保存文件。');
     }
   }, [workspace.drafts, draftKey]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      for (const [lockedPath, lease] of Object.entries(leaseRef.current))
+        void requestRef.current<{ expiresAt: string }>(
+          `/vms/${vm.id}/file-lock?path=${encodeURIComponent(lockedPath)}`,
+          'POST',
+          { action: 'renew', token: lease.token },
+        ).then((value) => setLeases((current) => current[lockedPath]?.token === lease.token
+          ? { ...current, [lockedPath]: { ...lease, expiresAt: value.expiresAt } }
+          : current)).catch(() => {
+          setLeases((current) => {
+            if (current[lockedPath]?.token !== lease.token) return current;
+            const next = { ...current };
+            delete next[lockedPath];
+            return next;
+          });
+          setError('文件锁续租失败；请重新获取后再保存。');
+        });
+    }, 45000);
+    return () => {
+      window.clearInterval(timer);
+      for (const [lockedPath, lease] of Object.entries(leaseRef.current))
+        void requestRef.current(`/vms/${vm.id}/file-lock?path=${encodeURIComponent(lockedPath)}`,
+          'POST', { action: 'release', token: lease.token }).catch(() => {});
+    };
+  }, [vm.id]);
+  const releaseLease = async (lockedPath: string) => {
+    const lease = leaseRef.current[lockedPath];
+    if (!lease) return;
+    await request(`/vms/${vm.id}/file-lock?path=${encodeURIComponent(lockedPath)}`,
+      'POST', { action: 'release', token: lease.token });
+    setLeases((current) => {
+      if (current[lockedPath]?.token !== lease.token) return current;
+      const next = { ...current };
+      delete next[lockedPath];
+      return next;
+    });
+  };
   const [overwrite, setOverwrite] = useState(false),
     [progress, setProgress] = useState<UploadProgress | null>(null),
     [dragging, setDragging] = useState(false);
@@ -234,6 +276,7 @@ export function FileBrowser({
         path: filePath,
         destination,
         recursive,
+        ...(leases[filePath]?.token ? { lockToken: leases[filePath].token } : {}),
       });
       await refresh();
     }, '文件操作已完成');
@@ -285,6 +328,7 @@ export function FileBrowser({
           content: submitted.content,
           overwrite: !submitted.fresh,
           expectedVersion: submitted.version,
+          ...(leases[submitted.path]?.token ? { lockToken: leases[submitted.path].token } : {}),
         });
         setWorkspace((current) => ({
           ...current,
@@ -318,6 +362,7 @@ export function FileBrowser({
         await uploadFiles({
           files,
           token,
+          fileLockToken: (name) => leases[target(name)]?.token,
           signal: abort.signal,
           url: (name) =>
             `/api/vms/${vm.id}/transfer?path=${encodeURIComponent(target(name))}&overwrite=${overwrite ? 1 : 0}`,
@@ -493,7 +538,11 @@ export function FileBrowser({
                         await request(
                           `/vms/${vm.id}/history`,
                           'POST',
-                          { action: 'restore', id: item.id, ...(expectedVersion ? { expectedVersion } : {}) },
+                          {
+                            action: 'restore', id: item.id,
+                            ...(expectedVersion ? { expectedVersion } : {}),
+                            ...(leases[item.path]?.token ? { lockToken: leases[item.path].token } : {}),
+                          },
                           signal,
                         );
                         history.reload();
@@ -644,6 +693,7 @@ export function FileBrowser({
               aria-label="关闭编辑器"
               onClick={async () => {
                 if (await leave('discard')) {
+                  void releaseLease(edit.path).catch((error) => setError((error as Error).message));
                   setEdit(null);
                   setConflict(null);
                 }
@@ -651,6 +701,29 @@ export function FileBrowser({
             >
               <X size={16} />
             </button>
+          </div>
+          <div className="feature-actions">
+            {leases[edit.path] ? (
+              <>
+                <span role="status">此编辑器已锁定至 {new Date(leases[edit.path].expiresAt).toLocaleTimeString()}</span>
+                <button className="secondary compact" disabled={action.busy}
+                  onClick={() => void action.run(() => releaseLease(edit.path), '文件锁已释放')}>
+                  释放文件锁
+                </button>
+              </>
+            ) : (
+              <button className="secondary compact" disabled={action.busy}
+                onClick={() => void action.run(async () => {
+                  const value = await request<{ token: string; expiresAt: string }>(
+                    `/vms/${vm.id}/file-lock?path=${encodeURIComponent(edit.path)}`,
+                    'POST', { action: 'acquire' },
+                  );
+                  setLeases((current) => ({ ...current, [edit.path]: value }));
+                }, '文件锁已获取')}>
+                获取文件锁
+              </button>
+            )}
+            <span className="muted">租约每 45 秒续期；锁定期间文件工作台的其他写入不能修改此路径。</span>
           </div>
           <label>
             文件路径

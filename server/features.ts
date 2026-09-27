@@ -29,6 +29,7 @@ import type { CodeIntelligence } from './code-intelligence.ts';
 import type { ExtendedFeatures } from './extended-features.ts';
 import type { FeatureSuite } from './feature-suite.ts';
 import type { FileHistory } from './file-history.ts';
+import type { FileLocks } from './file-locks.ts';
 import type { NextFeatures } from './next-features.ts';
 import type { Pipelines } from './pipelines.ts';
 import type { RuntimeVersions } from './runtime-versions.ts';
@@ -81,6 +82,7 @@ export class Features {
   containers!: Containers;
   migration!: DataMigration;
   history!: FileHistory;
+  fileLocks!: FileLocks;
   pipelines!: Pipelines;
   runtimes!: RuntimeVersions;
   intelligence!: CodeIntelligence;

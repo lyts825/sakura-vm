@@ -14,6 +14,7 @@ export async function resumableUpload(
   token: string,
   signal: AbortSignal,
   progress: (bytes: number, phase: string) => void,
+  fileLockToken?: string,
 ) {
   const destination = new URL(transferUrl, window.location.origin);
   const endpoint = destination.pathname.replace(/\/transfer$/, '/uploads');
@@ -23,6 +24,7 @@ export async function resumableUpload(
       signal,
       headers: {
         'X-Sakura-Token': token,
+        ...(fileLockToken ? { 'X-Sakura-File-Lock': fileLockToken } : {}),
         'Content-Type': method === 'PUT' ? 'application/octet-stream' : 'application/json',
       },
       body,

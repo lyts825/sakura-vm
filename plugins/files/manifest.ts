@@ -7,11 +7,12 @@ export const manifest = definePlugin({
   category: 'workspace',
   requires: [pin('transfers')],
   optional: [pin('projects'), pin('migration')],
-  services: ['files', 'history'],
+  services: ['files', 'history', 'fileLocks'],
   contributes: {
     http: [
       http('/api/vms/:vmId/files', ['GET']),
       http('/api/vms/:vmId/file', ['GET', 'PUT']),
+      http('/api/vms/:vmId/file-lock', ['GET', 'POST']),
       http('/api/vms/:vmId/history', ['GET', 'POST'], true),
       http('/api/vms/:vmId/transfer', ['GET', 'PUT']),
       http('/api/vms/:vmId/file-operation', ['POST']),

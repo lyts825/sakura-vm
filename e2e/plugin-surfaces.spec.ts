@@ -1924,6 +1924,13 @@ test('file conflict editor combines independent changes and saves against the la
   await page.route('**/api/vms/*/history*', (route) => route.fulfill({ json: { items: [] } }));
   await page.route('**/api/vms/*/files?*', (route) => route.fulfill({ json: [] }));
   let saved: any;
+  const lockToken = '84b78682-911e-4383-91af-4242e38d55a7';
+  await page.route('**/api/vms/*/file-lock?*', (route) => {
+    const action = route.request().postDataJSON()?.action;
+    return route.fulfill({ json: action === 'acquire'
+      ? { token: lockToken, expiresAt: '2030-01-01T00:00:00.000Z' }
+      : { released: '/workspace/file.txt' } });
+  });
   await page.route('**/api/vms/*/file', (route) => {
     const input = route.request().postDataJSON();
     if (input.expectedVersion !== 'new-version')
@@ -1940,6 +1947,8 @@ test('file conflict editor combines independent changes and saves against the la
   await page.getByRole('button', { name: '三方合并', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '共同版本', exact: true })).toHaveValue('one\ntwo\nthree\n');
   await page.getByRole('button', { name: '应用合并结果' }).click();
+  await page.getByRole('button', { name: '获取文件锁' }).click();
+  await expect(page.getByRole('status').getByText(/此编辑器已锁定至/)).toBeVisible();
   await page.getByRole('button', { name: '保存文件', exact: true }).click();
   await expect
     .poll(() => saved)
@@ -1948,6 +1957,7 @@ test('file conflict editor combines independent changes and saves against the la
       content: 'ONE\ntwo\nTHREE\n',
       overwrite: true,
       expectedVersion: 'new-version',
+      lockToken,
     });
 });
 

@@ -229,6 +229,32 @@ test('files activate only their declared services and cannot export through down
   assert.equal(vm.fileBeforeReplace, undefined);
 });
 
+test('file-lock route grants one lease and guards file mutations until release', async () => {
+  const vm = machines(), host = await Features.create(vm, ['files']);
+  const endpoint = 'http://localhost/api/vms/vm/file-lock?path=%2Fworkspace%2Fnotes.txt';
+  const call = async (method: string, url: string, input?: unknown) => {
+    const { req, res } = request(method);
+    await host.route(req, res, new URL(url), async () => input);
+    return res.payload;
+  };
+  try {
+    const first = await call('POST', endpoint, { action: 'acquire' });
+    assert.match(first.token, /^[0-9a-f-]{36}$/);
+    assert.deepEqual(await call('GET', endpoint), {
+      path: '/workspace/notes.txt', locked: true, expiresAt: first.expiresAt,
+    });
+    await assert.rejects(call('POST', endpoint, { action: 'acquire' }),
+      (error: any) => error.status === 409);
+    await assert.rejects(call('POST', 'http://localhost/api/vms/vm/file-operation', {
+      action: 'delete', path: '/workspace/notes.txt', recursive: false,
+    }), (error: any) => error.status === 409);
+    await call('POST', endpoint, { action: 'release', token: first.token });
+    assert.equal((await call('GET', endpoint)).locked, false);
+  } finally {
+    await host.close();
+  }
+});
+
 test('snapshot and desktop routes use path segment lengths after extraction', async () => {
   const vm = machines(),
     host = await Features.create(vm, ['snapshots', 'desktop']);
