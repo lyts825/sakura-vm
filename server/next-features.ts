@@ -128,8 +128,8 @@ export const nextFeatureCatalog = [
     '嵌套虚拟化',
     '虚拟硬件与固件',
     'P2',
-    '检测嵌套虚拟化能力并记录结果。',
-    'planned',
+    '读取客户机 CPU 虚拟化标志与 KVM 设备，记录嵌套虚拟化候选条件。',
+    'available',
   ],
   [
     'vcpu-hotplug',
@@ -838,6 +838,47 @@ export class NextFeatures {
         forwards: this.machines.get(id).forwards,
         message: '在实例的“服务与端口”页先配置端口转发，再创建本机 HTTP 入口、路径规则与健康检查。',
       };
+    if (spec.id === 'nested-virtualization') {
+      if (this.machines.state(id) !== 'running')
+        return {
+          ready: false,
+          executed: false,
+          adapter,
+          reason: '请先启动实例，以客户机实际可见的 CPU 标志和 KVM 设备为准。',
+        };
+      try {
+        signal?.throwIfAborted();
+        const response = await this.machines.exec(
+          id,
+          "set -e\nsed -n '/^flags[[:space:]]*:/ {s/^/CPU=/;p;q;}' /proc/cpuinfo\nif test -c /dev/kvm; then echo KVM=yes; else echo KVM=no; fi\nprintf 'KERNEL='; uname -r",
+          10000,
+          signal,
+        );
+        if (response.code !== 0)
+          return { ready: false, executed: false, adapter, reason: response.stderr || '客户机探测失败' };
+        const flags = response.stdout.match(/^CPU=flags\s*:\s*(.*)$/m)?.[1]?.split(/\s+/) || [];
+        const cpuExtension = flags.includes('vmx') ? 'vmx' : flags.includes('svm') ? 'svm' : null;
+        const kvmDevice = /^KVM=yes$/m.test(response.stdout);
+        const nestedCandidate = Boolean(cpuExtension && kvmDevice);
+        return {
+          ready: true,
+          executed: action === 'run',
+          adapter,
+          cpuExtension,
+          kvmDevice,
+          nestedCandidate,
+          kernel: response.stdout.match(/^KERNEL=(.*)$/m)?.[1]?.trim() || '',
+          accelerator: this.machines.live.get(id)?.accelerator || null,
+          checkedAt: now(),
+          message: nestedCandidate
+            ? '客户机具备 CPU 虚拟化标志和 KVM 设备；仍需安装并实际验证二层虚拟机。'
+            : '客户机未同时具备 CPU 虚拟化标志和 KVM 设备，不能将当前实例当作已支持嵌套 KVM。',
+        };
+      } catch (error) {
+        signal?.throwIfAborted();
+        return { ready: false, executed: false, adapter, reason: (error as Error).message };
+      }
+    }
     if (hasCapability(spec.id)) {
       const runner = new CapabilityActions(this.machines, this.workspaces);
       return action === 'run'
