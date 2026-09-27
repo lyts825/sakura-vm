@@ -23,6 +23,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { EventEmitter } from 'node:events';
 import { BackupRecovery } from '../server/backup-recovery';
 import { SignedBundles } from '../server/signed-bundles';
+import { ingressAlias } from '../shared/http-ingress.ts';
 
 test('backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile', async ({
   page,
@@ -2328,7 +2329,7 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
       if (submitted.action === 'save') {
         const item = submitted.entry;
         entries = [{ ...item, id: item.id || vm.id, createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(), url: `${item.protocol}://127.0.0.1:${item.listenPort}${item.pathPrefix}`,
+          updatedAt: new Date().toISOString(), url: `${item.protocol}://${item.domainAlias ? ingressAlias(item.id || vm.id) : '127.0.0.1'}:${item.listenPort}${item.pathPrefix}`,
           health: { status: 'checking' } }];
         if (item.protocol === 'https') certificate = {
           pem: '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----',
@@ -2390,6 +2391,12 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
   await certCard.getByRole('button', { name: '立即轮换' }).click();
   await expect.poll(() => certificateAction).toMatchObject({ action: 'rotate' });
   await expect(certCard.getByText('CC:DD')).toBeVisible();
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  const aliasEditor = page.locator('.feature-card').filter({ has: page.getByRole('heading', { name: '编辑入口' }) });
+  await aliasEditor.getByLabel('为此入口生成 .localhost 本地域名').check();
+  await aliasEditor.getByRole('button', { name: '保存入口' }).click();
+  await expect.poll(() => submitted).toMatchObject({ action: 'save', entry: { domainAlias: true } });
+  await expect(page.getByRole('link', { name: /\.sakura\.localhost:8901/ })).toBeVisible();
 });
 
 test('backup policies enable block deduplication and show how each backup is stored', async ({ page }) => {

@@ -763,6 +763,10 @@
                   "https"
                 ]
               },
+              "domainAlias": {
+                "default": false,
+                "type": "boolean"
+              },
               "listenPort": {
                 "type": "integer",
                 "minimum": 1024,
@@ -837,6 +841,7 @@
               "id",
               "name",
               "protocol",
+              "domainAlias",
               "listenPort",
               "pathPrefix",
               "vmId",
@@ -903,6 +908,10 @@
                     "http",
                     "https"
                   ]
+                },
+                "domainAlias": {
+                  "default": false,
+                  "type": "boolean"
                 },
                 "listenPort": {
                   "type": "integer",
@@ -1019,6 +1028,10 @@
                   "https"
                 ]
               },
+              "domainAlias": {
+                "default": false,
+                "type": "boolean"
+              },
               "listenPort": {
                 "type": "integer",
                 "minimum": 1024,
@@ -1093,6 +1106,7 @@
               "id",
               "name",
               "protocol",
+              "domainAlias",
               "listenPort",
               "pathPrefix",
               "vmId",

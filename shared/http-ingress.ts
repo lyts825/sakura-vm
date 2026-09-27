@@ -18,6 +18,7 @@ export const ingressInputSchema = z
     id: z.uuid().optional(),
     name: z.string().trim().min(1).max(60),
     protocol: z.enum(['http', 'https']).default('http'),
+    domainAlias: z.boolean().default(false),
     listenPort: z.number().int().min(1024).max(65535),
     pathPrefix: pathSchema,
     vmId: z.uuid(),
@@ -60,3 +61,7 @@ export type IngressEntry = z.infer<typeof ingressEntrySchema>;
 export type IngressAction = z.infer<typeof ingressActionSchema>;
 export type IngressHealth = z.infer<typeof ingressHealthSchema>;
 export type IngressView = z.infer<typeof ingressViewSchema>;
+
+export function ingressAlias(id: string) {
+  return `app-${id.replace(/-/g, '').toLowerCase()}.sakura.localhost`;
+}

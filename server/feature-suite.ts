@@ -476,7 +476,7 @@ export class FeatureSuite {
     } else if (featureId === 'reverse-proxy') {
       result.ready = true;
       result.network = 'localhost-https-ingress';
-      result.reason = '已接入实例 → 服务与端口的本机 HTTPS 路由和证书轮换；自动生成并解析本地域名尚未实现。';
+      result.reason = '已接入实例 → 服务与端口的本机 HTTPS 路由、证书轮换和浏览器可访问的 .sakura.localhost 别名；系统级域名解析仍未实现。';
     } else if (featureId === 'vpn-integration') {
       result.network = 'profile-backed';
     } else if (featureId === 'rbac-sharing' || featureId === 'plugin-api') {

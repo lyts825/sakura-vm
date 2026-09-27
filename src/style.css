@@ -1285,6 +1285,9 @@ main {
   flex: 1;
   min-width: 0;
 }
+.machine-content > .content-panel {
+  flex: 0 0 auto;
+}
 .terminal-panel-slot {
   display: flex;
   flex-direction: column;

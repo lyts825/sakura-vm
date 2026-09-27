@@ -2,14 +2,14 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 151 条有实现入口，**99 条仍未完成**（89 条规划、10 条部分实现）。按标识去重后为 98 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 151 条有实现入口，**99 条仍未完成**（88 条规划、11 条部分实现）。按标识去重后为 98 个未完成标识；不同条目仍有范围重叠。
 
 本轮已接通 101 条原未完成目录记录，另完善了文本三方合并。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 第一批 | 50 | 32 | 5 | 13 | 18 |
-| 第二批 | 100 | 80 | 1 | 19 | 20 |
+| 第二批 | 100 | 80 | 2 | 18 | 20 |
 | 第三批 | 100 | 39 | 4 | 57 | 61 |
 
 ## 第一批
@@ -32,7 +32,7 @@
 
 ### 网络与服务
 
-- [ ] **HTTPS 反向代理**（P1 · 部分实现） · [`reverse-proxy`](../server/feature-suite.ts#L63) — 已有本机 HTTPS 路由、WebSocket 转发与自签名证书轮换；仍缺自动生成并解析本地域名。
+- [ ] **HTTPS 反向代理**（P1 · 部分实现） · [`reverse-proxy`](../server/feature-suite.ts#L63) — 已有 HTTPS 路由、WebSocket、证书轮换及浏览器可访问的 .sakura.localhost 别名；系统级解析器尚不识别这些别名。
 - [ ] **VPN 集成**（P1 · 规划） · [`vpn-integration`](../server/feature-suite.ts#L65) — 管理 WireGuard 或 Tailscale 连接。 对应完整流程尚未实现。
 - [ ] **离线软件包缓存**（P1 · 规划） · [`package-cache`](../server/feature-suite.ts#L67) — 缓存常用软件源和项目依赖。 对应完整流程尚未实现。
 
@@ -71,7 +71,7 @@
 - [ ] **网络带宽配额**（P2 · 规划） · [`network-quota`](../server/extended-features.ts#L115) — 限制带宽、连接数和请求速率。 对应完整流程尚未实现。
 - [ ] **SSH Agent 转发**（P1 · 规划） · [`ssh-agent-forward`](../server/extended-features.ts#L116) — 在确认后转发宿主机 Agent。 对应完整流程尚未实现。
 - [ ] **GPG Agent 转发**（P2 · 规划） · [`gpg-agent-forward`](../server/extended-features.ts#L117) — 在确认后转发签名 Agent。 对应完整流程尚未实现。
-- [ ] **本地域名别名**（P0 · 规划） · [`local-dns-alias`](../server/extended-features.ts#L118) — 为服务生成本地域名和通配别名。 对应完整流程尚未实现。
+- [ ] **本地域名别名**（P0 · 部分实现） · [`local-dns-alias`](../server/extended-features.ts#L118) — 可为服务生成稳定的 .sakura.localhost 域名和通配证书，Chromium 已验证可访问；Windows Node/系统级 DNS 尚不能直接解析。
 - [ ] **数据包捕获**（P1 · 规划） · [`packet-capture`](../server/extended-features.ts#L119) — 采集脱敏网络诊断包。 对应完整流程尚未实现。
 - [ ] **临时反向隧道**（P2 · 规划） · [`reverse-tunnel`](../server/extended-features.ts#L120) — 为受控调试创建一次性入口。 对应完整流程尚未实现。
 

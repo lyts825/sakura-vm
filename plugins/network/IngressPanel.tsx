@@ -8,6 +8,7 @@ function blank(vmId: string, upstreamPort: number): IngressInput {
   return {
     name: '',
     protocol: 'http',
+    domainAlias: false,
     listenPort: 8888,
     pathPrefix: '/',
     vmId,
@@ -77,6 +78,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
                     id: entry.id,
                     name: entry.name,
                     protocol: entry.protocol,
+                    domainAlias: entry.domainAlias,
                     listenPort: entry.listenPort,
                     pathPrefix: entry.pathPrefix,
                     vmId: entry.vmId,
@@ -199,6 +201,14 @@ export function IngressPanel({ vm, request }: FeatureProps) {
             onChange={(event) => change({ stripPrefix: event.target.checked })}
           />{' '}
           转发前移除入口路径前缀
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={form.domainAlias}
+            onChange={(event) => change({ domainAlias: event.target.checked })}
+          />{' '}
+          为此入口生成 .localhost 本地域名
         </label>
         <div className="feature-actions">
           <button

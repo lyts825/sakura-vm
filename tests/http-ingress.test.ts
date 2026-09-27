@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { Engine } from '../server/runtime.ts';
+import { ingressAlias } from '../shared/http-ingress.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-ingress-test-'));
 process.env.SAKURA_DATA_DIR = root;
@@ -45,6 +46,29 @@ async function secureGet(port: number, path: string, ca: string) {
   return new Promise<{ status: number; body: string }>((resolve, reject) => {
     const req = secureRequest(
       { hostname: '127.0.0.1', port, path, ca, rejectUnauthorized: true, agent: false },
+      async (res) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of res) chunks.push(chunk);
+        resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString() });
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function hostedGet(port: number, hostname: string, ca?: string) {
+  return new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const send = ca ? secureRequest : request;
+    const req = send(
+      {
+        hostname: '127.0.0.1',
+        servername: ca && hostname !== '127.0.0.1' ? hostname : undefined,
+        port,
+        path: '/',
+        headers: { host: `${hostname}:${port}` },
+        ...(ca ? { ca, rejectUnauthorized: true, agent: false } : {}),
+      },
       async (res) => {
         const chunks: Buffer[] = [];
         for await (const chunk of res) chunks.push(chunk);
@@ -327,6 +351,60 @@ test('HTTPS ingress routes verified TLS and WebSocket connections through live c
     await certificates.close();
     await new Promise<void>((resolve) => wsServer.close(() => resolve()));
     await stop(upstream);
+  }
+});
+
+test('generated local domains isolate same-path virtual hosts and use a verified wildcard certificate', async () => {
+  const first = createServer((req, res) => res.writeHead(200).end(`first:${req.headers['x-forwarded-host']}`));
+  const second = createServer((req, res) => res.writeHead(200).end(`second:${req.headers['x-forwarded-host']}`));
+  const firstPort = await serve(first), secondPort = await serve(second);
+  const httpPort = await port(), httpsPort = await port();
+  const machines = new Machines({} as Engine), id = randomUUID();
+  machines.records.set(id, {
+    ...createSchema.parse({ name: 'aliases', forwards: [
+      { host: firstPort, guest: 80 }, { host: secondPort, guest: 81 },
+    ] }),
+    id, createdAt: new Date().toISOString(), snapshots: [],
+  });
+  machines.live.set(id, { status: 'running' } as any);
+  const certificates = new IngressCertificates(join(root, 'alias-certificates.json'));
+  const ingress = new HttpIngress(machines, join(root, 'aliases.json'), certificates);
+  try {
+    await certificates.init();
+    await ingress.init();
+    const save = (name: string, listenPort: number, upstreamPort: number, protocol: 'http' | 'https', domainAlias: boolean) =>
+      ingress.action({ action: 'save', entry: {
+        name, protocol, domainAlias, listenPort, pathPrefix: '/', vmId: id,
+        upstreamPort, healthPath: '/', stripPrefix: false,
+      } });
+    const one = (await save('One', httpPort, firstPort, 'http', true)).entries[0];
+    const two = (await save('Two', httpPort, secondPort, 'http', true)).entries.find((entry) => entry.name === 'Two')!;
+    const firstAlias = ingressAlias(one.id), secondAlias = ingressAlias(two.id);
+    assert.equal(one.url, `http://${firstAlias}:${httpPort}/`);
+    assert.deepEqual(await hostedGet(httpPort, firstAlias), {
+      status: 200, body: `first:${firstAlias}:${httpPort}`,
+    });
+    assert.deepEqual(await hostedGet(httpPort, secondAlias), {
+      status: 200, body: `second:${secondAlias}:${httpPort}`,
+    });
+    assert.equal((await hostedGet(httpPort, '127.0.0.1')).status, 404);
+    assert.equal((await hostedGet(httpPort, 'unregistered.sakura.localhost')).status, 403);
+    await save('Loopback', httpPort, firstPort, 'http', false);
+    assert.equal((await hostedGet(httpPort, '127.0.0.1')).status, 200);
+    const secure = (await save('Secure', httpsPort, firstPort, 'https', true)).entries.find((entry) => entry.name === 'Secure')!;
+    const certificate = certificates.view().certificate;
+    assert.ok(certificate);
+    const secureAlias = ingressAlias(secure.id);
+    assert.equal(secure.url, `https://${secureAlias}:${httpsPort}/`);
+    assert.deepEqual(await hostedGet(httpsPort, secureAlias, certificate.pem), {
+      status: 200, body: `first:${secureAlias}:${httpsPort}`,
+    });
+    assert.equal((await hostedGet(httpsPort, '127.0.0.1', certificate.pem)).status, 404);
+  } finally {
+    await ingress.close();
+    await certificates.close();
+    await stop(second);
+    await stop(first);
   }
 });
 

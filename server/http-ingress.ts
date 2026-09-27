@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import {
   ingressActionSchema,
+  ingressAlias,
   ingressEntrySchema,
   type IngressAction,
   type IngressEntry,
@@ -53,15 +54,16 @@ function matching(path: string, prefix: string) {
   return prefix === '/' || path === prefix || path.startsWith(`${prefix}/`);
 }
 
-function localClient(req: IncomingMessage, port: number) {
+function localClient(req: IncomingMessage, port: number, aliases: Set<string>) {
   const host = req.headers.host?.toLowerCase();
-  if (host && host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return false;
+  if (host && host !== `127.0.0.1:${port}` && host !== `localhost:${port}` && !aliases.has(host))
+    return false;
   if (!req.headers.origin) return true;
+  if (!host) return false;
   try {
     const origin = new URL(req.headers.origin);
-    return (
-      ['127.0.0.1', 'localhost'].includes(origin.hostname) && ['http:', 'https:'].includes(origin.protocol)
-    );
+    return origin.host.toLowerCase() === host &&
+      origin.protocol === ((req.socket as { encrypted?: boolean }).encrypted ? 'https:' : 'http:');
   } catch {
     return false;
   }
@@ -101,7 +103,9 @@ export class HttpIngress {
         this.machines.reserveHostPorts(OWNER, [...this.listeners.keys(), port]);
         if (protocols.has('https')) {
           if (!this.certificates) throw new AppError('HTTPS 证书服务未启用', 503);
-          await this.certificates.ensure();
+          await this.certificates.ensure(
+            this.entries.some((entry) => entry.listenPort === port && entry.domainAlias),
+          );
         }
         this.listeners.set(port, await this.listen(port, [...protocols][0]));
       } catch (error) {
@@ -118,7 +122,7 @@ export class HttpIngress {
     return {
       entries: this.entries.map((entry) => ({
         ...entry,
-        url: `${entry.protocol}://127.0.0.1:${entry.listenPort}${entry.pathPrefix}`,
+        url: `${entry.protocol}://${entry.domainAlias ? ingressAlias(entry.id) : '127.0.0.1'}:${entry.listenPort}${entry.pathPrefix}`,
         health: this.availability(entry) || this.health.get(entry.id) || { status: 'checking' },
       })),
       listenerErrors: { ...this.listenerErrors },
@@ -159,7 +163,9 @@ export class HttpIngress {
       }
       if (next.length > 24 || new Set(next.map((entry) => entry.listenPort)).size > 4)
         throw new AppError('最多保存 24 条入口规则和 4 个监听端口', 409);
-      const keys = next.map((entry) => `${entry.listenPort}:${entry.pathPrefix}`);
+      const keys = next.map(
+        (entry) => `${entry.listenPort}:${entry.domainAlias ? ingressAlias(entry.id) : 'loopback'}:${entry.pathPrefix}`,
+      );
       if (new Set(keys).size !== keys.length) throw new AppError('监听端口与路径组合不能重复', 409);
       for (const port of new Set(next.map((entry) => entry.listenPort))) {
         const protocol = new Set(next.filter((entry) => entry.listenPort === port).map((entry) => entry.protocol));
@@ -181,6 +187,8 @@ export class HttpIngress {
     const added = new Map<number, Server>();
     this.machines.reserveHostPorts(OWNER, nextPorts);
     try {
+      if (next.some((entry) => entry.protocol === 'https' && entry.domainAlias))
+        await this.certificates!.ensure(true);
       for (const port of nextPorts) {
         if (this.listeners.has(port)) continue;
         const protocol = next.find((entry) => entry.listenPort === port)!.protocol;
@@ -241,12 +249,27 @@ export class HttpIngress {
     });
   }
 
+  private aliases(port: number) {
+    return new Set(
+      this.entries
+        .filter((entry) => entry.listenPort === port && entry.domainAlias)
+        .map((entry) => `${ingressAlias(entry.id)}:${port}`),
+    );
+  }
+
   private target(req: IncomingMessage, port: number) {
     const raw = req.url || '/';
     if (!raw.startsWith('/') || raw.startsWith('//')) return null;
     const url = new URL(raw, 'http://127.0.0.1');
+    const host = req.headers.host?.toLowerCase().replace(new RegExp(`:${port}$`), '') || '127.0.0.1';
     const entry = this.entries
-      .filter((candidate) => candidate.listenPort === port && matching(url.pathname, candidate.pathPrefix))
+      .filter((candidate) =>
+        candidate.listenPort === port &&
+        matching(url.pathname, candidate.pathPrefix) &&
+        (candidate.domainAlias
+          ? ingressAlias(candidate.id) === host
+          : host === '127.0.0.1' || host === 'localhost'),
+      )
       .sort((a, b) => b.pathPrefix.length - a.pathPrefix.length)[0];
     if (!entry) return null;
     const path =
@@ -276,7 +299,7 @@ export class HttpIngress {
   }
 
   private proxy(req: IncomingMessage, res: ServerResponse, port: number) {
-    if (!localClient(req, port)) {
+    if (!localClient(req, port, this.aliases(port))) {
       res.writeHead(403).end('Forbidden');
       return;
     }
@@ -292,7 +315,7 @@ export class HttpIngress {
     const headers = cleanHeaders(req.headers);
     headers.host = `127.0.0.1:${target.entry.upstreamPort}`;
     headers['x-forwarded-for'] = '127.0.0.1';
-    headers['x-forwarded-host'] = `127.0.0.1:${port}`;
+    headers['x-forwarded-host'] = req.headers.host || `127.0.0.1:${port}`;
     headers['x-forwarded-proto'] = target.entry.protocol;
     if (target.entry.pathPrefix !== '/') headers['x-forwarded-prefix'] = target.entry.pathPrefix;
     const upstream = request(
@@ -322,7 +345,7 @@ export class HttpIngress {
   }
 
   private upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, port: number) {
-    if (!localClient(req, port)) {
+    if (!localClient(req, port, this.aliases(port))) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       return;
     }
@@ -340,7 +363,7 @@ export class HttpIngress {
     headers.connection = 'Upgrade';
     headers.upgrade = 'websocket';
     headers['x-forwarded-for'] = '127.0.0.1';
-    headers['x-forwarded-host'] = `127.0.0.1:${port}`;
+    headers['x-forwarded-host'] = req.headers.host || `127.0.0.1:${port}`;
     headers['x-forwarded-proto'] = target.entry.protocol;
     const upstream = request({
       hostname: '127.0.0.1',

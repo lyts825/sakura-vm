@@ -39,6 +39,10 @@ test('local certificate is a valid localhost TLS identity, persists and rotates 
     assert.ok(first.certificate);
     assert.equal(new X509Certificate(first.certificate.pem).checkHost('localhost'), 'localhost');
     assert.equal(new X509Certificate(first.certificate.pem).checkIP('127.0.0.1'), '127.0.0.1');
+    assert.equal(
+      new X509Certificate(first.certificate.pem).checkHost('app-example.sakura.localhost'),
+      '*.sakura.localhost',
+    );
     assert.ok(!JSON.stringify(first).includes(options.key));
     server = createServer(options, (_req, res) => res.writeHead(200).end('secure'));
     certificates.onChange((certificate) =>
@@ -104,6 +108,43 @@ test('certificate nearing expiry rotates automatically on service startup', asyn
     assert.ok(view.certificate);
     assert.notEqual(view.certificate.fingerprint256, new X509Certificate(old.cert).fingerprint256);
     assert.ok(view.nextRotationAt && Date.parse(view.nextRotationAt) > Date.now());
+  } finally {
+    await certificates.close();
+  }
+});
+
+test('requesting a domain alias upgrades an older certificate without alias coverage', async () => {
+  const file = join(root, 'legacy-certificates.json');
+  const old = await generate([{ name: 'commonName', value: 'localhost' }], {
+    keyType: 'ec',
+    curve: 'P-256',
+    algorithm: 'sha256',
+    notBeforeDate: new Date(Date.now() - 3600000),
+    notAfterDate: new Date(Date.now() + 300 * 86400000),
+    extensions: [
+      {
+        name: 'subjectAltName',
+        altNames: [
+          { type: 2, value: 'localhost' },
+          { type: 7, ip: '127.0.0.1' },
+        ],
+      },
+    ],
+  });
+  await writeFile(file, JSON.stringify({
+    policy: { autoRotate: false, renewBeforeDays: 30 },
+    certificate: { key: old.private, cert: old.cert, generatedAt: new Date().toISOString() },
+  }));
+  const certificates = new IngressCertificates(file);
+  try {
+    await certificates.init();
+    assert.equal(certificates.view().certificate?.fingerprint256, new X509Certificate(old.cert).fingerprint256);
+    await certificates.ensure(true);
+    const current = certificates.view().certificate;
+    assert.ok(current);
+    assert.notEqual(current.fingerprint256, new X509Certificate(old.cert).fingerprint256);
+    assert.equal(new X509Certificate(current.pem).checkHost('app-example.sakura.localhost'), '*.sakura.localhost');
+    assert.equal(certificates.view().policy.autoRotate, false);
   } finally {
     await certificates.close();
   }

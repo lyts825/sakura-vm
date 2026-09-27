@@ -37,6 +37,9 @@ function inspect(certificate: Certificate) {
   return parsed;
 }
 
+const supportsAliases = (certificate: Certificate) =>
+  inspect(certificate).checkHost('app-example.sakura.localhost') === '*.sakura.localhost';
+
 function rotationAt(certificate: Certificate, policy: CertificatePolicy) {
   return new Date(Date.parse(inspect(certificate).validTo) - policy.renewBeforeDays * 86400000);
 }
@@ -112,11 +115,12 @@ export class IngressCertificates {
     return () => this.listeners.delete(listener);
   }
 
-  async ensure() {
+  async ensure(domainAliases = false) {
     return this.serial(async () => {
       const certificate = this.state.certificate;
       if (
         !certificate ||
+        (domainAliases && !supportsAliases(certificate)) ||
         (this.state.policy.autoRotate && rotationAt(certificate, this.state.policy).getTime() <= Date.now())
       )
         await this.issue(this.state.policy);
@@ -184,6 +188,7 @@ export class IngressCertificates {
           name: 'subjectAltName',
           altNames: [
             { type: 2, value: 'localhost' },
+            { type: 2, value: '*.sakura.localhost' },
             { type: 7, ip: '127.0.0.1' },
           ],
         },
@@ -195,6 +200,7 @@ export class IngressCertificates {
       generatedAt: new Date().toISOString(),
     };
     inspect(certificate);
+    if (!supportsAliases(certificate)) throw new AppError('新证书不支持本地域名别名', 500);
     const previous = this.state.certificate;
     try {
       for (const listener of this.listeners) listener(certificate);
