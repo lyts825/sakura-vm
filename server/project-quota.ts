@@ -76,9 +76,11 @@ export async function projectQuota(
   const directory = (await workspaces.config(vmId)).directory;
   if (!directoryAllowed(directory))
     return { ready: false, executed: false, active: false, persistent: false,
+      projectId, directory, limitMiB: null,
       reason: '项目配额要求项目目录位于 /workspace，且路径仅含字母、数字、点、下划线或连字符。' };
   if (machines.state(vmId) !== 'running')
     return { ready: false, executed: false, active: false, persistent: false,
+      projectId, directory, limitMiB: null,
       reason: '请先启动发行版。' };
 
   const readOnly = action === 'check' || options.mode === 'status';
@@ -101,13 +103,15 @@ export async function projectQuota(
     const lines = result.stdout.trim().split(/\r?\n/);
     const mount = lines.find((line) => /^\/dev\/loop\d+ ext[234]$/.test(line));
     const filesystem = lines.find((line) => /^\S+\s+\d+\s+\d+\s+\d+\s+\d+%\s+/.test(line));
-    const fstab = lines.some((line) => line.includes(marker(projectId)));
+    const fstabEntry = lines.find((line) => line.startsWith(image(projectId) + ' ') &&
+      line.endsWith(marker(projectId))) || null;
+    const fstab = Boolean(fstabEntry);
     const backing = mount && lines.some((line) => line.startsWith(
       `/sys/block/${mount.split(' ')[0].split('/').at(-1)}/loop/backing_file `) &&
       line.endsWith(image(projectId)));
     const fields = filesystem?.trim().split(/\s+/);
     return {
-      active: Boolean(mount && backing), persistent: fstab,
+      active: Boolean(mount && backing), persistent: fstab, fstabEntry,
       mount: mount || null,
       capacityMiB: fields ? Math.round(Number(fields[1]) / 1024) : null,
       usedMiB: fields ? Math.round(Number(fields[2]) / 1024) : null,
@@ -250,7 +254,7 @@ export async function projectQuota(
         await exec(`rm -rf ${staged}`, 30000, true);
         throw error;
       }
-      const savedEntry = `${image(projectId)} ${directory} ext4 loop,nofail 0 0 ${marker(projectId)}`;
+      const savedEntry = before.fstabEntry!;
       try {
         await exec([
           'set -eu',
@@ -261,9 +265,11 @@ export async function projectQuota(
           `rmdir ${source}`,
           `mv ${staged} ${source}`,
           `mv ${quote(image(projectId))} ${quote(`${root}/archive-${projectId}-${randomBytes(6).toString('hex')}.img`)}`,
+          `rm -f ${quote(`/etc/local.d/sakura-project-quota-${projectId}.start`)}`,
         ].join('\n'), 60000);
         await rm(recordFile(vmId, projectId), { force: true });
-        return { ready: true, executed: true, projectId, directory, active: false, persistent: false,
+        return { ready: true, executed: true, projectId, directory, limitMiB: null,
+          active: false, persistent: false,
           reason: '已保留原始目录备份与配额镜像归档，项目内容已迁回普通目录。' };
       } catch (error) {
         const state = await inspect();
