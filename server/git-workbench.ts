@@ -92,6 +92,13 @@ export const gitActionSchema = z.discriminatedUnion('action', [
       expectedIndex: z.string().regex(/^[a-f0-9]{64}$/),
     })
     .strict(),
+  z.object({
+    action: z.literal('resolve-choice'),
+    path: repositoryPath,
+    choice: z.enum(['ours', 'theirs']),
+    expectedIndex: z.string().regex(/^[a-f0-9]{64}$/),
+    expectedWorktree: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict(),
   z.object({ action: z.enum(['stage', 'unstage']), paths: z.array(repositoryPath).min(1).max(200) }).strict(),
   z
     .object({
@@ -339,6 +346,59 @@ export class GitWorkbench {
       expectedIndex: textVersion(index.stdout),
     };
   }
+  async conflictChoices(id: string, path: string, signal?: AbortSignal, directory?: string) {
+    repositoryPath.parse(path);
+    directory ??= (await this.workspaces.config(id)).directory;
+    const components = path.split('/').filter(Boolean);
+    const safe = await this.machines.exec(id,
+      components.slice(0, -1)
+        .map((_, index) => `test ! -L ${quote(posix.join(directory!, ...components.slice(0, index + 1)))}`)
+        .join(' && ') || 'true', 10000, signal);
+    if (safe.code !== 0) throw new AppError('冲突路径不能穿过符号链接');
+    const index = await this.command(id, `ls-files --unmerged -z -- ${quote(path)}`, signal, directory);
+    if (index.code !== 0) throw new AppError(index.stderr);
+    const stages: Record<string, { mode: string; oid: string }> = {};
+    for (const line of index.stdout.split('\0').filter(Boolean)) {
+      const entry = /^(100644|100755|120000|160000) ([a-f0-9]{40,64}) ([123])\t([^\0]*)$/.exec(line);
+      if (!entry || entry[4] !== path || stages[entry[3]])
+        throw new AppError('冲突索引包含不支持的条目，请在终端处理', 409);
+      stages[entry[3]] = { mode: entry[1], oid: entry[2] };
+    }
+    if (!stages['2'] && !stages['3']) throw new AppError('此文件没有未解决的冲突', 409);
+    const file = posix.join(directory, path);
+    const type = await this.machines.exec(id,
+      `if test -L ${quote(file)}; then printf link; elif test -f ${quote(file)}; then printf file; ` +
+      `elif test -d ${quote(file)}; then printf directory; else printf missing; fi`, 10000, signal);
+    if (type.code !== 0) throw new AppError('无法检查冲突文件状态');
+    const kind = type.stdout.trim();
+    let worktree = kind;
+    if (kind === 'file') {
+      const hash = await this.command(id, `hash-object --no-filters -- ${quote(path)}`, signal, directory);
+      if (hash.code !== 0 || !/^[a-f0-9]{40,64}\s*$/.test(hash.stdout))
+        throw new AppError('无法校验冲突文件内容，请重新打开', 409);
+      worktree += ':' + hash.stdout.trim();
+    } else if (kind === 'link') {
+      const target = await this.machines.exec(id, `readlink -n -- ${quote(file)}`, 10000, signal);
+      if (target.code !== 0) throw new AppError('无法校验冲突符号链接，请重新打开', 409);
+      worktree += ':' + target.stdout;
+    } else if (kind === 'directory') {
+      const head = await this.command(id, `-C ${quote(path)} rev-parse --verify HEAD`, signal, directory);
+      const status = head.code === 0
+        ? await this.command(id, `-C ${quote(path)} status --porcelain=v1 -z`, signal, directory)
+        : null;
+      if (status && status.code !== 0) throw new AppError('无法校验子模块工作目录，请重新打开', 409);
+      worktree += ':' + (head.code === 0 ? head.stdout : '') + ':' + (status?.stdout || '');
+    } else if (kind !== 'missing') throw new AppError('无法识别冲突文件状态');
+    return {
+      path,
+      base: stages['1'] || null,
+      ours: stages['2'] || null,
+      theirs: stages['3'] || null,
+      worktree: kind,
+      expectedIndex: textVersion(index.stdout),
+      expectedWorktree: textVersion(worktree),
+    };
+  }
   async run(id: string, input: unknown) {
     const value = gitActionSchema.parse(input);
     return this.machines.locked(`git:${this.workspaces.projects.key(id)}`, async () => {
@@ -377,6 +437,24 @@ export class GitWorkbench {
                 value.expectedVersion,
               );
               command = `add -- ${quote(value.path)}`;
+              break;
+            }
+            case 'resolve-choice': {
+              const current = await this.conflictChoices(id, value.path, signal, directory);
+              if (current.expectedIndex !== value.expectedIndex ||
+                  current.expectedWorktree !== value.expectedWorktree)
+                throw new AppError('冲突或文件已变化，请重新选择版本', 409);
+              const chosen = value.choice === 'ours' ? current.ours : current.theirs;
+              if (chosen) {
+                if (chosen.mode !== '160000') {
+                  const checkout = await execute(`checkout --${value.choice} -- ${quote(value.path)}`);
+                  if (checkout.code !== 0) throw new AppError(redactGitOutput(checkout.stderr));
+                } else log('已选择子模块提交；子模块工作目录不会自动切换。\n');
+                command = `update-index --add --cacheinfo ${chosen.mode},${chosen.oid},${quote(value.path)}`;
+              } else if (current.worktree === 'directory') {
+                log('已选择删除索引中的子模块；现有目录留在工作区供人工检查。\n');
+                command = `update-index --force-remove -- ${quote(value.path)}`;
+              } else command = `rm -f -- ${quote(value.path)}`;
               break;
             }
             case 'stage':
@@ -443,6 +521,7 @@ export class GitWorkbench {
         {
           title: `Git · ${value.action}${'remote' in value ? ' · ' + value.remote + (value.branch ? '/' + value.branch : '') : ''}`,
           vmId: id,
+          action: value.action,
           projectId: this.workspaces.projects.current(id),
         },
       );

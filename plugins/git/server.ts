@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { GitWorkbench } from '../../server/git-workbench.ts';
-import { readJsonBody, MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
+import { MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
@@ -14,7 +14,7 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: (req: IncomingMessage, signal?: AbortSignal, limit?: number) => Promise<any>,
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -34,7 +34,9 @@ export async function route(
     if (action === 'git') {
       if (req.method === 'GET') {
         send(
-          url.searchParams.has('merge')
+          url.searchParams.has('choices')
+            ? await this.git.conflictChoices(id, url.searchParams.get('choices')!, signal)
+            : url.searchParams.has('merge')
             ? await this.git.mergeInputs(id, url.searchParams.get('merge')!, signal)
             : url.searchParams.has('path')
               ? await this.git.diff(
@@ -48,7 +50,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        send(await this.git.run(id, await readJsonBody(req, MAX_TEXT_REQUEST_BYTES, signal)), 202);
+        send(await this.git.run(id, await body(req, signal, MAX_TEXT_REQUEST_BYTES)), 202);
         return true;
       }
     }

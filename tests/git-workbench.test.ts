@@ -1,6 +1,6 @@
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile as execFileCallback } from 'node:child_process';
+import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { textVersion } from '../server/files.ts';
@@ -204,6 +204,126 @@ test('three-way Git editor reads index stages, rejects stale edits and stages th
   assert.equal(saved.status, 'done', saved.error);
   assert.equal(await git(f.local, 'show', ':shared.txt'), 'merged');
   assert.equal(await git(f.local, 'ls-files', '--unmerged'), '');
+});
+
+test('Git conflict choices stage binary versions and reject an edited worktree', async (t) => {
+  const f = await fixture(t);
+  const file = join(f.local, 'artifact.bin');
+  await writeFile(file, Buffer.from([0, 1, 2]));
+  await git(f.local, 'add', '--', 'artifact.bin');
+  await git(f.local, 'commit', '-m', 'binary base');
+  await git(f.local, 'switch', '-c', 'topic');
+  await writeFile(file, Buffer.from([0, 3, 2]));
+  await git(f.local, 'commit', '-am', 'theirs');
+  await git(f.local, 'switch', 'main');
+  await writeFile(file, Buffer.from([0, 4, 2]));
+  await git(f.local, 'commit', '-am', 'ours');
+  await assert.rejects(git(f.local, 'merge', 'topic'));
+  const context = await f.scope(() => f.service.conflictChoices(id, 'artifact.bin'));
+  assert.equal(context.ours?.mode, '100644');
+  assert.equal(context.theirs?.mode, '100644');
+  await writeFile(file, Buffer.from([0, 5, 2]));
+  const stale = await f.run({
+    action: 'resolve-choice', path: context.path, choice: 'theirs',
+    expectedIndex: context.expectedIndex, expectedWorktree: context.expectedWorktree,
+  });
+  assert.equal(stale.status, 'error');
+  assert.match(stale.error!, /已变化/);
+  assert.deepEqual(await readFile(file), Buffer.from([0, 5, 2]));
+  const fresh = await f.scope(() => f.service.conflictChoices(id, 'artifact.bin'));
+  const resolved = await f.run({
+    action: 'resolve-choice', path: fresh.path, choice: 'theirs',
+    expectedIndex: fresh.expectedIndex, expectedWorktree: fresh.expectedWorktree,
+  });
+  assert.equal(resolved.status, 'done', resolved.error);
+  assert.equal(await git(f.local, 'rev-parse', ':artifact.bin'), fresh.theirs?.oid);
+  assert.deepEqual(await readFile(file), Buffer.from([0, 3, 2]));
+  assert.equal(await git(f.local, 'ls-files', '--unmerged'), '');
+});
+
+test('Git conflict choices can accept a deleted side', async (t) => {
+  const f = await fixture(t);
+  await git(f.local, 'switch', '-c', 'topic');
+  await git(f.local, 'rm', '--', 'shared.txt');
+  await git(f.local, 'commit', '-m', 'delete shared');
+  await git(f.local, 'switch', 'main');
+  await commit(f.local, 'shared.txt', 'updated\n');
+  await assert.rejects(git(f.local, 'merge', 'topic'));
+  const context = await f.scope(() => f.service.conflictChoices(id, 'shared.txt'));
+  assert.ok(context.ours);
+  assert.equal(context.theirs, null);
+  const result = await f.run({
+    action: 'resolve-choice', path: context.path, choice: 'theirs',
+    expectedIndex: context.expectedIndex, expectedWorktree: context.expectedWorktree,
+  });
+  assert.equal(result.status, 'done', result.error);
+  assert.equal(await git(f.local, 'ls-files', '--unmerged'), '');
+  await assert.rejects(readFile(join(f.local, 'shared.txt')), { code: 'ENOENT' });
+});
+
+test('Git conflict choices preserve the selected symbolic-link index entry', async (t) => {
+  const f = await fixture(t);
+  const linkName = 'shortcut';
+  const stage = async (target: string) => {
+    const source = join(f.directory, 'link-target');
+    await writeFile(source, target);
+    const oid = await git(f.local, 'hash-object', '-w', source);
+    await git(f.local, 'update-index', '--add', '--cacheinfo', `120000,${oid},${linkName}`);
+    await git(f.local, 'checkout-index', '-f', '--', linkName);
+    return oid;
+  };
+  await stage('base-target');
+  await git(f.local, 'commit', '-m', 'link base');
+  await git(f.local, 'switch', '-c', 'topic');
+  const theirs = await stage('theirs-target');
+  await git(f.local, 'commit', '-m', 'link theirs');
+  await git(f.local, 'switch', 'main');
+  await stage('ours-target');
+  await git(f.local, 'commit', '-m', 'link ours');
+  await assert.rejects(git(f.local, 'merge', 'topic'));
+  const context = await f.scope(() => f.service.conflictChoices(id, linkName));
+  assert.equal(context.theirs?.mode, '120000');
+  assert.equal(context.theirs?.oid, theirs);
+  const resolved = await f.run({
+    action: 'resolve-choice', path: linkName, choice: 'theirs',
+    expectedIndex: context.expectedIndex, expectedWorktree: context.expectedWorktree,
+  });
+  assert.equal(resolved.status, 'done', resolved.error);
+  assert.equal(await git(f.local, 'rev-parse', `:${linkName}`), theirs);
+  assert.equal(await git(f.local, 'ls-files', '--unmerged'), '');
+});
+
+test('Git conflict choices stage a selected gitlink without changing its work directory', async (t) => {
+  const f = await fixture(t);
+  const base = await git(f.local, 'rev-parse', 'HEAD');
+  const ours = await commit(f.local, 'ours.txt', 'ours\n');
+  const theirs = await commit(f.local, 'theirs.txt', 'theirs\n');
+  const index = [
+    `0 ${'0'.repeat(40)}\tmodule`,
+    `160000 ${base} 1\tmodule`,
+    `160000 ${ours} 2\tmodule`,
+    `160000 ${theirs} 3\tmodule`,
+    '',
+  ].join('\n');
+  await new Promise<void>((done, reject) => {
+    const child = spawn('git', [...gitOptions, 'update-index', '--index-info'], { cwd: f.local, env });
+    let error = '';
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { error += chunk; });
+    child.once('error', reject);
+    child.once('close', (code) => code === 0 ? done() : reject(new Error(error)));
+    child.stdin.end(index);
+  });
+  const context = await f.scope(() => f.service.conflictChoices(id, 'module'));
+  assert.equal(context.worktree, 'missing');
+  assert.equal(context.theirs?.mode, '160000');
+  const result = await f.run({
+    action: 'resolve-choice', path: 'module', choice: 'theirs',
+    expectedIndex: context.expectedIndex, expectedWorktree: context.expectedWorktree,
+  });
+  assert.equal(result.status, 'done', result.error);
+  assert.equal(await git(f.local, 'rev-parse', ':module'), theirs);
+  assert.equal(await git(f.local, 'ls-files', '--unmerged'), '');
+  await assert.rejects(stat(join(f.local, 'module')), { code: 'ENOENT' });
 });
 
 test('remote inputs reject refspecs, revisions, flags, shell syntax and credential URLs', () => {

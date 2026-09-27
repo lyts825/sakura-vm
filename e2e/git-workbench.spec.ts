@@ -36,6 +36,7 @@ async function workbench(page: Page) {
         latestJob = {
           id: `job-${submissions.length}`,
           status: 'running',
+          action: submissions.at(-1)!.value.action,
           log: '',
           // Distinct jobs can share a timestamp; the accepted id must still win over an old poll.
           startedAt: '2026-01-01T00:00:00.000Z',
@@ -43,6 +44,12 @@ async function workbench(page: Page) {
         if (!retainOldJob) state.job = latestJob;
         return route.fulfill({ status: 202, json: latestJob });
       }
+      if (url.searchParams.has('choices'))
+        return route.fulfill({ json: {
+          path: url.searchParams.get('choices'), base: null,
+          ours: { mode: '100644', oid: 'a'.repeat(40) }, theirs: null,
+          worktree: 'file', expectedIndex: 'b'.repeat(64), expectedWorktree: 'c'.repeat(64),
+        } });
       if (url.searchParams.has('path'))
         return route.fulfill({ json: { diff: 'file difference', truncated: false } });
       return route.fulfill({ json: state });
@@ -96,6 +103,24 @@ async function workbench(page: Page) {
     refresh: () => page.getByRole('button', { name: '刷新 Git', exact: true }).click(),
   };
 }
+
+test('Git conflict choices show deleted and retained sides and submit reviewed index tokens', async ({ page }) => {
+  const f = await workbench(page);
+  f.state.changes = [{ path: 'deleted.txt', index: 'U', worktree: 'U' }];
+  f.state.conflicts = ['deleted.txt'];
+  await f.refresh();
+  await page.getByRole('button', { name: '选择版本 deleted.txt' }).click();
+  await expect(page.getByRole('heading', { name: '选择冲突版本：deleted.txt' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /采用传入版本（删除）/ })).toBeVisible();
+  await page.getByRole('button', { name: /采用传入版本（删除）/ }).click();
+  await expect.poll(() => f.submissions.at(-1)?.value).toEqual({
+    action: 'resolve-choice', path: 'deleted.txt', choice: 'theirs',
+    expectedIndex: 'b'.repeat(64), expectedWorktree: 'c'.repeat(64),
+  });
+  f.finish('done');
+  await f.refresh();
+  await expect(page.getByRole('heading', { name: '选择冲突版本：deleted.txt' })).toBeHidden();
+});
 
 test('remote controls select the upstream, submit explicit targets and stay busy before polling catches up', async ({
   page,

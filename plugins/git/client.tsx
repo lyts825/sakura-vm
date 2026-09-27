@@ -53,6 +53,15 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
     expectedVersion: string;
     expectedIndex: string;
   } | null>(null);
+  const [choiceContext, setChoiceContext] = useState<{
+    path: string;
+    base: { mode: string; oid: string } | null;
+    ours: { mode: string; oid: string } | null;
+    theirs: { mode: string; oid: string } | null;
+    worktree: string;
+    expectedIndex: string;
+    expectedWorktree: string;
+  } | null>(null);
   const [loadedProject, setLoadedProject] = useState('');
   useEffect(() => {
     const projectId = remote.data?.projectId || 'default';
@@ -104,7 +113,10 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
   const busy = action.busy || job?.status === 'running';
   useEffect(() => {
     if (job && job.status !== 'running') diff.reload();
-    if (job?.status === 'done' && job.action === 'resolve') setMerge(null);
+    if (job?.status === 'done' && ['resolve', 'resolve-choice'].includes(job.action || '')) {
+      setMerge(null);
+      setChoiceContext(null);
+    }
   }, [job?.id, job?.status, diff.reload]);
   const conflicts = remote.data?.changes.filter(isGitConflict) || [];
   const blocked =
@@ -218,13 +230,48 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                                     signal,
                                   ),
                                 );
+                                setChoiceContext(null);
                               })
                             }
                           >
-                            三方合并 {change.path}
+                            文本三方合并 {change.path}
+                          </button>
+                          <button
+                            disabled={busy}
+                            onClick={() => void action.run(async (signal) => {
+                              setChoiceContext(await request(
+                                `/vms/${vm.id}/git?choices=${encodeURIComponent(change.path)}`,
+                                'GET', undefined, signal,
+                              ));
+                              setMerge(null);
+                            })}
+                          >
+                            选择版本 {change.path}
                           </button>
                         </p>
                       ))}
+                      {choiceContext && (
+                        <div className="feature-card">
+                          <h5>选择冲突版本：{choiceContext.path}</h5>
+                          <p className="subtle-note">
+                            二进制、删除、符号链接和子模块冲突可选择一侧版本；子模块工作目录不会自动切换。
+                          </p>
+                          {(['ours', 'theirs'] as const).map((choice) => {
+                            const stage = choiceContext[choice];
+                            return <button key={choice} className="secondary compact" disabled={busy}
+                              onClick={() => void run({
+                                action: 'resolve-choice', path: choiceContext.path, choice,
+                                expectedIndex: choiceContext.expectedIndex,
+                                expectedWorktree: choiceContext.expectedWorktree,
+                              })}>
+                              采用{choice === 'ours' ? '当前' : '传入'}版本
+                              {stage ? `（${stage.mode} · ${stage.oid.slice(0, 8)}）` : '（删除）'}
+                            </button>;
+                          })}
+                          <button className="secondary compact" disabled={busy}
+                            onClick={() => setChoiceContext(null)}>取消</button>
+                        </div>
+                      )}
                       {merge && (
                         <fieldset disabled={busy}>
                           <ThreeWayMerge

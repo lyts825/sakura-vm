@@ -116,6 +116,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'workspace-search',
   'binary-preview',
   'three-way-sync',
+  'merge-editor',
   'resumable-transfer',
   'file-drop',
   'git-worktrees',
@@ -136,7 +137,6 @@ const availableFeatureIds = new Set<FeatureId>([
 const partialFeatureIds = new Set<FeatureId>([
   'reverse-proxy',
   'language-services',
-  'merge-editor',
   'multi-monitor',
   'security-scan',
 ]);
