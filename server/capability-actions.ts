@@ -20,6 +20,7 @@ import { hostPower, powerDecision, powerPolicy, savePowerPolicy } from './power-
 import { checkFlamegraph, runFlamegraph } from './flamegraph.ts';
 import { checkEbpfProfiler, runEbpfProfiler } from './ebpf-profiler.ts';
 import { networkQuota } from './network-quota.ts';
+import { projectQuota } from './project-quota.ts';
 import { egressPolicy } from './egress-policy.ts';
 import { natHairpin } from './nat-hairpin.ts';
 
@@ -69,6 +70,8 @@ export class CapabilityActions {
       return { featureId, ...await checkEbpfProfiler(this.machines, id, signal) };
     if (featureId === 'network-quota')
       return { featureId, ...await networkQuota(this.machines, id, {}, 'check', signal) };
+    if (featureId === 'project-quota')
+      return { featureId, ...await projectQuota(this.machines, this.workspaces, id, {}, 'check', signal) };
     if (featureId === 'egress-policy')
       return { featureId, ...await egressPolicy(this.machines, id, {}, 'check', signal) };
     if (featureId === 'nat-hairpin')
@@ -109,6 +112,8 @@ export class CapabilityActions {
       return runEbpfProfiler(this.machines, id, parameters, signal);
     if (featureId === 'network-quota')
       return { code: 0, ...await networkQuota(this.machines, id, parameters, 'run', signal) };
+    if (featureId === 'project-quota')
+      return { code: 0, ...await projectQuota(this.machines, this.workspaces, id, parameters, 'run', signal) };
     if (featureId === 'egress-policy')
       return { code: 0, ...await egressPolicy(this.machines, id, parameters, 'run', signal) };
     if (featureId === 'nat-hairpin')

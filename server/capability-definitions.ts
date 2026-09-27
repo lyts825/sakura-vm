@@ -7,6 +7,7 @@ import { diskHealthThresholds } from './host-disk-health.ts';
 import { powerPolicySchema } from './power-policy.ts';
 import { networkEmulationShape } from './network-emulation.ts';
 import { networkQuotaShape } from './network-quota.ts';
+import { projectQuotaShape } from './project-quota.ts';
 import { egressPolicyShape } from './egress-policy.ts';
 import { natHairpinShape } from './nat-hairpin.ts';
 import { flamegraphOptions } from './flamegraph.ts';
@@ -52,6 +53,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'project-quota': action(
+    '项目磁盘配额', 'extended', projectQuotaShape,
+    { mode: 'status', limitMiB: 512 },
+    '为当前项目目录创建固定容量 ext4 卷，迁移现有文件并在客户机重启后自动挂载。apply 设置上限，grow 扩容，clear 将内容迁回普通目录；原始目录备份与镜像归档保留在客户机 /var/lib/sakura/project-quotas。要求目录位于 /workspace 且不与其他项目重叠。',
+    true, true,
+  ),
   'storage-pools': action(
     '存储池管理',
     'next',

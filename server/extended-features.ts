@@ -48,7 +48,7 @@ export const extendedFeatureCatalog = [
   ['disk-encryption', '虚拟磁盘加密', '存储', 'P1', '保护宿主机上的实例磁盘文件。', 'planned'],
   ['qcow2-scrub', 'QCOW2 完整性巡检', '存储', 'P0', '检查虚拟磁盘链和坏块。', 'available'],
   ['backup-dedup', '备份块级去重', '存储', 'P1', '减少重复备份的磁盘占用。', 'available'],
-  ['project-quota', '项目磁盘配额', '存储', 'P1', '限制单个项目可使用的空间。', 'planned'],
+  ['project-quota', '项目磁盘配额', '存储', 'P1', '限制单个项目可使用的空间。', 'available'],
   ['guest-quota', '客户机目录配额', '存储', 'P1', '查看和设置 Linux 用户与目录配额。', 'experimental'],
   [
     'cow-workspace',

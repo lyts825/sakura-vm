@@ -20,6 +20,7 @@ import { secretRefsSchema, privateLog, redactValues, type Secrets } from './secr
 import type { NetworkProfiles } from './network-profiles.ts';
 import { ProjectCatalog } from './project-catalog.ts';
 import { runtimesSchema, runtimeEnvironment } from './runtime-versions.ts';
+import { guardProjectQuotaDirectory, projectQuota, readProjectQuotaRecord } from './project-quota.ts';
 
 export const projectSchema = z
   .object({
@@ -209,6 +210,10 @@ export class Workspaces {
       if (this.jobs.view(this.projects.key(id))?.status === 'running')
         throw new AppError('请等待项目操作完成', 409);
       const previous = await this.config(id);
+      await guardProjectQuotaDirectory(
+        id, this.projects.current(id), project.directory,
+        (await this.projects.list(id)).projects.map((item) => item.id),
+      );
       const removed = (previous.services || [])
         .filter((s) => !project.services?.some((next) => next.name === s.name))
         .map((s) => `sakura-service-${previous._workspace ? previous._workspace + '-' : ''}${s.name}`);
@@ -263,6 +268,12 @@ export class Workspaces {
   }
   private async runInternal(id: string, action: 'setup' | 'start' | 'stop' | 'terminal', service?: string) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
+    if ((action === 'setup' || action === 'start') &&
+        await readProjectQuotaRecord(id, this.projects.current(id))) {
+      const quota = await projectQuota(this.machines, this, id, {}, 'check');
+      if (!quota.ready || !quota.active)
+        throw new AppError('项目配额未挂载；拒绝在未受限的目录中启动项目', 409);
+    }
     const project =
       action === 'stop' || action === 'terminal' ? await this.config(id) : await this.resolvedConfig(id);
     const distro = this.machines.get(id).distro;

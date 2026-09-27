@@ -2,55 +2,54 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 184 条有实现入口，**66 条仍未完成**（61 条规划、5 条部分实现）。按标识去重后为 65 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 185 条有实现入口，**65 条仍未完成**（60 条规划、5 条部分实现）。按标识去重后为 64 个未完成标识；不同条目仍有范围重叠。
 
-本轮已接通 134 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
+本轮已接通 135 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 第一批 | 50 | 37 | 2 | 11 | 13 |
-| 第二批 | 100 | 88 | 1 | 11 | 12 |
+| 第二批 | 100 | 89 | 1 | 10 | 11 |
 | 第三批 | 100 | 59 | 2 | 39 | 41 |
 
 ## 第一批
 
 ### 实例与资源
 
-- [ ] **多架构实例**（P2 · 规划） · [`multi-arch`](../server/feature-suite.ts#L34) — 为 ARM64 等架构提供 QEMU 兼容运行入口。 对应完整流程尚未实现。
+- [ ] **多架构实例**（P2 · 规划） · [`multi-arch`](../server/feature-suite.ts#L35) — 为 ARM64 等架构提供 QEMU 兼容运行入口。 对应完整流程尚未实现。
 
 ### 文件与数据
 
-- [ ] **Windows 文件系统直挂**（P1 · 规划） · [`windows-mount`](../server/feature-suite.ts#L42) — 通过受控共享挂载宿主机目录。 对应完整流程尚未实现。
+- [ ] **Windows 文件系统直挂**（P1 · 规划） · [`windows-mount`](../server/feature-suite.ts#L43) — 通过受控共享挂载宿主机目录。 对应完整流程尚未实现。
 
 ### 开发工作台
 
-- [ ] **LSP 语言服务**（P1 · 部分实现） · [`language-services`](../server/feature-suite.ts#L50) — 提供补全、跳转、重命名和诊断。 对应完整流程尚未实现。
-- [ ] **DAP 调试器**（P2 · 规划） · [`debug-adapter`](../server/feature-suite.ts#L51) — 提供断点、单步、调用栈和变量查看。 对应完整流程尚未实现。
-- [ ] **Dev Container 支持**（P1 · 规划） · [`dev-container`](../server/feature-suite.ts#L60) — 从 Dockerfile 或 devcontainer 配置创建环境。 对应完整流程尚未实现。
+- [ ] **LSP 语言服务**（P1 · 部分实现） · [`language-services`](../server/feature-suite.ts#L51) — 提供补全、跳转、重命名和诊断。 对应完整流程尚未实现。
+- [ ] **DAP 调试器**（P2 · 规划） · [`debug-adapter`](../server/feature-suite.ts#L52) — 提供断点、单步、调用栈和变量查看。 对应完整流程尚未实现。
+- [ ] **Dev Container 支持**（P1 · 规划） · [`dev-container`](../server/feature-suite.ts#L61) — 从 Dockerfile 或 devcontainer 配置创建环境。 对应完整流程尚未实现。
 
 ### 网络与服务
 
-- [ ] **VPN 集成**（P1 · 规划） · [`vpn-integration`](../server/feature-suite.ts#L67) — 管理 WireGuard 或 Tailscale 连接。 对应完整流程尚未实现。
+- [ ] **VPN 集成**（P1 · 规划） · [`vpn-integration`](../server/feature-suite.ts#L68) — 管理 WireGuard 或 Tailscale 连接。 对应完整流程尚未实现。
 
 ### 桌面与跨系统
 
-- [ ] **GPU 与 3D 加速**（P2 · 规划） · [`gpu-acceleration`](../server/feature-suite.ts#L71) — 支持 virtio-gpu 和 VirGL 等方案。 对应完整流程尚未实现。
-- [ ] **音频与摄像头转发**（P2 · 规划） · [`audio-video`](../server/feature-suite.ts#L72) — 让 Linux 图形应用使用宿主机设备。 对应完整流程尚未实现。
-- [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L73) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
-- [ ] **Windows 进程互操作**（P2 · 规划） · [`process-interop`](../server/feature-suite.ts#L74) — 允许 Linux 命令调用受控的 Windows 程序。 对应完整流程尚未实现。
-- [ ] **多显示器与无障碍**（P1 · 部分实现） · [`multi-monitor`](../server/feature-suite.ts#L76) — 保存分辨率、缩放和多屏布局。 对应完整流程尚未实现。
+- [ ] **GPU 与 3D 加速**（P2 · 规划） · [`gpu-acceleration`](../server/feature-suite.ts#L72) — 支持 virtio-gpu 和 VirGL 等方案。 对应完整流程尚未实现。
+- [ ] **音频与摄像头转发**（P2 · 规划） · [`audio-video`](../server/feature-suite.ts#L73) — 让 Linux 图形应用使用宿主机设备。 对应完整流程尚未实现。
+- [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L74) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
+- [ ] **Windows 进程互操作**（P2 · 规划） · [`process-interop`](../server/feature-suite.ts#L75) — 允许 Linux 命令调用受控的 Windows 程序。 对应完整流程尚未实现。
+- [ ] **多显示器与无障碍**（P1 · 部分实现） · [`multi-monitor`](../server/feature-suite.ts#L77) — 保存分辨率、缩放和多屏布局。 对应完整流程尚未实现。
 
 ### 运维与安全
 
-- [ ] **多用户与只读分享**（P2 · 规划） · [`rbac-sharing`](../server/feature-suite.ts#L80) — 提供角色、短期令牌和审计日志。 对应完整流程尚未实现。
-- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L81) — 内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。
+- [ ] **多用户与只读分享**（P2 · 规划） · [`rbac-sharing`](../server/feature-suite.ts#L81) — 提供角色、短期令牌和审计日志。 对应完整流程尚未实现。
+- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L82) — 内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。
 
 ## 第二批
 
 ### 存储
 
 - [ ] **虚拟磁盘加密**（P1 · 规划） · [`disk-encryption`](../server/extended-features.ts#L48) — 保护宿主机上的实例磁盘文件。 对应完整流程尚未实现。
-- [ ] **项目磁盘配额**（P1 · 规划） · [`project-quota`](../server/extended-features.ts#L51) — 限制单个项目可使用的空间。 对应完整流程尚未实现。
 - [ ] **客户机目录配额**（P1 · 部分实现） · [`guest-quota`](../server/extended-features.ts#L52) — 目前为 quota 探测，尚无完整配额设置与管理流程。
 - [ ] **安全擦除证明**（P2 · 规划） · [`secure-erase`](../server/extended-features.ts#L63) — 擦除文件并记录操作证明。 对应完整流程尚未实现。
 
