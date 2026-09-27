@@ -20,7 +20,8 @@ export async function activate(host: PluginContext) {
     const id = retryTarget(job);
     if (job.action?.startsWith('package:')) {
       const [operationValue, ...nameParts] = job.action.slice(8).split(':');
-      const operation = z.enum(['list', 'search', 'install', 'remove', 'update']).parse(operationValue);
+      const operation = z.enum(['list', 'search', 'install', 'remove', 'update',
+        'cache-list', 'cache-prefetch', 'cache-install', 'cache-clear']).parse(operationValue);
       return retryInProject(host, job, () =>
         Promise.resolve(
           host.suite.package(id, {

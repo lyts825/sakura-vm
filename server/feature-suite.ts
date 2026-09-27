@@ -20,6 +20,7 @@ import { resourcePolicy } from './resource-policies.ts';
 import { observeAvailability, type AvailabilitySpan } from './availability.ts';
 import type { SecretRotationItem } from './secret-rotation.ts';
 import { hostPower, powerPolicy, powerDecision, type PowerSample } from './power-policy.ts';
+import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -135,6 +136,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'golden-images',
   'snapshot-diff',
   'online-snapshots',
+  'package-cache',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'language-services',
@@ -273,7 +275,8 @@ export type FeatureAction =
       password?: string;
     }
   | { action: 'search'; query: string; path?: string; content?: boolean }
-  | { action: 'package'; operation: 'list' | 'search' | 'install' | 'remove' | 'update'; name?: string }
+  | { action: 'package'; operation: 'list' | 'search' | 'install' | 'remove' | 'update' |
+      'cache-list' | 'cache-prefetch' | 'cache-install' | 'cache-clear'; name?: string }
   | { action: 'network-test'; target: string }
   | { action: 'security-scan' }
   | { action: 'discover-ports' }
@@ -463,6 +466,9 @@ export class FeatureSuite {
       result.ready = true;
       result.reason = '在实例 → 快照中，对运行中的实例创建在线快照；客户机需安装并运行 qemu-guest-agent。';
       result.snapshots = vm.snapshots.length;
+    } else if (featureId === 'package-cache') {
+      result.ready = true;
+      result.reason = '工作空间 → 软件包：预取软件包和依赖到客户机磁盘缓存，查看缓存后可完全禁止网络地安装。';
     } else if (
       featureId === 'windows-mount' ||
       featureId === 'file-drop' ||
@@ -886,28 +892,31 @@ export class FeatureSuite {
     input: Omit<Extract<FeatureAction, { action: 'package' }>, 'action'>,
     signal?: AbortSignal,
   ) {
-    const operation = z.enum(['list', 'search', 'install', 'remove', 'update']).parse(input.operation);
+    const operation = z.enum(['list', 'search', 'install', 'remove', 'update',
+      ...packageCacheOperations]).parse(input.operation);
     const name = input.name ? packageName.parse(input.name) : undefined;
     if (['search', 'install', 'remove'].includes(operation) && !name)
       throw new AppError('此操作需要软件包名称');
     const vm = this.machines.get(id);
-    const manager = vm.distro === 'alpine' ? 'apk' : 'apt-get';
-    const command =
-      manager === 'apk'
+    const manager = !vm.distro || vm.distro === 'alpine' ? 'apk' : 'apt-get';
+    const regular = operation as 'list' | 'search' | 'install' | 'remove' | 'update';
+    const command = operation.startsWith('cache-')
+      ? packageCacheScript(vm.distro, operation as (typeof packageCacheOperations)[number], name)
+      : manager === 'apk'
         ? {
             list: 'apk info',
             search: `apk search -v ${quote(name!)}`,
             install: `apk add --no-cache --timeout 30 ${quote(name!)}`,
             remove: `apk del ${quote(name!)}`,
             update: 'apk update',
-          }[operation]
+          }[regular]
         : {
             list: "dpkg-query -W -f='${Package}\\t${Version}\\n'",
             search: `apt-cache search ${quote(name!)}`,
             install: `DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 install -y ${quote(name!)}`,
             remove: `DEBIAN_FRONTEND=noninteractive apt-get remove -y ${quote(name!)}`,
             update: 'apt-get update',
-          }[operation];
+          }[regular];
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:package`,
       async (log, taskSignal) => {
@@ -916,7 +925,9 @@ export class FeatureSuite {
         if (result.code !== 0) throw new AppError(result.stderr.trim() || `软件包操作失败（${result.code}）`);
       },
       {
-        title: `软件包${{ list: '列表', search: '搜索', install: '安装', remove: '卸载', update: '更新' }[operation]}`,
+        title: `软件包${{ list: '列表', search: '搜索', install: '安装', remove: '卸载', update: '更新',
+          'cache-list': '缓存列表', 'cache-prefetch': '预取缓存',
+          'cache-install': '离线安装', 'cache-clear': '清除缓存' }[operation]}`,
         vmId: id,
         projectId: this.workspaces.projects.current(id),
         action: `package:${operation}${name ? `:${name}` : ''}`,
@@ -1019,7 +1030,8 @@ export class FeatureSuite {
         z
           .object({
             action: z.literal('package'),
-            operation: z.enum(['list', 'search', 'install', 'remove', 'update']),
+            operation: z.enum(['list', 'search', 'install', 'remove', 'update',
+              ...packageCacheOperations]),
             name: z.string().optional(),
           })
           .strict(),

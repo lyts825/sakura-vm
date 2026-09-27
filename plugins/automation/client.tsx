@@ -197,7 +197,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const [searchResult, setSearchResult] = useState<string[]>([]);
   const [packageName, setPackageName] = useState('');
   const [packageOperation, setPackageOperation] = useState<
-    'list' | 'search' | 'install' | 'remove' | 'update'
+    'list' | 'search' | 'install' | 'remove' | 'update' |
+    'cache-list' | 'cache-prefetch' | 'cache-install' | 'cache-clear'
   >('list');
   const [networkTarget, setNetworkTarget] = useState('example.com');
   const [networkResult, setNetworkResult] = useState('');
@@ -315,7 +316,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       await request(`/vms/${active.id}/advanced`, 'POST', {
         action: 'package',
         operation: packageOperation,
-        ...(packageName.trim() ? { name: packageName.trim() } : {}),
+        ...(!['list', 'update', 'cache-list'].includes(packageOperation) && packageName.trim()
+          ? { name: packageName.trim() } : {}),
       });
     }, '软件包任务已提交，请在任务中心查看日志');
   const runDev = () =>
@@ -879,6 +881,10 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                     <option value="install">安装</option>
                     <option value="remove">卸载</option>
                     <option value="update">更新索引</option>
+                    <option value="cache-list">查看离线缓存</option>
+                    <option value="cache-prefetch">预取软件包及依赖</option>
+                    <option value="cache-install">从缓存离线安装</option>
+                    <option value="cache-clear">移除指定软件包缓存</option>
                   </select>
                 </label>
                 <label>
@@ -886,13 +892,16 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   <input
                     value={packageName}
                     onChange={(event) => setPackageName(event.target.value)}
-                    placeholder="可选"
+                    placeholder={['list', 'update', 'cache-list'].includes(packageOperation)
+                      ? '此操作无需填写' : '输入软件包名称'}
                   />
                 </label>
               </div>
+              <p className="subtle-note">预取会联网下载已验证的软件包及依赖；离线安装只使用客户机磁盘中的已校验缓存。缓存列表按“名称、文件数、字节数”显示在任务日志中。</p>
               <button
                 className="secondary compact"
-                disabled={action.busy || active.status !== 'running'}
+                disabled={action.busy || active.status !== 'running' ||
+                  (['cache-prefetch', 'cache-install', 'cache-clear'].includes(packageOperation) && !packageName.trim())}
                 onClick={runPackage}
               >
                 提交软件包任务
