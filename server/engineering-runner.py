@@ -841,6 +841,8 @@ def execute(root, operation, p):
             results.append(dict(name=step["name"], **result))
             previous = result["code"]
             failed |= previous != 0
+            if operation == "runbooks" and failed:
+                break
         missing = [path for path in p.get("artifacts", []) if not safe_path(root, path).exists()]
         return dict(code=1 if failed or missing else 0, results=results, missingArtifacts=missing)
     if operation == "artifact-provenance":

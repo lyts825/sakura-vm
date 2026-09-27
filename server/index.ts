@@ -26,6 +26,8 @@ import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from './graphql-a
 import { SessionLock } from './session-lock.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { AutomationRules } from './automation-rules.ts';
+import { runEngineeringOperation } from './engineering-runner.ts';
+import { Workspaces } from './workspaces.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
@@ -164,7 +166,17 @@ async function main() {
   await webhooks.init();
   const automationRules = new AutomationRules(eventSource, machines, undefined, undefined,
     () => !!features.migration?.blocked,
-    (delta) => { features.mutations += delta; });
+    (delta) => { features.mutations += delta; },
+    async (id, steps, projectId, signal) => {
+      const own = !features.workspaces;
+      const workspaces = features.workspaces || new Workspaces(machines);
+      try {
+        return await workspaces.projects.with(id, projectId, () =>
+          runEngineeringOperation(machines, workspaces, id, 'runbooks', { steps }, signal));
+      } finally {
+        if (own) await workspaces.close();
+      }
+    });
   await automationRules.init();
   const retention = new LogRetention(
     () => features.jobStores(),

@@ -7,12 +7,12 @@ import {
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 import './features.css';
 
-type Draft = Pick<AutomationRule, 'name' | 'enabled' | 'previewOnly' | 'filter' | 'action' | 'cooldownSeconds'>;
+type Draft = Pick<AutomationRule, 'name' | 'enabled' | 'previewOnly' | 'filter' | 'action' | 'steps' | 'cooldownSeconds'>;
 type Preview = { rule: AutomationRule; matches: Array<{
   event: WebhookEvent; targetVmId: string | null; action: Draft['action']; wouldExecute: boolean;
-}> };
+}>; approval?: string };
 const fresh = (): Draft => ({
-  name: '', enabled: false, previewOnly: true, action: 'start', cooldownSeconds: 300,
+  name: '', enabled: false, previewOnly: true, action: 'start', steps: [], cooldownSeconds: 300,
   filter: { types: ['alert.raised'], vmIds: [], projectIds: [], tags: [], statuses: [], kinds: [] },
 });
 const labels: Record<string, string> = {
@@ -21,6 +21,7 @@ const labels: Record<string, string> = {
   cpu: 'CPU', memory: '内存', disk: '磁盘', service: '服务',
   backup: '备份', task: '任务', secret: '密钥轮换',
   start: '启动实例', stop: '正常停止实例', suspend: '暂停实例', resume: '恢复实例',
+  runbook: '自动修复 Runbook',
   preview: '仅预览', pending: '执行中', failed: '失败', skipped: '已跳过',
 };
 const split = (value: string) => [...new Set(value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean))];
@@ -38,8 +39,9 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
   };
   const edit = (rule: AutomationRule) => {
     setEditing({ id: rule.id, version: rule.version });
-    setDraft({ name: rule.name, enabled: rule.enabled, previewOnly: rule.previewOnly,
-      filter: rule.filter, action: rule.action, cooldownSeconds: rule.cooldownSeconds });
+    setDraft({ name: rule.name, enabled: rule.enabled,
+      previewOnly: rule.action === 'runbook' ? true : rule.previewOnly,
+      filter: rule.filter, action: rule.action, steps: rule.steps, cooldownSeconds: rule.cooldownSeconds });
     setVmIds(rule.filter.vmIds.join(', '));
     setProjects(rule.filter.projectIds.join(', '));
     setTags(rule.filter.tags.join(', '));
@@ -55,7 +57,8 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
   const save = () => void action.run(async (signal) => {
     await request('/automation-rules', 'POST', {
       operation: 'save', ...editing,
-      rule: { ...draft, filter: { ...draft.filter,
+      rule: { ...draft, previewOnly: draft.action === 'runbook' ? true : draft.previewOnly,
+        filter: { ...draft.filter,
         vmIds: split(vmIds), projectIds: split(projects), tags: split(tags),
       } },
     }, signal);
@@ -72,9 +75,19 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
     setPreview(await request<Preview>('/automation-rules', 'POST',
       { operation: 'preview', id: rule.id }, signal));
   });
+  const approve = () => void action.run(async (signal) => {
+    if (!preview?.approval || preview.rule.action !== 'runbook') return;
+    const rule = preview.rule;
+    await request('/automation-rules', 'POST', { operation: 'save', id: rule.id,
+      version: rule.version, approval: preview.approval,
+      rule: { name: rule.name, enabled: true, previewOnly: false, filter: rule.filter,
+        action: rule.action, steps: rule.steps, cooldownSeconds: rule.cooldownSeconds } }, signal);
+    clear();
+    remote.reload();
+  }, '已批准并启用自动修复');
   return <section className="system-card automation-rule-settings" aria-label="事件自动化规则">
     <div className="panel-heading">
-      <div><h3>事件自动化规则</h3><p>根据任务和告警事件执行受限的实例操作。新规则默认只预览。</p></div>
+      <div><h3>事件自动化规则</h3><p>根据任务和告警事件执行实例操作或修复 Runbook。新规则默认只预览。</p></div>
       <button className="secondary compact" onClick={remote.reload}>刷新</button>
     </div>
     <Feedback error={action.error || remote.error || remote.data?.error} message={action.message} />
@@ -84,8 +97,9 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
         <label>规则名称<input value={draft.name} maxLength={64}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
         <label>实例操作<select value={draft.action}
-          onChange={(e) => setDraft({ ...draft, action: e.target.value as Draft['action'] })}>
-          {(['start', 'stop', 'suspend', 'resume'] as const).map((value) =>
+          onChange={(e) => setDraft({ ...draft, action: e.target.value as Draft['action'],
+            steps: e.target.value === 'runbook' ? draft.steps : [] })}>
+          {(['start', 'stop', 'suspend', 'resume', 'runbook'] as const).map((value) =>
             <option key={value} value={value}>{labels[value]}</option>)}</select></label>
         <label>冷却秒数<input type="number" min={60} max={86400} value={draft.cooldownSeconds}
           onChange={(e) => setDraft({ ...draft, cooldownSeconds: Number(e.target.value) })} /></label>
@@ -96,6 +110,26 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
         <label>实例标签（逗号分隔，必须全部匹配）<input value={tags}
           onChange={(e) => setTags(e.target.value)} /></label>
       </div>
+      {draft.action === 'runbook' && <div className="feature-card">
+        <h4>修复步骤</h4>
+        <p className="subtle-note">按顺序在匹配实例的项目目录执行 Shell 命令；任一步骤失败即停止。最多 8 步，总超时 600 秒。</p>
+        {draft.steps.map((step, index) => <div key={index} className="shortcut-fields">
+          <label>步骤名称<input value={step.name} maxLength={80}
+            onChange={(e) => setDraft({ ...draft, steps: draft.steps.map((item, at) =>
+              at === index ? { ...item, name: e.target.value } : item) })} /></label>
+          <label>Shell 命令<input value={step.command} maxLength={2048}
+            onChange={(e) => setDraft({ ...draft, steps: draft.steps.map((item, at) =>
+              at === index ? { ...item, command: e.target.value } : item) })} /></label>
+          <label>超时秒数<input type="number" min={1} max={120} value={step.timeout}
+            onChange={(e) => setDraft({ ...draft, steps: draft.steps.map((item, at) =>
+              at === index ? { ...item, timeout: Number(e.target.value) } : item) })} /></label>
+          <button className="secondary compact" onClick={() => setDraft({ ...draft,
+            steps: draft.steps.filter((_, at) => at !== index) })}>移除步骤</button>
+        </div>)}
+        <button className="secondary compact" disabled={draft.steps.length >= 8}
+          onClick={() => setDraft({ ...draft, steps: [...draft.steps,
+            { name: '', command: '', timeout: 30 }] })}>添加步骤</button>
+      </div>}
       <fieldset className="webhook-choices"><legend>事件类型</legend>
         {webhookTypes.map((value) => <label key={value} className="check">
           <input type="checkbox" checked={draft.filter.types.includes(value)}
@@ -113,12 +147,13 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
       </fieldset>
       <label className="check"><input type="checkbox" checked={draft.enabled}
         onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />启用规则</label>
-      <label className="check"><input type="checkbox" checked={!draft.previewOnly}
+      <label className="check"><input type="checkbox" checked={draft.action !== 'runbook' && !draft.previewOnly}
+        disabled={draft.action === 'runbook'}
         onChange={(e) => setDraft({ ...draft, previewOnly: !e.target.checked })} />
-        实际执行实例操作（取消勾选时只记录预览）</label>
+        实际执行实例操作（Runbook 需先保存、预览并单独批准）</label>
       <div className="feature-actions">
         <button className="primary compact" disabled={action.busy || !draft.name.trim() ||
-          !draft.filter.types.length} onClick={save}>保存规则</button>
+          !draft.filter.types.length || (draft.action === 'runbook' && !draft.steps.length)} onClick={save}>保存规则</button>
         {editing && <button className="secondary compact" onClick={clear}>取消编辑</button>}
       </div>
     </div>
@@ -133,6 +168,14 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
       </div>)}
     </div>
     {preview && <div className="feature-card"><h4>事件预览：{preview.rule.name}</h4>
+      {preview.rule.action === 'runbook' && <div>
+        <p>以下命令将在匹配实例的项目目录中顺序运行：</p>
+        {preview.rule.steps.map((step, index) => <p key={index}>
+          {index + 1}. {step.name} · {step.timeout} 秒 · <code>{step.command}</code>
+        </p>)}
+        {preview.rule.previewOnly && preview.approval && <button className="primary compact"
+          disabled={action.busy} onClick={approve}>批准并启用自动修复</button>}
+      </div>}
       {!preview.matches.length && <p>最近没有匹配事件。</p>}
       {preview.matches.map(({ event, action: operation, targetVmId, wouldExecute }) =>
         <p key={event.id}>{event.occurredAt} · {labels[event.type]} · {targetVmId || '无实例'} ·
@@ -144,6 +187,8 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
         {new Date(item.startedAt).toLocaleString()} · {labels[item.action]} ·
         {item.vmId || '无实例'} · {labels[item.status] || item.status}
         {item.reason ? ` · ${item.reason}` : ''}
+        {item.steps?.length ? ` · 步骤：${item.steps.map((step) =>
+          `${step.name}(${step.code === -1 ? '跳过' : step.code})`).join('、')}` : ''}
       </p>)}
     </div>
   </section>;

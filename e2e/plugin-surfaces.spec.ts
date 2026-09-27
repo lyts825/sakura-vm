@@ -1241,6 +1241,61 @@ test('automation rules preview events before explicitly enabling a real VM actio
   }
 });
 
+test('reviewed Runbook rules expose exact steps before approval and run once for a matching alert', async ({ page }) => {
+  await app(page);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-runbook-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  let now = Date.now();
+  let events: Array<{ id: string; type: 'alert.raised'; occurredAt: string; vmId: string;
+    kind: 'service'; tags: string[] }> = [];
+  const calls: string[][] = [];
+  const machine = { get: () => vm, requireUnlocked: () => {}, start: async () => {},
+    stop: async () => {}, suspend: async () => {}, resume: async () => {} } as unknown as Machines;
+  const rules = new AutomationRules(async () => events, machine,
+    join(directory, 'rules.json'), () => now, () => false, () => {}, async (_id, steps) => {
+      calls.push(steps.map((step) => step.command));
+      return { code: 0, results: steps.map(() => ({ code: 0 })) };
+    });
+  await rules.init(false);
+  await page.route('**/api/automation-rules', async (route) => {
+    try {
+      if (route.request().method() === 'GET') return route.fulfill({ json: rules.view() });
+      return route.fulfill({ json: await rules.configure(route.request().postDataJSON()) });
+    } catch (error: any) {
+      return route.fulfill({ status: error.status || 400, json: { error: error.message } });
+    }
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理自动化规则' }).click();
+    const panel = page.getByRole('region', { name: '事件自动化规则' });
+    await panel.getByLabel('规则名称').fill('修复服务');
+    await panel.getByRole('combobox', { name: /实例操作/ }).selectOption('runbook');
+    await panel.getByRole('button', { name: '添加步骤' }).click();
+    await panel.getByLabel('步骤名称').fill('重建标记');
+    await panel.getByLabel('Shell 命令').fill('touch /workspace/repaired');
+    await panel.getByLabel('启用规则').check();
+    await panel.getByRole('button', { name: '保存规则' }).click();
+    await expect(panel.locator('.automation-rule-row')).toContainText('预览中');
+    await panel.locator('.automation-rule-row').getByRole('button', { name: '预览最近事件' }).click();
+    await expect(panel.getByText('touch /workspace/repaired')).toBeVisible();
+    await panel.getByRole('button', { name: '批准并启用自动修复' }).click();
+    await expect(panel.locator('.automation-rule-row')).toContainText('实际执行');
+    now += 1000;
+    events = [{ id: 'f'.repeat(64), type: 'alert.raised', kind: 'service',
+      occurredAt: new Date(now).toISOString(), vmId: vm.id, tags: [] }];
+    await rules.tick();
+    await rules.tick();
+    expect(calls).toEqual([['touch /workspace/repaired']]);
+    await panel.getByRole('button', { name: '刷新' }).click();
+    await expect(panel.getByText(/重建标记\(0\)/)).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+    await rules.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('plugin rollout previews a host cohort, persists a policy and explains next startup', async ({ page }) => {
   await app(page);
   const directory = await mkdtemp(join(tmpdir(), 'sakura-rollout-browser-'));

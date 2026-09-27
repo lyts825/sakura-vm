@@ -402,8 +402,8 @@ export const nextFeatureCatalog = [
     '自动修复 Runbook',
     '可观测性与自动运维',
     'P0',
-    '保存带审批和预览的自动修复步骤。',
-    'planned',
+    '按告警或任务事件执行经逐步预览和批准的修复命令，持久去重并限制频率。',
+    'available',
   ],
   ['build-cache', '构建缓存', '开发与 AI', 'P1', '检查客户机缓存目录和构建工具。', 'available'],
   ['build-farm', '分布式构建农场', '开发与 AI', 'P2', '保存构建节点和队列调度元数据。', 'planned'],
@@ -869,6 +869,13 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '系统设置 → 事件自动化规则，按任务或告警筛选实例，先预览再启用实际执行；规则持久去重并记录每次操作。',
+      };
+    if (spec.id === 'auto-remediation')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '系统设置 → 事件自动化规则 → 自动修复 Runbook：保存预览规则，检查每一步命令与匹配事件，再单独批准实际执行。',
       };
     if (spec.id === 'feature-rollout')
       return {

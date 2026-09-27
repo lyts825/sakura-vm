@@ -38,6 +38,7 @@
     "test:rescue": "tsx scripts/smoke-rescue.ts",
     "test:snapshot-diff": "tsx scripts/smoke-snapshot-diff.ts",
     "test:online-snapshot": "tsx scripts/smoke-online-snapshot.ts",
+    "test:auto-remediation": "tsx scripts/smoke-auto-remediation.ts",
     "test:backup-recovery": "tsx scripts/smoke-backup-recovery.ts",
     "test:observability": "tsx scripts/smoke-observability.ts",
     "test:network": "tsx scripts/smoke-network.ts",

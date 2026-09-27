@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -23,15 +23,29 @@ const filterSchema = z.object({
   statuses: unique(z.enum(webhookJobStatuses), 4).default([]),
   kinds: unique(z.enum(webhookAlertKinds), 7).default([]),
 }).strict();
+const runbookStepSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  command: z.string().trim().min(1).max(2048),
+  timeout: z.number().int().min(1).max(120),
+}).strict();
+export type RunbookStep = z.infer<typeof runbookStepSchema>;
 const ruleInput = z.object({
   name: z.string().trim().min(1).max(64),
   enabled: z.boolean(),
   previewOnly: z.boolean().default(true),
   filter: filterSchema,
-  action: z.enum(['start', 'stop', 'suspend', 'resume']),
+  action: z.enum(['start', 'stop', 'suspend', 'resume', 'runbook']),
+  steps: z.array(runbookStepSchema).max(8).default([]),
   cooldownSeconds: z.number().int().min(60).max(86400).default(300),
-}).strict();
-const ruleSchema = ruleInput.extend({
+}).strict().superRefine((rule, context) => {
+  if (rule.action === 'runbook' && rule.steps.length === 0)
+    context.addIssue({ code: 'custom', path: ['steps'], message: '自动修复至少需要一个步骤' });
+  if (rule.action !== 'runbook' && rule.steps.length)
+    context.addIssue({ code: 'custom', path: ['steps'], message: '实例操作不能包含 Runbook 步骤' });
+  if (rule.steps.reduce((sum, step) => sum + step.timeout, 0) > 600)
+    context.addIssue({ code: 'custom', path: ['steps'], message: '步骤总超时不能超过 600 秒' });
+});
+const ruleSchema = ruleInput.safeExtend({
   id: z.uuid(), version: z.number().int().positive(), createdAt: z.number().int().nonnegative(),
   activeSince: z.number().int().nonnegative(), updatedAt: z.number().int().nonnegative(),
 }).strict();
@@ -41,6 +55,7 @@ const executionSchema = z.object({
   status: z.enum(['preview', 'pending', 'done', 'failed', 'skipped']),
   startedAt: z.number().int().nonnegative(), finishedAt: z.number().int().nonnegative().optional(),
   reason: z.string().max(300).optional(),
+  steps: z.array(z.object({ name: z.string(), code: z.number().int() }).strict()).max(8).optional(),
 }).strict();
 const stateSchema = z.object({
   version: z.literal(1), rules: z.array(ruleSchema).max(limits.rules),
@@ -57,9 +72,11 @@ export type AutomationView = {
   rules: AutomationRule[]; executions: AutomationExecution[]; error?: string; collecting: boolean;
   limits: typeof limits;
 };
+export type RunbookExecutor = (id: string, steps: RunbookStep[], projectId: string | undefined,
+  signal: AbortSignal) => Promise<{ code: number; results?: Array<{ code: number; skipped?: boolean }> }>;
 export const automationRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('save'), id: z.uuid().optional(), version: z.number().int().positive().optional(),
-    rule: ruleInput }).strict(),
+    rule: ruleInput, approval: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict(),
   z.object({ operation: z.literal('remove'), id: z.uuid(), version: z.number().int().positive() }).strict(),
   z.object({ operation: z.literal('preview'), id: z.uuid() }).strict(),
 ]);
@@ -69,6 +86,8 @@ const defaultState = (): State => ({
 });
 
 export class AutomationRules {
+  private readonly approvalKey = randomBytes(32);
+  private readonly activeRunbooks = new Set<AbortController>();
   private state: State = defaultState();
   private queue: Promise<unknown> = Promise.resolve();
   private timer?: ReturnType<typeof setInterval>;
@@ -77,12 +96,20 @@ export class AutomationRules {
   private error?: string;
   constructor(
     private source: () => Promise<WebhookEvent[]>,
-    private machines: Pick<Machines, 'get' | 'requireUnlocked' | 'start' | 'stop' | 'suspend' | 'resume'>,
+    private machines: Pick<Machines, 'get' | 'requireUnlocked' | 'start' | 'stop' | 'suspend' | 'resume'> &
+      Partial<Pick<Machines, 'on' | 'off'>>,
     private file = join(DATA, 'automation-rules.json'),
     private now = Date.now,
     private blocked: () => boolean = () => false,
     private mutation: (delta: number) => void = () => {},
+    private runbook?: RunbookExecutor,
   ) {}
+  private approval(id: string, version: number, rule: z.infer<typeof ruleInput>) {
+    const reviewed = { name: rule.name, filter: rule.filter, action: rule.action,
+      steps: rule.steps, cooldownSeconds: rule.cooldownSeconds };
+    return createHmac('sha256', this.approvalKey)
+      .update(JSON.stringify({ id, version, reviewed })).digest('hex');
+  }
   async init(schedule = true) {
     const info = await stat(this.file).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error;
@@ -135,7 +162,9 @@ export class AutomationRules {
       const rule = this.state.rules.find((candidate) => candidate.id === value.id);
       if (!rule) throw new AppError('自动化规则不存在', 404);
       const events = await this.source();
-      return { rule, matches: events.filter((event) => event.type !== 'test' &&
+      return { rule, ...(rule.action === 'runbook' ?
+        { approval: this.approval(rule.id, rule.version, rule) } : {}),
+        matches: events.filter((event) => event.type !== 'test' &&
         matchesWebhook(rule.filter, event)).slice(-10).reverse().map((event) => ({
           event, targetVmId: event.vmId || null, action: rule.action, wouldExecute: rule.enabled &&
             !rule.previewOnly && !!event.vmId,
@@ -159,6 +188,15 @@ export class AutomationRules {
         if (index < 0 && next.rules.length >= limits.rules) throw new AppError('最多保存 24 条自动化规则');
         const time = this.now();
         const previous = index >= 0 ? next.rules[index] : undefined;
+        if (value.rule.action === 'runbook' && !value.rule.previewOnly) {
+          if (!this.runbook) throw new AppError('自动修复执行器不可用', 503);
+          if (!previous || !previous.previewOnly || previous.action !== 'runbook' || !value.approval)
+            throw new AppError('请先保存预览规则，检查步骤后再批准执行', 409);
+          const expected = Buffer.from(this.approval(previous.id, previous.version, value.rule), 'hex');
+          const provided = Buffer.from(value.approval, 'hex');
+          if (!timingSafeEqual(expected, provided))
+            throw new AppError('规则内容已变化，请保存并重新预览后批准', 409);
+        }
         const rule = {
           ...value.rule, id: previous?.id || randomUUID(), version: (previous?.version || 0) + 1,
           createdAt: previous?.createdAt || time, activeSince: time, updatedAt: time,
@@ -242,6 +280,7 @@ export class AutomationRules {
           });
           continue;
         }
+        let stepResults: Array<{ name: string; code: number }> | undefined;
         try {
           this.machines.get(event.vmId!);
           this.machines.requireUnlocked(event.vmId!);
@@ -249,13 +288,34 @@ export class AutomationRules {
           if (rule.action === 'start') await this.machines.start(event.vmId!);
           else if (rule.action === 'stop') await this.machines.stop(event.vmId!, false);
           else if (rule.action === 'suspend') await this.machines.suspend(event.vmId!);
-          else await this.machines.resume(event.vmId!);
+          else if (rule.action === 'resume') await this.machines.resume(event.vmId!);
+          else {
+            if (!this.runbook) throw new AppError('自动修复执行器不可用', 503);
+            const controller = new AbortController();
+            const lockdown = (target: string) => {
+              if (target === event.vmId) controller.abort(new AppError('实例已进入应急锁定', 409));
+            };
+            this.activeRunbooks.add(controller);
+            this.machines.on?.('incident-lockdown', lockdown);
+            try {
+              const outcome = await this.runbook(event.vmId!, rule.steps, event.projectId, controller.signal);
+              stepResults = (outcome.results || []).slice(0, rule.steps.length).map((item, index) => ({
+                name: rule.steps[index].name,
+                code: item.skipped ? -1 : item.code,
+              }));
+              if (outcome.code !== 0) throw new AppError('自动修复步骤失败', 409);
+            } finally {
+              this.machines.off?.('incident-lockdown', lockdown);
+              this.activeRunbooks.delete(controller);
+            }
+          }
         } catch (error) {
           await this.change((next) => {
             const entry = next.executions.find((item) => item.id === id);
             if (entry) {
               entry.status = 'failed'; entry.finishedAt = this.now();
               entry.reason = String((error as Error).message || error).slice(0, 300);
+              if (stepResults) entry.steps = stepResults;
             }
           });
           continue;
@@ -264,7 +324,10 @@ export class AutomationRules {
         // record rather than claiming failure or executing the action again.
         await this.change((next) => {
           const entry = next.executions.find((item) => item.id === id);
-          if (entry) { entry.status = 'done'; entry.finishedAt = this.now(); }
+          if (entry) {
+            entry.status = 'done'; entry.finishedAt = this.now();
+            if (stepResults) entry.steps = stepResults;
+          }
         });
       }
     }
@@ -272,6 +335,7 @@ export class AutomationRules {
   async close() {
     this.closed = true;
     if (this.timer) clearInterval(this.timer);
+    for (const controller of this.activeRunbooks) controller.abort();
     await this.pending;
     await this.queue.catch(() => {});
   }

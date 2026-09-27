@@ -190,3 +190,63 @@ test('automation rules enforce the durable daily action ceiling', async (t) => {
   assert.equal(restarted.view().executions[0].status, 'skipped');
   await restarted.close();
 });
+
+test('runbook approval binds the reviewed steps and executes each event at most once', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'sakura-automation-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = join(root, 'rules.json');
+  let now = Date.parse('2026-09-27T10:00:00.000Z');
+  let latest: WebhookEvent[] = [];
+  let fail = false;
+  const calls: Array<{ id: string; projectId?: string; commands: string[] }> = [];
+  const machines = {
+    get: () => ({ id: vmId }), requireUnlocked: () => {},
+    start: async () => {}, stop: async () => {}, suspend: async () => {}, resume: async () => {},
+  } as unknown as Machines;
+  const executor = async (id: string, steps: Array<{ command: string }>, projectId?: string) => {
+    calls.push({ id, projectId, commands: steps.map((step) => step.command) });
+    return { code: fail ? 1 : 0, results: steps.map((_, index) => ({ code: fail && index === 0 ? 1 : 0 })) };
+  };
+  const create = async () => {
+    const service = new AutomationRules(async () => latest, machines, file, () => now,
+      () => false, () => {}, executor);
+    await service.init(false);
+    return service;
+  };
+  let service = await create();
+  const repair = { ...rule, name: '重启服务', action: 'runbook' as const, steps: [
+    { name: '检查', command: 'test -f /workspace/ready', timeout: 10 },
+    { name: '修复', command: 'touch /workspace/repaired', timeout: 20 },
+  ] };
+  await service.configure({ operation: 'save', rule: repair });
+  const saved = service.view().rules[0];
+  const preview = await service.configure({ operation: 'preview', id: saved.id });
+  assert.ok('approval' in preview && preview.approval);
+  await assert.rejects(service.configure({ operation: 'save', id: saved.id,
+    version: saved.version, rule: { ...repair, previewOnly: false } }), /预览/);
+  await assert.rejects(service.configure({ operation: 'save', id: saved.id,
+    version: saved.version, approval: preview.approval,
+    rule: { ...repair, previewOnly: false, steps: [{ ...repair.steps[0], command: 'touch /workspace/changed' }] } }),
+  /规则内容已变化/);
+  await service.configure({ operation: 'save', id: saved.id, version: saved.version,
+    approval: preview.approval, rule: { ...repair, previewOnly: false } });
+  now += 1000;
+  latest = [{ ...event('a'.repeat(64), now), projectId: 'default' }];
+  await service.tick();
+  assert.deepEqual(calls, [{ id: vmId, projectId: 'default', commands: repair.steps.map((step) => step.command) }]);
+  assert.equal(service.view().executions[0].status, 'done');
+  assert.deepEqual(service.view().executions[0].steps,
+    [{ name: '检查', code: 0 }, { name: '修复', code: 0 }]);
+  fail = true;
+  now += 61_000;
+  latest = [event('b'.repeat(64), now)];
+  await service.tick();
+  assert.equal(service.view().executions[0].status, 'failed');
+  assert.deepEqual(service.view().executions[0].steps,
+    [{ name: '检查', code: 1 }, { name: '修复', code: 0 }]);
+  await service.close();
+  service = await create();
+  await service.tick();
+  assert.equal(calls.length, 2);
+  await service.close();
+});

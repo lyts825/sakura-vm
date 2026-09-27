@@ -1535,7 +1535,7 @@ function App() {
                 )}
                 <section className="system-card">
                   <h3>事件自动化规则</h3>
-                  <p>匹配任务与告警事件，先预览，再按规则启动、停止或暂停实例。</p>
+                  <p>匹配任务与告警事件，预览后执行实例操作或经单独批准的修复 Runbook。</p>
                   <button className="secondary compact" onClick={() => setShowAutomationRules(!showAutomationRules)}>
                     {showAutomationRules ? '收起自动化规则' : '管理自动化规则'}
                   </button>
