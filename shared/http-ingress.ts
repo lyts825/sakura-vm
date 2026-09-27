@@ -13,6 +13,22 @@ const pathSchema = z
     '路径不能包含编码斜杠或点段',
   );
 
+export const ingressClientAuthSchema = z
+  .object({
+    currentPem: z.string().min(100).max(16000),
+    currentCaPem: z.string().min(100).max(16000).optional(),
+    replacementPem: z.string().min(100).max(16000).optional(),
+    replacementCaPem: z.string().min(100).max(16000).optional(),
+    rotateAt: z.string().datetime().optional(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.replacementPem) === Boolean(value.rotateAt), {
+    message: '替换证书与轮换时间须同时填写',
+  })
+  .refine((value) => !value.replacementCaPem || Boolean(value.replacementPem), {
+    message: '替换 CA 须同时提供替换客户端证书',
+  });
+
 export const ingressInputSchema = z
   .object({
     id: z.uuid().optional(),
@@ -25,6 +41,7 @@ export const ingressInputSchema = z
     upstreamPort: z.number().int().min(1024).max(65535),
     healthPath: pathSchema,
     stripPrefix: z.boolean(),
+    clientAuth: ingressClientAuthSchema.nullable().default(null),
   })
   .strict();
 
@@ -61,6 +78,7 @@ export type IngressEntry = z.infer<typeof ingressEntrySchema>;
 export type IngressAction = z.infer<typeof ingressActionSchema>;
 export type IngressHealth = z.infer<typeof ingressHealthSchema>;
 export type IngressView = z.infer<typeof ingressViewSchema>;
+export type IngressClientAuth = z.infer<typeof ingressClientAuthSchema>;
 
 export function ingressAlias(id: string) {
   return `app-${id.replace(/-/g, '').toLowerCase()}.sakura.localhost`;

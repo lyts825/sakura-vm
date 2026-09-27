@@ -272,8 +272,8 @@ export const nextFeatureCatalog = [
     'mTLS 服务策略',
     '网络与服务治理',
     'P0',
-    '保存服务间双向 TLS 策略和证书轮换时间。',
-    'planned',
+    '为本机 HTTPS 入口按路由验证客户端证书，并在预定时间切换信任证书。',
+    'available',
   ],
   ['network-topology', '网络拓扑图', '网络与服务治理', 'P1', '记录客户机接口、路由和转发拓扑。', 'available'],
   ['nat-hairpin', 'NAT 回流', '网络与服务治理', 'P2', '保存端口回流规则并检查当前转发配置。', 'planned'],
@@ -996,6 +996,13 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '在实例的“服务与端口”页管理本机 HTTPS 主机证书、自动轮换策略和下一次轮换时间；远程主机配对仍由独立功能负责。',
+      };
+    if (spec.id === 'mtls-policy')
+      return {
+        ready: this.machines.get(id).forwards.length > 0,
+        executed: false,
+        adapter,
+        message: '在实例的“服务与端口”页编辑 HTTPS 入口，启用 mTLS 并登记客户端证书；可预设替换证书与切换时间。HTTP 请求和 WebSocket 升级均按路由验证。',
       };
     if (spec.id === 'network-emulation')
       return {

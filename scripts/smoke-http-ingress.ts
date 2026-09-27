@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { request as secureRequest } from 'node:https';
 import { ingressAlias } from '../shared/http-ingress.ts';
 import { setTimeout as delay } from 'node:timers/promises';
+import { generate } from 'selfsigned';
 
 const directory = await mkdtemp(join(tmpdir(), 'sakura-http-ingress-smoke-'));
 assert.equal(dirname(directory), resolve(tmpdir()));
@@ -21,12 +22,13 @@ await machines.init();
 const certificates = new IngressCertificates(join(directory, 'certificates.json'));
 await certificates.init();
 const ingress = new HttpIngress(machines, join(directory, 'ingress.json'), certificates);
-async function secureGet(port: number, ca: string, hostname?: string) {
+async function secureGet(port: number, ca: string, hostname?: string, client?: { cert: string; key: string }) {
   return new Promise<{ status: number; body: string }>((resolve, reject) => {
     const req = secureRequest(
       {
         hostname: '127.0.0.1', port, path: '/app', ca, rejectUnauthorized: true, agent: false,
         ...(hostname ? { servername: hostname, headers: { host: `${hostname}:${port}` } } : {}),
+        ...(client || {}),
       },
       async (response) => {
         const chunks: Buffer[] = [];
@@ -125,13 +127,36 @@ try {
   });
   assert.equal((await secureGet(secureListener, rotatedCertificate.pem, aliasHost)).status, 200);
   await assert.rejects(secureGet(secureListener, firstCertificate.pem));
+  const clientCertificate = await generate([{ name: 'commonName', value: 'Sakura smoke client' }], {
+    keyType: 'ec', curve: 'P-256', algorithm: 'sha256',
+    notBeforeDate: new Date(Date.now() - 3600000),
+    notAfterDate: new Date(Date.now() + 86400000),
+    extensions: [
+      { name: 'basicConstraints', cA: false, critical: true },
+      { name: 'keyUsage', digitalSignature: true, critical: true },
+      { name: 'extKeyUsage', clientAuth: true },
+    ],
+  });
+  await ingress.action({ action: 'save', entry: {
+    id: secureView.entries.find((entry) => entry.name === 'secure-web')!.id,
+    name: 'secure-web', protocol: 'https', listenPort: secureListener, pathPrefix: '/app',
+    vmId: vm.id, upstreamPort: forward, healthPath: '/', stripPrefix: true,
+    clientAuth: { currentPem: clientCertificate.cert },
+  } });
+  assert.equal((await secureGet(secureListener, rotatedCertificate.pem)).status, 403);
+  assert.deepEqual(await secureGet(secureListener, rotatedCertificate.pem, undefined,
+    { cert: clientCertificate.cert, key: clientCertificate.private }), {
+    status: 200, body: 'Sakura ingress proof',
+  });
+  assert.equal((await secureGet(secureListener, rotatedCertificate.pem, aliasHost)).status, 200);
   const checked = await ingress.action({ action: 'check', id: view.entries[0].id });
   assert.equal(checked.entries[0].health.status, 'healthy');
   await machines.stop(vm.id);
   assert.equal((await fetch(`http://127.0.0.1:${listener}/app`)).status, 503);
-  assert.equal((await secureGet(secureListener, rotatedCertificate.pem)).status, 503);
+  assert.equal((await secureGet(secureListener, rotatedCertificate.pem, undefined,
+    { cert: clientCertificate.cert, key: clientCertificate.private })).status, 503);
   assert.equal((await secureGet(secureListener, rotatedCertificate.pem, aliasHost)).status, 503);
-  console.log('Real QEMU NAT to HTTP/HTTPS and local-domain ingress, certificate rotation, health check and stopped-instance refusal passed.');
+  console.log('Real QEMU NAT to HTTP/HTTPS and local-domain ingress, certificate rotation, mTLS, health check and stopped-instance refusal passed.');
 } finally {
   await ingress.close();
   await certificates.close();

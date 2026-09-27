@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, X509Certificate } from 'node:crypto';
 import {
   createServer as createHttpServer,
   request,
@@ -10,6 +10,7 @@ import {
 import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
 import type { Duplex } from 'node:stream';
 import { join } from 'node:path';
+import { TLSSocket } from 'node:tls';
 import { z } from 'zod';
 import {
   ingressActionSchema,
@@ -19,6 +20,7 @@ import {
   type IngressEntry,
   type IngressHealth,
   type IngressView,
+  type IngressClientAuth,
 } from '../shared/http-ingress.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError, DATA, PORT } from './model.ts';
@@ -69,6 +71,69 @@ function localClient(req: IncomingMessage, port: number, aliases: Set<string>) {
   }
 }
 
+function clientCertificate(pem: string) {
+  if ((pem.match(/-----BEGIN CERTIFICATE-----/g) || []).length !== 1 ||
+      (pem.match(/-----END CERTIFICATE-----/g) || []).length !== 1)
+    throw new AppError('每个客户端证书字段只能包含一张 PEM 证书', 409);
+  try {
+    return new X509Certificate(pem);
+  } catch {
+    throw new AppError('客户端证书不是有效的 PEM 证书', 409);
+  }
+}
+
+function validateClientAuth(policy: IngressClientAuth | null, protocol: 'http' | 'https') {
+  if (!policy) return;
+  if (protocol !== 'https') throw new AppError('mTLS 策略只能用于 HTTPS 入口', 409);
+  const now = Date.now();
+  const current = clientCertificate(policy.currentPem);
+  const rotateAt = policy.rotateAt ? Date.parse(policy.rotateAt) : null;
+  const replacement = policy.replacementPem ? clientCertificate(policy.replacementPem) : null;
+  const validateIssuer = (leaf: X509Certificate, issuerPem: string | undefined, at: number) => {
+    if (!issuerPem) {
+      if (!leaf.verify(leaf.publicKey))
+        throw new AppError('非自签名的客户端证书须填写直接签发 CA', 409);
+      return;
+    }
+    const issuer = clientCertificate(issuerPem);
+    if (!issuer.ca || !leaf.checkIssued(issuer) || !leaf.verify(issuer.publicKey))
+      throw new AppError('客户端证书不是由所填 CA 直接签发', 409);
+    if (Date.parse(issuer.validFrom) > at || Date.parse(issuer.validTo) <= at)
+      throw new AppError('客户端证书 CA 在生效时间不处于有效期内', 409);
+  };
+  if (replacement && current.fingerprint256 === replacement.fingerprint256)
+    throw new AppError('替换证书须与当前客户端证书不同', 409);
+  const active = rotateAt !== null && rotateAt <= now ? replacement! : current;
+  if (Date.parse(active.validFrom) > now || Date.parse(active.validTo) <= now)
+    throw new AppError('当前生效的客户端证书不在有效期内', 409);
+  if (rotateAt === null || rotateAt > now) {
+    validateIssuer(current, policy.currentCaPem, now);
+    if (rotateAt !== null) validateIssuer(current, policy.currentCaPem, rotateAt);
+  }
+  if (replacement)
+    validateIssuer(replacement, policy.replacementCaPem, rotateAt! > now ? rotateAt! : now);
+  if (rotateAt !== null && rotateAt > now) {
+    if (Date.parse(current.validTo) <= rotateAt)
+      throw new AppError('当前客户端证书将在轮换前过期', 409);
+    if (Date.parse(replacement!.validFrom) > rotateAt || Date.parse(replacement!.validTo) <= rotateAt)
+      throw new AppError('替换证书在轮换时间尚未生效或已经过期', 409);
+  }
+}
+
+function allowedClient(req: IncomingMessage, policy: IngressClientAuth | null) {
+  if (!policy) return true;
+  if (!(req.socket instanceof TLSSocket) || !req.socket.authorized) return false;
+  const peer = req.socket.getPeerCertificate();
+  if (!peer.raw) return false;
+  const activePem = policy.rotateAt && Date.now() >= Date.parse(policy.rotateAt)
+    ? policy.replacementPem!
+    : policy.currentPem;
+  const active = clientCertificate(activePem);
+  const now = Date.now();
+  return Date.parse(active.validFrom) <= now && Date.parse(active.validTo) > now &&
+    peer.fingerprint256 === active.fingerprint256;
+}
+
 export class HttpIngress {
   private entries: IngressEntry[] = [];
   private listeners = new Map<number, Server>();
@@ -92,7 +157,10 @@ export class HttpIngress {
       this.unsubscribe = this.certificates.onChange((certificate) => {
         for (const [port, server] of this.listeners)
           if (this.entries.some((entry) => entry.listenPort === port && entry.protocol === 'https'))
-            (server as HttpsServer).setSecureContext({ key: certificate.key, cert: certificate.cert });
+            (server as HttpsServer).setSecureContext({
+              key: certificate.key, cert: certificate.cert,
+              ca: this.trustAnchors(port, this.entries),
+            });
       });
     for (const port of new Set(this.entries.map((entry) => entry.listenPort))) {
       try {
@@ -107,7 +175,7 @@ export class HttpIngress {
             this.entries.some((entry) => entry.listenPort === port && entry.domainAlias),
           );
         }
-        this.listeners.set(port, await this.listen(port, [...protocols][0]));
+        this.listeners.set(port, await this.listen(port, [...protocols][0], this.entries));
       } catch (error) {
         this.machines.reserveHostPorts(OWNER, this.listeners.keys());
         this.listenerErrors[String(port)] = (error as Error).message;
@@ -163,6 +231,7 @@ export class HttpIngress {
           createdAt: current?.createdAt || timestamp,
           updatedAt: timestamp,
         };
+        validateClientAuth(entry.clientAuth, entry.protocol);
         next = [...this.entries.filter((item) => item.id !== entry.id), entry];
       }
       if (next.length > 24 || new Set(next.map((entry) => entry.listenPort)).size > 4)
@@ -197,10 +266,16 @@ export class HttpIngress {
         if (this.listeners.has(port)) continue;
         const protocol = next.find((entry) => entry.listenPort === port)!.protocol;
         if (protocol === 'https') await this.certificates!.ensure();
-        added.set(port, await this.listen(port, protocol));
+        added.set(port, await this.listen(port, protocol, next));
       }
+      for (const [port, server] of this.listeners)
+        if (nextPorts.includes(port) && next.find((entry) => entry.listenPort === port)?.protocol === 'https')
+          (server as HttpsServer).setSecureContext(this.secureOptions(port, next));
       await writeStore(this.file, next);
     } catch (error) {
+      for (const [port, server] of this.listeners)
+        if (this.entries.some((entry) => entry.listenPort === port && entry.protocol === 'https'))
+          (server as HttpsServer).setSecureContext(this.secureOptions(port, this.entries));
       for (const [port, server] of added) await this.closeListener(port, server);
       this.machines.reserveHostPorts(OWNER, oldPorts);
       throw error;
@@ -217,11 +292,29 @@ export class HttpIngress {
     void this.checkAll().catch(() => {});
   }
 
-  private listen(port: number, protocol: 'http' | 'https') {
+  private trustAnchors(port: number, entries: IngressEntry[]) {
+    return [...new Set(entries.filter((entry) => entry.listenPort === port)
+      .flatMap((entry) => entry.clientAuth
+        ? [entry.clientAuth.currentCaPem || entry.clientAuth.currentPem,
+          entry.clientAuth.replacementCaPem || entry.clientAuth.replacementPem]
+          .filter((pem): pem is string => !!pem)
+        : []))];
+  }
+
+  private secureOptions(port: number, entries: IngressEntry[]) {
+    return {
+      ...this.certificates!.tlsOptions(),
+      ca: this.trustAnchors(port, entries),
+      requestCert: true,
+      rejectUnauthorized: false,
+    };
+  }
+
+  private listen(port: number, protocol: 'http' | 'https', entries: IngressEntry[]) {
     const listener = (req: IncomingMessage, res: ServerResponse) => this.proxy(req, res, port);
     const server: Server =
       protocol === 'https'
-        ? createHttpsServer(this.certificates!.tlsOptions(), listener)
+        ? createHttpsServer(this.secureOptions(port, entries), listener)
         : createHttpServer(listener);
     server.on('error', (error) => {
       this.listenerErrors[String(port)] = error.message;
@@ -312,6 +405,10 @@ export class HttpIngress {
       res.writeHead(404).end('Not found');
       return;
     }
+    if (!allowedClient(req, target.entry.clientAuth)) {
+      res.writeHead(403).end('Client certificate required');
+      return;
+    }
     if (this.availability(target.entry)) {
       res.writeHead(503).end('Upstream unavailable');
       return;
@@ -356,6 +453,10 @@ export class HttpIngress {
     const target = this.target(req, port);
     if (!target || req.headers.upgrade?.toLowerCase() !== 'websocket') {
       socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+      return;
+    }
+    if (!allowedClient(req, target.entry.clientAuth)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       return;
     }
     if (this.availability(target.entry)) {

@@ -9,6 +9,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
+import { generate } from 'selfsigned';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { Engine } from '../server/runtime.ts';
 import { ingressAlias } from '../shared/http-ingress.ts';
 
@@ -55,6 +57,35 @@ async function secureGet(port: number, path: string, ca: string) {
     req.on('error', reject);
     req.end();
   });
+}
+
+async function clientGet(port: number, path: string, ca: string, client?: { cert: string; key: string }) {
+  return new Promise<number>((resolve, reject) => {
+    const req = secureRequest({
+      hostname: '127.0.0.1', port, path, ca, rejectUnauthorized: true, agent: false,
+      ...(client || {}),
+    }, (res) => {
+      res.resume();
+      resolve(res.statusCode || 0);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function clientCertificate(name: string, ca?: { key: string; cert: string }) {
+  const generated = await generate([{ name: 'commonName', value: name }], {
+    keyType: 'ec', curve: 'P-256', algorithm: 'sha256',
+    notBeforeDate: new Date(Date.now() - 3600000),
+    notAfterDate: new Date(Date.now() + 86400000),
+    ...(ca ? { ca } : {}),
+    extensions: [
+      { name: 'basicConstraints', cA: false, critical: true },
+      { name: 'keyUsage', digitalSignature: true, critical: true },
+      { name: 'extKeyUsage', clientAuth: true },
+    ],
+  });
+  return { cert: generated.cert, key: generated.private };
 }
 
 async function hostedGet(port: number, hostname: string, ca?: string) {
@@ -345,6 +376,111 @@ test('HTTPS ingress routes verified TLS and WebSocket connections through live c
     assert.equal((await secureGet(listenPort, '/secure/restored', second.pem)).body, '/restored:https');
     await restored.action({ action: 'delete', id: saved.entries[0].id });
     await assert.rejects(secureGet(listenPort, '/secure', second.pem));
+  } finally {
+    await restored?.close();
+    await ingress.close();
+    await certificates.close();
+    await new Promise<void>((resolve) => wsServer.close(() => resolve()));
+    await stop(upstream);
+  }
+});
+
+test('HTTPS ingress enforces route-specific mTLS for HTTP and WebSocket through scheduled client rotation', async () => {
+  const upstream = createServer((_req, res) => res.writeHead(200).end('ok'));
+  const wsServer = new WebSocketServer({ server: upstream });
+  wsServer.on('connection', (socket) => socket.on('message', () => socket.send('ok')));
+  const upstreamPort = await serve(upstream), listenPort = await port();
+  const machines = new Machines({} as Engine), id = randomUUID();
+  machines.records.set(id, {
+    ...createSchema.parse({ name: 'mtls-test', forwards: [{ host: upstreamPort, guest: 8080 }] }),
+    id, createdAt: new Date().toISOString(), snapshots: [],
+  });
+  machines.live.set(id, { status: 'running' } as any);
+  const certificates = new IngressCertificates(join(root, 'mtls-server-certificates.json'));
+  const file = join(root, 'mtls-ingress.json');
+  const ingress = new HttpIngress(machines, file, certificates);
+  let restored: InstanceType<typeof HttpIngress> | undefined;
+  const issuer = await generate([{ name: 'commonName', value: 'Client issuer' }], {
+    keyType: 'ec', curve: 'P-256', algorithm: 'sha256',
+    notBeforeDate: new Date(Date.now() - 3600000),
+    notAfterDate: new Date(Date.now() + 86400000),
+    extensions: [
+      { name: 'basicConstraints', cA: true, critical: true },
+      { name: 'keyUsage', keyCertSign: true, cRLSign: true, critical: true },
+    ],
+  });
+  const current = await clientCertificate('Current client', { key: issuer.private, cert: issuer.cert });
+  const replacement = await clientCertificate('Replacement client');
+  const outsider = await clientCertificate('Outsider client');
+  try {
+    await certificates.init();
+    await ingress.init();
+    await assert.rejects(ingress.action({ action: 'save', entry: {
+      name: 'Bad', protocol: 'http', listenPort, pathPrefix: '/bad', vmId: id,
+      upstreamPort, healthPath: '/', stripPrefix: false,
+      clientAuth: { currentPem: current.cert, currentCaPem: issuer.cert },
+    } }), /只能用于 HTTPS/);
+    await ingress.action({ action: 'save', entry: {
+      name: 'Public', protocol: 'https', listenPort, pathPrefix: '/public', vmId: id,
+      upstreamPort, healthPath: '/', stripPrefix: true,
+    } });
+    await assert.rejects(ingress.action({ action: 'save', entry: {
+      name: 'Missing issuer', protocol: 'https', listenPort, pathPrefix: '/invalid', vmId: id,
+      upstreamPort, healthPath: '/', stripPrefix: true,
+      clientAuth: { currentPem: current.cert },
+    } }), /须填写直接签发 CA/);
+    const secured = (await ingress.action({ action: 'save', entry: {
+      name: 'Private', protocol: 'https', listenPort, pathPrefix: '/private', vmId: id,
+      upstreamPort, healthPath: '/', stripPrefix: true,
+      clientAuth: { currentPem: current.cert, currentCaPem: issuer.cert },
+    } })).entries.find((entry) => entry.name === 'Private')!;
+    let serverPem = certificates.view().certificate!.pem;
+    assert.equal(await clientGet(listenPort, '/public', serverPem), 200);
+    assert.equal(await clientGet(listenPort, '/private', serverPem), 403);
+    assert.equal(await clientGet(listenPort, '/private', serverPem, outsider), 403);
+    assert.equal(await clientGet(listenPort, '/private', serverPem, current), 200);
+    const denied = new WebSocket(`wss://127.0.0.1:${listenPort}/private/ws`, {
+      ca: serverPem, rejectUnauthorized: true,
+    });
+    assert.equal(await new Promise<number>((resolve, reject) => {
+      denied.on('unexpected-response', (_req, response) => {
+        response.resume();
+        resolve(response.statusCode || 0);
+      });
+      denied.on('error', reject);
+    }), 403);
+    const socket = new WebSocket(`wss://127.0.0.1:${listenPort}/private/ws`, {
+      ca: serverPem, rejectUnauthorized: true, ...current,
+    });
+    const echoed = new Promise<string>((resolve, reject) => {
+      socket.on('open', () => socket.send('ping'));
+      socket.on('message', (message) => resolve(String(message)));
+      socket.on('error', reject);
+    });
+    assert.equal(await echoed, 'ok');
+    socket.close();
+    const rotateAt = new Date(Date.now() + 500).toISOString();
+    await ingress.action({ action: 'save', entry: {
+      id: secured.id, name: secured.name, protocol: secured.protocol,
+      listenPort: secured.listenPort, pathPrefix: secured.pathPrefix, vmId: secured.vmId,
+      upstreamPort: secured.upstreamPort, healthPath: secured.healthPath,
+      stripPrefix: secured.stripPrefix, clientAuth: {
+        currentPem: current.cert, currentCaPem: issuer.cert,
+        replacementPem: replacement.cert, rotateAt,
+      },
+    } });
+    assert.equal(await clientGet(listenPort, '/private', serverPem, current), 200);
+    assert.equal(await clientGet(listenPort, '/private', serverPem, replacement), 403);
+    await delay(Math.max(0, Date.parse(rotateAt) - Date.now()) + 50);
+    assert.equal(await clientGet(listenPort, '/private', serverPem, current), 403);
+    assert.equal(await clientGet(listenPort, '/private', serverPem, replacement), 200);
+    serverPem = (await certificates.action({ action: 'rotate' })).certificate!.pem;
+    assert.equal(await clientGet(listenPort, '/private', serverPem, replacement), 200);
+    await ingress.close();
+    restored = new HttpIngress(machines, file, certificates);
+    await restored.init();
+    assert.equal(await clientGet(listenPort, '/private', serverPem, replacement), 200);
+    assert.equal(await clientGet(listenPort, '/private', serverPem, current), 403);
   } finally {
     await restored?.close();
     await ingress.close();

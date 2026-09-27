@@ -5,6 +5,12 @@ import type { CertificatePolicy, CertificateView } from '../../shared/ingress-ce
 import type { LocalAliasView } from '../../shared/local-aliases.ts';
 import { Feedback, useAction, useRemote, type FeatureProps } from '../../src/feature-shared.tsx';
 
+function localDateTime(iso?: string) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 function blank(vmId: string, upstreamPort: number): IngressInput {
   return {
     name: '',
@@ -16,6 +22,7 @@ function blank(vmId: string, upstreamPort: number): IngressInput {
     upstreamPort,
     healthPath: '/',
     stripPrefix: false,
+    clientAuth: null,
   };
 }
 
@@ -71,6 +78,10 @@ export function IngressPanel({ vm, request }: FeatureProps) {
                 {entry.health.httpStatus ? `（HTTP ${entry.health.httpStatus}）` : ''}
                 {entry.health.error ? `：${entry.health.error}` : ''}
               </p>
+              {entry.clientAuth && <p className="subtle-note">
+                mTLS 客户端证书已启用
+                {entry.clientAuth.rotateAt && ` · ${Date.now() >= Date.parse(entry.clientAuth.rotateAt) ? '已于' : '将于'} ${new Date(entry.clientAuth.rotateAt).toLocaleString()} 切换至替换证书`}
+              </p>}
             </div>
             <div className="feature-actions">
               <button
@@ -88,6 +99,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
                     upstreamPort: entry.upstreamPort,
                     healthPath: entry.healthPath,
                     stripPrefix: entry.stripPrefix,
+                    clientAuth: entry.clientAuth,
                   })
                 }
               >
@@ -156,7 +168,10 @@ export function IngressPanel({ vm, request }: FeatureProps) {
             协议
             <select
               value={form.protocol}
-              onChange={(event) => change({ protocol: event.target.value as 'http' | 'https' })}
+              onChange={(event) => change({
+                protocol: event.target.value as 'http' | 'https',
+                clientAuth: event.target.value === 'http' ? null : form.clientAuth,
+              })}
             >
               <option value="http">HTTP</option>
               <option value="https">HTTPS（本机证书）</option>
@@ -214,6 +229,48 @@ export function IngressPanel({ vm, request }: FeatureProps) {
           />{' '}
           为此入口生成 .localhost 本地域名
         </label>
+        {form.protocol === 'https' && <>
+          <label>
+            <input type="checkbox" checked={!!form.clientAuth}
+              onChange={(event) => change({ clientAuth: event.target.checked ? { currentPem: '' } : null })} />{' '}
+            要求客户端证书（mTLS）
+          </label>
+          {form.clientAuth && <>
+            <p className="subtle-note">粘贴客户端的 PEM 公钥证书；请求必须持有对应私钥。可提前登记替换证书，并按设定时间切换。</p>
+            <label>当前客户端证书（PEM）
+              <textarea rows={5} value={form.clientAuth.currentPem}
+                onChange={(event) => change({ clientAuth: { ...form.clientAuth!, currentPem: event.target.value } })} />
+            </label>
+            <label>当前签发 CA（PEM，直签证书可选）
+              <textarea rows={4} value={form.clientAuth.currentCaPem || ''}
+                onChange={(event) => change({ clientAuth: {
+                  ...form.clientAuth!, currentCaPem: event.target.value || undefined,
+                } })} />
+            </label>
+            <label>替换客户端证书（PEM，可选）
+              <textarea rows={5} value={form.clientAuth.replacementPem || ''}
+                onChange={(event) => change({ clientAuth: {
+                  ...form.clientAuth!,
+                  replacementPem: event.target.value || undefined,
+                  replacementCaPem: event.target.value ? form.clientAuth!.replacementCaPem : undefined,
+                  rotateAt: event.target.value ? form.clientAuth!.rotateAt : undefined,
+                } })} />
+            </label>
+            {form.clientAuth.replacementPem && <label>替换签发 CA（PEM，直签证书可选）
+              <textarea rows={4} value={form.clientAuth.replacementCaPem || ''}
+                onChange={(event) => change({ clientAuth: {
+                  ...form.clientAuth!, replacementCaPem: event.target.value || undefined,
+                } })} />
+            </label>}
+            {form.clientAuth.replacementPem && <label>切换时间
+              <input type="datetime-local" value={localDateTime(form.clientAuth.rotateAt)}
+                onChange={(event) => change({ clientAuth: {
+                  ...form.clientAuth!,
+                  rotateAt: event.target.value ? new Date(event.target.value).toISOString() : undefined,
+                } })} />
+            </label>}
+          </>}
+        </>}
         <div className="feature-actions">
           <button
             className="primary compact"

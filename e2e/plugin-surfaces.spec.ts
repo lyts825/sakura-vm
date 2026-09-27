@@ -2669,6 +2669,21 @@ test('service tab saves, checks and removes a local HTTP ingress route', async (
   await systemAliasCard.getByRole('button', { name: '启用系统解析' }).click();
   await expect.poll(() => aliasAction).toEqual({ action: 'set-enabled', enabled: true });
   await expect(systemAliasCard.getByText(/已安装 1 个/)).toBeVisible();
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  const mtlsEditor = page.locator('.feature-card').filter({ has: page.getByRole('heading', { name: '编辑入口' }) });
+  await mtlsEditor.getByLabel('要求客户端证书（mTLS）').check();
+  await mtlsEditor.getByLabel('当前客户端证书（PEM）').fill('-----BEGIN CERTIFICATE-----\ncurrent\n-----END CERTIFICATE-----');
+  await mtlsEditor.getByLabel('替换客户端证书（PEM，可选）').fill('-----BEGIN CERTIFICATE-----\nreplacement\n-----END CERTIFICATE-----');
+  await mtlsEditor.getByLabel('切换时间').fill('2030-01-02T03:04');
+  await mtlsEditor.getByRole('button', { name: '保存入口' }).click();
+  await expect.poll(() => submitted).toMatchObject({ action: 'save', entry: {
+    clientAuth: {
+      currentPem: '-----BEGIN CERTIFICATE-----\ncurrent\n-----END CERTIFICATE-----',
+      replacementPem: '-----BEGIN CERTIFICATE-----\nreplacement\n-----END CERTIFICATE-----',
+      rotateAt: expect.any(String),
+    },
+  } });
+  await expect(page.getByText('mTLS 客户端证书已启用')).toBeVisible();
 });
 
 test('backup policies enable block deduplication and show how each backup is stored', async ({ page }) => {

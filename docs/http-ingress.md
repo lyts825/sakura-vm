@@ -8,6 +8,12 @@
 
 当实例停止、被删除或上游端口转发被移除时，入口返回 503。找不到匹配路由返回 404，上游连接失败返回 502。入口只在本机开放，并拒绝未登记的 `Host` 或不匹配的 `Origin`。HTTPS 入口首次创建时生成带 `localhost`、`127.0.0.1` 和 `*.sakura.localhost` 标识的自签名证书；旧证书在首次创建 HTTPS 别名时升级。可以下载公钥证书并自行加入信任，未信任前浏览器会显示警告。私钥仅写入本机网络插件数据文件，不通过 API 返回。证书默认在到期前 30 天自动轮换，也可在页面调整策略或立即轮换；轮换时现有 HTTPS 监听器立即采用新证书，新连接需要信任新的公钥证书。自动轮换关闭时不安排下次轮换，过期证书会阻止 HTTPS 入口启动。当前不提供外部网络访问。
 
+HTTPS 入口可启用 mTLS：在该入口填写客户端 PEM 公钥证书，客户端访问时必须提交配套证书与私钥。自签名客户端证书可直接登记；由 CA 直接签发的证书可同时填写签发 CA 的 PEM。Sakura 在 TLS 握手中验证证书链，并按入口核对叶证书 SHA-256 指纹与有效期；没有证书、错误证书或过期证书的 HTTP 请求和 WebSocket 升级返回 403。客户端私钥不上传或保存在 Sakura。该策略只作用于选定入口，同一端口上的其他 HTTPS 路由可以保持公开；由于 TLS 握手发生在路径匹配之前，共用端口的客户端也可能看到证书选择提示。
+
+需要轮换客户端证书时，可提前填入替换证书及切换时间；如替换证书也由 CA 签发，一并填写对应 CA。切换前仅当前证书可用，切换后仅替换证书可用；正在使用的长连接不会被主动断开。入口规则和切换时间保存在网络插件的数据文件中，重启后继续生效。编辑入口可清除或替换 mTLS 策略。当前只支持单张自签名叶证书，或由所填 CA 直接签发的单张叶证书；不支持导入多级中间 CA 链。
+
 可用 `GET /api/ingress` 查看规则、健康状态和监听错误，使用 `POST /api/ingress` 的 `save`、`delete`、`check` 操作管理。`GET /api/ingress-certificate` 返回公钥证书、指纹、有效期和策略；`POST /api/ingress-certificate` 支持 `configure` 和 `rotate`。这些接口沿用 Sakura 控制 API 的本机认证。
 
-自动化验证包括 HTTP/HTTPS 路由、别名虚拟主机、证书校验和热轮换、WebSocket、健康状态、端口冲突、配置恢复及删除释放；浏览器场景验证真实 `.sakura.localhost` 导航，`npm run test:http-ingress` 使用真实 QEMU 和客户机 HTTP 服务验证 NAT 端到端转发。
+`save` 的 HTTPS 入口可包含 `clientAuth: { currentPem, currentCaPem?, replacementPem?, replacementCaPem?, rotateAt? }`；不启用时为 `null`。`replacementPem` 与 ISO 8601 格式的 `rotateAt` 须同时提供。服务器证书与客户端证书独立轮换。
+
+自动化验证包括 HTTP/HTTPS 路由、别名虚拟主机、证书校验和热轮换、按路由的 mTLS 拒绝与证书切换、WebSocket、健康状态、端口冲突、配置恢复及删除释放；浏览器场景验证真实 `.sakura.localhost` 导航，`npm run test:http-ingress` 使用真实 QEMU 和客户机 HTTP 服务验证 NAT、mTLS 与公开别名路由的端到端转发。
