@@ -58,7 +58,7 @@ export const capabilityDefinitions = {
   'object-backup': action(
     'S3/MinIO 备份目标', 'next', objectBackupInput.shape,
     { mode: 'status' },
-    '保存对象存储目标并用私密配置引用访问密钥；可列出、上传、下载校验、恢复或删除远端备份。上传前验证本机备份，发布清单前重读远端数据并核对 SHA-256。',
+    '保存对象存储目标并用私密配置引用访问密钥；可启用定期自动上传，或手动列出、上传、下载校验、恢复和删除远端备份。发布清单前重读远端数据并核对 SHA-256。',
     false, true,
   ),
   'project-quota': action(

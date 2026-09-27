@@ -45,7 +45,7 @@ try {
   }) });
   await secrets.save(source.id, { name: 'BackupPassword', value: 'sakura-object-backup-password' });
   const target = { endpoint: s3.endpoint, bucket: 'sakura-test', prefix: 'smoke',
-    credentialSecret: 'S3Credentials' };
+    credentialSecret: 'S3Credentials', autoUpload: true };
   const saved = await object.action(source.id, { mode: 'save', target }, 'run', signal);
   assert.equal(saved.ready, true);
 
@@ -60,9 +60,9 @@ try {
     assert.equal(backup.storage === 'blocks', kind === 'blocks');
     assert.equal(!!backup.encrypted, kind === 'encrypted');
     const remoteId = `${source.id}/${backup.id}`;
-    const uploaded = await object.action(source.id, { mode: 'upload', backupId: backup.id }, 'run', signal);
-    assert.equal(uploaded.ready, true);
-    assert.equal(uploaded.executed, true);
+    await object.tick();
+    const status = await object.action(source.id, { mode: 'status' }, 'run', signal);
+    assert.ok('sync' in status && status.sync?.mirrored[backup.id] === backup.checksum);
     const verified = await object.action(source.id, { mode: 'verify', remoteId }, 'run', signal);
     assert.ok('verified' in verified && verified.verified);
     const listed = await object.action(source.id, { mode: 'list' }, 'run', signal);
@@ -83,6 +83,7 @@ try {
   assert.ok(s3.partCount >= 2, 'Real VM backup must use multipart upload');
   await machines.delete(source.id);
 } finally {
+  await object.close();
   await backups.close();
   await machines.close();
   await s3.close();

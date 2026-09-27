@@ -1217,6 +1217,6 @@ export class NextFeatures {
   }
 
   async close() {
-    await Promise.all([this.jobs.close(), this.storageTiering.close()]);
+    await Promise.all([this.jobs.close(), this.storageTiering.close(), this.objectBackup?.close()]);
   }
 }

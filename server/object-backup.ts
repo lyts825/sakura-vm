@@ -33,6 +33,7 @@ export const objectTargetSchema = z.object({
   region: z.string().min(1).max(64).regex(/^[A-Za-z0-9-]+$/).default('us-east-1'),
   prefix: prefix.default(''),
   credentialSecret: secretName,
+  autoUpload: z.boolean().default(false),
 }).strict();
 const credentialSchema = z.object({
   accessKeyId: z.string().min(1).max(256),
@@ -48,6 +49,13 @@ const metadataSchema = z.object({
   retainUntil: z.iso.datetime().optional(),
 }).strict();
 type Metadata = z.infer<typeof metadataSchema>;
+const syncStateSchema = z.object({
+  mirrored: z.record(uuid, sha).default({}),
+  lastAttemptAt: z.iso.datetime().optional(),
+  lastSuccessAt: z.iso.datetime().optional(),
+  lastError: z.string().max(500).optional(),
+}).strict();
+type SyncState = z.infer<typeof syncStateSchema>;
 export const objectBackupInput = z.object({
   mode: z.enum(['status', 'save', 'list', 'upload', 'verify', 'restore', 'delete']).default('status'),
   target: objectTargetSchema.optional(),
@@ -58,14 +66,81 @@ export const objectBackupInput = z.object({
 }).strict();
 
 export class ObjectBackup {
+  private timer: ReturnType<typeof setInterval>;
+  private ticking?: Promise<void>;
+  private closed = false;
+  private automaticAbort = new AbortController();
   constructor(
     private machines: Machines,
     private services: () => { backups?: Backups; bundles?: Bundles; secrets?: Secrets },
-  ) {}
+  ) {
+    this.timer = setInterval(() => {
+      if (!this.ticking) this.ticking = this.tick().catch(() => {}).finally(() => {
+        this.ticking = undefined;
+      });
+    }, 60_000);
+    this.timer.unref();
+  }
 
   private file(vmId: string) { return join(vmDir(vmId), 'object-backup.json'); }
+  private syncFile(vmId: string) { return join(vmDir(vmId), 'object-backup-sync.json'); }
   private async target(vmId: string) {
     return objectTargetSchema.nullable().parse(await readStore(this.file(vmId), () => null));
+  }
+  private async syncState(vmId: string) {
+    return syncStateSchema.parse(await readStore(this.syncFile(vmId), () => ({ mirrored: {} })));
+  }
+  private async updateSync(vmId: string, update: (state: SyncState) => void) {
+    return this.machines.locked(`object-backup-sync:${vmId}`, async () => {
+      const state = await this.syncState(vmId);
+      update(state);
+      await writeStore(this.syncFile(vmId), state);
+      return state;
+    });
+  }
+  private async markMirrored(vmId: string, backupId: string, checksum: string) {
+    await this.updateSync(vmId, (state) => {
+      state.mirrored[backupId] = checksum;
+      state.lastAttemptAt = new Date().toISOString();
+      state.lastSuccessAt = state.lastAttemptAt;
+      delete state.lastError;
+    });
+  }
+  /** Retry failed automatic transfers after five minutes; local backups remain usable on failure. */
+  async tick(now = Date.now()) {
+    if (this.closed) return;
+    const { backups, bundles, secrets } = this.services();
+    if (!backups || !bundles || !secrets) return;
+    for (const vmId of this.machines.records.keys()) {
+      if (this.closed || this.automaticAbort.signal.aborted) return;
+      try {
+        const target = await this.target(vmId);
+        if (!target?.autoUpload || backups.jobs.view(vmId)?.status === 'running') continue;
+        const state = await this.syncState(vmId);
+        if (state.lastError && state.lastAttemptAt && now - Date.parse(state.lastAttemptAt) < 300_000)
+          continue;
+        const items = (await backups.view(vmId)).items;
+        const localIds = new Set(items.map((item) => item.id));
+        if (Object.keys(state.mirrored).some((id) => !localIds.has(id)))
+          await this.updateSync(vmId, (current) => {
+            for (const id of Object.keys(current.mirrored))
+              if (!localIds.has(id)) delete current.mirrored[id];
+          });
+        for (const item of items.slice().reverse()) {
+          if (this.closed || this.automaticAbort.signal.aborted) return;
+          if (state.mirrored[item.id] === item.checksum) continue;
+          await this.action(vmId, { mode: 'upload', backupId: item.id }, 'run',
+            this.automaticAbort.signal);
+          state.mirrored[item.id] = item.checksum;
+        }
+      } catch (error) {
+        if (this.closed || this.automaticAbort.signal.aborted) return;
+        await this.updateSync(vmId, (state) => {
+          state.lastAttemptAt = new Date(now).toISOString();
+          state.lastError = String((error as Error).message || error).slice(0, 500);
+        });
+      }
+    }
   }
   private async client(vmId: string, target: z.infer<typeof objectTargetSchema>, secrets: Secrets) {
     let credential: z.infer<typeof credentialSchema>;
@@ -144,7 +219,8 @@ export class ObjectBackup {
     if (!backups || !bundles || !secrets) {
       const reason = '请启用快照、备份策略与私密配置插件';
       if (action === 'check' || options.mode === 'status')
-        return { ready: false, executed: false, reason };
+        return { ready: false, executed: false, reason,
+          ...(configured ? { target: configured, sync: await this.syncState(vmId) } : {}) };
       throw new AppError(reason, 409);
     }
     if (options.mode === 'save') {
@@ -152,18 +228,33 @@ export class ObjectBackup {
       const client = await this.client(vmId, options.target, secrets);
       try {
         await client.send(new HeadBucketCommand({ Bucket: options.target.bucket }), { abortSignal: signal });
-        if (action === 'run') await this.machines.locked(`object-backup-config:${vmId}`,
-          () => writeStore(this.file(vmId), options.target!));
+        if (action === 'run') await this.machines.locked(`object-backup:${vmId}`, async () => {
+          const previous = await this.target(vmId);
+          await writeStore(this.file(vmId), options.target!);
+          if (JSON.stringify(previous) !== JSON.stringify(options.target))
+            await this.machines.locked(`object-backup-sync:${vmId}`,
+              () => writeStore(this.syncFile(vmId), { mirrored: {} }));
+        });
         return { ready: true, executed: action === 'run', target: options.target };
       } finally { client.destroy(); }
     }
     const target = configured!;
+    if (action === 'check' || options.mode === 'status') {
+      const sync = await this.syncState(vmId);
+      let statusClient: S3Client | undefined;
+      try {
+        statusClient = await this.client(vmId, target, secrets);
+        await statusClient.send(new HeadBucketCommand({ Bucket: target.bucket }),
+          { abortSignal: signal });
+        return { ready: true, executed: false, target, sync };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ready: false, executed: false, target, sync,
+          reason: String((error as Error).message || error).slice(0, 500) };
+      } finally { statusClient?.destroy(); }
+    }
     const client = await this.client(vmId, target, secrets);
     try {
-      if (action === 'check' || options.mode === 'status') {
-        await client.send(new HeadBucketCommand({ Bucket: target.bucket }), { abortSignal: signal });
-        return { ready: true, executed: false, target };
-      }
       if (options.mode === 'list') {
         const entries: Array<{ remoteId: string; metadata: Metadata }> = [];
         let token: string | undefined;
@@ -209,6 +300,7 @@ export class ObjectBackup {
             if (existing.sha256 !== metadata.sha256 || existing.bytes !== metadata.bytes)
               throw new AppError('远端同名备份与本机备份不一致', 409);
             await this.remoteHash(client, target, existing, signal);
+            await this.markMirrored(vmId, item.id, item.checksum);
             return { ready: true, executed: false, remoteId: `${vmId}/${item.id}`,
               metadata: existing, message: '远端备份已存在并通过校验。' };
           } catch (error) {
@@ -243,6 +335,7 @@ export class ObjectBackup {
               throw error;
             } finally { signal.removeEventListener('abort', cancel); body.destroy(); }
           });
+          await this.markMirrored(vmId, item.id, item.checksum);
           return { ready: true, executed: true, remoteId: `${vmId}/${item.id}`, metadata };
         });
       }
@@ -257,6 +350,8 @@ export class ObjectBackup {
           { abortSignal: signal });
         await client.send(new DeleteObjectCommand({ Bucket: target.bucket, Key: keys.data }),
           { abortSignal: signal });
+        if (metadata.sourceVmId === vmId)
+          await this.updateSync(vmId, (state) => { delete state.mirrored[metadata.backupId]; });
         return { ready: true, executed: true, remoteId: options.remoteId, deleted: true };
       }
       const tempRoot = join(DATA, 'object-backup-temp');
@@ -290,5 +385,11 @@ export class ObjectBackup {
           ...(restored ? { restoredVmId: restored.id, restoredName: restored.name } : {}) };
       } finally { await rm(temp, { recursive: true, force: true }); }
     } finally { client.destroy(); }
+  }
+  async close() {
+    this.closed = true;
+    clearInterval(this.timer);
+    this.automaticAbort.abort();
+    await this.ticking;
   }
 }

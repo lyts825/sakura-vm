@@ -26,9 +26,10 @@ test('S3 target checks, multipart upload, integrity, restore and deletion', asyn
     retainUntil: new Date(Date.now() + 3600_000).toISOString() };
   await mkdir(vmDir(id), { recursive: true });
   const s3 = await mockS3();
-  const machines = { get: () => ({ id }), requireUnlocked: () => {},
+  const machines = { records: new Map([[id, { id }]]), get: () => ({ id }), requireUnlocked: () => {},
     locked: async (_key: string, work: () => Promise<unknown>) => work() };
   const backups = {
+    jobs: { view: () => null },
     view: async () => ({ items: [item] }),
     withVerifiedFile: async (_id: string, _backupId: string, _password: string | undefined,
       signal: AbortSignal, work: (file: string) => Promise<unknown>) => {
@@ -42,8 +43,10 @@ test('S3 target checks, multipart upload, integrity, restore and deletion', asyn
     for await (const _chunk of stream) { /* consume verified bundle */ }
     return { id: restoredId, name };
   } };
+  let credentialsAvailable = true;
   const secrets = { value: async (_id: string, name: string) => {
     assert.equal(name, 'S3Credentials');
+    if (!credentialsAvailable) throw new Error('Credentials unavailable');
     return JSON.stringify({ accessKeyId: 'fixture-access', secretAccessKey: 'fixture-secret' });
   } };
   const object = new ObjectBackup(machines as never, () =>
@@ -95,7 +98,27 @@ test('S3 target checks, multipart upload, integrity, restore and deletion', asyn
     await object.action(id, { mode: 'delete', remoteId }, 'run', signal);
     const empty = await object.action(id, { mode: 'list' }, 'run', signal);
     assert.ok('entries' in empty && empty.entries?.length === 0);
+    await object.action(id, { mode: 'save', target: { ...target, autoUpload: true } }, 'run', signal);
+    const brokenLocal = Buffer.from(content);
+    brokenLocal[brokenLocal.length - 1] ^= 0xff;
+    await writeFile(file, brokenLocal);
+    await object.tick();
+    const failed = await object.action(id, { mode: 'status' }, 'run', signal);
+    assert.ok('sync' in failed && failed.sync?.lastError?.includes('备份磁盘校验失败'));
+    assert.ok(!s3.objects.has(dataKey));
+    await writeFile(file, content);
+    await object.tick();
+    assert.ok(!s3.objects.has(dataKey), 'failed automatic sync waits before retry');
+    await object.tick(Date.now() + 300_001);
+    const automatic = await object.action(id, { mode: 'status' }, 'run', signal);
+    assert.ok('sync' in automatic && automatic.sync?.mirrored[backupId] === item.checksum);
+    assert.ok(s3.objects.has(dataKey), 'automatic sync must republish a local backup');
+    credentialsAvailable = false;
+    const unavailable = await object.action(id, { mode: 'status' }, 'run', signal);
+    assert.equal(unavailable.ready, false);
+    assert.ok('sync' in unavailable && unavailable.sync?.mirrored[backupId] === item.checksum);
   } finally {
+    await object.close();
     await s3.close();
     await rm(root, { recursive: true, force: true });
   }
