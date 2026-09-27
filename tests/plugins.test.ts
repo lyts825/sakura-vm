@@ -259,6 +259,7 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
   const vm = machines(),
     host = await Features.create(vm, ['snapshots', 'desktop']);
   vm.snapshot = async (_id, name) => ({ name }) as any;
+  vm.onlineSnapshot = async (_id, name) => ({ name, consistency: 'filesystem' }) as any;
   host.desktops.view = async () => ({ status: 'not-installed', log: '' });
   try {
     const first = request('POST');
@@ -270,6 +271,14 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
     );
     assert.equal(first.res.status, 201);
     assert.equal(first.res.payload.name, 'checkpoint');
+    const online = request('POST');
+    assert.equal(
+      await host.route(online.req, online.res, new URL('http://localhost/api/vms/vm/snapshots'), async () => ({
+        name: 'live', online: true,
+      })),
+      true,
+    );
+    assert.equal(online.res.payload.consistency, 'filesystem');
     const second = request();
     assert.equal(
       await host.route(

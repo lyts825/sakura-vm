@@ -53,6 +53,7 @@ async function fixture(t: TestContext, ready: (ftp: SFTPWrapper, peer: Connectio
     startedAt: new Date().toISOString(),
     sshPort: (server.address() as { port: number }).port,
     qmpPort: 0,
+    agentPort: 0,
     serialPort: 0,
     abort: new AbortController(),
     bootAbort: new AbortController(),

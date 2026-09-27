@@ -363,6 +363,28 @@ test('snapshot comparison selects historical and current states, shows file chan
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test('running instance creates a filesystem-consistent online snapshot from the snapshot tab', async ({ page }) => {
+  await app(page, ['snapshots'], true);
+  const id = randomUUID();
+  let submitted: any;
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    status: 'running', poweredOn: true,
+    snapshots: submitted ? [{ id, name: submitted.name, createdAt: new Date().toISOString(),
+      consistency: 'filesystem' }] : [],
+  }] }));
+  await page.route('**/api/vms/*/snapshots', (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { id, name: submitted.name,
+      consistency: 'filesystem', createdAt: new Date().toISOString() } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '快照', exact: true }).click();
+  await page.getByLabel('新快照名称').fill('before-upgrade');
+  await page.getByRole('button', { name: '创建在线快照' }).click();
+  await expect.poll(() => submitted).toEqual({ name: 'before-upgrade', online: true });
+  await expect(page.getByText('文件系统一致性')).toBeVisible();
+});
+
 test('golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile', async ({
   page,
 }) => {

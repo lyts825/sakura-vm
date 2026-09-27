@@ -20,6 +20,7 @@ export function SnapshotsPanel(props: FeatureProps) {
     [backup, setBackup] = useState(true);
   const action = useAction();
   const stopped = !vm.poweredOn;
+  const running = vm.status === 'running';
   const mutate = (path: string, method: string, body?: unknown) =>
     action.run(async () => {
       await request(`/vms/${vm.id}${path}`, method, body);
@@ -30,7 +31,7 @@ export function SnapshotsPanel(props: FeatureProps) {
       <div className="panel-heading">
         <div>
           <h3>快照与迁移</h3>
-          <p>停止实例后创建恢复点、克隆或导出。</p>
+          <p>运行中可通过客户机代理冻结文件系统并创建快照；恢复、克隆与导出仍需停止实例。</p>
         </div>
       </div>
       <Feedback error={action.error} message={action.message} />
@@ -44,11 +45,11 @@ export function SnapshotsPanel(props: FeatureProps) {
         />
         <button
           className="primary compact"
-          disabled={!stopped || action.busy || !name.trim()}
-          onClick={() => void mutate('/snapshots', 'POST', { name })}
+          disabled={action.busy || !name.trim() || (!stopped && !running)}
+          onClick={() => void mutate('/snapshots', 'POST', { name, online: running })}
         >
           <Plus size={14} />
-          创建快照
+          {running ? '创建在线快照' : '创建快照'}
         </button>
       </div>
       <label className="checkbox-label">
@@ -62,6 +63,7 @@ export function SnapshotsPanel(props: FeatureProps) {
               <b>{s.name}</b>
               <p>
                 {new Date(s.createdAt).toLocaleString()}
+                {s.consistency === 'filesystem' ? ' · 文件系统一致性' : ''}
                 {s.note ? ` · ${s.note}` : ''}
               </p>
               <p className="subtle-note">快照 ID（跨主机复制使用）：<code>{s.id}</code></p>

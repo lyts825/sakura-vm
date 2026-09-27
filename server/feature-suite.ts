@@ -134,6 +134,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'native-integration',
   'golden-images',
   'snapshot-diff',
+  'online-snapshots',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'language-services',
@@ -459,8 +460,9 @@ export class FeatureSuite {
         '启用磁盘快照插件后，在实例 → 快照选择起点和终点，离线比较整个磁盘及指定路径中的普通文件和符号链接。';
       result.snapshots = vm.snapshots.length;
     } else if (featureId === 'online-snapshots') {
+      result.ready = true;
+      result.reason = '在实例 → 快照中，对运行中的实例创建在线快照；客户机需安装并运行 qemu-guest-agent。';
       result.snapshots = vm.snapshots.length;
-      result.consistency = this.machines.state(id) === 'running' ? 'qmp-coordinated' : 'offline';
     } else if (
       featureId === 'windows-mount' ||
       featureId === 'file-drop' ||

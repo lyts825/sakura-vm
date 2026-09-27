@@ -172,11 +172,11 @@ export async function route(
     action = parts[3];
   this.machines.get(id);
   if (req.method === 'POST' && parts[3] === 'snapshots' && parts.length === 4) {
-    const { name } = z
-      .object({ name: z.string().trim().min(1).max(60) })
+    const { name, online } = z
+      .object({ name: z.string().trim().min(1).max(60), online: z.boolean().optional() })
       .strict()
       .parse(await body(req));
-    return send(await this.machines.snapshot(id, name), 201);
+    return send(await (online ? this.machines.onlineSnapshot(id, name) : this.machines.snapshot(id, name)), 201);
   }
   if (
     req.method === 'POST' &&

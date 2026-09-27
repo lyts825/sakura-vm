@@ -1,7 +1,9 @@
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Engine } from '../server/runtime.ts';
@@ -122,4 +124,60 @@ test('legacy snapshots without identity metadata keep their existing controller 
   assert.equal(await readFile(join(dir, 'id_rsa'), 'utf8'), 'original-private-key');
   assert.equal((await machines.snapshotIdentity(id, legacy.id)).key, 'original-private-key');
   await assert.rejects(machines.snapshotIdentity(id, randomUUID()), /不存在/);
+});
+
+test('failed online disk snapshot thaws the guest and removes its identity metadata', async (t) => {
+  const { machines, id, dir } = await fixture(t);
+  const agentCommands: string[] = [];
+  const agent = createServer((socket) => {
+    socket.setEncoding('utf8');
+    let input = '';
+    socket.on('data', (data: string) => {
+      input += data;
+      let index: number;
+      while ((index = input.indexOf('\n')) >= 0) {
+        const command = JSON.parse(input.slice(0, index));
+        input = input.slice(index + 1);
+        agentCommands.push(command.execute);
+        socket.write(JSON.stringify({ id: command.id,
+          return: command.execute.startsWith('guest-fsfreeze-') ? 1 : {} }) + '\n');
+      }
+    });
+  });
+  const monitor = createServer((socket) => {
+    socket.write(JSON.stringify({ QMP: { version: { qemu: { major: 9, minor: 0, micro: 0 }, package: '' },
+      capabilities: [] } }) + '\n');
+    socket.setEncoding('utf8');
+    let input = '';
+    socket.on('data', (data: string) => {
+      input += data;
+      let index: number;
+      while ((index = input.indexOf('\n')) >= 0) {
+        const command = JSON.parse(input.slice(0, index));
+        input = input.slice(index + 1);
+        socket.write(JSON.stringify(command.execute === 'qmp_capabilities'
+          ? { id: command.id, return: {} }
+          : { id: command.id, error: { class: 'GenericError', desc: 'disk unavailable' } }) + '\n');
+      }
+    });
+  });
+  agent.listen(0, '127.0.0.1');
+  monitor.listen(0, '127.0.0.1');
+  await Promise.all([once(agent, 'listening'), once(monitor, 'listening')]);
+  const agentPort = (agent.address() as { port: number }).port;
+  const qmpPort = (monitor.address() as { port: number }).port;
+  machines.live.set(id, { status: 'running', agentPort, qmpPort } as any);
+  try {
+    await assert.rejects(machines.onlineSnapshot(id, 'failed'), /disk unavailable/);
+    assert.deepEqual(agentCommands,
+      ['guest-ping', 'guest-fsfreeze-freeze', 'guest-fsfreeze-thaw']);
+    assert.deepEqual(machines.get(id).snapshots, []);
+    assert.equal((await readdir(dir)).filter((name) => name.startsWith('.snapshot-')).length, 0);
+  } finally {
+    machines.live.delete(id);
+    await Promise.all([
+      new Promise<void>((resolve) => agent.close(() => resolve())),
+      new Promise<void>((resolve) => monitor.close(() => resolve())),
+    ]);
+  }
 });

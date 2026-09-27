@@ -28,7 +28,7 @@ import {
 import { createSshKey, seedIso, userData, metaData, bootSetup, cloudUserData, cloudNetwork } from './seed.ts';
 import { distroInfo } from './images.ts';
 import { Files, MAX_TEXT_BYTES } from './files.ts';
-import { freePort, qmp } from './qmp.ts';
+import { freePort, qmp, GuestAgent } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
 import { readStore, writeStore, fileHash, regularDirectory, within } from './local-store.ts';
@@ -112,6 +112,7 @@ type Live = {
   startedAt: string;
   sshPort: number;
   qmpPort: number;
+  agentPort: number;
   serialPort: number;
   abort: AbortController;
   bootAbort: AbortController;
@@ -548,7 +549,7 @@ export class Machines extends EventEmitter {
               throw new AppError(`端口 ${p.host} 已被另一实例使用`, 409);
         this.requireUnreservedPorts(vm.forwards);
         const firmware = vm.firmware === 'uefi' ? await ensureUefiFirmware(id) : null;
-        const [sshPort, qmpPort, serialPort] = await Promise.all([freePort(), freePort(), freePort()]);
+        const [sshPort, qmpPort, serialPort, agentPort] = await Promise.all([freePort(), freePort(), freePort(), freePort()]);
         await recordBootAttempt(id);
         const accelerator =
           vm.accelerator === 'auto' ? (this.engine.whpxAvailable ? 'whpx' : 'tcg') : vm.accelerator;
@@ -558,6 +559,7 @@ export class Machines extends EventEmitter {
           startedAt: new Date().toISOString(),
           sshPort,
           qmpPort,
+          agentPort,
           serialPort,
           abort: new AbortController(),
           bootAbort: new AbortController(),
@@ -634,12 +636,18 @@ export class Machines extends EventEmitter {
               ]
             : []),
           '-drive',
-          `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,format=qcow2,${diskOptions(vm)}${vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''}`,
+          `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,id=sakura-disk,format=qcow2,${diskOptions(vm)}${vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''}`,
           '-drive',
           `file=${escape(join(dir, 'seed.iso'))},${vm.distro && vm.distro !== 'alpine' ? 'if=virtio,format=raw' : 'media=cdrom'},readonly=on`,
           '-netdev',
           `user,id=sakura-net,ipv4=on,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${vm.sandbox?.network === 'isolated' ? 'restrict=on,ipv6=off,' : vm.hardware?.ipv6 === undefined ? '' : `ipv6=${vm.hardware.ipv6 ? 'on' : 'off'},`}${forwards.join(',')}`,
           ...deviceArguments(vm),
+          '-chardev',
+          `socket,id=sakura-agent,host=127.0.0.1,port=${agentPort},server=on,wait=off`,
+          '-device',
+          'virtio-serial-pci',
+          '-device',
+          'virtserialport,chardev=sakura-agent,name=org.qemu.guest_agent.0',
           '-qmp',
           `tcp:127.0.0.1:${qmpPort},server=on,wait=off`,
           '-serial',
@@ -1604,13 +1612,14 @@ export class Machines extends EventEmitter {
     const { key, seed } = await this.diskIdentity(id, snapshotId);
     return { key, seed };
   }
-  private async createSnapshot(vm: VMRecord, name: string) {
+  private async createSnapshot(vm: VMRecord, name: string, onlinePort?: number) {
     const shot = {
       id: randomUUID(),
       name,
       createdAt: new Date().toISOString(),
       diskGiB: vm.diskGiB,
       pendingResize: !!vm.pendingResize,
+      consistency: onlinePort === undefined ? 'offline' as const : 'filesystem' as const,
     };
     const identity = await this.diskIdentity(vm.id);
     const file = this.snapshotIdentityFile(vm.id, shot.id);
@@ -1619,7 +1628,11 @@ export class Machines extends EventEmitter {
       mode: 0o600,
     });
     try {
-      await this.engine.run('sakura-img', ['snapshot', '-c', shot.id, join(vmDir(vm.id), 'disk.qcow2')]);
+      if (onlinePort === undefined)
+        await this.engine.run('sakura-img', ['snapshot', '-c', shot.id, join(vmDir(vm.id), 'disk.qcow2')]);
+      else
+        await qmp(onlinePort, 'blockdev-snapshot-internal-sync',
+          { device: 'sakura-disk', name: shot.id }, 30000);
     } catch (error) {
       await rm(file, { force: true });
       throw error;
@@ -1634,6 +1647,52 @@ export class Machines extends EventEmitter {
       this.requireStopped(id);
       if (vm.snapshots.length >= 20) throw new AppError('最多保留 20 个磁盘快照');
       return this.createSnapshot(vm, name);
+    });
+  }
+  async onlineSnapshot(id: string, name: string) {
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      const live = this.live.get(id);
+      if (!live || live.status !== 'running') throw new AppError('在线快照要求实例正在运行', 409);
+      if (vm.sandbox?.storage === 'discard-on-stop')
+        throw new AppError('临时写时复制实例不能保存在线快照', 409);
+      if (vm.snapshots.length >= 20) throw new AppError('最多保留 20 个磁盘快照');
+      let agent: GuestAgent | undefined;
+      try {
+        agent = await GuestAgent.connect(live.agentPort);
+        await agent.execute('guest-ping', undefined, 5000);
+      } catch (error) {
+        agent?.close();
+        throw new AppError(`客户机代理不可用；请在 Linux 内安装并启动 qemu-guest-agent：${String((error as Error).message || error)}`, 409);
+      }
+      let freezeAttempted = false;
+      let freezeCount = 0;
+      let failure: unknown;
+      let result: Awaited<ReturnType<typeof this.createSnapshot>> | undefined;
+      try {
+        freezeAttempted = true;
+        const count = await agent.execute('guest-fsfreeze-freeze', undefined, 30000);
+        if (typeof count !== 'number' || count < 1)
+          throw new AppError('客户机代理未冻结任何文件系统，已取消在线快照', 409);
+        freezeCount = count;
+        result = await this.createSnapshot(vm, name, live.qmpPort);
+      } catch (error) {
+        failure = error;
+      } finally {
+        if (freezeAttempted) {
+          try {
+            const thawed = await agent.execute('guest-fsfreeze-thaw', undefined, 30000);
+            if (freezeCount > 0 && (typeof thawed !== 'number' || thawed < freezeCount))
+              throw new Error(`仅解冻 ${String(thawed)} / ${freezeCount} 个文件系统`);
+          } catch (error) {
+            failure = new AppError(`文件系统解冻失败，实例将停止以解除冻结：${String((error as Error).message || error)}`, 500);
+            await this.stopInternal(id, true).catch(() => {});
+          }
+        }
+        agent.close();
+      }
+      if (failure) throw failure;
+      return result!;
     });
   }
   async restore(id: string, snapshotId: string, backup = false) {

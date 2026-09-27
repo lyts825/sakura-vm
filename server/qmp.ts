@@ -1,5 +1,6 @@
 import { createConnection, createServer } from 'node:net';
 import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
 
 export async function freePort() {
   const server = createServer();
@@ -9,14 +10,14 @@ export async function freePort() {
   await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
   return port;
 }
-export async function qmp(port: number, command: string, args?: Record<string, unknown>) {
+export async function qmp(port: number, command: string, args?: Record<string, unknown>, timeoutMs = 5000) {
   return new Promise<unknown>((resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port });
     socket.setEncoding('utf8');
     let input = '';
     let sent = false;
     let settled = false;
-    const timer = setTimeout(() => finish(new Error('QMP response timed out')), 5000);
+    const timer = setTimeout(() => finish(new Error('QMP response timed out')), timeoutMs);
     function finish(error?: Error, data?: unknown) {
       if (settled) return;
       settled = true;
@@ -53,4 +54,82 @@ export async function qmp(port: number, command: string, args?: Record<string, u
       }
     });
   });
+}
+
+/** Keep one guest-agent connection open across freeze, snapshot and thaw. */
+export class GuestAgent {
+  private input = '';
+  private sequence = 0;
+  private readonly session = randomUUID();
+  private pending?: { id: string; resolve: (value: unknown) => void; reject: (error: Error) => void };
+  private constructor(private readonly socket: ReturnType<typeof createConnection>) {
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk: string) => {
+      this.input += chunk;
+      if (this.input.length > 1024 * 1024) return this.fail(new Error('Guest agent response is too large'));
+      let index: number;
+      while ((index = this.input.indexOf('\n')) >= 0) {
+        const line = this.input.slice(0, index).replace(/^\uFFFD/, '');
+        this.input = this.input.slice(index + 1);
+        if (!line.trim()) continue;
+        try {
+          const message = JSON.parse(line);
+          if (message.id !== this.pending?.id) continue;
+          const pending = this.pending!;
+          this.pending = undefined;
+          if (message.error) pending.reject(new Error(message.error.desc || 'Guest agent command failed'));
+          else pending.resolve(message.return);
+        } catch (error) {
+          this.fail(error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+    });
+    socket.on('error', (error) => this.fail(error));
+    socket.on('close', () => this.fail(new Error('Guest agent connection closed')));
+  }
+  static async connect(port: number, timeoutMs = 5000) {
+    const socket = createConnection({ host: '127.0.0.1', port });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('connect', connected);
+          socket.off('error', failed);
+        };
+        const connected = () => { cleanup(); resolve(); };
+        const failed = (error: Error) => { cleanup(); reject(error); };
+        const timer = setTimeout(() => failed(new Error('Guest agent connection timed out')), timeoutMs);
+        socket.once('connect', connected);
+        socket.once('error', failed);
+      });
+      return new GuestAgent(socket);
+    } catch (error) {
+      socket.destroy();
+      throw error;
+    }
+  }
+  async execute(command: string, args?: Record<string, unknown>, timeoutMs = 30000) {
+    if (this.pending) throw new Error('Guest agent command already in progress');
+    if (this.socket.destroyed) throw new Error('Guest agent connection closed');
+    const id = `${this.session}:${++this.sequence}`;
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.fail(new Error(`Guest agent ${command} timed out`));
+        this.socket.destroy();
+      }, timeoutMs);
+      this.pending = {
+        id,
+        resolve: (value) => { clearTimeout(timer); resolve(value); },
+        reject: (error) => { clearTimeout(timer); reject(error); },
+      };
+      this.socket.write(JSON.stringify({ execute: command, arguments: args, id }) + '\n');
+    });
+  }
+  close() { this.socket.destroy(); }
+  private fail(error: Error) {
+    const pending = this.pending;
+    this.pending = undefined;
+    pending?.reject(error);
+    this.socket.destroy();
+  }
 }
