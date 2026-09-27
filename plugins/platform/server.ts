@@ -5,6 +5,17 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 import { NextFeatures } from '../../server/next-features.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../server/model.ts';
+import { z } from 'zod';
+import type { PluginOperation } from '../../server/plugin-api.ts';
+
+export const operations: Record<string, PluginOperation> = {
+  'notebook-link': {
+    response: z.object({ provider: z.enum(['jupyter', 'marimo']), url: z.url() }).strict(),
+    execute(url) {
+      return this.next.notebookLink(url.pathname.split('/')[3]);
+    },
+  },
+};
 
 export async function activate(host: PluginContext) {
   const m = host.machines;

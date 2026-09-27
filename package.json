@@ -28,6 +28,7 @@
     "test:hardware-matrix": "tsx scripts/smoke-hardware-matrix.ts",
     "test:nested-virtualization": "tsx scripts/smoke-nested-virtualization.ts",
     "test:guest-dns": "tsx scripts/smoke-guest-dns.ts",
+    "test:notebook": "tsx scripts/smoke-notebook.ts",
     "test:private-dns": "tsx scripts/smoke-private-dns.ts",
     "test:image-import": "tsx scripts/smoke-image-import.ts",
     "test:uefi": "tsx scripts/smoke-uefi.ts",

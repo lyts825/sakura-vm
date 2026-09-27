@@ -31,6 +31,10 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
     for (const operation of plugin.contributes.operations)
       assert.ok(ids.has(`${plugin.id}.${operation.id}`), `${plugin.id}.${operation.id}`);
   assert.equal(spec.paths['/api/vms/{vmId}/commands'].get['x-sakura-enabled'], true);
+  const notebookLink = spec.paths['/api/vms/{vmId}/notebook-link'].get;
+  assert.equal(notebookLink.operationId, 'platform.notebook-link');
+  assert.deepEqual(notebookLink.responses[200].content!['application/json'].schema.required,
+    ['provider', 'url']);
   assert.equal(spec.paths['/api/vms/{vmId}/metrics'].get['x-sakura-enabled'], false);
   assert.ok(
     spec.paths['/api/vms/{vmId}/commands'].get.parameters.some(

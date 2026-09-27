@@ -3015,6 +3015,44 @@ test('capability center edits operation parameters, disables planned runs and ex
   expect(locked).toBe(false);
 });
 
+test('notebook session opens its authenticated local link from the capability center', async ({ page }) => {
+  await app(page, ['projects', 'platform'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }),
+  );
+  await page.route('**/api/vms/*/next-features*', (route) => route.fulfill({
+    json: {
+      projectId: 'default', settings: {}, records: {}, executions: [],
+      jobs: [{ id: 'notebook-job', action: 'next:notebook-environment',
+        status: 'done', log: '', startedAt: new Date().toISOString(),
+        result: { bytes: 100, sha256: 'a'.repeat(64) } }],
+      capabilities: capabilityViews('next'), features: [],
+    },
+  }));
+  await page.route('**/api/jobs/notebook-job/result*', (route) => route.fulfill({
+    json: { jobId: 'notebook-job', result: { message: 'Notebook 已启动',
+      session: { provider: 'jupyter', status: 'running', hostPort: 49122, guestPort: 8888 } } },
+  }));
+  let linkRequests = 0;
+  await page.route('**/api/vms/*/notebook-link*', (route) => {
+    linkRequests++;
+    return route.fulfill({ json: { provider: 'jupyter',
+      url: 'http://127.0.0.1:49122/lab?token=local-test-token' } });
+  });
+  await page.context().route('http://127.0.0.1:49122/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<h1>Notebook opened</h1>' }),
+  );
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('next 功能操作').selectOption('notebook-environment');
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('button', { name: '打开 Notebook' }).click();
+  const popup = await popupPromise;
+  await expect(popup.getByRole('heading', { name: 'Notebook opened' })).toBeVisible();
+  expect(new URL(popup.url()).searchParams.get('token')).toBe('local-test-token');
+  expect(linkRequests).toBe(1);
+});
+
 test('hardware compatibility check displays probed devices and current configuration on mobile', async ({
   page,
 }) => {

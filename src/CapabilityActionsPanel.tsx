@@ -40,6 +40,7 @@ export function CapabilityActionsPanel({
     [],
   );
   const definition = definitions.find((item) => item.id === selected);
+  const vmId = /^\/vms\/([^/]+)\/next-features$/.exec(path)?.[1];
   useEffect(() => {
     setParameters(JSON.stringify(definition?.example || {}, null, 2));
   }, [selected, path, request]);
@@ -253,6 +254,30 @@ export function CapabilityActionsPanel({
               <p>历史快照已复制到目标主机，来源实例和快照保持不变。</p>
               <p>目标实例 ID：<code>{result.remoteVmId}</code></p>
               <p>磁盘 SHA-256：<code>{result.sha256}</code></p>
+            </div>
+          )}
+          {selected === 'notebook-environment' && result && (
+            <div className="feature-card">
+              <p>{result.message || 'Notebook 会话状态'}</p>
+              {result.session && <p>{result.session.provider === 'jupyter' ? 'JupyterLab' : 'Marimo'} ·
+                {result.session.status === 'running' ? '运行中' :
+                  result.session.status === 'unhealthy' ? '入口未就绪' : '已停止'} ·
+                本机端口 {result.session.hostPort}</p>}
+              {result.session?.status === 'running' && vmId && <button
+                className="secondary compact"
+                disabled={action.busy}
+                onClick={() => {
+                  const tab = window.open('about:blank', '_blank');
+                  if (tab) tab.opener = null;
+                  void action.run(async () => {
+                    if (!tab) throw new Error('浏览器阻止了新标签页，请允许弹窗后重试');
+                    try {
+                      const link = await request<{ url: string }>(`/vms/${vmId}/notebook-link`);
+                      tab.location.replace(link.url);
+                    } catch (error) { tab.close(); throw error; }
+                  }, 'Notebook 已在新标签页打开');
+                }}
+              >打开 Notebook</button>}
             </div>
           )}
           {(selected === 'flamegraph' || selected === 'ebpf-profiler') &&

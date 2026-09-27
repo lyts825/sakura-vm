@@ -1,4 +1,4 @@
-import { definePlugin, pin, http } from '../../shared/plugin-protocol.ts';
+import { definePlugin, pin, http, operation } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({
   id: 'platform',
@@ -9,7 +9,10 @@ export const manifest = definePlugin({
   requires: [pin('projects')],
   services: ['next'],
   contributes: {
-    http: [http('/api/next-features', ['GET']), http('/api/vms/:vmId/next-features', ['GET', 'POST'], true)],
+    http: [http('/api/next-features', ['GET']),
+      http('/api/vms/:vmId/next-features', ['GET', 'POST'], true),
+      http('/api/vms/:vmId/notebook-link', ['GET'], true)],
+    operations: [operation('notebook-link', 'GET', '/api/vms/:vmId/notebook-link')],
     pages: ['features'],
   },
 });

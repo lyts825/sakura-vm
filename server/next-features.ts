@@ -15,6 +15,7 @@ import { guestDnsDiagnostics } from './guest-dns.ts';
 import { hostScoreInput, type HostScoreInput, type HostPeers } from './host-peers.ts';
 import type { ColdMigrations } from './cold-migration.ts';
 import type { SnapshotReplications } from './snapshot-replications.ts';
+import type { NotebookEnvironments } from './notebook-environments.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -515,8 +516,8 @@ export const nextFeatureCatalog = [
     'Jupyter/Marimo 环境',
     '操作系统与桌面',
     'P1',
-    '检查客户机 Notebook 工具并保存启动参数。',
-    'planned',
+    '在当前项目安装 JupyterLab 或 Marimo，管理带认证的会话与本机回环入口。',
+    'available',
   ],
   [
     'authenticated-ide-preview',
@@ -626,8 +627,6 @@ const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'process-interop': 'command -v ps >/dev/null && ps -eo pid,comm',
   'gpu-compute-passthrough':
     'if command -v nvidia-smi >/dev/null; then nvidia-smi --query-gpu=name --format=csv,noheader; else command -v rocminfo >/dev/null && rocminfo; fi',
-  'notebook-environment':
-    'if command -v jupyter >/dev/null; then jupyter --version; else command -v marimo >/dev/null && marimo --version; fi',
 };
 
 const now = () => new Date().toISOString();
@@ -644,6 +643,7 @@ export class NextFeatures {
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private coldMigrations?: ColdMigrations;
   private snapshotReplications?: SnapshotReplications;
+  private notebookEnvironments?: NotebookEnvironments;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -662,6 +662,16 @@ export class NextFeatures {
 
   setSnapshotReplications(service: SnapshotReplications) {
     this.snapshotReplications = service;
+  }
+
+  setNotebookEnvironments(service: NotebookEnvironments) {
+    this.notebookEnvironments = service;
+  }
+
+  notebookLink(id: string) {
+    if (!this.notebookEnvironments) throw new AppError('Notebook 服务尚未启用', 503);
+    this.machines.requireUnlocked(id);
+    return this.notebookEnvironments.link(id);
   }
 
   private file() {
@@ -763,6 +773,7 @@ export class NextFeatures {
     signal?: AbortSignal,
     options: Record<string, unknown> = {},
     action: 'check' | 'run' = 'check',
+    log: (line: string) => void = () => {},
   ) {
     const state = await this.state();
     const configured = state.settings[id]?.[spec.id];
@@ -883,6 +894,15 @@ export class NextFeatures {
       return { ...(action === 'run'
         ? await this.snapshotReplications.run(id, merged, signal || new AbortController().signal)
         : await this.snapshotReplications.preview(id, merged)), adapter };
+    }
+    if (spec.id === 'notebook-environment') {
+      if (!this.notebookEnvironments)
+        return { ready: false, executed: false, adapter,
+          reason: 'Notebook 服务尚未启动。' };
+      return { ...(action === 'run'
+        ? await this.notebookEnvironments.run(id, merged,
+          signal || new AbortController().signal, log)
+        : await this.notebookEnvironments.view(id, merged, signal)), adapter };
     }
     if (spec.id === 'graphql-api')
       return {
@@ -1056,9 +1076,10 @@ export class NextFeatures {
     action: 'check' | 'run',
     signal?: AbortSignal,
     options?: Record<string, unknown>,
+    log?: (line: string) => void,
   ) {
     const startedAt = now();
-    const result = await this.probe(id, spec, signal, options, action);
+    const result = await this.probe(id, spec, signal, options, action, log);
     const historyResult = spec.id === 'flamegraph' || spec.id === 'ebpf-profiler'
       ? compactProfileResult(result) : result;
     const state = await this.state();
@@ -1122,7 +1143,7 @@ export class NextFeatures {
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:${spec.id}`,
       async (log, taskSignal, _update, saveResult) => {
-        const result = await this.executeFeature(id, spec, 'run', taskSignal, value.options);
+        const result = await this.executeFeature(id, spec, 'run', taskSignal, value.options, log);
         await saveResult(result);
         log(`${JSON.stringify(spec.id === 'flamegraph' || spec.id === 'ebpf-profiler'
           ? compactProfileResult(result) : result)}\n`);

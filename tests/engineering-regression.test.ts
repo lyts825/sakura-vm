@@ -148,15 +148,15 @@ test('checks do not lock machines or claim probe-only features are implemented',
       false,
     );
     assert.equal(machines.incidentLocked(id), false);
-    const missing: any = await next.action(id, { action: 'check', featureId: 'notebook-environment' });
+    const missing: any = await next.action(id, { action: 'check', featureId: 'gpu-compute-passthrough' });
     assert.equal(missing.ready, false);
     assert.equal(missing.probePassed, false);
     machines.exec = async () => ({ stdout: 'version', stderr: '', code: 0 });
     assert.equal(
-      ((await next.action(id, { action: 'check', featureId: 'notebook-environment' })) as any).ready,
+      ((await next.action(id, { action: 'check', featureId: 'gpu-compute-passthrough' })) as any).ready,
       false,
     );
-    await assert.rejects(next.action(id, { action: 'run', featureId: 'notebook-environment' }), /实现/);
+    await assert.rejects(next.action(id, { action: 'run', featureId: 'gpu-compute-passthrough' }), /实现/);
     const recording: any = await next.action(id, { action: 'check', featureId: 'desktop-recording' });
     assert.equal(recording.ready, true);
     assert.equal(recording.executed, false);

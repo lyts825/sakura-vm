@@ -10,6 +10,7 @@ import { flamegraphOptions } from './flamegraph.ts';
 import { ebpfProfileOptions } from './ebpf-profiler.ts';
 import { coldMigrationInput, maintenanceDrainInput } from './cold-migration.ts';
 import { snapshotReplicationInput } from './snapshot-replications.ts';
+import { notebookInput } from './notebook-environments.ts';
 
 export const relativePath = z
   .string()
@@ -44,6 +45,15 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'notebook-environment': action(
+    'Jupyter/Marimo 环境',
+    'next',
+    notebookInput.shape,
+    { mode: 'status', provider: 'jupyter', guestPort: 8888, hostPort: 8888 },
+    '当前项目可安装并启动 JupyterLab 或 Marimo。start 自动安装缺少的工具，创建仅监听本机回环地址的端口映射；stop 关闭会话并移除由该功能创建的映射。访问链接通过单独的本机控制接口获取。',
+    false,
+    true,
+  ),
   'cross-host-snapshots': action(
     '跨主机快照复制',
     'next',
