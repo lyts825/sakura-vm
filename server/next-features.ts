@@ -276,7 +276,7 @@ export const nextFeatureCatalog = [
     'available',
   ],
   ['network-topology', '网络拓扑图', '网络与服务治理', 'P1', '记录客户机接口、路由和转发拓扑。', 'available'],
-  ['nat-hairpin', 'NAT 回流', '网络与服务治理', 'P2', '保存端口回流规则并检查当前转发配置。', 'planned'],
+  ['nat-hairpin', 'NAT 回流', '网络与服务治理', 'P2', '验证客户机通过本机 QEMU 宿主网关回连现有 TCP 转发服务。', 'available'],
   ['proxy-pac', 'PAC 代理策略', '网络与服务治理', 'P2', '保存按域名分流的 PAC 规则。', 'available'],
   [
     'network-emulation',

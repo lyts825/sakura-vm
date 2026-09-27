@@ -21,6 +21,7 @@ import { checkFlamegraph, runFlamegraph } from './flamegraph.ts';
 import { checkEbpfProfiler, runEbpfProfiler } from './ebpf-profiler.ts';
 import { networkQuota } from './network-quota.ts';
 import { egressPolicy } from './egress-policy.ts';
+import { natHairpin } from './nat-hairpin.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -70,6 +71,8 @@ export class CapabilityActions {
       return { featureId, ...await networkQuota(this.machines, id, {}, 'check', signal) };
     if (featureId === 'egress-policy')
       return { featureId, ...await egressPolicy(this.machines, id, {}, 'check', signal) };
+    if (featureId === 'nat-hairpin')
+      return { featureId, ...await natHairpin(this.machines, id, {}, 'check', signal) };
     if (featureId === 'packet-capture') {
       const probe = await this.machines.exec(id,
         'python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)" && command -v tcpdump >/dev/null && tcpdump -D >/dev/null',
@@ -108,6 +111,8 @@ export class CapabilityActions {
       return { code: 0, ...await networkQuota(this.machines, id, parameters, 'run', signal) };
     if (featureId === 'egress-policy')
       return { code: 0, ...await egressPolicy(this.machines, id, parameters, 'run', signal) };
+    if (featureId === 'nat-hairpin')
+      return { code: 0, ...await natHairpin(this.machines, id, parameters, 'run', signal) };
     if (featureId === 'power-aware-schedule') {
       const p = capabilityDefinitions[featureId].schema.parse(parameters);
       if (p.mode === 'save' && !p.policy) throw new AppError('保存时需要提供电源策略');

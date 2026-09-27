@@ -19,6 +19,7 @@ const { networkSchema } = await import('../server/network-profiles.ts');
 const { networkEmulation } = await import('../server/network-emulation.ts');
 const { networkQuota } = await import('../server/network-quota.ts');
 const { egressPolicy } = await import('../server/egress-policy.ts');
+const { natHairpin } = await import('../server/nat-hairpin.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 let features: FeaturesType | undefined;
@@ -167,6 +168,20 @@ PY`, 45000);
   const preview = await features.network.preview(vm.id, saved.config);
   await features.network.apply(vm.id, preview.config, preview.token);
   assert.match(await banner(port), /^SSH-2\.0/);
+  const hairpinCheck = await natHairpin(machines, vm.id, {}, 'check');
+  assert.equal(hairpinCheck.ready, true);
+  const verifiedHairpin = await natHairpin(machines, vm.id,
+    { mode: 'verify', hostPort: port }, 'run');
+  assert.equal(verifiedHairpin.ready, true);
+  const hairpin = await machines.exec(vm.id, `python3 - <<'PY'
+import socket
+with socket.create_connection(('10.0.2.2', ${port}), 3) as connection:
+    connection.settimeout(3)
+    print(connection.recv(128).decode('ascii').strip())
+PY`, 10000);
+  assert.equal(hairpin.code, 0, hairpin.stdout + hairpin.stderr);
+  assert.match(hairpin.stdout, /^SSH-2\.0/m);
+  console.log('Guest to host gateway to guest SSH hairpin passed');
   await machines.setForwards(vm.id, []);
   await assert.rejects(banner(port));
   await machines.setForwards(vm.id, [{ name: 'SSH proof', host: port, guest: 22 }]);

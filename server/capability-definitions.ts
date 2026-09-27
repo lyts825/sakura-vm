@@ -8,6 +8,7 @@ import { powerPolicySchema } from './power-policy.ts';
 import { networkEmulationShape } from './network-emulation.ts';
 import { networkQuotaShape } from './network-quota.ts';
 import { egressPolicyShape } from './egress-policy.ts';
+import { natHairpinShape } from './nat-hairpin.ts';
 import { flamegraphOptions } from './flamegraph.ts';
 import { ebpfProfileOptions } from './ebpf-profiler.ts';
 import { coldMigrationInput, maintenanceDrainInput } from './cold-migration.ts';
@@ -157,6 +158,15 @@ export const capabilityDefinitions = {
     '在客户机指定网卡上限制新建 IPv4 出站连接，仅允许列出的地址或 CIDR；新建 IPv6 出站连接全部拒绝。现有连接和 DHCP 保持可用。需要 iptables/ip6tables；重启后需重新应用。',
     true,
     true,
+  ),
+  'nat-hairpin': action(
+    'NAT 回流验证',
+    'next',
+    natHairpinShape,
+    { mode: 'status' },
+    '选择实例现有 TCP 转发的宿主端口，让客户机连接 QEMU 宿主网关 10.0.2.2 的对应端口，验证客户机→宿主→客户机回流。当前仅适用于本机 QEMU 用户网络；无需额外建立转发规则。',
+    true,
+    false,
   ),
   'power-aware-schedule': action(
     '宿主电源感知调度',
