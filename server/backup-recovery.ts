@@ -74,8 +74,10 @@ export class BackupRecovery {
         try {
           update('校验并准备备份磁盘');
           await this.backups.withVerifiedFile(id, config.backupId, config.password, combined, (file) =>
-            this.bundles.withDisk(createReadStream(file), combined, (disk) =>
-              this.machines.withRescue(
+            this.bundles.withDisk(createReadStream(file), combined, (disk, diskEncryption) => {
+              if (diskEncryption)
+                throw new AppError('加密实例备份暂不支持只读文件提取；可恢复为新实例并录入磁盘口令', 409);
+              return this.machines.withRescue(
                 id,
                 combined,
                 update,
@@ -107,8 +109,8 @@ export class BackupRecovery {
                 },
                 log,
                 disk,
-              ),
-            ),
+              );
+            }),
           );
           combined.throwIfAborted();
           execution.outcome = 'success';

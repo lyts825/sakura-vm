@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdir, readFile, readdir, writeFile, rename, rm, stat, copyFile, lstat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, rename, rm, stat, copyFile, lstat, link, open } from 'node:fs/promises';
 import { existsSync, createReadStream, createWriteStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -38,6 +38,9 @@ import { resourcePolicy, validateAdmission } from './resource-policies.ts';
 import { cpuSetSize } from './guest-hardware.ts';
 import { ensureUefiFirmware, requireUefiSupport } from './firmware.ts';
 import { StoragePools } from './storage-pools.ts';
+import { diskEncryptionSchema, encryptedDriveOption, encryptedImageOptions, plainImageOptions,
+  openDiskSecret, qemuSecretObject, withDiskSecret } from './disk-encryption.ts';
+import { Secrets } from './secrets.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
@@ -236,6 +239,8 @@ export class Machines extends EventEmitter {
           r.sandbox = sandboxPolicySchema.parse(r.sandbox);
           if (r.forwards.length) throw new Error('沙箱不允许额外端口转发');
         }
+        if (r.diskEncryption !== undefined)
+          r.diskEncryption = diskEncryptionSchema.parse(r.diskEncryption);
         if (r.rescueOf !== undefined) {
           checkedId(r.rescueOf);
           if (
@@ -254,10 +259,122 @@ export class Machines extends EventEmitter {
     } catch (e: any) {
       if (e.code !== 'ENOENT') throw e;
     }
+    for (const vm of this.records.values()) await this.recoverDiskEncryption(vm);
     if ([...this.records.values()].some((vm) => vm.sandbox)) {
       await this.expireSandboxes();
       this.watchSandboxes();
     }
+  }
+  private diskEncryptionPaths(id: string) {
+    const dir = vmDir(id);
+    return {
+      disk: join(dir, 'disk.qcow2'),
+      staged: join(dir, '.disk.encrypting.qcow2'),
+      backup: join(dir, '.disk.before-encrypt.qcow2'),
+      pending: join(dir, '.disk-encryption.pending.json'),
+    };
+  }
+  private async diskInfo(id: string) {
+    const output = await this.engine.run('sakura-img',
+      ['info', '-f', 'qcow2', '--output=json', this.diskEncryptionPaths(id).disk]);
+    return JSON.parse(output) as { format?: string; encrypted?: boolean; 'backing-filename'?: string };
+  }
+  private async recoverDiskEncryption(vm: VMRecord) {
+    const paths = this.diskEncryptionPaths(vm.id);
+    const pending = await readFile(paths.pending, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    });
+    if (!pending && !vm.diskEncryption) return;
+    const info = await this.diskInfo(vm.id);
+    if (pending) {
+      const config = diskEncryptionSchema.parse(JSON.parse(pending));
+      if (info.encrypted) {
+        if (vm.diskEncryption && vm.diskEncryption.secretName !== config.secretName)
+          throw new AppError(`实例 ${vm.name} 的磁盘口令引用与待恢复事务不一致`, 409);
+        vm.diskEncryption = config;
+        await this.save();
+      } else if (vm.diskEncryption) {
+        throw new AppError(`实例 ${vm.name} 的加密标记与明文磁盘不一致，请先恢复磁盘`, 409);
+      }
+      // After a crash, only an encrypted current disk justifies deleting the plaintext hard link.
+      await rm(paths.staged, { force: true });
+      await rm(paths.backup, { force: true });
+      await rm(paths.pending, { force: true });
+    }
+    if (vm.diskEncryption && !info.encrypted)
+      throw new AppError(`实例 ${vm.name} 的加密标记与磁盘格式不一致`, 409);
+  }
+  async withDiskSecret<T>(vm: VMRecord, action: (file: string) => Promise<T>) {
+    return withDiskSecret(this, vm, action);
+  }
+  async diskEncryptionStatus(id: string) {
+    const vm = this.get(id);
+    // QEMU owns the image while running; startup already verified its format.
+    const info = this.live.has(id) ? { encrypted: !!vm.diskEncryption } : await this.diskInfo(id);
+    const keyAvailable = vm.diskEncryption
+      ? (await new Secrets(this).list(id)).some((item) => item.name === vm.diskEncryption!.secretName)
+      : false;
+    return { enabled: !!vm.diskEncryption, encrypted: !!info.encrypted,
+      format: vm.diskEncryption?.format, secretName: vm.diskEncryption?.secretName,
+      keyAvailable, stopped: !this.live.has(id), snapshots: vm.snapshots.length };
+  }
+  async encryptDisk(id: string, secretName: string, signal?: AbortSignal) {
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      this.requireStopped(id);
+      if (vm.diskEncryption) throw new AppError('实例磁盘已经加密', 409);
+      if (vm.sandbox || vm.rescueOf) throw new AppError('临时实例不能加密磁盘', 409);
+      if (vm.snapshots.length) throw new AppError('请先删除或导出内部快照，再加密实例磁盘', 409);
+      const config = diskEncryptionSchema.parse({ format: 'luks', secretName });
+      const paths = this.diskEncryptionPaths(id);
+      for (const path of [paths.staged, paths.backup, paths.pending])
+        if (existsSync(path)) throw new AppError('存在未完成的磁盘加密文件，请先重启服务执行恢复', 409);
+      if ((await this.diskInfo(id)).encrypted) throw new AppError('磁盘已加密但缺少加密配置', 409);
+      const original = await lstat(paths.disk);
+      if (!original.isFile()) throw new AppError('实例磁盘必须是普通文件', 409);
+      const secret = await openDiskSecret(this, id, config.secretName);
+      let published = false;
+      try {
+        await writeFile(paths.pending, JSON.stringify(config), { flag: 'wx', mode: 0o600 });
+        signal?.throwIfAborted();
+        const object = ['--object', qemuSecretObject(secret.file)];
+        await this.engine.run('sakura-img', [
+          'convert', ...object, '-f', 'qcow2', '-O', 'qcow2',
+          '-o', 'encrypt.format=luks,encrypt.key-secret=sakura-disk-key',
+          paths.disk, paths.staged,
+        ], { signal, timeoutMs: 1800000 });
+        const stagedInfo = JSON.parse(await this.engine.run('sakura-img',
+          ['info', '-f', 'qcow2', '--output=json', paths.staged]));
+        if (stagedInfo.format !== 'qcow2' || stagedInfo.encrypted !== true ||
+            stagedInfo['backing-filename'])
+          throw new AppError('加密转换结果无效，原磁盘未修改', 409);
+        await this.engine.run('sakura-img', ['check', ...object, '--image-opts',
+          encryptedImageOptions(paths.staged)], { signal, timeoutMs: 1800000 });
+        await this.engine.run('sakura-img', ['compare', ...object, '--image-opts',
+          plainImageOptions(paths.disk), encryptedImageOptions(paths.staged)],
+        { signal, timeoutMs: 1800000 });
+        const handle = await open(paths.staged, 'r+');
+        try { await handle.sync(); } finally { await handle.close(); }
+        signal?.throwIfAborted();
+        await link(paths.disk, paths.backup);
+        await rename(paths.staged, paths.disk);
+        published = true;
+        vm.diskEncryption = config;
+        await this.save();
+        await rm(paths.backup, { force: true });
+        await rm(paths.pending, { force: true });
+        this.emit('change');
+        return this.diskEncryptionStatus(id);
+      } finally {
+        await secret.close();
+        if (!published) {
+          await rm(paths.staged, { force: true });
+          await rm(paths.backup, { force: true });
+          await rm(paths.pending, { force: true });
+        }
+      }
+    });
   }
   private watchSandboxes() {
     if (this.sandboxTimer || this.closing) return;
@@ -375,6 +492,7 @@ export class Machines extends EventEmitter {
       deviceArguments: deviceArguments(vm),
       display: vm.hardware?.devices?.graphics === 'virgl' ? 'egl-headless' : 'none',
       diskOptions: diskOptions(vm) + (vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''),
+      diskEncryption: vm.diskEncryption ? { format: 'luks', secretName: vm.diskEncryption.secretName } : undefined,
       diskPersistence: vm.sandbox?.storage || 'persistent',
       accelerator: vm.accelerator,
       disk: join(vmDir(id), 'disk.qcow2'),
@@ -557,6 +675,11 @@ export class Machines extends EventEmitter {
         this.requireUnreservedPorts(vm.forwards);
         if (vm.architecture === 'aarch64' && !this.engine.aarch64Available)
           throw new AppError('缺少 ARM64 QEMU，请运行 npm run setup', 503);
+        if (vm.diskEncryption && !(await this.diskInfo(id)).encrypted)
+          throw new AppError('加密配置与实际磁盘不一致，拒绝启动', 409);
+        if (vm.diskEncryption && !(await new Secrets(this).list(id)).some(
+          (item) => item.name === vm.diskEncryption!.secretName))
+          throw new AppError(`缺少私密配置：${vm.diskEncryption.secretName}`, 409);
         const firmware = vm.firmware === 'uefi'
           ? await ensureUefiFirmware(id, vm.architecture) : null;
         const [sshPort, qmpPort, serialPort, agentPort] = await Promise.all([freePort(), freePort(), freePort(), freePort()]);
@@ -599,6 +722,14 @@ export class Machines extends EventEmitter {
         if (vm.sandbox && sandboxExpired(vm.sandbox)) {
           this.live.delete(id);
           this.requireSandboxLifetime(vm);
+        }
+        let diskSecret: Awaited<ReturnType<typeof openDiskSecret>> | undefined;
+        try {
+          if (vm.diskEncryption)
+            diskSecret = await openDiskSecret(this, id, vm.diskEncryption.secretName);
+        } catch (error) {
+          this.live.delete(id);
+          throw error;
         }
         const escape = (s: string) => s.replaceAll(',', ',,');
         const forwards = [
@@ -646,8 +777,9 @@ export class Machines extends EventEmitter {
                 `if=pflash,unit=1,format=raw,file=${escape(firmware.vars)}`,
               ]
             : []),
+          ...(diskSecret ? ['-object', qemuSecretObject(diskSecret.file)] : []),
           '-drive',
-          `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,id=sakura-disk,format=qcow2,${diskOptions(vm)}${vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''}`,
+          `file=${escape(join(dir, 'disk.qcow2'))},if=virtio,id=sakura-disk,format=qcow2,${diskOptions(vm)}${diskSecret ? ',' + encryptedDriveOption() : ''}${vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''}`,
           '-drive',
           `file=${escape(join(dir, 'seed.iso'))},${vm.distro && vm.distro !== 'alpine' ? 'if=virtio,format=raw' : 'media=cdrom'},readonly=on`,
           '-netdev',
@@ -679,6 +811,7 @@ export class Machines extends EventEmitter {
             },
           )
           .finally(async () => {
+            await diskSecret?.close().catch((error) => this.log(id, `\r\n清理磁盘临时口令失败：${String(error)}\r\n`));
             live.bootAbort.abort();
             live.serial?.destroy();
             for (const client of live.clients) client.end();
@@ -688,6 +821,20 @@ export class Machines extends EventEmitter {
             await this.save().catch((error) => this.log(id, `\r\n保存实例状态失败：${String(error)}\r\n`));
             this.emit('change');
           });
+        if (diskSecret) {
+          const secret = diskSecret;
+          void (async () => {
+            while (this.live.get(id) === live && !live.abort.signal.aborted) {
+              try {
+                await qmp(qmpPort, 'query-status', undefined, 2000);
+                await secret.close();
+                return;
+              } catch {
+                await delay(100);
+              }
+            }
+          })().catch((error) => this.log(id, `\r\n清理磁盘临时口令失败：${String(error)}\r\n`));
+        }
         live.bootDone = this.watchBoot(id, live).catch((e) => {
           if (!live.bootAbort.signal.aborted) this.log(id, String(e));
         });
@@ -1468,12 +1615,13 @@ export class Machines extends EventEmitter {
       for (const shot of vm.snapshots) shot.diskGiB ??= vm.diskGiB;
       await this.createSnapshot(vm, '扩容前自动备份');
       // QEMU metadata updates are allowed to finish even if the request leaves.
-      await this.engine.run('sakura-img', [
-        'resize',
-        '-f',
-        'qcow2',
-        join(vmDir(id), 'disk.qcow2'),
-        `${diskGiB}G`,
+      if (vm.diskEncryption)
+        await this.withDiskSecret(vm, (file) => this.engine.run('sakura-img', [
+          'resize', '--object', qemuSecretObject(file), '--image-opts',
+          encryptedImageOptions(join(vmDir(id), 'disk.qcow2')), `${diskGiB}G`,
+        ]));
+      else await this.engine.run('sakura-img', [
+        'resize', '-f', 'qcow2', join(vmDir(id), 'disk.qcow2'), `${diskGiB}G`,
       ]);
       vm.diskGiB = diskGiB;
       vm.pendingResize = true;
@@ -1516,6 +1664,8 @@ export class Machines extends EventEmitter {
         const source = this.get(sourceId);
         this.requireStopped(sourceId);
         if (source.sandbox) throw new AppError('救援目标必须是普通实例', 409);
+        if (source.diskEncryption)
+          throw new AppError('加密实例的只读救援尚不支持密钥挂载', 409);
         combined.throwIfAborted();
         try {
           phase('创建临时救援系统');
@@ -1653,8 +1803,15 @@ export class Machines extends EventEmitter {
       mode: 0o600,
     });
     try {
-      if (onlinePort === undefined)
-        await this.engine.run('sakura-img', ['snapshot', '-c', shot.id, join(vmDir(vm.id), 'disk.qcow2')]);
+      if (onlinePort === undefined) {
+        if (vm.diskEncryption)
+          await this.withDiskSecret(vm, (secret) => this.engine.run('sakura-img', [
+            'snapshot', '--object', qemuSecretObject(secret), '--image-opts',
+            '-c', shot.id, encryptedImageOptions(join(vmDir(vm.id), 'disk.qcow2')),
+          ]));
+        else await this.engine.run('sakura-img',
+          ['snapshot', '-c', shot.id, join(vmDir(vm.id), 'disk.qcow2')]);
+      }
       else
         await qmp(onlinePort, 'blockdev-snapshot-internal-sync',
           { device: 'sakura-disk', name: shot.id }, 30000);
@@ -1730,7 +1887,13 @@ export class Machines extends EventEmitter {
         if (vm.snapshots.length >= 20) throw new AppError('请先删除一个旧快照，为恢复前备份留出位置');
         await this.createSnapshot(vm, '恢复前自动备份');
       }
-      await this.engine.run('sakura-img', ['snapshot', '-a', snapshotId, join(vmDir(id), 'disk.qcow2')]);
+      if (vm.diskEncryption)
+        await this.withDiskSecret(vm, (secret) => this.engine.run('sakura-img', [
+          'snapshot', '--object', qemuSecretObject(secret), '--image-opts',
+          '-a', snapshotId, encryptedImageOptions(join(vmDir(id), 'disk.qcow2')),
+        ]));
+      else await this.engine.run('sakura-img',
+        ['snapshot', '-a', snapshotId, join(vmDir(id), 'disk.qcow2')]);
       const restored = vm.snapshots.find((s) => s.id === snapshotId)!;
       if (restored.diskGiB) vm.diskGiB = restored.diskGiB;
       vm.pendingResize = !!restored.pendingResize;
@@ -1871,7 +2034,13 @@ export class Machines extends EventEmitter {
       if (!shot) throw new AppError('快照不存在', 404);
       if (patch) Object.assign(shot, patch);
       else {
-        await this.engine.run('sakura-img', ['snapshot', '-d', shot.id, join(vmDir(id), 'disk.qcow2')]);
+        if (vm.diskEncryption)
+          await this.withDiskSecret(vm, (secret) => this.engine.run('sakura-img', [
+            'snapshot', '--object', qemuSecretObject(secret), '--image-opts',
+            '-d', shot.id, encryptedImageOptions(join(vmDir(id), 'disk.qcow2')),
+          ]));
+        else await this.engine.run('sakura-img',
+          ['snapshot', '-d', shot.id, join(vmDir(id), 'disk.qcow2')]);
         vm.snapshots = vm.snapshots.filter((s) => s !== shot);
         await rm(this.snapshotIdentityFile(id, shot.id), { force: true });
       }
@@ -2041,6 +2210,7 @@ export class Machines extends EventEmitter {
     pendingResize = false,
     projects?: { active: string; projects: { id: string; name: string }[]; configs: Record<string, unknown> },
     migrationOrigin?: VMRecord['migrationOrigin'],
+    diskEncryption?: VMRecord['diskEncryption'],
   ) {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
@@ -2059,6 +2229,7 @@ export class Machines extends EventEmitter {
         bootstrapped: true,
         pendingResize,
         ...(migrationOrigin ? { migrationOrigin } : {}),
+        ...(diskEncryption ? { diskEncryption: diskEncryptionSchema.parse(diskEncryption) } : {}),
       };
       const dir = await this.prepareVmDirectory(vm);
       try {

@@ -9,6 +9,8 @@ import { runEngineeringOperation, requireSuccessfulResult } from './engineering-
 import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { ReverseTunnels } from './reverse-tunnels.ts';
+import { encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
+import { secretName } from './secrets.ts';
 import {
   engineeringOperations,
   operationViews,
@@ -45,7 +47,7 @@ export const extendedFeatureCatalog = [
     'available',
   ],
   ['device-profiles', '设备能力档案', '虚拟机', 'P1', '保存可复用的虚拟设备组合。', 'available'],
-  ['disk-encryption', '虚拟磁盘加密', '存储', 'P1', '保护宿主机上的实例磁盘文件。', 'planned'],
+  ['disk-encryption', '虚拟磁盘加密', '存储', 'P1', '使用 LUKS 加密 QCOW2 实例磁盘。', 'available'],
   ['qcow2-scrub', 'QCOW2 完整性巡检', '存储', 'P0', '检查虚拟磁盘链和坏块。', 'available'],
   ['backup-dedup', '备份块级去重', '存储', 'P1', '减少重复备份的磁盘占用。', 'available'],
   ['project-quota', '项目磁盘配额', '存储', 'P1', '限制单个项目可使用的空间。', 'available'],
@@ -312,6 +314,8 @@ export class ExtendedFeatures {
       })
       .strict()
       .parse(input);
+    if (value.featureId === 'disk-encryption')
+      value.options = z.object({ secretName: secretName.optional() }).strict().parse(value.options);
     const state = await this.state();
     const settings = (state.settings[id] ||= {});
     settings[value.featureId] = {
@@ -337,6 +341,15 @@ export class ExtendedFeatures {
     };
     if (spec.id === 'qemu-commandline')
       return { ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) };
+    if (spec.id === 'disk-encryption') {
+      const status = await this.machines.diskEncryptionStatus(id);
+      return { ready: status.encrypted === status.enabled && (!status.enabled || status.keyAvailable),
+        executed: false, state: spec.state,
+        adapter, ...status,
+        reason: status.enabled
+          ? '实例磁盘已加密；启动时使用同名私密配置解锁。导入其他主机后需重新保存口令。'
+          : '先在开发 → 私密配置中保存 16–256 字符口令，再停止实例、清除内部快照并运行此能力，参数为 {"secretName":"名称"}。' };
+    }
     if (spec.id === 'cow-workspace')
       return {
         ready: true,
@@ -474,11 +487,14 @@ export class ExtendedFeatures {
     if (spec.id === 'qcow2-scrub') {
       try {
         this.machines.requireStopped(id);
-        const result = await this.machines.engine.run(
-          'sakura-img',
-          ['check', '-f', 'qcow2', join(vmDir(id), 'disk.qcow2')],
-          { signal, timeoutMs: 120000 },
-        );
+        const vm = this.machines.get(id);
+        const disk = join(vmDir(id), 'disk.qcow2');
+        const result = vm.diskEncryption
+          ? await this.machines.withDiskSecret(vm, (secret) => this.machines.engine.run(
+              'sakura-img', ['check', '--object', qemuSecretObject(secret), '--image-opts',
+                encryptedImageOptions(disk)], { signal, timeoutMs: 120000 }))
+          : await this.machines.engine.run('sakura-img', ['check', '-f', 'qcow2', disk],
+              { signal, timeoutMs: 120000 });
         return { ready: true, state: spec.state, adapter, output: result.trim() || 'QCOW2 检查通过' };
       } catch (error) {
         return {
@@ -543,6 +559,12 @@ export class ExtendedFeatures {
           result = { code: 0, ready: true, executed: true, closed, ...this.tunnels.status(id) };
         } else result = { code: 0, ready: true, executed: true, ...this.tunnels.status(id) };
       }
+    } else if (spec.id === 'disk-encryption') {
+      if (action === 'run') {
+        const input = z.object({ secretName }).strict().parse(merged);
+        const status = await this.machines.encryptDisk(id, input.secretName, signal);
+        result = { ready: status.enabled && status.encrypted, executed: true, ...status };
+      } else result = await this.probe(id, spec, signal, merged);
     } else if (hasCapability(spec.id)) {
       const runner = new CapabilityActions(this.machines, this.workspaces);
       result =

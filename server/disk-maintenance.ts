@@ -72,6 +72,8 @@ async function compactDisk(
 ) {
   const vm = machines.get(id);
   machines.requireStopped(id);
+  if (vm.diskEncryption)
+    throw new AppError('加密磁盘暂不支持离线重建；可继续使用客户机 TRIM', 409);
   if (vm.snapshots.length) throw new AppError('请先删除或导出内部快照后再整理磁盘', 409);
   if (vm.pendingResize) throw new AppError('请先启动并完成文件系统扩容，再停止实例整理磁盘', 409);
   await regularDirectory(vmDir(id));

@@ -12,7 +12,7 @@ test('the second feature tranche has 100 unique, categorized entries', () => {
   assert.equal(new Set(extendedFeatureCatalog.map(([id]) => id)).size, 100);
   assert.ok(new Set(extendedFeatureCatalog.map(([, , category]) => category)).size >= 8);
   assert.ok(extendedFeatureCatalog.every(([, , , priority]) => ['P0', 'P1', 'P2'].includes(priority)));
-  assert.equal(extendedFeatureCatalog.find(([id]) => id === 'disk-encryption')?.[5], 'planned');
+  assert.equal(extendedFeatureCatalog.find(([id]) => id === 'disk-encryption')?.[5], 'available');
   assert.equal(extendedFeatureCatalog.find(([id]) => id === 'git-stash')?.[5], 'available');
 });
 

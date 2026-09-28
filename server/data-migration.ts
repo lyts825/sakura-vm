@@ -6,6 +6,7 @@ import { DATA, AppError } from './model.ts';
 import type { Machines } from './machines.ts';
 import { Jobs } from './jobs.ts';
 import { fileHash, regularDirectory, within, readStore, writeStore } from './local-store.ts';
+import { encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 
 type MigrationFile = { path: string; bytes: number; modified: number };
 export class DataMigration {
@@ -164,7 +165,14 @@ export class DataMigration {
             update('核对迁移后的虚拟磁盘', 85);
             for (const vm of this.machines.records.values()) {
               signal.throwIfAborted();
-              await this.machines.engine.run(
+              const sourceDisk = join(this.source, 'machines', vm.id, 'disk.qcow2');
+              const targetDisk = join(plan.target, 'machines', vm.id, 'disk.qcow2');
+              if (vm.diskEncryption)
+                await this.machines.withDiskSecret(vm, (secret) => this.machines.engine.run(
+                  'sakura-img', ['compare', '--object', qemuSecretObject(secret),
+                    '--image-opts', encryptedImageOptions(sourceDisk),
+                    encryptedImageOptions(targetDisk)], { signal }));
+              else await this.machines.engine.run(
                 'sakura-img',
                 [
                   'compare',
@@ -172,8 +180,8 @@ export class DataMigration {
                   'qcow2',
                   '-F',
                   'qcow2',
-                  join(this.source, 'machines', vm.id, 'disk.qcow2'),
-                  join(plan.target, 'machines', vm.id, 'disk.qcow2'),
+                  sourceDisk,
+                  targetDisk,
                 ],
                 { signal },
               );

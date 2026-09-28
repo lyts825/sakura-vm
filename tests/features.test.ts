@@ -9,7 +9,7 @@ import { cloudUserData, cloudNetwork } from '../server/seed.ts';
 import { desktopCommands, imeInstall } from '../server/desktop-guest.ts';
 import { Jobs } from '../server/jobs.ts';
 
-test('portable disks reject backing paths, external data, encryption and oversized virtual disks before QEMU reads them', () => {
+test('portable disks reject backing paths, external data, unexpected encryption and oversized virtual disks', () => {
   const valid = Buffer.alloc(104);
   valid.writeUInt32BE(0x514649fb);
   valid.writeUInt32BE(3, 4);
@@ -27,6 +27,11 @@ test('portable disks reject backing paths, external data, encryption and oversiz
     assert.throws(() => validateDiskHeader(disk));
   }
   assert.throws(() => validateDiskHeader(Buffer.from('not a disk')));
+  const encrypted = Buffer.from(valid);
+  encrypted.writeUInt32BE(2, 32);
+  assert.throws(() => validateDiskHeader(encrypted));
+  assert.doesNotThrow(() => validateDiskHeader(encrypted, true));
+  assert.throws(() => validateDiskHeader(valid, true));
 });
 test('folder sync rejects traversal, Windows device names, streams and ambiguous names', () => {
   for (const name of [

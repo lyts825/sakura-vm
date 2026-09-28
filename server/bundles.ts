@@ -12,6 +12,9 @@ import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
 import ssh2 from 'ssh2';
 import { ByteRate } from './byte-rate.ts';
 import { bundleSignatureSchema, verifySignedManifest, type SignedBundles } from './signed-bundles.ts';
+import { diskEncryptionSchema, encryptedImageOptions,
+  qemuSecretObject } from './disk-encryption.ts';
+import { Secrets } from './secrets.ts';
 
 const MAGIC = Buffer.from('SAKURA01');
 const MAX_BUNDLE = 32 * 1024 ** 3;
@@ -39,13 +42,14 @@ const manifestSchema = z
       )
       .optional(),
     pendingResize: z.boolean().default(false),
+    diskEncryption: diskEncryptionSchema.optional(),
     key: z.string().max(16384),
     seed: z.string().max(262144),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
     signature: bundleSignatureSchema.optional(),
   })
   .strict();
-export function validateDiskHeader(header: Buffer) {
+export function validateDiskHeader(header: Buffer, allowEncryption = false) {
   if (
     header.length < 104 ||
     header.readUInt32BE(0) !== 0x514649fb ||
@@ -54,7 +58,8 @@ export function validateDiskHeader(header: Buffer) {
     throw new AppError('需要 QCOW2 磁盘');
   if (header.readBigUInt64BE(8) !== 0n || header.readUInt32BE(16) !== 0)
     throw new AppError('导入磁盘不能依赖外部基础镜像');
-  if (header.readUInt32BE(32) !== 0) throw new AppError('不支持加密磁盘');
+  if (header.readUInt32BE(32) !== (allowEncryption ? 2 : 0))
+    throw new AppError('磁盘加密格式与导入清单不一致');
   if (header.readUInt32BE(4) === 3 && (header.readBigUInt64BE(72) & 4n) !== 0n)
     throw new AppError('不支持外部数据文件');
   if (header.readBigUInt64BE(24) > 128n * 1024n ** 3n) throw new AppError('虚拟磁盘不能超过 128 GiB');
@@ -106,12 +111,18 @@ export class Bundles {
       const dir = await this.temp();
       try {
         const disk = join(dir, 'disk.qcow2');
-        await this.machines.engine.run(
-          'sakura-img',
+        if (vm.diskEncryption)
+          await this.machines.withDiskSecret(vm, (secret) => this.machines.engine.run(
+            'sakura-img', ['convert', '--object', qemuSecretObject(secret),
+              '--image-opts', '-O', 'qcow2',
+              '-o', 'encrypt.format=luks,encrypt.key-secret=sakura-disk-key',
+              ...(snapshotId ? ['-l', snapshotId] : []),
+              encryptedImageOptions(join(vmDir(id), 'disk.qcow2')),
+              disk], { timeoutMs: 1800000, signal }));
+        else await this.machines.engine.run('sakura-img',
           ['convert', '-f', 'qcow2', '-O', 'qcow2',
             ...(snapshotId ? ['-l', snapshotId] : []), join(vmDir(id), 'disk.qcow2'), disk],
-          { timeoutMs: 1800000, signal },
-        );
+          { timeoutMs: 1800000, signal });
         signal?.throwIfAborted();
         const hash = createHash('sha256');
         if ((await stat(disk)).size + 300012 > MAX_BUNDLE) throw new AppError('当前导出包上限为 32 GiB');
@@ -141,6 +152,7 @@ export class Bundles {
           project: await this.project(id),
           projects: await this.projectCatalog(id),
           ...((snapshot ? snapshot.pendingResize : pendingResize) ? { pendingResize: true } : {}),
+          ...(vm.diskEncryption ? { diskEncryption: vm.diskEncryption } : {}),
           key: identity.key,
           seed: identity.seed.toString('base64'),
           sha256: hash.digest('hex'),
@@ -196,6 +208,7 @@ export class Bundles {
           manifest.pendingResize,
           manifest.projects,
           migrationOrigin ? { ...migrationOrigin, diskSha256: manifest.sha256 } : undefined,
+          manifest.diskEncryption,
         );
       };
       return external && this.signatures
@@ -204,8 +217,10 @@ export class Bundles {
     });
   }
   /** A verified standalone disk exists only for the duration of the callback. */
-  async withDisk<T>(source: Readable, signal: AbortSignal, work: (disk: string) => Promise<T>) {
-    return this.withContents(source, signal, (disk) => work(disk));
+  async withDisk<T>(source: Readable, signal: AbortSignal,
+    work: (disk: string, diskEncryption?: VMRecord['diskEncryption']) => Promise<T>) {
+    return this.withContents(source, signal,
+      (disk, manifest) => work(disk, manifest.diskEncryption));
   }
   private async withContents<T>(
     source: Readable,
@@ -258,7 +273,7 @@ export class Bundles {
       try {
         const b = Buffer.alloc(104);
         await handle.read(b, 0, b.length, 0);
-        validateDiskHeader(b);
+        validateDiskHeader(b, !!manifest.diskEncryption);
       } finally {
         await handle.close();
       }
@@ -269,6 +284,8 @@ export class Bundles {
       );
       if (info['backing-filename'] || info['format-specific']?.data?.['data-file'])
         throw new AppError('导入磁盘含外部依赖');
+      if (!!info.encrypted !== !!manifest.diskEncryption)
+        throw new AppError('磁盘加密状态与导入清单不一致');
       const key = manifest.key;
       const parsedKey = ssh2.utils.parseKey(key);
       const identity = Array.isArray(parsedKey) ? parsedKey[0] : parsedKey;
@@ -293,27 +310,25 @@ export class Bundles {
       const dir = await this.temp();
       try {
         const disk = join(dir, 'disk.qcow2');
-        await this.machines.engine.run(
-          'sakura-img',
-          [
-            'convert',
-            '-f',
-            'qcow2',
-            '-O',
-            'qcow2',
-            ...(snapshot ? ['-l', snapshot] : []),
-            join(vmDir(id), 'disk.qcow2'),
-            disk,
-          ],
-          { timeoutMs: 1800000, signal },
-        );
+        if (vm.diskEncryption)
+          await this.machines.withDiskSecret(vm, (secret) => this.machines.engine.run(
+            'sakura-img', ['convert', '--object', qemuSecretObject(secret),
+              '--image-opts', '-O', 'qcow2',
+              '-o', 'encrypt.format=luks,encrypt.key-secret=sakura-disk-key',
+              ...(snapshot ? ['-l', snapshot] : []),
+              encryptedImageOptions(join(vmDir(id), 'disk.qcow2')),
+              disk], { timeoutMs: 1800000, signal }));
+        else await this.machines.engine.run('sakura-img', [
+          'convert', '-f', 'qcow2', '-O', 'qcow2',
+          ...(snapshot ? ['-l', snapshot] : []), join(vmDir(id), 'disk.qcow2'), disk,
+        ], { timeoutMs: 1800000, signal });
         const identity = await this.machines.snapshotIdentity(id, snapshot);
         const { memoryMiB, cpus, diskGiB, accelerator, distro, template, hardware, firmware,
           storagePoolId } = vm;
         const project = await this.project(id);
         const projects = await this.projectCatalog(id);
         signal?.throwIfAborted();
-        return await this.machines.adopt(
+        const adopted = await this.machines.adopt(
           {
             name,
             memoryMiB,
@@ -333,7 +348,15 @@ export class Bundles {
           project,
           !!(shot ? shot.pendingResize : vm.pendingResize),
           projects,
+          undefined,
+          vm.diskEncryption,
         );
+        if (vm.diskEncryption) {
+          const secrets = new Secrets(this.machines);
+          await secrets.save(adopted.id, { name: vm.diskEncryption.secretName,
+            value: await secrets.value(id, vm.diskEncryption.secretName) });
+        }
+        return adopted;
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

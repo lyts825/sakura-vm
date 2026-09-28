@@ -5,6 +5,7 @@ import { dataDirectory } from './data-directory.ts';
 import type { DesktopPreferences } from './desktop-preferences.ts';
 import type { SandboxPolicy } from '../shared/sandbox.ts';
 import { hardwareSchema, hardwareIssues } from '../shared/hardware.ts';
+import type { DiskEncryptionConfig } from './disk-encryption.ts';
 export { desktopPreferencesSchema, defaultDesktopPreferences } from './desktop-preferences.ts';
 export type { DesktopPreferences } from './desktop-preferences.ts';
 
@@ -88,6 +89,7 @@ export const organizationSchema = z
   .strict();
 export type VMRecord = VMConfig & {
   id: string;
+  diskEncryption?: DiskEncryptionConfig;
   sandbox?: SandboxPolicy;
   // Only the rescue executor creates these disposable guests. They cannot be restarted.
   rescueOf?: string;

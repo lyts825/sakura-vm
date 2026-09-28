@@ -166,6 +166,8 @@ export class SnapshotDiff {
             this.machines.requireUnlocked(id);
             operationSignal.throwIfAborted();
             const current = this.machines.get(id);
+            if (current.diskEncryption)
+              throw new AppError('加密实例暂不支持快照文件差异提取', 409);
             if (
               !current.snapshots.some((shot) => shot.id === input.from) ||
               (input.to !== 'current' && !current.snapshots.some((shot) => shot.id === input.to))

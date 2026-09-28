@@ -2,14 +2,14 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 208 条有实现入口，**42 条仍未完成**（39 条规划、3 条部分实现）。按标识去重后为 42 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 209 条有实现入口，**41 条仍未完成**（38 条规划、3 条部分实现）。按标识去重后为 41 个未完成标识；不同条目仍有范围重叠。
 
-本轮已接通 158 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
+本轮已接通 159 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 第一批 | 50 | 42 | 2 | 6 | 8 |
-| 第二批 | 100 | 93 | 0 | 7 | 7 |
+| 第二批 | 100 | 94 | 0 | 6 | 6 |
 | 第三批 | 100 | 73 | 1 | 26 | 27 |
 
 ## 第一批
@@ -38,25 +38,24 @@
 
 ### 存储
 
-- [ ] **虚拟磁盘加密**（P1 · 规划） · [`disk-encryption`](../server/extended-features.ts#L48) — 保护宿主机上的实例磁盘文件。 对应完整流程尚未实现。
-- [ ] **安全擦除证明**（P2 · 规划） · [`secure-erase`](../server/extended-features.ts#L63) — 擦除文件并记录操作证明。 对应完整流程尚未实现。
+- [ ] **安全擦除证明**（P2 · 规划） · [`secure-erase`](../server/extended-features.ts#L65) — 擦除文件并记录操作证明。 对应完整流程尚未实现。
 
 ### 网络
 
-- [ ] **项目网络隔离**（P1 · 规划） · [`network-isolation`](../server/extended-features.ts#L114) — 按项目隔离网络命名空间。 对应完整流程尚未实现。
-- [ ] **GPG Agent 转发**（P2 · 规划） · [`gpg-agent-forward`](../server/extended-features.ts#L118) — 在确认后转发签名 Agent。 对应完整流程尚未实现。
+- [ ] **项目网络隔离**（P1 · 规划） · [`network-isolation`](../server/extended-features.ts#L116) — 按项目隔离网络命名空间。 对应完整流程尚未实现。
+- [ ] **GPG Agent 转发**（P2 · 规划） · [`gpg-agent-forward`](../server/extended-features.ts#L120) — 在确认后转发签名 Agent。 对应完整流程尚未实现。
 
 ### 安全
 
-- [ ] **TPM 与安全启动**（P2 · 规划） · [`tpm-secure-boot`](../server/extended-features.ts#L123) — 检测并配置 TPM 和安全启动链。 对应完整流程尚未实现。
+- [ ] **TPM 与安全启动**（P2 · 规划） · [`tpm-secure-boot`](../server/extended-features.ts#L125) — 检测并配置 TPM 和安全启动链。 对应完整流程尚未实现。
 
 ### 体验集成
 
-- [ ] **语言与区域包**（P2 · 规划） · [`locale-packs`](../server/extended-features.ts#L186) — 支持界面语言、时区和数字格式。 对应完整流程尚未实现。
+- [ ] **语言与区域包**（P2 · 规划） · [`locale-packs`](../server/extended-features.ts#L188) — 支持界面语言、时区和数字格式。 对应完整流程尚未实现。
 
 ### 平台
 
-- [ ] **自更新与回滚**（P0 · 规划） · [`self-update`](../server/extended-features.ts#L187) — 灰度升级 Sakura 并支持回滚。 对应完整流程尚未实现。
+- [ ] **自更新与回滚**（P0 · 规划） · [`self-update`](../server/extended-features.ts#L189) — 灰度升级 Sakura 并支持回滚。 对应完整流程尚未实现。
 
 ## 第三批
 
