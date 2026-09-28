@@ -36,6 +36,7 @@ import { GpuProfiles } from './gpu-profiles.ts';
 import { BuildFarm } from './build-farm.ts';
 import { MediaDevices } from './media-devices.ts';
 import { MemoryReclaim } from './memory-reclaim.ts';
+import { HostMounts } from './host-mount.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
@@ -120,6 +121,12 @@ async function main() {
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });
   await memoryReclaim.init();
+  const hostMounts = new HostMounts(machines,
+    () => !!features.migration?.blocked,
+    (delta) => { features.mutations += delta; });
+  await hostMounts.init();
+  features.next?.setHostMounts(hostMounts);
+  features.suite?.setHostMounts(hostMounts);
   const gpuProfiles = new GpuProfiles(machines, undefined,
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });
@@ -965,6 +972,13 @@ async function main() {
         await memoryReclaim.action(reclaimRoute[1], await authorizedBody(req, 4096)));
       throw new AppError('不支持此方法', 405);
     }
+    const hostMountRoute = /^\/api\/vms\/([a-f0-9-]{36})\/host-mount$/.exec(url.pathname);
+    if (hostMountRoute) {
+      if (req.method === 'GET') return send(res, await hostMounts.view(hostMountRoute[1]));
+      if (req.method === 'POST') return send(res,
+        await hostMounts.action(hostMountRoute[1], await authorizedBody(req, 4096)));
+      throw new AppError('不支持此方法', 405);
+    }
     if (url.pathname === '/api/host-peers') {
       if (req.method === 'GET') return send(res,
         { ...hostPeers.view(), local: await hostPeers.status() });
@@ -1456,6 +1470,7 @@ async function main() {
       () => usbHotplug.close(),
       () => mediaDevices.close(),
       () => memoryReclaim.close(),
+      () => hostMounts.close(),
       () => gpuProfiles.close(),
       () => buildFarm.close(),
       () => hostPeers.close(),

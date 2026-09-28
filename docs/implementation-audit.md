@@ -96,7 +96,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 快照时间线与差异 / `snapshot-diff` | 已实现 | 离线提取快照后以只读救援系统计算普通文件和符号链接差异，QEMU 比较整盘逻辑内容；快照页与后台任务可操作。 | [server/snapshot-diff.ts](D:/27247/Desktop/Sakura/server/snapshot-diff.ts) |
 | TRIM、压缩与稀疏回收 / `disk-maintenance` | 部分实现 | 停机 QCOW2 整理已实现，不能全算未实现；缺计划 TRIM、完整稀疏回收编排。 | [server/maintenance.ts:103](D:/27247/Desktop/Sakura/server/maintenance.ts:103) |
 | 资源预设与推荐 / `resource-presets` | 部分实现 | 四个固定 CPU/内存预设可应用；缺按工作负载推荐及磁盘推荐。 | [server/feature-suite.ts:369](D:/27247/Desktop/Sakura/server/feature-suite.ts:369) |
-| Windows 文件系统直挂 / `windows-mount` | 未实现 | 现有同步是文件复制；无宿主目录直挂/virtio-fs 设备配置。 | [server/feature-suite.ts:316](D:/27247/Desktop/Sakura/server/feature-suite.ts:316) |
+| Windows 文件系统直挂 / `windows-mount` | 已实现（SSHFS） | 通过宿主只提供 SFTP 的受限服务，把选定目录挂载到客户机 `/mnt/sakura-host`；只读与路径策略在宿主强制执行。此项不代表 Virtio-FS。 | [server/host-mount.ts](../server/host-mount.ts) |
 | 文件拖放与富剪贴板 / `file-drop` | 部分实现 | 文件拖放上传、桌面文本剪贴板已实现；缺文件/图片富剪贴板双向桥接。 | [plugins/files/client.tsx:342](D:/27247/Desktop/Sakura/plugins/files/client.tsx:342) |
 | 全工作区全文搜索 / `workspace-search` | 部分实现 | 有选定实例/项目搜索；缺跨实例、跨项目统一检索与聚合。 | [server/feature-suite.ts:558](D:/27247/Desktop/Sakura/server/feature-suite.ts:558) |
 | 可视化磁盘分析 / `disk-analyzer` | 部分实现 | 返回 du 目录大小并显示列表；缺按文件类型统计及完整可视化分析。 | [server/feature-suite.ts:388](D:/27247/Desktop/Sakura/server/feature-suite.ts:388) |
@@ -327,7 +327,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 变更审批 / `change-approval` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存变更摘要、审批人和审批状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 活动摘要 / `activity-digest` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“从任务和执行历史生成活动摘要。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | Windows/Linux 进程互操作 / `process-interop` | 仅探测 | 只列 Linux 进程；没有 Windows/Linux 跨系统进程协议。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:171](D:/27247/Desktop/Sakura/server/next-features.ts:171) |
-| 宿主盘挂载策略 / `host-drive-policy` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存宿主目录挂载的只读和路径策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
+| 宿主盘挂载策略 / `host-drive-policy` | 已实现 | 按实例保存宿主绝对路径、启用状态和只读选项，运行时通过 SSHFS 挂载，停用时卸载。 | [server/host-mount.ts](../server/host-mount.ts) |
 | 文件关联 / `file-associations` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存扩展名到 Sakura 工作区的关联。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 按应用剪贴板策略 / `clipboard-policy` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存剪贴板按应用的读写和敏感内容策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 音频摄像头麦克风直通 / `media-passthrough` | 已实现 | 可复核宿主音频后端、USB 媒体规则和转发状态，并检查客户机 ALSA 与视频节点；媒体 USB 设备是否可用取决于宿主硬件与客户机驱动。 | [server/media-devices.ts](D:/27247/Desktop/Sakura/server/media-devices.ts) |

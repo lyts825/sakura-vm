@@ -27,6 +27,7 @@ import { MetricHistory } from '../../src/MetricHistory';
 import { NotificationCenter } from '../../src/NotificationCenter';
 import { UsbHotplugPanel } from '../../src/UsbHotplugPanel';
 import { MemoryReclaimSettings } from './MemoryReclaimSettings';
+import { HostMountSettings } from './HostMountSettings';
 
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
@@ -664,6 +665,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
               </button>
               <MemoryReclaimSettings vmId={active.id} maximum={active.memoryMiB}
                 running={active.status === 'running'} request={request} />
+              <HostMountSettings vmId={active.id} request={request} />
               <div className="feature-actions">
                 <label>
                   资源预设

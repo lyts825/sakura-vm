@@ -3407,6 +3407,53 @@ test('guest memory reclaim saves a minimum and shows the latest balloon decision
   await expect(panel.getByText(/可用 350 \/ 512 MiB/)).toBeVisible();
 });
 
+test('host directory mount saves path and read-only policy, then mounts and unmounts', async ({ page }) => {
+  await app(page, ['projects', 'automation'], true);
+  await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
+    settings: { schedule: { enabled: false, idleMinutes: 0, idleAction: 'stop' },
+      alerts: { enabled: false, cpuPercent: 90, memoryPercent: 90, diskPercent: 90,
+        cooldownMinutes: 30, taskFailures: false, serviceFailures: false } },
+    features: [], presets: {}, events: [], history: [],
+  } }));
+  let policy = { enabled: false, hostPath: '', readOnly: true };
+  let running = false;
+  let mounted = false;
+  await page.route('**/api/vms/*/host-mount*', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON();
+      if (input.operation === 'configure') {
+        policy = input.policy;
+        mounted = policy.enabled && running;
+      }
+      if (input.operation === 'mount') mounted = true;
+      if (input.operation === 'unmount') {
+        mounted = false;
+        policy.enabled = false;
+      }
+    }
+    return route.fulfill({ json: { policy, guestPath: '/mnt/sakura-host',
+      running, mounted, observation: null } });
+  });
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const panel = page.getByRole('region', { name: '宿主目录挂载' });
+  await panel.getByRole('checkbox', { name: '启用宿主目录挂载' }).check();
+  await panel.getByRole('textbox', { name: 'Windows 目录绝对路径' }).fill('C:\\Users\\me\\Projects');
+  await panel.getByRole('button', { name: '保存挂载策略' }).click();
+  await expect.poll(() => policy).toEqual({ enabled: true,
+    hostPath: 'C:\\Users\\me\\Projects', readOnly: true });
+  await expect(panel.getByText(/等待实例运行或挂载重试/)).toBeVisible();
+  running = true;
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    status: 'running', poweredOn: true }] }));
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await panel.getByRole('button', { name: '立即挂载' }).click();
+  await expect(panel.getByText(/^已挂载 ·/)).toBeVisible();
+  await panel.getByRole('button', { name: '卸载并停用' }).click();
+  await expect.poll(() => policy.enabled).toBe(false);
+  await expect(panel.getByText(/未启用/)).toBeVisible();
+});
+
 async function app(page: Page, active: string[] = [], withVm = false) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;

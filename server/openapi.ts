@@ -23,6 +23,7 @@ import { gpuProfileRequest } from './gpu-profiles.ts';
 import { buildFarmRequest } from './build-farm.ts';
 import { mediaDeviceRequest } from './media-devices.ts';
 import { memoryReclaimRequest } from './memory-reclaim.ts';
+import { hostMountRequest } from './host-mount.ts';
 import { hostPeerRequest } from './host-peers.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
@@ -226,6 +227,10 @@ const core: {
     title: '查看客户机内存压力自动回收策略与最近采样', inspect: true },
   { id: 'memory-reclaim.change', method: 'POST', path: '/api/vms/{vmId}/memory-reclaim',
     title: '保存自动回收策略或立即采样客户机内存', body: request(memoryReclaimRequest) },
+  { id: 'host-mount.get', method: 'GET', path: '/api/vms/{vmId}/host-mount',
+    title: '查看宿主目录挂载策略、客户机路径和状态', inspect: true },
+  { id: 'host-mount.change', method: 'POST', path: '/api/vms/{vmId}/host-mount',
+    title: '保存宿主目录挂载策略或挂载、卸载目录', body: request(hostMountRequest) },
   {
     id: 'host-peers.get', method: 'GET', path: '/api/host-peers',
     title: '主机配对、资源和健康状态', inspect: true,

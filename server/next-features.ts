@@ -11,6 +11,7 @@ import { capabilityViews, capabilityParameters, hasCapability } from './capabili
 import { AcmeRenewal } from './acme-renewal.ts';
 import type { ProcessInterop } from './process-interop.ts';
 import type { MediaDevices } from './media-devices.ts';
+import type { HostMounts } from './host-mount.ts';
 import type { SnapshotMerge } from './snapshot-merge.ts';
 import { hardwareCompatibility } from './hardware-compatibility.ts';
 import { firmwareSupport } from './firmware.ts';
@@ -500,8 +501,8 @@ export const nextFeatureCatalog = [
     '宿主盘挂载策略',
     '操作系统与桌面',
     'P0',
-    '保存宿主目录挂载的只读和路径策略。',
-    'planned',
+    '保存宿主目录挂载的只读和路径策略，运行时通过 SSHFS 挂载。',
+    'available',
   ],
   [
     'file-associations',
@@ -677,6 +678,7 @@ export class NextFeatures {
   private wireGuardOverlay?: WireGuardOverlay;
   private processInterop?: ProcessInterop;
   private mediaDevices?: MediaDevices;
+  private hostMounts?: HostMounts;
   private snapshotMerge?: SnapshotMerge;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
@@ -765,6 +767,7 @@ export class NextFeatures {
   }
   setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
   setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
+  setHostMounts(service: HostMounts) { this.hostMounts = service; }
   setSnapshotMerge(service?: SnapshotMerge) { this.snapshotMerge = service; }
 
   browserIdeLink(id: string) {
@@ -1305,6 +1308,18 @@ export class NextFeatures {
       const input = z.object({ locked: z.boolean() }).strict().parse(options);
       const result = await this.machines.setIncidentLockdown(id, input.locked);
       return { ready: true, executed: true, adapter, ...result };
+    }
+    if (spec.id === 'host-drive-policy') {
+      if (!this.hostMounts)
+        return { ready: false, executed: false, adapter,
+          reason: '宿主目录挂载服务不可用。' };
+      let mount = await this.hostMounts.view(id);
+      if (action === 'run' && mount.policy.enabled && this.machines.state(id) === 'running')
+        mount = await this.hostMounts.action(id, { operation: 'mount' });
+      return { ready: mount.mounted, executed: action === 'run' && mount.mounted,
+        adapter: 'sshfs-host-share', policy: mount.policy, guestPath: mount.guestPath,
+        reason: mount.mounted ? '宿主目录已挂载。' :
+          '在能力中心 → 资源中保存宿主目录与只读策略，然后启动实例。' };
     }
     if (action === 'run' && spec.state !== 'available')
       throw new AppError('此功能尚未完成实现；保存配置不会执行对应能力', 501);

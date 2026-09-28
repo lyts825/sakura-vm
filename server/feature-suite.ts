@@ -27,6 +27,7 @@ import { scanGuestVulnerabilities } from './security-vulnerabilities.ts';
 import { dependencyManagerSchema, projectDependencyCacheScript } from './project-dependency-cache.ts';
 import { processInteropInput, type ProcessInterop } from './process-interop.ts';
 import type { MediaDevices } from './media-devices.ts';
+import type { HostMounts } from './host-mount.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -45,7 +46,7 @@ export const featureCatalog = [
   ['snapshot-diff', '快照时间线与差异', '实例与资源', 'P1', '比较快照的文件和磁盘变化。'],
   ['disk-maintenance', 'TRIM、压缩与稀疏回收', '实例与资源', 'P1', '计划执行客户机 TRIM 和磁盘整理。'],
   ['resource-presets', '资源预设与推荐', '实例与资源', 'P0', '按工作负载推荐 CPU、内存和磁盘。'],
-  ['windows-mount', 'Windows 文件系统直挂', '文件与数据', 'P1', '通过受控共享挂载宿主机目录。'],
+  ['windows-mount', 'Windows 文件系统直挂', '文件与数据', 'P1', '通过受控 SSHFS 共享挂载宿主机目录。'],
   ['file-drop', '文件拖放与富剪贴板', '文件与数据', 'P1', '在宿主机与客户机间传递文件和图片。'],
   ['workspace-search', '全工作区全文搜索', '文件与数据', 'P0', '跨实例、项目和文件类型搜索内容。'],
   ['disk-analyzer', '可视化磁盘分析', '文件与数据', 'P0', '按目录和类型查看客户机磁盘占用。'],
@@ -112,6 +113,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'gpu-acceleration',
   'audio-video',
   'process-interop',
+  'windows-mount',
   'image-import',
   'power-schedules',
   'idle-shutdown',
@@ -315,6 +317,7 @@ export class FeatureSuite {
   private powerAbort = new AbortController();
   private processInterop?: ProcessInterop;
   private mediaDevices?: MediaDevices;
+  private hostMounts?: HostMounts;
 
   constructor(
     private machines: Machines,
@@ -328,6 +331,7 @@ export class FeatureSuite {
   ) {}
   setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
   setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
+  setHostMounts(service: HostMounts) { this.hostMounts = service; }
   enableBackground() {
     if (this.powerAbort.signal.aborted) this.powerAbort = new AbortController();
     const controller = this.powerAbort;
@@ -537,8 +541,14 @@ export class FeatureSuite {
       result.audio = media?.audio || 'none';
       result.guest = media?.guest || null;
       result.reason = '系统设置 → 音视频设备：启用 HDA/DirectSound 后重启实例；USB 摄像头、麦克风和耳机使用指定设备的 VID:PID 转发规则，客户机需安装对应驱动。';
+    } else if (featureId === 'windows-mount') {
+      const mount = await this.hostMounts?.view(id);
+      result.ready = !!mount?.policy.enabled && !!mount?.mounted;
+      result.hostMount = mount || null;
+      result.reason = mount?.mounted
+        ? `宿主目录已通过 SSHFS 挂载到 ${mount.guestPath}。`
+        : '能力中心 → 资源中填写宿主绝对路径、只读策略并保存；启动实例后会自动挂载。';
     } else if (
-      featureId === 'windows-mount' ||
       featureId === 'file-drop' ||
       featureId === 'resumable-transfer'
     ) {
