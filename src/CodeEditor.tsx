@@ -4,6 +4,7 @@ import { EditorState, Compartment, type Extension } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { openSearchPanel } from '@codemirror/search';
 import { StreamLanguage } from '@codemirror/language';
+import type { LspPosition } from '../shared/language-service';
 
 async function language(path: string): Promise<Extension> {
   if (/\.[jt]sx?$/.test(path))
@@ -31,18 +32,20 @@ export function CodeEditor({
   change,
   save,
   line,
+  positionChange,
 }: {
   path: string;
   value: string;
   change: (value: string) => void;
   save: () => void;
   line?: number;
+  positionChange?: (position: LspPosition) => void;
 }) {
   const parent = useRef<HTMLDivElement>(null),
     view = useRef<EditorView | null>(null),
-    callbacks = useRef({ change, save }),
+    callbacks = useRef({ change, save, positionChange }),
     configuring = useRef(false);
-  callbacks.current = { change, save };
+  callbacks.current = { change, save, positionChange };
   const mode = useRef(new Compartment());
   useEffect(() => {
     const editor = new EditorView({
@@ -66,6 +69,11 @@ export function CodeEditor({
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !configuring.current)
               callbacks.current.change(update.state.doc.toString());
+            if (update.selectionSet || update.docChanged) {
+              const head = update.state.selection.main.head;
+              const selectedLine = update.state.doc.lineAt(head);
+              callbacks.current.positionChange?.({ line: selectedLine.number - 1, character: head - selectedLine.from });
+            }
           }),
         ],
       }),

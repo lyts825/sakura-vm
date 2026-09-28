@@ -4,13 +4,14 @@ import { anyDirty, restoreDrafts, saveDraftResult, type EditorDraft } from '../.
 import { download, Feedback, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { dirtyEdit, registerEditorGuard, type FileEdit } from '../../src/file-editor-state';
-import { PluginGate } from '../../src/plugin-context';
+import { PluginGate, usePlugin } from '../../src/plugin-context';
 import { ProjectNavigator } from '../../src/ProjectNavigator';
 import { transferBytes, uploadFiles, type UploadProgress } from '../../src/transfers';
 import { BinaryPreview } from '../../src/BinaryPreview';
 import { ThreeWayMerge } from '../../src/ThreeWayMerge';
 import { clipboardFiles } from '../../src/clipboard-files';
 import { NativeOpenButtons } from '../../src/NativeIntegration';
+import { applyTextEdits, type LspPosition, type LspRange } from '../../shared/language-service';
 const CodeEditor = lazy(() =>
   import('../../src/CodeEditor').then((module) => ({ default: module.CodeEditor })),
 );
@@ -75,6 +76,7 @@ export function FileBrowser({
   const [path, setPath] = useState('/workspace'),
     [input, setInput] = useState('/workspace');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const languagePlugin = usePlugin('code-checks');
   const [merging, setMerging] = useState(false);
   const [files, setFiles] = useState<Entry[]>([]),
     [loading, setLoading] = useState(false),
@@ -110,6 +112,14 @@ export function FileBrowser({
   leaseRef.current = leases;
   requestRef.current = request;
   const [diagnostics, setDiagnostics] = useState<{ message: string; line?: number; column?: number }[]>([]);
+  const [diagnosticNote, setDiagnosticNote] = useState('');
+  const cursor = useRef<LspPosition>({ line: 0, character: 0 });
+  const [languageReady, setLanguageReady] = useState<boolean | null>(null);
+  const [languageError, setLanguageError] = useState('');
+  const [completions, setCompletions] = useState<{ label: string; detail: string; insertText: string; range: LspRange | null }[]>([]);
+  const [definitions, setDefinitions] = useState<{ path: string; line: number; column: number }[]>([]);
+  const [renameName, setRenameName] = useState('');
+  const [renamePreview, setRenamePreview] = useState<{ token: string; files: { path: string; before: string; after: string }[] } | null>(null);
   const conflict = edit ? conflicts[edit.id] : null;
   const setConflict = (value: { content: string; version: string } | null) => {
     const id = workspaceRef.current.active;
@@ -122,6 +132,29 @@ export function FileBrowser({
   };
   const editRef = useRef(edit);
   editRef.current = edit;
+  useEffect(() => {
+    setCompletions([]);
+    setDefinitions([]);
+    setRenamePreview(null);
+    setDiagnostics([]);
+    setDiagnosticNote('');
+    cursor.current = { line: 0, character: 0 };
+    if (!languagePlugin || !edit || !/\.(?:[cm]?[jt]sx?|py)$/i.test(edit.path)) {
+      setLanguageReady(null);
+      setLanguageError('');
+      return;
+    }
+    const abort = new AbortController();
+    let alive = true;
+    setLanguageReady(null);
+    setLanguageError('');
+    void requestRef.current<{ installed: boolean }>(
+      `/vms/${vm.id}/language-service?path=${encodeURIComponent(edit.path)}`,
+      'GET', undefined, abort.signal,
+    ).then((value) => { if (alive) setLanguageReady(value.installed); })
+      .catch((error) => { if (alive) setLanguageError((error as Error).message); });
+    return () => { alive = false; abort.abort(); };
+  }, [edit?.id, edit?.path, vm.id, languagePlugin]);
   const [leaveKind, setLeaveKind] = useState<'leave' | 'replace' | 'discard' | null>(null);
   const history = useRemote<{
     items: {
@@ -351,6 +384,76 @@ export function FileBrowser({
         throw error;
       }
     }, '文本已保存');
+  };
+  const languageAction = (kind: 'completion' | 'definition' | 'diagnostics' | 'rename') => {
+    const submitted = editRef.current;
+    if (!submitted) return;
+    void action.run(async (signal) => {
+      if (kind === 'rename' && (submitted.fresh || dirtyEdit(submitted)))
+        throw new Error('请先保存当前文件，再预览重命名');
+      const result = await request<any>(`/vms/${vm.id}/language-service`, 'POST', {
+        action: kind, path: submitted.path, content: submitted.content,
+        position: cursor.current,
+        ...(kind === 'rename' ? { newName: renameName, version: submitted.version } : {}),
+      }, signal);
+      if (workspaceRef.current.active !== submitted.id ||
+          (kind !== 'rename' && editRef.current?.content !== submitted.content)) return;
+      if (kind === 'completion') {
+        setCompletions(result.items);
+        setDefinitions([]);
+      } else if (kind === 'definition') {
+        setDefinitions(result.locations);
+        setCompletions([]);
+        if (result.locations.length === 1) await openPath(result.locations[0].path, result.locations[0].line);
+      } else if (kind === 'diagnostics') {
+        setDiagnostics(result.diagnostics);
+        setDiagnosticNote(result.received
+          ? result.diagnostics.length ? '' : '语言服务器未报告问题'
+          : '语言服务器未在等待时间内发送诊断结果');
+      } else {
+        if (result.files.some((file: { path: string }) =>
+          workspaceRef.current.drafts.some((draft) => draft.path === file.path && dirtyEdit(draft))))
+          throw new Error('重命名涉及未保存的标签，请先保存这些文件');
+        setRenamePreview(result);
+      }
+    }, kind === 'rename' ? '请检查重命名预览' : '语言服务已响应');
+  };
+  const applyCompletion = (item: { insertText: string; range: LspRange | null }) => {
+    const current = editRef.current;
+    if (!current) return;
+    let range = item.range;
+    if (!range) {
+      const lines = current.content.split('\n'),
+        line = lines[cursor.current.line] || '',
+        prefix = (line.slice(0, cursor.current.character).match(/[\p{L}\p{N}_$]*$/u) || [''])[0];
+      range = { start: { line: cursor.current.line, character: cursor.current.character - prefix.length }, end: cursor.current };
+    }
+    setEdit({ ...current, content: applyTextEdits(current.content, [{ range, newText: item.insertText }]) });
+    setCompletions([]);
+  };
+  const applyRename = () => {
+    const preview = renamePreview;
+    const submitted = editRef.current;
+    if (!preview || !submitted) return;
+    void action.run(async (signal) => {
+      if (preview.files.some((file) => workspaceRef.current.drafts.some((draft) =>
+        draft.path === file.path && dirtyEdit(draft)))) throw new Error('请先保存涉及的文件');
+      const result = await request<{ files: { path: string; content: string; version: string }[] }>(
+        `/vms/${vm.id}/language-service`, 'POST', {
+          action: 'apply', token: preview.token,
+          ...(leases[submitted.path]?.token ? { lockToken: leases[submitted.path].token } : {}),
+        }, signal);
+      const updated = new Map(result.files.map((file) => [file.path, file]));
+      setWorkspace((current) => ({
+        ...current,
+        drafts: current.drafts.map((draft) => {
+          const file = updated.get(draft.path);
+          return file ? { ...draft, content: file.content, baseContent: file.content, version: file.version } : draft;
+        }),
+      }));
+      setRenamePreview(null);
+      await refresh();
+    }, '项目符号已重命名');
   };
   const send = (values: FileList | File[]) => {
     const files = Array.from(values);
@@ -738,11 +841,70 @@ export function FileBrowser({
               key={edit.id}
               path={edit.path}
               value={edit.content}
-              change={(content) => setEdit({ ...edit, content })}
+              change={(content) => { setEdit({ ...edit, content }); setCompletions([]); setDefinitions([]); }}
               save={() => void save()}
               line={line.path === edit.path ? line.number : undefined}
+              positionChange={(position) => { cursor.current = position; }}
             />
           </Suspense>
+          {/\.(?:[cm]?[jt]sx?|py)$/i.test(edit.path) && (
+            <PluginGate id="code-checks">
+              <div className="feature-card">
+                <div className="panel-heading"><h4>语言服务</h4>
+                  <span className="muted">{languageError || (languageReady === null ? '正在检查语言服务器…' : languageReady ? '已安装' : '需要安装')}</span>
+                </div>
+                {languageReady === false ? (
+                  <button className="secondary compact" disabled={action.busy} onClick={() => void action.run(async (signal) => {
+                    const path = edit.path;
+                    await request(`/vms/${vm.id}/language-service`, 'POST', { action: 'install' }, signal);
+                    if (editRef.current?.path === path) setLanguageReady(true);
+                  }, 'TypeScript、JavaScript 与 Python 语言服务器已安装')}>
+                    安装语言服务器
+                  </button>
+                ) : languageReady === true ? (
+                  <>
+                    <div className="feature-actions">
+                      <button className="secondary compact" disabled={action.busy} onClick={() => languageAction('completion')}>补全</button>
+                      <button className="secondary compact" disabled={action.busy} onClick={() => languageAction('definition')}>跳转到定义</button>
+                      <button className="secondary compact" disabled={action.busy} onClick={() => languageAction('diagnostics')}>语言诊断</button>
+                    </div>
+                    <div className="feature-actions">
+                      <input aria-label="重命名为" placeholder="新名称" value={renameName}
+                        onChange={(event) => setRenameName(event.target.value)} />
+                      <button className="secondary compact" disabled={action.busy || !renameName || dirtyEdit(edit) || !!edit.fresh}
+                        onClick={() => languageAction('rename')}>预览重命名</button>
+                    </div>
+                    {!!completions.length && <div className="feature-card" aria-label="补全候选">
+                      {completions.map((item, index) => <button key={index} className="text-button"
+                        onClick={() => applyCompletion(item)} title={item.detail}>
+                        {item.label}{item.detail ? ` — ${item.detail}` : ''}
+                      </button>)}
+                    </div>}
+                    {!!definitions.length && <div className="feature-card" aria-label="定义位置">
+                      {definitions.map((item, index) => <button key={index} className="text-button"
+                        onClick={() => void openPath(item.path, item.line)}>
+                        {item.path}:{item.line}:{item.column}
+                      </button>)}
+                    </div>}
+                    {renamePreview && <div className="feature-card" role="status">
+                      <h4>重命名预览 · {renamePreview.files.length} 个文件</h4>
+                      {renamePreview.files.map((file) => <details key={file.path}>
+                        <summary>{file.path}</summary>
+                        <div className="feature-grid">
+                          <div><b>修改前</b><pre className="feature-log">{file.before}</pre></div>
+                          <div><b>修改后</b><pre className="feature-log">{file.after}</pre></div>
+                        </div>
+                      </details>)}
+                      <div className="feature-actions">
+                        <button className="primary compact" disabled={action.busy} onClick={applyRename}>应用重命名</button>
+                        <button className="secondary compact" onClick={() => setRenamePreview(null)}>取消</button>
+                      </div>
+                    </div>}
+                  </>
+                ) : null}
+              </div>
+            </PluginGate>
+          )}
           <div className="feature-actions">
             <PluginGate id="code-checks">
               <button
@@ -759,6 +921,7 @@ export function FileBrowser({
                       signal,
                     );
                     setDiagnostics(result.diagnostics);
+                    setDiagnosticNote(result.diagnostics.length ? '' : '代码检查未发现问题');
                   }, '检查完成')
                 }
               >
@@ -766,9 +929,10 @@ export function FileBrowser({
               </button>
             </PluginGate>
           </div>
-          {diagnostics.length > 0 && (
+          {(diagnostics.length > 0 || diagnosticNote) && (
             <div className="feature-card" role="status">
               <b>代码检查</b>
+              {diagnosticNote && <p className="muted">{diagnosticNote}</p>}
               {diagnostics.map((item, index) => (
                 <p className="machine-error" key={index}>
                   {item.line ? `${item.line}:${item.column || 1} ` : ''}

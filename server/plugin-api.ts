@@ -33,6 +33,7 @@ export const SERVICE_KEYS = [
   'pipelines',
   'runtimes',
   'intelligence',
+  'languageServices',
   'suite',
   'extended',
   'next',

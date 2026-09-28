@@ -26,6 +26,7 @@ import type { ServiceHealth } from './service-health.ts';
 import type { Toolchains } from './toolchains.ts';
 
 import type { CodeIntelligence } from './code-intelligence.ts';
+import type { LanguageServices } from './language-services.ts';
 import type { ExtendedFeatures } from './extended-features.ts';
 import type { FeatureSuite } from './feature-suite.ts';
 import type { FileHistory } from './file-history.ts';
@@ -86,6 +87,7 @@ export class Features {
   pipelines!: Pipelines;
   runtimes!: RuntimeVersions;
   intelligence!: CodeIntelligence;
+  languageServices!: LanguageServices;
   suite!: FeatureSuite;
   extended!: ExtendedFeatures;
   next!: NextFeatures;

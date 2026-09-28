@@ -142,6 +142,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'reverse-proxy',
   'ai-assistant',
   'native-integration',
+  'language-services',
   'multi-monitor',
   'golden-images',
   'multi-arch',
@@ -153,9 +154,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'vpn-integration',
   'rbac-sharing',
 ]);
-const partialFeatureIds = new Set<FeatureId>([
-  'language-services',
-]);
+const partialFeatureIds = new Set<FeatureId>();
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
   featureCatalog.map(([id, name, category, priority, summary]) => ({
@@ -538,10 +537,18 @@ export class FeatureSuite {
       result.reason = result.ready
         ? '启用项目和容器插件后，在容器工作台从 devcontainer.json 或 Dockerfile 创建环境。'
         : '需要运行中的 Debian/Ubuntu 实例和 Docker；在容器工作台安装后重试。';
-    } else if (
-      featureId === 'language-services' ||
-      featureId === 'debug-adapter'
-    ) {
+    } else if (featureId === 'language-services') {
+      const probe = this.machines.state(id) === 'running'
+        ? await this.machines.exec(id,
+            'test -x /opt/sakura-language-services/node_modules/.bin/typescript-language-server && test -f /opt/sakura-language-services/node_modules/typescript/lib/tsserver.js && test -x /opt/sakura-language-services/node_modules/.bin/pyright-langserver',
+            10000, signal).catch(() => null)
+        : null;
+      result.ready = probe?.code === 0;
+      result.adapter = 'lsp-stdio';
+      result.reason = result.ready
+        ? '文件面板可对当前项目中的 TypeScript、JavaScript 和 Python 文件执行补全、跳转、语言诊断和预览后重命名。'
+        : '请启动实例，在文件面板打开当前项目中的源文件并安装语言服务器。';
+    } else if (featureId === 'debug-adapter') {
       result.adapter = 'workspace-tooling';
     } else if (featureId === 'reverse-proxy') {
       result.ready = true;

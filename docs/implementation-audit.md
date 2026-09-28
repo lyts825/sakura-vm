@@ -104,7 +104,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 三方同步合并 / `three-way-sync` | 部分实现 | 有共同哈希基线、冲突检测及保留某侧/双份决策；没有基于共同内容的三方合并。 | [server/sync.ts:458](D:/27247/Desktop/Sakura/server/sync.ts:458) |
 | 目录级版本时间线 / `directory-history` | 部分实现 | 有单文件历史和目录回收站；缺整目录版本快照、差异及整体回滚。 | [server/file-history.ts:29](D:/27247/Desktop/Sakura/server/file-history.ts:29) |
 | 二进制文件预览 / `binary-preview` | 未实现 | 目录标为 available，但文件面板只提供 UTF-8 编辑及下载；无图片/PDF/归档预览组件。 | [plugins/files/client.tsx:233](D:/27247/Desktop/Sakura/plugins/files/client.tsx:233) |
-| LSP 语言服务 / `language-services` | 部分实现 | 有语法高亮及单文件命令式诊断；缺 LSP 会话、补全、定义跳转和重命名。 | [server/code-intelligence.ts:19](D:/27247/Desktop/Sakura/server/code-intelligence.ts:19) |
+| LSP 语言服务 / `language-services` | 已有专用操作 | 文件编辑器可调用客户机内 LSP 服务器完成补全、定义跳转、诊断和预览后跨文件重命名；已在真实 Alpine 客户机验证。 | [server/language-services.ts](D:/27247/Desktop/Sakura/server/language-services.ts) |
 | DAP 调试器 / `debug-adapter` | 未实现 | 只有目录信息；未发现 DAP 会话、断点、单步、调用栈接口及 UI。 | [server/feature-suite.ts:318](D:/27247/Desktop/Sakura/server/feature-suite.ts:318) |
 | 测试资源管理器 / `test-explorer` | 已有专用操作 | 有测试文件发现、运行命令及任务日志；按目录中当前简化范围实现。 | [server/feature-suite.ts:446](D:/27247/Desktop/Sakura/server/feature-suite.ts:446) |
 | 格式化与代码检查 / `format-lint` | 部分实现 | 能调用项目 lint/format 工具；没有统一自动修复流程，缺工具时部分分支只打印提示并返回成功。 | [server/feature-suite.ts:449](D:/27247/Desktop/Sakura/server/feature-suite.ts:449) |

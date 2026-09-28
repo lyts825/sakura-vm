@@ -2192,6 +2192,52 @@ test('host disk health remains usable while the guest is stopped and keeps unkno
   expect((await download).suggestedFilename()).toBe('sakura-disk-health.json');
 });
 
+test('file editor previews and applies LSP rename, then displays language diagnostics', async ({ page }) => {
+  const source = 'export const flower = 1;\n', renamed = 'export const petal = 1;\n';
+  await page.addInitScript(({ id, source }) => localStorage.setItem(`sakura-drafts:${id}`, JSON.stringify([{
+    id: 'lsp-draft', path: '/workspace/a.ts', content: source, baseContent: source,
+    version: 'a'.repeat(64),
+  }])), { id: vm.id, source });
+  await app(page, ['projects', 'files', 'code-checks'], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/history*', (route) => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/vms/*/files?*', (route) => route.fulfill({ json: [] }));
+  const actions: string[] = [];
+  await page.route('**/api/vms/*/language-service*', (route) => {
+    if (route.request().method() === 'GET')
+      return route.fulfill({ json: { installed: true, language: 'typescript' } });
+    const input = route.request().postDataJSON();
+    actions.push(input.action);
+    return route.fulfill({ json: input.action === 'rename'
+      ? { token: 'bb74d525-2fea-4daa-96ec-8ea6db2179db', files: [{ path: '/workspace/a.ts', before: source, after: renamed }] }
+      : input.action === 'apply'
+        ? { files: [{ path: '/workspace/a.ts', content: renamed, version: 'b'.repeat(64) }] }
+        : input.action === 'completion'
+          ? { path: '/workspace/a.ts', items: [{ label: 'leaf', detail: 'symbol', insertText: 'leaf',
+            range: { start: { line: 0, character: 13 }, end: { line: 0, character: 18 } } }] }
+          : input.action === 'definition'
+            ? { path: '/workspace/a.ts', locations: [{ path: '/workspace/a.ts', line: 1, column: 1 }] }
+        : { path: '/workspace/a.ts', received: true, diagnostics: [{ severity: 'warning', message: '示例警告', line: 1, column: 5 }] } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '语言服务' })).toBeVisible();
+  await expect(page.getByText('已安装', { exact: true })).toBeVisible();
+  await page.getByRole('textbox', { name: '重命名为' }).fill('petal');
+  await page.getByRole('button', { name: '预览重命名' }).click();
+  await expect(page.getByText('重命名预览 · 1 个文件')).toBeVisible();
+  await page.getByRole('button', { name: '应用重命名' }).click();
+  await expect(page.getByText('项目符号已重命名')).toBeVisible();
+  await page.getByRole('button', { name: '语言诊断' }).click();
+  await expect(page.getByText('示例警告')).toBeVisible();
+  await page.getByRole('button', { name: '跳转到定义' }).click();
+  await page.getByRole('button', { name: '补全', exact: true }).click();
+  await page.getByRole('button', { name: 'leaf — symbol' }).click();
+  await expect.poll(() => page.evaluate((id) => JSON.parse(localStorage.getItem(`sakura-drafts:${id}`) || '[]')[0]?.content,
+    vm.id)).toBe('export const leaf = 1;\n');
+  expect(actions).toEqual(['rename', 'apply', 'diagnostics', 'definition', 'completion']);
+});
+
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>
