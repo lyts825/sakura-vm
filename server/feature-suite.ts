@@ -65,7 +65,7 @@ export const featureCatalog = [
   ['port-discovery', '端口自动发现', '网络与服务', 'P0', '检测监听端口并生成转发建议。'],
   ['reverse-proxy', 'HTTPS 反向代理', '网络与服务', 'P1', '生成本地域名、证书和服务路由。'],
   ['network-profiles', '网络配置档案', '网络与服务', 'P1', '保存 NAT、DNS、代理和镜像源设置。'],
-  ['vpn-integration', 'VPN 集成', '网络与服务', 'P1', '管理 WireGuard 或 Tailscale 连接。'],
+  ['vpn-integration', 'VPN 集成', '网络与服务', 'P1', '通过 WireGuard 管理客户机覆盖网络连接。'],
   ['network-diagnostics', '网络诊断工具箱', '网络与服务', 'P0', '执行 DNS、HTTPS、路由和端口测试。'],
   ['package-cache', '离线软件包缓存', '网络与服务', 'P1', '缓存常用软件源和项目依赖。'],
   ['service-dashboard', '服务运行面板', '网络与服务', 'P0', '集中查看依赖、日志和自动恢复状态。'],
@@ -140,6 +140,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'online-snapshots',
   'package-cache',
   'security-scan',
+  'vpn-integration',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'language-services',
@@ -494,7 +495,9 @@ export class FeatureSuite {
       result.network = 'localhost-https-ingress';
       result.reason = '实例 → 服务与端口提供 HTTPS 路由、WebSocket 与证书轮换；可明确启用 Windows hosts 系统解析，使 .sakura.localhost 别名供本机程序访问。';
     } else if (featureId === 'vpn-integration') {
-      result.network = 'profile-backed';
+      result.ready = true;
+      result.network = 'wireguard-overlay';
+      result.reason = '启用平台与私密配置插件后，在能力中心 → WireGuard 覆盖网络生成密钥、保存对端配置并启动接口。当前支持 WireGuard，不包含 Tailscale。';
     } else if (featureId === 'rbac-sharing' || featureId === 'plugin-api') {
       result.controlPlane = 'local-token-and-event-bus';
     }

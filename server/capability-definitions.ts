@@ -21,6 +21,7 @@ import { storagePoolInput } from './storage-pools.ts';
 import { tieringInput } from './storage-tiering.ts';
 import { disasterRecoveryInput } from './disaster-recovery-drill.ts';
 import { objectBackupInput } from './object-backup.ts';
+import { wireGuardInput } from './wireguard-overlay.ts';
 
 export const relativePath = z
   .string()
@@ -55,6 +56,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'wireguard-overlay': action(
+    'WireGuard 覆盖网络', 'next', wireGuardInput.shape,
+    { mode: 'status' },
+    '保存经校验的覆盖网络地址、UDP 端口和对端配置；私钥仅放在当前实例的私密配置中。可生成密钥、启动或停止接口，客户机重新启动后自动恢复。默认路由不能由覆盖网络接管。',
+    false, true,
+  ),
   'object-backup': action(
     'S3/MinIO 备份目标', 'next', objectBackupInput.shape,
     { mode: 'status' },

@@ -4,6 +4,7 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { NextFeatures } from '../../server/next-features.ts';
 import { ObjectBackup } from '../../server/object-backup.ts';
+import { WireGuardOverlay } from '../../server/wireguard-overlay.ts';
 import type { Backups } from '../../server/backups.ts';
 import type { Bundles } from '../../server/bundles.ts';
 import type { Secrets } from '../../server/secrets.ts';
@@ -36,6 +37,8 @@ export async function activate(host: PluginContext) {
     bundles: host.optional<Bundles>('snapshots', 'bundles'),
     secrets: host.optional<Secrets>('secrets', 'secrets'),
   })));
+  host.next.setWireGuardOverlay(new WireGuardOverlay(m,
+    () => host.optional<Secrets>('secrets', 'secrets')));
   await host.next.init();
   host.registerJobs(host.next.jobs, (job) => {
     if (!job.action?.startsWith('next:')) throw new AppError('请回到原功能页面重新执行');

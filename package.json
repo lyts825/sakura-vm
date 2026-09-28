@@ -26,6 +26,7 @@
     "test:storage-pools": "tsx scripts/smoke-storage-pools.ts",
     "test:disaster-recovery": "tsx scripts/smoke-disaster-recovery.ts",
     "test:object-backup": "tsx scripts/smoke-object-backup.ts",
+    "test:wireguard": "tsx scripts/smoke-wireguard.ts",
     "test:golden-images": "tsx scripts/smoke-golden-images.ts",
     "test:signed-bundles": "tsx scripts/smoke-signed-bundles.ts",
     "test:hardware-matrix": "tsx scripts/smoke-hardware-matrix.ts",

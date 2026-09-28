@@ -20,6 +20,7 @@ import type { BrowserIde } from './browser-ide.ts';
 import { StorageTiering } from './storage-tiering.ts';
 import type { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import type { ObjectBackup } from './object-backup.ts';
+import type { WireGuardOverlay } from './wireguard-overlay.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -241,8 +242,8 @@ export const nextFeatureCatalog = [
     'WireGuard 覆盖网络',
     '网络与服务治理',
     'P1',
-    '检查客户机 WireGuard 工具和当前接口状态。',
-    'planned',
+    '配置客户机 WireGuard 接口、对端与覆盖路由，重启后自动恢复。',
+    'available',
   ],
   [
     'private-dns-dnssec',
@@ -622,7 +623,6 @@ const defaultState = (): NextState => ({ settings: {}, executions: {}, records: 
 
 const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'virtio-fs': 'mount | grep -E "virtiofs|9p"',
-  'wireguard-overlay': 'command -v wg >/dev/null && wg show',
   'acme-renewal':
     'if command -v certbot >/dev/null; then certbot --version; else command -v lego >/dev/null && lego --version; fi',
   'network-topology': 'command -v ip >/dev/null && ip addr && ip route',
@@ -654,6 +654,7 @@ export class NextFeatures {
   private browserIde?: BrowserIde;
   private disasterRecovery?: DisasterRecoveryDrill;
   private objectBackup?: ObjectBackup;
+  private wireGuardOverlay?: WireGuardOverlay;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -696,6 +697,9 @@ export class NextFeatures {
 
   setObjectBackup(service: ObjectBackup) {
     this.objectBackup = service;
+  }
+  setWireGuardOverlay(service: WireGuardOverlay) {
+    this.wireGuardOverlay = service;
   }
 
   browserIdeLink(id: string) {
@@ -913,6 +917,13 @@ export class NextFeatures {
         return { ready: false, executed: false, adapter,
           reason: '对象备份服务尚未启用。' };
       return { ...await this.objectBackup.action(id, merged, action,
+        signal || new AbortController().signal), adapter };
+    }
+    if (spec.id === 'wireguard-overlay') {
+      if (!this.wireGuardOverlay)
+        return { ready: false, executed: false, adapter,
+          reason: 'WireGuard 覆盖网络服务尚未启用。' };
+      return { ...await this.wireGuardOverlay.action(id, merged, action,
         signal || new AbortController().signal), adapter };
     }
     if (spec.id === 'cold-migration') {
@@ -1217,6 +1228,7 @@ export class NextFeatures {
   }
 
   async close() {
-    await Promise.all([this.jobs.close(), this.storageTiering.close(), this.objectBackup?.close()]);
+    await Promise.all([this.jobs.close(), this.storageTiering.close(), this.objectBackup?.close(),
+      this.wireGuardOverlay?.close()]);
   }
 }
