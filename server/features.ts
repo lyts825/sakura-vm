@@ -63,6 +63,7 @@ function matchesOperation(pattern: string, pathname: string) {
 
 /** Optional plugin host. No plugin services are constructed until explicitly selected. */
 export class Features {
+  extraJobStores: Jobs[] = [];
   files!: Files;
   images!: Images;
   bundles!: Bundles;
@@ -220,7 +221,7 @@ export class Features {
       this.require('network');
   }
   jobStores(): Jobs[] {
-    const stores: Jobs[] = [];
+    const stores: Jobs[] = [...this.extraJobStores];
     for (const module of this.modules.values())
       for (const key of module.manifest.services) {
         const service = this.serviceValue(key) as { jobs?: Jobs } | undefined;

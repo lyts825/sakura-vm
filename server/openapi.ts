@@ -20,6 +20,7 @@ import { featureRolloutRequest } from './feature-rollouts.ts';
 import { fleetRolloutRequest } from './fleet-policy-rollouts.ts';
 import { usbHotplugRequest } from './usb-hotplug.ts';
 import { gpuProfileRequest } from './gpu-profiles.ts';
+import { buildFarmRequest } from './build-farm.ts';
 import { hostPeerRequest } from './host-peers.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
@@ -211,6 +212,10 @@ const core: {
     title: '查看 GPU/vGPU 档案、宿主后端探测和实例应用记录', inspect: true },
   { id: 'gpu-profiles.change', method: 'POST', path: '/api/gpu-profiles',
     title: '保存档案、复核宿主兼容性并应用到停止的实例', body: request(gpuProfileRequest) },
+  { id: 'build-farm.get', method: 'GET', path: '/api/build-farm',
+    title: '查看构建节点、排队任务及执行记录', inspect: true },
+  { id: 'build-farm.change', method: 'POST', path: '/api/build-farm',
+    title: '管理构建节点并提交、取消或重试构建', body: request(buildFarmRequest) },
   {
     id: 'host-peers.get', method: 'GET', path: '/api/host-peers',
     title: '主机配对、资源和健康状态', inspect: true,

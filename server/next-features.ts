@@ -415,7 +415,8 @@ export const nextFeatureCatalog = [
     'available',
   ],
   ['build-cache', '构建缓存', '开发与 AI', 'P1', '检查客户机缓存目录和构建工具。', 'available'],
-  ['build-farm', '分布式构建农场', '开发与 AI', 'P2', '保存构建节点和队列调度元数据。', 'planned'],
+  ['build-farm', '分布式构建农场', '开发与 AI', 'P2',
+    '登记运行中的 Linux 实例作为构建节点，持久排队并按标签和空闲槽位执行构建。', 'available'],
   [
     'language-server-catalog',
     '语言服务器目录',
@@ -986,6 +987,13 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '系统设置 → GPU/vGPU 档案，配置 Virtio GPU 输出、尺寸和宿主显存，预览宿主后端可用性后应用到停止的实例。',
+      };
+    if (spec.id === 'build-farm')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '系统设置 → 构建农场，登记实例节点和并发槽位，按标签提交构建命令；排队任务在节点运行时调度。',
       };
     if (spec.id === 'host-pairing' || spec.id === 'multi-host-inventory')
       return {

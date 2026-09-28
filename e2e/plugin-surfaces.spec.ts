@@ -2400,6 +2400,50 @@ test('GPU profiles save, preview host support and apply reviewed hardware to a s
   expect(requests[2].previewToken).toBe('a'.repeat(64));
 });
 
+test('build farm registers a VM node, queues a matching command and cancels it', async ({ page }) => {
+  await app(page, [], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'stopped' }] }));
+  const requests: any[] = [];
+  let node: any;
+  let task: any;
+  await page.route('**/api/build-farm', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: {
+      nodes: node ? [{ ...node, vmName: vm.name, status: 'stopped', busy: 0 }] : [],
+      tasks: task ? [task] : [],
+    } });
+    const input = route.request().postDataJSON();
+    requests.push(input);
+    if (input.operation === 'save-node') {
+      node = input.node;
+      return route.fulfill({ json: node });
+    }
+    if (input.operation === 'submit') {
+      task = { ...input.build, id: '7f35a821-9a22-47ae-911e-9e70c7461091',
+        status: 'queued', createdAt: new Date().toISOString(), job: null };
+      return route.fulfill({ json: task });
+    }
+    task.status = 'cancelled';
+    return route.fulfill({ json: task });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '系统设置' }).click();
+  await page.getByRole('button', { name: '管理构建农场' }).click();
+  const panel = page.getByRole('region', { name: '构建农场' });
+  await panel.getByLabel('构建节点标签').fill('linux, node');
+  await panel.getByRole('button', { name: '保存构建节点' }).click();
+  await expect(panel).toContainText('example · stopped ·0/1 运行');
+  await panel.getByLabel('构建名称').fill('Compile');
+  await panel.getByLabel('构建客户机命令').fill('npm run build');
+  await panel.getByLabel('构建所需标签').fill('node');
+  await panel.getByRole('button', { name: '提交构建' }).click();
+  await expect(panel).toContainText('Compile · queued');
+  await panel.getByRole('button', { name: '取消构建' }).click();
+  await expect(panel).toContainText('Compile · cancelled');
+  expect(requests.map((item) => item.operation)).toEqual(['save-node', 'submit', 'cancel']);
+  expect(requests[1].build).toMatchObject({ name: 'Compile', command: 'npm run build',
+    labels: ['node'], timeoutSeconds: 300 });
+});
+
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>

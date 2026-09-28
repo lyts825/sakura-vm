@@ -307,7 +307,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 容量预测 / `capacity-forecast` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“根据宿主机当前资源生成容量预测快照。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | 自动修复 Runbook / `auto-remediation` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存带审批和预览的自动修复步骤。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 构建缓存 / `build-cache` | 仅探测 | 只找缓存目录；没有缓存键、恢复、失效和容量管理。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:168](D:/27247/Desktop/Sakura/server/next-features.ts:168) |
-| 分布式构建农场 / `build-farm` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存构建节点和队列调度元数据。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
+| 分布式构建农场 / `build-farm` | 已实现 | 可登记多个 Linux 实例构建节点，按标签、在线状态与并发槽位持久排队；在客户机执行实际命令，记录日志与退出码，支持取消、失败重试及重启后中断识别。 | [server/build-farm.ts](D:/27247/Desktop/Sakura/server/build-farm.ts) |
 | 语言服务器目录 / `language-server-catalog` | 仅探测 | 只尝试语言服务器版本；没有安装、会话连接或编辑器集成。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:169](D:/27247/Desktop/Sakura/server/next-features.ts:169) |
 | DevContainer 市场 / `devcontainer-marketplace` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：登记 DevContainer 模板和来源校验状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 分支预览环境 / `branch-preview` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存分支预览环境的生命周期状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |

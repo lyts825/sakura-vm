@@ -127,6 +127,9 @@ const FleetPolicyRolloutSettings = lazy(() =>
 const GpuProfilesSettings = lazy(() =>
   import('./GpuProfilesSettings').then((module) => ({ default: module.GpuProfilesSettings })),
 );
+const BuildFarmSettings = lazy(() =>
+  import('./BuildFarmSettings').then((module) => ({ default: module.BuildFarmSettings })),
+);
 const LocalAssistant = lazy(() =>
   import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
@@ -392,6 +395,7 @@ function App() {
   const [showHostPeers, setShowHostPeers] = useState(false);
   const [showFleetRollouts, setShowFleetRollouts] = useState(false);
   const [showGpuProfiles, setShowGpuProfiles] = useState(false);
+  const [showBuildFarm, setShowBuildFarm] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -1609,6 +1613,18 @@ function App() {
                 {showGpuProfiles && (
                   <Suspense fallback={<p>正在读取 GPU 档案…</p>}>
                     <GpuProfilesSettings request={api} />
+                  </Suspense>
+                )}
+                <section className="system-card">
+                  <h3>构建农场</h3>
+                  <p>登记 Linux 实例节点，按标签和并发槽位排队执行构建命令。</p>
+                  <button className="secondary compact" onClick={() => setShowBuildFarm(!showBuildFarm)}>
+                    {showBuildFarm ? '收起构建农场' : '管理构建农场'}
+                  </button>
+                </section>
+                {showBuildFarm && (
+                  <Suspense fallback={<p>正在读取构建队列…</p>}>
+                    <BuildFarmSettings request={api} />
                   </Suspense>
                 )}
                 <section className="system-card">
