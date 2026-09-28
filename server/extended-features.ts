@@ -121,7 +121,8 @@ export const extendedFeatureCatalog = [
   ['packet-capture', '数据包捕获', '网络', 'P1', '在客户机限时抓包，导出无地址与载荷的匿名流量诊断报告。', 'available'],
   ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为客户机 TCP 服务创建限时、本机回环地址上的调试入口。', 'available'],
   ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2', '检测并配置 TPM 和安全启动链。', 'planned'],
-  ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2', '使用宿主机安全凭据解锁密钥。', 'planned'],
+  ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2',
+    '管理员使用本机平台通行密钥和用户验证解锁已锁定的控制面，并建立新的管理员会话。', 'available'],
   ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'available'],
   ['audit-log', '防篡改审计日志', '安全', 'P0', '记录关键操作并保护日志链。', 'available'],
   ['clipboard-redaction', '剪贴板敏感检测', '安全', 'P1', '识别并阻止疑似密钥复制。', 'available'],
@@ -379,6 +380,12 @@ export class ExtendedFeatures {
         adapter,
         reason: '系统设置 → 管理会话锁定，设置解锁密码和空闲时间；锁定会拒绝控制请求并断开终端与桌面。',
       };
+    if (spec.id === 'hello-unlock')
+      return { ready: process.platform === 'win32', executed: false,
+        state: spec.state, adapter,
+        reason: process.platform === 'win32'
+          ? '在 localhost 为管理员登记本机平台通行密钥并启用控制面锁定；锁定页可用 Windows Hello 解锁。'
+          : 'Windows Hello 解锁需要 Windows 主机。' };
     if (spec.id === 'offline-pwa')
       return {
         ready: true,

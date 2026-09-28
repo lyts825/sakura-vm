@@ -81,6 +81,7 @@ test('passkey challenges are single-use and stored credentials survive restart a
     await access.enable({ password: 'correct horse battery staple' });
     const owner = await access.login({ username: 'owner', password: 'correct horse battery staple' });
     const passkeys = new Passkeys(access, 7337, () => now);
+    await assert.rejects(passkeys.beginUnlock(1), /本机平台/);
     const begin = await passkeys.beginAuthentication();
     assert.equal(begin.options.rpId, 'localhost');
     const invalid = { ceremonyId: begin.ceremonyId, response: { id: 'a'.repeat(32) } };
@@ -95,6 +96,21 @@ test('passkey challenges are single-use and stored credentials survive restart a
     await access.addPasskey(owner.principal.id, { id, publicKey: 'c'.repeat(32),
       counter: 0, transports: ['internal'], name: 'test key',
       createdAt: new Date(now).toISOString() });
+    const loginChallenge = await passkeys.beginAuthentication();
+    await assert.rejects(passkeys.finishUnlock({ ceremonyId: loginChallenge.ceremonyId,
+      response: { id } }), /已失效/);
+    const unlockChallenge = await passkeys.beginUnlock(17);
+    await assert.rejects(passkeys.finishAuthentication({ ceremonyId: unlockChallenge.ceremonyId,
+      response: { id } }), /已失效/);
+    const viewer = await access.createViewer({ username: 'reader', password: 'read only password 123',
+      vmIds: ['00000000-0000-4000-8000-000000000001'], expiresAt: now + 86_400_000 });
+    const viewerKey = 'd'.repeat(32);
+    await access.addPasskey(viewer.id, { id: viewerKey, publicKey: 'e'.repeat(32),
+      counter: 0, transports: ['internal'], name: 'viewer key',
+      createdAt: new Date(now).toISOString() });
+    const deniedUnlock = await passkeys.beginUnlock(18);
+    await assert.rejects(passkeys.finishUnlock({ ceremonyId: deniedUnlock.ceremonyId,
+      response: { id: viewerKey } }), /管理员/);
     assert.equal(access.passkeysFor(owner.principal.id)[0].name, 'test key');
     assert.ok(!JSON.stringify(access.passkeysFor(owner.principal.id)).includes('publicKey'));
     const restarted = new AccessControl(file, () => now);

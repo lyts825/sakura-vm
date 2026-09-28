@@ -367,6 +367,23 @@ async function main() {
       if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
       return send(res, await session.unlock(await body(req, 4096)));
     }
+    if (url.pathname === '/api/session/unlock/passkey/options') {
+      if (req.method !== 'POST' || !access.enabled || !session.view().locked)
+        throw new AppError('控制面未启用通行密钥解锁', 409);
+      requirePasskeyOrigin(req);
+      z.object({}).strict().parse(await body(req, 4096));
+      return send(res, await passkeys.beginUnlock(session.getGeneration()));
+    }
+    if (url.pathname === '/api/session/unlock/passkey/verify') {
+      if (req.method !== 'POST' || !access.enabled || !session.view().locked)
+        throw new AppError('控制面未启用通行密钥解锁', 409);
+      requirePasskeyOrigin(req);
+      const { login, lockGeneration } = await passkeys.finishUnlock(await body(req, 65536));
+      try {
+        const unlocked = await session.unlockWithPasskey(lockGeneration!);
+        return send(res, { ...login, session: unlocked });
+      } catch (error) { access.logout(login.token); throw error; }
+    }
     session.requireUnlocked();
     if (url.pathname === '/api/access/login') {
       if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
@@ -879,7 +896,8 @@ async function main() {
       if (url.pathname.startsWith('/api/')) {
         if ((url.pathname === '/api/access/login' ||
             url.pathname === '/api/access/handoff/redeem' ||
-            url.pathname === '/api/access/passkeys/login/verify') && req.method === 'POST')
+            url.pathname === '/api/access/passkeys/login/verify' ||
+            url.pathname === '/api/session/unlock/passkey/verify') && req.method === 'POST')
           return await audit.span({ kind: 'request', name: 'POST ' + url.pathname },
             () => api(req, res, url), () => res.statusCode);
         let actorId: string | undefined;

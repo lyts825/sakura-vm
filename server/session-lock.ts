@@ -104,6 +104,7 @@ export class SessionLock {
       retryAfterSeconds: Math.max(0, Math.ceil((this.state.blockedUntil - this.now()) / 1000)),
     };
   }
+  getGeneration() { return this.generation; }
   requireUnlocked() {
     if (this.closed) throw new AppError('会话服务正在关闭', 503);
     this.checkIdle();
@@ -199,6 +200,23 @@ export class SessionLock {
       this.lastActivity = this.now();
       if (transitioned) this.generation++;
       this.changed(false, transitioned);
+      return this.view();
+    });
+  }
+  unlockWithPasskey(expectedGeneration: number) {
+    return this.exclusive(async () => {
+      if (!this.state.enabled || !this.locked || this.generation !== expectedGeneration)
+        throw new AppError('会话状态已变化，请重新解锁', 409);
+      const next = { ...this.state, failures: 0, blockedUntil: 0 };
+      await writeStore(this.file, next);
+      this.state = next;
+      if (this.closed || !this.locked || this.generation !== expectedGeneration)
+        throw new AppError('会话状态已变化，请重新解锁', 409);
+      this.locked = false;
+      this.reason = undefined;
+      this.lastActivity = this.now();
+      this.generation++;
+      this.changed(false, true);
       return this.view();
     });
   }

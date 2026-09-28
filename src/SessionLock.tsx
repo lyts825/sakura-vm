@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LockKeyhole } from 'lucide-react';
+import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import type { SessionLockView } from '../shared/session-lock';
 import { api, controllerSession } from './controller-session';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
@@ -12,6 +13,16 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [accountEnabled, setAccountEnabled] = useState(false);
+  useEffect(() => {
+    if (!session.locked) return;
+    const abort = new AbortController();
+    void fetch('/api/access/status', { cache: 'no-store', signal: abort.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((value) => { if (!abort.signal.aborted) setAccountEnabled(value?.enabled === true); })
+      .catch(() => { if (!abort.signal.aborted) setAccountEnabled(false); });
+    return () => abort.abort();
+  }, [session.locked]);
   useEffect(() => {
     if (!session.enabled && !session.locked) return;
     const abort = new AbortController();
@@ -128,6 +139,35 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
             {busy ? '正在解锁…' : '解锁控制面'}
           </button>
         </form>
+        {accountEnabled && location.hostname === 'localhost' ? <button type="button" className="secondary"
+          disabled={busy} onClick={async () => {
+            setError(''); setBusy(true);
+            try {
+              if (!window.PublicKeyCredential) throw new Error('当前浏览器不支持通行密钥');
+              const request = async (path: string, input: unknown) => {
+                const response = await fetch('/api/session/unlock/passkey/' + path, {
+                  method: 'POST', cache: 'no-store',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(input), signal: AbortSignal.timeout(60_000),
+                });
+                const value = await response.json();
+                if (!response.ok) throw new Error(value.error || '通行密钥解锁失败');
+                return value;
+              };
+              const begin = await request('options', {}) as
+                { ceremonyId: string; options: PublicKeyCredentialRequestOptionsJSON };
+              const { startAuthentication } = await import('@simplewebauthn/browser');
+              const response = await startAuthentication({ optionsJSON: begin.options });
+              const result = await request('verify',
+                { ceremonyId: begin.ceremonyId, response });
+              controllerSession.updateSession(result.session);
+              controllerSession.adoptAccount(result.token, result.principal);
+            } catch (reason) {
+              setError(reason instanceof Error ? reason.message : '通行密钥解锁失败');
+            } finally { setBusy(false); }
+          }}>使用 Windows Hello / 本机通行密钥解锁</button>
+          : accountEnabled && <p><a href={`http://localhost:${location.port || '80'}/`}>
+            在 localhost 打开以使用本机通行密钥解锁</a></p>}
         {session.retryAfterSeconds > 0 && (
           <p role="status">尝试过多，请在 {session.retryAfterSeconds} 秒后重试。</p>
         )}

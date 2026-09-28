@@ -121,6 +121,20 @@ test('pending verification cannot unlock a newer lock; parallel password work is
   assert.throws(() => manager.requireUnlocked(), status(503));
 });
 
+test('verified owner passkey unlocks only the exact locked generation and resets the cooldown', async (t) => {
+  const fixture = await setup(t), manager = await fixture.create();
+  await enable(manager);
+  manager.lock();
+  const stale = manager.getGeneration();
+  manager.lock();
+  await assert.rejects(manager.unlockWithPasskey(stale), status(409));
+  for (let i = 0; i < 5; i++) await assert.rejects(manager.unlock({ password: 'wrong' }), status(403));
+  const current = manager.getGeneration();
+  assert.equal((await manager.unlockWithPasskey(current)).locked, false);
+  assert.equal(manager.view().retryAfterSeconds, 0);
+  await assert.rejects(manager.unlockWithPasskey(current), status(409));
+});
+
 test('missing credentials, malformed storage, clock rollback and expiry during configuration fail closed', async (t) => {
   const fixture = await setup(t),
     manager = await fixture.create();

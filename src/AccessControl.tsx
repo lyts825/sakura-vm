@@ -458,6 +458,7 @@ function PasskeyManager() {
   const principal = usePrincipal();
   const [keys, setKeys] = useState<PasskeyView[]>([]);
   const [name, setName] = useState('此设备');
+  const [platformOnly, setPlatformOnly] = useState(false);
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -473,7 +474,7 @@ function PasskeyManager() {
       event.preventDefault(); setBusy(true); setError(''); setMessage('');
       try {
         const begin = await api<Ceremony<PublicKeyCredentialCreationOptionsJSON>>(
-          '/access/passkeys/register/options', 'POST', { name, password });
+          '/access/passkeys/register/options', 'POST', { name, password, platformOnly });
         const { startRegistration } = await import('@simplewebauthn/browser');
         const response = await startRegistration({ optionsJSON: begin.options });
         await api('/access/passkeys/register/verify', 'POST',
@@ -486,6 +487,9 @@ function PasskeyManager() {
         onChange={(event) => setName(event.target.value)} /></label>
       <label>当前账户密码<input type="password" autoComplete="current-password" required
         value={password} disabled={busy} onChange={(event) => setPassword(event.target.value)} /></label>
+      <label><input type="checkbox" checked={platformOnly} disabled={busy}
+        onChange={(event) => setPlatformOnly(event.target.checked)} />
+        仅使用本机平台认证器（Windows Hello 等）</label>
       <button className="secondary compact" disabled={busy || keys.length >= 10}>登记通行密钥</button>
     </form> : <p><a href={localhostUrl()}>在 localhost 打开以登记通行密钥</a></p>}
     <ul>{keys.map((key) => <li key={key.id}>

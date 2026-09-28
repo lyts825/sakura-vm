@@ -12,11 +12,13 @@ const ceremonyId = z.string().regex(/^[a-f0-9]{64}$/);
 const browserCredential = z.object({ id: z.string().min(16).max(1024) }).passthrough();
 export const passkeyRegisterStart = z.object({
   password: z.string().max(256), name: z.string().trim().min(1).max(64),
+  platformOnly: z.boolean().default(false),
 }).strict();
 export const passkeyFinish = z.object({ ceremonyId, response: browserCredential }).strict();
 export const passkeyRemove = z.object({ password: z.string().max(256) }).strict();
 
-type Ceremony = { challenge: string; expiresAt: number; accountId?: string; name?: string };
+type Ceremony = { challenge: string; expiresAt: number; purpose: 'register' | 'login' | 'unlock';
+  accountId?: string; name?: string; lockGeneration?: number };
 
 /** Short-lived, one-use WebAuthn ceremonies bound to this local service process. */
 export class Passkeys {
@@ -36,10 +38,11 @@ export class Passkeys {
     return id;
   }
 
-  private take(id: string, accountId?: string) {
+  private take(id: string, purpose: Ceremony['purpose'], accountId?: string) {
     const entry = this.ceremonies.get(ceremonyId.parse(id));
     this.ceremonies.delete(id);
-    if (!entry || entry.expiresAt <= this.now() || entry.accountId !== accountId)
+    if (!entry || entry.expiresAt <= this.now() || entry.accountId !== accountId ||
+        entry.purpose !== purpose)
       throw new AppError('通行密钥请求已失效，请重新开始', 409);
     return entry;
   }
@@ -55,17 +58,19 @@ export class Passkeys {
       userDisplayName: principal.username,
       userID: Buffer.from(principal.id.replaceAll('-', ''), 'hex'),
       attestationType: 'none',
-      authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+      authenticatorSelection: { residentKey: 'required', userVerification: 'required',
+        ...(value.platformOnly ? { authenticatorAttachment: 'platform' as const } : {}) },
       supportedAlgorithmIDs: [-7, -257],
       excludeCredentials: existing.map((item) => ({ id: item.id, transports: item.transports })),
     });
     return { ceremonyId: this.remember({ challenge: options.challenge,
-      expiresAt: this.now() + 5 * 60_000, accountId: principal.id, name: value.name }), options };
+      expiresAt: this.now() + 5 * 60_000, purpose: 'register',
+      accountId: principal.id, name: value.name }), options };
   }
 
   async finishRegistration(principal: Principal, input: unknown) {
     const value = passkeyFinish.parse(input);
-    const ceremony = this.take(value.ceremonyId, principal.id);
+    const ceremony = this.take(value.ceremonyId, 'register', principal.id);
     let verified;
     try {
       verified = await verifyRegistrationResponse({
@@ -90,14 +95,29 @@ export class Passkeys {
       rpID: this.rpID, userVerification: 'required',
     });
     return { ceremonyId: this.remember({ challenge: options.challenge,
-      expiresAt: this.now() + 5 * 60_000 }), options };
+      expiresAt: this.now() + 5 * 60_000, purpose: 'login' }), options };
   }
 
-  async finishAuthentication(input: unknown) {
+  async beginUnlock(lockGeneration: number) {
+    const owner = this.access.users().find((item) => item.role === 'owner');
+    if (!owner || !this.access.registeredPasskeysFor(owner.id)
+      .some((item) => item.transports.includes('internal')))
+      throw new AppError('请先为管理员登记本机平台通行密钥', 409);
+    const options = await generateAuthenticationOptions({
+      rpID: this.rpID, userVerification: 'required',
+    });
+    return { ceremonyId: this.remember({ challenge: options.challenge,
+      expiresAt: this.now() + 5 * 60_000, purpose: 'unlock', lockGeneration }), options };
+  }
+
+  private async finish(input: unknown, purpose: 'login' | 'unlock') {
     const value = passkeyFinish.parse(input);
-    const ceremony = this.take(value.ceremonyId);
+    const ceremony = this.take(value.ceremonyId, purpose);
     const registered = this.access.getPasskey(value.response.id);
     if (!registered) throw new AppError('通行密钥验证失败', 403);
+    if (purpose === 'unlock' &&
+        (registered.user.role !== 'owner' || !registered.key.transports.includes('internal')))
+      throw new AppError('需要管理员的本机平台通行密钥', 403);
     let verified;
     try {
       verified = await verifyAuthenticationResponse({
@@ -112,9 +132,16 @@ export class Passkeys {
       });
     } catch { throw new AppError('通行密钥验证失败', 403); }
     if (!verified.verified) throw new AppError('通行密钥验证失败', 403);
-    return this.access.completePasskeyLogin(registered.user.id, registered.key.id,
+    const login = await this.access.completePasskeyLogin(registered.user.id, registered.key.id,
       registered.key.counter, verified.authenticationInfo.newCounter);
+    return { login, lockGeneration: ceremony.lockGeneration };
   }
+
+  async finishAuthentication(input: unknown) {
+    return (await this.finish(input, 'login')).login;
+  }
+
+  finishUnlock(input: unknown) { return this.finish(input, 'unlock'); }
 
   close() { this.ceremonies.clear(); }
 }
