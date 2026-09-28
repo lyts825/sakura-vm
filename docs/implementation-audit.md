@@ -285,7 +285,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | NAT 回流 / `nat-hairpin` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存端口回流规则并检查当前转发配置。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | PAC 代理策略 / `proxy-pac` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存按域名分流的 PAC 规则。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 延迟丢包模拟 / `network-emulation` | 仅探测 | 只查看 tc qdisc；没有应用或预览给定延迟/丢包参数。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:165](D:/27247/Desktop/Sakura/server/next-features.ts:165) |
-| 服务网格边车 / `service-mesh` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“登记服务边车策略和可选代理检测结果。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
+| 服务网格边车 / `service-mesh` | 已实现（依赖客户机 Envoy） | 按项目保存受限的环回 TCP 策略，生成并验证 Envoy 配置，启动、检查及停止独立边车；当前环境未安装 Envoy，真实流量需在具备二进制的客户机验证。 | [server/service-mesh.ts](D:/27247/Desktop/Sakura/server/service-mesh.ts) |
 | Passkey/WebAuthn / `passkey-webauthn` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存控制面 Passkey 策略和注册统计。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | OIDC 与 SAML 单点登录 / `oidc-saml` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：校验身份提供商元数据并保存非敏感配置。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 自定义 RBAC / `custom-rbac` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存项目角色、权限和成员映射。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |

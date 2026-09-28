@@ -28,6 +28,7 @@ import type { ObjectBackup } from './object-backup.ts';
 import type { WireGuardOverlay } from './wireguard-overlay.ts';
 import { TeamTemplates } from './team-templates.ts';
 import type { CommunityPlugins } from './community-plugins.ts';
+import { ServiceMesh } from './service-mesh.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -296,7 +297,8 @@ export const nextFeatureCatalog = [
     '检查并实际设置或清除客户机网卡的 tc/netem 延迟、抖动和丢包规则。',
     'available',
   ],
-  ['service-mesh', '服务网格边车', '网络与服务治理', 'P2', '登记服务边车策略和可选代理检测结果。', 'planned'],
+  ['service-mesh', '服务网格边车', '网络与服务治理', 'P2',
+    '按项目配置环回 TCP Envoy 边车，校验、启动、检查与停止代理。', 'available'],
   [
     'passkey-webauthn',
     'Passkey/WebAuthn',
@@ -667,6 +669,7 @@ function compactProfileResult(result: Record<string, unknown>) {
 export class NextFeatures {
   jobs = new Jobs('next-features');
   storageTiering: StorageTiering;
+  serviceMesh: ServiceMesh;
   acmeRenewal: AcmeRenewal;
   teamTemplates: TeamTemplates;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
@@ -696,6 +699,7 @@ export class NextFeatures {
     private workspaces: Workspaces,
   ) {
     this.storageTiering = new StorageTiering(machines);
+    this.serviceMesh = new ServiceMesh(machines, workspaces);
     this.acmeRenewal = new AcmeRenewal(machines);
     this.teamTemplates = new TeamTemplates(machines, workspaces);
   }
@@ -703,9 +707,11 @@ export class NextFeatures {
   async init() {
     try {
       await this.storageTiering.init();
+      await this.serviceMesh.init();
       await this.acmeRenewal.init();
     } catch (error) {
-      await Promise.allSettled([this.storageTiering.close(), this.acmeRenewal.close()]);
+      await Promise.allSettled([this.storageTiering.close(), this.serviceMesh.close(),
+        this.acmeRenewal.close()]);
       throw error;
     }
   }
@@ -845,6 +851,10 @@ export class NextFeatures {
         { mode: 'save', enabled: value.enabled, intervalHours });
       return { enabled: value.enabled, options: { intervalHours: result.policy!.intervalHours },
         updatedAt: now(), policy: result.policy };
+    }
+    if (value.featureId === 'service-mesh') {
+      value.options = z.object({}).strict().parse(value.options);
+      if (!value.enabled) await this.serviceMesh.assertNoRunning(id);
     }
     if (value.featureId === 'process-interop' && !value.enabled && this.processInterop)
       await this.processInterop.action(id, { mode: 'disable' }, 'run');
@@ -988,6 +998,8 @@ export class NextFeatures {
         message: '插件中心 → 第三方插件：信任发布者公钥、添加 HTTPS 目录源、刷新并安装。插件运行于无宿主导入的限时 WebAssembly 工作线程。',
         ...(!view ? { reason: '第三方插件服务尚未启动。' } : {}) };
     }
+    if (spec.id === 'service-mesh')
+      return { ...await this.serviceMesh.action(id, { mode: 'status', ...merged }, action, signal), adapter };
     if (spec.id === 'fleet-policy-rollout')
       return {
         ready: true,
@@ -1462,7 +1474,8 @@ export class NextFeatures {
   }
 
   async close() {
-    await Promise.all([this.jobs.close(), this.storageTiering.close(), this.objectBackup?.close(),
+    await Promise.all([this.jobs.close(), this.storageTiering.close(), this.serviceMesh.close(),
+      this.objectBackup?.close(),
       this.wireGuardOverlay?.close(), this.acmeRenewal.close()]);
   }
 }

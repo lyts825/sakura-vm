@@ -28,6 +28,7 @@ import { processInteropInput } from './process-interop.ts';
 import { sshAgentForwardInput } from './ssh-agent-forward.ts';
 import { gpuAccelerationInput } from './gpu-acceleration.ts';
 import { syscallProfileInput } from './syscall-profile.ts';
+import { serviceMeshPolicy } from './service-mesh.ts';
 
 export const relativePath = z
   .string()
@@ -62,6 +63,14 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'service-mesh': action(
+    '服务网格边车', 'next',
+    { mode: z.enum(['status', 'save', 'remove', 'start', 'stop']).default('status'),
+      policy: serviceMeshPolicy.optional() },
+    { mode: 'status' },
+    '按项目保存固定环回 TCP Envoy 策略。save 需要名称、监听端口和上游端口；start 在运行中的客户机校验配置并启动，stop 停止当前项目边车，remove 删除策略。需要客户机已安装 Envoy 与 tmux；不会开放管理端口。',
+    false, true,
+  ),
   'syscall-profile': action(
     '系统调用隔离', 'extended', syscallProfileInput.shape,
     { mode: 'status' },
