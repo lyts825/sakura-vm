@@ -25,6 +25,7 @@ import { wireGuardInput } from './wireguard-overlay.ts';
 import { teamTemplateInput } from './team-templates.ts';
 import { acmeInput } from './acme-renewal.ts';
 import { processInteropInput } from './process-interop.ts';
+import { sshAgentForwardInput } from './ssh-agent-forward.ts';
 
 export const relativePath = z
   .string()
@@ -59,6 +60,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'ssh-agent-forward': action(
+    'SSH Agent 转发', 'extended', sshAgentForwardInput.shape,
+    { command: 'ssh-add -L', confirmed: true, timeoutSeconds: 60 },
+    '仅在这一次客户机命令运行期间转发宿主 SSH Agent。提交前请确认命令及其依赖可信；命令结束或取消后关闭 SSH 连接。私钥不会复制到客户机。',
+    true, false,
+  ),
   'process-interop': action(
     'Windows/Linux 进程互操作', 'next', processInteropInput.shape,
     { mode: 'status' },

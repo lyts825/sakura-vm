@@ -4,7 +4,7 @@ import { existsSync, createReadStream, createWriteStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createConnection, type Socket } from 'node:net';
-import { Client, type SFTPWrapper } from 'ssh2';
+import { Client, type ClientCallback, type ExecOptions, type SFTPWrapper } from 'ssh2';
 import { StringDecoder } from 'node:string_decoder';
 import { isUtf8 } from 'node:buffer';
 import { Readable, Transform, type Duplex } from 'node:stream';
@@ -780,7 +780,7 @@ export class Machines extends EventEmitter {
       this.emit('change');
     }
   }
-  async connect(id: string, timeout = 10000, signal?: AbortSignal) {
+  async connect(id: string, timeout = 10000, signal?: AbortSignal, agentPath?: string) {
     this.requireUnlocked(id);
     const live = this.live.get(id);
     if (!live || live.status === 'stopping' || live.status === 'paused')
@@ -795,7 +795,7 @@ export class Machines extends EventEmitter {
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new Error('SSH connection timed out');
       try {
-        return await this.connectOnce(live, key, remaining, signal);
+        return await this.connectOnce(live, key, remaining, signal, agentPath);
       } catch (error) {
         // An interrupted clone rekey may have updated the guest before the host
         // key file. Recover using the pending key without replaying commands.
@@ -812,6 +812,7 @@ export class Machines extends EventEmitter {
             Buffer.from(pending.privateText),
             Math.max(1, deadline - performance.now()),
             signal,
+            agentPath,
           );
         }
         // QEMU's user-network listener can refuse simultaneous TCP connects.
@@ -828,7 +829,8 @@ export class Machines extends EventEmitter {
       }
     }
   }
-  private connectOnce(live: Live, key: Buffer, timeout: number, signal?: AbortSignal) {
+  private connectOnce(live: Live, key: Buffer, timeout: number, signal?: AbortSignal,
+    agentPath?: string) {
     signal?.throwIfAborted();
     return new Promise<Client>((resolve, reject) => {
       const client = new Client();
@@ -866,6 +868,7 @@ export class Machines extends EventEmitter {
           readyTimeout: timeout,
           keepaliveInterval: 10000,
           keepaliveCountMax: 3,
+          ...(agentPath ? { agent: agentPath, agentForward: true } : {}),
         });
       } catch (error) {
         cleanup();
@@ -881,8 +884,9 @@ export class Machines extends EventEmitter {
     timeout = 30000,
     signal?: AbortSignal,
     output?: (data: string) => void,
+    agentPath?: string,
   ) {
-    const client = await this.connect(id, Math.min(timeout, 10000), signal);
+    const client = await this.connect(id, Math.min(timeout, 10000), signal, agentPath);
     try {
       return await new Promise<{ stdout: string; stderr: string; code: number }>((resolve, reject) => {
         let stdout = '',
@@ -916,7 +920,7 @@ export class Machines extends EventEmitter {
           abort();
           return;
         }
-        client.exec(command, (error, stream) => {
+        const completed: ClientCallback = (error, stream) => {
           if (error) {
             finish(error);
             return;
@@ -944,7 +948,9 @@ export class Machines extends EventEmitter {
           stream.on('close', (code: number) => {
             finish(undefined, code ?? -1);
           });
-        });
+        };
+        if (agentPath) client.exec(command, { agentForward: true } as ExecOptions, completed);
+        else client.exec(command, completed);
       });
     } finally {
       client.end();
