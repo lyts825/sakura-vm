@@ -1,4 +1,5 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import type RFB from '@novnc/novnc';
 import type { AccessPrincipal } from '../shared/access-control';
 import type { SessionLockView } from '../shared/session-lock';
 import { api, controllerSession } from './controller-session';
@@ -96,11 +97,15 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 
 function SharedInventory({ principal }: { principal: AccessPrincipal }) {
   const [vms, setVms] = useState<SharedVm[]>([]);
+  const [desktopAvailable, setDesktopAvailable] = useState(false);
+  const [desktopId, setDesktopId] = useState('');
   const [error, setError] = useState('');
+  const token = useToken();
   useEffect(() => {
     const abort = new AbortController();
-    const refresh = () => void api<{ vms: SharedVm[] }>('/access/view', 'GET', undefined, abort.signal)
-      .then((result) => { setVms(result.vms); setError(''); })
+    const refresh = () => void api<{ vms: SharedVm[]; desktopAvailable: boolean }>(
+      '/access/view', 'GET', undefined, abort.signal)
+      .then((result) => { setVms(result.vms); setDesktopAvailable(result.desktopAvailable); setError(''); })
       .catch((reason) => { if (!abort.signal.aborted) setError(String(reason.message || reason)); });
     refresh();
     const timer = setInterval(refresh, 15_000);
@@ -113,14 +118,45 @@ function SharedInventory({ principal }: { principal: AccessPrincipal }) {
         .finally(() => controllerSession.clearCredential())}>退出登录</button>
     </header>
     <section className="system-card"><h2>已授权实例</h2>
-      <p>只能查看所选实例的状态和资源摘要。操作、日志、终端和下载不可访问。</p>
+      <p>只能查看所选实例的状态、资源摘要和可用的只读桌面。操作、日志、终端和下载不可访问。</p>
       {error && <p role="alert" className="inline-error">{error}</p>}
       {vms.length ? <ul>{vms.map((vm) => <li key={vm.id}>
         <strong>{vm.name}</strong> · {vm.status} · {vm.distro || 'Alpine'} ·
         {' '}{vm.cpus} CPU / {vm.memoryMiB} MiB / {vm.diskGiB} GiB
+        {desktopAvailable && vm.status === 'running' && <button className="secondary compact"
+          onClick={() => setDesktopId(vm.id === desktopId ? '' : vm.id)}>
+          {vm.id === desktopId ? '关闭桌面视图' : '只读查看桌面'}</button>}
       </li>)}</ul> : <p>当前没有可查看的实例。</p>}
     </section>
+    {desktopId && token && <SharedDesktop vmId={desktopId} token={token} />}
   </main>;
+}
+
+function SharedDesktop({ vmId, token }: { vmId: string; token: string }) {
+  const screen = useRef<HTMLDivElement>(null);
+  const [connection, setConnection] = useState('正在连接桌面…');
+  useEffect(() => {
+    let alive = true;
+    let client: RFB | undefined;
+    void import('@novnc/novnc').then(({ default: RFBClient }) => {
+      if (!alive || !screen.current) return;
+      const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      client = new RFBClient(screen.current,
+        `${scheme}//${location.host}/ws/${vmId}/desktop-view?token=${encodeURIComponent(token)}`);
+      client.viewOnly = true;
+      client.scaleViewport = true;
+      client.resizeSession = false;
+      client.background = '#201b24';
+      client.addEventListener('connect', () => { if (alive) setConnection('只读桌面已连接'); });
+      client.addEventListener('disconnect', () => { if (alive) setConnection('桌面连接已断开'); });
+    }).catch(() => { if (alive) setConnection('无法加载桌面查看器'); });
+    return () => { alive = false; client?.disconnect(); };
+  }, [vmId, token]);
+  return <section className="system-card" aria-label="只读桌面视图">
+    <h2>只读桌面视图</h2>
+    <p role="status">{connection}。键盘、鼠标和剪贴板输入在服务端被拒绝。</p>
+    <div className="desktop-screen-shell"><div className="desktop-screen" ref={screen} /></div>
+  </section>;
 }
 
 export function AccountLogoutButton() {

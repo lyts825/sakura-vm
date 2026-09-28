@@ -236,3 +236,58 @@ for (const loss of ['browser', 'SSH then VNC', 'VNC then SSH']) {
     assert.equal(connections, 2, 'reconnection opens a fresh tunnel to the same guest service');
   });
 }
+
+test('shared desktop bridge forwards framebuffer requests but closes on keyboard input', async (t) => {
+  const tcpSockets = new Set<Socket>();
+  let received = Buffer.alloc(0);
+  const tcp = createServer((socket) => {
+    tcpSockets.add(socket);
+    socket.on('close', () => tcpSockets.delete(socket));
+    socket.on('error', () => {});
+    socket.on('data', (chunk: Buffer) => { received = Buffer.concat([received, chunk]); });
+    socket.write('RFB 003.008\n');
+  });
+  tcp.listen(0, '127.0.0.1');
+  await once(tcp, 'listening');
+  const http = createHttpServer();
+  const wss = new WebSocketServer({ server: http });
+  http.listen(0, '127.0.0.1');
+  await once(http, 'listening');
+  const { machines, desktops } = fixture();
+  let channel: Socket;
+  machines.connect = async () => Object.assign(new EventEmitter(), {
+    destroy: () => channel?.destroy(),
+    exec: (_command: string, callback: Function) => {
+      channel = createConnection({ host: '127.0.0.1', port: (tcp.address() as { port: number }).port });
+      channel.once('connect', () => callback(null, channel));
+    },
+  }) as unknown as Awaited<ReturnType<Machines['connect']>>;
+  wss.on('connection', (socket) => {
+    void desktops.attach('vm', socket, true).catch(() => socket.close());
+  });
+  t.after(async () => {
+    for (const socket of wss.clients) socket.terminate();
+    for (const socket of tcpSockets) socket.destroy();
+    wss.close();
+    await desktops.close();
+    await Promise.all([
+      new Promise<void>((resolve) => http.close(() => resolve())),
+      new Promise<void>((resolve) => tcp.close(() => resolve())),
+    ]);
+  });
+  const client = new WebSocket(`ws://127.0.0.1:${(http.address() as { port: number }).port}`);
+  t.after(() => client.terminate());
+  assert.equal((await once(client, 'message'))[0].toString(), 'RFB 003.008\n');
+  const allowed = Buffer.concat([
+    Buffer.from('RFB 003.008\n'), Buffer.from([1, 1]),
+    Buffer.from([3, 0, 0, 0, 0, 0, 0, 0, 64, 64]),
+  ]);
+  client.send(allowed.subarray(0, 7));
+  client.send(allowed.subarray(7));
+  for (let attempt = 0; attempt < 30 && received.length < allowed.length; attempt++) await delay(10);
+  assert.deepEqual(received, allowed);
+  const closed = once(client, 'close');
+  client.send(Buffer.from([4, 1, 0, 0, 0, 0, 0, 65]));
+  await closed;
+  assert.deepEqual(received, allowed);
+});

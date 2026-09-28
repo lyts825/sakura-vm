@@ -83,6 +83,16 @@ async function main() {
   (delta) => { features.mutations += delta; });
   await hostPeers.init();
   features.next?.setResourceScheduler((input) => hostPeers.score(input));
+  features.next?.setSharedDesktopCheck(async (id) => {
+    if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
+    if (!features.socketEnabled('desktop'))
+      return { ready: false, reason: '请先启用桌面插件并重启 Sakura。' };
+    try {
+      const desktop = await features.desktops.view(id);
+      return desktop.status === 'ready' ? { ready: true }
+        : { ready: false, reason: '实例桌面尚未就绪。' };
+    } catch (error) { return { ready: false, reason: (error as Error).message }; }
+  });
   const importedPeerVm = (requesterId: string, transferId: string) =>
     [...machines.records.values()].find((vm) =>
       vm.migrationOrigin?.sourceHostId === requesterId &&
@@ -207,6 +217,15 @@ async function main() {
     machines.emit('change');
   };
   const socketVms = new WeakMap<WebSocket, string>();
+  const socketAccounts = new WeakMap<WebSocket, string>();
+  const socketCredentials = new WeakMap<WebSocket, string>();
+  const terminateAccountSockets = (id: string) => {
+    for (const client of ws.clients) if (socketAccounts.get(client) === id) client.terminate();
+  };
+  const terminateCredentialSockets = (credential: string) => {
+    for (const client of ws.clients)
+      if (socketCredentials.get(client) === credential) client.terminate();
+  };
   machines.on('incident-lockdown', (id: string) => {
     for (const store of features.jobStores())
       for (const job of store.list())
@@ -218,6 +237,14 @@ async function main() {
   const equalToken = (value: unknown) => {
     if (!access.enabled) return tokenMatches(value, token);
     try { return access.authorize(value).role === 'owner'; } catch { return false; }
+  };
+  const socketAuthorization = (credential: string, mode: string, id: string) => {
+    if (!access.enabled) return equalToken(credential) ? { role: 'owner' as const } : null;
+    try {
+      const principal = access.authorize(credential);
+      return principal.role === 'owner' || (mode === 'desktop-view' && principal.vmIds.includes(id))
+        ? principal : null;
+    } catch { return null; }
   };
   const allowedRequest = (req: IncomingMessage) => sameOrigin(req.headers, PORT);
   const authorized = (req: IncomingMessage) => {
@@ -281,12 +308,16 @@ async function main() {
       const ids = principal.role === 'viewer' ? principal.vmIds : [...machines.records.keys()];
       const vms = await Promise.all(ids.filter((id) => machines.records.has(id)).map((id) => machines.view(id)));
       return send(res, { role: principal.role, checkedAt: new Date().toISOString(),
+        desktopAvailable: features.socketEnabled('desktop'),
         vms: vms.map(({ id, name, status, distro, cpus, memoryMiB, diskGiB }) =>
           ({ id, name, status, distro, cpus, memoryMiB, diskGiB })) });
     }
     if (url.pathname === '/api/access/logout') {
       if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
-      return send(res, access.logout(req.headers['x-sakura-token']));
+      const credential = req.headers['x-sakura-token'];
+      const result = access.logout(credential);
+      if (typeof credential === 'string') terminateCredentialSockets(credential);
+      return send(res, result);
     }
     if (url.pathname === '/api/access/enable') {
       if (req.method !== 'POST' || access.enabled) throw new AppError('不支持此方法', 405);
@@ -311,7 +342,10 @@ async function main() {
     if (/^\/api\/access\/users\/[a-f0-9-]{36}$/.test(url.pathname)) {
       if (req.method !== 'DELETE') throw new AppError('不支持此方法', 405);
       if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-      return send(res, await access.removeViewer(url.pathname.split('/').at(-1)!));
+      const id = url.pathname.split('/').at(-1)!;
+      const result = await access.removeViewer(id);
+      terminateAccountSockets(id);
+      return send(res, result);
     }
     if (url.pathname === '/api/access/password') {
       if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
@@ -703,14 +737,16 @@ async function main() {
     const id = parts[2];
     const mode = parts[3];
     const events = url.pathname === '/ws/events';
+    const credential = url.searchParams.get('token') || '';
     if (
       !allowedRequest(req) ||
-      (!events && mode !== 'logs' && machines.incidentLocked(id)) ||
-      !equalToken(url.searchParams.get('token')) ||
-      (mode === 'desktop' && !features.socketEnabled('desktop')) ||
-      (url.searchParams.has('session') && !features.socketEnabled('terminal-session')) ||
       (!events &&
-        (parts.length !== 4 || !machines.records.has(id) || !['terminal', 'logs', 'desktop'].includes(mode)))
+        (parts.length !== 4 || !machines.records.has(id) ||
+          !['terminal', 'logs', 'desktop', 'desktop-view'].includes(mode))) ||
+      (!events && mode !== 'logs' && machines.incidentLocked(id)) ||
+      !socketAuthorization(credential, mode, id) ||
+      ((mode === 'desktop' || mode === 'desktop-view') && !features.socketEnabled('desktop')) ||
+      (url.searchParams.has('session') && !features.socketEnabled('terminal-session'))
     ) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
@@ -722,6 +758,15 @@ async function main() {
       } catch {
         client.terminate();
         return;
+      }
+      const principal = socketAuthorization(credential, mode, id);
+      if (!principal) { client.terminate(); return; }
+      socketCredentials.set(client, credential);
+      if ('id' in principal) {
+        socketAccounts.set(client, principal.id);
+        const timer = setTimeout(() => client.terminate(),
+          Math.max(1, principal.expiresAt - Date.now()));
+        client.once('close', () => clearTimeout(timer));
       }
       if (!events) socketVms.set(client, id);
       if (!events && mode !== 'logs' && machines.incidentLocked(id)) {
@@ -738,9 +783,9 @@ async function main() {
         }
       };
       client.on('error', () => {});
-      if (mode === 'desktop') {
+      if (mode === 'desktop' || mode === 'desktop-view') {
         try {
-          await features.desktops.attach(id, client);
+          await features.desktops.attach(id, client, mode === 'desktop-view');
         } catch {
           client.close(1011, 'Desktop unavailable');
         }

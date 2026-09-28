@@ -462,7 +462,8 @@ export const nextFeatureCatalog = [
     'available',
   ],
   ['shared-terminal', '共享终端', '协作与团队', 'P0', '保存共享终端会话和成员访问状态。', 'planned'],
-  ['shared-desktop-view', '共享桌面视图', '协作与团队', 'P1', '保存只读桌面查看会话。', 'planned'],
+  ['shared-desktop-view', '共享桌面视图', '协作与团队', 'P1',
+    '已授权的本地只读账户可查看实例桌面，服务端拒绝键鼠、剪贴板和调整桌面尺寸。', 'available'],
   ['session-handoff', '会话交接', '协作与团队', 'P0', '保存可恢复的会话交接令牌元数据。', 'planned'],
   ['file-locks', '文件锁', '协作与团队', 'P0', '在文件工作台获取、续租和释放文件锁，并阻止其他文件工作台写入修改锁定路径。', 'available'],
   ['review-threads', '行级评审线程', '协作与团队', 'P1', '保存文件、行号和评审意见线程。', 'available'],
@@ -659,6 +660,7 @@ export class NextFeatures {
   private disasterRecovery?: DisasterRecoveryDrill;
   private objectBackup?: ObjectBackup;
   private wireGuardOverlay?: WireGuardOverlay;
+  private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -674,6 +676,10 @@ export class NextFeatures {
 
   setResourceScheduler(score: (input: HostScoreInput) => ReturnType<HostPeers['score']>) {
     this.scoreHosts = score;
+  }
+
+  setSharedDesktopCheck(check: (id: string) => Promise<{ ready: boolean; reason?: string }>) {
+    this.sharedDesktopCheck = check;
   }
 
   setColdMigrations(service: ColdMigrations) {
@@ -935,6 +941,13 @@ export class NextFeatures {
     }
     if (spec.id === 'team-templates')
       return { ...await this.teamTemplates.action(id, merged, action), adapter };
+    if (spec.id === 'shared-desktop-view') {
+      const state = this.sharedDesktopCheck
+        ? await this.sharedDesktopCheck(id)
+        : { ready: false, reason: '共享桌面服务尚未启动。' };
+      return { ...state, executed: false, adapter,
+        message: '系统设置 → 账户与只读分享：为此实例创建只读账户。用户登录后打开只读桌面视图。' };
+    }
     if (spec.id === 'cold-migration') {
       if (!this.coldMigrations)
         return { ready: false, executed: false, adapter,

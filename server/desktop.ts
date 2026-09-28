@@ -9,6 +9,7 @@ import {
   type DesktopPreferences,
 } from './desktop-preferences.ts';
 import { desktopCommands } from './desktop-guest.ts';
+import { ReadOnlyRfb } from './readonly-rfb.ts';
 
 type Operation = {
   startedAt: string;
@@ -124,7 +125,7 @@ export class Desktops {
     return { ...operation.view };
   }
 
-  async attach(id: string, socket: WebSocket) {
+  async attach(id: string, socket: WebSocket, readOnly = false) {
     const abort = new AbortController();
     socket.once('close', () => abort.abort());
     if (socket.readyState !== WebSocket.OPEN) return;
@@ -167,7 +168,12 @@ export class Desktops {
         close();
       });
       channel.once('close', () => browser.destroy());
-      channel.pipe(browser).pipe(channel);
+      channel.pipe(browser);
+      if (readOnly) {
+        const filter = new ReadOnlyRfb();
+        filter.on('error', close);
+        browser.pipe(filter).pipe(channel);
+      } else browser.pipe(channel);
     } catch (error) {
       close();
       throw error;

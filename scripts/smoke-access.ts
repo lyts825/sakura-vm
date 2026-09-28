@@ -57,8 +57,8 @@ const request = async (path: string, method = 'GET', token?: string, body?: unkn
   });
   return { status: response.status, body: await response.json() as any };
 };
-const wsStatus = async (token: string) => {
-  const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/events?token=' + token,
+const wsStatus = async (token: string, path = '/ws/events') => {
+  const socket = new WebSocket(origin.replace('http:', 'ws:') + path + '?token=' + token,
     { handshakeTimeout: 3000 });
   socket.on('error', () => {});
   return new Promise<number>((done, fail) => {
@@ -72,12 +72,20 @@ const wsStatus = async (token: string) => {
 
 try {
   await start();
-  const legacy = (await request('/api/bootstrap')).body.token as string;
+  let legacy = (await request('/api/bootstrap')).body.token as string;
   assert.equal(legacy.length, 64);
+  assert.equal((await request('/api/plugins', 'PATCH', legacy,
+    { kind: 'plugin', id: 'desktop', enabled: true })).status, 200);
+  await stop();
+  await start();
+  legacy = (await request('/api/bootstrap')).body.token as string;
   const created = await request('/api/vms', 'POST', legacy,
     { name: 'access-fixture', memoryMiB: 512, cpus: 2, diskGiB: 4 });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const vmId = created.body.id as string;
+  const another = await request('/api/vms', 'POST', legacy,
+    { name: 'private-fixture', memoryMiB: 512, cpus: 2, diskGiB: 4 });
+  assert.equal(another.status, 201, JSON.stringify(another.body));
   assert.equal((await request('/api/access/enable', 'POST', legacy, { password })).status, 200);
   assert.equal((await request('/api/bootstrap')).status, 401);
   assert.equal((await request('/api/vms', 'GET', legacy)).status, 401);
@@ -99,16 +107,27 @@ try {
   assert.equal(inventory.status, 200);
   assert.equal(inventory.body.vms.length, 1);
   assert.equal(inventory.body.vms[0].id, vmId);
+  assert.equal(inventory.body.desktopAvailable, true);
   assert.ok(!JSON.stringify(inventory.body).includes('id_rsa'));
   for (const path of ['/api/vms', '/api/audit', '/api/graphql-schema'])
     assert.equal((await request(path, 'GET', viewerToken)).status, 403, path);
   assert.equal((await request('/api/vms/' + vmId + '/stop', 'POST', viewerToken, {})).status, 403);
   assert.equal(await wsStatus(viewerToken), 403);
+  assert.equal(await wsStatus(viewerToken, '/ws/' + vmId + '/desktop-view'), 101);
+  assert.equal(await wsStatus(viewerToken, '/ws/' + vmId + '/desktop'), 403);
+  assert.equal(await wsStatus(viewerToken, '/ws/' + another.body.id + '/desktop-view'), 403);
   assert.equal(await wsStatus(ownerToken), 101);
 
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
+    // The fixture VM is stopped; present it as running to exercise the view-only UI path.
+    await page.route('**/api/access/view', async (route) => {
+      const response = await route.fetch();
+      const result = await response.json();
+      return route.fulfill({ response, json: { ...result,
+        vms: result.vms.map((vm: { status: string }) => ({ ...vm, status: 'running' })) } });
+    });
     await page.goto(origin);
     await page.getByRole('heading', { name: '登录 Sakura' }).waitFor();
     await page.getByLabel('账户名').fill('reader');
@@ -117,6 +136,13 @@ try {
     await page.getByRole('heading', { name: '已授权实例' }).waitFor();
     await page.getByText('access-fixture').waitFor();
     assert.equal(await page.getByText('终端', { exact: true }).count(), 0);
+    const desktopSocket = page.waitForEvent('websocket', {
+      predicate: (socket) => socket.url().includes('/ws/' + vmId + '/desktop-view?'),
+    });
+    await page.getByRole('button', { name: '只读查看桌面' }).click();
+    await desktopSocket;
+    await page.getByRole('heading', { name: '只读桌面视图' }).waitFor();
+    await page.getByRole('button', { name: '关闭桌面视图' }).click();
     await page.getByRole('button', { name: '退出登录' }).click();
     await page.getByRole('heading', { name: '登录 Sakura' }).waitFor();
   } finally { await browser.close(); }
