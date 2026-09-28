@@ -58,6 +58,8 @@ export const projectSchema = z
     }
   });
 export type Project = z.infer<typeof projectSchema> & { _workspace?: string };
+export const projectVersion = (project: Project) => createHash('sha256')
+  .update(JSON.stringify(project)).digest('hex');
 export const projectSession = (project: Project) =>
   project._workspace ? `sakura-project-${project._workspace}` : 'sakura-project';
 export const projectLog = (project: Project) => `/tmp/${projectSession(project)}.log`;
@@ -203,13 +205,15 @@ export class Workspaces {
       : undefined;
     return { ...project, _workspace: project._workspace, environment, ...(services ? { services } : {}) };
   }
-  async save(id: string, input: unknown, allowedDirectory?: string) {
+  async save(id: string, input: unknown, allowedDirectory?: string, expectedVersion?: string) {
     const project = projectSchema.parse(input);
     return this.machines.locked(id, async () => {
       this.machines.get(id);
       if (this.jobs.view(this.projects.key(id))?.status === 'running')
         throw new AppError('请等待项目操作完成', 409);
       const previous = await this.config(id);
+      if (expectedVersion !== undefined && projectVersion(previous) !== expectedVersion)
+        throw new AppError('项目配置已变化，请重新审阅并提交变更', 409);
       if (allowedDirectory !== undefined &&
           (project.directory !== allowedDirectory || previous.directory !== allowedDirectory))
         throw new AppError('项目成员不能修改项目目录', 403);
@@ -238,8 +242,10 @@ export class Workspaces {
     });
   }
   async view(id: string) {
+    const project = await this.config(id);
     return {
-      project: await this.config(id),
+      project,
+      version: projectVersion(project),
       projectId: this.projects.current(id),
       job: this.jobs.view(this.projects.key(id)),
     };

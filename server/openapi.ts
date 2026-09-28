@@ -8,6 +8,7 @@ import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.t
 import { accessEnableInput, accessLoginInput, accessViewerInput, accessMemberInput, accessPasswordInput,
   accessHandoffInput, accessHandoffRedeem } from './access-control.ts';
 import { projectPermissionInput } from './project-permissions.ts';
+import { changeRequestInput, changeDecisionInput } from './change-approvals.ts';
 import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
 import { terminalShareInput } from './terminal-sharing.ts';
 import { webhookRequest } from './webhooks.ts';
@@ -100,6 +101,14 @@ const core: {
   { id: 'access.configureProjectPermissions', method: 'PUT',
     path: '/api/access/project-permissions', title: '设置项目角色、权限和成员授权',
     body: request(projectPermissionInput) },
+  { id: 'access.changes', method: 'GET', path: '/api/access/changes',
+    title: '列出当前账户可查看或审批的项目变更', inspect: true },
+  { id: 'access.createChange', method: 'POST', path: '/api/access/changes',
+    title: '提交精确配置与基线版本的项目变更', body: request(changeRequestInput), status: 201 },
+  { id: 'access.decideChange', method: 'POST', path: '/api/access/changes/{id}/decision',
+    title: '由另一账户审批或拒绝项目变更', body: request(changeDecisionInput) },
+  { id: 'access.applyChange', method: 'POST', path: '/api/access/changes/{id}/apply',
+    title: '申请人一次性应用已批准的变更', body: request(z.object({}).strict()) },
   { id: 'access.password', method: 'POST', path: '/api/access/password',
     title: '更换管理员密码并撤销全部会话', body: request(accessPasswordInput) },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },

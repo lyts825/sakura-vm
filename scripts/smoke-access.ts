@@ -200,6 +200,149 @@ try {
   assert.equal((await request(projectPath, 'PUT', memberToken, memberRead.body.project)).status, 200);
   assert.equal((await request(projectPath, 'GET', memberToken)).body.project.directory,
     memberRead.body.project.directory);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles,
+    grants: [{ accountId: member.body.id, roleId: 'developer' }],
+    approvalRequired: true })).status, 200);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles,
+    grants: [{ accountId: member.body.id, roleId: 'developer' }] })).body.approvalRequired, true);
+  assert.equal((await request(projectPath, 'PUT', memberToken, memberRead.body.project)).status, 409);
+  assert.equal((await request(projectPath, 'PUT', ownerToken, memberRead.body.project)).status, 409);
+  const changedProject = { ...memberRead.body.project, command: 'printf approved-change' };
+  assert.equal((await request('/api/access/changes', 'POST', memberToken,
+    { vmId, projectId: 'default', summary: 'Wrong base version',
+      project: changedProject, expectedVersion: '0'.repeat(64) })).status, 409);
+  const proposed = await request('/api/access/changes', 'POST', memberToken,
+    { vmId, projectId: 'default', summary: 'Review the project start command',
+      project: changedProject, expectedVersion: memberRead.body.version });
+  assert.equal(proposed.status, 201, JSON.stringify(proposed.body));
+  assert.equal((await request('/api/access/changes', 'GET', memberToken)).body.changes[0].id,
+    proposed.body.id);
+  assert.equal((await request(`/api/access/changes/${proposed.body.id}/decision`,
+    'POST', memberToken, { decision: 'approve' })).status, 403);
+  assert.equal((await request(`/api/access/changes/${proposed.body.id}/decision`,
+    'POST', viewerToken, { decision: 'approve' })).status, 403);
+  const approvalBrowser = await chromium.launch();
+  try {
+    const approvalPage = await approvalBrowser.newPage();
+    await approvalPage.goto(origin);
+    await approvalPage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    await approvalPage.getByLabel('密码').fill(password);
+    await approvalPage.getByRole('button', { name: '登录', exact: true }).click();
+    await approvalPage.getByRole('button', { name: '系统设置', exact: true }).click();
+    await approvalPage.getByRole('button', { name: '提交管理员变更审批' }).waitFor();
+    const changePanel = approvalPage.getByRole('region', { name: '项目变更审批' });
+    const proposal = changePanel.locator('article').filter({ hasText: 'Review the project start command' });
+    await proposal.getByText('Review the project start command').waitFor();
+    await proposal.getByText('查看完整项目配置与基线版本').click();
+    await proposal.getByLabel('已审阅完整配置').check();
+    await proposal.getByRole('button', { name: '批准' }).click();
+    await changePanel.getByText('变更已批准').waitFor();
+    await approvalPage.setViewportSize({ width: 390, height: 844 });
+    const ownerOverflow = await approvalPage.evaluate(() => [...document.querySelectorAll('*')]
+      .filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
+      .slice(0, 12).map((element) => ({ tag: element.tagName,
+        className: element.className, width: Math.round(element.getBoundingClientRect().width),
+        right: Math.round(element.getBoundingClientRect().right) })));
+    assert.equal(await approvalPage.evaluate(() => document.documentElement.scrollWidth), 390,
+      JSON.stringify(ownerOverflow));
+  } finally { await approvalBrowser.close(); }
+  assert.equal((await request('/api/access/changes', 'GET', ownerToken)).body.changes
+    .find((item: { id: string }) => item.id === proposed.body.id).status, 'approved');
+  assert.equal((await request(`/api/access/changes/${proposed.body.id}/apply`,
+    'POST', ownerToken, {})).status, 403);
+  const appliedChange = await request(`/api/access/changes/${proposed.body.id}/apply`,
+    'POST', memberToken, {});
+  assert.equal(appliedChange.status, 200, JSON.stringify(appliedChange.body));
+  assert.equal(appliedChange.body.status, 'applied');
+  assert.equal((await request(projectPath, 'GET', memberToken)).body.project.command,
+    'printf approved-change');
+  assert.equal((await request(`/api/access/changes/${proposed.body.id}/apply`,
+    'POST', memberToken, {})).status, 409);
+  const reviewer = await request('/api/access/members', 'POST', ownerToken,
+    { username: 'reviewer', password: 'a second member password' });
+  assert.equal(reviewer.status, 201);
+  const reviewerRole = { id: 'reviewer', name: 'Reviewer', permissions: ['read', 'approve'] };
+  const approvalRoles = [...roles, reviewerRole];
+  const approvalGrants = [
+    { accountId: member.body.id, roleId: 'developer' },
+    { accountId: reviewer.body.id, roleId: 'reviewer' },
+  ];
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles: approvalRoles,
+    grants: approvalGrants, approvalRequired: true })).status, 200);
+  const reviewerLogin = await request('/api/access/login', 'POST', undefined,
+    { username: 'reviewer', password: 'a second member password' });
+  assert.equal(reviewerLogin.status, 200);
+  const reviewerToken = reviewerLogin.body.token as string;
+  assert.equal((await request(projectPath, 'PUT', reviewerToken, changedProject)).status, 403);
+  const ownerCurrent = await request(projectPath, 'GET', ownerToken);
+  const ownerChange = await request('/api/access/changes', 'POST', ownerToken,
+    { vmId, projectId: 'default', summary: 'Owner request for second review',
+      project: { ...ownerCurrent.body.project, command: 'printf owner-approved' },
+      expectedVersion: ownerCurrent.body.version });
+  assert.equal(ownerChange.status, 201, JSON.stringify(ownerChange.body));
+  assert.equal((await request(`/api/access/changes/${ownerChange.body.id}/decision`,
+    'POST', ownerToken, { decision: 'approve' })).status, 403);
+  assert.ok((await request('/api/access/changes', 'GET', reviewerToken)).body.changes
+    .some((item: { id: string }) => item.id === ownerChange.body.id));
+  const reviewerBrowser = await chromium.launch();
+  try {
+    const reviewerPage = await reviewerBrowser.newPage();
+    await reviewerPage.goto(origin);
+    await reviewerPage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    await reviewerPage.getByLabel('账户名').fill('reviewer');
+    await reviewerPage.getByLabel('密码').fill('a second member password');
+    await reviewerPage.getByRole('button', { name: '登录', exact: true }).click();
+    assert.equal(await reviewerPage.getByRole('button', { name: '保存项目配置' }).count(), 0);
+    const changePanel = reviewerPage.getByRole('region', { name: '项目变更审批' });
+    const proposal = changePanel.locator('article').filter({ hasText: 'Owner request for second review' });
+    await proposal.getByText('Owner request for second review').waitFor();
+    await proposal.getByText('查看完整项目配置与基线版本').click();
+    await proposal.getByLabel('已审阅完整配置').check();
+    await proposal.getByRole('button', { name: '批准' }).click();
+    await changePanel.getByText('变更已批准').waitFor();
+    await reviewerPage.setViewportSize({ width: 390, height: 844 });
+    assert.ok(await reviewerPage.evaluate(() => document.documentElement.scrollWidth <= 390));
+  } finally { await reviewerBrowser.close(); }
+  assert.equal((await request(`/api/access/changes/${ownerChange.body.id}/apply`,
+    'POST', ownerToken, {})).status, 200);
+  assert.equal((await request(projectPath, 'GET', ownerToken)).body.project.command,
+    'printf owner-approved');
+  const staleBase = await request(projectPath, 'GET', memberToken);
+  const staleChange = await request('/api/access/changes', 'POST', memberToken,
+    { vmId, projectId: 'default', summary: 'Reject a stale approved change',
+      project: { ...staleBase.body.project, command: 'printf stale-change' },
+      expectedVersion: staleBase.body.version });
+  assert.equal(staleChange.status, 201);
+  assert.equal((await request(`/api/access/changes/${staleChange.body.id}/decision`,
+    'POST', reviewerToken, { decision: 'approve' })).status, 200);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles: approvalRoles,
+    grants: approvalGrants, approvalRequired: false })).status, 200);
+  assert.equal((await request(projectPath, 'PUT', ownerToken,
+    { ...staleBase.body.project, command: 'printf newer-change' })).status, 200);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles: approvalRoles,
+    grants: approvalGrants, approvalRequired: true })).status, 200);
+  assert.equal((await request(`/api/access/changes/${staleChange.body.id}/apply`,
+    'POST', memberToken, {})).status, 409);
+  assert.equal((await request(projectPath, 'GET', ownerToken)).body.project.command,
+    'printf newer-change');
+  assert.equal((await request('/api/access/changes', 'GET', ownerToken)).body.changes
+    .find((item: { id: string }) => item.id === staleChange.body.id).status, 'failed');
+  const revokedBase = await request(projectPath, 'GET', memberToken);
+  const revokedChange = await request('/api/access/changes', 'POST', memberToken,
+    { vmId, projectId: 'default', summary: 'Reject revoked second approval',
+      project: { ...revokedBase.body.project, command: 'printf revoked-change' },
+      expectedVersion: revokedBase.body.version });
+  assert.equal(revokedChange.status, 201);
+  assert.equal((await request(`/api/access/changes/${revokedChange.body.id}/decision`,
+    'POST', reviewerToken, { decision: 'approve' })).status, 200);
+  assert.equal((await request('/api/access/members/' + reviewer.body.id,
+    'DELETE', ownerToken)).status, 200);
+  assert.equal((await request('/api/access/changes', 'GET', reviewerToken)).status, 401);
+  assert.equal((await request(`/api/access/changes/${revokedChange.body.id}/apply`,
+    'POST', memberToken, {})).status, 409);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles,
+    grants: [{ accountId: member.body.id, roleId: 'developer' }],
+    approvalRequired: false })).status, 200);
   const memberBrowser = await chromium.launch();
   try {
     const memberPage = await memberBrowser.newPage();
@@ -508,6 +651,8 @@ try {
     { username: 'owner', password: newPassword });
   assert.equal(again.status, 200);
   assert.equal((await request('/api/vms', 'GET', again.body.token)).status, 200);
+  assert.equal((await request('/api/access/changes', 'GET', again.body.token)).body.changes
+    .find((item: { id: string }) => item.id === proposed.body.id).status, 'applied');
   const persistedMember = await request('/api/access/login', 'POST', undefined,
     { username: 'developer', password: 'a long member password' });
   assert.equal(persistedMember.status, 200);

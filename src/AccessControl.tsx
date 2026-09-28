@@ -22,10 +22,16 @@ type JitRequestView = { id: string; viewerId: string; vmId: string;
     'claimed' | 'completed' | 'failed'; createdAt: number; expiresAt?: number; error?: string };
 type Ceremony<T> = { ceremonyId: string; options: T };
 type ProjectGrantView = { vmId: string; vmName: string; projectId: string; projectName: string;
-  roleId: string; permissions: Array<'read' | 'write' | 'execute'> };
-type ProjectRoleView = { id: string; name: string; permissions: Array<'read' | 'write' | 'execute'> };
+  roleId: string; permissions: Array<'read' | 'write' | 'execute' | 'approve'>;
+  approvalRequired: boolean };
+type ProjectRoleView = { id: string; name: string;
+  permissions: Array<'read' | 'write' | 'execute' | 'approve'> };
 type ProjectPolicyView = { vmId: string; projectId: string; roles: ProjectRoleView[];
-  grants: Array<{ accountId: string; roleId: string }> };
+  grants: Array<{ accountId: string; roleId: string }>; approvalRequired: boolean };
+type ChangeView = { id: string; vmId: string; projectId: string; requesterId: string;
+  summary: string; project: unknown; expectedVersion: string;
+  status: 'pending' | 'approved' | 'denied' | 'claimed' | 'applied' | 'failed' | 'expired';
+  approvedBy?: string; error?: string; createdAt: number };
 
 async function publicPasskeyRequest<T>(path: string, input: unknown) {
   const response = await fetch('/api/access/passkeys/' + path, {
@@ -165,6 +171,9 @@ function ProjectMemberPortal({ principal }: { principal: AccessPrincipal }) {
   const [projects, setProjects] = useState<ProjectGrantView[]>([]);
   const [selected, setSelected] = useState('');
   const [document, setDocument] = useState('');
+  const [version, setVersion] = useState('');
+  const [summary, setSummary] = useState('');
+  const [changeRefresh, setChangeRefresh] = useState(0);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -186,12 +195,13 @@ function ProjectMemberPortal({ principal }: { principal: AccessPrincipal }) {
   useEffect(() => {
     if (!current) return;
     const abort = new AbortController();
-    void api<{ project: unknown }>(`/vms/${current.vmId}/project?project=${current.projectId}`,
+    void api<{ project: unknown; version: string }>(`/vms/${current.vmId}/project?project=${current.projectId}`,
       'GET', undefined, abort.signal)
-      .then((result) => { setDocument(JSON.stringify(result.project, null, 2)); setError(''); })
+      .then((result) => { setDocument(JSON.stringify(result.project, null, 2));
+        setVersion(result.version); setError(''); })
       .catch((reason) => { if (!abort.signal.aborted) setError(String(reason.message || reason)); });
     return () => abort.abort();
-  }, [selected, projects]);
+  }, [selected, projects, changeRefresh]);
   return <main className="app-shell"><header className="app-header">
     <h1>Sakura · 项目成员</h1><span>{principal.username}</span>
     <button className="secondary compact" onClick={() => void api('/access/logout', 'POST', {})
@@ -207,16 +217,29 @@ function ProjectMemberPortal({ principal }: { principal: AccessPrincipal }) {
       <label>项目配置<textarea rows={18} spellCheck={false} value={document}
         readOnly={!current.permissions.includes('write')}
         onChange={(event) => setDocument(event.target.value)} /></label>
-      {current.permissions.includes('write') && <button className="primary compact" disabled={busy}
+      {current.approvalRequired && <p>此项目的配置变更须经另一账户批准，再由申请人应用。</p>}
+      {current.permissions.includes('write') && current.approvalRequired &&
+        <label>变更摘要<input minLength={8} maxLength={500} value={summary}
+          onChange={(event) => setSummary(event.target.value)} /></label>}
+      {current.permissions.includes('write') && <button className="primary compact"
+        disabled={busy || (current.approvalRequired && (summary.trim().length < 8 || !version))}
         onClick={async () => {
           setBusy(true); setError(''); setMessage('');
           try {
             const value = JSON.parse(document);
-            await api(`/vms/${current.vmId}/project?project=${current.projectId}`, 'PUT', value);
-            setMessage('项目配置已保存');
+            if (current.approvalRequired) {
+              await api('/access/changes', 'POST', { vmId: current.vmId,
+                projectId: current.projectId, summary, project: value, expectedVersion: version });
+              setSummary(''); setChangeRefresh((value) => value + 1);
+              setMessage('变更已提交，等待第二位账户批准');
+            } else {
+              await api(`/vms/${current.vmId}/project?project=${current.projectId}`, 'PUT', value);
+              setChangeRefresh((value) => value + 1);
+              setMessage('项目配置已保存');
+            }
           } catch (reason) { setError(reason instanceof Error ? reason.message : '保存失败'); }
           finally { setBusy(false); }
-        }}>保存项目配置</button>}
+        }}>{current.approvalRequired ? '提交变更审批' : '保存项目配置'}</button>}
       {current.permissions.includes('execute') && <div>
         {(['setup', 'start', 'stop'] as const).map((action) => <button key={action}
           className="secondary compact" disabled={busy} onClick={async () => {
@@ -231,7 +254,9 @@ function ProjectMemberPortal({ principal }: { principal: AccessPrincipal }) {
     </> : <p>目前没有获授权的项目。</p>}
     {message && <p role="status">{message}</p>}
     {error && <p role="alert" className="inline-error">{error}</p>}
-  </section><PasskeyManager /><SessionHandoffManager /></main>;
+  </section><ChangeApprovalPanel refreshKey={changeRefresh}
+    onApplied={() => setChangeRefresh((value) => value + 1)} />
+    <PasskeyManager /><SessionHandoffManager /></main>;
 }
 
 function SharedInventory({ principal }: { principal: AccessPrincipal }) {
@@ -624,6 +649,74 @@ export function AccountLogoutButton() {
   </button>;
 }
 
+function ChangeApprovalPanel({ refreshKey = 0, onApplied }: {
+  refreshKey?: number; onApplied?: () => void;
+}) {
+  const principal = usePrincipal();
+  const [changes, setChanges] = useState<ChangeView[]>([]);
+  const [reviewed, setReviewed] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const refresh = async (signal?: AbortSignal) => {
+    const result = await api<{ changes: ChangeView[] }>('/access/changes', 'GET', undefined, signal);
+    setChanges(result.changes);
+  };
+  useEffect(() => {
+    const abort = new AbortController();
+    void refresh(abort.signal).catch((reason) => {
+      if (!abort.signal.aborted) setError(String(reason.message || reason));
+    });
+    const timer = setInterval(() => void refresh(abort.signal).catch((reason) => {
+      if (!abort.signal.aborted) setError(String(reason.message || reason));
+    }), 15_000);
+    return () => { abort.abort(); clearInterval(timer); };
+  }, [principal?.id, refreshKey]);
+  const run = async (id: string, action: 'approve' | 'deny' | 'apply') => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      if (action === 'apply') {
+        await api(`/access/changes/${id}/apply`, 'POST', {});
+        onApplied?.();
+      } else await api(`/access/changes/${id}/decision`, 'POST', { decision: action });
+      setReviewed((value) => value.filter((item) => item !== id));
+      await refresh();
+      setMessage(action === 'apply' ? '已应用批准的变更' :
+        action === 'approve' ? '变更已批准' : '变更已拒绝');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '审批操作失败'); }
+    finally { setBusy(false); }
+  };
+  return <section className="system-card" aria-label="项目变更审批">
+    <h3>项目变更审批</h3>
+    {!changes.length && <p>目前没有可查看的变更请求。</p>}
+    {[...changes].reverse().slice(0, 40).map((item) => <article key={item.id}>
+      <h4>{item.summary}</h4>
+      <p>{item.vmId} / {item.projectId} · {item.status} ·
+        {new Date(item.createdAt).toLocaleString()}</p>
+      {item.error && <p role="alert" className="inline-error">{item.error}</p>}
+      <details><summary>查看完整项目配置与基线版本</summary>
+        <p>基线 SHA-256：<code>{item.expectedVersion}</code></p>
+        <pre className="approval-config">{JSON.stringify(item.project, null, 2)}</pre>
+      </details>
+      {item.status === 'pending' && item.requesterId !== principal?.id && <>
+        <label><input type="checkbox" checked={reviewed.includes(item.id)}
+          onChange={(event) => setReviewed((value) => event.target.checked
+            ? [...value, item.id] : value.filter((id) => id !== item.id))} />
+          已审阅完整配置</label>
+        <button className="primary compact" disabled={busy || !reviewed.includes(item.id)}
+          onClick={() => void run(item.id, 'approve')}>批准</button>
+        <button className="secondary compact" disabled={busy}
+          onClick={() => void run(item.id, 'deny')}>拒绝</button>
+      </>}
+      {item.status === 'approved' && item.requesterId === principal?.id &&
+        <button className="primary compact" disabled={busy}
+          onClick={() => void run(item.id, 'apply')}>应用已批准变更</button>}
+    </article>)}
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
 function ProjectPermissionSettings({ users, vms, refresh }: {
   users: UserView[]; vms: SharedVm[]; refresh: () => Promise<void>;
 }) {
@@ -635,6 +728,10 @@ function ProjectPermissionSettings({ users, vms, refresh }: {
   const [policy, setPolicy] = useState<ProjectPolicyView | null>(null);
   const [newRoleId, setNewRoleId] = useState('');
   const [newRoleName, setNewRoleName] = useState('');
+  const [ownerDocument, setOwnerDocument] = useState('');
+  const [ownerVersion, setOwnerVersion] = useState('');
+  const [ownerScope, setOwnerScope] = useState('');
+  const [ownerSummary, setOwnerSummary] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -661,6 +758,19 @@ function ProjectPermissionSettings({ users, vms, refresh }: {
       .then((result) => { setPolicy(result); setError(''); })
       .catch((reason) => { if (!abort.signal.aborted) setError(String(reason.message || reason)); });
     return () => abort.abort();
+  }, [vmId, projectId]);
+  const loadOwnerDocument = async () => {
+    const scope = `${vmId}:${projectId}`;
+    const result = await api<{ project: unknown; version: string }>(
+      `/vms/${vmId}/project?project=${projectId}`);
+    setOwnerDocument(JSON.stringify(result.project, null, 2));
+    setOwnerVersion(result.version);
+    setOwnerScope(scope);
+  };
+  useEffect(() => {
+    if (!vmId || !projectId) return;
+    setOwnerDocument(''); setOwnerVersion(''); setOwnerScope('');
+    void loadOwnerDocument().catch((reason) => setError(String(reason.message || reason)));
   }, [vmId, projectId]);
   return <section className="system-card" aria-label="项目权限管理">
     <h3>项目成员与权限</h3>
@@ -703,7 +813,7 @@ function ProjectPermissionSettings({ users, vms, refresh }: {
           setPolicy({ ...policy, roles: policy.roles.map((item, i) => i === index
             ? { ...item, name: event.target.value } : item) })} /></label>
         <span> {role.id} </span>
-        {(['read', 'write', 'execute'] as const).map((permission) => <label key={permission}>
+        {(['read', 'write', 'execute', 'approve'] as const).map((permission) => <label key={permission}>
           <input type="checkbox" checked={role.permissions.includes(permission)}
             disabled={permission === 'read'} onChange={(event) => setPolicy({ ...policy,
               roles: policy.roles.map((item, i) => i === index ? { ...item,
@@ -732,16 +842,42 @@ function ProjectPermissionSettings({ users, vms, refresh }: {
           <option value="">无权限</option>
           {policy.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
         </select></label>)}
+      <label><input type="checkbox" checked={policy.approvalRequired}
+        onChange={(event) => setPolicy({ ...policy, approvalRequired: event.target.checked })} />
+        项目配置变更需要第二位账户审批</label>
       <button className="primary compact" disabled={busy} onClick={async () => {
         setBusy(true); setError(''); setMessage('');
         try {
           const query = new URLSearchParams({ vmId, projectId });
           const updated = await api<ProjectPolicyView>(`/access/project-permissions?${query}`,
-            'PUT', { roles: policy.roles, grants: policy.grants });
+            'PUT', { roles: policy.roles, grants: policy.grants,
+              approvalRequired: policy.approvalRequired });
           setPolicy(updated); setMessage('项目权限已保存');
         } catch (reason) { setError(reason instanceof Error ? reason.message : '保存失败'); }
         finally { setBusy(false); }
       }}>保存项目权限</button>
+      {policy.approvalRequired && <><h4>提交管理员配置变更</h4>
+        <p>管理员提交的配置也须由另一位具有审批权限的成员确认。</p>
+        <button className="secondary compact" disabled={busy}
+          onClick={() => void loadOwnerDocument().catch((reason) =>
+            setError(String(reason.message || reason)))}>刷新当前配置与版本</button>
+        <label>变更摘要<input minLength={8} maxLength={500} value={ownerSummary}
+          onChange={(event) => setOwnerSummary(event.target.value)} /></label>
+        <label>拟提交的完整项目配置<textarea rows={12} spellCheck={false}
+          value={ownerDocument} onChange={(event) => setOwnerDocument(event.target.value)} /></label>
+        <button className="primary compact" disabled={busy || !ownerVersion ||
+          ownerScope !== `${vmId}:${projectId}` ||
+          ownerSummary.trim().length < 8} onClick={async () => {
+            setBusy(true); setError(''); setMessage('');
+            try {
+              await api('/access/changes', 'POST', { vmId, projectId,
+                summary: ownerSummary, project: JSON.parse(ownerDocument),
+                expectedVersion: ownerVersion });
+              setOwnerSummary(''); setMessage('管理员变更已提交，请由另一成员审阅');
+            } catch (reason) { setError(reason instanceof Error ? reason.message : '提交失败'); }
+            finally { setBusy(false); }
+          }}>提交管理员变更审批</button>
+      </>}
     </>}
     {message && <p role="status">{message}</p>}
     {error && <p role="alert" className="inline-error">{error}</p>}
@@ -834,6 +970,7 @@ export function AccessSettings() {
         }}>撤销</button>
       </li>)}</ul>
       <ProjectPermissionSettings users={users} vms={vms} refresh={refresh} />
+      <ChangeApprovalPanel />
       <JitOwnerPanel users={users} vms={vms} />
       <BrowserExtensionManager />
       <h4>更换管理员密码</h4>

@@ -312,7 +312,8 @@ export const nextFeatureCatalog = [
     '按项目定义读取、编辑、执行角色并映射成员；项目接口按当前角色逐请求校验。', 'available'],
   ['jit-privilege', 'JIT 临时授权', '安全与合规', 'P1',
     '只读账户按实例申请一次启停，管理员限时审批，可在执行前撤销。', 'available'],
-  ['dual-approval', '双人审批', '安全与合规', 'P0', '保存需要第二位成员确认的高风险操作。', 'planned'],
+  ['dual-approval', '双人审批', '安全与合规', 'P0',
+    '启用策略后，项目配置变更须由不同账户审阅完整配置并批准，再由申请人一次性应用。', 'available'],
   ['signed-policy-bundles', '签名策略包', '安全与合规', 'P1', '计算策略包摘要并记录签名状态。', 'planned'],
   [
     'remote-audit-lock',
@@ -478,7 +479,8 @@ export const nextFeatureCatalog = [
   ['team-templates', '团队模板', '协作与团队', 'P1',
     '预览并保存可复制的资源与项目蓝图，再按指纹创建独立实例；不复制私密配置。', 'available'],
   ['onboarding-checklist', '入门清单', '协作与团队', 'P1', '保存团队成员入门步骤和完成状态。', 'available'],
-  ['change-approval', '变更审批', '协作与团队', 'P0', '保存变更摘要、审批人和审批状态。', 'planned'],
+  ['change-approval', '变更审批', '协作与团队', 'P0',
+    '保存项目配置摘要、完整内容、基线版本、审批人与结果；版本变化拒绝应用。', 'available'],
   ['activity-digest', '活动摘要', '协作与团队', 'P2', '从任务和执行历史生成活动摘要。', 'available'],
   [
     'process-interop',
@@ -1042,10 +1044,13 @@ export class NextFeatures {
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
         message: '只读账户在分享页申请指定实例的一次启停操作；管理员在账户设置中审批，有效期内由申请者执行。' };
-    if (spec.id === 'custom-rbac' || spec.id === 'project-permissions')
-      return { ready: this.accountModeReady?.() || false, executed: false, adapter,
-        ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
-        message: '系统设置 → 账户与只读分享 → 项目成员与权限：为当前实例的项目定义角色、权限和成员分配；实际授权由项目 API 在请求时执行。' };
+    if (['custom-rbac', 'project-permissions', 'dual-approval', 'change-approval']
+      .includes(spec.id)) {
+      const ready = Boolean(this.accountModeReady?.() && this.workspaces);
+      return { ready, executed: false, adapter,
+        ...(!ready ? { reason: '请启用账户模式和项目工作区插件。' } : {}),
+        message: '系统设置 → 账户与只读分享 → 项目成员与权限：按项目配置角色、成员和双人变更审批；变更申请绑定完整配置与基线版本。' };
+    }
     if (spec.id === 'acme-renewal')
       return { ...await this.acmeRenewal.run(id, options, action, signal),
         adapter: { ...adapter, enabled: true } };

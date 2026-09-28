@@ -7,17 +7,18 @@ import type { AccessControl, Principal } from './access-control.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
 
-const permission = z.enum(['read', 'write', 'execute']);
+const permission = z.enum(['read', 'write', 'execute', 'approve']);
 const role = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/),
   name: z.string().trim().min(1).max(64),
-  permissions: z.array(permission).min(1).max(3),
+  permissions: z.array(permission).min(1).max(4),
 }).strict();
 const grant = z.object({ accountId: z.uuid(), roleId: role.shape.id }).strict();
 const scopeFields = z.object({
   vmId: z.uuid(), projectId: projectIdSchema,
   roles: z.array(role).min(1).max(20),
   grants: z.array(grant).max(40),
+  approvalRequired: z.boolean().default(false),
 }).strict();
 const scope = scopeFields.superRefine((value, ctx) => {
   const ids = value.roles.map((item) => item.id);
@@ -28,7 +29,7 @@ const scope = scopeFields.superRefine((value, ctx) => {
   for (const [index, item] of value.roles.entries()) {
     if (new Set(item.permissions).size !== item.permissions.length ||
         (!item.permissions.includes('read') && item.permissions.some((p) => p !== 'read')))
-      ctx.addIssue({ code: 'custom', message: '写入和执行角色须包含读取权限，权限不能重复',
+      ctx.addIssue({ code: 'custom', message: '非只读角色须包含读取权限，权限不能重复',
         path: ['roles', index, 'permissions'] });
   }
   for (const [index, item] of value.grants.entries())
@@ -36,7 +37,8 @@ const scope = scopeFields.superRefine((value, ctx) => {
       ctx.addIssue({ code: 'custom', message: '成员引用的角色不存在', path: ['grants', index, 'roleId'] });
 });
 const state = z.object({ version: z.literal(1), scopes: z.array(scope).max(1000) }).strict();
-export const projectPermissionInput = scopeFields.pick({ roles: true, grants: true });
+export const projectPermissionInput = scopeFields.pick({ roles: true, grants: true })
+  .extend({ approvalRequired: z.boolean().optional() });
 type Scope = z.infer<typeof scope>;
 export type ProjectPermission = z.infer<typeof permission>;
 
@@ -101,20 +103,24 @@ export class ProjectPermissions {
   async view(vmId: string, projectId: string) {
     await this.existing(vmId, projectId);
     const item = this.scopes.find((entry) => entry.vmId === vmId && entry.projectId === projectId);
-    return { vmId, projectId, roles: item?.roles || defaultRoles, grants: item?.grants || [] };
+    return { vmId, projectId, roles: item?.roles || defaultRoles,
+      grants: item?.grants || [], approvalRequired: item?.approvalRequired || false };
   }
 
   async configure(vmId: string, projectId: string, input: unknown) {
     const value = projectPermissionInput.parse(input);
-    scope.parse({ vmId, projectId, ...value });
     return this.serial(async () => {
+      const previous = this.scopes.find((item) => item.vmId === vmId && item.projectId === projectId);
+      const approvalRequired = value.approvalRequired ?? previous?.approvalRequired ?? false;
+      scope.parse({ vmId, projectId, ...value, approvalRequired });
       const index = await this.existing(vmId, projectId);
       if (value.grants.length) await this.requireIsolated(vmId, projectId, index);
       const members = new Set(this.access.users().filter((item) => item.role === 'member')
         .map((item) => item.id));
       if (value.grants.some((item) => !members.has(item.accountId)))
         throw new AppError('只能向现有项目成员账户授予角色', 409);
-      const next: Scope = { vmId, projectId, roles: value.roles, grants: value.grants };
+      const next: Scope = { vmId, projectId, roles: value.roles, grants: value.grants,
+        approvalRequired };
       const scopes = [...this.scopes.filter((item) =>
         item.vmId !== vmId || item.projectId !== projectId), next];
       if (scopes.length > 1000) throw new AppError('项目权限范围已达上限', 409);
@@ -129,7 +135,7 @@ export class ProjectPermissions {
     const live = this.access.users().some((item) => item.id === principal.id && item.role === 'member');
     if (!live) throw new AppError('账户已失效', 401);
     const results: Array<{ vmId: string; vmName: string; projectId: string; projectName: string;
-      roleId: string; permissions: ProjectPermission[] }> = [];
+      roleId: string; permissions: ProjectPermission[]; approvalRequired: boolean }> = [];
     for (const item of this.scopes) {
       const entry = item.grants.find((grant) => grant.accountId === principal.id);
       if (!entry) continue;
@@ -141,7 +147,8 @@ export class ProjectPermissions {
       if (project && await this.requireIsolated(item.vmId, item.projectId, index!)
         .then(() => true, () => false)) results.push({ vmId: item.vmId, vmName: vm.name,
         projectId: item.projectId, projectName: project.name,
-        roleId: role.id, permissions: [...role.permissions] });
+        roleId: role.id, permissions: [...role.permissions],
+        approvalRequired: item.approvalRequired });
     }
     return results;
   }
@@ -158,6 +165,22 @@ export class ProjectPermissions {
     const role = item?.roles.find((entry) => entry.id === grant?.roleId);
     if (!role?.permissions.includes(required)) throw new AppError('账户没有此项目操作权限', 403);
     await this.requireIsolated(vmId, projectId, index);
+  }
+
+  requiresApproval(vmId: string, projectId: string) {
+    return this.scopes.some((item) => item.vmId === vmId && item.projectId === projectId &&
+      item.approvalRequired);
+  }
+
+  async liveApprover(accountId: string, vmId: string, projectId: string) {
+    const account = this.access.users().find((item) => item.id === accountId);
+    if (!account) return false;
+    if (account.role === 'owner') return true;
+    if (account.role !== 'member' || (account.expiresAt && account.expiresAt <= Date.now()))
+      return false;
+    const principal: Principal = { id: account.id, username: account.username,
+      role: account.role, vmIds: [], expiresAt: Number.MAX_SAFE_INTEGER };
+    return this.require(principal, vmId, projectId, 'approve').then(() => true, () => false);
   }
 
   async revokeMember(accountId: string) {

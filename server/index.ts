@@ -43,6 +43,7 @@ import { Passkeys, passkeyRemove } from './passkeys.ts';
 import { TerminalSharing, terminalShareInput } from './terminal-sharing.ts';
 import { JitPrivileges } from './jit-privileges.ts';
 import { ProjectPermissions, type ProjectPermission } from './project-permissions.ts';
+import { ChangeApprovals } from './change-approvals.ts';
 import { BrowserExtensions, extensionOrigin } from './browser-extensions.ts';
 import { ProcessInterop, guestInteropRequest } from './process-interop.ts';
 
@@ -96,6 +97,9 @@ async function main() {
     (id) => rollouts.decision(id).allowed);
   const projectPermissions = new ProjectPermissions(access, machines, features.workspaces);
   await projectPermissions.init();
+  const changeApprovals = features.workspaces
+    ? new ChangeApprovals(projectPermissions, features.workspaces) : undefined;
+  await changeApprovals?.init();
   features.next?.setAcmeMutationCounter((delta) => { features.mutations += delta; });
   features.next?.setAcmeAllowed(() => !session.view().locked && !features.migration?.blocked);
   const processInterop = new ProcessInterop(machines, PORT, () => {
@@ -455,6 +459,8 @@ async function main() {
       /^\/api\/access\/terminal-shares\/[a-f0-9-]{36}$/.test(url.pathname);
     const jitRoute = url.pathname === '/api/access/jit' ||
       /^\/api\/access\/jit\/[a-f0-9-]{36}\/(decision|execute)$/.test(url.pathname);
+    const changeRoute = url.pathname === '/api/access/changes' ||
+      /^\/api\/access\/changes\/[a-f0-9-]{36}\/(decision|apply)$/.test(url.pathname);
     const memberProjectMatch = /^\/api\/vms\/([a-f0-9-]{36})\/(project|project-runtime|project-files|git|health)$/.exec(url.pathname);
     const memberProjectPermission = memberProjectMatch &&
       memberProjectRoutes[memberProjectMatch[2]]?.[req.method as 'GET' | 'PUT' | 'POST'];
@@ -469,7 +475,7 @@ async function main() {
         url.pathname !== '/api/access/logout' &&
         url.pathname !== '/api/access/handoff' &&
         url.pathname !== '/api/access/projects' && !passkeyManagementRoute &&
-        !memberProjectRoute)
+        !memberProjectRoute && !changeRoute)
       throw new AppError('项目成员没有此接口的访问权限', 403);
     if (accountPrincipal?.role === 'member' && memberProjectRoute) {
       if (!features.enabled.has('projects')) throw new AppError('项目工作区插件未启用', 403);
@@ -478,6 +484,8 @@ async function main() {
       if (!projectId) throw new AppError('项目成员请求必须指定项目 ID', 400);
       await projectPermissions.require(accountPrincipal, vmId, projectId, memberProjectPermission!);
       if (req.method === 'PUT' && memberProjectMatch![2] === 'project') {
+        if (projectPermissions.requiresApproval(vmId, projectId))
+          throw new AppError('此项目的配置变更需要第二位账户审批', 409);
         const proposal = projectSchema.parse(await authorizedBody(req, 32768));
         return features.workspaces.projects.with(vmId, projectId, async () => {
           const previous = await features.workspaces.config(vmId);
@@ -485,10 +493,45 @@ async function main() {
         });
       }
     }
+    if (accountPrincipal?.role === 'owner' && req.method === 'PUT' &&
+        memberProjectMatch?.[2] === 'project' && features.workspaces) {
+      const vmId = memberProjectMatch[1];
+      const projectId = url.searchParams.get('project') ||
+        (await features.workspaces.projects.list(vmId)).active;
+      if (projectPermissions.requiresApproval(vmId, projectId))
+        throw new AppError('此项目的配置变更需要第二位账户审批', 409);
+    }
     if (url.pathname === '/api/access/projects') {
       if (req.method !== 'GET' || accountPrincipal?.role !== 'member')
         throw new AppError('只有项目成员可查看授权项目', 403);
       return send(res, { projects: await projectPermissions.accessible(accountPrincipal) });
+    }
+    if (url.pathname === '/api/access/changes') {
+      if (!accountPrincipal || !changeApprovals)
+        throw new AppError('请先启用账户模式与项目工作区插件', 409);
+      if (req.method === 'GET')
+        return send(res, { changes: await changeApprovals.list(accountPrincipal) });
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await changeApprovals.create(accountPrincipal,
+        await authorizedBody(req, 65536)), 201);
+    }
+    if (/^\/api\/access\/changes\/[a-f0-9-]{36}\/decision$/.test(url.pathname)) {
+      if (req.method !== 'POST' || !accountPrincipal || !changeApprovals)
+        throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await changeApprovals.decide(accountPrincipal,
+        url.pathname.split('/')[4], await authorizedBody(req, 4096)));
+    }
+    if (/^\/api\/access\/changes\/[a-f0-9-]{36}\/apply$/.test(url.pathname)) {
+      if (req.method !== 'POST' || !accountPrincipal || !changeApprovals)
+        throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      z.object({}).strict().parse(await authorizedBody(req, 4096));
+      features.mutations++;
+      try { return send(res, await changeApprovals.apply(accountPrincipal,
+        url.pathname.split('/')[4])); }
+      finally { features.mutations--; }
     }
     if (url.pathname === '/api/access/view') {
       if (req.method !== 'GET' || !access.enabled) throw new AppError('不支持此方法', 405);
@@ -1263,6 +1306,7 @@ async function main() {
       () => terminalSharing.close(),
       () => jitPrivileges.close(),
       () => projectPermissions.close(),
+      () => changeApprovals?.close(),
       () => browserExtensions.close(),
       () => assistant.close(),
       () => native.close(),
