@@ -587,7 +587,8 @@ export const nextFeatureCatalog = [
   ['mobile-companion', '移动伴侣', '平台与扩展', 'P2', '保存移动设备配对和只读通知策略。', 'planned'],
   ['browser-extension', '浏览器扩展', '平台与扩展', 'P2',
     'Manifest V3 扩展以管理员一次性配对码连接本机服务，只读查看实例摘要；支持到期、撤销和连接状态。', 'available'],
-  ['tray-companion', 'Windows 托盘伴侣', '平台与扩展', 'P1', '保存托盘进程连接和启动策略。', 'planned'],
+  ['tray-companion', 'Windows 托盘伴侣', '平台与扩展', 'P1',
+    '运行 Windows 系统托盘进程，查看本机 Sakura 状态、打开控制台、启动服务并保存登录自启策略。', 'available'],
   ['feature-rollout', '功能开关与灰度', '平台与扩展', 'P0',
     '按稳定主机分桶和版本化比例控制所选插件下次启动时是否激活。', 'available'],
 ] as const;
@@ -1013,6 +1014,10 @@ export class NextFeatures {
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
         message: '从发行包加载 browser-extension，管理员在系统设置中生成五分钟配对码；扩展仅可读取实例摘要。' };
+    if (spec.id === 'tray-companion')
+      return { ready: process.platform === 'win32', executed: false, adapter,
+        ...(process.platform !== 'win32' ? { reason: '仅支持 Windows 主机。' } : {}),
+        message: '在 Windows 运行 npm run tray；托盘可显示本机状态、打开 Sakura、启动服务及设置登录自启。' };
     if (spec.id === 'jit-privilege')
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),

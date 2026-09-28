@@ -54,6 +54,8 @@
     "test:management": "tsx scripts/smoke-management.ts",
     "test:access": "tsx scripts/smoke-access.ts",
     "test:browser-extension": "tsx scripts/smoke-browser-extension.ts",
+    "test:tray": "tsx scripts/smoke-tray.ts",
+    "tray": "node scripts/start-tray.mjs",
     "test:shared-terminal": "tsx scripts/smoke-shared-terminal.ts",
     "test:development": "tsx scripts/smoke-development.ts",
     "plugins:check": "tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",

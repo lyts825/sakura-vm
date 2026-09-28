@@ -21,6 +21,11 @@ for (const file of ['popup.js', 'background.js']) {
     { encoding: 'utf8' });
   if (checked.status !== 0) throw new Error(`Invalid browser extension JavaScript: ${file}`);
 }
+for (const file of ['scripts/sakura-tray.ps1', 'scripts/start-tray.mjs'])
+  await stat(join(root, file));
+const trayJavaScript = spawnSync(process.execPath,
+  ['--check', join(root, 'scripts/start-tray.mjs')], { encoding: 'utf8' });
+if (trayJavaScript.status !== 0) throw new Error('Invalid tray launcher JavaScript');
 const jsFiles = [];
 async function collect(folder) {
   for (const item of await readdir(folder, { withFileTypes: true })) {
