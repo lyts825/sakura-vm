@@ -36,6 +36,8 @@ async function setup(
     }>,
     catalogs: {} as Record<string, any[]>,
     subscriptions: [] as Array<{ pluginId: string; types: string[]; enabled: boolean }>,
+    schedules: [] as Array<{ pluginId: string; intervalMinutes: number;
+      enabled: boolean; nextRunAt: number }>,
     deliveries: [] as Array<{ id: string; pluginId: string; event: { type: string;
       occurredAt: string }; status: string }>,
   };
@@ -90,6 +92,9 @@ async function setup(
         } satisfies PluginStatus,
       });
     }
+    if (path === '/api/community-plugins/extensions/sample-plugin/inspect')
+      return route.fulfill({ json: { pluginId: 'sample-plugin', version: '1.0.0',
+        result: { echoed: route.request().postDataJSON().text } } });
     if (path === '/api/community-plugins') {
       if (route.request().method() === 'POST') {
         const input = route.request().postDataJSON();
@@ -113,6 +118,10 @@ async function setup(
               version: '1.0.0',
               sha256: 'b'.repeat(64),
               publisher: 'a'.repeat(64),
+              extensions: { routes: [{ id: 'inspect', name: 'Inspect' }],
+                panels: [{ id: 'sample', title: '示例扩展', description: '安全 JSON 表单',
+                  routeId: 'inspect', fields: [{ key: 'text', label: '输入文本',
+                    type: 'text', required: true }] }] },
             },
           ];
         if (input.operation === 'install')
@@ -128,6 +137,14 @@ async function setup(
               types: input.types, enabled: input.enabled }];
         if (input.operation === 'unsubscribe')
           community.subscriptions = community.subscriptions.filter((item) =>
+            item.pluginId !== input.pluginId);
+        if (input.operation === 'schedule')
+          community.schedules = [...community.schedules.filter((item) =>
+            item.pluginId !== input.pluginId), { pluginId: input.pluginId,
+              intervalMinutes: input.intervalMinutes, enabled: input.enabled,
+              nextRunAt: Date.now() + input.intervalMinutes * 60000 }];
+        if (input.operation === 'unschedule')
+          community.schedules = community.schedules.filter((item) =>
             item.pluginId !== input.pluginId);
         if (input.operation === 'run')
           return route.fulfill({
@@ -227,6 +244,17 @@ test('community catalog requires a trusted publisher before installation and can
   await expect(market.getByRole('button', { name: '暂停自动触发' })).toBeVisible();
   await market.getByRole('button', { name: '暂停自动触发' }).click();
   await expect(market.getByRole('button', { name: '恢复自动触发' })).toBeVisible();
+  await market.getByRole('button', { name: '启用定时' }).click();
+  await expect(market.getByRole('button', { name: '暂停定时' })).toBeVisible();
+  await market.getByRole('button', { name: '暂停定时' }).click();
+  await expect(market.getByRole('button', { name: '恢复定时' })).toBeVisible();
+  const panel = market.getByRole('region', { name: '示例扩展' });
+  await panel.getByRole('textbox', { name: '输入文本' }).fill('hello');
+  await panel.getByRole('button', { name: '运行扩展操作' }).click();
+  await expect(panel.getByLabel('示例扩展 结果')).toContainText('hello');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(panel).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)).toBe(false);
   await market.getByRole('button', { name: '测试运行' }).click();
   await expect(market.getByLabel('隔离插件运行结果')).toContainText('"ok": true');
   await market.getByRole('button', { name: '卸载' }).click();

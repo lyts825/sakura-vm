@@ -1090,6 +1090,16 @@ async function main() {
       try { return send(res, await communityPlugins.action(await authorizedBody(req, 64 * 1024))); }
       finally { features.mutations--; }
     }
+    if (route[1] === 'community-plugins' && route[2] === 'extensions' && route.length === 5) {
+      if (principal.role !== 'owner') throw new AppError('只有管理员可调用第三方插件', 403);
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      features.mutations++;
+      try {
+        return send(res, await communityPlugins.invokeRoute(route[3], route[4],
+          await authorizedBody(req, 32 * 1024)));
+      } finally { features.mutations--; }
+    }
     if (await features.route(req, res, url, (request, signal, limit) => authorizedBody(request, limit, signal)))
       return;
     if (req.method === 'GET' && url.pathname === '/api/system')

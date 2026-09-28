@@ -64,6 +64,10 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
     version: '1.0.0',
     sha256: createHash('sha256').update(bytes).digest('hex'),
     publisher: fingerprint,
+    extensions: { routes: [{ id: 'inspect', name: 'Inspect' }],
+      panels: [{ id: 'summary', title: 'Summary', description: 'Inspect JSON',
+        routeId: 'inspect', fields: [{ key: 'text', label: 'Text',
+          type: 'text' as const, required: true }] }] },
   };
   const entry = {
     ...base,
@@ -86,6 +90,9 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
       await service.action({ operation: 'run', pluginId: base.id, input: { hello: 'world' } }),
       { pluginId: base.id, version: '1.0.0', result: { ok: true } },
     );
+    assert.deepEqual(await service.invokeRoute(base.id, 'inspect', { text: 'hello' }),
+      { pluginId: base.id, version: '1.0.0', result: { ok: true } });
+    await assert.rejects(service.invokeRoute(base.id, 'unknown', {}), /未声明/);
     const restored = new CommunityPlugins(file, directory);
     await restored.init();
     assert.deepEqual(await restored.action({ operation: 'run', pluginId: base.id, input: null }), {
@@ -103,6 +110,13 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
       /签名验证失败/,
     );
     assert.equal(service.view().installed[0].name, base.name);
+
+    listing = { schemaVersion: 1, plugins: [{ ...entry,
+      extensions: { ...entry.extensions, panels: [{ ...entry.extensions.panels[0],
+        title: 'Tampered panel' }] } }] };
+    await service.action({ operation: 'refresh', id: source.id });
+    await assert.rejects(service.action({ operation: 'install', sourceId: source.id,
+      pluginId: base.id }), /签名验证失败/);
 
     await writeFile(
       join(directory, `${base.id}-${base.version}-${base.sha256}.wasm`),
@@ -200,6 +214,21 @@ test('event subscriptions trigger signed WASM once for new metadata-only events'
     await restored.tick();
     assert.equal(restored.view().deliveries.length, 2);
     assert.equal(restored.view().deliveries[0].status, 'done');
+    await restored.action({ operation: 'schedule', pluginId: base.id,
+      intervalMinutes: 1, enabled: true });
+    now += 60_001;
+    await restored.tick();
+    assert.equal(restored.view().deliveries.length, 3);
+    assert.equal(restored.view().deliveries[0].event.type, 'plugin.timer');
+    assert.equal(restored.view().deliveries[0].status, 'done');
+    await restored.tick();
+    assert.equal(restored.view().deliveries.length, 3);
+    const roundtrip = new CommunityPlugins(file, directory);
+    await roundtrip.init();
+    assert.equal(roundtrip.view().deliveries[0].event.type, 'plugin.timer');
+    await roundtrip.close();
+    await restored.action({ operation: 'unschedule', pluginId: base.id });
+    assert.equal(restored.view().schedules.length, 0);
     await restored.action({ operation: 'uninstall', pluginId: base.id });
     assert.equal(restored.view().subscriptions.length, 0);
     await restored.close();

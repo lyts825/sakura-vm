@@ -135,7 +135,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 阈值告警与通知中心 / `alerts` | 部分实现 | 有资源阈值事件与确认；缺服务/备份统一告警及外部通知投递。 | [server/feature-suite.ts:511](D:/27247/Desktop/Sakura/server/feature-suite.ts:511) |
 | 镜像与软件包安全扫描 / `security-scan` | 已有专用操作 | 检查 SSH 设置、升级与可写系统文件，并按已安装源包版本实际匹配 OSV 漏洞；扫描失败明确显示未完成。 | [docs/security-scan.md](security-scan.md) |
 | 多用户与只读分享 / `rbac-sharing` | 未实现 | 只有本机共享管理令牌与同源检查；没有多用户、角色及只读短期分享。 | [server/index.ts:46](D:/27247/Desktop/Sakura/server/index.ts:46) |
-| 插件 API 与自动化触发器 / `plugin-api` | 部分实现 | 内置插件、签名 Webhook、签名 WebAssembly 纯计算插件及脱敏事件自动触发已实现；第三方 HTTP 路由与界面扩展仍缺。 | [server/community-plugins.ts](D:/27247/Desktop/Sakura/server/community-plugins.ts) |
+| 插件 API 与自动化触发器 / `plugin-api` | 已实现（隔离扩展） | 签名 WebAssembly 插件可订阅脱敏事件、按周期自动运行，并声明经管理员认证的 JSON HTTP 操作和纯表单面板；没有任意宿主 I/O 或前端代码执行权限。 | [server/community-plugins.ts](D:/27247/Desktop/Sakura/server/community-plugins.ts) |
 
 ### 第二批（100 条）
 

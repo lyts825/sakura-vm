@@ -24,6 +24,11 @@
 .community-plugin-entry p { margin: 4px 0; }
 .community-plugin-entry small { color: var(--muted); }
 .community-plugin-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.community-plugin-extension { margin: 0 0 16px; padding: 16px; border: 1px solid var(--line);
+  border-radius: 10px; }
+.community-plugin-extension h4 { margin: 0 0 8px; }
+.community-plugin-extension input[type="checkbox"] { display: inline-block; width: auto; margin: 0 0 0 8px; }
+.community-plugin-extension .feature-log { max-height: 240px; overflow: auto; }
 @media (max-width: 720px) {
   .community-plugin-forms { grid-template-columns: 1fr; }
   .community-plugin-entry { align-items: flex-start; flex-direction: column; }

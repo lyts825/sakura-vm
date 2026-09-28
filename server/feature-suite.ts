@@ -87,7 +87,8 @@ export const featureCatalog = [
   ['security-scan', '镜像与软件包安全扫描', '运维与安全', 'P1', '检查 CVE、弱配置和过期组件。'],
   ['rbac-sharing', '多用户与只读分享', '运维与安全', 'P2',
     '可选账户模式提供管理员与限定实例的只读账户、短期会话令牌和按身份记录的写操作审计。'],
-  ['plugin-api', '插件 API 与自动化触发器', '运维与安全', 'P1', '开放事件、定时任务、Webhook 和扩展面板。'],
+  ['plugin-api', '插件 API 与自动化触发器', '运维与安全', 'P1',
+    '提供脱敏事件、定时触发、签名 Webhook，以及受限 JSON HTTP 操作与声明式扩展面板。'],
 ] as const;
 
 export const resourcePresets = {
@@ -159,8 +160,9 @@ const availableFeatureIds = new Set<FeatureId>([
   'security-scan',
   'vpn-integration',
   'rbac-sharing',
+  'plugin-api',
 ]);
-const partialFeatureIds = new Set<FeatureId>(['plugin-api']);
+const partialFeatureIds = new Set<FeatureId>();
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
   featureCatalog.map(([id, name, category, priority, summary]) => ({
@@ -605,8 +607,9 @@ export class FeatureSuite {
       result.controlPlane = 'opt-in-owner-viewer-accounts';
       result.reason = '系统设置 → 账户与只读分享：启用独立账户，管理员可为指定实例创建有期限的只读账户。账户会话按期限失效，写请求记录账户 ID；当前仍只监听本机。';
     } else if (featureId === 'plugin-api') {
-      result.controlPlane = 'local-token-and-event-bus';
-      result.reason = '插件中心的签名 WebAssembly 插件可订阅脱敏任务或告警事件并自动运行，保留触发结果；第三方 HTTP 路由与界面扩展仍未实现。';
+      result.ready = true;
+      result.controlPlane = 'signed-isolated-wasm-extensions';
+      result.reason = '插件中心支持签名 WebAssembly 插件、脱敏事件订阅、定时触发、管理员 HTTP 操作及声明式表单面板；插件不能执行宿主 I/O 或注入前端代码。';
     }
     const state = await this.state();
     state.featureRuns ||= {};

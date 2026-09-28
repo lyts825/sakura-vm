@@ -331,6 +331,9 @@ const core: {
     title: '第三方签名插件目录、来源与安装状态', inspect: true },
   { id: 'community-plugins.change', method: 'POST', path: '/api/community-plugins',
     title: '信任发布者、管理目录、安装或运行隔离插件', body: request(communityPluginRequest) },
+  { id: 'community-plugins.extension', method: 'POST',
+    path: '/api/community-plugins/extensions/{pluginId}/{routeId}',
+    title: '调用签名插件声明的隔离 HTTP 操作', body: {} },
   {
     id: 'plugins.change',
     method: 'PATCH',

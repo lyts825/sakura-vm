@@ -8,6 +8,9 @@ type Entry = {
   version: string;
   sha256: string;
   publisher: string;
+  extensions?: { routes: Array<{ id: string; name: string }>;
+    panels: Array<{ id: string; title: string; description: string; routeId: string;
+      fields: Array<{ key: string; label: string; type: 'text' | 'number' | 'boolean'; required: boolean }> }> };
 };
 type View = {
   publishers: Array<{ fingerprint: string; name: string }>;
@@ -17,6 +20,8 @@ type View = {
   problems?: Record<string, string>;
   subscriptions?: Array<{ pluginId: string; types: Array<'job.finished' | 'alert.raised'>;
     enabled: boolean }>;
+  schedules?: Array<{ pluginId: string; intervalMinutes: number; enabled: boolean;
+    nextRunAt: number }>;
   deliveries?: Array<{ id: string; pluginId: string; event: { type: string; occurredAt: string };
     status: 'pending' | 'done' | 'failed'; error?: string; resultPreview?: string }>;
   eventError?: string;
@@ -33,6 +38,62 @@ const validView = (value: unknown): value is View => {
   );
 };
 
+function CommunityExtensionPanel({ pluginId, panel, request }: {
+  pluginId: string; panel: NonNullable<Entry['extensions']>['panels'][number]; request: Request;
+}) {
+  const [values, setValues] = useState<Record<string, string | boolean>>({});
+  const [result, setResult] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const invalid = panel.fields.some((field) => {
+    const value = values[field.key];
+    return field.required && value === undefined && field.type !== 'boolean' ||
+      field.required && value === '' ||
+      field.type === 'number' && value !== undefined && value !== '' &&
+        !Number.isFinite(Number(value));
+  });
+  const submit = async () => {
+    if (busy || invalid) return;
+    setBusy(true);
+    setError('');
+    try {
+      const body: Record<string, unknown> = {};
+      for (const field of panel.fields) {
+        const value = values[field.key];
+        if (field.type === 'boolean') body[field.key] = value === true;
+        else if (value !== undefined && value !== '')
+          body[field.key] = field.type === 'number' ? Number(value) : value;
+      }
+      const response = await request<unknown>(
+        `/community-plugins/extensions/${pluginId}/${panel.routeId}`, 'POST', body);
+      setResult(JSON.stringify(response, null, 2));
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <section className="community-plugin-extension" aria-label={panel.title}>
+    <h4>{panel.title}</h4>
+    {panel.description && <p className="muted">{panel.description}</p>}
+    {panel.fields.map((field) => <label key={field.key}>
+      {field.label}
+      {field.type === 'boolean' ? <input type="checkbox" checked={values[field.key] === true}
+        onChange={(event) => setValues((current) => ({ ...current,
+          [field.key]: event.target.checked }))} /> :
+        <input type={field.type === 'number' ? 'number' : 'text'}
+          value={String(values[field.key] ?? '')} maxLength={field.type === 'text' ? 4096 : undefined}
+          onChange={(event) => setValues((current) => ({ ...current,
+            [field.key]: event.target.value }))} />}
+    </label>)}
+    <button className="secondary compact" disabled={busy || invalid} onClick={() => void submit()}>
+      {busy ? '处理中…' : '运行扩展操作'}
+    </button>
+    {error && <p role="alert">{error}</p>}
+    {result && <pre className="feature-log" aria-label={panel.title + ' 结果'}>{result}</pre>}
+  </section>;
+}
+
 export function CommunityPluginCenter({ request }: { request: Request }) {
   const [view, setView] = useState<View | null>(null);
   const [publisherName, setPublisherName] = useState('');
@@ -41,6 +102,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
   const [sourceUrl, setSourceUrl] = useState('');
   const [input, setInput] = useState('{}');
   const [result, setResult] = useState('');
+  const [scheduleMinutes, setScheduleMinutes] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -236,7 +298,8 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                 <textarea rows={4} value={input} onChange={(event) => setInput(event.target.value)} />
               </label>
               {view.installed.map((item) => (
-                <div className="community-plugin-entry" key={item.id}>
+                <div key={item.id}>
+                <div className="community-plugin-entry">
                   <span>
                     <strong>{item.name}</strong>{' '}
                     <code>
@@ -247,6 +310,8 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                   <div className="community-plugin-actions">
                     {(() => {
                       const subscription = view.subscriptions?.find((value) => value.pluginId === item.id);
+                      const schedule = view.schedules?.find((value) => value.pluginId === item.id);
+                      const minutes = scheduleMinutes[item.id] ?? schedule?.intervalMinutes ?? 60;
                       return <>
                         <button className="secondary compact" disabled={busy}
                           onClick={() => void act({ operation: 'subscribe', pluginId: item.id,
@@ -258,6 +323,22 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                         {subscription && <button className="secondary compact" disabled={busy}
                           onClick={() => void act({ operation: 'unsubscribe', pluginId: item.id },
                             '事件订阅已移除')}>移除订阅</button>}
+                        <label>定时周期（分钟）
+                          <input type="number" min={1} max={1440} value={minutes}
+                            style={{ width: 96 }}
+                            onChange={(event) => setScheduleMinutes((current) => ({ ...current,
+                              [item.id]: Number(event.target.value) }))} />
+                        </label>
+                        <button className="secondary compact"
+                          disabled={busy || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440}
+                          onClick={() => void act({ operation: 'schedule', pluginId: item.id,
+                            intervalMinutes: minutes, enabled: !schedule?.enabled },
+                          schedule?.enabled ? '定时触发已暂停' : '定时触发已启用')}>
+                          {schedule?.enabled ? '暂停定时' : schedule ? '恢复定时' : '启用定时'}
+                        </button>
+                        {schedule && <button className="secondary compact" disabled={busy}
+                          onClick={() => void act({ operation: 'unschedule', pluginId: item.id },
+                            '定时触发已移除')}>移除定时</button>}
                       </>;
                     })()}
                     <button
@@ -284,6 +365,10 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                       卸载
                     </button>
                   </div>
+                </div>
+                {item.extensions?.panels.map((panel) =>
+                  <CommunityExtensionPanel key={panel.id} pluginId={item.id} panel={panel}
+                    request={request} />)}
                 </div>
               ))}
               {result && (

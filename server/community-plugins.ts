@@ -25,6 +25,28 @@ const publisher = z
 const source = z
   .object({ id: z.uuid(), name: label, url: z.url().max(1024), addedAt: z.number().int().positive() })
   .strict();
+const extensionId = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+const extensionRoute = z.object({ id: extensionId, name: label }).strict();
+const extensionField = z.object({ key: extensionId, label,
+  type: z.enum(['text', 'number', 'boolean']), required: z.boolean() }).strict();
+const extensionPanel = z.object({ id: extensionId, title: label,
+  description: z.string().max(200), routeId: extensionId,
+  fields: z.array(extensionField).max(8) }).strict();
+const extensions = z.object({ routes: z.array(extensionRoute).max(8),
+  panels: z.array(extensionPanel).max(4) }).strict().superRefine((value, context) => {
+  if (new Set(value.routes.map((item) => item.id)).size !== value.routes.length)
+    context.addIssue({ code: 'custom', path: ['routes'], message: '扩展路由不能重复' });
+  if (new Set(value.panels.map((item) => item.id)).size !== value.panels.length)
+    context.addIssue({ code: 'custom', path: ['panels'], message: '扩展面板不能重复' });
+  for (const [index, panel] of value.panels.entries()) {
+    if (!value.routes.some((route) => route.id === panel.routeId))
+      context.addIssue({ code: 'custom', path: ['panels', index, 'routeId'],
+        message: '扩展面板必须引用已声明的路由' });
+    if (new Set(panel.fields.map((field) => field.key)).size !== panel.fields.length)
+      context.addIssue({ code: 'custom', path: ['panels', index, 'fields'],
+        message: '扩展表单字段不能重复' });
+  }
+});
 const entry = z
   .object({
     schemaVersion: z.literal(1),
@@ -36,6 +58,7 @@ const entry = z
     publisher: digest,
     signature,
     wasmUrl: z.string().min(1).max(1024),
+    extensions: extensions.optional(),
   })
   .strict();
 const catalog = z.object({ schemaVersion: z.literal(1), plugins: z.array(entry).max(100) }).strict();
@@ -47,7 +70,12 @@ const subscribedTypes = z.array(z.enum(webhookTypes)).min(1).max(2)
   .refine((values) => new Set(values).size === values.length, '事件类型不能重复');
 const subscription = z.object({ pluginId, types: subscribedTypes, enabled: z.boolean(),
   activeSince: z.number().int().nonnegative(), updatedAt: z.number().int().nonnegative() }).strict();
-const delivery = z.object({ id: digest, pluginId, event: eventSchema,
+const schedule = z.object({ pluginId, intervalMinutes: z.number().int().min(1).max(1440),
+  enabled: z.boolean(), nextRunAt: z.number().int().nonnegative(),
+  updatedAt: z.number().int().nonnegative() }).strict();
+const timerEvent = z.object({ id: digest, type: z.literal('plugin.timer'),
+  occurredAt: z.iso.datetime(), tags: z.tuple([]) }).strict();
+const delivery = z.object({ id: digest, pluginId, event: z.union([eventSchema, timerEvent]),
   status: z.enum(['pending', 'done', 'failed']),
   processedAt: z.number().int().nonnegative().optional(),
   error: z.string().max(300).optional(), resultPreview: z.string().max(8192).optional() }).strict();
@@ -59,6 +87,7 @@ const stateSchema = z
     installed: z.array(installed).max(64),
     catalogs: z.record(z.string(), z.array(entry).max(100)),
     subscriptions: z.array(subscription).max(64).default([]),
+    schedules: z.array(schedule).max(64).default([]),
     deliveries: z.array(delivery).max(200).default([]),
     observed: z.record(digest, z.number().int().nonnegative()).default({}),
   })
@@ -72,6 +101,7 @@ const defaults = (): State => ({
   installed: [],
   catalogs: {},
   subscriptions: [],
+  schedules: [],
   deliveries: [],
   observed: {},
 });
@@ -89,6 +119,9 @@ export const communityPluginRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('subscribe'), pluginId, types: subscribedTypes,
     enabled: z.boolean() }).strict(),
   z.object({ operation: z.literal('unsubscribe'), pluginId }).strict(),
+  z.object({ operation: z.literal('schedule'), pluginId,
+    intervalMinutes: z.number().int().min(1).max(1440), enabled: z.boolean() }).strict(),
+  z.object({ operation: z.literal('unschedule'), pluginId }).strict(),
 ]);
 
 function publicKey(value: string): { key: KeyObject; fingerprint: string } {
@@ -105,7 +138,7 @@ function publicKey(value: string): { key: KeyObject; fingerprint: string } {
 }
 
 export function signedPluginPayload(
-  value: Pick<Entry, 'schemaVersion' | 'id' | 'name' | 'description' | 'version' | 'sha256' | 'publisher'>,
+  value: Pick<Entry, 'schemaVersion' | 'id' | 'name' | 'description' | 'version' | 'sha256' | 'publisher' | 'extensions'>,
 ) {
   return Buffer.from(
     JSON.stringify({
@@ -116,6 +149,7 @@ export function signedPluginPayload(
       version: value.version,
       sha256: value.sha256,
       publisher: value.publisher,
+      ...(value.extensions ? { extensions: value.extensions } : {}),
     }),
     'utf8',
   );
@@ -279,6 +313,9 @@ export class CommunityPlugins {
       new Set(this.state.subscriptions.map((item) => item.pluginId)).size !== this.state.subscriptions.length ||
       this.state.subscriptions.some((item) =>
         !this.state.installed.some((installed) => installed.id === item.pluginId)) ||
+      new Set(this.state.schedules.map((item) => item.pluginId)).size !== this.state.schedules.length ||
+      this.state.schedules.some((item) =>
+        !this.state.installed.some((installed) => installed.id === item.pluginId)) ||
       new Set(this.state.deliveries.map((item) => item.id)).size !== this.state.deliveries.length ||
       Object.keys(this.state.observed).length > 20000
     )
@@ -331,6 +368,7 @@ export class CommunityPlugins {
       catalogs: this.state.catalogs,
       problems: this.problems,
       subscriptions: this.state.subscriptions,
+      schedules: this.state.schedules,
       deliveries: this.state.deliveries.slice(-40).reverse(),
       eventError: this.eventError,
     };
@@ -434,6 +472,7 @@ export class CommunityPlugins {
         if (!old) throw new AppError('插件未安装', 404);
         next.installed = next.installed.filter((item) => item.id !== input.pluginId);
         next.subscriptions = next.subscriptions.filter((item) => item.pluginId !== input.pluginId);
+        next.schedules = next.schedules.filter((item) => item.pluginId !== input.pluginId);
         for (const item of next.deliveries)
           if (item.pluginId === input.pluginId && item.status === 'pending') {
             item.status = 'failed';
@@ -465,10 +504,49 @@ export class CommunityPlugins {
             item.processedAt = this.now();
             item.error = '事件订阅已移除';
           }
+      } else if (input.operation === 'schedule') {
+        if (!next.installed.some((item) => item.id === input.pluginId))
+          throw new AppError('请先安装插件', 404);
+        const current = next.schedules.findIndex((item) => item.pluginId === input.pluginId);
+        if (current < 0 && next.schedules.length >= 64)
+          throw new AppError('定时触发数量已达上限', 409);
+        const value = { pluginId: input.pluginId, intervalMinutes: input.intervalMinutes,
+          enabled: input.enabled, nextRunAt: this.now() + input.intervalMinutes * 60000,
+          updatedAt: this.now() };
+        if (current < 0) next.schedules.push(value);
+        else next.schedules[current] = value;
+        if (!input.enabled)
+          for (const item of next.deliveries)
+            if (item.pluginId === input.pluginId && item.event.type === 'plugin.timer' &&
+                item.status === 'pending') {
+              item.status = 'failed';
+              item.processedAt = this.now();
+              item.error = '定时触发已暂停';
+            }
+      } else if (input.operation === 'unschedule') {
+        if (!next.schedules.some((item) => item.pluginId === input.pluginId))
+          throw new AppError('插件尚无定时触发', 404);
+        next.schedules = next.schedules.filter((item) => item.pluginId !== input.pluginId);
+        for (const item of next.deliveries)
+          if (item.pluginId === input.pluginId && item.event.type === 'plugin.timer' &&
+              item.status === 'pending') {
+            item.status = 'failed';
+            item.processedAt = this.now();
+            item.error = '定时触发已移除';
+          }
       }
       await this.save(next);
       return this.view();
     });
+  }
+
+  async invokeRoute(rawPluginId: string, rawRouteId: string, body: unknown) {
+    const id = pluginId.parse(rawPluginId);
+    const routeId = extensionId.parse(rawRouteId);
+    const item = this.state.installed.find((candidate) => candidate.id === id);
+    if (!item?.extensions?.routes.some((route) => route.id === routeId))
+      throw new AppError('签名插件未声明此 HTTP 操作', 404);
+    return this.run(id, { kind: 'http', routeId, body });
   }
 
   async tick() {
@@ -476,7 +554,7 @@ export class CommunityPlugins {
     if (this.pending) return this.pending;
     this.mutation(1);
     const task = this.deliverEvents().then(
-      () => { this.eventError = undefined; },
+      (sourceError) => { this.eventError = sourceError; },
       (error) => { this.eventError = String((error as Error).message || error).slice(0, 300); },
     ).finally(() => {
       if (this.pending === task) this.pending = undefined;
@@ -487,7 +565,11 @@ export class CommunityPlugins {
   }
 
   private async deliverEvents() {
-    const events = (await this.source!()).slice(-500)
+    let fetched: WebhookEvent[] = [];
+    let sourceError: string | undefined;
+    try { fetched = await this.source!(); }
+    catch (error) { sourceError = String((error as Error).message || error).slice(0, 300); }
+    const events = fetched.slice(-500)
       .flatMap((item) => {
         const parsed = eventSchema.safeParse(item);
         return parsed.success && parsed.data.type !== 'test' ? [parsed.data] : [];
@@ -505,6 +587,22 @@ export class CommunityPlugins {
         ...pending,
       ];
       const selected = pending.slice(0, 8);
+      for (const schedule of next.schedules) {
+        if (selected.length >= 8 || next.deliveries.length >= 200) break;
+        if (!schedule.enabled || schedule.nextRunAt > now) continue;
+        const scheduledAt = schedule.nextRunAt;
+        const id = sha256(Buffer.from(`${schedule.pluginId}:timer:${scheduledAt}`));
+        schedule.nextRunAt = now + schedule.intervalMinutes * 60000;
+        if (next.observed[id]) continue;
+        if (Object.keys(next.observed).length >= 20000)
+          throw new AppError('插件事件去重窗口已满，请稍后重试', 409);
+        const event = { id, type: 'plugin.timer' as const,
+          occurredAt: new Date(scheduledAt).toISOString(), tags: [] as [] };
+        const item = { id, pluginId: schedule.pluginId, event, status: 'pending' as const };
+        next.observed[id] = now;
+        next.deliveries.push(item);
+        selected.push(item);
+      }
       for (const event of events) {
         if (event.type === 'test') continue;
         if (selected.length >= 8 || next.deliveries.length >= 200) break;
@@ -532,7 +630,9 @@ export class CommunityPlugins {
       let status: 'done' | 'failed' = 'done';
       let resultPreview: string | undefined, error: string | undefined;
       try {
-        const output = await this.run(task.pluginId, { kind: 'event', event: task.event });
+        const output = await this.run(task.pluginId, task.event.type === 'plugin.timer'
+          ? { kind: 'schedule', scheduledAt: task.event.occurredAt }
+          : { kind: 'event', event: task.event });
         resultPreview = JSON.stringify(output.result).slice(0, 8192);
       } catch (failure) {
         status = 'failed';
@@ -549,6 +649,7 @@ export class CommunityPlugins {
         await this.save(next);
       });
     }
+    return sourceError;
   }
 
   private async run(id: string, input: unknown) {
