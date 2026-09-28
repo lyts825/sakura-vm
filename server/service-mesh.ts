@@ -172,13 +172,16 @@ envoy --version 2>/dev/null | head -n 1
     const projectId = this.project(id);
     const policy = this.store.policies[id]?.[projectId] || null;
     const guest = await this.guestStatus(id, projectId, signal);
+    const isolated = (await this.workspaces.config(id)).networkIsolation === 'private';
     return {
       projectId,
       policy,
       ...guest,
-      ready: Boolean(policy && guest.guestRunning && guest.envoyInstalled && guest.tmuxInstalled),
+      ready: Boolean(policy && guest.guestRunning && guest.envoyInstalled && guest.tmuxInstalled && !isolated),
       executed: false,
-      ...(!policy
+      ...(isolated
+        ? { reason: '私有项目网络不开放服务网格端口，请切换为共享客户机网络。' }
+        : !policy
         ? { reason: '请先保存此项目的边车策略。' }
         : !guest.guestRunning
           ? { reason: '请先启动 Linux 实例。' }
@@ -263,6 +266,8 @@ envoy --version 2>/dev/null | head -n 1
         return { ...(await this.status(id, signal)), ready: true, executed: true, message: '边车已停止。' };
       }
       if (!current) throw new AppError('请先保存此项目的边车策略', 409);
+      if ((await this.workspaces.config(id)).networkIsolation === 'private')
+        throw new AppError('私有项目网络不开放服务网格端口，请切换为共享客户机网络', 409);
       if (!guest.envoyInstalled || !guest.tmuxInstalled)
         throw new AppError('客户机需要已安装的 Envoy 和 tmux', 409);
       if (guest.sidecarRunning) throw new AppError('此项目边车已经运行，请先停止', 409);

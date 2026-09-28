@@ -21,6 +21,7 @@ const projectBlueprint = z.object({
   template: projectSchema.shape.template,
   repository: projectSchema.shape.repository,
   previewPort: projectSchema.shape.previewPort,
+  networkIsolation: projectSchema.shape.networkIsolation,
   runtimes: projectSchema.shape.runtimes,
 }).strict();
 const contentSchema = z.object({ resources: resourceSchema, project: projectBlueprint }).strict();
@@ -86,7 +87,8 @@ export class TeamTemplates {
       },
       project: {
         directory: '/workspace', template: project.template, repository,
-        previewPort: project.previewPort, runtimes: project.runtimes,
+        previewPort: project.previewPort, networkIsolation: project.networkIsolation,
+        runtimes: project.runtimes,
       },
     });
   }

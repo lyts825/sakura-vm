@@ -147,6 +147,9 @@ export class Containers {
       value.action === 'install' || value.action === 'install-devcontainer-cli'
         ? { directory: '/workspace', environment: await this.workspaces.networkEnvironment(id) }
         : await this.workspaces.resolvedConfig(id);
+    if ('networkIsolation' in project && project.networkIsolation === 'private' &&
+        ['devcontainer-up', 'dockerfile-up', 'compose-up', 'start', 'restart'].includes(value.action))
+      throw new AppError('私有项目网络不能启动使用客户机 Docker 网络的容器', 409);
     return this.jobs.start(
       id,
       async (log, signal) => {

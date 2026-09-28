@@ -13,6 +13,7 @@ import { envPrefix } from './project-services.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { repositoryPath } from './git-workbench.ts';
+import { ensureProjectNetworkScript, projectNetworkCommand } from './project-network-isolation.ts';
 
 export const pipelineSchema = z
   .object({
@@ -157,7 +158,9 @@ export class Pipelines {
               const result = await guestTask(
                 this.machines,
                 id,
-                `set -e\ncd ${quote(project.directory)}\n${envPrefix(project.environment)}\n${definitionStep.command}`,
+                `set -e\n${ensureProjectNetworkScript(project, this.machines.get(id).distro || 'alpine')}` +
+                  projectNetworkCommand(project,
+                    `cd ${quote(project.directory)}\n${envPrefix(project.environment)}\n${definitionStep.command}`),
                 signal,
                 output.write,
                 definitionStep.timeout * 1000,

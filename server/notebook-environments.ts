@@ -112,13 +112,16 @@ export class NotebookEnvironments {
       session ? this.alive(id, projectId, signal) : Promise.resolve(false),
     ]) : [false, false];
     const reachable = alive && session ? await this.probeHttp(session) : false;
-    return { ready: running, executed: false, installed,
+    const isolated = project.networkIsolation === 'private';
+    return { ready: running && !isolated, executed: false, installed,
       session: session ? { provider: session.provider, directory: session.directory,
         guestPort: session.guestPort, hostPort: session.hostPort,
         status: !alive ? 'stopped' : reachable ? 'running' : 'unhealthy',
         startedAt: session.startedAt, needsReview: session.status === 'review' } : null,
       projectId,
-      message: running ? '可安装、启动或停止当前项目的 Notebook 会话。' : '请先启动实例。' };
+      message: !running ? '请先启动实例。' : isolated
+        ? '私有项目网络不开放 Notebook 端口，请切换为共享客户机网络。'
+        : '可安装、启动或停止当前项目的 Notebook 会话。' };
   }
 
   private async install(id: string, directory: string, provider: Provider,
@@ -174,6 +177,8 @@ export class NotebookEnvironments {
     const { projectId, session: prior } = this.context(id);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
     const project = await this.workspaces.config(id);
+    if (project.networkIsolation === 'private')
+      throw new AppError('私有项目网络不开放 Notebook 端口，请切换为共享客户机网络', 409);
     if (prior && await this.alive(id, projectId, signal)) {
       if (prior.provider !== options.provider || prior.directory !== project.directory ||
           prior.hostPort !== options.hostPort || prior.guestPort !== options.guestPort)

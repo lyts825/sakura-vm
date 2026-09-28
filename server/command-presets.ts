@@ -12,6 +12,7 @@ import { readStore, writeStore } from './local-store.ts';
 import { readVersionedStore, writeVersionedStore } from './plugin-data.ts';
 import { join } from 'node:path';
 import { vmDir } from './model.ts';
+import { ensureProjectNetworkScript, projectNetworkCommand } from './project-network-isolation.ts';
 
 export const presetSchema = z
   .object({
@@ -103,7 +104,9 @@ export class CommandPresets {
           const result = await guestTask(
             this.machines,
             id,
-            `set -e\ncd ${quote(project.directory)}\n${envPrefix(project.environment)}\n${script}`,
+            `set -e\n${ensureProjectNetworkScript(project, this.machines.get(id).distro || 'alpine')}` +
+              projectNetworkCommand(project,
+                `cd ${quote(project.directory)}\n${envPrefix(project.environment)}\n${script}`),
             signal,
             output.write,
           );

@@ -83,6 +83,8 @@ test('project boundaries accept explicit guest commands but reject invalid paths
     { directory: 'relative' },
     { repository: 'file:///etc/shadow' },
     { previewPort: 80 },
+    { networkIsolation: 'private', previewPort: 18080 },
+    { networkIsolation: 'unrestricted' },
     { template: 'shell' },
     { hostCommand: 'cmd.exe' },
   ])
@@ -143,8 +145,9 @@ test('setup identity changes only when preparation inputs change', () => {
   for (const patch of [
     { directory: '/workspace/other' },
     { repository: 'https://example.com/repo.git' },
-    { template: 'node' as const },
-    { setup: 'npm install' },
+      { template: 'node' as const },
+      { setup: 'npm install' },
+      { networkIsolation: 'private' as const },
   ])
     assert.notEqual(setupFingerprint({ ...project, ...patch }), original);
 });

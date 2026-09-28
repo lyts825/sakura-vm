@@ -149,6 +149,8 @@ export class BrowserIde {
   async view(id: string, input: unknown = {}, signal?: AbortSignal) {
     browserIdeInput.parse(input);
     const { vm, projectId, session } = this.context(id);
+    const project = await this.workspaces.config(id);
+    const isolated = project.networkIsolation === 'private';
     const supported = vm.distro === 'debian' || vm.distro === 'ubuntu';
     const running = this.machines.state(id) === 'running';
     const expired = !!session && Date.now() >= Date.parse(session.expiresAt);
@@ -157,7 +159,7 @@ export class BrowserIde {
       session && !expired ? this.alive(id, projectId, signal) : Promise.resolve(false),
     ]) : [false, false];
     const reachable = alive && session ? await this.probeHttp(session) : false;
-    return { ready: supported && running, executed: false, supported, installed,
+    return { ready: supported && running && !isolated, executed: false, supported, installed,
       session: session ? { directory: session.directory, hostPort: session.hostPort,
         guestPort: session.guestPort, startedAt: session.startedAt,
         expiresAt: session.expiresAt,
@@ -166,6 +168,7 @@ export class BrowserIde {
       projectId,
       message: !supported ? '浏览器 IDE 目前支持 Debian 和 Ubuntu 客户机。'
         : !running ? '请先启动实例。'
+          : isolated ? '私有项目网络不开放浏览器 IDE 端口，请切换为共享客户机网络。'
           : '可为当前项目安装、启动或停止带密码的浏览器 IDE。' };
   }
 
@@ -239,6 +242,8 @@ test -x ${quote(binary)}`;
       throw new AppError('浏览器 IDE 目前支持 Debian 和 Ubuntu 客户机', 409);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
     const project = await this.workspaces.config(id);
+    if (project.networkIsolation === 'private')
+      throw new AppError('私有项目网络不开放浏览器 IDE 端口，请切换为共享客户机网络', 409);
     if (prior && Date.now() < Date.parse(prior.expiresAt) &&
         await this.alive(id, projectId, signal)) {
       if (prior.directory !== project.directory || prior.hostPort !== options.hostPort ||

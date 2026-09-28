@@ -21,6 +21,8 @@ import type { NetworkProfiles } from './network-profiles.ts';
 import { ProjectCatalog } from './project-catalog.ts';
 import { runtimesSchema, runtimeEnvironment } from './runtime-versions.ts';
 import { guardProjectQuotaDirectory, projectQuota, readProjectQuotaRecord } from './project-quota.ts';
+import { ensureProjectNetworkScript, projectNetworkCommand,
+  removeProjectNetwork } from './project-network-isolation.ts';
 
 export const projectSchema = z
   .object({
@@ -44,6 +46,7 @@ export const projectSchema = z
     setup: z.string().max(8192).default(''),
     command: z.string().max(8192).default(''),
     previewPort: z.number().int().min(1024).max(65535).optional(),
+    networkIsolation: z.enum(['host', 'private']).optional(),
     environment: environmentSchema.optional(),
     secrets: secretRefsSchema.optional(),
     runtimes: runtimesSchema.optional(),
@@ -56,6 +59,9 @@ export const projectSchema = z
     } catch (error) {
       ctx.addIssue({ code: 'custom', message: (error as Error).message, path: ['services'] });
     }
+    if (project.networkIsolation === 'private' && project.previewPort)
+      ctx.addIssue({ code: 'custom', message: '私有网络命名空间不开放 Windows 预览端口',
+        path: ['previewPort'] });
   });
 export type Project = z.infer<typeof projectSchema> & { _workspace?: string };
 export const projectVersion = (project: Project) => createHash('sha256')
@@ -72,7 +78,7 @@ export function projectPrivateValues(project: Project) {
   ].filter(Boolean);
 }
 export function setupFingerprint(project: Project) {
-  const { directory, template, repository, setup, environment } = project;
+  const { directory, template, repository, setup, environment, networkIsolation } = project;
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -80,6 +86,7 @@ export function setupFingerprint(project: Project) {
         template,
         repository,
         setup,
+        networkIsolation: networkIsolation || 'host',
         ...(environment && Object.keys(environment).length ? { environment } : {}),
       }),
     )
@@ -235,6 +242,23 @@ export class Workspaces {
         );
         if (check.stdout.trim()) throw new AppError('请先停止要移除或替换的运行服务', 409);
       }
+      if ((previous.networkIsolation || 'host') !== (project.networkIsolation || 'host') &&
+          this.machines.state(id) === 'running') {
+        const sessions = [projectSession(previous),
+          ...(previous.services || []).map((item) =>
+            `sakura-service-${previous._workspace ? previous._workspace + '-' : ''}${item.name}`),
+          `sakura-notebook-${this.projects.current(id)}`,
+          `sakura-browser-ide-${this.projects.current(id)}`,
+          `sakura-mesh-${this.projects.current(id)}`];
+        const check = await this.machines.exec(id,
+          sessions.map((name) => `tmux has-session -t =${name} 2>/dev/null && echo active || true`)
+            .join('\n'), 10000);
+        if (check.stdout.includes('active'))
+          throw new AppError('请先停止运行中的项目，再切换网络隔离模式', 409);
+      }
+      if (previous.networkIsolation === 'private' && project.networkIsolation !== 'private' &&
+          this.machines.state(id) === 'running')
+        await removeProjectNetwork(this.machines, id, previous);
       const file = this.projects.file(id);
       await writeFile(`${file}.tmp`, JSON.stringify(project, null, 2));
       await rename(`${file}.tmp`, file);
@@ -305,6 +329,7 @@ export class Workspaces {
               log,
               signal,
             );
+            await removeProjectNetwork(this.machines, id, project, signal);
             return;
           }
           if (action === 'terminal') {
@@ -315,16 +340,17 @@ export class Workspaces {
             action === 'setup'
               ? provisionScript(project.template, distro)
               : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
+          const network = ensureProjectNetworkScript(project, distro || 'alpine');
           let prepare = `mkdir -p ${quote(project.directory)}\n`;
           if (project.repository)
             prepare += `if [ ! -e ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
           const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
           const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
           if (project.setup.trim())
-            prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\ncd ${quote(project.directory)}\n${project.setup}\nfi\ntouch ${marker}\n`;
+            prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\n${projectNetworkCommand(project, `cd ${quote(project.directory)}\n${project.setup}`)}\nfi\ntouch ${marker}\n`;
           if (action === 'start' && !project.services?.length) {
             if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
-            prepare += `tmux new-session -d -s ${projectSession(project)} -c ${quote(project.directory)} ${quote(`sh -lc ${quote(`${envPrefix(project.environment)}\n${project.command}`)} > ${projectLog(project)} 2>&1`)}\nsleep 1\nif ! tmux has-session -t =${projectSession(project)} 2>/dev/null; then tail -c 8192 ${projectLog(project)}; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
+            prepare += `tmux new-session -d -s ${projectSession(project)} -c ${quote(project.directory)} ${quote(`${projectNetworkCommand(project, `${envPrefix(project.environment)}\n${project.command}`)} > ${projectLog(project)} 2>&1`)}\nsleep 1\nif ! tmux has-session -t =${projectSession(project)} 2>/dev/null; then tail -c 8192 ${projectLog(project)}; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
           }
           log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
           const running =
@@ -333,7 +359,7 @@ export class Workspaces {
               : '';
           await this.execute(
             id,
-            `set -eu\n${running}${envPrefix(project.environment)}\n${install}\n${prepare}`,
+            `set -eu\n${running}${envPrefix(project.environment)}\n${install}\n${network}${prepare}`,
             log,
             signal,
           );

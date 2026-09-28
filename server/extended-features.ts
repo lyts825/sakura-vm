@@ -14,6 +14,7 @@ import { encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 import { secretName } from './secrets.ts';
 import { checkSecureErase, runSecureErase } from './secure-erase.ts';
 import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
+import { projectNetworkNamespace } from './project-network-isolation.ts';
 import {
   engineeringOperations,
   operationViews,
@@ -117,7 +118,8 @@ export const extendedFeatureCatalog = [
   ['reproducible-build', '可复现构建验证', '质量发布', 'P2', '比较独立构建产生的产物。', 'available'],
   ['ipv6', 'IPv6 客户机网络', '网络', 'P1', '为客户机提供 IPv6 网络能力。', 'available'],
   ['static-routes', '静态租约与路由', '网络', 'P1', '保存 DHCP 租约和自定义路由。', 'available'],
-  ['network-isolation', '项目网络隔离', '网络', 'P1', '按项目隔离网络命名空间。', 'planned'],
+  ['network-isolation', '项目网络隔离', '网络', 'P1',
+    '在项目设置中将托管命令和服务置于仅回环的独立网络命名空间。', 'experimental'],
   ['egress-policy', '出站白名单', '网络', 'P1', '限制客户机可访问的目标。', 'available'],
   ['network-quota', '网络带宽配额', '网络', 'P2', '限制出站带宽、并发 TCP 连接和新建连接速率。', 'available'],
   ['ssh-agent-forward', 'SSH Agent 转发', '网络', 'P1', '在确认后仅向单次客户机命令转发宿主机 SSH Agent。', 'available'],
@@ -350,6 +352,21 @@ export class ExtendedFeatures {
     };
     if (spec.id === 'qemu-commandline')
       return { ready: true, state: spec.state, adapter, commandline: this.machines.commandline(id) };
+    if (spec.id === 'network-isolation') {
+      const project = await this.workspaces.config(id);
+      const namespace = projectNetworkNamespace(project);
+      const active = namespace && this.machines.state(id) === 'running'
+        ? (await this.machines.exec(id,
+            `ip netns exec ${namespace} true >/dev/null 2>&1 && ` +
+            `test "$(ip -n ${namespace} -o link show | wc -l)" -eq 1 && ` +
+            `test "$(ip -n ${namespace} -o -4 route show | wc -l)" -eq 0 && ` +
+            `test "$(ip -n ${namespace} -o -6 route show | wc -l)" -eq 0`,
+            5000, signal).catch(() => null))?.code === 0
+        : false;
+      return { ready: active, executed: false, state: spec.state, adapter,
+        mode: project.networkIsolation || 'host', namespace, active,
+        reason: '在项目设置中选择私有网络并启动项目。该模式覆盖托管项目命令，不限制客户机管理员终端及其他进程。' };
+    }
     if (spec.id === 'disk-encryption') {
       const status = await this.machines.diskEncryptionStatus(id);
       return { ready: status.encrypted === status.enabled && (!status.enabled || status.keyAvailable),
@@ -572,6 +589,8 @@ export class ExtendedFeatures {
       { ...configured?.options, ...options };
     if (spec.id === 'self-update' && action === 'run')
       throw new AppError('请在安装目录运行离线更新命令；此入口仅供检查', 409);
+    if (spec.id === 'network-isolation' && action === 'run')
+      throw new AppError('请在项目设置中切换网络模式，再启动项目', 409);
     const operation = Object.entries(engineeringOperations).find(
       ([_, value]) => value.feature === spec.id,
     )?.[0] as EngineeringOperation | undefined;
@@ -612,6 +631,8 @@ export class ExtendedFeatures {
       const validated = validateOperation({ operation, parameters: merged });
       const executed = await this.runOperation(id, operation, validated.parameters, signal);
       result = { ...executed, ready: executed.code === 0, executed: true };
+    } else if (spec.id === 'network-isolation') {
+      result = await this.probe(id, spec, signal, merged);
     } else if (spec.id === 'vm-suspend') {
       if (action === 'run') {
         const input = z

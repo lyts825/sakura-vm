@@ -17,6 +17,7 @@ test('managed Jupyter and Marimo sessions install, authenticate, survive restart
     createdAt: new Date().toISOString(), snapshots: [] };
   let live = false;
   let machineStatus = 'running';
+  let networkIsolation: 'host' | 'private' = 'host';
   const installed = new Set<string>();
   const commands: string[] = [];
   const machines = {
@@ -51,7 +52,7 @@ test('managed Jupyter and Marimo sessions install, authenticate, survive restart
   } as unknown as Machines;
   const workspaces = {
     projects: { current: () => 'default' },
-    config: async () => ({ directory: '/workspace', template: 'python' }),
+    config: async () => ({ directory: '/workspace', template: 'python', networkIsolation }),
   } as unknown as Workspaces;
   const file = join(root, 'notebooks.json');
   const service = new NotebookEnvironments(machines, workspaces, file,
@@ -90,4 +91,7 @@ test('managed Jupyter and Marimo sessions install, authenticate, survive restart
   machineStatus = 'running';
   await restarted.run(id, { mode: 'stop' }, signal, () => {});
   assert.deepEqual(vm.forwards, [{ name: 'existing', host: 12718, guest: 2718 }]);
+  networkIsolation = 'private';
+  assert.equal((await restarted.view(id)).ready, false);
+  await assert.rejects(restarted.run(id, { mode: 'start' }, signal, () => {}), /私有项目网络/);
 });

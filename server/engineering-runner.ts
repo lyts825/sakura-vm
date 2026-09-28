@@ -8,6 +8,7 @@ import { guestTask } from './guest-task.ts';
 import { quote } from './files.ts';
 import { redactValues } from './secrets.ts';
 import { CommandPresets } from './command-presets.ts';
+import { ensureProjectNetworkScript, projectNetworkCommand } from './project-network-isolation.ts';
 
 let source: Promise<string> | undefined;
 export function engineeringSource() {
@@ -60,7 +61,9 @@ export async function runEngineeringOperation(
     quote(payload) +
     ' | base64 -d | python3 ' +
     quote(helper);
-  const output = await guestTask(machines, id, command, signal, undefined, timeout);
+  const output = await guestTask(machines, id,
+    `set -e\n${ensureProjectNetworkScript(project, machines.get(id).distro || 'alpine')}` +
+      projectNetworkCommand(project, command), signal, undefined, timeout);
   let result: EngineeringResult;
   try {
     result = JSON.parse(output.stdout);

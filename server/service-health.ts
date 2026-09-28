@@ -6,6 +6,7 @@ import { quote } from './files.ts';
 import { Jobs } from './jobs.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { AppError } from './model.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 export type HealthView = {
   name: string;
@@ -143,7 +144,9 @@ export class ServiceHealth {
           state = states.get(service.name);
         if (!policy || !state?.desired || state.nextCheck > now || abort.signal.aborted) continue;
         state.nextCheck = now + policy.interval * 1000;
-        const script = `set -e\ncd ${quote(project.directory)}\n${envPrefix({ ...project.environment, ...service.environment })}\ntmux has-session -t =${serviceSession(service.name, project)}\n${policy.command}`;
+        const script = `set -e\ntmux has-session -t =${serviceSession(service.name, project)}\n` +
+          projectNetworkCommand(project,
+            `cd ${quote(project.directory)}\n${envPrefix({ ...project.environment, ...service.environment })}\n${policy.command}`);
         const result = await guestTask(
           this.machines,
           id,

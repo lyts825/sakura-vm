@@ -16,6 +16,7 @@ test('browser IDE installs a verified archive and manages project passwords, for
   const vm = { ...createSchema.parse({ name: 'ide-source', distro: 'debian' }), id,
     createdAt: new Date().toISOString(), snapshots: [] };
   let installed = false, live = false, status = 'running';
+  let networkIsolation: 'host' | 'private' = 'host';
   const commands: string[] = [];
   const machines = {
     live: new Map(),
@@ -47,7 +48,7 @@ test('browser IDE installs a verified archive and manages project passwords, for
   } as unknown as Machines;
   const workspaces = {
     projects: { current: () => 'default' },
-    config: async () => ({ directory: '/workspace', template: 'node' }),
+    config: async () => ({ directory: '/workspace', template: 'node', networkIsolation }),
   } as unknown as Workspaces;
   const file = join(root, 'browser-ide.json');
   const service = new BrowserIde(machines, workspaces, file, async () => live);
@@ -80,4 +81,7 @@ test('browser IDE installs a verified archive and manages project passwords, for
   await restarted.run(id, { mode: 'start', hostPort: 18081 }, signal, () => {});
   await restarted.run(id, { mode: 'stop' }, signal, () => {});
   assert.deepEqual(vm.forwards, [{ name: 'existing', host: 18081, guest: 8080 }]);
+  networkIsolation = 'private';
+  assert.equal((await restarted.view(id)).ready, false);
+  await assert.rejects(restarted.run(id, { mode: 'start' }, signal, () => {}), /私有项目网络/);
 });

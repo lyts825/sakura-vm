@@ -6,6 +6,7 @@ import type { Machines } from './machines.ts';
 import type { Project } from './workspaces.ts';
 import { guestTask } from './guest-task.ts';
 import { secretRefsSchema } from './secrets.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 export const environmentSchema = z
   .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(4096))
@@ -127,7 +128,7 @@ export async function runServices(
         started.push(service.name);
         const result = await machines.exec(
           id,
-          `tmux new-session -d -s ${serviceSession(service.name, project)} -c ${quote(project.directory)} ${quote(`sh -lc ${quote(script)} > ${quote(serviceLog(service.name, project))} 2>&1`)}`,
+          `tmux new-session -d -s ${serviceSession(service.name, project)} -c ${quote(project.directory)} ${quote(`${projectNetworkCommand(project, script)} > ${quote(serviceLog(service.name, project))} 2>&1`)}`,
           10000,
           signal,
         );
@@ -151,7 +152,8 @@ export async function runServices(
         const check = await guestTask(
           machines,
           id,
-          `cd ${quote(project.directory)}\n${envPrefix({ ...project.environment, ...service.environment })}\n${service.ready}`,
+          projectNetworkCommand(project,
+            `cd ${quote(project.directory)}\n${envPrefix({ ...project.environment, ...service.environment })}\n${service.ready}`),
           signal,
           undefined,
           Math.min(5000, Math.max(1000, deadline - Date.now())),

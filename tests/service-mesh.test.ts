@@ -15,6 +15,7 @@ test('Envoy sidecar policy is project scoped, validated, launched and stopped', 
     running = false,
     guestRunning = false,
     envoy = true;
+  let networkIsolation: 'host' | 'private' = 'host';
   const commands: string[] = [];
   const machines = {
     get: () => ({ id: vmId }),
@@ -48,7 +49,8 @@ test('Envoy sidecar policy is project scoped, validated, launched and stopped', 
       };
     },
   } as unknown as Machines;
-  const workspaces = { projects: { current: () => projectId } } as unknown as Workspaces;
+  const workspaces = { projects: { current: () => projectId },
+    config: async () => ({ networkIsolation }) } as unknown as Workspaces;
   const file = join(root, 'mesh.json');
   const policy = { name: 'frontend', listenPort: 15001, upstreamPort: 8080 };
   const mesh = new ServiceMesh(machines, workspaces, file);
@@ -68,6 +70,10 @@ test('Envoy sidecar policy is project scoped, validated, launched and stopped', 
     await assert.rejects(mesh.action(vmId, { mode: 'save', policy }, 'run'), /先停止/);
     await mesh.action(vmId, { mode: 'stop' }, 'run');
     assert.equal((await mesh.status(vmId)).sidecarRunning, false);
+    networkIsolation = 'private';
+    assert.equal((await mesh.status(vmId)).ready, false);
+    await assert.rejects(mesh.action(vmId, { mode: 'start' }, 'run'), /私有项目网络/);
+    networkIsolation = 'host';
 
     projectId = '0123456789abcdef';
     assert.equal((await mesh.status(vmId)).policy, null);

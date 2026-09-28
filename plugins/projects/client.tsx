@@ -194,12 +194,23 @@ export function ProjectPanel(props: FeatureProps) {
             />
           </label>
           <label>
+            项目网络
+            <select value={project.networkIsolation || 'host'}
+              onChange={(e) => edit({ networkIsolation: e.target.value as 'host' | 'private',
+                ...(e.target.value === 'private' ? { previewPort: undefined } : {}) })}>
+              <option value="host">共享客户机网络</option>
+              <option value="private">独立命名空间（仅回环，无外网）</option>
+            </select>
+            <small>私有模式适用于项目命令、服务、流水线和收藏命令；Notebook、浏览器 IDE、服务网格及容器启动需要共享网络。</small>
+          </label>
+          <label>
             预览的 Windows 端口（在“服务”中配置转发）
             <input
               type="number"
               min={1024}
               max={65535}
               value={project.previewPort ?? ''}
+              disabled={project.networkIsolation === 'private'}
               onChange={(e) => edit({ previewPort: e.target.value ? +e.target.value : undefined })}
             />
           </label>
