@@ -136,7 +136,7 @@ export const extendedFeatureCatalog = [
     '通过 Sakura 保留锁阻止备份删除与自动清理。',
     'available',
   ],
-  ['syscall-profile', '系统调用隔离', '安全', 'P2', '为客户机应用应用受限策略。', 'planned'],
+  ['syscall-profile', '系统调用隔离', '安全', 'P2', '以经验证的 seccomp 策略运行客户机命令及其子进程。', 'available'],
   ['command-risk', '高风险命令评估', '安全', 'P0', '对破坏性命令提供预览和确认。', 'available'],
   ['metrics-export', '指标导出', '运维', 'P0', '导出 Prometheus 或 OpenTelemetry 指标。', 'available'],
   ['process-history', '进程历史指标', '运维', 'P0', '保存进程级 CPU 和内存趋势。', 'available'],

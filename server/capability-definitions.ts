@@ -27,6 +27,7 @@ import { acmeInput } from './acme-renewal.ts';
 import { processInteropInput } from './process-interop.ts';
 import { sshAgentForwardInput } from './ssh-agent-forward.ts';
 import { gpuAccelerationInput } from './gpu-acceleration.ts';
+import { syscallProfileInput } from './syscall-profile.ts';
 
 export const relativePath = z
   .string()
@@ -61,6 +62,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'syscall-profile': action(
+    '系统调用隔离', 'extended', syscallProfileInput.shape,
+    { mode: 'status' },
+    'install 在客户机安装 Python 与 libseccomp 并实测过滤器。run 需要 command、confirmed=true，可选 restricted 或 networkless 策略；只约束这一次命令及其子进程，不更改客户机全局策略，也不隔离文件系统。',
+    true, true,
+  ),
   'gpu-acceleration': action(
     'GPU 与 3D 加速', 'suite', gpuAccelerationInput.shape,
     { mode: 'status' },
