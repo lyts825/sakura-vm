@@ -30,6 +30,7 @@ import { AutomationRules } from './automation-rules.ts';
 import { runEngineeringOperation } from './engineering-runner.ts';
 import { Workspaces, projectSchema } from './workspaces.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
+import { FleetPolicyRollouts } from './fleet-policy-rollouts.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
@@ -125,6 +126,14 @@ async function main() {
   () => !!features.migration?.blocked,
   (delta) => { features.mutations += delta; });
   await hostPeers.init();
+  hostPeers.setRolloutReceiver({
+    view: () => ({ hostId: hostPeers.view().hostId, policies: rollouts.view().policies }),
+    save: (input) => rollouts.configure(input),
+  });
+  const fleetRollouts = new FleetPolicyRollouts(hostPeers, undefined,
+    () => !!features.migration?.blocked,
+    (delta) => { features.mutations += delta; });
+  await fleetRollouts.init();
   features.next?.setResourceScheduler((input) => hostPeers.score(input));
   features.next?.setSharedDesktopCheck(async (id) => {
     if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
@@ -895,6 +904,12 @@ async function main() {
         await rollouts.configure(await authorizedBody(req, 32768)));
       throw new AppError('不支持此方法', 405);
     }
+    if (url.pathname === '/api/fleet-policy-rollouts') {
+      if (req.method === 'GET') return send(res, fleetRollouts.view());
+      if (req.method === 'POST') return send(res,
+        await fleetRollouts.configure(await authorizedBody(req, 32768)));
+      throw new AppError('不支持此方法', 405);
+    }
     if (url.pathname === '/api/host-peers') {
       if (req.method === 'GET') return send(res,
         { ...hostPeers.view(), local: await hostPeers.status() });
@@ -1376,6 +1391,7 @@ async function main() {
       () => webhooks.close(),
       () => automationRules.close(),
       () => rollouts.close(),
+      () => fleetRollouts.close(),
       () => hostPeers.close(),
       () => retention.close(),
       () => graph.close(),

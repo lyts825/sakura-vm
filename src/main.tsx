@@ -121,6 +121,9 @@ const FeatureRolloutSettings = lazy(() =>
 const HostPeersSettings = lazy(() =>
   import('./HostPeersSettings').then((module) => ({ default: module.HostPeersSettings })),
 );
+const FleetPolicyRolloutSettings = lazy(() =>
+  import('./FleetPolicyRolloutSettings').then((module) => ({ default: module.FleetPolicyRolloutSettings })),
+);
 const LocalAssistant = lazy(() =>
   import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
@@ -384,6 +387,7 @@ function App() {
   const [showAutomationRules, setShowAutomationRules] = useState(false);
   const [showFeatureRollouts, setShowFeatureRollouts] = useState(false);
   const [showHostPeers, setShowHostPeers] = useState(false);
+  const [showFleetRollouts, setShowFleetRollouts] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -1577,6 +1581,18 @@ function App() {
                 {showHostPeers && (
                   <Suspense fallback={<p>正在读取主机状态…</p>}>
                     <HostPeersSettings request={api} />
+                  </Suspense>
+                )}
+                <section className="system-card">
+                  <h3>集群策略发布</h3>
+                  <p>保存并复核跨主机插件灰度批次，再向获授权的目标逐台发布。</p>
+                  <button className="secondary compact" onClick={() => setShowFleetRollouts(!showFleetRollouts)}>
+                    {showFleetRollouts ? '收起集群策略' : '管理集群策略'}
+                  </button>
+                </section>
+                {showFleetRollouts && (
+                  <Suspense fallback={<p>正在读取集群策略…</p>}>
+                    <FleetPolicyRolloutSettings request={api} />
                   </Suspense>
                 )}
                 <section className="system-card">

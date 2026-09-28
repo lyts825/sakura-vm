@@ -17,6 +17,7 @@ import { terminalShareInput } from './terminal-sharing.ts';
 import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
+import { fleetRolloutRequest } from './fleet-policy-rollouts.ts';
 import { hostPeerRequest } from './host-peers.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
@@ -191,6 +192,14 @@ const core: {
   {
     id: 'feature-rollouts.change', method: 'POST', path: '/api/feature-rollouts',
     title: '保存、预览或删除插件灰度策略', body: request(featureRolloutRequest),
+  },
+  {
+    id: 'fleet-policy-rollouts.get', method: 'GET', path: '/api/fleet-policy-rollouts',
+    title: '查看已保存的集群策略发布批次及逐台结果', inspect: true,
+  },
+  {
+    id: 'fleet-policy-rollouts.change', method: 'POST', path: '/api/fleet-policy-rollouts',
+    title: '复核目标策略版本并创建或发布集群策略批次', body: request(fleetRolloutRequest),
   },
   {
     id: 'host-peers.get', method: 'GET', path: '/api/host-peers',

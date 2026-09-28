@@ -8,13 +8,13 @@ import { AppError, DATA } from './model.ts';
 
 const ids = new Set<string>(PLUGINS.map((plugin) => plugin.id));
 const pluginId = z.string().refine((id) => ids.has(id), '插件不存在');
-const policyInput = z.object({
+export const rolloutPolicyInput = z.object({
   pluginId,
   enabled: z.boolean(),
   percentage: z.number().int().min(0).max(100),
   cohortVersion: z.string().trim().min(1).max(64),
 }).strict();
-const policySchema = policyInput.extend({
+const policySchema = rolloutPolicyInput.extend({
   revision: z.number().int().positive(),
   updatedAt: z.number().int().nonnegative(),
 }).strict();
@@ -27,10 +27,10 @@ type Store = z.infer<typeof storeSchema>;
 export type RolloutPolicy = Store['policies'][number];
 export const featureRolloutRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('save'), revision: z.number().int().positive().optional(),
-    policy: policyInput }).strict(),
+    policy: rolloutPolicyInput }).strict(),
   z.object({ operation: z.literal('remove'), pluginId,
     revision: z.number().int().positive() }).strict(),
-  z.object({ operation: z.literal('preview'), policy: policyInput }).strict(),
+  z.object({ operation: z.literal('preview'), policy: rolloutPolicyInput }).strict(),
 ]);
 const initial = (): Store => ({ version: 1, hostId: randomUUID(), policies: [] });
 
@@ -59,7 +59,7 @@ export class FeatureRollouts {
     if (!info) await writeStore(this.file, this.state);
   }
 
-  decision(id: string, draft?: z.infer<typeof policyInput>) {
+  decision(id: string, draft?: z.infer<typeof rolloutPolicyInput>) {
     const policy = draft || this.state.policies.find((item) => item.pluginId === id);
     const bucket = policy ? parseInt(createHash('sha256')
       .update(`${this.state.hostId}:${id}:${policy.cohortVersion}`).digest('hex').slice(0, 8), 16) % 10_000 : null;

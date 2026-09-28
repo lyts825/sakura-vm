@@ -95,8 +95,8 @@ export const nextFeatureCatalog = [
     '集群策略发布',
     '远程主机与集群',
     'P1',
-    '以版本化批次保存集群策略发布计划。',
-    'planned',
+    '复核已配对主机的插件策略版本，按批次逐台发布并持久记录成功、失败与重试。',
+    'available',
   ],
   [
     'maintenance-drain',
@@ -964,6 +964,13 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '系统设置 → 插件功能灰度，预览当前主机分桶并保存插件、版本和放行比例；下次启动按策略实际选择插件。',
+      };
+    if (spec.id === 'fleet-policy-rollout')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '系统设置 → 集群策略发布，选择已配对主机并保存待复核批次，再逐台发布插件灰度策略；目标主机须先授权策略发布。',
       };
     if (spec.id === 'host-pairing' || spec.id === 'multi-host-inventory')
       return {

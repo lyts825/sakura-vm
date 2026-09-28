@@ -254,7 +254,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 资源评分调度 / `resource-scheduler` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：根据 CPU、内存和负载为实例计算主机选择分数。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 故障自动接管 / `ha-failover` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存高可用接管策略和最后一次健康检查。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 跨主机快照复制 / `cross-host-snapshots` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“记录快照复制目标、校验和与重试状态。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
-| 集群策略发布 / `fleet-policy-rollout` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：以版本化批次保存集群策略发布计划。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
+| 集群策略发布 / `fleet-policy-rollout` | 已实现 | 保存目标主机策略修订的待发布批次，经配对 TLS 连接逐台发布插件灰度策略，持久记录单目标结果并支持失败重试及版本冲突拒绝。 | [server/fleet-policy-rollouts.ts](D:/27247/Desktop/Sakura/server/fleet-policy-rollouts.ts) |
 | 主机维护排空 / `maintenance-drain` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：在维护前登记排空计划并追踪实例迁移状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | UEFI 与 OVMF 固件 / `uefi-ovmf` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“检测宿主机是否有 UEFI/OVMF 固件并保存选择。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | vTPM 密钥登记 / `vtpm-key-enrollment` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存 vTPM 密钥登记元数据和轮换提醒。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |

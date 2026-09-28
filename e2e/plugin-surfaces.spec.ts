@@ -2310,6 +2310,48 @@ test('regional preferences translate UI labels and format values without changin
   await expect(page.getByRole('heading', { name: '文件', level: 2 })).toBeVisible();
 });
 
+test('fleet policy editor saves a reviewable batch and publishes to the selected host', async ({ page }) => {
+  await app(page, [], true);
+  const peerId = '32a41182-487f-41c7-9619-ab0e1637a8ba';
+  const batchId = '5af8fc8d-f43a-4f3a-81e1-8ad4f0e4c746';
+  await page.route('**/api/host-peers', (route) => route.fulfill({ json: {
+    outbound: [{ id: peerId, name: 'target', url: 'https://127.0.0.1:7443/' }],
+  } }));
+  await page.route('**/api/feature-rollouts', (route) => route.fulfill({ json: {
+    plugins: [{ id: 'metrics', name: '资源监控' }],
+  } }));
+  const requests: any[] = [];
+  let batch: any;
+  await page.route('**/api/fleet-policy-rollouts', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { batches: batch ? [batch] : [] } });
+    const input = route.request().postDataJSON();
+    requests.push(input);
+    if (input.operation === 'create') batch = {
+      id: batchId, revision: 1, policy: input.policy,
+      targets: [{ peerId, hostId: peerId, name: 'target', beforeRevision: 0, state: 'pending' }],
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    };
+    else batch = { ...batch, revision: 2, targets: [{ ...batch.targets[0], state: 'applied' }] };
+    return route.fulfill({ json: batch });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '系统设置' }).click();
+  await page.getByRole('button', { name: '管理集群策略' }).click();
+  const panel = page.getByRole('region', { name: '集群策略发布' });
+  await panel.getByLabel('集群灰度百分比').fill('25');
+  await panel.getByLabel('集群分桶版本').fill('canary-2');
+  await panel.getByRole('checkbox', { name: /target/ }).check();
+  await panel.getByRole('button', { name: '保存待发布批次' }).click();
+  await expect(panel.getByText('原修订 0 · 待发布')).toBeVisible();
+  await panel.getByRole('button', { name: '发布或重试批次' }).click();
+  await expect(panel.getByText('原修订 0 · 已发布')).toBeVisible();
+  expect(requests.map((item) => item.operation)).toEqual(['create', 'publish']);
+  expect(requests[0].policy).toEqual({ pluginId: 'metrics', enabled: true,
+    percentage: 25, cohortVersion: 'canary-2' });
+  expect(requests[0].peers).toEqual([peerId]);
+  expect(requests[1].revision).toBe(1);
+});
+
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>

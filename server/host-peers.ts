@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { readJsonBody } from './http.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError, createSchema, DATA } from './model.ts';
+import { featureRolloutRequest } from './feature-rollouts.ts';
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
@@ -34,7 +35,16 @@ const incomingSchema = z.object({
   id: z.uuid(), requesterId: z.uuid(), name: hostName,
   tokenHash: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.number().int().nonnegative(),
   allowImport: z.boolean().default(false),
+  allowPolicy: z.boolean().default(false),
 }).strict();
+const rolloutPolicySchema = z.object({
+  pluginId: z.string().min(1).max(128), enabled: z.boolean(),
+  percentage: z.number().int().min(0).max(100), cohortVersion: z.string().min(1).max(64),
+  revision: z.number().int().positive(), updatedAt: z.number().int().nonnegative(),
+}).strict();
+const rolloutViewSchema = z.object({ hostId: z.uuid(),
+  policies: z.array(rolloutPolicySchema).max(128) }).strict();
+export type PeerRolloutView = z.infer<typeof rolloutViewSchema>;
 const outboundSchema = z.object({
   id: z.uuid(), remoteId: z.uuid(), name: hostName, url: peerUrl,
   fingerprint, token: tokenSchema, createdAt: z.number().int().nonnegative(),
@@ -86,6 +96,7 @@ export const hostPeerRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('remove-outbound'), id: z.uuid() }).strict(),
   z.object({ operation: z.literal('revoke-inbound'), id: z.uuid() }).strict(),
   z.object({ operation: z.literal('allow-import'), id: z.uuid(), enabled: z.boolean() }).strict(),
+  z.object({ operation: z.literal('allow-policy'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ operation: z.literal('refresh') }).strict(),
   z.object({ operation: z.literal('score'), requirements: hostScoreInput }).strict(),
 ]);
@@ -168,6 +179,7 @@ export class HostPeers {
   private closed = false;
   private listenerError?: string;
   private importReceiver?: ImportReceiver;
+  private rolloutReceiver?: { view: () => PeerRolloutView; save: (input: unknown) => Promise<unknown> };
   private activeImports = new Map<string, Set<AbortController>>();
   private transferIds = new Set<string>();
   constructor(
@@ -261,7 +273,7 @@ export class HostPeers {
             const token = randomBytes(32).toString('hex');
             next.incoming.push({ id: randomUUID(), requesterId: value.requesterId,
               name: value.name, tokenHash: hash(token), createdAt: this.now(),
-              allowImport: false });
+              allowImport: false, allowPolicy: false });
             return { id: next.hostId, name: next.name, token };
           });
           this.code = undefined;
@@ -271,6 +283,20 @@ export class HostPeers {
       if (request.method === 'GET' && request.url === '/peer/status') {
         this.inbound(request);
         return this.send(response, await this.status());
+      }
+      if (request.url === '/peer/rollouts' && ['GET', 'POST'].includes(request.method || '')) {
+        const peer = this.inbound(request);
+        if (!peer.allowPolicy) throw new AppError('此同伴未获策略发布权限', 403);
+        if (!this.rolloutReceiver) throw new AppError('目标主机尚未启用策略接收器', 503);
+        if (request.method === 'GET') return this.send(response, this.rolloutReceiver.view());
+        const input = featureRolloutRequest.parse(await readJsonBody(request, 4096));
+        if (input.operation !== 'save') throw new AppError('同伴只能发布灰度策略', 400);
+        if (!this.inbound(request).allowPolicy) throw new AppError('策略发布权限已撤销', 403);
+        this.mutation(1);
+        try {
+          await this.rolloutReceiver.save(input);
+          return this.send(response, this.rolloutReceiver.view());
+        } finally { this.mutation(-1); }
       }
       if (request.method === 'GET' && request.url?.startsWith('/peer/import-status?')) {
         const peer = this.inbound(request);
@@ -351,6 +377,31 @@ export class HostPeers {
 
   setImportReceiver(receiver: ImportReceiver) {
     this.importReceiver = receiver;
+  }
+  setRolloutReceiver(receiver: { view: () => PeerRolloutView; save: (input: unknown) => Promise<unknown> }) {
+    this.rolloutReceiver = receiver;
+  }
+  async rolloutStatus(peerId: string): Promise<PeerRolloutView> {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const result = rolloutViewSchema.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/rollouts', 'GET', undefined, peer.token));
+    if (result.hostId !== peer.remoteId) throw new AppError('远端主机身份已变化', 409);
+    return result;
+  }
+  async publishRollout(peerId: string, input: unknown): Promise<PeerRolloutView> {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    const value = featureRolloutRequest.parse(input);
+    if (value.operation !== 'save') throw new AppError('只允许发布灰度策略');
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const result = rolloutViewSchema.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/rollouts', 'POST', value, peer.token));
+    if (result.hostId !== peer.remoteId) throw new AppError('远端主机身份已变化', 409);
+    return result;
   }
 
   async importStatus(peerId: string, transferId: string) {
@@ -593,6 +644,10 @@ export class HostPeers {
           const peer = next.incoming.find((item) => item.id === value.id);
           if (!peer) throw new AppError('入站配对不存在', 404);
           peer.allowImport = value.enabled;
+        } else if (value.operation === 'allow-policy') {
+          const peer = next.incoming.find((item) => item.id === value.id);
+          if (!peer) throw new AppError('入站配对不存在', 404);
+          peer.allowPolicy = value.enabled;
         }
       });
       if (value.operation === 'remove-outbound') this.observations.delete(value.id);
