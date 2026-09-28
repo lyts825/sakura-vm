@@ -61,6 +61,9 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.deepEqual(spec.paths['/api/access/changes'].post.requestBody!.content['application/json']
     .schema.required, ['vmId', 'projectId', 'summary', 'project', 'expectedVersion']);
   assert.equal(spec.paths['/api/access/changes/{id}/apply'].post.parameters[0].name, 'id');
+  assert.deepEqual(spec.paths['/api/access/policy-bundles/apply'].post.requestBody!
+    .content['application/json'].schema.required, ['bundle', 'target', 'expectedVersion']);
+  assert.equal(spec.paths['/api/access/policy-bundles/keys'].get.security, undefined);
   assert.deepEqual(spec.paths['/api/session/unlock'].post.security, []);
   assert.equal(spec.paths['/api/session/settings'].patch.security, undefined);
   assert.ok(!spec.paths['/api/images']); // This declaration is a dispatcher prefix, not a POST endpoint.

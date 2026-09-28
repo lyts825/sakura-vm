@@ -8,6 +8,8 @@ import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.t
 import { accessEnableInput, accessLoginInput, accessViewerInput, accessMemberInput, accessPasswordInput,
   accessHandoffInput, accessHandoffRedeem } from './access-control.ts';
 import { projectPermissionInput } from './project-permissions.ts';
+import { policyBundleApply, policyBundleKeyAction, policyBundlePreview,
+  policyBundleTarget } from './policy-bundles.ts';
 import { changeRequestInput, changeDecisionInput } from './change-approvals.ts';
 import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
 import { terminalShareInput } from './terminal-sharing.ts';
@@ -101,6 +103,20 @@ const core: {
   { id: 'access.configureProjectPermissions', method: 'PUT',
     path: '/api/access/project-permissions', title: '设置项目角色、权限和成员授权',
     body: request(projectPermissionInput) },
+  { id: 'access.policyBundleKeys', method: 'GET',
+    path: '/api/access/policy-bundles/keys', title: '查看本机及受信任的策略签名公钥', inspect: true },
+  { id: 'access.policyBundleKeyAction', method: 'POST',
+    path: '/api/access/policy-bundles/keys', title: '信任或撤销项目策略签名公钥',
+    body: request(policyBundleKeyAction) },
+  { id: 'access.exportPolicyBundle', method: 'POST',
+    path: '/api/access/policy-bundles/export', title: '导出签名的完整项目权限策略',
+    body: request(policyBundleTarget) },
+  { id: 'access.previewPolicyBundle', method: 'POST',
+    path: '/api/access/policy-bundles/preview', title: '验证项目策略包签名并预览目标差异',
+    body: request(policyBundlePreview) },
+  { id: 'access.applyPolicyBundle', method: 'POST',
+    path: '/api/access/policy-bundles/apply', title: '应用受信任且目标版本匹配的项目策略包',
+    body: request(policyBundleApply) },
   { id: 'access.changes', method: 'GET', path: '/api/access/changes',
     title: '列出当前账户可查看或审批的项目变更', inspect: true },
   { id: 'access.createChange', method: 'POST', path: '/api/access/changes',

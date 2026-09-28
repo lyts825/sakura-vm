@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -17,6 +18,13 @@ await new Promise<void>((done) => listener.close(() => done()));
 const origin = `http://127.0.0.1:${port}`;
 const passkeyOrigin = `http://localhost:${port}`;
 const password = 'a long administrator password';
+const canonical = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.entries(value)
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([name, item]) => `${JSON.stringify(name)}:${canonical(item)}`).join(',')}}`;
+  return JSON.stringify(value);
+};
 let server: ReturnType<typeof spawn> | undefined;
 let output = '';
 const start = async () => {
@@ -184,6 +192,77 @@ try {
   const grantedPolicy = await request(policyPath, 'PUT', ownerToken, { roles,
     grants: [{ accountId: member.body.id, roleId: 'developer' }] });
   assert.equal(grantedPolicy.status, 200, JSON.stringify(grantedPolicy.body));
+  const policyKeys = await request('/api/access/policy-bundles/keys', 'GET', ownerToken);
+  assert.equal(policyKeys.status, 200, JSON.stringify(policyKeys.body));
+  assert.equal(policyKeys.body.trustedKeys.length, 1);
+  assert.ok(!JSON.stringify(policyKeys.body).includes('PRIVATE KEY'));
+  assert.equal((await request('/api/access/policy-bundles/keys', 'GET', memberToken)).status, 403);
+  assert.equal((await request('/api/access/policy-bundles/export', 'POST', viewerToken,
+    { vmId, projectId: 'default' })).status, 403);
+  const exportedPolicy = await request('/api/access/policy-bundles/export', 'POST', ownerToken,
+    { vmId, projectId: 'default' });
+  assert.equal(exportedPolicy.status, 200, JSON.stringify(exportedPolicy.body));
+  assert.deepEqual(exportedPolicy.body.bundle.policy.roles, roles);
+  assert.equal(exportedPolicy.body.bundle.signature.algorithm, 'Ed25519');
+  assert.ok(!JSON.stringify(exportedPolicy.body).includes('PRIVATE KEY'));
+  const target = { vmId, projectId: 'default' };
+  const policyPreview = await request('/api/access/policy-bundles/preview', 'POST',
+    ownerToken, { bundle: exportedPolicy.body.bundle, target });
+  assert.equal(policyPreview.status, 200, JSON.stringify(policyPreview.body));
+  assert.equal(policyPreview.body.trusted, true);
+  assert.equal(policyPreview.body.expectedVersion, grantedPolicy.body.version);
+  assert.equal((await request('/api/access/policy-bundles/preview', 'POST', ownerToken,
+    { bundle: { ...exportedPolicy.body.bundle,
+      policy: { ...exportedPolicy.body.bundle.policy, approvalRequired: true } },
+    target })).status, 400, 'Changing a signed policy must invalidate its signature');
+  const foreignKeys = generateKeyPairSync('ed25519');
+  const foreignUnsigned = { format: exportedPolicy.body.bundle.format,
+    source: exportedPolicy.body.bundle.source, policy: exportedPolicy.body.bundle.policy };
+  const foreignPublicKey = foreignKeys.publicKey.export({ format: 'pem', type: 'spki' }).toString();
+  const foreignBundle = { ...foreignUnsigned,
+    signature: { algorithm: 'Ed25519', publicKey: foreignPublicKey,
+      value: sign(null, Buffer.from('SAKURA01:project-policy-ed25519:v1\n' +
+        canonical(foreignUnsigned)), foreignKeys.privateKey).toString('base64') } };
+  const foreignPreview = await request('/api/access/policy-bundles/preview',
+    'POST', ownerToken, { bundle: foreignBundle, target });
+  assert.equal(foreignPreview.status, 200, JSON.stringify(foreignPreview.body));
+  assert.equal(foreignPreview.body.trusted, false);
+  assert.equal((await request('/api/access/policy-bundles/apply', 'POST', ownerToken,
+    { bundle: foreignBundle, target,
+      expectedVersion: foreignPreview.body.expectedVersion })).status, 403);
+  const trustedPolicyKey = await request('/api/access/policy-bundles/keys', 'POST', ownerToken,
+    { action: 'trust', revision: policyKeys.body.revision,
+      name: 'External policy signer', publicKey: foreignPublicKey });
+  assert.equal(trustedPolicyKey.status, 200, JSON.stringify(trustedPolicyKey.body));
+  assert.equal(trustedPolicyKey.body.trustedKeys.length, 2);
+  assert.equal((await request('/api/access/policy-bundles/keys', 'POST', ownerToken,
+    { action: 'forget', revision: trustedPolicyKey.body.revision,
+      fingerprint: policyKeys.body.localKey.fingerprint })).status, 409);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles: [
+    { ...roles[0], name: 'Temporary role name' }],
+    grants: [{ accountId: member.body.id, roleId: 'developer' }] })).status, 200);
+  assert.equal((await request('/api/access/policy-bundles/apply', 'POST', ownerToken,
+    { bundle: foreignBundle, target,
+      expectedVersion: foreignPreview.body.expectedVersion })).status, 409,
+    'A changed target policy invalidates a previously previewed version');
+  const freshPreview = await request('/api/access/policy-bundles/preview',
+    'POST', ownerToken, { bundle: foreignBundle, target });
+  assert.equal(freshPreview.status, 200);
+  const restoredPolicy = await request('/api/access/policy-bundles/apply',
+    'POST', ownerToken, { bundle: foreignBundle, target,
+      expectedVersion: freshPreview.body.expectedVersion });
+  assert.equal(restoredPolicy.status, 200, JSON.stringify(restoredPolicy.body));
+  assert.deepEqual((await request(policyPath, 'GET', ownerToken)).body.roles, roles);
+  assert.equal((await request('/api/access/policy-bundles/apply', 'POST', ownerToken,
+    { bundle: foreignBundle, target,
+      expectedVersion: freshPreview.body.expectedVersion })).status, 409);
+  const forgottenPolicyKey = await request('/api/access/policy-bundles/keys',
+    'POST', ownerToken, { action: 'forget', revision: trustedPolicyKey.body.revision,
+      fingerprint: foreignPreview.body.signer });
+  assert.equal(forgottenPolicyKey.status, 200);
+  assert.equal((await request('/api/access/policy-bundles/apply', 'POST', ownerToken,
+    { bundle: foreignBundle, target,
+      expectedVersion: restoredPolicy.body.policy.version })).status, 403);
   const assigned = (await request('/api/access/projects', 'GET', memberToken)).body.projects;
   assert.equal(assigned.length, 1);
   assert.equal(assigned[0].projectId, 'default');
@@ -230,6 +309,18 @@ try {
     await approvalPage.getByRole('button', { name: '登录', exact: true }).click();
     await approvalPage.getByRole('button', { name: '系统设置', exact: true }).click();
     await approvalPage.getByRole('button', { name: '提交管理员变更审批' }).waitFor();
+    const policyBundlePanel = approvalPage.getByRole('region', { name: '签名项目策略包' });
+    await policyBundlePanel.getByRole('button', { name: '导出签名策略包' }).click();
+    await policyBundlePanel.getByText('当前项目策略已签名，可复制或下载').waitFor();
+    assert.match(await policyBundlePanel.getByLabel('导出的策略包 JSON').inputValue(),
+      /"signature"/);
+    await policyBundlePanel.getByLabel('导入策略包 JSON')
+      .fill(JSON.stringify(exportedPolicy.body.bundle));
+    await policyBundlePanel.getByRole('button', { name: '验证并预览' }).click();
+    await policyBundlePanel.getByText('签名已验证，请审阅当前策略和拟应用策略').waitFor();
+    await policyBundlePanel.getByLabel('已审阅完整策略、成员授权与审批要求').check();
+    assert.equal(await policyBundlePanel.getByRole('button', { name: '应用签名策略包' })
+      .isEnabled(), true);
     const changePanel = approvalPage.getByRole('region', { name: '项目变更审批' });
     const proposal = changePanel.locator('article').filter({ hasText: 'Review the project start command' });
     await proposal.getByText('Review the project start command').waitFor();
@@ -651,6 +742,14 @@ try {
     { username: 'owner', password: newPassword });
   assert.equal(again.status, 200);
   assert.equal((await request('/api/vms', 'GET', again.body.token)).status, 200);
+  const restartedPolicyKeys = await request('/api/access/policy-bundles/keys',
+    'GET', again.body.token);
+  assert.equal(restartedPolicyKeys.status, 200);
+  assert.equal(restartedPolicyKeys.body.localKey.fingerprint,
+    policyKeys.body.localKey.fingerprint);
+  assert.equal(restartedPolicyKeys.body.trustedKeys.length, 1);
+  assert.equal((await request('/api/access/policy-bundles/preview', 'POST',
+    again.body.token, { bundle: exportedPolicy.body.bundle, target })).status, 200);
   assert.equal((await request('/api/access/changes', 'GET', again.body.token)).body.changes
     .find((item: { id: string }) => item.id === proposed.body.id).status, 'applied');
   const persistedMember = await request('/api/access/login', 'POST', undefined,

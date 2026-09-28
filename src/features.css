@@ -228,6 +228,26 @@
 .signed-bundles-fingerprint {
   overflow-wrap: anywhere;
 }
+.policy-bundle-panel,
+.policy-bundle-preview {
+  min-width: 0;
+}
+.policy-bundle-panel textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.policy-bundle-code {
+  overflow-wrap: anywhere;
+}
+.policy-bundle-preview pre {
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .hardware-matrix-report {
   overflow-wrap: anywhere;
 }

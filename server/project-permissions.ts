@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
 import { AppError, DATA } from './model.ts';
@@ -19,6 +20,7 @@ const scopeFields = z.object({
   roles: z.array(role).min(1).max(20),
   grants: z.array(grant).max(40),
   approvalRequired: z.boolean().default(false),
+  revision: z.number().int().min(0).default(0),
 }).strict();
 const scope = scopeFields.superRefine((value, ctx) => {
   const ids = value.roles.map((item) => item.id);
@@ -39,6 +41,9 @@ const scope = scopeFields.superRefine((value, ctx) => {
 const state = z.object({ version: z.literal(1), scopes: z.array(scope).max(1000) }).strict();
 export const projectPermissionInput = scopeFields.pick({ roles: true, grants: true })
   .extend({ approvalRequired: z.boolean().optional() });
+export const projectPermissionDocument = scopeFields.pick({
+  roles: true, grants: true, approvalRequired: true,
+});
 type Scope = z.infer<typeof scope>;
 export type ProjectPermission = z.infer<typeof permission>;
 
@@ -103,16 +108,29 @@ export class ProjectPermissions {
   async view(vmId: string, projectId: string) {
     await this.existing(vmId, projectId);
     const item = this.scopes.find((entry) => entry.vmId === vmId && entry.projectId === projectId);
-    return { vmId, projectId, roles: item?.roles || defaultRoles,
+    const policy = { roles: item?.roles || defaultRoles,
       grants: item?.grants || [], approvalRequired: item?.approvalRequired || false };
+    return { vmId, projectId, ...policy, version: this.version(vmId, projectId) };
   }
 
-  async configure(vmId: string, projectId: string, input: unknown) {
+  version(vmId: string, projectId: string) {
+    const item = this.scopes.find((entry) => entry.vmId === vmId && entry.projectId === projectId);
+    return createHash('sha256').update(JSON.stringify({ vmId, projectId,
+      revision: item?.revision || 0,
+      roles: item?.roles || defaultRoles, grants: item?.grants || [],
+      approvalRequired: item?.approvalRequired || false })).digest('hex');
+  }
+
+  async configure(vmId: string, projectId: string, input: unknown,
+    expectedVersion?: string) {
     const value = projectPermissionInput.parse(input);
     return this.serial(async () => {
+      if (expectedVersion !== undefined && expectedVersion !== this.version(vmId, projectId))
+        throw new AppError('项目权限已变化，请刷新后重新应用', 409);
       const previous = this.scopes.find((item) => item.vmId === vmId && item.projectId === projectId);
       const approvalRequired = value.approvalRequired ?? previous?.approvalRequired ?? false;
-      scope.parse({ vmId, projectId, ...value, approvalRequired });
+      const revision = (previous?.revision || 0) + 1;
+      scope.parse({ vmId, projectId, ...value, approvalRequired, revision });
       const index = await this.existing(vmId, projectId);
       if (value.grants.length) await this.requireIsolated(vmId, projectId, index);
       const members = new Set(this.access.users().filter((item) => item.role === 'member')
@@ -120,13 +138,13 @@ export class ProjectPermissions {
       if (value.grants.some((item) => !members.has(item.accountId)))
         throw new AppError('只能向现有项目成员账户授予角色', 409);
       const next: Scope = { vmId, projectId, roles: value.roles, grants: value.grants,
-        approvalRequired };
+        approvalRequired, revision };
       const scopes = [...this.scopes.filter((item) =>
         item.vmId !== vmId || item.projectId !== projectId), next];
       if (scopes.length > 1000) throw new AppError('项目权限范围已达上限', 409);
       await writeStore(this.file, { version: 1, scopes });
       this.scopes = scopes;
-      return next;
+      return { ...next, version: this.version(vmId, projectId) };
     });
   }
 
@@ -186,7 +204,8 @@ export class ProjectPermissions {
   async revokeMember(accountId: string) {
     await this.serial(async () => {
       const scopes = this.scopes.map((item) => ({ ...item,
-        grants: item.grants.filter((grant) => grant.accountId !== accountId) }));
+        grants: item.grants.filter((grant) => grant.accountId !== accountId),
+        revision: item.revision + (item.grants.some((grant) => grant.accountId === accountId) ? 1 : 0) }));
       await writeStore(this.file, { version: 1, scopes });
       this.scopes = scopes;
     });

@@ -314,7 +314,8 @@ export const nextFeatureCatalog = [
     '只读账户按实例申请一次启停，管理员限时审批，可在执行前撤销。', 'available'],
   ['dual-approval', '双人审批', '安全与合规', 'P0',
     '启用策略后，项目配置变更须由不同账户审阅完整配置并批准，再由申请人一次性应用。', 'available'],
-  ['signed-policy-bundles', '签名策略包', '安全与合规', 'P1', '计算策略包摘要并记录签名状态。', 'planned'],
+  ['signed-policy-bundles', '签名策略包', '安全与合规', 'P1',
+    '导出完整项目权限策略的 Ed25519 签名包；验签、信任密钥、预览目标版本后应用。', 'available'],
   [
     'remote-audit-lock',
     '远程不可变审计',
@@ -1050,6 +1051,12 @@ export class NextFeatures {
       return { ready, executed: false, adapter,
         ...(!ready ? { reason: '请启用账户模式和项目工作区插件。' } : {}),
         message: '系统设置 → 账户与只读分享 → 项目成员与权限：按项目配置角色、成员和双人变更审批；变更申请绑定完整配置与基线版本。' };
+    }
+    if (spec.id === 'signed-policy-bundles') {
+      const ready = Boolean(this.accountModeReady?.() && this.workspaces);
+      return { ready, executed: false, adapter,
+        ...(!ready ? { reason: '请启用账户模式和项目工作区插件。' } : {}),
+        message: '系统设置 → 账户与只读分享 → 项目成员与权限 → 签名项目策略包：导出、验签、信任签名者并按版本应用。' };
     }
     if (spec.id === 'acme-renewal')
       return { ...await this.acmeRenewal.run(id, options, action, signal),

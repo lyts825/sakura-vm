@@ -43,6 +43,7 @@ import { Passkeys, passkeyRemove } from './passkeys.ts';
 import { TerminalSharing, terminalShareInput } from './terminal-sharing.ts';
 import { JitPrivileges } from './jit-privileges.ts';
 import { ProjectPermissions, type ProjectPermission } from './project-permissions.ts';
+import { PolicyBundles, policyBundlePreview, policyBundleTarget } from './policy-bundles.ts';
 import { ChangeApprovals } from './change-approvals.ts';
 import { BrowserExtensions, extensionOrigin } from './browser-extensions.ts';
 import { ProcessInterop, guestInteropRequest } from './process-interop.ts';
@@ -97,6 +98,8 @@ async function main() {
     (id) => rollouts.decision(id).allowed);
   const projectPermissions = new ProjectPermissions(access, machines, features.workspaces);
   await projectPermissions.init();
+  const policyBundles = new PolicyBundles(projectPermissions);
+  await policyBundles.init();
   const changeApprovals = features.workspaces
     ? new ChangeApprovals(projectPermissions, features.workspaces) : undefined;
   await changeApprovals?.init();
@@ -711,6 +714,33 @@ async function main() {
       return send(res, await projectPermissions.configure(vmId, projectId,
         await authorizedBody(req, 32768)));
     }
+    if (url.pathname.startsWith('/api/access/policy-bundles/')) {
+      if (accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可管理项目策略包', 403);
+      if (!features.enabled.has('projects')) throw new AppError('项目工作区插件未启用', 403);
+      if (url.pathname === '/api/access/policy-bundles/keys') {
+        if (req.method === 'GET') return send(res, policyBundles.keys());
+        if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+        return send(res, await policyBundles.action(await authorizedBody(req, 8192)));
+      }
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      if (url.pathname === '/api/access/policy-bundles/export') {
+        const target = policyBundleTarget.parse(await authorizedBody(req, 4096));
+        return send(res, { bundle: await policyBundles.export(target.vmId, target.projectId) });
+      }
+      if (url.pathname === '/api/access/policy-bundles/preview') {
+        const input = policyBundlePreview.parse(await authorizedBody(req, 65536));
+        return send(res, await policyBundles.preview(input.bundle, input.target));
+      }
+      if (url.pathname === '/api/access/policy-bundles/apply') {
+        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+        features.mutations++;
+        try { return send(res, await policyBundles.apply(await authorizedBody(req, 65536))); }
+        finally { features.mutations--; }
+      }
+      throw new AppError('接口不存在', 404);
+    }
     if (/^\/api\/access\/users\/[a-f0-9-]{36}$/.test(url.pathname)) {
       if (req.method !== 'DELETE') throw new AppError('不支持此方法', 405);
       if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
@@ -1306,6 +1336,7 @@ async function main() {
       () => terminalSharing.close(),
       () => jitPrivileges.close(),
       () => projectPermissions.close(),
+      () => policyBundles.close(),
       () => changeApprovals?.close(),
       () => browserExtensions.close(),
       () => assistant.close(),

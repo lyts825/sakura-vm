@@ -27,7 +27,17 @@ type ProjectGrantView = { vmId: string; vmName: string; projectId: string; proje
 type ProjectRoleView = { id: string; name: string;
   permissions: Array<'read' | 'write' | 'execute' | 'approve'> };
 type ProjectPolicyView = { vmId: string; projectId: string; roles: ProjectRoleView[];
-  grants: Array<{ accountId: string; roleId: string }>; approvalRequired: boolean };
+  grants: Array<{ accountId: string; roleId: string }>; approvalRequired: boolean; version: string };
+type PolicyDocument = Pick<ProjectPolicyView, 'roles' | 'grants' | 'approvalRequired'>;
+type SignedPolicyBundle = { format: 'sakura-project-policy/v1';
+  source: { vmId: string; projectId: string }; policy: PolicyDocument;
+  signature: { algorithm: 'Ed25519'; publicKey: string; value: string } };
+type PolicyKeys = { revision: number;
+  localKey: { name: string; fingerprint: string; publicKey: string };
+  trustedKeys: Array<{ name: string; fingerprint: string; publicKey: string }> };
+type PolicyPreview = { source: { vmId: string; projectId: string };
+  target: { vmId: string; projectId: string }; signer: string; trusted: boolean;
+  expectedVersion: string; current: PolicyDocument; proposed: PolicyDocument };
 type ChangeView = { id: string; vmId: string; projectId: string; requesterId: string;
   summary: string; project: unknown; expectedVersion: string;
   status: 'pending' | 'approved' | 'denied' | 'claimed' | 'applied' | 'failed' | 'expired';
@@ -717,6 +727,113 @@ function ChangeApprovalPanel({ refreshKey = 0, onApplied }: {
   </section>;
 }
 
+function PolicyBundlePanel({ vmId, projectId, onApplied }: {
+  vmId: string; projectId: string; onApplied: () => Promise<void>;
+}) {
+  const [keys, setKeys] = useState<PolicyKeys | null>(null);
+  const [exported, setExported] = useState('');
+  const [importText, setImportText] = useState('');
+  const [bundle, setBundle] = useState<SignedPolicyBundle | null>(null);
+  const [preview, setPreview] = useState<PolicyPreview | null>(null);
+  const [keyName, setKeyName] = useState('外部策略签名者');
+  const [reviewed, setReviewed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const target = { vmId, projectId };
+  useEffect(() => {
+    const abort = new AbortController();
+    void api<PolicyKeys>('/access/policy-bundles/keys', 'GET', undefined, abort.signal)
+      .then(setKeys).catch((reason) => {
+        if (!abort.signal.aborted) setError(String(reason.message || reason));
+      });
+    return () => abort.abort();
+  }, []);
+  useEffect(() => {
+    setPreview(null); setBundle(null); setReviewed(false); setExported('');
+  }, [vmId, projectId]);
+  const perform = async (action: () => Promise<void>) => {
+    setBusy(true); setError(''); setMessage('');
+    try { await action(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '操作失败'); }
+    finally { setBusy(false); }
+  };
+  return <section className="policy-bundle-panel" aria-label="签名项目策略包">
+    <h4>签名项目策略包</h4>
+    <p>导出当前项目的角色、成员授权和审批要求。导入时须先验签并审阅完整差异；只有受信任签名者的包才能应用。</p>
+    {keys && <><p>本机签名密钥：<code className="policy-bundle-code">{keys.localKey.fingerprint}</code></p>
+      <details><summary>公钥与受信任签名者</summary>
+        <label>本机公钥<textarea rows={4} readOnly value={keys.localKey.publicKey} /></label>
+        <ul>{keys.trustedKeys.map((entry) => <li key={entry.fingerprint}>
+          {entry.name} · <code className="policy-bundle-code">{entry.fingerprint}</code>
+          {entry.fingerprint !== keys.localKey.fingerprint &&
+            <button className="secondary compact" disabled={busy} onClick={() => void perform(async () => {
+              setKeys(await api<PolicyKeys>('/access/policy-bundles/keys', 'POST',
+                { action: 'forget', revision: keys.revision, fingerprint: entry.fingerprint }));
+              setPreview(null); setReviewed(false); setMessage('已撤销对此签名者的信任');
+            })}>撤销信任</button>}</li>)}</ul>
+      </details></>}
+    <button className="secondary compact" disabled={busy} onClick={() => void perform(async () => {
+      const result = await api<{ bundle: SignedPolicyBundle }>(
+        '/access/policy-bundles/export', 'POST', target);
+      setExported(JSON.stringify(result.bundle, null, 2));
+      setMessage('当前项目策略已签名，可复制或下载');
+    })}>导出签名策略包</button>
+    {exported && <><label>导出的策略包 JSON<textarea rows={9} readOnly spellCheck={false}
+      value={exported} /></label>
+      <button className="secondary compact" onClick={() => {
+        const url = URL.createObjectURL(new Blob([exported], { type: 'application/json' }));
+        const anchor = document.createElement('a');
+        anchor.href = url; anchor.download = `sakura-policy-${projectId}.json`;
+        anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }}>下载策略包</button></>}
+    <label>导入策略包 JSON<textarea rows={9} spellCheck={false} value={importText}
+      onChange={(event) => { setImportText(event.target.value); setPreview(null);
+        setBundle(null); setReviewed(false); }} /></label>
+    <button className="secondary compact" disabled={busy || !importText.trim()}
+      onClick={() => void perform(async () => {
+        const parsed = JSON.parse(importText) as SignedPolicyBundle;
+        const result = await api<PolicyPreview>('/access/policy-bundles/preview',
+          'POST', { bundle: parsed, target });
+        setBundle(parsed); setPreview(result); setReviewed(false);
+        setMessage('签名已验证，请审阅当前策略和拟应用策略');
+      })}>验证并预览</button>
+    {preview && bundle && <div className="policy-bundle-preview">
+      <p>来源：{preview.source.vmId} / {preview.source.projectId}</p>
+      <p>目标：{preview.target.vmId} / {preview.target.projectId}</p>
+      <p>签名者：<code className="policy-bundle-code">{preview.signer}</code>
+        {' · '}{preview.trusted ? '已受信任' : '尚未信任'}</p>
+      <p>目标基线：<code className="policy-bundle-code">{preview.expectedVersion}</code></p>
+      <details><summary>查看完整策略差异</summary>
+        <p>当前策略</p><pre>{JSON.stringify(preview.current, null, 2)}</pre>
+        <p>拟应用策略</p><pre>{JSON.stringify(preview.proposed, null, 2)}</pre>
+      </details>
+      {!preview.trusted && keys && <><label>签名者名称<input maxLength={64}
+        value={keyName} onChange={(event) => setKeyName(event.target.value)} /></label>
+        <button className="secondary compact" disabled={busy || !keyName.trim()}
+          onClick={() => void perform(async () => {
+            setKeys(await api<PolicyKeys>('/access/policy-bundles/keys', 'POST',
+              { action: 'trust', revision: keys.revision, name: keyName,
+                publicKey: bundle.signature.publicKey }));
+            setPreview({ ...preview, trusted: true });
+            setMessage('已信任此签名者，请继续审阅并应用');
+          })}>信任此签名者</button></>}
+      <label><input type="checkbox" checked={reviewed}
+        onChange={(event) => setReviewed(event.target.checked)} />
+        已审阅完整策略、成员授权与审批要求</label>
+      <button className="primary compact" disabled={busy || !preview.trusted || !reviewed}
+        onClick={() => void perform(async () => {
+          await api('/access/policy-bundles/apply', 'POST',
+            { bundle, target, expectedVersion: preview.expectedVersion });
+          await onApplied(); setPreview(null); setReviewed(false);
+          setMessage('签名策略包已应用');
+        })}>应用签名策略包</button>
+    </div>}
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
 function ProjectPermissionSettings({ users, vms, refresh }: {
   users: UserView[]; vms: SharedVm[]; refresh: () => Promise<void>;
 }) {
@@ -856,6 +973,10 @@ function ProjectPermissionSettings({ users, vms, refresh }: {
         } catch (reason) { setError(reason instanceof Error ? reason.message : '保存失败'); }
         finally { setBusy(false); }
       }}>保存项目权限</button>
+      <PolicyBundlePanel vmId={vmId} projectId={projectId} onApplied={async () => {
+        const query = new URLSearchParams({ vmId, projectId });
+        setPolicy(await api<ProjectPolicyView>(`/access/project-permissions?${query}`));
+      }} />
       {policy.approvalRequired && <><h4>提交管理员配置变更</h4>
         <p>管理员提交的配置也须由另一位具有审批权限的成员确认。</p>
         <button className="secondary compact" disabled={busy}
