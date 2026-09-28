@@ -6,9 +6,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
+import { inflateRawSync } from 'node:zlib';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from '@playwright/test';
 import { WebSocket } from 'ws';
+import { generate } from 'selfsigned';
+import { SignedXml } from 'xml-crypto';
 
 const data = await mkdtemp(join(tmpdir(), 'sakura-access-vm-'));
 assert.ok(resolve(data).startsWith(resolve(tmpdir()) + sep));
@@ -147,6 +150,33 @@ try {
   assert.equal(owner.status, 200, JSON.stringify(owner.body));
   const ownerToken = owner.body.token as string;
   assert.equal((await request('/api/vms', 'GET', ownerToken)).status, 200);
+  assert.deepEqual((await request('/api/access/sso/providers')).body,
+    { oidc: false, saml: false });
+  assert.equal((await request('/api/access/sso')).status, 401);
+  const ssoCert = await generate([{ name: 'commonName', value: 'Sakura smoke IdP' }],
+    { notBeforeDate: new Date(Date.now() - 60_000),
+      notAfterDate: new Date(Date.now() + 86400_000) });
+  const ssoCertBody = ssoCert.cert.replace(/-----[^-]+-----|\s/g, '');
+  const ssoMetadata = `<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://id.example.test/saml"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><KeyDescriptor use="signing"><KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#"><X509Data><X509Certificate>${ssoCertBody}</X509Certificate></X509Data></KeyInfo></KeyDescriptor><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://id.example.test/login"/></IDPSSODescriptor></EntityDescriptor>`;
+  assert.equal((await request('/api/access/sso/saml', 'PUT', undefined,
+    { metadataXml: ssoMetadata })).status, 401);
+  assert.equal((await request('/api/access/sso/saml', 'PUT', ownerToken,
+    { metadataXml: ssoMetadata })).status, 200);
+  assert.equal((await request('/api/access/sso/providers')).body.saml, true);
+  const ssoStarted = await request('/api/access/sso/start', 'POST', undefined,
+    { provider: 'saml', mode: 'login', origin });
+  assert.equal(ssoStarted.status, 200, JSON.stringify(ssoStarted.body));
+  assert.ok(ssoStarted.body.redirect.startsWith('https://id.example.test/login?'));
+  const callback = await fetch(`http://localhost:${port}/api/access/sso/saml/callback`, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded',
+      origin: 'https://id.example.test', 'sec-fetch-site': 'cross-site' },
+    body: new URLSearchParams({ SAMLResponse: Buffer.from('<invalid/>').toString('base64'),
+      RelayState: ssoStarted.body.state }),
+  });
+  assert.equal(callback.status, 200);
+  assert.match(callback.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
+  assert.match(await callback.text(), /postMessage/);
+  assert.equal((await request('/api/access/sso/saml', 'DELETE', ownerToken)).status, 200);
   assert.equal((await request('/api/audit/remote', 'GET', ownerToken)).body.target, null);
   const auditTarget = { bucket: 'locked-audit-bucket', region: 'us-east-1',
     prefix: 'sakura-test', retentionDays: 7,
@@ -520,6 +550,25 @@ try {
   assert.equal((await request(policyPath, 'PUT', ownerToken, { roles,
     grants: [{ accountId: member.body.id, roleId: 'developer' }] })).status, 200);
 
+  assert.equal((await request('/api/access/sso/saml', 'PUT', ownerToken,
+    { metadataXml: ssoMetadata })).status, 200);
+  const signedSamlResponse = (requestId: string) => {
+    const issued = new Date().toISOString();
+    const before = new Date(Date.now() - 60_000).toISOString();
+    const after = new Date(Date.now() + 5 * 60_000).toISOString();
+    const acs = `http://localhost:${port}/api/access/sso/saml/callback`;
+    const xml = `<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_response" Version="2.0" IssueInstant="${issued}" Destination="${acs}" InResponseTo="${requestId}"><saml:Issuer>https://id.example.test/saml</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status><saml:Assertion ID="_assertion" Version="2.0" IssueInstant="${issued}"><saml:Issuer>https://id.example.test/saml</saml:Issuer><saml:Subject><saml:NameID>smoke-owner</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData InResponseTo="${requestId}" Recipient="${acs}" NotOnOrAfter="${after}"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="${before}" NotOnOrAfter="${after}"><saml:AudienceRestriction><saml:Audience>urn:sakura:localhost:${port}</saml:Audience></saml:AudienceRestriction></saml:Conditions></saml:Assertion></samlp:Response>`;
+    const signer = new SignedXml({ privateKey: ssoCert.private, publicCert: ssoCert.cert,
+      canonicalizationAlgorithm: 'http://www.w3.org/2001/10/xml-exc-c14n#',
+      signatureAlgorithm: 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256' });
+    signer.addReference({ xpath: "/*[local-name()='Response']",
+      digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256',
+      transforms: ['http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+        'http://www.w3.org/2001/10/xml-exc-c14n#'] });
+    signer.computeSignature(xml, { location: { reference:
+      "/*[local-name()='Response']/*[local-name()='Issuer']", action: 'after' } });
+    return Buffer.from(signer.getSignedXml()).toString('base64');
+  };
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -554,6 +603,17 @@ try {
     await page.getByRole('heading', { name: '登录 Sakura' }).waitFor();
 
     const passkeyPage = await browser.newPage();
+    await passkeyPage.context().route(/^https:\/\/id\.example\.test\/login\?/, async (route) => {
+      const target = new URL(route.request().url());
+      const requestXml = inflateRawSync(Buffer.from(target.searchParams.get('SAMLRequest')!,
+        'base64')).toString('utf8');
+      const requestId = /\bID="([^"]+)"/.exec(requestXml)?.[1];
+      assert.ok(requestId);
+      const state = target.searchParams.get('RelayState');
+      assert.ok(state);
+      await route.fulfill({ contentType: 'text/html', body:
+        `<form method="post" action="http://localhost:${port}/api/access/sso/saml/callback"><input name="SAMLResponse" value="${signedSamlResponse(requestId)}"><input name="RelayState" value="${state}"></form><script>document.forms[0].submit()</script>` });
+    });
     const cdp = await passkeyPage.context().newCDPSession(passkeyPage);
     await cdp.send('WebAuthn.enable');
     await cdp.send('WebAuthn.addVirtualAuthenticator', { options: {
@@ -578,6 +638,14 @@ try {
         await passkeyPage.locator('body').innerText()); });
     await passkeyPage.getByRole('button', { name: '系统设置', exact: true }).click();
     await passkeyPage.getByRole('region', { name: '项目权限管理' }).waitFor();
+    const ssoLinks = passkeyPage.getByRole('region', { name: '单点登录身份' });
+    await ssoLinks.getByRole('button', { name: '绑定身份' }).click();
+    await ssoLinks.getByText('外部身份已绑定').waitFor();
+    await passkeyPage.getByRole('button', { name: 'owner · 退出' }).click();
+    await passkeyPage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    await passkeyPage.getByRole('button', { name: '使用 SAML 登录' }).click();
+    await passkeyPage.getByRole('button', { name: 'owner · 退出' }).waitFor();
+    await passkeyPage.getByRole('button', { name: '系统设置', exact: true }).click();
     const jitApprovals = passkeyPage.getByRole('region', { name: '临时授权审批' });
     await jitApprovals.getByText('Need the shared terminal for a review').waitFor();
     await jitApprovals.getByRole('button', { name: '批准' }).click();
@@ -591,8 +659,10 @@ try {
     await manager.getByText('通行密钥已登记').waitFor();
     const registered = await registrationVerify;
     assert.equal(registered.status(), 201);
+    const currentOwnerToken = registered.request().headers()['x-sakura-token'];
+    assert.ok(currentOwnerToken);
     assert.equal((await request('/api/access/passkeys/register/verify', 'POST',
-      ownerBrowserData.token, registered.request().postDataJSON(), passkeyOrigin)).status, 409);
+      currentOwnerToken, registered.request().postDataJSON(), passkeyOrigin)).status, 409);
     const savedKeys = (await request('/api/access/passkeys', 'GET', ownerToken)).body.passkeys;
     assert.equal(savedKeys.length, 1);
     assert.equal(savedKeys[0].name, 'local-key');

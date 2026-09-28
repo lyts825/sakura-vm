@@ -48,6 +48,7 @@ import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 import { AccessControl, accessHandoffInput, accessPasswordInput } from './access-control.ts';
 import { Passkeys, passkeyRemove } from './passkeys.ts';
+import { SingleSignOn, ssoCallbackPage, type SsoProvider } from './sso.ts';
 import { TerminalSharing, terminalShareInput } from './terminal-sharing.ts';
 import { JitPrivileges } from './jit-privileges.ts';
 import { ProjectPermissions, type ProjectPermission } from './project-permissions.ts';
@@ -74,6 +75,8 @@ async function main() {
   const access = new AccessControl();
   await access.init();
   const passkeys = new Passkeys(access, PORT);
+  const sso = new SingleSignOn(access, PORT);
+  await sso.init();
   const dev = process.argv.includes('--dev');
   validateRegistry();
   const plugins = new PluginManager();
@@ -343,11 +346,13 @@ async function main() {
   const graph = new GraphApi(async () => querySnapshot(machines, features.jobStores(), features.enabled));
   plugins.activated(features.enabled, features.errors, features.lifecycle);
   const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
+  sso.setRevocationHandler(() => { for (const client of ws.clients) client.terminate(); });
   const protectedResponses = new Set<ServerResponse>();
   sessionChanged = (locked, transitioned) => {
     if (transitioned) token = randomBytes(32).toString('hex');
     if (locked) {
       access.revokeAll();
+      sso.cancelPending();
       native.revoke();
       assistant.revoke();
       for (const client of ws.clients) client.terminate();
@@ -418,6 +423,34 @@ async function main() {
     });
     res.end(JSON.stringify(data));
   }
+  const sendSsoPage = (res: ServerResponse, origin: string | null, state: string,
+    result?: unknown, error?: string) => {
+    const { html, nonce } = ssoCallbackPage(origin, state, result, error);
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; frame-ancestors 'none'; base-uri 'none'`,
+    });
+    res.end(html);
+  };
+  const samlPost = async (req: IncomingMessage) => {
+    if (!req.headers['content-type']?.startsWith('application/x-www-form-urlencoded'))
+      throw new AppError('SAML 回调需要表单编码', 415);
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > 1_500_000) throw new AppError('SAML 响应过大', 413);
+      chunks.push(chunk);
+    }
+    const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+    if (form.getAll('SAMLResponse').length !== 1 || form.getAll('RelayState').length !== 1)
+      throw new AppError('SAML 响应缺少唯一的状态与断言', 400);
+    return { SAMLResponse: form.get('SAMLResponse')!, RelayState: form.get('RelayState')! };
+  };
   const extensionApi = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (![`127.0.0.1:${PORT}`, `localhost:${PORT}`].includes(req.headers.host || ''))
       throw new AppError('仅接受本机扩展连接', 403);
@@ -494,7 +527,47 @@ async function main() {
         return send(res, { ...login, session: unlocked });
       } catch (error) { access.logout(login.token); throw error; }
     }
+    if (url.pathname === '/api/access/sso/oidc/callback' ||
+        url.pathname === '/api/access/sso/saml/callback') {
+      const providerId: SsoProvider = url.pathname.includes('/oidc/') ? 'oidc' : 'saml';
+      if (req.method !== (providerId === 'oidc' ? 'GET' : 'POST'))
+        throw new AppError('不支持此方法', 405);
+      const post = providerId === 'saml' ? await samlPost(req) : undefined;
+      const state = providerId === 'oidc' ? url.searchParams.get('state') || '' : post!.RelayState;
+      const origin = sso.pendingOrigin(providerId, state);
+      try {
+        session.requireUnlocked();
+        const completed = providerId === 'oidc'
+          ? await sso.completeOidc(new URL(url.search, `http://localhost:${PORT}/api/access/sso/oidc/callback`))
+          : await sso.completeSaml(post!);
+        try { session.requireUnlocked(); }
+        catch (error) {
+          if ('token' in completed.result) access.logout(completed.result.token);
+          throw error;
+        }
+        return sendSsoPage(res, completed.origin, completed.state, completed.result);
+      } catch (error) {
+        return sendSsoPage(res, origin, state, undefined,
+          error instanceof Error ? error.message : '单点登录失败');
+      }
+    }
     session.requireUnlocked();
+    if (url.pathname === '/api/access/sso/providers') {
+      if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
+      return send(res, sso.providers());
+    }
+    if (url.pathname === '/api/access/sso/start') {
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const input = await body(req, 4096);
+      session.requireUnlocked();
+      const credential = req.headers['x-sakura-token'];
+      const started = await sso.begin(input,
+        typeof credential === 'string' ? credential : undefined);
+      try { session.requireUnlocked(); }
+      catch (error) { sso.cancelPending(); throw error; }
+      return send(res, started);
+    }
     if (url.pathname === '/api/access/login') {
       if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
       const login = await access.login(await body(req, 4096));
@@ -539,6 +612,28 @@ async function main() {
     if (await features.downloads?.route(req, res, url)) return;
     const principal = authorized(req);
     const accountPrincipal = access.enabled ? access.authorize(req.headers['x-sakura-token']) : null;
+    if (url.pathname === '/api/access/sso') {
+      if (req.method !== 'GET' || !accountPrincipal) throw new AppError('不支持此方法', 405);
+      return send(res, sso.view(accountPrincipal.role === 'owner' ? undefined : accountPrincipal.id));
+    }
+    if (url.pathname === '/api/access/sso/oidc' ||
+        url.pathname === '/api/access/sso/saml') {
+      if (accountPrincipal?.role !== 'owner') throw new AppError('仅管理员可配置单点登录', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const providerId: SsoProvider = url.pathname.endsWith('oidc') ? 'oidc' : 'saml';
+      if (req.method === 'DELETE') return send(res, await sso.disable(providerId));
+      if (req.method !== 'PUT') throw new AppError('不支持此方法', 405);
+      const input = await authorizedBody(req, providerId === 'saml' ? 700_000 : 8192);
+      return send(res, providerId === 'oidc'
+        ? await sso.configureOidc(input) : await sso.configureSaml(input));
+    }
+    if (/^\/api\/access\/sso\/link\/(oidc|saml)$/.test(url.pathname)) {
+      if (req.method !== 'DELETE' || !accountPrincipal)
+        throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await sso.unlink(accountPrincipal.id,
+        url.pathname.split('/').at(-1) as SsoProvider));
+    }
     const passkeyManagementRoute = [
       '/api/access/passkeys', '/api/access/passkeys/register/options',
       '/api/access/passkeys/register/verify',
@@ -1234,9 +1329,13 @@ async function main() {
             name: (req.method + ' ' + extensionUrl.pathname).slice(0, 200) },
           () => extensionApi(req, res, extensionUrl), () => res.statusCode);
       }
-      if (!allowedRequest(req)) throw new AppError('仅接受本机同源访问', 403);
       const url = requestUrl(req.url, PORT);
       if (!url) throw new AppError('无效的请求地址', 400);
+      const ssoCallback = (req.url?.startsWith('/api/access/sso/oidc/callback?') &&
+        url.pathname === '/api/access/sso/oidc/callback' && req.method === 'GET') ||
+        (req.url === '/api/access/sso/saml/callback' && req.method === 'POST');
+      if (!allowedRequest(req) && !(ssoCallback && req.headers.host === `localhost:${PORT}`))
+        throw new AppError('仅接受本机同源访问', 403);
       if (url.pathname.startsWith('/api/')) {
         if ((url.pathname === '/api/access/login' ||
             url.pathname === '/api/access/handoff/redeem' ||
@@ -1514,6 +1613,7 @@ async function main() {
     for (const dispose of [
       () => session.close(),
       () => access.close(),
+      () => sso.close(),
       () => passkeys.close(),
       () => terminalSharing.close(),
       () => jitPrivileges.close(),

@@ -13,6 +13,15 @@ type SharedVm = { id: string; name: string; status: string; distro?: string;
 type UserView = { id: string; username: string; role: 'owner' | 'viewer' | 'member';
   vmIds: string[]; expiresAt: number | null; createdAt: string };
 type PasskeyView = { id: string; name: string; createdAt: string; lastUsedAt?: string };
+type SsoProvider = 'oidc' | 'saml';
+type SsoProviders = Record<SsoProvider, boolean>;
+type SsoBinding = { id: string; provider: SsoProvider; accountId: string;
+  issuer: string; subject: string; createdAt: string };
+type SsoView = { oidc?: { issuer: string; clientId: string;
+  authMethod: 'client_secret_basic' | 'client_secret_post' | 'none'; hasSecret: boolean };
+  saml?: { issuer: string; entryPoint: string; fingerprints: string[] };
+  callbackUrl: string; samlCallbackUrl: string; serviceProviderId: string;
+  bindings: SsoBinding[] };
 type TerminalGrantView = { id: string; vmId: string; session: string; expiresAt: number };
 type BrowserExtensionView = { id: string; origin: string; createdAt: number;
   expiresAt: number; lastSeenAt?: number; connected: boolean; expired: boolean;
@@ -73,6 +82,62 @@ async function publicPasskeyRequest<T>(path: string, input: unknown) {
   return result as T;
 }
 
+async function startSso(provider: SsoProvider, mode: 'login' | 'link') {
+  const popup = window.open('', '_blank', 'popup,width=640,height=720');
+  if (!popup) throw new Error('浏览器阻止了登录窗口，请允许弹出窗口后重试');
+  try {
+    popup.document.title = 'Sakura 单点登录';
+    popup.document.body.textContent = '正在连接身份提供商…';
+    const input = { provider, mode, origin: location.origin };
+    let begin: { redirect: string; state: string };
+    if (mode === 'link') begin = await api('/access/sso/start', 'POST', input);
+    else {
+      const response = await fetch('/api/access/sso/start', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '无法开始单点登录');
+      begin = data;
+    }
+    if (new URL(begin.redirect).protocol !== 'https:')
+      throw new Error('身份提供商登录地址必须使用 HTTPS');
+    return await new Promise<{ token: string; principal: AccessPrincipal } | { linked: true }>(
+      (resolve, reject) => {
+        let settled = false;
+        const finish = (error?: Error, value?: { token: string; principal: AccessPrincipal } |
+          { linked: true }) => {
+          if (settled) return;
+          settled = true;
+          window.removeEventListener('message', onMessage);
+          clearInterval(closed);
+          clearTimeout(timeout);
+          try { popup.close(); } catch {}
+          error ? reject(error) : resolve(value!);
+        };
+        const onMessage = (event: MessageEvent) => {
+          if (event.source !== popup || event.origin !== `http://localhost:${location.port}` ||
+              event.data?.type !== 'sakura-sso' || event.data.state !== begin.state) return;
+          if (event.data.error) finish(new Error(String(event.data.error)));
+          else if (mode === 'login' && typeof event.data.result?.token === 'string' &&
+              event.data.result?.principal) finish(undefined, event.data.result);
+          else if (mode === 'link' && event.data.result?.linked === true)
+            finish(undefined, { linked: true });
+          else finish(new Error('身份提供商返回了无效结果'));
+        };
+        window.addEventListener('message', onMessage);
+        const closed = setInterval(() => { if (popup.closed) finish(new Error('登录窗口已关闭')); }, 1000);
+        const timeout = setTimeout(() => finish(new Error('单点登录已超时')), 5 * 60_000);
+        try { popup.location.assign(begin.redirect); }
+        catch (reason) { finish(reason instanceof Error ? reason : new Error('无法打开身份提供商')); }
+      });
+  } catch (error) {
+    try { popup.close(); } catch {}
+    throw error;
+  }
+}
+
 const localhostUrl = () => `http://localhost:${location.port || '80'}/`;
 
 const useToken = () => useSyncExternalStore(controllerSession.subscribe, controllerSession.getToken);
@@ -89,6 +154,7 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
   const [handoffCode, setHandoffCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ssoProviders, setSsoProviders] = useState<SsoProviders>({ oidc: false, saml: false });
 
   useEffect(() => {
     const abort = new AbortController();
@@ -119,6 +185,16 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
     const timer = setInterval(() => void refresh(), 10_000);
     return () => { abort.abort(); clearInterval(timer); };
   }, [principal]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const abort = new AbortController();
+    void fetch('/api/access/sso/providers', { cache: 'no-store', signal: abort.signal })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((providers) => { if (!abort.signal.aborted && providers) setSsoProviders(providers); })
+      .catch(() => {});
+    return () => abort.abort();
+  }, [enabled, token]);
 
   if (enabled === null) return <main className="session-lock-screen"><p role="status">
     {statusError || '正在读取账户状态…'}</p></main>;
@@ -191,6 +267,17 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
           finally { setBusy(false); }
         }}>使用通行密钥登录</button>
         : <p><a href={localhostUrl()}>在 localhost 打开通行密钥登录</a></p>}
+      {(Object.keys(ssoProviders) as SsoProvider[]).filter((provider) =>
+        ssoProviders[provider]).map((provider) =>
+        <button key={provider} className="secondary" disabled={busy}
+          onClick={async () => {
+            setBusy(true); setError('');
+            try {
+              const result = await startSso(provider, 'login');
+              if ('token' in result) controllerSession.adoptAccount(result.token, result.principal);
+            } catch (reason) { setError(reason instanceof Error ? reason.message : '单点登录失败'); }
+            finally { setBusy(false); }
+          }}>使用 {provider === 'oidc' ? 'OIDC' : 'SAML'} 登录</button>)}
       {error && <p role="alert" className="inline-error">{error}</p>}
       {statusError && <p role="status" className="inline-error">{statusError}</p>}
     </section>
@@ -236,7 +323,7 @@ function ProjectMemberPortal({ principal }: { principal: AccessPrincipal }) {
     <h1>Sakura · 项目成员</h1><span>{principal.username}</span>
     <button className="secondary compact" onClick={() => void api('/access/logout', 'POST', {})
       .finally(() => controllerSession.clearCredential())}>退出登录</button>
-  </header><section className="system-card" aria-label="授权项目">
+  </header><SsoAccountLinks accountId={principal.id} /><section className="system-card" aria-label="授权项目">
     <h2>授权项目</h2>
     {projects.length ? <><label>项目<select value={selected}
       onChange={(event) => { setSelected(event.target.value); setMessage(''); }}>
@@ -318,6 +405,7 @@ function SharedInventory({ principal }: { principal: AccessPrincipal }) {
       <button className="secondary compact" onClick={() => void api('/access/logout', 'POST', {})
         .finally(() => controllerSession.clearCredential())}>退出登录</button>
     </header>
+    <SsoAccountLinks accountId={principal.id} />
     <section className="system-card"><h2>已授权实例</h2>
       <p>只能查看所选实例的状态、资源摘要和可用的只读桌面。操作、日志、终端和下载不可访问。</p>
       {error && <p role="alert" className="inline-error">{error}</p>}
@@ -1204,6 +1292,138 @@ function ProjectPermissionSettings({ users, vms, refresh }: {
   </section>;
 }
 
+function SsoAccountLinks({ accountId }: { accountId: string }) {
+  const [view, setView] = useState<SsoView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const refresh = async () => setView(await api<SsoView>('/access/sso'));
+  useEffect(() => { void refresh().catch((reason) => setError(String(reason.message || reason))); },
+    [accountId]);
+  if (!view) return null;
+  const bindings = view.bindings.filter((item) => item.accountId === accountId);
+  return <section className="system-card" aria-label="单点登录身份">
+    <h3>单点登录身份</h3>
+    <p>先使用当前账户绑定外部身份，之后即可在登录页使用该提供商登录。</p>
+    {(['oidc', 'saml'] as const).filter((provider) => !!view[provider]).map((provider) => {
+      const binding = bindings.find((item) => item.provider === provider);
+      return <div key={provider}>
+        <strong>{provider === 'oidc' ? 'OIDC' : 'SAML'}</strong>
+        {binding ? <p>已绑定：{binding.subject} · {binding.issuer}</p> : <p>尚未绑定</p>}
+        <button className="secondary compact" disabled={busy} onClick={async () => {
+          setBusy(true); setError(''); setMessage('');
+          try { await startSso(provider, 'link'); await refresh(); setMessage('外部身份已绑定'); }
+          catch (reason) { setError(reason instanceof Error ? reason.message : '绑定失败'); }
+          finally { setBusy(false); }
+        }}>{binding ? '重新绑定' : '绑定身份'}</button>
+        {binding && <button className="secondary compact" disabled={busy} onClick={async () => {
+          setBusy(true); setError(''); setMessage('');
+          try { await api(`/access/sso/link/${provider}`, 'DELETE');
+            await refresh(); setMessage('已解除绑定，关联登录会话已撤销'); }
+          catch (reason) { setError(reason instanceof Error ? reason.message : '解除绑定失败'); }
+          finally { setBusy(false); }
+        }}>解除绑定</button>}
+      </div>;
+    })}
+    {!view.oidc && !view.saml && <p>管理员尚未配置身份提供商。</p>}
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
+function SsoConfiguration({ users }: { users: UserView[] }) {
+  const [view, setView] = useState<SsoView | null>(null);
+  const [issuer, setIssuer] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [authMethod, setAuthMethod] = useState<'client_secret_basic' |
+    'client_secret_post' | 'none'>('client_secret_basic');
+  const [secret, setSecret] = useState('');
+  const [metadataXml, setMetadataXml] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const refresh = async () => {
+    const next = await api<SsoView>('/access/sso');
+    setView(next);
+    if (next.oidc) {
+      setIssuer(next.oidc.issuer); setClientId(next.oidc.clientId);
+      setAuthMethod(next.oidc.authMethod);
+    }
+  };
+  useEffect(() => { void refresh().catch((reason) => setError(String(reason.message || reason))); }, []);
+  if (!view) return null;
+  return <section className="system-card" aria-label="单点登录配置">
+    <h3>OIDC 与 SAML 单点登录</h3>
+    <p>为本机账户绑定外部身份。提供商配置变更会解除该提供商的所有账户绑定并撤销其登录会话。</p>
+    <p>OIDC 回调：<code>{view.callbackUrl}</code></p>
+    <p>SAML 服务提供商 ID：<code>{view.serviceProviderId}</code>；ACS：
+      <code>{view.samlCallbackUrl}</code></p>
+    <form onSubmit={async (event) => {
+      event.preventDefault(); setBusy(true); setError(''); setMessage('');
+      try {
+        await api('/access/sso/oidc', 'PUT', { issuer, clientId, authMethod,
+          ...(authMethod !== 'none' ? { clientSecret: secret } : {}) });
+        setSecret(''); await refresh(); setMessage('OIDC 已配置，请在下方绑定账户身份');
+      } catch (reason) { setError(reason instanceof Error ? reason.message : 'OIDC 配置失败'); }
+      finally { setBusy(false); }
+    }}>
+      <h4>OIDC</h4>
+      <label>Issuer URL<input type="url" required value={issuer} disabled={busy}
+        placeholder="https://id.example.com/" onChange={(event) => setIssuer(event.target.value)} /></label>
+      <label>Client ID<input required value={clientId} disabled={busy}
+        onChange={(event) => setClientId(event.target.value)} /></label>
+      <label>Token 认证方式<select value={authMethod} disabled={busy}
+        onChange={(event) => setAuthMethod(event.target.value as typeof authMethod)}>
+        <option value="client_secret_basic">Client Secret Basic</option>
+        <option value="client_secret_post">Client Secret Post</option>
+        <option value="none">Public Client</option>
+      </select></label>
+      {authMethod !== 'none' && <label>Client Secret<input type="password" required value={secret}
+        autoComplete="off" disabled={busy} onChange={(event) => setSecret(event.target.value)} /></label>}
+      <button className="primary compact" disabled={busy || !issuer || !clientId ||
+        (authMethod !== 'none' && !secret)}>保存 OIDC 配置</button>
+      {view.oidc && <button type="button" className="secondary compact" disabled={busy}
+        onClick={async () => {
+          setBusy(true); setError(''); setMessage('');
+          try { await api('/access/sso/oidc', 'DELETE'); await refresh();
+            setMessage('OIDC 已停用'); }
+          catch (reason) { setError(reason instanceof Error ? reason.message : '停用失败'); }
+          finally { setBusy(false); }
+        }}>停用 OIDC</button>}
+    </form>
+    <form onSubmit={async (event) => {
+      event.preventDefault(); setBusy(true); setError(''); setMessage('');
+      try { await api('/access/sso/saml', 'PUT', { metadataXml });
+        setMetadataXml(''); await refresh(); setMessage('SAML 已配置，请在下方绑定账户身份'); }
+      catch (reason) { setError(reason instanceof Error ? reason.message : 'SAML 配置失败'); }
+      finally { setBusy(false); }
+    }}>
+      <h4>SAML 2.0</h4>
+      {view.saml && <p>当前 IdP：{view.saml.issuer} · 签名证书指纹：
+        {view.saml.fingerprints.join('、')}</p>}
+      <label>IdP 元数据 XML<textarea required rows={8} value={metadataXml} disabled={busy}
+        onChange={(event) => setMetadataXml(event.target.value)} /></label>
+      <button className="primary compact" disabled={busy || !metadataXml.trim()}>保存 SAML 配置</button>
+      {view.saml && <button type="button" className="secondary compact" disabled={busy}
+        onClick={async () => {
+          setBusy(true); setError(''); setMessage('');
+          try { await api('/access/sso/saml', 'DELETE'); await refresh();
+            setMessage('SAML 已停用'); }
+          catch (reason) { setError(reason instanceof Error ? reason.message : '停用失败'); }
+          finally { setBusy(false); }
+        }}>停用 SAML</button>}
+    </form>
+    {view.bindings.length > 0 && <><h4>已绑定账户</h4><ul>
+      {view.bindings.map((binding) => <li key={binding.id}>
+        {users.find((user) => user.id === binding.accountId)?.username || '已删除账户'} ·
+        {' '}{binding.provider.toUpperCase()} · {binding.subject}
+      </li>)}
+    </ul></>}
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
 export function AccessSettings() {
   const accountMode = useAccountMode();
   const principal = usePrincipal();
@@ -1295,6 +1515,8 @@ export function AccessSettings() {
       <JitOwnerPanel users={users} vms={vms} />
       <BrowserExtensionManager />
       <MobileCompanionManager vms={vms} />
+      {principal?.role === 'owner' && <><SsoConfiguration users={users} />
+        <SsoAccountLinks accountId={principal.id} /></>}
       <h4>更换管理员密码</h4>
       <p>更换后所有账户会话立即失效，需要用新密码重新登录。</p>
       <form onSubmit={async (event) => {

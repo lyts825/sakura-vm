@@ -13,6 +13,7 @@ import { policyBundleApply, policyBundleKeyAction, policyBundlePreview,
   policyBundleTarget } from './policy-bundles.ts';
 import { changeRequestInput, changeDecisionInput } from './change-approvals.ts';
 import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
+import { ssoBeginInput, ssoOidcInput, ssoSamlInput } from './sso.ts';
 import { terminalShareInput } from './terminal-sharing.ts';
 import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
@@ -63,6 +64,27 @@ const core: {
     title: '账户模式与会话锁状态', public: true, response: { type: 'object',
       properties: { enabled: { type: 'boolean' }, session: { type: 'object' } },
       required: ['enabled', 'session'] } },
+  { id: 'access.ssoProviders', method: 'GET', path: '/api/access/sso/providers',
+    title: '列出已配置的单点登录提供商', public: true },
+  { id: 'access.ssoStart', method: 'POST', path: '/api/access/sso/start',
+    title: '开始 OIDC 或 SAML 登录或账户绑定', public: true,
+    body: request(ssoBeginInput) },
+  { id: 'access.ssoOidcCallback', method: 'GET', path: '/api/access/sso/oidc/callback',
+    title: '接收身份提供商的 OIDC 授权码回调', public: true, media: 'text/html' },
+  { id: 'access.ssoSamlCallback', method: 'POST', path: '/api/access/sso/saml/callback',
+    title: '接收身份提供商的 SAML POST 断言', public: true, media: 'text/html' },
+  { id: 'access.ssoView', method: 'GET', path: '/api/access/sso',
+    title: '查看单点登录配置和当前账户关联', inspect: true },
+  { id: 'access.ssoOidcConfigure', method: 'PUT', path: '/api/access/sso/oidc',
+    title: '管理员配置 OIDC 身份提供商', body: request(ssoOidcInput) },
+  { id: 'access.ssoOidcDisable', method: 'DELETE', path: '/api/access/sso/oidc',
+    title: '管理员停用 OIDC 并撤销关联会话' },
+  { id: 'access.ssoSamlConfigure', method: 'PUT', path: '/api/access/sso/saml',
+    title: '管理员导入 SAML IdP 元数据', body: request(ssoSamlInput) },
+  { id: 'access.ssoSamlDisable', method: 'DELETE', path: '/api/access/sso/saml',
+    title: '管理员停用 SAML 并撤销关联会话' },
+  { id: 'access.ssoUnlink', method: 'DELETE', path: '/api/access/sso/link/{provider}',
+    title: '解除当前账户的外部身份关联并撤销会话' },
   { id: 'access.login', method: 'POST', path: '/api/access/login',
     title: '使用账户密码登录', public: true, body: request(accessLoginInput) },
   { id: 'access.handoffRedeem', method: 'POST', path: '/api/access/handoff/redeem',

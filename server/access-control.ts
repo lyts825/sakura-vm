@@ -164,6 +164,21 @@ export class AccessControl {
     this.sessions.set(digest(token), { accountId: user.id, expiresAt, credentialId });
     return { token, principal: this.principal(user, expiresAt) };
   }
+  async completeFederatedLogin(accountId: string, credentialId: string) {
+    return this.serial(async () => {
+      if (!this.state.enabled) throw new AppError('账户模式未启用', 409);
+      const user = this.state.accounts.find((item) => item.id === accountId);
+      if (!user || (user.expiresAt && user.expiresAt <= this.now()))
+        throw new AppError('关联账户已失效', 401);
+      return this.issueSession(user, credentialId);
+    });
+  }
+  revokeFederatedCredential(credentialId: string) {
+    let removed = 0;
+    for (const [token, session] of this.sessions)
+      if (session.credentialId === credentialId) { this.sessions.delete(token); removed++; }
+    return removed;
+  }
 
   private principal(user: Account, expiresAt: number): Principal {
     return { id: user.id, username: user.username, role: user.role,
