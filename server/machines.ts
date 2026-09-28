@@ -28,7 +28,7 @@ import {
 import { createSshKey, seedIso, userData, metaData, bootSetup, cloudUserData, cloudNetwork } from './seed.ts';
 import { distroInfo } from './images.ts';
 import { Files, MAX_TEXT_BYTES } from './files.ts';
-import { freePort, qmp, GuestAgent } from './qmp.ts';
+import { freePort, qmp, qmpSnapshotJob, GuestAgent } from './qmp.ts';
 import type { Engine } from './runtime.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
 import { readStore, writeStore, fileHash, regularDirectory, within } from './local-store.ts';
@@ -1796,14 +1796,30 @@ export class Machines extends EventEmitter {
     const { key, seed } = await this.diskIdentity(id, snapshotId);
     return { key, seed };
   }
-  private async createSnapshot(vm: VMRecord, name: string, onlinePort?: number) {
+  private async vmStateFingerprint(vm: VMRecord, qmpPort: number, accelerator: string) {
+    // The command-line QMP listener serves one client at a time.
+    const version = await qmp(qmpPort, 'query-version');
+    const cpuSlots = await qmp(qmpPort, 'query-hotpluggable-cpus');
+    const memorySize = await qmp(qmpPort, 'query-memory-size-summary');
+    const memoryDevices = await qmp(qmpPort, 'query-memory-devices');
+    return createHash('sha256').update(JSON.stringify({
+      version, accelerator, architecture: vm.architecture || 'x86_64',
+      distro: vm.distro || 'alpine', firmware: vm.firmware || 'bios',
+      memoryMiB: vm.memoryMiB, cpus: vm.cpus, diskGiB: vm.diskGiB,
+      hardware: vm.hardware || null, cpuSlots, memorySize, memoryDevices,
+    })).digest('hex');
+  }
+  private async createSnapshot(vm: VMRecord, name: string, onlinePort?: number,
+    stateFingerprint?: string) {
     const shot = {
       id: randomUUID(),
       name,
       createdAt: new Date().toISOString(),
       diskGiB: vm.diskGiB,
       pendingResize: !!vm.pendingResize,
-      consistency: onlinePort === undefined ? 'offline' as const : 'filesystem' as const,
+      consistency: stateFingerprint ? 'vmstate' as const :
+        onlinePort === undefined ? 'offline' as const : 'filesystem' as const,
+      ...(stateFingerprint ? { stateFingerprint } : {}),
     };
     const identity = await this.diskIdentity(vm.id);
     const file = this.snapshotIdentityFile(vm.id, shot.id);
@@ -1821,6 +1837,8 @@ export class Machines extends EventEmitter {
         else await this.engine.run('sakura-img',
           ['snapshot', '-c', shot.id, join(vmDir(vm.id), 'disk.qcow2')]);
       }
+      else if (stateFingerprint)
+        await qmpSnapshotJob(onlinePort, 'snapshot-save', shot.id);
       else
         await qmp(onlinePort, 'blockdev-snapshot-internal-sync',
           { device: 'sakura-disk', name: shot.id }, 30000);
@@ -1886,11 +1904,70 @@ export class Machines extends EventEmitter {
       return result!;
     });
   }
+  async memorySnapshot(id: string, name: string) {
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      const live = this.live.get(id);
+      if (!live || live.status !== 'running')
+        throw new AppError('整机状态快照要求实例正在运行', 409);
+      if (vm.rescueOf) throw new AppError('临时救援实例不能保存整机状态', 409);
+      if (live.accelerator !== 'tcg')
+        throw new AppError('当前 WHPX 无法保存 RAM 状态；请停机后将加速器切换为 TCG', 409);
+      if (vm.sandbox?.storage === 'discard-on-stop' || vm.diskEncryption ||
+          vm.firmware === 'uefi')
+        throw new AppError('当前实例的临时磁盘、加密磁盘或 UEFI NVRAM 不支持整机状态快照', 409);
+      if (vm.snapshots.length >= 20) throw new AppError('最多保留 20 个快照');
+      const fingerprint = await this.vmStateFingerprint(vm, live.qmpPort, live.accelerator);
+      return this.createSnapshot(vm, name, live.qmpPort, fingerprint);
+    });
+  }
+  async restoreMemory(id: string, snapshotId: string, backup = false) {
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      const shot = vm.snapshots.find((item) => item.id === snapshotId);
+      if (!shot || shot.consistency !== 'vmstate' || !shot.stateFingerprint)
+        throw new AppError('整机状态快照不存在', 404);
+      const live = this.live.get(id);
+      if (!live || live.status !== 'running')
+        throw new AppError('请先启动实例，再恢复整机状态', 409);
+      if (live.accelerator !== 'tcg')
+        throw new AppError('当前 WHPX 无法恢复 RAM 状态；请停机后将加速器切换为 TCG', 409);
+      if (vm.sandbox?.storage === 'discard-on-stop' || vm.diskEncryption ||
+          vm.firmware === 'uefi')
+        throw new AppError('当前实例的临时磁盘、加密磁盘或 UEFI NVRAM 不支持整机状态恢复', 409);
+      const fingerprint = await this.vmStateFingerprint(vm, live.qmpPort, live.accelerator);
+      if (fingerprint !== shot.stateFingerprint)
+        throw new AppError('QEMU 版本或实例硬件已变化，拒绝恢复不兼容的 RAM 状态', 409);
+      const [currentIdentity, snapshotIdentity] = await Promise.all([
+        this.diskIdentity(id), this.diskIdentity(id, snapshotId),
+      ]);
+      if (currentIdentity.key !== snapshotIdentity.key ||
+          !currentIdentity.seed.equals(snapshotIdentity.seed) ||
+          currentIdentity.pending !== snapshotIdentity.pending)
+        throw new AppError('实例控制身份或初始化镜像已变化，拒绝加载不匹配的整机状态', 409);
+      if (backup) {
+        if (vm.snapshots.length >= 20)
+          throw new AppError('请先删除一个旧快照，为恢复前备份留出位置', 409);
+        await this.createSnapshot(vm, '恢复前整机状态自动备份', live.qmpPort, fingerprint);
+      }
+      await qmpSnapshotJob(live.qmpPort, 'snapshot-load', shot.id);
+      const status = await qmp(live.qmpPort, 'query-status');
+      if (!status || typeof status !== 'object' ||
+          (status as { running?: boolean }).running !== true)
+        throw new AppError('整机状态已加载，但客户机尚未恢复运行，请检查实例', 409);
+      for (const client of live.clients) client.destroy();
+      this.emit('change');
+      return this.view(id);
+    });
+  }
   async restore(id: string, snapshotId: string, backup = false) {
     return this.locked(id, async () => {
       const vm = this.get(id);
       this.requireStopped(id);
-      if (!vm.snapshots.some((s) => s.id === snapshotId)) throw new AppError('快照不存在', 404);
+      const selected = vm.snapshots.find((s) => s.id === snapshotId);
+      if (!selected) throw new AppError('快照不存在', 404);
+      if (selected.consistency === 'vmstate')
+        throw new AppError('此快照包含 RAM 状态，请启动实例并使用整机状态恢复', 409);
       const identity = await this.diskIdentity(id, snapshotId);
       if (backup) {
         if (vm.snapshots.length >= 20) throw new AppError('请先删除一个旧快照，为恢复前备份留出位置');

@@ -191,11 +191,14 @@ export async function route(
     action = parts[3];
   this.machines.get(id);
   if (req.method === 'POST' && parts[3] === 'snapshots' && parts.length === 4) {
-    const { name, online } = z
-      .object({ name: z.string().trim().min(1).max(60), online: z.boolean().optional() })
+    const { name, online, memory } = z
+      .object({ name: z.string().trim().min(1).max(60), online: z.boolean().optional(),
+        memory: z.boolean().optional() })
       .strict()
       .parse(await body(req));
-    return send(await (online ? this.machines.onlineSnapshot(id, name) : this.machines.snapshot(id, name)), 201);
+    if (memory && !online) throw new AppError('整机状态快照要求运行中的实例', 409);
+    return send(await (memory ? this.machines.memorySnapshot(id, name)
+      : online ? this.machines.onlineSnapshot(id, name) : this.machines.snapshot(id, name)), 201);
   }
   if (
     req.method === 'POST' &&
@@ -206,11 +209,12 @@ export async function route(
   ) {
     const input = req.headers['content-type']?.startsWith('application/json')
       ? z
-          .object({ backup: z.boolean().default(true) })
+          .object({ backup: z.boolean().default(true), memory: z.boolean().optional() })
           .strict()
           .parse(await body(req))
       : { backup: false };
-    return send(await this.machines.restore(id, parts[4], input.backup));
+    return send(await (input.memory ? this.machines.restoreMemory(id, parts[4], input.backup)
+      : this.machines.restore(id, parts[4], input.backup)));
   }
   if (action === 'snapshots' && parts[4] && parts.length === 5) {
     if (req.method === 'DELETE') {

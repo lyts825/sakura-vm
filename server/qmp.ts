@@ -1,6 +1,7 @@
 import { createConnection, createServer } from 'node:net';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export async function freePort() {
   const server = createServer();
@@ -54,6 +55,38 @@ export async function qmp(port: number, command: string, args?: Record<string, u
       }
     });
   });
+}
+
+/** Snapshot QMP commands enqueue jobs; their immediate reply is not completion. */
+export async function qmpSnapshotJob(port: number, command: 'snapshot-save' | 'snapshot-load',
+  tag: string, timeoutMs = 5 * 60_000) {
+  const blocks = await qmp(port, 'query-block', undefined, 10_000);
+  if (!Array.isArray(blocks)) throw new Error('QMP did not return block devices');
+  if (blocks.some((block) => block && typeof block === 'object' &&
+      block.device !== 'sakura-disk' && block.inserted && !block.inserted.ro))
+    throw new Error('Additional writable block devices are not supported by VM-state snapshots');
+  const disk = blocks.find((block) => block && typeof block === 'object' &&
+    block.device === 'sakura-disk');
+  const node = disk?.inserted?.['node-name'];
+  if (typeof node !== 'string' || disk.inserted.drv !== 'qcow2' || disk.inserted.ro)
+    throw new Error('Sakura writable QCOW2 disk node is unavailable');
+  const id = `sakura-${command}-${randomUUID()}`;
+  await qmp(port, command, { 'job-id': id, tag, vmstate: node,
+    devices: [node] }, 30_000);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await qmp(port, 'query-jobs', undefined, 10_000);
+    if (!Array.isArray(result)) throw new Error('QMP did not return snapshot jobs');
+    const job = result.find((item) => item && typeof item === 'object' && item.id === id);
+    if (job?.status === 'concluded') {
+      await qmp(port, 'job-dismiss', { id }, 10_000);
+      if (job.error) throw new Error(String(job.error));
+      return;
+    }
+    await delay(250);
+  }
+  await qmp(port, 'job-cancel', { id }, 10_000).catch(() => {});
+  throw new Error('QMP snapshot job timed out');
 }
 
 /** Keep one guest-agent connection open across freeze, snapshot and thaw. */

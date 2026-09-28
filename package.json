@@ -61,6 +61,7 @@
     "test:host-mount": "tsx scripts/smoke-host-mount.ts",
     "test:package-workbench": "tsx scripts/smoke-package-workbench.ts",
     "test:online-snapshot": "tsx scripts/smoke-online-snapshot.ts",
+    "test:memory-snapshot": "tsx scripts/smoke-memory-snapshot.ts",
     "test:auto-remediation": "tsx scripts/smoke-auto-remediation.ts",
     "test:package-cache": "tsx scripts/smoke-package-cache.ts",
     "test:security-scan": "tsx scripts/smoke-security-scan.ts",

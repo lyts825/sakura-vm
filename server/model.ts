@@ -78,7 +78,8 @@ export type Snapshot = {
   note?: string;
   diskGiB?: number;
   pendingResize?: boolean;
-  consistency?: 'offline' | 'filesystem';
+  consistency?: 'offline' | 'filesystem' | 'vmstate';
+  stateFingerprint?: string;
 };
 export const organizationSchema = z
   .object({

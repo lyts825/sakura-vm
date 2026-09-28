@@ -12,4 +12,6 @@ Sakura 启动实例时提供专用 virtio 串口。创建在线快照时，先�
 
 在线快照仅保存磁盘，不保存内存、运行中进程或应用事务。数据库等应用如需事务级一致性，应在快照前自行完成应用层检查点。恢复、删除快照、克隆和导出仍要求先停止实例。临时写时复制实例不支持保存在线快照。
 
+需要保存 RAM 与运行中进程时，可改用 [整机状态快照](memory-snapshots.md)。它使用不同的 QEMU 作业流程，在本机要求 TCG 加速器；不代替应用层事务检查点。
+
 接口为 `POST /api/vms/{vmId}/snapshots`，请求体示例：`{"name":"before-upgrade","online":true}`。未提供 `online` 时沿用离线快照行为。真实 Alpine/QEMU 验证命令为 `npm run test:online-snapshot`：在运行中创建快照、继续写入、停止恢复、再次启动并核对旧文件内容。

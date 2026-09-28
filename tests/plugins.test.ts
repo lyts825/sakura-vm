@@ -260,6 +260,8 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
     host = await Features.create(vm, ['snapshots', 'desktop']);
   vm.snapshot = async (_id, name) => ({ name }) as any;
   vm.onlineSnapshot = async (_id, name) => ({ name, consistency: 'filesystem' }) as any;
+  vm.memorySnapshot = async (_id, name) => ({ name, consistency: 'vmstate' }) as any;
+  vm.restoreMemory = async (id, snapshotId, backup) => ({ id, snapshotId, backup }) as any;
   host.desktops.view = async () => ({ status: 'not-installed', log: '' });
   try {
     const first = request('POST');
@@ -279,6 +281,23 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
       true,
     );
     assert.equal(online.res.payload.consistency, 'filesystem');
+    const memory = request('POST');
+    assert.equal(
+      await host.route(memory.req, memory.res, new URL('http://localhost/api/vms/vm/snapshots'),
+        async () => ({ name: 'process', online: true, memory: true })),
+      true,
+    );
+    assert.equal(memory.res.payload.consistency, 'vmstate');
+    const restore = request('POST');
+    restore.req.headers['content-type'] = 'application/json';
+    assert.equal(
+      await host.route(restore.req, restore.res,
+        new URL('http://localhost/api/vms/vm/snapshots/checkpoint/restore'),
+        async () => ({ backup: true, memory: true })),
+      true,
+    );
+    assert.deepEqual(restore.res.payload,
+      { id: 'vm', snapshotId: 'checkpoint', backup: true });
     const second = request();
     assert.equal(
       await host.route(

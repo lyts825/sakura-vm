@@ -413,10 +413,42 @@ test('running instance creates a filesystem-consistent online snapshot from the 
   });
   await page.reload();
   await page.getByRole('tab', { name: '快照', exact: true }).click();
+  await expect(page.getByLabel(/包含 RAM 与运行中进程/)).toBeDisabled();
   await page.getByLabel('新快照名称').fill('before-upgrade');
   await page.getByRole('button', { name: '创建在线快照' }).click();
   await expect.poll(() => submitted).toEqual({ name: 'before-upgrade', online: true });
   await expect(page.getByText('文件系统一致性')).toBeVisible();
+});
+
+test('TCG instance saves and restores a RAM and process snapshot', async ({ page }) => {
+  await app(page, ['snapshots'], true);
+  const id = randomUUID();
+  let submitted: any;
+  let restored: any;
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    status: 'running', poweredOn: true, activeAccelerator: 'tcg',
+    snapshots: submitted ? [{ id, name: submitted.name, createdAt: new Date().toISOString(),
+      consistency: 'vmstate', stateFingerprint: 'abc' }] : [],
+  }] }));
+  await page.route('**/api/vms/*/snapshots', (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { id, name: submitted.name,
+      consistency: 'vmstate', createdAt: new Date().toISOString() } });
+  });
+  await page.route('**/api/vms/*/snapshots/*/restore', (route) => {
+    restored = route.request().postDataJSON();
+    return route.fulfill({ json: { ...vm, status: 'running', poweredOn: true } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '快照', exact: true }).click();
+  await page.getByLabel(/包含 RAM 与运行中进程/).check();
+  await page.getByLabel('新快照名称').fill('working-process');
+  await page.getByRole('button', { name: '保存整机状态' }).click();
+  await expect.poll(() => submitted).toEqual({ name: 'working-process', online: true, memory: true });
+  await expect(page.getByText(/整机状态（RAM 与进程）/)).toBeVisible();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: '恢复整机状态' }).click();
+  await expect.poll(() => restored).toEqual({ backup: true, memory: true });
 });
 
 test('golden image library saves templates, verifies, restores after refresh, creates instances and removes safely on mobile', async ({

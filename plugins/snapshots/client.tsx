@@ -19,10 +19,14 @@ export function SnapshotsPanel(props: FeatureProps) {
   const [name, setName] = useState(''),
     [cloneName, setCloneName] = useState(vm.name.slice(0, 26) + '-copy'),
     [editing, setEditing] = useState<Snapshot | null>(null),
+    [includeMemory, setIncludeMemory] = useState(false),
     [backup, setBackup] = useState(true);
   const action = useAction();
   const stopped = !vm.poweredOn;
   const running = vm.status === 'running';
+  const memorySupported = running && vm.activeAccelerator === 'tcg' &&
+    vm.sandbox?.storage !== 'discard-on-stop' && !vm.diskEncryption &&
+    vm.firmware !== 'uefi';
   const mutate = (path: string, method: string, body?: unknown) =>
     action.run(async () => {
       await request(`/vms/${vm.id}${path}`, method, body);
@@ -33,7 +37,7 @@ export function SnapshotsPanel(props: FeatureProps) {
       <div className="panel-heading">
         <div>
           <h3>快照与迁移</h3>
-          <p>运行中可通过客户机代理冻结文件系统并创建快照；恢复、克隆与导出仍需停止实例。</p>
+          <p>运行中可冻结文件系统创建磁盘快照，或保存包含 RAM 与进程的整机状态；磁盘恢复、克隆与导出需停止实例，整机状态恢复需先启动实例。</p>
         </div>
       </div>
       <Feedback error={action.error} message={action.message} />
@@ -47,13 +51,23 @@ export function SnapshotsPanel(props: FeatureProps) {
         />
         <button
           className="primary compact"
-          disabled={action.busy || !name.trim() || (!stopped && !running)}
-          onClick={() => void mutate('/snapshots', 'POST', { name, online: running })}
+          disabled={action.busy || !name.trim() || (!stopped && !running) ||
+            (running && includeMemory && !memorySupported)}
+          onClick={() => void mutate('/snapshots', 'POST', { name, online: running,
+            ...(running && includeMemory ? { memory: true } : {}) })}
         >
           <Plus size={14} />
-          {running ? '创建在线快照' : '创建快照'}
+          {running && includeMemory ? '保存整机状态' : running ? '创建在线快照' : '创建快照'}
         </button>
       </div>
+      {running && <label className="checkbox-label">
+        <input type="checkbox" checked={includeMemory} disabled={!memorySupported}
+          onChange={(event) => setIncludeMemory(event.target.checked)} />
+        包含 RAM 与运行中进程（可能短暂暂停客户机）
+      </label>}
+      {running && !memorySupported && <p className="subtle-note">
+        整机状态快照需要 TCG、持久明文磁盘与 BIOS；WHPX 实例请停机后切换加速器。
+      </p>}
       <label className="checkbox-label">
         <input type="checkbox" checked={backup} onChange={(e) => setBackup(e.target.checked)} />
         恢复前自动保存当前状态（占用一个快照名额）
@@ -65,10 +79,14 @@ export function SnapshotsPanel(props: FeatureProps) {
               <b>{s.name}</b>
               <p>
                 {formatDateTime(new Date(s.createdAt))}
-                {s.consistency === 'filesystem' ? ' · 文件系统一致性' : ''}
+                {s.consistency === 'filesystem' ? ' · 文件系统一致性' :
+                  s.consistency === 'vmstate' ? ' · 整机状态（RAM 与进程）' : ''}
                 {s.note ? ` · ${s.note}` : ''}
               </p>
-              <p className="subtle-note">快照 ID（跨主机复制使用）：<code>{s.id}</code></p>
+              <p className="subtle-note">
+                {s.consistency === 'vmstate' ? '快照 ID（跨主机复制仅包含磁盘）：' :
+                  '快照 ID（跨主机复制使用）：'}<code>{s.id}</code>
+              </p>
             </div>
             <div className="feature-actions">
               <button
@@ -80,13 +98,16 @@ export function SnapshotsPanel(props: FeatureProps) {
               </button>
               <button
                 className="secondary compact"
-                disabled={action.busy || !stopped}
+                disabled={action.busy || (s.consistency === 'vmstate' ? !memorySupported : !stopped)}
                 onClick={() => {
-                  if (confirm(`恢复“${s.name}”并覆盖当前磁盘状态？`))
-                    void mutate(`/snapshots/${s.id}/restore`, 'POST', { backup });
+                  if (confirm(s.consistency === 'vmstate'
+                    ? `恢复“${s.name}”的 RAM、进程和磁盘状态？当前运行状态将被覆盖。`
+                    : `恢复“${s.name}”并覆盖当前磁盘状态？`))
+                    void mutate(`/snapshots/${s.id}/restore`, 'POST', {
+                      backup, memory: s.consistency === 'vmstate' });
                 }}
               >
-                恢复
+                {s.consistency === 'vmstate' ? '恢复整机状态' : '恢复'}
               </button>
               <button
                 className="text-button"
