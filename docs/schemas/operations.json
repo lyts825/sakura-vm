@@ -3540,5 +3540,132 @@
       ],
       "additionalProperties": {}
     }
+  },
+  "snapshots.snapshot-merge-view": {
+    "id": "snapshot-merge-view",
+    "method": "GET",
+    "path": "/api/vms/:vmId/snapshot-merge",
+    "status": 200,
+    "request": null,
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "branchOrigin": {
+          "type": "object",
+          "properties": {
+            "sourceVmId": {
+              "type": "string"
+            },
+            "snapshotId": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sourceVmId",
+            "snapshotId",
+            "createdAt"
+          ],
+          "additionalProperties": false
+        },
+        "sourceName": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "startedAt"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "persistenceError": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "snapshots.snapshot-merge-run": {
+    "id": "snapshot-merge-run",
+    "method": "POST",
+    "path": "/api/vms/:vmId/snapshot-merge",
+    "status": 202,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "preview",
+            "apply"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "partition": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        },
+        "path": {
+          "default": "/workspace",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^\\/(?:[^/\\\\\\x00-\\x1f]+(?:\\/[^/\\\\\\x00-\\x1f]+)*)?$"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "startedAt"
+      ],
+      "additionalProperties": {}
+    }
   }
 }

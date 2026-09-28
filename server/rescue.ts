@@ -9,8 +9,9 @@ import { rescueRunSchema } from '../shared/rescue.ts';
 import type { SandboxExecution } from '../shared/sandbox.ts';
 
 /** Only supported filesystems receive an automatic mount; never replay a journal. */
-export function rescueSetup(partition: number | null, role: 'source' | 'compare' = 'source') {
-  const mountPoint = role === 'source' ? '/mnt/source' : '/mnt/compare';
+export function rescueSetup(partition: number | null,
+  role: 'source' | 'compare' | 'target' = 'source', writable = false) {
+  const mountPoint = `/mnt/${role}`;
   return `set -eu
 device=
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
@@ -24,7 +25,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 test -n "$device" || { echo '未发现救援磁盘' >&2; exit 1; }
-test "$(cat /sys/block/$(basename "$device")/ro)" = 1 || { echo '救援磁盘不是只读设备' >&2; exit 1; }
+test "$(cat /sys/block/$(basename "$device")/ro)" = ${writable ? '0' : '1'} || { echo '救援磁盘访问模式不符' >&2; exit 1; }
 printf '%s\n' "$device" > /run/sakura-${role}-device
 mkdir -p /workspace ${mountPoint}
 echo "源磁盘：$device（QEMU 只读）"
@@ -40,12 +41,12 @@ done
 test -b "$target" || { echo '所选分区不存在，请选择仅检查分区后查看磁盘布局' >&2; exit 1; }
 kind=$(blkid "$target" | sed -n 's/.* TYPE="\\([^"]*\\)".*/\\1/p')
 case "$kind" in
-  ext2) options=ro ;;
-  ext3|ext4) options=ro,noload ;;
+  ext2) options=${writable ? 'rw' : 'ro'} ;;
+  ext3|ext4) options=${writable ? 'rw' : 'ro,noload'} ;;
   *) echo "自动挂载仅支持 ext2/ext3/ext4，检测到：$kind。请选择仅检查分区后手动诊断。" >&2; exit 1 ;;
 esac
 mount -t "$kind" -o "$options" "$target" ${mountPoint}
-echo '源分区已只读挂载到 ${mountPoint}（不重放日志）'`
+echo '磁盘已${writable ? '读写' : '只读'}挂载到 ${mountPoint}'`
 }
 `;
 }

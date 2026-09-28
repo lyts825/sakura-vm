@@ -11,6 +11,7 @@ import { capabilityViews, capabilityParameters, hasCapability } from './capabili
 import { AcmeRenewal } from './acme-renewal.ts';
 import type { ProcessInterop } from './process-interop.ts';
 import type { MediaDevices } from './media-devices.ts';
+import type { SnapshotMerge } from './snapshot-merge.ts';
 import { hardwareCompatibility } from './hardware-compatibility.ts';
 import { firmwareSupport } from './firmware.ts';
 import { networkEmulation } from './network-emulation.ts';
@@ -198,7 +199,8 @@ export const nextFeatureCatalog = [
     '上传和验证备份到 S3/MinIO，并从远端校验恢复。',
     'available',
   ],
-  ['snapshot-merge', '快照分支合并', '存储与灾备', 'P1', '生成快照分支合并预览并记录来源。', 'planned'],
+  ['snapshot-merge', '快照分支合并', '存储与灾备', 'P1',
+    '三方比较快照克隆分支与原实例的工作区文件，将无冲突变更应用到新实例并记录来源。', 'available'],
   [
     'file-level-restore',
     '文件级恢复',
@@ -675,6 +677,7 @@ export class NextFeatures {
   private wireGuardOverlay?: WireGuardOverlay;
   private processInterop?: ProcessInterop;
   private mediaDevices?: MediaDevices;
+  private snapshotMerge?: SnapshotMerge;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
@@ -762,6 +765,7 @@ export class NextFeatures {
   }
   setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
   setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
+  setSnapshotMerge(service?: SnapshotMerge) { this.snapshotMerge = service; }
 
   browserIdeLink(id: string) {
     if (!this.browserIde) throw new AppError('浏览器 IDE 服务尚未启用', 503);
@@ -1013,6 +1017,15 @@ export class NextFeatures {
         ? view.support.none.available && this.machines.get(id).architecture !== 'aarch64'
         : hostAudio || (activeUsb && guestMedia), executed: false, adapter,
         message: '系统设置 → 音视频设备：停机复核并配置 QEMU HDA 音频；运行中可查看宿主 USB 设备，为摄像头、麦克风或耳机保存转发规则，并检查客户机设备。' };
+    }
+    if (spec.id === 'snapshot-merge') {
+      const branch = this.machines.get(id).branchOrigin;
+      return { ready: !!branch && !!this.snapshotMerge, executed: false, adapter,
+        ...(branch ? { branchOrigin: branch } : {}),
+        message: '在快照页从历史快照克隆分支；停止分支和原实例后，在分支的快照合并面板预览三方文件差异，再将无冲突变更应用到新的目标副本。',
+        ...(!this.snapshotMerge ? { reason: '请启用磁盘快照插件。' } :
+          !branch ? { reason: '此实例不是保留合并基线的快照克隆分支。' } : {}),
+      };
     }
     if (spec.id === 'host-pairing' || spec.id === 'multi-host-inventory')
       return {

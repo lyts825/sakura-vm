@@ -11,6 +11,8 @@ import { GoldenImages } from '../../server/golden-images.ts';
 import { goldenActionSchema, goldenEntrySchema, goldenResultSchema } from '../../shared/golden-images.ts';
 import { Rescue } from '../../server/rescue.ts';
 import { SnapshotDiff } from '../../server/snapshot-diff.ts';
+import { SnapshotMerge } from '../../server/snapshot-merge.ts';
+import { snapshotMergeInputSchema, snapshotMergeJobSchema, snapshotMergeViewSchema } from '../../shared/snapshot-merge.ts';
 import {
   snapshotDiffInputSchema,
   snapshotDiffJobSchema,
@@ -45,8 +47,25 @@ export async function activate(host: PluginContext) {
   host.registerJobs(snapshotDiff.jobs, () => {
     throw new AppError('请在快照页选择快照后重新比较', 409);
   });
+  const snapshotMerge = host.provide('snapshotMerge', new SnapshotMerge(host.machines, host.bundles));
+  host.registerJobs(snapshotMerge.jobs, () => {
+    throw new AppError('请在快照页核对分支和目标后重新合并', 409);
+  });
 }
 export const operations: Record<string, PluginOperation> = {
+  'snapshot-merge-view': {
+    response: snapshotMergeViewSchema,
+    execute(url) {
+      return this.use<SnapshotMerge>('snapshots', 'snapshotMerge').view(url.pathname.split('/')[3]);
+    },
+  },
+  'snapshot-merge-run': {
+    request: snapshotMergeInputSchema,
+    response: snapshotMergeJobSchema,
+    execute(url, input) {
+      return this.use<SnapshotMerge>('snapshots', 'snapshotMerge').run(url.pathname.split('/')[3], input);
+    },
+  },
   'snapshot-diff-view': {
     response: snapshotDiffViewSchema,
     execute(url) {

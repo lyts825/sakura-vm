@@ -3,11 +3,11 @@ import { definePlugin, pin, http, operation } from '../../shared/plugin-protocol
 export const manifest = definePlugin({
   id: 'snapshots',
   name: '磁盘快照',
-  description: '快照、恢复、差异比较、克隆、只读救援、黄金镜像库以及独立磁盘包导入导出。',
+  description: '快照、恢复、差异比较、分支合并、克隆、只读救援、黄金镜像库以及独立磁盘包导入导出。',
   category: 'workspace',
   requires: [pin('transfers')],
   optional: [pin('backups')],
-  services: ['bundles', 'signedBundles', 'goldenImages', 'rescue', 'snapshotDiff'],
+  services: ['bundles', 'signedBundles', 'goldenImages', 'rescue', 'snapshotDiff', 'snapshotMerge'],
   lifecycle: { activateMs: 30000, closeMs: 180000 },
   contributes: {
     http: [
@@ -17,6 +17,7 @@ export const manifest = definePlugin({
       http('/api/signed-bundles', ['GET', 'POST']),
       http('/api/vms/:vmId/snapshots', ['POST', 'PATCH', 'DELETE']),
       http('/api/vms/:vmId/snapshot-diff', ['GET', 'POST']),
+      http('/api/vms/:vmId/snapshot-merge', ['GET', 'POST']),
       http('/api/vms/:vmId/export', ['GET']),
       http('/api/vms/:vmId/clone', ['POST']),
     ],
@@ -30,6 +31,8 @@ export const manifest = definePlugin({
       operation('rescue-run', 'POST', '/api/vms/:vmId/rescue', 202),
       operation('snapshot-diff-view', 'GET', '/api/vms/:vmId/snapshot-diff'),
       operation('snapshot-diff-run', 'POST', '/api/vms/:vmId/snapshot-diff', 202),
+      operation('snapshot-merge-view', 'GET', '/api/vms/:vmId/snapshot-merge'),
+      operation('snapshot-merge-run', 'POST', '/api/vms/:vmId/snapshot-merge', 202),
     ],
     tabs: ['snapshots'],
   },

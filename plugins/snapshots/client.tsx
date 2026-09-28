@@ -8,6 +8,7 @@ import { PluginGate } from '../../src/plugin-context';
 import { GoldenImageLibrary } from './GoldenImages';
 import { RescuePanel } from './RescuePanel';
 import { SnapshotDiffPanel } from './SnapshotDiffPanel';
+import { SnapshotMergePanel } from './SnapshotMergePanel';
 import { SignedBundlesPanel } from './SignedBundles';
 const BackupPanel = lazy(() =>
   import('../backups/client').then((module) => ({ default: module.BackupPanel })),
@@ -109,6 +110,7 @@ export function SnapshotsPanel(props: FeatureProps) {
         ))}
       </div>
       <SnapshotDiffPanel key={'diff-' + vm.id} {...props} />
+      <SnapshotMergePanel key={'merge-' + vm.id} {...props} />
       {editing && (
         <div className="feature-card">
           <label>

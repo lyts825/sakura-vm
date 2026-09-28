@@ -18,7 +18,7 @@ const SCAN_TIMEOUT_MS = 10 * 60_000;
 const CONVERT_TIMEOUT_MS = 30 * 60_000;
 
 /** Paths are base64 encoded in the guest so even newlines in filenames remain unambiguous. */
-export function snapshotManifestCommand(mount: '/mnt/source' | '/mnt/compare', path: string) {
+export function snapshotManifestCommand(mount: '/mnt/source' | '/mnt/compare' | '/mnt/target', path: string) {
   const root = mount + (path === '/' ? '' : path);
   return `set -eu
 root=${quote(root)}
@@ -49,7 +49,8 @@ function decodeBase64(value: string) {
   return bytes.toString('utf8');
 }
 
-export function parseSnapshotManifest(output: string, mount: '/mnt/source' | '/mnt/compare') {
+export function parseSnapshotManifest(output: string,
+  mount: '/mnt/source' | '/mnt/compare' | '/mnt/target') {
   const files = new Map<string, SnapshotDiffFile>();
   if (output.trim() === 'MISSING') return files;
   for (const line of output.split(/\r?\n/)) {

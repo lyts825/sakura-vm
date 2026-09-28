@@ -350,6 +350,9 @@ export class Bundles {
           projects,
           undefined,
           vm.diskEncryption,
+          snapshot && !vm.diskEncryption
+            ? { sourceVmId: id, snapshotId: snapshot, createdAt: new Date().toISOString() }
+            : undefined,
         );
         if (vm.diskEncryption) {
           const secrets = new Secrets(this.machines);

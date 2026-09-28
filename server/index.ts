@@ -104,6 +104,8 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
+  features.next?.setSnapshotMerge(features.serviceValue('snapshotMerge') as
+    import('./snapshot-merge.ts').SnapshotMerge | undefined);
   const usbHotplug = new UsbHotplug(machines, undefined,
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });

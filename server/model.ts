@@ -104,6 +104,10 @@ export type VMRecord = VMConfig & {
   pendingResize?: boolean;
   migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string;
     sourceVmId?: string; snapshotId?: string; diskSha256?: string };
+  // Snapshot clones retain an independent baseline disk for three-way workspace merges.
+  branchOrigin?: { sourceVmId: string; snapshotId: string; createdAt: string };
+  mergeOrigin?: { branchVmId: string; targetVmId: string; snapshotId: string;
+    path: string; mergedAt: string; appliedFiles: number };
 };
 export type VMView = VMRecord & {
   activeAccelerator?: 'tcg' | 'whpx';

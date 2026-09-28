@@ -269,7 +269,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 存储池管理 / `storage-pools` | 部分实现 | 仅 stat 当前数据目录；没有存储池清单、容量统计及选择/分配。 | [server/next-features.ts:350](D:/27247/Desktop/Sakura/server/next-features.ts:350) |
 | SSD/HDD 分层 / `storage-tiering` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存热数据与冷数据的分层策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | S3/MinIO 备份目标 / `object-backup` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：校验对象存储目标配置并保存脱敏连接信息。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
-| 快照分支合并 / `snapshot-merge` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“生成快照分支合并预览并记录来源。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
+| 快照分支合并 / `snapshot-merge` | 已实现 | 明文快照克隆保留独立基线，离线三方比较普通文件和符号链接；无冲突变更写入来源实例的新副本，记录来源并保留两个输入实例。 | [server/snapshot-merge.ts](D:/27247/Desktop/Sakura/server/snapshot-merge.ts) |
 | 文件级恢复 / `file-level-restore` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存文件级恢复请求和目标路径校验结果。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | 全局备份去重 / `global-dedup` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“计算本地备份索引的去重统计。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | 备份带宽限速 / `backup-throttle` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存备份带宽和并发限制。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |

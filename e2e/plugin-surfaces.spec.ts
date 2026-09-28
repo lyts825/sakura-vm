@@ -363,6 +363,40 @@ test('snapshot comparison selects historical and current states, shows file chan
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test('snapshot branch merge submits a reviewed three-way merge into a new instance', async ({ page }) => {
+  await app(page, ['snapshots', 'transfers'], true);
+  const sourceVmId = randomUUID(), snapshotId = randomUUID(), jobId = randomUUID();
+  let submitted: any;
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    branchOrigin: { sourceVmId, snapshotId, createdAt: new Date().toISOString() },
+  }] }));
+  await page.route(`**/api/vms/${vm.id}`, (route) => route.fulfill({ json: { ...vm,
+    branchOrigin: { sourceVmId, snapshotId, createdAt: new Date().toISOString() },
+  } }));
+  await page.route('**/api/vms/*/snapshot-merge', (route) => {
+    if (route.request().method() === 'POST') submitted = route.request().postDataJSON();
+    return route.fulfill({ json: route.request().method() === 'POST'
+      ? { id: jobId, status: 'running', startedAt: new Date().toISOString() }
+      : { branchOrigin: { sourceVmId, snapshotId, createdAt: new Date().toISOString() },
+        sourceName: 'original', runs: submitted ? [{ id: jobId, status: 'done', log: '合并完成',
+          startedAt: new Date().toISOString(), result: { bytes: 100, sha256: 'a'.repeat(64) } }] : [] } });
+  });
+  await page.route('**/api/jobs/*/result', (route) => route.fulfill({ json: {
+    mode: 'apply', branchVmId: vm.id, targetVmId: sourceVmId, snapshotId,
+    path: '/workspace', applied: ['/workspace/new.txt'], conflicts: [], already: [],
+    mergedVmId: randomUUID(), checkedAt: new Date().toISOString(),
+  } }));
+  await page.reload();
+  await page.getByRole('tab', { name: '快照', exact: true }).click();
+  const panel = page.getByRole('region', { name: '快照分支合并' });
+  await expect(panel.getByText(/此实例从 original 的快照克隆/)).toBeVisible();
+  await panel.getByLabel('合并实例名称').fill('merged-copy');
+  await panel.getByRole('button', { name: '合并到新实例' }).click();
+  await expect.poll(() => submitted).toEqual({ mode: 'apply', name: 'merged-copy',
+    path: '/workspace', partition: 0 });
+  await expect(panel.getByText(/新实例 ID/)).toBeVisible();
+});
+
 test('running instance creates a filesystem-consistent online snapshot from the snapshot tab', async ({ page }) => {
   await app(page, ['snapshots'], true);
   const id = randomUUID();

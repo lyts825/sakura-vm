@@ -324,6 +324,8 @@ export class Machines extends EventEmitter {
       const vm = this.get(id);
       this.requireStopped(id);
       if (vm.diskEncryption) throw new AppError('实例磁盘已经加密', 409);
+      if (vm.branchOrigin)
+        throw new AppError('快照分支保留明文合并基线，不能加密；请先合并或删除分支', 409);
       if (vm.sandbox || vm.rescueOf) throw new AppError('临时实例不能加密磁盘', 409);
       if (vm.snapshots.length) throw new AppError('请先删除或导出内部快照，再加密实例磁盘', 409);
       const config = diskEncryptionSchema.parse({ format: 'luks', secretName });
@@ -763,6 +765,8 @@ export class Machines extends EventEmitter {
                 'pcie-root-port,id=sakura-rescue-port,slot=1,chassis=1',
                 '-device',
                 'pcie-root-port,id=sakura-rescue-compare-port,slot=2,chassis=2',
+                '-device',
+                'pcie-root-port,id=sakura-rescue-target-port,slot=3,chassis=3',
               ]
             : []),
           '-display',
@@ -1651,6 +1655,7 @@ export class Machines extends EventEmitter {
     diagnostic: (text: string) => void = () => {},
     readOnlyDisk = join(vmDir(sourceId), 'disk.qcow2'),
     comparisonDisk?: string,
+    targetDisk?: { file: string; writable: boolean },
   ) {
     const controller = new AbortController();
     const combined = AbortSignal.any([signal, controller.signal, AbortSignal.timeout(35 * 60_000)]);
@@ -1708,20 +1713,21 @@ export class Machines extends EventEmitter {
           phase('只读连接源磁盘');
           const port = this.live.get(rescueId)!.qmpPort;
           // Attach only after boot: the source may share the rescue image's filesystem UUID.
-          const attach = async (file: string, role: 'source' | 'compare') => {
+          const attach = async (file: string, role: 'source' | 'compare' | 'target', writable = false) => {
             const node = `sakura-rescue-${role}`;
             await qmp(port, 'blockdev-add', {
               driver: 'qcow2',
               'node-name': node,
-              'read-only': true,
-              file: { driver: 'file', filename: file, 'read-only': true },
+              'read-only': !writable,
+              file: { driver: 'file', filename: file, 'read-only': !writable },
             });
             combined.throwIfAborted();
             await qmp(port, 'device_add', {
               driver: 'virtio-blk-pci',
               drive: node,
-              id: `sakura-rescue-${role === 'source' ? 'disk' : 'compare-disk'}`,
-              bus: role === 'source' ? 'sakura-rescue-port' : 'sakura-rescue-compare-port',
+              id: `sakura-rescue-${role === 'source' ? 'disk' : role + '-disk'}`,
+              bus: role === 'source' ? 'sakura-rescue-port' :
+                role === 'compare' ? 'sakura-rescue-compare-port' : 'sakura-rescue-target-port',
               serial: `sakura-${role}`,
             });
             const nodes = (await qmp(port, 'query-named-block-nodes')) as {
@@ -1730,12 +1736,14 @@ export class Machines extends EventEmitter {
             }[];
             if (
               !Array.isArray(nodes) ||
-              !nodes.some((entry) => entry['node-name'] === node && entry.ro === true)
+              !nodes.some((entry) => entry['node-name'] === node && entry.ro === !writable)
             )
-              throw new AppError('救援磁盘未确认只读，已终止任务', 409);
+              throw new AppError(writable ? '救援磁盘未确认读写，已终止任务' :
+                '救援磁盘未确认只读，已终止任务', 409);
           };
           await attach(readOnlyDisk, 'source');
           if (comparisonDisk) await attach(comparisonDisk, 'compare');
+          if (targetDisk) await attach(targetDisk.file, 'target', targetDisk.writable);
           combined.throwIfAborted();
           return await work(rescueId, combined);
         } finally {
@@ -2212,6 +2220,7 @@ export class Machines extends EventEmitter {
     projects?: { active: string; projects: { id: string; name: string }[]; configs: Record<string, unknown> },
     migrationOrigin?: VMRecord['migrationOrigin'],
     diskEncryption?: VMRecord['diskEncryption'],
+    branchOrigin?: VMRecord['branchOrigin'],
   ) {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
@@ -2231,10 +2240,12 @@ export class Machines extends EventEmitter {
         pendingResize,
         ...(migrationOrigin ? { migrationOrigin } : {}),
         ...(diskEncryption ? { diskEncryption: diskEncryptionSchema.parse(diskEncryption) } : {}),
+        ...(branchOrigin ? { branchOrigin } : {}),
       };
       const dir = await this.prepareVmDirectory(vm);
       try {
         await copyFile(disk, join(dir, 'disk.qcow2'));
+        if (branchOrigin) await copyFile(disk, join(dir, 'branch-base.qcow2'));
         await writeFile(join(dir, 'id_rsa'), key, { mode: 0o600 });
         await writeFile(join(dir, 'seed.iso'), seed);
         await writeFile(join(dir, 'identity.json'), JSON.stringify(createSshKey()), { mode: 0o600 });
@@ -2261,6 +2272,16 @@ export class Machines extends EventEmitter {
         throw error;
       }
     }));
+  }
+  async recordMerge(id: string, origin: NonNullable<VMRecord['mergeOrigin']>) {
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      this.requireStopped(id);
+      vm.mergeOrigin = origin;
+      await this.save();
+      this.emit('change');
+      return this.view(id);
+    });
   }
   async close() {
     if (this.closeTask) return this.closeTask;
