@@ -455,6 +455,8 @@ Windows/Linux 进程互操作：在 Windows 宿主机的第一批或第三批能
 
 SSH Agent 转发：在扩展能力中心选择“SSH Agent 转发”，填写要执行的客户机命令、`confirmed: true` 和 1–300 秒时限。Sakura 连接宿主 `SSH_AUTH_SOCK`（Windows 默认 OpenSSH Agent 管道），只为该命令创建转发 SSH 会话；命令结束、失败或取消即关闭连接。客户机需要 OpenSSH 客户端，宿主 Agent 需运行且装载所需密钥。客户机可请求 Agent 为任意数据签名，因此只对可信命令启用；私钥文件不复制到客户机。
 
+GPG Agent 转发：第二批能力中心可在确认的单次命令期间，将宿主机受限制的 GnuPG extra socket 通过 SSH 提供给客户机临时 `GNUPGHOME`，并在完成或取消后关闭转发及清理临时目录。客户机须安装 GnuPG、导入公钥，并显式允许 SSH 远端 Unix 套接字转发；默认 Alpine 镜像的 `AllowTcpForwarding no` 会被前置检查拒绝。`npm run test:gpg-agent-forward` 已用真实 Alpine SSH 与模拟 Assuan extra socket 验证连接、拒绝和清理；真实宿主私钥签名尚未验证。设置与范围见 [GPG Agent 转发](gpg-agent-forward.md)。
+
 账户模式中的 JIT 临时授权支持只读账户为其已分享的实例申请一次“启动”或“正常停止”，申请必须填写原因，并在 24 小时内获批。管理员在“系统设置 → 账户与只读分享”中选择 1–60 分钟有效期批准，也可拒绝或在执行前撤销。申请者在只读分享页手动执行；批准绑定申请者、实例和操作，执行前持久标记为已使用，失败或服务重启均不会自动重试。账户失效、实例范围变更、实例应急锁定及控制面锁定仍会阻止执行。普通只读账户的其他变更接口保持拒绝；JIT 目前只涵盖单次实例启停，不授予终端命令或配置修改权限。
 
 ACME 证书续期在第三批能力中心选择“ACME 证书续期”。`status` 检查运行中客户机是否安装 Certbot 并已有 `/etc/letsencrypt/renewal/*.conf`；`dry-run` 调用 Certbot 的测试续期，`renew` 执行实际续期。`save` 保存 `enabled` 和 `intervalHours`（1–168，默认 12），启用后在实例运行且控制面未锁定、数据未迁移时定期执行。停机期间保留到期任务，下一次启动后重试；每次尝试及退出码写入宿主状态。该功能续期已有证书，不负责首次签发、域名验证配置或 Web 服务重载；如需部署新证书，请在客户机配置 Certbot deploy hook。[Certbot 官方文档](https://eff-certbot.readthedocs.io/en/stable/using.html#renewal)说明退出码 0 也可能表示目前无需续期，所以结果只报告“续期检查成功”，不推断证书已更换。

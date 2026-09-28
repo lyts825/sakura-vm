@@ -413,6 +413,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
           '从原安装目录执行 npm run update:check -- <新包目录> 和 npm run update:stage -- <新包目录>；使用输出的 versions/<编号> 执行 npm run update:activate -- versions/<编号>，重启服务生效。启动失败会自动回滚；也可运行 npm run update:rollback。升级前请备份实例数据。',
         'secure-erase':
           '使用 CLI：sakura extended <实例名> run secure-erase <options.json>。先提交 {"mode":"preview","path":"相对文件"}；在任务结果中取得 previewToken，再提交 {"mode":"erase","path":"同一路径","previewToken":"...","confirmed":true}。仅删除当前 /workspace 项目中的单链接普通文件；SSD、QCOW2 和快照的旧块可能仍可恢复。',
+        'gpg-agent-forward':
+          '使用 CLI：sakura extended <实例名> run gpg-agent-forward <options.json>，内容为 {"command":"gpg --no-autostart ...","confirmed":true,"timeoutSeconds":60}。宿主必须运行 GnuPG extra socket，客户机需安装 gpg 并导入公钥；临时 GNUPGHOME 和 SSH 转发仅在本次命令期间存在。',
         'watch-sync':
           '打开工作空间 → 同步，启用自动同步和文件变化事件。可查看两端监听状态；Linux 需要 inotify-tools。',
         'rename-detection':
@@ -1027,6 +1029,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                     'backup-dedup',
                     'self-update',
                     'secure-erase',
+                    'gpg-agent-forward',
                   ].includes(feature.id)
                     ? '使用说明'
                     : extended.data?.operations.some((item) => item.feature === feature.id)

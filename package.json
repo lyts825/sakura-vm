@@ -36,6 +36,7 @@
     "test:arm64": "tsx scripts/smoke-arm64.ts",
     "test:process-interop": "tsx scripts/smoke-process-interop.ts",
     "test:ssh-agent-forward": "tsx scripts/smoke-ssh-agent-forward.ts",
+    "test:gpg-agent-forward": "tsx scripts/smoke-gpg-agent-forward.ts",
     "test:gpu": "tsx scripts/smoke-gpu.ts",
     "test:syscall-profile": "tsx scripts/smoke-syscall-profile.ts",
     "test:nested-virtualization": "tsx scripts/smoke-nested-virtualization.ts",

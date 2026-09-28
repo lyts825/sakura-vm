@@ -13,6 +13,7 @@ import { ReverseTunnels } from './reverse-tunnels.ts';
 import { encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 import { secretName } from './secrets.ts';
 import { checkSecureErase, runSecureErase } from './secure-erase.ts';
+import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
 import {
   engineeringOperations,
   operationViews,
@@ -120,7 +121,8 @@ export const extendedFeatureCatalog = [
   ['egress-policy', '出站白名单', '网络', 'P1', '限制客户机可访问的目标。', 'available'],
   ['network-quota', '网络带宽配额', '网络', 'P2', '限制出站带宽、并发 TCP 连接和新建连接速率。', 'available'],
   ['ssh-agent-forward', 'SSH Agent 转发', '网络', 'P1', '在确认后仅向单次客户机命令转发宿主机 SSH Agent。', 'available'],
-  ['gpg-agent-forward', 'GPG Agent 转发', '网络', 'P2', '在确认后转发签名 Agent。', 'planned'],
+  ['gpg-agent-forward', 'GPG Agent 转发', '网络', 'P2',
+    '仅在确认的单次命令期间，将受限制的宿主 GPG Agent extra socket 转发到客户机。', 'available'],
   ['local-dns-alias', '本地域名别名', '网络', 'P0',
     '为本机入口生成稳定别名，按需同步到 Windows hosts 系统解析。', 'available'],
   ['packet-capture', '数据包捕获', '网络', 'P1', '在客户机限时抓包，导出无地址与载荷的匿名流量诊断报告。', 'available'],
@@ -320,8 +322,9 @@ export class ExtendedFeatures {
       .parse(input);
     if (value.featureId === 'disk-encryption')
       value.options = z.object({ secretName: secretName.optional() }).strict().parse(value.options);
-    if (value.featureId === 'secure-erase' && Object.keys(value.options).length)
-      throw new AppError('擦除路径、令牌和确认不能保存为持久配置', 409);
+    if (['secure-erase', 'gpg-agent-forward'].includes(value.featureId) &&
+        Object.keys(value.options).length)
+      throw new AppError('一次性命令与确认不能保存为持久配置', 409);
     const state = await this.state();
     const settings = (state.settings[id] ||= {});
     settings[value.featureId] = {
@@ -557,7 +560,7 @@ export class ExtendedFeatures {
     const startedAt = new Date().toISOString();
     const configured = (await this.state()).settings[id]?.[spec.id];
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
-    const merged = spec.id === 'secure-erase' ? options || {} :
+    const merged = ['secure-erase', 'gpg-agent-forward'].includes(spec.id) ? options || {} :
       { ...configured?.options, ...options };
     if (spec.id === 'self-update' && action === 'run')
       throw new AppError('请在安装目录运行离线更新命令；此入口仅供检查', 409);
@@ -569,6 +572,10 @@ export class ExtendedFeatures {
       result = action === 'check'
         ? await checkSecureErase(this.machines, this.workspaces, id, signal)
         : await runSecureErase(this.machines, this.workspaces, id, merged, signal);
+    } else if (spec.id === 'gpg-agent-forward') {
+      result = action === 'check'
+        ? await checkGpgAgentForward(this.machines, id, signal)
+        : await runGpgAgentForward(this.machines, id, merged, signal);
     } else if (spec.id === 'reverse-tunnel') {
       if (action === 'check') result = await this.tunnels.check(id, signal);
       else {
