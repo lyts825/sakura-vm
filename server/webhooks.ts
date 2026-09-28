@@ -60,7 +60,7 @@ const subscriptionInput = z
     ...filter,
   })
   .strict();
-const eventSchema = z
+export const eventSchema = z
   .object({
     id: z.string().regex(/^[a-f0-9]{64}$/),
     type: z.enum([...webhookTypes, 'test']),

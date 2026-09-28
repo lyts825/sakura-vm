@@ -284,6 +284,9 @@ async function main() {
     features.jobStores().flatMap((store) => store.list()),
     (await features.suite?.alertEvents()) || [],
   );
+  communityPlugins.setEventSource(eventSource, true,
+    () => !!features.migration?.blocked,
+    (delta) => { features.mutations += delta; });
   const webhooks = new Webhooks(
     eventSource,
     undefined,

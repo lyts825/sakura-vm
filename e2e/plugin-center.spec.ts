@@ -35,6 +35,9 @@ async function setup(
       sourceId: string;
     }>,
     catalogs: {} as Record<string, any[]>,
+    subscriptions: [] as Array<{ pluginId: string; types: string[]; enabled: boolean }>,
+    deliveries: [] as Array<{ id: string; pluginId: string; event: { type: string;
+      occurredAt: string }; status: string }>,
   };
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -119,6 +122,13 @@ async function setup(
           });
         if (input.operation === 'uninstall')
           community.installed = community.installed.filter((item) => item.id !== input.pluginId);
+        if (input.operation === 'subscribe')
+          community.subscriptions = [...community.subscriptions.filter((item) =>
+            item.pluginId !== input.pluginId), { pluginId: input.pluginId,
+              types: input.types, enabled: input.enabled }];
+        if (input.operation === 'unsubscribe')
+          community.subscriptions = community.subscriptions.filter((item) =>
+            item.pluginId !== input.pluginId);
         if (input.operation === 'run')
           return route.fulfill({
             json: {
@@ -213,6 +223,10 @@ test('community catalog requires a trusted publisher before installation and can
   await market.getByRole('button', { name: '添加信任' }).click();
   await market.getByRole('button', { name: '安装' }).click();
   await expect(market.getByRole('heading', { name: '已安装的隔离插件' })).toBeVisible();
+  await market.getByRole('button', { name: '订阅任务与告警' }).click();
+  await expect(market.getByRole('button', { name: '暂停自动触发' })).toBeVisible();
+  await market.getByRole('button', { name: '暂停自动触发' }).click();
+  await expect(market.getByRole('button', { name: '恢复自动触发' })).toBeVisible();
   await market.getByRole('button', { name: '测试运行' }).click();
   await expect(market.getByLabel('隔离插件运行结果')).toContainText('"ok": true');
   await market.getByRole('button', { name: '卸载' }).click();

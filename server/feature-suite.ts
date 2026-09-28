@@ -160,7 +160,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'vpn-integration',
   'rbac-sharing',
 ]);
-const partialFeatureIds = new Set<FeatureId>();
+const partialFeatureIds = new Set<FeatureId>(['plugin-api']);
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
   featureCatalog.map(([id, name, category, priority, summary]) => ({
@@ -606,6 +606,7 @@ export class FeatureSuite {
       result.reason = '系统设置 → 账户与只读分享：启用独立账户，管理员可为指定实例创建有期限的只读账户。账户会话按期限失效，写请求记录账户 ID；当前仍只监听本机。';
     } else if (featureId === 'plugin-api') {
       result.controlPlane = 'local-token-and-event-bus';
+      result.reason = '插件中心的签名 WebAssembly 插件可订阅脱敏任务或告警事件并自动运行，保留触发结果；第三方 HTTP 路由与界面扩展仍未实现。';
     }
     const state = await this.state();
     state.featureRuns ||= {};

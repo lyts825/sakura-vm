@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { CommunityPlugins, signedPluginPayload, validatePluginWasm } from '../server/community-plugins.ts';
@@ -127,4 +127,84 @@ test('isolated plugin validation requires bounded memory and no host imports', a
   await validatePluginWasm(wasm());
   await assert.rejects(validatePluginWasm(wasm(257)), /16 MiB/);
   await assert.rejects(validatePluginWasm(Buffer.from('not wasm')), /WebAssembly v1/);
+});
+
+test('event subscriptions trigger signed WASM once for new metadata-only events', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sakura-community-events-'));
+  assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep));
+  const file = join(root, 'state.json'), directory = join(root, 'wasm');
+  const bytes = wasm();
+  const pair = generateKeyPairSync('ed25519');
+  const pem = pair.publicKey.export({ format: 'pem', type: 'spki' }).toString();
+  const fingerprint = createHash('sha256')
+    .update(pair.publicKey.export({ format: 'der', type: 'spki' })).digest('hex');
+  let now = Date.parse('2026-01-01T00:00:00.000Z');
+  const base = { schemaVersion: 1 as const, id: 'event-plugin', name: 'Event',
+    description: 'Event computation', version: '1.0.0',
+    sha256: createHash('sha256').update(bytes).digest('hex'), publisher: fingerprint };
+  const entry = { ...base, signature: sign(null, signedPluginPayload(base), pair.privateKey)
+    .toString('base64'), wasmUrl: './event.wasm' };
+  const catalog = Buffer.from(JSON.stringify({ schemaVersion: 1, plugins: [entry] }));
+  const service = new CommunityPlugins(file, directory,
+    async (url) => url.endsWith('catalog.json') ? catalog : bytes, () => now);
+  const events: Array<{ id: string; type: 'job.finished'; occurredAt: string;
+    status: 'done'; tags: string[] }> = [];
+  try {
+    await service.init();
+    await service.action({ operation: 'trust', name: 'Publisher', publicKey: pem });
+    await service.action({ operation: 'add-source', name: 'Source',
+      url: 'https://plugins.example/catalog.json' });
+    const sourceId = service.view().sources[0].id;
+    await service.action({ operation: 'refresh', id: sourceId });
+    await service.action({ operation: 'install', sourceId, pluginId: base.id });
+    service.setEventSource(async () => events, false);
+    await service.action({ operation: 'subscribe', pluginId: base.id,
+      types: ['job.finished'], enabled: true });
+    events.push({ id: 'a'.repeat(64), type: 'job.finished',
+      occurredAt: '2025-12-31T23:59:59.000Z', status: 'done', tags: [] });
+    await service.tick();
+    assert.equal(service.view().deliveries.length, 0);
+    now += 1000;
+    events.push({ id: 'b'.repeat(64), type: 'job.finished',
+      occurredAt: new Date(now).toISOString(), status: 'done', tags: [] });
+    await service.tick();
+    assert.equal(service.view().deliveries.length, 1);
+    assert.equal(service.view().deliveries[0].status, 'done');
+    assert.equal(service.view().deliveries[0].resultPreview, '{"ok":true}');
+    await service.tick();
+    assert.equal(service.view().deliveries.length, 1);
+    await service.action({ operation: 'subscribe', pluginId: base.id,
+      types: ['job.finished'], enabled: false });
+    now += 1000;
+    events.push({ id: 'd'.repeat(64), type: 'job.finished',
+      occurredAt: new Date(now).toISOString(), status: 'done', tags: [] });
+    await service.tick();
+    assert.equal(service.view().deliveries.length, 1);
+    await service.action({ operation: 'subscribe', pluginId: base.id,
+      types: ['job.finished'], enabled: true });
+    await service.tick();
+    assert.equal(service.view().deliveries.length, 1);
+    await service.close();
+    const persisted = JSON.parse(await readFile(file, 'utf8'));
+    const resumedEvent = { id: 'c'.repeat(64), type: 'job.finished',
+      occurredAt: new Date(now).toISOString(), status: 'done', tags: [] };
+    const resumedId = createHash('sha256').update(`${base.id}:${resumedEvent.id}`).digest('hex');
+    persisted.deliveries.push({ id: resumedId, pluginId: base.id,
+      event: resumedEvent, status: 'pending' });
+    persisted.observed[resumedId] = now;
+    await writeFile(file, JSON.stringify(persisted));
+    const restored = new CommunityPlugins(file, directory, undefined, () => now);
+    await restored.init();
+    restored.setEventSource(async () => events, false);
+    now += 50 * 3600000;
+    await restored.tick();
+    assert.equal(restored.view().deliveries.length, 2);
+    assert.equal(restored.view().deliveries[0].status, 'done');
+    await restored.action({ operation: 'uninstall', pluginId: base.id });
+    assert.equal(restored.view().subscriptions.length, 0);
+    await restored.close();
+  } finally {
+    await service.close();
+    await rm(root, { recursive: true, force: true });
+  }
 });

@@ -15,6 +15,11 @@ type View = {
   installed: Array<Entry & { sourceId: string }>;
   catalogs: Record<string, Entry[]>;
   problems?: Record<string, string>;
+  subscriptions?: Array<{ pluginId: string; types: Array<'job.finished' | 'alert.raised'>;
+    enabled: boolean }>;
+  deliveries?: Array<{ id: string; pluginId: string; event: { type: string; occurredAt: string };
+    status: 'pending' | 'done' | 'failed'; error?: string; resultPreview?: string }>;
+  eventError?: string;
 };
 const validView = (value: unknown): value is View => {
   if (!value || typeof value !== 'object') return false;
@@ -78,7 +83,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
       <h2>第三方插件市场</h2>
       <p className="muted">
         添加信任的 Ed25519 发布者和 HTTPS 目录源。安装前核对签名与文件摘要；运行时插件只能处理 JSON
-        数据，无法访问宿主服务。
+        数据，无法访问宿主服务。可订阅脱敏任务和告警事件，自动运行插件并查看结果。
       </p>
       {error && (
         <p role="alert" className="machine-error">
@@ -240,6 +245,21 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                     {view.problems?.[item.id] && <small role="alert"> · {view.problems[item.id]}</small>}
                   </span>
                   <div className="community-plugin-actions">
+                    {(() => {
+                      const subscription = view.subscriptions?.find((value) => value.pluginId === item.id);
+                      return <>
+                        <button className="secondary compact" disabled={busy}
+                          onClick={() => void act({ operation: 'subscribe', pluginId: item.id,
+                            types: subscription?.types || ['job.finished', 'alert.raised'],
+                            enabled: !subscription?.enabled },
+                          subscription?.enabled ? '自动触发已暂停' : '自动触发已启用')}>
+                          {subscription?.enabled ? '暂停自动触发' : subscription ? '恢复自动触发' : '订阅任务与告警'}
+                        </button>
+                        {subscription && <button className="secondary compact" disabled={busy}
+                          onClick={() => void act({ operation: 'unsubscribe', pluginId: item.id },
+                            '事件订阅已移除')}>移除订阅</button>}
+                      </>;
+                    })()}
                     <button
                       className="secondary compact"
                       disabled={busy}
@@ -271,6 +291,23 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                   {result}
                 </pre>
               )}
+              <h4>自动触发记录</h4>
+              <button className="secondary compact" disabled={busy}
+                onClick={() => void load().catch((e) => setError((e as Error).message))}>
+                刷新触发记录
+              </button>
+              {(view.deliveries?.length || 0) > 0 ? <>
+                <ul>
+                  {view.deliveries?.slice(0, 10).map((delivery) => <li key={delivery.id}>
+                    <code>{delivery.pluginId}</code> · {delivery.event.type} · {delivery.status} ·
+                    {delivery.event.occurredAt}
+                    {delivery.error && <small role="alert"> · {delivery.error}</small>}
+                    {delivery.resultPreview && <details><summary>查看结果</summary>
+                      <pre className="feature-log">{delivery.resultPreview}</pre></details>}
+                  </li>)}
+                </ul>
+              </> : <p className="muted">尚无自动触发记录。</p>}
+              {view.eventError && <p role="alert">事件检查失败：{view.eventError}</p>}
             </>
           )}
         </>

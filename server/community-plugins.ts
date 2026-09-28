@@ -1,11 +1,13 @@
 import { createHash, createPublicKey, randomUUID, verify, type KeyObject } from 'node:crypto';
-import { readFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { get as httpsGet } from 'node:https';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { z } from 'zod';
 import { AppError, DATA } from './model.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { eventSchema } from './webhooks.ts';
+import { webhookTypes, type WebhookEvent } from '../shared/webhooks.ts';
 
 const pluginId = z.string().regex(/^[a-z][a-z0-9-]{1,63}$/);
 const version = z.string().regex(/^\d+\.\d+\.\d+$/);
@@ -41,6 +43,14 @@ const installed = entry
   .omit({ wasmUrl: true })
   .extend({ sourceId: z.uuid(), installedAt: z.number().int().positive() })
   .strict();
+const subscribedTypes = z.array(z.enum(webhookTypes)).min(1).max(2)
+  .refine((values) => new Set(values).size === values.length, '事件类型不能重复');
+const subscription = z.object({ pluginId, types: subscribedTypes, enabled: z.boolean(),
+  activeSince: z.number().int().nonnegative(), updatedAt: z.number().int().nonnegative() }).strict();
+const delivery = z.object({ id: digest, pluginId, event: eventSchema,
+  status: z.enum(['pending', 'done', 'failed']),
+  processedAt: z.number().int().nonnegative().optional(),
+  error: z.string().max(300).optional(), resultPreview: z.string().max(8192).optional() }).strict();
 const stateSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -48,6 +58,9 @@ const stateSchema = z
     sources: z.array(source).max(32),
     installed: z.array(installed).max(64),
     catalogs: z.record(z.string(), z.array(entry).max(100)),
+    subscriptions: z.array(subscription).max(64).default([]),
+    deliveries: z.array(delivery).max(200).default([]),
+    observed: z.record(digest, z.number().int().nonnegative()).default({}),
   })
   .strict();
 type State = z.infer<typeof stateSchema>;
@@ -58,6 +71,9 @@ const defaults = (): State => ({
   sources: [],
   installed: [],
   catalogs: {},
+  subscriptions: [],
+  deliveries: [],
+  observed: {},
 });
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
@@ -70,6 +86,9 @@ export const communityPluginRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('install'), sourceId: z.uuid(), pluginId }).strict(),
   z.object({ operation: z.literal('uninstall'), pluginId }).strict(),
   z.object({ operation: z.literal('run'), pluginId, input: z.unknown() }).strict(),
+  z.object({ operation: z.literal('subscribe'), pluginId, types: subscribedTypes,
+    enabled: z.boolean() }).strict(),
+  z.object({ operation: z.literal('unsubscribe'), pluginId }).strict(),
 ]);
 
 function publicKey(value: string): { key: KeyObject; fingerprint: string } {
@@ -231,6 +250,12 @@ export class CommunityPlugins {
   private running = new Map<string, Set<Worker>>();
   private problems: Record<string, string> = {};
   private inFlight = 0;
+  private source?: () => Promise<WebhookEvent[]>;
+  private timer?: ReturnType<typeof setInterval>;
+  private pending?: Promise<void>;
+  private eventError?: string;
+  private blocked = () => false;
+  private mutation = (_delta: number) => {};
   private closed = false;
   constructor(
     private file = join(DATA, 'community-plugins.json'),
@@ -240,11 +265,22 @@ export class CommunityPlugins {
   ) {}
 
   async init() {
+    const info = await stat(this.file).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      return null;
+    });
+    if (info && (!info.isFile() || info.size > 8 * 1024 ** 2))
+      throw new AppError('第三方插件记录类型或大小无效', 503);
     this.state = stateSchema.parse(await readStore(this.file, defaults));
     if (
       new Set(this.state.publishers.map((item) => item.fingerprint)).size !== this.state.publishers.length ||
       new Set(this.state.sources.map((item) => item.id)).size !== this.state.sources.length ||
-      new Set(this.state.installed.map((item) => item.id)).size !== this.state.installed.length
+      new Set(this.state.installed.map((item) => item.id)).size !== this.state.installed.length ||
+      new Set(this.state.subscriptions.map((item) => item.pluginId)).size !== this.state.subscriptions.length ||
+      this.state.subscriptions.some((item) =>
+        !this.state.installed.some((installed) => installed.id === item.pluginId)) ||
+      new Set(this.state.deliveries.map((item) => item.id)).size !== this.state.deliveries.length ||
+      Object.keys(this.state.observed).length > 20000
     )
       throw new AppError('第三方插件目录包含重复记录', 503);
     for (const trusted of this.state.publishers)
@@ -294,7 +330,24 @@ export class CommunityPlugins {
       installed: this.state.installed,
       catalogs: this.state.catalogs,
       problems: this.problems,
+      subscriptions: this.state.subscriptions,
+      deliveries: this.state.deliveries.slice(-40).reverse(),
+      eventError: this.eventError,
     };
+  }
+
+  setEventSource(source: () => Promise<WebhookEvent[]>, schedule = true,
+    blocked: () => boolean = () => false, mutation: (delta: number) => void = () => {}) {
+    if (this.closed) throw new AppError('插件市场正在关闭', 503);
+    this.source = source;
+    this.blocked = blocked;
+    this.mutation = mutation;
+    if (this.timer) clearInterval(this.timer);
+    if (schedule) {
+      this.timer = setInterval(() => void this.tick(), 5000);
+      this.timer.unref();
+      void this.tick();
+    }
   }
 
   async action(raw: unknown) {
@@ -380,15 +433,122 @@ export class CommunityPlugins {
         const old = next.installed.find((item) => item.id === input.pluginId);
         if (!old) throw new AppError('插件未安装', 404);
         next.installed = next.installed.filter((item) => item.id !== input.pluginId);
+        next.subscriptions = next.subscriptions.filter((item) => item.pluginId !== input.pluginId);
+        for (const item of next.deliveries)
+          if (item.pluginId === input.pluginId && item.status === 'pending') {
+            item.status = 'failed';
+            item.processedAt = this.now();
+            item.error = '插件已卸载';
+          }
         await this.save(next);
         delete this.problems[input.pluginId];
         await Promise.all([...(this.running.get(input.pluginId) || [])].map((worker) => worker.terminate()));
         await rm(this.wasmFile(old), { force: true });
         return this.view();
+      } else if (input.operation === 'subscribe') {
+        if (!next.installed.some((item) => item.id === input.pluginId))
+          throw new AppError('请先安装插件', 404);
+        const current = next.subscriptions.findIndex((item) => item.pluginId === input.pluginId);
+        if (current < 0 && next.subscriptions.length >= 64)
+          throw new AppError('事件订阅数量已达上限', 409);
+        const value = { pluginId: input.pluginId, types: input.types, enabled: input.enabled,
+          activeSince: this.now(), updatedAt: this.now() };
+        if (current < 0) next.subscriptions.push(value);
+        else next.subscriptions[current] = value;
+      } else if (input.operation === 'unsubscribe') {
+        if (!next.subscriptions.some((item) => item.pluginId === input.pluginId))
+          throw new AppError('插件尚未订阅事件', 404);
+        next.subscriptions = next.subscriptions.filter((item) => item.pluginId !== input.pluginId);
+        for (const item of next.deliveries)
+          if (item.pluginId === input.pluginId && item.status === 'pending') {
+            item.status = 'failed';
+            item.processedAt = this.now();
+            item.error = '事件订阅已移除';
+          }
       }
       await this.save(next);
       return this.view();
     });
+  }
+
+  async tick() {
+    if (this.closed || !this.source || this.blocked()) return;
+    if (this.pending) return this.pending;
+    this.mutation(1);
+    const task = this.deliverEvents().then(
+      () => { this.eventError = undefined; },
+      (error) => { this.eventError = String((error as Error).message || error).slice(0, 300); },
+    ).finally(() => {
+      if (this.pending === task) this.pending = undefined;
+      this.mutation(-1);
+    });
+    this.pending = task;
+    return task;
+  }
+
+  private async deliverEvents() {
+    const events = (await this.source!()).slice(-500)
+      .flatMap((item) => {
+        const parsed = eventSchema.safeParse(item);
+        return parsed.success && parsed.data.type !== 'test' ? [parsed.data] : [];
+      }).sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+    const tasks = await this.serial(async () => {
+      const next = structuredClone(this.state);
+      const now = this.now();
+      for (const [key, at] of Object.entries(next.observed))
+        if (at < now - 48 * 3600000) delete next.observed[key];
+      const pending = next.deliveries.filter((item) => item.status === 'pending');
+      const historyRoom = Math.max(0, 192 - pending.length);
+      next.deliveries = [
+        ...(historyRoom ? next.deliveries.filter((item) => item.status !== 'pending')
+          .slice(-historyRoom) : []),
+        ...pending,
+      ];
+      const selected = pending.slice(0, 8);
+      for (const event of events) {
+        if (event.type === 'test') continue;
+        if (selected.length >= 8 || next.deliveries.length >= 200) break;
+        for (const subscription of next.subscriptions) {
+          if (selected.length >= 8 || next.deliveries.length >= 200) break;
+          if (!subscription.enabled || !subscription.types.includes(event.type) ||
+              Date.parse(event.occurredAt) <= subscription.activeSince ||
+              Date.parse(event.occurredAt) < now - 24 * 3600000 ||
+              Date.parse(event.occurredAt) > now + 5 * 60000) continue;
+          const id = sha256(Buffer.from(`${subscription.pluginId}:${event.id}`));
+          if (next.observed[id]) continue;
+          if (Object.keys(next.observed).length >= 20000)
+            throw new AppError('插件事件去重窗口已满，请稍后重试', 409);
+          const item = { id, pluginId: subscription.pluginId, event, status: 'pending' as const };
+          next.observed[id] = now;
+          next.deliveries.push(item);
+          selected.push(item);
+        }
+      }
+      if (JSON.stringify(next) !== JSON.stringify(this.state)) await this.save(next);
+      return selected;
+    });
+    for (const task of tasks) {
+      if (this.closed) return;
+      let status: 'done' | 'failed' = 'done';
+      let resultPreview: string | undefined, error: string | undefined;
+      try {
+        const output = await this.run(task.pluginId, { kind: 'event', event: task.event });
+        resultPreview = JSON.stringify(output.result).slice(0, 8192);
+      } catch (failure) {
+        status = 'failed';
+        error = String((failure as Error).message || failure).slice(0, 300);
+      }
+      await this.serial(async () => {
+        const next = structuredClone(this.state);
+        const record = next.deliveries.find((item) => item.id === task.id);
+        if (!record || record.status !== 'pending') return;
+        record.status = status;
+        record.processedAt = this.now();
+        if (error) record.error = error;
+        if (resultPreview) record.resultPreview = resultPreview;
+        await this.save(next);
+      });
+    }
   }
 
   private async run(id: string, input: unknown) {
@@ -459,6 +619,8 @@ export class CommunityPlugins {
 
   async close() {
     this.closed = true;
+    if (this.timer) clearInterval(this.timer);
+    await this.pending;
     await this.writes;
     await Promise.all(
       [...this.running.values()].flatMap((set) => [...set]).map((worker) => worker.terminate()),

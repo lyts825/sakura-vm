@@ -25,6 +25,10 @@
 
 插件必须是 WebAssembly v1 模块，不能导入任何宿主函数、内存或模块，也不能声明函数表。它需导出一个最大值不超过 256 页（16 MiB）的 `memory`，及两个函数：`alloc(i32) -> i32` 和 `run(i32, i32) -> i32`。宿主把 JSON UTF-8 输入写到 `alloc` 返回的位置，调用 `run`；返回值指向 4 字节小端输出长度，后面是最长 64 KiB 的 JSON UTF-8 结果。单次输入最长 32 KiB，执行最长 1 秒，同时最多 4 个工作线程。插件不具备文件、网络、虚拟机或系统 API；它适用于对传入数据做纯计算。需要访问宿主能力的扩展仍需其他协议，当前不由此沙箱开放。
 
-管理接口为 `GET /api/community-plugins` 和 `POST /api/community-plugins`，沿用 Sakura 管理员会话。POST 的 `operation` 可为 `trust`、`untrust`、`add-source`、`remove-source`、`refresh`、`install`、`uninstall`、`run`。插件中心提供同样的操作。第三方插件目前不会自动订阅事件，也不贡献导航页或 HTTP 路由；这些仍属于未完成的插件 API 范围。
+管理接口为 `GET /api/community-plugins` 和 `POST /api/community-plugins`，沿用 Sakura 管理员会话。POST 的 `operation` 可为 `trust`、`untrust`、`add-source`、`remove-source`、`refresh`、`install`、`uninstall`、`run`、`subscribe`、`unsubscribe`。插件中心提供同样的操作。
+
+安装后管理员可提交 `{"operation":"subscribe","pluginId":"example-plugin","types":["job.finished","alert.raised"],"enabled":true}`。Sakura 每五秒读取内部任务和告警事件，为订阅开始后 24 小时内的新事件运行插件。输入仅含事件 ID、类型、时间、实例/项目 ID、状态、类别和标签等固定元数据，不含命令、日志、标题或消息。相同插件与事件会持久去重；启动时会恢复尚未完成的触发任务。结果预览和失败原因最多保留最近 200 条记录。暂停后再次启用会从启用时刻开始，不补发历史事件。卸载插件会移除订阅并终止其运行中的工作线程。
+
+第三方插件仍不能贡献导航页或 HTTP 路由；这些属于未完成的插件 API 范围。
 
 这是一种严格的无宿主导入计算环境，不是通用 Node.js 插件。发布者签名认证文件来源，不证明插件计算结果可信。管理员应核对发布者公钥指纹与目录源身份。
