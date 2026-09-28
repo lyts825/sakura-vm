@@ -3,6 +3,12 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react
 import type { Request } from './feature-shared';
 import { getTerminalStore } from './terminal-store';
 import { restoreLayouts } from './terminal-layouts';
+import { controllerSession } from './controller-session';
+
+type SharedViewer = { id: string; username: string; role: 'owner' | 'viewer';
+  vmIds: string[]; expiresAt: number | null };
+type TerminalGrant = { id: string; vmId: string; session: string;
+  viewerId: string; expiresAt: number };
 
 export function TerminalWorkspace({
   id,
@@ -14,6 +20,7 @@ export function TerminalWorkspace({
   render: (session: string) => ReactNode;
 }) {
   const store = getTerminalStore(id);
+  const principal = useSyncExternalStore(controllerSession.subscribe, controllerSession.getPrincipal);
   const { tabs, active, closing, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const dispatch = store.dispatch;
   const [split, setSplit] = useState(false);
@@ -229,6 +236,66 @@ export function TerminalWorkspace({
       <p className="terminal-session-note">
         双击标签重命名 · 安装项目环境中的 tmux 后，刷新页面可恢复原会话；关闭标签会结束该会话。
       </p>
+      {principal?.role === 'owner' && <TerminalShareControls vmId={id} session={active}
+        request={request} />}
     </div>
   );
+}
+
+function TerminalShareControls({ vmId, session, request }: {
+  vmId: string; session: string; request: Request;
+}) {
+  const [viewers, setViewers] = useState<SharedViewer[]>([]);
+  const [grants, setGrants] = useState<TerminalGrant[]>([]);
+  const [viewerId, setViewerId] = useState('');
+  const [minutes, setMinutes] = useState(60);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const refresh = async () => {
+    const [users, shared] = await Promise.all([
+      request<{ users: SharedViewer[] }>('/access/users'),
+      request<{ grants: TerminalGrant[] }>('/access/terminal-shares?vmId=' + encodeURIComponent(vmId)),
+    ]);
+    const eligible = users.users.filter((item) => item.role === 'viewer' &&
+      item.vmIds.includes(vmId) && (item.expiresAt === null || item.expiresAt > Date.now()));
+    setViewers(eligible);
+    setGrants(shared.grants);
+    setViewerId((current) => eligible.some((item) => item.id === current) ? current : eligible[0]?.id || '');
+  };
+  useEffect(() => { void refresh().catch((reason) => setError(String(reason.message || reason))); },
+    [vmId]);
+  return <section className="system-card" aria-label="共享终端管理">
+    <h3>共享当前终端</h3>
+    <p>只读账户可实时查看此 tmux 会话；输入和尺寸调整会在服务端拒绝。</p>
+    <form onSubmit={async (event) => {
+      event.preventDefault(); setBusy(true); setError('');
+      try {
+        await request('/access/terminal-shares', 'POST', { vmId, session, viewerId, minutes });
+        await refresh();
+      } catch (reason) { setError(reason instanceof Error ? reason.message : '无法共享终端'); }
+      finally { setBusy(false); }
+    }}>
+      <label>只读账户<select value={viewerId} disabled={busy || !viewers.length}
+        onChange={(event) => setViewerId(event.target.value)}>
+        {viewers.map((item) => <option key={item.id} value={item.id}>{item.username}</option>)}
+      </select></label>
+      <label>有效分钟<input type="number" min={1} max={480} value={minutes} disabled={busy}
+        onChange={(event) => setMinutes(Number(event.target.value))} /></label>
+      <button className="secondary compact" disabled={busy || !viewerId}>共享</button>
+    </form>
+    {!viewers.length && <p>先在“账户与只读分享”为此实例创建只读账户。</p>}
+    <ul>{grants.filter((item) => item.session === session).map((item) => <li key={item.id}>
+      {viewers.find((viewer) => viewer.id === item.viewerId)?.username || '已撤销账户'}
+      {' · 到期 '}{new Date(item.expiresAt).toLocaleString()}
+      <button className="secondary compact" disabled={busy} onClick={async () => {
+        setBusy(true); setError('');
+        try { await request('/access/terminal-shares/' + item.id, 'DELETE'); await refresh(); }
+        catch (reason) { setError(reason instanceof Error ? reason.message : '无法撤销共享'); }
+        finally { setBusy(false); }
+      }}>撤销</button>
+    </li>)}</ul>
+    <button className="secondary compact" disabled={busy} onClick={() => void refresh()
+      .catch((reason) => setError(String(reason.message || reason)))}>刷新共享状态</button>
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
 }

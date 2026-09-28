@@ -40,6 +40,7 @@ import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 import { AccessControl, accessHandoffInput } from './access-control.ts';
 import { Passkeys, passkeyRemove } from './passkeys.ts';
+import { TerminalSharing, terminalShareInput } from './terminal-sharing.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -56,6 +57,8 @@ async function main() {
   const engine = await createRuntime();
   const machines = new Machines(engine);
   await machines.init();
+  const terminalSharing = new TerminalSharing(machines);
+  await terminalSharing.init();
   const audit = hostAudit();
   Jobs.instrument = (job, work) =>
     audit.span(
@@ -99,6 +102,18 @@ async function main() {
     registered: access.users().reduce((count, user) => count + access.passkeysFor(user.id).length, 0),
     ...(!access.enabled ? { reason: '请先启用账户模式。' } : {}) }));
   features.next?.setAccountModeReady(() => access.enabled);
+  features.next?.setSharedTerminalCheck(async (id) => {
+    if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
+    if (!features.socketEnabled('terminal-session'))
+      return { ready: false, reason: '请先启用可恢复终端会话插件并重启 Sakura。' };
+    if (machines.state(id) !== 'running')
+      return { ready: false, reason: '请先启动实例。' };
+    try {
+      const result = await machines.exec(id, 'command -v tmux >/dev/null', 10000);
+      return result.code === 0 ? { ready: true }
+        : { ready: false, reason: '请先在客户机安装 tmux。' };
+    } catch (error) { return { ready: false, reason: (error as Error).message }; }
+  });
   const importedPeerVm = (requesterId: string, transferId: string) =>
     [...machines.records.values()].find((vm) =>
       vm.migrationOrigin?.sourceHostId === requesterId &&
@@ -225,12 +240,17 @@ async function main() {
   const socketVms = new WeakMap<WebSocket, string>();
   const socketAccounts = new WeakMap<WebSocket, string>();
   const socketCredentials = new WeakMap<WebSocket, string>();
+  const socketTerminalGrants = new WeakMap<WebSocket, string>();
   const terminateAccountSockets = (id: string) => {
     for (const client of ws.clients) if (socketAccounts.get(client) === id) client.terminate();
   };
   const terminateCredentialSockets = (credential: string) => {
     for (const client of ws.clients)
       if (socketCredentials.get(client) === credential) client.terminate();
+  };
+  const terminateTerminalGrantSockets = (id: string) => {
+    for (const client of ws.clients)
+      if (socketTerminalGrants.get(client) === id) client.terminate();
   };
   machines.on('incident-lockdown', (id: string) => {
     for (const store of features.jobStores())
@@ -244,11 +264,15 @@ async function main() {
     if (!access.enabled) return tokenMatches(value, token);
     try { return access.authorize(value).role === 'owner'; } catch { return false; }
   };
-  const socketAuthorization = (credential: string, mode: string, id: string) => {
+  const socketAuthorization = (credential: string, mode: string, id: string,
+    terminalSession?: string | null) => {
     if (!access.enabled) return equalToken(credential) ? { role: 'owner' as const } : null;
     try {
       const principal = access.authorize(credential);
-      return principal.role === 'owner' || (mode === 'desktop-view' && principal.vmIds.includes(id))
+      return (principal.role === 'owner' && mode !== 'terminal-view') ||
+        (principal.role === 'viewer' && principal.vmIds.includes(id) &&
+          (mode === 'desktop-view' || (mode === 'terminal-view' && !!terminalSession &&
+            !!terminalSharing.find(principal.id, id, terminalSession))))
         ? principal : null;
     } catch { return null; }
   };
@@ -338,9 +362,11 @@ async function main() {
       '/api/access/passkeys', '/api/access/passkeys/register/options',
       '/api/access/passkeys/register/verify',
     ].includes(url.pathname) || /^\/api\/access\/passkeys\/[A-Za-z0-9_-]{16,1024}$/.test(url.pathname);
+    const terminalShareRoute = url.pathname === '/api/access/terminal-shares' ||
+      /^\/api\/access\/terminal-shares\/[a-f0-9-]{36}$/.test(url.pathname);
     if (access.enabled && principal.role === 'viewer' &&
         url.pathname !== '/api/access/view' && url.pathname !== '/api/access/logout' &&
-        url.pathname !== '/api/access/handoff' && !passkeyManagementRoute)
+        url.pathname !== '/api/access/handoff' && !passkeyManagementRoute && !terminalShareRoute)
       throw new AppError('只读账户没有此接口的访问权限', 403);
     if (url.pathname === '/api/access/view') {
       if (req.method !== 'GET' || !access.enabled) throw new AppError('不支持此方法', 405);
@@ -367,6 +393,41 @@ async function main() {
       const proof = await access.login({ username: accountPrincipal.username, password: input.password });
       access.logout(proof.token);
       return send(res, await access.createHandoff(req.headers['x-sakura-token']));
+    }
+    if (url.pathname === '/api/access/terminal-shares') {
+      if (!accountPrincipal) throw new AppError('账户模式未启用', 409);
+      if (req.method === 'GET') {
+        const vmId = url.searchParams.get('vmId');
+        if (vmId) z.uuid().parse(vmId);
+        if (accountPrincipal.role === 'viewer' && vmId && !accountPrincipal.vmIds.includes(vmId))
+          throw new AppError('实例不在账户范围内', 403);
+        return send(res, { grants: terminalSharing.list(
+          accountPrincipal.role === 'viewer' ? accountPrincipal.id : undefined,
+          vmId || undefined) });
+      }
+      if (req.method !== 'POST' || accountPrincipal.role !== 'owner')
+        throw new AppError('只有管理员可共享终端', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      if (!features.socketEnabled('terminal-session'))
+        throw new AppError('请先启用可恢复终端会话插件', 409);
+      const input = terminalShareInput.parse(await authorizedBody(req, 4096));
+      machines.requireUnlocked(input.vmId);
+      const viewer = access.users().find((user) => user.id === input.viewerId &&
+        user.role === 'viewer' && user.vmIds.includes(input.vmId) &&
+        (user.expiresAt === null || user.expiresAt > Date.now()));
+      if (!viewer) throw new AppError('只读账户无此实例权限', 403);
+      const result = await terminalSharing.create(input);
+      terminateTerminalGrantSockets(result.id);
+      return send(res, result, 201);
+    }
+    if (/^\/api\/access\/terminal-shares\/[a-f0-9-]{36}$/.test(url.pathname)) {
+      if (req.method !== 'DELETE' || accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可撤销终端共享', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const id = url.pathname.split('/').at(-1)!;
+      const result = await terminalSharing.revoke(id);
+      terminateTerminalGrantSockets(id);
+      return send(res, result);
     }
     if (url.pathname === '/api/access/passkeys') {
       if (req.method !== 'GET' || !accountPrincipal) throw new AppError('不支持此方法', 405);
@@ -420,6 +481,7 @@ async function main() {
       const id = url.pathname.split('/').at(-1)!;
       const result = await access.removeViewer(id);
       terminateAccountSockets(id);
+      await terminalSharing.revokeViewer(id);
       return send(res, result);
     }
     if (url.pathname === '/api/access/password') {
@@ -813,15 +875,17 @@ async function main() {
     const parts = url.pathname.split('/');
     const id = parts[2];
     const mode = parts[3];
+    const terminalSession = url.searchParams.get('session');
     const events = url.pathname === '/ws/events';
     const credential = url.searchParams.get('token') || '';
     if (
       !allowedRequest(req) ||
       (!events &&
         (parts.length !== 4 || !machines.records.has(id) ||
-          !['terminal', 'logs', 'desktop', 'desktop-view'].includes(mode))) ||
+          !['terminal', 'terminal-view', 'logs', 'desktop', 'desktop-view'].includes(mode))) ||
       (!events && mode !== 'logs' && machines.incidentLocked(id)) ||
-      !socketAuthorization(credential, mode, id) ||
+      (mode === 'terminal-view' && (!terminalSession || !/^[a-z0-9-]{1,48}$/.test(terminalSession))) ||
+      !socketAuthorization(credential, mode, id, terminalSession) ||
       ((mode === 'desktop' || mode === 'desktop-view') && !features.socketEnabled('desktop')) ||
       (url.searchParams.has('session') && !features.socketEnabled('terminal-session'))
     ) {
@@ -836,13 +900,21 @@ async function main() {
         client.terminate();
         return;
       }
-      const principal = socketAuthorization(credential, mode, id);
+      const principal = socketAuthorization(credential, mode, id, terminalSession);
       if (!principal) { client.terminate(); return; }
       socketCredentials.set(client, credential);
       if ('id' in principal) {
         socketAccounts.set(client, principal.id);
         const timer = setTimeout(() => client.terminate(),
           Math.max(1, principal.expiresAt - Date.now()));
+        client.once('close', () => clearTimeout(timer));
+      }
+      if (mode === 'terminal-view' && 'id' in principal) {
+        const grant = terminalSharing.find(principal.id, id, terminalSession!);
+        if (!grant) { client.terminate(); return; }
+        socketTerminalGrants.set(client, grant.id);
+        const timer = setTimeout(() => client.terminate(),
+          Math.max(1, grant.expiresAt - Date.now()));
         client.once('close', () => clearTimeout(timer));
       }
       if (!events) socketVms.set(client, id);
@@ -912,6 +984,10 @@ async function main() {
           client.on('message', (raw) => {
             try {
               session.requireUnlocked();
+              if (mode === 'terminal-view') {
+                client.close(1008, 'Read-only terminal');
+                return;
+              }
               const msg = JSON.parse(raw.toString());
               if (msg.type === 'input' && typeof msg.data === 'string' && msg.data.length <= 32768)
                 stream.write(msg.data);
@@ -927,8 +1003,10 @@ async function main() {
             }
           });
         };
-        const terminalSession = url.searchParams.get('session');
-        if (terminalSession && /^[a-z0-9-]{1,48}$/.test(terminalSession)) {
+        if (mode === 'terminal-view') {
+          ssh.exec(`exec tmux attach-session -r -t =sakura-terminal-${terminalSession}`,
+            { pty: { term: 'xterm-256color', cols: 100, rows: 28 } }, connected);
+        } else if (terminalSession && /^[a-z0-9-]{1,48}$/.test(terminalSession)) {
           ssh.exec(
             `if command -v tmux >/dev/null; then exec tmux new-session -A -s sakura-terminal-${terminalSession}; else printf '安装项目环境后可恢复终端会话。\\r\\n'; exec /bin/sh -l; fi`,
             { pty: { term: 'xterm-256color', cols: 100, rows: 28 } },
@@ -962,6 +1040,7 @@ async function main() {
       () => session.close(),
       () => access.close(),
       () => passkeys.close(),
+      () => terminalSharing.close(),
       () => assistant.close(),
       () => native.close(),
       () => webhooks.close(),

@@ -60,7 +60,8 @@ const request = async (path: string, method = 'GET', token?: string, body?: unkn
   return { status: response.status, body: await response.json() as any };
 };
 const wsStatus = async (token: string, path = '/ws/events') => {
-  const socket = new WebSocket(origin.replace('http:', 'ws:') + path + '?token=' + token,
+  const socket = new WebSocket(origin.replace('http:', 'ws:') + path +
+    (path.includes('?') ? '&' : '?') + 'token=' + token,
     { handshakeTimeout: 3000 });
   socket.on('error', () => {});
   return new Promise<number>((done, fail) => {
@@ -78,6 +79,8 @@ try {
   assert.equal(legacy.length, 64);
   assert.equal((await request('/api/plugins', 'PATCH', legacy,
     { kind: 'plugin', id: 'desktop', enabled: true })).status, 200);
+  assert.equal((await request('/api/plugins', 'PATCH', legacy,
+    { kind: 'plugin', id: 'terminal-workspace', enabled: true })).status, 200);
   await stop();
   await start();
   legacy = (await request('/api/bootstrap')).body.token as string;
@@ -251,6 +254,92 @@ try {
     await sourcePage.close();
     await targetPage.close();
   } finally { await browser.close(); }
+
+  const boot = await request('/api/vms/' + vmId + '/start', 'POST', ownerToken, {});
+  assert.equal(boot.status, 200, JSON.stringify(boot.body));
+  const bootDeadline = Date.now() + 90_000;
+  while ((await request('/api/vms/' + vmId, 'GET', ownerToken)).body.status !== 'running') {
+    assert.ok(Date.now() < bootDeadline, '共享终端测试实例启动超时');
+    await delay(250);
+  }
+  const guest = async (command: string) => {
+    const result = await request('/api/vms/' + vmId + '/exec', 'POST', ownerToken, { command });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    return result.body as { stdout: string; stderr: string; code: number };
+  };
+  if ((await guest('command -v tmux >/dev/null')).code !== 0)
+    assert.equal((await guest('apk add --no-cache tmux')).code, 0);
+  assert.equal((await guest('tmux new-session -d -s sakura-terminal-sharetest')).code, 0);
+  const shared = await request('/api/access/terminal-shares', 'POST', ownerToken,
+    { vmId, viewerId: viewer.body.id, session: 'sharetest', minutes: 5 });
+  assert.equal(shared.status, 201, JSON.stringify(shared.body));
+  assert.equal((await request('/api/access/terminal-shares', 'GET', viewerToken)).body.grants[0].id,
+    shared.body.id);
+  const sharedBrowser = await chromium.launch();
+  try {
+    const ownerSharePage = await sharedBrowser.newPage();
+    await ownerSharePage.goto(origin);
+    await ownerSharePage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    await ownerSharePage.getByLabel('密码').fill(password);
+    await ownerSharePage.getByRole('button', { name: '登录', exact: true }).click();
+    await ownerSharePage.getByRole('tab', { name: '终端', exact: true }).click();
+    const shareControls = ownerSharePage.getByRole('region', { name: '共享终端管理' });
+    await shareControls.waitFor();
+    await shareControls.getByLabel('只读账户').selectOption({ label: 'reader' });
+    assert.equal(await shareControls.getByRole('button', { name: '共享', exact: true }).isEnabled(), true);
+    await ownerSharePage.close();
+    const sharedPage = await sharedBrowser.newPage();
+    await sharedPage.goto(origin);
+    await sharedPage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    await sharedPage.getByLabel('账户名').fill('reader');
+    await sharedPage.getByLabel('密码').fill('a long viewer password');
+    await sharedPage.getByRole('button', { name: '登录', exact: true }).click();
+    await sharedPage.getByRole('button', { name: '只读查看终端' }).waitFor();
+    await sharedPage.getByRole('button', { name: '只读查看终端' }).click();
+    await sharedPage.getByRole('region', { name: '只读终端视图' }).waitFor();
+    await sharedPage.getByText('终端视图已连接', { exact: false }).waitFor();
+  } finally { await sharedBrowser.close(); }
+  const terminalUrl = origin.replace('http:', 'ws:') + '/ws/' + vmId +
+    '/terminal-view?session=sharetest&token=' + viewerToken;
+  const openTerminal = async () => {
+    const socket = new WebSocket(terminalUrl, { handshakeTimeout: 5000 });
+    const messages: { type: string; data: unknown }[] = [];
+    socket.on('message', (raw) => { messages.push(JSON.parse(raw.toString())); });
+    await new Promise<void>((done, fail) => {
+      socket.once('open', () => done()); socket.once('error', fail);
+    });
+    const deadline = Date.now() + 10_000;
+    while (!messages.some((item) => item.type === 'ready') && Date.now() < deadline)
+      await delay(100);
+    assert.ok(messages.some((item) => item.type === 'ready'), JSON.stringify(messages));
+    return { socket, messages };
+  };
+  const viewed = await openTerminal();
+  assert.equal((await guest("tmux send-keys -t =sakura-terminal-sharetest:0 'printf shared-terminal-ws' Enter")).code, 0);
+  const outputDeadline = Date.now() + 10_000;
+  while (!viewed.messages.some((item) => item.type === 'data' &&
+      String(item.data).includes('shared-terminal-ws')) && Date.now() < outputDeadline)
+    await delay(100);
+  assert.ok(viewed.messages.some((item) => item.type === 'data' &&
+    String(item.data).includes('shared-terminal-ws')));
+  const rejectedInput = new Promise<number>((done) => viewed.socket.once('close', (code) => done(code)));
+  viewed.socket.send(JSON.stringify({ type: 'input', data: 'touch /tmp/share-violation\n' }));
+  assert.equal(await rejectedInput, 1008);
+  assert.equal((await guest('test ! -e /tmp/share-violation')).code, 0);
+  const reopened = await openTerminal();
+  const shortenedSocket = new Promise<void>((done) => reopened.socket.once('close', () => done()));
+  const shortened = await request('/api/access/terminal-shares', 'POST', ownerToken,
+    { vmId, viewerId: viewer.body.id, session: 'sharetest', minutes: 1 });
+  assert.equal(shortened.status, 201);
+  assert.equal(shortened.body.id, shared.body.id);
+  await shortenedSocket;
+  const afterShortening = await openTerminal();
+  const revokedSocket = new Promise<void>((done) => afterShortening.socket.once('close', () => done()));
+  assert.equal((await request('/api/access/terminal-shares/' + shared.body.id,
+    'DELETE', ownerToken)).status, 200);
+  await revokedSocket;
+  assert.equal((await request('/api/access/terminal-shares', 'GET', viewerToken)).body.grants.length, 0);
+  assert.equal(await wsStatus(viewerToken, '/ws/' + vmId + '/terminal-view?session=sharetest'), 403);
 
   assert.equal((await request('/api/access/users/' + viewer.body.id, 'DELETE', ownerToken)).status, 200);
   assert.equal((await request('/api/access/view', 'GET', viewerToken)).status, 401);

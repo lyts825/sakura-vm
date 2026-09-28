@@ -12,6 +12,7 @@ type SharedVm = { id: string; name: string; status: string; distro?: string;
 type UserView = { id: string; username: string; role: 'owner' | 'viewer';
   vmIds: string[]; expiresAt: number | null; createdAt: string };
 type PasskeyView = { id: string; name: string; createdAt: string; lastUsedAt?: string };
+type TerminalGrantView = { id: string; vmId: string; session: string; expiresAt: number };
 type Ceremony<T> = { ceremonyId: string; options: T };
 
 async function publicPasskeyRequest<T>(path: string, input: unknown) {
@@ -151,13 +152,20 @@ function SharedInventory({ principal }: { principal: AccessPrincipal }) {
   const [vms, setVms] = useState<SharedVm[]>([]);
   const [desktopAvailable, setDesktopAvailable] = useState(false);
   const [desktopId, setDesktopId] = useState('');
+  const [terminalGrants, setTerminalGrants] = useState<TerminalGrantView[]>([]);
+  const [openTerminal, setOpenTerminal] = useState('');
   const [error, setError] = useState('');
   const token = useToken();
   useEffect(() => {
     const abort = new AbortController();
-    const refresh = () => void api<{ vms: SharedVm[]; desktopAvailable: boolean }>(
-      '/access/view', 'GET', undefined, abort.signal)
-      .then((result) => { setVms(result.vms); setDesktopAvailable(result.desktopAvailable); setError(''); })
+    const refresh = () => void Promise.all([
+      api<{ vms: SharedVm[]; desktopAvailable: boolean }>(
+        '/access/view', 'GET', undefined, abort.signal),
+      api<{ grants: TerminalGrantView[] }>(
+        '/access/terminal-shares', 'GET', undefined, abort.signal),
+    ])
+      .then(([result, shared]) => { setVms(result.vms); setDesktopAvailable(result.desktopAvailable);
+        setTerminalGrants(shared.grants); setError(''); })
       .catch((reason) => { if (!abort.signal.aborted) setError(String(reason.message || reason)); });
     refresh();
     const timer = setInterval(refresh, 15_000);
@@ -178,12 +186,57 @@ function SharedInventory({ principal }: { principal: AccessPrincipal }) {
         {desktopAvailable && vm.status === 'running' && <button className="secondary compact"
           onClick={() => setDesktopId(vm.id === desktopId ? '' : vm.id)}>
           {vm.id === desktopId ? '关闭桌面视图' : '只读查看桌面'}</button>}
+        {vm.status === 'running' && terminalGrants.filter((grant) => grant.vmId === vm.id)
+          .map((grant) => <button key={grant.id} className="secondary compact"
+            onClick={() => setOpenTerminal(openTerminal === grant.id ? '' : grant.id)}>
+            {openTerminal === grant.id ? '关闭终端视图' : '只读查看终端'}
+          </button>)}
       </li>)}</ul> : <p>当前没有可查看的实例。</p>}
     </section>
     {desktopId && token && <SharedDesktop vmId={desktopId} token={token} />}
+    {terminalGrants.filter((grant) => grant.id === openTerminal).map((grant) =>
+      <SharedTerminal key={grant.id} grant={grant} token={token} />)}
     <PasskeyManager />
     <SessionHandoffManager />
   </main>;
+}
+
+function SharedTerminal({ grant, token }: { grant: TerminalGrantView; token: string }) {
+  const screen = useRef<HTMLDivElement>(null);
+  const [connection, setConnection] = useState('正在连接终端…');
+  useEffect(() => {
+    let active = true;
+    let socket: WebSocket | undefined;
+    let terminal: import('@xterm/xterm').Terminal | undefined;
+    void import('@xterm/xterm').then(({ Terminal }) => {
+      if (!active || !screen.current) return;
+      terminal = new Terminal({ disableStdin: true, cursorBlink: false,
+        fontSize: 13, scrollback: 4000, theme: { background: '#26212c', foreground: '#eee6ef' } });
+      terminal.open(screen.current);
+      const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${scheme}//${location.host}/ws/${grant.vmId}/terminal-view?` +
+        `token=${encodeURIComponent(token)}&session=${encodeURIComponent(grant.session)}`);
+      socket.onopen = () => { if (active) setConnection('终端视图已连接'); };
+      socket.onmessage = (event) => {
+        if (!active) return;
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'data' && typeof message.data === 'string')
+            terminal?.write(message.data);
+          if (message.type === 'error') setConnection(String(message.data));
+          if (message.type === 'exit') setConnection('终端会话已结束');
+        } catch { setConnection('终端消息格式错误'); }
+      };
+      socket.onclose = () => { if (active) setConnection('终端连接已断开'); };
+      socket.onerror = () => { if (active) setConnection('无法连接共享终端'); };
+    }).catch(() => { if (active) setConnection('无法加载终端查看器'); });
+    return () => { active = false; socket?.close(); terminal?.dispose(); };
+  }, [grant.id, token]);
+  return <section className="system-card" aria-label="只读终端视图">
+    <h2>只读终端视图</h2>
+    <p role="status">{connection}。输入在服务端被拒绝。</p>
+    <div className="xterm-container" ref={screen} />
+  </section>;
 }
 
 function SessionHandoffManager() {

@@ -461,7 +461,8 @@ export const nextFeatureCatalog = [
     '使用本机模型生成含命令、用途、影响与验证方式的结构化计划，供人工审阅和导出。',
     'available',
   ],
-  ['shared-terminal', '共享终端', '协作与团队', 'P0', '保存共享终端会话和成员访问状态。', 'planned'],
+  ['shared-terminal', '共享终端', '协作与团队', 'P0',
+    '管理员按终端会话和账户授予限时只读权限；实时输出、输入阻断和撤销均在服务端执行。', 'available'],
   ['shared-desktop-view', '共享桌面视图', '协作与团队', 'P1',
     '已授权的本地只读账户可查看实例桌面，服务端拒绝键鼠、剪贴板和调整桌面尺寸。', 'available'],
   ['session-handoff', '会话交接', '协作与团队', 'P0',
@@ -662,6 +663,7 @@ export class NextFeatures {
   private objectBackup?: ObjectBackup;
   private wireGuardOverlay?: WireGuardOverlay;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
+  private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
   private accountModeReady?: () => boolean;
   private stateValue?: NextState;
@@ -683,6 +685,10 @@ export class NextFeatures {
 
   setSharedDesktopCheck(check: (id: string) => Promise<{ ready: boolean; reason?: string }>) {
     this.sharedDesktopCheck = check;
+  }
+
+  setSharedTerminalCheck(check: (id: string) => Promise<{ ready: boolean; reason?: string }>) {
+    this.sharedTerminalCheck = check;
   }
 
   setPasskeyCheck(check: () => { ready: boolean; registered: number; reason?: string }) {
@@ -956,6 +962,13 @@ export class NextFeatures {
         : { ready: false, reason: '共享桌面服务尚未启动。' };
       return { ...state, executed: false, adapter,
         message: '系统设置 → 账户与只读分享：为此实例创建只读账户。用户登录后打开只读桌面视图。' };
+    }
+    if (spec.id === 'shared-terminal') {
+      const status = this.sharedTerminalCheck
+        ? await this.sharedTerminalCheck(id)
+        : { ready: false, reason: '共享终端服务尚未启动。' };
+      return { ...status, executed: false, adapter,
+        message: '在可恢复终端会话中选定只读账户并共享；对方登录后可实时查看，输入在服务端被拒绝。' };
     }
     if (spec.id === 'passkey-webauthn') {
       const status = this.passkeyCheck?.() || { ready: false, registered: 0,

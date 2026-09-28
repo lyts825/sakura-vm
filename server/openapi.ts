@@ -8,6 +8,7 @@ import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.t
 import { accessEnableInput, accessLoginInput, accessViewerInput, accessPasswordInput,
   accessHandoffInput, accessHandoffRedeem } from './access-control.ts';
 import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
+import { terminalShareInput } from './terminal-sharing.ts';
 import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
@@ -56,6 +57,13 @@ const core: {
     title: '验证密码并生成两分钟有效的会话交接码', body: request(accessHandoffInput) },
   { id: 'access.handoffCancel', method: 'DELETE', path: '/api/access/handoff',
     title: '取消当前会话待接收的交接码' },
+  { id: 'access.terminalShares', method: 'GET', path: '/api/access/terminal-shares',
+    title: '列出当前账户可查看的终端共享；可用 vmId 查询参数筛选', inspect: true },
+  { id: 'access.terminalShareCreate', method: 'POST', path: '/api/access/terminal-shares',
+    title: '为只读账户授予运行中 tmux 会话的限时查看权限',
+    body: request(terminalShareInput), status: 201 },
+  { id: 'access.terminalShareRevoke', method: 'DELETE',
+    path: '/api/access/terminal-shares/{id}', title: '撤销终端查看权限及活动连接' },
   { id: 'access.passkeyLoginOptions', method: 'POST', path: '/api/access/passkeys/login/options',
     title: '开始本机通行密钥登录', public: true, body: request(z.object({}).strict()) },
   { id: 'access.passkeyLoginVerify', method: 'POST', path: '/api/access/passkeys/login/verify',
