@@ -34,6 +34,7 @@ export async function route(
       name: url.searchParams.get('name'),
       format: url.searchParams.get('format'),
       distro: url.searchParams.get('distro'),
+      architecture: url.searchParams.get('architecture') || 'x86_64',
       memoryMiB: Number(url.searchParams.get('memoryMiB')),
       cpus: Number(url.searchParams.get('cpus')),
       accelerator: url.searchParams.get('accelerator') || 'auto',

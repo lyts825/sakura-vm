@@ -13,7 +13,7 @@ const SignedBundlesPanel = lazy(() =>
 );
 
 export type ImageInfo = {
-  id: 'alpine' | 'debian' | 'ubuntu';
+  id: 'alpine' | 'debian' | 'debian-arm64' | 'ubuntu';
   name: string;
   ready: boolean;
   minimumMemory: number;
@@ -39,6 +39,7 @@ export function ImageCatalog({
   const [diskName, setDiskName] = useState('imported-disk');
   const [diskFormat, setDiskFormat] = useState<'raw' | 'vmdk' | 'vhdx' | 'ova'>('raw');
   const [diskDistro, setDiskDistro] = useState<'alpine' | 'debian' | 'ubuntu'>('alpine');
+  const [diskArchitecture, setDiskArchitecture] = useState<'x86_64' | 'aarch64'>('x86_64');
   const [diskMemory, setDiskMemory] = useState(1024);
   const [diskCpus, setDiskCpus] = useState(2);
   const [diskFirmware, setDiskFirmware] = useState<'bios' | 'uefi'>('bios');
@@ -52,7 +53,7 @@ export function ImageCatalog({
           <div className="feature-card" key={img.id}>
             <span className="tag">官方云镜像</span>
             <h3>{img.name}</h3>
-            <p>x86_64 · 最低 {img.minimumMemory} MiB 内存</p>
+            <p>{img.id === 'debian-arm64' ? 'ARM64' : 'x86_64'} · 最低 {img.minimumMemory} MiB 内存</p>
             <span className={`badge ${img.ready ? 'running' : ''}`}>
               {img.ready ? '可创建实例' : '尚未下载'}
             </span>
@@ -88,8 +89,24 @@ export function ImageCatalog({
             </select>
           </label>
           <label>源发行版
-            <select aria-label="镜像源发行版" value={diskDistro} onChange={(event) => setDiskDistro(event.target.value as typeof diskDistro)}>
-              <option value="alpine">Alpine</option><option value="debian">Debian</option><option value="ubuntu">Ubuntu</option>
+            <select aria-label="镜像源发行版" value={diskDistro}
+              onChange={(event) => setDiskDistro(event.target.value as typeof diskDistro)}>
+              {diskArchitecture !== 'aarch64' && <option value="alpine">Alpine</option>}
+              <option value="debian">Debian</option>
+              {diskArchitecture !== 'aarch64' && <option value="ubuntu">Ubuntu</option>}
+            </select>
+          </label>
+          <label>客户机架构
+            <select aria-label="导入实例架构" value={diskArchitecture}
+              onChange={(event) => {
+                const architecture = event.target.value as typeof diskArchitecture;
+                setDiskArchitecture(architecture);
+                if (architecture === 'aarch64') {
+                  setDiskDistro('debian');
+                  setDiskFirmware('uefi');
+                }
+              }}>
+              <option value="x86_64">x86_64</option><option value="aarch64">ARM64</option>
             </select>
           </label>
           <label>内存 MiB
@@ -100,7 +117,8 @@ export function ImageCatalog({
           </label>
           <label>启动固件
             <select aria-label="导入实例固件" value={diskFirmware} onChange={(event) => setDiskFirmware(event.target.value as typeof diskFirmware)}>
-              <option value="bios">BIOS</option><option value="uefi">UEFI / OVMF</option>
+              {diskArchitecture !== 'aarch64' && <option value="bios">BIOS</option>}
+              <option value="uefi">UEFI / OVMF</option>
             </select>
           </label>
         </div>
@@ -116,7 +134,9 @@ export function ImageCatalog({
             if (!/^[a-z][a-z0-9-]{0,31}$/.test(diskName)) throw new Error('实例名称格式不正确');
             if (selected.size > 8 * 1024 ** 3) throw new Error('镜像文件超过 8 GiB');
             if (diskSha256 && !/^[a-f0-9]{64}$/.test(diskSha256)) throw new Error('SHA-256 必须为 64 位十六进制');
-            const query = new URLSearchParams({ name: diskName, format: diskFormat, distro: diskDistro, memoryMiB: String(diskMemory), cpus: String(diskCpus), firmware: diskFirmware });
+            const query = new URLSearchParams({ name: diskName, format: diskFormat,
+              distro: diskDistro, architecture: diskArchitecture,
+              memoryMiB: String(diskMemory), cpus: String(diskCpus), firmware: diskFirmware });
             if (diskSha256) query.set('sha256', diskSha256);
             const response = await fetch(`/api/image-import?${query}`, {
               method: 'POST',

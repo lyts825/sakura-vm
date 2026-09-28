@@ -227,6 +227,8 @@ export class Machines extends EventEmitter {
           accelerator: r.accelerator,
           forwards: r.forwards,
           distro: r.distro,
+          architecture: r.architecture,
+          firmware: r.firmware,
           template: r.template,
           hardware: r.hardware,
         });
@@ -364,7 +366,8 @@ export class Machines extends EventEmitter {
     const vm = this.get(id);
     return {
       name: `sakura-${vm.name}`,
-      machine: 'q35',
+      machine: vm.architecture === 'aarch64' ? 'virt' : 'q35',
+      architecture: vm.architecture || 'x86_64',
       memoryMiB: vm.memoryMiB,
       cpus: vm.cpus,
       hardware: vm.hardware,
@@ -425,7 +428,9 @@ export class Machines extends EventEmitter {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
       this.requireUnreservedPorts(config.forwards);
-      if (config.firmware === 'uefi') await requireUefiSupport();
+      if (config.architecture === 'aarch64' && !this.engine.aarch64Available)
+        throw new AppError('缺少 ARM64 QEMU，请运行 npm run setup', 503);
+      if (config.firmware === 'uefi') await requireUefiSupport(config.architecture);
       if (sandbox !== undefined) {
         sandbox = sandboxPolicySchema.parse(sandbox);
         if (sandboxExpired(sandbox)) throw new AppError('沙箱期限必须晚于当前时间');
@@ -434,7 +439,7 @@ export class Machines extends EventEmitter {
       }
       if ([...this.records.values()].some((v) => v.name === config.name))
         throw new AppError('该名称已存在', 409);
-      const image = distroInfo(config.distro);
+      const image = distroInfo(config.distro, config.architecture);
       if (!existsSync(image.file)) throw new AppError('镜像尚未准备好，请先下载对应发行版镜像', 503);
       if (config.memoryMiB < image.minimumMemory || config.diskGiB < image.minimumDisk)
         throw new AppError(
@@ -460,7 +465,8 @@ export class Machines extends EventEmitter {
             'meta-data': metaData(vm.id, vm.name, key.publicText),
             'user-data':
               vm.distro && vm.distro !== 'alpine'
-                ? cloudUserData(vm.name, key.publicText)
+                ? cloudUserData(vm.name, key.publicText,
+                  vm.architecture === 'aarch64' ? '/dev/ttyAMA0' : '/dev/ttyS0')
                 : userData(vm.name, key.publicText),
             ...(vm.distro && vm.distro !== 'alpine' ? { 'network-config': cloudNetwork } : {}),
           }),
@@ -548,11 +554,14 @@ export class Machines extends EventEmitter {
             if (vm.forwards.some((n) => n.host === p.host))
               throw new AppError(`端口 ${p.host} 已被另一实例使用`, 409);
         this.requireUnreservedPorts(vm.forwards);
-        const firmware = vm.firmware === 'uefi' ? await ensureUefiFirmware(id) : null;
+        if (vm.architecture === 'aarch64' && !this.engine.aarch64Available)
+          throw new AppError('缺少 ARM64 QEMU，请运行 npm run setup', 503);
+        const firmware = vm.firmware === 'uefi'
+          ? await ensureUefiFirmware(id, vm.architecture) : null;
         const [sshPort, qmpPort, serialPort, agentPort] = await Promise.all([freePort(), freePort(), freePort(), freePort()]);
         await recordBootAttempt(id);
-        const accelerator =
-          vm.accelerator === 'auto' ? (this.engine.whpxAvailable ? 'whpx' : 'tcg') : vm.accelerator;
+        const accelerator = vm.architecture === 'aarch64' ? 'tcg'
+          : vm.accelerator === 'auto' ? (this.engine.whpxAvailable ? 'whpx' : 'tcg') : vm.accelerator;
         const live: Live = {
           status: 'starting',
           accelerator,
@@ -599,7 +608,7 @@ export class Machines extends EventEmitter {
           '-name',
           `sakura-${vm.name}`,
           '-machine',
-          'q35',
+          vm.architecture === 'aarch64' ? 'virt' : 'q35',
           '-nodefaults',
           ...(vm.sandbox ? ['-no-user-config'] : []),
           '-boot',
@@ -610,7 +619,8 @@ export class Machines extends EventEmitter {
           // otherwise make Alpine's early PIT/IO-APIC timer check panic. icount
           // requires single-threaded TCG; other hosts keep multi-threading.
           accelerator === 'whpx' ? 'whpx' : `tcg,thread=${process.platform === 'win32' ? 'single' : 'multi'}`,
-          ...(process.platform === 'win32' && accelerator === 'tcg'
+          ...(vm.architecture === 'aarch64' ? ['-cpu', 'cortex-a57'] : []),
+          ...(process.platform === 'win32' && accelerator === 'tcg' && vm.architecture !== 'aarch64'
             ? ['-icount', 'shift=auto,sleep=on']
             : []),
           ...hardwareArguments(vm),
@@ -654,7 +664,7 @@ export class Machines extends EventEmitter {
           `tcp:127.0.0.1:${serialPort},server=on,wait=off`,
         ];
         live.done = this.engine
-          .run('sakura-qemu', args, {
+          .run(vm.architecture === 'aarch64' ? 'sakura-qemu-aarch64' : 'sakura-qemu', args, {
             signal: live.abort.signal,
             timeoutMs: 2147483647,
             output: (b) => this.log(id, b),
@@ -1185,8 +1195,12 @@ export class Machines extends EventEmitter {
       this.requireMutableConfig(vm);
       this.requireStopped(id);
       const config = createSchema.parse(input);
+      if (config.architecture === undefined && vm.architecture)
+        config.architecture = vm.architecture;
+      if (config.firmware === undefined && vm.architecture === 'aarch64')
+        config.firmware = vm.firmware;
       this.requireUnreservedPorts(config.forwards);
-      if (config.firmware === 'uefi') await requireUefiSupport();
+      if (config.firmware === 'uefi') await requireUefiSupport(config.architecture ?? vm.architecture);
       if (config.name !== vm.name) throw new AppError('实例名称创建后不可修改');
       if (config.diskGiB !== vm.diskGiB) throw new AppError('磁盘大小创建后不可修改');
       if (config.storagePoolId !== undefined &&
@@ -1194,10 +1208,13 @@ export class Machines extends EventEmitter {
         throw new AppError('请使用存储池迁移操作移动已有实例', 409);
       if ((config.distro || 'alpine') !== (vm.distro || 'alpine'))
         throw new AppError('不能更改已有磁盘的发行版');
+      if (config.architecture !== undefined && config.architecture !== (vm.architecture || 'x86_64'))
+        throw new AppError('不能更改已有磁盘的架构');
       const before = { ...vm };
-      if (config.memoryMiB < distroInfo(vm.distro).minimumMemory)
+      if (config.memoryMiB < distroInfo(vm.distro, vm.architecture).minimumMemory)
         throw new AppError('内存低于发行版最低要求');
-      createSchema.parse({ ...config, hardware: config.hardware ?? vm.hardware });
+      createSchema.parse({ ...config, architecture: vm.architecture,
+        firmware: config.firmware ?? vm.firmware, hardware: config.hardware ?? vm.hardware });
       this.requireUnreservedPorts(config.forwards);
       Object.assign(vm, config);
       try {
@@ -1222,6 +1239,7 @@ export class Machines extends EventEmitter {
       diskGiB: vm.diskGiB,
       accelerator: vm.accelerator,
       distro: vm.distro,
+      architecture: vm.architecture,
       template: vm.template,
       firmware: vm.firmware,
       forwards: vm.forwards,
@@ -1951,10 +1969,10 @@ export class Machines extends EventEmitter {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const { signal, pendingResize } = options;
       const config = createSchema.parse(input);
-      if (config.firmware === 'uefi') await requireUefiSupport();
+      if (config.firmware === 'uefi') await requireUefiSupport(config.architecture);
       if (!config.distro || (config.template && config.template !== 'none'))
         throw new AppError('导入镜像需要选择 Linux 发行版，且不能自动安装模板');
-      const image = distroInfo(config.distro);
+      const image = distroInfo(config.distro, config.architecture);
       if (config.memoryMiB < image.minimumMemory || config.diskGiB < image.minimumDisk)
         throw new AppError(
           `${image.name} 至少需要 ${image.minimumMemory} MiB 内存、${image.minimumDisk} GiB 磁盘`,
@@ -1979,7 +1997,8 @@ export class Machines extends EventEmitter {
           'user-data':
             vm.distro === 'alpine'
               ? userData(vm.name, key.publicText)
-              : cloudUserData(vm.name, key.publicText),
+              : cloudUserData(vm.name, key.publicText,
+                vm.architecture === 'aarch64' ? '/dev/ttyAMA0' : '/dev/ttyS0'),
           ...(vm.distro === 'alpine' ? {} : { 'network-config': cloudNetwork }),
         });
         await pipeline(
@@ -2022,7 +2041,7 @@ export class Machines extends EventEmitter {
         vm.migrationOrigin?.sourceHostId === migrationOrigin.sourceHostId &&
         vm.migrationOrigin.transferId === migrationOrigin.transferId))
         throw new AppError('此迁移任务已经导入', 409);
-      if (config.firmware === 'uefi') await requireUefiSupport();
+      if (config.firmware === 'uefi') await requireUefiSupport(config.architecture);
       if (this.records.size >= 32 || [...this.records.values()].some((v) => v.name === config.name))
         throw new AppError('名称已存在或已达到 32 个实例上限', 409);
       const vm: VMRecord = {

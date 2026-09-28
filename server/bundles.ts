@@ -127,6 +127,7 @@ export class Bundles {
           accelerator,
           forwards,
           distro,
+          architecture,
           template,
           hardware,
           firmware,
@@ -136,7 +137,7 @@ export class Bundles {
         const unsigned = manifestSchema.parse({
           version: 1,
           config: { name, memoryMiB, cpus, diskGiB: snapshot?.diskGiB || diskGiB,
-            accelerator, forwards, distro, template, hardware, firmware },
+            accelerator, forwards, distro, architecture, template, hardware, firmware },
           project: await this.project(id),
           projects: await this.projectCatalog(id),
           ...((snapshot ? snapshot.pendingResize : pendingResize) ? { pendingResize: true } : {}),

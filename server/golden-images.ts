@@ -151,6 +151,7 @@ export class GoldenImages {
         sourceId: source.id,
         sourceName: source.name,
         distro: source.distro || 'alpine',
+        architecture: source.architecture,
         diskGiB: source.diskGiB,
         bytes,
         sha256,

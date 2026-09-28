@@ -2539,6 +2539,13 @@
                   "ubuntu"
                 ]
               },
+              "architecture": {
+                "type": "string",
+                "enum": [
+                  "x86_64",
+                  "aarch64"
+                ]
+              },
               "diskGiB": {
                 "type": "integer",
                 "minimum": 2,

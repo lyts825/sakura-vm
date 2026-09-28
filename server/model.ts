@@ -34,6 +34,7 @@ export const createSchema = z
     accelerator: z.enum(['auto', 'tcg', 'whpx']).default('auto'),
     firmware: z.enum(['bios', 'uefi']).optional(),
     distro: z.enum(['alpine', 'debian', 'ubuntu']).optional(),
+    architecture: z.enum(['x86_64', 'aarch64']).optional(),
     template: z.enum(['none', 'node', 'python', 'rust']).optional(),
     hardware: hardwareSchema.optional(),
     forwards: z
@@ -50,6 +51,14 @@ export const createSchema = z
   .strict()
   .superRefine((v, ctx) => {
     for (const message of hardwareIssues(v)) ctx.addIssue({ code: 'custom', message, path: ['hardware'] });
+    if (v.architecture === 'aarch64') {
+      if (v.distro !== 'debian')
+        ctx.addIssue({ code: 'custom', message: 'ARM64 当前支持 Debian 12', path: ['distro'] });
+      if (v.firmware !== 'uefi')
+        ctx.addIssue({ code: 'custom', message: 'ARM64 需要 UEFI 固件', path: ['firmware'] });
+      if (v.accelerator === 'whpx')
+        ctx.addIssue({ code: 'custom', message: 'ARM64 在 Windows 上使用 TCG', path: ['accelerator'] });
+    }
     if (new Set(v.forwards.map((p) => p.host)).size !== v.forwards.length)
       ctx.addIssue({ code: 'custom', message: '主机端口不能重复', path: ['forwards'] });
   });

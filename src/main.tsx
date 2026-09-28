@@ -1063,7 +1063,7 @@ function App() {
                               {v.organization?.favorite ? '★ ' : ''}
                               {v.name}
                             </h3>
-                            <p>{distroName(v.distro)}</p>
+                            <p>{distroName(v.distro, v.architecture)}</p>
                           </div>
                           {vm?.id === v.id ? <CircleDot size={16} /> : <ChevronRight size={15} />}
                         </div>
@@ -1145,7 +1145,7 @@ function App() {
                               <Badge vm={vm} />
                             </div>
                             <p>
-                              <span>{distroName(vm.distro)}</span>
+                              <span>{distroName(vm.distro, vm.architecture)}</span>
                               <span>
                                 独立内核 ·{' '}
                                 {vm.activeAccelerator?.toUpperCase() ||
@@ -1865,9 +1865,11 @@ function ResourceFields({
           value={config.accelerator}
           onChange={(e) => set({ ...config, accelerator: e.target.value as VMConfig['accelerator'] })}
         >
-          <option value="auto">自动 · 优先使用可用的硬件加速</option>
+          <option value="auto">{config.architecture === 'aarch64'
+            ? '自动 · ARM64 使用 TCG' : '自动 · 优先使用可用的硬件加速'}</option>
           <option value="tcg">TCG · 兼容模式，无需系统配置</option>
-          <option value="whpx">WHPX · 硬件加速，需已启用 Windows Hypervisor Platform</option>
+          {config.architecture !== 'aarch64' &&
+            <option value="whpx">WHPX · 硬件加速，需已启用 Windows Hypervisor Platform</option>}
         </select>
       </label>
       <label>
@@ -1877,7 +1879,7 @@ function ResourceFields({
           value={config.firmware || 'bios'}
           onChange={(e) => set({ ...config, firmware: e.target.value as VMConfig['firmware'] })}
         >
-          <option value="bios">BIOS · 兼容现有磁盘</option>
+          {config.architecture !== 'aarch64' && <option value="bios">BIOS · 兼容现有磁盘</option>}
           <option value="uefi">UEFI · OVMF 固件</option>
         </select>
         <small>切换已有实例前，请确认磁盘包含对应固件可启动的系统。</small>
@@ -1914,8 +1916,9 @@ function CreateModal({
   const images = useRemote<ImageInfo[]>(api, '/images', hasImages);
   const pools = useRemote<{ pools: { id: string; name: string; available: boolean;
     freeBytes: number | null }[] }>(api, '/storage-pools');
+  const imageId = config.architecture === 'aarch64' ? 'debian-arm64' : config.distro || 'alpine';
   const selectedImage = hasImages
-    ? images.data?.find((i) => i.id === (config.distro || 'alpine'))
+    ? images.data?.find((i) => i.id === imageId)
     : { ready: true };
   return (
     <Modal title="一个新的 Linux 空间" subtitle="选择资源，剩下的交给 Sakura。" onClose={close}>
@@ -1928,13 +1931,17 @@ function CreateModal({
         <label>
           发行版
           <select
-            value={config.distro || 'alpine'}
+            value={imageId}
             onChange={(e) => {
-              const distro = e.target.value as VMConfig['distro'];
-              const image = images.data?.find((i) => i.id === distro);
+              const arm64 = e.target.value === 'debian-arm64';
+              const distro = (arm64 ? 'debian' : e.target.value) as VMConfig['distro'];
+              const image = images.data?.find((i) => i.id === e.target.value);
               set({
                 ...config,
                 distro,
+                architecture: arm64 ? 'aarch64' : 'x86_64',
+                accelerator: arm64 ? 'tcg' : 'auto',
+                firmware: arm64 ? 'uefi' : config.firmware,
                 memoryMiB: Math.max(config.memoryMiB, image?.minimumMemory || 512),
                 diskGiB: Math.max(config.diskGiB, image?.minimumDisk || 4),
               });
@@ -2063,6 +2070,7 @@ function ConfigPanel({
     storagePoolId: vm.storagePoolId,
     forwards: vm.forwards,
     distro: vm.distro,
+    architecture: vm.architecture,
     template: vm.template,
     firmware: vm.firmware,
   });

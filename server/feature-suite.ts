@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { z } from 'zod';
 import { DATA, AppError, guestPath } from './model.ts';
 import type { Machines } from './machines.ts';
@@ -10,6 +11,7 @@ import { guestTask } from './guest-task.ts';
 import { quote } from './files.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { distroInfo } from './images.ts';
+import { firmwareSupport } from './firmware.ts';
 import { envPrefix } from './project-services.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { CapabilityActions } from './capability-actions.ts';
@@ -32,7 +34,8 @@ import { dependencyManagerSchema, projectDependencyCacheScript } from './project
 export const featureCatalog = [
   ['image-import', '通用镜像导入', '实例与资源', 'P1', '支持 VHDX、VMDK、RAW、OVA 等格式的导入校验。'],
   ['golden-images', '黄金镜像制作', '实例与资源', 'P1', '将干净的实例固化为可复用模板。'],
-  ['multi-arch', '多架构实例', '实例与资源', 'P2', '为 ARM64 等架构提供 QEMU 兼容运行入口。'],
+  ['multi-arch', '多架构实例', '实例与资源', 'P2',
+    '使用 Debian 12 ARM64 镜像、QEMU virt 和 UEFI 固件创建并运行 aarch64 实例。'],
   ['power-schedules', '开机与关机计划', '实例与资源', 'P0', '按本机时间自动启动或停止实例。'],
   ['idle-shutdown', '空闲自动暂停或关机', '实例与资源', 'P1', '连续空闲时自动释放实例资源。'],
   ['dynamic-memory', '动态内存目标', '实例与资源', 'P1', '通过 virtio-balloon 在运行中调整客户机内存目标。'],
@@ -137,6 +140,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'ai-assistant',
   'native-integration',
   'golden-images',
+  'multi-arch',
   'snapshot-diff',
   'online-snapshots',
   'package-cache',
@@ -463,8 +467,16 @@ export class FeatureSuite {
       result.accelerator = vm.accelerator;
       result.commandline = this.machines.commandline(id);
     } else if (featureId === 'multi-arch') {
-      result.architecture = process.arch;
-      result.qemu = true;
+      const image = distroInfo('debian', 'aarch64');
+      const firmware = await firmwareSupport('aarch64');
+      result.architecture = vm.architecture || 'x86_64';
+      result.qemu = this.machines.engine.aarch64Available;
+      result.firmware = firmware.available;
+      result.imageReady = existsSync(image.file);
+      result.ready = !!result.qemu && firmware.available && !!result.imageReady;
+      result.reason = result.ready
+        ? '在新建实例中选择 Debian 12 ARM64；使用 TCG、UEFI 与 QEMU virt 启动。'
+        : '请准备 ARM64 QEMU、UEFI 固件和镜像库中的 Debian 12 ARM64 镜像。';
     } else if (featureId === 'snapshot-diff') {
       result.ready = true;
       result.reason =

@@ -11,6 +11,7 @@ export const goldenEntrySchema = z
     sourceId: z.uuid(),
     sourceName: z.string().min(1).max(32),
     distro: z.enum(['alpine', 'debian', 'ubuntu']),
+    architecture: z.enum(['x86_64', 'aarch64']).optional(),
     diskGiB: z.number().int().min(2).max(128),
     bytes: z.number().int().positive().max(goldenLimits.imageBytes),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),

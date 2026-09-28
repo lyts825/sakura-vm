@@ -16,6 +16,7 @@ export async function createRuntime() {
   const suffix = process.platform === 'win32' ? '.exe' : '';
   const binaries = {
     'sakura-qemu': join(qemuDir, `qemu-system-x86_64${suffix}`),
+    'sakura-qemu-aarch64': join(qemuDir, `qemu-system-aarch64${suffix}`),
     'sakura-img': join(qemuDir, `qemu-img${suffix}`),
     'sakura-io': join(qemuDir, `qemu-io${suffix}`),
   };
@@ -160,6 +161,7 @@ export async function createRuntime() {
       await probe;
     }
   }
-  return { runtime, service, run, runStatus, version, whpxAvailable, qemuIoAvailable };
+  return { runtime, service, run, runStatus, version, whpxAvailable, qemuIoAvailable,
+    aarch64Available: existsSync(binaries['sakura-qemu-aarch64']) };
 }
 export type Engine = Awaited<ReturnType<typeof createRuntime>>;

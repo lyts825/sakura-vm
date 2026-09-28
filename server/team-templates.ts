@@ -12,6 +12,7 @@ const resourceSchema = z.object({
   diskGiB: createSchema.shape.diskGiB,
   accelerator: createSchema.shape.accelerator,
   distro: z.enum(['alpine', 'debian', 'ubuntu']).default('alpine'),
+  architecture: z.enum(['x86_64', 'aarch64']).optional(),
   firmware: z.enum(['bios', 'uefi']).default('bios'),
   template: z.enum(['none', 'node', 'python', 'rust']).default('none'),
 }).strict();
@@ -80,6 +81,7 @@ export class TeamTemplates {
       resources: {
         cpus: vm.cpus, memoryMiB: vm.memoryMiB, diskGiB: vm.diskGiB,
         accelerator: vm.accelerator, distro: vm.distro || 'alpine',
+        architecture: vm.architecture,
         firmware: vm.firmware || 'bios', template: project.template,
       },
       project: {

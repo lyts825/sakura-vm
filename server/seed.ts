@@ -122,7 +122,8 @@ ethernets:
     accept-ra: true
 `;
 
-export function cloudUserData(name: string, publicKey: string) {
+export function cloudUserData(name: string, publicKey: string,
+  serialDevice: '/dev/ttyS0' | '/dev/ttyAMA0' = '/dev/ttyS0') {
   return `#cloud-config
 hostname: ${name}
 manage_etc_hosts: true
@@ -146,7 +147,7 @@ write_files:
 runcmd:
   - [mkdir, -p, /workspace]
   - [systemctl, restart, ssh]
-  - [sh, -c, "printf 'SAKURA_READY\\n' > /dev/ttyS0"]
+  - [sh, -c, "printf 'SAKURA_READY\\n' > ${serialDevice}"]
 `;
 }
 

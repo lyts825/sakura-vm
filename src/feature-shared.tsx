@@ -15,8 +15,11 @@ export type FeatureProps = {
   projectId?: string;
   onProjectChange?: (projectId: string) => void;
 };
-export const distroName = (distro?: string) =>
-  ({ alpine: 'Alpine 3.23', debian: 'Debian 12', ubuntu: 'Ubuntu 24.04 LTS' })[distro || 'alpine'] || distro;
+export const distroName = (distro?: string, architecture?: string) => {
+  const name = ({ alpine: 'Alpine 3.23', debian: 'Debian 12', ubuntu: 'Ubuntu 24.04 LTS' })
+    [distro || 'alpine'] || distro;
+  return architecture === 'aarch64' ? `${name} ARM64` : name;
+};
 export const formatBytes = (value: number) =>
   value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GiB` : `${(value / 1024 ** 2).toFixed(1)} MiB`;
 export function useRemote<T>(request: Request, path: string, enabled = true, interval = 5000) {

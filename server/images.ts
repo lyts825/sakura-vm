@@ -26,6 +26,15 @@ export const distributions = {
     sums: 'https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS',
     algorithm: 'sha512',
   },
+  'debian-arm64': {
+    name: 'Debian 12 ARM64',
+    file: join(process.env.SAKURA_IMAGE_DIR || join(DATA, 'images'), 'debian-12-arm64.qcow2'),
+    minimumMemory: 1024,
+    minimumDisk: 4,
+    url: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2',
+    sums: 'https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS',
+    algorithm: 'sha512',
+  },
   ubuntu: {
     name: 'Ubuntu 24.04 LTS',
     file: join(process.env.SAKURA_IMAGE_DIR || join(DATA, 'images'), 'ubuntu-24.04.qcow2'),
@@ -37,9 +46,12 @@ export const distributions = {
   },
 } as const;
 export type Distro = keyof typeof distributions;
-export function distroInfo(id: string = 'alpine') {
-  if (!Object.hasOwn(distributions, id)) throw new AppError('未知发行版');
-  return distributions[id as Distro];
+export function distroInfo(id: string = 'alpine', architecture: string = 'x86_64') {
+  if (architecture !== 'x86_64' && architecture !== 'aarch64')
+    throw new AppError('未知客户机架构');
+  const key = architecture === 'aarch64' ? `${id}-arm64` : id;
+  if (!Object.hasOwn(distributions, key)) throw new AppError('未知发行版或架构');
+  return distributions[key as Distro];
 }
 export function checksumFor(text: string, filename: string) {
   for (const line of text.split(/\r?\n/)) {

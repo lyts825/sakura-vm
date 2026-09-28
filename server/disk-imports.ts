@@ -19,12 +19,17 @@ export const diskImportSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/),
   format: z.enum(['raw', 'vmdk', 'vhdx', 'ova']),
   distro: z.enum(['alpine', 'debian', 'ubuntu']),
+  architecture: z.enum(['x86_64', 'aarch64']).default('x86_64'),
   memoryMiB: z.number().int().min(256).max(8192),
   cpus: z.number().int().min(1).max(8),
   accelerator: z.enum(['auto', 'tcg', 'whpx']).default('auto'),
   firmware: z.enum(['bios', 'uefi']).default('bios'),
   sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-}).strict();
+}).strict().superRefine((value, ctx) => {
+  if (value.architecture === 'aarch64' &&
+      (value.distro !== 'debian' || value.firmware !== 'uefi' || value.accelerator === 'whpx'))
+    ctx.addIssue({ code: 'custom', message: 'ARM64 导入需要 Debian、UEFI 和 TCG 兼容模式' });
+});
 export type DiskImportInput = z.infer<typeof diskImportSchema>;
 
 function tarText(bytes: Buffer) {
@@ -155,7 +160,7 @@ export class DiskImports {
   constructor(private machines: Machines) {}
   async import(input: unknown, source: Readable, signal?: AbortSignal) {
     const request = diskImportSchema.parse(input);
-    if (request.firmware === 'uefi') await requireUefiSupport();
+    if (request.firmware === 'uefi') await requireUefiSupport(request.architecture);
     await regularDirectory(DATA);
     const transfers = join(DATA, 'transfers');
     await mkdir(transfers, { recursive: true });
@@ -216,7 +221,8 @@ export class DiskImports {
           throw new AppError('仅支持无父磁盘的独立单文件 VMDK');
       }
       const disk = join(dir, 'disk.qcow2');
-      const diskGiB = Math.max(2, distroInfo(request.distro).minimumDisk, Math.ceil(virtual / GiB));
+      const diskGiB = Math.max(2,
+        distroInfo(request.distro, request.architecture).minimumDisk, Math.ceil(virtual / GiB));
       await this.machines.engine.run('sakura-img', [
         'convert', '-f', format, '-O', 'qcow2', '-o', 'compat=1.1', sourceDisk, disk,
       ], { signal, timeoutMs: 3600000 });
@@ -236,6 +242,7 @@ export class DiskImports {
       const vm = await this.machines.importDisk({
         name: request.name,
         distro: request.distro,
+        architecture: request.architecture,
         memoryMiB: request.memoryMiB,
         cpus: request.cpus,
         accelerator: request.accelerator,

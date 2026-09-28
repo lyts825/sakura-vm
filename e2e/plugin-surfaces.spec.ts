@@ -579,6 +579,35 @@ test('new Linux instance submits UEFI firmware selection with its resource confi
   expect(created.firmware).toBe('uefi');
 });
 
+test('new ARM64 instance selects the matching Debian image, UEFI and TCG', async ({ page }) => {
+  await app(page, ['images']);
+  await page.route('**/api/images', (route) => route.fulfill({ json: [
+    { id: 'alpine', name: 'Alpine 3.23', ready: true, minimumMemory: 256, minimumDisk: 2 },
+    { id: 'debian-arm64', name: 'Debian 12 ARM64', ready: true,
+      minimumMemory: 1024, minimumDisk: 4 },
+  ] }));
+  let created: any;
+  await page.route('**/api/vms', (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: [] });
+    created = route.request().postDataJSON();
+    return route.fulfill({ status: 201,
+      json: { ...vm, ...created, id: randomUUID(), status: 'stopped',
+        poweredOn: false, snapshots: [] } });
+  });
+  await page.getByRole('button', { name: '创建发行版', exact: true }).click();
+  await page.getByRole('combobox', { name: '发行版', exact: true })
+    .selectOption('debian-arm64');
+  await expect(page.getByLabel('执行模式').locator('option[value=whpx]')).toHaveCount(0);
+  await expect(page.getByLabel('启动固件').locator('option[value=bios]')).toHaveCount(0);
+  await page.getByLabel('创建后立即启动').uncheck();
+  await page.getByRole('button', { name: '创建发行版', exact: true }).last().click();
+  await expect.poll(() => created?.architecture).toBe('aarch64');
+  expect(created.distro).toBe('debian');
+  expect(created.firmware).toBe('uefi');
+  expect(created.accelerator).toBe('tcg');
+  expect(created.memoryMiB).toBeGreaterThanOrEqual(1024);
+});
+
 test('clipboard policy remains enforced in memory when browser persistence is unavailable', async ({
   page,
 }) => {

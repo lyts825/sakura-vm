@@ -70,7 +70,8 @@ export class SnapshotReplications {
         snapshot: { id: snapshot.id, createdAt: snapshot.createdAt,
           diskGiB: snapshot.diskGiB, pendingResize: snapshot.pendingResize },
         config: { memoryMiB: vm.memoryMiB, cpus: vm.cpus, accelerator: vm.accelerator,
-          distro: vm.distro, template: vm.template, hardware: vm.hardware,
+          distro: vm.distro, architecture: vm.architecture,
+          template: vm.template, hardware: vm.hardware,
           firmware: vm.firmware },
         key: identity.key, seed: identity.seed.toString('base64'),
       })).digest('hex');
