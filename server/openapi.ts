@@ -25,6 +25,7 @@ import { mediaDeviceRequest } from './media-devices.ts';
 import { memoryReclaimRequest } from './memory-reclaim.ts';
 import { hostMountRequest } from './host-mount.ts';
 import { hostPeerRequest } from './host-peers.ts';
+import { communityPluginRequest } from './community-plugins.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
 import { storagePoolInput } from './storage-pools.ts';
@@ -326,6 +327,10 @@ const core: {
   { id: 'audit.remoteAction', method: 'POST', path: '/api/audit/remote',
     title: '配置、同步或校验远程不可变审计锚点', body: request(remoteAuditAction) },
   { id: 'plugins.list', method: 'GET', path: '/api/plugins', title: '插件目录与启用状态', inspect: true },
+  { id: 'community-plugins.list', method: 'GET', path: '/api/community-plugins',
+    title: '第三方签名插件目录、来源与安装状态', inspect: true },
+  { id: 'community-plugins.change', method: 'POST', path: '/api/community-plugins',
+    title: '信任发布者、管理目录、安装或运行隔离插件', body: request(communityPluginRequest) },
   {
     id: 'plugins.change',
     method: 'PATCH',

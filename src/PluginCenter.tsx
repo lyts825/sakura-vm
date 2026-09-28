@@ -26,6 +26,7 @@ import { resolvePlugins } from '../shared/plugin-selection';
 import type { Request } from './feature-shared';
 import { pageLabels, sectionLabels, tabLabels } from './plugin-navigation';
 import './plugins.css';
+import { CommunityPluginCenter } from './CommunityPluginCenter';
 
 const categories = {
   foundation: { label: '基础配套', icon: Layers },
@@ -691,8 +692,9 @@ export function PluginCenter({ request }: { request: Request }) {
           )}
           <p className="plugin-footnote">
             <ShieldCheck size={14} />
-            所有插件均随 Sakura 提供。选择保存在本机，停用后数据仍保留。
+            上方为随 Sakura 提供的内置插件。选择保存在本机，停用后数据仍保留。
           </p>
+          <CommunityPluginCenter request={request} />
         </>
       )}
     </div>

@@ -7,6 +7,7 @@ import {
   type PluginStatus,
 } from '../shared/plugins.ts';
 import { explainPlugins, resolvePlugins } from '../shared/plugin-selection.ts';
+import { randomUUID } from 'node:crypto';
 
 async function setup(
   page: Page,
@@ -22,11 +23,34 @@ async function setup(
   let selection = options.selection || emptySelection();
   const active = options.active || [];
   let writes = 0;
+  const community = {
+    publishers: [] as Array<{ fingerprint: string; name: string }>,
+    sources: [] as Array<{ id: string; name: string; url: string }>,
+    installed: [] as Array<{
+      id: string;
+      name: string;
+      version: string;
+      sha256: string;
+      publisher: string;
+      sourceId: string;
+    }>,
+    catalogs: {} as Record<string, any[]>,
+  };
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === '/api/access/status') return route.fulfill({ json: { enabled: false,
-      session: { configured: false, enabled: false, locked: false, idleMinutes: 15,
-        retryAfterSeconds: 0 } } });
+    if (path === '/api/access/status')
+      return route.fulfill({
+        json: {
+          enabled: false,
+          session: {
+            configured: false,
+            enabled: false,
+            locked: false,
+            idleMinutes: 15,
+            retryAfterSeconds: 0,
+          },
+        },
+      });
     if (path === '/api/plugins') {
       if (options.readError && route.request().method() === 'GET') {
         options.readError = false;
@@ -62,6 +86,49 @@ async function setup(
           packs: PLUGIN_PACKS,
         } satisfies PluginStatus,
       });
+    }
+    if (path === '/api/community-plugins') {
+      if (route.request().method() === 'POST') {
+        const input = route.request().postDataJSON();
+        if (input.operation === 'trust')
+          community.publishers.push({
+            fingerprint: 'a'.repeat(64),
+            name: input.name,
+          });
+        if (input.operation === 'add-source')
+          community.sources.push({
+            id: randomUUID(),
+            name: input.name,
+            url: input.url,
+          });
+        if (input.operation === 'refresh')
+          community.catalogs[input.id] = [
+            {
+              id: 'sample-plugin',
+              name: '示例插件',
+              description: 'JSON 示例',
+              version: '1.0.0',
+              sha256: 'b'.repeat(64),
+              publisher: 'a'.repeat(64),
+            },
+          ];
+        if (input.operation === 'install')
+          community.installed.push({
+            ...community.catalogs[input.sourceId][0],
+            sourceId: input.sourceId,
+          });
+        if (input.operation === 'uninstall')
+          community.installed = community.installed.filter((item) => item.id !== input.pluginId);
+        if (input.operation === 'run')
+          return route.fulfill({
+            json: {
+              pluginId: input.pluginId,
+              version: '1.0.0',
+              result: { ok: true },
+            },
+          });
+      }
+      return route.fulfill({ json: community });
     }
     return route.fulfill({
       json:
@@ -128,6 +195,28 @@ test('plugin catalog searches, combines filters, and keeps the base configuratio
   await expect(page.getByRole('article')).toHaveCount(0);
   await page.getByRole('button', { name: '重置筛选', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(PLUGINS.length);
+});
+
+test('community catalog requires a trusted publisher before installation and can run then unload', async ({
+  page,
+}) => {
+  await setup(page);
+  const market = page.getByRole('region', { name: '第三方插件市场' });
+  await market.getByRole('textbox', { name: '名称' }).last().fill('测试目录');
+  await market.getByRole('textbox', { name: 'HTTPS 目录 URL' }).fill('https://plugins.example/catalog.json');
+  await market.getByRole('button', { name: '添加目录源' }).click();
+  await market.getByRole('button', { name: '刷新目录' }).click();
+  await expect(market.getByText('示例插件')).toBeVisible();
+  await expect(market.getByRole('button', { name: '安装' })).toBeDisabled();
+  await market.getByRole('textbox', { name: '名称' }).first().fill('测试发布者');
+  await market.getByRole('textbox', { name: 'Ed25519 公钥（PEM）' }).fill('test-key');
+  await market.getByRole('button', { name: '添加信任' }).click();
+  await market.getByRole('button', { name: '安装' }).click();
+  await expect(market.getByRole('heading', { name: '已安装的隔离插件' })).toBeVisible();
+  await market.getByRole('button', { name: '测试运行' }).click();
+  await expect(market.getByLabel('隔离插件运行结果')).toContainText('"ok": true');
+  await market.getByRole('button', { name: '卸载' }).click();
+  await expect(market.getByText('尚无已安装插件。')).toBeVisible();
 });
 
 test('pack selection, independent retention and removal preserve shared dependencies without activating navigation', async ({

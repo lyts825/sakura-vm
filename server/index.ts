@@ -54,6 +54,7 @@ import { ProjectPermissions, type ProjectPermission } from './project-permission
 import { PolicyBundles, policyBundlePreview, policyBundleTarget } from './policy-bundles.ts';
 import { ChangeApprovals } from './change-approvals.ts';
 import { BrowserExtensions, extensionOrigin } from './browser-extensions.ts';
+import { CommunityPlugins } from './community-plugins.ts';
 import { ProcessInterop, guestInteropRequest } from './process-interop.ts';
 
 const memberProjectRoutes: Record<string, Partial<Record<'GET' | 'PUT' | 'POST', ProjectPermission>>> = {
@@ -85,6 +86,8 @@ async function main() {
   await jitPrivileges.init();
   const browserExtensions = new BrowserExtensions(access);
   await browserExtensions.init();
+  const communityPlugins = new CommunityPlugins();
+  await communityPlugins.init();
   const audit = hostAudit();
   const remoteAudit = new RemoteAuditLock(audit);
   await remoteAudit.init();
@@ -106,6 +109,7 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
+  features.next?.setCommunityPlugins(communityPlugins);
   features.next?.setSnapshotMerge(features.serviceValue('snapshotMerge') as
     import('./snapshot-merge.ts').SnapshotMerge | undefined);
   const usbHotplug = new UsbHotplug(machines, undefined,
@@ -1073,6 +1077,16 @@ async function main() {
       }
       throw new AppError('不支持此方法', 405);
     }
+    if (url.pathname === '/api/community-plugins') {
+      if (principal.role !== 'owner')
+        throw new AppError('只有管理员可管理第三方插件', 403);
+      if (req.method === 'GET') return send(res, communityPlugins.view());
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      features.mutations++;
+      try { return send(res, await communityPlugins.action(await authorizedBody(req, 64 * 1024))); }
+      finally { features.mutations--; }
+    }
     if (await features.route(req, res, url, (request, signal, limit) => authorizedBody(request, limit, signal)))
       return;
     if (req.method === 'GET' && url.pathname === '/api/system')
@@ -1461,6 +1475,7 @@ async function main() {
       () => policyBundles.close(),
       () => changeApprovals?.close(),
       () => browserExtensions.close(),
+      () => communityPlugins.close(),
       () => assistant.close(),
       () => native.close(),
       () => webhooks.close(),

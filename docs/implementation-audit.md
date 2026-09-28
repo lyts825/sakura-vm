@@ -135,7 +135,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 阈值告警与通知中心 / `alerts` | 部分实现 | 有资源阈值事件与确认；缺服务/备份统一告警及外部通知投递。 | [server/feature-suite.ts:511](D:/27247/Desktop/Sakura/server/feature-suite.ts:511) |
 | 镜像与软件包安全扫描 / `security-scan` | 已有专用操作 | 检查 SSH 设置、升级与可写系统文件，并按已安装源包版本实际匹配 OSV 漏洞；扫描失败明确显示未完成。 | [docs/security-scan.md](security-scan.md) |
 | 多用户与只读分享 / `rbac-sharing` | 未实现 | 只有本机共享管理令牌与同源检查；没有多用户、角色及只读短期分享。 | [server/index.ts:46](D:/27247/Desktop/Sakura/server/index.ts:46) |
-| 插件 API 与自动化触发器 / `plugin-api` | 部分实现 | 内置插件声明、生命周期、事件及独立调度器已实现；缺外部 Webhook、任意第三方隔离插件和完整触发器系统。 | [server/plugin-api.ts:46](D:/27247/Desktop/Sakura/server/plugin-api.ts:46) |
+| 插件 API 与自动化触发器 / `plugin-api` | 部分实现 | 内置插件、签名 Webhook、签名 WebAssembly 纯计算插件已实现；第三方事件订阅、自动触发、HTTP 与界面扩展仍缺。 | [server/community-plugins.ts](D:/27247/Desktop/Sakura/server/community-plugins.ts) |
 
 ### 第二批（100 条）
 
@@ -336,8 +336,8 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | Jupyter/Marimo 环境 / `notebook-environment` | 仅探测 | 只查 Jupyter/Marimo 版本；没有安装、启动、认证与会话管理。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:173](D:/27247/Desktop/Sakura/server/next-features.ts:173) |
 | 认证浏览器 IDE / `authenticated-ide-preview` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存浏览器 IDE 会话和认证过期时间。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 桌面录制与回放 / `desktop-recording` | 仅探测 | 只读 ffmpeg 版本；没有录制、停止、存储或回放。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:174](D:/27247/Desktop/Sakura/server/next-features.ts:174) |
-| 插件市场 / `plugin-marketplace` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存插件目录、来源和安装状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
-| 签名沙箱插件 / `signed-plugin-sandbox` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：计算插件摘要并记录签名与沙箱策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
+| 插件市场 / `plugin-marketplace` | 已实现 | 管理员添加 HTTPS 目录和受信任发布者，刷新、下载、校验、安装及卸载独立 WebAssembly 插件；目录与安装状态持久保存。 | [server/community-plugins.ts](D:/27247/Desktop/Sakura/server/community-plugins.ts) |
+| 签名沙箱插件 / `signed-plugin-sandbox` | 已实现 | 安装及运行前核对 SHA-256 与 Ed25519 签名；模块不能导入宿主能力，内存、输入、输出、时间和并发有上限。 | [server/community-plugins.ts](D:/27247/Desktop/Sakura/server/community-plugins.ts) |
 | Schema 驱动面板 / `schema-panels` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存面板 Schema 版本和校验状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | GraphQL API / `graphql-api` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：登记 GraphQL API 版本和查询限制。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | Webhook 事件 / `webhook-events` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存 Webhook 订阅和最近投递状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |

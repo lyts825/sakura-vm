@@ -28,7 +28,7 @@
 
 没有保存插件选择的旧版本升级后进入基础版，已有实例和插件数据保留。已有选择则继续保留；原 `development`、`environment`、`monitoring` 插件选择迁移为同名整合包，旧版单独选中的 `automation` 会保留后台调度，旧 CLI 标识仍可用。需要恢复全部入口可选择 `complete`。停用插件不会卸载客户机软件或撤销已经写入客户机的配置。
 
-当前只加载随源码交付的内置插件，按需激活服务与加载浏览器入口；尚不提供远程市场、独立插件下载或热卸载。完整设计见 [插件架构](docs/plugin-architecture.md)，声明格式、生命周期和 JSON Schema 见 [插件协议](docs/plugin-protocol.md)。
+内置插件按需激活服务与加载浏览器入口；第三方纯计算插件可从 HTTPS 目录下载，经发布者签名验证后在隔离的 WebAssembly 工作线程运行，并可直接卸载。第三方事件订阅、宿主服务与浏览器入口仍待实现。完整设计见 [插件架构](docs/plugin-architecture.md)、[内置插件协议](docs/plugin-protocol.md)与[第三方插件协议](docs/community-plugins.md)。
 
 ## 快速启动
 

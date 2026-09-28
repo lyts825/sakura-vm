@@ -27,6 +27,7 @@ import type { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import type { ObjectBackup } from './object-backup.ts';
 import type { WireGuardOverlay } from './wireguard-overlay.ts';
 import { TeamTemplates } from './team-templates.ts';
+import type { CommunityPlugins } from './community-plugins.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -562,14 +563,14 @@ export const nextFeatureCatalog = [
     '录制 Linux 桌面画面、保存回放索引并导出视频。',
     'available',
   ],
-  ['plugin-marketplace', '插件市场', '平台与扩展', 'P0', '保存插件目录、来源和安装状态。', 'planned'],
+  ['plugin-marketplace', '插件市场', '平台与扩展', 'P0', '通过 HTTPS 目录发现、下载并安装已信任发布者签名的 WebAssembly 插件。', 'available'],
   [
     'signed-plugin-sandbox',
     '签名沙箱插件',
     '平台与扩展',
     'P0',
-    '计算插件摘要并记录签名与沙箱策略。',
-    'planned',
+    '验证 Ed25519 发布签名与文件摘要，在无宿主导入、内存和时间受限的 WebAssembly 工作线程中运行。',
+    'available',
   ],
   ['schema-panels', 'Schema 驱动面板', '平台与扩展', 'P1', '保存面板 Schema 版本和校验状态。', 'available'],
   [
@@ -680,6 +681,7 @@ export class NextFeatures {
   private mediaDevices?: MediaDevices;
   private hostMounts?: HostMounts;
   private snapshotMerge?: SnapshotMerge;
+  private communityPlugins?: CommunityPlugins;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
@@ -769,6 +771,7 @@ export class NextFeatures {
   setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
   setHostMounts(service: HostMounts) { this.hostMounts = service; }
   setSnapshotMerge(service?: SnapshotMerge) { this.snapshotMerge = service; }
+  setCommunityPlugins(service: CommunityPlugins) { this.communityPlugins = service; }
 
   browserIdeLink(id: string) {
     if (!this.browserIde) throw new AppError('浏览器 IDE 服务尚未启用', 503);
@@ -977,6 +980,14 @@ export class NextFeatures {
         adapter,
         message: '系统设置 → 插件功能灰度，预览当前主机分桶并保存插件、版本和放行比例；下次启动按策略实际选择插件。',
       };
+    if (spec.id === 'plugin-marketplace' || spec.id === 'signed-plugin-sandbox') {
+      const view = this.communityPlugins?.view();
+      return { ready: !!view, executed: false, adapter,
+        publishers: view?.publishers.length || 0, sources: view?.sources.length || 0,
+        installed: view?.installed.length || 0,
+        message: '插件中心 → 第三方插件：信任发布者公钥、添加 HTTPS 目录源、刷新并安装。插件运行于无宿主导入的限时 WebAssembly 工作线程。',
+        ...(!view ? { reason: '第三方插件服务尚未启动。' } : {}) };
+    }
     if (spec.id === 'fleet-policy-rollout')
       return {
         ready: true,

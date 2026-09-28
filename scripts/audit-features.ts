@@ -21,7 +21,7 @@ const all = groups.flatMap((group) => group.rows),
   unfinished = all.filter((item) => item.state !== 'available');
 const notes: Record<string, string> = {
   'clipboard-policy': '已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。',
-  'plugin-api': '内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。',
+  'plugin-api': '内置插件框架、签名 Webhook 和签名 WebAssembly 计算插件已实现；第三方事件订阅、自动触发、HTTP 与界面扩展仍未实现。',
   'availability-report': '目前为 uptime 探测，尚无持续可用性记录与完整报告。',
   'multi-host-inventory': '目前返回本机信息，尚未实现多主机汇总。',
   'hardware-compatibility': '目前返回本机信息，尚未建立经验证的硬件兼容矩阵。',
@@ -45,7 +45,7 @@ for (const group of groups) {
   }
 }
 output +=
-  '\n## 目录以外的范围\n\n- 插件独立下载与热卸载；当前仍只加载内置插件。\n- 持久保存 RAM 和运行中进程的快照/恢复。\n\n重新生成：`npm run features:audit`。上述目录状态由源码声明，真实硬件、多主机和外部身份服务仍需要对应环境验证。\n';
+  '\n## 目录以外的范围\n\n- 持久保存 RAM 和运行中进程的快照/恢复。\n\n重新生成：`npm run features:audit`。上述目录状态由源码声明，真实硬件、多主机和外部身份服务仍需要对应环境验证。\n';
 await writeFile('docs/unfinished-features.md', output);
 console.log(
   `Unfinished: ${unfinished.length}; available entries: ${count(all, 'available')}; catalog records: ${all.length}`,
