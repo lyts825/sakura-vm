@@ -2,15 +2,15 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 196 条有实现入口，**54 条仍未完成**（50 条规划、4 条部分实现）。按标识去重后为 53 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 197 条有实现入口，**53 条仍未完成**（49 条规划、4 条部分实现）。按标识去重后为 52 个未完成标识；不同条目仍有范围重叠。
 
-本轮已接通 146 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
+本轮已接通 147 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 第一批 | 50 | 39 | 2 | 9 | 11 |
 | 第二批 | 100 | 90 | 0 | 10 | 10 |
-| 第三批 | 100 | 67 | 2 | 31 | 33 |
+| 第三批 | 100 | 68 | 2 | 30 | 32 |
 
 ## 第一批
 
@@ -97,37 +97,36 @@
 
 - [ ] **OIDC 与 SAML 单点登录**（P0 · 规划） · [`oidc-saml`](../server/next-features.ts#L302) — 校验身份提供商元数据并保存非敏感配置。 对应完整流程尚未实现。
 - [ ] **自定义 RBAC**（P0 · 规划） · [`custom-rbac`](../server/next-features.ts#L309) — 保存项目角色、权限和成员映射。 对应完整流程尚未实现。
-- [ ] **JIT 临时授权**（P1 · 规划） · [`jit-privilege`](../server/next-features.ts#L310) — 登记有时限的临时权限请求。 对应完整流程尚未实现。
-- [ ] **双人审批**（P0 · 规划） · [`dual-approval`](../server/next-features.ts#L311) — 保存需要第二位成员确认的高风险操作。 对应完整流程尚未实现。
-- [ ] **签名策略包**（P1 · 规划） · [`signed-policy-bundles`](../server/next-features.ts#L312) — 计算策略包摘要并记录签名状态。 对应完整流程尚未实现。
-- [ ] **远程不可变审计**（P0 · 规划） · [`remote-audit-lock`](../server/next-features.ts#L314) — 保存远程审计目标和本地链式记录摘要。 对应完整流程尚未实现。
+- [ ] **双人审批**（P0 · 规划） · [`dual-approval`](../server/next-features.ts#L312) — 保存需要第二位成员确认的高风险操作。 对应完整流程尚未实现。
+- [ ] **签名策略包**（P1 · 规划） · [`signed-policy-bundles`](../server/next-features.ts#L313) — 计算策略包摘要并记录签名状态。 对应完整流程尚未实现。
+- [ ] **远程不可变审计**（P0 · 规划） · [`remote-audit-lock`](../server/next-features.ts#L315) — 保存远程审计目标和本地链式记录摘要。 对应完整流程尚未实现。
 
 ### 开发与 AI
 
-- [ ] **分布式构建农场**（P2 · 规划） · [`build-farm`](../server/next-features.ts#L412) — 保存构建节点和队列调度元数据。 对应完整流程尚未实现。
-- [ ] **DevContainer 市场**（P1 · 规划） · [`devcontainer-marketplace`](../server/next-features.ts#L422) — 登记 DevContainer 模板和来源校验状态。 对应完整流程尚未实现。
+- [ ] **分布式构建农场**（P2 · 规划） · [`build-farm`](../server/next-features.ts#L413) — 保存构建节点和队列调度元数据。 对应完整流程尚未实现。
+- [ ] **DevContainer 市场**（P1 · 规划） · [`devcontainer-marketplace`](../server/next-features.ts#L423) — 登记 DevContainer 模板和来源校验状态。 对应完整流程尚未实现。
 
 ### 协作与团队
 
-- [ ] **项目权限**（P0 · 规划） · [`project-permissions`](../server/next-features.ts#L472) — 保存项目成员和角色权限。 对应完整流程尚未实现。
-- [ ] **变更审批**（P0 · 规划） · [`change-approval`](../server/next-features.ts#L476) — 保存变更摘要、审批人和审批状态。 对应完整流程尚未实现。
+- [ ] **项目权限**（P0 · 规划） · [`project-permissions`](../server/next-features.ts#L473) — 保存项目成员和角色权限。 对应完整流程尚未实现。
+- [ ] **变更审批**（P0 · 规划） · [`change-approval`](../server/next-features.ts#L477) — 保存变更摘要、审批人和审批状态。 对应完整流程尚未实现。
 
 ### 操作系统与桌面
 
-- [ ] **Windows/Linux 进程互操作**（P1 · 规划） · [`process-interop`](../server/next-features.ts#L479) — 检查客户机进程工具和宿主平台。 对应完整流程尚未实现。
-- [ ] **宿主盘挂载策略**（P0 · 规划） · [`host-drive-policy`](../server/next-features.ts#L487) — 保存宿主目录挂载的只读和路径策略。 对应完整流程尚未实现。
-- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L503) — 已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
-- [ ] **音频摄像头麦克风直通**（P1 · 规划） · [`media-passthrough`](../server/next-features.ts#L511) — 检查客户机音视频设备和直通声明。 对应完整流程尚未实现。
-- [ ] **USB 热插拔**（P1 · 规划） · [`usb-hotplug`](../server/next-features.ts#L518) — 保存 USB 设备热插拔事件和规则。 对应完整流程尚未实现。
-- [ ] **CUDA/ROCm 直通**（P1 · 规划） · [`gpu-compute-passthrough`](../server/next-features.ts#L520) — 检查客户机 CUDA/ROCm 工具和设备可见性。 对应完整流程尚未实现。
+- [ ] **Windows/Linux 进程互操作**（P1 · 规划） · [`process-interop`](../server/next-features.ts#L480) — 检查客户机进程工具和宿主平台。 对应完整流程尚未实现。
+- [ ] **宿主盘挂载策略**（P0 · 规划） · [`host-drive-policy`](../server/next-features.ts#L488) — 保存宿主目录挂载的只读和路径策略。 对应完整流程尚未实现。
+- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L504) — 已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
+- [ ] **音频摄像头麦克风直通**（P1 · 规划） · [`media-passthrough`](../server/next-features.ts#L512) — 检查客户机音视频设备和直通声明。 对应完整流程尚未实现。
+- [ ] **USB 热插拔**（P1 · 规划） · [`usb-hotplug`](../server/next-features.ts#L519) — 保存 USB 设备热插拔事件和规则。 对应完整流程尚未实现。
+- [ ] **CUDA/ROCm 直通**（P1 · 规划） · [`gpu-compute-passthrough`](../server/next-features.ts#L521) — 检查客户机 CUDA/ROCm 工具和设备可见性。 对应完整流程尚未实现。
 
 ### 平台与扩展
 
-- [ ] **插件市场**（P0 · 规划） · [`plugin-marketplace`](../server/next-features.ts#L551) — 保存插件目录、来源和安装状态。 对应完整流程尚未实现。
-- [ ] **签名沙箱插件**（P0 · 规划） · [`signed-plugin-sandbox`](../server/next-features.ts#L553) — 计算插件摘要并记录签名与沙箱策略。 对应完整流程尚未实现。
-- [ ] **移动伴侣**（P2 · 规划） · [`mobile-companion`](../server/next-features.ts#L585) — 保存移动设备配对和只读通知策略。 对应完整流程尚未实现。
-- [ ] **浏览器扩展**（P2 · 规划） · [`browser-extension`](../server/next-features.ts#L586) — 保存浏览器扩展连接状态和权限摘要。 对应完整流程尚未实现。
-- [ ] **Windows 托盘伴侣**（P1 · 规划） · [`tray-companion`](../server/next-features.ts#L587) — 保存托盘进程连接和启动策略。 对应完整流程尚未实现。
+- [ ] **插件市场**（P0 · 规划） · [`plugin-marketplace`](../server/next-features.ts#L552) — 保存插件目录、来源和安装状态。 对应完整流程尚未实现。
+- [ ] **签名沙箱插件**（P0 · 规划） · [`signed-plugin-sandbox`](../server/next-features.ts#L554) — 计算插件摘要并记录签名与沙箱策略。 对应完整流程尚未实现。
+- [ ] **移动伴侣**（P2 · 规划） · [`mobile-companion`](../server/next-features.ts#L586) — 保存移动设备配对和只读通知策略。 对应完整流程尚未实现。
+- [ ] **浏览器扩展**（P2 · 规划） · [`browser-extension`](../server/next-features.ts#L587) — 保存浏览器扩展连接状态和权限摘要。 对应完整流程尚未实现。
+- [ ] **Windows 托盘伴侣**（P1 · 规划） · [`tray-companion`](../server/next-features.ts#L588) — 保存托盘进程连接和启动策略。 对应完整流程尚未实现。
 
 ## 目录以外的范围
 

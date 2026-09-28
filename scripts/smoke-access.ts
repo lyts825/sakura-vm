@@ -50,14 +50,16 @@ const stop = async () => {
   server = undefined;
 };
 const request = async (path: string, method = 'GET', token?: string, body?: unknown,
-  base = origin) => {
-  const response = await fetch(base + path, {
-    method, headers: { ...(token ? { 'x-sakura-token': token } : {}),
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(20_000),
-  });
-  return { status: response.status, body: await response.json() as any };
+  base = origin, timeoutMs = 20_000) => {
+  try {
+    const response = await fetch(base + path, {
+      method, headers: { ...(token ? { 'x-sakura-token': token } : {}),
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return { status: response.status, body: await response.json() as any };
+  } catch (error) { throw new Error(`${method} ${path}: ${String(error)}`); }
 };
 const wsStatus = async (token: string, path = '/ws/events') => {
   const socket = new WebSocket(origin.replace('http:', 'ws:') + path +
@@ -150,7 +152,7 @@ try {
     await page.getByLabel('密码').fill('a long viewer password');
     await page.getByRole('button', { name: '登录', exact: true }).click();
     await page.getByRole('heading', { name: '已授权实例' }).waitFor();
-    await page.getByText('access-fixture').waitFor();
+    await page.getByText('access-fixture').first().waitFor();
     assert.equal(await page.getByText('终端', { exact: true }).count(), 0);
     const desktopSocket = page.waitForEvent('websocket', {
       predicate: (socket) => socket.url().includes('/ws/' + vmId + '/desktop-view?'),
@@ -159,6 +161,11 @@ try {
     await desktopSocket;
     await page.getByRole('heading', { name: '只读桌面视图' }).waitFor();
     await page.getByRole('button', { name: '关闭桌面视图' }).click();
+    const jitForm = page.getByRole('region', { name: '临时操作授权' });
+    await jitForm.getByLabel('实例').selectOption({ label: 'access-fixture' });
+    await jitForm.getByLabel('原因').fill('Need the shared terminal for a review');
+    await jitForm.getByRole('button', { name: '提交申请' }).click();
+    await jitForm.getByText('申请已提交').waitFor();
     await page.getByRole('button', { name: '退出登录' }).click();
     await page.getByRole('heading', { name: '登录 Sakura' }).waitFor();
 
@@ -186,6 +193,10 @@ try {
       .catch(async () => { throw new Error('Owner browser login failed: ' +
         await passkeyPage.locator('body').innerText()); });
     await passkeyPage.getByRole('button', { name: '系统设置', exact: true }).click();
+    const jitApprovals = passkeyPage.getByRole('region', { name: '临时授权审批' });
+    await jitApprovals.getByText('Need the shared terminal for a review').waitFor();
+    await jitApprovals.getByRole('button', { name: '批准' }).click();
+    await jitApprovals.getByText('已批准临时操作').waitFor();
     const manager = passkeyPage.getByRole('region', { name: '通行密钥管理' });
     await manager.getByLabel('通行密钥名称').fill('local-key');
     await manager.getByLabel('当前账户密码').fill(password);
@@ -255,15 +266,30 @@ try {
     await targetPage.close();
   } finally { await browser.close(); }
 
-  const boot = await request('/api/vms/' + vmId + '/start', 'POST', ownerToken, {});
+  const invalidJit = await request('/api/access/jit', 'POST', viewerToken,
+    { vmId: another.body.id, operation: 'start', reason: 'Need a temporary boot' });
+  assert.equal(invalidJit.status, 403);
+  const applied = (await request('/api/access/jit', 'GET', viewerToken)).body.requests[0];
+  assert.equal(applied.status, 'approved');
+  assert.equal((await request('/api/access/jit/' + applied.id + '/decision',
+    'POST', viewerToken, { decision: 'approve', minutes: 15 })).status, 403);
+  assert.equal((await request('/api/access/jit/' + applied.id + '/decision',
+    'POST', ownerToken, { decision: 'approve', minutes: 15 })).status, 409);
+  const boot = await request('/api/access/jit/' + applied.id + '/execute',
+    'POST', viewerToken, {});
   assert.equal(boot.status, 200, JSON.stringify(boot.body));
+  assert.equal(boot.body.status, 'completed');
+  assert.equal((await request('/api/access/jit/' + applied.id + '/execute',
+    'POST', viewerToken, {})).status, 409);
+  assert.equal((await request('/api/vms/' + vmId + '/stop', 'POST', viewerToken, {})).status, 403);
   const bootDeadline = Date.now() + 90_000;
   while ((await request('/api/vms/' + vmId, 'GET', ownerToken)).body.status !== 'running') {
     assert.ok(Date.now() < bootDeadline, '共享终端测试实例启动超时');
     await delay(250);
   }
   const guest = async (command: string) => {
-    const result = await request('/api/vms/' + vmId + '/exec', 'POST', ownerToken, { command });
+    const result = await request('/api/vms/' + vmId + '/exec', 'POST', ownerToken,
+      { command }, origin, 45_000);
     assert.equal(result.status, 200, JSON.stringify(result.body));
     return result.body as { stdout: string; stderr: string; code: number };
   };
@@ -380,5 +406,5 @@ try {
   console.log('Account mode HTTP, WebSocket, browser, revocation and restart validation passed');
 } finally {
   await stop();
-  await rm(data, { recursive: true, force: true });
+  await rm(data, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 }

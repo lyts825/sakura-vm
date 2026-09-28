@@ -13,6 +13,10 @@ type UserView = { id: string; username: string; role: 'owner' | 'viewer';
   vmIds: string[]; expiresAt: number | null; createdAt: string };
 type PasskeyView = { id: string; name: string; createdAt: string; lastUsedAt?: string };
 type TerminalGrantView = { id: string; vmId: string; session: string; expiresAt: number };
+type JitRequestView = { id: string; viewerId: string; vmId: string;
+  operation: 'start' | 'stop'; reason: string;
+  status: 'pending' | 'approved' | 'denied' | 'revoked' | 'expired' |
+    'claimed' | 'completed' | 'failed'; createdAt: number; expiresAt?: number; error?: string };
 type Ceremony<T> = { ceremonyId: string; options: T };
 
 async function publicPasskeyRequest<T>(path: string, input: unknown) {
@@ -196,9 +200,124 @@ function SharedInventory({ principal }: { principal: AccessPrincipal }) {
     {desktopId && token && <SharedDesktop vmId={desktopId} token={token} />}
     {terminalGrants.filter((grant) => grant.id === openTerminal).map((grant) =>
       <SharedTerminal key={grant.id} grant={grant} token={token} />)}
+    <JitViewerPanel vms={vms} />
     <PasskeyManager />
     <SessionHandoffManager />
   </main>;
+}
+
+const jitStatus: Record<JitRequestView['status'], string> = {
+  pending: '待审批', approved: '已批准', denied: '已拒绝', revoked: '已撤销',
+  expired: '已过期', claimed: '执行中', completed: '已完成', failed: '执行失败',
+};
+const jitOperation = { start: '启动', stop: '正常停止' };
+const visibleJitRequests = (requests: JitRequestView[]) => [
+  ...requests.filter((item) => item.status === 'pending' || item.status === 'approved'),
+  ...requests.filter((item) => item.status !== 'pending' && item.status !== 'approved').slice(-30),
+].sort((a, b) => b.createdAt - a.createdAt);
+
+function JitViewerPanel({ vms }: { vms: SharedVm[] }) {
+  const [requests, setRequests] = useState<JitRequestView[]>([]);
+  const [vmId, setVmId] = useState('');
+  const [operation, setOperation] = useState<'start' | 'stop'>('start');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const refresh = async () => setRequests((await api<{ requests: JitRequestView[] }>(
+    '/access/jit')).requests);
+  useEffect(() => {
+    void refresh().catch((cause) => setError(String(cause.message || cause)));
+    const timer = setInterval(() => void refresh().catch(() => {}), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+  return <section className="system-card" aria-label="临时操作授权">
+    <h2>申请临时操作授权</h2>
+    <p>对已分享实例申请一次启停操作。管理员批准后，请在有效期内手动执行。</p>
+    <form onSubmit={async (event) => {
+      event.preventDefault(); setBusy(true); setError(''); setMessage('');
+      try {
+        await api('/access/jit', 'POST', { vmId, operation, reason });
+        setReason(''); setMessage('申请已提交'); await refresh();
+      } catch (cause) { setError(cause instanceof Error ? cause.message : '申请失败'); }
+      finally { setBusy(false); }
+    }}>
+      <label>实例<select value={vmId} required disabled={busy}
+        onChange={(event) => setVmId(event.target.value)}>
+        <option value="">选择实例</option>
+        {vms.map((vm) => <option key={vm.id} value={vm.id}>{vm.name}</option>)}
+      </select></label>
+      <label>操作<select value={operation} disabled={busy}
+        onChange={(event) => setOperation(event.target.value as 'start' | 'stop')}>
+        <option value="start">启动</option><option value="stop">正常停止</option>
+      </select></label>
+      <label>原因<textarea value={reason} minLength={8} maxLength={300} required disabled={busy}
+        onChange={(event) => setReason(event.target.value)} /></label>
+      <button className="secondary compact" disabled={busy || !vmId}>提交申请</button>
+    </form>
+    <ul>{visibleJitRequests(requests).map((item) => <li key={item.id}>
+      {vms.find((vm) => vm.id === item.vmId)?.name || '已移除实例'} ·
+      {' '}{jitOperation[item.operation]} · {jitStatus[item.status]} · {item.reason}
+      {item.expiresAt && ` · 有效至 ${new Date(item.expiresAt).toLocaleString()}`}
+      {item.error && ` · ${item.error}`}
+      {item.status === 'approved' && <button className="primary compact" disabled={busy}
+        onClick={async () => {
+          setBusy(true); setError(''); setMessage('');
+          try {
+            await api('/access/jit/' + item.id + '/execute', 'POST', {});
+            setMessage('操作已执行');
+          } catch (cause) { setError(cause instanceof Error ? cause.message : '执行失败'); }
+          finally { await refresh().catch(() => {}); setBusy(false); }
+        }}>执行一次</button>}
+    </li>)}</ul>
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
+function JitOwnerPanel({ users, vms }: { users: UserView[]; vms: SharedVm[] }) {
+  const [requests, setRequests] = useState<JitRequestView[]>([]);
+  const [minutes, setMinutes] = useState(15);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const refresh = async () => setRequests((await api<{ requests: JitRequestView[] }>(
+    '/access/jit')).requests);
+  useEffect(() => {
+    void refresh().catch((cause) => setError(String(cause.message || cause)));
+    const timer = setInterval(() => void refresh().catch(() => {}), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+  const decide = async (id: string, decision: 'approve' | 'deny') => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      await api('/access/jit/' + id + '/decision', 'POST',
+        decision === 'approve' ? { decision, minutes } : { decision });
+      setMessage(decision === 'approve' ? '已批准临时操作' : '已拒绝或撤销临时操作');
+      await refresh();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '审批失败'); }
+    finally { setBusy(false); }
+  };
+  return <section aria-label="临时授权审批">
+    <h4>临时授权审批</h4>
+    <p>审批只针对申请者、实例和一次指定操作；最多有效 60 分钟。可在执行前撤销。</p>
+    <label>批准时长（分钟）<input type="number" min={1} max={60} value={minutes}
+      disabled={busy} onChange={(event) => setMinutes(Number(event.target.value))} /></label>
+    <ul>{visibleJitRequests(requests).map((item) => <li key={item.id}>
+      {users.find((user) => user.id === item.viewerId)?.username || '已移除账户'} ·
+      {' '}{vms.find((vm) => vm.id === item.vmId)?.name || '已移除实例'} ·
+      {' '}{jitOperation[item.operation]} · {jitStatus[item.status]} · {item.reason}
+      {item.expiresAt && ` · 有效至 ${new Date(item.expiresAt).toLocaleString()}`}
+      {item.status === 'pending' && <button className="primary compact" disabled={busy}
+        onClick={() => void decide(item.id, 'approve')}>批准</button>}
+      {(item.status === 'pending' || item.status === 'approved') &&
+        <button className="secondary compact" disabled={busy}
+          onClick={() => void decide(item.id, 'deny')}>
+          {item.status === 'approved' ? '撤销' : '拒绝'}</button>}
+    </li>)}</ul>
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
 }
 
 function SharedTerminal({ grant, token }: { grant: TerminalGrantView; token: string }) {
@@ -450,6 +569,7 @@ export function AccessSettings() {
           finally { setBusy(false); }
         }}>撤销</button>
       </li>)}</ul>
+      <JitOwnerPanel users={users} vms={vms} />
       <h4>更换管理员密码</h4>
       <p>更换后所有账户会话立即失效，需要用新密码重新登录。</p>
       <form onSubmit={async (event) => {

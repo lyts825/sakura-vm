@@ -307,7 +307,8 @@ export const nextFeatureCatalog = [
     'planned',
   ],
   ['custom-rbac', '自定义 RBAC', '安全与合规', 'P0', '保存项目角色、权限和成员映射。', 'planned'],
-  ['jit-privilege', 'JIT 临时授权', '安全与合规', 'P1', '登记有时限的临时权限请求。', 'planned'],
+  ['jit-privilege', 'JIT 临时授权', '安全与合规', 'P1',
+    '只读账户按实例申请一次启停，管理员限时审批，可在执行前撤销。', 'available'],
   ['dual-approval', '双人审批', '安全与合规', 'P0', '保存需要第二位成员确认的高风险操作。', 'planned'],
   ['signed-policy-bundles', '签名策略包', '安全与合规', 'P1', '计算策略包摘要并记录签名状态。', 'planned'],
   [
@@ -980,6 +981,10 @@ export class NextFeatures {
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
         message: '账户设置 → 会话交接：验证当前密码并生成一次性交接码，在另一个本机浏览器的登录页接收。' };
+    if (spec.id === 'jit-privilege')
+      return { ready: this.accountModeReady?.() || false, executed: false, adapter,
+        ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
+        message: '只读账户在分享页申请指定实例的一次启停操作；管理员在账户设置中审批，有效期内由申请者执行。' };
     if (spec.id === 'cold-migration') {
       if (!this.coldMigrations)
         return { ready: false, executed: false, adapter,

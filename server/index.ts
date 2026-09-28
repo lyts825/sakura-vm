@@ -41,6 +41,7 @@ import { NativeIntegration, nativeMappings } from './native-integration.ts';
 import { AccessControl, accessHandoffInput } from './access-control.ts';
 import { Passkeys, passkeyRemove } from './passkeys.ts';
 import { TerminalSharing, terminalShareInput } from './terminal-sharing.ts';
+import { JitPrivileges } from './jit-privileges.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -59,6 +60,8 @@ async function main() {
   await machines.init();
   const terminalSharing = new TerminalSharing(machines);
   await terminalSharing.init();
+  const jitPrivileges = new JitPrivileges(access, machines);
+  await jitPrivileges.init();
   const audit = hostAudit();
   Jobs.instrument = (job, work) =>
     audit.span(
@@ -364,9 +367,12 @@ async function main() {
     ].includes(url.pathname) || /^\/api\/access\/passkeys\/[A-Za-z0-9_-]{16,1024}$/.test(url.pathname);
     const terminalShareRoute = url.pathname === '/api/access/terminal-shares' ||
       /^\/api\/access\/terminal-shares\/[a-f0-9-]{36}$/.test(url.pathname);
+    const jitRoute = url.pathname === '/api/access/jit' ||
+      /^\/api\/access\/jit\/[a-f0-9-]{36}\/(decision|execute)$/.test(url.pathname);
     if (access.enabled && principal.role === 'viewer' &&
         url.pathname !== '/api/access/view' && url.pathname !== '/api/access/logout' &&
-        url.pathname !== '/api/access/handoff' && !passkeyManagementRoute && !terminalShareRoute)
+        url.pathname !== '/api/access/handoff' && !passkeyManagementRoute &&
+        !terminalShareRoute && !jitRoute)
       throw new AppError('只读账户没有此接口的访问权限', 403);
     if (url.pathname === '/api/access/view') {
       if (req.method !== 'GET' || !access.enabled) throw new AppError('不支持此方法', 405);
@@ -428,6 +434,32 @@ async function main() {
       const result = await terminalSharing.revoke(id);
       terminateTerminalGrantSockets(id);
       return send(res, result);
+    }
+    if (url.pathname === '/api/access/jit') {
+      if (!accountPrincipal) throw new AppError('账户模式未启用', 409);
+      if (req.method === 'GET') return send(res, { requests: jitPrivileges.list(accountPrincipal) });
+      if (req.method !== 'POST' || accountPrincipal.role !== 'viewer')
+        throw new AppError('只有只读账户可申请临时授权', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await jitPrivileges.create(accountPrincipal,
+        await authorizedBody(req, 4096)), 201);
+    }
+    if (/^\/api\/access\/jit\/[a-f0-9-]{36}\/decision$/.test(url.pathname)) {
+      if (req.method !== 'POST' || accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可审批临时授权', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await jitPrivileges.decide(accountPrincipal,
+        url.pathname.split('/')[4], await authorizedBody(req, 4096)));
+    }
+    if (/^\/api\/access\/jit\/[a-f0-9-]{36}\/execute$/.test(url.pathname)) {
+      if (req.method !== 'POST' || accountPrincipal?.role !== 'viewer')
+        throw new AppError('只有申请账户可执行临时授权', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      z.object({}).strict().parse(await authorizedBody(req, 4096));
+      features.mutations++;
+      try {
+        return send(res, await jitPrivileges.execute(accountPrincipal, url.pathname.split('/')[4]));
+      } finally { features.mutations--; }
     }
     if (url.pathname === '/api/access/passkeys') {
       if (req.method !== 'GET' || !accountPrincipal) throw new AppError('不支持此方法', 405);
@@ -1041,6 +1073,7 @@ async function main() {
       () => access.close(),
       () => passkeys.close(),
       () => terminalSharing.close(),
+      () => jitPrivileges.close(),
       () => assistant.close(),
       () => native.close(),
       () => webhooks.close(),
