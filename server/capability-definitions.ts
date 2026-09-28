@@ -22,6 +22,7 @@ import { tieringInput } from './storage-tiering.ts';
 import { disasterRecoveryInput } from './disaster-recovery-drill.ts';
 import { objectBackupInput } from './object-backup.ts';
 import { wireGuardInput } from './wireguard-overlay.ts';
+import { teamTemplateInput } from './team-templates.ts';
 
 export const relativePath = z
   .string()
@@ -56,6 +57,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'team-templates': action(
+    '团队模板', 'next', teamTemplateInput.shape,
+    { mode: 'list' },
+    'capture 先 check 预览当前实例和项目，再用返回的 fingerprint 保存；create 先 check 查看模板，再以 templateId、fingerprint 和 targetName 创建独立实例。delete 也要求模板指纹。模板排除环境变量、私密配置、服务与命令及端口转发。',
+    false, true,
+  ),
   'wireguard-overlay': action(
     'WireGuard 覆盖网络', 'next', wireGuardInput.shape,
     { mode: 'status' },

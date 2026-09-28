@@ -21,6 +21,7 @@ import { StorageTiering } from './storage-tiering.ts';
 import type { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import type { ObjectBackup } from './object-backup.ts';
 import type { WireGuardOverlay } from './wireguard-overlay.ts';
+import { TeamTemplates } from './team-templates.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -466,7 +467,8 @@ export const nextFeatureCatalog = [
   ['file-locks', '文件锁', '协作与团队', 'P0', '在文件工作台获取、续租和释放文件锁，并阻止其他文件工作台写入修改锁定路径。', 'available'],
   ['review-threads', '行级评审线程', '协作与团队', 'P1', '保存文件、行号和评审意见线程。', 'available'],
   ['project-permissions', '项目权限', '协作与团队', 'P0', '保存项目成员和角色权限。', 'planned'],
-  ['team-templates', '团队模板', '协作与团队', 'P1', '保存可复制的项目和资源模板。', 'planned'],
+  ['team-templates', '团队模板', '协作与团队', 'P1',
+    '预览并保存可复制的资源与项目蓝图，再按指纹创建独立实例；不复制私密配置。', 'available'],
   ['onboarding-checklist', '入门清单', '协作与团队', 'P1', '保存团队成员入门步骤和完成状态。', 'available'],
   ['change-approval', '变更审批', '协作与团队', 'P0', '保存变更摘要、审批人和审批状态。', 'planned'],
   ['activity-digest', '活动摘要', '协作与团队', 'P2', '从任务和执行历史生成活动摘要。', 'available'],
@@ -648,6 +650,7 @@ function compactProfileResult(result: Record<string, unknown>) {
 export class NextFeatures {
   jobs = new Jobs('next-features');
   storageTiering: StorageTiering;
+  teamTemplates: TeamTemplates;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private coldMigrations?: ColdMigrations;
   private snapshotReplications?: SnapshotReplications;
@@ -662,7 +665,10 @@ export class NextFeatures {
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
-  ) { this.storageTiering = new StorageTiering(machines); }
+  ) {
+    this.storageTiering = new StorageTiering(machines);
+    this.teamTemplates = new TeamTemplates(machines, workspaces);
+  }
 
   async init() { await this.storageTiering.init(); }
 
@@ -927,6 +933,8 @@ export class NextFeatures {
       return { ...await this.wireGuardOverlay.action(id, merged, action,
         signal || new AbortController().signal), adapter };
     }
+    if (spec.id === 'team-templates')
+      return { ...await this.teamTemplates.action(id, merged, action), adapter };
     if (spec.id === 'cold-migration') {
       if (!this.coldMigrations)
         return { ready: false, executed: false, adapter,

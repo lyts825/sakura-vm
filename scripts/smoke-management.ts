@@ -91,6 +91,31 @@ try {
       { name: 'frontend', command: 'echo frontend-ready; exec sleep 600', dependsOn: ['backend'] },
     ],
   });
+  console.log('Checking portable team template capture and independent instance creation');
+  const team = features.next!;
+  const templatePreview: any = await team.action(id, { action: 'check', featureId: 'team-templates',
+    options: { mode: 'capture', name: 'Management starter' } });
+  assert.ok(templatePreview.fingerprint);
+  assert.equal(templatePreview.content.project.directory, '/workspace');
+  assert.equal(templatePreview.content.project.environment, undefined);
+  const templateCapture: any = await team.action(id, { action: 'run', featureId: 'team-templates',
+    options: { mode: 'capture', name: 'Management starter', fingerprint: templatePreview.fingerprint } });
+  await team.jobs.wait(templateCapture.key);
+  assert.equal(team.jobs.view(templateCapture.key)?.status, 'done');
+  const templateResult: any = await team.jobs.result(templateCapture.id);
+  const templateId = templateResult.template.id;
+  const templateCreate: any = await team.action(id, { action: 'run', featureId: 'team-templates',
+    options: { mode: 'create', templateId, fingerprint: templateResult.template.fingerprint,
+      targetName: 'management-template-copy' } });
+  await team.jobs.wait(templateCreate.key);
+  assert.equal(team.jobs.view(templateCreate.key)?.status, 'done',
+    team.jobs.view(templateCreate.key)?.error);
+  const createdTemplate: any = await team.jobs.result(templateCreate.id);
+  ids.push(createdTemplate.vmId);
+  const copiedProject = await features.workspaces.config(createdTemplate.vmId);
+  assert.equal(copiedProject.directory, '/workspace');
+  assert.equal(copiedProject.environment, undefined);
+  assert.equal(copiedProject.services, undefined);
   await features.workspaces.run(id, 'start');
   await done(features.workspaces.jobs, id);
   const running = await features.workspaces.runtime(id);
