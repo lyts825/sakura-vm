@@ -73,6 +73,7 @@ test('configure operations carry the full preference set into the guest restart'
   const { desktops, machines } = fixture();
   const preferences = {
     resolution: '1600x1000' as const,
+    monitorLayout: 'dual-horizontal' as const,
     scale: 150,
     theme: 'paper' as const,
     wallpaper: 'plain' as const,
@@ -89,6 +90,7 @@ test('configure operations carry the full preference set into the guest restart'
   const view = desktops.start('vm', 'configure', preferences);
   assert.deepEqual(view.preferences, preferences);
   assert.match(command, /RESOLUTION='1600x1000'/);
+  assert.match(command, /MONITOR_LAYOUT='dual-horizontal'/);
   assert.match(command, /WALLPAPER='plain'/);
   assert.match(command, /PANEL='floating'/);
   assert.match(command, /AUTO_HIDE_PANEL='true'/);

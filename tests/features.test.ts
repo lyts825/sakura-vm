@@ -111,6 +111,7 @@ test('cloud-init and systemd desktop adapters retain key-only access and a non-r
 test('KDE desktop adapters expose validated appearance preferences for every distro', () => {
   const preferences = {
     resolution: '1440x900' as const,
+    monitorLayout: 'dual-vertical' as const,
     scale: 125,
     theme: 'midnight' as const,
     wallpaper: 'midnight' as const,
@@ -123,6 +124,7 @@ test('KDE desktop adapters expose validated appearance preferences for every dis
     const commands = desktopCommands(distro, preferences);
     assert.match(commands.install, /KDE Plasma|kde-plasma-desktop/);
     assert.match(commands.install, /RESOLUTION='1440x900'/);
+    assert.match(commands.install, /MONITOR_LAYOUT='dual-vertical'/);
     assert.match(commands.install, /SCALE='125'/);
     assert.match(commands.configure, /desktop-preferences/);
     assert.match(commands.install, /ready_script=.*plasma-not-ready/);

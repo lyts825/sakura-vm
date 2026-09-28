@@ -898,6 +898,42 @@ test('real noVNC obeys clipboard policy and records, decodes, exports and persis
   }
 });
 
+test('desktop layout saves two logical monitors and restores the applied preference', async ({ page }) => {
+  await app(page, ['desktop'], true);
+  let preferences: Record<string, unknown> = {
+    resolution: '1280x800', monitorLayout: 'single', scale: 100,
+    theme: 'sakura', wallpaper: 'sakura', accent: '#c75b86',
+    panel: 'bottom', autoHidePanel: false, animations: true,
+  };
+  let submitted: Record<string, unknown> | undefined;
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/desktop*', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON() as { preferences: Record<string, unknown> };
+      submitted = input.preferences;
+      preferences = submitted;
+      return route.fulfill({ status: 202,
+        json: { status: 'starting', log: '', preferences } });
+    }
+    return route.fulfill({ json: { status: 'stopped', log: '', preferences } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '桌面', exact: true }).click();
+  await page.getByRole('button', { name: '外观与布局' }).click();
+  const layout = page.getByLabel('逻辑屏幕布局');
+  await layout.selectOption('dual-horizontal');
+  await expect(page.getByText('两个逻辑屏幕显示在同一桌面画布中')).toBeVisible();
+  await page.getByRole('button', { name: '应用并重启桌面' }).click();
+  await expect.poll(() => submitted?.monitorLayout).toBe('dual-horizontal');
+  await page.reload();
+  await page.getByRole('tab', { name: '桌面', exact: true }).click();
+  await page.getByRole('button', { name: '外观与布局' }).click();
+  await expect(page.getByLabel('逻辑屏幕布局')).toHaveValue('dual-horizontal');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test('Windows integration settings save and remove real registration plans without replacing defaults, and fit mobile', async ({
   page,
 }) => {

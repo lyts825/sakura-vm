@@ -47,6 +47,7 @@ export async function route(
           preferences: z
             .object({
               resolution: z.enum(['1280x800', '1440x900', '1600x1000', '1920x1080']).optional(),
+              monitorLayout: z.enum(['single', 'dual-horizontal', 'dual-vertical']).optional(),
               scale: z.number().int().min(100).max(200).optional(),
               theme: z.enum(['sakura', 'midnight', 'paper', 'lavender']).optional(),
               wallpaper: z.enum(['sakura', 'midnight', 'paper', 'plain']).optional(),

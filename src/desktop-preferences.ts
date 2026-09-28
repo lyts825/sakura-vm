@@ -2,6 +2,7 @@ import type { DesktopPreferences, DesktopView } from '../server/model.ts';
 
 export const desktopPreferenceDefaults: DesktopPreferences = {
   resolution: '1280x800',
+  monitorLayout: 'single',
   scale: 100,
   theme: 'sakura',
   wallpaper: 'sakura',
@@ -12,6 +13,7 @@ export const desktopPreferenceDefaults: DesktopPreferences = {
 };
 
 const resolutions = ['1280x800', '1440x900', '1600x1000', '1920x1080'] as const;
+const monitorLayouts = ['single', 'dual-horizontal', 'dual-vertical'] as const;
 const themes = ['sakura', 'midnight', 'paper', 'lavender'] as const;
 const wallpapers = ['sakura', 'midnight', 'paper', 'plain'] as const;
 const panels = ['bottom', 'top', 'floating'] as const;
@@ -24,6 +26,8 @@ export function mergeDesktopPreferences(input: unknown): DesktopPreferences {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   return {
     resolution: valueOrDefault(value.resolution, resolutions, desktopPreferenceDefaults.resolution),
+    monitorLayout: valueOrDefault(value.monitorLayout, monitorLayouts,
+      desktopPreferenceDefaults.monitorLayout),
     scale:
       typeof value.scale === 'number' &&
       Number.isInteger(value.scale) &&

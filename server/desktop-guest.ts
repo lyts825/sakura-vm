@@ -35,6 +35,33 @@ done
 tail -c 8192 /var/log/sakura-desktop.log
 exit 1`;
 
+export const desktopFramebufferSetup = String.raw`width=$(printf '%s' "$RESOLUTION" | cut -dx -f1)
+height=$(printf '%s' "$RESOLUTION" | cut -dx -f2)
+case "$MONITOR_LAYOUT" in
+  single) FRAMEBUFFER="$RESOLUTION" ;;
+  dual-horizontal) FRAMEBUFFER="$((width * 2))x$height" ;;
+  dual-vertical) FRAMEBUFFER="$width"x"$((height * 2))" ;;
+  *) echo 'Invalid monitor layout' >&2; exit 1 ;;
+esac
+export FRAMEBUFFER`;
+
+export const desktopMonitorSetup = String.raw`if [ "$MONITOR_LAYOUT" != single ]; then
+  command -v xrandr >/dev/null || { echo 'Install xrandr before enabling two monitors' >&2; exit 1; }
+  output=$(xrandr --query | awk '$2 == "connected" { print $1; exit }')
+  [ -n "$output" ] || { echo 'No Xvnc output for logical monitors' >&2; exit 1; }
+  mm_width=$((width * 254 / 960))
+  mm_height=$((height * 254 / 960))
+  first=$(printf '%s/%sx%s/%s+0+0' "$width" "$mm_width" "$height" "$mm_height")
+  if [ "$MONITOR_LAYOUT" = dual-horizontal ]; then second_x=$width; second_y=0
+  else second_x=0; second_y=$height; fi
+  second=$(printf '%s/%sx%s/%s+%s+%s' "$width" "$mm_width" "$height" "$mm_height" "$second_x" "$second_y")
+  xrandr --setmonitor sakura-primary "$first" "$output"
+  xrandr --setmonitor sakura-secondary "$second" none
+  [ "$(xrandr --listmonitors | awk 'NR == 1 { print $2 }')" = 2 ] || {
+    echo 'Xvnc did not publish both logical monitors' >&2; exit 1;
+  }
+fi`;
+
 function shellLiteral(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -47,6 +74,7 @@ function desktopConfigScript(input: DesktopPreferences) {
 cat > /etc/sakura/desktop-preferences <<'SAKURA_PREFERENCES'
 DESKTOP=kde-plasma
 RESOLUTION=${shellLiteral(p.resolution)}
+MONITOR_LAYOUT=${shellLiteral(p.monitorLayout)}
 SCALE=${shellLiteral(String(p.scale))}
 QT_SCALE_FACTOR=${shellLiteral(factor)}
 THEME=${shellLiteral(p.theme)}
@@ -78,7 +106,7 @@ trap 'exit 1' HUP INT TERM
 echo 'Installing KDE Plasma and TigerVNC. The first installation needs internet access.'
 apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community \
   plasma-desktop plasma-workspace kwin systemsettings breeze breeze-icons konsole dolphin tigervnc dbus dbus-x11 dbus-openrc \
-  kquickcharts kpipewire tzdata font-dejavu font-noto-cjk xauth xdpyinfo
+  kquickcharts kpipewire tzdata font-dejavu font-noto-cjk xauth xdpyinfo xrandr
 if ! id sakura-desktop >/dev/null 2>&1; then
   adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop
 fi
@@ -94,6 +122,7 @@ export XDG_CURRENT_DESKTOP=KDE DESKTOP_SESSION=plasma KDE_FULL_SESSION=true
 unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS WAYLAND_DISPLAY WAYLAND_SOCKET
 [ ! -f /home/sakura-desktop/.sakura-ime ] || . /home/sakura-desktop/.sakura-ime
 RESOLUTION=1280x800
+MONITOR_LAYOUT=single
 QT_SCALE_FACTOR=1
 THEME=sakura
 ACCENT=#c75b86
@@ -103,7 +132,8 @@ ANIMATIONS=true
 WALLPAPER=sakura
 ACCENT_RGB=199,91,134
 [ ! -f /etc/sakura/desktop-preferences ] || . /etc/sakura/desktop-preferences
-export RESOLUTION QT_SCALE_FACTOR THEME ACCENT PANEL AUTO_HIDE_PANEL ANIMATIONS WALLPAPER ACCENT_RGB
+${desktopFramebufferSetup}
+export RESOLUTION MONITOR_LAYOUT QT_SCALE_FACTOR THEME ACCENT PANEL AUTO_HIDE_PANEL ANIMATIONS WALLPAPER ACCENT_RGB
 export LIBGL_ALWAYS_SOFTWARE=1 QT_QUICK_BACKEND=software
 write_kde() {
   if command -v kwriteconfig6 >/dev/null 2>&1; then kwriteconfig6 "$@"
@@ -126,7 +156,7 @@ if ! cmp -s /etc/sakura/desktop-preferences /home/sakura-desktop/.config/sakura-
   write_kde --file kdeglobals --group KDE --key AnimationDurationFactor "$speed"
 fi
 xauth -f "$XAUTHORITY" add :1 . "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-Xvnc :1 -geometry "$RESOLUTION" -depth 24 -rfbport 5901 -interface 127.0.0.1 \
+Xvnc :1 -geometry "$FRAMEBUFFER" -depth 24 -rfbport 5901 -interface 127.0.0.1 \
   -localhost -SecurityTypes None -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" &
 vnc_pid=$!
 session_pid=''
@@ -145,6 +175,7 @@ for attempt in $(seq 1 40); do
   sleep 0.25
 done
 xdpyinfo >/dev/null
+${desktopMonitorSetup}
 dbus-run-session -- /usr/local/libexec/sakura-plasma-session &
 session_pid=$!
 # Either child can fail while the other is still alive (notably nested Wayland).
@@ -159,7 +190,7 @@ mkdir -p /usr/local/libexec/sakura-plasma
 cat > /usr/local/libexec/sakura-plasma/kwin_wayland_wrapper <<'SAKURA_KWIN'
 #!/bin/sh
 # Scope the wrapper to Sakura; system Plasma sessions keep the vendor binary.
-exec /usr/bin/kwin_wayland_wrapper "$@" --x11-display :1 --width "$(printf '%s' "$RESOLUTION" | cut -dx -f1)" --height "$(printf '%s' "$RESOLUTION" | cut -dx -f2)" --no-lockscreen
+exec /usr/bin/kwin_wayland_wrapper "$@" --x11-display :1 --width "$(printf '%s' "$FRAMEBUFFER" | cut -dx -f1)" --height "$(printf '%s' "$FRAMEBUFFER" | cut -dx -f2)" --no-lockscreen
 SAKURA_KWIN
 chmod 755 /usr/local/libexec/sakura-plasma/kwin_wayland_wrapper
 cat > /usr/local/libexec/sakura-plasma-session <<'SAKURA_PLASMA'
@@ -251,7 +282,7 @@ PAPER_WALLPAPER
 chown -R sakura-desktop:sakura-desktop /home/sakura-desktop/.config /home/sakura-desktop/.local
 rc-update add dbus default
 rc-update add sakura-desktop default
-printf '2\n' > /etc/sakura/desktop-version
+printf '3\n' > /etc/sakura/desktop-version
 echo 'Starting the desktop session…'
 ` +
   desktopStart +
@@ -261,15 +292,23 @@ SAKURA_INSTALL`;
 
 export function desktopCommands(distro = 'alpine', input = defaultDesktopPreferences) {
   const preferences = desktopPreferencesSchema.parse(input);
-  const startWithPreferences = (start: string) => String.raw`set -eu
+  const startWithPreferences = (start: string, install: string) => String.raw`set -eu
+if ! grep -qx '3' /etc/sakura/desktop-version 2>/dev/null; then
+${install}
+else
 ${desktopConfigScript(preferences)}
-${start}`;
-  const configure = (start: string) =>
-    String.raw`set -eu
+${start}
+fi`;
+  const configure = (start: string, install: string) => String.raw`set -eu
 test -f /etc/sakura/desktop-version
+if ! grep -qx '3' /etc/sakura/desktop-version; then
+  echo 'Upgrading KDE Plasma desktop for logical monitors…'
+${install}
+else
 ${desktopConfigScript(preferences)}
 echo 'Applying KDE Plasma preferences and restarting the desktop session…'
 ${start}
+fi
 echo 'KDE Plasma preferences applied.'`;
   const customizedInstall = desktopInstall.replace(
     desktopConfigScript(defaultDesktopPreferences),
@@ -280,9 +319,9 @@ echo 'KDE Plasma preferences applied.'`;
       probe: desktopProbe,
       preferencesProbe: desktopPreferencesProbe,
       start: desktopStart,
-      startWithPreferences: startWithPreferences(desktopStart),
+      startWithPreferences: startWithPreferences(desktopStart, customizedInstall),
       install: customizedInstall,
-      configure: configure(desktopStart),
+      configure: configure(desktopStart, customizedInstall),
       preferences,
     };
   const probe = desktopProbe.replace(
@@ -315,8 +354,8 @@ SAKURA_SERVICE`;
   const install = customizedInstall
     .replace(/case "\$\(cat \/etc\/alpine-release\)" in[\s\S]*?esac/, '')
     .replace(
-      /apk add --no-cache[\s\S]*?xauth xdpyinfo/,
-      'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y --no-install-recommends kde-plasma-desktop systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils netcat-openbsd',
+      /apk add --no-cache[\s\S]*?xauth xdpyinfo xrandr/,
+      'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y --no-install-recommends kde-plasma-desktop systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd',
     )
     .replace(
       'adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop',
@@ -333,9 +372,9 @@ SAKURA_SERVICE`;
     probe,
     preferencesProbe: desktopPreferencesProbe,
     start,
-    startWithPreferences: startWithPreferences(start),
+    startWithPreferences: startWithPreferences(start, install),
     install,
-    configure: configure(start),
+    configure: configure(start, install),
     preferences,
   };
 }

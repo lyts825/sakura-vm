@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const desktopPreferenceFields = {
   resolution: z.enum(['1280x800', '1440x900', '1600x1000', '1920x1080']),
+  monitorLayout: z.enum(['single', 'dual-horizontal', 'dual-vertical']),
   scale: z.number().int().min(100).max(200),
   theme: z.enum(['sakura', 'midnight', 'paper', 'lavender']),
   wallpaper: z.enum(['sakura', 'midnight', 'paper', 'plain']),
@@ -14,6 +15,7 @@ const desktopPreferenceFields = {
 export const desktopPreferencesSchema = z
   .object({
     resolution: desktopPreferenceFields.resolution.default('1280x800'),
+    monitorLayout: desktopPreferenceFields.monitorLayout.default('single'),
     scale: desktopPreferenceFields.scale.default(100),
     theme: desktopPreferenceFields.theme.default('sakura'),
     wallpaper: desktopPreferenceFields.wallpaper.default('sakura'),
@@ -52,13 +54,14 @@ function unquoteShellValue(value: string) {
 export function parseDesktopPreferencesFile(contents: string): DesktopPreferences {
   const values: Record<string, string> = {};
   for (const line of contents.split(/\r?\n/)) {
-    const match = /^(RESOLUTION|SCALE|THEME|WALLPAPER|ACCENT|PANEL|AUTO_HIDE_PANEL|ANIMATIONS)=(.*)$/.exec(
+    const match = /^(RESOLUTION|MONITOR_LAYOUT|SCALE|THEME|WALLPAPER|ACCENT|PANEL|AUTO_HIDE_PANEL|ANIMATIONS)=(.*)$/.exec(
       line.trim(),
     );
     if (match) values[match[1]] = unquoteShellValue(match[2]);
   }
   return mergeDesktopPreferences({
     resolution: values.RESOLUTION,
+    monitorLayout: values.MONITOR_LAYOUT,
     scale: values.SCALE === undefined ? undefined : Number(values.SCALE),
     theme: values.THEME,
     wallpaper: values.WALLPAPER,

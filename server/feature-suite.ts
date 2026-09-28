@@ -142,6 +142,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'reverse-proxy',
   'ai-assistant',
   'native-integration',
+  'multi-monitor',
   'golden-images',
   'multi-arch',
   'dev-container',
@@ -154,7 +155,6 @@ const availableFeatureIds = new Set<FeatureId>([
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'language-services',
-  'multi-monitor',
 ]);
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
@@ -512,6 +512,16 @@ export class FeatureSuite {
     } else if (featureId === 'security-scan') {
       result.ready = this.machines.state(id) === 'running';
       result.reason = '工作空间 → 安全扫描：检查客户机 SSH 和系统文件，并用 OSV 匹配已安装源包的漏洞；查询失败会明确显示未完成。';
+    } else if (featureId === 'multi-monitor') {
+      const probe = this.machines.state(id) === 'running'
+        ? await this.machines.exec(id,
+            "test -f /etc/sakura/desktop-version && command -v xrandr >/dev/null",
+            10000, signal).catch(() => null)
+        : null;
+      result.ready = probe?.code === 0;
+      result.reason = result.ready
+        ? '桌面 → 外观与布局，选择每块逻辑屏幕的分辨率、缩放和单屏/左右/上下布局；应用后重启桌面。两个逻辑屏幕共享一个 VNC 画布。'
+        : '请先启动实例并在桌面页安装 KDE Plasma；新安装包含双逻辑屏幕所需的 xrandr。';
     } else if (
       featureId === 'windows-mount' ||
       featureId === 'file-drop' ||

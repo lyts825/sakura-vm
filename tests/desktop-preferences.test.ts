@@ -24,6 +24,7 @@ test('desktop preference drafts survive a remount until a guest read confirms th
     { preferences: defaultDesktopPreferences, pending: false },
     {
       resolution: '1920x1080',
+      monitorLayout: 'dual-horizontal',
       scale: 150,
       theme: 'midnight',
       wallpaper: 'midnight',
@@ -37,6 +38,7 @@ test('desktop preference drafts survive a remount until a guest read confirms th
   const remounted = loadDesktopPreferences(id, () => browser);
   assert.equal(remounted.pending, true);
   assert.equal(remounted.preferences.wallpaper, 'midnight');
+  assert.equal(remounted.preferences.monitorLayout, 'dual-horizontal');
 
   const oldGuest = { status: 'ready' as const, log: '', preferences: defaultDesktopPreferences };
   assert.deepEqual(receiveDesktopPreferences(remounted, oldGuest), remounted);
@@ -60,6 +62,7 @@ test('legacy raw preference storage is upgraded without allowing unknown fields'
   const restored = loadDesktopPreferences('vm', () => browser);
   assert.equal(restored.preferences.resolution, '1440x900');
   assert.equal(restored.preferences.wallpaper, 'paper');
+  assert.equal(restored.preferences.monitorLayout, 'single');
   assert.equal(restored.pending, false);
 });
 

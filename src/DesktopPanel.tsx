@@ -231,7 +231,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
               `${scheme}//${location.host}/ws/${vm.id}/desktop?token=${encodeURIComponent(token)}`,
             );
             client.scaleViewport = true;
-            client.resizeSession = true;
+            client.resizeSession = desktop?.preferences?.monitorLayout !== 'dual-horizontal' &&
+              desktop?.preferences?.monitorLayout !== 'dual-vertical';
             client.background = '#201b24';
             clientRef.current = client;
             client.addEventListener('clipboard', (event) => {
@@ -270,7 +271,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       clientRef.current = null;
       sentClipboard.current = '';
     };
-  }, [vm.id, vm.startedAt, ready, token, attempt]);
+  }, [vm.id, vm.startedAt, ready, token, attempt, desktop?.preferences?.monitorLayout]);
 
   const enable = useCallback(
     async (action: 'install' | 'start' | 'configure') => {
@@ -475,6 +476,21 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
                 <option value="1600x1000">1600 × 1000 · 细节</option>
                 <option value="1920x1080">1920 × 1080 · 高清</option>
               </select>
+            </label>
+            <label>
+              <span>逻辑屏幕布局</span>
+              <select
+                value={preferences.monitorLayout}
+                onChange={(event) => updatePreferences({
+                  monitorLayout: event.target.value as DesktopPreferences['monitorLayout'],
+                })}
+              >
+                <option value="single">单屏</option>
+                <option value="dual-horizontal">双屏 · 左右</option>
+                <option value="dual-vertical">双屏 · 上下</option>
+              </select>
+              {preferences.monitorLayout !== 'single' &&
+                <small>两个逻辑屏幕显示在同一桌面画布中；全屏可查看完整布局。</small>}
             </label>
             <label>
               <span>界面缩放</span>
