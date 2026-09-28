@@ -423,6 +423,8 @@ vCPU 热插拔现有完整可用路径：停机预留插槽、TCG 启动、检�
 
 ## 使用方式
 
+Windows/Linux 进程互操作：在 Windows 宿主机的第一批或第三批能力入口提交 `{"mode":"allow","programId":"whoami","executable":"C:\\Windows\\System32\\whoami.exe"}`，再启动 Linux 实例并提交 `{"mode":"install"}`。客户机执行 `sakura-win whoami`，标准输出、标准错误和退出码来自登记的 Windows 程序。登记时可指定 `fixedArgs`；客户机只能传 `programId`，不能注入参数。`status` 查看允许列表，`remove` 撤销单个程序，`disable` 立即撤销实例令牌。每次调用重新验证 EXE 的 SHA-256；服务还检查实例运行及应急锁定、控制面锁定和数据迁移状态。每实例只允许一个并发调用，运行上限 30 秒，输出上限 128 KiB。客户机需安装 curl 与 jq，`install` 会尝试通过 apk 或 apt 安装。令牌只写入客户机 root 可读的 curl 配置，宿主只存储哈希。
+
 账户模式中的 JIT 临时授权支持只读账户为其已分享的实例申请一次“启动”或“正常停止”，申请必须填写原因，并在 24 小时内获批。管理员在“系统设置 → 账户与只读分享”中选择 1–60 分钟有效期批准，也可拒绝或在执行前撤销。申请者在只读分享页手动执行；批准绑定申请者、实例和操作，执行前持久标记为已使用，失败或服务重启均不会自动重试。账户失效、实例范围变更、实例应急锁定及控制面锁定仍会阻止执行。普通只读账户的其他变更接口保持拒绝；JIT 目前只涵盖单次实例启停，不授予终端命令或配置修改权限。
 
 ACME 证书续期在第三批能力中心选择“ACME 证书续期”。`status` 检查运行中客户机是否安装 Certbot 并已有 `/etc/letsencrypt/renewal/*.conf`；`dry-run` 调用 Certbot 的测试续期，`renew` 执行实际续期。`save` 保存 `enabled` 和 `intervalHours`（1–168，默认 12），启用后在实例运行且控制面未锁定、数据未迁移时定期执行。停机期间保留到期任务，下一次启动后重试；每次尝试及退出码写入宿主状态。该功能续期已有证书，不负责首次签发、域名验证配置或 Web 服务重载；如需部署新证书，请在客户机配置 Certbot deploy hook。[Certbot 官方文档](https://eff-certbot.readthedocs.io/en/stable/using.html#renewal)说明退出码 0 也可能表示目前无需续期，所以结果只报告“续期检查成功”，不推断证书已更换。

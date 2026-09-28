@@ -25,6 +25,7 @@ import { hostPower, powerPolicy, powerDecision, type PowerSample } from './power
 import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
 import { scanGuestVulnerabilities } from './security-vulnerabilities.ts';
 import { dependencyManagerSchema, projectDependencyCacheScript } from './project-dependency-cache.ts';
+import { processInteropInput, type ProcessInterop } from './process-interop.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -107,6 +108,7 @@ export type FeatureCatalogItem = {
 };
 
 const availableFeatureIds = new Set<FeatureId>([
+  'process-interop',
   'image-import',
   'power-schedules',
   'idle-shutdown',
@@ -307,6 +309,7 @@ export class FeatureSuite {
   private lastSampleAt = new Map<string, number>();
   private ticking = false;
   private powerAbort = new AbortController();
+  private processInterop?: ProcessInterop;
 
   constructor(
     private machines: Machines,
@@ -318,6 +321,7 @@ export class FeatureSuite {
       power?: (signal: AbortSignal) => Promise<PowerSample>;
     } = {},
   ) {}
+  setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
   enableBackground() {
     if (this.powerAbort.signal.aborted) this.powerAbort = new AbortController();
     const controller = this.powerAbort;
@@ -409,6 +413,23 @@ export class FeatureSuite {
       .enum(featureCatalog.map(([value]) => value) as [FeatureId, ...FeatureId[]])
       .parse(input.featureId);
     const spec = featureCatalog.find(([value]) => value === featureId)!;
+    if (featureId === 'process-interop') {
+      if (!this.processInterop) throw new AppError('进程互操作服务尚未启动', 503);
+      const options = processInteropInput.parse(input.options || {});
+      if (input.action === 'check') return this.processInterop.action(id, options, 'check', signal);
+      this.machines.requireUnlocked(id);
+      return this.jobs.start(
+        this.workspaces.projects.key(id) + ':process-interop',
+        async (log, taskSignal, _update, saveResult) => {
+          const result = await this.processInterop!.action(id, options, 'run', taskSignal);
+          await saveResult(result);
+          log(JSON.stringify(result) + '\n');
+          if (!result.ready) throw new AppError('进程互操作失败', 409);
+        },
+        { vmId: id, projectId: this.workspaces.projects.current(id),
+          title: spec[1], action: 'capability:process-interop' },
+      );
+    }
     if (hasCapability(featureId)) {
       const runner = new CapabilityActions(this.machines, this.workspaces);
       if (input.action === 'check') return runner.check(id, featureId, signal);

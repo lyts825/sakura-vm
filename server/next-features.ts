@@ -9,6 +9,7 @@ import { readStore, writeStore } from './local-store.ts';
 import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { AcmeRenewal } from './acme-renewal.ts';
+import type { ProcessInterop } from './process-interop.ts';
 import { hardwareCompatibility } from './hardware-compatibility.ts';
 import { firmwareSupport } from './firmware.ts';
 import { networkEmulation } from './network-emulation.ts';
@@ -482,8 +483,8 @@ export const nextFeatureCatalog = [
     'Windows/Linux 进程互操作',
     '操作系统与桌面',
     'P1',
-    '检查客户机进程工具和宿主平台。',
-    'planned',
+    '登记固定 Windows 程序，在 Linux 客户机通过 sakura-win 受控调用。',
+    'available',
   ],
   [
     'host-drive-policy',
@@ -638,7 +639,6 @@ const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'language-server-catalog':
     'found=0; for c in typescript-language-server pyright rust-analyzer gopls; do if command -v "$c" >/dev/null; then printf "%s\\n" "$c"; found=1; fi; done; test "$found" = 1',
   'code-search-index': 'command -v rg >/dev/null && rg --version',
-  'process-interop': 'command -v ps >/dev/null && ps -eo pid,comm',
   'gpu-compute-passthrough':
     'if command -v nvidia-smi >/dev/null; then nvidia-smi --query-gpu=name --format=csv,noheader; else command -v rocminfo >/dev/null && rocminfo; fi',
 };
@@ -665,6 +665,7 @@ export class NextFeatures {
   private disasterRecovery?: DisasterRecoveryDrill;
   private objectBackup?: ObjectBackup;
   private wireGuardOverlay?: WireGuardOverlay;
+  private processInterop?: ProcessInterop;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
@@ -746,6 +747,7 @@ export class NextFeatures {
   setWireGuardOverlay(service: WireGuardOverlay) {
     this.wireGuardOverlay = service;
   }
+  setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
 
   browserIdeLink(id: string) {
     if (!this.browserIde) throw new AppError('浏览器 IDE 服务尚未启用', 503);
@@ -820,6 +822,8 @@ export class NextFeatures {
       return { enabled: value.enabled, options: { intervalHours: result.policy!.intervalHours },
         updatedAt: now(), policy: result.policy };
     }
+    if (value.featureId === 'process-interop' && !value.enabled && this.processInterop)
+      await this.processInterop.action(id, { mode: 'disable' }, 'run');
     const state = await this.state();
     const settings = (state.settings[id] ||= {});
     settings[value.featureId] = { enabled: value.enabled, options: value.options, updatedAt: now() };
@@ -976,6 +980,11 @@ export class NextFeatures {
           reason: '对象备份服务尚未启用。' };
       return { ...await this.objectBackup.action(id, merged, action,
         signal || new AbortController().signal), adapter };
+    }
+    if (spec.id === 'process-interop') {
+      if (!this.processInterop)
+        return { ready: false, executed: false, adapter, reason: '进程互操作服务尚未启动。' };
+      return { ...await this.processInterop.action(id, merged, action, signal), adapter };
     }
     if (spec.id === 'wireguard-overlay') {
       if (!this.wireGuardOverlay)

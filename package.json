@@ -32,6 +32,7 @@
     "test:hardware-matrix": "tsx scripts/smoke-hardware-matrix.ts",
     "test:cpu-hotplug": "tsx scripts/smoke-cpu-hotplug.ts",
     "test:arm64": "tsx scripts/smoke-arm64.ts",
+    "test:process-interop": "tsx scripts/smoke-process-interop.ts",
     "test:nested-virtualization": "tsx scripts/smoke-nested-virtualization.ts",
     "test:guest-dns": "tsx scripts/smoke-guest-dns.ts",
     "test:acme": "tsx scripts/smoke-acme.ts",

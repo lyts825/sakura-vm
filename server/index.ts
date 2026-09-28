@@ -43,6 +43,7 @@ import { Passkeys, passkeyRemove } from './passkeys.ts';
 import { TerminalSharing, terminalShareInput } from './terminal-sharing.ts';
 import { JitPrivileges } from './jit-privileges.ts';
 import { BrowserExtensions, extensionOrigin } from './browser-extensions.ts';
+import { ProcessInterop, guestInteropRequest } from './process-interop.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -86,6 +87,12 @@ async function main() {
     (id) => rollouts.decision(id).allowed);
   features.next?.setAcmeMutationCounter((delta) => { features.mutations += delta; });
   features.next?.setAcmeAllowed(() => !session.view().locked && !features.migration?.blocked);
+  const processInterop = new ProcessInterop(machines, PORT, () => {
+    session.requireUnlocked();
+    if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+  });
+  features.next?.setProcessInterop(processInterop);
+  features.suite?.setProcessInterop(processInterop);
   const hostPeers = new HostPeers(async () => {
     const vms = await machines.list();
     return { platform: platform(), arch: arch(), cpus: Math.max(1, cpus().length),
@@ -882,6 +889,19 @@ async function main() {
 
   const server = createServer(async (req, res) => {
     try {
+      if (req.url === '/api/guest/interop') {
+        if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+        if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '') ||
+            ![`127.0.0.1:${PORT}`, `localhost:${PORT}`].includes(req.headers.host || '') ||
+            req.headers.origin || req.headers['sec-fetch-site'])
+          throw new AppError('仅接受本机客户机连接', 403);
+        const input = guestInteropRequest.parse(await body(req, 4096));
+        const vmId = input.vmId;
+        return await audit.span({ kind: 'request', name: 'POST /api/guest/interop', vmId },
+          async () => send(res, await processInterop.guest(input,
+            Array.isArray(req.headers['x-sakura-guest-token']) ? undefined :
+              req.headers['x-sakura-guest-token'])), () => res.statusCode);
+      }
       if (req.url?.startsWith('/api/extension/')) {
         const extensionUrl = requestUrl(req.url, PORT);
         if (extensionUrl && ['/api/extension/connect', '/api/extension/inventory']

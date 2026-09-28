@@ -24,6 +24,7 @@ import { objectBackupInput } from './object-backup.ts';
 import { wireGuardInput } from './wireguard-overlay.ts';
 import { teamTemplateInput } from './team-templates.ts';
 import { acmeInput } from './acme-renewal.ts';
+import { processInteropInput } from './process-interop.ts';
 
 export const relativePath = z
   .string()
@@ -58,6 +59,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'process-interop': action(
+    'Windows/Linux 进程互操作', 'next', processInteropInput.shape,
+    { mode: 'status' },
+    'allow 登记固定 Windows EXE 与可选固定参数；install 在运行中的 Linux 实例安装 sakura-win。客户机只能按 programId 调用，不能传任意参数。remove 撤销单个程序，disable 撤销实例令牌。',
+    false, true,
+  ),
   'acme-renewal': action(
     'ACME 证书续期', 'next', acmeInput.shape,
     { mode: 'status' },
