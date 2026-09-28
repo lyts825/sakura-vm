@@ -57,6 +57,7 @@
     "test:rescue": "tsx scripts/smoke-rescue.ts",
     "test:snapshot-diff": "tsx scripts/smoke-snapshot-diff.ts",
     "test:snapshot-merge": "tsx scripts/smoke-snapshot-merge.ts",
+    "test:memory-reclaim": "tsx scripts/smoke-memory-reclaim.ts",
     "test:online-snapshot": "tsx scripts/smoke-online-snapshot.ts",
     "test:auto-remediation": "tsx scripts/smoke-auto-remediation.ts",
     "test:package-cache": "tsx scripts/smoke-package-cache.ts",

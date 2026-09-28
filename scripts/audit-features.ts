@@ -45,7 +45,7 @@ for (const group of groups) {
   }
 }
 output +=
-  '\n## 目录以外的范围\n\n- 插件独立下载与热卸载；当前仍只加载内置插件。\n- 基于客户机内存压力的自动回收。\n- 完整发行版包管理界面。\n- 持久保存 RAM 和运行中进程的快照/恢复。\n\n重新生成：`npm run features:audit`。上述目录状态由源码声明，真实硬件、多主机和外部身份服务仍需要对应环境验证。\n';
+  '\n## 目录以外的范围\n\n- 插件独立下载与热卸载；当前仍只加载内置插件。\n- 完整发行版包管理界面。\n- 持久保存 RAM 和运行中进程的快照/恢复。\n\n重新生成：`npm run features:audit`。上述目录状态由源码声明，真实硬件、多主机和外部身份服务仍需要对应环境验证。\n';
 await writeFile('docs/unfinished-features.md', output);
 console.log(
   `Unfinished: ${unfinished.length}; available entries: ${count(all, 'available')}; catalog records: ${all.length}`,

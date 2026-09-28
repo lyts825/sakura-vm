@@ -26,6 +26,7 @@ import type { CapabilityActionView } from '../../shared/capability-actions';
 import { MetricHistory } from '../../src/MetricHistory';
 import { NotificationCenter } from '../../src/NotificationCenter';
 import { UsbHotplugPanel } from '../../src/UsbHotplugPanel';
+import { MemoryReclaimSettings } from './MemoryReclaimSettings';
 
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
@@ -661,6 +662,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
               >
                 应用内存目标
               </button>
+              <MemoryReclaimSettings vmId={active.id} maximum={active.memoryMiB}
+                running={active.status === 'running'} request={request} />
               <div className="feature-actions">
                 <label>
                   资源预设

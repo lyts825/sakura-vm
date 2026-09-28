@@ -3371,6 +3371,42 @@ test('resource history exports samples and the notification center acknowledges 
     .toBe(1);
 });
 
+test('guest memory reclaim saves a minimum and shows the latest balloon decision', async ({ page }) => {
+  await app(page, ['projects', 'automation'], true);
+  await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
+    settings: { schedule: { enabled: false, idleMinutes: 0, idleAction: 'stop' },
+      alerts: { enabled: false, cpuPercent: 90, memoryPercent: 90, diskPercent: 90,
+        cooldownMinutes: 30, taskFailures: false, serviceFailures: false } },
+    features: [], presets: {}, events: [], history: [],
+  } }));
+  let policy = { enabled: false, minMiB: 256 };
+  let sample = false;
+  await page.route('**/api/vms/*/memory-reclaim*', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON();
+      if (input.operation === 'configure') policy = input.policy;
+      if (input.operation === 'sample') sample = true;
+    }
+    return route.fulfill({ json: { policy, effectiveMinMiB: 256,
+      currentTargetMiB: sample ? 448 : 512,
+      observation: sample ? { at: new Date().toISOString(), totalMiB: 512,
+        availableMiB: 350, targetMiB: 448, decision: 'shrink',
+        reason: '客户机连续三次可用内存超过 55%，回收至多 64 MiB' } : null } });
+  });
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const panel = page.getByRole('region', { name: '自动内存回收' });
+  await panel.getByRole('checkbox', { name: '启用自动内存回收' }).check();
+  await panel.getByRole('spinbutton', { name: '最低内存目标（MiB）' }).fill('384');
+  await panel.getByRole('button', { name: '保存回收策略' }).click();
+  await expect.poll(() => policy).toEqual({ enabled: true, minMiB: 384 });
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    status: 'running', poweredOn: true }] }));
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await panel.getByRole('button', { name: '立即采样' }).click();
+  await expect(panel.getByText(/可用 350 \/ 512 MiB/)).toBeVisible();
+});
+
 async function app(page: Page, active: string[] = [], withVm = false) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;
