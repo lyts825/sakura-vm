@@ -390,10 +390,13 @@ test('golden image library saves templates, verifies, restores after refresh, cr
 }) => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-golden-browser-'));
   expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  // The mock export is tiny; use a small virtual disk so the capacity preflight
+  // does not depend on the test host having 16 GiB free in its temp volume.
+  const sourceVm = { ...vm, diskGiB: 2 };
   const derived: any[] = [];
   const machines = {
-    records: new Map([[vm.id, vm]]),
-    get: () => vm,
+    records: new Map([[sourceVm.id, sourceVm]]),
+    get: () => sourceVm,
     requireUnlocked: () => {},
     requireStopped: () => {},
   } as unknown as Machines;
@@ -409,7 +412,7 @@ test('golden image library saves templates, verifies, restores after refresh, cr
         for await (const chunk of source) bytes += chunk;
         expect(bytes).toBe('golden-browser-content');
         beforeAdopt();
-        const created = { ...vm, id: randomUUID(), name };
+        const created = { ...sourceVm, id: randomUUID(), name };
         derived.push(created);
         return created;
       },
@@ -420,7 +423,7 @@ test('golden image library saves templates, verifies, restores after refresh, cr
   try {
     await app(page, ['snapshots', 'transfers', 'images'], true);
     await page.route('**/api/images', (route) => route.fulfill({ json: [] }));
-    await page.route('**/api/vms', (route) => route.fulfill({ json: [vm, ...derived] }));
+    await page.route('**/api/vms', (route) => route.fulfill({ json: [sourceVm, ...derived] }));
     await page.route('**/api/golden-images', async (route) => {
       try {
         await route.fulfill({

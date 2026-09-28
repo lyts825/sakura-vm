@@ -308,7 +308,8 @@ export const nextFeatureCatalog = [
     '校验身份提供商元数据并保存非敏感配置。',
     'planned',
   ],
-  ['custom-rbac', '自定义 RBAC', '安全与合规', 'P0', '保存项目角色、权限和成员映射。', 'planned'],
+  ['custom-rbac', '自定义 RBAC', '安全与合规', 'P0',
+    '按项目定义读取、编辑、执行角色并映射成员；项目接口按当前角色逐请求校验。', 'available'],
   ['jit-privilege', 'JIT 临时授权', '安全与合规', 'P1',
     '只读账户按实例申请一次启停，管理员限时审批，可在执行前撤销。', 'available'],
   ['dual-approval', '双人审批', '安全与合规', 'P0', '保存需要第二位成员确认的高风险操作。', 'planned'],
@@ -472,7 +473,8 @@ export const nextFeatureCatalog = [
     '生成两分钟有效的一次性交接码，在本机浏览器间转移账户会话并撤销原凭证。', 'available'],
   ['file-locks', '文件锁', '协作与团队', 'P0', '在文件工作台获取、续租和释放文件锁，并阻止其他文件工作台写入修改锁定路径。', 'available'],
   ['review-threads', '行级评审线程', '协作与团队', 'P1', '保存文件、行号和评审意见线程。', 'available'],
-  ['project-permissions', '项目权限', '协作与团队', 'P0', '保存项目成员和角色权限。', 'planned'],
+  ['project-permissions', '项目权限', '协作与团队', 'P0',
+    '成员默认无权访问，管理员按实例及项目授予角色；项目配置、搜索、Git 和健康接口按角色校验。', 'available'],
   ['team-templates', '团队模板', '协作与团队', 'P1',
     '预览并保存可复制的资源与项目蓝图，再按指纹创建独立实例；不复制私密配置。', 'available'],
   ['onboarding-checklist', '入门清单', '协作与团队', 'P1', '保存团队成员入门步骤和完成状态。', 'available'],
@@ -1040,6 +1042,10 @@ export class NextFeatures {
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
         message: '只读账户在分享页申请指定实例的一次启停操作；管理员在账户设置中审批，有效期内由申请者执行。' };
+    if (spec.id === 'custom-rbac' || spec.id === 'project-permissions')
+      return { ready: this.accountModeReady?.() || false, executed: false, adapter,
+        ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
+        message: '系统设置 → 账户与只读分享 → 项目成员与权限：为当前实例的项目定义角色、权限和成员分配；实际授权由项目 API 在请求时执行。' };
     if (spec.id === 'acme-renewal')
       return { ...await this.acmeRenewal.run(id, options, action, signal),
         adapter: { ...adapter, enabled: true } };

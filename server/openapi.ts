@@ -5,8 +5,9 @@ import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { logRetentionRequest } from './log-retention.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
-import { accessEnableInput, accessLoginInput, accessViewerInput, accessPasswordInput,
+import { accessEnableInput, accessLoginInput, accessViewerInput, accessMemberInput, accessPasswordInput,
   accessHandoffInput, accessHandoffRedeem } from './access-control.ts';
+import { projectPermissionInput } from './project-permissions.ts';
 import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
 import { terminalShareInput } from './terminal-sharing.ts';
 import { webhookRequest } from './webhooks.ts';
@@ -88,6 +89,17 @@ const core: {
     title: '创建限定实例的只读账户', body: request(accessViewerInput), status: 201 },
   { id: 'access.removeViewer', method: 'DELETE', path: '/api/access/users/{id}',
     title: '撤销只读账户及其会话' },
+  { id: 'access.createMember', method: 'POST', path: '/api/access/members',
+    title: '创建默认无项目权限的成员账户', body: request(accessMemberInput), status: 201 },
+  { id: 'access.removeMember', method: 'DELETE', path: '/api/access/members/{id}',
+    title: '删除项目成员并撤销会话与项目授权' },
+  { id: 'access.projects', method: 'GET', path: '/api/access/projects',
+    title: '成员列出已获授权的项目', inspect: true },
+  { id: 'access.projectPermissions', method: 'GET', path: '/api/access/project-permissions',
+    title: '查看指定 vmId 与 projectId 的角色和成员授权', inspect: true },
+  { id: 'access.configureProjectPermissions', method: 'PUT',
+    path: '/api/access/project-permissions', title: '设置项目角色、权限和成员授权',
+    body: request(projectPermissionInput) },
   { id: 'access.password', method: 'POST', path: '/api/access/password',
     title: '更换管理员密码并撤销全部会话', body: request(accessPasswordInput) },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },

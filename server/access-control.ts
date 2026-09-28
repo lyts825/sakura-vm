@@ -18,7 +18,7 @@ const passkey = z.object({
   lastUsedAt: z.iso.datetime().optional(),
 }).strict();
 const account = z.object({
-  id: z.uuid(), username, role: z.enum(['owner', 'viewer']), credential,
+  id: z.uuid(), username, role: z.enum(['owner', 'viewer', 'member']), credential,
   vmIds: z.array(z.uuid()).max(32),
   expiresAt: z.number().int().nonnegative().nullable(),
   createdAt: z.iso.datetime(),
@@ -39,6 +39,7 @@ export const accessViewerInput = z.object({
   username, password, vmIds: z.array(z.uuid()).min(1).max(32),
   expiresAt: z.number().int().positive(),
 }).strict();
+export const accessMemberInput = z.object({ username, password }).strict();
 export const accessPasswordInput = z.object({ password: z.string().max(256), newPassword: password }).strict();
 export const accessHandoffInput = z.object({ password: z.string().max(256) }).strict();
 export const accessHandoffRedeem = z.object({ code: z.string().regex(/^[A-Za-z0-9_-]{24}$/) }).strict();
@@ -247,7 +248,7 @@ export class AccessControl {
       if (!this.state.enabled) throw new AppError('账户模式未启用', 409);
       if (value.expiresAt < this.now() + 5 * 60_000 || value.expiresAt > this.now() + 30 * 86400_000)
         throw new AppError('只读账户期限应在 5 分钟至 30 天之间');
-      if (this.state.accounts.length >= 41) throw new AppError('最多保留 40 个只读账户', 409);
+      if (this.state.accounts.length >= 41) throw new AppError('最多保留 40 个非管理员账户', 409);
       if (this.state.accounts.some((item) => item.username === value.username))
         throw new AppError('账户名称已存在', 409);
       const user: Account = {
@@ -262,11 +263,46 @@ export class AccessControl {
     });
   }
 
+  async createMember(input: unknown) {
+    const value = accessMemberInput.parse(input);
+    return this.serial(async () => {
+      if (!this.state.enabled) throw new AppError('账户模式未启用', 409);
+      if (this.state.accounts.length >= 41) throw new AppError('最多保留 40 个非管理员账户', 409);
+      if (this.state.accounts.some((item) => item.username === value.username))
+        throw new AppError('账户名称已存在', 409);
+      const user: Account = {
+        id: randomUUID(), username: value.username, role: 'member',
+        credential: await makeCredential(value.password), vmIds: [], expiresAt: null,
+        createdAt: new Date(this.now()).toISOString(), passkeys: [],
+      };
+      const next: State = { ...this.state, accounts: [...this.state.accounts, user] };
+      await writeStore(this.file, next);
+      this.state = next;
+      return this.users().find((item) => item.id === user.id)!;
+    });
+  }
+
   async removeViewer(id: string) {
     z.uuid().parse(id);
     return this.serial(async () => {
       const user = this.state.accounts.find((item) => item.id === id && item.role === 'viewer');
       if (!user) throw new AppError('只读账户不存在', 404);
+      const next: State = { ...this.state, accounts: this.state.accounts.filter((item) => item.id !== id) };
+      await writeStore(this.file, next);
+      this.state = next;
+      for (const [key, session] of this.sessions)
+        if (session.accountId === id) this.sessions.delete(key);
+      for (const [key, handoff] of this.handoffs)
+        if (handoff.accountId === id) this.handoffs.delete(key);
+      return { removed: id };
+    });
+  }
+
+  async removeMember(id: string) {
+    z.uuid().parse(id);
+    return this.serial(async () => {
+      const user = this.state.accounts.find((item) => item.id === id && item.role === 'member');
+      if (!user) throw new AppError('项目成员不存在', 404);
       const next: State = { ...this.state, accounts: this.state.accounts.filter((item) => item.id !== id) };
       await writeStore(this.file, next);
       this.state = next;

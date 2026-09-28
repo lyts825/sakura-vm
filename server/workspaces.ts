@@ -203,13 +203,16 @@ export class Workspaces {
       : undefined;
     return { ...project, _workspace: project._workspace, environment, ...(services ? { services } : {}) };
   }
-  async save(id: string, input: unknown) {
+  async save(id: string, input: unknown, allowedDirectory?: string) {
     const project = projectSchema.parse(input);
     return this.machines.locked(id, async () => {
       this.machines.get(id);
       if (this.jobs.view(this.projects.key(id))?.status === 'running')
         throw new AppError('请等待项目操作完成', 409);
       const previous = await this.config(id);
+      if (allowedDirectory !== undefined &&
+          (project.directory !== allowedDirectory || previous.directory !== allowedDirectory))
+        throw new AppError('项目成员不能修改项目目录', 403);
       await guardProjectQuotaDirectory(
         id, this.projects.current(id), project.directory,
         (await this.projects.list(id)).projects.map((item) => item.id),

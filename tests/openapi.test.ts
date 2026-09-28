@@ -97,6 +97,25 @@ test('generated SDK logs into account mode, uses the session token and revokes i
   assert.equal(JSON.stringify(client), '{}');
 });
 
+test('generated SDK accepts project member accounts and includes project authorization operations', async () => {
+  const { SakuraClient, operations } = await sdk();
+  assert.equal(operations['core.access.configureProjectPermissions'].method, 'PUT');
+  const token = 'b'.repeat(64);
+  const client = new SakuraClient({ fetcher: async (url: string, options: RequestInit) => {
+    const path = new URL(url).pathname;
+    if (path === '/api/access/login') return Response.json({ token,
+      principal: { id: 'member-id', username: 'developer', role: 'member', vmIds: [],
+        expiresAt: Date.now() + 1000 } });
+    if (path === '/api/access/projects') {
+      assert.equal((options.headers as Record<string, string>)['X-Sakura-Token'], token);
+      return Response.json({ projects: [{ vmId: 'vm', projectId: 'default', roleId: 'reader' }] });
+    }
+    throw new Error('Unexpected request ' + path);
+  } });
+  assert.equal((await client.login('developer', 'long private password')).role, 'member');
+  assert.equal((await client.call('core.access.projects')).projects[0].roleId, 'reader');
+});
+
 test('the generated module authenticates against HTTP, sends encoded parameters and JSON, and streams binary replies', async () => {
   const calls: { path: string; method: string; body: string }[] = [];
   const server = createServer(async (req, res) => {

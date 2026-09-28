@@ -83,6 +83,10 @@ try {
     { kind: 'plugin', id: 'desktop', enabled: true })).status, 200);
   assert.equal((await request('/api/plugins', 'PATCH', legacy,
     { kind: 'plugin', id: 'terminal-workspace', enabled: true })).status, 200);
+  assert.equal((await request('/api/plugins', 'PATCH', legacy,
+    { kind: 'plugin', id: 'projects', enabled: true })).status, 200);
+  assert.equal((await request('/api/plugins', 'PATCH', legacy,
+    { kind: 'plugin', id: 'project-search', enabled: true })).status, 200);
   await stop();
   await start();
   legacy = (await request('/api/bootstrap')).body.token as string;
@@ -135,6 +139,99 @@ try {
   assert.equal(await wsStatus(viewerToken, '/ws/' + vmId + '/desktop'), 403);
   assert.equal(await wsStatus(viewerToken, '/ws/' + another.body.id + '/desktop-view'), 403);
   assert.equal(await wsStatus(ownerToken), 101);
+
+  const member = await request('/api/access/members', 'POST', ownerToken,
+    { username: 'developer', password: 'a long member password' });
+  assert.equal(member.status, 201, JSON.stringify(member.body));
+  const memberLogin = await request('/api/access/login', 'POST', undefined,
+    { username: 'developer', password: 'a long member password' });
+  assert.equal(memberLogin.status, 200, JSON.stringify(memberLogin.body));
+  let memberToken = memberLogin.body.token as string;
+  const projectPath = `/api/vms/${vmId}/project?project=default`;
+  assert.equal((await request('/api/access/projects', 'GET', memberToken)).body.projects.length, 0);
+  assert.equal((await request(projectPath, 'GET', memberToken)).status, 403);
+  assert.equal((await request('/api/vms/' + vmId + '/project', 'GET', memberToken)).status, 400);
+  assert.equal((await request('/api/vms', 'GET', memberToken)).status, 403);
+  assert.equal((await request('/api/access/view', 'GET', memberToken)).status, 403);
+  assert.equal((await request('/api/access/terminal-shares', 'GET', memberToken)).status, 403);
+  assert.equal(await wsStatus(memberToken), 403);
+  assert.equal((await request(projectPath, 'PUT', ownerToken,
+    { directory: '/workspace/main' })).status, 200);
+  const otherProject = await request(`/api/vms/${vmId}/projects`, 'POST', ownerToken,
+    { action: 'create', name: 'other', config: { directory: '/workspace/other' } });
+  assert.equal(otherProject.status, 200, JSON.stringify(otherProject.body));
+  const otherProjectId = otherProject.body.active as string;
+  assert.notEqual(otherProjectId, 'default');
+  const originalPolicy = await request('/api/access/project-permissions' +
+    `?vmId=${vmId}&projectId=default`, 'GET', ownerToken);
+  assert.equal(originalPolicy.status, 200);
+  assert.equal(originalPolicy.body.grants.length, 0);
+  const policyPath = `/api/access/project-permissions?vmId=${vmId}&projectId=default`;
+  const roles = [{ id: 'developer', name: 'Developer', permissions: ['read', 'write'] }];
+  assert.equal((await request(`/api/vms/${vmId}/project?project=${otherProjectId}`, 'PUT', ownerToken,
+    { directory: '/workspace/main/nested' })).status, 200);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles,
+    grants: [{ accountId: member.body.id, roleId: 'developer' }] })).status, 409);
+  assert.equal((await request(`/api/vms/${vmId}/project?project=${otherProjectId}`, 'PUT', ownerToken,
+    { directory: '/workspace/other' })).status, 200);
+  assert.equal((await request(projectPath, 'GET', ownerToken)).body.project.directory, '/workspace/main');
+  assert.equal((await request(`/api/vms/${vmId}/project?project=${otherProjectId}`,
+    'GET', ownerToken)).body.project.directory, '/workspace/other');
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles,
+    grants: [{ accountId: member.body.id, roleId: 'missing' }] })).status, 400);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles,
+    grants: [{ accountId: viewer.body.id, roleId: 'developer' }] })).status, 409);
+  const grantedPolicy = await request(policyPath, 'PUT', ownerToken, { roles,
+    grants: [{ accountId: member.body.id, roleId: 'developer' }] });
+  assert.equal(grantedPolicy.status, 200, JSON.stringify(grantedPolicy.body));
+  const assigned = (await request('/api/access/projects', 'GET', memberToken)).body.projects;
+  assert.equal(assigned.length, 1);
+  assert.equal(assigned[0].projectId, 'default');
+  assert.equal((await request(`/api/vms/${vmId}/project?project=${otherProjectId}`, 'PUT', ownerToken,
+    { directory: '/workspace/main/nested' })).status, 200);
+  assert.equal((await request(projectPath, 'GET', memberToken)).status, 409);
+  assert.equal((await request('/api/access/projects', 'GET', memberToken)).body.projects.length, 0);
+  assert.equal((await request(`/api/vms/${vmId}/project?project=${otherProjectId}`, 'PUT', ownerToken,
+    { directory: '/workspace/other' })).status, 200);
+  const memberRead = await request(projectPath, 'GET', memberToken);
+  assert.equal(memberRead.status, 200, JSON.stringify(memberRead.body));
+  assert.equal((await request(projectPath, 'PUT', memberToken,
+    { ...memberRead.body.project, directory: '/workspace/other' })).status, 403);
+  assert.equal((await request(projectPath, 'PUT', memberToken, memberRead.body.project)).status, 200);
+  assert.equal((await request(projectPath, 'GET', memberToken)).body.project.directory,
+    memberRead.body.project.directory);
+  const memberBrowser = await chromium.launch();
+  try {
+    const memberPage = await memberBrowser.newPage();
+    await memberPage.goto(origin);
+    await memberPage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    await memberPage.getByLabel('账户名').fill('developer');
+    await memberPage.getByLabel('密码').fill('a long member password');
+    await memberPage.getByRole('button', { name: '登录', exact: true }).click();
+    await memberPage.getByRole('heading', { name: 'Sakura · 项目成员' }).waitFor();
+    assert.equal(await memberPage.locator('select').first().inputValue(), `${vmId}:default`);
+    assert.equal(await memberPage.getByLabel('项目配置').isEditable(), true);
+    await memberPage.getByRole('button', { name: '保存项目配置' }).click();
+    await memberPage.getByText('项目配置已保存').waitFor();
+    await memberPage.close();
+  } finally { await memberBrowser.close(); }
+  assert.equal((await request(projectPath, 'POST', memberToken, { action: 'stop' })).status, 403);
+  assert.equal((await request(`/api/vms/${vmId}/project?project=${otherProjectId}`,
+    'GET', memberToken)).status, 403);
+  assert.equal((await request(`/api/vms/${another.body.id}/project?project=default`,
+    'GET', memberToken)).status, 403);
+  assert.equal((await request(`/api/vms/${vmId}/projects`, 'GET', memberToken)).status, 403);
+  assert.equal((await request(`/api/vms/${vmId}/git?project=default`, 'GET', memberToken)).status, 403);
+  assert.equal((await request(policyPath, 'PUT', memberToken, { roles, grants: [] })).status, 403);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles: [
+    { ...roles[0], permissions: ['read', 'write', 'execute'] }],
+    grants: [{ accountId: member.body.id, roleId: 'developer' }] })).status, 200);
+  assert.equal((await request(projectPath, 'POST', memberToken, { action: 'stop' })).status, 409,
+    'Execution permission reaches the stopped-VM precondition');
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles, grants: [] })).status, 200);
+  assert.equal((await request(projectPath, 'GET', memberToken)).status, 403);
+  assert.equal((await request(policyPath, 'PUT', ownerToken, { roles,
+    grants: [{ accountId: member.body.id, roleId: 'developer' }] })).status, 200);
 
   const browser = await chromium.launch();
   try {
@@ -193,6 +290,7 @@ try {
       .catch(async () => { throw new Error('Owner browser login failed: ' +
         await passkeyPage.locator('body').innerText()); });
     await passkeyPage.getByRole('button', { name: '系统设置', exact: true }).click();
+    await passkeyPage.getByRole('region', { name: '项目权限管理' }).waitFor();
     const jitApprovals = passkeyPage.getByRole('region', { name: '临时授权审批' });
     await jitApprovals.getByText('Need the shared terminal for a review').waitFor();
     await jitApprovals.getByRole('button', { name: '批准' }).click();
@@ -293,6 +391,13 @@ try {
     assert.equal(result.status, 200, JSON.stringify(result.body));
     return result.body as { stdout: string; stderr: string; code: number };
   };
+  assert.equal((await guest('mkdir -p /workspace/main; printf project-only > /workspace/main/sample.txt')).code, 0);
+  const searched = await request(`/api/vms/${vmId}/project-files?project=default&q=sample`,
+    'GET', memberToken);
+  assert.equal(searched.status, 200, JSON.stringify(searched.body));
+  assert.ok(searched.body.files.some((item: { path: string }) => item.path === 'sample.txt'));
+  assert.equal((await request(`/api/vms/${vmId}/project-files?project=${otherProjectId}&q=sample`,
+    'GET', memberToken)).status, 403);
   if ((await guest('command -v tmux >/dev/null')).code !== 0)
     assert.equal((await guest('apk add --no-cache tmux')).code, 0);
   assert.equal((await guest('tmux new-session -d -s sakura-terminal-sharetest')).code, 0);
@@ -403,6 +508,16 @@ try {
     { username: 'owner', password: newPassword });
   assert.equal(again.status, 200);
   assert.equal((await request('/api/vms', 'GET', again.body.token)).status, 200);
+  const persistedMember = await request('/api/access/login', 'POST', undefined,
+    { username: 'developer', password: 'a long member password' });
+  assert.equal(persistedMember.status, 200);
+  memberToken = persistedMember.body.token;
+  assert.equal((await request(projectPath, 'GET', memberToken)).status, 200);
+  assert.equal((await request('/api/access/members/' + member.body.id,
+    'DELETE', again.body.token)).status, 200);
+  assert.equal((await request('/api/access/projects', 'GET', memberToken)).status, 401);
+  assert.equal((await request('/api/access/login', 'POST', undefined,
+    { username: 'developer', password: 'a long member password' })).status, 403);
   console.log('Account mode HTTP, WebSocket, browser, revocation and restart validation passed');
 } finally {
   await stop();

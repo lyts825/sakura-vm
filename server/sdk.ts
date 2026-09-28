@@ -34,7 +34,7 @@ export class SakuraClient {
       method: 'POST', body: { username, password }, signal, authenticated: false,
     });
     if (typeof value?.token !== 'string' || !/^[a-f0-9]{64}$/.test(value.token) ||
-        !['owner', 'viewer'].includes(value.principal?.role))
+        !['owner', 'viewer', 'member'].includes(value.principal?.role))
       throw new Error('Invalid account login response');
     this.#token = value.token;
     return value.principal;

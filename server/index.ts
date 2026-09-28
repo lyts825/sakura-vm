@@ -13,7 +13,7 @@ import { Machines } from './machines.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
 import { Features } from './features.ts';
 import { PluginManager } from './plugin-manager.ts';
-import { validateRegistry } from './plugins/registry.ts';
+import { routeContribution, validateRegistry } from './plugins/registry.ts';
 import { readJsonBody as body, requestUrl } from './http.ts';
 import type { ClientChannel } from 'ssh2';
 import { hostAudit } from './audit.ts';
@@ -27,7 +27,7 @@ import { SessionLock } from './session-lock.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { AutomationRules } from './automation-rules.ts';
 import { runEngineeringOperation } from './engineering-runner.ts';
-import { Workspaces } from './workspaces.ts';
+import { Workspaces, projectSchema } from './workspaces.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
@@ -42,8 +42,17 @@ import { AccessControl, accessHandoffInput, accessPasswordInput } from './access
 import { Passkeys, passkeyRemove } from './passkeys.ts';
 import { TerminalSharing, terminalShareInput } from './terminal-sharing.ts';
 import { JitPrivileges } from './jit-privileges.ts';
+import { ProjectPermissions, type ProjectPermission } from './project-permissions.ts';
 import { BrowserExtensions, extensionOrigin } from './browser-extensions.ts';
 import { ProcessInterop, guestInteropRequest } from './process-interop.ts';
+
+const memberProjectRoutes: Record<string, Partial<Record<'GET' | 'PUT' | 'POST', ProjectPermission>>> = {
+  project: { GET: 'read', PUT: 'write', POST: 'execute' },
+  'project-runtime': { GET: 'read' },
+  'project-files': { GET: 'read' },
+  git: { GET: 'read', POST: 'execute' },
+  health: { GET: 'read' },
+};
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -85,6 +94,8 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
+  const projectPermissions = new ProjectPermissions(access, machines, features.workspaces);
+  await projectPermissions.init();
   features.next?.setAcmeMutationCounter((delta) => { features.mutations += delta; });
   features.next?.setAcmeAllowed(() => !session.view().locked && !features.migration?.blocked);
   const processInterop = new ProcessInterop(machines, PORT, () => {
@@ -444,11 +455,41 @@ async function main() {
       /^\/api\/access\/terminal-shares\/[a-f0-9-]{36}$/.test(url.pathname);
     const jitRoute = url.pathname === '/api/access/jit' ||
       /^\/api\/access\/jit\/[a-f0-9-]{36}\/(decision|execute)$/.test(url.pathname);
+    const memberProjectMatch = /^\/api\/vms\/([a-f0-9-]{36})\/(project|project-runtime|project-files|git|health)$/.exec(url.pathname);
+    const memberProjectPermission = memberProjectMatch &&
+      memberProjectRoutes[memberProjectMatch[2]]?.[req.method as 'GET' | 'PUT' | 'POST'];
+    const memberProjectRoute = !!memberProjectPermission &&
+      routeContribution(url.pathname)?.projectScoped === true;
     if (access.enabled && principal.role === 'viewer' &&
         url.pathname !== '/api/access/view' && url.pathname !== '/api/access/logout' &&
         url.pathname !== '/api/access/handoff' && !passkeyManagementRoute &&
         !terminalShareRoute && !jitRoute)
       throw new AppError('只读账户没有此接口的访问权限', 403);
+    if (access.enabled && principal.role === 'member' &&
+        url.pathname !== '/api/access/logout' &&
+        url.pathname !== '/api/access/handoff' &&
+        url.pathname !== '/api/access/projects' && !passkeyManagementRoute &&
+        !memberProjectRoute)
+      throw new AppError('项目成员没有此接口的访问权限', 403);
+    if (accountPrincipal?.role === 'member' && memberProjectRoute) {
+      if (!features.enabled.has('projects')) throw new AppError('项目工作区插件未启用', 403);
+      const vmId = memberProjectMatch![1];
+      const projectId = url.searchParams.get('project');
+      if (!projectId) throw new AppError('项目成员请求必须指定项目 ID', 400);
+      await projectPermissions.require(accountPrincipal, vmId, projectId, memberProjectPermission!);
+      if (req.method === 'PUT' && memberProjectMatch![2] === 'project') {
+        const proposal = projectSchema.parse(await authorizedBody(req, 32768));
+        return features.workspaces.projects.with(vmId, projectId, async () => {
+          const previous = await features.workspaces.config(vmId);
+          return send(res, await features.workspaces.save(vmId, proposal, previous.directory));
+        });
+      }
+    }
+    if (url.pathname === '/api/access/projects') {
+      if (req.method !== 'GET' || accountPrincipal?.role !== 'member')
+        throw new AppError('只有项目成员可查看授权项目', 403);
+      return send(res, { projects: await projectPermissions.accessible(accountPrincipal) });
+    }
     if (url.pathname === '/api/access/view') {
       if (req.method !== 'GET' || !access.enabled) throw new AppError('不支持此方法', 405);
       const ids = principal.role === 'viewer' ? principal.vmIds : [...machines.records.keys()];
@@ -599,6 +640,33 @@ async function main() {
         return send(res, await access.createViewer(input), 201);
       }
       throw new AppError('不支持此方法', 405);
+    }
+    if (url.pathname === '/api/access/members') {
+      if (req.method !== 'POST' || accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可创建项目成员', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await access.createMember(await authorizedBody(req, 4096)), 201);
+    }
+    if (/^\/api\/access\/members\/[a-f0-9-]{36}$/.test(url.pathname)) {
+      if (req.method !== 'DELETE' || accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可删除项目成员', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const id = url.pathname.split('/').at(-1)!;
+      const result = await access.removeMember(id);
+      terminateAccountSockets(id);
+      await projectPermissions.revokeMember(id);
+      return send(res, result);
+    }
+    if (url.pathname === '/api/access/project-permissions') {
+      if (accountPrincipal?.role !== 'owner') throw new AppError('只有管理员可管理项目权限', 403);
+      if (!features.enabled.has('projects')) throw new AppError('项目工作区插件未启用', 403);
+      const vmId = z.uuid().parse(url.searchParams.get('vmId'));
+      const projectId = url.searchParams.get('projectId') || '';
+      if (req.method === 'GET') return send(res, await projectPermissions.view(vmId, projectId));
+      if (req.method !== 'PUT') throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await projectPermissions.configure(vmId, projectId,
+        await authorizedBody(req, 32768)));
     }
     if (/^\/api\/access\/users\/[a-f0-9-]{36}$/.test(url.pathname)) {
       if (req.method !== 'DELETE') throw new AppError('不支持此方法', 405);
@@ -862,6 +930,7 @@ async function main() {
         }
         if (req.method === 'DELETE') {
           await machines.delete(id);
+          await projectPermissions.revokeVm(id);
           return send(res, { ok: true });
         }
       }
@@ -1193,6 +1262,7 @@ async function main() {
       () => passkeys.close(),
       () => terminalSharing.close(),
       () => jitPrivileges.close(),
+      () => projectPermissions.close(),
       () => browserExtensions.close(),
       () => assistant.close(),
       () => native.close(),

@@ -1,7 +1,7 @@
 export type AccessPrincipal = {
   id: string;
   username: string;
-  role: 'owner' | 'viewer';
+  role: 'owner' | 'viewer' | 'member';
   vmIds: string[];
   expiresAt: number;
 };

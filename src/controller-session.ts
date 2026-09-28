@@ -31,7 +31,7 @@ export class ControllerSession {
     this.clearCredential();
   };
   adoptAccount = (token: string, principal: AccessPrincipal) => {
-    if (!/^[a-f0-9]{64}$/.test(token) || !['owner', 'viewer'].includes(principal.role))
+    if (!/^[a-f0-9]{64}$/.test(token) || !['owner', 'viewer', 'member'].includes(principal.role))
       throw new Error('账户凭证格式错误');
     this.accountMode = true;
     this.principal = principal;

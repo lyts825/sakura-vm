@@ -9,7 +9,7 @@ import { api, controllerSession } from './controller-session';
 type AccountStatus = { enabled: boolean; session: SessionLockView };
 type SharedVm = { id: string; name: string; status: string; distro?: string;
   cpus: number; memoryMiB: number; diskGiB: number };
-type UserView = { id: string; username: string; role: 'owner' | 'viewer';
+type UserView = { id: string; username: string; role: 'owner' | 'viewer' | 'member';
   vmIds: string[]; expiresAt: number | null; createdAt: string };
 type PasskeyView = { id: string; name: string; createdAt: string; lastUsedAt?: string };
 type TerminalGrantView = { id: string; vmId: string; session: string; expiresAt: number };
@@ -21,6 +21,11 @@ type JitRequestView = { id: string; viewerId: string; vmId: string;
   status: 'pending' | 'approved' | 'denied' | 'revoked' | 'expired' |
     'claimed' | 'completed' | 'failed'; createdAt: number; expiresAt?: number; error?: string };
 type Ceremony<T> = { ceremonyId: string; options: T };
+type ProjectGrantView = { vmId: string; vmName: string; projectId: string; projectName: string;
+  roleId: string; permissions: Array<'read' | 'write' | 'execute'> };
+type ProjectRoleView = { id: string; name: string; permissions: Array<'read' | 'write' | 'execute'> };
+type ProjectPolicyView = { vmId: string; projectId: string; roles: ProjectRoleView[];
+  grants: Array<{ accountId: string; roleId: string }> };
 
 async function publicPasskeyRequest<T>(path: string, input: unknown) {
   const response = await fetch('/api/access/passkeys/' + path, {
@@ -84,6 +89,7 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
   if (!enabled) return children;
   if (token && principal?.role === 'owner') return children;
   if (token && principal?.role === 'viewer') return <SharedInventory principal={principal} />;
+  if (token && principal?.role === 'member') return <ProjectMemberPortal principal={principal} />;
   return <main className="session-lock-screen">
     <section className="session-lock-panel" aria-labelledby="account-login-title">
       <h1 id="account-login-title">登录 Sakura</h1>
@@ -153,6 +159,79 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
       {statusError && <p role="status" className="inline-error">{statusError}</p>}
     </section>
   </main>;
+}
+
+function ProjectMemberPortal({ principal }: { principal: AccessPrincipal }) {
+  const [projects, setProjects] = useState<ProjectGrantView[]>([]);
+  const [selected, setSelected] = useState('');
+  const [document, setDocument] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const current = projects.find((item) => `${item.vmId}:${item.projectId}` === selected);
+  useEffect(() => {
+    const abort = new AbortController();
+    const refresh = () => void api<{ projects: ProjectGrantView[] }>(
+      '/access/projects', 'GET', undefined, abort.signal).then((result) => {
+        setProjects((current) => JSON.stringify(current) === JSON.stringify(result.projects)
+          ? current : result.projects);
+        setSelected((value) => result.projects.some((item) =>
+          `${item.vmId}:${item.projectId}` === value) ? value :
+          result.projects.length ? `${result.projects[0].vmId}:${result.projects[0].projectId}` : '');
+      }).catch((reason) => { if (!abort.signal.aborted) setError(String(reason.message || reason)); });
+    refresh();
+    const timer = setInterval(refresh, 15_000);
+    return () => { abort.abort(); clearInterval(timer); };
+  }, [principal.id]);
+  useEffect(() => {
+    if (!current) return;
+    const abort = new AbortController();
+    void api<{ project: unknown }>(`/vms/${current.vmId}/project?project=${current.projectId}`,
+      'GET', undefined, abort.signal)
+      .then((result) => { setDocument(JSON.stringify(result.project, null, 2)); setError(''); })
+      .catch((reason) => { if (!abort.signal.aborted) setError(String(reason.message || reason)); });
+    return () => abort.abort();
+  }, [selected, projects]);
+  return <main className="app-shell"><header className="app-header">
+    <h1>Sakura · 项目成员</h1><span>{principal.username}</span>
+    <button className="secondary compact" onClick={() => void api('/access/logout', 'POST', {})
+      .finally(() => controllerSession.clearCredential())}>退出登录</button>
+  </header><section className="system-card" aria-label="授权项目">
+    <h2>授权项目</h2>
+    {projects.length ? <><label>项目<select value={selected}
+      onChange={(event) => { setSelected(event.target.value); setMessage(''); }}>
+      {projects.map((item) => <option key={`${item.vmId}:${item.projectId}`}
+        value={`${item.vmId}:${item.projectId}`}>{item.vmName} / {item.projectName}</option>)}
+    </select></label>
+    {current && <><p>角色：{current.roleId} · 权限：{current.permissions.join('、')}</p>
+      <label>项目配置<textarea rows={18} spellCheck={false} value={document}
+        readOnly={!current.permissions.includes('write')}
+        onChange={(event) => setDocument(event.target.value)} /></label>
+      {current.permissions.includes('write') && <button className="primary compact" disabled={busy}
+        onClick={async () => {
+          setBusy(true); setError(''); setMessage('');
+          try {
+            const value = JSON.parse(document);
+            await api(`/vms/${current.vmId}/project?project=${current.projectId}`, 'PUT', value);
+            setMessage('项目配置已保存');
+          } catch (reason) { setError(reason instanceof Error ? reason.message : '保存失败'); }
+          finally { setBusy(false); }
+        }}>保存项目配置</button>}
+      {current.permissions.includes('execute') && <div>
+        {(['setup', 'start', 'stop'] as const).map((action) => <button key={action}
+          className="secondary compact" disabled={busy} onClick={async () => {
+            setBusy(true); setError(''); setMessage('');
+            try {
+              await api(`/vms/${current.vmId}/project?project=${current.projectId}`, 'POST', { action });
+              setMessage(`项目操作 ${action} 已提交`);
+            } catch (reason) { setError(reason instanceof Error ? reason.message : '操作失败'); }
+            finally { setBusy(false); }
+          }}>{action}</button>)}
+      </div>}</>}
+    </> : <p>目前没有获授权的项目。</p>}
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section><PasskeyManager /><SessionHandoffManager /></main>;
 }
 
 function SharedInventory({ principal }: { principal: AccessPrincipal }) {
@@ -545,6 +624,130 @@ export function AccountLogoutButton() {
   </button>;
 }
 
+function ProjectPermissionSettings({ users, vms, refresh }: {
+  users: UserView[]; vms: SharedVm[]; refresh: () => Promise<void>;
+}) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [vmId, setVmId] = useState('');
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [projectId, setProjectId] = useState('');
+  const [policy, setPolicy] = useState<ProjectPolicyView | null>(null);
+  const [newRoleId, setNewRoleId] = useState('');
+  const [newRoleName, setNewRoleName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const members = users.filter((user) => user.role === 'member');
+  useEffect(() => {
+    if (!vmId && vms[0]) setVmId(vms[0].id);
+  }, [vmId, vms]);
+  useEffect(() => {
+    if (!vmId) return;
+    const abort = new AbortController();
+    void api<{ projects: Array<{ id: string; name: string }> }>(
+      `/vms/${vmId}/projects`, 'GET', undefined, abort.signal)
+      .then((result) => { setProjects(result.projects);
+        setProjectId((value) => result.projects.some((item) => item.id === value)
+          ? value : result.projects[0]?.id || ''); setError(''); })
+      .catch((reason) => { if (!abort.signal.aborted) setError(String(reason.message || reason)); });
+    return () => abort.abort();
+  }, [vmId]);
+  useEffect(() => {
+    if (!vmId || !projectId) return;
+    const abort = new AbortController();
+    const query = new URLSearchParams({ vmId, projectId });
+    void api<ProjectPolicyView>(`/access/project-permissions?${query}`, 'GET', undefined, abort.signal)
+      .then((result) => { setPolicy(result); setError(''); })
+      .catch((reason) => { if (!abort.signal.aborted) setError(String(reason.message || reason)); });
+    return () => abort.abort();
+  }, [vmId, projectId]);
+  return <section className="system-card" aria-label="项目权限管理">
+    <h3>项目成员与权限</h3>
+    <p>成员默认无权访问任何项目。为每个项目定义角色，再将成员分配到角色。</p>
+    <form onSubmit={async (event) => {
+      event.preventDefault(); setBusy(true); setError(''); setMessage('');
+      try {
+        await api('/access/members', 'POST', { username, password });
+        setUsername(''); setPassword(''); await refresh(); setMessage('项目成员已创建');
+      } catch (reason) { setError(reason instanceof Error ? reason.message : '创建失败'); }
+      finally { setBusy(false); }
+    }}>
+      <label>成员账户名<input required pattern="[a-z][a-z0-9_-]{2,31}" value={username}
+        onChange={(event) => setUsername(event.target.value)} disabled={busy} /></label>
+      <label>成员密码<input required type="password" minLength={12} maxLength={256}
+        autoComplete="new-password" value={password}
+        onChange={(event) => setPassword(event.target.value)} disabled={busy} /></label>
+      <button className="secondary compact" disabled={busy}>创建成员</button>
+    </form>
+    <ul>{members.map((item) => <li key={item.id}>{item.username}
+      <button className="secondary compact" disabled={busy} onClick={async () => {
+        setBusy(true); setError('');
+        try { await api('/access/members/' + item.id, 'DELETE'); await refresh();
+          setPolicy((current) => current ? { ...current,
+            grants: current.grants.filter((grant) => grant.accountId !== item.id) } : current); }
+        catch (reason) { setError(reason instanceof Error ? reason.message : '删除失败'); }
+        finally { setBusy(false); }
+      }}>删除成员</button></li>)}</ul>
+    {vms.length > 0 && <><label>实例<select value={vmId} onChange={(event) => {
+      setVmId(event.target.value); setPolicy(null); }}>
+      {vms.map((vm) => <option key={vm.id} value={vm.id}>{vm.name}</option>)}
+    </select></label>
+      <label>项目<select value={projectId} onChange={(event) => {
+        setProjectId(event.target.value); setPolicy(null); }}>
+        {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select></label></>}
+    {policy && <><h4>角色与权限</h4>
+      {policy.roles.map((role, index) => <div key={role.id}>
+        <label>角色名称<input value={role.name} maxLength={64} onChange={(event) =>
+          setPolicy({ ...policy, roles: policy.roles.map((item, i) => i === index
+            ? { ...item, name: event.target.value } : item) })} /></label>
+        <span> {role.id} </span>
+        {(['read', 'write', 'execute'] as const).map((permission) => <label key={permission}>
+          <input type="checkbox" checked={role.permissions.includes(permission)}
+            disabled={permission === 'read'} onChange={(event) => setPolicy({ ...policy,
+              roles: policy.roles.map((item, i) => i === index ? { ...item,
+                permissions: event.target.checked
+                  ? [...item.permissions, permission]
+                  : item.permissions.filter((entry) => entry !== permission) } : item) })} />
+          {permission}</label>)}
+        <button className="secondary compact" disabled={policy.grants.some((grant) => grant.roleId === role.id)}
+          onClick={() => setPolicy({ ...policy,
+            roles: policy.roles.filter((item) => item.id !== role.id) })}>删除角色</button>
+      </div>)}
+      <div><label>新角色 ID<input pattern="[a-z][a-z0-9-]{0,31}" value={newRoleId}
+        onChange={(event) => setNewRoleId(event.target.value)} /></label>
+        <label>名称<input value={newRoleName} onChange={(event) => setNewRoleName(event.target.value)} /></label>
+        <button className="secondary compact" disabled={!newRoleId || !newRoleName ||
+          policy.roles.some((role) => role.id === newRoleId) || policy.roles.length >= 20}
+          onClick={() => { setPolicy({ ...policy, roles: [...policy.roles,
+            { id: newRoleId, name: newRoleName, permissions: ['read'] }] });
+            setNewRoleId(''); setNewRoleName(''); }}>添加角色</button></div>
+      <h4>成员角色</h4>
+      {members.map((member) => <label key={member.id}>{member.username}
+        <select value={policy.grants.find((item) => item.accountId === member.id)?.roleId || ''}
+          onChange={(event) => setPolicy({ ...policy,
+            grants: [...policy.grants.filter((item) => item.accountId !== member.id),
+              ...(event.target.value ? [{ accountId: member.id, roleId: event.target.value }] : [])] })}>
+          <option value="">无权限</option>
+          {policy.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+        </select></label>)}
+      <button className="primary compact" disabled={busy} onClick={async () => {
+        setBusy(true); setError(''); setMessage('');
+        try {
+          const query = new URLSearchParams({ vmId, projectId });
+          const updated = await api<ProjectPolicyView>(`/access/project-permissions?${query}`,
+            'PUT', { roles: policy.roles, grants: policy.grants });
+          setPolicy(updated); setMessage('项目权限已保存');
+        } catch (reason) { setError(reason instanceof Error ? reason.message : '保存失败'); }
+        finally { setBusy(false); }
+      }}>保存项目权限</button>
+    </>}
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
 export function AccessSettings() {
   const accountMode = useAccountMode();
   const principal = usePrincipal();
@@ -630,6 +833,7 @@ export function AccessSettings() {
           finally { setBusy(false); }
         }}>撤销</button>
       </li>)}</ul>
+      <ProjectPermissionSettings users={users} vms={vms} refresh={refresh} />
       <JitOwnerPanel users={users} vms={vms} />
       <BrowserExtensionManager />
       <h4>更换管理员密码</h4>
