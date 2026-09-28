@@ -10,6 +10,7 @@ import {
 } from './desktop-preferences.ts';
 import { desktopCommands } from './desktop-guest.ts';
 import { ReadOnlyRfb } from './readonly-rfb.ts';
+import { SingleAppWindows } from './single-app-windows.ts';
 
 type Operation = {
   startedAt: string;
@@ -18,10 +19,12 @@ type Operation = {
 };
 
 export class Desktops {
+  readonly apps: SingleAppWindows;
   private operations = new Map<string, Operation>();
   private pending = new Set<Promise<void>>();
   private closed = false;
   constructor(private machines: Machines) {
+    this.apps = new SingleAppWindows(machines);
     machines.on('change', this.onChange);
   }
   private onChange = () => {
@@ -36,6 +39,7 @@ export class Desktops {
   async close() {
     this.closed = true;
     this.machines.off('change', this.onChange);
+    await this.apps.close();
     for (const operation of this.operations.values()) operation.abort.abort();
     await Promise.allSettled([...this.pending]);
     this.operations.clear();
@@ -125,7 +129,9 @@ export class Desktops {
     return { ...operation.view };
   }
 
-  async attach(id: string, socket: WebSocket, readOnly = false) {
+  async attach(id: string, socket: WebSocket, readOnly = false, port = 5901) {
+    if (!Number.isInteger(port) || port < 5901 || port > 5917)
+      throw new AppError('无效的桌面端口', 400);
     const abort = new AbortController();
     socket.once('close', () => abort.abort());
     if (socket.readyState !== WebSocket.OPEN) return;
@@ -147,7 +153,7 @@ export class Desktops {
         const timer = setTimeout(() => reject(new Error('桌面连接超时')), 10000);
         // Alpine Tiny Cloud disables TCP forwarding. An exec channel to its
         // built-in netcat carries the same binary stream without changing sshd.
-        ssh.exec('exec nc 127.0.0.1 5901', (error, stream) => {
+        ssh.exec(`exec nc 127.0.0.1 ${port}`, (error, stream) => {
           clearTimeout(timer);
           if (error) reject(error);
           else resolve(stream);

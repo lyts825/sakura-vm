@@ -117,6 +117,95 @@
   margin: 12px 20px 0;
 }
 
+.desktop-single-app {
+  margin: 14px 20px 0;
+  padding: 16px;
+  border: 1px solid var(--accent-line);
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface));
+}
+
+.desktop-single-app-head,
+.desktop-single-app-head h3,
+.desktop-single-app-form,
+.desktop-single-app-sessions > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.desktop-single-app-head {
+  justify-content: space-between;
+}
+
+.desktop-single-app-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.desktop-single-app-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.desktop-single-app-head > span {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.desktop-single-app-form {
+  flex-wrap: wrap;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.desktop-single-app-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 155px;
+  flex: 1 1 155px;
+  font-size: 11px;
+}
+
+.desktop-single-app-form input,
+.desktop-single-app-form select,
+.desktop-single-app-form textarea {
+  width: 100%;
+  padding: 8px;
+}
+
+.desktop-single-app-form button {
+  margin-bottom: 1px;
+}
+
+.desktop-single-app-sessions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.desktop-single-app-sessions > div {
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.desktop-single-app-sessions > div > span {
+  display: flex;
+  flex: 1 1 120px;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.desktop-single-app-sessions small {
+  color: var(--muted);
+}
+
 .desktop-customizer {
   position: relative;
   margin: 14px 20px 0;

@@ -162,7 +162,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'rbac-sharing',
   'plugin-api',
 ]);
-const partialFeatureIds = new Set<FeatureId>();
+const partialFeatureIds = new Set<FeatureId>(['single-app-windows']);
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
   featureCatalog.map(([id, name, category, priority, summary]) => ({
@@ -485,7 +485,13 @@ export class FeatureSuite {
       options: input.options || {},
       checkedAt: new Date().toISOString(),
     };
-    if (featureId === 'ai-assistant') {
+    if (featureId === 'single-app-windows') {
+      result.ready = (vm.distro === undefined || vm.distro === 'alpine') &&
+        this.machines.state(id) === 'running';
+      result.reason = result.ready
+        ? '桌面 → 单应用窗口可为 Alpine 图形程序创建独立浏览器窗口和虚拟显示器；尚未集成宿主系统原生单应用窗口。'
+        : '请启动 Alpine 实例，然后在桌面页打开单应用窗口。';
+    } else if (featureId === 'ai-assistant') {
       result.ready = true;
       result.reason =
         '系统设置 → 本地 AI 助手，连接本机 Ollama，审阅脱敏上下文后获取解释、测试或修复建议。需要已下载的本地模型。';

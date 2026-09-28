@@ -1000,6 +1000,43 @@ test('desktop layout saves two logical monitors and restores the applied prefere
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test('Alpine desktop opens and stops an isolated single-app browser window', async ({ page }) => {
+  await app(page, ['desktop'], true);
+  const sessions: Array<Record<string, unknown>> = [];
+  let started: Record<string, unknown> | undefined;
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, distro: 'alpine', status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/desktop*', (route) =>
+    route.fulfill({ json: { status: 'stopped', log: '', preferences: {} } }));
+  await page.route('**/api/vms/*/single-app', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { sessions } });
+    const input = route.request().postDataJSON() as Record<string, unknown>;
+    if (input.action === 'start') {
+      started = input;
+      const session = { id: 'a45e91ec-c630-414e-befc-b66e53c76730',
+        program: input.program, resolution: input.resolution, status: 'running',
+        startedAt: new Date().toISOString() };
+      sessions.push(session);
+      return route.fulfill({ status: 201, json: session });
+    }
+    sessions.splice(sessions.findIndex((session) => session.id === input.id), 1);
+    return route.fulfill({ json: { stopped: true } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '桌面', exact: true }).click();
+  await page.getByRole('button', { name: '单应用窗口' }).click();
+  const panel = page.getByRole('region', { name: '单应用 Linux 窗口' });
+  await panel.getByLabel('程序名').fill('xterm');
+  const popupPromise = page.waitForEvent('popup');
+  await panel.getByRole('button', { name: '启动应用' }).click();
+  const popup = await popupPromise;
+  await expect(popup).toHaveTitle('xterm · Sakura');
+  expect(started).toMatchObject({ action: 'start', program: 'xterm', resolution: '1024x768' });
+  await panel.getByRole('button', { name: '停止' }).click();
+  await expect(panel.getByText('1024x768 · 运行中')).toHaveCount(0);
+  await popup.close();
+});
+
 test('Windows integration settings save and remove real registration plans without replacing defaults, and fit mobile', async ({
   page,
 }) => {

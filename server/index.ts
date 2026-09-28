@@ -1450,6 +1450,7 @@ async function main() {
     const id = parts[2];
     const mode = parts[3];
     const terminalSession = url.searchParams.get('session');
+    const appSession = url.searchParams.get('app');
     const events = url.pathname === '/ws/events';
     const credential = url.searchParams.get('token') || '';
     if (
@@ -1459,6 +1460,7 @@ async function main() {
           !['terminal', 'terminal-view', 'logs', 'desktop', 'desktop-view'].includes(mode))) ||
       (!events && mode !== 'logs' && machines.incidentLocked(id)) ||
       (mode === 'terminal-view' && (!terminalSession || !/^[a-z0-9-]{1,48}$/.test(terminalSession))) ||
+      (appSession !== null && (mode !== 'desktop' || !z.uuid().safeParse(appSession).success)) ||
       !socketAuthorization(credential, mode, id, terminalSession) ||
       ((mode === 'desktop' || mode === 'desktop-view') && !features.socketEnabled('desktop')) ||
       (url.searchParams.has('session') && !features.socketEnabled('terminal-session'))
@@ -1508,7 +1510,8 @@ async function main() {
       client.on('error', () => {});
       if (mode === 'desktop' || mode === 'desktop-view') {
         try {
-          await features.desktops.attach(id, client, mode === 'desktop-view');
+          const port = appSession ? await features.desktops.apps.port(id, appSession) : 5901;
+          await features.desktops.attach(id, client, mode === 'desktop-view', port);
         } catch {
           client.close(1011, 'Desktop unavailable');
         }

@@ -17,7 +17,8 @@ test('feature suite exposes the complete six-category roadmap', () => {
   assert.ok(features.some((feature) => feature.id === 'test-explorer' && feature.state === 'available'));
   assert.ok(features.some((feature) => feature.id === 'gpu-acceleration' && feature.state === 'available'));
   assert.deepEqual(implementedFeatureCatalogView(), features);
-  assert.ok(features.some((feature) => !feature.implemented && feature.state === 'planned'));
+  assert.ok(features.some((feature) => feature.id === 'single-app-windows' &&
+    !feature.implemented && feature.state === 'experimental'));
 });
 
 test('resource presets stay within the VM configuration limits', () => {
