@@ -12,6 +12,7 @@ import { capabilityViews, capabilityParameters, hasCapability } from './capabili
 import { ReverseTunnels } from './reverse-tunnels.ts';
 import { encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 import { secretName } from './secrets.ts';
+import { checkSecureErase, runSecureErase } from './secure-erase.ts';
 import {
   engineeringOperations,
   operationViews,
@@ -63,7 +64,8 @@ export const extendedFeatureCatalog = [
   ],
   ['archive-wizard', '归档与解压向导', '存储', 'P0', '安全地创建和解压常见归档文件。', 'available'],
   ['posix-acl', 'POSIX ACL 管理', '存储', 'P1', '查看和修改文件 ACL。', 'available'],
-  ['secure-erase', '安全擦除证明', '存储', 'P2', '擦除文件并记录操作证明。', 'planned'],
+  ['secure-erase', '安全擦除证明', '存储', 'P2',
+    '预览项目文件，三轮逻辑覆盖并删除，记录校验结果；不保证物理介质不可恢复。', 'available'],
   ['hash-manifest', '文件哈希清单', '存储', 'P0', '生成可校验的文件哈希清单。', 'available'],
   ['cross-vm-copy', '跨实例复制', '文件同步', 'P0', '在两个运行中的实例之间复制文件。', 'available'],
   ['watch-sync', '事件驱动增量同步', '文件同步', 'P1', '监听变化并只同步受影响的文件。', 'available'],
@@ -318,6 +320,8 @@ export class ExtendedFeatures {
       .parse(input);
     if (value.featureId === 'disk-encryption')
       value.options = z.object({ secretName: secretName.optional() }).strict().parse(value.options);
+    if (value.featureId === 'secure-erase' && Object.keys(value.options).length)
+      throw new AppError('擦除路径、令牌和确认不能保存为持久配置', 409);
     const state = await this.state();
     const settings = (state.settings[id] ||= {});
     settings[value.featureId] = {
@@ -553,14 +557,19 @@ export class ExtendedFeatures {
     const startedAt = new Date().toISOString();
     const configured = (await this.state()).settings[id]?.[spec.id];
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
-    const merged = { ...configured?.options, ...options };
+    const merged = spec.id === 'secure-erase' ? options || {} :
+      { ...configured?.options, ...options };
     if (spec.id === 'self-update' && action === 'run')
       throw new AppError('请在安装目录运行离线更新命令；此入口仅供检查', 409);
     const operation = Object.entries(engineeringOperations).find(
       ([_, value]) => value.feature === spec.id,
     )?.[0] as EngineeringOperation | undefined;
     let result: Record<string, unknown> & { ready: boolean };
-    if (spec.id === 'reverse-tunnel') {
+    if (spec.id === 'secure-erase') {
+      result = action === 'check'
+        ? await checkSecureErase(this.machines, this.workspaces, id, signal)
+        : await runSecureErase(this.machines, this.workspaces, id, merged, signal);
+    } else if (spec.id === 'reverse-tunnel') {
       if (action === 'check') result = await this.tunnels.check(id, signal);
       else {
         const p = capabilityParameters('reverse-tunnel', merged);

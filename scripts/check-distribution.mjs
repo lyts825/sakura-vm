@@ -6,7 +6,9 @@ const root = process.cwd();
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 for (const name of ['tsx', 'vite', 'react', 'react-dom', '@xterm/xterm', '@novnc/novnc'])
   if (Object.hasOwn(manifest.dependencies, name)) throw new Error(`${name} should only be needed to build the release`);
-for (const file of ['dist/index.html', '.sakura-server/index.js', '.sakura-server/assets/state-report.sh', '.sakura-server/assets/engineering-runner.py'])
+for (const file of ['dist/index.html', '.sakura-server/index.js',
+  '.sakura-server/assets/state-report.sh', '.sakura-server/assets/engineering-runner.py',
+  '.sakura-server/assets/secure-erase.py'])
   await stat(join(root, file));
 const extensionRoot = join(root, 'browser-extension');
 const extension = JSON.parse(await readFile(join(extensionRoot, 'manifest.json'), 'utf8'));

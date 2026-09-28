@@ -225,6 +225,7 @@ npm run update:status # 查看独立运行包的当前版本指针
 npm run test:features # 新功能真实 VM 集成测试（需联网安装模板）
 npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启、快照与旧配置迁移
 npm run test:sandbox # 真实 QEMU 沙箱网络隔离、限时执行、取消及到期清理
+npm run test:secure-erase # 真实 Alpine 项目文件预览、逻辑覆盖、校验与删除
 ```
 
 真实 VM 测试需要先完成 `setup`；测试实例及其磁盘会在结束时删除。

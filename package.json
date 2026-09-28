@@ -24,6 +24,7 @@
     "test:engineering": "tsx scripts/smoke-engineering.ts",
     "test:storage": "tsx scripts/smoke-storage.ts",
     "test:disk-encryption": "tsx scripts/smoke-disk-encryption.ts",
+    "test:secure-erase": "tsx scripts/smoke-secure-erase.ts",
     "test:storage-pools": "tsx scripts/smoke-storage-pools.ts",
     "test:disaster-recovery": "tsx scripts/smoke-disaster-recovery.ts",
     "test:object-backup": "tsx scripts/smoke-object-backup.ts",
