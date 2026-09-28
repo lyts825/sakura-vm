@@ -3665,6 +3665,51 @@ test('capability center edits operation parameters, disables planned runs and ex
   expect(locked).toBe(false);
 });
 
+test('USB hotplug panel saves a persistent rule and removes an active forwarding', async ({ page }) => {
+  await app(page, ['platform'], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'running' }] }));
+  await page.route('**/api/vms/*/next-features*', (route) => route.fulfill({ json: {
+    projectId: 'default', settings: {}, jobs: [], records: {}, executions: [],
+    features: [{ id: 'usb-hotplug', name: 'USB 热插拔', category: '硬件',
+      summary: '按设备 ID 转发', state: 'available' }],
+  } }));
+  const ruleId = '53e7bbf6-5640-474e-9887-e8da6f283021';
+  const deviceId = 'sakura-usb-99174a03-b3a2-4bc0-9758-0abb1a575b43';
+  let rules: any[] = [], configured: any[] = [];
+  const submitted: any[] = [];
+  await page.route('**/api/vms/*/usb-hotplug', (route) => {
+    if (route.request().method() === 'POST') {
+      const value = route.request().postDataJSON();
+      submitted.push(value);
+      if (value.operation === 'save-rule') {
+        rules = [{ id: ruleId, vendorId: value.vendorId, productId: value.productId,
+          createdAt: new Date().toISOString() }];
+        configured = [{ id: deviceId, vendorId: value.vendorId, productId: value.productId,
+          ruleId }];
+      } else if (value.operation === 'detach') configured = [];
+    }
+    return route.fulfill({ json: { ready: true,
+      hostDevices: 'Device 1.2, USB device 1234:5678', hostError: '',
+      rules, configured, events: [] } });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const row = page.locator('.catalog-item').filter({ hasText: 'USB 热插拔' });
+  await row.getByRole('button', { name: '运行' }).click();
+  const panel = page.getByRole('region', { name: 'USB 热插拔管理' });
+  await expect(panel).toContainText('Device 1.2');
+  await panel.getByLabel('USB 厂商 ID').fill('1234');
+  await panel.getByLabel('USB 产品 ID').fill('5678');
+  await panel.getByRole('button', { name: '保存启动转发规则' }).click();
+  await expect(panel).toContainText('持久规则');
+  await panel.getByRole('button', { name: '移除', exact: true }).click();
+  await expect(panel).toContainText('当前没有转发');
+  expect(submitted).toEqual([
+    { operation: 'save-rule', vendorId: 0x1234, productId: 0x5678 },
+    { operation: 'detach', deviceId },
+  ]);
+});
+
 test('notebook session opens its authenticated local link from the capability center', async ({ page }) => {
   await app(page, ['projects', 'platform'], true);
   await page.route('**/api/vms', (route) =>

@@ -31,6 +31,7 @@ import { runEngineeringOperation } from './engineering-runner.ts';
 import { Workspaces, projectSchema } from './workspaces.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
 import { FleetPolicyRollouts } from './fleet-policy-rollouts.ts';
+import { UsbHotplug } from './usb-hotplug.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
@@ -100,6 +101,10 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
+  const usbHotplug = new UsbHotplug(machines, undefined,
+    () => !!features.migration?.blocked,
+    (delta) => { features.mutations += delta; });
+  await usbHotplug.init();
   remoteAudit.setBackgroundAllowed(() => !features.migration?.blocked &&
     !session.view().locked);
   const projectPermissions = new ProjectPermissions(access, machines, features.workspaces);
@@ -1041,6 +1046,12 @@ async function main() {
     if (route[1] === 'vms' && route[2]) {
       const id = route[2];
       machines.get(id);
+      if (route.length === 4 && route[3] === 'usb-hotplug') {
+        if (req.method === 'GET') return send(res, await usbHotplug.view(id));
+        if (req.method === 'POST') return send(res,
+          await usbHotplug.action(id, await authorizedBody(req, 4096)));
+        throw new AppError('不支持此方法', 405);
+      }
       if (route.length === 3) {
         if (req.method === 'GET') return send(res, await machines.view(id));
         if (req.method === 'PATCH') {
@@ -1392,6 +1403,7 @@ async function main() {
       () => automationRules.close(),
       () => rollouts.close(),
       () => fleetRollouts.close(),
+      () => usbHotplug.close(),
       () => hostPeers.close(),
       () => retention.close(),
       () => graph.close(),

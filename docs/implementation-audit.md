@@ -331,7 +331,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 文件关联 / `file-associations` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存扩展名到 Sakura 工作区的关联。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 按应用剪贴板策略 / `clipboard-policy` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存剪贴板按应用的读写和敏感内容策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 音频摄像头麦克风直通 / `media-passthrough` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“检查客户机音视频设备和直通声明。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
-| USB 热插拔 / `usb-hotplug` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存 USB 设备热插拔事件和规则。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
+| USB 热插拔 / `usb-hotplug` | 已实现 | x86_64 实例启动时提供 xHCI 控制器；规则和结果持久保存，QMP 动态连接/移除指定 VID:PID 的宿主 USB 设备，重启后重新应用规则。 | [server/usb-hotplug.ts](D:/27247/Desktop/Sakura/server/usb-hotplug.ts) |
 | CUDA/ROCm 直通 / `gpu-compute-passthrough` | 仅探测 | 只查 nvidia-smi/rocminfo；没有 GPU 设备直通配置。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:172](D:/27247/Desktop/Sakura/server/next-features.ts:172) |
 | Jupyter/Marimo 环境 / `notebook-environment` | 仅探测 | 只查 Jupyter/Marimo 版本；没有安装、启动、认证与会话管理。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:173](D:/27247/Desktop/Sakura/server/next-features.ts:173) |
 | 认证浏览器 IDE / `authenticated-ide-preview` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存浏览器 IDE 会话和认证过期时间。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |

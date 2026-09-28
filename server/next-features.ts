@@ -523,7 +523,8 @@ export const nextFeatureCatalog = [
     '检查客户机音视频设备和直通声明。',
     'planned',
   ],
-  ['usb-hotplug', 'USB 热插拔', '操作系统与桌面', 'P1', '保存 USB 设备热插拔事件和规则。', 'planned'],
+  ['usb-hotplug', 'USB 热插拔', '操作系统与桌面', 'P1',
+    '按 USB 厂商和产品 ID 保存转发规则，运行时动态连接或移除设备并记录结果。', 'available'],
   [
     'gpu-compute-passthrough',
     'CUDA/ROCm 直通',
@@ -971,6 +972,13 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '系统设置 → 集群策略发布，选择已配对主机并保存待复核批次，再逐台发布插件灰度策略；目标主机须先授权策略发布。',
+      };
+    if (spec.id === 'usb-hotplug')
+      return {
+        ready: this.machines.get(id).architecture !== 'aarch64' && this.machines.state(id) === 'running',
+        executed: false,
+        adapter,
+        message: '能力中心 → USB 热插拔，查看宿主可见设备，输入厂商与产品 ID 添加持久转发规则，或临时连接和移除。',
       };
     if (spec.id === 'host-pairing' || spec.id === 'multi-host-inventory')
       return {

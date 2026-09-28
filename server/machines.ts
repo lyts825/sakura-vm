@@ -785,6 +785,7 @@ export class Machines extends EventEmitter {
           '-netdev',
           `user,id=sakura-net,ipv4=on,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${vm.sandbox?.network === 'isolated' ? 'restrict=on,ipv6=off,' : vm.hardware?.ipv6 === undefined ? '' : `ipv6=${vm.hardware.ipv6 ? 'on' : 'off'},`}${forwards.join(',')}`,
           ...deviceArguments(vm),
+          ...(vm.architecture === 'aarch64' ? [] : ['-device', 'qemu-xhci,id=sakura-usb']),
           '-chardev',
           `socket,id=sakura-agent,host=127.0.0.1,port=${agentPort},server=on,wait=off`,
           '-device',

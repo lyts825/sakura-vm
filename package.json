@@ -40,6 +40,7 @@
     "test:multi-monitor": "tsx scripts/smoke-multi-monitor.ts",
     "test:language-services": "tsx scripts/smoke-language-services.ts",
     "test:debug-adapter": "tsx scripts/smoke-debug-adapter.ts",
+    "test:usb-hotplug": "tsx scripts/smoke-usb-hotplug.ts",
     "test:gpu": "tsx scripts/smoke-gpu.ts",
     "test:syscall-profile": "tsx scripts/smoke-syscall-profile.ts",
     "test:nested-virtualization": "tsx scripts/smoke-nested-virtualization.ts",

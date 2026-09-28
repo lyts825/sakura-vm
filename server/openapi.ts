@@ -18,6 +18,7 @@ import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
 import { fleetRolloutRequest } from './fleet-policy-rollouts.ts';
+import { usbHotplugRequest } from './usb-hotplug.ts';
 import { hostPeerRequest } from './host-peers.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
@@ -201,6 +202,10 @@ const core: {
     id: 'fleet-policy-rollouts.change', method: 'POST', path: '/api/fleet-policy-rollouts',
     title: '复核目标策略版本并创建或发布集群策略批次', body: request(fleetRolloutRequest),
   },
+  { id: 'usb-hotplug.get', method: 'GET', path: '/api/vms/{vmId}/usb-hotplug',
+    title: '查看宿主 USB 设备、转发规则与操作记录', inspect: true },
+  { id: 'usb-hotplug.change', method: 'POST', path: '/api/vms/{vmId}/usb-hotplug',
+    title: '保存 USB 转发规则或动态连接和移除设备', body: request(usbHotplugRequest) },
   {
     id: 'host-peers.get', method: 'GET', path: '/api/host-peers',
     title: '主机配对、资源和健康状态', inspect: true,

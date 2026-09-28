@@ -25,6 +25,7 @@ import { CapabilityActionsPanel } from '../../src/CapabilityActionsPanel';
 import type { CapabilityActionView } from '../../shared/capability-actions';
 import { MetricHistory } from '../../src/MetricHistory';
 import { NotificationCenter } from '../../src/NotificationCenter';
+import { UsbHotplugPanel } from '../../src/UsbHotplugPanel';
 
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
@@ -251,6 +252,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const [suiteCapability, setSuiteCapability] = useState('');
   const [extendedCapability, setExtendedCapability] = useState('');
   const [nextCapability, setNextCapability] = useState('');
+  const [showUsbHotplug, setShowUsbHotplug] = useState(false);
   const lockdown = useRemote<{ locked: boolean }>(request, '/vms/' + active.id + '/lockdown');
   useEffect(() => {
     const selected = extended.data?.operations.find((item) => item.id === extendedOperation);
@@ -490,6 +492,10 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'usb-hotplug') {
+        setShowUsbHotplug((value) => !value);
+        return;
+      }
       if (featureId === 'file-level-restore') {
         setNextResult(
           '启用备份策略插件，在停止实例的快照页使用“备份文件恢复”。选择备份、分区与相对根目录的文件路径；完成后下载提取的文件，当前磁盘保持原样。',
@@ -1128,6 +1134,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
           </div>
           {nextResult && <pre className="feature-log">{nextResult}</pre>}
           {hardwareReport && <HardwareMatrix report={hardwareReport} />}
+          {showUsbHotplug && <UsbHotplugPanel request={request} vmId={active.id} />}
         </section>
       )}
 
