@@ -15,6 +15,7 @@ import { secretName } from './secrets.ts';
 import { checkSecureErase, runSecureErase } from './secure-erase.ts';
 import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
 import { projectNetworkNamespace } from './project-network-isolation.ts';
+import { inspectTrustedBoot } from './trusted-boot.ts';
 import {
   engineeringOperations,
   operationViews,
@@ -129,7 +130,8 @@ export const extendedFeatureCatalog = [
     '为本机入口生成稳定别名，按需同步到 Windows hosts 系统解析。', 'available'],
   ['packet-capture', '数据包捕获', '网络', 'P1', '在客户机限时抓包，导出无地址与载荷的匿名流量诊断报告。', 'available'],
   ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为客户机 TCP 服务创建限时、本机回环地址上的调试入口。', 'available'],
-  ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2', '检测并配置 TPM 和安全启动链。', 'planned'],
+  ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2',
+    '检测 QEMU、OVMF、swtpm 与客户机的 TPM 和安全启动状态。', 'experimental'],
   ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2',
     '管理员使用本机平台通行密钥和用户验证解锁已锁定的控制面，并建立新的管理员会话。', 'available'],
   ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'available'],
@@ -367,6 +369,9 @@ export class ExtendedFeatures {
         mode: project.networkIsolation || 'host', namespace, active,
         reason: '在项目设置中选择私有网络并启动项目。该模式覆盖托管项目命令，不限制客户机管理员终端及其他进程。' };
     }
+    if (spec.id === 'tpm-secure-boot')
+      return { ...await inspectTrustedBoot(this.machines, id, undefined, signal),
+        state: spec.state, adapter };
     if (spec.id === 'disk-encryption') {
       const status = await this.machines.diskEncryptionStatus(id);
       return { ready: status.encrypted === status.enabled && (!status.enabled || status.keyAvailable),
@@ -591,6 +596,8 @@ export class ExtendedFeatures {
       throw new AppError('请在安装目录运行离线更新命令；此入口仅供检查', 409);
     if (spec.id === 'network-isolation' && action === 'run')
       throw new AppError('请在项目设置中切换网络模式，再启动项目', 409);
+    if (spec.id === 'tpm-secure-boot' && action === 'run')
+      throw new AppError('当前仅支持证据检查；vTPM 与密钥登记链尚未实现', 501);
     const operation = Object.entries(engineeringOperations).find(
       ([_, value]) => value.feature === spec.id,
     )?.[0] as EngineeringOperation | undefined;
@@ -631,7 +638,7 @@ export class ExtendedFeatures {
       const validated = validateOperation({ operation, parameters: merged });
       const executed = await this.runOperation(id, operation, validated.parameters, signal);
       result = { ...executed, ready: executed.code === 0, executed: true };
-    } else if (spec.id === 'network-isolation') {
+    } else if (spec.id === 'network-isolation' || spec.id === 'tpm-secure-boot') {
       result = await this.probe(id, spec, signal, merged);
     } else if (spec.id === 'vm-suspend') {
       if (action === 'run') {

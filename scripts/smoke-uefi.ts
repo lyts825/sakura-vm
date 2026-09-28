@@ -13,6 +13,7 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { Machines } = await import('../server/machines.ts');
 const { vmDir } = await import('../server/model.ts');
 const { firmwareSupport } = await import('../server/firmware.ts');
+const { inspectTrustedBoot } = await import('../server/trusted-boot.ts');
 const engine = await createRuntime();
 const machines = new Machines(engine);
 await machines.init();
@@ -30,6 +31,11 @@ async function boot(id: string) {
   const result = await machines.exec(id, 'test -d /sys/firmware/efi && grep ^ID= /etc/os-release');
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /debian/);
+  const trust = await inspectTrustedBoot(machines, id);
+  assert.equal(trust.guest?.efi, true);
+  assert.notEqual(trust.guest?.secureBootEnabled, true);
+  assert.equal(trust.guest?.tpmDevicePresent, false);
+  assert.equal(trust.ready, false);
   await machines.stop(id);
 }
 
