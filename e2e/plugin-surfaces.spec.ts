@@ -2444,6 +2444,53 @@ test('build farm registers a VM node, queues a matching command and cancels it',
     labels: ['node'], timeoutSeconds: 300 });
 });
 
+test('media devices preview host audio and save a typed USB camera rule', async ({ page }) => {
+  await app(page, [], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'stopped' }] }));
+  const requests: any[] = [];
+  let audio = 'none';
+  let audioBackend = 'none';
+  let rules: any[] = [];
+  const view = () => ({ vmId: vm.id, vmName: vm.name, status: 'stopped',
+    audio, audioBackend, support: { none: { available: true }, dsound: { available: true } },
+    guest: null, usb: { ready: false, hostDevices: '', hostError: '',
+      rules, configured: [] } });
+  await page.route('**/api/vms/*/media-devices', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: view() });
+    const input = route.request().postDataJSON();
+    requests.push(input);
+    if (input.operation === 'preview-audio') return route.fulfill({ json: {
+      vmId: vm.id, mode: input.mode, ready: true, reasons: [],
+      before: {}, after: { devices: { audio: 'hda-duplex', audioBackend: 'dsound' } },
+      qemuAudioArguments: ['-audiodev', 'dsound,id=sakura-audio', '-device',
+        'ich9-intel-hda', '-device', 'hda-duplex,audiodev=sakura-audio'],
+      previewToken: 'a'.repeat(64),
+    } });
+    if (input.operation === 'apply-audio') { audio = 'hda-duplex'; audioBackend = 'dsound'; }
+    if (input.operation === 'save-usb') rules = [{ id: '52e2ec91-675d-4d85-bac1-91205f58ec63',
+      mediaKind: input.kind, vendorId: input.vendorId, productId: input.productId }];
+    return route.fulfill({ json: view() });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '系统设置' }).click();
+  await page.getByRole('button', { name: '管理音视频设备' }).click();
+  const panel = page.getByRole('region', { name: '音视频设备' });
+  await expect(panel).toContainText('DirectSound：可启动');
+  await panel.getByRole('button', { name: '预览音频配置' }).click();
+  await expect(panel.getByRole('region', { name: '音频配置预览' }))
+    .toContainText('hda-duplex,audiodev=sakura-audio');
+  await panel.getByRole('button', { name: '应用音频配置' }).click();
+  await expect(panel).toContainText('当前声卡：hda-duplex');
+  await panel.getByLabel('媒体 USB 厂商 ID').fill('1234');
+  await panel.getByLabel('媒体 USB 产品 ID').fill('5678');
+  await panel.getByRole('button', { name: '保存媒体转发规则' }).click();
+  await expect(panel).toContainText('camera · 1234:5678');
+  expect(requests.map((item) => item.operation)).toEqual([
+    'preview-audio', 'apply-audio', 'save-usb']);
+  expect(requests[2]).toMatchObject({ kind: 'camera', vendorId: 0x1234,
+    productId: 0x5678 });
+});
+
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>

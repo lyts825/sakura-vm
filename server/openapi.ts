@@ -21,6 +21,7 @@ import { fleetRolloutRequest } from './fleet-policy-rollouts.ts';
 import { usbHotplugRequest } from './usb-hotplug.ts';
 import { gpuProfileRequest } from './gpu-profiles.ts';
 import { buildFarmRequest } from './build-farm.ts';
+import { mediaDeviceRequest } from './media-devices.ts';
 import { hostPeerRequest } from './host-peers.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
@@ -216,6 +217,10 @@ const core: {
     title: '查看构建节点、排队任务及执行记录', inspect: true },
   { id: 'build-farm.change', method: 'POST', path: '/api/build-farm',
     title: '管理构建节点并提交、取消或重试构建', body: request(buildFarmRequest) },
+  { id: 'media-devices.get', method: 'GET', path: '/api/vms/{vmId}/media-devices',
+    title: '查看虚拟音视频设备、宿主后端、USB 规则与客户机证据', inspect: true },
+  { id: 'media-devices.change', method: 'POST', path: '/api/vms/{vmId}/media-devices',
+    title: '复核并应用音频设备或管理 USB 摄像头与麦克风转发', body: request(mediaDeviceRequest) },
   {
     id: 'host-peers.get', method: 'GET', path: '/api/host-peers',
     title: '主机配对、资源和健康状态', inspect: true,

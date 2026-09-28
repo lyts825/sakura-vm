@@ -34,6 +34,7 @@ import { FleetPolicyRollouts } from './fleet-policy-rollouts.ts';
 import { UsbHotplug } from './usb-hotplug.ts';
 import { GpuProfiles } from './gpu-profiles.ts';
 import { BuildFarm } from './build-farm.ts';
+import { MediaDevices } from './media-devices.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
@@ -107,6 +108,11 @@ async function main() {
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });
   await usbHotplug.init();
+  const mediaDevices = new MediaDevices(machines, usbHotplug,
+    () => !!features.migration?.blocked,
+    (delta) => { features.mutations += delta; });
+  features.next?.setMediaDevices(mediaDevices);
+  features.suite?.setMediaDevices(mediaDevices);
   const gpuProfiles = new GpuProfiles(machines, undefined,
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });
@@ -938,6 +944,13 @@ async function main() {
         await buildFarm.action(await authorizedBody(req, 8192)));
       throw new AppError('不支持此方法', 405);
     }
+    const mediaRoute = /^\/api\/vms\/([a-f0-9-]{36})\/media-devices$/.exec(url.pathname);
+    if (mediaRoute) {
+      if (req.method === 'GET') return send(res, await mediaDevices.view(mediaRoute[1]));
+      if (req.method === 'POST') return send(res,
+        await mediaDevices.action(mediaRoute[1], await authorizedBody(req, 8192)));
+      throw new AppError('不支持此方法', 405);
+    }
     if (url.pathname === '/api/host-peers') {
       if (req.method === 'GET') return send(res,
         { ...hostPeers.view(), local: await hostPeers.status() });
@@ -1427,6 +1440,7 @@ async function main() {
       () => rollouts.close(),
       () => fleetRollouts.close(),
       () => usbHotplug.close(),
+      () => mediaDevices.close(),
       () => gpuProfiles.close(),
       () => buildFarm.close(),
       () => hostPeers.close(),

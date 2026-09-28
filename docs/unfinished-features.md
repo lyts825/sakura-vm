@@ -2,30 +2,29 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 228 条有实现入口，**22 条仍未完成**（21 条规划、1 条部分实现）。按标识去重后为 22 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 231 条有实现入口，**19 条仍未完成**（18 条规划、1 条部分实现）。按标识去重后为 19 个未完成标识；不同条目仍有范围重叠。
 
-本轮已接通 178 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
+本轮已接通 181 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 第一批 | 50 | 46 | 0 | 4 | 4 |
+| 第一批 | 50 | 47 | 0 | 3 | 3 |
 | 第二批 | 100 | 98 | 0 | 2 | 2 |
-| 第三批 | 100 | 84 | 1 | 15 | 16 |
+| 第三批 | 100 | 86 | 1 | 13 | 14 |
 
 ## 第一批
 
 ### 文件与数据
 
-- [ ] **Windows 文件系统直挂**（P1 · 规划） · [`windows-mount`](../server/feature-suite.ts#L47) — 通过受控共享挂载宿主机目录。 对应完整流程尚未实现。
+- [ ] **Windows 文件系统直挂**（P1 · 规划） · [`windows-mount`](../server/feature-suite.ts#L48) — 通过受控共享挂载宿主机目录。 对应完整流程尚未实现。
 
 ### 桌面与跨系统
 
-- [ ] **音频与摄像头转发**（P2 · 规划） · [`audio-video`](../server/feature-suite.ts#L77) — 让 Linux 图形应用使用宿主机设备。 对应完整流程尚未实现。
-- [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L78) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
+- [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L79) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
 
 ### 运维与安全
 
-- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L87) — 内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。
+- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L88) — 内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。
 
 ## 第二批
 
@@ -41,40 +40,38 @@
 
 ### 远程主机与集群
 
-- [ ] **虚拟机在线迁移**（P1 · 规划） · [`live-migration`](../server/next-features.ts#L60) — 检查在线迁移前置条件并生成迁移计划。 对应完整流程尚未实现。
-- [ ] **故障自动接管**（P0 · 规划） · [`ha-failover`](../server/next-features.ts#L78) — 保存高可用接管策略和最后一次健康检查。 对应完整流程尚未实现。
+- [ ] **虚拟机在线迁移**（P1 · 规划） · [`live-migration`](../server/next-features.ts#L61) — 检查在线迁移前置条件并生成迁移计划。 对应完整流程尚未实现。
+- [ ] **故障自动接管**（P0 · 规划） · [`ha-failover`](../server/next-features.ts#L79) — 保存高可用接管策略和最后一次健康检查。 对应完整流程尚未实现。
 
 ### 虚拟硬件与固件
 
-- [ ] **vTPM 密钥登记**（P1 · 规划） · [`vtpm-key-enrollment`](../server/next-features.ts#L118) — 保存 vTPM 密钥登记元数据和轮换提醒。 对应完整流程尚未实现。
-- [ ] **PCI 与 USB 直通**（P1 · 规划） · [`pci-usb-passthrough`](../server/next-features.ts#L126) — 校验直通设备声明并生成安全预览。 对应完整流程尚未实现。
-- [ ] **Virtio-FS 共享目录**（P0 · 规划） · [`virtio-fs`](../server/next-features.ts#L159) — 检查客户机是否识别 virtio-fs 或 9p 共享目录。 对应完整流程尚未实现。
-- [ ] **虚拟音视频设备**（P2 · 规划） · [`virtual-media-devices`](../server/next-features.ts#L167) — 保存虚拟声卡、摄像头和媒体设备配置。 对应完整流程尚未实现。
+- [ ] **vTPM 密钥登记**（P1 · 规划） · [`vtpm-key-enrollment`](../server/next-features.ts#L119) — 保存 vTPM 密钥登记元数据和轮换提醒。 对应完整流程尚未实现。
+- [ ] **PCI 与 USB 直通**（P1 · 规划） · [`pci-usb-passthrough`](../server/next-features.ts#L127) — 校验直通设备声明并生成安全预览。 对应完整流程尚未实现。
+- [ ] **Virtio-FS 共享目录**（P0 · 规划） · [`virtio-fs`](../server/next-features.ts#L160) — 检查客户机是否识别 virtio-fs 或 9p 共享目录。 对应完整流程尚未实现。
 
 ### 存储与灾备
 
-- [ ] **快照分支合并**（P1 · 规划） · [`snapshot-merge`](../server/next-features.ts#L200) — 生成快照分支合并预览并记录来源。 对应完整流程尚未实现。
+- [ ] **快照分支合并**（P1 · 规划） · [`snapshot-merge`](../server/next-features.ts#L201) — 生成快照分支合并预览并记录来源。 对应完整流程尚未实现。
 
 ### 网络与服务治理
 
-- [ ] **服务网格边车**（P2 · 规划） · [`service-mesh`](../server/next-features.ts#L294) — 登记服务边车策略和可选代理检测结果。 对应完整流程尚未实现。
+- [ ] **服务网格边车**（P2 · 规划） · [`service-mesh`](../server/next-features.ts#L295) — 登记服务边车策略和可选代理检测结果。 对应完整流程尚未实现。
 
 ### 安全与合规
 
-- [ ] **OIDC 与 SAML 单点登录**（P0 · 规划） · [`oidc-saml`](../server/next-features.ts#L304) — 校验身份提供商元数据并保存非敏感配置。 对应完整流程尚未实现。
+- [ ] **OIDC 与 SAML 单点登录**（P0 · 规划） · [`oidc-saml`](../server/next-features.ts#L305) — 校验身份提供商元数据并保存非敏感配置。 对应完整流程尚未实现。
 
 ### 操作系统与桌面
 
-- [ ] **宿主盘挂载策略**（P0 · 规划） · [`host-drive-policy`](../server/next-features.ts#L496) — 保存宿主目录挂载的只读和路径策略。 对应完整流程尚未实现。
-- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L512) — 已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
-- [ ] **音频摄像头麦克风直通**（P1 · 规划） · [`media-passthrough`](../server/next-features.ts#L520) — 检查客户机音视频设备和直通声明。 对应完整流程尚未实现。
-- [ ] **CUDA/ROCm 直通**（P1 · 规划） · [`gpu-compute-passthrough`](../server/next-features.ts#L530) — 检查客户机 CUDA/ROCm 工具和设备可见性。 对应完整流程尚未实现。
+- [ ] **宿主盘挂载策略**（P0 · 规划） · [`host-drive-policy`](../server/next-features.ts#L497) — 保存宿主目录挂载的只读和路径策略。 对应完整流程尚未实现。
+- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L513) — 已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
+- [ ] **CUDA/ROCm 直通**（P1 · 规划） · [`gpu-compute-passthrough`](../server/next-features.ts#L531) — 检查客户机 CUDA/ROCm 工具和设备可见性。 对应完整流程尚未实现。
 
 ### 平台与扩展
 
-- [ ] **插件市场**（P0 · 规划） · [`plugin-marketplace`](../server/next-features.ts#L561) — 保存插件目录、来源和安装状态。 对应完整流程尚未实现。
-- [ ] **签名沙箱插件**（P0 · 规划） · [`signed-plugin-sandbox`](../server/next-features.ts#L563) — 计算插件摘要并记录签名与沙箱策略。 对应完整流程尚未实现。
-- [ ] **移动伴侣**（P2 · 规划） · [`mobile-companion`](../server/next-features.ts#L595) — 保存移动设备配对和只读通知策略。 对应完整流程尚未实现。
+- [ ] **插件市场**（P0 · 规划） · [`plugin-marketplace`](../server/next-features.ts#L562) — 保存插件目录、来源和安装状态。 对应完整流程尚未实现。
+- [ ] **签名沙箱插件**（P0 · 规划） · [`signed-plugin-sandbox`](../server/next-features.ts#L564) — 计算插件摘要并记录签名与沙箱策略。 对应完整流程尚未实现。
+- [ ] **移动伴侣**（P2 · 规划） · [`mobile-companion`](../server/next-features.ts#L596) — 保存移动设备配对和只读通知策略。 对应完整流程尚未实现。
 
 ## 目录以外的范围
 

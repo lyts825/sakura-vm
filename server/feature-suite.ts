@@ -26,6 +26,7 @@ import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
 import { scanGuestVulnerabilities } from './security-vulnerabilities.ts';
 import { dependencyManagerSchema, projectDependencyCacheScript } from './project-dependency-cache.ts';
 import { processInteropInput, type ProcessInterop } from './process-interop.ts';
+import type { MediaDevices } from './media-devices.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -109,6 +110,7 @@ export type FeatureCatalogItem = {
 
 const availableFeatureIds = new Set<FeatureId>([
   'gpu-acceleration',
+  'audio-video',
   'process-interop',
   'image-import',
   'power-schedules',
@@ -312,6 +314,7 @@ export class FeatureSuite {
   private ticking = false;
   private powerAbort = new AbortController();
   private processInterop?: ProcessInterop;
+  private mediaDevices?: MediaDevices;
 
   constructor(
     private machines: Machines,
@@ -324,6 +327,7 @@ export class FeatureSuite {
     } = {},
   ) {}
   setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
+  setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
   enableBackground() {
     if (this.powerAbort.signal.aborted) this.powerAbort = new AbortController();
     const controller = this.powerAbort;
@@ -522,6 +526,17 @@ export class FeatureSuite {
       result.reason = result.ready
         ? '桌面 → 外观与布局，选择每块逻辑屏幕的分辨率、缩放和单屏/左右/上下布局；应用后重启桌面。两个逻辑屏幕共享一个 VNC 画布。'
         : '请先启动实例并在桌面页安装 KDE Plasma；新安装包含双逻辑屏幕所需的 xrandr。';
+    } else if (featureId === 'audio-video') {
+      const media = await this.mediaDevices?.view(id);
+      const hostAudio = !!media && media.audio === 'hda-duplex' &&
+        media.audioBackend === 'dsound' && media.support.dsound.available &&
+        /^\s*\d+\s+\[/.test(media.guest?.audio || '');
+      const activeUsb = !!media && media.usb.rules.some((rule) => !!rule.mediaKind &&
+        media.usb.configured.some((device) => device.ruleId === rule.id));
+      result.ready = hostAudio || activeUsb && (!!media?.guest?.audio || !!media?.guest?.video);
+      result.audio = media?.audio || 'none';
+      result.guest = media?.guest || null;
+      result.reason = '系统设置 → 音视频设备：启用 HDA/DirectSound 后重启实例；USB 摄像头、麦克风和耳机使用指定设备的 VID:PID 转发规则，客户机需安装对应驱动。';
     } else if (
       featureId === 'windows-mount' ||
       featureId === 'file-drop' ||

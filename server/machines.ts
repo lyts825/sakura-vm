@@ -33,7 +33,7 @@ import type { Engine } from './runtime.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
 import { readStore, writeStore, fileHash, regularDirectory, within } from './local-store.ts';
 import { bootGuardStatus, recordBootAttempt, resetBootGuard } from './boot-guard.ts';
-import { hardwareArguments, deviceArguments, diskOptions, hardwareSchema } from '../shared/hardware.ts';
+import { hardwareArguments, deviceArguments, audioArguments, diskOptions, hardwareSchema } from '../shared/hardware.ts';
 import { resourcePolicy, validateAdmission } from './resource-policies.ts';
 import { cpuSetSize } from './guest-hardware.ts';
 import { ensureUefiFirmware, requireUefiSupport } from './firmware.ts';
@@ -490,6 +490,7 @@ export class Machines extends EventEmitter {
       hardware: vm.hardware,
       resourceArguments: hardwareArguments(vm),
       deviceArguments: deviceArguments(vm),
+      audioArguments: audioArguments(vm),
       display: vm.hardware?.devices?.graphics === 'virgl' ? 'egl-headless' : 'none',
       diskOptions: diskOptions(vm) + (vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''),
       diskEncryption: vm.diskEncryption ? { format: 'luks', secretName: vm.diskEncryption.secretName } : undefined,
@@ -784,6 +785,7 @@ export class Machines extends EventEmitter {
           `file=${escape(join(dir, 'seed.iso'))},${vm.distro && vm.distro !== 'alpine' ? 'if=virtio,format=raw' : 'media=cdrom'},readonly=on`,
           '-netdev',
           `user,id=sakura-net,ipv4=on,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${vm.sandbox?.network === 'isolated' ? 'restrict=on,ipv6=off,' : vm.hardware?.ipv6 === undefined ? '' : `ipv6=${vm.hardware.ipv6 ? 'on' : 'off'},`}${forwards.join(',')}`,
+          ...audioArguments(vm),
           ...deviceArguments(vm),
           ...(vm.architecture === 'aarch64' ? [] : ['-device', 'qemu-xhci,id=sakura-usb']),
           '-chardev',

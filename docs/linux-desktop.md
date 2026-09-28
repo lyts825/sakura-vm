@@ -54,6 +54,6 @@
 
 此前本机 WHPX 测试中曾出现 SSH 与桌面同时长时间失联：TCP 可以连接但收不到 SSH 握手，串口中的网络配置及 SSH 监听仍正常，QMP 可以正常关机；重启客户机后恢复。本轮曾在原配置上完成 4 轮重启及快照流程和约 1.6 GiB 的图像传输，没有复现这一现象。它与本轮明确复现的短暂 `ECONNREFUSED` 不同，根因仍未确认；MSI-X 配置与自动重连属于稳定性改进，不能据此保证该历史故障已被消除。因此功能仍标记为实验性。
 
-桌面已提供文本剪贴板互通和可选 Fcitx5 中文输入，不包含 GPU/3D 加速、声音转发或 WSLg 单应用窗口集成。TCG 使用软件模拟，桌面启动和操作会明显慢于硬件加速。
+桌面提供文本剪贴板互通和可选 Fcitx5 中文输入。停止实例后可配置 Virtio GPU/VirGL 与 QEMU HDA/DirectSound 音频；USB 摄像头和麦克风可按设备 ID 转发。noVNC 网页自身没有独立音频流，也没有 WSLg 单应用窗口集成。TCG 使用软件模拟，桌面启动和操作会明显慢于硬件加速。
 
 可用 `SAKURA_TEST_DESKTOP=1` 配合 `npm run test:vm` 重跑联网安装、SSH 通道的 VNC 握手、重启和快照验证；追加 `SAKURA_TEST_CONNECTIONS=1` 可验证并发传输。客户机日志为 `/var/log/sakura-desktop.log`。GUI 或 SSH 长时间无法恢复时，可停止并重新启动实例。

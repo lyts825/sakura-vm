@@ -125,8 +125,8 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 网络诊断工具箱 / `network-diagnostics` | 部分实现 | 有 DNS、HTTPS、监听端口检查；缺完整路由诊断及结构化故障定位。 | [server/feature-suite.ts:611](D:/27247/Desktop/Sakura/server/feature-suite.ts:611) |
 | 离线软件包缓存 / `package-cache` | 已有专用操作 | 支持 Alpine/APT 系统软件包及 npm/pip 项目依赖的预取、校验和离线安装；系统包缓存还支持清单和定向清理。 | [docs/package-cache.md](package-cache.md) |
 | 服务运行面板 / `service-dashboard` | 已有专用操作 | 项目服务依赖、日志、启停与健康检查有实际服务实现。 | [server/workspaces.ts:107](D:/27247/Desktop/Sakura/server/workspaces.ts:107) |
-| GPU 与 3D 加速 / `gpu-acceleration` | 未实现 | 没有 GPU/3D 转发；WHPX 是 CPU 虚拟化加速，不能代替 GPU 功能。 | [docs/linux-desktop.md:57](D:/27247/Desktop/Sakura/docs/linux-desktop.md:57) |
-| 音频与摄像头转发 / `audio-video` | 未实现 | 现有 noVNC 桌面未实现声音、摄像头或麦克风转发。 | [docs/linux-desktop.md:57](D:/27247/Desktop/Sakura/docs/linux-desktop.md:57) |
+| GPU 与 3D 加速 / `gpu-acceleration` | 已实现 | QEMU Virtio GPU 2D 与 VirGL 3D 可配置；客户机 Mesa/GBM 渲染器另行检查，WHPX 只负责 CPU 虚拟化加速。 | [docs/capability-completion.md](D:/27247/Desktop/Sakura/docs/capability-completion.md) |
+| 音频与摄像头转发 / `audio-video` | 已实现 | QEMU HDA 双向声卡连接 Windows DirectSound；USB 摄像头、麦克风和耳机可按 VID:PID 保存规则并通过运行中的 QEMU 转发。客户机设备状态可检查；noVNC 页面自身没有音频流。 | [server/media-devices.ts](D:/27247/Desktop/Sakura/server/media-devices.ts) |
 | 单应用 Linux 窗口 / `single-app-windows` | 未实现 | 提供整个远程桌面；无 WSLg 类独立应用窗口集成。 | [docs/linux-desktop.md:57](D:/27247/Desktop/Sakura/docs/linux-desktop.md:57) |
 | Windows 进程互操作 / `process-interop` | 未实现 | 执行命令只发往客户机；无 Linux 调用受控 Windows 进程的协议。 | [server/feature-suite.ts:62](D:/27247/Desktop/Sakura/server/feature-suite.ts:62) |
 | 宿主机原生集成 / `native-integration` | 部分实现 | 有 VS Code Remote-SSH 链接及配置；缺资源管理器打开、文件关联等系统集成。 | [server/ide.ts:72](D:/27247/Desktop/Sakura/server/ide.ts:72) |
@@ -264,7 +264,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 在线 vCPU 热插拔 / `vcpu-hotplug` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存在线 vCPU 调整计划和目标值。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | 在线内存热插拔 / `memory-hotplug` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存在线内存调整计划和目标值。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | Virtio-FS 共享目录 / `virtio-fs` | 仅探测 | 只 grep 已挂载目录；没有宿主共享进程、QEMU 设备和挂载编排。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:160](D:/27247/Desktop/Sakura/server/next-features.ts:160) |
-| 虚拟音视频设备 / `virtual-media-devices` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存虚拟声卡、摄像头和媒体设备配置。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
+| 虚拟音视频设备 / `virtual-media-devices` | 已实现 | 停机预览并保存 HDA 双向声卡及虚拟/DirectSound 后端，探测真实 QEMU 后端；保存分类的 USB 媒体设备转发规则。 | [server/media-devices.ts](D:/27247/Desktop/Sakura/server/media-devices.ts) |
 | 硬件兼容矩阵 / `hardware-compatibility` | 部分实现 | QEMU/QMP 能力直接硬编码 true；没有硬件项目逐项探测矩阵。 | [server/next-features.ts:348](D:/27247/Desktop/Sakura/server/next-features.ts:348) |
 | 存储池管理 / `storage-pools` | 部分实现 | 仅 stat 当前数据目录；没有存储池清单、容量统计及选择/分配。 | [server/next-features.ts:350](D:/27247/Desktop/Sakura/server/next-features.ts:350) |
 | SSD/HDD 分层 / `storage-tiering` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存热数据与冷数据的分层策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
@@ -330,7 +330,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 宿主盘挂载策略 / `host-drive-policy` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存宿主目录挂载的只读和路径策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 文件关联 / `file-associations` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存扩展名到 Sakura 工作区的关联。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 按应用剪贴板策略 / `clipboard-policy` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存剪贴板按应用的读写和敏感内容策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
-| 音频摄像头麦克风直通 / `media-passthrough` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“检查客户机音视频设备和直通声明。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
+| 音频摄像头麦克风直通 / `media-passthrough` | 已实现 | 可复核宿主音频后端、USB 媒体规则和转发状态，并检查客户机 ALSA 与视频节点；媒体 USB 设备是否可用取决于宿主硬件与客户机驱动。 | [server/media-devices.ts](D:/27247/Desktop/Sakura/server/media-devices.ts) |
 | USB 热插拔 / `usb-hotplug` | 已实现 | x86_64 实例启动时提供 xHCI 控制器；规则和结果持久保存，QMP 动态连接/移除指定 VID:PID 的宿主 USB 设备，重启后重新应用规则。 | [server/usb-hotplug.ts](D:/27247/Desktop/Sakura/server/usb-hotplug.ts) |
 | CUDA/ROCm 直通 / `gpu-compute-passthrough` | 仅探测 | 只查 nvidia-smi/rocminfo；没有 GPU 设备直通配置。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:172](D:/27247/Desktop/Sakura/server/next-features.ts:172) |
 | Jupyter/Marimo 环境 / `notebook-environment` | 仅探测 | 只查 Jupyter/Marimo 版本；没有安装、启动、认证与会话管理。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:173](D:/27247/Desktop/Sakura/server/next-features.ts:173) |

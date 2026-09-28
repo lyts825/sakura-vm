@@ -10,6 +10,7 @@ import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { AcmeRenewal } from './acme-renewal.ts';
 import type { ProcessInterop } from './process-interop.ts';
+import type { MediaDevices } from './media-devices.ts';
 import { hardwareCompatibility } from './hardware-compatibility.ts';
 import { firmwareSupport } from './firmware.ts';
 import { networkEmulation } from './network-emulation.ts';
@@ -168,8 +169,8 @@ export const nextFeatureCatalog = [
     '虚拟音视频设备',
     '虚拟硬件与固件',
     'P2',
-    '保存虚拟声卡、摄像头和媒体设备配置。',
-    'planned',
+    '配置 QEMU 双向 HDA 声卡与宿主音频后端，保存 USB 摄像头和麦克风转发规则。',
+    'available',
   ],
   [
     'hardware-compatibility',
@@ -521,8 +522,8 @@ export const nextFeatureCatalog = [
     '音频摄像头麦克风直通',
     '操作系统与桌面',
     'P1',
-    '检查客户机音视频设备和直通声明。',
-    'planned',
+    '探测客户机音视频设备和宿主 USB 转发状态，配置宿主音频及媒体 USB 规则。',
+    'available',
   ],
   ['usb-hotplug', 'USB 热插拔', '操作系统与桌面', 'P1',
     '按 USB 厂商和产品 ID 保存转发规则，运行时动态连接或移除设备并记录结果。', 'available'],
@@ -673,6 +674,7 @@ export class NextFeatures {
   private objectBackup?: ObjectBackup;
   private wireGuardOverlay?: WireGuardOverlay;
   private processInterop?: ProcessInterop;
+  private mediaDevices?: MediaDevices;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
@@ -759,6 +761,7 @@ export class NextFeatures {
     this.wireGuardOverlay = service;
   }
   setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
+  setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
 
   browserIdeLink(id: string) {
     if (!this.browserIde) throw new AppError('浏览器 IDE 服务尚未启用', 503);
@@ -995,6 +998,22 @@ export class NextFeatures {
         adapter,
         message: '系统设置 → 构建农场，登记实例节点和并发槽位，按标签提交构建命令；排队任务在节点运行时调度。',
       };
+    if (spec.id === 'virtual-media-devices' || spec.id === 'media-passthrough') {
+      if (!this.mediaDevices) return { ready: false, executed: false, adapter,
+        reason: '音视频设备服务尚未启动。' };
+      const view = await this.mediaDevices.view(id);
+      const mediaRules = view.usb.rules.filter((rule) => !!rule.mediaKind);
+      const activeUsb = mediaRules.some((rule) => view.usb.configured.some((device) =>
+        device.ruleId === rule.id));
+      const hostAudio = view.audio === 'hda-duplex' && view.audioBackend === 'dsound' &&
+        view.support.dsound.available && /^\s*\d+\s+\[/.test(view.guest?.audio || '');
+      const guestMedia = /^\s*\d+\s+\[/.test(view.guest?.audio || '') ||
+        /\/dev\/video\d+/.test(view.guest?.video || '');
+      return { ...view, ready: spec.id === 'virtual-media-devices'
+        ? view.support.none.available && this.machines.get(id).architecture !== 'aarch64'
+        : hostAudio || (activeUsb && guestMedia), executed: false, adapter,
+        message: '系统设置 → 音视频设备：停机复核并配置 QEMU HDA 音频；运行中可查看宿主 USB 设备，为摄像头、麦克风或耳机保存转发规则，并检查客户机设备。' };
+    }
     if (spec.id === 'host-pairing' || spec.id === 'multi-host-inventory')
       return {
         ready: true,

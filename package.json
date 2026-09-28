@@ -43,6 +43,7 @@
     "test:usb-hotplug": "tsx scripts/smoke-usb-hotplug.ts",
     "test:gpu-profiles": "tsx scripts/smoke-gpu-profiles.ts",
     "test:build-farm": "tsx scripts/smoke-build-farm.ts",
+    "test:media-devices": "tsx scripts/smoke-media-devices.ts",
     "test:gpu": "tsx scripts/smoke-gpu.ts",
     "test:syscall-profile": "tsx scripts/smoke-syscall-profile.ts",
     "test:nested-virtualization": "tsx scripts/smoke-nested-virtualization.ts",

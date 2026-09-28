@@ -9,8 +9,9 @@ import { qmp } from './qmp.ts';
 
 const vendorId = z.number().int().min(1).max(0xffff);
 const productId = z.number().int().min(1).max(0xffff);
+const mediaKind = z.enum(['camera', 'microphone', 'headset']);
 const ruleSchema = z.object({ id: z.uuid(), vmId: z.uuid(), vendorId, productId,
-  createdAt: z.string() }).strict();
+  mediaKind: mediaKind.optional(), createdAt: z.string() }).strict();
 const eventSchema = z.object({ id: z.uuid(), vmId: z.uuid(), operation: z.enum(['attach', 'detach']),
   deviceId: z.string().min(1), vendorId, productId, source: z.enum(['manual', 'rule']),
   status: z.enum(['configured', 'requested', 'failed']), at: z.string(),
@@ -23,7 +24,8 @@ type Runtime = { startedAt: string; devices: Device[] };
 const initial = (): Store => ({ version: 1, rules: [], events: [] });
 
 export const usbHotplugRequest = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('save-rule'), vendorId, productId }).strict(),
+  z.object({ operation: z.literal('save-rule'), vendorId, productId,
+    mediaKind: mediaKind.optional() }).strict(),
   z.object({ operation: z.literal('remove-rule'), id: z.uuid() }).strict(),
   z.object({ operation: z.literal('apply-rule'), id: z.uuid() }).strict(),
   z.object({ operation: z.literal('attach'), vendorId, productId }).strict(),
@@ -171,7 +173,8 @@ export class UsbHotplug {
           rule.vendorId === value.vendorId && rule.productId === value.productId))
           throw new AppError('相同 USB 转发规则已存在', 409);
         const rule = { id: randomUUID(), vmId, vendorId: value.vendorId,
-          productId: value.productId, createdAt: new Date().toISOString() };
+          productId: value.productId, ...(value.mediaKind ? { mediaKind: value.mediaKind } : {}),
+          createdAt: new Date().toISOString() };
         await this.save({ ...this.state, rules: [...this.state.rules, rule] });
         if (this.machines.state(vmId) === 'running')
           await this.attach(vmId, rule.vendorId, rule.productId, 'rule', rule.id);

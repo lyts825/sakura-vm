@@ -130,6 +130,9 @@ const GpuProfilesSettings = lazy(() =>
 const BuildFarmSettings = lazy(() =>
   import('./BuildFarmSettings').then((module) => ({ default: module.BuildFarmSettings })),
 );
+const MediaDevicesSettings = lazy(() =>
+  import('./MediaDevicesSettings').then((module) => ({ default: module.MediaDevicesSettings })),
+);
 const LocalAssistant = lazy(() =>
   import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
@@ -396,6 +399,7 @@ function App() {
   const [showFleetRollouts, setShowFleetRollouts] = useState(false);
   const [showGpuProfiles, setShowGpuProfiles] = useState(false);
   const [showBuildFarm, setShowBuildFarm] = useState(false);
+  const [showMediaDevices, setShowMediaDevices] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -1625,6 +1629,18 @@ function App() {
                 {showBuildFarm && (
                   <Suspense fallback={<p>正在读取构建队列…</p>}>
                     <BuildFarmSettings request={api} />
+                  </Suspense>
+                )}
+                <section className="system-card">
+                  <h3>音视频设备</h3>
+                  <p>配置虚拟声卡与宿主音频，并管理 USB 摄像头、麦克风和耳机转发。</p>
+                  <button className="secondary compact" onClick={() => setShowMediaDevices(!showMediaDevices)}>
+                    {showMediaDevices ? '收起音视频设备' : '管理音视频设备'}
+                  </button>
+                </section>
+                {showMediaDevices && (
+                  <Suspense fallback={<p>正在读取音视频设备…</p>}>
+                    <MediaDevicesSettings request={api} />
                   </Suspense>
                 )}
                 <section className="system-card">
