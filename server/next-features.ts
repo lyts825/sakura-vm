@@ -295,8 +295,8 @@ export const nextFeatureCatalog = [
     'Passkey/WebAuthn',
     '安全与合规',
     'P0',
-    '保存控制面 Passkey 策略和注册统计。',
-    'planned',
+    '本机账户可登记、使用和撤销通行密钥；登录验证一次性挑战及凭证计数器。',
+    'available',
   ],
   [
     'oidc-saml',
@@ -661,6 +661,7 @@ export class NextFeatures {
   private objectBackup?: ObjectBackup;
   private wireGuardOverlay?: WireGuardOverlay;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
+  private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -680,6 +681,10 @@ export class NextFeatures {
 
   setSharedDesktopCheck(check: (id: string) => Promise<{ ready: boolean; reason?: string }>) {
     this.sharedDesktopCheck = check;
+  }
+
+  setPasskeyCheck(check: () => { ready: boolean; registered: number; reason?: string }) {
+    this.passkeyCheck = check;
   }
 
   setColdMigrations(service: ColdMigrations) {
@@ -947,6 +952,12 @@ export class NextFeatures {
         : { ready: false, reason: '共享桌面服务尚未启动。' };
       return { ...state, executed: false, adapter,
         message: '系统设置 → 账户与只读分享：为此实例创建只读账户。用户登录后打开只读桌面视图。' };
+    }
+    if (spec.id === 'passkey-webauthn') {
+      const status = this.passkeyCheck?.() || { ready: false, registered: 0,
+        reason: '通行密钥服务尚未启动。' };
+      return { ...status, executed: false, adapter,
+        message: '启用账户模式后，在 localhost 打开账户设置，以当前密码登记通行密钥；登录页可免密登录。' };
     }
     if (spec.id === 'cold-migration') {
       if (!this.coldMigrations)

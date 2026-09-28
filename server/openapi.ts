@@ -6,6 +6,7 @@ import { logRetentionRequest } from './log-retention.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
 import { accessEnableInput, accessLoginInput, accessViewerInput, accessPasswordInput } from './access-control.ts';
+import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
 import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
@@ -48,6 +49,20 @@ const core: {
       required: ['enabled', 'session'] } },
   { id: 'access.login', method: 'POST', path: '/api/access/login',
     title: '使用账户密码登录', public: true, body: request(accessLoginInput) },
+  { id: 'access.passkeyLoginOptions', method: 'POST', path: '/api/access/passkeys/login/options',
+    title: '开始本机通行密钥登录', public: true, body: request(z.object({}).strict()) },
+  { id: 'access.passkeyLoginVerify', method: 'POST', path: '/api/access/passkeys/login/verify',
+    title: '验证通行密钥并登录', public: true, body: request(passkeyFinish) },
+  { id: 'access.passkeys', method: 'GET', path: '/api/access/passkeys',
+    title: '列出当前账户的通行密钥', inspect: true },
+  { id: 'access.passkeyRegisterOptions', method: 'POST',
+    path: '/api/access/passkeys/register/options', title: '验证密码并开始登记通行密钥',
+    body: request(passkeyRegisterStart) },
+  { id: 'access.passkeyRegisterVerify', method: 'POST',
+    path: '/api/access/passkeys/register/verify', title: '验证并登记通行密钥',
+    body: request(passkeyFinish), status: 201 },
+  { id: 'access.passkeyRemove', method: 'DELETE', path: '/api/access/passkeys/{id}',
+    title: '验证密码并撤销通行密钥及其会话', body: request(passkeyRemove) },
   { id: 'access.view', method: 'GET', path: '/api/access/view',
     title: '获授权的实例摘要', inspect: true },
   { id: 'access.logout', method: 'POST', path: '/api/access/logout', title: '撤销当前账户会话' },

@@ -8,11 +8,21 @@ const password = z.string().min(12).max(256);
 const username = z.string().regex(/^[a-z][a-z0-9_-]{2,31}$/);
 const credential = z.object({ salt: z.string().regex(/^[a-f0-9]{64}$/),
   hash: z.string().regex(/^[a-f0-9]{128}$/) }).strict();
+const passkey = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{16,1024}$/),
+  publicKey: z.string().regex(/^[A-Za-z0-9_-]{16,4096}$/),
+  counter: z.number().int().nonnegative(),
+  transports: z.array(z.string().min(1).max(32)).max(8),
+  name: z.string().trim().min(1).max(64),
+  createdAt: z.iso.datetime(),
+  lastUsedAt: z.iso.datetime().optional(),
+}).strict();
 const account = z.object({
   id: z.uuid(), username, role: z.enum(['owner', 'viewer']), credential,
   vmIds: z.array(z.uuid()).max(32),
   expiresAt: z.number().int().nonnegative().nullable(),
   createdAt: z.iso.datetime(),
+  passkeys: z.array(passkey).max(10).default([]),
 }).strict();
 const stateSchema = z.object({ version: z.literal(1), enabled: z.boolean(),
   accounts: z.array(account).max(41) }).strict()
@@ -20,6 +30,7 @@ const stateSchema = z.object({ version: z.literal(1), enabled: z.boolean(),
     '启用账户模式需要且只允许一个管理员');
 type State = z.infer<typeof stateSchema>;
 type Account = z.infer<typeof account>;
+export type PasskeyRecord = z.infer<typeof passkey>;
 export type Principal = Pick<Account, 'id' | 'username' | 'role' | 'vmIds'> & { expiresAt: number };
 
 export const accessEnableInput = z.object({ password }).strict();
@@ -52,7 +63,7 @@ async function matches(text: string, stored: Account['credential']) {
 /** Opt-in host identities. No legacy controller token is accepted once enabled. */
 export class AccessControl {
   private state: State = defaults();
-  private sessions = new Map<string, { accountId: string; expiresAt: number }>();
+  private sessions = new Map<string, { accountId: string; expiresAt: number; credentialId?: string }>();
   private failures = new Map<string, { count: number; blockedUntil: number }>();
   private pending = Promise.resolve();
   private closed = false;
@@ -62,14 +73,36 @@ export class AccessControl {
   async init() {
     this.state = stateSchema.parse(await readStore(this.file, defaults));
     if (new Set(this.state.accounts.map((item) => item.username)).size !== this.state.accounts.length ||
-        new Set(this.state.accounts.map((item) => item.id)).size !== this.state.accounts.length)
+        new Set(this.state.accounts.map((item) => item.id)).size !== this.state.accounts.length ||
+        new Set(this.state.accounts.flatMap((item) => item.passkeys.map((key) => key.id))).size !==
+          this.state.accounts.reduce((count, item) => count + item.passkeys.length, 0))
       throw new AppError('账户目录包含重复身份', 503);
   }
 
   get enabled() { return this.state.enabled; }
   status() { return { enabled: this.state.enabled }; }
   users() {
-    return this.state.accounts.map(({ credential: _, ...item }) => item);
+    return this.state.accounts.map(({ credential: _, passkeys: __, ...item }) => item);
+  }
+
+  passkeysFor(accountId: string) {
+    const user = this.state.accounts.find((item) => item.id === accountId);
+    if (!user) throw new AppError('账户不存在', 404);
+    return user.passkeys.map(({ publicKey: _, counter: __, transports: ___, ...item }) => item);
+  }
+
+  registeredPasskeysFor(accountId: string) {
+    const user = this.state.accounts.find((item) => item.id === accountId);
+    if (!user) throw new AppError('账户不存在', 404);
+    return user.passkeys.map((item) => ({ ...item }));
+  }
+
+  getPasskey(id: string) {
+    for (const user of this.state.accounts) {
+      const key = user.passkeys.find((item) => item.id === id);
+      if (key) return { user, key };
+    }
+    return null;
   }
 
   private serial<T>(work: () => Promise<T>) {
@@ -88,7 +121,7 @@ export class AccessControl {
       const owner: Account = {
         id: randomUUID(), username: 'owner', role: 'owner',
         credential: await makeCredential(value.password), vmIds: [], expiresAt: null,
-        createdAt: new Date(this.now()).toISOString(),
+        createdAt: new Date(this.now()).toISOString(), passkeys: [],
       };
       const next: State = { version: 1, enabled: true, accounts: [owner] };
       await writeStore(this.file, next);
@@ -115,12 +148,16 @@ export class AccessControl {
         throw new AppError('账户或密码无效', 403);
       }
       this.failures.delete(value.username);
-      const expiresAt = Math.min(this.now() + (user.role === 'owner' ? 8 : 1) * 3_600_000,
-        user.expiresAt ?? Number.MAX_SAFE_INTEGER);
-      const token = randomBytes(32).toString('hex');
-      this.sessions.set(digest(token), { accountId: user.id, expiresAt });
-      return { token, principal: this.principal(user, expiresAt) };
+      return this.issueSession(user);
     });
+  }
+
+  private issueSession(user: Account, credentialId?: string) {
+    const expiresAt = Math.min(this.now() + (user.role === 'owner' ? 8 : 1) * 3_600_000,
+      user.expiresAt ?? Number.MAX_SAFE_INTEGER);
+    const token = randomBytes(32).toString('hex');
+    this.sessions.set(digest(token), { accountId: user.id, expiresAt, credentialId });
+    return { token, principal: this.principal(user, expiresAt) };
   }
 
   private principal(user: Account, expiresAt: number): Principal {
@@ -165,7 +202,7 @@ export class AccessControl {
       const user: Account = {
         id: randomUUID(), username: value.username, role: 'viewer',
         credential: await makeCredential(value.password), vmIds: [...new Set(value.vmIds)],
-        expiresAt: value.expiresAt, createdAt: new Date(this.now()).toISOString(),
+        expiresAt: value.expiresAt, createdAt: new Date(this.now()).toISOString(), passkeys: [],
       };
       const next: State = { ...this.state, accounts: [...this.state.accounts, user] };
       await writeStore(this.file, next);
@@ -185,6 +222,57 @@ export class AccessControl {
       for (const [key, session] of this.sessions)
         if (session.accountId === id) this.sessions.delete(key);
       return { removed: id };
+    });
+  }
+
+  async addPasskey(accountId: string, input: unknown) {
+    const key = passkey.parse(input);
+    return this.serial(async () => {
+      if (this.getPasskey(key.id)) throw new AppError('通行密钥已登记', 409);
+      const user = this.state.accounts.find((item) => item.id === accountId);
+      if (!user || (user.expiresAt && user.expiresAt <= this.now()))
+        throw new AppError('账户已失效', 401);
+      if (user.passkeys.length >= 10) throw new AppError('每个账户最多登记 10 把通行密钥', 409);
+      const next: State = { ...this.state, accounts: this.state.accounts.map((item) =>
+        item.id === accountId ? { ...item, passkeys: [...item.passkeys, key] } : item) };
+      await writeStore(this.file, next);
+      this.state = next;
+      return this.passkeysFor(accountId).find((item) => item.id === key.id)!;
+    });
+  }
+
+  async removePasskey(accountId: string, id: string) {
+    return this.serial(async () => {
+      const user = this.state.accounts.find((item) => item.id === accountId);
+      if (!user?.passkeys.some((item) => item.id === id))
+        throw new AppError('通行密钥不存在', 404);
+      const next: State = { ...this.state, accounts: this.state.accounts.map((item) =>
+        item.id === accountId
+          ? { ...item, passkeys: item.passkeys.filter((key) => key.id !== id) } : item) };
+      await writeStore(this.file, next);
+      this.state = next;
+      for (const [token, session] of this.sessions)
+        if (session.credentialId === id) this.sessions.delete(token);
+      return { removed: id };
+    });
+  }
+
+  async completePasskeyLogin(accountId: string, id: string,
+    previousCounter: number, newCounter: number) {
+    return this.serial(async () => {
+      const user = this.state.accounts.find((item) => item.id === accountId);
+      const key = user?.passkeys.find((item) => item.id === id);
+      if (!user || !key || (user.expiresAt && user.expiresAt <= this.now()))
+        throw new AppError('账户或通行密钥已失效', 401);
+      if (key.counter !== previousCounter || newCounter < previousCounter)
+        throw new AppError('通行密钥计数器已变化，请重新验证', 409);
+      const next: State = { ...this.state, accounts: this.state.accounts.map((item) =>
+        item.id === accountId ? { ...item, passkeys: item.passkeys.map((entry) =>
+          entry.id === id ? { ...entry, counter: newCounter,
+            lastUsedAt: new Date(this.now()).toISOString() } : entry) } : item) };
+      await writeStore(this.file, next);
+      this.state = next;
+      return this.issueSession(next.accounts.find((item) => item.id === accountId)!, id);
     });
   }
 

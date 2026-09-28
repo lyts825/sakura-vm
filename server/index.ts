@@ -39,6 +39,7 @@ import { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
 import { AccessControl } from './access-control.ts';
+import { Passkeys, passkeyRemove } from './passkeys.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -47,6 +48,7 @@ async function main() {
   await session.init();
   const access = new AccessControl();
   await access.init();
+  const passkeys = new Passkeys(access, PORT);
   const dev = process.argv.includes('--dev');
   validateRegistry();
   const plugins = new PluginManager();
@@ -93,6 +95,9 @@ async function main() {
         : { ready: false, reason: '实例桌面尚未就绪。' };
     } catch (error) { return { ready: false, reason: (error as Error).message }; }
   });
+  features.next?.setPasskeyCheck(() => ({ ready: access.enabled,
+    registered: access.users().reduce((count, user) => count + access.passkeysFor(user.id).length, 0),
+    ...(!access.enabled ? { reason: '请先启用账户模式。' } : {}) }));
   const importedPeerVm = (requesterId: string, transferId: string) =>
     [...machines.records.values()].find((vm) =>
       vm.migrationOrigin?.sourceHostId === requesterId &&
@@ -247,6 +252,10 @@ async function main() {
     } catch { return null; }
   };
   const allowedRequest = (req: IncomingMessage) => sameOrigin(req.headers, PORT);
+  const requirePasskeyOrigin = (req: IncomingMessage) => {
+    if (req.headers.host !== `localhost:${PORT}`)
+      throw new AppError('通行密钥需要在 localhost 页面使用', 400);
+  };
   const authorized = (req: IncomingMessage) => {
     session.requireUnlocked();
     if (access.enabled) return access.authorize(req.headers['x-sakura-token']);
@@ -287,6 +296,21 @@ async function main() {
       catch (error) { access.logout(login.token); throw error; }
       return send(res, login);
     }
+    if (url.pathname === '/api/access/passkeys/login/options') {
+      if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
+      requirePasskeyOrigin(req);
+      z.object({}).strict().parse(await body(req, 4096));
+      return send(res, await passkeys.beginAuthentication());
+    }
+    if (url.pathname === '/api/access/passkeys/login/verify') {
+      if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
+      requirePasskeyOrigin(req);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const login = await passkeys.finishAuthentication(await body(req, 65536));
+      try { session.requireUnlocked(); }
+      catch (error) { access.logout(login.token); throw error; }
+      return send(res, login);
+    }
     if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
       if (access.enabled) throw new AppError('请登录账户后访问 Sakura', 401);
       return send(res, { token, session: session.view() });
@@ -300,8 +324,14 @@ async function main() {
     }
     if (await features.downloads?.route(req, res, url)) return;
     const principal = authorized(req);
+    const accountPrincipal = access.enabled ? access.authorize(req.headers['x-sakura-token']) : null;
+    const passkeyManagementRoute = [
+      '/api/access/passkeys', '/api/access/passkeys/register/options',
+      '/api/access/passkeys/register/verify',
+    ].includes(url.pathname) || /^\/api\/access\/passkeys\/[A-Za-z0-9_-]{16,1024}$/.test(url.pathname);
     if (access.enabled && principal.role === 'viewer' &&
-        url.pathname !== '/api/access/view' && url.pathname !== '/api/access/logout')
+        url.pathname !== '/api/access/view' && url.pathname !== '/api/access/logout' &&
+        !passkeyManagementRoute)
       throw new AppError('只读账户没有此接口的访问权限', 403);
     if (url.pathname === '/api/access/view') {
       if (req.method !== 'GET' || !access.enabled) throw new AppError('不支持此方法', 405);
@@ -317,6 +347,32 @@ async function main() {
       const credential = req.headers['x-sakura-token'];
       const result = access.logout(credential);
       if (typeof credential === 'string') terminateCredentialSockets(credential);
+      return send(res, result);
+    }
+    if (url.pathname === '/api/access/passkeys') {
+      if (req.method !== 'GET' || !accountPrincipal) throw new AppError('不支持此方法', 405);
+      return send(res, { passkeys: access.passkeysFor(accountPrincipal.id) });
+    }
+    if (url.pathname === '/api/access/passkeys/register/options') {
+      if (req.method !== 'POST' || !accountPrincipal) throw new AppError('不支持此方法', 405);
+      requirePasskeyOrigin(req);
+      return send(res, await passkeys.beginRegistration(accountPrincipal, await authorizedBody(req, 4096)));
+    }
+    if (url.pathname === '/api/access/passkeys/register/verify') {
+      if (req.method !== 'POST' || !accountPrincipal) throw new AppError('不支持此方法', 405);
+      requirePasskeyOrigin(req);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await passkeys.finishRegistration(accountPrincipal,
+        await authorizedBody(req, 65536)), 201);
+    }
+    if (/^\/api\/access\/passkeys\/[A-Za-z0-9_-]{16,1024}$/.test(url.pathname)) {
+      if (req.method !== 'DELETE' || !accountPrincipal) throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const input = passkeyRemove.parse(await authorizedBody(req, 4096));
+      const proof = await access.login({ username: accountPrincipal.username, password: input.password });
+      access.logout(proof.token);
+      const result = await access.removePasskey(accountPrincipal.id, url.pathname.split('/').at(-1)!);
+      terminateAccountSockets(accountPrincipal.id);
       return send(res, result);
     }
     if (url.pathname === '/api/access/enable') {
@@ -627,8 +683,9 @@ async function main() {
       const url = requestUrl(req.url, PORT);
       if (!url) throw new AppError('无效的请求地址', 400);
       if (url.pathname.startsWith('/api/')) {
-        if (url.pathname === '/api/access/login' && req.method === 'POST')
-          return await audit.span({ kind: 'request', name: 'POST /api/access/login' },
+        if ((url.pathname === '/api/access/login' ||
+            url.pathname === '/api/access/passkeys/login/verify') && req.method === 'POST')
+          return await audit.span({ kind: 'request', name: 'POST ' + url.pathname },
             () => api(req, res, url), () => res.statusCode);
         let actorId: string | undefined;
         if (access.enabled) {
@@ -884,6 +941,7 @@ async function main() {
     for (const dispose of [
       () => session.close(),
       () => access.close(),
+      () => passkeys.close(),
       () => assistant.close(),
       () => native.close(),
       () => webhooks.close(),

@@ -72,12 +72,12 @@ export class ControllerSession {
 
   authenticate(staleToken = this.token): Promise<string> {
     if (this.session.locked) return Promise.reject(new Error('控制面已锁定，请先解锁'));
-    // Another request may already have replaced the rejected credential.
-    if (this.token && this.token !== staleToken) return Promise.resolve(this.token);
     if (this.accountMode) {
-      this.clearCredential();
+      if (this.token) return Promise.resolve(this.token);
       return Promise.reject(new Error('账户会话已过期，请重新登录'));
     }
+    // Another request may already have replaced the rejected credential.
+    if (this.token && this.token !== staleToken) return Promise.resolve(this.token);
     if (this.pending) return this.pending;
     const generation = this.generation;
     const pending = (async () => {

@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AccessControl } from '../server/access-control.ts';
+import { Passkeys } from '../server/passkeys.ts';
 
 test('opt-in account mode replaces the shared token with expiring scoped identities', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-access-'));
@@ -64,6 +65,49 @@ test('account login locks out repeated guessing and does not persist sessions', 
     await restarted.init();
     assert.throws(() => restarted.authorize(login.token), /访问凭证/);
     await restarted.close();
+  } finally {
+    await access.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('passkey challenges are single-use and stored credentials survive restart and revoke their sessions', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-passkeys-'));
+  const file = join(directory, 'accounts.json');
+  let now = Date.UTC(2026, 0, 1);
+  const access = new AccessControl(file, () => now);
+  await access.init();
+  try {
+    await access.enable({ password: 'correct horse battery staple' });
+    const owner = await access.login({ username: 'owner', password: 'correct horse battery staple' });
+    const passkeys = new Passkeys(access, 7337, () => now);
+    const begin = await passkeys.beginAuthentication();
+    assert.equal(begin.options.rpId, 'localhost');
+    const invalid = { ceremonyId: begin.ceremonyId, response: { id: 'a'.repeat(32) } };
+    await assert.rejects(passkeys.finishAuthentication(invalid), /验证失败/);
+    await assert.rejects(passkeys.finishAuthentication(invalid), /已失效/);
+    const expired = await passkeys.beginAuthentication();
+    now += 5 * 60_000;
+    await assert.rejects(passkeys.finishAuthentication({ ...invalid,
+      ceremonyId: expired.ceremonyId }), /已失效/);
+
+    const id = 'b'.repeat(32);
+    await access.addPasskey(owner.principal.id, { id, publicKey: 'c'.repeat(32),
+      counter: 0, transports: ['internal'], name: 'test key',
+      createdAt: new Date(now).toISOString() });
+    assert.equal(access.passkeysFor(owner.principal.id)[0].name, 'test key');
+    assert.ok(!JSON.stringify(access.passkeysFor(owner.principal.id)).includes('publicKey'));
+    const restarted = new AccessControl(file, () => now);
+    await restarted.init();
+    assert.equal(restarted.getPasskey(id)?.key.id, id);
+    await restarted.close();
+    const signedIn = await access.completePasskeyLogin(owner.principal.id, id, 0, 1);
+    assert.equal(access.authorize(signedIn.token).role, 'owner');
+    await assert.rejects(access.completePasskeyLogin(owner.principal.id, id, 0, 1), /计数器/);
+    await access.removePasskey(owner.principal.id, id);
+    assert.throws(() => access.authorize(signedIn.token), /凭证/);
+    assert.equal(access.authorize(owner.token).role, 'owner');
+    passkeys.close();
   } finally {
     await access.close();
     await rm(directory, { recursive: true, force: true });

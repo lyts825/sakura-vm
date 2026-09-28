@@ -114,6 +114,8 @@ test('account credentials never fall back to public bootstrap or replay a reject
   session.setAccountMode(true);
   session.adoptAccount('a'.repeat(64), { id: 'owner', username: 'owner', role: 'owner',
     vmIds: [], expiresAt: Date.now() + 10000 });
+  assert.equal(await session.authenticate(), 'a'.repeat(64));
+  assert.equal(bootstrap, 0);
   await assert.rejects(session.request('/vms', 'POST', {}), /重新登录/);
   assert.equal(writes, 1);
   assert.equal(bootstrap, 0);

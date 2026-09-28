@@ -15,6 +15,7 @@ await new Promise<void>((done) => listener.listen(0, '127.0.0.1', done));
 const port = (listener.address() as { port: number }).port;
 await new Promise<void>((done) => listener.close(() => done()));
 const origin = `http://127.0.0.1:${port}`;
+const passkeyOrigin = `http://localhost:${port}`;
 const password = 'a long administrator password';
 let server: ReturnType<typeof spawn> | undefined;
 let output = '';
@@ -48,8 +49,9 @@ const stop = async () => {
   await exited;
   server = undefined;
 };
-const request = async (path: string, method = 'GET', token?: string, body?: unknown) => {
-  const response = await fetch(origin + path, {
+const request = async (path: string, method = 'GET', token?: string, body?: unknown,
+  base = origin) => {
+  const response = await fetch(base + path, {
     method, headers: { ...(token ? { 'x-sakura-token': token } : {}),
       ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -145,6 +147,65 @@ try {
     await page.getByRole('button', { name: '关闭桌面视图' }).click();
     await page.getByRole('button', { name: '退出登录' }).click();
     await page.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+
+    const passkeyPage = await browser.newPage();
+    const cdp = await passkeyPage.context().newCDPSession(passkeyPage);
+    await cdp.send('WebAuthn.enable');
+    await cdp.send('WebAuthn.addVirtualAuthenticator', { options: {
+      protocol: 'ctap2', transport: 'internal', hasResidentKey: true,
+      hasUserVerification: true, isUserVerified: true,
+    } });
+    assert.equal((await request('/api/access/passkeys/login/options', 'POST', undefined, {})).status, 400);
+    await passkeyPage.goto(passkeyOrigin);
+    await passkeyPage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    assert.equal(await passkeyPage.getByLabel('账户名').inputValue(), 'owner');
+    await passkeyPage.getByLabel('密码').fill(password);
+    const ownerBrowserLogin = passkeyPage.waitForResponse((response) =>
+      response.url().endsWith('/api/access/login'));
+    await passkeyPage.getByRole('button', { name: '登录', exact: true }).click();
+    const ownerBrowserResponse = await ownerBrowserLogin;
+    assert.equal(ownerBrowserResponse.status(), 200, await ownerBrowserResponse.text());
+    const ownerBrowserData = await ownerBrowserResponse.json();
+    assert.equal(ownerBrowserData.principal.role, 'owner');
+    assert.equal(ownerBrowserData.token.length, 64);
+    await passkeyPage.getByRole('button', { name: '系统设置', exact: true }).waitFor({ timeout: 8000 })
+      .catch(async () => { throw new Error('Owner browser login failed: ' +
+        await passkeyPage.locator('body').innerText()); });
+    await passkeyPage.getByRole('button', { name: '系统设置', exact: true }).click();
+    const manager = passkeyPage.getByRole('region', { name: '通行密钥管理' });
+    await manager.getByLabel('通行密钥名称').fill('local-key');
+    await manager.getByLabel('当前账户密码').fill(password);
+    const registrationVerify = passkeyPage.waitForResponse((response) =>
+      response.url().endsWith('/api/access/passkeys/register/verify'));
+    await manager.getByRole('button', { name: '登记通行密钥' }).click();
+    await manager.getByText('通行密钥已登记').waitFor();
+    const registered = await registrationVerify;
+    assert.equal(registered.status(), 201);
+    assert.equal((await request('/api/access/passkeys/register/verify', 'POST',
+      ownerBrowserData.token, registered.request().postDataJSON(), passkeyOrigin)).status, 409);
+    const savedKeys = (await request('/api/access/passkeys', 'GET', ownerToken)).body.passkeys;
+    assert.equal(savedKeys.length, 1);
+    assert.equal(savedKeys[0].name, 'local-key');
+    assert.ok(!JSON.stringify(savedKeys).includes('publicKey'));
+    await passkeyPage.getByRole('button', { name: 'owner · 退出' }).click();
+    await passkeyPage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    const loginVerify = passkeyPage.waitForResponse((response) =>
+      response.url().endsWith('/api/access/passkeys/login/verify'));
+    await passkeyPage.getByRole('button', { name: '使用通行密钥登录' }).click();
+    await passkeyPage.getByRole('button', { name: 'owner · 退出' }).waitFor();
+    const verified = await loginVerify;
+    assert.equal(verified.status(), 200);
+    const passkeyLogin = await verified.json();
+    assert.equal((await request('/api/vms', 'GET', passkeyLogin.token)).status, 200);
+    assert.equal((await request('/api/access/passkeys/login/verify', 'POST', undefined,
+      verified.request().postDataJSON(), passkeyOrigin)).status, 409);
+    assert.equal((await request('/api/access/passkeys/' + savedKeys[0].id, 'DELETE', ownerToken,
+      { password: 'incorrect' })).status, 403);
+    assert.equal((await request('/api/access/passkeys/' + savedKeys[0].id, 'DELETE', ownerToken,
+      { password })).status, 200);
+    assert.equal((await request('/api/vms', 'GET', passkeyLogin.token)).status, 401);
+    assert.equal((await request('/api/access/passkeys', 'GET', ownerToken)).body.passkeys.length, 0);
+    await passkeyPage.close();
   } finally { await browser.close(); }
 
   assert.equal((await request('/api/access/users/' + viewer.body.id, 'DELETE', ownerToken)).status, 200);

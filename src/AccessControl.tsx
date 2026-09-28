@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type RFB from '@novnc/novnc';
+import type { PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import type { AccessPrincipal } from '../shared/access-control';
 import type { SessionLockView } from '../shared/session-lock';
 import { api, controllerSession } from './controller-session';
@@ -9,6 +11,20 @@ type SharedVm = { id: string; name: string; status: string; distro?: string;
   cpus: number; memoryMiB: number; diskGiB: number };
 type UserView = { id: string; username: string; role: 'owner' | 'viewer';
   vmIds: string[]; expiresAt: number | null; createdAt: string };
+type PasskeyView = { id: string; name: string; createdAt: string; lastUsedAt?: string };
+type Ceremony<T> = { ceremonyId: string; options: T };
+
+async function publicPasskeyRequest<T>(path: string, input: unknown) {
+  const response = await fetch('/api/access/passkeys/' + path, {
+    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input), signal: AbortSignal.timeout(60_000),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || '通行密钥请求失败');
+  return result as T;
+}
+
+const localhostUrl = () => `http://localhost:${location.port || '80'}/`;
 
 const useToken = () => useSyncExternalStore(controllerSession.subscribe, controllerSession.getToken);
 const usePrincipal = () => useSyncExternalStore(controllerSession.subscribe, controllerSession.getPrincipal);
@@ -89,6 +105,21 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
         <button className="primary" disabled={busy || !username || !password}>
           {busy ? '正在登录…' : '登录'}</button>
       </form>
+      {location.hostname === 'localhost' ? <button className="secondary" disabled={busy}
+        onClick={async () => {
+          setBusy(true); setError('');
+          try {
+            const begin = await publicPasskeyRequest<Ceremony<PublicKeyCredentialRequestOptionsJSON>>(
+              'login/options', {});
+            const { startAuthentication } = await import('@simplewebauthn/browser');
+            const response = await startAuthentication({ optionsJSON: begin.options });
+            const login = await publicPasskeyRequest<{ token: string; principal: AccessPrincipal }>(
+              'login/verify', { ceremonyId: begin.ceremonyId, response });
+            controllerSession.adoptAccount(login.token, login.principal);
+          } catch (reason) { setError(reason instanceof Error ? reason.message : '通行密钥登录失败'); }
+          finally { setBusy(false); }
+        }}>使用通行密钥登录</button>
+        : <p><a href={localhostUrl()}>在 localhost 打开通行密钥登录</a></p>}
       {error && <p role="alert" className="inline-error">{error}</p>}
       {statusError && <p role="status" className="inline-error">{statusError}</p>}
     </section>
@@ -129,7 +160,59 @@ function SharedInventory({ principal }: { principal: AccessPrincipal }) {
       </li>)}</ul> : <p>当前没有可查看的实例。</p>}
     </section>
     {desktopId && token && <SharedDesktop vmId={desktopId} token={token} />}
+    <PasskeyManager />
   </main>;
+}
+
+function PasskeyManager() {
+  const principal = usePrincipal();
+  const [keys, setKeys] = useState<PasskeyView[]>([]);
+  const [name, setName] = useState('此设备');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const refresh = async () => setKeys((await api<{ passkeys: PasskeyView[] }>(
+    '/access/passkeys')).passkeys);
+  useEffect(() => { void refresh().catch((reason) => setError(String(reason.message || reason))); },
+    [principal?.id]);
+  return <section className="system-card" aria-label="通行密钥管理">
+    <h3>通行密钥</h3>
+    <p>每个账户最多登记 10 把通行密钥。登记和撤销需要当前账户密码。</p>
+    {location.hostname === 'localhost' ? <form onSubmit={async (event) => {
+      event.preventDefault(); setBusy(true); setError(''); setMessage('');
+      try {
+        const begin = await api<Ceremony<PublicKeyCredentialCreationOptionsJSON>>(
+          '/access/passkeys/register/options', 'POST', { name, password });
+        const { startRegistration } = await import('@simplewebauthn/browser');
+        const response = await startRegistration({ optionsJSON: begin.options });
+        await api('/access/passkeys/register/verify', 'POST',
+          { ceremonyId: begin.ceremonyId, response });
+        setPassword(''); setMessage('通行密钥已登记'); await refresh();
+      } catch (reason) { setError(reason instanceof Error ? reason.message : '登记失败'); }
+      finally { setBusy(false); }
+    }}>
+      <label>通行密钥名称<input value={name} maxLength={64} required disabled={busy}
+        onChange={(event) => setName(event.target.value)} /></label>
+      <label>当前账户密码<input type="password" autoComplete="current-password" required
+        value={password} disabled={busy} onChange={(event) => setPassword(event.target.value)} /></label>
+      <button className="secondary compact" disabled={busy || keys.length >= 10}>登记通行密钥</button>
+    </form> : <p><a href={localhostUrl()}>在 localhost 打开以登记通行密钥</a></p>}
+    <ul>{keys.map((key) => <li key={key.id}>
+      {key.name} · 登记于 {new Date(key.createdAt).toLocaleString()}
+      {key.lastUsedAt && ` · 最近使用 ${new Date(key.lastUsedAt).toLocaleString()}`}
+      <button className="secondary compact" disabled={busy || !password} onClick={async () => {
+        setBusy(true); setError(''); setMessage('');
+        try {
+          await api('/access/passkeys/' + key.id, 'DELETE', { password });
+          setPassword(''); setMessage('通行密钥已撤销'); await refresh();
+        } catch (reason) { setError(reason instanceof Error ? reason.message : '撤销失败'); }
+        finally { setBusy(false); }
+      }}>撤销</button>
+    </li>)}</ul>
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
 }
 
 function SharedDesktop({ vmId, token }: { vmId: string; token: string }) {
@@ -275,6 +358,7 @@ export function AccessSettings() {
           disabled={busy} /></label>
         <button className="secondary compact" disabled={busy}>更换密码</button>
       </form>
+      <PasskeyManager />
     </>}
     {message && <p role="status">{message}</p>}
     {error && <p role="alert" className="inline-error">{error}</p>}
