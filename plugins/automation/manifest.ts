@@ -12,6 +12,7 @@ export const manifest = definePlugin({
     http: [
       http('/api/feature-suite', ['GET']),
       http('/api/vms/:vmId/advanced', ['GET', 'PUT', 'POST'], true),
+      http('/api/vms/:vmId/packages', ['GET', 'POST'], true),
       http('/api/vms/:vmId/suspend', ['POST']),
       http('/api/vms/:vmId/resume', ['POST']),
     ],

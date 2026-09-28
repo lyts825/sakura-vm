@@ -59,6 +59,7 @@
     "test:snapshot-merge": "tsx scripts/smoke-snapshot-merge.ts",
     "test:memory-reclaim": "tsx scripts/smoke-memory-reclaim.ts",
     "test:host-mount": "tsx scripts/smoke-host-mount.ts",
+    "test:package-workbench": "tsx scripts/smoke-package-workbench.ts",
     "test:online-snapshot": "tsx scripts/smoke-online-snapshot.ts",
     "test:auto-remediation": "tsx scripts/smoke-auto-remediation.ts",
     "test:package-cache": "tsx scripts/smoke-package-cache.ts",

@@ -28,6 +28,7 @@ import { NotificationCenter } from '../../src/NotificationCenter';
 import { UsbHotplugPanel } from '../../src/UsbHotplugPanel';
 import { MemoryReclaimSettings } from './MemoryReclaimSettings';
 import { HostMountSettings } from './HostMountSettings';
+import { PackageWorkbenchPanel } from './PackageWorkbenchPanel';
 
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
@@ -204,7 +205,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const [packageOperation, setPackageOperation] = useState<
     'list' | 'search' | 'install' | 'remove' | 'update' |
     'cache-list' | 'cache-prefetch' | 'cache-install' | 'cache-clear'
-  >('list');
+  >('cache-list');
   const [networkTarget, setNetworkTarget] = useState('example.com');
   const [networkResult, setNetworkResult] = useState('');
   const [securityResult, setSecurityResult] = useState<{
@@ -902,6 +903,9 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 <Package size={17} />
                 软件包
               </h3>
+              <PackageWorkbenchPanel vmId={active.id} running={active.status === 'running'}
+                request={request} onSubmitted={() => remote.reload()} />
+              <h4>离线软件包缓存</h4>
               <div className="feature-grid compact-grid">
                 <label>
                   操作
@@ -909,11 +913,6 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                     value={packageOperation}
                     onChange={(event) => setPackageOperation(event.target.value as typeof packageOperation)}
                   >
-                    <option value="list">列出已安装</option>
-                    <option value="search">搜索</option>
-                    <option value="install">安装</option>
-                    <option value="remove">卸载</option>
-                    <option value="update">更新索引</option>
                     <option value="cache-list">查看离线缓存</option>
                     <option value="cache-prefetch">预取软件包及依赖</option>
                     <option value="cache-install">从缓存离线安装</option>

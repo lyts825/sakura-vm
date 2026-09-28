@@ -16,11 +16,11 @@
 
 ### 桌面与跨系统
 
-- [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L80) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
+- [ ] **单应用 Linux 窗口**（P2 · 规划） · [`single-app-windows`](../server/feature-suite.ts#L81) — 将 Linux GUI 应用集成到 Windows 桌面。 对应完整流程尚未实现。
 
 ### 运维与安全
 
-- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L89) — 内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。
+- [ ] **插件 API 与自动化触发器**（P1 · 规划） · [`plugin-api`](../server/feature-suite.ts#L90) — 内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。
 
 ## 第二批
 
@@ -67,7 +67,6 @@
 ## 目录以外的范围
 
 - 插件独立下载与热卸载；当前仍只加载内置插件。
-- 完整发行版包管理界面。
 - 持久保存 RAM 和运行中进程的快照/恢复。
 
 重新生成：`npm run features:audit`。上述目录状态由源码声明，真实硬件、多主机和外部身份服务仍需要对应环境验证。

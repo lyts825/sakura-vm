@@ -28,6 +28,7 @@ import { dependencyManagerSchema, projectDependencyCacheScript } from './project
 import { processInteropInput, type ProcessInterop } from './process-interop.ts';
 import type { MediaDevices } from './media-devices.ts';
 import type { HostMounts } from './host-mount.ts';
+import { PackageWorkbench } from './package-workbench.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -250,7 +251,8 @@ const defaultState = (): FeatureState => ({
 
 const defaultSchedule = (): Schedule => scheduleSchema.parse({});
 const defaultAlerts = (): AlertConfig => alertSchema.parse({});
-const packageName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9+_.:@/-]{0,127}$/, '软件包名称无效');
+const packageName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9+_.-]{0,127}$/, '软件包名称无效')
+  .refine((value) => !/[+-]$/.test(value), '软件包名称不能以 + 或 - 结尾');
 const searchText = z
   .string()
   .trim()
@@ -296,6 +298,7 @@ export type FeatureAction =
     }
   | { action: 'search'; query: string; path?: string; content?: boolean }
   | { action: 'package'; operation: 'list' | 'search' | 'install' | 'remove' | 'update' |
+      'upgrade' | 'upgrade-all' |
       'cache-list' | 'cache-prefetch' | 'cache-install' | 'cache-clear'; name?: string }
   | { action: 'network-test'; target: string }
   | { action: 'security-scan' }
@@ -318,6 +321,7 @@ export class FeatureSuite {
   private processInterop?: ProcessInterop;
   private mediaDevices?: MediaDevices;
   private hostMounts?: HostMounts;
+  readonly packageWorkbench: PackageWorkbench;
 
   constructor(
     private machines: Machines,
@@ -328,7 +332,10 @@ export class FeatureSuite {
       secrets?: (id: string) => Promise<SecretRotationItem[] | undefined>;
       power?: (signal: AbortSignal) => Promise<PowerSample>;
     } = {},
-  ) {}
+  ) {
+    this.packageWorkbench = new PackageWorkbench(machines, (id, operation, name) =>
+      this.package(id, { operation, name }));
+  }
   setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
   setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
   setHostMounts(service: HostMounts) { this.hostMounts = service; }
@@ -1011,30 +1018,36 @@ export class FeatureSuite {
     input: Omit<Extract<FeatureAction, { action: 'package' }>, 'action'>,
     signal?: AbortSignal,
   ) {
-    const operation = z.enum(['list', 'search', 'install', 'remove', 'update',
+    const operation = z.enum(['list', 'search', 'install', 'remove', 'update', 'upgrade', 'upgrade-all',
       ...packageCacheOperations]).parse(input.operation);
     const name = input.name ? packageName.parse(input.name) : undefined;
-    if (['search', 'install', 'remove'].includes(operation) && !name)
+    if (['search', 'install', 'remove', 'upgrade'].includes(operation) && !name)
       throw new AppError('此操作需要软件包名称');
     const vm = this.machines.get(id);
     const manager = !vm.distro || vm.distro === 'alpine' ? 'apk' : 'apt-get';
-    const regular = operation as 'list' | 'search' | 'install' | 'remove' | 'update';
+    const argument = quote(name || '');
+    const regular = operation as 'list' | 'search' | 'install' | 'remove' | 'update' |
+      'upgrade' | 'upgrade-all';
     const command = operation.startsWith('cache-')
       ? packageCacheScript(vm.distro, operation as (typeof packageCacheOperations)[number], name)
       : manager === 'apk'
         ? {
             list: 'apk info',
-            search: `apk search -v ${quote(name!)}`,
-            install: `apk add --no-cache --timeout 30 ${quote(name!)}`,
-            remove: `apk del ${quote(name!)}`,
+            search: `apk search -v ${argument}`,
+            install: `apk add --no-cache --timeout 30 ${argument}`,
+            remove: `apk del ${argument}`,
             update: 'apk update',
+            upgrade: `apk upgrade ${argument}`,
+            'upgrade-all': 'apk upgrade',
           }[regular]
         : {
             list: "dpkg-query -W -f='${Package}\\t${Version}\\n'",
-            search: `apt-cache search ${quote(name!)}`,
-            install: `DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 install -y ${quote(name!)}`,
-            remove: `DEBIAN_FRONTEND=noninteractive apt-get remove -y ${quote(name!)}`,
+            search: `apt-cache search ${argument}`,
+            install: `DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 install -y ${argument}`,
+            remove: `DEBIAN_FRONTEND=noninteractive apt-get remove -y ${argument}`,
             update: 'apt-get update',
+            upgrade: `DEBIAN_FRONTEND=noninteractive apt-get --only-upgrade install -y ${argument}`,
+            'upgrade-all': 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y',
           }[regular];
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:package`,
@@ -1045,6 +1058,7 @@ export class FeatureSuite {
       },
       {
         title: `软件包${{ list: '列表', search: '搜索', install: '安装', remove: '卸载', update: '更新',
+          upgrade: '升级', 'upgrade-all': '全部升级',
           'cache-list': '缓存列表', 'cache-prefetch': '预取缓存',
           'cache-install': '离线安装', 'cache-clear': '清除缓存' }[operation]}`,
         vmId: id,

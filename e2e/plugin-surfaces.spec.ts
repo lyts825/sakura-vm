@@ -3454,6 +3454,60 @@ test('host directory mount saves path and read-only policy, then mounts and unmo
   await expect(panel.getByText(/未启用/)).toBeVisible();
 });
 
+test('package workbench lists packages and requires a reviewed plan before applying', async ({ page }) => {
+  await app(page, ['projects', 'automation'], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
+    settings: { schedule: { enabled: false, idleMinutes: 0, idleAction: 'stop' },
+      alerts: { enabled: false, cpuPercent: 90, memoryPercent: 90, diskPercent: 90,
+        cooldownMinutes: 30, taskFailures: false, serviceFailures: false } },
+    features: [], presets: {}, events: [], history: [],
+  } }));
+  const actions: unknown[] = [];
+  await page.route('**/api/vms/*/packages*', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON();
+      actions.push(input);
+      if (input.operation === 'preview') return route.fulfill({ json: {
+        token: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+        expiresAt: Date.now() + 300_000, change: input.change,
+        name: input.name || null, plan: '(1/1) Installing jq (1.8.2-r0)',
+      } });
+      return route.fulfill({ json: { job: { status: 'running', log: '' } } });
+    }
+    const parameters = new URL(route.request().url()).searchParams;
+    const mode = parameters.get('mode');
+    const items = mode === 'search'
+      ? [{ name: 'jq', version: '1.8.2-r0', description: 'JSON processor' }]
+      : mode === 'updates'
+        ? [{ name: 'alpine-base', version: '3.23.6-r0',
+          installedVersion: '3.23.4-r0', availableVersion: '3.23.6-r0' }]
+        : [{ name: 'openssh', version: '10.2_p1-r0', installedVersion: '10.2_p1-r0' }];
+    return route.fulfill({ json: { vmId: vm.id, mode, query: parameters.get('query') || '',
+      manager: 'apk', items, total: items.length, page: 1, hasMore: false } });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const panel = page.getByRole('region', { name: '发行版包管理器' });
+  await expect(panel.getByText('openssh', { exact: true })).toBeVisible();
+  await panel.getByRole('combobox', { name: '视图' }).selectOption('search');
+  await panel.getByRole('textbox', { name: '筛选或搜索' }).fill('jq');
+  await panel.getByRole('button', { name: '查询软件包' }).click();
+  await expect(panel.getByText('JSON processor')).toBeVisible();
+  await panel.getByRole('button', { name: '安装', exact: true }).click();
+  const preview = panel.getByRole('region', { name: '软件包变更预览' });
+  await expect(preview.getByLabel('软件包模拟计划')).toContainText('Installing jq');
+  expect(actions).toHaveLength(1);
+  await preview.getByRole('button', { name: '确认执行此计划' }).click();
+  await expect.poll(() => actions.length).toBe(2);
+  expect(actions[1]).toEqual({ operation: 'apply', token: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa' });
+  await panel.getByRole('combobox', { name: '视图' }).selectOption('updates');
+  await expect(panel.getByText('3.23.4-r0 → 3.23.6-r0')).toBeVisible();
+  await panel.getByRole('button', { name: '预览全部升级' }).click();
+  expect(actions).toContainEqual({ operation: 'preview', change: 'upgrade-all' });
+});
+
 async function app(page: Page, active: string[] = [], withVm = false) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;

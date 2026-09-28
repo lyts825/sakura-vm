@@ -20,7 +20,7 @@ export async function activate(host: PluginContext) {
     const id = retryTarget(job);
     if (job.action?.startsWith('package:')) {
       const [operationValue, ...nameParts] = job.action.slice(8).split(':');
-      const operation = z.enum(['list', 'search', 'install', 'remove', 'update',
+      const operation = z.enum(['list', 'search', 'install', 'remove', 'update', 'upgrade', 'upgrade-all',
         'cache-list', 'cache-prefetch', 'cache-install', 'cache-clear']).parse(operationValue);
       return retryInProject(host, job, () =>
         Promise.resolve(
@@ -90,6 +90,18 @@ export async function route(
   if (parts.length === 4 && req.method === 'POST' && action === 'resume')
     return send(await this.machines.resume(id));
   if (parts.length === 4) {
+    if (action === 'packages') {
+      if (req.method === 'GET') {
+        const mode = url.searchParams.get('mode') || 'installed';
+        const query = url.searchParams.get('query') || '';
+        const page = Number(url.searchParams.get('page') || 1);
+        const limit = Number(url.searchParams.get('limit') || 50);
+        return send(await this.suite.packageWorkbench.query(id,
+          { mode, query, page, limit }, signal));
+      }
+      if (req.method === 'POST')
+        return send(await this.suite.packageWorkbench.action(id, await body(req), signal), 202);
+    }
     if (action === 'advanced') {
       if (req.method === 'GET') {
         send(await this.suite.view(id, Number(url.searchParams.get('limit') || 120)));

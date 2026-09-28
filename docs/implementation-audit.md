@@ -112,7 +112,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 三方合并编辑器 / `merge-editor` | 部分实现 | 有冲突文本及覆盖/重新载入提示；缺 Git/同步三方可视化合并编辑器。 | [plugins/files/client.tsx:680](D:/27247/Desktop/Sakura/plugins/files/client.tsx:680) |
 | 依赖图与更新报告 / `dependency-report` | 部分实现 | 返回包管理器报告；缺依赖关系图及统一升级建议模型。 | [server/feature-suite.ts:455](D:/27247/Desktop/Sakura/server/feature-suite.ts:455) |
 | 更多运行时版本 / `runtime-matrix` | 部分实现 | 精确版本管理已支持 Node/Python；缺此目录承诺的 Go、Java、.NET、PHP。 | [server/runtime-versions.ts:12](D:/27247/Desktop/Sakura/server/runtime-versions.ts:12) |
-| Linux 包管理器界面 / `package-manager` | 已有专用操作 | 有 apk/apt 查询、安装、卸载和更新任务。 | [server/feature-suite.ts:574](D:/27247/Desktop/Sakura/server/feature-suite.ts:574) |
+| Linux 包管理器界面 / `package-manager` | 已实现 | 分页展示 apk/apt 已安装、搜索与可升级列表；安装、卸载和升级先模拟计划，再用一次性令牌执行任务。 | [server/package-workbench.ts](../server/package-workbench.ts) |
 | 可复现环境锁文件 / `reproducible-env` | 部分实现 | 有 Node/Python/Rust 版本文本快照比对和依赖锁文件安装；缺操作系统包、全部工具链的统一锁定及重建验证。 | [server/feature-suite.ts:458](D:/27247/Desktop/Sakura/server/feature-suite.ts:458) |
 | Dev Container 支持 / `dev-container` | 未实现 | Docker/Compose 是独立插件；未解析 devcontainer 配置并创建开发环境。 | [server/feature-suite.ts:318](D:/27247/Desktop/Sakura/server/feature-suite.ts:318) |
 | 浏览器预览与热重载 / `browser-preview` | 已有专用操作 | 支持端口转发及打开服务网页；热重载由客户机开发服务器提供。 | [plugins/network/client.tsx:74](D:/27247/Desktop/Sakura/plugins/network/client.tsx:74) |
