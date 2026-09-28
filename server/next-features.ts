@@ -427,7 +427,7 @@ export const nextFeatureCatalog = [
     '开发与 AI',
     'P1',
     '登记 DevContainer 模板和来源校验状态。',
-    'planned',
+    'available',
   ],
   ['branch-preview', '分支预览环境', '开发与 AI', 'P1', '保存分支预览环境的生命周期状态。', 'available'],
   [
@@ -1027,6 +1027,15 @@ export class NextFeatures {
       return { ready: process.platform === 'win32', executed: false, adapter,
         ...(process.platform !== 'win32' ? { reason: '仅支持 Windows 主机。' } : {}),
         message: '在 Windows 运行 npm run tray；托盘可显示本机状态、打开 Sakura、启动服务及设置登录自启。' };
+    if (spec.id === 'devcontainer-marketplace') {
+      const vm = this.machines.get(id);
+      const result = vm.distro && vm.distro !== 'alpine' && this.machines.state(id) === 'running'
+        ? await this.machines.exec(id, 'command -v devcontainer >/dev/null', 10000, signal)
+        : null;
+      return { ready: result?.code === 0, executed: false, adapter,
+        ...(result?.code !== 0 ? { reason: '需要运行中的 Debian/Ubuntu 实例与 Dev Container CLI。' } : {}),
+        message: '在容器工作台选择官方模板，校验 OCI 元数据与发布者，然后应用到空项目目录。' };
+    }
     if (spec.id === 'jit-privilege')
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),

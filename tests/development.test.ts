@@ -21,6 +21,7 @@ const { networkSchema, networkEnvironment, rewriteMirrors, NetworkProfiles } =
 const { presetSchema, presetScript, CommandPresets } = await import('../server/command-presets.ts');
 const { gitActionSchema, parseStatus, repositoryPath } = await import('../server/git-workbench.ts');
 const { containerActionSchema, Containers } = await import('../server/containers.ts');
+const { verifyDevcontainerTemplateMetadata } = await import('../server/devcontainer-templates.ts');
 const { Machines } = await import('../server/machines.ts');
 const { DataMigration } = await import('../server/data-migration.ts');
 const { dataDirectory } = await import('../server/data-directory.ts');
@@ -297,6 +298,8 @@ test('container actions reject unsafe identifiers, flags and parent Compose path
     { action: 'compose-up', file: '../compose.yaml' },
     { action: 'dockerfile-up', file: '../Dockerfile' },
     { action: 'dockerfile-up', file: '/etc/passwd' },
+    { action: 'template-apply', templateId: 'unknown', version: '1.0.0' },
+    { action: 'template-apply', templateId: 'debian', version: 'latest' },
   ])
     assert.equal(containerActionSchema.safeParse(input).success, false);
   const machines = { get: () => ({ distro: 'alpine' }) } as unknown as MachinesType;
@@ -307,6 +310,26 @@ test('container actions reject unsafe identifiers, flags and parent Compose path
   } finally {
     await containers.close();
   }
+});
+test('official Dev Container template metadata binds the requested source, version and file paths', () => {
+  const metadata = {
+    id: 'debian', version: '4.0.2', name: 'Debian', description: 'Debian environment',
+    publisher: 'Dev Container Spec Maintainers',
+    documentationURL: 'https://github.com/devcontainers/templates/tree/main/src/debian',
+    options: { imageVariant: { type: 'string', default: 'bookworm', proposals: ['trixie', 'bookworm'] } },
+    optionalPaths: ['.github/dependabot.yml'],
+    files: ['.devcontainer/devcontainer.json', '.github/dependabot.yml'],
+  };
+  const output = `[log] metadata\n${JSON.stringify(metadata)}\n`;
+  const verified = verifyDevcontainerTemplateMetadata(output, 'debian', '4.0.2');
+  assert.equal(verified.reference, 'ghcr.io/devcontainers/templates/debian:4.0.2');
+  assert.deepEqual(verified.imageVariant?.choices, ['bookworm', 'trixie']);
+  assert.throws(() => verifyDevcontainerTemplateMetadata(output, 'python', '4.0.2'), /来源或版本/);
+  assert.throws(() => verifyDevcontainerTemplateMetadata(output, 'debian', '4.0.1'), /来源或版本/);
+  assert.throws(() => verifyDevcontainerTemplateMetadata(JSON.stringify({ ...metadata,
+    publisher: 'Impostor' }), 'debian'), /来源或版本/);
+  assert.throws(() => verifyDevcontainerTemplateMetadata(JSON.stringify({ ...metadata,
+    files: ['../escape', '.devcontainer/devcontainer.json'] }), 'debian'), /元数据无效/);
 });
 test('container view keeps project Dev Container files visible when the CLI is unavailable', async () => {
   const machines = {

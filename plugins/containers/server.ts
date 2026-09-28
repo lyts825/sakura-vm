@@ -35,6 +35,9 @@ export async function route(
         send(
           url.searchParams.has('logs')
             ? await this.containers.logs(id, url.searchParams.get('logs')!, signal)
+            : url.searchParams.has('template')
+              ? await this.containers.templateMetadata(id, url.searchParams.get('template')!,
+                  undefined, signal)
             : await this.containers.view(id, signal),
         );
         return true;

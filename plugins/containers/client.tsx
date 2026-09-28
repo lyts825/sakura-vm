@@ -8,8 +8,14 @@ import '../../src/features.css';
 import { stopped } from '../../src/guest-state';
 
 export type DockerItem = Record<string, string>;
+type TemplateInfo = {
+  id: string; version: string; name: string; description: string; documentationURL: string;
+  reference: string; sourceMatched: boolean; projectId: string;
+  imageVariant?: { default: string; choices: string[] };
+  optionalPaths: string[]; files: string[];
+};
 
-export function ContainersPanel({ vm, request }: FeatureProps) {
+export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
   const remote = useRemote<{
       supported: boolean;
       installed: boolean;
@@ -22,12 +28,17 @@ export function ContainersPanel({ vm, request }: FeatureProps) {
       volumes: DockerItem[];
       files: string[];
       devcontainer?: { cliInstalled: boolean; version?: string; files: string[]; error?: string };
+      templates?: { id: string; name: string; description: string }[];
       job: JobView | null;
     }>(request, `/vms/${vm.id}/containers`, vm.status === 'running', 8000),
     action = useAction();
   const [image, setImage] = useState(''),
     [file, setFile] = useState('compose.yaml'),
     [dockerfile, setDockerfile] = useState('Dockerfile'),
+    [templateId, setTemplateId] = useState('javascript-node'),
+    [templateInfo, setTemplateInfo] = useState<TemplateInfo | null>(null),
+    [templateVariant, setTemplateVariant] = useState(''),
+    [templateOmit, setTemplateOmit] = useState<string[]>([]),
     [logs, setLogs] = useState('');
   const output = useRemote<{ log: string }>(
     request,
@@ -40,7 +51,16 @@ export function ContainersPanel({ vm, request }: FeatureProps) {
       remote.reload();
       output.reload();
     });
+  const inspectTemplate = () => action.run(async (signal) => {
+    const info = await request<Omit<TemplateInfo, 'projectId'>>(
+      `/vms/${vm.id}/containers?template=${encodeURIComponent(templateId)}`, 'GET', undefined, signal);
+    setTemplateInfo({ ...info, projectId: projectId || 'default' });
+    setTemplateVariant(info.imageVariant?.default || '');
+    setTemplateOmit(info.optionalPaths);
+  });
   const busy = action.busy || remote.data?.job?.status === 'running';
+  const selectedTemplate = templateInfo?.id === templateId &&
+    templateInfo.projectId === (projectId || 'default') ? templateInfo : null;
   return (
     <div className="content-panel feature-panel">
       <div className="panel-heading">
@@ -170,13 +190,13 @@ export function ContainersPanel({ vm, request }: FeatureProps) {
                             ? `Dev Container CLI ${remote.data.devcontainer.version}`
                             : 'devcontainer.json 需要先安装 Dev Container CLI。'}
                         </p>
+                        {!remote.data.devcontainer?.cliInstalled &&
+                          <button className="secondary compact" disabled={busy}
+                            onClick={() => void run({ action: 'install-devcontainer-cli' })}>
+                            安装 Dev Container CLI
+                          </button>}
                         {(remote.data.devcontainer?.files.some((path) => path.endsWith('devcontainer.json')))
                           ? <div className="feature-actions">
-                              {!remote.data.devcontainer?.cliInstalled &&
-                                <button className="secondary compact" disabled={busy}
-                                  onClick={() => void run({ action: 'install-devcontainer-cli' })}>
-                                  安装 Dev Container CLI
-                                </button>}
                               <button className="primary compact"
                                 disabled={busy || !remote.data.devcontainer?.cliInstalled}
                                 onClick={() => void run({ action: 'devcontainer-up' })}>
@@ -193,6 +213,52 @@ export function ContainersPanel({ vm, request }: FeatureProps) {
                           从 Dockerfile 构建并启动
                         </button>
                         <p className="subtle-note">Dockerfile 模式将项目挂载到容器的 /workspace；已有容器直接启动，需更新镜像时先移除旧容器。</p>
+                      </div>
+                      <div className="feature-card">
+                        <h4>官方 Dev Container 模板</h4>
+                        <p className="subtle-note">从官方 OCI 目录读取元数据，核对发布者与模板身份后应用到空项目目录。</p>
+                        <label>
+                          模板
+                          <select value={templateId} onChange={(event) => {
+                            setTemplateId(event.target.value);
+                            setTemplateInfo(null);
+                          }}>
+                            {(remote.data.templates || []).map((template) =>
+                              <option value={template.id} key={template.id}>{template.name} · {template.description}</option>)}
+                          </select>
+                        </label>
+                        <button className="secondary compact" disabled={busy || !remote.data.devcontainer?.cliInstalled}
+                          onClick={() => void inspectTemplate()}>校验模板来源</button>
+                        {!remote.data.devcontainer?.cliInstalled &&
+                          <p className="muted">请先安装上方的 Dev Container CLI。</p>}
+                        {selectedTemplate && <>
+                          <p>{selectedTemplate.name} · {selectedTemplate.version}</p>
+                          <p className="subtle-note">{selectedTemplate.description}</p>
+                          <p className="subtle-note">来源匹配：{selectedTemplate.reference}</p>
+                          <a href={selectedTemplate.documentationURL} target="_blank" rel="noreferrer">查看官方模板说明</a>
+                          <p className="subtle-note">模板包含：{selectedTemplate.files.join('、')}</p>
+                          {selectedTemplate.imageVariant && <label>
+                            镜像版本
+                            <select value={templateVariant} onChange={(event) => setTemplateVariant(event.target.value)}>
+                              {selectedTemplate.imageVariant.choices.map((choice) =>
+                                <option value={choice} key={choice}>{choice}</option>)}
+                            </select>
+                          </label>}
+                          {selectedTemplate.optionalPaths.map((path) => <label key={path}>
+                            <input type="checkbox" checked={!templateOmit.includes(path)}
+                              onChange={(event) => setTemplateOmit((current) =>
+                                event.target.checked ? current.filter((item) => item !== path) : [...current, path])} />
+                            包含可选文件 {path}
+                          </label>)}
+                          {(remote.data.devcontainer?.files.length || 0) > 0 &&
+                            <p className="subtle-note">当前项目已有 Dev Container 或 Dockerfile 文件；请切换到空项目目录再应用模板。</p>}
+                          <button className="primary compact"
+                            disabled={busy || !!remote.data.devcontainer?.files.length}
+                            onClick={() => void run({ action: 'template-apply', templateId,
+                              version: selectedTemplate.version,
+                              ...(templateVariant ? { imageVariant: templateVariant } : {}),
+                              omitPaths: templateOmit })}>应用模板到空项目</button>
+                        </>}
                       </div>
                       <div className="feature-card">
                         <h4>镜像</h4>

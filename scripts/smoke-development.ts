@@ -260,6 +260,25 @@ try {
         await features.containers.run(guest.id, { action: 'remove', id: devcontainer.ID });
         await done(features.containers.jobs, guest.id);
         assert.equal((await features.containers.view(guest.id)).containers.length, 0);
+        const template = await features.containers.templateMetadata(guest.id, 'debian');
+        assert.equal(template.sourceMatched, true);
+        await command(guest.id, 'mkdir -p /workspace/template-smoke');
+        await features.workspaces.save(guest.id, { directory: '/workspace/template-smoke' });
+        await features.containers.run(guest.id, { action: 'template-apply', templateId: 'debian',
+          version: template.version, imageVariant: 'bookworm', omitPaths: template.optionalPaths });
+        await done(features.containers.jobs, guest.id);
+        const applied = await machines.readGuestFile(guest.id,
+          '/workspace/template-smoke/.devcontainer/devcontainer.json');
+        assert.match(applied, /Debian/);
+        assert.match(applied, /bookworm/);
+        await features.containers.run(guest.id, { action: 'template-apply', templateId: 'debian',
+          version: template.version, imageVariant: 'bookworm', omitPaths: template.optionalPaths });
+        await features.containers.jobs.wait(guest.id);
+        assert.match(features.containers.jobs.view(guest.id)?.error || '', /空项目目录/);
+        assert.equal(await machines.readGuestFile(guest.id,
+          '/workspace/template-smoke/.devcontainer/devcontainer.json'), applied);
+        assert.equal((await command(guest.id,
+          "find /workspace -maxdepth 1 -name '.sakura-devtemplate-*' -print")).trim(), '');
       }
       await machines.stop(guest.id);
       await machines.delete(guest.id);

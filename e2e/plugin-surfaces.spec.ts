@@ -3064,7 +3064,7 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
-test('Dev Container workbench submits Dockerfile and configuration actions for the selected project', async ({ page }) => {
+test('Dev Container workbench submits Dockerfile and configuration actions and protects configured projects', async ({ page }) => {
   await app(page, ['projects', 'containers'], true);
   await page.route('**/api/vms', (route) =>
     route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
@@ -3077,11 +3077,19 @@ test('Dev Container workbench submits Dockerfile and configuration actions for t
       if (input.action === 'install-devcontainer-cli') cliInstalled = true;
       return route.fulfill({ json: { id: 'job', status: 'queued' } });
     }
+    if (new URL(route.request().url()).searchParams.has('template'))
+      return route.fulfill({ json: { id: 'javascript-node', name: 'Node.js', version: '6.0.2',
+        description: 'Node.js template', documentationURL: 'https://github.com/devcontainers/templates/tree/main/src/javascript-node',
+        reference: 'ghcr.io/devcontainers/templates/javascript-node:6.0.2', sourceMatched: true,
+        imageVariant: { default: '24-trixie', choices: ['24-trixie', '22-bookworm'] },
+        optionalPaths: ['.github/dependabot.yml'],
+        files: ['README.md', '.devcontainer/devcontainer.json', '.github/dependabot.yml'] } });
     return route.fulfill({ json: {
       supported: true, installed: true, available: true, version: '27.0', compose: 'Docker Compose 2',
       containers: [], images: [], volumes: [], files: [], job: null,
       devcontainer: { cliInstalled, version: cliInstalled ? '0.82.0' : undefined,
         files: ['Dockerfile', '.devcontainer/devcontainer.json'] },
+      templates: [{ id: 'javascript-node', name: 'Node.js', description: 'Node.js 与 JavaScript' }],
     } });
   });
   await page.reload();
@@ -3094,8 +3102,48 @@ test('Dev Container workbench submits Dockerfile and configuration actions for t
   await expect(page.getByRole('button', { name: '按 devcontainer.json 创建或启动' })).toBeEnabled();
   await page.getByRole('button', { name: '按 devcontainer.json 创建或启动' }).click();
   await expect.poll(() => submitted).toContainEqual({ action: 'devcontainer-up' });
+  await page.getByRole('button', { name: '校验模板来源' }).click();
+  await expect(page.getByText('来源匹配：ghcr.io/devcontainers/templates/javascript-node:6.0.2')).toBeVisible();
+  await page.getByRole('combobox', { name: '镜像版本' }).selectOption('22-bookworm');
+  await page.getByRole('checkbox', { name: '包含可选文件 .github/dependabot.yml' }).check();
+  await expect(page.getByRole('button', { name: '应用模板到空项目' })).toBeDisabled();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('official Dev Container template applies the reviewed version and optional files to an empty project', async ({ page }) => {
+  await app(page, ['projects', 'containers'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
+  let submitted: unknown;
+  await page.route('**/api/vms/*/containers**', (route) => {
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ json: { id: 'job', status: 'queued' } });
+    }
+    if (new URL(route.request().url()).searchParams.has('template'))
+      return route.fulfill({ json: { id: 'debian', name: 'Debian', version: '4.0.2',
+        description: 'Debian template', documentationURL: 'https://github.com/devcontainers/templates/tree/main/src/debian',
+        reference: 'ghcr.io/devcontainers/templates/debian:4.0.2', sourceMatched: true,
+        imageVariant: { default: 'trixie', choices: ['trixie', 'bookworm'] },
+        optionalPaths: ['.github/dependabot.yml'],
+        files: ['README.md', '.devcontainer/devcontainer.json', '.github/dependabot.yml'] } });
+    return route.fulfill({ json: { supported: true, installed: true, available: true,
+      version: '27.0', compose: 'Docker Compose 2', containers: [], images: [], volumes: [], files: [],
+      devcontainer: { cliInstalled: true, version: '0.82.0', files: [] }, job: null,
+      templates: [{ id: 'debian', name: 'Debian', description: '通用 Debian 开发环境' }],
+    } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '容器', exact: true }).click();
+  await page.getByRole('combobox', { name: '模板', exact: true }).selectOption('debian');
+  await page.getByRole('button', { name: '校验模板来源' }).click();
+  await expect(page.getByText('来源匹配：ghcr.io/devcontainers/templates/debian:4.0.2')).toBeVisible();
+  await page.getByRole('combobox', { name: '镜像版本' }).selectOption('bookworm');
+  await page.getByRole('checkbox', { name: '包含可选文件 .github/dependabot.yml' }).check();
+  await page.getByRole('button', { name: '应用模板到空项目' }).click();
+  await expect.poll(() => submitted).toEqual({ action: 'template-apply',
+    templateId: 'debian', version: '4.0.2', imageVariant: 'bookworm', omitPaths: [] });
 });
 
 test('security scan shows OSV package matches and never reports an incomplete lookup as clean', async ({ page }) => {

@@ -9,6 +9,8 @@ import { envPrefix } from './project-services.ts';
 import { quote } from './files.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { privateLog, redactValues } from './secrets.ts';
+import { devcontainerTemplates, devcontainerTemplateId, devcontainerTemplateReference,
+  devcontainerTemplateApplyInput, verifyDevcontainerTemplateMetadata } from './devcontainer-templates.ts';
 
 const containerId = z.string().regex(/^[a-f0-9]{12,64}$/);
 const imageName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$/);
@@ -17,6 +19,7 @@ export const containerActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('install-devcontainer-cli') }).strict(),
   z.object({ action: z.literal('devcontainer-up') }).strict(),
   z.object({ action: z.literal('dockerfile-up'), file: repositoryPath.default('Dockerfile') }).strict(),
+  devcontainerTemplateApplyInput,
   z.object({ action: z.enum(['start', 'stop', 'restart', 'remove']), id: containerId }).strict(),
   z.object({ action: z.enum(['pull', 'remove-image']), image: imageName }).strict(),
   z
@@ -93,8 +96,23 @@ export class Containers {
       volumes: jsonLines(volumes),
       files: files.trim().split('\n').filter(Boolean),
       devcontainer: await this.devcontainerView(id, project.directory, signal),
+      templates: devcontainerTemplates,
       job: this.jobs.view(id),
     };
+  }
+  async templateMetadata(id: string, input: string, version?: string, signal?: AbortSignal) {
+    this.supported(id);
+    if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
+    const templateId = devcontainerTemplateId.parse(input);
+    const reference = devcontainerTemplateReference(templateId, version);
+    const environment = await this.workspaces.networkEnvironment(id);
+    const result = await this.machines.exec(id,
+      `set -eu\n${envPrefix(environment)}\n` +
+      `command -v devcontainer >/dev/null || { echo '请先安装 Dev Container CLI' >&2; exit 1; }\n` +
+      `devcontainer templates metadata ${quote(reference)}`,
+      60000, signal);
+    if (result.code !== 0) throw new AppError(result.stderr || '无法读取模板源元数据', 502);
+    return verifyDevcontainerTemplateMetadata(result.stdout, templateId, version);
   }
   private async devcontainerView(id: string, directory: string, signal?: AbortSignal) {
     const command = `set -eu\ncd ${quote(directory)}\n` +
@@ -144,6 +162,41 @@ export class Containers {
             `command -v devcontainer >/dev/null || { echo '请先安装 Dev Container CLI' >&2; exit 1; }\n` +
             `docker version >/dev/null\n` +
             `devcontainer up --workspace-folder ${quote(project.directory)}`;
+        else if (value.action === 'template-apply') {
+          log(`读取官方模板 ${value.templateId}:${value.version} 元数据并检查来源…\n`);
+          const metadata = await this.templateMetadata(id, value.templateId, value.version, signal);
+          const variant = value.imageVariant || metadata.imageVariant?.default;
+          if (metadata.imageVariant && (!variant || !metadata.imageVariant.choices.includes(variant)))
+            throw new AppError('模板镜像版本不在发布者提供的选项中', 409);
+          if (!metadata.imageVariant && value.imageVariant)
+            throw new AppError('该模板不接受镜像版本参数', 409);
+          if (value.omitPaths.some((path) => !metadata.optionalPaths.includes(path)))
+            throw new AppError('只能省略模板声明为可选的文件', 409);
+          const args = variant ? { imageVariant: variant } : {};
+          command = `set -eu\nroot=$(realpath -e -- ${quote(project.directory)})\n` +
+            `if [ -n "$(find "$root" -mindepth 1 -maxdepth 1 -print -quit)" ]; then ` +
+            `echo '模板只能应用到空项目目录' >&2; exit 1; fi\n` +
+            `parent=$(dirname -- "$root")\n` +
+            `staged=$(mktemp -d -p "$parent" .sakura-devtemplate-XXXXXXXX)\n` +
+            `trap 'case "$staged" in "$parent"/.sakura-devtemplate-*) ` +
+            `if [ -d "$staged" ]; then rm -r -- "$staged"; fi;; esac' EXIT\n` +
+            `devcontainer templates apply --template-id ${quote(metadata.reference)} ` +
+            `--workspace-folder "$staged" --template-args ${quote(JSON.stringify(args))} ` +
+            `--omit-paths ${quote(JSON.stringify(value.omitPaths))}\n` +
+            `test -f "$staged/.devcontainer/devcontainer.json"\n` +
+            `python3 - "$staged" "$root" <<'PY'\n` +
+            `import os, sys\n` +
+            `source, target = sys.argv[1:]\n` +
+            `if not os.path.isdir(source) or os.path.islink(source):\n` +
+            `    raise SystemExit('模板暂存目录无效')\n` +
+            `if not os.path.isdir(target) or os.path.islink(target):\n` +
+            `    raise SystemExit('项目目录已变更')\n` +
+            `with os.scandir(target) as entries:\n` +
+            `    if next(entries, None) is not None:\n` +
+            `        raise SystemExit('项目目录不再为空')\n` +
+            `os.replace(source, target)\n` +
+            `PY`;
+        }
         else if (value.action === 'dockerfile-up') {
           const file = value.file;
           const workspace = '_workspace' in project ? project._workspace || 'default' : 'default';
