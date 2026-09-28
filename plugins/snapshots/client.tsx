@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { Copy, Download, Plus, Trash2 } from 'lucide-react';
 import { lazy, useState } from 'react';
 import type { Snapshot } from '../../server/model';
@@ -62,7 +63,7 @@ export function SnapshotsPanel(props: FeatureProps) {
             <div>
               <b>{s.name}</b>
               <p>
-                {new Date(s.createdAt).toLocaleString()}
+                {formatDateTime(new Date(s.createdAt))}
                 {s.consistency === 'filesystem' ? ' · 文件系统一致性' : ''}
                 {s.note ? ` · ${s.note}` : ''}
               </p>

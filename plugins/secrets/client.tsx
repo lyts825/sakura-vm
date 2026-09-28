@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import '../../src/development.css';
@@ -69,7 +70,7 @@ export function SecretsPanel({ vm, request }: FeatureProps) {
         <div className="development-row" key={item.name}>
           <div>
             <b>{item.name}</b>
-            <p className="subtle-note">更新于 {new Date(item.updatedAt).toLocaleString()}</p>
+            <p className="subtle-note">更新于 {formatDateTime(new Date(item.updatedAt))}</p>
             {rotation.data?.items.find((entry) => entry.name === item.name) && (
               <RotationEditor
                 key={
@@ -143,7 +144,7 @@ function RotationEditor({
         {item.ageDays === null ? '' : ` · 已使用 ${item.ageDays} 天`}
       </summary>
       {item.dueAt && item.policy.enabled && (
-        <p className="subtle-note">轮换期限：{new Date(item.dueAt).toLocaleString()}</p>
+        <p className="subtle-note">轮换期限：{formatDateTime(new Date(item.dueAt))}</p>
       )}
       <label className="checkbox-label">
         <input

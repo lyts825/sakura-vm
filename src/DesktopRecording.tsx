@@ -1,3 +1,5 @@
+import { formatDecimal } from './localization';
+import { formatDateTime } from './localization';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { DesktopRecorder, type RecordingProgress } from './desktop-recorder';
 import {
@@ -13,7 +15,7 @@ import { registerEditorGuard } from './file-editor-state';
 
 const duration = (ms: number) =>
   `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
-const size = (bytes: number) => `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+const size = (bytes: number) => `${formatDecimal((bytes / 1024 ** 2), 1)} MiB`;
 function exportRecording(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob),
     a = document.createElement('a');
@@ -143,7 +145,7 @@ export function RecordingLibrary({
             <div>
               <strong>{entry.name}</strong>
               <p>
-                {entry.vmName} · {new Date(entry.createdAt).toLocaleString()} · {duration(entry.milliseconds)}{' '}
+                {entry.vmName} · {formatDateTime(new Date(entry.createdAt))} · {duration(entry.milliseconds)}{' '}
                 · {size(entry.bytes)}
               </p>
             </div>
@@ -219,7 +221,7 @@ export function DesktopRecording({
     [message, setMessage] = useState('');
   const [result, setResult] = useState<{ entry: RecordingEntry; blob: Blob; saved: boolean }>();
   const [revision, setRevision] = useState(0),
-    [name, setName] = useState(`${vm.name} ${new Date().toLocaleString()}`);
+    [name, setName] = useState(`${vm.name} ${formatDateTime(new Date())}`);
   const recorder = useRef<DesktopRecorder | undefined>(undefined);
   const dirty = useRef(false),
     alive = useRef(true);

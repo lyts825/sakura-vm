@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
 import type { SnapshotDiffResult } from '../../shared/snapshot-diff';
 import type { JobView } from '../../server/jobs';
@@ -40,7 +41,7 @@ export function SnapshotDiffPanel({ vm, request }: FeatureProps) {
             <option value="">选择快照</option>
             {vm.snapshots.map((shot) => (
               <option key={shot.id} value={shot.id}>
-                {shot.name} · {new Date(shot.createdAt).toLocaleString()}
+                {shot.name} · {formatDateTime(new Date(shot.createdAt))}
               </option>
             ))}
           </select>
@@ -53,7 +54,7 @@ export function SnapshotDiffPanel({ vm, request }: FeatureProps) {
               .filter((shot) => shot.id !== from)
               .map((shot) => (
                 <option key={shot.id} value={shot.id}>
-                  {shot.name} · {new Date(shot.createdAt).toLocaleString()}
+                  {shot.name} · {formatDateTime(new Date(shot.createdAt))}
                 </option>
               ))}
           </select>

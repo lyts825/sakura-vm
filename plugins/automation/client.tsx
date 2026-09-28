@@ -1,3 +1,5 @@
+import { formatDecimal } from '../../src/localization';
+import { formatDateTime } from '../../src/localization';
 import { Activity, Bell, Compass, HardDrive, Package, Play, Search, ShieldCheck, Wifi } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ExtendedFeature } from '../../server/extended-features';
@@ -142,7 +144,7 @@ const fallbackPresets: Record<ResourcePresetId, ResourcePreset> = {
 };
 
 const bytes = (value: number) =>
-  value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GiB` : `${(value / 1024 ** 2).toFixed(0)} MiB`;
+  value >= 1024 ** 3 ? `${formatDecimal((value / 1024 ** 3), 1)} GiB` : `${formatDecimal((value / 1024 ** 2), 0)} MiB`;
 
 export function FeatureSuitePanel(props: Props) {
   if (!props.vms.length)
@@ -607,13 +609,13 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 <>
                   <div className="metric-strip">
                     <span>
-                      CPU <b>{latest.cpuPercent.toFixed(1)}%</b>
+                      CPU <b>{formatDecimal(latest.cpuPercent, 1)}%</b>
                     </span>
                     <span>
                       内存{' '}
                       <b>
                         {latest.memoryTotal
-                          ? ((latest.memoryUsed / latest.memoryTotal) * 100).toFixed(1)
+                          ? formatDecimal(((latest.memoryUsed / latest.memoryTotal) * 100), 1)
                           : '0'}
                         %
                       </b>
@@ -621,13 +623,13 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                     <span>
                       磁盘{' '}
                       <b>
-                        {latest.diskTotal ? ((latest.diskUsed / latest.diskTotal) * 100).toFixed(1) : '0'}%
+                        {latest.diskTotal ? formatDecimal(((latest.diskUsed / latest.diskTotal) * 100), 1) : '0'}%
                       </b>
                     </span>
                   </div>
                   <MetricHistory history={remote.data?.history || []} />
                   <p className="subtle-note">
-                    最近采样：{new Date(latest.sampledAt).toLocaleString()} · 磁盘 {bytes(latest.diskUsed)} /{' '}
+                    最近采样：{formatDateTime(new Date(latest.sampledAt))} · 磁盘 {bytes(latest.diskUsed)} /{' '}
                     {bytes(latest.diskTotal)}
                   </p>
                 </>

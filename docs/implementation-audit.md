@@ -238,7 +238,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 条件命令宏 / `command-macros` | 工程入口阻塞 | 公共 action 校验阻断此操作。执行器现状：有 when 条件、argv 引用、超时和步骤结果；最终失败没有向任务状态传播。 | [server/extended-features.ts:503](D:/27247/Desktop/Sakura/server/extended-features.ts:503) |
 | 离线监控 PWA / `offline-pwa` | 目录占位 | 通用 check/run 落到明确未实现回退；配置也受公共校验错误影响。缺少“离线查看最近状态和事件。”的执行闭环。 | [server/extended-features.ts:298](D:/27247/Desktop/Sakura/server/extended-features.ts:298) |
 | 无障碍检查模式 / `accessibility-audit` | 目录占位 | 通用 check/run 落到明确未实现回退；配置也受公共校验错误影响。缺少“检查对比度、焦点和屏幕阅读器语义。”的执行闭环。 | [server/extended-features.ts:298](D:/27247/Desktop/Sakura/server/extended-features.ts:298) |
-| 语言与区域包 / `locale-packs` | 目录占位 | 通用 check/run 落到明确未实现回退；配置也受公共校验错误影响。缺少“支持界面语言、时区和数字格式。”的执行闭环。 | [server/extended-features.ts:298](D:/27247/Desktop/Sakura/server/extended-features.ts:298) |
+| 语言与区域包 / `locale-packs` | 已有专用入口 | 系统设置可切换本浏览器的简体/繁体中文、IANA 时区和数字格式；常见日期与数值展示使用统一格式器，繁体文本包由源码生成。 | [src/LocaleSettings.tsx](D:/27247/Desktop/Sakura/src/LocaleSettings.tsx) |
 | 自更新与回滚 / `self-update` | 目录占位 | 通用 check/run 落到明确未实现回退；配置也受公共校验错误影响。缺少“灰度升级 Sakura 并支持回滚。”的执行闭环。 | [server/extended-features.ts:298](D:/27247/Desktop/Sakura/server/extended-features.ts:298) |
 | OpenAPI 与 SDK / `api-explorer` | 部分实现 | 已有插件/操作 JSON Schema；无完整 HTTP OpenAPI 文档、交互浏览器或 SDK 生成器。 | [scripts/plugin-schema.ts:36](D:/27247/Desktop/Sakura/scripts/plugin-schema.ts:36) |
 

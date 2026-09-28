@@ -1,3 +1,4 @@
+import { formatDateTime } from './localization';
 import { ClipboardList, Inbox } from 'lucide-react';
 import { useState } from 'react';
 import type { JobView } from '../server/jobs';
@@ -79,7 +80,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
           <summary>需要关注的事件（{events.data.events.length}）</summary>
           {events.data.events.slice(0, 20).map((event, index) => (
             <p className="subtle-note" key={`${event.at}-${index}`}>
-              {new Date(event.at).toLocaleString()} · {event.title || '后台任务'} ·{' '}
+              {formatDateTime(new Date(event.at))} · {event.title || '后台任务'} ·{' '}
               {event.message || event.status}
             </p>
           ))}
@@ -108,7 +109,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
             {vms.find((vm) => vm.id === job.vmId)?.name || '系统'}
           </summary>
           <p className="subtle-note">
-            {new Date(job.startedAt).toLocaleString()} · 耗时{' '}
+            {formatDateTime(new Date(job.startedAt))} · 耗时{' '}
             {Math.max(
               0,
               Math.round(
@@ -124,7 +125,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
           <pre className="feature-log">
             {job.log ||
               (job.logPruned
-                ? `日志已按保留策略清理（${new Date(job.logPruned.at).toLocaleString()}）`
+                ? `日志已按保留策略清理（${formatDateTime(new Date(job.logPruned.at))}）`
                 : job.status === 'running'
                   ? '等待任务输出…'
                   : '任务没有日志输出。')}

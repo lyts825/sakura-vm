@@ -1,3 +1,5 @@
+import { formatDecimal } from './localization';
+import { formatDateTime } from './localization';
 import { useEffect, useRef, useState } from 'react';
 import {
   assistantModes,
@@ -153,7 +155,7 @@ export function LocalAssistant({ request }: { request: Request }) {
               <datalist id="local-models">
                 {models.map((model) => (
                   <option key={model.name} value={model.name}>
-                    {(model.size / 1024 ** 3).toFixed(1)} GiB
+                    {formatDecimal((model.size / 1024 ** 3), 1)} GiB
                   </option>
                 ))}
               </datalist>
@@ -334,7 +336,7 @@ export function LocalAssistant({ request }: { request: Request }) {
         <div className="assistant-result">
           <h4>{result.plan ? '命令计划 · 等待人工审阅' : '模型建议'}</h4>
           <p className="subtle-note">
-            {result.model} · {new Date(result.generatedAt).toLocaleString()} · 建议尚未执行或验证
+            {result.model} · {formatDateTime(new Date(result.generatedAt))} · 建议尚未执行或验证
             {result.truncated ? ' · 输出达到生成长度限制' : ''}
           </p>
           {result.plan ? (

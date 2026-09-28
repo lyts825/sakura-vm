@@ -2285,6 +2285,31 @@ test('Python debug panel starts with breakpoints and shows stepwise stack and va
   expect(submitted[0].breakpoints).toEqual([2]);
 });
 
+test('regional preferences translate UI labels and format values without changing a named VM', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-01-01T00:30:00.000Z') });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('sakura-locale')) localStorage.setItem('sakura-locale', JSON.stringify({
+      language: 'zh-TW', timeZone: 'UTC', numberLocale: 'de-DE',
+    }));
+  });
+  await app(page, [], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, name: '文件' }] }));
+  await page.reload();
+  await expect(page.getByText('你的工作空間')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '文件', level: 2 })).toBeVisible();
+  await page.getByRole('button', { name: '系統設定' }).click();
+  await expect(page.getByRole('heading', { name: '語言與區域' })).toBeVisible();
+  await expect(page.getByText('1.234.567,89').first()).toBeVisible();
+  await page.getByRole('combobox', { name: '時間區域' }).fill('America/Los_Angeles');
+  await expect(page.getByRole('region', { name: '語言與區域設定' }).locator('.subtle-note').first())
+    .toContainText('2025/12/31');
+  await page.getByRole('combobox', { name: '介面語言' }).selectOption('zh-CN');
+  await page.getByRole('button', { name: '儲存語言與區域' }).click();
+  await expect(page.getByText('你的工作空间')).toBeVisible();
+  await page.getByRole('button', { name: '工作空间' }).click();
+  await expect(page.getByRole('heading', { name: '文件', level: 2 })).toBeVisible();
+});
+
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>

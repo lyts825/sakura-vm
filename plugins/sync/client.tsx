@@ -1,3 +1,5 @@
+import { formatDecimal } from '../../src/localization';
+import { formatDateTime } from '../../src/localization';
 import { Save, FolderSync as SyncIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { JobView } from '../../server/jobs';
@@ -389,7 +391,7 @@ export function SyncPanel({ vm, request }: FeatureProps) {
           同步已排队 · 已尝试 {remote.data.queue.attempts} 次
           {remote.data.queue.lastError && ` · ${remote.data.queue.lastError}`}
           {remote.data.queue.nextAttemptAt > Date.now() &&
-            ` · 下次重试 ${new Date(remote.data.queue.nextAttemptAt).toLocaleString()}`}
+            ` · 下次重试 ${formatDateTime(new Date(remote.data.queue.nextAttemptAt))}`}
         </p>
       )}
       {preview && (
@@ -560,8 +562,8 @@ export function SyncPanel({ vm, request }: FeatureProps) {
           {remote.data.history.map((point) => (
             <div className="feature-card" key={point.id}>
               <p>
-                {new Date(point.createdAt).toLocaleString()} · {point.changes} 项变更 ·{' '}
-                {(point.bytes / 1024 ** 2).toFixed(1)} MiB ·
+                {formatDateTime(new Date(point.createdAt))} · {point.changes} 项变更 ·{' '}
+                {formatDecimal((point.bytes / 1024 ** 2), 1)} MiB ·
                 {
                   { pending: '未完成', done: '已完成', failed: '部分失败', 'rolled-back': '已回滚' }[
                     point.status

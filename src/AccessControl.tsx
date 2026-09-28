@@ -1,3 +1,4 @@
+import { formatDateTime } from './localization';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type RFB from '@novnc/novnc';
 import type { PublicKeyCredentialCreationOptionsJSON,
@@ -382,7 +383,7 @@ function JitViewerPanel({ vms }: { vms: SharedVm[] }) {
     <ul>{visibleJitRequests(requests).map((item) => <li key={item.id}>
       {vms.find((vm) => vm.id === item.vmId)?.name || '已移除实例'} ·
       {' '}{jitOperation[item.operation]} · {jitStatus[item.status]} · {item.reason}
-      {item.expiresAt && ` · 有效至 ${new Date(item.expiresAt).toLocaleString()}`}
+      {item.expiresAt && ` · 有效至 ${formatDateTime(new Date(item.expiresAt))}`}
       {item.error && ` · ${item.error}`}
       {item.status === 'approved' && <button className="primary compact" disabled={busy}
         onClick={async () => {
@@ -431,7 +432,7 @@ function JitOwnerPanel({ users, vms }: { users: UserView[]; vms: SharedVm[] }) {
       {users.find((user) => user.id === item.viewerId)?.username || '已移除账户'} ·
       {' '}{vms.find((vm) => vm.id === item.vmId)?.name || '已移除实例'} ·
       {' '}{jitOperation[item.operation]} · {jitStatus[item.status]} · {item.reason}
-      {item.expiresAt && ` · 有效至 ${new Date(item.expiresAt).toLocaleString()}`}
+      {item.expiresAt && ` · 有效至 ${formatDateTime(new Date(item.expiresAt))}`}
       {item.status === 'pending' && <button className="primary compact" disabled={busy}
         onClick={() => void decide(item.id, 'approve')}>批准</button>}
       {(item.status === 'pending' || item.status === 'approved') &&
@@ -483,7 +484,7 @@ function BrowserExtensionManager() {
       .catch((cause) => setError(String(cause.message || cause)))}>刷新连接</button>
     <ul>{connections.map((item) => <li key={item.id}>
       <code>{item.origin}</code> · {item.expired ? '已过期' : item.connected ? '最近已连接' : '未连接'} ·
-      权限：实例摘要（只读） · 到期 {new Date(item.expiresAt).toLocaleString()}
+      权限：实例摘要（只读） · 到期 {formatDateTime(new Date(item.expiresAt))}
       <button className="secondary compact" disabled={busy} onClick={async () => {
         setBusy(true); setError(''); setMessage('');
         try {
@@ -614,8 +615,8 @@ function PasskeyManager() {
       <button className="secondary compact" disabled={busy || keys.length >= 10}>登记通行密钥</button>
     </form> : <p><a href={localhostUrl()}>在 localhost 打开以登记通行密钥</a></p>}
     <ul>{keys.map((key) => <li key={key.id}>
-      {key.name} · 登记于 {new Date(key.createdAt).toLocaleString()}
-      {key.lastUsedAt && ` · 最近使用 ${new Date(key.lastUsedAt).toLocaleString()}`}
+      {key.name} · 登记于 {formatDateTime(new Date(key.createdAt))}
+      {key.lastUsedAt && ` · 最近使用 ${formatDateTime(new Date(key.lastUsedAt))}`}
       <button className="secondary compact" disabled={busy || !password} onClick={async () => {
         setBusy(true); setError(''); setMessage('');
         try {
@@ -709,7 +710,7 @@ function ChangeApprovalPanel({ refreshKey = 0, onApplied }: {
     {[...changes].reverse().slice(0, 40).map((item) => <article key={item.id}>
       <h4>{item.summary}</h4>
       <p>{item.vmId} / {item.projectId} · {item.status} ·
-        {new Date(item.createdAt).toLocaleString()}</p>
+        {formatDateTime(new Date(item.createdAt))}</p>
       {item.error && <p role="alert" className="inline-error">{item.error}</p>}
       <details><summary>查看完整项目配置与基线版本</summary>
         <p>基线 SHA-256：<code>{item.expectedVersion}</code></p>
@@ -912,10 +913,10 @@ function RemoteAuditSettings() {
       : status.local.error || '校验失败'}</p>
       {status.last && <p>远端锚点：第 {status.last.sequence} 条 ·
         <code className="remote-audit-code"> {status.last.hash}</code> ·
-        保留至 {new Date(status.last.retainUntil).toLocaleString()} ·
+        保留至 {formatDateTime(new Date(status.last.retainUntil))} ·
         {status.protected ? '记录保留期未过' : '记录保留期已过'} ·
         {status.caughtUp ? '已追平' : '等待下一次自动同步'}</p>}
-      {status.lastVerifiedAt && <p>上次验证：{new Date(status.lastVerifiedAt).toLocaleString()}</p>}
+      {status.lastVerifiedAt && <p>上次验证：{formatDateTime(new Date(status.lastVerifiedAt))}</p>}
       {status.lastError && <p role="alert" className="inline-error">{status.lastError}</p>}</>}
     {message && <p role="status">{message}</p>}
     {error && <p role="alert" className="inline-error">{error}</p>}
@@ -1170,7 +1171,7 @@ export function AccessSettings() {
         <button className="primary compact" disabled={busy || !selected.length}>创建只读账户</button>
       </form>
       <ul>{users.filter((item) => item.role === 'viewer').map((item) => <li key={item.id}>
-        {item.username} · {item.vmIds.length} 台实例 · 到期 {new Date(item.expiresAt || 0).toLocaleString()}
+        {item.username} · {item.vmIds.length} 台实例 · 到期 {formatDateTime(new Date(item.expiresAt || 0))}
         <button className="secondary compact" disabled={busy} onClick={async () => {
           setBusy(true); setError('');
           try { await api('/access/users/' + item.id, 'DELETE'); await refresh(); }

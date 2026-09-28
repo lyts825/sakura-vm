@@ -1,3 +1,4 @@
+import { formatDateTime, formatNumber } from './localization';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VMView } from '../server/model';
 import type { JobView } from '../server/jobs';
@@ -21,7 +22,8 @@ export const distroName = (distro?: string, architecture?: string) => {
   return architecture === 'aarch64' ? `${name} ARM64` : name;
 };
 export const formatBytes = (value: number) =>
-  value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GiB` : `${(value / 1024 ** 2).toFixed(1)} MiB`;
+  value >= 1024 ** 3 ? `${formatNumber(value / 1024 ** 3, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} GiB`
+    : `${formatNumber(value / 1024 ** 2, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MiB`;
 export function useRemote<T>(request: Request, path: string, enabled = true, interval = 5000) {
   const [data, setData] = useState<T | null>(null),
     [error, setError] = useState(''),
@@ -144,7 +146,7 @@ export function JobLog({ job }: { job?: JobView | null }) {
       </span>
       <Feedback error={job.error} />
       {job.logPruned && !job.log && (
-        <p className="subtle-note">日志已按保留策略清理（{new Date(job.logPruned.at).toLocaleString()}）。</p>
+        <p className="subtle-note">日志已按保留策略清理（{formatDateTime(new Date(job.logPruned.at))}）。</p>
       )}
       {job.log && (
         <pre className="feature-log" aria-label="操作日志">

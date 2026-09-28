@@ -1,3 +1,4 @@
+import { formatDecimal } from '../../src/localization';
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useRemote, Feedback, formatBytes, type FeatureProps } from '../../src/feature-shared';
@@ -39,7 +40,7 @@ export function MetricsPanel({ vm, request }: FeatureProps) {
         <>
           <div className="metrics-grid">
             {[
-              ['CPU', `${m.cpuPercent.toFixed(1)}%`, m.cpuPercent],
+              ['CPU', `${formatDecimal(m.cpuPercent, 1)}%`, m.cpuPercent],
               [
                 '内存',
                 `${formatBytes(m.memoryUsed)} / ${formatBytes(m.memoryTotal)}`,

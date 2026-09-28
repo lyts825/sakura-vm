@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { GitBranch, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { GitChange } from '../../server/git-workbench';
@@ -532,7 +533,7 @@ function GitWorkspacePanel({ vm, request: baseRequest, projectId }: FeatureProps
                         <div>
                           <code>{commit.short}</code> {commit.subject}
                           <p className="subtle-note">
-                            {commit.author} · {new Date(commit.date).toLocaleString()}
+                            {commit.author} · {formatDateTime(new Date(commit.date))}
                           </p>
                         </div>
                       </div>

@@ -1,8 +1,10 @@
+import { formatDecimal } from './localization';
+import { formatDateTime } from './localization';
 import { useEffect, useState } from 'react';
 import type { LogRetentionPolicy, LogRetentionPreview, LogRetentionView } from '../shared/log-retention';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 
-const bytes = (n: number) => `${(n / 1024 ** 2).toFixed(2)} MiB`;
+const bytes = (n: number) => `${formatDecimal((n / 1024 ** 2), 2)} MiB`;
 export function LogRetentionSettings({ request }: { request: Request }) {
   const remote = useRemote<LogRetentionView>(request, '/log-retention', true, 0);
   const action = useAction();
@@ -145,7 +147,7 @@ export function LogRetentionSettings({ request }: { request: Request }) {
       )}
       {saved?.lastRun && (
         <p className="subtle-note">
-          上次清理：{new Date(saved.lastRun.at).toLocaleString()}，清理 {saved.lastRun.removedLogs} 份（
+          上次清理：{formatDateTime(new Date(saved.lastRun.at))}，清理 {saved.lastRun.removedLogs} 份（
           {bytes(saved.lastRun.removedBytes)}）。
         </p>
       )}

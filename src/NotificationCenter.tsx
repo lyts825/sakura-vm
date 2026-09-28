@@ -1,3 +1,4 @@
+import { formatDateTime } from './localization';
 import { useEffect, useRef, useState } from 'react';
 import type { AlertEvent } from '../server/feature-suite';
 import { saveText } from './export-file';
@@ -94,7 +95,7 @@ export function NotificationCenter({
               <b>{event.message}</b>
               <br />
               <small>
-                {new Date(event.createdAt).toLocaleString()}
+                {formatDateTime(new Date(event.createdAt))}
                 {event.projectId ? ` · 项目 ${event.projectId}` : ''}
                 {event.jobId ? ` · 任务 ${event.jobId}` : ''}
               </small>

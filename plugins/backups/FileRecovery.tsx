@@ -1,3 +1,5 @@
+import { formatDecimal } from '../../src/localization';
+import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
 import type { BackupRecord } from '../../server/backups';
 import type { BackupRecovery } from '../../server/backup-recovery';
@@ -75,7 +77,7 @@ export function FileRecovery({
               <option value="">选择一份备份</option>
               {items.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {new Date(item.createdAt).toLocaleString()} · {item.id.slice(0, 8)}
+                  {formatDateTime(new Date(item.createdAt))} · {item.id.slice(0, 8)}
                   {item.encrypted ? ' · 加密' : item.storage === 'blocks' ? ' · 内容块' : ''}
                 </option>
               ))}
@@ -151,7 +153,7 @@ export function FileRecovery({
       )}
       {(remote.data?.runs || []).map((job) => (
         <details key={job.id} open={job === remote.data?.runs[0]}>
-          <summary>文件恢复记录 · {new Date(job.startedAt).toLocaleString()}</summary>
+          <summary>文件恢复记录 · {formatDateTime(new Date(job.startedAt))}</summary>
           <JobLog job={job} />
           <div className="feature-actions">
             <button
@@ -178,7 +180,7 @@ export function FileRecovery({
                   })
                 }
               >
-                下载恢复文件 {artifact.path} · {(artifact.bytes / 1024).toFixed(1)} KiB
+                下载恢复文件 {artifact.path} · {formatDecimal((artifact.bytes / 1024), 1)} KiB
               </button>
             ))}
           </div>

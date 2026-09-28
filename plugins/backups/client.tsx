@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { useEffect, useState } from 'react';
 import type { BackupPolicy, BackupRecord } from '../../server/backups';
 import type { JobView } from '../../server/jobs';
@@ -172,7 +173,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
       {remote.data?.items.map((item) => (
         <div className="backup-row" key={item.id}>
           <div>
-            <b>{new Date(item.createdAt).toLocaleString()}</b>
+            <b>{formatDateTime(new Date(item.createdAt))}</b>
             <p className="subtle-note">
               {item.encrypted ? '已加密 · ' : ''}
               {item.storage === 'blocks' ? '内容块去重 · ' : ''}
@@ -180,7 +181,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
             </p>
             {item.directory && <p className="subtle-note wrap-path">{item.directory}</p>}
             {item.retainUntil && (
-              <p className="subtle-note">保留锁到期：{new Date(item.retainUntil).toLocaleString()}</p>
+              <p className="subtle-note">保留锁到期：{formatDateTime(new Date(item.retainUntil))}</p>
             )}
           </div>
           <div className="feature-actions">

@@ -190,7 +190,7 @@ export const extendedFeatureCatalog = [
     '检查对比度、焦点和屏幕阅读器语义。',
     'available',
   ],
-  ['locale-packs', '语言与区域包', '体验集成', 'P2', '支持界面语言、时区和数字格式。', 'planned'],
+  ['locale-packs', '语言与区域包', '体验集成', 'P2', '支持简体/繁体界面、时区和数字格式。', 'available'],
   ['self-update', '自更新与回滚', '平台', 'P0', '校验本地发行包、隔离预启、分阶段切换版本并回滚。', 'available'],
   [
     'api-explorer',
@@ -248,9 +248,9 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
   id: spec.id,
   category: spec.category,
   mode: spec.category === '虚拟机' || spec.category === '网络' ? 'guest-aware' : 'portable',
-  actions: spec.id === 'self-update' ? ['check'] :
+  actions: spec.id === 'self-update' || spec.id === 'locale-packs' ? ['check'] :
     spec.state === 'available' || hasCapability(spec.id) ? ['configure', 'check', 'run'] : ['configure', 'check'],
-  persistent: spec.id !== 'self-update',
+  persistent: spec.id !== 'self-update' && spec.id !== 'locale-packs',
 });
 
 export class ExtendedFeatures {
@@ -448,6 +448,14 @@ export class ExtendedFeatures {
         state: spec.state,
         adapter,
         reason: '顶栏无障碍检查模式：实际扫描当前页面、定位元素、查看键盘焦点并导出报告。',
+      };
+    if (spec.id === 'locale-packs')
+      return {
+        ready: true,
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '系统设置 → 语言与区域：在本浏览器切换简体/繁体中文、时区和数字格式，保存后重新载入界面。',
       };
     if (spec.id === 'shortcut-editor')
       return {

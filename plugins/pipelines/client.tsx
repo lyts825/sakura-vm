@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { Play, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { JobView } from '../../server/jobs';
@@ -89,7 +90,7 @@ export function PipelinePanel({ vm, request }: FeatureProps) {
       {remote.data?.runs.map((run) => (
         <details className="feature-card" key={run.id}>
           <summary>
-            {run.name} · {run.status} · {new Date(run.startedAt).toLocaleString()}
+            {run.name} · {run.status} · {formatDateTime(new Date(run.startedAt))}
           </summary>
           {run.steps.map((step: any) => (
             <div className="development-row" key={step.name}>

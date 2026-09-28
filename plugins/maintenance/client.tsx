@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { JobView } from '../../server/jobs';
@@ -243,7 +244,7 @@ export function MaintenancePanel({ vm, request, refresh }: FeatureProps) {
           return (
             attempt && (
               <p key={mode} className={attempt.error ? 'machine-error' : 'subtle-note'}>
-                {mode === 'trim' ? 'TRIM' : '磁盘整理'} · {new Date(attempt.startedAt).toLocaleString()} ·{' '}
+                {mode === 'trim' ? 'TRIM' : '磁盘整理'} · {formatDateTime(new Date(attempt.startedAt))} ·{' '}
                 {attempt.error || (attempt.finishedAt ? '完成' : '执行中或上次执行中断')}
               </p>
             )

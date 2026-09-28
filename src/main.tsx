@@ -80,6 +80,8 @@ import { workspacePath } from './workspace-request';
 import { ClipboardSettings } from './ClipboardSettings';
 import { installClipboardProtection } from './clipboard-protection';
 import { ShortcutSettings } from './ShortcutSettings';
+import { LocaleSettings } from './LocaleSettings';
+import { formatNumber, installLanguagePack } from './localization';
 import {
   effectiveShortcuts,
   eventShortcut,
@@ -223,8 +225,12 @@ function readSessionState(): SessionState {
   }
 }
 const bytes = (n: number) =>
-  n >= 1073741824 ? `${(n / 1073741824).toFixed(2)} GB` : `${(n / 1048576).toFixed(1)} MB`;
-const memory = (n: number) => (n >= 1024 ? `${Number((n / 1024).toFixed(1))} GiB` : `${n} MiB`);
+  n >= 1073741824 ? `${formatNumber(n / 1073741824,
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 })} GB`
+    : `${formatNumber(n / 1048576,
+      { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
+const memory = (n: number) => n >= 1024
+  ? `${formatNumber(n / 1024, { maximumFractionDigits: 1 })} GiB` : `${formatNumber(n)} MiB`;
 const states = {
   running: '运行中',
   paused: '已暂停',
@@ -785,7 +791,7 @@ function App() {
               className={selected === v.id && page === 'workspace' ? 'selected-distro' : ''}
             >
               <span className={`tiny-dot ${v.status}`} />
-              <span>{v.name}</span>
+              <span data-locale-ignore>{v.name}</span>
               <ChevronRight size={13} />
             </button>
           ))}
@@ -944,7 +950,8 @@ function App() {
                   </span>
                   <div>
                     <strong>
-                      {allocated >= 1024 ? (allocated / 1024).toFixed(1) : allocated}
+                      {formatNumber(allocated >= 1024 ? allocated / 1024 : allocated,
+                        { maximumFractionDigits: 1 })}
                       <small>{allocated >= 1024 ? 'GiB' : 'MiB'}</small>
                     </strong>
                     <span className="stat-note">运行实例配置总量</span>
@@ -1059,7 +1066,7 @@ function App() {
                         <div className="distro-card-top">
                           <Alpine small />
                           <div className="distro-identity">
-                            <h3 title={v.name}>
+                            <h3 title={v.name} data-locale-ignore>
                               {v.organization?.favorite ? '★ ' : ''}
                               {v.name}
                             </h3>
@@ -1141,7 +1148,7 @@ function App() {
                           <Alpine />
                           <div>
                             <div>
-                              <h2>{vm.name}</h2>
+                              <h2 data-locale-ignore>{vm.name}</h2>
                               <Badge vm={vm} />
                             </div>
                             <p>
@@ -1511,6 +1518,7 @@ function App() {
                 </div>
               </div>
               <div className="system-grid">
+                <LocaleSettings />
                 <section className="system-card">
                   <h3>本地 AI 助手与命令规划</h3>
                   <p>使用本机模型解释代码、生成测试与修复建议，或预览命令计划。</p>
@@ -2194,6 +2202,7 @@ function ConfigPanel({
 }
 const root = import.meta.hot?.data.root ?? createRoot(document.getElementById('root')!);
 if (import.meta.hot) import.meta.hot.data.root = root;
+await installLanguagePack(document.body);
 root.render(
   <SessionBoundary>
     <AccessBoundary><App /></AccessBoundary>

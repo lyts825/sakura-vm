@@ -1,3 +1,5 @@
+import { formatDecimal } from './localization';
+import { formatDateTime } from './localization';
 import { useState } from 'react';
 import type { PeerStatus } from '../server/host-peers';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
@@ -26,7 +28,7 @@ type ReplicationView = { enabled: boolean; entries: Array<{ vmId: string; snapsh
   transferId: string; peerId: string; targetName: string;
   status: 'queued' | 'transferring' | 'replicated' | 'review';
   remoteVmId?: string; sha256?: string; error?: string; updatedAt: string }> };
-const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1) + ' GiB';
+const gib = (bytes: number) => formatDecimal((bytes / 1024 ** 3), 1) + ' GiB';
 
 function ResourceCard({ title, status, error, checkedAt }: {
   title: string; status?: PeerStatus; error?: string; checkedAt?: number;
@@ -37,7 +39,7 @@ function ResourceCard({ title, status, error, checkedAt }: {
     {status && <p>{status.platform} / {status.arch} · {status.cpus} 核 ·
       可用内存 {gib(status.memoryFree)} / {gib(status.memoryTotal)} ·
       实例 {status.runningVms} 运行 / {status.vmCount} 总数</p>}
-    {checkedAt && <p className="subtle-note">上次检查：{new Date(checkedAt).toLocaleString()}</p>}
+    {checkedAt && <p className="subtle-note">上次检查：{formatDateTime(new Date(checkedAt))}</p>}
   </div>;
 }
 
@@ -106,7 +108,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
         !Number.isInteger(requirements.memoryMiB) || requirements.memoryMiB < 256 ||
         requirements.memoryMiB > 131072} onClick={score}>计算主机评分</button>
       {scores && <div className="host-peer-scores" aria-label="主机评分结果">
-        <p className="subtle-note">评分时间：{new Date(scores.scoredAt).toLocaleString()}</p>
+        <p className="subtle-note">评分时间：{formatDateTime(new Date(scores.scoredAt))}</p>
         {scores.candidates.map((item) => <div className="host-peer-row" key={item.id}>
           <span><strong>{item.name}</strong> · {item.source === 'local' ? '本机' : '远端'} ·
             {item.eligible ? `评分 ${item.score} / 100（内存 ${item.components.memory}、CPU 负载 ${item.components.cpuLoad}、实例密度 ${item.components.instanceDensity}）` :
@@ -174,7 +176,7 @@ export function HostPeersSettings({ request }: { request: Request }) {
           onClick={() => apply('revoke-code')}>撤销配对码</button>}
       </div>
       {remote.data?.pairing && <p>配对码：<strong>{remote.data.pairing.value}</strong> ·
-        有效至 {new Date(remote.data.pairing.expiresAt).toLocaleString()}</p>}
+        有效至 {formatDateTime(new Date(remote.data.pairing.expiresAt))}</p>}
       <p className="subtle-note">入口配置在重启服务后生效。局域网访问请使用这台主机的 IP、所设端口、上方指纹和一次性配对码。</p>
     </div>
     <div className="feature-card">

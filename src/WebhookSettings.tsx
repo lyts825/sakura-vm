@@ -1,3 +1,4 @@
+import { formatDateTime } from './localization';
 import { useState } from 'react';
 import {
   webhookTypes,
@@ -324,9 +325,9 @@ export function WebhookSettings({ request }: { request: Request }) {
           <p className="subtle-note">
             投递标识：{delivery.id}
             <br />
-            更新时间：{new Date(delivery.updatedAt).toLocaleString()}
+            更新时间：{formatDateTime(new Date(delivery.updatedAt))}
             {delivery.status === 'pending' && (
-              <> · 下次尝试：{new Date(delivery.nextAttemptAt).toLocaleString()}</>
+              <> · 下次尝试：{formatDateTime(new Date(delivery.nextAttemptAt))}</>
             )}
           </p>
           {delivery.error && <p className="subtle-note">{delivery.error}</p>}

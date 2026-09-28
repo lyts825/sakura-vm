@@ -1,3 +1,5 @@
+import { formatDecimal } from '../../src/localization';
+import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
 import { DEFAULT_RESCUE_COMMAND } from '../../shared/rescue';
 import type { Rescue } from '../../server/rescue';
@@ -136,7 +138,7 @@ export function RescuePanel({ vm, request, refresh }: FeatureProps) {
       )}
       {(remote.data?.runs || []).map((job) => (
         <details key={job.id} open={job === remote.data?.runs[0]}>
-          <summary>救援记录 · {new Date(job.startedAt).toLocaleString()}</summary>
+          <summary>救援记录 · {formatDateTime(new Date(job.startedAt))}</summary>
           <JobLog job={job} />
           <div className="feature-actions">
             <button
@@ -165,7 +167,7 @@ export function RescuePanel({ vm, request, refresh }: FeatureProps) {
                   })
                 }
               >
-                下载 {artifact.name} · {(artifact.bytes / 1024).toFixed(1)} KiB
+                下载 {artifact.name} · {formatDecimal((artifact.bytes / 1024), 1)} KiB
               </button>
             ))}
           </div>

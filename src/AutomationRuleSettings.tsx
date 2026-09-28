@@ -1,3 +1,4 @@
+import { formatDateTime } from './localization';
 import { useState } from 'react';
 import type { AutomationRule, AutomationView } from '../server/automation-rules';
 import {
@@ -184,7 +185,7 @@ export function AutomationRuleSettings({ request }: { request: Request }) {
     <div className="feature-card"><h4>最近执行</h4>
       {!remote.data?.executions.length && <p className="subtle-note">尚无匹配事件。</p>}
       {remote.data?.executions.slice(0, 30).map((item) => <p key={item.id}>
-        {new Date(item.startedAt).toLocaleString()} · {labels[item.action]} ·
+        {formatDateTime(new Date(item.startedAt))} · {labels[item.action]} ·
         {item.vmId || '无实例'} · {labels[item.status] || item.status}
         {item.reason ? ` · ${item.reason}` : ''}
         {item.steps?.length ? ` · 步骤：${item.steps.map((step) =>

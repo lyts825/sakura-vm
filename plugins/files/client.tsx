@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { ArrowUp, Download, FileText, Folder, Plus, RefreshCw, Save, Trash2, Upload, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { anyDirty, restoreDrafts, saveDraftResult, type EditorDraft } from '../../src/editor-drafts';
@@ -621,7 +622,7 @@ export function FileBrowser({
               <div className="development-row" key={item.id}>
                 <div>
                   <code>{item.kind === 'trash' ? '回收站' : '历史版本'}</code> <b>{item.path}</b>
-                  <small> · {new Date(item.createdAt).toLocaleString()}</small>
+                  <small> · {formatDateTime(new Date(item.createdAt))}</small>
                 </div>
                 <div className="feature-actions">
                   <button
@@ -702,7 +703,7 @@ export function FileBrowser({
           <div className="browser-row" key={file.name}>
             <button className="file-open" disabled={action.busy} onClick={() => open(file)}>
               {file.directory ? <Folder size={17} /> : <FileText size={17} />}
-              <span>
+              <span data-locale-ignore>
                 {file.name}
                 {file.symlink ? ' ↗' : ''}
               </span>
@@ -774,6 +775,7 @@ export function FileBrowser({
             <button
               key={draft.id}
               role="tab"
+              data-locale-ignore
               aria-selected={draft.id === workspace.active}
               title={draft.path}
               className={draft.id === workspace.active ? 'active' : ''}

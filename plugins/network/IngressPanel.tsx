@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../src/localization';
 import { ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { IngressInput, IngressView } from '../../shared/http-ingress.ts';
@@ -80,7 +81,7 @@ export function IngressPanel({ vm, request }: FeatureProps) {
               </p>
               {entry.clientAuth && <p className="subtle-note">
                 mTLS 客户端证书已启用
-                {entry.clientAuth.rotateAt && ` · ${Date.now() >= Date.parse(entry.clientAuth.rotateAt) ? '已于' : '将于'} ${new Date(entry.clientAuth.rotateAt).toLocaleString()} 切换至替换证书`}
+                {entry.clientAuth.rotateAt && ` · ${Date.now() >= Date.parse(entry.clientAuth.rotateAt) ? '已于' : '将于'} ${formatDateTime(new Date(entry.clientAuth.rotateAt))} 切换至替换证书`}
               </p>}
             </div>
             <div className="feature-actions">
@@ -323,9 +324,9 @@ export function IngressPanel({ vm, request }: FeatureProps) {
           <p>
             SHA-256 指纹：<code>{certificates.data.certificate.fingerprint256}</code>
             <br />
-            有效期至 {new Date(certificates.data.certificate.validTo).toLocaleString()}
+            有效期至 {formatDateTime(new Date(certificates.data.certificate.validTo))}
             {certificates.data.nextRotationAt &&
-              ` · 下次轮换 ${new Date(certificates.data.nextRotationAt).toLocaleString()}`}
+              ` · 下次轮换 ${formatDateTime(new Date(certificates.data.nextRotationAt))}`}
           </p>
         ) : (
           <p className="muted">尚未生成证书。</p>

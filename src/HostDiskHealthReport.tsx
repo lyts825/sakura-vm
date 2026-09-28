@@ -1,3 +1,4 @@
+import { formatDecimal } from './localization';
 import type { hostDiskHealth } from '../server/host-disk-health';
 
 export function HostDiskHealthReport({ report }: { report: Awaited<ReturnType<typeof hostDiskHealth>> }) {
@@ -12,8 +13,8 @@ export function HostDiskHealthReport({ report }: { report: Awaited<ReturnType<ty
     <div className="feature-card" aria-label="主机磁盘健康报告">
       <h4>{states[report.status]}</h4>
       <p>
-        可用空间：{(report.capacity.availableBytes / 1024 ** 3).toFixed(1)} GiB ·{' '}
-        {report.capacity.freePercent === null ? '比例未知' : report.capacity.freePercent.toFixed(1) + '%'}
+        可用空间：{formatDecimal((report.capacity.availableBytes / 1024 ** 3), 1)} GiB ·{' '}
+        {report.capacity.freePercent === null ? '比例未知' : formatDecimal(report.capacity.freePercent, 1) + '%'}
       </p>
       <p className="subtle-note">
         数据目录：{report.directory} · 卷状态：{report.volume?.health || '未知'}

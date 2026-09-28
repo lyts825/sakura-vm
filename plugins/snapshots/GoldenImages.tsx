@@ -1,3 +1,5 @@
+import { formatDecimal } from '../../src/localization';
+import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
 import type { VMView } from '../../server/model';
 import type { GoldenImages } from '../../server/golden-images';
@@ -95,7 +97,7 @@ export function GoldenImageLibrary({
       </button>
       <p>
         {remote.data?.templates.length || 0} / 16 个模板 ·{' '}
-        {((remote.data?.templates.reduce((sum, row) => sum + row.bytes, 0) || 0) / 1024 ** 3).toFixed(2)} /
+        {formatDecimal(((remote.data?.templates.reduce((sum, row) => sum + row.bytes, 0) || 0) / 1024 ** 3), 2)} /
         128 GiB
       </p>
       <label>
@@ -115,8 +117,8 @@ export function GoldenImageLibrary({
             <h4>{entry.name}</h4>
             <p>{entry.note}</p>
             <p>
-              {entry.distro} · {entry.sourceName} · {new Date(entry.createdAt).toLocaleString()} · 虚拟磁盘{' '}
-              {entry.diskGiB} GiB · 模板 {(entry.bytes / 1024 ** 2).toFixed(1)} MiB
+              {entry.distro} · {entry.sourceName} · {formatDateTime(new Date(entry.createdAt))} · 虚拟磁盘{' '}
+              {entry.diskGiB} GiB · 模板 {formatDecimal((entry.bytes / 1024 ** 2), 1)} MiB
             </p>
             <p className="subtle-note">
               SHA-256：<code>{entry.sha256}</code>

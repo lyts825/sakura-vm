@@ -1,3 +1,5 @@
+import { formatDecimal } from './localization';
+import { formatDateTime } from './localization';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CapabilityActionView } from '../shared/capability-actions';
 import type { JobView } from '../server/jobs';
@@ -210,10 +212,10 @@ export function CapabilityActionsPanel({
             <div className="feature-card">
               <p>
                 已观测时段可用率：
-                {result.availablePercent === null ? '暂无样本' : result.availablePercent.toFixed(2) + '%'}
+                {result.availablePercent === null ? '暂无样本' : formatDecimal(result.availablePercent, 2) + '%'}
               </p>
               <p>
-                观测覆盖率：{result.coveragePercent.toFixed(2)}% · 未知时长：
+                观测覆盖率：{formatDecimal(result.coveragePercent, 2)}% · 未知时长：
                 {Math.round(result.unknownSeconds)} 秒
               </p>
               <p className="subtle-note">
@@ -296,7 +298,7 @@ export function CapabilityActionsPanel({
                   result.session.status === 'expired' ? '已过期' :
                     result.session.status === 'unhealthy' ? '入口未就绪' : '已停止'} ·
                 本机端口 {result.session.hostPort} ·
-                到期 {new Date(result.session.expiresAt).toLocaleString('zh-CN')}
+                到期 {formatDateTime(new Date(result.session.expiresAt))}
               </p>}
               {result.session?.status === 'running' && vmId && <button
                 className="secondary compact"
@@ -320,7 +322,7 @@ export function CapabilityActionsPanel({
                   void action.run(async () => navigator.clipboard.writeText(ideAccess.password),
                     '访问密码已复制')
                 }>复制访问密码</button>
-                <span className="subtle-note">到期 {new Date(ideAccess.expiresAt).toLocaleString('zh-CN')}</span>
+                <span className="subtle-note">到期 {formatDateTime(new Date(ideAccess.expiresAt))}</span>
               </p>}
             </div>
           )}
@@ -334,7 +336,7 @@ export function CapabilityActionsPanel({
                     <td>{pool.name}<br /><code>{pool.id}</code></td>
                     <td><code>{pool.root}</code></td>
                     <td>{pool.freeBytes === null ? '目录不可用' :
-                      (pool.freeBytes / 1024 ** 3).toFixed(1) + ' GiB'}</td>
+                      formatDecimal((pool.freeBytes / 1024 ** 3), 1) + ' GiB'}</td>
                     <td>{pool.vms?.map((vm: any) => vm.name).join('、') || '无'}</td>
                     <td>
                       {pool.available && !running && pool.id !== result.currentPoolId && <button
@@ -385,7 +387,7 @@ export function CapabilityActionsPanel({
                   <tbody>{result.candidates.map((item: any) => <tr key={item.vmId}>
                     <td>{item.name}</td><td><code>{item.currentPoolId}</code></td>
                     <td><code>{item.targetPoolId || '—'}</code></td>
-                    <td>{new Date(item.lastUsedAt).toLocaleString('zh-CN')}</td>
+                    <td>{formatDateTime(new Date(item.lastUsedAt))}</td>
                     <td>{item.ready ? '可迁移' : item.reason}</td>
                   </tr>)}</tbody>
                 </table>
@@ -399,8 +401,8 @@ export function CapabilityActionsPanel({
                 <table><thead><tr><th>备份</th><th>时间</th><th>大小</th><th>操作</th></tr></thead>
                   <tbody>{result.backups.map((backup: any) => <tr key={backup.id}>
                     <td><code>{backup.id}</code>{backup.encrypted ? ' · 已加密' : ''}</td>
-                    <td>{new Date(backup.createdAt).toLocaleString('zh-CN')}</td>
-                    <td>{(backup.bytes / 1024 ** 2).toFixed(1)} MiB</td>
+                    <td>{formatDateTime(new Date(backup.createdAt))}</td>
+                    <td>{formatDecimal((backup.bytes / 1024 ** 2), 1)} MiB</td>
                     <td><button className="secondary compact" onClick={() =>
                       setParameters(JSON.stringify({ mode: 'run', backupId: backup.id }, null, 2))
                     }>准备演练</button></td>
@@ -435,7 +437,7 @@ export function CapabilityActionsPanel({
               <p>{result.active
                 ? `本机 TCP 入口：127.0.0.1:${result.localPort} → 客户机 127.0.0.1:${result.guestPort}`
                 : '当前没有临时 TCP 入口。'}</p>
-              {result.active && <p>到期时间：{new Date(result.expiresAt).toLocaleString('zh-CN')}
+              {result.active && <p>到期时间：{formatDateTime(new Date(result.expiresAt))}
                 {' · '}当前连接：{result.connections}</p>}
               {result.active && <button className="secondary compact" onClick={() =>
                 setParameters(JSON.stringify({ mode: 'close' }, null, 2))
@@ -486,8 +488,8 @@ export function CapabilityActionsPanel({
                 {result.metrics.map((item: any) => (
                   <tr key={item.field}>
                     <td>{item.field}</td>
-                    <td>{item.baseline.toFixed(2)}</td>
-                    <td>{item.current.toFixed(2)}</td>
+                    <td>{formatDecimal(item.baseline, 2)}</td>
+                    <td>{formatDecimal(item.current, 2)}</td>
                     <td>{item.anomalous ? '异常' : '正常'}</td>
                   </tr>
                 ))}
@@ -497,23 +499,23 @@ export function CapabilityActionsPanel({
           {result?.basis === 'completed-tasks' && (
             <div className="feature-grid">
               <p>
-                成功率：{result.actualPercent === null ? '暂无样本' : result.actualPercent.toFixed(2) + '%'}
+                成功率：{result.actualPercent === null ? '暂无样本' : formatDecimal(result.actualPercent, 2) + '%'}
               </p>
               <p>
                 已完成任务：{result.samples} · 失败：{result.failed}
               </p>
-              <p>剩余失败预算：{result.remainingFailures.toFixed(2)}</p>
+              <p>剩余失败预算：{formatDecimal(result.remainingFailures, 2)}</p>
             </div>
           )}
           {selected === 'disk-analyzer' && result?.types && (
             <div aria-label="磁盘占用分析">
               <p>
-                共 {result.files} 个文件 · {(result.totalBytes / 1024 / 1024).toFixed(2)} MiB
+                共 {result.files} 个文件 · {formatDecimal((result.totalBytes / 1024 / 1024), 2)} MiB
               </p>
               {result.types.map((item: { type: string; bytes: number; files: number }) => (
                 <div key={item.type}>
                   <span>
-                    {item.type} · {item.files} 个文件 · {(item.bytes / 1024).toFixed(1)} KiB
+                    {item.type} · {item.files} 个文件 · {formatDecimal((item.bytes / 1024), 1)} KiB
                   </span>
                   <meter
                     aria-label={item.type + ' 占用'}

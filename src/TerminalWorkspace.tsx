@@ -1,3 +1,4 @@
+import { formatDateTime } from './localization';
 import { Columns2, Plus, X } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { Request } from './feature-shared';
@@ -286,7 +287,7 @@ function TerminalShareControls({ vmId, session, request }: {
     {!viewers.length && <p>先在“账户与只读分享”为此实例创建只读账户。</p>}
     <ul>{grants.filter((item) => item.session === session).map((item) => <li key={item.id}>
       {viewers.find((viewer) => viewer.id === item.viewerId)?.username || '已撤销账户'}
-      {' · 到期 '}{new Date(item.expiresAt).toLocaleString()}
+      {' · 到期 '}{formatDateTime(new Date(item.expiresAt))}
       <button className="secondary compact" disabled={busy} onClick={async () => {
         setBusy(true); setError('');
         try { await request('/access/terminal-shares/' + item.id, 'DELETE'); await refresh(); }

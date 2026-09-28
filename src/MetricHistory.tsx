@@ -1,3 +1,5 @@
+import { formatDecimal } from './localization';
+import { formatDateTime } from './localization';
 import { useState } from 'react';
 import type { MetricPoint } from '../server/feature-suite';
 import { formatBytes } from './feature-shared';
@@ -151,8 +153,8 @@ export function MetricHistory({ history }: { history: MetricPoint[] }) {
                 .reverse()
                 .map((point) => (
                   <tr key={point.sampledAt}>
-                    <td>{new Date(point.sampledAt).toLocaleString()}</td>
-                    <td>{point.cpuPercent.toFixed(1)}%</td>
+                    <td>{formatDateTime(new Date(point.sampledAt))}</td>
+                    <td>{formatDecimal(point.cpuPercent, 1)}%</td>
                     <td>{formatBytes(point.memoryUsed)}</td>
                     <td>{formatBytes(point.diskUsed)}</td>
                     <td>{rate(point.networkReceiveBytesPerSecond)}</td>

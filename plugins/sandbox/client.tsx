@@ -1,3 +1,5 @@
+import { formatDecimal } from '../../src/localization';
+import { formatDateTime } from '../../src/localization';
 import { Clock, Play, Plus, Shield, Square, TerminalSquare, Trash2 } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import type { SandboxOverview, SandboxView } from '../../server/sandboxes';
@@ -21,7 +23,7 @@ const statusLabels = {
   stopping: '停止中',
   error: '异常',
 };
-const date = (value: string) => new Date(value).toLocaleString('zh-CN', { hour12: false });
+const date = (value: string) => formatDateTime(new Date(value), { hour12: false });
 
 export function SandboxPage({ request, refresh }: PluginPageProps) {
   const remote = useRemote<SandboxOverview>(request, '/sandboxes', true, 1500);
@@ -468,7 +470,7 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
                         return value === undefined ? null : (
                           <Fragment key={key}>
                             <dt>{label}</dt>
-                            <dd>{(value / 1000).toFixed(2)} 秒</dd>
+                            <dd>{formatDecimal((value / 1000), 2)} 秒</dd>
                           </Fragment>
                         );
                       })}
@@ -503,7 +505,7 @@ export function SandboxPage({ request, refresh }: PluginPageProps) {
                             })
                           }
                         >
-                          下载 {artifact.name} · {(artifact.bytes / 1024).toFixed(1)} KiB
+                          下载 {artifact.name} · {formatDecimal((artifact.bytes / 1024), 1)} KiB
                         </button>
                       ))}
                     </div>
