@@ -188,7 +188,7 @@ try {
       // Build a tiny local image so integration tests do not depend on Docker Hub access.
       const fixture = await machines.exec(
         guest.id,
-        'export DEBIAN_FRONTEND=noninteractive; apt-get install -y busybox-static && mkdir -p /tmp/sakura-image/bin && cp /bin/busybox /tmp/sakura-image/bin/busybox && tar -C /tmp/sakura-image -cf - . | docker import - sakura-smoke:local',
+        'export DEBIAN_FRONTEND=noninteractive; apt-get install -y busybox-static && mkdir -p /tmp/sakura-image/bin /tmp/sakura-image/etc /tmp/sakura-image/root && cp /bin/busybox /tmp/sakura-image/bin/busybox && for applet in $(/bin/busybox --list); do [ "$applet" = busybox ] || ln -sf busybox "/tmp/sakura-image/bin/$applet"; done && printf "root:x:0:0:root:/root:/bin/sh\\n" > /tmp/sakura-image/etc/passwd && printf "root:x:0:\\n" > /tmp/sakura-image/etc/group && tar -C /tmp/sakura-image -cf - . | docker import - sakura-smoke:local',
         180000,
       );
       assert.equal(fixture.code, 0, fixture.stderr);
@@ -211,6 +211,56 @@ try {
       await features.containers.run(guest.id, { action: 'compose-down', file: 'compose.yaml' });
       await done(features.containers.jobs, guest.id);
       assert.equal((await features.containers.view(guest.id)).containers.length, 0);
+      await machines.writeGuestFile(guest.id, '/workspace/Dockerfile', 'FROM sakura-smoke:local\n', false);
+      await machines.writeGuestFile(guest.id, '/workspace/devcontainer-smoke.txt', 'workspace-bind-ready\n', false);
+      assert.match((await features.containers.view(guest.id)).devcontainer?.files.join('\n') || '', /Dockerfile/);
+      await features.containers.run(guest.id, { action: 'dockerfile-up', file: 'Dockerfile' });
+      await done(features.containers.jobs, guest.id);
+      const built = (await features.containers.view(guest.id)).containers.find(
+        (item) => item.Names?.startsWith(`sakura-dev-${guest.id.slice(0, 8)}-`),
+      );
+      assert.ok(built?.ID);
+      assert.match(await command(guest.id, `docker exec ${built.Names} cat /workspace/devcontainer-smoke.txt`), /workspace-bind-ready/);
+      await command(guest.id, 'mkdir -p /workspace/other');
+      await machines.writeGuestFile(guest.id, '/workspace/other/Dockerfile', 'FROM sakura-smoke:local\n', false);
+      await features.workspaces.save(guest.id, { directory: '/workspace/other' });
+      await features.containers.run(guest.id, { action: 'dockerfile-up', file: 'Dockerfile' });
+      await features.containers.jobs.wait(guest.id);
+      assert.match(features.containers.jobs.view(guest.id)?.error || '', /项目目录已变更/);
+      await features.workspaces.save(guest.id, { directory: '/workspace' });
+      await features.containers.run(guest.id, { action: 'stop', id: built.ID });
+      await done(features.containers.jobs, guest.id);
+      await features.containers.run(guest.id, { action: 'dockerfile-up', file: 'Dockerfile' });
+      await done(features.containers.jobs, guest.id);
+      assert.match(await command(guest.id, `docker exec ${built.Names} cat /workspace/devcontainer-smoke.txt`), /workspace-bind-ready/);
+      await features.containers.run(guest.id, { action: 'stop', id: built.ID });
+      await done(features.containers.jobs, guest.id);
+      await features.containers.run(guest.id, { action: 'remove', id: built.ID });
+      await done(features.containers.jobs, guest.id);
+      assert.equal((await features.containers.view(guest.id)).containers.length, 0);
+      if (distro === 'debian') {
+        await machines.writeGuestFile(
+          guest.id,
+          '/workspace/.devcontainer.json',
+          JSON.stringify({ image: 'sakura-smoke:local', workspaceFolder: '/workspace',
+            workspaceMount: 'source=/workspace,target=/workspace,type=bind',
+            remoteUser: 'root', updateRemoteUserUID: false }),
+          false,
+        );
+        await features.containers.run(guest.id, { action: 'install-devcontainer-cli' });
+        await done(features.containers.jobs, guest.id);
+        assert.equal((await features.containers.view(guest.id)).devcontainer?.cliInstalled, true);
+        await features.containers.run(guest.id, { action: 'devcontainer-up' });
+        await done(features.containers.jobs, guest.id);
+        const devcontainer = (await features.containers.view(guest.id)).containers[0];
+        assert.ok(devcontainer?.ID);
+        assert.match(await command(guest.id, `docker exec ${devcontainer.ID} cat /workspace/devcontainer-smoke.txt`), /workspace-bind-ready/);
+        await features.containers.run(guest.id, { action: 'stop', id: devcontainer.ID });
+        await done(features.containers.jobs, guest.id);
+        await features.containers.run(guest.id, { action: 'remove', id: devcontainer.ID });
+        await done(features.containers.jobs, guest.id);
+        assert.equal((await features.containers.view(guest.id)).containers.length, 0);
+      }
       await machines.stop(guest.id);
       await machines.delete(guest.id);
       console.log(`${distro} Docker installation, Compose up/down, logs and container controls passed`);

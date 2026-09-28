@@ -14,6 +14,9 @@ const containerId = z.string().regex(/^[a-f0-9]{12,64}$/);
 const imageName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$/);
 export const containerActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('install') }).strict(),
+  z.object({ action: z.literal('install-devcontainer-cli') }).strict(),
+  z.object({ action: z.literal('devcontainer-up') }).strict(),
+  z.object({ action: z.literal('dockerfile-up'), file: repositoryPath.default('Dockerfile') }).strict(),
   z.object({ action: z.enum(['start', 'stop', 'restart', 'remove']), id: containerId }).strict(),
   z.object({ action: z.enum(['pull', 'remove-image']), image: imageName }).strict(),
   z
@@ -89,8 +92,24 @@ export class Containers {
       images: jsonLines(images),
       volumes: jsonLines(volumes),
       files: files.trim().split('\n').filter(Boolean),
+      devcontainer: await this.devcontainerView(id, project.directory, signal),
       job: this.jobs.view(id),
     };
+  }
+  private async devcontainerView(id: string, directory: string, signal?: AbortSignal) {
+    const command = `set -eu\ncd ${quote(directory)}\n` +
+      `for path in .devcontainer/devcontainer.json .devcontainer.json Dockerfile; do ` +
+      `if [ -f "$path" ]; then printf '%s\\n' "$path"; fi; done\n` +
+      `echo SAKURA_DEVCONTAINER_VERSION\n` +
+      `if command -v devcontainer >/dev/null 2>&1; then devcontainer --version || echo unavailable; else echo unavailable; fi`;
+    const result = await this.machines.exec(id, command, 10000, signal);
+    if (result.code !== 0) return { cliInstalled: false, files: [], error: result.stderr };
+    const [fileOutput = '', versionOutput = ''] = result.stdout.split(/SAKURA_DEVCONTAINER_VERSION\r?\n/);
+    const files = fileOutput.trim().split(/\r?\n/).filter(Boolean);
+    const version = versionOutput.trim().split(/\r?\n/).at(-1);
+    return { cliInstalled: !!version && version !== 'unavailable',
+      version: version === 'unavailable' ? undefined : version,
+      files };
   }
   async logs(id: string, target: string, signal?: AbortSignal) {
     this.supported(id);
@@ -107,7 +126,7 @@ export class Containers {
       value = containerActionSchema.parse(input);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
     const project =
-      value.action === 'install'
+      value.action === 'install' || value.action === 'install-devcontainer-cli'
         ? { directory: '/workspace', environment: await this.workspaces.networkEnvironment(id) }
         : await this.workspaces.resolvedConfig(id);
     return this.jobs.start(
@@ -116,6 +135,40 @@ export class Containers {
         let command: string;
         if (value.action === 'install')
           command = `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\napt-get install -y docker.io ${vm.distro === 'ubuntu' ? 'docker-compose-v2' : 'docker-compose'}\nsystemctl enable --now docker\ndocker version\n`;
+        else if (value.action === 'install-devcontainer-cli')
+          command = `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\napt-get install -y nodejs npm python3 make g++\nnpm install --global @devcontainers/cli@0.82.0\ndevcontainer --version`;
+        else if (value.action === 'devcontainer-up')
+          command = `set -eu\ncd ${quote(project.directory)}\n` +
+            `if [ ! -f .devcontainer/devcontainer.json ] && [ ! -f .devcontainer.json ]; then ` +
+            `echo '项目没有 devcontainer.json' >&2; exit 1; fi\n` +
+            `command -v devcontainer >/dev/null || { echo '请先安装 Dev Container CLI' >&2; exit 1; }\n` +
+            `docker version >/dev/null\n` +
+            `devcontainer up --workspace-folder ${quote(project.directory)}`;
+        else if (value.action === 'dockerfile-up') {
+          const file = value.file;
+          const workspace = '_workspace' in project ? project._workspace || 'default' : 'default';
+          const name = `sakura-dev-${id.slice(0, 8)}-${workspace}`;
+          const image = `${name}:latest`;
+          if (/[,:]/.test(project.directory))
+            throw new AppError('Dockerfile 模式暂不支持包含逗号或冒号的项目路径', 409);
+          command = `set -eu\n` +
+            `root=$(realpath -e -- ${quote(project.directory)})\n` +
+            `case "$root" in *','*|*':'*) echo '项目路径不适合 Docker bind mount' >&2; exit 1;; esac\n` +
+            `dockerfile=$(realpath -e -- ${quote(posix.join(project.directory, file))})\n` +
+            `case "$dockerfile" in "$root"/*) ;; *) echo 'Dockerfile 超出项目目录' >&2; exit 1;; esac\n` +
+            `if docker container inspect ${quote(name)} >/dev/null 2>&1; then ` +
+            `owner=$(docker inspect --format '{{index .Config.Labels "sakura.vm"}}' ${quote(name)}); ` +
+            `[ "$owner" = ${quote(id)} ] || { echo '同名容器不属于此实例' >&2; exit 1; }; ` +
+            `mounted=$(docker inspect --format '{{index .Config.Labels "sakura.directory"}}' ${quote(name)}); ` +
+            `[ "$mounted" = "$root" ] || { echo '项目目录已变更，请删除旧容器后重建' >&2; exit 1; }; ` +
+            `docker start ${quote(name)}; else ` +
+            `docker build -f "$dockerfile" -t ${quote(image)} "$root" && ` +
+            `docker run -d --name ${quote(name)} --label sakura.managed=devcontainer ` +
+            `--label ${quote(`sakura.vm=${id}`)} --label ${quote(`sakura.project=${workspace}`)} ` +
+            `--label "sakura.directory=$root" ` +
+            `--mount "type=bind,source=$root,target=/workspace" ` +
+            `-w /workspace --entrypoint /bin/sh ${quote(image)} -c 'while :; do sleep 600; done'; fi`;
+        }
         else if ('id' in value)
           command = `docker ${value.action === 'remove' ? 'rm' : value.action} ${quote(value.id)}`;
         else if ('image' in value)

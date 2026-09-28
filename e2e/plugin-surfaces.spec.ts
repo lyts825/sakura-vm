@@ -3064,6 +3064,40 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
+test('Dev Container workbench submits Dockerfile and configuration actions for the selected project', async ({ page }) => {
+  await app(page, ['projects', 'containers'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
+  let cliInstalled = false;
+  const submitted: unknown[] = [];
+  await page.route('**/api/vms/*/containers**', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON();
+      submitted.push(input);
+      if (input.action === 'install-devcontainer-cli') cliInstalled = true;
+      return route.fulfill({ json: { id: 'job', status: 'queued' } });
+    }
+    return route.fulfill({ json: {
+      supported: true, installed: true, available: true, version: '27.0', compose: 'Docker Compose 2',
+      containers: [], images: [], volumes: [], files: [], job: null,
+      devcontainer: { cliInstalled, version: cliInstalled ? '0.82.0' : undefined,
+        files: ['Dockerfile', '.devcontainer/devcontainer.json'] },
+    } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '容器', exact: true }).click();
+  await expect(page.getByRole('button', { name: '按 devcontainer.json 创建或启动' })).toBeDisabled();
+  await page.getByRole('textbox', { name: '项目内的 Dockerfile' }).fill('development/Dockerfile');
+  await page.getByRole('button', { name: '从 Dockerfile 构建并启动' }).click();
+  await expect.poll(() => submitted).toContainEqual({ action: 'dockerfile-up', file: 'development/Dockerfile' });
+  await page.getByRole('button', { name: '安装 Dev Container CLI' }).click();
+  await expect(page.getByRole('button', { name: '按 devcontainer.json 创建或启动' })).toBeEnabled();
+  await page.getByRole('button', { name: '按 devcontainer.json 创建或启动' }).click();
+  await expect.poll(() => submitted).toContainEqual({ action: 'devcontainer-up' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('security scan shows OSV package matches and never reports an incomplete lookup as clean', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms', (route) =>

@@ -21,11 +21,13 @@ export function ContainersPanel({ vm, request }: FeatureProps) {
       images: DockerItem[];
       volumes: DockerItem[];
       files: string[];
+      devcontainer?: { cliInstalled: boolean; version?: string; files: string[]; error?: string };
       job: JobView | null;
     }>(request, `/vms/${vm.id}/containers`, vm.status === 'running', 8000),
     action = useAction();
   const [image, setImage] = useState(''),
     [file, setFile] = useState('compose.yaml'),
+    [dockerfile, setDockerfile] = useState('Dockerfile'),
     [logs, setLogs] = useState('');
   const output = useRemote<{ log: string }>(
     request,
@@ -50,7 +52,7 @@ export function ContainersPanel({ vm, request }: FeatureProps) {
           <RefreshCw size={16} />
         </button>
       </div>
-      <Feedback error={action.error || remote.error || output.error || remote.data?.error} />
+      <Feedback error={action.error || remote.error || output.error || remote.data?.error || remote.data?.devcontainer?.error} />
       {vm.status !== 'running'
         ? stopped
         : remote.data && (
@@ -160,6 +162,37 @@ export function ContainersPanel({ vm, request }: FeatureProps) {
                             </button>
                           ))}
                         </div>
+                      </div>
+                      <div className="feature-card">
+                        <h4>Dev Container</h4>
+                        <p className="subtle-note">
+                          {remote.data.devcontainer?.cliInstalled
+                            ? `Dev Container CLI ${remote.data.devcontainer.version}`
+                            : 'devcontainer.json 需要先安装 Dev Container CLI。'}
+                        </p>
+                        {(remote.data.devcontainer?.files.some((path) => path.endsWith('devcontainer.json')))
+                          ? <div className="feature-actions">
+                              {!remote.data.devcontainer?.cliInstalled &&
+                                <button className="secondary compact" disabled={busy}
+                                  onClick={() => void run({ action: 'install-devcontainer-cli' })}>
+                                  安装 Dev Container CLI
+                                </button>}
+                              <button className="primary compact"
+                                disabled={busy || !remote.data.devcontainer?.cliInstalled}
+                                onClick={() => void run({ action: 'devcontainer-up' })}>
+                                按 devcontainer.json 创建或启动
+                              </button>
+                            </div>
+                          : <p className="muted">当前项目没有 devcontainer.json。</p>}
+                        <label>
+                          项目内的 Dockerfile
+                          <input value={dockerfile} onChange={(event) => setDockerfile(event.target.value)} />
+                        </label>
+                        <button className="secondary compact" disabled={busy || !dockerfile.trim()}
+                          onClick={() => void run({ action: 'dockerfile-up', file: dockerfile.trim() })}>
+                          从 Dockerfile 构建并启动
+                        </button>
+                        <p className="subtle-note">Dockerfile 模式将项目挂载到容器的 /workspace；已有容器直接启动，需更新镜像时先移除旧容器。</p>
                       </div>
                       <div className="feature-card">
                         <h4>镜像</h4>

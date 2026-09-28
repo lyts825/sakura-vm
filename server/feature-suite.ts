@@ -144,6 +144,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'native-integration',
   'golden-images',
   'multi-arch',
+  'dev-container',
   'snapshot-diff',
   'online-snapshots',
   'package-cache',
@@ -517,10 +518,19 @@ export class FeatureSuite {
       featureId === 'resumable-transfer'
     ) {
       result.transfer = 'sftp-resumable';
+    } else if (featureId === 'dev-container') {
+      const probe = vm.distro && vm.distro !== 'alpine' && this.machines.state(id) === 'running'
+        ? await this.machines.exec(id, 'command -v docker >/dev/null && docker info >/dev/null',
+            10000, signal).catch(() => null)
+        : null;
+      result.ready = probe?.code === 0;
+      result.adapter = 'workspace-tooling';
+      result.reason = result.ready
+        ? '启用项目和容器插件后，在容器工作台从 devcontainer.json 或 Dockerfile 创建环境。'
+        : '需要运行中的 Debian/Ubuntu 实例和 Docker；在容器工作台安装后重试。';
     } else if (
       featureId === 'language-services' ||
-      featureId === 'debug-adapter' ||
-      featureId === 'dev-container'
+      featureId === 'debug-adapter'
     ) {
       result.adapter = 'workspace-tooling';
     } else if (featureId === 'reverse-proxy') {

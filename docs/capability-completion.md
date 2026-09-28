@@ -2,6 +2,12 @@
 
 在 `c669881` 基础上持续完成原未完成目录记录，并完成文件、Git 和目录同步的冲突编辑。已完成部分按批提交；Windows 集成为 `f90a0a3`，网页应用剪贴板策略为 `1b4674a`，桌面录制为 `d626ae0`，黄金镜像库为 `3aef7b6`，临时 COW 工作区为 `08a7e03`，只读救援为 `f315dad`。近期接通了备份文件级恢复、云镜像导入、UEFI 固件、快照差异、本机 HTTP/HTTPS 入口、主机入口证书轮换、客户机网络仿真、嵌套虚拟化检测、私有 DNS、文件锁、事件自动化规则、插件功能灰度、跨主机配对、资源评分、客户机火焰图、eBPF 内核性能分析、跨主机冷迁移、主机维护排空、Windows 系统域名解析、跨主机快照复制、Jupyter/Marimo 环境、认证浏览器 IDE、本机存储池管理、SSD/HDD 分层、灾备演练、mTLS 服务入口、自定义同步合并驱动、脱敏数据包捕获、临时反向隧道、出站目标白名单、网络配额、NAT 回流验证、一致性在线快照、自动修复 Runbook、离线软件包缓存、镜像软件包安全扫描、项目磁盘配额、客户机用户配额、S3/MinIO 对象备份、WireGuard 覆盖网络、npm 依赖升级、团队模板、多用户只读分享与共享桌面视图。未完成功能逐条清单见 [未完成功能](unfinished-features.md)。不以保存配置、返回本机信息或工具探测代替实际执行。
 
+## Dev Container 开发环境
+
+在运行中的 Debian 或 Ubuntu 实例中，先于容器工作台安装 Docker。项目包含 `.devcontainer/devcontainer.json` 或 `.devcontainer.json` 时，可安装固定版本的 Dev Container CLI，然后使用其 `up --workspace-folder` 启动配置声明的镜像、Dockerfile 构建或 Compose 服务。该路径将配置解释交给 [Dev Container 官方 CLI](https://github.com/devcontainers/cli)，遵循配置文件的工作目录与挂载设置。若项目仅包含 Dockerfile，可直接构建镜像并创建常驻容器；Sakura 将当前项目目录绑定到容器的 `/workspace`，容器列入同一工作台，可查看日志、停止、重启和删除。再次执行 Dockerfile 模式会启动已有容器；更新镜像需先删除旧容器。
+
+Dockerfile 路径必须位于当前项目目录，符号链接解析后也不能越界。若项目目录变更，旧容器会拒绝以新目录名义重启，需先删除再构建。CLI 和镜像构建可能需要访问 npm 或镜像仓库；构建步骤来自用户当前项目，应按该项目的 Dockerfile 和配置执行。Dockerfile 模式不自动解释 devcontainer.json 中的 Features、生命周期命令或 Compose 定义，此类配置请使用 CLI 模式。
+
 ## 浏览器扩展
 
 随源码及运行包提供可安装的 Chromium Manifest V3 扩展。管理员通过五分钟一次性配对码授权扩展读取本机实例摘要；凭证绑定连接、三十天到期，可从设置中撤销，更换管理员密码时全部失效。真实 Chromium 扩展和编译版服务验证了配对、读取、越权拒绝与撤销。安装和使用见 [浏览器扩展](browser-extension.md)。

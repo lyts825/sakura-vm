@@ -295,6 +295,8 @@ test('container actions reject unsafe identifiers, flags and parent Compose path
     { action: 'stop', id: '--all' },
     { action: 'pull', image: 'nginx; touch /tmp/x' },
     { action: 'compose-up', file: '../compose.yaml' },
+    { action: 'dockerfile-up', file: '../Dockerfile' },
+    { action: 'dockerfile-up', file: '/etc/passwd' },
   ])
     assert.equal(containerActionSchema.safeParse(input).success, false);
   const machines = { get: () => ({ distro: 'alpine' }) } as unknown as MachinesType;
@@ -302,6 +304,27 @@ test('container actions reject unsafe identifiers, flags and parent Compose path
   try {
     assert.equal((await containers.view('vm')).supported, false);
     await assert.rejects(containers.run('vm', { action: 'install' }), /Debian 和 Ubuntu/);
+  } finally {
+    await containers.close();
+  }
+});
+test('container view keeps project Dev Container files visible when the CLI is unavailable', async () => {
+  const machines = {
+    get: () => ({ distro: 'debian' }),
+    exec: async (_id: string, command: string) => {
+      if (command.includes('SAKURA_DEVCONTAINER_VERSION'))
+        return { code: 0, stdout: 'Dockerfile\n.devcontainer/devcontainer.json\nSAKURA_DEVCONTAINER_VERSION\nunavailable\n', stderr: '' };
+      if (command.includes('SAKURA_IMAGES'))
+        return { code: 0, stdout: 'SAKURA_IMAGES\nSAKURA_VOLUMES\nSAKURA_COMPOSE\nDocker Compose 2\nSAKURA_FILES\n', stderr: '' };
+      return { code: 0, stdout: '27.0\n', stderr: '' };
+    },
+  } as unknown as MachinesType;
+  const workspaces = { config: async () => ({ directory: '/workspace' }) } as unknown as WorkspacesType;
+  const containers = new Containers(machines, workspaces);
+  try {
+    const view = await containers.view('vm');
+    assert.equal(view.devcontainer?.cliInstalled, false);
+    assert.deepEqual(view.devcontainer?.files, ['Dockerfile', '.devcontainer/devcontainer.json']);
   } finally {
     await containers.close();
   }
