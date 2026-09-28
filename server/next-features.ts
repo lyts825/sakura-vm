@@ -434,7 +434,8 @@ export const nextFeatureCatalog = [
     '稳定分片并实际执行测试，保留每片日志、耗时与退出码。',
     'available',
   ],
-  ['dependency-bot', '依赖升级机器人', '开发与 AI', 'P1', '保存依赖升级检查计划和安全限制。', 'planned'],
+  ['dependency-bot', '依赖升级机器人', '开发与 AI', 'P1',
+    '扫描 npm 直接依赖并生成审阅计划；按计划更新清单与锁文件，支持中断恢复和版本回退。', 'available'],
   [
     'code-search-index',
     '代码搜索索引',

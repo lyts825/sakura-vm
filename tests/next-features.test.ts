@@ -12,6 +12,7 @@ import { gitActionSchema } from '../server/git-workbench.ts';
 import { syncDirection } from '../server/sync.ts';
 import { projectSchema } from '../server/workspaces.ts';
 import { nextFeatureCatalog } from '../server/next-features.ts';
+import { capabilityParameters } from '../server/capability-definitions.ts';
 
 test('project catalog keeps a default project and rejects duplicate identities', () => {
   assert.equal(
@@ -92,5 +93,16 @@ test('the third feature tranche has 100 unique entries with implementation state
   assert.equal(nextFeatureCatalog.find(([id]) => id === 'incident-lockdown')?.[5], 'available');
   assert.equal(nextFeatureCatalog.find(([id]) => id === 'desktop-recording')?.[5], 'available');
   assert.equal(nextFeatureCatalog.find(([id]) => id === 'network-emulation')?.[5], 'available');
+  assert.equal(nextFeatureCatalog.find(([id]) => id === 'dependency-bot')?.[5], 'available');
   assert.ok(nextFeatureCatalog.every(([id]) => /^[a-z][a-z0-9-]+$/.test(id)));
+});
+
+test('dependency upgrade requires bounded operation parameters', () => {
+  assert.deepEqual(capabilityParameters('dependency-bot', { mode: 'scan' }), {
+    mode: 'scan', allowMajor: false, timeout: 60,
+  });
+  assert.equal(capabilityParameters('dependency-bot', { mode: 'apply', planId: 'a'.repeat(64) }).planId,
+    'a'.repeat(64));
+  assert.throws(() => capabilityParameters('dependency-bot', { mode: 'apply', planId: '../../evil' }));
+  assert.throws(() => capabilityParameters('dependency-bot', { mode: 'scan', timeout: 1000 }));
 });

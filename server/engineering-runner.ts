@@ -45,7 +45,8 @@ export async function runEngineeringOperation(
   const steps = (parameters.steps || parameters.checks || []) as Array<{ timeout?: number }>;
   const timeout = Math.max(
     120_000,
-    (seconds * (operation === 'reproducible-build' ? 2 : 1) +
+    (seconds * ((operation === 'reproducible-build' ||
+      (operation === 'dependency-bot' && parameters.mode === 'apply')) ? 2 : 1) +
       steps.reduce((sum, step) => sum + Number(step.timeout || 60), 0) +
       30) *
       1000,

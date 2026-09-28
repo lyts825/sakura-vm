@@ -930,7 +930,7 @@ CAPABILITY_OPERATIONS = {
     "patch-bundle", "environment-recreate", "format-lint",
     "build-cache", "branch-preview", "onboarding-checklist", "review-threads",
     "workspace-search", "git-worktrees",
-    "dependency-report", "runtime-matrix", "reproducible-env", "network-diagnostics",
+    "dependency-report", "dependency-bot", "runtime-matrix", "reproducible-env", "network-diagnostics",
     "packet-capture",
 }
 
@@ -1131,6 +1131,283 @@ def dependency_report(root, p):
         if p.get('updates'):
             updates = json.loads(run(['python3', '-m', 'pip', 'list', '--outdated', '--format=json'], root, timeout=p.get('timeout', 60))['stdout'])
     return dict(manager=manager, nodes=nodes, edges=edges, updates=updates, updatesChecked=bool(p.get('updates')), generatedAt=time.time())
+
+
+BOT_VERSION = re.compile(r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')
+BOT_REQUESTED = re.compile(r'^[\^~]?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$')
+BOT_NAME = re.compile(r'^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$')
+BOT_KINDS = ('dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies')
+
+
+def bot_file(root, name):
+    file = safe_path(root, name, True)
+    if not file.is_file() or file.stat().st_size > 16 * 1024 * 1024:
+        raise Failure('依赖文件类型或大小不受支持：' + name)
+    return file.read_bytes()
+
+
+def bot_inputs(root):
+    if safe_path(root, 'npm-shrinkwrap.json').exists():
+        raise Failure('依赖升级机器人当前只支持 package-lock.json，不支持 npm-shrinkwrap.json')
+    manifest_bytes, lock_bytes = bot_file(root, 'package.json'), bot_file(root, 'package-lock.json')
+    try:
+        manifest, lock = json.loads(manifest_bytes), json.loads(lock_bytes)
+    except (ValueError, UnicodeDecodeError):
+        raise Failure('package.json 或 package-lock.json 不是有效 JSON')
+    if not isinstance(manifest, dict) or not isinstance(lock, dict) or manifest.get('workspaces'):
+        raise Failure('需要单项目 npm 清单；暂不支持 workspaces')
+    packages = lock.get('packages')
+    if lock.get('lockfileVersion') not in (2, 3) or not isinstance(packages, dict) or not isinstance(packages.get(''), dict):
+        raise Failure('需要 npm lockfileVersion 2 或 3 的锁文件')
+    direct = {}
+    for kind in BOT_KINDS:
+        listed = manifest.get(kind, {})
+        if not isinstance(listed, dict):
+            raise Failure('package.json 依赖声明格式错误')
+        if packages[''].get(kind, {}) != listed:
+            raise Failure('package.json 与锁文件根依赖不一致，请先更新锁文件')
+        for name, requested in listed.items():
+            if not isinstance(name, str) or not BOT_NAME.fullmatch(name) or not isinstance(requested, str):
+                raise Failure('存在不受支持的直接依赖声明')
+            if name in direct:
+                raise Failure('同一个直接依赖不能出现在多个依赖类别')
+            direct[name] = (kind, requested)
+    if len(direct) > 100:
+        raise Failure('直接依赖超过 100 个，请拆分项目')
+    return manifest_bytes, lock_bytes, manifest, lock, direct
+
+
+def bot_digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def bot_scan(root, allow_major, timeout):
+    manifest_bytes, lock_bytes, _, lock, direct = bot_inputs(root)
+    deadline = time.monotonic() + timeout
+    result = run(['npm', 'outdated', '--json', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'],
+                 root, timeout=timeout, check=False)
+    if result['code'] not in (0, 1):
+        raise Failure('npm 更新查询失败', exitCode=result['code'])
+    try:
+        outdated = json.loads(result['stdout'] or '{}')
+    except ValueError:
+        raise Failure('npm 更新查询没有返回有效 JSON')
+    if not isinstance(outdated, dict) or 'error' in outdated:
+        raise Failure('npm 更新查询失败')
+    manifest_sha, lock_sha = bot_digest(manifest_bytes), bot_digest(lock_bytes)
+    candidates, skipped = [], []
+    lookups = 0
+    for name, (kind, requested) in sorted(direct.items()):
+        if not BOT_REQUESTED.fullmatch(requested):
+            skipped.append(dict(name=name, reason='只升级普通 npm 稳定版本范围；别名、文件和 Git 依赖保持原样'))
+            continue
+        installed = lock['packages'].get('node_modules/' + name, {})
+        current = installed.get('version') if isinstance(installed, dict) else None
+        current_match = BOT_VERSION.fullmatch(current) if isinstance(current, str) else None
+        if not current_match:
+            skipped.append(dict(name=name, reason='锁文件中没有稳定的直接依赖版本'))
+            continue
+        update = outdated.get(name, {})
+        if not isinstance(update, dict):
+            skipped.append(dict(name=name, reason='npm 更新响应格式错误'))
+            continue
+        options = []
+        for field in ('wanted', 'latest'):
+            target = update.get(field)
+            match = BOT_VERSION.fullmatch(target) if isinstance(target, str) else None
+            if match and tuple(map(int, match.groups())) > tuple(map(int, current_match.groups())):
+                if allow_major or match[1] == current_match[1]:
+                    options.append((tuple(map(int, match.groups())), target))
+        # Exact pins have wanted=current. If latest crossed a major boundary, ask
+        # npm for versions on the current major before declaring no safe update.
+        if not options and not allow_major and update and lookups < 20 and deadline - time.monotonic() > 1:
+            lookups += 1
+            scoped = run(['npm', 'view', name + '@^' + current_match[1] + '.0.0', 'version', '--json',
+                          '--ignore-scripts', '--no-audit', '--no-fund'], root,
+                         timeout=min(10, max(1, deadline - time.monotonic())), check=False)
+            if scoped['code'] == 0:
+                try:
+                    versions = json.loads(scoped['stdout'])
+                    for target in versions if isinstance(versions, list) else [versions]:
+                        match = BOT_VERSION.fullmatch(target) if isinstance(target, str) else None
+                        if match and tuple(map(int, match.groups())) > tuple(map(int, current_match.groups())):
+                            options.append((tuple(map(int, match.groups())), target))
+                except ValueError:
+                    pass
+        if not options:
+            if update:
+                skipped.append(dict(name=name, reason='未发现符合安全策略的稳定版本；查询预算耗尽时可重试扫描'))
+            continue
+        _, target = max(options)
+        target_parts = tuple(map(int, BOT_VERSION.fullmatch(target).groups()))
+        current_parts = tuple(map(int, current_match.groups()))
+        change = 'major' if target_parts[0] != current_parts[0] else 'minor' if target_parts[1] != current_parts[1] else 'patch'
+        plan = dict(manager='npm', name=name, kind=kind, current=current, target=target, change=change,
+                    requested=requested, manifestSha256=manifest_sha, lockSha256=lock_sha, allowMajor=allow_major)
+        plan_id = bot_digest(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode())
+        candidates.append(dict(**plan, planId=plan_id))
+    return dict(manager='npm', manifestSha256=manifest_sha, lockSha256=lock_sha, allowMajor=allow_major,
+                candidates=candidates, skipped=skipped, checkedAt=time.time())
+
+
+def bot_replace(root, name, contents):
+    file = safe_path(root, name, True)
+    before = file.stat()
+    mode = stat.S_IMODE(before.st_mode)
+    fd, temporary = tempfile.mkstemp(prefix='.sakura-dependency-', dir=root)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(contents)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        if hasattr(os, 'chown'):
+            try:
+                os.chown(temporary, before.st_uid, before.st_gid)
+            except PermissionError:
+                if (before.st_uid, before.st_gid) != (os.geteuid(), os.getegid()):
+                    raise Failure('无法保留依赖文件的所有者或用户组：' + name)
+        os.replace(temporary, file)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def bot_recover(root):
+    pending = safe_path(root, '.sakura/dependency-bot/pending.json')
+    if not pending.exists():
+        return dict(recovered=False)
+    record = json.loads(read_text(root, '.sakura/dependency-bot/pending.json', 4096))
+    revision_id = record.get('revisionId', '')
+    if not isinstance(revision_id, str) or not re.fullmatch(r'[a-f0-9]{32}', revision_id):
+        raise Failure('依赖升级恢复记录损坏')
+    directory = '.sakura/dependency-bot/revisions/' + revision_id + '/'
+    for name in ('package.json', 'package-lock.json'):
+        current = bot_file(root, name)
+        original = bot_file(root, directory + name)
+        allowed = (record['before'][name], record['after'][name])
+        if bot_digest(original) != record['before'][name] or bot_digest(current) not in allowed:
+            raise Failure('升级中断后文件被外部修改，拒绝自动恢复：' + name)
+    for name in ('package.json', 'package-lock.json'):
+        bot_replace(root, name, bot_file(root, directory + name))
+    pending.unlink()
+    return dict(recovered=True, revisionId=revision_id)
+
+
+def bot_publish(root, manifest_bytes, lock_bytes, source_plan, expected_before):
+    originals = {name: bot_file(root, name) for name in ('package.json', 'package-lock.json')}
+    desired = {'package.json': manifest_bytes, 'package-lock.json': lock_bytes}
+    if any(bot_digest(originals[name]) != expected_before[name] for name in originals):
+        raise Failure('发布前依赖文件已改变，请重新扫描')
+    revision_id = uuid.uuid4().hex
+    base = safe_path(root, '.sakura/dependency-bot')
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(base, 0o700)
+    directory = '.sakura/dependency-bot/revisions/' + revision_id + '/'
+    target = safe_path(root, directory)
+    target.mkdir(parents=True, exist_ok=False)
+    for name, contents in originals.items():
+        (target / name).write_bytes(contents)
+    before = {name: bot_digest(contents) for name, contents in originals.items()}
+    after = {name: bot_digest(contents) for name, contents in desired.items()}
+    pending = dict(revisionId=revision_id, before=before, after=after)
+    atomic_json(root, '.sakura/dependency-bot/pending.json', pending)
+    try:
+        for name in ('package.json', 'package-lock.json'):
+            if bot_digest(bot_file(root, name)) != before[name]:
+                raise Failure('发布前依赖文件已改变，拒绝覆盖：' + name)
+            bot_replace(root, name, desired[name])
+        atomic_json(root, directory + 'record.json', dict(revisionId=revision_id, source=source_plan,
+                    before=before, after=after, appliedAt=time.time()))
+        safe_path(root, '.sakura/dependency-bot/pending.json').unlink()
+    except Exception:
+        bot_recover(root)
+        raise
+    retention_warning = None
+    try:
+        revisions = safe_path(root, '.sakura/dependency-bot/revisions')
+        old = sorted((item for item in revisions.iterdir() if item.is_dir() and not item.is_symlink() and
+                      re.fullmatch(r'[a-f0-9]{32}', item.name) and (item / 'record.json').is_file()),
+                     key=lambda item: item.stat().st_mtime)
+        for item in old[:-20]:
+            # Keep a bounded set of local recovery points. safe_path checks
+            # every component again before recursive cleanup.
+            safe_path(root, '.sakura/dependency-bot/revisions/' + item.name, True)
+            shutil.rmtree(item)
+    except (OSError, Failure) as error:
+        retention_warning = str(error)
+    return dict(revisionId=revision_id, before=before, after=after, retentionWarning=retention_warning)
+
+
+def dependency_bot(root, p):
+    mode = p.get('mode', 'status')
+    pending = safe_path(root, '.sakura/dependency-bot/pending.json')
+    if mode == 'recover':
+        return bot_recover(root)
+    if pending.exists():
+        raise Failure('存在中断的依赖升级，请先执行 recover')
+    if mode == 'status':
+        manifest_bytes, lock_bytes, _, _, direct = bot_inputs(root)
+        return dict(manager='npm', directDependencies=len(direct), manifestSha256=bot_digest(manifest_bytes),
+                    lockSha256=bot_digest(lock_bytes), pending=False)
+    if mode == 'scan':
+        return bot_scan(root, p.get('allowMajor', False), p.get('timeout', 60))
+    if mode == 'restore':
+        revision_id = p.get('revisionId', '')
+        if not isinstance(revision_id, str) or not re.fullmatch(r'[a-f0-9]{32}', revision_id):
+            raise Failure('恢复需要有效的 revisionId')
+        directory = '.sakura/dependency-bot/revisions/' + revision_id + '/'
+        record = json.loads(read_text(root, directory + 'record.json', 4096))
+        current = {name: bot_file(root, name) for name in ('package.json', 'package-lock.json')}
+        if any(bot_digest(data) != record['after'][name] for name, data in current.items()):
+            raise Failure('依赖文件已在升级后改变，拒绝按旧版本恢复')
+        return dict(restoredFrom=revision_id, **bot_publish(root, bot_file(root, directory + 'package.json'),
+                    bot_file(root, directory + 'package-lock.json'), dict(restore=revision_id), record['after']))
+    if mode != 'apply':
+        raise Failure('未知的依赖升级操作')
+    plan_id = p.get('planId', '')
+    if not isinstance(plan_id, str) or not re.fullmatch(r'[a-f0-9]{64}', plan_id):
+        raise Failure('升级需要 scan 返回的 planId')
+    scan = bot_scan(root, p.get('allowMajor', False), p.get('timeout', 60))
+    candidate = next((item for item in scan['candidates'] if item['planId'] == plan_id), None)
+    if not candidate:
+        raise Failure('升级计划已失效，请重新扫描并审阅目标版本')
+    kind = candidate['kind']
+    with tempfile.TemporaryDirectory(prefix='.sakura-dependency-stage-', dir=root) as stage_name:
+        stage = Path(stage_name)
+        for name in ('package.json', 'package-lock.json'):
+            (stage / name).write_bytes(bot_file(root, name))
+        config = safe_path(root, '.npmrc')
+        if config.exists():
+            if not config.is_file() or config.stat().st_size > 65536:
+                raise Failure('.npmrc 类型或大小不受支持')
+            shutil.copy2(config, stage / '.npmrc')
+        save = {'dependencies': '--save-prod', 'devDependencies': '--save-dev',
+                'optionalDependencies': '--save-optional', 'peerDependencies': '--save-peer'}[kind]
+        command = run(['npm', 'install', candidate['name'] + '@' + candidate['target'], save, '--save-exact',
+                       '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund', '--no-progress',
+                       '--no-update-notifier'], stage, timeout=p.get('timeout', 60), check=False)
+        if command['code']:
+            raise Failure('npm 锁文件升级失败', exitCode=command['code'])
+        new_manifest, new_lock = bot_file(stage, 'package.json'), bot_file(stage, 'package-lock.json')
+        old_manifest, old_lock, manifest, _, _ = bot_inputs(root)
+        if bot_digest(old_manifest) != scan['manifestSha256'] or bot_digest(old_lock) != scan['lockSha256']:
+            raise Failure('升级期间依赖文件已改变，请重新扫描')
+        updated = json.loads(new_manifest)
+        expected = json.loads(old_manifest)
+        expected[kind][candidate['name']] = candidate['target']
+        if updated != expected:
+            raise Failure('npm 修改了计划外的 package.json 内容，拒绝发布')
+        lock = json.loads(new_lock)
+        packages = lock.get('packages', {})
+        installed = packages.get('node_modules/' + candidate['name'], {})
+        if (not isinstance(installed, dict) or installed.get('version') != candidate['target'] or
+                packages.get('', {}).get(kind, {}).get(candidate['name']) != candidate['target']):
+            raise Failure('npm 锁文件未解析到审阅的目标版本，拒绝发布')
+        published = bot_publish(root, new_manifest, new_lock, dict(planId=plan_id, name=candidate['name'],
+                                target=candidate['target']),
+                                {'package.json': scan['manifestSha256'], 'package-lock.json': scan['lockSha256']})
+    return dict(manager='npm', updated=candidate, **published)
 
 
 def runtime_matrix(root, p):
@@ -1408,6 +1685,8 @@ def capability_execute(root, operation, p):
         return network_diagnostics(root, p)
     if operation == 'dependency-report':
         return dependency_report(root, p)
+    if operation == 'dependency-bot':
+        return dependency_bot(root, p)
     if operation == 'runtime-matrix':
         return runtime_matrix(root, p)
     if operation == 'reproducible-env':

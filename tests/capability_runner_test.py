@@ -107,6 +107,100 @@ class Capabilities(unittest.TestCase):
         self.assertIsNone(next(item for item in report['edges'] if item['name'] == 'optional-missing')['target'])
         self.assertFalse(report['updatesChecked'])
 
+    def test_dependency_bot_scans_applies_and_restores_reviewed_npm_upgrade(self):
+        manifest = dict(name='fixture', version='1.0.0', dependencies={'is-number': '^1.0.0'},
+                        scripts={'postinstall': 'exit 77'})
+        lock = dict(name='fixture', lockfileVersion=3, packages={
+            '': dict(name='fixture', version='1.0.0', dependencies={'is-number': '^1.0.0'}),
+            'node_modules/is-number': dict(version='1.0.0')})
+        original_manifest = json.dumps(manifest)
+        original_lock = json.dumps(lock)
+        self.write('package.json', original_manifest)
+        self.write('package-lock.json', original_lock)
+        commands = []
+
+        def npm(args, cwd=None, **_):
+            commands.append(args)
+            if args[1] == 'outdated':
+                return dict(code=1, stdout=json.dumps({'is-number': {'wanted': '1.1.0', 'latest': '2.0.0'}}), stderr='')
+            if args[1] == 'view':
+                return dict(code=0, stdout='"1.1.0"', stderr='')
+            self.assertEqual(args[1], 'install')
+            self.assertIn('--ignore-scripts', args)
+            self.assertIn('--package-lock-only', args)
+            self.assertIn('--save-prod', args)
+            staged_manifest = json.loads((cwd / 'package.json').read_text())
+            staged_lock = json.loads((cwd / 'package-lock.json').read_text())
+            staged_manifest['dependencies']['is-number'] = '1.1.0'
+            staged_lock['packages']['']['dependencies']['is-number'] = '1.1.0'
+            staged_lock['packages']['node_modules/is-number']['version'] = '1.1.0'
+            (cwd / 'package.json').write_text(json.dumps(staged_manifest))
+            (cwd / 'package-lock.json').write_text(json.dumps(staged_lock))
+            return dict(code=0, stdout='', stderr='')
+
+        with patch.object(runner, 'run', side_effect=npm):
+            scan = self.execute('dependency-bot', mode='scan', allowMajor=False)
+            self.assertEqual(scan['candidates'][0]['target'], '1.1.0')
+            self.assertEqual(scan['candidates'][0]['change'], 'minor')
+            self.assertEqual(self.write('package.json', original_manifest).read_text(), original_manifest)
+            with self.assertRaises(runner.Failure):
+                self.execute('dependency-bot', mode='apply', planId='0' * 64, allowMajor=False)
+            result = self.execute('dependency-bot', mode='apply', planId=scan['candidates'][0]['planId'], allowMajor=False)
+            self.assertEqual(result['updated']['target'], '1.1.0')
+            self.assertEqual(self.execute('dependency-bot', mode='status')['directDependencies'], 1)
+            with self.assertRaises(runner.Failure):
+                self.execute('dependency-bot', mode='apply', planId=scan['candidates'][0]['planId'], allowMajor=False)
+            restored = self.execute('dependency-bot', mode='restore', revisionId=result['revisionId'])
+            self.assertEqual(restored['restoredFrom'], result['revisionId'])
+            self.assertEqual((self.root / 'package.json').read_text(), original_manifest)
+            self.assertEqual((self.root / 'package-lock.json').read_text(), original_lock)
+        self.assertEqual(len([args for args in commands if args[1] == 'install']), 1)
+
+    def test_dependency_bot_refuses_changed_source_and_recovers_interrupted_publication(self):
+        manifest = dict(name='fixture', dependencies={'sample': '^1.0.0'})
+        lock = dict(lockfileVersion=3, packages={'': dict(dependencies={'sample': '^1.0.0'}),
+                                                 'node_modules/sample': dict(version='1.0.0')})
+        self.write('package.json', json.dumps(manifest))
+        self.write('package-lock.json', json.dumps(lock))
+        with patch.object(runner, 'run', return_value=dict(code=1, stdout=json.dumps({
+                'sample': {'wanted': '1.0.1', 'latest': '1.0.1'}}), stderr='')):
+            scan = self.execute('dependency-bot', mode='scan')
+            manifest['description'] = 'changed by user'
+            self.write('package.json', json.dumps(manifest))
+            with self.assertRaisesRegex(runner.Failure, '失效'):
+                self.execute('dependency-bot', mode='apply', planId=scan['candidates'][0]['planId'])
+
+        revision_id = 'a' * 32
+        backup = self.root / '.sakura/dependency-bot/revisions' / revision_id
+        backup.mkdir(parents=True)
+        originals = {name: (self.root / name).read_bytes() for name in ('package.json', 'package-lock.json')}
+        after_manifest = b'{"name":"partially-updated"}'
+        for name, data in originals.items():
+            (backup / name).write_bytes(data)
+        (self.root / 'package.json').write_bytes(after_manifest)
+        pending = dict(revisionId=revision_id,
+                       before={name: runner.bot_digest(data) for name, data in originals.items()},
+                       after={'package.json': runner.bot_digest(after_manifest),
+                              'package-lock.json': runner.bot_digest(originals['package-lock.json'])})
+        self.write('.sakura/dependency-bot/pending.json', json.dumps(pending))
+        with self.assertRaisesRegex(runner.Failure, 'recover'):
+            self.execute('dependency-bot', mode='status')
+        self.assertTrue(self.execute('dependency-bot', mode='recover')['recovered'])
+        self.assertEqual((self.root / 'package.json').read_bytes(), originals['package.json'])
+        self.assertEqual((self.root / 'package-lock.json').read_bytes(), originals['package-lock.json'])
+
+    def test_dependency_bot_does_not_convert_file_dependency_to_registry_package(self):
+        self.write('package.json', json.dumps(dict(name='fixture', dependencies={'sample': 'file:vendor/sample'})))
+        self.write('package-lock.json', json.dumps(dict(lockfileVersion=3, packages={
+            '': dict(dependencies={'sample': 'file:vendor/sample'}),
+            'node_modules/sample': dict(version='1.0.0')})))
+        with patch.object(runner, 'run', return_value=dict(code=1, stdout=json.dumps({
+                'sample': {'wanted': '1.0.0', 'latest': '2.0.0'}}), stderr='')) as command:
+            scan = self.execute('dependency-bot', mode='scan', allowMajor=True)
+        self.assertEqual(scan['candidates'], [])
+        self.assertEqual(scan['skipped'][0]['name'], 'sample')
+        self.assertEqual(command.call_count, 1)
+
     def test_environment_lock_verifies_changes_and_rejects_unsafe_packages_before_install(self):
         sample = dict(version=1, system={'ID': 'alpine', 'VERSION_ID': '3.23', 'architecture': 'x86_64', 'manager': 'apk'},
                       packages={'nodejs': '24.1-r0'}, tools={'node': 'v24.1'}, locks={'package-lock.json': 'a' * 64})

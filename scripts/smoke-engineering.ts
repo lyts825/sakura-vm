@@ -153,6 +153,38 @@ try {
   await operate('static-routes', { mode: 'list' });
   await operate('guest-clock-policy', { mode: 'inspect' });
   await operate('command-risk', { command: 'rm -rf build' });
+  console.log('Checking reviewed npm dependency upgrade in the guest');
+  const fixture = '/workspace/dependency-bot-fixture';
+  assert.equal((await machines.exec(id, `mkdir -p ${fixture}`)).code, 0);
+  await machines.writeGuestFile(id, fixture + '/package.json',
+    JSON.stringify({ name: 'sakura-bot-smoke', version: '1.0.0', dependencies: { 'is-number': '6.0.0' } }), false);
+  const npmLock = await machines.exec(id,
+    `cd ${fixture} && npm install --package-lock-only --ignore-scripts --no-audit --no-fund`, 90000);
+  assert.equal(npmLock.code, 0, npmLock.stderr);
+  await features.workspaces.save(id, { directory: fixture, environment: {} });
+  const botRun = async (options: Record<string, unknown>) => {
+    const job: any = await features.next.action(id!, {
+      action: 'run', featureId: 'dependency-bot', options,
+    });
+    await features.next.jobs.wait(job.key);
+    const state = features.next.jobs.view(job.key)!;
+    assert.equal(state.status, 'done', state.log + '\n' + state.error);
+    return await features.next.jobs.result(job.id) as any;
+  };
+  const upgradeScan = await botRun({ mode: 'scan', allowMajor: true });
+  const upgradePlan = upgradeScan.candidates.find((candidate: any) => candidate.name === 'is-number');
+  assert.equal(upgradePlan?.target, '7.0.0');
+  const upgrade = await botRun({ mode: 'apply', allowMajor: true, planId: upgradePlan.planId });
+  assert.equal(upgrade.updated.target, '7.0.0');
+  const upgradedManifest = await machines.exec(id, `cat ${fixture}/package.json`);
+  assert.equal(JSON.parse(upgradedManifest.stdout).dependencies['is-number'], '7.0.0');
+  const reverted = await botRun({ mode: 'restore', revisionId: upgrade.revisionId });
+  assert.equal(reverted.restoredFrom, upgrade.revisionId);
+  const restoredManifest = await machines.exec(id, `cat ${fixture}/package.json`);
+  assert.equal(JSON.parse(restoredManifest.stdout).dependencies['is-number'], '6.0.0');
+  await features.workspaces.save(id, {
+    directory: '/workspace/app', environment: { MODE: 'dev', FLAG: 'true' },
+  });
   console.log('Checking commit gate and process cancellation');
   const gitSetup = await machines.exec(
     id,

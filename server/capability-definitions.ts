@@ -285,6 +285,19 @@ export const capabilityDefinitions = {
     { manager: 'auto', updates: false, timeout: 60 },
     '读取 npm 锁文件的直接与传递依赖图，或当前 Python 环境的安装元数据。updates 显式查询包源并列出可升级版本；不修改依赖。',
   ),
+  'dependency-bot': action(
+    '依赖升级机器人', 'next',
+    {
+      mode: z.enum(['status', 'scan', 'apply', 'recover', 'restore']).default('status'),
+      allowMajor: z.boolean().default(false),
+      planId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+      revisionId: z.string().regex(/^[a-f0-9]{32}$/).optional(),
+      timeout: z.number().int().min(10).max(300).default(60),
+    },
+    { mode: 'scan', allowMajor: false, timeout: 60 },
+    '在当前单项目 npm package-lock 中扫描稳定版本更新；默认只列出同主版本候选。先运行 scan 审阅 planId，再用 apply 和相同的 allowMajor 应用。升级只生成清单和锁文件，不运行安装脚本；可用 revisionId 回退，意外中断后先 recover。',
+    true, true,
+  ),
   'runtime-matrix': action(
     '运行时版本管理',
     'suite',
