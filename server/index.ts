@@ -38,12 +38,15 @@ import { storagePoolInput } from './storage-pools.ts';
 import { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
+import { AccessControl } from './access-control.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
   let sessionChanged = (_locked: boolean, _transitioned: boolean) => {};
   const session = new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned));
   await session.init();
+  const access = new AccessControl();
+  await access.init();
   const dev = process.argv.includes('--dev');
   validateRegistry();
   const plugins = new PluginManager();
@@ -195,6 +198,7 @@ async function main() {
   sessionChanged = (locked, transitioned) => {
     if (transitioned) token = randomBytes(32).toString('hex');
     if (locked) {
+      access.revokeAll();
       native.revoke();
       assistant.revoke();
       for (const client of ws.clients) client.terminate();
@@ -211,11 +215,16 @@ async function main() {
       if (socketVms.get(socket) === id) socket.close(1008, 'Incident lockdown');
   });
   let vite: Awaited<ReturnType<typeof import('vite').createServer>> | undefined;
-  const equalToken = (value: unknown) => tokenMatches(value, token);
+  const equalToken = (value: unknown) => {
+    if (!access.enabled) return tokenMatches(value, token);
+    try { return access.authorize(value).role === 'owner'; } catch { return false; }
+  };
   const allowedRequest = (req: IncomingMessage) => sameOrigin(req.headers, PORT);
   const authorized = (req: IncomingMessage) => {
     session.requireUnlocked();
+    if (access.enabled) return access.authorize(req.headers['x-sakura-token']);
     if (!equalToken(req.headers['x-sakura-token'])) throw new AppError('访问凭证已过期，请刷新页面', 401);
+    return { role: 'owner' as const };
   };
   const authorizedBody = async (req: IncomingMessage, limit?: number, signal?: AbortSignal) => {
     const input = await body(req, limit, signal);
@@ -231,6 +240,10 @@ async function main() {
     res.end(JSON.stringify(data));
   }
   const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
+    if (url.pathname === '/api/access/status') {
+      if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
+      return send(res, { ...access.status(), session: session.view() });
+    }
     if (url.pathname === '/api/session') {
       if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
       return send(res, session.view());
@@ -240,8 +253,17 @@ async function main() {
       return send(res, await session.unlock(await body(req, 4096)));
     }
     session.requireUnlocked();
-    if (req.method === 'GET' && url.pathname === '/api/bootstrap')
+    if (url.pathname === '/api/access/login') {
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      const login = await access.login(await body(req, 4096));
+      try { session.requireUnlocked(); }
+      catch (error) { access.logout(login.token); throw error; }
+      return send(res, login);
+    }
+    if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
+      if (access.enabled) throw new AppError('请登录账户后访问 Sakura', 401);
       return send(res, { token, session: session.view() });
+    }
     // End already admitted streams when a lock takes effect. The lock response itself must survive.
     if (url.pathname !== '/api/session/lock') {
       protectedResponses.add(res);
@@ -250,7 +272,54 @@ async function main() {
       res.once('close', remove);
     }
     if (await features.downloads?.route(req, res, url)) return;
-    authorized(req);
+    const principal = authorized(req);
+    if (access.enabled && principal.role === 'viewer' &&
+        url.pathname !== '/api/access/view' && url.pathname !== '/api/access/logout')
+      throw new AppError('只读账户没有此接口的访问权限', 403);
+    if (url.pathname === '/api/access/view') {
+      if (req.method !== 'GET' || !access.enabled) throw new AppError('不支持此方法', 405);
+      const ids = principal.role === 'viewer' ? principal.vmIds : [...machines.records.keys()];
+      const vms = await Promise.all(ids.filter((id) => machines.records.has(id)).map((id) => machines.view(id)));
+      return send(res, { role: principal.role, checkedAt: new Date().toISOString(),
+        vms: vms.map(({ id, name, status, distro, cpus, memoryMiB, diskGiB }) =>
+          ({ id, name, status, distro, cpus, memoryMiB, diskGiB })) });
+    }
+    if (url.pathname === '/api/access/logout') {
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      return send(res, access.logout(req.headers['x-sakura-token']));
+    }
+    if (url.pathname === '/api/access/enable') {
+      if (req.method !== 'POST' || access.enabled) throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const result = await access.enable(await authorizedBody(req, 4096));
+      token = randomBytes(32).toString('hex');
+      for (const client of ws.clients) client.terminate();
+      return send(res, result);
+    }
+    if (url.pathname === '/api/access/users') {
+      if (!access.enabled) throw new AppError('账户模式未启用', 409);
+      if (req.method === 'GET') return send(res, { users: access.users() });
+      if (req.method === 'POST') {
+        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+        const input = await authorizedBody(req, 4096);
+        const vmIds = z.array(z.uuid()).min(1).max(32).parse((input as { vmIds?: unknown }).vmIds);
+        for (const id of vmIds) machines.get(id);
+        return send(res, await access.createViewer(input), 201);
+      }
+      throw new AppError('不支持此方法', 405);
+    }
+    if (/^\/api\/access\/users\/[a-f0-9-]{36}$/.test(url.pathname)) {
+      if (req.method !== 'DELETE') throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      return send(res, await access.removeViewer(url.pathname.split('/').at(-1)!));
+    }
+    if (url.pathname === '/api/access/password') {
+      if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      const result = await access.changeOwnerPassword(await authorizedBody(req, 4096));
+      for (const client of ws.clients) client.terminate();
+      return send(res, result);
+    }
     if (url.pathname === '/api/session/lock' || url.pathname === '/api/session/activity') {
       if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
       z.object({})
@@ -524,13 +593,22 @@ async function main() {
       const url = requestUrl(req.url, PORT);
       if (!url) throw new AppError('无效的请求地址', 400);
       if (url.pathname.startsWith('/api/')) {
-        if (!['GET', 'HEAD'].includes(req.method || '') && equalToken(req.headers['x-sakura-token'])) {
+        if (url.pathname === '/api/access/login' && req.method === 'POST')
+          return await audit.span({ kind: 'request', name: 'POST /api/access/login' },
+            () => api(req, res, url), () => res.statusCode);
+        let actorId: string | undefined;
+        if (access.enabled) {
+          try { actorId = access.authorize(req.headers['x-sakura-token']).id; } catch {}
+        }
+        if (!['GET', 'HEAD'].includes(req.method || '') &&
+            (actorId || (!access.enabled && equalToken(req.headers['x-sakura-token'])))) {
           const vmId = /^\/api\/vms\/([a-f0-9-]{36})(?:\/|$)/.exec(url.pathname)?.[1];
           return await audit.span(
             {
               kind: 'request',
               name: (req.method + ' ' + url.pathname).slice(0, 200),
               ...(vmId && z.uuid().safeParse(vmId).success ? { vmId } : {}),
+              ...(actorId ? { actorId } : {}),
             },
             () => api(req, res, url),
             () => res.statusCode,
@@ -760,6 +838,7 @@ async function main() {
     let failed = false;
     for (const dispose of [
       () => session.close(),
+      () => access.close(),
       () => assistant.close(),
       () => native.close(),
       () => webhooks.close(),

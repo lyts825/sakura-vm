@@ -24,6 +24,9 @@ async function setup(
   let writes = 0;
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/access/status') return route.fulfill({ json: { enabled: false,
+      session: { configured: false, enabled: false, locked: false, idleMinutes: 15,
+        retryAfterSeconds: 0 } } });
     if (path === '/api/plugins') {
       if (options.readError && route.request().method() === 'GET') {
         options.readError = false;

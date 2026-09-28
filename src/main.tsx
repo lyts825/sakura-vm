@@ -55,6 +55,7 @@ import { TerminalPanel } from './TerminalPanel';
 import { api, controllerSession, RefreshQueue } from './controller-session';
 import { watchController } from './controller-watch';
 import { SessionBoundary, SessionLockButton, SessionLockSettings } from './SessionLock';
+import { AccessBoundary, AccessSettings, AccountLogoutButton } from './AccessControl';
 import type { SessionLockView } from '../shared/session-lock';
 import type { NativeHandoff } from '../shared/native-integration';
 
@@ -829,6 +830,7 @@ function App() {
           </div>
           <div className="topbar-actions">
             <SessionLockButton />
+            <AccountLogoutButton />
             <button
               id="accessibility-mode-toggle"
               data-audit-tools
@@ -1577,6 +1579,7 @@ function App() {
                   </button>
                 </section>
                 {showSessionLock && <SessionLockSettings request={api} />}
+                <AccessSettings />
                 <section className="system-card">
                   <h3>GraphQL 查询</h3>
                   <p>选择需要的实例和任务字段，读取本机状态。</p>
@@ -2185,6 +2188,6 @@ const root = import.meta.hot?.data.root ?? createRoot(document.getElementById('r
 if (import.meta.hot) import.meta.hot.data.root = root;
 root.render(
   <SessionBoundary>
-    <App />
+    <AccessBoundary><App /></AccessBoundary>
   </SessionBoundary>,
 );

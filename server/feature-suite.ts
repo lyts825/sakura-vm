@@ -78,7 +78,8 @@ export const featureCatalog = [
   ['metrics-history', '历史资源指标', '运维与安全', 'P0', '保存 CPU、内存、磁盘和网络趋势。'],
   ['alerts', '阈值告警与通知中心', '运维与安全', 'P0', '对资源、服务、备份失败发送提醒。'],
   ['security-scan', '镜像与软件包安全扫描', '运维与安全', 'P1', '检查 CVE、弱配置和过期组件。'],
-  ['rbac-sharing', '多用户与只读分享', '运维与安全', 'P2', '提供角色、短期令牌和审计日志。'],
+  ['rbac-sharing', '多用户与只读分享', '运维与安全', 'P2',
+    '可选账户模式提供管理员与限定实例的只读账户、短期会话令牌和按身份记录的写操作审计。'],
   ['plugin-api', '插件 API 与自动化触发器', '运维与安全', 'P1', '开放事件、定时任务、Webhook 和扩展面板。'],
 ] as const;
 
@@ -141,6 +142,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'package-cache',
   'security-scan',
   'vpn-integration',
+  'rbac-sharing',
 ]);
 const partialFeatureIds = new Set<FeatureId>([
   'language-services',
@@ -498,7 +500,11 @@ export class FeatureSuite {
       result.ready = true;
       result.network = 'wireguard-overlay';
       result.reason = '启用平台与私密配置插件后，在能力中心 → WireGuard 覆盖网络生成密钥、保存对端配置并启动接口。当前支持 WireGuard，不包含 Tailscale。';
-    } else if (featureId === 'rbac-sharing' || featureId === 'plugin-api') {
+    } else if (featureId === 'rbac-sharing') {
+      result.ready = true;
+      result.controlPlane = 'opt-in-owner-viewer-accounts';
+      result.reason = '系统设置 → 账户与只读分享：启用独立账户，管理员可为指定实例创建有期限的只读账户。账户会话按期限失效，写请求记录账户 ID；当前仍只监听本机。';
+    } else if (featureId === 'plugin-api') {
       result.controlPlane = 'local-token-and-event-bus';
     }
     const state = await this.state();

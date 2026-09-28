@@ -104,6 +104,24 @@ test('concurrent expired requests obtain one new credential and retry only the r
   unsubscribe();
 });
 
+test('account credentials never fall back to public bootstrap or replay a rejected mutation', async () => {
+  let bootstrap = 0, writes = 0;
+  const session = new ControllerSession(async (url) => {
+    if (url === '/api/bootstrap') { bootstrap++; return Response.json({ token: 'legacy-admin' }); }
+    writes++;
+    return Response.json({ error: 'expired' }, { status: 401 });
+  });
+  session.setAccountMode(true);
+  session.adoptAccount('a'.repeat(64), { id: 'owner', username: 'owner', role: 'owner',
+    vmIds: [], expiresAt: Date.now() + 10000 });
+  await assert.rejects(session.request('/vms', 'POST', {}), /重新登录/);
+  assert.equal(writes, 1);
+  assert.equal(bootstrap, 0);
+  assert.equal(session.getToken(), '');
+  await assert.rejects(session.request('/vms'), /重新登录/);
+  assert.equal(writes, 1);
+});
+
 test('a lost mutation response is never replayed and cancelled requests do not execute after authentication', async () => {
   const gate = deferred();
   let mutations = 0;

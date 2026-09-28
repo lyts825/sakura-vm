@@ -1,4 +1,5 @@
 import type { SessionLockView } from '../shared/session-lock';
+import type { AccessPrincipal } from '../shared/access-control';
 
 /** A controller credential belongs to one unlocked host session, not to the browser tab. */
 export class ControllerSession {
@@ -14,12 +15,37 @@ export class ControllerSession {
     retryAfterSeconds: 0,
   };
   private generation = 0;
+  private accountMode = false;
+  private principal?: AccessPrincipal;
 
   constructor(private fetcher: typeof fetch = (...args) => fetch(...args)) {}
 
   getToken = () => this.token;
   getSession = () => this.session;
   getGeneration = () => this.generation;
+  getAccountMode = () => this.accountMode;
+  getPrincipal = () => this.principal;
+  setAccountMode = (enabled: boolean) => {
+    if (enabled === this.accountMode) return;
+    this.accountMode = enabled;
+    this.clearCredential();
+  };
+  adoptAccount = (token: string, principal: AccessPrincipal) => {
+    if (!/^[a-f0-9]{64}$/.test(token) || !['owner', 'viewer'].includes(principal.role))
+      throw new Error('账户凭证格式错误');
+    this.accountMode = true;
+    this.principal = principal;
+    this.token = token;
+    this.generation++;
+    for (const listener of this.listeners) listener();
+  };
+  clearCredential = () => {
+    this.token = '';
+    this.principal = undefined;
+    this.pending = undefined;
+    this.generation++;
+    for (const listener of this.listeners) listener();
+  };
   subscribeSession = (listener: () => void) => {
     this.sessionListeners.add(listener);
     return () => {
@@ -31,10 +57,7 @@ export class ControllerSession {
     const transitioned = value.locked !== this.session.locked;
     this.session = value;
     if (transitioned) {
-      this.generation++;
-      this.pending = undefined;
-      this.token = '';
-      for (const listener of this.listeners) listener();
+      this.clearCredential();
     }
     for (const listener of this.sessionListeners) listener();
   };
@@ -51,6 +74,10 @@ export class ControllerSession {
     if (this.session.locked) return Promise.reject(new Error('控制面已锁定，请先解锁'));
     // Another request may already have replaced the rejected credential.
     if (this.token && this.token !== staleToken) return Promise.resolve(this.token);
+    if (this.accountMode) {
+      this.clearCredential();
+      return Promise.reject(new Error('账户会话已过期，请重新登录'));
+    }
     if (this.pending) return this.pending;
     const generation = this.generation;
     const pending = (async () => {
@@ -108,6 +135,10 @@ export class ControllerSession {
       // mutation after a network error or an ambiguous server response.
       if (response.status === 401 && attempt === 0) {
         await response.body?.cancel();
+        if (this.accountMode) {
+          this.clearCredential();
+          throw new Error('账户会话已过期，请重新登录');
+        }
         await this.authenticate(credential);
         continue;
       }

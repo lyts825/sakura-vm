@@ -48,6 +48,9 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   const body = spec.paths['/api/vms'].post.requestBody!.content['application/json'].schema;
   assert.deepEqual(body.required, ['name']);
   assert.deepEqual(spec.paths['/api/bootstrap'].get.security, []);
+  assert.deepEqual(spec.paths['/api/access/login'].post.security, []);
+  assert.deepEqual(spec.paths['/api/access/status'].get.security, []);
+  assert.equal(spec.paths['/api/access/users'].post.security, undefined);
   assert.deepEqual(spec.paths['/api/session/unlock'].post.security, []);
   assert.equal(spec.paths['/api/session/settings'].patch.security, undefined);
   assert.ok(!spec.paths['/api/images']); // This declaration is a dispatcher prefix, not a POST endpoint.
@@ -57,6 +60,34 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
     '/api/vms/vm/commands?project=default&q=a%26b',
   );
   assert.throws(() => apiPath('/api/vms/{vmId}', { vmId: '..' }));
+});
+
+test('generated SDK logs into account mode, uses the session token and revokes it on logout', async () => {
+  const { SakuraClient } = await sdk();
+  const token = 'a'.repeat(64);
+  const calls: { path: string; method: string; token?: string; body?: string }[] = [];
+  const client = new SakuraClient({ fetcher: async (url: string, options: RequestInit) => {
+    const path = new URL(url).pathname;
+    const headers = options.headers as Record<string, string>;
+    calls.push({ path, method: options.method!, token: headers['X-Sakura-Token'],
+      body: options.body as string | undefined });
+    if (path === '/api/access/login') return Response.json({ token,
+      principal: { id: 'viewer-id', username: 'reader', role: 'viewer', vmIds: [],
+        expiresAt: Date.now() + 1000 } });
+    if (path === '/api/access/logout') return Response.json({ ok: true });
+    if (path === '/api/access/view') return Response.json({ vms: [] });
+    throw new Error('Unexpected request ' + path);
+  } });
+  assert.equal((await client.login('reader', 'long private password')).role, 'viewer');
+  assert.deepEqual(await client.call('core.access.view'), { vms: [] });
+  await client.logout();
+  assert.deepEqual(calls.map((item) => item.path),
+    ['/api/access/login', '/api/access/view', '/api/access/logout']);
+  assert.equal(calls[0].token, undefined);
+  assert.equal(calls[1].token, token);
+  assert.equal(calls[2].token, token);
+  assert.equal(JSON.parse(calls[0].body!).password, 'long private password');
+  assert.equal(JSON.stringify(client), '{}');
 });
 
 test('the generated module authenticates against HTTP, sends encoded parameters and JSON, and streams binary replies', async () => {

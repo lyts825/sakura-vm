@@ -29,6 +29,21 @@ export class SakuraClient {
     if (typeof value.token !== 'string' || !value.token) throw new Error('Invalid controller credential');
     this.#token = value.token;
   }
+  async login(username, password, signal) {
+    const value = await this.request('/api/access/login', {
+      method: 'POST', body: { username, password }, signal, authenticated: false,
+    });
+    if (typeof value?.token !== 'string' || !/^[a-f0-9]{64}$/.test(value.token) ||
+        !['owner', 'viewer'].includes(value.principal?.role))
+      throw new Error('Invalid account login response');
+    this.#token = value.token;
+    return value.principal;
+  }
+  async logout(signal) {
+    if (!this.#token) return;
+    try { await this.request('/api/access/logout', { method: 'POST', signal }); }
+    finally { this.#token = ''; }
+  }
   async call(operationId, { path: parameters = {}, query = {}, body, signal, response: result = 'auto' } = {}) {
     if (!Object.hasOwn(operations, operationId)) throw new Error('Unknown operation: ' + operationId);
     const operation = operations[operationId];

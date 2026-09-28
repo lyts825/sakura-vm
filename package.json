@@ -51,6 +51,7 @@
     "test:network": "tsx scripts/smoke-network.ts",
     "test:http-ingress": "tsx scripts/smoke-http-ingress.ts",
     "test:management": "tsx scripts/smoke-management.ts",
+    "test:access": "tsx scripts/smoke-access.ts",
     "test:development": "tsx scripts/smoke-development.ts",
     "plugins:check": "tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",
     "plugins:schema": "tsx scripts/plugin-schema.ts",

@@ -30,6 +30,9 @@ async function workbench(page: Page) {
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url()),
       path = url.pathname;
+    if (path === '/api/access/status') return route.fulfill({ json: { enabled: false,
+      session: { configured: false, enabled: false, locked: false, idleMinutes: 15,
+        retryAfterSeconds: 0 } } });
     if (path.endsWith('/git')) {
       if (route.request().method() === 'POST') {
         submissions.push({ value: route.request().postDataJSON(), project: url.searchParams.get('project') });

@@ -5,6 +5,7 @@ import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { logRetentionRequest } from './log-retention.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
+import { accessEnableInput, accessLoginInput, accessViewerInput, accessPasswordInput } from './access-control.ts';
 import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
@@ -37,10 +38,28 @@ const core: {
     id: 'bootstrap',
     method: 'GET',
     path: '/api/bootstrap',
-    title: '获取本地控制凭证',
+    title: '未启用账户模式时获取本地控制凭证',
     public: true,
     response: { type: 'object', properties: { token: string }, required: ['token'] },
   },
+  { id: 'access.status', method: 'GET', path: '/api/access/status',
+    title: '账户模式与会话锁状态', public: true, response: { type: 'object',
+      properties: { enabled: { type: 'boolean' }, session: { type: 'object' } },
+      required: ['enabled', 'session'] } },
+  { id: 'access.login', method: 'POST', path: '/api/access/login',
+    title: '使用账户密码登录', public: true, body: request(accessLoginInput) },
+  { id: 'access.view', method: 'GET', path: '/api/access/view',
+    title: '获授权的实例摘要', inspect: true },
+  { id: 'access.logout', method: 'POST', path: '/api/access/logout', title: '撤销当前账户会话' },
+  { id: 'access.enable', method: 'POST', path: '/api/access/enable',
+    title: '启用账户模式并设置管理员密码', body: request(accessEnableInput) },
+  { id: 'access.users', method: 'GET', path: '/api/access/users', title: '列出账户' },
+  { id: 'access.createViewer', method: 'POST', path: '/api/access/users',
+    title: '创建限定实例的只读账户', body: request(accessViewerInput), status: 201 },
+  { id: 'access.removeViewer', method: 'DELETE', path: '/api/access/users/{id}',
+    title: '撤销只读账户及其会话' },
+  { id: 'access.password', method: 'POST', path: '/api/access/password',
+    title: '更换管理员密码并撤销全部会话', body: request(accessPasswordInput) },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
   { id: 'storage-pools.get', method: 'GET', path: '/api/storage-pools',
@@ -282,7 +301,7 @@ export function apiDocument(active: Iterable<string>, port: number): ApiDocument
       title: 'Sakura 本地控制 API',
       version: '0.1.0',
       description:
-        '核心 HTTP 接口及已声明的插件操作。未声明完整响应的核心接口标记 partial；旧插件只列入 x-sakura-route-prefixes，不把分发前缀当作可执行端点。二进制传输和旧接口可通过 SDK 的通用 HTTP 方法访问，参数以功能文档和服务端校验为准。WebSocket 不在本 HTTP 文档和客户端的范围。控制凭证只属于当前服务进程。',
+        '核心 HTTP 接口及已声明的插件操作。未声明完整响应的核心接口标记 partial；旧插件只列入 x-sakura-route-prefixes，不把分发前缀当作可执行端点。二进制传输和旧接口可通过 SDK 的通用 HTTP 方法访问，参数以功能文档和服务端校验为准。WebSocket 不在本 HTTP 文档和客户端的范围。账户模式启用后请先通过 SDK login 登录；控制凭证只属于当前服务进程。',
     },
     servers: [{ url: `http://127.0.0.1:${port}` }],
     security: [{ LocalControllerToken: [] }],

@@ -1434,6 +1434,8 @@ test('session locking removes private UI, idle polling does not renew access, an
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     try {
+      if (path === '/api/access/status') return route.fulfill({ json: { enabled: false,
+        session: lock.view() } });
       if (path === '/api/session') return route.fulfill({ json: lock.view() });
       if (path === '/api/session/unlock')
         return route.fulfill({ json: await lock.unlock(route.request().postDataJSON()) });
@@ -2971,6 +2973,9 @@ test('resource history exports samples and the notification center acknowledges 
 async function app(page: Page, active: string[] = [], withVm = false) {
   await page.route('**/api/**', (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/access/status') return route.fulfill({ json: { enabled: false,
+      session: { configured: false, enabled: false, locked: false, idleMinutes: 15,
+        retryAfterSeconds: 0 } } });
     const data =
       path === '/api/bootstrap'
         ? { token: 'test-token' }

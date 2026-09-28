@@ -25,6 +25,7 @@ const eventSchema = z
     projectId: z.string().max(32).optional(),
     status: z.number().int().min(0).max(599).optional(),
     jobId: z.uuid().optional(),
+    actorId: z.uuid().optional(),
   })
   .strict();
 const recordSchema = z
@@ -192,7 +193,7 @@ export class AuditLog {
     });
   }
   async span<T>(
-    event: Pick<AuditEvent, 'kind' | 'name' | 'vmId' | 'projectId' | 'jobId'>,
+    event: Pick<AuditEvent, 'kind' | 'name' | 'vmId' | 'projectId' | 'jobId' | 'actorId'>,
     work: () => Promise<T>,
     status: () => number = () => 200,
   ) {
