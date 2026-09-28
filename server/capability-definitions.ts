@@ -23,6 +23,7 @@ import { disasterRecoveryInput } from './disaster-recovery-drill.ts';
 import { objectBackupInput } from './object-backup.ts';
 import { wireGuardInput } from './wireguard-overlay.ts';
 import { teamTemplateInput } from './team-templates.ts';
+import { acmeInput } from './acme-renewal.ts';
 
 export const relativePath = z
   .string()
@@ -57,6 +58,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'acme-renewal': action(
+    'ACME 证书续期', 'next', acmeInput.shape,
+    { mode: 'status' },
+    '仅处理客户机中已有的 Certbot 续期配置。status 检查客户端和配置；save 保存 enabled 与 intervalHours（默认每 12 小时）；dry-run 使用测试 CA 验证；renew 执行实际续期。Certbot 退出码为零也可能表示尚未到续期时间。',
+    false, true,
+  ),
   'team-templates': action(
     '团队模板', 'next', teamTemplateInput.shape,
     { mode: 'list' },

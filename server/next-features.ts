@@ -8,6 +8,7 @@ import { Jobs } from './jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
+import { AcmeRenewal } from './acme-renewal.ts';
 import { hardwareCompatibility } from './hardware-compatibility.ts';
 import { firmwareSupport } from './firmware.ts';
 import { networkEmulation } from './network-emulation.ts';
@@ -267,8 +268,8 @@ export const nextFeatureCatalog = [
     'ACME 证书续期',
     '网络与服务治理',
     'P1',
-    '检查客户机 ACME 客户端并保存续期窗口。',
-    'planned',
+    '对客户机已有 Certbot 证书执行试运行、手动或定期续期。',
+    'available',
   ],
   [
     'mtls-policy',
@@ -630,8 +631,6 @@ const defaultState = (): NextState => ({ settings: {}, executions: {}, records: 
 
 const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'virtio-fs': 'mount | grep -E "virtiofs|9p"',
-  'acme-renewal':
-    'if command -v certbot >/dev/null; then certbot --version; else command -v lego >/dev/null && lego --version; fi',
   'network-topology': 'command -v ip >/dev/null && ip addr && ip route',
   'build-cache': 'test -d /workspace/.cache || test -d /workspace/target',
   'language-server-catalog':
@@ -654,6 +653,7 @@ function compactProfileResult(result: Record<string, unknown>) {
 export class NextFeatures {
   jobs = new Jobs('next-features');
   storageTiering: StorageTiering;
+  acmeRenewal: AcmeRenewal;
   teamTemplates: TeamTemplates;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private coldMigrations?: ColdMigrations;
@@ -675,10 +675,24 @@ export class NextFeatures {
     private workspaces: Workspaces,
   ) {
     this.storageTiering = new StorageTiering(machines);
+    this.acmeRenewal = new AcmeRenewal(machines);
     this.teamTemplates = new TeamTemplates(machines, workspaces);
   }
 
-  async init() { await this.storageTiering.init(); }
+  async init() {
+    try {
+      await this.storageTiering.init();
+      await this.acmeRenewal.init();
+    } catch (error) {
+      await Promise.allSettled([this.storageTiering.close(), this.acmeRenewal.close()]);
+      throw error;
+    }
+  }
+
+  setAcmeAllowed(check: () => boolean) { this.acmeRenewal.setAllowed(check); }
+  setAcmeMutationCounter(change: (delta: number) => void) {
+    this.acmeRenewal.setMutationCounter(change);
+  }
 
   setResourceScheduler(score: (input: HostScoreInput) => ReturnType<HostPeers['score']>) {
     this.scoreHosts = score;
@@ -769,11 +783,15 @@ export class NextFeatures {
     this.machines.get(id);
     const state = await this.state();
     const projectId = this.workspaces.projects.current(id);
+    const settings = { ...(state.settings[id] || {}) };
+    const acmePolicy = this.acmeRenewal.view(id).policy;
+    if (acmePolicy) settings['acme-renewal'] = { enabled: acmePolicy.enabled,
+      options: { intervalHours: acmePolicy.intervalHours }, updatedAt: acmePolicy.updatedAt };
     return {
       projectId,
       features: catalog,
       capabilities: capabilityViews('next'),
-      settings: state.settings[id] || {},
+      settings,
       records: state.records[id] || {},
       executions: (state.executions[id] || []).slice(-80).reverse(),
       jobs: this.jobs
@@ -792,6 +810,14 @@ export class NextFeatures {
       })
       .strict()
       .parse(input);
+    if (value.featureId === 'acme-renewal') {
+      const intervalHours = value.options.intervalHours === undefined ? undefined :
+        z.number().int().min(1).max(168).parse(value.options.intervalHours);
+      const result = await this.acmeRenewal.save(id,
+        { mode: 'save', enabled: value.enabled, intervalHours });
+      return { enabled: value.enabled, options: { intervalHours: result.policy!.intervalHours },
+        updatedAt: now(), policy: result.policy };
+    }
     const state = await this.state();
     const settings = (state.settings[id] ||= {});
     settings[value.featureId] = { enabled: value.enabled, options: value.options, updatedAt: now() };
@@ -844,10 +870,11 @@ export class NextFeatures {
     const adapter = {
       id: spec.id,
       enabled: configured?.enabled ?? true,
-      options: merged,
+      options: spec.id === 'acme-renewal' ? options : merged,
       actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
-    if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
+    if (action === 'run' && configured?.enabled === false && spec.id !== 'acme-renewal')
+      throw new AppError('此能力已禁用', 409);
     if (spec.id === 'file-level-restore')
       return {
         ready: true,
@@ -985,6 +1012,9 @@ export class NextFeatures {
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
         message: '只读账户在分享页申请指定实例的一次启停操作；管理员在账户设置中审批，有效期内由申请者执行。' };
+    if (spec.id === 'acme-renewal')
+      return { ...await this.acmeRenewal.run(id, options, action, signal),
+        adapter: { ...adapter, enabled: true } };
     if (spec.id === 'cold-migration') {
       if (!this.coldMigrations)
         return { ready: false, executed: false, adapter,
@@ -1269,7 +1299,8 @@ export class NextFeatures {
       return this.executeFeature(id, spec, value.action, signal, value.options);
     if (spec.state !== 'available') throw new AppError('此功能尚未完成实现', 501);
     if (hasCapability(spec.id)) {
-      const configured = (await this.state()).settings[id]?.[spec.id]?.options || {};
+      const configured = spec.id === 'acme-renewal' ? {} :
+        (await this.state()).settings[id]?.[spec.id]?.options || {};
       capabilityParameters(spec.id, { ...configured, ...value.options });
     }
     const projectId = this.workspaces.projects.current(id);
@@ -1288,6 +1319,6 @@ export class NextFeatures {
 
   async close() {
     await Promise.all([this.jobs.close(), this.storageTiering.close(), this.objectBackup?.close(),
-      this.wireGuardOverlay?.close()]);
+      this.wireGuardOverlay?.close(), this.acmeRenewal.close()]);
   }
 }

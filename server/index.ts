@@ -81,6 +81,8 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
+  features.next?.setAcmeMutationCounter((delta) => { features.mutations += delta; });
+  features.next?.setAcmeAllowed(() => !session.view().locked && !features.migration?.blocked);
   const hostPeers = new HostPeers(async () => {
     const vms = await machines.list();
     return { platform: platform(), arch: arch(), cpus: Math.max(1, cpus().length),
