@@ -81,7 +81,8 @@ export class AuditLog {
     this.queue = next;
     return next;
   }
-  private async scan(limit: number, vmId?: string) {
+  private async scan(limit: number, vmId?: string,
+    pinned?: { sequence: number; hash: string }) {
     await this.secret();
     const info = await stat(this.file()).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error;
@@ -102,7 +103,8 @@ export class AuditLog {
       throw new AppError('审计封印校验失败');
     let sequence = 0,
       hash = zero,
-      anchored = !anchor || (anchor.sequence === 0 && anchor.hash === zero);
+      anchored = !anchor || (anchor.sequence === 0 && anchor.hash === zero),
+      pinnedMatch = !pinned || (pinned.sequence === 0 && pinned.hash === zero);
     const records: AuditRecord[] = [];
     if (info) {
       if (info.size) {
@@ -130,6 +132,7 @@ export class AuditLog {
           sequence = entry.sequence;
           hash = entry.hash;
           if (anchor?.sequence === sequence) anchored = anchor.hash === hash;
+          if (pinned?.sequence === sequence) pinnedMatch = pinned.hash === hash;
           if (limit && (!vmId || entry.event.vmId === vmId)) {
             records.push(entry);
             if (records.length > limit) records.shift();
@@ -142,14 +145,15 @@ export class AuditLog {
     }
     if (!anchored || (anchor && anchor.sequence > sequence) || (sequence && !anchor))
       throw new AppError('审计日志被截断或缺少封印');
+    if (!pinnedMatch) throw new AppError('本地审计链不包含远程锚点摘要');
     // A complete authenticated append may survive a crash before its seal write.
     this.cached = { sequence, hash, bytes: info?.size || 0, mtime: info?.mtimeMs || 0 };
     return { valid: true as const, sequence, hash, records, bytes: info?.size || 0 };
   }
-  async read(limit = 200, vmId?: string) {
+  async read(limit = 200, vmId?: string, pinned?: { sequence: number; hash: string }) {
     return this.serial(async () => {
       try {
-        return await this.scan(Math.max(0, Math.min(2000, limit)), vmId);
+        return await this.scan(Math.max(0, Math.min(2000, limit)), vmId, pinned);
       } catch (error) {
         this.cached = undefined;
         return { valid: false as const, records: [], error: (error as Error).message };

@@ -3,6 +3,7 @@ import { createSchema } from './model.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { logRetentionRequest } from './log-retention.ts';
+import { remoteAuditAction } from './remote-audit.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
 import { accessEnableInput, accessLoginInput, accessViewerInput, accessMemberInput, accessPasswordInput,
@@ -281,6 +282,10 @@ const core: {
     body: request(logRetentionRequest),
   },
   { id: 'audit', method: 'GET', path: '/api/audit', title: '审计链记录' },
+  { id: 'audit.remoteStatus', method: 'GET', path: '/api/audit/remote',
+    title: '本地审计链与远程对象锁锚点状态', inspect: true },
+  { id: 'audit.remoteAction', method: 'POST', path: '/api/audit/remote',
+    title: '配置、同步或校验远程不可变审计锚点', body: request(remoteAuditAction) },
   { id: 'plugins.list', method: 'GET', path: '/api/plugins', title: '插件目录与启用状态', inspect: true },
   {
     id: 'plugins.change',

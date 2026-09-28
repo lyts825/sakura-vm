@@ -17,6 +17,7 @@ import { routeContribution, validateRegistry } from './plugins/registry.ts';
 import { readJsonBody as body, requestUrl } from './http.ts';
 import type { ClientChannel } from 'ssh2';
 import { hostAudit } from './audit.ts';
+import { RemoteAuditLock, remoteAuditAction } from './remote-audit.ts';
 import { Jobs } from './jobs.ts';
 import { monitorSnapshot } from './monitor.ts';
 import { apiDocument } from './openapi.ts';
@@ -78,6 +79,8 @@ async function main() {
   const browserExtensions = new BrowserExtensions(access);
   await browserExtensions.init();
   const audit = hostAudit();
+  const remoteAudit = new RemoteAuditLock(audit);
+  await remoteAudit.init();
   Jobs.instrument = (job, work) =>
     audit.span(
       {
@@ -96,6 +99,8 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
+  remoteAudit.setBackgroundAllowed(() => !features.migration?.blocked &&
+    !session.view().locked);
   const projectPermissions = new ProjectPermissions(access, machines, features.workspaces);
   await projectPermissions.init();
   const policyBundles = new PolicyBundles(projectPermissions);
@@ -135,6 +140,16 @@ async function main() {
     registered: access.users().reduce((count, user) => count + access.passkeysFor(user.id).length, 0),
     ...(!access.enabled ? { reason: '请先启用账户模式。' } : {}) }));
   features.next?.setAccountModeReady(() => access.enabled);
+  features.next?.setRemoteAuditCheck(async () => {
+    const status = await remoteAudit.status();
+    return { ready: Boolean(status.target && status.last && status.local.valid &&
+      status.protected && status.lastVerifiedAt &&
+      Date.now() - Date.parse(status.lastVerifiedAt) < 2 * 3_600_000 &&
+      !status.lastError), configured: Boolean(status.target),
+      anchoredSequence: status.last?.sequence || 0,
+      reason: !status.target ? '请在系统设置中配置启用对象锁的远程审计桶。' :
+        status.lastError || (!status.last ? '配置后请同步首个审计锚点。' : undefined) };
+  });
   features.next?.setSharedTerminalCheck(async (id) => {
     if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
     if (!features.socketEnabled('terminal-session'))
@@ -831,6 +846,23 @@ async function main() {
       !/^\/api\/jobs\/[^/]+\/cancel$/.test(url.pathname)
     )
       throw new AppError('数据目录迁移维护中，请等待完成并重启服务', 409);
+    if (url.pathname === '/api/audit/remote') {
+      if (accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可管理远程审计', 403);
+      if (req.method === 'GET') return send(res, await remoteAudit.status());
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      const input = remoteAuditAction.parse(await authorizedBody(req, 8192));
+      features.mutations++;
+      try {
+        return send(res, input.action === 'configure'
+          ? await remoteAudit.configure(input.target)
+          : input.action === 'disable'
+            ? await remoteAudit.disable()
+            : input.action === 'verify'
+              ? await remoteAudit.verify()
+              : await remoteAudit.sync());
+      } finally { features.mutations--; }
+    }
     if (url.pathname === '/api/log-retention') {
       if (req.method === 'GET') return send(res, retention.view());
       if (req.method === 'POST') {
@@ -1347,6 +1379,7 @@ async function main() {
       () => hostPeers.close(),
       () => retention.close(),
       () => graph.close(),
+      () => remoteAudit.close(),
       () => browserIde?.close(),
       () => features.close(),
       () => machines.close(),

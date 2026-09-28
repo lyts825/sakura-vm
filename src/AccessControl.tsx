@@ -38,6 +38,13 @@ type PolicyKeys = { revision: number;
 type PolicyPreview = { source: { vmId: string; projectId: string };
   target: { vmId: string; projectId: string }; signer: string; trusted: boolean;
   expectedVersion: string; current: PolicyDocument; proposed: PolicyDocument };
+type RemoteAuditStatus = { hostId: string; target: null | {
+  endpoint?: string; bucket: string; region: string; prefix: string; retentionDays: number };
+  last?: { key: string; versionId: string; sequence: number; hash: string;
+    retainUntil: string };
+  local: { valid: boolean; sequence?: number; hash?: string; error?: string };
+  caughtUp: boolean; protected: boolean;
+  lastAttemptAt?: string; lastVerifiedAt?: string; lastError?: string };
 type ChangeView = { id: string; vmId: string; projectId: string; requesterId: string;
   summary: string; project: unknown; expectedVersion: string;
   status: 'pending' | 'approved' | 'denied' | 'claimed' | 'applied' | 'failed' | 'expired';
@@ -834,6 +841,87 @@ function PolicyBundlePanel({ vmId, projectId, onApplied }: {
   </section>;
 }
 
+function RemoteAuditSettings() {
+  const [status, setStatus] = useState<RemoteAuditStatus | null>(null);
+  const [endpoint, setEndpoint] = useState('');
+  const [bucket, setBucket] = useState('');
+  const [region, setRegion] = useState('us-east-1');
+  const [prefix, setPrefix] = useState('');
+  const [retentionDays, setRetentionDays] = useState(30);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const abort = new AbortController();
+    void api<RemoteAuditStatus>('/audit/remote', 'GET', undefined, abort.signal)
+      .then((value) => { setStatus(value);
+        if (value.target) {
+          setEndpoint(value.target.endpoint || ''); setBucket(value.target.bucket);
+          setRegion(value.target.region); setPrefix(value.target.prefix);
+          setRetentionDays(value.target.retentionDays);
+        }
+      }).catch((reason) => {
+        if (!abort.signal.aborted) setError(String(reason.message || reason));
+      });
+    return () => abort.abort();
+  }, []);
+  const run = async (action: 'configure' | 'sync' | 'verify' | 'disable') => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const input = action === 'configure' ? { action, target: {
+        ...(endpoint.trim() ? { endpoint: endpoint.trim() } : {}),
+        bucket: bucket.trim(), region: region.trim(), prefix: prefix.trim(),
+        retentionDays,
+      } } : { action };
+      const result = await api<RemoteAuditStatus>('/audit/remote', 'POST', input);
+      setStatus(result);
+      setMessage(action === 'configure' ? '已验证对象锁并保存远程目标' :
+        action === 'sync' ? '已同步并验证审计锚点' :
+          action === 'verify' ? '远程锚点与本地审计链校验通过' : '远程自动锚定已停用');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : '远程审计操作失败'); }
+    finally { setBusy(false); }
+  };
+  return <section className="system-card" aria-label="远程不可变审计">
+    <h3>远程不可变审计</h3>
+    <p>将本地审计链头写入启用 Object Lock 的 S3 兼容桶，并核验对象版本的 COMPLIANCE 保留期。凭据由运行 Sakura 的环境提供，不会保存于此设置。</p>
+    <p>主机标识：<code className="remote-audit-code">{status?.hostId || '读取中'}</code></p>
+    <label>桶名<input value={bucket} onChange={(event) => setBucket(event.target.value)}
+      disabled={busy || Boolean(status?.last)} /></label>
+    <label>区域<input value={region} onChange={(event) => setRegion(event.target.value)}
+      disabled={busy || Boolean(status?.last)} /></label>
+    <label>自定义端点（可留空）<input type="url" value={endpoint}
+      onChange={(event) => setEndpoint(event.target.value)}
+      disabled={busy || Boolean(status?.last)} /></label>
+    <label>对象前缀<input value={prefix} onChange={(event) => setPrefix(event.target.value)}
+      disabled={busy || Boolean(status?.last)} /></label>
+    <label>保留天数<input type="number" min={7} max={3650} value={retentionDays}
+      onChange={(event) => setRetentionDays(Number(event.target.value))}
+      disabled={busy || Boolean(status?.last)} /></label>
+    <div className="feature-actions">
+      <button className="primary compact" disabled={busy || !bucket.trim() ||
+        Boolean(status?.last)} onClick={() => void run('configure')}>验证并保存目标</button>
+      <button className="secondary compact" disabled={busy || !status?.target}
+        onClick={() => void run('sync')}>同步审计锚点</button>
+      <button className="secondary compact" disabled={busy || !status?.last}
+        onClick={() => void run('verify')}>校验远端版本</button>
+      <button className="secondary compact" disabled={busy || !status?.target}
+        onClick={() => void run('disable')}>停用自动锚定</button>
+    </div>
+    {status && <><p>本地审计：{status.local.valid
+      ? `第 ${status.local.sequence} 条 · ${status.local.hash}`
+      : status.local.error || '校验失败'}</p>
+      {status.last && <p>远端锚点：第 {status.last.sequence} 条 ·
+        <code className="remote-audit-code"> {status.last.hash}</code> ·
+        保留至 {new Date(status.last.retainUntil).toLocaleString()} ·
+        {status.protected ? '记录保留期未过' : '记录保留期已过'} ·
+        {status.caughtUp ? '已追平' : '等待下一次自动同步'}</p>}
+      {status.lastVerifiedAt && <p>上次验证：{new Date(status.lastVerifiedAt).toLocaleString()}</p>}
+      {status.lastError && <p role="alert" className="inline-error">{status.lastError}</p>}</>}
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
 function ProjectPermissionSettings({ users, vms, refresh }: {
   users: UserView[]; vms: SharedVm[]; refresh: () => Promise<void>;
 }) {
@@ -1092,6 +1180,7 @@ export function AccessSettings() {
       </li>)}</ul>
       <ProjectPermissionSettings users={users} vms={vms} refresh={refresh} />
       <ChangeApprovalPanel />
+      <RemoteAuditSettings />
       <JitOwnerPanel users={users} vms={vms} />
       <BrowserExtensionManager />
       <h4>更换管理员密码</h4>

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { createServer as createHttpServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -15,6 +16,38 @@ const listener = createServer();
 await new Promise<void>((done) => listener.listen(0, '127.0.0.1', done));
 const port = (listener.address() as { port: number }).port;
 await new Promise<void>((done) => listener.close(() => done()));
+const auditObjects = new Map<string, { body: string; versionId: string; until: string }>();
+const auditS3 = createHttpServer(async (req, res) => {
+  const url = new URL(req.url || '/', 'http://127.0.0.1');
+  if (req.method === 'GET' && url.searchParams.has('object-lock')) {
+    res.setHeader('content-type', 'application/xml');
+    res.end('<ObjectLockConfiguration><ObjectLockEnabled>Enabled</ObjectLockEnabled></ObjectLockConfiguration>');
+    return;
+  }
+  if (req.method === 'PUT') {
+    assert.equal(req.headers['x-amz-object-lock-mode'], 'COMPLIANCE');
+    assert.ok(req.headers['x-amz-checksum-sha256']);
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks).toString();
+    const versionId = `version-${auditObjects.size + 1}`;
+    auditObjects.set(url.pathname, { body, versionId,
+      until: String(req.headers['x-amz-object-lock-retain-until-date']) });
+    res.setHeader('x-amz-version-id', versionId);
+    res.end(); return;
+  }
+  const object = auditObjects.get(url.pathname);
+  if (!object || url.searchParams.get('versionId') !== object.versionId) {
+    res.writeHead(404).end(); return;
+  }
+  res.setHeader('x-amz-version-id', object.versionId);
+  res.setHeader('x-amz-object-lock-mode', 'COMPLIANCE');
+  res.setHeader('x-amz-object-lock-retain-until-date', object.until);
+  res.setHeader('content-length', String(Buffer.byteLength(object.body)));
+  res.end(req.method === 'HEAD' ? undefined : object.body);
+});
+await new Promise<void>((done) => auditS3.listen(0, '127.0.0.1', done));
+const auditS3Port = (auditS3.address() as { port: number }).port;
 const origin = `http://127.0.0.1:${port}`;
 const passkeyOrigin = `http://localhost:${port}`;
 const password = 'a long administrator password';
@@ -31,7 +64,8 @@ const start = async () => {
   server = spawn(process.execPath, ['.sakura-server/index.js'], {
     cwd: resolve('.'),
     env: { ...process.env, SAKURA_DATA_DIR: data, SAKURA_PORT: String(port),
-      SAKURA_IMAGE_PATH: resolve('.data/images/alpine-3.23.qcow2') },
+      SAKURA_IMAGE_PATH: resolve('.data/images/alpine-3.23.qcow2'),
+      AWS_ACCESS_KEY_ID: 'audit-test-key', AWS_SECRET_ACCESS_KEY: 'audit-test-secret' },
     windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
   });
   output = '';
@@ -113,6 +147,20 @@ try {
   assert.equal(owner.status, 200, JSON.stringify(owner.body));
   const ownerToken = owner.body.token as string;
   assert.equal((await request('/api/vms', 'GET', ownerToken)).status, 200);
+  assert.equal((await request('/api/audit/remote', 'GET', ownerToken)).body.target, null);
+  const auditTarget = { bucket: 'locked-audit-bucket', region: 'us-east-1',
+    prefix: 'sakura-test', retentionDays: 7,
+    endpoint: `http://127.0.0.1:${auditS3Port}` };
+  const auditConfigured = await request('/api/audit/remote', 'POST', ownerToken,
+    { action: 'configure', target: auditTarget });
+  assert.equal(auditConfigured.status, 200, JSON.stringify(auditConfigured.body));
+  const auditSynced = await request('/api/audit/remote', 'POST', ownerToken,
+    { action: 'sync' });
+  assert.equal(auditSynced.status, 200, JSON.stringify(auditSynced.body));
+  assert.ok(auditSynced.body.last.sequence > 0);
+  assert.equal(auditObjects.size, 1);
+  assert.equal((await request('/api/audit/remote', 'POST', ownerToken,
+    { action: 'verify' })).status, 200);
   const viewer = await request('/api/access/users', 'POST', ownerToken, {
     username: 'reader', password: 'a long viewer password', vmIds: [vmId],
     expiresAt: Date.now() + 86_400_000,
@@ -122,6 +170,7 @@ try {
     { username: 'reader', password: 'a long viewer password' });
   assert.equal(loggedIn.status, 200);
   let viewerToken = loggedIn.body.token as string;
+  assert.equal((await request('/api/audit/remote', 'GET', viewerToken)).status, 403);
   const viewerHandoff = await request('/api/access/handoff', 'POST', viewerToken,
     { password: 'a long viewer password' });
   assert.equal(viewerHandoff.status, 200, JSON.stringify(viewerHandoff.body));
@@ -309,6 +358,10 @@ try {
     await approvalPage.getByRole('button', { name: '登录', exact: true }).click();
     await approvalPage.getByRole('button', { name: '系统设置', exact: true }).click();
     await approvalPage.getByRole('button', { name: '提交管理员变更审批' }).waitFor();
+    const remoteAuditPanel = approvalPage.getByRole('region', { name: '远程不可变审计' });
+    await remoteAuditPanel.getByText(/远端锚点：第/).waitFor();
+    await remoteAuditPanel.getByRole('button', { name: '校验远端版本' }).click();
+    await remoteAuditPanel.getByText('远程锚点与本地审计链校验通过').waitFor();
     const policyBundlePanel = approvalPage.getByRole('region', { name: '签名项目策略包' });
     await policyBundlePanel.getByRole('button', { name: '导出签名策略包' }).click();
     await policyBundlePanel.getByText('当前项目策略已签名，可复制或下载').waitFor();
@@ -742,6 +795,11 @@ try {
     { username: 'owner', password: newPassword });
   assert.equal(again.status, 200);
   assert.equal((await request('/api/vms', 'GET', again.body.token)).status, 200);
+  const persistedAudit = await request('/api/audit/remote', 'GET', again.body.token);
+  assert.equal(persistedAudit.status, 200);
+  assert.equal(persistedAudit.body.last.key, auditSynced.body.last.key);
+  assert.equal((await request('/api/audit/remote', 'POST', again.body.token,
+    { action: 'verify' })).status, 200);
   const restartedPolicyKeys = await request('/api/access/policy-bundles/keys',
     'GET', again.body.token);
   assert.equal(restartedPolicyKeys.status, 200);
@@ -765,5 +823,6 @@ try {
   console.log('Account mode HTTP, WebSocket, browser, revocation and restart validation passed');
 } finally {
   await stop();
+  await new Promise<void>((done) => auditS3.close(() => done()));
   await rm(data, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 }

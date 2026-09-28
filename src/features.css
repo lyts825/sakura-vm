@@ -242,6 +242,9 @@
 .policy-bundle-code {
   overflow-wrap: anywhere;
 }
+.remote-audit-code {
+  overflow-wrap: anywhere;
+}
 .policy-bundle-preview pre {
   max-width: 100%;
   overflow: auto;

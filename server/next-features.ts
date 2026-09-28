@@ -321,8 +321,8 @@ export const nextFeatureCatalog = [
     '远程不可变审计',
     '安全与合规',
     'P0',
-    '保存远程审计目标和本地链式记录摘要。',
-    'planned',
+    '将已校验的本地审计链头锚定到启用对象锁的远程桶，并按对象版本验证保留期。',
+    'available',
   ],
   [
     'compliance-evidence',
@@ -675,6 +675,8 @@ export class NextFeatures {
   private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
   private accountModeReady?: () => boolean;
+  private remoteAuditCheck?: () => Promise<{ ready: boolean; configured: boolean;
+    anchoredSequence: number; reason?: string }>;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -719,6 +721,8 @@ export class NextFeatures {
   }
 
   setAccountModeReady(check: () => boolean) { this.accountModeReady = check; }
+  setRemoteAuditCheck(check: () => Promise<{ ready: boolean; configured: boolean;
+    anchoredSequence: number; reason?: string }>) { this.remoteAuditCheck = check; }
 
   setColdMigrations(service: ColdMigrations) {
     this.coldMigrations = service;
@@ -1057,6 +1061,12 @@ export class NextFeatures {
       return { ready, executed: false, adapter,
         ...(!ready ? { reason: '请启用账户模式和项目工作区插件。' } : {}),
         message: '系统设置 → 账户与只读分享 → 项目成员与权限 → 签名项目策略包：导出、验签、信任签名者并按版本应用。' };
+    }
+    if (spec.id === 'remote-audit-lock') {
+      const status = await this.remoteAuditCheck?.() || { ready: false, configured: false,
+        anchoredSequence: 0, reason: '远程审计服务尚未启动。' };
+      return { ...status, executed: false, adapter,
+        message: '系统设置 → 账户与只读分享 → 远程不可变审计：设置启用对象锁的桶并同步审计链锚点。' };
     }
     if (spec.id === 'acme-renewal')
       return { ...await this.acmeRenewal.run(id, options, action, signal),

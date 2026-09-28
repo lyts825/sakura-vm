@@ -26,6 +26,10 @@ test('audit serializes concurrent append, verifies restart and excludes arbitrar
     result.records.map((entry) => entry.sequence),
     Array.from({ length: 10 }, (_, index) => index + 11),
   );
+  assert.equal((await audit.read(0, undefined,
+    { sequence: 11, hash: result.records[0].hash })).valid, true);
+  assert.equal((await audit.read(0, undefined,
+    { sequence: 11, hash: 'f'.repeat(64) })).valid, false);
   assert.throws(() => audit.record({ ...event, password: 'never log' } as any));
   assert.ok(!JSON.stringify(result).includes('never log'));
 });
