@@ -135,8 +135,8 @@ export const nextFeatureCatalog = [
     'GPU 与 vGPU 档案',
     '虚拟硬件与固件',
     'P1',
-    '登记 GPU 配置档案及其兼容性要求。',
-    'planned',
+    '保存可复用虚拟显卡档案，启动宿主后端探测并经预览应用到停止的实例。',
+    'available',
   ],
   [
     'nested-virtualization',
@@ -979,6 +979,13 @@ export class NextFeatures {
         executed: false,
         adapter,
         message: '能力中心 → USB 热插拔，查看宿主可见设备，输入厂商与产品 ID 添加持久转发规则，或临时连接和移除。',
+      };
+    if (spec.id === 'gpu-vgpu-profiles')
+      return {
+        ready: true,
+        executed: false,
+        adapter,
+        message: '系统设置 → GPU/vGPU 档案，配置 Virtio GPU 输出、尺寸和宿主显存，预览宿主后端可用性后应用到停止的实例。',
       };
     if (spec.id === 'host-pairing' || spec.id === 'multi-host-inventory')
       return {

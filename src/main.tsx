@@ -124,6 +124,9 @@ const HostPeersSettings = lazy(() =>
 const FleetPolicyRolloutSettings = lazy(() =>
   import('./FleetPolicyRolloutSettings').then((module) => ({ default: module.FleetPolicyRolloutSettings })),
 );
+const GpuProfilesSettings = lazy(() =>
+  import('./GpuProfilesSettings').then((module) => ({ default: module.GpuProfilesSettings })),
+);
 const LocalAssistant = lazy(() =>
   import('./LocalAssistant').then((module) => ({ default: module.LocalAssistant })),
 );
@@ -388,6 +391,7 @@ function App() {
   const [showFeatureRollouts, setShowFeatureRollouts] = useState(false);
   const [showHostPeers, setShowHostPeers] = useState(false);
   const [showFleetRollouts, setShowFleetRollouts] = useState(false);
+  const [showGpuProfiles, setShowGpuProfiles] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
@@ -1593,6 +1597,18 @@ function App() {
                 {showFleetRollouts && (
                   <Suspense fallback={<p>正在读取集群策略…</p>}>
                     <FleetPolicyRolloutSettings request={api} />
+                  </Suspense>
+                )}
+                <section className="system-card">
+                  <h3>GPU/vGPU 档案</h3>
+                  <p>保存并复用虚拟显卡输出与宿主显存配置，预览宿主后端后应用到停止的实例。</p>
+                  <button className="secondary compact" onClick={() => setShowGpuProfiles(!showGpuProfiles)}>
+                    {showGpuProfiles ? '收起 GPU 档案' : '管理 GPU 档案'}
+                  </button>
+                </section>
+                {showGpuProfiles && (
+                  <Suspense fallback={<p>正在读取 GPU 档案…</p>}>
+                    <GpuProfilesSettings request={api} />
                   </Suspense>
                 )}
                 <section className="system-card">

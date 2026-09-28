@@ -22,6 +22,10 @@ export const cpuTopologySchema = z
 export const deviceProfileSchema = z
   .object({
     graphics: z.enum(['none', 'virtio-gpu', 'virgl']).default('none'),
+    graphicsOutputs: z.number().int().min(1).max(4).optional(),
+    graphicsWidth: z.number().int().min(640).max(3840).optional(),
+    graphicsHeight: z.number().int().min(480).max(2160).optional(),
+    graphicsMemoryMiB: z.number().int().min(64).max(1024).optional(),
     networkCard: z.enum(['virtio-net-pci', 'e1000']).default('virtio-net-pci'),
     randomDevice: z.boolean().default(true),
     balloon: z.boolean().default(true),
@@ -98,13 +102,16 @@ export function hardwareArguments(vm: HardwareVM) {
 }
 export function deviceArguments(vm: HardwareVM) {
   const config = deviceProfileSchema.parse(vm.hardware?.devices || {});
+  const graphics = config.graphics === 'none' ? [] : ['-device',
+    `${config.graphics === 'virgl' ? 'virtio-gpu-gl-pci' : 'virtio-gpu-pci'},` +
+    `max_outputs=${config.graphicsOutputs ?? 1},xres=${config.graphicsWidth ?? 1280},` +
+    `yres=${config.graphicsHeight ?? 800},max_hostmem=${config.graphicsMemoryMiB ?? 256}M`];
   return [
     '-device',
     config.networkCard + ',netdev=sakura-net' + (config.networkCard === 'virtio-net-pci' ? ',vectors=4' : ''),
     ...(config.randomDevice ? ['-device', 'virtio-rng-pci'] : []),
     ...(config.balloon ? ['-device', 'virtio-balloon-pci'] : []),
-    ...(config.graphics === 'none' ? [] : ['-device',
-      config.graphics === 'virgl' ? 'virtio-gpu-gl-pci' : 'virtio-gpu-pci']),
+    ...graphics,
   ];
 }
 export function diskOptions(vm: HardwareVM) {

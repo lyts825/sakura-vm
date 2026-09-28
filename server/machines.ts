@@ -1344,12 +1344,14 @@ export class Machines extends EventEmitter {
     await live.done;
     return this.view(id);
   }
-  async update(id: string, input: unknown) {
+  async update(id: string, input: unknown | ((current: VMRecord) => unknown),
+    guard?: (current: VMRecord) => void) {
     return this.locked(id, async () => {
       const vm = this.get(id);
       this.requireMutableConfig(vm);
       this.requireStopped(id);
-      const config = createSchema.parse(input);
+      guard?.(vm);
+      const config = createSchema.parse(typeof input === 'function' ? input(vm) : input);
       if (config.architecture === undefined && vm.architecture)
         config.architecture = vm.architecture;
       if (config.firmware === undefined && vm.architecture === 'aarch64')
@@ -1384,21 +1386,17 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
-  async configureHardware(id: string, input: unknown) {
-    const hardware = hardwareSchema.parse(input),
-      vm = this.get(id);
-    return this.update(id, {
-      name: vm.name,
-      memoryMiB: vm.memoryMiB,
-      cpus: vm.cpus,
-      diskGiB: vm.diskGiB,
-      accelerator: vm.accelerator,
-      distro: vm.distro,
-      architecture: vm.architecture,
-      template: vm.template,
-      firmware: vm.firmware,
-      forwards: vm.forwards,
-      hardware,
+  async configureHardware(id: string, input: unknown,
+    expected?: { hardware: unknown; memoryMiB: number; architecture?: string }) {
+    const hardware = hardwareSchema.parse(input);
+    return this.update(id, (vm: VMRecord) => ({
+      name: vm.name, memoryMiB: vm.memoryMiB, cpus: vm.cpus, diskGiB: vm.diskGiB,
+      accelerator: vm.accelerator, distro: vm.distro, architecture: vm.architecture,
+      template: vm.template, firmware: vm.firmware, forwards: vm.forwards, hardware,
+    }), (vm) => {
+      if (expected && (JSON.stringify(vm.hardware || {}) !== JSON.stringify(expected.hardware) ||
+          vm.memoryMiB !== expected.memoryMiB || vm.architecture !== expected.architecture))
+        throw new AppError('实例配置已变化，请重新预览 GPU 档案', 409);
     });
   }
   async hotplug(id: string, kind: 'cpu' | 'memory', target?: number, signal?: AbortSignal) {

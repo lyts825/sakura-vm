@@ -66,8 +66,8 @@ test('Virtio GPU and VirGL select distinct devices and reject the unsupported AR
     hardware: { devices: { graphics: 'virtio-gpu' } } });
   const virgl = createSchema.parse({ name: 'gpu3d',
     hardware: { devices: { graphics: 'virgl' } } });
-  assert.ok(deviceArguments(twoD).includes('virtio-gpu-pci'));
-  assert.ok(deviceArguments(virgl).includes('virtio-gpu-gl-pci'));
+  assert.ok(deviceArguments(twoD).some((arg) => arg.startsWith('virtio-gpu-pci,')));
+  assert.ok(deviceArguments(virgl).some((arg) => arg.startsWith('virtio-gpu-gl-pci,')));
   assert.equal(createSchema.safeParse({ name: 'arm-gpu', architecture: 'aarch64',
     distro: 'debian', firmware: 'uefi',
     hardware: { devices: { graphics: 'virgl' } } }).success, false);

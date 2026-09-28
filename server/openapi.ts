@@ -19,6 +19,7 @@ import { automationRequest } from './automation-rules.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
 import { fleetRolloutRequest } from './fleet-policy-rollouts.ts';
 import { usbHotplugRequest } from './usb-hotplug.ts';
+import { gpuProfileRequest } from './gpu-profiles.ts';
 import { hostPeerRequest } from './host-peers.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
@@ -206,6 +207,10 @@ const core: {
     title: '查看宿主 USB 设备、转发规则与操作记录', inspect: true },
   { id: 'usb-hotplug.change', method: 'POST', path: '/api/vms/{vmId}/usb-hotplug',
     title: '保存 USB 转发规则或动态连接和移除设备', body: request(usbHotplugRequest) },
+  { id: 'gpu-profiles.get', method: 'GET', path: '/api/gpu-profiles',
+    title: '查看 GPU/vGPU 档案、宿主后端探测和实例应用记录', inspect: true },
+  { id: 'gpu-profiles.change', method: 'POST', path: '/api/gpu-profiles',
+    title: '保存档案、复核宿主兼容性并应用到停止的实例', body: request(gpuProfileRequest) },
   {
     id: 'host-peers.get', method: 'GET', path: '/api/host-peers',
     title: '主机配对、资源和健康状态', inspect: true,

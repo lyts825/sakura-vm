@@ -2352,6 +2352,54 @@ test('fleet policy editor saves a reviewable batch and publishes to the selected
   expect(requests[1].revision).toBe(1);
 });
 
+test('GPU profiles save, preview host support and apply reviewed hardware to a stopped VM', async ({ page }) => {
+  await app(page, [], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'stopped' }] }));
+  const profileId = '52e2ec91-675d-4d85-bac1-91205f58ec63';
+  const requests: any[] = [];
+  let profile: any;
+  let assignment: any;
+  await page.route('**/api/gpu-profiles', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: {
+      profiles: profile ? [profile] : [],
+      support: { 'virtio-gpu': { available: true }, virgl: { available: false,
+        reason: 'EGL unavailable' } }, assignments: assignment ? [assignment] : [],
+    } });
+    const input = route.request().postDataJSON();
+    requests.push(input);
+    if (input.operation === 'save') {
+      profile = { ...input.profile, id: profileId, revision: 1 };
+      return route.fulfill({ json: profile });
+    }
+    if (input.operation === 'preview') return route.fulfill({ json: {
+      ready: true, reasons: [], previewToken: 'a'.repeat(64), before: {},
+      after: { devices: { graphics: 'virtio-gpu', graphicsOutputs: 2 } },
+      qemuDeviceArguments: ['-device', 'virtio-gpu-pci,max_outputs=2'],
+      vmName: vm.name, profileId, profileRevision: 1,
+    } });
+    assignment = { vmId: vm.id, vmName: vm.name, profileId,
+      profileName: profile.name, profileRevision: 1, drifted: false };
+    return route.fulfill({ json: assignment });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '系统设置' }).click();
+  await page.getByRole('button', { name: '管理 GPU 档案' }).click();
+  const panel = page.getByRole('region', { name: 'GPU/vGPU 档案' });
+  await expect(panel).toContainText('EGL unavailable');
+  await panel.getByLabel('GPU 档案名称').fill('Two displays');
+  await panel.getByLabel('GPU 输出数量').fill('2');
+  await panel.getByLabel('GPU 宽度').fill('1600');
+  await panel.getByRole('button', { name: '保存 GPU 档案' }).click();
+  await panel.getByRole('button', { name: '预览应用' }).click();
+  await expect(panel.getByRole('region', { name: 'GPU 档案应用预览' }))
+    .toContainText('virtio-gpu-pci,max_outputs=2');
+  await panel.getByRole('button', { name: '应用到停止实例' }).click();
+  await expect(panel).toContainText('配置仍匹配');
+  expect(requests.map((item) => item.operation)).toEqual(['save', 'preview', 'apply']);
+  expect(requests[0].profile).toMatchObject({ graphics: 'virtio-gpu', outputs: 2, width: 1600 });
+  expect(requests[2].previewToken).toBe('a'.repeat(64));
+});
+
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>

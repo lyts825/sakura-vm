@@ -259,7 +259,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | UEFI 与 OVMF 固件 / `uefi-ovmf` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“检测宿主机是否有 UEFI/OVMF 固件并保存选择。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | vTPM 密钥登记 / `vtpm-key-enrollment` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存 vTPM 密钥登记元数据和轮换提醒。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | PCI 与 USB 直通 / `pci-usb-passthrough` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“校验直通设备声明并生成安全预览。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
-| GPU 与 vGPU 档案 / `gpu-vgpu-profiles` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“登记 GPU 配置档案及其兼容性要求。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
+| GPU 与 vGPU 档案 / `gpu-vgpu-profiles` | 已实现 | 保存可复用的 Virtio GPU 2D / VirGL 3D 档案，实际启动 QEMU 探测宿主后端；复核停机实例的兼容性、硬件差异和设备参数后应用，并记录档案修订及硬件漂移。 | [server/gpu-profiles.ts](D:/27247/Desktop/Sakura/server/gpu-profiles.ts) |
 | 嵌套虚拟化 / `nested-virtualization` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“检测嵌套虚拟化能力并记录结果。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | 在线 vCPU 热插拔 / `vcpu-hotplug` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存在线 vCPU 调整计划和目标值。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | 在线内存热插拔 / `memory-hotplug` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存在线内存调整计划和目标值。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
