@@ -143,6 +143,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'ai-assistant',
   'native-integration',
   'language-services',
+  'debug-adapter',
   'multi-monitor',
   'golden-images',
   'multi-arch',
@@ -549,7 +550,16 @@ export class FeatureSuite {
         ? '文件面板可对当前项目中的 TypeScript、JavaScript 和 Python 文件执行补全、跳转、语言诊断和预览后重命名。'
         : '请启动实例，在文件面板打开当前项目中的源文件并安装语言服务器。';
     } else if (featureId === 'debug-adapter') {
-      result.adapter = 'workspace-tooling';
+      const probe = this.machines.state(id) === 'running'
+        ? await this.machines.exec(id,
+            "/opt/sakura-debugger/bin/python -c 'import debugpy; assert debugpy.__version__ == \"1.8.16\"'",
+            10000, signal).catch(() => null)
+        : null;
+      result.ready = probe?.code === 0;
+      result.adapter = 'debugpy-dap-stdio';
+      result.reason = result.ready
+        ? '文件面板可为当前项目中的 Python 文件设置断点、暂停和单步，并查看调用栈、变量与程序输出。'
+        : '请启动实例，在文件面板打开当前项目中的 Python 文件并安装 Python 调试器。';
     } else if (featureId === 'reverse-proxy') {
       result.ready = true;
       result.network = 'localhost-https-ingress';

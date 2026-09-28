@@ -27,6 +27,7 @@ import type { Toolchains } from './toolchains.ts';
 
 import type { CodeIntelligence } from './code-intelligence.ts';
 import type { LanguageServices } from './language-services.ts';
+import type { DebugAdapter } from './debug-adapter.ts';
 import type { ExtendedFeatures } from './extended-features.ts';
 import type { FeatureSuite } from './feature-suite.ts';
 import type { FileHistory } from './file-history.ts';
@@ -88,6 +89,7 @@ export class Features {
   runtimes!: RuntimeVersions;
   intelligence!: CodeIntelligence;
   languageServices!: LanguageServices;
+  debugger!: DebugAdapter;
   suite!: FeatureSuite;
   extended!: ExtendedFeatures;
   next!: NextFeatures;

@@ -11,6 +11,7 @@ import { BinaryPreview } from '../../src/BinaryPreview';
 import { ThreeWayMerge } from '../../src/ThreeWayMerge';
 import { clipboardFiles } from '../../src/clipboard-files';
 import { NativeOpenButtons } from '../../src/NativeIntegration';
+import { DebugPanel } from '../code-checks/client';
 import { applyTextEdits, type LspPosition, type LspRange } from '../../shared/language-service';
 const CodeEditor = lazy(() =>
   import('../../src/CodeEditor').then((module) => ({ default: module.CodeEditor })),
@@ -905,6 +906,10 @@ export function FileBrowser({
               </div>
             </PluginGate>
           )}
+          {/\.py$/i.test(edit.path) && <PluginGate id="code-checks">
+            <DebugPanel vmId={vm.id} request={request} path={edit.path}
+              dirty={!!edit.fresh || dirtyEdit(edit)} openPath={openPath} />
+          </PluginGate>}
           <div className="feature-actions">
             <PluginGate id="code-checks">
               <button

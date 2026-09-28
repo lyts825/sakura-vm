@@ -2238,6 +2238,53 @@ test('file editor previews and applies LSP rename, then displays language diagno
   expect(actions).toEqual(['rename', 'apply', 'diagnostics', 'definition', 'completion']);
 });
 
+test('Python debug panel starts with breakpoints and shows stepwise stack and variable changes', async ({ page }) => {
+  const source = 'value = 1\nvalue += 1\nprint(value)\n';
+  await page.addInitScript(({ id, source }) => localStorage.setItem(`sakura-drafts:${id}`, JSON.stringify([{
+    id: 'debug-draft', path: '/workspace/hello.py', content: source, baseContent: source,
+    version: 'c'.repeat(64),
+  }])), { id: vm.id, source });
+  await app(page, ['projects', 'files', 'code-checks'], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/history*', (route) => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/vms/*/files?*', (route) => route.fulfill({ json: [] }));
+  const token = '72f4e34d-c936-4915-88fc-309e53bc40e4';
+  let state: any = { installed: true, active: false };
+  const submitted: any[] = [];
+  await page.route('**/api/vms/*/debugger*', (route) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: state });
+    const input = route.request().postDataJSON();
+    submitted.push(input);
+    if (input.action === 'start') state = {
+      installed: true, active: true, token, state: 'stopped', path: '/workspace/hello.py',
+      directory: '/workspace', reason: 'breakpoint', selectedFrame: 1,
+      breakpoints: [{ line: 2, verified: true }],
+      frames: [{ id: 1, name: '<module>', path: '/workspace/hello.py', line: 2, column: 1 }],
+      variables: [{ name: 'value', value: '1', type: 'int', variablesReference: 0 }], output: '',
+    };
+    else if (input.action === 'next') state = {
+      ...state, reason: 'step', selectedFrame: 2,
+      frames: [{ id: 2, name: '<module>', path: '/workspace/hello.py', line: 3, column: 1 }],
+      variables: [{ name: 'value', value: '2', type: 'int', variablesReference: 0 }],
+    };
+    else if (input.action === 'continue') state = { ...state, active: false, state: 'terminated', output: '2\n' };
+    return route.fulfill({ json: state });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '文件', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Python 调试器' })).toBeVisible();
+  await page.getByRole('textbox', { name: '断点行号', exact: true }).fill('2');
+  await page.getByRole('button', { name: '开始调试' }).click();
+  await expect(page.getByText('value: 1 (int)')).toBeVisible();
+  await expect(page.getByText('<module> · /workspace/hello.py:2')).toBeVisible();
+  await page.getByRole('button', { name: '单步越过' }).click();
+  await expect(page.getByText('value: 2 (int)')).toBeVisible();
+  await page.getByRole('button', { name: '继续', exact: true }).click();
+  await expect(page.getByText('2', { exact: true }).last()).toBeVisible();
+  expect(submitted.map((item) => item.action)).toEqual(['start', 'next', 'continue']);
+  expect(submitted[0].breakpoints).toEqual([2]);
+});
+
 test('file previews render CSV as text and terminal layouts restore after reloading', async ({ page }) => {
   await app(page, ['files', 'transfers', 'terminal-workspace'], true);
   await page.route('**/api/vms', (route) =>

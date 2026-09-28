@@ -54,7 +54,7 @@ flowchart TB
 | `ide`                  | VS Code Remote-SSH 配置和项目连接               | projects                      |
 | `toolchains`           | 工具检查和安装                                  | projects                      |
 | `project-search`       | 项目文件名与内容搜索                            | projects、files               |
-| `code-checks`          | 代码诊断与 TypeScript、JavaScript、Python LSP 语言服务 | projects、files               |
+| `code-checks`          | 代码诊断、TypeScript/JavaScript/Python LSP 语言服务与 Python DAP 调试 | projects、files               |
 | `commands`             | 参数化收藏命令、执行和日志                      | projects                      |
 | `pipelines`            | 构建步骤、运行记录和产物下载                    | projects、files、transfers    |
 | `runtimes`             | 项目运行时版本选择和安装                        | projects                      |

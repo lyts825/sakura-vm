@@ -34,6 +34,7 @@ export const SERVICE_KEYS = [
   'runtimes',
   'intelligence',
   'languageServices',
+  'debugger',
   'suite',
   'extended',
   'next',
