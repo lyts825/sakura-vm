@@ -40,6 +40,8 @@ export const accessViewerInput = z.object({
   expiresAt: z.number().int().positive(),
 }).strict();
 export const accessPasswordInput = z.object({ password: z.string().max(256), newPassword: password }).strict();
+export const accessHandoffInput = z.object({ password: z.string().max(256) }).strict();
+export const accessHandoffRedeem = z.object({ code: z.string().regex(/^[A-Za-z0-9_-]{24}$/) }).strict();
 
 const defaults = (): State => ({ version: 1, enabled: false, accounts: [] });
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -64,6 +66,8 @@ async function matches(text: string, stored: Account['credential']) {
 export class AccessControl {
   private state: State = defaults();
   private sessions = new Map<string, { accountId: string; expiresAt: number; credentialId?: string }>();
+  private handoffs = new Map<string, { sourceToken: string; sessionKey: string;
+    accountId: string; expiresAt: number }>();
   private failures = new Map<string, { count: number; blockedUntil: number }>();
   private pending = Promise.resolve();
   private closed = false;
@@ -152,9 +156,9 @@ export class AccessControl {
     });
   }
 
-  private issueSession(user: Account, credentialId?: string) {
+  private issueSession(user: Account, credentialId?: string, notAfter = Number.MAX_SAFE_INTEGER) {
     const expiresAt = Math.min(this.now() + (user.role === 'owner' ? 8 : 1) * 3_600_000,
-      user.expiresAt ?? Number.MAX_SAFE_INTEGER);
+      user.expiresAt ?? Number.MAX_SAFE_INTEGER, notAfter);
     const token = randomBytes(32).toString('hex');
     this.sessions.set(digest(token), { accountId: user.id, expiresAt, credentialId });
     return { token, principal: this.principal(user, expiresAt) };
@@ -183,12 +187,59 @@ export class AccessControl {
   }
 
   logout(value: unknown) {
-    if (typeof value === 'string' && /^[a-f0-9]{64}$/.test(value))
-      this.sessions.delete(digest(value));
+    if (typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)) {
+      const sessionKey = digest(value);
+      this.sessions.delete(sessionKey);
+      for (const [key, handoff] of this.handoffs)
+        if (handoff.sessionKey === sessionKey) this.handoffs.delete(key);
+    }
     return { ok: true };
   }
 
-  revokeAll() { this.sessions.clear(); }
+  revokeAll() { this.sessions.clear(); this.handoffs.clear(); }
+
+  async createHandoff(sourceToken: unknown) {
+    return this.serial(async () => {
+      const principal = this.authorize(sourceToken);
+      const sessionKey = digest(sourceToken as string);
+      for (const [key, handoff] of this.handoffs)
+        if (handoff.expiresAt <= this.now() || handoff.sessionKey === sessionKey)
+          this.handoffs.delete(key);
+      if (this.handoffs.size >= 32) throw new AppError('待接收的会话交接过多，请稍后重试', 429);
+      const code = randomBytes(18).toString('base64url');
+      const expiresAt = Math.min(this.now() + 2 * 60_000, principal.expiresAt);
+      this.handoffs.set(digest(code), { sourceToken: sourceToken as string,
+        sessionKey, accountId: principal.id, expiresAt });
+      return { code, expiresAt };
+    });
+  }
+
+  cancelHandoff(sourceToken: unknown) {
+    const principal = this.authorize(sourceToken);
+    const sessionKey = digest(sourceToken as string);
+    for (const [key, handoff] of this.handoffs)
+      if (handoff.sessionKey === sessionKey && handoff.accountId === principal.id)
+        this.handoffs.delete(key);
+    return { cancelled: true };
+  }
+
+  async redeemHandoff(input: unknown) {
+    const { code } = accessHandoffRedeem.parse(input);
+    return this.serial(async () => {
+      const key = digest(code);
+      const handoff = this.handoffs.get(key);
+      this.handoffs.delete(key);
+      const session = handoff && this.sessions.get(handoff.sessionKey);
+      const user = handoff && this.state.accounts.find((item) => item.id === handoff.accountId);
+      if (!handoff || handoff.expiresAt <= this.now() || !session ||
+          session.accountId !== handoff.accountId || session.expiresAt <= this.now() ||
+          !user || (user.expiresAt && user.expiresAt <= this.now()))
+        throw new AppError('交接码无效或已过期', 403);
+      this.sessions.delete(handoff.sessionKey);
+      const login = this.issueSession(user, session.credentialId, session.expiresAt);
+      return { ...login, sourceToken: handoff.sourceToken };
+    });
+  }
 
   async createViewer(input: unknown) {
     const value = accessViewerInput.parse(input);
@@ -221,6 +272,8 @@ export class AccessControl {
       this.state = next;
       for (const [key, session] of this.sessions)
         if (session.accountId === id) this.sessions.delete(key);
+      for (const [key, handoff] of this.handoffs)
+        if (handoff.accountId === id) this.handoffs.delete(key);
       return { removed: id };
     });
   }
@@ -288,6 +341,7 @@ export class AccessControl {
       await writeStore(this.file, next);
       this.state = next;
       this.sessions.clear();
+      this.handoffs.clear();
       return { changed: true };
     });
   }
@@ -296,5 +350,6 @@ export class AccessControl {
     this.closed = true;
     await this.pending;
     this.sessions.clear();
+    this.handoffs.clear();
   }
 }

@@ -49,6 +49,8 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.deepEqual(body.required, ['name']);
   assert.deepEqual(spec.paths['/api/bootstrap'].get.security, []);
   assert.deepEqual(spec.paths['/api/access/login'].post.security, []);
+  assert.deepEqual(spec.paths['/api/access/handoff/redeem'].post.security, []);
+  assert.equal(spec.paths['/api/access/handoff'].post.security, undefined);
   assert.deepEqual(spec.paths['/api/access/passkeys/login/options'].post.security, []);
   assert.deepEqual(spec.paths['/api/access/passkeys/login/verify'].post.security, []);
   assert.equal(spec.paths['/api/access/passkeys/register/options'].post.security, undefined);

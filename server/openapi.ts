@@ -5,7 +5,8 @@ import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { logRetentionRequest } from './log-retention.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
-import { accessEnableInput, accessLoginInput, accessViewerInput, accessPasswordInput } from './access-control.ts';
+import { accessEnableInput, accessLoginInput, accessViewerInput, accessPasswordInput,
+  accessHandoffInput, accessHandoffRedeem } from './access-control.ts';
 import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
 import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
@@ -49,6 +50,12 @@ const core: {
       required: ['enabled', 'session'] } },
   { id: 'access.login', method: 'POST', path: '/api/access/login',
     title: '使用账户密码登录', public: true, body: request(accessLoginInput) },
+  { id: 'access.handoffRedeem', method: 'POST', path: '/api/access/handoff/redeem',
+    title: '接收一次性账户会话交接', public: true, body: request(accessHandoffRedeem) },
+  { id: 'access.handoffCreate', method: 'POST', path: '/api/access/handoff',
+    title: '验证密码并生成两分钟有效的会话交接码', body: request(accessHandoffInput) },
+  { id: 'access.handoffCancel', method: 'DELETE', path: '/api/access/handoff',
+    title: '取消当前会话待接收的交接码' },
   { id: 'access.passkeyLoginOptions', method: 'POST', path: '/api/access/passkeys/login/options',
     title: '开始本机通行密钥登录', public: true, body: request(z.object({}).strict()) },
   { id: 'access.passkeyLoginVerify', method: 'POST', path: '/api/access/passkeys/login/verify',

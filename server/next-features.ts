@@ -464,7 +464,8 @@ export const nextFeatureCatalog = [
   ['shared-terminal', '共享终端', '协作与团队', 'P0', '保存共享终端会话和成员访问状态。', 'planned'],
   ['shared-desktop-view', '共享桌面视图', '协作与团队', 'P1',
     '已授权的本地只读账户可查看实例桌面，服务端拒绝键鼠、剪贴板和调整桌面尺寸。', 'available'],
-  ['session-handoff', '会话交接', '协作与团队', 'P0', '保存可恢复的会话交接令牌元数据。', 'planned'],
+  ['session-handoff', '会话交接', '协作与团队', 'P0',
+    '生成两分钟有效的一次性交接码，在本机浏览器间转移账户会话并撤销原凭证。', 'available'],
   ['file-locks', '文件锁', '协作与团队', 'P0', '在文件工作台获取、续租和释放文件锁，并阻止其他文件工作台写入修改锁定路径。', 'available'],
   ['review-threads', '行级评审线程', '协作与团队', 'P1', '保存文件、行号和评审意见线程。', 'available'],
   ['project-permissions', '项目权限', '协作与团队', 'P0', '保存项目成员和角色权限。', 'planned'],
@@ -662,6 +663,7 @@ export class NextFeatures {
   private wireGuardOverlay?: WireGuardOverlay;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
+  private accountModeReady?: () => boolean;
   private stateValue?: NextState;
   private stateLoading?: Promise<NextState>;
   private writes = Promise.resolve();
@@ -686,6 +688,8 @@ export class NextFeatures {
   setPasskeyCheck(check: () => { ready: boolean; registered: number; reason?: string }) {
     this.passkeyCheck = check;
   }
+
+  setAccountModeReady(check: () => boolean) { this.accountModeReady = check; }
 
   setColdMigrations(service: ColdMigrations) {
     this.coldMigrations = service;
@@ -959,6 +963,10 @@ export class NextFeatures {
       return { ...status, executed: false, adapter,
         message: '启用账户模式后，在 localhost 打开账户设置，以当前密码登记通行密钥；登录页可免密登录。' };
     }
+    if (spec.id === 'session-handoff')
+      return { ready: this.accountModeReady?.() || false, executed: false, adapter,
+        ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
+        message: '账户设置 → 会话交接：验证当前密码并生成一次性交接码，在另一个本机浏览器的登录页接收。' };
     if (spec.id === 'cold-migration') {
       if (!this.coldMigrations)
         return { ready: false, executed: false, adapter,

@@ -104,7 +104,18 @@ try {
   const loggedIn = await request('/api/access/login', 'POST', undefined,
     { username: 'reader', password: 'a long viewer password' });
   assert.equal(loggedIn.status, 200);
-  const viewerToken = loggedIn.body.token as string;
+  let viewerToken = loggedIn.body.token as string;
+  const viewerHandoff = await request('/api/access/handoff', 'POST', viewerToken,
+    { password: 'a long viewer password' });
+  assert.equal(viewerHandoff.status, 200, JSON.stringify(viewerHandoff.body));
+  const viewerMoved = await request('/api/access/handoff/redeem', 'POST', undefined,
+    { code: viewerHandoff.body.code });
+  assert.equal(viewerMoved.status, 200);
+  assert.equal(viewerMoved.body.principal.role, 'viewer');
+  assert.deepEqual(viewerMoved.body.principal.vmIds, [vmId]);
+  assert.equal(viewerMoved.body.principal.expiresAt, loggedIn.body.principal.expiresAt);
+  assert.equal((await request('/api/access/view', 'GET', viewerToken)).status, 401);
+  viewerToken = viewerMoved.body.token;
   const inventory = await request('/api/access/view', 'GET', viewerToken);
   assert.equal(inventory.status, 200);
   assert.equal(inventory.body.vms.length, 1);
@@ -206,6 +217,39 @@ try {
     assert.equal((await request('/api/vms', 'GET', passkeyLogin.token)).status, 401);
     assert.equal((await request('/api/access/passkeys', 'GET', ownerToken)).body.passkeys.length, 0);
     await passkeyPage.close();
+
+    assert.equal((await request('/api/access/handoff', 'POST', ownerToken,
+      { password: 'incorrect' })).status, 403);
+    const sourcePage = await browser.newPage();
+    await sourcePage.goto(origin);
+    await sourcePage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    await sourcePage.getByLabel('密码').fill(password);
+    const sourceLoginResponse = sourcePage.waitForResponse((response) =>
+      response.url().endsWith('/api/access/login'));
+    await sourcePage.getByRole('button', { name: '登录', exact: true }).click();
+    const sourceLogin = await (await sourceLoginResponse).json();
+    await sourcePage.getByRole('button', { name: '系统设置', exact: true }).click();
+    const handoffManager = sourcePage.getByRole('region', { name: '会话交接' });
+    await handoffManager.getByLabel('当前账户密码').fill(password);
+    await handoffManager.getByRole('button', { name: '生成交接码' }).click();
+    const handoffCode = await handoffManager.getByRole('status').locator('code').innerText();
+    assert.match(handoffCode, /^[A-Za-z0-9_-]{24}$/);
+    const targetPage = await browser.newPage();
+    await targetPage.goto(origin);
+    await targetPage.getByRole('heading', { name: '登录 Sakura' }).waitFor();
+    await targetPage.getByLabel('会话交接码').fill(handoffCode);
+    const redeemResponse = targetPage.waitForResponse((response) =>
+      response.url().endsWith('/api/access/handoff/redeem'));
+    await targetPage.getByRole('button', { name: '接收会话' }).click();
+    await targetPage.getByRole('button', { name: '系统设置', exact: true }).waitFor();
+    const moved = await (await redeemResponse).json();
+    assert.equal(moved.principal.role, 'owner');
+    assert.equal((await request('/api/vms', 'GET', sourceLogin.token)).status, 401);
+    assert.equal((await request('/api/vms', 'GET', moved.token)).status, 200);
+    assert.equal((await request('/api/access/handoff/redeem', 'POST', undefined,
+      { code: handoffCode })).status, 403);
+    await sourcePage.close();
+    await targetPage.close();
   } finally { await browser.close(); }
 
   assert.equal((await request('/api/access/users/' + viewer.body.id, 'DELETE', ownerToken)).status, 200);

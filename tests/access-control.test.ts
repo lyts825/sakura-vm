@@ -104,10 +104,46 @@ test('passkey challenges are single-use and stored credentials survive restart a
     const signedIn = await access.completePasskeyLogin(owner.principal.id, id, 0, 1);
     assert.equal(access.authorize(signedIn.token).role, 'owner');
     await assert.rejects(access.completePasskeyLogin(owner.principal.id, id, 0, 1), /计数器/);
-    await access.removePasskey(owner.principal.id, id);
+    const handoff = await access.createHandoff(signedIn.token);
+    const moved = await access.redeemHandoff({ code: handoff.code });
     assert.throws(() => access.authorize(signedIn.token), /凭证/);
+    assert.equal(access.authorize(moved.token).role, 'owner');
+    await access.removePasskey(owner.principal.id, id);
+    assert.throws(() => access.authorize(moved.token), /凭证/);
     assert.equal(access.authorize(owner.token).role, 'owner');
     passkeys.close();
+  } finally {
+    await access.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('session handoff moves one live credential without extending its lifetime', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-handoff-'));
+  let now = Date.UTC(2026, 0, 1);
+  const access = new AccessControl(join(directory, 'accounts.json'), () => now);
+  await access.init();
+  try {
+    await access.enable({ password: 'correct horse battery staple' });
+    const owner = await access.login({ username: 'owner', password: 'correct horse battery staple' });
+    const cancelled = await access.createHandoff(owner.token);
+    assert.match(cancelled.code, /^[A-Za-z0-9_-]{24}$/);
+    access.cancelHandoff(owner.token);
+    await assert.rejects(access.redeemHandoff({ code: cancelled.code }), /无效或已过期/);
+    const expired = await access.createHandoff(owner.token);
+    now += 120_000;
+    await assert.rejects(access.redeemHandoff({ code: expired.code }), /无效或已过期/);
+    const fresh = await access.createHandoff(owner.token);
+    now += 10_000;
+    const moved = await access.redeemHandoff({ code: fresh.code });
+    assert.equal(moved.sourceToken, owner.token);
+    assert.equal(moved.principal.expiresAt, owner.principal.expiresAt);
+    assert.equal(access.authorize(moved.token).id, owner.principal.id);
+    assert.throws(() => access.authorize(owner.token), /凭证/);
+    await assert.rejects(access.redeemHandoff({ code: fresh.code }), /无效或已过期/);
+    const pending = await access.createHandoff(moved.token);
+    access.logout(moved.token);
+    await assert.rejects(access.redeemHandoff({ code: pending.code }), /无效或已过期/);
   } finally {
     await access.close();
     await rm(directory, { recursive: true, force: true });

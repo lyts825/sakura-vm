@@ -38,7 +38,7 @@ import { storagePoolInput } from './storage-pools.ts';
 import { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
-import { AccessControl } from './access-control.ts';
+import { AccessControl, accessHandoffInput } from './access-control.ts';
 import { Passkeys, passkeyRemove } from './passkeys.ts';
 
 async function main() {
@@ -98,6 +98,7 @@ async function main() {
   features.next?.setPasskeyCheck(() => ({ ready: access.enabled,
     registered: access.users().reduce((count, user) => count + access.passkeysFor(user.id).length, 0),
     ...(!access.enabled ? { reason: '请先启用账户模式。' } : {}) }));
+  features.next?.setAccountModeReady(() => access.enabled);
   const importedPeerVm = (requesterId: string, transferId: string) =>
     [...machines.records.values()].find((vm) =>
       vm.migrationOrigin?.sourceHostId === requesterId &&
@@ -296,6 +297,14 @@ async function main() {
       catch (error) { access.logout(login.token); throw error; }
       return send(res, login);
     }
+    if (url.pathname === '/api/access/handoff/redeem') {
+      if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
+      const { sourceToken, ...login } = await access.redeemHandoff(await body(req, 4096));
+      try { session.requireUnlocked(); }
+      catch (error) { access.logout(login.token); throw error; }
+      terminateCredentialSockets(sourceToken);
+      return send(res, login);
+    }
     if (url.pathname === '/api/access/passkeys/login/options') {
       if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
       requirePasskeyOrigin(req);
@@ -331,7 +340,7 @@ async function main() {
     ].includes(url.pathname) || /^\/api\/access\/passkeys\/[A-Za-z0-9_-]{16,1024}$/.test(url.pathname);
     if (access.enabled && principal.role === 'viewer' &&
         url.pathname !== '/api/access/view' && url.pathname !== '/api/access/logout' &&
-        !passkeyManagementRoute)
+        url.pathname !== '/api/access/handoff' && !passkeyManagementRoute)
       throw new AppError('只读账户没有此接口的访问权限', 403);
     if (url.pathname === '/api/access/view') {
       if (req.method !== 'GET' || !access.enabled) throw new AppError('不支持此方法', 405);
@@ -348,6 +357,16 @@ async function main() {
       const result = access.logout(credential);
       if (typeof credential === 'string') terminateCredentialSockets(credential);
       return send(res, result);
+    }
+    if (url.pathname === '/api/access/handoff') {
+      if (!accountPrincipal) throw new AppError('账户模式未启用', 409);
+      if (req.method === 'DELETE')
+        return send(res, access.cancelHandoff(req.headers['x-sakura-token']));
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      const input = accessHandoffInput.parse(await authorizedBody(req, 4096));
+      const proof = await access.login({ username: accountPrincipal.username, password: input.password });
+      access.logout(proof.token);
+      return send(res, await access.createHandoff(req.headers['x-sakura-token']));
     }
     if (url.pathname === '/api/access/passkeys') {
       if (req.method !== 'GET' || !accountPrincipal) throw new AppError('不支持此方法', 405);
@@ -684,6 +703,7 @@ async function main() {
       if (!url) throw new AppError('无效的请求地址', 400);
       if (url.pathname.startsWith('/api/')) {
         if ((url.pathname === '/api/access/login' ||
+            url.pathname === '/api/access/handoff/redeem' ||
             url.pathname === '/api/access/passkeys/login/verify') && req.method === 'POST')
           return await audit.span({ kind: 'request', name: 'POST ' + url.pathname },
             () => api(req, res, url), () => res.statusCode);

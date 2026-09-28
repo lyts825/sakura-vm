@@ -37,6 +37,7 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
   const [statusError, setStatusError] = useState('');
   const [username, setUsername] = useState('owner');
   const [password, setPassword] = useState('');
+  const [handoffCode, setHandoffCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -105,6 +106,26 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
         <button className="primary" disabled={busy || !username || !password}>
           {busy ? '正在登录…' : '登录'}</button>
       </form>
+      <form onSubmit={async (event) => {
+        event.preventDefault(); setBusy(true); setError('');
+        try {
+          const response = await fetch('/api/access/handoff/redeem', {
+            method: 'POST', cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: handoffCode.trim() }),
+            signal: AbortSignal.timeout(15_000),
+          });
+          const login = await response.json();
+          if (!response.ok) throw new Error(login.error || '会话交接失败');
+          controllerSession.adoptAccount(login.token, login.principal);
+          setHandoffCode('');
+        } catch (reason) { setError(reason instanceof Error ? reason.message : '会话交接失败'); }
+        finally { setBusy(false); }
+      }}>
+        <label>会话交接码<input autoComplete="off" maxLength={24} value={handoffCode}
+          onChange={(event) => setHandoffCode(event.target.value)} disabled={busy} /></label>
+        <button className="secondary" disabled={busy || !handoffCode.trim()}>接收会话</button>
+      </form>
       {location.hostname === 'localhost' ? <button className="secondary" disabled={busy}
         onClick={async () => {
           setBusy(true); setError('');
@@ -161,7 +182,47 @@ function SharedInventory({ principal }: { principal: AccessPrincipal }) {
     </section>
     {desktopId && token && <SharedDesktop vmId={desktopId} token={token} />}
     <PasskeyManager />
+    <SessionHandoffManager />
   </main>;
+}
+
+function SessionHandoffManager() {
+  const [password, setPassword] = useState('');
+  const [handoff, setHandoff] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!handoff) return;
+    const timer = setTimeout(() => setHandoff(null), Math.max(1, handoff.expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [handoff?.expiresAt]);
+  return <section className="system-card" aria-label="会话交接">
+    <h3>会话交接</h3>
+    <p>使用当前密码生成两分钟有效的一次性交接码。在另一个本机浏览器会话接收后，当前会话立即失效。</p>
+    <form onSubmit={async (event) => {
+      event.preventDefault(); setBusy(true); setError('');
+      try {
+        const result = await api<{ code: string; expiresAt: number }>(
+          '/access/handoff', 'POST', { password });
+        setPassword(''); setHandoff(result);
+      } catch (reason) { setError(reason instanceof Error ? reason.message : '无法生成交接码'); }
+      finally { setBusy(false); }
+    }}>
+      <label>当前账户密码<input type="password" autoComplete="current-password" required
+        value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} /></label>
+      <button className="secondary compact" disabled={busy}>生成交接码</button>
+    </form>
+    {handoff && <p role="status">交接码：<code>{handoff.code}</code>；
+      到期 {new Date(handoff.expiresAt).toLocaleTimeString()}
+      <button className="secondary compact" disabled={busy} onClick={async () => {
+        setBusy(true); setError('');
+        try { await api('/access/handoff', 'DELETE'); setHandoff(null); }
+        catch (reason) { setError(reason instanceof Error ? reason.message : '无法取消交接码'); }
+        finally { setBusy(false); }
+      }}>取消交接码</button>
+    </p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
 }
 
 function PasskeyManager() {
@@ -359,6 +420,7 @@ export function AccessSettings() {
         <button className="secondary compact" disabled={busy}>更换密码</button>
       </form>
       <PasskeyManager />
+      <SessionHandoffManager />
     </>}
     {message && <p role="status">{message}</p>}
     {error && <p role="alert" className="inline-error">{error}</p>}
