@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sakura 实例伴侣</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header><span class="mark">❀</span><h1>Sakura</h1></header>
+    <p id="status" role="status">正在读取连接状态…</p>
+    <form id="pair-form" hidden>
+      <label>本机端口<input id="port" type="number" min="1" max="65535" value="7337" required></label>
+      <label>配对码<input id="code" maxlength="12" pattern="[A-Za-z0-9_-]{12}" autocomplete="off" required></label>
+      <button type="submit">连接 Sakura</button>
+      <p class="hint">在 Sakura 的“系统设置 → 浏览器扩展”生成配对码。</p>
+    </form>
+    <section id="inventory" hidden>
+      <p class="hint">权限：实例摘要（只读）</p>
+      <div id="vms"></div>
+      <div class="actions">
+        <button id="refresh" type="button">刷新</button>
+        <button id="open" type="button">打开 Sakura</button>
+        <button id="forget" type="button">清除本地凭证</button>
+      </div>
+    </section>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

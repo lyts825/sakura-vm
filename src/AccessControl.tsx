@@ -13,6 +13,9 @@ type UserView = { id: string; username: string; role: 'owner' | 'viewer';
   vmIds: string[]; expiresAt: number | null; createdAt: string };
 type PasskeyView = { id: string; name: string; createdAt: string; lastUsedAt?: string };
 type TerminalGrantView = { id: string; vmId: string; session: string; expiresAt: number };
+type BrowserExtensionView = { id: string; origin: string; createdAt: number;
+  expiresAt: number; lastSeenAt?: number; connected: boolean; expired: boolean;
+  permissions: string[] };
 type JitRequestView = { id: string; viewerId: string; vmId: string;
   operation: 'start' | 'stop'; reason: string;
   status: 'pending' | 'approved' | 'denied' | 'revoked' | 'expired' |
@@ -320,6 +323,60 @@ function JitOwnerPanel({ users, vms }: { users: UserView[]; vms: SharedVm[] }) {
   </section>;
 }
 
+function BrowserExtensionManager() {
+  const [connections, setConnections] = useState<BrowserExtensionView[]>([]);
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const refresh = async () => setConnections((await api<{ connections: BrowserExtensionView[] }>(
+    '/browser-extensions')).connections);
+  useEffect(() => {
+    void refresh().catch((cause) => setError(String(cause.message || cause)));
+    const timer = setInterval(() => void refresh().catch(() => {}), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (!pairing) return;
+    const timer = setTimeout(() => setPairing(null), Math.max(1, pairing.expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [pairing?.expiresAt]);
+  return <section aria-label="浏览器扩展管理">
+    <h4>浏览器扩展</h4>
+    <p>在 Chromium 或 Chrome 的扩展程序页启用开发者模式，选择源码或发行包中的
+      <code>browser-extension</code> 文件夹加载。扩展仅可读取本机实例摘要，不能操作实例。</p>
+    <button className="secondary compact" disabled={busy} onClick={async () => {
+      setBusy(true); setError(''); setMessage('');
+      try {
+        const result = await api<{ code: string; expiresAt: number }>(
+          '/browser-extensions', 'POST', {});
+        setPairing(result);
+        setMessage('请在扩展弹窗输入配对码和当前 Sakura 端口');
+      } catch (cause) { setError(cause instanceof Error ? cause.message : '无法生成配对码'); }
+      finally { setBusy(false); }
+    }}>生成扩展配对码</button>
+    {pairing && <p role="status">配对码：<code>{pairing.code}</code> ·
+      有效至 {new Date(pairing.expiresAt).toLocaleTimeString()} ·
+      端口 {location.port || '80'}</p>}
+    <button className="secondary compact" disabled={busy} onClick={() => void refresh()
+      .catch((cause) => setError(String(cause.message || cause)))}>刷新连接</button>
+    <ul>{connections.map((item) => <li key={item.id}>
+      <code>{item.origin}</code> · {item.expired ? '已过期' : item.connected ? '最近已连接' : '未连接'} ·
+      权限：实例摘要（只读） · 到期 {new Date(item.expiresAt).toLocaleString()}
+      <button className="secondary compact" disabled={busy} onClick={async () => {
+        setBusy(true); setError(''); setMessage('');
+        try {
+          await api('/browser-extensions/' + item.id, 'DELETE');
+          setMessage('扩展连接已撤销'); await refresh();
+        } catch (cause) { setError(cause instanceof Error ? cause.message : '撤销失败'); }
+        finally { setBusy(false); }
+      }}>撤销</button>
+    </li>)}</ul>
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
 function SharedTerminal({ grant, token }: { grant: TerminalGrantView; token: string }) {
   const screen = useRef<HTMLDivElement>(null);
   const [connection, setConnection] = useState('正在连接终端…');
@@ -570,6 +627,7 @@ export function AccessSettings() {
         }}>撤销</button>
       </li>)}</ul>
       <JitOwnerPanel users={users} vms={vms} />
+      <BrowserExtensionManager />
       <h4>更换管理员密码</h4>
       <p>更换后所有账户会话立即失效，需要用新密码重新登录。</p>
       <form onSubmit={async (event) => {

@@ -38,10 +38,11 @@ import { storagePoolInput } from './storage-pools.ts';
 import { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
-import { AccessControl, accessHandoffInput } from './access-control.ts';
+import { AccessControl, accessHandoffInput, accessPasswordInput } from './access-control.ts';
 import { Passkeys, passkeyRemove } from './passkeys.ts';
 import { TerminalSharing, terminalShareInput } from './terminal-sharing.ts';
 import { JitPrivileges } from './jit-privileges.ts';
+import { BrowserExtensions, extensionOrigin } from './browser-extensions.ts';
 
 async function main() {
   let token = randomBytes(32).toString('hex');
@@ -62,6 +63,8 @@ async function main() {
   await terminalSharing.init();
   const jitPrivileges = new JitPrivileges(access, machines);
   await jitPrivileges.init();
+  const browserExtensions = new BrowserExtensions(access);
+  await browserExtensions.init();
   const audit = hostAudit();
   Jobs.instrument = (job, work) =>
     audit.span(
@@ -305,6 +308,52 @@ async function main() {
     });
     res.end(JSON.stringify(data));
   }
+  const extensionApi = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
+    if (![`127.0.0.1:${PORT}`, `localhost:${PORT}`].includes(req.headers.host || ''))
+      throw new AppError('仅接受本机扩展连接', 403);
+    let origin: string;
+    try {
+      origin = extensionOrigin(req.headers.origin ||
+        (req.method === 'GET' ? req.headers['x-sakura-extension-origin'] : undefined));
+      if (req.method !== 'OPTIONS' && req.headers['x-sakura-extension-origin'] !== origin)
+        throw new Error('扩展来源不一致');
+    }
+    catch { throw new AppError('需要有效的浏览器扩展来源', 403); }
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin, X-Sakura-Extension-Origin');
+    res.setHeader('Access-Control-Allow-Headers',
+      'Content-Type, X-Sakura-Extension-Origin, X-Sakura-Extension-Token');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, { 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+    session.requireUnlocked();
+    protectedResponses.add(res);
+    const unprotect = () => protectedResponses.delete(res);
+    res.once('finish', unprotect);
+    res.once('close', unprotect);
+    if (!access.enabled) throw new AppError('请先启用账户模式', 409);
+    if (url.pathname === '/api/extension/connect') {
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      features.mutations++;
+      try { return send(res, await browserExtensions.connect(origin, await body(req, 4096)), 201); }
+      finally { features.mutations--; }
+    }
+    if (url.pathname === '/api/extension/inventory') {
+      if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
+      const grant = browserExtensions.authorize(origin, req.headers['x-sakura-extension-token']);
+      const vms = await Promise.all([...machines.records.keys()].map((id) => machines.view(id)));
+      session.requireUnlocked();
+      return send(res, { permissions: grant.permissions, expiresAt: grant.expiresAt,
+        checkedAt: new Date().toISOString(),
+        vms: vms.map(({ id, name, status, distro, cpus, memoryMiB, diskGiB }) =>
+          ({ id, name, status, distro, cpus, memoryMiB, diskGiB })) });
+    }
+    throw new AppError('接口不存在', 404);
+  };
   const api = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname === '/api/access/status') {
       if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
@@ -446,6 +495,24 @@ async function main() {
       return send(res, await jitPrivileges.create(accountPrincipal,
         await authorizedBody(req, 4096)), 201);
     }
+    if (url.pathname === '/api/browser-extensions') {
+      if (accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可管理浏览器扩展', 403);
+      if (req.method === 'GET')
+        return send(res, { connections: browserExtensions.list(accountPrincipal.id) });
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      z.object({}).strict().parse(await authorizedBody(req, 4096));
+      return send(res, browserExtensions.createPairing(accountPrincipal.id), 201);
+    }
+    if (/^\/api\/browser-extensions\/[a-f0-9-]{36}$/.test(url.pathname)) {
+      if (req.method !== 'DELETE' || accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可撤销浏览器扩展', 403);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      features.mutations++;
+      try { return send(res, await browserExtensions.revoke(accountPrincipal.id,
+        url.pathname.split('/')[3])); }
+      finally { features.mutations--; }
+    }
     if (/^\/api\/access\/jit\/[a-f0-9-]{36}\/decision$/.test(url.pathname)) {
       if (req.method !== 'POST' || accountPrincipal?.role !== 'owner')
         throw new AppError('只有管理员可审批临时授权', 403);
@@ -521,7 +588,11 @@ async function main() {
     if (url.pathname === '/api/access/password') {
       if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
       if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-      const result = await access.changeOwnerPassword(await authorizedBody(req, 4096));
+      const input = accessPasswordInput.parse(await authorizedBody(req, 4096));
+      const proof = await access.login({ username: accountPrincipal!.username, password: input.password });
+      access.logout(proof.token);
+      await browserExtensions.revokeAll();
+      const result = await access.changeOwnerPassword(input);
       for (const client of ws.clients) client.terminate();
       return send(res, result);
     }
@@ -794,6 +865,14 @@ async function main() {
 
   const server = createServer(async (req, res) => {
     try {
+      if (req.url?.startsWith('/api/extension/')) {
+        const extensionUrl = requestUrl(req.url, PORT);
+        if (extensionUrl && ['/api/extension/connect', '/api/extension/inventory']
+          .includes(extensionUrl.pathname))
+          return await audit.span({ kind: 'request',
+            name: (req.method + ' ' + extensionUrl.pathname).slice(0, 200) },
+          () => extensionApi(req, res, extensionUrl), () => res.statusCode);
+      }
       if (!allowedRequest(req)) throw new AppError('仅接受本机同源访问', 403);
       const url = requestUrl(req.url, PORT);
       if (!url) throw new AppError('无效的请求地址', 400);
@@ -1076,6 +1155,7 @@ async function main() {
       () => passkeys.close(),
       () => terminalSharing.close(),
       () => jitPrivileges.close(),
+      () => browserExtensions.close(),
       () => assistant.close(),
       () => native.close(),
       () => webhooks.close(),

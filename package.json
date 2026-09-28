@@ -53,6 +53,7 @@
     "test:http-ingress": "tsx scripts/smoke-http-ingress.ts",
     "test:management": "tsx scripts/smoke-management.ts",
     "test:access": "tsx scripts/smoke-access.ts",
+    "test:browser-extension": "tsx scripts/smoke-browser-extension.ts",
     "test:shared-terminal": "tsx scripts/smoke-shared-terminal.ts",
     "test:development": "tsx scripts/smoke-development.ts",
     "plugins:check": "tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",

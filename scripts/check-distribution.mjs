@@ -8,6 +8,19 @@ for (const name of ['tsx', 'vite', 'react', 'react-dom', '@xterm/xterm', '@novnc
   if (Object.hasOwn(manifest.dependencies, name)) throw new Error(`${name} should only be needed to build the release`);
 for (const file of ['dist/index.html', '.sakura-server/index.js', '.sakura-server/assets/state-report.sh', '.sakura-server/assets/engineering-runner.py'])
   await stat(join(root, file));
+const extensionRoot = join(root, 'browser-extension');
+const extension = JSON.parse(await readFile(join(extensionRoot, 'manifest.json'), 'utf8'));
+if (extension.manifest_version !== 3 || extension.action?.default_popup !== 'popup.html' ||
+    extension.permissions?.join(',') !== 'storage' ||
+    extension.host_permissions?.join(',') !== 'http://127.0.0.1/*')
+  throw new Error('Browser extension manifest permissions changed unexpectedly');
+for (const file of ['popup.html', 'popup.css', 'popup.js', 'background.js'])
+  await stat(join(extensionRoot, file));
+for (const file of ['popup.js', 'background.js']) {
+  const checked = spawnSync(process.execPath, ['--check', join(extensionRoot, file)],
+    { encoding: 'utf8' });
+  if (checked.status !== 0) throw new Error(`Invalid browser extension JavaScript: ${file}`);
+}
 const jsFiles = [];
 async function collect(folder) {
   for (const item of await readdir(folder, { withFileTypes: true })) {

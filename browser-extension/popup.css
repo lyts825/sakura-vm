@@ -1,0 +1,29 @@
+:root { color-scheme: light dark; font: 14px/1.45 system-ui, sans-serif; }
+body { margin: 0; width: 320px; background: #fbf7fb; color: #382b3d; }
+main { padding: 16px; }
+header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.mark { color: #b64375; font-size: 24px; }
+h1 { font-size: 18px; margin: 0; }
+p { margin: 8px 0; }
+label { display: grid; gap: 4px; margin: 10px 0; }
+input { box-sizing: border-box; width: 100%; border: 1px solid #b7a8b9; border-radius: 7px;
+  background: #fff; color: #382b3d; padding: 7px; font: inherit; }
+button { border: 1px solid #a6567b; border-radius: 7px; background: #b64375;
+  color: white; padding: 7px 10px; font: inherit; cursor: pointer; }
+button:hover { background: #9d3864; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.actions button { background: transparent; color: #6f2850; }
+.actions button:hover { background: #f2e3ed; }
+.hint { color: #715f74; font-size: 12px; }
+.vm { border-top: 1px solid #decfdd; padding: 9px 0; }
+.vm strong { display: block; }
+.vm span { color: #715f74; font-size: 12px; }
+#status.error { color: #9b2241; }
+@media (prefers-color-scheme: dark) {
+  body { background: #241c29; color: #f2eaf2; }
+  input { background: #332a37; color: #f2eaf2; border-color: #675469; }
+  .hint, .vm span { color: #c5b6c8; }
+  .vm { border-color: #5b485f; }
+  .actions button { color: #f3bad4; }
+  .actions button:hover { background: #49364a; }
+}

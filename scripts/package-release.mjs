@@ -8,6 +8,7 @@ await mkdir(outputRoot, { recursive: true });
 const output = await mkdtemp(join(outputRoot, 'sakura-'));
 for (const folder of ['dist', '.sakura-server'])
   await cp(join(root, folder), join(output, folder), { recursive: true });
+await cp(join(root, 'browser-extension'), join(output, 'browser-extension'), { recursive: true });
 await cp(join(root, 'package-lock.json'), join(output, 'package-lock.json'));
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 manifest.scripts = {
@@ -40,11 +41,13 @@ const readme = [
   'npm start',
   '```',
   '',
-  '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行时依赖 graphql、selfsigned、ssh2、ws、zod。',
+  '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行依赖以随包 `package.json` 为准。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
+  '浏览器扩展位于 `browser-extension`，可在 Chromium/Chrome 的扩展程序页加载已解压的扩展程序；需在 Sakura 中启用账户模式并由管理员配对。',
   '',
 ].join('\n');
 await writeFile(join(output, 'README.md'), readme);
-if (Object.keys(manifest.dependencies).sort().join(',') !== 'graphql,selfsigned,ssh2,ws,zod')
-  throw new Error('运行依赖与预期不一致');
+for (const name of ['graphql', 'selfsigned', 'ssh2', 'ws', 'zod'])
+  if (!Object.hasOwn(manifest.dependencies, name))
+    throw new Error(`缺少运行依赖：${name}`);
 console.log(output);

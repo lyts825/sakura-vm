@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Sakura 实例伴侣",
+  "version": "0.1.0",
+  "description": "配对到本机 Sakura，只读查看实例摘要。",
+  "action": { "default_popup": "popup.html" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*"]
+}

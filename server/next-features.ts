@@ -585,7 +585,8 @@ export const nextFeatureCatalog = [
     'available',
   ],
   ['mobile-companion', '移动伴侣', '平台与扩展', 'P2', '保存移动设备配对和只读通知策略。', 'planned'],
-  ['browser-extension', '浏览器扩展', '平台与扩展', 'P2', '保存浏览器扩展连接状态和权限摘要。', 'planned'],
+  ['browser-extension', '浏览器扩展', '平台与扩展', 'P2',
+    'Manifest V3 扩展以管理员一次性配对码连接本机服务，只读查看实例摘要；支持到期、撤销和连接状态。', 'available'],
   ['tray-companion', 'Windows 托盘伴侣', '平台与扩展', 'P1', '保存托盘进程连接和启动策略。', 'planned'],
   ['feature-rollout', '功能开关与灰度', '平台与扩展', 'P0',
     '按稳定主机分桶和版本化比例控制所选插件下次启动时是否激活。', 'available'],
@@ -1008,6 +1009,10 @@ export class NextFeatures {
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
         message: '账户设置 → 会话交接：验证当前密码并生成一次性交接码，在另一个本机浏览器的登录页接收。' };
+    if (spec.id === 'browser-extension')
+      return { ready: this.accountModeReady?.() || false, executed: false, adapter,
+        ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
+        message: '从发行包加载 browser-extension，管理员在系统设置中生成五分钟配对码；扩展仅可读取实例摘要。' };
     if (spec.id === 'jit-privilege')
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
