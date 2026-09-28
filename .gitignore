@@ -5,6 +5,8 @@ dist/
 playwright-report/
 test-results/
 release/
+.sakura-update/
+versions/
 .vendor/
 .tools/
 __pycache__/

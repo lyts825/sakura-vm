@@ -14,6 +14,7 @@ test('the second feature tranche has 100 unique, categorized entries', () => {
   assert.ok(extendedFeatureCatalog.every(([, , , priority]) => ['P0', 'P1', 'P2'].includes(priority)));
   assert.equal(extendedFeatureCatalog.find(([id]) => id === 'disk-encryption')?.[5], 'available');
   assert.equal(extendedFeatureCatalog.find(([id]) => id === 'git-stash')?.[5], 'available');
+  assert.equal(extendedFeatureCatalog.find(([id]) => id === 'self-update')?.[5], 'available');
 });
 
 test('engineering operations expose JSON schemas and reject unsafe project paths', () => {

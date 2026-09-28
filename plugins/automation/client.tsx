@@ -409,6 +409,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
         'backup-dedup':
           '打开实例 → 备份，启用本机内容块去重。新备份跨实例复用相同块，下载和恢复会重组并校验；平台能力中的全局去重统计可清理无引用块。',
         'signed-bundles': '打开镜像库或实例快照页的“签名实例包”，启用严格导入并管理受信任 Ed25519 公钥。',
+        'self-update':
+          '从原安装目录执行 npm run update:check -- <新包目录> 和 npm run update:stage -- <新包目录>；使用输出的 versions/<编号> 执行 npm run update:activate -- versions/<编号>，重启服务生效。启动失败会自动回滚；也可运行 npm run update:rollback。升级前请备份实例数据。',
         'watch-sync':
           '打开工作空间 → 同步，启用自动同步和文件变化事件。可查看两端监听状态；Linux 需要 inotify-tools。',
         'rename-detection':
@@ -1021,6 +1023,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                     'sync-rollback',
                     'immutable-backups',
                     'backup-dedup',
+                    'self-update',
                   ].includes(feature.id)
                     ? '使用说明'
                     : extended.data?.operations.some((item) => item.feature === feature.id)

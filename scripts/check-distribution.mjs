@@ -21,11 +21,14 @@ for (const file of ['popup.js', 'background.js']) {
     { encoding: 'utf8' });
   if (checked.status !== 0) throw new Error(`Invalid browser extension JavaScript: ${file}`);
 }
-for (const file of ['scripts/sakura-tray.ps1', 'scripts/start-tray.mjs'])
+for (const file of ['scripts/sakura-tray.ps1', 'scripts/start-tray.mjs',
+  'scripts/launch.mjs', 'scripts/self-update.mjs', 'scripts/release-manifest.mjs'])
   await stat(join(root, file));
-const trayJavaScript = spawnSync(process.execPath,
-  ['--check', join(root, 'scripts/start-tray.mjs')], { encoding: 'utf8' });
-if (trayJavaScript.status !== 0) throw new Error('Invalid tray launcher JavaScript');
+for (const file of ['start-tray.mjs', 'launch.mjs', 'self-update.mjs', 'release-manifest.mjs']) {
+  const checked = spawnSync(process.execPath, ['--check', join(root, 'scripts', file)],
+    { encoding: 'utf8' });
+  if (checked.status !== 0) throw new Error(`Invalid release script: ${file}`);
+}
 const jsFiles = [];
 async function collect(folder) {
   for (const item of await readdir(folder, { withFileTypes: true })) {

@@ -1,6 +1,7 @@
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeReleaseManifest } from './release-manifest.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const outputRoot = join(root, 'release');
@@ -16,6 +17,11 @@ manifest.scripts = {
   start: manifest.scripts.start,
   sakura: manifest.scripts.sakura,
   tray: manifest.scripts.tray,
+  'update:status': manifest.scripts['update:status'],
+  'update:check': manifest.scripts['update:check'],
+  'update:stage': manifest.scripts['update:stage'],
+  'update:activate': manifest.scripts['update:activate'],
+  'update:rollback': manifest.scripts['update:rollback'],
 };
 delete manifest.devDependencies;
 await writeFile(join(output, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
@@ -30,6 +36,9 @@ for (const file of [
   'native-open.mjs',
   'sakura-tray.ps1',
   'start-tray.mjs',
+  'launch.mjs',
+  'self-update.mjs',
+  'release-manifest.mjs',
 ])
   await cp(join(root, 'scripts', file), join(output, 'scripts', file));
 const readme = [
@@ -48,9 +57,13 @@ const readme = [
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
   '浏览器扩展位于 `browser-extension`，可在 Chromium/Chrome 的扩展程序页加载已解压的扩展程序；需在 Sakura 中启用账户模式并由管理员配对。',
   'Windows 可运行 `npm run tray` 打开系统托盘；菜单中可选择登录自启和由托盘启动 Sakura。',
+  '更新：从原安装目录运行 `npm run update:check -- <新包目录>`、`npm run update:stage -- <新包目录>`，',
+  '然后运行 `npm run update:activate -- versions/<编号>` 并重启 Sakura。',
+  '可用 `npm run update:rollback` 切回上一个版本，再重启服务。更新前请保存或备份重要数据。',
   '',
 ].join('\n');
 await writeFile(join(output, 'README.md'), readme);
+await writeReleaseManifest(output);
 for (const name of ['graphql', 'selfsigned', 'ssh2', 'ws', 'zod'])
   if (!Object.hasOwn(manifest.dependencies, name))
     throw new Error(`缺少运行依赖：${name}`);

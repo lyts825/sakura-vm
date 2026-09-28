@@ -221,12 +221,15 @@ npm run test:production # 使用隔离数据目录启动编译后的服务
 npm run test:e2e     # 浏览器插件入口回归（先安装 Playwright Chromium）
 npm run verify       # 声明、单测、生产构建、分发和浏览器全套检查
 npm run release:prepare # 在 release/ 下生成独立运行包
+npm run update:status # 查看独立运行包的当前版本指针
 npm run test:features # 新功能真实 VM 集成测试（需联网安装模板）
 npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启、快照与旧配置迁移
 npm run test:sandbox # 真实 QEMU 沙箱网络隔离、限时执行、取消及到期清理
 ```
 
 真实 VM 测试需要先完成 `setup`；测试实例及其磁盘会在结束时删除。
+
+独立运行包可校验并预启新版本，再切换启动指针；启动失败自动回滚。命令和数据边界见 [自更新说明](docs/self-update.md)。
 
 插件回归覆盖空配置、分包独立激活、嵌套组合、版本与循环、声明冲突、服务越界、HTTP/WS 拦截、旧选择迁移、并发保存、异步清理与数据保留。可选功能集成脚本显式加载插件，不会修改用户的插件选择。
 

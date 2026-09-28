@@ -1,6 +1,7 @@
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { z } from 'zod';
-import { AppError, DATA, vmDir } from './model.ts';
+import { AppError, DATA, ROOT, vmDir } from './model.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
@@ -186,7 +187,7 @@ export const extendedFeatureCatalog = [
     'available',
   ],
   ['locale-packs', '语言与区域包', '体验集成', 'P2', '支持界面语言、时区和数字格式。', 'planned'],
-  ['self-update', '自更新与回滚', '平台', 'P0', '灰度升级 Sakura 并支持回滚。', 'planned'],
+  ['self-update', '自更新与回滚', '平台', 'P0', '校验本地发行包、隔离预启、分阶段切换版本并回滚。', 'available'],
   [
     'api-explorer',
     'OpenAPI 与 SDK',
@@ -243,8 +244,9 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
   id: spec.id,
   category: spec.category,
   mode: spec.category === '虚拟机' || spec.category === '网络' ? 'guest-aware' : 'portable',
-  actions: spec.state === 'available' || hasCapability(spec.id) ? ['configure', 'check', 'run'] : ['configure', 'check'],
-  persistent: true,
+  actions: spec.id === 'self-update' ? ['check'] :
+    spec.state === 'available' || hasCapability(spec.id) ? ['configure', 'check', 'run'] : ['configure', 'check'],
+  persistent: spec.id !== 'self-update',
 });
 
 export class ExtendedFeatures {
@@ -375,6 +377,15 @@ export class ExtendedFeatures {
         state: spec.state,
         adapter,
         reason: '系统设置 → 开发接口，浏览 OpenAPI、试读状态并下载 JavaScript SDK。',
+      };
+    if (spec.id === 'self-update')
+      return {
+        ready: existsSync(join(ROOT, 'scripts', 'self-update.mjs')) &&
+          existsSync(join(ROOT, 'scripts', 'launch.mjs')),
+        executed: false,
+        state: spec.state,
+        adapter,
+        reason: '从安装目录使用 npm run update:check / update:stage / update:activate；重启后自动健康检查，失败回滚，也可手动运行 npm run update:rollback。升级仅替换应用版本，保留宿主数据与 QEMU/PosixLoom。',
       };
     if (spec.id === 'explorer-integration')
       return {
@@ -543,6 +554,8 @@ export class ExtendedFeatures {
     const configured = (await this.state()).settings[id]?.[spec.id];
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
     const merged = { ...configured?.options, ...options };
+    if (spec.id === 'self-update' && action === 'run')
+      throw new AppError('请在安装目录运行离线更新命令；此入口仅供检查', 409);
     const operation = Object.entries(engineeringOperations).find(
       ([_, value]) => value.feature === spec.id,
     )?.[0] as EngineeringOperation | undefined;

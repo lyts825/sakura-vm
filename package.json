@@ -12,7 +12,7 @@
     "dev": "tsx server/index.ts --dev",
     "preview": "vite preview",
     "build": "tsc --noEmit && vite build && vite build --ssr server/index.ts --outDir .sakura-server && node scripts/prepare-server-assets.mjs",
-    "start": "node .sakura-server/index.js",
+    "start": "node scripts/launch.mjs",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:integration": "playwright test --config playwright.integration.config.ts",
@@ -73,6 +73,11 @@
     "verify": "npm run plugins:check && npm test && npm run build && npm run dist:check && npm run test:production && npm run test:e2e",
     "dist:check": "node scripts/check-distribution.mjs",
     "release:prepare": "node scripts/package-release.mjs",
+    "update:status": "node scripts/self-update.mjs status",
+    "update:check": "node scripts/self-update.mjs check",
+    "update:stage": "node scripts/self-update.mjs stage",
+    "update:activate": "node scripts/self-update.mjs activate",
+    "update:rollback": "node scripts/self-update.mjs rollback",
     "sakura": "node scripts/cli.mjs"
   },
   "dependencies": {

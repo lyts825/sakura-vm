@@ -13,7 +13,7 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
   throw 'Sakura 托盘伴侣仅支持 Windows。'
 }
 $root = Split-Path -Parent $PSScriptRoot
-$entry = Join-Path $root '.sakura-server\index.js'
+$entry = Join-Path $root 'scripts\launch.mjs'
 if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) {
   throw '请先运行 npm run build，或从已编译的 Sakura 运行包启动托盘。'
 }
