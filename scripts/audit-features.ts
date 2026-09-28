@@ -21,8 +21,6 @@ const all = groups.flatMap((group) => group.rows),
   unfinished = all.filter((item) => item.state !== 'available');
 const notes: Record<string, string> = {
   'clipboard-policy': '已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。',
-  'vcpu-hotplug':
-    '已实现预留插槽、QMP 添加和客户机上线校验。当前 WHPX 拒绝在线添加；Alpine 6.18 在 TCG 下未识别预留 CPU，正常添加流程仍待兼容内核验证。',
   'plugin-api': '内置插件框架与签名 Webhook 投递已实现；第三方隔离插件及完整事件触发工作流仍未实现。',
   'availability-report': '目前为 uptime 探测，尚无持续可用性记录与完整报告。',
   'multi-host-inventory': '目前返回本机信息，尚未实现多主机汇总。',

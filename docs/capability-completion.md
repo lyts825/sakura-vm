@@ -403,7 +403,7 @@ TRIM 仅针对 Linux 根文件系统，需启用设备 discard 并安装 fstrim�
 
 资源能力在能力中心配置。拓扑、设备、IPv6 和资源预设需停止实例后应用，随实例包导出；预算检查覆盖启动和热插拔，自动开机按优先级顺序执行。内存热插拔需预留最大容量和插槽，以 128 MiB 为单位添加，核验 QMP 容量及 Linux 上线结果。真实 Alpine 测试已验证 TCG 下从 1024 MiB 增至 1152 MiB 和冷启动后的持久化。
 
-vCPU 热插拔仍标记为部分实现：已接通 QMP 添加和上线检查，但本机 WHPX 添加 CPU 导致 QEMU 退出，因此执行前拒绝 WHPX 热插拔。当前 Alpine 6.18.22 在 TCG 下未识别预留 CPU，也在修改前拒绝操作。没有将无效的内核参数修改作为解决方案。相关实现依据 [QEMU CPU 热插拔接口](https://www.qemu.org/docs/master/system/cpu-hotplug.html) 和 [Linux 6.18.22 ACPI CPU 识别代码](https://github.com/gregkh/linux/blob/v6.18.22/arch/x86/kernel/acpi/boot.c)。
+vCPU 热插拔现有完整可用路径：停机预留插槽、TCG 启动、检查客户机可用插槽、QMP 在线添加及 Linux 上线校验。真实 Debian 12/QEMU 11.1 从 1 个 CPU 增至 2 个，冷启动后仍为 2 个；Alpine 6.18 未识别预留 CPU 和 WHPX 不稳定时继续在修改前拒绝。操作与支持边界见 [在线 vCPU 热插拔](cpu-hotplug.md)。
 
 环境锁记录 OS、架构、系统包精确版本、工具版本和项目清单哈希。校验返回实际漂移；安装需要相同发行版/版本/架构，使用项目锁定安装，并且系统软件包变更需要显式 `installSystem`。不保证已从软件源移除的旧版本仍能下载。运行时精确安装先执行包管理器模拟，再安装用户选择的包和版本。
 

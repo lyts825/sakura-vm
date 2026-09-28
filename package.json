@@ -30,6 +30,7 @@
     "test:golden-images": "tsx scripts/smoke-golden-images.ts",
     "test:signed-bundles": "tsx scripts/smoke-signed-bundles.ts",
     "test:hardware-matrix": "tsx scripts/smoke-hardware-matrix.ts",
+    "test:cpu-hotplug": "tsx scripts/smoke-cpu-hotplug.ts",
     "test:nested-virtualization": "tsx scripts/smoke-nested-virtualization.ts",
     "test:guest-dns": "tsx scripts/smoke-guest-dns.ts",
     "test:acme": "tsx scripts/smoke-acme.ts",

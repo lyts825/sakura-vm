@@ -427,7 +427,7 @@ export const capabilityDefinitions = {
       target: z.number().int().min(1).max(8).optional(),
     },
     { mode: 'view' },
-    'configure 在停止时预留插槽；TCG 模式下 add 添加到 target 个 vCPU 并确认 Linux 上线。执行前检查内核预留数量；当前 Alpine 6.18 内核未识别 TCG 预留 CPU 时拒绝添加，WHPX 也拒绝在线修改。',
+    'configure 在停止时预留插槽；TCG 模式下先用 view 检查客户机预留数量，再以 add 添加到 target 个 vCPU 并确认 Linux 上线。Debian 12 已通过真实虚拟机验证；不支持的内核和 WHPX 会在修改前拒绝。',
     false,
     true,
   ),

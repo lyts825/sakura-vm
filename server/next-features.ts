@@ -150,8 +150,8 @@ export const nextFeatureCatalog = [
     '在线 vCPU 热插拔',
     '虚拟硬件与固件',
     'P1',
-    '保存在线 vCPU 调整计划和目标值。',
-    'experimental',
+    '在停机时预留 CPU 插槽；TCG 和支持 ACPI CPU 热插拔的客户机可在线增加 vCPU，并校验上线。',
+    'available',
   ],
   ['memory-hotplug', '在线内存热插拔', '虚拟硬件与固件', 'P1', '保存在线内存调整计划和目标值。', 'available'],
   [
