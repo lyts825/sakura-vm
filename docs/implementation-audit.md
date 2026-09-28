@@ -257,8 +257,8 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 集群策略发布 / `fleet-policy-rollout` | 已实现 | 保存目标主机策略修订的待发布批次，经配对 TLS 连接逐台发布插件灰度策略，持久记录单目标结果并支持失败重试及版本冲突拒绝。 | [server/fleet-policy-rollouts.ts](D:/27247/Desktop/Sakura/server/fleet-policy-rollouts.ts) |
 | 主机维护排空 / `maintenance-drain` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：在维护前登记排空计划并追踪实例迁移状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | UEFI 与 OVMF 固件 / `uefi-ovmf` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“检测宿主机是否有 UEFI/OVMF 固件并保存选择。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
-| vTPM 密钥登记 / `vtpm-key-enrollment` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存 vTPM 密钥登记元数据和轮换提醒。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
-| PCI 与 USB 直通 / `pci-usb-passthrough` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“校验直通设备声明并生成安全预览。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
+| vTPM 密钥登记 / `vtpm-key-enrollment` | 已实现元数据登记 | 按实例保存公钥 SHA-256 指纹和轮换周期，计算逾期与将到期提醒；不创建 vTPM 或验证密钥归属。 | [server/vtpm-enrollment.ts](D:/27247/Desktop/Sakura/server/vtpm-enrollment.ts) |
+| PCI 与 USB 直通 / `pci-usb-passthrough` | 已实现安全预览 | 校验 USB VID:PID 或 PCI BDF，Linux PCI 只读检查 IOMMU 组与 VFIO 绑定；实际 USB 连接沿用热插拔，PCI 设备尚未加入 QEMU。 | [server/device-passthrough-preview.ts](D:/27247/Desktop/Sakura/server/device-passthrough-preview.ts) |
 | GPU 与 vGPU 档案 / `gpu-vgpu-profiles` | 已实现 | 保存可复用的 Virtio GPU 2D / VirGL 3D 档案，实际启动 QEMU 探测宿主后端；复核停机实例的兼容性、硬件差异和设备参数后应用，并记录档案修订及硬件漂移。 | [server/gpu-profiles.ts](D:/27247/Desktop/Sakura/server/gpu-profiles.ts) |
 | 嵌套虚拟化 / `nested-virtualization` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“检测嵌套虚拟化能力并记录结果。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
 | 在线 vCPU 热插拔 / `vcpu-hotplug` | 目录占位 | 落到 ready=false、executed=false 的未实现回退；缺少“保存在线 vCPU 调整计划和目标值。”的对应处理。 | [server/next-features.ts:397](D:/27247/Desktop/Sakura/server/next-features.ts:397) |
@@ -332,7 +332,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | 按应用剪贴板策略 / `clipboard-policy` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存剪贴板按应用的读写和敏感内容策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 音频摄像头麦克风直通 / `media-passthrough` | 已实现 | 可复核宿主音频后端、USB 媒体规则和转发状态，并检查客户机 ALSA 与视频节点；媒体 USB 设备是否可用取决于宿主硬件与客户机驱动。 | [server/media-devices.ts](D:/27247/Desktop/Sakura/server/media-devices.ts) |
 | USB 热插拔 / `usb-hotplug` | 已实现 | x86_64 实例启动时提供 xHCI 控制器；规则和结果持久保存，QMP 动态连接/移除指定 VID:PID 的宿主 USB 设备，重启后重新应用规则。 | [server/usb-hotplug.ts](D:/27247/Desktop/Sakura/server/usb-hotplug.ts) |
-| CUDA/ROCm 直通 / `gpu-compute-passthrough` | 仅探测 | 只查 nvidia-smi/rocminfo；没有 GPU 设备直通配置。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:172](D:/27247/Desktop/Sakura/server/next-features.ts:172) |
+| CUDA/ROCm 直通 / `gpu-compute-passthrough` | 已实现客户机可见性检查 | 同时要求驱动工具报告 GPU 与对应设备节点存在，缺少任一证据均不报就绪；不配置宿主 PCI 直通或执行计算负载。 | [server/gpu-compute.ts](D:/27247/Desktop/Sakura/server/gpu-compute.ts) |
 | Jupyter/Marimo 环境 / `notebook-environment` | 仅探测 | 只查 Jupyter/Marimo 版本；没有安装、启动、认证与会话管理。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:173](D:/27247/Desktop/Sakura/server/next-features.ts:173) |
 | 认证浏览器 IDE / `authenticated-ide-preview` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存浏览器 IDE 会话和认证过期时间。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 桌面录制与回放 / `desktop-recording` | 仅探测 | 只读 ffmpeg 版本；没有录制、停止、存储或回放。 缺少工具的部分分支仍可返回 ready=true。 | [server/next-features.ts:174](D:/27247/Desktop/Sakura/server/next-features.ts:174) |

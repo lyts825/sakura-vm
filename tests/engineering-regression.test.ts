@@ -25,7 +25,8 @@ function fixture() {
     fail = false,
     locked = false;
   const machines: any = {
-    on() {}, off() {},
+    on() {},
+    off() {},
     records: new Map([[id, { id }]]),
     live: new Map(),
     get: () => ({ id }),
@@ -140,7 +141,7 @@ test('all 200 configure branches accept the public envelope and reject unexpecte
   }
 });
 
-test('checks do not lock machines or claim probe-only features are implemented', async () => {
+test('checks do not lock machines and GPU visibility requires real guest evidence', async () => {
   const { machines, workspaces } = fixture();
   const next = new NextFeatures(machines, workspaces);
   try {
@@ -149,15 +150,24 @@ test('checks do not lock machines or claim probe-only features are implemented',
       false,
     );
     assert.equal(machines.incidentLocked(id), false);
+    await assert.rejects(next.action(id, { action: 'configure',
+      featureId: 'vtpm-key-enrollment', enabled: true,
+      options: { privateKey: 'must-not-persist' } }));
     const missing: any = await next.action(id, { action: 'check', featureId: 'gpu-compute-passthrough' });
     assert.equal(missing.ready, false);
-    assert.equal(missing.probePassed, false);
-    machines.exec = async () => ({ stdout: 'version', stderr: '', code: 0 });
+    assert.equal(missing.cuda.available, false);
+    machines.exec = async (_id: string, command: string) => ({
+      stdout: command.includes('nvidia-smi') ? 'NVIDIA A10, GPU-123\n' : '',
+      stderr: '',
+      code: 0,
+    });
     assert.equal(
       ((await next.action(id, { action: 'check', featureId: 'gpu-compute-passthrough' })) as any).ready,
-      false,
+      true,
     );
-    await assert.rejects(next.action(id, { action: 'run', featureId: 'gpu-compute-passthrough' }), /实现/);
+    const gpuJob: any = await next.action(id, { action: 'run', featureId: 'gpu-compute-passthrough' });
+    await next.jobs.wait(gpuJob.key);
+    assert.equal(next.jobs.view(gpuJob.key)?.status, 'done');
     const recording: any = await next.action(id, { action: 'check', featureId: 'desktop-recording' });
     assert.equal(recording.ready, true);
     assert.equal(recording.executed, false);

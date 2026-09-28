@@ -29,6 +29,8 @@ import { sshAgentForwardInput } from './ssh-agent-forward.ts';
 import { gpuAccelerationInput } from './gpu-acceleration.ts';
 import { syscallProfileInput } from './syscall-profile.ts';
 import { serviceMeshPolicy } from './service-mesh.ts';
+import { gpuComputeInput } from './gpu-compute.ts';
+import { passthroughDevice } from './device-passthrough-preview.ts';
 
 export const relativePath = z
   .string()
@@ -63,6 +65,31 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'gpu-compute-passthrough': action(
+    'CUDA/ROCm 直通可见性', 'next', gpuComputeInput.shape,
+    { provider: 'auto' },
+    '读取客户机 nvidia-smi 或 rocminfo 的 GPU 列表及相应设备节点。仅检查可见性，不配置 PCI 直通，也不执行计算负载。',
+    true, false,
+  ),
+  'pci-usb-passthrough': action(
+    'PCI 与 USB 直通声明预览', 'next',
+    { mode: z.enum(['status', 'preview']).default('status'),
+      device: passthroughDevice.optional() },
+    { mode: 'preview', device: { kind: 'usb', vendorId: 0x1234, productId: 0x5678 } },
+    '校验 USB VID:PID 或 PCI BDF；PCI 在 Linux 上只读检查 IOMMU 组及 VFIO 驱动，Windows 报告不支持。不会连接设备；实际 USB 连接使用 USB 热插拔。',
+    false, false,
+  ),
+  'vtpm-key-enrollment': action(
+    'vTPM 密钥登记', 'next',
+    { mode: z.enum(['status', 'save', 'remove']).default('status'),
+      fingerprint: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+      label: z.string().trim().min(1).max(80).optional(),
+      enrolledAt: z.iso.datetime().optional(),
+      rotateAfterDays: z.number().int().min(1).max(3650).optional() },
+    { mode: 'status' },
+    '只保存公钥 SHA-256 指纹和轮换日期；save 需要 fingerprint、label、rotateAfterDays，remove 需要 fingerprint。不存储私钥，不验证 TPM 报价，也不创建虚拟 TPM。',
+    false, true,
+  ),
   'service-mesh': action(
     '服务网格边车', 'next',
     { mode: z.enum(['status', 'save', 'remove', 'start', 'stop']).default('status'),

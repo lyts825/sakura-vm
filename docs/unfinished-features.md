@@ -2,15 +2,15 @@
 
 根据当前工作区源码生成。最初基线为 `c669881`，其目录中有 200 条未完成记录。
 
-目前共 250 条目录记录，其中 237 条有实现入口，**13 条仍未完成**（12 条规划、1 条部分实现）。按标识去重后为 13 个未完成标识；不同条目仍有范围重叠。
+目前共 250 条目录记录，其中 240 条有实现入口，**10 条仍未完成**（9 条规划、1 条部分实现）。按标识去重后为 10 个未完成标识；不同条目仍有范围重叠。
 
-本轮已接通 187 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
+本轮已接通 190 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。
 
 | 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | 第一批 | 50 | 48 | 0 | 2 | 2 |
 | 第二批 | 100 | 98 | 0 | 2 | 2 |
-| 第三批 | 100 | 91 | 1 | 8 | 9 |
+| 第三批 | 100 | 94 | 1 | 5 | 6 |
 
 ## 第一批
 
@@ -36,27 +36,24 @@
 
 ### 远程主机与集群
 
-- [ ] **虚拟机在线迁移**（P1 · 规划） · [`live-migration`](../server/next-features.ts#L65) — 检查在线迁移前置条件并生成迁移计划。 对应完整流程尚未实现。
-- [ ] **故障自动接管**（P0 · 规划） · [`ha-failover`](../server/next-features.ts#L83) — 保存高可用接管策略和最后一次健康检查。 对应完整流程尚未实现。
+- [ ] **虚拟机在线迁移**（P1 · 规划） · [`live-migration`](../server/next-features.ts#L68) — 检查在线迁移前置条件并生成迁移计划。 对应完整流程尚未实现。
+- [ ] **故障自动接管**（P0 · 规划） · [`ha-failover`](../server/next-features.ts#L92) — 保存高可用接管策略和最后一次健康检查。 对应完整流程尚未实现。
 
 ### 虚拟硬件与固件
 
-- [ ] **vTPM 密钥登记**（P1 · 规划） · [`vtpm-key-enrollment`](../server/next-features.ts#L123) — 保存 vTPM 密钥登记元数据和轮换提醒。 对应完整流程尚未实现。
-- [ ] **PCI 与 USB 直通**（P1 · 规划） · [`pci-usb-passthrough`](../server/next-features.ts#L131) — 校验直通设备声明并生成安全预览。 对应完整流程尚未实现。
-- [ ] **Virtio-FS 共享目录**（P0 · 规划） · [`virtio-fs`](../server/next-features.ts#L164) — 检查客户机是否识别 virtio-fs 或 9p 共享目录。 对应完整流程尚未实现。
+- [ ] **Virtio-FS 共享目录**（P0 · 规划） · [`virtio-fs`](../server/next-features.ts#L173) — 检查客户机是否识别 virtio-fs 或 9p 共享目录。 对应完整流程尚未实现。
 
 ### 安全与合规
 
-- [ ] **OIDC 与 SAML 单点登录**（P0 · 规划） · [`oidc-saml`](../server/next-features.ts#L311) — 校验身份提供商元数据并保存非敏感配置。 对应完整流程尚未实现。
+- [ ] **OIDC 与 SAML 单点登录**（P0 · 规划） · [`oidc-saml`](../server/next-features.ts#L351) — 校验身份提供商元数据并保存非敏感配置。 对应完整流程尚未实现。
 
 ### 操作系统与桌面
 
-- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L519) — 已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
-- [ ] **CUDA/ROCm 直通**（P1 · 规划） · [`gpu-compute-passthrough`](../server/next-features.ts#L537) — 检查客户机 CUDA/ROCm 工具和设备可见性。 对应完整流程尚未实现。
+- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L645) — 已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
 
 ### 平台与扩展
 
-- [ ] **移动伴侣**（P2 · 规划） · [`mobile-companion`](../server/next-features.ts#L602) — 保存移动设备配对和只读通知策略。 对应完整流程尚未实现。
+- [ ] **移动伴侣**（P2 · 规划） · [`mobile-companion`](../server/next-features.ts#L741) — 保存移动设备配对和只读通知策略。 对应完整流程尚未实现。
 
 ## 目录以外的范围
 

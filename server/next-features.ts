@@ -29,6 +29,9 @@ import type { WireGuardOverlay } from './wireguard-overlay.ts';
 import { TeamTemplates } from './team-templates.ts';
 import type { CommunityPlugins } from './community-plugins.ts';
 import { ServiceMesh } from './service-mesh.ts';
+import { VtpmEnrollment } from './vtpm-enrollment.ts';
+import { devicePassthroughPreview } from './device-passthrough-preview.ts';
+import { gpuComputeInput, gpuComputeStatus } from './gpu-compute.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -125,7 +128,7 @@ export const nextFeatureCatalog = [
     '虚拟硬件与固件',
     'P1',
     '保存 vTPM 密钥登记元数据和轮换提醒。',
-    'planned',
+    'available',
   ],
   [
     'pci-usb-passthrough',
@@ -133,7 +136,7 @@ export const nextFeatureCatalog = [
     '虚拟硬件与固件',
     'P1',
     '校验直通设备声明并生成安全预览。',
-    'planned',
+    'available',
   ],
   [
     'gpu-vgpu-profiles',
@@ -539,7 +542,7 @@ export const nextFeatureCatalog = [
     '操作系统与桌面',
     'P1',
     '检查客户机 CUDA/ROCm 工具和设备可见性。',
-    'planned',
+    'available',
   ],
   [
     'notebook-environment',
@@ -653,8 +656,6 @@ const guestChecks: Partial<Record<NextFeatureId, string>> = {
   'language-server-catalog':
     'found=0; for c in typescript-language-server pyright rust-analyzer gopls; do if command -v "$c" >/dev/null; then printf "%s\\n" "$c"; found=1; fi; done; test "$found" = 1',
   'code-search-index': 'command -v rg >/dev/null && rg --version',
-  'gpu-compute-passthrough':
-    'if command -v nvidia-smi >/dev/null; then nvidia-smi --query-gpu=name --format=csv,noheader; else command -v rocminfo >/dev/null && rocminfo; fi',
 };
 
 const now = () => new Date().toISOString();
@@ -670,6 +671,7 @@ export class NextFeatures {
   jobs = new Jobs('next-features');
   storageTiering: StorageTiering;
   serviceMesh: ServiceMesh;
+  vtpmEnrollment: VtpmEnrollment;
   acmeRenewal: AcmeRenewal;
   teamTemplates: TeamTemplates;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
@@ -700,6 +702,7 @@ export class NextFeatures {
   ) {
     this.storageTiering = new StorageTiering(machines);
     this.serviceMesh = new ServiceMesh(machines, workspaces);
+    this.vtpmEnrollment = new VtpmEnrollment(machines);
     this.acmeRenewal = new AcmeRenewal(machines);
     this.teamTemplates = new TeamTemplates(machines, workspaces);
   }
@@ -708,9 +711,11 @@ export class NextFeatures {
     try {
       await this.storageTiering.init();
       await this.serviceMesh.init();
+      await this.vtpmEnrollment.init();
       await this.acmeRenewal.init();
     } catch (error) {
       await Promise.allSettled([this.storageTiering.close(), this.serviceMesh.close(),
+        this.vtpmEnrollment.close(),
         this.acmeRenewal.close()]);
       throw error;
     }
@@ -856,6 +861,10 @@ export class NextFeatures {
       value.options = z.object({}).strict().parse(value.options);
       if (!value.enabled) await this.serviceMesh.assertNoRunning(id);
     }
+    if (value.featureId === 'vtpm-key-enrollment' || value.featureId === 'pci-usb-passthrough')
+      value.options = z.object({}).strict().parse(value.options);
+    if (value.featureId === 'gpu-compute-passthrough')
+      value.options = gpuComputeInput.parse(value.options);
     if (value.featureId === 'process-interop' && !value.enabled && this.processInterop)
       await this.processInterop.action(id, { mode: 'disable' }, 'run');
     const state = await this.state();
@@ -1000,6 +1009,13 @@ export class NextFeatures {
     }
     if (spec.id === 'service-mesh')
       return { ...await this.serviceMesh.action(id, { mode: 'status', ...merged }, action, signal), adapter };
+    if (spec.id === 'vtpm-key-enrollment')
+      return { ...await this.vtpmEnrollment.action(id, { mode: 'status', ...merged }, action), adapter };
+    if (spec.id === 'pci-usb-passthrough')
+      return { ...await devicePassthroughPreview(this.machines, id,
+        { mode: 'status', ...merged }, action), adapter };
+    if (spec.id === 'gpu-compute-passthrough')
+      return { ...await gpuComputeStatus(this.machines, id, merged, action, signal), adapter };
     if (spec.id === 'fleet-policy-rollout')
       return {
         ready: true,
@@ -1475,6 +1491,7 @@ export class NextFeatures {
 
   async close() {
     await Promise.all([this.jobs.close(), this.storageTiering.close(), this.serviceMesh.close(),
+      this.vtpmEnrollment.close(),
       this.objectBackup?.close(),
       this.wireGuardOverlay?.close(), this.acmeRenewal.close()]);
   }

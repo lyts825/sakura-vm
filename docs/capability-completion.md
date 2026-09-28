@@ -571,6 +571,8 @@ ACME 证书续期在第三批能力中心选择“ACME 证书续期”。`status
 
 ## 验证
 
+硬件声明批次：第三批能力现在可以只读预览 USB VID:PID 与 PCI BDF，Linux 上检查 PCI IOMMU 组及 VFIO 绑定；在运行中的客户机检查 NVIDIA/ROCm 工具和设备节点；按实例登记公钥指纹并计算轮换到期提醒。以上操作不代表 PCI/GPU 已实际直通或 vTPM 已创建。边界和参数见 [硬件声明与检查](hardware-readiness.md)。
+
 服务网格边车批次：按实例和项目保存仅监听环回的 Envoy TCP 代理策略；`start` 在客户机用 Envoy 验证生成配置后启动独立 tmux 会话，`status` 检查工具和进程，`stop`、`remove` 清理会话与策略。单元测试覆盖项目隔离、端口冲突、缺失依赖、停机保存和禁用前检查。本机无运行中的 Envoy，尚未完成真实流量的客户机端到端测试，使用条件见 [项目 Envoy 边车](service-mesh.md)。
 
 第三方插件批次：插件中心现在可添加受信任的 Ed25519 发布者和 HTTPS 目录，下载并安装签名 WebAssembly 插件，立即执行或卸载。安装和运行均校验签名与文件 SHA-256；无宿主导入的工作线程限制内存、时间、输入、输出及并发。单元测试运行真实 WebAssembly 模块，并验证目录元数据篡改和文件篡改被拒绝。第三方插件目前只处理 JSON，不订阅事件或扩展 HTTP/界面；协议和发布格式见 [第三方插件](community-plugins.md)。
