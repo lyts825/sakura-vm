@@ -50,6 +50,7 @@ test('CPU topology validates complete NUMA allocation and builds explicit QEMU r
       hardware: {
         devices: {
           networkCard: 'e1000',
+          graphics: 'none',
           randomDevice: false,
           balloon: false,
           diskCache: 'none',
@@ -58,6 +59,18 @@ test('CPU topology validates complete NUMA allocation and builds explicit QEMU r
       },
     }).includes('virtio-balloon-pci'),
   );
+});
+
+test('Virtio GPU and VirGL select distinct devices and reject the unsupported ARM64 PCI profile', () => {
+  const twoD = createSchema.parse({ name: 'gpu2d',
+    hardware: { devices: { graphics: 'virtio-gpu' } } });
+  const virgl = createSchema.parse({ name: 'gpu3d',
+    hardware: { devices: { graphics: 'virgl' } } });
+  assert.ok(deviceArguments(twoD).includes('virtio-gpu-pci'));
+  assert.ok(deviceArguments(virgl).includes('virtio-gpu-gl-pci'));
+  assert.equal(createSchema.safeParse({ name: 'arm-gpu', architecture: 'aarch64',
+    distro: 'debian', firmware: 'uefi',
+    hardware: { devices: { graphics: 'virgl' } } }).success, false);
 });
 
 test('resource admission reserves physical memory and serializes CPU budgets without double counting current VM', () => {

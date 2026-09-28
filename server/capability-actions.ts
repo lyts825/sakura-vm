@@ -25,6 +25,7 @@ import { guestQuota } from './guest-quota.ts';
 import { egressPolicy } from './egress-policy.ts';
 import { natHairpin } from './nat-hairpin.ts';
 import { checkSshAgentForward, runSshAgentForward } from './ssh-agent-forward.ts';
+import { checkGpuAcceleration, runGpuAcceleration } from './gpu-acceleration.ts';
 
 export function dependencyOrder(root: string, graph: Record<string, string[]>) {
   const visiting = new Set<string>(),
@@ -68,6 +69,8 @@ export class CapabilityActions {
       return { ready: false, executed: false, featureId, reason: '请先启动发行版。' };
     if (featureId === 'ssh-agent-forward')
       return { featureId, ...await checkSshAgentForward(this.machines, id, signal) };
+    if (featureId === 'gpu-acceleration')
+      return { featureId, ...await checkGpuAcceleration(this.machines, id, signal) };
     if (featureId === 'flamegraph')
       return { featureId, ...await checkFlamegraph(this.machines, id, signal) };
     if (featureId === 'ebpf-profiler')
@@ -114,6 +117,8 @@ export class CapabilityActions {
     signal.throwIfAborted();
     if (featureId === 'ssh-agent-forward')
       return runSshAgentForward(this.machines, id, parameters, signal);
+    if (featureId === 'gpu-acceleration')
+      return runGpuAcceleration(this.machines, id, parameters, signal);
     if (featureId === 'flamegraph')
       return runFlamegraph(this.machines, id, parameters, signal);
     if (featureId === 'ebpf-profiler')

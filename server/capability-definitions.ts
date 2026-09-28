@@ -26,6 +26,7 @@ import { teamTemplateInput } from './team-templates.ts';
 import { acmeInput } from './acme-renewal.ts';
 import { processInteropInput } from './process-interop.ts';
 import { sshAgentForwardInput } from './ssh-agent-forward.ts';
+import { gpuAccelerationInput } from './gpu-acceleration.ts';
 
 export const relativePath = z
   .string()
@@ -60,6 +61,12 @@ const action = <T extends z.ZodRawShape>(
 ) => ({ name, scope, schema: z.object(shape).strict(), example, note, requiresGuest, writes });
 
 export const capabilityDefinitions = {
+  'gpu-acceleration': action(
+    'GPU 与 3D 加速', 'suite', gpuAccelerationInput.shape,
+    { mode: 'status' },
+    '先在虚拟设备档案选择 Virtio GPU 或 VirGL，停机后应用并重启。status 检查客户机 DRM 与实际 Mesa 渲染器；install-mesa 为 VirGL 安装 Mesa EGL 工具并重新验证。',
+    true, true,
+  ),
   'ssh-agent-forward': action(
     'SSH Agent 转发', 'extended', sshAgentForwardInput.shape,
     { command: 'ssh-add -L', confirmed: true, timeoutSeconds: 60 },
@@ -404,7 +411,7 @@ export const capabilityDefinitions = {
       profile: deviceProfileSchema.optional(),
     },
     { mode: 'list' },
-    '保存和应用网卡、随机数、内存气球、磁盘缓存与 TRIM 设备组合；停止后应用，下次启动生效。',
+    '保存和应用网卡、随机数、内存气球、磁盘缓存、TRIM 与 Virtio GPU/VirGL 设备组合；停止后应用，下次启动生效。',
     false,
     true,
   ),

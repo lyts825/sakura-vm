@@ -42,6 +42,8 @@ export async function hardwareCompatibility(machines: Machines, id: string, sign
     ['virtio-rng-pci', 'Virtio 随机数设备'],
     ['virtio-balloon-pci', 'Virtio 内存气球'],
     ['pc-dimm', '内存热插拔 DIMM'],
+    ['virtio-gpu-pci', 'Virtio GPU 2D'],
+    ['virtio-gpu-gl-pci', 'VirGL 3D 显卡'],
   ].map(([device, name]) => ({
     id: device,
     name,
@@ -86,6 +88,8 @@ export async function hardwareCompatibility(machines: Machines, id: string, sign
     ...(profile.randomDevice ? ['virtio-rng-pci'] : []),
     ...(profile.balloon ? ['virtio-balloon-pci'] : []),
     ...(vm.hardware?.memory ? ['pc-dimm'] : []),
+    ...(profile.graphics === 'none' ? [] : [profile.graphics === 'virgl'
+      ? 'virtio-gpu-gl-pci' : 'virtio-gpu-pci']),
   ];
   const issues = hardwareIssues(vm);
   if (!q35) issues.push('当前 QEMU 未列出 Q35 机器类型');
@@ -108,6 +112,7 @@ export async function hardwareCompatibility(machines: Machines, id: string, sign
     current: {
       accelerator,
       networkCard: profile.networkCard,
+      graphics: profile.graphics,
       selectedDevices,
       cpuTopology: vm.hardware?.cpu || null,
       memoryHotplug: vm.hardware?.memory || null,

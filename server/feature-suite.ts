@@ -108,6 +108,7 @@ export type FeatureCatalogItem = {
 };
 
 const availableFeatureIds = new Set<FeatureId>([
+  'gpu-acceleration',
   'process-interop',
   'image-import',
   'power-schedules',
@@ -484,9 +485,6 @@ export class FeatureSuite {
     } else if (featureId === 'metrics-history' || featureId === 'alerts') {
       result.ready = true;
       result.reason = '已接入能力中心的资源趋势与通知中心；自动采样和告警需启用自动化调度插件。';
-    } else if (featureId === 'gpu-acceleration') {
-      result.accelerator = vm.accelerator;
-      result.commandline = this.machines.commandline(id);
     } else if (featureId === 'multi-arch') {
       const image = distroInfo('debian', 'aarch64');
       const firmware = await firmwareSupport('aarch64');

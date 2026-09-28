@@ -15,7 +15,7 @@ test('feature suite exposes the complete six-category roadmap', () => {
   assert.ok(features.some((feature) => feature.id === 'metrics-history' && feature.state === 'available'));
   assert.ok(features.some((feature) => feature.id === 'dynamic-memory' && feature.state === 'available'));
   assert.ok(features.some((feature) => feature.id === 'test-explorer' && feature.state === 'available'));
-  assert.ok(features.some((feature) => feature.id === 'gpu-acceleration' && feature.state === 'planned'));
+  assert.ok(features.some((feature) => feature.id === 'gpu-acceleration' && feature.state === 'available'));
   assert.deepEqual(implementedFeatureCatalogView(), features);
   assert.ok(features.some((feature) => !feature.implemented && feature.state === 'planned'));
 });

@@ -373,6 +373,7 @@ export class Machines extends EventEmitter {
       hardware: vm.hardware,
       resourceArguments: hardwareArguments(vm),
       deviceArguments: deviceArguments(vm),
+      display: vm.hardware?.devices?.graphics === 'virgl' ? 'egl-headless' : 'none',
       diskOptions: diskOptions(vm) + (vm.sandbox?.storage === 'discard-on-stop' ? ',snapshot=on' : ''),
       diskPersistence: vm.sandbox?.storage || 'persistent',
       accelerator: vm.accelerator,
@@ -633,7 +634,7 @@ export class Machines extends EventEmitter {
               ]
             : []),
           '-display',
-          'none',
+          vm.hardware?.devices?.graphics === 'virgl' ? 'egl-headless' : 'none',
           '-monitor',
           'none',
           '-no-reboot',

@@ -21,6 +21,7 @@ export const cpuTopologySchema = z
   .strict();
 export const deviceProfileSchema = z
   .object({
+    graphics: z.enum(['none', 'virtio-gpu', 'virgl']).default('none'),
     networkCard: z.enum(['virtio-net-pci', 'e1000']).default('virtio-net-pci'),
     randomDevice: z.boolean().default(true),
     balloon: z.boolean().default(true),
@@ -43,11 +44,15 @@ export const hardwareSchema = z
   })
   .strict();
 export type Hardware = z.infer<typeof hardwareSchema>;
-export type HardwareVM = { memoryMiB: number; cpus: number; hardware?: Hardware };
+export type HardwareVM = { memoryMiB: number; cpus: number; hardware?: Hardware;
+  architecture?: 'x86_64' | 'aarch64' };
 
 export function hardwareIssues(vm: HardwareVM) {
   const issues: string[] = [],
     cpu = vm.hardware?.cpu;
+  if (vm.architecture === 'aarch64' && vm.hardware?.devices?.graphics &&
+      vm.hardware.devices.graphics !== 'none')
+    issues.push('当前 ARM64 机型不支持此 PCI 虚拟显卡配置');
   if (cpu) {
     const maximum = cpu.sockets * cpu.cores * cpu.threads;
     if (maximum < vm.cpus || maximum > 8) issues.push('CPU 拓扑总数必须大于等于启动 vCPU 数量且不超过 8');
@@ -98,6 +103,8 @@ export function deviceArguments(vm: HardwareVM) {
     config.networkCard + ',netdev=sakura-net' + (config.networkCard === 'virtio-net-pci' ? ',vectors=4' : ''),
     ...(config.randomDevice ? ['-device', 'virtio-rng-pci'] : []),
     ...(config.balloon ? ['-device', 'virtio-balloon-pci'] : []),
+    ...(config.graphics === 'none' ? [] : ['-device',
+      config.graphics === 'virgl' ? 'virtio-gpu-gl-pci' : 'virtio-gpu-pci']),
   ];
 }
 export function diskOptions(vm: HardwareVM) {

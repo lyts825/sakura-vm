@@ -423,6 +423,8 @@ vCPU 热插拔现有完整可用路径：停机预留插槽、TCG 启动、检�
 
 ## 使用方式
 
+GPU 与 3D 加速：在扩展能力中心的“虚拟设备档案”保存并应用 `{"graphics":"virtio-gpu"}`（2D DRM）或 `{"graphics":"virgl"}`（3D），停机后应用并重新启动实例。VirGL 使用 QEMU `virtio-gpu-gl-pci` 与 `egl-headless`；在第一批“GPU 与 3D 加速”中运行 `install-mesa` 可安装客户机 Mesa，再用 `status` 读取 GBM 实际渲染器。返回 `verifiedBy: gl-renderer` 表示 Mesa 报告 `renderer: virgl`；Debian 上若 `eglinfo` 未打印渲染器，则以 GBM 的 `virtio_gpu` EGL 驱动与内核 `+virgl` 协商联合验证，返回 `gbm-driver-and-virgl-device`。软件渲染不会被误报。Debian 云内核缺少 GPU 模块时，安装还会配置通用内核，需要重启后再次验证。真实虚拟机冒烟测试覆盖 Alpine VirGL、Virtio GPU 2D、Debian VirGL 与 Ubuntu VirGL；可在 PowerShell 中运行 `$env:SAKURA_GPU_UBUNTU_ONLY='1'; npm run test:gpu` 单独测 Ubuntu。此配置当前只支持 x86_64；应用是否使用该设备仍由应用及其显示栈决定。
+
 Windows/Linux 进程互操作：在 Windows 宿主机的第一批或第三批能力入口提交 `{"mode":"allow","programId":"whoami","executable":"C:\\Windows\\System32\\whoami.exe"}`，再启动 Linux 实例并提交 `{"mode":"install"}`。客户机执行 `sakura-win whoami`，标准输出、标准错误和退出码来自登记的 Windows 程序。登记时可指定 `fixedArgs`；客户机只能传 `programId`，不能注入参数。`status` 查看允许列表，`remove` 撤销单个程序，`disable` 立即撤销实例令牌。每次调用重新验证 EXE 的 SHA-256；服务还检查实例运行及应急锁定、控制面锁定和数据迁移状态。每实例只允许一个并发调用，运行上限 30 秒，输出上限 128 KiB。客户机需安装 curl 与 jq，`install` 会尝试通过 apk 或 apt 安装。令牌只写入客户机 root 可读的 curl 配置，宿主只存储哈希。
 
 SSH Agent 转发：在扩展能力中心选择“SSH Agent 转发”，填写要执行的客户机命令、`confirmed: true` 和 1–300 秒时限。Sakura 连接宿主 `SSH_AUTH_SOCK`（Windows 默认 OpenSSH Agent 管道），只为该命令创建转发 SSH 会话；命令结束、失败或取消即关闭连接。客户机需要 OpenSSH 客户端，宿主 Agent 需运行且装载所需密钥。客户机可请求 Agent 为任意数据签名，因此只对可信命令启用；私钥文件不复制到客户机。
