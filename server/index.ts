@@ -54,6 +54,7 @@ import { ProjectPermissions, type ProjectPermission } from './project-permission
 import { PolicyBundles, policyBundlePreview, policyBundleTarget } from './policy-bundles.ts';
 import { ChangeApprovals } from './change-approvals.ts';
 import { BrowserExtensions, extensionOrigin } from './browser-extensions.ts';
+import { MobileCompanion } from './mobile-companion.ts';
 import { CommunityPlugins } from './community-plugins.ts';
 import { ProcessInterop, guestInteropRequest } from './process-interop.ts';
 
@@ -166,6 +167,23 @@ async function main() {
   () => !!features.migration?.blocked,
   (delta) => { features.mutations += delta; });
   await hostPeers.init();
+  const mobileCompanion = new MobileCompanion(access, async () => {
+    const vms = await machines.list();
+    return { vms: vms.map(({ id, name, status }) => ({ id, name, status })),
+      alerts: await features.suite?.alertEvents() || [] };
+  }, () => {
+    session.requireUnlocked();
+    if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+  }, undefined, undefined, (delta) => { features.mutations += delta; });
+  await mobileCompanion.init();
+  hostPeers.setMobileHandler((request, response) => mobileCompanion.handle(request, response));
+  features.next?.setMobileCheck(() => ({ ready: access.enabled &&
+    hostPeers.view().listener.active && hostPeers.view().listener.host === '0.0.0.0',
+    devices: access.enabled ? mobileCompanion.view(access.users()
+      .find((item) => item.role === 'owner')!.id).devices.length : 0,
+    reason: !access.enabled ? '请先启用账户模式。' :
+      !hostPeers.view().listener.active || hostPeers.view().listener.host !== '0.0.0.0'
+        ? '请启用局域网 HTTPS 同伴入口并重启服务。' : undefined }));
   hostPeers.setRolloutReceiver({
     view: () => ({ hostId: hostPeers.view().hostId, policies: rollouts.view().policies }),
     save: (input) => rollouts.configure(input),
@@ -682,6 +700,20 @@ async function main() {
       z.object({}).strict().parse(await authorizedBody(req, 4096));
       return send(res, browserExtensions.createPairing(accountPrincipal.id), 201);
     }
+    if (url.pathname === '/api/mobile-companion') {
+      if (accountPrincipal?.role !== 'owner')
+        throw new AppError('只有管理员可管理移动伴侣', 403);
+      if (req.method === 'GET')
+        return send(res, { ...mobileCompanion.view(accountPrincipal.id),
+          listener: hostPeers.view().listener,
+          fingerprint: hostPeers.view().fingerprint });
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      features.mutations++;
+      try { return send(res, await mobileCompanion.action(accountPrincipal.id,
+        await authorizedBody(req, 4096))); }
+      finally { features.mutations--; }
+    }
     if (/^\/api\/browser-extensions\/[a-f0-9-]{36}$/.test(url.pathname)) {
       if (req.method !== 'DELETE' || accountPrincipal?.role !== 'owner')
         throw new AppError('只有管理员可撤销浏览器扩展', 403);
@@ -824,6 +856,7 @@ async function main() {
       const proof = await access.login({ username: accountPrincipal!.username, password: input.password });
       access.logout(proof.token);
       await browserExtensions.revokeAll();
+      await mobileCompanion.revokeAll();
       const result = await access.changeOwnerPassword(input);
       for (const client of ws.clients) client.terminate();
       return send(res, result);
@@ -1488,6 +1521,7 @@ async function main() {
       () => policyBundles.close(),
       () => changeApprovals?.close(),
       () => browserExtensions.close(),
+      () => mobileCompanion.close(),
       () => communityPlugins.close(),
       () => assistant.close(),
       () => native.close(),

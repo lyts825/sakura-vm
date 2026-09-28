@@ -602,7 +602,8 @@ export const nextFeatureCatalog = [
     '按任务和告警事件执行带去重、冷却与预览模式的实例操作。',
     'available',
   ],
-  ['mobile-companion', '移动伴侣', '平台与扩展', 'P2', '保存移动设备配对和只读通知策略。', 'planned'],
+  ['mobile-companion', '移动伴侣', '平台与扩展', 'P2',
+    '经独立 HTTPS 入口配对移动浏览器，按设备策略只读查看实例状态和告警。', 'available'],
   ['browser-extension', '浏览器扩展', '平台与扩展', 'P2',
     'Manifest V3 扩展以管理员一次性配对码连接本机服务，只读查看实例摘要；支持到期、撤销和连接状态。', 'available'],
   ['tray-companion', 'Windows 托盘伴侣', '平台与扩展', 'P1',
@@ -691,6 +692,7 @@ export class NextFeatures {
   private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
   private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
   private accountModeReady?: () => boolean;
+  private mobileCheck?: () => { ready: boolean; devices: number; reason?: string };
   private remoteAuditCheck?: () => Promise<{ ready: boolean; configured: boolean;
     anchoredSequence: number; reason?: string }>;
   private stateValue?: NextState;
@@ -743,6 +745,9 @@ export class NextFeatures {
   }
 
   setAccountModeReady(check: () => boolean) { this.accountModeReady = check; }
+  setMobileCheck(check: () => { ready: boolean; devices: number; reason?: string }) {
+    this.mobileCheck = check;
+  }
   setRemoteAuditCheck(check: () => Promise<{ ready: boolean; configured: boolean;
     anchoredSequence: number; reason?: string }>) { this.remoteAuditCheck = check; }
 
@@ -1136,6 +1141,12 @@ export class NextFeatures {
       return { ready: this.accountModeReady?.() || false, executed: false, adapter,
         ...(!this.accountModeReady?.() ? { reason: '请先启用账户模式。' } : {}),
         message: '从发行包加载 browser-extension，管理员在系统设置中生成五分钟配对码；扩展仅可读取实例摘要。' };
+    if (spec.id === 'mobile-companion') {
+      const status = this.mobileCheck?.() || { ready: false, devices: 0,
+        reason: '移动伴侣服务尚未启动。' };
+      return { ...status, executed: false, adapter,
+        message: '系统设置 → 账户与只读分享 → 移动伴侣：启用独立 HTTPS 同伴入口，管理员选择实例与告警类型后生成五分钟配对码；手机在同一网络打开 /mobile/。' };
+    }
     if (spec.id === 'tray-companion')
       return { ready: process.platform === 'win32', executed: false, adapter,
         ...(process.platform !== 'win32' ? { reason: '仅支持 Windows 主机。' } : {}),

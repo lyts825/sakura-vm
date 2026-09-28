@@ -17,6 +17,18 @@ type TerminalGrantView = { id: string; vmId: string; session: string; expiresAt:
 type BrowserExtensionView = { id: string; origin: string; createdAt: number;
   expiresAt: number; lastSeenAt?: number; connected: boolean; expired: boolean;
   permissions: string[] };
+type MobileKind = 'cpu' | 'memory' | 'disk' | 'service' | 'backup' | 'task' | 'secret';
+type MobilePolicy = { enabled: boolean; vmIds: string[]; kinds: MobileKind[] };
+type MobileView = { listener: { enabled: boolean; active: boolean; host: string; port: number;
+  error?: string }; fingerprint: string; devices: Array<{ id: string; name: string;
+    policy: MobilePolicy; createdAt: number; expiresAt: number; lastSeenAt?: number;
+    connected: boolean; expired: boolean }> };
+const mobileKinds: Array<{ id: MobileKind; name: string }> = [
+  { id: 'cpu', name: 'CPU' }, { id: 'memory', name: '内存' },
+  { id: 'disk', name: '磁盘' }, { id: 'service', name: '服务' },
+  { id: 'backup', name: '备份' }, { id: 'task', name: '任务' },
+  { id: 'secret', name: '密钥轮换' },
+];
 type JitRequestView = { id: string; viewerId: string; vmId: string;
   operation: 'start' | 'stop'; reason: string;
   status: 'pending' | 'approved' | 'denied' | 'revoked' | 'expired' |
@@ -495,6 +507,104 @@ function BrowserExtensionManager() {
       }}>撤销</button>
     </li>)}</ul>
     {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </section>;
+}
+
+function MobilePolicyFields({ policy, onChange, vms }: {
+  policy: MobilePolicy; onChange: (value: MobilePolicy) => void; vms: SharedVm[];
+}) {
+  return <>
+    <label><input type="checkbox" checked={policy.enabled}
+      onChange={(event) => onChange({ ...policy, enabled: event.target.checked })} />
+      允许只读查看</label>
+    <fieldset><legend>可见实例</legend>{vms.map((vm) => <label key={vm.id}>
+      <input type="checkbox" checked={policy.vmIds.includes(vm.id)}
+        onChange={(event) => onChange({ ...policy, vmIds: event.target.checked
+          ? [...policy.vmIds, vm.id] : policy.vmIds.filter((id) => id !== vm.id) })} />
+      {vm.name}</label>)}</fieldset>
+    <fieldset><legend>告警类型</legend>{mobileKinds.map((kind) => <label key={kind.id}>
+      <input type="checkbox" checked={policy.kinds.includes(kind.id)}
+        onChange={(event) => onChange({ ...policy, kinds: event.target.checked
+          ? [...policy.kinds, kind.id] : policy.kinds.filter((id) => id !== kind.id) })} />
+      {kind.name}</label>)}</fieldset>
+  </>;
+}
+
+function MobileDevicePolicy({ device, vms, refresh }: {
+  device: MobileView['devices'][number]; vms: SharedVm[]; refresh: () => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<MobilePolicy>(device.policy);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const savedPolicy = JSON.stringify(device.policy);
+  useEffect(() => setDraft(device.policy), [device.id, savedPolicy]);
+  const change = async (operation: 'policy' | 'revoke') => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      await api('/mobile-companion', 'POST', { operation, id: device.id,
+        ...(operation === 'policy' ? { policy: draft } : {}) });
+      await refresh(); setMessage(operation === 'policy' ? '设备策略已保存' : '设备已撤销');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '设备操作失败'); }
+    finally { setBusy(false); }
+  };
+  return <li><strong>{device.name}</strong> · {device.expired ? '已过期' :
+    device.connected ? '最近已连接' : '未连接'} · 到期 {formatDateTime(new Date(device.expiresAt))}
+    <details><summary>修改只读范围</summary>
+      <MobilePolicyFields policy={draft} onChange={setDraft} vms={vms} />
+      <button className="secondary compact" disabled={busy || !draft.vmIds.length ||
+        !draft.kinds.length} onClick={() => void change('policy')}>保存设备策略</button>
+    </details>
+    <button className="secondary compact" disabled={busy}
+      onClick={() => void change('revoke')}>撤销设备</button>
+    {message && <p role="status">{message}</p>}
+    {error && <p role="alert" className="inline-error">{error}</p>}
+  </li>;
+}
+
+function MobileCompanionManager({ vms }: { vms: SharedVm[] }) {
+  const [view, setView] = useState<MobileView | null>(null);
+  const [policy, setPolicy] = useState<MobilePolicy>({ enabled: true,
+    vmIds: [], kinds: ['cpu', 'memory', 'disk', 'service', 'backup', 'task'] });
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const refresh = async () => setView(await api<MobileView>('/mobile-companion'));
+  useEffect(() => {
+    void refresh().catch((cause) => setError(String(cause.message || cause)));
+    const timer = setInterval(() => void refresh().catch(() => {}), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (!pairing) return;
+    const timer = setTimeout(() => setPairing(null), Math.max(1, pairing.expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [pairing?.expiresAt]);
+  return <section aria-label="移动伴侣管理">
+    <h4>移动伴侣</h4>
+    <p>手机连接独立 HTTPS 同伴入口，只读查看选定实例状态与告警。先在“主机配对与多主机状态”启用局域网监听并重启服务。</p>
+    {view && <p>HTTPS 端口 {view.listener.port} · {view.listener.active &&
+      view.listener.host === '0.0.0.0' ? '局域网入口已启动' : '局域网入口尚未启动'}
+      {view.listener.error && ` · ${view.listener.error}`}<br />
+      手机打开 <code>https://主机局域网地址:{view.listener.port}/mobile/</code>；
+      核对证书 SHA-256 指纹 <code>{view.fingerprint}</code>。</p>}
+    <MobilePolicyFields policy={policy} onChange={setPolicy} vms={vms} />
+    <button className="secondary compact" disabled={busy || !policy.vmIds.length ||
+      !policy.kinds.length || !view?.listener.active || view.listener.host !== '0.0.0.0'}
+      onClick={async () => {
+        setBusy(true); setError('');
+        try { setPairing(await api<{ code: string; expiresAt: number }>(
+          '/mobile-companion', 'POST', { operation: 'pair', policy })); }
+        catch (cause) { setError(cause instanceof Error ? cause.message : '无法生成配对码'); }
+        finally { setBusy(false); }
+      }}>生成手机配对码</button>
+    {pairing && <p role="status">配对码：<code>{pairing.code}</code> ·
+      有效至 {formatDateTime(new Date(pairing.expiresAt))}</p>}
+    <button className="secondary compact" onClick={() => void refresh()
+      .catch((cause) => setError(String(cause.message || cause)))}>刷新设备</button>
+    <ul>{view?.devices.map((device) => <MobileDevicePolicy key={device.id}
+      device={device} vms={vms} refresh={refresh} />)}</ul>
     {error && <p role="alert" className="inline-error">{error}</p>}
   </section>;
 }
@@ -1184,6 +1294,7 @@ export function AccessSettings() {
       <RemoteAuditSettings />
       <JitOwnerPanel users={users} vms={vms} />
       <BrowserExtensionManager />
+      <MobileCompanionManager vms={vms} />
       <h4>更换管理员密码</h4>
       <p>更换后所有账户会话立即失效，需要用新密码重新登录。</p>
       <form onSubmit={async (event) => {

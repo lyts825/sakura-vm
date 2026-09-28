@@ -342,7 +342,7 @@ incident-lockdown 仅保存 records[id].locked 并报告 ready=true；没有其�
 | GraphQL API / `graphql-api` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：登记 GraphQL API 版本和查询限制。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | Webhook 事件 / `webhook-events` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存 Webhook 订阅和最近投递状态。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 事件自动化 DSL / `automation-dsl` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：校验并保存事件自动化规则，默认只预览。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
-| 移动伴侣 / `mobile-companion` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存移动设备配对和只读通知策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
+| 移动伴侣 / `mobile-companion` | 已实现（只读网页） | 经独立 HTTPS 同伴入口提供手机页面；管理员选择实例与告警类型，短码配对、限速、持久凭证、范围过滤及撤销实际生效。告警仅在页面内展示，不提供后台推送。 | [server/mobile-companion.ts](D:/27247/Desktop/Sakura/server/mobile-companion.ts) |
 | 浏览器扩展 / `browser-extension` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存浏览器扩展连接状态和权限摘要。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | Windows 托盘伴侣 / `tray-companion` | 仅本地记录 | 仅写通用 lastInput/checkedAt；没有专用配置校验、状态模型与实际执行/策略应用。目录目标：保存托盘进程连接和启动策略。 | [server/next-features.ts:385](D:/27247/Desktop/Sakura/server/next-features.ts:385) |
 | 功能开关与灰度 / `feature-rollout` | 仅本地记录 | 只保存 percentage/version；未把功能开关应用到服务。 | [server/next-features.ts:379](D:/27247/Desktop/Sakura/server/next-features.ts:379) |

@@ -26,6 +26,7 @@ import { memoryReclaimRequest } from './memory-reclaim.ts';
 import { hostMountRequest } from './host-mount.ts';
 import { hostPeerRequest } from './host-peers.ts';
 import { communityPluginRequest } from './community-plugins.ts';
+import { mobileAction } from './mobile-companion.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
 import { storagePoolInput } from './storage-pools.ts';
@@ -334,6 +335,10 @@ const core: {
   { id: 'community-plugins.extension', method: 'POST',
     path: '/api/community-plugins/extensions/{pluginId}/{routeId}',
     title: '调用签名插件声明的隔离 HTTP 操作', body: {} },
+  { id: 'mobile-companion.get', method: 'GET', path: '/api/mobile-companion',
+    title: '查看已配对移动设备及 HTTPS 入口', inspect: true },
+  { id: 'mobile-companion.change', method: 'POST', path: '/api/mobile-companion',
+    title: '生成手机配对码、修改只读策略或撤销设备', body: request(mobileAction) },
   {
     id: 'plugins.change',
     method: 'PATCH',

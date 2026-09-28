@@ -180,6 +180,7 @@ export class HostPeers {
   private listenerError?: string;
   private importReceiver?: ImportReceiver;
   private rolloutReceiver?: { view: () => PeerRolloutView; save: (input: unknown) => Promise<unknown> };
+  private mobileHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
   private activeImports = new Map<string, Set<AbortController>>();
   private transferIds = new Set<string>();
   constructor(
@@ -245,6 +246,10 @@ export class HostPeers {
   private async peerRoute(request: IncomingMessage, response: ServerResponse) {
     try {
       if (this.closed) throw new AppError('服务正在关闭', 503);
+      if (request.url === '/mobile' || request.url?.startsWith('/mobile/')) {
+        if (!this.mobileHandler) throw new AppError('移动伴侣尚未启用', 503);
+        return await this.mobileHandler(request, response);
+      }
       if (request.method === 'POST' && request.url === '/peer/pair') {
         const address = request.socket.remoteAddress || 'unknown';
         const attempt = this.attempts.get(address);
@@ -380,6 +385,9 @@ export class HostPeers {
   }
   setRolloutReceiver(receiver: { view: () => PeerRolloutView; save: (input: unknown) => Promise<unknown> }) {
     this.rolloutReceiver = receiver;
+  }
+  setMobileHandler(handler: (request: IncomingMessage, response: ServerResponse) => Promise<void>) {
+    this.mobileHandler = handler;
   }
   async rolloutStatus(peerId: string): Promise<PeerRolloutView> {
     if (this.closed) throw new AppError('服务正在关闭', 503);
