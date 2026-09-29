@@ -37,6 +37,7 @@ import { BuildFarm } from './build-farm.ts';
 import { MediaDevices } from './media-devices.ts';
 import { MemoryReclaim } from './memory-reclaim.ts';
 import { HostMounts } from './host-mount.ts';
+import { VirtioFsShares } from './virtio-fs.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
@@ -135,6 +136,11 @@ async function main() {
   await hostMounts.init();
   features.next?.setHostMounts(hostMounts);
   features.suite?.setHostMounts(hostMounts);
+  const virtioFsShares = new VirtioFsShares(machines,
+    () => !!features.migration?.blocked,
+    (delta) => { features.mutations += delta; });
+  await virtioFsShares.init();
+  features.next?.setVirtioFsShares(virtioFsShares);
   const gpuProfiles = new GpuProfiles(machines, undefined,
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });
@@ -1115,6 +1121,13 @@ async function main() {
         await hostMounts.action(hostMountRoute[1], await authorizedBody(req, 4096)));
       throw new AppError('不支持此方法', 405);
     }
+    const virtioFsRoute = /^\/api\/vms\/([a-f0-9-]{36})\/virtio-fs$/.exec(url.pathname);
+    if (virtioFsRoute) {
+      if (req.method === 'GET') return send(res, await virtioFsShares.view(virtioFsRoute[1]));
+      if (req.method === 'POST') return send(res,
+        await virtioFsShares.action(virtioFsRoute[1], await authorizedBody(req, 4096)));
+      throw new AppError('不支持此方法', 405);
+    }
     if (url.pathname === '/api/host-peers') {
       if (req.method === 'GET') return send(res,
         { ...hostPeers.view(), local: await hostPeers.status() });
@@ -1637,6 +1650,7 @@ async function main() {
       () => mediaDevices.close(),
       () => memoryReclaim.close(),
       () => hostMounts.close(),
+      () => virtioFsShares.close(),
       () => gpuProfiles.close(),
       () => buildFarm.close(),
       () => hostPeers.close(),

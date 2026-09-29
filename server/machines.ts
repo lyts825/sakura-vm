@@ -130,8 +130,10 @@ type Live = {
   memoryTargetMiB?: number;
   error?: string;
 };
+export type BootAttachment = { args: string[]; close: () => Promise<void> };
 export class Machines extends EventEmitter {
   storagePools = new StoragePools(this);
+  prepareBootAttachment?: (vm: VMRecord, onExit: (error: string) => void) => Promise<BootAttachment | undefined>;
   fileBeforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
   records = new Map<string, VMRecord>();
   live = new Map<string, Live>();
@@ -727,11 +729,25 @@ export class Machines extends EventEmitter {
           this.requireSandboxLifetime(vm);
         }
         let diskSecret: Awaited<ReturnType<typeof openDiskSecret>> | undefined;
+        let attachment: BootAttachment | undefined;
         try {
           if (vm.diskEncryption)
             diskSecret = await openDiskSecret(this, id, vm.diskEncryption.secretName);
+          attachment = await this.prepareBootAttachment?.(vm, (error) => {
+            if (this.live.get(id) !== live || live.abort.signal.aborted ||
+                live.status === 'stopping') return;
+            live.error = `Virtio-FS 守护程序退出：${error.slice(-1024)}`;
+            vm.lastError = live.error;
+            this.log(id, `\r\n${live.error}\r\n`);
+            this.emit('change');
+            live.abort.abort();
+          });
         } catch (error) {
           this.live.delete(id);
+          await attachment?.close().catch(() => {});
+          await diskSecret?.close().catch(() => {});
+          vm.lastError = (error as Error).message;
+          this.emit('change');
           throw error;
         }
         const escape = (s: string) => s.replaceAll(',', ',,');
@@ -759,6 +775,7 @@ export class Machines extends EventEmitter {
             ? ['-icount', 'shift=auto,sleep=on']
             : []),
           ...hardwareArguments(vm),
+          ...(attachment?.args || []),
           ...(vm.rescueOf
             ? [
                 '-device',
@@ -818,6 +835,7 @@ export class Machines extends EventEmitter {
             },
           )
           .finally(async () => {
+            await attachment?.close().catch((error) => this.log(id, `\r\n清理 Virtio-FS 守护程序失败：${String(error)}\r\n`));
             await diskSecret?.close().catch((error) => this.log(id, `\r\n清理磁盘临时口令失败：${String(error)}\r\n`));
             live.bootAbort.abort();
             live.serial?.destroy();

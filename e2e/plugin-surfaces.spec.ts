@@ -3616,6 +3616,48 @@ test('host directory mount saves path and read-only policy, then mounts and unmo
   await expect(panel.getByText(/未启用/)).toBeVisible();
 });
 
+test('Virtio-FS card saves a stopped-instance policy and controls the mounted guest share', async ({ page }) => {
+  await app(page, ['projects', 'automation'], true);
+  await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
+    settings: { schedule: { enabled: false, idleMinutes: 0, idleAction: 'stop' },
+      alerts: { enabled: false, cpuPercent: 90, memoryPercent: 90, diskPercent: 90,
+        cooldownMinutes: 30, taskFailures: false, serviceFailures: false } },
+    features: [], presets: {}, events: [], history: [],
+  } }));
+  let policy = { enabled: false, hostPath: '', readOnly: true };
+  let running = false, mounted = false;
+  await page.route('**/api/vms/*/virtio-fs*', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON();
+      if (input.operation === 'configure') policy = input.policy;
+      if (input.operation === 'mount') mounted = true;
+      if (input.operation === 'unmount') {
+        mounted = false;
+        policy.enabled = false;
+      }
+    }
+    return route.fulfill({ json: { policy, guestPath: '/mnt/sakura-virtiofs',
+      stopped: !running, running, attached: running && policy.enabled,
+      mounted, observation: null } });
+  });
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Virtio-FS 共享目录' });
+  await panel.getByRole('checkbox', { name: '启用 Virtio-FS' }).check();
+  await panel.getByRole('textbox', { name: 'Linux 宿主目录绝对路径' }).fill('/home/me/projects');
+  await panel.getByRole('button', { name: '保存策略' }).click();
+  await expect.poll(() => policy).toEqual({ enabled: true,
+    hostPath: '/home/me/projects', readOnly: true });
+  running = true;
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    status: 'running', poweredOn: true }] }));
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await panel.getByRole('button', { name: '立即挂载' }).click();
+  await expect(panel.getByText(/^已挂载 ·/)).toBeVisible();
+  await panel.getByRole('button', { name: '卸载并停用' }).click();
+  await expect.poll(() => policy.enabled).toBe(false);
+});
+
 test('package workbench lists packages and requires a reviewed plan before applying', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,

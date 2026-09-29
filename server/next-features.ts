@@ -34,7 +34,7 @@ import { devicePassthroughPreview } from './device-passthrough-preview.ts';
 import { gpuComputeInput, gpuComputeStatus } from './gpu-compute.ts';
 import { planLiveMigration } from './live-migration.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
-import { inspectVirtioFs } from './virtio-fs.ts';
+import { inspectVirtioFs, type VirtioFsShares } from './virtio-fs.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -171,7 +171,7 @@ export const nextFeatureCatalog = [
     'Virtio-FS 共享目录',
     '虚拟硬件与固件',
     'P0',
-    '检查 QEMU、virtiofsd、共享内存和客户机文件系统证据；目录直挂尚未编排。',
+    'Linux 宿主可配置宿主目录、启动 virtiofsd 与共享内存 QEMU 设备，并在客户机自动挂载；当前 Windows 随附构建不支持。',
     'experimental',
   ],
   [
@@ -689,6 +689,7 @@ export class NextFeatures {
   private processInterop?: ProcessInterop;
   private mediaDevices?: MediaDevices;
   private hostMounts?: HostMounts;
+  private virtioFsShares?: VirtioFsShares;
   private snapshotMerge?: SnapshotMerge;
   private communityPlugins?: CommunityPlugins;
   private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
@@ -790,6 +791,7 @@ export class NextFeatures {
   setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
   setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
   setHostMounts(service: HostMounts) { this.hostMounts = service; }
+  setVirtioFsShares(service: VirtioFsShares) { this.virtioFsShares = service; }
   setSnapshotMerge(service?: SnapshotMerge) { this.snapshotMerge = service; }
   setCommunityPlugins(service: CommunityPlugins) { this.communityPlugins = service; }
 
@@ -1110,8 +1112,16 @@ export class NextFeatures {
       return { ...await checkHaFailover(this.machines, this.hostPeers,
         this.snapshotReplications, id, merged, configured?.enabled ?? true, signal), adapter };
     }
-    if (spec.id === 'virtio-fs')
-      return { ...await inspectVirtioFs(this.machines, id, signal), adapter };
+    if (spec.id === 'virtio-fs') {
+      if (!this.virtioFsShares) return { ready: false, executed: false, adapter,
+        reason: 'Virtio-FS 服务尚未启动。' };
+      if (action === 'run') await this.virtioFsShares.action(id, { operation: 'mount' });
+      const [inspection, share] = await Promise.all([
+        inspectVirtioFs(this.machines, id, signal), this.virtioFsShares.view(id)]);
+      return { ...inspection, ready: inspection.ready && share.mounted && share.policy.enabled,
+        policy: share.policy, attached: share.attached,
+        executed: action === 'run' && inspection.ready && share.mounted, adapter };
+    }
     if (spec.id === 'object-backup') {
       if (!this.objectBackup)
         return { ready: false, executed: false, adapter,
