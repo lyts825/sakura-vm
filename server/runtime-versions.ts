@@ -7,6 +7,7 @@ import { Jobs } from './jobs.ts';
 import { quote } from './files.ts';
 import { guestTask } from './guest-task.ts';
 import { envPrefix } from './project-services.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 export const exactVersion = z.string().regex(/^\d{1,2}\.\d{1,3}\.\d{1,3}$/);
 export const runtimesSchema = z
@@ -49,9 +50,10 @@ export class RuntimeVersions {
   ) {}
   async inspect(id: string, project: Project, signal?: AbortSignal) {
     const environment = runtimeEnvironment(project.runtimes, project.environment?.PATH);
+    const script = `${envPrefix(environment)}\nnode --version 2>/dev/null || true\necho SAKURA_PYTHON\npython3 --version 2>/dev/null || true`;
     const result = await this.machines.exec(
       id,
-      `${envPrefix(environment)}\nnode --version 2>/dev/null || true\necho SAKURA_PYTHON\npython3 --version 2>/dev/null || true`,
+      project.networkIsolation === 'private' ? projectNetworkCommand(project, script) : script,
       10000,
       signal,
     );
@@ -98,7 +100,10 @@ export class RuntimeVersions {
       project = await this.workspaces.config(id);
     for (const [tool, version] of Object.entries(runtimes) as ['node' | 'python', string][]) {
       const executable = `${runtimeBin(tool, version)}/${tool === 'python' ? 'python3' : 'node'}`;
-      const result = await this.machines.exec(id, `${quote(executable)} --version`, 10000);
+      const script = `${quote(executable)} --version`;
+      const result = await this.machines.exec(id,
+        project.networkIsolation === 'private' ? projectNetworkCommand(project, script) : script,
+        10000);
       if (result.code !== 0 || !result.stdout.includes(version))
         throw new AppError(`请先安装 ${tool} ${version}`);
     }

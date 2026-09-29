@@ -117,6 +117,7 @@ export function provisionScript(template: Project['template'], distro = 'alpine'
 export class Workspaces {
   jobs = new Jobs('projects');
   projects: ProjectCatalog;
+  private configListeners = new Set<() => Promise<void>>();
   private observed = new Map<string, string>();
   private sampler: Metrics;
   onAction?: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>;
@@ -166,7 +167,12 @@ export class Workspaces {
   async close() {
     this.machines.off('change', this.onChange);
     this.observed.clear();
+    this.configListeners.clear();
     await Promise.all([this.jobs.close(), this.sampler.close()]);
+  }
+  onConfigChange(listener: () => Promise<void>) {
+    this.configListeners.add(listener);
+    return () => this.configListeners.delete(listener);
   }
   async config(id: string): Promise<Project> {
     const vm = this.machines.get(id);
@@ -262,6 +268,7 @@ export class Workspaces {
       const file = this.projects.file(id);
       await writeFile(`${file}.tmp`, JSON.stringify(project, null, 2));
       await rename(`${file}.tmp`, file);
+      await Promise.allSettled([...this.configListeners].map((listener) => listener()));
       return project;
     });
   }

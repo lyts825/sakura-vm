@@ -1,9 +1,9 @@
-import { mkdir, readFile, writeFile, rename, copyFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, rename, copyFile } from 'node:fs/promises';
 import { join, resolve, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { DATA, vmDir, AppError } from './model.ts';
 import type { Machines } from './machines.ts';
-import type { Workspaces } from './workspaces.ts';
+import { projectSchema, type Workspaces } from './workspaces.ts';
 import { readStore, regularDirectory } from './local-store.ts';
 
 export const sshPath = (value: string) =>
@@ -11,6 +11,7 @@ export const sshPath = (value: string) =>
 export class Ide {
   private queue = Promise.resolve();
   private file = join(DATA, 'ssh', 'config');
+  private unsubscribeConfig: () => void;
   private onChange = () => {
     void this.update().catch(() => {});
   };
@@ -20,17 +21,33 @@ export class Ide {
     private sshDirectory = join(homedir(), '.ssh'),
   ) {
     machines.on('change', this.onChange);
+    this.unsubscribeConfig = workspaces.onConfigChange?.(() => this.update()) || (() => {});
+  }
+  private async hasPrivateProject(id: string) {
+    try {
+      const files = (await readdir(vmDir(id)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      }))
+        .filter((name) => /^project(?:-[a-f0-9]{16})?\.json$/.test(name));
+      for (const file of files) {
+        const parsed = projectSchema.safeParse(await readStore(
+          join(vmDir(id), file), () => null));
+        // An unreadable project config must not leave a previously generated alias active.
+        if (!parsed.success || parsed.data.networkIsolation === 'private') return true;
+      }
+      return false;
+    } catch { return true; }
   }
   async update() {
-    const text = [...this.machines.records.values()]
-      .map(
-        (vm) =>
-          `Host sakura-${vm.name}\n  HostName 127.0.0.1\n  User root\n  Port ${this.machines.live.get(vm.id)?.sshPort || 1}\n  IdentityFile ${sshPath(join(vmDir(vm.id), 'id_rsa'))}\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile ${sshPath(join(vmDir(vm.id), 'known_hosts'))}\n`,
-      )
-      .join('\n');
     this.queue = this.queue
       .catch(() => {})
       .then(async () => {
+        const entries = await Promise.all([...this.machines.records.values()].map(async (vm) => {
+          if (await this.hasPrivateProject(vm.id)) return '';
+          return `Host sakura-${vm.name}\n  HostName 127.0.0.1\n  User root\n  Port ${this.machines.live.get(vm.id)?.sshPort || 1}\n  IdentityFile ${sshPath(join(vmDir(vm.id), 'id_rsa'))}\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile ${sshPath(join(vmDir(vm.id), 'known_hosts'))}\n`;
+        }));
+        const text = entries.filter(Boolean).join('\n');
         await mkdir(join(DATA, 'ssh'), { recursive: true });
         await writeFile(this.file + '.tmp', text, { mode: 0o600 });
         await rename(this.file + '.tmp', this.file);
@@ -63,6 +80,9 @@ export class Ide {
     const vm = this.machines.get(id),
       project = await this.workspaces.config(id);
     const alias = `sakura-${vm.name}`;
+    if (project.networkIsolation === 'private' || await this.hasPrivateProject(id))
+      return { supported: false, running: this.machines.state(id) === 'running',
+        alias, config: this.file, command: '', url: '', reason: 'private-network' as const };
     return {
       supported: !!vm.distro && vm.distro !== 'alpine',
       running: this.machines.state(id) === 'running',
@@ -74,7 +94,9 @@ export class Ide {
   }
   async install(id: string) {
     const view = await this.view(id);
-    if (!view.supported) throw new AppError('VS Code Remote-SSH 请使用 Debian 或 Ubuntu');
+    if (!view.supported) throw new AppError(view.reason === 'private-network'
+      ? '实例包含私有项目，不能通过共享网络的 Remote-SSH 运行编辑器；请使用项目终端和文件编辑器。'
+      : 'VS Code Remote-SSH 请使用 Debian 或 Ubuntu');
     if (!view.running) throw new AppError('请先启动发行版');
     return this.machines.locked('ssh-config', async () => {
       await this.update();
@@ -95,6 +117,7 @@ export class Ide {
   }
   async close() {
     this.machines.off('change', this.onChange);
+    this.unsubscribeConfig();
     await this.queue.catch(() => {});
   }
 }

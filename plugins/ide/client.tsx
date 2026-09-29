@@ -11,6 +11,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
     alias: string;
     command: string;
     url: string;
+    reason?: 'private-network';
   }>(request, `/vms/${vm.id}/ide`);
   const [link, setLink] = useState('');
   const action = useAction();
@@ -46,7 +47,9 @@ export function IdeConnection({ vm, request }: FeatureProps) {
           </>
         ) : (
           <p className="muted">
-            Remote-SSH 接入支持 Debian 与 Ubuntu。Alpine 可继续使用网页终端和文件编辑器。
+            {ide.data?.reason === 'private-network'
+              ? '实例包含私有项目，不能通过共享网络的 Remote-SSH 运行编辑器；请使用项目终端和文件编辑器。'
+              : 'Remote-SSH 接入支持 Debian 与 Ubuntu。Alpine 可继续使用网页终端和文件编辑器。'}
           </p>
         )}
       </div>

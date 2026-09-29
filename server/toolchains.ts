@@ -6,6 +6,7 @@ import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
 import { envPrefix } from './project-services.ts';
 import { quote } from './files.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 export const toolCatalog = {
   git: {
@@ -80,7 +81,9 @@ export class Toolchains {
           `printf '\\nSAKURA_TOOL_${key}\\n'; if command -v ${tool.executable} >/dev/null; then ${tool.version} 2>&1 | head -c 2000; fi; printf '\\nSAKURA_REQUIRED_${key}\\n'; ${tool.markers.map((file) => `test ! -e ${quote(project.directory + '/' + file)} || printf yes`).join('; ')}; printf '\\n'`,
       )
       .join('\n');
-    const result = await this.machines.exec(id, script, 20000, signal);
+    const result = await this.machines.exec(id,
+      project.networkIsolation === 'private' ? projectNetworkCommand(project, script) : script,
+      20000, signal);
     if (result.code !== 0) throw new AppError(result.stderr || '无法检查开发工具');
     return {
       tools: Object.entries(toolCatalog).map(([key, tool]) => {
