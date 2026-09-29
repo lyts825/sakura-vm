@@ -9,6 +9,7 @@ import { generate } from 'selfsigned';
 import { HaWitnessClient } from '../server/ha-witness-client.ts';
 import { HaWitness } from '../server/ha-witness-core.ts';
 import { haWitnessServerConfigSchema, startHaWitnessServer } from '../server/ha-witness-server.ts';
+import { checkHaWitnessDeployment } from '../server/ha-witness-preflight.ts';
 
 async function listen(server: Server) {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
@@ -45,6 +46,7 @@ test('independent HTTPS witness powers off source before promoting a paired targ
   const transferId = randomUUID(), snapshotId = randomUUID();
   let poweredOff = false, targetRunning = false, targetRetired = false;
   let activeVmId = '', bmcOffCount = 0, targetStartCount = 0;
+  let targetIdentity = targetHostId;
   const sourceAt = Date.now(), plan = {
     sourceHostId, sourceVmId, targetHostId, transferId, remoteVmId, snapshotId,
     sha256: 'a'.repeat(64), snapshotAt: new Date(sourceAt).toISOString(),
@@ -63,6 +65,10 @@ test('independent HTTPS witness powers off source before promoting a paired targ
   })());
   const target = createServer(tls, (req, res) => void (async () => {
     assert.equal(req.headers.authorization, `Bearer ${targetToken}`);
+    if (req.method === 'GET' && req.url === '/peer/status') {
+      res.end(JSON.stringify({ version: 1, id: targetIdentity }));
+      return;
+    }
     const payload = await input(req);
     assert.deepEqual(payload, { transferId, remoteVmId,
       sha256: plan.sha256, sourceVmId, snapshotId });
@@ -95,8 +101,8 @@ test('independent HTTPS witness powers off source before promoting a paired targ
       activeVmId = remoteVmId;
       res.end(JSON.stringify({ accepted: true, activeVmId }));
     } else {
-      assert.equal(new URL(req.url!, 'https://localhost').searchParams.get('sourceVmId'),
-        sourceVmId);
+      const source = new URL(req.url!, 'https://localhost').searchParams.get('sourceVmId');
+      assert.ok(source === sourceVmId || source === secondSourceVmId);
       res.end(JSON.stringify({ activeVmId }));
     }
   })());
@@ -138,6 +144,17 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     assert.equal(haWitnessServerConfigSchema.safeParse({ ...config,
       sourceTokens: undefined, sourceToken, vms: [firstVm] }).success, true,
     'single-source configurations retain their existing token format');
+    const initialPreflight = await checkHaWitnessDeployment(config);
+    assert.equal(initialPreflight.ok, true);
+    assert.equal(initialPreflight.vms[0].armed, false);
+    assert.equal(initialPreflight.vms[0].checks.replica, null);
+    targetIdentity = randomUUID();
+    const wrongPeer = await checkHaWitnessDeployment(config);
+    assert.equal(wrongPeer.ok, false);
+    assert.equal(wrongPeer.vms[0].checks.target.ok, false);
+    targetIdentity = targetHostId;
+    assert.equal(bmcOffCount, 0);
+    assert.equal(targetStartCount, 0);
     witnessService = await startHaWitnessServer(config, () => clock);
     const address = witnessService.server.address();
     if (!address || typeof address === 'string') throw new Error('witness port missing');
@@ -161,12 +178,20 @@ test('independent HTTPS witness powers off source before promoting a paired targ
       failureThreshold: 2, plan: null }));
     assert.equal((await client.heartbeat({ sourceHostId, sourceVmId,
       failureThreshold: 2, plan })).armed, true);
+    const armedPreflight = await checkHaWitnessDeployment(config);
+    assert.equal(armedPreflight.ok, true);
+    assert.equal(armedPreflight.vms[0].armed, true);
+    assert.equal(armedPreflight.vms[0].checks.replica?.ok, true);
+    assert.equal(armedPreflight.vms[0].checks.application?.ok, true);
+    assert.equal(bmcOffCount, 0);
+    assert.equal(targetStartCount, 0);
     clock = sourceAt + 30_000;
     await witnessService.witness.sample();
     assert.equal(bmcOffCount, 1);
     assert.equal(targetStartCount, 1);
     assert.equal(activeVmId, remoteVmId);
     assert.equal((await client.status({ sourceHostId, sourceVmId })).phase, 'promoted');
+    assert.equal((await checkHaWitnessDeployment(config)).ok, true);
     await assert.rejects(client.authorizeStart({ sourceHostId, sourceVmId }));
     targetRunning = false;
     assert.deepEqual(await client.rejoin({ sourceHostId, sourceVmId,

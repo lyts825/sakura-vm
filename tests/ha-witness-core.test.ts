@@ -186,6 +186,7 @@ test('slow fencing and retirement for one host do not block another host heartbe
   const witness = new HaWitness(file, [vm, secondVm], actions, () => time);
   let sample: ReturnType<HaWitness['sample']> | undefined;
   let rejoining: ReturnType<HaWitness['rejoin']> | undefined;
+  let draining: ReturnType<HaWitness['drain']> | undefined;
   const keepSecondAlive = async () => {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -208,10 +209,16 @@ test('slow fencing and retirement for one host do not block another host heartbe
     time = 130_000;
     sample = witness.sample();
     await fenceStarted;
+    let drainFinished = false;
+    draining = witness.drain().then(() => { drainFinished = true; });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(drainFinished, false, 'shutdown must wait for in-flight fencing');
     time = 140_000;
     await keepSecondAlive();
     releaseFence();
     await sample;
+    await draining;
+    assert.equal(drainFinished, true);
     assert.equal((await witness.status({ sourceHostId, sourceVmId })).phase, 'promoted');
     rejoining = witness.rejoin({ sourceHostId, sourceVmId, dataReconciled: true });
     await retireStarted;
@@ -223,7 +230,7 @@ test('slow fencing and retirement for one host do not block another host heartbe
       sourceVmId: secondVm.sourceVmId })).phase, 'source');
   } finally {
     releaseFence(); releaseRetire();
-    await Promise.allSettled([sample, rejoining].filter(Boolean));
+    await Promise.allSettled([sample, rejoining, draining].filter(Boolean));
     const path = await realpath(root);
     if (!basename(path).startsWith('sakura-ha-witness-multi-') ||
         resolve(path) === resolve(tmpdir())) throw new Error('unsafe witness cleanup');

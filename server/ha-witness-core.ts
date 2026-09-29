@@ -208,6 +208,21 @@ export class HaWitness {
     });
   }
 
+  /** Local, read-only deployment inspection; never exposed through the witness HTTP API. */
+  deploymentState(raw: unknown) {
+    return this.enqueue(async () => {
+      const vm = this.vm(haWitnessIdentitySchema.parse(raw));
+      const entry = this.entry(vm.sourceVmId);
+      return { phase: entry.phase, plan: entry.plan ? { ...entry.plan } : null };
+    });
+  }
+
+  /** Let a witness process finish fencing and durable writes before it exits. */
+  async drain() {
+    await Promise.allSettled([...this.vmWork.values()]);
+    await this.work;
+  }
+
   sample() {
     return Promise.all([...this.known.values()].map((vm) =>
       this.runVm(vm.sourceVmId, () => this.sampleVm(vm), true)));

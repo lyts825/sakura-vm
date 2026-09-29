@@ -212,5 +212,6 @@ export async function startHaWitnessServer(raw: unknown,
   return { witness, server, close: async () => {
     clearInterval(timer);
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    await witness.drain();
   } };
 }
