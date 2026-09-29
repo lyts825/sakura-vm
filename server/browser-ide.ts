@@ -324,6 +324,8 @@ exec timeout ${durationSeconds}s ${quote(binary)} ${quote(project.directory)} --
         if (vm.distro !== 'debian' && vm.distro !== 'ubuntu')
           throw new AppError('浏览器 IDE 目前支持 Debian 和 Ubuntu 客户机', 409);
         if (this.machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
+        if ((await this.workspaces.config(id)).networkIsolation === 'private')
+          throw new AppError('私有项目网络不开放浏览器 IDE 端口，请切换为共享客户机网络', 409);
         await this.install(id, signal, log);
         return { ready: true, executed: true, installed: true,
           message: '浏览器 IDE 已安装；现在可启动会话。' };

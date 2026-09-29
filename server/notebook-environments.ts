@@ -249,6 +249,8 @@ export class NotebookEnvironments {
       if (options.mode === 'install') {
         if (this.machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
         const project = await this.workspaces.config(id);
+        if (project.networkIsolation === 'private')
+          throw new AppError('私有项目网络不开放 Notebook 端口，请切换为共享客户机网络', 409);
         await this.install(id, project.directory, options.provider, signal, log);
         return { ready: true, executed: true, installed: true,
           provider: options.provider, message: 'Notebook 环境已安装；现在可启动会话。' };

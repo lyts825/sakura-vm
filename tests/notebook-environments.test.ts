@@ -94,4 +94,9 @@ test('managed Jupyter and Marimo sessions install, authenticate, survive restart
   networkIsolation = 'private';
   assert.equal((await restarted.view(id)).ready, false);
   await assert.rejects(restarted.run(id, { mode: 'start' }, signal, () => {}), /私有项目网络/);
+  const beforePrivateInstall = commands.length;
+  await assert.rejects(restarted.run(id, { mode: 'install' }, signal, () => {}),
+    /私有项目网络/);
+  assert.equal(commands.length, beforePrivateInstall,
+    'private project installation must not execute in the shared guest network');
 });
