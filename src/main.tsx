@@ -368,6 +368,8 @@ function App() {
   const hasProjects = has('projects'),
     hasPalette = has('command-palette');
   const [projectSelections, setProjectSelections] = useState<Record<string, string>>({});
+  const [projectLoadError, setProjectLoadError] = useState('');
+  const [projectRevision, setProjectRevision] = useState(0);
   const setSelected = async (value: string) => {
     if (value === selected || (await mayLeaveEditor())) setSelectedRaw(value);
   };
@@ -451,6 +453,7 @@ function App() {
   );
   useEffect(() => {
     if (!selected || !hasProjects) return;
+    setProjectLoadError('');
     const abort = new AbortController();
     let alive = true;
     void api<ProjectIndex>(`/vms/${selected}/projects`, 'GET', undefined, abort.signal)
@@ -463,12 +466,12 @@ function App() {
               : data.active,
           }));
       })
-      .catch(() => {});
+      .catch((error) => { if (alive) setProjectLoadError(error instanceof Error ? error.message : '无法加载工作项目'); });
     return () => {
       alive = false;
       abort.abort();
     };
-  }, [selected, hasProjects, token]);
+  }, [selected, hasProjects, token, projectRevision]);
   useEffect(() => {
     if (!token || !system) return;
     let alive = true,
@@ -1397,17 +1400,21 @@ function App() {
                         aria-labelledby={`tab-${tab}`}
                       >
                         <div className="terminal-panel-slot" hidden={tab !== 'terminal'}>
-                          {has('terminal-workspace') ? (
+                          {hasProjects && !projectId ? <div className="terminal-offline" role="status">
+                            <p>{projectLoadError || '正在加载工作项目…'}</p>
+                            {projectLoadError && <button onClick={() => setProjectRevision((value) => value + 1)}>重新加载项目</button>}
+                          </div> : has('terminal-workspace') ? (
                             <TerminalWorkspace
-                              key={vm.id}
+                              key={`${vm.id}:${projectId || ''}`}
                               id={vm.id}
+                              projectId={projectId}
                               request={api}
                               render={(session) => (
-                                <TerminalPanel vm={vm} start={start} busy={busy} session={session} />
+                                <TerminalPanel vm={vm} start={start} busy={busy} session={session} projectId={projectId} />
                               )}
                             />
                           ) : (
-                            <TerminalPanel key={vm.id} vm={vm} start={start} busy={busy} />
+                            <TerminalPanel key={`${vm.id}:${projectId || ''}`} vm={vm} start={start} busy={busy} projectId={projectId} />
                           )}
                         </div>
                         {tab === 'development' && (

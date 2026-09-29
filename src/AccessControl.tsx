@@ -22,7 +22,8 @@ type SsoView = { oidc?: { issuer: string; clientId: string;
   saml?: { issuer: string; entryPoint: string; fingerprints: string[] };
   callbackUrl: string; samlCallbackUrl: string; serviceProviderId: string;
   bindings: SsoBinding[] };
-type TerminalGrantView = { id: string; vmId: string; session: string; expiresAt: number };
+type TerminalGrantView = { id: string; vmId: string; session: string; projectId?: string;
+  terminalId?: string; expiresAt: number };
 type BrowserExtensionView = { id: string; origin: string; createdAt: number;
   expiresAt: number; lastSeenAt?: number; connected: boolean; expired: boolean;
   permissions: string[] };
@@ -711,14 +712,16 @@ function SharedTerminal({ grant, token }: { grant: TerminalGrantView; token: str
       terminal.open(screen.current);
       const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
       socket = new WebSocket(`${scheme}//${location.host}/ws/${grant.vmId}/terminal-view?` +
-        `token=${encodeURIComponent(token)}&session=${encodeURIComponent(grant.session)}`);
-      socket.onopen = () => { if (active) setConnection('终端视图已连接'); };
+        `token=${encodeURIComponent(token)}&session=${encodeURIComponent(grant.session)}` +
+        (grant.projectId ? `&project=${encodeURIComponent(grant.projectId)}` : ''));
+      socket.onopen = () => { if (active) setConnection('正在连接终端…'); };
       socket.onmessage = (event) => {
         if (!active) return;
         try {
           const message = JSON.parse(event.data);
           if (message.type === 'data' && typeof message.data === 'string')
             terminal?.write(message.data);
+          if (message.type === 'ready') setConnection('终端视图已连接');
           if (message.type === 'error') setConnection(String(message.data));
           if (message.type === 'exit') setConnection('终端会话已结束');
         } catch { setConnection('终端消息格式错误'); }
@@ -727,8 +730,9 @@ function SharedTerminal({ grant, token }: { grant: TerminalGrantView; token: str
       socket.onerror = () => { if (active) setConnection('无法连接共享终端'); };
     }).catch(() => { if (active) setConnection('无法加载终端查看器'); });
     return () => { active = false; socket?.close(); terminal?.dispose(); };
-  }, [grant.id, token]);
-  return <section className="system-card" aria-label="只读终端视图">
+  }, [grant.id, grant.projectId, grant.terminalId, grant.expiresAt, token]);
+  return <section className="system-card" aria-label="只读终端视图"
+    data-clipboard-app="terminal" data-clipboard-vm={grant.vmId}>
     <h2>只读终端视图</h2>
     <p role="status">{connection}。输入在服务端被拒绝。</p>
     <div className="xterm-container" ref={screen} />

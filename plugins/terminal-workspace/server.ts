@@ -3,6 +3,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
+import { ProjectCatalog } from '../../server/project-catalog.ts';
+import { stopTerminalsScript } from '../../server/project-terminals.ts';
+import { AppError } from '../../server/model.ts';
 
 export async function activate(host: PluginContext) {}
 export async function route(
@@ -28,16 +31,24 @@ export async function route(
   this.machines.get(id);
   if (parts.length === 4) {
     if (action === 'terminal-session' && req.method === 'POST') {
-      const { session } = z
-        .object({ session: z.string().regex(/^[a-z0-9-]{1,48}$/) })
-        .strict()
+      const input = z.union([
+        z.object({ session: z.string().regex(/^[a-z0-9-]{1,48}$/) }).strict(),
+        z.object({ action: z.literal('stop-all') }).strict(),
+      ])
         .parse(await body(req));
-      if (this.machines.state(id) === 'running')
-        await this.machines.exec(
-          id,
-          `if command -v tmux >/dev/null && tmux has-session -t =sakura-terminal-${session} 2>/dev/null; then tmux kill-session -t =sakura-terminal-${session}; fi`,
-        );
-      send({ ok: true });
+      const projects = this.workspaces?.projects || new ProjectCatalog(this.machines);
+      const projectId = await projects.with(id, url.searchParams.get('project'),
+        async () => projects.current(id));
+      await this.machines.locked(id, async () => {
+        if (this.machines.state(id) === 'paused')
+          throw new AppError('请先恢复实例再停止项目终端', 409);
+        if (this.machines.state(id) === 'running') {
+          const result = await this.machines.exec(id, stopTerminalsScript(projectId,
+            'session' in input ? input.session : undefined), 10000, signal);
+          if (result.code !== 0) throw new AppError(result.stderr || '无法停止项目终端', 409);
+        }
+      });
+      send({ ok: true, projectId });
       return true;
     }
   }

@@ -757,9 +757,19 @@ try {
     'GET', memberToken)).status, 403);
   if ((await guest('command -v tmux >/dev/null')).code !== 0)
     assert.equal((await guest('apk add --no-cache tmux')).code, 0);
-  assert.equal((await guest('tmux new-session -d -s sakura-terminal-sharetest')).code, 0);
+  const ownerTerminal = new WebSocket(origin.replace('http:', 'ws:') +
+    `/ws/${vmId}/terminal?session=sharetest&project=default&token=${ownerToken}`);
+  await new Promise<void>((done, fail) => {
+    const timer = setTimeout(() => fail(new Error('项目终端未就绪')), 30000);
+    ownerTerminal.once('error', (error) => { clearTimeout(timer); fail(error); });
+    ownerTerminal.on('message', (raw) => {
+      const message = JSON.parse(raw.toString());
+      if (message.type === 'error') { clearTimeout(timer); fail(new Error(String(message.data))); }
+      if (message.type === 'ready') { clearTimeout(timer); ownerTerminal.close(); done(); }
+    });
+  });
   const shared = await request('/api/access/terminal-shares', 'POST', ownerToken,
-    { vmId, viewerId: viewer.body.id, session: 'sharetest', minutes: 5 });
+    { vmId, viewerId: viewer.body.id, session: 'sharetest', projectId: 'default', minutes: 5 });
   assert.equal(shared.status, 201, JSON.stringify(shared.body));
   assert.equal((await request('/api/access/terminal-shares', 'GET', viewerToken)).body.grants[0].id,
     shared.body.id);
@@ -788,7 +798,7 @@ try {
     await sharedPage.getByText('终端视图已连接', { exact: false }).waitFor();
   } finally { await sharedBrowser.close(); }
   const terminalUrl = origin.replace('http:', 'ws:') + '/ws/' + vmId +
-    '/terminal-view?session=sharetest&token=' + viewerToken;
+    '/terminal-view?session=sharetest&project=default&token=' + viewerToken;
   const openTerminal = async () => {
     const socket = new WebSocket(terminalUrl, { handshakeTimeout: 5000 });
     const messages: { type: string; data: unknown }[] = [];
@@ -803,7 +813,7 @@ try {
     return { socket, messages };
   };
   const viewed = await openTerminal();
-  assert.equal((await guest("tmux send-keys -t =sakura-terminal-sharetest:0 'printf shared-terminal-ws' Enter")).code, 0);
+  assert.equal((await guest("tmux send-keys -t sakura-terminal-default-sharetest:0 'printf shared-terminal-ws' Enter")).code, 0);
   const outputDeadline = Date.now() + 10_000;
   while (!viewed.messages.some((item) => item.type === 'data' &&
       String(item.data).includes('shared-terminal-ws')) && Date.now() < outputDeadline)

@@ -2,7 +2,7 @@ import { restoreTerminals, terminalReducer, type TerminalAction, type TerminalSt
 import { applyTerminalLayout, type TerminalLayout } from './terminal-layouts';
 
 type TerminalStorage = Pick<Storage, 'getItem' | 'setItem'>;
-type Snapshot = TerminalState & { closing: string | null; error: string };
+type Snapshot = TerminalState & { closing: string | null; error: string; suspended: boolean };
 
 function createStore(id: string, storage: () => TerminalStorage) {
   const key = `sakura-terminals-${id}`;
@@ -10,17 +10,22 @@ function createStore(id: string, storage: () => TerminalStorage) {
   try {
     saved = JSON.parse(storage().getItem(key) || 'null');
   } catch {}
-  let snapshot: Snapshot = { ...restoreTerminals(saved), closing: null, error: '' };
+  let snapshot: Snapshot = { ...restoreTerminals(saved), closing: null, error: '', suspended: false };
   try {
     const selected = storage().getItem(key + '-active');
     if (snapshot.tabs.some((tab) => tab.id === selected)) snapshot.active = selected!;
+    snapshot.suspended = storage().getItem(key + '-suspended') === 'true';
   } catch {}
   const listeners = new Set<() => void>();
 
   const update = (next: Snapshot) => {
     const tabsChanged = next.tabs !== snapshot.tabs;
     const activeChanged = next.active !== snapshot.active;
+    const suspendedChanged = next.suspended !== snapshot.suspended;
     snapshot = next;
+    if (suspendedChanged) {
+      try { storage().setItem(key + '-suspended', String(snapshot.suspended)); } catch {}
+    }
     if (activeChanged || tabsChanged) {
       try {
         storage().setItem(key + '-active', snapshot.active);
@@ -53,6 +58,18 @@ function createStore(id: string, storage: () => TerminalStorage) {
       if (snapshot.closing) throw new Error('请等待终端关闭操作结束');
       update({ ...snapshot, ...applyTerminalLayout(snapshot, layout), error: '' });
     },
+    resume() {
+      if (!snapshot.closing) update({ ...snapshot, suspended: false, error: '' });
+    },
+    async stopAll(remove: () => Promise<unknown>) {
+      if (snapshot.closing) return;
+      // Unmount sockets first. Keep this persisted even if the request fails:
+      // a browser reload must not recreate sessions during cleanup or editing.
+      update({ ...snapshot, suspended: true, closing: '*', error: '' });
+      try { await remove(); }
+      catch (error) { update({ ...snapshot, error: error instanceof Error ? error.message : String(error) }); }
+      finally { update({ ...snapshot, closing: null }); }
+    },
     async close(session: string, remove: () => Promise<unknown>) {
       if (snapshot.closing || snapshot.tabs.length < 2 || !snapshot.tabs.some((tab) => tab.id === session))
         return;
@@ -71,7 +88,7 @@ function createStore(id: string, storage: () => TerminalStorage) {
   };
 }
 
-// One owner per VM outlives its mounted views, including pending close requests.
+// One owner per VM/project outlives its mounted views, including pending requests.
 // Every view subscribes to the same snapshot and writes the same latest tab list.
 export function createTerminalStores(storage: () => TerminalStorage) {
   const stores = new Map<string, ReturnType<typeof createStore>>();

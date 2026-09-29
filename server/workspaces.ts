@@ -23,6 +23,7 @@ import { runtimesSchema, runtimeEnvironment } from './runtime-versions.ts';
 import { guardProjectQuotaDirectory, projectQuota, readProjectQuotaRecord } from './project-quota.ts';
 import { ensureProjectNetworkScript, projectNetworkCommand,
   removeProjectNetwork } from './project-network-isolation.ts';
+import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 
 export const projectSchema = z
   .object({
@@ -237,6 +238,23 @@ export class Workspaces {
           (project.directory !== allowedDirectory || previous.directory !== allowedDirectory))
         throw new AppError('项目成员不能修改项目目录', 403);
       for (const guard of this.configGuards) await guard(id, previous, project);
+      if (previous.directory !== project.directory ||
+          (previous.networkIsolation || 'host') !== (project.networkIsolation || 'host')) {
+        if (this.machines.state(id) === 'paused')
+          throw new AppError('请先恢复实例并停止项目终端，再修改目录或网络模式', 409);
+        if (this.machines.state(id) === 'running') {
+          const prefix = terminalSessionPrefix(this.projects.current(id));
+          const check = await this.machines.exec(id, `set -eu\n` +
+            `if command -v tmux >/dev/null && tmux list-sessions -F '#{session_name}' >/dev/null 2>&1; then\n` +
+            `  sakura_sessions=$(tmux list-sessions -F '#{session_name}')\n` +
+            `  for sakura_session in $sakura_sessions; do\n` +
+            `    case "$sakura_session" in ${prefix}*) echo active;; esac\n` +
+            `  done\nfi`, 10000);
+          if (check.code !== 0) throw new AppError(check.stderr || '无法检查项目终端状态', 409);
+          if (check.stdout.includes('active'))
+            throw new AppError('请先停止此项目的所有终端，再修改目录或网络模式', 409);
+        }
+      }
       await guardProjectQuotaDirectory(
         id, this.projects.current(id), project.directory,
         (await this.projects.list(id)).projects.map((item) => item.id),

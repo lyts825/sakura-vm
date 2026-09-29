@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTerminalStores } from '../src/terminal-store.ts';
 import { applyTerminalLayout, restoreLayouts } from '../src/terminal-layouts.ts';
+import { terminalStoreKey } from '../shared/terminal-scope.ts';
 
 function deferred() {
   let resolve!: () => void;
@@ -186,4 +187,35 @@ test('unavailable storage does not break closing or in-page recovery after remou
     ['second'],
   );
   assert.equal(remounted.active, 'second');
+});
+
+test('stopping a project suspends sockets before cleanup and preserves layouts across reload and failure', async () => {
+  const { getStore, storage, saved } = fixture();
+  const project = getStore(terminalStoreKey('first-vm', '0123456789abcdef'));
+  const other = getStore(terminalStoreKey('first-vm', 'default'));
+  project.dispatch({ type: 'add', id: 'private-build' });
+  other.dispatch({ type: 'rename', id: 'main', name: 'Other project' });
+  const response = deferred();
+  const stopping = project.stopAll(() => {
+    assert.equal(project.getSnapshot().suspended, true);
+    assert.equal(project.getSnapshot().closing, '*');
+    assert.equal(saved.get('sakura-terminals-first-vm:0123456789abcdef-suspended'), 'true');
+    return response.promise;
+  });
+  project.resume();
+  assert.equal(project.getSnapshot().suspended, true, 'cannot reopen while killing sessions');
+  response.reject(new Error('恢复实例后再停止'));
+  await stopping;
+  assert.equal(project.getSnapshot().error, '恢复实例后再停止');
+  assert.equal(project.getSnapshot().suspended, true);
+  const restored = createTerminalStores(() => storage)(terminalStoreKey('first-vm', '0123456789abcdef'));
+  assert.equal(restored.getSnapshot().suspended, true);
+  assert.deepEqual(restored.getSnapshot().tabs.map((tab) => tab.id), ['main', 'private-build']);
+  await restored.stopAll(async () => {});
+  restored.resume();
+  assert.equal(restored.getSnapshot().suspended, false);
+  assert.equal(other.getSnapshot().suspended, false);
+  assert.equal(other.getSnapshot().tabs[0].name, 'Other project');
+  assert.equal(createTerminalStores(() => storage)(terminalStoreKey('first-vm', '0123456789abcdef'))
+    .getSnapshot().suspended, false);
 });

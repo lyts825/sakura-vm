@@ -3,7 +3,7 @@ type Options = {
   socket: (token: string) => WebSocket;
   data: (text: string) => void;
   report: (message: string) => void;
-  ready: () => void;
+  ready: (context: unknown) => void;
   logs: boolean;
 };
 
@@ -42,7 +42,7 @@ export function connectTerminal(options: Options) {
             ready = true;
             failures = 0;
             options.report('SSH 已连接');
-            options.ready();
+            options.ready(message.data);
           }
           if (message.type === 'error') {
             options.data(`\r\n连接失败：${String(message.data)}\r\n`);

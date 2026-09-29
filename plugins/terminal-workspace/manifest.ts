@@ -1,9 +1,10 @@
-import { definePlugin, http } from '../../shared/plugin-protocol.ts';
+import { definePlugin, http, pin } from '../../shared/plugin-protocol.ts';
 
 export const manifest = definePlugin({
   id: 'terminal-workspace',
   name: '多终端工作区',
   description: '终端标签、分屏与 tmux 会话恢复。',
   category: 'workspace',
-  contributes: { http: [http('/api/vms/:vmId/terminal-session', ['POST'])], sockets: ['terminal-session'] },
+  optional: [pin('projects')],
+  contributes: { http: [http('/api/vms/:vmId/terminal-session', ['POST'], true)], sockets: ['terminal-session'] },
 });

@@ -94,7 +94,7 @@ const core: {
   { id: 'access.handoffCancel', method: 'DELETE', path: '/api/access/handoff',
     title: '取消当前会话待接收的交接码' },
   { id: 'access.terminalShares', method: 'GET', path: '/api/access/terminal-shares',
-    title: '列出当前账户可查看的终端共享；可用 vmId 查询参数筛选', inspect: true },
+    title: '列出当前账户可查看的终端共享；可用 vmId、project 查询参数筛选', inspect: true },
   { id: 'access.terminalShareCreate', method: 'POST', path: '/api/access/terminal-shares',
     title: '为只读账户授予运行中 tmux 会话的限时查看权限',
     body: request(terminalShareInput), status: 201 },

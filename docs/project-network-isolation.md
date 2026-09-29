@@ -6,11 +6,13 @@
 
 Envoy 服务网格及数据库容器仍依赖客户机共享网络，因此会拒绝在私有项目中启动。容器模板查询与容器安装、镜像拉取、模板应用、Compose 命令等共享网络操作同样拒绝；已有容器可按 ID 停止或移除，清理命令不继承项目环境变量。一个实例只要含有私有项目，Sakura 就不生成该实例的 VS Code Remote-SSH 主机别名，并拒绝编辑器项目入口；项目设置变更后同步更新已生成的别名。按锁文件安装依赖及其安装脚本在私有命名空间中运行，需要联网下载时会失败；可先在共享网络预取固定依赖（npm 禁用脚本，pip 只下载二进制包），再从项目缓存离线安装。仓库数据通过客户机共享网络获取，但私有项目使用无工作树检出下载，检出及 Git 过滤器在项目命名空间内执行。项目环境变量也只在托管项目命令内设置，不传给共享网络中的准备步骤。安装运行时及其他准备工作仍使用客户机共享网络，以便获取依赖。
 
-这是一项针对 **Sakura 托管项目进程、单应用窗口与显式项目终端** 的网络分段功能，当前仍标为部分实现。普通管理员终端、独立 SSH、客户机自行启动的进程、普通 KDE 桌面及其他扩展不受该模式限制；客户机 root 也能自行变更网络命名空间。不能把它当作抵御客户机管理员或恶意代码的安全边界，也不能用它承诺实例级无外网。需要整个实例断网时，应使用实例级网络策略。
+网页普通终端与可恢复 tmux 会话也按当前工作项目进入相同的网络空间，准备阶段可自动创建命名空间。恢复和只读分享会复核项目、目录、网络模式、运行会话标识及所有窗格的实际网络空间。运行中的连接、断开后仍在运行的 tmux 会话及暂停中的实例会阻止修改项目目录或网络模式；“停止项目终端”按项目清理并保留停止状态和布局，刷新不会重建会话。停用项目插件后仍遵守已保存的活动项目配置，见 [项目终端与只读分享](project-terminals.md)。
+
+这是一项针对 **Sakura 托管项目进程、单应用窗口与网页项目终端** 的网络分段功能，当前仍标为部分实现。独立 SSH、客户机管理执行接口、自行启动的进程、普通 KDE 桌面及其他扩展不受该模式限制；客户机 root 也能自行变更网络命名空间。不能把它当作抵御客户机管理员或恶意代码的安全边界，也不能用它承诺实例级无外网。需要整个实例断网时，应使用实例级网络策略。
 
 单应用图形窗口也沿用启动项目的网络模式。私有窗口的 Xvnc、Openbox、应用及其子进程在项目网络空间内运行，已有 SSH 连接桥接进入同一空间并复核网络；运行和暂停中的窗口会阻止该项目切换模式或目录。每个窗口还使用独立 Linux 用户、受保护的 X11/VNC 凭据和按用户限制的图形端口，见 [单应用窗口](single-app-windows.md)。普通 KDE 桌面及自行启动的图形程序仍不受项目网络设置约束。
 
-`npm run test:project-network-isolation` 在真实 Alpine 虚拟机中验证两个项目使用不同的命名空间、没有路由，且初始化、环境变量、服务、仓库下载阶段（测试桩）与真实 Git 检出、Git 工作台、收藏命令、流水线、交互式项目终端、运行时版本与开发工具检查处于预期的命名空间，人工添加路由后托管命令拒绝执行，并验证停止后的清理。`npx tsx scripts/smoke-project-network-isolation.ts debian` 和 `npx tsx scripts/smoke-project-network-isolation.ts ubuntu` 可在真实 Debian、Ubuntu 客户机中复核同一流程。设置 `SAKURA_LSP_PRIVATE=1` 运行 `npm run test:language-services`、设置 `SAKURA_DAP_PRIVATE=1` 运行 `npm run test:debug-adapter` 可额外验证私有项目中的语言服务与调试器。普通管理员终端和自行启动进程仍不受项目命名空间约束。
+`npm run test:project-network-isolation` 在真实 Alpine 虚拟机中验证两个项目使用不同的命名空间、没有路由，且初始化、环境变量、服务、仓库下载阶段（测试桩）与真实 Git 检出、Git 工作台、收藏命令、流水线、交互式项目终端、运行时版本与开发工具检查处于预期的命名空间，人工添加路由后托管命令拒绝执行，并验证停止后的清理。`npx tsx scripts/smoke-project-network-isolation.ts debian` 和 `npx tsx scripts/smoke-project-network-isolation.ts ubuntu` 可在真实 Debian、Ubuntu 客户机中复核同一流程。设置 `SAKURA_LSP_PRIVATE=1` 运行 `npm run test:language-services`、设置 `SAKURA_DAP_PRIVATE=1` 运行 `npm run test:debug-adapter` 可额外验证私有项目中的语言服务与调试器。独立 SSH、管理执行接口和自行启动进程仍不受项目命名空间约束。
 
 设置 `SAKURA_NOTEBOOK_PRIVATE=1` 运行 `npm run test:notebook` 验证私有 Notebook 的二进制包预取、离线安装、认证、桥接恢复和 Jupyter WebSocket 内核的实际命名空间及拒绝外网。设置 `SAKURA_BROWSER_IDE_PRIVATE=1` 运行 `npm run test:browser-ide` 验证私有浏览器 IDE 的认证、进程命名空间、桥接恢复和到期清理；同时设置 `SAKURA_BROWSER_IDE_TERMINAL=1` 验证真实浏览器中的集成终端也进入同一命名空间。
 

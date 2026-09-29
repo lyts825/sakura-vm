@@ -29,7 +29,7 @@ import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { AutomationRules } from './automation-rules.ts';
 import { runEngineeringOperation } from './engineering-runner.ts';
 import { Workspaces, projectSchema } from './workspaces.ts';
-import { projectPrivateShellCommand } from './project-network-isolation.ts';
+import { ProjectTerminals } from './project-terminals.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
 import { FleetPolicyRollouts } from './fleet-policy-rollouts.ts';
@@ -121,6 +121,8 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
+  const projectTerminals = new ProjectTerminals(machines, features.workspaces);
+  terminalSharing.useProjectTerminals(projectTerminals);
   features.next?.setCommunityPlugins(communityPlugins);
   features.next?.setSnapshotMerge(features.serviceValue('snapshotMerge') as
     import('./snapshot-merge.ts').SnapshotMerge | undefined);
@@ -507,14 +509,14 @@ async function main() {
     try { return access.authorize(value).role === 'owner'; } catch { return false; }
   };
   const socketAuthorization = (credential: string, mode: string, id: string,
-    terminalSession?: string | null) => {
+    terminalSession?: string | null, terminalProject?: string | null) => {
     if (!access.enabled) return equalToken(credential) ? { role: 'owner' as const } : null;
     try {
       const principal = access.authorize(credential);
       return (principal.role === 'owner' && mode !== 'terminal-view') ||
         (principal.role === 'viewer' && principal.vmIds.includes(id) &&
           (mode === 'desktop-view' || (mode === 'terminal-view' && !!terminalSession &&
-            !!terminalSharing.find(principal.id, id, terminalSession))))
+            !!terminalSharing.find(principal.id, id, terminalSession, terminalProject))))
         ? principal : null;
     } catch { return null; }
   };
@@ -865,12 +867,14 @@ async function main() {
       if (!accountPrincipal) throw new AppError('账户模式未启用', 409);
       if (req.method === 'GET') {
         const vmId = url.searchParams.get('vmId');
+        const projectId = url.searchParams.get('project');
         if (vmId) z.uuid().parse(vmId);
+        if (projectId !== null) projectIdSchema.parse(projectId);
         if (accountPrincipal.role === 'viewer' && vmId && !accountPrincipal.vmIds.includes(vmId))
           throw new AppError('实例不在账户范围内', 403);
         return send(res, { grants: terminalSharing.list(
           accountPrincipal.role === 'viewer' ? accountPrincipal.id : undefined,
-          vmId || undefined) });
+          vmId || undefined, projectId || undefined) });
       }
       if (req.method !== 'POST' || accountPrincipal.role !== 'owner')
         throw new AppError('只有管理员可共享终端', 403);
@@ -1594,10 +1598,12 @@ async function main() {
           !['terminal', 'terminal-view', 'logs', 'desktop', 'desktop-view'].includes(mode))) ||
       (!events && mode !== 'logs' && machines.incidentLocked(id)) ||
       (mode === 'terminal-view' && (!terminalSession || !/^[a-z0-9-]{1,48}$/.test(terminalSession))) ||
-      (terminalProject !== null && (mode !== 'terminal' || terminalSession !== null ||
+      (terminalSession !== null && (!['terminal', 'terminal-view', 'logs'].includes(mode) ||
+        !/^[a-z0-9-]{1,48}$/.test(terminalSession))) ||
+      (terminalProject !== null && (!['terminal', 'terminal-view'].includes(mode) ||
         !projectIdSchema.safeParse(terminalProject).success)) ||
       (appSession !== null && (mode !== 'desktop' || !z.uuid().safeParse(appSession).success)) ||
-      !socketAuthorization(credential, mode, id, terminalSession) ||
+      !socketAuthorization(credential, mode, id, terminalSession, terminalProject) ||
       ((mode === 'desktop' || mode === 'desktop-view') && !features.socketEnabled('desktop')) ||
       (url.searchParams.has('session') && !features.socketEnabled('terminal-session'))
     ) {
@@ -1612,7 +1618,7 @@ async function main() {
         client.terminate();
         return;
       }
-      const principal = socketAuthorization(credential, mode, id, terminalSession);
+      const principal = socketAuthorization(credential, mode, id, terminalSession, terminalProject);
       if (!principal) { client.terminate(); return; }
       socketCredentials.set(client, credential);
       if ('id' in principal) {
@@ -1622,7 +1628,7 @@ async function main() {
         client.once('close', () => clearTimeout(timer));
       }
       if (mode === 'terminal-view' && 'id' in principal) {
-        const grant = terminalSharing.find(principal.id, id, terminalSession!);
+        const grant = terminalSharing.find(principal.id, id, terminalSession!, terminalProject);
         if (!grant) { client.terminate(); return; }
         socketTerminalGrants.set(client, grant.id);
         const timer = setTimeout(() => client.terminate(),
@@ -1669,27 +1675,37 @@ async function main() {
         return;
       }
       let ssh: Awaited<ReturnType<typeof machines.connect>> | undefined;
-      client.on('close', () => ssh?.end());
+      let terminalLease: Awaited<ReturnType<typeof projectTerminals.prepare>> | undefined;
+      const terminalAbort = new AbortController();
+      client.on('close', () => {
+        terminalAbort.abort(); terminalLease?.release(); ssh?.end();
+      });
       try {
-        const projectShell = terminalProject && features.workspaces
-          ? await features.workspaces.projects.with(id, terminalProject,
-            async () => projectPrivateShellCommand(await features.workspaces.config(id)))
-          : null;
-        if (terminalProject && !projectShell) throw new AppError('项目终端不可用', 503);
-        ssh = await machines.connect(id);
+        const terminalGrant = mode === 'terminal-view' && 'id' in principal
+          ? terminalSharing.find(principal.id, id, terminalSession!, terminalProject) : null;
+        if (mode === 'terminal-view' && 'id' in principal && !terminalGrant?.terminalId)
+          throw new AppError('此共享授权未绑定运行会话，请让管理员重新共享终端', 409);
+        terminalLease = await projectTerminals.prepare(id, terminalProject, terminalSession,
+          mode === 'terminal-view', terminalAbort.signal, terminalGrant?.terminalId);
+        ssh = await machines.connect(id, 10000, terminalAbort.signal);
         if (client.readyState !== WebSocket.OPEN) {
           ssh.end();
           return;
         }
         ssh.on('error', (error) => sendData('error', error.message));
+        ssh.once('close', () => client.close());
         const connected = (error: Error | undefined, stream: ClientChannel) => {
+          if (!error && (terminalAbort.signal.aborted || client.readyState !== WebSocket.OPEN)) {
+            stream.close(); ssh?.end(); return;
+          }
           if (error) {
             sendData('error', error.message);
             client.close();
             ssh?.end();
             return;
           }
-          sendData('ready', true);
+          sendData('ready', { projectId: terminalLease!.projectId,
+            networkIsolation: terminalLease!.networkIsolation });
           const stdout = new StringDecoder('utf8'),
             stderr = new StringDecoder('utf8');
           stream.on('data', (data: Buffer) => sendData('data', stdout.write(data)));
@@ -1722,22 +1738,12 @@ async function main() {
             }
           });
         };
-        if (mode === 'terminal-view') {
-          ssh.exec(`exec tmux attach-session -r -t =sakura-terminal-${terminalSession}`,
-            { pty: { term: 'xterm-256color', cols: 100, rows: 28 } }, connected);
-        } else if (projectShell) {
-          ssh.exec(projectShell,
-            { pty: { term: 'xterm-256color', cols: 100, rows: 28 } }, connected);
-        } else if (terminalSession && /^[a-z0-9-]{1,48}$/.test(terminalSession)) {
-          ssh.exec(
-            `if command -v tmux >/dev/null; then exec tmux new-session -A -s sakura-terminal-${terminalSession}; else printf '安装项目环境后可恢复终端会话。\\r\\n'; exec /bin/sh -l; fi`,
-            { pty: { term: 'xterm-256color', cols: 100, rows: 28 } },
-            connected,
-          );
-        } else ssh.shell({ term: 'xterm-256color', cols: 100, rows: 28 }, connected);
+        ssh.exec(terminalLease.command,
+          { pty: { term: 'xterm-256color', cols: 100, rows: 28 } }, connected);
       } catch (error: any) {
         sendData('error', error.message);
         client.close();
+        terminalLease?.release();
         ssh?.end();
       }
     });
@@ -1764,6 +1770,7 @@ async function main() {
       () => sso.close(),
       () => passkeys.close(),
       () => terminalSharing.close(),
+      () => projectTerminals.close(),
       () => jitPrivileges.close(),
       () => projectPermissions.close(),
       () => policyBundles.close(),

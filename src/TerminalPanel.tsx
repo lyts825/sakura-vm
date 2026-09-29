@@ -1,6 +1,6 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
-import { Minus, Play, Plus, RefreshCw, TerminalSquare, Trash2 } from 'lucide-react';
+import { Minus, Play, Plus, RefreshCw, TerminalSquare, Trash2, Unplug } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { VMView } from '../server/model';
 import { controllerSession } from './controller-session';
@@ -32,9 +32,12 @@ export function TerminalPanel({
   });
   const [retry, setRetry] = useState(0),
     [connection, setConnection] = useState('连接中');
+  const [disconnected, setDisconnected] = useState(false);
+  const [networkMode, setNetworkMode] = useState<'host' | 'private' | null>(null);
   const mode = vm.status === 'running' ? 'terminal' : 'logs';
   useEffect(() => {
-    if (!ref.current || vm.status === 'stopped') return;
+    setNetworkMode(null);
+    if (!ref.current || vm.status === 'stopped' || disconnected) return;
     const monoFamily = getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim();
     let disposed = false;
     const term = new Terminal({
@@ -80,7 +83,10 @@ export function TerminalPanel({
         ),
       data: (text) => term.write(text),
       report: setConnection,
-      ready: () => {
+      ready: (context) => {
+        if (context && typeof context === 'object' && 'networkIsolation' in context &&
+            (context.networkIsolation === 'host' || context.networkIsolation === 'private'))
+          setNetworkMode(context.networkIsolation);
         resize();
         if (
           ref.current?.clientWidth &&
@@ -123,7 +129,7 @@ export function TerminalPanel({
       terminal.current = null;
       fitTerminal.current = null;
     };
-  }, [vm.id, vm.status, mode, retry, session, projectId]);
+  }, [vm.id, vm.status, mode, retry, session, projectId, disconnected]);
   // Resize the existing terminal without replacing its SSH connection or scrollback.
   useEffect(() => {
     if (terminal.current) {
@@ -137,7 +143,7 @@ export function TerminalPanel({
     }
   }, [fontSize]);
   const connectionTone =
-    vm.status === 'stopped'
+    vm.status === 'stopped' || disconnected
       ? 'stopped'
       : connection === 'SSH 已连接'
         ? 'running'
@@ -155,7 +161,7 @@ export function TerminalPanel({
             <i />
             <i />
           </span>
-          <span>{vm.status === 'running' ? `root@${vm.name}: ${projectId ? '私有项目网络' : '~'}` : 'Linux 启动控制台'}</span>
+          <span>{vm.status === 'running' ? `root@${vm.name}: ${networkMode === 'private' ? '私有项目网络' : networkMode === 'host' ? '共享网络' : '项目终端'}` : 'Linux 启动控制台'}</span>
         </div>
         <div>
           <div className="terminal-font-controls" role="group" aria-label="终端字号">
@@ -198,10 +204,12 @@ export function TerminalPanel({
             aria-label="重新连接终端"
             title="重新连接"
             disabled={vm.status === 'stopped'}
-            onClick={() => setRetry((v) => v + 1)}
+            onClick={() => { setDisconnected(false); setRetry((v) => v + 1); }}
           >
             <RefreshCw size={14} />
           </button>
+          {!session && vm.status === 'running' && <button aria-label="断开项目终端" title="断开项目终端"
+            disabled={disconnected} onClick={() => setDisconnected(true)}><Unplug size={14} /></button>}
         </div>
       </div>
       {vm.status === 'stopped' ? (
@@ -214,13 +222,13 @@ export function TerminalPanel({
             启动并连接
           </button>
         </div>
-      ) : (
+      ) : disconnected ? <div className="terminal-offline"><p>项目终端已断开，点击重新连接继续。</p></div> : (
         <div ref={ref} className="xterm-container" />
       )}
       <div className="terminal-bottom">
         <span className={`terminal-session ${connectionTone}`} role="status">
           <span className={`tiny-dot ${connectionTone}`} />
-          {vm.status === 'stopped' ? '发行版已停止' : connection}
+          {vm.status === 'stopped' ? '发行版已停止' : disconnected ? '连接已关闭' : connection}
         </span>
         <span>
           UTF-8<span className="terminal-separator">/</span>xterm-256color

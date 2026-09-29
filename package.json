@@ -88,6 +88,7 @@
     "test:hello": "tsx scripts/smoke-hello.ts",
     "tray": "node scripts/start-tray.mjs",
     "test:shared-terminal": "tsx scripts/smoke-shared-terminal.ts",
+    "test:project-terminals": "tsx scripts/smoke-project-terminals.ts",
     "test:development": "tsx scripts/smoke-development.ts",
     "plugins:check": "tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",
     "plugins:schema": "tsx scripts/plugin-schema.ts",

@@ -3061,6 +3061,9 @@ const vm = {
 
 test('saved private project offers an interactive shell in its network context', async ({ page }) => {
   await app(page, ['projects'], true);
+  await page.routeWebSocket(/\/ws\/[^/]+\/terminal\?/, (socket) => {
+    socket.send(JSON.stringify({ type: 'ready', data: { projectId: 'default', networkIsolation: 'private' } }));
+  });
   await page.route('**/api/vms', (route) =>
     route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
   await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, (route) =>
@@ -3072,9 +3075,67 @@ test('saved private project offers an interactive shell in its network context',
   const open = page.getByRole('button', { name: '打开项目隔离终端' });
   await expect(open).toBeVisible();
   await open.click();
-  await expect(page.getByText('root@example: 私有项目网络')).toBeVisible();
+  await expect(page.getByText('root@example: 私有项目网络').last()).toBeVisible();
   await page.getByRole('button', { name: '关闭项目隔离终端' }).click();
-  await expect(page.getByText('root@example: 私有项目网络')).toHaveCount(0);
+  await expect(page.getByText('root@example: 私有项目网络')).toHaveCount(1);
+});
+
+test('ordinary terminal workspaces isolate project layouts and remain stopped across reload until reopened', async ({ page }) => {
+  await app(page, ['projects', 'terminal-workspace'], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  const privateId = '0123456789abcdef';
+  let active = privateId, hold = false, release: (() => void) | undefined;
+  const connected: string[] = [], stopped: string[] = [];
+  await page.route(/\/api\/vms\/[^/]+\/projects(?:\?.*)?$/, async (route) => {
+    if (hold) await new Promise<void>((done) => { release = done; });
+    if (route.request().method() === 'POST') active = route.request().postDataJSON().projectId;
+    return route.fulfill({ json: { active, projects: [{ id: 'default', name: '共享项目' }, { id: privateId, name: '私有项目' }] } });
+  });
+  await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, (route) => route.fulfill({ json: {
+    projectId: active, job: null, project: { directory: '/workspace', template: 'none',
+      repository: '', setup: '', command: '', networkIsolation: active === privateId ? 'private' : 'host' } } }));
+  await page.route(/\/api\/vms\/[^/]+\/terminal-session(?:\?.*)?$/, (route) => {
+    expect(route.request().postDataJSON()).toEqual({ action: 'stop-all' });
+    stopped.push(new URL(route.request().url()).searchParams.get('project')!);
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.routeWebSocket(/\/ws\/[^/]+\/terminal\?/, (socket) => {
+    const project = new URL(socket.url()).searchParams.get('project')!;
+    connected.push(project);
+    socket.send(JSON.stringify({ type: 'ready', data: { projectId: project,
+      networkIsolation: project === privateId ? 'private' : 'host' } }));
+  });
+  hold = true;
+  await page.reload();
+  await expect(page.getByText('正在加载工作项目…')).toBeVisible();
+  expect(connected).toEqual([]);
+  await expect.poll(() => Boolean(release)).toBe(true);
+  hold = false; release!();
+  await expect(page.getByText('root@example: 私有项目网络')).toBeVisible();
+  await page.getByRole('button', { name: '新建终端' }).click();
+  await expect(page.locator('.terminal-tab')).toHaveCount(2);
+  await page.getByRole('button', { name: '停止项目终端' }).click();
+  await expect(page.getByRole('button', { name: '打开终端', exact: true })).toBeVisible();
+  expect(stopped).toEqual([privateId]);
+  const count = connected.length;
+  await page.reload();
+  await expect(page.getByRole('button', { name: '打开终端', exact: true })).toBeVisible();
+  expect(connected.length).toBe(count);
+  await expect(page.locator('.terminal-tab')).toHaveCount(2);
+  await page.getByRole('tab', { name: '项目', exact: true }).click();
+  await page.getByRole('combobox', { name: '工作项目', exact: true }).selectOption('default');
+  await page.getByRole('tab', { name: '终端', exact: true }).click();
+  await expect(page.getByText('root@example: 共享网络')).toBeVisible();
+  await expect(page.locator('.terminal-tab')).toHaveCount(1);
+  await page.getByRole('tab', { name: '项目', exact: true }).click();
+  await page.getByRole('combobox', { name: '工作项目', exact: true }).selectOption(privateId);
+  await page.getByRole('tab', { name: '终端', exact: true }).click();
+  await expect(page.locator('.terminal-tab')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '打开终端', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '打开终端', exact: true }).click();
+  await expect(page.locator('.terminal-pane:not([hidden])').getByText('root@example: 私有项目网络')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test('clipboard protection blocks sensitive selections and editor payloads locally, preserves cuts and persists settings', async ({

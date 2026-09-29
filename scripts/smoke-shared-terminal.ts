@@ -15,9 +15,12 @@ process.env.SAKURA_IMAGE_DIR = resolve('.data/images');
 const { createRuntime } = await import('../server/runtime.ts');
 const { Machines } = await import('../server/machines.ts');
 const { TerminalSharing } = await import('../server/terminal-sharing.ts');
+const { ProjectTerminals } = await import('../server/project-terminals.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const sharing = new TerminalSharing(machines, join(root, 'terminal-sharing.json'));
+const terminals = new ProjectTerminals(machines);
+sharing.useProjectTerminals(terminals);
 await sharing.init();
 try {
   const vm = await machines.create({ name: 'terminal-share-smoke', memoryMiB: 1024,
@@ -29,22 +32,18 @@ try {
       throw new Error(machines.logs.get(vm.id) || '客户机启动超时');
     await delay(250);
   }
-  const installed = await machines.exec(vm.id, 'command -v tmux >/dev/null');
-  if (installed.code !== 0) {
-    const install = await machines.exec(vm.id, 'apk add --no-cache tmux', 120_000);
-    assert.equal(install.code, 0, install.stderr);
-  }
   const session = 'share-test';
-  const target = '=sakura-terminal-' + session;
-  const created = await machines.exec(vm.id, `tmux new-session -d -s sakura-terminal-${session}`);
-  assert.equal(created.code, 0, created.stderr);
+  const target = 'sakura-terminal-default-' + session;
+  const created = await terminals.prepare(vm.id, 'default', session);
+  created.release();
   const viewerId = '00000000-0000-4000-8000-000000000002';
-  const grant = await sharing.create({ vmId: vm.id, viewerId, session, minutes: 5 });
-  assert.equal(sharing.find(viewerId, vm.id, session)?.id, grant.id);
+  const grant = await sharing.create({ vmId: vm.id, viewerId, session, projectId: 'default', minutes: 5 });
+  assert.equal(sharing.find(viewerId, vm.id, session, 'default')?.id, grant.id);
+  const readonly = await terminals.prepare(vm.id, 'default', session, true);
   const client = await machines.connect(vm.id);
   try {
     const stream = await new Promise<ClientChannel>((done, fail) => client.exec(
-      `exec tmux attach-session -r -t ${target}`,
+      readonly.command,
       { pty: { term: 'xterm-256color', cols: 100, rows: 28 } },
       (error, channel) => error ? fail(error) : done(channel)));
     let output = '';
@@ -62,12 +61,13 @@ try {
     assert.equal((await machines.exec(vm.id,
       'test ! -e /tmp/readonly-terminal-violation')).code, 0);
     stream.close();
-  } finally { client.end(); }
+  } finally { client.end(); readonly.release(); }
   await sharing.revoke(grant.id);
-  assert.equal(sharing.find(viewerId, vm.id, session), null);
+  assert.equal(sharing.find(viewerId, vm.id, session, 'default'), null);
   console.log('Live tmux read-only attachment, output, blocked input and grant revocation passed');
 } finally {
   await sharing.close();
+  await terminals.close();
   await machines.close();
   assert.equal(dirname(root), resolve(tmpdir()));
   assert.match(root, /sakura-shared-terminal-/);
