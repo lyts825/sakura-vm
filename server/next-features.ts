@@ -32,6 +32,7 @@ import { ServiceMesh } from './service-mesh.ts';
 import { VtpmEnrollment } from './vtpm-enrollment.ts';
 import { devicePassthroughPreview } from './device-passthrough-preview.ts';
 import { gpuComputeInput, gpuComputeStatus } from './gpu-compute.ts';
+import { planLiveMigration } from './live-migration.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -70,7 +71,7 @@ export const nextFeatureCatalog = [
     '远程主机与集群',
     'P1',
     '检查在线迁移前置条件并生成迁移计划。',
-    'planned',
+    'experimental',
   ],
   ['cold-migration', '冷迁移队列', '远程主机与集群', 'P1',
     '将停止实例的校验包传至已授权远端，持久记录重试任务，确认后移除源实例。', 'available'],
@@ -1091,6 +1092,12 @@ export class NextFeatures {
       return { ...score, ready: score.candidates.some((item) => item.eligible),
         executed: action === 'run', adapter,
         message: '此结果是按最近资源观测计算的放置建议，不会迁移或启动实例。' };
+    }
+    if (spec.id === 'live-migration') {
+      if (!this.scoreHosts) return { ready: false, executed: false, adapter,
+        reason: '主机资源评分服务尚未启动。' };
+      return { ...await planLiveMigration(this.machines, this.scoreHosts, id, merged, signal),
+        adapter };
     }
     if (spec.id === 'object-backup') {
       if (!this.objectBackup)
