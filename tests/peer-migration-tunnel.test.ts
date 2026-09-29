@@ -54,7 +54,13 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
     assert.throws(() => target.registerMigrationSession(inbound.requesterId,
       { disk: 80, state: echoPort }), /端口无效/);
     const session = target.registerMigrationSession(inbound.requesterId,
-      { disk: echoPort, state: echoPort });
+      { disk: echoPort, state: echoPort, qmp: echoPort,
+        targetDiskNode: 'sakura-disk' });
+    await assert.rejects(source.targetMigrationQmp(outbound.id, session,
+      'system_reset'), /Invalid option|invalid_value|Invalid input/i);
+    await assert.rejects(source.targetMigrationQmp(outbound.id, session,
+      'migrate-incoming', { uri: `tcp:0.0.0.0:${echoPort}`, 'exit-on-error': false }),
+    /HTTP 400/);
     forward = await source.openMigrationForward(outbound.id, session, 'disk');
     client = createConnection({ host: '127.0.0.1', port: forward.port });
     client.on('error', () => {});

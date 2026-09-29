@@ -32,6 +32,7 @@ const root = await mkdtemp(join(tmpdir(), 'sakura-qemu-migration-'));
 const sourceDisk = join(root, 'source.qcow2');
 const targetDisk = join(root, 'target.qcow2');
 let sourcePeers: HostPeers | undefined, targetPeers: HostPeers | undefined;
+let peerId: string | undefined, peerSession: string | undefined;
 const forwards: Array<Awaited<ReturnType<HostPeers['openMigrationForward']>>> = [];
 const peerStatus = async () => ({ platform: process.platform, arch: process.arch,
   cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
@@ -100,7 +101,10 @@ try {
     await targetPeers.configure({ operation: 'allow-import', id: incoming.id, enabled: true });
     await targetPeers.configure({ operation: 'allow-activate', id: incoming.id, enabled: true });
     const session = targetPeers.registerMigrationSession(incoming.requesterId,
-      { disk: nbdPort, state: transferPort });
+      { disk: nbdPort, state: transferPort, qmp: targetPort,
+        targetDiskNode: 'sakura-disk' });
+    peerId = outgoing.id;
+    peerSession = session;
     const disk = await sourcePeers.openMigrationForward(outgoing.id, session, 'disk');
     forwards.push(disk);
     const state = await sourcePeers.openMigrationForward(outgoing.id, session, 'state');
@@ -117,7 +121,9 @@ try {
       }
       return qmp(sourcePort, command, args, timeoutMs);
     },
-    target: (command, args, timeoutMs) => qmp(targetPort, command, args, timeoutMs),
+    target: (command, args, timeoutMs) => peerTunnel
+      ? sourcePeers!.targetMigrationQmp(peerId!, peerSession!, command, args, timeoutMs)
+      : qmp(targetPort, command, args, timeoutMs),
     sourceDiskNode: 'sakura-disk', targetDiskNode: 'sakura-disk',
     nbdListen: { type: 'inet', data: { host: remoteEndpoint ? '0.0.0.0' : '127.0.0.1',
       port: String(nbdPort) } },
@@ -180,7 +186,7 @@ try {
     console.log('Failed durable fencing left both QEMU instances stopped for reconciliation.');
   } else {
     await run(qemuImg, ['compare', '-f', 'qcow2', '-F', 'qcow2', sourceDisk, targetDisk]);
-    console.log(`QEMU mirrored a live disk through NBD${peerTunnel ? ' and pinned peer TLS' : ''}, paused before switchover, transferred RAM, resumed only the target, and verified identical disk contents.`);
+    console.log(`QEMU mirrored a live disk through NBD${peerTunnel ? ' and pinned peer TLS with restricted target QMP' : ''}, paused before switchover, transferred RAM, resumed only the target, and verified identical disk contents.`);
   }
 } finally {
   await Promise.all(processes.map(async (child) => {

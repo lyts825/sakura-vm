@@ -115,6 +115,7 @@ async function copyDirectoryVerified(source: string, destination: string, signal
 
 type Live = {
   status: VMStatus;
+  incoming?: boolean;
   accelerator: 'tcg' | 'whpx';
   startedAt: string;
   sshPort: number;
@@ -679,6 +680,27 @@ export class Machines extends EventEmitter {
   async start(id: string) {
     return this.startInternal(id);
   }
+  async startIncoming(id: string) {
+    return this.startInternal(id, undefined, true);
+  }
+  async completeIncoming(id: string, query: typeof qmp = qmp) {
+    return this.locked(id, async () => {
+      const live = this.live.get(id);
+      if (!live?.incoming || live.status !== 'paused')
+        throw new AppError('目标实例不在迁移接收状态', 409);
+      const state = await query(live.qmpPort, 'query-status') as
+        { status?: string; running?: boolean };
+      if (state.running !== true || state.status !== 'running')
+        throw new AppError('目标 QEMU 尚未完成迁移并运行', 409);
+      live.incoming = false;
+      live.status = 'starting';
+      live.bootDone = this.watchBoot(id, live).catch((error) => {
+        if (!live.bootAbort.signal.aborted) this.log(id, String(error));
+      });
+      this.emit('change');
+      return this.view(id);
+    });
+  }
   async fenceForLiveMigration(id: string, raw: unknown,
     query: typeof qmp = qmp) {
     const identity = liveMigrationFenceSchema.omit({ fencedAt: true }).parse(raw);
@@ -775,7 +797,7 @@ export class Machines extends EventEmitter {
       return vm.haRetirement;
     });
   }
-  private async startInternal(id: string, rescueOf?: string) {
+  private async startInternal(id: string, rescueOf?: string, incoming = false) {
     return this.locked('launch', () =>
       this.locked(id, async () => {
         const vm = this.get(id);
@@ -791,6 +813,8 @@ export class Machines extends EventEmitter {
         if (vm.rescueOf && (vm.rescueOf !== rescueOf || !this.locks.has(rescueOf)))
           throw new AppError('临时救援实例只能由救援任务启动，请重新提交救援任务', 409);
         this.requireSandboxLifetime(vm);
+        if (incoming && this.live.has(id))
+          throw new AppError('迁移目标实例必须处于停止状态', 409);
         if (this.live.has(id)) return this.view(id);
         validateAdmission(
           await resourcePolicy(),
@@ -818,7 +842,8 @@ export class Machines extends EventEmitter {
         const accelerator = vm.architecture === 'aarch64' ? 'tcg'
           : vm.accelerator === 'auto' ? (this.engine.whpxAvailable ? 'whpx' : 'tcg') : vm.accelerator;
         const live: Live = {
-          status: 'starting',
+          status: incoming ? 'paused' : 'starting',
+          incoming,
           accelerator,
           startedAt: new Date().toISOString(),
           sshPort,
@@ -827,7 +852,7 @@ export class Machines extends EventEmitter {
           serialPort,
           abort: new AbortController(),
           bootAbort: new AbortController(),
-          bootstrapKnown: vm.bootstrapped !== false,
+          bootstrapKnown: incoming || vm.bootstrapped !== false,
           serialConnected: false,
           serialReady: false,
           serialTail: '',
@@ -960,6 +985,7 @@ export class Machines extends EventEmitter {
           `tcp:127.0.0.1:${qmpPort},server=on,wait=off`,
           '-serial',
           `tcp:127.0.0.1:${serialPort},server=on,wait=off`,
+          ...(incoming ? ['-incoming', 'defer'] : []),
         ];
         live.done = this.engine
           .run(vm.architecture === 'aarch64' ? 'sakura-qemu-aarch64' : 'sakura-qemu', args, {
@@ -1002,7 +1028,7 @@ export class Machines extends EventEmitter {
             }
           })().catch((error) => this.log(id, `\r\n清理磁盘临时口令失败：${String(error)}\r\n`));
         }
-        live.bootDone = this.watchBoot(id, live).catch((e) => {
+        if (!incoming) live.bootDone = this.watchBoot(id, live).catch((e) => {
           if (!live.bootAbort.signal.aborted) this.log(id, String(e));
         });
         this.emit('change');
@@ -1487,6 +1513,7 @@ export class Machines extends EventEmitter {
       this.requireSandboxLifetime(this.get(id));
       const live = this.live.get(id);
       if (!live || live.status !== 'paused') throw new AppError('只有已暂停的发行版可以恢复', 409);
+      if (live.incoming) throw new AppError('迁移接收中的目标实例不能手动恢复', 409);
       await qmp(live.qmpPort, 'cont');
       live.status = 'running';
       this.emit('change');
@@ -1497,6 +1524,7 @@ export class Machines extends EventEmitter {
     this.get(id);
     const live = this.live.get(id);
     if (!live) return this.view(id);
+    if (live.incoming) force = true;
     // Guest poweroff can finish before status reaches "stopping". Notify
     // lifecycle observers before sending the graceful shutdown command.
     this.emit('stop-requested', id);

@@ -13,6 +13,7 @@ import { readJsonBody } from './http.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError, createSchema, DATA } from './model.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
+import { qmp } from './qmp.ts';
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
@@ -79,8 +80,13 @@ type ImportReceipt = z.infer<typeof importReceiptSchema>;
 type ImportIdentity = { transferId: string; requesterId: string };
 type MigrationChannel = 'disk' | 'state';
 type MigrationSession = { requesterId: string; ports: Record<MigrationChannel, number>;
+  qmpPort?: number; targetDiskNode?: string; exportId?: string;
   expiresAt: number; active: Set<Duplex> };
 type MigrationForward = { server: TcpServer; sockets: Set<Duplex> };
+const migrationQmpInput = z.object({ sessionId: z.uuid(), command: z.enum([
+  'query-status', 'query-version', 'query-block', 'migrate-incoming',
+  'nbd-server-start', 'block-export-add', 'block-export-del', 'nbd-server-stop',
+]), args: z.record(z.string(), z.unknown()).optional() }).strict();
 const activateInput = z.object({ transferId: z.uuid(), remoteVmId: z.uuid(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 const replicaActivateInput = activateInput.safeExtend({
@@ -352,7 +358,8 @@ export class HostPeers {
   }
 
   /** Target-side, short-lived authority for QEMU ports already bound to loopback. */
-  registerMigrationSession(requesterId: string, ports: Record<MigrationChannel, number>) {
+  registerMigrationSession(requesterId: string, ports: Record<MigrationChannel, number> &
+    { qmp?: number; targetDiskNode?: string }) {
     if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
     z.uuid().parse(requesterId);
     const peer = this.state.incoming.find((item) => item.requesterId === requesterId);
@@ -363,11 +370,16 @@ export class HostPeers {
         this.closeMigrationSession(id);
     if (this.migrationSessions.size >= 4)
       throw new AppError('迁移通道数量已达上限', 409);
-    for (const port of [ports.disk, ports.state])
+    for (const port of [ports.disk, ports.state, ...(ports.qmp === undefined ? [] : [ports.qmp])])
       if (!Number.isInteger(port) || port < 1024 || port > 65535)
         throw new AppError('迁移端口无效');
+    if ((ports.qmp === undefined) !== (ports.targetDiskNode === undefined) ||
+        (ports.targetDiskNode !== undefined &&
+          !/^[a-zA-Z][a-zA-Z0-9_-]{0,30}$/.test(ports.targetDiskNode)))
+      throw new AppError('目标 QMP 与磁盘节点必须一起登记');
     const id = randomUUID();
     this.migrationSessions.set(id, { requesterId, ports: { ...ports },
+      qmpPort: ports.qmp, targetDiskNode: ports.targetDiskNode,
       expiresAt: this.now() + 30 * 60_000, active: new Set() });
     return id;
   }
@@ -436,6 +448,51 @@ export class HostPeers {
     } };
   }
 
+  async targetMigrationQmp(peerId: string, sessionId: string, command: string,
+    args?: Record<string, unknown>, timeoutMs = 10_000) {
+    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    return requestPeer(peer.url, peer.fingerprint, '/peer/migration-qmp', 'POST',
+      migrationQmpInput.parse({ sessionId, command, args }), peer.token,
+      Math.min(Math.max(timeoutMs, 1000), 15_000));
+  }
+
+  private async executeMigrationQmp(peerId: string, input: z.infer<typeof migrationQmpInput>) {
+    const session = this.migrationSessions.get(input.sessionId);
+    if (!session || session.requesterId !== peerId ||
+        session.expiresAt <= this.now() || !session.qmpPort || !session.targetDiskNode)
+      throw new AppError('迁移会话不存在或已过期', 404);
+    const args = input.args || {};
+    const keys = Object.keys(args).sort().join(',');
+    if (input.command.startsWith('query-') || input.command === 'nbd-server-stop') {
+      if (keys) throw new AppError('QMP 查询或停止命令不能包含参数');
+    } else if (input.command === 'migrate-incoming') {
+      if (keys !== 'exit-on-error,uri' || args.uri !== `tcp:127.0.0.1:${session.ports.state}` ||
+          args['exit-on-error'] !== false)
+        throw new AppError('迁移接收端口与会话不一致');
+    } else if (input.command === 'nbd-server-start') {
+      const expected = { type: 'inet', data: { host: '127.0.0.1',
+        port: String(session.ports.disk) } };
+      if (keys !== 'addr' || JSON.stringify(args.addr) !== JSON.stringify(expected))
+        throw new AppError('NBD 监听端口与会话不一致');
+    } else if (input.command === 'block-export-add') {
+      const id = args.id;
+      if (keys !== 'id,name,node-name,type,writable' ||
+          typeof id !== 'string' || !/^sakura-export-[0-9a-f]{12}$/.test(id) ||
+          args.name !== id || args.type !== 'nbd' || args.writable !== true ||
+          args['node-name'] !== session.targetDiskNode || session.exportId)
+        throw new AppError('NBD 导出与迁移会话不一致');
+    } else if (input.command === 'block-export-del') {
+      if (keys !== 'id' || args.id !== session.exportId)
+        throw new AppError('NBD 导出标识与迁移会话不一致');
+    }
+    const result = await qmp(session.qmpPort, input.command, args, 10_000);
+    if (input.command === 'block-export-add') session.exportId = args.id as string;
+    if (input.command === 'block-export-del') session.exportId = undefined;
+    return result;
+  }
+
   private async peerRoute(request: IncomingMessage, response: ServerResponse) {
     try {
       if (this.closed) throw new AppError('服务正在关闭', 503);
@@ -482,6 +539,19 @@ export class HostPeers {
       if (request.method === 'GET' && request.url === '/peer/status') {
         this.inbound(request);
         return this.send(response, await this.status());
+      }
+      if (request.method === 'POST' && request.url === '/peer/migration-qmp') {
+        const peer = this.inbound(request);
+        if (!peer.allowImport || !peer.allowActivate)
+          throw new AppError('此同伴未获在线迁移接收权限', 403);
+        const input = migrationQmpInput.parse(await readJsonBody(request, 4096));
+        this.mutation(1);
+        try {
+          if (!this.state.incoming.some((item) => item.id === peer.id &&
+              item.allowImport && item.allowActivate))
+            throw new AppError('在线迁移接收权限已撤销', 403);
+          return this.send(response, await this.executeMigrationQmp(peer.requesterId, input));
+        } finally { this.mutation(-1); }
       }
       if (request.url === '/peer/rollouts' && ['GET', 'POST'].includes(request.method || '')) {
         const peer = this.inbound(request);
