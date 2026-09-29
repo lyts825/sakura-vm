@@ -1009,13 +1009,15 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
     route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
   await page.route('**/api/vms/*/desktop*', (route) =>
     route.fulfill({ json: { status: 'stopped', log: '', preferences: {} } }));
-  await page.route('**/api/vms/*/single-app', (route) => {
+  await page.route('**/api/vms/*/single-app*', (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ json: { sessions } });
     const input = route.request().postDataJSON() as Record<string, unknown>;
     if (input.action === 'start') {
       started = input;
       const session = { id: 'a45e91ec-c630-414e-befc-b66e53c76730',
         program: input.program, resolution: input.resolution, clipboard: input.clipboard,
+        password: 'c2FrdXJh', networkIsolation: 'private',
+        dataDirectory: '/home/skapp0123456789abcdef01234567',
         status: 'running',
         startedAt: new Date().toISOString() };
       sessions.push(session);
@@ -1036,10 +1038,14 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
   await expect(popup).toHaveTitle('xterm · Sakura');
   await expect(popup).toHaveURL(/\/single-app\.html\?nonce=/);
   expect(popup.url()).not.toContain('token=');
+  expect(popup.url()).not.toContain('c2FrdXJh');
   await expect.poll(() => popup.evaluate(() => window.opener === null)).toBe(true);
   expect(started).toMatchObject({ action: 'start', program: 'xterm',
     resolution: '1024x768', clipboard: { copy: true, paste: false } });
   await expect(panel.getByText('复制开启 · 粘贴关闭')).toBeVisible();
+  await expect(panel.getByText('私有网络 · 数据目录 /home/skapp0123456789abcdef01234567')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await panel.getByRole('button', { name: '停止' }).click();
   await expect(panel.getByText('1024x768 · 运行中')).toHaveCount(0);
   await page.close();
@@ -1086,10 +1092,11 @@ test('single-app window applies desktop clipboard policy to its RFB bridge', asy
       route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
     await page.route('**/api/vms/*/desktop*', (route) =>
       route.fulfill({ json: { status: 'stopped', log: '', preferences: {} } }));
-    await page.route('**/api/vms/*/single-app', (route) => {
+    await page.route('**/api/vms/*/single-app*', (route) => {
       if (route.request().method() === 'GET') return route.fulfill({ json: { sessions: [] } });
       return route.fulfill({ status: 201, json: {
         id: 'a45e91ec-c630-414e-befc-b66e53c76730', program: 'xterm',
+        password: 'c2FrdXJh', networkIsolation: 'host', dataDirectory: '/home/single-app-fixture',
         resolution: '1024x768', status: 'running', startedAt: new Date().toISOString(),
       } });
     });

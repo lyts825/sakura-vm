@@ -118,6 +118,7 @@ export class Workspaces {
   jobs = new Jobs('projects');
   projects: ProjectCatalog;
   private configListeners = new Set<() => Promise<void>>();
+  private configGuards = new Set<(id: string, previous: Project, next: Project) => Promise<void>>();
   private observed = new Map<string, string>();
   private sampler: Metrics;
   onAction?: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>;
@@ -168,11 +169,16 @@ export class Workspaces {
     this.machines.off('change', this.onChange);
     this.observed.clear();
     this.configListeners.clear();
+    this.configGuards.clear();
     await Promise.all([this.jobs.close(), this.sampler.close()]);
   }
   onConfigChange(listener: () => Promise<void>) {
     this.configListeners.add(listener);
     return () => this.configListeners.delete(listener);
+  }
+  beforeConfigChange(guard: (id: string, previous: Project, next: Project) => Promise<void>) {
+    this.configGuards.add(guard);
+    return () => this.configGuards.delete(guard);
   }
   async config(id: string): Promise<Project> {
     const vm = this.machines.get(id);
@@ -230,6 +236,7 @@ export class Workspaces {
       if (allowedDirectory !== undefined &&
           (project.directory !== allowedDirectory || previous.directory !== allowedDirectory))
         throw new AppError('项目成员不能修改项目目录', 403);
+      for (const guard of this.configGuards) await guard(id, previous, project);
       await guardProjectQuotaDirectory(
         id, this.projects.current(id), project.directory,
         (await this.projects.list(id)).projects.map((item) => item.id),

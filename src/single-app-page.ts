@@ -9,7 +9,7 @@ type Init = {
   nonce: string;
   vmId: string;
   session: { id: string; program: string; resolution: string;
-    clipboard?: { copy: boolean; paste: boolean } };
+    password: string; clipboard?: { copy: boolean; paste: boolean } };
   token: string;
 };
 
@@ -45,7 +45,8 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
     window.opener = null;
     const { vmId, session, token } = event.data;
     if (!/^[a-f0-9-]{36}$/.test(vmId) || !/^[a-f0-9-]{36}$/.test(session?.id) ||
-        !/^[A-Za-z][A-Za-z0-9+._-]{0,63}$/.test(session?.program || '') || !token) {
+        !/^[A-Za-z][A-Za-z0-9+._-]{0,63}$/.test(session?.program || '') ||
+        !/^[A-Za-z0-9+/]{8}$/.test(session?.password || '') || !token) {
       status.textContent = '应用会话无效，请从 Sakura 桌面页重新打开';
       return;
     }
@@ -69,7 +70,9 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
       };
       const connect = () => {
         connection = connectDesktop(() => {
-          const next = new RFB(screen, url);
+          const next = new RFB(screen, url, {
+            credentials: { password: session.password, username: '', target: '' },
+          });
           next.scaleViewport = true;
           next.resizeSession = false;
           next.background = '#201b24';

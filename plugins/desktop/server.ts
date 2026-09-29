@@ -14,7 +14,7 @@ import { singleAppClipboard, singleAppInput, singleAppProgram } from '../../serv
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.desktops = new Desktops(m);
+  host.desktops = new Desktops(m, host.workspaces);
   host.jobs = new Jobs('input-method');
   host.registerJobs(host.jobs, (job) => installIme.call(host, retryTarget(job)));
 }

@@ -11,6 +11,7 @@ import {
 import { desktopCommands } from './desktop-guest.ts';
 import { ReadOnlyRfb } from './readonly-rfb.ts';
 import { SingleAppWindows } from './single-app-windows.ts';
+import type { Workspaces } from './workspaces.ts';
 
 type Operation = {
   startedAt: string;
@@ -23,8 +24,8 @@ export class Desktops {
   private operations = new Map<string, Operation>();
   private pending = new Set<Promise<void>>();
   private closed = false;
-  constructor(private machines: Machines) {
-    this.apps = new SingleAppWindows(machines);
+  constructor(private machines: Machines, workspaces?: Workspaces) {
+    this.apps = new SingleAppWindows(machines, workspaces);
     machines.on('change', this.onChange);
   }
   private onChange = () => {
@@ -139,6 +140,8 @@ export class Desktops {
       ? this.apps.onSessionInvalidated(id, appSession, () => socket.terminate()) : null;
     socket.once('close', () => { abort.abort(); stopWatching?.(); });
     if (this.machines.state(id) !== 'running') throw new AppError('发行版尚未就绪', 409);
+    const command = appSession
+      ? await this.apps.connectionCommand(id, appSession, port) : `exec nc 127.0.0.1 ${port}`;
     const ssh = await this.machines.connect(id, 10000, abort.signal);
     const close = () => {
       ssh.destroy();
@@ -156,7 +159,7 @@ export class Desktops {
         const timer = setTimeout(() => reject(new Error('桌面连接超时')), 10000);
         // Alpine Tiny Cloud disables TCP forwarding. An exec channel to its
         // built-in netcat carries the same binary stream without changing sshd.
-        ssh.exec(`exec nc 127.0.0.1 ${port}`, (error, stream) => {
+        ssh.exec(command, (error, stream) => {
           clearTimeout(timer);
           if (error) reject(error);
           else resolve(stream);

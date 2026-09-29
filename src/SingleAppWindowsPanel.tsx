@@ -8,6 +8,9 @@ type AppSession = {
   id: string;
   program: string;
   resolution: string;
+  password: string;
+  networkIsolation: 'host' | 'private';
+  dataDirectory: string;
   clipboard?: { copy: boolean; paste: boolean };
   status: 'running' | 'stopped' | 'relaunch-required';
   startedAt: string;
@@ -107,7 +110,7 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     <div className="desktop-single-app-head">
       <div>
         <h3><TerminalSquare size={17} /> 单应用窗口</h3>
-        <p>在独立浏览器窗口运行 Linux 图形程序。应用会使用单独的虚拟显示器；每台实例最多四个。</p>
+        <p>在当前项目中运行 Linux 图形程序，沿用项目网络设置。每个窗口独立保存应用数据；每台实例最多四个。</p>
       </div>
       <span>试验功能</span>
     </div>
@@ -147,7 +150,9 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
         <span><b>{session.program}</b><small>{session.resolution} · {session.status === 'running' ? '运行中'
           : session.status === 'relaunch-required' ? '规则已收紧，需停止并重开' : '已退出'} ·
           复制{session.clipboard?.copy === false ? '关闭' : '开启'} ·
-          粘贴{session.clipboard?.paste === false ? '关闭' : '开启'}</small></span>
+          粘贴{session.clipboard?.paste === false ? '关闭' : '开启'}</small>
+        <small>{session.networkIsolation === 'private' ? '私有网络' : '共享网络'} ·
+          数据目录 {session.dataDirectory}</small></span>
         <button className="secondary compact" disabled={session.status !== 'running'}
           onClick={() => void open(session)}><ExternalLink size={13} /> 打开</button>
         <button className="secondary compact" disabled={busy}
