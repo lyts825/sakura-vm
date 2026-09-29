@@ -258,8 +258,8 @@ export class TrustedBootService {
       throw new AppError('当前安全启动链仅支持 Debian 和 Ubuntu 镜像', 409);
     const host = await probeTrustedBootHost();
     if (!host.secureFirmware || !host.varsTemplate || !host.smm ||
-        !host.tpmBackend || !host.swtpm)
-      throw new AppError('宿主缺少预登记安全启动固件、QEMU TPM/SMM 后端或 swtpm', 503);
+        !host.tpmBackend || !host.swtpm || !host.rebootAction)
+      throw new AppError('宿主缺少预登记安全启动固件、QEMU 6.0+ TPM/SMM 后端或 swtpm', 503);
   }
 
   private async firmware(id: string) {
@@ -301,7 +301,11 @@ export class TrustedBootService {
     child.on('error', (error) => { failure = error.message; exited = true; });
     child.on('exit', (code, signal) => {
       exited = true;
-      if (!closing) onExit(failure.trim() || `exit=${code}, signal=${signal}`);
+      // With --terminate, swtpm exits cleanly when QEMU closes its control
+      // socket during a guest shutdown or reboot. Only abnormal exits should
+      // turn the VM into an error while it is otherwise running.
+      if (!closing && (code !== 0 || signal || failure.trim()))
+        onExit(failure.trim() || `exit=${code}, signal=${signal}`);
     });
     const close = async () => {
       if (closing) return;

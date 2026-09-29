@@ -32,6 +32,11 @@ function commandOutput(file: string, args: string[]) {
   });
 }
 
+export function supportsQmpRebootAction(version: string) {
+  const major = /\bQEMU emulator version (\d+)\./.exec(version)?.[1];
+  return major !== undefined && Number(major) >= 6;
+}
+
 export const guestTrustedBootScript = `set +e
 printf 'EFI='; if [ -d /sys/firmware/efi ]; then echo yes; else echo no; fi
 for name in SecureBoot SetupMode; do
@@ -50,18 +55,20 @@ printf 'TPM='; if [ -c /dev/tpmrm0 ] || [ -c /dev/tpm0 ]; then echo yes; else ec
 const flag = (value: string | undefined) => value === '1' ? true : value === '0' ? false : null;
 
 export async function probeTrustedBootHost(paths: TrustedBootPaths = trustedBootPaths()) {
-  const [secureFirmware, varsTemplate, tpmBackend, machine, swtpm] = await Promise.all([
+  const [secureFirmware, varsTemplate, tpmBackend, machine, swtpm, version] = await Promise.all([
     regularFirmware(paths.secureFirmware),
     regularFirmware(paths.varsTemplate),
     commandOutput(paths.qemu, ['-tpmdev', 'help']),
     commandOutput(paths.qemu, ['-machine', 'q35,help']),
     commandOutput(paths.swtpm, ['--version']),
+    commandOutput(paths.qemu, ['--version']),
   ]);
   return {
     secureFirmware, varsTemplate,
     smm: machine.ok && /\bsmm=/.test(machine.output),
     tpmBackend: tpmBackend.ok && /\bemulator\b/.test(tpmBackend.output),
     swtpm: swtpm.ok,
+    rebootAction: version.ok && supportsQmpRebootAction(version.output),
   };
 }
 
@@ -85,7 +92,7 @@ export async function inspectTrustedBoot(machines: Machines, id: string,
     guest.setupMode === false && guest.tpmDevicePresent;
   return {
     ready: Boolean(observed && host.secureFirmware && host.varsTemplate && host.smm &&
-      host.tpmBackend && host.swtpm),
+      host.tpmBackend && host.swtpm && host.rebootAction),
     executed: false,
     firmware: vm.firmware || 'bios',
     host,
@@ -93,6 +100,7 @@ export async function inspectTrustedBoot(machines: Machines, id: string,
     observed,
     reason: !host.tpmBackend ? '当前 QEMU 构建不支持 TPM 后端。'
       : !host.swtpm ? '未找到 swtpm TPM 2.0 模拟器。'
+      : !host.rebootAction ? '当前 QEMU 版本不支持启动后恢复客户机重启策略（需要 6.0 或更新版本）。'
         : !host.secureFirmware || !host.varsTemplate || !host.smm
           ? '当前 QEMU/OVMF 缺少安全启动固件、NVRAM 模板或 SMM。'
           : !guest?.efi ? '客户机尚未以 UEFI 启动。'

@@ -24,7 +24,7 @@ const notes: Record<string, string> = {
   'virtio-fs': '已在 WSL Linux 宿主用真实 QEMU、virtiofsd 和 Alpine 客户机验证自动挂载、读取与只读拒写；当前主要验证平台 Windows 的随附 QEMU 缺少所需后端，仍为部分实现。',
   'live-migration': '已接入源 QMP 状态、已配对目标主机资源与平台前置检查，并生成只读迁移步骤和阻断条件；磁盘在线同步、目标接收进程、状态传输和防双写切换仍未实现。',
   'network-isolation': '项目设置可将托管初始化、命令、服务、健康检查、流水线、收藏命令及显式项目终端放入仅回环的独立网络命名空间；普通管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。',
-  'tpm-secure-boot': 'Linux x86_64 宿主可启动持久 swtpm 与预登记密钥的 OVMF；便携备份及新建停机快照可保存 TPM/NVRAM，历史快照恢复、导出和克隆使用对应状态。Windows 随附 QEMU 缺少 TPM 后端，仍为部分实现。',
+  'tpm-secure-boot': 'Linux x86_64 宿主的 Debian/Ubuntu 客户机已验证持久 swtpm 与安全启动，包括首次 EFI 复位；便携备份及新建停机快照可保存 TPM/NVRAM，历史快照恢复、导出和克隆使用对应状态。Windows 随附 QEMU 缺少 TPM 后端，仍为部分实现。',
   'clipboard-policy': '已实现 Sakura 网页应用入口与独立 Linux 应用窗口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。',
   'availability-report': '目前为 uptime 探测，尚无持续可用性记录与完整报告。',
   'multi-host-inventory': '目前返回本机信息，尚未实现多主机汇总。',

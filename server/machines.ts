@@ -125,6 +125,7 @@ type Live = {
   serialTail?: string;
   done: Promise<void>;
   bootDone?: Promise<void>;
+  allowInitialReset?: boolean;
   serial?: Socket;
   clients: Set<Client>;
   memoryTargetMiB?: number;
@@ -762,6 +763,7 @@ export class Machines extends EventEmitter {
             this.emit('change');
             live.abort.abort();
           });
+          live.allowInitialReset = !!trustedAttachment;
         } catch (error) {
           this.live.delete(id);
           await trustedAttachment?.close().catch(() => {});
@@ -812,7 +814,9 @@ export class Machines extends EventEmitter {
           vm.hardware?.devices?.graphics === 'virgl' ? 'egl-headless' : 'none',
           '-monitor',
           'none',
-          '-no-reboot',
+          // Some signed UEFI fallback loaders register a boot entry and reset
+          // once before the first Linux boot. Keep that reset inside QEMU.
+          ...(trustedAttachment ? [] : ['-no-reboot']),
           ...(firmware
             ? [
                 '-drive',
@@ -959,6 +963,10 @@ export class Machines extends EventEmitter {
           await rm(identityFile);
         }
         if (this.live.get(id) === live && live.status === 'starting') {
+          // Secure UEFI may reset once to register its signed boot loader. Once
+          // Linux is ready, restore the usual stop-on-guest-reboot behavior.
+          if (live.allowInitialReset)
+            await qmp(live.qmpPort, 'set-action', { reboot: 'shutdown' });
           live.status = 'running';
           this.get(id).bootstrapped = true;
           await resetBootGuard(id);

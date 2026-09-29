@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Machines } from '../server/machines.ts';
-import { inspectTrustedBoot } from '../server/trusted-boot.ts';
+import { inspectTrustedBoot, supportsQmpRebootAction } from '../server/trusted-boot.ts';
 import { trustedBootArguments } from '../server/trusted-boot-service.ts';
 
 test('TPM backend binds a private socket and protects the secure pflash variable store', () => {
@@ -13,6 +13,13 @@ test('TPM backend binds a private socket and protects the secure pflash variable
     '-tpmdev', 'emulator,id=sakura-tpmdev,chardev=sakura-tpm',
     '-device', 'tpm-tis,tpmdev=sakura-tpmdev',
   ]);
+});
+
+test('secure boot requires QMP reboot action support before admitting a VM', () => {
+  assert.equal(supportsQmpRebootAction('QEMU emulator version 5.2.0'), false);
+  assert.equal(supportsQmpRebootAction('QEMU emulator version 6.0.0'), true);
+  assert.equal(supportsQmpRebootAction('QEMU emulator version 10.2.0 (Debian)'), true);
+  assert.equal(supportsQmpRebootAction('not a QEMU version'), false);
 });
 
 test('TPM and Secure Boot check separates host prerequisites from guest evidence', async () => {

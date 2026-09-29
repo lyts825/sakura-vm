@@ -591,7 +591,7 @@ Virtio-FS 检查批次：第三批能力中心可分别检查 QEMU 文件系统�
 
 单应用窗口批次：Alpine、Debian 和 Ubuntu 桌面页可为每个图形程序启动独立 Xvnc 显示器，通过有权限校验的桌面 WebSocket 在独立浏览器弹窗中操作，并支持重开与停止；令牌经同源消息交接，主控制页关闭后弹窗仍可继续。三个发行版的真实虚拟机均已验证两个会话端口相互独立、RFB 握手和停止清理；浏览器测试覆盖启动与停止。当前并非 Windows 原生单应用窗口。范围见 [单应用窗口说明](single-app-windows.md)。
 
-可信启动批次：第二批能力中心可检查安全版 OVMF、QEMU SMM/TPM 后端、`swtpm` 和客户机实际 SecureBoot/TPM 状态。Linux 宿主现在可为 Debian/Ubuntu UEFI 实例编排持久 swtpm 与预登记密钥的 OVMF；真实 Debian 虚拟机已验证安全启动与 TPM 2.0。便携备份、导入和克隆可保留 TPM/NVRAM；新建停机磁盘快照也会保存对应状态，真实 Debian 客户机完成回滚和历史导出后再启动。Windows 随附 QEMU 缺少 TPM 后端，目录保留“部分实现”。边界见 [TPM 与安全启动](trusted-boot.md)。
+可信启动批次：第二批能力中心可检查安全版 OVMF、QEMU SMM/TPM 后端、`swtpm` 和客户机实际 SecureBoot/TPM 状态。Linux 宿主现在可为 Debian/Ubuntu UEFI 实例编排持久 swtpm 与预登记密钥的 OVMF；真实 Debian 和 Ubuntu 虚拟机已验证安全启动与 TPM 2.0。Ubuntu 签名引导链首次登记 EFI 启动项所需的复位可在 QEMU 内完成，初始化后恢复客户机重启即停止的策略。便携备份、导入和克隆可保留 TPM/NVRAM；新建停机磁盘快照也会保存对应状态，真实 Debian 和 Ubuntu 客户机完成回滚和历史导出后再启动。Windows 随附 QEMU 缺少 TPM 后端，目录保留“部分实现”。边界见 [TPM 与安全启动](trusted-boot.md)。
 
 项目网络隔离批次：项目设置新增仅回环的独立 Linux 网络命名空间；托管项目脚本、服务、健康检查、流水线、收藏命令、工程执行器及显式项目终端进入该命名空间。真实 Alpine 虚拟机验证双项目分离、无路由和清理。普通管理员终端与客户机自行启动的进程仍可使用共享网络，因此目录保留“部分实现”。范围与操作见 [项目网络隔离](project-network-isolation.md)。
 

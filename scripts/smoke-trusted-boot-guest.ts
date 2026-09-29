@@ -9,6 +9,9 @@ if (process.platform !== 'linux') {
   console.log('Trusted boot guest smoke requires Linux; skipped.');
   process.exit(0);
 }
+const distro = process.argv[2] || 'debian';
+if (distro !== 'debian' && distro !== 'ubuntu')
+  throw new Error('Choose debian or ubuntu');
 const root = await mkdtemp(join(tmpdir(), 'sakura-trusted-guest-'));
 process.env.SAKURA_DATA_DIR = root;
 process.env.SAKURA_IMAGE_DIR = resolve('.data/images');
@@ -28,7 +31,7 @@ try {
   await machines.init();
   await service.init();
   bundles.setTrustedBoot(service);
-  const vm = await machines.create({ name: 'verify-trust', distro: 'debian',
+  const vm = await machines.create({ name: `verify-trust-${distro}`, distro,
     firmware: 'uefi', memoryMiB: 1024, cpus: 1, diskGiB: 4,
     accelerator: 'tcg', forwards: [] });
   id = vm.id;
@@ -48,6 +51,15 @@ try {
   await verifyBoot(id);
   assert.ok((await stat(join(vmDir(id), 'uefi-secure-vars.fd'))).size > 65536);
   assert.ok((await stat(join(vmDir(id), 'tpm2'))).isDirectory());
+  const reboot = await machines.exec(id,
+    '(sleep 2; reboot) >/dev/null 2>&1 </dev/null &', 10000);
+  assert.equal(reboot.code, 0, reboot.stderr);
+  const rebootDeadline = Date.now() + 30_000;
+  while (Date.now() < rebootDeadline && machines.state(id) === 'running')
+    await delay(250);
+  assert.equal(machines.state(id), 'stopped',
+    `A guest reboot after initialization should stop QEMU: ${machines.get(id).lastError || ''}\n${(machines.logs.get(id) || '').slice(-3000)}`);
+  await verifyBoot(id);
   await machines.stop(id);
   await verifyBoot(id);
   await machines.stop(id);
@@ -73,7 +85,7 @@ try {
   assert.equal(restoredState?.enabled, true);
   assert.deepEqual(restoredState?.files, historicalState?.files);
   await verifyBoot(restoredId);
-  console.log('Real Debian guest booted with TPM and Secure Boot, rolled back a trusted offline snapshot, then booted its historical export.');
+  console.log(`Real ${distro} guest booted with TPM and Secure Boot, stopped QEMU on guest reboot, rolled back a trusted offline snapshot, then booted its historical export.`);
 } finally {
   if (id && machines.live.has(id)) await machines.stop(id).catch(() => {});
   if (restoredId && machines.live.has(restoredId)) await machines.stop(restoredId).catch(() => {});
