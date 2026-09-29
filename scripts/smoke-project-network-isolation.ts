@@ -19,7 +19,7 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { Features } = await import('../server/features.ts');
 const { CommandPresets } = await import('../server/command-presets.ts');
 const { Pipelines } = await import('../server/pipelines.ts');
-const { projectPrivateShellCommand } = await import('../server/project-network-isolation.ts');
+const { projectNetworkCommand, projectPrivateShellCommand } = await import('../server/project-network-isolation.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const features = await Features.create(machines, ['projects', 'service-health']);
@@ -83,6 +83,16 @@ try {
   assert.equal(await command(vm.id, 'cat /workspace/first-shell.routes'), '');
   assert.notEqual(firstNamespace, hostNamespace);
   assert.equal(await command(vm.id, 'ip netns exec sk-default ip -4 route show'), '');
+  await command(vm.id, 'ip -n sk-default route add blackhole 203.0.113.0/24');
+  try {
+    const guarded = await machines.exec(vm.id,
+      projectNetworkCommand(await features.workspaces.config(vm.id),
+        'touch /workspace/private-route-bypass'));
+    assert.notEqual(guarded.code, 0, 'managed command ran after a route appeared');
+    await command(vm.id, 'test ! -e /workspace/private-route-bypass');
+  } finally {
+    await command(vm.id, 'ip -n sk-default route del blackhole 203.0.113.0/24');
+  }
   const presets = await commands.save(vm.id, { name: 'namespace',
     command: 'readlink /proc/self/ns/net > /workspace/first-preset.ns' });
   await commands.run(vm.id, presets[0].id, {});

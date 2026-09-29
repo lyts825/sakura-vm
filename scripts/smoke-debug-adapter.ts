@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const directory = await mkdtemp(resolve(tmpdir(), 'sakura-dap-smoke-'));
 const distro = process.env.SAKURA_DAP_DISTRO === 'debian' ? 'debian' : 'alpine';
+const isolated = process.env.SAKURA_DAP_PRIVATE === '1';
 process.env.SAKURA_DATA_DIR = directory;
 process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
 process.env.SAKURA_IMAGE_DIR = resolve('.data/images');
@@ -26,8 +27,16 @@ try {
   const created = await machines.exec(vm.id, 'mkdir -p /workspace/app', 10000);
   assert.equal(created.code, 0, created.stderr);
   await machines.writeGuestFile(vm.id, '/workspace/app/hello.py',
-    'value = 1\nvalue += 1\nprint(value)\n', false);
-  await features.workspaces.save(vm.id, { directory: '/workspace/app' });
+    'value = 1\nvalue += 1\nprint(value)\n' +
+      (isolated ? 'print(__import__("os").readlink("/proc/self/ns/net"))\n' : ''), false);
+  await features.workspaces.save(vm.id, { directory: '/workspace/app',
+    ...(isolated ? { networkIsolation: 'private' as const, command: 'exec sleep 600' } : {}) });
+  if (isolated) {
+    await features.workspaces.run(vm.id, 'start');
+    await features.workspaces.jobs.wait(vm.id);
+    const job = features.workspaces.jobs.view(vm.id);
+    assert.equal(job?.status, 'done', job?.error);
+  }
   assert.equal((await features.debugger.status(vm.id)).installed, false);
   await features.debugger.install(vm.id);
   assert.equal((await features.debugger.status(vm.id)).installed, true);
@@ -63,8 +72,14 @@ try {
     await delay(200);
   } while (true);
   assert.match(status.output, /2/);
+  if (isolated) {
+    const expected = await machines.exec(vm.id,
+      'ip netns exec sk-default readlink /proc/self/ns/net');
+    assert.equal(expected.code, 0, expected.stderr);
+    assert.ok(status.output.includes(expected.stdout.trim()), status.output);
+  }
   await features.debugger.stop(vm.id, status.token);
-  console.log(`Real ${distro} debugpy DAP breakpoints, stepping, frames, variables and output passed.`);
+  console.log(`Real ${distro}${isolated ? ' private-network' : ''} debugpy DAP breakpoints, stepping, frames, variables and output passed.`);
 } finally {
   await features.close();
   await machines.close();

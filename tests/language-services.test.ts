@@ -21,7 +21,8 @@ const frame = (message: unknown) => {
   const data = Buffer.from(JSON.stringify(message));
   return Buffer.concat([Buffer.from(`Content-Length: ${data.length}\r\n\r\n`), data]);
 };
-function mockLanguageServer(stream: Duplex, renameUri = 'file:///workspace/app/a.ts') {
+function mockLanguageServer(stream: Duplex, renameUri = 'file:///workspace/app/a.ts',
+  partialDiagnostics = false) {
   let input = Buffer.alloc(0);
   stream.on('data', (chunk: Buffer) => {
     input = Buffer.concat([input, chunk]);
@@ -37,10 +38,17 @@ function mockLanguageServer(stream: Duplex, renameUri = 'file:///workspace/app/a
         stream.write(response.subarray(0, 11));
         stream.write(response.subarray(11));
       } else if (message.method === 'textDocument/didOpen') {
+        if (partialDiagnostics) stream.write(frame({ jsonrpc: '2.0',
+          method: 'textDocument/publishDiagnostics', params: {
+            uri: message.params.textDocument.uri, diagnostics: [],
+          } }));
+        const publish = () =>
         stream.write(frame({ jsonrpc: '2.0', method: 'textDocument/publishDiagnostics', params: {
           uri: message.params.textDocument.uri,
           diagnostics: [{ message: 'mock warning', severity: 2, range: { start: { line: 0, character: 2 } } }],
         } }));
+        if (partialDiagnostics) setTimeout(publish, 100);
+        else publish();
       } else if (message.method === 'textDocument/completion') {
         stream.write(frame({ jsonrpc: '2.0', id: message.id, result: { items: [{ label: 'flower', detail: 'symbol' }] } }));
       } else if (message.method === 'textDocument/definition') {
@@ -56,7 +64,9 @@ function mockLanguageServer(stream: Duplex, renameUri = 'file:///workspace/app/a
     }
   });
 }
-function fixture(renameUri?: string) {
+function fixture(renameUri?: string, partialDiagnostics = false) {
+  const commands: string[] = [];
+  const execCommands: string[] = [];
   const files = new Map([
     ['/workspace/app/a.ts', 'export const flower = 1;\n'],
     ['/workspace/app/b.ts', 'import { flower } from "./a";\n'],
@@ -65,8 +75,11 @@ function fixture(renameUri?: string) {
     get: () => ({ distro: 'alpine' }),
     connect: async () => {
       const [client, server] = pair();
-      mockLanguageServer(server, renameUri);
-      return { exec: (_command: string, done: (error: Error | undefined, stream?: Duplex) => void) => done(undefined, client),
+      mockLanguageServer(server, renameUri, partialDiagnostics);
+      return { exec: (command: string, done: (error: Error | undefined, stream?: Duplex) => void) => {
+        commands.push(command);
+        done(undefined, client);
+      },
         end: () => { client.destroy(); server.destroy(); }, destroy: () => { client.destroy(); server.destroy(); } };
     },
     readGuestFile: async (_id: string, path: string) => {
@@ -77,13 +90,44 @@ function fixture(renameUri?: string) {
       assert.equal(textVersion(files.get(path)!), expected);
       files.set(path, content);
     },
-    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
+    exec: async (_id: string, command: string) => {
+      execCommands.push(command);
+      return { code: 0, stdout: '', stderr: '' };
+    },
   } as unknown as Machines;
-  const project = { directory: '/workspace/app' };
+  const project: { directory: string; networkIsolation?: 'host' | 'private' } = { directory: '/workspace/app' };
   const workspaces = { config: async () => project } as unknown as Workspaces;
   const locks = new FileLocks();
-  return { service: new LanguageServices(machines, workspaces, locks), files, locks, project };
+  return { service: new LanguageServices(machines, workspaces, locks), files, locks, project,
+    commands, execCommands };
 }
+
+test('language service installation provisions Python for Pyright diagnostics', async () => {
+  const { service, execCommands } = fixture();
+  await service.install('vm');
+  assert.match(execCommands[0], /apk add --no-cache --timeout 30 nodejs npm python3/);
+  await service.status('vm', '/workspace/app/main.py');
+  assert.match(execCommands[1], /command -v python3 >\/dev\/null/);
+});
+
+test('private project language server starts inside its network namespace', async () => {
+  const { service, files, project, commands } = fixture();
+  project.networkIsolation = 'private';
+  const result = await service.execute('vm', { action: 'completion',
+    path: '/workspace/app/a.ts', content: files.get('/workspace/app/a.ts')!,
+    position: { line: 0, character: 16 } });
+  assert.equal(result.items[0].label, 'flower');
+  assert.match(commands[0], /ip netns exec sk-default sh -lc/);
+  assert.match(commands[0], /sakura_ipv4=.*ip -n sk-default/);
+});
+
+test('TypeScript diagnostics wait past an initial empty syntax report', async () => {
+  const { service, files } = fixture(undefined, true);
+  const result = await service.execute('vm', { action: 'diagnostics',
+    path: '/workspace/app/a.ts', content: files.get('/workspace/app/a.ts')! });
+  assert.equal(result.received, true);
+  assert.equal(result.diagnostics[0]?.message, 'mock warning');
+});
 
 test('LSP UTF-16 edits validate ranges and reject overlaps', () => {
   assert.equal(positionOffset('a😀b\n', { line: 0, character: 3 }), 3);

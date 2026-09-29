@@ -14,7 +14,20 @@ export function projectNetworkNamespace(project: Project) {
 
 export function projectNetworkCommand(project: Project, script: string) {
   const namespace = projectNetworkNamespace(project);
-  return `${namespace ? `ip netns exec ${namespace} ` : ''}sh -lc ${quote(script)}`;
+  if (!namespace) return `sh -lc ${quote(script)}`;
+  return `sh -ec ${quote(`${projectNetworkCheckScript(namespace)}\nip netns exec ${namespace} sh -lc ${quote(script)}`)}`;
+}
+
+export function projectNetworkCheckScript(namespace: string) {
+  return `if ! ip netns exec ${namespace} true >/dev/null 2>&1; then ` +
+      `echo '请先启动私有网络项目' >&2; exit 1; fi\n` +
+    `sakura_links=$(ip -n ${namespace} -o link show) || exit 1\n` +
+    `if [ "$(printf '%s\\n' "$sakura_links" | wc -l)" -ne 1 ]; then ` +
+      `echo '项目命名空间已有额外网络接口，拒绝执行' >&2; exit 1; fi\n` +
+    `sakura_ipv4=$(ip -n ${namespace} -o -4 route show) || exit 1\n` +
+    `sakura_ipv6=$(ip -n ${namespace} -o -6 route show) || exit 1\n` +
+    `if [ -n "$sakura_ipv4" ] || [ -n "$sakura_ipv6" ]; then ` +
+      `echo '项目命名空间已有网络路由，拒绝执行' >&2; exit 1; fi`;
 }
 
 /** Interactive shell for a saved private project, with the same route checks as managed commands. */
@@ -22,11 +35,7 @@ export function projectPrivateShellCommand(project: Project) {
   const namespace = projectNetworkNamespace(project);
   if (!namespace) throw new AppError('当前项目未启用私有网络', 409);
   return `set -eu\n` +
-    `if ! ip netns exec ${namespace} true >/dev/null 2>&1; then ` +
-      `echo '请先启动私有网络项目' >&2; exit 1; fi\n` +
-    `test "$(ip -n ${namespace} -o link show | wc -l)" -eq 1\n` +
-    `test "$(ip -n ${namespace} -o -4 route show | wc -l)" -eq 0\n` +
-    `test "$(ip -n ${namespace} -o -6 route show | wc -l)" -eq 0\n` +
+    `${projectNetworkCheckScript(namespace)}\n` +
     `cd ${quote(project.directory)}\n` +
     `exec ip netns exec ${namespace} sh -l`;
 }

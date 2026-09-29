@@ -12,9 +12,10 @@ import { capabilityViews, capabilityParameters, hasCapability } from './capabili
 import { ReverseTunnels } from './reverse-tunnels.ts';
 import { encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 import { secretName } from './secrets.ts';
+import { quote } from './files.ts';
 import { checkSecureErase, runSecureErase } from './secure-erase.ts';
 import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
-import { projectNetworkNamespace } from './project-network-isolation.ts';
+import { projectNetworkCheckScript, projectNetworkNamespace } from './project-network-isolation.ts';
 import { inspectTrustedBoot } from './trusted-boot.ts';
 import type { TrustedBootService } from './trusted-boot-service.ts';
 import {
@@ -362,15 +363,12 @@ export class ExtendedFeatures {
       const namespace = projectNetworkNamespace(project);
       const active = namespace && this.machines.state(id) === 'running'
         ? (await this.machines.exec(id,
-            `ip netns exec ${namespace} true >/dev/null 2>&1 && ` +
-            `test "$(ip -n ${namespace} -o link show | wc -l)" -eq 1 && ` +
-            `test "$(ip -n ${namespace} -o -4 route show | wc -l)" -eq 0 && ` +
-            `test "$(ip -n ${namespace} -o -6 route show | wc -l)" -eq 0`,
+            `sh -ec ${quote(projectNetworkCheckScript(namespace))}`,
             5000, signal).catch(() => null))?.code === 0
         : false;
       return { ready: active, executed: false, state: spec.state, adapter,
         mode: project.networkIsolation || 'host', namespace, active,
-        reason: '在项目设置中选择私有网络并启动项目。该模式覆盖托管项目命令，不限制客户机管理员终端及其他进程。' };
+        reason: '在项目设置中选择私有网络并启动项目。该模式覆盖托管项目命令及开发工具，不限制客户机管理员终端及其他进程。' };
     }
     if (spec.id === 'tpm-secure-boot') {
       const [inspection, configured] = await Promise.all([

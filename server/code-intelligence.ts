@@ -4,6 +4,7 @@ import type { Workspaces } from './workspaces.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { quote } from './files.ts';
 import { guestPath } from './model.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 export type Diagnostic = {
   severity: 'error' | 'warning' | 'info';
@@ -32,7 +33,7 @@ export class CodeIntelligence {
     else if (ext === 'py') command = `python3 -m py_compile ${quote(target)}`;
     else if (ext === 'json') command = `python3 -m json.tool ${quote(target)} >/dev/null`;
     else return { path, diagnostics: [], supported: false };
-    const result = await this.machines.exec(id, command, 30000, signal),
+    const result = await this.machines.exec(id, projectNetworkCommand(project, command), 30000, signal),
       output = `${result.stdout}\n${result.stderr}`.trim();
     if (result.code === 0) return { path, diagnostics: [], supported: true };
     const diagnostics: Diagnostic[] = output

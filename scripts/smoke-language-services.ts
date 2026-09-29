@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const directory = await mkdtemp(resolve(tmpdir(), `sakura-lsp-smoke-`));
 const distro = process.env.SAKURA_LSP_DISTRO === 'debian' ? 'debian' : 'alpine';
+const isolated = process.env.SAKURA_LSP_PRIVATE === '1';
 process.env.SAKURA_DATA_DIR = directory;
 process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
 process.env.SAKURA_IMAGE_DIR = resolve('.data/images');
@@ -32,12 +33,24 @@ try {
   await machines.writeGuestFile(vm.id, '/workspace/app/tsconfig.json',
     '{"compilerOptions":{"module":"commonjs","target":"es2020","strict":true}}\n', false);
   await machines.writeGuestFile(vm.id, '/workspace/app/main.py', 'import os\nprint(os.path)\n', false);
-  await features.workspaces.save(vm.id, { directory: '/workspace/app' });
+  await features.workspaces.save(vm.id, { directory: '/workspace/app',
+    ...(isolated ? { networkIsolation: 'private' as const, command: 'exec sleep 600' } : {}) });
+  if (isolated) {
+    await features.workspaces.run(vm.id, 'start');
+    await features.workspaces.jobs.wait(vm.id);
+    const job = features.workspaces.jobs.view(vm.id);
+    assert.equal(job?.status, 'done', job?.error);
+  }
   const before = await features.languageServices.status(vm.id, '/workspace/app/a.ts');
   console.log('Language server initially installed:', before.installed);
   await features.languageServices.install(vm.id);
   assert.equal((await features.languageServices.status(vm.id, '/workspace/app/a.ts')).installed, true);
   assert.equal((await features.languageServices.status(vm.id, '/workspace/app/main.py')).installed, true);
+  if (isolated) {
+    const interpreter = await machines.exec(vm.id,
+      'ip netns exec sk-default python3 --version');
+    assert.equal(interpreter.code, 0, interpreter.stderr);
+  }
   const python = await features.languageServices.execute(vm.id, {
     action: 'diagnostics', path: '/workspace/app/main.py', content: 'import os\nprint(missing_name)\n',
   });
@@ -69,7 +82,7 @@ try {
   await features.languageServices.apply(vm.id, preview.token);
   assert.match(await machines.readGuestFile(vm.id, '/workspace/app/a.ts'), /petal/);
   assert.match(await machines.readGuestFile(vm.id, '/workspace/app/b.ts'), /petal/);
-  console.log(`Real ${distro} TypeScript LSP completion, definition, diagnostics and multi-file rename, plus Python diagnostics passed.`);
+  console.log(`Real ${distro}${isolated ? ' private-network' : ''} TypeScript LSP completion, definition, diagnostics and multi-file rename, plus Python diagnostics passed.`);
 } finally {
   await features.close();
   await machines.close();

@@ -8,6 +8,7 @@ import { AppError, guestPath } from './model.ts';
 import { quote } from './files.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { DapTransport } from './dap-transport.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 const python = '/opt/sakura-debugger/bin/python';
 const maxOutput = 64 * 1024;
@@ -93,7 +94,8 @@ export class DebugAdapter {
     let transport: DapTransport | undefined;
     try {
       const stream = await new Promise<Duplex>((resolve, reject) => client.exec(
-        `exec ${quote(python)} -m debugpy.adapter`, (error, channel) => error ? reject(error) : resolve(channel)));
+        projectNetworkCommand(project, `exec ${quote(python)} -m debugpy.adapter`),
+        (error, channel) => error ? reject(error) : resolve(channel)));
       transport = new DapTransport(stream);
       const session: Session = {
         id: randomUUID(), vm: id, directory: project.directory, program, client, transport,

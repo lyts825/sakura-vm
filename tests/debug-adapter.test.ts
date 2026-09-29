@@ -66,3 +66,25 @@ test('debug sessions reject concurrent starts and paths outside the current proj
   await assert.rejects(debuggerService.start('vm', { path: '/workspace/app/main.js', breakpoints: [] }), /Python/);
   await assert.rejects(debuggerService.start('vm', { path: '/workspace/app/main.py', breakpoints: [0] }), /断点行号/);
 });
+
+test('private project debugger launches its adapter inside the project namespace', async () => {
+  let launched = '';
+  const workspaces = { config: async () => ({ directory: '/workspace/app', networkIsolation: 'private' }) };
+  const machines = {
+    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
+    connect: async () => ({
+      exec: (command: string, done: (error: Error) => void) => {
+        launched = command;
+        done(new Error('capture launch'));
+      },
+      destroy: () => {},
+    }),
+  };
+  const debuggerService = new DebugAdapter(machines as unknown as Machines,
+    workspaces as unknown as Workspaces);
+  await assert.rejects(debuggerService.start('vm', {
+    path: '/workspace/app/main.py', breakpoints: [],
+  }), /capture launch/);
+  assert.match(launched, /ip netns exec sk-default sh -lc/);
+  assert.match(launched, /sakura_ipv4=.*ip -n sk-default/);
+});

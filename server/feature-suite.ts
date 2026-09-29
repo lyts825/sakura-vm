@@ -29,6 +29,7 @@ import { processInteropInput, type ProcessInterop } from './process-interop.ts';
 import type { MediaDevices } from './media-devices.ts';
 import type { HostMounts } from './host-mount.ts';
 import { PackageWorkbench } from './package-workbench.ts';
+import { ensureProjectNetworkScript, projectNetworkCommand } from './project-network-isolation.ts';
 
 /**
  * The feature suite is intentionally kept separate from the VM record.  The
@@ -781,6 +782,8 @@ export class FeatureSuite {
           return;
         }
         const project = await this.workspaces.resolvedConfig(id);
+        if (project.networkIsolation === 'private' && operation === 'database')
+          throw new AppError('私有网络项目不能启动使用共享客户机网络的数据库容器', 409);
         const directory = quote(project.directory);
         const worktreePath = path ? quote(`${project.directory}/${path}`) : '';
         const environment = envPrefix(project.environment);
@@ -855,11 +858,18 @@ export class FeatureSuite {
         }
         const secrets = [input.password || '', ...Object.values(project.environment || {})];
         const output = privateLog(log, secrets);
+        const script = `${environment}\nset -eu\n${command}`;
+        const privateRuntime = project.networkIsolation === 'private' &&
+          operation !== 'prefetch-dependencies';
+        const guestScript = privateRuntime
+          ? `set -e\n${ensureProjectNetworkScript(project, vm.distro || 'alpine')}\n` +
+            projectNetworkCommand(project, script)
+          : script;
         try {
           const result = await guestTask(
             this.machines,
             id,
-            `${environment}\nset -eu\n${command}`,
+            guestScript,
             combined,
             output.write,
             600_000,

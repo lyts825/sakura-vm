@@ -8,6 +8,7 @@ import { AppError, guestPath } from './model.ts';
 import { MAX_TEXT_BYTES, quote, textVersion } from './files.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { LspTransport } from './lsp-transport.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 import { applyTextEdits, positionOffset, type LspPosition, type LspRange, type LspTextEdit } from '../shared/language-service.ts';
 
 const prefix = '/opt/sakura-language-services';
@@ -75,27 +76,29 @@ export class LanguageServices {
     const bundled = `${prefix}/node_modules/.bin/${lang.executable}`;
     const command = lang.kind === 'typescript'
       ? `test -x ${quote(bundled)} && test -f ${quote(`${prefix}/node_modules/typescript/lib/tsserver.js`)}`
-      : `test -x ${quote(bundled)}`;
+      : `test -x ${quote(bundled)} && command -v python3 >/dev/null`;
     const result = await this.machines.exec(id, command, 10000, signal);
     return { language: lang.id, installed: result.code === 0, supported: true };
   }
   async install(id: string, signal?: AbortSignal) {
     const distro = this.machines.get(id).distro;
     const packages = !distro || distro === 'alpine'
-      ? 'apk add --no-cache --timeout 30 nodejs npm'
-      : 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y nodejs npm';
-    const command = `set -eu; if ! command -v npm >/dev/null; then for attempt in 1 2 3; do if (${packages}); then break; fi; sleep 2; done; command -v npm >/dev/null; fi; for attempt in 1 2 3; do if npm install --prefix ${quote(prefix)} --no-audit --no-fund --omit=dev typescript@5.9.3 typescript-language-server@4.3.4 pyright@1.1.414; then break; fi; sleep 2; done; test -f ${quote(`${prefix}/node_modules/typescript/lib/tsserver.js`)}; test -x ${quote(`${prefix}/node_modules/.bin/typescript-language-server`)}; test -x ${quote(`${prefix}/node_modules/.bin/pyright-langserver`)}`;
+      ? 'apk add --no-cache --timeout 30 nodejs npm python3'
+      : 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y nodejs npm python3';
+    const command = `set -eu; if ! command -v npm >/dev/null || ! command -v python3 >/dev/null; then for attempt in 1 2 3; do if (${packages}); then break; fi; sleep 2; done; command -v npm >/dev/null; command -v python3 >/dev/null; fi; for attempt in 1 2 3; do if npm install --prefix ${quote(prefix)} --no-audit --no-fund --omit=dev typescript@5.9.3 typescript-language-server@4.3.4 pyright@1.1.414; then break; fi; sleep 2; done; test -f ${quote(`${prefix}/node_modules/typescript/lib/tsserver.js`)}; test -x ${quote(`${prefix}/node_modules/.bin/typescript-language-server`)}; test -x ${quote(`${prefix}/node_modules/.bin/pyright-langserver`)}`;
     const result = await this.machines.exec(id, command, 360000, signal);
     if (result.code !== 0) throw new AppError(`语言服务安装失败：${(result.stderr || result.stdout).slice(-2000)}`, 502);
     return { installed: true, languages: ['TypeScript', 'JavaScript', 'Python'] };
   }
   private async session<T>(id: string, path: string, content: string, signal: AbortSignal | undefined,
-    action: (connection: LspTransport, address: string, diagnostics: () => any[] | null) => Promise<T>): Promise<T> {
+    action: (connection: LspTransport, address: string,
+      diagnostics: { items: any[] | null; updatedAt: number }, activeSignal: AbortSignal) => Promise<T>,
+    timeoutMs: number): Promise<T> {
     const project = await this.workspaces.config(id);
     path = projectFile(project.directory, path);
     if (Buffer.byteLength(content) > MAX_TEXT_BYTES) throw new AppError('文本超过 1 MiB', 413);
     const lang = language(path);
-    const timeout = AbortSignal.timeout(30000);
+    const timeout = AbortSignal.timeout(timeoutMs);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const executable = `${prefix}/node_modules/.bin/${lang.executable}`;
     const command = `if test -x ${quote(executable)}; then exec ${quote(executable)} --stdio; else echo '请先安装语言服务' >&2; exit 127; fi`;
@@ -105,13 +108,16 @@ export class LanguageServices {
     combined.addEventListener('abort', abort, { once: true });
     try {
       const stream = await new Promise<Duplex>((resolve, reject) =>
-        client.exec(command, (error, channel) => error ? reject(error) : resolve(channel)));
+        client.exec(projectNetworkCommand(project, command),
+          (error, channel) => error ? reject(error) : resolve(channel)));
       connection = new LspTransport(stream);
-      let received: any[] | null = null;
+      const diagnostics = { items: null as any[] | null, updatedAt: 0 };
       const address = uri(path), rootUri = uri(project.directory);
       connection.onNotification((method, params) => {
-        if (method === 'textDocument/publishDiagnostics' && params?.uri === address && Array.isArray(params.diagnostics))
-          received = params.diagnostics.slice(0, 200);
+        if (method === 'textDocument/publishDiagnostics' && params?.uri === address && Array.isArray(params.diagnostics)) {
+          diagnostics.items = params.diagnostics.slice(0, 200);
+          diagnostics.updatedAt = Date.now();
+        }
       });
       await connection.request('initialize', {
         processId: null, rootUri, workspaceFolders: [{ uri: rootUri, name: posix.basename(project.directory) }],
@@ -131,7 +137,7 @@ export class LanguageServices {
       });
       connection.notify('initialized', {});
       connection.notify('textDocument/didOpen', { textDocument: { uri: address, languageId: lang.id, version: 1, text: content } });
-      return await action(connection, address, () => received);
+      return await action(connection, address, diagnostics, combined);
     } finally {
       combined.removeEventListener('abort', abort);
       connection?.close();
@@ -162,21 +168,29 @@ export class LanguageServices {
       const current = await this.machines.readGuestFile(id, path);
       if (textVersion(current) !== input.version) throw new AppError('文件已被修改，请刷新后重试', 409);
     }
-    return this.session(id, path, input.content, signal, async (connection, address, diagnostics) => {
+    const timeoutMs = input.action === 'diagnostics' || input.action === 'rename' ? 120000 : 30000;
+    return this.session(id, path, input.content, signal, async (connection, address, diagnostics, activeSignal) => {
       if (lang.kind === 'typescript' && (input.action === 'definition' || input.action === 'rename')) {
-        const deadline = Date.now() + 3000;
-        while (!diagnostics() && Date.now() < deadline) {
-          signal?.throwIfAborted();
+        const deadline = Date.now() + (input.action === 'rename' ? 90000 : 3000);
+        while (Date.now() < deadline) {
+          activeSignal.throwIfAborted();
+          const items = diagnostics.items;
+          // TypeScript publishes syntax, semantic and suggestion results in separate snapshots.
+          if (items && (input.action === 'definition' ||
+              Date.now() - diagnostics.updatedAt >= (items.length ? 1000 : 10000))) break;
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
       }
       if (input.action === 'diagnostics') {
-        const deadline = Date.now() + 4000;
-        while (!diagnostics() && Date.now() < deadline) {
-          signal?.throwIfAborted();
+        const deadline = Date.now() + 90000;
+        while (Date.now() < deadline) {
+          activeSignal.throwIfAborted();
+          const items = diagnostics.items;
+          if (items && (lang.kind === 'python' ||
+              Date.now() - diagnostics.updatedAt >= (items.length ? 1000 : 10000))) break;
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
-        const reported = diagnostics();
+        const reported = diagnostics.items;
         return { path, received: !!reported, diagnostics: (reported || []).map((item: any) => ({
           severity: item.severity === 2 ? 'warning' : item.severity === 3 ? 'info' : 'error',
           message: String(item.message || '').slice(0, 1000),
@@ -225,7 +239,7 @@ export class LanguageServices {
       if (this.previews.size >= 8) this.previews.delete(this.previews.keys().next().value!);
       this.previews.set(token, { vm: id, directory: project.directory, expires: Date.now() + 5 * 60_000, changes });
       return { token, files: changes.map(({ path, before, after }) => ({ path, before, after })) };
-    });
+    }, timeoutMs);
   }
   async apply(id: string, token: string, lockToken?: string) {
     const preview = this.previews.get(token);

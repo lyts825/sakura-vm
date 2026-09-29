@@ -16,11 +16,11 @@
 
 ### 网络
 
-- [ ] **项目网络隔离**（P1 · 部分实现） · [`network-isolation`](../server/extended-features.ts#L123) — 项目设置可将托管初始化、命令、服务、健康检查、流水线、收藏命令及显式项目终端放入仅回环的独立网络命名空间；普通管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。
+- [ ] **项目网络隔离**（P1 · 部分实现） · [`network-isolation`](../server/extended-features.ts#L124) — 项目设置可将托管初始化、命令、服务、健康检查、流水线、收藏命令、显式项目终端、代码诊断、语言服务、调试适配器及开发工具任务放入仅回环的独立网络命名空间，执行前拒绝额外接口或路由；普通管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。
 
 ### 安全
 
-- [ ] **TPM 与安全启动**（P2 · 部分实现） · [`tpm-secure-boot`](../server/extended-features.ts#L134) — Linux x86_64 宿主的 Debian/Ubuntu 客户机已验证持久 swtpm 与安全启动，包括首次 EFI 复位；便携备份及新建停机快照可保存 TPM/NVRAM，历史快照恢复、导出和克隆使用对应状态。Windows 随附 QEMU 缺少 TPM 后端，仍为部分实现。
+- [ ] **TPM 与安全启动**（P2 · 部分实现） · [`tpm-secure-boot`](../server/extended-features.ts#L135) — Linux x86_64 宿主的 Debian/Ubuntu 客户机已验证持久 swtpm 与安全启动，包括首次 EFI 复位；便携备份及新建停机快照可保存 TPM/NVRAM，历史快照恢复、导出和克隆使用对应状态。Windows 随附 QEMU 缺少 TPM 后端，仍为部分实现。
 
 ## 第三批
 
