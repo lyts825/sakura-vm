@@ -587,6 +587,8 @@ ACME 证书续期在第三批能力中心选择“ACME 证书续期”。`status
 
 ## 验证
 
+私有项目交互环境批次：Notebook 和认证浏览器 IDE 现在可在项目网络命名空间内运行，宿主使用回环 SSH TCP 桥接提供浏览器入口，不创建 QEMU 映射或客户机网络接口、路由。Notebook 二进制依赖在共享网络预取，项目虚拟环境在命名空间内离线安装。真实 Alpine、Debian/QEMU 验证 Marimo、JupyterLab 的安装与认证、桥接恢复，以及 Jupyter WebSocket 内核实际处于私有命名空间且无法访问共享网络；真实 Debian/QEMU 验证 code-server 发布包摘要、错误缓存拒绝与有效缓存安装、正确与错误密码、进程命名空间、桥接恢复和到期清理，真实 Chromium 操作还核对了集成终端继承同一项目命名空间。项目网络隔离仍为部分实现，普通管理员终端、自行启动进程与其他扩展的限制尚未完成。
+
 项目网络隔离跨发行版验证批次：相同的真实虚拟机脚本在 Alpine、Debian 和 Ubuntu 中验证独立命名空间、无路由、初始化、服务、收藏命令、流水线与停止清理。后续新增显式项目隔离终端，仍不限制普通管理员终端或客户机自行启动的进程，见 [项目网络隔离](project-network-isolation.md)。
 
 Virtio-FS 检查批次：第三批能力中心可分别检查 QEMU 文件系统设备、共享内存后端、virtiofsd 和客户机实际文件系统挂载。Linux 宿主已接通侧车进程、启动设备与客户机自动挂载；真实 Alpine、Debian、Ubuntu 客户机验证宿主文件读取、只读拒写和可写模式将客户机文件写入宿主。Windows 可通过 WSL Linux 后端使用，目录在支持后端上列为可用；随附 Windows QEMU 仍缺少文件系统设备和共享内存后端，范围见 [Virtio-FS 共享目录](virtio-fs.md)。

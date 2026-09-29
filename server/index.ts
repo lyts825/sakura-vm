@@ -366,9 +366,10 @@ async function main() {
   let snapshotReplications: SnapshotReplications | undefined;
   let haLocalFailovers: HaLocalFailovers | undefined;
   let haHostFailover: HaHostFailover | undefined;
+  let notebooks: NotebookEnvironments | undefined;
   let browserIde: BrowserIde | undefined;
   if (features.next) {
-    const notebooks = new NotebookEnvironments(machines, features.workspaces);
+    notebooks = new NotebookEnvironments(machines, features.workspaces);
     await notebooks.init();
     features.next.setNotebookEnvironments(notebooks);
     browserIde = new BrowserIde(machines, features.workspaces);
@@ -1791,6 +1792,7 @@ async function main() {
       () => graph.close(),
       () => remoteAudit.close(),
       () => browserIde?.close(),
+      () => notebooks?.close(),
       () => features.close(),
       () => machines.close(),
       () => audit.close(),
