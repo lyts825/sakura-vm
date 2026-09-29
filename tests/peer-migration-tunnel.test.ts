@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import { createConnection, createServer, type Server, type Socket } from 'node:net';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { HostPeers } from '../server/host-peers.ts';
+import { createSshKey, seedIso } from '../server/seed.ts';
 
 const status = async () => ({ platform: process.platform, arch: process.arch,
   cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
@@ -47,10 +49,25 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
     const inbound = target.view().incoming[0];
     const outbound = source.view().outbound[0];
     const echoPort = await listen(echo);
+    const identity = { key: createSshKey().privateText,
+      seedBase64: seedIso({ 'meta-data': 'source', 'user-data': 'setup' }).toString('base64') };
+    const prepare = { transferId: randomUUID(), sourceVmId: randomUUID(),
+      config: { name: 'migrated' }, ...identity };
+    await assert.rejects(source.prepareLiveTarget(outbound.id, prepare), /HTTP 403/);
     assert.throws(() => target.registerMigrationSession(inbound.requesterId,
       { disk: echoPort, state: echoPort }), /权限/);
     await target.configure({ operation: 'allow-import', id: inbound.id, enabled: true });
     await target.configure({ operation: 'allow-activate', id: inbound.id, enabled: true });
+    const prepared = { targetVmId: randomUUID(), sessionId: randomUUID(),
+      targetDiskNode: '#block23', diskPort: echoPort, statePort: echoPort };
+    target.setLiveMigrationReceiver({ prepare: async (input) => {
+      assert.equal(input.requesterId, inbound.requesterId);
+      assert.equal(input.transferId, prepare.transferId);
+      assert.equal(input.key, identity.key);
+      assert.deepEqual(input.seed, Buffer.from(identity.seedBase64, 'base64'));
+      return prepared;
+    } });
+    assert.deepEqual(await source.prepareLiveTarget(outbound.id, prepare), prepared);
     assert.throws(() => target.registerMigrationSession(inbound.requesterId,
       { disk: 80, state: echoPort }), /端口无效/);
     const session = target.registerMigrationSession(inbound.requesterId,

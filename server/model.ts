@@ -108,6 +108,7 @@ export type VMRecord = VMConfig & {
   haPromotion?: HaPromotion;
   haRetirement?: HaRetirement;
   liveMigrationFence?: LiveMigrationFence;
+  liveMigrationOrigin?: LiveMigrationOrigin;
   // Snapshot clones retain an independent baseline disk for three-way workspace merges.
   branchOrigin?: { sourceVmId: string; snapshotId: string; createdAt: string };
   mergeOrigin?: { branchVmId: string; targetVmId: string; snapshotId: string;
@@ -132,6 +133,12 @@ export const liveMigrationFenceSchema = z.object({
   fencedAt: z.iso.datetime(),
 }).strict();
 export type LiveMigrationFence = z.infer<typeof liveMigrationFenceSchema>;
+export const liveMigrationOriginSchema = z.object({
+  sourceHostId: z.uuid(), sourceVmId: z.uuid(), transferId: z.uuid(),
+  status: z.enum(['prepared', 'received', 'ready']),
+  createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
+}).strict();
+export type LiveMigrationOrigin = z.infer<typeof liveMigrationOriginSchema>;
 export type VMView = VMRecord & {
   activeAccelerator?: 'tcg' | 'whpx';
   memoryTargetMiB?: number;

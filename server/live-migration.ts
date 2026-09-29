@@ -74,7 +74,7 @@ export async function planLiveMigration(machines: Machines,
       blockers.push(`源 QMP 检查失败：${(error as Error).message}`);
     }
   }
-  blockers.push('服务尚未创建配置一致的目标侧暂停接收进程并接入配对主机迁移会话。');
+  blockers.push('服务尚未把目标准备接口与来源迁移任务串成可执行的跨主机流程。');
   blockers.push('服务尚未把已验证的磁盘脏块同步与内存预复制接入跨主机执行流程。');
   blockers.push('服务尚未把持久切换栅栏、目标客户机就绪与故障恢复接入执行流程。');
   return {

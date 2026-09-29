@@ -32,9 +32,14 @@ test('incoming QEMU stays paused until transfer completes and cannot be resumed 
   const id = randomUUID();
   await mkdir(vmDir(id));
   await writeFile(join(vmDir(id), 'disk.qcow2'), 'synthetic disk');
+  const now = new Date().toISOString();
   machines.records.set(id, { ...createSchema.parse({ name: 'target' }),
-    id, createdAt: new Date().toISOString(), snapshots: [] });
+    id, createdAt: now, snapshots: [], liveMigrationOrigin: {
+      sourceHostId: randomUUID(), sourceVmId: randomUUID(), transferId: randomUUID(),
+      status: 'prepared', createdAt: now, updatedAt: now,
+    } });
   try {
+    await assert.rejects(machines.start(id), /尚未接收客户机状态/);
     const incoming = await machines.startIncoming(id);
     assert.equal(incoming.status, 'paused');
     assert.deepEqual(launches[0].slice(-2), ['-incoming', 'defer']);
@@ -48,6 +53,7 @@ test('incoming QEMU stays paused until transfer completes and cannot be resumed 
     await machines.completeIncoming(id, async () => ({ status: 'running', running: true }));
     assert.equal(machines.state(id), 'starting');
     assert.equal(machines.live.get(id)?.incoming, false);
+    assert.equal(machines.get(id).liveMigrationOrigin?.status, 'received');
     assert.ok(machines.live.get(id)?.bootDone);
     await machines.stop(id, true);
     assert.equal(machines.live.has(id), false);

@@ -87,6 +87,16 @@ const migrationQmpInput = z.object({ sessionId: z.uuid(), command: z.enum([
   'query-status', 'query-version', 'query-block', 'migrate-incoming',
   'nbd-server-start', 'block-export-add', 'block-export-del', 'nbd-server-stop',
 ]), args: z.record(z.string(), z.unknown()).optional() }).strict();
+const liveTargetPrepareInput = z.object({
+  transferId: z.uuid(), sourceVmId: z.uuid(), config: createSchema,
+  key: z.string().min(100).max(16_000),
+  seedBase64: z.string().min(100).max(1_400_000).regex(/^[A-Za-z0-9+/]*={0,2}$/),
+}).strict();
+const liveTargetReceipt = z.object({
+  targetVmId: z.uuid(), sessionId: z.uuid(), targetDiskNode: z.string().min(1).max(64),
+  diskPort: z.number().int().min(1024).max(65535),
+  statePort: z.number().int().min(1024).max(65535),
+}).strict();
 const activateInput = z.object({ transferId: z.uuid(), remoteVmId: z.uuid(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 const replicaActivateInput = activateInput.safeExtend({
@@ -253,6 +263,10 @@ export class HostPeers {
   private closed = false;
   private listenerError?: string;
   private importReceiver?: ImportReceiver;
+  private liveMigrationReceiver?: { prepare: (input: {
+    requesterId: string; transferId: string; sourceVmId: string;
+    config: z.infer<typeof createSchema>; key: string; seed: Buffer;
+  }) => Promise<z.infer<typeof liveTargetReceipt>> };
   private rolloutReceiver?: { view: () => PeerRolloutView; save: (input: unknown) => Promise<unknown> };
   private mobileHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
   private activeImports = new Map<string, Set<AbortController>>();
@@ -458,6 +472,15 @@ export class HostPeers {
       Math.min(Math.max(timeoutMs, 1000), 15_000));
   }
 
+  async prepareLiveTarget(peerId: string, raw: unknown) {
+    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const input = liveTargetPrepareInput.parse(raw);
+    return liveTargetReceipt.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/live-target-prepare', 'POST', input, peer.token, 120_000));
+  }
+
   private async executeMigrationQmp(peerId: string, input: z.infer<typeof migrationQmpInput>) {
     const session = this.migrationSessions.get(input.sessionId);
     if (!session || session.requesterId !== peerId ||
@@ -551,6 +574,27 @@ export class HostPeers {
               item.allowImport && item.allowActivate))
             throw new AppError('在线迁移接收权限已撤销', 403);
           return this.send(response, await this.executeMigrationQmp(peer.requesterId, input));
+        } finally { this.mutation(-1); }
+      }
+      if (request.method === 'POST' && request.url === '/peer/live-target-prepare') {
+        const peer = this.inbound(request);
+        if (!peer.allowImport || !peer.allowActivate)
+          throw new AppError('此同伴未获在线迁移接收权限', 403);
+        if (!this.liveMigrationReceiver)
+          throw new AppError('目标主机尚未启用在线迁移接收器', 503);
+        const input = liveTargetPrepareInput.parse(await readJsonBody(request, 1_500_000));
+        const seed = Buffer.from(input.seedBase64, 'base64');
+        if (seed.toString('base64') !== input.seedBase64)
+          throw new AppError('客户机 seed 编码无效');
+        this.mutation(1);
+        try {
+          if (!this.state.incoming.some((item) => item.id === peer.id &&
+              item.allowImport && item.allowActivate))
+            throw new AppError('在线迁移接收权限已撤销', 403);
+          return this.send(response, liveTargetReceipt.parse(await this.liveMigrationReceiver.prepare({
+            requesterId: peer.requesterId, transferId: input.transferId,
+            sourceVmId: input.sourceVmId, config: input.config, key: input.key, seed,
+          })));
         } finally { this.mutation(-1); }
       }
       if (request.url === '/peer/rollouts' && ['GET', 'POST'].includes(request.method || '')) {
@@ -733,6 +777,9 @@ export class HostPeers {
 
   setImportReceiver(receiver: ImportReceiver) {
     this.importReceiver = receiver;
+  }
+  setLiveMigrationReceiver(receiver: NonNullable<HostPeers['liveMigrationReceiver']>) {
+    this.liveMigrationReceiver = receiver;
   }
   setRolloutReceiver(receiver: { view: () => PeerRolloutView; save: (input: unknown) => Promise<unknown> }) {
     this.rolloutReceiver = receiver;

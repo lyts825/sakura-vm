@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { mkdir, readFile, readdir, writeFile, rename, rm, stat, copyFile, lstat, link, open } from 'node:fs/promises';
 import { existsSync, createReadStream, createWriteStream } from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createPrivateKey, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createConnection, type Socket } from 'node:net';
 import { Client, type ClientCallback, type ExecOptions, type SFTPWrapper } from 'ssh2';
@@ -10,6 +10,7 @@ import { isUtf8 } from 'node:buffer';
 import { Readable, Transform, type Duplex } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
+import { z } from 'zod';
 import {
   AppError,
   DATA,
@@ -23,6 +24,7 @@ import {
   haPromotionSchema,
   haRetirementSchema,
   liveMigrationFenceSchema,
+  liveMigrationOriginSchema,
   type HaPromotion,
   type VMRecord,
   type VMConfig,
@@ -264,6 +266,8 @@ export class Machines extends EventEmitter {
           r.haRetirement = haRetirementSchema.parse(r.haRetirement);
         if (r.liveMigrationFence !== undefined)
           r.liveMigrationFence = liveMigrationFenceSchema.parse(r.liveMigrationFence);
+        if (r.liveMigrationOrigin !== undefined)
+          r.liveMigrationOrigin = liveMigrationOriginSchema.parse(r.liveMigrationOrigin);
         if (r.rescueOf !== undefined) {
           checkedId(r.rescueOf);
           if (
@@ -549,6 +553,29 @@ export class Machines extends EventEmitter {
   async create(input: unknown, sandbox?: SandboxPolicy) {
     return this.createInternal(input, sandbox);
   }
+  async createIncomingTarget(input: unknown, identity: { key: string; seed: Buffer },
+    source: { sourceHostId: string; sourceVmId: string; transferId: string }) {
+    if (typeof identity.key !== 'string' || identity.key.length < 100 ||
+        identity.key.length > 16_000 || !Buffer.isBuffer(identity.seed) ||
+        identity.seed.length < 40 * 1024 || identity.seed.length > 1024 * 1024 ||
+        identity.seed.toString('ascii', 32769, 32774) !== 'CD001')
+      throw new AppError('在线迁移客户机身份数据无效');
+    try { createPrivateKey(identity.key); }
+    catch { throw new AppError('在线迁移控制密钥无效'); }
+    const sourceIds = z.object({ sourceHostId: z.uuid(), sourceVmId: z.uuid(),
+      transferId: z.uuid() }).strict().parse(source);
+    const config = createSchema.parse(input);
+    if (config.firmware === 'uefi' || config.architecture === 'aarch64' ||
+        config.hardware?.devices?.graphics === 'virgl')
+      throw new AppError('此硬件配置尚不能安全在线迁移', 409);
+    if ([...this.records.values()].some((vm) =>
+      vm.liveMigrationOrigin?.sourceHostId === sourceIds.sourceHostId &&
+      vm.liveMigrationOrigin.transferId === sourceIds.transferId))
+      throw new AppError('此在线迁移任务已创建目标实例', 409);
+    const now = new Date().toISOString();
+    return this.createInternal(config, undefined, undefined, { ...identity,
+      origin: { ...sourceIds, status: 'prepared', createdAt: now, updatedAt: now } });
+  }
   private async prepareVmDirectory(vm: VMRecord) {
     const root = await this.storagePools.ensure(vm.storagePoolId);
     this.storagePools.bind(vm.id, vm.storagePoolId);
@@ -569,7 +596,8 @@ export class Machines extends EventEmitter {
     await regularDirectory(dir);
     await rm(dir, { recursive: true, force: true });
   }
-  private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string) {
+  private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string,
+    incoming?: { key: string; seed: Buffer; origin: NonNullable<VMRecord['liveMigrationOrigin']> }) {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
       this.requireUnreservedPorts(config.forwards);
@@ -584,6 +612,10 @@ export class Machines extends EventEmitter {
       }
       if ([...this.records.values()].some((v) => v.name === config.name))
         throw new AppError('该名称已存在', 409);
+      if (incoming && [...this.records.values()].some((vm) =>
+        vm.liveMigrationOrigin?.sourceHostId === incoming.origin.sourceHostId &&
+        vm.liveMigrationOrigin.transferId === incoming.origin.transferId))
+        throw new AppError('此在线迁移任务已创建目标实例', 409);
       const image = distroInfo(config.distro, config.architecture);
       if (!existsSync(image.file)) throw new AppError('镜像尚未准备好，请先下载对应发行版镜像', 503);
       if (config.memoryMiB < image.minimumMemory || config.diskGiB < image.minimumDisk)
@@ -596,23 +628,24 @@ export class Machines extends EventEmitter {
         id: randomUUID(),
         createdAt: new Date().toISOString(),
         snapshots: [],
-        bootstrapped: false,
+        bootstrapped: !!incoming,
+        ...(incoming ? { liveMigrationOrigin: incoming.origin } : {}),
         ...(sandbox ? { sandbox } : {}),
         ...(rescueOf ? { rescueOf } : {}),
       };
       const dir = await this.prepareVmDirectory(vm);
       try {
-        const key = createSshKey();
-        await writeFile(join(dir, 'id_rsa'), key.privateText, { mode: 0o600 });
+        const key = incoming ? null : createSshKey();
+        await writeFile(join(dir, 'id_rsa'), incoming?.key || key!.privateText, { mode: 0o600 });
         await writeFile(
           join(dir, 'seed.iso'),
-          seedIso({
-            'meta-data': metaData(vm.id, vm.name, key.publicText),
+          incoming?.seed || seedIso({
+            'meta-data': metaData(vm.id, vm.name, key!.publicText),
             'user-data':
               vm.distro && vm.distro !== 'alpine'
-                ? cloudUserData(vm.name, key.publicText,
+                ? cloudUserData(vm.name, key!.publicText,
                   vm.architecture === 'aarch64' ? '/dev/ttyAMA0' : '/dev/ttyS0')
-                : userData(vm.name, key.publicText),
+                : userData(vm.name, key!.publicText),
             ...(vm.distro && vm.distro !== 'alpine' ? { 'network-config': cloudNetwork } : {}),
           }),
         );
@@ -688,10 +721,17 @@ export class Machines extends EventEmitter {
       const live = this.live.get(id);
       if (!live?.incoming || live.status !== 'paused')
         throw new AppError('目标实例不在迁移接收状态', 409);
+      const vm = this.get(id), previous = vm.liveMigrationOrigin;
+      if (!previous || previous.status !== 'prepared')
+        throw new AppError('目标实例没有待完成的在线迁移记录', 409);
       const state = await query(live.qmpPort, 'query-status') as
         { status?: string; running?: boolean };
       if (state.running !== true || state.status !== 'running')
         throw new AppError('目标 QEMU 尚未完成迁移并运行', 409);
+      vm.liveMigrationOrigin = liveMigrationOriginSchema.parse({ ...previous,
+        status: 'received', updatedAt: new Date().toISOString() });
+      try { await this.save(); }
+      catch (error) { vm.liveMigrationOrigin = previous; throw error; }
       live.incoming = false;
       live.status = 'starting';
       live.bootDone = this.watchBoot(id, live).catch((error) => {
@@ -810,6 +850,10 @@ export class Machines extends EventEmitter {
         if (vm.liveMigrationFence)
           throw new AppError('来源实例已为在线迁移设置栅栏，不能在原主机重新启动',
             409, 'LIVE_MIGRATION_SOURCE_FENCED');
+        if (incoming && vm.liveMigrationOrigin?.status !== 'prepared')
+          throw new AppError('目标实例没有待接收的在线迁移记录', 409);
+        if (!incoming && vm.liveMigrationOrigin?.status === 'prepared')
+          throw new AppError('在线迁移目标尚未接收客户机状态，不能普通启动', 409);
         if (vm.rescueOf && (vm.rescueOf !== rescueOf || !this.locks.has(rescueOf)))
           throw new AppError('临时救援实例只能由救援任务启动，请重新提交救援任务', 409);
         this.requireSandboxLifetime(vm);
@@ -1108,6 +1152,19 @@ export class Machines extends EventEmitter {
           // Linux is ready, restore the usual stop-on-guest-reboot behavior.
           if (live.allowInitialReset)
             await qmp(live.qmpPort, 'set-action', { reboot: 'shutdown' });
+          const vm = this.get(id), origin = vm.liveMigrationOrigin;
+          if (origin?.status === 'received') {
+            vm.liveMigrationOrigin = liveMigrationOriginSchema.parse({ ...origin,
+              status: 'ready', updatedAt: new Date().toISOString() });
+            try { await this.save(); }
+            catch (error) {
+              vm.liveMigrationOrigin = origin;
+              live.error = `迁移目标就绪记录保存失败：${String(error)}`;
+              live.status = 'error';
+              this.emit('change');
+              return;
+            }
+          }
           live.status = 'running';
           this.get(id).bootstrapped = true;
           await resetBootGuard(id);

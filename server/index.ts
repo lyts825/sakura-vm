@@ -42,6 +42,7 @@ import { HostMounts } from './host-mount.ts';
 import { VirtioFsShares } from './virtio-fs.ts';
 import { TrustedBootService } from './trusted-boot-service.ts';
 import { HostPeers } from './host-peers.ts';
+import { LiveMigrationReceiver } from './live-migration-receiver.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
 import { HaLocalFailovers } from './ha-local-failovers.ts';
@@ -207,6 +208,12 @@ async function main() {
     view: () => ({ hostId: hostPeers.view().hostId, policies: rollouts.view().policies }),
     save: (input) => rollouts.configure(input),
   });
+  const liveMigrationReceiver = new LiveMigrationReceiver(machines, hostPeers, () => {
+    session.requireUnlocked();
+    if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+    if (!features.next) throw new AppError('请先启用扩展功能插件', 503);
+  });
+  hostPeers.setLiveMigrationReceiver({ prepare: (input) => liveMigrationReceiver.prepare(input) });
   const fleetRollouts = new FleetPolicyRollouts(hostPeers, undefined,
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });
