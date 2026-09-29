@@ -100,6 +100,11 @@ const liveTargetReceipt = z.object({
 }).strict();
 const liveTargetCompleteInput = z.object({ targetVmId: z.uuid(),
   transferId: z.uuid(), sessionId: z.uuid() }).strict();
+const liveTargetAbortInput = liveTargetCompleteInput.safeExtend({
+  sourceRunning: z.literal(true),
+});
+const liveTargetAbortResult = z.object({ targetVmId: z.uuid(),
+  aborted: z.literal(true) }).strict();
 const liveTargetStatusInput = liveTargetCompleteInput.omit({ sessionId: true });
 const liveTargetStatus = z.object({ targetVmId: z.uuid(),
   status: z.enum(['stopped', 'starting', 'running', 'paused', 'stopping', 'error']),
@@ -277,6 +282,8 @@ export class HostPeers {
   }) => Promise<z.infer<typeof liveTargetReceipt>>;
   complete: (input: z.infer<typeof liveTargetCompleteInput> & { requesterId: string }) =>
     Promise<z.infer<typeof liveTargetStatus>>;
+  abort: (input: z.infer<typeof liveTargetAbortInput> & { requesterId: string }) =>
+    Promise<z.infer<typeof liveTargetAbortResult>>;
   status: (input: z.infer<typeof liveTargetStatusInput> & { requesterId: string }) =>
     Promise<z.infer<typeof liveTargetStatus>> };
   private rolloutReceiver?: { view: () => PeerRolloutView; save: (input: unknown) => Promise<unknown> };
@@ -515,6 +522,15 @@ export class HostPeers {
       peer.token, 30_000));
   }
 
+  async abortLiveTarget(peerId: string, raw: unknown) {
+    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    return liveTargetAbortResult.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/live-target-abort', 'POST', liveTargetAbortInput.parse(raw),
+      peer.token, 30_000));
+  }
+
   async inspectLiveTarget(peerId: string, raw: unknown) {
     if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
     const peer = this.state.outbound.find((item) => item.id === peerId);
@@ -654,6 +670,23 @@ export class HostPeers {
               item.allowImport && item.allowActivate))
             throw new AppError('在线迁移接收权限已撤销', 403);
           return this.send(response, liveTargetStatus.parse(await this.liveMigrationReceiver.complete({
+            ...input, requesterId: peer.requesterId,
+          })));
+        } finally { this.mutation(-1); }
+      }
+      if (request.method === 'POST' && request.url === '/peer/live-target-abort') {
+        const peer = this.inbound(request);
+        if (!peer.allowImport || !peer.allowActivate)
+          throw new AppError('此同伴未获在线迁移接收权限', 403);
+        if (!this.liveMigrationReceiver)
+          throw new AppError('目标主机尚未启用在线迁移接收器', 503);
+        const input = liveTargetAbortInput.parse(await readJsonBody(request, 1024));
+        this.mutation(1);
+        try {
+          if (!this.state.incoming.some((item) => item.id === peer.id &&
+              item.allowImport && item.allowActivate))
+            throw new AppError('在线迁移接收权限已撤销', 403);
+          return this.send(response, liveTargetAbortResult.parse(await this.liveMigrationReceiver.abort({
             ...input, requesterId: peer.requesterId,
           })));
         } finally { this.mutation(-1); }

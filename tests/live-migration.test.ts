@@ -10,7 +10,7 @@ const vmId = randomUUID(), localId = randomUUID(), peerId = randomUUID();
 const machines = {
   get: () => ({ cpus: 2, memoryMiB: 1024 }),
   state: () => 'running',
-  live: new Map([[vmId, { qmpPort: 1234 }]]),
+  live: new Map([[vmId, { qmpPort: 1234, accelerator: 'tcg' }]]),
 } as unknown as Machines;
 const score = (arch = 'x64', eligible = true) => async () => ({ candidates: [
   { id: localId, source: 'local', name: 'local', eligible: true, reasons: [],
@@ -66,4 +66,13 @@ test('online migration check preserves a missing peer as a blocker', async () =>
     { targetHostId: missing }, undefined, query());
   assert.equal(result.targetHostId, missing);
   assert.ok(result.blockers.some((item) => item.includes('未配对')));
+});
+
+test('online migration check reports runnable only when the coordinator is wired', async () => {
+  const result = await planLiveMigration(machines, score(), vmId,
+    { targetHostId: peerId }, undefined, query(), true);
+  assert.equal(result.ready, true);
+  assert.equal(result.executed, false);
+  assert.equal(result.targetHostId, peerId);
+  assert.deepEqual(result.blockers, []);
 });

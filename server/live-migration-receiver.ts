@@ -8,6 +8,7 @@ type PrepareInput = { requesterId: string; transferId: string; sourceVmId: strin
   config: VMConfig; key: string; seed: Buffer };
 
 export class LiveMigrationReceiver {
+  private finalizing = new Set<string>();
   constructor(private machines: Machines, private peers: HostPeers,
     private requireAvailable: () => void = () => {}) {}
 
@@ -85,13 +86,46 @@ export class LiveMigrationReceiver {
   async complete(input: { requesterId: string; transferId: string;
     targetVmId: string; sessionId: string }) {
     this.requireAvailable();
-    const before = this.status(input);
-    if (before.originStatus !== 'prepared') return before;
-    if (!this.peers.matchesMigrationSession(input.sessionId, input.requesterId,
-      input.targetVmId, input.transferId))
-      throw new AppError('在线迁移会话与目标实例不匹配', 409);
-    await this.machines.completeIncoming(input.targetVmId);
-    this.peers.closeMigrationSession(input.sessionId);
-    return this.status(input);
+    if (this.finalizing.has(input.targetVmId))
+      throw new AppError('目标实例正在完成在线迁移操作', 409);
+    this.finalizing.add(input.targetVmId);
+    try {
+      const before = this.status(input);
+      if (before.originStatus !== 'prepared') return before;
+      if (!this.peers.matchesMigrationSession(input.sessionId, input.requesterId,
+        input.targetVmId, input.transferId))
+        throw new AppError('在线迁移会话与目标实例不匹配', 409);
+      await this.machines.completeIncoming(input.targetVmId);
+      this.peers.closeMigrationSession(input.sessionId);
+      return this.status(input);
+    } finally { this.finalizing.delete(input.targetVmId); }
+  }
+
+  async abort(input: { requesterId: string; transferId: string;
+    targetVmId: string; sessionId: string; sourceRunning: true }) {
+    this.requireAvailable();
+    if (this.finalizing.has(input.targetVmId))
+      throw new AppError('目标实例正在完成在线迁移操作', 409);
+    this.finalizing.add(input.targetVmId);
+    try {
+      const before = this.status(input);
+      if (before.originStatus !== 'prepared')
+        throw new AppError('目标实例已接收迁移，不能取消', 409);
+      if (!this.peers.matchesMigrationSession(input.sessionId, input.requesterId,
+        input.targetVmId, input.transferId))
+        throw new AppError('在线迁移会话与目标实例不匹配', 409);
+      // Revoke all active migration streams before checking whether the receiver
+      // can still run; a late QEMU switchover must never race target deletion.
+      this.peers.closeMigrationSession(input.sessionId);
+      const live = this.machines.live.get(input.targetVmId);
+      if (live) {
+        const state = await qmp(live.qmpPort, 'query-status') as { running?: boolean };
+        if (state.running !== false)
+          throw new AppError('目标 QEMU 状态不确定，保留目标实例', 409);
+      }
+      await this.machines.stop(input.targetVmId, true);
+      await this.machines.delete(input.targetVmId);
+      return { targetVmId: input.targetVmId, aborted: true as const };
+    } finally { this.finalizing.delete(input.targetVmId); }
   }
 }

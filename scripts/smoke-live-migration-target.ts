@@ -55,6 +55,7 @@ try {
   targetPeers.setLiveMigrationReceiver({
     prepare: (input) => receiver.prepare(input),
     complete: (input) => receiver.complete(input),
+    abort: (input) => receiver.abort(input),
     status: (input) => Promise.resolve(receiver.status(input)),
   });
   const key = createSshKey().privateText;
@@ -82,7 +83,13 @@ try {
     sessionId: migrationSession,
   }), /HTTP 409/);
   await assert.rejects(machines.start(targetVmId), /尚未接收客户机状态/);
-  console.log('A paired TLS request created a real Sakura QEMU target in deferred incoming mode, retained source identity, exposed restricted QMP and remained paused.');
+  assert.deepEqual(await sourcePeers.abortLiveTarget(outboundId, {
+    targetVmId, transferId: machines.get(targetVmId).liveMigrationOrigin!.transferId,
+    sessionId: migrationSession, sourceRunning: true,
+  }), { targetVmId, aborted: true });
+  assert.equal(machines!.live.has(targetVmId), false);
+  assert.throws(() => machines!.get(targetVmId!), /不存在/);
+  console.log('A paired TLS request created a real paused Sakura QEMU target, verified its identity and restricted QMP, then safely aborted and removed it.');
 } finally {
   if (migrationSession) targetPeers?.closeMigrationSession(migrationSession);
   if (machines && targetVmId) {

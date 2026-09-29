@@ -190,3 +190,36 @@ test('QMP preserves multibyte text split across TCP reads', async (t) => {
   });
   assert.equal(await qmp(port, 'human-monitor-command'), '你好');
 });
+
+test('QMP retries a refused connection before any command was sent', async (t) => {
+  const reservation = createServer();
+  reservation.listen(0, '127.0.0.1');
+  await once(reservation, 'listening');
+  const port = (reservation.address() as { port: number }).port;
+  await new Promise<void>((resolve) => reservation.close(() => resolve()));
+  let commands = 0;
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+    socket.write('{"QMP":{"version":{}}}\n');
+    socket.on('data', (data) => {
+      const request = JSON.parse(data.toString());
+      if (request.id === 'hello') socket.write('{"return":{},"id":"hello"}\n');
+      else {
+        commands++;
+        socket.write('{"return":{"running":true},"id":"command"}\n');
+      }
+    });
+  });
+  t.after(async () => {
+    for (const socket of sockets) socket.destroy();
+    if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const answer = qmp(port, 'query-status', undefined, 2000);
+  await new Promise<void>((resolve) => setTimeout(resolve, 150));
+  server.listen(port, '127.0.0.1');
+  await once(server, 'listening');
+  assert.deepEqual(await answer, { running: true });
+  assert.equal(commands, 1);
+});

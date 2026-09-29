@@ -11,7 +11,8 @@ export async function freePort() {
   await new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res())));
   return port;
 }
-export async function qmp(port: number, command: string, args?: Record<string, unknown>, timeoutMs = 5000) {
+async function qmpOnce(port: number, command: string,
+  args: Record<string, unknown> | undefined, timeoutMs: number) {
   return new Promise<unknown>((resolve, reject) => {
     const socket = createConnection({ host: '127.0.0.1', port });
     socket.setEncoding('utf8');
@@ -55,6 +56,22 @@ export async function qmp(port: number, command: string, args?: Record<string, u
       }
     });
   });
+}
+
+export async function qmp(port: number, command: string,
+  args?: Record<string, unknown>, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  for (let attempts = 0; ; attempts++) {
+    try { return await qmpOnce(port, command, args, Math.max(1, deadline - Date.now())); }
+    catch (error) {
+      // QEMU's socket chardev may briefly stop accepting while the previous
+      // short-lived QMP client disconnects. ECONNREFUSED occurs before any
+      // command bytes are sent, so retrying cannot execute a mutation twice.
+      if ((error as NodeJS.ErrnoException).code !== 'ECONNREFUSED' ||
+          attempts >= 19 || Date.now() + 50 >= deadline) throw error;
+      await delay(50);
+    }
+  }
 }
 
 /** Snapshot QMP commands enqueue jobs; their immediate reply is not completion. */

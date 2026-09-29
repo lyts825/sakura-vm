@@ -216,6 +216,7 @@ async function main() {
   hostPeers.setLiveMigrationReceiver({
     prepare: (input) => liveMigrationReceiver.prepare(input),
     complete: (input) => liveMigrationReceiver.complete(input),
+    abort: (input) => liveMigrationReceiver.abort(input),
     status: (input) => Promise.resolve(liveMigrationReceiver.status(input)),
   });
   const fleetRollouts = new FleetPolicyRollouts(hostPeers, undefined,

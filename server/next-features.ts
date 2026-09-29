@@ -32,7 +32,8 @@ import { ServiceMesh } from './service-mesh.ts';
 import { VtpmEnrollment } from './vtpm-enrollment.ts';
 import { devicePassthroughPreview } from './device-passthrough-preview.ts';
 import { gpuComputeInput, gpuComputeStatus } from './gpu-compute.ts';
-import { planLiveMigration } from './live-migration.ts';
+import { liveMigrationInput, planLiveMigration } from './live-migration.ts';
+import { LiveMigrationRunner } from './live-migration-runner.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
 import { HaFailureMonitor } from './ha-failure-monitor.ts';
 import type { HaLocalFailovers } from './ha-local-failovers.ts';
@@ -74,7 +75,7 @@ export const nextFeatureCatalog = [
     '虚拟机在线迁移',
     '远程主机与集群',
     'P1',
-    '检查在线迁移前置条件并生成迁移计划。',
+    '检查前置条件，并在同平台 TCG 主机之间迁移运行中的客户机磁盘与内存。',
     'experimental',
   ],
   ['cold-migration', '冷迁移队列', '远程主机与集群', 'P1',
@@ -683,6 +684,7 @@ export class NextFeatures {
   private haLocalFailovers?: HaLocalFailovers;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private hostPeers?: HostPeers;
+  private liveMigrationRunner?: LiveMigrationRunner;
   private coldMigrations?: ColdMigrations;
   private snapshotReplications?: SnapshotReplications;
   private notebookEnvironments?: NotebookEnvironments;
@@ -751,7 +753,10 @@ export class NextFeatures {
   setResourceScheduler(score: (input: HostScoreInput) => ReturnType<HostPeers['score']>) {
     this.scoreHosts = score;
   }
-  setHostPeers(peers: HostPeers) { this.hostPeers = peers; }
+  setHostPeers(peers: HostPeers) {
+    this.hostPeers = peers;
+    this.liveMigrationRunner = new LiveMigrationRunner(this.machines, peers);
+  }
 
   setSharedDesktopCheck(check: (id: string) => Promise<{ ready: boolean; reason?: string }>) {
     this.sharedDesktopCheck = check;
@@ -953,7 +958,9 @@ export class NextFeatures {
       id: spec.id,
       enabled: configured?.enabled ?? true,
       options: spec.id === 'acme-renewal' ? options : merged,
-      actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
+      actions: spec.state === 'available' ||
+        (spec.id === 'live-migration' && this.liveMigrationRunner)
+        ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false && spec.id !== 'acme-renewal')
       throw new AppError('此能力已禁用', 409);
@@ -1123,8 +1130,15 @@ export class NextFeatures {
     if (spec.id === 'live-migration') {
       if (!this.scoreHosts) return { ready: false, executed: false, adapter,
         reason: '主机资源评分服务尚未启动。' };
-      return { ...await planLiveMigration(this.machines, this.scoreHosts, id, merged, signal),
-        adapter };
+      const plan = await planLiveMigration(this.machines, this.scoreHosts, id,
+        merged, signal, undefined, !!this.liveMigrationRunner);
+      if (action === 'run' && plan.ready && plan.targetHostId && this.liveMigrationRunner) {
+        const options = liveMigrationInput.parse(merged);
+        return { ...await this.liveMigrationRunner.run(id, {
+          targetHostId: plan.targetHostId, targetName: options.targetName,
+        }, signal, log), adapter };
+      }
+      return { ...plan, adapter };
     }
     if (spec.id === 'ha-failover') {
       if (!this.hostPeers) return { ready: false, executed: false, adapter,
@@ -1541,7 +1555,9 @@ export class NextFeatures {
     const spec = this.spec(value.featureId);
     if (value.action === 'check' || spec.id === 'incident-lockdown')
       return this.executeFeature(id, spec, value.action, signal, value.options);
-    if (spec.state !== 'available') throw new AppError('此功能尚未完成实现', 501);
+    if (spec.state !== 'available' &&
+        !(spec.id === 'live-migration' && this.liveMigrationRunner))
+      throw new AppError('此功能尚未完成实现', 501);
     if (hasCapability(spec.id)) {
       const configured = spec.id === 'acme-renewal' ? {} :
         (await this.state()).settings[id]?.[spec.id]?.options || {};

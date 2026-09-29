@@ -5,6 +5,8 @@ import { qmp } from './qmp.ts';
 
 export const liveMigrationInput = z.object({
   targetHostId: z.uuid().optional(),
+  targetName: z.string().trim().min(1).max(32)
+    .regex(/^[a-z][a-z0-9-]*$/).optional(),
 }).strict();
 
 type Score = Awaited<ReturnType<HostPeers['score']>>;
@@ -12,7 +14,8 @@ type Query = typeof qmp;
 
 export async function planLiveMigration(machines: Machines,
   scoreHosts: (input: { cpus: number; memoryMiB: number }) => Promise<Score>,
-  id: string, raw: unknown, signal?: AbortSignal, query: Query = qmp) {
+  id: string, raw: unknown, signal?: AbortSignal, query: Query = qmp,
+  executionAvailable = false) {
   const vm = machines.get(id);
   const options = liveMigrationInput.safeParse(raw);
   const blockers: string[] = [];
@@ -52,6 +55,16 @@ export async function planLiveMigration(machines: Machines,
       (target.status.platform !== local.status.platform ||
        target.status.arch !== local.status.arch))
     blockers.push('目标主机平台或体系结构与源主机不一致。');
+  if (executionAvailable) {
+    if (vm.liveMigrationFence || vm.haPromotion || vm.haRetirement)
+      blockers.push('来源实例已有切换栅栏或故障接管记录。');
+    if (vm.architecture === 'aarch64' || vm.firmware === 'uefi' ||
+        vm.hardware?.devices?.graphics === 'virgl' || vm.diskEncryption ||
+        vm.sandbox || vm.snapshots?.length || vm.pendingResize || vm.branchOrigin)
+      blockers.push('此实例的硬件、磁盘或快照配置尚不能安全在线迁移。');
+    if (machines.live.get(id)?.accelerator !== 'tcg')
+      blockers.push('当前仅支持由 TCG 运行的来源实例。');
+  }
   let qemu: unknown = null;
   let migration: unknown = null;
   if (machines.state(id) !== 'running' || !machines.live.get(id)) {
@@ -74,15 +87,20 @@ export async function planLiveMigration(machines: Machines,
       blockers.push(`源 QMP 检查失败：${(error as Error).message}`);
     }
   }
-  blockers.push('服务尚未把目标准备接口与来源迁移任务串成可执行的跨主机流程。');
-  blockers.push('服务尚未把已验证的磁盘脏块同步与内存预复制接入跨主机执行流程。');
-  blockers.push('服务尚未把持久切换栅栏、目标客户机就绪与故障恢复接入执行流程。');
+  if (!executionAvailable) {
+    blockers.push('服务尚未把目标准备接口与来源迁移任务串成可执行的跨主机流程。');
+    blockers.push('服务尚未把已验证的磁盘脏块同步与内存预复制接入跨主机执行流程。');
+    blockers.push('服务尚未把持久切换栅栏、目标客户机就绪与故障恢复接入执行流程。');
+  }
   return {
-    ready: false, executed: false, planned: true, sourceVmId: id,
+    ready: executionAvailable && blockers.length === 0,
+    executed: false, planned: true, sourceVmId: id,
     targetHostId: target?.id || options.data?.targetHostId || null,
     checkedAt: new Date().toISOString(), qemu, migration,
     candidates, blockers, steps,
     reason: blockers[0],
-    message: '这是只读迁移计划；不会传输磁盘、启动目标或停止源实例。',
+    message: executionAvailable
+      ? '检查通过后可运行在线迁移；切换后目标客户机就绪才会停止并封锁来源实例。'
+      : '这是只读迁移计划；不会传输磁盘、启动目标或停止源实例。',
   };
 }
