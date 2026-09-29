@@ -50,6 +50,24 @@ const id = '11111111-1111-4111-8111-111111111111';
 const projectId = '0123456789abcdef';
 const posix = (path: string) => path.replaceAll('\\', '/');
 
+test('private project Git commands require its checked network namespace', async (t) => {
+  const commands: string[] = [];
+  const machines = { exec: async (_id: string, command: string) => {
+    commands.push(command);
+    return { code: 1, stdout: '', stderr: 'not a repository' };
+  } } as unknown as MachinesType;
+  const workspaces = { config: async () => ({ directory: '/workspace/private',
+    networkIsolation: 'private', _workspace: projectId }),
+    projects: { key: () => id, current: () => projectId },
+  } as unknown as Workspaces;
+  const service = new GitWorkbench(machines, workspaces);
+  t.after(() => service.close());
+  await service.view(id);
+  assert.equal(commands.length, 1);
+  assert.match(commands[0], /ip netns exec sk-0123456789abcdef sh -lc/);
+  assert.match(commands[0], /额外网络接口/);
+});
+
 after(async () => {
   assert.equal(dirname(root), resolve(tmpdir()));
   assert.ok(root.includes('sakura-git-test-'));
@@ -572,7 +590,8 @@ test('pull preserves ignored files and stays in the accepted project directory a
   const pulled = await f.run({ action: 'pull' });
   assert.equal(pulled.status, 'done', pulled.error);
   assert.equal(await git(f.local, 'rev-parse', 'HEAD'), next);
-  assert.ok(f.commands.every((value) => value.command.startsWith(`cd '${posix(f.local)}'`)));
+  assert.ok(f.commands.every((value) => value.command.includes(posix(f.local)) &&
+    !value.command.includes(posix(f.peer))));
 });
 
 test('network and authentication errors are durable, redacted and never automatically retried', async (t) => {
@@ -666,7 +685,8 @@ test('accepted Git jobs serialize per project, keep their directory, and cancel 
   assert.equal(job.status, 'cancelled');
   assert.equal(job.errorCode, undefined);
   assert.equal(await git(f.local, 'rev-parse', 'HEAD'), await git(f.peer, 'rev-parse', 'HEAD'));
-  assert.ok(f.commands.every((value) => value.command.startsWith(`cd '${posix(f.local)}'`)));
+  assert.ok(f.commands.every((value) => value.command.includes(posix(f.local)) &&
+    !value.command.includes(posix(f.peer))));
   assert.ok(!f.commands.some((value) => value.command.includes(' merge --ff-only')));
   assert.equal(
     f.commands.find((value) => value.command.includes('GIT_ALLOW_PROTOCOL=https'))!.signal?.aborted,

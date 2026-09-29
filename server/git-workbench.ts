@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import type { Workspaces } from './workspaces.ts';
+import type { Project, Workspaces } from './workspaces.ts';
 import { AppError } from './model.ts';
 import { quote, textVersion } from './files.ts';
 import { posix } from 'node:path';
 import { Jobs } from './jobs.ts';
 import { isGitConflict, type GitChange, type GitUpstream } from '../shared/git.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 export type { GitChange } from '../shared/git.ts';
 export function parseStatus(text: string): GitChange[] {
@@ -207,14 +208,15 @@ export class GitWorkbench {
     id: string,
     command: string,
     signal?: AbortSignal,
-    directory?: string,
+    project?: Project,
     network = false,
   ) {
-    directory ??= (await this.workspaces.config(id)).directory;
+    project ??= await this.workspaces.config(id);
     signal?.throwIfAborted();
     const result = await this.machines.exec(
       id,
-      `cd ${quote(directory)} && LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false GCM_INTERACTIVE=never ${network ? 'GIT_ALLOW_PROTOCOL=https ' : ''}${git} ${command}`,
+      projectNetworkCommand(project,
+        `cd ${quote(project.directory)} && LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false GCM_INTERACTIVE=never ${network ? 'GIT_ALLOW_PROTOCOL=https ' : ''}${git} ${command}`),
       network ? 120000 : 30000,
       signal,
     );
@@ -222,8 +224,8 @@ export class GitWorkbench {
     return result;
   }
   async view(id: string, signal?: AbortSignal) {
-    const { directory } = await this.workspaces.config(id);
-    const command: GitCommand = (value) => this.command(id, value, signal, directory);
+    const project = await this.workspaces.config(id);
+    const command: GitCommand = (value) => this.command(id, value, signal, project);
     const check = await command('rev-parse --is-inside-work-tree');
     if (check.code !== 0)
       return {
@@ -288,22 +290,26 @@ export class GitWorkbench {
   }
   async diff(id: string, path: string, staged: boolean, signal?: AbortSignal) {
     repositoryPath.parse(path);
+    const project = await this.workspaces.config(id);
     const untracked =
       !staged &&
-      (await this.command(id, `ls-files --others --exclude-standard -z -- ${quote(path)}`, signal)).stdout
+      (await this.command(id, `ls-files --others --exclude-standard -z -- ${quote(path)}`, signal,
+        project)).stdout
         .split('\0')
         .includes(path);
     const result = await this.command(
       id,
       `diff --no-ext-diff --no-textconv ${untracked ? '--no-index' : staged ? '--cached' : ''} -- ${untracked ? '/dev/null ' : ''}${quote(path)}`,
       signal,
+      project,
     );
     if (result.code !== 0 && !(untracked && result.code === 1)) throw new AppError(result.stderr);
     return { diff: result.stdout.slice(0, 200000), truncated: result.stdout.length > 200000 };
   }
-  async mergeInputs(id: string, path: string, signal?: AbortSignal, directory?: string) {
+  async mergeInputs(id: string, path: string, signal?: AbortSignal, project?: Project) {
     repositoryPath.parse(path);
-    directory ??= (await this.workspaces.config(id)).directory;
+    project ??= await this.workspaces.config(id);
+    const directory = project.directory;
     const components = path.split('/').filter(Boolean);
     const safe = await this.machines.exec(
       id,
@@ -314,7 +320,7 @@ export class GitWorkbench {
       signal,
     );
     if (safe.code !== 0) throw new AppError('冲突路径不能穿过符号链接');
-    const index = await this.command(id, `ls-files --unmerged -z -- ${quote(path)}`, signal, directory);
+    const index = await this.command(id, `ls-files --unmerged -z -- ${quote(path)}`, signal, project);
     if (index.code !== 0) throw new AppError(index.stderr);
     const entries = index.stdout
       .split('\0')
@@ -328,10 +334,10 @@ export class GitWorkbench {
       throw new AppError('此文件不是可合并的普通文本冲突；删除、链接或子模块冲突请在终端处理', 409);
     const values: Record<string, string> = { '1': '', '2': '', '3': '' };
     for (const entry of entries) {
-      const size = await this.command(id, `cat-file -s ${entry![2]}`, signal, directory);
+      const size = await this.command(id, `cat-file -s ${entry![2]}`, signal, project);
       if (size.code !== 0 || !/^\d+\s*$/.test(size.stdout) || Number(size.stdout) > 1024 ** 2)
         throw new AppError('冲突版本超过 1 MiB 或无法读取');
-      const content = await this.command(id, `cat-file blob ${entry![2]}`, signal, directory);
+      const content = await this.command(id, `cat-file blob ${entry![2]}`, signal, project);
       if (content.code !== 0 || content.stdout.includes('\0') || content.stdout.includes('\uFFFD'))
         throw new AppError('三方编辑器需要 UTF-8 文本');
       values[entry![3]] = content.stdout;
@@ -346,16 +352,17 @@ export class GitWorkbench {
       expectedIndex: textVersion(index.stdout),
     };
   }
-  async conflictChoices(id: string, path: string, signal?: AbortSignal, directory?: string) {
+  async conflictChoices(id: string, path: string, signal?: AbortSignal, project?: Project) {
     repositoryPath.parse(path);
-    directory ??= (await this.workspaces.config(id)).directory;
+    project ??= await this.workspaces.config(id);
+    const directory = project.directory;
     const components = path.split('/').filter(Boolean);
     const safe = await this.machines.exec(id,
       components.slice(0, -1)
         .map((_, index) => `test ! -L ${quote(posix.join(directory!, ...components.slice(0, index + 1)))}`)
         .join(' && ') || 'true', 10000, signal);
     if (safe.code !== 0) throw new AppError('冲突路径不能穿过符号链接');
-    const index = await this.command(id, `ls-files --unmerged -z -- ${quote(path)}`, signal, directory);
+    const index = await this.command(id, `ls-files --unmerged -z -- ${quote(path)}`, signal, project);
     if (index.code !== 0) throw new AppError(index.stderr);
     const stages: Record<string, { mode: string; oid: string }> = {};
     for (const line of index.stdout.split('\0').filter(Boolean)) {
@@ -373,7 +380,7 @@ export class GitWorkbench {
     const kind = type.stdout.trim();
     let worktree = kind;
     if (kind === 'file') {
-      const hash = await this.command(id, `hash-object --no-filters -- ${quote(path)}`, signal, directory);
+      const hash = await this.command(id, `hash-object --no-filters -- ${quote(path)}`, signal, project);
       if (hash.code !== 0 || !/^[a-f0-9]{40,64}\s*$/.test(hash.stdout))
         throw new AppError('无法校验冲突文件内容，请重新打开', 409);
       worktree += ':' + hash.stdout.trim();
@@ -382,9 +389,9 @@ export class GitWorkbench {
       if (target.code !== 0) throw new AppError('无法校验冲突符号链接，请重新打开', 409);
       worktree += ':' + target.stdout;
     } else if (kind === 'directory') {
-      const head = await this.command(id, `-C ${quote(path)} rev-parse --verify HEAD`, signal, directory);
+      const head = await this.command(id, `-C ${quote(path)} rev-parse --verify HEAD`, signal, project);
       const status = head.code === 0
-        ? await this.command(id, `-C ${quote(path)} status --porcelain=v1 -z`, signal, directory)
+        ? await this.command(id, `-C ${quote(path)} status --porcelain=v1 -z`, signal, project)
         : null;
       if (status && status.code !== 0) throw new AppError('无法校验子模块工作目录，请重新打开', 409);
       worktree += ':' + (head.code === 0 ? head.stdout : '') + ':' + (status?.stdout || '');
@@ -404,12 +411,13 @@ export class GitWorkbench {
     return this.machines.locked(`git:${this.workspaces.projects.key(id)}`, async () => {
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
       // Keep the accepted job in the same directory even if project settings change while it runs.
-      const { directory } = await this.workspaces.config(id);
+      const project = await this.workspaces.config(id);
+      const { directory } = project;
       return this.jobs.start(
         this.workspaces.projects.key(id),
         async (log, signal, update) => {
           const execute: GitCommand = (command, network) =>
-            this.command(id, command, signal, directory, network);
+            this.command(id, command, signal, project, network);
           if (value.action === 'fetch' || value.action === 'pull' || value.action === 'push') {
             try {
               await this.remoteAction(value, execute, log, update);
@@ -423,7 +431,7 @@ export class GitWorkbench {
           if (value.action === 'remote-add' && !value.url) throw new AppError('新增远程仓库需要 HTTPS 地址');
           switch (value.action) {
             case 'resolve': {
-              const current = await this.mergeInputs(id, value.path, signal, directory);
+              const current = await this.mergeInputs(id, value.path, signal, project);
               if (
                 current.expectedIndex !== value.expectedIndex ||
                 current.expectedVersion !== value.expectedVersion
@@ -440,7 +448,7 @@ export class GitWorkbench {
               break;
             }
             case 'resolve-choice': {
-              const current = await this.conflictChoices(id, value.path, signal, directory);
+              const current = await this.conflictChoices(id, value.path, signal, project);
               if (current.expectedIndex !== value.expectedIndex ||
                   current.expectedWorktree !== value.expectedWorktree)
                 throw new AppError('冲突或文件已变化，请重新选择版本', 409);

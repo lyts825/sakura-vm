@@ -21,7 +21,7 @@ const all = groups.flatMap((group) => group.rows),
   unfinished = all.filter((item) => item.state !== 'available');
 const notes: Record<string, string> = {
   'ha-failover': '本机 QEMU 进程退出接管已可用。新增独立 HTTPS 见证节点、来源持久启动登记、Redfish 带外关机确认、目标副本启动、应用健康与流量切换接口；见证模拟跨服务测试通过。真实第三节点、BMC、健康端点和流量系统尚未完成故障演练，故保持部分实现。',
-  'network-isolation': '项目设置可将托管初始化、命令、服务、健康检查、流水线、收藏命令、显式项目终端、代码诊断、语言服务、调试适配器及开发工具任务放入仅回环的独立网络命名空间，执行前拒绝额外接口或路由；普通管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。',
+  'network-isolation': '项目设置可将托管初始化、命令、服务、健康检查、流水线、收藏命令、显式项目终端、代码诊断、语言服务、调试适配器、开发工具任务及 Git 工作台命令放入仅回环的独立网络命名空间，执行前拒绝额外接口或路由；普通管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。',
   'clipboard-policy': '已实现 Sakura 网页应用入口与独立 Linux 应用窗口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；单应用 Xvnc 会话可在启动时独立禁止双向剪贴板传递，普通 Windows/Linux 应用进程仍缺系统级策略。',
   'availability-report': '目前为 uptime 探测，尚无持续可用性记录与完整报告。',
   'multi-host-inventory': '目前返回本机信息，尚未实现多主机汇总。',
