@@ -22,13 +22,14 @@ export const singleAppInput = z.object({
 
 type AppSession = { id: string; vmId: string; program: string; display: number;
   port: number; resolution: string; clipboard: { copy: boolean; paste: boolean };
-  startedAt: string };
+  startedAt: string; revoked?: boolean };
 const sessionName = (id: string) => `sakura-single-app-${id.slice(0, 12)}`;
 const sessionLog = (id: string) => `/tmp/${sessionName(id)}.log`;
 const sessionPid = (id: string) => `/tmp/sakura-single-app-${id}.pid`;
 
 export class SingleAppWindows {
   private sessions = new Map<string, AppSession>();
+  private sessionListeners = new Map<string, Set<() => void>>();
   private pending = new Set<Promise<AppSession>>();
   private closed = false;
   private closeAbort = new AbortController();
@@ -38,8 +39,32 @@ export class SingleAppWindows {
   private onChange = () => {
     for (const [id, session] of this.sessions)
       if (!this.machines.records.has(session.vmId) ||
-          this.machines.state(session.vmId) !== 'running') this.sessions.delete(id);
+          this.machines.state(session.vmId) !== 'running') {
+        this.disconnect(id);
+        this.sessions.delete(id);
+      }
   };
+
+  private disconnect(sessionId: string) {
+    const listeners = this.sessionListeners.get(sessionId);
+    this.sessionListeners.delete(sessionId);
+    for (const listener of listeners || []) listener();
+  }
+
+  onSessionInvalidated(id: string, sessionId: string, listener: () => void) {
+    const session = this.sessions.get(z.uuid().parse(sessionId));
+    if (!session || session.vmId !== id || session.revoked ||
+        this.machines.state(id) !== 'running')
+      throw new AppError('应用窗口会话已失效，请停止并重开', 409);
+    const listeners = this.sessionListeners.get(sessionId) || new Set<() => void>();
+    listeners.add(listener);
+    this.sessionListeners.set(sessionId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size && this.sessionListeners.get(sessionId) === listeners)
+        this.sessionListeners.delete(sessionId);
+    };
+  }
 
   private clipboardFile(id: string) {
     return join(vmDir(id), 'single-app-clipboard.json');
@@ -61,6 +86,14 @@ export class SingleAppWindows {
       const next = clipboardStoreSchema.parse({ version: 1,
         rules: { ...rules, [program]: clipboard } });
       await writeStore(this.clipboardFile(id), next);
+      for (const session of this.sessions.values()) {
+        if (session.vmId !== id || session.program !== program || session.revoked) continue;
+        if ((session.clipboard.copy && !clipboard.copy) ||
+            (session.clipboard.paste && !clipboard.paste)) {
+          session.revoked = true;
+          this.disconnect(session.id);
+        }
+      }
       return { program, clipboard };
     });
   }
@@ -110,14 +143,19 @@ test "$closed" = yes`;
     this.machines.get(id);
     const rows = [...this.sessions.values()].filter((session) => session.vmId === id);
     return Promise.all(rows.map(async (session) => ({ ...session,
-      status: await this.alive(session) ? 'running' : 'stopped' })));
+      status: await this.alive(session) ?
+        (session.revoked ? 'relaunch-required' : 'running') : 'stopped' })));
   }
 
   async port(id: string, sessionId: string) {
     const session = this.sessions.get(z.uuid().parse(sessionId));
     if (!session || session.vmId !== id || this.machines.state(id) !== 'running')
       throw new AppError('应用窗口会话不存在或已停止', 404);
+    if (session.revoked)
+      throw new AppError('剪贴板规则已收紧，请停止并重开此窗口', 409);
     if (!await this.alive(session)) throw new AppError('应用窗口会话已退出', 409);
+    if (session.revoked)
+      throw new AppError('剪贴板规则已收紧，请停止并重开此窗口', 409);
     return session.port;
   }
 
@@ -251,6 +289,7 @@ wait "$app_pid"
     return this.machines.locked(`single-app:${id}`, async () => {
       const session = this.sessions.get(z.uuid().parse(sessionId));
       if (!session || session.vmId !== id) throw new AppError('应用窗口会话不存在', 404);
+      this.disconnect(session.id);
       if (this.machines.state(id) === 'running') await this.terminate(session);
       this.sessions.delete(session.id);
       return { stopped: true };
@@ -265,5 +304,6 @@ wait "$app_pid"
     await Promise.allSettled([...this.sessions.values()].map((session) =>
       this.stop(session.vmId, session.id)));
     this.sessions.clear();
+    this.sessionListeners.clear();
   }
 }

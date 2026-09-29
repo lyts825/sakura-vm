@@ -9,7 +9,7 @@ type AppSession = {
   program: string;
   resolution: string;
   clipboard?: { copy: boolean; paste: boolean };
-  status: 'running' | 'stopped';
+  status: 'running' | 'stopped' | 'relaunch-required';
   startedAt: string;
 };
 
@@ -133,7 +133,7 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
         onClick={() => void updatePolicy(false)}>保存此程序规则</button>
       {savedPolicy && <button className="text-button" type="button" disabled={busy}
         onClick={() => void updatePolicy(true)}>移除程序规则</button>}
-      {savedPolicy && <small>已保存的规则适用于此实例中该程序的后续窗口；放宽权限请先保存。
+      {savedPolicy && <small>收紧规则会断开仍具旧权限的窗口，需停止并重开；放宽权限只适用于后续窗口。
         </small>}
       <button className="primary compact" type="submit"
         disabled={busy || vm.status !== 'running' || unsavedRelaxation}>
@@ -144,7 +144,8 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     <Feedback error={error || list.error} />
     {!!list.data?.sessions.length && <div className="desktop-single-app-sessions">
       {list.data.sessions.map((session) => <div key={session.id}>
-        <span><b>{session.program}</b><small>{session.resolution} · {session.status === 'running' ? '运行中' : '已退出'} ·
+        <span><b>{session.program}</b><small>{session.resolution} · {session.status === 'running' ? '运行中'
+          : session.status === 'relaunch-required' ? '规则已收紧，需停止并重开' : '已退出'} ·
           复制{session.clipboard?.copy === false ? '关闭' : '开启'} ·
           粘贴{session.clipboard?.paste === false ? '关闭' : '开启'}</small></span>
         <button className="secondary compact" disabled={session.status !== 'running'}

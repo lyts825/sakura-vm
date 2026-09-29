@@ -1646,7 +1646,8 @@ async function main() {
       if (mode === 'desktop' || mode === 'desktop-view') {
         try {
           const port = appSession ? await features.desktops.apps.port(id, appSession) : 5901;
-          await features.desktops.attach(id, client, mode === 'desktop-view', port);
+          await features.desktops.attach(id, client, mode === 'desktop-view', port,
+            appSession || undefined);
         } catch {
           client.close(1011, 'Desktop unavailable');
         }

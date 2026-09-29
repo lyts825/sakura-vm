@@ -129,12 +129,15 @@ export class Desktops {
     return { ...operation.view };
   }
 
-  async attach(id: string, socket: WebSocket, readOnly = false, port = 5901) {
+  async attach(id: string, socket: WebSocket, readOnly = false, port = 5901,
+    appSession?: string) {
     if (!Number.isInteger(port) || port < 5901 || port > 5917)
       throw new AppError('无效的桌面端口', 400);
     const abort = new AbortController();
-    socket.once('close', () => abort.abort());
     if (socket.readyState !== WebSocket.OPEN) return;
+    const stopWatching = appSession
+      ? this.apps.onSessionInvalidated(id, appSession, () => socket.terminate()) : null;
+    socket.once('close', () => { abort.abort(); stopWatching?.(); });
     if (this.machines.state(id) !== 'running') throw new AppError('发行版尚未就绪', 409);
     const ssh = await this.machines.connect(id, 10000, abort.signal);
     const close = () => {

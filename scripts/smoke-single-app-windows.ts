@@ -3,6 +3,7 @@ import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { WebSocket, WebSocketServer } from 'ws';
 
 const distro = process.env.SAKURA_TEST_DISTRO || 'alpine';
 assert.ok(['alpine', 'debian', 'ubuntu'].includes(distro), 'unsupported smoke distro');
@@ -20,6 +21,8 @@ const { Desktops } = await import('../server/desktop.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const desktops = new Desktops(machines);
+let browser: WebSocket | undefined;
+let bridge: WebSocketServer | undefined;
 try {
   const vm = await machines.create({ name: `single-app-${distro}`, distro: distro as
     'alpine' | 'debian' | 'ubuntu', memoryMiB: 1024, cpus: 2, diskGiB: 4 });
@@ -60,7 +63,29 @@ DISPLAY=:${other.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 1000
   assert.equal(otherClipboard.code, 0, otherClipboard.stderr);
   assert.deepEqual(otherClipboard.stdout.trim().split(/\s+/).map((value) =>
     value === 'on' ? '1' : value), ['1', '1']);
+  bridge = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  await new Promise<void>((resolve) => bridge!.once('listening', resolve));
+  bridge.on('connection', (socket) => void desktops.attach(vm.id, socket, false,
+    other.port, other.id).catch(() => socket.terminate()));
+  const address = bridge.address();
+  if (!address || typeof address === 'string') throw new Error('missing bridge port');
+  browser = new WebSocket(`ws://127.0.0.1:${address.port}`);
+  await Promise.race([
+    new Promise<void>((resolve, reject) => {
+      browser!.once('message', () => resolve());
+      browser!.once('error', reject);
+    }),
+    delay(5000).then(() => { throw new Error('application RFB bridge did not connect'); }),
+  ]);
+  const disconnected = new Promise<void>((resolve) => browser!.once('close', () => resolve()));
   await desktops.apps.saveClipboardPolicy(vm.id, 'xterm', { copy: false, paste: false });
+  await Promise.race([disconnected,
+    delay(5000).then(() => { throw new Error('old application bridge stayed connected'); })]);
+  await assert.rejects(desktops.apps.port(vm.id, other.id), /规则已收紧/);
+  assert.equal((await desktops.apps.list(vm.id)).find((item) => item.id === other.id)?.status,
+    'relaunch-required');
+  assert.equal(await desktops.apps.port(vm.id, session.id), session.port,
+    'an already restricted window remains available');
   assert.deepEqual((await desktops.apps.clipboardPolicies(vm.id)).xterm,
     { copy: false, paste: false });
   const governed = await desktops.apps.start(vm.id, { program: 'xterm',
@@ -77,19 +102,24 @@ DISPLAY=:${governed.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 1
   assert.equal(governedClipboard.code, 0, governedClipboard.stderr);
   assert.deepEqual(governedClipboard.stdout.trim().split(/\s+/).map((value) =>
     value === 'off' ? '0' : value), ['0', '0']);
-  assert.equal((await desktops.apps.list(vm.id)).filter((item) => item.status === 'running').length, 3);
+  assert.equal(await desktops.apps.port(vm.id, governed.id), governed.port);
+  const liveSessions = await desktops.apps.list(vm.id);
+  assert.equal(liveSessions.filter((item) => item.status === 'running').length, 2);
+  assert.equal(liveSessions.filter((item) => item.status === 'relaunch-required').length, 1);
   await desktops.apps.stop(vm.id, session.id);
   await delay(500);
   const stopped = await machines.exec(vm.id,
     `! nc -z 127.0.0.1 ${session.port} >/dev/null 2>&1`, 5000);
   assert.equal(stopped.code, 0, stopped.stderr);
-  assert.equal(await desktops.apps.port(vm.id, other.id), other.port);
+  await assert.rejects(desktops.apps.port(vm.id, other.id), /规则已收紧/);
   await desktops.apps.stop(vm.id, governed.id);
   await desktops.apps.stop(vm.id, other.id);
   await desktops.apps.removeClipboardPolicy(vm.id, 'xterm');
   assert.equal((await desktops.apps.clipboardPolicies(vm.id)).xterm, undefined);
   console.log(`Real ${distro} independent single-app Xvnc sessions, saved clipboard rule, RFB handshake and cleanup passed`);
 } finally {
+  browser?.terminate();
+  if (bridge) await new Promise<void>((resolve) => bridge!.close(() => resolve()));
   await desktops.close();
   await machines.close();
   assert.equal(dirname(directory), resolve(tmpdir()));
