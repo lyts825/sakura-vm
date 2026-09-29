@@ -28,6 +28,7 @@ const failFence = process.argv.includes('--fail-fence');
 const differentSize = process.argv.includes('--different-size');
 const remoteEndpoint = process.argv.includes('--remote-endpoint');
 const peerTunnel = process.argv.includes('--peer-tunnel');
+const legacyDrive = process.argv.includes('--legacy-drive');
 const root = await mkdtemp(join(tmpdir(), 'sakura-qemu-migration-'));
 const sourceDisk = join(root, 'source.qcow2');
 const targetDisk = join(root, 'target.qcow2');
@@ -43,9 +44,11 @@ async function launch(port: number, disk: string, incoming: boolean) {
     '-name', 'sakura-migration-smoke', '-machine', 'q35', '-accel', 'tcg',
     '-cpu', 'qemu64', '-m', '128', '-smp', '1', '-nodefaults',
     '-display', 'none', '-monitor', 'none', '-serial', 'none',
-    '-blockdev', JSON.stringify({ driver: 'file', 'node-name': 'sakura-file', filename: disk }),
-    '-blockdev', JSON.stringify({ driver: 'qcow2', 'node-name': 'sakura-disk', file: 'sakura-file' }),
-    '-device', 'virtio-blk-pci,drive=sakura-disk,id=sakura-device',
+    ...(legacyDrive
+      ? ['-drive', `file=${disk},if=virtio,id=sakura-disk,format=qcow2`]
+      : ['-blockdev', JSON.stringify({ driver: 'file', 'node-name': 'sakura-file', filename: disk }),
+          '-blockdev', JSON.stringify({ driver: 'qcow2', 'node-name': 'sakura-disk', file: 'sakura-file' }),
+          '-device', 'virtio-blk-pci,drive=sakura-disk,id=sakura-device']),
     '-qmp', `tcp:127.0.0.1:${port},server=on,wait=off`,
     ...(incoming ? ['-incoming', 'defer'] : ['-S']),
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -77,6 +80,17 @@ try {
   await launch(targetPort, targetDisk, true);
   await qmp(sourcePort, 'cont');
   assert.equal(status(await qmp(sourcePort, 'query-status')).running, true);
+  const node = async (port: number) => {
+    const blocks = await qmp(port, 'query-block') as Array<{
+      device: string; inserted?: { 'node-name'?: string; ro?: boolean } }>;
+    const disk = blocks.find((block) => block.device === 'sakura-disk' &&
+      block.inserted?.ro === false);
+    if (!disk?.inserted?.['node-name']) throw new Error('QEMU writable disk node is unavailable');
+    return disk.inserted['node-name'];
+  };
+  const [sourceDiskNode, targetDiskNode] = await Promise.all([
+    node(sourcePort), node(targetPort),
+  ]);
   let sourceNbdPort = nbdPort, sourceTransferPort = transferPort;
   if (peerTunnel) {
     const peerPort = await freePort();
@@ -102,7 +116,7 @@ try {
     await targetPeers.configure({ operation: 'allow-activate', id: incoming.id, enabled: true });
     const session = targetPeers.registerMigrationSession(incoming.requesterId,
       { disk: nbdPort, state: transferPort, qmp: targetPort,
-        targetDiskNode: 'sakura-disk' });
+        targetDiskNode });
     peerId = outgoing.id;
     peerSession = session;
     const disk = await sourcePeers.openMigrationForward(outgoing.id, session, 'disk');
@@ -124,7 +138,7 @@ try {
     target: (command, args, timeoutMs) => peerTunnel
       ? sourcePeers!.targetMigrationQmp(peerId!, peerSession!, command, args, timeoutMs)
       : qmp(targetPort, command, args, timeoutMs),
-    sourceDiskNode: 'sakura-disk', targetDiskNode: 'sakura-disk',
+    sourceDiskNode, targetDiskNode,
     nbdListen: { type: 'inet', data: { host: remoteEndpoint ? '0.0.0.0' : '127.0.0.1',
       port: String(nbdPort) } },
     nbdConnect: { type: 'inet', host: '127.0.0.1', port: String(sourceNbdPort) },

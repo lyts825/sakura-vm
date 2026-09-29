@@ -375,7 +375,7 @@ export class HostPeers {
         throw new AppError('迁移端口无效');
     if ((ports.qmp === undefined) !== (ports.targetDiskNode === undefined) ||
         (ports.targetDiskNode !== undefined &&
-          !/^[a-zA-Z][a-zA-Z0-9_-]{0,30}$/.test(ports.targetDiskNode)))
+          !/^[#a-zA-Z0-9._-]{1,64}$/.test(ports.targetDiskNode)))
       throw new AppError('目标 QMP 与磁盘节点必须一起登记');
     const id = randomUUID();
     this.migrationSessions.set(id, { requesterId, ports: { ...ports },
