@@ -112,6 +112,7 @@ export type FeatureCatalogItem = {
 };
 
 const availableFeatureIds = new Set<FeatureId>([
+  'single-app-windows',
   'gpu-acceleration',
   'audio-video',
   'process-interop',
@@ -162,7 +163,7 @@ const availableFeatureIds = new Set<FeatureId>([
   'rbac-sharing',
   'plugin-api',
 ]);
-const partialFeatureIds = new Set<FeatureId>(['single-app-windows']);
+const partialFeatureIds = new Set<FeatureId>();
 
 export const featureCatalogView = (): FeatureCatalogItem[] =>
   featureCatalog.map(([id, name, category, priority, summary]) => ({
@@ -486,11 +487,10 @@ export class FeatureSuite {
       checkedAt: new Date().toISOString(),
     };
     if (featureId === 'single-app-windows') {
-      result.ready = (vm.distro === undefined || vm.distro === 'alpine') &&
-        this.machines.state(id) === 'running';
+      result.ready = this.machines.state(id) === 'running';
       result.reason = result.ready
-        ? '桌面 → 单应用窗口可为 Alpine 图形程序创建独立浏览器窗口和虚拟显示器；尚未集成宿主系统原生单应用窗口。'
-        : '请启动 Alpine 实例，然后在桌面页打开单应用窗口。';
+        ? '桌面 → 单应用窗口可为 Linux 图形程序创建独立浏览器窗口和虚拟显示器；尚未集成宿主系统原生单应用窗口。'
+        : '请启动实例，然后在桌面页打开单应用窗口。';
     } else if (featureId === 'ai-assistant') {
       result.ready = true;
       result.reason =

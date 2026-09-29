@@ -15,11 +15,13 @@ type AppSession = { id: string; vmId: string; program: string; display: number;
   port: number; resolution: string; startedAt: string };
 const sessionName = (id: string) => `sakura-single-app-${id.slice(0, 12)}`;
 const sessionLog = (id: string) => `/tmp/${sessionName(id)}.log`;
+const sessionPid = (id: string) => `/tmp/sakura-single-app-${id}.pid`;
 
 export class SingleAppWindows {
   private sessions = new Map<string, AppSession>();
   private pending = new Set<Promise<AppSession>>();
   private closed = false;
+  private closeAbort = new AbortController();
   constructor(private machines: Machines) {
     machines.on('change', this.onChange);
   }
@@ -34,6 +36,27 @@ export class SingleAppWindows {
     const result = await this.machines.exec(session.vmId,
       `tmux has-session -t =${sessionName(session.id)} 2>/dev/null`, 5000);
     return result.code === 0;
+  }
+
+  private async terminate(session: AppSession) {
+    const command = `pid=$(cat ${quote(sessionPid(session.id))} 2>/dev/null || true)
+case "$pid" in
+  ''|*[!0-9]*) ;;
+  *) if test -r "/proc/$pid/cmdline" &&
+       test "$(stat -c %u "/proc/$pid" 2>/dev/null)" = "$(id -u sakura-desktop)" &&
+       tr '\\000' ' ' < "/proc/$pid/cmdline" | grep -Fq ${quote(`sakura_app_id=${session.id}`)}; then
+       kill -TERM "$pid" 2>/dev/null || true
+     fi ;;
+esac
+closed=no
+for attempt in $(seq 1 25); do
+  if ! nc -z 127.0.0.1 ${session.port} >/dev/null 2>&1; then closed=yes; break; fi
+  sleep 0.2
+done
+tmux kill-session -t =${sessionName(session.id)} 2>/dev/null || true
+test "$closed" = yes`;
+    const result = await this.machines.exec(session.vmId, command, 10000);
+    if (result.code !== 0) throw new AppError('无法停止应用窗口的图形进程', 409);
   }
 
   async list(id: string) {
@@ -51,14 +74,15 @@ export class SingleAppWindows {
     return session.port;
   }
 
-  async start(id: string, raw: unknown) {
+  async start(id: string, raw: unknown, signal?: AbortSignal) {
     const input = singleAppInput.parse(raw);
+    const activeSignal = signal
+      ? AbortSignal.any([signal, this.closeAbort.signal]) : this.closeAbort.signal;
     const pending = this.machines.locked(`single-app:${id}`, async () => {
+      activeSignal.throwIfAborted();
       if (this.closed || this.machines.closing)
         throw new AppError('应用窗口服务正在关闭', 503);
       const vm = this.machines.get(id);
-      if (vm.distro && vm.distro !== 'alpine')
-        throw new AppError('单应用窗口目前需要 Alpine 客户机', 409);
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
       const existing = [...this.sessions.values()].filter((session) => session.vmId === id);
       const active = [];
@@ -67,22 +91,32 @@ export class SingleAppWindows {
         else this.sessions.delete(session.id);
       }
       if (active.length >= 4) throw new AppError('每个实例最多运行四个单应用窗口', 409);
+      const alpine = !vm.distro || vm.distro === 'alpine';
+      const install = alpine
+        ? 'apk add --no-cache --timeout 30 tigervnc openbox xauth xdpyinfo tmux xterm font-dejavu'
+        : 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && ' +
+          'apt-get install -y -qq --no-install-recommends ' +
+          'tigervnc-standalone-server openbox xauth x11-utils tmux xterm fonts-dejavu-core netcat-openbsd';
+      const createUser = alpine
+        ? 'adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop'
+        : 'useradd -m -d /home/sakura-desktop -s /bin/sh sakura-desktop';
       const provision = await this.machines.exec(id,
-        `set -eu\nif ! command -v Xvnc >/dev/null || ! command -v openbox >/dev/null || ` +
-          `! command -v xauth >/dev/null || ! command -v xdpyinfo >/dev/null || ` +
-          `! command -v tmux >/dev/null; then ` +
-          `apk add --no-cache --timeout 30 tigervnc openbox xauth xdpyinfo tmux xterm font-dejavu; fi\n` +
-          `if ! id sakura-desktop >/dev/null 2>&1; then ` +
-          `adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop; fi\n` +
-          `command -v ${input.program} >/dev/null`, 180000);
+        `set -eu\nif ! (command -v Xvnc >/dev/null || command -v Xtigervnc >/dev/null) || ` +
+          `! command -v openbox >/dev/null || ! command -v xauth >/dev/null || ` +
+          `! command -v xdpyinfo >/dev/null || ! command -v tmux >/dev/null || ` +
+          `! command -v xterm >/dev/null || ` +
+          `! command -v nc >/dev/null; then ${install}; fi\n` +
+          `if ! id sakura-desktop >/dev/null 2>&1; then ${createUser}; fi\n` +
+          `command -v ${input.program} >/dev/null`, 240000, activeSignal);
       if (provision.code !== 0)
         throw new AppError(provision.stderr.slice(-1000) || '应用或图形环境安装失败', 409);
       let display = 0;
       for (const candidate of [10, 11, 12, 13, 14, 15, 16, 17]) {
         if (active.some((session) => session.display === candidate)) continue;
+        activeSignal.throwIfAborted();
         const check = await this.machines.exec(id,
           `test ! -e /tmp/.X11-unix/X${candidate} && ` +
-          `! nc -z 127.0.0.1 ${5900 + candidate} >/dev/null 2>&1`, 5000);
+          `! nc -z 127.0.0.1 ${5900 + candidate} >/dev/null 2>&1`, 5000, activeSignal);
         if (check.code === 0) { display = candidate; break; }
       }
       if (!display) throw new AppError('没有可用的应用窗口显示端口', 409);
@@ -91,11 +125,15 @@ export class SingleAppWindows {
         startedAt: new Date().toISOString() };
       const app = [input.program, ...input.args.map(quote)].join(' ');
       const script = `set -eu
+sakura_app_id=${session.id}
+pid_file=${sessionPid(session.id)}
+printf '%s\n' "$$" > "$pid_file"
 directory=$(mktemp -d /tmp/${sessionName(session.id)}.XXXXXXXX)
 chmod 700 "$directory"
 export DISPLAY=:${display} XAUTHORITY="$directory/Xauthority"
 xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')"
-Xvnc "$DISPLAY" -geometry ${input.resolution} -depth 24 -rfbport ${session.port} -interface 127.0.0.1 -localhost -SecurityTypes None -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" >"$directory/xvnc.log" 2>&1 &
+vnc_binary=$(command -v Xvnc || command -v Xtigervnc)
+"$vnc_binary" "$DISPLAY" -geometry ${input.resolution} -depth 24 -rfbport ${session.port} -interface 127.0.0.1 -localhost -SecurityTypes None -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" >"$directory/xvnc.log" 2>&1 &
 vnc_pid=$!
 wm_pid=''
 app_pid=''
@@ -106,6 +144,7 @@ cleanup() {
   kill "$vnc_pid" 2>/dev/null || true
   wait "$vnc_pid" 2>/dev/null || true
   rm -rf -- "$directory"
+  rm -f -- "$pid_file"
 }
 trap cleanup EXIT HUP INT TERM
 ready=no
@@ -121,18 +160,21 @@ timeout 14400 ${app} >"$directory/app.log" 2>&1 &
 app_pid=$!
 wait "$app_pid"
 `;
-      const launch = await this.machines.exec(id,
-        `tmux new-session -d -s ${sessionName(session.id)} ` +
-          quote(`su sakura-desktop -s /bin/sh -c ${quote(script)} > ${quote(sessionLog(session.id))} 2>&1`),
-        10000);
-      if (launch.code !== 0) throw new AppError(launch.stderr || '无法启动单应用窗口', 409);
       try {
+        activeSignal.throwIfAborted();
+        const launch = await this.machines.exec(id,
+          `tmux new-session -d -s ${sessionName(session.id)} ` +
+            quote(`su sakura-desktop -s /bin/sh -c ${quote(script)} > ${quote(sessionLog(session.id))} 2>&1`),
+          10000, activeSignal);
+        if (launch.code !== 0) throw new AppError(launch.stderr || '无法启动单应用窗口', 409);
         const deadline = Date.now() + 15000;
         while (Date.now() < deadline) {
+          activeSignal.throwIfAborted();
           const status = await this.machines.exec(id,
             `tmux has-session -t =${sessionName(session.id)} 2>/dev/null && ` +
-            `nc -z 127.0.0.1 ${session.port} >/dev/null 2>&1`, 5000);
+            `nc -z 127.0.0.1 ${session.port} >/dev/null 2>&1`, 5000, activeSignal);
           if (status.code === 0) {
+            activeSignal.throwIfAborted();
             if (this.closed || this.machines.closing)
               throw new AppError('应用窗口服务正在关闭', 503);
             this.sessions.set(session.id, session);
@@ -144,8 +186,7 @@ wait "$app_pid"
         const log = await this.machines.exec(id, `tail -c 2000 ${quote(sessionLog(session.id))}`, 5000);
         throw new AppError(log.stdout || '应用窗口未能启动', 409);
       } catch (error) {
-        await this.machines.exec(id,
-          `tmux kill-session -t =${sessionName(session.id)} 2>/dev/null || true`, 5000).catch(() => {});
+        await this.terminate(session).catch(() => {});
         throw error;
       }
     });
@@ -158,12 +199,7 @@ wait "$app_pid"
     return this.machines.locked(`single-app:${id}`, async () => {
       const session = this.sessions.get(z.uuid().parse(sessionId));
       if (!session || session.vmId !== id) throw new AppError('应用窗口会话不存在', 404);
-      if (this.machines.state(id) === 'running') {
-        const result = await this.machines.exec(id,
-          `if tmux has-session -t =${sessionName(session.id)} 2>/dev/null; then ` +
-          `tmux kill-session -t =${sessionName(session.id)}; fi`, 10000);
-        if (result.code !== 0) throw new AppError('无法停止应用窗口', 409);
-      }
+      if (this.machines.state(id) === 'running') await this.terminate(session);
       this.sessions.delete(session.id);
       return { stopped: true };
     });
@@ -171,6 +207,7 @@ wait "$app_pid"
 
   async close() {
     this.closed = true;
+    this.closeAbort.abort();
     this.machines.off('change', this.onChange);
     await Promise.allSettled([...this.pending]);
     await Promise.allSettled([...this.sessions.values()].map((session) =>

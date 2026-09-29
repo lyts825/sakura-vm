@@ -6,7 +6,7 @@ const root = process.cwd();
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 for (const name of ['tsx', 'vite', 'react', 'react-dom', '@xterm/xterm', '@novnc/novnc'])
   if (Object.hasOwn(manifest.dependencies, name)) throw new Error(`${name} should only be needed to build the release`);
-for (const file of ['dist/index.html', '.sakura-server/index.js',
+for (const file of ['dist/index.html', 'dist/single-app.html', '.sakura-server/index.js',
   '.sakura-server/assets/state-report.sh', '.sakura-server/assets/engineering-runner.py',
   '.sakura-server/assets/secure-erase.py'])
   await stat(join(root, file));
@@ -45,7 +45,11 @@ for (const file of jsFiles) {
   if (checked.status !== 0) throw new Error(`Invalid release JavaScript: ${file}\n${checked.stderr}`);
 }
 const html = await readFile(join(root, 'dist', 'index.html'), 'utf8');
-const entry = /src="\/assets\/(index-[^/" ]+\.js)"/.exec(html)?.[1];
+const singleAppHtml = await readFile(join(root, 'dist', 'single-app.html'), 'utf8');
+const singleAppEntry = /src="\/assets\/([^/" ]+\.js)"/.exec(singleAppHtml)?.[1];
+if (!singleAppEntry) throw new Error('Single-app window bundle is missing');
+await stat(join(root, 'dist', 'assets', singleAppEntry));
+const entry = /src="\/assets\/([^/" ]+\.js)"/.exec(html)?.[1];
 if (!entry) throw new Error('Frontend entry bundle is missing');
 const bytes = (await stat(join(root, 'dist', 'assets', entry))).size;
 if (bytes > 450_000) throw new Error(`Frontend entry exceeds 450 KB: ${bytes}`);

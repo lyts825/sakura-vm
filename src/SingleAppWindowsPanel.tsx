@@ -76,7 +76,7 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     <div className="desktop-single-app-head">
       <div>
         <h3><TerminalSquare size={17} /> 单应用窗口</h3>
-        <p>在独立浏览器窗口运行 Alpine 图形程序。应用会使用单独的虚拟显示器；每台实例最多四个。</p>
+        <p>在独立浏览器窗口运行 Linux 图形程序。应用会使用单独的虚拟显示器；每台实例最多四个。</p>
       </div>
       <span>试验功能</span>
     </div>

@@ -1000,12 +1000,12 @@ test('desktop layout saves two logical monitors and restores the applied prefere
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('Alpine desktop opens and stops an isolated single-app browser window', async ({ page }) => {
+test('Debian desktop opens and stops an isolated single-app browser window', async ({ page }) => {
   await app(page, ['desktop'], true);
   const sessions: Array<Record<string, unknown>> = [];
   let started: Record<string, unknown> | undefined;
   await page.route('**/api/vms', (route) =>
-    route.fulfill({ json: [{ ...vm, distro: 'alpine', status: 'running', poweredOn: true }] }));
+    route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
   await page.route('**/api/vms/*/desktop*', (route) =>
     route.fulfill({ json: { status: 'stopped', log: '', preferences: {} } }));
   await page.route('**/api/vms/*/single-app', (route) => {
@@ -1031,9 +1031,14 @@ test('Alpine desktop opens and stops an isolated single-app browser window', asy
   await panel.getByRole('button', { name: '启动应用' }).click();
   const popup = await popupPromise;
   await expect(popup).toHaveTitle('xterm · Sakura');
+  await expect(popup).toHaveURL(/\/single-app\.html\?nonce=/);
+  expect(popup.url()).not.toContain('token=');
+  await expect.poll(() => popup.evaluate(() => window.opener === null)).toBe(true);
   expect(started).toMatchObject({ action: 'start', program: 'xterm', resolution: '1024x768' });
   await panel.getByRole('button', { name: '停止' }).click();
   await expect(panel.getByText('1024x768 · 运行中')).toHaveCount(0);
+  await page.close();
+  await expect(popup).toHaveTitle('xterm · Sakura');
   await popup.close();
 });
 

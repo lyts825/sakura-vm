@@ -4,11 +4,15 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+const distro = process.env.SAKURA_TEST_DISTRO || 'alpine';
+assert.ok(['alpine', 'debian', 'ubuntu'].includes(distro), 'unsupported smoke distro');
+const imageName = { alpine: 'alpine-3.23.qcow2', debian: 'debian-12.qcow2',
+  ubuntu: 'ubuntu-24.04.qcow2' }[distro]!;
 const directory = await mkdtemp(join(tmpdir(), 'sakura-single-app-'));
 await mkdir(join(directory, 'images'), { recursive: true });
-await copyFile(resolve('.data/images/alpine-3.23.qcow2'),
-  join(directory, 'images/alpine-3.23.qcow2'));
+await copyFile(resolve('.data/images', imageName), join(directory, 'images', imageName));
 process.env.SAKURA_DATA_DIR = directory;
+process.env.SAKURA_IMAGE_DIR = join(directory, 'images');
 process.env.SAKURA_IMAGE_PATH = join(directory, 'images/alpine-3.23.qcow2');
 const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
@@ -17,8 +21,8 @@ const machines = new Machines(await createRuntime());
 await machines.init();
 const desktops = new Desktops(machines);
 try {
-  const vm = await machines.create({ name: 'single-app-smoke',
-    memoryMiB: 1024, cpus: 2, diskGiB: 4 });
+  const vm = await machines.create({ name: `single-app-${distro}`, distro: distro as
+    'alpine' | 'debian' | 'ubuntu', memoryMiB: 1024, cpus: 2, diskGiB: 4 });
   await machines.start(vm.id);
   const deadline = Date.now() + 300_000;
   while (machines.state(vm.id) !== 'running') {
@@ -43,7 +47,7 @@ try {
   assert.equal(stopped.code, 0, stopped.stderr);
   assert.equal(await desktops.apps.port(vm.id, other.id), other.port);
   await desktops.apps.stop(vm.id, other.id);
-  console.log('Real Alpine independent single-app Xvnc sessions, RFB handshake and cleanup passed');
+  console.log(`Real ${distro} independent single-app Xvnc sessions, RFB handshake and cleanup passed`);
 } finally {
   await desktops.close();
   await machines.close();

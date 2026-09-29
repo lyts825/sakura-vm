@@ -1384,7 +1384,7 @@ async function main() {
         'Content-Type': mime[extname(candidate)] || 'application/octet-stream',
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control':
-          candidate.endsWith('index.html') ||
+          candidate.endsWith('.html') ||
           candidate.endsWith('sw.js') ||
           candidate.endsWith('.webmanifest')
             ? 'no-cache'

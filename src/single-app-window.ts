@@ -1,6 +1,6 @@
-import { connectDesktop } from './desktop-connection';
-
 type Session = { id: string; program: string; resolution: string };
+
+type PopupReady = { type: 'sakura-single-app-ready'; nonce: string };
 
 export function createSingleAppPopup() {
   const popup = window.open('', '_blank', 'popup,width=1060,height=840');
@@ -13,39 +13,32 @@ export function createSingleAppPopup() {
 export async function connectSingleAppPopup(popup: Window, vmId: string,
   session: Session, token: string) {
   if (popup.closed) throw new Error('应用窗口已关闭');
-  const { default: RFB } = await import('@novnc/novnc');
-  const doc = popup.document;
-  doc.title = `${session.program} · Sakura`;
-  doc.body.replaceChildren();
-  doc.body.style.margin = '0';
-  doc.body.style.background = '#201b24';
-  const style = doc.createElement('style');
-  style.textContent = `html,body{height:100%;overflow:hidden} .app-toolbar{height:42px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:#26212c;color:#eee6ef;font:13px system-ui,sans-serif} .app-screen{height:calc(100vh - 42px);width:100%;overflow:hidden} .app-close{background:#655168;color:white;border:0;border-radius:6px;padding:5px 10px;cursor:pointer}`;
-  const toolbar = doc.createElement('div');
-  toolbar.className = 'app-toolbar';
-  const status = doc.createElement('span');
-  status.textContent = `${session.program} · 正在连接…`;
-  const close = doc.createElement('button');
-  close.className = 'app-close';
-  close.textContent = '关闭窗口';
-  close.onclick = () => popup.close();
-  toolbar.append(status, close);
-  const screen = doc.createElement('div');
-  screen.className = 'app-screen';
-  screen.setAttribute('aria-label', `${session.program} Linux 应用窗口`);
-  doc.head.append(style);
-  doc.body.append(toolbar, screen);
-  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${scheme}//${location.host}/ws/${vmId}/desktop?token=${encodeURIComponent(token)}&app=${encodeURIComponent(session.id)}`;
-  const connection = connectDesktop(() => {
-    const client = new RFB(screen, url);
-    client.scaleViewport = true;
-    client.resizeSession = false;
-    client.background = '#201b24';
-    return client;
-  }, ({ connected, message, error }) => {
-    if (!popup.closed) status.textContent = `${session.program} · ${error || message || (connected ? '已连接' : '连接中')}`;
+  const nonce = crypto.randomUUID();
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      window.removeEventListener('message', receive);
+    };
+    const receive = (event: MessageEvent<PopupReady>) => {
+      if (event.source !== popup || event.origin !== location.origin ||
+          event.data?.type !== 'sakura-single-app-ready' || event.data.nonce !== nonce) return;
+      cleanup();
+      if (popup.closed) return reject(new Error('应用窗口已关闭'));
+      popup.postMessage({ type: 'sakura-single-app-init', nonce, vmId, session, token },
+        location.origin);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('应用窗口页面未能加载'));
+    }, 15000);
+    window.addEventListener('message', receive);
+    try {
+      popup.location.replace(`${location.origin}/single-app.html?nonce=${encodeURIComponent(nonce)}`);
+    } catch (cause) {
+      cleanup();
+      reject(cause);
+    }
   });
-  popup.addEventListener('pagehide', () => connection.dispose(), { once: true });
   popup.focus();
 }

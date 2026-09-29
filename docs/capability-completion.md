@@ -579,7 +579,7 @@ ACME 证书续期在第三批能力中心选择“ACME 证书续期”。`status
 
 ## 验证
 
-单应用窗口批次：Alpine 桌面页可为每个图形程序启动独立 Xvnc 显示器，通过有权限校验的桌面 WebSocket 在浏览器弹窗中操作，并支持重开与停止。真实虚拟机验证两个会话端口相互独立、RFB 握手和停止清理；浏览器测试覆盖启动与停止。由于当前并非 Windows 原生单应用窗口且仅支持 Alpine，目录保留“部分实现”。范围见 [单应用窗口说明](single-app-windows.md)。
+单应用窗口批次：Alpine、Debian 和 Ubuntu 桌面页可为每个图形程序启动独立 Xvnc 显示器，通过有权限校验的桌面 WebSocket 在独立浏览器弹窗中操作，并支持重开与停止；令牌经同源消息交接，主控制页关闭后弹窗仍可继续。三个发行版的真实虚拟机均已验证两个会话端口相互独立、RFB 握手和停止清理；浏览器测试覆盖启动与停止。当前并非 Windows 原生单应用窗口。范围见 [单应用窗口说明](single-app-windows.md)。
 
 可信启动证据批次：第二批能力中心可检查安全版 OVMF、QEMU SMM/TPM 后端、`swtpm` 和客户机实际 SecureBoot/TPM 状态。真实 Debian UEFI 虚拟机验证空白 NVRAM 未开启安全启动且未发现 TPM；当前便携 QEMU 缺少 TPM 后端，因此不报告已配置完整链路，目录保留“部分实现”。边界见 [TPM 与安全启动检查](trusted-boot.md)。
 

@@ -334,7 +334,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         </div>
         {(ready || running) && (
           <div className="desktop-toolbar-actions">
-            {running && (!vm.distro || vm.distro === 'alpine') && <button
+            {running && <button
               className={`secondary compact ${showApps ? 'is-active' : ''}`}
               aria-expanded={showApps}
               onClick={() => setShowApps((value) => !value)}
@@ -419,7 +419,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         </div>
       )}
       {showRecording && <DesktopRecording vm={vm} connected={connected} screen={screen} />}
-      {showApps && running && (!vm.distro || vm.distro === 'alpine') &&
+      {showApps && running &&
         <SingleAppWindowsPanel vm={vm} token={token} request={request} />}
       {showCustomizer && (
         <section className="desktop-customizer" aria-label="KDE Plasma 桌面自定义">

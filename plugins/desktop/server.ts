@@ -77,7 +77,7 @@ export async function route(
       ]).parse(await body(req));
       if (input.action === 'start') {
         const { action: _, ...options } = input;
-        return send(await this.desktops.apps.start(id, options), 201);
+        return send(await this.desktops.apps.start(id, options, signal), 201);
       }
       return send(await this.desktops.apps.stop(id, input.id));
     }

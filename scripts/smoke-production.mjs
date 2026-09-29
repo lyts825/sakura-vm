@@ -307,6 +307,14 @@ async function probe(selected, expected) {
       const browser = await chromium.launch();
       try {
         const context = await browser.newContext();
+        const singleAppPage = await context.newPage();
+        const singleAppResponse = await singleAppPage.goto(origin + '/single-app.html');
+        assert.equal(singleAppResponse.status(), 200);
+        assert.match(singleAppResponse.headers()['content-security-policy'], /script-src 'self';/);
+        await singleAppPage.getByRole('status')
+          .filter({ hasText: '请从 Sakura 桌面页重新打开应用窗口' }).waitFor();
+        await singleAppPage.close();
+        console.log('Standalone single-app window loads under the production CSP.');
         const page = await context.newPage();
         const document = await page.goto(origin);
         assert.match(document.headers()['content-security-policy'], /script-src 'self';/);

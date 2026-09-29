@@ -87,7 +87,7 @@ test('release hash validation, isolated canary, activation, rollback and failed-
       await Promise.race([new Promise((done) => launcher.once('exit', done)),
         new Promise((done) => setTimeout(done, 5000))]);
     }
-  } finally { await rm(temporary, { recursive: true, force: true }); }
+  } finally { await rm(temporary, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }); }
 });
 
 test('tampered package and changed runtime pin fail before activation', async () => {
@@ -103,7 +103,7 @@ test('tampered package and changed runtime pin fail before activation', async ()
     await assert.rejects(stageUpdate(source, installation, { skipInstall: true, skipCanary: true }),
       /完整安装流程/);
     assert.equal((await pointer(installation)).active, '.');
-  } finally { await rm(temporary, { recursive: true, force: true }); }
+  } finally { await rm(temporary, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }); }
 });
 
 async function writeReleaseManifestReplacement(source: string) {

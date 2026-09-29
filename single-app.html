@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta name="theme-color" content="#26212c" />
+    <title>Linux 应用 · Sakura</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #201b24; }
+      .toolbar { height: 42px; box-sizing: border-box; display: flex; align-items: center;
+        justify-content: space-between; padding: 0 12px; background: #26212c;
+        color: #eee6ef; font: 13px system-ui, sans-serif; }
+      #screen { height: calc(100vh - 42px); width: 100%; overflow: hidden; }
+      button { background: #655168; color: white; border: 0; border-radius: 6px;
+        padding: 5px 10px; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar"><span id="status" role="status">正在等待应用连接…</span>
+      <button id="close" type="button">关闭窗口</button></div>
+    <div id="screen" aria-label="Linux 单应用窗口"></div>
+    <script type="module" src="/src/single-app-page.ts"></script>
+  </body>
+</html>
