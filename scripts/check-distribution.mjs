@@ -25,9 +25,11 @@ for (const file of ['popup.js', 'background.js']) {
   if (checked.status !== 0) throw new Error(`Invalid browser extension JavaScript: ${file}`);
 }
 for (const file of ['scripts/sakura-tray.ps1', 'scripts/start-tray.mjs',
-  'scripts/launch.mjs', 'scripts/wsl-runtime.mjs', 'scripts/self-update.mjs', 'scripts/release-manifest.mjs'])
+  'scripts/launch.mjs', 'scripts/wsl-runtime.mjs', 'scripts/self-update.mjs', 'scripts/release-manifest.mjs',
+  'scripts/cli.mjs', 'scripts/guest-cli.mjs'])
   await stat(join(root, file));
-for (const file of ['start-tray.mjs', 'launch.mjs', 'wsl-runtime.mjs', 'self-update.mjs', 'release-manifest.mjs']) {
+for (const file of ['start-tray.mjs', 'launch.mjs', 'wsl-runtime.mjs', 'self-update.mjs', 'release-manifest.mjs',
+  'cli.mjs', 'guest-cli.mjs']) {
   const checked = spawnSync(process.execPath, ['--check', join(root, 'scripts', file)],
     { encoding: 'utf8' });
   if (checked.status !== 0) throw new Error(`Invalid release script: ${file}`);

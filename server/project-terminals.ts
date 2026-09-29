@@ -70,9 +70,10 @@ export class ProjectTerminals {
   private controller = new AbortController();
   private unguard: () => void;
 
-  constructor(private machines: Machines, workspaces?: Workspaces) {
+  constructor(private machines: Machines, workspaces?: Workspaces,
+    context?: ConstructorParameters<typeof Workspaces>[1]) {
     this.ownsWorkspaces = !workspaces;
-    this.workspaces = workspaces || new Workspaces(machines);
+    this.workspaces = workspaces || new Workspaces(machines, context);
     this.unguard = this.workspaces.beforeConfigChange(async (id, previous, next) => {
       if (previous.directory === next.directory &&
           (previous.networkIsolation || 'host') === (next.networkIsolation || 'host')) return;

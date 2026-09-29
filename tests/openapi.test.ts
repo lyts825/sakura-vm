@@ -45,6 +45,15 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
       (item) => item.name === 'project' && !item.required,
     ),
   );
+  const execution = spec.paths['/api/vms/{vmId}/exec'].post;
+  const executionBody = execution.requestBody!.content['application/json'].schema;
+  const executionProperties = executionBody.properties as Record<string, Record<string, unknown>>;
+  assert.deepEqual(executionBody.required, ['command']);
+  assert.equal(executionProperties.scope.default, 'project');
+  assert.equal(executionProperties.timeoutSeconds.default, 30);
+  assert.ok(execution.parameters.some((item) => item.name === 'project' && item.in === 'query' && !item.required));
+  assert.deepEqual(execution.responses[200].content!['application/json'].schema.required,
+    ['stdout', 'stderr', 'code', 'scope']);
   const body = spec.paths['/api/vms'].post.requestBody!.content['application/json'].schema;
   assert.deepEqual(body.required, ['name']);
   assert.deepEqual(spec.paths['/api/bootstrap'].get.security, []);

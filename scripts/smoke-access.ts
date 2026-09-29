@@ -744,7 +744,7 @@ try {
   }
   const guest = async (command: string) => {
     const result = await request('/api/vms/' + vmId + '/exec', 'POST', ownerToken,
-      { command }, origin, 45_000);
+      { command, scope: 'instance' }, origin, 45_000);
     assert.equal(result.status, 200, JSON.stringify(result.body));
     return result.body as { stdout: string; stderr: string; code: number };
   };

@@ -30,6 +30,7 @@ import { AutomationRules } from './automation-rules.ts';
 import { runEngineeringOperation } from './engineering-runner.ts';
 import { Workspaces, projectSchema } from './workspaces.ts';
 import { ProjectTerminals } from './project-terminals.ts';
+import { ProjectExecution, guestExecutionInput } from './project-execution.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
 import { FleetPolicyRollouts } from './fleet-policy-rollouts.ts';
@@ -121,7 +122,10 @@ async function main() {
   await rollouts.init();
   features = await Features.create(machines, selectedPlugins,
     (id) => rollouts.decision(id).allowed);
-  const projectTerminals = new ProjectTerminals(machines, features.workspaces);
+  const projectTerminals = new ProjectTerminals(machines, features.workspaces, {
+    get secrets() { return features.secrets; }, get network() { return features.network; },
+  });
+  const projectExecution = new ProjectExecution(machines, projectTerminals);
   terminalSharing.useProjectTerminals(projectTerminals);
   features.next?.setCommunityPlugins(communityPlugins);
   features.next?.setSnapshotMerge(features.serviceValue('snapshotMerge') as
@@ -1431,11 +1435,15 @@ async function main() {
         return send(res, await machines.stop(id, options.force));
       }
       if (req.method === 'POST' && route.length === 4 && route[3] === 'exec') {
-        const { command } = z
-          .object({ command: z.string().min(1).max(65536) })
-          .strict()
-          .parse(await authorizedBody(req));
-        return send(res, await machines.exec(id, command));
+        const abort = new AbortController();
+        const cancel = () => { if (!res.writableFinished) abort.abort(); };
+        req.once('aborted', cancel); res.once('close', cancel);
+        try {
+          const input = guestExecutionInput.parse(await authorizedBody(req, 512 * 1024, abort.signal));
+          return send(res, await projectExecution.run(id, input, url.searchParams.get('project'), abort.signal));
+        } finally {
+          req.off('aborted', cancel); res.off('close', cancel);
+        }
       }
       if (req.method === 'GET' && route.length === 4 && route[3] === 'logs')
         return send(res, { content: machines.logs.get(id) || '' });
@@ -1770,6 +1778,7 @@ async function main() {
       () => sso.close(),
       () => passkeys.close(),
       () => terminalSharing.close(),
+      () => projectExecution.close(),
       () => projectTerminals.close(),
       () => jitPrivileges.close(),
       () => projectPermissions.close(),

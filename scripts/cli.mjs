@@ -4,18 +4,20 @@ import { createReadStream } from 'node:fs';
 import { readFile, open, lstat, unlink } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { guestArguments, guestExecution } from './guest-cli.mjs';
 const base = `http://127.0.0.1:${process.env.SAKURA_PORT || 7337}`;
 const [action = 'help', name, ...args] = process.argv.slice(2);
 async function main() {
   if (action === 'help') {
     if (name !== 'all') {
       console.log(
-        'Sakura — minimal Linux workspace\n\n  list\n  create <name>\n  start <name>\n  stop <name>\n  shell <name>\n  exec <name> -- <command> [args...]\n  plugins\n  plugin <enable|disable> <id>\n  pack <enable|disable> <id>\n  help all\n\nOptional commands require their plugin. Plugin changes take effect after restarting the service.',
+        'Sakura — minimal Linux workspace\n\n  list\n  create <name>\n  start <name>\n  stop <name>\n  shell <name> [--project <id>]\n  exec <name> [--project <id> | --instance] [--timeout <seconds>] -- <command> [args...]\n  plugins\n  plugin <enable|disable> <id>\n  pack <enable|disable> <id>\n  help all\n\nCommands use the saved active project by default. Account mode accepts SAKURA_TOKEN. Optional commands require their plugin. Plugin changes take effect after restarting the service.',
       );
       return;
     }
     const { developmentHelp } = await import('./development-cli.mjs');
     const { sandboxHelp } = await import('./sandbox-cli.mjs');
+    console.log('Project commands:\n  shell <name> [--project <id>]\n  exec <name> [--project <id> | --instance] [--timeout <seconds>] -- <command> [args...]\n  Commands use the saved active project by default. Account mode accepts SAKURA_TOKEN.');
     console.log(
       '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
     );
@@ -33,15 +35,25 @@ async function main() {
     return;
   }
   try {
-    const authentication = await fetch(`${base}/api/bootstrap`);
-    const bootstrap = await authentication.json();
-    if (!authentication.ok) throw new Error(bootstrap.error || '无法获取控制凭证');
-    if (typeof bootstrap.token !== 'string' || !bootstrap.token) throw new Error('服务返回了无效的访问凭证');
+    const guest = ['exec', 'shell'].includes(action) ? guestArguments(action, args) : null;
+    const abort = new AbortController();
+    const cancel = () => { process.exitCode = 130; abort.abort(); };
+    process.on('SIGINT', cancel);
+    process.on('SIGTERM', cancel);
+    let bootstrap = { token: process.env.SAKURA_TOKEN || '' };
+    if (bootstrap.token && !/^[a-f0-9]{64}$/.test(bootstrap.token)) throw new Error('SAKURA_TOKEN 格式无效');
+    if (!bootstrap.token) {
+      const authentication = await fetch(`${base}/api/bootstrap`, { signal: abort.signal });
+      bootstrap = await authentication.json();
+      if (!authentication.ok) throw new Error(bootstrap.error || '无法获取控制凭证；账户模式请设置 SAKURA_TOKEN');
+      if (typeof bootstrap.token !== 'string' || !bootstrap.token) throw new Error('服务返回了无效的访问凭证');
+    }
     async function api(path, method = 'GET', data) {
       const response = await fetch(`${base}/api${path}`, {
         method,
         headers: { 'X-Sakura-Token': bootstrap.token, 'Content-Type': 'application/json' },
         body: data === undefined ? undefined : JSON.stringify(data),
+        signal: abort.signal,
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
@@ -556,17 +568,16 @@ async function main() {
       }
     }
     if (action === 'exec') {
-      const argv = args[0] === '--' ? args.slice(1) : args;
-      if (!argv.length) throw new Error('Specify a command after --');
-      const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
-      const result = await api(`/vms/${vm.id}/exec`, 'POST', { command: argv.map(quote).join(' ') });
+      const command = guestExecution(vm.id, guest);
+      const result = await api(command.path, 'POST', command.body);
       process.stdout.write(result.stdout);
       process.stderr.write(result.stderr);
       process.exitCode = result.code < 0 ? 1 : result.code;
       return;
     }
     const socket = new WebSocket(
-      `${base.replace('http:', 'ws:')}/ws/${vm.id}/terminal?token=${bootstrap.token}`,
+      `${base.replace('http:', 'ws:')}/ws/${vm.id}/terminal?token=${encodeURIComponent(bootstrap.token)}` +
+        (guest?.project ? `&project=${encodeURIComponent(guest.project)}` : ''),
     );
     const rawMode = Boolean(process.stdin.isTTY);
     const restore = () => {
@@ -581,7 +592,7 @@ async function main() {
     socket.on('message', (data) => {
       const msg = JSON.parse(data.toString());
       if (msg.type === 'data') process.stdout.write(msg.data);
-      if (msg.type === 'error') console.error(msg.data);
+      if (msg.type === 'error') { console.error(msg.data); process.exitCode = 1; }
       if (msg.type === 'ready') {
         resize();
         if (rawMode) process.stdin.setRawMode(true);
@@ -600,11 +611,14 @@ async function main() {
       process.exitCode = 1;
       socket.close();
     });
-    process.on('SIGTERM', () => {
+    const close = () => {
       restore();
       socket.close();
-    });
+    };
+    process.on('SIGTERM', close);
+    process.on('SIGINT', close);
   } catch (error) {
+    if (process.exitCode === 130) return;
     console.error(
       `Sakura: ${error.message}. ${error.message === 'fetch failed' ? 'Run npm start first.' : ''}`,
     );

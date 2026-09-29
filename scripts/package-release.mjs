@@ -33,6 +33,7 @@ for (const file of [
   'setup.mjs',
   'versions.mjs',
   'cli.mjs',
+  'guest-cli.mjs',
   'development-cli.mjs',
   'sandbox-cli.mjs',
   'resumable-download.mjs',

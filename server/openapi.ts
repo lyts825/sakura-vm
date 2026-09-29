@@ -15,6 +15,7 @@ import { changeRequestInput, changeDecisionInput } from './change-approvals.ts';
 import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
 import { ssoBeginInput, ssoOidcInput, ssoSamlInput } from './sso.ts';
 import { terminalShareInput } from './terminal-sharing.ts';
+import { guestExecutionInput } from './project-execution.ts';
 import { webhookRequest } from './webhooks.ts';
 import { automationRequest } from './automation-rules.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
@@ -51,6 +52,7 @@ const core: {
   media?: string;
   inspect?: boolean;
   public?: boolean;
+  projectScoped?: boolean;
 }[] = [
   {
     id: 'bootstrap',
@@ -407,8 +409,13 @@ const core: {
     id: 'vms.exec',
     method: 'POST',
     path: '/api/vms/{vmId}/exec',
-    title: '执行客户机命令',
-    body: request(z.object({ command: z.string().min(1).max(65536) }).strict()),
+    title: '按当前或指定项目执行客户机命令；实例管理需明确指定 instance 范围',
+    projectScoped: true,
+    body: request(guestExecutionInput),
+    response: { type: 'object', required: ['stdout', 'stderr', 'code', 'scope'], properties: {
+      stdout: string, stderr: string, code: { type: 'integer' }, scope: { enum: ['project', 'instance'] },
+      projectId: string, directory: string, networkIsolation: { enum: ['host', 'private'] },
+    } },
   },
   {
     id: 'vms.logs',
@@ -492,6 +499,9 @@ export function apiDocument(active: Iterable<string>, port: number): ApiDocument
       'x-sakura-inspectable': !!item.inspect,
       'x-sakura-contract': item.response ? 'declared' : 'partial',
       ...(item.public ? { security: [] } : {}),
+      ...(item.projectScoped ? { parameters: [{ name: 'project', in: 'query' as const,
+        required: false, schema: { type: 'string', pattern: '^(default|[a-f0-9]{16})$' },
+        description: '省略时使用实例保存的活动项目；实例管理范围不接受项目参数。' }] } : {}),
       ...(item.body
         ? { requestBody: { required: true, content: { 'application/json': { schema: item.body } } } }
         : {}),

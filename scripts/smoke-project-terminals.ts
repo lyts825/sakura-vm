@@ -14,7 +14,7 @@ assert.ok(images[distro]);
 const data = await mkdtemp(join(tmpdir(), 'sakura-terminal-scope-'));
 assert.ok(resolve(data).startsWith(resolve(tmpdir()) + sep));
 await writeFile(join(data, 'plugins.json'), JSON.stringify({ schemaVersion: 3,
-  plugins: ['projects', 'terminal-workspace', 'automation', 'images'], packs: [] }));
+  plugins: ['projects', 'terminal-workspace', 'automation', 'images', 'secrets', 'files'], packs: [] }));
 const listener = createServer();
 await new Promise<void>((done) => listener.listen(0, '127.0.0.1', done));
 const port = (listener.address() as { port: number }).port;
@@ -23,6 +23,19 @@ const origin = `http://127.0.0.1:${port}`;
 let server: ReturnType<typeof spawn> | undefined, output = '', token = '';
 let debugVm = '';
 const sockets = new Set<WebSocket>();
+async function cli(args: string[], accountToken?: string, input?: string) {
+  const child = spawn(process.execPath, ['scripts/cli.mjs', ...args], { cwd: resolve('.'),
+    env: { ...process.env, SAKURA_PORT: String(port), SAKURA_TOKEN: accountToken || '' },
+    windowsHide: true, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+  child.stdin?.end(input);
+  let stdout = '', stderr = '';
+  child.stdout?.on('data', (chunk) => { stdout += chunk; });
+  child.stderr?.on('data', (chunk) => { stderr += chunk; });
+  const code = await new Promise<number | null>((done, fail) => {
+    child.once('close', done); child.once('error', fail);
+  });
+  return { code, stdout, stderr };
+}
 async function start() {
   server = spawn(process.execPath, ['.sakura-server/index.js'], {
     cwd: resolve('.'), env: { ...process.env, SAKURA_DATA_DIR: data, SAKURA_PORT: String(port),
@@ -100,16 +113,90 @@ try {
   const vm = await ok('/api/vms', 'POST', { name: 'terminal-scope', distro, memoryMiB: 1024, cpus: 2, diskGiB: 4 });
   const id = vm.id as string;
   debugVm = id;
-  const config = { directory: '/workspace/private', networkIsolation: 'private' };
+  const config = { directory: '/workspace/private', networkIsolation: 'private',
+    environment: { SAKURA_EXEC_SCOPE: 'inside', PATH: '/workspace/exec-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' },
+    secrets: { SAKURA_EXEC_SECRET: 'exec-secret' } };
+  await ok(`/api/vms/${id}/secrets`, 'PUT', { name: 'exec-secret', value: 'fixture-private-exec-value' });
   await ok(`/api/vms/${id}/project?project=default`, 'PUT', { directory: '/workspace/shared' });
   const index = await ok(`/api/vms/${id}/projects`, 'POST', { action: 'create', name: 'Private', config });
   const privateId = index.active as string;
   await boot(id);
   const guest = async (command: string) => {
-    const result = await ok(`/api/vms/${id}/exec`, 'POST', { command });
+    const result = await ok(`/api/vms/${id}/exec`, 'POST', { command, scope: 'instance' });
     assert.equal(result.code, 0, result.stderr); return result.stdout.trim() as string;
   };
   const hostNamespace = await guest('readlink /proc/self/ns/net');
+  const apiExecution = await ok(`/api/vms/${id}/exec`, 'POST', { command:
+    'readlink /proc/self/ns/net; pwd; printf "%s\\n" "$SAKURA_EXEC_SCOPE" "$SAKURA_EXEC_SECRET"; printf "%s" "$SAKURA_EXEC_SECRET" >&2' });
+  assert.equal(apiExecution.scope, 'project'); assert.equal(apiExecution.projectId, privateId);
+  assert.equal(apiExecution.networkIsolation, 'private');
+  const apiNamespace = await guest(`ip netns exec sk-${privateId} readlink /proc/self/ns/net`);
+  assert.equal(apiExecution.stdout, `${apiNamespace}\n/workspace/private\ninside\n[私密配置已隐藏]\n`);
+  assert.equal(apiExecution.stderr, '[私密配置已隐藏]');
+  const sdkSource = await ok('/api/sdk');
+  const { SakuraClient } = await import('data:text/javascript;base64,' + Buffer.from(sdkSource.content).toString('base64'));
+  const sdk = new SakuraClient();
+  const sdkExecution = await sdk.call('core.vms.exec', { path: { vmId: id },
+    query: { project: 'default' }, body: { command: 'readlink /proc/self/ns/net; pwd' } });
+  assert.equal(sdkExecution.stdout, `${hostNamespace}\n/workspace/shared\n`);
+  assert.equal(sdkExecution.projectId, 'default');
+  assert.equal((await request(`/api/vms/${id}/exec?project=${privateId}`, 'POST', { command: 'true', scope: 'instance' })).status, 400);
+  assert.equal((await request(`/api/vms/${id}/exec?project=`, 'POST', { command: 'true' })).status, 400);
+  assert.equal((await request(`/api/vms/${id}/exec?project=1111111111111111`, 'POST', { command: 'true' })).status, 404);
+  const cliExecution = await cli(['exec', 'terminal-scope', '--', 'sh', '-c',
+    'readlink /proc/self/ns/net; pwd; printf "%s" "$SAKURA_EXEC_SCOPE"']);
+  assert.equal(cliExecution.code, 0, cliExecution.stderr);
+  assert.equal(cliExecution.stdout, `${apiNamespace}\n/workspace/private\ninside`);
+  const literal = "a'b $(touch /workspace/cli-injection); --project default";
+  assert.deepEqual(await cli(['exec', 'terminal-scope', '--', 'printf', '%s', literal]),
+    { code: 0, stdout: literal, stderr: '' });
+  await guest('test ! -e /workspace/cli-injection');
+  const management = await cli(['exec', 'terminal-scope', '--instance', '--', 'readlink', '/proc/self/ns/net']);
+  assert.equal(management.code, 0, management.stderr); assert.equal(management.stdout, hostNamespace + '\n');
+  assert.equal((await cli(['exec', 'terminal-scope', '--project', 'default', '--', 'sh', '-c', 'exit 23'])).code, 23);
+  for (const [projectId, namespace, directory] of [[privateId, apiNamespace, '/workspace/private'],
+    ['default', hostNamespace, '/workspace/shared']]) {
+    const shell = await cli(['shell', 'terminal-scope', '--project', projectId], undefined,
+      'printf "\\nCLI_SHELL_SCOPE\\n"; readlink /proc/self/ns/net; pwd; exit\n');
+    assert.equal(shell.code, 0, shell.stderr);
+    assert.ok(shell.stdout.replaceAll('\r', '').includes(`\nCLI_SHELL_SCOPE\n${namespace}\n${directory}\n`), shell.stdout);
+  }
+  const timeout = await request(`/api/vms/${id}/exec`, 'POST', {
+    command: 'echo $$ > /workspace/private/exec-timeout.pid; sleep 600 & echo $! >> /workspace/private/exec-timeout.pid; wait', timeoutSeconds: 1 });
+  assert.equal(timeout.status, 408, JSON.stringify(timeout));
+  const timedOutPids = (await ok(`/api/vms/${id}/file?path=/workspace/private/exec-timeout.pid`)).content;
+  assert.match(timedOutPids, /^\d+\n\d+\n$/);
+  await guest(`for pid in ${timedOutPids.trim().split('\n').join(' ')}; do ! kill -0 "$pid" 2>/dev/null || exit 1; done; test "$(find /tmp -name .sakura-job-\\*.pid -print | wc -l)" -le 1`);
+  const cancel = new AbortController();
+  const cancelled = fetch(origin + `/api/vms/${id}/exec`, { method: 'POST',
+    headers: { 'x-sakura-token': token, 'content-type': 'application/json' },
+    body: JSON.stringify({ command: 'echo $$ > /workspace/private/exec-cancel.pid; sleep 600 & echo $! >> /workspace/private/exec-cancel.pid; wait', timeoutSeconds: 120 }),
+    signal: cancel.signal }).catch(() => {});
+  let pids: string[];
+  try {
+    pids = await (async () => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        // File reads do not acquire the execution lock. Observe both actual guest
+        // PIDs before aborting so cancellation cannot pass if nothing started.
+        const result = await request(`/api/vms/${id}/file?path=/workspace/private/exec-cancel.pid`);
+        if (result.status === 200 && /^\d+\n\d+\n$/.test(result.body.content))
+          return result.body.content.trim().split('\n') as string[];
+        await delay(100);
+      }
+      throw new Error('The cancellable guest command did not publish its process IDs');
+    })();
+    assert.equal((await request(`/api/vms/${id}/project?project=${privateId}`, 'PUT', { ...config, directory: '/workspace/changed' })).status, 409);
+  } finally { cancel.abort(); await cancelled; }
+  let cleaned = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await request(`/api/vms/${id}/exec`, 'POST', { scope: 'instance',
+      command: `for pid in ${pids.join(' ')}; do if kill -0 "$pid" 2>/dev/null; then exit 1; fi; done; test "$(find /tmp -name .sakura-job-\\*.pid -print | wc -l)" -le 1` });
+    if (result.status === 200 && result.body.code === 0) { cleaned = true; break; }
+    assert.ok(result.status === 409 || result.status === 200, JSON.stringify(result));
+    await delay(100);
+  }
+  assert.ok(cleaned, 'Cancellation must remove the shell, its child and the execution lock');
+  console.log(`${distro}: API/SDK/CLI project scope, environment, secret redaction, literal arguments, exit status, timeout and cancellation passed.`);
   const first = await terminal(id, 'main');
   assert.deepEqual(first.context, { projectId: privateId, networkIsolation: 'private' });
   first.input('readlink /proc/self/ns/net > terminal.ns; pwd > terminal.cwd; printf PRIVATE_HISTORY_MARKER');
@@ -144,9 +231,13 @@ try {
   const password = 'terminal scope owner password';
   await ok('/api/access/enable', 'POST', { password });
   token = (await ok('/api/access/login', 'POST', { username: 'owner', password })).token;
+  const accountExec = await cli(['exec', 'terminal-scope', '--', 'pwd'], token);
+  assert.equal(accountExec.code, 0, accountExec.stderr);
+  assert.equal(accountExec.stdout, '/workspace/private\n');
   const viewer = await ok('/api/access/users', 'POST', { username: 'terminal-reader',
     password: 'terminal scope viewer password', vmIds: [id], expiresAt: Date.now() + 3600000 });
   const viewerLogin = await ok('/api/access/login', 'POST', { username: 'terminal-reader', password: 'terminal scope viewer password' });
+  assert.notEqual((await cli(['exec', 'terminal-scope', '--instance', '--', 'true'], viewerLogin.token)).code, 0);
   const grant = await ok('/api/access/terminal-shares', 'POST', { vmId: id, session: 'main', viewerId: viewer.id, minutes: 5 });
   assert.equal(grant.projectId, privateId);
   const browser = await chromium.launch();
@@ -210,6 +301,9 @@ try {
   console.log(`${distro}: controller restarted without the projects plugin.`);
   await boot(id);
   assert.equal((await request(`/api/vms/${id}/project`)).status, 403);
+  const fallbackExec = await ok(`/api/vms/${id}/exec`, 'POST', { command: 'pwd; printf "%s" "$SAKURA_EXEC_SECRET"' });
+  assert.equal(fallbackExec.projectId, privateId);
+  assert.equal(fallbackExec.stdout, '/workspace/changed\n[私密配置已隐藏]');
   const fallback = await terminal(id, 'main');
   assert.deepEqual(fallback.context, { projectId: privateId, networkIsolation: 'private' });
   fallback.input('readlink /proc/self/ns/net > fallback.ns');
@@ -221,6 +315,7 @@ try {
 } catch (error) {
   if (debugVm) {
     try { console.error(await request(`/api/vms/${debugVm}/exec`, 'POST', {
+      scope: 'instance',
       command: "tmux list-sessions 2>&1; tmux list-panes -a -F '#{session_name} #{pane_pid} #{pane_dead} #{pane_current_command}' 2>&1; ip netns list" })); } catch {}
   }
   throw error;
