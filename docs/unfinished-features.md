@@ -31,7 +31,7 @@
 
 ### 虚拟硬件与固件
 
-- [ ] **Virtio-FS 共享目录**（P0 · 部分实现） · [`virtio-fs`](../server/next-features.ts#L170) — 已在 WSL Linux 宿主用真实 QEMU、virtiofsd 和 Alpine 客户机验证自动挂载、读取与只读拒写；当前主要验证平台 Windows 的随附 QEMU 缺少所需后端，仍为部分实现。
+- [ ] **Virtio-FS 共享目录**（P0 · 部分实现） · [`virtio-fs`](../server/next-features.ts#L170) — 已在 WSL Linux 宿主用真实 QEMU、virtiofsd 和 Alpine/Debian/Ubuntu 客户机验证自动挂载、只读拒写与可写模式；当前主要验证平台 Windows 的随附 QEMU 缺少所需后端，仍为部分实现。
 
 ### 操作系统与桌面
 
