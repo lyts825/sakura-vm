@@ -20,7 +20,7 @@ const groups = [
 const all = groups.flatMap((group) => group.rows),
   unfinished = all.filter((item) => item.state !== 'available');
 const notes: Record<string, string> = {
-  'ha-failover': '本机 QEMU 进程退出接管已可用。独立 HTTPS 见证节点提供来源持久启动登记、Redfish 带外关机确认、目标副本启动、应用健康和流量切换；新增只读部署预检及正常关闭时等待隔离操作，见证模拟跨服务测试通过。真实第三节点、BMC、健康端点和流量系统尚未完成故障演练，故保持部分实现。',
+  'ha-failover': '本机 QEMU 进程退出接管已可用。独立 HTTPS 见证节点提供来源持久启动登记、Redfish 系统 UUID 核对与带外关机确认、目标副本启动、应用健康和流量切换；含只读部署预检及正常关闭时等待隔离操作，见证模拟跨服务测试通过。真实第三节点、BMC、健康端点和流量系统尚未完成故障演练，故保持部分实现。',
   'network-isolation': '项目设置可将托管初始化、命令、服务、健康检查、流水线、收藏命令、显式项目终端、代码诊断、语言服务、调试适配器、开发工具任务、运行时与开发工具版本检查及 Git 工作台命令放入仅回环的独立网络命名空间；含私有项目的实例会撤销 Sakura 生成的 VS Code Remote-SSH 别名并拒绝该入口。普通管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。',
   'clipboard-policy': '已实现 Sakura 网页应用入口与独立 Linux 应用窗口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；单应用窗口可按实例和程序保存方向规则，Xvnc 启动时执行且请求不能放宽，收紧规则会立即断开旧窗口桥接并拒绝重连。普通 Windows/Linux 应用进程仍缺系统级策略。',
   'availability-report': '目前为 uptime 探测，尚无持续可用性记录与完整报告。',

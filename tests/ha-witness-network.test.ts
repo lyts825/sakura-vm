@@ -44,6 +44,9 @@ test('independent HTTPS witness powers off source before promoting a paired targ
   const secondSourceHostId = randomUUID(), secondSourceVmId = randomUUID();
   const targetHostId = randomUUID(), remoteVmId = randomUUID();
   const transferId = randomUUID(), snapshotId = randomUUID();
+  const sourceSystemUuid = randomUUID();
+  let bmcIdentity = sourceSystemUuid;
+  let changeIdentityAfterForceOff = false;
   let poweredOff = false, targetRunning = false, targetRetired = false;
   let activeVmId = '', bmcOffCount = 0, targetStartCount = 0;
   let targetIdentity = targetHostId;
@@ -59,9 +62,11 @@ test('independent HTTPS witness powers off source before promoting a paired targ
       assert.equal(req.url, '/redfish/v1/Systems/1/Actions/ComputerSystem.Reset');
       assert.deepEqual(await input(req), { ResetType: 'ForceOff' });
       poweredOff = true; bmcOffCount++;
+      if (changeIdentityAfterForceOff) bmcIdentity = randomUUID();
     }
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ PowerState: poweredOff ? 'Off' : 'On' }));
+    res.end(JSON.stringify({ UUID: bmcIdentity,
+      PowerState: poweredOff ? 'Off' : 'On' }));
   })());
   const target = createServer(tls, (req, res) => void (async () => {
     assert.equal(req.headers.authorization, `Bearer ${targetToken}`);
@@ -117,12 +122,14 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     let clock = sourceAt;
     const stateFile = join(root, 'state.json');
     await HaWitness.initialize(stateFile, [
-      { sourceHostId, sourceVmId, targetHostId, failureThreshold: 2 },
+      { sourceHostId, sourceVmId, targetHostId, failureThreshold: 2,
+        sourceSystemUuid },
       { sourceHostId: secondSourceHostId, sourceVmId: secondSourceVmId,
-        targetHostId, failureThreshold: 2 },
+        targetHostId, failureThreshold: 2, sourceSystemUuid },
     ]);
     const firstVm = { sourceHostId, sourceVmId, targetHostId, failureThreshold: 2,
       redfish: { baseUrl: bmcUrl, systemPath: '/redfish/v1/Systems/1',
+        systemUuid: sourceSystemUuid,
         username: 'admin', password: 'password', fingerprint },
       target: { baseUrl: targetUrl, fingerprint, token: targetToken },
       application: { url: `${appUrl}health`, token: appToken, fingerprint },
@@ -144,10 +151,21 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     assert.equal(haWitnessServerConfigSchema.safeParse({ ...config,
       sourceTokens: undefined, sourceToken, vms: [firstVm] }).success, true,
     'single-source configurations retain their existing token format');
+    assert.equal(haWitnessServerConfigSchema.safeParse({ ...config,
+      vms: [{ ...firstVm, redfish: { ...firstVm.redfish,
+        systemUuid: undefined } }] }).success, false);
+    await assert.rejects(checkHaWitnessDeployment({ ...config,
+      vms: [{ ...firstVm, redfish: { ...firstVm.redfish,
+        systemUuid: randomUUID() } }, config.vms[1]] }), /持久登记不一致/);
     const initialPreflight = await checkHaWitnessDeployment(config);
     assert.equal(initialPreflight.ok, true);
     assert.equal(initialPreflight.vms[0].armed, false);
     assert.equal(initialPreflight.vms[0].checks.replica, null);
+    bmcIdentity = randomUUID();
+    const wrongBmc = await checkHaWitnessDeployment(config);
+    assert.equal(wrongBmc.ok, false);
+    assert.equal(wrongBmc.vms[0].checks.redfish.ok, false);
+    bmcIdentity = sourceSystemUuid;
     targetIdentity = randomUUID();
     const wrongPeer = await checkHaWitnessDeployment(config);
     assert.equal(wrongPeer.ok, false);
@@ -186,8 +204,21 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     assert.equal(bmcOffCount, 0);
     assert.equal(targetStartCount, 0);
     clock = sourceAt + 30_000;
+    bmcIdentity = randomUUID();
+    await witnessService.witness.sample();
+    assert.equal((await client.status({ sourceHostId, sourceVmId })).phase, 'fencing');
+    assert.equal(bmcOffCount, 0, 'wrong BMC identity must not receive ForceOff');
+    assert.equal(targetStartCount, 0);
+    bmcIdentity = sourceSystemUuid;
+    changeIdentityAfterForceOff = true;
     await witnessService.witness.sample();
     assert.equal(bmcOffCount, 1);
+    assert.equal(targetStartCount, 0,
+      'an identity change after ForceOff must not confirm fencing');
+    assert.equal((await client.status({ sourceHostId, sourceVmId })).phase, 'fencing');
+    bmcIdentity = sourceSystemUuid;
+    changeIdentityAfterForceOff = false;
+    await witnessService.witness.sample();
     assert.equal(targetStartCount, 1);
     assert.equal(activeVmId, remoteVmId);
     assert.equal((await client.status({ sourceHostId, sourceVmId })).phase, 'promoted');

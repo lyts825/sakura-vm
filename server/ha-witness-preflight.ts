@@ -3,7 +3,8 @@ import { createSecureContext } from 'node:tls';
 import { readFile } from 'node:fs/promises';
 import { HaWitness, type HaWitnessPlan } from './ha-witness-core.ts';
 import { haHttpsRequest } from './ha-witness-http.ts';
-import { haWitnessServerConfigSchema, type HaWitnessServerConfig } from './ha-witness-server.ts';
+import { haWitnessServerConfigSchema, redfishPowerState, witnessVms,
+  type HaWitnessServerConfig } from './ha-witness-server.ts';
 
 type Check = { ok: true; detail: string } | { ok: false; error: string };
 
@@ -23,7 +24,7 @@ export async function checkHaWitnessDeployment(raw: unknown) {
   const denyControl = async (): Promise<never> => {
     throw new Error('只读部署预检不能执行接管操作');
   };
-  const witness = new HaWitness(config.stateFile, config.vms, {
+  const witness = new HaWitness(config.stateFile, witnessVms(config), {
     fence: denyControl, targetStatus: denyControl, activate: denyControl,
     applicationReady: denyControl, switchTraffic: denyControl,
     trafficTarget: denyControl, retire: denyControl,
@@ -50,12 +51,11 @@ export async function checkHaWitnessDeployment(raw: unknown) {
         new URL(vm.redfish.systemPath, vm.redfish.baseUrl).toString(),
         'GET', undefined, { basic: { username: vm.redfish.username,
           password: vm.redfish.password }, ca,
-          fingerprint: vm.redfish.fingerprint }) as { PowerState?: unknown };
-      if (typeof result?.PowerState !== 'string' || !result.PowerState)
-        throw new Error('Redfish 未返回 PowerState');
-      if (phase !== 'source' && result.PowerState !== 'Off')
-        throw new Error(`见证已进入 ${phase}，但来源宿主电源状态为 ${result.PowerState}`);
-      return `PowerState=${result.PowerState}`;
+          fingerprint: vm.redfish.fingerprint });
+      const powerState = redfishPowerState(result, vm.redfish.systemUuid);
+      if (phase !== 'source' && powerState !== 'Off')
+        throw new Error(`见证已进入 ${phase}，但来源宿主电源状态为 ${powerState}`);
+      return `PowerState=${powerState}`;
     });
     const target = check(async () => {
       const result = await haHttpsRequest(new URL('/peer/status', vm.target.baseUrl).toString(),

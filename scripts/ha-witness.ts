@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { startHaWitnessServer } from '../server/ha-witness-server.ts';
 import { HaWitness } from '../server/ha-witness-core.ts';
-import { haWitnessServerConfigSchema } from '../server/ha-witness-server.ts';
+import { haWitnessServerConfigSchema, startHaWitnessServer,
+  witnessVms } from '../server/ha-witness-server.ts';
 import { checkHaWitnessDeployment } from '../server/ha-witness-preflight.ts';
 
 const initialize = process.argv[2] === '--initialize';
@@ -13,7 +13,7 @@ if (!configPath)
 const config = haWitnessServerConfigSchema.parse(
   JSON.parse(await readFile(resolve(configPath), 'utf8')));
 if (initialize) {
-  await HaWitness.initialize(config.stateFile, config.vms);
+  await HaWitness.initialize(config.stateFile, witnessVms(config));
   console.log('HA 见证状态文件已初始化；请保护此文件并确保位于持久存储。');
   process.exit(0);
 }

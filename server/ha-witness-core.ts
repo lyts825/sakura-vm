@@ -34,15 +34,23 @@ const entrySchema = z.object({
 type Entry = z.infer<typeof entrySchema>;
 const bindingSchema = haWitnessIdentitySchema.safeExtend({
   targetHostId: z.uuid(), failureThreshold: z.number().int().min(2).max(10),
+  sourceSystemUuid: z.string().regex(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/).optional(),
 });
 const storeSchema = z.object({
-  version: z.literal(2),
+  version: z.literal(3),
   bindings: z.record(z.uuid(), bindingSchema),
   entries: z.record(z.uuid(), entrySchema),
 }).strict();
 type Store = z.infer<typeof storeSchema>;
 export type HaWitnessVm = HaWitnessIdentity & { targetHostId: string;
-  failureThreshold: number };
+  failureThreshold: number; sourceSystemUuid?: string };
+
+function binding(vm: HaWitnessVm) {
+  return bindingSchema.parse({ sourceHostId: vm.sourceHostId,
+    sourceVmId: vm.sourceVmId, targetHostId: vm.targetHostId,
+    failureThreshold: vm.failureThreshold,
+    ...(vm.sourceSystemUuid ? { sourceSystemUuid: vm.sourceSystemUuid.toLowerCase() } : {}) });
+}
 export type HaWitnessActions = {
   /** Must return only after an out-of-band power controller confirms Off. */
   fence: (vm: HaWitnessVm) => Promise<void>;
@@ -59,7 +67,7 @@ export type HaWitnessActions = {
 
 /** Durable authority with serialized state writes and independent external work per VM. */
 export class HaWitness {
-  private state: Store = { version: 2, bindings: {}, entries: {} };
+  private state: Store = { version: 3, bindings: {}, entries: {} };
   private work = Promise.resolve();
   private known = new Map<string, HaWitnessVm>();
   private vmWork = new Map<string, Promise<unknown>>();
@@ -67,16 +75,11 @@ export class HaWitness {
   constructor(private file: string, vms: HaWitnessVm[],
     private actions: HaWitnessActions, private now = () => Date.now()) {
     for (const vm of vms) {
-      bindingSchema.parse(this.binding(vm));
+      binding(vm);
       if (this.known.has(vm.sourceVmId))
         throw new AppError('见证实例配置无效');
       this.known.set(vm.sourceVmId, vm);
     }
-  }
-
-  private binding(vm: HaWitnessVm) {
-    return { sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId,
-      targetHostId: vm.targetHostId, failureThreshold: vm.failureThreshold };
   }
 
   static async initialize(file: string, vms: HaWitnessVm[]) {
@@ -84,12 +87,10 @@ export class HaWitness {
       throw new AppError('见证实例 ID 重复', 409);
     const entries = Object.fromEntries(vms.map((vm) => [vm.sourceVmId,
       { phase: 'source', plan: null, lastHeartbeatAt: 0 }]));
-    const bindings = Object.fromEntries(vms.map((vm) => [vm.sourceVmId,
-      bindingSchema.parse({ sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId,
-        targetHostId: vm.targetHostId, failureThreshold: vm.failureThreshold })]));
+    const bindings = Object.fromEntries(vms.map((vm) => [vm.sourceVmId, binding(vm)]));
     await mkdir(dirname(file), { recursive: true });
     try {
-      await writeFile(file, JSON.stringify(storeSchema.parse({ version: 2, bindings, entries }),
+      await writeFile(file, JSON.stringify(storeSchema.parse({ version: 3, bindings, entries }),
         null, 2), { flag: 'wx', mode: 0o600, flush: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST')
@@ -111,9 +112,11 @@ export class HaWitness {
     if (JSON.stringify(configured) !== JSON.stringify(Object.keys(state.data.bindings).sort()) ||
         JSON.stringify(configured) !== JSON.stringify(Object.keys(state.data.entries).sort()) ||
         configured.some((id) => {
-          const saved = state.data.bindings[id], current = this.binding(this.known.get(id)!);
+          const saved = state.data.bindings[id], current = binding(this.known.get(id)!);
           return !saved || Object.keys(current).some((key) =>
-            saved[key as keyof typeof saved] !== current[key as keyof typeof current]);
+            saved[key as keyof typeof saved] !== current[key as keyof typeof current]) ||
+            Object.keys(saved).some((key) =>
+              saved[key as keyof typeof saved] !== current[key as keyof typeof current]);
         }))
       throw new AppError('见证实例配置与持久登记不一致；须人工核对后恢复',
         503, 'HA_WITNESS_STATE_MISMATCH');

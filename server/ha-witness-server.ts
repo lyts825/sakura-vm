@@ -17,10 +17,23 @@ const baseUrl = httpsUrl.refine((value) => new URL(value).pathname === '/' &&
   !new URL(value).search, '基础 URL 不能包含路径或查询参数');
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
 const bearerToken = z.string().regex(/^[a-f0-9]{64}$/);
+const systemUuid = z.string().regex(/^[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}$/);
+
+export function redfishPowerState(raw: unknown, expectedUuid: string) {
+  const result = raw as { UUID?: unknown; PowerState?: unknown } | null;
+  if (typeof result?.UUID !== 'string' ||
+      result.UUID.toLowerCase() !== expectedUuid.toLowerCase())
+    throw new AppError('Redfish 系统 UUID 与配置不一致', 409);
+  if (typeof result.PowerState !== 'string' || !result.PowerState)
+    throw new AppError('Redfish 未返回 PowerState', 502);
+  return result.PowerState;
+}
+
 const witnessVmConfigSchema = z.object({
   sourceHostId: z.uuid(), sourceVmId: z.uuid(), targetHostId: z.uuid(),
   failureThreshold: z.number().int().min(2).max(10),
   redfish: z.object({ baseUrl, systemPath: z.string().regex(/^\/redfish\/v1\/Systems\/[A-Za-z0-9._~-]+$/),
+    systemUuid,
     username: z.string().min(1).max(128), password: z.string().min(1).max(1024),
     caFile: z.string().min(1).optional(), fingerprint: fingerprint.optional(),
   }).strict().refine((value) => !!value.caFile !== !!value.fingerprint,
@@ -53,6 +66,13 @@ export const haWitnessServerConfigSchema = z.object({
 export type HaWitnessServerConfig = z.infer<typeof haWitnessServerConfigSchema>;
 type ConfigVm = HaWitnessServerConfig['vms'][number];
 
+export function witnessVms(config: HaWitnessServerConfig): HaWitnessVm[] {
+  return config.vms.map((vm) => ({ sourceHostId: vm.sourceHostId,
+    sourceVmId: vm.sourceVmId, targetHostId: vm.targetHostId,
+    failureThreshold: vm.failureThreshold,
+    sourceSystemUuid: vm.redfish.systemUuid.toLowerCase() }));
+}
+
 function targetInput(plan: HaWitnessPlan) {
   return { transferId: plan.transferId, remoteVmId: plan.remoteVmId,
     sha256: plan.sha256, sourceVmId: plan.sourceVmId, snapshotId: plan.snapshotId };
@@ -82,15 +102,17 @@ async function actionsFor(config: HaWitnessServerConfig): Promise<HaWitnessActio
   return {
     fence: async (identity) => {
       const vm = entry(identity), systemPath = vm.redfish.systemPath;
-      const status = await bmc(vm, 'GET', systemPath) as { PowerState?: string };
-      if (status?.PowerState !== 'Off') {
+      const status = redfishPowerState(await bmc(vm, 'GET', systemPath),
+        vm.redfish.systemUuid);
+      if (status !== 'Off') {
         await bmc(vm, 'POST', `${systemPath}/Actions/ComputerSystem.Reset`,
           { ResetType: 'ForceOff' });
       }
       const deadline = Date.now() + 90_000;
       while (true) {
-        const next = await bmc(vm, 'GET', systemPath) as { PowerState?: string };
-        if (next?.PowerState === 'Off') return;
+        const next = redfishPowerState(await bmc(vm, 'GET', systemPath),
+          vm.redfish.systemUuid);
+        if (next === 'Off') return;
         if (Date.now() >= deadline) throw new AppError('带外控制器未确认来源宿主已关闭', 504);
         await new Promise((resolve) => setTimeout(resolve, 2_000));
       }
@@ -167,7 +189,8 @@ export async function startHaWitnessServer(raw: unknown,
   const sourceTokens = new Map<string, string>(config.sourceTokens
     ? Object.entries(config.sourceTokens)
     : [[config.vms[0].sourceHostId, config.sourceToken!]]);
-  const witness = new HaWitness(config.stateFile, config.vms, await actionsFor(config), now);
+  const witness = new HaWitness(config.stateFile, witnessVms(config),
+    await actionsFor(config), now);
   await witness.init();
   const server: Server = createHttpsServer({
     cert: await readFile(config.listen.certFile), key: await readFile(config.listen.keyFile),

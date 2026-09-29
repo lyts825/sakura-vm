@@ -12,17 +12,17 @@
 
 ## 独立见证节点接管宿主失联
 
-仓库现在提供独立 HTTPS 见证程序（`npm run ha:witness`）。它每 15 秒接收来源 Sakura 的已校验副本心跳；连续 `failureThreshold` 次心跳缺失后，先持久记录隔离阶段，再通过 Redfish `ForceOff` 关闭**来源宿主**，直到该系统资源明确返回 `PowerState: "Off"`。隔离失败或结果不明确时，绝不启动目标。隔离确认后，见证程序使用来源与目标的已配对令牌复核并启动精确的快照副本；目标进入 `running`、应用健康接口确认、流量接口确认目标实例后，才记录接管完成。不同来源实例的外部隔离、健康检查和流量操作独立执行；某台 BMC 响应缓慢不会阻塞其他实例的心跳持久化。故障中断后会从持久状态重试，不重新允许来源启动。后台接管不依赖目标网页会话保持解锁；实例应急锁与数据目录维护状态仍会阻止操作。
+仓库现在提供独立 HTTPS 见证程序（`npm run ha:witness`）。它每 15 秒接收来源 Sakura 的已校验副本心跳；连续 `failureThreshold` 次心跳缺失后，先持久记录隔离阶段，再通过 Redfish `ForceOff` 关闭**来源宿主**，直到该系统资源明确返回 `PowerState: "Off"`。关机前及确认时都要求 Redfish 系统 UUID 与已登记的来源宿主硬件 UUID 相同；身份不符时不发送关机请求，也不启动目标。隔离失败或结果不明确时，绝不启动目标。隔离确认后，见证程序使用来源与目标的已配对令牌复核并启动精确的快照副本；目标进入 `running`、应用健康接口确认、流量接口确认目标实例后，才记录接管完成。不同来源实例的外部隔离、健康检查和流量操作独立执行；某台 BMC 响应缓慢不会阻塞其他实例的心跳持久化。故障中断后会从持久状态重试，不重新允许来源启动。后台接管不依赖目标网页会话保持解锁；实例应急锁与数据目录维护状态仍会阻止操作。
 
 来源实例一旦启用宿主失联接管，就把见证登记持久写入 `machines.json`。每次启动都必须先获得见证节点授权；见证不可达、状态文件损坏、HA 插件未加载时均拒绝启动。目标快照副本也不能从普通“启动实例”入口手动启动。启用或修改见证目标与阈值前须停止来源实例；关闭策略会先取得见证节点的撤防确认，再清除本机登记。删除来源实例前须先撤防。
 
 见证程序要部署在独立于来源与目标的第三节点，并使用持久存储。`npm run build` 会生成 `.sakura-witness/ha-witness.js`，运行包也包含它。在首次部署、**确认目标副本未运行且没有历史接管记录之后**，执行 `npm run ha:witness -- --initialize <witness-config.json>` 创建状态文件；随后执行 `npm run ha:witness -- --preflight <witness-config.json>` 检查部署，再用 `npm run ha:witness -- <witness-config.json>` 启动。预检只读取见证状态、监听证书和外部状态：向 BMC 查询电源状态，查询目标主机身份，若已有布防计划则调用目标的只读副本预检和应用健康接口，并查询流量当前指向；它不会关机、启动副本或切流。报告只输出实例 ID、阶段和检查结果，不输出令牌或密码；任一检查失败时进程返回非零状态。无布防计划时无法验证精确副本及目标应用接口，应在布防后再跑一次预检。见证服务收到正常关闭信号后会等待正在执行的隔离与持久化操作结束。状态文件丢失或损坏时，程序拒绝自动初始化；应先核实源、目标和流量的实际状态，再人工恢复或初始化，不能把空状态当作安全的来源授权。
 
-见证配置 JSON 包含 `version: 1`、`listen`（`host`、`port`、TLS `certFile`、`keyFile`）、`stateFile`，以及每个实例的 `vms` 项。仅有一个来源宿主时可使用 64 位十六进制 `sourceToken`；多个来源宿主必须改用 `sourceTokens`，以来源宿主 UUID 为键、各自不同的 64 位十六进制令牌为值，且键须完整覆盖配置中的来源宿主。见证服务会把令牌绑定到请求中的 `sourceHostId`，一个来源不能替另一个来源续报心跳、撤防或退出接管。持久状态使用版本 2，并绑定每个实例的来源宿主、来源实例、目标宿主与故障阈值；配置少了实例、增加实例或改变这些绑定时，服务拒绝启动，不会把缺失记录当作来源可运行。旧版状态文件也拒绝自动升级。应核实来源、目标和流量状态后，通过受控恢复流程处理，不要在已有接管记录上重新初始化。每项填写 `sourceHostId`、`sourceVmId`、`targetHostId`、`failureThreshold`，并配置：
+见证配置 JSON 包含 `version: 1`、`listen`（`host`、`port`、TLS `certFile`、`keyFile`）、`stateFile`，以及每个实例的 `vms` 项。仅有一个来源宿主时可使用 64 位十六进制 `sourceToken`；多个来源宿主必须改用 `sourceTokens`，以来源宿主 UUID 为键、各自不同的 64 位十六进制令牌为值，且键须完整覆盖配置中的来源宿主。见证服务会把令牌绑定到请求中的 `sourceHostId`，一个来源不能替另一个来源续报心跳、撤防或退出接管。持久状态使用版本 3，并绑定每个实例的来源宿主、来源实例、目标宿主、故障阈值与 Redfish 系统 UUID；配置少了实例、增加实例或改变这些绑定时，服务拒绝启动，不会把缺失记录当作来源可运行。旧版状态文件也拒绝自动升级。应核实来源、目标和流量状态后，通过受控恢复流程处理，不要在已有接管记录上重新初始化。每项填写 `sourceHostId`、`sourceVmId`、`targetHostId`、`failureThreshold`，并配置：
 
 | 字段 | 内容 |
 | --- | --- |
-| `redfish` | 来源宿主 BMC 的 HTTPS `baseUrl`、`systemPath`（如 `/redfish/v1/Systems/1`）、`username`、`password`，以及 `caFile` 或 SHA-256 证书 `fingerprint` 二选一。见证程序按 [DMTF ComputerSystem Reset](https://github.com/DMTF/Redfish-Publications/blob/main/openapi/ComputerSystem.v1_0_6.yaml) 发 `ForceOff` 并轮询 `PowerState`。|
+| `redfish` | 来源宿主 BMC 的 HTTPS `baseUrl`、`systemPath`（如 `/redfish/v1/Systems/1`）、`systemUuid`（该资源返回的 `UUID`，应与来源宿主硬件清单核对）、`username`、`password`，以及 `caFile` 或 SHA-256 证书 `fingerprint` 二选一。见证程序按 [DMTF ComputerSystem Reset](https://redfish.dmtf.org/schemas/DSP2046_2025.1.html) 发 `ForceOff` 并轮询 `PowerState`，每次读取均校验 `UUID`。|
 | `target` | 目标 Sakura 主机的配对 HTTPS `baseUrl`、证书 `fingerprint`、来源主机在 `host-peers.json` 中保存的该目标配对 `token`。目标入站配对必须授予导入和故障接管权限。|
 | `application` | 应用健康 HTTPS `url`、64 位十六进制 `token`，可选证书 `fingerprint`。`GET <url>?vmId=<目标实例 UUID>` 须返回 `{ "ready": true, "vmId": "<目标实例 UUID>" }`。|
 | `traffic` | 流量控制 HTTPS `baseUrl`、64 位十六进制 `token`，可选证书 `fingerprint`。`POST /activate` 接收 `{ "sourceVmId": "...", "targetVmId": "..." }`，须幂等返回 `{ "accepted": true, "activeVmId": "<目标实例 UUID>" }`；`GET /status?sourceVmId=...` 须返回同一 `activeVmId`。|
@@ -31,4 +31,4 @@
 
 宿主失联后的回切需要先停止目标、回迁目标期间的新写入或明确接受丢失，并在来源面板确认后执行“目标停机后退出接管”。见证节点会让目标副本持久退役，才重新允许来源启动；流量回切由运维侧在来源应用恢复健康后进行。不要在目标运行期间重新初始化见证状态或直接修改本机登记。
 
-目前已通过独立 HTTPS 服务模拟 Redfish、配对目标、应用健康和流量接口，以及见证重启/失败路径单元测试；只读预检也覆盖证书、目标身份、布防副本和外部接口契约。**预检不能替代真实故障演练；尚未在用户的真实第三节点、BMC、应用健康端点与流量控制系统上完成演练**，目录仍标为部分实现。已移除源实例的[冷迁移](cold-migration.md)可单独授权目标启动；那是另一种流程。
+目前已通过独立 HTTPS 服务模拟 Redfish、配对目标、应用健康和流量接口，以及见证重启/失败路径单元测试；只读预检也覆盖证书、BMC 系统 UUID、目标身份、布防副本和外部接口契约。**预检不能替代真实故障演练；尚未在用户的真实第三节点、BMC、应用健康端点与流量控制系统上完成演练**，目录仍标为部分实现。已移除源实例的[冷迁移](cold-migration.md)可单独授权目标启动；那是另一种流程。
