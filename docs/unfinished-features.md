@@ -20,7 +20,7 @@
 
 ### 安全
 
-- [ ] **TPM 与安全启动**（P2 · 部分实现） · [`tpm-secure-boot`](../server/extended-features.ts#L134) — Linux x86_64 宿主已能启动持久 swtpm 与预登记密钥的 OVMF，真实 Debian 客户机原实例两次及备份恢复后再次启动均确认 TPM 和 Secure Boot；新备份、导入与克隆保留 TPM/NVRAM。Windows 随附 QEMU 缺少 TPM 后端，仍为部分实现。
+- [ ] **TPM 与安全启动**（P2 · 部分实现） · [`tpm-secure-boot`](../server/extended-features.ts#L134) — Linux x86_64 宿主可启动持久 swtpm 与预登记密钥的 OVMF；便携备份及新建停机快照可保存 TPM/NVRAM，历史快照恢复、导出和克隆使用对应状态。Windows 随附 QEMU 缺少 TPM 后端，仍为部分实现。
 
 ## 第三批
 

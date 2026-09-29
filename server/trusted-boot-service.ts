@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,8 +10,8 @@ import type { BootAttachment, Machines } from './machines.ts';
 import { AppError, DATA, vmDir, type VMRecord } from './model.ts';
 import { readStore, regularDirectory, writeStore } from './local-store.ts';
 import { inspectTrustedBoot, probeTrustedBootHost, trustedBootPaths } from './trusted-boot.ts';
-import { MAX_TRUSTED_BOOT_FILE, MAX_TRUSTED_BOOT_TOTAL,
-  validateTrustedBootFiles, type TrustedBootFiles } from './trusted-boot-archive.ts';
+import { MAX_TRUSTED_BOOT_FILE, MAX_TRUSTED_BOOT_TOTAL, decodeTrustedBootArchive,
+  encodeTrustedBootArchive, validateTrustedBootFiles, type TrustedBootFiles } from './trusted-boot-archive.ts';
 
 const policySchema = z.object({ enabled: z.boolean() }).strict();
 type Policy = z.infer<typeof policySchema>;
@@ -49,6 +49,12 @@ export class TrustedBootService {
     };
     this.machines.prepareTrustedBootAttachment = (vm, onExit) => this.prepare(vm, onExit);
     this.machines.trustedBootStateFingerprint = (id) => this.fingerprint(id);
+    this.machines.trustedBootSnapshot = {
+      capture: (id, snapshotId) => this.saveSnapshot(id, snapshotId),
+      prepareRestore: (id, snapshotId) => this.prepareSnapshotRestore(id, snapshotId),
+      remove: (id, snapshotId) => this.removeSnapshot(id, snapshotId),
+      ensureOnlineAllowed: (id) => this.ensureOnlineSnapshotAllowed(id),
+    };
   }
 
   private async save(id: string, policy: Policy) {
@@ -61,9 +67,112 @@ export class TrustedBootService {
     await operation;
   }
 
+  private snapshotFile(id: string, snapshotId: string) {
+    return join(vmDir(id), `.snapshot-${z.uuid().parse(snapshotId)}.trusted-boot.json`);
+  }
+
+  private async saveSnapshot(id: string, snapshotId: string) {
+    const state = await this.capture(id) || { enabled: false, files: [] };
+    await writeFile(this.snapshotFile(id, snapshotId),
+      JSON.stringify(encodeTrustedBootArchive(state)), { flag: 'wx', mode: 0o600, flush: true });
+  }
+
+  private async readSnapshot(id: string, snapshotId: string): Promise<TrustedBootFiles | undefined> {
+    const file = this.snapshotFile(id, snapshotId);
+    const info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!info) {
+      if (await this.capture(id))
+        throw new AppError('此历史快照没有对应的 TPM/NVRAM 状态，拒绝恢复或导出', 409);
+      return undefined;
+    }
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 48 * 1024 ** 2)
+      throw new AppError('快照 TPM 状态文件类型或大小无效', 409);
+    let state: TrustedBootFiles;
+    try { state = decodeTrustedBootArchive(JSON.parse(await readFile(file, 'utf8'))); }
+    catch { throw new AppError('快照 TPM 状态编码或校验失败', 409); }
+    const vm = this.machines.get(id);
+    if (state.enabled && (vm.firmware !== 'uefi' || vm.architecture === 'aarch64' ||
+        !vm.distro || vm.distro === 'alpine'))
+      throw new AppError('历史 TPM 快照与当前实例固件或发行版不兼容', 409);
+    return state;
+  }
+
+  private async prepareSnapshotRestore(id: string, snapshotId: string) {
+    const state = await this.readSnapshot(id, snapshotId);
+    await this.capture(id); // Validate the current state before qemu-img changes the disk.
+    return async () => { if (state) await this.replaceCurrent(id, state); };
+  }
+
+  private async removeSnapshot(id: string, snapshotId: string) {
+    await rm(this.snapshotFile(id, snapshotId), { force: true });
+  }
+
+  private async ensureOnlineSnapshotAllowed(id: string) {
+    if (await this.capture(id))
+      throw new AppError('TPM/NVRAM 状态需要停机快照；在线磁盘快照不能与其保持一致', 409);
+  }
+
+  private async replaceCurrent(id: string, state: TrustedBootFiles) {
+    validateTrustedBootFiles(state);
+    this.machines.requireStopped(id);
+    const directory = await regularDirectory(vmDir(id));
+    await this.capture(id); // Reject links and unexpected current state before changing any file.
+    const stage = await mkdtemp(join(directory, '.trusted-restore-'));
+    const vars = join(directory, 'uefi-secure-vars.fd');
+    const tpm = join(directory, 'tpm2');
+    const oldVars = join(stage, 'previous-vars');
+    const oldTpm = join(stage, 'previous-tpm');
+    const newVars = join(stage, 'new-vars');
+    const newTpm = join(stage, 'new-tpm');
+    const exists = async (path: string) => lstat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    let movedVars = false, movedTpm = false, installedVars = false, installedTpm = false;
+    let preserveStage = false;
+    try {
+      for (const file of state.files) {
+        if (file.name === 'uefi-secure-vars.fd')
+          await writeFile(newVars, file.data, { flag: 'wx', mode: 0o600, flush: true });
+        else {
+          await mkdir(newTpm, { recursive: true, mode: 0o700 });
+          await writeFile(join(newTpm, file.name.slice(5)), file.data,
+            { flag: 'wx', mode: 0o600, flush: true });
+        }
+      }
+      if (await exists(vars)) { await rename(vars, oldVars); movedVars = true; }
+      if (await exists(tpm)) { await rename(tpm, oldTpm); movedTpm = true; }
+      if (await exists(newVars)) { await rename(newVars, vars); installedVars = true; }
+      if (await exists(newTpm)) { await rename(newTpm, tpm); installedTpm = true; }
+      await this.save(id, { enabled: state.enabled });
+    } catch (error) {
+      try {
+        if (installedVars) await rm(vars, { force: true });
+        if (installedTpm) await rm(tpm, { recursive: true, force: true });
+        if (movedVars) await rename(oldVars, vars);
+        if (movedTpm) await rename(oldTpm, tpm);
+      } catch (rollbackError) {
+        preserveStage = true;
+        throw new AppError(`TPM 状态恢复和回滚均失败：${String(error)}；${String(rollbackError)}`, 500);
+      }
+      throw error;
+    } finally {
+      if (!preserveStage) await rm(stage, { recursive: true, force: true });
+    }
+  }
+
   /** Called while the machine lock is held, so state cannot change during export. */
   async capture(id: string, snapshotId?: string): Promise<TrustedBootFiles | undefined> {
     this.machines.get(id);
+    if (snapshotId) {
+      if (!this.machines.get(id).snapshots.some((shot) => shot.id === snapshotId))
+        throw new AppError('快照不存在', 404);
+      const state = await this.readSnapshot(id, snapshotId);
+      return state && (state.enabled || state.files.length) ? state : undefined;
+    }
     const directory = await regularDirectory(vmDir(id));
     const files: TrustedBootFiles['files'] = [];
     let total = 0;
@@ -109,7 +218,6 @@ export class TrustedBootService {
     }
     const enabled = !!this.policies[id]?.enabled;
     if (!enabled && !files.length) return undefined;
-    if (snapshotId) throw new AppError('TPM 状态没有历史快照；不能导出或克隆该磁盘快照', 409);
     const snapshot = { enabled, files };
     validateTrustedBootFiles(snapshot);
     return snapshot;
@@ -266,5 +374,6 @@ export class TrustedBootService {
     this.machines.prepareTrustedFirmware = undefined;
     this.machines.prepareTrustedBootAttachment = undefined;
     this.machines.trustedBootStateFingerprint = undefined;
+    this.machines.trustedBootSnapshot = undefined;
   }
 }

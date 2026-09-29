@@ -369,8 +369,8 @@ test('portable backup, import, and clone retain TPM identity and secure NVRAM', 
     createdAt: new Date().toISOString() });
   await assert.rejects(bundles.export(id, new Writable({ write(_chunk, _encoding, callback) {
     callback();
-  } }), () => {}, undefined, 0, snapshot), /TPM 状态没有历史快照/);
-  await assert.rejects(bundles.clone(id, 'trusted-history', snapshot), /TPM 状态没有历史快照/);
+  } }), () => {}, undefined, 0, snapshot), /没有对应的 TPM\/NVRAM 状态/);
+  await assert.rejects(bundles.clone(id, 'trusted-history', snapshot), /没有对应的 TPM\/NVRAM 状态/);
 });
 
 test('tampered TPM state is rejected before import and backup verification', async (t) => {

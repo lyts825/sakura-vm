@@ -137,6 +137,12 @@ export class Machines extends EventEmitter {
   prepareTrustedFirmware?: (vm: VMRecord) => Promise<{ code: string; vars: string } | undefined>;
   prepareTrustedBootAttachment?: (vm: VMRecord, onExit: (error: string) => void) => Promise<BootAttachment | undefined>;
   trustedBootStateFingerprint?: (id: string) => Promise<string>;
+  trustedBootSnapshot?: {
+    capture: (id: string, snapshotId: string) => Promise<void>;
+    prepareRestore: (id: string, snapshotId: string) => Promise<() => Promise<void>>;
+    remove: (id: string, snapshotId: string) => Promise<void>;
+    ensureOnlineAllowed: (id: string) => Promise<void>;
+  };
   fileBeforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
   records = new Map<string, VMRecord>();
   live = new Map<string, Live>();
@@ -1863,6 +1869,9 @@ export class Machines extends EventEmitter {
       mode: 0o600,
     });
     try {
+      if (onlinePort === undefined)
+        await this.trustedBootSnapshot?.capture(vm.id, shot.id);
+      else await this.trustedBootSnapshot?.ensureOnlineAllowed(vm.id);
       if (onlinePort === undefined) {
         if (vm.diskEncryption)
           await this.withDiskSecret(vm, (secret) => this.engine.run('sakura-img', [
@@ -1879,6 +1888,7 @@ export class Machines extends EventEmitter {
           { device: 'sakura-disk', name: shot.id }, 30000);
     } catch (error) {
       await rm(file, { force: true });
+      await this.trustedBootSnapshot?.remove(vm.id, shot.id);
       throw error;
     }
     vm.snapshots.push(shot);
@@ -1901,6 +1911,7 @@ export class Machines extends EventEmitter {
       if (vm.sandbox?.storage === 'discard-on-stop')
         throw new AppError('临时写时复制实例不能保存在线快照', 409);
       if (vm.snapshots.length >= 20) throw new AppError('最多保留 20 个磁盘快照');
+      await this.trustedBootSnapshot?.ensureOnlineAllowed(id);
       let agent: GuestAgent | undefined;
       try {
         agent = await GuestAgent.connect(live.agentPort);
@@ -2004,6 +2015,7 @@ export class Machines extends EventEmitter {
       if (selected.consistency === 'vmstate')
         throw new AppError('此快照包含 RAM 状态，请启动实例并使用整机状态恢复', 409);
       const identity = await this.diskIdentity(id, snapshotId);
+      const restoreTrusted = await this.trustedBootSnapshot?.prepareRestore(id, snapshotId);
       if (backup) {
         if (vm.snapshots.length >= 20) throw new AppError('请先删除一个旧快照，为恢复前备份留出位置');
         await this.createSnapshot(vm, '恢复前自动备份');
@@ -2024,6 +2036,7 @@ export class Machines extends EventEmitter {
       if (identity.pending !== undefined)
         await writeIdentityFile(join(dir, 'identity.json'), identity.pending);
       else await rm(join(dir, 'identity.json'), { force: true });
+      await restoreTrusted?.();
       delete vm.lastError;
       await this.save();
       return this.view(id);
@@ -2166,6 +2179,7 @@ export class Machines extends EventEmitter {
           ['snapshot', '-d', shot.id, join(vmDir(id), 'disk.qcow2')]);
         vm.snapshots = vm.snapshots.filter((s) => s !== shot);
         await rm(this.snapshotIdentityFile(id, shot.id), { force: true });
+        await this.trustedBootSnapshot?.remove(id, shot.id);
       }
       await this.save();
       this.emit('change');

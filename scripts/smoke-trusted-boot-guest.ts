@@ -51,16 +51,29 @@ try {
   await machines.stop(id);
   await verifyBoot(id);
   await machines.stop(id);
-  const bundle = join(root, 'trusted.sakura');
-  await bundles.export(id, createWriteStream(bundle, { flags: 'wx', mode: 0o600 }), () => {});
+  const snapshot = await machines.snapshot(id, 'trusted history');
+  const historicalState = await service.capture(id, snapshot.id);
+  assert.equal(historicalState?.enabled, true);
+  await verifyBoot(id);
+  const write = await machines.exec(id, "printf changed > /workspace/trusted-snapshot-change", 10000);
+  assert.equal(write.code, 0, write.stderr);
+  await machines.stop(id);
+  await machines.restore(id, snapshot.id);
+  assert.deepEqual(await service.capture(id), historicalState);
+  await verifyBoot(id);
+  const rolledBack = await machines.exec(id, 'test ! -e /workspace/trusted-snapshot-change', 10000);
+  assert.equal(rolledBack.code, 0, rolledBack.stderr);
+  await machines.stop(id);
+  const bundle = join(root, 'trusted-history.sakura');
+  await bundles.export(id, createWriteStream(bundle, { flags: 'wx', mode: 0o600 }),
+    () => {}, undefined, 0, snapshot.id);
   const restored = await bundles.import('verify-restored', createReadStream(bundle));
   restoredId = restored.id;
-  const sourceState = await service.capture(id);
   const restoredState = await service.capture(restoredId);
   assert.equal(restoredState?.enabled, true);
-  assert.deepEqual(restoredState?.files, sourceState?.files);
+  assert.deepEqual(restoredState?.files, historicalState?.files);
   await verifyBoot(restoredId);
-  console.log('Real Debian guest booted twice, then restored and booted from a TPM-preserving backup.');
+  console.log('Real Debian guest booted with TPM and Secure Boot, rolled back a trusted offline snapshot, then booted its historical export.');
 } finally {
   if (id && machines.live.has(id)) await machines.stop(id).catch(() => {});
   if (restoredId && machines.live.has(restoredId)) await machines.stop(restoredId).catch(() => {});
