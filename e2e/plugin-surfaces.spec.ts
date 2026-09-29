@@ -3048,6 +3048,24 @@ const vm = {
   poweredOn: false,
 };
 
+test('saved private project offers an interactive shell in its network context', async ({ page }) => {
+  await app(page, ['projects'], true);
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { projectId: 'default', job: null,
+      project: { directory: '/workspace', template: 'none', repository: '',
+        setup: '', command: '', networkIsolation: 'private' } } }));
+  await page.reload();
+  await page.getByRole('tab', { name: '项目', exact: true }).click();
+  const open = page.getByRole('button', { name: '打开项目隔离终端' });
+  await expect(open).toBeVisible();
+  await open.click();
+  await expect(page.getByText('root@example: 私有项目网络')).toBeVisible();
+  await page.getByRole('button', { name: '关闭项目隔离终端' }).click();
+  await expect(page.getByText('root@example: 私有项目网络')).toHaveCount(0);
+});
+
 test('clipboard protection blocks sensitive selections and editor payloads locally, preserves cuts and persists settings', async ({
   page,
 }) => {

@@ -19,6 +19,7 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { Features } = await import('../server/features.ts');
 const { CommandPresets } = await import('../server/command-presets.ts');
 const { Pipelines } = await import('../server/pipelines.ts');
+const { projectPrivateShellCommand } = await import('../server/project-network-isolation.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const features = await Features.create(machines, ['projects', 'service-health']);
@@ -34,6 +35,28 @@ async function job(id: string, projectId = 'default') {
   await features.workspaces.jobs.wait(key);
   const result = features.workspaces.jobs.view(key);
   assert.equal(result?.status, 'done', result?.error + '\n' + result?.log);
+}
+async function interactiveProjectShell(id: string, command: string) {
+  const ssh = await machines.connect(id);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ssh.exec(command, { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
+        (error, stream) => {
+          if (error) return reject(error);
+          let stderr = '', stdout = '';
+          const timeout = setTimeout(() => reject(new Error('project shell did not close: ' + stdout + stderr)), 15_000);
+          stream.on('data', (chunk: Buffer) => { stdout = (stdout + chunk.toString()).slice(-4096); });
+          stream.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+          stream.on('error', reject);
+          stream.on('close', (code: number) => {
+            clearTimeout(timeout);
+            code === 0 ? resolve() : reject(new Error(stderr || stdout || `project shell exited ${code}`));
+          });
+          stream.end('readlink /proc/self/ns/net > /workspace/first-shell.ns\n' +
+            'ip -4 route show > /workspace/first-shell.routes\nexit\n');
+        });
+    });
+  } finally { ssh.end(); }
 }
 try {
   const vm = await machines.create({ name: `project-netns-${distro}`, distro: distro as
@@ -54,6 +77,10 @@ try {
   await job(vm.id);
   const firstNamespace = await command(vm.id, 'cat /workspace/first.ns');
   assert.equal(await command(vm.id, 'cat /workspace/first-setup.ns'), firstNamespace);
+  await interactiveProjectShell(vm.id,
+    projectPrivateShellCommand(await features.workspaces.config(vm.id)));
+  assert.equal(await command(vm.id, 'cat /workspace/first-shell.ns'), firstNamespace);
+  assert.equal(await command(vm.id, 'cat /workspace/first-shell.routes'), '');
   assert.notEqual(firstNamespace, hostNamespace);
   assert.equal(await command(vm.id, 'ip netns exec sk-default ip -4 route show'), '');
   const presets = await commands.save(vm.id, { name: 'namespace',

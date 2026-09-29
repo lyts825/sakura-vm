@@ -7,6 +7,7 @@ import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';
 import { executeProjectAction, type ProjectAction } from '../../src/project-action';
 import { workspaceRequest } from '../../src/workspace-request';
+import { TerminalPanel } from '../../src/TerminalPanel';
 import { EnvironmentEditor, ProjectConnections, ServiceEditor } from './editors';
 const HealthPanel = lazy(() =>
   import('../service-health/client').then((module) => ({ default: module.HealthPanel })),
@@ -40,6 +41,7 @@ export function ProjectPanel(props: FeatureProps) {
   }>(request, `/vms/${vm.id}/project-runtime`, vm.status === 'running');
   const [project, setProject] = useState<Project | null>(null),
     [loadedProjectId, setLoadedProjectId] = useState('');
+  const [shellProjectId, setShellProjectId] = useState<string | null>(null);
   const action = useAction();
   useEffect(() => {
     if (!remote.data) return;
@@ -53,6 +55,7 @@ export function ProjectPanel(props: FeatureProps) {
   useEffect(() => {
     if (projects.data) onProjectChange?.(projects.data.active);
   }, [onProjectChange, projects.data]);
+  useEffect(() => setShellProjectId(null), [remote.data?.projectId]);
   const edit = (patch: Partial<Project>) => setProject((p) => p && { ...p, ...patch });
   const execute = (kind: ProjectAction) =>
     action.run(async (signal) => {
@@ -201,7 +204,7 @@ export function ProjectPanel(props: FeatureProps) {
               <option value="host">共享客户机网络</option>
               <option value="private">独立命名空间（仅回环，无外网）</option>
             </select>
-            <small>私有模式适用于项目命令、服务、流水线和收藏命令；Notebook、浏览器 IDE、服务网格及容器启动需要共享网络。</small>
+            <small>私有模式适用于项目命令、服务、流水线、收藏命令和显式项目隔离终端；Notebook、浏览器 IDE、服务网格及容器启动需要共享网络。</small>
           </label>
           <label>
             预览的 Windows 端口（在“服务”中配置转发）
@@ -276,7 +279,20 @@ export function ProjectPanel(props: FeatureProps) {
             >
               安装终端会话恢复支持
             </button>
+            {remote.data?.project.networkIsolation === 'private' &&
+              vm.status === 'running' && <button className="secondary compact"
+                aria-expanded={shellProjectId === (remote.data.projectId || 'default')}
+                onClick={() => setShellProjectId((current) =>
+                  current === (remote.data!.projectId || 'default')
+                    ? null : (remote.data!.projectId || 'default'))}>
+                {shellProjectId === (remote.data.projectId || 'default')
+                  ? '关闭项目隔离终端' : '打开项目隔离终端'}
+              </button>}
           </div>
+          {shellProjectId === (remote.data?.projectId || 'default') &&
+            remote.data?.project.networkIsolation === 'private' &&
+            vm.status === 'running' && <TerminalPanel vm={vm} start={() => {}}
+              busy={false} projectId={shellProjectId} />}
         </>
       )}
       <JobLog job={remote.data?.job} />

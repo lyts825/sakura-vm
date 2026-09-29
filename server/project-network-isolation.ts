@@ -17,6 +17,20 @@ export function projectNetworkCommand(project: Project, script: string) {
   return `${namespace ? `ip netns exec ${namespace} ` : ''}sh -lc ${quote(script)}`;
 }
 
+/** Interactive shell for a saved private project, with the same route checks as managed commands. */
+export function projectPrivateShellCommand(project: Project) {
+  const namespace = projectNetworkNamespace(project);
+  if (!namespace) throw new AppError('当前项目未启用私有网络', 409);
+  return `set -eu\n` +
+    `if ! ip netns exec ${namespace} true >/dev/null 2>&1; then ` +
+      `echo '请先启动私有网络项目' >&2; exit 1; fi\n` +
+    `test "$(ip -n ${namespace} -o link show | wc -l)" -eq 1\n` +
+    `test "$(ip -n ${namespace} -o -4 route show | wc -l)" -eq 0\n` +
+    `test "$(ip -n ${namespace} -o -6 route show | wc -l)" -eq 0\n` +
+    `cd ${quote(project.directory)}\n` +
+    `exec ip netns exec ${namespace} sh -l`;
+}
+
 export function ensureProjectNetworkScript(project: Project, distro: string) {
   const namespace = projectNetworkNamespace(project);
   if (!namespace) return '';

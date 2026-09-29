@@ -29,6 +29,8 @@ import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { AutomationRules } from './automation-rules.ts';
 import { runEngineeringOperation } from './engineering-runner.ts';
 import { Workspaces, projectSchema } from './workspaces.ts';
+import { projectPrivateShellCommand } from './project-network-isolation.ts';
+import { projectIdSchema } from './project-catalog.ts';
 import { FeatureRollouts } from './feature-rollouts.ts';
 import { FleetPolicyRollouts } from './fleet-policy-rollouts.ts';
 import { UsbHotplug } from './usb-hotplug.ts';
@@ -1478,6 +1480,7 @@ async function main() {
     const id = parts[2];
     const mode = parts[3];
     const terminalSession = url.searchParams.get('session');
+    const terminalProject = url.searchParams.get('project');
     const appSession = url.searchParams.get('app');
     const events = url.pathname === '/ws/events';
     const credential = url.searchParams.get('token') || '';
@@ -1488,6 +1491,8 @@ async function main() {
           !['terminal', 'terminal-view', 'logs', 'desktop', 'desktop-view'].includes(mode))) ||
       (!events && mode !== 'logs' && machines.incidentLocked(id)) ||
       (mode === 'terminal-view' && (!terminalSession || !/^[a-z0-9-]{1,48}$/.test(terminalSession))) ||
+      (terminalProject !== null && (mode !== 'terminal' || terminalSession !== null ||
+        !projectIdSchema.safeParse(terminalProject).success)) ||
       (appSession !== null && (mode !== 'desktop' || !z.uuid().safeParse(appSession).success)) ||
       !socketAuthorization(credential, mode, id, terminalSession) ||
       ((mode === 'desktop' || mode === 'desktop-view') && !features.socketEnabled('desktop')) ||
@@ -1562,6 +1567,11 @@ async function main() {
       let ssh: Awaited<ReturnType<typeof machines.connect>> | undefined;
       client.on('close', () => ssh?.end());
       try {
+        const projectShell = terminalProject && features.workspaces
+          ? await features.workspaces.projects.with(id, terminalProject,
+            async () => projectPrivateShellCommand(await features.workspaces.config(id)))
+          : null;
+        if (terminalProject && !projectShell) throw new AppError('项目终端不可用', 503);
         ssh = await machines.connect(id);
         if (client.readyState !== WebSocket.OPEN) {
           ssh.end();
@@ -1610,6 +1620,9 @@ async function main() {
         };
         if (mode === 'terminal-view') {
           ssh.exec(`exec tmux attach-session -r -t =sakura-terminal-${terminalSession}`,
+            { pty: { term: 'xterm-256color', cols: 100, rows: 28 } }, connected);
+        } else if (projectShell) {
+          ssh.exec(projectShell,
             { pty: { term: 'xterm-256color', cols: 100, rows: 28 } }, connected);
         } else if (terminalSession && /^[a-z0-9-]{1,48}$/.test(terminalSession)) {
           ssh.exec(

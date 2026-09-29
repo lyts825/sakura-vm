@@ -11,11 +11,13 @@ export function TerminalPanel({
   start,
   busy,
   session,
+  projectId,
 }: {
   vm: VMView;
   start: () => unknown;
   busy: boolean;
   session?: string;
+  projectId?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null),
     terminal = useRef<Terminal | null>(null);
@@ -74,7 +76,7 @@ export function TerminalPanel({
       authenticate: () => controllerSession.authenticate(),
       socket: (token) =>
         new WebSocket(
-          `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${vm.id}/${mode}?token=${encodeURIComponent(token)}${session ? `&session=${encodeURIComponent(session)}` : ''}`,
+          `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${vm.id}/${mode}?token=${encodeURIComponent(token)}${session ? `&session=${encodeURIComponent(session)}` : ''}${mode === 'terminal' && projectId ? `&project=${encodeURIComponent(projectId)}` : ''}`,
         ),
       data: (text) => term.write(text),
       report: setConnection,
@@ -121,7 +123,7 @@ export function TerminalPanel({
       terminal.current = null;
       fitTerminal.current = null;
     };
-  }, [vm.id, vm.status, mode, retry, session]);
+  }, [vm.id, vm.status, mode, retry, session, projectId]);
   // Resize the existing terminal without replacing its SSH connection or scrollback.
   useEffect(() => {
     if (terminal.current) {
@@ -153,7 +155,7 @@ export function TerminalPanel({
             <i />
             <i />
           </span>
-          <span>{vm.status === 'running' ? `root@${vm.name}: ~` : 'Linux 启动控制台'}</span>
+          <span>{vm.status === 'running' ? `root@${vm.name}: ${projectId ? '私有项目网络' : '~'}` : 'Linux 启动控制台'}</span>
         </div>
         <div>
           <div className="terminal-font-controls" role="group" aria-label="终端字号">
