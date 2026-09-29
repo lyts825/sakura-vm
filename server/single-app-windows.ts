@@ -1,16 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
+import { join } from 'node:path';
 import type { Machines } from './machines.ts';
-import { AppError } from './model.ts';
+import { AppError, vmDir } from './model.ts';
 import { quote } from './files.ts';
+import { readStore, writeStore } from './local-store.ts';
 
+export const singleAppProgram = z.string().regex(/^[A-Za-z][A-Za-z0-9+._-]{0,63}$/);
+export const singleAppClipboard = z.object({ copy: z.boolean(), paste: z.boolean() }).strict();
+const clipboardStoreSchema = z.object({ version: z.literal(1),
+  rules: z.record(singleAppProgram, singleAppClipboard),
+}).strict().refine((value) => Object.keys(value.rules).length <= 64,
+  '单应用剪贴板规则不能超过 64 条');
 export const singleAppInput = z.object({
-  program: z.string().regex(/^[A-Za-z][A-Za-z0-9+._-]{0,63}$/),
+  program: singleAppProgram,
   args: z.array(z.string().max(256).refine((value) => !/[\x00-\x1f]/.test(value))).max(12).default([]),
   resolution: z.enum(['800x600', '1024x768', '1280x800']).default('1024x768'),
-  clipboard: z.object({ copy: z.boolean(), paste: z.boolean() }).strict()
-    .default({ copy: true, paste: true }),
+  clipboard: singleAppClipboard.default({ copy: true, paste: true }),
 }).strict();
 
 type AppSession = { id: string; vmId: string; program: string; display: number;
@@ -33,6 +40,43 @@ export class SingleAppWindows {
       if (!this.machines.records.has(session.vmId) ||
           this.machines.state(session.vmId) !== 'running') this.sessions.delete(id);
   };
+
+  private clipboardFile(id: string) {
+    return join(vmDir(id), 'single-app-clipboard.json');
+  }
+
+  async clipboardPolicies(id: string) {
+    this.machines.get(id);
+    return clipboardStoreSchema.parse(await readStore(this.clipboardFile(id),
+      () => ({ version: 1, rules: {} }))).rules;
+  }
+
+  async saveClipboardPolicy(id: string, program: string, raw: unknown) {
+    singleAppProgram.parse(program);
+    const clipboard = singleAppClipboard.parse(raw);
+    this.machines.get(id);
+    this.machines.requireUnlocked(id);
+    return this.machines.locked(`single-app:${id}`, async () => {
+      const rules = await this.clipboardPolicies(id);
+      const next = clipboardStoreSchema.parse({ version: 1,
+        rules: { ...rules, [program]: clipboard } });
+      await writeStore(this.clipboardFile(id), next);
+      return { program, clipboard };
+    });
+  }
+
+  async removeClipboardPolicy(id: string, program: string) {
+    singleAppProgram.parse(program);
+    this.machines.get(id);
+    this.machines.requireUnlocked(id);
+    return this.machines.locked(`single-app:${id}`, async () => {
+      const rules = await this.clipboardPolicies(id);
+      const removed = Object.hasOwn(rules, program);
+      const remaining = Object.fromEntries(Object.entries(rules).filter(([key]) => key !== program));
+      await writeStore(this.clipboardFile(id), { version: 1, rules: remaining });
+      return { removed, program };
+    });
+  }
 
   private async alive(session: AppSession) {
     if (this.machines.state(session.vmId) !== 'running') return false;
@@ -87,6 +131,10 @@ test "$closed" = yes`;
         throw new AppError('应用窗口服务正在关闭', 503);
       const vm = this.machines.get(id);
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
+      const rules = await this.clipboardPolicies(id);
+      const savedClipboard = Object.hasOwn(rules, input.program) ? rules[input.program] : undefined;
+      const clipboard = { copy: input.clipboard.copy && (savedClipboard?.copy ?? true),
+        paste: input.clipboard.paste && (savedClipboard?.paste ?? true) };
       const existing = [...this.sessions.values()].filter((session) => session.vmId === id);
       const active = [];
       for (const session of existing) {
@@ -125,7 +173,7 @@ test "$closed" = yes`;
       if (!display) throw new AppError('没有可用的应用窗口显示端口', 409);
       const session: AppSession = { id: randomUUID(), vmId: id, program: input.program,
         display, port: 5900 + display, resolution: input.resolution,
-        clipboard: input.clipboard,
+        clipboard,
         startedAt: new Date().toISOString() };
       const app = [input.program, ...input.args.map(quote)].join(' ');
       const script = `set -eu
@@ -137,7 +185,7 @@ chmod 700 "$directory"
 export DISPLAY=:${display} XAUTHORITY="$directory/Xauthority"
 xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')"
 vnc_binary=$(command -v Xvnc || command -v Xtigervnc)
-"$vnc_binary" "$DISPLAY" -geometry ${input.resolution} -depth 24 -rfbport ${session.port} -interface 127.0.0.1 -localhost -SecurityTypes None -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" -AllowOverride=desktop -SendCutText=${input.clipboard.copy ? 1 : 0} -SendPrimary=${input.clipboard.copy ? 1 : 0} -AcceptCutText=${input.clipboard.paste ? 1 : 0} -SetPrimary=${input.clipboard.paste ? 1 : 0} >"$directory/xvnc.log" 2>&1 &
+"$vnc_binary" "$DISPLAY" -geometry ${input.resolution} -depth 24 -rfbport ${session.port} -interface 127.0.0.1 -localhost -SecurityTypes None -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" -AllowOverride=desktop -SendCutText=${clipboard.copy ? 1 : 0} -SendPrimary=${clipboard.copy ? 1 : 0} -AcceptCutText=${clipboard.paste ? 1 : 0} -SetPrimary=${clipboard.paste ? 1 : 0} >"$directory/xvnc.log" 2>&1 &
 vnc_pid=$!
 wm_pid=''
 app_pid=''

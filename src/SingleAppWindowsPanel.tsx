@@ -1,5 +1,5 @@
 import { ExternalLink, LoaderCircle, Square, TerminalSquare } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { VMView } from '../server/model';
 import { Feedback, useRemote, type Request } from './feature-shared';
 import { connectSingleAppPopup, createSingleAppPopup } from './single-app-window';
@@ -23,8 +23,32 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
   const [allowPaste, setAllowPaste] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const list = useRemote<{ sessions: AppSession[] }>(request,
+  const list = useRemote<{ sessions: AppSession[];
+    clipboardPolicies: Record<string, { copy: boolean; paste: boolean }> }>(request,
     `/vms/${vm.id}/single-app`, vm.status === 'running', 5000);
+  const rules = list.data?.clipboardPolicies;
+  const savedPolicy = rules && Object.hasOwn(rules, program.trim())
+    ? rules[program.trim()] : undefined;
+  const unsavedRelaxation = !!savedPolicy &&
+    ((!savedPolicy.copy && allowCopy) || (!savedPolicy.paste && allowPaste));
+  useEffect(() => {
+    setAllowCopy(savedPolicy?.copy ?? true);
+    setAllowPaste(savedPolicy?.paste ?? true);
+  }, [program, savedPolicy?.copy, savedPolicy?.paste]);
+
+  const updatePolicy = async (remove: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await request(`/vms/${vm.id}/single-app`, 'POST', remove
+        ? { action: 'clipboard-remove', program: program.trim() }
+        : { action: 'clipboard-save', program: program.trim(),
+          clipboard: { copy: allowCopy, paste: allowPaste } });
+      list.reload();
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  };
 
   const open = async (session: AppSession) => {
     const popup = createSingleAppPopup();
@@ -38,6 +62,10 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
 
   const start = async () => {
     if (busy) return;
+    if (unsavedRelaxation) {
+      setError('放宽此程序的剪贴板权限前，请先保存新规则');
+      return;
+    }
     let popup: Window;
     try { popup = createSingleAppPopup(); }
     catch (cause) { setError((cause as Error).message); return; }
@@ -101,7 +129,14 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
         onChange={(event) => setAllowCopy(event.target.checked)} />允许复制到宿主</label>
       <label className="single-app-clipboard-toggle"><input type="checkbox" checked={allowPaste}
         onChange={(event) => setAllowPaste(event.target.checked)} />允许粘贴到应用</label>
-      <button className="primary compact" type="submit" disabled={busy || vm.status !== 'running'}>
+      <button className="secondary compact" type="button" disabled={busy || !program.trim()}
+        onClick={() => void updatePolicy(false)}>保存此程序规则</button>
+      {savedPolicy && <button className="text-button" type="button" disabled={busy}
+        onClick={() => void updatePolicy(true)}>移除程序规则</button>}
+      {savedPolicy && <small>已保存的规则适用于此实例中该程序的后续窗口；放宽权限请先保存。
+        </small>}
+      <button className="primary compact" type="submit"
+        disabled={busy || vm.status !== 'running' || unsavedRelaxation}>
         {busy ? <LoaderCircle size={14} className="spin" /> : <ExternalLink size={14} />}
         启动应用
       </button>

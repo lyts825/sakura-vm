@@ -60,15 +60,35 @@ DISPLAY=:${other.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 1000
   assert.equal(otherClipboard.code, 0, otherClipboard.stderr);
   assert.deepEqual(otherClipboard.stdout.trim().split(/\s+/).map((value) =>
     value === 'on' ? '1' : value), ['1', '1']);
-  assert.equal((await desktops.apps.list(vm.id)).filter((item) => item.status === 'running').length, 2);
+  await desktops.apps.saveClipboardPolicy(vm.id, 'xterm', { copy: false, paste: false });
+  assert.deepEqual((await desktops.apps.clipboardPolicies(vm.id)).xterm,
+    { copy: false, paste: false });
+  const governed = await desktops.apps.start(vm.id, { program: 'xterm',
+    args: ['-hold', '-e', 'sh', '-c', 'sleep 120'],
+    clipboard: { copy: true, paste: true } });
+  assert.deepEqual(governed.clipboard, { copy: false, paste: false },
+    'saved per-program rule cannot be widened by a launch request');
+  const governedClipboard = await machines.exec(vm.id, `set -eu
+auth=$(find /tmp/sakura-single-app-${governed.id.slice(0, 12)}.* -maxdepth 1 -name Xauthority -print -quit)
+test -n "$auth"
+config=$(command -v vncconfig || command -v tigervncconfig)
+DISPLAY=:${governed.display} XAUTHORITY="$auth" "$config" -get SendCutText
+DISPLAY=:${governed.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 10000);
+  assert.equal(governedClipboard.code, 0, governedClipboard.stderr);
+  assert.deepEqual(governedClipboard.stdout.trim().split(/\s+/).map((value) =>
+    value === 'off' ? '0' : value), ['0', '0']);
+  assert.equal((await desktops.apps.list(vm.id)).filter((item) => item.status === 'running').length, 3);
   await desktops.apps.stop(vm.id, session.id);
   await delay(500);
   const stopped = await machines.exec(vm.id,
     `! nc -z 127.0.0.1 ${session.port} >/dev/null 2>&1`, 5000);
   assert.equal(stopped.code, 0, stopped.stderr);
   assert.equal(await desktops.apps.port(vm.id, other.id), other.port);
+  await desktops.apps.stop(vm.id, governed.id);
   await desktops.apps.stop(vm.id, other.id);
-  console.log(`Real ${distro} independent single-app Xvnc sessions, RFB handshake and cleanup passed`);
+  await desktops.apps.removeClipboardPolicy(vm.id, 'xterm');
+  assert.equal((await desktops.apps.clipboardPolicies(vm.id)).xterm, undefined);
+  console.log(`Real ${distro} independent single-app Xvnc sessions, saved clipboard rule, RFB handshake and cleanup passed`);
 } finally {
   await desktops.close();
   await machines.close();

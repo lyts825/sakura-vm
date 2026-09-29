@@ -10,7 +10,7 @@ import { Desktops } from '../../server/desktop.ts';
 import { Jobs } from '../../server/jobs.ts';
 import { imeInstall } from '../../server/desktop-guest.ts';
 import { guestTask } from '../../server/guest-task.ts';
-import { singleAppInput } from '../../server/single-app-windows.ts';
+import { singleAppClipboard, singleAppInput, singleAppProgram } from '../../server/single-app-windows.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
@@ -69,17 +69,25 @@ export async function route(
     }
   }
   if (action === 'single-app' && parts.length === 4) {
-    if (req.method === 'GET') return send({ sessions: await this.desktops.apps.list(id) });
+    if (req.method === 'GET') return send({ sessions: await this.desktops.apps.list(id),
+      clipboardPolicies: await this.desktops.apps.clipboardPolicies(id) });
     if (req.method === 'POST') {
       const input = z.discriminatedUnion('action', [
         singleAppInput.safeExtend({ action: z.literal('start') }),
         z.object({ action: z.literal('stop'), id: z.uuid() }).strict(),
+        z.object({ action: z.literal('clipboard-save'), program: singleAppProgram,
+          clipboard: singleAppClipboard }).strict(),
+        z.object({ action: z.literal('clipboard-remove'), program: singleAppProgram }).strict(),
       ]).parse(await body(req));
       if (input.action === 'start') {
         const { action: _, ...options } = input;
         return send(await this.desktops.apps.start(id, options, signal), 201);
       }
-      return send(await this.desktops.apps.stop(id, input.id));
+      if (input.action === 'stop') return send(await this.desktops.apps.stop(id, input.id));
+      if (input.action === 'clipboard-save')
+        return send(await this.desktops.apps.saveClipboardPolicy(id, input.program,
+          input.clipboard));
+      return send(await this.desktops.apps.removeClipboardPolicy(id, input.program));
     }
   }
   if (parts.length === 4) {
