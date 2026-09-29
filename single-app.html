@@ -7,17 +7,43 @@
     <title>Linux 应用 · Sakura</title>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #201b24; }
+      body { display: flex; flex-direction: column; }
       .toolbar { height: 42px; box-sizing: border-box; display: flex; align-items: center;
-        justify-content: space-between; padding: 0 12px; background: #26212c;
+        gap: 10px; padding: 0 12px; background: #26212c;
         color: #eee6ef; font: 13px system-ui, sans-serif; }
-      #screen { height: calc(100vh - 42px); width: 100%; overflow: hidden; }
+      #status { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #screen { flex: 1; min-height: 0; width: 100%; overflow: hidden; }
+      #clipboard { padding: 10px 12px; background: #302a35; color: #eee6ef;
+        font: 13px system-ui, sans-serif; }
+      #clipboard[hidden] { display: none; }
+      .clipboard-fields { display: flex; gap: 12px; }
+      .clipboard-fields label { display: grid; flex: 1; min-width: 0; gap: 5px; }
+      textarea { box-sizing: border-box; width: 100%; height: 60px; resize: vertical;
+        border: 1px solid #85778b; border-radius: 5px; padding: 6px;
+        background: #211c25; color: #fff; }
+      .clipboard-actions { display: flex; gap: 12px; margin-top: 7px; }
+      .clipboard-actions button { flex: 1; }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      #clipboard-error { min-height: 0; margin: 5px 0 0; color: #ffd0da; }
       button { background: #655168; color: white; border: 0; border-radius: 6px;
         padding: 5px 10px; cursor: pointer; }
     </style>
   </head>
   <body>
     <div class="toolbar"><span id="status" role="status">正在等待应用连接…</span>
+      <button id="toggle-clipboard" type="button" aria-controls="clipboard" aria-expanded="false">剪贴板</button>
       <button id="close" type="button">关闭窗口</button></div>
+    <section id="clipboard" aria-label="单应用窗口剪贴板" hidden>
+      <div class="clipboard-fields">
+        <label>发送到 Linux 的文本<textarea id="outgoing" maxlength="1048576"></textarea></label>
+        <label>Linux 剪贴板文本<textarea id="incoming" readonly></textarea></label>
+      </div>
+      <div class="clipboard-actions">
+        <button id="send" type="button" disabled>发送</button>
+        <button id="copy" type="button" disabled>复制到宿主</button>
+      </div>
+      <p id="clipboard-error" role="alert"></p>
+    </section>
     <div id="screen" aria-label="Linux 单应用窗口"></div>
     <script type="module" src="/src/single-app-page.ts"></script>
   </body>

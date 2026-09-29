@@ -28,6 +28,7 @@ import { EventEmitter } from 'node:events';
 import { BackupRecovery } from '../server/backup-recovery';
 import { SignedBundles } from '../server/signed-bundles';
 import { ingressAlias } from '../shared/http-ingress.ts';
+import { defaultClipboardPolicies } from '../shared/clipboard-policy.ts';
 
 test('backup file recovery selects encrypted backups, clears passwords, downloads verified files and cancels on mobile', async ({
   page,
@@ -1040,6 +1041,93 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
   await page.close();
   await expect(popup).toHaveTitle('xterm · Sakura');
   await popup.close();
+});
+
+test('single-app window applies desktop clipboard policy to its RFB bridge', async ({ page, context }) => {
+  const sockets: NodeWebSocket[] = [], sent: string[] = [];
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  await new Promise<void>((done) => server.once('listening', done));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Expected local port');
+  await context.addInitScript((port) => {
+    const Native = window.WebSocket;
+    const Redirect = function (url: string | URL, protocols?: string | string[]) {
+      return new Native(String(url).includes('/desktop?') ? `ws://127.0.0.1:${port}` : url, protocols);
+    };
+    Object.setPrototypeOf(Redirect, Native);
+    Redirect.prototype = Native.prototype;
+    window.WebSocket = Redirect as unknown as typeof WebSocket;
+  }, address.port);
+  server.on('connection', (socket) => {
+    sockets.push(socket);
+    let stage = 0;
+    socket.on('message', (raw) => {
+      const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+      if (stage === 0) { stage++; socket.send(Buffer.from([1, 1])); }
+      else if (stage === 1) { stage++; socket.send(Buffer.alloc(4)); }
+      else if (stage === 2) {
+        stage++;
+        const init = Buffer.alloc(24);
+        init.writeUInt16BE(64, 0);
+        init.writeUInt16BE(64, 2);
+        Buffer.from([32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0]).copy(init, 4);
+        socket.send(init);
+      } else if (bytes[0] === 6 && bytes.length >= 8) sent.push(bytes.subarray(8).toString());
+    });
+    socket.send(Buffer.from('RFB 003.008\n'));
+  });
+  try {
+    await app(page, ['desktop'], true);
+    await page.route('**/api/vms', (route) =>
+      route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
+    await page.route('**/api/vms/*/desktop*', (route) =>
+      route.fulfill({ json: { status: 'stopped', log: '', preferences: {} } }));
+    await page.route('**/api/vms/*/single-app', (route) => {
+      if (route.request().method() === 'GET') return route.fulfill({ json: { sessions: [] } });
+      return route.fulfill({ status: 201, json: {
+        id: 'a45e91ec-c630-414e-befc-b66e53c76730', program: 'xterm',
+        resolution: '1024x768', status: 'running', startedAt: new Date().toISOString(),
+      } });
+    });
+    await page.reload();
+    await page.getByRole('tab', { name: '桌面', exact: true }).click();
+    await page.getByRole('button', { name: '单应用窗口' }).click();
+    const popupPromise = page.waitForEvent('popup');
+    await page.getByRole('button', { name: '启动应用' }).click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveTitle('xterm · Sakura');
+    await popup.getByRole('button', { name: '剪贴板' }).click();
+    const panel = popup.getByRole('region', { name: '单应用窗口剪贴板' });
+    const incoming = panel.getByRole('textbox', { name: 'Linux 剪贴板文本' });
+    const outgoing = panel.getByRole('textbox', { name: '发送到 Linux 的文本' });
+    await expect(panel.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
+    const serverClipboard = (value: string) => {
+      const data = Buffer.from(value), header = Buffer.alloc(8);
+      header[0] = 3;
+      header.writeUInt32BE(data.length, 4);
+      sockets.at(-1)!.send(Buffer.concat([header, data]));
+    };
+    serverClipboard('guest text');
+    await expect(incoming).toHaveValue('guest text');
+    await outgoing.fill('host text');
+    await panel.getByRole('button', { name: '发送', exact: true }).click();
+    await expect.poll(() => sent).toContain('host text');
+    const policy = defaultClipboardPolicies();
+    policy.defaults.desktop.copy = false;
+    policy.defaults.desktop.paste = false;
+    await page.evaluate((value) => localStorage.setItem('sakura-clipboard-policies', value),
+      JSON.stringify(policy));
+    await expect(incoming).toHaveValue('');
+    await expect(outgoing).toHaveValue('');
+    await expect(panel.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
+    await expect.poll(() => sockets.length).toBe(2);
+    serverClipboard('must remain hidden');
+    await expect(incoming).toHaveValue('');
+    await popup.close();
+  } finally {
+    for (const socket of sockets) socket.terminate();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
 
 test('Windows integration settings save and remove real registration plans without replacing defaults, and fit mobile', async ({

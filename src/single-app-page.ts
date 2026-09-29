@@ -1,4 +1,8 @@
+import type RFB from '@novnc/novnc';
 import { connectDesktop } from './desktop-connection';
+import { assertClipboardTransfer, installClipboardProtection,
+  subscribeClipboardProtection, writeProtectedClipboard } from './clipboard-protection';
+import { currentClipboardRule, subscribeClipboardPolicies } from './clipboard-policy';
 
 type Init = {
   type: 'sakura-single-app-init';
@@ -10,9 +14,20 @@ type Init = {
 
 const status = document.getElementById('status')!;
 const screen = document.getElementById('screen')!;
+const clipboard = document.getElementById('clipboard')!;
+const toggleClipboard = document.getElementById('toggle-clipboard') as HTMLButtonElement;
+const outgoing = document.getElementById('outgoing') as HTMLTextAreaElement;
+const incoming = document.getElementById('incoming') as HTMLTextAreaElement;
+const send = document.getElementById('send') as HTMLButtonElement;
+const copy = document.getElementById('copy') as HTMLButtonElement;
+const clipboardError = document.getElementById('clipboard-error')!;
 const nonce = new URLSearchParams(location.search).get('nonce');
 const parent = window.opener;
 document.getElementById('close')!.addEventListener('click', () => window.close());
+toggleClipboard.addEventListener('click', () => {
+  clipboard.hidden = !clipboard.hidden;
+  toggleClipboard.setAttribute('aria-expanded', String(!clipboard.hidden));
+});
 
 if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
   status.textContent = '请从 Sakura 桌面页重新打开应用窗口';
@@ -38,17 +53,90 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
       const { default: RFB } = await import('@novnc/novnc');
       const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${scheme}//${location.host}/ws/${vmId}/desktop?token=${encodeURIComponent(token)}&app=${encodeURIComponent(session.id)}`;
-      const connection = connectDesktop(() => {
-        const client = new RFB(screen, url);
-        client.scaleViewport = true;
-        client.resizeSession = false;
-        client.background = '#201b24';
-        return client;
-      }, ({ connected, message, error }) => {
-        status.textContent = `${session.program} · ${error || message ||
-          (connected ? '已连接' : '连接中')}`;
+      const context = { app: 'desktop' as const, vmId };
+      document.body.dataset.clipboardApp = 'desktop';
+      document.body.dataset.clipboardVm = vmId;
+      let client: RFB | null = null;
+      let connection: ReturnType<typeof connectDesktop> | null = null;
+      let connected = false;
+      let sentClipboard = '';
+      const refreshButtons = () => {
+        const rule = currentClipboardRule(context);
+        send.disabled = !connected || !rule.paste;
+        copy.disabled = !incoming.value || !rule.copy;
+      };
+      const connect = () => {
+        connection = connectDesktop(() => {
+          const next = new RFB(screen, url);
+          next.scaleViewport = true;
+          next.resizeSession = false;
+          next.background = '#201b24';
+          client = next;
+          next.addEventListener('clipboard', (event) => {
+            if (client !== next) return;
+            const text = (event as CustomEvent<{ text: string }>).detail.text;
+            try {
+              assertClipboardTransfer(context, 'copy', text);
+              incoming.value = text;
+              clipboardError.textContent = '';
+            } catch (cause) {
+              incoming.value = '';
+              clipboardError.textContent = (cause as Error).message;
+            }
+            refreshButtons();
+          });
+          return next;
+        }, ({ connected: ready, message, error }) => {
+          connected = ready;
+          if (!ready) client = null;
+          status.textContent = `${session.program} · ${error || message ||
+            (ready ? '已连接' : '连接中')}`;
+          refreshButtons();
+        });
+      };
+      const refreshPolicy = () => {
+        try { assertClipboardTransfer(context, 'copy', incoming.value); }
+        catch { incoming.value = ''; }
+        try { assertClipboardTransfer(context, 'paste', outgoing.value); }
+        catch { outgoing.value = ''; }
+        if (sentClipboard) {
+          try { assertClipboardTransfer(context, 'paste', sentClipboard); }
+          catch {
+            sentClipboard = '';
+            connection?.dispose();
+            client = null;
+            connected = false;
+            connect();
+          }
+        }
+        refreshButtons();
+      };
+      send.addEventListener('click', () => {
+        try {
+          if (!client || !connected) throw new Error('应用窗口尚未连接');
+          assertClipboardTransfer(context, 'paste', outgoing.value);
+          client.clipboardPasteFrom(outgoing.value);
+          sentClipboard = outgoing.value;
+          clipboardError.textContent = '';
+        } catch (cause) { clipboardError.textContent = (cause as Error).message; }
       });
-      window.addEventListener('pagehide', () => connection.dispose(), { once: true });
+      copy.addEventListener('click', () => {
+        void writeProtectedClipboard(incoming.value, context)
+          .then(() => { clipboardError.textContent = ''; })
+          .catch((cause: Error) => { clipboardError.textContent = cause.message; });
+      });
+      const unsubscribePolicies = subscribeClipboardPolicies(refreshPolicy);
+      const unsubscribeProtection = subscribeClipboardProtection(refreshPolicy);
+      const removeClipboardProtection = installClipboardProtection(document,
+        (message) => { clipboardError.textContent = message; });
+      refreshPolicy();
+      connect();
+      window.addEventListener('pagehide', () => {
+        connection?.dispose();
+        unsubscribePolicies();
+        unsubscribeProtection();
+        removeClipboardProtection();
+      }, { once: true });
     } catch (cause) {
       status.textContent = `桌面客户端加载失败：${(cause as Error).message}`;
     }

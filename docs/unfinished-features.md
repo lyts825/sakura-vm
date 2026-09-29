@@ -35,6 +35,6 @@
 
 ### 操作系统与桌面
 
-- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L523) — 已实现 Sakura 网页应用入口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
+- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L523) — 已实现 Sakura 网页应用入口与独立 Linux 应用窗口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
 
 重新生成：`npm run features:audit`。上述目录状态由源码声明，真实硬件、多主机和外部身份服务仍需要对应环境验证。
