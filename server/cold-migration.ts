@@ -11,6 +11,7 @@ export const coldMigrationInput = z.object({
   peerId: z.uuid(),
   targetName: createSchema.shape.name,
   confirmSourceRemoval: z.boolean().default(false),
+  startTarget: z.boolean().default(false),
 }).strict();
 type Input = z.infer<typeof coldMigrationInput>;
 export const maintenanceDrainInput = z.object({
@@ -104,19 +105,33 @@ export class ColdMigrations {
       return { ready: false, executed: false,
         reason: '请选择已配对目标主机，填写目标实例名称与源实例移除确认。',
         queue: this.queue!.entries.filter((item) => item.vmId === id).slice(-8) };
+    if (parsed.data.startTarget && !parsed.data.confirmSourceRemoval)
+      return { ready: false, executed: false,
+        reason: '启动目标前必须明确确认移除源实例，避免两端同时写入。',
+        queue: this.queue!.entries.filter((item) => item.vmId === id).slice(-8) };
     try {
       const prior = this.queue!.entries.findLast((entry) => entry.vmId === id &&
         entry.peerId === parsed.data.peerId && entry.targetName === parsed.data.targetName &&
         entry.status !== 'moved');
       const receipt = await this.existingReceipt(prior, parsed.data.peerId,
         parsed.data.targetName);
-      const { peer, candidate } = await this.target(id, parsed.data, !receipt);
+      if (parsed.data.startTarget && !receipt)
+        throw new AppError('请先完成一次保留源实例的复制并复核目标，再请求启动目标', 409);
+      if (parsed.data.startTarget) {
+        if (!receipt?.sha256) throw new AppError('目标导入回执缺少磁盘校验值', 409);
+        await this.peers.checkImportActivation(parsed.data.peerId, {
+          transferId: prior!.transferId, remoteVmId: receipt.id, sha256: receipt.sha256,
+        });
+      }
+      const { peer, candidate } = await this.target(id, parsed.data,
+        !receipt || parsed.data.startTarget);
       const fingerprint = await this.machines.migrationFingerprint(id);
       if (prior && !sameFingerprint(prior.fingerprint, fingerprint))
         throw new AppError('源实例与之前的迁移队列记录不同；请改用新的目标名称重新迁移', 409);
       return { ready: true, executed: false, target: { id: peer.id, name: peer.name,
         hostId: peer.remoteId, score: candidate.score }, fingerprint,
         sourceRemovalRequested: parsed.data.confirmSourceRemoval,
+        targetStartRequested: parsed.data.startTarget,
         queue: this.queue!.entries.filter((item) => item.vmId === id).slice(-8),
         message: '先校验并导入完整实例包；只有目标回执有效、源实例未变化且明确确认移除时才删除源实例。' };
     } catch (error) {
@@ -134,6 +149,8 @@ export class ColdMigrations {
 
   private async runOne(id: string, input: unknown, signal: AbortSignal) {
     const options = coldMigrationInput.parse(input);
+    if (options.startTarget && !options.confirmSourceRemoval)
+      throw new AppError('启动目标前必须明确确认移除源实例，避免两端同时写入', 409);
     signal.throwIfAborted();
     const fingerprint = await this.machines.migrationFingerprint(id);
     const prior = this.queue!.entries.findLast((entry) => entry.vmId === id &&
@@ -142,7 +159,9 @@ export class ColdMigrations {
     if (prior && !sameFingerprint(prior.fingerprint, fingerprint))
       throw new AppError('源实例与之前的迁移队列记录不同；请改用新的目标名称重新迁移', 409);
     const existing = await this.existingReceipt(prior, options.peerId, options.targetName);
-    const { peer } = await this.target(id, options, !existing);
+    if (options.startTarget && !existing)
+      throw new AppError('请先完成一次保留源实例的复制并复核目标，再请求启动目标', 409);
+    const { peer } = await this.target(id, options, !existing || options.startTarget);
     const transferId = prior?.transferId || randomUUID();
     if (!prior) await this.change((queue) => {
       while (queue.entries.length >= 128) {
@@ -184,14 +203,34 @@ export class ColdMigrations {
       const confirmed = await this.peers.importStatus(options.peerId, transferId);
       if (confirmed?.id !== receipt.id || confirmed.name !== options.targetName)
         throw new AppError('目标主机回执与导入结果不一致，保留源实例', 409);
+      const activation = options.startTarget ? {
+        transferId, remoteVmId: receipt.id, sha256: confirmed.sha256 || '',
+      } : null;
+      if (activation) {
+        if (!/^[a-f0-9]{64}$/.test(activation.sha256) ||
+            receipt.sha256 !== activation.sha256)
+          throw new AppError('目标导入回执缺少一致的磁盘校验值，保留源实例', 409);
+        await this.peers.checkImportActivation(options.peerId, activation);
+      }
       signal.throwIfAborted();
       await this.machines.delete(id, fingerprint);
       let queuePersisted = true;
       try { await update('moved', receipt.id); }
       catch { queuePersisted = false; }
+      let targetStart: Awaited<ReturnType<HostPeers['activateImport']>> | undefined;
+      if (activation) {
+        try { targetStart = await this.peers.activateImport(options.peerId, activation); }
+        catch (error) {
+          const message = `源实例已移除，但目标启动未确认：${(error as Error).message}`;
+          await update('moved', receipt.id, message).catch(() => {});
+          throw new AppError(message, 502);
+        }
+      }
       return { ready: true, executed: true, phase: 'moved', transferId,
         sourceVmId: id, remoteVmId: receipt.id, targetHostId: peer.remoteId,
-        sourceRemoved: true, queuePersisted };
+        sourceRemoved: true, queuePersisted,
+        ...(targetStart ? { targetStart,
+          message: '源实例已移除，目标主机接受启动请求；请检查目标客户机健康与服务入口。' } : {}) };
     } catch (error) {
       if (this.machines.records.has(id))
         await update('review', prior?.remoteVmId, (error as Error).message).catch(() => {});

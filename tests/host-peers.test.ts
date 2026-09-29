@@ -87,6 +87,31 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
       throw new Error('重试不得再次上传');
     }, new AbortController().signal);
     assert.equal(imported, 'verified bundle');
+    const digest = 'a'.repeat(64);
+    let activated = 0;
+    target.setImportReceiver({
+      status: async () => ({ id: importedId, name: 'migrated', sha256: digest }),
+      receive: async () => { throw new Error('启动检查不得重新导入'); },
+      inspectActivation: async ({ remoteVmId }) => ({ id: remoteVmId, status: 'stopped' }),
+      activate: async ({ remoteVmId }) => {
+        activated++;
+        return { id: remoteVmId, status: 'starting' };
+      },
+    });
+    const activation = { transferId, remoteVmId: importedId, sha256: digest };
+    await assert.rejects(initiator.checkImportActivation(outboundId, activation), /HTTP 403/);
+    await assert.rejects(initiator.activateImport(outboundId, activation), /HTTP 403/);
+    await target.configure({ operation: 'allow-activate', id: inboundId, enabled: true });
+    assert.deepEqual(await initiator.checkImportActivation(outboundId, activation),
+      { ready: true, id: importedId, status: 'stopped' });
+    await assert.rejects(initiator.activateImport(outboundId,
+      { ...activation, sha256: 'b'.repeat(64) }), /HTTP 409/);
+    assert.equal(activated, 0);
+    assert.deepEqual(await initiator.activateImport(outboundId, activation),
+      { id: importedId, status: 'starting' });
+    assert.equal(activated, 1);
+    await target.configure({ operation: 'allow-activate', id: inboundId, enabled: false });
+    await assert.rejects(initiator.activateImport(outboundId, activation), /HTTP 403/);
     let checks = 0;
     target.setImportReceiver({
       status: async () => ++checks === 1 ? null : { id: importedId, name: 'migrated' },

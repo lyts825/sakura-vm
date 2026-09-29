@@ -37,6 +37,7 @@ test('cold migration persists a retry identity and removes only an unchanged sou
     },
   } as unknown as Machines;
   const transfers: string[] = [];
+  const digest = 'b'.repeat(64);
   let published = false;
   let eligible = true;
   const peers = {
@@ -48,9 +49,12 @@ test('cold migration persists a retry identity and removes only an unchanged sou
     upload: async (_peer: string, transferId: string) => {
       transfers.push(transferId);
       published = true;
-      return { id: remoteVmId, name: 'migrated' };
+      return { id: remoteVmId, name: 'migrated', sha256: digest };
     },
-    importStatus: async () => published ? { id: remoteVmId, name: 'migrated' } : null,
+    importStatus: async () => published
+      ? { id: remoteVmId, name: 'migrated', sha256: digest } : null,
+    checkImportActivation: async () => ({ ready: true, id: remoteVmId, status: 'stopped' }),
+    activateImport: async () => { throw new Error('target launch reply lost'); },
   } as unknown as HostPeers;
   const bundles = { export: async () => { throw new Error('fake peer handles upload'); } } as unknown as Bundles;
   const file = join(root, 'queue.json');
@@ -58,6 +62,8 @@ test('cold migration persists a retry identity and removes only an unchanged sou
   const first = new ColdMigrations(machines, bundles, peers, file);
   await first.init();
   assert.equal((await first.preview(vmId, {})).ready, false);
+  assert.match((await first.preview(vmId, { ...options,
+    confirmSourceRemoval: true, startTarget: true })).reason || '', /先完成一次/);
   const copied = await first.run(vmId, options, new AbortController().signal);
   assert.equal(copied.phase, 'copied');
   assert.equal(deletions, 0);
@@ -69,10 +75,16 @@ test('cold migration persists a retry identity and removes only an unchanged sou
   const restarted = new ColdMigrations(machines, bundles, peers, file);
   await restarted.init();
   assert.equal((await restarted.preview(vmId, options)).ready, true);
-  const moved = await restarted.run(vmId, { ...options, confirmSourceRemoval: true },
-    new AbortController().signal);
-  assert.equal(moved.phase, 'moved');
+  await assert.rejects(restarted.run(vmId, { ...options,
+    confirmSourceRemoval: true, startTarget: true }, new AbortController().signal), /当前不可选/);
+  assert.equal(deletions, 0);
+  eligible = true;
+  await assert.rejects(restarted.run(vmId, { ...options,
+    confirmSourceRemoval: true, startTarget: true }, new AbortController().signal),
+  /源实例已移除，但目标启动未确认/);
   assert.equal(deletions, 1);
+  assert.equal(restarted.view().entries[0].status, 'moved');
+  assert.match(restarted.view().entries[0].error || '', /启动未确认/);
   assert.equal(transfers.length, 2);
   assert.equal(transfers[0], transfers[1]);
 });

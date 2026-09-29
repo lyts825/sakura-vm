@@ -68,7 +68,7 @@ export async function checkHaFailover(machines: Machines, peers: HostPeers,
   else if (ageMinutes > policy.maxReplicaAgeMinutes)
     blockers.push(`副本数据已超过 ${policy.maxReplicaAgeMinutes} 分钟时效上限。`);
   blockers.push('尚无独立见证节点与源主机栅栏，网络分区时不能安全地自动启动副本。');
-  blockers.push('尚未实现目标主机的受控启动、健康确认与流量切换。');
+  blockers.push('故障接管尚未实现目标健康确认与流量切换；受控启动目前仅用于已移除源实例的冷迁移。');
   return {
     ready: false, executed: false, checkedAt: new Date().toISOString(),
     policy, source: { vmId: id, state: sourceState },

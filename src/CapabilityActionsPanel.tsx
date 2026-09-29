@@ -244,6 +244,7 @@ export function CapabilityActionsPanel({
               <p>{result.phase === 'moved' ? '源实例已移除，冷迁移完成。' :
                 '目标实例已导入，源实例仍保留。请在目标主机确认可用后，用相同目标 ID 和名称重试并明确勾选移除源实例。'}</p>
               <p>目标实例 ID：<code>{result.remoteVmId}</code></p>
+              {result.targetStart && <p>目标启动请求已接受：{result.targetStart.status}。请继续检查客户机健康。</p>}
               {!result.queuePersisted && result.phase === 'moved' &&
                 <p className="subtle-note">迁移已完成，但队列状态保存失败；请检查目标实例。</p>}
             </div>

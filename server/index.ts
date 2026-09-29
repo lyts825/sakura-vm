@@ -252,6 +252,23 @@ async function main() {
     [...machines.records.values()].find((vm) =>
       vm.migrationOrigin?.sourceHostId === requesterId &&
       vm.migrationOrigin.transferId === transferId);
+  const inspectImportedActivation = ({ requesterId, transferId, remoteVmId, sha256 }: {
+    requesterId: string; transferId: string; remoteVmId: string; sha256: string;
+  }) => {
+    session.requireUnlocked();
+    if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+    if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
+    const vm = machines.get(remoteVmId);
+    if (vm.migrationOrigin?.sourceHostId !== requesterId ||
+        vm.migrationOrigin.transferId !== transferId ||
+        vm.migrationOrigin.diskSha256 !== sha256)
+      throw new AppError('目标实例身份或校验值与导入记录不一致', 409);
+    machines.requireUnlocked(remoteVmId);
+    const state = machines.state(remoteVmId);
+    if (state !== 'stopped' && state !== 'starting' && state !== 'running')
+      throw new AppError(`目标实例当前为 ${state}，需要人工复核`, 409);
+    return { id: remoteVmId, status: state };
+  };
   hostPeers.setImportReceiver({
     status: async ({ requesterId, transferId }) => {
       if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
@@ -274,6 +291,16 @@ async function main() {
         ...(imported.migrationOrigin?.diskSha256
           ? { sha256: imported.migrationOrigin.diskSha256 } : {}),
         ...(sourceVmId ? { sourceVmId } : {}), ...(snapshotId ? { snapshotId } : {}) };
+    },
+    inspectActivation: async (input) => inspectImportedActivation(input),
+    activate: async (input) => {
+      const { remoteVmId } = input;
+      const current = inspectImportedActivation(input);
+      if (current.status === 'stopped') await machines.start(remoteVmId);
+      const status = machines.state(remoteVmId);
+      if (status !== 'starting' && status !== 'running')
+        throw new AppError(`目标实例启动未保持运行状态：${status}`, 502);
+      return { id: remoteVmId, status };
     },
   });
   let coldMigrations: ColdMigrations | undefined;

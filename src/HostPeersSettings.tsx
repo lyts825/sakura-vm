@@ -13,7 +13,7 @@ type HostPeersView = {
   hostId: string; name: string; fingerprint: string; local: PeerStatus;
   listener: Listener; pairing: { value: string; expiresAt: number } | null;
   incoming: Array<{ id: string; requesterId: string; name: string;
-    createdAt: number; allowImport: boolean; allowPolicy: boolean }>;
+    createdAt: number; allowImport: boolean; allowPolicy: boolean; allowActivate: boolean }>;
   outbound: Array<{ id: string; remoteId: string; name: string; url: string;
     fingerprint: string; createdAt: number; observation: Observation | null }>;
 };
@@ -205,7 +205,8 @@ export function HostPeersSettings({ request }: { request: Request }) {
       {remote.data?.incoming.map((peer) => <div className="host-peer-row" key={peer.id}>
         <span><strong>{peer.name}</strong> · {peer.requesterId} ·
           实例包导入：{peer.allowImport ? '已允许' : '未允许'} ·
-          策略发布：{peer.allowPolicy ? '已允许' : '未允许'}</span>
+          策略发布：{peer.allowPolicy ? '已允许' : '未允许'} ·
+          目标启动：{peer.allowActivate ? '已允许' : '未允许'}</span>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('allow-import', { id: peer.id, enabled: !peer.allowImport },
             peer.allowImport ? '实例包导入权限已关闭' : '实例包导入权限已开启')}>
@@ -215,6 +216,11 @@ export function HostPeersSettings({ request }: { request: Request }) {
           onClick={() => apply('allow-policy', { id: peer.id, enabled: !peer.allowPolicy },
             peer.allowPolicy ? '策略发布权限已关闭' : '策略发布权限已开启')}>
           {peer.allowPolicy ? '关闭策略发布' : '允许策略发布'}
+        </button>
+        <button className="secondary compact" disabled={action.busy}
+          onClick={() => apply('allow-activate', { id: peer.id, enabled: !peer.allowActivate },
+            peer.allowActivate ? '目标启动权限已关闭' : '目标启动权限已开启')}>
+          {peer.allowActivate ? '关闭目标启动' : '允许目标启动'}
         </button>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('revoke-inbound', { id: peer.id }, '读取权限已撤销')}>撤销访问</button>

@@ -64,17 +64,29 @@ test('pinned peer TLS streams a real validated bundle into a distinct machine ma
   const local = new HostPeers(status, join(root, 'local-peers.json'), 'Local');
   await local.init(false);
   const targetBundles = new Bundles(destination);
+  let activated = false;
   target.setImportReceiver({
     status: async ({ requesterId, transferId }) => {
       const found = [...destination.records.values()].find((vm) =>
         vm.migrationOrigin?.sourceHostId === requesterId &&
         vm.migrationOrigin.transferId === transferId);
-      return found ? { id: found.id, name: found.migrationOrigin!.targetName } : null;
+      return found ? { id: found.id, name: found.migrationOrigin!.targetName,
+        sha256: found.migrationOrigin!.diskSha256 } : null;
     },
     receive: async ({ requesterId, transferId, name, source: body, signal }) => {
       const imported = await targetBundles.import(name, body, signal, undefined,
         { sourceHostId: requesterId, transferId, targetName: name });
-      return { id: imported.id, name };
+      return { id: imported.id, name, sha256: imported.migrationOrigin!.diskSha256 };
+    },
+    inspectActivation: async ({ remoteVmId }) => ({ id: remoteVmId, status: 'stopped' }),
+    activate: async ({ requesterId, transferId, remoteVmId, sha256 }) => {
+      assert.equal(source.records.has(id), false);
+      const imported = destination.get(remoteVmId);
+      assert.equal(imported.migrationOrigin?.sourceHostId, requesterId);
+      assert.equal(imported.migrationOrigin?.transferId, transferId);
+      assert.equal(imported.migrationOrigin?.diskSha256, sha256);
+      activated = true;
+      return { id: remoteVmId, status: 'starting' };
     },
   });
   try {
@@ -99,6 +111,22 @@ test('pinned peer TLS streams a real validated bundle into a distinct machine ma
     const retry = await migration.run(id, options, new AbortController().signal);
     assert.equal(retry.remoteVmId, imported.id);
     assert.equal(destination.records.size, 1);
+    await assert.rejects(migration.run(id, { ...options, startTarget: true },
+      new AbortController().signal), /明确确认移除源实例/);
+    await assert.rejects(migration.run(id, { ...options,
+      confirmSourceRemoval: true, startTarget: true }, new AbortController().signal), /HTTP 403/);
+    assert.equal(source.records.has(id), true);
+    assert.equal(activated, false);
+    await target.configure({ operation: 'allow-activate',
+      id: target.view().incoming[0].id, enabled: true });
+    const moved = await migration.run(id, { ...options,
+      confirmSourceRemoval: true, startTarget: true }, new AbortController().signal);
+    assert.equal(moved.phase, 'moved');
+    assert.equal(moved.sourceRemoved, true);
+    assert.ok('targetStart' in moved && moved.targetStart);
+    assert.equal(moved.targetStart.status, 'starting');
+    assert.equal(activated, true);
+    assert.equal(source.records.has(id), false);
   } finally {
     await local.close();
     await target.close();

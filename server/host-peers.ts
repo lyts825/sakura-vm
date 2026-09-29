@@ -36,6 +36,7 @@ const incomingSchema = z.object({
   tokenHash: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.number().int().nonnegative(),
   allowImport: z.boolean().default(false),
   allowPolicy: z.boolean().default(false),
+  allowActivate: z.boolean().default(false),
 }).strict();
 const rolloutPolicySchema = z.object({
   pluginId: z.string().min(1).max(128), enabled: z.boolean(),
@@ -73,11 +74,22 @@ const importReceiptSchema = z.object({
 }).strict();
 type ImportReceipt = z.infer<typeof importReceiptSchema>;
 type ImportIdentity = { transferId: string; requesterId: string };
+const activateInput = z.object({ transferId: z.uuid(), remoteVmId: z.uuid(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+const activateResult = z.object({ id: z.uuid(), status: z.enum([
+  'stopped', 'starting', 'running', 'paused', 'stopping', 'error',
+]) }).strict();
+const activateCheckResult = z.object({ ready: z.literal(true), id: z.uuid(),
+  status: activateResult.shape.status }).strict();
 type ImportReceiver = {
   status: (identity: ImportIdentity) => Promise<ImportReceipt | null>;
   receive: (input: ImportIdentity & { name: string; sourceVmId?: string; snapshotId?: string;
     source: IncomingMessage;
     signal: AbortSignal }) => Promise<ImportReceipt>;
+  activate?: (input: ImportIdentity & { remoteVmId: string; sha256: string }) =>
+    Promise<z.infer<typeof activateResult>>;
+  inspectActivation?: (input: ImportIdentity & { remoteVmId: string; sha256: string }) =>
+    Promise<z.infer<typeof activateResult>>;
 };
 const pairInput = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/),
   requesterId: z.uuid(), name: hostName }).strict();
@@ -97,6 +109,7 @@ export const hostPeerRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('revoke-inbound'), id: z.uuid() }).strict(),
   z.object({ operation: z.literal('allow-import'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ operation: z.literal('allow-policy'), id: z.uuid(), enabled: z.boolean() }).strict(),
+  z.object({ operation: z.literal('allow-activate'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ operation: z.literal('refresh') }).strict(),
   z.object({ operation: z.literal('score'), requirements: hostScoreInput }).strict(),
 ]);
@@ -130,12 +143,12 @@ function checkPinnedCertificate(socket: TLSSocket, pin: string) {
 }
 
 function requestPeer(urlText: string, pin: string, path: string, method: 'GET' | 'POST',
-  payload?: unknown, token?: string): Promise<unknown> {
+  payload?: unknown, token?: string, timeoutMs = 10_000): Promise<unknown> {
   const url = new URL(path, urlText);
   const body = payload === undefined ? undefined : JSON.stringify(payload);
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
-      method, agent: false, rejectUnauthorized: false, signal: AbortSignal.timeout(10_000),
+      method, agent: false, rejectUnauthorized: false, signal: AbortSignal.timeout(timeoutMs),
       headers: {
         ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -278,7 +291,7 @@ export class HostPeers {
             const token = randomBytes(32).toString('hex');
             next.incoming.push({ id: randomUUID(), requesterId: value.requesterId,
               name: value.name, tokenHash: hash(token), createdAt: this.now(),
-              allowImport: false, allowPolicy: false });
+              allowImport: false, allowPolicy: false, allowActivate: false });
             return { id: next.hostId, name: next.name, token };
           });
           this.code = undefined;
@@ -315,6 +328,40 @@ export class HostPeers {
         const transferId = z.uuid().parse(url.searchParams.get('id'));
         return this.send(response, await this.importReceiver.status({
           transferId, requesterId: peer.requesterId }));
+      }
+      if (request.method === 'POST' &&
+          (request.url === '/peer/activate' || request.url === '/peer/activate-check')) {
+        const peer = this.inbound(request);
+        if (!peer.allowImport || !peer.allowActivate)
+          throw new AppError('此同伴未获目标实例启动权限', 403);
+        if (!this.importReceiver?.activate || !this.importReceiver.inspectActivation)
+          throw new AppError('目标主机尚未启用实例启动接收器', 503);
+        const input = activateInput.parse(await readJsonBody(request, 4096));
+        const identity = { transferId: input.transferId, requesterId: peer.requesterId };
+        const receipt = await this.importReceiver.status(identity);
+        if (!receipt?.sha256 || receipt.id !== input.remoteVmId ||
+            receipt.sha256 !== input.sha256)
+          throw new AppError('目标实例与已校验的导入回执不一致', 409);
+        const current = this.inbound(request);
+        if (!current.allowImport || !current.allowActivate)
+          throw new AppError('目标实例启动权限已撤销', 403);
+        const activationInput = { ...identity, remoteVmId: input.remoteVmId,
+          sha256: input.sha256 };
+        if (request.url === '/peer/activate-check') {
+          const inspected = activateResult.parse(await this.importReceiver.inspectActivation(
+            activationInput));
+          if (inspected.id !== input.remoteVmId)
+            throw new AppError('目标实例启动预检返回了其他实例', 409);
+          return this.send(response, { ready: true, id: input.remoteVmId,
+            status: inspected.status });
+        }
+        this.mutation(1);
+        try {
+          const result = activateResult.parse(await this.importReceiver.activate(activationInput));
+          if (result.id !== input.remoteVmId)
+            throw new AppError('目标实例启动返回了其他实例', 409);
+          return this.send(response, result);
+        } finally { this.mutation(-1); }
       }
       if (request.method === 'POST' && request.url === '/peer/import') {
         const peer = this.inbound(request);
@@ -421,6 +468,29 @@ export class HostPeers {
     const result = await requestPeer(peer.url, peer.fingerprint,
       `/peer/import-status?id=${transferId}`, 'GET', undefined, peer.token);
     return result === null ? null : importReceiptSchema.parse(result);
+  }
+
+  async activateImport(peerId: string, input: unknown) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    const value = activateInput.parse(input);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const result = activateResult.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/activate', 'POST', value, peer.token, 30_000));
+    if (result.id !== value.remoteVmId)
+      throw new AppError('远端目标实例身份已变化', 409);
+    return result;
+  }
+
+  async checkImportActivation(peerId: string, input: unknown) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    const value = activateInput.parse(input);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    return activateCheckResult.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/activate-check', 'POST', value, peer.token));
   }
 
   private change<T>(edit: (next: Store) => T): Promise<T> {
@@ -656,6 +726,10 @@ export class HostPeers {
           const peer = next.incoming.find((item) => item.id === value.id);
           if (!peer) throw new AppError('入站配对不存在', 404);
           peer.allowPolicy = value.enabled;
+        } else if (value.operation === 'allow-activate') {
+          const peer = next.incoming.find((item) => item.id === value.id);
+          if (!peer) throw new AppError('入站配对不存在', 404);
+          peer.allowActivate = value.enabled;
         }
       });
       if (value.operation === 'remove-outbound') this.observations.delete(value.id);
