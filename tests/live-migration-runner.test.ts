@@ -34,6 +34,7 @@ async function fixture(mode: 'success' | 'before-fence' | 'after-fence') {
   }));
   const vm = { id: vmId, name: 'source', memoryMiB: 512, cpus: 2,
     diskGiB: 8, accelerator: 'tcg', forwards: [], snapshots: [],
+    organization: { group: 'engineering', tags: ['important'], favorite: true },
     liveMigrationFence: undefined as { targetHostId: string; targetVmId: string;
       transferId: string } | undefined };
   let stopped = 0, aborted = 0, closed = 0, prepared = 0, completed = 0;
@@ -55,13 +56,15 @@ async function fixture(mode: 'success' | 'before-fence' | 'after-fence') {
     ] }),
     prepareLiveTarget: async (_peer: string, input: { sourceVmId: string;
       config: { name: string }; key: string; seedBase64: string;
-      projects?: { configs: { default?: { command: string } } } }) => {
+      projects?: { configs: { default?: { command: string } } };
+      organization?: { group: string; tags: string[]; favorite: boolean } }) => {
       prepared++;
       assert.equal(input.sourceVmId, vmId);
       assert.equal(input.config.name, 'destination');
       assert.equal(input.key, 'private key');
       assert.equal(Buffer.from(input.seedBase64, 'base64').toString(), 'seed content');
       assert.equal(input.projects?.configs.default?.command, 'printf migrated');
+      assert.deepEqual(input.organization, vm.organization);
       return { targetVmId, sessionId: randomUUID(), targetDiskNode: '#target',
         diskPort: 2345, statePort: 2346 };
     },

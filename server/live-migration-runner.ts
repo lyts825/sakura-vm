@@ -90,6 +90,7 @@ export class LiveMigrationRunner {
     const prepared = await this.peers.prepareLiveTarget(peer.id, {
       sourceVmId: id, transferId, config: targetConfig,
       key, seedBase64: seed.toString('base64'), projects,
+      organization: vm.organization,
     });
     log(`目标实例 ${prepared.targetVmId} 已暂停，迁移标识 ${transferId}。\n`);
     const forwards: Array<Awaited<ReturnType<HostPeers['openMigrationForward']>>> = [];

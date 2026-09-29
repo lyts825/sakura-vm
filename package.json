@@ -59,6 +59,7 @@
     "test:live-migration-transport": "tsx scripts/smoke-qemu-live-migration.ts",
     "test:live-migration-target": "tsx scripts/smoke-live-migration-target.ts",
     "test:live-migration-runner": "tsx scripts/smoke-live-migration-runner.ts",
+    "test:live-migration-distributed": "tsx scripts/smoke-live-migration-distributed.ts",
     "test:rescue": "tsx scripts/smoke-rescue.ts",
     "test:snapshot-diff": "tsx scripts/smoke-snapshot-diff.ts",
     "test:snapshot-merge": "tsx scripts/smoke-snapshot-merge.ts",

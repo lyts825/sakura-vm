@@ -556,7 +556,7 @@ export class Machines extends EventEmitter {
   }
   async createIncomingTarget(input: unknown, identity: { key: string; seed: Buffer },
     source: { sourceHostId: string; sourceVmId: string; transferId: string },
-    projects?: LiveMigrationProjects) {
+    projects?: LiveMigrationProjects, organization?: VMRecord['organization']) {
     if (typeof identity.key !== 'string' || identity.key.length < 100 ||
         identity.key.length > 16_000 || !Buffer.isBuffer(identity.seed) ||
         identity.seed.length < 40 * 1024 || identity.seed.length > 1024 * 1024 ||
@@ -578,6 +578,7 @@ export class Machines extends EventEmitter {
     return this.createInternal(config, undefined, undefined, { ...identity,
       origin: { ...sourceIds, status: 'prepared', createdAt: now, updatedAt: now },
       ...(projects ? { projects: liveMigrationProjectsSchema.parse(projects) } : {}),
+      ...(organization ? { organization: organizationSchema.parse(organization) } : {}),
     });
   }
   private async prepareVmDirectory(vm: VMRecord) {
@@ -602,7 +603,7 @@ export class Machines extends EventEmitter {
   }
   private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string,
     incoming?: { key: string; seed: Buffer; origin: NonNullable<VMRecord['liveMigrationOrigin']>;
-      projects?: LiveMigrationProjects }) {
+      projects?: LiveMigrationProjects; organization?: VMRecord['organization'] }) {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
       this.requireUnreservedPorts(config.forwards);
@@ -635,6 +636,7 @@ export class Machines extends EventEmitter {
         snapshots: [],
         bootstrapped: !!incoming,
         ...(incoming ? { liveMigrationOrigin: incoming.origin } : {}),
+        ...(incoming?.organization ? { organization: incoming.organization } : {}),
         ...(sandbox ? { sandbox } : {}),
         ...(rescueOf ? { rescueOf } : {}),
       };

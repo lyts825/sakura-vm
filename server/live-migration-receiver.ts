@@ -1,12 +1,13 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Machines } from './machines.ts';
 import type { HostPeers } from './host-peers.ts';
-import { AppError, type VMConfig } from './model.ts';
+import { AppError, type VMConfig, type VMRecord } from './model.ts';
 import { freePort, qmp } from './qmp.ts';
 import type { LiveMigrationProjects } from './live-migration-projects.ts';
 
 type PrepareInput = { requesterId: string; transferId: string; sourceVmId: string;
-  config: VMConfig; key: string; seed: Buffer; projects?: LiveMigrationProjects };
+  config: VMConfig; key: string; seed: Buffer; projects?: LiveMigrationProjects;
+  organization?: VMRecord['organization'] };
 
 export class LiveMigrationReceiver {
   private finalizing = new Set<string>();
@@ -19,7 +20,7 @@ export class LiveMigrationReceiver {
       { key: input.key, seed: input.seed }, {
         sourceHostId: input.requesterId, sourceVmId: input.sourceVmId,
         transferId: input.transferId,
-      }, input.projects);
+      }, input.projects, input.organization);
     let sessionId: string | undefined;
     try {
       this.requireAvailable();

@@ -75,8 +75,8 @@ export const nextFeatureCatalog = [
     '虚拟机在线迁移',
     '远程主机与集群',
     'P1',
-    '检查前置条件，并在同平台 TCG 主机之间迁移运行中的客户机磁盘与内存。',
-    'experimental',
+    '检查前置条件，并在同平台 TCG/BIOS 主机之间迁移运行中的客户机、项目配置与实例标签。',
+    'available',
   ],
   ['cold-migration', '冷迁移队列', '远程主机与集群', 'P1',
     '将停止实例的校验包传至已授权远端，持久记录重试任务，确认后移除源实例。', 'available'],
@@ -958,9 +958,7 @@ export class NextFeatures {
       id: spec.id,
       enabled: configured?.enabled ?? true,
       options: spec.id === 'acme-renewal' ? options : merged,
-      actions: spec.state === 'available' ||
-        (spec.id === 'live-migration' && this.liveMigrationRunner)
-        ? ['configure', 'check', 'run'] : ['configure', 'check'],
+      actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false && spec.id !== 'acme-renewal')
       throw new AppError('此能力已禁用', 409);
@@ -1555,9 +1553,7 @@ export class NextFeatures {
     const spec = this.spec(value.featureId);
     if (value.action === 'check' || spec.id === 'incident-lockdown')
       return this.executeFeature(id, spec, value.action, signal, value.options);
-    if (spec.state !== 'available' &&
-        !(spec.id === 'live-migration' && this.liveMigrationRunner))
-      throw new AppError('此功能尚未完成实现', 501);
+    if (spec.state !== 'available') throw new AppError('此功能尚未完成实现', 501);
     if (hasCapability(spec.id)) {
       const configured = spec.id === 'acme-renewal' ? {} :
         (await this.state()).settings[id]?.[spec.id]?.options || {};
