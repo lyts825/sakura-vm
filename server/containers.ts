@@ -103,6 +103,8 @@ export class Containers {
   async templateMetadata(id: string, input: string, version?: string, signal?: AbortSignal) {
     this.supported(id);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
+    if ((await this.workspaces.config(id)).networkIsolation === 'private')
+      throw new AppError('私有项目网络不能通过共享网络读取容器模板', 409);
     const templateId = devcontainerTemplateId.parse(input);
     const reference = devcontainerTemplateReference(templateId, version);
     const environment = await this.workspaces.networkEnvironment(id);
@@ -143,13 +145,13 @@ export class Containers {
     const vm = this.supported(id),
       value = containerActionSchema.parse(input);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
+    const privateNetwork = (await this.workspaces.config(id)).networkIsolation === 'private';
+    if (privateNetwork && !['stop', 'remove', 'remove-image'].includes(value.action))
+      throw new AppError('私有项目网络不能通过共享客户机网络执行容器操作', 409);
     const project =
       value.action === 'install' || value.action === 'install-devcontainer-cli'
         ? { directory: '/workspace', environment: await this.workspaces.networkEnvironment(id) }
         : await this.workspaces.resolvedConfig(id);
-    if ('networkIsolation' in project && project.networkIsolation === 'private' &&
-        ['devcontainer-up', 'dockerfile-up', 'compose-up', 'start', 'restart'].includes(value.action))
-      throw new AppError('私有项目网络不能启动使用客户机 Docker 网络的容器', 409);
     return this.jobs.start(
       id,
       async (log, signal) => {
@@ -244,7 +246,7 @@ export class Containers {
           const result = await guestTask(
             this.machines,
             id,
-            `set -eu\n${envPrefix(project.environment)}\n${command}`,
+            `set -eu\n${privateNetwork ? '' : envPrefix(project.environment)}\n${command}`,
             signal,
             output.write,
           );

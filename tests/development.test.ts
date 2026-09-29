@@ -311,6 +311,31 @@ test('container actions reject unsafe identifiers, flags and parent Compose path
     await containers.close();
   }
 });
+test('private projects reject shared-network container preparation before guest execution', async () => {
+  let executed = 0;
+  const machines = {
+    get: () => ({ distro: 'debian' }),
+    state: () => 'running',
+    exec: async () => { executed++; return { code: 0, stdout: '', stderr: '' }; },
+  } as unknown as MachinesType;
+  const workspaces = {
+    config: async () => ({ directory: '/workspace', networkIsolation: 'private' }),
+  } as unknown as WorkspacesType;
+  const containers = new Containers(machines, workspaces);
+  try {
+    for (const action of [
+      { action: 'install' },
+      { action: 'pull', image: 'debian:stable' },
+      { action: 'template-apply', templateId: 'debian', version: '4.0.2' },
+      { action: 'compose-down', file: 'compose.yaml' },
+    ]) await assert.rejects(containers.run('vm', action), /私有项目网络/);
+    await assert.rejects(containers.templateMetadata('vm', 'debian', '4.0.2'),
+      /私有项目网络/);
+    assert.equal(executed, 0);
+  } finally {
+    await containers.close();
+  }
+});
 test('official Dev Container template metadata binds the requested source, version and file paths', () => {
   const metadata = {
     id: 'debian', version: '4.0.2', name: 'Debian', description: 'Debian environment',
