@@ -349,12 +349,20 @@ export class Workspaces {
               : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
           const network = ensureProjectNetworkScript(project, distro || 'alpine');
           let prepare = `mkdir -p ${quote(project.directory)}\n`;
-          if (project.repository)
-            prepare += `if [ ! -e ${quote(project.directory + '/.git')} ]; then git clone -- ${quote(project.repository)} ${quote(project.directory)}; fi\n`;
+          if (project.repository) {
+            const privateNetwork = project.networkIsolation === 'private';
+            prepare += `if [ ! -e ${quote(project.directory + '/.git')} ]; then\n` +
+              `git clone ${privateNetwork ? '--no-checkout ' : ''}-- ` +
+              `${quote(project.repository)} ${quote(project.directory)}\n`;
+            if (privateNetwork)
+              prepare += `${projectNetworkCommand(project,
+                `${envPrefix(project.environment)}\ngit -C ${quote(project.directory)} checkout --force HEAD`)}\n`;
+            prepare += 'fi\n';
+          }
           const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
           const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
           if (project.setup.trim())
-            prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\n${projectNetworkCommand(project, `cd ${quote(project.directory)}\n${project.setup}`)}\nfi\ntouch ${marker}\n`;
+            prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\n${projectNetworkCommand(project, `${envPrefix(project.environment)}\ncd ${quote(project.directory)}\n${project.setup}`)}\nfi\ntouch ${marker}\n`;
           if (action === 'start' && !project.services?.length) {
             if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
             prepare += `tmux new-session -d -s ${projectSession(project)} -c ${quote(project.directory)} ${quote(`${projectNetworkCommand(project, `${envPrefix(project.environment)}\n${project.command}`)} > ${projectLog(project)} 2>&1`)}\nsleep 1\nif ! tmux has-session -t =${projectSession(project)} 2>/dev/null; then tail -c 8192 ${projectLog(project)}; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
@@ -366,7 +374,8 @@ export class Workspaces {
               : '';
           await this.execute(
             id,
-            `set -eu\n${running}${envPrefix(project.environment)}\n${install}\n${network}${prepare}`,
+            `set -eu\n${running}${project.networkIsolation === 'private' ? '' :
+              envPrefix(project.environment)}\n${install}\n${network}${prepare}`,
             log,
             signal,
           );

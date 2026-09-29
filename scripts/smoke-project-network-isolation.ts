@@ -82,7 +82,8 @@ try {
   assert.match(await readFile(sshConfig, 'utf8'), new RegExp(`Host sakura-${vm.name}`));
   await features.workspaces.save(vm.id, { directory: '/workspace/first',
     networkIsolation: 'private',
-    setup: 'readlink /proc/self/ns/net > /workspace/first-setup.ns',
+    environment: { SAKURA_SCOPE: 'private' },
+    setup: 'test "$SAKURA_SCOPE" = private; readlink /proc/self/ns/net > /workspace/first-setup.ns',
     command: 'readlink /proc/self/ns/net > /workspace/first.ns; exec sleep 600' });
   assert.doesNotMatch(await readFile(sshConfig, 'utf8'),
     new RegExp(`Host sakura-${vm.name}`));
@@ -134,11 +135,27 @@ chmod 755 /usr/local/bin/node /opt/sakura-runtimes/node-1.2.3/bin/node`);
 cat > ${gitPath} <<'SAKURA_GIT_PROBE'
 #!/bin/sh
 readlink /proc/self/ns/net > /workspace/first-git.ns
+if [ "$1" = clone ]; then
+  readlink /proc/self/ns/net > /workspace/second-clone.ns
+  test -z "$SAKURA_PRIVATE_ENV" || exit 1
+  mkdir -p /workspace/second
+  cp -R /workspace/source-repo/.git /workspace/second/.git
+  exit 0
+fi
+if [ "$1" = -C ] && [ "$3" = checkout ]; then
+  readlink /proc/self/ns/net > /workspace/second-checkout.ns
+  test "$SAKURA_PRIVATE_ENV" = inside || exit 1
+fi
 exec ${gitPath}.sakura-real "$@"
 SAKURA_GIT_PROBE
 chmod 755 ${gitPath}`);
   await git.view(vm.id);
   assert.equal(await command(vm.id, 'cat /workspace/first-git.ns'), firstNamespace);
+  await command(vm.id, `mkdir -p /workspace/source-repo
+${gitPath}.sakura-real -C /workspace/source-repo init -q
+printf 'isolated checkout\n' > /workspace/source-repo/README
+${gitPath}.sakura-real -C /workspace/source-repo add README
+${gitPath}.sakura-real -C /workspace/source-repo -c user.name=Test -c user.email=test@example.invalid commit -qm initial`);
   const presets = await commands.save(vm.id, { name: 'namespace',
     command: 'readlink /proc/self/ns/net > /workspace/first-preset.ns' });
   await commands.run(vm.id, presets[0].id, {});
@@ -156,7 +173,9 @@ chmod 755 ${gitPath}`);
     command: 'exec sleep 600' }), /请先停止运行中的项目/);
   const index = await features.workspaces.projects.create(vm.id, 'Second project',
     async () => { await features.workspaces.save(vm.id, { directory: '/workspace/second',
-      networkIsolation: 'private', services: [{ name: 'api',
+      networkIsolation: 'private', repository: 'https://example.invalid/repo',
+      environment: { SAKURA_PRIVATE_ENV: 'inside' },
+      services: [{ name: 'api',
         command: 'readlink /proc/self/ns/net > /workspace/second.ns; exec sleep 600',
         ready: 'test "$(readlink /proc/self/ns/net)" = "$(cat /workspace/second.ns)"' }] }); });
   const secondId = index.active;
@@ -167,6 +186,9 @@ chmod 755 ${gitPath}`);
   const secondNamespace = await command(vm.id, 'cat /workspace/second.ns');
   assert.notEqual(secondNamespace, hostNamespace);
   assert.notEqual(secondNamespace, firstNamespace);
+  assert.equal(await command(vm.id, 'cat /workspace/second-clone.ns'), hostNamespace);
+  assert.equal(await command(vm.id, 'cat /workspace/second-checkout.ns'), secondNamespace);
+  assert.equal(await command(vm.id, 'cat /workspace/second/README'), 'isolated checkout');
   assert.equal(await command(vm.id, `ip netns exec sk-${secondId} ip -4 route show`), '');
   await features.workspaces.projects.with(vm.id, secondId, async () => {
     await features.workspaces.run(vm.id, 'stop');
