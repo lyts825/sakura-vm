@@ -1015,7 +1015,8 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
     if (input.action === 'start') {
       started = input;
       const session = { id: 'a45e91ec-c630-414e-befc-b66e53c76730',
-        program: input.program, resolution: input.resolution, status: 'running',
+        program: input.program, resolution: input.resolution, clipboard: input.clipboard,
+        status: 'running',
         startedAt: new Date().toISOString() };
       sessions.push(session);
       return route.fulfill({ status: 201, json: session });
@@ -1028,6 +1029,7 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
   await page.getByRole('button', { name: '单应用窗口' }).click();
   const panel = page.getByRole('region', { name: '单应用 Linux 窗口' });
   await panel.getByLabel('程序名').fill('xterm');
+  await panel.getByLabel('允许粘贴到应用').uncheck();
   const popupPromise = page.waitForEvent('popup');
   await panel.getByRole('button', { name: '启动应用' }).click();
   const popup = await popupPromise;
@@ -1035,7 +1037,9 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
   await expect(popup).toHaveURL(/\/single-app\.html\?nonce=/);
   expect(popup.url()).not.toContain('token=');
   await expect.poll(() => popup.evaluate(() => window.opener === null)).toBe(true);
-  expect(started).toMatchObject({ action: 'start', program: 'xterm', resolution: '1024x768' });
+  expect(started).toMatchObject({ action: 'start', program: 'xterm',
+    resolution: '1024x768', clipboard: { copy: true, paste: false } });
+  await expect(panel.getByText('复制开启 · 粘贴关闭')).toBeVisible();
   await panel.getByRole('button', { name: '停止' }).click();
   await expect(panel.getByText('1024x768 · 运行中')).toHaveCount(0);
   await page.close();

@@ -1,4 +1,5 @@
-type Session = { id: string; program: string; resolution: string };
+type Session = { id: string; program: string; resolution: string;
+  clipboard?: { copy: boolean; paste: boolean } };
 
 type PopupReady = { type: 'sakura-single-app-ready'; nonce: string };
 

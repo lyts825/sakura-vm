@@ -8,7 +8,8 @@ type Init = {
   type: 'sakura-single-app-init';
   nonce: string;
   vmId: string;
-  session: { id: string; program: string; resolution: string };
+  session: { id: string; program: string; resolution: string;
+    clipboard?: { copy: boolean; paste: boolean } };
   token: string;
 };
 
@@ -54,6 +55,7 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
       const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${scheme}//${location.host}/ws/${vmId}/desktop?token=${encodeURIComponent(token)}&app=${encodeURIComponent(session.id)}`;
       const context = { app: 'desktop' as const, vmId };
+      const sessionClipboard = session.clipboard || { copy: true, paste: true };
       document.body.dataset.clipboardApp = 'desktop';
       document.body.dataset.clipboardVm = vmId;
       let client: RFB | null = null;
@@ -62,8 +64,8 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
       let sentClipboard = '';
       const refreshButtons = () => {
         const rule = currentClipboardRule(context);
-        send.disabled = !connected || !rule.paste;
-        copy.disabled = !incoming.value || !rule.copy;
+        send.disabled = !connected || !rule.paste || !sessionClipboard.paste;
+        copy.disabled = !incoming.value || !rule.copy || !sessionClipboard.copy;
       };
       const connect = () => {
         connection = connectDesktop(() => {
@@ -76,6 +78,7 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
             if (client !== next) return;
             const text = (event as CustomEvent<{ text: string }>).detail.text;
             try {
+              if (!sessionClipboard.copy) throw new Error('此应用会话已禁止复制到宿主');
               assertClipboardTransfer(context, 'copy', text);
               incoming.value = text;
               clipboardError.textContent = '';
@@ -95,6 +98,8 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
         });
       };
       const refreshPolicy = () => {
+        if (!sessionClipboard.copy) incoming.value = '';
+        if (!sessionClipboard.paste) outgoing.value = '';
         try { assertClipboardTransfer(context, 'copy', incoming.value); }
         catch { incoming.value = ''; }
         try { assertClipboardTransfer(context, 'paste', outgoing.value); }
@@ -114,6 +119,7 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
       send.addEventListener('click', () => {
         try {
           if (!client || !connected) throw new Error('应用窗口尚未连接');
+          if (!sessionClipboard.paste) throw new Error('此应用会话已禁止粘贴');
           assertClipboardTransfer(context, 'paste', outgoing.value);
           client.clipboardPasteFrom(outgoing.value);
           sentClipboard = outgoing.value;
@@ -121,6 +127,10 @@ if (!nonce || !/^[a-f0-9-]{36}$/.test(nonce) || !parent) {
         } catch (cause) { clipboardError.textContent = (cause as Error).message; }
       });
       copy.addEventListener('click', () => {
+        if (!sessionClipboard.copy) {
+          clipboardError.textContent = '此应用会话已禁止复制到宿主';
+          return;
+        }
         void writeProtectedClipboard(incoming.value, context)
           .then(() => { clipboardError.textContent = ''; })
           .catch((cause: Error) => { clipboardError.textContent = cause.message; });

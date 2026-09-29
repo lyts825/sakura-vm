@@ -342,6 +342,8 @@ export class HostPeers {
         if (!receipt?.sha256 || receipt.id !== input.remoteVmId ||
             receipt.sha256 !== input.sha256)
           throw new AppError('目标实例与已校验的导入回执不一致', 409);
+        if (receipt.sourceVmId || receipt.snapshotId)
+          throw new AppError('快照复制副本不能通过冷迁移目标启动接口启动', 409);
         const current = this.inbound(request);
         if (!current.allowImport || !current.allowActivate)
           throw new AppError('目标实例启动权限已撤销', 403);
@@ -489,8 +491,11 @@ export class HostPeers {
     const value = activateInput.parse(input);
     const peer = this.state.outbound.find((item) => item.id === peerId);
     if (!peer) throw new AppError('远端主机不存在', 404);
-    return activateCheckResult.parse(await requestPeer(peer.url, peer.fingerprint,
+    const result = activateCheckResult.parse(await requestPeer(peer.url, peer.fingerprint,
       '/peer/activate-check', 'POST', value, peer.token));
+    if (result.id !== value.remoteVmId)
+      throw new AppError('远端目标实例身份已变化', 409);
+    return result;
   }
 
   private change<T>(edit: (next: Store) => T): Promise<T> {

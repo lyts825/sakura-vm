@@ -263,6 +263,8 @@ async function main() {
         vm.migrationOrigin.transferId !== transferId ||
         vm.migrationOrigin.diskSha256 !== sha256)
       throw new AppError('目标实例身份或校验值与导入记录不一致', 409);
+    if (vm.migrationOrigin.sourceVmId || vm.migrationOrigin.snapshotId)
+      throw new AppError('快照复制副本不能通过冷迁移目标启动接口启动', 409);
     machines.requireUnlocked(remoteVmId);
     const state = machines.state(remoteVmId);
     if (state !== 'stopped' && state !== 'starting' && state !== 'running')

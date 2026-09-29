@@ -4,8 +4,10 @@
 
 每台实例最多四个会话，可从桌面页重新打开或停止。应用退出、实例停止或 Sakura 服务关闭时会话终止，最长运行四小时。关闭弹窗只断开观看，可从会话列表重新打开。弹窗加载独立页面，取得连接令牌后不再依赖主控制页保持打开；令牌不写入弹窗网址。图形数据经已有实例 SSH 通道和有权限校验的 WebSocket 转发；客户机 RFB 仅监听环回。
 
+启动时可分别关闭“复制到宿主”和“粘贴到应用”。Sakura 将限制写入此应用专属 Xvnc 会话的剪贴板收发与 PRIMARY 选区参数，并禁止会话内用 `vncconfig` 放宽这些参数；重开窗口仍沿用会话设置，更改需要停止并重新启动应用。网页中的敏感文本检测和大小限制仍额外生效。这只约束该图形会话与 VNC 客户端之间的剪贴板传递，不阻止客户机管理员在其他进程或显示器中访问数据。
+
 这是独立的**浏览器窗口**，不是 Windows 原生单应用窗口；应用界面仍显示在自己的虚拟屏幕上，可能带有 Openbox 背景和窗口边框。重启 Sakura 服务后未保留会话索引，也不提供跨窗口剪贴板同步、音频或文件拖放。浏览器必须允许弹窗。目录的“可用”表示可以启动、操作、重开和停止每个独立应用窗口，不表示具备宿主窗口管理器级的无缝集成。
 
-接口：`GET /api/vms/:vmId/single-app` 查看会话；`POST` 使用 `{ "action": "start", "program": "xterm", "args": [], "resolution": "1024x768" }` 启动，或 `{ "action": "stop", "id": "..." }` 停止。图形 WebSocket 为 `/ws/:vmId/desktop?app=:sessionId&token=:ownerToken`，仅实例拥有者可连接。
+接口：`GET /api/vms/:vmId/single-app` 查看会话；`POST` 使用 `{ "action": "start", "program": "xterm", "args": [], "resolution": "1024x768", "clipboard": { "copy": false, "paste": true } }` 启动，或 `{ "action": "stop", "id": "..." }` 停止。省略 `clipboard` 时双向均允许。图形 WebSocket 为 `/ws/:vmId/desktop?app=:sessionId&token=:ownerToken`，仅实例拥有者可连接。
 
 `npm run test:single-app-windows` 在真实 Alpine 虚拟机内验证启动、独立 RFB 握手和停止；设置 `SAKURA_TEST_DISTRO=debian` 或 `ubuntu` 可验证对应发行版。

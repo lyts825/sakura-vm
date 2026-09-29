@@ -89,8 +89,10 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     assert.equal(imported, 'verified bundle');
     const digest = 'a'.repeat(64);
     let activated = 0;
+    let snapshotImport = false;
     target.setImportReceiver({
-      status: async () => ({ id: importedId, name: 'migrated', sha256: digest }),
+      status: async () => ({ id: importedId, name: 'migrated', sha256: digest,
+        ...(snapshotImport ? { sourceVmId: randomUUID(), snapshotId: randomUUID() } : {}) }),
       receive: async () => { throw new Error('启动检查不得重新导入'); },
       inspectActivation: async ({ remoteVmId }) => ({ id: remoteVmId, status: 'stopped' }),
       activate: async ({ remoteVmId }) => {
@@ -102,6 +104,11 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     await assert.rejects(initiator.checkImportActivation(outboundId, activation), /HTTP 403/);
     await assert.rejects(initiator.activateImport(outboundId, activation), /HTTP 403/);
     await target.configure({ operation: 'allow-activate', id: inboundId, enabled: true });
+    snapshotImport = true;
+    await assert.rejects(initiator.checkImportActivation(outboundId, activation), /HTTP 409/);
+    await assert.rejects(initiator.activateImport(outboundId, activation), /HTTP 409/);
+    snapshotImport = false;
+    assert.equal(activated, 0);
     assert.deepEqual(await initiator.checkImportActivation(outboundId, activation),
       { ready: true, id: importedId, status: 'stopped' });
     await assert.rejects(initiator.activateImport(outboundId,

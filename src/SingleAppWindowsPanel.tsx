@@ -8,6 +8,7 @@ type AppSession = {
   id: string;
   program: string;
   resolution: string;
+  clipboard?: { copy: boolean; paste: boolean };
   status: 'running' | 'stopped';
   startedAt: string;
 };
@@ -18,6 +19,8 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
   const [program, setProgram] = useState('xterm');
   const [args, setArgs] = useState('');
   const [resolution, setResolution] = useState('1024x768');
+  const [allowCopy, setAllowCopy] = useState(true);
+  const [allowPaste, setAllowPaste] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const list = useRemote<{ sessions: AppSession[] }>(request,
@@ -45,7 +48,7 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
       session = await request<AppSession>(`/vms/${vm.id}/single-app`, 'POST', {
         action: 'start', program: program.trim(),
         args: args.split('\n').map((arg) => arg.trim()).filter(Boolean),
-        resolution,
+        resolution, clipboard: { copy: allowCopy, paste: allowPaste },
       });
       await connectSingleAppPopup(popup, vm.id, session, token);
     } catch (cause) {
@@ -94,6 +97,10 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
         <option value="1024x768">1024 × 768</option>
         <option value="1280x800">1280 × 800</option>
       </select></label>
+      <label className="single-app-clipboard-toggle"><input type="checkbox" checked={allowCopy}
+        onChange={(event) => setAllowCopy(event.target.checked)} />允许复制到宿主</label>
+      <label className="single-app-clipboard-toggle"><input type="checkbox" checked={allowPaste}
+        onChange={(event) => setAllowPaste(event.target.checked)} />允许粘贴到应用</label>
       <button className="primary compact" type="submit" disabled={busy || vm.status !== 'running'}>
         {busy ? <LoaderCircle size={14} className="spin" /> : <ExternalLink size={14} />}
         启动应用
@@ -102,7 +109,9 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     <Feedback error={error || list.error} />
     {!!list.data?.sessions.length && <div className="desktop-single-app-sessions">
       {list.data.sessions.map((session) => <div key={session.id}>
-        <span><b>{session.program}</b><small>{session.resolution} · {session.status === 'running' ? '运行中' : '已退出'}</small></span>
+        <span><b>{session.program}</b><small>{session.resolution} · {session.status === 'running' ? '运行中' : '已退出'} ·
+          复制{session.clipboard?.copy === false ? '关闭' : '开启'} ·
+          粘贴{session.clipboard?.paste === false ? '关闭' : '开启'}</small></span>
         <button className="secondary compact" disabled={session.status !== 'running'}
           onClick={() => void open(session)}><ExternalLink size={13} /> 打开</button>
         <button className="secondary compact" disabled={busy}

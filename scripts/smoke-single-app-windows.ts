@@ -31,7 +31,8 @@ try {
     await delay(250);
   }
   const session = await desktops.apps.start(vm.id, { program: 'xterm',
-    args: ['-hold', '-e', 'sh', '-c', 'sleep 120'] });
+    args: ['-hold', '-e', 'sh', '-c', 'sleep 120'],
+    clipboard: { copy: false, paste: false } });
   const other = await desktops.apps.start(vm.id, { program: 'xterm',
     args: ['-hold', '-e', 'sh', '-c', 'sleep 120'] });
   assert.notEqual(other.port, session.port);
@@ -39,6 +40,26 @@ try {
   const handshake = await machines.exec(vm.id,
     `timeout 5 sh -c 'nc 127.0.0.1 ${session.port} | head -c 12'`, 10000);
   assert.match(handshake.stdout, /^RFB 003\./, JSON.stringify(handshake));
+  const clipboard = await machines.exec(vm.id, `set -eu
+auth=$(find /tmp/sakura-single-app-${session.id.slice(0, 12)}.* -maxdepth 1 -name Xauthority -print -quit)
+test -n "$auth"
+config=$(command -v vncconfig || command -v tigervncconfig)
+DISPLAY=:${session.display} XAUTHORITY="$auth" "$config" -get SendCutText
+DISPLAY=:${session.display} XAUTHORITY="$auth" "$config" -get AcceptCutText
+DISPLAY=:${session.display} XAUTHORITY="$auth" "$config" -set AcceptCutText=1 >/dev/null 2>&1 || true
+DISPLAY=:${session.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 10000);
+  assert.equal(clipboard.code, 0, clipboard.stderr);
+  assert.deepEqual(clipboard.stdout.trim().split(/\s+/).map((value) =>
+    value === 'off' ? '0' : value), ['0', '0', '0']);
+  const otherClipboard = await machines.exec(vm.id, `set -eu
+auth=$(find /tmp/sakura-single-app-${other.id.slice(0, 12)}.* -maxdepth 1 -name Xauthority -print -quit)
+test -n "$auth"
+config=$(command -v vncconfig || command -v tigervncconfig)
+DISPLAY=:${other.display} XAUTHORITY="$auth" "$config" -get SendCutText
+DISPLAY=:${other.display} XAUTHORITY="$auth" "$config" -get AcceptCutText`, 10000);
+  assert.equal(otherClipboard.code, 0, otherClipboard.stderr);
+  assert.deepEqual(otherClipboard.stdout.trim().split(/\s+/).map((value) =>
+    value === 'on' ? '1' : value), ['1', '1']);
   assert.equal((await desktops.apps.list(vm.id)).filter((item) => item.status === 'running').length, 2);
   await desktops.apps.stop(vm.id, session.id);
   await delay(500);

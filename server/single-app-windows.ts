@@ -9,10 +9,13 @@ export const singleAppInput = z.object({
   program: z.string().regex(/^[A-Za-z][A-Za-z0-9+._-]{0,63}$/),
   args: z.array(z.string().max(256).refine((value) => !/[\x00-\x1f]/.test(value))).max(12).default([]),
   resolution: z.enum(['800x600', '1024x768', '1280x800']).default('1024x768'),
+  clipboard: z.object({ copy: z.boolean(), paste: z.boolean() }).strict()
+    .default({ copy: true, paste: true }),
 }).strict();
 
 type AppSession = { id: string; vmId: string; program: string; display: number;
-  port: number; resolution: string; startedAt: string };
+  port: number; resolution: string; clipboard: { copy: boolean; paste: boolean };
+  startedAt: string };
 const sessionName = (id: string) => `sakura-single-app-${id.slice(0, 12)}`;
 const sessionLog = (id: string) => `/tmp/${sessionName(id)}.log`;
 const sessionPid = (id: string) => `/tmp/sakura-single-app-${id}.pid`;
@@ -122,6 +125,7 @@ test "$closed" = yes`;
       if (!display) throw new AppError('没有可用的应用窗口显示端口', 409);
       const session: AppSession = { id: randomUUID(), vmId: id, program: input.program,
         display, port: 5900 + display, resolution: input.resolution,
+        clipboard: input.clipboard,
         startedAt: new Date().toISOString() };
       const app = [input.program, ...input.args.map(quote)].join(' ');
       const script = `set -eu
@@ -133,7 +137,7 @@ chmod 700 "$directory"
 export DISPLAY=:${display} XAUTHORITY="$directory/Xauthority"
 xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')"
 vnc_binary=$(command -v Xvnc || command -v Xtigervnc)
-"$vnc_binary" "$DISPLAY" -geometry ${input.resolution} -depth 24 -rfbport ${session.port} -interface 127.0.0.1 -localhost -SecurityTypes None -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" >"$directory/xvnc.log" 2>&1 &
+"$vnc_binary" "$DISPLAY" -geometry ${input.resolution} -depth 24 -rfbport ${session.port} -interface 127.0.0.1 -localhost -SecurityTypes None -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" -AllowOverride=desktop -SendCutText=${input.clipboard.copy ? 1 : 0} -SendPrimary=${input.clipboard.copy ? 1 : 0} -AcceptCutText=${input.clipboard.paste ? 1 : 0} -SetPrimary=${input.clipboard.paste ? 1 : 0} >"$directory/xvnc.log" 2>&1 &
 vnc_pid=$!
 wm_pid=''
 app_pid=''
