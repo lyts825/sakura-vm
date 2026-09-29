@@ -13,6 +13,8 @@ const INTERVAL_MS = 15_000;
 export class HaHostFailover {
   private work = Promise.resolve();
   private timer?: ReturnType<typeof setInterval>;
+  private keepaliveTimer?: ReturnType<typeof setInterval>;
+  private keepalivePending: Promise<void> | null = null;
   private closed = false;
   private errors: Record<string, string> = {};
   private armed: Record<string, boolean> = {};
@@ -59,7 +61,43 @@ export class HaHostFailover {
     return current;
   }
 
+  private keepalive() {
+    if (this.closed || !this.client) return Promise.resolve();
+    if (this.keepalivePending) return this.keepalivePending;
+    const current = this.sendKeepalives().finally(() => {
+      if (this.keepalivePending === current) this.keepalivePending = null;
+    });
+    this.keepalivePending = current;
+    return current;
+  }
+
+  private async sendKeepalives() {
+    const policies = await this.policies();
+    await Promise.all([...this.machines.records.values()].map(async (vm) => {
+      const enrollment = vm.haWitnessEnrollment;
+      const policy = policies[vm.id];
+      const parsed = haFailoverOptions.safeParse(policy?.options);
+      if (!enrollment || !policy?.enabled || !parsed.success ||
+          !parsed.data.autoHostFailover ||
+          parsed.data.targetHostId !== enrollment.targetHostId ||
+          parsed.data.failureThreshold !== enrollment.failureThreshold ||
+          this.machines.state(vm.id) !== 'running' || vm.haPromotion) return;
+      try {
+        const result = await this.client!.heartbeat({ ...this.identity(vm.id),
+          failureThreshold: enrollment.failureThreshold });
+        this.armed[vm.id] = result.armed;
+      } catch (error) {
+        this.armed[vm.id] = false;
+        this.errors[vm.id] = (error as Error).message;
+      }
+    }));
+  }
+
   async init() {
+    await this.keepalive();
+    this.keepaliveTimer = setInterval(() => void this.keepalive().catch((error) =>
+      console.error('宿主失联独立心跳失败：', error)), 5_000);
+    this.keepaliveTimer.unref();
     await this.sample();
     this.timer = setInterval(() => void this.sample().catch((error) =>
       console.error('宿主失联心跳扫描失败：', error)), INTERVAL_MS);
@@ -92,9 +130,9 @@ export class HaHostFailover {
         if (!this.client) throw new AppError('见证节点未配置', 503);
         const options = parsed.data;
         // Keep liveness independent of potentially slow peer capacity/receipt checks.
-        await this.client.heartbeat({ ...this.identity(id),
-          failureThreshold: options.failureThreshold, plan: null });
-        this.armed[id] = false;
+        const liveness = await this.client.heartbeat({ ...this.identity(id),
+          failureThreshold: options.failureThreshold });
+        this.armed[id] = liveness.armed;
         let plan: HaWitnessPlan | null = null;
         if (this.machines.state(id) === 'running' && !this.machines.get(id).haPromotion) {
           const checked = await checkHaFailover(this.machines, this.peers,
@@ -116,7 +154,7 @@ export class HaHostFailover {
           const result = await this.client.heartbeat({ ...this.identity(id),
             failureThreshold: options.failureThreshold, plan });
           this.armed[id] = result.armed;
-        }
+        } else await this.disarm(id, options.failureThreshold);
         this.phases[id] = 'source';
         this.targetVmIds[id] = plan?.remoteVmId || '';
         delete this.errors[id];
@@ -156,6 +194,8 @@ export class HaHostFailover {
   async close() {
     this.closed = true;
     clearInterval(this.timer);
+    clearInterval(this.keepaliveTimer);
+    await this.keepalivePending?.catch(() => {});
     await this.work.catch(() => {});
     if (!this.client) return;
     for (const vm of this.machines.records.values()) {

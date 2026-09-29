@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { HaWitness, type HaWitnessActions } from '../server/ha-witness-core.ts';
@@ -139,6 +139,24 @@ test('expired replica cannot arm a host-loss failover', async () => {
   } finally { await f.cleanup(); }
 });
 
+test('liveness-only heartbeats retain a verified plan until explicit disarm', async () => {
+  const f = await fixture();
+  try {
+    await f.witness.heartbeat({ sourceHostId, sourceVmId, failureThreshold: 2, plan });
+    f.clock(120_000);
+    assert.equal((await f.witness.heartbeat({ sourceHostId, sourceVmId,
+      failureThreshold: 2 })).armed, true);
+    f.clock(130_000);
+    await f.witness.sample();
+    assert.deepEqual(f.calls, [], 'slow validation does not appear as source loss');
+    assert.equal((await f.witness.heartbeat({ sourceHostId, sourceVmId,
+      failureThreshold: 2, plan: null })).armed, false);
+    f.clock(160_000);
+    await f.witness.sample();
+    assert.deepEqual(f.calls, [], 'explicit disarm removes the failover candidate');
+  } finally { await f.cleanup(); }
+});
+
 test('witness refuses a missing state file and refuses to overwrite an existing state', async () => {
   const f = await fixture();
   try {
@@ -151,5 +169,39 @@ test('witness refuses a missing state file and refuses to overwrite an existing 
       retire: async () => {},
     });
     await assert.rejects(empty.init(), { code: 'HA_WITNESS_STATE_MISSING' });
+  } finally { await f.cleanup(); }
+});
+
+test('witness refuses missing entries, changed identities and legacy state', async () => {
+  const f = await fixture();
+  try {
+    const original = JSON.parse(await readFile(f.file, 'utf8'));
+    const actions: HaWitnessActions = {
+      fence: async () => {}, targetStatus: async () => 'stopped',
+      activate: async () => {}, applicationReady: async () => false,
+      switchTraffic: async () => {}, trafficTarget: async () => '',
+      retire: async () => {},
+    };
+    const reopen = async (config = vm) => {
+      const witness = new HaWitness(f.file, [config], actions);
+      await witness.init();
+    };
+    for (const invalid of [
+      { ...original, entries: {} },
+      { ...original, bindings: {} },
+      { ...original, bindings: {
+        [sourceVmId]: { ...original.bindings[sourceVmId], targetHostId: randomUUID() },
+      } },
+      { version: 1, entries: original.entries },
+    ]) {
+      await writeFile(f.file, JSON.stringify(invalid));
+      await assert.rejects(reopen(), { code: 'HA_WITNESS_STATE_MISMATCH' });
+    }
+    await writeFile(f.file, JSON.stringify(original));
+    await assert.rejects(reopen({ ...vm, failureThreshold: 3 }),
+      { code: 'HA_WITNESS_STATE_MISMATCH' });
+    await assert.rejects(reopen({ ...vm, sourceHostId: randomUUID() }),
+      { code: 'HA_WITNESS_STATE_MISMATCH' });
+    await reopen();
   } finally { await f.cleanup(); }
 });

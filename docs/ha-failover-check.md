@@ -18,7 +18,7 @@
 
 见证程序要部署在独立于来源与目标的第三节点，并使用持久存储。`npm run build` 会生成 `.sakura-witness/ha-witness.js`，运行包也包含它。在首次部署、**确认目标副本未运行且没有历史接管记录之后**，执行 `npm run ha:witness -- --initialize <witness-config.json>` 创建状态文件；随后执行 `npm run ha:witness -- <witness-config.json>` 启动。状态文件丢失或损坏时，程序拒绝自动初始化；应先核实源、目标和流量的实际状态，再人工恢复或初始化，不能把空状态当作安全的来源授权。
 
-见证配置 JSON 包含 `version: 1`、`listen`（`host`、`port`、TLS `certFile`、`keyFile`）、`stateFile`、64 位十六进制 `sourceToken`，以及每个实例的 `vms` 项。每项填写 `sourceHostId`、`sourceVmId`、`targetHostId`、`failureThreshold`，并配置：
+见证配置 JSON 包含 `version: 1`、`listen`（`host`、`port`、TLS `certFile`、`keyFile`）、`stateFile`、64 位十六进制 `sourceToken`，以及每个实例的 `vms` 项。持久状态使用版本 2，并绑定每个实例的来源宿主、来源实例、目标宿主与故障阈值；配置少了实例、增加实例或改变这些绑定时，服务拒绝启动，不会把缺失记录当作来源可运行。旧版状态文件也拒绝自动升级。应核实来源、目标和流量状态后，通过受控恢复流程处理，不要在已有接管记录上重新初始化。每项填写 `sourceHostId`、`sourceVmId`、`targetHostId`、`failureThreshold`，并配置：
 
 | 字段 | 内容 |
 | --- | --- |
@@ -27,7 +27,7 @@
 | `application` | 应用健康 HTTPS `url`、64 位十六进制 `token`，可选证书 `fingerprint`。`GET <url>?vmId=<目标实例 UUID>` 须返回 `{ "ready": true, "vmId": "<目标实例 UUID>" }`。|
 | `traffic` | 流量控制 HTTPS `baseUrl`、64 位十六进制 `token`，可选证书 `fingerprint`。`POST /activate` 接收 `{ "sourceVmId": "...", "targetVmId": "..." }`，须幂等返回 `{ "accepted": true, "activeVmId": "<目标实例 UUID>" }`；`GET /status?sourceVmId=...` 须返回同一 `activeVmId`。|
 
-来源 Sakura 的 `SAKURA_HA_WITNESS_CONFIG_FILE` 环境变量指向另一个仅包含 `version: 1`、见证节点根 `url`、其证书 `fingerprint` 和相同 `token` 的 JSON 文件。配置后重启来源服务，在实例的故障接管面板选定目标，启用“独立见证节点确认宿主隔离后自动接管”，并保持见证配置中的阈值一致。更换目标或阈值时，先关闭策略并获得撤防确认，再更新见证节点配置、停止来源实例并重新启用。来源只在目标容量、平台、快照时效、复制回执和目标停机状态均通过时发送布防计划；不满足时发送撤防心跳。检查结果包含见证状态，只有来源计划与见证布防均就绪才报告 `ready: true`。
+来源 Sakura 的 `SAKURA_HA_WITNESS_CONFIG_FILE` 环境变量指向另一个仅包含 `version: 1`、见证节点根 `url`、其证书 `fingerprint` 和相同 `token` 的 JSON 文件。配置后重启来源服务，在实例的故障接管面板选定目标，启用“独立见证节点确认宿主隔离后自动接管”，并保持见证配置中的阈值一致。更换目标或阈值时，先关闭策略并获得撤防确认，再更新见证节点配置、停止来源实例并重新启用。来源只在目标容量、平台、快照时效、复制回执和目标停机状态均通过时发送布防计划；不满足时发送撤防心跳。慢速预检期间的存活心跳独立续报，不会先清除上一次仍在有效期内的已校验计划；预检确认为不可用或计划过期时撤防。检查结果包含见证状态，只有来源计划与见证布防均就绪才报告 `ready: true`。
 
 宿主失联后的回切需要先停止目标、回迁目标期间的新写入或明确接受丢失，并在来源面板确认后执行“目标停机后退出接管”。见证节点会让目标副本持久退役，才重新允许来源启动；流量回切由运维侧在来源应用恢复健康后进行。不要在目标运行期间重新初始化见证状态或直接修改本机登记。
 

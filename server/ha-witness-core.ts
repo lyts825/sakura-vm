@@ -14,7 +14,8 @@ export type HaWitnessPlan = z.infer<typeof haWitnessPlanSchema>;
 export const haWitnessHeartbeatSchema = z.object({
   sourceHostId: z.uuid(), sourceVmId: z.uuid(),
   failureThreshold: z.number().int().min(2).max(10),
-  plan: haWitnessPlanSchema.nullable(),
+  // Omission refreshes liveness without withdrawing the last verified plan.
+  plan: haWitnessPlanSchema.nullable().optional(),
 }).strict();
 export type HaWitnessHeartbeat = z.infer<typeof haWitnessHeartbeatSchema>;
 export const haWitnessIdentitySchema = z.object({
@@ -31,7 +32,14 @@ const entrySchema = z.object({
   error: z.string().max(500).optional(),
 }).strict();
 type Entry = z.infer<typeof entrySchema>;
-const storeSchema = z.object({ version: z.literal(1), entries: z.record(z.uuid(), entrySchema) }).strict();
+const bindingSchema = haWitnessIdentitySchema.safeExtend({
+  targetHostId: z.uuid(), failureThreshold: z.number().int().min(2).max(10),
+});
+const storeSchema = z.object({
+  version: z.literal(2),
+  bindings: z.record(z.uuid(), bindingSchema),
+  entries: z.record(z.uuid(), entrySchema),
+}).strict();
 type Store = z.infer<typeof storeSchema>;
 export type HaWitnessVm = HaWitnessIdentity & { targetHostId: string;
   failureThreshold: number };
@@ -51,21 +59,23 @@ export type HaWitnessActions = {
 
 /** Serialized, durable authority for one source VM. Network failures never grant a start. */
 export class HaWitness {
-  private state: Store = { version: 1, entries: {} };
+  private state: Store = { version: 2, bindings: {}, entries: {} };
   private work = Promise.resolve();
   private known = new Map<string, HaWitnessVm>();
 
   constructor(private file: string, vms: HaWitnessVm[],
     private actions: HaWitnessActions, private now = () => Date.now()) {
     for (const vm of vms) {
-      haWitnessIdentitySchema.parse({ sourceHostId: vm.sourceHostId,
-        sourceVmId: vm.sourceVmId });
-      z.uuid().parse(vm.targetHostId);
-      if (!Number.isInteger(vm.failureThreshold) || vm.failureThreshold < 2 ||
-          vm.failureThreshold > 10 || this.known.has(vm.sourceVmId))
+      bindingSchema.parse(this.binding(vm));
+      if (this.known.has(vm.sourceVmId))
         throw new AppError('见证实例配置无效');
       this.known.set(vm.sourceVmId, vm);
     }
+  }
+
+  private binding(vm: HaWitnessVm) {
+    return { sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId,
+      targetHostId: vm.targetHostId, failureThreshold: vm.failureThreshold };
   }
 
   static async initialize(file: string, vms: HaWitnessVm[]) {
@@ -73,9 +83,12 @@ export class HaWitness {
       throw new AppError('见证实例 ID 重复', 409);
     const entries = Object.fromEntries(vms.map((vm) => [vm.sourceVmId,
       { phase: 'source', plan: null, lastHeartbeatAt: 0 }]));
+    const bindings = Object.fromEntries(vms.map((vm) => [vm.sourceVmId,
+      bindingSchema.parse({ sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId,
+        targetHostId: vm.targetHostId, failureThreshold: vm.failureThreshold })]));
     await mkdir(dirname(file), { recursive: true });
     try {
-      await writeFile(file, JSON.stringify(storeSchema.parse({ version: 1, entries }),
+      await writeFile(file, JSON.stringify(storeSchema.parse({ version: 2, bindings, entries }),
         null, 2), { flag: 'wx', mode: 0o600, flush: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST')
@@ -89,7 +102,21 @@ export class HaWitness {
     if (!loaded)
       throw new AppError('见证状态文件缺失；为避免双主启动，须人工核对后初始化',
         503, 'HA_WITNESS_STATE_MISSING');
-    this.state = storeSchema.parse(loaded);
+    const state = storeSchema.safeParse(loaded);
+    if (!state.success)
+      throw new AppError('见证状态版本或内容无效；须人工核对来源与目标后恢复',
+        503, 'HA_WITNESS_STATE_MISMATCH');
+    const configured = [...this.known.keys()].sort();
+    if (JSON.stringify(configured) !== JSON.stringify(Object.keys(state.data.bindings).sort()) ||
+        JSON.stringify(configured) !== JSON.stringify(Object.keys(state.data.entries).sort()) ||
+        configured.some((id) => {
+          const saved = state.data.bindings[id], current = this.binding(this.known.get(id)!);
+          return !saved || Object.keys(current).some((key) =>
+            saved[key as keyof typeof saved] !== current[key as keyof typeof current]);
+        }))
+      throw new AppError('见证实例配置与持久登记不一致；须人工核对后恢复',
+        503, 'HA_WITNESS_STATE_MISMATCH');
+    this.state = state.data;
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -107,11 +134,14 @@ export class HaWitness {
   }
 
   private entry(id: string): Entry {
-    return this.state.entries[id] || { phase: 'source', plan: null, lastHeartbeatAt: 0 };
+    const entry = this.state.entries[id];
+    if (!entry) throw new AppError('见证状态缺少已登记实例',
+      503, 'HA_WITNESS_STATE_MISMATCH');
+    return entry;
   }
 
   private async save(id: string, entry: Entry) {
-    const next = storeSchema.parse({ version: 1,
+    const next = storeSchema.parse({ ...this.state,
       entries: { ...this.state.entries, [id]: entrySchema.parse(entry) } });
     await writeStore(this.file, next);
     this.state = next;
@@ -128,14 +158,15 @@ export class HaWitness {
       if (entry.phase !== 'source')
         throw new AppError('来源已进入隔离或接管流程，不能重新登记运行心跳',
           409, 'HA_WITNESS_FENCED');
-      if (input.plan && (input.plan.sourceHostId !== vm.sourceHostId ||
-          input.plan.sourceVmId !== vm.sourceVmId ||
-          input.plan.targetHostId !== vm.targetHostId))
+      const candidate = input.plan === undefined ? entry.plan : input.plan;
+      if (candidate && (candidate.sourceHostId !== vm.sourceHostId ||
+          candidate.sourceVmId !== vm.sourceVmId ||
+          candidate.targetHostId !== vm.targetHostId))
         throw new AppError('见证副本身份与预配置不一致', 409);
       const at = this.now();
-      const plan = input.plan && Date.parse(input.plan.snapshotAt) <= at &&
-        at - Date.parse(input.plan.snapshotAt) <= input.plan.maxReplicaAgeMinutes * 60_000
-        ? input.plan : null;
+      const plan = candidate && Date.parse(candidate.snapshotAt) <= at &&
+        at - Date.parse(candidate.snapshotAt) <= candidate.maxReplicaAgeMinutes * 60_000
+        ? candidate : null;
       await this.save(vm.sourceVmId, { phase: 'source', plan,
         lastHeartbeatAt: at });
       return { armed: !!plan, phase: 'source' as const };
