@@ -1,5 +1,9 @@
 # 功能实现记录
 
+## 可选 WSL Linux 后端
+
+Windows 项目目录现在提供 `npm run check:wsl` 和 `npm run start:wsl`：前者检查 Linux Node.js、QEMU、swtpm、virtiofsd、带预登记密钥的 OVMF 及构建产物；后者把服务与 QEMU 放在默认 WSL 发行版内，数据单独保存在 Linux 文件系统，使已经实现的 TPM/安全启动与 Virtio-FS 路径可从 Windows 浏览器使用。2026-09-29 在本机验证 WSL 依赖探测、Windows 本机 HTTP 访问、通过 Windows CLI 创建并启动真实 Alpine 客户机、执行 `uname -a`、停止实例和 Ctrl+C 关闭服务。TPM 与 Virtio-FS 的真实客户机验证记录仍见各自文档；此入口不改变随附 Windows QEMU 的缺失后端。使用说明见 [WSL 后端](wsl-backend.md)。
+
 ## 音视频设备与宿主媒体转发
 
 系统设置的“音视频设备”可为停止的 x86_64 实例复核并配置 QEMU HDA 双向声卡。可选择 Windows DirectSound 宿主输出和麦克风，或仅保留无宿主音频的虚拟声卡；页面使用实际 QEMU 启动探测后端，保存的硬件配置在下次启动生效。真实 Alpine 启动测试确认 HDA PCI 设备枚举，当前 Windows 宿主的 DirectSound 后端可启动。页面还可查看运行中实例的客户机 ALSA 声卡和 `/dev/video*` 设备证据。

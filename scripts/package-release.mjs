@@ -15,6 +15,8 @@ const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 manifest.scripts = {
   setup: manifest.scripts.setup,
   start: manifest.scripts.start,
+  'start:wsl': manifest.scripts['start:wsl'],
+  'check:wsl': manifest.scripts['check:wsl'],
   sakura: manifest.scripts.sakura,
   tray: manifest.scripts.tray,
   'update:status': manifest.scripts['update:status'],
@@ -37,6 +39,7 @@ for (const file of [
   'sakura-tray.ps1',
   'start-tray.mjs',
   'launch.mjs',
+  'wsl-runtime.mjs',
   'self-update.mjs',
   'release-manifest.mjs',
 ])
@@ -54,6 +57,7 @@ const readme = [
   '```',
   '',
   '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行依赖以随包 `package.json` 为准。',
+  '已配置含 Linux QEMU、swtpm、virtiofsd 和 OVMF 的 WSL 发行版时，也可先运行 `npm run check:wsl`，再用 `npm run start:wsl` 启动可用 TPM 与 Virtio-FS 的 Linux 后端；数据单独保存在该发行版的 Linux 文件系统中。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
   '浏览器扩展位于 `browser-extension`，可在 Chromium/Chrome 的扩展程序页加载已解压的扩展程序；需在 Sakura 中启用账户模式并由管理员配对。',
   'Windows 可运行 `npm run tray` 打开系统托盘；菜单中可选择登录自启和由托盘启动 Sakura。',

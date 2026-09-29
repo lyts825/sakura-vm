@@ -45,6 +45,8 @@ npm start
 
 `setup` 将固定版本的 PosixLoom、QEMU 和 Alpine 下载到项目目录，不修改系统 PATH、注册表或 WSL。下载需要网络；镜像与 QEMU 会校验 SHA-512。之后常规启停可离线使用。Windows 下会提取便携 QEMU；已有安装可以设置 `SAKURA_QEMU_DIR` 指向同时包含 `qemu-system-x86_64.exe`、`qemu-img.exe` 和 `qemu-io.exe` 的目录。
 
+需要 TPM/安全启动或 Virtio-FS 时，可选用已安装 Linux QEMU、swtpm、virtiofsd、OVMF 和 Node.js 22.12+ 的 WSL 发行版：先运行 `npm run check:wsl`，再运行 `npm run start:wsl`。浏览器仍访问同一 Windows 本机地址；WSL 模式使用独立的 Linux 数据目录。准备步骤和限制见 [WSL 后端](docs/wsl-backend.md)。默认 `npm start` 仍使用原生 Windows 后端。
+
 开发模式：`npm run dev`（同一端口，Vite HMR）。关闭浏览器不会停止虚拟机；退出后台服务会先尝试关闭虚拟机。不要同时启动两个使用相同数据目录的服务。
 
 浏览器在服务重启后会自动获取新凭证并恢复状态连接；已停止的实例由用户重新启动。终端短暂断线时会退避重连并保留当前页面的输出，启用多终端插件且安装 tmux 时可重新附着会话；已经退出的 Shell 保持结束状态。网络错误后的写操作需要检查结果后重试，只有被服务明确拒绝的过期凭证请求会在重新鉴权后重试。
@@ -202,7 +204,7 @@ scripts/cli.mjs         WSL 风格命令行入口
 
 ## 当前范围
 
-- 支持 Alpine Linux 3.23.4、Debian 12、Ubuntu 24.04 的官方 x86_64 云镜像，也可导入支持 NoCloud/Tiny Cloud 的独立 RAW、VMDK、VHDX 和单磁盘 OVA Linux 云镜像；可在 BIOS 与宿主具备 OVMF 文件时的 UEFI 固件之间选择。目录互通支持双向同步与 SSHFS 宿主目录挂载。提供常用开发工具、发行版包管理、内存压力回收和受控跨系统进程调用；尚未提供 WSLg、Windows 驱动器直接挂载或 Virtio-FS。
+- 支持 Alpine Linux 3.23.4、Debian 12、Ubuntu 24.04 的官方 x86_64 云镜像，也可导入支持 NoCloud/Tiny Cloud 的独立 RAW、VMDK、VHDX 和单磁盘 OVA Linux 云镜像；可在 BIOS 与宿主具备 OVMF 文件时的 UEFI 固件之间选择。目录互通支持双向同步与 SSHFS 宿主目录挂载；可选 WSL Linux 后端还可使用 Virtio-FS。提供常用开发工具、发行版包管理、内存压力回收和受控跨系统进程调用；尚未提供 WSLg 或 Windows 驱动器直接挂载。
 - TCG 是软件模拟。自动模式会检测本机是否能使用 WHPX；其他主机的启动时间和兼容性仍取决于硬件及系统配置。内存限制是 QEMU 配额，Web 的「已分配内存」不是客户机实时使用量。
 - 普通磁盘快照不保存 RAM 或运行中的进程；TCG 模式下可选择[整机状态快照](docs/memory-snapshots.md)并在启动后手动恢复。恢复会覆盖快照之后的数据。
 - 客户机 SSH 与端口转发默认仅监听 `127.0.0.1`，客户机使用 NAT 上网；已配对的主机和手机伴侣可按显式配置通过 HTTPS 接入。此版本不宣称防御恶意客户机。

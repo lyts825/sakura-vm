@@ -13,6 +13,8 @@
     "preview": "vite preview",
     "build": "tsc --noEmit && vite build && vite build --ssr server/index.ts --outDir .sakura-server && node scripts/prepare-server-assets.mjs",
     "start": "node scripts/launch.mjs",
+    "start:wsl": "node scripts/wsl-runtime.mjs",
+    "check:wsl": "node scripts/wsl-runtime.mjs --check",
     "test": "tsx --test --test-concurrency=4 tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:integration": "playwright test --config playwright.integration.config.ts",

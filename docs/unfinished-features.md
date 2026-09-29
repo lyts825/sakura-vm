@@ -20,7 +20,7 @@
 
 ### 安全
 
-- [ ] **TPM 与安全启动**（P2 · 部分实现） · [`tpm-secure-boot`](../server/extended-features.ts#L135) — Linux x86_64 宿主的 Debian/Ubuntu 客户机已验证持久 swtpm 与安全启动，包括首次 EFI 复位；便携备份及新建停机快照可保存 TPM/NVRAM，历史快照恢复、导出和克隆使用对应状态。Windows 随附 QEMU 缺少 TPM 后端，仍为部分实现。
+- [ ] **TPM 与安全启动**（P2 · 部分实现） · [`tpm-secure-boot`](../server/extended-features.ts#L135) — Linux x86_64 宿主的 Debian/Ubuntu 客户机已验证持久 swtpm 与安全启动，包括首次 EFI 复位；便携备份及新建停机快照可保存 TPM/NVRAM，历史快照恢复、导出和克隆使用对应状态。Windows 可选用 start:wsl 入口运行该 Linux 后端；随附原生 Windows QEMU 缺少 TPM 后端，故为部分实现。
 
 ## 第三批
 
@@ -31,7 +31,7 @@
 
 ### 虚拟硬件与固件
 
-- [ ] **Virtio-FS 共享目录**（P0 · 部分实现） · [`virtio-fs`](../server/next-features.ts#L172) — 已在 WSL Linux 宿主用真实 QEMU、virtiofsd 和 Alpine/Debian/Ubuntu 客户机验证自动挂载、只读拒写与可写模式；当前主要验证平台 Windows 的随附 QEMU 缺少所需后端，仍为部分实现。
+- [ ] **Virtio-FS 共享目录**（P0 · 部分实现） · [`virtio-fs`](../server/next-features.ts#L172) — 已在 WSL Linux 宿主用真实 QEMU、virtiofsd 和 Alpine/Debian/Ubuntu 客户机验证自动挂载、只读拒写与可写模式；Windows 可选用 start:wsl 入口运行该 Linux 后端，随附的原生 Windows QEMU 仍缺少所需后端，故为部分实现。
 
 ### 操作系统与桌面
 
