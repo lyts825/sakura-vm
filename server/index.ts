@@ -196,6 +196,7 @@ async function main() {
     (delta) => { features.mutations += delta; });
   await fleetRollouts.init();
   features.next?.setResourceScheduler((input) => hostPeers.score(input));
+  features.next?.setHostPeers(hostPeers);
   features.next?.setSharedDesktopCheck(async (id) => {
     if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
     if (!features.socketEnabled('desktop'))

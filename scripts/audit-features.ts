@@ -20,6 +20,7 @@ const groups = [
 const all = groups.flatMap((group) => group.rows),
   unfinished = all.filter((item) => item.state !== 'available');
 const notes: Record<string, string> = {
+  'ha-failover': '可校验并保存目标、故障阈值及副本时效策略，手动检查主实例、目标主机和副本实时回执；独立见证、源端栅栏、目标启动与自动切换仍未实现。',
   'live-migration': '已接入源 QMP 状态、已配对目标主机资源与平台前置检查，并生成只读迁移步骤和阻断条件；磁盘在线同步、目标接收进程、状态传输和防双写切换仍未实现。',
   'network-isolation': '项目设置可将托管初始化、命令、服务、健康检查、流水线及收藏命令放入仅回环的独立网络命名空间；管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。',
   'tpm-secure-boot': '可检查当前 QEMU、OVMF、swtpm 及客户机实际 TPM/安全启动证据；尚未创建 vTPM、登记启动密钥或配置完整安全启动链。',

@@ -29,6 +29,7 @@ import { UsbHotplugPanel } from '../../src/UsbHotplugPanel';
 import { MemoryReclaimSettings } from './MemoryReclaimSettings';
 import { HostMountSettings } from './HostMountSettings';
 import { PackageWorkbenchPanel } from './PackageWorkbenchPanel';
+import { HaFailoverPanel } from './HaFailoverPanel';
 
 function ReadinessBadge({ records, id }: { records?: FeatureExecutionState[]; id: string }) {
   const status = featureReadiness(records, id);
@@ -1136,6 +1137,9 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
               </div>
             ))}
           </div>
+          {next.data?.features.some((feature) => feature.id === 'ha-failover') &&
+            <HaFailoverPanel key={active.id} request={request} vmId={active.id}
+              setting={next.data.settings['ha-failover']} reload={next.reload} />}
           {nextResult && <pre className="feature-log">{nextResult}</pre>}
           {hardwareReport && <HardwareMatrix report={hardwareReport} />}
           {showUsbHotplug && <UsbHotplugPanel request={request} vmId={active.id} />}

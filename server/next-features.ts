@@ -33,6 +33,7 @@ import { VtpmEnrollment } from './vtpm-enrollment.ts';
 import { devicePassthroughPreview } from './device-passthrough-preview.ts';
 import { gpuComputeInput, gpuComputeStatus } from './gpu-compute.ts';
 import { planLiveMigration } from './live-migration.ts';
+import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -88,8 +89,8 @@ export const nextFeatureCatalog = [
     '故障自动接管',
     '远程主机与集群',
     'P0',
-    '保存高可用接管策略和最后一次健康检查。',
-    'planned',
+    '保存接管目标和副本时效策略，检查主机与副本健康；自动切换尚未实现。',
+    'experimental',
   ],
   [
     'cross-host-snapshots',
@@ -677,6 +678,7 @@ export class NextFeatures {
   acmeRenewal: AcmeRenewal;
   teamTemplates: TeamTemplates;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
+  private hostPeers?: HostPeers;
   private coldMigrations?: ColdMigrations;
   private snapshotReplications?: SnapshotReplications;
   private notebookEnvironments?: NotebookEnvironments;
@@ -732,6 +734,7 @@ export class NextFeatures {
   setResourceScheduler(score: (input: HostScoreInput) => ReturnType<HostPeers['score']>) {
     this.scoreHosts = score;
   }
+  setHostPeers(peers: HostPeers) { this.hostPeers = peers; }
 
   setSharedDesktopCheck(check: (id: string) => Promise<{ ready: boolean; reason?: string }>) {
     this.sharedDesktopCheck = check;
@@ -871,6 +874,8 @@ export class NextFeatures {
       value.options = z.object({}).strict().parse(value.options);
     if (value.featureId === 'gpu-compute-passthrough')
       value.options = gpuComputeInput.parse(value.options);
+    if (value.featureId === 'ha-failover')
+      value.options = haFailoverOptions.parse(value.options);
     if (value.featureId === 'process-interop' && !value.enabled && this.processInterop)
       await this.processInterop.action(id, { mode: 'disable' }, 'run');
     const state = await this.state();
@@ -1098,6 +1103,12 @@ export class NextFeatures {
         reason: '主机资源评分服务尚未启动。' };
       return { ...await planLiveMigration(this.machines, this.scoreHosts, id, merged, signal),
         adapter };
+    }
+    if (spec.id === 'ha-failover') {
+      if (!this.hostPeers) return { ready: false, executed: false, adapter,
+        reason: '主机配对服务尚未启动。' };
+      return { ...await checkHaFailover(this.machines, this.hostPeers,
+        this.snapshotReplications, id, merged, configured?.enabled ?? true, signal), adapter };
     }
     if (spec.id === 'object-backup') {
       if (!this.objectBackup)

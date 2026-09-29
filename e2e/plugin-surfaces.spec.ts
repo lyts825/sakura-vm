@@ -4137,6 +4137,50 @@ test('capability center edits operation parameters, disables planned runs and ex
   expect(locked).toBe(false);
 });
 
+test('failover policy saves a paired target and reports an unready health check', async ({ page }) => {
+  await app(page, ['platform'], true);
+  const targetHostId = randomUUID();
+  let saved: Record<string, unknown> | null = null;
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, status: 'running' }] }));
+  await page.route('**/api/host-peers*', (route) => route.fulfill({ json: {
+    outbound: [{ id: randomUUID(), remoteId: targetHostId, name: '备用主机' }],
+  } }));
+  await page.route('**/api/vms/*/next-features*', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON() as Record<string, unknown>;
+      if (input.action === 'configure') {
+        saved = input;
+        return route.fulfill({ json: { enabled: true, options: input.options,
+          updatedAt: new Date().toISOString() } });
+      }
+      return route.fulfill({ json: { ready: false, executed: false,
+        blockers: ['尚无独立见证节点与源主机栅栏'] } });
+    }
+    return route.fulfill({ json: {
+      projectId: 'default', settings: saved ? { 'ha-failover': {
+        enabled: true, options: saved.options, updatedAt: new Date().toISOString(),
+      } } : {}, jobs: [], records: {}, executions: [],
+      features: [{ id: 'ha-failover', name: '故障自动接管', category: '远程主机与集群',
+        summary: '健康检查', state: 'experimental' }],
+    } });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const panel = page.getByLabel('故障接管策略与健康检查');
+  await panel.getByLabel('目标主机').selectOption(targetHostId);
+  await panel.getByLabel('故障检查次数阈值').fill('4');
+  await panel.getByLabel('副本最长时效（分钟）').fill('120');
+  await panel.getByLabel('启用策略记录').check();
+  await panel.getByRole('button', { name: '保存策略' }).click();
+  await expect.poll(() => saved).toMatchObject({ action: 'configure', featureId: 'ha-failover',
+    enabled: true, options: { targetHostId, failureThreshold: 4, maxReplicaAgeMinutes: 120 } });
+  await panel.getByRole('button', { name: '检查健康' }).click();
+  await expect(panel).toContainText('尚无独立见证节点与源主机栅栏');
+  await expect(page.locator('.catalog-item').filter({ hasText: '故障自动接管' })
+    .getByRole('button', { name: '运行' })).toBeDisabled();
+});
+
 test('USB hotplug panel saves a persistent rule and removes an active forwarding', async ({ page }) => {
   await app(page, ['platform'], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'running' }] }));
