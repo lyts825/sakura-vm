@@ -34,6 +34,7 @@ import { devicePassthroughPreview } from './device-passthrough-preview.ts';
 import { gpuComputeInput, gpuComputeStatus } from './gpu-compute.ts';
 import { planLiveMigration } from './live-migration.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
+import { inspectVirtioFs } from './virtio-fs.ts';
 
 /**
  * The third tranche is intentionally data driven.  Each item has a stable
@@ -170,8 +171,8 @@ export const nextFeatureCatalog = [
     'Virtio-FS 共享目录',
     '虚拟硬件与固件',
     'P0',
-    '检查客户机是否识别 virtio-fs 或 9p 共享目录。',
-    'planned',
+    '检查 QEMU、virtiofsd、共享内存和客户机文件系统证据；目录直挂尚未编排。',
+    'experimental',
   ],
   [
     'virtual-media-devices',
@@ -653,7 +654,6 @@ type NextState = {
 const defaultState = (): NextState => ({ settings: {}, executions: {}, records: {} });
 
 const guestChecks: Partial<Record<NextFeatureId, string>> = {
-  'virtio-fs': 'mount | grep -E "virtiofs|9p"',
   'network-topology': 'command -v ip >/dev/null && ip addr && ip route',
   'build-cache': 'test -d /workspace/.cache || test -d /workspace/target',
   'language-server-catalog':
@@ -1110,6 +1110,8 @@ export class NextFeatures {
       return { ...await checkHaFailover(this.machines, this.hostPeers,
         this.snapshotReplications, id, merged, configured?.enabled ?? true, signal), adapter };
     }
+    if (spec.id === 'virtio-fs')
+      return { ...await inspectVirtioFs(this.machines, id, signal), adapter };
     if (spec.id === 'object-backup') {
       if (!this.objectBackup)
         return { ready: false, executed: false, adapter,
