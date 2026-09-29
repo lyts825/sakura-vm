@@ -105,11 +105,27 @@ export type VMRecord = VMConfig & {
   pendingResize?: boolean;
   migrationOrigin?: { sourceHostId: string; transferId: string; targetName: string;
     sourceVmId?: string; snapshotId?: string; diskSha256?: string };
+  haPromotion?: HaPromotion;
+  haRetirement?: HaRetirement;
   // Snapshot clones retain an independent baseline disk for three-way workspace merges.
   branchOrigin?: { sourceVmId: string; snapshotId: string; createdAt: string };
   mergeOrigin?: { branchVmId: string; targetVmId: string; snapshotId: string;
     path: string; mergedAt: string; appliedFiles: number };
 };
+export const haPromotionSchema = z.object({
+  peerId: z.uuid(), targetHostId: z.uuid(), transferId: z.uuid(),
+  remoteVmId: z.uuid(), snapshotId: z.uuid(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  fencedAt: z.iso.datetime(), status: z.enum(['fenced', 'accepted']),
+  updatedAt: z.iso.datetime(), error: z.string().max(500).optional(),
+}).strict();
+export type HaPromotion = z.infer<typeof haPromotionSchema>;
+export const haRetirementSchema = z.object({
+  sourceHostId: z.uuid(), transferId: z.uuid(), sourceVmId: z.uuid(),
+  snapshotId: z.uuid(), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  retiredAt: z.iso.datetime(),
+}).strict();
+export type HaRetirement = z.infer<typeof haRetirementSchema>;
 export type VMView = VMRecord & {
   activeAccelerator?: 'tcg' | 'whpx';
   memoryTargetMiB?: number;

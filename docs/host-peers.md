@@ -11,3 +11,5 @@
 本机控制 API 为 `GET/POST /api/host-peers`，受控制面会话与本机凭证保护；请求结构在 OpenAPI/SDK 中。同伴 HTTPS 入口提供 `POST /peer/pair` 和经配对凭证认证的 `GET /peer/status`。仅当目标主机为指定入站配对单独开启导入权限后，`GET /peer/import-status` 与 `POST /peer/import` 才允许查询回执和流式导入完整实例包。另有独立的策略发布授权，允许该入站主机通过 `GET/POST /peer/rollouts` 读取和保存插件灰度策略，不包含其他控制操作。迁移流程见 [跨主机冷迁移](cold-migration.md)和[主机维护排空](maintenance-drain.md)；策略发布见[集群策略发布](fleet-policy-rollout.md)。
 
 同一授权通道还支持[跨主机快照复制](snapshot-replications.md)，将指定历史快照校验后导入为远端独立实例。
+
+故障副本接管使用独立的入站 `allow-failover` 权限，同时需要导入权限。`/peer/replica-activate-check`、`/peer/replica-activate` 与 `/peer/replica-retire` 均核对传输 ID、实例 ID、来源实例、快照 ID 和磁盘 SHA-256；目标退出接管时必须已停机，随后被持久封锁。详见[故障接管策略与健康检查](ha-failover-check.md)。

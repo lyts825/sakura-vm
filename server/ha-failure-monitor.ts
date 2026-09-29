@@ -72,17 +72,13 @@ export class HaFailureMonitor {
   };
 
   private stopRequested = (id: string) => {
-    void this.enqueue(async () => {
-      const status = this.statuses[id];
-      if (!status || this.closed) return;
-      const at = new Date().toISOString();
-      const next = { ...this.statuses, [id]: {
-        ...status, armed: false, consecutiveFailures: 0,
-        observedState: 'stopping' as const, observedAt: at, suspectedAt: undefined,
-      } };
-      await writeStore(this.file, next);
-      this.statuses = next;
-    }).catch((error) => console.error('HA 停机观察失败：', error));
+    const status = this.statuses[id];
+    if (!status || this.closed) return;
+    this.statuses[id] = { ...status, armed: false, consecutiveFailures: 0,
+      observedState: 'stopping', observedAt: new Date().toISOString(),
+      suspectedAt: undefined };
+    void this.enqueue(() => writeStore(this.file, this.statuses)).catch((error) =>
+      console.error('HA 停机观察失败：', error));
   };
 
   async init() {

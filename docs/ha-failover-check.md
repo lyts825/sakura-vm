@@ -1,7 +1,11 @@
 # 故障接管策略与健康检查
 
-第三批能力中心的“故障接管策略与健康检查”可保存目标、故障阈值和副本最长时效，并持续观察本机主实例的运行状态。API 使用 `POST /api/vms/:vmId/next-features` 的 `configure`，设置 `featureId: "ha-failover"`、`enabled: true` 和 `options.targetHostId`（已配对主机的主机 ID），可选设置 `failureThreshold`（2–10，默认 3）与 `maxReplicaAgeMinutes`（1–10080，默认 1440）。`check` 结果包含主实例状态、目标资源和平台观测、最近已校验快照副本的实时回执与数据时效、阻断原因，并保存到该实例的能力执行历史。
+第三批能力中心的“故障接管策略与健康检查”可保存目标、故障阈值和副本最长时效，并持续观察本机主实例的运行状态。API 使用 `POST /api/vms/:vmId/next-features` 的 `configure`，设置 `featureId: "ha-failover"`、`enabled: true` 和 `options.targetHostId`（已配对主机的主机 ID），可选设置 `failureThreshold`（2–10，默认 3）、`maxReplicaAgeMinutes`（1–10080，默认 1440）和 `autoProcessFailover`（默认 `false`）。`check` 结果包含主实例状态、目标资源和平台观测、最近已校验快照副本的实时回执与数据时效、阻断原因，以及本机进程故障接管的 `localProcessReady`；检查本身不会启动副本。
 
 启用并选定目标后，主实例首次进入 `running` 时监测器开始计数；每 15 秒采样一次，连续 `failureThreshold` 次处于 `error` 或 `stopped` 则标记为疑似故障。恢复运行会清零；通过 Sakura 主动停止或暂停时会撤销监测。进程异常退出与故障计数写入 `ha-failure-monitor.json`，服务异常终止后重启可继续观察；正常关闭服务会撤销监测，避免计划关机触发误报。`GET /api/vms/:vmId/next-features` 的 `haFailoverMonitor` 和手动 `check` 结果的 `monitor` 显示采样状态。
 
-这只是来源主机上的 QEMU 运行状态监测，不能在来源宿主失联时独立判定故障，也不能证明客户机应用健康。来源主机故障时本机控制服务可能同时不可用；独立见证节点、源端栅栏、故障后的健康确认与流量切换仍缺失。已移除源实例的[冷迁移](cold-migration.md)可单独授权目标启动，但不能代替故障接管的防双写证明。即使达到阈值且目标有新鲜副本，检查仍返回 `ready: false, executed: false`，不会自动启动副本。使用已实现的[跨主机快照复制](snapshot-replications.md)可预先创建独立副本，但它本身不构成自动故障接管。
+要启用本机进程故障接管，先用[跨主机快照复制](snapshot-replications.md)创建停机副本，在目标主机的入站配对中分别授予“实例包导入”和“故障副本接管”，再勾选“本机 QEMU 进程退出后自动接管”。来源本次服务运行期间必须实际见过该 QEMU 运行；旧监测记录或服务重启后未托管的进程不构成退出证据。达到故障阈值后，Sakura 重新检查目标容量、平台、回执、快照时效和目标停机状态，在本机持久保存来源启动栅栏，然后请求目标启动。来源启动会返回 `HA_SOURCE_FENCED`；目标启动失败时保留栅栏并重试。目标接受启动后显示目标实例 ID 和接管状态。
+
+退出接管须先在目标主机停止副本，并回迁目标运行期间的新写入，或明确接受丢失这些写入。来源实例面板需勾选数据确认后才能点“目标停机后退出接管”；API 使用同一路径的 `run`，传入 `{ "mode": "rejoin", "dataReconciled": true }`。来源经认证请求目标把该副本持久标记为不可重启，收到确认后才解除自身栅栏。目标仍运行、不可访问或权限撤销时，来源保持封锁；若目标已封锁但响应丢失，重复操作仍可完成。退出后旧副本不可再用于接管，需要重新复制快照。
+
+这一路径只处理本机可观察的 QEMU 进程退出。来源宿主整机失联或网络分区时，本机控制服务可能同时不可用，也不能证明客户机应用健康。独立见证、跨主机栅栏、故障后的应用健康确认与流量切换仍缺失，所以完整 HA 检查继续返回 `ready: false, executed: false`。已移除源实例的[冷迁移](cold-migration.md)可单独授权目标启动；那是另一种流程。

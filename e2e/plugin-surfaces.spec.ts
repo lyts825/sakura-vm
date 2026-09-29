@@ -4241,6 +4241,8 @@ test('failover policy saves a paired target and reports an unready health check'
   await app(page, ['platform'], true);
   const targetHostId = randomUUID();
   let saved: Record<string, unknown> | null = null;
+  let rejoined = false;
+  let promotion: Record<string, unknown> | null = null;
   await page.route('**/api/vms', (route) =>
     route.fulfill({ json: [{ ...vm, status: 'running' }] }));
   await page.route('**/api/host-peers*', (route) => route.fulfill({ json: {
@@ -4254,6 +4256,11 @@ test('failover policy saves a paired target and reports an unready health check'
         return route.fulfill({ json: { enabled: true, options: input.options,
           updatedAt: new Date().toISOString() } });
       }
+      if (input.action === 'run' && input.featureId === 'ha-failover') {
+        rejoined = (input.options as { mode?: string; dataReconciled?: boolean })?.mode ===
+          'rejoin' && (input.options as { dataReconciled?: boolean }).dataReconciled === true;
+        return route.fulfill({ json: { ready: true, executed: true } });
+      }
       return route.fulfill({ json: { ready: false, executed: false,
         blockers: ['尚无独立见证节点与源主机栅栏'] } });
     }
@@ -4264,6 +4271,7 @@ test('failover policy saves a paired target and reports an unready health check'
       haFailoverMonitor: saved ? { armed: true, suspected: false,
         consecutiveFailures: 2, observedState: 'error',
         observedAt: '2026-09-29T00:00:00.000Z', sampleIntervalSeconds: 15 } : null,
+      haPromotion: promotion,
       features: [{ id: 'ha-failover', name: '故障自动接管', category: '远程主机与集群',
         summary: '健康检查', state: 'experimental' }],
     } });
@@ -4275,15 +4283,26 @@ test('failover policy saves a paired target and reports an unready health check'
   await panel.getByLabel('故障检查次数阈值').fill('4');
   await panel.getByLabel('副本最长时效（分钟）').fill('120');
   await panel.getByLabel('启用本机故障监测').check();
+  await panel.getByLabel('本机 QEMU 进程退出后自动接管').check();
   await panel.getByRole('button', { name: '保存策略' }).click();
   await expect.poll(() => saved).toMatchObject({ action: 'configure', featureId: 'ha-failover',
-    enabled: true, options: { targetHostId, failureThreshold: 4, maxReplicaAgeMinutes: 120 } });
+    enabled: true, options: { targetHostId, failureThreshold: 4,
+      maxReplicaAgeMinutes: 120, autoProcessFailover: true } });
   await expect(panel).toContainText('正在监测主实例');
   await expect(panel).toContainText('2/4 次');
   await panel.getByRole('button', { name: '检查健康' }).click();
   await expect(panel).toContainText('尚无独立见证节点与源主机栅栏');
   await expect(page.locator('.catalog-item').filter({ hasText: '故障自动接管' })
     .getByRole('button', { name: '运行' })).toBeDisabled();
+  promotion = { remoteVmId: randomUUID(), snapshotId: randomUUID(),
+    status: 'accepted', fencedAt: new Date().toISOString() };
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const promotedPanel = page.getByLabel('故障接管策略与健康检查');
+  await expect(promotedPanel).toContainText('来源启动已被持久封锁');
+  await promotedPanel.getByLabel('已回迁目标运行期间的写入数据，或接受丢失这些新数据').check();
+  await promotedPanel.getByRole('button', { name: '目标停机后退出接管' }).click();
+  await expect.poll(() => rejoined).toBe(true);
 });
 
 test('USB hotplug panel saves a persistent rule and removes an active forwarding', async ({ page }) => {

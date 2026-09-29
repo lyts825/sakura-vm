@@ -7,9 +7,14 @@ type PeerView = { outbound: Array<{ id: string; remoteId: string; name: string }
 type Monitor = { armed: boolean; suspected: boolean; consecutiveFailures: number;
   observedState: string; observedAt: string; suspectedAt?: string;
   sampleIntervalSeconds: number };
+type Promotion = { remoteVmId: string; snapshotId: string; status: 'fenced' | 'accepted';
+  fencedAt: string; error?: string };
 
-export function HaFailoverPanel({ request, vmId, setting, monitor, reload }: {
-  request: Request; vmId: string; setting?: Setting; monitor?: Monitor | null; reload: () => void;
+export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, localFailover,
+  reload }: {
+  request: Request; vmId: string; setting?: Setting; monitor?: Monitor | null;
+  promotion?: Promotion | null; localFailover?: { error: string | null } | null;
+  reload: () => void;
 }) {
   const peers = useRemote<PeerView>(request, '/host-peers', true, 10000);
   const action = useAction();
@@ -19,6 +24,9 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, reload }: {
     Number(setting?.options?.failureThreshold || 3));
   const [maxReplicaAgeMinutes, setMaxReplicaAgeMinutes] = useState(
     Number(setting?.options?.maxReplicaAgeMinutes || 1440));
+  const [autoProcessFailover, setAutoProcessFailover] = useState(
+    setting?.options?.autoProcessFailover === true);
+  const [dataReconciled, setDataReconciled] = useState(false);
   const [result, setResult] = useState('');
   useEffect(() => {
     if (!setting) return;
@@ -26,12 +34,13 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, reload }: {
     setTargetHostId(String(setting.options?.targetHostId || ''));
     setFailureThreshold(Number(setting.options?.failureThreshold || 3));
     setMaxReplicaAgeMinutes(Number(setting.options?.maxReplicaAgeMinutes || 1440));
+    setAutoProcessFailover(setting.options?.autoProcessFailover === true);
   }, [setting?.updatedAt]);
   const options = { ...(targetHostId ? { targetHostId } : {}),
-    failureThreshold, maxReplicaAgeMinutes };
+    failureThreshold, maxReplicaAgeMinutes, autoProcessFailover };
   return <div className="ha-failover-panel" aria-label="故障接管策略与健康检查">
     <h4>故障接管策略与健康检查</h4>
-    <p className="muted">本机每 15 秒观察主实例运行状态并持久记录连续故障样本；自动接管尚未实现。</p>
+    <p className="muted">本机每 15 秒观察主实例。开启本机进程故障接管后，仅在 Sakura 确认来源 QEMU 已退出、达到阈值且目标副本通过校验时，先持久封锁来源再请求目标启动。宿主失联和网络分区不会触发接管。</p>
     {monitor && <p role={monitor.suspected ? 'alert' : undefined}>
       {monitor.suspected ? '已达到疑似故障阈值' : monitor.armed ? '正在监测主实例' : '监测未就绪'}：
       {monitor.consecutiveFailures}/{Number(setting?.options?.failureThreshold || 3)} 次 ·
@@ -55,7 +64,17 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, reload }: {
       </label>
       <label className="checkbox-row"><input type="checkbox" checked={enabled}
         onChange={(event) => setEnabled(event.target.checked)} />启用本机故障监测</label>
+      <label className="checkbox-row"><input type="checkbox" checked={autoProcessFailover}
+        onChange={(event) => setAutoProcessFailover(event.target.checked)} />本机 QEMU 进程退出后自动接管</label>
     </div>
+    {promotion && <p role="alert">来源启动已被持久封锁；目标实例 <code>{promotion.remoteVmId}</code>：
+      {promotion.status === 'accepted' ? '已接受启动' : '等待启动确认'} ·
+      栅栏时间 {formatDateTime(promotion.fencedAt)}
+      {promotion.error && ` · ${promotion.error}`}</p>}
+    {localFailover?.error && <p role="alert">最近一次接管尝试：{localFailover.error}</p>}
+    {promotion && <label className="checkbox-row"><input type="checkbox"
+      checked={dataReconciled} onChange={(event) => setDataReconciled(event.target.checked)} />
+      已回迁目标运行期间的写入数据，或接受丢失这些新数据</label>}
     <div className="feature-actions">
       <button className="secondary" disabled={action.busy || (enabled && !targetHostId)}
         onClick={() => void action.run(async () => {
@@ -70,6 +89,13 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, reload }: {
           setResult(JSON.stringify(checked, null, 2));
           reload();
         })}>检查健康</button>
+      {promotion && <button className="secondary" disabled={action.busy || !dataReconciled}
+        onClick={() => void action.run(async () => {
+          await request(`/vms/${vmId}/next-features`, 'POST',
+            { action: 'run', featureId: 'ha-failover',
+              options: { mode: 'rejoin', dataReconciled: true } });
+          reload();
+        }, '目标副本已持久封锁，来源可以重新启动')}>目标停机后退出接管</button>}
     </div>
     <Feedback error={action.error || peers.error} message={action.message} />
     {result && <pre className="feature-log">{result}</pre>}

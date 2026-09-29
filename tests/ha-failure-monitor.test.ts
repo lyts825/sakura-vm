@@ -94,6 +94,7 @@ test('HA background monitor records an intentional stop even if the VM exits bef
   try {
     await monitor.init();
     machine.emit('stop-requested', id);
+    assert.equal(monitor.view(id)?.armed, false);
     vmState = 'stopped';
     machine.emit('change');
     await monitor.sample();

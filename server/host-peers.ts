@@ -37,6 +37,7 @@ const incomingSchema = z.object({
   allowImport: z.boolean().default(false),
   allowPolicy: z.boolean().default(false),
   allowActivate: z.boolean().default(false),
+  allowFailover: z.boolean().default(false),
 }).strict();
 const rolloutPolicySchema = z.object({
   pluginId: z.string().min(1).max(128), enabled: z.boolean(),
@@ -76,11 +77,15 @@ type ImportReceipt = z.infer<typeof importReceiptSchema>;
 type ImportIdentity = { transferId: string; requesterId: string };
 const activateInput = z.object({ transferId: z.uuid(), remoteVmId: z.uuid(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+const replicaActivateInput = activateInput.safeExtend({
+  sourceVmId: z.uuid(), snapshotId: z.uuid(),
+});
 const activateResult = z.object({ id: z.uuid(), status: z.enum([
   'stopped', 'starting', 'running', 'paused', 'stopping', 'error',
 ]) }).strict();
 const activateCheckResult = z.object({ ready: z.literal(true), id: z.uuid(),
   status: activateResult.shape.status }).strict();
+const retireResult = z.object({ id: z.uuid(), retired: z.literal(true) }).strict();
 type ImportReceiver = {
   status: (identity: ImportIdentity) => Promise<ImportReceipt | null>;
   receive: (input: ImportIdentity & { name: string; sourceVmId?: string; snapshotId?: string;
@@ -90,6 +95,12 @@ type ImportReceiver = {
     Promise<z.infer<typeof activateResult>>;
   inspectActivation?: (input: ImportIdentity & { remoteVmId: string; sha256: string }) =>
     Promise<z.infer<typeof activateResult>>;
+  activateReplica?: (input: ImportIdentity & z.infer<typeof replicaActivateInput>) =>
+    Promise<z.infer<typeof activateResult>>;
+  inspectReplicaActivation?: (input: ImportIdentity & z.infer<typeof replicaActivateInput>) =>
+    Promise<z.infer<typeof activateResult>>;
+  retireReplica?: (input: ImportIdentity & z.infer<typeof replicaActivateInput>) =>
+    Promise<z.infer<typeof retireResult>>;
 };
 const pairInput = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/),
   requesterId: z.uuid(), name: hostName }).strict();
@@ -110,6 +121,7 @@ export const hostPeerRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('allow-import'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ operation: z.literal('allow-policy'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ operation: z.literal('allow-activate'), id: z.uuid(), enabled: z.boolean() }).strict(),
+  z.object({ operation: z.literal('allow-failover'), id: z.uuid(), enabled: z.boolean() }).strict(),
   z.object({ operation: z.literal('refresh') }).strict(),
   z.object({ operation: z.literal('score'), requirements: hostScoreInput }).strict(),
 ]);
@@ -291,7 +303,8 @@ export class HostPeers {
             const token = randomBytes(32).toString('hex');
             next.incoming.push({ id: randomUUID(), requesterId: value.requesterId,
               name: value.name, tokenHash: hash(token), createdAt: this.now(),
-              allowImport: false, allowPolicy: false, allowActivate: false });
+              allowImport: false, allowPolicy: false, allowActivate: false,
+              allowFailover: false });
             return { id: next.hostId, name: next.name, token };
           });
           this.code = undefined;
@@ -362,6 +375,57 @@ export class HostPeers {
           const result = activateResult.parse(await this.importReceiver.activate(activationInput));
           if (result.id !== input.remoteVmId)
             throw new AppError('目标实例启动返回了其他实例', 409);
+          return this.send(response, result);
+        } finally { this.mutation(-1); }
+      }
+      if (request.method === 'POST' &&
+          (request.url === '/peer/replica-activate' ||
+           request.url === '/peer/replica-activate-check' ||
+           request.url === '/peer/replica-retire')) {
+        const peer = this.inbound(request);
+        if (!peer.allowImport || !peer.allowFailover)
+          throw new AppError('此同伴未获故障副本启动权限', 403);
+        if (!this.importReceiver?.activateReplica ||
+            !this.importReceiver.inspectReplicaActivation)
+          throw new AppError('目标主机尚未启用故障副本接收器', 503);
+        const input = replicaActivateInput.parse(await readJsonBody(request, 4096));
+        const identity = { transferId: input.transferId, requesterId: peer.requesterId };
+        const receipt = await this.importReceiver.status(identity);
+        if (!receipt?.sha256 || receipt.id !== input.remoteVmId ||
+            receipt.sha256 !== input.sha256 ||
+            receipt.sourceVmId !== input.sourceVmId ||
+            receipt.snapshotId !== input.snapshotId)
+          throw new AppError('故障副本与已校验的快照回执不一致', 409);
+        const current = this.inbound(request);
+        if (!current.allowImport || !current.allowFailover)
+          throw new AppError('故障副本启动权限已撤销', 403);
+        const activationInput = { ...identity, ...input };
+        if (request.url === '/peer/replica-retire') {
+          if (!this.importReceiver.retireReplica)
+            throw new AppError('目标主机尚未启用故障副本退出接口', 503);
+          this.mutation(1);
+          try {
+            const result = retireResult.parse(await this.importReceiver.retireReplica(
+              activationInput));
+            if (result.id !== input.remoteVmId)
+              throw new AppError('故障副本退出返回了其他实例', 409);
+            return this.send(response, result);
+          } finally { this.mutation(-1); }
+        }
+        if (request.url === '/peer/replica-activate-check') {
+          const inspected = activateResult.parse(await
+            this.importReceiver.inspectReplicaActivation(activationInput));
+          if (inspected.id !== input.remoteVmId)
+            throw new AppError('故障副本预检返回了其他实例', 409);
+          return this.send(response, { ready: true, id: input.remoteVmId,
+            status: inspected.status });
+        }
+        this.mutation(1);
+        try {
+          const result = activateResult.parse(await
+            this.importReceiver.activateReplica(activationInput));
+          if (result.id !== input.remoteVmId)
+            throw new AppError('故障副本启动返回了其他实例', 409);
           return this.send(response, result);
         } finally { this.mutation(-1); }
       }
@@ -495,6 +559,45 @@ export class HostPeers {
       '/peer/activate-check', 'POST', value, peer.token));
     if (result.id !== value.remoteVmId)
       throw new AppError('远端目标实例身份已变化', 409);
+    return result;
+  }
+
+  async checkReplicaActivation(peerId: string, input: unknown) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    const value = replicaActivateInput.parse(input);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const result = activateCheckResult.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/replica-activate-check', 'POST', value, peer.token));
+    if (result.id !== value.remoteVmId)
+      throw new AppError('远端故障副本身份已变化', 409);
+    return result;
+  }
+
+  async activateReplica(peerId: string, input: unknown) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    const value = replicaActivateInput.parse(input);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const result = activateResult.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/replica-activate', 'POST', value, peer.token, 30_000));
+    if (result.id !== value.remoteVmId)
+      throw new AppError('远端故障副本身份已变化', 409);
+    return result;
+  }
+
+  async retireReplica(peerId: string, input: unknown) {
+    if (this.closed) throw new AppError('服务正在关闭', 503);
+    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    const value = replicaActivateInput.parse(input);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const result = retireResult.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/replica-retire', 'POST', value, peer.token, 30_000));
+    if (result.id !== value.remoteVmId)
+      throw new AppError('远端故障副本身份已变化', 409);
     return result;
   }
 
@@ -735,6 +838,10 @@ export class HostPeers {
           const peer = next.incoming.find((item) => item.id === value.id);
           if (!peer) throw new AppError('入站配对不存在', 404);
           peer.allowActivate = value.enabled;
+        } else if (value.operation === 'allow-failover') {
+          const peer = next.incoming.find((item) => item.id === value.id);
+          if (!peer) throw new AppError('入站配对不存在', 404);
+          peer.allowFailover = value.enabled;
         }
       });
       if (value.operation === 'remove-outbound') this.observations.delete(value.id);

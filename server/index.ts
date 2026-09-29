@@ -44,6 +44,7 @@ import { TrustedBootService } from './trusted-boot-service.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
+import { HaLocalFailovers } from './ha-local-failovers.ts';
 import { NotebookEnvironments } from './notebook-environments.ts';
 import { BrowserIde } from './browser-ide.ts';
 import { storagePoolInput } from './storage-pools.ts';
@@ -271,6 +272,26 @@ async function main() {
       throw new AppError(`目标实例当前为 ${state}，需要人工复核`, 409);
     return { id: remoteVmId, status: state };
   };
+  const inspectReplicaActivation = ({ requesterId, transferId, remoteVmId, sha256,
+    sourceVmId, snapshotId }: { requesterId: string; transferId: string;
+    remoteVmId: string; sha256: string; sourceVmId: string; snapshotId: string }) => {
+    session.requireUnlocked();
+    if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+    if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
+    const vm = machines.get(remoteVmId);
+    if (vm.migrationOrigin?.sourceHostId !== requesterId ||
+        vm.migrationOrigin.transferId !== transferId ||
+        vm.migrationOrigin.diskSha256 !== sha256 ||
+        vm.migrationOrigin.sourceVmId !== sourceVmId ||
+        vm.migrationOrigin.snapshotId !== snapshotId)
+      throw new AppError('故障副本身份或快照校验值与导入记录不一致', 409);
+    machines.requireUnlocked(remoteVmId);
+    if (vm.haRetirement) throw new AppError('故障副本已退出接管', 409);
+    const state = machines.state(remoteVmId);
+    if (state !== 'stopped' && state !== 'starting' && state !== 'running')
+      throw new AppError(`故障副本当前为 ${state}，需要人工复核`, 409);
+    return { id: remoteVmId, status: state };
+  };
   hostPeers.setImportReceiver({
     status: async ({ requesterId, transferId }) => {
       if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
@@ -295,6 +316,27 @@ async function main() {
         ...(sourceVmId ? { sourceVmId } : {}), ...(snapshotId ? { snapshotId } : {}) };
     },
     inspectActivation: async (input) => inspectImportedActivation(input),
+    inspectReplicaActivation: async (input) => inspectReplicaActivation(input),
+    retireReplica: async (input) => {
+      session.requireUnlocked();
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
+      machines.requireUnlocked(input.remoteVmId);
+      await machines.retireHaReplica(input.remoteVmId, {
+        sourceHostId: input.requesterId, transferId: input.transferId,
+        sourceVmId: input.sourceVmId, snapshotId: input.snapshotId,
+        sha256: input.sha256,
+      });
+      return { id: input.remoteVmId, retired: true as const };
+    },
+    activateReplica: async (input) => {
+      const current = inspectReplicaActivation(input);
+      if (current.status === 'stopped') await machines.start(input.remoteVmId);
+      const status = machines.state(input.remoteVmId);
+      if (status !== 'starting' && status !== 'running')
+        throw new AppError(`故障副本启动未保持运行状态：${status}`, 502);
+      return { id: input.remoteVmId, status };
+    },
     activate: async (input) => {
       const { remoteVmId } = input;
       const current = inspectImportedActivation(input);
@@ -307,6 +349,7 @@ async function main() {
   });
   let coldMigrations: ColdMigrations | undefined;
   let snapshotReplications: SnapshotReplications | undefined;
+  let haLocalFailovers: HaLocalFailovers | undefined;
   let browserIde: BrowserIde | undefined;
   if (features.next) {
     const notebooks = new NotebookEnvironments(machines, features.workspaces);
@@ -323,6 +366,11 @@ async function main() {
     snapshotReplications = new SnapshotReplications(machines, features.bundles, hostPeers);
     await snapshotReplications.init();
     features.next.setSnapshotReplications(snapshotReplications);
+    haLocalFailovers = new HaLocalFailovers(machines, features.next.haFailureMonitor,
+      hostPeers, snapshotReplications, () => features.next!.haPolicies(),
+      () => !session.view().locked && !features.migration?.blocked && !machines.closing);
+    features.next.setHaLocalFailovers(haLocalFailovers);
+    await haLocalFailovers.init();
   }
   if (features.next && features.backups && features.bundles)
     features.next.setDisasterRecovery(new DisasterRecoveryDrill(
@@ -1710,6 +1758,7 @@ async function main() {
       () => trustedBoot.close(),
       () => gpuProfiles.close(),
       () => buildFarm.close(),
+      () => haLocalFailovers?.close(),
       () => hostPeers.close(),
       () => retention.close(),
       () => graph.close(),

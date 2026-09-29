@@ -20,6 +20,9 @@ import {
   vmDir,
   guestPath,
   organizationSchema,
+  haPromotionSchema,
+  haRetirementSchema,
+  type HaPromotion,
   type VMRecord,
   type VMConfig,
   type VMView,
@@ -253,6 +256,10 @@ export class Machines extends EventEmitter {
         }
         if (r.diskEncryption !== undefined)
           r.diskEncryption = diskEncryptionSchema.parse(r.diskEncryption);
+        if (r.haPromotion !== undefined)
+          r.haPromotion = haPromotionSchema.parse(r.haPromotion);
+        if (r.haRetirement !== undefined)
+          r.haRetirement = haRetirementSchema.parse(r.haRetirement);
         if (r.rescueOf !== undefined) {
           checkedId(r.rescueOf);
           if (
@@ -669,10 +676,81 @@ export class Machines extends EventEmitter {
   async start(id: string) {
     return this.startInternal(id);
   }
+  async fenceForHa(id: string, raw: HaPromotion,
+    guard?: () => Promise<void> | void) {
+    const promotion = haPromotionSchema.parse(raw);
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      this.requireStopped(id);
+      await guard?.();
+      if (vm.haPromotion) {
+        if (vm.haPromotion.transferId !== promotion.transferId)
+          throw new AppError('来源实例已有其他故障接管栅栏', 409);
+        return vm.haPromotion;
+      }
+      vm.haPromotion = promotion;
+      try { await this.save(); }
+      catch (error) { delete vm.haPromotion; throw error; }
+      this.emit('change');
+      return promotion;
+    });
+  }
+  async updateHaPromotion(id: string, transferId: string,
+    patch: Pick<HaPromotion, 'status'> & { error?: string }) {
+    return this.locked(id, async () => {
+      const vm = this.get(id), previous = vm.haPromotion;
+      if (!previous || previous.transferId !== transferId)
+        throw new AppError('故障接管栅栏已变化', 409);
+      vm.haPromotion = haPromotionSchema.parse({ ...previous, ...patch,
+        updatedAt: new Date().toISOString() });
+      try { await this.save(); }
+      catch (error) { vm.haPromotion = previous; throw error; }
+      this.emit('change');
+      return vm.haPromotion;
+    });
+  }
+  async releaseHaPromotion(id: string, transferId: string) {
+    return this.locked(id, async () => {
+      const vm = this.get(id), previous = vm.haPromotion;
+      this.requireStopped(id);
+      if (!previous || previous.transferId !== transferId)
+        throw new AppError('故障接管栅栏已变化', 409);
+      delete vm.haPromotion;
+      try { await this.save(); }
+      catch (error) { vm.haPromotion = previous; throw error; }
+      this.emit('change');
+      return { released: true };
+    });
+  }
+  async retireHaReplica(id: string, raw: unknown) {
+    const identity = haRetirementSchema.omit({ retiredAt: true }).parse(raw);
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      this.requireStopped(id);
+      if (vm.migrationOrigin?.sourceHostId !== identity.sourceHostId ||
+          vm.migrationOrigin.transferId !== identity.transferId ||
+          vm.migrationOrigin.sourceVmId !== identity.sourceVmId ||
+          vm.migrationOrigin.snapshotId !== identity.snapshotId ||
+          vm.migrationOrigin.diskSha256 !== identity.sha256)
+        throw new AppError('故障副本身份与导入记录不一致', 409);
+      if (vm.haRetirement) return vm.haRetirement;
+      vm.haRetirement = { ...identity, retiredAt: new Date().toISOString() };
+      try { await this.save(); }
+      catch (error) { delete vm.haRetirement; throw error; }
+      this.emit('change');
+      return vm.haRetirement;
+    });
+  }
   private async startInternal(id: string, rescueOf?: string) {
     return this.locked('launch', () =>
       this.locked(id, async () => {
         const vm = this.get(id);
+        if (vm.haPromotion)
+          throw new AppError('来源实例已为故障接管设置栅栏；请先确认目标已停止并解除栅栏',
+            409, 'HA_SOURCE_FENCED');
+        if (vm.haRetirement)
+          throw new AppError('故障副本已退出接管并被持久封锁，不能重新启动',
+            409, 'HA_REPLICA_RETIRED');
         if (vm.rescueOf && (vm.rescueOf !== rescueOf || !this.locks.has(rescueOf)))
           throw new AppError('临时救援实例只能由救援任务启动，请重新提交救援任务', 409);
         this.requireSandboxLifetime(vm);

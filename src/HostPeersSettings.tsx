@@ -13,7 +13,8 @@ type HostPeersView = {
   hostId: string; name: string; fingerprint: string; local: PeerStatus;
   listener: Listener; pairing: { value: string; expiresAt: number } | null;
   incoming: Array<{ id: string; requesterId: string; name: string;
-    createdAt: number; allowImport: boolean; allowPolicy: boolean; allowActivate: boolean }>;
+    createdAt: number; allowImport: boolean; allowPolicy: boolean;
+    allowActivate: boolean; allowFailover: boolean }>;
   outbound: Array<{ id: string; remoteId: string; name: string; url: string;
     fingerprint: string; createdAt: number; observation: Observation | null }>;
 };
@@ -206,7 +207,8 @@ export function HostPeersSettings({ request }: { request: Request }) {
         <span><strong>{peer.name}</strong> · {peer.requesterId} ·
           实例包导入：{peer.allowImport ? '已允许' : '未允许'} ·
           策略发布：{peer.allowPolicy ? '已允许' : '未允许'} ·
-          目标启动：{peer.allowActivate ? '已允许' : '未允许'}</span>
+          目标启动：{peer.allowActivate ? '已允许' : '未允许'} ·
+          故障副本接管：{peer.allowFailover ? '已允许' : '未允许'}</span>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('allow-import', { id: peer.id, enabled: !peer.allowImport },
             peer.allowImport ? '实例包导入权限已关闭' : '实例包导入权限已开启')}>
@@ -221,6 +223,11 @@ export function HostPeersSettings({ request }: { request: Request }) {
           onClick={() => apply('allow-activate', { id: peer.id, enabled: !peer.allowActivate },
             peer.allowActivate ? '目标启动权限已关闭' : '目标启动权限已开启')}>
           {peer.allowActivate ? '关闭目标启动' : '允许目标启动'}
+        </button>
+        <button className="secondary compact" disabled={action.busy}
+          onClick={() => apply('allow-failover', { id: peer.id, enabled: !peer.allowFailover },
+            peer.allowFailover ? '故障副本接管权限已关闭' : '故障副本接管权限已开启')}>
+          {peer.allowFailover ? '关闭故障接管' : '允许故障接管'}
         </button>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => apply('revoke-inbound', { id: peer.id }, '读取权限已撤销')}>撤销访问</button>

@@ -119,6 +119,38 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     assert.equal(activated, 1);
     await target.configure({ operation: 'allow-activate', id: inboundId, enabled: false });
     await assert.rejects(initiator.activateImport(outboundId, activation), /HTTP 403/);
+    const sourceVmId = randomUUID(), snapshotId = randomUUID();
+    const replica = { ...activation, sourceVmId, snapshotId };
+    let replicaStarts = 0, replicaRetires = 0;
+    target.setImportReceiver({
+      status: async () => ({ id: importedId, name: 'standby', sha256: digest,
+        sourceVmId, snapshotId }),
+      receive: async () => { throw new Error('副本接管不得重新导入'); },
+      inspectReplicaActivation: async () => ({ id: importedId, status: 'stopped' }),
+      activateReplica: async () => {
+        replicaStarts++;
+        return { id: importedId, status: 'starting' };
+      },
+      retireReplica: async () => {
+        replicaRetires++;
+        return { id: importedId, retired: true };
+      },
+    });
+    await assert.rejects(initiator.checkReplicaActivation(outboundId, replica), /HTTP 403/);
+    await target.configure({ operation: 'allow-failover', id: inboundId, enabled: true });
+    assert.deepEqual(await initiator.checkReplicaActivation(outboundId, replica),
+      { ready: true, id: importedId, status: 'stopped' });
+    await assert.rejects(initiator.activateReplica(outboundId,
+      { ...replica, snapshotId: randomUUID() }), /HTTP 409/);
+    assert.equal(replicaStarts, 0);
+    assert.deepEqual(await initiator.activateReplica(outboundId, replica),
+      { id: importedId, status: 'starting' });
+    assert.equal(replicaStarts, 1);
+    assert.deepEqual(await initiator.retireReplica(outboundId, replica),
+      { id: importedId, retired: true });
+    assert.equal(replicaRetires, 1);
+    await target.configure({ operation: 'allow-failover', id: inboundId, enabled: false });
+    await assert.rejects(initiator.retireReplica(outboundId, replica), /HTTP 403/);
     let checks = 0;
     target.setImportReceiver({
       status: async () => ++checks === 1 ? null : { id: importedId, name: 'migrated' },

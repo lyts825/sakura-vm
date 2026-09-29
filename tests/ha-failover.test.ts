@@ -8,14 +8,18 @@ import type { SnapshotReplications } from '../server/snapshot-replications.ts';
 
 const vmId = randomUUID(), snapshotId = randomUUID(), remoteVmId = randomUUID();
 const peerId = randomUUID(), targetHostId = randomUUID(), transferId = randomUUID();
-const machines = (snapshotAt: string) => ({
+const machines = (snapshotAt: string, source: 'running' | 'error' = 'running') => ({
   get: () => ({ cpus: 2, memoryMiB: 1024,
     snapshots: [{ id: snapshotId, createdAt: snapshotAt }] }),
-  state: () => 'running',
+  state: () => source,
+  live: new Map(),
 }) as unknown as Machines;
 const peers = (eligible = true) => ({
   score: async () => ({ candidates: [
+    { id: randomUUID(), source: 'local', name: 'source', eligible: true,
+      status: { platform: 'win32', arch: 'x64' } },
     { id: targetHostId, source: 'peer', name: 'standby', eligible,
+      status: { platform: 'win32', arch: 'x64' },
       reasons: eligible ? [] : ['空闲内存不足'], observedAt: Date.now() },
   ] }),
   view: () => ({ outbound: [{ id: peerId, remoteId: targetHostId }] }),
@@ -31,6 +35,7 @@ const replications = () => ({ view: () => ({ entries: [{
 test('failover policy accepts bounded health settings and rejects unknown parameters', () => {
   assert.deepEqual(haFailoverOptions.parse({ targetHostId }), {
     targetHostId, failureThreshold: 3, maxReplicaAgeMinutes: 1440,
+    autoProcessFailover: false,
   });
   assert.equal(haFailoverOptions.safeParse({ targetHostId, failureThreshold: 1 }).success, false);
   assert.equal(haFailoverOptions.safeParse({ targetHostId, command: 'start' }).success, false);
@@ -45,7 +50,20 @@ test('failover health check identifies a fresh verified replica without claiming
   assert.equal(result.replica?.remoteVmId, remoteVmId);
   assert.equal(result.replica?.receiptVerified, true);
   assert.ok(result.blockers.some((item) => item.includes('栅栏')));
-  assert.ok(result.blockers.some((item) => item.includes('受控启动')));
+  assert.ok(result.blockers.some((item) => item.includes('流量切换')));
+});
+
+test('fresh verified replica can pass the local process-only preflight after QEMU exits', async () => {
+  const unevidenced = await checkHaFailover(machines(new Date().toISOString(), 'error'),
+    peers(), replications(), vmId, { targetHostId, autoProcessFailover: true }, true);
+  assert.equal(unevidenced.localProcessReady, false);
+  const result = await checkHaFailover(machines(new Date().toISOString(), 'error'),
+    peers(), replications(), vmId, { targetHostId, autoProcessFailover: true }, true,
+    undefined, true, true);
+  assert.equal(result.ready, false);
+  assert.equal(result.localProcessReady, true);
+  assert.equal(result.replica?.transferId, transferId);
+  assert.equal(result.replica?.peerId, peerId);
 });
 
 test('failover health check rejects a vanished standby receipt', async () => {

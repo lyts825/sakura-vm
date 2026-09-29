@@ -35,6 +35,7 @@ import { gpuComputeInput, gpuComputeStatus } from './gpu-compute.ts';
 import { planLiveMigration } from './live-migration.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
 import { HaFailureMonitor } from './ha-failure-monitor.ts';
+import type { HaLocalFailovers } from './ha-local-failovers.ts';
 import { inspectVirtioFs, type VirtioFsShares } from './virtio-fs.ts';
 
 /**
@@ -91,7 +92,7 @@ export const nextFeatureCatalog = [
     '故障自动接管',
     '远程主机与集群',
     'P0',
-    '保存接管策略，持续监测本机主实例并检查目标副本；自动切换尚未实现。',
+    '监测本机 QEMU 进程故障，显式启用后以持久来源栅栏启动已校验副本；宿主失联接管仍需独立见证。',
     'experimental',
   ],
   [
@@ -679,6 +680,7 @@ export class NextFeatures {
   acmeRenewal: AcmeRenewal;
   teamTemplates: TeamTemplates;
   haFailureMonitor: HaFailureMonitor;
+  private haLocalFailovers?: HaLocalFailovers;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private hostPeers?: HostPeers;
   private coldMigrations?: ColdMigrations;
@@ -713,14 +715,18 @@ export class NextFeatures {
     this.vtpmEnrollment = new VtpmEnrollment(machines);
     this.acmeRenewal = new AcmeRenewal(machines);
     this.teamTemplates = new TeamTemplates(machines, workspaces);
-    this.haFailureMonitor = new HaFailureMonitor(machines, async () => {
-      const state = await this.state();
-      return Object.fromEntries(Object.entries(state.settings).flatMap(([id, settings]) => {
-        const policy = settings['ha-failover'];
-        return policy ? [[id, policy]] : [];
-      }));
-    });
+    this.haFailureMonitor = new HaFailureMonitor(machines, () => this.haPolicies());
   }
+
+  async haPolicies() {
+    const state = await this.state();
+    return Object.fromEntries(Object.entries(state.settings).flatMap(([id, settings]) => {
+      const policy = settings['ha-failover'];
+      return policy ? [[id, policy]] : [];
+    }));
+  }
+
+  setHaLocalFailovers(service: HaLocalFailovers) { this.haLocalFailovers = service; }
 
   async init() {
     try {
@@ -854,6 +860,8 @@ export class NextFeatures {
       settings,
       records: state.records[id] || {},
       haFailoverMonitor: this.haFailureMonitor.view(id),
+      haPromotion: this.machines.get(id).haPromotion || null,
+      haLocalFailover: this.haLocalFailovers?.view(id) || null,
       executions: (state.executions[id] || []).slice(-80).reverse(),
       jobs: this.jobs
         .list()
@@ -1122,8 +1130,12 @@ export class NextFeatures {
       if (!this.hostPeers) return { ready: false, executed: false, adapter,
         reason: '主机配对服务尚未启动。' };
       return { ...await checkHaFailover(this.machines, this.hostPeers,
-        this.snapshotReplications, id, merged, configured?.enabled ?? true, signal),
-        monitor: this.haFailureMonitor.view(id), adapter };
+        this.snapshotReplications, id, merged, configured?.enabled ?? true, signal,
+        this.haLocalFailovers?.hasObservedLive(id) || false,
+        this.haFailureMonitor.view(id)?.suspected || false),
+        monitor: this.haFailureMonitor.view(id),
+        promotion: this.machines.get(id).haPromotion || null,
+        localFailover: this.haLocalFailovers?.view(id) || null, adapter };
     }
     if (spec.id === 'virtio-fs') {
       if (!this.virtioFsShares) return { ready: false, executed: false, adapter,
@@ -1519,6 +1531,12 @@ export class NextFeatures {
     if (value.action === 'configure') {
       const { action: _, ...configuration } = value;
       return this.configure(id, configuration);
+    }
+    if (value.featureId === 'ha-failover' && value.action === 'run') {
+      const operation = z.object({ mode: z.literal('rejoin'),
+        dataReconciled: z.literal(true) }).strict().parse(value.options);
+      if (!this.haLocalFailovers) throw new AppError('本机故障接管服务尚未启用', 503);
+      return this.haLocalFailovers.rejoin(id, operation.dataReconciled);
     }
     const spec = this.spec(value.featureId);
     if (value.action === 'check' || spec.id === 'incident-lockdown')
