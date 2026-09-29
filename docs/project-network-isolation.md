@@ -6,4 +6,4 @@
 
 这是一项针对 **Sakura 托管项目进程** 的网络分段功能，当前仍标为部分实现。管理员终端、SSH、客户机自行启动的进程、图形应用及其他扩展不受该模式限制；客户机 root 也能自行变更网络命名空间。不能把它当作抵御客户机管理员或恶意代码的安全边界，也不能用它承诺实例级无外网。需要整个实例断网时，应使用实例级网络策略。
 
-`npm run test:project-network-isolation` 在真实 Alpine 虚拟机中验证两个项目使用不同的命名空间、没有路由，且初始化、服务、收藏命令与流水线进入各自命名空间，并验证停止后的清理。Debian/Ubuntu 客户机通过 `iproute2` 使用同一命名空间命令，尚未完成相同的真实虚拟机测试。
+`npm run test:project-network-isolation` 在真实 Alpine 虚拟机中验证两个项目使用不同的命名空间、没有路由，且初始化、服务、收藏命令与流水线进入各自命名空间，并验证停止后的清理。`npx tsx scripts/smoke-project-network-isolation.ts debian` 和 `npx tsx scripts/smoke-project-network-isolation.ts ubuntu` 在真实 Debian、Ubuntu 客户机中通过同一流程。三个发行版均已验证；管理员终端和自行启动进程仍不受项目命名空间约束。

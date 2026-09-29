@@ -4,11 +4,15 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+const distro = process.argv[2] || process.env.SAKURA_TEST_DISTRO || 'alpine';
+assert.ok(['alpine', 'debian', 'ubuntu'].includes(distro), 'unsupported smoke distro');
+const imageName = { alpine: 'alpine-3.23.qcow2', debian: 'debian-12.qcow2',
+  ubuntu: 'ubuntu-24.04.qcow2' }[distro]!;
 const directory = await mkdtemp(join(tmpdir(), 'sakura-project-netns-'));
 await mkdir(join(directory, 'images'), { recursive: true });
-await copyFile(resolve('.data/images/alpine-3.23.qcow2'),
-  join(directory, 'images/alpine-3.23.qcow2'));
+await copyFile(resolve('.data/images', imageName), join(directory, 'images', imageName));
 process.env.SAKURA_DATA_DIR = directory;
+process.env.SAKURA_IMAGE_DIR = join(directory, 'images');
 process.env.SAKURA_IMAGE_PATH = join(directory, 'images/alpine-3.23.qcow2');
 const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
@@ -32,8 +36,8 @@ async function job(id: string, projectId = 'default') {
   assert.equal(result?.status, 'done', result?.error + '\n' + result?.log);
 }
 try {
-  const vm = await machines.create({ name: 'project-netns-smoke',
-    memoryMiB: 512, cpus: 2, diskGiB: 4 });
+  const vm = await machines.create({ name: `project-netns-${distro}`, distro: distro as
+    'alpine' | 'debian' | 'ubuntu', memoryMiB: 1024, cpus: 2, diskGiB: 4 });
   await machines.start(vm.id);
   const deadline = Date.now() + 300_000;
   while (machines.state(vm.id) !== 'running') {
@@ -90,7 +94,7 @@ try {
     await job(vm.id);
   });
   assert.equal(await command(vm.id, 'ip netns list'), '');
-  console.log('Real Alpine project namespaces, setup, services, presets, pipelines and cleanup passed');
+  console.log(`Real ${distro} project namespaces, setup, services, presets, pipelines and cleanup passed`);
 } finally {
   await commands.close();
   await pipelines.close();
