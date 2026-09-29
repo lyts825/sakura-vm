@@ -107,6 +107,7 @@ export type VMRecord = VMConfig & {
     sourceVmId?: string; snapshotId?: string; diskSha256?: string };
   haPromotion?: HaPromotion;
   haRetirement?: HaRetirement;
+  haWitnessEnrollment?: HaWitnessEnrollment;
   liveMigrationFence?: LiveMigrationFence;
   liveMigrationOrigin?: LiveMigrationOrigin;
   // Snapshot clones retain an independent baseline disk for three-way workspace merges.
@@ -122,6 +123,11 @@ export const haPromotionSchema = z.object({
   updatedAt: z.iso.datetime(), error: z.string().max(500).optional(),
 }).strict();
 export type HaPromotion = z.infer<typeof haPromotionSchema>;
+export const haWitnessEnrollmentSchema = z.object({
+  targetHostId: z.uuid(), failureThreshold: z.number().int().min(2).max(10),
+  registeredAt: z.iso.datetime(),
+}).strict();
+export type HaWitnessEnrollment = z.infer<typeof haWitnessEnrollmentSchema>;
 export const haRetirementSchema = z.object({
   sourceHostId: z.uuid(), transferId: z.uuid(), sourceVmId: z.uuid(),
   snapshotId: z.uuid(), sha256: z.string().regex(/^[a-f0-9]{64}$/),

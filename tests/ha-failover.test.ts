@@ -37,7 +37,7 @@ const replications = () => ({ view: () => ({ entries: [{
 test('failover policy accepts bounded health settings and rejects unknown parameters', () => {
   assert.deepEqual(haFailoverOptions.parse({ targetHostId }), {
     targetHostId, failureThreshold: 3, maxReplicaAgeMinutes: 1440,
-    autoProcessFailover: false,
+    autoProcessFailover: false, autoHostFailover: false,
   });
   assert.equal(haFailoverOptions.safeParse({ targetHostId, failureThreshold: 1 }).success, false);
   assert.equal(haFailoverOptions.safeParse({ targetHostId, command: 'start' }).success, false);
@@ -51,8 +51,18 @@ test('failover health check identifies a fresh verified replica without claiming
   assert.equal(result.target?.hostId, targetHostId);
   assert.equal(result.replica?.remoteVmId, remoteVmId);
   assert.equal(result.replica?.receiptVerified, true);
-  assert.ok(result.blockers.some((item) => item.includes('栅栏')));
-  assert.ok(result.blockers.some((item) => item.includes('流量切换')));
+  assert.ok(result.blockers.some((item) => item.includes('未启用独立见证')));
+  assert.equal(result.hostPlanReady, false);
+});
+
+test('host-loss plan requires an eligible verified stopped replica', async () => {
+  const ready = await checkHaFailover(machines(new Date().toISOString()), peers(),
+    replications(), vmId, { targetHostId, autoHostFailover: true }, true);
+  assert.equal(ready.hostPlanReady, true);
+  assert.equal(ready.replica?.standbyStatus, 'stopped');
+  const unavailable = await checkHaFailover(machines(new Date().toISOString()), peers(false),
+    replications(), vmId, { targetHostId, autoHostFailover: true }, true);
+  assert.equal(unavailable.hostPlanReady, false);
 });
 
 test('fresh verified replica can pass the local process-only preflight after QEMU exits', async () => {

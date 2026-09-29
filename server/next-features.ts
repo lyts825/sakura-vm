@@ -37,6 +37,7 @@ import { LiveMigrationRunner } from './live-migration-runner.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
 import { HaFailureMonitor } from './ha-failure-monitor.ts';
 import type { HaLocalFailovers } from './ha-local-failovers.ts';
+import type { HaHostFailover } from './ha-host-failover.ts';
 import { inspectVirtioFs, type VirtioFsShares } from './virtio-fs.ts';
 
 /**
@@ -93,7 +94,7 @@ export const nextFeatureCatalog = [
     '故障自动接管',
     '远程主机与集群',
     'P0',
-    '监测本机 QEMU 进程故障，显式启用后以持久来源栅栏启动已校验副本；宿主失联接管仍需独立见证。',
+    '监测本机 QEMU 进程故障；配置独立见证、Redfish 隔离、应用健康与流量接口后，可对宿主失联执行受控接管。',
     'experimental',
   ],
   [
@@ -682,6 +683,7 @@ export class NextFeatures {
   teamTemplates: TeamTemplates;
   haFailureMonitor: HaFailureMonitor;
   private haLocalFailovers?: HaLocalFailovers;
+  private haHostFailover?: HaHostFailover;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private hostPeers?: HostPeers;
   private liveMigrationRunner?: LiveMigrationRunner;
@@ -729,6 +731,7 @@ export class NextFeatures {
   }
 
   setHaLocalFailovers(service: HaLocalFailovers) { this.haLocalFailovers = service; }
+  setHaHostFailover(service: HaHostFailover) { this.haHostFailover = service; }
 
   async init() {
     try {
@@ -867,6 +870,7 @@ export class NextFeatures {
       haFailoverMonitor: this.haFailureMonitor.view(id),
       haPromotion: this.machines.get(id).haPromotion || null,
       haLocalFailover: this.haLocalFailovers?.view(id) || null,
+      haHostFailover: this.haHostFailover?.view(id) || null,
       executions: (state.executions[id] || []).slice(-80).reverse(),
       jobs: this.jobs
         .list()
@@ -900,8 +904,40 @@ export class NextFeatures {
       value.options = z.object({}).strict().parse(value.options);
     if (value.featureId === 'gpu-compute-passthrough')
       value.options = gpuComputeInput.parse(value.options);
-    if (value.featureId === 'ha-failover')
-      value.options = haFailoverOptions.parse(value.options);
+    if (value.featureId === 'ha-failover') {
+      const haOptions = haFailoverOptions.parse(value.options);
+      value.options = haOptions;
+      const wantsWitness = value.enabled && haOptions.autoHostFailover;
+      if (wantsWitness && !haOptions.targetHostId)
+        throw new AppError('请先选择已配对的故障接管目标主机', 409);
+      if (wantsWitness &&
+          !this.haHostFailover?.configured())
+        throw new AppError('启用宿主失联接管前须配置独立见证节点', 409);
+      const enrolled = this.machines.get(id).haWitnessEnrollment;
+      const changing = !!enrolled && (!wantsWitness ||
+        enrolled.targetHostId !== haOptions.targetHostId ||
+        enrolled.failureThreshold !== haOptions.failureThreshold);
+      if (wantsWitness && enrolled && changing)
+        throw new AppError('请先关闭宿主失联接管，更新见证节点配置后再启用新的目标或阈值', 409);
+      if (wantsWitness && (!enrolled || changing)) this.machines.requireStopped(id);
+      if (wantsWitness) {
+        const witness = await this.haHostFailover!.witnessStatus(id);
+        if (witness.error || witness.phase !== 'source' ||
+            witness.targetHostId !== haOptions.targetHostId ||
+            witness.failureThreshold !== haOptions.failureThreshold)
+          throw new AppError(`见证节点尚未就绪或目标配置不一致：${witness.error || witness.phase || '未知状态'}`,
+            409);
+      }
+      if (changing) {
+        if (!this.haHostFailover)
+          throw new AppError('宿主失联接管服务不可用，不能安全撤销策略', 503);
+        await this.haHostFailover.disarm(id, enrolled!.failureThreshold);
+        await this.machines.releaseHaWitness(id, enrolled!.targetHostId);
+      }
+      if (wantsWitness)
+        await this.machines.enrollHaWitness(id,
+          haOptions.targetHostId!, haOptions.failureThreshold);
+    }
     if (value.featureId === 'process-interop' && !value.enabled && this.processInterop)
       await this.processInterop.action(id, { mode: 'disable' }, 'run');
     const state = await this.state();
@@ -1141,13 +1177,28 @@ export class NextFeatures {
     if (spec.id === 'ha-failover') {
       if (!this.hostPeers) return { ready: false, executed: false, adapter,
         reason: '主机配对服务尚未启动。' };
-      return { ...await checkHaFailover(this.machines, this.hostPeers,
+      const checked = await checkHaFailover(this.machines, this.hostPeers,
         this.snapshotReplications, id, merged, configured?.enabled ?? true, signal,
         this.haLocalFailovers?.hasObservedLive(id) || false,
-        this.haFailureMonitor.view(id)?.suspected || false),
+        this.haFailureMonitor.view(id)?.suspected || false);
+      const witness = checked.policy.autoHostFailover
+        ? await this.haHostFailover?.witnessStatus(id) ||
+          { configured: false, error: '宿主失联接管服务未启用' }
+        : null;
+      const blockers = [...checked.blockers];
+      if (checked.policy.autoHostFailover) {
+        if (!witness?.configured) blockers.push('独立见证节点未配置。');
+        else if (witness.error) blockers.push(`独立见证节点：${witness.error}`);
+        else if (witness.phase !== 'source' || !witness.armed)
+          blockers.push('独立见证节点尚未确认布防。');
+      }
+      return { ...checked, ready: checked.hostPlanReady && blockers.length === 0,
+        blockers, reason: blockers[0],
         monitor: this.haFailureMonitor.view(id),
         promotion: this.machines.get(id).haPromotion || null,
-        localFailover: this.haLocalFailovers?.view(id) || null, adapter };
+        localFailover: this.haLocalFailovers?.view(id) || null,
+        hostFailover: this.haHostFailover?.view(id) || null,
+        witness, adapter };
     }
     if (spec.id === 'virtio-fs') {
       if (!this.virtioFsShares) return { ready: false, executed: false, adapter,
@@ -1547,8 +1598,12 @@ export class NextFeatures {
     if (value.featureId === 'ha-failover' && value.action === 'run') {
       const operation = z.object({ mode: z.literal('rejoin'),
         dataReconciled: z.literal(true) }).strict().parse(value.options);
-      if (!this.haLocalFailovers) throw new AppError('本机故障接管服务尚未启用', 503);
-      return this.haLocalFailovers.rejoin(id, operation.dataReconciled);
+      if (this.machines.get(id).haPromotion) {
+        if (!this.haLocalFailovers) throw new AppError('本机故障接管服务尚未启用', 503);
+        return this.haLocalFailovers.rejoin(id, operation.dataReconciled);
+      }
+      if (!this.haHostFailover) throw new AppError('宿主失联接管服务尚未启用', 503);
+      return this.haHostFailover.rejoin(id, operation.dataReconciled);
     }
     const spec = this.spec(value.featureId);
     if (value.action === 'check' || spec.id === 'incident-lockdown')

@@ -11,9 +11,12 @@ type Promotion = { remoteVmId: string; snapshotId: string; status: 'fenced' | 'a
   fencedAt: string; error?: string };
 
 export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, localFailover,
+  hostFailover,
   reload }: {
   request: Request; vmId: string; setting?: Setting; monitor?: Monitor | null;
   promotion?: Promotion | null; localFailover?: { error: string | null } | null;
+  hostFailover?: { configured: boolean; armed: boolean; phase: string | null;
+    targetVmId: string | null; error: string | null } | null;
   reload: () => void;
 }) {
   const peers = useRemote<PeerView>(request, '/host-peers', true, 10000);
@@ -26,6 +29,8 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
     Number(setting?.options?.maxReplicaAgeMinutes || 1440));
   const [autoProcessFailover, setAutoProcessFailover] = useState(
     setting?.options?.autoProcessFailover === true);
+  const [autoHostFailover, setAutoHostFailover] = useState(
+    setting?.options?.autoHostFailover === true);
   const [dataReconciled, setDataReconciled] = useState(false);
   const [result, setResult] = useState('');
   useEffect(() => {
@@ -35,12 +40,13 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
     setFailureThreshold(Number(setting.options?.failureThreshold || 3));
     setMaxReplicaAgeMinutes(Number(setting.options?.maxReplicaAgeMinutes || 1440));
     setAutoProcessFailover(setting.options?.autoProcessFailover === true);
+    setAutoHostFailover(setting.options?.autoHostFailover === true);
   }, [setting?.updatedAt]);
   const options = { ...(targetHostId ? { targetHostId } : {}),
-    failureThreshold, maxReplicaAgeMinutes, autoProcessFailover };
+    failureThreshold, maxReplicaAgeMinutes, autoProcessFailover, autoHostFailover };
   return <div className="ha-failover-panel" aria-label="故障接管策略与健康检查">
     <h4>故障接管策略与健康检查</h4>
-    <p className="muted">本机每 15 秒观察主实例。开启本机进程故障接管后，仅在 Sakura 确认来源 QEMU 已退出、达到阈值且目标副本通过校验时，先持久封锁来源再请求目标启动。宿主失联和网络分区不会触发接管。</p>
+    <p className="muted">本机每 15 秒观察主实例。进程接管先持久封锁来源再启动副本；宿主失联接管还需独立见证节点、带外电源隔离、应用健康检查与流量切换配置。</p>
     {monitor && <p role={monitor.suspected ? 'alert' : undefined}>
       {monitor.suspected ? '已达到疑似故障阈值' : monitor.armed ? '正在监测主实例' : '监测未就绪'}：
       {monitor.consecutiveFailures}/{Number(setting?.options?.failureThreshold || 3)} 次 ·
@@ -66,13 +72,24 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
         onChange={(event) => setEnabled(event.target.checked)} />启用本机故障监测</label>
       <label className="checkbox-row"><input type="checkbox" checked={autoProcessFailover}
         onChange={(event) => setAutoProcessFailover(event.target.checked)} />本机 QEMU 进程退出后自动接管</label>
+      <label className="checkbox-row"><input type="checkbox" checked={autoHostFailover}
+        disabled={!hostFailover?.configured}
+        onChange={(event) => setAutoHostFailover(event.target.checked)} />独立见证节点确认宿主隔离后自动接管</label>
     </div>
+    {autoHostFailover && hostFailover && <p role={hostFailover.error ? 'alert' : undefined}>
+      见证节点：{hostFailover.phase === 'promoted' ? '目标已接管' :
+        hostFailover.phase === 'fencing' ? '正在隔离来源' :
+        hostFailover.phase === 'fenced' ? '来源已隔离，等待目标就绪' :
+        hostFailover.armed ? '已布防' : '未布防'}
+      {hostFailover.targetVmId && ` · 目标 ${hostFailover.targetVmId}`}
+      {hostFailover.error && ` · ${hostFailover.error}`}</p>}
+    {!hostFailover?.configured && <p className="muted">需先设置 SAKURA_HA_WITNESS_CONFIG_FILE 并重启 Sakura，才能启用宿主失联接管。</p>}
     {promotion && <p role="alert">来源启动已被持久封锁；目标实例 <code>{promotion.remoteVmId}</code>：
       {promotion.status === 'accepted' ? '已接受启动' : '等待启动确认'} ·
       栅栏时间 {formatDateTime(promotion.fencedAt)}
       {promotion.error && ` · ${promotion.error}`}</p>}
     {localFailover?.error && <p role="alert">最近一次接管尝试：{localFailover.error}</p>}
-    {promotion && <label className="checkbox-row"><input type="checkbox"
+    {(promotion || hostFailover?.phase === 'promoted') && <label className="checkbox-row"><input type="checkbox"
       checked={dataReconciled} onChange={(event) => setDataReconciled(event.target.checked)} />
       已回迁目标运行期间的写入数据，或接受丢失这些新数据</label>}
     <div className="feature-actions">
@@ -89,7 +106,8 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
           setResult(JSON.stringify(checked, null, 2));
           reload();
         })}>检查健康</button>
-      {promotion && <button className="secondary" disabled={action.busy || !dataReconciled}
+      {(promotion || hostFailover?.phase === 'promoted') &&
+        <button className="secondary" disabled={action.busy || !dataReconciled}
         onClick={() => void action.run(async () => {
           await request(`/vms/${vmId}/next-features`, 'POST',
             { action: 'run', featureId: 'ha-failover',

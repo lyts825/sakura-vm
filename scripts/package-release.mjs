@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const outputRoot = join(root, 'release');
 await mkdir(outputRoot, { recursive: true });
 const output = await mkdtemp(join(outputRoot, 'sakura-'));
-for (const folder of ['dist', '.sakura-server'])
+for (const folder of ['dist', '.sakura-server', '.sakura-witness'])
   await cp(join(root, folder), join(output, folder), { recursive: true });
 await cp(join(root, 'browser-extension'), join(output, 'browser-extension'), { recursive: true });
 await cp(join(root, 'package-lock.json'), join(output, 'package-lock.json'));
@@ -16,6 +16,7 @@ manifest.scripts = {
   setup: manifest.scripts.setup,
   start: manifest.scripts.start,
   'start:wsl': manifest.scripts['start:wsl'],
+  'ha:witness': manifest.scripts['ha:witness'],
   'check:wsl': manifest.scripts['check:wsl'],
   sakura: manifest.scripts.sakura,
   tray: manifest.scripts.tray,

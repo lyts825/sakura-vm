@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .sakura-server/
+.sakura-witness/
 playwright-report/
 test-results/
 release/

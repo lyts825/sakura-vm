@@ -46,6 +46,8 @@ import { LiveMigrationReceiver } from './live-migration-receiver.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
 import { HaLocalFailovers } from './ha-local-failovers.ts';
+import { HaHostFailover } from './ha-host-failover.ts';
+import { HaWitnessClient } from './ha-witness-client.ts';
 import { NotebookEnvironments } from './notebook-environments.ts';
 import { BrowserIde } from './browser-ide.ts';
 import { storagePoolInput } from './storage-pools.ts';
@@ -287,7 +289,6 @@ async function main() {
   const inspectReplicaActivation = ({ requesterId, transferId, remoteVmId, sha256,
     sourceVmId, snapshotId }: { requesterId: string; transferId: string;
     remoteVmId: string; sha256: string; sourceVmId: string; snapshotId: string }) => {
-    session.requireUnlocked();
     if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
     if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
     const vm = machines.get(remoteVmId);
@@ -330,7 +331,6 @@ async function main() {
     inspectActivation: async (input) => inspectImportedActivation(input),
     inspectReplicaActivation: async (input) => inspectReplicaActivation(input),
     retireReplica: async (input) => {
-      session.requireUnlocked();
       if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
       if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
       machines.requireUnlocked(input.remoteVmId);
@@ -365,6 +365,7 @@ async function main() {
   let coldMigrations: ColdMigrations | undefined;
   let snapshotReplications: SnapshotReplications | undefined;
   let haLocalFailovers: HaLocalFailovers | undefined;
+  let haHostFailover: HaHostFailover | undefined;
   let browserIde: BrowserIde | undefined;
   if (features.next) {
     const notebooks = new NotebookEnvironments(machines, features.workspaces);
@@ -383,9 +384,18 @@ async function main() {
     features.next.setSnapshotReplications(snapshotReplications);
     haLocalFailovers = new HaLocalFailovers(machines, features.next.haFailureMonitor,
       hostPeers, snapshotReplications, () => features.next!.haPolicies(),
-      () => !session.view().locked && !features.migration?.blocked && !machines.closing);
+      () => !features.migration?.blocked && !machines.closing);
     features.next.setHaLocalFailovers(haLocalFailovers);
     await haLocalFailovers.init();
+    const witnessClient = await HaWitnessClient.fromEnv().catch((error) => {
+      console.error('HA 见证配置不可用：', (error as Error).message);
+      return null;
+    });
+    haHostFailover = new HaHostFailover(machines, hostPeers,
+      snapshotReplications, () => features.next!.haPolicies(), witnessClient);
+    machines.setHaStartGuard((id) => haHostFailover!.authorizeStart(id));
+    features.next.setHaHostFailover(haHostFailover);
+    await haHostFailover.init();
   }
   if (features.next && features.backups && features.bundles)
     features.next.setDisasterRecovery(new DisasterRecoveryDrill(
@@ -1774,6 +1784,7 @@ async function main() {
       () => gpuProfiles.close(),
       () => buildFarm.close(),
       () => haLocalFailovers?.close(),
+      () => haHostFailover?.close(),
       () => hostPeers.close(),
       () => retention.close(),
       () => graph.close(),

@@ -8,6 +8,7 @@ export const haFailoverOptions = z.object({
   failureThreshold: z.number().int().min(2).max(10).default(3),
   maxReplicaAgeMinutes: z.number().int().min(1).max(10080).default(1440),
   autoProcessFailover: z.boolean().default(false),
+  autoHostFailover: z.boolean().default(false),
 }).strict();
 
 export async function checkHaFailover(machines: Machines, peers: HostPeers,
@@ -73,7 +74,8 @@ export async function checkHaFailover(machines: Machines, peers: HostPeers,
   else if (ageMinutes === null) blockers.push('来源快照已不存在，无法计算副本数据时效。');
   else if (ageMinutes > policy.maxReplicaAgeMinutes)
     blockers.push(`副本数据已超过 ${policy.maxReplicaAgeMinutes} 分钟时效上限。`);
-  if (policy.autoProcessFailover && latest?.remoteVmId && latest.sha256 &&
+  if ((policy.autoProcessFailover || policy.autoHostFailover) &&
+      latest?.remoteVmId && latest.sha256 &&
       peer && receiptVerified) {
     try {
       signal?.throwIfAborted();
@@ -90,8 +92,10 @@ export async function checkHaFailover(machines: Machines, peers: HostPeers,
       blockers.push(`目标故障副本启动预检失败：${(error as Error).message}`);
     }
   }
-  blockers.push('尚无独立见证节点与源主机栅栏，网络分区时不能安全地自动启动副本。');
-  blockers.push('宿主失联接管仍缺目标健康确认与流量切换；仅本机确认 QEMU 进程退出时可使用持久栅栏启动副本。');
+  if (!policy.autoHostFailover) {
+    blockers.push('未启用独立见证节点接管；宿主失联不会自动启动副本。');
+    blockers.push('仅本机确认 QEMU 进程退出时可使用持久栅栏启动副本。');
+  }
   const localProcessReady = enabled && policy.autoProcessFailover &&
     processObserved && failureSuspected &&
     (sourceState === 'error' || sourceState === 'stopped') &&
@@ -99,9 +103,14 @@ export async function checkHaFailover(machines: Machines, peers: HostPeers,
     compatible && !!latest?.remoteVmId && !!latest?.sha256 &&
     receiptVerified && standbyStatus === 'stopped' &&
     ageMinutes !== null && ageMinutes <= policy.maxReplicaAgeMinutes;
+  const hostPlanReady = enabled && policy.autoHostFailover &&
+    sourceState === 'running' && !vm.haPromotion && !!target?.eligible &&
+    compatible && !!latest?.remoteVmId && !!latest.sha256 &&
+    receiptVerified && standbyStatus === 'stopped' &&
+    ageMinutes !== null && ageMinutes <= policy.maxReplicaAgeMinutes;
   return {
     ready: false, executed: false, checkedAt: new Date().toISOString(),
-    localProcessReady, processObservedInSession: processObserved,
+    localProcessReady, hostPlanReady, processObservedInSession: processObserved,
     failureSuspected,
     policy, source: { vmId: id, state: sourceState },
     target: target ? { hostId: target.id, name: target.name,
@@ -112,6 +121,8 @@ export async function checkHaFailover(machines: Machines, peers: HostPeers,
       sha256: latest.sha256, replicatedAt: latest.updatedAt, ageMinutes,
       receiptVerified, standbyStatus } : null,
     blockers, reason: blockers[0],
-    message: '开启本机进程故障接管后，达到故障阈值且 QEMU 已退出时将持久封锁来源并尝试启动已校验目标；宿主失联不会触发。',
+    message: policy.autoHostFailover
+      ? '独立见证节点须确认带外隔离、应用健康与流量切换，才会完成宿主失联接管。'
+      : '开启本机进程故障接管后，达到故障阈值且 QEMU 已退出时将持久封锁来源并尝试启动已校验目标；宿主失联不会触发。',
   };
 }

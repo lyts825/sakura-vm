@@ -7,6 +7,7 @@ const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 for (const name of ['tsx', 'vite', 'react', 'react-dom', '@xterm/xterm', '@novnc/novnc'])
   if (Object.hasOwn(manifest.dependencies, name)) throw new Error(`${name} should only be needed to build the release`);
 for (const file of ['dist/index.html', 'dist/single-app.html', '.sakura-server/index.js',
+  '.sakura-witness/ha-witness.js',
   '.sakura-server/assets/state-report.sh', '.sakura-server/assets/engineering-runner.py',
   '.sakura-server/assets/secure-erase.py'])
   await stat(join(root, file));
@@ -40,6 +41,7 @@ async function collect(folder) {
   }
 }
 await collect(join(root, '.sakura-server'));
+await collect(join(root, '.sakura-witness'));
 for (const file of jsFiles) {
   const checked = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
   if (checked.status !== 0) throw new Error(`Invalid release JavaScript: ${file}\n${checked.stderr}`);

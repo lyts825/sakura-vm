@@ -23,6 +23,7 @@ import {
   organizationSchema,
   haPromotionSchema,
   haRetirementSchema,
+  haWitnessEnrollmentSchema,
   liveMigrationFenceSchema,
   liveMigrationOriginSchema,
   type HaPromotion,
@@ -167,6 +168,8 @@ export class Machines extends EventEmitter {
   private incidentWrites = Promise.resolve();
   private rescueControllers = new Set<AbortController>();
   private hostPortReservations = new Map<string, Set<number>>();
+  private haStartGuard?: (id: string) => Promise<void>;
+  setHaStartGuard(guard: (id: string) => Promise<void>) { this.haStartGuard = guard; }
   reserveHostPorts(owner: string, ports: Iterable<number>) {
     const next = new Set(ports);
     for (const port of next) {
@@ -265,6 +268,8 @@ export class Machines extends EventEmitter {
           r.haPromotion = haPromotionSchema.parse(r.haPromotion);
         if (r.haRetirement !== undefined)
           r.haRetirement = haRetirementSchema.parse(r.haRetirement);
+        if (r.haWitnessEnrollment !== undefined)
+          r.haWitnessEnrollment = haWitnessEnrollmentSchema.parse(r.haWitnessEnrollment);
         if (r.liveMigrationFence !== undefined)
           r.liveMigrationFence = liveMigrationFenceSchema.parse(r.liveMigrationFence);
         if (r.liveMigrationOrigin !== undefined)
@@ -733,6 +738,38 @@ export class Machines extends EventEmitter {
     transferId: string; sourceVmId: string; snapshotId: string; sha256: string }) {
     return this.startInternal(id, undefined, false, identity);
   }
+  async enrollHaWitness(id: string, targetHostId: string, failureThreshold: number) {
+    z.uuid().parse(targetHostId);
+    z.number().int().min(2).max(10).parse(failureThreshold);
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      this.requireStopped(id);
+      if (vm.haWitnessEnrollment) {
+        if (vm.haWitnessEnrollment.targetHostId !== targetHostId ||
+            vm.haWitnessEnrollment.failureThreshold !== failureThreshold)
+          throw new AppError('实例已登记其他 HA 见证目标，须先撤销', 409);
+        return vm.haWitnessEnrollment;
+      }
+      vm.haWitnessEnrollment = haWitnessEnrollmentSchema.parse({ targetHostId,
+        failureThreshold,
+        registeredAt: new Date().toISOString() });
+      try { await this.save(); }
+      catch (error) { delete vm.haWitnessEnrollment; throw error; }
+      this.emit('change');
+      return vm.haWitnessEnrollment;
+    });
+  }
+  async releaseHaWitness(id: string, targetHostId: string) {
+    return this.locked(id, async () => {
+      const vm = this.get(id), previous = vm.haWitnessEnrollment;
+      if (!previous || previous.targetHostId !== targetHostId)
+        throw new AppError('实例见证登记已变化', 409);
+      delete vm.haWitnessEnrollment;
+      try { await this.save(); }
+      catch (error) { vm.haWitnessEnrollment = previous; throw error; }
+      this.emit('change');
+    });
+  }
   async startIncoming(id: string) {
     return this.startInternal(id, undefined, true);
   }
@@ -893,6 +930,12 @@ export class Machines extends EventEmitter {
         if (incoming && this.live.has(id))
           throw new AppError('迁移目标实例必须处于停止状态', 409);
         if (this.live.has(id)) return this.view(id);
+        if (vm.haWitnessEnrollment) {
+          if (!this.haStartGuard)
+            throw new AppError('见证启动校验不可用，拒绝启动已登记实例',
+              503, 'HA_WITNESS_UNAVAILABLE');
+          await this.haStartGuard(id);
+        }
         validateAdmission(
           await resourcePolicy(),
           vm,
@@ -2400,6 +2443,9 @@ export class Machines extends EventEmitter {
             throw new AppError('源实例在迁移后已变化，保留源实例，请重新预览', 409);
         }
         const vm = this.get(id);
+        if (vm.haWitnessEnrollment)
+          throw new AppError('请先在故障接管策略中撤销见证登记，再删除实例',
+            409, 'HA_WITNESS_ENROLLED');
         await this.removeVmDirectory(vm);
         this.records.delete(id);
         this.logs.delete(id);

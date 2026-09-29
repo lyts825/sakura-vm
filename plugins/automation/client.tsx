@@ -138,6 +138,8 @@ type NextView = {
   haPromotion?: { remoteVmId: string; snapshotId: string; status: 'fenced' | 'accepted';
     fencedAt: string; error?: string } | null;
   haLocalFailover?: { error: string | null } | null;
+  haHostFailover?: { configured: boolean; armed: boolean; phase: string | null;
+    targetVmId: string | null; error: string | null } | null;
   executions?: Array<{
     featureId: string;
     action: string;
@@ -1151,7 +1153,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
             <HaFailoverPanel key={active.id} request={request} vmId={active.id}
               setting={next.data.settings['ha-failover']}
               monitor={next.data.haFailoverMonitor} promotion={next.data.haPromotion}
-              localFailover={next.data.haLocalFailover} reload={next.reload} />}
+              localFailover={next.data.haLocalFailover}
+              hostFailover={next.data.haHostFailover} reload={next.reload} />}
           {nextResult && <pre className="feature-log">{nextResult}</pre>}
           {hardwareReport && <HardwareMatrix report={hardwareReport} />}
           {showUsbHotplug && <UsbHotplugPanel request={request} vmId={active.id} />}
