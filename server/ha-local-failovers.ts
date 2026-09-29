@@ -103,6 +103,7 @@ export class HaLocalFailovers {
       const target = await this.peers.checkReplicaActivation(replica.peerId, input);
       if (target.status !== 'stopped')
         throw new AppError(`故障副本当前为 ${target.status}，拒绝自动接管`, 409);
+      if (this.closed || !this.allowed()) return;
       const at = new Date().toISOString();
       promotion = await this.machines.fenceForHa(id, {
         peerId: replica.peerId, targetHostId: checked.policy.targetHostId!,
@@ -110,7 +111,8 @@ export class HaLocalFailovers {
         snapshotId: input.snapshotId, sha256: input.sha256,
         fencedAt: at, status: 'fenced', updatedAt: at,
       }, async () => {
-        if (!this.observedLive.has(id) || !this.monitor.view(id)?.suspected ||
+        if (this.closed || !this.allowed() || !this.observedLive.has(id) ||
+            !this.monitor.view(id)?.suspected ||
             this.machines.live.has(id))
           throw new AppError('来源实例故障状态已变化，取消接管', 409);
         const latest = (await this.policies())[id];
@@ -123,7 +125,9 @@ export class HaLocalFailovers {
     const input = { transferId: promotion.transferId, remoteVmId: promotion.remoteVmId,
       sha256: promotion.sha256, sourceVmId: id, snapshotId: promotion.snapshotId };
     try {
+      if (this.closed || !this.allowed()) return;
       const target = await this.peers.checkReplicaActivation(promotion.peerId, input);
+      if (this.closed || !this.allowed()) return;
       const result = target.status === 'stopped'
         ? await this.peers.activateReplica(promotion.peerId, input) : target;
       if (result.status !== 'starting' && result.status !== 'running')
