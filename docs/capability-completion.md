@@ -2,7 +2,7 @@
 
 ## 可选 WSL Linux 后端
 
-Windows 项目目录现在提供 `npm run check:wsl` 和 `npm run start:wsl`：前者检查 Linux Node.js、QEMU、swtpm、virtiofsd、带预登记密钥的 OVMF 及构建产物；后者把服务与 QEMU 放在默认 WSL 发行版内，数据单独保存在 Linux 文件系统，使已经实现的 TPM/安全启动与 Virtio-FS 路径可从 Windows 浏览器使用。2026-09-29 在本机验证 WSL 依赖探测、Windows 本机 HTTP 访问、通过 Windows CLI 创建并启动真实 Alpine 客户机、执行 `uname -a`、停止实例和 Ctrl+C 关闭服务。TPM 与 Virtio-FS 的真实客户机验证记录仍见各自文档；此入口不改变随附 Windows QEMU 的缺失后端。使用说明见 [WSL 后端](wsl-backend.md)。
+Windows 项目目录现在提供 `npm run check:wsl` 和 `npm run start:wsl`：前者检查 Linux Node.js、QEMU、swtpm、virtiofsd、带预登记密钥的 OVMF 及构建产物；后者把服务与 QEMU 放在默认 WSL 发行版内，数据单独保存在 Linux 文件系统，使已经实现的 TPM/安全启动与 Virtio-FS 路径可从 Windows 浏览器使用。因此这两项在支持后端上列为可用。2026-09-29 在本机验证 WSL 依赖探测、Windows 本机 HTTP 访问、通过 Windows CLI 创建并启动真实 Alpine 客户机、执行 `uname -a`、停止实例和 Ctrl+C 关闭服务。TPM 与 Virtio-FS 的真实客户机验证记录仍见各自文档；此入口不改变随附 Windows QEMU 的缺失后端。使用说明见 [WSL 后端](wsl-backend.md)。
 
 ## 音视频设备与宿主媒体转发
 
@@ -585,7 +585,7 @@ ACME 证书续期在第三批能力中心选择“ACME 证书续期”。`status
 
 项目网络隔离跨发行版验证批次：相同的真实虚拟机脚本在 Alpine、Debian 和 Ubuntu 中验证独立命名空间、无路由、初始化、服务、收藏命令、流水线与停止清理。后续新增显式项目隔离终端，仍不限制普通管理员终端或客户机自行启动的进程，见 [项目网络隔离](project-network-isolation.md)。
 
-Virtio-FS 检查批次：第三批能力中心可分别检查 QEMU 文件系统设备、共享内存后端、virtiofsd 和客户机实际文件系统挂载。Linux 宿主已接通侧车进程、启动设备与客户机自动挂载；真实 Alpine、Debian、Ubuntu 客户机验证宿主文件读取、只读拒写和可写模式将客户机文件写入宿主。Windows 随附 QEMU 缺少文件系统设备和共享内存后端，目录仍为“部分实现”，范围见 [Virtio-FS 共享目录](virtio-fs.md)。
+Virtio-FS 检查批次：第三批能力中心可分别检查 QEMU 文件系统设备、共享内存后端、virtiofsd 和客户机实际文件系统挂载。Linux 宿主已接通侧车进程、启动设备与客户机自动挂载；真实 Alpine、Debian、Ubuntu 客户机验证宿主文件读取、只读拒写和可写模式将客户机文件写入宿主。Windows 可通过 WSL Linux 后端使用，目录在支持后端上列为可用；随附 Windows QEMU 仍缺少文件系统设备和共享内存后端，范围见 [Virtio-FS 共享目录](virtio-fs.md)。
 
 故障接管检查批次：第三批能力中心可保存目标主机、故障阈值和副本时效策略；后台每 15 秒观察本机主实例状态，持久记录连续故障样本，主动停止或暂停时撤销监测；手动检查源实例状态、目标资源与平台，以及已校验副本的实时回执和数据时效。新增显式选择的本机 QEMU 进程退出接管：只接受当前控制进程已观察过的运行实例，先持久封锁来源，再以独立入站权限请求目标启动；退出接管先持久封锁已停机的目标。宿主失联、网络分区及流量切换仍未实现，完整 HA 检查仍为未就绪。范围见 [故障接管策略与健康检查](ha-failover-check.md)。
 
@@ -597,7 +597,7 @@ Virtio-FS 检查批次：第三批能力中心可分别检查 QEMU 文件系统�
 
 单应用窗口批次：Alpine、Debian 和 Ubuntu 桌面页可为每个图形程序启动独立 Xvnc 显示器，通过有权限校验的桌面 WebSocket 在独立浏览器弹窗中操作，并支持重开与停止；令牌经同源消息交接，主控制页关闭后弹窗仍可继续。三个发行版的真实虚拟机均已验证两个会话端口相互独立、RFB 握手和停止清理；浏览器测试覆盖启动与停止。当前并非 Windows 原生单应用窗口。范围见 [单应用窗口说明](single-app-windows.md)。
 
-可信启动批次：第二批能力中心可检查安全版 OVMF、QEMU SMM/TPM 后端、`swtpm` 和客户机实际 SecureBoot/TPM 状态。Linux 宿主现在可为 Debian/Ubuntu UEFI 实例编排持久 swtpm 与预登记密钥的 OVMF；真实 Debian 和 Ubuntu 虚拟机已验证安全启动与 TPM 2.0。Ubuntu 签名引导链首次登记 EFI 启动项所需的复位可在 QEMU 内完成，初始化后恢复客户机重启即停止的策略。便携备份、导入和克隆可保留 TPM/NVRAM；新建停机磁盘快照也会保存对应状态，真实 Debian 和 Ubuntu 客户机完成回滚和历史导出后再启动。Windows 随附 QEMU 缺少 TPM 后端，目录保留“部分实现”。边界见 [TPM 与安全启动](trusted-boot.md)。
+可信启动批次：第二批能力中心可检查安全版 OVMF、QEMU SMM/TPM 后端、`swtpm` 和客户机实际 SecureBoot/TPM 状态。Linux 宿主现在可为 Debian/Ubuntu UEFI 实例编排持久 swtpm 与预登记密钥的 OVMF；真实 Debian 和 Ubuntu 虚拟机已验证安全启动与 TPM 2.0。Ubuntu 签名引导链首次登记 EFI 启动项所需的复位可在 QEMU 内完成，初始化后恢复客户机重启即停止的策略。便携备份、导入和克隆可保留 TPM/NVRAM；新建停机磁盘快照也会保存对应状态，真实 Debian 和 Ubuntu 客户机完成回滚和历史导出后再启动。Windows 可通过 WSL Linux 后端使用，目录在支持后端上列为可用；随附 Windows QEMU 仍缺少 TPM 后端。边界见 [TPM 与安全启动](trusted-boot.md)。
 
 项目网络隔离批次：项目设置新增仅回环的独立 Linux 网络命名空间；托管项目脚本、服务、健康检查、流水线、收藏命令、工程执行器、显式项目终端、代码诊断、语言服务、调试适配器和开发工具任务进入该命名空间。命名空间出现额外接口或路由时托管命令会拒绝执行，真实 Alpine、Debian、Ubuntu 客户机验证双项目分离、路由拒绝和清理；额外的 Alpine 客户机实测了私有网络中的 TypeScript/Python 语言服务、跨文件重命名及 debugpy 调试进程。按锁文件安装依赖在私有模式下运行，需联网下载时会失败；依赖可在共享网络预取后离线安装。数据库容器因无法保证隔离而被拒绝。普通管理员终端与客户机自行启动的进程仍可使用共享网络，因此目录保留“部分实现”。范围与操作见 [项目网络隔离](project-network-isolation.md)。
 

@@ -133,7 +133,7 @@ export const extendedFeatureCatalog = [
   ['packet-capture', '数据包捕获', '网络', 'P1', '在客户机限时抓包，导出无地址与载荷的匿名流量诊断报告。', 'available'],
   ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为客户机 TCP 服务创建限时、本机回环地址上的调试入口。', 'available'],
   ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2',
-    'Linux 宿主可编排持久 vTPM 与预登记密钥的 OVMF 安全启动；Windows 随附后端尚不支持。', 'experimental'],
+    'Linux 宿主可编排持久 vTPM 与预登记密钥的 OVMF 安全启动；Windows 可使用 WSL 后端。', 'available'],
   ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2',
     '管理员使用本机平台通行密钥和用户验证解锁已锁定的控制面，并建立新的管理员会话。', 'available'],
   ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'available'],

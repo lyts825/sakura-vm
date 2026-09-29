@@ -173,8 +173,8 @@ export const nextFeatureCatalog = [
     'Virtio-FS 共享目录',
     '虚拟硬件与固件',
     'P0',
-    'Linux 宿主可配置宿主目录、启动 virtiofsd 与共享内存 QEMU 设备，并在客户机自动挂载；当前 Windows 随附构建不支持。',
-    'experimental',
+    'Linux 宿主可配置宿主目录、启动 virtiofsd 与共享内存 QEMU 设备，并在客户机自动挂载；Windows 可使用 WSL 后端。',
+    'available',
   ],
   [
     'virtual-media-devices',

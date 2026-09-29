@@ -10,6 +10,6 @@ QMP 的 `set-action` 需要 QEMU 6.0 或更新版本；宿主能力检查会拒�
 
 停机后新建的磁盘快照还会保存对应 TPM/NVRAM 状态，恢复该快照时一并回滚；从该历史快照导出或克隆也使用同一状态。损坏的状态文件会在改写磁盘前被拒绝。较旧、没有状态侧车的快照在实例已有 TPM 状态时仍拒绝恢复或导出，不会用当前 TPM 身份冒充历史身份。启用 TPM/NVRAM 的实例暂不支持在线磁盘快照，因为客户机文件系统冻结并不能同时冻结宿主上的 swtpm 和 OVMF 状态；整机 RAM 快照原有的 UEFI 限制也保持不变。跨主机迁移的源实例校验包含 TPM/NVRAM 状态。
 
-已在 WSL Linux 宿主使用 QEMU 10.2、swtpm 0.10.1 和 Debian、Ubuntu 客户机验证多次原实例启动、停机快照回滚及历史快照导入后的再次启动，均确认 Secure Boot 与 TPM 2.0；回滚还撤销了快照之后写入的客户机文件。Ubuntu 的签名引导链首次登记 EFI 启动项时需要一次复位。`node --experimental-transform-types scripts/smoke-trusted-boot-guest.ts debian` 或将末尾参数改为 `ubuntu` 可复核。Windows 可按 [WSL 后端](wsl-backend.md)启动已具备上述依赖的 Linux 服务。随附便携 Windows QEMU 目前缺少 TPM emulator 后端，因而该能力仍标为**部分实现**。现有 [vTPM 密钥登记](hardware-readiness.md#vtpm-密钥登记)只保存用户公钥指纹元数据，不代表 TPM 内部的密钥创建或报价验证。
+已在 WSL Linux 宿主使用 QEMU 10.2、swtpm 0.10.1 和 Debian、Ubuntu 客户机验证多次原实例启动、停机快照回滚及历史快照导入后的再次启动，均确认 Secure Boot 与 TPM 2.0；回滚还撤销了快照之后写入的客户机文件。Ubuntu 的签名引导链首次登记 EFI 启动项时需要一次复位。`node --experimental-transform-types scripts/smoke-trusted-boot-guest.ts debian` 或将末尾参数改为 `ubuntu` 可复核。Windows 可按 [WSL 后端](wsl-backend.md)启动已具备上述依赖的 Linux 服务，故目录将该能力列为在支持后端上可用；随附便携 Windows QEMU 仍缺少 TPM emulator 后端。现有 [vTPM 密钥登记](hardware-readiness.md#vtpm-密钥登记)只保存用户公钥指纹元数据，不代表 TPM 内部的密钥创建或报价验证。
 
 启动参数依据 [QEMU TPM 文档](https://www.qemu.org/docs/master/specs/tpm)、[QMP `set-action` 参考](https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html)和 [EDK II OVMF 安全启动说明](https://github.com/tianocore/edk2/blob/master/OvmfPkg/README)。
