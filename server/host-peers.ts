@@ -2,9 +2,11 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual, X509Certificate }
 import { stat } from 'node:fs/promises';
 import { request as httpsRequest, createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createConnection, createServer as createTcpServer, type Server as TcpServer,
+  type Socket } from 'node:net';
 import { join } from 'node:path';
 import { createSecureContext, type TLSSocket } from 'node:tls';
-import type { Writable } from 'node:stream';
+import type { Duplex, Writable } from 'node:stream';
 import { generate } from 'selfsigned';
 import { z } from 'zod';
 import { readJsonBody } from './http.ts';
@@ -75,6 +77,10 @@ const importReceiptSchema = z.object({
 }).strict();
 type ImportReceipt = z.infer<typeof importReceiptSchema>;
 type ImportIdentity = { transferId: string; requesterId: string };
+type MigrationChannel = 'disk' | 'state';
+type MigrationSession = { requesterId: string; ports: Record<MigrationChannel, number>;
+  expiresAt: number; active: Set<Duplex> };
+type MigrationForward = { server: TcpServer; sockets: Set<Duplex> };
 const activateInput = z.object({ transferId: z.uuid(), remoteVmId: z.uuid(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 const replicaActivateInput = activateInput.safeExtend({
@@ -192,6 +198,43 @@ function requestPeer(urlText: string, pin: string, path: string, method: 'GET' |
   });
 }
 
+function connectPinnedPeerStream(urlText: string, pin: string, path: string, token: string): Promise<Duplex> {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(new URL(path, urlText), {
+      method: 'CONNECT', agent: false, rejectUnauthorized: false,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const timer = setTimeout(() => request.destroy(new AppError('迁移通道连接超时', 504)), 10_000);
+    timer.unref();
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    };
+    request.once('socket', (socket) => socket.once('secureConnect', () => {
+      try { checkPinnedCertificate(socket as TLSSocket, pin); request.end(); }
+      catch (error) { request.destroy(error as Error); }
+    }));
+    request.once('connect', (response, socket, head) => {
+      if (response.statusCode !== 200) {
+        socket.destroy();
+        return fail(new AppError(`远端迁移通道返回 HTTP ${response.statusCode || 0}`, 502));
+      }
+      if (head.length) socket.unshift(head);
+      settled = true;
+      clearTimeout(timer);
+      resolve(socket);
+    });
+    request.once('response', (response) => {
+      response.resume();
+      fail(new AppError(`远端迁移通道返回 HTTP ${response.statusCode || 0}`, 502));
+    });
+    request.once('error', fail);
+  });
+}
+
 export class HostPeers {
   private state!: Store;
   private server?: HttpsServer;
@@ -208,6 +251,8 @@ export class HostPeers {
   private mobileHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
   private activeImports = new Map<string, Set<AbortController>>();
   private transferIds = new Set<string>();
+  private migrationSessions = new Map<string, MigrationSession>();
+  private migrationForwards = new Map<string, Set<MigrationForward>>();
   constructor(
     private snapshot: () => Promise<Omit<PeerStatus, 'version' | 'id' | 'name' | 'checkedAt'>>,
     private file = join(DATA, 'host-peers.json'),
@@ -247,6 +292,8 @@ export class HostPeers {
     const server = createHttpsServer({ ...this.state.certificate, minVersion: 'TLSv1.2' },
       (request, response) => void this.peerRoute(request, response));
     server.requestTimeout = 10_000;
+    server.on('connect', (request, socket, head) =>
+      this.acceptMigrationStream(request, socket, head));
     try {
       await new Promise<void>((resolve, reject) => {
         server.once('error', reject);
@@ -266,6 +313,127 @@ export class HostPeers {
     response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     response.end(JSON.stringify(payload));
+  }
+
+  private acceptMigrationStream(request: IncomingMessage, socket: Duplex, head: Buffer) {
+    socket.on('error', () => {});
+    const reject = (status: number) => {
+      socket.end(`HTTP/1.1 ${status} Rejected\r\nConnection: close\r\n\r\n`);
+    };
+    try {
+      if (this.closed || this.blocked()) return reject(503);
+      const peer = this.inbound(request);
+      if (!peer.allowImport || !peer.allowActivate) return reject(403);
+      const match = /^\/peer\/migration-stream\/([0-9a-f-]{36})\/(disk|state)$/.exec(request.url || '');
+      if (!match) return reject(404);
+      const session = this.migrationSessions.get(match[1]);
+      if (!session || session.requesterId !== peer.requesterId ||
+          session.expiresAt <= this.now()) return reject(404);
+      if (session.active.size >= 4) return reject(429);
+      const upstream = createConnection({ host: '127.0.0.1',
+        port: session.ports[match[2] as MigrationChannel] });
+      socket.pause();
+      session.active.add(socket);
+      const cleanup = () => { session.active.delete(socket); upstream.destroy(); };
+      socket.once('close', cleanup);
+      socket.once('error', () => upstream.destroy());
+      upstream.once('error', () => socket.destroy());
+      upstream.once('connect', () => {
+        if (socket.destroyed) return upstream.destroy();
+        socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        if (head.length) upstream.write(head);
+        socket.pipe(upstream);
+        upstream.pipe(socket);
+        socket.resume();
+      });
+    } catch (error) {
+      reject(error instanceof AppError ? error.status : 400);
+    }
+  }
+
+  /** Target-side, short-lived authority for QEMU ports already bound to loopback. */
+  registerMigrationSession(requesterId: string, ports: Record<MigrationChannel, number>) {
+    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
+    z.uuid().parse(requesterId);
+    const peer = this.state.incoming.find((item) => item.requesterId === requesterId);
+    if (!peer?.allowImport || !peer.allowActivate)
+      throw new AppError('同伴没有在线迁移接收权限', 403);
+    for (const [id, session] of this.migrationSessions)
+      if (session.expiresAt <= this.now() && session.active.size === 0)
+        this.closeMigrationSession(id);
+    if (this.migrationSessions.size >= 4)
+      throw new AppError('迁移通道数量已达上限', 409);
+    for (const port of [ports.disk, ports.state])
+      if (!Number.isInteger(port) || port < 1024 || port > 65535)
+        throw new AppError('迁移端口无效');
+    const id = randomUUID();
+    this.migrationSessions.set(id, { requesterId, ports: { ...ports },
+      expiresAt: this.now() + 30 * 60_000, active: new Set() });
+    return id;
+  }
+
+  closeMigrationSession(id: string) {
+    const session = this.migrationSessions.get(id);
+    if (!session) return;
+    this.migrationSessions.delete(id);
+    for (const socket of session.active) socket.destroy();
+  }
+
+  private closeMigrationForwards(peerId: string) {
+    const forwards = this.migrationForwards.get(peerId);
+    if (!forwards) return;
+    this.migrationForwards.delete(peerId);
+    for (const forward of forwards) {
+      for (const socket of forward.sockets) socket.destroy();
+      forward.server.close();
+    }
+    forwards.clear();
+  }
+
+  /** Source-side local forward: QEMU only sees 127.0.0.1 while TLS carries the bytes. */
+  async openMigrationForward(peerId: string, sessionId: string, channel: MigrationChannel) {
+    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
+    z.uuid().parse(sessionId);
+    if (channel !== 'disk' && channel !== 'state') throw new AppError('迁移通道无效');
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    if ((this.migrationForwards.get(peerId)?.size || 0) >= 4)
+      throw new AppError('本机迁移转发端口数量已达上限', 409);
+    const sockets = new Set<Duplex>();
+    const server = createTcpServer((local: Socket) => {
+      local.pause();
+      sockets.add(local);
+      local.once('close', () => sockets.delete(local));
+      void connectPinnedPeerStream(peer.url, peer.fingerprint,
+        `/peer/migration-stream/${sessionId}/${channel}`, peer.token).then((remote) => {
+        if (local.destroyed) return remote.destroy();
+        sockets.add(remote);
+        remote.once('close', () => sockets.delete(remote));
+        local.once('error', () => remote.destroy());
+        remote.once('error', () => local.destroy());
+        local.once('close', () => remote.destroy());
+        remote.once('close', () => local.destroy());
+        local.pipe(remote);
+        remote.pipe(local);
+        local.resume();
+      }).catch(() => local.destroy());
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve(); });
+    });
+    const entry = { server, sockets };
+    const active = this.migrationForwards.get(peerId) || new Set<MigrationForward>();
+    active.add(entry);
+    this.migrationForwards.set(peerId, active);
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('迁移转发端口无效');
+    return { port: address.port, close: async () => {
+      if (!active.delete(entry)) return;
+      if (!active.size) this.migrationForwards.delete(peerId);
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    } };
   }
 
   private async peerRoute(request: IncomingMessage, response: ServerResponse) {
@@ -845,10 +1013,18 @@ export class HostPeers {
         }
       });
       if (value.operation === 'remove-outbound') this.observations.delete(value.id);
+      if (value.operation === 'remove-outbound') this.closeMigrationForwards(value.id);
       if (value.operation === 'revoke-inbound' ||
           (value.operation === 'allow-import' && !value.enabled))
         for (const controller of this.activeImports.get(value.id) || [])
           controller.abort(new AppError('导入权限已撤销', 403));
+      if (value.operation === 'revoke-inbound' ||
+          ((value.operation === 'allow-import' || value.operation === 'allow-activate') &&
+            !value.enabled)) {
+        for (const [id, session] of this.migrationSessions)
+          if (!this.state.incoming.some((peer) => peer.requesterId === session.requesterId &&
+              peer.allowImport && peer.allowActivate)) this.closeMigrationSession(id);
+      }
       return this.view();
     } finally { this.mutation(-1); }
   }
@@ -880,6 +1056,8 @@ export class HostPeers {
   async close() {
     this.closed = true;
     this.code = undefined;
+    for (const id of this.migrationSessions.keys()) this.closeMigrationSession(id);
+    for (const peerId of this.migrationForwards.keys()) this.closeMigrationForwards(peerId);
     for (const active of this.activeImports.values())
       for (const controller of active) controller.abort(new AppError('服务正在关闭', 503));
     if (this.timer) clearInterval(this.timer);

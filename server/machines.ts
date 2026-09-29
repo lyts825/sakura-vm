@@ -22,6 +22,7 @@ import {
   organizationSchema,
   haPromotionSchema,
   haRetirementSchema,
+  liveMigrationFenceSchema,
   type HaPromotion,
   type VMRecord,
   type VMConfig,
@@ -260,6 +261,8 @@ export class Machines extends EventEmitter {
           r.haPromotion = haPromotionSchema.parse(r.haPromotion);
         if (r.haRetirement !== undefined)
           r.haRetirement = haRetirementSchema.parse(r.haRetirement);
+        if (r.liveMigrationFence !== undefined)
+          r.liveMigrationFence = liveMigrationFenceSchema.parse(r.liveMigrationFence);
         if (r.rescueOf !== undefined) {
           checkedId(r.rescueOf);
           if (
@@ -676,6 +679,37 @@ export class Machines extends EventEmitter {
   async start(id: string) {
     return this.startInternal(id);
   }
+  async fenceForLiveMigration(id: string, raw: unknown,
+    query: typeof qmp = qmp) {
+    const identity = liveMigrationFenceSchema.omit({ fencedAt: true }).parse(raw);
+    return this.locked(id, async () => {
+      const vm = this.get(id);
+      if (vm.liveMigrationFence) {
+        if (vm.liveMigrationFence.transferId !== identity.transferId ||
+            vm.liveMigrationFence.targetHostId !== identity.targetHostId ||
+            vm.liveMigrationFence.targetVmId !== identity.targetVmId)
+          throw new AppError('来源实例已有其他在线迁移栅栏', 409);
+        return vm.liveMigrationFence;
+      }
+      if (vm.haPromotion || vm.haRetirement)
+        throw new AppError('故障接管实例不能同时进行在线迁移', 409);
+      const live = this.live.get(id);
+      if (!live || live.status !== 'running')
+        throw new AppError('来源实例没有运行', 409);
+      const [state, migration] = await Promise.all([
+        query(live.qmpPort, 'query-status'), query(live.qmpPort, 'query-migrate'),
+      ]) as [{ running?: boolean }, { status?: string }];
+      if (state.running !== false || migration.status !== 'pre-switchover')
+        throw new AppError('来源 QEMU 尚未在迁移切换点暂停', 409);
+      const fence = liveMigrationFenceSchema.parse({ ...identity,
+        fencedAt: new Date().toISOString() });
+      vm.liveMigrationFence = fence;
+      try { await this.save(); }
+      catch (error) { delete vm.liveMigrationFence; throw error; }
+      this.emit('change');
+      return fence;
+    });
+  }
   async fenceForHa(id: string, raw: HaPromotion,
     guard?: () => Promise<void> | void) {
     const promotion = haPromotionSchema.parse(raw);
@@ -751,6 +785,9 @@ export class Machines extends EventEmitter {
         if (vm.haRetirement)
           throw new AppError('故障副本已退出接管并被持久封锁，不能重新启动',
             409, 'HA_REPLICA_RETIRED');
+        if (vm.liveMigrationFence)
+          throw new AppError('来源实例已为在线迁移设置栅栏，不能在原主机重新启动',
+            409, 'LIVE_MIGRATION_SOURCE_FENCED');
         if (vm.rescueOf && (vm.rescueOf !== rescueOf || !this.locks.has(rescueOf)))
           throw new AppError('临时救援实例只能由救援任务启动，请重新提交救援任务', 409);
         this.requireSandboxLifetime(vm);
@@ -1775,6 +1812,9 @@ export class Machines extends EventEmitter {
   }
   requireStopped(id: string) {
     if (this.live.has(id)) throw new AppError('请先停止发行版，再进行此操作', 409);
+    if (this.get(id).liveMigrationFence)
+      throw new AppError('在线迁移来源已设置栅栏，请先完成目标验证与安全回退',
+        409, 'LIVE_MIGRATION_SOURCE_FENCED');
   }
   /** Holds the source lock until the read-only attachment's QEMU process has exited. */
   async withRescue<T>(

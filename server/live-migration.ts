@@ -74,9 +74,9 @@ export async function planLiveMigration(machines: Machines,
       blockers.push(`源 QMP 检查失败：${(error as Error).message}`);
     }
   }
-  blockers.push('尚未实现目标侧暂停接收进程与经认证的 QEMU 迁移通道。');
-  blockers.push('尚未实现磁盘脏块同步与目标镜像一致性校验。');
-  blockers.push('尚未实现防止源和目标同时写入的切换栅栏。');
+  blockers.push('服务尚未创建配置一致的目标侧暂停接收进程并接入配对主机迁移会话。');
+  blockers.push('服务尚未把已验证的磁盘脏块同步与内存预复制接入跨主机执行流程。');
+  blockers.push('服务尚未把持久切换栅栏、目标客户机就绪与故障恢复接入执行流程。');
   return {
     ready: false, executed: false, planned: true, sourceVmId: id,
     targetHostId: target?.id || options.data?.targetHostId || null,

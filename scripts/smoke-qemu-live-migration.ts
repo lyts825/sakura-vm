@@ -6,6 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { migrateQemuWithMirroredDisk } from '../server/live-migration-transport.ts';
+import { HostPeers } from '../server/host-peers.ts';
 import { freePort, qmp } from '../server/qmp.ts';
 
 if (!['linux', 'win32'].includes(process.platform)) {
@@ -26,9 +27,15 @@ const interruptPrecopy = process.argv.includes('--interrupt-precopy');
 const failFence = process.argv.includes('--fail-fence');
 const differentSize = process.argv.includes('--different-size');
 const remoteEndpoint = process.argv.includes('--remote-endpoint');
+const peerTunnel = process.argv.includes('--peer-tunnel');
 const root = await mkdtemp(join(tmpdir(), 'sakura-qemu-migration-'));
 const sourceDisk = join(root, 'source.qcow2');
 const targetDisk = join(root, 'target.qcow2');
+let sourcePeers: HostPeers | undefined, targetPeers: HostPeers | undefined;
+const forwards: Array<Awaited<ReturnType<HostPeers['openMigrationForward']>>> = [];
+const peerStatus = async () => ({ platform: process.platform, arch: process.arch,
+  cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
+  load: [0, 0, 0], vmCount: 1, runningVms: 1 });
 
 async function launch(port: number, disk: string, incoming: boolean) {
   const child = spawn(qemu, [
@@ -69,6 +76,38 @@ try {
   await launch(targetPort, targetDisk, true);
   await qmp(sourcePort, 'cont');
   assert.equal(status(await qmp(sourcePort, 'query-status')).running, true);
+  let sourceNbdPort = nbdPort, sourceTransferPort = transferPort;
+  if (peerTunnel) {
+    const peerPort = await freePort();
+    const targetFile = join(root, 'target-peer.json');
+    targetPeers = new HostPeers(peerStatus, targetFile, 'Target');
+    await targetPeers.init(false);
+    await targetPeers.configure({ operation: 'listener', listener: {
+      enabled: true, host: '127.0.0.1', port: peerPort,
+    } });
+    await targetPeers.close();
+    targetPeers = new HostPeers(peerStatus, targetFile, 'Target');
+    await targetPeers.init(true);
+    sourcePeers = new HostPeers(peerStatus, join(root, 'source-peer.json'), 'Source');
+    await sourcePeers.init(false);
+    const code = await targetPeers.configure({ operation: 'create-code' });
+    if (!('pairing' in code) || !code.pairing) throw new Error('Missing peer code');
+    await sourcePeers.configure({ operation: 'connect',
+      url: `https://127.0.0.1:${peerPort}/`,
+      fingerprint: targetPeers.view().fingerprint, code: code.pairing.value });
+    const incoming = targetPeers.view().incoming[0];
+    const outgoing = sourcePeers.view().outbound[0];
+    await targetPeers.configure({ operation: 'allow-import', id: incoming.id, enabled: true });
+    await targetPeers.configure({ operation: 'allow-activate', id: incoming.id, enabled: true });
+    const session = targetPeers.registerMigrationSession(incoming.requesterId,
+      { disk: nbdPort, state: transferPort });
+    const disk = await sourcePeers.openMigrationForward(outgoing.id, session, 'disk');
+    forwards.push(disk);
+    const state = await sourcePeers.openMigrationForward(outgoing.id, session, 'state');
+    forwards.push(state);
+    sourceNbdPort = disk.port;
+    sourceTransferPort = state.port;
+  }
   let fenced = false, interrupted = false;
   const migration = migrateQemuWithMirroredDisk({
     source: (command, args, timeoutMs) => {
@@ -82,9 +121,9 @@ try {
     sourceDiskNode: 'sakura-disk', targetDiskNode: 'sakura-disk',
     nbdListen: { type: 'inet', data: { host: remoteEndpoint ? '0.0.0.0' : '127.0.0.1',
       port: String(nbdPort) } },
-    nbdConnect: { type: 'inet', host: '127.0.0.1', port: String(nbdPort) },
+    nbdConnect: { type: 'inet', host: '127.0.0.1', port: String(sourceNbdPort) },
     incomingUri: `tcp:127.0.0.1:${transferPort}`,
-    outgoingUri: `tcp:127.0.0.1:${transferPort}`,
+    outgoingUri: `tcp:127.0.0.1:${sourceTransferPort}`,
     fenceSource: async () => {
       fenced = true;
       if (failFence) throw new Error('injected durable fence failure');
@@ -141,7 +180,7 @@ try {
     console.log('Failed durable fencing left both QEMU instances stopped for reconciliation.');
   } else {
     await run(qemuImg, ['compare', '-f', 'qcow2', '-F', 'qcow2', sourceDisk, targetDisk]);
-    console.log('QEMU mirrored a live disk through NBD, paused before switchover, transferred RAM, resumed only the target, and verified identical disk contents.');
+    console.log(`QEMU mirrored a live disk through NBD${peerTunnel ? ' and pinned peer TLS' : ''}, paused before switchover, transferred RAM, resumed only the target, and verified identical disk contents.`);
   }
 } finally {
   await Promise.all(processes.map(async (child) => {
@@ -152,6 +191,9 @@ try {
       delay(3000).then(() => { if (child.exitCode === null) child.kill('SIGKILL'); }),
     ]);
   }));
+  await Promise.all(forwards.map((forward) => forward.close()));
+  await sourcePeers?.close();
+  await targetPeers?.close();
   const [resolvedRoot, resolvedTemp] = await Promise.all([realpath(root), realpath(tmpdir())]);
   if (dirname(resolvedRoot).toLowerCase() !== resolvedTemp.toLowerCase() ||
       !basename(resolvedRoot).startsWith('sakura-qemu-migration-'))
