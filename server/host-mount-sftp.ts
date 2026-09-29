@@ -14,6 +14,16 @@ const MAX_READ = 256 * 1024;
 type Handle = { type: 'file'; file: FileHandle } | { type: 'directory'; entries: string[];
   path: string; offset: number };
 
+function ephemeralSshKeys() {
+  // ssh2's OpenSSH writer can rarely emit a key its parser rejects.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const keys = utils.generateKeyPairSync('ed25519');
+    if (!(utils.parseKey(keys.private) instanceof Error) &&
+        !(utils.parseKey(keys.public) instanceof Error)) return keys;
+  }
+  throw new AppError('无法生成宿主目录共享的临时 SSH 密钥', 500);
+}
+
 function safePart(part: string) {
   return part !== '.' && part !== '..' && part.length <= 255 &&
     !/[\\:\x00-\x1f<>"|?*]/.test(part) && !/[. ]$/.test(part);
@@ -235,8 +245,8 @@ export async function serveHostMount(root: string, readOnly: boolean) {
   root = await regularDirectory(root);
   if (!(await lstat(root).catch(() => null))?.isDirectory())
     throw new AppError('宿主共享目录不存在', 400);
-  const hostKeys = utils.generateKeyPairSync('ed25519');
-  const clientKeys = utils.generateKeyPairSync('ed25519');
+  const hostKeys = ephemeralSshKeys();
+  const clientKeys = ephemeralSshKeys();
   const parsed = utils.parseKey(clientKeys.public);
   if (parsed instanceof Error) throw parsed;
   const connections = new Set<Connection>();

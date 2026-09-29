@@ -7,6 +7,7 @@ import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-
 import { saveBlob } from './export-file';
 import { SchemaFields } from './SchemaFields';
 import { HostDiskHealthReport } from './HostDiskHealthReport';
+import { writeProtectedClipboard } from './clipboard-protection';
 
 type Props = {
   request: Request;
@@ -320,7 +321,8 @@ export function CapabilityActionsPanel({
               >打开浏览器 IDE</button>}
               {ideAccess && <p>访问密码：<code>{ideAccess.password}</code>
                 <button className="secondary compact" onClick={() =>
-                  void action.run(async () => navigator.clipboard.writeText(ideAccess.password),
+                  void action.run(() => writeProtectedClipboard(ideAccess.password,
+                    { app: 'workbench', vmId }),
                     '访问密码已复制')
                 }>复制访问密码</button>
                 <span className="subtle-note">到期 {formatDateTime(new Date(ideAccess.expiresAt))}</span>
