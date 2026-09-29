@@ -56,6 +56,7 @@
     "test:private-dns": "tsx scripts/smoke-private-dns.ts",
     "test:image-import": "tsx scripts/smoke-image-import.ts",
     "test:uefi": "tsx scripts/smoke-uefi.ts",
+    "test:live-migration-transport": "tsx scripts/smoke-qemu-live-migration.ts",
     "test:rescue": "tsx scripts/smoke-rescue.ts",
     "test:snapshot-diff": "tsx scripts/smoke-snapshot-diff.ts",
     "test:snapshot-merge": "tsx scripts/smoke-snapshot-merge.ts",

@@ -1,5 +1,9 @@
 # 功能实现记录
 
+## 在线迁移传输验证
+
+独立 QEMU 传输模块现在可在匹配的暂停目标进程与来源进程之间，通过 NBD `blockdev-mirror` 追平磁盘、预复制 RAM、在切换前暂停来源并再次追平最后写入；取消镜像后调用持久栅栏回调，成功才继续迁移。真实 Windows QEMU 11.1 与 WSL Linux QEMU 10.2 的临时合成磁盘测试均确认目标恢复、来源停住以及目标盘逻辑内容一致。预复制中断会恢复来源，栅栏失败保持两端停住，目标盘容量不匹配会在传输前拒绝。该模块尚未接入已配对远端服务、认证通道和持久栅栏；功能目录仍为部分实现，边界见 [在线迁移前置检查](live-migration-plan.md)。
+
 ## 可选 WSL Linux 后端
 
 Windows 项目目录现在提供 `npm run check:wsl` 和 `npm run start:wsl`：前者检查 Linux Node.js、QEMU、swtpm、virtiofsd、带预登记密钥的 OVMF 及构建产物；后者把服务与 QEMU 放在默认 WSL 发行版内，数据单独保存在 Linux 文件系统，使已经实现的 TPM/安全启动与 Virtio-FS 路径可从 Windows 浏览器使用。因此这两项在支持后端上列为可用。2026-09-29 在本机验证 WSL 依赖探测、Windows 本机 HTTP 访问、通过 Windows CLI 创建并启动真实 Alpine 客户机、执行 `uname -a`、停止实例和 Ctrl+C 关闭服务。TPM 与 Virtio-FS 的真实客户机验证记录仍见各自文档；此入口不改变随附 Windows QEMU 的缺失后端。使用说明见 [WSL 后端](wsl-backend.md)。
