@@ -6,4 +6,4 @@
 
 这是一项针对 **Sakura 托管项目进程与显式项目终端** 的网络分段功能，当前仍标为部分实现。普通管理员终端、独立 SSH、客户机自行启动的进程、图形应用及其他扩展不受该模式限制；客户机 root 也能自行变更网络命名空间。不能把它当作抵御客户机管理员或恶意代码的安全边界，也不能用它承诺实例级无外网。需要整个实例断网时，应使用实例级网络策略。
 
-`npm run test:project-network-isolation` 在真实 Alpine 虚拟机中验证两个项目使用不同的命名空间、没有路由，且初始化、服务、收藏命令、流水线与交互式项目终端进入相应命名空间，人工添加路由后托管命令拒绝执行，并验证停止后的清理。`npx tsx scripts/smoke-project-network-isolation.ts debian` 和 `npx tsx scripts/smoke-project-network-isolation.ts ubuntu` 可在真实 Debian、Ubuntu 客户机中复核同一流程。设置 `SAKURA_LSP_PRIVATE=1` 运行 `npm run test:language-services`、设置 `SAKURA_DAP_PRIVATE=1` 运行 `npm run test:debug-adapter` 可额外验证私有项目中的语言服务与调试器。普通管理员终端和自行启动进程仍不受项目命名空间约束。
+`npm run test:project-network-isolation` 在真实 Alpine 虚拟机中验证两个项目使用不同的命名空间、没有路由，且初始化、服务、Git 工作台、收藏命令、流水线与交互式项目终端进入相应命名空间，人工添加路由后托管命令拒绝执行，并验证停止后的清理。`npx tsx scripts/smoke-project-network-isolation.ts debian` 和 `npx tsx scripts/smoke-project-network-isolation.ts ubuntu` 可在真实 Debian、Ubuntu 客户机中复核同一流程。设置 `SAKURA_LSP_PRIVATE=1` 运行 `npm run test:language-services`、设置 `SAKURA_DAP_PRIVATE=1` 运行 `npm run test:debug-adapter` 可额外验证私有项目中的语言服务与调试器。普通管理员终端和自行启动进程仍不受项目命名空间约束。

@@ -19,12 +19,14 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { Features } = await import('../server/features.ts');
 const { CommandPresets } = await import('../server/command-presets.ts');
 const { Pipelines } = await import('../server/pipelines.ts');
+const { GitWorkbench } = await import('../server/git-workbench.ts');
 const { projectNetworkCommand, projectPrivateShellCommand } = await import('../server/project-network-isolation.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const features = await Features.create(machines, ['projects', 'service-health']);
 const commands = new CommandPresets(machines, features.workspaces);
 const pipelines = new Pipelines(machines, features.workspaces, features.files);
+const git = new GitWorkbench(machines, features.workspaces);
 async function command(id: string, script: string, timeout = 10_000) {
   const result = await machines.exec(id, script, timeout);
   assert.equal(result.code, 0, result.stderr || result.stdout);
@@ -93,6 +95,17 @@ try {
   } finally {
     await command(vm.id, 'ip -n sk-default route del blackhole 203.0.113.0/24');
   }
+  const gitPath = await command(vm.id, 'command -v git');
+  assert.match(gitPath, /^\/[A-Za-z0-9/._+-]+$/);
+  await command(vm.id, `mv ${gitPath} ${gitPath}.sakura-real
+cat > ${gitPath} <<'SAKURA_GIT_PROBE'
+#!/bin/sh
+readlink /proc/self/ns/net > /workspace/first-git.ns
+exec ${gitPath}.sakura-real "$@"
+SAKURA_GIT_PROBE
+chmod 755 ${gitPath}`);
+  await git.view(vm.id);
+  assert.equal(await command(vm.id, 'cat /workspace/first-git.ns'), firstNamespace);
   const presets = await commands.save(vm.id, { name: 'namespace',
     command: 'readlink /proc/self/ns/net > /workspace/first-preset.ns' });
   await commands.run(vm.id, presets[0].id, {});
@@ -131,10 +144,11 @@ try {
     await job(vm.id);
   });
   assert.equal(await command(vm.id, 'ip netns list'), '');
-  console.log(`Real ${distro} project namespaces, setup, services, presets, pipelines and cleanup passed`);
+  console.log(`Real ${distro} project namespaces, setup, services, Git, presets, pipelines and cleanup passed`);
 } finally {
   await commands.close();
   await pipelines.close();
+  await git.close();
   await features.close();
   await machines.close();
   assert.equal(dirname(directory), resolve(tmpdir()));
