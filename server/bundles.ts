@@ -15,9 +15,13 @@ import { bundleSignatureSchema, verifySignedManifest, type SignedBundles } from 
 import { diskEncryptionSchema, encryptedImageOptions,
   qemuSecretObject } from './disk-encryption.ts';
 import { Secrets } from './secrets.ts';
+import type { TrustedBootService } from './trusted-boot-service.ts';
+import { decodeTrustedBootArchive, encodeTrustedBootArchive, trustedBootArchiveSchema,
+  type TrustedBootFiles } from './trusted-boot-archive.ts';
 
 const MAGIC = Buffer.from('SAKURA01');
 const MAX_BUNDLE = 32 * 1024 ** 3;
+export const MAX_BUNDLE_MANIFEST = 8 * 1024 ** 2;
 const manifestSchema = z
   .object({
     version: z.literal(1),
@@ -43,6 +47,7 @@ const manifestSchema = z
       .optional(),
     pendingResize: z.boolean().default(false),
     diskEncryption: diskEncryptionSchema.optional(),
+    trustedBoot: trustedBootArchiveSchema.optional(),
     key: z.string().max(16384),
     seed: z.string().max(262144),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -65,10 +70,12 @@ export function validateDiskHeader(header: Buffer, allowEncryption = false) {
   if (header.readBigUInt64BE(24) > 128n * 1024n ** 3n) throw new AppError('虚拟磁盘不能超过 128 GiB');
 }
 export class Bundles {
+  private trustedBoot?: TrustedBootService;
   constructor(
     private machines: Machines,
     private signatures?: SignedBundles,
   ) {}
+  setTrustedBoot(service: TrustedBootService) { this.trustedBoot = service; }
   private async project(id: string) {
     try {
       return projectSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'project.json'), 'utf8')));
@@ -108,6 +115,7 @@ export class Bundles {
       const vm = this.machines.get(id);
       const snapshot = snapshotId ? vm.snapshots.find((item) => item.id === snapshotId) : undefined;
       if (snapshotId && !snapshot) throw new AppError('快照不存在', 404);
+      const trustedBoot = await this.trustedBoot?.capture(id, snapshotId);
       const dir = await this.temp();
       try {
         const disk = join(dir, 'disk.qcow2');
@@ -125,7 +133,6 @@ export class Bundles {
           { timeoutMs: 1800000, signal });
         signal?.throwIfAborted();
         const hash = createHash('sha256');
-        if ((await stat(disk)).size + 300012 > MAX_BUNDLE) throw new AppError('当前导出包上限为 32 GiB');
         for await (const chunk of createReadStream(disk)) {
           signal?.throwIfAborted();
           hash.update(chunk);
@@ -153,11 +160,15 @@ export class Bundles {
           projects: await this.projectCatalog(id),
           ...((snapshot ? snapshot.pendingResize : pendingResize) ? { pendingResize: true } : {}),
           ...(vm.diskEncryption ? { diskEncryption: vm.diskEncryption } : {}),
+          ...(trustedBoot ? { trustedBoot: encodeTrustedBootArchive(trustedBoot) } : {}),
           key: identity.key,
           seed: identity.seed.toString('base64'),
           sha256: hash.digest('hex'),
         });
         const manifest = Buffer.from(JSON.stringify(this.signatures?.signManifest(unsigned) || unsigned));
+        if (manifest.length > MAX_BUNDLE_MANIFEST ||
+            (await stat(disk)).size + manifest.length + 12 > MAX_BUNDLE)
+          throw new AppError('当前导出包超过大小上限');
         const length = Buffer.alloc(4);
         length.writeUInt32BE(manifest.length);
         signal?.throwIfAborted();
@@ -195,11 +206,13 @@ export class Bundles {
     external = false,
     migrationOrigin?: VMRecord['migrationOrigin'],
   ) {
-    return this.withContents(source, signal, async (disk, manifest, seed) => {
-      const publish = () => {
+    return this.withContents(source, signal, async (disk, manifest, seed, trustedBoot) => {
+      if (trustedBoot && !this.trustedBoot)
+        throw new AppError('TPM 状态恢复服务不可用', 503);
+      const publish = async () => {
         signal?.throwIfAborted();
         beforeAdopt?.();
-        return this.machines.adopt(
+        const adopted = await this.machines.adopt(
           { ...manifest.config, name, forwards: [] },
           disk,
           manifest.key,
@@ -210,6 +223,14 @@ export class Bundles {
           migrationOrigin ? { ...migrationOrigin, diskSha256: manifest.sha256 } : undefined,
           manifest.diskEncryption,
         );
+        if (trustedBoot) {
+          try { await this.trustedBoot!.restore(adopted.id, trustedBoot); }
+          catch (error) {
+            await this.machines.delete(adopted.id);
+            throw error;
+          }
+        }
+        return adopted;
       };
       return external && this.signatures
         ? this.signatures.withAuthorizedExternal(manifest.signature, publish)
@@ -225,7 +246,8 @@ export class Bundles {
   private async withContents<T>(
     source: Readable,
     signal: AbortSignal | undefined,
-    work: (disk: string, manifest: z.infer<typeof manifestSchema>, seed: Buffer) => Promise<T>,
+    work: (disk: string, manifest: z.infer<typeof manifestSchema>, seed: Buffer,
+      trustedBoot?: TrustedBootFiles) => Promise<T>,
   ) {
     signal?.throwIfAborted();
     const dir = await this.temp();
@@ -246,7 +268,8 @@ export class Bundles {
               if (prefix.length < 12) return cb();
               if (!prefix.subarray(0, 8).equals(MAGIC)) return cb(new AppError('不是 Sakura 导出文件'));
               const length = prefix.readUInt32BE(8);
-              if (length > 300000 || length < 2) return cb(new AppError('无效的导入清单'));
+              if (length > MAX_BUNDLE_MANIFEST || length < 2)
+                return cb(new AppError('无效的导入清单'));
               if (prefix.length < 12 + length) return cb();
               try {
                 manifest = manifestSchema.parse(
@@ -269,6 +292,8 @@ export class Bundles {
       if (!manifest || hash.digest('hex') !== manifest.sha256)
         throw new AppError('导入包不完整或磁盘校验失败');
       verifySignedManifest(manifest);
+      const trustedBoot = manifest.trustedBoot
+        ? decodeTrustedBootArchive(manifest.trustedBoot) : undefined;
       const handle = await open(disk, 'r');
       try {
         const b = Buffer.alloc(104);
@@ -295,7 +320,7 @@ export class Bundles {
       if (seed.length < 34816 || seed.toString('ascii', 32769, 32774) !== 'CD001')
         throw new AppError('初始化镜像已损坏');
       signal?.throwIfAborted();
-      return await work(disk, manifest, seed);
+      return await work(disk, manifest, seed, trustedBoot);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -307,6 +332,7 @@ export class Bundles {
       const vm = this.machines.get(id);
       const shot = snapshot ? vm.snapshots.find((s) => s.id === snapshot) : undefined;
       if (snapshot && !shot) throw new AppError('快照不存在', 404);
+      const trustedBoot = await this.trustedBoot?.capture(id, snapshot);
       const dir = await this.temp();
       try {
         const disk = join(dir, 'disk.qcow2');
@@ -358,6 +384,13 @@ export class Bundles {
           const secrets = new Secrets(this.machines);
           await secrets.save(adopted.id, { name: vm.diskEncryption.secretName,
             value: await secrets.value(id, vm.diskEncryption.secretName) });
+        }
+        if (trustedBoot) {
+          try { await this.trustedBoot!.restore(adopted.id, trustedBoot); }
+          catch (error) {
+            await this.machines.delete(adopted.id);
+            throw error;
+          }
         }
         return adopted;
       } finally {

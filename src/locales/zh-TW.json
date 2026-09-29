@@ -65,7 +65,7 @@
   "KDE Plasma 强调色": "KDE Plasma 強調色",
   "KDE Plasma 桌面自定义": "KDE Plasma 桌面自定義",
   "KDE 设置会在下次会话启动时完整加载": "KDE 設定會在下次會話啟動時完整載入",
-  "Linux x86_64 宿主上的 Debian 或 Ubuntu UEFI 实例可使用持久 vTPM 与预登记密钥的 OVMF 固件。停止实例后保存策略，重启并检查实际状态。当前磁盘备份与导出不包含 TPM 状态或安全启动 NVRAM。": "Linux x86_64 宿主上的 Debian 或 Ubuntu UEFI 例項可使用持久 vTPM 與預登記金鑰的 OVMF 韌體。停止例項後儲存策略，重啟並檢查實際狀態。當前磁碟備份與匯出不包含 TPM 狀態或安全啟動 NVRAM。",
+  "Linux x86_64 宿主上的 Debian 或 Ubuntu UEFI 实例可使用持久 vTPM 与预登记密钥的 OVMF 固件。停止实例后保存策略，重启并检查实际状态。新建备份和导出包含 TPM 状态与安全启动 NVRAM；包含敏感密钥的备份请设置密码。历史磁盘快照不能与当前 TPM 状态一起导出或克隆。": "Linux x86_64 宿主上的 Debian 或 Ubuntu UEFI 例項可使用持久 vTPM 與預登記金鑰的 OVMF 韌體。停止例項後儲存策略，重啟並檢查實際狀態。新建備份和匯出包含 TPM 狀態與安全啟動 NVRAM；包含敏感金鑰的備份請設定密碼。歷史磁碟快照不能與當前 TPM 狀態一起匯出或克隆。",
   "Linux 内容": "Linux 內容",
   "Linux 剪贴板文本": "Linux 剪貼簿文本",
   "Linux 启动控制台": "Linux 啟動控制台",

@@ -5,7 +5,8 @@ import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, DATA, checkedId } from './model.ts';
 import type { Machines } from './machines.ts';
-import type { Bundles } from './bundles.ts';
+import { MAX_BUNDLE_MANIFEST, type Bundles } from './bundles.ts';
+import { decodeTrustedBootArchive } from './trusted-boot-archive.ts';
 import { Jobs } from './jobs.ts';
 import { Secrets, secretName } from './secrets.ts';
 import { fileHash, regularDirectory } from './local-store.ts';
@@ -67,15 +68,25 @@ export async function verifyBackup(file: string, signal: AbortSignal) {
   const handle = await open(file, 'r');
   let length: number, expected: string;
   try {
+    const readExactly = async (buffer: Buffer, position: number) => {
+      let offset = 0;
+      while (offset < buffer.length) {
+        const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, position + offset);
+        if (!bytesRead) throw new AppError('备份清单被截断');
+        offset += bytesRead;
+      }
+    };
     const prefix = Buffer.alloc(12);
-    await handle.read(prefix, 0, 12, 0);
+    await readExactly(prefix, 0);
     if (prefix.subarray(0, 8).toString() !== 'SAKURA01') throw new AppError('备份文件格式错误');
     length = prefix.readUInt32BE(8);
-    if (length < 2 || length > 300000) throw new AppError('备份清单长度错误');
+    if (length < 2 || length > MAX_BUNDLE_MANIFEST) throw new AppError('备份清单长度错误');
     const manifest = Buffer.alloc(length);
-    await handle.read(manifest, 0, length, 12);
-    expected = JSON.parse(manifest.toString()).sha256;
+    await readExactly(manifest, 12);
+    const metadata = JSON.parse(manifest.toString());
+    expected = metadata.sha256;
     if (!/^[a-f0-9]{64}$/.test(expected)) throw new AppError('备份校验信息错误');
+    if (metadata.trustedBoot) decodeTrustedBootArchive(metadata.trustedBoot);
   } finally {
     await handle.close();
   }

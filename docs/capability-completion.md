@@ -567,7 +567,7 @@ ACME 证书续期在第三批能力中心选择“ACME 证书续期”。`status
 
 ## UEFI 与 OVMF 固件
 
-实例创建、停止状态下的资源配置和通用镜像导入现在可选择 BIOS 或 UEFI。能力中心会检查本机 QEMU 目录中的 x86_64 OVMF 代码与变量模板；缺失时拒绝保存 UEFI 实例配置。UEFI 实例首次启动时在自身目录生成独立 NVRAM 文件，后续重启沿用该文件，QEMU 通过只读代码 pflash 和可写变量 pflash 启动。切换固件不转换现有磁盘分区或引导程序；Sakura 包导出与克隆当前仅保留磁盘，恢复后的 UEFI NVRAM 从模板重新生成，自定义 EFI 启动项可能需要重建。
+实例创建、停止状态下的资源配置和通用镜像导入现在可选择 BIOS 或 UEFI。能力中心会检查本机 QEMU 目录中的 x86_64 OVMF 代码与变量模板；缺失时拒绝保存 UEFI 实例配置。UEFI 实例首次启动时在自身目录生成独立 NVRAM 文件，后续重启沿用该文件，QEMU 通过只读代码 pflash 和可写变量 pflash 启动。切换固件不转换现有磁盘分区或引导程序；未启用可信启动的普通 UEFI 实例在包导出与克隆后会从模板重新生成 NVRAM，自定义 EFI 启动项可能需要重建。启用 TPM 与安全启动时，新的备份、导入和克隆会保留其安全 NVRAM 与 TPM 状态。
 
 ## 虚拟磁盘加密
 
@@ -591,7 +591,7 @@ Virtio-FS 检查批次：第三批能力中心可分别检查 QEMU 文件系统�
 
 单应用窗口批次：Alpine、Debian 和 Ubuntu 桌面页可为每个图形程序启动独立 Xvnc 显示器，通过有权限校验的桌面 WebSocket 在独立浏览器弹窗中操作，并支持重开与停止；令牌经同源消息交接，主控制页关闭后弹窗仍可继续。三个发行版的真实虚拟机均已验证两个会话端口相互独立、RFB 握手和停止清理；浏览器测试覆盖启动与停止。当前并非 Windows 原生单应用窗口。范围见 [单应用窗口说明](single-app-windows.md)。
 
-可信启动批次：第二批能力中心可检查安全版 OVMF、QEMU SMM/TPM 后端、`swtpm` 和客户机实际 SecureBoot/TPM 状态。Linux 宿主现在可为 Debian/Ubuntu UEFI 实例编排持久 swtpm 与预登记密钥的 OVMF；真实 Debian 虚拟机已验证安全启动与 TPM 2.0。Windows 随附 QEMU 缺少 TPM 后端，目录保留“部分实现”。边界见 [TPM 与安全启动](trusted-boot.md)。
+可信启动批次：第二批能力中心可检查安全版 OVMF、QEMU SMM/TPM 后端、`swtpm` 和客户机实际 SecureBoot/TPM 状态。Linux 宿主现在可为 Debian/Ubuntu UEFI 实例编排持久 swtpm 与预登记密钥的 OVMF；真实 Debian 虚拟机已验证安全启动与 TPM 2.0。便携备份、导入和克隆可保留 TPM/NVRAM，历史磁盘快照因缺少对应状态而拒绝导出与克隆。Windows 随附 QEMU 缺少 TPM 后端，目录保留“部分实现”。边界见 [TPM 与安全启动](trusted-boot.md)。
 
 项目网络隔离批次：项目设置新增仅回环的独立 Linux 网络命名空间；托管项目脚本、服务、健康检查、流水线、收藏命令及工程执行器进入该命名空间。真实 Alpine 虚拟机已验证双项目分离、无路由和清理。管理员终端与客户机自行启动的进程仍可使用共享网络，因此目录保留“部分实现”。范围与操作见 [项目网络隔离](project-network-isolation.md)。
 

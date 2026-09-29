@@ -146,6 +146,7 @@ async function main() {
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });
   await trustedBoot.init();
+  features.bundles?.setTrustedBoot(trustedBoot);
   features.extended?.setTrustedBoot(trustedBoot);
   const gpuProfiles = new GpuProfiles(machines, undefined,
     () => !!features.migration?.blocked,

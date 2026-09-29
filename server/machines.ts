@@ -136,6 +136,7 @@ export class Machines extends EventEmitter {
   prepareBootAttachment?: (vm: VMRecord, onExit: (error: string) => void) => Promise<BootAttachment | undefined>;
   prepareTrustedFirmware?: (vm: VMRecord) => Promise<{ code: string; vars: string } | undefined>;
   prepareTrustedBootAttachment?: (vm: VMRecord, onExit: (error: string) => void) => Promise<BootAttachment | undefined>;
+  trustedBootStateFingerprint?: (id: string) => Promise<string>;
   fileBeforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
   records = new Map<string, VMRecord>();
   live = new Map<string, Live>();
@@ -2040,6 +2041,8 @@ export class Machines extends EventEmitter {
       const contents = await readFile(join(dir, name));
       metadata.update(name).update(String(contents.length)).update(contents);
     }
+    if (this.trustedBootStateFingerprint)
+      metadata.update(await this.trustedBootStateFingerprint(id));
     return { recordHash: metadata.digest('hex'),
       diskSize: disk.size, diskMtimeMs: disk.mtimeMs };
   }

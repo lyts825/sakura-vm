@@ -1,6 +1,6 @@
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +15,8 @@ const { Bundles } = await import('../server/bundles.ts');
 const { Machines: MachineManager } = await import('../server/machines.ts');
 const { vmDir, createSchema } = await import('../server/model.ts');
 const { createSshKey, seedIso } = await import('../server/seed.ts');
+const { TrustedBootService } = await import('../server/trusted-boot-service.ts');
+const { verifyBackup } = await import('../server/backups.ts');
 after(() => rm(root, { recursive: true, force: true }));
 const key = createSshKey();
 const seed = seedIso({ 'user-data': 'test' });
@@ -326,4 +328,78 @@ test('UEFI firmware choice survives portable export, import, and clone', async (
   await bundles.clone(id, 'firmware-clone');
   assert.equal((adopted[0] as any).firmware, 'uefi');
   assert.equal((adopted[1] as any).firmware, 'uefi');
+});
+
+test('portable backup, import, and clone retain TPM identity and secure NVRAM', async (t) => {
+  const { machines, id, bundles } = await resizeFixture(t);
+  const service = new TrustedBootService(machines);
+  await service.init();
+  t.after(() => service.close());
+  bundles.setTrustedBoot(service);
+  const vars = randomBytes(340_000);
+  const permanent = Buffer.from('persistent-tpm-identity');
+  await service.restore(id, { enabled: true, files: [
+    { name: 'uefi-secure-vars.fd', data: vars },
+    { name: 'tpm2/tpm2-00.permall', data: permanent },
+  ] });
+  await writeFile(join(vmDir(id), 'tpm2', '.lock'), 'transient');
+  const firstFingerprint = await machines.migrationFingerprint(id);
+  const chunks: Buffer[] = [];
+  await bundles.export(id, new Writable({
+    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
+  }), () => {});
+  const contents = Buffer.concat(chunks);
+  const manifestLength = contents.readUInt32BE(8);
+  assert.ok(manifestLength > 300_000);
+  const file = join(root, `${id}.sakura`);
+  await writeFile(file, contents);
+  await verifyBackup(file, new AbortController().signal);
+  const imported = await bundles.import('trusted-import', Readable.from([contents]));
+  const cloned = await bundles.clone(id, 'trusted-clone');
+  for (const target of [imported, cloned]) {
+    assert.equal((await service.view(target.id)).policy.enabled, true);
+    assert.deepEqual(await readFile(join(vmDir(target.id), 'uefi-secure-vars.fd')), vars);
+    assert.deepEqual(await readFile(join(vmDir(target.id), 'tpm2', 'tpm2-00.permall')), permanent);
+    await assert.rejects(readFile(join(vmDir(target.id), 'tpm2', '.lock')), { code: 'ENOENT' });
+  }
+  await writeFile(join(vmDir(id), 'tpm2', 'tpm2-00.permall'), 'changed');
+  assert.notDeepEqual(await machines.migrationFingerprint(id), firstFingerprint);
+  const snapshot = randomUUID();
+  machines.get(id).snapshots.push({ id: snapshot, name: 'older',
+    createdAt: new Date().toISOString() });
+  await assert.rejects(bundles.export(id, new Writable({ write(_chunk, _encoding, callback) {
+    callback();
+  } }), () => {}, undefined, 0, snapshot), /TPM 状态没有历史快照/);
+  await assert.rejects(bundles.clone(id, 'trusted-history', snapshot), /TPM 状态没有历史快照/);
+});
+
+test('tampered TPM state is rejected before import and backup verification', async (t) => {
+  const { machines, id, bundles } = await resizeFixture(t);
+  const service = new TrustedBootService(machines);
+  await service.init();
+  t.after(() => service.close());
+  bundles.setTrustedBoot(service);
+  await service.restore(id, { enabled: true, files: [
+    { name: 'tpm2/tpm2-00.permall', data: Buffer.from('secret') },
+  ] });
+  const chunks: Buffer[] = [];
+  await bundles.export(id, new Writable({
+    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
+  }), () => {});
+  const contents = Buffer.concat(chunks);
+  const length = contents.readUInt32BE(8);
+  const manifest = JSON.parse(contents.subarray(12, 12 + length).toString('utf8'));
+  manifest.trustedBoot.files[0].sha256 = '0'.repeat(64);
+  const tamperedManifest = Buffer.from(JSON.stringify(manifest));
+  const prefix = Buffer.alloc(12);
+  prefix.write('SAKURA01');
+  prefix.writeUInt32BE(tamperedManifest.length, 8);
+  const tampered = Buffer.concat([prefix, tamperedManifest, contents.subarray(12 + length)]);
+  const count = machines.records.size;
+  await assert.rejects(bundles.import('tampered-tpm', Readable.from([tampered])),
+    /TPM 状态校验失败/);
+  assert.equal(machines.records.size, count);
+  const file = join(root, `${id}-tampered.sakura`);
+  await writeFile(file, tampered);
+  await assert.rejects(verifyBackup(file, new AbortController().signal), /TPM 状态校验失败/);
 });

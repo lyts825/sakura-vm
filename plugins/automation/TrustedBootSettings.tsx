@@ -25,7 +25,7 @@ export function TrustedBootSettings({ vmId, request }: { vmId: string; request: 
   });
   return <div className="feature-card" role="region" aria-label="TPM 与安全启动">
     <h4>TPM 与安全启动</h4>
-    <p className="subtle-note">Linux x86_64 宿主上的 Debian 或 Ubuntu UEFI 实例可使用持久 vTPM 与预登记密钥的 OVMF 固件。停止实例后保存策略，重启并检查实际状态。当前磁盘备份与导出不包含 TPM 状态或安全启动 NVRAM。</p>
+    <p className="subtle-note">Linux x86_64 宿主上的 Debian 或 Ubuntu UEFI 实例可使用持久 vTPM 与预登记密钥的 OVMF 固件。停止实例后保存策略，重启并检查实际状态。新建备份和导出包含 TPM 状态与安全启动 NVRAM；包含敏感密钥的备份请设置密码。历史磁盘快照不能与当前 TPM 状态一起导出或克隆。</p>
     <Feedback error={remote.error || action.error} message={action.message} />
     <label className="checkbox-label">
       <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { chmod, copyFile, lstat, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -9,6 +10,8 @@ import type { BootAttachment, Machines } from './machines.ts';
 import { AppError, DATA, vmDir, type VMRecord } from './model.ts';
 import { readStore, regularDirectory, writeStore } from './local-store.ts';
 import { inspectTrustedBoot, probeTrustedBootHost, trustedBootPaths } from './trusted-boot.ts';
+import { MAX_TRUSTED_BOOT_FILE, MAX_TRUSTED_BOOT_TOTAL,
+  validateTrustedBootFiles, type TrustedBootFiles } from './trusted-boot-archive.ts';
 
 const policySchema = z.object({ enabled: z.boolean() }).strict();
 type Policy = z.infer<typeof policySchema>;
@@ -45,6 +48,7 @@ export class TrustedBootService {
       return this.firmware(vm.id);
     };
     this.machines.prepareTrustedBootAttachment = (vm, onExit) => this.prepare(vm, onExit);
+    this.machines.trustedBootStateFingerprint = (id) => this.fingerprint(id);
   }
 
   private async save(id: string, policy: Policy) {
@@ -55,6 +59,86 @@ export class TrustedBootService {
     });
     this.writes = operation;
     await operation;
+  }
+
+  /** Called while the machine lock is held, so state cannot change during export. */
+  async capture(id: string, snapshotId?: string): Promise<TrustedBootFiles | undefined> {
+    this.machines.get(id);
+    const directory = await regularDirectory(vmDir(id));
+    const files: TrustedBootFiles['files'] = [];
+    let total = 0;
+    const add = async (name: string, path: string, size: number) => {
+      if (size > MAX_TRUSTED_BOOT_FILE || total + size > MAX_TRUSTED_BOOT_TOTAL ||
+          files.length >= 16)
+        throw new AppError('实例 TPM 状态文件数量或大小超限', 409);
+      const data = await readFile(path);
+      files.push({ name, data });
+      total += data.length;
+      if (data.length > MAX_TRUSTED_BOOT_FILE || total > MAX_TRUSTED_BOOT_TOTAL)
+        throw new AppError('实例 TPM 状态文件数量或大小超限', 409);
+    };
+    const vars = join(directory, 'uefi-secure-vars.fd');
+    const varsInfo = await lstat(vars).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (varsInfo) {
+      if (!varsInfo.isFile() || varsInfo.isSymbolicLink())
+        throw new AppError('实例安全启动 NVRAM 文件无效', 409);
+      await add('uefi-secure-vars.fd', vars, varsInfo.size);
+    }
+    const stateDir = join(directory, 'tpm2');
+    const stateInfo = await lstat(stateDir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (stateInfo) {
+      if (!stateInfo.isDirectory() || stateInfo.isSymbolicLink())
+        throw new AppError('实例 TPM 状态目录无效', 409);
+      for (const name of (await readdir(stateDir)).sort()) {
+        // swtpm recreates this advisory lock; it is not TPM identity state.
+        if (name === '.lock') continue;
+        if (!/^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$/.test(name))
+          throw new AppError('实例 TPM 状态文件名无效', 409);
+        const path = join(stateDir, name);
+        const info = await lstat(path);
+        if (!info.isFile() || info.isSymbolicLink())
+          throw new AppError('实例 TPM 状态文件无效', 409);
+        await add(`tpm2/${name}`, path, info.size);
+      }
+    }
+    const enabled = !!this.policies[id]?.enabled;
+    if (!enabled && !files.length) return undefined;
+    if (snapshotId) throw new AppError('TPM 状态没有历史快照；不能导出或克隆该磁盘快照', 409);
+    const snapshot = { enabled, files };
+    validateTrustedBootFiles(snapshot);
+    return snapshot;
+  }
+
+  async restore(id: string, snapshot: TrustedBootFiles) {
+    validateTrustedBootFiles(snapshot);
+    this.machines.get(id);
+    this.machines.requireStopped(id);
+    const directory = await regularDirectory(vmDir(id));
+    for (const { name, data } of snapshot.files) {
+      const [folder, file] = name.startsWith('tpm2/')
+        ? ['tpm2', name.slice(5)] : ['', name];
+      const targetDir = folder ? join(directory, folder) : directory;
+      if (folder) {
+        await mkdir(targetDir, { recursive: true, mode: 0o700 });
+        await regularDirectory(targetDir);
+      }
+      await writeFile(join(targetDir, file), data, { flag: 'wx', mode: 0o600 });
+    }
+    await this.save(id, { enabled: snapshot.enabled });
+  }
+
+  private async fingerprint(id: string) {
+    const state = await this.capture(id);
+    const hash = createHash('sha256').update(String(!!state?.enabled));
+    for (const file of state?.files || [])
+      hash.update(file.name).update(String(file.data.length)).update(file.data);
+    return hash.digest('hex');
   }
 
   private async requireSupported(vm: VMRecord) {
@@ -181,5 +265,6 @@ export class TrustedBootService {
     this.active.clear();
     this.machines.prepareTrustedFirmware = undefined;
     this.machines.prepareTrustedBootAttachment = undefined;
+    this.machines.trustedBootStateFingerprint = undefined;
   }
 }
