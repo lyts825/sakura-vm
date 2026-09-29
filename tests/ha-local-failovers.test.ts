@@ -33,6 +33,7 @@ test('process-only takeover fences source before promotion and retires target be
       snapshotId, diskSha256: sha256,
     } });
   let suspected = true, starts = 0, retires = 0, failStartOnce = true;
+  let targetStatus: 'stopped' | 'starting' | 'running' = 'stopped';
   const monitor = {
     view: () => ({ suspected }),
     reconfigure: async () => { suspected = false; },
@@ -46,7 +47,7 @@ test('process-only takeover fences source before promotion and retires target be
     ] }),
     view: () => ({ outbound: [{ id: peerId, remoteId: targetHostId }] }),
     importStatus: async () => ({ id: targetId, sha256, sourceVmId: sourceId, snapshotId }),
-    checkReplicaActivation: async () => ({ ready: true, id: targetId, status: 'stopped' }),
+    checkReplicaActivation: async () => ({ ready: true, id: targetId, status: targetStatus }),
     activateReplica: async () => {
       const saved = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8'));
       assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId,
@@ -56,7 +57,8 @@ test('process-only takeover fences source before promotion and retires target be
         failStartOnce = false;
         throw new Error('standby unavailable');
       }
-      return { id: targetId, status: 'starting' };
+      targetStatus = 'starting';
+      return { id: targetId, status: targetStatus };
     },
     retireReplica: async () => {
       retires++;
@@ -83,6 +85,19 @@ test('process-only takeover fences source before promotion and retires target be
     await assert.rejects(machines.start(sourceId), { code: 'HA_SOURCE_FENCED' });
     await failover.sample();
     assert.equal(starts, 2);
+    assert.equal(machines.get(sourceId).haPromotion?.status, 'fenced');
+    assert.equal(machines.get(sourceId).haPromotion?.error, undefined);
+    await failover.sample();
+    assert.equal(starts, 2, 'a starting standby is observed rather than started again');
+    assert.equal(machines.get(sourceId).haPromotion?.status, 'fenced');
+    const waiting = new Machines(engine);
+    await waiting.init();
+    try {
+      assert.equal(waiting.get(sourceId).haPromotion?.status, 'fenced');
+      await assert.rejects(waiting.start(sourceId), { code: 'HA_SOURCE_FENCED' });
+    } finally { await waiting.close(); }
+    targetStatus = 'running';
+    await failover.sample();
     assert.equal(machines.get(sourceId).haPromotion?.status, 'accepted');
     await assert.rejects(machines.start(sourceId), { code: 'HA_SOURCE_FENCED' });
     const reopened = new Machines(engine);

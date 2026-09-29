@@ -125,7 +125,13 @@ export class HaLocalFailovers {
       if (this.closed || !this.allowed()) return;
       const result = target.status === 'stopped'
         ? await this.peers.activateReplica(promotion.peerId, input) : target;
-      if (result.status !== 'starting' && result.status !== 'running')
+      if (result.status === 'starting') {
+        if (promotion.error)
+          await this.machines.updateHaPromotion(id, promotion.transferId,
+            { status: 'fenced', error: undefined });
+        return;
+      }
+      if (result.status !== 'running')
         throw new AppError(`故障副本当前为 ${result.status}，尚未接管`, 409);
       await this.machines.updateHaPromotion(id, promotion.transferId,
         { status: 'accepted', error: undefined });
