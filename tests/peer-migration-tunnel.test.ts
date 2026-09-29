@@ -66,8 +66,24 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
       assert.equal(input.key, identity.key);
       assert.deepEqual(input.seed, Buffer.from(identity.seedBase64, 'base64'));
       return prepared;
+    }, complete: async (input) => {
+      assert.equal(input.requesterId, inbound.requesterId);
+      assert.equal(input.sessionId, prepared.sessionId);
+      return { targetVmId: prepared.targetVmId,
+        status: 'starting' as const, originStatus: 'received' as const };
+    }, status: async (input) => {
+      assert.equal(input.requesterId, inbound.requesterId);
+      return { targetVmId: prepared.targetVmId,
+        status: 'paused' as const, originStatus: 'prepared' as const };
     } });
     assert.deepEqual(await source.prepareLiveTarget(outbound.id, prepare), prepared);
+    assert.equal((await source.inspectLiveTarget(outbound.id, {
+      targetVmId: prepared.targetVmId, transferId: prepare.transferId,
+    })).originStatus, 'prepared');
+    assert.equal((await source.completeLiveTarget(outbound.id, {
+      targetVmId: prepared.targetVmId, transferId: prepare.transferId,
+      sessionId: prepared.sessionId,
+    })).originStatus, 'received');
     assert.throws(() => target.registerMigrationSession(inbound.requesterId,
       { disk: 80, state: echoPort }), /端口无效/);
     const session = target.registerMigrationSession(inbound.requesterId,

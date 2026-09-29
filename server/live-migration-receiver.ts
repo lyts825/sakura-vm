@@ -59,6 +59,7 @@ export class LiveMigrationReceiver {
       this.requireAvailable();
       sessionId = this.peers.registerMigrationSession(input.requesterId, {
         disk: diskPort, state: statePort, qmp: live.qmpPort, targetDiskNode,
+        targetVmId: created.id, transferId: input.transferId,
       });
       return { targetVmId: created.id, sessionId, targetDiskNode,
         diskPort, statePort };
@@ -68,5 +69,29 @@ export class LiveMigrationReceiver {
       await this.machines.delete(created.id).catch(() => {});
       throw error;
     }
+  }
+
+  status(input: { requesterId: string; transferId: string; targetVmId: string }) {
+    this.requireAvailable();
+    const vm = this.machines.get(input.targetVmId);
+    const origin = vm.liveMigrationOrigin;
+    if (!origin || origin.sourceHostId !== input.requesterId ||
+        origin.transferId !== input.transferId)
+      throw new AppError('在线迁移目标身份不匹配', 409);
+    return { targetVmId: vm.id, status: this.machines.state(vm.id),
+      originStatus: origin.status };
+  }
+
+  async complete(input: { requesterId: string; transferId: string;
+    targetVmId: string; sessionId: string }) {
+    this.requireAvailable();
+    const before = this.status(input);
+    if (before.originStatus !== 'prepared') return before;
+    if (!this.peers.matchesMigrationSession(input.sessionId, input.requesterId,
+      input.targetVmId, input.transferId))
+      throw new AppError('在线迁移会话与目标实例不匹配', 409);
+    await this.machines.completeIncoming(input.targetVmId);
+    this.peers.closeMigrationSession(input.sessionId);
+    return this.status(input);
   }
 }

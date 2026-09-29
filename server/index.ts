@@ -213,7 +213,11 @@ async function main() {
     if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
     if (!features.next) throw new AppError('请先启用扩展功能插件', 503);
   });
-  hostPeers.setLiveMigrationReceiver({ prepare: (input) => liveMigrationReceiver.prepare(input) });
+  hostPeers.setLiveMigrationReceiver({
+    prepare: (input) => liveMigrationReceiver.prepare(input),
+    complete: (input) => liveMigrationReceiver.complete(input),
+    status: (input) => Promise.resolve(liveMigrationReceiver.status(input)),
+  });
   const fleetRollouts = new FleetPolicyRollouts(hostPeers, undefined,
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });

@@ -80,7 +80,8 @@ type ImportReceipt = z.infer<typeof importReceiptSchema>;
 type ImportIdentity = { transferId: string; requesterId: string };
 type MigrationChannel = 'disk' | 'state';
 type MigrationSession = { requesterId: string; ports: Record<MigrationChannel, number>;
-  qmpPort?: number; targetDiskNode?: string; exportId?: string;
+  qmpPort?: number; targetDiskNode?: string; targetVmId?: string; transferId?: string;
+  exportId?: string;
   expiresAt: number; active: Set<Duplex> };
 type MigrationForward = { server: TcpServer; sockets: Set<Duplex> };
 const migrationQmpInput = z.object({ sessionId: z.uuid(), command: z.enum([
@@ -96,6 +97,13 @@ const liveTargetReceipt = z.object({
   targetVmId: z.uuid(), sessionId: z.uuid(), targetDiskNode: z.string().min(1).max(64),
   diskPort: z.number().int().min(1024).max(65535),
   statePort: z.number().int().min(1024).max(65535),
+}).strict();
+const liveTargetCompleteInput = z.object({ targetVmId: z.uuid(),
+  transferId: z.uuid(), sessionId: z.uuid() }).strict();
+const liveTargetStatusInput = liveTargetCompleteInput.omit({ sessionId: true });
+const liveTargetStatus = z.object({ targetVmId: z.uuid(),
+  status: z.enum(['stopped', 'starting', 'running', 'paused', 'stopping', 'error']),
+  originStatus: z.enum(['prepared', 'received', 'ready']),
 }).strict();
 const activateInput = z.object({ transferId: z.uuid(), remoteVmId: z.uuid(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
@@ -266,7 +274,11 @@ export class HostPeers {
   private liveMigrationReceiver?: { prepare: (input: {
     requesterId: string; transferId: string; sourceVmId: string;
     config: z.infer<typeof createSchema>; key: string; seed: Buffer;
-  }) => Promise<z.infer<typeof liveTargetReceipt>> };
+  }) => Promise<z.infer<typeof liveTargetReceipt>>;
+  complete: (input: z.infer<typeof liveTargetCompleteInput> & { requesterId: string }) =>
+    Promise<z.infer<typeof liveTargetStatus>>;
+  status: (input: z.infer<typeof liveTargetStatusInput> & { requesterId: string }) =>
+    Promise<z.infer<typeof liveTargetStatus>> };
   private rolloutReceiver?: { view: () => PeerRolloutView; save: (input: unknown) => Promise<unknown> };
   private mobileHandler?: (request: IncomingMessage, response: ServerResponse) => Promise<void>;
   private activeImports = new Map<string, Set<AbortController>>();
@@ -373,7 +385,7 @@ export class HostPeers {
 
   /** Target-side, short-lived authority for QEMU ports already bound to loopback. */
   registerMigrationSession(requesterId: string, ports: Record<MigrationChannel, number> &
-    { qmp?: number; targetDiskNode?: string }) {
+    { qmp?: number; targetDiskNode?: string; targetVmId?: string; transferId?: string }) {
     if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
     z.uuid().parse(requesterId);
     const peer = this.state.incoming.find((item) => item.requesterId === requesterId);
@@ -391,11 +403,24 @@ export class HostPeers {
         (ports.targetDiskNode !== undefined &&
           !/^[#a-zA-Z0-9._-]{1,64}$/.test(ports.targetDiskNode)))
       throw new AppError('目标 QMP 与磁盘节点必须一起登记');
+    if ((ports.targetVmId === undefined) !== (ports.transferId === undefined))
+      throw new AppError('目标实例与迁移标识必须一起登记');
+    if (ports.targetVmId) z.uuid().parse(ports.targetVmId);
+    if (ports.transferId) z.uuid().parse(ports.transferId);
     const id = randomUUID();
     this.migrationSessions.set(id, { requesterId, ports: { ...ports },
       qmpPort: ports.qmp, targetDiskNode: ports.targetDiskNode,
+      targetVmId: ports.targetVmId, transferId: ports.transferId,
       expiresAt: this.now() + 30 * 60_000, active: new Set() });
     return id;
+  }
+
+  matchesMigrationSession(id: string, requesterId: string, targetVmId: string,
+    transferId: string) {
+    const session = this.migrationSessions.get(id);
+    return !!session && session.expiresAt > this.now() &&
+      session.requesterId === requesterId && session.targetVmId === targetVmId &&
+      session.transferId === transferId;
   }
 
   closeMigrationSession(id: string) {
@@ -479,6 +504,25 @@ export class HostPeers {
     const input = liveTargetPrepareInput.parse(raw);
     return liveTargetReceipt.parse(await requestPeer(peer.url, peer.fingerprint,
       '/peer/live-target-prepare', 'POST', input, peer.token, 120_000));
+  }
+
+  async completeLiveTarget(peerId: string, raw: unknown) {
+    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    return liveTargetStatus.parse(await requestPeer(peer.url, peer.fingerprint,
+      '/peer/live-target-complete', 'POST', liveTargetCompleteInput.parse(raw),
+      peer.token, 30_000));
+  }
+
+  async inspectLiveTarget(peerId: string, raw: unknown) {
+    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
+    const peer = this.state.outbound.find((item) => item.id === peerId);
+    if (!peer) throw new AppError('远端主机不存在', 404);
+    const input = liveTargetStatusInput.parse(raw);
+    const path = `/peer/live-target-status?targetVmId=${input.targetVmId}&transferId=${input.transferId}`;
+    return liveTargetStatus.parse(await requestPeer(peer.url, peer.fingerprint,
+      path, 'GET', undefined, peer.token));
   }
 
   private async executeMigrationQmp(peerId: string, input: z.infer<typeof migrationQmpInput>) {
@@ -596,6 +640,44 @@ export class HostPeers {
             sourceVmId: input.sourceVmId, config: input.config, key: input.key, seed,
           })));
         } finally { this.mutation(-1); }
+      }
+      if (request.method === 'POST' && request.url === '/peer/live-target-complete') {
+        const peer = this.inbound(request);
+        if (!peer.allowImport || !peer.allowActivate)
+          throw new AppError('此同伴未获在线迁移接收权限', 403);
+        if (!this.liveMigrationReceiver)
+          throw new AppError('目标主机尚未启用在线迁移接收器', 503);
+        const input = liveTargetCompleteInput.parse(await readJsonBody(request, 1024));
+        this.mutation(1);
+        try {
+          if (!this.state.incoming.some((item) => item.id === peer.id &&
+              item.allowImport && item.allowActivate))
+            throw new AppError('在线迁移接收权限已撤销', 403);
+          return this.send(response, liveTargetStatus.parse(await this.liveMigrationReceiver.complete({
+            ...input, requesterId: peer.requesterId,
+          })));
+        } finally { this.mutation(-1); }
+      }
+      if (request.method === 'GET' && request.url?.startsWith('/peer/live-target-status?')) {
+        const peer = this.inbound(request);
+        if (!peer.allowImport || !peer.allowActivate)
+          throw new AppError('此同伴未获在线迁移接收权限', 403);
+        if (!this.liveMigrationReceiver)
+          throw new AppError('目标主机尚未启用在线迁移接收器', 503);
+        const url = new URL(request.url, 'https://peer.invalid');
+        if (url.pathname !== '/peer/live-target-status' ||
+            [...url.searchParams.keys()].some((key) =>
+              key !== 'targetVmId' && key !== 'transferId') ||
+            url.searchParams.getAll('targetVmId').length !== 1 ||
+            url.searchParams.getAll('transferId').length !== 1)
+          throw new AppError('目标状态请求无效');
+        const input = liveTargetStatusInput.parse({
+          targetVmId: url.searchParams.get('targetVmId'),
+          transferId: url.searchParams.get('transferId'),
+        });
+        return this.send(response, liveTargetStatus.parse(await this.liveMigrationReceiver.status({
+          ...input, requesterId: peer.requesterId,
+        })));
       }
       if (request.url === '/peer/rollouts' && ['GET', 'POST'].includes(request.method || '')) {
         const peer = this.inbound(request);

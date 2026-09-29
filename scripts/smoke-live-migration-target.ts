@@ -52,7 +52,11 @@ try {
   await targetPeers.configure({ operation: 'allow-import', id: inboundId, enabled: true });
   await targetPeers.configure({ operation: 'allow-activate', id: inboundId, enabled: true });
   const receiver = new LiveMigrationReceiver(machines, targetPeers);
-  targetPeers.setLiveMigrationReceiver({ prepare: (input) => receiver.prepare(input) });
+  targetPeers.setLiveMigrationReceiver({
+    prepare: (input) => receiver.prepare(input),
+    complete: (input) => receiver.complete(input),
+    status: (input) => Promise.resolve(receiver.status(input)),
+  });
   const key = createSshKey().privateText;
   const seed = seedIso({ 'meta-data': 'migration smoke', 'user-data': 'smoke setup' });
   const prepared = await sourcePeers.prepareLiveTarget(outboundId, {
@@ -70,6 +74,13 @@ try {
   assert.equal((await qmp(qmpPort, 'query-status') as { running: boolean }).running, false);
   assert.equal((await sourcePeers.targetMigrationQmp(outboundId, migrationSession,
     'query-status') as { running: boolean }).running, false);
+  assert.deepEqual(await sourcePeers.inspectLiveTarget(outboundId, {
+    targetVmId, transferId: machines.get(targetVmId).liveMigrationOrigin!.transferId,
+  }), { targetVmId, status: 'paused', originStatus: 'prepared' });
+  await assert.rejects(sourcePeers.completeLiveTarget(outboundId, {
+    targetVmId, transferId: machines.get(targetVmId).liveMigrationOrigin!.transferId,
+    sessionId: migrationSession,
+  }), /HTTP 409/);
   await assert.rejects(machines.start(targetVmId), /尚未接收客户机状态/);
   console.log('A paired TLS request created a real Sakura QEMU target in deferred incoming mode, retained source identity, exposed restricted QMP and remained paused.');
 } finally {
