@@ -343,7 +343,10 @@ async function main() {
     },
     activateReplica: async (input) => {
       const current = inspectReplicaActivation(input);
-      if (current.status === 'stopped') await machines.start(input.remoteVmId);
+      if (current.status === 'stopped') await machines.startHaReplica(input.remoteVmId, {
+        sourceHostId: input.requesterId, transferId: input.transferId,
+        sourceVmId: input.sourceVmId, snapshotId: input.snapshotId, sha256: input.sha256,
+      });
       const status = machines.state(input.remoteVmId);
       if (status !== 'starting' && status !== 'running')
         throw new AppError(`故障副本启动未保持运行状态：${status}`, 502);

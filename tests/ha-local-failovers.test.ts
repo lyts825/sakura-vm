@@ -32,6 +32,10 @@ test('process-only takeover fences source before promotion and retires target be
       sourceHostId, transferId, targetName: 'standby', sourceVmId: sourceId,
       snapshotId, diskSha256: sha256,
     } });
+  await assert.rejects(machines.start(targetId), { code: 'HA_REPLICA_STANDBY' });
+  await assert.rejects(machines.startHaReplica(targetId, { sourceHostId, transferId,
+    sourceVmId: sourceId, snapshotId, sha256: 'b'.repeat(64) }),
+  { code: 'HA_REPLICA_STANDBY' });
   let suspected = true, starts = 0, retires = 0, failStartOnce = true;
   let targetStatus: 'stopped' | 'starting' | 'running' = 'stopped';
   const monitor = {

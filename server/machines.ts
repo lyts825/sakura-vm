@@ -729,6 +729,10 @@ export class Machines extends EventEmitter {
   async start(id: string) {
     return this.startInternal(id);
   }
+  async startHaReplica(id: string, identity: { sourceHostId: string;
+    transferId: string; sourceVmId: string; snapshotId: string; sha256: string }) {
+    return this.startInternal(id, undefined, false, identity);
+  }
   async startIncoming(id: string) {
     return this.startInternal(id, undefined, true);
   }
@@ -853,7 +857,9 @@ export class Machines extends EventEmitter {
       return vm.haRetirement;
     });
   }
-  private async startInternal(id: string, rescueOf?: string, incoming = false) {
+  private async startInternal(id: string, rescueOf?: string, incoming = false,
+    haActivation?: { sourceHostId: string; transferId: string;
+      sourceVmId: string; snapshotId: string; sha256: string }) {
     return this.locked('launch', () =>
       this.locked(id, async () => {
         const vm = this.get(id);
@@ -863,6 +869,17 @@ export class Machines extends EventEmitter {
         if (vm.haRetirement)
           throw new AppError('故障副本已退出接管并被持久封锁，不能重新启动',
             409, 'HA_REPLICA_RETIRED');
+        if (vm.migrationOrigin?.snapshotId) {
+          if (!haActivation ||
+              vm.migrationOrigin.sourceHostId !== haActivation.sourceHostId ||
+              vm.migrationOrigin.transferId !== haActivation.transferId ||
+              vm.migrationOrigin.sourceVmId !== haActivation.sourceVmId ||
+              vm.migrationOrigin.snapshotId !== haActivation.snapshotId ||
+              vm.migrationOrigin.diskSha256 !== haActivation.sha256)
+            throw new AppError('故障副本只能通过已认证的接管流程启动',
+              409, 'HA_REPLICA_STANDBY');
+        } else if (haActivation)
+          throw new AppError('目标实例不是已校验的故障副本', 409);
         if (vm.liveMigrationFence)
           throw new AppError('来源实例已为在线迁移设置栅栏，不能在原主机重新启动',
             409, 'LIVE_MIGRATION_SOURCE_FENCED');
