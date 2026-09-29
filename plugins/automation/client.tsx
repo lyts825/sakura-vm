@@ -132,6 +132,9 @@ type NextView = {
   projectId?: string;
   features: NextFeature[];
   settings: Record<string, { enabled: boolean; options?: Record<string, unknown>; updatedAt: string }>;
+  haFailoverMonitor?: { armed: boolean; suspected: boolean; consecutiveFailures: number;
+    observedState: string; observedAt: string; suspectedAt?: string;
+    sampleIntervalSeconds: number } | null;
   executions?: Array<{
     featureId: string;
     action: string;
@@ -1143,7 +1146,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
           </div>
           {next.data?.features.some((feature) => feature.id === 'ha-failover') &&
             <HaFailoverPanel key={active.id} request={request} vmId={active.id}
-              setting={next.data.settings['ha-failover']} reload={next.reload} />}
+              setting={next.data.settings['ha-failover']}
+              monitor={next.data.haFailoverMonitor} reload={next.reload} />}
           {nextResult && <pre className="feature-log">{nextResult}</pre>}
           {hardwareReport && <HardwareMatrix report={hardwareReport} />}
           {showUsbHotplug && <UsbHotplugPanel request={request} vmId={active.id} />}

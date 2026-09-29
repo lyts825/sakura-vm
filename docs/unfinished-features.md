@@ -26,15 +26,15 @@
 
 ### 远程主机与集群
 
-- [ ] **虚拟机在线迁移**（P1 · 部分实现） · [`live-migration`](../server/next-features.ts#L71) — 已接入源 QMP 状态、已配对目标主机资源与平台前置检查，并生成只读迁移步骤和阻断条件；磁盘在线同步、目标接收进程、状态传输和防双写切换仍未实现。
-- [ ] **故障自动接管**（P0 · 部分实现） · [`ha-failover`](../server/next-features.ts#L89) — 可校验并保存目标、故障阈值及副本时效策略，手动检查主实例、目标主机和副本实时回执；独立见证、源端栅栏、目标启动与自动切换仍未实现。
+- [ ] **虚拟机在线迁移**（P1 · 部分实现） · [`live-migration`](../server/next-features.ts#L72) — 已接入源 QMP 状态、已配对目标主机资源与平台前置检查，并生成只读迁移步骤和阻断条件；磁盘在线同步、目标接收进程、状态传输和防双写切换仍未实现。
+- [ ] **故障自动接管**（P0 · 部分实现） · [`ha-failover`](../server/next-features.ts#L90) — 可保存目标、故障阈值及副本时效策略；后台每 15 秒观察本机主实例状态，持久记录连续故障样本，手动复核目标和副本回执；独立见证、源端栅栏、目标启动与自动切换仍未实现。
 
 ### 虚拟硬件与固件
 
-- [ ] **Virtio-FS 共享目录**（P0 · 部分实现） · [`virtio-fs`](../server/next-features.ts#L170) — 已在 WSL Linux 宿主用真实 QEMU、virtiofsd 和 Alpine/Debian/Ubuntu 客户机验证自动挂载、只读拒写与可写模式；当前主要验证平台 Windows 的随附 QEMU 缺少所需后端，仍为部分实现。
+- [ ] **Virtio-FS 共享目录**（P0 · 部分实现） · [`virtio-fs`](../server/next-features.ts#L171) — 已在 WSL Linux 宿主用真实 QEMU、virtiofsd 和 Alpine/Debian/Ubuntu 客户机验证自动挂载、只读拒写与可写模式；当前主要验证平台 Windows 的随附 QEMU 缺少所需后端，仍为部分实现。
 
 ### 操作系统与桌面
 
-- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L525) — 已实现 Sakura 网页应用入口与独立 Linux 应用窗口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
+- [ ] **按应用剪贴板策略**（P0 · 部分实现） · [`clipboard-policy`](../server/next-features.ts#L526) — 已实现 Sakura 网页应用入口与独立 Linux 应用窗口的复制/粘贴、实例覆盖、文件与图片限制、敏感文本检测，以及 noVNC 缓存撤回；仍缺按 Windows/Linux 独立应用进程的系统级策略。
 
 重新生成：`npm run features:audit`。上述目录状态由源码声明，真实硬件、多主机和外部身份服务仍需要对应环境验证。

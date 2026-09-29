@@ -20,7 +20,7 @@ const groups = [
 const all = groups.flatMap((group) => group.rows),
   unfinished = all.filter((item) => item.state !== 'available');
 const notes: Record<string, string> = {
-  'ha-failover': '可校验并保存目标、故障阈值及副本时效策略，手动检查主实例、目标主机和副本实时回执；独立见证、源端栅栏、目标启动与自动切换仍未实现。',
+  'ha-failover': '可保存目标、故障阈值及副本时效策略；后台每 15 秒观察本机主实例状态，持久记录连续故障样本，手动复核目标和副本回执；独立见证、源端栅栏、目标启动与自动切换仍未实现。',
   'virtio-fs': '已在 WSL Linux 宿主用真实 QEMU、virtiofsd 和 Alpine/Debian/Ubuntu 客户机验证自动挂载、只读拒写与可写模式；当前主要验证平台 Windows 的随附 QEMU 缺少所需后端，仍为部分实现。',
   'live-migration': '已接入源 QMP 状态、已配对目标主机资源与平台前置检查，并生成只读迁移步骤和阻断条件；磁盘在线同步、目标接收进程、状态传输和防双写切换仍未实现。',
   'network-isolation': '项目设置可将托管初始化、命令、服务、健康检查、流水线、收藏命令、显式项目终端、代码诊断、语言服务、调试适配器及开发工具任务放入仅回环的独立网络命名空间，执行前拒绝额外接口或路由；普通管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。',

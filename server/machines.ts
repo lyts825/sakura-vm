@@ -1382,6 +1382,9 @@ export class Machines extends EventEmitter {
     this.get(id);
     const live = this.live.get(id);
     if (!live) return this.view(id);
+    // Guest poweroff can finish before status reaches "stopping". Notify
+    // lifecycle observers before sending the graceful shutdown command.
+    this.emit('stop-requested', id);
     live.bootAbort.abort();
     if (!force && live.status === 'paused') {
       await qmp(live.qmpPort, 'cont').catch(() => {});

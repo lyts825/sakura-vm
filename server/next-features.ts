@@ -34,6 +34,7 @@ import { devicePassthroughPreview } from './device-passthrough-preview.ts';
 import { gpuComputeInput, gpuComputeStatus } from './gpu-compute.ts';
 import { planLiveMigration } from './live-migration.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
+import { HaFailureMonitor } from './ha-failure-monitor.ts';
 import { inspectVirtioFs, type VirtioFsShares } from './virtio-fs.ts';
 
 /**
@@ -90,7 +91,7 @@ export const nextFeatureCatalog = [
     '故障自动接管',
     '远程主机与集群',
     'P0',
-    '保存接管目标和副本时效策略，检查主机与副本健康；自动切换尚未实现。',
+    '保存接管策略，持续监测本机主实例并检查目标副本；自动切换尚未实现。',
     'experimental',
   ],
   [
@@ -677,6 +678,7 @@ export class NextFeatures {
   vtpmEnrollment: VtpmEnrollment;
   acmeRenewal: AcmeRenewal;
   teamTemplates: TeamTemplates;
+  haFailureMonitor: HaFailureMonitor;
   private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
   private hostPeers?: HostPeers;
   private coldMigrations?: ColdMigrations;
@@ -711,6 +713,13 @@ export class NextFeatures {
     this.vtpmEnrollment = new VtpmEnrollment(machines);
     this.acmeRenewal = new AcmeRenewal(machines);
     this.teamTemplates = new TeamTemplates(machines, workspaces);
+    this.haFailureMonitor = new HaFailureMonitor(machines, async () => {
+      const state = await this.state();
+      return Object.fromEntries(Object.entries(state.settings).flatMap(([id, settings]) => {
+        const policy = settings['ha-failover'];
+        return policy ? [[id, policy]] : [];
+      }));
+    });
   }
 
   async init() {
@@ -719,10 +728,11 @@ export class NextFeatures {
       await this.serviceMesh.init();
       await this.vtpmEnrollment.init();
       await this.acmeRenewal.init();
+      await this.haFailureMonitor.init();
     } catch (error) {
       await Promise.allSettled([this.storageTiering.close(), this.serviceMesh.close(),
         this.vtpmEnrollment.close(),
-        this.acmeRenewal.close()]);
+        this.acmeRenewal.close(), this.haFailureMonitor.close()]);
       throw error;
     }
   }
@@ -843,6 +853,7 @@ export class NextFeatures {
       capabilities: capabilityViews('next'),
       settings,
       records: state.records[id] || {},
+      haFailoverMonitor: this.haFailureMonitor.view(id),
       executions: (state.executions[id] || []).slice(-80).reverse(),
       jobs: this.jobs
         .list()
@@ -884,6 +895,7 @@ export class NextFeatures {
     const settings = (state.settings[id] ||= {});
     settings[value.featureId] = { enabled: value.enabled, options: value.options, updatedAt: now() };
     await this.save(state);
+    if (value.featureId === 'ha-failover') await this.haFailureMonitor.reconfigure(id);
     return settings[value.featureId];
   }
 
@@ -1110,7 +1122,8 @@ export class NextFeatures {
       if (!this.hostPeers) return { ready: false, executed: false, adapter,
         reason: '主机配对服务尚未启动。' };
       return { ...await checkHaFailover(this.machines, this.hostPeers,
-        this.snapshotReplications, id, merged, configured?.enabled ?? true, signal), adapter };
+        this.snapshotReplications, id, merged, configured?.enabled ?? true, signal),
+        monitor: this.haFailureMonitor.view(id), adapter };
     }
     if (spec.id === 'virtio-fs') {
       if (!this.virtioFsShares) return { ready: false, executed: false, adapter,
@@ -1534,6 +1547,7 @@ export class NextFeatures {
     await Promise.all([this.jobs.close(), this.storageTiering.close(), this.serviceMesh.close(),
       this.vtpmEnrollment.close(),
       this.objectBackup?.close(),
-      this.wireGuardOverlay?.close(), this.acmeRenewal.close()]);
+      this.wireGuardOverlay?.close(), this.acmeRenewal.close(),
+      this.haFailureMonitor.close()]);
   }
 }

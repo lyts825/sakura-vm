@@ -4257,6 +4257,9 @@ test('failover policy saves a paired target and reports an unready health check'
       projectId: 'default', settings: saved ? { 'ha-failover': {
         enabled: true, options: saved.options, updatedAt: new Date().toISOString(),
       } } : {}, jobs: [], records: {}, executions: [],
+      haFailoverMonitor: saved ? { armed: true, suspected: false,
+        consecutiveFailures: 2, observedState: 'error',
+        observedAt: '2026-09-29T00:00:00.000Z', sampleIntervalSeconds: 15 } : null,
       features: [{ id: 'ha-failover', name: '故障自动接管', category: '远程主机与集群',
         summary: '健康检查', state: 'experimental' }],
     } });
@@ -4267,10 +4270,12 @@ test('failover policy saves a paired target and reports an unready health check'
   await panel.getByLabel('目标主机').selectOption(targetHostId);
   await panel.getByLabel('故障检查次数阈值').fill('4');
   await panel.getByLabel('副本最长时效（分钟）').fill('120');
-  await panel.getByLabel('启用策略记录').check();
+  await panel.getByLabel('启用本机故障监测').check();
   await panel.getByRole('button', { name: '保存策略' }).click();
   await expect.poll(() => saved).toMatchObject({ action: 'configure', featureId: 'ha-failover',
     enabled: true, options: { targetHostId, failureThreshold: 4, maxReplicaAgeMinutes: 120 } });
+  await expect(panel).toContainText('正在监测主实例');
+  await expect(panel).toContainText('2/4 次');
   await panel.getByRole('button', { name: '检查健康' }).click();
   await expect(panel).toContainText('尚无独立见证节点与源主机栅栏');
   await expect(page.locator('.catalog-item').filter({ hasText: '故障自动接管' })
