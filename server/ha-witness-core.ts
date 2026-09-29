@@ -57,11 +57,12 @@ export type HaWitnessActions = {
   retire: (vm: HaWitnessVm, plan: HaWitnessPlan) => Promise<void>;
 };
 
-/** Serialized, durable authority for one source VM. Network failures never grant a start. */
+/** Durable authority with serialized state writes and independent external work per VM. */
 export class HaWitness {
   private state: Store = { version: 2, bindings: {}, entries: {} };
   private work = Promise.resolve();
   private known = new Map<string, HaWitnessVm>();
+  private vmWork = new Map<string, Promise<unknown>>();
 
   constructor(private file: string, vms: HaWitnessVm[],
     private actions: HaWitnessActions, private now = () => Date.now()) {
@@ -122,6 +123,18 @@ export class HaWitness {
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const current = this.work.catch(() => {}).then(task);
     this.work = current.then(() => {}, () => {});
+    return current;
+  }
+
+  private runVm<T>(id: string, task: () => Promise<T>, skipBusy = false): Promise<T | undefined> {
+    const previous = this.vmWork.get(id);
+    if (previous && skipBusy) return Promise.resolve(undefined);
+    const current = (previous || Promise.resolve()).catch(() => {}).then(task);
+    this.vmWork.set(id, current);
+    const finished = () => {
+      if (this.vmWork.get(id) === current) this.vmWork.delete(id);
+    };
+    void current.then(finished, finished);
     return current;
   }
 
@@ -196,65 +209,90 @@ export class HaWitness {
   }
 
   sample() {
-    return this.enqueue(async () => {
-      for (const vm of this.known.values()) {
-        let entry = this.entry(vm.sourceVmId);
-        if (!entry.plan || entry.phase === 'promoted') continue;
-        if (entry.phase === 'source') {
-          if (this.now() - entry.lastHeartbeatAt < vm.failureThreshold * 15_000)
-            continue;
-          // A stale snapshot is not a failover candidate. Keep the source eligible.
-          if (this.now() - Date.parse(entry.plan.snapshotAt) >
-              entry.plan.maxReplicaAgeMinutes * 60_000) {
-            await this.save(vm.sourceVmId, { ...entry, plan: null,
-              error: '副本已超过配置的数据时效上限' });
-            continue;
-          }
-          entry = { ...entry, phase: 'fencing', error: undefined };
-          await this.save(vm.sourceVmId, entry);
-        }
-        if (!entry.plan) continue;
-        const plan = entry.plan;
-        try {
-          if (entry.phase === 'fencing') {
-            await this.actions.fence(vm);
-            entry = { ...entry, phase: 'fenced', fencedAt: this.now(), error: undefined };
-            await this.save(vm.sourceVmId, entry);
-          }
-          if (entry.phase !== 'fenced') continue;
-          const target = await this.actions.targetStatus(vm, plan);
-          if (target === 'stopped') await this.actions.activate(vm, plan);
-          else if (target !== 'starting' && target !== 'running')
-            throw new AppError(`目标副本处于 ${target}，不能接管`, 409);
-          if (await this.actions.targetStatus(vm, plan) !== 'running') continue;
-          if (!await this.actions.applicationReady(vm, plan)) continue;
-          await this.actions.switchTraffic(vm, plan);
-          if (await this.actions.trafficTarget(vm, plan) !== plan.remoteVmId)
-            throw new AppError('流量入口没有确认目标实例', 409);
-          await this.save(vm.sourceVmId, { ...entry, phase: 'promoted',
-            promotedAt: this.now(), error: undefined });
-        } catch (error) {
-          await this.save(vm.sourceVmId, { ...entry,
-            error: (error as Error).message.slice(0, 500) });
-        }
-      }
-    });
+    return Promise.all([...this.known.values()].map((vm) =>
+      this.runVm(vm.sourceVmId, () => this.sampleVm(vm), true)));
   }
 
-  rejoin(raw: unknown) {
-    return this.enqueue(async () => {
-      const input = haWitnessIdentitySchema.safeExtend({
-        dataReconciled: z.literal(true),
-      }).parse(raw);
-      const vm = this.vm({ sourceHostId: input.sourceHostId,
-        sourceVmId: input.sourceVmId });
-      const entry = this.entry(vm.sourceVmId);
+  private async sampleVm(vm: HaWitnessVm) {
+    let entry = await this.enqueue(async () => {
+      const current = this.entry(vm.sourceVmId);
+      if (!current.plan || current.phase === 'promoted') return null;
+      if (current.phase !== 'source') return current;
+      if (this.now() - current.lastHeartbeatAt < vm.failureThreshold * 15_000)
+        return null;
+      // A stale snapshot is not a failover candidate. Keep the source eligible.
+      if (this.now() - Date.parse(current.plan.snapshotAt) >
+          current.plan.maxReplicaAgeMinutes * 60_000) {
+        await this.save(vm.sourceVmId, { ...current, plan: null,
+          error: '副本已超过配置的数据时效上限' });
+        return null;
+      }
+      const fencing = { ...current, phase: 'fencing' as const, error: undefined };
+      await this.save(vm.sourceVmId, fencing);
+      return fencing;
+    });
+    if (!entry?.plan) return;
+    const plan = entry.plan;
+    try {
+      if (entry.phase === 'fencing') {
+        await this.actions.fence(vm);
+        entry = await this.enqueue(async () => {
+          const current = this.entry(vm.sourceVmId);
+          if (current.phase !== 'fencing' || current.plan?.transferId !== plan.transferId)
+            throw new AppError('隔离期间见证计划发生变化', 503);
+          const fenced = { ...current, phase: 'fenced' as const,
+            fencedAt: this.now(), error: undefined };
+          await this.save(vm.sourceVmId, fenced);
+          return fenced;
+        });
+      }
+      if (entry.phase !== 'fenced') return;
+      const target = await this.actions.targetStatus(vm, plan);
+      if (target === 'stopped') await this.actions.activate(vm, plan);
+      else if (target !== 'starting' && target !== 'running')
+        throw new AppError(`目标副本处于 ${target}，不能接管`, 409);
+      if (await this.actions.targetStatus(vm, plan) !== 'running') return;
+      if (!await this.actions.applicationReady(vm, plan)) return;
+      await this.actions.switchTraffic(vm, plan);
+      if (await this.actions.trafficTarget(vm, plan) !== plan.remoteVmId)
+        throw new AppError('流量入口没有确认目标实例', 409);
+      await this.enqueue(async () => {
+        const current = this.entry(vm.sourceVmId);
+        if (current.phase !== 'fenced' || current.plan?.transferId !== plan.transferId)
+          throw new AppError('切流期间见证计划发生变化', 503);
+        await this.save(vm.sourceVmId, { ...current, phase: 'promoted',
+          promotedAt: this.now(), error: undefined });
+      });
+    } catch (error) {
+      await this.enqueue(async () => {
+        const current = this.entry(vm.sourceVmId);
+        if (current.phase === 'fencing' || current.phase === 'fenced')
+          await this.save(vm.sourceVmId, { ...current,
+            error: (error as Error).message.slice(0, 500) });
+      });
+    }
+  }
+
+  async rejoin(raw: unknown) {
+    const input = haWitnessIdentitySchema.safeExtend({
+      dataReconciled: z.literal(true),
+    }).parse(raw);
+    const vm = this.vm({ sourceHostId: input.sourceHostId,
+      sourceVmId: input.sourceVmId });
+    return this.runVm(vm.sourceVmId, async () => {
+      const entry = await this.enqueue(async () => this.entry(vm.sourceVmId));
       if (entry.phase !== 'promoted' || !entry.plan)
         throw new AppError('见证节点没有已完成的目标接管', 409);
       // Retire is idempotent and refuses a running target. A lost response is retried.
       await this.actions.retire(vm, entry.plan);
-      await this.save(vm.sourceVmId, { phase: 'source', plan: null,
-        lastHeartbeatAt: 0 });
+      await this.enqueue(async () => {
+        const current = this.entry(vm.sourceVmId);
+        if (current.phase !== 'promoted' ||
+            current.plan?.transferId !== entry.plan?.transferId)
+          throw new AppError('退出接管期间见证计划发生变化', 503);
+        await this.save(vm.sourceVmId, { phase: 'source', plan: null,
+          lastHeartbeatAt: 0 });
+      });
       return { released: true as const, retiredRemoteVmId: entry.plan.remoteVmId };
     });
   }

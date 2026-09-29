@@ -35,9 +35,21 @@ export const haWitnessServerConfigSchema = z.object({
   version: z.literal(1), listen: z.object({ host: z.string().min(1),
     port: z.number().int().min(0).max(65535),
     certFile: z.string().min(1), keyFile: z.string().min(1) }).strict(),
-  stateFile: z.string().min(1), sourceToken: bearerToken,
+  stateFile: z.string().min(1),
+  sourceToken: bearerToken.optional(),
+  sourceTokens: z.record(z.uuid(), bearerToken).optional(),
   vms: z.array(witnessVmConfigSchema).min(1).max(64),
-}).strict();
+}).strict().superRefine((config, context) => {
+  const hosts = new Set(config.vms.map((vm) => vm.sourceHostId));
+  if (!!config.sourceToken === !!config.sourceTokens ||
+      (config.sourceToken && hosts.size !== 1) ||
+      (config.sourceTokens &&
+        (Object.keys(config.sourceTokens).length !== hosts.size ||
+         [...hosts].some((host) => !config.sourceTokens?.[host]) ||
+         new Set(Object.values(config.sourceTokens)).size !== hosts.size)))
+    context.addIssue({ code: 'custom', path: ['sourceTokens'],
+      message: '每个来源宿主须有独立令牌；全局来源令牌只适用于单一来源宿主' });
+});
 export type HaWitnessServerConfig = z.infer<typeof haWitnessServerConfigSchema>;
 type ConfigVm = HaWitnessServerConfig['vms'][number];
 
@@ -135,12 +147,16 @@ async function actionsFor(config: HaWitnessServerConfig): Promise<HaWitnessActio
 }
 
 const hash = (value: string) => createHash('sha256').update(value).digest();
-function authorized(request: IncomingMessage, token: string) {
+function authorizedHost(request: IncomingMessage, tokens: Map<string, string>) {
   const header = request.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return false;
+  if (!header?.startsWith('Bearer ')) return null;
   const received = header.slice(7);
-  return /^[a-f0-9]{64}$/.test(received) &&
-    timingSafeEqual(hash(received), hash(token));
+  if (!/^[a-f0-9]{64}$/.test(received)) return null;
+  const receivedHash = hash(received);
+  let host: string | null = null;
+  for (const [id, token] of tokens)
+    if (timingSafeEqual(receivedHash, hash(token))) host = id;
+  return host;
 }
 
 export async function startHaWitnessServer(raw: unknown,
@@ -148,6 +164,9 @@ export async function startHaWitnessServer(raw: unknown,
   const config = haWitnessServerConfigSchema.parse(raw);
   if (new Set(config.vms.map((vm) => vm.sourceVmId)).size !== config.vms.length)
     throw new AppError('见证实例 ID 重复');
+  const sourceTokens = new Map<string, string>(config.sourceTokens
+    ? Object.entries(config.sourceTokens)
+    : [[config.vms[0].sourceHostId, config.sourceToken!]]);
   const witness = new HaWitness(config.stateFile, config.vms, await actionsFor(config), now);
   await witness.init();
   const server: Server = createHttpsServer({
@@ -155,9 +174,13 @@ export async function startHaWitnessServer(raw: unknown,
     minVersion: 'TLSv1.2',
   }, (request, response) => void (async () => {
     try {
-      if (!authorized(request, config.sourceToken)) throw new AppError('未授权', 401);
+      const sourceHostId = authorizedHost(request, sourceTokens);
+      if (!sourceHostId) throw new AppError('未授权', 401);
       if (request.method !== 'POST') throw new AppError('不支持此方法', 405);
       const body = await readJsonBody(request, 4096);
+      if (!body || typeof body !== 'object' ||
+          (body as Record<string, unknown>).sourceHostId !== sourceHostId)
+        throw new AppError('来源凭据与实例身份不匹配', 403);
       let result: unknown;
       if (request.url === '/v1/heartbeat') result = await witness.heartbeat(body);
       else if (request.url === '/v1/authorize-start') result = await witness.authorizeStart(body);

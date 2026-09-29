@@ -8,7 +8,7 @@ import { basename, join, resolve } from 'node:path';
 import { generate } from 'selfsigned';
 import { HaWitnessClient } from '../server/ha-witness-client.ts';
 import { HaWitness } from '../server/ha-witness-core.ts';
-import { startHaWitnessServer } from '../server/ha-witness-server.ts';
+import { haWitnessServerConfigSchema, startHaWitnessServer } from '../server/ha-witness-server.ts';
 
 async function listen(server: Server) {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
@@ -35,10 +35,12 @@ test('independent HTTPS witness powers off source before promoting a paired targ
   const fingerprint = new X509Certificate(cert.cert).fingerprint256;
   const tls = { cert: cert.cert, key: cert.private };
   const sourceToken = randomBytes(32).toString('hex');
+  const secondSourceToken = randomBytes(32).toString('hex');
   const targetToken = randomBytes(32).toString('hex');
   const appToken = randomBytes(32).toString('hex');
   const trafficToken = randomBytes(32).toString('hex');
   const sourceHostId = randomUUID(), sourceVmId = randomUUID();
+  const secondSourceHostId = randomUUID(), secondSourceVmId = randomUUID();
   const targetHostId = randomUUID(), remoteVmId = randomUUID();
   const transferId = randomUUID(), snapshotId = randomUUID();
   let poweredOff = false, targetRunning = false, targetRetired = false;
@@ -108,23 +110,41 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     await writeFile(keyFile, cert.private);
     let clock = sourceAt;
     const stateFile = join(root, 'state.json');
-    await HaWitness.initialize(stateFile, [{ sourceHostId, sourceVmId,
-      targetHostId, failureThreshold: 2 }]);
-    witnessService = await startHaWitnessServer({ version: 1,
+    await HaWitness.initialize(stateFile, [
+      { sourceHostId, sourceVmId, targetHostId, failureThreshold: 2 },
+      { sourceHostId: secondSourceHostId, sourceVmId: secondSourceVmId,
+        targetHostId, failureThreshold: 2 },
+    ]);
+    const firstVm = { sourceHostId, sourceVmId, targetHostId, failureThreshold: 2,
+      redfish: { baseUrl: bmcUrl, systemPath: '/redfish/v1/Systems/1',
+        username: 'admin', password: 'password', fingerprint },
+      target: { baseUrl: targetUrl, fingerprint, token: targetToken },
+      application: { url: `${appUrl}health`, token: appToken, fingerprint },
+      traffic: { baseUrl: trafficUrl, token: trafficToken, fingerprint },
+    };
+    const config = { version: 1 as const,
       listen: { host: '127.0.0.1', port: 0, certFile, keyFile },
-      stateFile, sourceToken,
-      vms: [{ sourceHostId, sourceVmId, targetHostId, failureThreshold: 2,
-        redfish: { baseUrl: bmcUrl, systemPath: '/redfish/v1/Systems/1',
-          username: 'admin', password: 'password', fingerprint },
-        target: { baseUrl: targetUrl, fingerprint, token: targetToken },
-        application: { url: `${appUrl}health`, token: appToken, fingerprint },
-        traffic: { baseUrl: trafficUrl, token: trafficToken, fingerprint },
-      }],
-    }, () => clock);
+      stateFile, sourceTokens: { [sourceHostId]: sourceToken,
+        [secondSourceHostId]: secondSourceToken },
+      vms: [firstVm, { ...firstVm, sourceHostId: secondSourceHostId,
+        sourceVmId: secondSourceVmId }],
+    };
+    assert.equal(haWitnessServerConfigSchema.safeParse({ ...config,
+      sourceTokens: undefined, sourceToken }).success, false,
+    'one shared credential must not authorize two source hosts');
+    assert.equal(haWitnessServerConfigSchema.safeParse({ ...config,
+      sourceTokens: { [sourceHostId]: sourceToken,
+        [secondSourceHostId]: sourceToken } }).success, false);
+    assert.equal(haWitnessServerConfigSchema.safeParse({ ...config,
+      sourceTokens: undefined, sourceToken, vms: [firstVm] }).success, true,
+    'single-source configurations retain their existing token format');
+    witnessService = await startHaWitnessServer(config, () => clock);
     const address = witnessService.server.address();
     if (!address || typeof address === 'string') throw new Error('witness port missing');
     const client = new HaWitnessClient({ version: 1,
       url: `https://127.0.0.1:${address.port}/`, fingerprint, token: sourceToken });
+    const secondClient = new HaWitnessClient({ version: 1,
+      url: `https://127.0.0.1:${address.port}/`, fingerprint, token: secondSourceToken });
     const wrongFingerprint = fingerprint.replace(/^../, fingerprint.startsWith('00') ? 'FF' : '00');
     await assert.rejects(new HaWitnessClient({ version: 1,
       url: `https://127.0.0.1:${address.port}/`, fingerprint: wrongFingerprint,
@@ -133,6 +153,12 @@ test('independent HTTPS witness powers off source before promoting a paired targ
       url: `https://127.0.0.1:${address.port}/`, fingerprint,
       token: randomBytes(32).toString('hex') }).authorizeStart({ sourceHostId, sourceVmId }));
     await client.authorizeStart({ sourceHostId, sourceVmId });
+    await secondClient.authorizeStart({ sourceHostId: secondSourceHostId,
+      sourceVmId: secondSourceVmId });
+    await assert.rejects(client.authorizeStart({ sourceHostId: secondSourceHostId,
+      sourceVmId: secondSourceVmId }));
+    await assert.rejects(secondClient.heartbeat({ sourceHostId, sourceVmId,
+      failureThreshold: 2, plan: null }));
     assert.equal((await client.heartbeat({ sourceHostId, sourceVmId,
       failureThreshold: 2, plan })).armed, true);
     clock = sourceAt + 30_000;

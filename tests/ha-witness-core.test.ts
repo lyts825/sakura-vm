@@ -157,6 +157,80 @@ test('liveness-only heartbeats retain a verified plan until explicit disarm', as
   } finally { await f.cleanup(); }
 });
 
+test('slow fencing and retirement for one host do not block another host heartbeat', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sakura-ha-witness-multi-'));
+  const file = join(root, 'witness.json');
+  const secondVm = { sourceHostId, sourceVmId: randomUUID(),
+    targetHostId: randomUUID(), failureThreshold: 2 };
+  const secondPlan = { ...plan, sourceVmId: secondVm.sourceVmId,
+    targetHostId: secondVm.targetHostId, transferId: randomUUID(),
+    remoteVmId: randomUUID() };
+  let time = 100_000;
+  let releaseFence = () => {}, enteredFence = () => {};
+  let releaseRetire = () => {}, enteredRetire = () => {};
+  const fenceGate = new Promise<void>((resolve) => { releaseFence = resolve; });
+  const fenceStarted = new Promise<void>((resolve) => { enteredFence = resolve; });
+  const retireGate = new Promise<void>((resolve) => { releaseRetire = resolve; });
+  const retireStarted = new Promise<void>((resolve) => { enteredRetire = resolve; });
+  const actions: HaWitnessActions = {
+    fence: async (source) => {
+      if (source.sourceVmId === sourceVmId) { enteredFence(); await fenceGate; }
+      else throw new Error('healthy host must not be fenced');
+    },
+    targetStatus: async () => 'running', activate: async () => {},
+    applicationReady: async () => true, switchTraffic: async () => {},
+    trafficTarget: async (_source, candidate) => candidate.remoteVmId,
+    retire: async () => { enteredRetire(); await retireGate; },
+  };
+  await HaWitness.initialize(file, [vm, secondVm]);
+  const witness = new HaWitness(file, [vm, secondVm], actions, () => time);
+  let sample: ReturnType<HaWitness['sample']> | undefined;
+  let rejoining: ReturnType<HaWitness['rejoin']> | undefined;
+  const keepSecondAlive = async () => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        witness.heartbeat({ sourceHostId, sourceVmId: secondVm.sourceVmId,
+          failureThreshold: 2 }),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error('healthy host heartbeat stalled')), 2000);
+        }),
+      ]);
+      assert.equal(response.armed, true);
+    } finally { clearTimeout(timeout); }
+  };
+  try {
+    await witness.init();
+    await witness.heartbeat({ sourceHostId, sourceVmId, failureThreshold: 2, plan });
+    time = 115_000;
+    await witness.heartbeat({ sourceHostId, sourceVmId: secondVm.sourceVmId,
+      failureThreshold: 2, plan: secondPlan });
+    time = 130_000;
+    sample = witness.sample();
+    await fenceStarted;
+    time = 140_000;
+    await keepSecondAlive();
+    releaseFence();
+    await sample;
+    assert.equal((await witness.status({ sourceHostId, sourceVmId })).phase, 'promoted');
+    rejoining = witness.rejoin({ sourceHostId, sourceVmId, dataReconciled: true });
+    await retireStarted;
+    time = 145_000;
+    await keepSecondAlive();
+    releaseRetire();
+    await rejoining;
+    assert.equal((await witness.status({ sourceHostId,
+      sourceVmId: secondVm.sourceVmId })).phase, 'source');
+  } finally {
+    releaseFence(); releaseRetire();
+    await Promise.allSettled([sample, rejoining].filter(Boolean));
+    const path = await realpath(root);
+    if (!basename(path).startsWith('sakura-ha-witness-multi-') ||
+        resolve(path) === resolve(tmpdir())) throw new Error('unsafe witness cleanup');
+    await rm(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
 test('witness refuses a missing state file and refuses to overwrite an existing state', async () => {
   const f = await fixture();
   try {
