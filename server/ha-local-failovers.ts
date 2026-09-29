@@ -98,17 +98,12 @@ export class HaLocalFailovers {
       const replica = checked.replica;
       if (!checked.localProcessReady || !replica?.remoteVmId || !replica.sha256)
         return;
-      const input = { transferId: replica.transferId, remoteVmId: replica.remoteVmId,
-        sha256: replica.sha256, sourceVmId: id, snapshotId: replica.snapshotId };
-      const target = await this.peers.checkReplicaActivation(replica.peerId, input);
-      if (target.status !== 'stopped')
-        throw new AppError(`故障副本当前为 ${target.status}，拒绝自动接管`, 409);
       if (this.closed || !this.allowed()) return;
       const at = new Date().toISOString();
       promotion = await this.machines.fenceForHa(id, {
         peerId: replica.peerId, targetHostId: checked.policy.targetHostId!,
-        transferId: input.transferId, remoteVmId: input.remoteVmId,
-        snapshotId: input.snapshotId, sha256: input.sha256,
+        transferId: replica.transferId, remoteVmId: replica.remoteVmId,
+        snapshotId: replica.snapshotId, sha256: replica.sha256,
         fencedAt: at, status: 'fenced', updatedAt: at,
       }, async () => {
         if (this.closed || !this.allowed() || !this.observedLive.has(id) ||

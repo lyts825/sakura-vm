@@ -1,6 +1,6 @@
 # 故障接管策略与健康检查
 
-第三批能力中心的“故障接管策略与健康检查”可保存目标、故障阈值和副本最长时效，并持续观察本机主实例的运行状态。API 使用 `POST /api/vms/:vmId/next-features` 的 `configure`，设置 `featureId: "ha-failover"`、`enabled: true` 和 `options.targetHostId`（已配对主机的主机 ID），可选设置 `failureThreshold`（2–10，默认 3）、`maxReplicaAgeMinutes`（1–10080，默认 1440）和 `autoProcessFailover`（默认 `false`）。`check` 结果包含主实例状态、目标资源和平台观测、最近已校验快照副本的实时回执与数据时效、阻断原因，以及本机进程故障接管的 `localProcessReady`；检查本身不会启动副本。
+第三批能力中心的“故障接管策略与健康检查”可保存目标、故障阈值和副本最长时效，并持续观察本机主实例的运行状态。API 使用 `POST /api/vms/:vmId/next-features` 的 `configure`，设置 `featureId: "ha-failover"`、`enabled: true` 和 `options.targetHostId`（已配对主机的主机 ID），可选设置 `failureThreshold`（2–10，默认 3）、`maxReplicaAgeMinutes`（1–10080，默认 1440）和 `autoProcessFailover`（默认 `false`）。`check` 结果包含主实例状态、目标资源和平台观测、最近已校验快照副本的实时回执与数据时效；开启本机进程故障接管后还会验证目标启动权限与停机状态。`localProcessReady` 仅在本次服务已观察过来源进程运行、故障达到阈值且其余预检均通过时才为真；检查本身不会启动副本。
 
 启用并选定目标后，主实例首次进入 `running` 时监测器开始计数；每 15 秒采样一次，连续 `failureThreshold` 次处于 `error` 或 `stopped` 则标记为疑似故障。恢复运行会清零；通过 Sakura 主动停止或暂停时会撤销监测。进程异常退出与故障计数写入 `ha-failure-monitor.json`，服务异常终止后重启可继续观察；正常关闭服务会撤销监测，避免计划关机触发误报。`GET /api/vms/:vmId/next-features` 的 `haFailoverMonitor` 和手动 `check` 结果的 `monitor` 显示采样状态。
 

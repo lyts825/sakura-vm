@@ -25,6 +25,8 @@ const peers = (eligible = true) => ({
   view: () => ({ outbound: [{ id: peerId, remoteId: targetHostId }] }),
   importStatus: async () => ({ id: remoteVmId, sha256: 'a'.repeat(64),
     sourceVmId: vmId, snapshotId }),
+  checkReplicaActivation: async () => ({ ready: true, id: remoteVmId,
+    status: 'stopped' }),
 }) as unknown as HostPeers;
 const replications = () => ({ view: () => ({ entries: [{
   vmId, peerId, snapshotId, transferId, remoteVmId, sha256: 'a'.repeat(64),
@@ -64,6 +66,18 @@ test('fresh verified replica can pass the local process-only preflight after QEM
   assert.equal(result.localProcessReady, true);
   assert.equal(result.replica?.transferId, transferId);
   assert.equal(result.replica?.peerId, peerId);
+  assert.equal(result.replica?.standbyStatus, 'stopped');
+});
+
+test('local process preflight rejects a standby without activation permission', async () => {
+  const forbidden = { ...peers(), checkReplicaActivation: async () => {
+    throw new Error('HTTP 403');
+  } } as unknown as HostPeers;
+  const result = await checkHaFailover(machines(new Date().toISOString(), 'error'),
+    forbidden, replications(), vmId, { targetHostId, autoProcessFailover: true },
+    true, undefined, true, true);
+  assert.equal(result.localProcessReady, false);
+  assert.ok(result.blockers.some((item) => item.includes('HTTP 403')));
 });
 
 test('failover health check rejects a vanished standby receipt', async () => {

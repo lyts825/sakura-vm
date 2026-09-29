@@ -32,7 +32,7 @@ test('process-only takeover fences source before promotion and retires target be
       sourceHostId, transferId, targetName: 'standby', sourceVmId: sourceId,
       snapshotId, diskSha256: sha256,
     } });
-  let suspected = true, starts = 0, retires = 0;
+  let suspected = true, starts = 0, retires = 0, failStartOnce = true;
   const monitor = {
     view: () => ({ suspected }),
     reconfigure: async () => { suspected = false; },
@@ -52,6 +52,10 @@ test('process-only takeover fences source before promotion and retires target be
       assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId,
         transferId);
       starts++;
+      if (failStartOnce) {
+        failStartOnce = false;
+        throw new Error('standby unavailable');
+      }
       return { id: targetId, status: 'starting' };
     },
     retireReplica: async () => {
@@ -75,6 +79,10 @@ test('process-only takeover fences source before promotion and retires target be
     machines.live.delete(sourceId);
     await failover.sample();
     assert.equal(starts, 1);
+    assert.equal(machines.get(sourceId).haPromotion?.status, 'fenced');
+    await assert.rejects(machines.start(sourceId), { code: 'HA_SOURCE_FENCED' });
+    await failover.sample();
+    assert.equal(starts, 2);
     assert.equal(machines.get(sourceId).haPromotion?.status, 'accepted');
     await assert.rejects(machines.start(sourceId), { code: 'HA_SOURCE_FENCED' });
     const reopened = new Machines(engine);
