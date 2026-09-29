@@ -24,6 +24,7 @@ let running = false;
 const machines = {
   records: new Map([[id, vm]]), live: new Map<string, object>(),
   get: () => vm,
+  locked: async (_id: string, work: () => Promise<unknown>) => work(),
   state: () => running ? 'running' : 'stopped',
   requireStopped: () => { if (running) throw Error('running'); },
   requireUnlocked: () => {},

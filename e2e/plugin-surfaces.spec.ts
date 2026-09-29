@@ -3658,6 +3658,42 @@ test('Virtio-FS card saves a stopped-instance policy and controls the mounted gu
   await expect.poll(() => policy.enabled).toBe(false);
 });
 
+test('TPM and Secure Boot card saves policy and shows verified guest evidence', async ({ page }) => {
+  await app(page, ['projects', 'automation'], true);
+  await page.route('**/api/vms/*/advanced*', (route) => route.fulfill({ json: {
+    settings: { schedule: { enabled: false, idleMinutes: 0, idleAction: 'stop' },
+      alerts: { enabled: false, cpuPercent: 90, memoryPercent: 90, diskPercent: 90,
+        cooldownMinutes: 30, taskFailures: false, serviceFailures: false } },
+    features: [], presets: {}, events: [], history: [],
+  } }));
+  let enabled = false, running = false;
+  await page.route('**/api/vms/*/trusted-boot*', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON();
+      if (input.operation === 'configure') enabled = input.policy.enabled;
+      if (input.operation === 'check') return route.fulfill({ json: {
+        ready: true, reason: null,
+        guest: { efi: true, secureBootEnabled: true,
+          setupMode: false, tpmDevicePresent: true },
+      } });
+    }
+    return route.fulfill({ json: { policy: { enabled },
+      stopped: !running, attached: running && enabled } });
+  });
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'TPM 与安全启动' });
+  await panel.getByRole('checkbox', { name: '启用 TPM 与安全启动' }).check();
+  await panel.getByRole('button', { name: '保存策略' }).click();
+  await expect.poll(() => enabled).toBe(true);
+  running = true;
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    status: 'running', poweredOn: true }] }));
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await panel.getByRole('button', { name: '检查客户机状态' }).click();
+  await expect(panel.getByText('客户机已启用安全启动并识别 TPM')).toBeVisible();
+});
+
 test('package workbench lists packages and requires a reviewed plan before applying', async ({ page }) => {
   await app(page, ['projects', 'automation'], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,

@@ -130,10 +130,12 @@ type Live = {
   memoryTargetMiB?: number;
   error?: string;
 };
-export type BootAttachment = { args: string[]; close: () => Promise<void> };
+export type BootAttachment = { args: string[]; close: () => Promise<void>; machine?: string };
 export class Machines extends EventEmitter {
   storagePools = new StoragePools(this);
   prepareBootAttachment?: (vm: VMRecord, onExit: (error: string) => void) => Promise<BootAttachment | undefined>;
+  prepareTrustedFirmware?: (vm: VMRecord) => Promise<{ code: string; vars: string } | undefined>;
+  prepareTrustedBootAttachment?: (vm: VMRecord, onExit: (error: string) => void) => Promise<BootAttachment | undefined>;
   fileBeforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
   records = new Map<string, VMRecord>();
   live = new Map<string, Live>();
@@ -686,7 +688,8 @@ export class Machines extends EventEmitter {
           (item) => item.name === vm.diskEncryption!.secretName))
           throw new AppError(`缺少私密配置：${vm.diskEncryption.secretName}`, 409);
         const firmware = vm.firmware === 'uefi'
-          ? await ensureUefiFirmware(id, vm.architecture) : null;
+          ? (await this.prepareTrustedFirmware?.(vm)) ||
+            await ensureUefiFirmware(id, vm.architecture) : null;
         const [sshPort, qmpPort, serialPort, agentPort] = await Promise.all([freePort(), freePort(), freePort(), freePort()]);
         await recordBootAttempt(id);
         const accelerator = vm.architecture === 'aarch64' ? 'tcg'
@@ -730,6 +733,7 @@ export class Machines extends EventEmitter {
         }
         let diskSecret: Awaited<ReturnType<typeof openDiskSecret>> | undefined;
         let attachment: BootAttachment | undefined;
+        let trustedAttachment: BootAttachment | undefined;
         try {
           if (vm.diskEncryption)
             diskSecret = await openDiskSecret(this, id, vm.diskEncryption.secretName);
@@ -742,8 +746,18 @@ export class Machines extends EventEmitter {
             this.emit('change');
             live.abort.abort();
           });
+          trustedAttachment = await this.prepareTrustedBootAttachment?.(vm, (error) => {
+            if (this.live.get(id) !== live || live.abort.signal.aborted ||
+                live.status === 'stopping') return;
+            live.error = `TPM 守护程序退出：${error.slice(-1024)}`;
+            vm.lastError = live.error;
+            this.log(id, `\r\n${live.error}\r\n`);
+            this.emit('change');
+            live.abort.abort();
+          });
         } catch (error) {
           this.live.delete(id);
+          await trustedAttachment?.close().catch(() => {});
           await attachment?.close().catch(() => {});
           await diskSecret?.close().catch(() => {});
           vm.lastError = (error as Error).message;
@@ -759,7 +773,7 @@ export class Machines extends EventEmitter {
           '-name',
           `sakura-${vm.name}`,
           '-machine',
-          vm.architecture === 'aarch64' ? 'virt' : 'q35',
+          trustedAttachment?.machine || (vm.architecture === 'aarch64' ? 'virt' : 'q35'),
           '-nodefaults',
           ...(vm.sandbox ? ['-no-user-config'] : []),
           '-boot',
@@ -776,6 +790,7 @@ export class Machines extends EventEmitter {
             : []),
           ...hardwareArguments(vm),
           ...(attachment?.args || []),
+          ...(trustedAttachment?.args || []),
           ...(vm.rescueOf
             ? [
                 '-device',
@@ -835,6 +850,7 @@ export class Machines extends EventEmitter {
             },
           )
           .finally(async () => {
+            await trustedAttachment?.close().catch((error) => this.log(id, `\r\n清理 TPM 守护程序失败：${String(error)}\r\n`));
             await attachment?.close().catch((error) => this.log(id, `\r\n清理 Virtio-FS 守护程序失败：${String(error)}\r\n`));
             await diskSecret?.close().catch((error) => this.log(id, `\r\n清理磁盘临时口令失败：${String(error)}\r\n`));
             live.bootAbort.abort();

@@ -16,6 +16,7 @@ import { checkSecureErase, runSecureErase } from './secure-erase.ts';
 import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
 import { projectNetworkNamespace } from './project-network-isolation.ts';
 import { inspectTrustedBoot } from './trusted-boot.ts';
+import type { TrustedBootService } from './trusted-boot-service.ts';
 import {
   engineeringOperations,
   operationViews,
@@ -131,7 +132,7 @@ export const extendedFeatureCatalog = [
   ['packet-capture', '数据包捕获', '网络', 'P1', '在客户机限时抓包，导出无地址与载荷的匿名流量诊断报告。', 'available'],
   ['reverse-tunnel', '临时反向隧道', '网络', 'P2', '为客户机 TCP 服务创建限时、本机回环地址上的调试入口。', 'available'],
   ['tpm-secure-boot', 'TPM 与安全启动', '安全', 'P2',
-    '检测 QEMU、OVMF、swtpm 与客户机的 TPM 和安全启动状态。', 'experimental'],
+    'Linux 宿主可编排持久 vTPM 与预登记密钥的 OVMF 安全启动；Windows 随附后端尚不支持。', 'experimental'],
   ['hello-unlock', 'Windows Hello 解锁', '安全', 'P2',
     '管理员使用本机平台通行密钥和用户验证解锁已锁定的控制面，并建立新的管理员会话。', 'available'],
   ['session-lock', '会话自动锁定', '安全', 'P0', '长时间无操作后锁定控制面板。', 'available'],
@@ -259,6 +260,7 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
 
 export class ExtendedFeatures {
   jobs = new Jobs('extended-features');
+  private trustedBoot?: TrustedBootService;
   private tunnels: ReverseTunnels;
   private stateValue?: ExtendedState;
   private stateLoading?: Promise<ExtendedState>;
@@ -269,6 +271,7 @@ export class ExtendedFeatures {
   ) {
     this.tunnels = new ReverseTunnels(machines);
   }
+  setTrustedBoot(service: TrustedBootService) { this.trustedBoot = service; }
 
   private file() {
     return join(DATA, 'extended-features.json');
@@ -369,9 +372,15 @@ export class ExtendedFeatures {
         mode: project.networkIsolation || 'host', namespace, active,
         reason: '在项目设置中选择私有网络并启动项目。该模式覆盖托管项目命令，不限制客户机管理员终端及其他进程。' };
     }
-    if (spec.id === 'tpm-secure-boot')
-      return { ...await inspectTrustedBoot(this.machines, id, undefined, signal),
+    if (spec.id === 'tpm-secure-boot') {
+      const [inspection, configured] = await Promise.all([
+        inspectTrustedBoot(this.machines, id, undefined, signal),
+        this.trustedBoot?.view(id)]);
+      return { ...inspection,
+        ready: inspection.ready && !!configured?.attached && !!configured.policy.enabled,
+        policy: configured?.policy, attached: configured?.attached,
         state: spec.state, adapter };
+    }
     if (spec.id === 'disk-encryption') {
       const status = await this.machines.diskEncryptionStatus(id);
       return { ready: status.encrypted === status.enabled && (!status.enabled || status.keyAvailable),
@@ -597,7 +606,7 @@ export class ExtendedFeatures {
     if (spec.id === 'network-isolation' && action === 'run')
       throw new AppError('请在项目设置中切换网络模式，再启动项目', 409);
     if (spec.id === 'tpm-secure-boot' && action === 'run')
-      throw new AppError('当前仅支持证据检查；vTPM 与密钥登记链尚未实现', 501);
+      throw new AppError('请在资源设置中启用 TPM 与安全启动，然后重启 UEFI 实例；此入口仅检查证据', 409);
     const operation = Object.entries(engineeringOperations).find(
       ([_, value]) => value.feature === spec.id,
     )?.[0] as EngineeringOperation | undefined;

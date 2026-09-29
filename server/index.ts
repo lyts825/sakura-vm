@@ -38,6 +38,7 @@ import { MediaDevices } from './media-devices.ts';
 import { MemoryReclaim } from './memory-reclaim.ts';
 import { HostMounts } from './host-mount.ts';
 import { VirtioFsShares } from './virtio-fs.ts';
+import { TrustedBootService } from './trusted-boot-service.ts';
 import { HostPeers } from './host-peers.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
@@ -141,6 +142,11 @@ async function main() {
     (delta) => { features.mutations += delta; });
   await virtioFsShares.init();
   features.next?.setVirtioFsShares(virtioFsShares);
+  const trustedBoot = new TrustedBootService(machines,
+    () => !!features.migration?.blocked,
+    (delta) => { features.mutations += delta; });
+  await trustedBoot.init();
+  features.extended?.setTrustedBoot(trustedBoot);
   const gpuProfiles = new GpuProfiles(machines, undefined,
     () => !!features.migration?.blocked,
     (delta) => { features.mutations += delta; });
@@ -1128,6 +1134,13 @@ async function main() {
         await virtioFsShares.action(virtioFsRoute[1], await authorizedBody(req, 4096)));
       throw new AppError('不支持此方法', 405);
     }
+    const trustedBootRoute = /^\/api\/vms\/([a-f0-9-]{36})\/trusted-boot$/.exec(url.pathname);
+    if (trustedBootRoute) {
+      if (req.method === 'GET') return send(res, await trustedBoot.view(trustedBootRoute[1]));
+      if (req.method === 'POST') return send(res,
+        await trustedBoot.action(trustedBootRoute[1], await authorizedBody(req, 4096)));
+      throw new AppError('不支持此方法', 405);
+    }
     if (url.pathname === '/api/host-peers') {
       if (req.method === 'GET') return send(res,
         { ...hostPeers.view(), local: await hostPeers.status() });
@@ -1651,6 +1664,7 @@ async function main() {
       () => memoryReclaim.close(),
       () => hostMounts.close(),
       () => virtioFsShares.close(),
+      () => trustedBoot.close(),
       () => gpuProfiles.close(),
       () => buildFarm.close(),
       () => hostPeers.close(),

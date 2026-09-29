@@ -16,11 +16,11 @@
 
 ### 网络
 
-- [ ] **项目网络隔离**（P1 · 部分实现） · [`network-isolation`](../server/extended-features.ts#L122) — 项目设置可将托管初始化、命令、服务、健康检查、流水线及收藏命令放入仅回环的独立网络命名空间；管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。
+- [ ] **项目网络隔离**（P1 · 部分实现） · [`network-isolation`](../server/extended-features.ts#L123) — 项目设置可将托管初始化、命令、服务、健康检查、流水线及收藏命令放入仅回环的独立网络命名空间；管理员终端、客户机自行启动的进程及部分扩展仍使用共享客户机网络，故仍为部分实现。
 
 ### 安全
 
-- [ ] **TPM 与安全启动**（P2 · 部分实现） · [`tpm-secure-boot`](../server/extended-features.ts#L133) — 可检查当前 QEMU、OVMF、swtpm 及客户机实际 TPM/安全启动证据；尚未创建 vTPM、登记启动密钥或配置完整安全启动链。
+- [ ] **TPM 与安全启动**（P2 · 部分实现） · [`tpm-secure-boot`](../server/extended-features.ts#L134) — Linux x86_64 宿主已能启动持久 swtpm 与预登记密钥的 OVMF，真实 Debian 客户机两次启动均确认 TPM 和 Secure Boot；Windows 随附 QEMU 缺少 TPM 后端，磁盘备份也尚不包含 TPM/NVRAM 状态，仍为部分实现。
 
 ## 第三批
 

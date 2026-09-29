@@ -4,6 +4,16 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Machines } from '../server/machines.ts';
 import { inspectTrustedBoot } from '../server/trusted-boot.ts';
+import { trustedBootArguments } from '../server/trusted-boot-service.ts';
+
+test('TPM backend binds a private socket and protects the secure pflash variable store', () => {
+  assert.deepEqual(trustedBootArguments('/tmp/sakura-tpm-a,b/tpm.sock'), [
+    '-global', 'driver=cfi.pflash01,property=secure,value=on',
+    '-chardev', 'socket,id=sakura-tpm,path=/tmp/sakura-tpm-a,,b/tpm.sock',
+    '-tpmdev', 'emulator,id=sakura-tpmdev,chardev=sakura-tpm',
+    '-device', 'tpm-tis,tpmdev=sakura-tpmdev',
+  ]);
+});
 
 test('TPM and Secure Boot check separates host prerequisites from guest evidence', async () => {
   const missing = join(tmpdir(), 'sakura-missing-trusted-boot-file');

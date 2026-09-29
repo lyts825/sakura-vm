@@ -1,6 +1,6 @@
 # 硬件声明、密钥登记与计算设备检查
 
-这些能力在第三批能力中心的操作参数中使用。它们分别提供只读预览、元数据登记和客户机可见性检查；不创建 vTPM，不解绑宿主 PCI 驱动，也不安装 GPU 驱动。
+这些能力在第三批能力中心的操作参数中使用。它们分别提供只读预览、元数据登记和客户机可见性检查；此处的密钥登记不创建 vTPM，PCI 预览不解绑宿主驱动，GPU 检查不安装驱动。实际 vTPM 启动流程见 [TPM 与安全启动](trusted-boot.md)。
 
 ## PCI 与 USB 直通声明预览
 
@@ -30,4 +30,4 @@ PCI 预览校验 BDF。Linux 宿主上还会只读检查 `/sys/bus/pci/devices` 
 {"mode":"save","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","label":"Signing key","rotateAfterDays":365}
 ```
 
-只接受公钥的 64 位小写十六进制 SHA-256 指纹、标签和轮换间隔；可选 `enrolledAt` 为 ISO 时间。`status` 返回到期日、已逾期及未来 30 天内到期的数量。`remove` 加 `fingerprint` 可删除一条记录。每个实例最多 32 条。登记不接收或保存私钥、密封数据、TPM 报价，也不会自动轮换密钥；目前没有可创建的虚拟 TPM 设备。
+只接受公钥的 64 位小写十六进制 SHA-256 指纹、标签和轮换间隔；可选 `enrolledAt` 为 ISO 时间。`status` 返回到期日、已逾期及未来 30 天内到期的数量。`remove` 加 `fingerprint` 可删除一条记录。每个实例最多 32 条。登记不接收或保存私钥、密封数据、TPM 报价，也不会自动轮换密钥；vTPM 设备由独立的 Linux [可信启动策略](trusted-boot.md)创建。

@@ -257,18 +257,20 @@ export class VirtioFsShares {
     try {
       await this.locked(id, async () => {
         if (input.operation === 'configure') {
-          this.machines.requireStopped(id);
-          if (input.policy.enabled) {
-            if (process.platform !== 'linux' || vm.architecture === 'aarch64')
-              throw new AppError('Virtio-FS 目前需要 Linux x86_64 宿主和客户机', 503);
-            if (vm.hardware?.cpu?.numa || vm.hardware?.memory)
-              throw new AppError('当前 Virtio-FS 配置不能与 NUMA 或内存热插拔同时使用', 409);
-            const host = await probeVirtioFsHost('x86_64');
-            if (!host.qemuVirtioFs || !host.sharedMemory || !host.virtiofsd)
-              throw new AppError('宿主 QEMU 或 virtiofsd 缺少 Virtio-FS 启动组件', 503);
-            input.policy.hostPath = await this.validHostPath(input.policy.hostPath);
-          }
-          await this.save(id, input.policy);
+          await this.machines.locked(id, async () => {
+            this.machines.requireStopped(id);
+            if (input.policy.enabled) {
+              if (process.platform !== 'linux' || vm.architecture === 'aarch64')
+                throw new AppError('Virtio-FS 目前需要 Linux x86_64 宿主和客户机', 503);
+              if (vm.hardware?.cpu?.numa || vm.hardware?.memory)
+                throw new AppError('当前 Virtio-FS 配置不能与 NUMA 或内存热插拔同时使用', 409);
+              const host = await probeVirtioFsHost('x86_64');
+              if (!host.qemuVirtioFs || !host.sharedMemory || !host.virtiofsd)
+                throw new AppError('宿主 QEMU 或 virtiofsd 缺少 Virtio-FS 启动组件', 503);
+              input.policy.hostPath = await this.validHostPath(input.policy.hostPath);
+            }
+            await this.save(id, input.policy);
+          });
         } else if (input.operation === 'mount') {
           await this.mount(id);
         } else {

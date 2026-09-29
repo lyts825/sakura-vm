@@ -1,4 +1,4 @@
-import { constants } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { copyFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppError, ROOT, vmDir } from './model.ts';
@@ -6,9 +6,14 @@ import { regularDirectory } from './local-store.ts';
 
 function paths(architecture: 'x86_64' | 'aarch64' = 'x86_64') {
   const share = join(process.env.SAKURA_QEMU_DIR || join(ROOT, '.tools/qemu'), 'share');
-  return architecture === 'aarch64'
+  const bundled = architecture === 'aarch64'
     ? { code: join(share, 'edk2-aarch64-code.fd'), template: join(share, 'edk2-arm-vars.fd') }
     : { code: join(share, 'edk2-x86_64-code.fd'), template: join(share, 'edk2-i386-vars.fd') };
+  if (architecture === 'x86_64' && process.platform === 'linux' &&
+      !existsSync(bundled.code) && existsSync('/usr/share/OVMF/OVMF_CODE_4M.fd'))
+    return { code: '/usr/share/OVMF/OVMF_CODE_4M.fd',
+      template: '/usr/share/OVMF/OVMF_VARS_4M.fd' };
+  return bundled;
 }
 async function regularSize(file: string) {
   const info = await lstat(file).catch((error) => {

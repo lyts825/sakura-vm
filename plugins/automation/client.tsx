@@ -29,6 +29,7 @@ import { UsbHotplugPanel } from '../../src/UsbHotplugPanel';
 import { MemoryReclaimSettings } from './MemoryReclaimSettings';
 import { HostMountSettings } from './HostMountSettings';
 import { VirtioFsSettings } from './VirtioFsSettings';
+import { TrustedBootSettings } from './TrustedBootSettings';
 import { PackageWorkbenchPanel } from './PackageWorkbenchPanel';
 import { HaFailoverPanel } from './HaFailoverPanel';
 
@@ -670,6 +671,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                 running={active.status === 'running'} request={request} />
               <HostMountSettings vmId={active.id} request={request} />
               <VirtioFsSettings vmId={active.id} request={request} />
+              <TrustedBootSettings vmId={active.id} request={request} />
               <div className="feature-actions">
                 <label>
                   资源预设

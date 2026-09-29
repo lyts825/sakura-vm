@@ -1,23 +1,28 @@
 import { execFile } from 'node:child_process';
-import { lstat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Machines } from './machines.ts';
 import { ROOT } from './model.ts';
 
-type Paths = { qemu: string; secureFirmware: string; varsTemplate: string; swtpm: string };
-const defaultPaths = (): Paths => {
+export type TrustedBootPaths = { qemu: string; secureFirmware: string; varsTemplate: string; swtpm: string };
+export const trustedBootPaths = (): TrustedBootPaths => {
   const root = process.env.SAKURA_QEMU_DIR || join(ROOT, '.tools/qemu');
+  const bundledCode = join(root, 'share', 'edk2-x86_64-secure-code.fd');
+  const bundledVars = join(root, 'share', 'edk2-x86_64-secure-vars.fd');
   return {
     qemu: join(root, `qemu-system-x86_64${process.platform === 'win32' ? '.exe' : ''}`),
-    secureFirmware: join(root, 'share', 'edk2-x86_64-secure-code.fd'),
-    varsTemplate: join(root, 'share', 'edk2-i386-vars.fd'),
+    secureFirmware: process.env.SAKURA_SECURE_BOOT_CODE ||
+      (existsSync(bundledCode) ? bundledCode : '/usr/share/OVMF/OVMF_CODE_4M.ms.fd'),
+    varsTemplate: process.env.SAKURA_SECURE_BOOT_VARS ||
+      (existsSync(bundledVars) ? bundledVars : '/usr/share/OVMF/OVMF_VARS_4M.ms.fd'),
     swtpm: process.env.SAKURA_SWTPM_PATH || 'swtpm',
   };
 };
 
 async function regularFirmware(path: string) {
-  const info = await lstat(path).catch(() => null);
-  return Boolean(info?.isFile() && !info.isSymbolicLink() && info.size >= 65536);
+  const info = await stat(path).catch(() => null);
+  return Boolean(info?.isFile() && info.size >= 65536);
 }
 
 function commandOutput(file: string, args: string[]) {
@@ -44,9 +49,7 @@ printf 'TPM='; if [ -c /dev/tpmrm0 ] || [ -c /dev/tpm0 ]; then echo yes; else ec
 
 const flag = (value: string | undefined) => value === '1' ? true : value === '0' ? false : null;
 
-export async function inspectTrustedBoot(machines: Machines, id: string,
-  paths: Paths = defaultPaths(), signal?: AbortSignal) {
-  const vm = machines.get(id);
+export async function probeTrustedBootHost(paths: TrustedBootPaths = trustedBootPaths()) {
   const [secureFirmware, varsTemplate, tpmBackend, machine, swtpm] = await Promise.all([
     regularFirmware(paths.secureFirmware),
     regularFirmware(paths.varsTemplate),
@@ -54,12 +57,18 @@ export async function inspectTrustedBoot(machines: Machines, id: string,
     commandOutput(paths.qemu, ['-machine', 'q35,help']),
     commandOutput(paths.swtpm, ['--version']),
   ]);
-  const host = {
+  return {
     secureFirmware, varsTemplate,
     smm: machine.ok && /\bsmm=/.test(machine.output),
     tpmBackend: tpmBackend.ok && /\bemulator\b/.test(tpmBackend.output),
     swtpm: swtpm.ok,
   };
+}
+
+export async function inspectTrustedBoot(machines: Machines, id: string,
+  paths: TrustedBootPaths = trustedBootPaths(), signal?: AbortSignal) {
+  const vm = machines.get(id);
+  const host = await probeTrustedBootHost(paths);
   let guest: { efi: boolean; secureBootEnabled: boolean | null;
     setupMode: boolean | null; tpmDevicePresent: boolean } | null = null;
   if (machines.state(id) === 'running') {
