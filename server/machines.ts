@@ -47,6 +47,7 @@ import { StoragePools } from './storage-pools.ts';
 import { diskEncryptionSchema, encryptedDriveOption, encryptedImageOptions, plainImageOptions,
   openDiskSecret, qemuSecretObject, withDiskSecret } from './disk-encryption.ts';
 import { Secrets } from './secrets.ts';
+import { liveMigrationProjectsSchema, type LiveMigrationProjects } from './live-migration-projects.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
@@ -554,7 +555,8 @@ export class Machines extends EventEmitter {
     return this.createInternal(input, sandbox);
   }
   async createIncomingTarget(input: unknown, identity: { key: string; seed: Buffer },
-    source: { sourceHostId: string; sourceVmId: string; transferId: string }) {
+    source: { sourceHostId: string; sourceVmId: string; transferId: string },
+    projects?: LiveMigrationProjects) {
     if (typeof identity.key !== 'string' || identity.key.length < 100 ||
         identity.key.length > 16_000 || !Buffer.isBuffer(identity.seed) ||
         identity.seed.length < 40 * 1024 || identity.seed.length > 1024 * 1024 ||
@@ -574,7 +576,9 @@ export class Machines extends EventEmitter {
       throw new AppError('此在线迁移任务已创建目标实例', 409);
     const now = new Date().toISOString();
     return this.createInternal(config, undefined, undefined, { ...identity,
-      origin: { ...sourceIds, status: 'prepared', createdAt: now, updatedAt: now } });
+      origin: { ...sourceIds, status: 'prepared', createdAt: now, updatedAt: now },
+      ...(projects ? { projects: liveMigrationProjectsSchema.parse(projects) } : {}),
+    });
   }
   private async prepareVmDirectory(vm: VMRecord) {
     const root = await this.storagePools.ensure(vm.storagePoolId);
@@ -597,7 +601,8 @@ export class Machines extends EventEmitter {
     await rm(dir, { recursive: true, force: true });
   }
   private async createInternal(input: unknown, sandbox?: SandboxPolicy, rescueOf?: string,
-    incoming?: { key: string; seed: Buffer; origin: NonNullable<VMRecord['liveMigrationOrigin']> }) {
+    incoming?: { key: string; seed: Buffer; origin: NonNullable<VMRecord['liveMigrationOrigin']>;
+      projects?: LiveMigrationProjects }) {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
       this.requireUnreservedPorts(config.forwards);
@@ -649,6 +654,15 @@ export class Machines extends EventEmitter {
             ...(vm.distro && vm.distro !== 'alpine' ? { 'network-config': cloudNetwork } : {}),
           }),
         );
+        if (incoming?.projects) {
+          await writeFile(join(dir, 'projects.json'),
+            JSON.stringify({ active: incoming.projects.active,
+              projects: incoming.projects.projects }, null, 2));
+          for (const [projectId, project] of Object.entries(incoming.projects.configs))
+            await writeFile(join(dir, projectId === 'default'
+              ? 'project.json' : `project-${projectId}.json`),
+            JSON.stringify(project, null, 2));
+        }
         await this.engine.run('sakura-img', [
           'create',
           '-f',

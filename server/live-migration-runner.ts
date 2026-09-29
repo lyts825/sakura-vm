@@ -8,6 +8,7 @@ import type { HostPeers } from './host-peers.ts';
 import { AppError, createSchema, vmDir } from './model.ts';
 import { qmp } from './qmp.ts';
 import { migrateQemuWithMirroredDisk } from './live-migration-transport.ts';
+import { readLiveMigrationProjects } from './live-migration-projects.ts';
 
 export const runLiveMigrationInput = z.object({
   targetHostId: z.uuid(),
@@ -78,16 +79,17 @@ export class LiveMigrationRunner {
       distro: vm.distro, architecture: vm.architecture, template: vm.template,
       hardware: vm.hardware, forwards: vm.forwards,
     });
-    const [key, seed] = await Promise.all([
+    const [key, seed, projects] = await Promise.all([
       readFile(join(vmDir(id), 'id_rsa'), 'utf8'),
       readFile(join(vmDir(id), 'seed.iso')),
+      readLiveMigrationProjects(id),
     ]);
     signal?.throwIfAborted();
     const transferId = randomUUID();
     log(`准备目标主机 ${peer.name} 的在线迁移接收实例。\n`);
     const prepared = await this.peers.prepareLiveTarget(peer.id, {
       sourceVmId: id, transferId, config: targetConfig,
-      key, seedBase64: seed.toString('base64'),
+      key, seedBase64: seed.toString('base64'), projects,
     });
     log(`目标实例 ${prepared.targetVmId} 已暂停，迁移标识 ${transferId}。\n`);
     const forwards: Array<Awaited<ReturnType<HostPeers['openMigrationForward']>>> = [];

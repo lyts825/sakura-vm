@@ -14,6 +14,7 @@ import { readStore, writeStore } from './local-store.ts';
 import { AppError, createSchema, DATA } from './model.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
 import { qmp } from './qmp.ts';
+import { liveMigrationProjectsSchema } from './live-migration-projects.ts';
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
@@ -92,6 +93,7 @@ const liveTargetPrepareInput = z.object({
   transferId: z.uuid(), sourceVmId: z.uuid(), config: createSchema,
   key: z.string().min(100).max(16_000),
   seedBase64: z.string().min(100).max(1_400_000).regex(/^[A-Za-z0-9+/]*={0,2}$/),
+  projects: liveMigrationProjectsSchema.optional(),
 }).strict();
 const liveTargetReceipt = z.object({
   targetVmId: z.uuid(), sessionId: z.uuid(), targetDiskNode: z.string().min(1).max(64),
@@ -279,6 +281,7 @@ export class HostPeers {
   private liveMigrationReceiver?: { prepare: (input: {
     requesterId: string; transferId: string; sourceVmId: string;
     config: z.infer<typeof createSchema>; key: string; seed: Buffer;
+    projects?: z.infer<typeof liveMigrationProjectsSchema>;
   }) => Promise<z.infer<typeof liveTargetReceipt>>;
   complete: (input: z.infer<typeof liveTargetCompleteInput> & { requesterId: string }) =>
     Promise<z.infer<typeof liveTargetStatus>>;
@@ -642,7 +645,7 @@ export class HostPeers {
           throw new AppError('此同伴未获在线迁移接收权限', 403);
         if (!this.liveMigrationReceiver)
           throw new AppError('目标主机尚未启用在线迁移接收器', 503);
-        const input = liveTargetPrepareInput.parse(await readJsonBody(request, 1_500_000));
+        const input = liveTargetPrepareInput.parse(await readJsonBody(request, 2_000_000));
         const seed = Buffer.from(input.seedBase64, 'base64');
         if (seed.toString('base64') !== input.seedBase64)
           throw new AppError('客户机 seed 编码无效');
@@ -654,6 +657,7 @@ export class HostPeers {
           return this.send(response, liveTargetReceipt.parse(await this.liveMigrationReceiver.prepare({
             requesterId: peer.requesterId, transferId: input.transferId,
             sourceVmId: input.sourceVmId, config: input.config, key: input.key, seed,
+            projects: input.projects,
           })));
         } finally { this.mutation(-1); }
       }

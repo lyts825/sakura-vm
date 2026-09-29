@@ -3,9 +3,10 @@ import type { Machines } from './machines.ts';
 import type { HostPeers } from './host-peers.ts';
 import { AppError, type VMConfig } from './model.ts';
 import { freePort, qmp } from './qmp.ts';
+import type { LiveMigrationProjects } from './live-migration-projects.ts';
 
 type PrepareInput = { requesterId: string; transferId: string; sourceVmId: string;
-  config: VMConfig; key: string; seed: Buffer };
+  config: VMConfig; key: string; seed: Buffer; projects?: LiveMigrationProjects };
 
 export class LiveMigrationReceiver {
   private finalizing = new Set<string>();
@@ -18,7 +19,7 @@ export class LiveMigrationReceiver {
       { key: input.key, seed: input.seed }, {
         sourceHostId: input.requesterId, sourceVmId: input.sourceVmId,
         transferId: input.transferId,
-      });
+      }, input.projects);
     let sessionId: string | undefined;
     try {
       this.requireAvailable();

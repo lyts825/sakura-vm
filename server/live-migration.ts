@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Machines } from './machines.ts';
 import type { HostPeers } from './host-peers.ts';
 import { qmp } from './qmp.ts';
+import { readLiveMigrationProjects } from './live-migration-projects.ts';
 
 export const liveMigrationInput = z.object({
   targetHostId: z.uuid().optional(),
@@ -64,6 +65,8 @@ export async function planLiveMigration(machines: Machines,
       blockers.push('此实例的硬件、磁盘或快照配置尚不能安全在线迁移。');
     if (machines.live.get(id)?.accelerator !== 'tcg')
       blockers.push('当前仅支持由 TCG 运行的来源实例。');
+    try { await readLiveMigrationProjects(id); }
+    catch (error) { blockers.push(`项目配置：${(error as Error).message}`); }
   }
   let qemu: unknown = null;
   let migration: unknown = null;

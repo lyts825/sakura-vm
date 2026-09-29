@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -14,6 +14,7 @@ const { Machines } = await import('../server/machines.ts');
 const { HostPeers } = await import('../server/host-peers.ts');
 const { LiveMigrationReceiver } = await import('../server/live-migration-receiver.ts');
 const { LiveMigrationRunner } = await import('../server/live-migration-runner.ts');
+const { vmDir } = await import('../server/model.ts');
 const { freePort, qmp } = await import('../server/qmp.ts');
 let engine: Awaited<ReturnType<typeof createRuntime>> | undefined;
 let source: InstanceType<typeof Machines> | undefined;
@@ -70,6 +71,11 @@ try {
   }
   assert.equal((await source.exec(vm.id,
     'printf sakura-live-migration > /tmp/sakura-migration-marker', 15_000)).code, 0);
+  const projectIndex = { active: 'default',
+    projects: [{ id: 'default', name: '默认项目' }] };
+  const projectConfig = { directory: '/workspace', command: 'printf migrated' };
+  await writeFile(join(vmDir(vm.id), 'projects.json'), JSON.stringify(projectIndex));
+  await writeFile(join(vmDir(vm.id), 'project.json'), JSON.stringify(projectConfig));
   let lastMigrationStatus = '';
   const tracedQmp = (async (qmpPort: number, command: string,
     args?: Record<string, unknown>, timeoutMs?: number) => {
@@ -111,10 +117,15 @@ try {
   assert.equal(source.state(vm.id), 'stopped');
   assert.equal(source.get(vm.id).liveMigrationFence?.targetVmId, targetVmId);
   assert.equal(target.get(targetVmId).liveMigrationOrigin?.status, 'ready');
+  assert.deepEqual(JSON.parse(await readFile(join(vmDir(targetVmId), 'projects.json'), 'utf8')),
+    projectIndex);
+  const transferredProject = JSON.parse(await readFile(join(vmDir(targetVmId),
+    'project.json'), 'utf8')) as { command: string };
+  assert.equal(transferredProject.command, projectConfig.command);
   const marker = await target.exec(targetVmId, 'cat /tmp/sakura-migration-marker', 15_000);
   assert.equal(marker.code, 0);
   assert.equal(marker.stdout.trim(), 'sakura-live-migration');
-  console.log('A live Alpine guest retained its in-memory marker through paired TLS disk and RAM migration; target SSH became ready and source QEMU stopped behind a durable fence.');
+  console.log('A live Alpine guest retained its in-memory marker and Sakura project configuration through paired TLS migration; target SSH became ready and source QEMU stopped behind a durable fence.');
 } finally {
   if (source && sourceVmId) await source.stop(sourceVmId, true).catch(() => {});
   if (target && targetVmId) await target.stop(targetVmId, true).catch(() => {});

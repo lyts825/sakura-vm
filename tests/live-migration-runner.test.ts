@@ -27,6 +27,11 @@ async function fixture(mode: 'success' | 'before-fence' | 'after-fence') {
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'id_rsa'), 'private key');
   await writeFile(join(dir, 'seed.iso'), 'seed content');
+  await writeFile(join(dir, 'projects.json'), JSON.stringify({ active: 'default',
+    projects: [{ id: 'default', name: 'Default' }] }));
+  await writeFile(join(dir, 'project.json'), JSON.stringify({
+    directory: '/workspace', command: 'printf migrated',
+  }));
   const vm = { id: vmId, name: 'source', memoryMiB: 512, cpus: 2,
     diskGiB: 8, accelerator: 'tcg', forwards: [], snapshots: [],
     liveMigrationFence: undefined as { targetHostId: string; targetVmId: string;
@@ -49,12 +54,14 @@ async function fixture(mode: 'success' | 'before-fence' | 'after-fence') {
         status: { platform: 'win32', arch: 'x64' } },
     ] }),
     prepareLiveTarget: async (_peer: string, input: { sourceVmId: string;
-      config: { name: string }; key: string; seedBase64: string }) => {
+      config: { name: string }; key: string; seedBase64: string;
+      projects?: { configs: { default?: { command: string } } } }) => {
       prepared++;
       assert.equal(input.sourceVmId, vmId);
       assert.equal(input.config.name, 'destination');
       assert.equal(input.key, 'private key');
       assert.equal(Buffer.from(input.seedBase64, 'base64').toString(), 'seed content');
+      assert.equal(input.projects?.configs.default?.command, 'printf migrated');
       return { targetVmId, sessionId: randomUUID(), targetDiskNode: '#target',
         diskPort: 2345, statePort: 2346 };
     },
@@ -115,4 +122,14 @@ test('post-fence failure keeps target and source fence for manual reconciliation
   assert.ok(vm.liveMigrationFence);
   assert.deepEqual(counts(), { prepared: 1, completed: 0,
     stopped: 0, aborted: 0, closed: 2 });
+});
+
+test('migration refuses project secrets that cannot follow the guest to another host', async () => {
+  const { runner, vmId, hostId, counts } = await fixture('success');
+  await writeFile(join(vmDir(vmId), 'project.json'), JSON.stringify({
+    directory: '/workspace', secrets: { TOKEN: 'HostOnlySecret' },
+  }));
+  await assert.rejects(runner.run(vmId, { targetHostId: hostId,
+    targetName: 'destination' }), /宿主私密配置/);
+  assert.equal(counts().prepared, 0);
 });
