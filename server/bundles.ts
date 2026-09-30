@@ -15,6 +15,8 @@ import { bundleSignatureSchema, verifySignedManifest, type SignedBundles } from 
 import { diskEncryptionSchema, encryptedImageOptions,
   qemuSecretObject } from './disk-encryption.ts';
 import { Secrets } from './secrets.ts';
+import { DesktopBindings, desktopBindingSchema } from './desktop-binding.ts';
+import { writeStore } from './local-store.ts';
 import type { TrustedBootService } from './trusted-boot-service.ts';
 import { decodeTrustedBootArchive, encodeTrustedBootArchive, trustedBootArchiveSchema,
   type TrustedBootFiles } from './trusted-boot-archive.ts';
@@ -48,6 +50,7 @@ const manifestSchema = z
     pendingResize: z.boolean().default(false),
     diskEncryption: diskEncryptionSchema.optional(),
     trustedBoot: trustedBootArchiveSchema.optional(),
+    desktopBinding: desktopBindingSchema.optional(),
     key: z.string().max(16384),
     seed: z.string().max(262144),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -154,6 +157,7 @@ export class Bundles {
         const identity = await this.machines.snapshotIdentity(id, snapshotId);
         const unsigned = manifestSchema.parse({
           version: 1,
+          desktopBinding: await new DesktopBindings(this.machines).read(id) || undefined,
           config: { name, memoryMiB, cpus, diskGiB: snapshot?.diskGiB || diskGiB,
             accelerator, forwards, distro, architecture, template, hardware, firmware },
           project: await this.project(id),
@@ -223,6 +227,10 @@ export class Bundles {
           migrationOrigin ? { ...migrationOrigin, diskSha256: manifest.sha256 } : undefined,
           manifest.diskEncryption,
         );
+        if (manifest.desktopBinding) {
+          try { await writeStore(join(vmDir(adopted.id), 'desktop-binding.json'), manifest.desktopBinding); }
+          catch (error) { await this.machines.delete(adopted.id); throw error; }
+        }
         if (trustedBoot) {
           try { await this.trustedBoot!.restore(adopted.id, trustedBoot); }
           catch (error) {
@@ -353,6 +361,7 @@ export class Bundles {
           storagePoolId } = vm;
         const project = await this.project(id);
         const projects = await this.projectCatalog(id);
+        const desktopBinding = await new DesktopBindings(this.machines).read(id);
         signal?.throwIfAborted();
         const adopted = await this.machines.adopt(
           {
@@ -380,6 +389,10 @@ export class Bundles {
             ? { sourceVmId: id, snapshotId: snapshot, createdAt: new Date().toISOString() }
             : undefined,
         );
+        if (desktopBinding) {
+          try { await writeStore(join(vmDir(adopted.id), 'desktop-binding.json'), desktopBinding); }
+          catch (error) { await this.machines.delete(adopted.id); throw error; }
+        }
         if (vm.diskEncryption) {
           const secrets = new Secrets(this.machines);
           await secrets.save(adopted.id, { name: vm.diskEncryption.secretName,

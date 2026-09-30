@@ -223,6 +223,24 @@ test('portable backup round trips persist pending filesystem growth across servi
   assert.equal(reopened.get(restored.id).pendingResize, true);
 });
 
+test('portable backups and clones retain the KDE recovery project without exporting its environment', async (t) => {
+  const { machines, id, bundles } = await resizeFixture(t);
+  const binding = { version: 1, projectId: 'default', directory: '/workspace',
+    networkIsolation: 'private', launcherSha256: 'a'.repeat(64), enabled: true };
+  await writeFile(join(vmDir(id), 'desktop-binding.json'), JSON.stringify(binding));
+  const chunks: Buffer[] = [];
+  await bundles.export(id, new Writable({ write(chunk, _encoding, done) {
+    chunks.push(Buffer.from(chunk)); done();
+  } }), () => {});
+  const payload = Buffer.concat(chunks);
+  const length = payload.readUInt32BE(8);
+  assert.deepEqual(JSON.parse(payload.subarray(12, 12 + length).toString()).desktopBinding, binding);
+  const restored = await bundles.import('desktop-import', Readable.from([payload]));
+  const cloned = await bundles.clone(id, 'desktop-clone');
+  for (const copy of [restored, cloned])
+    assert.deepEqual(JSON.parse(await readFile(join(vmDir(copy.id), 'desktop-binding.json'), 'utf8')), binding);
+});
+
 test('peer bundle imports persist an origin that prevents duplicate transfer adoption', async (t) => {
   const { machines, bundles } = await resizeFixture(t);
   const migrationOrigin = { sourceHostId: randomUUID(), transferId: randomUUID(),

@@ -43,8 +43,15 @@ test "$(id -u ${user})" = ${uid}`;
 }
 
 export function appCleanupScript(id: string, uid: number) {
+  return `${appIdentityCheck(id, uid)} || exit 1\n${uidCleanupScript(uid)}`;
+}
+
+/** Stop an existing account's processes without racing PID reuse. */
+export function uidCleanupScript(uid: number, environment?: 'SAKURA_DESKTOP_UID') {
+  if (!Number.isSafeInteger(uid) || uid < 1000) throw new Error('Invalid application UID');
   const script = `import os,signal,time
-uid=${uid}
+uid=${environment ? `int(os.environ[${JSON.stringify(environment)}])` : uid}
+if uid<1000: raise RuntimeError('Unsafe application UID')
 def processes():
   for name in os.listdir('/proc'):
     if not name.isdigit(): continue
@@ -68,8 +75,7 @@ while any(processes()):
   if time.monotonic()-started>5: raise RuntimeError('Application processes did not exit')
   if time.monotonic()-started>0.5: stop(signal.SIGKILL)
   time.sleep(0.1)`;
-  return `${appIdentityCheck(id, uid)} || exit 1
-python3 -I -S -c ${quote(script)}`;
+  return `python3 -I -S -c ${quote(script)}`;
 }
 
 export function appSupervisedCommand(id: string, uid: number, command: string, afterCleanup = '') {

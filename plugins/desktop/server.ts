@@ -44,7 +44,7 @@ export async function route(
     if (req.method === 'POST') {
       const { action, preferences } = z
         .object({
-          action: z.enum(['install', 'start', 'configure']),
+          action: z.enum(['install', 'start', 'configure', 'stop']),
           preferences: z
             .object({
               resolution: z.enum(['1280x800', '1440x900', '1600x1000', '1920x1080']).optional(),
@@ -65,6 +65,10 @@ export async function route(
         })
         .strict()
         .parse(await body(req));
+      if (action === 'stop') {
+        if (preferences) throw new AppError('停止桌面不能提交外观设置');
+        return send(await this.desktops.stop(id));
+      }
       return send(this.desktops.start(id, action, preferences), 202);
     }
   }

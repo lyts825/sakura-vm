@@ -1001,6 +1001,34 @@ test('desktop layout saves two logical monitors and restores the applied prefere
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test('KDE project mismatch blocks graphics until the owner stops and rebinds the desktop', async ({ page }) => {
+  await app(page, ['desktop'], true);
+  let phase = 'ready', mismatch = true;
+  const submitted: Array<Record<string, unknown>> = [], connections: string[] = [];
+  page.on('websocket', (socket) => connections.push(socket.url()));
+  await page.route('**/api/vms', (route) =>
+    route.fulfill({ json: [{ ...vm, memoryMiB: 2048, status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/desktop*', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON(); submitted.push(input);
+      if (input.action === 'stop') { phase = 'stopped'; mismatch = false; }
+      return route.fulfill({ json: { stopped: true } });
+    }
+    return route.fulfill({ json: { status: phase, log: '', preferences: {},
+      projectId: '0123456789abcdef', directory: '/workspace/other', networkIsolation: 'private',
+      ...(mismatch ? { bindingMismatch: true } : {}) } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '桌面', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '桌面正在另一个项目中运行' })).toBeVisible();
+  await expect(page.locator('.desktop-screen canvas')).toHaveCount(0);
+  expect(connections.filter((url) => url.includes('/desktop?'))).toHaveLength(0);
+  await page.getByRole('button', { name: '停止已运行的桌面' }).click();
+  await expect(page.getByRole('heading', { name: '桌面会话已停止' })).toBeVisible();
+  expect(submitted).toEqual([{ action: 'stop' }]);
+  await expect(page.getByRole('button', { name: '启动桌面', exact: true })).toBeVisible();
+});
+
 test('Debian desktop opens and stops an isolated single-app browser window', async ({ page }) => {
   await app(page, ['desktop'], true);
   const sessions: Array<Record<string, unknown>> = [];

@@ -3,12 +3,16 @@ import {
   desktopPreferencesSchema,
   type DesktopPreferences,
 } from './desktop-preferences.ts';
+import { desktopLauncher, desktopLauncherPath } from './desktop-binding.ts';
+import type { Project } from './workspaces.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 // These scripts run only inside the managed guest, over its existing SSH connection.
 // TigerVNC owns the outer X server. Wayland-only distros nest KWin inside it.
 // BusyBox pgrep matches argv[0], which KDE launches with an absolute path.
+const displayReady = 'timeout 3 env DISPLAY=:1 XAUTHORITY=/run/sakura-desktop/Xauthority xdpyinfo';
 const plasmaReady =
-  "test -f /run/sakura-desktop/ready && pgrep -u sakura-desktop -f '(^|/)plasmashell( |$)' >/dev/null 2>&1 && pgrep -u sakura-desktop -f '(^|/)kwin_(x11|wayland)( |$)' >/dev/null 2>&1 && timeout 3 env DISPLAY=:1 XAUTHORITY=/run/sakura-desktop/Xauthority xdpyinfo >/dev/null 2>&1";
+  "test -f /run/sakura-desktop/ready && pgrep -u sakura-desktop -f '(^|/)plasmashell( |$)' >/dev/null 2>&1 && pgrep -u sakura-desktop -f '(^|/)kwin_(x11|wayland)( |$)' >/dev/null 2>&1 && " + displayReady + ' >/dev/null 2>&1';
 export const desktopProbe = String.raw`if [ ! -f /etc/sakura/desktop-version ]; then
   printf 'not-installed\n'
 elif rc-service sakura-desktop status >/dev/null 2>&1; then
@@ -88,6 +92,7 @@ SAKURA_PREFERENCES
 chmod 644 /etc/sakura/desktop-preferences`;
 }
 
+const defaultLauncherProject: Project = { directory: '/home/sakura-desktop', template: 'none', repository: '', setup: '', command: '' };
 export const desktopInstall =
   String.raw`timeout -s TERM 900 /bin/sh <<'SAKURA_INSTALL'
 set -eu
@@ -106,12 +111,19 @@ trap 'exit 1' HUP INT TERM
 echo 'Installing KDE Plasma and TigerVNC. The first installation needs internet access.'
 apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community \
   plasma-desktop plasma-workspace kwin systemsettings breeze breeze-icons konsole dolphin tigervnc dbus dbus-x11 dbus-openrc \
-  kquickcharts kpipewire tzdata font-dejavu font-noto-cjk xauth xdpyinfo xrandr
+  kquickcharts kpipewire tzdata font-dejavu font-noto-cjk xauth xdpyinfo xrandr python3 iproute2 setpriv
 if ! id sakura-desktop >/dev/null 2>&1; then
   adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop
 fi
 test "$(id -u sakura-desktop)" != 0
 test "$(awk -F: '$1 == "sakura-desktop" { print $6 }' /etc/passwd)" = /home/sakura-desktop
+if [ ! -e ${desktopLauncherPath} ]; then
+cat > ${desktopLauncherPath} <<'SAKURA_LAUNCHER'
+${desktopLauncher(defaultLauncherProject)}SAKURA_LAUNCHER
+chmod 700 ${desktopLauncherPath}
+fi
+test -f ${desktopLauncherPath} && test ! -L ${desktopLauncherPath}
+test "$(stat -c %u ${desktopLauncherPath})" = 0
 ${desktopConfigScript(defaultDesktopPreferences)}
 cat > /usr/local/libexec/sakura-desktop-session <<'SAKURA_SESSION'
 #!/bin/sh
@@ -252,8 +264,7 @@ chmod 755 /usr/local/libexec/sakura-apply-layout
 cat > /etc/init.d/sakura-desktop <<'SAKURA_SERVICE'
 #!/sbin/openrc-run
 description="Sakura KDE Plasma desktop over SSH"
-command="/bin/su"
-command_args="-l sakura-desktop -s /bin/sh -c /usr/local/libexec/sakura-desktop-session"
+command="${desktopLauncherPath}"
 supervisor="supervise-daemon"
 respawn_delay=3
 respawn_max=5
@@ -281,8 +292,8 @@ cat > /home/sakura-desktop/.local/share/wallpapers/paper.svg <<'PAPER_WALLPAPER'
 PAPER_WALLPAPER
 chown -R sakura-desktop:sakura-desktop /home/sakura-desktop/.config /home/sakura-desktop/.local
 rc-update add dbus default
-rc-update add sakura-desktop default
-printf '3\n' > /etc/sakura/desktop-version
+rc-update del sakura-desktop default >/dev/null 2>&1 || true
+printf '4\n' > /etc/sakura/desktop-version
 echo 'Starting the desktop session…'
 ` +
   desktopStart +
@@ -290,10 +301,14 @@ echo 'Starting the desktop session…'
 echo 'KDE Plasma desktop is ready.'
 SAKURA_INSTALL`;
 
-export function desktopCommands(distro = 'alpine', input = defaultDesktopPreferences) {
+export function desktopCommands(distro = 'alpine', input = defaultDesktopPreferences, project?: Project) {
   const preferences = desktopPreferencesSchema.parse(input);
+  const scope = (script: string) => project?.networkIsolation === 'private'
+    ? script.replaceAll(displayReady, projectNetworkCommand(project, displayReady)) : script;
+  const prepare = (install: string, start: string) => install.replace(start, '')
+    .replace("echo 'KDE Plasma desktop is ready.'", "echo 'KDE Plasma installation prepared.'");
   const startWithPreferences = (start: string, install: string) => String.raw`set -eu
-if ! grep -qx '3' /etc/sakura/desktop-version 2>/dev/null; then
+if ! grep -qx '4' /etc/sakura/desktop-version 2>/dev/null; then
 ${install}
 else
 ${desktopConfigScript(preferences)}
@@ -301,7 +316,7 @@ ${start}
 fi`;
   const configure = (start: string, install: string) => String.raw`set -eu
 test -f /etc/sakura/desktop-version
-if ! grep -qx '3' /etc/sakura/desktop-version; then
+if ! grep -qx '4' /etc/sakura/desktop-version; then
   echo 'Upgrading KDE Plasma desktop for logical monitors…'
 ${install}
 else
@@ -310,18 +325,20 @@ echo 'Applying KDE Plasma preferences and restarting the desktop session…'
 ${start}
 fi
 echo 'KDE Plasma preferences applied.'`;
-  const customizedInstall = desktopInstall.replace(
+  const customizedInstall = desktopInstall.replace(desktopLauncher(defaultLauncherProject), desktopLauncher(defaultLauncherProject, distro)).replace(
     desktopConfigScript(defaultDesktopPreferences),
     desktopConfigScript(preferences),
   );
   if (distro === 'alpine')
     return {
-      probe: desktopProbe,
+      probe: scope(desktopProbe),
       preferencesProbe: desktopPreferencesProbe,
-      start: desktopStart,
-      startWithPreferences: startWithPreferences(desktopStart, customizedInstall),
-      install: customizedInstall,
-      configure: configure(desktopStart, customizedInstall),
+      versionProbe: "grep -qx '4' /etc/sakura/desktop-version 2>/dev/null",
+      start: scope(desktopStart),
+      startWithPreferences: scope(startWithPreferences(desktopStart, customizedInstall)),
+      install: scope(customizedInstall),
+      prepare: prepare(customizedInstall, desktopStart),
+      configure: scope(configure(desktopStart, customizedInstall)),
       preferences,
     };
   const probe = desktopProbe.replace(
@@ -339,11 +356,11 @@ After=network.target dbus.service
 Requires=dbus.service
 [Service]
 Type=simple
-User=sakura-desktop
-Group=sakura-desktop
+User=root
+Group=root
 RuntimeDirectory=sakura-desktop
 RuntimeDirectoryMode=0700
-ExecStart=/usr/local/libexec/sakura-desktop-session
+ExecStart=${desktopLauncherPath}
 Restart=on-failure
 RestartSec=3
 StandardOutput=append:/var/log/sakura-desktop.log
@@ -354,8 +371,8 @@ SAKURA_SERVICE`;
   const install = customizedInstall
     .replace(/case "\$\(cat \/etc\/alpine-release\)" in[\s\S]*?esac/, '')
     .replace(
-      /apk add --no-cache[\s\S]*?xauth xdpyinfo xrandr/,
-      'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y --no-install-recommends kde-plasma-desktop systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd',
+      /apk add --no-cache[\s\S]*?xauth xdpyinfo xrandr python3 iproute2 setpriv/,
+      'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y --no-install-recommends kde-plasma-desktop kwin-x11 systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd python3 iproute2 util-linux',
     )
     .replace(
       'adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop',
@@ -364,17 +381,19 @@ SAKURA_SERVICE`;
     .replace('Xvnc :1', 'Xtigervnc :1')
     .replace(/cat > \/etc\/init.d\/sakura-desktop[\s\S]*?chmod 755 \/etc\/init.d\/sakura-desktop/, unit)
     .replace(
-      'rc-update add dbus default\nrc-update add sakura-desktop default',
-      'systemctl daemon-reload\nsystemctl enable sakura-desktop',
+      'rc-update add dbus default\nrc-update del sakura-desktop default >/dev/null 2>&1 || true',
+      'systemctl daemon-reload\nsystemctl disable sakura-desktop',
     )
     .replace(desktopStart, start);
   return {
-    probe,
+    probe: scope(probe),
     preferencesProbe: desktopPreferencesProbe,
-    start,
-    startWithPreferences: startWithPreferences(start, install),
-    install,
-    configure: configure(start, install),
+    versionProbe: "grep -qx '4' /etc/sakura/desktop-version 2>/dev/null",
+    start: scope(start),
+    startWithPreferences: scope(startWithPreferences(start, install)),
+    install: scope(install),
+    prepare: prepare(install, start),
+    configure: scope(configure(start, install)),
     preferences,
   };
 }

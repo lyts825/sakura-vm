@@ -70,6 +70,10 @@ export type DesktopView = {
   log: string;
   error?: string;
   preferences?: DesktopPreferences;
+  projectId?: string;
+  directory?: string;
+  networkIsolation?: 'host' | 'private';
+  bindingMismatch?: boolean;
 };
 export type Snapshot = {
   id: string;

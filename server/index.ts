@@ -238,7 +238,7 @@ async function main() {
     if (!features.socketEnabled('desktop'))
       return { ready: false, reason: '请先启用桌面插件并重启 Sakura。' };
     try {
-      const desktop = await features.desktops.view(id);
+      const desktop = await features.desktops.view(id, true);
       return desktop.status === 'ready' ? { ready: true }
         : { ready: false, reason: '实例桌面尚未就绪。' };
     } catch (error) { return { ready: false, reason: (error as Error).message }; }
@@ -1608,7 +1608,7 @@ async function main() {
       (mode === 'terminal-view' && (!terminalSession || !/^[a-z0-9-]{1,48}$/.test(terminalSession))) ||
       (terminalSession !== null && (!['terminal', 'terminal-view', 'logs'].includes(mode) ||
         !/^[a-z0-9-]{1,48}$/.test(terminalSession))) ||
-      (terminalProject !== null && (!['terminal', 'terminal-view'].includes(mode) ||
+      (terminalProject !== null && (!['terminal', 'terminal-view', 'desktop', 'desktop-view'].includes(mode) ||
         !projectIdSchema.safeParse(terminalProject).success)) ||
       (appSession !== null && (mode !== 'desktop' || !z.uuid().safeParse(appSession).success)) ||
       !socketAuthorization(credential, mode, id, terminalSession, terminalProject) ||
@@ -1662,7 +1662,7 @@ async function main() {
         try {
           const port = appSession ? await features.desktops.apps.port(id, appSession) : 5901;
           await features.desktops.attach(id, client, mode === 'desktop-view', port,
-            appSession || undefined);
+            appSession || undefined, terminalProject);
         } catch {
           client.close(1011, 'Desktop unavailable');
         }

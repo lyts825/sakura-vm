@@ -10,7 +10,7 @@ export const manifest = definePlugin({
   requires: [pin('projects')],
   services: ['desktops', 'jobs'],
   contributes: {
-    http: [http('/api/vms/:vmId/desktop', ['GET', 'POST']),
+    http: [http('/api/vms/:vmId/desktop', ['GET', 'POST'], true),
       http('/api/vms/:vmId/single-app', ['GET', 'POST'], true),
       http('/api/vms/:vmId/ime', ['GET', 'POST'])],
     sockets: ['desktop'],

@@ -103,7 +103,11 @@ test('cloud-init and systemd desktop adapters retain key-only access and a non-r
   for (const distro of ['debian', 'ubuntu']) {
     const scripts = desktopCommands(distro);
     assert.doesNotMatch(scripts.install, /apk add|rc-service|rc-update/);
-    assert.match(scripts.install, /User=sakura-desktop/);
+    assert.match(scripts.install, /User=root/);
+    assert.match(scripts.install, /ExecStart=\/usr\/local\/libexec\/sakura-desktop-launcher/);
+    assert.match(scripts.install, /\/usr\/bin\/setpriv --reuid/);
+    assert.match(scripts.install, /kwin-x11/);
+    assert.match(scripts.install, /test "\$uid" -ge 1000/);
     assert.match(scripts.install, /Xtigervnc :1/);
     assert.match(scripts.start, /systemctl restart/);
   }

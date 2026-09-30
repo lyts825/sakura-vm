@@ -20,6 +20,7 @@ import {
   Send,
   SlidersHorizontal,
   Sparkles,
+  Square,
   WandSparkles,
   Wifi,
 } from 'lucide-react';
@@ -117,14 +118,14 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const installLog = useRef<HTMLPreElement>(null);
   const followLog = useRef(true);
   const running = vm.status === 'running';
-  const ready = running && desktop?.status === 'ready';
+  const ready = running && desktop?.status === 'ready' && !desktop.bindingMismatch;
   const lowMemory = vm.memoryMiB < 1024;
   const installing = desktop?.status === 'installing' || desktop?.status === 'starting';
   const desktopState = !running
     ? 'stopped'
     : installing || !desktop
       ? 'preparing'
-      : desktop.status === 'error'
+      : desktop.status === 'error' || desktop.bindingMismatch
         ? 'error'
         : desktop.status === 'stopped'
           ? 'paused'
@@ -180,7 +181,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       try {
         const view = await request<DesktopView>(`/vms/${vm.id}/desktop`, 'GET', undefined, abort.signal);
         if (alive && statusOrder.current.accept(version)) {
-          guestAvailable.current = view.status === 'ready';
+          guestAvailable.current = view.status === 'ready' && !view.bindingMismatch;
           connectionRef.current?.setAvailable(guestAvailable.current);
           setDesktop(view);
           setPreferenceState((current) => receiveDesktopPreferences(current, view));
@@ -230,7 +231,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
           () => {
             const client = new RFBClient(
               target,
-              `${scheme}//${location.host}/ws/${vm.id}/desktop?token=${encodeURIComponent(token)}`,
+              `${scheme}//${location.host}/ws/${vm.id}/desktop?token=${encodeURIComponent(token)}` +
+                (desktop?.projectId ? `&project=${encodeURIComponent(desktop.projectId)}` : ''),
             );
             client.scaleViewport = true;
             client.resizeSession = desktop?.preferences?.monitorLayout !== 'dual-horizontal' &&
@@ -273,10 +275,10 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       clientRef.current = null;
       sentClipboard.current = '';
     };
-  }, [vm.id, vm.startedAt, ready, token, attempt, desktop?.preferences?.monitorLayout]);
+  }, [vm.id, vm.startedAt, ready, token, attempt, desktop?.preferences?.monitorLayout, desktop?.projectId]);
 
   const enable = useCallback(
-    async (action: 'install' | 'start' | 'configure') => {
+    async (action: 'install' | 'start' | 'configure' | 'stop') => {
       if (!running || enabling.current) return;
       const abort = new AbortController();
       enabling.current = abort;
@@ -285,13 +287,17 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       setSubmitting(true);
       setError('');
       try {
-        const view = await request<DesktopView>(
+        const result = await request<DesktopView>(
           `/vms/${vm.id}/desktop`,
           'POST',
-          { action, preferences },
+          action === 'stop' ? { action } : { action, preferences },
           abort.signal,
         );
+        const view = action === 'stop' ? await request<DesktopView>(
+          `/vms/${vm.id}/desktop`, 'GET', undefined, abort.signal) : result;
         if (enabling.current === abort && statusOrder.current.accept(version)) {
+          guestAvailable.current = view.status === 'ready' && !view.bindingMismatch;
+          connectionRef.current?.setAvailable(guestAvailable.current);
           setDesktop(view);
           if (action === 'configure') setShowCustomizer(false);
           setStatusError('');
@@ -334,6 +340,13 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         </div>
         {(ready || running) && (
           <div className="desktop-toolbar-actions">
+            {desktop && ['ready', 'starting', 'installing'].includes(desktop.status) && (
+              <button className="secondary compact" disabled={submitting}
+                title="停止 KDE 会话及其程序；请先保存桌面中的工作"
+                onClick={() => void enable('stop')}>
+                <Square size={14} /> 停止桌面
+              </button>
+            )}
             {running && <button
               className={`secondary compact ${showApps ? 'is-active' : ''}`}
               aria-expanded={showApps}
@@ -726,8 +739,10 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             <h3>
               {!running
                 ? '启动 Linux，进入图形桌面'
-                : installing
-                  ? '正在准备 KDE Plasma 桌面'
+                : desktop?.bindingMismatch
+                  ? '桌面正在另一个项目中运行'
+                  : installing
+                    ? '正在准备 KDE Plasma 桌面'
                   : desktop?.status === 'stopped'
                     ? '桌面会话已停止'
                     : desktop?.status === 'error'
@@ -735,8 +750,9 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
                       : '给 Linux 添一个桌面'}
             </h3>
             <p>
-              KDE Plasma 桌面，包含 Dolphin 文件管理器和 Konsole
-              图形终端。首次安装需要联网，之后随发行版启动，文件保存在实例磁盘中。
+              {desktop?.bindingMismatch
+                ? '请先保存旧会话中的工作并停止桌面，再为当前项目启动。桌面及其程序会使用当前项目的网络设置。'
+                : 'KDE Plasma 桌面包含 Dolphin 文件管理器和 Konsole 图形终端。首次安装需要联网，之后按保存的项目绑定恢复；文件保存在实例磁盘中。'}
             </p>
           </div>
           <div className="desktop-spec-grid">
@@ -767,6 +783,11 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             <button className="primary" onClick={start} disabled={busy || vm.poweredOn}>
               <Play size={15} />
               {vm.poweredOn ? '等待系统就绪…' : '启动发行版'}
+            </button>
+          ) : desktop?.bindingMismatch ? (
+            <button className="primary" disabled={submitting} onClick={() => void enable('stop')}>
+              {submitting ? <LoaderCircle className="spin" size={15} /> : <Square size={15} />}
+              停止已运行的桌面
             </button>
           ) : lowMemory ? (
             <button className="secondary" onClick={configure}>
