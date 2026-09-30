@@ -43,6 +43,7 @@ import { HostMounts } from './host-mount.ts';
 import { VirtioFsShares } from './virtio-fs.ts';
 import { TrustedBootService } from './trusted-boot-service.ts';
 import { HostPeers } from './host-peers.ts';
+import { createHostImportReceiver } from './host-import-receiver.ts';
 import { LiveMigrationReceiver } from './live-migration-receiver.ts';
 import { ColdMigrations } from './cold-migration.ts';
 import { SnapshotReplications } from './snapshot-replications.ts';
@@ -269,105 +270,11 @@ async function main() {
         : { ready: false, reason: '请先在客户机安装 tmux。' };
     } catch (error) { return { ready: false, reason: (error as Error).message }; }
   });
-  const importedPeerVm = (requesterId: string, transferId: string) =>
-    [...machines.records.values()].find((vm) =>
-      vm.migrationOrigin?.sourceHostId === requesterId &&
-      vm.migrationOrigin.transferId === transferId);
-  const inspectImportedActivation = ({ requesterId, transferId, remoteVmId, sha256 }: {
-    requesterId: string; transferId: string; remoteVmId: string; sha256: string;
-  }) => {
-    session.requireUnlocked();
-    if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-    if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
-    const vm = machines.get(remoteVmId);
-    if (vm.migrationOrigin?.sourceHostId !== requesterId ||
-        vm.migrationOrigin.transferId !== transferId ||
-        vm.migrationOrigin.diskSha256 !== sha256)
-      throw new AppError('目标实例身份或校验值与导入记录不一致', 409);
-    if (vm.migrationOrigin.sourceVmId || vm.migrationOrigin.snapshotId)
-      throw new AppError('快照复制副本不能通过冷迁移目标启动接口启动', 409);
-    machines.requireUnlocked(remoteVmId);
-    const state = machines.state(remoteVmId);
-    if (state !== 'stopped' && state !== 'starting' && state !== 'running')
-      throw new AppError(`目标实例当前为 ${state}，需要人工复核`, 409);
-    return { id: remoteVmId, status: state };
-  };
-  const inspectReplicaActivation = ({ requesterId, transferId, remoteVmId, sha256,
-    sourceVmId, snapshotId }: { requesterId: string; transferId: string;
-    remoteVmId: string; sha256: string; sourceVmId: string; snapshotId: string }) => {
-    if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-    if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
-    const vm = machines.get(remoteVmId);
-    if (vm.migrationOrigin?.sourceHostId !== requesterId ||
-        vm.migrationOrigin.transferId !== transferId ||
-        vm.migrationOrigin.diskSha256 !== sha256 ||
-        vm.migrationOrigin.sourceVmId !== sourceVmId ||
-        vm.migrationOrigin.snapshotId !== snapshotId)
-      throw new AppError('故障副本身份或快照校验值与导入记录不一致', 409);
-    machines.requireUnlocked(remoteVmId);
-    if (vm.haRetirement) throw new AppError('故障副本已退出接管', 409);
-    const state = machines.state(remoteVmId);
-    if (state !== 'stopped' && state !== 'starting' && state !== 'running')
-      throw new AppError(`故障副本当前为 ${state}，需要人工复核`, 409);
-    return { id: remoteVmId, status: state };
-  };
-  hostPeers.setImportReceiver({
-    status: async ({ requesterId, transferId }) => {
-      if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
-      const vm = importedPeerVm(requesterId, transferId);
-      return vm ? { id: vm.id, name: vm.migrationOrigin!.targetName,
-        ...(vm.migrationOrigin!.diskSha256 ? { sha256: vm.migrationOrigin!.diskSha256 } : {}),
-        ...(vm.migrationOrigin!.sourceVmId ? { sourceVmId: vm.migrationOrigin!.sourceVmId } : {}),
-        ...(vm.migrationOrigin!.snapshotId ? { snapshotId: vm.migrationOrigin!.snapshotId } : {}) } : null;
-    },
-    receive: async ({ requesterId, transferId, name, sourceVmId, snapshotId, source, signal }) => {
-      session.requireUnlocked();
-      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-      if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
-      const imported = await features.bundles.import(name, source, signal, () => {
-        session.requireUnlocked();
-        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-      }, { sourceHostId: requesterId, transferId, targetName: name,
-        ...(sourceVmId ? { sourceVmId } : {}), ...(snapshotId ? { snapshotId } : {}) });
-      return { id: imported.id, name,
-        ...(imported.migrationOrigin?.diskSha256
-          ? { sha256: imported.migrationOrigin.diskSha256 } : {}),
-        ...(sourceVmId ? { sourceVmId } : {}), ...(snapshotId ? { snapshotId } : {}) };
-    },
-    inspectActivation: async (input) => inspectImportedActivation(input),
-    inspectReplicaActivation: async (input) => inspectReplicaActivation(input),
-    retireReplica: async (input) => {
-      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-      if (!features.bundles) throw new AppError('请先启用快照与实例包插件', 503);
-      machines.requireUnlocked(input.remoteVmId);
-      await machines.retireHaReplica(input.remoteVmId, {
-        sourceHostId: input.requesterId, transferId: input.transferId,
-        sourceVmId: input.sourceVmId, snapshotId: input.snapshotId,
-        sha256: input.sha256,
-      });
-      return { id: input.remoteVmId, retired: true as const };
-    },
-    activateReplica: async (input) => {
-      const current = inspectReplicaActivation(input);
-      if (current.status === 'stopped') await machines.startHaReplica(input.remoteVmId, {
-        sourceHostId: input.requesterId, transferId: input.transferId,
-        sourceVmId: input.sourceVmId, snapshotId: input.snapshotId, sha256: input.sha256,
-      });
-      const status = machines.state(input.remoteVmId);
-      if (status !== 'starting' && status !== 'running')
-        throw new AppError(`故障副本启动未保持运行状态：${status}`, 502);
-      return { id: input.remoteVmId, status };
-    },
-    activate: async (input) => {
-      const { remoteVmId } = input;
-      const current = inspectImportedActivation(input);
-      if (current.status === 'stopped') await machines.start(remoteVmId);
-      const status = machines.state(remoteVmId);
-      if (status !== 'starting' && status !== 'running')
-        throw new AppError(`目标实例启动未保持运行状态：${status}`, 502);
-      return { id: remoteVmId, status };
-    },
-  });
+  hostPeers.setImportReceiver(createHostImportReceiver(machines, {
+    bundles: () => features.bundles,
+    requireSessionUnlocked: () => session.requireUnlocked(),
+    migrationBlocked: () => !!features.migration?.blocked,
+  }));
   let coldMigrations: ColdMigrations | undefined;
   let snapshotReplications: SnapshotReplications | undefined;
   let haLocalFailovers: HaLocalFailovers | undefined;

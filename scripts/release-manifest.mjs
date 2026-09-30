@@ -3,10 +3,17 @@ import { createReadStream } from 'node:fs';
 import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
-export const releaseEntries = [
+const legacyReleaseEntries = [
   '.sakura-server', 'dist', 'browser-extension', 'scripts', 'package.json',
   'package-lock.json', 'README.md',
 ];
+export const releaseEntries = [...legacyReleaseEntries, '.sakura-witness'];
+
+export function releaseEntriesFor(schemaVersion) {
+  if (schemaVersion === 1) return legacyReleaseEntries;
+  if (schemaVersion === 2) return releaseEntries;
+  throw new Error('发行包清单版本无效');
+}
 
 export function inside(root, path) {
   const base = resolve(root), target = resolve(path);
@@ -34,9 +41,11 @@ async function list(root, part, files) {
   } else throw new Error(`发行包包含特殊文件：${part}`);
 }
 
-export async function releaseFiles(root) {
+export async function releaseFiles(root, schemaVersion = 2) {
   const files = [];
-  for (const entry of releaseEntries) await list(root, entry, files);
+  for (const entry of releaseEntriesFor(schemaVersion)) await list(root, entry, files);
+  if (schemaVersion === 2 && !files.some((file) => file.path === '.sakura-witness/ha-witness.js'))
+    throw new Error('发行包缺少见证程序入口');
   return files.sort((a, b) => a.path.localeCompare(b.path, 'en'));
 }
 
@@ -44,7 +53,7 @@ export async function writeReleaseManifest(root) {
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   const files = await releaseFiles(root);
   const fingerprint = createHash('sha256').update(JSON.stringify(files)).digest('hex');
-  const manifest = { schemaVersion: 1, name: 'sakura-vm', version: pkg.version,
+  const manifest = { schemaVersion: 2, name: 'sakura-vm', version: pkg.version,
     fingerprint, files };
   await writeFile(join(root, 'sakura-release.json'), JSON.stringify(manifest, null, 2) + '\n',
     { flag: 'wx' });
@@ -54,11 +63,11 @@ export async function writeReleaseManifest(root) {
 export async function verifyReleaseManifest(root) {
   const raw = await readFile(join(root, 'sakura-release.json'), 'utf8');
   const manifest = JSON.parse(raw);
-  if (manifest.schemaVersion !== 1 || manifest.name !== 'sakura-vm' ||
+  if (![1, 2].includes(manifest.schemaVersion) || manifest.name !== 'sakura-vm' ||
       typeof manifest.version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(manifest.version) ||
       !/^[a-f0-9]{64}$/.test(manifest.fingerprint) || !Array.isArray(manifest.files))
     throw new Error('发行包清单无效');
-  const files = await releaseFiles(root);
+  const files = await releaseFiles(root, manifest.schemaVersion);
   if (JSON.stringify(files) !== JSON.stringify(manifest.files))
     throw new Error('发行包文件与 SHA-256 清单不符');
   if (createHash('sha256').update(JSON.stringify(files)).digest('hex') !== manifest.fingerprint)

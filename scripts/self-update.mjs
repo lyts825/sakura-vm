@@ -6,7 +6,7 @@ import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, wri
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { inside, releaseEntries, verifyReleaseManifest } from './release-manifest.mjs';
+import { inside, releaseEntriesFor, verifyReleaseManifest } from './release-manifest.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -130,7 +130,7 @@ export async function stageUpdate(source, installation = root, options = {}) {
   const candidate = versionPath(installation, `versions/${id}`);
   await mkdir(candidate);
   try {
-    for (const entry of releaseEntries)
+    for (const entry of releaseEntriesFor(manifest.schemaVersion))
       await cp(join(selected, entry), join(candidate, entry), { recursive: true, errorOnExist: true, force: false });
     await cp(join(selected, 'sakura-release.json'), join(candidate, 'sakura-release.json'));
     await verifyReleaseManifest(candidate);
