@@ -70,6 +70,10 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.equal(spec.paths['/api/native-clipboard'].get.operationId, 'core.native-clipboard.get');
   assert.equal(spec.paths['/api/native-clipboard'].post.security, undefined);
   assert.ok(spec.paths['/api/native-clipboard'].post.requestBody!.content['application/json'].schema.oneOf);
+  const x11 = spec.paths['/api/vms/{vmId}/x11-clipboard'];
+  assert.equal(x11.get.operationId, 'desktop.x11-clipboard-get');
+  assert.ok(x11.post.requestBody!.content['application/json'].schema.oneOf);
+  assert.ok(x11.post.parameters.some(item => item.name === 'project' && item.in === 'query'));
   assert.deepEqual(spec.paths['/api/access/changes'].post.requestBody!.content['application/json']
     .schema.required, ['vmId', 'projectId', 'summary', 'project', 'expectedVersion']);
   assert.equal(spec.paths['/api/access/changes/{id}/apply'].post.parameters[0].name, 'id');

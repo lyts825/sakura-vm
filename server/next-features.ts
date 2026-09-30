@@ -1042,7 +1042,7 @@ export class NextFeatures {
         executed: false,
         adapter,
         message:
-          '系统设置 → 剪贴板敏感检测管理网页入口；管理 Windows 剪贴板策略可按完整 EXE 路径限制成功附加的当前用户 x64 进程的 Win32/OLE 调用。新进程附加前、其他系统接口和普通 Linux 进程仍不在此范围内。',
+          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 策略限制成功附加的当前用户 x64 EXE 的 Win32/OLE 调用。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 应用并热更新规则。新进程附加前、其他底层接口、既有 Linux 程序及原生 Wayland 仍未覆盖。',
       };
     if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner')
       return {

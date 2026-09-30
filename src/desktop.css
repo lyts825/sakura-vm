@@ -1084,3 +1084,8 @@
     flex-direction: column;
   }
 }
+.x11-clipboard h4, .x11-clipboard-sessions p { overflow-wrap: anywhere; }
+.x11-clipboard-application, .x11-clipboard-sessions article { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.x11-clipboard-flags { display: flex; flex-wrap: wrap; gap: 12px; }
+.x11-clipboard fieldset { min-width: 0; }
+.x11-clipboard .button-row { flex-wrap: wrap; }

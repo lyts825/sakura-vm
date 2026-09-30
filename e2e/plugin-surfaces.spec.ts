@@ -1002,6 +1002,84 @@ test('desktop layout saves two logical monitors and restores the applied prefere
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test('Linux X11 clipboard saves identities and rules, launches arguments, survives reload and cleans sessions on mobile', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await app(page, ['desktop', 'projects'], true);
+  await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/desktop*', route => route.fulfill({ json: { status: 'ready', log: '', preferences: {},
+    projectId: 'default', directory: '/workspace/private', networkIsolation: 'private' } }));
+  const image = '/usr/bin/konsole', sha256 = 'a'.repeat(64), id = randomUUID();
+  const state: any = { version: 1, applications: [], ready: true, sessions: [], installation: null, build: 'b'.repeat(64) };
+  const submitted: any[] = [];
+  await page.route('**/api/vms/*/x11-clipboard*', route => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postDataJSON(); submitted.push(input);
+      if (input.action === 'identify') return route.fulfill({ json: { image, sha256 } });
+      if (input.action === 'save') { state.version++; state.applications = [input.application]; }
+      if (input.action === 'launch') {
+        const session = { id, state: 'running', image, sha256, projectId: 'default', compatible: true, active: true,
+          rule: state.applications[0].rule, blockedCopy: 7, blockedPaste: 2,
+          processes: [{ pid: 1234, created: '42', image, loaded: true }] };
+        state.sessions.push(session); return route.fulfill({ json: session });
+      }
+      if (input.action === 'stop') state.sessions[0].state = 'stopped';
+      if (input.action === 'forget') state.sessions = [];
+      if (input.action === 'remove') { state.version++; state.applications = []; }
+    }
+    return route.fulfill({ json: state });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '桌面', exact: true }).click();
+  await page.getByRole('button', { name: '原生应用剪贴板', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Linux X11 应用剪贴板策略' });
+  await panel.getByRole('button', { name: '读取应用身份' }).click();
+  const start = panel.getByRole('button', { name: '按已保存规则启动' });
+  await expect(start).toBeDisabled();
+  await panel.getByLabel('允许复制', { exact: true }).uncheck();
+  await panel.getByLabel('允许文件与其他格式', { exact: true }).uncheck();
+  await panel.getByLabel('检测敏感文本', { exact: true }).check();
+  await panel.getByLabel('文本上限（字节）').fill('4096');
+  await panel.getByRole('button', { name: '保存此应用规则' }).click();
+  await expect(start).toBeEnabled();
+  await panel.getByLabel('启动参数（每行一个，可留空）').fill('--title\nspace & $()');
+  await start.click();
+  const sessions = panel.getByLabel('Linux 受控应用');
+  await expect(sessions).toContainText('拒绝复制 7 次');
+  expect(submitted.find(value => value.action === 'launch')).toEqual({ action: 'launch', version: 2, image, args: ['--title', 'space & $()'] });
+  expect(submitted.find(value => value.action === 'save').application.rule).toEqual({ copy: false, paste: true, files: false, sensitive: true, maxTextBytes: 4096 });
+  await page.reload();
+  await page.getByRole('tab', { name: '桌面', exact: true }).click();
+  await page.getByRole('button', { name: '原生应用剪贴板', exact: true }).click();
+  await expect(panel.getByLabel('允许复制', { exact: true })).not.toBeChecked();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(sessions).toContainText('代理已加载');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await panel.screenshot({ path: resolve('.data/linux-clipboard-mobile.png') });
+  await sessions.getByRole('button', { name: '停止应用及子进程' }).click();
+  await expect(sessions).toContainText('已停止');
+  await sessions.getByRole('button', { name: '清理已停止记录' }).click();
+  await expect(sessions.locator('article')).toHaveCount(0);
+  await panel.getByRole('button', { name: '移除并停用此应用规则' }).click();
+  await expect(panel.locator('.x11-clipboard-application')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('Linux X11 clipboard refuses unsaved changes and a mismatched KDE project', async ({ page }) => {
+  await app(page, ['desktop'], true);
+  await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/desktop*', route => route.fulfill({ json: { status: 'ready', log: '', preferences: {}, bindingMismatch: true,
+    projectId: '0123456789abcdef', directory: '/workspace/other', networkIsolation: 'private' } }));
+  await page.route('**/api/vms/*/x11-clipboard*', route => route.fulfill({ json: { version: 2, ready: true, installation: null, sessions: [],
+    applications: [{ image: '/usr/bin/konsole', sha256: 'a'.repeat(64), rule: { copy: true, paste: true, files: true, sensitive: false, maxTextBytes: 1048576 } }] } }));
+  await page.reload();
+  await page.getByRole('tab', { name: '桌面', exact: true }).click();
+  await page.getByRole('button', { name: '原生应用剪贴板', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Linux X11 应用剪贴板策略' });
+  await expect(panel.getByText('启动应用前，请先启动并绑定当前项目的 KDE 桌面。')).toBeVisible();
+  await expect(panel.getByRole('button', { name: '按已保存规则启动' })).toBeDisabled();
+});
+
 test('KDE project mismatch blocks graphics until the owner stops and rebinds the desktop', async ({ page }) => {
   await app(page, ['desktop'], true);
   let phase = 'ready', mismatch = true;

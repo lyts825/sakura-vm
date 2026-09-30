@@ -47,7 +47,7 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
       <p className="subtle-note">
         代理覆盖 Win32 与 OLE
         剪贴板调用。新进程在扫描并成功附加前尚未受限；受保护进程、自行调用底层系统接口的程序不在此保证范围内。普通
-        Linux 进程尚不支持。
+        Linux X11 应用可在 KDE 桌面中的原生应用剪贴板入口启动。
       </p>
       <fieldset disabled={action.busy}>
         <label className="checkbox-label">

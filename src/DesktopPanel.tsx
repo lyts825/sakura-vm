@@ -49,6 +49,7 @@ import { effectiveClipboardRule } from '../shared/clipboard-policy';
 import { DesktopRecording } from './DesktopRecording';
 import { mayLeaveEditor } from './file-editor-state';
 import { SingleAppWindowsPanel } from './SingleAppWindowsPanel';
+import { X11ClipboardSettings } from './X11ClipboardSettings';
 
 type Props = {
   vm: VMView;
@@ -76,6 +77,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const [showClipboard, setShowClipboard] = useState(false);
   const [showRecording, setShowRecording] = useState(false);
   const [showApps, setShowApps] = useState(false);
+  const [showX11Clipboard, setShowX11Clipboard] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [preferenceState, setPreferenceState] = useState(() =>
     loadDesktopPreferences(vm.id, () => localStorage),
@@ -354,6 +356,10 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             >
               单应用窗口
             </button>}
+            {running && <button className={`secondary compact ${showX11Clipboard ? 'is-active' : ''}`}
+              aria-expanded={showX11Clipboard} onClick={() => setShowX11Clipboard(value => !value)}>
+              原生应用剪贴板
+            </button>}
             <button
               className="secondary compact"
               aria-expanded={showRecording}
@@ -434,6 +440,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       {showRecording && <DesktopRecording vm={vm} connected={connected} screen={screen} />}
       {showApps && running &&
         <SingleAppWindowsPanel vm={vm} token={token} request={request} />}
+      {showX11Clipboard && running && <X11ClipboardSettings vmId={vm.id} desktopReady={ready} request={request} />}
       {showCustomizer && (
         <section className="desktop-customizer" aria-label="KDE Plasma 桌面自定义">
           <div className="desktop-customizer-head">

@@ -18,6 +18,7 @@ import { projectNetworkCommand, projectNetworkNamespace, projectNetworkCheckScri
 import { privateLog, redactValues } from './secrets.ts';
 import { guestTask } from './guest-task.ts';
 import { uidCleanupScript } from './single-app-sandbox.ts';
+import { X11Clipboard } from './x11-clipboard.ts';
 
 type Operation = {
   startedAt: string;
@@ -29,6 +30,7 @@ type Operation = {
 
 export class Desktops {
   readonly apps: SingleAppWindows;
+  readonly clipboard: X11Clipboard;
   private operations = new Map<string, Operation>();
   private pending = new Set<Promise<void>>();
   private closed = false;
@@ -40,6 +42,14 @@ export class Desktops {
   constructor(private machines: Machines, private workspaces?: Workspaces) {
     this.apps = new SingleAppWindows(machines, workspaces);
     this.bindings = new DesktopBindings(machines);
+    this.clipboard = new X11Clipboard(machines, async (id) => {
+      if (!this.workspaces) throw new AppError('请先启用项目工作区', 409);
+      await this.desktopCommand(id, this.workspaces.projects.current(id));
+      const binding = await this.bindings.read(id);
+      if (!binding) throw new AppError('请停止并重新启动桌面以登记项目绑定', 409);
+      const project = await this.workspaces.resolvedConfig(id);
+      return { project, launcherSha256: binding.launcherSha256 };
+    });
     machines.on('change', this.onChange);
     machines.on('incident-lockdown', this.invalidate);
     this.unguard = workspaces?.beforeConfigChange(async (id, previous, next) => {
@@ -119,7 +129,7 @@ export class Desktops {
     this.machines.off('incident-lockdown', this.invalidate);
     for (const id of this.watchers.keys()) this.invalidate(id);
     for (const operation of this.operations.values()) operation.abort.abort();
-    await Promise.allSettled([this.apps.close(), ...this.pending]);
+    await Promise.allSettled([this.apps.close(), this.clipboard.close(), ...this.pending]);
     this.operations.clear();
     this.recovery.clear();
     this.unguard?.();

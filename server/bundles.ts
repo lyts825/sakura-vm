@@ -16,6 +16,7 @@ import { diskEncryptionSchema, encryptedImageOptions,
   qemuSecretObject } from './disk-encryption.ts';
 import { Secrets } from './secrets.ts';
 import { DesktopBindings, desktopBindingSchema } from './desktop-binding.ts';
+import { x11ClipboardConfiguration } from './x11-clipboard.ts';
 import { writeStore } from './local-store.ts';
 import type { TrustedBootService } from './trusted-boot-service.ts';
 import { decodeTrustedBootArchive, encodeTrustedBootArchive, trustedBootArchiveSchema,
@@ -51,6 +52,7 @@ const manifestSchema = z
     diskEncryption: diskEncryptionSchema.optional(),
     trustedBoot: trustedBootArchiveSchema.optional(),
     desktopBinding: desktopBindingSchema.optional(),
+    x11Clipboard: x11ClipboardConfiguration.optional(),
     key: z.string().max(16384),
     seed: z.string().max(262144),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -82,6 +84,14 @@ export class Bundles {
   private async project(id: string) {
     try {
       return projectSchema.parse(JSON.parse(await readFile(join(vmDir(id), 'project.json'), 'utf8')));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return undefined;
+    }
+  }
+  private async x11Clipboard(id: string) {
+    try {
+      return x11ClipboardConfiguration.parse(JSON.parse(await readFile(join(vmDir(id), 'x11-clipboard.json'), 'utf8')));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       return undefined;
@@ -158,6 +168,7 @@ export class Bundles {
         const unsigned = manifestSchema.parse({
           version: 1,
           desktopBinding: await new DesktopBindings(this.machines).read(id) || undefined,
+          x11Clipboard: await this.x11Clipboard(id),
           config: { name, memoryMiB, cpus, diskGiB: snapshot?.diskGiB || diskGiB,
             accelerator, forwards, distro, architecture, template, hardware, firmware },
           project: await this.project(id),
@@ -229,6 +240,10 @@ export class Bundles {
         );
         if (manifest.desktopBinding) {
           try { await writeStore(join(vmDir(adopted.id), 'desktop-binding.json'), manifest.desktopBinding); }
+          catch (error) { await this.machines.delete(adopted.id); throw error; }
+        }
+        if (manifest.x11Clipboard) {
+          try { await writeStore(join(vmDir(adopted.id), 'x11-clipboard.json'), manifest.x11Clipboard); }
           catch (error) { await this.machines.delete(adopted.id); throw error; }
         }
         if (trustedBoot) {
@@ -362,6 +377,7 @@ export class Bundles {
         const project = await this.project(id);
         const projects = await this.projectCatalog(id);
         const desktopBinding = await new DesktopBindings(this.machines).read(id);
+        const x11Clipboard = await this.x11Clipboard(id);
         signal?.throwIfAborted();
         const adopted = await this.machines.adopt(
           {
@@ -391,6 +407,10 @@ export class Bundles {
         );
         if (desktopBinding) {
           try { await writeStore(join(vmDir(adopted.id), 'desktop-binding.json'), desktopBinding); }
+          catch (error) { await this.machines.delete(adopted.id); throw error; }
+        }
+        if (x11Clipboard) {
+          try { await writeStore(join(vmDir(adopted.id), 'x11-clipboard.json'), x11Clipboard); }
           catch (error) { await this.machines.delete(adopted.id); throw error; }
         }
         if (vm.diskEncryption) {

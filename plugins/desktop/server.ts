@@ -1,6 +1,6 @@
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../../server/plugin-api.ts';
+import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 import { retryTarget } from '../../server/plugins/retry.ts';
 
 import { z } from 'zod';
@@ -11,12 +11,23 @@ import { Jobs } from '../../server/jobs.ts';
 import { imeInstall } from '../../server/desktop-guest.ts';
 import { guestTask } from '../../server/guest-task.ts';
 import { singleAppClipboard, singleAppInput, singleAppProgram } from '../../server/single-app-windows.ts';
+import { x11ClipboardRequest, x11ClipboardViewSchema, x11ClipboardActionResponse } from '../../server/x11-clipboard.ts';
+
+export const operations: Record<string, PluginOperation> = {
+  'x11-clipboard-get': { response: x11ClipboardViewSchema, execute(url, _, signal) {
+    return this.desktops.clipboard.view(url.pathname.split('/')[3], signal);
+  } },
+  'x11-clipboard-action': { request: x11ClipboardRequest, response: x11ClipboardActionResponse,
+    execute(url, input, signal) { return this.desktops.clipboard.action(url.pathname.split('/')[3], input, signal); } },
+};
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.desktops = new Desktops(m, host.workspaces);
   host.jobs = new Jobs('input-method');
   host.registerJobs(host.jobs, (job) => installIme.call(host, retryTarget(job)));
+  const clipboard = host.provide('x11Clipboard', host.desktops.clipboard);
+  host.registerJobs(clipboard.jobs, (job) => clipboard.install(retryTarget(job)));
 }
 export async function route(
   this: PluginContext,

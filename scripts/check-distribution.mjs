@@ -26,6 +26,20 @@ if (process.platform === 'win32') {
       throw new Error(`Native clipboard distribution integrity failed: ${name}`);
   }
 }
+{
+  const folder = join(root, '.sakura-server/assets/linux-clipboard');
+  const native = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
+  const names = ['protocol.h', 'policy.cpp', 'controller.py'], build = createHash('sha256');
+  if (native.version !== 1 || !/^[a-f0-9]{64}$/.test(native.build) || !Array.isArray(native.files) || native.files.length !== 3 ||
+      new Set(native.files.map(file => file.name)).size !== 3) throw new Error('Linux clipboard source metadata is invalid');
+  for (const name of names) {
+    const file = native.files.find(file => file.name === name), bytes = await readFile(join(folder, name));
+    if (!file || file.size !== bytes.length || file.sha256 !== createHash('sha256').update(bytes).digest('hex'))
+      throw new Error(`Linux clipboard source integrity failed: ${name}`);
+    build.update(name).update(bytes);
+  }
+  if (build.digest('hex') !== native.build) throw new Error('Linux clipboard source build digest failed');
+}
 const extensionRoot = join(root, 'browser-extension');
 const extension = JSON.parse(await readFile(join(extensionRoot, 'manifest.json'), 'utf8'));
 if (extension.manifest_version !== 3 || extension.action?.default_popup !== 'popup.html' ||
