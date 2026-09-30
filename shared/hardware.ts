@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+// Keep the named x86 model stable across hosts while supporting x86-64-v2.
+export function qemuCpuModel(architecture?: 'x86_64' | 'aarch64') {
+  return architecture === 'aarch64' ? 'cortex-a57' : 'Nehalem-v1';
+}
+
 export const cpuTopologySchema = z
   .object({
     sockets: z.number().int().min(1).max(8).default(1),

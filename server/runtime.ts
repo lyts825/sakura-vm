@@ -10,6 +10,7 @@ import {
   NATIVE_COMMAND_ADAPTERS,
 } from '../.vendor/posixloom/dist/src/index.js';
 import { ROOT, DATA, AppError } from './model.ts';
+import { qemuCpuModel } from '../shared/hardware.ts';
 
 export async function createRuntime() {
   const qemuDir = process.env.SAKURA_QEMU_DIR || join(ROOT, '.tools/qemu');
@@ -130,6 +131,8 @@ export async function createRuntime() {
       [
         '-accel',
         'whpx',
+        '-cpu',
+        qemuCpuModel(),
         '-machine',
         'q35',
         '-nodefaults',

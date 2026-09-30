@@ -335,6 +335,9 @@ export class FeatureSuite {
       services?: (id: string) => Array<HealthView & { projectId: string }>;
       secrets?: (id: string) => Promise<SecretRotationItem[] | undefined>;
       power?: (signal: AbortSignal) => Promise<PowerSample>;
+      privateDatabase?: (id: string,
+        input: { database: 'postgres' | 'mysql' | 'redis'; password: string; name?: string; port?: number },
+        signal: AbortSignal, log: (text: string) => void) => Promise<void>;
     } = {},
   ) {
     this.packageWorkbench = new PackageWorkbench(machines, (id, operation, name) =>
@@ -782,8 +785,14 @@ export class FeatureSuite {
           return;
         }
         const project = await this.workspaces.resolvedConfig(id);
-        if (project.networkIsolation === 'private' && operation === 'database')
-          throw new AppError('私有网络项目不能启动使用共享客户机网络的数据库容器', 409);
+        if (project.networkIsolation === 'private' && operation === 'database') {
+          if (!this.observations.privateDatabase)
+            throw new AppError('私有数据库需要启用容器插件', 409);
+          await this.observations.privateDatabase(id, {
+            database: database!, password: input.password!, name: input.name, port: input.port,
+          }, combined, log);
+          return;
+        }
         const directory = quote(project.directory);
         const worktreePath = path ? quote(`${project.directory}/${path}`) : '';
         const environment = envPrefix(project.environment);

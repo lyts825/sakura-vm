@@ -3987,6 +3987,41 @@ test('Dev Container workbench submits Dockerfile and configuration actions and p
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test('private Docker workbench starts and stops the selected project runtime and reports invalid bindings', async ({page}) => {
+  await app(page,['projects','containers'],true);
+  await page.route('**/api/vms',route=>route.fulfill({json:[{...vm,distro:'debian',status:'running',poweredOn:true}]}));
+  let running=false,valid=true;
+  const submitted:Array<{action:string}>=[];
+  await page.route('**/api/vms/*/containers**',route=>{
+    if (route.request().method()==='POST') {
+      const input=route.request().postDataJSON();submitted.push(input);
+      if (input.action==='start-project-runtime') running=true;
+      if (input.action==='stop-project-runtime') {running=false;valid=true;}
+      return route.fulfill({json:{id:'job',status:'done'}});
+    }
+    return route.fulfill({json:{supported:true,installed:true,available:running&&valid,privateNetwork:true,
+      runtime:{present:true,running,valid:running&&valid,reason:valid?null:'私有 Docker 的运行配置已变化，请停止环境后重建'},
+      error:valid?undefined:'私有 Docker 的运行配置已变化，请停止环境后重建',
+      version:'27.0',compose:'Docker Compose 2',containers:[],images:[],volumes:[],files:[],
+      devcontainer:{cliInstalled:true,version:'0.82.0',files:[]},templates:[],job:null}});
+  });
+  await page.reload();await page.getByRole('tab',{name:'容器',exact:true}).click();
+  await expect(page.getByText('管理所选项目的私有容器和镜像。')).toBeVisible();
+  await page.getByRole('button',{name:'启动项目 Docker 环境',exact:true}).click();
+  await expect.poll(()=>submitted).toContainEqual({action:'start-project-runtime'});
+  await expect(page.getByRole('button',{name:'停止项目 Docker 环境',exact:true})).toBeVisible();
+  valid=false;
+  await page.getByRole('button',{name:'刷新容器'}).click();
+  await expect(page.getByText('私有 Docker 的运行配置已变化，请停止环境后重建')).toBeVisible();
+  await expect(page.getByRole('button',{name:'从 Dockerfile 构建并启动'})).toHaveCount(0);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'停止项目 Docker 环境',exact:true}).click();
+  await expect.poll(()=>submitted).toContainEqual({action:'stop-project-runtime'});
+  await expect(page.getByRole('button',{name:'启动项目 Docker 环境',exact:true})).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+});
+
 test('official Dev Container template applies the reviewed version and optional files to an empty project', async ({ page }) => {
   await app(page, ['projects', 'containers'], true);
   await page.route('**/api/vms', (route) =>

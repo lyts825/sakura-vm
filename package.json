@@ -47,6 +47,8 @@
     "test:gpu-profiles": "tsx scripts/smoke-gpu-profiles.ts",
     "test:build-farm": "tsx scripts/smoke-build-farm.ts",
     "test:service-mesh": "tsx scripts/smoke-service-mesh.ts",
+    "test:private-containers": "tsx scripts/smoke-private-containers.ts",
+    "test:private-databases": "tsx scripts/smoke-private-databases.ts",
     "test:media-devices": "tsx scripts/smoke-media-devices.ts",
     "test:gpu": "tsx scripts/smoke-gpu.ts",
     "test:syscall-profile": "tsx scripts/smoke-syscall-profile.ts",

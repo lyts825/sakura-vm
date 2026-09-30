@@ -43,6 +43,7 @@ test('incoming QEMU stays paused until transfer completes and cannot be resumed 
     const incoming = await machines.startIncoming(id);
     assert.equal(incoming.status, 'paused');
     assert.deepEqual(launches[0].slice(-2), ['-incoming', 'defer']);
+    assert.equal(launches[0][launches[0].indexOf('-cpu') + 1], 'Nehalem-v1');
     assert.equal(machines.live.get(id)?.incoming, true);
     assert.equal(machines.live.get(id)?.bootDone, undefined);
     await assert.rejects(machines.startIncoming(id), /必须处于停止状态/);

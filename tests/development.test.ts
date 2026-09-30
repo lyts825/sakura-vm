@@ -303,7 +303,7 @@ test('container actions reject unsafe identifiers, flags and parent Compose path
   ])
     assert.equal(containerActionSchema.safeParse(input).success, false);
   const machines = { get: () => ({ distro: 'alpine' }) } as unknown as MachinesType;
-  const containers = new Containers(machines, {} as WorkspacesType);
+  const containers = new Containers(machines, {beforeConfigChange:()=>()=>{}} as unknown as WorkspacesType);
   try {
     assert.equal((await containers.view('vm')).supported, false);
     await assert.rejects(containers.run('vm', { action: 'install' }), /Debian 和 Ubuntu/);
@@ -311,27 +311,35 @@ test('container actions reject unsafe identifiers, flags and parent Compose path
     await containers.close();
   }
 });
-test('private projects reject shared-network container preparation before guest execution', async () => {
-  let executed = 0;
+test('private container workloads refuse an unverified runtime without using the shared daemon', async () => {
+  const executed:string[]=[];
   const machines = {
     get: () => ({ distro: 'debian' }),
     state: () => 'running',
-    exec: async () => { executed++; return { code: 0, stdout: '', stderr: '' }; },
+    locked: async (_id:string,run:()=>Promise<unknown>)=>run(),
+    exec: async (_id:string,command:string) => { executed.push(command); return { code: 0,
+      stdout: JSON.stringify({present:false,running:false,valid:false,reason:null,runId:null,containers:0}), stderr: '' }; },
   } as unknown as MachinesType;
   const workspaces = {
     config: async () => ({ directory: '/workspace', networkIsolation: 'private' }),
+    resolvedConfig: async () => ({directory:'/workspace',networkIsolation:'private'}),
+    beforeConfigChange:()=>()=>{},
+    projects:{current:()=> 'default',inScope:(_id:string,_project:string,run:()=>unknown)=>run()},
   } as unknown as WorkspacesType;
   const containers = new Containers(machines, workspaces);
   try {
     for (const action of [
-      { action: 'install' },
       { action: 'pull', image: 'debian:stable' },
-      { action: 'template-apply', templateId: 'debian', version: '4.0.2' },
+      { action: 'dockerfile-up', file:'Dockerfile' },
       { action: 'compose-down', file: 'compose.yaml' },
-    ]) await assert.rejects(containers.run('vm', action), /私有项目网络/);
-    await assert.rejects(containers.templateMetadata('vm', 'debian', '4.0.2'),
-      /私有项目网络/);
-    assert.equal(executed, 0);
+    ]) {
+      await containers.run('vm', action);
+      await containers.jobs.wait('vm');
+      assert.equal(containers.jobs.view('vm')?.status,'error');
+      assert.match(containers.jobs.view('vm')?.error || '',/私有 Docker/);
+    }
+    assert.equal(executed.length,3);
+    assert.ok(executed.every(command=>command.includes('systemctl') && !command.includes('docker --host unix:///var/run/docker.sock')));
   } finally {
     await containers.close();
   }
@@ -359,6 +367,7 @@ test('official Dev Container template metadata binds the requested source, versi
 test('container view keeps project Dev Container files visible when the CLI is unavailable', async () => {
   const machines = {
     get: () => ({ distro: 'debian' }),
+    state: () => 'running',
     exec: async (_id: string, command: string) => {
       if (command.includes('SAKURA_DEVCONTAINER_VERSION'))
         return { code: 0, stdout: 'Dockerfile\n.devcontainer/devcontainer.json\nSAKURA_DEVCONTAINER_VERSION\nunavailable\n', stderr: '' };
@@ -367,7 +376,7 @@ test('container view keeps project Dev Container files visible when the CLI is u
       return { code: 0, stdout: '27.0\n', stderr: '' };
     },
   } as unknown as MachinesType;
-  const workspaces = { config: async () => ({ directory: '/workspace' }) } as unknown as WorkspacesType;
+  const workspaces = {beforeConfigChange:()=>()=>{}, config: async () => ({ directory: '/workspace' }) } as unknown as WorkspacesType;
   const containers = new Containers(machines, workspaces);
   try {
     const view = await containers.view('vm');

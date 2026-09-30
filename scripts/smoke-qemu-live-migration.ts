@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { migrateQemuWithMirroredDisk } from '../server/live-migration-transport.ts';
 import { HostPeers } from '../server/host-peers.ts';
 import { freePort, qmp } from '../server/qmp.ts';
+import { qemuCpuModel } from '../shared/hardware.ts';
 
 if (!['linux', 'win32'].includes(process.platform)) {
   console.log('QEMU migration smoke requires Linux or Windows; skipped.');
@@ -26,6 +27,7 @@ const status = (value: unknown) => value as { status?: string; running?: boolean
 const interruptPrecopy = process.argv.includes('--interrupt-precopy');
 const failFence = process.argv.includes('--fail-fence');
 const differentSize = process.argv.includes('--different-size');
+const differentCpu = process.argv.includes('--different-cpu');
 const remoteEndpoint = process.argv.includes('--remote-endpoint');
 const peerTunnel = process.argv.includes('--peer-tunnel');
 const legacyDrive = process.argv.includes('--legacy-drive');
@@ -42,7 +44,7 @@ const peerStatus = async () => ({ platform: process.platform, arch: process.arch
 async function launch(port: number, disk: string, incoming: boolean) {
   const child = spawn(qemu, [
     '-name', 'sakura-migration-smoke', '-machine', 'q35', '-accel', 'tcg',
-    '-cpu', 'qemu64', '-m', '128', '-smp', '1', '-nodefaults',
+    '-cpu', incoming && differentCpu ? 'qemu64-v1' : qemuCpuModel(), '-m', '128', '-smp', '1', '-nodefaults',
     '-display', 'none', '-monitor', 'none', '-serial', 'none',
     ...(legacyDrive
       ? ['-drive', `file=${disk},if=virtio,id=sakura-disk,format=qcow2`]
@@ -83,8 +85,9 @@ try {
   const node = async (port: number) => {
     const blocks = await qmp(port, 'query-block') as Array<{
       device: string; inserted?: { 'node-name'?: string; ro?: boolean } }>;
-    const disk = blocks.find((block) => block.device === 'sakura-disk' &&
-      block.inserted?.ro === false);
+    const writable = blocks.filter((block) => block.inserted?.ro === false);
+    assert.equal(writable.length, 1, 'Exactly one writable smoke disk is required');
+    const disk = writable[0];
     if (!disk?.inserted?.['node-name']) throw new Error('QEMU writable disk node is unavailable');
     return disk.inserted['node-name'];
   };
@@ -155,6 +158,11 @@ try {
     assert.equal(fenced, false);
     assert.equal(status(await qmp(sourcePort, 'query-status')).running, true);
     assert.equal(status(await qmp(targetPort, 'query-status')).running, false);
+  } else if (differentCpu) {
+    await assert.rejects(migration, /CPU models or topology differ/);
+    assert.equal(fenced, false);
+    assert.equal(status(await qmp(sourcePort, 'query-status')).running, true);
+    assert.equal(status(await qmp(targetPort, 'query-status')).running, false);
   } else if (differentSize) {
     await assert.rejects(migration, /virtual sizes differ/);
     assert.equal(fenced, false);
@@ -192,6 +200,8 @@ try {
   }));
   if (remoteEndpoint) {
     console.log('An unauthenticated non-loopback NBD endpoint was rejected before QEMU changed state.');
+  } else if (differentCpu) {
+    console.log('A mismatched target CPU was rejected before either QEMU changed state.');
   } else if (differentSize) {
     console.log('A mismatched target disk was rejected before either QEMU changed state.');
   } else if (interruptPrecopy) {

@@ -8,6 +8,7 @@ import { AppError } from '../../server/model.ts';
 import { z } from 'zod';
 import type { ServiceHealth } from '../../server/service-health.ts';
 import type { Secrets } from '../../server/secrets.ts';
+import type { Containers } from '../../server/containers.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
@@ -15,6 +16,11 @@ export async function activate(host: PluginContext) {
     jobs: () => host.jobStores().flatMap((store) => store.list()),
     services: (id) => host.optional<ServiceHealth>('service-health', 'health')?.observed(id) || [],
     secrets: async (id) => host.optional<Secrets>('secrets', 'secrets')?.rotation(id),
+    privateDatabase: async (id, input, signal, log) => {
+      const service = host.optional<Containers>('containers', 'containers');
+      if (!service) throw new AppError('私有数据库需要启用容器插件', 409);
+      await service.privateDatabase(id, input, signal, log);
+    },
   });
   host.registerJobs(host.suite.jobs, (job) => {
     const id = retryTarget(job);

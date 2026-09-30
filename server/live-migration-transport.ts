@@ -56,6 +56,20 @@ function writableDiskSize(value: unknown, node: string) {
   return size as number;
 }
 
+function cpuLayout(value: unknown) {
+  if (!Array.isArray(value) || !value.length)
+    throw new Error('QEMU returned invalid CPU slots');
+  return JSON.stringify(value.map((slot) => {
+    if (!slot || typeof slot !== 'object' || typeof slot.type !== 'string' || !slot.type ||
+        !Number.isSafeInteger(slot['vcpus-count']) || slot['vcpus-count'] <= 0 ||
+        !slot.props || typeof slot.props !== 'object' || Array.isArray(slot.props) ||
+        !Object.values(slot.props).every((item) => Number.isSafeInteger(item)))
+      throw new Error('QEMU returned invalid CPU slots');
+    return [slot.type, slot['vcpus-count'],
+      Object.entries(slot.props).sort(([a], [b]) => a.localeCompare(b))];
+  }).map((slot) => JSON.stringify(slot)).sort());
+}
+
 async function waitFor(source: MigrationQmp, command: 'query-block-jobs' | 'query-migrate',
   ready: (value: unknown) => boolean, timeoutMs: number, signal?: AbortSignal) {
   const deadline = Date.now() + timeoutMs;
@@ -95,6 +109,11 @@ export async function migrateQemuWithMirroredDisk(input: MirroredMigrationOption
   };
   if (version(sourceVersion) !== version(targetVersion))
     throw new Error('Source and target QEMU versions differ');
+  const [sourceCpus, targetCpus] = await Promise.all([
+    source('query-hotpluggable-cpus'), target('query-hotpluggable-cpus'),
+  ]);
+  if (cpuLayout(sourceCpus) !== cpuLayout(targetCpus))
+    throw new Error('Source and target CPU models or topology differ');
   const [sourceBlocks, targetBlocks] = await Promise.all([
     source('query-block'), target('query-block'),
   ]);

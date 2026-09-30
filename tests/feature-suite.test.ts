@@ -67,7 +67,7 @@ test('private project developer tasks use the namespace and reject shared-networ
       password: 'very-long-password' });
     await suite.jobs.wait('vm:dev');
     assert.equal(suite.jobs.view('vm:dev')?.status, 'error');
-    assert.match(suite.jobs.view('vm:dev')?.error || '', /私有网络项目不能启动/);
+    assert.match(suite.jobs.view('vm:dev')?.error || '', /私有数据库需要启用容器插件/);
     assert.equal(commands.length, 3);
   } finally { await suite.close(); }
 });

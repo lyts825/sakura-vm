@@ -24,6 +24,7 @@ import { guardProjectQuotaDirectory, projectQuota, readProjectQuotaRecord } from
 import { ensureProjectNetworkScript, projectNetworkCommand,
   removeProjectNetwork } from './project-network-isolation.ts';
 import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
+import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
 
 export const projectSchema = z
   .object({
@@ -244,6 +245,29 @@ export class Workspaces {
         if (this.machines.state(id) === 'paused')
           throw new AppError('请先恢复实例并停止项目终端，再修改目录或网络模式', 409);
         if (this.machines.state(id) === 'running') {
+          // Keep existing Docker bindings protected even when its plugin is
+          // disabled or the host service has been reloaded.
+          const paths=privateDockerPaths(this.projects.current(id));
+          const dockerPresent=await this.machines.exec(id,
+            `if [ -e ${quote(paths.config+'/binding.json')} ] || [ -d ${quote(paths.data)} ] || [ -S ${quote(paths.socket)} ]; then echo SAKURA_PROJECT_DOCKER_PRESENT; fi`,10_000);
+          if (dockerPresent.code!==0) throw new AppError('无法检查项目 Docker 绑定',409);
+          if (dockerPresent.stdout.includes('SAKURA_PROJECT_DOCKER_PRESENT')) {
+            const runtime=await privateDockerStatus(this.machines,id,previous);
+            if (runtime.running || runtime.containers)
+              throw new AppError('请先移除项目容器并停止私有 Docker 环境，再修改目录或网络模式',409);
+          }
+          if (project.networkIsolation==='private' && previous.networkIsolation!=='private') {
+            const projectId=this.projects.current(id);
+            const script=`set -eu\nif ! command -v docker >/dev/null; then exit 0; fi\n`+
+              `docker --host unix:///var/run/docker.sock version >/dev/null\n`+
+              `docker --host unix:///var/run/docker.sock ps -aq --filter ${quote('label=sakura.vm='+id)} --filter ${quote('label=sakura.project='+projectId)}\n`+
+              `docker --host unix:///var/run/docker.sock ps -aq --filter ${quote('label=com.docker.compose.project=sakura-'+id.slice(0,8)+'-'+projectId)}\n`+
+              `docker --host unix:///var/run/docker.sock ps -aq --filter ${quote('label=devcontainer.local_folder='+previous.directory)}\n`;
+            const sharedDocker=await this.machines.exec(id,
+              `env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/sh -c ${quote(script)}`,15_000);
+            if (sharedDocker.code!==0) throw new AppError('无法核对共享 Docker 的旧项目容器，请先恢复 Docker 并移除容器',409);
+            if (sharedDocker.stdout.trim()) throw new AppError('请先移除旧项目容器，再修改目录或网络模式',409);
+          }
           const prefix = terminalSessionPrefix(this.projects.current(id));
           const check = await this.machines.exec(id, `set -eu\n` +
             `if command -v tmux >/dev/null && tmux list-sessions -F '#{session_name}' >/dev/null 2>&1; then\n` +

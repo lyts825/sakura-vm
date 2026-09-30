@@ -6,7 +6,7 @@ export const manifest = definePlugin({
   description: '资源策略、软件包与开发任务；计划调度由独立插件运行。',
   category: 'operations',
   requires: [pin('projects')],
-  optional: [pin('automation-scheduler'), pin('service-health'), pin('secrets')],
+  optional: [pin('automation-scheduler'), pin('service-health'), pin('secrets'), pin('containers')],
   services: ['suite'],
   contributes: {
     http: [

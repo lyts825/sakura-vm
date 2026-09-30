@@ -40,7 +40,7 @@ import type { Engine } from './runtime.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
 import { readStore, writeStore, fileHash, regularDirectory, within } from './local-store.ts';
 import { bootGuardStatus, recordBootAttempt, resetBootGuard } from './boot-guard.ts';
-import { hardwareArguments, deviceArguments, audioArguments, diskOptions, hardwareSchema } from '../shared/hardware.ts';
+import { hardwareArguments, deviceArguments, audioArguments, diskOptions, hardwareSchema, qemuCpuModel } from '../shared/hardware.ts';
 import { resourcePolicy, validateAdmission } from './resource-policies.ts';
 import { cpuSetSize } from './guest-hardware.ts';
 import { ensureUefiFirmware, requireUefiSupport } from './firmware.ts';
@@ -1055,7 +1055,7 @@ export class Machines extends EventEmitter {
           // otherwise make Alpine's early PIT/IO-APIC timer check panic. icount
           // requires single-threaded TCG; other hosts keep multi-threading.
           accelerator === 'whpx' ? 'whpx' : `tcg,thread=${process.platform === 'win32' ? 'single' : 'multi'}`,
-          ...(vm.architecture === 'aarch64' ? ['-cpu', 'cortex-a57'] : []),
+          '-cpu', qemuCpuModel(vm.architecture),
           ...(process.platform === 'win32' && accelerator === 'tcg' && vm.architecture !== 'aarch64'
             ? ['-icount', 'shift=auto,sleep=on']
             : []),
@@ -2140,6 +2140,7 @@ export class Machines extends EventEmitter {
     const memoryDevices = await qmp(qmpPort, 'query-memory-devices');
     return createHash('sha256').update(JSON.stringify({
       version, accelerator, architecture: vm.architecture || 'x86_64',
+      ...(vm.architecture === 'aarch64' ? {} : { cpuModel: qemuCpuModel(vm.architecture) }),
       distro: vm.distro || 'alpine', firmware: vm.firmware || 'bios',
       memoryMiB: vm.memoryMiB, cpus: vm.cpus, diskGiB: vm.diskGiB,
       hardware: vm.hardware || null, cpuSlots, memorySize, memoryDevices,

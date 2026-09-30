@@ -79,12 +79,13 @@ for (const [available, requested, expected] of [
   [false, 'whpx', 'whpx'],
 ] as const) {
   test(`acceleration ${requested} resolves to ${expected} when WHPX availability is ${available}`, async (t) => {
-    const { machines, id } = await fixture(t, available);
+    const { machines, id, commands } = await fixture(t, available);
     machines.get(id).accelerator = requested;
     machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
     await machines.start(id);
     assert.equal((await machines.view(id)).activeAccelerator, expected);
     assert.equal(machines.get(id).accelerator, requested);
+    assert.equal(commands[0][commands[0].indexOf('-cpu') + 1], 'Nehalem-v1');
   });
 }
 

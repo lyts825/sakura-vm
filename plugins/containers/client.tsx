@@ -20,6 +20,8 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
       supported: boolean;
       installed: boolean;
       available?: boolean;
+      privateNetwork?: boolean;
+      runtime?: {present:boolean;running:boolean;valid:boolean;reason:string|null};
       error?: string;
       version?: string;
       compose?: string;
@@ -66,7 +68,7 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
       <div className="panel-heading">
         <div>
           <h3>Docker / Compose</h3>
-          <p>管理此实例内的容器、镜像和项目。</p>
+          <p>{remote.data?.privateNetwork ? '管理所选项目的私有容器和镜像。' : '管理此实例内的容器、镜像和项目。'}</p>
         </div>
         <button className="icon-button" aria-label="刷新容器" onClick={remote.reload}>
           <RefreshCw size={16} />
@@ -85,10 +87,19 @@ export function ContainersPanel({ vm, request, projectId }: FeatureProps) {
                     <button
                       className="primary compact"
                       disabled={busy}
-                      onClick={() => void run({ action: 'install' })}
+                      onClick={() => void run({ action: remote.data?.privateNetwork && remote.data.installed ? 'start-project-runtime' : 'install' })}
                     >
-                      安装并启动 Docker / Compose
+                      {remote.data.privateNetwork && remote.data.installed ? '启动项目 Docker 环境' : '安装并启动 Docker / Compose'}
                     </button>
+                  )}
+                  {remote.data.privateNetwork && remote.data.runtime?.running && (
+                    <button className="text-button" disabled={busy} onClick={() => {
+                      if (confirm('停止此项目的所有容器和 Docker 环境？容器记录与数据卷会保留。'))
+                        void run({action:'stop-project-runtime'});
+                    }}>停止项目 Docker 环境</button>
+                  )}
+                  {remote.data.privateNetwork && (
+                    <p className="subtle-note">容器使用本项目回环网络。Compose 服务需设置 network_mode: host，并使用应用自身的端口；镜像先通过下方入口预取。</p>
                   )}
                   {remote.data.available && (
                     <>

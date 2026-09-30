@@ -86,7 +86,7 @@ type MigrationSession = { requesterId: string; ports: Record<MigrationChannel, n
   expiresAt: number; active: Set<Duplex> };
 type MigrationForward = { server: TcpServer; sockets: Set<Duplex> };
 const migrationQmpInput = z.object({ sessionId: z.uuid(), command: z.enum([
-  'query-status', 'query-version', 'query-block', 'migrate-incoming',
+  'query-status', 'query-version', 'query-hotpluggable-cpus', 'query-block', 'migrate-incoming',
   'nbd-server-start', 'block-export-add', 'block-export-del', 'nbd-server-stop',
 ]), args: z.record(z.string(), z.unknown()).optional() }).strict();
 const liveTargetPrepareInput = z.object({
