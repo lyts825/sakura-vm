@@ -25,6 +25,7 @@ import { ensureProjectNetworkScript, projectNetworkCommand,
   removeProjectNetwork } from './project-network-isolation.ts';
 import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
+import { projectSshBusyScript } from './project-ssh.ts';
 
 export const projectSchema = z
   .object({
@@ -245,6 +246,11 @@ export class Workspaces {
         if (this.machines.state(id) === 'paused')
           throw new AppError('请先恢复实例并停止项目终端，再修改目录或网络模式', 409);
         if (this.machines.state(id) === 'running') {
+          const sshBusy = await this.machines.exec(id,
+            projectSshBusyScript(this.projects.current(id)), 10_000);
+          if (sshBusy.code !== 0) throw new AppError('无法检查项目 SSH 绑定', 409);
+          if (sshBusy.stdout.includes('SAKURA_PROJECT_SSH_BUSY'))
+            throw new AppError('请先停止项目 SSH 及其编辑器进程，再修改目录或网络模式', 409);
           // Keep existing Docker bindings protected even when its plugin is
           // disabled or the host service has been reloaded.
           const paths=privateDockerPaths(this.projects.current(id));

@@ -204,7 +204,7 @@ export function ProjectPanel(props: FeatureProps) {
               <option value="host">共享客户机网络</option>
               <option value="private">独立命名空间（仅回环，无外网）</option>
             </select>
-            <small>私有模式适用于当前项目的命令、服务、终端、Notebook、浏览器 IDE 和单应用窗口，仅能访问回环网络；服务网格及容器启动需要共享网络。</small>
+            <small>私有项目的命令、服务和已接入的开发工具仅能访问自身回环网络；工具安装与依赖预取使用共享网络。专属容器和 SSH 接入支持 Debian 与 Ubuntu。</small>
           </label>
           <label>
             预览的 Windows 端口（在“服务”中配置转发）

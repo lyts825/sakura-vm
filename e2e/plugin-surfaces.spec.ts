@@ -3940,6 +3940,54 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
+test('project SSH setup shows private-network settings and confirms stopping its editor processes', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await app(page, ['projects', 'ide'], true);
+  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
+    distro: 'debian', status: 'running', poweredOn: true }] }));
+  await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, (route) => route.fulfill({ json: {
+    projectId: 'default', job: null, project: { directory: '/workspace/private', template: 'none',
+      repository: '', setup: '', command: '', networkIsolation: 'private' } } }));
+  let configured = false;
+  const actions: unknown[] = [];
+  const alias = `sakura-${vm.id}-default`;
+  await page.route('**/api/vms/*/ide**', (route) => {
+    if (route.request().method() === 'POST') {
+      const input = route.request().postData() ? route.request().postDataJSON() : {};
+      actions.push(input);
+      configured = input.action !== 'stop';
+    }
+    return route.fulfill({ json: { supported: true, running: true, projectScoped: true,
+      networkIsolation: 'private', alias,
+      runtime: { present: configured, running: configured, valid: configured, reason: null },
+      command: configured ? `code --remote ssh-remote+${alias} '/workspace/private'` : '',
+      sshCommand: configured ? `ssh ${alias}` : '',
+      url: configured ? `vscode://vscode-remote/ssh-remote+${alias}/workspace/private` : '' } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '项目', exact: true }).click();
+  await expect(page.getByText('"remote.SSH.localServerDownload": "always"', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '配置 VS Code 连接', exact: true }).click();
+  const stop = page.getByRole('button', { name: '停止项目 SSH', exact: true });
+  await expect(stop).toBeVisible();
+  await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveAttribute('href',
+    `vscode://vscode-remote/ssh-remote+${alias}/workspace/private`);
+  await expect(page.getByText(`ssh ${alias}`, { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await stop.click();
+  expect(actions).toHaveLength(1);
+  page.once('dialog', (dialog) => dialog.accept());
+  await stop.click();
+  await expect(stop).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveCount(0);
+  expect(actions).toEqual([{}, { action: 'stop' }]);
+  expect(pageErrors).toEqual([]);
+});
+
 test('Dev Container workbench submits Dockerfile and configuration actions and protects configured projects', async ({ page }) => {
   await app(page, ['projects', 'containers'], true);
   await page.route('**/api/vms', (route) =>

@@ -123,3 +123,36 @@ test('project and service secret references require the secret provider instead 
     assert.equal((await workspaces.resolvedConfig(id)).directory, '/workspace');
   } finally { await workspaces.close(); }
 });
+
+test('core project binding protection includes SSH children when the IDE plugin is absent', async () => {
+  const id = randomUUID();
+  const { machines, workspaces } = fixture(id);
+  await mkdir(vmDir(id), { recursive: true });
+  machines.get = () => ({ template: 'none' }) as ReturnType<MachinesType['get']>;
+  const locks = new Machines({} as Engine);
+  machines.locked = locks.locked.bind(locks);
+  let busy = true;
+  machines.exec = async (_id, command) => ({ code: 0, stderr: '',
+    stdout: busy && command.includes('SAKURA_PROJECT_SSH_BUSY') ? 'SAKURA_PROJECT_SSH_BUSY\n' : '' });
+  try {
+    await assert.rejects(workspaces.save(id, { directory: '/workspace/moved' }), /停止项目 SSH/);
+    await assert.rejects(workspaces.save(id, { networkIsolation: 'private' }), /停止项目 SSH/);
+    assert.equal((await workspaces.config(id)).directory, '/workspace');
+    busy = false;
+    await workspaces.save(id, { directory: '/workspace/moved', networkIsolation: 'private' });
+    assert.equal((await workspaces.config(id)).directory, '/workspace/moved');
+  } finally { await workspaces.close(); }
+});
+
+test('an unreadable SSH process scope fails closed before changing a project binding', async () => {
+  const id = randomUUID();
+  const { machines, workspaces } = fixture(id);
+  machines.get = () => ({ template: 'none' }) as ReturnType<MachinesType['get']>;
+  const locks = new Machines({} as Engine);
+  machines.locked = locks.locked.bind(locks);
+  machines.exec = async () => ({ code: 1, stdout: '', stderr: 'process inspection unavailable' });
+  try {
+    await assert.rejects(workspaces.save(id, { directory: '/workspace/moved' }), /检查项目 SSH/);
+    assert.equal((await workspaces.config(id)).directory, '/workspace');
+  } finally { await workspaces.close(); }
+});

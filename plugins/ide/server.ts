@@ -36,7 +36,11 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        send(await this.ide.install(id));
+        const input = z
+          .object({ action: z.enum(['install', 'stop']).default('install') })
+          .strict()
+          .parse((await body(req)) || {});
+        send(input.action === 'stop' ? await this.ide.stop(id) : await this.ide.install(id, signal));
         return true;
       }
     }

@@ -172,3 +172,53 @@ test('a late SSH connection is destroyed when its local bridge has already been 
       'a cancelled connection must never execute the relay');
   } finally { release(); await bridges.close(); }
 });
+
+test('project runtime validation rejects stale new connections and repeated opens without executing a relay', async () => {
+  const guest = new Guest();
+  let valid = false, checks = 0;
+  const bridges = new ProjectNetworkBridges(guest as unknown as Machines, async () => {
+    checks++;
+    if (!valid) throw new Error('runtime binding changed');
+  });
+  const port = await freePort();
+  try {
+    await assert.rejects(bridges.open(id, project, 8888, port), /binding changed/);
+    assert.equal(guest.reservations.size, 0);
+    await rejected(port);
+    valid = true;
+    await bridges.open(id, project, 8888, port);
+    valid = false;
+    await assert.rejects(bridges.open(id, project, 8888, port), /binding changed/);
+    const socket = connect(port, '127.0.0.1');
+    socket.on('error', () => {});
+    await once(socket, 'connect');
+    await eventually(() => socket.destroyed);
+    assert.equal(checks, 4);
+    assert.equal(guest.clients.size, 0);
+    assert.equal(guest.commands.some((command) => command.includes('python3 -I -S -u')), false);
+  } finally { await bridges.close(); }
+  assert.equal(guest.reservations.size, 0);
+});
+
+test('an explicitly allowed shared project bridge is separately stopped and still validates its runtime', async () => {
+  const guest = new Guest();
+  let checks = 0;
+  const shared = { ...project, networkIsolation: 'host' as const };
+  const bridges = new ProjectNetworkBridges(guest as unknown as Machines, async () => { checks++; });
+  const port = await freePort();
+  try {
+    await bridges.open(id, shared, 8888, port, undefined, true);
+    assert.equal(checks, 1);
+    const socket = connect(port, '127.0.0.1');
+    socket.on('error', () => {});
+    await once(socket, 'connect');
+    const response = once(socket, 'data');
+    socket.write('shared');
+    assert.equal((await response)[0].toString(), 'shared');
+    assert.equal(checks, 2);
+    assert.ok(guest.commands.every((command) => !command.includes('ip netns exec')));
+    await bridges.stop(id, shared._workspace!);
+    await eventually(() => socket.destroyed && guest.clients.size === 0);
+    await rejected(port);
+  } finally { await bridges.close(); }
+});

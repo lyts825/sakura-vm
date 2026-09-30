@@ -7,5 +7,5 @@ export const manifest = definePlugin({
   category: 'development',
   requires: [pin('projects')],
   services: ['ide'],
-  contributes: { http: [http('/api/vms/:vmId/ide', ['GET', 'POST'], true)], tabs: ['project'] },
+  contributes: { http: [http('/api/vms/:vmId/ide', ['GET', 'POST'], true)] },
 });

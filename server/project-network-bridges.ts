@@ -13,6 +13,7 @@ type Bridge = {
   guestPort: number;
   hostPort: number;
   command: string;
+  project: Project;
   server: Server;
   abort: AbortController;
   sockets: Set<Socket>;
@@ -68,22 +69,24 @@ export class ProjectNetworkBridges {
       if (bridge.vmId === id) void this.stopKey(key);
   };
 
-  constructor(private machines: Machines) {
+  constructor(private machines: Machines,
+    private validate?: (id: string, project: Project, signal?: AbortSignal) => Promise<void>) {
     machines.on('change', this.changed);
     machines.on('incident-lockdown', this.locked);
   }
 
   async open(id: string, project: Project, guestPort: number, hostPort: number,
-    signal?: AbortSignal) {
+    signal?: AbortSignal, allowShared = false) {
     const namespace = projectNetworkNamespace(project);
-    if (!namespace) throw new AppError('本机桥接需要私有项目网络', 409);
+    if (!namespace && !allowShared) throw new AppError('本机桥接需要私有项目网络', 409);
     if (![guestPort, hostPort].every((port) => Number.isInteger(port) && port >= 1024 && port <= 65535))
       throw new AppError('项目桥接端口无效');
     if (this.closed) throw new AppError('项目桥接服务已关闭', 409);
     signal?.throwIfAborted();
     if (!this.isRunning(id)) throw new AppError('请先启动实例', 409);
     this.machines.requireUnlocked(id);
-    const key = `${id}:${namespace}`;
+    const scope = namespace || `host-${project._workspace || 'default'}`;
+    const key = `${id}:${scope}`;
     await this.stopping.get(key);
     if (this.closed || !this.isRunning(id)) throw new AppError('实例或项目桥接已关闭', 409);
     const prior = this.bridges.get(key);
@@ -92,11 +95,12 @@ export class ProjectNetworkBridges {
         throw new AppError('请先关闭已有项目桥接，再修改端口', 409);
       await prior.opening;
       signal?.throwIfAborted();
+      await this.validate?.(id, project, signal);
       return;
     }
     const server = createServer({ allowHalfOpen: true },
       (socket) => void this.connect(key, server, socket));
-    const bridge: Bridge = { vmId: id, namespace, guestPort, hostPort,
+    const bridge: Bridge = { vmId: id, namespace: scope, guestPort, hostPort, project,
       command: relayCommand(project, guestPort), server,
       abort: new AbortController(), sockets: new Set(), opening: Promise.resolve() };
     this.bridges.set(key, bridge);
@@ -107,6 +111,7 @@ export class ProjectNetworkBridges {
       try {
         signal?.throwIfAborted();
         this.machines.requireUnlocked(id);
+        await this.validate?.(id, project, bridge.abort.signal);
         this.machines.reserveHostPorts(this.owner + ':' + key, [hostPort]);
         reserved = true;
         const result = await this.machines.exec(id,
@@ -152,6 +157,7 @@ export class ProjectNetworkBridges {
     });
     try {
       this.machines.requireUnlocked(bridge.vmId);
+      await this.validate?.(bridge.vmId, bridge.project, abort.signal);
       const client = await this.machines.connect(bridge.vmId, 10000, abort.signal);
       const destroy = () => client.destroy();
       abort.signal.addEventListener('abort', destroy, { once: true });
@@ -218,7 +224,9 @@ export class ProjectNetworkBridges {
     return stopping;
   }
 
-  stop(id: string, projectId: string) { return this.stopKey(`${id}:sk-${projectId}`); }
+  async stop(id: string, projectId: string) {
+    await Promise.all([this.stopKey(`${id}:sk-${projectId}`), this.stopKey(`${id}:host-${projectId}`)]);
+  }
 
   async close() {
     this.closed = true;

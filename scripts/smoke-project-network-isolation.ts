@@ -87,8 +87,12 @@ try {
     command: 'readlink /proc/self/ns/net > /workspace/first.ns; exec sleep 600' });
   assert.doesNotMatch(await readFile(sshConfig, 'utf8'),
     new RegExp(`Host sakura-${vm.name}`));
-  assert.equal((await ide.view(vm.id)).supported, false);
-  await assert.rejects(ide.install(vm.id), /实例包含私有项目/);
+  const privateIde = await ide.view(vm.id);
+  assert.equal(privateIde.supported, distro !== 'alpine');
+  if (distro !== 'alpine') {
+    assert.ok('projectScoped' in privateIde && privateIde.projectScoped);
+    assert.equal(privateIde.command, '');
+  } else await assert.rejects(ide.install(vm.id), /Debian 或 Ubuntu/);
   await features.workspaces.run(vm.id, 'start');
   await job(vm.id);
   const firstNamespace = await command(vm.id, 'cat /workspace/first.ns');
