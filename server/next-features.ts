@@ -433,7 +433,7 @@ export const nextFeatureCatalog = [
   ],
   ['build-cache', '构建缓存', '开发与 AI', 'P1', '检查客户机缓存目录和构建工具。', 'available'],
   ['build-farm', '分布式构建农场', '开发与 AI', 'P2',
-    '登记运行中的 Linux 实例作为构建节点，持久排队并按标签和空闲槽位执行构建。', 'available'],
+    '将 Linux 实例和项目登记为构建节点，持久排队并按标签和空闲槽位在项目环境与网络中构建。', 'available'],
   [
     'language-server-catalog',
     '语言服务器目录',
@@ -1116,7 +1116,7 @@ export class NextFeatures {
         ready: true,
         executed: false,
         adapter,
-        message: '系统设置 → 构建农场，登记实例节点和并发槽位，按标签提交构建命令；排队任务在节点运行时调度。',
+        message: '系统设置 → 构建农场，登记实例、项目和并发槽位，按标签提交构建命令；排队任务在节点运行时进入绑定项目的目录、环境与网络。',
       };
     if (spec.id === 'virtual-media-devices' || spec.id === 'media-passthrough') {
       if (!this.mediaDevices) return { ready: false, executed: false, adapter,

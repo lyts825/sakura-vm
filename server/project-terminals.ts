@@ -79,7 +79,7 @@ export class ProjectTerminals {
           (previous.networkIsolation || 'host') === (next.networkIsolation || 'host')) return;
       if ([...this.leases].some((lease) => lease.vmId === id &&
           lease.projectId === (previous._workspace || 'default')))
-        throw new AppError('请先断开此项目的终端连接，再修改目录或网络模式', 409);
+        throw new AppError('请先结束此项目的终端或命令，再修改目录或网络模式', 409);
     });
   }
 

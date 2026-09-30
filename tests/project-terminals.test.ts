@@ -50,8 +50,8 @@ test('terminal leases bind to the selected project and block directory or networ
     assert.match(privateShell.command, /exec ip netns exec sk-default sh -l/);
     assert.equal(privateShell.projectId, 'default');
     assert.equal(privateShell.networkIsolation, 'private');
-    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/changed', networkIsolation: 'private' }), /断开/);
-    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/private', networkIsolation: 'host' }), /断开/);
+    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/changed', networkIsolation: 'private' }), /终端或命令/);
+    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/private', networkIsolation: 'host' }), /终端或命令/);
     privateShell.release();
     await f.workspaces.save(f.id, { directory: '/workspace/private', networkIsolation: 'host' });
     const shell = await f.terminals.prepare(f.id, null);

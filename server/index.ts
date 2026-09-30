@@ -166,7 +166,7 @@ async function main() {
   await gpuProfiles.init();
   const buildFarm = new BuildFarm(machines, undefined,
     () => !!features.migration?.blocked,
-    (delta) => { features.mutations += delta; });
+    (delta) => { features.mutations += delta; }, undefined, projectTerminals);
   await buildFarm.init();
   features.extraJobStores.push(buildFarm.jobs);
   remoteAudit.setBackgroundAllowed(() => !features.migration?.blocked &&
@@ -1215,7 +1215,8 @@ async function main() {
       throw new AppError('不支持此方法', 405);
     }
     if (url.pathname === '/api/build-farm') {
-      if (req.method === 'GET') return send(res, buildFarm.view());
+      if (req.method === 'GET') return send(res, url.searchParams.has('vmId')
+        ? await buildFarm.projects(url.searchParams.get('vmId')!) : buildFarm.view());
       if (req.method === 'POST') return send(res,
         await buildFarm.action(await authorizedBody(req, 8192)));
       throw new AppError('不支持此方法', 405);

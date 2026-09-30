@@ -104,3 +104,22 @@ test('saving project configuration cannot race a start that is still loading its
     await workspaces.close();
   }
 });
+
+test('project and service secret references require the secret provider instead of executing with missing values', async () => {
+  const id = randomUUID();
+  const { machines, workspaces } = fixture(id);
+  machines.get = () => ({ template: 'none' }) as ReturnType<MachinesType['get']>;
+  await mkdir(vmDir(id), { recursive: true });
+  const file = join(vmDir(id), 'project.json');
+  try {
+    for (const project of [
+      { secrets: { TOKEN: 'project-key' } },
+      { services: [{ name: 'worker', command: 'true', secrets: { TOKEN: 'service-key' } }] },
+    ]) {
+      await writeFile(file, JSON.stringify(project));
+      await assert.rejects(workspaces.resolvedConfig(id), /启用 secrets 插件/);
+    }
+    await writeFile(file, JSON.stringify({ secrets: {}, services: [] }));
+    assert.equal((await workspaces.resolvedConfig(id)).directory, '/workspace');
+  } finally { await workspaces.close(); }
+});

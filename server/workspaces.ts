@@ -203,7 +203,8 @@ export class Workspaces {
     const project = await this.config(id);
     if (
       !this.context?.secrets &&
-      (project.secrets?.length || project.services?.some((service) => service.secrets?.length))
+      (Object.keys(project.secrets || {}).length ||
+        project.services?.some((service) => Object.keys(service.secrets || {}).length))
     )
       throw new AppError('项目引用了私密配置，请先启用 secrets 插件', 409);
     const environment = {

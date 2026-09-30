@@ -3,10 +3,12 @@ import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-
 import type { JobView } from '../server/jobs';
 
 type Node = { vmId: string; vmName: string | null; status: string;
-  slots: number; busy: number; labels: string[]; enabled: boolean };
+  slots: number; busy: number; labels: string[]; enabled: boolean; projectId?: string };
 type Task = { id: string; name: string; status: string; vmId?: string;
-  labels: string[]; createdAt: string; error?: string; job: JobView | null };
+  labels: string[]; createdAt: string; error?: string; job: JobView | null;
+  projectId?: string; directory?: string; networkIsolation?: 'host' | 'private' };
 type View = { nodes: Node[]; tasks: Task[]; persistenceError?: string };
+type ProjectIndex = { vmId: string; active: string; projects: Array<{ id: string; name: string }> };
 type VM = { id: string; name: string; status: string };
 const labels = (value: string) => value.split(',').map((item) => item.trim()).filter(Boolean);
 const validLabels = (items: string[]) => items.length <= 8 &&
@@ -17,21 +19,26 @@ export function BuildFarmSettings({ request }: { request: Request }) {
   const vms = useRemote<VM[]>(request, '/vms', true, 5000);
   const action = useAction();
   const [vmId, setVmId] = useState('');
+  const [projectId, setProjectId] = useState('');
   const [slots, setSlots] = useState(1);
   const [nodeLabels, setNodeLabels] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
-  const [cwd, setCwd] = useState('/workspace');
+  const [cwd, setCwd] = useState('');
   const [taskLabels, setTaskLabels] = useState('');
   const [timeoutSeconds, setTimeoutSeconds] = useState(300);
   const target = vmId || vms.data?.[0]?.id || '';
+  const projects = useRemote<ProjectIndex>(request,
+    `/build-farm?vmId=${encodeURIComponent(target)}`, !!target, 5000);
+  const availableProjects = projects.data?.vmId === target ? projects.data.projects : [];
+  const selectedProject = projectId || (projects.data?.vmId === target ? projects.data.active : '');
   const required = labels(taskLabels);
   const candidates = remote.data?.nodes.filter((node) =>
     required.every((label) => node.labels.includes(label))) || [];
   const saveNode = () => void action.run(async (signal) => {
     await request('/build-farm', 'POST', { operation: 'save-node', node: {
-      vmId: target, slots, labels: labels(nodeLabels), enabled } }, signal);
+      vmId: target, projectId: selectedProject, slots, labels: labels(nodeLabels), enabled } }, signal);
     remote.reload();
   }, '构建节点已保存');
   const removeNode = (node: Node) => void action.run(async (signal) => {
@@ -40,7 +47,7 @@ export function BuildFarmSettings({ request }: { request: Request }) {
   }, '构建节点已移除');
   const submit = () => void action.run(async (signal) => {
     await request('/build-farm', 'POST', { operation: 'submit', build: {
-      name, command, cwd, labels: required, timeoutSeconds } }, signal);
+      name, command, ...(cwd ? { cwd } : {}), labels: required, timeoutSeconds } }, signal);
     setName(''); setCommand(''); remote.reload();
   }, '构建已排队，匹配节点空闲时自动执行');
   const taskAction = (task: Task, operation: 'retry' | 'cancel') => void action.run(async (signal) => {
@@ -49,15 +56,19 @@ export function BuildFarmSettings({ request }: { request: Request }) {
   }, operation === 'cancel' ? '取消请求已提交' : '新构建已排队');
   return <section className="system-card" aria-label="构建农场">
     <h3>构建农场</h3>
-    <p>将已安装构建工具的 Linux 实例登记为节点，按标签和并发槽位调度命令。命令在目标实例的客户机内执行；停止的节点会保留待执行任务。</p>
-    <Feedback error={action.error || remote.error || vms.error || remote.data?.persistenceError}
+    <p>将已安装构建工具的 Linux 实例和项目登记为节点，按标签和并发槽位调度命令。构建使用节点绑定项目的环境与网络设置；停止的节点会保留待执行任务。</p>
+    <Feedback error={action.error || remote.error || vms.error || projects.error || remote.data?.persistenceError}
       message={action.message} />
     <div className="feature-card">
       <h4>登记节点</h4>
       <div className="shortcut-fields">
         <label>Linux 实例<select aria-label="构建节点实例" value={target}
-          onChange={(event) => setVmId(event.target.value)}>
+          onChange={(event) => { setVmId(event.target.value); setProjectId(''); }}>
           {vms.data?.map((vm) => <option key={vm.id} value={vm.id}>{vm.name} · {vm.status}</option>)}
+        </select></label>
+        <label>项目<select aria-label="构建节点项目" value={selectedProject}
+          onChange={(event) => setProjectId(event.target.value)}>
+          {availableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select></label>
         <label>并发槽位<input aria-label="构建并发槽位" type="number" min={1} max={4}
           value={slots} onChange={(event) => setSlots(Number(event.target.value))} /></label>
@@ -67,14 +78,15 @@ export function BuildFarmSettings({ request }: { request: Request }) {
           onChange={(event) => setEnabled(event.target.checked)} />启用调度</label>
       </div>
       <button className="primary compact" disabled={action.busy || !target ||
+        !availableProjects.some((project) => project.id === selectedProject) ||
         !Number.isInteger(slots) || slots < 1 || slots > 4 || !validLabels(labels(nodeLabels))}
         onClick={saveNode}>保存构建节点</button>
       {remote.data?.nodes.map((node) => <div key={node.vmId} className="host-peer-row">
         <span><strong>{node.vmName || node.vmId}</strong> · {node.status} ·
           {node.busy}/{node.slots} 运行 · {node.labels.join(', ') || '无标签'} ·
-          {node.enabled ? '已启用' : '已停用'}</span>
+          {node.enabled ? '已启用' : '已停用'} · 项目 {node.projectId === 'default' ? '默认项目' : node.projectId}</span>
         <button className="secondary compact" disabled={action.busy}
-          onClick={() => { setVmId(node.vmId); setSlots(node.slots);
+          onClick={() => { setVmId(node.vmId); setProjectId(node.projectId || ''); setSlots(node.slots);
             setNodeLabels(node.labels.join(', ')); setEnabled(node.enabled); }}>编辑</button>
         <button className="secondary compact" disabled={action.busy}
           onClick={() => removeNode(node)}>移除</button>
@@ -85,7 +97,7 @@ export function BuildFarmSettings({ request }: { request: Request }) {
       <div className="shortcut-fields">
         <label>构建名称<input aria-label="构建名称" value={name} maxLength={80}
           onChange={(event) => setName(event.target.value)} /></label>
-        <label>工作目录<input aria-label="构建工作目录" value={cwd}
+        <label>工作目录（可选）<input aria-label="构建工作目录" value={cwd} placeholder="留空使用节点项目目录"
           onChange={(event) => setCwd(event.target.value)} /></label>
         <label>所需标签（逗号分隔）<input aria-label="构建所需标签" value={taskLabels}
           onChange={(event) => setTaskLabels(event.target.value)} /></label>
@@ -94,11 +106,11 @@ export function BuildFarmSettings({ request }: { request: Request }) {
       </div>
       <label>客户机命令<textarea aria-label="构建客户机命令" value={command}
         maxLength={4096} onChange={(event) => setCommand(event.target.value)} /></label>
-      <p className="subtle-note">匹配节点：{candidates.map((node) =>
+      <p className="subtle-note">工作目录须在节点绑定的项目内。匹配节点：{candidates.map((node) =>
         `${node.vmName || node.vmId} (${node.status})`).join('、') || '无'}。任务会保留到匹配节点启动并有空闲槽位。</p>
       <button className="primary compact" disabled={action.busy || !name.trim() || !command.trim() ||
         !candidates.length || !validLabels(required) ||
-        !/^\/workspace(?:\/(?!\.{1,2}(?:\/|$))[a-zA-Z0-9._-]+)*$/.test(cwd) ||
+        (cwd !== '' && !/^\/workspace(?:\/(?!\.{1,2}(?:\/|$))[a-zA-Z0-9._-]+)*$/.test(cwd)) ||
         !Number.isInteger(timeoutSeconds) || timeoutSeconds < 5 || timeoutSeconds > 1800}
         onClick={submit}>提交构建</button>
     </div>
@@ -108,6 +120,8 @@ export function BuildFarmSettings({ request }: { request: Request }) {
       {remote.data?.tasks.map((task) => <div key={task.id} className="feature-card">
         <strong>{task.name}</strong> · {task.status} ·
         {task.vmId ? remote.data?.nodes.find((node) => node.vmId === task.vmId)?.vmName || task.vmId : '等待节点'}
+        {task.projectId && <p className="subtle-note">项目 {task.projectId === 'default' ? '默认项目' : task.projectId}
+          {task.directory && ` · ${task.directory}`} {task.networkIsolation === 'private' ? '· 私有网络' : ''}</p>}
         {task.error && <p role="alert">{task.error}</p>}
         {task.job && <JobLog job={task.job} />}
         {['queued', 'running'].includes(task.status) && <button className="secondary compact"
