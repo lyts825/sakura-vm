@@ -39,6 +39,7 @@ function fixture() {
       if (locked) throw new Error('locked');
     },
     incidentLocked: () => locked,
+    locked: async (_id: string, action: () => Promise<unknown>) => action(),
     setIncidentLockdown: async (_id: string, value: boolean) => {
       locked = value;
       return { locked };

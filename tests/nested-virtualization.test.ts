@@ -35,6 +35,7 @@ test('nested virtualization records actual guest flags and KVM availability with
     snapshots: [],
   });
   const workspaces = {
+    beforeConfigChange: () => () => {},
     projects: { current: () => 'default', key: (vmId: string) => vmId },
   } as unknown as Workspaces;
   const features = new NextFeatures(machines, workspaces);

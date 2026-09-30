@@ -308,7 +308,7 @@ export const nextFeatureCatalog = [
     'available',
   ],
   ['service-mesh', '服务网格边车', '网络与服务治理', 'P2',
-    '按项目配置环回 TCP Envoy 边车，校验、启动、检查与停止代理。', 'available'],
+    '按项目网络运行环回 TCP Envoy 边车，核对配置、进程与会话绑定并停止遗留代理。', 'available'],
   [
     'passkey-webauthn',
     'Passkey/WebAuthn',
@@ -715,7 +715,8 @@ export class NextFeatures {
     private workspaces: Workspaces,
   ) {
     this.storageTiering = new StorageTiering(machines);
-    this.serviceMesh = new ServiceMesh(machines, workspaces);
+    this.serviceMesh = new ServiceMesh(machines, workspaces, undefined,
+      async (id) => (await this.state()).settings[id]?.['service-mesh']?.enabled !== false);
     this.vtpmEnrollment = new VtpmEnrollment(machines);
     this.acmeRenewal = new AcmeRenewal(machines);
     this.teamTemplates = new TeamTemplates(machines, workspaces);
@@ -898,7 +899,13 @@ export class NextFeatures {
     }
     if (value.featureId === 'service-mesh') {
       value.options = z.object({}).strict().parse(value.options);
-      if (!value.enabled) await this.serviceMesh.assertNoRunning(id);
+      return this.serviceMesh.configure(id, value.enabled, async () => {
+        const state = await this.state();
+        const settings = (state.settings[id] ||= {});
+        settings[value.featureId] = { enabled: value.enabled, options: value.options, updatedAt: now() };
+        await this.save(state);
+        return settings[value.featureId];
+      });
     }
     if (value.featureId === 'vtpm-key-enrollment' || value.featureId === 'pci-usb-passthrough')
       value.options = z.object({}).strict().parse(value.options);

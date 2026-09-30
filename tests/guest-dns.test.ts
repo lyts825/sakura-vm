@@ -51,6 +51,7 @@ test('DNS diagnostic checks the guest, runs as a recorded task and reports unrea
     createdAt: new Date().toISOString(), snapshots: [],
   });
   const workspaces = {
+    beforeConfigChange: () => () => {},
     projects: { current: () => 'default', key: (vmId: string) => vmId },
   } as unknown as Workspaces;
   const features = new NextFeatures(machines, workspaces);

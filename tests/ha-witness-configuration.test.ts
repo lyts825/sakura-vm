@@ -26,7 +26,8 @@ test('HA policy enrollment and revocation follow witness acknowledgments', async
   const id = randomUUID(), targetHostId = randomUUID();
   machines.records.set(id, { ...createSchema.parse({ name: 'ha-policy' }),
     id, createdAt: new Date().toISOString(), snapshots: [] });
-  const workspaces = { projects: { current: () => 'default', key: () => id } } as unknown as Workspaces;
+  const workspaces = { beforeConfigChange: () => () => {},
+    projects: { current: () => 'default', key: () => id } } as unknown as Workspaces;
   const features = new NextFeatures(machines, workspaces);
   const disarmed: string[] = [];
   features.setHaHostFailover({
