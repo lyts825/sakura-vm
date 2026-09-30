@@ -119,7 +119,7 @@ export class CapabilityActions {
     const parameters = capabilityParameters(featureId, input);
     signal.throwIfAborted();
     if (featureId === 'ssh-agent-forward')
-      return runSshAgentForward(this.machines, id, parameters, signal);
+      return runSshAgentForward(this.machines, id, parameters, signal, this.workspaces);
     if (featureId === 'gpu-acceleration')
       return runGpuAcceleration(this.machines, id, parameters, signal);
     if (featureId === 'syscall-profile')

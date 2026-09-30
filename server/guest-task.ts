@@ -11,6 +11,7 @@ export async function guestTask(
   signal: AbortSignal,
   log?: (text: string) => void,
   timeout = 1200000,
+  agentPath?: string,
 ) {
   const instance = machines.live.get(id);
   const pid = `/tmp/.sakura-job-${randomUUID()}.pid`;
@@ -25,6 +26,7 @@ export async function guestTask(
       timeout,
       signal,
       log,
+      agentPath,
     );
   } finally {
     if (instance && machines.live.get(id) === instance)

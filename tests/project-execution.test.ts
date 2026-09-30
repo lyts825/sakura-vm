@@ -14,7 +14,7 @@ process.env.SAKURA_DATA_DIR = root;
 const { Machines } = await import('../server/machines.ts');
 const { Workspaces } = await import('../server/workspaces.ts');
 const { ProjectTerminals } = await import('../server/project-terminals.ts');
-const { ProjectExecution } = await import('../server/project-execution.ts');
+const { ProjectExecution, withProjectCommand } = await import('../server/project-execution.ts');
 const { vmDir } = await import('../server/model.ts');
 after(() => rm(root, { recursive: true, force: true }));
 
@@ -44,7 +44,7 @@ async function fixture() {
     resolve: async () => ({ TOKEN: 'private-value' }),
   } as unknown as Secrets });
   const terminals = new ProjectTerminals(machines, workspaces), service = new ProjectExecution(machines, terminals);
-  return { id, live, commands, workspaces, terminals, service, executing,
+  return { id, machines, live, commands, workspaces, terminals, service, executing,
     wait: () => { wait = true; },
     close: async () => { await service.close(); await terminals.close(); await workspaces.close(); } };
 }
@@ -91,5 +91,22 @@ test('abort and service shutdown clean the guest process group and release execu
     const stopped = assert.rejects(second);
     await f.service.close(); await stopped;
     assert.ok(f.commands.filter((value) => value.includes('kill -TERM --')).length >= 2);
+  } finally { await f.close(); }
+});
+
+test('agent command setup resolves the persisted active project and preserves an explicit default scope', async () => {
+  const f = await fixture();
+  try {
+    const index = await f.workspaces.projects.create(f.id, 'Private', async () => {
+      await f.workspaces.save(f.id, { directory: '/workspace/agent', networkIsolation: 'private' });
+    });
+    const inspect = (project: { _workspace?: string; directory: string; networkIsolation?: string }) =>
+      Promise.resolve({ projectId: project._workspace || 'default', directory: project.directory,
+        networkIsolation: project.networkIsolation || 'host' });
+    assert.deepEqual(await withProjectCommand(f.machines, f.id, undefined, undefined, inspect),
+      { projectId: index.active, directory: '/workspace/agent', networkIsolation: 'private' });
+    assert.deepEqual(await f.workspaces.projects.with(f.id, 'default', () =>
+      withProjectCommand(f.machines, f.id, undefined, f.workspaces, inspect)),
+      { projectId: 'default', directory: '/workspace', networkIsolation: 'host' });
   } finally { await f.close(); }
 });

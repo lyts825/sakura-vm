@@ -2,6 +2,9 @@ import { connect } from 'node:net';
 import { z } from 'zod';
 import { AppError } from './model.ts';
 import type { Machines } from './machines.ts';
+import type { Workspaces } from './workspaces.ts';
+import { guestTask } from './guest-task.ts';
+import { withProjectCommand, projectExecutionCommand, redactProjectOutput } from './project-execution.ts';
 
 export const sshAgentForwardInput = z.object({
   command: z.string().min(1).max(8192),
@@ -55,16 +58,23 @@ export async function checkSshAgentForward(machines: Machines, id: string,
 }
 
 export async function runSshAgentForward(machines: Machines, id: string,
-  input: unknown, signal?: AbortSignal) {
+  input: unknown, signal?: AbortSignal, workspaces?: Workspaces) {
   const options = sshAgentForwardInput.parse(input);
   machines.requireUnlocked(id);
   if (machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
   const socket = hostAgentSocket();
   if (!await agentReachable(socket, signal)) throw new AppError('宿主机 SSH Agent 未运行', 409);
   signal?.throwIfAborted();
-  const result = await machines.exec(id, options.command,
-    options.timeoutSeconds * 1000, signal, undefined, socket);
-  return { code: result.code, ready: result.code === 0, executed: true,
-    stdout: result.stdout, stderr: result.stderr,
-    message: 'Agent 转发连接已随命令结束关闭。' };
+  return withProjectCommand(machines, id, signal, workspaces, async (project) => {
+    // sshd supplies the socket for this connection; project configuration must
+    // not replace it with a different agent path.
+    const { SSH_AUTH_SOCK: _ignored, ...environment } = project.environment || {};
+    const result = await guestTask(machines, id,
+      projectExecutionCommand({ ...project, environment }, options.command),
+      signal || new AbortController().signal, undefined, options.timeoutSeconds * 1000, socket);
+    return { ...redactProjectOutput(project, result), ready: result.code === 0, executed: true,
+      projectId: project._workspace || 'default', directory: project.directory,
+      networkIsolation: project.networkIsolation || 'host',
+      message: 'Agent 转发连接已随命令结束关闭。' };
+  });
 }

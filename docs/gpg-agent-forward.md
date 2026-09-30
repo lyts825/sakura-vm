@@ -22,4 +22,6 @@
 
 执行 `npm run sakura -- extended <实例名> run gpg-agent-forward gpg-forward.json`，再用 `npm run sakura -- task <任务 ID> result` 查看退出码、输出及清理警告。`command` 是客户机 Shell 命令，最长 8192 字符，时限为 1–300 秒。Sakura 为每次运行创建权限受限的临时 `GNUPGHOME`，所以命令须在该目录导入对应**公钥**；上例从客户机项目导入。签名命令使用 `--no-autostart`，避免连接失败时客户机自行启动另一个 Agent。
 
-客户机临时目录、SSH 监听套接字和活动连接会在执行后清理。宿主机额外套接字位置不会写入客户机。当前真实 Alpine 回归使用 Windows 命名管道上的模拟 Assuan 服务，验证了 SSH 转发、单次命令响应、默认 SSH 策略拒绝、命令失败和取消时清理；未用真实宿主私钥完成签名。可运行 `npm run test:gpg-agent-forward` 复核。
+命令沿用所选项目的目录、环境与网络模式，输出遮盖项目私密配置；项目环境中的 `GNUPGHOME` 会由本次临时目录替换。私有项目保持仅回环网络，转发使用共享文件系统中的 Unix 套接字，不创建网络接口或路由。实际接口或路由不符时拒绝执行。命令使用独立进程组，取消或超时后清理进程、桥接及临时目录；整个执行和清理期间阻止实例操作及项目修改。项目命令的其他范围见 [项目命令执行](project-execution.md)。
+
+客户机临时目录、SSH 监听套接字和活动连接会在执行后清理。宿主机额外套接字位置不会写入客户机。真实 Alpine、Debian、Ubuntu 回归使用 Windows 命名管道上的模拟 Assuan 服务，验证了 SSH 配置拒绝与允许、单次命令响应、实际项目网络空间、目录、环境与密钥遮盖、额外路由拒绝、命令失败和取消后的 shell/子进程及临时目录清理；未用真实宿主私钥完成签名。可运行 `npm run test:gpg-agent-forward -- alpine` 复核；参数也支持 `debian`、`ubuntu`，设置 `SAKURA_AGENT_PRIVATE=1` 启用私有项目。

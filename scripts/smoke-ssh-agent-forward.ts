@@ -9,14 +9,21 @@ import { setTimeout as delay } from 'node:timers/promises';
 if (process.platform !== 'win32') throw new Error('Windows host required');
 const directory = await mkdtemp(join(tmpdir(), 'sakura-ssh-agent-vm-'));
 process.env.SAKURA_DATA_DIR = directory;
-process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
+const distro = process.argv[2] || 'alpine';
+const images: Record<string, string> = { alpine: 'alpine-3.23.qcow2', debian: 'debian-12.qcow2', ubuntu: 'ubuntu-24.04.qcow2' };
+assert.ok(images[distro]);
+process.env.SAKURA_IMAGE_PATH = resolve('.data/images', images[distro]);
+process.env.SAKURA_IMAGE_DIR = resolve('.data/images');
 const pipe = '\\\\.\\pipe\\sakura-ssh-agent-' + process.pid + '-' + randomBytes(4).toString('hex');
 process.env.SSH_AUTH_SOCK = pipe;
 const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
 const { checkSshAgentForward, runSshAgentForward } = await import('../server/ssh-agent-forward.ts');
+const { Workspaces } = await import('../server/workspaces.ts');
+const { Secrets } = await import('../server/secrets.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
+const secrets = new Secrets(machines), workspaces = new Workspaces(machines, { secrets });
 const u32 = (value: number) => {
   const output = Buffer.alloc(4);
   output.writeUInt32BE(value);
@@ -46,7 +53,7 @@ const agent = createServer((socket) => {
 });
 await new Promise<void>((done) => agent.listen(pipe, done));
 try {
-  const vm = await machines.create({ name: 'ssh-agent-smoke', memoryMiB: 512,
+  const vm = await machines.create({ name: 'ssh-agent-smoke', distro, memoryMiB: 1024,
     cpus: 2, diskGiB: 4 });
   await machines.start(vm.id);
   const deadline = Date.now() + 300000;
@@ -56,7 +63,7 @@ try {
     await delay(300);
   }
   const tool = await machines.exec(vm.id,
-    'command -v ssh-add >/dev/null || apk add --no-cache openssh-client', 180000);
+    'command -v ssh-add >/dev/null || { if command -v apk >/dev/null; then apk add --no-cache openssh-client; else apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-client; fi; }', 180000);
   assert.equal(tool.code, 0, tool.stdout + tool.stderr);
   const before = await machines.exec(vm.id, 'test -z "${SSH_AUTH_SOCK:-}"');
   assert.equal(before.code, 0, before.stdout + before.stderr);
@@ -69,17 +76,50 @@ try {
   assert.equal(forwarded.code, 0, forwarded.stdout + forwarded.stderr);
   assert.match(forwarded.stdout, /ssh-ed25519/);
   assert.ok(queries > 0);
+  const privateMode = process.env.SAKURA_AGENT_PRIVATE === '1';
+  await secrets.save(vm.id, { name: 'agent-key', value: 'agent-forward-test-private' });
+  await workspaces.save(vm.id, { directory: '/workspace/agent-project', networkIsolation: privateMode ? 'private' : 'host',
+    environment: { SAKURA_AGENT_MARKER: 'project', SSH_AUTH_SOCK: '/tmp/incorrect-agent' }, secrets: { SAKURA_AGENT_SECRET: 'agent-key' } });
+  const hostNamespace = (await machines.exec(vm.id, 'readlink /proc/self/ns/net')).stdout.trim();
+  const scoped = await runSshAgentForward(machines, vm.id, { command:
+    'readlink /proc/self/ns/net; pwd; printf "%s\\n" "$SAKURA_AGENT_MARKER" "$SAKURA_AGENT_SECRET"; ssh-add -L', confirmed: true }, undefined, workspaces);
+  const namespace = privateMode ? (await machines.exec(vm.id, 'ip netns exec sk-default readlink /proc/self/ns/net')).stdout.trim() : hostNamespace;
+  assert.equal(scoped.networkIsolation, privateMode ? 'private' : 'host');
+  assert.equal(scoped.projectId, 'default');
+  assert.ok(scoped.stdout.startsWith(`${namespace}\n/workspace/agent-project\nproject\n[私密配置已隐藏]\n`), scoped.stdout);
+  assert.match(scoped.stdout, /ssh-ed25519/);
+  if (privateMode) {
+    assert.notEqual(namespace, hostNamespace);
+    assert.equal((await machines.exec(vm.id, 'ip -n sk-default route add blackhole 203.0.113.0/24')).code, 0);
+    await assert.rejects(runSshAgentForward(machines, vm.id, { command: 'touch /workspace/agent-leak', confirmed: true }, undefined, workspaces), /网络路由/);
+    assert.equal((await machines.exec(vm.id, 'test ! -e /workspace/agent-leak; ip -n sk-default route del blackhole 203.0.113.0/24')).code, 0);
+  }
   const cancelled = new AbortController();
   const pending = runSshAgentForward(machines, vm.id,
-    { command: 'sleep 10; ssh-add -L', confirmed: true, timeoutSeconds: 30 },
-    cancelled.signal);
-  await delay(200);
-  cancelled.abort();
-  await assert.rejects(pending, /取消|aborted/i);
+    { command: 'echo $$ > /workspace/agent-project/cancel.pid; sleep 600 & echo $! >> /workspace/agent-project/cancel.pid; wait', confirmed: true, timeoutSeconds: 30 },
+    cancelled.signal, workspaces);
+  const rejected = assert.rejects(pending, /取消|aborted/i);
+  let pids = '';
+  try {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      pids = await machines.readGuestFile(vm.id, '/workspace/agent-project/cancel.pid').catch(() => '');
+      if (/^\d+\n\d+\n$/.test(pids)) break; await delay(100);
+    }
+    assert.match(pids, /^\d+\n\d+\n$/);
+    await assert.rejects(workspaces.save(vm.id, { directory: '/workspace/changed' }), /另一项操作/);
+  } finally { cancelled.abort(); await rejected; }
+  let cleanup;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    cleanup = await machines.exec(vm.id,
+      `for pid in ${pids.trim().split('\n').join(' ')}; do if kill -0 "$pid" 2>/dev/null; then cat /proc/"$pid"/stat; exit 1; fi; done`);
+    if (cleanup.code === 0) break; await delay(100);
+  }
+  assert.equal(cleanup!.code, 0, cleanup!.stdout + cleanup!.stderr);
   const after = await machines.exec(vm.id, 'test -z "${SSH_AUTH_SOCK:-}"');
   assert.equal(after.code, 0, after.stdout + after.stderr);
-  console.log('Real Alpine SSH command saw only the explicitly forwarded test agent.');
+  console.log(`Real ${distro} SSH forwarding verified project scope, secret redaction, reserved socket, route rejection and cancellation cleanup (${privateMode ? 'private' : 'host'}).`);
 } finally {
+  await workspaces.close();
   await machines.close();
   await new Promise<void>((done) => agent.close(() => done()));
   assert.equal(dirname(directory), resolve(tmpdir()));

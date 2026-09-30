@@ -616,7 +616,7 @@ export class ExtendedFeatures {
     } else if (spec.id === 'gpg-agent-forward') {
       result = action === 'check'
         ? await checkGpgAgentForward(this.machines, id, signal)
-        : await runGpgAgentForward(this.machines, id, merged, signal);
+        : await runGpgAgentForward(this.machines, id, merged, signal, this.workspaces);
     } else if (spec.id === 'reverse-tunnel') {
       if (action === 'check') result = await this.tunnels.check(id, signal);
       else {

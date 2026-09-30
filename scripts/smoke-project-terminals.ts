@@ -125,6 +125,20 @@ try {
     const result = await ok(`/api/vms/${id}/exec`, 'POST', { command, scope: 'instance' });
     assert.equal(result.code, 0, result.stderr); return result.stdout.trim() as string;
   };
+  const waitForProcessCleanup = async (pids: string[], label: string) => {
+    assert.ok(pids.length === 2 && pids.every((pid) => /^\d+$/.test(pid)));
+    let last;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      last = await request(`/api/vms/${id}/exec`, 'POST', { scope: 'instance',
+        command: `for pid in ${pids.join(' ')}; do if kill -0 "$pid" 2>/dev/null; then cat /proc/"$pid"/stat; exit 1; fi; done; test "$(find /tmp -name .sakura-job-\\*.pid -print | wc -l)" -le 1` });
+      if (last.status === 200 && last.body.code === 0) return;
+      assert.ok(last.status === 409 || last.status === 200, JSON.stringify(last));
+      // Signal delivery and orphan reaping can finish shortly after the SSH
+      // cleanup channel closes. Require both actual PIDs to disappear.
+      await delay(100);
+    }
+    assert.fail(label + ': shell, child and execution lock must be cleaned: ' + JSON.stringify(last));
+  };
   const hostNamespace = await guest('readlink /proc/self/ns/net');
   const apiExecution = await ok(`/api/vms/${id}/exec`, 'POST', { command:
     'readlink /proc/self/ns/net; pwd; printf "%s\\n" "$SAKURA_EXEC_SCOPE" "$SAKURA_EXEC_SECRET"; printf "%s" "$SAKURA_EXEC_SECRET" >&2' });
@@ -166,7 +180,7 @@ try {
   assert.equal(timeout.status, 408, JSON.stringify(timeout));
   const timedOutPids = (await ok(`/api/vms/${id}/file?path=/workspace/private/exec-timeout.pid`)).content;
   assert.match(timedOutPids, /^\d+\n\d+\n$/);
-  await guest(`for pid in ${timedOutPids.trim().split('\n').join(' ')}; do ! kill -0 "$pid" 2>/dev/null || exit 1; done; test "$(find /tmp -name .sakura-job-\\*.pid -print | wc -l)" -le 1`);
+  await waitForProcessCleanup(timedOutPids.trim().split('\n'), 'Timeout');
   const cancel = new AbortController();
   const cancelled = fetch(origin + `/api/vms/${id}/exec`, { method: 'POST',
     headers: { 'x-sakura-token': token, 'content-type': 'application/json' },
@@ -187,15 +201,7 @@ try {
     })();
     assert.equal((await request(`/api/vms/${id}/project?project=${privateId}`, 'PUT', { ...config, directory: '/workspace/changed' })).status, 409);
   } finally { cancel.abort(); await cancelled; }
-  let cleaned = false;
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const result = await request(`/api/vms/${id}/exec`, 'POST', { scope: 'instance',
-      command: `for pid in ${pids.join(' ')}; do if kill -0 "$pid" 2>/dev/null; then exit 1; fi; done; test "$(find /tmp -name .sakura-job-\\*.pid -print | wc -l)" -le 1` });
-    if (result.status === 200 && result.body.code === 0) { cleaned = true; break; }
-    assert.ok(result.status === 409 || result.status === 200, JSON.stringify(result));
-    await delay(100);
-  }
-  assert.ok(cleaned, 'Cancellation must remove the shell, its child and the execution lock');
+  await waitForProcessCleanup(pids, 'Cancellation');
   console.log(`${distro}: API/SDK/CLI project scope, environment, secret redaction, literal arguments, exit status, timeout and cancellation passed.`);
   const first = await terminal(id, 'main');
   assert.deepEqual(first.context, { projectId: privateId, networkIsolation: 'private' });

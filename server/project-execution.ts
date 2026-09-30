@@ -4,11 +4,44 @@ import type { ProjectTerminals } from './project-terminals.ts';
 import { AppError } from './model.ts';
 import { quote } from './files.ts';
 import { envPrefix } from './project-services.ts';
-import { projectNetworkCommand } from './project-network-isolation.ts';
-import { projectPrivateValues } from './workspaces.ts';
+import { projectNetworkCommand, ensureProjectNetworkScript, projectNetworkNamespace,
+  projectNetworkCheckScript } from './project-network-isolation.ts';
+import { Workspaces, projectPrivateValues, type Project } from './workspaces.ts';
 import { redactValues } from './secrets.ts';
 import { guestTask } from './guest-task.ts';
 import { projectIdSchema } from './project-catalog.ts';
+
+export function projectExecutionCommand(project: Project, command: string) {
+  return projectNetworkCommand(project,
+    `set -eu\n${envPrefix(project.environment)}\ncd ${quote(project.directory)}\n` +
+    `exec /bin/sh -c ${quote(command)}`);
+}
+
+export function redactProjectOutput<T extends { stdout: string; stderr: string }>(project: Project, result: T) {
+  const values = projectPrivateValues(project);
+  return { ...result, stdout: redactValues(result.stdout, values), stderr: redactValues(result.stderr, values) };
+}
+
+/** Agent operations hold the VM lock through setup, execution and cleanup. */
+export async function withProjectCommand<T>(machines: Machines, id: string, signal: AbortSignal | undefined,
+  workspaces: Workspaces | undefined, action: (project: Project) => Promise<T>) {
+  const scope = workspaces || new Workspaces(machines);
+  try {
+    const run = () => machines.locked(id, async () => {
+      signal?.throwIfAborted();
+      if (machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例', 409);
+      const project = await scope.resolvedConfig(id), namespace = projectNetworkNamespace(project);
+      const setup = await machines.exec(id, `set -eu\n` +
+        (namespace ? `if ip netns exec ${namespace} true >/dev/null 2>&1; then\n${projectNetworkCheckScript(namespace)}\nfi\n` : '') +
+        ensureProjectNetworkScript(project, machines.get(id).distro || 'alpine') +
+        `mkdir -p ${quote(project.directory)}`, 180000, signal);
+      if (setup.code !== 0) throw new AppError(setup.stderr || '无法准备项目命令', 409);
+      signal?.throwIfAborted();
+      return action(project);
+    });
+    return workspaces ? await run() : await scope.projects.with(id, undefined, run);
+  } finally { if (!workspaces) await scope.close(); }
+}
 
 export const guestExecutionInput = z.object({
   command: z.string().min(1).max(65536),
@@ -52,12 +85,9 @@ export class ProjectExecution {
       signal.throwIfAborted();
       return await this.machines.locked(id, async () => {
         if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例', 409);
-        const result = await guestTask(this.machines, id, projectNetworkCommand(project,
-          `set -eu\n${envPrefix(project.environment)}\ncd ${quote(project.directory)}\n` +
-          `exec /bin/sh -c ${quote(input.command)}`), signal, undefined, input.timeoutSeconds * 1000);
-        const privateValues = projectPrivateValues(project);
-        return { ...result, stdout: redactValues(result.stdout, privateValues),
-          stderr: redactValues(result.stderr, privateValues), scope: 'project' as const,
+        const result = await guestTask(this.machines, id, projectExecutionCommand(project, input.command),
+          signal, undefined, input.timeoutSeconds * 1000);
+        return { ...redactProjectOutput(project, result), scope: 'project' as const,
           projectId: prepared.projectId, directory: project.directory,
           networkIsolation: project.networkIsolation || 'host' };
       });

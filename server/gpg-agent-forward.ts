@@ -9,6 +9,9 @@ import { z } from 'zod';
 import { AppError } from './model.ts';
 import { quote } from './files.ts';
 import type { Machines } from './machines.ts';
+import type { Workspaces } from './workspaces.ts';
+import { guestTask } from './guest-task.ts';
+import { withProjectCommand, projectExecutionCommand, redactProjectOutput } from './project-execution.ts';
 
 const execFileAsync = promisify(execFile);
 const guestDirectory = /^\/tmp\/sakura-gpg-[A-Za-z0-9]{8}$/;
@@ -181,7 +184,7 @@ function forwardUnix(client: Client, remote: string, host: string, signal?: Abor
 }
 
 export async function runGpgAgentForward(machines: Machines, id: string,
-  input: unknown, signal?: AbortSignal) {
+  input: unknown, signal?: AbortSignal, workspaces?: Workspaces) {
   const options = gpgAgentForwardInput.parse(input);
   machines.requireUnlocked(id);
   if (machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
@@ -189,44 +192,47 @@ export async function runGpgAgentForward(machines: Machines, id: string,
   if (!await gpgSocketReachable(host, signal))
     throw new AppError('宿主机的 GPG Agent extra socket 不可用', 409);
   signal?.throwIfAborted();
-  const installed = await machines.exec(id, 'command -v gpg >/dev/null && command -v mktemp >/dev/null',
-    10000, signal);
-  if (installed.code !== 0) throw new AppError('客户机需要安装 GnuPG', 409);
-  if (!await guestGpgForwardingReady(machines, id, signal))
-    throw new AppError('客户机 SSH 服务未允许远端 Unix 套接字转发；请启用 AllowTcpForwarding remote 和 AllowStreamLocalForwarding remote', 409);
-  signal?.throwIfAborted();
-  const directoryResult = await machines.exec(id,
-    'umask 077; mktemp -d /tmp/sakura-gpg-XXXXXXXX', 10000, signal);
-  const directory = directoryResult.stdout.trim();
-  if (directoryResult.code !== 0 || !guestDirectory.test(directory))
-    throw new AppError('无法建立临时 GPG 目录', 502);
-  const remote = directory + '/S.gpg-agent';
-  let client: Client | undefined;
-  let bridge: ReturnType<typeof forwardUnix> | undefined;
-  let result: { stdout: string; stderr: string; code: number } | undefined;
-  let cleanupError = '';
-  try {
-    client = await machines.connect(id, 10000, signal);
-    bridge = forwardUnix(client, remote, host, signal);
-    await bridge.ready;
+  return withProjectCommand(machines, id, signal, workspaces, async (project) => {
+    const installed = await machines.exec(id, 'command -v gpg >/dev/null && command -v mktemp >/dev/null',
+      10000, signal);
+    if (installed.code !== 0) throw new AppError('客户机需要安装 GnuPG', 409);
+    if (!await guestGpgForwardingReady(machines, id, signal))
+      throw new AppError('客户机 SSH 服务未允许远端 Unix 套接字转发；请启用 AllowTcpForwarding remote 和 AllowStreamLocalForwarding remote', 409);
     signal?.throwIfAborted();
-    result = await machines.exec(id,
-      `umask 077; export GNUPGHOME=${quote(directory)}; ${options.command}`,
-      options.timeoutSeconds * 1000, signal);
-  } finally {
-    await bridge?.close().catch(() => {});
-    client?.end();
-    // Cleanup is independent of user cancellation. The host bridge is already closed.
-    const cleanup = await machines.exec(id,
-      `rm -rf -- ${quote(directory)}`, 10000).catch((error) => {
-      cleanupError = String((error as Error).message || error);
-      return null;
-    });
-    if (cleanup && cleanup.code !== 0) cleanupError = cleanup.stderr.trim() || '临时目录未清理';
-  }
-  if (!result) throw new AppError('GPG 命令未执行', 502);
-  return { code: result.code, ready: result.code === 0, executed: true,
-    stdout: result.stdout, stderr: result.stderr,
-    ...(cleanupError ? { cleanupWarning: cleanupError } : {}),
-    message: '单次命令的 GPG Agent 转发已关闭。' };
+    const directoryResult = await machines.exec(id,
+      'umask 077; mktemp -d /tmp/sakura-gpg-XXXXXXXX', 10000, signal);
+    const directory = directoryResult.stdout.trim();
+    if (directoryResult.code !== 0 || !guestDirectory.test(directory))
+      throw new AppError('无法建立临时 GPG 目录', 502);
+    const remote = directory + '/S.gpg-agent';
+    let client: Client | undefined;
+    let bridge: ReturnType<typeof forwardUnix> | undefined;
+    let result: { stdout: string; stderr: string; code: number } | undefined;
+    let cleanupError = '';
+    try {
+      client = await machines.connect(id, 10000, signal);
+      bridge = forwardUnix(client, remote, host, signal);
+      await bridge.ready;
+      signal?.throwIfAborted();
+      result = await guestTask(machines, id, projectExecutionCommand(project,
+        `umask 077; export GNUPGHOME=${quote(directory)}; ${options.command}`),
+        signal || new AbortController().signal, undefined, options.timeoutSeconds * 1000);
+    } finally {
+      await bridge?.close().catch(() => {});
+      client?.end();
+      // Cleanup is independent of user cancellation. The host bridge is already closed.
+      const cleanup = await machines.exec(id,
+        `rm -rf -- ${quote(directory)}`, 10000).catch((error) => {
+        cleanupError = String((error as Error).message || error);
+        return null;
+      });
+      if (cleanup && cleanup.code !== 0) cleanupError = cleanup.stderr.trim() || '临时目录未清理';
+    }
+    if (!result) throw new AppError('GPG 命令未执行', 502);
+    return { ...redactProjectOutput(project, result), ready: result.code === 0, executed: true,
+      projectId: project._workspace || 'default', directory: project.directory,
+      networkIsolation: project.networkIsolation || 'host',
+      ...(cleanupError ? { cleanupWarning: cleanupError } : {}),
+      message: '单次命令的 GPG Agent 转发已关闭。' };
+  });
 }
