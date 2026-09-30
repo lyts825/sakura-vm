@@ -15,11 +15,37 @@ export class HaLocalFailovers {
   private closed = false;
   private errors: Record<string, string> = {};
   private observedLive = new Set<string>();
+  private witnessDisarm?: (id: string, failureThreshold: number) => Promise<void>;
 
   constructor(private machines: Machines, private monitor: HaFailureMonitor,
     private peers: HostPeers, private replications: SnapshotReplications,
     private policies: () => Promise<Record<string, Policy>>,
     private allowed: () => boolean = () => true) {}
+
+  setWitnessDisarmGuard(guard: (id: string, failureThreshold: number) => Promise<void>) {
+    this.witnessDisarm = guard;
+  }
+
+  private async disarmWitness(id: string) {
+    const enrollment = this.machines.get(id).haWitnessEnrollment;
+    if (!enrollment) return;
+    if (!this.witnessDisarm)
+      throw new AppError('见证撤防校验不可用，不能执行本机故障接管',
+        503, 'HA_WITNESS_UNAVAILABLE');
+    await this.witnessDisarm(id, enrollment.failureThreshold);
+  }
+
+  private async requireAttemptAuthority(id: string, targetHostId: string, firstFence = false) {
+    const latest = (await this.policies())[id];
+    const parsed = haFailoverOptions.safeParse(latest?.options);
+    if (!latest?.enabled || !parsed.success || !parsed.data.autoProcessFailover ||
+        parsed.data.targetHostId !== targetHostId)
+      throw new AppError('接管策略已变化，取消接管', 409);
+    if (this.closed || !this.allowed() || this.machines.live.has(id) ||
+        (firstFence && (!this.observedLive.has(id) || !this.monitor.view(id)?.suspected)))
+      throw new AppError('来源实例故障状态已变化，取消接管', 409);
+    this.machines.requireStopped(id);
+  }
 
   async init() {
     this.machines.on('change', this.observeLive);
@@ -90,6 +116,7 @@ export class HaLocalFailovers {
     if (vm.haPromotion?.status === 'accepted') return;
     if (this.machines.live.has(id)) return;
     let promotion = vm.haPromotion;
+    const retrying = !!promotion;
     if (!promotion) {
       if (!this.observedLive.has(id) || !this.monitor.view(id)?.suspected) return;
       this.machines.requireUnlocked(id);
@@ -106,23 +133,25 @@ export class HaLocalFailovers {
         snapshotId: replica.snapshotId, sha256: replica.sha256,
         fencedAt: at, status: 'fenced', updatedAt: at,
       }, async () => {
-        if (this.closed || !this.allowed() || !this.observedLive.has(id) ||
-            !this.monitor.view(id)?.suspected ||
-            this.machines.live.has(id))
-          throw new AppError('来源实例故障状态已变化，取消接管', 409);
-        const latest = (await this.policies())[id];
-        const parsed = haFailoverOptions.safeParse(latest?.options);
-        if (!latest?.enabled || !parsed.success || !parsed.data.autoProcessFailover ||
-            parsed.data.targetHostId !== checked.policy.targetHostId)
-          throw new AppError('接管策略已变化，取消接管', 409);
+        await this.requireAttemptAuthority(id, checked.policy.targetHostId!, true);
+        await this.disarmWitness(id);
+        await this.requireAttemptAuthority(id, checked.policy.targetHostId!, true);
       });
     }
     const input = { transferId: promotion.transferId, remoteVmId: promotion.remoteVmId,
       sha256: promotion.sha256, sourceVmId: id, snapshotId: promotion.snapshotId };
     try {
       if (this.closed || !this.allowed()) return;
+      if (retrying) {
+        await this.disarmWitness(id);
+        await this.requireAttemptAuthority(id, promotion.targetHostId);
+        if (this.machines.get(id).haPromotion?.transferId !== promotion.transferId)
+          throw new AppError('来源实例接管栅栏已变化，取消接管', 409);
+      }
       const target = await this.peers.checkReplicaActivation(promotion.peerId, input);
-      if (this.closed || !this.allowed()) return;
+      await this.requireAttemptAuthority(id, promotion.targetHostId);
+      if (this.machines.get(id).haPromotion?.transferId !== promotion.transferId)
+        throw new AppError('来源实例接管栅栏已变化，取消接管', 409);
       const result = target.status === 'stopped'
         ? await this.peers.activateReplica(promotion.peerId, input) : target;
       if (result.status === 'starting') {

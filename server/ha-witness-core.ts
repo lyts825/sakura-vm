@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, open, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { AppError } from './model.ts';
 import { readStore, writeStore } from './local-store.ts';
@@ -29,13 +29,14 @@ const entrySchema = z.object({
   lastHeartbeatAt: z.number().int().nonnegative(),
   fencedAt: z.number().int().nonnegative().optional(),
   promotedAt: z.number().int().nonnegative().optional(),
+  retiredRemoteVmId: z.uuid().optional(),
   error: z.string().max(500).optional(),
 }).strict();
 type Entry = z.infer<typeof entrySchema>;
 const bindingSchema = haWitnessIdentitySchema.safeExtend({
   targetHostId: z.uuid(), failureThreshold: z.number().int().min(2).max(10),
   sourceSystemUuid: z.string().regex(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/).optional(),
-});
+}).refine((vm) => vm.sourceHostId !== vm.targetHostId, '来源宿主与目标宿主必须不同');
 const storeSchema = z.object({
   version: z.literal(3),
   bindings: z.record(z.uuid(), bindingSchema),
@@ -54,6 +55,8 @@ function binding(vm: HaWitnessVm) {
 export type HaWitnessActions = {
   /** Must return only after an out-of-band power controller confirms Off. */
   fence: (vm: HaWitnessVm) => Promise<void>;
+  /** Read-only recheck of both system identity and Off; a historical fence is insufficient. */
+  confirmFence: (vm: HaWitnessVm) => Promise<void>;
   /** Target inspection must validate the exact imported snapshot identity. */
   targetStatus: (vm: HaWitnessVm, plan: HaWitnessPlan) =>
     Promise<'stopped' | 'starting' | 'running'>;
@@ -65,12 +68,36 @@ export type HaWitnessActions = {
   retire: (vm: HaWitnessVm, plan: HaWitnessPlan) => Promise<void>;
 };
 
+async function syncDirectory(file: string) {
+  if (process.platform !== 'linux') return;
+  const directory = await open(dirname(file), 'r');
+  try { await directory.sync(); }
+  finally { await directory.close(); }
+}
+
+async function persistState(file: string, next: Store) {
+  for (let attempt = 0; ; attempt++) {
+    try { await writeStore(file, next); break; }
+    catch (error) {
+      // On Windows a concurrent read or security scanner can temporarily hold
+      // a sharing lock against atomic replacement. Retry only these bounded
+      // conflicts; never treat an unsuccessful write as an authority commit.
+      if (process.platform !== 'win32' || attempt >= 5 ||
+          !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException).code || ''))
+        throw error;
+      await new Promise((done) => setTimeout(done, 25 * 2 ** attempt));
+    }
+  }
+  await syncDirectory(file);
+}
+
 /** Durable authority with serialized state writes and independent external work per VM. */
 export class HaWitness {
   private state: Store = { version: 3, bindings: {}, entries: {} };
   private work = Promise.resolve();
   private known = new Map<string, HaWitnessVm>();
   private vmWork = new Map<string, Promise<unknown>>();
+  private storageUnavailable = false;
 
   constructor(private file: string, vms: HaWitnessVm[],
     private actions: HaWitnessActions, private now = () => Date.now()) {
@@ -92,6 +119,7 @@ export class HaWitness {
     try {
       await writeFile(file, JSON.stringify(storeSchema.parse({ version: 3, bindings, entries }),
         null, 2), { flag: 'wx', mode: 0o600, flush: true });
+      await syncDirectory(file);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST')
         throw new AppError('见证状态文件已存在，不能重新初始化', 409);
@@ -120,6 +148,15 @@ export class HaWitness {
         }))
       throw new AppError('见证实例配置与持久登记不一致；须人工核对后恢复',
         503, 'HA_WITNESS_STATE_MISMATCH');
+    for (const id of configured) {
+      const vm = this.known.get(id)!, entry = state.data.entries[id];
+      if ((entry.phase !== 'source' && !entry.plan) ||
+          (entry.plan && (entry.plan.sourceHostId !== vm.sourceHostId ||
+            entry.plan.sourceVmId !== vm.sourceVmId || entry.plan.targetHostId !== vm.targetHostId)) ||
+          (entry.retiredRemoteVmId && (entry.phase !== 'source' || entry.plan)))
+        throw new AppError('见证持久计划与实例登记不一致；须人工核对后恢复',
+          503, 'HA_WITNESS_STATE_MISMATCH');
+    }
     this.state = state.data;
   }
 
@@ -159,12 +196,20 @@ export class HaWitness {
   private async save(id: string, entry: Entry) {
     const next = storeSchema.parse({ ...this.state,
       entries: { ...this.state.entries, [id]: entrySchema.parse(entry) } });
-    await writeStore(this.file, next);
+    try { await persistState(this.file, next); }
+    catch (error) { this.storageUnavailable = true; throw error; }
     this.state = next;
+  }
+
+  private requireStorage() {
+    if (this.storageUnavailable)
+      throw new AppError('见证持久存储写入失败；须恢复存储并重启后核对状态',
+        503, 'HA_WITNESS_STORAGE_UNAVAILABLE');
   }
 
   heartbeat(raw: unknown) {
     return this.enqueue(async () => {
+      this.requireStorage();
       const input = haWitnessHeartbeatSchema.parse(raw), vm = this.vm({
         sourceHostId: input.sourceHostId, sourceVmId: input.sourceVmId,
       });
@@ -184,13 +229,15 @@ export class HaWitness {
         at - Date.parse(candidate.snapshotAt) <= candidate.maxReplicaAgeMinutes * 60_000
         ? candidate : null;
       await this.save(vm.sourceVmId, { phase: 'source', plan,
-        lastHeartbeatAt: at });
+        lastHeartbeatAt: at,
+        ...(!plan && entry.retiredRemoteVmId ? { retiredRemoteVmId: entry.retiredRemoteVmId } : {}) });
       return { armed: !!plan, phase: 'source' as const };
     });
   }
 
   authorizeStart(raw: unknown) {
     return this.enqueue(async () => {
+      this.requireStorage();
       const vm = this.vm(haWitnessIdentitySchema.parse(raw));
       const entry = this.entry(vm.sourceVmId);
       if (entry.phase !== 'source')
@@ -207,7 +254,8 @@ export class HaWitness {
         targetHostId: vm.targetHostId, failureThreshold: vm.failureThreshold,
         lastHeartbeatAt: entry.lastHeartbeatAt,
         fencedAt: entry.fencedAt || null, promotedAt: entry.promotedAt || null,
-        targetVmId: entry.plan?.remoteVmId || null, error: entry.error || null };
+        targetVmId: entry.plan?.remoteVmId || null, error: this.storageUnavailable
+          ? '见证持久存储写入失败；须恢复存储并重启后核对状态' : entry.error || null };
     });
   }
 
@@ -233,8 +281,9 @@ export class HaWitness {
 
   private async sampleVm(vm: HaWitnessVm) {
     let entry = await this.enqueue(async () => {
+      this.requireStorage();
       const current = this.entry(vm.sourceVmId);
-      if (!current.plan || current.phase === 'promoted') return null;
+      if (!current.plan) return null;
       if (current.phase !== 'source') return current;
       if (this.now() - current.lastHeartbeatAt < vm.failureThreshold * 15_000)
         return null;
@@ -264,29 +313,38 @@ export class HaWitness {
           return fenced;
         });
       }
-      if (entry.phase !== 'fenced') return;
+      if (entry.phase !== 'fenced' && entry.phase !== 'promoted') return;
+      await this.actions.confirmFence(vm);
       const target = await this.actions.targetStatus(vm, plan);
       if (target === 'stopped') await this.actions.activate(vm, plan);
       else if (target !== 'starting' && target !== 'running')
         throw new AppError(`目标副本处于 ${target}，不能接管`, 409);
-      if (await this.actions.targetStatus(vm, plan) !== 'running') return;
-      if (!await this.actions.applicationReady(vm, plan)) return;
-      await this.actions.switchTraffic(vm, plan);
+      if (await this.actions.targetStatus(vm, plan) !== 'running')
+        throw new AppError('目标副本仍在启动，保持来源隔离', 409);
+      if (!await this.actions.applicationReady(vm, plan))
+        throw new AppError('目标应用尚未通过健康检查，保持来源隔离', 409);
+      await this.actions.confirmFence(vm);
+      if (await this.actions.trafficTarget(vm, plan) !== plan.remoteVmId)
+        await this.actions.switchTraffic(vm, plan);
       if (await this.actions.trafficTarget(vm, plan) !== plan.remoteVmId)
         throw new AppError('流量入口没有确认目标实例', 409);
       await this.enqueue(async () => {
         const current = this.entry(vm.sourceVmId);
-        if (current.phase !== 'fenced' || current.plan?.transferId !== plan.transferId)
+        if ((current.phase !== 'fenced' && current.phase !== 'promoted') ||
+            current.plan?.transferId !== plan.transferId)
           throw new AppError('切流期间见证计划发生变化', 503);
+        if (current.phase === 'promoted' && !current.error) return;
         await this.save(vm.sourceVmId, { ...current, phase: 'promoted',
-          promotedAt: this.now(), error: undefined });
+          promotedAt: current.promotedAt ?? this.now(), error: undefined });
       });
     } catch (error) {
       await this.enqueue(async () => {
         const current = this.entry(vm.sourceVmId);
-        if (current.phase === 'fencing' || current.phase === 'fenced')
+        const detail = (error instanceof Error ? error.message : '接管操作失败').slice(0, 500);
+        if (current.error !== detail && (current.phase === 'fencing' ||
+            current.phase === 'fenced' || current.phase === 'promoted'))
           await this.save(vm.sourceVmId, { ...current,
-            error: (error as Error).message.slice(0, 500) });
+            error: detail });
       });
     }
   }
@@ -298,18 +356,23 @@ export class HaWitness {
     const vm = this.vm({ sourceHostId: input.sourceHostId,
       sourceVmId: input.sourceVmId });
     return this.runVm(vm.sourceVmId, async () => {
-      const entry = await this.enqueue(async () => this.entry(vm.sourceVmId));
-      if (entry.phase !== 'promoted' || !entry.plan)
-        throw new AppError('见证节点没有已完成的目标接管', 409);
+      const entry = await this.enqueue(async () => {
+        this.requireStorage();
+        return this.entry(vm.sourceVmId);
+      });
+      if (entry.phase === 'source' && !entry.plan && entry.retiredRemoteVmId)
+        return { released: true as const, retiredRemoteVmId: entry.retiredRemoteVmId };
+      if (entry.phase === 'source' || !entry.plan)
+        throw new AppError('见证节点没有待退出的隔离或接管记录', 409);
       // Retire is idempotent and refuses a running target. A lost response is retried.
       await this.actions.retire(vm, entry.plan);
       await this.enqueue(async () => {
         const current = this.entry(vm.sourceVmId);
-        if (current.phase !== 'promoted' ||
+        if (current.phase !== entry.phase ||
             current.plan?.transferId !== entry.plan?.transferId)
           throw new AppError('退出接管期间见证计划发生变化', 503);
         await this.save(vm.sourceVmId, { phase: 'source', plan: null,
-          lastHeartbeatAt: 0 });
+          lastHeartbeatAt: 0, retiredRemoteVmId: entry.plan!.remoteVmId });
       });
       return { released: true as const, retiredRemoteVmId: entry.plan.remoteVmId };
     });

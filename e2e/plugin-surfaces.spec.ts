@@ -1305,73 +1305,145 @@ test('Windows integration settings save and remove real registration plans witho
   }
 });
 
-test('Windows native clipboard settings bind executable rules, show failures, disable owned processes and fit mobile', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  await app(page);
-  const directory = await mkdtemp(join(tmpdir(), 'sakura-native-clipboard-browser-'));
-  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
-  const assets = join(directory, 'assets');
-  await mkdir(assets);
-  const files = [];
-  for (const name of ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'MinHook-LICENSE.txt']) {
-    const bytes = Buffer.from(name);
-    await writeFile(join(assets, name), bytes);
-    files.push({ name, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
-  }
-  await writeFile(join(assets, 'native-clipboard.json'), JSON.stringify({ version: 1, architecture: 'x64', build: 'b'.repeat(64), files }));
-  const image = 'D:\\Programs\\很长的应用程序目录和包含空格的文件名\\clipboard editor.exe';
-  const identity = { pid: 10001, created: '134000000000000001', image, bits: 64 };
-  let policy: any = { present: false }, fail = false;
-  const native = new NativeClipboard({ file: join(directory, 'native.json'), assets, interval: 0, supported: true,
-    hashImage: async () => 'a'.repeat(64), run: async (_file, args) => {
-      if (args[0] === 'list') return { processes: [identity] };
-      if (args[0] === 'status') return policy;
-      if (fail) throw new Error('process rejects native attachment');
-      policy = { present: true, ready: true, compatible: true, active: args[8] === '1', flags: Number(args[6]),
-        maximum: Number(args[7]), blockedCopy: 5, blockedPaste: 2 };
-      return policy;
-    } });
-  await native.init();
-  await page.route('**/api/native-clipboard*', async (route) => {
-    try { await route.fulfill({ json: route.request().method() === 'GET' ? native.view() : await native.action(route.request().postDataJSON()) }); }
-    catch (error: any) { await route.fulfill({ status: error.status || 400, json: { error: error.message } }); }
+for (const bits of [64, 32] as const) {
+  test(`Windows native clipboard settings bind ${bits}-bit executable rules, show failures, disable owned processes and fit mobile`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await app(page);
+    const directory = await mkdtemp(join(tmpdir(), 'sakura-native-clipboard-browser-'));
+    expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+    const assets = join(directory, 'assets');
+    await mkdir(assets);
+    const files = [];
+    const names = [
+      'SakuraClipboardPolicy.dll',
+      'sakura-clipboard-controller.exe',
+      'MinHook-LICENSE.txt',
+    ];
+    if (bits === 32)
+      names.push('SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe');
+    for (const name of names) {
+      const bytes = Buffer.from(name);
+      await writeFile(join(assets, name), bytes);
+      files.push({
+        name,
+        size: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      });
+    }
+    await writeFile(
+      join(assets, 'native-clipboard.json'),
+      JSON.stringify({
+        version: bits === 32 ? 2 : 1,
+        architecture: 'x64',
+        build: 'b'.repeat(64),
+        files,
+      }),
+    );
+    const image = 'D:\\Programs\\很长的应用程序目录和包含空格的文件名\\clipboard editor.exe';
+    const identity = { pid: 10001, created: '134000000000000001', image, bits };
+    const enabledHelpers: string[] = [];
+    let policy: any = { present: false },
+      fail = false;
+    const native = new NativeClipboard({
+      file: join(directory, 'native.json'),
+      assets,
+      interval: 0,
+      supported: true,
+      hashImage: async () => 'a'.repeat(64),
+      run: async (file, args) => {
+        if (args[0] === 'list') return { processes: [identity] };
+        if (args[0] === 'status') return policy;
+        if (args[8] === '1') enabledHelpers.push(file);
+        if (fail) throw new Error('process rejects native attachment');
+        policy = {
+          present: true,
+          ready: true,
+          compatible: true,
+          active: args[8] === '1',
+          flags: Number(args[6]),
+          maximum: Number(args[7]),
+          blockedCopy: 5,
+          blockedPaste: 2,
+        };
+        return policy;
+      },
+    });
+    await native.init();
+    await page.route('**/api/native-clipboard*', async (route) => {
+      try {
+        await route.fulfill({
+          json:
+            route.request().method() === 'GET'
+              ? native.view()
+              : await native.action(route.request().postDataJSON()),
+        });
+      } catch (error: any) {
+        await route.fulfill({ status: error.status || 400, json: { error: error.message } });
+      }
+    });
+    try {
+      await page.getByRole('button', { name: '系统设置', exact: true }).click();
+      await page.getByRole('button', { name: '管理 Windows 剪贴板策略', exact: true }).click();
+      const panel = page.getByRole('region', { name: 'Windows 应用剪贴板策略' });
+      await expect(panel.getByRole('option').filter({ hasText: image })).toContainText(
+        `${bits} 位`,
+      );
+      await panel.getByLabel('正在运行的应用').selectOption(`${identity.pid}:${identity.created}`);
+      await panel.getByRole('button', { name: '添加或重新绑定应用' }).click();
+      await expect(panel.getByLabel('允许复制与剪切', { exact: true })).toBeChecked();
+      await panel.getByLabel('允许复制与剪切', { exact: true }).uncheck();
+      await panel.getByLabel('阻止疑似敏感文本').check();
+      await panel.getByLabel('文本上限').selectOption('4096');
+      await panel.getByLabel('启用 Windows 应用策略').check();
+      await panel.getByRole('button', { name: '保存 Windows 剪贴板策略', exact: true }).click();
+      await expect(panel.getByRole('status')).toHaveText(
+        'Windows 剪贴板配置已保存；请查看各进程的应用状态',
+      );
+      await expect(panel.getByText('已接入 Win32/OLE · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
+      expect(policy.flags).toBe(14);
+      expect(enabledHelpers.length).toBeGreaterThan(0);
+      expect(
+        enabledHelpers.every((file) =>
+          file.endsWith(
+            bits === 32 ? 'sakura-clipboard-controller-x86.exe' : 'sakura-clipboard-controller.exe',
+          ),
+        ),
+      ).toBe(true);
+      await page.reload();
+      await page.getByRole('button', { name: '管理 Windows 剪贴板策略', exact: true }).click();
+      await expect(panel.getByLabel('允许复制与剪切', { exact: true })).not.toBeChecked();
+      await panel.getByLabel('允许粘贴', { exact: true }).uncheck();
+      fail = true;
+      await panel.getByRole('button', { name: '保存 Windows 剪贴板策略', exact: true }).click();
+      await expect(
+        panel.getByRole('alert').filter({ hasText: 'process rejects native attachment' }),
+      ).toBeVisible();
+      await expect(panel.getByText('未应用当前规则 · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
+      await page.setViewportSize({ width: 390, height: 844 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        390,
+      );
+      const suffix = bits === 32 ? '-x86' : '';
+      await page.screenshot({
+        path: `artifacts/native-clipboard-mobile${suffix}.png`,
+        fullPage: true,
+      });
+      await panel.screenshot({ path: `artifacts/native-clipboard-panel-mobile${suffix}.png` });
+      fail = false;
+      await panel.getByRole('button', { name: '停用 Windows 应用策略' }).click();
+      await expect(panel.getByLabel('启用 Windows 应用策略')).not.toBeChecked();
+      await expect(panel.getByText('已停用 · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
+      expect(policy.active).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      await native.close();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
-  try {
-    await page.getByRole('button', { name: '系统设置', exact: true }).click();
-    await page.getByRole('button', { name: '管理 Windows 剪贴板策略', exact: true }).click();
-    const panel = page.getByRole('region', { name: 'Windows 应用剪贴板策略' });
-    await panel.getByLabel('正在运行的应用').selectOption(`${identity.pid}:${identity.created}`);
-    await panel.getByRole('button', { name: '添加或重新绑定应用' }).click();
-    await expect(panel.getByLabel('允许复制与剪切', { exact: true })).toBeChecked();
-    await panel.getByLabel('允许复制与剪切', { exact: true }).uncheck();
-    await panel.getByLabel('阻止疑似敏感文本').check();
-    await panel.getByLabel('文本上限').selectOption('4096');
-    await panel.getByLabel('启用 Windows 应用策略').check();
-    await panel.getByRole('button', { name: '保存 Windows 剪贴板策略', exact: true }).click();
-    await expect(panel.getByRole('status')).toHaveText('Windows 剪贴板配置已保存；请查看各进程的应用状态');
-    await expect(panel.getByText('已接入 Win32/OLE · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
-    expect(policy.flags).toBe(14);
-    await page.reload();
-    await page.getByRole('button', { name: '管理 Windows 剪贴板策略', exact: true }).click();
-    await expect(panel.getByLabel('允许复制与剪切', { exact: true })).not.toBeChecked();
-    await panel.getByLabel('允许粘贴', { exact: true }).uncheck();
-    fail = true;
-    await panel.getByRole('button', { name: '保存 Windows 剪贴板策略', exact: true }).click();
-    await expect(panel.getByRole('alert').filter({ hasText: 'process rejects native attachment' })).toBeVisible();
-    await expect(panel.getByText('未应用当前规则 · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
-    await page.setViewportSize({ width: 390, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-    await page.screenshot({ path: 'artifacts/native-clipboard-mobile.png', fullPage: true });
-    await panel.screenshot({ path: 'artifacts/native-clipboard-panel-mobile.png' });
-    fail = false;
-    await panel.getByRole('button', { name: '停用 Windows 应用策略' }).click();
-    await expect(panel.getByLabel('启用 Windows 应用策略')).not.toBeChecked();
-    await expect(panel.getByText('已停用 · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
-    expect(policy.active).toBe(false);
-    expect(errors).toEqual([]);
-  } finally { await native.close(); await rm(directory, { recursive: true, force: true }); }
-});
+}
 
 test('Explorer handoffs preserve explicit project selection, open directories and files, and launch mapped host copies', async ({
   page,
@@ -4639,6 +4711,103 @@ test('failover policy saves a paired target and reports an unready health check'
   await promotedPanel.getByRole('button', { name: '目标停机后退出接管' }).click();
   await expect.poll(() => rejoined).toBe(true);
 });
+
+for (const failedPhase of ['fencing', 'fenced'] as const) {
+  test(`host failover ${failedPhase} recovery requires data confirmation and a retired target`, async ({
+    page,
+  }) => {
+    await app(page, ['platform'], true);
+    const targetHostId = randomUUID(),
+      targetVmId = randomUUID();
+    let phase: string = failedPhase,
+      targetStopped = false;
+    const requests: unknown[] = [];
+    await page.route('**/api/vms', (route) =>
+      route.fulfill({ json: [{ ...vm, status: 'stopped' }] }),
+    );
+    await page.route('**/api/host-peers*', (route) =>
+      route.fulfill({
+        json: {
+          outbound: [{ id: randomUUID(), remoteId: targetHostId, name: '备用主机' }],
+        },
+      }),
+    );
+    await page.route('**/api/vms/*/next-features*', (route) => {
+      if (route.request().method() === 'POST') {
+        const input = route.request().postDataJSON();
+        requests.push(input);
+        if (!targetStopped)
+          return route.fulfill({ status: 409, json: { error: '目标副本仍在运行，不能退役' } });
+        phase = 'source';
+        return route.fulfill({ json: { ready: true, executed: true } });
+      }
+      return route.fulfill({
+        json: {
+          projectId: 'default',
+          settings: {
+            'ha-failover': {
+              enabled: true,
+              options: {
+                targetHostId,
+                failureThreshold: 3,
+                maxReplicaAgeMinutes: 1440,
+                autoProcessFailover: false,
+                autoHostFailover: true,
+              },
+              updatedAt: '2026-10-01T00:00:00.000Z',
+            },
+          },
+          jobs: [],
+          records: {},
+          executions: [],
+          haFailoverMonitor: null,
+          haPromotion: null,
+          haHostFailover: {
+            configured: true,
+            armed: phase !== 'source',
+            phase,
+            targetVmId: phase === 'source' ? null : targetVmId,
+            error: null,
+          },
+          features: [
+            {
+              id: 'ha-failover',
+              name: '故障自动接管',
+              category: '远程主机与集群',
+              summary: '健康检查',
+              state: 'experimental',
+            },
+          ],
+        },
+      });
+    });
+    await page.reload();
+    await page.getByRole('button', { name: '能力中心', exact: true }).click();
+    const panel = page.getByLabel('故障接管策略与健康检查');
+    await expect(panel).toContainText(
+      failedPhase === 'fencing' ? '正在隔离来源' : '来源已隔离，等待目标就绪',
+    );
+    await expect(panel.getByRole('button', { name: '目标停机后退出接管' })).toBeDisabled();
+    await panel.getByLabel('已回迁目标运行期间的写入数据，或接受丢失这些新数据').check();
+    await panel.getByRole('button', { name: '目标停机后退出接管' }).click();
+    await expect(
+      panel.getByRole('alert').filter({ hasText: '目标副本仍在运行，不能退役' }),
+    ).toBeVisible();
+    expect(phase).toBe(failedPhase);
+    targetStopped = true;
+    await panel.getByRole('button', { name: '目标停机后退出接管' }).click();
+    await expect.poll(() => phase).toBe('source');
+    await expect(panel.getByRole('button', { name: '目标停机后退出接管' })).toHaveCount(0);
+    await expect(panel.getByRole('status')).toContainText('目标副本已持久封锁，来源可以重新启动');
+    expect(requests).toEqual(
+      [0, 1].map(() => ({
+        action: 'run',
+        featureId: 'ha-failover',
+        options: { mode: 'rejoin', dataReconciled: true },
+      })),
+    );
+  });
+}
 
 test('USB hotplug panel saves a persistent rule and removes an active forwarding', async ({ page }) => {
   await app(page, ['platform'], true);

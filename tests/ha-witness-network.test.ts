@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:https';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -10,6 +12,7 @@ import { HaWitnessClient } from '../server/ha-witness-client.ts';
 import { HaWitness } from '../server/ha-witness-core.ts';
 import { haWitnessServerConfigSchema, startHaWitnessServer } from '../server/ha-witness-server.ts';
 import { checkHaWitnessDeployment } from '../server/ha-witness-preflight.ts';
+import { observeHaFailoverDrill, prepareHaFailoverDrill } from '../server/ha-witness-drill.ts';
 
 async function listen(server: Server) {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
@@ -30,6 +33,7 @@ test('independent HTTPS witness powers off source before promoting a paired targ
   const root = await mkdtemp(join(tmpdir(), 'sakura-ha-witness-network-'));
   const cert = await generate([{ name: 'commonName', value: 'localhost' }], {
     keyType: 'ec', curve: 'P-256', algorithm: 'sha256',
+    extensions: [{ name: 'subjectAltName', altNames: [{ type: 7, ip: '127.0.0.1' }] }],
     notBeforeDate: new Date(Date.now() - 60_000),
     notAfterDate: new Date(Date.now() + 3600_000),
   });
@@ -48,7 +52,7 @@ test('independent HTTPS witness powers off source before promoting a paired targ
   let bmcIdentity = sourceSystemUuid;
   let changeIdentityAfterForceOff = false;
   let poweredOff = false, targetRunning = false, targetRetired = false;
-  let activeVmId = '', bmcOffCount = 0, targetStartCount = 0;
+  let activeVmId = sourceVmId, bmcOffCount = 0, targetStartCount = 0;
   let targetIdentity = targetHostId;
   const sourceAt = Date.now(), plan = {
     sourceHostId, sourceVmId, targetHostId, transferId, remoteVmId, snapshotId,
@@ -113,6 +117,11 @@ test('independent HTTPS witness powers off source before promoting a paired targ
   })());
   const servers = [bmc, target, app, traffic];
   let witnessService: Awaited<ReturnType<typeof startHaWitnessServer>> | undefined;
+  let observing: ReturnType<typeof observeHaFailoverDrill> | undefined;
+  const drillAbort = new AbortController();
+  let cliObserver: ChildProcess | undefined;
+  let cliExited: Promise<number | null> | undefined;
+  let cliOutput = '';
   try {
     const [bmcUrl, targetUrl, appUrl, trafficUrl] = await Promise.all(
       servers.map((server) => listen(server)));
@@ -176,6 +185,7 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     witnessService = await startHaWitnessServer(config, () => clock);
     const address = witnessService.server.address();
     if (!address || typeof address === 'string') throw new Error('witness port missing');
+    config.listen.port = address.port;
     const client = new HaWitnessClient({ version: 1,
       url: `https://127.0.0.1:${address.port}/`, fingerprint, token: sourceToken });
     const secondClient = new HaWitnessClient({ version: 1,
@@ -188,6 +198,7 @@ test('independent HTTPS witness powers off source before promoting a paired targ
       url: `https://127.0.0.1:${address.port}/`, fingerprint,
       token: randomBytes(32).toString('hex') }).authorizeStart({ sourceHostId, sourceVmId }));
     await client.authorizeStart({ sourceHostId, sourceVmId });
+    await assert.rejects(prepareHaFailoverDrill(config, sourceVmId), /基线未就绪/);
     await secondClient.authorizeStart({ sourceHostId: secondSourceHostId,
       sourceVmId: secondSourceVmId });
     await assert.rejects(client.authorizeStart({ sourceHostId: secondSourceHostId,
@@ -203,6 +214,65 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     assert.equal(armedPreflight.vms[0].checks.application?.ok, true);
     assert.equal(bmcOffCount, 0);
     assert.equal(targetStartCount, 0);
+    const drillPlan = await prepareHaFailoverDrill(config, sourceVmId);
+    const caFile = join(root, 'bmc-ca.pem');
+    await writeFile(caFile, cert.cert);
+    const caConfig = { ...config, vms: config.vms.map((item, index) => index ? item :
+      { ...item, redfish: { ...item.redfish, fingerprint: undefined, caFile } }) };
+    const caPlan = await prepareHaFailoverDrill(caConfig, sourceVmId);
+    await writeFile(caFile, `${cert.cert}\n`);
+    await assert.rejects(observeHaFailoverDrill(caConfig, caPlan,
+      { output: join(root, 'changed-ca.jsonl') }), /配置不一致/,
+    'changing CA contents at the same path invalidates a reviewed drill plan');
+    await assert.rejects(observeHaFailoverDrill({ ...config,
+      vms: config.vms.map((item, index) => index ? item : { ...item,
+        traffic: { ...item.traffic, baseUrl: 'https://unreviewed.invalid/' } }) }, drillPlan,
+    { output: join(root, 'unreviewed.jsonl') }), /配置不一致/);
+    if (process.env.SAKURA_TEST_HA_WITNESS_ENTRY) {
+      const cliEntry = resolve(process.env.SAKURA_TEST_HA_WITNESS_ENTRY);
+      const cliConfig = join(root, 'cli-config.json'), cliPlan = join(root, 'cli-plan.json');
+      await writeFile(cliConfig, JSON.stringify(config), { mode: 0o600, flush: true });
+      const planned = await promisify(execFile)(process.execPath, [cliEntry, '--drill-plan',
+        cliConfig, sourceVmId, '--output', cliPlan], { windowsHide: true, timeout: 15_000 });
+      assert.equal(JSON.parse(planned.stdout).ready, true);
+      const generated = JSON.parse(await readFile(cliPlan, 'utf8'));
+      assert.equal(generated.replica.remoteVmId, remoteVmId);
+      cliObserver = spawn(process.execPath, [cliEntry, '--observe', cliConfig,
+        '--plan', cliPlan, '--output', join(root, 'cli-observations.jsonl'),
+        '--timeout-seconds', '60'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      cliExited = new Promise((done, fail) => {
+        cliObserver!.once('error', fail); cliObserver!.once('exit', done);
+      });
+      const ready = new Promise<void>((done, fail) => {
+        const timer = setTimeout(() => fail(new Error(`compiled CLI baseline failed: ${cliOutput}`)), 15_000);
+        const consume = (chunk: Buffer) => {
+          cliOutput += chunk.toString();
+          for (const line of cliOutput.split(/\r?\n/)) {
+            try {
+              const value = JSON.parse(line);
+              if (value.phase === 'source' && value.sourceStartAllowed === true) {
+                clearTimeout(timer); done();
+              }
+            } catch { /* A JSON line may still be incomplete. */ }
+          }
+        };
+        cliObserver!.stdout!.on('data', consume); cliObserver!.stderr!.on('data', consume);
+        void cliExited!.then(() => { clearTimeout(timer); fail(new Error(cliOutput)); }, fail);
+      });
+      await ready;
+    }
+    let baselineCaptured = () => {};
+    const baseline = new Promise<void>((done) => { baselineCaptured = done; });
+    observing = observeHaFailoverDrill(config, drillPlan, {
+      output: join(root, 'observations.jsonl'), intervalMs: 25, timeoutMs: 30_000,
+      signal: drillAbort.signal,
+      onSample: (sample) => {
+        if (sample.phase === 'source' && sample.sourceStartAllowed === true) baselineCaptured();
+      },
+    });
+    await Promise.race([baseline, observing.then((result) => {
+      throw new Error(`drill observer did not capture a baseline: ${JSON.stringify(result)}`);
+    })]);
     clock = sourceAt + 30_000;
     bmcIdentity = randomUUID();
     await witnessService.witness.sample();
@@ -218,19 +288,75 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     assert.equal((await client.status({ sourceHostId, sourceVmId })).phase, 'fencing');
     bmcIdentity = sourceSystemUuid;
     changeIdentityAfterForceOff = false;
+    targetIdentity = randomUUID();
+    await witnessService.witness.sample();
+    assert.equal(targetStartCount, 0, 'wrong target host identity must not activate a replica');
+    assert.equal((await client.status({ sourceHostId, sourceVmId })).phase, 'fenced');
+    bmcIdentity = randomUUID();
+    await witnessService.close();
+    witnessService = await startHaWitnessServer(config, () => clock);
+    await witnessService.witness.drain();
+    await witnessService.witness.sample();
+    assert.equal(targetStartCount, 0, 'restarted witness must recheck a historical Off confirmation');
+    assert.equal(bmcOffCount, 1, 'a durable fence is checked without replaying ForceOff');
+    await assert.rejects(client.authorizeStart({ sourceHostId, sourceVmId }));
+    bmcIdentity = sourceSystemUuid;
+    targetIdentity = targetHostId;
     await witnessService.witness.sample();
     assert.equal(targetStartCount, 1);
     assert.equal(activeVmId, remoteVmId);
     assert.equal((await client.status({ sourceHostId, sourceVmId })).phase, 'promoted');
     assert.equal((await checkHaWitnessDeployment(config)).ok, true);
+    const observed = await observing;
+    assert.equal(observed.ok, true);
+    assert.equal(observed.physicalNodeIndependenceVerified, false,
+      'a same-computer fixture cannot certify three independent physical nodes');
+    const evidence = await readFile(join(root, 'observations.jsonl'), 'utf8');
+    for (const token of [sourceToken, secondSourceToken, targetToken, appToken, trafficToken])
+      assert.equal(evidence.includes(token), false);
+    const samples = evidence.trim().split('\n').map((line) => JSON.parse(line));
+    assert.equal(samples[1].type, 'baseline');
+    assert.equal(samples[1].sample.sourceStartAllowed, true);
+    assert.equal(samples.at(-1).ok, true);
+    assert.equal(samples.at(-2).sample.sourceStartAllowed, false);
+    if (cliExited) {
+      assert.equal(await cliExited, 0, cliOutput);
+      const cliEvidence = (await readFile(join(root, 'cli-observations.jsonl'), 'utf8'))
+        .trim().split('\n').map((line) => JSON.parse(line));
+      assert.equal(cliEvidence[1].type, 'baseline');
+      assert.equal(cliEvidence.at(-1).promotionObserved, true);
+      assert.equal(cliEvidence.at(-1).physicalNodeIndependenceVerified, false);
+      for (const token of [sourceToken, secondSourceToken, targetToken, appToken, trafficToken])
+        assert.equal(JSON.stringify(cliEvidence).includes(token), false);
+    }
+    await assert.rejects(observeHaFailoverDrill(config, drillPlan,
+      { output: join(root, 'observations.jsonl') }), { code: 'EEXIST' });
+    poweredOff = false; targetRunning = false;
+    await witnessService.close();
+    witnessService = await startHaWitnessServer(config, () => clock);
+    await witnessService.witness.drain();
+    await witnessService.witness.sample();
+    assert.equal(targetStartCount, 1, 'a revived source blocks restarting the promoted target');
+    assert.equal(bmcOffCount, 1, 'a revived source is not blindly powered off again');
+    await assert.rejects(client.authorizeStart({ sourceHostId, sourceVmId }));
+    poweredOff = true;
+    await witnessService.witness.sample();
+    assert.equal(targetStartCount, 2, 'the same promoted replica is restarted after Off is confirmed');
     await assert.rejects(client.authorizeStart({ sourceHostId, sourceVmId }));
     targetRunning = false;
     assert.deepEqual(await client.rejoin({ sourceHostId, sourceVmId,
       dataReconciled: true }), { released: true, retiredRemoteVmId: remoteVmId });
     assert.equal(targetRetired, true);
+    assert.deepEqual(await client.rejoin({ sourceHostId, sourceVmId, dataReconciled: true }),
+      { released: true, retiredRemoteVmId: remoteVmId });
     await client.authorizeStart({ sourceHostId, sourceVmId });
   } finally {
+    drillAbort.abort();
+    if (cliObserver && cliObserver.exitCode === null && cliObserver.signalCode === null)
+      cliObserver.kill('SIGTERM');
+    await cliExited;
     await witnessService?.close();
+    await observing;
     for (const server of servers) if (server.listening) await close(server);
     const path = await realpath(root);
     if (!basename(path).startsWith('sakura-ha-witness-network-') ||

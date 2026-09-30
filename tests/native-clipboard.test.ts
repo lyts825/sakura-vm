@@ -18,7 +18,7 @@ const b: NativeClipboardProcess = { ...a, pid: 2345, image: 'D:\\Other\\编辑�
 const hash = 'a'.repeat(64);
 const defaults = defaultClipboardRule();
 const id = (item: { pid: number; created: string }) => `${item.pid}:${item.created}`;
-async function fixture(t: any, extra: Record<string, unknown> = {}) {
+async function fixture(t: any, extra: Record<string, unknown> = {}, dual = false) {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-native-clipboard-'));
   assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -29,6 +29,7 @@ async function fixture(t: any, extra: Record<string, unknown> = {}) {
     'SakuraClipboardPolicy.dll',
     'sakura-clipboard-controller.exe',
     'MinHook-LICENSE.txt',
+    ...(dual ? ['SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe'] : []),
   ]) {
     const contents = Buffer.from(name);
     await writeFile(join(assets, name), contents);
@@ -36,7 +37,7 @@ async function fixture(t: any, extra: Record<string, unknown> = {}) {
   }
   await writeFile(
     join(assets, 'native-clipboard.json'),
-    JSON.stringify({ version: 1, architecture: 'x64', build: 'b'.repeat(64), files }),
+    JSON.stringify({ version: dual ? 2 : 1, architecture: 'x64', build: 'b'.repeat(64), files }),
   );
   const file = join(directory, 'native.json');
   let inventory = [a, b],
@@ -46,6 +47,7 @@ async function fixture(t: any, extra: Record<string, unknown> = {}) {
     maintenance = false,
     mutations = 0;
   const calls: string[][] = [],
+    helpers: { file: string; args: string[] }[] = [],
     policies = new Map<string, any>();
   const options = {
     file,
@@ -62,6 +64,7 @@ async function fixture(t: any, extra: Record<string, unknown> = {}) {
       assert.ok(mutations >= 0);
     },
     run: async (_file: string, args: string[]) => {
+      helpers.push({ file: _file, args });
       calls.push(args);
       if (args[0] === 'list') return { processes: inventory };
       const key = args[2] + ':' + args[3];
@@ -105,6 +108,7 @@ async function fixture(t: any, extra: Record<string, unknown> = {}) {
     file,
     assets,
     calls,
+    helpers,
     policies,
     configure,
     setInventory: (value: NativeClipboardProcess[]) => {
@@ -181,6 +185,79 @@ test('saved rules attach only matching paths, journal before native calls, watch
   assert.equal(f.service.view().processes.find((item) => item.pid === 4567)?.state, 'error');
   assert.ok(!f.service.view().processes.some((item) => item.pid === b.pid));
   assert.equal(f.mutations(), 0);
+});
+
+test('dual architecture assets route x86 attachment and retain shared ownership across restart and disable', async (t) => {
+  const f = await fixture(t, {}, true);
+  const x86: NativeClipboardProcess = { ...a, pid: 4568, image: 'D:\\Apps\\LegacyEditor.exe', bits: 32 };
+  f.setInventory([a, b, x86]);
+  const selected = await f.service.action({ action: 'identify', pid: x86.pid, created: x86.created });
+  assert.deepEqual(selected, { image: x86.image, sha256: hash });
+  await f.configure(
+    true,
+    [a, x86].map((item) => ({ image: item.image, sha256: hash, rule: { ...defaults, copy: false } })),
+  );
+  assert.equal(f.service.view().processes.filter((item) => item.state === 'enforced').length, 2);
+  const attached = f.helpers.find((item) => item.args[0] === 'apply' && item.args[2] === String(x86.pid))!;
+  assert.ok(attached.file.endsWith('sakura-clipboard-controller-x86.exe'));
+  assert.ok(attached.args[5].endsWith('SakuraClipboardPolicy-x86.dll'));
+  assert.equal(
+    JSON.parse(await readFile(f.file, 'utf8')).managed.find(
+      (item: NativeClipboardProcess) => item.pid === x86.pid,
+    ).bits,
+    32,
+  );
+  await f.service.close();
+  const resumed = new NativeClipboard(f.options);
+  t.after(() => resumed.close());
+  await resumed.init();
+  assert.equal(resumed.view().processes.filter((item) => item.state === 'enforced').length, 2);
+  assert.equal(
+    f.calls.filter((args) => args[0] === 'apply').length,
+    2,
+    'ready x86 and x64 mappings do not reattach',
+  );
+  await resumed.action({
+    action: 'configure',
+    version: resumed.view().version,
+    settings: { ...resumed.view().settings, enabled: false },
+  });
+  assert.equal(f.policies.get(id(x86)).active, false);
+  assert.ok(
+    f.helpers
+      .filter((item) => item.args[0] === 'apply' && item.args[8] === '0')
+      .every((item) => item.file.endsWith('sakura-clipboard-controller.exe')),
+  );
+  assert.equal(JSON.parse(await readFile(f.file, 'utf8')).managed.length, 0);
+});
+
+test('legacy x64 assets refuse x86 identities instead of invoking an unverified controller', async (t) => {
+  const f = await fixture(t);
+  const x86: NativeClipboardProcess = { ...a, bits: 32 };
+  f.setInventory([x86]);
+  await assert.rejects(
+    f.service.action({ action: 'identify', pid: x86.pid, created: x86.created }),
+    /架构不受支持/,
+  );
+  await f.configure();
+  assert.equal(f.service.view().processes[0].state, 'error');
+  assert.equal(f.calls.filter((args) => args[0] === 'apply').length, 0);
+  assert.ok(!f.helpers.some((item) => item.file.endsWith('sakura-clipboard-controller-x86.exe')));
+});
+
+test('x86 binary corruption blocks new attachments while a verified x64 controller still disables owned x86 mappings', async (t) => {
+  const f = await fixture(t, {}, true);
+  const x86: NativeClipboardProcess = { ...a, bits: 32 };
+  f.setInventory([x86]);
+  await f.configure();
+  await writeFile(join(f.assets, 'sakura-clipboard-controller-x86.exe'), 'tampered');
+  await f.service.action({ action: 'refresh' });
+  assert.equal(f.service.view().ready, false);
+  assert.match(f.service.view().processes[0].error!, /完整性失败/);
+  assert.equal(f.policies.get(id(x86)).active, true);
+  await f.configure(false);
+  assert.equal(f.policies.get(id(x86)).active, false);
+  assert.equal(JSON.parse(await readFile(f.file, 'utf8')).managed.length, 0);
 });
 
 test('restart retains ownership, cached readiness avoids duplicate attach, and explicit stop clears old maps even after image changes', async (t) => {

@@ -21,6 +21,7 @@ struct SakuraClipboardConfigure {
   uint32_t magic, version;
   wchar_t section[192];
 };
+static_assert(sizeof(SakuraClipboardPolicy)==128, "The shared policy must have the same ABI in x64 and x86 controllers");
 inline uint64_t processCreation(HANDLE process) {
   FILETIME created{}, exited{}, kernel{}, user{};
   if (!GetProcessTimes(process, &created, &exited, &kernel, &user)) return 0;

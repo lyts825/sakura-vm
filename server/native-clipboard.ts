@@ -105,16 +105,21 @@ const assetNames = [
   'sakura-clipboard-controller.exe',
   'MinHook-LICENSE.txt',
 ] as const;
+const dualAssetNames = [
+  ...assetNames,
+  'SakuraClipboardPolicy-x86.dll',
+  'sakura-clipboard-controller-x86.exe',
+] as const;
 const assetsSchema = z
   .object({
-    version: z.literal(1),
+    version: z.union([z.literal(1), z.literal(2)]),
     architecture: z.literal('x64'),
     build: digest,
     files: z
       .array(
         z
           .object({
-            name: z.enum(assetNames),
+            name: z.enum(dualAssetNames),
             size: z
               .number()
               .int()
@@ -124,10 +129,18 @@ const assetsSchema = z
           })
           .strict(),
       )
-      .length(3),
+      .min(3)
+      .max(5),
   })
   .strict()
-  .refine((value) => new Set(value.files.map((item) => item.name)).size === 3);
+  .refine((value) => {
+    const expected = value.version === 1 ? assetNames : dualAssetNames;
+    return (
+      value.files.length === expected.length &&
+      new Set(value.files.map((item) => item.name)).size === expected.length &&
+      expected.every((name) => value.files.some((item) => item.name === name))
+    );
+  });
 const flags = (value: ClipboardRule) =>
   (value.copy ? 1 : 0) | (value.paste ? 2 : 0) | (value.files ? 4 : 0) | (value.sensitive ? 8 : 0);
 const key = (value: { pid: number; created: string }) => `${value.pid}:${value.created}`;
@@ -182,6 +195,7 @@ type Options = {
 // Only explicitly selected, same-user/session processes are attached. The DLL
 // retains its current policy if this service closes; shutdown never relaxes it.
 export class NativeClipboard {
+  private hasX86 = false;
   private state: z.infer<typeof stateSchema> = {
     schemaVersion: 1,
     version: 1,
@@ -255,11 +269,11 @@ export class NativeClipboard {
     this.queue = task;
     return task;
   }
-  private controller() {
-    return join(this.assets, 'sakura-clipboard-controller.exe');
+  private controller(bits = 64) {
+    return join(this.assets, `sakura-clipboard-controller${bits === 32 ? '-x86' : ''}.exe`);
   }
-  private library() {
-    return join(this.assets, 'SakuraClipboardPolicy.dll');
+  private library(bits = 64) {
+    return join(this.assets, `SakuraClipboardPolicy${bits === 32 ? '-x86' : ''}.dll`);
   }
   private async checkedAssets(library: boolean) {
     if (!this.supported) throw new AppError('当前宿主机需要 Windows x64 才能使用此代理', 503);
@@ -269,7 +283,11 @@ export class NativeClipboard {
     if (!info.isFile() || info.isSymbolicLink() || info.size > 16384)
       throw new AppError('原生剪贴板清单无效', 503);
     const manifest = assetsSchema.parse(JSON.parse(await readFile(manifestPath, 'utf8')));
-    for (const name of library ? assetNames : (['sakura-clipboard-controller.exe'] as const)) {
+    for (const name of library
+      ? manifest.version === 1
+        ? assetNames
+        : dualAssetNames
+      : (['sakura-clipboard-controller.exe'] as const)) {
       const file = join(this.assets, name),
         item = manifest.files.find((item) => item.name === name)!;
       const info = await lstat(file);
@@ -281,6 +299,7 @@ export class NativeClipboard {
       )
         throw new AppError(`原生剪贴板文件完整性失败：${name}`, 503);
     }
+    this.hasX86 = manifest.version === 2;
   }
   private async list() {
     return listSchema
@@ -293,13 +312,16 @@ export class NativeClipboard {
     );
   }
   private apply(item: NativeClipboardProcess, rule: ClipboardRule, active: boolean) {
-    return this.run(this.controller(), [
+    const bits = active ? item.bits : 64;
+    if (active && bits === 32 && !this.hasX86)
+      throw new AppError('此运行包未包含 32 位应用代理，请更新运行包');
+    return this.run(this.controller(bits), [
       'apply',
       this.state.owner,
       String(item.pid),
       item.created,
       item.image,
-      this.library(),
+      this.library(bits),
       String(flags(rule)),
       String(rule.maxTextBytes),
       active ? '1' : '0',
@@ -397,7 +419,8 @@ export class NativeClipboard {
           }
           throw new AppError('进程仍保留策略，但当前无法核对身份');
         }
-        if (item.bits !== 64) throw new AppError('此进程架构不受支持；需要 x64 应用');
+        if (item.bits !== 64 && (item.bits !== 32 || !this.hasX86))
+          throw new AppError('此进程架构不受支持；需要运行包对应的 x64 或 x86 应用');
         if ((await check(item.image)) !== desired.sha256)
           throw new AppError('应用文件已变化，请重新选择应用并保存规则');
         if (libraryError) throw new AppError(libraryError);
@@ -461,7 +484,8 @@ export class NativeClipboard {
             (item) => item.pid === input.pid && item.created === input.created,
           );
           if (!item) throw new AppError('进程身份已变化，请刷新应用列表', 409);
-          if (item.bits !== 64) throw new AppError('此进程架构不受支持；需要 x64 应用');
+          if (item.bits !== 64 && (item.bits !== 32 || !this.hasX86))
+            throw new AppError('此进程架构不受支持；需要运行包对应的 x64 或 x86 应用');
           const sha256 = await this.hashImage(item.image);
           const again = (await this.list()).find((entry) => key(entry) === key(item));
           if (!again || samePath(again.image) !== samePath(item.image))

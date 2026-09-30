@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "listen": {
+    "host": "0.0.0.0",
+    "port": 9443,
+    "certFile": "/etc/sakura-ha/witness-cert.pem",
+    "keyFile": "/etc/sakura-ha/witness-key.pem"
+  },
+  "stateFile": "/var/lib/sakura-ha/witness-state.json",
+  "sourceToken": "REPLACE_WITH_UNIQUE_64_HEX_SOURCE_WITNESS_TOKEN",
+  "vms": [
+    {
+      "sourceHostId": "REPLACE_WITH_SOURCE_SAKURA_HOST_UUID",
+      "sourceVmId": "REPLACE_WITH_SOURCE_VM_UUID",
+      "targetHostId": "REPLACE_WITH_DIFFERENT_TARGET_SAKURA_HOST_UUID",
+      "failureThreshold": 3,
+      "redfish": {
+        "baseUrl": "https://replace-bmc-host.invalid/",
+        "systemPath": "/redfish/v1/Systems/REPLACE_SYSTEM_RESOURCE_ID",
+        "systemUuid": "REPLACE_WITH_HARDWARE_INVENTORY_VERIFIED_BMC_SYSTEM_UUID",
+        "username": "REPLACE_BMC_USERNAME",
+        "password": "REPLACE_BMC_PASSWORD",
+        "caFile": "/etc/sakura-ha/bmc-ca.pem"
+      },
+      "target": {
+        "baseUrl": "https://replace-target-host.invalid/",
+        "fingerprint": "REPLACE_WITH_TARGET_SHA256_CERTIFICATE_FINGERPRINT",
+        "token": "REPLACE_WITH_SOURCE_TO_TARGET_PAIRING_TOKEN_64_HEX"
+      },
+      "application": {
+        "url": "https://replace-application-host.invalid/health",
+        "token": "REPLACE_WITH_APPLICATION_TOKEN_64_HEX"
+      },
+      "traffic": {
+        "baseUrl": "https://replace-traffic-controller.invalid/",
+        "token": "REPLACE_WITH_TRAFFIC_CONTROLLER_TOKEN_64_HEX"
+      }
+    }
+  ]
+}

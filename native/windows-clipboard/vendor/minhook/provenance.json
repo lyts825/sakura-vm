@@ -57,6 +57,21 @@
       "path": "src/hde/table64.h",
       "gitBlob": "01d4541f97765a1fe14ad4a60f3705156abaf176",
       "sha256": "b774446d2f110ce954fb0a710f4693c5562ddbd8d56fe84106f2ee80db8b50a2"
+    },
+    {
+      "path": "src/hde/hde32.c",
+      "gitBlob": "eb6af9b8ac8f3d83ab370f807467f2733fb4210d",
+      "sha256": "5da4941e9044f7b325c7f952b5840089e365f374740b7fe7318805d08c0d6c32"
+    },
+    {
+      "path": "src/hde/hde32.h",
+      "gitBlob": "1112450d87ae6772ad805f4f7fa07965c5bbbdb0",
+      "sha256": "5132de5be8ac7a9d054420f5caef0fb01437faa892f03b3cdc77f795973bf15a"
+    },
+    {
+      "path": "src/hde/table32.h",
+      "gitBlob": "7b3e12e32fdb7c362ca333c992e3c2e05556edb5",
+      "sha256": "43bf687a9fff071b5f46070db4d36c846f8e069cdc57485ee897c499aacdde23"
     }
   ]
 }

@@ -6,6 +6,16 @@ import './prepare-linux-clipboard.mjs';
 const root = process.cwd();
 const target = join(root, '.sakura-server', 'assets');
 await mkdir(target, { recursive: true });
+const witnessDocs = join(root, '.sakura-witness', 'docs');
+const witnessScripts = join(root, '.sakura-witness', 'scripts');
+await mkdir(witnessDocs, { recursive: true });
+await mkdir(witnessScripts, { recursive: true });
+for (const file of ['ha-failover-check.md', 'ha-external-drill.md', 'ha-witness-config.example.json'])
+  await cp(join(root, 'docs', file), join(witnessDocs, file));
+await cp(
+  join(root, 'scripts', 'ha-witness.service.example'),
+  join(witnessScripts, 'ha-witness.service.example'),
+);
 if (process.platform === 'win32')
   await cp(join(root, '.tools', 'native-clipboard'), join(target, 'native-clipboard'), { recursive: true });
 await cp(join(root, 'server', 'engineering-runner.py'), join(target, 'engineering-runner.py'));

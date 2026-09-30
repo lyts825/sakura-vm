@@ -144,7 +144,7 @@ try {
     240000,
   );
   await command(
-    `set -eu\ncd /root/sakura-x11-build\ng++ -std=c++17 -O2 -Wall -Wextra fixture.cpp -o ${program} -lX11 -lX11-xcb -lxcb\n` +
+    `set -eu\ncd /root/sakura-x11-build\ng++ -std=c++17 -O2 -Wall -Wextra fixture.cpp -o ${program} -lX11 -lX11-xcb -lxcb -pthread\n` +
       `g++ -std=c++17 -O2 -fPIC -Wall -Wextra fixture-qt.cpp -o ${qtProgram} $(pkg-config --cflags --libs ${qt})\nchmod 755 ${program} ${qtProgram}`,
     90000,
   );
@@ -152,7 +152,7 @@ try {
   console.log(
     await command(
       `python3 /root/sakura-x11-build/smoke.py ${quote(bundle.directory + '/libSakuraClipboard.so')} ${program} ${bundle.manifest.build}`,
-      120000,
+      300000,
     ),
   );
   // A clipboard manager retains already exported bytes. Disable only this
@@ -258,12 +258,45 @@ try {
     Buffer.from('ordinary native clipboard text').toString('hex'),
   );
   await stop(qtSource.id);
+  const largeData = Buffer.from('owned Qt incremental 界é text\n'.repeat(10000));
+  assert.ok(largeData.length > 256 * 1024 && largeData.length < 1048576);
+  const largeFile = '/usr/local/lib/sakura-x11-test/incremental.txt';
+  await machines.sftp(vmId, async (ftp) => {
+    await pipeline(Readable.from([largeData]), ftp.createWriteStream(largeFile, { flags: 'w', mode: 0o644 }));
+  });
+  const largeRead = (toolkit: string) => plainRead(toolkit).replace(dataFile, largeFile);
+  await save(program);
+  await save(qtProgram);
+  const incrMarker = '/home/sakura-desktop/sakura-x11-' + randomUUID();
+  const incrSource = await launch(program, [
+    'mixed', 'owner', 'UTF8_STRING', largeFile, 'CLIPBOARD', 'incr:32767', incrMarker,
+  ]);
+  assert.equal(await marker(incrMarker), 'READY');
+  assert.equal(await command(largeRead('xcb')), largeData.toString('hex'));
+  const qtIncrMarker = '/home/sakura-desktop/sakura-x11-' + randomUUID();
+  const qtIncrSink = await launch(qtProgram, ['probe', qtIncrMarker, 'fixture']);
+  assert.equal(await marker(qtIncrMarker), largeData.toString('hex'));
+  await stop(qtIncrSink.id);
+  await stop(incrSource.id);
+  const qtIncrSource = await launch(qtProgram, ['owner', largeFile, 'fixture']);
+  let qtIncrRead = '';
+  for (let i = 0; i < 20; i++) {
+    qtIncrRead = await command(largeRead('mixed'));
+    if (qtIncrRead !== 'DENIED') break;
+    await delay(100);
+  }
+  assert.equal(qtIncrRead, largeData.toString('hex'));
+  await save(qtProgram, { ...defaultClipboardRule(), maxTextBytes: 1024 });
+  assert.equal(await command(largeRead('xcb')), 'DENIED');
+  await save(qtProgram);
+  await stop(qtIncrSource.id);
+  console.log('Real KDE/Qt >256KiB INCR in both directions, mixed aliases and live size tightening passed');
   const stopped = await native.view(vmId);
   assert.equal(stopped.sessions.find((row) => row.id === source.id)!.state, 'stopped');
   await action({ action: 'forget', id: source.id });
   assert.ok(!(await native.view(vmId)).sessions.some((row) => row.id === source.id));
   console.log(
-    'Real KDE private project, Xlib/XCB/Qt in both directions, live rules, disable, counters, service reload and cgroup cleanup passed',
+    'Real KDE private project, Xlib/XCB/Qt in both directions including INCR, live rules, disable, counters, service reload and cgroup cleanup passed',
   );
 } finally {
   await native.close();

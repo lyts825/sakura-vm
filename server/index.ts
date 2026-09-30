@@ -297,11 +297,6 @@ async function main() {
     snapshotReplications = new SnapshotReplications(machines, features.bundles, hostPeers);
     await snapshotReplications.init();
     features.next.setSnapshotReplications(snapshotReplications);
-    haLocalFailovers = new HaLocalFailovers(machines, features.next.haFailureMonitor,
-      hostPeers, snapshotReplications, () => features.next!.haPolicies(),
-      () => !features.migration?.blocked && !machines.closing);
-    features.next.setHaLocalFailovers(haLocalFailovers);
-    await haLocalFailovers.init();
     const witnessClient = await HaWitnessClient.fromEnv().catch((error) => {
       console.error('HA 见证配置不可用：', (error as Error).message);
       return null;
@@ -311,6 +306,13 @@ async function main() {
     machines.setHaStartGuard((id) => haHostFailover!.authorizeStart(id));
     features.next.setHaHostFailover(haHostFailover);
     await haHostFailover.init();
+    haLocalFailovers = new HaLocalFailovers(machines, features.next.haFailureMonitor,
+      hostPeers, snapshotReplications, () => features.next!.haPolicies(),
+      () => !features.migration?.blocked && !machines.closing);
+    haLocalFailovers.setWitnessDisarmGuard((id, failureThreshold) =>
+      haHostFailover!.disarm(id, failureThreshold));
+    features.next.setHaLocalFailovers(haLocalFailovers);
+    await haLocalFailovers.init();
   }
   if (features.next && features.backups && features.bundles)
     features.next.setDisasterRecovery(new DisasterRecoveryDrill(

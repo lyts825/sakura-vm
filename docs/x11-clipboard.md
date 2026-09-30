@@ -8,13 +8,15 @@
 
 支持复制、粘贴、其他格式、敏感文本和 1 KiB 至 1 MiB 的 UTF-8 文本上限。关闭其他格式或启用敏感检测时，拒绝文件、图片、HTML 和自定义格式；仅保留允许的纯文本与必要元数据。敏感检测检查常见私钥、令牌、JWT、带凭据 URL 与凭据赋值，不能识别所有秘密。二进制格式不扫描内容，单次最多 16 MiB。
 
-原生代理通过显式 `LD_PRELOAD` 加载，覆盖 Xlib 和 XCB 的 PRIMARY、CLIPBOARD 请求、内容属性与通知。Qt 所用的零长度大小查询可返回受限元数据，实际文本仍在完整读取时检查。启用规则时拒绝 INCR 分块、MULTIPLE 复合传输、追加属性及实际数据的部分读取；因此部分大文本或复杂应用传输暂不可用。移除规则会显式放宽已有会话，但代理留在进程中直到应用退出。
+原生代理通过显式 `LD_PRELOAD` 加载，覆盖 Xlib 和 XCB 的 PRIMARY、CLIPBOARD 请求、内容属性与通知。INCR 分块传输先在私有缓冲区收齐，再检查完整 UTF-8、敏感内容、方向和大小，跨块的字符或凭据不会逐块放行；传输途中收紧的规则继续作用于完整内容。Xlib/XCB 混合访问、零长度大小查询和重复读取使用同一已检查缓存，每次读取仍核对当前规则。大小查询返回完整数据的真实格式与长度。
+
+单次 INCR 最多等待 8 秒，单进程最多保留 32 个缓存及 32 MiB 缓存预算；文本仍受已保存的 1 KiB–1 MiB 上限约束。复制端仅在完整检查后用一个原子 X11 请求发布内容，超过服务器实际最大请求大小时拒绝，不逐块发布未经完整检查的前缀。实测 Xvfb 的最大请求为 16,777,212 字节，因此 16 MiB 二进制 INCR 会被拒绝。启用规则时仍拒绝 MULTIPLE 复合传输、普通属性追加及实际数据的部分读取。停用会显式放宽后续传输；已经被拒绝的 INCR 不会因停用转成原始逐块读取，代理留在进程中直到应用退出。
 
 保存新规则会更新运行中会话的根用户策略文件，API 返回各会话执行状态；应用的后续操作读取当前规则。保存成功但客户机更新失败时保留已保存意图并显示错误，「刷新并应用已保存规则」可重试。关闭面板或控制服务保留当前规则；服务重载恢复同一归属，不自动重启应用。统计只保存加载状态和拒绝次数，不保存剪贴板文本或应用输出。
 
 启动前核对 KDE 项目绑定、启动文件摘要、专属桌面账户、X11 凭据及实际 Plasma 进程网络。应用使用绑定项目的目录与私有环境配置，私有项目的实际网络空间只有回环接口且没有路由；控制请求只传递环境摘要。配置或私密值改变后，需要重启桌面再启动应用。每个会话有独立 D-Bus，避免交给未加载代理的既有应用。
 
-客户机需要可写的统一 cgroup v2 及 `cgroup.kill`。应用和私有 D-Bus 在降权前进入该会话专属的根用户 cgroup，普通子进程继承其归属；状态核对 PID、创建时间、UID、实际网络空间和代理映射。停止按钮强制结束此会话及子进程，请先保存内容；清理记录只删除已停止会话。克隆与导出/导入保留程序身份、规则和控制服务归属，不保存或重放 PID，不自动启动应用。
+客户机需要可写的统一 cgroup v2 及 `cgroup.kill`。应用和私有 D-Bus 在降权前进入该会话专属的根用户 cgroup，普通子进程继承其归属；状态核对 PID、创建时间、UID、实际网络空间和代理映射。停止按钮强制结束此会话及子进程，请先保存内容；进程退出后会等待内核释放 cgroup，最多 5 秒，权限和其他清理错误继续显示失败。清理记录只删除已停止会话。克隆与导出/导入保留程序身份、规则和控制服务归属，不保存或重放 PID，不自动启动应用。
 
 ## 范围与验证
 
@@ -26,7 +28,7 @@
 npm run test:x11-clipboard -- debian
 ```
 
-此测试创建自己的虚拟机，在独立认证 Xvfb 中测试 Xlib/XCB，再在真实 KDE 的私有项目中测试原生 API。测试不访问宿主剪贴板；检查方向收紧、文本与格式限制、敏感内容、缓存属性重读、Qt 大小查询、无效策略、服务重载、停用及会话 cgroup 清理。浏览器测试覆盖读取身份、保存、字面参数启动、页面重载、错误项目拒绝和手机宽度。便携包测试检查规则与归属的克隆、导入恢复。
+此测试创建自己的虚拟机，在独立认证 Xvfb 中测试 Xlib/XCB，再在真实 KDE 的私有项目中测试原生 API。测试不访问宿主剪贴板；检查方向收紧、文本与格式限制、敏感内容、缓存属性重读、Qt 大小查询、无效策略、服务重载、停用及会话 cgroup 清理。INCR 测试覆盖双向大文本、跨块 UTF-8 和凭据、Xlib/XCB 混合访问、32 位格式的本机长整型步长、通用回复接口、空流、TARGETS 过滤、畸形流、超时、缓存预算和原子请求上限。浏览器测试覆盖读取身份、保存、字面参数启动、页面重载、错误项目拒绝和手机宽度。便携包测试检查规则与归属的克隆、导入恢复。
 
 编译版 HTTP 与生成 SDK 联测可复用前一测试自己创建并关闭的 Debian 实例。先设置 `SAKURA_KEEP_X11_SMOKE=1` 运行上面的测试，记录它输出的 `Retained owned fixture` 目录，保持同一 `TEMP`/`TMP`，再执行：
 
@@ -36,4 +38,4 @@ npm run test:x11-clipboard:http -- <保留的测试目录>
 
 它只接受临时目录中的单实例 `sakura-x11-*` 测试数据，临时启用桌面插件，检查桌面恢复、接口契约、非法请求拒绝、版本冲突、文件身份、保存规则，以及真实原生复制拒绝、计数和会话清理；结束后关闭实例与服务并恢复插件选择。不要同时运行另一个控制器。追加已生成的运行包目录作为第二个参数可校验包摘要后，直接测试包内编译服务；该目录需要先按安装或更新流程准备固定的 QEMU/PosixLoom 运行时。
 
-实现依据 [Xlib 接口](https://xorg.freedesktop.org/archive/current/doc/libX11/libX11/libX11.html)、[Qt XCB 剪贴板实现](https://github.com/qt/qtbase/blob/5.15/src/plugins/platforms/xcb/qxcbclipboard.cpp)、[Linux cgroup v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html) 和 [setns](https://man7.org/linux/man-pages/man2/setns.2.html)。
+实现依据 [ICCCM 剪贴板传输协议](https://xorg.freedesktop.org/archive/X11R7.7/doc/xorg-docs/icccm/icccm.html)、[Xlib 接口](https://xorg.freedesktop.org/archive/current/doc/libX11/libX11/libX11.html)、[Qt XCB 剪贴板实现](https://github.com/qt/qtbase/blob/5.15/src/plugins/platforms/xcb/qxcbclipboard.cpp)、[Linux cgroup v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html) 和 [setns](https://man7.org/linux/man-pages/man2/setns.2.html)。

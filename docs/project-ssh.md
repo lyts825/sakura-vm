@@ -4,6 +4,8 @@ Debian、Ubuntu 中，在“项目”页选择工作项目，再点“配置 VS 
 
 同一实例只要包含私有项目，原来按实例名称生成的共享网络别名便被撤销。共享网络项目也使用自己的 SSH 服务与密钥，但保持共享网络模式。项目别名使用实例 UUID 和项目 ID，形如 `sakura-<实例 UUID>-<项目 ID>`；更改实例名称不改变这个别名，也不会与其他实例的名称档案重叠。没有私有项目的实例保留既有接入方式。Alpine 不提供此 Remote-SSH 接入。
 
+能力中心的 VS Code、JetBrains 和 Neovim 档案同样使用经过核对的项目 SSH 入口，只导出本项目地址、专属身份与固定主机公钥配置。含私有项目时，尚未配置项目 SSH、IDE 插件未启用、绑定或运行状态核对失败都会拒绝导出；Alpine 私有项目也不生成共享入口。只有没有私有项目的实例保留原有实例 SSH 档案。
+
 ## VS Code 设置
 
 私有项目不能从客户机联网下载服务端。在本机 VS Code 的用户设置中使用：
@@ -37,6 +39,8 @@ npm run test:project-ssh -- debian
 npm run test:project-ssh -- ubuntu
 ```
 
-测试使用独立临时数据目录和真实 QEMU 客户机、Windows OpenSSH 客户端或宿主 `ssh`，验证身份、目录、环境、实际网络、SFTP、同端口应用、TCP 转发与外网拒绝、跨项目密钥拒绝、共享项目、控制重载、暂停、后台进程清理、配置与启动文件丢失、额外路由、密钥轮换和重启恢复。正常退出前同步磁盘并停止实例。设置 `SAKURA_KEEP_SSH_SMOKE=1` 可保留所属测试目录，脚本第三个参数可指定同一所属目录供复测。
+测试使用独立临时数据目录和真实 QEMU 客户机、Windows OpenSSH 客户端或宿主 `ssh`，验证身份、目录、环境、实际网络、SFTP、三种编辑器档案的真实连接、同端口应用、TCP 转发与外网拒绝、跨项目密钥拒绝、共享项目、控制重载、暂停、后台进程清理、配置与启动文件丢失、额外路由、密钥轮换和重启恢复。正常退出前同步磁盘并停止实例。设置 `SAKURA_KEEP_SSH_SMOKE=1` 可保留所属测试目录，脚本第三个参数可指定同一所属目录供复测。
 
-可额外设置 `SAKURA_SSH_VSCODE_ARCHIVE` 为微软官方 Linux x64 服务端发布包的绝对路径，并将官方更新元数据中的 SHA-256 设置为 `SAKURA_SSH_VSCODE_SHA256`。测试核对摘要，通过真实 SFTP 上传到两个项目，分别启动官方后端、核对进程网络、经 SSH 转发版本端点并验证停止清理。当前已验证 VS Code Server 1.140.0 后端；本机未安装 VS Code 图形客户端，尚未完成 Remote-SSH 扩展界面的端到端验证。
+可额外设置 `SAKURA_SSH_VSCODE_ARCHIVE` 为微软官方 Linux x64 服务端发布包的绝对路径，并将官方更新元数据中的 SHA-256 设置为 `SAKURA_SSH_VSCODE_SHA256`。测试核对摘要，通过真实 SFTP 上传到两个项目，分别启动官方后端、核对进程网络、经 SSH 转发版本端点并验证停止清理。已验证 VS Code Server 1.140.0 后端。
+
+设置 `SAKURA_SSH_VSCODE_CLIENT` 为本机官方 `Code.exe` 的绝对路径，可启用真实桌面 Remote-SSH 联测；`SAKURA_SSH_REMOTE_VSIX` 可指定事先下载的官方 Remote-SSH VSIX，否则从扩展市场安装。测试单独创建用户配置与扩展目录，在两个项目分别打开桌面窗口，以实际远程 workspace 扩展验证打开、修改和保存文本，创建集成终端、执行 ShellExecution 任务，核对扩展、子进程、终端和任务的实际网络空间并验证外网拒绝。客户端关闭仅针对测试窗口，随后仍执行完整 SSH 生命周期验证。结果保存为所属目录中的 `vscode-client-evidence.json`，客户端日志在其 `vscode-client-portable-data/user-data/logs`。Windows 上的官方 VS Code 1.140.0 与 Remote-SSH 0.129.2026091815 已在真实 Debian 12、Ubuntu 24.04 各自的两个私有项目通过上述流程；JetBrains 与 Neovim 当前验证了导出的档案和真实 SSH 连接，尚未执行它们各自的客户端联测。

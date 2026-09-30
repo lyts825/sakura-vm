@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { HaWitness, type HaWitnessActions } from '../server/ha-witness-core.ts';
@@ -23,6 +23,10 @@ async function fixture() {
       calls.push('fence');
       if (failFence) throw new Error('BMC did not confirm Off');
       poweredOff = true;
+    },
+    confirmFence: async () => {
+      calls.push('confirm-fence');
+      if (!poweredOff) throw new Error('source power is no longer Off');
     },
     targetStatus: async () => { calls.push('target-status'); return target; },
     activate: async () => {
@@ -47,6 +51,7 @@ async function fixture() {
     healthy: (value: boolean) => { healthy = value; },
     failFence: (value: boolean) => { failFence = value; },
     failRetire: (value: boolean) => { failRetire = value; },
+    poweredOff: (value: boolean) => { poweredOff = value; },
     cleanup: async () => {
       const path = await realpath(root);
       if (!basename(path).startsWith('sakura-ha-witness-') ||
@@ -66,9 +71,10 @@ test('witness persists fencing before target activation and denies a returning s
     assert.deepEqual(f.calls, []);
     f.clock(130_000);
     await f.witness.sample();
-    assert.deepEqual(f.calls.slice(0, 3), ['fence', 'target-status', 'activate']);
+    assert.deepEqual(f.calls.slice(0, 4), ['fence', 'confirm-fence', 'target-status', 'activate']);
     const reopened = new HaWitness(f.file, [vm], {
       fence: async () => { throw new Error('fence must not repeat after confirmation'); },
+      confirmFence: async () => {},
       targetStatus: async () => 'running', activate: async () => {},
       applicationReady: async () => true, switchTraffic: async () => {},
       trafficTarget: async () => plan.remoteVmId, retire: async () => {},
@@ -97,7 +103,7 @@ test('uncertain power state never starts the target and survives process restart
       { code: 'HA_WITNESS_FENCED' });
     f.failFence(false);
     await f.witness.sample();
-    assert.deepEqual(f.calls.slice(1, 4), ['fence', 'target-status', 'activate']);
+    assert.deepEqual(f.calls.slice(1, 5), ['fence', 'confirm-fence', 'target-status', 'activate']);
   } finally { await f.cleanup(); }
 });
 
@@ -122,6 +128,8 @@ test('stale replica is disarmed; promotion waits for application health and veri
     f.failRetire(false);
     f.target('stopped');
     await f.witness.rejoin({ sourceHostId, sourceVmId, dataReconciled: true });
+    assert.deepEqual(await f.witness.rejoin({ sourceHostId, sourceVmId, dataReconciled: true }),
+      { released: true, retiredRemoteVmId: plan.remoteVmId }, 'lost successful responses are idempotent');
     assert.equal((await f.witness.authorizeStart({ sourceHostId, sourceVmId })).allowed, true);
   } finally { await f.cleanup(); }
 });
@@ -157,6 +165,112 @@ test('liveness-only heartbeats retain a verified plan until explicit disarm', as
   } finally { await f.cleanup(); }
 });
 
+test('a historical fence cannot activate or switch traffic after the source powers on again', async () => {
+  const f = await fixture();
+  try {
+    await f.witness.heartbeat({ sourceHostId, sourceVmId, failureThreshold: 2, plan });
+    f.clock(130_000);
+    await f.witness.sample();
+    f.target('stopped');
+    f.poweredOff(false);
+    const before = f.calls.length;
+    await f.witness.sample();
+    assert.deepEqual(f.calls.slice(before), ['confirm-fence']);
+    const status = await f.witness.status({ sourceHostId, sourceVmId });
+    assert.equal(status.phase, 'fenced');
+    assert.match(status.error || '', /no longer Off/);
+    await assert.rejects(f.witness.authorizeStart({ sourceHostId, sourceVmId }),
+      { code: 'HA_WITNESS_FENCED' });
+    f.poweredOff(true);
+    f.target('running');
+    f.healthy(true);
+    await f.witness.sample();
+    assert.equal((await f.witness.status({ sourceHostId, sourceVmId })).phase, 'promoted');
+  } finally { await f.cleanup(); }
+});
+
+test('a promoted target restarts the same writable replica and repairs traffic only when needed', async () => {
+  const f = await fixture();
+  try {
+    await f.witness.heartbeat({ sourceHostId, sourceVmId, failureThreshold: 2, plan });
+    f.clock(130_000);
+    await f.witness.sample();
+    f.target('running'); f.healthy(true);
+    await f.witness.sample();
+    const promoted = await f.witness.status({ sourceHostId, sourceVmId });
+    const before = f.calls.length;
+    await f.witness.sample();
+    assert.equal(f.calls.slice(before).includes('activate'), false);
+    assert.equal(f.calls.slice(before).includes('traffic-switch'), false,
+      'healthy promoted samples must not rewrite production routing');
+    f.target('stopped');
+    f.clock(140_000);
+    await f.witness.sample();
+    assert.equal(f.calls.filter((call) => call === 'activate').length, 2);
+    assert.equal((await f.witness.status({ sourceHostId, sourceVmId })).phase, 'promoted');
+    f.target('running');
+    await f.witness.sample();
+    assert.equal((await f.witness.status({ sourceHostId, sourceVmId })).promotedAt, promoted.promotedAt);
+    assert.equal((await f.witness.status({ sourceHostId, sourceVmId })).error, null);
+    f.poweredOff(false); f.target('stopped');
+    const activations = f.calls.filter((call) => call === 'activate').length;
+    await f.witness.sample();
+    assert.equal(f.calls.filter((call) => call === 'activate').length, activations);
+    await assert.rejects(f.witness.authorizeStart({ sourceHostId, sourceVmId }),
+      { code: 'HA_WITNESS_FENCED' });
+  } finally { await f.cleanup(); }
+});
+
+test('a failed authority write freezes source start and prevents external takeover work', async () => {
+  const f = await fixture();
+  try {
+    await f.witness.heartbeat({ sourceHostId, sourceVmId, failureThreshold: 2, plan });
+    await rm(f.file);
+    await mkdir(f.file);
+    f.clock(130_000);
+    await assert.rejects(f.witness.sample());
+    assert.deepEqual(f.calls, []);
+    await assert.rejects(f.witness.authorizeStart({ sourceHostId, sourceVmId }),
+      { code: 'HA_WITNESS_STORAGE_UNAVAILABLE' });
+    await assert.rejects(f.witness.heartbeat({ sourceHostId, sourceVmId, failureThreshold: 2 }),
+      { code: 'HA_WITNESS_STORAGE_UNAVAILABLE' });
+    assert.match((await f.witness.status({ sourceHostId, sourceVmId })).error || '', /持久存储写入失败/);
+  } finally { await f.cleanup(); }
+});
+
+for (const failedPhase of ['fencing', 'fenced'] as const)
+  test(`an interrupted ${failedPhase} takeover can release only an explicitly reconciled, retired target`, async () => {
+    const f = await fixture();
+    try {
+      await f.witness.heartbeat({ sourceHostId, sourceVmId, failureThreshold: 2, plan });
+      f.failFence(failedPhase === 'fencing');
+      f.clock(130_000);
+      await f.witness.sample();
+      assert.equal((await f.witness.status({ sourceHostId, sourceVmId })).phase, failedPhase);
+      f.target('running');
+      await assert.rejects(f.witness.rejoin({ sourceHostId, sourceVmId, dataReconciled: true }),
+        /still running/);
+      await assert.rejects(f.witness.authorizeStart({ sourceHostId, sourceVmId }),
+        { code: 'HA_WITNESS_FENCED' });
+      f.target('stopped');
+      const result = await f.witness.rejoin({ sourceHostId, sourceVmId, dataReconciled: true });
+      assert.deepEqual(result, { released: true, retiredRemoteVmId: plan.remoteVmId });
+      const saved = JSON.parse(await readFile(f.file, 'utf8'));
+      assert.equal(saved.entries[sourceVmId].retiredRemoteVmId, plan.remoteVmId);
+      await f.witness.heartbeat({ sourceHostId, sourceVmId, failureThreshold: 2, plan: null });
+      const actions: HaWitnessActions = {
+        fence: async () => {}, confirmFence: async () => {}, targetStatus: async () => 'stopped',
+        activate: async () => {}, applicationReady: async () => false,
+        switchTraffic: async () => {}, trafficTarget: async () => '',
+        retire: async () => { throw new Error('successful durable retirement must not repeat'); },
+      };
+      const reopened = new HaWitness(f.file, [vm], actions, () => 131_000);
+      await reopened.init();
+      assert.deepEqual(await reopened.rejoin({ sourceHostId, sourceVmId, dataReconciled: true }), result);
+      assert.equal((await reopened.authorizeStart({ sourceHostId, sourceVmId })).allowed, true);
+    } finally { await f.cleanup(); }
+  });
+
 test('slow fencing and retirement for one host do not block another host heartbeat', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-ha-witness-multi-'));
   const file = join(root, 'witness.json');
@@ -177,6 +291,7 @@ test('slow fencing and retirement for one host do not block another host heartbe
       if (source.sourceVmId === sourceVmId) { enteredFence(); await fenceGate; }
       else throw new Error('healthy host must not be fenced');
     },
+    confirmFence: async () => {},
     targetStatus: async () => 'running', activate: async () => {},
     applicationReady: async () => true, switchTraffic: async () => {},
     trafficTarget: async (_source, candidate) => candidate.remoteVmId,
@@ -244,7 +359,7 @@ test('witness refuses a missing state file and refuses to overwrite an existing 
     await assert.rejects(HaWitness.initialize(f.file, [vm]), /已存在/);
     await rm(f.file);
     const empty = new HaWitness(f.file, [vm], {
-      fence: async () => {}, targetStatus: async () => 'stopped',
+      fence: async () => {}, confirmFence: async () => {}, targetStatus: async () => 'stopped',
       activate: async () => {}, applicationReady: async () => false,
       switchTraffic: async () => {}, trafficTarget: async () => '',
       retire: async () => {},
@@ -258,7 +373,7 @@ test('witness refuses missing entries, changed identities and legacy state', asy
   try {
     const original = JSON.parse(await readFile(f.file, 'utf8'));
     const actions: HaWitnessActions = {
-      fence: async () => {}, targetStatus: async () => 'stopped',
+      fence: async () => {}, confirmFence: async () => {}, targetStatus: async () => 'stopped',
       activate: async () => {}, applicationReady: async () => false,
       switchTraffic: async () => {}, trafficTarget: async () => '',
       retire: async () => {},
@@ -274,6 +389,14 @@ test('witness refuses missing entries, changed identities and legacy state', asy
         [sourceVmId]: { ...original.bindings[sourceVmId], targetHostId: randomUUID() },
       } },
       { version: 1, entries: original.entries },
+      { ...original, entries: { [sourceVmId]: { ...original.entries[sourceVmId],
+        phase: 'fenced', plan: null } } },
+      { ...original, entries: { [sourceVmId]: { ...original.entries[sourceVmId],
+        plan: { ...plan, sourceVmId: randomUUID() } } } },
+      { ...original, entries: { [sourceVmId]: { ...original.entries[sourceVmId],
+        plan: { ...plan, sourceHostId: randomUUID() } } } },
+      { ...original, entries: { [sourceVmId]: { ...original.entries[sourceVmId],
+        plan: { ...plan, targetHostId: randomUUID() } } } },
     ]) {
       await writeFile(f.file, JSON.stringify(invalid));
       await assert.rejects(reopen(), { code: 'HA_WITNESS_STATE_MISMATCH' });

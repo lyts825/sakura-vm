@@ -38,11 +38,11 @@ type Reply = { id?: number; type?: 'ready' | 'error'; ok?: boolean; error?: stri
   port?: number; fingerprint?: string; hostId?: string; code?: string;
   applicationUrl?: string; applicationFingerprint?: string; result?: unknown };
 const pending = new Map<number, { resolve: (reply: Reply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-let worker: ChildProcess | undefined, witness: ChildProcess | undefined;
+let worker: ChildProcess | undefined, witness: ChildProcess | undefined, observer: ChildProcess | undefined;
 let engine: Awaited<ReturnType<typeof createRuntime>> | undefined;
 let machines: InstanceType<typeof Machines> | undefined, peers: InstanceType<typeof HostPeers> | undefined;
 let workspaces: InstanceType<typeof Workspaces> | undefined, hostHa: InstanceType<typeof HaHostFailover> | undefined;
-let vmId = '', targetVmId = '', workerOutput = '', witnessOutput = '', sequence = 0;
+let vmId = '', targetVmId = '', workerOutput = '', witnessOutput = '', observerOutput = '', sequence = 0;
 const servers: Server[] = [];
 const appToken = randomBytes(32).toString('hex'), sourceToken = randomBytes(32).toString('hex'),
   trafficToken = randomBytes(32).toString('hex'), systemUuid = randomUUID();
@@ -150,6 +150,7 @@ try {
   const vm = await machines.create({ name: `ha-source-${distro}`, distro, accelerator: 'auto',
     memoryMiB: distro === 'alpine' ? 512 : 1024, cpus: 2, diskGiB: 4, template: 'none', forwards: [] });
   vmId = vm.id;
+  activeVmId = vmId;
   console.log(`Booting ${distro} source to prepare the historical application snapshot`);
   await machines.start(vmId);
   await waitUntil('source boot', async () => machines!.state(vmId) !== 'starting');
@@ -278,6 +279,24 @@ WantedBy=multi-user.target
   const changed = await machines.exec(vmId, 'printf current-only-data > /workspace/ha-data; sync', 10_000); assert.equal(changed.code, 0);
   await hostHa.sample(); assert.equal(hostHa.view(vmId).armed, true, JSON.stringify(hostHa.view(vmId)));
   const preflight = await checkHaWitnessDeployment(config); assert.equal(preflight.ok, true, JSON.stringify(preflight));
+  const planFile = join(root, 'drill-plan.json'), observationsFile = join(root, 'drill-observations.jsonl');
+  await runWitness(['--drill-plan', configPath, vmId, '--output', planFile]);
+  const plan = JSON.parse(await readFile(planFile, 'utf8'));
+  assert.equal(plan.replica.sourceVmId, vmId); assert.equal(plan.replica.remoteVmId, targetVmId);
+  observer = spawn(process.execPath, [witnessEntry, '--observe', configPath,
+    '--plan', planFile, '--output', observationsFile, '--timeout-seconds', '600'], {
+    cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, SAKURA_DATA_DIR: join(root, 'observer-runtime') } });
+  for (const stream of [observer.stdout, observer.stderr]) stream!.on('data', (chunk: Buffer) => {
+    observerOutput = (observerOutput + chunk.toString()).slice(-6000);
+  });
+  await waitUntil('compiled observer baseline', async () => {
+    assert.equal(observer!.exitCode, null, observerOutput);
+    const text = await readFile(observationsFile, 'utf8').catch(() => '');
+    return text.split('\n').slice(0, -1).filter(Boolean).some((line) => {
+      const row = JSON.parse(line); return row.type === 'baseline' && row.sample.ok;
+    });
+  }, 30_000);
   reportedSystemUuid = randomUUID();
   console.log('Source heartbeats withheld; wrong BMC UUID must keep the real target stopped');
   await waitUntil('identity rejection', async () => {
@@ -292,7 +311,7 @@ WantedBy=multi-user.target
     return ((await request('inspect', { targetVmId })).result as { status: string }).status === 'running';
   });
   assert.equal(forceOffCount, 1); assert.equal(machines.state(vmId), 'stopped');
-  assert.equal(activeVmId, ''); assert.equal(trafficAttempts, 0);
+  assert.equal(activeVmId, vmId); assert.equal(trafficAttempts, 0);
   await assert.rejects(machines.start(vmId), /见证节点未确认来源启动/);
   const booted = (await request('http', { targetVmId })).result as { ready: boolean; marker: string };
   assert.equal(booted.marker, 'historical-ha-data'); assert.equal(booted.ready, false);
@@ -305,7 +324,7 @@ WantedBy=multi-user.target
   await request('ready', { targetVmId });
   console.log('Witness restart retained the source fence; guest readiness enabled, traffic remains denied');
   await waitUntil('traffic rejection', async () => trafficAttempts > 0, 60_000);
-  assert.equal((await client.status(identity)).phase, 'fenced'); assert.equal(activeVmId, '');
+  assert.equal((await client.status(identity)).phase, 'fenced'); assert.equal(activeVmId, vmId);
   allowTraffic = true;
   await waitUntil('traffic promotion', async () => (await client.status(identity)).phase === 'promoted', 60_000);
   assert.equal(activeVmId, targetVmId); assert.equal(forceOffCount, 1);
@@ -313,6 +332,30 @@ WantedBy=multi-user.target
   const routed = await haHttpsRequest(new URL('/app', trafficUrl).toString(), 'GET', undefined, { fingerprint }) as { marker: string; ready: boolean };
   assert.equal(routed.marker, 'historical-ha-data'); assert.equal(routed.ready, true);
   assert.equal((await checkHaWitnessDeployment(config)).ok, true);
+  await waitUntil('compiled observer completion', async () => observer!.exitCode !== null, 30_000);
+  assert.equal(observer.exitCode, 0, observerOutput);
+  const observed = (await readFile(observationsFile, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const observationResult = observed.at(-1);
+  assert.equal(observationResult.promotionObserved, true); assert.equal(observationResult.ok, true);
+  assert.equal(observationResult.physicalNodeIndependenceVerified, false);
+  assert.ok(observed.some((row) => row.type === 'baseline' && row.sample.sourceStartAllowed === true));
+  assert.ok(observed.filter((row) => row.type === 'observation' && row.sample.phase === 'promoted' &&
+    row.sample.stable && row.sample.ok && row.sample.sourceStartAllowed === false).length >= 2);
+  console.log('Compiled drill-plan and observer captured a source baseline and two stable promoted samples; physical independence remains false');
+  await request('write', { targetVmId });
+  const written = (await request('http', { targetVmId })).result as { marker: string; bootId: string };
+  assert.equal(written.marker, 'target-only-write');
+  const cutoversBeforeRestart = trafficAttempts;
+  await request('stop', { targetVmId });
+  await waitUntil('promoted target restart with retained writes', async () => {
+    const app = await request('http', { targetVmId }).then((value) =>
+      value.result as { marker: string; bootId: string; ready: boolean }, () => null);
+    const status = await client.status(identity);
+    return !!app && app.bootId !== written.bootId && app.marker === 'target-only-write' &&
+      app.ready && status.phase === 'promoted' && !status.error;
+  });
+  assert.equal(trafficAttempts, cutoversBeforeRestart); assert.equal(forceOffCount, 1);
+  console.log('Compiled witness restarted the same real target with its new writes retained and no repeated traffic cutover');
   await assert.rejects(hostHa.rejoin(vmId, true), /HTTP 502/);
   assert.equal((await client.status(identity)).phase, 'promoted');
   assert.equal(((await request('inspect', { targetVmId })).result as { status: string }).status, 'running');
@@ -327,12 +370,12 @@ WantedBy=multi-user.target
   await waitUntil('source rejoin boot', async () => machines!.state(vmId) !== 'starting');
   assert.equal(machines.state(vmId), 'running');
   assert.equal(await machines.readGuestFile(vmId, '/workspace/ha-data'), 'current-only-data');
-  console.log(`PASS ${distro}: production receiver, real snapshot/VM/HTTP application, compiled witness restart, UUID rejection, fencing, readiness/traffic retry and durable target retirement (BMC simulated locally)`);
+  console.log(`PASS ${distro}: production receiver, real snapshot/VM/HTTP application, compiled witness restart, UUID rejection, fencing, readiness/traffic retry, read-only drill observation, same-target restart retaining writes and durable target retirement (BMC simulated locally)`);
 } catch (error) {
   console.error('HA integration failed:', (error as Error).stack);
   throw error;
 } finally {
-  await hostHa?.close(); await stopProcess(witness);
+  await stopProcess(observer); await hostHa?.close(); await stopProcess(witness);
   await workspaces?.close(); await machines?.close(); await peers?.close(); await engine?.runtime.close();
   if (worker && worker.exitCode === null && worker.signalCode === null) {
     await request('shutdown').catch(() => {});

@@ -16,7 +16,7 @@ const { createHostImportReceiver } = await import('../server/host-import-receive
 const { SessionLock } = await import('../server/session-lock.ts');
 const { freePort } = await import('../server/qmp.ts');
 
-type Request = { id: number; action: 'grant' | 'inspect' | 'ready' | 'http' | 'stop' | 'lock' | 'shutdown';
+type Request = { id: number; action: 'grant' | 'inspect' | 'ready' | 'write' | 'http' | 'stop' | 'lock' | 'shutdown';
   requesterId?: string; targetVmId?: string };
 const send = (payload: unknown) => process.send?.(payload);
 let engine: Awaited<ReturnType<typeof createRuntime>> | undefined;
@@ -73,7 +73,8 @@ try {
       const id = z.uuid().parse(url.searchParams.get('vmId'));
       let ready = false;
       if (machines!.state(id) === 'running')
-        ready = await guestHttp(id).then((value) => value.ready && value.marker === 'historical-ha-data', () => false);
+        ready = await guestHttp(id).then((value) => value.ready &&
+          ['historical-ha-data', 'target-only-write'].includes(value.marker), () => false);
       res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ ready, vmId: id }));
     } catch { res.writeHead(503); res.end(); }
   })());
@@ -106,6 +107,10 @@ try {
             ...(machines!.state(id) === 'running' ? { application: await guestHttp(id) } : {}) };
         } else if (raw.action === 'ready') {
           const response = await machines!.exec(z.uuid().parse(raw.targetVmId), 'touch /workspace/ha-ready', 10_000);
+          assert.equal(response.code, 0, response.stderr);
+        } else if (raw.action === 'write') {
+          const response = await machines!.exec(z.uuid().parse(raw.targetVmId),
+            'printf target-only-write > /workspace/ha-data; sync', 10_000);
           assert.equal(response.code, 0, response.stderr);
         } else if (raw.action === 'http') result = await guestHttp(z.uuid().parse(raw.targetVmId));
         else if (raw.action === 'stop') await machines!.stop(z.uuid().parse(raw.targetVmId), true);

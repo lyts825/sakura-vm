@@ -1,0 +1,28 @@
+[Unit]
+Description=Sakura independent HA witness
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=sakura-ha
+Group=sakura-ha
+WorkingDirectory=/opt/sakura
+ExecStart=/usr/bin/node /opt/sakura/scripts/launch-witness.mjs /etc/sakura-ha/witness.json
+Environment=SAKURA_DATA_DIR=/var/lib/sakura-ha/runtime
+StateDirectory=sakura-ha
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=300
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sakura-ha
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

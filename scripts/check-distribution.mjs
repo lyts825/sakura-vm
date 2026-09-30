@@ -15,10 +15,10 @@ for (const file of ['dist/index.html', 'dist/single-app.html', '.sakura-server/i
 if (process.platform === 'win32') {
   const folder = join(root, '.sakura-server', 'assets', 'native-clipboard');
   const native = JSON.parse(await readFile(join(folder, 'native-clipboard.json'), 'utf8'));
-  const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'MinHook-LICENSE.txt'];
-  if (native.version !== 1 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
-      !Array.isArray(native.files) || native.files.length !== 3 ||
-      new Set(native.files.map((file) => file.name)).size !== 3)
+  const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe', 'MinHook-LICENSE.txt'];
+  if (native.version !== 2 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
+      !Array.isArray(native.files) || native.files.length !== names.length ||
+      new Set(native.files.map((file) => file.name)).size !== names.length)
     throw new Error('Native clipboard distribution metadata is invalid');
   for (const name of names) {
     const file = native.files.find((file) => file.name === name), bytes = await readFile(join(folder, name));

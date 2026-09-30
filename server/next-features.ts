@@ -94,7 +94,7 @@ export const nextFeatureCatalog = [
     '故障自动接管',
     '远程主机与集群',
     'P0',
-    '监测本机 QEMU 进程故障；配置独立见证、Redfish 隔离、应用健康与流量接口后，可对宿主失联执行受控接管。',
+    '监测本机 QEMU 进程故障；独立见证确认 Redfish 隔离后接管副本并持续检查应用与流量，提供只读部署预检和演练观察。',
     'experimental',
   ],
   [
@@ -530,7 +530,7 @@ export const nextFeatureCatalog = [
     '按应用剪贴板策略',
     '操作系统与桌面',
     'P0',
-    '保存剪贴板按应用的读写和敏感内容策略。',
+    '管理网页入口、Windows x64/x86 应用与显式启动 Linux X11 应用的剪贴板方向、格式、文本大小和敏感内容。',
     'experimental',
   ],
   [
@@ -1042,7 +1042,7 @@ export class NextFeatures {
         executed: false,
         adapter,
         message:
-          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 策略限制成功附加的当前用户 x64 EXE 的 Win32/OLE 调用。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 应用并热更新规则。新进程附加前、其他底层接口、既有 Linux 程序及原生 Wayland 仍未覆盖。',
+          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 策略限制成功附加的当前用户 x64/x86 EXE 的 Win32/OLE 调用。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 应用并热更新规则，INCR 大文本收齐检查后传输。新进程附加前、MULTIPLE、其他底层接口、既有 Linux 程序及原生 Wayland 仍未覆盖。',
       };
     if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner')
       return {

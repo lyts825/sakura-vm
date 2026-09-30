@@ -10,7 +10,7 @@ import ssh2 from 'ssh2';
 
 const distro = process.argv[2] || 'debian';
 assert.ok(['debian', 'ubuntu'].includes(distro));
-const directory = process.argv[3] || (await mkdtemp(join(tmpdir(), 'sakura-project-ssh-')));
+const directory = resolve(process.argv[3] || (await mkdtemp(join(tmpdir(), 'sakura-project-ssh-'))));
 const owned = await realpath(directory);
 assert.equal(dirname(owned), await realpath(tmpdir()));
 assert.match(basename(owned), /^sakura-project-ssh-/);
@@ -27,6 +27,9 @@ const { Secrets } = await import('../server/secrets.ts');
 const { Ide } = await import('../server/ide.ts');
 const { quote } = await import('../server/files.ts');
 const { vmDir } = await import('../server/model.ts');
+const { runReport } = await import('../server/capability-reports.ts');
+const { secureSshPaths } = await import('../server/ssh-files.ts');
+const { projectVscodeClientSmoke } = await import('./project-vscode-client-smoke.ts');
 const machines = new Machines(await createRuntime());
 let vmId = '',
   workspaces: InstanceType<typeof Workspaces> | undefined,
@@ -172,6 +175,8 @@ try {
             .then(() => {}),
         )
       ).active;
+    await assert.rejects(within(id, () => runReport(machines, workspaces!, vmId,
+      'editor-profiles', { editor: 'neovim' }, new AbortController().signal)), /先在项目页配置/);
     console.log(`${distro}: preparing SSH for ${name}`);
     await within(id, async () => {
       const current = await workspaces!.config(vmId);
@@ -193,6 +198,21 @@ try {
       await external(view.alias, 'printf %s "$VSCODE_AGENT_FOLDER"'),
       '/var/lib/sakura/ssh/' + id + '/.vscode-server',
     );
+    for (const editor of ['jetbrains', 'neovim', 'vscode']) {
+      const profile = await within(id, () => runReport(machines, workspaces!, vmId,
+        'editor-profiles', { editor }, new AbortController().signal));
+      assert.equal(profile.projectScoped, true);
+      assert.equal(profile.projectId, id);
+      assert.equal(profile.networkIsolation, 'private');
+      assert.notEqual(profile.port, machines.live.get(vmId)?.sshPort);
+      assert.equal(profile.identityFile, join(vmDir(vmId), 'project-ssh', id, 'id_rsa'));
+      const config = join(directory, editor + '-' + id + '.config');
+      await writeFile(config, (profile.download as { content: string }).content, { mode: 0o600 });
+      await secureSshPaths([config]);
+      const exported = await run(ssh, ['-F', config, '-o', 'BatchMode=yes', '-T',
+        String(profile.alias), 'pwd; readlink /proc/self/ns/net'], { timeout: 30_000, encoding: 'utf8' });
+      assert.deepEqual(exported.stdout.trim().split('\n'), [path, result[2]]);
+    }
     if (secrets)
       assert.ok(
         (await external(view.alias, 'printf %s "$TOKEN"')) === privateValue,
@@ -314,6 +334,7 @@ try {
   console.log(
     `${distro}: real SFTP, independent same-port applications, forwarding restrictions and wrong project key refusal passed`,
   );
+  await projectVscodeClientSmoke(directory, join(directory, 'ssh-client/config'), projects, external);
   await within('default', () =>
     workspaces!.save(vmId, { directory: '/workspace/ssh-shared', environment: { SAKURA_SCOPE: 'shared' } }),
   );
@@ -331,6 +352,8 @@ try {
   await within('default', () => ide!.stop(vmId));
   console.log(`${distro}: shared project uses its own key and binding without restoring a VM-wide alias`);
   await ide.close();
+  await assert.rejects(within(projects[0].id, () => runReport(machines, workspaces!, vmId,
+    'editor-profiles', { editor: 'vscode' }, new AbortController().signal)), /启用 IDE 插件/);
   const alphaConfig = await within(projects[0].id, () => workspaces!.config(vmId));
   await assert.rejects(
     within(projects[0].id, () =>
@@ -370,6 +393,8 @@ try {
   const tampered = await within(projects[0].id, () => ide!.view(vmId));
   assert.ok('runtime' in tampered && !tampered.runtime?.valid && tampered.runtime?.running);
   assert.equal(tampered.command, '');
+  await assert.rejects(within(projects[0].id, () => runReport(machines, workspaces!, vmId,
+    'editor-profiles', { editor: 'jetbrains' }, new AbortController().signal)), /先在项目页配置/);
   await within(projects[0].id, () => ide!.stop(vmId));
   await within(projects[0].id, () => ide!.install(vmId));
   const configFolder = `/etc/sakura/ssh/${projects[0].id}`;

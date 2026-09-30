@@ -24,6 +24,7 @@ policies = {}
 counter = 0
 generation = 0
 display = ":93"
+request_maximum = 0
 auth = directory / "Xauthority"
 subprocess.run(["xauth", "-f", str(auth), "add", display, ".", os.urandom(16).hex()], check=True)
 os.chown(auth, user.pw_uid, user.pw_gid)
@@ -49,6 +50,11 @@ def rule(name, flags=23, maximum=1048576):
 
 def start(toolkit, action, target="UTF8_STRING", data=b"ordinary text", policy=None, extra=None, selection="CLIPBOARD"):
     global counter
+    for child in children:
+        if child.poll() is not None:
+            for stream in [child.stdin, child.stdout, child.stderr]:
+                if stream:
+                    stream.close()
     counter += 1
     file = directory / (str(counter) + ".data")
     file.write_bytes(data)
@@ -92,6 +98,117 @@ def read(toolkit, **options):
     assert process.wait(15) == 0, process.stderr.read()
     return answer
 
+
+def incremental(toolkit, other):
+    """Exercise a real PropertyDelete-driven owner, never just an INCR marker."""
+    data = ("ordinary \u754c\u00e9 incremental text\n".encode() * 14000)[:700001]
+    # Finish on a UTF-8 boundary while splitting multibyte characters in chunks.
+    data = data.decode("utf-8", "ignore").encode()
+    rule("source"); rule("sink")
+    for guarded_source, guarded_sink in [(True, False), (False, True), (True, True)]:
+        source = owner(toolkit, data=data, policy="source" if guarded_source else None,
+                       extra="incr:32767")
+        assert read(other, policy="sink" if guarded_sink else None) == data.hex()
+        assert read("mixed", policy="sink" if guarded_sink else None, action="size") == data.hex()
+        if guarded_sink:
+            for receiver in ["xlib", "xcb", "mixed"]:
+                assert read(receiver, policy="sink", action="concurrent", data=data) == "COMPLETE"
+        if guarded_source:
+            external = subprocess.run(["xclip", "-selection", "clipboard", "-out", "-target", "UTF8_STRING"],
+                                      env=environment, preexec_fn=credentials, capture_output=True, timeout=15)
+            assert external.returncode == 0 and external.stdout == data
+        source.terminate(); source.wait(15)
+    # Tiny chunks straddle a UTF-8 code point and each supported secret pattern.
+    for value in ["A\u754c\u00e9Z".encode(), b"prefix password=0123456789abcdef trailing",
+                  b"-----BEGIN PRIVATE KEY-----", b"ghp_" + b"a"*35,
+                  b"https://user:0123456789abcdef@example.test/path",
+                  b"eyJ" + b"a"*20 + b"." + b"b"*20 + b"." + b"c"*20, b"\xc3\x28"]:
+        secret = value != "A\u754c\u00e9Z".encode()
+        for guarded_source in [True, False]:
+            rule("source", 31); rule("sink", 31)
+            source = owner(toolkit, data=value, policy="source" if guarded_source else None, extra="incr:3")
+            assert read(other, policy=None if guarded_source else "sink") == ("DENIED" if secret else value.hex())
+            source.terminate(); source.wait(15)
+    rule("source"); rule("sink")
+    for guarded_source in [True, False]:
+        source = owner(toolkit, data=b"", policy="source" if guarded_source else None, extra="incr:3")
+        assert read(other, policy=None if guarded_source else "sink", action="size") == "EMPTY"
+        source.terminate(); source.wait(15)
+    source = owner(toolkit, data=b"cache after a complete INCR transfer", extra="incr:7")
+    cached = start("mixed", "cache", policy="sink")
+    assert line(cached) == b"cache after a complete INCR transfer".hex()
+    rule("sink", 21); cached.stdin.write("recheck\n"); cached.stdin.flush()
+    assert line(cached) == "DENIED" and cached.wait(15) == 0
+    rule("sink")
+    deleting = start(other, "delete", policy="sink")
+    assert line(deleting) == b"cache after a complete INCR transfer".hex()
+    deleting.stdin.write("recheck\n"); deleting.stdin.flush()
+    assert line(deleting) == "DENIED" and deleting.wait(15) == 0
+    assert read(other, policy="sink", action="short") == "DENIED"
+    source.terminate(); source.wait(15)
+    if other == "xcb":
+        source = owner(toolkit, extra="incr:2")
+        for action in ["wait", "wait64", "poll", "poll64", "size"]:
+            assert read(other, policy="sink", action=action) == b"ordinary text".hex()
+        source.terminate(); source.wait(15)
+    # Format/type changes, invalid hints, and missing terminators cannot expose a prefix.
+    for mode in ["incr-bad-type:4", "incr-bad-format:4", "incr-hint:4", "incr-overhint:4", "incr-bad-header:4"]:
+        for guarded_source in [True, False]:
+            source = owner(toolkit, policy="source" if guarded_source else None, extra=mode)
+            assert read(other, policy=None if guarded_source else "sink") == "DENIED", mode
+            source.terminate(); source.wait(15)
+    for guarded_source in [True, False]:
+        source = owner(toolkit, policy="source" if guarded_source else None, extra="incr-stall:4")
+        started = time.monotonic()
+        assert read(other, policy=None if guarded_source else "sink") == "DENIED"
+        assert time.monotonic() - started < 12
+        source.terminate(); source.wait(15)
+    for guarded_source in [True, False]:
+        rule("source", 23, 1024); rule("sink", 23, 1024)
+        source = owner(toolkit, data=b"x"*2048, policy="source" if guarded_source else None, extra="incr-underhint:257")
+        assert read(other, policy=None if guarded_source else "sink") == "DENIED"
+        source.terminate(); source.wait(15)
+    # Atomic policy replacement while the owner is stopped between two chunks.
+    for guarded_source in [True, False]:
+        for flags, maximum in [(22 if guarded_source else 21, 1048576), (31, 1048576), (23, 1024)]:
+            rule("source"); rule("sink")
+            source = owner(toolkit, data=b"prefix password=0123456789abcdef " + b"x"*1500,
+                           policy="source" if guarded_source else None, extra="incr-pause:13")
+            sink = start(other, "read", policy=None if guarded_source else "sink")
+            assert line(source) == "CHUNK"
+            rule("source" if guarded_source else "sink", flags, maximum)
+            source.stdin.write("continue\n"); source.stdin.flush()
+            assert line(sink) == "DENIED" and sink.wait(15) == 0
+            source.terminate(); source.wait(15)
+    rule("source"); rule("sink")
+    source = owner(toolkit, data=b"primary incremental", selection="PRIMARY", policy="source", extra="incr:3")
+    assert read(other, policy="sink", selection="PRIMARY") == b"primary incremental".hex()
+    source.terminate(); source.wait(15)
+    # Xlib's 32-bit properties use unsigned-long stride; XCB uses packed CARD32.
+    cards = struct.pack("<IIII", 0x12345678, 0, 0xFFFFFFFF, 0x87654321)
+    for guarded_source in [True, False]:
+        source = owner(toolkit, target="application/sakura-card32", data=cards,
+                       policy="source" if guarded_source else None, extra="incr32:8")
+        assert read(other, target="application/sakura-card32", policy=None if guarded_source else "sink") == cards.hex()
+        source.terminate(); source.wait(15)
+    for guarded_source in [True, False]:
+        rule("source", 19); rule("sink", 19)
+        source = owner(toolkit, policy="source" if guarded_source else None, extra="incr-targets:8")
+        formats = read(other, target="TARGETS", policy=None if guarded_source else "sink")
+        assert formats == "UTF8_STRING;TARGETS;TIMESTAMP;", formats
+        source.terminate(); source.wait(15)
+    rule("source"); rule("sink")
+    source = owner(toolkit, extra="incr:7")
+    assert read(other, policy="sink", action="stress") == "32/16"
+    source.terminate(); source.wait(15)
+    if toolkit == "xlib" and request_maximum < 16*1024*1024 + 28:
+        source = owner(toolkit, target="application/sakura-binary", data=b"x"*(16*1024*1024),
+                       policy="source", extra="incr:65536")
+        assert read(other, target="application/sakura-binary") == "DENIED"
+        source.terminate(); source.wait(15)
+        print("Complete binary INCR exceeding the server's atomic request limit was refused", flush=True)
+    print(toolkit + ": complete INCR in both directions, UTF8/secret boundaries, cached aliases, delete, generic replies, malformed/timeout/limits, live tightening and CARD32 passed", flush=True)
+
 try:
     server = subprocess.Popen(["Xvfb", display, "-screen", "0", "320x240x24", "-nolisten", "tcp", "-auth", str(auth)],
                               env=environment, preexec_fn=credentials, start_new_session=True,
@@ -102,11 +219,14 @@ try:
             break
         assert server.poll() is None
         time.sleep(.1)
+    request_maximum = int(read("xcb", action="maximum"))
+    print("Owned X11 maximum request bytes: " + str(request_maximum), flush=True)
     for toolkit in ["xlib", "xcb", "mixed"]:
         other = "xcb" if toolkit == "xlib" else "xlib"
         rule("source")
         rule("sink")
         source = owner(toolkit, policy="source")
+        assert read("mixed", policy="sink", action="reply-stress") == "DENIED"
         assert read(other, policy="sink") == b"ordinary text".hex()
         assert read(other, policy="sink", action="size") == b"ordinary text".hex()
         assert read("mixed", policy="sink") == b"ordinary text".hex()
@@ -169,12 +289,7 @@ try:
         rule("sink")
         source.terminate(); source.wait(15)
 
-        source = owner(toolkit, extra="incr")
-        assert read(other, policy="sink") == "DENIED"
-        source.terminate(); source.wait(15)
-        source = owner(toolkit, policy="source", extra="incr")
-        assert read(other) == "DENIED"
-        source.terminate(); source.wait(15)
+        incremental(toolkit, other)
         source = owner(toolkit, data=b"first segment subsequent text")
         assert read(other, policy="sink", extra=1) == "DENIED"
         policies["sink"].unlink()
@@ -191,7 +306,7 @@ try:
             assert read(other, policy="sink", action="wait") == "DENIED"
             assert read(other, policy="sink", action="poll") == "DENIED"
         source.terminate(); source.wait(15)
-        print(toolkit + ": directions, live tightening, cached reads, text limits, formats, secrets, INCR and invalid policy passed", flush=True)
+        print(toolkit + ": directions, live tightening, cached reads, text limits, formats, secrets and invalid policy passed", flush=True)
     counts = [struct.unpack("<IIQQQ65s31x", path.read_bytes()) for path in directory.glob("*.status")]
     assert sum(value[2] for value in counts) > 10
     assert sum(value[3] for value in counts) > 0 and sum(value[4] for value in counts) > 0

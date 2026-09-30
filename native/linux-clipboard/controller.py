@@ -250,6 +250,29 @@ def view(directory, owner):
             "blockedCopy": status[3], "blockedPaste": status[4],
             **({"error": "; ".join(errors) or "应用已退出或剪贴板代理未加载，请停止并重新启动"} if errors or (rows and not controlled) else {})}
 
+def remove_stopped_cgroup(group):
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            empty = not (group / "cgroup.procs").read_text().strip()
+        except FileNotFoundError:
+            if not group.exists():
+                return
+            raise
+        if empty:
+            try:
+                group.rmdir()
+                return
+            except FileNotFoundError:
+                return
+            except OSError as error:
+                # cgroup.kill may empty procs before the kernel releases the group.
+                if error.errno not in (errno.EBUSY, errno.ENOTEMPTY):
+                    raise
+        if time.monotonic() >= deadline:
+            raise RuntimeError("应用进程组仍未停止或未能清理")
+        time.sleep(.05)
+
 def stop(directory, owner):
     value = metadata(directory, owner)
     group = cgroup_path(owner, value["id"])
@@ -257,7 +280,7 @@ def stop(directory, owner):
         return {"stopped": True}
     secure_directory(group)
     if not (group / "cgroup.procs").read_text().strip():
-        group.rmdir()
+        remove_stopped_cgroup(group)
         return {"stopped": True}
     for pid in (group / "cgroup.procs").read_text().split():
         try:
@@ -267,12 +290,8 @@ def stop(directory, owner):
             pass
     require((group / "cgroup.kill").exists(), "内核不能可靠清理应用进程组")
     (group / "cgroup.kill").write_text("1")
-    for _ in range(100):
-        if not (group / "cgroup.procs").read_text().strip():
-            group.rmdir()
-            return {"stopped": True}
-        time.sleep(.05)
-    raise RuntimeError("应用进程组仍未停止")
+    remove_stopped_cgroup(group)
+    return {"stopped": True}
 
 def desktop_environment(network, expected, launcher):
     require(DIGEST.fullmatch(launcher) and digest(Path("/usr/local/libexec/sakura-desktop-launcher")) == launcher,

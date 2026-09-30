@@ -119,7 +119,7 @@ static void command(const std::string& line) {
     if(snapshot==INVALID_HANDLE_VALUE){result(false,GetLastError());return;}
     MODULEENTRY32W module{};module.dwSize=sizeof(module);unsigned count=0;
     if(Module32FirstW(snapshot,&module))do{
-      if(CompareStringOrdinal(module.szModule,-1,L"SakuraClipboardPolicy.dll",-1,TRUE)==CSTR_EQUAL)++count;
+      if(CompareStringOrdinal(module.szModule,-1,sizeof(void*)==4?L"SakuraClipboardPolicy-x86.dll":L"SakuraClipboardPolicy.dll",-1,TRUE)==CSTR_EQUAL)++count;
     }while(Module32NextW(snapshot,&module));
     CloseHandle(snapshot);std::cout<<"{\"count\":"<<count<<'}'<<std::endl;return;
   }

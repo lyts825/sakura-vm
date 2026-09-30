@@ -6,37 +6,47 @@ import { mkdir, copyFile, cp, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { createServer } from 'node:net';
+import { existsSync } from 'node:fs';
 import { NativeClipboard } from '../server/native-clipboard.ts';
 
 if (process.platform !== 'win32') throw new Error('The native clipboard smoke requires Windows.');
 const execute = promisify(execFile);
+const bits = Number(process.argv[2] || '64');
+assert.ok(bits === 64 || bits === 32, 'Specify 64 or 32 for the fixture architecture');
 const folder = resolve('.data/native-clipboard-test-temp/fixture-' + randomUUID());
 await mkdir(folder, { recursive: true });
-const compiler = process.env.SAKURA_NATIVE_CLIPBOARD_CXX || 'g++.exe';
+const compiler32 = resolve('.tools/mingw32-16.2.0/mingw32/bin/g++.exe');
+const compiler =
+  bits === 32
+    ? process.env.SAKURA_NATIVE_CLIPBOARD_CXX32 ||
+      (existsSync(compiler32) ? compiler32 : 'i686-w64-mingw32-g++.exe')
+    : process.env.SAKURA_NATIVE_CLIPBOARD_CXX || 'g++.exe';
 const fixture = join(folder, 'fixture.exe'),
   other = join(folder, 'other.exe');
-await execute(
-  compiler,
-  [
-    '-std=c++17',
-    '-O2',
-    '-s',
-    '-static',
-    '-municode',
-    resolve('native/windows-clipboard/fixture.cpp'),
-    '-o',
-    fixture,
-    '-lole32',
-    '-luuid',
-    '-lshell32',
-    '-ladvapi32',
-  ],
-  { windowsHide: true, timeout: 60000 },
-);
-await copyFile(fixture, other);
+const fixtureArguments = (target) => [
+  '-std=c++17',
+  '-O2',
+  '-s',
+  '-static',
+  '-municode',
+  resolve('native/windows-clipboard/fixture.cpp'),
+  '-o',
+  target,
+  '-lole32',
+  '-luuid',
+  '-lshell32',
+  '-ladvapi32',
+];
+await execute(compiler, fixtureArguments(fixture), { windowsHide: true, timeout: 60000 });
+if (bits === 32)
+  await execute(process.env.SAKURA_NATIVE_CLIPBOARD_CXX || 'g++.exe', fixtureArguments(other), {
+    windowsHide: true,
+    timeout: 60000,
+  });
+else await copyFile(fixture, other);
 const assets = resolve(process.env.SAKURA_NATIVE_CLIPBOARD_ASSETS || '.tools/native-clipboard');
-const controller = join(assets, 'sakura-clipboard-controller.exe');
-const library = join(assets, 'SakuraClipboardPolicy.dll');
+const controller = join(assets, `sakura-clipboard-controller${bits === 32 ? '-x86' : ''}.exe`);
+const library = join(assets, `SakuraClipboardPolicy${bits === 32 ? '-x86' : ''}.dll`);
 const owner = randomUUID();
 async function launch(path, station) {
   let server, socket, lines;
@@ -165,7 +175,7 @@ try {
   assert.equal(counterpart.station, identity.station);
   assert.ok(
     (await agent(['list'])).processes.some(
-      (p) => p.pid === identity.pid && p.created === identity.created && p.bits === 64,
+      (p) => p.pid === identity.pid && p.created === identity.created && p.bits === bits,
     ),
   );
   assert.equal((await b.request('write', 'baseline')).ok, true);
@@ -340,12 +350,12 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(service.view().processes.find((item) => item.pid === third.pid)?.state, 'enforced');
   assert.equal((await c.request('write', 'new process refused')).ok, false);
+  await service.close();
   const controlled = service.view().processes.filter((item) => item.state === 'enforced');
   assert.ok(
     controlled.some((item) => item.pid === identity.pid) && controlled.some((item) => item.pid === third.pid),
   );
   assert.ok(controlled.every((item) => item.image.toLowerCase() === fixture.toLowerCase()));
-  await service.close();
   assert.equal((await a.request('write', 'closed controller refusal')).ok, false);
   assert.equal(JSON.parse(await readFile(file, 'utf8')).managed.length, controlled.length);
   locked = false;
@@ -381,6 +391,7 @@ try {
   console.log(
     'Actual server executable binding, automatic new-process enforcement through UI lock, restart ownership and explicit disable passed.',
   );
+  console.log(`Native ${bits}-bit fixture passed in an isolated window station.`);
 } finally {
   await service?.close();
   await Promise.allSettled([a.close(), b?.close(), c?.close()]);

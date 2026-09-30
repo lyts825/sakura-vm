@@ -730,7 +730,7 @@ export const capabilityDefinitions = {
       editor: z.enum(['jetbrains', 'neovim', 'vscode']).default('neovim'),
     },
     { editor: 'neovim' },
-    '生成当前实例的 SSH 档案与编辑器启动命令，可下载；不改写宿主现有 SSH 配置。',
+    '导出所选项目的编辑器 SSH 档案；含私有项目的实例需先启用 IDE 插件并配置项目连接，使用专属身份与固定主机公钥。',
     false,
   ),
   'metrics-export': action(

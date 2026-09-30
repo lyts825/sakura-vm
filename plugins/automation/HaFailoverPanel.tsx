@@ -33,6 +33,9 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
     setting?.options?.autoHostFailover === true);
   const [dataReconciled, setDataReconciled] = useState(false);
   const [result, setResult] = useState('');
+  const rejoinAvailable = !!promotion || ['fencing', 'fenced', 'promoted'].includes(hostFailover?.phase || '');
+  useEffect(() => { setDataReconciled(false); },
+    [vmId, promotion?.remoteVmId, hostFailover?.targetVmId, rejoinAvailable]);
   useEffect(() => {
     if (!setting) return;
     setEnabled(setting.enabled);
@@ -89,7 +92,7 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
       栅栏时间 {formatDateTime(promotion.fencedAt)}
       {promotion.error && ` · ${promotion.error}`}</p>}
     {localFailover?.error && <p role="alert">最近一次接管尝试：{localFailover.error}</p>}
-    {(promotion || hostFailover?.phase === 'promoted') && <label className="checkbox-row"><input type="checkbox"
+    {rejoinAvailable && <label className="checkbox-row"><input type="checkbox"
       checked={dataReconciled} onChange={(event) => setDataReconciled(event.target.checked)} />
       已回迁目标运行期间的写入数据，或接受丢失这些新数据</label>}
     <div className="feature-actions">
@@ -106,12 +109,13 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
           setResult(JSON.stringify(checked, null, 2));
           reload();
         })}>检查健康</button>
-      {(promotion || hostFailover?.phase === 'promoted') &&
+      {rejoinAvailable &&
         <button className="secondary" disabled={action.busy || !dataReconciled}
         onClick={() => void action.run(async () => {
           await request(`/vms/${vmId}/next-features`, 'POST',
             { action: 'run', featureId: 'ha-failover',
               options: { mode: 'rejoin', dataReconciled: true } });
+          setDataReconciled(false);
           reload();
         }, '目标副本已持久封锁，来源可以重新启动')}>目标停机后退出接管</button>}
     </div>

@@ -193,7 +193,8 @@ static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wst
   if (!ProcessIdToSessionId(pid,&targetSession) || !ProcessIdToSessionId(GetCurrentProcessId(),&ownSession) ||
       targetSession!=ownSession || !ownUser(process.value) || processCreation(process.value)!=created || !same(image(process.value),expected))
     throw std::runtime_error("process identity changed");
-  if (bits(process.value)!=64) throw std::runtime_error("native process architecture unsupported");
+  const auto architecture=bits(process.value);
+  if (architecture!=32 && architecture!=64) throw std::runtime_error("native process architecture unsupported");
   const auto name=mapping(owner,pid,created);
   const auto token=user(GetCurrentProcess()); wchar_t* sid=nullptr;
   if (!ConvertSidToStringSidW(reinterpret_cast<const TOKEN_USER*>(token.data())->User.Sid,&sid)) throw std::runtime_error("policy ACL unavailable");
@@ -227,6 +228,7 @@ static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wst
     // installed at a new path after an update; loading a second copy would
     // stack duplicate detours and OLE wrappers in an otherwise current process.
     if ((active || !exists) && data->status!=1) {
+      if (architecture!=sizeof(void*)*8) throw std::runtime_error("native attachment requires a matching architecture controller");
       loaded(process.value,pid,library);
       const DWORD answer=configure(process.value,pid,library,name);
       if (answer || data->status!=1) throw std::runtime_error("native clipboard API attachment failed");

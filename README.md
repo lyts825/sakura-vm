@@ -34,7 +34,7 @@
 
 目前验证的平台：Windows x64、Node.js 22.12+、Git、Rust stable（需要 MSVC C++ 构建工具）。无需管理员权限或安装 WSL。TCG 回退模式无需启用系统虚拟化组件。
 
-Windows 源码构建另需 x64 MinGW-w64 的 `g++.exe` 编译应用剪贴板代理；可通过 `SAKURA_NATIVE_CLIPBOARD_CXX` 指定完整路径。独立运行包已包含代理，使用运行包无需此编译器。范围、设置与验证见 [Windows 应用剪贴板策略](docs/native-clipboard.md)。
+Windows 源码构建另需 x64 与 i686 MinGW-w64 C++ 编译器，分别通过 `SAKURA_NATIVE_CLIPBOARD_CXX` 和 `SAKURA_NATIVE_CLIPBOARD_CXX32` 指定完整路径。独立运行包已包含两种应用架构的代理，使用运行包无需编译器。范围、设置与验证见 [Windows 应用剪贴板策略](docs/native-clipboard.md)。
 
 KDE 桌面的「原生应用剪贴板」入口可按完整 ELF 路径与摘要启动 Linux X11 应用，执行复制、粘贴、格式与敏感文本规则，支持热更新、服务重载及子进程清理。客户机需要 cgroup v2；现有应用、原生 Wayland 和底层协议路径仍未覆盖。用法和验证见 [Linux X11 应用剪贴板策略](docs/x11-clipboard.md)。
 

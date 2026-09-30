@@ -6,9 +6,12 @@ import { haHttpsRequest } from './ha-witness-http.ts';
 import { haWitnessServerConfigSchema, redfishPowerState, witnessVms,
   type HaWitnessServerConfig } from './ha-witness-server.ts';
 
-type Check = { ok: true; detail: string } | { ok: false; error: string };
+export type HaWitnessCheck = { ok: true; detail: string } | { ok: false; error: string };
+type Observed = { powerState?: string; targetHostId?: string;
+  targetVmId?: string; targetStatus?: 'stopped' | 'starting' | 'running';
+  applicationVmId?: string; applicationReady?: boolean; activeVmId?: string | null };
 
-async function check(task: () => Promise<string>): Promise<Check> {
+async function check(task: () => Promise<string>): Promise<HaWitnessCheck> {
   try { return { ok: true, detail: await task() }; }
   catch (error) { return { ok: false, error: (error as Error).message }; }
 }
@@ -25,7 +28,7 @@ export async function checkHaWitnessDeployment(raw: unknown) {
     throw new Error('只读部署预检不能执行接管操作');
   };
   const witness = new HaWitness(config.stateFile, witnessVms(config), {
-    fence: denyControl, targetStatus: denyControl, activate: denyControl,
+    fence: denyControl, confirmFence: denyControl, targetStatus: denyControl, activate: denyControl,
     applicationReady: denyControl, switchTraffic: denyControl,
     trafficTarget: denyControl, retire: denyControl,
   });
@@ -45,6 +48,7 @@ export async function checkHaWitnessDeployment(raw: unknown) {
     const { phase, plan } = await witness.deploymentState({
       sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId,
     });
+    const observed: Observed = {};
     const redfish = check(async () => {
       const ca = vm.redfish.caFile ? await readFile(vm.redfish.caFile) : undefined;
       const result = await haHttpsRequest(
@@ -53,6 +57,7 @@ export async function checkHaWitnessDeployment(raw: unknown) {
           password: vm.redfish.password }, ca,
           fingerprint: vm.redfish.fingerprint });
       const powerState = redfishPowerState(result, vm.redfish.systemUuid);
+      observed.powerState = powerState;
       if (phase !== 'source' && powerState !== 'Off')
         throw new Error(`见证已进入 ${phase}，但来源宿主电源状态为 ${powerState}`);
       return `PowerState=${powerState}`;
@@ -63,6 +68,7 @@ export async function checkHaWitnessDeployment(raw: unknown) {
           fingerprint: vm.target.fingerprint }) as { version?: unknown; id?: unknown };
       if (result?.version !== 1 || result.id !== vm.targetHostId)
         throw new Error('目标主机身份与见证配置不一致');
+      observed.targetHostId = result.id as string;
       return `hostId=${result.id}`;
     });
     const replica = plan ? check(async () => {
@@ -73,6 +79,8 @@ export async function checkHaWitnessDeployment(raw: unknown) {
       if (result?.ready !== true || result.id !== plan.remoteVmId ||
           !['stopped', 'starting', 'running'].includes(String(result.status)))
         throw new Error('目标副本身份或预检状态不一致');
+      observed.targetVmId = result.id as string;
+      observed.targetStatus = result.status as Observed['targetStatus'];
       if (phase === 'source' && result.status !== 'stopped')
         throw new Error('来源仍获授权时，目标副本不应已经启动');
       if (phase === 'promoted' && result.status !== 'running')
@@ -88,6 +96,8 @@ export async function checkHaWitnessDeployment(raw: unknown) {
         ready?: unknown; vmId?: unknown };
       if (result?.vmId !== plan.remoteVmId || typeof result.ready !== 'boolean')
         throw new Error('应用健康接口未返回目标实例及布尔就绪状态');
+      observed.applicationVmId = result.vmId as string;
+      observed.applicationReady = result.ready;
       if (phase === 'promoted' && !result.ready)
         throw new Error('已接管的目标应用未就绪');
       return `vmId=${result.vmId}, ready=${result.ready}`;
@@ -101,6 +111,7 @@ export async function checkHaWitnessDeployment(raw: unknown) {
       if (result?.activeVmId !== null &&
           typeof result?.activeVmId !== 'string')
         throw new Error('流量状态接口未返回 activeVmId');
+      observed.activeVmId = result.activeVmId as string | null;
       if (phase === 'promoted' && result.activeVmId !== plan?.remoteVmId)
         throw new Error('已接管实例未成为流量入口');
       return `activeVmId=${result.activeVmId || 'none'}`;
@@ -110,8 +121,19 @@ export async function checkHaWitnessDeployment(raw: unknown) {
       application: application ? await application : null,
       traffic: await traffic };
     return { sourceVmId: vm.sourceVmId, phase,
-      armed: !!plan, checks,
+      armed: !!plan, plan, observed, checks,
       ok: Object.values(checks).every((item) => !item || item.ok) };
   }));
-  return { ok: listener.ok && vms.every((vm) => vm.ok), listener, vms };
+  // Reads happen across external systems. Mark phase/plan changes during the
+  // sample so an observer does not mistake a normal transition for split-brain.
+  await witness.init();
+  const completed = await Promise.all(vms.map(async (vm) => {
+    const configVm = config.vms.find((item) => item.sourceVmId === vm.sourceVmId)!;
+    const after = await witness.deploymentState({ sourceHostId: configVm.sourceHostId,
+      sourceVmId: vm.sourceVmId });
+    return { ...vm, phaseAfter: after.phase,
+      stable: vm.phase === after.phase && vm.plan?.transferId === after.plan?.transferId };
+  }));
+  return { ok: listener.ok && completed.every((vm) => vm.ok), listener, vms: completed };
 }
+export type HaWitnessPreflightReport = Awaited<ReturnType<typeof checkHaWitnessDeployment>>;

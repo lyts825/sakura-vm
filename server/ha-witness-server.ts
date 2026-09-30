@@ -1,6 +1,6 @@
 import { createServer as createHttpsServer, type Server } from 'node:https';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { AppError } from './model.ts';
@@ -8,6 +8,7 @@ import { readJsonBody } from './http.ts';
 import { HaWitness, type HaWitnessActions, type HaWitnessPlan,
   type HaWitnessVm } from './ha-witness-core.ts';
 import { haHttpsRequest } from './ha-witness-http.ts';
+import { lockHaWitnessState } from './ha-witness-lock.ts';
 
 const httpsUrl = z.url().refine((value) => {
   const url = new URL(value);
@@ -43,7 +44,8 @@ const witnessVmConfigSchema = z.object({
     fingerprint: fingerprint.optional() }).strict(),
   traffic: z.object({ baseUrl, token: bearerToken,
     fingerprint: fingerprint.optional() }).strict(),
-}).strict();
+}).strict().refine((vm) => vm.sourceHostId !== vm.targetHostId,
+  '来源宿主与目标宿主必须不同');
 export const haWitnessServerConfigSchema = z.object({
   version: z.literal(1), listen: z.object({ host: z.string().min(1),
     port: z.number().int().min(0).max(65535),
@@ -96,9 +98,15 @@ async function actionsFor(config: HaWitnessServerConfig): Promise<HaWitnessActio
     { basic: { username: vm.redfish.username, password: vm.redfish.password },
       ca: ca.get(vm.sourceVmId), fingerprint: vm.redfish.fingerprint,
       timeoutMs: 10_000 });
-  const target = async (vm: ConfigVm, path: string, body: unknown) => haHttpsRequest(
-    new URL(path, vm.target.baseUrl).toString(), 'POST', body,
-    { bearer: vm.target.token, fingerprint: vm.target.fingerprint, timeoutMs: 30_000 });
+  const target = async (vm: ConfigVm, path: string, body: unknown) => {
+    const identity = await haHttpsRequest(new URL('/peer/status', vm.target.baseUrl).toString(),
+      'GET', undefined, { bearer: vm.target.token, fingerprint: vm.target.fingerprint }) as {
+      version?: unknown; id?: unknown };
+    if (identity?.version !== 1 || identity.id !== vm.targetHostId)
+      throw new AppError('目标主机身份与见证配置不一致', 409);
+    return haHttpsRequest(new URL(path, vm.target.baseUrl).toString(), 'POST', body,
+      { bearer: vm.target.token, fingerprint: vm.target.fingerprint, timeoutMs: 30_000 });
+  };
   return {
     fence: async (identity) => {
       const vm = entry(identity), systemPath = vm.redfish.systemPath;
@@ -116,6 +124,12 @@ async function actionsFor(config: HaWitnessServerConfig): Promise<HaWitnessActio
         if (Date.now() >= deadline) throw new AppError('带外控制器未确认来源宿主已关闭', 504);
         await new Promise((resolve) => setTimeout(resolve, 2_000));
       }
+    },
+    confirmFence: async (identity) => {
+      const vm = entry(identity);
+      if (redfishPowerState(await bmc(vm, 'GET', vm.redfish.systemPath),
+        vm.redfish.systemUuid) !== 'Off')
+        throw new AppError('来源宿主已不再确认关闭，保持隔离并停止接管推进', 409);
     },
     targetStatus: async (identity, plan) => {
       const result = await target(entry(identity), '/peer/replica-activate-check',
@@ -181,7 +195,7 @@ function authorizedHost(request: IncomingMessage, tokens: Map<string, string>) {
   return host;
 }
 
-export async function startHaWitnessServer(raw: unknown,
+async function startHaWitnessServerUnlocked(raw: unknown,
   now = () => Date.now()) {
   const config = haWitnessServerConfigSchema.parse(raw);
   if (new Set(config.vms.map((vm) => vm.sourceVmId)).size !== config.vms.length)
@@ -237,4 +251,23 @@ export async function startHaWitnessServer(raw: unknown,
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await witness.drain();
   } };
+}
+
+export async function startHaWitnessServer(raw: unknown, now = () => Date.now()) {
+  const parsed = haWitnessServerConfigSchema.parse(raw);
+  const config = { ...parsed, stateFile: await realpath(parsed.stateFile).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      throw new AppError('见证状态文件缺失；为避免双主启动，须人工核对后初始化',
+        503, 'HA_WITNESS_STATE_MISSING');
+    throw error;
+  }) };
+  const release = await lockHaWitnessState(config.stateFile);
+  try {
+    const service = await startHaWitnessServerUnlocked(config, now);
+    let closing: Promise<void> | undefined;
+    return { ...service, close: () => closing ||= (async () => {
+      try { await service.close(); }
+      finally { await release(); }
+    })() };
+  } catch (error) { await release(); throw error; }
 }

@@ -47,7 +47,11 @@ export class HaHostFailover {
     }
   }
 
-  async disarm(id: string, failureThreshold: number) {
+  disarm(id: string, failureThreshold: number) {
+    return this.enqueue(() => this.disarmNow(id, failureThreshold));
+  }
+
+  private async disarmNow(id: string, failureThreshold: number) {
     if (!this.client) throw new AppError('见证节点未配置，不能安全撤销宿主失联策略', 503);
     await this.client.heartbeat({ ...this.identity(id),
       failureThreshold, plan: null });
@@ -56,7 +60,11 @@ export class HaHostFailover {
   }
 
   sample() {
-    const current = this.work.catch(() => {}).then(() => this.scan());
+    return this.enqueue(() => this.scan());
+  }
+
+  private enqueue<T>(task: () => Promise<T>) {
+    const current = this.work.catch(() => {}).then(task);
     this.work = current.then(() => {}, () => {});
     return current;
   }
@@ -85,7 +93,7 @@ export class HaHostFailover {
       try {
         const result = await this.client!.heartbeat({ ...this.identity(vm.id),
           failureThreshold: enrollment.failureThreshold });
-        this.armed[vm.id] = result.armed;
+        this.armed[vm.id] = this.machines.state(vm.id) === 'running' && !vm.haPromotion && result.armed;
       } catch (error) {
         this.armed[vm.id] = false;
         this.errors[vm.id] = (error as Error).message;
@@ -114,7 +122,7 @@ export class HaHostFailover {
       const parsed = haFailoverOptions.safeParse(policy?.options);
       if (policy?.enabled && parsed.success && parsed.data.autoHostFailover) continue;
       try {
-        await this.disarm(vm.id, enrollment.failureThreshold);
+        await this.disarmNow(vm.id, enrollment.failureThreshold);
         delete this.errors[vm.id];
       } catch (error) { this.errors[vm.id] = (error as Error).message; }
     }
@@ -151,10 +159,26 @@ export class HaHostFailover {
           }
         }
         if (plan) {
+          // A process failure, local fence or policy change during slow peer
+          // validation must not resurrect a withdrawn host-loss plan.
+          const latest = (await this.policies())[id];
+          const latestOptions = haFailoverOptions.safeParse(latest?.options);
+          const currentVm = this.machines.get(id), currentEnrollment = currentVm.haWitnessEnrollment;
+          if (this.closed || !latest?.enabled || !latestOptions.success ||
+              !latestOptions.data.autoHostFailover ||
+              latestOptions.data.targetHostId !== options.targetHostId ||
+              latestOptions.data.failureThreshold !== options.failureThreshold ||
+              latestOptions.data.maxReplicaAgeMinutes !== options.maxReplicaAgeMinutes ||
+              !currentEnrollment ||
+              currentEnrollment?.targetHostId !== options.targetHostId ||
+              currentEnrollment.failureThreshold !== options.failureThreshold ||
+              this.machines.state(id) !== 'running' || currentVm.haPromotion) plan = null;
+        }
+        if (plan) {
           const result = await this.client.heartbeat({ ...this.identity(id),
             failureThreshold: options.failureThreshold, plan });
           this.armed[id] = result.armed;
-        } else await this.disarm(id, options.failureThreshold);
+        } else await this.disarmNow(id, options.failureThreshold);
         this.phases[id] = 'source';
         this.targetVmIds[id] = plan?.remoteVmId || '';
         delete this.errors[id];
@@ -200,7 +224,7 @@ export class HaHostFailover {
     if (!this.client) return;
     for (const vm of this.machines.records.values()) {
       if (!vm.haWitnessEnrollment) continue;
-      try { await this.disarm(vm.id, vm.haWitnessEnrollment.failureThreshold); }
+      try { await this.disarmNow(vm.id, vm.haWitnessEnrollment.failureThreshold); }
       catch (error) {
         console.error(`实例 ${vm.id} 的见证关闭心跳失败：`, (error as Error).message);
       }

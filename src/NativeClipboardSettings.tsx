@@ -40,7 +40,7 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
       <h3>Windows 应用剪贴板策略</h3>
       <p>
         选择正在运行的应用，保存复制、粘贴及内容限制。规则绑定完整程序路径和文件摘要，适用于当前 Windows
-        用户的 x64 进程。
+        用户的 x64 与 x86 进程。
       </p>
       <Feedback error={action.error || remote.error} message={action.message} />
       {remote.data?.error && <p role="alert">{remote.data.error}</p>}
@@ -64,10 +64,10 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
           <select value={process} onChange={(event) => setProcess(event.target.value)}>
             <option value="">选择应用进程</option>
             {remote.data?.available
-              .filter((item) => item.bits === 64)
+              .filter((item) => item.bits === 64 || item.bits === 32)
               .map((item) => (
                 <option key={`${item.pid}:${item.created}`} value={`${item.pid}:${item.created}`}>
-                  {item.image} · PID {item.pid}
+                  {item.image} · {item.bits} 位 · PID {item.pid}
                 </option>
               ))}
           </select>

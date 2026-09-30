@@ -784,7 +784,10 @@ export class FeatureSuite {
           requireSuccessfulResult(result);
           return;
         }
-        const project = await this.workspaces.resolvedConfig(id);
+        // Shared download preparation never resolves or exports project secrets,
+        // runtime selectors, import hooks or other project execution settings.
+        const prefetch = operation === 'prefetch-dependencies';
+        const project = prefetch ? await this.workspaces.config(id) : await this.workspaces.resolvedConfig(id);
         if (project.networkIsolation === 'private' && operation === 'database') {
           if (!this.observations.privateDatabase)
             throw new AppError('私有数据库需要启用容器插件', 409);
@@ -795,7 +798,7 @@ export class FeatureSuite {
         }
         const directory = quote(project.directory);
         const worktreePath = path ? quote(`${project.directory}/${path}`) : '';
-        const environment = envPrefix(project.environment);
+        const environment = prefetch ? '' : envPrefix(project.environment);
         let command: string;
         switch (operation) {
           case 'test':
@@ -819,7 +822,8 @@ export class FeatureSuite {
           case 'prefetch-dependencies':
           case 'install-cached-dependencies':
             command = projectDependencyCacheScript(project.directory,
-              this.workspaces.projects.current(id), cacheManager!, operation);
+              this.workspaces.projects.current(id), cacheManager!, operation,
+              prefetch ? await this.workspaces.networkEnvironment(id) : undefined);
             break;
           case 'worktree-list':
             command = `cd ${directory}\ngit worktree list --porcelain`;

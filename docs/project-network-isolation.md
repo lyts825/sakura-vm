@@ -8,9 +8,9 @@ Envoy 服务网格边车进入所选项目的网络空间，验证与运行时�
 
 Debian、Ubuntu 私有项目使用独立的 Docker 与 containerd，容器 `host` 网络为本项目的仅回环空间；镜像先通过共享网络预取，再导入项目，工作负载不退回共享 Docker。支持 Dockerfile、符合条件的 Compose、官方 Dev Container CLI 与数据库预设；容器、镜像和数据卷按项目分开，暂停、运行与停止后的容器记录保护目录及网络绑定，停用容器插件仍保留保护。使用条件、重启恢复及验证范围见 [私有项目容器](private-containers.md)。容器安装、CLI 安装、模板元数据与模板应用属于不加载项目密钥的共享网络准备步骤。
 
-含私有项目的 Debian、Ubuntu 实例撤销原有共享 SSH 名称别名，改用专属项目 SSH 服务和密钥。VS Code、普通 SSH 命令、SFTP 与其后台子进程进入所选项目网络，编辑器缓存也按项目分开；共享项目使用独立服务而保持共享网络。桥接只转送至本项目回环，每次新连接核对服务与实际网络；停止清理整个所属 cgroup，核心绑定保护不依赖 IDE 插件。私有模式需由本机下载 VS Code 服务端并传入，不能使用 Unix 套接字转发。重载与重启、环境和密钥变更及验证范围见 [项目 SSH 与 Remote-SSH](project-ssh.md)。
+含私有项目的 Debian、Ubuntu 实例撤销原有共享 SSH 名称别名，改用专属项目 SSH 服务和密钥。VS Code、普通 SSH 命令、SFTP 与其后台子进程进入所选项目网络，编辑器缓存也按项目分开；共享项目使用独立服务而保持共享网络。能力中心的 VS Code、JetBrains 与 Neovim 档案也只导出经过核对的项目入口，未配置项目 SSH 或 IDE 插件未启用时拒绝导出。桥接只转送至本项目回环，每次新连接核对服务与实际网络；停止清理整个所属 cgroup，核心绑定保护不依赖 IDE 插件。私有模式需由本机下载 VS Code 服务端并传入，不能使用 Unix 套接字转发。Windows 桌面 Remote-SSH 的真实远程扩展、编辑、集成终端及 ShellExecution 任务已在 Debian、Ubuntu 各自的双项目验证；重载与重启、环境和密钥变更及验证范围见 [项目 SSH 与 Remote-SSH](project-ssh.md)。
 
-按锁文件安装依赖及其安装脚本在私有命名空间中运行，需要联网下载时会失败；可先在共享网络预取固定依赖（npm 禁用脚本，pip 只下载二进制包），再从项目缓存离线安装。仓库数据通过客户机共享网络获取，但私有项目使用无工作树检出下载，检出及 Git 过滤器在项目命名空间内执行。项目环境变量也只在托管项目命令内设置，不传给共享网络中的准备步骤。安装运行时及其他准备工作仍使用客户机共享网络，以便获取依赖。
+按锁文件安装依赖及其安装脚本在私有命名空间中运行，需要联网下载时会失败；可先在共享网络预取固定依赖，再从项目缓存离线安装。预取不解析项目私密配置、不加载项目运行时或环境，在清空环境后的系统工具与独立临时目录中执行；项目 npmrc、Python 导入路径和包管理器配置不进入下载器。npm 使用去除脚本与可执行配置的清单、带完整版本和摘要的 registry 锁文件及空 npm 配置，保持 `--ignore-scripts`；Git、URL、路径、工作区链接和未完整锁定的来源先拒绝。pip 使用隔离系统 Python，只接受固定版本的普通包并下载二进制 wheels。下载后复核原始清单摘要，项目文件变化则拒绝发布缓存。单独保存的实例镜像与 HTTP(S) 代理配置可用于下载，不接受 URL 中的凭证或令牌参数；依赖项目令牌、认证 npmrc 或其他可执行下载配置的仓库目前不能通过此预取器使用。离线安装仍进入项目网络并加载项目环境。仓库数据通过客户机共享网络获取，但私有项目使用无工作树检出下载，检出及 Git 过滤器在项目命名空间内执行。安装运行时及其他准备工作仍使用客户机共享网络，以便获取依赖。
 
 网页普通终端与可恢复 tmux 会话也按当前工作项目进入相同的网络空间，准备阶段可自动创建命名空间。恢复和只读分享会复核项目、目录、网络模式、运行会话标识及所有窗格的实际网络空间。运行中的连接、断开后仍在运行的 tmux 会话及暂停中的实例会阻止修改项目目录或网络模式；“停止项目终端”按项目清理并保留停止状态和布局，刷新不会重建会话。停用项目插件后仍遵守已保存的活动项目配置，见 [项目终端与只读分享](project-terminals.md)。
 
@@ -33,6 +33,8 @@ KDE 桌面也会持久绑定所选项目，私有项目中的 Xvnc、Plasma、Ko
 `npm run test:project-network-isolation` 在真实 Alpine 虚拟机中验证两个项目使用不同的命名空间、没有路由，且初始化、环境变量、服务、仓库下载阶段（测试桩）与真实 Git 检出、Git 工作台、收藏命令、流水线、交互式项目终端、运行时版本与开发工具检查处于预期的命名空间，人工添加路由后托管命令拒绝执行，并验证停止后的清理。`npx tsx scripts/smoke-project-network-isolation.ts debian` 和 `npx tsx scripts/smoke-project-network-isolation.ts ubuntu` 可在真实 Debian、Ubuntu 客户机中复核同一流程。设置 `SAKURA_LSP_PRIVATE=1` 运行 `npm run test:language-services`、设置 `SAKURA_DAP_PRIVATE=1` 运行 `npm run test:debug-adapter` 可额外验证私有项目中的语言服务与调试器。非 Sakura 生成的系统 SSH、显式实例管理命令和自行启动进程仍不受项目命名空间约束。
 
 设置 `SAKURA_NOTEBOOK_PRIVATE=1` 运行 `npm run test:notebook` 验证私有 Notebook 的二进制包预取、离线安装、认证、桥接恢复和 Jupyter WebSocket 内核的实际命名空间及拒绝外网。设置 `SAKURA_BROWSER_IDE_PRIVATE=1` 运行 `npm run test:browser-ide` 验证私有浏览器 IDE 的认证、进程命名空间、桥接恢复和到期清理；同时设置 `SAKURA_BROWSER_IDE_TERMINAL=1` 验证真实浏览器中的集成终端也进入同一命名空间。
+
+`npm run test:project-cache -- alpine|debian|ubuntu` 使用独立真实客户机验证正常 npm registry 依赖和二进制 Python wheels 的下载与私有离线安装，检查预取忽略项目 `NODE_OPTIONS`、`PYTHONPATH`、npmrc、pip.conf、环境与未解析的私密引用，以及离线导入钩子只在项目网络执行；另验证清单变更、URL 与 Git prepare 依赖拒绝。设置 `SAKURA_KEEP_CACHE_SMOKE=1` 可保留所属目录中的 `prefetch-evidence.json`。
 
 设置 `SAKURA_SINGLE_APP_PRIVATE=1` 运行 `npm run test:single-app-windows` 验证私有图形窗口的进程命名空间、共享网络中没有 RFB 监听、既有会话绑定与停止清理；设置 `SAKURA_SINGLE_APP_BROWSER=1` 额外验证真实浏览器中的 noVNC 认证。
 

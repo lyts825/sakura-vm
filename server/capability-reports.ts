@@ -7,7 +7,7 @@ import { readStore, writeStore } from './local-store.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
 import type { JobView } from './jobs.ts';
-import { sshPath } from './ide.ts';
+import { editorConnectionProfile } from './ide.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { capabilityViews, type CapabilityId } from './capability-definitions.ts';
 
@@ -229,28 +229,18 @@ export async function runReport(
     };
   }
   if (featureId === 'editor-profiles') {
-    const vm = machines.get(id),
-      live = machines.live.get(id),
-      project = await workspaces.config(id);
-    if (!live || machines.state(id) !== 'running')
-      throw new AppError('请先启动实例，以获取当前 SSH 端口', 409);
-    const alias = 'sakura-' + vm.name;
-    const config = `Host ${alias}\n  HostName 127.0.0.1\n  Port ${live.sshPort}\n  User root\n  IdentityFile ${sshPath(join(vmDir(id), 'id_rsa'))}\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile ${sshPath(join(vmDir(id), 'known_hosts'))}\n`;
+    const { config, ...profile } = await editorConnectionProfile(machines, workspaces, id, signal);
+    const { alias, directory } = profile;
     return {
       editor: p.editor,
-      alias,
-      host: '127.0.0.1',
-      port: live.sshPort,
-      username: 'root',
-      directory: project.directory,
-      identityFile: join(vmDir(id), 'id_rsa'),
+      ...profile,
       instructions:
         p.editor === 'jetbrains'
           ? '在 JetBrains Gateway 的 SSH 连接中选择此档案，项目目录见 directory。'
           : p.editor === 'neovim'
             ? '使用下载的 SSH 档案配置 netrw 的 SSH 命令，再打开 remotePath。'
             : '将档案导入 Remote-SSH 后打开指定项目目录。',
-      remotePath: `scp://${alias}/${project.directory}/`,
+      remotePath: `scp://${alias}/${directory}/`,
       download: { filename: alias + '-ssh.config', mime: 'text/plain', content: config },
       expiresOnRestart: true,
     };
