@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const root = process.cwd();
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -11,6 +12,20 @@ for (const file of ['dist/index.html', 'dist/single-app.html', '.sakura-server/i
   '.sakura-server/assets/state-report.sh', '.sakura-server/assets/engineering-runner.py',
   '.sakura-server/assets/secure-erase.py'])
   await stat(join(root, file));
+if (process.platform === 'win32') {
+  const folder = join(root, '.sakura-server', 'assets', 'native-clipboard');
+  const native = JSON.parse(await readFile(join(folder, 'native-clipboard.json'), 'utf8'));
+  const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'MinHook-LICENSE.txt'];
+  if (native.version !== 1 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
+      !Array.isArray(native.files) || native.files.length !== 3 ||
+      new Set(native.files.map((file) => file.name)).size !== 3)
+    throw new Error('Native clipboard distribution metadata is invalid');
+  for (const name of names) {
+    const file = native.files.find((file) => file.name === name), bytes = await readFile(join(folder, name));
+    if (!file || file.size !== bytes.length || file.sha256 !== createHash('sha256').update(bytes).digest('hex'))
+      throw new Error(`Native clipboard distribution integrity failed: ${name}`);
+  }
+}
 const extensionRoot = join(root, 'browser-extension');
 const extension = JSON.parse(await readFile(join(extensionRoot, 'manifest.json'), 'utf8'));
 if (extension.manifest_version !== 3 || extension.action?.default_popup !== 'popup.html' ||

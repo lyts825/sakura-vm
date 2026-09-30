@@ -139,6 +139,9 @@ const LocalAssistant = lazy(() =>
 const NativeIntegrationSettings = lazy(() =>
   import('./NativeIntegration').then((module) => ({ default: module.NativeIntegrationSettings })),
 );
+const NativeClipboardSettings = lazy(() =>
+  import('./NativeClipboardSettings').then((module) => ({ default: module.NativeClipboardSettings })),
+);
 const RecordingLibrary = lazy(() =>
   import('./DesktopRecording').then((module) => ({ default: module.RecordingLibrary })),
 );
@@ -404,6 +407,7 @@ function App() {
   const [showMediaDevices, setShowMediaDevices] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [showNative, setShowNative] = useState(false);
+  const [showNativeClipboard, setShowNativeClipboard] = useState(false);
   const [showRecordings, setShowRecordings] = useState(false);
   const [openFile, setOpenFile] = useState<{
     id: string;
@@ -1708,6 +1712,16 @@ function App() {
                   projectName={projectId ? `${vm?.name || ''} / ${projectId}` : undefined}
                 />
                 <ClipboardSettings vms={vms} />
+                <section className="system-card">
+                  <h3>Windows 应用剪贴板</h3>
+                  <p>为本机应用设置复制与粘贴规则，并查看进程状态。</p>
+                  <button className="secondary compact" onClick={() => setShowNativeClipboard(!showNativeClipboard)}>
+                    {showNativeClipboard ? '收起 Windows 剪贴板策略' : '管理 Windows 剪贴板策略'}
+                  </button>
+                </section>
+                {showNativeClipboard && <Suspense fallback={<p>正在读取 Windows 剪贴板策略…</p>}>
+                  <NativeClipboardSettings request={api} />
+                </Suspense>}
                 <section className="system-card">
                   <h3>桌面录制库</h3>
                   <p>回放、下载或删除保存在此浏览器的录制。</p>

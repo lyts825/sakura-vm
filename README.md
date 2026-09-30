@@ -34,6 +34,8 @@
 
 目前验证的平台：Windows x64、Node.js 22.12+、Git、Rust stable（需要 MSVC C++ 构建工具）。无需管理员权限或安装 WSL。TCG 回退模式无需启用系统虚拟化组件。
 
+Windows 源码构建另需 x64 MinGW-w64 的 `g++.exe` 编译应用剪贴板代理；可通过 `SAKURA_NATIVE_CLIPBOARD_CXX` 指定完整路径。独立运行包已包含代理，使用运行包无需此编译器。范围、设置与验证见 [Windows 应用剪贴板策略](docs/native-clipboard.md)。
+
 ```powershell
 npm ci
 npm run setup
@@ -232,6 +234,7 @@ npm run test:sandbox # 真实 QEMU 沙箱网络隔离、限时执行、取消及
 npm run test:secure-erase # 真实 Alpine 项目文件预览、逻辑覆盖、校验与删除
 npm run test:gpg-agent-forward # 真实 Alpine SSH 远端 Unix 套接字与模拟 GPG extra socket
 npm run test:multi-monitor # 真实 Alpine Xvnc 单屏、横向双屏、纵向双屏 RandR 布局
+npm run test:native-clipboard # 独立窗口站中的真实 Windows Win32/OLE 应用与服务规则
 ```
 
 真实 VM 测试需要先完成 `setup`；测试实例及其磁盘会在结束时删除。

@@ -81,6 +81,16 @@ async function probe(selected, expected) {
     );
     const sdk = new SakuraClient();
     assert.deepEqual(await sdk.call('core.vms.list'), []);
+    const nativeClipboard = await sdk.call('core.native-clipboard.get');
+    assert.equal(nativeClipboard.settings.enabled, false);
+    assert.deepEqual(nativeClipboard.settings.applications, []);
+    assert.deepEqual(nativeClipboard.processes, []);
+    if (process.platform === 'win32' && process.arch === 'x64')
+      assert.equal(nativeClipboard.ready, true, nativeClipboard.error);
+    await assert.rejects(sdk.call('core.native-clipboard.action', {
+      body: { action: 'configure', version: 1, settings: { enabled: true, applications: [], extra: true } },
+    }), (error) => error.status === 400);
+    await sdk.call('core.native-clipboard.action', { body: { action: 'refresh' } });
     if (expected.includes('backups')) {
       const absent = randomUUID();
       assert.equal(specification.paths['/api/vms/{vmId}/backup-recovery'].post['x-sakura-enabled'], true);

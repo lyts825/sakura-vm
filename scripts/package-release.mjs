@@ -65,6 +65,7 @@ const readme = [
   '独立第三节点可运行 `npm run ha:witness -- --preflight <config.json>` 检查见证配置，再运行 `npm run ha:witness -- <config.json>`；见证入口随活动版本切换，完整性失败时拒绝启动。',
   '浏览器扩展位于 `browser-extension`，可在 Chromium/Chrome 的扩展程序页加载已解压的扩展程序；需在 Sakura 中启用账户模式并由管理员配对。',
   'Windows 可运行 `npm run tray` 打开系统托盘；菜单中可选择登录自启和由托盘启动 Sakura。',
+  'Windows x64 运行包包含应用剪贴板代理；在系统设置中按完整 EXE 路径选择应用后保存启用。仅覆盖成功附加的当前用户 x64 进程的 Win32/OLE 调用。新进程附加前及其他系统接口不受此代理保证；Linux 普通进程尚不支持。',
   '更新：从原安装目录运行 `npm run update:check -- <新包目录>`、`npm run update:stage -- <新包目录>`，',
   '然后运行 `npm run update:activate -- versions/<编号>` 并重启 Sakura。',
   '可用 `npm run update:rollback` 切回上一个版本，再重启服务。更新前请保存或备份重要数据。',

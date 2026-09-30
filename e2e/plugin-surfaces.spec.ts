@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { readFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { readFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { SessionLock } from '../server/session-lock';
@@ -16,12 +16,13 @@ import { generateSdk } from '../server/sdk.ts';
 import { graphqlInfo, GraphApi, querySnapshot } from '../server/graphql-api.ts';
 import type { Machines } from '../server/machines.ts';
 import { NativeIntegration } from '../server/native-integration.ts';
+import { NativeClipboard } from '../server/native-clipboard.ts';
 import { WebSocketServer, type WebSocket as NodeWebSocket } from 'ws';
 import { GoldenImages } from '../server/golden-images.ts';
 import { Jobs } from '../server/jobs.ts';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Rescue } from '../server/rescue';
 import { setTimeout as delay } from 'node:timers/promises';
 import { EventEmitter } from 'node:events';
@@ -1224,6 +1225,74 @@ test('Windows integration settings save and remove real registration plans witho
     await native.close();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('Windows native clipboard settings bind executable rules, show failures, disable owned processes and fit mobile', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await app(page);
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-native-clipboard-browser-'));
+  expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
+  const assets = join(directory, 'assets');
+  await mkdir(assets);
+  const files = [];
+  for (const name of ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'MinHook-LICENSE.txt']) {
+    const bytes = Buffer.from(name);
+    await writeFile(join(assets, name), bytes);
+    files.push({ name, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+  }
+  await writeFile(join(assets, 'native-clipboard.json'), JSON.stringify({ version: 1, architecture: 'x64', build: 'b'.repeat(64), files }));
+  const image = 'D:\\Programs\\很长的应用程序目录和包含空格的文件名\\clipboard editor.exe';
+  const identity = { pid: 10001, created: '134000000000000001', image, bits: 64 };
+  let policy: any = { present: false }, fail = false;
+  const native = new NativeClipboard({ file: join(directory, 'native.json'), assets, interval: 0, supported: true,
+    hashImage: async () => 'a'.repeat(64), run: async (_file, args) => {
+      if (args[0] === 'list') return { processes: [identity] };
+      if (args[0] === 'status') return policy;
+      if (fail) throw new Error('process rejects native attachment');
+      policy = { present: true, ready: true, compatible: true, active: args[8] === '1', flags: Number(args[6]),
+        maximum: Number(args[7]), blockedCopy: 5, blockedPaste: 2 };
+      return policy;
+    } });
+  await native.init();
+  await page.route('**/api/native-clipboard*', async (route) => {
+    try { await route.fulfill({ json: route.request().method() === 'GET' ? native.view() : await native.action(route.request().postDataJSON()) }); }
+    catch (error: any) { await route.fulfill({ status: error.status || 400, json: { error: error.message } }); }
+  });
+  try {
+    await page.getByRole('button', { name: '系统设置', exact: true }).click();
+    await page.getByRole('button', { name: '管理 Windows 剪贴板策略', exact: true }).click();
+    const panel = page.getByRole('region', { name: 'Windows 应用剪贴板策略' });
+    await panel.getByLabel('正在运行的应用').selectOption(`${identity.pid}:${identity.created}`);
+    await panel.getByRole('button', { name: '添加或重新绑定应用' }).click();
+    await expect(panel.getByLabel('允许复制与剪切', { exact: true })).toBeChecked();
+    await panel.getByLabel('允许复制与剪切', { exact: true }).uncheck();
+    await panel.getByLabel('阻止疑似敏感文本').check();
+    await panel.getByLabel('文本上限').selectOption('4096');
+    await panel.getByLabel('启用 Windows 应用策略').check();
+    await panel.getByRole('button', { name: '保存 Windows 剪贴板策略', exact: true }).click();
+    await expect(panel.getByRole('status')).toHaveText('Windows 剪贴板配置已保存；请查看各进程的应用状态');
+    await expect(panel.getByText('已接入 Win32/OLE · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
+    expect(policy.flags).toBe(14);
+    await page.reload();
+    await page.getByRole('button', { name: '管理 Windows 剪贴板策略', exact: true }).click();
+    await expect(panel.getByLabel('允许复制与剪切', { exact: true })).not.toBeChecked();
+    await panel.getByLabel('允许粘贴', { exact: true }).uncheck();
+    fail = true;
+    await panel.getByRole('button', { name: '保存 Windows 剪贴板策略', exact: true }).click();
+    await expect(panel.getByRole('alert').filter({ hasText: 'process rejects native attachment' })).toBeVisible();
+    await expect(panel.getByText('未应用当前规则 · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: 'artifacts/native-clipboard-mobile.png', fullPage: true });
+    await panel.screenshot({ path: 'artifacts/native-clipboard-panel-mobile.png' });
+    fail = false;
+    await panel.getByRole('button', { name: '停用 Windows 应用策略' }).click();
+    await expect(panel.getByLabel('启用 Windows 应用策略')).not.toBeChecked();
+    await expect(panel.getByText('已停用 · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
+    expect(policy.active).toBe(false);
+    expect(errors).toEqual([]);
+  } finally { await native.close(); await rm(directory, { recursive: true, force: true }); }
 });
 
 test('Explorer handoffs preserve explicit project selection, open directories and files, and launch mapped host copies', async ({

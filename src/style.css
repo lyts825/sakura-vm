@@ -3007,6 +3007,16 @@ label input {
   align-items: center;
   gap: 10px;
 }
+.native-clipboard legend {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+  padding: 10px 0;
+}
+.native-clipboard-process {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+}
 .native-associations {
   padding-left: 0;
   list-style: none;

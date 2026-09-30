@@ -31,6 +31,7 @@ import { communityPluginRequest } from './community-plugins.ts';
 import { mobileAction } from './mobile-companion.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { nativeRequest } from './native-integration.ts';
+import { nativeClipboardRequest } from './native-clipboard.ts';
 import { storagePoolInput } from './storage-pools.ts';
 import type { ApiDocument, ApiOperation, ApiParameter } from '../shared/api-document.ts';
 
@@ -181,6 +182,10 @@ const core: {
     title: '配置资源管理器入口、文件关联或打开本机副本',
     body: request(nativeRequest),
   },
+  { id: 'native-clipboard.get', method: 'GET', path: '/api/native-clipboard',
+    title: 'Windows 应用剪贴板设置、进程状态与拒绝计数', inspect: true },
+  { id: 'native-clipboard.action', method: 'POST', path: '/api/native-clipboard',
+    title: '绑定程序、保存或停用 Windows 进程剪贴板策略', body: request(nativeClipboardRequest) },
   {
     id: 'assistant.get',
     method: 'GET',

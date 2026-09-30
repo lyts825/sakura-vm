@@ -1042,7 +1042,7 @@ export class NextFeatures {
         executed: false,
         adapter,
         message:
-          '系统设置 → 剪贴板敏感检测 → 按应用剪贴板策略，管理网页终端、文件和桌面入口的复制/粘贴、实例覆盖与文本检测。当前不管理 Windows/Linux 独立应用进程的系统剪贴板权限。',
+          '系统设置 → 剪贴板敏感检测管理网页入口；管理 Windows 剪贴板策略可按完整 EXE 路径限制成功附加的当前用户 x64 进程的 Win32/OLE 调用。新进程附加前、其他系统接口和普通 Linux 进程仍不在此范围内。',
       };
     if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner')
       return {

@@ -67,6 +67,9 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.equal(spec.paths['/api/access/passkeys/{id}'].delete.parameters[0].name, 'id');
   assert.deepEqual(spec.paths['/api/access/status'].get.security, []);
   assert.equal(spec.paths['/api/access/users'].post.security, undefined);
+  assert.equal(spec.paths['/api/native-clipboard'].get.operationId, 'core.native-clipboard.get');
+  assert.equal(spec.paths['/api/native-clipboard'].post.security, undefined);
+  assert.ok(spec.paths['/api/native-clipboard'].post.requestBody!.content['application/json'].schema.oneOf);
   assert.deepEqual(spec.paths['/api/access/changes'].post.requestBody!.content['application/json']
     .schema.required, ['vmId', 'projectId', 'summary', 'project', 'expectedVersion']);
   assert.equal(spec.paths['/api/access/changes/{id}/apply'].post.parameters[0].name, 'id');

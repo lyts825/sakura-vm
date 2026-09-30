@@ -56,6 +56,7 @@ import { storagePoolInput } from './storage-pools.ts';
 import { DisasterRecoveryDrill } from './disaster-recovery-drill.ts';
 import { LocalAssistant, assistantRequest } from './local-assistant.ts';
 import { NativeIntegration, nativeMappings } from './native-integration.ts';
+import { NativeClipboard } from './native-clipboard.ts';
 import { AccessControl, accessHandoffInput, accessPasswordInput } from './access-control.ts';
 import { Passkeys, passkeyRemove } from './passkeys.ts';
 import { SingleSignOn, ssoCallbackPage, type SsoProvider } from './sso.ts';
@@ -330,6 +331,12 @@ async function main() {
     },
   );
   await native.init();
+  const nativeClipboard = new NativeClipboard({
+    guard: () => session.requireUnlocked(),
+    maintenance: () => !!features.migration?.blocked,
+    mutation: (delta) => { features.mutations += delta; },
+  });
+  await nativeClipboard.init();
   const assistant = new LocalAssistant();
   await assistant.init();
   const eventSource = async () => collectWebhookEvents(
@@ -1178,6 +1185,11 @@ async function main() {
       if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
       return send(res, snapshotReplications?.view() || { enabled: false, entries: [] });
     }
+    if (url.pathname === '/api/native-clipboard') {
+      if (req.method === 'GET') return send(res, nativeClipboard.view());
+      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+      return send(res, await nativeClipboard.action(await authorizedBody(req, 32768)));
+    }
     if (url.pathname === '/api/native-integration') {
       if (req.method === 'GET') return send(res, await native.view());
       if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
@@ -1697,6 +1709,7 @@ async function main() {
       () => communityPlugins.close(),
       () => assistant.close(),
       () => native.close(),
+      () => nativeClipboard.close(),
       () => webhooks.close(),
       () => automationRules.close(),
       () => rollouts.close(),
