@@ -46,6 +46,7 @@ function fixture() {
     exec: async () => ({ stdout: '', stderr: 'missing', code: 127 }),
   };
   const workspaces: any = {
+    beforeConfigChange: () => () => {},
     projects: { current: () => 'default', key: () => id + ':default' },
     metrics: async () => {
       if (fail) throw new Error('offline');

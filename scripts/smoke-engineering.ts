@@ -216,7 +216,7 @@ try {
   const httpPid = Number(httpServer.stdout.trim());
   assert.ok(Number.isInteger(httpPid) && httpPid > 1, httpServer.stdout);
   const { ReverseTunnels } = await import('../server/reverse-tunnels.ts');
-  const tunnels = new ReverseTunnels(machines);
+  const tunnels = new ReverseTunnels(machines, features.workspaces);
   try {
     await delay(500);
     const guestResponse = await machines.exec(id, 'wget -qO- http://127.0.0.1:8765/file.txt');

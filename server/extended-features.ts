@@ -270,7 +270,7 @@ export class ExtendedFeatures {
     private machines: Machines,
     private workspaces: Workspaces,
   ) {
-    this.tunnels = new ReverseTunnels(machines);
+    this.tunnels = new ReverseTunnels(machines, workspaces);
   }
   setTrustedBoot(service: TrustedBootService) { this.trustedBoot = service; }
 

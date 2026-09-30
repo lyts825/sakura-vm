@@ -188,6 +188,7 @@ function fixture() {
     },
   };
   const workspaces: any = {
+    beforeConfigChange: () => () => {},
     projects: {
       current: () => 'default',
       key: (id: string) => id,

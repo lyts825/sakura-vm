@@ -89,6 +89,7 @@
     "tray": "node scripts/start-tray.mjs",
     "test:shared-terminal": "tsx scripts/smoke-shared-terminal.ts",
     "test:project-terminals": "tsx scripts/smoke-project-terminals.ts",
+    "test:reverse-tunnels": "tsx scripts/smoke-reverse-tunnels.ts",
     "test:development": "tsx scripts/smoke-development.ts",
     "plugins:check": "tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",
     "plugins:schema": "tsx scripts/plugin-schema.ts",

@@ -49,6 +49,8 @@ import { diskEncryptionSchema, encryptedDriveOption, encryptedImageOptions, plai
   openDiskSecret, qemuSecretObject, withDiskSecret } from './disk-encryption.ts';
 import { Secrets } from './secrets.ts';
 import { liveMigrationProjectsSchema, type LiveMigrationProjects } from './live-migration-projects.ts';
+import type { Project } from './workspaces.ts';
+import { projectNetworkCommand } from './project-network-isolation.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
@@ -1434,12 +1436,14 @@ export class Machines extends EventEmitter {
       client.end();
     }
   }
-  async openGuestTcpStream(id: string, port: number, signal?: AbortSignal): Promise<Duplex> {
+  async openGuestTcpStream(id: string, port: number, signal?: AbortSignal,
+    project?: Project): Promise<Duplex> {
     if (!Number.isInteger(port) || port < 1 || port > 65535)
       throw new AppError('客户机端口无效');
     const script = [
       'import socket,sys,threading',
       `sock=socket.create_connection(("127.0.0.1",${port}),5)`,
+      'sock.settimeout(None)',
       'def upstream():',
       '  try:',
       '    while True:',
@@ -1459,7 +1463,8 @@ export class Machines extends EventEmitter {
       'finally: sock.close()',
     ].join('\n');
     const payload = Buffer.from(script).toString('base64');
-    const command = `python3 -u -c "import base64;exec(base64.b64decode('${payload}'))"`;
+    const relay = `python3 -I -S -u -c "import base64;exec(base64.b64decode('${payload}'))"`;
+    const command = project ? projectNetworkCommand(project, `exec ${relay}`) : relay;
     const client = await this.connect(id, 10000, signal);
     try {
       const channel = await new Promise<Duplex>((resolve, reject) => {
