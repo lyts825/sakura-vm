@@ -22,7 +22,7 @@ export function redactProjectOutput<T extends { stdout: string; stderr: string }
   return { ...result, stdout: redactValues(result.stdout, values), stderr: redactValues(result.stderr, values) };
 }
 
-/** Agent operations hold the VM lock through setup, execution and cleanup. */
+/** Project commands hold the VM lock through setup, execution and cleanup. */
 export async function withProjectCommand<T>(machines: Machines, id: string, signal: AbortSignal | undefined,
   workspaces: Workspaces | undefined, action: (project: Project) => Promise<T>) {
   const scope = workspaces || new Workspaces(machines);

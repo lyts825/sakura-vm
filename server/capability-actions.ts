@@ -123,7 +123,7 @@ export class CapabilityActions {
     if (featureId === 'gpu-acceleration')
       return runGpuAcceleration(this.machines, id, parameters, signal);
     if (featureId === 'syscall-profile')
-      return runSyscallProfile(this.machines, id, parameters, signal);
+      return runSyscallProfile(this.machines, id, parameters, signal, this.workspaces);
     if (featureId === 'flamegraph')
       return runFlamegraph(this.machines, id, parameters, signal);
     if (featureId === 'ebpf-profiler')

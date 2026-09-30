@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { AppError } from './model.ts';
 import { quote } from './files.ts';
 import type { Machines } from './machines.ts';
+import type { Workspaces } from './workspaces.ts';
+import { guestTask } from './guest-task.ts';
+import { withProjectCommand, projectExecutionCommand, redactProjectOutput } from './project-execution.ts';
 
 export const syscallProfileInput = z.object({
   mode: z.enum(['status', 'install', 'run']).default('status'),
@@ -99,38 +102,59 @@ def self_test(profile):
 def run(profile, seconds, argv):
     if not argv:
         raise ValueError('command required')
-    pid = os.fork()
+    signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    blocked = signal.pthread_sigmask(signal.SIG_BLOCK, signals)
+    try:
+        pid = os.fork()
+    except BaseException:
+        signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
+        raise
     if pid == 0:
         try:
+            for number in signals:
+                signal.signal(number, signal.SIG_DFL)
             os.setsid()
+            signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
             apply(profile)
             os.execvp(argv[0], argv)
         except BaseException as error:
             print('seccomp launch failed: ' + str(error), file=sys.stderr)
             os._exit(126)
-    def stop(_number, _frame):
+    reaped = False
+    def kill_group():
         try:
             os.killpg(pid, signal.SIGKILL)
         except ProcessLookupError:
-            pass
-        os.waitpid(pid, 0)
-        raise SystemExit(128 + _number)
-    for name in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        signal.signal(name, stop)
-    deadline = time.monotonic() + seconds
-    while True:
-        done, result = os.waitpid(pid, os.WNOHANG)
-        if done:
-            return os.waitstatus_to_exitcode(result)
-        if time.monotonic() >= deadline:
-            try:
-                os.killpg(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            # A signal can arrive before the child has called setsid().
+            if not reaped:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+    def stop(number, _frame):
+        signal.pthread_sigmask(signal.SIG_BLOCK, signals)
+        raise SystemExit(128 + number)
+    for number in signals:
+        signal.signal(number, stop)
+    try:
+        signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
+        deadline = time.monotonic() + seconds
+        while True:
+            done, result = os.waitpid(pid, os.WNOHANG)
+            if done:
+                reaped = True
+                code = os.waitstatus_to_exitcode(result)
+                return code if code >= 0 else 128 - code
+            if time.monotonic() >= deadline:
+                print('seccomp command timed out', file=sys.stderr)
+                return 124
+            time.sleep(0.05)
+    finally:
+        signal.pthread_sigmask(signal.SIG_BLOCK, signals)
+        # Also stop background descendants when the selected command exits.
+        kill_group()
+        if not reaped:
             os.waitpid(pid, 0)
-            print('seccomp command timed out', file=sys.stderr)
-            return 124
-        time.sleep(0.05)
 
 
 if __name__ == '__main__':
@@ -143,7 +167,8 @@ if __name__ == '__main__':
 `;
 
 const helperPath = '/usr/local/lib/sakura/seccomp-run.py';
-const probe = `test -r ${helperPath} && python3 ${helperPath} --self-test restricted && python3 ${helperPath} --self-test networkless`;
+const runner = `/usr/bin/python3 -I ${helperPath}`;
+const probe = `test -r ${helperPath} && ${runner} --self-test restricted && ${runner} --self-test networkless`;
 
 export async function checkSyscallProfile(machines: Machines, id: string,
   signal?: AbortSignal) {
@@ -158,7 +183,7 @@ export async function checkSyscallProfile(machines: Machines, id: string,
 }
 
 export async function runSyscallProfile(machines: Machines, id: string,
-  input: unknown, signal?: AbortSignal) {
+  input: unknown, signal?: AbortSignal, workspaces?: Workspaces) {
   const options = syscallProfileInput.parse(input);
   if (options.mode === 'status') {
     const status = await checkSyscallProfile(machines, id, signal);
@@ -181,13 +206,17 @@ export async function runSyscallProfile(machines: Machines, id: string,
   }
   if (!options.confirmed || !options.command)
     throw new AppError('运行受限命令需要 command 与 confirmed=true', 400);
-  const checked = await checkSyscallProfile(machines, id, signal);
-  if (!checked.ready) throw new AppError(checked.reason, 409);
-  const args = [options.profile, String(options.timeoutSeconds), '--',
-    options.command, ...options.args].map(quote).join(' ');
-  const result = await machines.exec(id, `python3 ${helperPath} --run ${args}`,
-    (options.timeoutSeconds + 15) * 1000, signal);
-  return { code: result.code, ready: result.code === 0, executed: true,
-    profile: options.profile, stdout: result.stdout, stderr: result.stderr,
-    timedOut: result.code === 124 };
+  return withProjectCommand(machines, id, signal, workspaces, async (project) => {
+    const checked = await checkSyscallProfile(machines, id, signal);
+    if (!checked.ready) throw new AppError(checked.reason, 409);
+    const args = [options.profile, String(options.timeoutSeconds), '--',
+      options.command!, ...options.args].map(quote).join(' ');
+    const result = await guestTask(machines, id,
+      projectExecutionCommand(project, `${runner} --run ${args}`),
+      signal || new AbortController().signal, undefined, (options.timeoutSeconds + 15) * 1000);
+    return { ...redactProjectOutput(project, result), ready: result.code === 0, executed: true,
+      profile: options.profile, timedOut: result.code === 124,
+      projectId: project._workspace || 'default', directory: project.directory,
+      networkIsolation: project.networkIsolation || 'host' };
+  });
 }

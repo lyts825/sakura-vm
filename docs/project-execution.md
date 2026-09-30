@@ -28,6 +28,8 @@ const result = await client.call('core.vms.exec', {
 
 能力中心中的单次 SSH/GPG Agent 命令也使用所选项目的目录、环境、网络模式和密钥遮盖。项目配置不能替换 SSH 转发连接提供的 `SSH_AUTH_SOCK`；GPG 命令使用本次运行专属的临时 `GNUPGHOME`。转发只在已确认的命令期间存在，超时或取消后结束命令进程组并关闭桥接；实例操作和项目修改在清理完成前受到保护。检查实际 Agent 协议与私有项目的脚本见 `test:ssh-agent-forward` 和 `test:gpg-agent-forward`，设置 `SAKURA_AGENT_PRIVATE=1` 可启用私有模式，发行版参数支持 `alpine`、`debian`、`ubuntu`。
 
+“系统调用隔离”的 `run` 模式也绑定所选项目，在进入网络空间、加载环境和目录后再施加 seccomp 策略，并遮盖私密输出。固定的系统 Python 以隔离模块加载模式启动受限执行器，项目 `PATH` 和 `PYTHONPATH` 仍传给用户选择的命令。取消或超时会结束执行器及受限命令进程组；命令正常退出后也清理同组的后台子进程。`status` 与 `install` 检查和安装实例工具，使用系统环境。`npm run test:syscall-profile -- alpine` 实测项目配置、策略继承、参数、额外路由拒绝和进程清理，也支持 `debian`、`ubuntu`。
+
 管理员维护整个实例时明确提交 `scope: "instance"` 或使用 CLI `--instance`。此范围使用客户机共享网络，不加载项目配置，也不接受项目查询参数。它用于系统管理，仍受实例维护、应急锁定和操作锁约束。
 
 一次性命令拥有独立进程组。请求断开、SDK 取消、CLI 收到退出信号或执行超时时，服务通过独立 SSH 连接结束该进程组并清理任务标记。服务正常关闭也等待这些清理；执行期间不能暂停、停止实例或修改项目绑定。主动脱离进程组的客户机进程及客户机管理员仍可绕过这些约束。
