@@ -6,7 +6,6 @@ import type { Machines } from './machines.ts';
 import type { Project } from './workspaces.ts';
 import { guestTask } from './guest-task.ts';
 import { secretRefsSchema } from './secrets.ts';
-import { projectNetworkCommand } from './project-network-isolation.ts';
 import { ProjectServiceScopes, projectServiceBinding, type ProjectServiceRecord } from './project-service-scope.ts';
 
 export const environmentSchema = z
@@ -105,6 +104,8 @@ export async function runServices(
   const order = serviceOrder(services, only);
   if (action === 'start' && order.length) await prepareProjectScopeTools(machines, id, signal);
   const scopes = new ProjectServiceScopes(machines, id, project);
+  const { ProjectRunScopes, projectIdentityTask } = await import('./project-run-scope.ts');
+  const identities = new ProjectRunScopes(machines);
   if (action === 'stop') {
     if (only) {
       const dependents = services.filter(
@@ -119,7 +120,8 @@ export async function runServices(
     for (const service of [...order].reverse().filter((s) => !only || s.name === only)) {
       signal.throwIfAborted();
       const state = await scopes.status(service.name, signal);
-      if (state.record) await scopes.stop(state.record, log);
+      const record = state.record || (await scopes.hasReceipt(service.name) ? await scopes.metadata(service.name) : null);
+      if (record) await scopes.stop(record, log);
       log(`已停止 ${service.name}\n`);
     }
     return;
@@ -133,31 +135,46 @@ export async function runServices(
         throw new AppError(`${service.name} 的上次启动尚未确认，请先停止并重建`, 409, 'SERVICE_SCOPE_CHANGED');
       if (live.status === 'exited')
         throw new AppError(`${service.name} 主 pane 已退出，请先停止清理仍归属此服务的进程`, 409, 'SERVICE_SCOPE_CHANGED');
-      if (live.status === 'running' && live.record?.binding !== projectServiceBinding(project, service))
-        throw new AppError(`${service.name} 启动配置已改变，请先停止并重建`, 409, 'SERVICE_SCOPE_CHANGED');
+      if (live.status === 'running') {
+        if (!live.record || !await identities.hasRun(id, live.record.projectId, live.record.runId))
+          throw new AppError(`旧服务 ${service.name} 尚未接入项目账号，请先确认停止全部后代再重新启动`,
+            409, 'SERVICE_IDENTITY_REQUIRED');
+        if (!await identities.active(id, live.record.projectId, live.record.runId, signal))
+          throw new AppError(`${service.name} 的账号启动回执尚未确认，请先停止并核对`, 409, 'SERVICE_SCOPE_CHANGED');
+        if (live.record.binding !== projectServiceBinding(project, service))
+          throw new AppError(`${service.name} 启动配置已改变，请先停止并重建`, 409, 'SERVICE_SCOPE_CHANGED');
+      }
       if (live.status !== 'running') {
         log(`启动 ${service.name}…\n`);
-        const script = `${envPrefix({ ...project.environment, ...service.environment })}\n${service.command}`;
         const intent = scopes.intent(service, live.bootId);
         started.push(intent);
-        await scopes.start(intent,
-          `${projectNetworkCommand(project, script)} > ${quote(serviceLog(service.name, project))} 2>&1`, signal);
+        await scopes.persistIntent(intent);
+        const payload = await identities.inherited(id, project,
+          { command: service.command, environment: { ...project.environment, ...service.environment } },
+          { kind: 'service', runId: intent.runId, bootId: intent.bootId }, signal);
+        await scopes.start(intent, payload, signal);
       }
       const deadline = Date.now() + service.timeout * 1000;
+      const identityDeadline = Math.min(deadline, Date.now() + 10000);
       let ready = false;
       do {
         await delay(300, undefined, { signal });
         const alive = await scopes.status(service.name, signal);
         if (alive.status !== 'running') throw new AppError(`${service.name} 已退出，请查看服务日志`);
+        if (!alive.record || !await identities.active(id, alive.record.projectId, alive.record.runId, signal)) {
+          if (Date.now() >= identityDeadline)
+            throw new AppError(`${service.name} 的账号启动回执未确认，请检查日志`, 409, 'SERVICE_SCOPE_CHANGED');
+          continue;
+        }
         if (!service.ready.trim()) {
           ready = true;
           break;
         }
-        const check = await guestTask(
+        const check = await projectIdentityTask(
           machines,
           id,
-          projectNetworkCommand(project,
-            `cd ${quote(project.directory)}\n${envPrefix({ ...project.environment, ...service.environment })}\n${service.ready}`),
+          project,
+          { command: service.ready, environment: { ...project.environment, ...service.environment } },
           signal,
           undefined,
           Math.min(5000, Math.max(1000, deadline - Date.now())),

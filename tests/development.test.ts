@@ -29,6 +29,8 @@ const { dataDirectory } = await import('../server/data-directory.ts');
 const { ServiceHealth } = await import('../server/service-health.ts');
 const { runServices } = await import('../server/project-services.ts');
 const { projectSchema } = await import('../server/workspaces.ts');
+const { scopeIdentityFixture } = await import('./project-scope-identity-fixture.ts');
+const { vmDir } = await import('../server/model.ts');
 const { Jobs } = await import('../server/jobs.ts');
 const { Backups } = await import('../server/backups.ts');
 const { Ide, sshPath } = await import('../server/ide.ts');
@@ -533,7 +535,10 @@ function managedHealthFixture(id: string, secret = '') {
   emitter.live = new Map([[id, {} as never]]);
   emitter.state = () => 'running';
   emitter.get = () => ({ id, distro: 'debian' }) as ReturnType<MachinesType['get']>;
+  emitter.locked = async (_key, action) => await action();
+  const commands: string[] = [];
   emitter.exec = async (_id, script) => {
+    commands.push(script);
     const prefix = '# SAKURA_PROJECT_SERVICE_REQUEST=';
     const encoded = script.split('\n').find(line => line.startsWith(prefix));
     if (!encoded) {
@@ -542,6 +547,7 @@ function managedHealthFixture(id: string, secret = '') {
       return { code: probe ? 1 : 0, stdout: '', stderr: '' };
     }
     const input = JSON.parse(Buffer.from(encoded.slice(prefix.length), 'base64').toString());
+    if (input.op === 'probe-reboot') return { code: 0, stdout: JSON.stringify({ bootId, retired: false }), stderr: '' };
     const reply = (status: string, record: ProjectServiceRecord | null) => ({
       code: 0, stdout: JSON.stringify({ status, bootId, record }), stderr: '',
     });
@@ -567,7 +573,10 @@ function managedHealthFixture(id: string, secret = '') {
     records.set(input.name, record);
     return reply(record.phase, record);
   };
-  return { emitter, records, counts: () => ({ probes, stops }), setStopFailure: (value: boolean) => { failStops = value; },
+  return { emitter, records, commands, register: (project: ReturnType<typeof projectSchema.parse>) =>
+      scopeIdentityFixture(emitter, project, () => bootId, runId => [...records.values()].find(record => record.runId === runId) || null,
+        execution => { if (execution.command.includes('health-probe')) { ++probes; return 1; } return 0; }),
+    counts: () => ({ probes, stops }), setStopFailure: (value: boolean) => { failStops = value; },
     setExited: (name: string) => { exited.add(name); } };
 }
 
@@ -589,7 +598,8 @@ test('health checks back off, enforce restart limits, preserve state after faile
         },
       ],
     });
-  const { emitter } = managedHealthFixture(id);
+  const f = managedHealthFixture(id), { emitter } = f;
+  f.register(project);
   const projects = new Jobs('health-test-projects', root);
   const workspaces = {
     config: async () => project,
@@ -625,6 +635,7 @@ for (const changed of ['run', 'missing', 'exited'] as const) {
     const project = projectSchema.parse({ services: [{ name: 'api', command: 'sleep 60', health: {
       command: 'health-probe', failures: 1, interval: 5, maxRestarts: 3, restart: true,
     } }] });
+    f.register(project);
     const projects = new Jobs('health-service-identity-' + changed, root);
     const workspaces = { config: async () => project, resolvedConfig: async () => project, jobs: projects } as unknown as WorkspacesType;
     const health = new ServiceHealth(f.emitter, workspaces);
@@ -672,6 +683,7 @@ test('an unconfirmed service stop pauses the whole restart chain and retains own
     ],
   });
   const f = managedHealthFixture(id, secret);
+  f.register(project);
   const projects = new Jobs('health-service-cleanup-test', root);
   const workspaces = { config: async () => project, resolvedConfig: async () => project, jobs: projects } as unknown as WorkspacesType;
   const health = new ServiceHealth(f.emitter, workspaces);
@@ -720,6 +732,47 @@ test('an unconfirmed service stop pauses the whole restart chain and retains own
     await projects.close();
   }
 });
+for (const invalid of ['missing-host-ticket', 'closed-guest-ticket', 'refused-before-probe-ticket'] as const) {
+  test(`health blocks a ${invalid} before executing a project probe and retains the pause`, async () => {
+    const id = randomUUID(), secret = 'health-identity-private-value';
+    const project = projectSchema.parse({ environment: { TOKEN: secret }, secrets: { TOKEN: 'secret-ref' },
+      services: [{ name: 'api', command: 'sleep 60', health: {
+        command: 'health-probe', failures: 1, interval: 5, maxRestarts: 1, restart: true,
+      } }],
+    });
+    const f = managedHealthFixture(id), identity = f.register(project);
+    await runServices(f.emitter, id, project, 'start', () => {}, new AbortController().signal);
+    const record = f.records.get('api')!;
+    if (invalid === 'closed-guest-ticket') identity.tickets.get(record.runId)!.phase = 'closed';
+    else if (invalid === 'missing-host-ticket') {
+      const file = join(vmDir(id), 'project-identities', 'default.json');
+      const journal = JSON.parse(await readFile(file, 'utf8')); journal.runs = [];
+      await writeFile(file, JSON.stringify(journal));
+    }
+    else f.emitter.execInput = async () => ({ code: 1, stderr: '',
+      stdout: '{"ok":false,"code":"DIRECTORY_MIGRATION_IDENTITY","detail":null}' });
+    const projects = new Jobs('health-invalid-identity', root);
+    const health = new ServiceHealth(f.emitter, { config: async () => project, resolvedConfig: async () => project,
+      jobs: projects } as unknown as WorkspacesType);
+    try {
+      (await health.expect(id, 'start'))(true); await health.tick(10000);
+      const state = (await health.view(id)).services[0];
+      assert.equal(state.status, 'unhealthy'); assert.equal(state.failures, 0); assert.equal(state.restarts, 0);
+      assert.match(state.error!, /自动检查与重启已暂停/); assert.ok(!state.error!.includes(secret));
+      assert.equal(f.counts().probes, 0);
+      if (invalid === 'refused-before-probe-ticket') {
+        assert.match(state.error!, /未确认发行本次运行票据/);
+        assert.equal(f.counts().stops, 0);
+        assert.equal(f.records.get('api')?.runId, record.runId);
+      }
+      assert.equal(health.jobs.view(id), null);
+      assert.ok(f.commands.every(command => !command.includes(secret)));
+      const reads = identity.state.readonlyCalls;
+      await health.tick(30000); assert.equal(f.counts().probes, 0); assert.equal(identity.state.readonlyCalls, reads);
+    } finally { await health.close(); await projects.close(); }
+  });
+}
+
 for (const failure of ['cleanup', 'scope'] as const) {
   test(`health ${failure} failures pause automatic probes and restarts until a successful manual action`, async () => {
     const id = randomUUID(), secret = 'health-private-token';
@@ -730,21 +783,22 @@ for (const failure of ['cleanup', 'scope'] as const) {
       } }],
     });
     let workers = 0, controls = 0;
-    const { emitter } = managedHealthFixture(id);
+    const f = managedHealthFixture(id), { emitter } = f;
+    f.register(project);
     await runServices(emitter, id, project, 'start', () => {}, new AbortController().signal);
-    const managedExec = emitter.exec;
+    const managedExec = emitter.exec, managedInput = emitter.execInput;
+    const cleanupCommands: string[] = [];
     emitter.exec = async (_id, script) => {
-      if (script.startsWith('# SAKURA_PROJECT_SERVICE_')) return managedExec(_id, script);
-      if (script.startsWith('setsid sh -c')) {
-        workers++;
-        return failure === 'scope'
-          ? { code: 126, stdout: '', stderr: `SAKURA_TASK_SCOPE_UNAVAILABLE: no cgroup.kill ${secret}` }
-          : { code: 0, stdout: '', stderr: '' };
-      }
-      controls++;
-      return failure === 'cleanup'
-        ? { code: 1, stdout: '', stderr: `owned scope still populated ${secret}` }
-        : { code: 0, stdout: '', stderr: '' };
+      if (!script.includes('sakura_owned_anchor')) return managedExec(_id, script);
+      controls++; cleanupCommands.push(script);
+      return failure === 'cleanup' ? { code: 1, stdout: '', stderr: `owned scope still populated ${secret}` }
+        : managedExec(_id, script);
+    };
+    emitter.execInput = async (...args) => {
+      workers++;
+      const result = await managedInput(...args);
+      return failure === 'scope' ? { ...result, code: 126, stderr: `SAKURA_TASK_SCOPE_UNAVAILABLE: no cgroup.kill ${secret}` }
+        : { ...result, code: 0 };
     };
     const projects = new Jobs('health-unconfirmed-test', root);
     const workspaces = {
@@ -774,6 +828,9 @@ for (const failure of ['cleanup', 'scope'] as const) {
       await health.tick(70000);
       assert.equal(workers, 1);
       assert.equal((await health.view(id)).services[0].desired, false);
+      // The operator retried the retained original task cleanup successfully.
+      // A service intent toggle alone cannot claim that task domain disappeared.
+      if (failure === 'cleanup') await managedExec(id, cleanupCommands[0]);
       (await health.expect(id, 'start'))(true);
       await health.tick(90000);
       assert.equal(workers, 2);

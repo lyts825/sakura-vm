@@ -62,6 +62,15 @@ export function stopTerminalsScript(projectId: string, session?: string) {
 }
 
 type Lease = { vmId: string; projectId: string; release: () => void };
+const preparedTerminals = new WeakMap<Machines, Set<Lease>>();
+
+/** A prepared connection can execute after prepare returns; keep it reserved until release. */
+export function assertProjectTerminalsStopped(machines: Machines, vmId: string, projectId: string) {
+  if ([...(preparedTerminals.get(machines) || [])].some(lease =>
+    lease.vmId === vmId && lease.projectId === projectId))
+    throw new AppError('请先关闭项目终端连接并等待终端准备完成', 409, 'PROJECT_DIRECTORY_RUNS_MUST_STOP');
+}
+
 export class ProjectTerminals {
   readonly workspaces: Workspaces;
   private ownsWorkspaces: boolean;
@@ -106,6 +115,10 @@ export class ProjectTerminals {
       const scope = project._workspace || 'default';
       let command = terminalShell(project);
       let terminalId: string | undefined;
+      const { ProjectRunScopes } = await import('./project-run-scope.ts');
+      await new ProjectRunScopes(this.machines).assertAdmission(id, scope);
+      const { assertNoPendingProjectDirectoryMigration } = await import('./project-directory-migration.ts');
+      await assertNoPendingProjectDirectoryMigration(this.machines, id, scope, abort);
       if (!readOnly) {
         const distro = this.machines.get(id).distro || 'alpine';
         const install = distro === 'alpine' ? 'apk add --no-cache --timeout 30 tmux' :
@@ -146,8 +159,13 @@ export class ProjectTerminals {
       }
       abort.throwIfAborted();
       const lease: Lease = { vmId: id, projectId: scope,
-        release: () => { this.leases.delete(lease); abort.removeEventListener('abort', lease.release); } };
+        release: () => {
+          this.leases.delete(lease); preparedTerminals.get(this.machines)?.delete(lease);
+          abort.removeEventListener('abort', lease.release);
+        } };
       this.leases.add(lease);
+      if (!preparedTerminals.has(this.machines)) preparedTerminals.set(this.machines, new Set());
+      preparedTerminals.get(this.machines)!.add(lease);
       abort.addEventListener('abort', lease.release, { once: true });
       return { command, projectId: scope, networkIsolation: project.networkIsolation || 'host',
         terminalId, release: lease.release };

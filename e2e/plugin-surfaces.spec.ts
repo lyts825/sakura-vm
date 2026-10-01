@@ -4254,6 +4254,76 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
+for (const initialState of ['preview', 'applied-with-unconfirmed-latch'] as const) {
+  test(`project directory permissions ${initialState} require a reviewed current plan and preserve retries on mobile`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await app(page, ['projects'], true);
+    await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+    const directory = '/srv/projects/' + 'long-project-'.repeat(8);
+    await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, route => route.fulfill({ json: {
+      projectId: 'default', job: null, project: { directory, template: 'none', command: 'sleep 60', setup: '', repository: '' },
+    } }));
+    await page.route('**/api/vms/*/project-runtime**', route => route.fulfill({ json: {
+      status: 'stopped', main: { status: 'stopped' }, log: '',
+    } }));
+    let revision = 0, applied = false, attempts = 0, reads = 0;
+    const submitted: unknown[] = [];
+    const makePlan = () => ({
+      sha256: (revision ? 'b' : 'a').repeat(64), state: applied ? 'applied' : initialState === 'preview' ? 'preview' : 'applied',
+      completed: applied ? ['.', 'long-name.txt'] : [], attempt: null, lastError: null, activatedIdentity: null,
+      proposal: { version: 1, planId: revision ? 'baac7c48-9a9d-42d3-bd30-6e653f937d1e' : '6a3e12d8-380a-4a9e-b796-04766b7502ba',
+        directory, identity: { account: 'skp012345678901234567890123', uid: 20001, gid: 20001 },
+        summary: { directories: 1, files: 1 }, entries: [
+          { path: '.', uid: 0, gid: 0, mode: 493, targetMode: 448 },
+          { path: 'long-name.txt', uid: 0, gid: 0, mode: 420, targetMode: 384 },
+        ] },
+    });
+    await page.route('**/api/vms/*/project-directory-migration**', async route => {
+      expect(new URL(route.request().url()).searchParams.get('project')).toBe('default');
+      if (route.request().method() === 'GET') {
+        ++reads;
+        return route.fulfill({ json: { version: 1, projectId: 'default', plan: makePlan(),
+          lastFailure: applied || initialState === 'preview' && !attempts ? null :
+            { code: 'PROJECT_DIRECTORY_CONFIRM_UNCONFIRMED', at: new Date().toISOString() } } });
+      }
+      const input = route.request().postDataJSON(); submitted.push(input);
+      if (input.action === 'preview') {
+        revision++;
+        return route.fulfill({ json: { version: 1, projectId: 'default', plan: makePlan(), lastFailure: null } });
+      }
+      expect(input).toEqual({ action: 'apply', version: 1, reviewed: true,
+        planId: makePlan().proposal.planId, sha256: makePlan().sha256 });
+      if (++attempts === 1) return route.fulfill({ status: 503, json: {
+        error: '目录确认未完成，保留原计划', code: 'PROJECT_DIRECTORY_CONFIRM_UNCONFIRMED',
+      } });
+      applied = true;
+      return route.fulfill({ json: { version: 1, projectId: 'default', plan: makePlan(), lastFailure: null } });
+    });
+    await page.reload(); await page.getByRole('tab', { name: '项目', exact: true }).click();
+    const card = page.locator('details.feature-card').filter({ has: page.getByText('目录账户权限', { exact: true }) });
+    await card.locator('summary').click();
+    await expect(card.getByText('目标账户：', { exact: false })).toBeVisible();
+    expect(reads).toBeGreaterThan(0); expect(submitted).toEqual([]);
+    const apply = card.getByRole('button', { name: '应用这份预览', exact: true });
+    const review = card.getByRole('checkbox', { name: '我已审阅逐项权限修改，并确认应用这份计划。', exact: true });
+    await expect(apply).toBeDisabled(); await review.check(); await expect(apply).toBeEnabled();
+    await card.getByRole('button', { name: '生成迁移预览', exact: true }).click();
+    await expect(card.getByText('计划版本：', { exact: false })).toContainText('b'.repeat(64));
+    await expect(review).not.toBeChecked(); await expect(apply).toBeDisabled();
+    await review.check();
+    const command = page.getByRole('textbox', { name: '启动命令', exact: true }); await command.fill('sleep 120');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await apply.click(); await expect(card.getByText('目录确认未完成，保留原计划', { exact: true })).toBeVisible();
+    await expect(apply).toBeEnabled(); await expect(command).toHaveValue('sleep 120');
+    await apply.click(); await expect(card.getByText('目录权限与独立账户已完整确认。', { exact: true })).toBeVisible();
+    await expect(apply).toHaveCount(0); await expect(command).toHaveValue('sleep 120');
+    expect(attempts).toBe(2); expect(submitted).toHaveLength(3); expect(errors).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: `artifacts/project-directory-${initialState}-mobile.png`, fullPage: true });
+  });
+}
+
 for (const initialStatus of ['exited', 'unconfirmed'] as const) {
   test(`project main ${initialStatus} cleanup preserves drafts and supports retry after a failed job on mobile`, async ({ page }) => {
     const pageErrors: string[] = [];

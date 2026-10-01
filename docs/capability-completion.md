@@ -1,6 +1,34 @@
 # 功能实现记录
 
-以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口，以及只按进程组清理短任务的缺口，已由后续批次补齐；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
+以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
+
+## 项目 UID 接入、受保护正文与目录迁移
+
+2026-10-01 将默认项目 API/SDK/CLI 命令、项目初始化、主命令、普通服务、就绪与命令式健康检查接入持久项目 UID/GID 和独立 home。命令及环境通过最多 128 KiB 的二进制 stdin 或 root 独占保护帧运输；固定启动器核对原 boot、run、域与文件身份，降权、清空补充组和 capabilities 后才读取正文、核对 EOF/摘要并执行密封只读 memfd，root argv 不含命令或密钥。已发行票据的用户非零退出和 JSON 输出保持原语义；未发行票据的控制器拒绝返回明确账号错误，健康检查不会据此进入普通失败重启循环。
+
+宿主先保存完整账号、上层运行及运输意图，再提交正文；上层确认全域清理后才核销准确票据。清理及确认失联保留原记录，下次操作恢复原票据；真实冷重启登记宿主退休，保留原始客户机回执。关闭历史逐项持久归档并读回核对，run UUID 不可重放。客户机仍每 boot 保留最多 1,024 张票据、同时最多 32 个活动运行，尚无无需重启的客户机归档。升级不能删除旧票据或放宽旧 SUID 启动器。
+
+已有 root 目录需项目所有者预览保存配置的目录迁移计划、核对摘要与变更，再明确应用；项目成员即使获读取、编辑和执行授权也不能迁移属主。迁移只接受已有允许目录，核对 FD 的设备号、inode、文件系统、mount ID、权限、内容及链接，拒绝链接、ACL/capabilities、跨挂载、其他项目重叠和超限回执；512 KiB 预算包含完整完成记录、最长错误路径及最终身份。中断、重启、绑定或最后门闩确认失联均保留同一计划重试，读取不安装或应用。准备及活动终端连接阻止迁移；新终端和共享重连先只读核对门闩再准备。旧 root 终端断开后保留的未知后代仍属于后续归属迁移范围。
+
+整个私有项目停止先冻结固定 generation/release ID，再清理服务、主命令和账号票据，最后核销准确原命名空间；旧请求不能跟随新 generation，即使 inode 被复用。删除工具持有锁 FD 并进入固定 root cgroup，控制器被杀或工具关闭继承 FD 后，恢复先确认工具域为空，才退休原代。合法 rebind 只退休完整匹配旧身份的 applied 迁移门闩，未完成门闩继续拒绝运行。网络清理未确认即使遇取消也保留 Job 失败、503 与具体错误码。
+
+运行面板读取已登记主命令和服务日志时，用固定系统环境、NOFOLLOW 打开并核对 root 所有、普通单链接和 `0600` 权限，再有界读取尾部；不会跟随项目预先放置的日志符号链接。未知旧回执的日志不读取，也不为读取安装 Python。共享项目 Git 检出使用项目 UID；私有项目目标没有 `.git` 时明确拒绝新启动，认证预取 broker 尚未接通该路径。
+
+最终账号核心构建为 `94bc2a7fb050ac8a72cce5fcf56997c6c44ba4a8473cd543cff6d36ff407b905`，Alpine、Debian、Ubuntu 各 31 项、共 93 项真实回归通过。包括保护帧、真实降权、完整命名空间与票据身份、失联恢复、合法 rebind 和 root 删除工具关闭锁 FD 后的清理确认。三份原始证明及源码摘要保存在 `.data/project-identity-network-latch-final-evidence.json`；Ubuntu 的最终核心轮使用默认 Node/tsx，不能据此宣称此前没有 JS 错误的原生客户端退出已经修复。
+
+主命令、服务、就绪、日志读取与 Workspaces 共 54 项三系统实测通过，其目录迁移依赖仍明确归属旧 helper `778d…`，原证明字节未改。最终 helper `e3ed3c6041923ad9344e7aea0c7b357045a87d17cb02b42ddf4f4dbed9e41f35` 另通过三系统各 3 项、共 9 项定向测试：真实预览、审阅、应用和 UID 执行，以及 saved/native-only 两种物理重叠拒绝；旧账号、配置、目录和原 54 项证明保持原样。索引分别为 `.data/network-remaining-test-temp/project-uid-scopes-final-summary.json` 与 `project-uid-migration-overlap-final-summary.json`。这些定向负例使用自有子目录 bind，旧 helper 已可能按跨挂载拒绝，不能代替下面真实允许根目录漏洞的复现。
+
+目录迁移的独立实机检查复现旧 helper 对 `/opt/projects` 与 `/srv/projects` 整体 bind 后的物理重叠仍接受预览；没有应用该计划。最终 helper 固定其他项目目录及祖先 FD，按设备、inode、文件系统身份核对；saved、native-only、物理祖先和文件系统根 bind 全部明确返回 `PROJECT_DIRECTORY_PHYSICAL_OVERLAP`，独立无关 tmpfs 预览仍允许。最终 5 项均通过，所有 alias 卸载，Beta 内容、属主、权限及原账号保持一致；证明为 `sakura-directory-migration-YkUE8m/project-directory-migration-physical-overlap-evidence-8372dcf6-deaf-42a9-a4f0-2f6acf6ef673.json`。缺系统 Python 的 Alpine 4 项只读门闩实测仍按其原 `778d…` 文件保存；这一门闩实现没有变化，不将旧整文件证明改记为新摘要。
+
+最终 `e3ed…` helper 的完整 Debian 回归 28 项通过：使用新的项目 ID 与自有目录，保留原账号和旧 23 项证明；只读 GET、预留身份失联恢复、目录与预算边界、准备租约及实际 SSH PTY、受管 SSH 服务和旧 tmux/native 入口阻止迁移、真实 fchown 中断、各阶段门闩、同计划跨真实重启恢复、丢失 rebind ACK 和最终确认重试均完成。原证明为 `sakura-directory-migration-YkUE8m/directory-migration-attempt-tHg8bu/project-directory-migration-evidence.json`，28 项全部通过、源码前后一致、实例停止并同步、live 为零。客户端使用 `--no-addons --import tsx`，没有清空旧 registry 或删除票据来满足新身份。
+
+最终 Debian 默认项目命令 9 项实测通过，涵盖两项目 UID、受保护密钥环境与非零退出、取消及脱离会话后代、准确票据确认失联重试、真实冷重启退休和私有项目健康检查、整项目命名空间核销。证明为 `sakura-boot-persistence-53hCt6/project-execution-identity-evidence.json`，脚本摘要为 `1f16fc60e704cf9f9b092087b2fa909735578e3ca43e04954f3c679498256e14`；全部相关源码在前后核对一致。
+
+最终全量 Node 测试 1,046 项，1,045 通过、1 项按平台跳过、0 失败；冻结期间捕获的 661 个源码摘要在完成后及提交前一致。32 个插件契约、9 个插件包、3,099 条语言文本和 74 个动态片段、6 个相关浏览器场景、完整生产构建、54 个服务模块分发和 7 种编译服务组合通过。日志包括 `.data/project-uid-full-unit-physical-final.log`、`.data/project-uid-full-unit-physical-verification.json`、`.data/project-directory-ui-first.log`、`.data/project-uid-physical-build-final.log` 和 `.data/project-uid-physical-production-final.log`。此前全轮的 build-farm mock 未提供新增只读迁移门闩响应，修正测试夹具后重跑；原失败日志保留，未放宽生产门闩。
+
+新运行包 `release/sakura-z9J08y` 的 256 个文件核对通过，指纹为 `d0fc9576c0b0a0ef0849d15dafcd0bb7c3ac9fd1505f5347d3f22789bf512f29`，编译服务摘要为 `e499a218d42de2115a60af3c4744d87f162017d95a6a10813ef2515c67c727db`。包内默认 Node 路径通过 9 组真实 Debian HTTP/生成 SDK 检查：认证与契约、直接终端连接阻止迁移、审阅后迁移和两项目 UID、主命令配置保护、清理失败与同 inode 新网络代、服务和健康检查、非零命令结果、成员不能迁移，以及准确整项目停止。原始证明为 `sakura-boot-persistence-53hCt6/compiled-project-identity-http-c452f1ec-8e0d-4744-bb0b-9dababcbc171.json`；客户端 `execArgv` 为空，源码和包摘要前后一致，原设置恢复、实例停止且所属 QEMU 为零。此前两轮脚本分别漏传 SDK 认证头及误读 Project DTO 字段，保留失败证明，修正测试后再测。运行包复用本机 QEMU/PosixLoom 与依赖，未验证新机器安装。
+
+本批均使用自有测试实例；最终原始证明、日志摘要、661 个源码摘要、旧证明归属及范围索引为 `.data/project-uid-final-checkpoint-evidence.json`。三系统产品测试的 `--no-addons` 条件逐份记录，未据此改变生产默认或声称原生插件退出根因已修复。目录仍为 250 项、247 项有入口、3 项部分实现；普通终端、SSH/Agent、运行时和其余扩展的账号与保护运输接入、实际独立外部 HA 演练、系统级剪贴板边界仍需继续完成。使用与限制见 [项目账号](project-identities.md)、[目录迁移](project-directory-migration.md)、[项目网络隔离](project-network-isolation.md) 和 [未完成功能](unfinished-features.md)。
 
 ## 主命令归属、项目账号核心与首次开机持久化
 

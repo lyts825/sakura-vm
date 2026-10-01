@@ -12,7 +12,7 @@ const root = await mkdtemp(join(tmpdir(), 'sakura-project-terminals-'));
 process.env.SAKURA_DATA_DIR = root;
 const { Machines } = await import('../server/machines.ts');
 const { Workspaces } = await import('../server/workspaces.ts');
-const { ProjectTerminals } = await import('../server/project-terminals.ts');
+const { ProjectTerminals, assertProjectTerminalsStopped } = await import('../server/project-terminals.ts');
 const { vmDir } = await import('../server/model.ts');
 after(() => rm(root, { recursive: true, force: true }));
 
@@ -20,12 +20,22 @@ async function fixture() {
   const id = randomUUID(), locks = new Machines({} as Engine);
   const commands: string[] = [];
   let status = 'running', persistent = false, verified = true;
+  let migration: 'applying' | 'failed' | 'directory-applied' | 'invalid' | null = null;
+  const identityId = randomUUID();
   const machines = Object.assign(new EventEmitter(), {
     records: new Map([[id, { template: 'none' }]]), live: new Map(),
     get: () => ({ template: 'none', distro: 'alpine' }), state: () => status,
     locked: locks.locked.bind(locks),
     exec: async (_id: string, command: string) => {
       commands.push(command);
+      if (command.includes('project-directory-migrations'))
+        return { code: 0, stderr: '', stdout: JSON.stringify(migration === 'invalid' ? {} : migration ? {
+          version: 1, projectId: 'default', planId: randomUUID(), sha256: 'a'.repeat(64), phase: migration,
+          identity: { version: 1, phase: 'active', registryId: randomUUID(), projectId: 'default', identityId,
+            revision: 1, uid: 20000, gid: 20000, account: 'skp' + identityId.replaceAll('-', '').slice(0, 24),
+            home: '/var/lib/sakura-project-homes/' + identityId, homeDevice: '1', homeInode: '2',
+            directory: '/workspace', directoryDevice: '1', directoryInode: '3', networkIsolation: 'host' },
+        } : null) };
       if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
         return { stdout: 'absent\n', stderr: '', code: 0 };
       if (command.includes('sakura_panes=') && !verified)
@@ -41,6 +51,7 @@ async function fixture() {
     status: (value: string) => { status = value; },
     persistent: (value: boolean) => { persistent = value; },
     verified: (value: boolean) => { verified = value; },
+    migration: (value: typeof migration) => { migration = value; },
     close: async () => { await terminals.close(); await workspaces.close(); } };
 }
 
@@ -61,6 +72,39 @@ test('terminal leases bind to the selected project and block directory or networ
     assert.match(shell.command, /cd '\/workspace\/private'/);
     shell.release();
   } finally { await f.close(); }
+});
+
+for (const phase of ['applying', 'failed', 'directory-applied', 'invalid'] as const) {
+  test(`${phase} directory migration prevents new terminals and shared reconnects before guest preparation`, async () => {
+    const f = await fixture();
+    try {
+      f.migration(phase);
+      for (const readOnly of [false, true]) {
+        const before = f.commands.length;
+        await assert.rejects(f.terminals.prepare(f.id, 'default', 'main', readOnly),
+          { code: phase === 'invalid' ? 'PROJECT_DIRECTORY_LATCH_CHANGED' : 'PROJECT_DIRECTORY_MIGRATION_PENDING' });
+        assert.equal(f.commands.length, before + 1, 'Only the read-only admission check may run.');
+        assert.doesNotMatch(f.commands.at(-1)!, /apk add|apt-get|mkdir -p|tmux new-session/);
+        assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'));
+      }
+    } finally { await f.close(); }
+  });
+}
+
+test('prepared direct terminal leases block migration across terminal instances until the exact connection releases', async () => {
+  const f = await fixture(), other = new ProjectTerminals(f.machines, f.workspaces);
+  try {
+    const first = await f.terminals.prepare(f.id, 'default');
+    const second = await other.prepare(f.id, 'default');
+    assert.throws(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'),
+      { code: 'PROJECT_DIRECTORY_RUNS_MUST_STOP' });
+    assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, '1111111111111111'));
+    await other.close();
+    assert.throws(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'),
+      { code: 'PROJECT_DIRECTORY_RUNS_MUST_STOP' });
+    second.release(); first.release();
+    assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'));
+  } finally { await other.close(); await f.close(); }
 });
 
 test('disconnected tmux sessions and paused guests still guard project binding changes', async () => {

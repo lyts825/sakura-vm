@@ -10,6 +10,7 @@ import { Workspaces, projectPrivateValues, type Project } from './workspaces.ts'
 import { redactValues } from './secrets.ts';
 import { guestTask } from './guest-task.ts';
 import { projectIdSchema } from './project-catalog.ts';
+import { projectIdentityTask } from './project-run-scope.ts';
 
 export function projectExecutionCommand(project: Project, command: string) {
   return projectNetworkCommand(project,
@@ -53,7 +54,8 @@ export const guestExecutionInput = z.object({
 export class ProjectExecution {
   private controller = new AbortController();
   private pending = new Set<Promise<unknown>>();
-  constructor(private machines: Machines, private terminals: ProjectTerminals) {}
+  constructor(private machines: Machines, private terminals: ProjectTerminals,
+    private runProjectTask: typeof projectIdentityTask = projectIdentityTask) {}
 
   run(id: string, input: unknown, projectId?: string | null, signal?: AbortSignal) {
     const value = guestExecutionInput.parse(input);
@@ -85,8 +87,8 @@ export class ProjectExecution {
       signal.throwIfAborted();
       return await this.machines.locked(id, async () => {
         if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例', 409);
-        const result = await guestTask(this.machines, id, projectExecutionCommand(project, input.command),
-          signal, undefined, input.timeoutSeconds * 1000);
+        const result = await this.runProjectTask(this.machines, id, project,
+          { command: input.command, environment: project.environment }, signal, undefined, input.timeoutSeconds * 1000);
         return { ...redactProjectOutput(project, result), scope: 'project' as const,
           projectId: prepared.projectId, directory: project.directory,
           networkIsolation: project.networkIsolation || 'host' };

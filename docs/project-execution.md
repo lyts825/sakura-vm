@@ -1,8 +1,10 @@
 # 项目命令执行
 
-基础命令执行 API、生成的 SDK 与 CLI 默认使用实例保存的活动项目。命令进入该项目目录，加载项目环境变量及私密配置，并按保存的网络模式运行；私有项目进入仅回环的网络命名空间，准备阶段可创建该空间和目录。执行前检查实际接口与路由，失败时拒绝执行。停用项目插件后仍遵守保存的项目配置，已启用的私密配置和网络服务仍参与环境解析。
+基础命令执行 API、生成的 SDK 与 CLI 默认使用实例保存的活动项目及其固定 UID/GID 和独立 home。命令进入该项目目录，加载项目环境变量及私密配置，并按保存的网络模式运行；私有项目进入仅回环的网络命名空间。正文通过有界标准输入运输，降权后执行已密封的只读脚本，root 参数不携带命令或环境正文。既有目录权限不足时须先核对并应用 [目录迁移](project-directory-migration.md)，不自动放宽目录权限。停用项目插件后仍遵守保存的项目配置，已启用的私密配置和网络服务仍参与环境解析。
 
 `POST /api/vms/:vmId/exec` 接受 `command`、可选的 `scope` 和 `timeoutSeconds`。`scope` 默认 `project`，超时默认 30 秒，允许 1–3600 秒。通过 `?project=default` 或 `?project=<16 位项目标识>` 选择其他项目；省略时使用活动项目。响应包含 `stdout`、`stderr`、`code`、`scope`，项目命令还返回 `projectId`、`directory` 和 `networkIsolation`。项目私密配置值在标准输出和错误输出中被遮盖。
+
+项目启动器在发行票据前拒绝时，会在确认任务域清理后返回明确的账号错误，不能作为普通命令退出码或普通健康失败处理。已发行运行的用户非零退出与任意 JSON 输出保持原有响应语义。
 
 CLI 示例：
 
@@ -26,12 +28,12 @@ const result = await client.call('core.vms.exec', {
 });
 ```
 
-能力中心中的单次 SSH/GPG Agent 命令也使用所选项目的目录、环境、网络模式和密钥遮盖。项目配置不能替换 SSH 转发连接提供的 `SSH_AUTH_SOCK`；GPG 命令使用本次运行专属的临时 `GNUPGHOME`。超时或取消后结束命令的 cgroup 并关闭桥接，GPG 临时目录仅在确认原任务域停止后清理；实例操作和项目修改在清理完成前受到保护。检查实际 Agent 协议与私有项目的脚本见 `test:ssh-agent-forward` 和 `test:gpg-agent-forward`，设置 `SAKURA_AGENT_PRIVATE=1` 可启用私有模式，发行版参数支持 `alpine`、`debian`、`ubuntu`。
+能力中心中的单次 SSH/GPG Agent 命令也使用所选项目的目录、环境、网络模式和密钥遮盖，但其专属套接字入口尚未迁移为上述项目账号。项目配置不能替换 SSH 转发连接提供的 `SSH_AUTH_SOCK`；GPG 命令使用本次运行专属的临时 `GNUPGHOME`。超时或取消后结束命令的 cgroup 并关闭桥接，GPG 临时目录仅在确认原任务域停止后清理；实例操作和项目修改在清理完成前受到保护。检查实际 Agent 协议与私有项目的脚本见 `test:ssh-agent-forward` 和 `test:gpg-agent-forward`，设置 `SAKURA_AGENT_PRIVATE=1` 可启用私有模式，发行版参数支持 `alpine`、`debian`、`ubuntu`。
 
 “系统调用隔离”的 `run` 模式也绑定所选项目，在进入网络空间、加载环境和目录后再施加 seccomp 策略，并遮盖私密输出。固定的系统 Python 以隔离模块加载模式启动受限执行器，项目 `PATH` 和 `PYTHONPATH` 仍传给用户选择的命令。取消、超时或正常退出后，清理执行器、受限命令及同任务域的后台子进程。`status` 与 `install` 检查和安装实例工具，使用系统环境。`npm run test:syscall-profile -- alpine` 实测项目配置、策略继承、参数、额外路由拒绝和进程清理，也支持 `debian`、`ubuntu`。
 
 管理员维护整个实例时明确提交 `scope: "instance"` 或使用 CLI `--instance`。此范围使用客户机共享网络，不加载项目配置，也不接受项目查询参数。它用于系统管理，仍受实例维护、应急锁定和操作锁约束。
 
-一次性命令拥有独立 cgroup v2。请求断开、SDK 取消、CLI 收到退出信号或超时时，服务通过独立 SSH 连接核对客户机 boot ID、域路径与 inode，结束所属进程并确认域已删除，再清理暂存资源和任务标记。普通 `setsid`、双重 fork 和 GNU `timeout` 创建的新进程组仍属于原任务域。清理连接最多重试三次，未确认时保留回执并返回错误；客户机管理员仍可主动改变归属。服务关闭等待这些清理，执行期间保护实例和项目绑定。运行条件及三发行版实测见 [客户机任务清理](guest-task-cleanup.md)。
+一次性命令拥有独立 cgroup v2。请求断开、SDK 取消、CLI 收到退出信号或超时时，服务通过独立 SSH 连接核对客户机 boot ID、域路径与 inode，结束所属进程并确认域已删除，再核销准确的项目账号票据及暂存资源。普通 `setsid`、双重 fork 和 GNU `timeout` 创建的新进程组仍属于原任务域。清理连接最多重试三次，未确认时保留回执并返回错误；后续项目命令先恢复可准确确认的旧任务，真实冷重启后保留原始票据并登记退休原因。客户机管理员仍可主动改变归属。服务关闭等待这些清理，执行期间保护实例和项目绑定。运行条件及三发行版实测见 [客户机任务清理](guest-task-cleanup.md) 与 [项目账号](project-identities.md)。
 
 `npm run test:project-terminals -- alpine` 在编译后的服务和真实 QEMU 客户机中验证 API/SDK/CLI 的实际网络空间、目录、环境与密钥遮盖、字面参数、退出码、超时与取消进程、账户权限及项目插件停用后的恢复。也可选择 `debian` 或 `ubuntu`。网络隔离的完整范围见 [项目网络隔离](project-network-isolation.md)。

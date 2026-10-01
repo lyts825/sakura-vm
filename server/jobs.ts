@@ -38,6 +38,7 @@ const cleanupFailureCodes = new Set([
   'GUEST_TASK_CLEANUP_FAILED', 'SERVICE_CLEANUP_FAILED',
   'PROJECT_MAIN_CLEANUP_FAILED', 'PROJECT_SSH_CLEANUP_FAILED',
   'PROJECT_IDENTITY_CLEANUP_FAILED',
+  'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED',
 ]);
 export class Jobs {
   static instrument?: (view: JobView, work: () => Promise<void>) => Promise<void>;

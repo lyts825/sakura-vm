@@ -26,8 +26,9 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { Workspaces, projectSchema, projectLog } = await import('../server/workspaces.ts');
 const { ProjectMainScope, ProjectServiceScopes, projectMainScopePaths } = await import('../server/project-service-scope.ts');
 const { mainSession } = await import('../server/project-main.ts');
-const { envPrefix, serviceSchema, serviceSession } = await import('../server/project-services.ts');
-const { projectNetworkCommand, projectNetworkNamespace } = await import('../server/project-network-isolation.ts');
+const { serviceSchema, serviceSession } = await import('../server/project-services.ts');
+const { projectNetworkNamespace } = await import('../server/project-network-isolation.ts');
+const { ProjectRunScopes } = await import('../server/project-run-scope.ts');
 const { quote } = await import('../server/files.ts');
 const { freePort } = await import('../server/qmp.ts');
 const machines = new Machines(await createRuntime());
@@ -38,7 +39,7 @@ assert.equal(vm.id, prior.vmId); assert.equal(vm.name, 'guest-task-cgroup-smoke'
 assert.equal(machines.state(vm.id), 'stopped');
 const token = 'owned-main-fixture-secret';
 const spaces = new Workspaces(machines, { secrets: { resolve: async () => ({ TOKEN: token }) } as any });
-const nativeExec = machines.exec.bind(machines);
+const nativeExec = machines.exec.bind(machines), nativeInput = machines.execInput.bind(machines);
 const sources = ['server/project-service-scope.ts', 'server/project-main.ts', 'server/project-services.ts', 'server/workspaces.ts'];
 const proof: any = { version: 1, vmId: vm.id, distro, fixture: root, client: { node: process.version, execArgv: process.execArgv },
   sourceSha256: {}, cases: [] };
@@ -68,6 +69,16 @@ const waitFile = async (file: string) => {
   throw new Error('Owned application did not publish ' + file);
 };
 const base = '/workspace/main-scope-smoke';
+const authorizeFixtureDirectory = async (project: ReturnType<typeof projectSchema.parse>, paths: string[]) => {
+  const scopes = new ProjectRunScopes(machines), identity = await scopes.reserve(vm.id, project);
+  // This test explicitly authorizes only its newly created owned directories.
+  // Production start never grants or recursively changes existing permissions.
+  for (const path of paths) {
+    assert.ok(path.startsWith(base + '/'));
+    await run(py(`import os,stat\np=${JSON.stringify(path)};assert os.path.realpath(p)==p\ni=os.lstat(p);assert stat.S_ISDIR(i.st_mode) and i.st_uid in [0,${identity.uid}]\nos.chown(p,${identity.uid},${identity.gid},follow_symlinks=False);os.chmod(p,0o700)`));
+  }
+  await scopes.identity(vm.id, project);
+};
 const children = async (directory: string) => {
   const values: any[] = [];
   for (const name of ['main', 'newgroup', 'setsid', 'doublefork']) {
@@ -101,7 +112,7 @@ const projectFor = async (label: string, exitMain = false) => {
   const project = projectSchema.parse({ directory, command: app(directory, exitMain), networkIsolation: 'private',
     environment: { TOKEN: token, SAKURA_MAIN_LABEL: label }, secrets: { TOKEN: 'owned-main-token' },
     setup: 'echo initialized >> ' + quote(directory + '/setup-runs') });
-  await spaces.save(vm.id, project); return { project, directory };
+  await spaces.save(vm.id, project); await authorizeFixtureDirectory(project, [directory]); return { project, directory };
 };
 const job = async (action: 'start' | 'stop', service?: string) => {
   const value = await spaces.run(vm.id, action, service); await spaces.jobs.wait(spaces.projects.key(vm.id));
@@ -143,10 +154,9 @@ try {
     'prepare-ack-lost', 'pane-ack-lost', 'commit-ack-lost', 'cancel-after-commit', 'prepared-timeout', 'cancel-cleanup-failed', 'startup-exit']) {
     const { project, directory } = await projectFor(mode, mode === 'startup-exit');
     const scope = new ProjectMainScope(machines, vm.id, project), values: any[] = [], events: string[] = [];
-    let stops = 0, setups = 0;
+    let stops = 0;
     machines.exec = (async (id, command, timeout, signal, output, agent) => {
       const input = request(command);
-      if (command.startsWith('setsid sh -c') && command.includes('setup-runs')) ++setups;
       if (input?.op === 'stop') {
         ++stops;
         if ((mode === 'first-stop-failure' && stops === 1) || mode === 'all-stop-failures' ||
@@ -166,7 +176,6 @@ try {
       }
       const result = await nativeExec(id, command, timeout, signal, output, agent);
       if (input?.op === 'prepare' && mode === 'prepare-ack-lost' && result.code === 0) throw new Error(token + ' owned prepare ACK lost');
-      if (input?.op === 'start' && mode === 'pane-ack-lost' && result.code === 0) throw new Error(token + ' owned pane ACK lost');
       if (input?.op === 'commit' && result.code === 0 && ['commit-ack-lost', 'cancel-after-commit', 'cancel-cleanup-failed', 'startup-exit'].includes(mode)) {
         values.push(...await children(directory));
         if (mode === 'commit-ack-lost') throw new Error(token + ' owned commit ACK lost');
@@ -175,6 +184,12 @@ try {
       if (input?.op === 'stop' && mode === 'stop-ack-lost' && stops === 1 && result.code === 0) throw new Error('owned stopped ACK lost');
       return result;
     }) as typeof machines.exec;
+    machines.execInput = (async (id, command, input, ...rest) => {
+      const result = await nativeInput(id, command, input, ...rest);
+      if (request(command)?.op === 'start' && mode === 'pane-ack-lost' && result.code === 0)
+        throw new Error(token + ' owned pane ACK lost');
+      return result;
+    }) as typeof machines.execInput;
     const started = await job('start');
     if (['normal', 'first-stop-failure', 'stop-ack-lost', 'all-stop-failures'].includes(mode)) {
       assert.equal(started.status, 'done', started.error + '\n' + started.log); values.push(...await children(directory));
@@ -188,7 +203,8 @@ try {
       assert.notEqual(privateNetwork, tmuxServer.network);
       const view = await spaces.runtime(vm.id); assert.equal(view.status, 'running'); assert.equal(view.main?.status, 'running');
       if (mode === 'normal') {
-        await requireDone('start'); assert.equal((await scope.status()).record!.runId, before.runId); assert.equal(setups, 1);
+        await requireDone('start'); assert.equal((await scope.status()).record!.runId, before.runId);
+        assert.equal(await run('wc -l < ' + quote(directory + '/setup-runs')), '1');
       }
       if (mode === 'all-stop-failures') {
         const host = await readFile(scope.receipt(), 'utf8'), stopped = await job('stop');
@@ -235,7 +251,7 @@ try {
       }
       machines.exec = nativeExec; await requireDone('stop'); await allStopped(values);
     }
-    machines.exec = nativeExec; await preserveOutside();
+    machines.exec = nativeExec; machines.execInput = nativeInput; await preserveOutside();
     proof.cases.push({ name: mode, stopAttempts: stops, events, childEvidence: values, outsidePreserved: true });
     console.log('PASS ' + mode + ': main lifecycle, escaped process groups and external tmux preserved.');
   }
@@ -329,6 +345,7 @@ try {
   }
   {
     const { project, directory } = await projectFor('independent-main-service'); await run('mkdir -p ' + quote(directory + '/service'));
+    await authorizeFixtureDirectory(project, [directory + '/service']);
     const service = serviceSchema.parse({ name: 'main', command: app(directory + '/service') }), mixed = { ...project, services: [service] };
     await spaces.save(vm.id, mixed); await requireDone('start');
     const resolved = await spaces.resolvedConfig(vm.id), services = new ProjectServiceScopes(machines, vm.id, resolved);
@@ -336,7 +353,11 @@ try {
     assert.equal(serviceRecord.version, 1);
     const restored = new ProjectServiceScopes(machines, vm.id, resolved); assert.equal((await restored.metadata('main'))!.runId, serviceRecord.runId);
     const scope = new ProjectMainScope(machines, vm.id, resolved), intent = scope.intent(serviceRecord.bootId);
-    await scope.start(intent, `${projectNetworkCommand(resolved, `${envPrefix(resolved.environment)}\n${resolved.command}`)} > ${quote(projectLog(resolved))} 2>&1`, new AbortController().signal);
+    await scope.persistIntent(intent);
+    const payload = await new ProjectRunScopes(machines).inherited(vm.id, resolved,
+      { command: resolved.command, environment: resolved.environment },
+      { kind: 'main', runId: intent.runId, bootId: intent.bootId });
+    await scope.start(intent, payload, new AbortController().signal);
     const mainValues = await children(directory), mainRecord = (await scope.status()).record!;
     assert.notEqual(mainRecord.session, serviceRecord.session); assert.notEqual(mainRecord.scopeName, serviceRecord.scopeName);
     assert.notEqual(scope.receipt(), restored.receipt('main')); assert.equal(JSON.stringify(mainRecord).includes(token), false);
@@ -492,8 +513,8 @@ try {
 } catch (error) {
   proof.error = String(error); throw error;
 } finally {
-  machines.exec = nativeExec; await spaces.close(); await machines.close();
+  machines.exec = nativeExec; machines.execInput = nativeInput; await spaces.close(); await machines.close();
   proof.vmStopped = machines.state(vm.id) === 'stopped'; proof.stoppedAt = new Date().toISOString();
-  await writeFile(join(root, 'project-main-scope-evidence.json'), JSON.stringify(proof, null, 2) + '\n');
-  console.log('Main scope proof:', join(root, 'project-main-scope-evidence.json'));
+  await writeFile(join(root, 'project-main-uid-scope-evidence.json'), JSON.stringify(proof, null, 2) + '\n');
+  console.log('Main UID scope proof:', join(root, 'project-main-uid-scope-evidence.json'));
 }

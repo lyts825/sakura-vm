@@ -40,7 +40,7 @@ async function fixture(status = 'exited', metadata = true) {
       if (command.includes('then echo active')) return { code: 0, stdout: metadata ? '' : 'active', stderr: '' };
       if (command.startsWith('if tmux has-session'))
         return { code: 0, stdout: metadata ? '' : 'running\nold log owned-private-token', stderr: '' };
-      if (command.startsWith('test ! -f')) return { code: 0, stdout: 'owned application log owned-private-token', stderr: '' };
+      if (command.startsWith('# SAKURA_PROJECT_RUNTIME_LOG')) return { code: 0, stdout: 'owned application log owned-private-token', stderr: '' };
       return { code: 0, stdout: '', stderr: '' };
     },
   }) as unknown as Machines;
@@ -93,6 +93,26 @@ test('unconfirmed scope status remains visible and does not discard available ap
     await assert.rejects(f.spaces.save(f.id, { ...f.project, services: [] }), { code: 'SERVICE_SCOPE_CHANGED' });
   } finally { await f.spaces.close(); }
 });
+test('service runtime rejects unverified root logs while an exactly stopped scope remains editable', async () => {
+  const f = await fixture('stopped'), execute = f.machines.exec;
+  f.machines.exec = async (id, command, ...rest) => {
+    if (command.startsWith('# SAKURA_PROJECT_RUNTIME_LOG')) {
+      assert.match(command, /\/usr\/bin\/env -i .*\/usr\/bin\/python3 -I -S/);
+      assert.match(command, /O_NOFOLLOW/); assert.match(command, /limit=8192/);
+      assert.equal(command.includes('tail -c'), false); assert.equal(command.includes('owned-private-token'), false);
+      return { code: 73, stdout: '', stderr: 'owned-private-token log identity refused' };
+    }
+    return execute.call(f.machines, id, command, ...rest);
+  };
+  try {
+    const runtime = await f.spaces.runtime(f.id);
+    assert.equal(runtime.status, 'unconfirmed'); assert.equal(runtime.services![0].status, 'unconfirmed');
+    assert.match(runtime.services![0].log, /日志读取未确认/);
+    assert.equal(runtime.services![0].log.includes('owned-private-token'), false);
+    await f.spaces.save(f.id, { ...f.project, services: [] });
+    assert.deepEqual((await f.spaces.config(f.id)).services, []);
+  } finally { await f.spaces.close(); }
+});
 test('confirmed stopped scope allows removal and binding changes without blocking configuration', async () => {
   const f = await fixture('stopped');
   try {
@@ -141,6 +161,7 @@ test('legacy running services expose migration state and use no Python or instal
     assert.match(runtime.services![0].log, /旧服务/);
     await assert.rejects(f.spaces.save(f.id, { ...f.project, services: [] }), { code: 'SERVICE_SCOPE_UNMANAGED' });
     assert.equal(f.commands.some(command => /python3|apk add|apt-get|SAKURA_PROJECT_SERVICE_/.test(command)), false);
+    assert.equal(f.commands.some(command => /tail -c|SAKURA_PROJECT_RUNTIME_LOG/.test(command)), false);
   } finally { await f.spaces.close(); }
 });
 

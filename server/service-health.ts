@@ -1,20 +1,21 @@
 import type { Machines } from './machines.ts';
 import { type Workspaces, projectPrivateValues } from './workspaces.ts';
-import { envPrefix, runServices, serviceOrder, serviceSession } from './project-services.ts';
-import { guestTask } from './guest-task.ts';
-import { quote } from './files.ts';
+import { runServices, serviceOrder } from './project-services.ts';
+import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
 import { Jobs } from './jobs.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { AppError } from './model.ts';
-import { projectNetworkCommand } from './project-network-isolation.ts';
 import { ProjectServiceScopes, projectServiceBinding } from './project-service-scope.ts';
 
 const lifecycleRefusals = new Set([
   'GUEST_TASK_CLEANUP_FAILED', 'GUEST_TASK_SCOPE_UNAVAILABLE',
   'SERVICE_CLEANUP_FAILED', 'SERVICE_SCOPE_UNAVAILABLE',
   'SERVICE_SCOPE_UNMANAGED', 'SERVICE_SCOPE_CHANGED',
+  'SERVICE_IDENTITY_REQUIRED',
 ]);
-const needsManualCleanup = (error: unknown) => error instanceof AppError && lifecycleRefusals.has(error.code || '');
+const needsManualCleanup = (error: unknown) => error instanceof AppError &&
+  (lifecycleRefusals.has(error.code || '') || error.code?.startsWith('PROJECT_IDENTITY_') ||
+    error.code?.startsWith('PROJECT_DIRECTORY_') || error.code?.startsWith('DIRECTORY_MIGRATION_'));
 
 export type HealthView = {
   name: string;
@@ -162,13 +163,18 @@ export class ServiceHealth {
         if (ownership.status === 'prepared' || ownership.status === 'unconfirmed' ||
             (ownership.status === 'running' && ownership.record?.binding !== projectServiceBinding(project, service)))
           throw new AppError('服务启动或配置归属未确认，请先停止并重建', 409, 'SERVICE_SCOPE_CHANGED');
-        const script = `set -e\ntmux has-session -t =${serviceSession(service.name, project)}\n` +
-          projectNetworkCommand(project,
-            `cd ${quote(project.directory)}\n${envPrefix({ ...project.environment, ...service.environment })}\n${policy.command}`);
-        const result = ownership.status !== 'running' ? { code: 1 } : await guestTask(
+        if (ownership.status === 'running') {
+          const identities = new ProjectRunScopes(this.machines);
+          if (!ownership.record || !await identities.hasRun(id, ownership.record.projectId, ownership.record.runId))
+            throw new AppError('服务尚未接入项目账号，请先确认停止全部后代再重新启动', 409, 'SERVICE_IDENTITY_REQUIRED');
+          if (!await identities.readonlyActive(id, ownership.record.projectId, ownership.record.runId, abort.signal))
+            throw new AppError('服务账号票据归属未确认，请先停止并重建', 409, 'SERVICE_SCOPE_CHANGED');
+        }
+        const result = ownership.status !== 'running' ? { code: 1 } : await projectIdentityTask(
           this.machines,
           id,
-          script,
+          project,
+          { command: policy.command, environment: { ...project.environment, ...service.environment } },
           abort.signal,
           undefined,
           policy.timeout * 1000,

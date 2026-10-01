@@ -3,6 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { Machines } from './machines.ts';
 import { quote } from './files.ts';
 import { AppError } from './model.ts';
+import { z } from 'zod';
 
 // Read the complete stat: comm can contain spaces, parentheses, and newlines.
 // POSIX shell keeps this available before Python is installed in a guest.
@@ -44,7 +45,7 @@ sakura_empty() {
   [ "$sakura_populated" = 0 ]
 }`;
 
-function taskCommands(receipt: string, script: string, timeout: number) {
+function taskCommands(receipt: string, script: string, timeout: number, input = false) {
   const status = receipt + '.status',
     cancel = receipt + '.cancel',
     stop = receipt + '.stop',
@@ -100,6 +101,7 @@ kill -TERM 0 2>/dev/null || true
 sleep 0.2
 printf 1 >&9`;
   const worker = `set -eu
+${input ? 'exec 7<&-\n' : ''}
 umask 077
 sakura_finish() {
   sakura_code=$?
@@ -142,8 +144,9 @@ while [ ! -f ${quote(receipt)} ]; do
 done
 [ ! -e ${quote(cancel)} ] || exit 125
 sh -c ${quote(script)}`;
-  const run = `setsid sh -c ${quote(worker)} &
+  const run = `${input ? 'exec 7<&0\n' : ''}setsid sh -c ${quote(worker)} ${input ? '<&7 ' : ''}&
 sakura_launcher=$!
+${input ? 'exec 7<&-\n' : ''}
 wait "$sakura_launcher" || true
 sakura_waits=0
 while [ ! -f ${quote(status)} ]; do
@@ -258,10 +261,14 @@ export async function guestTask(
   timeout = 1200000,
   agentPath?: string,
   afterCleanup?: () => Promise<void>,
+  options: { input?: Buffer; runId?: string } = {},
 ) {
+  if (options.input !== undefined && (!Buffer.isBuffer(options.input) || options.input.length > 128 * 1024))
+    throw new AppError('命令输入超过 128 KiB 或类型无效', 413, 'GUEST_INPUT_INVALID');
+  const input = options.input === undefined ? undefined : Buffer.from(options.input);
   const instance = machines.live.get(id);
-  const receipt = `/tmp/.sakura-job-${randomUUID()}.pid`;
-  const commands = taskCommands(receipt, script, timeout);
+  const receipt = `/tmp/.sakura-job-${options.runId ? z.uuid().parse(options.runId) : randomUUID()}.pid`;
+  const commands = taskCommands(receipt, script, timeout, input !== undefined);
   const control = async (operation: string | (() => Promise<void>), phase: string) => {
     let failure: unknown;
     for (let attempt = 0; attempt < 3; ++attempt) {
@@ -285,12 +292,15 @@ export async function guestTask(
     }
     const message = `客户机任务${phase}未确认，请核查归属记录 ${receipt}：${failure instanceof Error ? failure.message : String(failure)}`;
     log?.(message + '\n');
-    throw new AppError(message, 503, 'GUEST_TASK_CLEANUP_FAILED');
+    throw new AppError(message, 503, failure instanceof AppError && failure.code === 'PROJECT_IDENTITY_CLEANUP_FAILED'
+      ? failure.code : 'GUEST_TASK_CLEANUP_FAILED');
   };
   try {
     // BusyBox setsid can fork and return 0 before its child exits. The actual
     // worker status remains explicit and independent of the launcher PID.
-    const result = await machines.exec(id, commands.run, timeout, signal, log, agentPath);
+    const result = input === undefined
+      ? await machines.exec(id, commands.run, timeout, signal, log, agentPath)
+      : await machines.execInput(id, commands.run, input, timeout, signal, log, agentPath);
     if (result.code === 126 && result.stderr.includes('SAKURA_TASK_SCOPE_UNAVAILABLE:'))
       throw new AppError(result.stderr.trim(), 409, 'GUEST_TASK_SCOPE_UNAVAILABLE');
     return result;

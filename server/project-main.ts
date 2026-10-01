@@ -4,9 +4,8 @@ import type { Machines } from './machines.ts';
 import type { Project } from './workspaces.ts';
 import { AppError } from './model.ts';
 import { quote } from './files.ts';
-import { envPrefix, prepareProjectScopeTools } from './project-services.ts';
+import { prepareProjectScopeTools } from './project-services.ts';
 import { ProjectMainScope, projectMainBinding, projectMainScopePaths, type ProjectMainRecord } from './project-service-scope.ts';
-import { projectNetworkCommand } from './project-network-isolation.ts';
 import { writeStore } from './local-store.ts';
 
 export const mainSession = (project: Project) => projectMainScopePaths(project).session;
@@ -27,9 +26,15 @@ export async function runProjectMain(machines: Machines, id: string, project: Pr
   if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
   await prepareProjectScopeTools(machines, id, signal, 'main');
   const scope = new ProjectMainScope(machines, id, project);
+  const identities = new (await import('./project-run-scope.ts')).ProjectRunScopes(machines);
   const precheck = async () => {
     const state = await scope.status(signal);
     if (state.status === 'running') {
+      if (!state.record || !await identities.hasRun(id, state.record.projectId, state.record.runId))
+        throw new AppError('旧项目主命令尚未接入项目账号，请先确认停止全部后代再重新启动',
+          409, 'PROJECT_MAIN_IDENTITY_REQUIRED');
+      if (!await identities.active(id, state.record.projectId, state.record.runId, signal))
+        throw new AppError('项目主命令的账号启动回执尚未确认，请先停止并核对', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
       if (state.record?.binding !== projectMainBinding(project))
         throw new AppError('项目主命令启动配置已改变，请先停止并重建', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
       log('项目已经运行；如需应用新的启动配置，请先停止项目\n');
@@ -47,11 +52,21 @@ export async function runProjectMain(machines: Machines, id: string, project: Pr
   if (!state) return;
   const intent = scope.intent(state.bootId);
   try {
-    await scope.start(intent,
-      `${projectNetworkCommand(project, `${envPrefix(project.environment)}\n${project.command}`)} > ${quote(mainLog(project))} 2>&1`, signal);
+    await scope.persistIntent(intent);
+    const payload = await identities.inherited(id, project,
+      { command: project.command, environment: project.environment },
+      { kind: 'main', runId: intent.runId, bootId: intent.bootId }, signal);
+    await scope.start(intent, payload, signal);
     await delay(1000, undefined, { signal });
-    if ((await scope.status(signal)).status !== 'running')
-      throw new AppError('项目启动命令已退出，请检查日志', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
+    const deadline = Date.now() + 10000;
+    do {
+      if ((await scope.status(signal)).status !== 'running')
+        throw new AppError('项目启动命令已退出，请检查日志', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
+      if (await identities.active(id, intent.projectId, intent.runId, signal)) break;
+      if (Date.now() >= deadline)
+        throw new AppError('项目主命令的账号启动回执未确认，请检查日志', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
+      await delay(100, undefined, { signal });
+    } while (true);
     log('项目主命令已启动\n');
   } catch (error) {
     try { await scope.stop(intent, log); }
@@ -93,7 +108,7 @@ else:
 `;
   return '# SAKURA_PROJECT_MAIN_REBOOT_STOP\n' +
     '# SAKURA_PROJECT_MAIN_REQUEST=' + Buffer.from(JSON.stringify(request)).toString('base64') + '\n' +
-    `/usr/bin/python3 -I -S -c ${quote(source)}`;
+    `/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ${quote(source)}`;
 }
 async function confirmRebootedMainStop(machines: Machines, id: string, project: Project,
   scope: ProjectMainScope, record: ProjectMainRecord, log: (text: string) => void, instance: object | undefined) {
@@ -120,6 +135,10 @@ async function confirmRebootedMainStop(machines: Machines, id: string, project: 
         throw new Error('项目主命令重启归属回执的 boot 状态不符');
       if (!response.retired) return false;
       if (saved.phase !== 'stopped') await writeStore(scope.receipt(), { ...saved, phase: 'stopped' });
+      await unchanged();
+      const identities = new (await import('./project-run-scope.ts')).ProjectRunScopes(machines);
+      if (await identities.hasRun(id, record.projectId, record.runId))
+        await identities.closeAfterScopeStopped(id, record.projectId, record.runId);
       await unchanged();
       log('项目主命令所属旧 boot 已结束；未向新 boot 进程发送停止信号\n');
       return true;

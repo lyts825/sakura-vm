@@ -26,6 +26,7 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { projectSchema, Workspaces } = await import('../server/workspaces.ts');
 const { runServices, serviceSession, serviceLog } = await import('../server/project-services.ts');
 const { ProjectServiceScopes, projectServiceScopePaths } = await import('../server/project-service-scope.ts');
+const { ProjectRunScopes } = await import('../server/project-run-scope.ts');
 const { ensureProjectNetworkScript } = await import('../server/project-network-isolation.ts');
 const { quote } = await import('../server/files.ts');
 const { freePort } = await import('../server/qmp.ts');
@@ -38,7 +39,7 @@ assert.equal(vm.name, 'guest-task-cgroup-smoke');
 assert.equal(vm.distro, distro);
 assert.equal(machines.state(vm.id), 'stopped');
 const workspaces = new Workspaces(machines);
-const nativeExec = machines.exec.bind(machines);
+const nativeExec = machines.exec.bind(machines), nativeInput = machines.execInput.bind(machines);
 const run = async (command: string, timeout = 30000) => {
   const result = await nativeExec(vm.id, command, timeout);
   assert.equal(result.code, 0, result.stderr + result.stdout);
@@ -98,10 +99,18 @@ stay()`);
 const projectFor = async (label: string, dependencies = false) => {
   const directory = base + '/' + label + '-' + randomUUID();
   await run('mkdir -p ' + quote(directory) + (dependencies ? ' ' + quote(directory + '/db') : ''));
-  return { directory, project: projectSchema.parse({ directory, networkIsolation: 'private', environment: { SAKURA_SCOPE_TEST: label }, services: dependencies ? [
+  const project = projectSchema.parse({ directory, networkIsolation: 'private', environment: { SAKURA_SCOPE_TEST: label }, services: dependencies ? [
     { name: 'db', command: app(directory + '/db'), timeout: 5 },
     { name: 'api', command: app(directory), dependsOn: ['db'], ready: 'false', timeout: 5 },
-  ] : [{ name: 'api', command: app(directory), timeout: 5 }] }) };
+  ] : [{ name: 'api', command: app(directory), timeout: 5 }] });
+  const identities = new ProjectRunScopes(machines), identity = await identities.reserve(vm.id, project);
+  for (const path of [directory, ...(dependencies ? [directory + '/db'] : [])]) {
+    assert.ok(path.startsWith(base + '/'));
+    // An explicit fixture grant, never a production automatic migration.
+    await run(py(`import os,stat\np=${JSON.stringify(path)};assert os.path.realpath(p)==p\ni=os.lstat(p);assert stat.S_ISDIR(i.st_mode) and i.st_uid==0\nos.chown(p,${identity.uid},${identity.gid},follow_symlinks=False);os.chmod(p,0o700)`));
+  }
+  await identities.identity(vm.id, project);
+  return { directory, project };
 };
 const verifyChildrenStopped = async (values: any[]) => {
   for (const child of values) assert.equal(await pidAlive(child.pid, child.startTicks), false, 'Owned child remained: ' + JSON.stringify(child));
@@ -155,7 +164,6 @@ try {
       }
       const result = await nativeExec(id, command, timeout, signal, output, agent);
       if (input?.op === 'prepare' && mode === 'prepare-ack-lost' && result.code === 0) throw new Error('owned prepare acknowledgement lost');
-      if (input?.op === 'start' && mode === 'pane-ack-lost' && result.code === 0) throw new Error('owned pane acknowledgement lost');
       if (input?.op === 'commit' && result.code === 0) {
         committed = true;
         if (mode === 'commit-ack-lost' || mode === 'cancel-after-commit') {
@@ -167,6 +175,12 @@ try {
       if (input?.op === 'stop' && mode === 'stop-ack-lost' && stops === 1 && result.code === 0) throw new Error('owned stop acknowledgement lost');
       return result;
     }) as typeof machines.exec;
+    machines.execInput = (async (id, command, input, ...rest) => {
+      const result = await nativeInput(id, command, input, ...rest);
+      if (request(command)?.op === 'start' && mode === 'pane-ack-lost' && result.code === 0)
+        throw new Error('owned pane acknowledgement lost');
+      return result;
+    }) as typeof machines.execInput;
     if (['prepare-ack-lost', 'pane-ack-lost', 'commit-ack-lost', 'cancel-after-commit', 'prepared-timeout', 'ready-failure'].includes(mode)) {
       await assert.rejects(runServices(machines, vm.id, project, 'start', () => {}, controller.signal, 'api'), (error: any) => { startFailure = error; return true; });
       if (mode === 'prepared-timeout') {
@@ -230,7 +244,7 @@ try {
       if (mode === 'normal') await runServices(machines, vm.id, project, 'stop', () => {}, controller.signal);
       assert.equal((await scopes.status('api')).status, 'stopped');
     }
-    machines.exec = nativeExec;
+    machines.exec = nativeExec; machines.execInput = nativeInput;
     assert.equal(await pidAlive(unrelated.pid, unrelated.ticks), true);
     proof.cases.push({ name: mode, stops, events, children: values, failure: startFailure?.message });
     console.log('PASS ' + mode + ': owned persistent scope lifecycle and unrelated process preserved.');
@@ -262,11 +276,20 @@ try {
     machines.exec = (async (id, command, timeout, signal, output, agent) => {
       const result = await nativeExec(id, command, timeout, signal, output, agent);
       const op = request(command)?.op;
-      if (result.code === 0 && op === (partial === 'prepare' ? 'prepare' : 'start')) throw new Error('owned caller lost after ' + partial);
+      if (result.code === 0 && op === 'prepare' && partial === 'prepare') throw new Error('owned caller lost after ' + partial);
       return result;
     }) as typeof machines.exec;
-    await assert.rejects(scopes.start(intent, app(directory), controller.signal), /owned caller lost/);
-    machines.exec = nativeExec;
+    machines.execInput = (async (id, command, input, ...rest) => {
+      const result = await nativeInput(id, command, input, ...rest);
+      if (result.code === 0 && request(command)?.op === 'start' && partial === 'pane') throw new Error('owned caller lost after ' + partial);
+      return result;
+    }) as typeof machines.execInput;
+    await scopes.persistIntent(intent);
+    const payload = await new ProjectRunScopes(machines).inherited(vm.id, project,
+      { command: app(directory), environment: project.environment },
+      { kind: 'service', runId: intent.runId, bootId: intent.bootId });
+    await assert.rejects(scopes.start(intent, payload, controller.signal), /owned caller lost/);
+    machines.exec = nativeExec; machines.execInput = nativeInput;
     const before = JSON.parse(await readFile(scopes.receipt('api'), 'utf8'));
     assert.equal(before.phase, partial === 'prepare' ? 'intent' : 'prepared');
     assert.equal(before.panePid, null);
@@ -384,10 +407,10 @@ try {
 } catch (error) {
   proof.error = String(error); throw error;
 } finally {
-  machines.exec = nativeExec;
+  machines.exec = nativeExec; machines.execInput = nativeInput;
   await workspaces.close();
   await machines.close();
   proof.vmStopped = machines.state(vm.id) === 'stopped'; proof.stoppedAt = new Date().toISOString();
-  await writeFile(join(root, 'project-services-scope-evidence.json'), JSON.stringify(proof, null, 2) + '\n');
-  console.log('Persistent service scope proof:', join(root, 'project-services-scope-evidence.json'));
+  await writeFile(join(root, 'project-services-uid-scope-evidence.json'), JSON.stringify(proof, null, 2) + '\n');
+  console.log('Persistent UID service scope proof:', join(root, 'project-services-uid-scope-evidence.json'));
 }

@@ -12,6 +12,7 @@ export const manifest = definePlugin({
       http('/api/vms/:vmId/projects', ['GET', 'POST'], true),
       http('/api/vms/:vmId/project', ['GET', 'PUT', 'POST'], true),
       http('/api/vms/:vmId/project-runtime', ['GET'], true),
+      http('/api/vms/:vmId/project-directory-migration', ['GET', 'POST'], true),
     ],
     tabs: ['project'],
   },

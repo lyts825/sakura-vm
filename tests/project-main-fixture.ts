@@ -6,6 +6,7 @@ import type { Machines } from '../server/machines.ts';
 import { ProjectMainScope, ProjectServiceScopes, type ProjectMainRecord, type ProjectServiceRecord } from '../server/project-service-scope.ts';
 import { projectSchema, Workspaces } from '../server/workspaces.ts';
 import { writeStore } from '../server/local-store.ts';
+import { scopeIdentityFixture } from './project-scope-identity-fixture.ts';
 
 export function scopeRequest(command: string) {
   const line = command.split('\n').find(value => /^# SAKURA_PROJECT_(MAIN|SERVICE)_REQUEST=/.test(value));
@@ -31,7 +32,7 @@ export async function mainFixture(mode = 'normal') {
       if (!input) {
         if (command.startsWith('# SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
           return { code: 0, stdout: mode === 'legacy' ? 'unmanaged' : 'absent', stderr: '' };
-        if (command.startsWith('test ! -f'))
+        if (command.startsWith('# SAKURA_PROJECT_RUNTIME_LOG'))
           return { code: 0, stdout: 'owned main application log owned-main-private-token', stderr: '' };
         if (command.startsWith('if ip netns exec') && command.includes('ip netns del')) ++state.namespaceRemovals;
         return { code: 0, stdout: '', stderr: '' };
@@ -113,9 +114,20 @@ export async function mainFixture(mode = 'normal') {
       return reply('stopped', stopped);
     },
   }) as unknown as Machines;
+  const identity = scopeIdentityFixture(machines, project, () => state.currentBoot,
+    runId => state.main?.runId === runId ? state.main : [...state.services.values()].find(item => item.runId === runId) || null);
   const scope = new ProjectMainScope(machines, id, project);
   const spaces = new Workspaces(machines, { secrets: { resolve: async () => ({ TOKEN: 'owned-main-private-token' }) } as any });
   await writeStore(spaces.projects.file(id), project);
-  return { id, bootId, project, machines, scope, spaces, state, events, commands, controller,
+  return { id, bootId, project, machines, scope, spaces, state, events, commands, controller, identity,
+    startMain: async () => {
+      const intent = scope.intent(state.currentBoot);
+      await scope.persistIntent(intent);
+      return scope.start(intent, await identity.payload(id, intent), controller.signal);
+    },
+    startService: async (services: ProjectServiceScopes, record: ProjectServiceRecord) => {
+      await services.persistIntent(record);
+      return services.start(record, await identity.payload(id, record, { command: 'sleep 600' }), controller.signal);
+    },
     saveConfig: async (value: unknown) => writeStore(spaces.projects.file(id), value) };
 }

@@ -34,6 +34,8 @@ function guest(records: Map<string, { id: string; name: string }>, state: () => 
     get: (id: string) => records.get(id), state, locked: locks.locked.bind(locks),
     exec: (...args: any[]) => {
       commands.push(args[1]);
+      if (args[1].includes('project-directory-migrations'))
+        return Promise.resolve({ code: 0, stdout: 'null\n', stderr: '' });
       if (args[1].includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
         return Promise.resolve({ code: 0, stdout: 'absent\n', stderr: '' });
       return args[1].includes('setsid sh -c') ? execute(...args)

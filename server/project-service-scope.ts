@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { lstat } from 'node:fs/promises';
+import { lstat, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
@@ -63,6 +63,10 @@ export const projectMainRecordSchema = z.object({
 export type ProjectMainRecord = z.infer<typeof projectMainRecordSchema>;
 type ProjectScopeRecord = ProjectServiceRecord | ProjectMainRecord;
 type ScopeTarget = { kind: 'service'; name: string } | { kind: 'main' };
+export type ProjectScopeInput = { runId: string; command: string; input: Buffer; sha256: string };
+const transportSchema = z.object({ version: z.literal(1),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().min(1).max(128 * 1024),
+});
 const responseSchema = <Record extends ProjectScopeRecord>(schema: z.ZodType<Record>) => z.object({
   status: z.enum(['absent', 'prepared', 'running', 'exited', 'stopped', 'unconfirmed', 'unmanaged']),
   bootId: z.uuid(),
@@ -94,14 +98,14 @@ export function projectMainScopePaths(project: Project) {
 const scopePaths = (project: Project, target: ScopeTarget) => target.kind === 'main'
   ? projectMainScopePaths(project) : projectServiceScopePaths(project, target.name);
 export function projectMainBinding(project: Project) {
-  return createHash('sha256').update(JSON.stringify(['main-v2',
+  return createHash('sha256').update(JSON.stringify(['main-uid-v3',
     project._workspace || 'default', project.directory, project.networkIsolation || 'host',
     project.command, project.environment || {}, project.secrets || {}, project.runtimes || {},
     Boolean(project.services?.length),
   ])).digest('hex');
 }
 export function projectServiceBinding(project: Project, service: ProjectService) {
-  return createHash('sha256').update(JSON.stringify([
+  return createHash('sha256').update(JSON.stringify(['service-uid-v2',
     project._workspace || 'default', project.directory, project.networkIsolation || 'host',
     project.environment || {}, service.name, service.command, service.environment || {},
   ])).digest('hex');
@@ -109,7 +113,7 @@ export function projectServiceBinding(project: Project, service: ProjectService)
 
 // The helper and the pane launcher run with isolated Python before any project
 // environment or command. A persistent service deliberately has no task timeout.
-const helper = `import fcntl,json,os,re,signal,stat,subprocess,sys,tempfile,time
+const helper = `import fcntl,hashlib,json,os,re,signal,stat,subprocess,sys,tempfile,time
 boot=open('/proc/sys/kernel/random/boot_id').read().strip()
 folder=request['guest']; owner_file=folder+'/owner.json'; cancel_file=folder+'/cancel'
 main=request.get('kind')=='main'
@@ -190,6 +194,63 @@ def populated(descriptor):
   events=dict(line.split() for line in stream.read().splitlines())
  if events.get('populated') not in ['0','1']: refuse('服务 cgroup 空状态无法核对')
  return events['populated']=='1'
+
+def input_file(record): return folder+'/input-'+record['runId']+'.bin'
+def input_header(record,descriptor):
+ info=os.fstat(descriptor)
+ if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode&0o077 or info.st_nlink!=1: refuse('服务受保护正文权限无法核对')
+ header=b''
+ while not header.endswith(b'\\n') and len(header)<4096:
+  part=os.read(descriptor,1)
+  if not part: refuse('服务受保护正文归属不完整')
+  header+=part
+ value=json.loads(header)
+ fields={'version','bootId','runId','scopeName','inode','binding','fileDevice','fileInode','sha256','bytes'}
+ if not isinstance(value,dict) or set(value)!=fields or value['version']!=1: refuse('服务受保护正文归属不完整')
+ for key in ['bootId','runId','scopeName','inode','binding']:
+  if value[key]!=record[key]: refuse('服务受保护正文属于其他运行')
+ if value['fileDevice']!=str(info.st_dev) or value['fileInode']!=str(info.st_ino): refuse('服务受保护正文文件已被替换')
+ expected=request.get('transport')
+ if not isinstance(expected,dict) or set(expected)!={'version','sha256','bytes'} or expected['version']!=1 or value['sha256']!=expected['sha256'] or value['bytes']!=expected['bytes']: refuse('服务受保护正文与主机摘要不符')
+ return value
+
+def stage_input(record):
+ expected=request['transport']
+ if not isinstance(expected['bytes'],int) or expected['bytes']<1 or expected['bytes']>131072 or not re.fullmatch('[a-f0-9]{64}',expected['sha256']): refuse('服务受保护正文预算或摘要不符')
+ data=sys.stdin.buffer.read(expected['bytes']+1)
+ if len(data)!=expected['bytes'] or hashlib.sha256(data).hexdigest()!=expected['sha256']: refuse('服务受保护正文运输未确认；项目代码未执行')
+ info=os.lstat(folder)
+ if info.st_mode&0o077: refuse('服务正文目录需要 root 0700；项目代码未执行')
+ descriptor=os.open(input_file(record),os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+ try:
+  info=os.fstat(descriptor)
+  header={key:record[key] for key in ['bootId','runId','scopeName','inode','binding']}
+  header.update(version=1,fileDevice=str(info.st_dev),fileInode=str(info.st_ino),sha256=expected['sha256'],bytes=len(data))
+  with os.fdopen(descriptor,'wb',closefd=False) as stream:
+   stream.write(json.dumps(header,separators=(',',':')).encode()+b'\\n'); stream.write(data); stream.flush(); os.fsync(descriptor)
+ finally: os.close(descriptor)
+ directory=os.open(folder,os.O_DIRECTORY)
+ try: os.fsync(directory)
+ finally: os.close(directory)
+
+def consume_input(record):
+ descriptor=os.open(input_file(record),os.O_RDONLY|os.O_NOFOLLOW)
+ try:
+  header=input_header(record,descriptor)
+  with os.fdopen(descriptor,'rb',closefd=False) as stream: data=stream.read(header['bytes']+1)
+  if len(data)!=header['bytes'] or hashlib.sha256(data).hexdigest()!=header['sha256']: refuse('服务受保护正文长度或摘要已改变；项目代码未执行')
+  return data
+ finally: os.close(descriptor)
+
+def clean_input(record):
+ try: descriptor=os.open(input_file(record),os.O_RDONLY|os.O_NOFOLLOW)
+ except FileNotFoundError: return
+ try:
+  input_header(record,descriptor)
+  actual=os.lstat(input_file(record)); pinned=os.fstat(descriptor)
+  if actual.st_dev!=pinned.st_dev or actual.st_ino!=pinned.st_ino: refuse('服务受保护正文在清理前已被替换')
+  os.unlink(input_file(record))
+ finally: os.close(descriptor)
 def expect_owner(record):
  expected=request['record']
  if expected['bootId']!=boot or record['bootId']!=boot: refuse('客户机 boot 身份已改变，拒绝旧服务操作')
@@ -262,11 +323,12 @@ def launch():
  if descriptor is None: refuse('服务 prepared cgroup 已缺失')
  os.close(descriptor)
  if tmux_panes(): refuse('tmux 会话已被占用，拒绝替换')
+ stage_input(record)
  pane_script=request['paneScript']
  pane_file=folder+'/pane-'+record['runId']+'.py'
  script_file=os.open(pane_file,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
  with os.fdopen(script_file,'w') as stream: stream.write(pane_script); stream.flush(); os.fsync(stream.fileno())
- created=subprocess.run(['/usr/bin/tmux','new-session','-d','-s',request['session'],'-c',request['directory'],'-P','-F','#{session_id} #{pane_id} #{pane_pid}', '/usr/bin/python3','-I','-S',pane_file],capture_output=True,text=True)
+ created=subprocess.run(['/usr/bin/tmux','new-session','-d','-s',request['session'],'-c','/','-P','-F','#{session_id} #{pane_id} #{pane_pid}', '/usr/bin/env','-i','PATH=/usr/sbin:/usr/bin:/sbin:/bin','HOME=/root','LANG=C','LC_ALL=C','/usr/bin/python3','-I','-S',pane_file],capture_output=True,text=True)
  if created.returncode: refuse('无法创建服务 pane：'+created.stderr.strip())
  row=created.stdout.strip().split()
  if len(row)!=3 or not re.fullmatch(r'\\$[0-9]+',row[0]) or not re.fullmatch('%[0-9]+',row[1]) or not row[2].isdigit(): refuse('新建服务 pane 身份无法核对')
@@ -306,7 +368,7 @@ def stop():
  if record is None or (record['runId']!=expected['runId'] and record['phase']=='stopped'):
   if os.path.lexists(scope_path(expected)) or tmux_panes(): refuse('服务归属未知，拒绝未核对停止')
   if record is not None and os.path.lexists(scope_path(record)): refuse('旧服务 cgroup 已被替换，拒绝覆盖归属')
-  cancel(expected); stopped=dict(expected,phase='stopped'); write_owner(stopped); result('stopped',stopped); return
+  cancel(expected); clean_input(expected); stopped=dict(expected,phase='stopped'); write_owner(stopped); result('stopped',stopped); return
  expect_owner(record)
  panes=tmux_panes(); pane_identity(record,panes)
  descriptor=scope_descriptor(record)
@@ -346,6 +408,7 @@ def stop():
   if descriptor is not None:
    if str(os.stat(scope_path(record)).st_ino)!=record['inode']: refuse('服务 cgroup 路径在删除前已改变')
    for path,children,files in os.walk(scope_path(record),topdown=False): os.rmdir(path)
+  clean_input(record)
   try: os.unlink(folder+'/pane-'+record['runId']+'.py')
   except FileNotFoundError: pass
   record['phase']='stopped'; write_owner(record); result('stopped',record)
@@ -359,7 +422,8 @@ def pane():
   record=read_owner(); expect_owner(record)
   if cancelled(record) or record['phase']=='stopped': refuse('服务启动已取消；项目代码未执行')
   if record['panePid'] is not None:
-   if record['panePid']!=os.getpid() or record['paneId']!=os.environ.get('TMUX_PANE') or proc_fields(os.getpid())[19]!=record['paneStartTicks']: refuse('当前 pane 不属于本次启动')
+   if record['panePid']!=os.getpid() or proc_fields(os.getpid())[19]!=record['paneStartTicks']: refuse('当前 pane 不属于本次启动')
+   pane_identity(record,tmux_panes())
    descriptor=scope_descriptor(record)
    if descriptor is None: refuse('服务 cgroup 已缺失；项目代码未执行')
    try:
@@ -367,9 +431,19 @@ def pane():
    finally: os.close(descriptor)
    if '0::/'+record['scopeName'] not in open('/proc/self/cgroup').read().splitlines(): refuse('服务未进入已登记 cgroup；项目代码未执行')
    if record['phase']=='running':
+    data=consume_input(record)
     fcntl.flock(lock,fcntl.LOCK_UN)
     os.close(lock)
-    os.execv('/bin/sh',['sh','-c',request['payload']])
+    log_file=request['logFile']
+    log_descriptor=os.open(log_file,os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    info=os.fstat(log_descriptor)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_nlink!=1: refuse('服务日志归属无法核对')
+    os.fchmod(log_descriptor,0o600)
+    os.ftruncate(log_descriptor,0)
+    with os.fdopen(log_descriptor,'wb') as output:
+     child=subprocess.Popen(['/bin/sh','-c',request['command']],stdin=subprocess.PIPE,stdout=output,stderr=output,env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','HOME':'/root','LANG':'C','LC_ALL':'C'},close_fds=True)
+     child.communicate(data)
+    sys.exit(child.returncode if child.returncode>=0 else 128-child.returncode)
   fcntl.flock(lock,fcntl.LOCK_UN); time.sleep(0.05)
  refuse('服务提交等待超时；项目代码未执行；归属记录已保留')
 try:
@@ -382,14 +456,22 @@ function python(request: object) {
   return `request=json.loads(${JSON.stringify(JSON.stringify(request))})\n`;
 }
 function projectScopeCommand(project: Project, target: ScopeTarget, op: Operation,
-  record?: ProjectScopeRecord, payload?: string) {
+  record?: ProjectScopeRecord, payload?: ProjectScopeInput,
+  transport?: z.infer<typeof transportSchema>) {
   const paths = scopePaths(project, target);
   const executionHelper = target.kind === 'main'
     ? helper.replaceAll('服务', '项目主命令').replaceAll('SAKURA_SERVICE_SCOPE_', 'SAKURA_PROJECT_MAIN_SCOPE_') : helper;
-  const request: any = { op, ...paths, ...(record ? { record } : {}) };
+  const request: any = { op, ...paths, ...(record ? { record } : {}), ...(transport ? { transport } : {}) };
   if (op === 'start') {
-    const paneRequest = { op: 'pane', ...paths, record, payload };
-    request.directory = project.directory;
+    if (!record || !payload || payload.runId !== record.runId || !Buffer.isBuffer(payload.input) ||
+        !/^[a-f0-9]{64}$/.test(payload.sha256) || payload.input.length < 1 || payload.input.length > 128 * 1024 ||
+        createHash('sha256').update(payload.input).digest('hex') !== payload.sha256 ||
+        typeof payload.command !== 'string' || payload.command.length > 8192 || /[\x00-\x1f\x7f]/.test(payload.command))
+      throw new AppError('项目账号受保护正文或运行身份无法核对', 409,
+        target.kind === 'main' ? 'PROJECT_MAIN_SCOPE_CHANGED' : 'SERVICE_SCOPE_CHANGED');
+    request.transport = transportSchema.parse({ version: 1, sha256: payload.sha256, bytes: payload.input.length });
+    const paneRequest = { op: 'pane', ...paths, record, transport: request.transport,
+      command: payload.command, logFile: `/tmp/${paths.session}.log` };
     request.paneScript = 'import json\n' + python(paneRequest) + executionHelper;
   }
   const source = 'import json\n' + python(request) + executionHelper;
@@ -399,13 +481,13 @@ function projectScopeCommand(project: Project, target: ScopeTarget, op: Operatio
     `set -eu\nif [ ! -x /usr/bin/python3 ] || [ ! -x /usr/bin/tmux ]; then ` +
     `echo 'SAKURA_${target.kind === 'main' ? 'PROJECT_MAIN' : 'SERVICE'}_SCOPE_UNAVAILABLE: ` +
     `受管运行需要 python3、tmux 和可写 cgroup v2；项目代码未执行' >&2; exit 73; fi\n` +
-    `/usr/bin/python3 -I -S -c ${quote(source)}`;
+    `/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ${quote(source)}`;
 }
 export function projectServiceScopeCommand(project: Project, name: string, op: Operation,
-  record?: ProjectServiceRecord, payload?: string) {
+  record?: ProjectServiceRecord, payload?: ProjectScopeInput) {
   return projectScopeCommand(project, { kind: 'service', name }, op, record, payload);
 }
-export function projectMainScopeCommand(project: Project, op: Operation, record?: ProjectMainRecord, payload?: string) {
+export function projectMainScopeCommand(project: Project, op: Operation, record?: ProjectMainRecord, payload?: ProjectScopeInput) {
   return projectScopeCommand(project, { kind: 'main' }, op, record, payload);
 }
 
@@ -445,11 +527,55 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
     await writeStore(file, this.schema.parse(record));
     this.assertLive();
   }
-  private async execute(op: Operation, record?: Record,
-    payload?: string, signal?: AbortSignal) {
+  async persistIntent(record: Record) {
+    if (record.phase !== 'intent') throw new AppError('运行意图阶段不符', 409, this.code('SCOPE_CHANGED'));
     this.assertLive();
-    const result = await this.machines.exec(this.id,
-      projectScopeCommand(this.project, this.target, op, record, payload), 30_000, signal).catch((error) => {
+    const previous = await this.metadata();
+    if (previous) {
+      if (JSON.stringify(previous) === JSON.stringify(record)) return;
+      if (previous.phase !== 'stopped' || previous.runId === record.runId)
+        throw new AppError(`${this.label}原运行尚未完成清理，拒绝覆盖归属记录`, 409, this.code('SCOPE_CHANGED'));
+      const identities = new (await import('./project-run-scope.ts')).ProjectRunScopes(this.machines);
+      if (await identities.hasRun(this.id, previous.projectId, previous.runId))
+        await identities.closeAfterScopeStopped(this.id, previous.projectId, previous.runId);
+      this.assertLive();
+      if (JSON.stringify(await this.metadata()) !== JSON.stringify(previous))
+        throw new AppError(`${this.label}归属在账号清理期间已改变，拒绝覆盖`, 409, this.code('SCOPE_CHANGED'));
+    }
+    await this.save(record);
+  }
+  private transportFile(record: Record) {
+    return join(this.receipt(), '..', `transport-${record.runId}.json`);
+  }
+  private async transport(record: Record) {
+    try {
+      const value = await readStore<unknown>(this.transportFile(record), () => null);
+      if (value === null) return undefined;
+      const stored = z.object({ version: z.literal(1), record: this.schema,
+        sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().min(1).max(128 * 1024),
+        commandSha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict().parse(value);
+      this.sameOwner(stored.record, record);
+      return transportSchema.parse({ version: 1, sha256: stored.sha256, bytes: stored.bytes });
+    } catch { throw new AppError(`${this.label}受保护正文归属记录无法核对`, 409, this.code('SCOPE_CHANGED')); }
+  }
+  private async saveTransport(record: Record, payload: ProjectScopeInput) {
+    this.assertLive();
+    const metadata = { version: 1, record, sha256: payload.sha256, bytes: payload.input.length,
+      commandSha256: createHash('sha256').update(payload.command).digest('hex') };
+    // Immutable per-run metadata is persisted before transporting any body.
+    // An acknowledgement lost for this run must never overwrite its old frame.
+    await writeFile(this.transportFile(record), JSON.stringify(metadata, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    this.assertLive();
+  }
+  private async execute(op: Operation, record?: Record,
+    payload?: ProjectScopeInput, signal?: AbortSignal) {
+    this.assertLive();
+    const transport = record ? await this.transport(record) : undefined;
+    const command = projectScopeCommand(this.project, this.target, op, record, payload, transport);
+    const request = op === 'start'
+      ? this.machines.execInput(this.id, command, payload!.input, 30_000, signal)
+      : this.machines.exec(this.id, command, 30_000, signal);
+    const result = await request.catch((error) => {
         signal?.throwIfAborted();
         this.assertLive();
         if (this.target.kind !== 'main') throw error;
@@ -497,13 +623,20 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
       runId, bootId, scopeName: `sakura-${this.target.kind === 'main' ? 'main' : 'service'}-${runId}`, inode: null,
       binding, phase: 'intent', sessionId: null, paneId: null, panePid: null, paneStartTicks: null });
   }
-  async start(record: Record, payload: string, signal: AbortSignal) {
-    await this.save(record);
+  async start(record: Record, payload: ProjectScopeInput, signal: AbortSignal) {
+    // Validate and copy the caller's bytes before the first await. No root
+    // command contains the body; it is delivered only to execInput's stdin.
+    projectScopeCommand(this.project, this.target, 'start', record, payload);
+    payload = { ...payload, input: Buffer.from(payload.input) };
+    await this.persistIntent(record);
+    if (!await new (await import('./project-run-scope.ts')).ProjectRunScopes(this.machines).hasRun(this.id, record.projectId, record.runId))
+      throw new AppError(`${this.label}缺少已保存的项目账号运行票据，项目代码未执行`, 409, this.code('IDENTITY_REQUIRED'));
     signal.throwIfAborted();
     const prepared = await this.execute('prepare', record, undefined, signal);
     if (prepared.status !== 'prepared' || !prepared.record)
       throw new AppError(`${this.label} prepared 回执不完整`, 409, this.code('SCOPE_CHANGED'));
     await this.save(prepared.record);
+    await this.saveTransport(prepared.record, payload);
     const pane = await this.execute('start', prepared.record, payload, signal);
     if (pane.status !== 'prepared' || !pane.record?.panePid)
       throw new AppError(`${this.label} pane 回执不完整`, 409, this.code('SCOPE_CHANGED'));
@@ -513,6 +646,59 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
       throw new AppError(`${this.label}提交回执未确认`, 409, this.code('SCOPE_CHANGED'));
     await this.save(committed.record);
     return committed.record;
+  }
+  private async retireRebootedService(record: Record, log?: (text: string) => void) {
+    if (this.target.kind !== 'service') return false;
+    this.assertLive();
+    const request = { op: 'probe-reboot', ...scopePaths(this.project, this.target), record };
+    const source = `import fcntl,json,os,stat,subprocess
+request=json.loads(${JSON.stringify(JSON.stringify(request))})
+boot=open('/proc/sys/kernel/random/boot_id').read().strip()
+if boot==request['record']['bootId']:
+ print(json.dumps({'bootId':boot,'retired':False}))
+else:
+ folder=request['guest']
+ for path in ['/run/sakura-project-services',folder.rsplit('/',1)[0],folder]:
+  try: os.mkdir(path,0o700)
+  except FileExistsError: pass
+  info=os.lstat(path)
+  assert stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022
+ lock=os.open(folder+'/lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+ info=os.fstat(lock)
+ assert stat.S_ISREG(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022
+ fcntl.flock(lock,fcntl.LOCK_EX)
+ assert not os.path.lexists(folder+'/owner.json'),'新 boot 已有服务归属，拒绝旧运行停止'
+ assert not os.path.lexists('/sys/fs/cgroup/'+request['record']['scopeName']),'新 boot 已有同路径 cgroup，拒绝旧运行停止'
+ result=subprocess.run(['/usr/bin/tmux','has-session','-t','='+request['session']],capture_output=True,text=True)
+ assert result.returncode!=0,'新 boot 已有同名 pane，拒绝旧运行停止'
+ assert any(text in result.stderr for text in ["can't find session",'no server running','No such file or directory']),'新 boot 的 tmux 状态无法核对'
+ print(json.dumps({'bootId':boot,'retired':True}))
+`;
+    const unchanged = async () => {
+      this.assertLive();
+      const saved = await this.metadata(); this.assertLive();
+      if (!saved || JSON.stringify({ ...saved, phase: record.phase }) !== JSON.stringify(record) ||
+          (saved.phase !== record.phase && saved.phase !== 'stopped'))
+        throw new AppError('主机服务完整归属已改变，拒绝旧运行停止', 409, this.code('SCOPE_CHANGED'));
+      return saved;
+    };
+    await unchanged();
+    const result = await this.machines.exec(this.id, '# SAKURA_PROJECT_SERVICE_REBOOT_STOP\n' +
+      '# SAKURA_PROJECT_SERVICE_REQUEST=' + Buffer.from(JSON.stringify(request)).toString('base64') + '\n' +
+      `/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ${quote(source)}`, 10000);
+    const saved = await unchanged();
+    const response = result.code === 0 && z.object({ bootId: z.uuid(), retired: z.boolean() }).strict()
+      .safeParse((() => { try { return JSON.parse(result.stdout); } catch { return null; } })());
+    if (!response || !response.success || response.data.retired !== (response.data.bootId !== record.bootId))
+      throw new AppError(result.stderr.trim() || '服务重启归属回执未确认', 409, this.code('SCOPE_CHANGED'));
+    if (!response.data.retired) return false;
+    if (saved.phase !== 'stopped') await this.save({ ...saved, phase: 'stopped' });
+    await unchanged();
+    const identities = new (await import('./project-run-scope.ts')).ProjectRunScopes(this.machines);
+    if (await identities.hasRun(this.id, record.projectId, record.runId))
+      await identities.closeAfterScopeStopped(this.id, record.projectId, record.runId);
+    await unchanged(); log?.(`${this.label}所属旧 boot 已结束；未向新 boot 进程发送停止信号\n`);
+    return true;
   }
   async stop(record: Record, log?: (text: string) => void) {
     let failure: unknown;
@@ -536,10 +722,15 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
             sessionId: current.sessionId ?? record.sessionId, paneId: current.paneId ?? record.paneId,
             panePid: current.panePid ?? record.panePid, paneStartTicks: current.paneStartTicks ?? record.paneStartTicks };
         }
+        if (await this.retireRebootedService(stored || record, log)) return;
         const stopped = await this.execute('stop', expected);
         if (stopped.status !== 'stopped' || !stopped.record)
           throw new AppError(`${this.label}全 scope 停止未确认`, 409, this.code('SCOPE_CHANGED'));
         await this.save(stopped.record);
+        const identities = new (await import('./project-run-scope.ts')).ProjectRunScopes(this.machines);
+        if (await identities.hasRun(this.id, record.projectId, record.runId))
+          await identities.closeAfterScopeStopped(this.id, record.projectId, record.runId);
+        this.assertLive();
         return;
       } catch (error) {
         failure = error;
@@ -569,7 +760,8 @@ export class ProjectServiceScopes {
   intent(service: ProjectService, bootId: string) {
     return this.scope(service.name).newIntent(projectServiceBinding(this.project, service), bootId);
   }
-  start(record: ProjectServiceRecord, payload: string, signal: AbortSignal) {
+  persistIntent(record: ProjectServiceRecord) { return this.scope(record.name).persistIntent(record); }
+  start(record: ProjectServiceRecord, payload: ProjectScopeInput, signal: AbortSignal) {
     return this.scope(record.name).start(record, payload, signal);
   }
   stop(record: ProjectServiceRecord, log?: (text: string) => void) { return this.scope(record.name).stop(record, log); }

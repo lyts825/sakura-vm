@@ -13,7 +13,6 @@ import {
   serviceOrder,
   runServices,
   serviceLog,
-  envPrefix,
   type ProjectService,
 } from './project-services.ts';
 import { guestTask } from './guest-task.ts';
@@ -22,7 +21,7 @@ import type { NetworkProfiles } from './network-profiles.ts';
 import { ProjectCatalog } from './project-catalog.ts';
 import { runtimesSchema, runtimeEnvironment } from './runtime-versions.ts';
 import { guardProjectQuotaDirectory, projectQuota, readProjectQuotaRecord } from './project-quota.ts';
-import { ensureProjectNetworkScript, projectNetworkCommand,
+import { ensureProjectNetworkScript,
   removeProjectNetwork } from './project-network-isolation.ts';
 import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
@@ -31,6 +30,7 @@ import { resolveDependencyAuthentication } from './dependency-downloads.ts';
 import { ProjectMainScope, ProjectServiceScopes } from './project-service-scope.ts';
 import { legacyMainStatus, mainLog, mainSession, runProjectMain, stopProjectMain } from './project-main.ts';
 import type { DependencyManager } from './project-dependency-cache.ts';
+import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
 
 export const projectSchema = z
   .object({
@@ -78,6 +78,28 @@ export const projectSession = mainSession;
 export const projectLog = mainLog;
 export type ProjectRuntime = { status: string; log: string;
   services?: { name: string; status: string; log: string }[]; main?: { status: string } };
+function runtimeLogCommand(path: string, limit: 8192 | 16384) {
+  if (!/^\/tmp\/(?:sakura-project(?:-[a-f0-9]{16})?|sakura-service-(?:[a-f0-9]{16}-)?[a-z][a-z0-9-]{0,31})\.log$/.test(path))
+    throw new AppError('项目日志路径无法核对', 409);
+  const source = `import os,stat,sys
+path=${JSON.stringify(path)}; limit=${limit}
+try:
+ try: descriptor=os.open(path,os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC)
+ except FileNotFoundError: sys.exit(0)
+ try:
+  info=os.fstat(descriptor)
+  if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_nlink!=1 or stat.S_IMODE(info.st_mode)!=0o600:
+   raise RuntimeError('日志文件归属、类型或权限无法核对')
+  os.lseek(descriptor,max(0,info.st_size-limit),os.SEEK_SET)
+  sys.stdout.buffer.write(os.read(descriptor,limit))
+ finally: os.close(descriptor)
+except Exception as error:
+ print('SAKURA_PROJECT_RUNTIME_LOG_REFUSED: '+str(error),file=sys.stderr);sys.exit(73)
+`;
+  return '# SAKURA_PROJECT_RUNTIME_LOG\n' +
+    `if [ ! -x /usr/bin/python3 ]; then echo 'SAKURA_PROJECT_RUNTIME_LOG_REFUSED: 缺少系统 Python；未读取未确认的 root 日志' >&2; exit 73; fi\n` +
+    `/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ${quote(source)}`;
+}
 export function projectPrivateValues(project: Project) {
   return [
     ...Object.keys(project.secrets || {}).map((key) => project.environment?.[key] || ''),
@@ -257,6 +279,8 @@ export class Workspaces {
       const mainBindingInput = (value: Project) => JSON.stringify([value.directory, value.command,
         value.networkIsolation || 'host', value.environment || {}, value.secrets || {}, value.runtimes || {},
         Boolean(value.services?.length)]);
+      const identityBindingInput = (value: Project) => JSON.stringify([mainBindingInput(value),
+        (value.services || []).map(service => [service.name, service.command, service.environment || {}, service.secrets || {}])]);
       if (mainBindingInput(previous) !== mainBindingInput(project)) {
         const mainScope = new ProjectMainScope(this.machines, id, previous);
         const hasReceipt = await mainScope.hasReceipt(), machineState = this.machines.state(id);
@@ -306,6 +330,8 @@ export class Workspaces {
         if (runtime.status !== 'stopped' && runtime.status !== 'absent')
           throw new AppError('请先确认停止受管服务及其全部后代，再修改服务绑定或移除服务', 409, 'SERVICE_SCOPE_CHANGED');
       }
+      if (identityBindingInput(previous) !== identityBindingInput(project))
+        await new ProjectRunScopes(this.machines).guard(id, this.projects.current(id));
       if (previous.directory !== project.directory ||
           (previous.networkIsolation || 'host') !== (project.networkIsolation || 'host')) {
         if (this.machines.state(id) === 'paused')
@@ -384,8 +410,12 @@ export class Workspaces {
           throw new AppError('请先停止运行中的项目，再切换网络隔离模式', 409);
       }
       if (previous.networkIsolation === 'private' && project.networkIsolation !== 'private' &&
-          this.machines.state(id) === 'running')
-        await removeProjectNetwork(this.machines, id, previous);
+          this.machines.state(id) === 'running') {
+        const identities = new ProjectRunScopes(this.machines), projectId = this.projects.current(id);
+        const lease = await identities.beginNetworkRelease(id, projectId);
+        if (lease) await identities.releaseNetwork(id, projectId, lease);
+        else await removeProjectNetwork(this.machines, id, previous);
+      }
       const file = this.projects.file(id);
       await writeFile(`${file}.tmp`, JSON.stringify(project, null, 2));
       await rename(`${file}.tmp`, file);
@@ -403,7 +433,9 @@ export class Workspaces {
     };
   }
   private async execute(id: string, script: string, log: (text: string) => void, signal: AbortSignal) {
-    const result = await guestTask(this.machines, id, script, signal, log);
+    const result = await guestTask(this.machines, id,
+      `/usr/bin/env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C /bin/sh -c ${quote(script)}`,
+      signal, log);
     if (result.code !== 0) throw new Error(result.stderr.slice(-2000) || `命令退出码 ${result.code}`);
   }
   async run(
@@ -447,46 +479,68 @@ export class Workspaces {
           log = output.write;
         try {
           if (action === 'stop') {
+            const identities = new ProjectRunScopes(this.machines), projectId = this.projects.current(id);
+            // Capture and freeze this network generation before asynchronous
+            // scope cleanup. A late retry must never acquire a later network.
+            const lease = !service && project.networkIsolation === 'private'
+              ? await identities.beginNetworkRelease(id, projectId, signal) : null;
             if (project.services?.length) {
               await runServices(this.machines, id, project, 'stop', log, signal, service);
               if (service) return;
             }
             await stopProjectMain(this.machines, id, project, log, signal);
-            await removeProjectNetwork(this.machines, id, project, signal);
+            if (lease) await identities.releaseNetwork(id, projectId, lease, signal);
+            else await removeProjectNetwork(this.machines, id, project, signal);
             return;
           }
           if (action === 'terminal') {
             await this.execute(id, provisionScript('none', distro), log, signal);
             return;
           }
+          // Main scope prerequisites can install before prepareProject runs.
+          // Reject old retirement intent before admitting any such mutation.
+          await new ProjectRunScopes(this.machines).assertAdmission(id, this.projects.current(id));
           const install =
             action === 'setup'
               ? provisionScript(project.template, distro)
               : `if [ ! -f /etc/sakura/template-${project.template} ] || ! command -v tmux >/dev/null; then\n${provisionScript(project.template, distro)}\nfi\n`;
           const network = ensureProjectNetworkScript(project, distro || 'alpine');
-          let prepare = `mkdir -p ${quote(project.directory)}\n`;
-          if (project.repository) {
-            const privateNetwork = project.networkIsolation === 'private';
-            prepare += `if [ ! -e ${quote(project.directory + '/.git')} ]; then\n` +
-              `git clone ${privateNetwork ? '--no-checkout ' : ''}-- ` +
-              `${quote(project.repository)} ${quote(project.directory)}\n`;
-            if (privateNetwork)
-              prepare += `${projectNetworkCommand(project,
-                `${envPrefix(project.environment)}\ngit -C ${quote(project.directory)} checkout --force HEAD`)}\n`;
-            prepare += 'fi\n';
-          }
-          const marker = `/etc/sakura/project-setup-${setupFingerprint(project)}`;
-          const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
-          if (project.setup.trim())
-            prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\n${projectNetworkCommand(project, `${envPrefix(project.environment)}\ncd ${quote(project.directory)}\n${project.setup}`)}\nfi\ntouch ${marker}\n`;
+          // Previous markers certify a root setup, not setup by this account.
+          const marker = `/etc/sakura/project-setup-uid1-${setupFingerprint(project)}`;
           log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
-          const prepareProject = () => this.execute(
-            id,
-            `set -eu\n${project.networkIsolation === 'private' ? '' :
-              envPrefix(project.environment)}\n${install}\n${network}${prepare}`,
-            log,
-            signal,
-          );
+          const prepareProject = async () => {
+            await new ProjectRunScopes(this.machines).assertAdmission(id, this.projects.current(id));
+            // Trusted installation/network control has no project environment,
+            // repository, directory hooks or project command in its argv.
+            await this.execute(id, `set -eu\n${install}\n${network}`, log, signal);
+            await new ProjectRunScopes(this.machines).identity(id, project, signal);
+            let setupNeeded = Boolean(project.setup.trim());
+            if (setupNeeded && action !== 'setup') {
+              const done = await this.machines.exec(id, `test -f ${marker}`, 10000, signal);
+              setupNeeded = done.code !== 0;
+            }
+            let prepare = 'set -eu\n';
+            if (project.repository) {
+              prepare += 'if [ ! -e .git ]; then\n';
+              if (project.networkIsolation === 'private')
+                prepare += `printf '%s\\n' 'PROJECT_PRIVATE_REPOSITORY_REQUIRED: 私有项目请先通过受限下载入口准备本地仓库；项目账号不会降级到共享网络执行 Git。' >&2\nexit 73\n`;
+              else prepare += `git clone -- ${quote(project.repository)} .\n`;
+              prepare += 'fi\n';
+            }
+            if (setupNeeded) prepare += project.setup + '\n';
+            if (project.repository || setupNeeded) {
+              const result = await projectIdentityTask(this.machines, id, project,
+                { command: prepare, environment: project.environment }, signal, log);
+              if (result.code !== 0) {
+                const privateRepository = result.stderr.includes('PROJECT_PRIVATE_REPOSITORY_REQUIRED');
+                throw new AppError(result.stderr.slice(-2000) || `项目账号准备命令退出码 ${result.code}`, 409,
+                  privateRepository ? 'PROJECT_PRIVATE_REPOSITORY_REQUIRED' : 'PROJECT_SETUP_FAILED');
+              }
+            }
+            // Only the clean controller publishes /etc markers, after task
+            // descendants and the account ticket have both been retired.
+            if (setupNeeded) await this.execute(id, `set -eu\ntouch ${marker}`, log, signal);
+          };
           if (action === 'start' && !project.services?.length)
             await runProjectMain(this.machines, id, project, log, signal, prepareProject);
           else await prepareProject();
@@ -520,6 +574,17 @@ export class Workspaces {
           try {
             const runtime = await scopes.status(service.name, signal);
             status = runtime.status === 'absent' ? 'stopped' : runtime.status;
+            if (runtime.record && ['running', 'exited', 'stopped'].includes(runtime.status)) {
+              const identities = new ProjectRunScopes(this.machines);
+              if (await identities.hasRun(id, runtime.record.projectId, runtime.record.runId)) {
+                const active = await identities.readonlyActive(id, runtime.record.projectId, runtime.record.runId, signal);
+                if (active !== (runtime.status !== 'stopped'))
+                  throw new AppError('服务 scope 与项目账号票据状态不符；请完成所属运行清理', 409, 'SERVICE_SCOPE_CHANGED');
+              } else if (runtime.status === 'running') {
+                status = 'unconfirmed';
+                reason = '此旧服务尚未接入项目账号；请先确认停止全部后代后重新启动。';
+              }
+            }
             if (status === 'exited') reason = '主 pane 已退出，仍保留服务归属；请停止并清理全部后代。';
             else if (status === 'prepared' || status === 'unconfirmed') reason = '服务启动或停止尚未确认；请先确认停止再重建。';
           } catch (error) {
@@ -528,7 +593,7 @@ export class Workspaces {
             reason = error instanceof Error ? error.message : String(error);
           }
           const output = await this.machines.exec(id,
-            `test ! -f ${quote(serviceLog(service.name, project))} || tail -c 8192 ${quote(serviceLog(service.name, project))}`,
+            runtimeLogCommand(serviceLog(service.name, project), 8192),
             10000, signal).catch((error) => {
               signal?.throwIfAborted();
               return { code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) };
@@ -539,14 +604,17 @@ export class Workspaces {
         }
         const result = await this.machines.exec(
           id,
-          `if tmux has-session -t =sakura-service-${project._workspace ? project._workspace + '-' : ''}${service.name} 2>/dev/null; then echo running; else echo stopped; fi; test ! -f ${quote(serviceLog(service.name, project))} || tail -c 8192 ${quote(serviceLog(service.name, project))}`,
+          `if tmux has-session -t =sakura-service-${project._workspace ? project._workspace + '-' : ''}${service.name} 2>/dev/null; then echo running; else echo stopped; fi`,
           10000,
           signal,
         );
-        const [status, ...lines] = result.stdout.split('\n');
-        services.push({ name: service.name, status: status === 'running' ? 'migration-required' : status,
-          log: redactValues([status === 'running' ? '此旧服务尚未迁移到受管归属；请明确关闭旧会话后重新启动。' : '',
-            lines.join('\n')].filter(Boolean).join('\n'), privateValues) });
+        const status = result.stdout.split('\n')[0].trim();
+        services.push({ name: service.name,
+          status: result.code !== 0 || !['running', 'stopped'].includes(status) ? 'unconfirmed'
+            : status === 'running' ? 'migration-required' : status,
+          log: redactValues(result.code !== 0 || !['running', 'stopped'].includes(status)
+            ? '旧服务状态读取未确认：' + result.stderr
+            : status === 'running' ? '此旧服务尚未迁移到受管归属；请明确关闭旧会话后重新启动。旧日志归属无法核对，未读取。' : '', privateValues) });
       }
       return {
         status: services.some((s) => ['unconfirmed', 'prepared', 'migration-required'].includes(s.status))
@@ -562,25 +630,39 @@ export class Workspaces {
     }
     const mainScope = new ProjectMainScope(this.machines, id, project);
     let status: string, mainStatus: string, reason = '';
+    let hasMainReceipt = false;
     try {
-      const runtime = await mainScope.hasReceipt()
-        ? (await mainScope.status(signal)).status : await legacyMainStatus(this.machines, id, project, signal);
+      hasMainReceipt = await mainScope.hasReceipt();
+      const owned = hasMainReceipt ? await mainScope.status(signal) : null;
+      let runtime = owned?.status || await legacyMainStatus(this.machines, id, project, signal);
+      if (owned?.record && ['running', 'exited', 'stopped'].includes(runtime)) {
+        const identities = new ProjectRunScopes(this.machines);
+        if (await identities.hasRun(id, owned.record.projectId, owned.record.runId)) {
+          const active = await identities.readonlyActive(id, owned.record.projectId, owned.record.runId, signal);
+          if (active !== (runtime !== 'stopped'))
+            throw new AppError('主命令 scope 与项目账号票据状态不符；请完成所属运行清理', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
+        } else if (runtime === 'running') {
+          runtime = 'unconfirmed';
+          reason = '此旧项目主命令尚未接入项目账号；请先确认停止全部后代后重新启动。';
+        }
+      }
       mainStatus = runtime;
       status = runtime === 'absent' ? 'stopped' : ['prepared', 'unmanaged'].includes(runtime) ? 'unconfirmed' : runtime;
       if (runtime === 'exited') reason = '项目主命令主 pane 已退出，仍保留运行归属；请停止并清理全部后代。';
-      else if (runtime === 'unmanaged') reason = '旧项目主命令缺少可验证归属；请管理员检查并关闭旧会话及其后代后重新启动，未自动停止任何进程。';
-      else if (runtime === 'prepared' || runtime === 'unconfirmed') reason = '项目主命令启动或停止尚未确认；请先确认停止再重建。';
+      else if (runtime === 'unmanaged') reason = '旧项目主命令缺少可验证归属；请管理员检查并关闭旧会话及其后代后重新启动，未自动停止任何进程。' +
+        (!hasMainReceipt ? '旧日志归属无法核对，未读取。' : '');
+      else if ((runtime === 'prepared' || runtime === 'unconfirmed') && !reason) reason = '项目主命令启动或停止尚未确认；请先确认停止再重建。';
     } catch (error) {
       signal?.throwIfAborted();
       status = 'unconfirmed'; mainStatus = (error as AppError).code === 'PROJECT_MAIN_SCOPE_UNMANAGED' ? 'unmanaged' : 'unconfirmed';
       reason = error instanceof Error ? error.message : String(error);
     }
-    const output = await this.machines.exec(id,
-      `test ! -f ${quote(projectLog(project))} || tail -c 16384 ${quote(projectLog(project))}`, 10000, signal)
+    const output = hasMainReceipt ? await this.machines.exec(id,
+      runtimeLogCommand(projectLog(project), 16384), 10000, signal)
       .catch((error) => {
         signal?.throwIfAborted();
         return { code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) };
-      });
+      }) : { code: 0, stdout: '', stderr: '' };
     if (output.code !== 0) { status = 'unconfirmed'; reason += '\n主命令日志读取未确认：' + output.stderr; }
     return { status, log: redactValues([reason, output.stdout].filter(Boolean).join('\n'), privateValues), main: { status: mainStatus } };
   }

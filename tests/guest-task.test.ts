@@ -4,6 +4,41 @@ import { guestTask } from '../server/guest-task.ts';
 import type { Machines } from '../server/machines.ts';
 
 const result = { stdout: 'worker output', stderr: '', code: 7 };
+
+test('binary task input stays outside argv and survives the background launcher stdin redirection', async () => {
+  const runId = '476c4053-3d3d-4ea4-8546-e7026ce90b46', input = Buffer.from('private task input\0中文');
+  const commands: string[] = [], received: Buffer[] = [], live = {};
+  const machines = {
+    live: new Map([['owned', live]]),
+    exec: async (_id: string, command: string, _timeout: number, signal?: AbortSignal) => {
+      assert.equal(signal, undefined, 'cleanup uses its own uncancelled connections');
+      commands.push(command); return { ...result, code: 0 };
+    },
+    execInput: async (_id: string, command: string, body: Buffer) => {
+      commands.push(command); received.push(body);
+      assert.ok(command.startsWith('exec 7<&0\nsetsid sh -c'));
+      assert.ok(command.includes('<&7 &') && command.includes('exec 7<&-'));
+      assert.ok(command.includes('sakura-task-' + runId));
+      assert.ok(!command.includes('private task input') && !command.includes(input.toString('base64')));
+      return result;
+    },
+  } as unknown as Machines;
+  const operation = guestTask(machines, 'owned', '/fixed/payload-launcher', new AbortController().signal,
+    undefined, 10000, undefined, undefined, { input, runId });
+  input.fill(0);
+  assert.deepEqual(await operation, result);
+  assert.equal(received[0].toString(), 'private task input\0中文');
+  assert.ok(commands.at(-1)?.startsWith('rm -f'));
+});
+
+test('oversized task input is refused before allocating or cleaning any task receipt', async () => {
+  let calls = 0;
+  const machines = { live: new Map(), exec: async () => { calls++; return result; },
+    execInput: async () => { calls++; return result; } } as unknown as Machines;
+  await assert.rejects(guestTask(machines, 'owned', '/fixed/launch', new AbortController().signal,
+    undefined, 10000, undefined, undefined, { input: Buffer.alloc(131073) }), { code: 'GUEST_INPUT_INVALID' });
+  assert.equal(calls, 0);
+});
 function fixture(execute?: (command: string, attempt: number) => Promise<typeof result>, worker = result) {
   const live = {},
     commands: string[] = [],
@@ -23,6 +58,15 @@ function fixture(execute?: (command: string, attempt: number) => Promise<typeof 
   } as unknown as Machines;
   return { live, machines, commands, logs, log: (value: string) => logs.push(value) };
 }
+
+test('identity receipt cleanup failures retain their error code and cannot retire the outer receipt', async () => {
+  const f = fixture();
+  await assert.rejects(guestTask(f.machines, 'owned', 'true', new AbortController().signal,
+    undefined, 10000, undefined, async () => {
+      throw new (await import('../server/model.ts')).AppError('identity still unconfirmed', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+    }), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(f.commands.some(command => command.startsWith('rm -f')), false);
+});
 
 test('cleanup retries its independent connection before the stage callback and receipt retirement', async () => {
   const f = fixture(async (_command, attempt) => {

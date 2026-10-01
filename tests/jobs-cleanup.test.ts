@@ -26,6 +26,7 @@ for (const code of [
   'GUEST_TASK_CLEANUP_FAILED', 'SERVICE_CLEANUP_FAILED',
   'PROJECT_MAIN_CLEANUP_FAILED', 'PROJECT_SSH_CLEANUP_FAILED',
   'PROJECT_IDENTITY_CLEANUP_FAILED',
+  'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED',
 ]) {
   test(`cancelled ${code} cleanup remains a durable failure after restart`, async () => {
     const scope = code.toLowerCase(), jobs = new Jobs(scope, root), entered = gate();
@@ -71,22 +72,24 @@ test('shutdown waits for cleanup and preserves its failure instead of a cancelle
   assert.equal(view.error, '关闭后的任务域清理仍未确认');
 });
 
-test('tracked cancellation returns the original cleanup status, code and message', async () => {
-  const jobs = new Jobs('tracked-cleanup', root), entered = gate(), abort = new AbortController();
-  const pending = jobs.track('owned', async (_log, signal) => {
-    const aborted = new Promise<void>(done => signal.addEventListener('abort', () => done(), { once: true }));
-    entered.resolve();
-    await aborted;
-    throw new AppError('项目主命令清理未确认', 503, 'PROJECT_MAIN_CLEANUP_FAILED');
-  }, {}, abort.signal);
-  const rejected = assert.rejects(pending, { status: 503, code: 'PROJECT_MAIN_CLEANUP_FAILED',
-    message: '项目主命令清理未确认' });
-  await entered.promise;
-  abort.abort();
-  await rejected;
-  assert.equal(jobs.view('owned')?.status, 'error');
-  await jobs.close();
-});
+for (const code of ['PROJECT_MAIN_CLEANUP_FAILED', 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED']) {
+  test(`tracked cancellation returns the original ${code} status, code and message`, async () => {
+    const jobs = new Jobs('tracked-' + code.toLowerCase(), root), entered = gate(), abort = new AbortController();
+    const pending = jobs.track('owned', async (_log, signal) => {
+      const aborted = new Promise<void>(done => signal.addEventListener('abort', () => done(), { once: true }));
+      entered.resolve();
+      await aborted;
+      throw new AppError('项目清理未确认', 503, code);
+    }, {}, abort.signal);
+    const rejected = assert.rejects(pending, { status: 503, code,
+      message: '项目清理未确认' });
+    await entered.promise;
+    abort.abort();
+    await rejected;
+    assert.equal(jobs.view('owned')?.status, 'error');
+    await jobs.close();
+  });
+}
 
 test('ordinary cancellation still records a cancelled result after successful cleanup', async () => {
   const jobs = new Jobs('ordinary-cancel', root), entered = gate();

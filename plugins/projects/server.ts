@@ -7,6 +7,13 @@ import { AppError } from '../../server/model.ts';
 import { z } from 'zod';
 
 import { Workspaces } from '../../server/workspaces.ts';
+import {
+  ProjectDirectoryMigrations,
+  directoryMigrationApplySchema,
+  directoryMigrationPreviewSchema,
+} from '../../server/project-directory-migration.ts';
+
+const directoryMigrations = new WeakMap<PluginContext, ProjectDirectoryMigrations>();
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
@@ -18,11 +25,20 @@ export async function activate(host: PluginContext) {
       return host.network;
     },
   });
+  directoryMigrations.set(host, new ProjectDirectoryMigrations(m, host.workspaces));
+  host.onDispose(() => {
+    directoryMigrations.delete(host);
+  });
   host.registerJobs(host.workspaces.jobs, (job) => {
     if (!job.action) throw new AppError('请回到原功能页面重新执行');
     const [action, service] = job.action.split(':');
-    return retryInProject(host, job, () => host.workspaces.run(
-      retryTarget(job), z.enum(['setup', 'start', 'stop', 'terminal']).parse(action), service));
+    return retryInProject(host, job, () =>
+      host.workspaces.run(
+        retryTarget(job),
+        z.enum(['setup', 'start', 'stop', 'terminal']).parse(action),
+        service,
+      ),
+    );
   });
 }
 export async function route(
@@ -46,6 +62,21 @@ export async function route(
   const id = parts[2],
     action = parts[3];
   this.machines.get(id);
+  if (parts.length === 4 && action === 'project-directory-migration') {
+    const service = directoryMigrations.get(this);
+    if (!service) throw new AppError('目录迁移服务未初始化', 503);
+    if (req.method === 'GET') return send(await service.view(id));
+    if (req.method === 'POST') {
+      const input = z
+        .union([directoryMigrationPreviewSchema, directoryMigrationApplySchema])
+        .parse(await body(req));
+      return send(
+        input.action === 'preview'
+          ? await service.preview(id, signal)
+          : await service.apply(id, input, signal),
+      );
+    }
+  }
   if (parts.length === 4) {
     if (action === 'projects') {
       if (req.method === 'GET') {

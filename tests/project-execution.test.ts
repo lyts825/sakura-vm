@@ -16,6 +16,7 @@ const { Workspaces } = await import('../server/workspaces.ts');
 const { ProjectTerminals } = await import('../server/project-terminals.ts');
 const { ProjectExecution, withProjectCommand } = await import('../server/project-execution.ts');
 const { vmDir } = await import('../server/model.ts');
+const { guestTask } = await import('../server/guest-task.ts');
 after(() => rm(root, { recursive: true, force: true }));
 
 async function fixture() {
@@ -30,6 +31,8 @@ async function fixture() {
     locked: locks.locked.bind(locks),
     exec: async (_id: string, command: string, _timeout: number, signal?: AbortSignal) => {
       commands.push(command);
+      if (command.includes('project-directory-migrations'))
+        return { stdout: 'null\n', stderr: '', code: 0 };
       if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
         return { stdout: 'absent\n', stderr: '', code: 0 };
       if (!command.includes('setsid sh -c')) return { stdout: '', stderr: '', code: 0 };
@@ -45,13 +48,18 @@ async function fixture() {
   const workspaces = new Workspaces(machines, { secrets: {
     resolve: async () => ({ TOKEN: 'private-value' }),
   } as unknown as Secrets });
-  const terminals = new ProjectTerminals(machines, workspaces), service = new ProjectExecution(machines, terminals);
-  return { id, machines, live, commands, workspaces, terminals, service, executing,
+  const payloads: { directory: string; networkIsolation?: string; execution: { command: string; environment?: Record<string, string> } }[] = [];
+  const terminals = new ProjectTerminals(machines, workspaces), service = new ProjectExecution(machines, terminals,
+    async (transport, vmId, project, execution, signal, log, timeout, agentPath, afterCleanup) => {
+      payloads.push({ directory: project.directory, networkIsolation: project.networkIsolation, execution });
+      return guestTask(transport, vmId, '/fixed/protected-project-launcher', signal, log, timeout, agentPath, afterCleanup);
+    });
+  return { id, machines, live, commands, payloads, workspaces, terminals, service, executing,
     wait: () => { wait = true; },
     close: async () => { await service.close(); await terminals.close(); await workspaces.close(); } };
 }
 
-test('default execution uses the saved active project, exports environment inside its namespace and redacts secrets', async () => {
+test('default execution passes saved active project command and environment to the identity runner and redacts secrets', async () => {
   const f = await fixture();
   try {
     const index = await f.workspaces.projects.create(f.id, 'Private', async () => {
@@ -64,12 +72,16 @@ test('default execution uses the saved active project, exports environment insid
     assert.equal(result.code, 7);
     assert.equal(result.stdout, '[私密配置已隐藏]\noutput');
     assert.equal(result.stderr, '[私密配置已隐藏]');
-    const command = f.commands.find((value) => value.includes('setsid sh -c'))!;
-    assert.ok(command.indexOf(`ip netns exec sk-${index.active} sh -lc`) < command.indexOf('export TOKEN='));
-    assert.ok(!f.commands.filter((value) => !value.includes('setsid sh -c')).some((value) => value.includes('private-value')));
+    assert.equal(f.payloads.length, 1);
+    assert.equal(f.payloads[0].directory, '/workspace/private');
+    assert.equal(f.payloads[0].networkIsolation, 'private');
+    assert.equal(f.payloads[0].execution.command, 'echo "$TOKEN"');
+    assert.equal(f.payloads[0].execution.environment?.TOKEN, 'private-value');
+    assert.ok(!f.commands.some((value) => value.includes('private-value')));
     const management = await f.service.run(f.id, { command: 'echo admin', scope: 'instance' });
     assert.equal(management.scope, 'instance');
     assert.equal(management.stdout, 'private-value\noutput', 'instance commands do not load project secret values');
+    assert.equal(f.payloads.length, 1, 'explicit instance administration does not use a project identity');
     await assert.rejects(f.service.run(f.id, { command: 'true', scope: 'instance' }, index.active), /不能同时指定项目/);
     await assert.rejects(f.service.run(f.id, { command: 'true' }, '1111111111111111'), /项目不存在/);
     assert.throws(() => f.service.run(f.id, { command: 'true' }, ''));

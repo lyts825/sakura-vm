@@ -9,16 +9,157 @@ import { executeProjectAction, type ProjectAction } from '../../src/project-acti
 import { workspaceRequest } from '../../src/workspace-request';
 import { TerminalPanel } from '../../src/TerminalPanel';
 import { EnvironmentEditor, ProjectConnections, ServiceEditor } from './editors';
+import type { DirectoryMigrationView } from '../../server/project-directory-migration';
 const HealthPanel = lazy(() =>
   import('../service-health/client').then((module) => ({ default: module.HealthPanel })),
 );
 const SecretReferences = lazy(() =>
   import('../secrets/client').then((module) => ({ default: module.SecretReferences })),
 );
-const serviceStatus = (status: string) => ({
-  running: '运行中', stopped: '已停止', absent: '已停止', prepared: '启动未确认',
-  exited: '主进程已退出，待清理', unconfirmed: '状态未确认', 'migration-required': '旧服务待迁移',
-} as Record<string, string>)[status] || '状态未确认';
+const serviceStatus = (status: string) =>
+  (
+    ({
+      running: '运行中',
+      stopped: '已停止',
+      absent: '已停止',
+      prepared: '启动未确认',
+      exited: '主进程已退出，待清理',
+      unconfirmed: '状态未确认',
+      'migration-required': '旧服务待迁移',
+    }) as Record<string, string>
+  )[status] || '状态未确认';
+
+function DirectoryPermissions({
+  request,
+  vmId,
+  enabled,
+  applied,
+}: {
+  request: FeatureProps['request'];
+  vmId: string;
+  enabled: boolean;
+  applied: () => void;
+}) {
+  const endpoint = `/vms/${vmId}/project-directory-migration`;
+  const remote = useRemote<DirectoryMigrationView>(request, endpoint, enabled, 5000);
+  const action = useAction(),
+    plan = remote.data?.plan;
+  const [reviewed, setReviewed] = useState(false);
+  useEffect(() => setReviewed(false), [plan?.sha256, remote.data?.projectId]);
+  return (
+    <details className="feature-card">
+      <summary>目录账户权限</summary>
+      <p>请先保存项目配置，再生成权限预览；应用前必须停止全部入口。</p>
+      <p className="subtle-note">生成预览会为已保存项目保留独立账户，不修改项目目录权限。</p>
+      <p className="subtle-note">仅支持独立项目目录；父目录权限、链接和其他项目不会自动调整。</p>
+      <Feedback error={action.error || remote.error} message={action.message} />
+      <div className="feature-actions">
+        <button
+          className="secondary compact"
+          disabled={!enabled || action.busy}
+          onClick={() =>
+            void action.run(async (signal) => {
+              await request(endpoint, 'POST', { action: 'preview', version: 1 }, signal);
+              remote.reload();
+            })
+          }
+        >
+          生成迁移预览
+        </button>
+      </div>
+      {plan && (
+        <>
+          <p>{plan.proposal.directory}</p>
+          <p>
+            目标账户：{plan.proposal.identity.account} · UID/GID：{plan.proposal.identity.uid}/
+            {plan.proposal.identity.gid}
+          </p>
+          <p>
+            文件数：{plan.proposal.summary.files} · 目录数：{plan.proposal.summary.directories} ·
+            已核对应用项：{plan.completed.length}/{plan.proposal.entries.length}
+          </p>
+          <p className="subtle-note">
+            计划版本：{plan.proposal.version} · {plan.sha256}
+          </p>
+          {remote.data?.lastFailure && (
+            <p className="subtle-note">
+              上次失败：{remote.data.lastFailure.code} {remote.data.lastFailure.path}
+            </p>
+          )}
+          {plan.state === 'applied' && !remote.data?.lastFailure ? (
+            <p>目录权限与独立账户已完整确认。</p>
+          ) : (
+            <p className="subtle-note">应用或确认失败时保留原计划；未完整确认前，新项目运行会被阻止。</p>
+          )}
+          <div style={{ maxHeight: 280, overflow: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>路径</th>
+                  <th>原 UID/GID</th>
+                  <th>原权限</th>
+                  <th>目标权限</th>
+                </tr>
+              </thead>
+              <tbody>
+                {plan.proposal.entries.map((entry) => (
+                  <tr key={entry.path}>
+                    <td>{entry.path}</td>
+                    <td>
+                      {entry.uid}/{entry.gid}
+                    </td>
+                    <td>{entry.mode.toString(8).padStart(4, '0')}</td>
+                    <td>{entry.targetMode.toString(8).padStart(4, '0')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {(plan.state !== 'applied' || remote.data?.lastFailure) && (
+            <>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={reviewed}
+                  onChange={(event) => setReviewed(event.target.checked)}
+                />
+                我已审阅逐项权限修改，并确认应用这份计划。
+              </label>
+              <button
+                className="secondary compact"
+                disabled={!enabled || action.busy || !reviewed}
+                onClick={() =>
+                  void action.run(async (signal) => {
+                    try {
+                      await request(
+                        endpoint,
+                        'POST',
+                        {
+                          action: 'apply',
+                          version: 1,
+                          planId: plan.proposal.planId,
+                          sha256: plan.sha256,
+                          reviewed: true,
+                        },
+                        signal,
+                      );
+                      applied();
+                      setReviewed(false);
+                    } finally {
+                      remote.reload();
+                    }
+                  })
+                }
+              >
+                应用这份预览
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </details>
+  );
+}
 
 export function ProjectPanel(props: FeatureProps) {
   const { vm, request: baseRequest, refresh, projectId: selectedProjectId, onProjectChange } = props;
@@ -81,25 +222,31 @@ export function ProjectPanel(props: FeatureProps) {
           {runtime.data?.main?.status === 'unmanaged'
             ? '旧项目运行待迁移'
             : runtime.data?.status === 'running'
-            ? '项目运行中'
-            : runtime.data?.status === 'partial'
-              ? '部分服务运行中'
-              : runtime.data?.status === 'exited'
-                ? runtime.data.main ? '项目主进程已退出，待清理' : '服务主进程已退出，待清理'
-                : runtime.data?.status === 'unconfirmed'
-                  ? runtime.data.main ? '项目状态未确认' : '服务状态未确认'
-                  : '项目未运行'}
+              ? '项目运行中'
+              : runtime.data?.status === 'partial'
+                ? '部分服务运行中'
+                : runtime.data?.status === 'exited'
+                  ? runtime.data.main
+                    ? '项目主进程已退出，待清理'
+                    : '服务主进程已退出，待清理'
+                  : runtime.data?.status === 'unconfirmed'
+                    ? runtime.data.main
+                      ? '项目状态未确认'
+                      : '服务状态未确认'
+                    : '项目未运行'}
         </span>
       </div>
-      {runtime.data?.main?.status === 'unmanaged' && <p className="subtle-note">
-        旧项目会话缺少运行归属。请由管理员核查并停止旧会话及其后台任务，再从这里启动。
-      </p>}
-      {runtime.data?.main?.status === 'exited' && <p className="subtle-note">
-        主进程已退出，后台任务仍保留归属。请先停止项目完成清理。
-      </p>}
-      {runtime.data?.main && ['prepared', 'unconfirmed'].includes(runtime.data.main.status) && <p className="subtle-note">
-        项目运行尚未确认。请先停止项目完成核对和清理，再修改配置或重新启动。
-      </p>}
+      {runtime.data?.main?.status === 'unmanaged' && (
+        <p className="subtle-note">
+          旧项目会话缺少运行归属。请由管理员核查并停止旧会话及其后台任务，再从这里启动。
+        </p>
+      )}
+      {runtime.data?.main?.status === 'exited' && (
+        <p className="subtle-note">主进程已退出，后台任务仍保留归属。请先停止项目完成清理。</p>
+      )}
+      {runtime.data?.main && ['prepared', 'unconfirmed'].includes(runtime.data.main.status) && (
+        <p className="subtle-note">项目运行尚未确认。请先停止项目完成核对和清理，再修改配置或重新启动。</p>
+      )}
       {projects.data && (
         <div className="feature-actions">
           <label>
@@ -218,13 +365,22 @@ export function ProjectPanel(props: FeatureProps) {
           </label>
           <label>
             项目网络
-            <select value={project.networkIsolation || 'host'}
-              onChange={(e) => edit({ networkIsolation: e.target.value as 'host' | 'private',
-                ...(e.target.value === 'private' ? { previewPort: undefined } : {}) })}>
+            <select
+              value={project.networkIsolation || 'host'}
+              onChange={(e) =>
+                edit({
+                  networkIsolation: e.target.value as 'host' | 'private',
+                  ...(e.target.value === 'private' ? { previewPort: undefined } : {}),
+                })
+              }
+            >
               <option value="host">共享客户机网络</option>
               <option value="private">独立命名空间（仅回环，无外网）</option>
             </select>
-            <small>私有项目的命令、服务和已接入的开发工具仅能访问自身回环网络；工具安装与依赖预取使用共享网络。专属容器和 SSH 接入支持 Debian 与 Ubuntu。</small>
+            <small>
+              私有项目的命令、服务和已接入的开发工具仅能访问自身回环网络；工具安装与依赖预取使用共享网络。专属容器和
+              SSH 接入支持 Debian 与 Ubuntu。
+            </small>
           </label>
           <label>
             预览的 Windows 端口（在“服务”中配置转发）
@@ -265,7 +421,11 @@ export function ProjectPanel(props: FeatureProps) {
             </button>
             <button
               className="primary compact"
-              disabled={action.busy || remote.data?.job?.status === 'running' || runtime.data?.main?.status === 'unmanaged'}
+              disabled={
+                action.busy ||
+                remote.data?.job?.status === 'running' ||
+                runtime.data?.main?.status === 'unmanaged'
+              }
               onClick={() => void execute('start')}
             >
               <Play size={14} />
@@ -273,7 +433,12 @@ export function ProjectPanel(props: FeatureProps) {
             </button>
             <button
               className="secondary compact"
-              disabled={action.busy || vm.status !== 'running' || remote.data?.job?.status === 'running' || runtime.data?.main?.status === 'unmanaged'}
+              disabled={
+                action.busy ||
+                vm.status !== 'running' ||
+                remote.data?.job?.status === 'running' ||
+                runtime.data?.main?.status === 'unmanaged'
+              }
               onClick={() => void execute('stop')}
             >
               <Square size={14} />
@@ -299,23 +464,42 @@ export function ProjectPanel(props: FeatureProps) {
             >
               安装终端会话恢复支持
             </button>
-            {remote.data?.project.networkIsolation === 'private' &&
-              vm.status === 'running' && <button className="secondary compact"
+            {remote.data?.project.networkIsolation === 'private' && vm.status === 'running' && (
+              <button
+                className="secondary compact"
                 aria-expanded={shellProjectId === (remote.data.projectId || 'default')}
-                onClick={() => setShellProjectId((current) =>
-                  current === (remote.data!.projectId || 'default')
-                    ? null : (remote.data!.projectId || 'default'))}>
+                onClick={() =>
+                  setShellProjectId((current) =>
+                    current === (remote.data!.projectId || 'default')
+                      ? null
+                      : remote.data!.projectId || 'default',
+                  )
+                }
+              >
                 {shellProjectId === (remote.data.projectId || 'default')
-                  ? '关闭项目隔离终端' : '打开项目隔离终端'}
-              </button>}
+                  ? '关闭项目隔离终端'
+                  : '打开项目隔离终端'}
+              </button>
+            )}
           </div>
           {shellProjectId === (remote.data?.projectId || 'default') &&
             remote.data?.project.networkIsolation === 'private' &&
-            vm.status === 'running' && <TerminalPanel vm={vm} start={() => {}}
-              busy={false} projectId={shellProjectId} />}
+            vm.status === 'running' && (
+              <TerminalPanel vm={vm} start={() => {}} busy={false} projectId={shellProjectId} />
+            )}
         </>
       )}
       <JobLog job={remote.data?.job} />
+      <DirectoryPermissions
+        request={request}
+        vmId={vm.id}
+        enabled={vm.status === 'running'}
+        applied={() => {
+          remote.reload();
+          runtime.reload();
+          refresh();
+        }}
+      />
       <PluginGate id="service-health">
         <HealthPanel {...props} request={request} />
       </PluginGate>
