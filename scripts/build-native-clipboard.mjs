@@ -17,7 +17,14 @@ const provenance = JSON.parse(await readFile(join(vendor, 'provenance.json'), 'u
 const earlyVendor = join(source, 'vendor/detours');
 const earlyProvenance = JSON.parse(await readFile(join(earlyVendor, 'provenance.json'), 'utf8'));
 const hash = createHash('sha256');
-for (const name of ['protocol.h', 'early-import.h', 'early-policy.def', 'policy.cpp', 'controller.cpp'])
+for (const name of [
+  'protocol.h',
+  'early-import.h',
+  'control-system.h',
+  'early-policy.def',
+  'policy.cpp',
+  'controller.cpp',
+])
   hash.update(await readFile(join(source, name)));
 for (const file of provenance.files) {
   const data = await readFile(join(vendor, file.path));
@@ -94,6 +101,7 @@ for (const entry of compilers) {
       '-o',
       join(target, `SakuraClipboardPolicy${entry.suffix}.dll`),
       '-luser32',
+      '-lcomctl32',
       '-lole32',
       '-luuid',
     ],

@@ -1,13 +1,22 @@
 #include "protocol.h"
 #include "early-import.h"
+#include "control-system.h"
 #include "vendor/minhook/include/MinHook.h"
 #include <ole2.h>
+#include <commctrl.h>
+#include <richedit.h>
+#include <tlhelp32.h>
 #include <algorithm>
 #include <cstring>
 #include <cctype>
+#include <climits>
 #include <regex>
 #include <string>
 #include <vector>
+
+// MinGW declares these helpers without dllimport. Keep the address used for
+// dependency validation bound to the actual OS import, rather than our thunk.
+extern "C" __declspec(dllimport) BOOL WINAPI SetWindowSubclass(HWND,SUBCLASSPROC,UINT_PTR,DWORD_PTR);
 
 #ifndef SAKURA_CLIPBOARD_BUILD
 #error The native build identity is required
@@ -17,6 +26,7 @@ static SakuraClipboardPolicy* shared = nullptr;
 static HANDLE section = nullptr;
 static std::wstring sectionName;
 static SRWLOCK configureLock = SRWLOCK_INIT;
+static HINSTANCE policyModule=nullptr;
 static thread_local unsigned oleTransport=0;
 struct OleTransportScope {
   OleTransportScope() { ++oleTransport; }
@@ -94,10 +104,21 @@ static bool sensitive(const std::string& text) {
   for (const auto& pattern:patterns) if (std::regex_search(text,pattern)) return true;
   return false;
 }
+static bool plainFormat(UINT format) {
+  return format==CF_TEXT || format==CF_UNICODETEXT || format==CF_OEMTEXT;
+}
+static bool wideAllowed(const std::wstring& wide,const Rule& rule) {
+  if(!rule.active)return true;
+  const int count=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,wide.data(),int(wide.size()),nullptr,0,nullptr,nullptr);
+  if((!wide.empty() && !count) || uint32_t(count)>rule.maximum)return false;
+  std::string text(count,'\0');
+  if(count && !WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,wide.data(),int(wide.size()),text.data(),count,nullptr,nullptr))return false;
+  return !(rule.flags & Sensitive) || !sensitive(text);
+}
 static bool contentAllowed(UINT format, HANDLE data, const Rule& rule) {
   if (!rule.active) return true;
   if (!formatAllowed(format,rule)) return false;
-  if (format!=CF_TEXT && format!=CF_UNICODETEXT && format!=CF_OEMTEXT) return true;
+  if (!plainFormat(format)) return true;
   // A delayed-rendering placeholder carries no text. The later SetClipboardData
   // or guarded OLE GetData must supply bytes and passes this check again.
   if (!data) return true;
@@ -124,11 +145,7 @@ static bool contentAllowed(UINT format, HANDLE data, const Rule& rule) {
       wide.resize(count);
       if (count && !MultiByteToWideChar(encoding,0,first,length,wide.data(),count)) throw 0;
     }
-    const int count=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,wide.data(),int(wide.size()),nullptr,0,nullptr,nullptr);
-    if ((!wide.empty() && !count) || uint32_t(count)>rule.maximum) throw 0;
-    std::string text(count,'\0');
-    if (count && !WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,wide.data(),int(wide.size()),text.data(),count,nullptr,nullptr)) throw 0;
-    allowed=!(rule.flags & Sensitive) || !sensitive(text);
+    allowed=wideAllowed(wide,rule);
   } catch (...) { allowed=false; }
   GlobalUnlock(data);
   return allowed;
@@ -145,6 +162,12 @@ static decltype(&GetUpdatedClipboardFormats) originalUpdated=nullptr;
 static decltype(&OleGetClipboard) originalOleGet=nullptr;
 static decltype(&OleSetClipboard) originalOleSet=nullptr;
 static decltype(&OleFlushClipboard) originalOleFlush=nullptr;
+static decltype(&CreateWindowExW) originalCreateW=nullptr;
+static decltype(&CreateWindowExA) originalCreateA=nullptr;
+static decltype(&GetMessageW) originalMessageW=nullptr;
+static decltype(&GetMessageA) originalMessageA=nullptr;
+static decltype(&PeekMessageW) originalPeekW=nullptr;
+static decltype(&PeekMessageA) originalPeekA=nullptr;
 static HANDLE WINAPI getData(UINT format) {
   auto rule=current();
   // OLE transports its object/format metadata through two registered user32
@@ -203,6 +226,232 @@ static BOOL WINAPI updated(PUINT formats,UINT length,PUINT filled) {
   if (allowed>length) { SetLastError(ERROR_INSUFFICIENT_BUFFER); return FALSE; }
   std::copy(values.begin(),values.begin()+allowed,formats);
   return TRUE;
+}
+
+// Standard edit controls may empty the clipboard in user32's internal code,
+// then delete cut text even when SetClipboardData is refused. Subclass them on
+// their own GUI thread before the ordinary control copy/keyboard handler runs.
+// This never patches class procedures or another process's windows.
+static constexpr UINT_PTR controlSubclassId=0x53434c50;
+static constexpr LRESULT controlConfirmation=0x53434c50;
+static UINT controlProbeMessage=0;
+static thread_local HHOOK controlThreadHook=nullptr;
+static thread_local bool preparingControlThread=false;
+static thread_local bool installingControl=false;
+struct ControlCreation { bool ansi;const void* type;ControlCreation* previous; };
+static thread_local ControlCreation* controlCreation=nullptr;
+struct ControlCreationScope {
+  ControlCreation frame;
+  ControlCreationScope(bool ansi,const void* type):frame{ansi,type,controlCreation}{controlCreation=&frame;}
+  ~ControlCreationScope(){controlCreation=frame.previous;}
+};
+static bool ansiCreationThunk(LPCWSTR type) {
+  if(!controlCreation || !controlCreation->ansi)return false;
+  const auto narrow=static_cast<LPCSTR>(controlCreation->type);
+  const uintptr_t first=reinterpret_cast<uintptr_t>(narrow),second=reinterpret_cast<uintptr_t>(type);
+  if(first<=0xffff || second<=0xffff)return first==second;
+  unsigned length=0;while(length<256 && narrow[length])++length;
+  if(length==256)return false;
+  wchar_t name[256]{};
+  const int count=MultiByteToWideChar(CP_ACP,0,narrow,int(length),name,255);
+  return count>0 && CompareStringOrdinal(name,count,type,-1,TRUE)==CSTR_EQUAL;
+}
+static constexpr const wchar_t* ansiControlProperty=L"SakuraClipboard.Ansi." SAKURA_CLIPBOARD_BUILD;
+struct AnsiControl {WNDPROC original;};
+static int controlKind(HWND window) {
+  DWORD pid=0;GetWindowThreadProcessId(window,&pid);
+  if(pid!=GetCurrentProcessId())return 0;
+  wchar_t name[64]{};if(!GetClassNameW(window,name,64))return 0;
+  if(CompareStringOrdinal(name,-1,L"Edit",-1,TRUE)==CSTR_EQUAL)return 1;
+  const auto forms=[](const wchar_t* name,const wchar_t* type){
+    const std::wstring prefix=L"WindowsForms10."+std::wstring(type)+L".";
+    return std::wcslen(name)>=prefix.size() && CompareStringOrdinal(name,int(prefix.size()),prefix.c_str(),int(prefix.size()),TRUE)==CSTR_EQUAL;
+  };
+  if(forms(name,L"EDIT"))return 1;
+  for(const auto type:{L"RichEdit",L"RichEdit20A",L"RichEdit20W",L"RICHEDIT50W"})
+    if(CompareStringOrdinal(name,-1,type,-1,TRUE)==CSTR_EQUAL || forms(name,type))return 2;
+  return 0;
+}
+static bool selectedControlText(HWND window,int kind,std::wstring& text,const Rule& rule) {
+  LONG first=0,last=0;
+  if(kind==2){
+    CHARRANGE selection{};
+    SendMessageW(window,EM_EXGETSEL,0,reinterpret_cast<LPARAM>(&selection));
+    first=selection.cpMin;last=selection.cpMax;
+  }else {
+    DWORD begin=0,end=0;SendMessageW(window,EM_GETSEL,reinterpret_cast<WPARAM>(&begin),reinterpret_cast<LPARAM>(&end));
+    if(begin>INT_MAX || end>INT_MAX)return false;first=LONG(begin);last=LONG(end);
+  }
+  // RichEdit's select-all range includes its terminal document marker, which
+  // is absent from EM_GETSELTEXT. Inspect the returned text's exact UTF-8 size.
+  if(first<0 || last<first || uint32_t(last-first)>rule.maximum+(kind==2?1u:0u))return false;
+  if(last==first){text.clear();return true;}
+  if(kind==2){
+    if(!IsWindowUnicode(window)){
+      std::vector<char> bytes(size_t(last-first)*4+4,0);
+      const LRESULT count=SendMessageA(window,EM_GETSELTEXT,0,reinterpret_cast<LPARAM>(bytes.data()));
+      const auto end=std::find(bytes.begin(),bytes.end(),'\0');
+      if(count<0 || end==bytes.end())return false;
+      const int length=int(end-bytes.begin());
+      const int characters=MultiByteToWideChar(CP_ACP,0,bytes.data(),length,nullptr,0);
+      if(length && !characters)return false;
+      text.resize(size_t(characters));
+      return !characters || MultiByteToWideChar(CP_ACP,0,bytes.data(),length,text.data(),characters)==characters;
+    }
+    text.assign(size_t(last-first)+1,L'\0');
+    const LRESULT count=SendMessageW(window,EM_GETSELTEXT,0,reinterpret_cast<LPARAM>(text.data()));
+    if(count<0 || size_t(count)>=text.size())return false;
+    text.resize(size_t(count));return true;
+  }
+  // The standard EDIT API exposes the complete buffer. Bound its allocation;
+  // only the selected slice is subject to the clipboard's UTF-8 limit.
+  const int length=GetWindowTextLengthW(window);
+  if(length<last || length>16*1024*1024)return false;
+  std::wstring all(size_t(length)+1,L'\0');
+  if(GetWindowTextW(window,all.data(),int(all.size()))!=length)return false;
+  text=all.substr(size_t(first),size_t(last-first));return true;
+}
+static bool controlCopyRequest(UINT message,WPARAM key) {
+  if(message==WM_COPY || message==WM_CUT)return true;
+  if(message==WM_CHAR)return key==3 || key==24;
+  if(message!=WM_KEYDOWN)return false;
+  const bool control=(GetKeyState(VK_CONTROL)&0x8000)!=0,shift=(GetKeyState(VK_SHIFT)&0x8000)!=0;
+  if(GetKeyState(VK_MENU)&0x8000)return false;
+  return (control && (key=='C' || key=='X' || key==VK_INSERT)) || (!control && shift && key==VK_DELETE);
+}
+static bool allowControlMessage(HWND window,UINT message,WPARAM a) {
+  if(controlCopyRequest(message,a)) {
+    bool allowed=false;
+    try {
+      const auto rule=current();
+      if(!rule.active)allowed=true;
+      else if(rule.flags&CopyAllowed){
+        std::wstring text;
+        allowed=selectedControlText(window,controlKind(window),text,rule) && direction(true) && wideAllowed(text,current());
+      }
+    }catch(...){allowed=false;}
+    if(!allowed){blocked(true);return false;}
+  }
+  return true;
+}
+static LRESULT CALLBACK controlProcedure(HWND window,UINT message,WPARAM a,LPARAM b,UINT_PTR id,DWORD_PTR) {
+  if(controlProbeMessage && message==controlProbeMessage)return controlConfirmation;
+  if(message==WM_NCDESTROY)RemoveWindowSubclass(window,controlProcedure,id);
+  else if(!allowControlMessage(window,message,a))return 0;
+  return DefSubclassProc(window,message,a,b);
+}
+static LRESULT CALLBACK ansiControlProcedure(HWND window,UINT message,WPARAM a,LPARAM b) {
+  auto context=reinterpret_cast<AnsiControl*>(GetPropW(window,ansiControlProperty));
+  if(!context)return DefWindowProcA(window,message,a,b);
+  if(controlProbeMessage && message==controlProbeMessage)return controlConfirmation;
+  if(message==WM_NCDESTROY){
+    const WNDPROC original=context->original;RemovePropW(window,ansiControlProperty);
+    const LRESULT result=CallWindowProcA(original,window,message,a,b);delete context;return result;
+  }
+  if(!allowControlMessage(window,message,a))return 0;
+  return CallWindowProcA(context->original,window,message,a,b);
+}
+static bool installControl(HWND window) {
+  if(!controlKind(window))return true;
+  if(GetWindowThreadProcessId(window,nullptr)!=GetCurrentThreadId())return false;
+  if(installingControl)return false;
+  installingControl=true;
+  // SetWindowSubclass is idempotent for this procedure/id pair. Do not import
+  // GetWindowSubclass: Windows' default v5 common-controls image exports only
+  // the other documented subclass helpers by name; v6 supports all four.
+  bool installed=false;
+  if(GetPropW(window,ansiControlProperty))installed=true;
+  else if(IsWindowUnicode(window))installed=SetWindowSubclass(window,controlProcedure,controlSubclassId,0)!=FALSE;
+  else {
+    // A Unicode common-controls helper changes an ANSI window's message
+    // encoding. Keep its original ANSI chain using the documented raw API;
+    // this entire installation and destruction run on its owning thread.
+    auto context=new(std::nothrow) AnsiControl{reinterpret_cast<WNDPROC>(GetWindowLongPtrA(window,GWLP_WNDPROC))};
+    if(context && context->original && SetPropW(window,ansiControlProperty,context)){
+      SetLastError(0);
+      const auto previous=reinterpret_cast<WNDPROC>(SetWindowLongPtrA(window,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(&ansiControlProcedure)));
+      if(previous){context->original=previous;installed=true;}
+      else {SetWindowLongPtrA(window,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(context->original));RemovePropW(window,ansiControlProperty);delete context;}
+    }else delete context;
+  }
+  if(!installed && shared)InterlockedExchange(&shared->status,2);
+  installingControl=false;
+  return installed;
+}
+static LRESULT CALLBACK controlMessageHook(int code,WPARAM a,LPARAM b) {
+  if(code>=0 && b){
+    const auto message=reinterpret_cast<const CWPSTRUCT*>(b);
+    if(!controlCreation && message->message!=WM_NCCREATE && message->message!=WM_NCDESTROY && message->message!=WM_DESTROY)
+      installControl(message->hwnd);
+  }
+  return CallNextHookEx(nullptr,code,a,b);
+}
+static void prepareControlThread() {
+  if(preparingControlThread || controlThreadHook)return;
+  preparingControlThread=true;
+  // Called only in ordinary execution, never from earlyConfigure/DllMain.
+  // A first PeekMessage gives a new GUI thread its queue before the hook.
+  MSG message{};originalPeekW(&message,nullptr,0,0,PM_NOREMOVE);
+  controlThreadHook=SetWindowsHookExW(WH_CALLWNDPROC,controlMessageHook,policyModule,GetCurrentThreadId());
+  preparingControlThread=false;
+}
+static HWND WINAPI createControlW(DWORD ex,LPCWSTR type,LPCWSTR text,DWORD style,int x,int y,int width,int height,HWND parent,HMENU menu,HINSTANCE instance,LPVOID param) {
+  // A's internal W thunk has not yet fixed the returned window's ANSI message
+  // encoding. Defer only that same class, not independent child controls
+  // created while a custom parent's WM_CREATE is still on the stack.
+  const bool deferred=ansiCreationThunk(type);HWND window=nullptr;
+  {ControlCreationScope creating(false,type);window=originalCreateW(ex,type,text,style,x,y,width,height,parent,menu,instance,param);}
+  if(window && !deferred && !installControl(window)){DestroyWindow(window);SetLastError(ERROR_ACCESS_DENIED);return nullptr;}return window;
+}
+static HWND WINAPI createControlA(DWORD ex,LPCSTR type,LPCSTR text,DWORD style,int x,int y,int width,int height,HWND parent,HMENU menu,HINSTANCE instance,LPVOID param) {
+  HWND window=nullptr;
+  {ControlCreationScope creating(true,type);window=originalCreateA(ex,type,text,style,x,y,width,height,parent,menu,instance,param);}
+  if(window && !installControl(window)){DestroyWindow(window);SetLastError(ERROR_ACCESS_DENIED);return nullptr;}return window;
+}
+static BOOL WINAPI messageControlW(LPMSG message,HWND window,UINT first,UINT last) {prepareControlThread();return originalMessageW(message,window,first,last);}
+static BOOL WINAPI messageControlA(LPMSG message,HWND window,UINT first,UINT last) {prepareControlThread();return originalMessageA(message,window,first,last);}
+static BOOL WINAPI peekControlW(LPMSG message,HWND window,UINT first,UINT last,UINT remove) {prepareControlThread();return originalPeekW(message,window,first,last,remove);}
+static BOOL WINAPI peekControlA(LPMSG message,HWND window,UINT first,UINT last,UINT remove) {prepareControlThread();return originalPeekA(message,window,first,last,remove);}
+struct ControlAttachment {std::vector<HWND> windows;bool ready=true;};
+static BOOL CALLBACK collectControl(HWND window,LPARAM pointer) {
+  if(controlKind(window))reinterpret_cast<ControlAttachment*>(pointer)->windows.push_back(window);
+  return TRUE;
+}
+static BOOL CALLBACK collectThreadWindow(HWND window,LPARAM pointer) {
+  collectControl(window,pointer);EnumChildWindows(window,collectControl,pointer);return TRUE;
+}
+static bool attachExistingControls() {
+  // The regular configure export runs outside the loader lock. Existing GUI
+  // windows are reached with a temporary thread hook and confirmed by their
+  // installed subclass. Never report ready after a hung/unconfirmed control.
+  controlProbeMessage=RegisterWindowMessageW(L"SakuraClipboard.Controls." SAKURA_CLIPBOARD_BUILD);
+  if(!controlProbeMessage)return false;
+  const HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);
+  if(snapshot==INVALID_HANDLE_VALUE)return false;
+  ControlAttachment controls;
+  THREADENTRY32 entry{};entry.dwSize=sizeof(entry);
+  if(Thread32First(snapshot,&entry))do {
+    if(entry.th32OwnerProcessID==GetCurrentProcessId())EnumThreadWindows(entry.th32ThreadID,collectThreadWindow,reinterpret_cast<LPARAM>(&controls));
+  }while(Thread32Next(snapshot,&entry));
+  CloseHandle(snapshot);
+  for(HWND window=FindWindowExW(HWND_MESSAGE,nullptr,nullptr,nullptr);window;
+      window=FindWindowExW(HWND_MESSAGE,window,nullptr,nullptr)){
+    DWORD pid=0;GetWindowThreadProcessId(window,&pid);
+    if(pid==GetCurrentProcessId())collectThreadWindow(window,reinterpret_cast<LPARAM>(&controls));
+  }
+  for(const HWND window:controls.windows){
+    DWORD pid=0;const DWORD thread=GetWindowThreadProcessId(window,&pid);
+    if(!thread || pid!=GetCurrentProcessId())continue; // Destroyed before attachment.
+    const HHOOK hook=SetWindowsHookExW(WH_CALLWNDPROC,controlMessageHook,policyModule,thread);
+    if(!hook){controls.ready=false;break;}
+    DWORD_PTR reply=0;
+    const bool activated=SendMessageTimeoutW(window,WM_NULL,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,1000,&reply)!=0;
+    reply=0;
+    const bool confirmed=activated && SendMessageTimeoutW(window,controlProbeMessage,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,1000,&reply) && reply==DWORD_PTR(controlConfirmation);
+    UnhookWindowsHookEx(hook);
+    if(!confirmed && IsWindow(window)){controls.ready=false;break;}
+  }
+  return controls.ready;
 }
 
 // OLE uses cached IDataObject proxies as well as user32 calls. Check data at each
@@ -358,10 +607,55 @@ static HRESULT WINAPI oleGet(IDataObject** out) {
   try { *out=new GuardedData(data,false); } catch (...) { data->Release(); return E_OUTOFMEMORY; }
   data->Release(); return answer;
 }
+static bool preflightOleCopy(IDataObject* data) {
+  const auto initial=current();
+  if(!initial.active)return true;
+  IEnumFORMATETC* formats=nullptr;
+  const HRESULT enumerated=data->EnumFormatEtc(DATADIR_GET,&formats);
+  if(FAILED(enumerated) || !formats)return false;
+  bool eligible=false,complete=false,allowed=true;
+  for(unsigned index=0;index<65536 && allowed;++index){
+    FORMATETC format{};ULONG fetched=0;
+    const HRESULT next=formats->Next(1,&format,&fetched);
+    if(FAILED(next) || fetched>1){if(format.ptd)CoTaskMemFree(format.ptd);allowed=false;break;}
+    if(!fetched){if(format.ptd)CoTaskMemFree(format.ptd);complete=next==S_FALSE;break;}
+    const auto rule=current();
+    if(!direction(true)){if(format.ptd)CoTaskMemFree(format.ptd);allowed=false;break;}
+    const bool plain=plainFormat(format.cfFormat);
+    // Keep mixed-format filtering: unapproved alternate formats are hidden by
+    // GuardedData, rather than rejecting an otherwise valid plain-text copy.
+    if(formatAllowed(format.cfFormat,rule) && (!plain || (format.tymed&TYMED_HGLOBAL))){
+      if(format.cfFormat!=CF_LOCALE)eligible=true;
+      if(plain){
+        format.tymed=TYMED_HGLOBAL;STGMEDIUM medium{};
+        const HRESULT supplied=data->GetData(&format,&medium);
+        if(FAILED(supplied))allowed=false;
+        else {
+          const auto latest=current();
+          allowed=direction(true) && medium.tymed==TYMED_HGLOBAL && medium.hGlobal &&
+            contentAllowed(format.cfFormat,medium.hGlobal,latest);
+          ReleaseStgMedium(&medium);
+        }
+      }
+    }
+    if(format.ptd)CoTaskMemFree(format.ptd);
+    if(next!=S_OK){allowed=false;break;}
+  }
+  formats->Release();
+  const auto latest=current();
+  return allowed && complete && eligible && direction(true) && initial.active==latest.active &&
+    initial.flags==latest.flags && initial.maximum==latest.maximum;
+}
 static HRESULT WINAPI oleSet(IDataObject* data) {
   if (!direction(true)) { blocked(true); return E_ACCESSDENIED; }
   OleTransportScope transport;
   if (!data) return originalOleSet(nullptr);
+  // OleSetClipboard empties the previous clipboard before asking a delayed
+  // object for its data. Read complete exposed plain text first. If it cannot
+  // be inspected, reject here instead of destroying unrelated old contents.
+  bool allowed=false;
+  try{allowed=preflightOleCopy(data);}catch(...){allowed=false;}
+  if(!allowed || !direction(true)){blocked(true);return E_ACCESSDENIED;}
   GuardedData* wrapped=nullptr;
   try { wrapped=new GuardedData(data,true); } catch (...) { return E_OUTOFMEMORY; }
   const HRESULT result=originalOleSet(wrapped);
@@ -388,6 +682,14 @@ static bool earlySystemModule(const wchar_t* name) {
     CompareStringOrdinal(actual,int(size),system,int(size),TRUE)==CSTR_EQUAL && actual[size]==L'\\' &&
     CompareStringOrdinal(actual+size+1,-1,name,-1,TRUE)==CSTR_EQUAL;
 }
+static bool systemControlsLoaded() {
+  wchar_t actual[MAX_PATH]{};
+  HMODULE module=nullptr;
+  if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+      reinterpret_cast<LPCWSTR>(&SetWindowSubclass),&module))return false;
+  const DWORD length=module?GetModuleFileNameW(module,actual,MAX_PATH):0;
+  return length && length<MAX_PATH && controlSystemImage(actual);
+}
 static bool earlyConfigure(const SakuraClipboardEarly* input) {
   // This runs under the loader lock. user32/ole32 are static dependencies of
   // this DLL; never LoadLibrary, freeze other threads or wait for a worker here.
@@ -399,7 +701,7 @@ static bool earlyConfigure(const SakuraClipboardEarly* input) {
       input->pid!=GetCurrentProcessId() || input->creationTime!=processCreation(GetCurrentProcess()) ||
       std::memcmp(input->build,SAKURA_CLIPBOARD_BUILD,65)!=0 ||
       std::find(input->section,input->section+192,L'\0')==input->section+192 ||
-      !earlySystemModule(L"user32.dll") || !earlySystemModule(L"ole32.dll"))return false;
+      !earlySystemModule(L"user32.dll") || !earlySystemModule(L"ole32.dll") || !systemControlsLoaded())return false;
   section=OpenFileMappingW(FILE_MAP_ALL_ACCESS,FALSE,input->section);
   if(!section)return false;
   shared=static_cast<SakuraClipboardPolicy*>(MapViewOfFile(section,FILE_MAP_ALL_ACCESS,0,0,sizeof(SakuraClipboardPolicy)));
@@ -420,7 +722,13 @@ static bool earlyConfigure(const SakuraClipboardEarly* input) {
       !earlyHook(&originalUpdated,&GetUpdatedClipboardFormats,reinterpret_cast<void*>(&updated)) ||
       !earlyHook(&originalOleGet,&OleGetClipboard,reinterpret_cast<void*>(&oleGet)) ||
       !earlyHook(&originalOleSet,&OleSetClipboard,reinterpret_cast<void*>(&oleSet)) ||
-      !earlyHook(&originalOleFlush,&OleFlushClipboard,reinterpret_cast<void*>(&oleFlush))) {
+      !earlyHook(&originalOleFlush,&OleFlushClipboard,reinterpret_cast<void*>(&oleFlush)) ||
+      !earlyHook(&originalCreateW,&CreateWindowExW,reinterpret_cast<void*>(&createControlW)) ||
+      !earlyHook(&originalCreateA,&CreateWindowExA,reinterpret_cast<void*>(&createControlA)) ||
+      !earlyHook(&originalMessageW,&GetMessageW,reinterpret_cast<void*>(&messageControlW)) ||
+      !earlyHook(&originalMessageA,&GetMessageA,reinterpret_cast<void*>(&messageControlA)) ||
+      !earlyHook(&originalPeekW,&PeekMessageW,reinterpret_cast<void*>(&peekControlW)) ||
+      !earlyHook(&originalPeekA,&PeekMessageA,reinterpret_cast<void*>(&peekControlA))) {
     DetourTransactionAbort();return false;
   }
   if(DetourTransactionCommit()!=NO_ERROR)return false;
@@ -448,7 +756,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* poi
       else {
         sectionName=input->section;
         if (!LoadLibraryExW(L"user32.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32) ||
-            !LoadLibraryExW(L"ole32.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32) || MH_Initialize()!=MH_OK ||
+            !LoadLibraryExW(L"ole32.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32) || !systemControlsLoaded() || MH_Initialize()!=MH_OK ||
             !hook(L"user32","GetClipboardData",reinterpret_cast<void*>(&getData),&originalGet) ||
             !hook(L"user32","SetClipboardData",reinterpret_cast<void*>(&setData),&originalSet) ||
             !hook(L"user32","EmptyClipboard",reinterpret_cast<void*>(&empty),&originalEmpty) ||
@@ -460,7 +768,13 @@ extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* poi
             !hook(L"ole32","OleGetClipboard",reinterpret_cast<void*>(&oleGet),&originalOleGet) ||
             !hook(L"ole32","OleSetClipboard",reinterpret_cast<void*>(&oleSet),&originalOleSet) ||
             !hook(L"ole32","OleFlushClipboard",reinterpret_cast<void*>(&oleFlush),&originalOleFlush) ||
-            MH_EnableHook(MH_ALL_HOOKS)!=MH_OK) {
+            !hook(L"user32","CreateWindowExW",reinterpret_cast<void*>(&createControlW),&originalCreateW) ||
+            !hook(L"user32","CreateWindowExA",reinterpret_cast<void*>(&createControlA),&originalCreateA) ||
+            !hook(L"user32","GetMessageW",reinterpret_cast<void*>(&messageControlW),&originalMessageW) ||
+            !hook(L"user32","GetMessageA",reinterpret_cast<void*>(&messageControlA),&originalMessageA) ||
+            !hook(L"user32","PeekMessageW",reinterpret_cast<void*>(&peekControlW),&originalPeekW) ||
+            !hook(L"user32","PeekMessageA",reinterpret_cast<void*>(&peekControlA),&originalPeekA) ||
+            MH_EnableHook(MH_ALL_HOOKS)!=MH_OK || !attachExistingControls()) {
           MH_DisableHook(MH_ALL_HOOKS); MH_Uninitialize(); answer=5;
         }
         InterlockedExchange(&shared->status,answer ? 2 : 1);
@@ -477,6 +791,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* poi
 }
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
   if (reason==DLL_PROCESS_ATTACH) {
+    policyModule=instance;
     DisableThreadLibraryCalls(instance);
     DWORD size=0;
     const auto input=static_cast<const SakuraClipboardEarly*>(DetourFindPayloadEx(SakuraClipboardEarlyGuid,&size));

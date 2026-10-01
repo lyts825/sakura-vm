@@ -6,19 +6,19 @@ Microsoft Detours 将策略 DLL 插入首个 import，先于原始应用 DLL 初
 
 helper 随后用一个初始化线程完成 loader 工作，primary thread 在此期间保持 suspended。应用 DLL/TLS 的 process-attach 回调会运行于初始化线程；依赖这些回调必须在主线程执行的应用可能不兼容，不能将这条路径当成所有应用的兼容性保证。helper 独立读取 ready 和实际 DLL 路径，服务再次核对保存的版本、规则、资产和进程身份后才授权 `resume`。专属 Job 的 kill-on-close 保留至 `ResumeThread` 成功，之后才清除并发布 committed 回执。
 
-MinHook 原有运行中附加路径仍用于扫描及手动附加。它会枚举、暂停其他线程，不能移入 loader lock。早期路径使用 Microsoft Detours 官方 `simple` 示例中的当前线程事务方式；不调用 `LoadLibrary`、不暂停其他线程、不等待另一个 loader-bound 线程或 worker。User32/Ole32 是策略 DLL 的静态系统依赖。此处的 hook 设置遵循微软示例；应用自己的初始化代码仍须遵守 Windows 的 DllMain 约束。[官方示例](https://github.com/microsoft/Detours/blob/1dbd4ea281d73d478aa8d09a8b83fbd265f715f7/samples/simple/simple.cpp)、[DLL 初始化约束](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices)
+MinHook 原有运行中附加路径仍用于扫描及手动附加。它会枚举、暂停其他线程，不能移入 loader lock。早期路径使用 Microsoft Detours 官方 `simple` 示例中的当前线程事务方式；不调用 `LoadLibrary`、不暂停其他线程、不等待另一个 loader-bound 线程或 worker。User32、Ole32 与 Common Controls 是策略 DLL 的静态系统依赖；标准控件的线程钩子和已存在窗口接入在普通运行期执行。此处的 hook 设置遵循微软示例；应用自己的初始化代码仍须遵守 Windows 的 DllMain 约束。[官方示例](https://github.com/microsoft/Detours/blob/1dbd4ea281d73d478aa8d09a8b83fbd265f715f7/samples/simple/simple.cpp)、[DLL 初始化约束](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices)
 
 ## 支持条件和明确拒绝
 
 - 必须是匹配 helper 架构的未打包、原生 Windows GUI/console PE。CLR/AnyCPU、非 x64/x86、架构不匹配或无法核对的 PE 拒绝。
 - 策略 DLL 必须具有完整本地路径，能无损往返 Windows import 使用的活动代码页，且锁定的文件身份符合已核验资产。路径过长、编码不能表示、符号缺失或实际载入其他映像拒绝。
 - 动态代码禁止、Microsoft/Store-only 映像签名限制及不能核对的进程保护拒绝。
-- EXE `.local`、包加载重定向，以及将策略 DLL、User32/Ole32、关键运行库、当前 OS KnownDLL 或 API-set 名称重定向的应用清单拒绝。普通 Common Controls 清单及不重定向这些早期依赖的应用清单可用。
+- EXE `.local`、包加载重定向，以及将策略 DLL、User32/Ole32/Common Controls、关键运行库、当前 OS KnownDLL 或 API-set 名称重定向的应用清单拒绝。仅允许系统目录或经过核对的架构匹配 WinSxS Common Controls；应用及策略目录中的私有 comctl32 和非系统清单重定向拒绝。普通官方 Common Controls 清单可用。
 - 老运行包 v1/v2 保留已有进程策略的扫描、恢复及停用能力；受控启动要求 v3 的双架构早期代理及校验通过的 Detours 许可资产，不静默降级。
 
 Windows 的 `.local` 和 SxS 重定向优先于 KnownDLL，包括指定完整路径的 DLL。helper 在创建子进程前及持久 prepared 后、编辑 import 前各检查一次。清单通过 `CreateActCtx`/`QueryActCtx` 获取 OS 实际解析的程序集图，再读取这些清单的 XML；不能把 `ulFileCount=0` 当作没有重定向，因为本机实测该计数在有效 DLL 重定向时仍为 0。EXE 资源使用仅映射数据/资源的 `LoadLibraryEx`，不会执行该应用的 imports、DLL/TLS。解析图内嵌入私有程序集的 DLL/EXE 会检查全部本地 RT_MANIFEST 资源与语言版本，缺失或不可核对的实际清单拒绝；资源枚举异常不会误判成“没有清单”。XML 使用系统 XmlLite 内存流，禁止 DTD、外部 resolver，限制文档大小和深度，并按解码后的文件名检查，包括 UTF-16 和字符引用。[DLL 搜索顺序](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order)、[资源映射语义](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibraryexw)、[XmlLite 安全约束](<https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ms752816(v=vs.85)>)
 
-规则真正初始化时还核对进程内已加载的 User32/Ole32 的完整系统路径，ready 后 helper 核对策略 DLL 的实际完整路径。这些运行期检查与两次预检共同拒绝不兼容对象，但两次文件预检不构成目录的原子快照。应用目录、外部清单或系统配置在检查和 loader 之间被其他进程恶意改写，可能改变加载顺序；EXE 和策略 DLL 的只读锁不能锁住整个目录。该路径不承诺阻止有权限修改目录/进程内存/系统设置的对抗者。
+规则真正初始化时还核对进程内已加载的 User32/Ole32 与 Common Controls 的完整系统路径，ready 后 helper 核对策略 DLL 的实际完整路径。这些运行期检查与两次预检共同拒绝不兼容对象，但两次文件预检不构成目录的原子快照。应用目录、外部清单或系统配置在检查和 loader 之间被其他进程恶意改写，可能改变加载顺序；EXE 和策略 DLL 的只读锁不能锁住整个目录。该路径不承诺阻止有权限修改目录/进程内存/系统设置的对抗者。
 
 原始应用 imports/TLS 之前，Windows 必须初始化策略依赖的系统 DLL。由这些系统 DLL 初始化引入的系统级第三方启动 DLL，例如启用的 AppInit_DLLs，也可能先于策略 `DllMain` 执行。这条应用启动路径没有拦截或更改系统的该类机制，也不覆盖驱动、手工映射、直接调用底层剪贴板系统接口、恶意卸载/改写 hooks。Microsoft 说明 AppInit_DLLs 可向交互应用加载自定义 DLL，并在启用 Secure Boot 时禁用；测试不会修改这些系统设置，也不会据此假设每台机器的状态。[AppInit_DLLs 官方说明](https://learn.microsoft.com/en-us/windows/win32/dlls/secure-boot-and-appinit-dlls)
 

@@ -15,6 +15,7 @@
     "build:native-clipboard": "node scripts/build-native-clipboard.mjs",
     "test:native-clipboard": "tsx scripts/smoke-native-clipboard.mjs",
     "test:native-clipboard:early": "tsx scripts/smoke-native-clipboard-early.mjs",
+    "test:native-clipboard:interfaces": "tsx scripts/smoke-native-clipboard-interfaces.mjs",
     "test:x11-clipboard": "tsx scripts/smoke-x11-clipboard.ts",
     "test:x11-clipboard:http": "node scripts/smoke-x11-clipboard-http.mjs",
     "start": "node scripts/launch.mjs",

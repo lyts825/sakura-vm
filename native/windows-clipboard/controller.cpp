@@ -3,6 +3,7 @@
 #endif
 #include "protocol.h"
 #include "early-import.h"
+#include "control-system.h"
 #include <tlhelp32.h>
 #include <sddl.h>
 #include <wincrypt.h>
@@ -89,8 +90,18 @@ static unsigned bits(HANDLE process) {
   return wow==IMAGE_FILE_MACHINE_UNKNOWN && native==IMAGE_FILE_MACHINE_AMD64 ? 64 : 0;
 }
 static uintptr_t module(DWORD pid,const std::wstring& wanted,bool basename=false) {
-  Handle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,pid));
-  if (snapshot.value==INVALID_HANDLE_VALUE) throw std::runtime_error("process modules unavailable");
+  Handle snapshot(nullptr);
+  for(unsigned attempt=0;attempt<32;++attempt) {
+    snapshot.value=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,pid);
+    if(snapshot.value!=INVALID_HANDLE_VALUE)break;
+    const DWORD error=GetLastError();
+    // The documented snapshot API can reject a changing loader table with
+    // ERROR_BAD_LENGTH. Retry only that case; identity/permission/architecture
+    // failures remain explicit and never authorize attachment.
+    if(error!=ERROR_BAD_LENGTH || attempt==31)
+      throw std::runtime_error("process modules unavailable (Win32 "+std::to_string(error)+")");
+    Sleep(10);
+  }
   MODULEENTRY32W entry{}; entry.dwSize=sizeof(entry);
   if (Module32FirstW(snapshot.value,&entry)) do {
     if (same(basename ? entry.szModule : entry.szExePath,wanted)) return reinterpret_cast<uintptr_t>(entry.modBaseAddr);
@@ -339,7 +350,7 @@ static bool policyDependency(const std::wstring& path,const std::wstring& librar
   const auto name=path.substr(path.find_last_of(L"\\/")+1);
   const auto policy=library.substr(library.find_last_of(L"\\/")+1);
   if(same(name,policy))return true;
-  const std::wstring protectedNames[]{L"kernel32.dll",L"kernelbase.dll",L"user32.dll",L"ole32.dll",L"combase.dll",L"ucrtbase.dll",L"msvcrt.dll"};
+  const std::wstring protectedNames[]{L"kernel32.dll",L"kernelbase.dll",L"user32.dll",L"ole32.dll",L"combase.dll",L"comctl32.dll",L"ucrtbase.dll",L"msvcrt.dll"};
   for(const auto& item:protectedNames)if(same(name,item))return true;
   // KnownDLL's own dependencies are also resolved from Windows. A manifest can
   // precede that resolution, so protect the current OS's entire KnownDLL set,
@@ -376,7 +387,7 @@ static std::vector<unsigned char> activationData(HANDLE context,ULONG type,void*
     throw std::runtime_error("early activation context unavailable");
   return data;
 }
-static void manifestXml(const void* contents,DWORD length,const std::wstring& library) {
+static void manifestXml(const void* contents,DWORD length,const std::wstring& library,bool systemControls=false) {
   if(!contents || !length || length>8*1024*1024)throw std::runtime_error("early application manifest is too large or empty");
   IStream* stream=SHCreateMemStream(static_cast<const BYTE*>(contents),length);
   IXmlReader* reader=nullptr;
@@ -400,7 +411,8 @@ static void manifestXml(const void* contents,DWORD length,const std::wstring& li
         throw std::runtime_error("early application manifest file name unavailable");
       // XmlLite decodes both UTF-8/UTF-16 and XML character references. No DTD,
       // external resolver, or application code is involved in this metadata read.
-      if(policyDependency(std::wstring(name,count),library))
+      const std::wstring file(name,count);
+      if(policyDependency(file,library) && !(systemControls && same(file,L"comctl32.dll")))
         throw std::runtime_error("application manifest redirects an early policy dependency");
     }
     if(answer!=S_FALSE)throw std::runtime_error("early application manifest could not be verified");
@@ -410,6 +422,7 @@ static void manifestXml(const void* contents,DWORD length,const std::wstring& li
 struct ManifestResources {
   const std::wstring& library;
   bool executable;
+  bool systemControls;
   unsigned count=0;
   std::exception_ptr failure;
 };
@@ -419,7 +432,7 @@ static BOOL CALLBACK manifestLanguage(HMODULE data,LPCWSTR type,LPCWSTR name,WOR
     if(++read.count>1024)throw std::runtime_error("early manifest has too many resources");
     const HRSRC resource=FindResourceExW(data,type,name,language);
     const HGLOBAL loaded=resource?LoadResource(data,resource):nullptr;
-    manifestXml(loaded?LockResource(loaded):nullptr,resource?SizeofResource(data,resource):0,read.library);
+    manifestXml(loaded?LockResource(loaded):nullptr,resource?SizeofResource(data,resource):0,read.library,read.systemControls);
     return TRUE;
   } catch(...) {read.failure=std::current_exception();return FALSE;}
 }
@@ -442,7 +455,7 @@ static void manifestMetadata(const std::wstring& path,const std::wstring& librar
     HMODULE data=LoadLibraryExW(path.c_str(),nullptr,LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE|LOAD_LIBRARY_AS_IMAGE_RESOURCE);
     if(!data)throw std::runtime_error("early application manifest resource unavailable");
     try {
-      ManifestResources read{library,!required};
+      ManifestResources read{library,!required,controlSystemAssembly(path,true)};
       const BOOL scanned=EnumResourceNamesExW(data,MAKEINTRESOURCEW(24),manifestResource,
         reinterpret_cast<LONG_PTR>(&read),RESOURCE_ENUM_LN,0);
       if(read.failure)std::rethrow_exception(read.failure);
@@ -462,7 +475,7 @@ static void manifestMetadata(const std::wstring& path,const std::wstring& librar
   std::vector<unsigned char> contents(size_t(length.QuadPart));
   if(!ReadFile(file.value,contents.data(),DWORD(contents.size()),&count,nullptr) || count!=contents.size())
     throw std::runtime_error("early application manifest file unavailable");
-  manifestXml(contents.data(),count,library);
+  manifestXml(contents.data(),count,library,controlSystemAssembly(path,true));
 }
 static void activationDependencies(const std::wstring& source,const std::wstring& library,bool image) {
   manifestMetadata(source,library,image);
@@ -495,7 +508,8 @@ static void activationDependencies(const std::wstring& source,const std::wstring
         ACTIVATION_CONTEXT_QUERY_INDEX index{assembly,file};
         const auto item=activationData(context,FileInformationInAssemblyOfAssemblyInActivationContext,&index,sizeof(ASSEMBLY_FILE_DETAILED_INFORMATION));
         const auto information=reinterpret_cast<const ASSEMBLY_FILE_DETAILED_INFORMATION*>(item.data());
-        if(!information->lpFileName || policyDependency(information->lpFileName,library))
+        if(!information->lpFileName || (policyDependency(information->lpFileName,library) &&
+            !(controlSystemAssembly(path,true) && same(information->lpFileName,L"comctl32.dll"))))
           throw std::runtime_error("application manifest redirects an early policy dependency");
       }
     }
@@ -511,6 +525,8 @@ static void earlyDependencies(const std::wstring& expected,const std::wstring& l
   if(exists(expected+L".local"))throw std::runtime_error("DLL .local redirection does not support controlled early initialization");
   if(exists(expected.substr(0,expected.find_last_of(L'\\'))+L"\\microsoft.system.package.metadata\\application.local"))
     throw std::runtime_error("packaged DLL redirection does not support controlled early initialization");
+  for(const auto& folder:{expected.substr(0,expected.find_last_of(L'\\')),library.substr(0,library.find_last_of(L'\\'))})
+    if(exists(folder+L"\\comctl32.dll"))throw std::runtime_error("local Common Controls does not support controlled early initialization");
   activationDependencies(expected,library,true);
   if(exists(expected+L".manifest"))activationDependencies(expected+L".manifest",library,false);
 }

@@ -27,6 +27,7 @@ const application = join(folder, 'early.exe'),
 const importLibrary = join(folder, 'libEarlySakuraProbe.a');
 const manifestApplication = join(folder, 'manifest.exe'),
   redirectApplication = join(folder, 'redirect.exe'),
+  controlRedirectApplication = join(folder, 'common-controls-redirect.exe'),
   externalManifestApplication = join(folder, 'external-manifest.exe'),
   privateApplication = join(folder, 'private-assembly.exe'),
   privateRedirectApplication = join(folder, 'private-redirect.exe');
@@ -198,6 +199,7 @@ async function privateAssembly(target, redirect = false) {
 }
 await manifestExecutable(manifestApplication);
 await manifestExecutable(redirectApplication, true);
+await manifestExecutable(controlRedirectApplication, false, '<file name="comctl32.dll"/>');
 await privateAssembly(privateApplication);
 await privateAssembly(privateRedirectApplication, true);
 await copyFile(application, externalManifestApplication);
@@ -261,8 +263,86 @@ async function manifestLaunch(identity, saved, application = manifestApplication
     assert.equal(phase.privateStation, true);
     assert.equal(phase.copyError, 5);
     assert.equal(phase.pasteError, 5);
+    assert.equal(phase.protectedCommonControls, true);
   }
   return { process: committed.process, evidence };
+}
+async function rejectedCommonControls(identity, saved) {
+  const marker = join(folder, 'must-not-enter-common-controls-redirected-initializer');
+  const options = [
+    `--early-station=${identity.station}`,
+    `--early-owner=${saved.owner}`,
+    `--early-pipe=${run.pipe}`,
+    `--early-marker=${marker}`,
+  ];
+  const cases = [];
+  async function rejectWith(selectedService, image, expression, name) {
+    const sha256 = createHash('sha256')
+      .update(await readFile(image))
+      .digest('hex');
+    await selectedService.action({
+      action: 'configure',
+      version: selectedService.view().version,
+      settings: {
+        enabled: true,
+        applications: [
+          ...selectedService.view().settings.applications,
+          {
+            image,
+            sha256,
+            rule: { copy: false, paste: false, files: false, sensitive: true, maxTextBytes: 1048576 },
+          },
+        ],
+      },
+    });
+    const stateFile = selectedService === service ? file : join(folder, 'local-controls-assets-native.json');
+    const count = JSON.parse(await readFile(stateFile, 'utf8')).managed.length;
+    let refusal;
+    await assert.rejects(
+      selectedService.action({
+        action: 'launch',
+        version: selectedService.view().version,
+        image,
+        sha256,
+        args: options,
+      }),
+      (error) => {
+        refusal = error.message;
+        return expression.test(refusal);
+      },
+    );
+    assert.equal(existsSync(marker), false);
+    assert.equal(JSON.parse(await readFile(stateFile, 'utf8')).managed.length, count);
+    cases.push({ name, refusal, applicationInitializerNeverEntered: true, noChildCreated: true });
+  }
+  await rejectWith(
+    service,
+    controlRedirectApplication,
+    /manifest redirects/,
+    'embedded-comctl32-redirection',
+  );
+  const local = join(folder, 'local-controls-application');
+  await mkdir(local);
+  const localApplication = join(local, 'early.exe');
+  await copyFile(application, localApplication);
+  await copyFile(probe, join(local, basename(probe)));
+  await copyFile(probe, join(local, 'comctl32.dll'));
+  await rejectWith(service, localApplication, /local Common Controls/, 'application-private-comctl32');
+  const localAssets = join(folder, 'local-controls-assets');
+  await cp(assets, localAssets, { recursive: true });
+  await copyFile(probe, join(localAssets, 'comctl32.dll'));
+  const localService = new NativeClipboard({
+    file: join(folder, 'local-controls-assets-native.json'),
+    assets: localAssets,
+    interval: 0,
+  });
+  try {
+    await localService.init();
+    await rejectWith(localService, application, /local Common Controls/, 'policy-private-comctl32');
+  } finally {
+    await localService.close();
+  }
+  return { cases, applicationInitializerNeverEntered: true, noChildCreated: true };
 }
 async function rejectedRedirections(identity, saved) {
   const marker = join(folder, 'must-not-enter-redirected-initializer');
@@ -414,6 +494,7 @@ async function rejectedColdInitialization(identity) {
       '-o',
       join(badAssets, name),
       '-luser32',
+      '-lcomctl32',
       '-lole32',
       '-luuid',
     ],
@@ -562,6 +643,7 @@ try {
     assert.equal(phase.privateStation, true);
     assert.equal(phase.systemUser32, true);
     assert.equal(phase.systemOle32, true);
+    assert.equal(phase.protectedCommonControls, true);
     assert.equal(phase.flags, 8);
     assert.equal(phase.copyError, 5);
     assert.equal(phase.pasteError, 5);
@@ -578,12 +660,19 @@ try {
   );
   const manifest = JSON.parse(await readFile(join(assets, 'native-clipboard.json'), 'utf8'));
   const normalManifest = await manifestLaunch(identity, saved);
+  for (const phase of normalManifest.evidence.phases)
+    assert.match(
+      phase.commonControlsPath,
+      /\\WinSxS\\(?:amd64|x86)_microsoft\.windows\.common-controls_6595b64144ccf1df_/i,
+    );
   const privateManifest = await manifestLaunch(identity, saved, privateApplication);
+  const commonControls = await rejectedCommonControls(identity, saved);
   const redirections = await rejectedRedirections(identity, saved);
   const coldFailure = await rejectedColdInitialization(identity);
   const proof = {
     bits,
     build: manifest.build,
+    nativeFiles: manifest.files,
     station: identity.station,
     process: launched.process,
     phases: ['application-dll-tls', 'application-dll-main', 'executable-tls', 'wmain'],
@@ -592,6 +681,7 @@ try {
     normalManifest,
     privateManifest,
     redirections,
+    commonControls,
   };
   await writeFile(join(folder, 'early-proof.json'), JSON.stringify(proof, null, 2) + '\n');
   console.log(
@@ -602,7 +692,7 @@ try {
   );
   console.log(`Early initialization proof: ${join(folder, 'early-proof.json')}`);
   console.log(
-    `Actual ${bits}-bit Common Controls and embedded private assembly manifest launches passed; User32 SxS, UTF-16 sidecar, private assembly resource and .local redirection were refused before child creation.`,
+    `Actual ${bits}-bit protected WinSxS v6 Common Controls and embedded private assembly manifest launches passed; private application/policy comctl32.dll, Common Controls manifest, User32 SxS, UTF-16 sidecar, private assembly resource and .local redirection were refused before child creation.`,
   );
 } finally {
   run.write('exit\n');

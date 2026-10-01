@@ -6,7 +6,8 @@
 struct SakuraEarlyEvidence {
   uint32_t phase,pid,thread,flags;
   uint64_t created;
-  LONG ready,active,privateStation,systemUser32,systemOle32;
+  LONG ready,active,privateStation,systemUser32,systemOle32,protectedCommonControls;
+  wchar_t commonControlsPath[MAX_PATH];
   DWORD copyError,pasteError;
   HRESULT oleCopy,olePaste;
   LONG64 copies,pastes;

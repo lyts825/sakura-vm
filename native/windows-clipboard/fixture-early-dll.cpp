@@ -3,6 +3,7 @@
 // fixture window station, including when policy initialization failed.
 #define SAKURA_EARLY_DLL
 #include "fixture-early.h"
+#include "control-system.h"
 #include <cstring>
 #include <cwchar>
 
@@ -49,6 +50,9 @@ extern "C" __declspec(dllexport) void WINAPI SakuraEarlyRecord(unsigned phase) {
     policy->pid==value.pid && policy->creationTime==value.created && policy->status==1 && !(policy->sequence&1);
   if(policy){value.active=policy->active;value.flags=policy->flags;}
   value.systemUser32=systemModule(L"user32.dll");value.systemOle32=systemModule(L"ole32.dll");
+  const HMODULE controls=GetModuleHandleW(L"comctl32.dll");
+  if(controls && GetModuleFileNameW(controls,value.commonControlsPath,MAX_PATH))
+    value.protectedCommonControls=controlSystemImage(value.commonControlsPath);
   if(!OpenClipboard(nullptr))ExitProcess(73);
   SetLastError(0);EmptyClipboard();value.copyError=GetLastError();
   SetLastError(0);GetClipboardData(CF_UNICODETEXT);value.pasteError=GetLastError();CloseClipboard();
