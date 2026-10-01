@@ -23,12 +23,14 @@ export class ServiceHealth {
   private states = new Map<string, Map<string, HealthView>>();
   private checks = new Map<string, AbortController>();
   private generations = new Map<string, number>();
+  private blockedChecks = new Map<string, Set<string>>();
   private pending?: Promise<void>;
   private closed = false;
   private timer: ReturnType<typeof setInterval>;
   private onChange = () => {
     for (const key of this.states.keys())
       if (!this.machines.live.has(key.split(':')[0])) {
+        this.blockedChecks.delete(key);
         this.checks.get(key)?.abort();
         this.jobs.cancel(key);
         this.generations.set(key, (this.generations.get(key) || 0) + 1);
@@ -89,6 +91,8 @@ export class ServiceHealth {
           restarts: 0,
           nextCheck: 0,
         });
+      for (const name of names) this.blockedChecks.get(key)?.delete(name);
+      if (!this.blockedChecks.get(key)?.size) this.blockedChecks.delete(key);
     };
   }
   async view(id: string) {
@@ -97,7 +101,7 @@ export class ServiceHealth {
     return {
       services: (config.services || [])
         .filter((s) => s.health)
-        .map(
+        .map<HealthView>(
           (s) =>
             this.states.get(key)?.get(s.name) || {
               name: s.name,
@@ -137,12 +141,14 @@ export class ServiceHealth {
     const abort = new AbortController(),
       generation = this.generations.get(key);
     this.checks.set(key, abort);
+    let privateValues: string[] | undefined;
     try {
       const project = await this.workspaces.resolvedConfig(id);
+      privateValues = projectPrivateValues(project);
       for (const service of project.services || []) {
         const policy = service.health,
           state = states.get(service.name);
-        if (!policy || !state?.desired || state.nextCheck > now || abort.signal.aborted) continue;
+        if (!policy || !state?.desired || state.nextCheck > now || abort.signal.aborted || this.blockedChecks.get(key)?.has(service.name)) continue;
         state.nextCheck = now + policy.interval * 1000;
         const script = `set -e\ntmux has-session -t =${serviceSession(service.name, project)}\n` +
           projectNetworkCommand(project,
@@ -156,6 +162,8 @@ export class ServiceHealth {
           policy.timeout * 1000,
         ).catch((error) => {
           abort.signal.throwIfAborted();
+          if (error instanceof AppError &&
+            (error.code === 'GUEST_TASK_CLEANUP_FAILED' || error.code === 'GUEST_TASK_SCOPE_UNAVAILABLE')) throw error;
           return { code: 1, stderr: (error as Error).message };
         });
         if (generation !== this.generations.get(key)) break;
@@ -219,12 +227,24 @@ export class ServiceHealth {
         break;
       }
     } catch (error) {
-      if (!abort.signal.aborted)
+      if (!abort.signal.aborted && generation === this.generations.get(key)) {
+        const unconfirmed = error instanceof AppError &&
+          (error.code === 'GUEST_TASK_CLEANUP_FAILED' || error.code === 'GUEST_TASK_SCOPE_UNAVAILABLE');
+        const detail = privateValues ? redactValues((error as Error).message, privateValues) : '';
         for (const state of states.values())
           if (state.desired) {
             state.status = 'unhealthy';
-            state.error = '无法完成健康检查，请检查项目配置和私密配置引用';
+            state.checkedAt = new Date().toISOString();
+            if (unconfirmed) {
+              const blocked = this.blockedChecks.get(key) || new Set<string>();
+              blocked.add(state.name);
+              this.blockedChecks.set(key, blocked);
+              state.error = '健康检查任务隔离或清理未确认，自动检查与重启已暂停；请核查任务归属后手动停止服务。' + detail;
+            } else {
+              state.error = '无法完成健康检查，请检查项目配置和私密配置引用' + (detail ? '：' + detail : '');
+            }
           }
+      }
     } finally {
       if (this.checks.get(key) === abort) this.checks.delete(key);
     }

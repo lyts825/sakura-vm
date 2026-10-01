@@ -578,6 +578,69 @@ test('health checks back off, enforce restart limits, preserve state after faile
     await projects.close();
   }
 });
+for (const failure of ['cleanup', 'scope'] as const) {
+  test(`health ${failure} failures pause automatic probes and restarts until a successful manual action`, async () => {
+    const id = randomUUID(), secret = 'health-private-token';
+    const project = projectSchema.parse({
+      environment: { TOKEN: secret }, secrets: { TOKEN: 'health-token' },
+      services: [{ name: 'api', command: 'sleep 60', health: {
+        command: 'health-probe', failures: 1, interval: 5, maxRestarts: 1, restart: true,
+      } }],
+    });
+    let workers = 0, controls = 0;
+    const emitter = new EventEmitter() as unknown as MachinesType;
+    emitter.live = new Map([[id, {} as never]]);
+    emitter.state = () => 'running';
+    emitter.exec = async (_id, script) => {
+      if (script.startsWith('setsid sh -c')) {
+        workers++;
+        return failure === 'scope'
+          ? { code: 126, stdout: '', stderr: `SAKURA_TASK_SCOPE_UNAVAILABLE: no cgroup.kill ${secret}` }
+          : { code: 0, stdout: '', stderr: '' };
+      }
+      controls++;
+      return failure === 'cleanup'
+        ? { code: 1, stdout: '', stderr: `owned scope still populated ${secret}` }
+        : { code: 0, stdout: '', stderr: '' };
+    };
+    const projects = new Jobs('health-unconfirmed-test', root);
+    const workspaces = {
+      config: async () => project, resolvedConfig: async () => project, jobs: projects,
+    } as unknown as WorkspacesType;
+    const health = new ServiceHealth(emitter, workspaces);
+    try {
+      (await health.expect(id, 'start'))(true);
+      await health.tick(10000);
+      const state = (await health.view(id)).services[0];
+      assert.equal(state.status, 'unhealthy');
+      assert.equal(state.failures, 0);
+      assert.equal(state.restarts, 0);
+      assert.match(state.error!, /自动检查与重启已暂停/);
+      assert.equal(state.error!.includes(secret), false);
+      assert.match(state.error!, failure === 'cleanup' ? /owned scope still populated/ : /no cgroup.kill/);
+      assert.equal(health.jobs.view(id), null);
+      assert.equal(workers, 1);
+      if (failure === 'cleanup') assert.equal(controls, 3);
+      await health.tick(30000);
+      assert.equal(workers, 1);
+      (await health.expect(id, 'stop'))(false);
+      await health.tick(50000);
+      assert.equal(workers, 1);
+      assert.equal((await health.view(id)).services[0].desired, true);
+      (await health.expect(id, 'stop'))(true);
+      await health.tick(70000);
+      assert.equal(workers, 1);
+      assert.equal((await health.view(id)).services[0].desired, false);
+      (await health.expect(id, 'start'))(true);
+      await health.tick(90000);
+      assert.equal(workers, 2);
+    } finally {
+      await health.close();
+      await projects.close();
+    }
+  });
+}
+
 test('interrupted network changes can be restored but externally changed files are protected', async () => {
   const id = randomUUID(),
     locks = new Machines({} as Engine),
