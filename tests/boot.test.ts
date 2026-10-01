@@ -130,6 +130,29 @@ test('SSH authentication alone cannot mark an unprovisioned guest ready', async 
   assert.ok(probes > 1);
 });
 
+for (const distro of ['alpine', 'debian', 'ubuntu'] as const) {
+  test(`${distro} cannot acknowledge its first boot before guest persistence completes`, async (t) => {
+    const { machines, id } = await fixture(t), barrier = deferredProbe();
+    machines.get(id).distro = distro;
+    machines.get(id).bootstrapped = false;
+    let captured = '';
+    machines.exec = async (_id, command, _timeout, signal) => {
+      captured = command;
+      assert.match(command, /(?:&& |\n)\/bin\/sync(?:\n|$)/);
+      return Promise.race([barrier.promise, new Promise<never>((_resolve, reject) =>
+        signal?.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }))]);
+    };
+    await machines.start(id);
+    machines.log(id, 'SAKURA_READY\n');
+    await eventually(() => Boolean(captured));
+    assert.equal(machines.state(id), 'starting');
+    assert.equal(machines.get(id).bootstrapped, false);
+    barrier.resolve({ stdout: '', stderr: '', code: 0 });
+    await eventually(() => machines.state(id) === 'running');
+    assert.equal(machines.get(id).bootstrapped, true);
+  });
+}
+
 test('stopping during a readiness probe cancels it and cannot revive the guest', async (t) => {
   const { machines, id } = await fixture(t);
   const probe = deferredProbe();
@@ -333,6 +356,7 @@ test('a completed clone rekey publishes the host key before removing guest acces
       } else {
         stages.push('remove');
         correctOrder &&= stored === pending.privateText;
+        assert.match(command, /\/bin\/sync\n$/);
       }
     }
     return { stdout: '', stderr: '', code: 0 };

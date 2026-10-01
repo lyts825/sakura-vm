@@ -1194,8 +1194,8 @@ export class Machines extends EventEmitter {
         const result = await this.exec(
           id,
           this.get(id).distro && this.get(id).distro !== 'alpine'
-            ? 'test -f /var/lib/cloud/instance/boot-finished && test -d /workspace'
-            : `set -e\ntest -f /var/lib/cloud/.bootstrap-complete\n${bootSetup()}`,
+            ? 'test -f /var/lib/cloud/instance/boot-finished && test -d /workspace && /bin/sync'
+            : `set -e\ntest -f /var/lib/cloud/.bootstrap-complete\n${bootSetup()}\n/bin/sync`,
           Math.max(1, Math.min(1800, deadline - performance.now())),
           signal,
         );
@@ -1218,7 +1218,7 @@ export class Machines extends EventEmitter {
           await writeIdentityFile(join(vmDir(id), 'id_rsa'), identity.privateText);
           const changed = await this.exec(
             id,
-            `set -e\nprintf '%s\\n' '${identity.publicText}' > /root/.ssh/authorized_keys.sakura-tmp\nchmod 600 /root/.ssh/authorized_keys.sakura-tmp\nmv /root/.ssh/authorized_keys.sakura-tmp /root/.ssh/authorized_keys\nhostname '${this.get(id).name}'\nprintf '%s\\n' '${this.get(id).name}' > /etc/hostname\n`,
+            `set -e\nprintf '%s\\n' '${identity.publicText}' > /root/.ssh/authorized_keys.sakura-tmp\nchmod 600 /root/.ssh/authorized_keys.sakura-tmp\nmv /root/.ssh/authorized_keys.sakura-tmp /root/.ssh/authorized_keys\nhostname '${this.get(id).name}'\nprintf '%s\\n' '${this.get(id).name}' > /etc/hostname\n/bin/sync\n`,
             10000,
             signal,
           );
@@ -1366,6 +1366,32 @@ export class Machines extends EventEmitter {
     output?: (data: string) => void,
     agentPath?: string,
   ) {
+    return this.execChannel(id, command, timeout, signal, output, agentPath);
+  }
+  /** Bounded command input stays on the SSH channel, outside the guest argv. */
+  async execInput(
+    id: string,
+    command: string,
+    input: Buffer,
+    timeout = 30000,
+    signal?: AbortSignal,
+    output?: (data: string) => void,
+    agentPath?: string,
+  ) {
+    if (!Buffer.isBuffer(input) || input.length > 128 * 1024)
+      throw new AppError('命令输入超过 128 KiB 或类型无效', 413, 'GUEST_INPUT_INVALID');
+    // Capture before connecting so callers cannot change an in-flight payload.
+    return this.execChannel(id, command, timeout, signal, output, agentPath, Buffer.from(input));
+  }
+  private async execChannel(
+    id: string,
+    command: string,
+    timeout: number,
+    signal?: AbortSignal,
+    output?: (data: string) => void,
+    agentPath?: string,
+    input?: Buffer,
+  ) {
     const client = await this.connect(id, Math.min(timeout, 10000), signal, agentPath);
     try {
       return await new Promise<{ stdout: string; stderr: string; code: number }>((resolve, reject) => {
@@ -1428,6 +1454,13 @@ export class Machines extends EventEmitter {
           stream.on('close', (code: number) => {
             finish(undefined, code ?? -1);
           });
+          if (input !== undefined) {
+            try { stream.end(input); }
+            catch (error) {
+              finish(error instanceof Error ? error : new Error('SSH command input failed'));
+              stream.close();
+            }
+          }
         };
         if (agentPath) client.exec(command, { agentForward: true } as ExecOptions, completed);
         else client.exec(command, completed);

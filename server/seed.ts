@@ -240,6 +240,8 @@ cat > /etc/motd <<'SAKURA_MOTD'
 
 SAKURA_MOTD
 rc-service sshd restart
+# Persist the key, hostname and OpenRC changes before acknowledging readiness.
+/bin/sync
 printf 'SAKURA_READY\n' > /dev/ttyS0
 `;
 }
