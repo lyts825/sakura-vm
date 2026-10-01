@@ -17,6 +17,7 @@ const { Machines } = await import('../server/machines.ts');
 const { BuildFarm } = await import('../server/build-farm.ts');
 const { Workspaces } = await import('../server/workspaces.ts');
 const { ProjectTerminals } = await import('../server/project-terminals.ts');
+const { ProjectDirectoryMigrations } = await import('../server/project-directory-migration.ts');
 const { Secrets } = await import('../server/secrets.ts');
 const engine = await createRuntime();
 let machines: InstanceType<typeof Machines> | undefined;
@@ -55,11 +56,30 @@ try {
   const secrets = process.platform === 'win32' ? new Secrets(machines) : undefined;
   if (secrets) await secrets.save(vmId, { name: 'farm-key', value: secret });
   workspaces = new Workspaces(machines, { secrets });
+  if (distro === 'alpine') {
+    const cgroups = await machines.exec(vmId,
+      'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /sbin/rc-service cgroups start', 30000);
+    assert.equal(cgroups.code, 0, cgroups.stderr);
+  }
+  const migrations = new ProjectDirectoryMigrations(machines, workspaces);
+  // This script created this VM above. Review only its two new fixture roots;
+  // never reuse or change an existing project directory implicitly.
+  const prepareDirectory = async (projectId: string, path: '/workspace/private' | '/workspace/other') => {
+    const created = await machines!.exec(vmId, `set -eu\ntest ! -e ${path}\nmkdir -m 0700 ${path}`, 10000);
+    assert.equal(created.code, 0, created.stderr);
+    await workspaces!.projects.inScope(vmId, projectId, async () => {
+      const preview = await migrations.preview(vmId);
+      assert.ok(preview.plan);
+      await migrations.apply(vmId, { action: 'apply', version: 1, reviewed: true,
+        planId: preview.plan.proposal.planId, sha256: preview.plan.sha256 });
+    });
+  };
   await workspaces.save(vmId, { directory: '/workspace/shared' });
   const alpha = (await workspaces.projects.create(vmId, 'Private builder', async () => {
     await workspaces!.save(vmId, { directory: '/workspace/private', networkIsolation: 'private',
       environment: { BUILD_SCOPE: 'alpha' }, ...(secrets ? { secrets: { TOKEN: 'farm-key' } } : {}) });
   })).active;
+  await prepareDirectory(alpha, '/workspace/private');
   terminals = new ProjectTerminals(machines, workspaces);
   const create = () => new BuildFarm(machines!, undefined, undefined, undefined, undefined, terminals);
   farm = create();
@@ -69,6 +89,7 @@ try {
   const beta = (await workspaces.projects.create(vmId, 'Other builder', async () => {
     await workspaces!.save(vmId, { directory: '/workspace/other' });
   })).active;
+  await prepareDirectory(beta, '/workspace/other');
   await farm.close(); farm = create(); await farm.init();
   assert.equal(farm.view().nodes[0].projectId, alpha, 'changing the active project or controller cannot retarget a node');
   const first = await submit('Project environment', `set -eu

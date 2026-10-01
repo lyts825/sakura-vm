@@ -2986,6 +2986,67 @@ test('build farm registers a project node, queues a matching command and cancels
     labels: ['node'], timeoutSeconds: 300 });
 });
 
+test('build farm accepts project subdirectories and retains cleanup failures after cancellation and reload', async ({ page }) => {
+  await app(page, [], true);
+  const requests: any[] = [];
+  let task: any;
+  const node = { vmId: vm.id, vmName: vm.name, projectId: 'default', status: 'running',
+    slots: 2, busy: 0, labels: [], enabled: true };
+  await page.route('**/api/build-farm*', (route) => {
+    if (route.request().method() === 'GET') {
+      if (new URL(route.request().url()).searchParams.has('vmId')) return route.fulfill({ json: {
+        vmId: vm.id, active: 'default', projects: [{ id: 'default', name: '默认项目' }],
+      } });
+      return route.fulfill({ json: { nodes: [node], tasks: task ? [task] : [] } });
+    }
+    const input = route.request().postDataJSON();
+    requests.push(input);
+    if (input.operation === 'submit') task = { ...input.build,
+      id: '7732c964-566b-43fd-9ffb-fca72e38b1c8', status: 'running',
+      vmId: vm.id, projectId: 'default', directory: input.build.cwd,
+      createdAt: new Date().toISOString(), job: null };
+    else if (input.operation === 'cancel') {
+      task.status = 'error';
+      task.error = '项目账号清理未确认，请核查归属后重试';
+      task.errorCode = 'PROJECT_IDENTITY_CLEANUP_FAILED';
+    }
+    return route.fulfill({ json: task });
+  });
+  const open = async () => {
+    await page.getByRole('button', { name: '系统设置' }).click();
+    await page.getByRole('button', { name: '管理构建农场' }).click();
+    return page.getByRole('region', { name: '构建农场' });
+  };
+  await page.reload();
+  let panel = await open();
+  await panel.getByLabel('构建名称').fill('Owned nested build');
+  await panel.getByLabel('构建客户机命令').fill('make');
+  const submit = panel.getByRole('button', { name: '提交构建' });
+  for (const root of ['/workspace', '/opt/projects', '/srv/projects']) {
+    await panel.getByLabel('构建工作目录').fill(root + '/owned/subdir');
+    await expect(submit).toBeEnabled();
+    await panel.getByLabel('构建工作目录').fill(root + '/owned/../other');
+    await expect(submit).toBeDisabled();
+  }
+  expect(requests).toHaveLength(0);
+  await panel.getByLabel('构建工作目录').fill('/srv/projects/owned/subdir');
+  await submit.click();
+  await expect(panel).toContainText('Owned nested build · running');
+  await panel.getByRole('button', { name: '取消构建' }).click();
+  await expect(panel.getByRole('alert')).toHaveText(
+    '项目账号清理未确认，请核查归属后重试 (PROJECT_IDENTITY_CLEANUP_FAILED)');
+  await expect(panel).toContainText('Owned nested build · error');
+  await expect(panel.getByRole('button', { name: '取消构建' })).toHaveCount(0);
+  await page.reload();
+  panel = await open();
+  await expect(panel.getByRole('alert')).toHaveText(
+    '项目账号清理未确认，请核查归属后重试 (PROJECT_IDENTITY_CLEANUP_FAILED)');
+  await expect(panel).toContainText('Owned nested build · error');
+  await expect(panel.getByRole('button', { name: '重新排队' })).toBeEnabled();
+  expect(requests.map((item) => item.operation)).toEqual(['submit', 'cancel']);
+  expect(requests[0].build.cwd).toBe('/srv/projects/owned/subdir');
+});
+
 test('media devices preview host audio and save a typed USB camera rule', async ({ page }) => {
   await app(page, [], true);
   await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm, status: 'stopped' }] }));

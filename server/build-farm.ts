@@ -3,13 +3,14 @@ import { stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { Jobs } from './jobs.ts';
+import { Jobs, type JobView } from './jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError, DATA } from './model.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { projectExecutionCommand, redactProjectOutput } from './project-execution.ts';
-import { guestTask } from './guest-task.ts';
+import { redactProjectOutput } from './project-execution.ts';
+import { projectIdentityTask } from './project-run-scope.ts';
+import { quote } from './files.ts';
 import { projectPrivateValues } from './workspaces.ts';
 import { privateLog, redactValues } from './secrets.ts';
 
@@ -18,7 +19,7 @@ const labels = z.array(label).max(8).refine((items) => new Set(items).size === i
   '标签不能重复');
 const nodeInput = z.object({ vmId: z.uuid(), slots: z.number().int().min(1).max(4),
   labels, enabled: z.boolean(), projectId: projectIdSchema.optional() }).strict();
-const workdir = z.string().regex(/^\/workspace(?:\/[a-zA-Z0-9._-]+)*$/)
+const workdir = z.string().regex(/^\/(?:workspace|opt\/projects|srv\/projects)(?:\/[a-zA-Z0-9._-]+)*$/)
   .refine((value) => value.split('/').every((segment) => segment !== '.' && segment !== '..'),
     '工作目录不能包含点路径');
 const buildInput = z.object({ name: z.string().trim().min(1).max(80),
@@ -29,8 +30,10 @@ const taskSchema = buildInput.extend({ id: z.uuid(), retryOf: z.uuid().optional(
   status: z.enum(['queued', 'running', 'done', 'error', 'cancelled', 'interrupted']),
   vmId: z.uuid().optional(), jobId: z.uuid().optional(), createdAt: z.string(),
   startedAt: z.string().optional(), finishedAt: z.string().optional(),
-  error: z.string().optional(), projectId: projectIdSchema.optional(),
-  directory: z.string().optional(), networkIsolation: z.enum(['host', 'private']).optional() }).strict();
+  error: z.string().optional(), errorCode: z.string().optional(), projectId: projectIdSchema.optional(),
+  directory: z.string().optional(), projectDirectory: z.string().optional(),
+  configVersion: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  networkIsolation: z.enum(['host', 'private']).optional() }).strict();
 const storeSchema = z.object({ version: z.literal(1), nodes: z.array(nodeInput).max(32),
   tasks: z.array(taskSchema).max(256) }).strict();
 type Store = z.infer<typeof storeSchema>;
@@ -60,7 +63,8 @@ export class BuildFarm {
     private file = join(DATA, 'build-farm.json'),
     private blocked: () => boolean = () => false,
     private mutation: (delta: number) => void = () => {},
-    jobs?: Jobs, terminals?: ProjectTerminals) {
+    jobs?: Jobs, terminals?: ProjectTerminals,
+    private runTask: typeof projectIdentityTask = projectIdentityTask) {
     this.jobs = jobs || new Jobs('build-farm');
     this.ownsTerminals = !terminals;
     this.terminals = terminals || new ProjectTerminals(machines);
@@ -83,12 +87,7 @@ export class BuildFarm {
     }
     for (const task of this.state.tasks) if (task.status === 'running') {
       const job = task.jobId ? this.jobs.get(task.jobId) : this.jobs.view(task.id);
-      task.status = job?.status === 'done' ? 'done' : job?.status === 'error' ? 'error'
-        : job?.status === 'cancelled' ? 'cancelled' : 'interrupted';
-      task.error = task.status === 'interrupted'
-        ? '服务已重启；请检查目标实例后手动重试' : job?.error;
-      task.jobId ||= job?.id;
-      task.finishedAt = job?.finishedAt || new Date().toISOString();
+      Object.assign(task, this.finished(task, job, '服务已重启；请检查目标实例后手动重试'));
       changed = true;
     }
     if (changed) await writeStore(this.file, this.state);
@@ -218,17 +217,20 @@ export class BuildFarm {
     }
     return null;
   }
+  private finished(task: Task, job: JobView | null | undefined, interrupted: string): Task {
+    const status = job && job.status !== 'running' ? job.status : 'interrupted';
+    return { ...task, status, jobId: task.jobId || job?.id,
+      error: status === 'interrupted' ? job?.error || interrupted : job?.error,
+      errorCode: job?.errorCode, finishedAt: job?.finishedAt || new Date().toISOString() };
+  }
   private async reconcile() {
     let changed = false;
     const tasks = this.state.tasks.map((task): Task => {
       if (task.status !== 'running') return task;
       const job = task.jobId ? this.jobs.get(task.jobId) : this.jobs.view(task.id);
-      if (!job || job.status === 'running') return task;
+      if (job?.status === 'running') return task;
       changed = true;
-      return { ...task, jobId: job.id,
-        status: job.status === 'done' ? 'done' : job.status === 'cancelled'
-          ? 'cancelled' : job.status === 'error' ? 'error' : 'interrupted',
-        error: job.error, finishedAt: job.finishedAt || new Date().toISOString() };
+      return this.finished(task, job, '构建运行状态未确认，请检查目标实例后手动重试');
     });
     if (changed) await this.save({ ...this.state, tasks });
   }
@@ -263,34 +265,41 @@ export class BuildFarm {
     try {
       const job = this.jobs.start(id, async (log, signal, update, result) => {
         update('在 ' + this.machines.get(vmId).name + ' 执行构建');
-        const prepared = await this.terminals.prepare(vmId, projectId, null, false, signal);
+        const prepared = await this.terminals.prepare(vmId, projectId, null, false, signal, undefined, { mode: 'task' });
         let values: string[] = [];
         try {
-          const project = await this.terminals.workspaces.projects.inScope(vmId, projectId,
-            () => this.terminals.workspaces.resolvedConfig(vmId));
+          const { captured, signal: executionSignal } = prepared;
+          if (!captured || !executionSignal || this.machines.live.get(vmId) !== captured.live)
+            throw new AppError('构建准备的客户机身份未确认', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+          values = projectPrivateValues(captured.project);
+          const project = await this.terminals.workspaces.resolveProject(vmId, captured.project);
           values = projectPrivateValues(project);
           const directory = task.cwd || project.directory;
           const relative = posix.relative(project.directory, directory);
           if (relative === '..' || relative.startsWith('../') || posix.isAbsolute(relative))
             throw new AppError('构建工作目录必须位于节点绑定的项目目录内', 409);
-          const binding = { projectId, directory, networkIsolation: project.networkIsolation || 'host' as const };
+          const binding = { projectId, directory, projectDirectory: project.directory,
+            configVersion: captured.configVersion, networkIsolation: project.networkIsolation || 'host' as const };
           await this.serialized(async () => {
             await this.save({ ...this.state, tasks: this.state.tasks.map((item) =>
               item.id === id ? { ...item, ...binding } : item) });
           });
-          signal.throwIfAborted();
+          executionSignal.throwIfAborted();
           const output = privateLog(log, values);
           let completed;
           try {
-            completed = redactProjectOutput(project, await guestTask(this.machines, vmId,
-              projectExecutionCommand({ ...project, directory }, task.command),
-              signal, output.write, task.timeoutSeconds * 1000));
+            completed = redactProjectOutput(project, await this.runTask(this.machines, vmId, project,
+              { command: relative ? `cd ${quote('./' + relative)} || exit 72\n${task.command}` : task.command,
+                environment: project.environment },
+              executionSignal, output.write, task.timeoutSeconds * 1000, undefined, undefined,
+              { expectedLive: captured.live }));
           } finally { output.flush(); }
           await result({ exitCode: completed.code, vmId, ...binding,
             stdout: completed.stdout.slice(-16384), stderr: completed.stderr.slice(-16384) });
           if (completed.code !== 0) throw new AppError(`构建退出码 ${completed.code}`, 409);
         } catch (error) {
-          throw new AppError(redactValues(String((error as Error).message || error), values), 409);
+          throw new AppError(redactValues(String((error as Error).message || error), values),
+            error instanceof AppError ? error.status : 409, error instanceof AppError ? error.code : undefined);
         } finally { prepared.release(); }
       }, { title: task.name, vmId, projectId, action: 'build-farm' });
       await this.serialized(async () => {
@@ -306,11 +315,8 @@ export class BuildFarm {
       await this.serialized(async () => {
         const current = this.state.tasks.find((item) => item.id === id);
         if (current?.status !== 'running') return;
-        const status: Task['status'] = job.status === 'done' ? 'done' :
-          job.status === 'cancelled' ? 'cancelled' : 'error';
         await this.save({ ...this.state, tasks: this.state.tasks.map((item) => item.id === id
-          ? { ...item, status, error: job.error,
-            finishedAt: job.finishedAt || new Date().toISOString() } : item) });
+          ? this.finished(item, job, '构建运行状态未确认，请检查目标实例后手动重试') : item) });
       }).catch((error) => {
         this.schedulerError = `构建结果保存失败：${String((error as Error).message || error)}`;
       });
@@ -321,8 +327,11 @@ export class BuildFarm {
         await this.save({ ...this.state, tasks: this.state.tasks.map((item) => item.id === id
           ? { ...item, status: 'error' as const,
             error: String((error as Error).message || error),
+            errorCode: error instanceof AppError ? error.code : undefined,
             finishedAt: new Date().toISOString() } : item) });
-      }).catch(() => {});
+      }).catch((failure) => {
+        this.schedulerError = `构建失败记录保存未确认：${String((failure as Error).message || failure)}`;
+      });
     } finally { void this.pump(); }
   }
   async close() {
@@ -334,11 +343,7 @@ export class BuildFarm {
     let changed = false;
     for (const task of this.state.tasks) if (task.status === 'running') {
       const job = task.jobId ? this.jobs.get(task.jobId) : this.jobs.view(task.id);
-      task.status = job?.status === 'done' ? 'done' : 'interrupted';
-      task.error = task.status === 'interrupted'
-        ? '服务已关闭；请检查目标实例后手动重试' : undefined;
-      task.jobId ||= job?.id;
-      task.finishedAt = job?.finishedAt || new Date().toISOString();
+      Object.assign(task, this.finished(task, job, '服务已关闭；请检查目标实例后手动重试'));
       changed = true;
     }
     if (changed) await this.save({ ...this.state });

@@ -2,9 +2,9 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { Machines } from '../server/machines.ts';
+import { Machines } from '../server/machines.ts';
 import type { Project } from '../server/workspaces.ts';
 import { AppError } from '../server/model.ts';
 import { ProjectRunScopes } from '../server/project-run-scope.ts';
@@ -27,14 +27,10 @@ async function fixture() {
     registryId: identity.registryId, identityId, projectId: 'default', runId: owner.runId, revision: 1,
     bootId, build: 'a'.repeat(64), networkDevice: '4', networkInode: '5', cgroupDevice: '6', cgroupInode: '7',
     cgroupName: 'sakura-task-' + owner.runId, namespace: '' });
-  const calls: string[] = [], expected: unknown[] = [], instance = {}, locks = new Map<string, Promise<unknown>>();
+  const calls: string[] = [], expected: unknown[] = [], instance = {}, locks = new Machines({} as never);
   const machines = {
     live: new Map([[vmId, instance]]),
-    locked: async <T>(key: string, action: () => Promise<T>) => {
-      const operation = (locks.get(key) || Promise.resolve()).catch(() => {}).then(action);
-      locks.set(key, operation);
-      try { return await operation; } finally { if (locks.get(key) === operation) locks.delete(key); }
-    },
+    locked: locks.locked.bind(locks),
     exec: async (_id: string, command: string) => {
       if (command.includes('/var/lib/sakura/project-directory-migrations/'))
         return { code: 0, stderr: '', stdout: JSON.stringify(directoryLatch) };
@@ -55,10 +51,10 @@ async function fixture() {
     rebind: async (_vm: string, old: typeof identity, next: { directory: string; networkIsolation: 'host' | 'private' }) => {
       calls.push('rebind'); actual = { ...old, ...next, revision: old.revision + 1, directoryInode: '99' }; return { ...actual };
     },
-    inheritedInput: async (_identity: unknown, execution: { command: string }) => {
+    inheritedInput: async (_identity: unknown, execution: { command: string }, options: { runId: string }) => {
       calls.push('payload'); const input = Buffer.from(execution.command);
       return { command: '/fixed/launch --payload ' + createHash('sha256').update(input).digest('hex'), input,
-        sha256: createHash('sha256').update(input).digest('hex'), runId: owner.runId };
+        sha256: createHash('sha256').update(input).digest('hex'), runId: options.runId };
     },
     run: async () => {
       calls.push('run');
@@ -454,4 +450,186 @@ test('a lost begin reply followed by a different boot cannot capture or delete a
   f.setAbsent(true); const intent = await f.reopened().beginNetworkRelease(f.vmId, 'default'); assert.ok(intent);
   assert.deepEqual(intent, original); assert.equal(intent.lease, null); assert.equal(state.begins.length, 1);
   await f.scopes.releaseNetwork(f.vmId, 'default', intent); assert.deepEqual(state.releases, []);
+});
+
+test('atomic task admission permits two real owners while binding and network guards keep their durable tickets', async () => {
+  const f = await fixture(), signal = new AbortController().signal; f.setAbsent(false);
+  const first = await f.scopes.admitTask(f.vmId, f.project, { command: 'first' }, signal);
+  const second = await f.reopened().admitTask(f.vmId, f.project, { command: 'second' }, signal);
+  try {
+    assert.notEqual(first.payload.runId, second.payload.runId);
+    assert.equal((await f.view()).runs.length, 2);
+    f.calls.length = 0;
+    await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    assert.deepEqual(f.calls, [], 'confirmed in-process owners are not probed as lost tasks');
+    await assert.rejects(f.scopes.guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+    const next = { ...f.project, directory: '/workspace/other' };
+    await assert.rejects(f.reopened().identity(f.vmId, next), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+    assert.equal((await f.view()).runs.every((entry: { phase: string }) => entry.phase === 'intent'), true);
+    first.release();
+    await assert.rejects(f.reopened().admitTask(f.vmId, f.project, { command: 'third' }, signal),
+      { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    assert.equal((await f.view()).runs.length, 2, 'a released but populated owner prevents a new payload');
+  } finally { first.release(); second.release(); }
+});
+
+test('all manager instances queue admission checks behind the same fail-fast Machines lock', async () => {
+  const f = await fixture(), signal = new AbortController().signal;
+  let entered!: () => void, resume!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const barrier = new Promise<void>(resolve => { resume = resolve; });
+  const ensure = f.core.ensure;
+  f.core.ensure = async (...args) => { entered(); await barrier; return ensure(...args); };
+  const admission = f.scopes.admitTask(f.vmId, f.project, { command: 'first' }, signal);
+  await started;
+  assert.equal((await f.view()).pending.kind, 'ensure');
+  let checked = false;
+  const check = f.reopened().assertAdmission(f.vmId, 'default').then(() => { checked = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(checked, false);
+  resume();
+  const owner = await admission;
+  try { await check; assert.equal(checked, true); }
+  finally { owner.release(); }
+});
+
+test('cancellation preserves an admitted owner until cleanup and receipt classification explicitly release it', async () => {
+  const f = await fixture(), controller = new AbortController(); f.setAbsent(false);
+  const owner = await f.scopes.admitTask(f.vmId, f.project, { command: 'sleep' }, controller.signal);
+  controller.abort();
+  try {
+    await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    assert.equal(f.calls.includes('confirm'), false);
+    await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+  } finally { owner.release(); }
+  await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+  f.setAbsent(true); f.setMissing(true);
+  await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+  assert.equal((await f.view()).runs[0].phase, 'closed');
+  await f.reopened().guard(f.vmId, 'default');
+});
+
+test('stored task intents never become in-process owners without admission', async () => {
+  const f = await fixture(); await f.scopes.inherited(f.vmId, f.project, { command: 'orphan' }, f.owner);
+  f.setAbsent(false);
+  await assert.rejects(f.reopened().admitTask(f.vmId, f.project, { command: 'new' }, new AbortController().signal),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(f.calls.filter(value => value === 'payload').length, 1);
+  assert.equal((await f.view()).runs.length, 1);
+});
+
+for (const field of ['sha256', 'owner', 'identity'] as const) {
+  test('concurrent recovery refuses a changed admitted ' + field, async () => {
+    const f = await fixture(), owner = await f.scopes.admitTask(f.vmId, f.project,
+      { command: 'active' }, new AbortController().signal); f.setAbsent(false);
+    try {
+      const journal = await f.view();
+      if (field === 'sha256') journal.runs[0].sha256 = 'b'.repeat(64);
+      if (field === 'owner') journal.runs[0].owner.bootId = randomUUID();
+      if (field === 'identity') journal.runs[0].identity.homeInode = '999';
+      await writeFile(f.file, JSON.stringify(journal));
+      await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    } finally { owner.release(); }
+  });
+}
+
+test('a pinned full native receipt is skipped only while every exact field still matches', async () => {
+  const f = await fixture(), owner = await f.scopes.admitTask(f.vmId, f.project,
+    { command: 'active' }, new AbortController().signal); f.setAbsent(false);
+  f.core.run = async () => ({ ...f.run, runId: owner.payload.runId, cgroupName: 'sakura-task-' + owner.payload.runId });
+  try {
+    assert.equal(await f.reopened().active(f.vmId, 'default', owner.payload.runId), true);
+    await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    const journal = await f.view(); journal.runs[0].run.cgroupInode = '999';
+    await writeFile(f.file, JSON.stringify(journal));
+    await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  } finally { owner.release(); }
+});
+
+for (const change of ['live', 'boot', 'machines'] as const) {
+  test('new ' + change + ' state cannot adopt an in-process active task from disk', async () => {
+    const f = await fixture(), owner = await f.scopes.admitTask(f.vmId, f.project,
+      { command: 'active' }, new AbortController().signal); f.setAbsent(false);
+    try {
+      if (change === 'live') f.machines.live.set(f.vmId, {} as never);
+      if (change === 'boot') f.setBoot(randomUUID());
+      const manager = change === 'machines' ? new ProjectRunScopes({ ...f.machines } as Machines,
+        { identities: f.core, rootDirectory: dirname(dirname(f.file)) }) : f.reopened();
+      // path uses the original host journal; a new Machines object has no active owner.
+      await assert.rejects(manager.recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    } finally { owner.release(); }
+  });
+}
+
+test('admission rejects a changed boot before registration and keeps the exact unexecuted intent recoverable', async () => {
+  const f = await fixture(), inherited = f.core.inheritedInput;
+  f.core.inheritedInput = async (...args) => { const payload = await inherited(...args); f.setBoot(randomUUID()); return payload; };
+  await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'must not execute' }, new AbortController().signal),
+    { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  const before = await f.view(); assert.equal(before.runs.length, 1); assert.equal(before.runs[0].phase, 'intent');
+  await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+  assert.equal((await f.view()).runs[0].phase, 'closed');
+  assert.equal(f.calls.includes('stop'), false, 'old-boot intent retires without an old guest stop');
+});
+
+for (const field of ['runId', 'sha256'] as const) {
+  test('admission refuses a mismatched protected payload ' + field + ' before journaling or execution', async () => {
+    const f = await fixture(), inherited = f.core.inheritedInput;
+    f.core.inheritedInput = async (...args) => ({ ...await inherited(...args),
+      [field]: field === 'runId' ? randomUUID() : 'b'.repeat(64) });
+    await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'must not execute' }, new AbortController().signal),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.equal((await f.view()).runs.length, 0);
+  });
+}
+
+test('the captured live instance is mandatory when a prepared task enters the atomic admission', async () => {
+  const f = await fixture(), expectedLive = f.machines.live.get(f.vmId)!;
+  f.machines.live.set(f.vmId, {} as never);
+  await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'must not run' },
+    new AbortController().signal, { expectedLive }), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  assert.deepEqual(f.calls, []);
+  await assert.rejects(readFile(f.file), { code: 'ENOENT' });
+});
+
+test('a live replacement after durable intent creation keeps the unexecuted ticket and refuses registration', async () => {
+  const f = await fixture(), expectedLive = f.machines.live.get(f.vmId)!, execute = f.machines.exec;
+  let bootReads = 0;
+  f.machines.exec = async (...args) => {
+    const result = await execute(...args);
+    if (args[1].trim().endsWith('/proc/sys/kernel/random/boot_id') && ++bootReads === 2)
+      f.machines.live.set(f.vmId, {} as never);
+    return result;
+  };
+  await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'must not run' },
+    new AbortController().signal, { expectedLive }), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  assert.equal((await f.view()).runs[0].phase, 'intent');
+  f.setAbsent(false);
+  await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+});
+
+test('network retirement cannot use an active task registration to waive the nonclosed-run guard', async () => {
+  const f = await privateNetworkFixture(), owner = await f.scopes.admitTask(f.vmId, f.project,
+    { command: 'active' }, new AbortController().signal), state = networkCore(f); f.setAbsent(false);
+  try {
+    const intent = await f.reopened().beginNetworkRelease(f.vmId, 'default'); assert.ok(intent);
+    await assert.rejects(f.reopened().releaseNetwork(f.vmId, 'default', intent), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+    assert.deepEqual(state.releases, []);
+    await assert.rejects(f.scopes.guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_NETWORK_RETIREMENT_PENDING' });
+  } finally { owner.release(); }
+});
+
+test('a full ticket pinned during owned cleanup remains in-process until the complete task finally finishes', async () => {
+  const f = await fixture(), owner = await f.scopes.admitTask(f.vmId, f.project,
+    { command: 'active' }, new AbortController().signal); f.setCleanupFail(true);
+  f.core.run = async () => ({ ...f.run, runId: owner.payload.runId, cgroupName: 'sakura-task-' + owner.payload.runId });
+  try {
+    await assert.rejects(f.scopes.closeAfterScopeStopped(f.vmId, 'default', owner.payload.runId),
+      { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    f.calls.length = 0;
+    await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    assert.deepEqual(f.calls, [], 'active cleanup does not become an orphan between its retries');
+  } finally { owner.release(); }
+  await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
 });

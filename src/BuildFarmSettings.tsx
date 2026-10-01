@@ -5,7 +5,7 @@ import type { JobView } from '../server/jobs';
 type Node = { vmId: string; vmName: string | null; status: string;
   slots: number; busy: number; labels: string[]; enabled: boolean; projectId?: string };
 type Task = { id: string; name: string; status: string; vmId?: string;
-  labels: string[]; createdAt: string; error?: string; job: JobView | null;
+  labels: string[]; createdAt: string; error?: string; errorCode?: string; job: JobView | null;
   projectId?: string; directory?: string; networkIsolation?: 'host' | 'private' };
 type View = { nodes: Node[]; tasks: Task[]; persistenceError?: string };
 type ProjectIndex = { vmId: string; active: string; projects: Array<{ id: string; name: string }> };
@@ -56,7 +56,7 @@ export function BuildFarmSettings({ request }: { request: Request }) {
   }, operation === 'cancel' ? '取消请求已提交' : '新构建已排队');
   return <section className="system-card" aria-label="构建农场">
     <h3>构建农场</h3>
-    <p>将已安装构建工具的 Linux 实例和项目登记为节点，按标签和并发槽位调度命令。构建使用节点绑定项目的环境与网络设置；停止的节点会保留待执行任务。</p>
+    <p>将已安装构建工具的 Linux 实例和项目登记为节点，按标签和并发槽位调度命令。每次构建准备时固定项目配置，以项目账号使用该环境与网络设置；停止的节点会保留待执行任务。</p>
     <Feedback error={action.error || remote.error || vms.error || projects.error || remote.data?.persistenceError}
       message={action.message} />
     <div className="feature-card">
@@ -110,7 +110,7 @@ export function BuildFarmSettings({ request }: { request: Request }) {
         `${node.vmName || node.vmId} (${node.status})`).join('、') || '无'}。任务会保留到匹配节点启动并有空闲槽位。</p>
       <button className="primary compact" disabled={action.busy || !name.trim() || !command.trim() ||
         !candidates.length || !validLabels(required) ||
-        (cwd !== '' && !/^\/workspace(?:\/(?!\.{1,2}(?:\/|$))[a-zA-Z0-9._-]+)*$/.test(cwd)) ||
+        (cwd !== '' && !/^(?:\/workspace|\/opt\/projects|\/srv\/projects)(?:\/(?!\.{1,2}(?:\/|$))[a-zA-Z0-9._-]+)*$/.test(cwd)) ||
         !Number.isInteger(timeoutSeconds) || timeoutSeconds < 5 || timeoutSeconds > 1800}
         onClick={submit}>提交构建</button>
     </div>
@@ -122,7 +122,7 @@ export function BuildFarmSettings({ request }: { request: Request }) {
         {task.vmId ? remote.data?.nodes.find((node) => node.vmId === task.vmId)?.vmName || task.vmId : '等待节点'}
         {task.projectId && <p className="subtle-note">项目 {task.projectId === 'default' ? '默认项目' : task.projectId}
           {task.directory && ` · ${task.directory}`} {task.networkIsolation === 'private' ? '· 私有网络' : ''}</p>}
-        {task.error && <p role="alert">{task.error}</p>}
+        {task.error && <p role="alert">{task.error}{task.errorCode && ` (${task.errorCode})`}</p>}
         {task.job && <JobLog job={task.job} />}
         {['queued', 'running'].includes(task.status) && <button className="secondary compact"
           disabled={action.busy} onClick={() => taskAction(task, 'cancel')}>取消构建</button>}

@@ -54,6 +54,7 @@
     "test:usb-hotplug": "tsx scripts/smoke-usb-hotplug.ts",
     "test:gpu-profiles": "tsx scripts/smoke-gpu-profiles.ts",
     "test:build-farm": "tsx scripts/smoke-build-farm.ts",
+    "test:build-farm:identity": "node --import tsx scripts/smoke-build-farm-identity.ts",
     "test:service-mesh": "tsx scripts/smoke-service-mesh.ts",
     "test:private-containers": "tsx scripts/smoke-private-containers.ts",
     "test:private-databases": "tsx scripts/smoke-private-databases.ts",

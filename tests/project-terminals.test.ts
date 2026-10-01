@@ -11,7 +11,7 @@ import type { Engine } from '../server/runtime.ts';
 const root = await mkdtemp(join(tmpdir(), 'sakura-project-terminals-'));
 process.env.SAKURA_DATA_DIR = root;
 const { Machines } = await import('../server/machines.ts');
-const { Workspaces } = await import('../server/workspaces.ts');
+const { Workspaces, projectVersion } = await import('../server/workspaces.ts');
 const { ProjectTerminals, assertProjectTerminalsStopped } = await import('../server/project-terminals.ts');
 const { vmDir } = await import('../server/model.ts');
 after(() => rm(root, { recursive: true, force: true }));
@@ -23,7 +23,7 @@ async function fixture() {
   let migration: 'applying' | 'failed' | 'directory-applied' | 'invalid' | null = null;
   const identityId = randomUUID();
   const machines = Object.assign(new EventEmitter(), {
-    records: new Map([[id, { template: 'none' }]]), live: new Map(),
+    records: new Map([[id, { template: 'none' }]]), live: new Map([[id, {}]]),
     get: () => ({ template: 'none', distro: 'alpine' }), state: () => status,
     locked: locks.locked.bind(locks),
     exec: async (_id: string, command: string) => {
@@ -141,5 +141,77 @@ test('terminal fallback reads the persisted active project even when the project
       await assert.rejects(fallback.prepare(f.id, null, undefined, false, controller.signal));
       await assert.rejects(fallback.prepare(f.id, '1111111111111111'), /项目不存在/);
     } finally { await fallback.close(); }
+  } finally { await f.close(); }
+});
+
+test('task preparation captures one configuration and keeps its lease after caller cancellation', async () => {
+  const f = await fixture(), controller = new AbortController();
+  let prepared: Awaited<ReturnType<InstanceType<typeof ProjectTerminals>['prepare']>> | undefined;
+  try {
+    await f.workspaces.save(f.id, { directory: '/workspace/task', environment: { BUILD_VALUE: 'original' } });
+    const project = await f.workspaces.config(f.id);
+    prepared = await f.terminals.prepare(f.id, 'default', null, false, controller.signal, undefined, { mode: 'task' });
+    assert.equal(prepared.captured?.configVersion, projectVersion(project));
+    assert.deepEqual(prepared.captured?.project, project);
+    assert.equal(prepared.captured?.live, f.machines.live.get(f.id));
+    await f.workspaces.save(f.id, { ...project, environment: { BUILD_VALUE: 'next' } });
+    assert.equal(prepared.captured?.project.environment?.BUILD_VALUE, 'original');
+    controller.abort();
+    assert.equal(prepared.signal?.aborted, true);
+    assert.throws(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'),
+      { code: 'PROJECT_DIRECTORY_RUNS_MUST_STOP' });
+    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/changed' }), /终端或命令/);
+    prepared.release(); prepared.release();
+    assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'));
+    await f.workspaces.save(f.id, { directory: '/workspace/changed' });
+  } finally { prepared?.release(); await f.close(); }
+});
+
+test('closing waits for explicit task cleanup and keeps configuration guards until that release', async () => {
+  const f = await fixture();
+  let prepared: Awaited<ReturnType<InstanceType<typeof ProjectTerminals>['prepare']>> | undefined;
+  let closing: Promise<void> | undefined;
+  try {
+    const connection = await f.terminals.prepare(f.id, 'default');
+    assert.equal(connection.captured, undefined);
+    prepared = await f.terminals.prepare(f.id, 'default', null, false, undefined, undefined, { mode: 'task' });
+    let closed = false;
+    closing = f.terminals.close().then(() => { closed = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(prepared.signal?.aborted, true);
+    assert.equal(closed, false);
+    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/changed' }), /终端或命令/);
+    assert.throws(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'),
+      { code: 'PROJECT_DIRECTORY_RUNS_MUST_STOP' });
+    prepared.release();
+    await closing;
+    assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'));
+    await f.workspaces.save(f.id, { directory: '/workspace/changed' });
+    connection.release();
+  } finally { prepared?.release(); await closing; await f.close(); }
+});
+
+test('task preparation rejects attaching a tmux or read-only connection before guest actions', async () => {
+  const f = await fixture();
+  try {
+    await assert.rejects(f.terminals.prepare(f.id, 'default', 'main', false, undefined, undefined, { mode: 'task' }),
+      { status: 400 });
+    await assert.rejects(f.terminals.prepare(f.id, 'default', null, true, undefined, undefined, { mode: 'task' }),
+      { status: 400 });
+    assert.deepEqual(f.commands, []);
+  } finally { await f.close(); }
+});
+
+test('a replaced live instance cannot inherit a preparation lease or its captured configuration', async () => {
+  const f = await fixture(), execute = f.machines.exec;
+  f.machines.exec = async (...args) => {
+    const result = await execute(...args);
+    if (args[1].includes('mkdir -p')) f.machines.live.set(f.id, {} as never);
+    return result;
+  };
+  try {
+    await assert.rejects(f.terminals.prepare(f.id, 'default', null, false, undefined, undefined, { mode: 'task' }),
+      /客户机运行身份在准备期间改变/);
+    assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'));
   } finally { await f.close(); }
 });

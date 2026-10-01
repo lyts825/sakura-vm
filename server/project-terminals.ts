@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { Workspaces, type Project } from './workspaces.ts';
+import { Workspaces, projectVersion, type Project } from './workspaces.ts';
 import { quote } from './files.ts';
 import { AppError } from './model.ts';
 import { ensureProjectNetworkScript, projectNetworkCheckScript,
@@ -61,7 +61,7 @@ export function stopTerminalsScript(projectId: string, session?: string) {
     `    done\n  fi\n`) + `fi`;
 }
 
-type Lease = { vmId: string; projectId: string; release: () => void };
+type Lease = { vmId: string; projectId: string; task: boolean; finished: Promise<void>; release: () => void };
 const preparedTerminals = new WeakMap<Machines, Set<Lease>>();
 
 /** A prepared connection can execute after prepare returns; keep it reserved until release. */
@@ -105,13 +105,18 @@ export class ProjectTerminals {
   }
 
   async prepare(id: string, projectId: string | null | undefined, session?: string | null,
-    readOnly = false, signal?: AbortSignal, expectedTerminalId?: string) {
+    readOnly = false, signal?: AbortSignal, expectedTerminalId?: string, options: { mode?: 'task' } = {}) {
+    const task = options.mode === 'task';
+    if (task && (readOnly || session)) throw new AppError('任务准备不能同时附加终端会话', 400);
     const abort = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
     if (readOnly && (!session || !projectId))
       throw new AppError('此共享授权未绑定项目，请让管理员重新共享终端', 409);
     return this.serial(id, abort, () => this.workspaces.projects.with(id, projectId, async () => {
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例', 409);
+      const live = this.machines.live.get(id);
+      if (!live) throw new AppError('客户机运行身份未确认', 409);
       const project = await this.workspaces.config(id);
+      const version = projectVersion(project);
       const scope = project._workspace || 'default';
       let command = terminalShell(project);
       let terminalId: string | undefined;
@@ -158,17 +163,22 @@ export class ProjectTerminals {
           `${readOnly ? '-r ' : ''}-t "$sakura_target"`;
       }
       abort.throwIfAborted();
-      const lease: Lease = { vmId: id, projectId: scope,
+      if (this.machines.live.get(id) !== live) throw new AppError('客户机运行身份在准备期间改变', 409);
+      let finish!: () => void;
+      const finished = new Promise<void>(resolve => { finish = resolve; });
+      const lease: Lease = { vmId: id, projectId: scope, task, finished,
         release: () => {
           this.leases.delete(lease); preparedTerminals.get(this.machines)?.delete(lease);
           abort.removeEventListener('abort', lease.release);
+          finish();
         } };
       this.leases.add(lease);
       if (!preparedTerminals.has(this.machines)) preparedTerminals.set(this.machines, new Set());
       preparedTerminals.get(this.machines)!.add(lease);
-      abort.addEventListener('abort', lease.release, { once: true });
+      if (!task) abort.addEventListener('abort', lease.release, { once: true });
       return { command, projectId: scope, networkIsolation: project.networkIsolation || 'host',
-        terminalId, release: lease.release };
+        terminalId, release: lease.release,
+        ...(task ? { signal: abort, captured: { project, configVersion: version, live } } : {}) };
     }));
   }
 
@@ -184,9 +194,10 @@ export class ProjectTerminals {
 
   async close() {
     this.controller.abort();
-    this.unguard();
     await Promise.allSettled([...this.pending.values()]);
-    for (const lease of this.leases) lease.release();
+    for (const lease of this.leases) if (!lease.task) lease.release();
+    await Promise.all([...this.leases].map(lease => lease.finished));
+    this.unguard();
     if (this.ownsWorkspaces) await this.workspaces.close();
   }
 }

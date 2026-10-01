@@ -2,6 +2,28 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 项目账号构建、并发任务与准确取消
+
+2026-10-01 构建农场接入固定项目 UID/GID、独立 home 和受保护正文运输。每次准备捕获原项目配置、摘要与准确 live 实例，后续环境、运行时及密钥只解析该份配置；这不是入队时的快照。任务保存原项目目录、实际工作目录与配置版本，兼容既有第 1 版队列。降权后仅相对切换子目录，原账号目录绑定保持不变，普通 shell 的非零语句语义也保留。工作目录支持 `/workspace`、`/opt/projects` 与 `/srv/projects`，越界目录拒绝；用法见 [构建农场](build-farm.md)。
+
+同项目多个槽位各自使用完整 cgroup 和账号票据。短操作队列串行核对、登记与核销，正文可并行；当前进程的活动归属必须准确匹配 live、boot、owner、账号、正文摘要和已登记票据，不能从磁盘重建或任意跳过未知运行。准备第二槽位不会把第一槽位当作失联任务，目录迁移及网络核销仍受全部未闭合票据保护。准备租约在取消后保留到完整清理结束，关闭终端服务也先等待任务释放，再解除绑定保护。
+
+取消和关闭清理自己的全部后代，再核销准确账号票据；核销失联保留 503、具体错误码和原记录。关闭、重载和刷新不会把实际 error/cancelled/done 改成普通中断。密钥遮盖作用于分段输出、完整结果和错误；界面显示持久错误码，并允许检查后明确重新排队。
+
+最终三文件后端定向 71 项与主命令、服务、运行时、迁移和短任务的相关回归 187 项通过；类型和差异检查通过，测试前后的六份源码与测试摘要一致。证明为 `.data/build-farm-identity-backend-freeze-e20d903f-91d3-4583-8d42-ad8ccb4ac151.json`。两个浏览器场景通过，覆盖原节点提交和取消、三类允许目录、点路径拒绝及清理错误刷新后保留；证明为 `.data/build-farm-identity-ui-11477057-577b-47dc-9d57-10893cfc4856-verification.json`。
+
+默认 Node 24.15.0/tsx 的整仓回归共 1,140 项，1,139 通过、1 项平台跳过，0 失败或取消。192 个测试文件启动前捕获的 608 个源码摘要在完成后全部一致；日志为 `.data/runtime-identity-full-unit-build-farm.log`，摘要为 `4c5d30020e9e4330a8f7c491ab8c9dda2cbcb9a37ece0e299b25adef600af340`，校验为 `.data/runtime-identity-full-unit-build-farm-verification.json`。
+
+最终冻结 28 个生产源及实机脚本后，三系统真实构建服务检查共 41 项通过：Alpine 13、Debian 14、Ubuntu 14；客户端均为默认 Node 24.15.0/tsx，实际退出码为零。覆盖真实 UID、home、caps、私有网络、两个槽位同时运行、逐槽取消及脱离会话后代、准备保护、正文与进程环境拒读、子目录绑定与 shell 非零语义、准确清理失败恢复、服务关闭及重载不重放。汇总为 `.data/network-remaining-test-temp/build-farm-identity-final-summary-7bd1d3f3-4c7f-4550-bb85-1881f82e602b.json`，摘要为 `cb2ebff8b623a8a54262a6ac481bb36d8aa0d49c7b55927d0cb283562c6e133c`。这是源码服务图的实际运行；下方旧运行时编译 HTTP 的 13 项继续保留其原 19 源归属，不改记为本批构建接口实测。
+
+Alpine 使用准确两份已有迁移项目，只通过原 UID 创建本批子目录，原配置没有密钥引用，未执行密钥存储驱动用例。Debian/Ubuntu 各创建两份新的自有项目目录，实际预览、审阅并应用迁移；独立 DPAPI 密钥库及保存的引用验证分段 stdout/stderr、完整结果和重载后的遮盖。三系统仅在独立观察原外层 cgroup 已移除且全部准确 PID/startTicks 停止后，注入本次账号核销连接失联；原 503 与票据保留，正常恢复闭合准确账号，但失败回调留下的 root 控制目录按原样保留，没有宣称其已核销。三台实例全部同步后停止，live、准确 QEMU 和独立 CIM 为零；旧账号、目录绑定、ready 资产、配置、每条旧宿主回执和历史证明保持不变。
+
+实机预检的前两轮均在初始化客户机之前拒绝：新脚本误把原 9 项迁移汇总的顶层 vmId 与原 54 项证明的 passed 当成必有字段。两份 false 证明及真实退出码 1 的工具日志保留为 `build-farm-identity-validation-failure-7ee83858-ad04-4e3e-885e-82992da265c0.json` 和 `build-farm-identity-validation-failure-e4845112-10c2-4326-bd2e-1972fe3340d9.json`；未修改原证明。脚本随后分别核对两种原始成功合同，静态检查及三种真实 `--validate-only` 均通过，且均未初始化运行时或启动 VM；冻结、预检与最终运行各有独立证明。
+
+完整生产构建、54 个服务模块分发检查和 7 种编译服务组合均通过。新运行包 `release/sakura-cepdK5` 的 256 个文件校验通过，指纹为 `94afa1339843a027e5a7d9386c8ce43603ff06cc1f262de4ce5e4f2177d942dd`，编译服务摘要为 `61a060f60081c5ce7a857d0c4cd8ba736af5142530f90a2e97b86e780b303f87`；证明为 `.data/runtime-identity-physical-build-farm-release-verification.json`。运行包复用本机 QEMU/PosixLoom 和依赖，没有验证新机器安装。构建结束后独立按进程名、准确 fixture 路径和 VM ID 再次核对四份自有实例，QEMU 均为零，证明为 `.data/build-farm-identity-stopped-fixtures-79924e12-d630-4319-8f29-c8f48d123359.json`。
+
+本批源码、脚本、单元、界面、预检、三系统实测、运行包和原失败的完整索引为 `.data/build-farm-identity-final-checkpoint-evidence.json`。目录仍为 250 项、247 项有实现入口、3 项部分实现。普通终端、项目 SSH、SSH/GPG Agent 和剩余扩展的账号及正文运输接入、客户机每 boot 1,024 张票据的无重启归档、真实独立外部 HA 演练和系统级剪贴板边界仍需继续；当前范围见 [未完成功能](unfinished-features.md)。
+
 ## 项目运行时探测、安装回执与私有任务控制
 
 2026-10-01 将运行时显式探测和版本选择验证接入持久项目 UID/GID、独立 home、已核对目录和项目网络，正文与环境使用受保护运输。面板打开、刷新、十秒轮询以及 CLI `inspect` 只读取宿主配置与最近完成的采样；`probe` 才发行任务。采样有配置、宿主实例和五分钟时效核对，最多保留 256 项，失败与过期不会冒充新结果。声明文件只读普通 no-follow FD，有类型、编码、大小与前后身份检查；每个版本进程有时间和输出预算。完整任务清理及准确票据核销之后才发布采样。
@@ -33,6 +55,8 @@ coreutils 修复后的一轮全量 Node 测试 1,101 项，1,100 通过、1 项�
 该包首轮编译 HTTP 检查前 9 组通过，包括公开 API 官方 Node 安装、ready 回执、项目 UID 选择与探测、完整取消清理及包内 CLI；第 10 组测试角色 ID `runtime_reader` 不符合现有接口格式而中止。保留 false 证明 `compiled-runtime-identity-http-4f582916-6488-4161-8aa1-3fc66edc094c.json`，摘要为 `2d93dd251d90cae8746e482f1319b69a2dcae826122e1051480dba571b5c4d08`；实例同步后停止、QEMU 为零、原设置与活动项目恢复。仅将测试的两处角色 ID 改为 `runtime-reader`，生产接口、运行包与 19 源冻结未变；完整结果以独立的新证明记录。
 
 修正测试角色后的同包完整编译 HTTP/生成 SDK 回归 13 组通过：默认 Node 24.15.0、客户端与两次编译服务的 `execArgv` 均为空；认证、目录审阅应用、无发行 GET、真实 UID/home/caps/NNP/私网探测与缓存、严格 POST、取消全域清理、清除及未知 prefix 拒绝、官方 Node 22.12.0 实际安装与 ready、包内 CLI、成员权限拒绝和历史证明保持均完成。最终在已只读观察到实际 UID 探测进程与准确票据后触发生产 SIGINT 处理器，确认原票据闭合、服务退出码为零、客户机停止；仅重启同包宿主服务，公开状态仍为 stopped/live=0，原活动项目恢复。证明为 `sakura-boot-persistence-53hCt6/compiled-runtime-identity-http-65e8ac68-d307-4985-9380-21fafa41d032.json`，日志及退出回执为 `.data/runtime-identity-http-default-13-role-fixed-3c757d15-ca95-4f9a-bc96-042e028b384a.log` 与同名前缀的 `-exit.json`。私有 IPC 调用的是实际生产 SIGINT 处理器，这不验证 Windows 原生控制台信号交付，也不等于新的客户机冷启动。
+
+完整 13 组中的 Node 安装接口准确复用原 ready `6124800e-0315-449b-bcf4-72e8a0be5284`。首次官方包下载与 ready 创建仍归属此前 9/13 后因测试角色格式失败的原证明 `compiled-runtime-identity-http-4f582916-6488-4161-8aa1-3fc66edc094c.json`；最终完整轮没有宣称重新下载，也未修改原资产或回执。
 
 本批源码摘要、运行包、全量测试、三系统实际运行、编译 HTTP、私有控制、原失败与诊断的索引为 `.data/runtime-identity-final-checkpoint-evidence.json`；所有历史证明保留原始字节和创建源码归属。目录仍为 250 项、247 项有实现入口、3 项部分实现。普通终端、项目 SSH/Agent、构建农场及剩余扩展的账号与正文迁移、客户机每 boot 1,024 张票据的无重启归档、真正独立外部 HA 演练与系统级剪贴板边界仍需继续；ARM 安装及新机器部署未实测。清单继续见 [未完成功能](unfinished-features.md)。
 

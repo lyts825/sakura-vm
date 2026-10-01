@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
@@ -66,6 +66,11 @@ type Core = Pick<ProjectIdentities, 'ensure' | 'inspect' | 'rebind' | 'inherited
       signal?: AbortSignal) => Promise<{ version: 1; phase: 'released'; releaseId: string; network: z.infer<typeof projectIdentityNetworkSchema> }>;
   };
 const sharedCores = new WeakMap<Machines, ProjectIdentities>();
+const scopeQueues = new WeakMap<Machines, Map<string, Promise<unknown>>>();
+type TaskContext = { live: NonNullable<ReturnType<Machines['live']['get']>>; bootId: string };
+export type ProjectTaskAdmissionOptions = { expectedLive?: TaskContext['live'] };
+type ActiveTask = TaskContext & { file: string; entry: Entry };
+const activeTasks = new WeakMap<Machines, Map<string, ActiveTask>>();
 export type ProjectInheritedPayload = { identity: ProjectIdentity; runId: string; command: string; input: Buffer; sha256: string };
 type Access = {
   reserve(project: Project, signal?: AbortSignal): Promise<ProjectIdentity>;
@@ -160,21 +165,28 @@ export class ProjectRunScopes {
   }
   async withLock<T>(vmId: string, id: string, action: (access: Access) => Promise<T>) {
     id = projectIdSchema.parse(id);
-    return this.machines.locked(`project-identity:${vmId}:${id}`, async () => {
-      let open = true;
-      const checked = (project?: Project) => {
-        if (!open || (project && projectId(project) !== id))
-          throw new AppError('项目账号锁或项目范围已失效', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
-      };
-      try {
-        return await action({
-          reserve: async (project, signal) => { checked(project); return this.reserveUnlocked(vmId, project, true, signal); },
-          identity: async (project, signal) => { checked(project); return this.reserveUnlocked(vmId, project, false, signal); },
-          recoverStoppedTasks: async () => { checked(); await this.recoverStoppedTasksUnlocked(vmId, id); },
-          guard: async () => { checked(); await this.guardUnlocked(vmId, id); },
-        });
-      } finally { open = false; }
-    });
+    const key = `project-identity:${vmId}:${id}`;
+    let queue = scopeQueues.get(this.machines);
+    if (!queue) { queue = new Map(); scopeQueues.set(this.machines, queue); }
+    const operation = (queue.get(key) || Promise.resolve()).catch(() => {}).then(() =>
+      this.machines.locked(key, async () => {
+        let open = true;
+        const checked = (project?: Project) => {
+          if (!open || (project && projectId(project) !== id))
+            throw new AppError('项目账号锁或项目范围已失效', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+        };
+        try {
+          return await action({
+            reserve: async (project, signal) => { checked(project); return this.reserveUnlocked(vmId, project, true, signal); },
+            identity: async (project, signal) => { checked(project); return this.reserveUnlocked(vmId, project, false, signal); },
+            recoverStoppedTasks: async () => { checked(); await this.recoverStoppedTasksUnlocked(vmId, id); },
+            guard: async () => { checked(); await this.guardUnlocked(vmId, id); },
+          });
+        } finally { open = false; }
+      }));
+    queue.set(key, operation);
+    try { return await operation; }
+    finally { if (queue.get(key) === operation) queue.delete(key); }
   }
   reserve(vmId: string, project: Project, signal?: AbortSignal) {
     return this.withLock(vmId, projectId(project), access => access.reserve(project, signal));
@@ -260,11 +272,13 @@ export class ProjectRunScopes {
       controlled ? 'PROJECT_IDENTITY_' + refusal.data.code : 'PROJECT_IDENTITY_LAUNCH_UNCONFIRMED');
   }
   async assertAdmission(vmId: string, id: string) {
-    const journal = await this.read(vmId, projectIdSchema.parse(id));
-    if (journal.networkRelease && journal.networkRelease.phase !== 'released')
-      throw new AppError('项目网络核销尚未确认，请先重试原停止操作', 409, 'PROJECT_IDENTITY_NETWORK_RETIREMENT_PENDING');
-    if (journal.pending)
-      throw new AppError('项目账号绑定尚未确认，请先恢复原配置核对', 409, 'PROJECT_IDENTITY_BINDING_PENDING');
+    return this.withLock(vmId, id, async () => {
+      const journal = await this.read(vmId, id);
+      if (journal.networkRelease && journal.networkRelease.phase !== 'released')
+        throw new AppError('项目网络核销尚未确认，请先重试原停止操作', 409, 'PROJECT_IDENTITY_NETWORK_RETIREMENT_PENDING');
+      if (journal.pending)
+        throw new AppError('项目账号绑定尚未确认，请先恢复原配置核对', 409, 'PROJECT_IDENTITY_BINDING_PENDING');
+    });
   }
   private async kernelBoot(vmId: string, signal?: AbortSignal) {
     const result = await this.machines.exec(vmId,
@@ -374,6 +388,7 @@ export class ProjectRunScopes {
         throw new AppError('项目账号票据与原运行身份不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
       entry.run = run; entry.phase = run.phase === 'closed' ? 'closed' : 'active';
       await this.save(vmId, id, journal);
+      this.pinActiveTask(vmId, id, entry, run);
       return run.phase === 'active';
     });
   }
@@ -400,11 +415,17 @@ export class ProjectRunScopes {
   async inherited(vmId: string, project: Project, execution: ProjectIdentityExecution,
     owner: ProjectRunOwner, signal?: AbortSignal): Promise<ProjectInheritedPayload> {
     owner = ownerSchema.parse(owner);
-    return this.withLock(vmId, projectId(project), async access => {
-      const identity = await access.identity(project, signal), id = identity.projectId;
+    return this.withLock(vmId, projectId(project), () =>
+      this.inheritedUnlocked(vmId, project, execution, owner, signal));
+  }
+  private async inheritedUnlocked(vmId: string, project: Project, execution: ProjectIdentityExecution,
+    owner: ProjectRunOwner, signal?: AbortSignal): Promise<ProjectInheritedPayload> {
+      const identity = await this.reserveUnlocked(vmId, project, false, signal), id = identity.projectId;
       await assertNoPendingProjectDirectoryMigration(this.machines, vmId, id, signal);
       const journal = await this.read(vmId, id);
       const payload = await this.core.inheritedInput(identity, execution, { runId: owner.runId });
+      if (payload.runId !== owner.runId || createHash('sha256').update(payload.input).digest('hex') !== payload.sha256)
+        throw new AppError('项目正文摘要或本次运行身份不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
       signal?.throwIfAborted();
       const entry: Entry = { version: 1, projectId: id, identity, runId: owner.runId, owner,
         sha256: payload.sha256, phase: 'intent', run: null };
@@ -423,6 +444,65 @@ export class ProjectRunScopes {
       // launcher entry. No user command/environment is part of this argv.
       const command = `test "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(owner.bootId)} && ${payload.command}`;
       return { ...payload, command, identity, runId: owner.runId };
+  }
+  private taskKey(vmId: string, id: string, runId: string) {
+    return vmId + ':' + id + ':' + runId;
+  }
+  private taskMetadataMatches(record: ActiveTask, entry: Entry) {
+    return entry.owner.kind === 'task' && entry.version === record.entry.version &&
+      entry.projectId === record.entry.projectId && entry.runId === record.entry.runId &&
+      entry.sha256 === record.entry.sha256 && same(entry.owner, record.entry.owner) &&
+      same(entry.identity, record.entry.identity);
+  }
+  private pinActiveTask(vmId: string, id: string, entry: Entry, run: ProjectIdentityRun) {
+    const record = activeTasks.get(this.machines)?.get(this.taskKey(vmId, id, entry.runId));
+    if (!record || record.file !== this.file(vmId, id) || record.live !== this.machines.live.get(vmId) ||
+        record.bootId !== run.bootId || !this.taskMetadataMatches(record, entry)) return;
+    if (record.entry.run && !same({ ...run, phase: record.entry.run.phase }, record.entry.run))
+      throw new AppError('当前任务完整票据已变化', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+    record.entry.run = structuredClone(run);
+  }
+  private isActiveTask(vmId: string, id: string, entry: Entry, context?: TaskContext) {
+    const record = activeTasks.get(this.machines)?.get(this.taskKey(vmId, id, entry.runId));
+    if (!record || !context || record.file !== this.file(vmId, id) ||
+        record.live !== context.live || record.live !== this.machines.live.get(vmId) ||
+        record.bootId !== context.bootId || !this.taskMetadataMatches(record, entry)) return false;
+    return entry.run === null ? record.entry.run === null : Boolean(record.entry.run &&
+      same({ ...entry.run, phase: record.entry.run.phase }, record.entry.run));
+  }
+  private async taskContext(vmId: string, signal?: AbortSignal): Promise<TaskContext> {
+    const live = this.machines.live.get(vmId), result = await this.machines.exec(vmId,
+      'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/cat /proc/sys/kernel/random/boot_id', 10000, signal);
+    const bootId = z.uuid().safeParse(result.stdout.trim());
+    if (result.code !== 0 || !bootId.success || !live || this.machines.live.get(vmId) !== live)
+      throw new AppError('无法固定客户机开机身份，项目代码未执行', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+    return { live, bootId: bootId.data };
+  }
+  /** Only this admission creates an in-process owner; disk receipts never do. */
+  async admitTask(vmId: string, project: Project, execution: ProjectIdentityExecution, signal: AbortSignal,
+    options: ProjectTaskAdmissionOptions = {}) {
+    const id = projectId(project);
+    return this.withLock(vmId, id, async () => {
+      signal.throwIfAborted();
+      const context = await this.taskContext(vmId, signal), runId = randomUUID();
+      if (options.expectedLive && context.live !== options.expectedLive)
+        throw new AppError('客户机运行身份与本次任务准备不符，项目代码未执行', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      await this.recoverStoppedTasksUnlocked(vmId, id, context);
+      const owner: ProjectRunOwner = { kind: 'task', runId, bootId: context.bootId };
+      const payload = await this.inheritedUnlocked(vmId, project, execution, owner, signal);
+      const current = await this.taskContext(vmId);
+      if (current.live !== context.live || current.bootId !== context.bootId)
+        throw new AppError('客户机身份在任务入场期间改变，原 intent 保留', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      const entry: Entry = { version: 1, projectId: id, identity: structuredClone(payload.identity),
+        owner, runId, sha256: payload.sha256, phase: 'intent', run: null };
+      const record: ActiveTask = { ...context, file: this.file(vmId, id), entry };
+      let registry = activeTasks.get(this.machines);
+      if (!registry) { registry = new Map(); activeTasks.set(this.machines, registry); }
+      const key = this.taskKey(vmId, id, runId);
+      registry.set(key, record);
+      return { payload, live: context.live, release: () => {
+        if (registry.get(key) === record) registry.delete(key);
+      } };
     });
   }
   private async confirmScopeStopped(vmId: string, owner: ProjectRunOwner) {
@@ -441,10 +521,13 @@ export class ProjectRunScopes {
     id = projectIdSchema.parse(id);
     return this.withLock(vmId, id, access => access.recoverStoppedTasks());
   }
-  private async recoverStoppedTasksUnlocked(vmId: string, id: string) {
+  private async recoverStoppedTasksUnlocked(vmId: string, id: string, context?: TaskContext) {
     const journal = await this.read(vmId, id);
+    if (!context && journal.runs.some(entry =>
+      activeTasks.get(this.machines)?.has(this.taskKey(vmId, id, entry.runId))))
+      context = await this.taskContext(vmId);
     for (const entry of journal.runs) {
-      if (entry.owner.kind === 'task' && entry.phase !== 'closed')
+      if (entry.owner.kind === 'task' && entry.phase !== 'closed' && !this.isActiveTask(vmId, id, entry, context))
         await this.closeUnlocked(vmId, id, entry.runId);
     }
   }
@@ -488,6 +571,7 @@ export class ProjectRunScopes {
         throw new AppError('账号票据的上层运行归属不符', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
       entry.run = run; entry.phase = run.phase === 'closed' ? 'closed' : 'active';
       await this.save(vmId, id, journal);
+      this.pinActiveTask(vmId, id, entry, run);
       if (entry.phase === 'closed') return;
       // Once a complete ticket was received, an absent or changed receipt is
       // never treated as a task that did not start.
@@ -503,24 +587,23 @@ const parseJson = (value: string) => { try { return JSON.parse(value); } catch {
 /** All user code remains in the outer task domain; only that owner may authorize retirement. */
 export async function projectIdentityTask(machines: Machines, vmId: string, project: Project,
   execution: ProjectIdentityExecution, signal: AbortSignal, log?: (text: string) => void,
-  timeout = 1200000, agentPath?: string, afterCleanup?: () => Promise<void>) {
+  timeout = 1200000, agentPath?: string, afterCleanup?: () => Promise<void>,
+  options: ProjectTaskAdmissionOptions = {}) {
   signal.throwIfAborted();
-  const instance = machines.live.get(vmId), result = await machines.exec(vmId,
-    'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/cat /proc/sys/kernel/random/boot_id', 10000, signal);
-  const bootId = z.uuid().safeParse(result.stdout.trim());
-  if (result.code !== 0 || !bootId.success || !instance || machines.live.get(vmId) !== instance)
-    throw new AppError('无法固定客户机开机身份，项目代码未执行', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
-  const scopes = new ProjectRunScopes(machines), runId = randomUUID();
-  await scopes.recoverStoppedTasks(vmId, projectId(project));
-  const payload = await scopes.inherited(vmId, project, execution, { kind: 'task', runId, bootId: bootId.data }, signal);
-  if (signal.aborted) {
-    await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
-    signal.throwIfAborted();
-  }
-  const executed = await guestTask(machines, vmId, payload.command, signal, log, timeout, agentPath, async () => {
-    await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
-    await afterCleanup?.();
-  }, { input: payload.input, runId });
-  await scopes.assertTaskIssued(vmId, projectId(project), runId, executed);
-  return executed;
+  const scopes = new ProjectRunScopes(machines), admission = await scopes.admitTask(vmId, project, execution, signal, options);
+  const { payload } = admission, runId = payload.runId;
+  try {
+    if (machines.live.get(vmId) !== admission.live)
+      throw new AppError('客户机运行身份在任务启动前改变，原 intent 保留且项目代码未执行', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+    if (signal.aborted) {
+      await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
+      signal.throwIfAborted();
+    }
+    const executed = await guestTask(machines, vmId, payload.command, signal, log, timeout, agentPath, async () => {
+      await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
+      await afterCleanup?.();
+    }, { input: payload.input, runId });
+    await scopes.assertTaskIssued(vmId, projectId(project), runId, executed);
+    return executed;
+  } finally { admission.release(); }
 }
