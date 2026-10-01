@@ -61,6 +61,8 @@ async function fixture() {
   machines.exec = async (_id, command) => {
     const project = workspaces.projects.current(id);
     calls.push({ project, command });
+    if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
+      return { code: 0, stdout: 'absent\n', stderr: '' };
     if (command.includes('SAKURA_PROJECT_DOCKER_PRESENT'))
       return { code: 0, stdout: runtime.has(project) ? 'SAKURA_PROJECT_DOCKER_PRESENT\n' : '', stderr: '' };
     if (command.includes('data=json.loads') && command.includes('containerd'))

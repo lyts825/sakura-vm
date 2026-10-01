@@ -41,6 +41,7 @@ export function ProjectPanel(props: FeatureProps) {
   const runtime = useRemote<{
     status: string;
     log: string;
+    main?: { status: string };
     services?: { name: string; status: string; log: string }[];
   }>(request, `/vms/${vm.id}/project-runtime`, vm.status === 'running');
   const [project, setProject] = useState<Project | null>(null),
@@ -77,17 +78,28 @@ export function ProjectPanel(props: FeatureProps) {
           <p>保存环境、目录与命令，下次直接启动开发。</p>
         </div>
         <span className="badge">
-          {runtime.data?.status === 'running'
+          {runtime.data?.main?.status === 'unmanaged'
+            ? '旧项目运行待迁移'
+            : runtime.data?.status === 'running'
             ? '项目运行中'
             : runtime.data?.status === 'partial'
               ? '部分服务运行中'
               : runtime.data?.status === 'exited'
-                ? '服务主进程已退出，待清理'
+                ? runtime.data.main ? '项目主进程已退出，待清理' : '服务主进程已退出，待清理'
                 : runtime.data?.status === 'unconfirmed'
-                  ? '服务状态未确认'
+                  ? runtime.data.main ? '项目状态未确认' : '服务状态未确认'
                   : '项目未运行'}
         </span>
       </div>
+      {runtime.data?.main?.status === 'unmanaged' && <p className="subtle-note">
+        旧项目会话缺少运行归属。请由管理员核查并停止旧会话及其后台任务，再从这里启动。
+      </p>}
+      {runtime.data?.main?.status === 'exited' && <p className="subtle-note">
+        主进程已退出，后台任务仍保留归属。请先停止项目完成清理。
+      </p>}
+      {runtime.data?.main && ['prepared', 'unconfirmed'].includes(runtime.data.main.status) && <p className="subtle-note">
+        项目运行尚未确认。请先停止项目完成核对和清理，再修改配置或重新启动。
+      </p>}
       {projects.data && (
         <div className="feature-actions">
           <label>
@@ -253,7 +265,7 @@ export function ProjectPanel(props: FeatureProps) {
             </button>
             <button
               className="primary compact"
-              disabled={action.busy || remote.data?.job?.status === 'running'}
+              disabled={action.busy || remote.data?.job?.status === 'running' || runtime.data?.main?.status === 'unmanaged'}
               onClick={() => void execute('start')}
             >
               <Play size={14} />
@@ -261,7 +273,7 @@ export function ProjectPanel(props: FeatureProps) {
             </button>
             <button
               className="secondary compact"
-              disabled={action.busy || vm.status !== 'running' || remote.data?.job?.status === 'running'}
+              disabled={action.busy || vm.status !== 'running' || remote.data?.job?.status === 'running' || runtime.data?.main?.status === 'unmanaged'}
               onClick={() => void execute('stop')}
             >
               <Square size={14} />

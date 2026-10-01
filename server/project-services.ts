@@ -72,6 +72,26 @@ export function envPrefix(values: Record<string, string> = {}) {
     .map(([name, value]) => `export ${name}=${quote(value)}`)
     .join('\n');
 }
+export async function prepareProjectScopeTools(machines: Machines, id: string, signal: AbortSignal,
+  kind: 'service' | 'main' = 'service') {
+  const prefix = kind === 'main' ? 'PROJECT_MAIN' : 'SERVICE';
+  const distro = machines.get(id).distro;
+  const dependencies = await guestTask(machines, id,
+    `# SAKURA_PROJECT_${kind === 'main' ? 'MAIN' : 'SERVICE'}_DEPENDENCIES\nset -eu\n` +
+    `if [ -x /usr/bin/python3 ] && [ -x /usr/bin/tmux ]; then exit 0; fi\n` +
+    (distro === 'alpine'
+      ? `apk add --no-cache --timeout 30 python3 tmux\n`
+      : `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n` +
+        `apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends python3 tmux\n`) +
+    `test -x /usr/bin/python3 && test -x /usr/bin/tmux`, signal, undefined, 180_000)
+    .catch((error) => {
+      if ((error as AppError).code === 'GUEST_TASK_SCOPE_UNAVAILABLE')
+        throw new AppError((error as Error).message, 409, prefix + '_SCOPE_UNAVAILABLE');
+      throw error;
+    });
+  if (dependencies.code !== 0)
+    throw new AppError('无法准备运行归属工具 python3/tmux；项目代码未执行', 409, prefix + '_SCOPE_UNAVAILABLE');
+}
 export async function runServices(
   machines: Machines,
   id: string,
@@ -83,24 +103,7 @@ export async function runServices(
 ) {
   const services = project.services || [];
   const order = serviceOrder(services, only);
-  if (action === 'start' && order.length) {
-    const distro = machines.get(id).distro;
-    const dependencies = await guestTask(machines, id,
-      `# SAKURA_PROJECT_SERVICE_DEPENDENCIES\nset -eu\n` +
-      `if [ -x /usr/bin/python3 ] && [ -x /usr/bin/tmux ]; then exit 0; fi\n` +
-      (distro === 'alpine'
-        ? `apk add --no-cache --timeout 30 python3 tmux\n`
-        : `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n` +
-          `apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends python3 tmux\n`) +
-      `test -x /usr/bin/python3 && test -x /usr/bin/tmux`, signal, undefined, 180_000)
-      .catch((error) => {
-        if ((error as AppError).code === 'GUEST_TASK_SCOPE_UNAVAILABLE')
-          throw new AppError((error as Error).message, 409, 'SERVICE_SCOPE_UNAVAILABLE');
-        throw error;
-      });
-    if (dependencies.code !== 0)
-      throw new AppError('无法准备服务归属工具 python3/tmux；项目代码未执行', 409, 'SERVICE_SCOPE_UNAVAILABLE');
-  }
+  if (action === 'start' && order.length) await prepareProjectScopeTools(machines, id, signal);
   const scopes = new ProjectServiceScopes(machines, id, project);
   if (action === 'stop') {
     if (only) {

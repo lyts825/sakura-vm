@@ -30,6 +30,8 @@ async function fixture() {
     locked: locks.locked.bind(locks),
     exec: async (_id: string, command: string, _timeout: number, signal?: AbortSignal) => {
       commands.push(command);
+      if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
+        return { stdout: 'absent\n', stderr: '', code: 0 };
       if (!command.includes('setsid sh -c')) return { stdout: '', stderr: '', code: 0 };
       started();
       if (wait) await new Promise<void>((_done, fail) => {

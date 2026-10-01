@@ -53,6 +53,8 @@ class Guest extends EventEmitter {
     output?: (data: string) => void) {
     signal?.throwIfAborted();
     this.commands.push(command);
+    if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
+      return { stdout: 'absent\n', stderr: '', code: 0 };
     let stdout = '', code = 0;
     if (command.startsWith('if [ ! -f /etc/sakura/desktop-version ]')) stdout = this.phase;
     else if (command.includes('mv -f ' + desktopLauncherPath + '.')) {

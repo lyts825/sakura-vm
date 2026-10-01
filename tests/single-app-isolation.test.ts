@@ -28,6 +28,8 @@ async function fixture() {
     records: new Map([[id, { id }]]), live: new Map([[id, live]]), state: () => live.status,
     exec: async (_id: string, command: string) => {
       commands.push(command);
+      if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
+        return { code: 0, stdout: 'absent\n', stderr: '' };
       return { code: 0, stderr: '', stdout: command.includes('password=$(head -c 6')
         ? `${++uid}\nAbc/123+\n` : '' };
     },

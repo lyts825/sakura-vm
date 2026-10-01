@@ -4254,6 +4254,76 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
+for (const initialStatus of ['exited', 'unconfirmed'] as const) {
+  test(`project main ${initialStatus} cleanup preserves drafts and supports retry after a failed job on mobile`, async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    await app(page, ['projects'], true);
+    const runningVm = { ...vm, status: 'running', poweredOn: true };
+    await page.route('**/api/vms', route => route.fulfill({ json: [runningVm] }));
+    await page.route(/\/api\/vms\/[^/]+(?:\?.*)?$/, route => route.fulfill({ json: runningVm }));
+    let attempts = 0, stopped = false, saved = 0;
+    let job: { status: string; log: string; error?: string; errorCode?: string } | null = null;
+    await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, route => {
+      if (route.request().method() === 'PUT') {
+        ++saved;
+        return route.fulfill({ status: 409, json: { error: '旧运行尚未停止，不能覆盖配置' } });
+      }
+      if (route.request().method() === 'POST') {
+        expect(route.request().postDataJSON()).toEqual({ action: 'stop' });
+        if (++attempts === 1) job = { status: 'error', log: '清理记录保留',
+          error: '项目清理未确认，请重试', errorCode: 'PROJECT_MAIN_CLEANUP_FAILED' };
+        else { stopped = true; job = { status: 'done', log: '项目已停止' }; }
+        return route.fulfill({ json: job });
+      }
+      return route.fulfill({ json: { projectId: 'default', job, project: {
+        directory: '/workspace', template: 'none', repository: '', setup: '', command: 'sleep 60',
+      } } });
+    });
+    await page.route('**/api/vms/*/project-runtime**', route => route.fulfill({ json: {
+      status: stopped ? 'stopped' : initialStatus, main: { status: stopped ? 'stopped' : initialStatus },
+      log: stopped ? '项目已停止' : '主命令归属仍保留',
+    } }));
+    await page.reload();
+    await page.getByRole('tab', { name: '项目', exact: true }).click();
+    const badge = initialStatus === 'exited' ? '项目主进程已退出，待清理' : '项目状态未确认';
+    await expect(page.getByText(badge, { exact: true })).toBeVisible();
+    const command = page.getByRole('textbox', { name: '启动命令', exact: true });
+    await command.fill('sleep 120');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: '停止项目', exact: true }).click();
+    await expect(page.getByText('项目清理未确认，请重试', { exact: true })).toBeVisible();
+    await expect(page.getByText(badge, { exact: true })).toBeVisible();
+    await expect(command).toHaveValue('sleep 120');
+    await page.getByRole('button', { name: '停止项目', exact: true }).click();
+    await expect(page.getByText('项目未运行', { exact: true })).toBeVisible();
+    await expect(command).toHaveValue('sleep 120');
+    expect(attempts).toBe(2);
+    expect(saved).toBe(0);
+    expect(pageErrors).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}
+
+test('legacy project main sessions explain migration without enabling an unsafe automatic stop', async ({ page }) => {
+  await app(page, ['projects'], true);
+  await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, route => route.fulfill({ json: {
+    projectId: 'default', job: null, project: {
+      directory: '/workspace', template: 'none', repository: '', setup: '', command: 'sleep 60',
+    },
+  } }));
+  await page.route('**/api/vms/*/project-runtime**', route => route.fulfill({ json: {
+    status: 'unconfirmed', main: { status: 'unmanaged' }, log: '旧会话没有可验证归属',
+  } }));
+  await page.reload();
+  await page.getByRole('tab', { name: '项目', exact: true }).click();
+  await expect(page.getByText('旧项目运行待迁移', { exact: true })).toBeVisible();
+  await expect(page.getByText('旧项目会话缺少运行归属。请由管理员核查并停止旧会话及其后台任务，再从这里启动。', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '停止项目', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '启动开发', exact: true })).toBeDisabled();
+});
+
 test('project service cleanup failures retain the exited state and support a visible retry on mobile', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', error => pageErrors.push(error.message));

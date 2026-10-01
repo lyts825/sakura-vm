@@ -41,6 +41,8 @@ async function fixture() {
     locked: locks.locked.bind(locks),
     exec: async (_id: string, command: string) => {
       commands.push(command);
+      if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
+        return { code: 0, stdout: 'absent\n', stderr: '' };
       if (command.startsWith('set +e\nprintf')) {
         const project = /sakura-mesh-(default|[a-f0-9]{16})/.exec(command)![1];
         return {

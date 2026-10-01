@@ -40,15 +40,42 @@ export const projectServiceRecordSchema = z.object({
     ctx.addIssue({ code: 'custom', message: '服务尚未登记 pane 身份' });
 });
 export type ProjectServiceRecord = z.infer<typeof projectServiceRecordSchema>;
-const responseSchema = z.object({
+export const projectMainRecordSchema = z.object({
+  version: z.literal(2), kind: z.literal('main'), projectId: projectIdSchema,
+  session: z.string().regex(/^sakura-project(?:-[a-f0-9]{16})?$/),
+  runId: z.uuid(), bootId: z.uuid(), scopeName: z.string().regex(/^sakura-main-[a-f0-9-]{36}$/),
+  inode: decimal.nullable(), binding: z.string().regex(/^[a-f0-9]{64}$/),
+  phase: z.enum(['intent', 'prepared', 'running', 'stopped']),
+  sessionId: z.string().regex(/^\$[0-9]+$/).nullable(), paneId: z.string().regex(/^%[0-9]+$/).nullable(),
+  panePid: z.number().int().min(2).nullable(), paneStartTicks: decimal.nullable(),
+}).strict().superRefine((record, ctx) => {
+  const session = record.projectId === 'default' ? 'sakura-project' : `sakura-project-${record.projectId}`;
+  if (record.session !== session || record.scopeName !== 'sakura-main-' + record.runId)
+    ctx.addIssue({ code: 'custom', message: '项目主命令路径与身份不符' });
+  const panes = [record.sessionId, record.paneId, record.panePid, record.paneStartTicks];
+  if (panes.some(value => value !== null) && panes.some(value => value === null))
+    ctx.addIssue({ code: 'custom', message: '项目主命令 pane 归属记录不完整' });
+  if ((record.phase === 'prepared' || record.phase === 'running') && record.inode === null)
+    ctx.addIssue({ code: 'custom', message: '项目主命令 cgroup 归属记录不完整' });
+  if (record.phase === 'running' && record.panePid === null)
+    ctx.addIssue({ code: 'custom', message: '项目主命令尚未登记 pane 身份' });
+});
+export type ProjectMainRecord = z.infer<typeof projectMainRecordSchema>;
+type ProjectScopeRecord = ProjectServiceRecord | ProjectMainRecord;
+type ScopeTarget = { kind: 'service'; name: string } | { kind: 'main' };
+const responseSchema = <Record extends ProjectScopeRecord>(schema: z.ZodType<Record>) => z.object({
   status: z.enum(['absent', 'prepared', 'running', 'exited', 'stopped', 'unconfirmed', 'unmanaged']),
   bootId: z.uuid(),
-  record: projectServiceRecordSchema.nullable(),
+  record: schema.nullable(),
 }).strict().superRefine((response, ctx) => {
   if (['prepared', 'running', 'exited', 'stopped', 'unconfirmed'].includes(response.status) && !response.record)
     ctx.addIssue({ code: 'custom', message: '服务状态缺少可验证归属记录' });
 });
-export type ProjectServiceStatus = z.infer<typeof responseSchema>;
+export type ProjectScopeStatus<Record extends ProjectScopeRecord> = {
+  status: 'absent' | 'prepared' | 'running' | 'exited' | 'stopped' | 'unconfirmed' | 'unmanaged';
+  bootId: string; record: Record | null;
+};
+export type ProjectServiceStatus = ProjectScopeStatus<ProjectServiceRecord>;
 type Operation = 'status' | 'prepare' | 'start' | 'commit' | 'stop';
 export function projectServiceScopePaths(project: Project, name: string) {
   const projectId = projectIdSchema.parse(project._workspace || 'default');
@@ -57,6 +84,21 @@ export function projectServiceScopePaths(project: Project, name: string) {
     session: `sakura-service-${projectId === 'default' ? '' : projectId + '-'}${name}`,
     guest: `/run/sakura-project-services/${projectId}/${name}`,
   };
+}
+export function projectMainScopePaths(project: Project) {
+  const projectId = projectIdSchema.parse(project._workspace || 'default');
+  return { kind: 'main' as const, projectId,
+    session: projectId === 'default' ? 'sakura-project' : `sakura-project-${projectId}`,
+    guest: `/run/sakura-project-main/${projectId}` };
+}
+const scopePaths = (project: Project, target: ScopeTarget) => target.kind === 'main'
+  ? projectMainScopePaths(project) : projectServiceScopePaths(project, target.name);
+export function projectMainBinding(project: Project) {
+  return createHash('sha256').update(JSON.stringify(['main-v2',
+    project._workspace || 'default', project.directory, project.networkIsolation || 'host',
+    project.command, project.environment || {}, project.secrets || {}, project.runtimes || {},
+    Boolean(project.services?.length),
+  ])).digest('hex');
 }
 export function projectServiceBinding(project: Project, service: ProjectService) {
   return createHash('sha256').update(JSON.stringify([
@@ -70,13 +112,16 @@ export function projectServiceBinding(project: Project, service: ProjectService)
 const helper = `import fcntl,json,os,re,signal,stat,subprocess,sys,tempfile,time
 boot=open('/proc/sys/kernel/random/boot_id').read().strip()
 folder=request['guest']; owner_file=folder+'/owner.json'; cancel_file=folder+'/cancel'
+main=request.get('kind')=='main'
+root='/run/sakura-project-main' if main else '/run/sakura-project-services'
+scope_prefix='sakura-main-' if main else 'sakura-service-'
 def refuse(message): raise RuntimeError(message)
 def trusted_directory(path):
  try: os.mkdir(path,0o700)
  except FileExistsError: pass
  info=os.lstat(path)
  if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode & 0o022: refuse('服务归属目录权限无法核对')
-for path in ['/run/sakura-project-services',folder.rsplit('/',1)[0],folder]: trusted_directory(path)
+for path in [root,folder.rsplit('/',1)[0],folder]: trusted_directory(path)
 lock=os.open(folder+'/lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
 info=os.fstat(lock)
 if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode & 0o022: refuse('服务归属锁权限无法核对')
@@ -88,10 +133,11 @@ def read_owner():
   info=os.fstat(stream.fileno())
   if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode & 0o022: refuse('服务归属文件权限无法核对')
   record=json.load(stream)
- fields={'version','projectId','name','session','runId','bootId','scopeName','inode','binding','phase','sessionId','paneId','panePid','paneStartTicks'}
- if not isinstance(record,dict) or set(record)!=fields or record['version']!=1: refuse('服务归属记录不完整')
- if record['projectId']!=request['projectId'] or record['name']!=request['name'] or record['session']!=request['session']: refuse('服务归属项目不符')
- if not isinstance(record['runId'],str) or not re.fullmatch('[a-f0-9-]{36}',record['runId']) or record['scopeName']!='sakura-service-'+record['runId']: refuse('服务 cgroup 路径无法核对')
+ fields={'version','projectId','session','runId','bootId','scopeName','inode','binding','phase','sessionId','paneId','panePid','paneStartTicks','kind' if main else 'name'}
+ if not isinstance(record,dict) or set(record)!=fields or record['version']!=(2 if main else 1): refuse('服务归属记录不完整')
+ if record['projectId']!=request['projectId'] or record['session']!=request['session']: refuse('服务归属项目不符')
+ if (main and record['kind']!='main') or (not main and record['name']!=request['name']): refuse('服务归属类型不符')
+ if not isinstance(record['runId'],str) or not re.fullmatch('[a-f0-9-]{36}',record['runId']) or record['scopeName']!=scope_prefix+record['runId']: refuse('服务 cgroup 路径无法核对')
  if record['phase'] not in ['prepared','running','stopped']: refuse('服务归属阶段不符')
  if record['inode'] is not None and (not isinstance(record['inode'],str) or not re.fullmatch('[1-9][0-9]*',record['inode'])): refuse('服务 cgroup inode 无法核对')
  return record
@@ -335,22 +381,176 @@ except Exception as error:
 function python(request: object) {
   return `request=json.loads(${JSON.stringify(JSON.stringify(request))})\n`;
 }
-export function projectServiceScopeCommand(project: Project, name: string, op: Operation,
-  record?: ProjectServiceRecord, payload?: string) {
-  const paths = projectServiceScopePaths(project, name);
+function projectScopeCommand(project: Project, target: ScopeTarget, op: Operation,
+  record?: ProjectScopeRecord, payload?: string) {
+  const paths = scopePaths(project, target);
+  const executionHelper = target.kind === 'main'
+    ? helper.replaceAll('服务', '项目主命令').replaceAll('SAKURA_SERVICE_SCOPE_', 'SAKURA_PROJECT_MAIN_SCOPE_') : helper;
   const request: any = { op, ...paths, ...(record ? { record } : {}) };
   if (op === 'start') {
     const paneRequest = { op: 'pane', ...paths, record, payload };
     request.directory = project.directory;
-    request.paneScript = 'import json\n' + python(paneRequest) + helper;
+    request.paneScript = 'import json\n' + python(paneRequest) + executionHelper;
   }
-  const source = 'import json\n' + python(request) + helper;
+  const source = 'import json\n' + python(request) + executionHelper;
   const { paneScript: _paneScript, ...metadata } = request;
-  return `# SAKURA_PROJECT_SERVICE_${op.toUpperCase()}\n` +
-    `# SAKURA_PROJECT_SERVICE_REQUEST=${Buffer.from(JSON.stringify(metadata)).toString('base64')}\n` +
+  return `# SAKURA_PROJECT_${target.kind === 'main' ? 'MAIN' : 'SERVICE'}_${op.toUpperCase()}\n` +
+    `# SAKURA_PROJECT_${target.kind === 'main' ? 'MAIN' : 'SERVICE'}_REQUEST=${Buffer.from(JSON.stringify(metadata)).toString('base64')}\n` +
     `set -eu\nif [ ! -x /usr/bin/python3 ] || [ ! -x /usr/bin/tmux ]; then ` +
-    `echo 'SAKURA_SERVICE_SCOPE_UNAVAILABLE: 服务需要 python3、tmux 和可写 cgroup v2；项目代码未执行' >&2; exit 73; fi\n` +
+    `echo 'SAKURA_${target.kind === 'main' ? 'PROJECT_MAIN' : 'SERVICE'}_SCOPE_UNAVAILABLE: ` +
+    `受管运行需要 python3、tmux 和可写 cgroup v2；项目代码未执行' >&2; exit 73; fi\n` +
     `/usr/bin/python3 -I -S -c ${quote(source)}`;
+}
+export function projectServiceScopeCommand(project: Project, name: string, op: Operation,
+  record?: ProjectServiceRecord, payload?: string) {
+  return projectScopeCommand(project, { kind: 'service', name }, op, record, payload);
+}
+export function projectMainScopeCommand(project: Project, op: Operation, record?: ProjectMainRecord, payload?: string) {
+  return projectScopeCommand(project, { kind: 'main' }, op, record, payload);
+}
+
+class ProjectProcessScope<Record extends ProjectScopeRecord> {
+  private readonly instance: object | undefined;
+  constructor(private machines: Machines, private id: string, protected project: Project,
+    private target: ScopeTarget, private schema: z.ZodType<Record>, instance: object | undefined) {
+    this.instance = instance;
+  }
+  private code(suffix: string) { return `${this.target.kind === 'main' ? 'PROJECT_MAIN' : 'SERVICE'}_${suffix}`; }
+  private get label() { return this.target.kind === 'main' ? '项目主命令' : `服务 ${this.target.name}`; }
+  private assertLive() {
+    if (!this.instance || this.machines.live.get(this.id) !== this.instance)
+      throw new AppError(`客户机 live 实例已改变，拒绝旧${this.label}操作`, 409, this.code('SCOPE_CHANGED'));
+  }
+  receipt() {
+    const p = scopePaths(this.project, this.target);
+    return this.target.kind === 'main'
+      ? join(vmDir(this.id), 'project-main', p.projectId, 'runtime.json')
+      : join(vmDir(this.id), 'project-services', p.projectId, this.target.name, 'runtime.json');
+  }
+  async hasReceipt() {
+    try { await lstat(this.receipt()); return true; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+  }
+  async metadata() {
+    try {
+      const saved = await readStore<unknown>(this.receipt(), () => null);
+      return saved === null ? null : this.schema.parse(saved);
+    }
+    catch { throw new AppError(`主机${this.label}归属记录无法核对`, 409, this.code('SCOPE_CHANGED')); }
+  }
+  private async save(record: Record) {
+    this.assertLive();
+    const file = this.receipt();
+    await regularDirectory(join(file, '..'));
+    await writeStore(file, this.schema.parse(record));
+    this.assertLive();
+  }
+  private async execute(op: Operation, record?: Record,
+    payload?: string, signal?: AbortSignal) {
+    this.assertLive();
+    const result = await this.machines.exec(this.id,
+      projectScopeCommand(this.project, this.target, op, record, payload), 30_000, signal).catch((error) => {
+        signal?.throwIfAborted();
+        this.assertLive();
+        if (this.target.kind !== 'main') throw error;
+        throw new AppError(`项目主命令控制回执未确认：${error instanceof Error ? error.message : String(error)}`,
+          409, this.code('SCOPE_CHANGED'));
+      });
+    this.assertLive();
+    if (result.code !== 0)
+      throw new AppError(result.stderr.trim() || `无法${op}${this.label}`, 409,
+        result.stderr.includes(this.code('SCOPE_UNAVAILABLE')) ? this.code('SCOPE_UNAVAILABLE') : this.code('SCOPE_CHANGED'));
+    let response: ProjectScopeStatus<Record>;
+    try { response = responseSchema(this.schema).parse(JSON.parse(result.stdout)); }
+    catch { throw new AppError(`${this.label}归属回执无法核对，拒绝继续操作`, 409, this.code('SCOPE_CHANGED')); }
+    if (response.record && response.record.bootId !== response.bootId)
+      throw new AppError(`${this.label}回执 boot 身份不符`, 409, this.code('SCOPE_CHANGED'));
+    if (record && response.bootId !== record.bootId)
+      throw new AppError('客户机 boot 身份已改变', 409, this.code('SCOPE_CHANGED'));
+    if (record && response.record && (response.record.runId !== record.runId || response.record.scopeName !== record.scopeName))
+      throw new AppError(`客体回执与本次${this.label} run 不符`, 409, this.code('SCOPE_CHANGED'));
+    if (record && response.record) this.sameOwner(record, response.record);
+    return response;
+  }
+  private sameOwner(expected: Record, actual: Record) {
+    for (const key of ['runId', 'bootId', 'scopeName', 'binding'] as const)
+      if (expected[key] !== actual[key])
+        throw new AppError(`${this.label}运行归属已改变，拒绝旧操作`, 409, this.code('SCOPE_CHANGED'));
+    for (const key of ['inode', 'sessionId', 'paneId', 'panePid', 'paneStartTicks'] as const)
+      if (expected[key] !== null && expected[key] !== actual[key])
+        throw new AppError(`${this.label} cgroup 或 pane 归属已改变，拒绝旧操作`, 409, this.code('SCOPE_CHANGED'));
+  }
+  async status(signal?: AbortSignal) {
+    const status = await this.execute('status', undefined, undefined, signal);
+    if (status.status === 'unmanaged')
+      throw new AppError(`旧 tmux ${this.label}缺少可验证归属，请明确关闭旧会话后重新启动；未自动停止任何进程`, 409, this.code('SCOPE_UNMANAGED'));
+    const saved = await this.metadata();
+    if (saved && status.record) this.sameOwner(saved, status.record);
+    if (saved && !status.record && status.status === 'absent' && saved.phase !== 'stopped' && saved.bootId === status.bootId)
+      return { ...status, status: 'unconfirmed' as const, record: saved };
+    return status;
+  }
+  newIntent(binding: string, bootId: string): Record {
+    const paths = scopePaths(this.project, this.target), runId = randomUUID();
+    return this.schema.parse({ ...(this.target.kind === 'main' ? { version: 2, kind: 'main' }
+      : { version: 1, name: this.target.name }), projectId: paths.projectId, session: paths.session,
+      runId, bootId, scopeName: `sakura-${this.target.kind === 'main' ? 'main' : 'service'}-${runId}`, inode: null,
+      binding, phase: 'intent', sessionId: null, paneId: null, panePid: null, paneStartTicks: null });
+  }
+  async start(record: Record, payload: string, signal: AbortSignal) {
+    await this.save(record);
+    signal.throwIfAborted();
+    const prepared = await this.execute('prepare', record, undefined, signal);
+    if (prepared.status !== 'prepared' || !prepared.record)
+      throw new AppError(`${this.label} prepared 回执不完整`, 409, this.code('SCOPE_CHANGED'));
+    await this.save(prepared.record);
+    const pane = await this.execute('start', prepared.record, payload, signal);
+    if (pane.status !== 'prepared' || !pane.record?.panePid)
+      throw new AppError(`${this.label} pane 回执不完整`, 409, this.code('SCOPE_CHANGED'));
+    await this.save(pane.record);
+    const committed = await this.execute('commit', pane.record, undefined, signal);
+    if (committed.status !== 'running' || !committed.record)
+      throw new AppError(`${this.label}提交回执未确认`, 409, this.code('SCOPE_CHANGED'));
+    await this.save(committed.record);
+    return committed.record;
+  }
+  async stop(record: Record, log?: (text: string) => void) {
+    let failure: unknown;
+    for (let attempt = 0; attempt < 3; ++attempt) {
+      try {
+        this.assertLive();
+        const stored = await this.metadata();
+        let expected = record;
+        if (stored) {
+          const current = stored;
+          // An interrupted prepare can leave the host intent less complete than
+          // the guest's root-owned receipt. Compare every identity both sides
+          // know, then carry the fuller identity into the guarded guest stop.
+          for (const key of ['runId', 'bootId', 'scopeName', 'binding'] as const)
+            if (current[key] !== record[key])
+              throw new AppError(`主机${this.label} run 已改变，拒绝旧回滚`, 409, this.code('SCOPE_CHANGED'));
+          for (const key of ['inode', 'sessionId', 'paneId', 'panePid', 'paneStartTicks'] as const)
+            if (current[key] !== null && record[key] !== null && current[key] !== record[key])
+              throw new AppError(`主机${this.label} cgroup 或 pane 已改变，拒绝旧回滚`, 409, this.code('SCOPE_CHANGED'));
+          expected = { ...record, inode: current.inode ?? record.inode,
+            sessionId: current.sessionId ?? record.sessionId, paneId: current.paneId ?? record.paneId,
+            panePid: current.panePid ?? record.panePid, paneStartTicks: current.paneStartTicks ?? record.paneStartTicks };
+        }
+        const stopped = await this.execute('stop', expected);
+        if (stopped.status !== 'stopped' || !stopped.record)
+          throw new AppError(`${this.label}全 scope 停止未确认`, 409, this.code('SCOPE_CHANGED'));
+        await this.save(stopped.record);
+        return;
+      } catch (error) {
+        failure = error;
+        log?.(`${this.label}清理第 ${attempt + 1} 次未确认：${error instanceof Error ? error.message : String(error)}\n`);
+        if (this.machines.live.get(this.id) !== this.instance) break;
+        if (attempt < 2) await delay(250 * (attempt + 1));
+      }
+    }
+    throw new AppError(`${this.label}清理未确认：${failure instanceof Error ? failure.message : String(failure)}；` +
+      `已保留运行记录 ${this.receipt()}`, 503, this.code('CLEANUP_FAILED'));
+  }
 }
 
 export class ProjectServiceScopes {
@@ -358,130 +558,26 @@ export class ProjectServiceScopes {
   constructor(private machines: Machines, private id: string, private project: Project) {
     this.instance = machines.live.get(id);
   }
-  private assertLive() {
-    if (!this.instance || this.machines.live.get(this.id) !== this.instance)
-      throw new AppError('客户机 live 实例已改变，拒绝旧服务操作', 409, 'SERVICE_SCOPE_CHANGED');
+  private scope(name: string) {
+    return new ProjectProcessScope(this.machines, this.id, this.project,
+      { kind: 'service', name }, projectServiceRecordSchema, this.instance);
   }
-  receipt(name: string) {
-    const p = projectServiceScopePaths(this.project, name);
-    return join(vmDir(this.id), 'project-services', p.projectId, name, 'runtime.json');
+  receipt(name: string) { return this.scope(name).receipt(); }
+  hasReceipt(name: string) { return this.scope(name).hasReceipt(); }
+  metadata(name: string) { return this.scope(name).metadata(); }
+  status(name: string, signal?: AbortSignal) { return this.scope(name).status(signal); }
+  intent(service: ProjectService, bootId: string) {
+    return this.scope(service.name).newIntent(projectServiceBinding(this.project, service), bootId);
   }
-  async hasReceipt(name: string) {
-    try { await lstat(this.receipt(name)); return true; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+  start(record: ProjectServiceRecord, payload: string, signal: AbortSignal) {
+    return this.scope(record.name).start(record, payload, signal);
   }
-  async metadata(name: string) {
-    try {
-      const saved = await readStore<unknown>(this.receipt(name), () => null);
-      return saved === null ? null : projectServiceRecordSchema.parse(saved);
-    }
-    catch { throw new AppError('主机服务归属记录无法核对', 409, 'SERVICE_SCOPE_CHANGED'); }
+  stop(record: ProjectServiceRecord, log?: (text: string) => void) { return this.scope(record.name).stop(record, log); }
+}
+
+export class ProjectMainScope extends ProjectProcessScope<ProjectMainRecord> {
+  constructor(machines: Machines, id: string, project: Project) {
+    super(machines, id, project, { kind: 'main' }, projectMainRecordSchema, machines.live.get(id));
   }
-  private async save(record: ProjectServiceRecord) {
-    this.assertLive();
-    const file = this.receipt(record.name);
-    await regularDirectory(join(file, '..'));
-    await writeStore(file, projectServiceRecordSchema.parse(record));
-    this.assertLive();
-  }
-  private async execute(name: string, op: Operation, record?: ProjectServiceRecord,
-    payload?: string, signal?: AbortSignal) {
-    this.assertLive();
-    const result = await this.machines.exec(this.id,
-      projectServiceScopeCommand(this.project, name, op, record, payload), 30_000, signal);
-    this.assertLive();
-    if (result.code !== 0)
-      throw new AppError(result.stderr.trim() || `无法${op}项目服务`, 409,
-        result.stderr.includes('SAKURA_SERVICE_SCOPE_UNAVAILABLE') ? 'SERVICE_SCOPE_UNAVAILABLE' : 'SERVICE_SCOPE_CHANGED');
-    let response: ProjectServiceStatus;
-    try { response = responseSchema.parse(JSON.parse(result.stdout)); }
-    catch { throw new AppError('服务归属回执无法核对，拒绝继续操作', 409, 'SERVICE_SCOPE_CHANGED'); }
-    if (response.record && response.record.bootId !== response.bootId)
-      throw new AppError('服务回执 boot 身份不符', 409, 'SERVICE_SCOPE_CHANGED');
-    if (record && response.bootId !== record.bootId)
-      throw new AppError('客户机 boot 身份已改变', 409, 'SERVICE_SCOPE_CHANGED');
-    if (record && response.record && (response.record.runId !== record.runId || response.record.scopeName !== record.scopeName))
-      throw new AppError('客体回执与本次服务 run 不符', 409, 'SERVICE_SCOPE_CHANGED');
-    if (record && response.record) this.sameOwner(record, response.record);
-    return response;
-  }
-  private sameOwner(expected: ProjectServiceRecord, actual: ProjectServiceRecord) {
-    for (const key of ['runId', 'bootId', 'scopeName', 'binding'] as const)
-      if (expected[key] !== actual[key])
-        throw new AppError('服务运行归属已改变，拒绝旧服务操作', 409, 'SERVICE_SCOPE_CHANGED');
-    for (const key of ['inode', 'sessionId', 'paneId', 'panePid', 'paneStartTicks'] as const)
-      if (expected[key] !== null && expected[key] !== actual[key])
-        throw new AppError('服务 cgroup 或 pane 归属已改变，拒绝旧服务操作', 409, 'SERVICE_SCOPE_CHANGED');
-  }
-  async status(name: string, signal?: AbortSignal) {
-    const status = await this.execute(name, 'status', undefined, undefined, signal);
-    if (status.status === 'unmanaged')
-      throw new AppError('旧 tmux 服务缺少可验证归属，请明确关闭旧会话后重新启动；未自动停止任何进程', 409, 'SERVICE_SCOPE_UNMANAGED');
-    const saved = await this.metadata(name);
-    if (saved && status.record) this.sameOwner(saved, status.record);
-    if (saved && !status.record && status.status === 'absent' && saved.phase !== 'stopped' && saved.bootId === status.bootId)
-      return { ...status, status: 'unconfirmed' as const, record: saved };
-    return status;
-  }
-  intent(service: ProjectService, bootId: string): ProjectServiceRecord {
-    const paths = projectServiceScopePaths(this.project, service.name), runId = randomUUID();
-    return { version: 1, projectId: paths.projectId, name: service.name, session: paths.session,
-      runId, bootId, scopeName: 'sakura-service-' + runId, inode: null,
-      binding: projectServiceBinding(this.project, service), phase: 'intent',
-      sessionId: null, paneId: null, panePid: null, paneStartTicks: null };
-  }
-  async start(record: ProjectServiceRecord, payload: string, signal: AbortSignal) {
-    await this.save(record);
-    signal.throwIfAborted();
-    const prepared = await this.execute(record.name, 'prepare', record, undefined, signal);
-    if (prepared.status !== 'prepared' || !prepared.record)
-      throw new AppError('服务 prepared 回执不完整', 409, 'SERVICE_SCOPE_CHANGED');
-    await this.save(prepared.record);
-    const pane = await this.execute(record.name, 'start', prepared.record, payload, signal);
-    if (pane.status !== 'prepared' || !pane.record?.panePid)
-      throw new AppError('服务 pane 回执不完整', 409, 'SERVICE_SCOPE_CHANGED');
-    await this.save(pane.record);
-    const committed = await this.execute(record.name, 'commit', pane.record, undefined, signal);
-    if (committed.status !== 'running' || !committed.record)
-      throw new AppError('服务提交回执未确认', 409, 'SERVICE_SCOPE_CHANGED');
-    await this.save(committed.record);
-    return committed.record;
-  }
-  async stop(record: ProjectServiceRecord, log?: (text: string) => void) {
-    let failure: unknown;
-    for (let attempt = 0; attempt < 3; ++attempt) {
-      try {
-        this.assertLive();
-        const stored = await readStore<ProjectServiceRecord | null>(this.receipt(record.name), () => null);
-        let expected = record;
-        if (stored) {
-          const current = projectServiceRecordSchema.parse(stored);
-          // An interrupted prepare can leave the host intent less complete than
-          // the guest's root-owned receipt. Compare every identity both sides
-          // know, then carry the fuller identity into the guarded guest stop.
-          for (const key of ['runId', 'bootId', 'scopeName', 'binding'] as const)
-            if (current[key] !== record[key])
-              throw new AppError('主机服务 run 已改变，拒绝旧回滚', 409, 'SERVICE_SCOPE_CHANGED');
-          for (const key of ['inode', 'sessionId', 'paneId', 'panePid', 'paneStartTicks'] as const)
-            if (current[key] !== null && record[key] !== null && current[key] !== record[key])
-              throw new AppError('主机服务 cgroup 或 pane 已改变，拒绝旧回滚', 409, 'SERVICE_SCOPE_CHANGED');
-          expected = { ...record, inode: current.inode ?? record.inode,
-            sessionId: current.sessionId ?? record.sessionId, paneId: current.paneId ?? record.paneId,
-            panePid: current.panePid ?? record.panePid, paneStartTicks: current.paneStartTicks ?? record.paneStartTicks };
-        }
-        const stopped = await this.execute(record.name, 'stop', expected);
-        if (stopped.status !== 'stopped' || !stopped.record)
-          throw new AppError('服务全 scope 停止未确认', 409, 'SERVICE_SCOPE_CHANGED');
-        await this.save(stopped.record);
-        return;
-      } catch (error) {
-        failure = error;
-        log?.(`服务 ${record.name} 清理第 ${attempt + 1} 次未确认：${error instanceof Error ? error.message : String(error)}\n`);
-        if (this.machines.live.get(this.id) !== this.instance) break;
-        if (attempt < 2) await delay(250 * (attempt + 1));
-      }
-    }
-    throw new AppError(`服务 ${record.name} 清理未确认：${failure instanceof Error ? failure.message : String(failure)}；` +
-      `已保留运行记录 ${this.receipt(record.name)}`, 503, 'SERVICE_CLEANUP_FAILED');
-  }
+  intent(bootId: string) { return this.newIntent(projectMainBinding(this.project), bootId); }
 }

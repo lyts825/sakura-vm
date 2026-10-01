@@ -26,6 +26,8 @@ async function fixture() {
     locked: locks.locked.bind(locks),
     exec: async (_id: string, command: string) => {
       commands.push(command);
+      if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
+        return { stdout: 'absent\n', stderr: '', code: 0 };
       if (command.includes('sakura_panes=') && !verified)
         return { stdout: '', stderr: '终端窗格未处于项目网络空间', code: 1 };
       return { stdout: persistent && command.includes('echo active') ? 'active' : command.includes('sakura_panes=') ?

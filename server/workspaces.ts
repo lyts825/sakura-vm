@@ -28,7 +28,8 @@ import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
 import { projectSshBusyScript } from './project-ssh.ts';
 import { resolveDependencyAuthentication } from './dependency-downloads.ts';
-import { ProjectServiceScopes } from './project-service-scope.ts';
+import { ProjectMainScope, ProjectServiceScopes } from './project-service-scope.ts';
+import { legacyMainStatus, mainLog, mainSession, runProjectMain, stopProjectMain } from './project-main.ts';
 import type { DependencyManager } from './project-dependency-cache.ts';
 
 export const projectSchema = z
@@ -73,9 +74,10 @@ export const projectSchema = z
 export type Project = z.infer<typeof projectSchema> & { _workspace?: string };
 export const projectVersion = (project: Project) => createHash('sha256')
   .update(JSON.stringify(project)).digest('hex');
-export const projectSession = (project: Project) =>
-  project._workspace ? `sakura-project-${project._workspace}` : 'sakura-project';
-export const projectLog = (project: Project) => `/tmp/${projectSession(project)}.log`;
+export const projectSession = mainSession;
+export const projectLog = mainLog;
+export type ProjectRuntime = { status: string; log: string;
+  services?: { name: string; status: string; log: string }[]; main?: { status: string } };
 export function projectPrivateValues(project: Project) {
   return [
     ...Object.keys(project.secrets || {}).map((key) => project.environment?.[key] || ''),
@@ -252,6 +254,25 @@ export class Workspaces {
           (project.directory !== allowedDirectory || previous.directory !== allowedDirectory))
         throw new AppError('项目成员不能修改项目目录', 403);
       for (const guard of this.configGuards) await guard(id, previous, project);
+      const mainBindingInput = (value: Project) => JSON.stringify([value.directory, value.command,
+        value.networkIsolation || 'host', value.environment || {}, value.secrets || {}, value.runtimes || {},
+        Boolean(value.services?.length)]);
+      if (mainBindingInput(previous) !== mainBindingInput(project)) {
+        const mainScope = new ProjectMainScope(this.machines, id, previous);
+        const hasReceipt = await mainScope.hasReceipt(), machineState = this.machines.state(id);
+        if (machineState === 'paused') {
+          if (!hasReceipt || (await mainScope.metadata())?.phase !== 'stopped')
+            throw new AppError('请先恢复实例并核对或停止项目主命令，再修改运行绑定或切换到服务模式', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
+        } else if (machineState === 'running') {
+          if (hasReceipt) {
+            const runtime = await mainScope.status();
+            if (runtime.status !== 'stopped' && runtime.status !== 'absent')
+              throw new AppError('请先确认停止项目主命令及其全部后代，再修改运行绑定或切换到服务模式', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
+          } else if (await legacyMainStatus(this.machines, id, previous) === 'unmanaged') {
+            throw new AppError('旧项目主命令缺少受管归属，请管理员检查并关闭旧会话及其后代后再修改运行绑定', 409, 'PROJECT_MAIN_SCOPE_UNMANAGED');
+          }
+        }
+      }
       // Persistent service receipts retain detached descendants even after the
       // original tmux pane exits. Binding edits must keep that stop reachable.
       const serviceBindingInput = (value: Project, service: ProjectService) =>
@@ -263,6 +284,9 @@ export class Workspaces {
         if (next && serviceBindingInput(previous, service) === serviceBindingInput(project, next)) continue;
         const machineState = this.machines.state(id);
         if (!await serviceScopes.hasReceipt(service.name)) {
+          if (machineState === 'paused')
+            throw new AppError(`服务 ${service.name} 缺少可验证归属；请先恢复实例核对或关闭旧会话及其后代，再修改服务绑定或移除服务`,
+              409, 'SERVICE_SCOPE_UNMANAGED');
           if (machineState === 'running') {
             const old = await this.machines.exec(id,
               `if tmux has-session -t =sakura-service-${previous._workspace ? previous._workspace + '-' : ''}${service.name} 2>/dev/null; then echo active; fi`, 10000);
@@ -427,12 +451,7 @@ export class Workspaces {
               await runServices(this.machines, id, project, 'stop', log, signal, service);
               if (service) return;
             }
-            await this.execute(
-              id,
-              `if command -v tmux >/dev/null && tmux has-session -t =${projectSession(project)} 2>/dev/null; then tmux kill-session -t =${projectSession(project)}; fi`,
-              log,
-              signal,
-            );
+            await stopProjectMain(this.machines, id, project, log, signal);
             await removeProjectNetwork(this.machines, id, project, signal);
             return;
           }
@@ -460,22 +479,17 @@ export class Workspaces {
           const legacy = `/etc/sakura/project-${createHash('sha256').update(JSON.stringify(project)).digest('hex').slice(0, 16)}`;
           if (project.setup.trim())
             prepare += `if ${action === 'setup' ? 'true' : `[ ! -f ${marker} ] && [ ! -f ${legacy} ]`}; then\n${projectNetworkCommand(project, `${envPrefix(project.environment)}\ncd ${quote(project.directory)}\n${project.setup}`)}\nfi\ntouch ${marker}\n`;
-          if (action === 'start' && !project.services?.length) {
-            if (!project.command.trim()) throw new AppError('请先保存项目启动命令');
-            prepare += `tmux new-session -d -s ${projectSession(project)} -c ${quote(project.directory)} ${quote(`${projectNetworkCommand(project, `${envPrefix(project.environment)}\n${project.command}`)} > ${projectLog(project)} 2>&1`)}\nsleep 1\nif ! tmux has-session -t =${projectSession(project)} 2>/dev/null; then tail -c 8192 ${projectLog(project)}; echo '启动命令已退出，请检查日志' >&2; exit 1; fi\n`;
-          }
           log(action === 'setup' ? '正在安装环境并准备项目…\n' : '正在启动项目…\n');
-          const running =
-            action === 'start' && !project.services?.length
-              ? `if command -v tmux >/dev/null && tmux has-session -t =${projectSession(project)} 2>/dev/null; then echo '项目已经运行；如需应用新的启动配置，请先停止项目'; exit 0; fi\n`
-              : '';
-          await this.execute(
+          const prepareProject = () => this.execute(
             id,
-            `set -eu\n${running}${project.networkIsolation === 'private' ? '' :
+            `set -eu\n${project.networkIsolation === 'private' ? '' :
               envPrefix(project.environment)}\n${install}\n${network}${prepare}`,
             log,
             signal,
           );
+          if (action === 'start' && !project.services?.length)
+            await runProjectMain(this.machines, id, project, log, signal, prepareProject);
+          else await prepareProject();
           if (action === 'start' && project.services?.length)
             await runServices(this.machines, id, project, 'start', log, signal, service);
           log('操作完成。\n');
@@ -494,7 +508,7 @@ export class Workspaces {
       },
     );
   }
-  async runtime(id: string, signal?: AbortSignal) {
+  async runtime(id: string, signal?: AbortSignal): Promise<ProjectRuntime> {
     const project = await this.resolvedConfig(id);
     const privateValues = projectPrivateValues(project);
     if (project.services?.length) {
@@ -546,14 +560,29 @@ export class Workspaces {
         services,
       };
     }
-    const result = await this.machines.exec(
-      id,
-      `if command -v tmux >/dev/null && tmux has-session -t =${projectSession(project)} 2>/dev/null; then echo running; else echo stopped; fi; test ! -f ${projectLog(project)} || tail -c 16384 ${projectLog(project)}`,
-      10000,
-      signal,
-    );
-    const [status, ...lines] = result.stdout.split('\n');
-    return { status, log: redactValues(lines.join('\n'), privateValues) };
+    const mainScope = new ProjectMainScope(this.machines, id, project);
+    let status: string, mainStatus: string, reason = '';
+    try {
+      const runtime = await mainScope.hasReceipt()
+        ? (await mainScope.status(signal)).status : await legacyMainStatus(this.machines, id, project, signal);
+      mainStatus = runtime;
+      status = runtime === 'absent' ? 'stopped' : ['prepared', 'unmanaged'].includes(runtime) ? 'unconfirmed' : runtime;
+      if (runtime === 'exited') reason = '项目主命令主 pane 已退出，仍保留运行归属；请停止并清理全部后代。';
+      else if (runtime === 'unmanaged') reason = '旧项目主命令缺少可验证归属；请管理员检查并关闭旧会话及其后代后重新启动，未自动停止任何进程。';
+      else if (runtime === 'prepared' || runtime === 'unconfirmed') reason = '项目主命令启动或停止尚未确认；请先确认停止再重建。';
+    } catch (error) {
+      signal?.throwIfAborted();
+      status = 'unconfirmed'; mainStatus = (error as AppError).code === 'PROJECT_MAIN_SCOPE_UNMANAGED' ? 'unmanaged' : 'unconfirmed';
+      reason = error instanceof Error ? error.message : String(error);
+    }
+    const output = await this.machines.exec(id,
+      `test ! -f ${quote(projectLog(project))} || tail -c 16384 ${quote(projectLog(project))}`, 10000, signal)
+      .catch((error) => {
+        signal?.throwIfAborted();
+        return { code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) };
+      });
+    if (output.code !== 0) { status = 'unconfirmed'; reason += '\n主命令日志读取未确认：' + output.stderr; }
+    return { status, log: redactValues([reason, output.stdout].filter(Boolean).join('\n'), privateValues), main: { status: mainStatus } };
   }
   metrics(id: string) {
     return this.sampler.sample(id);

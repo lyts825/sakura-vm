@@ -31,6 +31,8 @@ async function fixture(status = 'exited', metadata = true) {
     locked: async (_id: string, action: () => Promise<unknown>) => action(),
     exec: async (_id: string, command: string) => {
       commands.push(command);
+      if (command.startsWith('# SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
+        return { code: 0, stdout: 'absent', stderr: '' };
       if (command.startsWith('# SAKURA_PROJECT_SERVICE_STATUS')) {
         if (status === 'uncertain') return { code: 73, stdout: '', stderr: 'owned-private-token ownership mismatch' };
         return { code: 0, stdout: JSON.stringify({ status, bootId, record }), stderr: '' };
@@ -107,6 +109,27 @@ test('confirmed stopped scope permits service edits while paused without attempt
   try {
     await f.spaces.save(f.id, { ...f.project, services: [{ ...f.project.services![0], command: 'sleep 601' }] });
     assert.equal(f.commands.length, 0);
+  } finally { await f.spaces.close(); }
+});
+
+test('paused stopped services without a main receipt require resume before changing main binding or service mode', async () => {
+  const f = await fixture('stopped'); f.paused();
+  try {
+    for (const update of [{ environment: {} }, { services: [] }, { command: 'sleep 601' }])
+      await assert.rejects(f.spaces.save(f.id, { ...f.project, ...update }), { code: 'PROJECT_MAIN_SCOPE_CHANGED' });
+    assert.equal(f.commands.length, 0); assert.equal((await f.spaces.config(f.id)).services?.length, 1);
+  } finally { await f.spaces.close(); }
+});
+
+test('paused unknown legacy services refuse command changes and partial removal before any guest access', async () => {
+  const f = await fixture('running', false);
+  const project = projectSchema.parse({ ...f.project, services: [...f.project.services!, { name: 'second', command: 'sleep 600' }] });
+  await writeStore(f.spaces.projects.file(f.id), project); f.paused();
+  try {
+    for (const services of [[{ ...project.services![0], command: 'sleep 601' }, project.services![1]], [project.services![1]]])
+      await assert.rejects(f.spaces.save(f.id, { ...project, services }), { code: 'SERVICE_SCOPE_UNMANAGED' });
+    assert.equal(f.commands.length, 0); assert.equal((await f.spaces.config(f.id)).services?.length, 2);
+    assert.equal((await f.spaces.config(f.id)).services?.[0].command, 'sleep 600');
   } finally { await f.spaces.close(); }
 });
 test('legacy running services expose migration state and use no Python or installation probes', async () => {
