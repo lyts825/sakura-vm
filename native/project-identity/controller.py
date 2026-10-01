@@ -27,12 +27,14 @@ BASE = '/var/lib/sakura/project-identities'
 HOMES = '/var/lib/sakura-project-homes'
 RUNTIME = '/run/sakura-project-identities'
 BUILDS = '/usr/local/lib/sakura-project-identity'
+MIGRATIONS = '/var/lib/sakura/project-directory-migrations'
 CGROUP = '/sys/fs/cgroup'
 NAMES = ['protocol.h', 'launcher.c', 'controller.py']
 BINDING = struct.Struct('<8sIIIIQQQQQ37s17s32s37s256s1024sI577s')
 RUN = struct.Struct('<8sIIIIQQQQQ37s37s17s37s37s65s64s32s634s')
 UID_MAP = struct.Struct('<8sII37s17s37s149s')
 REGISTRY = struct.Struct('<8sI37s207s')
+NETWORK_GUARD = struct.Struct('<8sIIQQQ37s37s17s37s37s37s14s')
 UUID = re.compile('[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}')
 PROJECT = re.compile('default|[a-f0-9]{16}')
 CLEAN_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/', 'LANG': 'C', 'LC_ALL': 'C'}
@@ -274,11 +276,12 @@ def tool(name):
     refuse('REQUIRED_TOOL', name)
 
 
-def execute(argv, data=None, timeout=15):
+def execute(argv, data=None, timeout=15, pass_fds=(), preexec_fn=None):
     try:
         result = subprocess.run(argv, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                env=CLEAN_ENV, timeout=timeout, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+                                env=CLEAN_ENV, timeout=timeout, check=False,
+                                pass_fds=pass_fds, preexec_fn=preexec_fn)
+    except (OSError, subprocess.SubprocessError):
         refuse('SYSTEM_TOOL_FAILED')
     if result.returncode or len(result.stdout) > 65536 or len(result.stderr) > 65536:
         refuse('SYSTEM_TOOL_FAILED', {'tool': os.path.basename(argv[0]), 'exit': result.returncode})
@@ -374,10 +377,12 @@ def probe(value):
             os.waitpid(child, 0)
 
 
-def registry():
+def registry(readonly=False):
     value = json_read(BASE + '/registry.json', True, 1048576)
     anchor = read(BASE + '/registry.bin', 256, True)
     if value is None:
+        if readonly:
+            refuse('REGISTRY_INCOMPLETE')
         if anchor is not None or os.listdir(BASE + '/projects') or os.listdir(BASE + '/uids'):
             refuse('REGISTRY_INCOMPLETE')
         value = {'version': 1, 'registryId': str(uuid.uuid4()), 'reserved': {}}
@@ -389,6 +394,8 @@ def registry():
     if anchor is not None and anchor != expected_anchor:
         refuse('REGISTRY_REPLACED')
     if anchor is None:
+        if readonly:
+            refuse('REGISTRY_INCOMPLETE')
         atomic(BASE + '/registry.bin', expected_anchor)
     if not isinstance(value['reserved'], dict) or len(value['reserved']) > 4096:
         refuse('REGISTRY_BOUND')
@@ -576,7 +583,132 @@ def durable_account(value):
             os.close(descriptor)
 
 
+def network_path(project, suffix='.json'):
+    return RUNTIME + '/networks/' + project + suffix
+
+
+def network_record(value):
+    keys = {'version', 'registryId', 'identityId', 'projectId', 'revision', 'bootId',
+            'namespace', 'networkDevice', 'networkInode', 'generation'}
+    if not isinstance(value, dict) or set(value) != keys or type(value['version']) is not int or value['version'] != 1 or \
+       type(value['revision']) is not int or not 1 <= value['revision'] <= 9007199254740991:
+        refuse('NETWORK_RECORD_INVALID')
+    for key in ('registryId', 'identityId', 'bootId', 'generation'):
+        identifier(value[key], UUID, 'NETWORK_RECORD_INVALID')
+    identifier(value['projectId'], PROJECT, 'NETWORK_RECORD_INVALID')
+    if value['namespace'] != 'sk-' + value['projectId']:
+        refuse('NETWORK_RECORD_INVALID')
+    for key in ('networkDevice', 'networkInode'):
+        if not isinstance(value[key], str) or not re.fullmatch('0|[1-9][0-9]*', value[key]) or int(value[key]) > 18446744073709551615:
+            refuse('NETWORK_RECORD_INVALID')
+    if value['networkInode'] == '0':
+        refuse('NETWORK_RECORD_INVALID')
+    return value
+
+
+def network_matches(value, network):
+    if value['networkIsolation'] != 'private' or any(network[key] != value[key] for key in ('registryId', 'identityId', 'projectId', 'revision')):
+        refuse('NETWORK_STALE')
+
+
+def network_plain(network):
+    return {key: item for key, item in network.items() if key not in ('projectId', 'generation')}
+
+
+def network_pin(project):
+    pin = json_read(network_path(project), True)
+    if pin is None:
+        return None
+    if not isinstance(pin, dict) or set(pin) != {'version', 'registryId', 'identityId', 'revision', 'bootId', 'namespace', 'networkDevice', 'networkInode'} or \
+       type(pin['version']) is not int or pin['version'] != 1 or type(pin['revision']) is not int or not 1 <= pin['revision'] <= 9007199254740991:
+        refuse('NETWORK_RECORD_INVALID')
+    for key in ('registryId', 'identityId', 'bootId'):
+        identifier(pin[key], UUID, 'NETWORK_RECORD_INVALID')
+    if pin['namespace'] not in ('', 'sk-' + project):
+        refuse('NETWORK_RECORD_INVALID')
+    for key in ('networkDevice', 'networkInode'):
+        if not isinstance(pin[key], str) or not re.fullmatch('0|[1-9][0-9]*', pin[key]) or int(pin[key]) > 18446744073709551615:
+            refuse('NETWORK_RECORD_INVALID')
+    if pin['networkInode'] == '0':
+        refuse('NETWORK_RECORD_INVALID')
+    return pin
+
+
+def namespace_stat(namespace):
+    try:
+        parent = directory_fd('/run/netns')
+    except Refusal:
+        if not os.path.lexists('/run/netns'):
+            return None
+        raise
+    try:
+        try:
+            return os.stat(namespace, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return None
+    finally:
+        os.close(parent)
+
+
+def network_guard(project):
+    raw = read(network_path(project, '.release.bin'), 256, True)
+    if raw is None:
+        return None
+    if len(raw) != 256:
+        refuse('NETWORK_GUARD_INVALID')
+    fields = NETWORK_GUARD.unpack(raw)
+    if fields[0] != b'SKIDN001' or fields[1] != 1 or fields[2] not in (1, 2, 3) or any(fields[12]):
+        refuse('NETWORK_GUARD_INVALID')
+    registry, identity, project_id, boot, generation, release = [decoded(item) for item in fields[6:12]]
+    network = network_record({'version': 1, 'registryId': registry, 'identityId': identity, 'projectId': project_id,
+                              'revision': fields[3], 'bootId': boot, 'namespace': 'sk-' + project_id,
+                              'networkDevice': str(fields[4]), 'networkInode': str(fields[5]), 'generation': generation})
+    if project_id != project:
+        refuse('NETWORK_GUARD_INVALID')
+    identifier(release, UUID, 'NETWORK_GUARD_INVALID')
+    return {'phase': ('pending', 'deleting', 'released')[fields[2] - 1], 'releaseId': release, 'network': network}
+
+
+def network_guard_write(project, phase, release_id, network):
+    network_record(network)
+    if network['projectId'] != project:
+        refuse('NETWORK_GUARD_INVALID')
+    identifier(release_id, UUID, 'NETWORK_RELEASE_ID')
+    atomic(network_path(project, '.release.bin'), NETWORK_GUARD.pack(
+        b'SKIDN001', 1, {'pending': 1, 'deleting': 2, 'released': 3}[phase], network['revision'],
+        int(network['networkDevice']), int(network['networkInode']), text(network['registryId'], 37),
+        text(network['identityId'], 37), text(project, 17), text(network['bootId'], 37),
+        text(network['generation'], 37), text(release_id, 37), b'\0' * 14))
+
+
+def network_generation(project):
+    epoch = json_read(network_path(project, '.generation.json'), True)
+    if epoch is not None:
+        if not isinstance(epoch, dict) or set(epoch) != {'version', 'phase', 'network'} or type(epoch['version']) is not int or epoch['version'] != 1 or epoch['phase'] not in ('active', 'retired'):
+            refuse('NETWORK_GENERATION_INVALID')
+        network_record(epoch['network'])
+        if epoch['network']['projectId'] != project:
+            refuse('NETWORK_GENERATION_INVALID')
+    return epoch
+
+
+def network_ready(value, boot):
+    guard = network_guard(value['projectId'])
+    owned_tool = network_tool(value['projectId'])
+    if owned_tool is not None:
+        network_matches(value, owned_tool['network'])
+        if guard is None or guard['phase'] != 'deleting' or guard['releaseId'] != owned_tool['releaseId'] or guard['network'] != owned_tool['network']:
+            refuse('NETWORK_TOOL_UNCONFIRMED')
+    if guard is not None:
+        network_matches(value, guard['network'])
+        if guard['phase'] != 'released':
+            if guard['network']['bootId'] != boot:
+                refuse('NETWORK_STALE')
+            refuse('NETWORK_RETIREMENT_PENDING')
+
+
 def network_fd(value, boot):
+    network_ready(value, boot)
     namespace = 'sk-' + value['projectId'] if value['networkIsolation'] == 'private' else ''
     try:
         if namespace:
@@ -608,16 +740,333 @@ def network_fd(value, boot):
         pinned = {'version': 1, 'registryId': value['registryId'], 'identityId': value['identityId'],
                   'revision': value['revision'], 'bootId': boot, 'namespace': namespace,
                   'networkDevice': str(info.st_dev), 'networkInode': str(info.st_ino)}
-        pin_path = RUNTIME + '/networks/' + value['projectId'] + '.json'
-        prior = json_read(pin_path, True)
+        pin_path = network_path(value['projectId'])
+        prior = network_pin(value['projectId'])
         if prior is not None and prior != pinned:
+            refuse('NETWORK_REPLACED')
+        epoch = network_generation(value['projectId']) if namespace else None
+        if epoch is not None:
+            network_matches(value, epoch['network'])
+        if epoch is not None and epoch['phase'] == 'active' and (prior is None or network_plain(epoch['network']) != pinned):
             refuse('NETWORK_REPLACED')
         if prior is None:
             json_write(pin_path, pinned)
+        if namespace and (epoch is None or epoch['phase'] == 'retired'):
+            network = dict(pinned, projectId=value['projectId'], generation=str(uuid.uuid4()))
+            json_write(network_path(value['projectId'], '.generation.json'), {'version': 1, 'phase': 'active', 'network': network})
         return descriptor, info, namespace
     except BaseException:
         os.close(descriptor)
         raise
+
+
+def network_capture(value, boot):
+    network_ready(value, boot)
+    if value['networkIsolation'] == 'host':
+        return None
+    info = namespace_stat('sk-' + value['projectId'])
+    if info is None:
+        pin = network_pin(value['projectId'])
+        epoch = network_generation(value['projectId'])
+        if pin is not None or (epoch is not None and epoch['phase'] == 'active'):
+            refuse('NETWORK_ABSENT')
+        if epoch is not None:
+            network_matches(value, epoch['network'])
+        return None
+    descriptor, actual, _namespace = network_fd(value, boot)
+    try:
+        if (actual.st_dev, actual.st_ino) != (info.st_dev, info.st_ino):
+            refuse('NETWORK_REPLACED')
+        epoch = network_generation(value['projectId'])
+        if epoch is None or epoch['phase'] != 'active':
+            refuse('NETWORK_GENERATION_INVALID')
+        network_matches(value, epoch['network'])
+        return epoch['network']
+    finally:
+        os.close(descriptor)
+
+
+def begin_network_release(value, request, boot):
+    # The host persists this boot/nonce before asynchronous stop begins. A
+    # receipt lost across reboot must never select a newly created namespace.
+    requested_boot = identifier(request.get('bootId'), UUID, 'BOOT_ID')
+    if requested_boot != boot:
+        refuse('BOOT_CHANGED')
+    release_id = identifier(request.get('releaseId'), UUID, 'NETWORK_RELEASE_ID')
+    guard = network_guard(value['projectId'])
+    if guard is not None:
+        network_matches(value, guard['network'])
+        if guard['releaseId'] == release_id:
+            if guard['network']['bootId'] != boot:
+                refuse('NETWORK_STALE')
+            return {'version': 1, 'phase': 'pending', 'releaseId': release_id, 'network': guard['network']}
+        if guard['phase'] != 'released':
+            refuse('NETWORK_RETIREMENT_PENDING')
+    network = network_capture(value, boot)
+    if network is None:
+        return None
+    network_guard_write(value['projectId'], 'pending', release_id, network)
+    return {'version': 1, 'phase': 'pending', 'releaseId': release_id, 'network': network}
+
+
+def network_idle(value, boot):
+    # Closed inherited tickets may still have a populated upper domain. Closed
+    # is not proof that detached descendants have stopped.
+    for run in runs_for(value):
+        if run['bootId'] != boot:
+            continue
+        descriptor = cgroup_fd(run)
+        try:
+            if run['phase'] != 'closed' or (descriptor is not None and populated(descriptor)):
+                refuse('NETWORK_RUNS_MUST_STOP')
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+
+def network_namespace_fd(network):
+    try:
+        parent = directory_fd('/run/netns')
+    except Refusal as error:
+        # Missing parents are allowed only for the caller's explicit recovery
+        # checks below; symlinks/permission substitutions are never absence.
+        if not os.path.lexists('/run/netns'):
+            return None
+        raise error
+    try:
+        try:
+            descriptor = os.open(network['namespace'], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        except FileNotFoundError:
+            return None
+    finally:
+        os.close(parent)
+    try:
+        info = os.fstat(descriptor)
+        if info.st_uid != 0 or fcntl.ioctl(descriptor, 0xb703) != 0x40000000 or not same(info, network, 'network'):
+            refuse('NETWORK_REPLACED')
+        now = os.stat('/run/netns/' + network['namespace'], follow_symlinks=False)
+        if (now.st_dev, now.st_ino) != (info.st_dev, info.st_ino):
+            refuse('NETWORK_REPLACED')
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def durable_unlink(path):
+    parent = directory_fd(os.path.dirname(path))
+    try:
+        try:
+            os.unlink(os.path.basename(path), dir_fd=parent)
+        except FileNotFoundError:
+            return
+        # O_PATH cannot fsync. Reopen only the same verified parent.
+        descriptor = os.open('.', os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent)
+
+
+def network_tool(project):
+    raw = read(network_path(project, '.tool.json'), 4096, True)
+    if raw is None:
+        return None
+    def pairs(items):
+        result = {}
+        for key, item in items:
+            if key in result:
+                refuse('NETWORK_TOOL_INVALID')
+            result[key] = item
+        return result
+    try:
+        record = json.loads(raw, object_pairs_hook=pairs)
+    except (ValueError, UnicodeError):
+        refuse('NETWORK_TOOL_INVALID')
+    keys = {'version', 'phase', 'releaseId', 'network', 'build', 'cgroupName', 'cgroupDevice', 'cgroupInode'}
+    if not isinstance(record, dict) or set(record) != keys or type(record['version']) is not int or record['version'] != 1 or record['phase'] not in ('creating', 'running'):
+        refuse('NETWORK_TOOL_INVALID')
+    network_record(record['network'])
+    if record['network']['projectId'] != project:
+        refuse('NETWORK_TOOL_INVALID')
+    identifier(record['releaseId'], UUID, 'NETWORK_TOOL_INVALID')
+    if record['cgroupName'] != 'sakura-network-release-' + record['releaseId'] or not isinstance(record['build'], str) or not re.fullmatch('[a-f0-9]{64}', record['build']):
+        refuse('NETWORK_TOOL_INVALID')
+    for key in ('cgroupDevice', 'cgroupInode'):
+        if not isinstance(record[key], str) or not re.fullmatch('0|[1-9][0-9]*', record[key]) or int(record[key]) > 18446744073709551615:
+            refuse('NETWORK_TOOL_INVALID')
+    if (record['phase'] == 'creating' and (record['cgroupDevice'], record['cgroupInode']) != ('0', '0')) or \
+       (record['phase'] == 'running' and record['cgroupInode'] == '0'):
+        refuse('NETWORK_TOOL_INVALID')
+    return record
+
+
+def network_tool_clear(project, owned_tool):
+    """Do not retire a namespace while an interrupted delete can still run.
+
+    The inherited lock normally serializes recovery through exec/exit. A
+    separately pinned cgroup remains authoritative even if a root utility
+    closes inherited descriptors. No new namespace is selected during this
+    bounded wait, and an unknown replacement is never adopted.
+    """
+    cgroup_available(False)
+    parent = directory_fd(CGROUP)
+    descriptor = None
+    try:
+        try:
+            descriptor = os.open(owned_tool['cgroupName'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        except FileNotFoundError:
+            # An interrupted cleanup may have removed the empty domain before
+            # removing its receipt. A nonexistent cgroup cannot contain a tool.
+            durable_unlink(network_path(project, '.tool.json'))
+            return
+        info = os.fstat(descriptor)
+        trusted(info, True)
+        if owned_tool['phase'] == 'running' and not same(info, owned_tool, 'cgroup'):
+            refuse('NETWORK_TOOL_REPLACED')
+        if owned_tool['phase'] == 'creating' and populated(descriptor):
+            # A creating receipt cannot have launched any process yet.
+            refuse('NETWORK_TOOL_REPLACED')
+        deadline = time.monotonic() + 15
+        while populated(descriptor):
+            if time.monotonic() >= deadline:
+                refuse('NETWORK_TOOL_RUNNING')
+            time.sleep(.02)
+        deadline = time.monotonic() + 5
+        while True:
+            now = os.stat(owned_tool['cgroupName'], dir_fd=parent, follow_symlinks=False)
+            if (now.st_dev, now.st_ino) != (info.st_dev, info.st_ino):
+                refuse('NETWORK_TOOL_REPLACED')
+            try:
+                os.rmdir(owned_tool['cgroupName'], dir_fd=parent)
+                break
+            except OSError as error:
+                if error.errno not in (errno.EBUSY, errno.ENOTEMPTY) or time.monotonic() >= deadline:
+                    refuse('NETWORK_TOOL_CLEANUP_FAILED')
+                time.sleep(.02)
+        durable_unlink(network_path(project, '.tool.json'))
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent)
+
+
+def network_delete(project, network, release_id, control_lock):
+    # This is the controller's already-held EX descriptor, never a caller path.
+    info = os.fstat(control_lock)
+    trusted(info, mode=0o600)
+    actual = os.stat(BASE + '/lock', follow_symlinks=False)
+    if (actual.st_dev, actual.st_ino) != (info.st_dev, info.st_ino):
+        refuse('REGISTRY_LOCK_REPLACED')
+    fcntl.flock(control_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    cgroup_available(True)
+    record = {'version': 1, 'phase': 'creating', 'releaseId': release_id, 'network': network,
+              'build': sources(), 'cgroupName': 'sakura-network-release-' + release_id,
+              'cgroupDevice': '0', 'cgroupInode': '0'}
+    if network_tool(project) is not None:
+        refuse('NETWORK_TOOL_UNCONFIRMED')
+    parent = directory_fd(CGROUP)
+    descriptor = None
+    try:
+        # The intent precedes mkdir. Before the running receipt is committed,
+        # no child can enter this name; a crash leaves only a known empty domain.
+        try:
+            os.stat(record['cgroupName'], dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            refuse('NETWORK_TOOL_REPLACED')
+        json_write(network_path(project, '.tool.json'), record)
+        os.mkdir(record['cgroupName'], 0o755, dir_fd=parent)
+        descriptor = os.open(record['cgroupName'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        info = os.fstat(descriptor)
+        trusted(info, True)
+        if populated(descriptor):
+            refuse('NETWORK_TOOL_REPLACED')
+        record.update(phase='running', cgroupDevice=str(info.st_dev), cgroupInode=str(info.st_ino))
+        json_write(network_path(project, '.tool.json'), record)
+        def enter():
+            target = os.open('cgroup.procs', os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=descriptor)
+            try:
+                os.write(target, str(os.getpid()).encode())
+            finally:
+                os.close(target)
+                os.close(descriptor)
+        execute([tool('ip'), 'netns', 'delete', network['namespace']],
+                pass_fds=(control_lock, descriptor), preexec_fn=enter)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent)
+    network_tool_clear(project, record)
+
+
+def release_network(value, request, boot, control_lock):
+    network = network_record(request.get('network'))
+    network_matches(value, network)
+    release_id = identifier(request.get('releaseId'), UUID, 'NETWORK_RELEASE_ID')
+    project = value['projectId']
+    guard = network_guard(project)
+    owned_tool = network_tool(project)
+    if guard is not None:
+        network_matches(value, guard['network'])
+        if guard['releaseId'] != release_id or guard['network'] != network:
+            refuse('NETWORK_RELEASE_STALE')
+        if guard['phase'] == 'released':
+            # This exact acknowledgement remains valid even after a fresh
+            # namespace/generation exists. Do not inspect or delete the latter.
+            if owned_tool is not None:
+                refuse('NETWORK_TOOL_UNCONFIRMED')
+            return {'version': 1, 'phase': 'released', 'releaseId': release_id, 'network': network}
+    network_idle(value, boot)
+    if owned_tool is not None:
+        if owned_tool['releaseId'] != release_id or owned_tool['network'] != network or network['bootId'] != boot or guard is None or guard['phase'] != 'deleting':
+            refuse('NETWORK_TOOL_UNCONFIRMED')
+        network_tool_clear(project, owned_tool)
+    pin = network_pin(project)
+    epoch = network_generation(project)
+    if network['bootId'] != boot:
+        # /run authority and namespaces disappear on reboot. Complete only
+        # the fixed old lease, without ip deletion or adoption of current state.
+        if guard is not None or pin is not None or epoch is not None or namespace_stat(network['namespace']) is not None:
+            refuse('NETWORK_RELEASE_STALE')
+        network_guard_write(project, 'released', release_id, network)
+        return {'version': 1, 'phase': 'released', 'releaseId': release_id, 'network': network}
+    if guard is None:
+        refuse('NETWORK_RELEASE_REQUIRED')
+    if pin is not None and pin != network_plain(network):
+        refuse('NETWORK_REPLACED')
+    if epoch is None or epoch['network'] != network or (epoch['phase'] == 'retired' and guard['phase'] != 'deleting'):
+        refuse('NETWORK_REPLACED')
+    if pin is None and guard['phase'] != 'deleting':
+        refuse('NETWORK_ABSENT')
+    descriptor = network_namespace_fd(network)
+    try:
+        if descriptor is None and guard['phase'] != 'deleting':
+            refuse('NETWORK_ABSENT')
+        if descriptor is not None:
+            ip = tool('ip')
+            if execute([ip, 'netns', 'pids', network['namespace']]).strip():
+                refuse('NETWORK_PROCESSES_REMAIN')
+            # Persist permission to resume an interrupted delete before invoking
+            # the fixed root tool. All new launchers remain blocked throughout.
+            network_guard_write(project, 'deleting', release_id, network)
+            now = os.stat('/run/netns/' + network['namespace'], follow_symlinks=False)
+            if not same(now, network, 'network'):
+                refuse('NETWORK_REPLACED')
+            network_delete(project, network, release_id, control_lock)
+            if namespace_stat(network['namespace']) is not None:
+                refuse('NETWORK_REPLACED')
+        if pin is not None:
+            durable_unlink(network_path(project))
+        json_write(network_path(project, '.generation.json'), {'version': 1, 'phase': 'retired', 'network': network})
+        network_guard_write(project, 'released', release_id, network)
+        return {'version': 1, 'phase': 'released', 'releaseId': release_id, 'network': network}
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def cgroup_fd(value):
@@ -691,7 +1140,132 @@ def current_cgroup():
     return membership[4:].strip()
 
 
+def migration_latch(value):
+    """Read the migration latch while holding the shared identity EX lock.
+
+    A failed/partial permission migration cannot create or retry a run. Repair
+    and inspection remain possible, and the latch is released only after the
+    migration helper records the complete current binding under this lock.
+    """
+    parent = directory_fd(os.path.dirname(MIGRATIONS))
+    descriptors = [parent]
+    try:
+        for part in (os.path.basename(MIGRATIONS), value['projectId']):
+            try:
+                descriptor = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                     dir_fd=descriptors[-1])
+            except FileNotFoundError:
+                return
+            descriptors.append(descriptor)
+            trusted(os.fstat(descriptor), True, 0o700)
+        try:
+            descriptor = os.open('latch.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                 dir_fd=descriptors[-1])
+        except FileNotFoundError:
+            return
+        with os.fdopen(descriptor, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            trusted(info, mode=0o600)
+            if info.st_size > 262144:
+                refuse('DIRECTORY_MIGRATION_INVALID')
+            raw = stream.read(262145)
+            if len(raw) > 262144:
+                refuse('DIRECTORY_MIGRATION_INVALID')
+    except OSError:
+        refuse('DIRECTORY_MIGRATION_INVALID')
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+    def pairs(items):
+        result = {}
+        for key, item in items:
+            if key in result:
+                refuse('DIRECTORY_MIGRATION_INVALID')
+            result[key] = item
+        return result
+    try:
+        latch = json.loads(raw, object_pairs_hook=pairs)
+    except (ValueError, UnicodeError):
+        refuse('DIRECTORY_MIGRATION_INVALID')
+    keys = {'version', 'projectId', 'planId', 'sha256', 'phase', 'identity'}
+    if not isinstance(latch, dict) or set(latch) != keys or type(latch['version']) is not int or latch['version'] != 1:
+        refuse('DIRECTORY_MIGRATION_INVALID')
+    if latch['projectId'] != value['projectId'] or not isinstance(latch['planId'], str) or not UUID.fullmatch(latch['planId']) or \
+       not isinstance(latch['sha256'], str) or not re.fullmatch('[a-f0-9]{64}', latch['sha256']) or \
+       latch['phase'] not in ('applying', 'failed', 'directory-applied', 'applied'):
+        refuse('DIRECTORY_MIGRATION_INVALID')
+    prior = latch['identity']
+    if not isinstance(prior, dict) or set(prior) != set(value):
+        refuse('DIRECTORY_MIGRATION_IDENTITY')
+    if type(prior['version']) is not int or prior['version'] != 1 or prior['phase'] not in ('intent', 'active') or \
+       type(prior['revision']) is not int or not 1 <= prior['revision'] <= 9007199254740991 or \
+       type(prior['uid']) is not int or not 20000 <= prior['uid'] <= 59999 or \
+       type(prior['gid']) is not int or prior['gid'] != prior['uid']:
+        refuse('DIRECTORY_MIGRATION_IDENTITY')
+    for key in ('registryId', 'identityId'):
+        if not isinstance(prior[key], str) or not UUID.fullmatch(prior[key]):
+            refuse('DIRECTORY_MIGRATION_IDENTITY')
+    for key in ('directoryDevice', 'directoryInode', 'homeDevice', 'homeInode'):
+        if not isinstance(prior[key], str) or not re.fullmatch('0|[1-9][0-9]*', prior[key]):
+            refuse('DIRECTORY_MIGRATION_IDENTITY')
+    path = prior['directory']
+    if not isinstance(path, str) or not path.startswith('/') or len(path.encode()) > 1023 or \
+       re.search('[\x00-\x1f\x7f]', path) or (path != '/' and any(not p or p in ('.', '..') for p in path.split('/')[1:])) or \
+       prior['directoryInode'] == '0' or (prior['phase'] == 'active' and prior['homeInode'] == '0') or \
+       prior['networkIsolation'] not in ('host', 'private'):
+        refuse('DIRECTORY_MIGRATION_IDENTITY')
+    # Repair may advance the phase/revision or directory fingerprint while the
+    # latch remains blocking. Its reserved account and private home cannot move.
+    fixed = ('registryId', 'projectId', 'identityId', 'account', 'uid', 'gid', 'home', 'homeDevice', 'homeInode')
+    if any(prior[key] != value[key] for key in fixed):
+        refuse('DIRECTORY_MIGRATION_IDENTITY')
+    return latch
+
+
+def migration_ready(value):
+    latch = migration_latch(value)
+    if latch is None:
+        return
+    if latch['phase'] != 'applied':
+        refuse('DIRECTORY_MIGRATION_PENDING')
+    if latch['identity'] != value:
+        refuse('DIRECTORY_MIGRATION_IDENTITY')
+
+
+def migration_retire_applied(value):
+    latch = migration_latch(value)
+    if latch is None or latch['phase'] != 'applied':
+        return
+    if latch['identity'] != value:
+        refuse('DIRECTORY_MIGRATION_IDENTITY')
+    # Rebind has already validated the new directory as this exact account.
+    # Retire only the confirmed old gate before the new binding is committed;
+    # unfinished migrations retain their gate through repair and confirmation.
+    durable_unlink(MIGRATIONS + '/' + value['projectId'] + '/latch.json')
+
+
 def prepare(value, request, boot, build, inherit=False):
+    migration_ready(value)
+    network_ready(value, boot)
+    history = runs_for(value)
+    # Historical privileged binaries can still consume their own active
+    # tickets. An upgrade must close those exact runs before issuing a ticket
+    # for the protected transport; stop remains reachable through this build.
+    for run in history:
+        if run['bootId'] != boot or run['build'] == build:
+            continue
+        if run['phase'] == 'active':
+            refuse('UPGRADE_RUNS_MUST_STOP')
+        descriptor = cgroup_fd(run)
+        try:
+            # stop publishes closed before kill/confirmation; an inherited
+            # ticket also closes while its upper domain can remain populated.
+            if descriptor is not None and populated(descriptor):
+                refuse('UPGRADE_RUNS_MUST_STOP')
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
     cgroup_available(True)
     requested = request.get('runId')
     if requested is not None:
@@ -713,7 +1287,6 @@ def prepare(value, request, boot, build, inherit=False):
             if not same(info, run, 'network') or namespace != run['namespace']:
                 refuse('NETWORK_REPLACED')
             return run
-    history = runs_for(value)
     if sum(item['phase'] == 'active' for item in history) >= 32 or len(os.listdir(RUNTIME + '/runs')) >= 1024:
         refuse('RUN_LIMIT')
     run_id = requested or str(uuid.uuid4())
@@ -797,6 +1370,7 @@ def stop(value, run, boot):
 def rebind(value, request, boot):
     if request.get('expected') is None:
         refuse('EXPECTED_IDENTITY_REQUIRED')
+    network_ready(value, boot)
     for run in runs_for(value):
         if run['bootId'] != boot:
             continue
@@ -815,11 +1389,10 @@ def rebind(value, request, boot):
     candidate = dict(value, directory=directory, directoryDevice=str(info.st_dev), directoryInode=str(info.st_ino),
                      networkIsolation=network, revision=value['revision'] + 1)
     probe(candidate)
+    migration_retire_applied(value)
     binding_write(candidate)
-    try:
-        os.unlink(RUNTIME + '/networks/' + value['projectId'] + '.json')
-    except FileNotFoundError:
-        pass
+    for suffix in ('.json', '.generation.json', '.release.bin', '.tool.json'):
+        durable_unlink(network_path(value['projectId'], suffix))
     return candidate
 
 
@@ -874,23 +1447,37 @@ def initialize():
             time.sleep(.01)
 
 
+def initialize_readonly():
+    descriptor = directory_fd(BASE)
+    try:
+        trusted(os.fstat(descriptor), True, 0o700)
+        lock = os.open('lock', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=descriptor)
+    finally:
+        os.close(descriptor)
+    try:
+        trusted(os.fstat(lock), mode=0o600)
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                return lock
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    refuse('REGISTRY_BUSY')
+                time.sleep(.01)
+    except BaseException:
+        os.close(lock)
+        raise
+
+
 def launch_argv(value, run, request, build):
-    command = request.get('argv')
-    environment = request.get('environment', {})
-    if not isinstance(command, list) or not 1 <= len(command) <= 128 or not all(isinstance(arg, str) and '\0' not in arg for arg in command) or not command[0].startswith('/'):
-        refuse('COMMAND_BOUND')
-    if not isinstance(environment, dict) or len(environment) > 128:
-        refuse('ENVIRONMENT_BOUND')
-    args = [BUILDS + '/' + build + '/launch', '--project', value['projectId'], value['identityId'], str(value['revision']), run['runId']]
-    total = sum(len(arg.encode()) for arg in command)
-    for key, content in environment.items():
-        if not isinstance(key, str) or not re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,127}', key) or key in ('HOME', 'USER', 'LOGNAME') or not isinstance(content, str) or '\0' in content or len((key + '=' + content).encode()) > 8192:
-            refuse('ENVIRONMENT_NAME')
-        args += ['--env', key + '=' + content]
-        total += len((key + '=' + content).encode())
-    if total > 65536:
-        refuse('COMMAND_BOUND')
-    return args + ['--'] + command
+    digest = request.get('payloadSha256')
+    if not isinstance(digest, str) or not re.fullmatch('[a-f0-9]{64}', digest):
+        refuse('PAYLOAD_DIGEST')
+    # The body stays on the authenticated channel. The root controller never
+    # parses, interprets or records any project command/environment.
+    return [BUILDS + '/' + build + '/launch', '--project', value['projectId'], value['identityId'],
+            str(value['revision']), run['runId'], '--payload', digest]
 
 
 def main():
@@ -918,8 +1505,12 @@ def main():
                'inspect': {'projectId'}, 'prepare': {'projectId', 'expected', 'runId'},
                'status': {'projectId', 'expected', 'runId'}, 'stop': {'projectId', 'expected', 'runId'},
                'run': {'projectId', 'expected', 'runId'},
+               'run-readonly': {'projectId', 'expected', 'runId'},
+               'network': {'projectId', 'expected'},
+               'begin-network-release': {'projectId', 'expected', 'releaseId', 'bootId'},
+               'release-network': {'projectId', 'expected', 'releaseId', 'network'},
                'rebind': {'projectId', 'expected', 'directory', 'networkIsolation'},
-               'exec-current': {'projectId', 'expected', 'runId', 'argv', 'environment'}}
+               'exec-current': {'projectId', 'expected', 'runId', 'payloadSha256'}}
     if action not in allowed or not set(request).issubset(allowed[action] | {'action'}):
         refuse('REQUEST_SCHEMA')
     if action != 'install':
@@ -927,10 +1518,11 @@ def main():
     build = sources()
     boot = open('/proc/sys/kernel/random/boot_id').read().strip()
     identifier(boot, UUID, 'BOOT_ID')
-    lock = initialize()
+    readonly = action == 'run-readonly'
+    lock = initialize_readonly() if readonly else initialize()
     args = None
     try:
-        store = registry()
+        store = registry(readonly)
         if action == 'install':
             result = {'version': 1, 'build': build, 'registryId': store['registryId'], 'bootId': boot}
         elif action == 'ensure':
@@ -943,17 +1535,20 @@ def main():
                     result = active(request['projectId'], request, store)
         elif action in ('prepare', 'exec-current'):
             value = active(request['projectId'], request, store)
+            if action == 'exec-current':
+                # Reject metadata before publishing an inherited ticket.
+                launch_argv(value, {'runId': identifier(request.get('runId'), UUID, 'RUN_ID')}, request, build)
             result = prepare(value, request, boot, build, action == 'exec-current')
             if action == 'exec-current':
                 args = launch_argv(value, result, request, build)
-        elif action in ('status', 'stop', 'run'):
+        elif action in ('status', 'stop', 'run', 'run-readonly'):
             value = binding_read(request['projectId'])
             reservation_check(value, store)
             expected(value, request)
             run_id = identifier(request.get('runId'), UUID, 'RUN_ID')
             run = run_read(run_id)
             check_run(value, run, boot, False)
-            if action == 'run':
+            if action in ('run', 'run-readonly'):
                 result = run
             elif action == 'stop':
                 result = stop(value, run, boot)
@@ -971,6 +1566,20 @@ def main():
             account_check(value)
             home_check(value)
             result = rebind(value, request, boot)
+        elif action in ('network', 'begin-network-release', 'release-network'):
+            value = binding_read(request['projectId'])
+            reservation_check(value, store)
+            expected(value, request)
+            if request.get('expected') is None:
+                refuse('EXPECTED_IDENTITY_REQUIRED')
+            # Cleanup also covers a reserved account whose directory migration
+            # never completed. No project code or account creation happens here.
+            if action == 'network':
+                result = network_capture(value, boot)
+            elif action == 'begin-network-release':
+                result = begin_network_release(value, request, boot)
+            else:
+                result = release_network(value, request, boot, lock)
     finally:
         os.close(lock)
     if args is not None:

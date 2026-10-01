@@ -43,6 +43,19 @@ export const projectIdentityRunSchema = z.object({
     ctx.addIssue({ code: 'custom', message: '项目运行票据不完整' });
 });
 export type ProjectIdentityRun = z.infer<typeof projectIdentityRunSchema>;
+export const projectIdentityNetworkSchema = z.object({ version: z.literal(1), registryId: uuid, identityId: uuid,
+  projectId, revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), bootId: uuid,
+  namespace: z.string(), networkDevice: decimal, networkInode: decimal, generation: uuid }).strict().superRefine((value, ctx) => {
+  if (value.namespace !== 'sk-' + value.projectId || value.networkInode === '0')
+    ctx.addIssue({ code: 'custom', message: '项目网络固定记录不完整' });
+});
+export type ProjectIdentityNetwork = z.infer<typeof projectIdentityNetworkSchema>;
+export const projectIdentityNetworkLeaseSchema = z.object({ version: z.literal(1), phase: z.literal('pending'),
+  releaseId: uuid, network: projectIdentityNetworkSchema }).strict();
+export type ProjectIdentityNetworkLease = z.infer<typeof projectIdentityNetworkLeaseSchema>;
+export const projectIdentityNetworkReleaseSchema = z.object({ version: z.literal(1), phase: z.literal('released'),
+  releaseId: uuid, network: projectIdentityNetworkSchema }).strict();
+export type ProjectIdentityNetworkRelease = z.infer<typeof projectIdentityNetworkReleaseSchema>;
 const manifestSchema = z.object({ version: z.literal(1), build: digest,
   files: z.array(z.object({ name: z.enum(projectIdentityAssetNames), size: z.number().int().min(1).max(262144),
     sha256: digest }).strict()).length(3),
@@ -67,16 +80,34 @@ const fixedEnvironment = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=
 const expectedIdentity = (identity: ProjectIdentity): ProjectIdentityExpected => ({
   registryId: identity.registryId, identityId: identity.identityId, revision: identity.revision,
 });
-const executableOptionsSchema = z.object({ command: z.string().min(1).max(65536).refine(value => !value.includes('\0')),
+const utf8String = (value: string) => !value.includes('\0') && Buffer.from(value, 'utf8').toString('utf8') === value;
+const executableOptionsSchema = z.object({ command: z.string().min(1).max(65536).refine(utf8String),
   environment: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/),
-    z.string().max(8192).refine(value => !value.includes('\0'))).default({}),
+    z.string().max(8192).refine(utf8String)).default({}),
 }).strict().superRefine((value, ctx) => {
   if (Object.keys(value.environment).length > 128 || ['HOME', 'USER', 'LOGNAME'].some(key => key in value.environment) ||
+      Object.entries(value.environment).some(([key, content]) => Buffer.byteLength(key + '=' + content) > 8192) ||
       Buffer.byteLength(value.command) + Object.entries(value.environment).reduce((sum, [key, content]) => sum + Buffer.byteLength(key + '=' + content), 0) > 65536)
     ctx.addIssue({ code: 'custom', message: '项目命令或环境超过边界' });
 });
 export type ProjectIdentityExecution = { command: string; environment?: Record<string, string> };
-type Transport = Pick<Machines, 'get' | 'exec' | 'writeGuestFile'>;
+export type ProjectIdentityInput = { command: string; input: Buffer; sha256: string };
+export type ProjectIdentityInheritedInput = ProjectIdentityInput & { runId: string };
+type Transport = Pick<Machines, 'get' | 'exec' | 'execInput' | 'writeGuestFile'>;
+export function projectIdentityPayload(execution: ProjectIdentityExecution) {
+  const value = executableOptionsSchema.parse(execution), script = Buffer.from(value.command, 'utf8');
+  const environment = Object.entries(value.environment).map(([key, content]) => [Buffer.from(key), Buffer.from(content, 'utf8')] as const);
+  const size = script.length + environment.reduce((sum, [key, content]) => sum + 8 + key.length + content.length, 0);
+  const input = Buffer.alloc(32 + size);
+  input.write('SKIDP001', 0, 'ascii'); input.writeUInt32LE(1, 8); input.writeUInt32LE(size, 16);
+  input.writeUInt32LE(environment.length, 20); input.writeUInt32LE(script.length, 24);
+  script.copy(input, 32); let offset = 32 + script.length;
+  for (const [key, content] of environment) {
+    input.writeUInt32LE(key.length, offset); input.writeUInt32LE(content.length, offset + 4); offset += 8;
+    key.copy(input, offset); offset += key.length; content.copy(input, offset); offset += content.length;
+  }
+  return { input, sha256: createHash('sha256').update(input).digest('hex') };
+}
 
 export class ProjectIdentities {
   private installed = new Map<string, Promise<string>>();
@@ -88,8 +119,8 @@ export class ProjectIdentities {
     if (data.length > 131072) throw new AppError('项目账户请求超过边界', 413);
     return `${fixedEnvironment} /usr/bin/python3 -I -S ${quote('/usr/local/lib/sakura-project-identity/' + digest.parse(build) + '/controller.py')} ${quote(data)}`;
   }
-  private async control<T>(vmId: string, request: object, schema: z.ZodType<T>, signal?: AbortSignal) {
-    const build = await this.install(vmId, signal);
+  private async control<T>(vmId: string, request: object, schema: z.ZodType<T>, signal?: AbortSignal, readonly = false) {
+    const build = readonly ? (await this.build()).manifest.build : await this.install(vmId, signal);
     const result = await this.machines.exec(vmId, this.controlCommand(build, request), 40000, signal);
     let reply: { ok: boolean; result?: unknown; code?: string; detail?: unknown };
     try { reply = JSON.parse(result.stdout); } catch {
@@ -100,7 +131,7 @@ export class ProjectIdentities {
       const toolFailure = z.object({ tool: z.enum(['groupadd', 'useradd', 'addgroup', 'adduser', 'openssl', 'chpasswd', 'ip']), exit: z.number().int() }).strict().safeParse(reply.detail);
       const context = code === 'SYSTEM_TOOL_FAILED' && toolFailure.success ? ':' + toolFailure.data.tool : '';
       const migration = code === 'DIRECTORY_MIGRATION_REQUIRED' ? '目录及父目录尚未授权给项目账户，请显式迁移权限' : '项目账户归属核对失败';
-      const cleanup = code === 'PROJECT_IDENTITY_CLEANUP_FAILED';
+      const cleanup = code === 'PROJECT_IDENTITY_CLEANUP_FAILED' || code === 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED';
       throw new AppError(`${migration}（${code}${context}）`, cleanup ? 503 : 409, cleanup ? code : 'PROJECT_IDENTITY_' + code);
     }
     try { return schema.parse(reply.result); } catch {
@@ -229,38 +260,49 @@ directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(dir
     if (run.namespace !== (identity.networkIsolation === 'private' ? 'sk-' + identity.projectId : ''))
       throw new AppError('项目运行网络绑定不符', 409, 'PROJECT_IDENTITY_RUN_STALE');
   }
-  command(identity: ProjectIdentity, run: ProjectIdentityRun, execution: ProjectIdentityExecution) {
+  input(identity: ProjectIdentity, run: ProjectIdentityRun, execution: ProjectIdentityExecution): ProjectIdentityInput {
     identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
     if (identity.phase !== 'active' || run.phase !== 'active') throw new AppError('项目账户或运行票据已关闭', 409, 'PROJECT_IDENTITY_RUN_CLOSED');
-    const input = executableOptionsSchema.parse(execution);
+    const payload = projectIdentityPayload(execution);
     const args = ['/usr/local/lib/sakura-project-identity/' + run.build + '/launch', '--project', identity.projectId,
       identity.identityId, String(identity.revision), run.runId];
-    for (const [key, value] of Object.entries(input.environment)) args.push('--env', key + '=' + value);
-    args.push('--', '/bin/sh', '-c', input.command);
-    return fixedEnvironment + ' ' + args.map(quote).join(' ');
+    args.push('--payload', payload.sha256);
+    return { ...payload, command: fixedEnvironment + ' ' + args.map(quote).join(' ') };
   }
-  selfCommand(run: ProjectIdentityRun, execution: ProjectIdentityExecution) {
+  selfInput(run: ProjectIdentityRun, execution: ProjectIdentityExecution): ProjectIdentityInput {
     run = projectIdentityRunSchema.parse(run);
     if (run.phase !== 'active') throw new AppError('项目运行票据已关闭', 409);
-    const input = executableOptionsSchema.parse(execution);
+    const payload = projectIdentityPayload(execution);
     const args = ['/usr/local/lib/sakura-project-identity/' + run.build + '/launch', '--self', run.runId];
-    for (const [key, value] of Object.entries(input.environment)) args.push('--env', key + '=' + value);
-    args.push('--', '/bin/sh', '-c', input.command);
-    return fixedEnvironment + ' ' + args.map(quote).join(' ');
+    args.push('--payload', payload.sha256);
+    return { ...payload, command: fixedEnvironment + ' ' + args.map(quote).join(' ') };
+  }
+  command(_identity: ProjectIdentity, _run: ProjectIdentityRun, _execution: ProjectIdentityExecution): never {
+    throw new AppError('项目命令必须使用受保护 stdin payload 运输', 409, 'PROJECT_IDENTITY_PAYLOAD_REQUIRED');
+  }
+  selfCommand(_run: ProjectIdentityRun, _execution: ProjectIdentityExecution): never {
+    throw new AppError('项目命令必须使用受保护 stdin payload 运输', 409, 'PROJECT_IDENTITY_PAYLOAD_REQUIRED');
   }
   async exec(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun, execution: ProjectIdentityExecution, signal?: AbortSignal, timeout = 30000) {
-    try { return await this.machines.exec(vmId, this.command(identity, run, execution), timeout, signal); }
+    try {
+      const plan = this.input(identity, run, execution);
+      return await this.machines.execInput(vmId, plan.command, plan.input, timeout, signal);
+    }
     finally { await this.stop(vmId, identity, run); }
   }
-  async inheritedCommand(identity: ProjectIdentity, execution: ProjectIdentityExecution, options: { runId?: string } = {}) {
-    identity = projectIdentitySchema.parse(identity); const input = executableOptionsSchema.parse(execution);
+  async inheritedInput(identity: ProjectIdentity, execution: ProjectIdentityExecution, options: { runId?: string } = {}): Promise<ProjectIdentityInheritedInput> {
+    identity = projectIdentitySchema.parse(identity); const payload = projectIdentityPayload(execution);
+    if (identity.phase !== 'active') throw new AppError('项目账户尚未完成', 409, 'PROJECT_IDENTITY_INCOMPLETE');
     const source = await this.build();
     // Called inside a registered root task/main/service cgroup. The root
     // controller captures its own actual membership; no path/FD number can be
     // supplied by a project. The C launcher reopens and checks the pinned FD.
-    return this.controlCommand(source.manifest.build, { action: 'exec-current', projectId: identity.projectId,
-      expected: expectedIdentity(identity), runId: options.runId ? uuid.parse(options.runId) : randomUUID(),
-      argv: ['/bin/sh', '-c', input.command], environment: input.environment });
+    const runId = options.runId ? uuid.parse(options.runId) : randomUUID();
+    return { ...payload, runId, command: this.controlCommand(source.manifest.build, { action: 'exec-current', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId, payloadSha256: payload.sha256 }) };
+  }
+  async inheritedCommand(_identity: ProjectIdentity, _execution: ProjectIdentityExecution, _options: { runId?: string } = {}): Promise<never> {
+    throw new AppError('继承运行必须使用受保护 stdin payload 运输', 409, 'PROJECT_IDENTITY_PAYLOAD_REQUIRED');
   }
   async status(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun, signal?: AbortSignal) {
     identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
@@ -272,6 +314,19 @@ directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(dir
     const run = await this.control(vmId, { action: 'run', projectId: identity.projectId,
       expected: expectedIdentity(identity), runId: uuid.parse(runId) }, projectIdentityRunSchema, signal);
     this.match(identity, run); return run;
+  }
+  async runReadonly(vmId: string, identity: ProjectIdentity, runId: string, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const source = await this.build();
+    // No install probe, package manager, stage, directory or registry creation.
+    // The pinned current controller itself verifies its source and acquires an
+    // existing SH lock. Missing/changed images and receipts remain errors.
+    const run = await this.control(vmId, { action: 'run-readonly', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId: uuid.parse(runId) }, projectIdentityRunSchema, signal, true);
+    this.match(identity, run);
+    if (run.build !== source.manifest.build)
+      throw new AppError('只读运行票据属于其他启动器构建', 409, 'PROJECT_IDENTITY_RUN_BUILD_STALE');
+    return run;
   }
   async stop(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun, _signal?: AbortSignal) {
     identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
@@ -296,5 +351,41 @@ directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(dir
     identity = projectIdentitySchema.parse(identity);
     const input = z.object({ directory, networkIsolation: z.enum(['host', 'private']) }).strict().parse(binding);
     return await this.control(vmId, { action: 'rebind', projectId: identity.projectId, expected: expectedIdentity(identity), ...input }, projectIdentitySchema, signal);
+  }
+  async network(vmId: string, identity: ProjectIdentity, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const network = await this.control(vmId, { action: 'network', projectId: identity.projectId,
+      expected: expectedIdentity(identity) }, projectIdentityNetworkSchema.nullable(), signal);
+    if (network && (identity.networkIsolation !== 'private' ||
+        (['registryId', 'identityId', 'projectId', 'revision'] as const).some(key => network[key] !== identity[key])))
+      throw new AppError('项目网络记录不属于当前身份', 409, 'PROJECT_IDENTITY_NETWORK_STALE');
+    return network;
+  }
+  async beginNetworkRelease(vmId: string, identity: ProjectIdentity, options: { releaseId: string; bootId: string }, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const releaseId = uuid.parse(options.releaseId), bootId = uuid.parse(options.bootId);
+    const lease = await this.control(vmId, { action: 'begin-network-release', projectId: identity.projectId,
+      expected: expectedIdentity(identity), releaseId, bootId }, projectIdentityNetworkLeaseSchema.nullable(), signal);
+    if (lease && (lease.releaseId !== releaseId || lease.network.bootId !== bootId || identity.networkIsolation !== 'private' ||
+        (['registryId', 'identityId', 'projectId', 'revision'] as const).some(key => lease.network[key] !== identity[key])))
+      throw new AppError('网络冻结回执不属于原请求', 409, 'PROJECT_IDENTITY_NETWORK_STALE');
+    return lease;
+  }
+  async releaseNetwork(vmId: string, identity: ProjectIdentity, lease: ProjectIdentityNetworkLease, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity); lease = projectIdentityNetworkLeaseSchema.parse(lease);
+    const { network, releaseId } = lease;
+    if (identity.networkIsolation !== 'private' ||
+        (['registryId', 'identityId', 'projectId', 'revision'] as const).some(key => network[key] !== identity[key]))
+      throw new AppError('网络核销请求不属于当前项目身份', 409, 'PROJECT_IDENTITY_NETWORK_STALE');
+    try {
+      const released = await this.control(vmId, { action: 'release-network', projectId: identity.projectId,
+        expected: expectedIdentity(identity), network, releaseId }, projectIdentityNetworkReleaseSchema, signal);
+      if (released.releaseId !== releaseId || JSON.stringify(released.network) !== JSON.stringify(network))
+        throw new AppError('网络核销回执不属于原代次', 503, 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED');
+      return released;
+    } catch (error) {
+      const reason = error instanceof AppError && error.code ? error.code : 'CONTROL_UNCONFIRMED';
+      throw new AppError(`项目网络核销未确认（${reason}）`, 503, 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED');
+    }
   }
 }

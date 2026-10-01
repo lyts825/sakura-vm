@@ -5,6 +5,7 @@
 #include <grp.h>
 #include <linux/capability.h>
 #include <linux/magic.h>
+#include <poll.h>
 #include <pwd.h>
 #include <sched.h>
 #include <stdbool.h>
@@ -12,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
@@ -109,6 +111,34 @@ static void record(const char *name, void *out, size_t size) {
         done += (size_t)n;
     }
     close(fd);
+}
+static void network_ready(const struct sk_binding *b) {
+    int parent = open_directory(SK_ID_RUNTIME "/networks", true);
+    char name[64]; path(name, sizeof(name), "%s%s.release.bin", b->project, "");
+    int fd = openat(parent, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW); int saved_errno = errno; close(parent);
+    if (fd < 0) { if (saved_errno == ENOENT) return; refuse("NETWORK_GUARD_INVALID"); }
+    struct sk_network_guard guard; struct stat s;
+    if (fstat(fd, &s)) refuse("NETWORK_GUARD_INVALID");
+    trusted(&s, false);
+    if ((s.st_mode & 0777) != 0600 || s.st_nlink != 1 || s.st_size != (off_t)sizeof(guard)) refuse("NETWORK_GUARD_INVALID");
+    size_t done = 0;
+    while (done < sizeof(guard)) {
+        ssize_t n = read(fd, (char *)&guard + done, sizeof(guard) - done);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) refuse("NETWORK_GUARD_INVALID");
+        done += (size_t)n;
+    }
+    close(fd);
+    if (memcmp(guard.magic, "SKIDN001", 8) || guard.version != 1 ||
+        guard.flags < SK_NETWORK_PENDING || guard.flags > SK_NETWORK_RELEASED || !guard.revision || !guard.network_inode ||
+        !fixed_string(guard.registry, sizeof(guard.registry)) || !fixed_string(guard.identity, sizeof(guard.identity)) ||
+        !fixed_string(guard.project, sizeof(guard.project)) || !fixed_string(guard.boot, sizeof(guard.boot)) ||
+        !fixed_string(guard.generation, sizeof(guard.generation)) || !fixed_string(guard.release, sizeof(guard.release)) ||
+        !uuid(guard.registry) || !uuid(guard.identity) || !project_id(guard.project) || !uuid(guard.boot) ||
+        !uuid(guard.generation) || !uuid(guard.release) || !zero(guard.reserved, sizeof(guard.reserved))) refuse("NETWORK_GUARD_INVALID");
+    if (strcmp(guard.registry, b->registry) || strcmp(guard.identity, b->identity) || strcmp(guard.project, b->project) ||
+        guard.revision != b->revision || b->network != SK_NETWORK_PRIVATE) refuse("NETWORK_GUARD_STALE");
+    if (guard.flags != SK_NETWORK_RELEASED) refuse("NETWORK_RETIREMENT_PENDING");
 }
 static void locked(int fd) {
     const struct timespec pause = {0, 10000000};
@@ -242,14 +272,167 @@ static void capabilities_drop(uint32_t uid, uint32_t gid) {
         saved_gid != gid || getgroups(0, NULL) != 0 || syscall(SYS_capget, &header, data) ||
         !zero(data, sizeof(data)) || prctl(PR_GET_NO_NEW_PRIVS, 0L, 0L, 0L, 0L) != 1) refuse("ACCOUNT_DROP_VERIFY");
 }
-static void close_extra_fds(void) {
+static void close_extra_fds_except(int preserve) {
 #ifdef SYS_close_range
-    if (!syscall(SYS_close_range, 3u, ~0u, 0u)) return;
+    bool first = preserve <= 3 || !syscall(SYS_close_range, 3u, (unsigned)preserve - 1u, 0u);
+    bool second = !syscall(SYS_close_range, (unsigned)(preserve < 3 ? 3 : preserve + 1), ~0u, 0u);
+    if (first && second) return;
     if (errno != ENOSYS && errno != EINVAL) refuse("FD_CLEANUP");
 #endif
     long limit = sysconf(_SC_OPEN_MAX);
     if (limit < 0 || limit > 1048576) refuse("FD_BOUND");
-    for (int fd = 3; fd < limit; ++fd) close(fd);
+    for (int fd = 3; fd < limit; ++fd) if (fd != preserve) close(fd);
+}
+static uint32_t rotate(uint32_t v, unsigned n) { return (v >> n) | (v << (32u - n)); }
+static void sha_block(uint32_t state[8], const unsigned char block[64]) {
+    static const uint32_t constants[64] = {
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
+    };
+    uint32_t words[64];
+    for (size_t i = 0; i < 16; ++i) words[i] = ((uint32_t)block[i*4] << 24) | ((uint32_t)block[i*4+1] << 16) |
+        ((uint32_t)block[i*4+2] << 8) | block[i*4+3];
+    for (size_t i = 16; i < 64; ++i) {
+        uint32_t x = words[i-15], y = words[i-2];
+        words[i] = words[i-16] + (rotate(x,7)^rotate(x,18)^(x>>3)) + words[i-7] + (rotate(y,17)^rotate(y,19)^(y>>10));
+    }
+    uint32_t a=state[0],b=state[1],c=state[2],d=state[3],e=state[4],f=state[5],g=state[6],h=state[7];
+    for (size_t i = 0; i < 64; ++i) {
+        uint32_t one = h + (rotate(e,6)^rotate(e,11)^rotate(e,25)) + ((e&f)^(~e&g)) + constants[i] + words[i];
+        uint32_t two = (rotate(a,2)^rotate(a,13)^rotate(a,22)) + ((a&b)^(a&c)^(b&c));
+        h=g;g=f;f=e;e=d+one;d=c;c=b;b=a;a=one+two;
+    }
+    state[0]+=a;state[1]+=b;state[2]+=c;state[3]+=d;state[4]+=e;state[5]+=f;state[6]+=g;state[7]+=h;
+}
+static void sha256(const unsigned char *data, size_t size, char result[65]) {
+    uint32_t state[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    size_t done = 0;
+    while (size - done >= 64) { sha_block(state,data+done); done += 64; }
+    unsigned char tail[128] = {0}; size_t remaining = size - done;
+    memcpy(tail,data+done,remaining); tail[remaining] = 0x80;
+    size_t padded = remaining < 56 ? 64 : 128; uint64_t bits = (uint64_t)size * 8;
+    for (size_t i = 0; i < 8; ++i) tail[padded-1-i] = (unsigned char)(bits >> (i*8));
+    sha_block(state,tail); if (padded == 128) sha_block(state,tail+64);
+    static const char digits[] = "0123456789abcdef";
+    for (size_t i = 0; i < 32; ++i) {
+        unsigned char v = (unsigned char)(state[i/4] >> (24-(i%4)*8));
+        result[i*2]=digits[v>>4]; result[i*2+1]=digits[v&15];
+    }
+    result[64]=0;
+}
+static bool utf8(const unsigned char *text, size_t size) {
+    for (size_t i = 0; i < size;) {
+        unsigned char a=text[i++]; if (!a) return false;
+        if (a < 0x80) continue;
+        unsigned count; uint32_t value, minimum;
+        if (a >= 0xc2 && a <= 0xdf) { count=1;value=a&31;minimum=0x80; }
+        else if (a >= 0xe0 && a <= 0xef) { count=2;value=a&15;minimum=0x800; }
+        else if (a >= 0xf0 && a <= 0xf4) { count=3;value=a&7;minimum=0x10000; }
+        else return false;
+        if (size - i < count) return false;
+        for (unsigned n=0;n<count;++n) { unsigned char b=text[i++]; if ((b&0xc0)!=0x80) return false; value=(value<<6)|(b&63); }
+        if (value<minimum || value>0x10ffff || (value>=0xd800 && value<=0xdfff)) return false;
+    }
+    return true;
+}
+static long long milliseconds(void) {
+    struct timespec now; if (clock_gettime(CLOCK_MONOTONIC,&now)) refuse("PAYLOAD_CLOCK");
+    return (long long)now.tv_sec*1000 + now.tv_nsec/1000000;
+}
+struct payload {
+    unsigned char *wire;
+    size_t wire_size, script_size;
+    unsigned environment_count;
+    char *keys[SK_PAYLOAD_ENV_LIMIT], *values[SK_PAYLOAD_ENV_LIMIT];
+};
+static uint32_t little(const unsigned char *p) { return p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24); }
+static struct payload payload_read(const char *expected) {
+    struct payload value = {0}; struct stat input_info;
+    if (fstat(STDIN_FILENO,&input_info) || (!S_ISFIFO(input_info.st_mode) && !S_ISSOCK(input_info.st_mode))) refuse("PAYLOAD_INPUT_TYPE");
+    int flags=fcntl(STDIN_FILENO,F_GETFL);
+    if (flags<0 || fcntl(STDIN_FILENO,F_SETFL,flags|O_NONBLOCK)) refuse("PAYLOAD_INPUT");
+    value.wire=malloc(SK_PAYLOAD_LIMIT+1u); if (!value.wire) refuse("PAYLOAD_MEMORY");
+    long long deadline=milliseconds()+SK_PAYLOAD_TIMEOUT_MS;
+    for (;;) {
+        long long remaining=deadline-milliseconds(); if (remaining<=0) refuse("PAYLOAD_TIMEOUT");
+        struct pollfd fd={STDIN_FILENO,POLLIN,0}; int ready=poll(&fd,1,(int)remaining);
+        if (ready<0 && errno==EINTR) continue;
+        if (ready<=0) refuse(ready==0?"PAYLOAD_TIMEOUT":"PAYLOAD_INPUT");
+        ssize_t n=read(STDIN_FILENO,value.wire+value.wire_size,SK_PAYLOAD_LIMIT+1u-value.wire_size);
+        if (n<0 && (errno==EINTR || errno==EAGAIN || errno==EWOULDBLOCK)) continue;
+        if (n<0) refuse("PAYLOAD_INPUT");
+        if (!n) break;
+        value.wire_size+=(size_t)n; if (value.wire_size>SK_PAYLOAD_LIMIT) refuse("PAYLOAD_BOUND");
+    }
+    if (value.wire_size<sizeof(struct sk_payload_header)) refuse("PAYLOAD_TRUNCATED");
+    struct sk_payload_header header; memcpy(&header,value.wire,sizeof(header));
+    if (memcmp(header.magic,"SKIDP001",8) || header.version!=SK_PAYLOAD_VERSION || header.flags || header.reserved)
+        refuse("PAYLOAD_HEADER");
+    if (header.body_size!=value.wire_size-sizeof(header)) refuse("PAYLOAD_LENGTH");
+    if (!header.script_size || header.script_size>SK_PAYLOAD_TEXT_LIMIT || header.script_size>header.body_size ||
+        header.environment_count>SK_PAYLOAD_ENV_LIMIT) refuse("PAYLOAD_BOUND");
+    char actual[65]; sha256(value.wire,value.wire_size,actual);
+    if (strcmp(actual,expected)) refuse("PAYLOAD_DIGEST");
+    if (!utf8(value.wire+sizeof(header),header.script_size)) refuse("PAYLOAD_UTF8");
+    value.script_size=header.script_size; value.environment_count=header.environment_count;
+    size_t offset=sizeof(header)+header.script_size, total=header.script_size;
+    for (unsigned i=0;i<header.environment_count;++i) {
+        if (value.wire_size-offset<8) refuse("PAYLOAD_LENGTH");
+        uint32_t key_size=little(value.wire+offset), content_size=little(value.wire+offset+4); offset+=8;
+        if (!key_size || key_size>128 || content_size>SK_PAYLOAD_ENTRY_LIMIT ||
+            (size_t)key_size+1+content_size>SK_PAYLOAD_ENTRY_LIMIT || (size_t)key_size+content_size>value.wire_size-offset)
+            refuse("PAYLOAD_ENVIRONMENT_BOUND");
+        const unsigned char *key=value.wire+offset, *content=key+key_size;
+        for (uint32_t n=0;n<key_size;++n) if (!((key[n]>='A'&&key[n]<='Z')||(key[n]>='a'&&key[n]<='z')||key[n]=='_'||
+            (n && key[n]>='0'&&key[n]<='9'))) refuse("PAYLOAD_ENVIRONMENT_NAME");
+        if (!utf8(content,content_size)) refuse("PAYLOAD_UTF8");
+        value.keys[i]=malloc(key_size+1u); value.values[i]=malloc(content_size+1u);
+        if (!value.keys[i] || !value.values[i]) refuse("PAYLOAD_MEMORY");
+        memcpy(value.keys[i],key,key_size); value.keys[i][key_size]=0;
+        memcpy(value.values[i],content,content_size); value.values[i][content_size]=0;
+        if (!strcmp(value.keys[i],"HOME") || !strcmp(value.keys[i],"USER") || !strcmp(value.keys[i],"LOGNAME")) refuse("PAYLOAD_ENVIRONMENT_IDENTITY");
+        for (unsigned previous=0;previous<i;++previous) if (!strcmp(value.keys[i],value.keys[previous])) refuse("PAYLOAD_ENVIRONMENT_DUPLICATE");
+        total+=(size_t)key_size+1+content_size; if (total>SK_PAYLOAD_TEXT_LIMIT) refuse("PAYLOAD_BOUND");
+        offset+=(size_t)key_size+content_size;
+    }
+    if (offset!=value.wire_size) refuse("PAYLOAD_TRAILING");
+    return value;
+}
+static void wipe(void *buffer, size_t size) { volatile unsigned char *p=buffer; while (size--) *p++=0; }
+static void payload_exec(struct payload *value) {
+    int descriptor=memfd_create("sakura-project-script",MFD_CLOEXEC|MFD_ALLOW_SEALING);
+    if (descriptor<0) refuse("PAYLOAD_MEMFD");
+    size_t done=0;
+    while (done<value->script_size) {
+        ssize_t n=write(descriptor,value->wire+sizeof(struct sk_payload_header)+done,value->script_size-done);
+        if (n<0 && errno==EINTR) continue;
+        if (n<=0) refuse("PAYLOAD_MEMFD");
+        done+=(size_t)n;
+    }
+    if (fchmod(descriptor,0400) || fcntl(descriptor,F_ADD_SEALS,F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK|F_SEAL_SEAL)<0)
+        refuse("PAYLOAD_SEAL");
+    char pathname[64]; snprintf(pathname,sizeof(pathname),"/proc/self/fd/%d",descriptor);
+    int readable=open(pathname,O_RDONLY|O_CLOEXEC); if (readable<0) refuse("PAYLOAD_MEMFD");
+    close(descriptor);
+    for (unsigned i=0;i<value->environment_count;++i) {
+        if (setenv(value->keys[i],value->values[i],1)) refuse("PROJECT_ENVIRONMENT");
+        wipe(value->keys[i],strlen(value->keys[i])); wipe(value->values[i],strlen(value->values[i]));
+        free(value->keys[i]);free(value->values[i]);
+    }
+    wipe(value->wire,value->wire_size);free(value->wire);
+    int input=open("/dev/null",O_RDONLY|O_CLOEXEC); if (input<0 || dup2(input,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
+    if (input!=STDIN_FILENO) close(input);
+    if (readable!=3) { if (dup2(readable,3)<0) refuse("PAYLOAD_MEMFD"); close(readable); }
+    if (fcntl(3,F_SETFD,0)) refuse("PAYLOAD_MEMFD");
+    close_extra_fds_except(3);
+    char *arguments[]={"/bin/sh","/proc/self/fd/3",NULL};
+    execv(arguments[0],arguments); refuse("COMMAND_EXEC");
 }
 int main(int argc, char **argv) {
     uid_t caller = getuid();
@@ -297,21 +480,10 @@ int main(int argc, char **argv) {
         refuse("REQUEST_STALE");
     path(name, sizeof(name), SK_ID_RUNTIME "/runs/%s%s.bin", run, ""); record(name, &r, sizeof(r));
     validate_run(&r, &b, run);
-    char *environment[129]; int environment_count = 0; size_t argument_bytes = 0;
-    while (index < argc && !strcmp(argv[index], "--env")) {
-        if (++index >= argc || environment_count == 128) refuse("ENVIRONMENT_BOUND");
-        char *value = argv[index++], *equals = strchr(value, '=');
-        if (!equals || equals == value || (size_t)(equals - value) > 128 || strlen(value) > 8192) refuse("ENVIRONMENT_NAME");
-        for (const char *p = value; p < equals; ++p)
-            if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (p > value && *p >= '0' && *p <= '9') || *p == '_'))
-                refuse("ENVIRONMENT_NAME");
-        if (!strncmp(value, "HOME=", 5) || !strncmp(value, "USER=", 5) || !strncmp(value, "LOGNAME=", 8)) refuse("ENVIRONMENT_IDENTITY");
-        argument_bytes += strlen(value); environment[environment_count++] = value;
-    }
-    if (index >= argc || strcmp(argv[index++], "--") || index >= argc || argv[index][0] != '/' || argc - index > 128)
-        refuse("COMMAND_BOUND");
-    for (int i = index; i < argc; ++i) argument_bytes += strlen(argv[i]);
-    if (argument_bytes > 65536) refuse("COMMAND_BOUND");
+    network_ready(&b);
+    if (argc-index!=2 || strcmp(argv[index],"--payload") || strlen(argv[index+1])!=64 || !hex(argv[index+1],64))
+        refuse("PAYLOAD_REQUIRED");
+    const char *payload_sha=argv[index+1];
     int directory = open_directory(b.directory, false); struct stat s;
     if (fstat(directory, &s) || !same_stat(&s, b.directory_device, b.directory_inode)) refuse("DIRECTORY_REPLACED");
     close(directory);
@@ -341,6 +513,9 @@ int main(int argc, char **argv) {
     char membership[64]; current_cgroup(membership);
     if (strcmp(membership, r.cgroup)) refuse("CGROUP_VERIFY");
     close(cgroup);
+    // Root scope anchors may inherit cgroup.kill or control locks. Keep only
+    // our own registry lock until the complete frame is accepted.
+    close_extra_fds_except(lock);
     capabilities_drop(b.uid, b.gid);
     directory = open_directory(b.directory, false);
     if (fstat(directory, &s) || !same_stat(&s, b.directory_device, b.directory_inode) ||
@@ -348,11 +523,7 @@ int main(int argc, char **argv) {
     close(directory);
     if (clearenv() || setenv("HOME", b.home, 1) || setenv("USER", b.account, 1) || setenv("LOGNAME", b.account, 1) ||
         setenv("PATH", "/usr/local/bin:/usr/bin:/bin", 1) || setenv("LANG", "C.UTF-8", 1)) refuse("PROJECT_ENVIRONMENT");
-    for (int i = 0; i < environment_count; ++i) {
-        char *equals = strchr(environment[i], '='); *equals = 0;
-        if (setenv(environment[i], equals + 1, 1)) refuse("PROJECT_ENVIRONMENT");
-    }
-    close(lock); close_extra_fds();
-    execv(argv[index], argv + index);
-    refuse("COMMAND_EXEC");
+    struct payload body=payload_read(payload_sha);
+    close(lock);
+    payload_exec(&body);
 }
