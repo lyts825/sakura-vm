@@ -124,6 +124,34 @@ export const projectSshRecordSchema = z
   });
 type Record = z.infer<typeof projectSshRecordSchema>;
 type Manager = 'systemd' | 'openrc';
+type RollbackOwner = { instance: object; bootId: string; runId: string };
+
+function rollbackOwnerCommand(project: Project, owner: RollbackOwner) {
+  const p = projectSshPaths(project._workspace || 'default');
+  return (
+    '# SAKURA_PROJECT_SSH_ROLLBACK_CHECK\npython3 -I -S -c ' +
+    quote(
+      `import glob,json,os\n` +
+        projectSshMainScan(p) +
+        `if open('/proc/sys/kernel/random/boot_id').read().strip()!=${JSON.stringify(owner.bootId)}: raise ValueError('客户机启动身份已改变；拒绝旧项目 SSH 回滚')\n` +
+        `binding=None\n` +
+        `try: binding=json.load(open(${JSON.stringify(p.config + '/binding.json')}))\n` +
+        `except FileNotFoundError: pass\n` +
+        `if binding is None:\n` +
+        ` units=${JSON.stringify(['/' + p.unit, p.openrcGroup])}\n` +
+        ` busy=bool(project_mains())\n` +
+        ` for path in glob.glob('/proc/[0-9]*/cgroup'):\n` +
+        `  try:\n` +
+        `   if any(row.split(':',2)[-1].endswith(unit) or unit+'/' in row.split(':',2)[-1] for row in open(path).read().splitlines() for unit in units): busy=True\n` +
+        `  except FileNotFoundError: pass\n` +
+        ` if busy: raise ValueError('项目 SSH 启动绑定缺失但仍有进程；拒绝未核对回滚')\n` +
+        ` print('SAKURA_PROJECT_SSH_ABSENT')\n` +
+        `else:\n` +
+        ` if not isinstance(binding,dict) or binding.get('runId')!=${JSON.stringify(owner.runId)}: raise ValueError('项目 SSH 运行身份已改变；拒绝终止其他启动')\n` +
+        ` print('SAKURA_PROJECT_SSH_OWNED')\n`,
+    )
+  );
+}
 const statusSchema = z
   .object({
     present: z.boolean(),
@@ -500,6 +528,7 @@ export class ProjectSsh {
     const p = projectSshPaths(projectId),
       namespace = projectNetworkNamespace(project),
       runId = randomUUID();
+    const instance = this.machines.live.get(id);
     const folder = this.folder(id, projectId);
     await regularDirectory(folder);
     await mkdir(folder, { recursive: true });
@@ -548,12 +577,19 @@ export class ProjectSsh {
           : '') +
         `mkdir -p /run/sshd ${quote(project.directory)}\nchmod 755 /run/sshd\nchmod 700 ${p.home}\n` +
         `test ! -L ${p.config}/hostkey\nif [ ! -f ${p.config}/hostkey ]; then ssh-keygen -q -t ed25519 -N '' -f ${p.config}/hostkey; fi\n` +
-        `ssh-keygen -y -f ${p.config}/hostkey | awk '{print "SAKURA_SSH_HOST_KEY=" $1 " " $2}'`,
+        `ssh-keygen -y -f ${p.config}/hostkey | awk '{print "SAKURA_SSH_HOST_KEY=" $1 " " $2}'\n` +
+        `printf 'SAKURA_SSH_BOOT_ID=%s\\n' "$(cat /proc/sys/kernel/random/boot_id)"`,
       signal,
       undefined,
       180_000,
     );
     if (prep.code !== 0) throw new AppError('无法准备项目 SSH 依赖或网络', 409);
+    const bootId = z.uuid().parse(
+      prep.stdout
+        .split('\n')
+        .find((line) => line.startsWith('SAKURA_SSH_BOOT_ID='))
+        ?.slice('SAKURA_SSH_BOOT_ID='.length),
+    );
     const hostPublicKey = z
       .string()
       .regex(/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/)
@@ -637,7 +673,8 @@ export class ProjectSsh {
     try {
       const started = await this.machines.exec(
         id,
-        `set -eu\numask 077\n${write}` +
+        `set -eu\numask 077\n` +
+          `[ "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(bootId)} ] || { echo '客户机启动身份已改变；项目 SSH 未启动' >&2; exit 1; }\n${write}` +
           `chmod 700 ${p.config}/command\nprintf '%s' ${quote(Buffer.from(JSON.stringify(record)).toString('base64'))} | base64 -d > ${p.config}/binding.json\n` +
           `/usr/sbin/sshd -t -f ${p.config}/sshd_config\n` +
           (distro === 'alpine'
@@ -659,26 +696,78 @@ export class ProjectSsh {
       }
       throw new AppError(reason, 409);
     } catch (error) {
-      await this.stopRuntime(id, project).catch(() => {});
+      let failure: unknown;
+      for (let attempt = 0; attempt < 3; ++attempt) {
+        if (!instance || this.machines.live.get(id) !== instance) {
+          failure = new Error('客户机实例已改变，原项目 SSH 回滚未确认');
+          break;
+        }
+        try {
+          await this.stopRuntime(id, project, { instance, bootId, runId });
+          if (this.machines.live.get(id) !== instance) throw new Error('客户机实例已改变');
+          failure = undefined;
+          break;
+        } catch (cleanupError) {
+          failure = cleanupError;
+          if (attempt < 2) await delay(250 * (attempt + 1));
+        }
+      }
+      if (failure)
+        throw new AppError(
+          `项目 SSH 启动失败：${error instanceof Error ? error.message : String(error)}；` +
+            `回滚清理未确认：${failure instanceof Error ? failure.message : String(failure)}；` +
+            `已保留本次启动记录 ${join(folder, 'runtime.json')}`,
+          503,
+          'PROJECT_SSH_CLEANUP_FAILED',
+        );
       throw error;
     }
   }
-  private async stopRuntime(id: string, project: Project) {
+  private async stopRuntime(id: string, project: Project, owner?: RollbackOwner) {
     const projectId = project._workspace || 'default',
-      p = projectSshPaths(projectId);
+      p = projectSshPaths(projectId),
+      key = `${id}:${projectId}`;
+    if (owner) {
+      if (this.machines.live.get(id) !== owner.instance)
+        throw new AppError('客户机实例已改变，拒绝旧项目 SSH 回滚', 409);
+      const record = await this.record(id, project),
+        endpoint = this.endpoints.get(key);
+      if (record?.runId !== owner.runId || (endpoint && endpoint.record.runId !== owner.runId))
+        throw new AppError('项目 SSH 主机运行身份已改变，拒绝旧回滚', 409);
+      const checked = await this.machines.exec(id, rollbackOwnerCommand(project, owner), 10000);
+      if (checked.code !== 0) throw new AppError(checked.stderr.trim() || '项目 SSH 回滚身份无法核对', 409);
+      if (this.machines.live.get(id) !== owner.instance || this.endpoints.get(key) !== endpoint)
+        throw new AppError('客户机实例或项目 SSH 桥接身份已改变，拒绝旧回滚', 409);
+    }
     await this.bridges.stop(id, projectId);
-    this.endpoints.delete(`${id}:${projectId}`);
+    if (
+      owner &&
+      this.endpoints.get(key)?.record.runId &&
+      this.endpoints.get(key)!.record.runId !== owner.runId
+    )
+      throw new AppError('项目 SSH 桥接身份已改变，拒绝删除新启动', 409);
+    this.endpoints.delete(key);
+    if (owner && this.machines.live.get(id) !== owner.instance)
+      throw new AppError('客户机实例已改变，拒绝旧项目 SSH 回滚', 409);
+    const stop =
+      this.machines.get(id).distro === 'alpine'
+        ? `python3 -I -S -c ${quote(openrcStopScript(p))}\n`
+        : `systemctl stop ${p.unit}\n`;
     const stopped = await this.machines.exec(
       id,
       `set -eu\n` +
-        (this.machines.get(id).distro === 'alpine'
-          ? `python3 -I -S -c ${quote(openrcStopScript(p))}\n`
-          : `systemctl stop ${p.unit}\n`) +
+        (owner
+          ? `sakura_rollback_owner=$(${rollbackOwnerCommand(project, owner)})\n` +
+            `if [ "$sakura_rollback_owner" = SAKURA_PROJECT_SSH_OWNED ]; then\n${stop}fi\n`
+          : stop) +
         projectSshBusyScript(projectId),
       30_000,
     );
     if (stopped.code !== 0 || stopped.stdout.includes('SAKURA_PROJECT_SSH_BUSY'))
-      throw new AppError('项目 SSH 子进程尚未停止，绑定不可修改', 409);
+      throw new AppError(
+        owner && stopped.stderr.trim() ? stopped.stderr.trim() : '项目 SSH 子进程尚未停止，绑定不可修改',
+        409,
+      );
   }
   async stop(id: string) {
     const project = await this.workspaces.config(id);
