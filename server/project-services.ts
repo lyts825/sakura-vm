@@ -7,6 +7,7 @@ import type { Project } from './workspaces.ts';
 import { guestTask } from './guest-task.ts';
 import { secretRefsSchema } from './secrets.ts';
 import { projectNetworkCommand } from './project-network-isolation.ts';
+import { ProjectServiceScopes, projectServiceBinding, type ProjectServiceRecord } from './project-service-scope.ts';
 
 export const environmentSchema = z
   .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(4096))
@@ -82,69 +83,69 @@ export async function runServices(
 ) {
   const services = project.services || [];
   const order = serviceOrder(services, only);
-  const stop = async (name: string) => {
-    const result = await machines.exec(
-      id,
-      `if tmux has-session -t =${serviceSession(name, project)} 2>/dev/null; then tmux kill-session -t =${serviceSession(name, project)}; fi`,
-      10000,
-    );
-    if (result.code !== 0) throw new AppError(result.stderr || '停止服务失败');
-  };
+  if (action === 'start' && order.length) {
+    const distro = machines.get(id).distro;
+    const dependencies = await guestTask(machines, id,
+      `# SAKURA_PROJECT_SERVICE_DEPENDENCIES\nset -eu\n` +
+      `if [ -x /usr/bin/python3 ] && [ -x /usr/bin/tmux ]; then exit 0; fi\n` +
+      (distro === 'alpine'
+        ? `apk add --no-cache --timeout 30 python3 tmux\n`
+        : `export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n` +
+          `apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends python3 tmux\n`) +
+      `test -x /usr/bin/python3 && test -x /usr/bin/tmux`, signal, undefined, 180_000)
+      .catch((error) => {
+        if ((error as AppError).code === 'GUEST_TASK_SCOPE_UNAVAILABLE')
+          throw new AppError((error as Error).message, 409, 'SERVICE_SCOPE_UNAVAILABLE');
+        throw error;
+      });
+    if (dependencies.code !== 0)
+      throw new AppError('无法准备服务归属工具 python3/tmux；项目代码未执行', 409, 'SERVICE_SCOPE_UNAVAILABLE');
+  }
+  const scopes = new ProjectServiceScopes(machines, id, project);
   if (action === 'stop') {
     if (only) {
       const dependents = services.filter(
         (s) => s.name !== only && serviceOrder(services, s.name).some((d) => d.name === only),
       );
       for (const dependent of dependents) {
-        const live = await machines.exec(
-          id,
-          `tmux has-session -t =${serviceSession(dependent.name, project)} 2>/dev/null`,
-          5000,
-          signal,
-        );
-        if (live.code === 0) throw new AppError(`请先停止依赖服务 ${dependent.name}`, 409);
+        const live = await scopes.status(dependent.name, signal);
+        if (live.status === 'running' || live.status === 'prepared' || live.status === 'exited' || live.status === 'unconfirmed')
+          throw new AppError(`请先停止依赖服务 ${dependent.name}`, 409);
       }
     }
     for (const service of [...order].reverse().filter((s) => !only || s.name === only)) {
       signal.throwIfAborted();
-      await stop(service.name);
+      const state = await scopes.status(service.name, signal);
+      if (state.record) await scopes.stop(state.record, log);
       log(`已停止 ${service.name}\n`);
     }
     return;
   }
-  const started: string[] = [];
+  const started: ProjectServiceRecord[] = [];
   try {
     for (const service of order) {
       signal.throwIfAborted();
-      const live = await machines.exec(
-        id,
-        `tmux has-session -t =${serviceSession(service.name, project)} 2>/dev/null`,
-        5000,
-        signal,
-      );
-      if (live.code !== 0) {
+      const live = await scopes.status(service.name, signal);
+      if (live.status === 'prepared' || live.status === 'unconfirmed')
+        throw new AppError(`${service.name} 的上次启动尚未确认，请先停止并重建`, 409, 'SERVICE_SCOPE_CHANGED');
+      if (live.status === 'exited')
+        throw new AppError(`${service.name} 主 pane 已退出，请先停止清理仍归属此服务的进程`, 409, 'SERVICE_SCOPE_CHANGED');
+      if (live.status === 'running' && live.record?.binding !== projectServiceBinding(project, service))
+        throw new AppError(`${service.name} 启动配置已改变，请先停止并重建`, 409, 'SERVICE_SCOPE_CHANGED');
+      if (live.status !== 'running') {
         log(`启动 ${service.name}…\n`);
         const script = `${envPrefix({ ...project.environment, ...service.environment })}\n${service.command}`;
-        started.push(service.name);
-        const result = await machines.exec(
-          id,
-          `tmux new-session -d -s ${serviceSession(service.name, project)} -c ${quote(project.directory)} ${quote(`${projectNetworkCommand(project, script)} > ${quote(serviceLog(service.name, project))} 2>&1`)}`,
-          10000,
-          signal,
-        );
-        if (result.code !== 0) throw new AppError(result.stderr || `无法启动 ${service.name}`);
+        const intent = scopes.intent(service, live.bootId);
+        started.push(intent);
+        await scopes.start(intent,
+          `${projectNetworkCommand(project, script)} > ${quote(serviceLog(service.name, project))} 2>&1`, signal);
       }
       const deadline = Date.now() + service.timeout * 1000;
       let ready = false;
       do {
         await delay(300, undefined, { signal });
-        const alive = await machines.exec(
-          id,
-          `tmux has-session -t =${serviceSession(service.name, project)} 2>/dev/null`,
-          5000,
-          signal,
-        );
-        if (alive.code !== 0) throw new AppError(`${service.name} 已退出，请查看服务日志`);
+        const alive = await scopes.status(service.name, signal);
+        if (alive.status !== 'running') throw new AppError(`${service.name} 已退出，请查看服务日志`);
         if (!service.ready.trim()) {
           ready = true;
           break;
@@ -168,7 +169,14 @@ export async function runServices(
       log(`${service.name} 已就绪\n`);
     }
   } catch (error) {
-    for (const name of started.reverse()) await stop(name).catch(() => {});
+    const failures: string[] = [];
+    for (const record of started.reverse()) {
+      try { await scopes.stop(record, log); }
+      catch (cleanupError) { failures.push(cleanupError instanceof Error ? cleanupError.message : String(cleanupError)); }
+    }
+    if (failures.length)
+      throw new AppError(`项目服务启动失败：${error instanceof Error ? error.message : String(error)}；` +
+        `回滚清理未确认：${failures.join('；')}`, 503, 'SERVICE_CLEANUP_FAILED');
     throw error;
   }
 }

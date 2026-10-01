@@ -11,6 +11,7 @@ import type { Bundles as BundlesType } from '../server/bundles';
 import type { Machines as MachinesType } from '../server/machines';
 import type { Workspaces as WorkspacesType } from '../server/workspaces';
 import type { Engine } from '../server/runtime';
+import type { ProjectServiceRecord } from '../server/project-service-scope.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-development-test-'));
 process.env.SAKURA_DATA_DIR = root;
@@ -26,6 +27,7 @@ const { Machines } = await import('../server/machines.ts');
 const { DataMigration } = await import('../server/data-migration.ts');
 const { dataDirectory } = await import('../server/data-directory.ts');
 const { ServiceHealth } = await import('../server/service-health.ts');
+const { runServices } = await import('../server/project-services.ts');
 const { projectSchema } = await import('../server/workspaces.ts');
 const { Jobs } = await import('../server/jobs.ts');
 const { Backups } = await import('../server/backups.ts');
@@ -524,6 +526,51 @@ test('SSH includes from a previous migrated directory are repaired without editi
     await rm(join(root, '.sakura-migration.json'));
   }
 });
+function managedHealthFixture(id: string, secret = '') {
+  const bootId = randomUUID(), records = new Map<string, ProjectServiceRecord>(), exited = new Set<string>();
+  let sequence = 0, probes = 0, stops = 0, failStops = false;
+  const emitter = new EventEmitter() as unknown as MachinesType;
+  emitter.live = new Map([[id, {} as never]]);
+  emitter.state = () => 'running';
+  emitter.get = () => ({ id, distro: 'debian' }) as ReturnType<MachinesType['get']>;
+  emitter.exec = async (_id, script) => {
+    const prefix = '# SAKURA_PROJECT_SERVICE_REQUEST=';
+    const encoded = script.split('\n').find(line => line.startsWith(prefix));
+    if (!encoded) {
+      const probe = script.startsWith('setsid sh -c') && script.includes('health-probe');
+      if (probe) probes++;
+      return { code: probe ? 1 : 0, stdout: '', stderr: '' };
+    }
+    const input = JSON.parse(Buffer.from(encoded.slice(prefix.length), 'base64').toString());
+    const reply = (status: string, record: ProjectServiceRecord | null) => ({
+      code: 0, stdout: JSON.stringify({ status, bootId, record }), stderr: '',
+    });
+    const previous = records.get(input.name);
+    if (input.op === 'status') return reply(previous?.phase === 'running' && exited.has(input.name) ? 'exited' : previous?.phase || 'absent', previous || null);
+    let record: ProjectServiceRecord;
+    if (input.op === 'prepare') {
+      exited.delete(input.name);
+      record = { ...input.record, phase: 'prepared', inode: String(1000 + ++sequence) };
+    } else if (input.op === 'start') {
+      assert.ok(previous);
+      record = { ...previous, sessionId: '$' + sequence, paneId: '%' + sequence,
+        panePid: 100 + sequence, paneStartTicks: String(2000 + sequence) };
+    } else if (input.op === 'commit') {
+      assert.ok(previous);
+      record = { ...previous, phase: 'running' };
+    } else {
+      assert.equal(input.op, 'stop');
+      stops++;
+      if (failStops) throw new Error('owned service cleanup refused ' + secret);
+      record = { ...(previous || input.record), phase: 'stopped' };
+    }
+    records.set(input.name, record);
+    return reply(record.phase, record);
+  };
+  return { emitter, records, counts: () => ({ probes, stops }), setStopFailure: (value: boolean) => { failStops = value; },
+    setExited: (name: string) => { exited.add(name); } };
+}
+
 test('health checks back off, enforce restart limits, preserve state after failed stops and honour manual stops', async () => {
   const id = randomUUID(),
     project = projectSchema.parse({
@@ -542,14 +589,7 @@ test('health checks back off, enforce restart limits, preserve state after faile
         },
       ],
     });
-  const emitter = new EventEmitter() as unknown as MachinesType;
-  emitter.live = new Map([[id, {} as never]]);
-  emitter.state = () => 'running';
-  emitter.exec = async (_id, script) => ({
-    code: script.includes('health-probe') ? 1 : 0,
-    stdout: '',
-    stderr: '',
-  });
+  const { emitter } = managedHealthFixture(id);
   const projects = new Jobs('health-test-projects', root);
   const workspaces = {
     config: async () => project,
@@ -561,6 +601,7 @@ test('health checks back off, enforce restart limits, preserve state after faile
     (await health.expect(id, 'start'))(true);
     await health.tick(10000);
     await health.jobs.wait(id);
+    assert.equal(health.jobs.view(id)?.status, 'done', health.jobs.view(id)?.error);
     assert.equal((await health.view(id)).services[0].restarts, 1);
     await health.tick(12000);
     assert.equal((await health.view(id)).services[0].failures, 1);
@@ -578,6 +619,107 @@ test('health checks back off, enforce restart limits, preserve state after faile
     await projects.close();
   }
 });
+for (const changed of ['run', 'missing', 'exited'] as const) {
+  test(`health checks verify service ${changed} ownership before executing a project probe`, async () => {
+    const id = randomUUID(), f = managedHealthFixture(id);
+    const project = projectSchema.parse({ services: [{ name: 'api', command: 'sleep 60', health: {
+      command: 'health-probe', failures: 1, interval: 5, maxRestarts: 3, restart: true,
+    } }] });
+    const projects = new Jobs('health-service-identity-' + changed, root);
+    const workspaces = { config: async () => project, resolvedConfig: async () => project, jobs: projects } as unknown as WorkspacesType;
+    const health = new ServiceHealth(f.emitter, workspaces);
+    try {
+      await runServices(f.emitter, id, project, 'start', () => {}, new AbortController().signal);
+      const oldRun = f.records.get('api')!.runId;
+      (await health.expect(id, 'start'))(true);
+      if (changed === 'run') {
+        const record = f.records.get('api')!;
+        record.runId = randomUUID(); record.scopeName = 'sakura-service-' + record.runId;
+      } else if (changed === 'missing') f.records.delete('api');
+      else f.setExited('api');
+      await health.tick(10000);
+      await health.jobs.wait(id);
+      assert.equal(f.counts().probes, 0);
+      const state = (await health.view(id)).services[0];
+      if (changed !== 'exited') {
+        assert.equal(f.counts().stops, 0);
+        assert.equal(state.restarts, 0);
+        assert.match(state.error!, /自动检查与重启已暂停/);
+        await health.tick(30000);
+        assert.equal(f.counts().probes, 0);
+      } else {
+        assert.equal(f.counts().stops, 1);
+        assert.equal(health.jobs.view(id)?.status, 'done', health.jobs.view(id)?.error);
+        assert.notEqual(f.records.get('api')!.runId, oldRun);
+        assert.equal(state.status, 'waiting');
+      }
+    } finally {
+      await health.close();
+      await projects.close();
+    }
+  });
+}
+test('an unconfirmed service stop pauses the whole restart chain and retains ownership until manual recovery', async () => {
+  const id = randomUUID(), secret = 'service-health-private-token';
+  const project = projectSchema.parse({ environment: { TOKEN: secret }, secrets: { TOKEN: 'health-token' },
+    services: [
+      { name: 'api', command: 'sleep 60', health: {
+        command: 'health-probe', failures: 1, interval: 5, maxRestarts: 3, restart: true,
+      } },
+      { name: 'worker', command: 'sleep 60', dependsOn: ['api'], health: {
+        command: 'health-probe', failures: 1, interval: 5, maxRestarts: 3, restart: true,
+      } },
+    ],
+  });
+  const f = managedHealthFixture(id, secret);
+  const projects = new Jobs('health-service-cleanup-test', root);
+  const workspaces = { config: async () => project, resolvedConfig: async () => project, jobs: projects } as unknown as WorkspacesType;
+  const health = new ServiceHealth(f.emitter, workspaces);
+  const signal = new AbortController().signal;
+  try {
+    await runServices(f.emitter, id, project, 'start', () => {}, signal);
+    const runs = [...f.records.values()].map(record => record.runId);
+    (await health.expect(id, 'start'))(true);
+    f.setStopFailure(true);
+    await health.tick(10000);
+    await health.jobs.wait(id);
+    assert.equal(health.jobs.view(id)?.status, 'error');
+    assert.equal(f.counts().stops, 3);
+    assert.equal(f.counts().probes, 1);
+    for (const state of (await health.view(id)).services) {
+      assert.equal(state.status, 'unhealthy');
+      assert.equal(state.desired, true);
+      assert.match(state.error!, /自动检查与重启已暂停/);
+      assert.equal(state.error!.includes(secret), false);
+    }
+    assert.equal(health.jobs.view(id)?.error?.includes(secret), false);
+    assert.deepEqual([...f.records.values()].map(record => record.runId), runs);
+    await health.tick(30000);
+    assert.equal(f.counts().probes, 1);
+    const failed = await health.expect(id, 'stop');
+    await assert.rejects(runServices(f.emitter, id, project, 'stop', () => {}, signal),
+      error => (error as { code: string }).code === 'SERVICE_CLEANUP_FAILED');
+    failed(false);
+    await health.tick(50000);
+    assert.equal(f.counts().probes, 1);
+    assert.ok((await health.view(id)).services.every(state => state.desired));
+    f.setStopFailure(false);
+    const recovered = await health.expect(id, 'stop');
+    await runServices(f.emitter, id, project, 'stop', () => {}, signal);
+    recovered(true);
+    assert.ok((await health.view(id)).services.every(state => !state.desired));
+    const restarted = await health.expect(id, 'start');
+    await runServices(f.emitter, id, project, 'start', () => {}, signal);
+    restarted(true);
+    await health.tick(70000);
+    await health.jobs.wait(id);
+    assert.equal(f.counts().probes, 2);
+    assert.equal(health.jobs.view(id)?.status, 'done', health.jobs.view(id)?.error);
+  } finally {
+    await health.close();
+    await projects.close();
+  }
+});
 for (const failure of ['cleanup', 'scope'] as const) {
   test(`health ${failure} failures pause automatic probes and restarts until a successful manual action`, async () => {
     const id = randomUUID(), secret = 'health-private-token';
@@ -588,10 +730,11 @@ for (const failure of ['cleanup', 'scope'] as const) {
       } }],
     });
     let workers = 0, controls = 0;
-    const emitter = new EventEmitter() as unknown as MachinesType;
-    emitter.live = new Map([[id, {} as never]]);
-    emitter.state = () => 'running';
+    const { emitter } = managedHealthFixture(id);
+    await runServices(emitter, id, project, 'start', () => {}, new AbortController().signal);
+    const managedExec = emitter.exec;
     emitter.exec = async (_id, script) => {
+      if (script.startsWith('# SAKURA_PROJECT_SERVICE_')) return managedExec(_id, script);
       if (script.startsWith('setsid sh -c')) {
         workers++;
         return failure === 'scope'

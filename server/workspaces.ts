@@ -14,6 +14,7 @@ import {
   runServices,
   serviceLog,
   envPrefix,
+  type ProjectService,
 } from './project-services.ts';
 import { guestTask } from './guest-task.ts';
 import { secretRefsSchema, privateLog, redactValues, type Secrets } from './secrets.ts';
@@ -27,6 +28,7 @@ import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
 import { projectSshBusyScript } from './project-ssh.ts';
 import { resolveDependencyAuthentication } from './dependency-downloads.ts';
+import { ProjectServiceScopes } from './project-service-scope.ts';
 import type { DependencyManager } from './project-dependency-cache.ts';
 
 export const projectSchema = z
@@ -250,6 +252,36 @@ export class Workspaces {
           (project.directory !== allowedDirectory || previous.directory !== allowedDirectory))
         throw new AppError('项目成员不能修改项目目录', 403);
       for (const guard of this.configGuards) await guard(id, previous, project);
+      // Persistent service receipts retain detached descendants even after the
+      // original tmux pane exits. Binding edits must keep that stop reachable.
+      const serviceBindingInput = (value: Project, service: ProjectService) =>
+        JSON.stringify([value.directory, value.networkIsolation || 'host', value.environment || {},
+          value.secrets || {}, value.runtimes || {}, service.command, service.environment || {}, service.secrets || {}]);
+      const serviceScopes = new ProjectServiceScopes(this.machines, id, previous);
+      for (const service of previous.services || []) {
+        const next = project.services?.find(item => item.name === service.name);
+        if (next && serviceBindingInput(previous, service) === serviceBindingInput(project, next)) continue;
+        const machineState = this.machines.state(id);
+        if (!await serviceScopes.hasReceipt(service.name)) {
+          if (machineState === 'running') {
+            const old = await this.machines.exec(id,
+              `if tmux has-session -t =sakura-service-${previous._workspace ? previous._workspace + '-' : ''}${service.name} 2>/dev/null; then echo active; fi`, 10000);
+            if (old.code !== 0) throw new AppError('无法检查旧服务会话', 409);
+            if (old.stdout.includes('active'))
+              throw new AppError('旧服务缺少受管归属，请明确关闭旧会话后重新启动，再修改服务绑定或移除服务', 409, 'SERVICE_SCOPE_UNMANAGED');
+          }
+          continue;
+        }
+        if (machineState === 'paused') {
+          if ((await serviceScopes.metadata(service.name))?.phase !== 'stopped')
+            throw new AppError('请先恢复实例并确认停止受管服务，再修改服务绑定或移除服务', 409);
+          continue;
+        }
+        if (machineState !== 'running') continue;
+        const runtime = await serviceScopes.status(service.name);
+        if (runtime.status !== 'stopped' && runtime.status !== 'absent')
+          throw new AppError('请先确认停止受管服务及其全部后代，再修改服务绑定或移除服务', 409, 'SERVICE_SCOPE_CHANGED');
+      }
       if (previous.directory !== project.directory ||
           (previous.networkIsolation || 'host') !== (project.networkIsolation || 'host')) {
         if (this.machines.state(id) === 'paused')
@@ -448,7 +480,8 @@ export class Workspaces {
             await runServices(this.machines, id, project, 'start', log, signal, service);
           log('操作完成。\n');
         } catch (error) {
-          throw new AppError(redactValues((error as Error).message, privateValues));
+          throw new AppError(redactValues((error as Error).message, privateValues),
+            error instanceof AppError ? error.status : 400, error instanceof AppError ? error.code : undefined);
         } finally {
           output.flush();
         }
@@ -466,7 +499,30 @@ export class Workspaces {
     const privateValues = projectPrivateValues(project);
     if (project.services?.length) {
       const services = [];
+      const scopes = new ProjectServiceScopes(this.machines, id, project);
       for (const service of project.services) {
+        if (await scopes.hasReceipt(service.name)) {
+          let status: string, reason = '';
+          try {
+            const runtime = await scopes.status(service.name, signal);
+            status = runtime.status === 'absent' ? 'stopped' : runtime.status;
+            if (status === 'exited') reason = '主 pane 已退出，仍保留服务归属；请停止并清理全部后代。';
+            else if (status === 'prepared' || status === 'unconfirmed') reason = '服务启动或停止尚未确认；请先确认停止再重建。';
+          } catch (error) {
+            signal?.throwIfAborted();
+            status = 'unconfirmed';
+            reason = error instanceof Error ? error.message : String(error);
+          }
+          const output = await this.machines.exec(id,
+            `test ! -f ${quote(serviceLog(service.name, project))} || tail -c 8192 ${quote(serviceLog(service.name, project))}`,
+            10000, signal).catch((error) => {
+              signal?.throwIfAborted();
+              return { code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) };
+            });
+          if (output.code !== 0) { status = 'unconfirmed'; reason += '\n服务日志读取未确认：' + output.stderr; }
+          services.push({ name: service.name, status, log: redactValues([reason, output.stdout].filter(Boolean).join('\n'), privateValues) });
+          continue;
+        }
         const result = await this.machines.exec(
           id,
           `if tmux has-session -t =sakura-service-${project._workspace ? project._workspace + '-' : ''}${service.name} 2>/dev/null; then echo running; else echo stopped; fi; test ! -f ${quote(serviceLog(service.name, project))} || tail -c 8192 ${quote(serviceLog(service.name, project))}`,
@@ -474,14 +530,18 @@ export class Workspaces {
           signal,
         );
         const [status, ...lines] = result.stdout.split('\n');
-        services.push({ name: service.name, status, log: redactValues(lines.join('\n'), privateValues) });
+        services.push({ name: service.name, status: status === 'running' ? 'migration-required' : status,
+          log: redactValues([status === 'running' ? '此旧服务尚未迁移到受管归属；请明确关闭旧会话后重新启动。' : '',
+            lines.join('\n')].filter(Boolean).join('\n'), privateValues) });
       }
       return {
-        status: services.every((s) => s.status === 'running')
+        status: services.some((s) => ['unconfirmed', 'prepared', 'migration-required'].includes(s.status))
+          ? 'unconfirmed'
+          : services.every((s) => s.status === 'running')
           ? 'running'
           : services.some((s) => s.status === 'running')
             ? 'partial'
-            : 'stopped',
+            : services.some(s => s.status === 'exited') ? 'exited' : 'stopped',
         log: '',
         services,
       };

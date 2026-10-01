@@ -7,6 +7,14 @@ import { Jobs } from './jobs.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { AppError } from './model.ts';
 import { projectNetworkCommand } from './project-network-isolation.ts';
+import { ProjectServiceScopes, projectServiceBinding } from './project-service-scope.ts';
+
+const lifecycleRefusals = new Set([
+  'GUEST_TASK_CLEANUP_FAILED', 'GUEST_TASK_SCOPE_UNAVAILABLE',
+  'SERVICE_CLEANUP_FAILED', 'SERVICE_SCOPE_UNAVAILABLE',
+  'SERVICE_SCOPE_UNMANAGED', 'SERVICE_SCOPE_CHANGED',
+]);
+const needsManualCleanup = (error: unknown) => error instanceof AppError && lifecycleRefusals.has(error.code || '');
 
 export type HealthView = {
   name: string;
@@ -150,10 +158,14 @@ export class ServiceHealth {
           state = states.get(service.name);
         if (!policy || !state?.desired || state.nextCheck > now || abort.signal.aborted || this.blockedChecks.get(key)?.has(service.name)) continue;
         state.nextCheck = now + policy.interval * 1000;
+        const ownership = await new ProjectServiceScopes(this.machines, id, project).status(service.name, abort.signal);
+        if (ownership.status === 'prepared' || ownership.status === 'unconfirmed' ||
+            (ownership.status === 'running' && ownership.record?.binding !== projectServiceBinding(project, service)))
+          throw new AppError('服务启动或配置归属未确认，请先停止并重建', 409, 'SERVICE_SCOPE_CHANGED');
         const script = `set -e\ntmux has-session -t =${serviceSession(service.name, project)}\n` +
           projectNetworkCommand(project,
             `cd ${quote(project.directory)}\n${envPrefix({ ...project.environment, ...service.environment })}\n${policy.command}`);
-        const result = await guestTask(
+        const result = ownership.status !== 'running' ? { code: 1 } : await guestTask(
           this.machines,
           id,
           script,
@@ -162,8 +174,7 @@ export class ServiceHealth {
           policy.timeout * 1000,
         ).catch((error) => {
           abort.signal.throwIfAborted();
-          if (error instanceof AppError &&
-            (error.code === 'GUEST_TASK_CLEANUP_FAILED' || error.code === 'GUEST_TASK_SCOPE_UNAVAILABLE')) throw error;
+          if (needsManualCleanup(error)) throw error;
           return { code: 1, stderr: (error as Error).message };
         });
         if (generation !== this.generations.get(key)) break;
@@ -209,11 +220,25 @@ export class ServiceHealth {
               }
               if (generation === this.generations.get(key)) state.status = 'waiting';
             } catch (error) {
+              const detail = redactValues((error as Error).message, projectPrivateValues(project));
               if (generation === this.generations.get(key)) {
-                state.status = 'unhealthy';
-                state.error = redactValues((error as Error).message, projectPrivateValues(project));
+                if (needsManualCleanup(error)) {
+                  const blocked = this.blockedChecks.get(key) || new Set<string>();
+                  for (const target of affected) {
+                    const paused = states.get(target.name);
+                    if (!paused?.desired) continue;
+                    blocked.add(target.name);
+                    paused.status = 'unhealthy';
+                    paused.error = '服务归属或清理未确认，自动检查与重启已暂停；请核查任务归属后手动停止服务。' + detail;
+                  }
+                  this.blockedChecks.set(key, blocked);
+                } else {
+                  state.status = 'unhealthy';
+                  state.error = detail;
+                }
               }
-              throw new AppError(redactValues((error as Error).message, projectPrivateValues(project)));
+              throw new AppError(detail, error instanceof AppError ? error.status : 500,
+                error instanceof AppError ? error.code : undefined);
             } finally {
               output.flush();
             }
@@ -228,8 +253,7 @@ export class ServiceHealth {
       }
     } catch (error) {
       if (!abort.signal.aborted && generation === this.generations.get(key)) {
-        const unconfirmed = error instanceof AppError &&
-          (error.code === 'GUEST_TASK_CLEANUP_FAILED' || error.code === 'GUEST_TASK_SCOPE_UNAVAILABLE');
+        const unconfirmed = needsManualCleanup(error);
         const detail = privateValues ? redactValues((error as Error).message, privateValues) : '';
         for (const state of states.values())
           if (state.desired) {

@@ -15,6 +15,10 @@ const HealthPanel = lazy(() =>
 const SecretReferences = lazy(() =>
   import('../secrets/client').then((module) => ({ default: module.SecretReferences })),
 );
+const serviceStatus = (status: string) => ({
+  running: '运行中', stopped: '已停止', absent: '已停止', prepared: '启动未确认',
+  exited: '主进程已退出，待清理', unconfirmed: '状态未确认', 'migration-required': '旧服务待迁移',
+} as Record<string, string>)[status] || '状态未确认';
 
 export function ProjectPanel(props: FeatureProps) {
   const { vm, request: baseRequest, refresh, projectId: selectedProjectId, onProjectChange } = props;
@@ -77,7 +81,11 @@ export function ProjectPanel(props: FeatureProps) {
             ? '项目运行中'
             : runtime.data?.status === 'partial'
               ? '部分服务运行中'
-              : '项目未运行'}
+              : runtime.data?.status === 'exited'
+                ? '服务主进程已退出，待清理'
+                : runtime.data?.status === 'unconfirmed'
+                  ? '服务状态未确认'
+                  : '项目未运行'}
         </span>
       </div>
       {projects.data && (
@@ -302,7 +310,7 @@ export function ProjectPanel(props: FeatureProps) {
       {runtime.data?.services?.map((service) => (
         <details className="feature-card" key={service.name}>
           <summary>
-            {service.name} · {service.status === 'running' ? '运行中' : '已停止'}
+            {service.name} · {serviceStatus(service.status)}
           </summary>
           <div className="feature-actions">
             {(['start', 'stop'] as const).map((kind) => (
