@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AppError, DATA, ROOT, vmDir } from './model.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
+import type { ProjectTerminals } from './project-terminals.ts';
 import { Jobs } from './jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { runEngineeringOperation, requireSuccessfulResult } from './engineering-runner.ts';
@@ -249,6 +250,7 @@ const idSchema = z.enum(
   extendedFeatureCatalog.map(([id]) => id) as [ExtendedFeatureId, ...ExtendedFeatureId[]],
 );
 const pathSchema = z.string().optional();
+const oneShotFeatures = new Set(['secure-erase', 'gpg-agent-forward', 'ssh-agent-forward']);
 
 const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
   id: spec.id,
@@ -262,6 +264,7 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
 export class ExtendedFeatures {
   jobs = new Jobs('extended-features');
   private trustedBoot?: TrustedBootService;
+  private projectTerminals?: ProjectTerminals;
   private tunnels: ReverseTunnels;
   private stateValue?: ExtendedState;
   private stateLoading?: Promise<ExtendedState>;
@@ -273,6 +276,7 @@ export class ExtendedFeatures {
     this.tunnels = new ReverseTunnels(machines, workspaces);
   }
   setTrustedBoot(service: TrustedBootService) { this.trustedBoot = service; }
+  setProjectTerminals(service: ProjectTerminals) { this.projectTerminals = service; }
 
   private file() {
     return join(DATA, 'extended-features.json');
@@ -330,7 +334,7 @@ export class ExtendedFeatures {
       .parse(input);
     if (value.featureId === 'disk-encryption')
       value.options = z.object({ secretName: secretName.optional() }).strict().parse(value.options);
-    if (['secure-erase', 'gpg-agent-forward'].includes(value.featureId) &&
+    if (oneShotFeatures.has(value.featureId) &&
         Object.keys(value.options).length)
       throw new AppError('一次性命令与确认不能保存为持久配置', 409);
     const state = await this.state();
@@ -597,7 +601,7 @@ export class ExtendedFeatures {
     const startedAt = new Date().toISOString();
     const configured = (await this.state()).settings[id]?.[spec.id];
     if (action === 'run' && configured?.enabled === false) throw new AppError('此能力已禁用', 409);
-    const merged = ['secure-erase', 'gpg-agent-forward'].includes(spec.id) ? options || {} :
+    const merged = oneShotFeatures.has(spec.id) ? options || {} :
       { ...configured?.options, ...options };
     if (spec.id === 'self-update' && action === 'run')
       throw new AppError('请在安装目录运行离线更新命令；此入口仅供检查', 409);
@@ -636,7 +640,7 @@ export class ExtendedFeatures {
         result = { ready: status.enabled && status.encrypted, executed: true, ...status };
       } else result = await this.probe(id, spec, signal, merged);
     } else if (hasCapability(spec.id)) {
-      const runner = new CapabilityActions(this.machines, this.workspaces);
+      const runner = new CapabilityActions(this.machines, this.workspaces, this.projectTerminals);
       result =
         action === 'run'
           ? await runner.run(id, spec.id, merged, signal || new AbortController().signal)
@@ -788,7 +792,8 @@ export class ExtendedFeatures {
     const spec = this.spec(value.featureId);
     if (value.action === 'check') return this.executeFeature(id, spec, 'check', signal);
     if (hasCapability(spec.id)) {
-      const configured = (await this.state()).settings[id]?.[spec.id]?.options || {};
+      const configured = oneShotFeatures.has(spec.id) ? {} :
+        (await this.state()).settings[id]?.[spec.id]?.options || {};
       capabilityParameters(spec.id, { ...configured, ...value.options });
     }
     const projectId = this.workspaces.projects.current(id);

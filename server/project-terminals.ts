@@ -132,9 +132,13 @@ export class ProjectTerminals {
         const prepared = await this.machines.exec(id, `set -eu\n` +
           `${session ? `if ! command -v tmux >/dev/null; then ${install}; fi\n` : ''}` +
           (namespace ? `if ip netns exec ${namespace} true >/dev/null 2>&1; then\n${projectNetworkCheckScript(namespace)}\nfi\n` : '') +
-          `${ensureProjectNetworkScript(project, distro)}mkdir -p ${quote(project.directory)}`,
+          `${ensureProjectNetworkScript(project, distro)}` + (task ?
+            `if [ ! -d ${quote(project.directory)} ] || [ -L ${quote(project.directory)} ]; then\n` +
+            `  echo 'SAKURA_TASK_DIRECTORY_MISSING: 项目目录不存在或是链接，请先显式准备并迁移原目录' >&2; exit 74\nfi` :
+            `mkdir -p ${quote(project.directory)}`),
         180_000, abort);
-        if (prepared.code !== 0) throw new AppError(prepared.stderr || '无法准备项目终端', 409);
+        if (prepared.code !== 0) throw new AppError(prepared.stderr || '无法准备项目终端', 409,
+          task && prepared.stderr.includes('SAKURA_TASK_DIRECTORY_MISSING:') ? 'PROJECT_IDENTITY_DIRECTORY_MISSING' : undefined);
       }
       if (session) {
         const name = terminalSessionName(scope, session);

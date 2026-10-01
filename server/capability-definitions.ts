@@ -113,7 +113,7 @@ export const capabilityDefinitions = {
   'ssh-agent-forward': action(
     'SSH Agent 转发', 'extended', sshAgentForwardInput.shape,
     { command: 'ssh-add -L', confirmed: true, timeoutSeconds: 60 },
-    '仅在这一次客户机命令运行期间转发宿主 SSH Agent。提交前请确认命令及其依赖可信；命令结束或取消后关闭 SSH 连接。私钥不会复制到客户机。',
+    '命令使用当前项目账号、独立 home 和项目网络。每次提交均需明确命令及 confirmed=true，不能保存命令或沿用旧确认。请确认命令及其依赖可信；结束或取消后撤销本次转发并确认全部后代清理，私钥不会复制到客户机。',
     true, false,
   ),
   'process-interop': action(

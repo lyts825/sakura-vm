@@ -28,7 +28,9 @@ const result = await client.call('core.vms.exec', {
 });
 ```
 
-能力中心中的单次 SSH/GPG Agent 命令也使用所选项目的目录、环境、网络模式和密钥遮盖，但其专属套接字入口尚未迁移为上述项目账号。项目配置不能替换 SSH 转发连接提供的 `SSH_AUTH_SOCK`；GPG 命令使用本次运行专属的临时 `GNUPGHOME`。超时或取消后结束命令的 cgroup 并关闭桥接，GPG 临时目录仅在确认原任务域停止后清理；实例操作和项目修改在清理完成前受到保护。检查实际 Agent 协议与私有项目的脚本见 `test:ssh-agent-forward` 和 `test:gpg-agent-forward`，设置 `SAKURA_AGENT_PRIVATE=1` 可启用私有模式，发行版参数支持 `alpine`、`debian`、`ubuntu`。
+能力中心的单次 SSH Agent 命令已使用所选项目的固定 UID/GID、独立 home、捕获配置及受保护正文。每次提交都需明确命令和 `confirmed: true`，不能保存命令或沿用旧确认。项目环境不能替换本次独立入口；直接请求核对准确项目和任务域，取消、超时或结束先清理完整域和转发资源，再核销账号票据。失败的具体清理码和原记录可在重载后继续查看，准备租约保留到清理结束，见 [SSH Agent 转发](ssh-agent-forward.md)。新的三系统检查入口 `test:ssh-agent:identity` 只接受脚本固定的已停止自有实例和旧证明，不接受任意用户实例。
+
+GPG 命令仍使用项目目录、环境、网络模式及本次专属临时 `GNUPGHOME`，尚未接入上述项目账号。超时或取消后结束命令 cgroup 并关闭桥接，仅在确认原域停止后清理临时目录。`test:ssh-agent-forward` 与 `test:gpg-agent-forward` 的独立实例检查支持发行版参数 `alpine`、`debian`、`ubuntu`；设置 `SAKURA_AGENT_PRIVATE=1` 可启用私有模式。
 
 “系统调用隔离”的 `run` 模式也绑定所选项目，在进入网络空间、加载环境和目录后再施加 seccomp 策略，并遮盖私密输出。固定的系统 Python 以隔离模块加载模式启动受限执行器，项目 `PATH` 和 `PYTHONPATH` 仍传给用户选择的命令。取消、超时或正常退出后，清理执行器、受限命令及同任务域的后台子进程。`status` 与 `install` 检查和安装实例工具，使用系统环境。`npm run test:syscall-profile -- alpine` 实测项目配置、策略继承、参数、额外路由拒绝和进程清理，也支持 `debian`、`ubuntu`。
 

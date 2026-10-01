@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { DATA, AppError, guestPath } from './model.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
+import type { ProjectTerminals } from './project-terminals.ts';
 import { Jobs, type JobView } from './jobs.ts';
 import type { HealthView } from './service-health.ts';
 import { randomUUID } from 'node:crypto';
@@ -326,6 +327,7 @@ export class FeatureSuite {
   private processInterop?: ProcessInterop;
   private mediaDevices?: MediaDevices;
   private hostMounts?: HostMounts;
+  private projectTerminals?: ProjectTerminals;
   readonly packageWorkbench: PackageWorkbench;
 
   constructor(
@@ -347,6 +349,7 @@ export class FeatureSuite {
   setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
   setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
   setHostMounts(service: HostMounts) { this.hostMounts = service; }
+  setProjectTerminals(service: ProjectTerminals) { this.projectTerminals = service; }
   enableBackground() {
     if (this.powerAbort.signal.aborted) this.powerAbort = new AbortController();
     const controller = this.powerAbort;
@@ -456,7 +459,7 @@ export class FeatureSuite {
       );
     }
     if (hasCapability(featureId)) {
-      const runner = new CapabilityActions(this.machines, this.workspaces);
+      const runner = new CapabilityActions(this.machines, this.workspaces, this.projectTerminals);
       if (input.action === 'check') return runner.check(id, featureId, signal);
       this.machines.requireUnlocked(id);
       const parameters = capabilityParameters(featureId, input.options || {});
@@ -779,7 +782,7 @@ export class FeatureSuite {
       async (log, taskSignal, _update, saveResult) => {
         const combined = taskSignal && signal ? AbortSignal.any([taskSignal, signal]) : taskSignal;
         if (operation === 'lint' || operation === 'format') {
-          const result = await new CapabilityActions(this.machines, this.workspaces).run(
+          const result = await new CapabilityActions(this.machines, this.workspaces, this.projectTerminals).run(
             id,
             'format-lint',
             { mode: operation },

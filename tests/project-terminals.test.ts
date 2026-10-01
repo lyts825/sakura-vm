@@ -2,8 +2,10 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, mkdtemp, rm, realpath, access } from 'node:fs/promises';
+import { join, dirname, basename, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { quote } from '../server/files.ts';
 import { tmpdir } from 'node:os';
 import type { Machines as MachineType } from '../server/machines.ts';
 import type { Engine } from '../server/runtime.ts';
@@ -71,6 +73,42 @@ test('terminal leases bind to the selected project and block directory or networ
     assert.doesNotMatch(shell.command, /netns/);
     assert.match(shell.command, /cd '\/workspace\/private'/);
     shell.release();
+  } finally { await f.close(); }
+});
+
+test('task preparation refuses a missing original directory without creating it or issuing a lease', async () => {
+  const f = await fixture(), execute = f.machines.exec.bind(f.machines);
+  f.machines.exec = async (...args) => {
+    const result = await execute(...args);
+    return args[1].includes('SAKURA_TASK_DIRECTORY_MISSING:') ? { code: 74, stdout: '',
+      stderr: 'SAKURA_TASK_DIRECTORY_MISSING: 项目目录不存在或是链接，请先显式准备并迁移原目录' } : result;
+  };
+  try {
+    await assert.rejects(f.terminals.prepare(f.id, 'default', null, false, undefined, undefined, { mode: 'task' }),
+      { code: 'PROJECT_IDENTITY_DIRECTORY_MISSING' });
+    const task = f.commands.at(-1)!;
+    assert.ok(task.includes("[ ! -d '/workspace' ]") && task.includes("[ -L '/workspace' ]"));
+    assert.doesNotMatch(task, /mkdir -p '\/workspace'/);
+    // Execute the exact fixed directory-check fragment against an owned host
+    // path. Keep network/package preparation outside this POSIX-shell check.
+    const parent = await mkdtemp(join(root, 'directory-check-')), missing = join(parent, 'missing');
+    const git = spawnSync('git', ['--exec-path'], { encoding: 'utf8', timeout: 5000 });
+    assert.equal(git.status, 0, git.stderr || git.error?.message);
+    const shell = process.platform === 'win32' ? resolve(git.stdout.trim(), '../../../usr/bin/sh.exe') : '/bin/sh';
+    const unix = process.platform === 'win32' ? missing.replaceAll('\\', '/').replace(/^([A-Za-z]):/, (_all, drive) => '/' + drive.toLowerCase()) : missing;
+    const check = task.slice(task.lastIndexOf('if [ ! -d ')).replaceAll("'/workspace'", quote(unix));
+    const refused = spawnSync(shell, ['-c', check], { encoding: 'utf8', timeout: 5000 });
+    assert.equal(refused.status, 74, refused.stderr || refused.error?.message);
+    assert.match(refused.stderr, /SAKURA_TASK_DIRECTORY_MISSING:/); await assert.rejects(access(missing), { code: 'ENOENT' });
+    await mkdir(missing);
+    const existing = spawnSync(shell, ['-c', check], { encoding: 'utf8', timeout: 5000 });
+    assert.equal(existing.status, 0, existing.stderr || existing.error?.message); await access(missing);
+    const canonical = await realpath(parent);
+    assert.equal(dirname(canonical), await realpath(root)); assert.ok(basename(canonical).startsWith('directory-check-'));
+    await rm(canonical, { recursive: true, force: true });
+    assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'));
+    const normal = await f.terminals.prepare(f.id, 'default'); normal.release();
+    assert.match(f.commands.at(-1)!, /mkdir -p '\/workspace'/, 'ordinary terminal compatibility is unchanged');
   } finally { await f.close(); }
 });
 
@@ -206,7 +244,7 @@ test('a replaced live instance cannot inherit a preparation lease or its capture
   const f = await fixture(), execute = f.machines.exec;
   f.machines.exec = async (...args) => {
     const result = await execute(...args);
-    if (args[1].includes('mkdir -p')) f.machines.live.set(f.id, {} as never);
+    if (args[1].includes('SAKURA_TASK_DIRECTORY_MISSING:')) f.machines.live.set(f.id, {} as never);
     return result;
   };
   try {

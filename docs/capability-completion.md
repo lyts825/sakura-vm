@@ -2,6 +2,38 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 单次 SSH Agent 的项目账号与独立资源清理
+
+2026-10-02 能力中心单次 SSH Agent 命令接入持久项目 UID/GID、独立 home、原项目目录和保存的网络模式。每次提交明确命令、确认与时限，旧配置中的命令或确认不能沿用。准备在异步检查前固定原项目，捕获配置摘要及准确 live 实例；环境、运行时和密钥只解析该份配置，项目中的 SSH_AUTH_SOCK 不能替换本次入口。正文与环境通过原受保护 stdin 帧交给固定降权启动器，root argv 不携带正文，普通 RUN 和全部清理的固定环境保持原合同。task 准备只核对既有目录，缺失目录明确拒绝，不再由 root 自动建立。用法见 [单次 SSH Agent 转发](ssh-agent-forward.md)。
+
+root SSH 源监听保持原权限，其专属父目录只供 root 访问，固定 Python broker 为本次任务建立项目 socket。每个新连接核对 UID/GID、pidfd、进程创建身份、boot、caps/NNP 与完整 cgroup，转发阶段复核原进程、源 socket 和归属；连接、帧、请求、字节及时间有预算。每条任务拥有准确资源记录和宿主物理连接，同项目两条任务互不关闭。已授权进程主动传递自己的 FD 或代理请求仍不属于防止同 UID 串通的证明。
+
+结束、取消与关闭先撤销本次宿主流并确认全部原后代停止，再核对 Agent 资源清理，最后核销账号票据。清理失联保留 503、具体错误码、原资源和宿主 owner，正常恢复按原完整身份重试；原 inode 的部分删除可继续，替换对象拒绝且保持原样。共享终端服务关闭会取消并等待这些任务，借用者不会关闭另一个服务的任务或宿主 Agent。界面显示持久错误码，刷新和重载不重放旧运行。
+
+最终后端定向 123 项、相关回归 178 项、存储路径 29 项与生命周期 5 项以及类型、Python AST、默认 Node ESM 和差异检查通过，冻结证明为 `.data/network-remaining-test-temp/ssh-agent-identity-backend-freeze-b8dbccfc-6e56-4e51-abcc-d93c50c7073e.json`。三个浏览器场景通过，覆盖原项目提交、明确确认、取消、错误码刷新后保留及窄屏；证明为 `.data/ssh-agent-identity-ui-7f2de5ab-6e2b-499f-b704-2fdc8fefe8cc-verification.json`。首轮浏览器运行在测试前因 ssh2 CommonJS 的命名导入失败，原 false 证明和实际退出码 1 保留；修正默认导入后通过。早期终端旧 mkdir mock 阻塞及 Windows Python kernel 模型的 fcntl/转义失败日志也保留于后端证明，没有改记为成功。
+
+首轮整仓回归实际 1,164 项，1,161 通过、1 项跳过、2 项 Windows rename EPERM 失败，621 个源码前后未变；原 false 证明和实际退出码 1 保留。实例清单随后沿用原提交时深快照与保存队列，接入已有独占刷新临时文件及 Windows 一秒有界重试，失败保留旧清单，不删除目标或其他临时文件。短锁时序证明自有 PowerShell 已关闭后仍可拒绝替换；只用连续 Node 读者的独立对照也实际返回 EPERM，证明原短锁测试自己的读者可能占用目标。测试协调关闭自己的读者后让出提交窗口，另以真实持续 Node 句柄验证预算失败、原 inode/完整旧值/邻居临时文件保留和关闭后恢复；生产一秒预算未放宽。原 25 项未改复测、9 项时序中的失败与五条件对照分别保留，没有猜测杀毒软件或把 bundle 首轮错误断言为同一原因。
+
+第二轮整仓回归实际 1,168 项，1,165 通过、1 项跳过、2 项生命周期测试失败，622 个源码前后未变；原 false 和实际退出码 1 保留。这两项旧测试通过建立固定 machines.json.tmp 目录注入保存失败，没有命中新接口的独占随机临时文件。随后只更新准确清单的故障注入，保留启动不产生孤立 live、原 lastError、退出清理、状态事件与保存错误日志断言；不改生产实现。
+
+随后 1,168 项整仓回归通过，但 Alpine 首次实际并发测试仅完成前 4 项，第二条任务未取得原生票据，实际退出 1；原 false、日志、账号记录和独立停机核对保留。已有任务实际使用 root0700 的 /root/.ssh/agent 父目录，而 Source 构造器要求该目录只能有一个 socket。[OpenSSH 发布说明](https://www.openssh.org/releasenotes.html)明确新版 sshd 将各转发 socket 放入 ~/.ssh/agent。新增 Python 执行模型在旧 broker 上实际 14 项中 13 项通过、1 项因 SOURCE_SHARED 失败；原 Alpine 第二槽未保存底层拒绝码，目录条件是代码与模型定位，不能将该码补写到原记录。修复仅移除目录唯一项假设，仍逐级核对 root 私有目录、准确 socket、监听进程身份和资源重复占用。同目录两条独立源可并存，邻居变动不撤销本源，本源或父目录替换、进程变化与同一源重复占用仍拒绝。
+
+修复共享父目录后，第二次 Alpine 实测完成 11 项，随后原测试硬要求停止后的 broker 仍为 ready，实际观测为 failed，退出 1；原 false 与只读核对保留。停止和回收记录显示完整 context、scope、source、endpoint 与 broker 身份均未改变，只更新运行阶段与失败诊断。清理失联的 503、至少三次确认及全域停止断言已顺序通过；原中间时序没有写入失败回执，未补造这些观察。只修改 smoke，分开保存 ready 和停止后回执；允许 ready/null 或 failed/合法诊断，逐字段核对不可变身份，继续要求原账号保持 active、准确替换拒绝且替换对象不变、原 inode 恢复后按正常 API 回收。18 项实际 Python 模型及 Node 导入、五段 AST、类型和差异检查通过，生产实现未变。
+
+随后 Alpine 在 e361 smoke 与 d18 戳下实际 16 项全部通过；接着 Debian 第 1 项基线断言失败，实际退出 1，Ubuntu 尚未启动。旧 Farm 保存的是创建两个测试项目之前的账号基线，结束时逐项确认原有记录未变，并在 projectPair 中保存明确创建的两份完整身份；没有保存结束后的完整 passwd 快照。只读比对确认 Debian 恰多这两份账号、绑定和保留 UID，原有记录与 ready 资产均不变；原 false、日志、双退出回执、顺序失败汇总及该次 Alpine 成功保持原脚本归属。验证脚本随后按已固定摘要的 Farm 身份，只允许记录明确创建的 pair 增量，并在任何项目正文之前核对完整身份与绑定；拒绝未知账号、旧账号变化、home inode 替换、UID 绑定变化、额外保留 UID 和 ready 资产变化。新增模型验证有效复用及明确增量和这些拒绝路径，没有依据当前客户机放宽基线或补造旧快照；生产源码未变。
+
+修正 Farm 基线后，Debian 实际通过前 3 项，在真实转发时返回 SOURCE_OWNER，退出 1；原失败当时没有保存源 socket 的权限，未据错误码补造数值。另一次只读 root SSH 转发实际观测 root:root 的 0755 socket，专属父目录 root:root/0700，真实 SO_PEERCRED、pidfd、startTicks 与 sshd9.2 身份均确认；观察未发送 Agent 协议消息、未 chmod 或 unlink 源，连接关闭和停机后 671 项保护核对通过。新增模型使旧 broker 实际 15 项中 14 通过、1 因源权限拒绝，修复后 15 项全通过。修复只移除叶节点低权限位的额外限制，访问仍由逐组件 no-follow 的 root0700 父目录保护，root 属主、准确 inode/完整 mode 与监听进程持续复核；父目录权限扩大、叶节点变化和非 root 源均拒绝。原 cc134 Alpine16、Debian3、宿主汇总器错误与所有退出回执保持原源码归属；随后重新冻结生产与测试源码，完整重跑三系统。
+
+当前默认 Node 24.15.0/tsx 的整仓回归共 1,171 项，1,170 通过、1 项平台跳过，0 失败或取消。196 个测试文件启动前捕获的 622 个源码摘要完成后全部一致；日志摘要为 `1b546e989d2a0a9ca38baae8481325ed2f428f8d9f01dc385895e750476b0a90`，校验为 `.data/ssh-agent-identity-full-unit-b1faca80-4e26-491f-8ea3-79ba75dc1ae0-verification.json`。此前 1,170 项测试使用 b864 戳，维持其原调用归属；当前整仓回归在 socket 权限修复后的生产戳下执行，43 个生产源和 broker/native 资产均与本次三系统戳逐字节相同。
+
+重新冻结 43 个生产源、原 native 94bc 资产与单文件 broker 清单后，三个实际 CLI 预检均退出零；712 个源码、资产、配置、历史证明与旧宿主记录前后保持原字节，未初始化运行时或启动 VM。预检证明为 `.data/network-remaining-test-temp/ssh-agent-project-identity-fixture-validation-770ae472-fa07-46e0-8845-52242f943bcb-final.json`。随后三系统真实运行各 16 项，共 48 项通过：Alpine、Debian、Ubuntu 均为默认 Node 24.15.0/tsx，无禁用 native 的附加参数。验证真实项目 UID/home/cwd、caps/NNP、原 stdin 帧、实际 ssh-add 列钥与 Ed25519 签名、两任务并行、同 UID 不同域及另一项目的直接连接拒绝、逐任务取消和脱离会话后代、broker 未就绪时正文不执行、清理回执失联保留原记录、准确替换对象拒绝、还原后正常恢复、借用服务关闭及重载不重放。汇总为 `.data/network-remaining-test-temp/ssh-agent-project-identity-final-summary-9a434bb0-d56f-464b-b388-d376e15ad822.json`，摘要为 `06714fb2bd2b0a893bd83f74ada2b8e9898bfead81ed2c7e24b7666575ff77c6`。这是冻结源码服务图运行，没有把旧编译 HTTP 证明改记为本批接口实测。
+
+三系统只复用原 Farm 两项目及其账号，未新增磁盘、项目或目录迁移。Alpine 原配置没有密钥引用，未声称执行 Secrets 驱动；Debian/Ubuntu 只读原独立 DPAPI 库。Agent 只用本次临时管道和内存中的自有 Ed25519 密钥，不写私钥、不连接用户 Agent。故障只在独立确认本次完整域已移除且全部准确 PID/startTicks 停止后注入；本次 root 观察目录及未核销的外层控制目录按证据保留。全部本次宿主物理流关闭，三台同步后停止，live、准确 QEMU 和独立 CIM 为零；原账号、home、目录绑定、配置、ready 资产、每条旧回执与原始证明保持归属。
+
+插件和语言包检查、完整生产构建、54 个服务模块分发检查及 7 种编译服务组合通过。新运行包 `release/sakura-lAO2jV` 的 258 个文件摘要通过，指纹为 `a38e641605b8a3ffaf646c9f829ac4800f09c3041e531dd7d7311c995f147de1`，编译服务摘要为 `2e3d3334b58dd73ec9e7ab4b46a13c5a98b904dd5e372c6ccdaa35e356c6f4a0`，broker 原始摘要为 `9fa4c76d17ca1f9ffc78058ccc5c508898dfa265eb67fd962dd10f129ee1fe0c`；证明为 `.data/ssh-agent-identity-release-c46e7904-98a9-4fd6-8064-4607f4639f88-verification.json`。运行包复用本机工具及依赖，未验证新机器安装；构建前后独立核对四份准确自有实例，QEMU 均为零。
+
+本批完整索引为 `.data/ssh-agent-identity-final-checkpoint-evidence.json`。目录仍为 250 项、247 项有实现入口、3 项部分实现。普通 PTY、专属项目 SSH、GPG Agent、cron、用户管理器及剩余扩展的账号接入、每 boot 1,024 张票据的无重启归档、独立外部 HA 演练和系统级剪贴板边界仍需继续；当前范围见 [未完成功能](unfinished-features.md)。下方 Farm、运行时、账号及编译 HTTP 证明继续保留原源码和客户端归属。
+
 ## 项目账号构建、并发任务与准确取消
 
 2026-10-01 构建农场接入固定项目 UID/GID、独立 home 和受保护正文运输。每次准备捕获原项目配置、摘要与准确 live 实例，后续环境、运行时及密钥只解析该份配置；这不是入队时的快照。任务保存原项目目录、实际工作目录与配置版本，兼容既有第 1 版队列。降权后仅相对切换子目录，原账号目录绑定保持不变，普通 shell 的非零语句语义也保留。工作目录支持 `/workspace`、`/opt/projects` 与 `/srv/projects`，越界目录拒绝；用法见 [构建农场](build-farm.md)。

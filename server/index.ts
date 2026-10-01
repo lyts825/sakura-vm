@@ -129,6 +129,8 @@ async function main() {
   });
   const projectExecution = new ProjectExecution(machines, projectTerminals);
   terminalSharing.useProjectTerminals(projectTerminals);
+  features.suite?.setProjectTerminals(projectTerminals);
+  features.extended?.setProjectTerminals(projectTerminals);
   features.next?.setCommunityPlugins(communityPlugins);
   features.next?.setSnapshotMerge(features.serviceValue('snapshotMerge') as
     import('./snapshot-merge.ts').SnapshotMerge | undefined);

@@ -9,11 +9,12 @@ import type { Project } from '../server/workspaces.ts';
 import { AppError } from '../server/model.ts';
 import { ProjectRunScopes } from '../server/project-run-scope.ts';
 import { projectIdentitySchema, projectIdentityRunSchema } from '../server/project-identity.ts';
+import { OwnedForwardAgent, type SshAgentContext } from '../server/ssh-agent-scope.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-project-run-scope-'));
 after(() => rm(root, { recursive: true, force: true }));
 
-async function fixture() {
+async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void>) {
   const directory = await mkdtemp(join(root, 'owned-')), vmId = randomUUID(), identityId = randomUUID();
   const identity = projectIdentitySchema.parse({ version: 1, phase: 'active', registryId: randomUUID(),
     projectId: 'default', identityId, revision: 1, account: 'skp' + identityId.replaceAll('-', '').slice(0, 24),
@@ -69,7 +70,9 @@ async function fixture() {
       return { ...run, phase: 'closed' as const };
     },
   };
-  const scopes = new ProjectRunScopes(machines, { identities: core, rootDirectory: directory });
+  const options = { identities: core, rootDirectory: directory,
+    ...(agentCleanup ? { agentScopes: { cleanup: async (_vm: string, context: SshAgentContext) => agentCleanup(context) } } : {}) };
+  const scopes = new ProjectRunScopes(machines, options);
   const project = { directory: identity.directory, networkIsolation: 'host' } as Project;
   const file = join(directory, 'project-identities', 'default.json');
   const view = async () => JSON.parse(await readFile(file, 'utf8'));
@@ -79,7 +82,7 @@ async function fixture() {
     setMigration: (value: boolean) => { migration = value; }, setIdentity: (value: typeof identity) => { actual = value; },
     setDirectoryLatch: (value: unknown) => { directoryLatch = value; },
     setBoot: (value: string) => { currentBoot = value; },
-    reopened: () => new ProjectRunScopes(machines, { identities: core, rootDirectory: directory }) };
+    reopened: () => new ProjectRunScopes(machines, options) };
 }
 
 test('identities and inherited intents survive manager reload without persisting payload bodies', async () => {
@@ -632,4 +635,84 @@ test('a full ticket pinned during owned cleanup remains in-process until the com
     assert.deepEqual(f.calls, [], 'active cleanup does not become an orphan between its retries');
   } finally { owner.release(); }
   await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+});
+
+const agentResource = () => ({ version: 1 as const, kind: 'ssh-agent' as const, leaseId: randomUUID(),
+  brokerSha256: 'a'.repeat(64), timeoutSeconds: 60 });
+
+test('Agent resources persist before payload execution and close before the account ticket', async () => {
+  const contexts: SshAgentContext[] = [], f = await fixture(async context => { contexts.push(context); f.calls.push('agent-cleanup'); });
+  const agent = new OwnedForwardAgent('unit-unused-agent', new AbortController().signal), resource = agentResource();
+  const admitted = await f.scopes.admitTask(f.vmId, f.project, { command: 'private-frame-value',
+    environment: { SSH_AUTH_SOCK: '/wrong/project/socket' } }, new AbortController().signal,
+    { sshAgent: { resource, agent } });
+  const runId = admitted.payload.runId;
+  f.core.run = async () => { f.calls.push('run'); return { ...f.run, runId, cgroupName: 'sakura-task-' + runId }; };
+  f.core.stop = async () => { f.calls.push('stop'); return { ...f.run, runId, cgroupName: 'sakura-task-' + runId, phase: 'closed' }; };
+  try {
+    const stored = await f.view(); assert.deepEqual(stored.runs[0].sshAgent, resource);
+    assert.ok(!JSON.stringify(stored).includes('private-frame-value') && !JSON.stringify(stored).includes('/wrong/project/socket'));
+    assert.deepEqual(admitted.agentContext?.identity, f.identity); assert.equal(admitted.agentContext?.owner.runId, runId);
+    f.calls.length = 0;
+    await f.scopes.closeAfterScopeStopped(f.vmId, 'default', runId);
+    assert.equal(contexts.length, 1); assert.equal(contexts[0].resource.leaseId, resource.leaseId);
+    assert.ok(f.calls.indexOf('agent-cleanup') > f.calls.indexOf('confirm'));
+    assert.ok(f.calls.indexOf('agent-cleanup') < f.calls.indexOf('stop'));
+    assert.equal((await f.view()).runs[0].phase, 'closed');
+  } finally { admitted.release(); await agent.close(); }
+});
+
+test('a failed Agent resource cleanup stays recoverable even when native has already returned closed', async () => {
+  let failed = true, attempts = 0;
+  const f = await fixture(async () => { ++attempts; if (failed) throw new AppError('host stream close unconfirmed', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED'); });
+  const agent = new OwnedForwardAgent('unit-unused-agent', new AbortController().signal), resource = agentResource();
+  const admitted = await f.scopes.admitTask(f.vmId, f.project, { command: 'true' }, new AbortController().signal,
+    { sshAgent: { resource, agent } });
+  f.core.run = async () => ({ ...f.run, runId: admitted.payload.runId,
+    cgroupName: 'sakura-task-' + admitted.payload.runId, phase: 'closed' });
+  try {
+    assert.equal(await f.scopes.active(f.vmId, 'default', admitted.payload.runId), false);
+    assert.equal((await f.view()).runs[0].phase, 'active', 'a closed native ticket cannot hide unresolved Agent resources');
+    await assert.rejects(f.scopes.closeAfterScopeStopped(f.vmId, 'default', admitted.payload.runId),
+      { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    assert.equal((await f.view()).runs[0].phase, 'active'); assert.equal(f.calls.includes('stop'), false);
+    admitted.release();
+    await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+    failed = false; await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    assert.equal(attempts, 2); assert.equal((await f.view()).runs[0].phase, 'closed');
+    await f.reopened().guard(f.vmId, 'default');
+  } finally { admitted.release(); await agent.close(); }
+});
+
+test('an unissued Agent task still cleans its exact resources before accepting native RECORD_ABSENT', async () => {
+  const f = await fixture(async context => { assert.equal(context.identity.identityId, f.identity.identityId); f.calls.push('agent-cleanup'); });
+  const agent = new OwnedForwardAgent('unit-unused-agent', new AbortController().signal);
+  const admitted = await f.scopes.admitTask(f.vmId, f.project, { command: 'must-not-run' }, new AbortController().signal,
+    { sshAgent: { resource: agentResource(), agent } });
+  f.setMissing(true); admitted.release();
+  try {
+    await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    assert.ok(f.calls.includes('agent-cleanup')); assert.equal(f.calls.includes('stop'), false);
+    assert.equal((await f.view()).runs[0].run, null);
+    await assert.rejects(f.reopened().assertTaskIssued(f.vmId, 'default', admitted.payload.runId,
+      { code: 1, stderr: '', stdout: JSON.stringify({ ok: false, code: 'SSH_AGENT_SOURCE_INVALID', detail: null }) }),
+      { code: 'PROJECT_IDENTITY_SSH_AGENT_SOURCE_INVALID' });
+  } finally { await agent.close(); }
+});
+
+test('changing immutable Agent metadata disables the concurrent-task exemption', async () => {
+  const f = await fixture(), agent = new OwnedForwardAgent('unit-unused-agent', new AbortController().signal);
+  const admitted = await f.scopes.admitTask(f.vmId, f.project, { command: 'active' }, new AbortController().signal,
+    { sshAgent: { resource: agentResource(), agent } }); f.setAbsent(false);
+  try {
+    const original = await f.view();
+    const changed = structuredClone(original); changed.runs[0].sshAgent.leaseId = randomUUID();
+    admitted.agentContext!.resource.leaseId = changed.runs[0].sshAgent.leaseId;
+    await writeFile(f.file, JSON.stringify(changed));
+    await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    assert.equal(f.calls.includes('stop'), false);
+    await writeFile(f.file, JSON.stringify(original));
+    f.calls.length = 0; await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    assert.deepEqual(f.calls, [], 'the original exact in-process owner still exists');
+  } finally { admitted.release(); await agent.close(); }
 });

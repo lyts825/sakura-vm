@@ -77,6 +77,18 @@ if (process.platform === 'win32') {
   }
   if (build.digest('hex') !== native.build) throw new Error('Project identity source build digest failed');
 }
+{
+  const folder = join(root, '.sakura-server/assets/ssh-agent');
+  const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
+  if (manifest.version !== 1 || manifest.file !== 'broker.py' ||
+      !Number.isSafeInteger(manifest.size) || manifest.size < 1 || manifest.size > 262144 ||
+      !/^[a-f0-9]{64}$/.test(manifest.sha256) ||
+      Object.keys(manifest).sort().join(',') !== 'file,sha256,size,version')
+    throw new Error('SSH Agent source metadata is invalid');
+  const bytes = await readFile(join(folder, manifest.file));
+  if (bytes.length !== manifest.size || createHash('sha256').update(bytes).digest('hex') !== manifest.sha256)
+    throw new Error('SSH Agent source integrity failed');
+}
 const extensionRoot = join(root, 'browser-extension');
 const extension = JSON.parse(await readFile(join(extensionRoot, 'manifest.json'), 'utf8'));
 if (extension.manifest_version !== 3 || extension.action?.default_popup !== 'popup.html' ||

@@ -145,6 +145,7 @@ export function JobLog({ job }: { job?: JobView | null }) {
         }
       </span>
       <Feedback error={job.error} />
+      {job.errorCode && <p className="subtle-note"><code>{job.errorCode}</code></p>}
       {job.logPruned && !job.log && (
         <p className="subtle-note">日志已按保留策略清理（{formatDateTime(new Date(job.logPruned.at))}）。</p>
       )}

@@ -5,6 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
+import type { ProjectTerminals } from './project-terminals.ts';
 import { AppError } from './model.ts';
 import { Files, ftpStat } from './files.ts';
 import { runEngineeringOperation } from './engineering-runner.ts';
@@ -54,6 +55,7 @@ export class CapabilityActions {
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
+    private projectTerminals?: ProjectTerminals,
   ) {}
 
   async check(id: string, featureId: CapabilityId, signal?: AbortSignal) {
@@ -119,7 +121,7 @@ export class CapabilityActions {
     const parameters = capabilityParameters(featureId, input);
     signal.throwIfAborted();
     if (featureId === 'ssh-agent-forward')
-      return runSshAgentForward(this.machines, id, parameters, signal, this.workspaces);
+      return runSshAgentForward(this.machines, id, parameters, signal, this.workspaces, this.projectTerminals);
     if (featureId === 'gpu-acceleration')
       return runGpuAcceleration(this.machines, id, parameters, signal);
     if (featureId === 'syscall-profile')

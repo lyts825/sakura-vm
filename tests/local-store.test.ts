@@ -91,26 +91,36 @@ test('Windows replacement retries a real short file lock without exposing a miss
   try {
     lock = await holdWindowsFile(f.file);
     const counts = { old: 0, new: 0 };
+    const readDestination = async () => {
+      const bytes = await fs.readFile(f.file, 'utf8');
+      assert.ok(bytes === f.old || bytes === f.next, 'readers see a complete old or new document');
+      ++counts[bytes === f.old ? 'old' : 'new'];
+      return bytes;
+    };
     reader = (async () => {
       while (!stopReader) {
-        const bytes = await fs.readFile(f.file, 'utf8');
-        assert.ok(bytes === f.old || bytes === f.next, 'readers see a complete old or new document');
-        ++counts[bytes === f.old ? 'old' : 'new'];
+        await readDestination();
         await delay(2);
       }
     })();
     // Attach immediately so an unexpected read failure cannot be an unhandled rejection.
     void reader.catch(() => {});
     const released = new Promise<void>((yes, no) => {
-      releaseTimer = setTimeout(() => { void lock!.release().then(yes, no); }, 150);
+      releaseTimer = setTimeout(() => { void (async () => {
+        await lock!.release();
+        // Windows replacement can also be denied by this test's own open
+        // read handles. Confirm all of them closed before the commit window.
+        stopReader = true;
+        await reader;
+      })().then(yes, no); }, 150);
     });
+    void released.catch(() => {});
     const started = performance.now();
     await writeStore(f.file, f.value);
     await released;
-    await delay(15);
     stopReader = true;
     await reader;
-    assert.equal(await fs.readFile(f.file, 'utf8'), f.next);
+    assert.equal(await readDestination(), f.next);
     assert.deepEqual(await fs.readdir(f.directory), [basename(f.file)]);
     assert.ok(counts.old > 1 && counts.new > 0);
     t.diagnostic(JSON.stringify({ nativeLock: true, shareDelete: false, elapsedMs: Math.round(performance.now() - started), reads: counts,
@@ -122,6 +132,40 @@ test('Windows replacement retries a real short file lock without exposing a miss
     await lock?.release();
     await f.cleanup();
   }
+});
+
+test('Windows own sustained Node read handle preserves the old document and cleans only its own temporary file, then a closed handle permits saving', { skip: !windows }, async t => {
+  const f = await fixture();
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  const unrelated = f.file + '.owned-other.tmp', sentinel = 'another owned temporary file';
+  await originalWriteFile(unrelated, sentinel);
+  try {
+    handle = await fs.open(f.file, 'r');
+    const identity = await handle.stat(), started = performance.now();
+    let failure: NodeJS.ErrnoException | undefined;
+    await assert.rejects(writeStore(f.file, f.value), error => {
+      failure = error as NodeJS.ErrnoException;
+      assert.ok(['EPERM', 'EACCES', 'EBUSY'].includes(failure.code || ''));
+      assert.equal(failure.syscall, 'rename');
+      assert.equal((failure as NodeJS.ErrnoException & { dest: string }).dest, f.file);
+      assert.notEqual(failure.path, unrelated);
+      return true;
+    });
+    const elapsedMs = performance.now() - started;
+    assert.ok(elapsedMs >= 900 && elapsedMs < 5000, `bounded retry elapsed ${elapsedMs}ms`);
+    assert.equal(await fs.readFile(f.file, 'utf8'), f.old);
+    assert.equal(await fs.readFile(unrelated, 'utf8'), sentinel);
+    assert.deepEqual((await fs.readdir(f.directory)).sort(), [basename(f.file), basename(unrelated)].sort());
+    const after = await fs.stat(f.file);
+    assert.equal(after.dev, identity.dev); assert.equal(after.ino, identity.ino);
+    await handle.close(); handle = undefined;
+    await writeStore(f.file, f.value);
+    assert.equal(await fs.readFile(f.file, 'utf8'), f.next);
+    assert.equal(await fs.readFile(unrelated, 'utf8'), sentinel);
+    assert.deepEqual((await fs.readdir(f.directory)).sort(), [basename(f.file), basename(unrelated)].sort());
+    t.diagnostic(JSON.stringify({ ownNodeReadHandle: true, nativeLock: true, elapsedMs: Math.round(elapsedMs), code: failure!.code,
+      retainedDevice: identity.dev, retainedInode: identity.ino, recoveryAfterClose: true }));
+  } finally { await handle?.close(); await f.cleanup(); }
 });
 
 test('Windows sustained native lock preserves the old document, returns the rename error, and cleans its only temporary file', { skip: !windows }, async t => {

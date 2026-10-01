@@ -2575,6 +2575,46 @@ test('power policy saves while the guest is stopped and displays the actual sche
   await expect(page.getByText('电池电量：25%', { exact: true })).toBeVisible();
 });
 
+test('SSH Agent capability needs an explicit submission and preserves cleanup errors after reload', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await app(page, ['projects', 'extensions'], true);
+  await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  const submitted: unknown[] = [];
+  let jobs: any[] = [];
+  await page.route('**/api/vms/*/extended-features*', route => {
+    expect(new URL(route.request().url()).searchParams.get('project')).toBe('default');
+    if (route.request().method() === 'POST') {
+      submitted.push(route.request().postDataJSON());
+      jobs = [{ id: 'ssh-agent-cleanup', action: 'extended:ssh-agent-forward',
+        status: 'error', log: '', startedAt: '2026-10-01T13:00:00.000Z',
+        finishedAt: '2026-10-01T13:00:01.000Z', error: 'Agent 清理未确认，原票据继续保留',
+        errorCode: 'PROJECT_IDENTITY_CLEANUP_FAILED' }];
+      return route.fulfill({ json: jobs[0] });
+    }
+    return route.fulfill({ json: { projectId: 'default', settings: {}, jobs,
+      executions: [], features: [], operations: [], capabilities: capabilityViews('extended') } });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '能力中心', exact: true }).click();
+  await page.getByLabel('extended 功能操作').selectOption('ssh-agent-forward');
+  await expect(page.getByText(/命令使用当前项目账号、独立 home 和项目网络/)).toBeVisible();
+  expect(submitted).toEqual([]);
+  const options = { command: 'ssh-add -L', confirmed: true, timeoutSeconds: 25 };
+  await page.getByLabel('extended 功能参数').fill(JSON.stringify(options));
+  await page.getByRole('button', { name: '提交SSH Agent 转发', exact: true }).click();
+  await expect.poll(() => submitted).toEqual([{ action: 'run', featureId: 'ssh-agent-forward', options }]);
+  await expect(page.getByText('Agent 清理未确认，原票据继续保留', { exact: true })).toBeVisible();
+  await expect(page.getByText('PROJECT_IDENTITY_CLEANUP_FAILED', { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByLabel('extended 功能操作').selectOption('ssh-agent-forward');
+  await expect(page.getByText('PROJECT_IDENTITY_CLEANUP_FAILED', { exact: true })).toBeVisible();
+  expect(submitted).toHaveLength(1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test('schema forms submit typed parameters and download a persisted report independently of logs', async ({
   page,
 }) => {

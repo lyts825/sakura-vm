@@ -47,6 +47,7 @@
     "test:arm64": "tsx scripts/smoke-arm64.ts",
     "test:process-interop": "tsx scripts/smoke-process-interop.ts",
     "test:ssh-agent-forward": "tsx scripts/smoke-ssh-agent-forward.ts",
+    "test:ssh-agent:identity": "node --import tsx scripts/smoke-ssh-agent-project-identity.ts",
     "test:gpg-agent-forward": "tsx scripts/smoke-gpg-agent-forward.ts",
     "test:multi-monitor": "tsx scripts/smoke-multi-monitor.ts",
     "test:language-services": "tsx scripts/smoke-language-services.ts",

@@ -4,14 +4,20 @@ import type { Machines } from './machines.ts';
 import { quote } from './files.ts';
 import { AppError } from './model.ts';
 import { z } from 'zod';
+import type { BaseAgent } from 'ssh2';
+import { isOwnedTaskAgent } from './ssh-agent-scope.ts';
 
 export const guestTaskControlRoot = '/run/sakura-guest-tasks';
 export function guestTaskControlPaths(runId: string) {
   const id = z.uuid().parse(runId), directory = `${guestTaskControlRoot}/${id}`;
   return { directory, receipt: `${directory}/.sakura-job-${id}.pid` };
 }
-const rootCommand = (phase: 'RUN' | 'CLEANUP' | 'CONFIRM_STOPPED' | 'RETIRE', source: string) =>
-  `# SAKURA_GUEST_TASK_${phase}\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ${quote('cd /\n' + source)}`;
+const rootCommand = (phase: 'RUN' | 'CLEANUP' | 'CONFIRM_STOPPED' | 'RETIRE', source: string, forwarded = false) =>
+  `# SAKURA_GUEST_TASK_${phase}\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C` +
+  // Only a minted, exact task owner may preserve the authenticated channel's
+  // sshd listener. It is not an arbitrary project environment exception.
+  (forwarded && phase === 'RUN' ? ' SAKURA_SSH_AGENT_SOURCE="${SSH_AUTH_SOCK-}"' : '') +
+  ` /bin/sh -c ${quote('cd /\n' + source)}`;
 
 // Read the complete stat: comm can contain spaces, parentheses, and newlines.
 // POSIX shell keeps this available before Python is installed in a guest.
@@ -53,7 +59,7 @@ sakura_empty() {
   [ "$sakura_populated" = 0 ]
 }`;
 
-function taskCommands(runId: string, token: string, script: string, timeout: number, input = false) {
+function taskCommands(runId: string, token: string, script: string, timeout: number, input = false, forwarded = false) {
   const { directory, receipt } = guestTaskControlPaths(runId), owner = directory + '/owner';
   const status = receipt + '.status',
     cancel = receipt + '.cancel',
@@ -237,7 +243,7 @@ while [ ! -f ${quote(status)} ]; do
   sakura_waits=$((sakura_waits + 1)); sleep 0.1
 done
 sakura_code=$(cat ${quote(status)})
-exit "$sakura_code"`);
+exit "$sakura_code"`, forwarded);
   const cleanup = rootCommand('CLEANUP', `set -eu
 umask 077
 ${controlFields}
@@ -359,9 +365,9 @@ export async function guestTask(
   signal: AbortSignal,
   log?: (text: string) => void,
   timeout = 1200000,
-  agentPath?: string,
+  agentPath?: string | BaseAgent,
   afterCleanup?: () => Promise<void>,
-  options: { input?: Buffer; runId?: string } = {},
+  options: { input?: Buffer; runId?: string; forwardedAgent?: true } = {},
 ) {
   if (options.input !== undefined && (!Buffer.isBuffer(options.input) || options.input.length > 128 * 1024))
     throw new AppError('命令输入超过 128 KiB 或类型无效', 413, 'GUEST_INPUT_INVALID');
@@ -369,7 +375,10 @@ export async function guestTask(
   const instance = machines.live.get(id);
   const runId = options.runId ? z.uuid().parse(options.runId) : randomUUID(),
     { receipt } = guestTaskControlPaths(runId);
-  const commands = taskCommands(runId, randomUUID(), script, timeout, input !== undefined);
+  if (options.forwardedAgent && (input === undefined || !options.runId ||
+      !isOwnedTaskAgent(machines, id, runId, agentPath)))
+    throw new AppError('SSH Agent 必须属于本次已登记的受保护任务', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+  const commands = taskCommands(runId, randomUUID(), script, timeout, input !== undefined, options.forwardedAgent);
   const control = async (operation: string | (() => Promise<void>), phase: string) => {
     let failure: unknown;
     for (let attempt = 0; attempt < 3; ++attempt) {

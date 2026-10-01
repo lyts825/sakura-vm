@@ -9,6 +9,8 @@ import { readStore, writeStore } from './local-store.ts';
 import { guestTask } from './guest-task.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { assertNoPendingProjectDirectoryMigration } from './project-directory-migration.ts';
+import { SshAgentScopes, OwnedForwardAgent, sshAgentResourceSchema, sshAgentSocketPath, bindTaskAgent,
+  type SshAgentResource, type SshAgentContext } from './ssh-agent-scope.ts';
 import { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema, projectIdentityNetworkSchema,
   type ProjectIdentity, type ProjectIdentityRun, type ProjectIdentityExecution } from './project-identity.ts';
 
@@ -18,6 +20,7 @@ export type ProjectRunOwner = z.infer<typeof ownerSchema>;
 const entrySchema = z.object({ version: z.literal(1), projectId: projectIdSchema, identity: projectIdentitySchema,
   runId: z.uuid(), owner: ownerSchema, sha256: z.string().regex(/^[a-f0-9]{64}$/),
   phase: z.enum(['intent', 'active', 'closed']), run: projectIdentityRunSchema.nullable(),
+  sshAgent: sshAgentResourceSchema.optional(),
   retirement: z.object({ reason: z.literal('guest-reboot'), bootId: z.uuid() }).strict().optional() }).strict()
   .superRefine((value, ctx) => {
     if (value.projectId !== value.identity.projectId || value.runId !== value.owner.runId ||
@@ -25,7 +28,7 @@ const entrySchema = z.object({ version: z.literal(1), projectId: projectIdSchema
           value.run.projectId !== value.projectId || value.run.identityId !== value.identity.identityId ||
           value.run.registryId !== value.identity.registryId || value.run.revision !== value.identity.revision ||
           value.run.bootId !== value.owner.bootId || value.run.cgroupName !== scopeName(value.owner))) ||
-        (value.phase === 'active' && !value.run) ||
+        (value.phase === 'active' && !value.run) || (value.sshAgent && value.owner.kind !== 'task') ||
         (value.retirement && (value.phase !== 'closed' || value.retirement.bootId === value.owner.bootId)) ||
         (value.phase === 'closed' && value.run?.phase === 'active' && !value.retirement))
       ctx.addIssue({ code: 'custom', message: '项目账号运行记录不完整' });
@@ -68,7 +71,8 @@ type Core = Pick<ProjectIdentities, 'ensure' | 'inspect' | 'rebind' | 'inherited
 const sharedCores = new WeakMap<Machines, ProjectIdentities>();
 const scopeQueues = new WeakMap<Machines, Map<string, Promise<unknown>>>();
 type TaskContext = { live: NonNullable<ReturnType<Machines['live']['get']>>; bootId: string };
-export type ProjectTaskAdmissionOptions = { expectedLive?: TaskContext['live'] };
+export type ProjectTaskAdmissionOptions = { expectedLive?: TaskContext['live'];
+  sshAgent?: { resource: SshAgentResource; agent: OwnedForwardAgent; scopes?: SshAgentScopes } };
 type ActiveTask = TaskContext & { file: string; entry: Entry };
 const activeTasks = new WeakMap<Machines, Map<string, ActiveTask>>();
 export type ProjectInheritedPayload = { identity: ProjectIdentity; runId: string; command: string; input: Buffer; sha256: string };
@@ -94,7 +98,8 @@ const sameIdentity = (left: ProjectIdentity, right: ProjectIdentity, rebind = fa
 /** Host receipts contain identities and hashes only, never project command/environment bodies. */
 export class ProjectRunScopes {
   private core: Core;
-  constructor(private machines: Machines, private options: { identities?: Core; rootDirectory?: string } = {}) {
+  constructor(private machines: Machines, private options: { identities?: Core; rootDirectory?: string;
+    agentScopes?: Pick<SshAgentScopes, 'cleanup'> } = {}) {
     if (options.identities) this.core = options.identities;
     else {
       let core = sharedCores.get(machines);
@@ -386,7 +391,7 @@ export class ProjectRunScopes {
       }
       if (!instance || this.machines.live.get(vmId) !== instance || !this.matches(entry, run))
         throw new AppError('项目账号票据与原运行身份不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
-      entry.run = run; entry.phase = run.phase === 'closed' ? 'closed' : 'active';
+      entry.run = run; entry.phase = run.phase === 'closed' && !entry.sshAgent ? 'closed' : 'active';
       await this.save(vmId, id, journal);
       this.pinActiveTask(vmId, id, entry, run);
       return run.phase === 'active';
@@ -419,7 +424,7 @@ export class ProjectRunScopes {
       this.inheritedUnlocked(vmId, project, execution, owner, signal));
   }
   private async inheritedUnlocked(vmId: string, project: Project, execution: ProjectIdentityExecution,
-    owner: ProjectRunOwner, signal?: AbortSignal): Promise<ProjectInheritedPayload> {
+    owner: ProjectRunOwner, signal?: AbortSignal, sshAgent?: SshAgentResource): Promise<ProjectInheritedPayload> {
       const identity = await this.reserveUnlocked(vmId, project, false, signal), id = identity.projectId;
       await assertNoPendingProjectDirectoryMigration(this.machines, vmId, id, signal);
       const journal = await this.read(vmId, id);
@@ -428,7 +433,7 @@ export class ProjectRunScopes {
         throw new AppError('项目正文摘要或本次运行身份不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
       signal?.throwIfAborted();
       const entry: Entry = { version: 1, projectId: id, identity, runId: owner.runId, owner,
-        sha256: payload.sha256, phase: 'intent', run: null };
+        sha256: payload.sha256, phase: 'intent', run: null, ...(sshAgent ? { sshAgent } : {}) };
       if (await this.archived(vmId, id, owner.runId))
         throw new AppError('项目账号运行票据已经归档，拒绝重新执行', 409, 'PROJECT_IDENTITY_RUN_STALE');
       const prior = journal.runs.find(run => run.runId === owner.runId);
@@ -452,7 +457,7 @@ export class ProjectRunScopes {
     return entry.owner.kind === 'task' && entry.version === record.entry.version &&
       entry.projectId === record.entry.projectId && entry.runId === record.entry.runId &&
       entry.sha256 === record.entry.sha256 && same(entry.owner, record.entry.owner) &&
-      same(entry.identity, record.entry.identity);
+      same(entry.identity, record.entry.identity) && same(entry.sshAgent, record.entry.sshAgent);
   }
   private pinActiveTask(vmId: string, id: string, entry: Entry, run: ProjectIdentityRun) {
     const record = activeTasks.get(this.machines)?.get(this.taskKey(vmId, id, entry.runId));
@@ -482,25 +487,40 @@ export class ProjectRunScopes {
   async admitTask(vmId: string, project: Project, execution: ProjectIdentityExecution, signal: AbortSignal,
     options: ProjectTaskAdmissionOptions = {}) {
     const id = projectId(project);
+    const expectedLive = options.expectedLive;
+    const forwarding = options.sshAgent ? { ...options.sshAgent,
+      resource: sshAgentResourceSchema.parse(options.sshAgent.resource) } : undefined;
     return this.withLock(vmId, id, async () => {
       signal.throwIfAborted();
       const context = await this.taskContext(vmId, signal), runId = randomUUID();
-      if (options.expectedLive && context.live !== options.expectedLive)
+      if (expectedLive && context.live !== expectedLive)
         throw new AppError('客户机运行身份与本次任务准备不符，项目代码未执行', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
       await this.recoverStoppedTasksUnlocked(vmId, id, context);
       const owner: ProjectRunOwner = { kind: 'task', runId, bootId: context.bootId };
-      const payload = await this.inheritedUnlocked(vmId, project, execution, owner, signal);
+      const resource = forwarding?.resource;
+      if (forwarding && !(forwarding.agent instanceof OwnedForwardAgent))
+        throw new AppError('SSH Agent 缺少本次独立的宿主 stream owner', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      const body = resource ? { ...execution, environment: { ...execution.environment,
+        SSH_AUTH_SOCK: sshAgentSocketPath(resource.leaseId) } } : execution;
+      const payload = await this.inheritedUnlocked(vmId, project, body, owner, signal, resource);
       const current = await this.taskContext(vmId);
       if (current.live !== context.live || current.bootId !== context.bootId)
         throw new AppError('客户机身份在任务入场期间改变，原 intent 保留', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
       const entry: Entry = { version: 1, projectId: id, identity: structuredClone(payload.identity),
-        owner, runId, sha256: payload.sha256, phase: 'intent', run: null };
+        owner, runId, sha256: payload.sha256, phase: 'intent', run: null,
+        ...(resource ? { sshAgent: structuredClone(resource) } : {}) };
+      const agentContext: SshAgentContext | undefined = resource ? {
+        resource: structuredClone(resource), identity: payload.identity,
+        owner: { ...owner, kind: 'task' }, sha256: payload.sha256 } : undefined;
+      const unbind = agentContext && forwarding ?
+        bindTaskAgent(this.machines, vmId, agentContext, forwarding.agent, context.live) : undefined;
       const record: ActiveTask = { ...context, file: this.file(vmId, id), entry };
       let registry = activeTasks.get(this.machines);
       if (!registry) { registry = new Map(); activeTasks.set(this.machines, registry); }
       const key = this.taskKey(vmId, id, runId);
       registry.set(key, record);
-      return { payload, live: context.live, release: () => {
+      return { payload, live: context.live, agentContext, forwarding, release: () => {
+        unbind?.();
         if (registry.get(key) === record) registry.delete(key);
       } };
     });
@@ -548,10 +568,21 @@ export class ProjectRunScopes {
       await unchanged();
       const currentBoot = await this.confirmScopeStopped(vmId, entry.owner);
       await unchanged();
+      const closeAgent = async () => {
+        if (!entry.sshAgent) return;
+        if (entry.owner.kind !== 'task') throw new AppError('Agent 归属不是单次任务', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+        await (this.options.agentScopes || new SshAgentScopes(this.machines)).cleanup(vmId, {
+          resource: entry.sshAgent, identity: entry.identity, owner: { ...entry.owner, kind: 'task' }, sha256: entry.sha256 });
+        await unchanged();
+        if (await this.confirmScopeStopped(vmId, entry.owner) !== currentBoot)
+          throw new AppError('Agent 清理期间客户机开机身份已改变', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+        await unchanged();
+      };
       if (currentBoot !== entry.owner.bootId) {
         if (await this.confirmScopeStopped(vmId, entry.owner) !== currentBoot)
           throw new AppError('客户机开机身份再次改变，原账号运行核销未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
         await unchanged();
+        await closeAgent();
         // A real reboot ended every process from the recorded boot. Keep the
         // original guest ticket unchanged rather than inventing a stop receipt
         // after its /run record disappeared. Never send an old stop to this boot.
@@ -565,17 +596,21 @@ export class ProjectRunScopes {
           throw new AppError('账号运行回执读取未确认，原记录继续保留', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
         }
         await unchanged(); await this.confirmScopeStopped(vmId, entry.owner); await unchanged();
+        await closeAgent();
         entry.phase = 'closed'; await this.save(vmId, id, journal); return;
       }
       if (!this.matches(entry, run))
         throw new AppError('账号票据的上层运行归属不符', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
-      entry.run = run; entry.phase = run.phase === 'closed' ? 'closed' : 'active';
+      // A closed native receipt cannot retire an unresolved Agent resource.
+      entry.run = run; entry.phase = run.phase === 'closed' && !entry.sshAgent ? 'closed' : 'active';
       await this.save(vmId, id, journal);
       this.pinActiveTask(vmId, id, entry, run);
       if (entry.phase === 'closed') return;
       // Once a complete ticket was received, an absent or changed receipt is
       // never treated as a task that did not start.
       await this.confirmScopeStopped(vmId, entry.owner); await unchanged();
+      await closeAgent();
+      if (run.phase === 'closed') { entry.phase = 'closed'; await this.save(vmId, id, journal); return; }
       const stopped = await this.core.stop(vmId, entry.identity, run);
       if (stopped.phase !== 'closed' || !same({ ...stopped, phase: run.phase }, run))
         throw new AppError('账号运行停止回执不属于本次票据', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
@@ -592,6 +627,7 @@ export async function projectIdentityTask(machines: Machines, vmId: string, proj
   signal.throwIfAborted();
   const scopes = new ProjectRunScopes(machines), admission = await scopes.admitTask(vmId, project, execution, signal, options);
   const { payload } = admission, runId = payload.runId;
+  let launched = false;
   try {
     if (machines.live.get(vmId) !== admission.live)
       throw new AppError('客户机运行身份在任务启动前改变，原 intent 保留且项目代码未执行', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
@@ -599,11 +635,25 @@ export async function projectIdentityTask(machines: Machines, vmId: string, proj
       await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
       signal.throwIfAborted();
     }
-    const executed = await guestTask(machines, vmId, payload.command, signal, log, timeout, agentPath, async () => {
+    let command = payload.command;
+    if (admission.agentContext && admission.forwarding) {
+      const agentScopes = admission.forwarding.scopes || new SshAgentScopes(machines);
+      await agentScopes.install(vmId, admission.agentContext.resource, signal);
+      if (machines.live.get(vmId) !== admission.live)
+        throw new AppError('Agent 安装期间客户机身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      command = agentScopes.command('run', admission.agentContext, payload.command);
+    }
+    launched = true;
+    const executed = await guestTask(machines, vmId, command, signal, log, timeout,
+      admission.forwarding?.agent || agentPath, async () => {
       await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
       await afterCleanup?.();
-    }, { input: payload.input, runId });
+    }, { input: payload.input, runId, ...(admission.agentContext ? { forwardedAgent: true } : {}) });
     await scopes.assertTaskIssued(vmId, projectId(project), runId, executed);
     return executed;
+  } catch (error) {
+    if (!launched && admission.agentContext && machines.live.get(vmId) === admission.live)
+      await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
+    throw error;
   } finally { admission.release(); }
 }

@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { guestTask, guestTaskControlPaths, guestTaskControlRoot } from '../server/guest-task.ts';
 import type { Machines } from '../server/machines.ts';
+import { randomUUID } from 'node:crypto';
+import { OwnedForwardAgent, bindTaskAgent } from '../server/ssh-agent-scope.ts';
+import { projectIdentitySchema } from '../server/project-identity.ts';
 
 const result = { stdout: 'worker output', stderr: '', code: 7 };
 
@@ -38,6 +41,42 @@ test('oversized task input is refused before allocating or cleaning any task rec
   await assert.rejects(guestTask(machines, 'owned', '/fixed/launch', new AbortController().signal,
     undefined, 10000, undefined, undefined, { input: Buffer.alloc(131073) }), { code: 'GUEST_INPUT_INVALID' });
   assert.equal(calls, 0);
+});
+
+test('only an exact minted Agent task preserves the authenticated channel socket; every cleanup stays env-i', async () => {
+  const runId = randomUUID(), identityId = randomUUID(), commands: string[] = [], live = {};
+  const agent = new OwnedForwardAgent('unit-unused-agent', new AbortController().signal);
+  const machines = { live: new Map([['owned', live]]),
+    exec: async (_id: string, command: string, _timeout: number, signal?: AbortSignal, _log?: unknown, source?: unknown) => {
+      commands.push(command); assert.equal(signal, undefined); assert.equal(source, undefined);
+      return { ...result, code: 0 };
+    }, execInput: async (_id: string, command: string, input: Buffer, _timeout: number,
+      _signal: AbortSignal, _log: unknown, source: unknown) => {
+      commands.push(command); assert.equal(source, agent); assert.equal(input.toString(), 'protected frame');
+      return result;
+    } } as unknown as Machines;
+  const ctx = { resource: { version: 1 as const, kind: 'ssh-agent' as const, leaseId: randomUUID(), brokerSha256: 'a'.repeat(64), timeoutSeconds: 60 },
+    identity: projectIdentitySchema.parse({ version: 1, phase: 'active', registryId: randomUUID(), projectId: 'default', identityId,
+      revision: 1, uid: 20000, gid: 20000, account: 'skp' + identityId.replaceAll('-', '').slice(0, 24),
+      home: '/var/lib/sakura-project-homes/' + identityId, directory: '/workspace', directoryDevice: '1', directoryInode: '2',
+      homeDevice: '1', homeInode: '3', networkIsolation: 'host' }),
+    owner: { kind: 'task' as const, runId, bootId: randomUUID() }, sha256: 'b'.repeat(64) };
+  const release = bindTaskAgent(machines, 'owned', ctx, agent, live as never);
+  try {
+    assert.deepEqual(await guestTask(machines, 'owned', '/fixed/agent-native-launcher', new AbortController().signal,
+      undefined, 10000, agent, undefined, { input: Buffer.from('protected frame'), runId, forwardedAgent: true }), result);
+    assert.ok(commands[0].includes('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C SAKURA_SSH_AGENT_SOURCE="${SSH_AUTH_SOCK-}"'));
+    assert.ok(commands.slice(1).every(command => command.includes('env -i PATH=') && !command.includes('SSH_AUTH_SOCK') && !command.includes('SAKURA_SSH_AGENT_SOURCE')));
+    const count = commands.length;
+    for (const options of [{ runId: randomUUID(), input: Buffer.from('frame') }, { runId, input: undefined }])
+      await assert.rejects(guestTask(machines, 'owned', '/fixed/launch', new AbortController().signal,
+        undefined, 10000, agent, undefined, { ...options, forwardedAgent: true }), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    machines.live.set('owned', {} as never);
+    await assert.rejects(guestTask(machines, 'owned', '/fixed/launch', new AbortController().signal,
+      undefined, 10000, agent, undefined, { runId, input: Buffer.from('frame'), forwardedAgent: true }),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.equal(commands.length, count, 'rejected caller flags cannot allocate or clean an unrelated task');
+  } finally { release(); await agent.close(); }
 });
 function fixture(execute?: (command: string, attempt: number) => Promise<typeof result>, worker = result) {
   const live = {},

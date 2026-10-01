@@ -4,7 +4,7 @@ import { existsSync, createReadStream, createWriteStream } from 'node:fs';
 import { createHash, createPrivateKey, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createConnection, type Socket } from 'node:net';
-import { Client, type ClientCallback, type ExecOptions, type SFTPWrapper } from 'ssh2';
+import { Client, type ClientCallback, type ExecOptions, type SFTPWrapper, type BaseAgent } from 'ssh2';
 import { StringDecoder } from 'node:string_decoder';
 import { isUtf8 } from 'node:buffer';
 import { Readable, Transform, type Duplex } from 'node:stream';
@@ -461,13 +461,14 @@ export class Machines extends EventEmitter {
   }
   private saveQueue = Promise.resolve();
   private async save() {
-    const json = JSON.stringify([...this.records.values()], null, 2);
+    // Capture nested record values when the save is admitted, before waiting
+    // for an earlier publication. Later mutations belong to a later snapshot.
+    const snapshot = JSON.parse(JSON.stringify([...this.records.values()])) as VMRecord[];
     const operation = this.saveQueue
       .catch(() => {})
       .then(async () => {
         const file = join(DATA, 'machines.json');
-        await writeFile(`${file}.tmp`, json);
-        await rename(`${file}.tmp`, file);
+        await writeStore(file, snapshot);
       });
     this.saveQueue = operation;
     await operation;
@@ -1260,7 +1261,7 @@ export class Machines extends EventEmitter {
       this.emit('change');
     }
   }
-  async connect(id: string, timeout = 10000, signal?: AbortSignal, agentPath?: string) {
+  async connect(id: string, timeout = 10000, signal?: AbortSignal, agentPath?: string | BaseAgent) {
     this.requireUnlocked(id);
     const live = this.live.get(id);
     if (!live || live.status === 'stopping' || live.status === 'paused')
@@ -1310,7 +1311,7 @@ export class Machines extends EventEmitter {
     }
   }
   private connectOnce(live: Live, key: Buffer, timeout: number, signal?: AbortSignal,
-    agentPath?: string) {
+    agentPath?: string | BaseAgent) {
     signal?.throwIfAborted();
     return new Promise<Client>((resolve, reject) => {
       const client = new Client();
@@ -1348,7 +1349,9 @@ export class Machines extends EventEmitter {
           readyTimeout: timeout,
           keepaliveInterval: 10000,
           keepaliveCountMax: 3,
-          ...(agentPath ? { agent: agentPath, agentForward: true } : {}),
+          ...(agentPath ? { agent: agentPath, agentForward: true,
+            // Forwarded task credentials never authenticate the VM's root login.
+            ...(typeof agentPath === 'string' ? {} : { authHandler: ['publickey'] }) } : {}),
         });
       } catch (error) {
         cleanup();
@@ -1364,7 +1367,7 @@ export class Machines extends EventEmitter {
     timeout = 30000,
     signal?: AbortSignal,
     output?: (data: string) => void,
-    agentPath?: string,
+    agentPath?: string | BaseAgent,
   ) {
     return this.execChannel(id, command, timeout, signal, output, agentPath);
   }
@@ -1376,7 +1379,7 @@ export class Machines extends EventEmitter {
     timeout = 30000,
     signal?: AbortSignal,
     output?: (data: string) => void,
-    agentPath?: string,
+    agentPath?: string | BaseAgent,
   ) {
     if (!Buffer.isBuffer(input) || input.length > 128 * 1024)
       throw new AppError('命令输入超过 128 KiB 或类型无效', 413, 'GUEST_INPUT_INVALID');
@@ -1389,7 +1392,7 @@ export class Machines extends EventEmitter {
     timeout: number,
     signal?: AbortSignal,
     output?: (data: string) => void,
-    agentPath?: string,
+    agentPath?: string | BaseAgent,
     input?: Buffer,
   ) {
     const client = await this.connect(id, Math.min(timeout, 10000), signal, agentPath);

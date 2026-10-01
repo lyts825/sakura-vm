@@ -4,6 +4,7 @@ import './prepare-monitor.mjs';
 import './prepare-linux-clipboard.mjs';
 import './prepare-wayland-clipboard.mjs';
 import './prepare-project-identity.mjs';
+import './prepare-ssh-agent.mjs';
 
 const root = process.cwd();
 const target = join(root, '.sakura-server', 'assets');
