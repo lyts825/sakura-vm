@@ -34,6 +34,11 @@ type Work = (
   update: JobUpdate,
   result: (value: unknown) => Promise<void>,
 ) => Promise<void>;
+const cleanupFailureCodes = new Set([
+  'GUEST_TASK_CLEANUP_FAILED', 'SERVICE_CLEANUP_FAILED',
+  'PROJECT_MAIN_CLEANUP_FAILED', 'PROJECT_SSH_CLEANUP_FAILED',
+  'PROJECT_IDENTITY_CLEANUP_FAILED',
+]);
 export class Jobs {
   static instrument?: (view: JobView, work: () => Promise<void>) => Promise<void>;
   private closed = false;
@@ -235,12 +240,14 @@ export class Jobs {
         view.progress = 100;
       })
       .catch((error: Error) => {
-        view.status = abort.signal.aborted ? 'cancelled' : 'error';
-        view.error = abort.signal.aborted ? '操作已取消' : error.message;
-        view.errorCode = !abort.signal.aborted && error instanceof AppError ? error.code : undefined;
+        const cleanupFailed = error instanceof AppError && cleanupFailureCodes.has(error.code || '');
+        const cancelled = abort.signal.aborted && !cleanupFailed;
+        view.status = cancelled ? 'cancelled' : 'error';
+        view.error = cancelled ? '操作已取消' : error.message;
+        view.errorCode = !cancelled && error instanceof AppError ? error.code : undefined;
         view.phase = view.error;
         if (view.execution)
-          view.execution.outcome = abort.signal.aborted
+          view.execution.outcome = cleanupFailed ? 'failed' : cancelled
             ? 'cancelled'
             : view.execution.outcome && view.execution.outcome !== 'success'
               ? view.execution.outcome
@@ -260,10 +267,12 @@ export class Jobs {
     external?: AbortSignal,
   ): Promise<T> {
     let result!: T;
+    let failure: unknown;
     const view = this.start(
       key,
       async (log, signal, update) => {
-        result = await work(log, signal, update);
+        try { result = await work(log, signal, update); }
+        catch (error) { failure = error; throw error; }
       },
       meta,
     );
@@ -273,7 +282,9 @@ export class Jobs {
     try {
       await this.items.get(key)!.done;
       if (view.status !== 'done')
-        throw new AppError(view.error || '任务失败', view.status === 'cancelled' ? 409 : 400);
+        throw new AppError(view.error || '任务失败', view.status === 'cancelled' ? 409 :
+          cleanupFailureCodes.has(view.errorCode || '') ? 503 :
+            failure instanceof AppError ? failure.status : 400, view.errorCode);
       return result;
     } finally {
       external?.removeEventListener('abort', cancel);
