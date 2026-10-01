@@ -44,6 +44,7 @@ export async function route(
       if (req.method === 'POST') {
         const input = z
           .discriminatedUnion('action', [
+            z.object({ action: z.literal('probe') }).strict(),
             z
               .object({
                 action: z.literal('select'),
@@ -56,13 +57,13 @@ export async function route(
               .strict(),
           ])
           .parse(await body(req));
-        send(
-          input.action === 'select'
-            ? await this.runtimes.select(id, { node: input.node, python: input.python })
-            : await this.runtimes.install(id, input),
-          input.action === 'install' ? 202 : 200,
-        );
-        return true;
+        if (input.action === 'probe') return send(await this.runtimes.probe(id, signal));
+        if (input.action === 'select')
+          return send(await this.runtimes.select(id, {
+            ...(input.node === undefined ? {} : { node: input.node }),
+            ...(input.python === undefined ? {} : { python: input.python }),
+          }, signal));
+        return send(await this.runtimes.install(id, { tool: input.tool, version: input.version }), 202);
       }
     }
   }

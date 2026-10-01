@@ -5,6 +5,14 @@ import { quote } from './files.ts';
 import { AppError } from './model.ts';
 import { z } from 'zod';
 
+export const guestTaskControlRoot = '/run/sakura-guest-tasks';
+export function guestTaskControlPaths(runId: string) {
+  const id = z.uuid().parse(runId), directory = `${guestTaskControlRoot}/${id}`;
+  return { directory, receipt: `${directory}/.sakura-job-${id}.pid` };
+}
+const rootCommand = (phase: 'RUN' | 'CLEANUP' | 'CONFIRM_STOPPED' | 'RETIRE', source: string) =>
+  `# SAKURA_GUEST_TASK_${phase}\n/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ${quote('cd /\n' + source)}`;
+
 // Read the complete stat: comm can contain spaces, parentheses, and newlines.
 // POSIX shell keeps this available before Python is installed in a guest.
 const processFields = `sakura_stat() {
@@ -45,20 +53,83 @@ sakura_empty() {
   [ "$sakura_populated" = 0 ]
 }`;
 
-function taskCommands(receipt: string, script: string, timeout: number, input = false) {
+function taskCommands(runId: string, token: string, script: string, timeout: number, input = false) {
+  const { directory, receipt } = guestTaskControlPaths(runId), owner = directory + '/owner';
   const status = receipt + '.status',
     cancel = receipt + '.cancel',
     stop = receipt + '.stop',
     ownership = receipt + '.scope',
     refused = receipt + '.refused',
-    scopeName = 'sakura-task-' + receipt.slice('/tmp/.sakura-job-'.length, -'.pid'.length),
+    scopeName = 'sakura-task-' + runId,
     scope = '/sys/fs/cgroup/' + scopeName;
+  // /run and the root-only base are checked before creation. The per-call token
+  // prevents an old or concurrent use of the same run UUID from authorizing
+  // writes, cleanup or receipt retirement. No Python is needed for this guard.
+  const controlFields = `sakura_control_fail() { echo "SAKURA_TASK_CONTROL_REFUSED: $1" >&2; exit 125; }
+sakura_control_directory() {
+  [ -d "$1" ] && [ ! -L "$1" ] || sakura_control_fail '控制目录类型无法核对'
+  sakura_control_info=$(stat -c '%u %g %a' "$1") || sakura_control_fail '控制目录权限无法读取'
+  set -f; set -- $sakura_control_info "$2"; set +f
+  [ "$#" -eq 4 ] && [ "$1" = 0 ] && [ "$2" = 0 ] || sakura_control_fail '控制目录不属于 root'
+  case "$3" in ''|*[!0-7]*) sakura_control_fail '控制目录权限无效';; esac
+  if [ "$4" = private ]; then
+    [ "$3" = 700 ] || sakura_control_fail '控制目录必须为 root0700'
+  else
+    [ "$((0$3 & 022))" -eq 0 ] || sakura_control_fail '控制目录父级可由其他账号写入'
+  fi
+}
+sakura_control_base() {
+  [ "$(id -u)" = 0 ] || sakura_control_fail '任务控制需要 root'
+  sakura_control_directory / parent
+  sakura_control_directory /run parent
+  if [ "$1" = create ] && [ ! -e ${quote(guestTaskControlRoot)} ] && [ ! -L ${quote(guestTaskControlRoot)} ]; then
+    (umask 077; mkdir -m 0700 ${quote(guestTaskControlRoot)}) 2>/dev/null || true
+  fi
+  sakura_control_directory ${quote(guestTaskControlRoot)} private
+}
+sakura_control_file() {
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    [ ! -L "$1" ] || sakura_control_fail '控制记录不是非链接普通文件'
+    sakura_control_metadata=$(stat -c '%u %g %a %h' "$1" 2>/dev/null) || {
+      [ ! -e "$1" ] && [ ! -L "$1" ] && return 0
+      sakura_control_fail '控制记录元数据无法读取'
+    }
+    [ -f "$1" ] || {
+      [ ! -e "$1" ] && [ ! -L "$1" ] && return 0
+      sakura_control_fail '控制记录不是普通文件'
+    }
+    [ "$sakura_control_metadata" = '0 0 600 1' ] || sakura_control_fail '控制记录归属、权限或链接数无法核对'
+  fi
+}
+sakura_control_task() {
+  sakura_control_base existing
+  sakura_control_directory ${quote(directory)} private
+  sakura_control_file ${quote(owner)}
+  [ -f ${quote(owner)} ] && [ "$(stat -c %s ${quote(owner)})" = 76 ] || sakura_control_fail '任务控制授权记录缺失或无效'
+  read -r sakura_control_version sakura_control_token sakura_control_boot sakura_control_extra < ${quote(owner)} || sakura_control_fail '任务控制授权记录无法读取'
+  [ "$sakura_control_version" = 1 ] && [ "$sakura_control_token" = ${quote(token)} ] &&
+    [ -z "$sakura_control_extra" ] && [ "$sakura_control_boot" = "$(cat /proc/sys/kernel/random/boot_id)" ] || sakura_control_fail '任务控制授权或启动身份不符'
+  for sakura_control_record in ${[receipt, receipt + '.tmp', ownership, ownership + '.tmp', refused, refused + '.tmp', status, status + '.tmp', cancel, stop, stop + '.tmp'].map(quote).join(' ')}; do
+    sakura_control_file "$sakura_control_record"
+  done
+}
+`;
+  const prepareControl = `${controlFields}
+umask 077
+sakura_control_base create
+[ ! -e ${quote(directory)} ] && [ ! -L ${quote(directory)} ] || sakura_control_fail 'run UUID 的控制目录已存在，未接管旧任务'
+mkdir -m 0700 ${quote(directory)} || sakura_control_fail '任务控制目录无法独占创建'
+sakura_control_directory ${quote(directory)} private
+printf '%s %s %s\\n' 1 ${quote(token)} "$(cat /proc/sys/kernel/random/boot_id)" > ${quote(owner)}
+sakura_control_task`;
   // The anchor provides a short TERM grace period and a finite lifetime. The
   // cgroup, inherited across setsid/fork, owns the complete foreground task.
   // Its open descriptor cannot accidentally address a replacement directory.
   const anchor = `set -eu
 umask 077
 trap '' HUP INT TERM
+${controlFields}
+sakura_control_task
 ${processFields}
 ${cgroupFields}
 sakura_boot=$1; sakura_leader=$2; sakura_leader_start=$3; sakura_scope_inode=$4
@@ -73,9 +144,11 @@ sakura_anchor_start=$sakura_start
 sakura_stat /proc/"$sakura_leader"/stat
 [ "$sakura_start" = "$sakura_leader_start" ] || exit 125
 [ ! -e ${quote(cancel)} ] || exit 125
+sakura_control_task
 printf '%s %s %s %s %s %s %s %s\\n' 2 "$sakura_boot" "$sakura_leader" "$sakura_leader_start" "$$" "$sakura_anchor_start" ${quote(scopeName)} "$sakura_scope_inode" > ${quote(receipt + '.tmp')}
 mv ${quote(receipt + '.tmp')} ${quote(receipt)}
 sakura_stop_requested() {
+  sakura_control_task
   [ -f ${quote(stop)} ] || return 1
   read -r sakura_stop_version sakura_stop_boot sakura_stop_leader sakura_stop_leader_start sakura_stop_anchor sakura_stop_anchor_start sakura_stop_scope sakura_stop_inode sakura_stop_extra < ${quote(stop)} || return 1
   [ "$sakura_stop_version" = 2 ] && [ -z "$sakura_stop_extra" ] &&
@@ -103,28 +176,33 @@ printf 1 >&9`;
   const worker = `set -eu
 ${input ? 'exec 7<&-\n' : ''}
 umask 077
+${controlFields}
+sakura_control_task
 sakura_finish() {
   sakura_code=$?
+  sakura_control_task
   printf '%s' "$sakura_code" > ${quote(status + '.tmp')}
   mv ${quote(status + '.tmp')} ${quote(status)}
 }
 trap sakura_finish 0
-[ ! -e ${quote(cancel)} ] || exit 125
 ${processFields}
 ${cgroupFields}
 sakura_boot=$(cat /proc/sys/kernel/random/boot_id)
 sakura_refuse() {
+  sakura_control_task
   printf '%s %s %s\\n' 2 "$sakura_boot" ${quote(scopeName)} > ${quote(refused + '.tmp')}
   mv ${quote(refused + '.tmp')} ${quote(refused)}
   echo "SAKURA_TASK_SCOPE_UNAVAILABLE: $1；项目代码未执行" >&2
   exit 126
 }
+[ ! -e ${quote(cancel)} ] || sakura_refuse '任务启动已撤销'
 if ! sakura_cgroup2 && [ -x /sbin/rc-service ]; then /sbin/rc-service cgroups start >/dev/null 2>&1 || true; fi
 sakura_cgroup2 || sakura_refuse '客户机需要可写 cgroup v2'
 [ ! -e ${quote(scope)} ] && [ ! -L ${quote(scope)} ] || { echo '任务 cgroup 名称已被占用；项目代码未执行' >&2; exit 125; }
 mkdir ${quote(scope)} || sakura_refuse '无法创建独立任务 cgroup'
 sakura_scope_inode=$(sakura_inode ${quote(scope)})
 case "$sakura_scope_inode" in ''|*[!0-9]*) echo '任务 cgroup 身份无法读取；项目代码未执行' >&2; exit 125;; esac
+sakura_control_task
 printf '%s %s %s %s\\n' 2 "$sakura_boot" ${quote(scopeName)} "$sakura_scope_inode" > ${quote(ownership + '.tmp')}
 mv ${quote(ownership + '.tmp')} ${quote(ownership)}
 [ -w ${quote(scope + '/cgroup.kill')} ] || { echo 'SAKURA_TASK_SCOPE_UNAVAILABLE: 客户机缺少可写 cgroup.kill；项目代码未执行' >&2; exit 126; }
@@ -144,12 +222,14 @@ while [ ! -f ${quote(receipt)} ]; do
 done
 [ ! -e ${quote(cancel)} ] || exit 125
 sh -c ${quote(script)}`;
-  const run = `${input ? 'exec 7<&0\n' : ''}setsid sh -c ${quote(worker)} ${input ? '<&7 ' : ''}&
+  const run = rootCommand('RUN', `${input ? 'exec 7<&0\n' : ''}${prepareControl}
+setsid sh -c ${quote(worker)} ${input ? '<&7 ' : ''}&
 sakura_launcher=$!
 ${input ? 'exec 7<&-\n' : ''}
 wait "$sakura_launcher" || true
 sakura_waits=0
 while [ ! -f ${quote(status)} ]; do
+  sakura_control_task
   if [ -f ${quote(receipt)} ]; then
     read -r sakura_version sakura_boot sakura_worker sakura_worker_start sakura_anchor sakura_anchor_start < ${quote(receipt)}
     if ! kill -0 "$sakura_worker" 2>/dev/null; then [ -f ${quote(status)} ] || { echo '任务进程意外退出' >&2; exit 1; }; fi
@@ -157,9 +237,11 @@ while [ ! -f ${quote(status)} ]; do
   sakura_waits=$((sakura_waits + 1)); sleep 0.1
 done
 sakura_code=$(cat ${quote(status)})
-exit "$sakura_code"`;
-  const cleanup = `set -eu
+exit "$sakura_code"`);
+  const cleanup = rootCommand('CLEANUP', `set -eu
 umask 077
+${controlFields}
+sakura_control_task
 ${processFields}
 ${cgroupFields}
 sakura_fail() { echo "$1" >&2; exit 1; }
@@ -209,6 +291,7 @@ sakura_owned_anchor() {
     grep -qx ${quote('0::/' + scopeName)} /proc/"$sakura_anchor"/cgroup
 }
 if sakura_owned_anchor; then
+  sakura_control_task
   printf '%s %s %s %s %s %s %s %s\\n' 2 "$sakura_boot" "$sakura_leader" "$sakura_leader_start" "$sakura_anchor" "$sakura_anchor_start" "$sakura_scope" "$sakura_scope_inode" > ${quote(stop + '.tmp')}
   mv ${quote(stop + '.tmp')} ${quote(stop)}
 fi
@@ -230,8 +313,10 @@ if ! sakura_empty; then sakura_fail '任务 cgroup 仍有运行进程，保留�
 [ "$(sakura_inode ${quote(scope)})" = "$sakura_scope_inode" ] || sakura_fail '任务 cgroup 路径已改变；清理未确认'
 # Remove the empty scope before afterCleanup or retiring the cancellation
 # marker. A delayed bootstrap can no longer enter it and run project code.
-rmdir ${quote(scope)} || sakura_fail '任务 cgroup 无法核销，保留取消标记和归属记录'`;
-  const confirmStopped = `set -eu
+rmdir ${quote(scope)} || sakura_fail '任务 cgroup 无法核销，保留取消标记和归属记录'`);
+  const confirmStopped = rootCommand('CONFIRM_STOPPED', `set -eu
+${controlFields}
+sakura_control_task
 if [ -f ${quote(ownership)} ]; then
   read -r sakura_version sakura_boot sakura_scope sakura_scope_inode sakura_extra < ${quote(ownership)}
   case "$sakura_scope_inode" in ''|*[!0-9]*) echo '任务 cgroup 身份无效' >&2; exit 1;; esac
@@ -242,10 +327,25 @@ else echo '任务停止归属记录已丢失' >&2; exit 1; fi
   [ "$sakura_boot" = "$(cat /proc/sys/kernel/random/boot_id)" ] &&
   [ ! -e ${quote(scope)} ] && [ ! -L ${quote(scope)} ] || {
   echo '客户机启动身份或任务域停止状态已改变；后续清理未确认' >&2; exit 1;
-}`;
+}`);
   // Only retire after the host received verified cleanup and the stage callback
   // completed. A lost cleanup reply leaves the receipt available for a retry.
-  const retire = `rm -f ${[receipt, receipt + '.tmp', ownership, ownership + '.tmp', refused, refused + '.tmp', status, status + '.tmp', cancel, stop, stop + '.tmp'].map(quote).join(' ')}`;
+  const retire = rootCommand('RETIRE', `set -eu
+${controlFields}
+sakura_control_base existing
+[ ! -e ${quote(scope)} ] && [ ! -L ${quote(scope)} ] || sakura_control_fail '任务域未停止，拒绝核销控制记录'
+if [ ! -e ${quote(directory)} ] && [ ! -L ${quote(directory)} ]; then exit 0; fi
+sakura_control_directory ${quote(directory)} private
+if [ ! -e ${quote(owner)} ] && [ ! -L ${quote(owner)} ]; then
+  # Only an already empty private directory can resume an interrupted rmdir.
+  [ -z "$(ls -A ${quote(directory)})" ] || sakura_control_fail '授权记录缺失且控制目录非空'
+  rmdir ${quote(directory)}
+  exit 0
+fi
+sakura_control_task
+rm -f ${[receipt, receipt + '.tmp', ownership, ownership + '.tmp', refused, refused + '.tmp', status, status + '.tmp', cancel, stop, stop + '.tmp'].map(quote).join(' ')}
+rm -f ${quote(owner)}
+rmdir ${quote(directory)}`);
   return { run, cleanup, confirmStopped, retire };
 }
 
@@ -267,8 +367,9 @@ export async function guestTask(
     throw new AppError('命令输入超过 128 KiB 或类型无效', 413, 'GUEST_INPUT_INVALID');
   const input = options.input === undefined ? undefined : Buffer.from(options.input);
   const instance = machines.live.get(id);
-  const receipt = `/tmp/.sakura-job-${options.runId ? z.uuid().parse(options.runId) : randomUUID()}.pid`;
-  const commands = taskCommands(receipt, script, timeout, input !== undefined);
+  const runId = options.runId ? z.uuid().parse(options.runId) : randomUUID(),
+    { receipt } = guestTaskControlPaths(runId);
+  const commands = taskCommands(runId, randomUUID(), script, timeout, input !== undefined);
   const control = async (operation: string | (() => Promise<void>), phase: string) => {
     let failure: unknown;
     for (let attempt = 0; attempt < 3; ++attempt) {

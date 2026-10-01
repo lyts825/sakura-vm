@@ -29,7 +29,7 @@ process.env.SAKURA_IMAGE_PATH = resolve(
 );
 const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
-const { guestTask } = await import('../server/guest-task.ts');
+const { guestTask, guestTaskControlPaths } = await import('../server/guest-task.ts');
 const { quote } = await import('../server/files.ts');
 const { freePort } = await import('../server/qmp.ts');
 const machines = new Machines(await createRuntime());
@@ -166,18 +166,26 @@ try {
     replacement?: { pid: number; inode: string };
   } = {};
   machines.exec = (async (id, command, timeout, signal, output, agent) => {
-    if (command.startsWith('setsid sh -c')) {
+    if (command.startsWith('# SAKURA_GUEST_TASK_RUN\n')) {
       current.main = command;
       command = command.replace(
         '</dev/null >/dev/null 2>&1 &',
         '</dev/null >' + folder + '/anchor-debug.log 2>&1 &',
       );
-      if (current.delayed) command = command.replace(/^setsid/, '/bin/sh ' + folder + '/bin/setsid');
-      if (current.delayedAnchor)
+      if (current.delayed) {
+        assert.ok(command.includes('\nsetsid sh -c '), 'delayed launcher must replace the worker only');
+        command = command.replace('\nsetsid sh -c ', '\n/bin/sh ' + folder + '/bin/setsid sh -c ');
+      }
+      if (current.delayedAnchor) {
+        assert.ok(command.includes('\nsh -c '), 'delayed anchor must replace its launch');
         command = command.replace('\nsh -c ', '\n/bin/sh ' + folder + '/delayed-anchor ');
+      }
       if (current.busybox) {
-        command = command.replaceAll('sh -c ', current.busybox + ' sh -c ');
-        command = command.replace(/^setsid /, 'setsid --fork ' + current.busybox + ' setsid ');
+        command = command.replace(/(?<![\w/])sh -c /g, current.busybox + ' sh -c ');
+        command = command.replace('/bin/sh -c ', current.busybox + ' sh -c ');
+        const launcher = '\nsetsid ' + current.busybox + ' sh -c ';
+        assert.ok(command.includes(launcher), 'BusyBox fork must replace the worker launcher');
+        command = command.replace(launcher, '\nsetsid --fork ' + current.busybox + ' setsid ' + current.busybox + ' sh -c ');
       }
       if (current.readOnly)
         command =
@@ -223,7 +231,7 @@ try {
         );
         throw new Error('Owned first cleanup SSH connection failed');
       }
-    } else if (command.startsWith('rm -f')) {
+    } else if (command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')) {
       current.retire = command;
       events.push('receipt-retirement');
     }
@@ -235,7 +243,12 @@ try {
     '\nwhile :; do printf x >> ' +
     quote(stage + '/heartbeat') +
     '; sleep 0.1; done';
-  const receiptFrom = () => /\/tmp\/\.sakura-job-[a-f0-9-]{36}\.pid/.exec(current.main!)![0];
+  const receiptFrom = () => {
+    const id = /sakura-task-([a-f0-9-]{36})/.exec(current.main!)![1];
+    const receipt = guestTaskControlPaths(id).receipt;
+    assert.ok(current.main!.includes(receipt));
+    return receipt;
+  };
   const scopeFrom = () => /sakura-task-[a-f0-9-]{36}/.exec(current.main!)![0];
   const cleanupStage = async (stage: string) => run('rm -rf -- ' + quote(stage));
   const retireReceipt = async (receipt: string) =>
@@ -253,9 +266,10 @@ try {
           receipt + '.cancel',
           receipt + '.stop',
           receipt + '.stop.tmp',
+          receipt.slice(0, receipt.lastIndexOf('/')) + '/owner',
         ]
           .map(quote)
-          .join(' '),
+          .join(' ') + '\nrmdir ' + quote(receipt.slice(0, receipt.lastIndexOf('/'))),
     );
 
   const stage = folder + '/retry-stage';
@@ -722,7 +736,8 @@ try {
   await machines.close();
   proof.stoppedAt = new Date().toISOString();
   proof.vmStopped = machines.state(vm.id) === 'stopped';
-  await writeFile(join(root, 'guest-task-cgroup-evidence.json'), JSON.stringify(proof, null, 2) + '\n');
-  console.log('Guest-task proof:', join(root, 'guest-task-cgroup-evidence.json'));
+  const proofPath = join(root, reuse ? 'guest-task-cgroup-evidence-' + randomUUID() + '.json' : 'guest-task-cgroup-evidence.json');
+  await writeFile(proofPath, JSON.stringify(proof, null, 2) + '\n', { flag: 'wx' });
+  console.log('Guest-task proof:', proofPath);
   console.log('Stopped owned ' + distro + ' fixture:', root);
 }

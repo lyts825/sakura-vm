@@ -542,7 +542,7 @@ function managedHealthFixture(id: string, secret = '') {
     const prefix = '# SAKURA_PROJECT_SERVICE_REQUEST=';
     const encoded = script.split('\n').find(line => line.startsWith(prefix));
     if (!encoded) {
-      const probe = script.startsWith('setsid sh -c') && script.includes('health-probe');
+      const probe = script.includes('# SAKURA_GUEST_TASK_RUN') && script.includes('health-probe');
       if (probe) probes++;
       return { code: probe ? 1 : 0, stdout: '', stderr: '' };
     }

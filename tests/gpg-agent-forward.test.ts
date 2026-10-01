@@ -86,7 +86,7 @@ test('GPG directory cleanup waits for scope confirmation, retries, and retains a
               };
             if (command.includes('mktemp -d'))
               return { code: 0, stdout: '/tmp/sakura-gpg-owned123\n', stderr: '' };
-            if (command.startsWith('setsid sh -c')) return { code: 7, stdout: '', stderr: '' };
+            if (command.includes('# SAKURA_GUEST_TASK_RUN')) return { code: 7, stdout: '', stderr: '' };
             if (command.includes('sakura_owned_anchor')) {
               if (mode === 'scope-failure')
                 return { code: 1, stdout: '', stderr: 'owned scope still active' };
@@ -117,14 +117,14 @@ test('GPG directory cleanup waits for scope confirmation, retries, and retains a
           assert.equal(removals, 0);
           assert.ok(events.includes('bridge-close'));
           assert.equal(
-            commands.some((command) => command.startsWith('rm -f')),
+            commands.some((command) => command.includes('# SAKURA_GUEST_TASK_RETIRE')),
             false,
           );
         } else if (mode === 'bridge-failure') {
           await assert.rejects(operation, /owned bridge connection failed/);
           assert.equal(removals, 2);
           assert.equal(
-            commands.some((command) => command.startsWith('setsid sh -c')),
+            commands.some((command) => command.includes('# SAKURA_GUEST_TASK_RUN')),
             false,
           );
         } else {

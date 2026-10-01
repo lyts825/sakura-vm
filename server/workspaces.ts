@@ -1,6 +1,6 @@
 import { Metrics } from './metrics.ts';
 export { metricsScript, parseMetrics } from './metrics.ts';
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { AppError, guestPath } from './model.ts';
@@ -19,7 +19,7 @@ import { guestTask } from './guest-task.ts';
 import { secretRefsSchema, privateLog, redactValues, type Secrets } from './secrets.ts';
 import type { NetworkProfiles } from './network-profiles.ts';
 import { ProjectCatalog } from './project-catalog.ts';
-import { runtimesSchema, runtimeEnvironment } from './runtime-versions.ts';
+import { runtimesSchema, runtimeEnvironment } from './runtime-config.ts';
 import { guardProjectQuotaDirectory, projectQuota, readProjectQuotaRecord } from './project-quota.ts';
 import { ensureProjectNetworkScript,
   removeProjectNetwork } from './project-network-isolation.ts';
@@ -237,7 +237,11 @@ export class Workspaces {
       : undefined;
   }
   async resolvedConfig(id: string): Promise<Project> {
-    const project = await this.config(id);
+    return this.resolveProject(id, await this.config(id));
+  }
+  // Resolve an already captured candidate without loading a second project or
+  // carrying runtime overrides from the previous selection into the candidate.
+  async resolveProject(id: string, project: Project): Promise<Project> {
     if (
       !this.context?.secrets &&
       (Object.keys(project.secrets || {}).length ||
@@ -263,15 +267,21 @@ export class Workspaces {
       : undefined;
     return { ...project, _workspace: project._workspace, environment, ...(services ? { services } : {}) };
   }
-  async save(id: string, input: unknown, allowedDirectory?: string, expectedVersion?: string) {
+  async save(id: string, input: unknown, allowedDirectory?: string, expectedVersion?: string,
+    commitGuard?: () => void) {
     const project = projectSchema.parse(input);
     return this.machines.locked(id, async () => {
+      commitGuard?.();
       this.machines.get(id);
       if (this.jobs.view(this.projects.key(id))?.status === 'running')
         throw new AppError('请等待项目操作完成', 409);
       const previous = await this.config(id);
       if (expectedVersion !== undefined && projectVersion(previous) !== expectedVersion)
         throw new AppError('项目配置已变化，请重新审阅并提交变更', 409);
+      const verifyVersion = async () => {
+        if (expectedVersion !== undefined && projectVersion(await this.config(id)) !== expectedVersion)
+          throw new AppError('项目配置已变化，请重新审阅并提交变更', 409);
+      };
       if (allowedDirectory !== undefined &&
           (project.directory !== allowedDirectory || previous.directory !== allowedDirectory))
         throw new AppError('项目成员不能修改项目目录', 403);
@@ -417,8 +427,17 @@ export class Workspaces {
         else await removeProjectNetwork(this.machines, id, previous);
       }
       const file = this.projects.file(id);
-      await writeFile(`${file}.tmp`, JSON.stringify(project, null, 2));
-      await rename(`${file}.tmp`, file);
+      await verifyVersion();
+      commitGuard?.();
+      try {
+        await writeFile(`${file}.tmp`, JSON.stringify(project, null, 2));
+        await verifyVersion();
+        commitGuard?.();
+        await rename(`${file}.tmp`, file);
+      } catch (error) {
+        await rm(`${file}.tmp`, { force: true });
+        throw error;
+      }
       await Promise.allSettled([...this.configListeners].map((listener) => listener()));
       return project;
     });

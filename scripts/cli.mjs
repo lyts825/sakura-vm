@@ -19,7 +19,7 @@ async function main() {
     const { sandboxHelp } = await import('./sandbox-cli.mjs');
     console.log('Project commands:\n  shell <name> [--project <id>]\n  exec <name> [--project <id> | --instance] [--timeout <seconds>] -- <command> [args...]\n  Commands use the saved active project by default. Account mode accepts SAKURA_TOKEN.');
     console.log(
-      '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
+      '\nNew workspace features\n  projects <name> [list|create|select|rename]\n  history <name> [path|restore|purge]\n  pipeline <name> [list|save|run|remove]\n  runtimes <name> [inspect|probe|select|install]\n  code-check <name> [path]\n  compact <name>\n  events',
     );
     console.log(
       'Sakura — local Linux workspaces\n\n  list\n  images\n  image <alpine|debian|ubuntu>\n  create <name> [alpine|debian|ubuntu] [none|node|python|rust]\n  start <name>\n  stop <name>\n  suspend <name>\n  resume <name>\n  extended <name> [view|check|run|configure|operation]\n  next <name> [view|check|run|configure]\n  shell <name>\n  exec <name> -- <command> [args...]\n  metrics <name>\n  clone <name> <new-name>\n  export <name> <file.sakura>\n  import <new-name> <file.sakura>\n  snapshots <name>\n  snapshot <name> <label>\n  project <name> <setup|start|stop|configure> [project.json]\n  sync <name> <both|push|pull|configure> [sync.json]\n\nStart the service with npm start first.',
@@ -330,6 +330,8 @@ async function main() {
     if (action === 'runtimes') {
       const kind = args[0] || 'inspect';
       if (kind === 'inspect') console.log(JSON.stringify(await api(`/vms/${vm.id}/runtimes`), null, 2));
+      else if (kind === 'probe')
+        console.log(JSON.stringify(await api(`/vms/${vm.id}/runtimes`, 'POST', { action: 'probe' }), null, 2));
       else if (kind === 'select') {
         if (!args[1]) throw new Error('Usage: runtimes <name> select <runtime.json>');
         console.log(

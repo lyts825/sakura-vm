@@ -2,6 +2,7 @@ import { readFile, mkdir, writeFile, rename, rm, lstat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, relative, isAbsolute, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { AppError } from './model.ts';
 
 export async function readStore<T>(file: string, fallback: () => T): Promise<T> {
@@ -17,7 +18,18 @@ export async function writeStore(file: string, value: unknown) {
   const temp = `${file}.${randomUUID()}.tmp`;
   try {
     await writeFile(temp, JSON.stringify(value, null, 2), { mode: 0o600, flag: 'wx', flush: true });
-    await rename(temp, file);
+    const deadline = performance.now() + 1000;
+    for (let attempt = 0; ; attempt++) {
+      try { await rename(temp, file); break; }
+      catch (error) {
+        const remaining = deadline - performance.now();
+        if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException)?.code || '') || remaining <= 0)
+          throw error;
+        // Windows can briefly deny replacement while another handle is open.
+        // Keep the original file and this exact flushed temporary file intact.
+        await delay(Math.min(remaining, 25 * 2 ** Math.min(attempt, 3)));
+      }
+    }
   } finally {
     await rm(temp, { force: true });
   }

@@ -27,6 +27,7 @@ for (const code of [
   'PROJECT_MAIN_CLEANUP_FAILED', 'PROJECT_SSH_CLEANUP_FAILED',
   'PROJECT_IDENTITY_CLEANUP_FAILED',
   'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED',
+  'RUNTIME_INSTALL_CLEANUP_FAILED',
 ]) {
   test(`cancelled ${code} cleanup remains a durable failure after restart`, async () => {
     const scope = code.toLowerCase(), jobs = new Jobs(scope, root), entered = gate();

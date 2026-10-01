@@ -40,7 +40,7 @@ function fixture(mode = 'normal') {
     locked: async (_key: string, action: () => Promise<unknown>) => action(),
     exec: async (_id: string, command: string) => {
       const input = request(command);
-      if (!input) return { code: command.startsWith('setsid sh -c') && command.includes('ready-probe') && mode === 'ready-failure' ? 1 : 0, stdout: '', stderr: '' };
+      if (!input) return { code: command.includes('# SAKURA_GUEST_TASK_RUN') && command.includes('ready-probe') && mode === 'ready-failure' ? 1 : 0, stdout: '', stderr: '' };
       const { op, name } = input;
       events.push({ op, name, runId: input.record?.runId || null });
       const reply = (status: string, record: ProjectServiceRecord | null) => ({ code: 0, stdout: JSON.stringify({ status, bootId: state.currentBoot, record }), stderr: '' });

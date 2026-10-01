@@ -31,7 +31,7 @@ test('managed Jupyter and Marimo sessions install, authenticate, survive restart
       commands.push(command);
       if (command.startsWith('test -x')) return { code: installed.has(command.includes('marimo')
         ? 'marimo' : 'jupyter') ? 0 : 1, stdout: '', stderr: '' };
-      if (command.startsWith('setsid ')) {
+      if (command.includes('# SAKURA_GUEST_TASK_RUN')) {
         installed.add(command.includes('pip install --disable-pip-version-check --no-input marimo')
           ? 'marimo' : 'jupyter');
         return { code: 0, stdout: '', stderr: '' };
@@ -122,7 +122,7 @@ test('private notebooks install offline inside their namespace and restore only 
       commands.push(command);
       if (command.startsWith('test -x')) return { code: installed.has(command.includes('marimo')
         ? 'marimo' : 'jupyter') ? 0 : 1, stdout: '', stderr: '' };
-      if (command.startsWith('setsid ') && command.includes('--find-links='))
+      if (command.includes('# SAKURA_GUEST_TASK_RUN') && command.includes('--find-links='))
         installed.add(command.includes('jupyterlab') ? 'jupyter' : 'marimo');
       if (command.startsWith('tmux has-session')) return { code: live ? 0 : 1, stdout: '', stderr: '' };
       if (command.startsWith('tmux new-session')) live = true;

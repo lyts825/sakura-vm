@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { guestTask } from '../server/guest-task.ts';
+import { guestTask, guestTaskControlPaths, guestTaskControlRoot } from '../server/guest-task.ts';
 import type { Machines } from '../server/machines.ts';
 
 const result = { stdout: 'worker output', stderr: '', code: 7 };
@@ -16,7 +16,7 @@ test('binary task input stays outside argv and survives the background launcher 
     },
     execInput: async (_id: string, command: string, body: Buffer) => {
       commands.push(command); received.push(body);
-      assert.ok(command.startsWith('exec 7<&0\nsetsid sh -c'));
+      assert.ok(command.startsWith('# SAKURA_GUEST_TASK_RUN\n') && command.includes('exec 7<&0'));
       assert.ok(command.includes('<&7 &') && command.includes('exec 7<&-'));
       assert.ok(command.includes('sakura-task-' + runId));
       assert.ok(!command.includes('private task input') && !command.includes(input.toString('base64')));
@@ -28,7 +28,7 @@ test('binary task input stays outside argv and survives the background launcher 
   input.fill(0);
   assert.deepEqual(await operation, result);
   assert.equal(received[0].toString(), 'private task input\0中文');
-  assert.ok(commands.at(-1)?.startsWith('rm -f'));
+  assert.ok(commands.at(-1)?.startsWith('# SAKURA_GUEST_TASK_RETIRE\n'));
 });
 
 test('oversized task input is refused before allocating or cleaning any task receipt', async () => {
@@ -48,11 +48,11 @@ function fixture(execute?: (command: string, attempt: number) => Promise<typeof 
     live: new Map([['owned', live]]),
     exec: async (_id: string, command: string, _timeout: number, signal?: AbortSignal) => {
       commands.push(command);
-      if (command.startsWith('setsid sh -c')) {
+      if (command.startsWith('# SAKURA_GUEST_TASK_RUN\n')) {
         if (signal?.aborted) throw signal.reason;
         return worker;
       }
-      if (command.startsWith('rm -f')) return { ...result, code: 0 };
+      if (command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')) return { ...result, code: 0 };
       return execute ? execute(command, ++controls) : { ...result, code: 0 };
     },
   } as unknown as Machines;
@@ -65,7 +65,7 @@ test('identity receipt cleanup failures retain their error code and cannot retir
     undefined, 10000, undefined, async () => {
       throw new (await import('../server/model.ts')).AppError('identity still unconfirmed', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
     }), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
-  assert.equal(f.commands.some(command => command.startsWith('rm -f')), false);
+  assert.equal(f.commands.some(command => command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')), false);
 });
 
 test('cleanup retries its independent connection before the stage callback and receipt retirement', async () => {
@@ -87,7 +87,7 @@ test('cleanup retries its independent connection before the stage callback and r
         ++callback;
         assert.equal(f.commands.filter((command) => command.includes('sakura_owned_anchor')).length, 2);
         assert.equal(
-          f.commands.some((command) => command.startsWith('rm -f')),
+          f.commands.some((command) => command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')),
           false,
         );
       },
@@ -96,7 +96,7 @@ test('cleanup retries its independent connection before the stage callback and r
   );
   assert.equal(callback, 1);
   assert.ok(f.logs.some((value) => value.includes('第 1 次未确认')));
-  assert.equal(f.commands.at(-1)?.startsWith('rm -f'), true);
+  assert.equal(f.commands.at(-1)?.startsWith('# SAKURA_GUEST_TASK_RETIRE\n'), true);
 });
 
 test('unconfirmed task scope cleanup keeps the receipt and never runs stage cleanup', async () => {
@@ -121,10 +121,10 @@ test('unconfirmed task scope cleanup keeps the receipt and never runs stage clea
   assert.equal(callback, 0);
   assert.equal(f.commands.filter((command) => command.includes('sakura_owned_anchor')).length, 3);
   assert.equal(
-    f.commands.some((command) => command.startsWith('rm -f')),
+    f.commands.some((command) => command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')),
     false,
   );
-  assert.ok(f.logs.some((value) => value.includes('/tmp/.sakura-job-')));
+  assert.ok(f.logs.some((value) => value.includes('/run/sakura-guest-tasks/')));
 });
 
 test('stage cleanup retries only after the scope is confirmed and preserves worker status', async () => {
@@ -147,7 +147,7 @@ test('stage cleanup retries only after the scope is confirmed and preserves work
     result,
   );
   assert.equal(attempts, 3);
-  assert.equal(f.commands.at(-1)?.startsWith('rm -f'), true);
+  assert.equal(f.commands.at(-1)?.startsWith('# SAKURA_GUEST_TASK_RETIRE\n'), true);
 });
 
 test('a guest without the required task scope reports refusal instead of a successful command', async () => {
@@ -174,7 +174,7 @@ test('a guest without the required task scope reports refusal instead of a succe
     (error: any) => error.code === 'GUEST_TASK_SCOPE_UNAVAILABLE' && /项目代码未执行/.test(error.message),
   );
   assert.equal(callback, true);
-  assert.equal(f.commands.at(-1)?.startsWith('rm -f'), true);
+  assert.equal(f.commands.at(-1)?.startsWith('# SAKURA_GUEST_TASK_RETIRE\n'), true);
 });
 
 test('lost retirement acknowledgements retry the same receipt after a single authorized stage cleanup', async () => {
@@ -187,8 +187,8 @@ test('lost retirement acknowledgements retry the same receipt after a single aut
     live: new Map([['owned', live]]),
     exec: async (_id: string, command: string) => {
       commands.push(command);
-      if (command.startsWith('setsid sh -c')) return result;
-      if (command.startsWith('rm -f') && ++retirements === 1) throw new Error('retirement reply lost');
+      if (command.startsWith('# SAKURA_GUEST_TASK_RUN\n')) return result;
+      if (command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n') && ++retirements === 1) throw new Error('retirement reply lost');
       return { ...result, code: 0 };
     },
   } as unknown as Machines;
@@ -238,7 +238,7 @@ test('stage callbacks are refused when the guest boot or stopped scope cannot be
   assert.equal(callbacks, 0);
   assert.equal(f.commands.filter((command) => command.includes('任务停止归属记录已丢失')).length, 3);
   assert.equal(
-    f.commands.some((command) => command.startsWith('rm -f')),
+    f.commands.some((command) => command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')),
     false,
   );
 });
@@ -264,7 +264,7 @@ test('stage cleanup failure and live instance replacement cannot retire uncertai
   );
   assert.equal(attempts, 3);
   assert.equal(
-    f.commands.some((command) => command.startsWith('rm -f')),
+    f.commands.some((command) => command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')),
     false,
   );
   const changed = fixture(async () => {
@@ -304,5 +304,64 @@ test('cancellation still performs cleanup without passing an already aborted sig
     (error) => error === original,
   );
   assert.equal(callback, true);
-  assert.equal(f.commands.at(-1)?.startsWith('rm -f'), true);
+  assert.equal(f.commands.at(-1)?.startsWith('# SAKURA_GUEST_TASK_RETIRE\n'), true);
+});
+
+test('private control path and every root phase validate protected parents and the same call nonce', async () => {
+  const runId = 'd0ae3dc9-206b-498d-b172-6c9cb2c6e2f1', f = fixture();
+  assert.deepEqual(guestTaskControlPaths(runId), {
+    directory: guestTaskControlRoot + '/' + runId,
+    receipt: guestTaskControlRoot + '/' + runId + '/.sakura-job-' + runId + '.pid',
+  });
+  await guestTask(f.machines, 'owned', 'true', new AbortController().signal, undefined,
+    10000, undefined, async () => {}, { runId });
+  const phases = ['RUN', 'CLEANUP', 'CONFIRM_STOPPED', 'RETIRE'];
+  assert.equal(f.commands.length, phases.length);
+  let nonce: string | undefined;
+  for (let index = 0; index < phases.length; ++index) {
+    const command = f.commands[index];
+    assert.ok(command.startsWith('# SAKURA_GUEST_TASK_' + phases[index] + '\n'));
+    assert.ok(command.includes('/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c'));
+    assert.match(command, /sakura_control_directory \/ parent/);
+    assert.match(command, /sakura_control_directory \/run parent/);
+    assert.ok(command.includes('0 0 600 1'));
+    assert.ok(command.includes('run UUID') || command.includes('sakura_control_task'));
+    assert.doesNotMatch(command, /chmod|\/tmp\/\.sakura-job-/);
+    const tokens = [...new Set(command.match(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/g))]
+      .filter(value => value !== runId);
+    assert.equal(tokens.length, 1);
+    if (nonce) assert.equal(tokens[0], nonce);
+    else nonce = tokens[0];
+  }
+  const again = fixture();
+  await guestTask(again.machines, 'owned', 'true', new AbortController().signal, undefined,
+    10000, undefined, undefined, { runId });
+  assert.ok(!again.commands[0].includes(nonce!));
+  assert.ok(f.commands.at(-1)?.includes('任务域未停止，拒绝核销控制记录'));
+  assert.ok(f.commands.at(-1)?.includes('授权记录缺失且控制目录非空'));
+});
+
+test('a refused private control directory cannot invoke cleanup callbacks or report worker success', async () => {
+  const f = fixture(async () => ({ ...result, code: 125, stderr: 'SAKURA_TASK_CONTROL_REFUSED: 控制目录必须为 root0700' }));
+  let callback = 0;
+  await assert.rejects(guestTask(f.machines, 'owned', 'true', new AbortController().signal,
+    f.log, 10000, undefined, async () => { callback++; }), (error: any) =>
+      error.code === 'GUEST_TASK_CLEANUP_FAILED' && error.message.includes('root0700'));
+  assert.equal(callback, 0);
+  assert.equal(f.commands.some(value => value.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')), false);
+  assert.ok(f.commands.slice(1).every(value => value.includes('sakura_control_task')));
+});
+
+test('private receipt retirement failures cannot downgrade unconfirmed control ownership to success', async () => {
+  const commands: string[] = [], live = {};
+  const machines = { live: new Map([['owned', live]]), exec: async (_id: string, command: string) => {
+    commands.push(command);
+    return command.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')
+      ? { code: 125, stdout: '', stderr: 'SAKURA_TASK_CONTROL_REFUSED: 任务控制授权或启动身份不符' }
+      : { ...result, code: command.startsWith('# SAKURA_GUEST_TASK_RUN\n') ? 7 : 0 };
+  } } as unknown as Machines;
+  await assert.rejects(guestTask(machines, 'owned', 'exit 7', new AbortController().signal), {
+    code: 'GUEST_TASK_CLEANUP_FAILED',
+  });
+  assert.equal(commands.filter(value => value.startsWith('# SAKURA_GUEST_TASK_RETIRE\n')).length, 3);
 });

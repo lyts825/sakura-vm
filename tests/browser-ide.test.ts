@@ -28,7 +28,7 @@ test('browser IDE installs a verified archive and manages project passwords, for
     exec: async (_id: string, command: string) => {
       commands.push(command);
       if (command.startsWith('test -x')) return { code: installed ? 0 : 1, stdout: '', stderr: '' };
-      if (command.startsWith('setsid ')) {
+      if (command.includes('# SAKURA_GUEST_TASK_RUN')) {
         installed = true;
         return { code: 0, stdout: '', stderr: '' };
       }
@@ -108,7 +108,7 @@ test('private browser IDE launches its process tree in the namespace and restore
     async exec(_id: string, command: string) {
       commands.push(command);
       if (command.startsWith('test -x')) return { code: installed ? 0 : 1, stdout: '', stderr: '' };
-      if (command.startsWith('setsid ') && command.includes('sha256sum -c -')) installed = true;
+      if (command.includes('# SAKURA_GUEST_TASK_RUN') && command.includes('sha256sum -c -')) installed = true;
       if (command.startsWith('tmux has-session')) return { code: live ? 0 : 1, stdout: '', stderr: '' };
       if (command.startsWith('tmux new-session')) live = true;
       if (command.includes('tmux kill-session')) live = false;

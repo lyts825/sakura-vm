@@ -2,6 +2,40 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 项目运行时探测、安装回执与私有任务控制
+
+2026-10-01 将运行时显式探测和版本选择验证接入持久项目 UID/GID、独立 home、已核对目录和项目网络，正文与环境使用受保护运输。面板打开、刷新、十秒轮询以及 CLI `inspect` 只读取宿主配置与最近完成的采样；`probe` 才发行任务。采样有配置、宿主实例和五分钟时效核对，最多保留 256 项，失败与过期不会冒充新结果。声明文件只读普通 no-follow FD，有类型、编码、大小与前后身份检查；每个版本进程有时间和输出预算。完整任务清理及准确票据核销之后才发布采样。
+
+版本选择先在项目 UID 下核对 ready 回执和准确绝对路径的版号，再释放 VM 锁，以原配置摘要保存；保存锁内在异步检查及临时文件写入后重新核对取消、服务关闭和实例归属。冲突保留新配置，空选择可清除覆盖。请求取消与关闭等待完整清理，清理未确认保持 503 和具体错误码。严格 POST、CLI 显式探测、面板状态和清除操作均已接通，账户模式仍仅允许 owner 使用运行时接口。使用见 [项目运行时版本](runtime-versions.md)。
+
+安装仍是明确的 root 管理员操作，使用固定系统环境，不加载项目密钥或项目 PATH。Debian/Ubuntu 的 Node 下载官方精确版本并核对摘要；Python 使用固定 uv 0.10.11、每次安装独占的 managed interpreter 与复制依赖的 relocatable venv。内部回执固定 stage、解释器及 destination 的设备与 inode，新树先有界核对属主、类型、链接、硬链接和权限，再只规范本次私有目录内的原 FD；构建期间解释器顶层保持 0700。prepared 回执在完整任务清理之后才能独立确认 ready、开放 0755。未知旧目录或不完整回执拒绝，不按目录存在执行 binary。恢复只处理准确原安装记录，无法确认的清理保存为 `RUNTIME_INSTALL_CLEANUP_FAILED`。
+
+外层短任务控制改为 root 0700 的 `/run/sakura-guest-tasks/<runId>` 与 root 0600 单链接记录，固定独立 nonce、boot 和完整 cgroup 身份。启动不接管已有 UUID；清理、停止确认与核销都复核原归属，丢失核销回执可重试。二进制输入及原完整 cgroup 回执合约保留，失败不能在正文执行前或清理后变成成功。
+
+固定运行时与任务控制 18 个生产源的首轮三系统真实检查共 56 项通过：Alpine 18、Debian 19、Ubuntu 19，默认 Node 24.15.0/tsx，无附加禁用 native 的参数。每种系统通过 3,000 次实际 runtime GET 无客户机操作或新账号票据，两项目独立 UID、home、私有网络与受保护正文、畸形声明和版本输出、真实脱离会话后代取消、配置冲突与未知 root 目录拒绝。Python 3.12.12 的项目 UID 选择、探测、pip、别名与新 venv 全部通过；Debian/Ubuntu 另首次安装并核对官方 Node 22.12.0。三台实例均同步后停止，live、所属 QEMU 与独立 CIM 核对为零，原账号、配置、证明和旧产物保持原样。汇总为 `.data/network-remaining-test-temp/runtime-project-identity-final-summary-436e88f8-a3c9-4431-a0fb-eef11dc3c61e.json`。
+
+Alpine 最终轮明确安装官方 coreutils 后复用原 ready 资产；其 Python 下载与 ready 生成仍归属前一份 `eed81…` 安装源的原始证明，不能改记为本轮首次下载。此前共享下载目录的 root `.lock` 为 0666，原安装按预期拒绝；只读诊断保留其 inode 与权限，改进为每次安装独占目录，不修复或删除旧共享内容。随后 Python 已实际下载并生成 ready，但 uv 的 pip 启动脚本使用 `realpath --`，BusyBox 产生错误 stderr；准确项目 UID 下的只读诊断确认这一点，最终补齐 coreutils，原脚本及 ready 回执字节不变。两次原失败、只读诊断与最终成功分别保存。更早宿主账号原子预留出现 EPERM，按同一账号与绑定正常 API 六步恢复通过；根因仍未确认，不宣称已修复，也不将恢复算作首次成功。
+
+私有任务控制另在自有 Debian 实例通过 12 组实际检查，包括全字节/NUL/UTF-8/128 KiB 输入、非零退出、控制目录权限、普通 UID 无法列目录、同 UUID 错误 nonce 拒绝且原任务保留、setsid 后代完整清理与核销回执丢失重试。证明为 `sakura-boot-persistence-53hCt6/guest-task-control-evidence-24cab065-0b2f-48ff-ae5e-a4c34b6ceadb.json`；旧控制方式只保留原始源码与只读推断，没有将其描述为实际漏洞复现。
+
+coreutils 修复后的一轮全量 Node 测试 1,101 项，1,100 通过、1 项平台跳过、0 失败；启动测试前捕获的 607 个源码摘要在完成后保持一致。运行时后端定向 65 项、面板浏览器 2 项、32 个插件契约、9 个插件包，以及 3,113 条语言文本与 74 个动态片段通过。全量原始日志与校验分别为 `.data/runtime-identity-full-unit-coreutils.log`、`.data/runtime-identity-full-unit-coreutils-verification.json`；较早 1,082 和 1,100 项测试的日志仍归属各自原安装源，不重新标记为后续源码。
+
+随后编译版 HTTP 的第一轮因测试脚本读取 Windows 文件属主所依赖的 PowerShell 模块无法加载而中止，改用准确文件的 .NET ACL 只读接口。第二轮前三组通过，但显式 probe 在宿主账号日志原子替换时返回真实 EPERM；新客户机票据尚未发行，原账号记录完整。两轮 false 证明 `compiled-runtime-identity-http-eaab3a10-d3fb-433c-941b-a4282fdd3513.json`、`compiled-runtime-identity-http-91b507df-5d57-4381-bbc6-471dda2e0c17.json` 均保持原字节与源码归属，实例停止、原设置恢复，不将局部通过写成完整成功。
+
+宿主 `writeStore` 为 Windows 的 EPERM/EACCES/EBUSY 增加总等待约一秒的有界原子替换重试；全部尝试只使用同一份已经 flush 的独占临时文件，持续失败返回原错误并保留旧文件，其他错误和非 Windows 直接失败。9 项新增测试通过，真实 Windows .NET FileShare.ReadWrite 且不允许删除共享的短锁验证连续读取只得到完整旧版或新版，持续锁验证原错误、原正文与临时清理；另三种错误码的相同临时 inode/正文、非 Windows 条件及序列化/flush 失败是明确模拟。连原运行时回归共 74 项通过，类型与差异检查通过；证明为 `.data/runtime-identity-store-freeze-b822e139-bcc8-410a-9399-eaa818b59b40.json`。原 EPERM 的具体持锁者仍未知，不据此宣称其根因或此前原生客户端退出已修复。
+
+加入存储修复后的全量 Node 回归 1,110 项，1,109 通过、1 项平台跳过、0 失败或取消。192 个测试文件启动前捕获的 608 个源码摘要在完成后全部一致，使用默认 Node 24.15.0/tsx。原始日志为 `.data/runtime-identity-full-unit-storage.log`，摘要为 `ce7b1d313c05d41d34e0a06dd073722407aa3374d67d057761fa26ea8d63e4d1`，校验为 `.data/runtime-identity-full-unit-storage-verification.json`。
+
+将宿主存储依赖也纳入冻结后，19 个生产源的三系统实际回归再通过 56 项，9,000 次 GET 无客户机操作或新增账号票据。该轮所有 Python 与 Node 都准确复用既有 ready 回执；Alpine Python 的创建继续归属原 `eed81…` 证明，Debian/Ubuntu Python 与 Node 的首次下载归属上述原 18 源汇总，不宣称再次下载。原账户、配置、旧产物与全部历史正负证明保持原字节，三台实例均同步、停止、live/QEMU/CIM 为零。新汇总 `.data/network-remaining-test-temp/runtime-project-identity-final-summary-10a5bfce-5855-4c68-a570-5de8e845201a.json` 的摘要为 `c4059c1390b198f9d8819083a205fe99b74a41756b65fde0b929b52dc2d22cbe`。
+
+完整生产构建、54 个服务模块分发检查和 7 种编译服务组合均通过。新运行包 `release/sakura-4EIY1q` 的 256 个文件校验通过，指纹为 `8abfef63654cabbf3c7b4f34cb5363ea815eba0a0f954791c19b9481fe92f6c6`，编译服务摘要为 `fad2ae3476c3f8099d5c4102d39cc5b3d6a530a60b8f6452b30b097ceb7b01c6`；校验为 `.data/runtime-identity-physical-storage-release-verification.json`。运行包复用本机已准备的 QEMU/PosixLoom 和依赖，没有验证新机器安装。
+
+该包首轮编译 HTTP 检查前 9 组通过，包括公开 API 官方 Node 安装、ready 回执、项目 UID 选择与探测、完整取消清理及包内 CLI；第 10 组测试角色 ID `runtime_reader` 不符合现有接口格式而中止。保留 false 证明 `compiled-runtime-identity-http-4f582916-6488-4161-8aa1-3fc66edc094c.json`，摘要为 `2d93dd251d90cae8746e482f1319b69a2dcae826122e1051480dba571b5c4d08`；实例同步后停止、QEMU 为零、原设置与活动项目恢复。仅将测试的两处角色 ID 改为 `runtime-reader`，生产接口、运行包与 19 源冻结未变；完整结果以独立的新证明记录。
+
+修正测试角色后的同包完整编译 HTTP/生成 SDK 回归 13 组通过：默认 Node 24.15.0、客户端与两次编译服务的 `execArgv` 均为空；认证、目录审阅应用、无发行 GET、真实 UID/home/caps/NNP/私网探测与缓存、严格 POST、取消全域清理、清除及未知 prefix 拒绝、官方 Node 22.12.0 实际安装与 ready、包内 CLI、成员权限拒绝和历史证明保持均完成。最终在已只读观察到实际 UID 探测进程与准确票据后触发生产 SIGINT 处理器，确认原票据闭合、服务退出码为零、客户机停止；仅重启同包宿主服务，公开状态仍为 stopped/live=0，原活动项目恢复。证明为 `sakura-boot-persistence-53hCt6/compiled-runtime-identity-http-65e8ac68-d307-4985-9380-21fafa41d032.json`，日志及退出回执为 `.data/runtime-identity-http-default-13-role-fixed-3c757d15-ca95-4f9a-bc96-042e028b384a.log` 与同名前缀的 `-exit.json`。私有 IPC 调用的是实际生产 SIGINT 处理器，这不验证 Windows 原生控制台信号交付，也不等于新的客户机冷启动。
+
+本批源码摘要、运行包、全量测试、三系统实际运行、编译 HTTP、私有控制、原失败与诊断的索引为 `.data/runtime-identity-final-checkpoint-evidence.json`；所有历史证明保留原始字节和创建源码归属。目录仍为 250 项、247 项有实现入口、3 项部分实现。普通终端、项目 SSH/Agent、构建农场及剩余扩展的账号与正文迁移、客户机每 boot 1,024 张票据的无重启归档、真正独立外部 HA 演练与系统级剪贴板边界仍需继续；ARM 安装及新机器部署未实测。清单继续见 [未完成功能](unfinished-features.md)。
+
 ## 项目 UID 接入、受保护正文与目录迁移
 
 2026-10-01 将默认项目 API/SDK/CLI 命令、项目初始化、主命令、普通服务、就绪与命令式健康检查接入持久项目 UID/GID 和独立 home。命令及环境通过最多 128 KiB 的二进制 stdin 或 root 独占保护帧运输；固定启动器核对原 boot、run、域与文件身份，降权、清空补充组和 capabilities 后才读取正文、核对 EOF/摘要并执行密封只读 memfd，root argv 不含命令或密钥。已发行票据的用户非零退出和 JSON 输出保持原语义；未发行票据的控制器拒绝返回明确账号错误，健康检查不会据此进入普通失败重启循环。

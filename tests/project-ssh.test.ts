@@ -173,7 +173,7 @@ async function rollbackFixture(distro: 'alpine' | 'debian', mode: string) {
           }),
           stderr: '',
         };
-      if (command.startsWith('setsid sh -c'))
+      if (command.includes('# SAKURA_GUEST_TASK_RUN'))
         return {
           code: 0,
           stdout: 'SAKURA_SSH_HOST_KEY=ssh-ed25519 YWJjZA==\nSAKURA_SSH_BOOT_ID=' + boot + '\n',

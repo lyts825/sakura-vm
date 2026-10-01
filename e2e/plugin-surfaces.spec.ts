@@ -4254,6 +4254,99 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
+test('runtime versions remain read-only until an explicit probe and mark saved selections stale on mobile', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await app(page, ['projects', 'runtimes'], true);
+  await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  const submitted: unknown[] = [];
+  let reads = 0;
+  let view = {
+    selected: { node: '22.12.0' }, declared: {} as Record<string, string>, actual: {} as Record<string, string>,
+    mismatches: [] as string[], job: null,
+    probe: { state: 'unprobed', checkedAt: null as string | null,
+      configVersion: null as string | null, bootId: null as string | null },
+  };
+  await page.route('**/api/vms/*/runtimes**', route => {
+    expect(new URL(route.request().url()).searchParams.get('project')).toBe('default');
+    if (route.request().method() === 'GET') { reads++; return route.fulfill({ json: view }); }
+    const input = route.request().postDataJSON(); submitted.push(input);
+    if (input.action === 'probe') {
+      view = { ...view, declared: { node: '22' }, actual: { node: '22.13.0', python: '3.12.0' },
+        mismatches: ['node'], probe: { state: 'cached', checkedAt: '2026-10-01T08:00:00Z',
+          configVersion: 'a'.repeat(64), bootId: 'ce2ca60c-a1b8-465d-a5f4-10198572fc0e' } };
+    } else if (input.node) {
+      expect(input).toEqual({ action: 'select', node: '23.5.1' });
+      view = { ...view, selected: { node: input.node }, probe: { ...view.probe, state: 'stale' } };
+    } else {
+      expect(input).toEqual({ action: 'select' });
+      view = { ...view, selected: { node: '' }, declared: {}, mismatches: [],
+        probe: { ...view.probe, state: 'cached' } };
+    }
+    return route.fulfill({ json: view });
+  });
+  await page.reload(); await page.getByRole('tab', { name: '开发', exact: true }).click();
+  await expect(page.getByText('尚未探测，请点击“探测项目版本”。', { exact: true })).toBeVisible();
+  await expect(page.getByText('最近探测版本匹配', { exact: true })).toHaveCount(0);
+  expect(submitted).toEqual([]); const firstReads = reads;
+  await page.reload();
+  await expect(page.getByRole('button', { name: '探测项目版本', exact: true })).toBeEnabled();
+  expect(reads).toBeGreaterThan(firstReads); expect(submitted).toEqual([]);
+  await page.getByRole('button', { name: '探测项目版本', exact: true }).click();
+  await expect(page.getByText('最近探测版本不匹配：node', { exact: true })).toBeVisible();
+  expect(submitted).toEqual([{ action: 'probe' }]);
+  await page.getByPlaceholder('22.12.0', { exact: true }).fill('23.5.1');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: '应用到项目', exact: true }).click();
+  await expect(page.getByText('最近采样已过期，请重新探测。', { exact: true })).toBeVisible();
+  await expect(page.getByText('项目选择：Node 23.5.1', { exact: false })).toBeVisible();
+  await expect(page.getByText('最近探测版本不匹配：node', { exact: true })).toHaveCount(0);
+  expect(submitted).toEqual([{ action: 'probe' }, { action: 'select', node: '23.5.1' }]);
+  expect(errors).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: 'artifacts/runtime-cached-stale-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: '清除版本选择', exact: true }).click();
+  await expect(page.getByText('最近探测未发现版本要求。', { exact: true })).toBeVisible();
+  await expect(page.getByText('最近探测版本匹配', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '清除版本选择', exact: true })).toBeDisabled();
+  expect(submitted).toHaveLength(3); expect(submitted[2]).toEqual({ action: 'select' });
+});
+
+test('runtime probe cleanup failures preserve the chosen version and allow an explicit retry', async ({ page }) => {
+  await app(page, ['projects', 'runtimes'], true);
+  await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  let attempts = 0;
+  const view = {
+    selected: { node: '22.12.0' }, declared: {}, actual: {} as Record<string, string>, mismatches: [], job: null,
+    probe: { state: 'unprobed', checkedAt: null as string | null,
+      configVersion: null as string | null, bootId: null as string | null },
+  };
+  await page.route('**/api/vms/*/runtimes**', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: view });
+    expect(route.request().postDataJSON()).toEqual({ action: 'probe' });
+    if (++attempts === 1) {
+      view.probe.state = 'failed';
+      return route.fulfill({ status: 503, json: {
+        error: '项目运行清理未确认，原票据继续保留', code: 'PROJECT_IDENTITY_CLEANUP_FAILED',
+      } });
+    }
+    view.probe = { state: 'cached', checkedAt: '2026-10-01T08:00:00Z',
+      configVersion: 'b'.repeat(64), bootId: 'ce2ca60c-a1b8-465d-a5f4-10198572fc0e' };
+    view.actual = { node: '22.12.0', python: '3.12.0' };
+    return route.fulfill({ json: view });
+  });
+  await page.reload(); await page.getByRole('tab', { name: '开发', exact: true }).click();
+  const version = page.getByPlaceholder('22.12.0', { exact: true }); await version.fill('24.8.0');
+  const probe = page.getByRole('button', { name: '探测项目版本', exact: true }); await probe.click();
+  await expect(page.getByRole('alert')).toHaveText('项目运行清理未确认，原票据继续保留');
+  await expect(page.getByText('上次探测未完成，请重试。', { exact: true })).toBeVisible();
+  await expect(page.getByText('最近探测版本匹配', { exact: true })).toHaveCount(0);
+  await expect(version).toHaveValue('24.8.0'); await expect(probe).toBeEnabled();
+  expect(attempts).toBe(1); await probe.click();
+  await expect(page.getByText('最近探测版本匹配', { exact: true })).toBeVisible();
+  await expect(version).toHaveValue('24.8.0'); expect(attempts).toBe(2);
+});
+
 for (const initialState of ['preview', 'applied-with-unconfirmed-latch'] as const) {
   test(`project directory permissions ${initialState} require a reviewed current plan and preserve retries on mobile`, async ({ page }) => {
     const errors: string[] = [];

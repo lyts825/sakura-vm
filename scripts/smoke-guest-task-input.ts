@@ -23,7 +23,7 @@ process.env.SAKURA_IMAGE_PATH = resolve('.data/images/debian-12.qcow2');
 const { Machines } = await import('../server/machines.ts');
 const { createRuntime } = await import('../server/runtime.ts');
 const { quote } = await import('../server/files.ts');
-const { guestTask } = await import('../server/guest-task.ts');
+const { guestTask, guestTaskControlPaths } = await import('../server/guest-task.ts');
 const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 const sourceFiles = ['server/guest-task.ts', 'server/machines.ts', 'scripts/smoke-guest-task-input.ts'];
 const sources: Record<string, string> = {};
@@ -48,7 +48,7 @@ async function roundtrip(name: string, data: Buffer, mutate = false, nonzero = f
   assert.equal(actual.length, expected.length); assert.equal(actual.sha256, expected.sha256);
   assert.equal(actual.cgroup, '0::/sakura-task-' + runId);
   await run(`test ! -e /sys/fs/cgroup/sakura-task-${runId}\n` +
-    `test ! -e /tmp/.sakura-job-${runId}.pid.scope\ntest ! -e /tmp/.sakura-job-${runId}.pid`);
+    'test ! -e ' + quote(guestTaskControlPaths(runId).directory));
   proof.checks.push({ name, runId, expected, actual, exitCode: result.code, scopeRemoved: true, passed: true });
   console.log('passed ' + name);
 }
@@ -92,7 +92,8 @@ try {
   const child = JSON.parse(await run('cat ' + quote(marker)));
   assert.equal(child.cgroup, '0::/sakura-task-' + runId);
   abort.abort(); assert.equal((await outcome).rejected, true);
-  await run(`test ! -e /sys/fs/cgroup/sakura-task-${runId}\ntest ! -e /tmp/.sakura-job-${runId}.pid.scope`);
+  await run(`test ! -e /sys/fs/cgroup/sakura-task-${runId}\n` +
+    'test ! -e ' + quote(guestTaskControlPaths(runId).directory));
   await run('/usr/bin/python3 -I -S -c ' + quote(`import os\ntry:\n state=open('/proc/${child.pid}/stat').read().rsplit(') ',1)[1].split()[0]\n assert state in ['Z','X']\nexcept FileNotFoundError: pass\n`));
   await run('rm -- ' + quote(marker)); marker = undefined;
   proof.checks.push({ name: 'cancel-cleans-detached-descendant-and-input-channel', runId, child,
