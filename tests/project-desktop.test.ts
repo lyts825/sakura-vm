@@ -179,7 +179,7 @@ test('stopping KDE aborts an unfinished installation before waiting for the VM l
   assert.equal(f.guest.starts, 0, 'the desktop service must not start during package preparation');
   await f.desktops.stop(f.guest.id);
   assert.equal((await f.bindings.read(f.guest.id))!.enabled, false);
-  assert.ok(f.guest.commands.some((command) => command.includes('kill -TERM --')));
+  assert.ok(f.guest.commands.some((command) => command.includes('sakura_owned_anchor') && command.includes('.pid.stop')));
   assert.equal((await f.scope(f.alpha, () => f.desktops.view(f.guest.id))).status, 'stopped');
 });
 

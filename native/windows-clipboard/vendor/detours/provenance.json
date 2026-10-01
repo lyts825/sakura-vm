@@ -1,0 +1,44 @@
+{
+  "repository": "https://github.com/microsoft/Detours",
+  "license": "MIT",
+  "files": [
+    {
+      "path": "LICENSE.md",
+      "sha256": "b301808b732cfaa60df2b4b422d78cd97d2a15058b207e7e33f0535ba5170dd6"
+    },
+    {
+      "path": "src/detours.h",
+      "sha256": "74b9d7a9f4f219a3ba1f08ee3f11ffece16f10ba413b12477955cca7449c4f60"
+    },
+    {
+      "path": "src/detver.h",
+      "sha256": "997d713d5b47d159f1736840b318ea426c76ed6f148014a5a9da78ebb4bd700c"
+    },
+    {
+      "path": "src/detours.cpp",
+      "sha256": "ea4f2b7ae5b71a902d88ae6b55e9167b72fcf69d2bece8acc453450702be3f91"
+    },
+    {
+      "path": "src/modules.cpp",
+      "sha256": "1950d936e27e847d69c132ee063752b5078593a98ab1841a2e10f33d8bbb4567"
+    },
+    {
+      "path": "src/disasm.cpp",
+      "sha256": "13c38684b1c1018828138301b57863feb37be70557d39ffe171849a0894ff395"
+    },
+    {
+      "path": "src/image.cpp",
+      "sha256": "a039466a8edc0248042c9df804a2d13bb8a4e03cb038fb10b4b762b2e5d214a9"
+    },
+    {
+      "path": "src/creatwth.cpp",
+      "sha256": "57d1756707c93d4544d3346355d3c7fe900578a8ecb4b4f6835da55e71b02cd5"
+    },
+    {
+      "path": "src/uimports.cpp",
+      "sha256": "18f86c93d2c2d8feb46ddfb500027ce959a542b824c1d70cf7671227b8c70176"
+    }
+  ],
+  "version": "4.0.1",
+  "commit": "1dbd4ea281d73d478aa8d09a8b83fbd265f715f7"
+}

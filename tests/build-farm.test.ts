@@ -252,7 +252,8 @@ test('two slots on one private node stay concurrent, guard project edits and cle
     await farm.action({ operation: 'cancel', id: first.id });
     await waitFor(() => releases.length === 3);
     assert.equal(peak, 2);
-    assert.ok(f.machines.commands.some((command: string) => command.includes('kill -TERM --')));
+    assert.ok(f.machines.commands.some((command: string) =>
+      command.includes('sakura_owned_anchor') && command.includes('.pid.stop')));
     for (const release of releases) release();
     await waitFor(() => farm.view().tasks.filter((task) => task.status === 'done').length === 2);
     assert.equal(farm.view().tasks.find((task) => task.id === first.id)?.status, 'cancelled');

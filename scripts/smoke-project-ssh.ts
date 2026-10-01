@@ -11,8 +11,15 @@ import ssh2 from 'ssh2';
 const distro = process.argv[2] || 'debian';
 assert.ok(['alpine', 'debian', 'ubuntu'].includes(distro));
 if (process.env.SAKURA_SSH_STOP_RECOVERY_ONLY === '1') assert.equal(distro, 'alpine');
-if (distro === 'alpine' && (process.env.SAKURA_SSH_VSCODE_ARCHIVE || process.env.SAKURA_SSH_VSCODE_CLIENT))
-  throw new Error('Alpine 只验证普通项目 SSH/SFTP；VS Code Remote-SSH 不支持该客户机');
+if (
+  distro === 'alpine' &&
+  (process.env.SAKURA_SSH_VSCODE_ARCHIVE ||
+    process.env.SAKURA_SSH_VSCODE_CLIENT ||
+    process.env.SAKURA_SSH_JETBRAINS_GATEWAY)
+)
+  throw new Error(
+    'Alpine 支持普通项目 SSH/SFTP 与 Neovim；VS Code Remote-SSH 和 JetBrains Gateway 不支持该客户机',
+  );
 const directory = resolve(process.argv[3] || (await mkdtemp(join(tmpdir(), 'sakura-project-ssh-'))));
 const owned = await realpath(directory);
 assert.equal(dirname(owned), await realpath(tmpdir()));
@@ -34,6 +41,7 @@ const { runReport } = await import('../server/capability-reports.ts');
 const { secureSshPaths } = await import('../server/ssh-files.ts');
 const { projectVscodeClientSmoke } = await import('./project-vscode-client-smoke.ts');
 const { projectNeovimClientSmoke } = await import('./project-neovim-client-smoke.ts');
+const { projectJetbrainsClientSmoke } = await import('./project-jetbrains-client-smoke.ts');
 const machines = new Machines(await createRuntime());
 const guestExec = machines.exec.bind(machines);
 let execution = 0;
@@ -282,9 +290,9 @@ try {
     (await machines.create({
       name: 'project-ssh-' + distro,
       distro,
-      memoryMiB: 2048,
-      cpus: 2,
-      diskGiB: 8,
+      memoryMiB: process.env.SAKURA_SSH_JETBRAINS_GATEWAY ? 8192 : 2048,
+      cpus: process.env.SAKURA_SSH_JETBRAINS_GATEWAY ? 4 : 2,
+      diskGiB: process.env.SAKURA_SSH_JETBRAINS_GATEWAY ? 16 : 8,
       forwards: [],
     }));
   vmId = vm.id;
@@ -610,6 +618,25 @@ try {
       `${distro}: real SFTP, independent same-port applications, forwarding restrictions and wrong project key refusal passed`,
     );
     await projectNeovimClientSmoke(directory, join(directory, 'ssh-client/config'), projects, external);
+    await projectJetbrainsClientSmoke(
+      directory,
+      join(directory, 'ssh-client/config'),
+      projects,
+      external,
+      async (project) =>
+        within(
+          project.id,
+          async () =>
+            (await runReport(
+              machines,
+              workspaces!,
+              vmId,
+              'editor-profiles',
+              { editor: 'jetbrains' },
+              new AbortController().signal,
+            )) as unknown as import('./project-jetbrains-client-smoke.ts').JetbrainsProfile,
+        ),
+    );
     if (distro === 'alpine') await alpineReceiptStopRecovery(projects);
     if (distro !== 'alpine')
       await projectVscodeClientSmoke(directory, join(directory, 'ssh-client/config'), projects, external);

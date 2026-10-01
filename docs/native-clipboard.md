@@ -17,17 +17,17 @@ Windows x64 宿主的原生代理为显式选择的 x64 和 x86 普通 EXE 应�
 
 ## 执行范围
 
-代理只附加当前 Windows 用户、同一会话的 x64 或 x86 EXE 进程，服务核对架构后用对应控制程序和 DLL 接入，使用 Win32 剪贴板函数与 OLE `IDataObject` 包装执行规则。未知架构继续拒绝；旧的第 1 版原生运行包只支持 x64，不会尝试执行未校验的 x86 工具。读取时再次检查当前权限与内容，包括代理接入后通过包装取得的 OLE 对象、源对象延迟提供的数据以及 Win32 延迟渲染。OLE 自身对象与格式元数据仅在已经授权的 OLE 操作内传递，应用实际内容仍由包装层检查。`GetDataHere` 通过检查过的临时全局内存填充调用者缓冲区；启用时暂不支持该方法的流、存储或文件介质，较大的全局内存介质也可能被拒绝。
+代理只附加当前 Windows 用户、同一会话的 x64 或 x86 EXE 进程，服务核对架构后用对应控制程序和 DLL 接入，使用 Win32 剪贴板函数与 OLE `IDataObject` 包装执行规则。未知架构继续拒绝；旧的第 1 版原生运行包只支持 x64，第 2 版支持双架构运行中附加，受控启动需要第 3 版早期代理。读取时再次检查当前权限与内容，包括代理接入后通过包装取得的 OLE 对象、源对象延迟提供的数据以及 Win32 延迟渲染。OLE 自身对象与格式元数据仅在已经授权的 OLE 操作内传递，应用实际内容仍由包装层检查。`GetDataHere` 通过检查过的临时全局内存填充调用者缓冲区；启用时暂不支持该方法的流、存储或文件介质，较大的全局内存介质也可能被拒绝。
 
 每个代理使用仅当前用户与 SYSTEM 可访问的命名内存段，只保存规则、版本、进程身份与计数。控制服务在附加前写入进程归属记录；PID 复用、进程列表短暂不可见与附加失败都不能被视为已成功应用。停用解除方向、内容与大小限制，但不卸载仍可能被使用的函数跳板或 OLE 包装；包装只提供受管接口，其他扩展接口在代理存续期间不可用。完全移除代理需要退出该应用。
 
-受控启动核对已保存版本、启用状态、EXE 摘要与 PE 架构，再用匹配架构工具锁定文件并创建暂停的主线程。创建时通过 `PROC_THREAD_ATTRIBUTE_JOB_LIST` 将新进程加入本次专属 Job，失败时不会留下尚未登记的暂停进程。服务先持久保存进程归属，再加载代理；加载完成后独立核对真实共享状态、当前规则、身份、文件摘要、界面锁及迁移维护状态，最后才允许恢复主线程。主函数中的首次普通 Win32/OLE 调用受已保存规则约束。此路径需要支持创建时 Job 分配的 Windows 10 或更新版本；不支持时明确拒绝创建。
+受控启动核对已保存版本、启用状态、EXE 摘要与 PE 架构，再用匹配架构工具锁定文件并创建暂停的主线程。创建时通过 `PROC_THREAD_ATTRIBUTE_JOB_LIST` 将新进程加入本次专属 Job，失败时不会留下尚未登记的暂停进程。服务先持久保存进程归属，再将策略 DLL 插入首个 import；它在原始应用 DLL/TLS 初始化之前同步核对并加载规则。初始化线程完成 loader 工作期间，主线程保持暂停。服务独立核对真实共享状态、当前规则、身份、文件摘要、界面锁及迁移维护状态，最后才允许恢复主线程。此路径需要支持创建时 Job 分配的 Windows 10 或更新版本；不支持时明确拒绝创建。
 
 恢复主线程之前的失败、控制工具 EOF 或异常退出由专属 Job 结束本次子进程。恢复成功后清除该 Job 的关闭终止标志，使应用在 Sakura 关闭后继续保留已加载规则。若最终提交回执丢失，已受限的子进程可能仍然存活；服务保留持久归属，报告「启动未确认」并通过刷新或后台扫描核对，不把丢失回复视为成功或保证已终止。
 
-受控启动的承诺止于主线程开始执行前加载规则。Windows 加载器准备、DLL 初始化和 TLS 回调可能早于代理运行，初始化期间另起的子进程也不能据此视为已接入；此路径不是初始化沙箱。自行启动的应用仍需等待周期扫描并成功附加。
+受控启动覆盖普通未打包原生 EXE 的原始应用 import DLL、DLL TLS、EXE TLS 与主入口；需要初始化回调运行在主线程的应用可能不兼容。`.local`、关键依赖清单重定向、CLR/AnyCPU、进程保护或无法核对的加载条件明确拒绝。系统 DLL 初始化引入的第三方启动 DLL、检查后恶意改写目录或系统设置、初始化期间自行创建的子进程仍不在承诺范围内。检查、loader lock 和线程语义见 [早期启动范围](windows-clipboard-early-init.md)。自行启动的应用仍需等待周期扫描并成功附加。
 
-这不是内核级 DLP 边界。受保护进程、其他用户、其他会话、ARM 应用和通过其他底层接口绕过常规 API 的程序不在保证范围内，也不能撤回应用先前已经读出的文本或接入前取得的原始数据对象。需要覆盖初始化或对恶意本机程序强制执行策略时仍需独立系统设施。Linux X11 应用可从 KDE 的原生入口显式启动，范围见 [Linux X11 应用剪贴板策略](x11-clipboard.md)；已有普通 Linux 程序、原生 Wayland 等路径仍未覆盖，因此总清单保持部分实现。
+这不是内核级 DLP 边界。受保护进程、其他用户、其他会话、ARM 应用和通过其他底层接口绕过常规 API 的程序不在保证范围内，也不能撤回应用先前已经读出的文本或接入前取得的原始数据对象。对恶意本机程序强制执行策略仍需独立系统设施。Linux X11 应用可从 KDE 的原生入口显式启动，范围见 [Linux X11 应用剪贴板策略](x11-clipboard.md)；已有普通 Linux 程序、原生 Wayland 等路径仍未覆盖，因此总清单保持部分实现。
 
 ## 构建、分发与验证
 
@@ -40,16 +40,20 @@ npm run build:native-clipboard
 npm run build
 npm run test:native-clipboard
 npm run test:native-clipboard -- 32
+node --import tsx scripts/smoke-native-clipboard-early.mjs 64
+node --import tsx scripts/smoke-native-clipboard-early.mjs 32
 ```
 
-源码编译到 `.tools/native-clipboard`，生产构建复制到 `.sakura-server/assets/native-clipboard`。第 2 版原生清单覆盖两种架构的代理 DLL、控制程序及 MinHook 许可，均有大小与 SHA-256；服务运行前逐项核对，完整性失败拒绝附加。主控制程序使用相同的 128 字节共享 ABI，可在 x86 DLL 或附加工具不可用时仍停用已归属且加载完成的进程规则，无须重新加载 DLL。运行包的整体摘要与更新也包含这些文件。Linux 构建不生成 Windows 二进制，相关页面会显示不可用。
+源码编译到 `.tools/native-clipboard`，生产构建复制到 `.sakura-server/assets/native-clipboard`。第 3 版原生清单覆盖两种架构的代理 DLL、控制程序及 MinHook、Detours 两份许可，均有大小与 SHA-256；服务运行前逐项核对，完整性失败拒绝附加。主控制程序使用相同的 128 字节共享 ABI，可在 x86 DLL 或附加工具不可用时仍停用已归属且加载完成的进程规则，无须重新加载 DLL。运行包的整体摘要与更新也包含这些文件。Linux 构建不生成 Windows 二进制，相关页面会显示不可用。
 
 `test:native-clipboard` 编译并启动真实 Win32/OLE 测试应用，创建只属于测试的新窗口站和桌面。默认测试 x64，参数 `32` 测试 x86 受管应用与 x64 对端交换内容。测试启动器使用新的本机登录标识，但保留当前用户的本机权限；不创建账户、不加载配置文件、不使用网络凭据，不读写交互桌面的剪贴板。两种架构均实测方向限制、格式枚举、错误进程身份、UTF-8 大小、敏感文本、畸形数据、二进制格式、OLE 缓存对象与 `GetDataHere`、混合格式、延迟渲染、自动扫描、会话锁定、控制重载和显式停用。Node 测试使用模拟原生适配器验证持久归属与异常处理，另检查双架构路由、旧清单拒绝和 x86 工具损坏时通过主控制程序停用；浏览器测试验证实际服务配置类的保存和失败状态。其他 Windows 版本及商业图形应用仍需独立兼容性验证。
 
-受控启动另在 x64/x86 私有窗口站实测主函数首个语句已加载相同构建的 ready/active 策略，首次普通复制和粘贴被拒绝；包含空字符串、空格、引号、反斜杠、中文、emoji、换行与命令样字符的参数原样到达。每种架构通过准备及附加阶段各自的 EOF/控制工具异常退出、恢复后提交 stdout 丢失共 5 个真实失败分支，以及写入归属后与附加后两种控制服务关闭分支。清理只影响本次子进程，原有 fixture 与其他规则保留；归属、扫描、重载及停用继续通过。20 项 Node 用例验证顺序、身份、实际策略复核、锁及迁移变化、持久写失败和严格参数；浏览器验证双架构启动、字面参数、版本冲突、失败提示、未保存禁用与手机布局。证据保存为所属测试目录的 `controlled-launch-proof.json`。
+受控启动另在 x64/x86 私有窗口站实测主函数首个语句已加载相同构建的 ready/active 策略，首次普通复制和粘贴被拒绝；包含空字符串、空格、引号、反斜杠、中文、emoji、换行与命令样字符的参数原样到达。每种架构通过准备及附加阶段各自的 EOF/控制工具异常退出、恢复后提交 stdout 丢失共 5 个真实失败分支，以及写入归属后与附加后两种控制服务关闭分支。清理只影响本次子进程，原有 fixture 与其他规则保留；归属、扫描、重载及停用继续通过。21 项 Node 用例验证顺序、身份、实际策略复核、锁及迁移变化、持久写失败和严格参数；浏览器验证双架构启动、字面参数、版本冲突、失败提示、未保存禁用与手机布局。证据保存为所属测试目录的 `controlled-launch-proof.json`。
 
 MinHook 固定为官方 1.3.4、提交 `c3fcafdc10146beb5919319d0683e44e3c30d537`。源码保留原许可与逐文件来源摘要，构建拒绝不匹配源码。许可随运行包分发。
 
-受控创建的系统接口依据微软 [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)、[创建属性与 Job 列表](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) 和 [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) 文档；实现与实机测试只承诺上述主线程边界。
+早期路径使用 Microsoft Detours 4.0.1、固定提交 `1dbd4ea281d73d478aa8d09a8b83fbd265f715f7`。双架构私有窗口站实测首个应用 DLL TLS、DllMain、EXE TLS 及 wmain 的 Win32/OLE 调用均受到当前策略约束；正常 Common Controls 可启动，关键依赖重定向与 cold build 不匹配明确拒绝，失败 Job 清理不影响另一已提交测试进程。来源、失败回归和许可说明见 [早期启动验证](windows-clipboard-early-init.md)。
+
+受控创建的系统接口依据微软 [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)、[创建属性与 Job 列表](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) 和 [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) 文档；实现与实机测试承诺范围以上述普通原生应用及早期启动说明为准。
 
 接口行为依据微软的 [剪贴板操作](https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-operations)、[OLE 剪贴板读取](https://learn.microsoft.com/en-us/windows/win32/api/ole2/nf-ole2-olegetclipboard) 和 [GetDataHere](https://learn.microsoft.com/en-us/windows/win32/api/objidl/nf-objidl-idataobject-getdatahere) 文档实现。测试隔离遵循 [窗口站创建](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowstationw) 与 [CreateProcessWithLogonW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw) 的本机权限和登录语义；钩子库来源为 [MinHook 官方仓库](https://github.com/TsudaKageyu/minhook)。

@@ -1268,7 +1268,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
               )}
             </div>
             {['prefetch-dependencies', 'install-cached-dependencies'].includes(devOperation) && (
-              <p className="subtle-note">预取需联网；离线安装校验依赖文件和缓存，不运行 npm 安装脚本。Python 依赖安装到项目的 .sakura/venv。</p>
+              <p className="subtle-note">预取需联网；认证仓库可在实例网络档案中设置“项目依赖认证预取”。离线安装校验依赖文件和缓存，不运行 npm 安装脚本。Python 依赖安装到项目的 .sakura/venv。</p>
             )}
             <button
               className="secondary compact"

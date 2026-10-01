@@ -14,6 +14,10 @@ constexpr uint32_t IncrementalTimeoutMs = 8000;
 constexpr uint32_t MultiplePairs = 128;
 constexpr uint32_t MultipleGroups = 32;
 constexpr uint32_t MultipleTimeoutMs = 12000;
+// Quarantined no-exec fork metadata and inherited connection identities remain
+// bounded. Abandoned payload allocations still share IncrementalBudget.
+constexpr uint32_t ForkDepth = 32;
+constexpr uint32_t ConnectionIdentities = 4096;
 enum Flags : uint32_t { Copy=1, Paste=2, Files=4, Sensitive=8, Active=16 };
 struct Policy {
   uint32_t magic, version, flags, maximum;

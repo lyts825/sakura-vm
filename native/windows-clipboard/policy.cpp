@@ -1,4 +1,5 @@
 #include "protocol.h"
+#include "early-import.h"
 #include "vendor/minhook/include/MinHook.h"
 #include <ole2.h>
 #include <algorithm>
@@ -374,6 +375,61 @@ static HRESULT WINAPI oleFlush() {
 template<class T> static bool hook(const wchar_t* module,const char* name,void* replacement,T* original) {
   return MH_CreateHookApi(module,name,replacement,reinterpret_cast<void**>(original))==MH_OK;
 }
+template<class T> static bool earlyHook(T* original,T source,void* replacement) {
+  *original=source;
+  return DetourAttach(reinterpret_cast<void**>(original),replacement)==NO_ERROR;
+}
+static bool earlySystemModule(const wchar_t* name) {
+  wchar_t actual[MAX_PATH]{},system[MAX_PATH]{};
+  const HMODULE module=GetModuleHandleW(name);
+  const UINT size=GetSystemDirectoryW(system,MAX_PATH);
+  const DWORD length=module?GetModuleFileNameW(module,actual,MAX_PATH):0;
+  return size && size<MAX_PATH && length && length<MAX_PATH &&
+    CompareStringOrdinal(actual,int(size),system,int(size),TRUE)==CSTR_EQUAL && actual[size]==L'\\' &&
+    CompareStringOrdinal(actual+size+1,-1,name,-1,TRUE)==CSTR_EQUAL;
+}
+static bool earlyConfigure(const SakuraClipboardEarly* input) {
+  // This runs under the loader lock. user32/ole32 are static dependencies of
+  // this DLL; never LoadLibrary, freeze other threads or wait for a worker here.
+  // The primary thread is still suspended. The policy's Windows dependencies
+  // initialize first; original application import DLLs initialize after us.
+  // Enlist only this startup thread, as in Microsoft's Detours simple sample.
+  // The whole transaction commits before returning.
+  if(input->magic!=SakuraClipboardMagic || input->version!=SakuraClipboardVersion || input->reserved ||
+      input->pid!=GetCurrentProcessId() || input->creationTime!=processCreation(GetCurrentProcess()) ||
+      std::memcmp(input->build,SAKURA_CLIPBOARD_BUILD,65)!=0 ||
+      std::find(input->section,input->section+192,L'\0')==input->section+192 ||
+      !earlySystemModule(L"user32.dll") || !earlySystemModule(L"ole32.dll"))return false;
+  section=OpenFileMappingW(FILE_MAP_ALL_ACCESS,FALSE,input->section);
+  if(!section)return false;
+  shared=static_cast<SakuraClipboardPolicy*>(MapViewOfFile(section,FILE_MAP_ALL_ACCESS,0,0,sizeof(SakuraClipboardPolicy)));
+  if(!shared || shared->magic!=SakuraClipboardMagic || shared->version!=SakuraClipboardVersion ||
+      shared->pid!=input->pid || shared->creationTime!=input->creationTime || shared->sequence&1 ||
+      !shared->active || shared->flags>15 || shared->maxTextBytes<1024 || shared->maxTextBytes>1048576 ||
+      std::memcmp(shared->build,SAKURA_CLIPBOARD_BUILD,65)!=0)return false;
+  sectionName=input->section;
+  if(!DetourRestoreAfterWith() || DetourTransactionBegin()!=NO_ERROR)return false;
+  if(DetourUpdateThread(GetCurrentThread())!=NO_ERROR ||
+      !earlyHook(&originalGet,&GetClipboardData,reinterpret_cast<void*>(&getData)) ||
+      !earlyHook(&originalSet,&SetClipboardData,reinterpret_cast<void*>(&setData)) ||
+      !earlyHook(&originalEmpty,&EmptyClipboard,reinterpret_cast<void*>(&empty)) ||
+      !earlyHook(&originalAvailable,&IsClipboardFormatAvailable,reinterpret_cast<void*>(&available)) ||
+      !earlyHook(&originalEnum,&EnumClipboardFormats,reinterpret_cast<void*>(&enumerate)) ||
+      !earlyHook(&originalCount,&CountClipboardFormats,reinterpret_cast<void*>(&count)) ||
+      !earlyHook(&originalPriority,&GetPriorityClipboardFormat,reinterpret_cast<void*>(&priority)) ||
+      !earlyHook(&originalUpdated,&GetUpdatedClipboardFormats,reinterpret_cast<void*>(&updated)) ||
+      !earlyHook(&originalOleGet,&OleGetClipboard,reinterpret_cast<void*>(&oleGet)) ||
+      !earlyHook(&originalOleSet,&OleSetClipboard,reinterpret_cast<void*>(&oleSet)) ||
+      !earlyHook(&originalOleFlush,&OleFlushClipboard,reinterpret_cast<void*>(&oleFlush))) {
+    DetourTransactionAbort();return false;
+  }
+  if(DetourTransactionCommit()!=NO_ERROR)return false;
+  InterlockedExchange(&shared->status,1);
+  return true;
+}
+// Detours' first import refers to ordinal 1. The loader resolves this symbol;
+// it does not execute it. The existing named configuration entry stays intact.
+extern "C" __declspec(dllexport) void WINAPI SakuraClipboardEarlyOrdinal() {}
 extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* pointer) {
   const auto input=static_cast<const SakuraClipboardConfigure*>(pointer);
   if (!input || input->magic!=SakuraClipboardMagic || input->version!=SakuraClipboardVersion ||
@@ -419,7 +475,25 @@ extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* poi
   ReleaseSRWLockExclusive(&configureLock);
   return answer;
 }
-BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID) {
-  if (reason==DLL_PROCESS_ATTACH) DisableThreadLibraryCalls(instance);
+BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
+  if (reason==DLL_PROCESS_ATTACH) {
+    DisableThreadLibraryCalls(instance);
+    DWORD size=0;
+    const auto input=static_cast<const SakuraClipboardEarly*>(DetourFindPayloadEx(SakuraClipboardEarlyGuid,&size));
+    // A static startup import must have its durable-authorized payload. Keep
+    // the later explicit LoadLibrary/configure path for normal running apps.
+    if(reserved && !input)return FALSE;
+    if(input) {
+      bool ready=false;
+      try {ready=size==sizeof(*input) && earlyConfigure(input);} catch(...) {}
+      if(!ready) {
+        if(shared)InterlockedExchange(&shared->status,2);
+        // Refuse process initialization. Never run an original application DLL
+        // with a missing rule or partial hook transaction, or fall back to the
+        // later normal attachment path for a controlled child.
+        return FALSE;
+      }
+    }
+  }
   return TRUE;
 }

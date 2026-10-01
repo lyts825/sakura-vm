@@ -26,6 +26,8 @@ import { ensureProjectNetworkScript, projectNetworkCommand,
 import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
 import { projectSshBusyScript } from './project-ssh.ts';
+import { resolveDependencyAuthentication } from './dependency-downloads.ts';
+import type { DependencyManager } from './project-dependency-cache.ts';
 
 export const projectSchema = z
   .object({
@@ -200,6 +202,13 @@ export class Workspaces {
   }
   networkEnvironment(id: string) {
     return this.context?.network?.environment(id) || Promise.resolve({});
+  }
+  async dependencyDownloadAuthentication(id: string, manager: DependencyManager) {
+    const state = await this.context?.network?.state(id);
+    const configuration = state?.appliedAt ? state.config.dependencyDownloads?.[manager] : undefined;
+    return configuration
+      ? resolveDependencyAuthentication(id, configuration, this.context?.secrets)
+      : undefined;
   }
   async resolvedConfig(id: string): Promise<Project> {
     const project = await this.config(id);

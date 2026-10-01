@@ -68,7 +68,7 @@ test('agent commands use project scope, preserve the forwarded socket, redact se
     await assert.rejects(machines.locked(id, async () => {}), /另一项操作/);
     const rejected = assert.rejects(cancelled);
     abort.abort(); await rejected;
-    assert.ok(commands.filter((item) => item.command.includes('kill -TERM --')).length >= 2);
+    assert.ok(commands.filter((item) => item.command.includes('sakura_owned_anchor') && item.command.includes('.pid.stop')).length >= 2);
     await machines.locked(id, async () => {});
   } finally {
     if (previous === undefined) delete process.env.SSH_AUTH_SOCK; else process.env.SSH_AUTH_SOCK = previous;

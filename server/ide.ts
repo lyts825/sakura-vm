@@ -1,5 +1,6 @@
-import { mkdir, readFile, readdir, writeFile, rename, copyFile, lstat } from 'node:fs/promises';
-import { join, resolve, isAbsolute } from 'node:path';
+import { mkdir, readFile, readdir, writeFile, rename, copyFile, lstat, rm } from 'node:fs/promises';
+import { join, resolve, isAbsolute, dirname } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { DATA, vmDir, AppError } from './model.ts';
 import type { Machines } from './machines.ts';
@@ -75,10 +76,11 @@ export async function editorConnectionProfile(
   workspaces: Workspaces,
   id: string,
   signal?: AbortSignal,
+  client: 'openssh' | 'jetbrains' = 'openssh',
 ) {
   signal?.throwIfAborted();
   const service = activeIde.get(workspaces);
-  if (service) return service.profile(id, signal);
+  if (service) return service.profile(id, signal, client);
   const project = await workspaces.config(id);
   if (
     machines.get(id).distro === 'alpine' ||
@@ -110,7 +112,7 @@ export class Ide {
     this.unsubscribeConfig = workspaces.onConfigChange?.(() => this.update()) || (() => {});
     activeIde.set(workspaces, this);
   }
-  async profile(id: string, signal?: AbortSignal) {
+  async profile(id: string, signal?: AbortSignal, client: 'openssh' | 'jetbrains' = 'openssh') {
     signal?.throwIfAborted();
     const project = await this.workspaces.config(id);
     if (
@@ -124,6 +126,33 @@ export class Ide {
     const endpoint = await this.ssh().endpoint(id, project, signal);
     if (!endpoint) throw new AppError('请先在项目页配置项目 SSH 连接', 409);
     signal?.throwIfAborted();
+    let knownHosts = endpoint.knownHosts;
+    if (client === 'jetbrains') {
+      // Gateway's SSHJ verifier does not honor OpenSSH HostKeyAlias. Bind its
+      // actual loopback endpoint to the same verified project key, never TOFU.
+      if (
+        !/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/.test(endpoint.hostPublicKey) ||
+        (await readFile(endpoint.knownHosts, 'utf8')) !==
+          `${endpoint.hostKeyAlias} ${endpoint.hostPublicKey}\n`
+      )
+        throw new AppError('项目 SSH 主机公钥绑定已变化，请停止并重建连接', 409);
+      const folder = await regularDirectory(dirname(endpoint.knownHosts));
+      knownHosts = join(folder, 'known_hosts.jetbrains');
+      const temporary = join(folder, '.known-hosts-jetbrains-' + randomUUID());
+      try {
+        await writeFile(
+          temporary,
+          `${endpoint.hostKeyAlias} ${endpoint.hostPublicKey}\n` +
+            `[127.0.0.1]:${endpoint.port} ${endpoint.hostPublicKey}\n`,
+          { flag: 'wx', mode: 0o600 },
+        );
+        await secureSshPaths([temporary]);
+        signal?.throwIfAborted();
+        await rename(temporary, knownHosts);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+    }
     return {
       alias: endpoint.hostKeyAlias,
       host: '127.0.0.1',
@@ -131,13 +160,19 @@ export class Ide {
       username: 'root',
       directory: project.directory,
       identityFile: endpoint.identity,
-      knownHostsFile: endpoint.knownHosts,
+      knownHostsFile: knownHosts,
       hostKeyAlias: endpoint.hostKeyAlias,
       projectScoped: true,
       projectId: project._workspace || 'default',
       vscodeSupported: this.machines.get(id).distro !== 'alpine',
       networkIsolation: project.networkIsolation || 'host',
-      config: projectSshConfig(endpoint),
+      config:
+        projectSshConfig({ ...endpoint, knownHosts }) +
+        (client === 'jetbrains'
+          ? '  GlobalKnownHostsFile none\n  IdentityAgent none\n' +
+            '  PasswordAuthentication no\n  KbdInteractiveAuthentication no\n'
+          : ''),
+      ...(client === 'jetbrains' ? { hostKeyVerification: 'project-and-endpoint' as const } : {}),
     };
   }
   async update() {

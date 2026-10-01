@@ -24,7 +24,8 @@ import type { SecretRotationItem } from './secret-rotation.ts';
 import { hostPower, powerPolicy, powerDecision, type PowerSample } from './power-policy.ts';
 import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
 import { scanGuestVulnerabilities } from './security-vulnerabilities.ts';
-import { dependencyManagerSchema, projectDependencyCacheScript } from './project-dependency-cache.ts';
+import { dependencyManagerSchema, projectDependencyCachePlan, type ProjectDependencyCachePlan } from './project-dependency-cache.ts';
+import { withDependencyAuthentication } from './dependency-downloads.ts';
 import { processInteropInput, type ProcessInterop } from './process-interop.ts';
 import type { MediaDevices } from './media-devices.ts';
 import type { HostMounts } from './host-mount.ts';
@@ -715,6 +716,11 @@ export class FeatureSuite {
       .filter((entry) => Number.isSafeInteger(entry.bytes) && entry.bytes >= 0);
     return { path, entries, checkedAt: new Date().toISOString() };
   }
+  private async cleanupDependencyStage(id: string, command: string) {
+    const result = await this.machines.exec(id, command, 10_000);
+    if (result.code !== 0)
+      throw new AppError('项目依赖暂存目录清理失败；请恢复实例连接后重试', 502);
+  }
   dev(id: string, input: Omit<Extract<FeatureAction, { action: 'dev' }>, 'action'>, signal?: AbortSignal) {
     const operation = z
       .enum([
@@ -788,6 +794,43 @@ export class FeatureSuite {
         // runtime selectors, import hooks or other project execution settings.
         const prefetch = operation === 'prefetch-dependencies';
         const project = prefetch ? await this.workspaces.config(id) : await this.workspaces.resolvedConfig(id);
+        if (prefetch) {
+          const authentication = await this.workspaces.dependencyDownloadAuthentication?.(id, cacheManager!);
+          if (authentication) {
+            const output = privateLog(log, authentication.privateValues);
+            try {
+              await withDependencyAuthentication(
+                this.machines,
+                id,
+                authentication,
+                combined,
+                async (paths) => {
+                  const plan = projectDependencyCachePlan(
+                    project.directory,
+                    this.workspaces.projects.current(id),
+                    cacheManager!,
+                    operation,
+                    await this.workspaces.networkEnvironment(id),
+                    paths,
+                  );
+                  const cleanup = plan.cleanup;
+                  const result = await guestTask(this.machines, id, plan.command, combined, output.write, 600_000,
+                    undefined, cleanup ? () => this.cleanupDependencyStage(id, cleanup) : undefined);
+                  if (result.code !== 0)
+                    throw new AppError(
+                      redactValues(result.stderr.trim(), authentication.privateValues) ||
+                        `认证依赖预取失败（${result.code}）`,
+                    );
+                },
+              );
+            } catch (error) {
+              throw new AppError(redactValues((error as Error).message, authentication.privateValues));
+            } finally {
+              output.flush();
+            }
+            return;
+          }
+        }
         if (project.networkIsolation === 'private' && operation === 'database') {
           if (!this.observations.privateDatabase)
             throw new AppError('私有数据库需要启用容器插件', 409);
@@ -800,6 +843,7 @@ export class FeatureSuite {
         const worktreePath = path ? quote(`${project.directory}/${path}`) : '';
         const environment = prefetch ? '' : envPrefix(project.environment);
         let command: string;
+        let cachePlan: ProjectDependencyCachePlan | undefined;
         switch (operation) {
           case 'test':
             command = `cd ${directory}\nif [ -f package.json ]; then npm test; elif [ -f pyproject.toml ] || [ -f pytest.ini ]; then python3 -m pytest; elif [ -f Cargo.toml ]; then cargo test; elif [ -f go.mod ]; then go test ./...; else echo '没有识别到测试项目'; fi`;
@@ -821,9 +865,10 @@ export class FeatureSuite {
             break;
           case 'prefetch-dependencies':
           case 'install-cached-dependencies':
-            command = projectDependencyCacheScript(project.directory,
+            cachePlan = projectDependencyCachePlan(project.directory,
               this.workspaces.projects.current(id), cacheManager!, operation,
               prefetch ? await this.workspaces.networkEnvironment(id) : undefined);
+            command = cachePlan.command;
             break;
           case 'worktree-list':
             command = `cd ${directory}\ngit worktree list --porcelain`;
@@ -878,6 +923,7 @@ export class FeatureSuite {
           ? `set -e\n${ensureProjectNetworkScript(project, vm.distro || 'alpine')}\n` +
             projectNetworkCommand(project, script)
           : script;
+        const cleanup = cachePlan?.cleanup;
         try {
           const result = await guestTask(
             this.machines,
@@ -886,6 +932,8 @@ export class FeatureSuite {
             combined,
             output.write,
             600_000,
+            undefined,
+            cleanup ? () => this.cleanupDependencyStage(id, cleanup) : undefined,
           );
           if (result.code !== 0)
             throw new AppError(

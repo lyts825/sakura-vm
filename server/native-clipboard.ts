@@ -130,16 +130,17 @@ const dualAssetNames = [
   'SakuraClipboardPolicy-x86.dll',
   'sakura-clipboard-controller-x86.exe',
 ] as const;
+const earlyAssetNames = [...dualAssetNames, 'Detours-LICENSE.md'] as const;
 const assetsSchema = z
   .object({
-    version: z.union([z.literal(1), z.literal(2)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     architecture: z.literal('x64'),
     build: digest,
     files: z
       .array(
         z
           .object({
-            name: z.enum(dualAssetNames),
+            name: z.enum(earlyAssetNames),
             size: z
               .number()
               .int()
@@ -150,11 +151,12 @@ const assetsSchema = z
           .strict(),
       )
       .min(3)
-      .max(5),
+      .max(6),
   })
   .strict()
   .refine((value) => {
-    const expected = value.version === 1 ? assetNames : dualAssetNames;
+    const expected =
+      value.version === 1 ? assetNames : value.version === 2 ? dualAssetNames : earlyAssetNames;
     return (
       value.files.length === expected.length &&
       new Set(value.files.map((item) => item.name)).size === expected.length &&
@@ -376,6 +378,7 @@ type Options = {
 // retains its current policy if this service closes; shutdown never relaxes it.
 export class NativeClipboard {
   private hasX86 = false;
+  private hasEarly = false;
   private state: z.infer<typeof stateSchema> = {
     schemaVersion: 1,
     version: 1,
@@ -471,7 +474,9 @@ export class NativeClipboard {
     for (const name of library
       ? manifest.version === 1
         ? assetNames
-        : dualAssetNames
+        : manifest.version === 2
+          ? dualAssetNames
+          : earlyAssetNames
       : (['sakura-clipboard-controller.exe'] as const)) {
       const file = join(this.assets, name),
         item = manifest.files.find((item) => item.name === name)!;
@@ -484,7 +489,8 @@ export class NativeClipboard {
       )
         throw new AppError(`原生剪贴板文件完整性失败：${name}`, 503);
     }
-    this.hasX86 = manifest.version === 2;
+    this.hasX86 = manifest.version >= 2;
+    this.hasEarly = manifest.version >= 3;
   }
   private async list() {
     return listSchema
@@ -678,6 +684,7 @@ export class NativeClipboard {
       throw new AppError('应用文件摘要已变化，请重新选择', 409);
     const bits = await this.imageBits(selected.image);
     if (bits === 32 && !this.hasX86) throw new AppError('此运行包未包含 32 位应用代理，请更新运行包');
+    if (!this.hasEarly) throw new AppError('此运行包未包含应用 DLL/TLS 初始化前的策略代理，请更新运行包');
     allowed();
     const sameIdentity = (value: NativeClipboardProcess) => {
       const item = identity.parse(value);

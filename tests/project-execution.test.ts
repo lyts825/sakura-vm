@@ -85,12 +85,12 @@ test('abort and service shutdown clean the guest process group and release execu
     await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/other' }), /另一项操作/);
     const cancelled = assert.rejects(operation);
     abort.abort(); await cancelled;
-    assert.ok(f.commands.some((value) => value.includes('kill -TERM --')));
+    assert.ok(f.commands.some((value) => value.includes('sakura_owned_anchor') && value.includes('.pid.stop')));
     await f.workspaces.save(f.id, { directory: '/workspace/other' });
     const second = f.service.run(f.id, { command: 'sleep 600', scope: 'instance' });
     const stopped = assert.rejects(second);
     await f.service.close(); await stopped;
-    assert.ok(f.commands.filter((value) => value.includes('kill -TERM --')).length >= 2);
+    assert.ok(f.commands.filter((value) => value.includes('sakura_owned_anchor') && value.includes('.pid.stop')).length >= 2);
   } finally { await f.close(); }
 });
 

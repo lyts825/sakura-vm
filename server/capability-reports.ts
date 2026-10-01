@@ -234,14 +234,22 @@ export async function runReport(
         'Alpine 项目 SSH 支持普通 SSH、SFTP 与 Neovim；VS Code Remote-SSH 和 JetBrains Gateway 请使用 Debian 或 Ubuntu',
         409,
       );
-    const { config, ...profile } = await editorConnectionProfile(machines, workspaces, id, signal);
+    const { config, ...profile } = await editorConnectionProfile(
+      machines,
+      workspaces,
+      id,
+      signal,
+      p.editor === 'jetbrains' ? 'jetbrains' : 'openssh',
+    );
     const { alias, directory } = profile;
     return {
       editor: p.editor,
       ...profile,
       instructions:
         p.editor === 'jetbrains'
-          ? '在 JetBrains Gateway 的 SSH 连接中选择此档案，项目目录见 directory。'
+          ? profile.projectScoped
+            ? '将完整下载档案导入 Gateway 实际读取的 OpenSSH config，再创建此 alias 的 SSH 条目并选择 OpenSSH config and authentication agent。保留 StrictHostKeyChecking yes，使用专属 knownHostsFile；Gateway 不支持 HostKeyAlias，已另行固定当前项目端口的公钥。项目目录见 directory；私有网络中须在本机下载匹配版本的官方后端并经 SFTP 上传。当前官方 native launcher 需要产品 *_VM_OPTIONS 文件中的 -Duser.home、-Didea.config.path/system.path/log.path/plugins.path 固定到项目 HOME 下的独立目录，仅 *_PROPERTIES 不足以固定这些路径。可复现部署入口与独立客户端配置见 docs/project-ssh.md 及 scripts/project-jetbrains-client-smoke.ts；默认任意 Gateway 下载/启动未验证这些独立配置。后端及客户端账户/许可证要求仍适用，图形编辑和保存需要另行验证。'
+            : '将下载档案导入 Gateway 实际读取的 OpenSSH config，创建此 alias 的 SSH 条目并选择 OpenSSH config and authentication agent，再打开 directory。此档案使用既有实例共享入口与首次连接公钥记录；项目独立入口需要先在项目页配置项目 SSH。后端及客户端账户/许可证要求仍适用，图形编辑和保存需要另行验证。'
           : p.editor === 'neovim'
             ? 'Neovim 0.12 先运行 :packadd netrw；使用下载的 SSH 档案配置 netrw 的 SSH 与 SCP 命令。Windows netrw 对绝对路径空格的转义有局限，建议从 relativeRemotePath 打开项目内文件；此 SSH 入口的默认目录已固定为 directory。'
             : '将档案导入 Remote-SSH 后打开指定项目目录。',

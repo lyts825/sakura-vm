@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 MAGIC = 0x58434C50
-library, fixture, build, qt_fixture = sys.argv[1:5]
+library, fixture, build, qt_fixture, fork_fixture = sys.argv[1:6]
 directory = Path(tempfile.mkdtemp(prefix="sakura-x11-smoke-", dir="/var/tmp"))
 directory.chmod(0o755)
 try:
@@ -71,7 +71,7 @@ def start(toolkit, action, target="UTF8_STRING", data=b"ordinary text", policy=N
         descriptor = os.open(status, os.O_RDWR)
         descriptors.append(descriptor)
         env["SAKURA_CLIPBOARD_STATUS_FD"] = str(descriptor)
-    args = [fixture, toolkit, action, target, str(file), selection]
+    args = [fork_fixture if action.startswith("fork-") else fixture, toolkit, action, target, str(file), selection]
     if extra is not None:
         args.append(str(extra))
     process = subprocess.Popen(args, env=env, preexec_fn=credentials, start_new_session=True,
@@ -83,9 +83,23 @@ def start(toolkit, action, target="UTF8_STRING", data=b"ordinary text", policy=N
     return process
 
 def line(process):
-    ready, _, _ = select.select([process.stdout], [], [], 15)
-    assert ready, "fixture did not answer"
-    answer = process.stdout.readline().strip()
+    # TextIO.readline may prefetch the next complete line. Selecting its raw fd
+    # again then reports a false timeout; keep explicit bounded per-process bytes.
+    buffered = getattr(process, "sakura_line_buffer", bytearray())
+    until = time.monotonic() + 15
+    while b"\n" not in buffered:
+        ready, _, _ = select.select([process.stdout.fileno()], [], [], max(0, until-time.monotonic()))
+        assert ready, ("fixture did not answer", process.args)
+        chunk = os.read(process.stdout.fileno(), 4096)
+        if not chunk:
+            break
+        buffered.extend(chunk)
+        # Legacy native fixtures print a hexadecimal body, up to the protocol's
+        # 16 MiB binary maximum. This bound covers its 2x representation.
+        assert len(buffered) <= 32*1024*1024+65536, "fixture output line exceeded its bound"
+    answer, _, rest = buffered.partition(b"\n")
+    process.sakura_line_buffer = rest
+    answer = answer.decode("utf-8").strip()
     assert answer, (process.poll(), process.stderr.read() if process.poll() is not None else "fixture ended")
     return answer
 
@@ -185,6 +199,51 @@ def stalled_broker_authentication():
         for worker in relays:
             worker.join(2)
     print("Broker authentication stall on the original pinned socket refused within its 2s setup bound and process exit joined workers", flush=True)
+
+def fork_after_broker():
+    runtime = subprocess.run(["ldd", "--version"], text=True, capture_output=True)
+    print("Fork runtime: " + (runtime.stdout or runtime.stderr).splitlines()[0], flush=True)
+    child_data = directory / "fork-child.data"
+    child_data.write_bytes(b"password=0123456789abcdef\n" * 300)
+    child_data.chmod(0o644)
+    parent_data = b"owned live parent broker text"
+    for toolkit in ["xlib", "xcb", "mixed"]:
+        variants = ["fork-live", "fork-nested", "fork-idle-exit", "fork-inherited", "fork-inherited-fd"]
+        if toolkit == "xcb":
+            variants.append("fork-depth")
+        for variant in variants:
+            print("Fork case: " + toolkit + " " + variant, flush=True)
+            rule("fork", flags=23)
+            primary = owner("xcb", data=child_data.read_bytes(), selection="PRIMARY")
+            source = owner("xcb", data=parent_data, extra="incr-group-pause:7")
+            receiver = start(toolkit, variant, data=parent_data, policy="fork", extra=child_data)
+            assert line(receiver) == "STARTED"
+            assert line(source) == "CHUNK", "fork did not happen during a live second INCR body"
+            receiver.stdin.write("fork\n"); receiver.stdin.flush()
+            if variant == "fork-nested":
+                assert line(receiver) == "GRANDCHILD-COMPLETE"
+                assert line(receiver) == "GRANDCHILD-EXIT-0"
+            if variant == "fork-depth":
+                assert line(receiver) == "DEPTH-BOUND-DENIED"
+            if variant in ["fork-live", "fork-nested"]:
+                assert line(receiver) == "CHILD-COMPLETE", receiver.poll()
+                rule("fork", flags=31 if variant == "fork-live" else 23,
+                     maximum=1048576 if variant == "fork-live" else 1024)
+                receiver.stdin.write("tightened\n"); receiver.stdin.flush()
+                assert line(receiver) == "CHILD-RECHECK-DENIED"
+            expected = "CHILD-REJECTED-126" if "inherited" in variant else "CHILD-EXIT-0"
+            assert line(receiver) == expected
+            source.stdin.write("resume\n"); source.stdin.flush()
+            assert line(receiver) == "PARENT-COMPLETE", "child damaged its parent's live broker socket"
+            rule("fork", flags=23)
+            receiver.stdin.write("next\n"); receiver.stdin.flush()
+            assert line(receiver) == "PARENT-NEXT"
+            assert line(source) == "CHUNK"
+            source.stdin.write("resume\n"); source.stdin.flush()
+            assert line(receiver) == "PARENT-NEXT-COMPLETE"
+            assert receiver.wait(5) == 0, receiver.stderr.read()
+            source.kill(); source.wait(); primary.kill(); primary.wait()
+        print(toolkit + ": live broker fork, fresh child MULTIPLE, policy tightening, normal C++ exit, inherited pointer/fd denial, parent continuation passed", flush=True)
 
 def small_server_qt():
     small = ":94"
@@ -465,6 +524,10 @@ try:
         time.sleep(.1)
     request_maximum = int(read("xcb", action="maximum"))
     print("Owned X11 maximum request bytes: " + str(request_maximum), flush=True)
+    if os.environ.get("SAKURA_X11_FORK_ONLY") == "1":
+        fork_after_broker()
+        print("Dedicated fork diagnostics passed", flush=True)
+        sys.exit(0)
     for toolkit in ["xlib", "xcb", "mixed"]:
         other = "xcb" if toolkit == "xlib" else "xlib"
         rule("source")
@@ -552,6 +615,7 @@ try:
             assert read(other, policy="sink", action="poll") == "DENIED"
         source.terminate(); source.wait(15)
         print(toolkit + ": directions, live tightening, cached reads, text limits, formats, secrets and invalid policy passed", flush=True)
+    fork_after_broker()
     stalled_broker_authentication()
     small_server_qt()
     counts = [struct.unpack("<IIQQQ65s31x", path.read_bytes()) for path in directory.glob("*.status")]

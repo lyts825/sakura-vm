@@ -438,6 +438,7 @@ export class ProjectSsh {
       identity: join(this.folder(id, record.projectId), 'id_rsa'),
       knownHosts: join(this.folder(id, record.projectId), 'known_hosts'),
       hostKeyAlias: `sakura-${id}-${record.projectId}`,
+      hostPublicKey: record.hostPublicKey,
     };
   }
   async entries() {

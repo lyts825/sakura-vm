@@ -2,11 +2,15 @@
 #define _WIN32_WINNT 0x0a00
 #endif
 #include "protocol.h"
+#include "early-import.h"
 #include <tlhelp32.h>
 #include <sddl.h>
 #include <wincrypt.h>
+#include <xmllite.h>
+#include <shlwapi.h>
 #include <algorithm>
 #include <cstring>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -285,10 +289,280 @@ static void primarySuspended(HANDLE thread) {
   const DWORD restored=ResumeThread(thread);
   if (previous!=1 || restored!=2) throw std::runtime_error("primary thread is no longer exclusively suspended");
 }
+static void nativeExecutable(HANDLE file) {
+  // Do not let Detours convert CLR/AnyCPU or a mismatched PE into a different
+  // startup path. Only native x86/x64 GUI/console images are supported here.
+  const auto read=[&](uint64_t offset,void* output,DWORD length) {
+    LARGE_INTEGER position{};position.QuadPart=offset;DWORD count=0;
+    return SetFilePointerEx(file,position,nullptr,FILE_BEGIN) &&
+      ReadFile(file,output,length,&count,nullptr) && count==length;
+  };
+  IMAGE_DOS_HEADER dos{};IMAGE_NT_HEADERS pe{};
+  if(!read(0,&dos,sizeof(dos)) || dos.e_magic!=IMAGE_DOS_SIGNATURE || dos.e_lfanew<sizeof(dos) ||
+      dos.e_lfanew>1048576 || !read(dos.e_lfanew,&pe,sizeof(pe)) || pe.Signature!=IMAGE_NT_SIGNATURE ||
+      pe.FileHeader.Machine!=(sizeof(void*)==8?IMAGE_FILE_MACHINE_AMD64:IMAGE_FILE_MACHINE_I386) ||
+      !(pe.FileHeader.Characteristics&IMAGE_FILE_EXECUTABLE_IMAGE) || pe.FileHeader.Characteristics&IMAGE_FILE_DLL ||
+      pe.FileHeader.SizeOfOptionalHeader!=sizeof(pe.OptionalHeader) ||
+      pe.OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR_MAGIC || pe.OptionalHeader.NumberOfRvaAndSizes<16 ||
+      (pe.OptionalHeader.Subsystem!=IMAGE_SUBSYSTEM_WINDOWS_GUI && pe.OptionalHeader.Subsystem!=IMAGE_SUBSYSTEM_WINDOWS_CUI) ||
+      pe.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].VirtualAddress ||
+      pe.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].Size)
+    throw std::runtime_error("controlled early initialization requires a native matching x86/x64 executable");
+}
+static std::string importPath(const std::wstring& library) {
+  if(library.size()<7 || library.size()>=MAX_PATH || library[1]!=L':' || library[2]!=L'\\' ||
+      !same(library.substr(library.size()-4),L".dll"))throw std::runtime_error("early policy requires a complete DLL path");
+  // Detours writes narrow PE import names. Reject a lossy conversion rather
+  // than load an alias, short path, or another library under the active ACP.
+  const UINT encoding=GetACP();BOOL substituted=FALSE;
+  const DWORD flags=encoding==CP_UTF8?WC_ERR_INVALID_CHARS:WC_NO_BEST_FIT_CHARS;
+  BOOL* used=encoding==CP_UTF8?nullptr:&substituted;
+  const int length=WideCharToMultiByte(encoding,flags,library.data(),int(library.size()),nullptr,0,nullptr,used);
+  if(!length || substituted)throw std::runtime_error("early DLL path cannot be represented by the Windows import encoding");
+  std::string result(length,'\0');
+  if(!WideCharToMultiByte(encoding,flags,library.data(),int(library.size()),result.data(),length,nullptr,used) || substituted)
+    throw std::runtime_error("early DLL path cannot be represented by the Windows import encoding");
+  std::wstring restored(library.size(),L'\0');
+  const int characters=MultiByteToWideChar(encoding,MB_ERR_INVALID_CHARS,result.data(),length,restored.data(),int(restored.size()));
+  if(characters!=int(library.size()) || restored!=library)
+    throw std::runtime_error("early DLL path cannot be represented by the Windows import encoding");
+  return result;
+}
+static bool exists(const std::wstring& path) {
+  if(GetFileAttributesW(path.c_str())!=INVALID_FILE_ATTRIBUTES)return true;
+  const DWORD error=GetLastError();
+  if(error!=ERROR_FILE_NOT_FOUND && error!=ERROR_PATH_NOT_FOUND)
+    throw std::runtime_error("early dependency redirection metadata unavailable");
+  return false;
+}
+static bool policyDependency(const std::wstring& path,const std::wstring& library) {
+  const auto name=path.substr(path.find_last_of(L"\\/")+1);
+  const auto policy=library.substr(library.find_last_of(L"\\/")+1);
+  if(same(name,policy))return true;
+  const std::wstring protectedNames[]{L"kernel32.dll",L"kernelbase.dll",L"user32.dll",L"ole32.dll",L"combase.dll",L"ucrtbase.dll",L"msvcrt.dll"};
+  for(const auto& item:protectedNames)if(same(name,item))return true;
+  // KnownDLL's own dependencies are also resolved from Windows. A manifest can
+  // precede that resolution, so protect the current OS's entire KnownDLL set,
+  // including transitive User32/OLE dependencies rather than a fixed DLL list.
+  static const std::vector<std::wstring> known=[]() {
+    HKEY raw=nullptr;
+    if(RegOpenKeyExW(HKEY_LOCAL_MACHINE,L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\KnownDLLs",0,KEY_QUERY_VALUE|KEY_WOW64_64KEY,&raw)!=ERROR_SUCCESS)
+      throw std::runtime_error("Windows early system dependency list unavailable");
+    std::vector<std::wstring> values;
+    try {
+      for(DWORD index=0;;++index) {
+        wchar_t key[256]{},value[512]{};DWORD keyLength=256,length=sizeof(value),type=0;
+        const LSTATUS answer=RegEnumValueW(raw,index,key,&keyLength,nullptr,&type,reinterpret_cast<BYTE*>(value),&length);
+        if(answer==ERROR_NO_MORE_ITEMS)break;
+        if(answer!=ERROR_SUCCESS || index>4096)throw std::runtime_error("Windows early system dependency list unavailable");
+        if(type==REG_SZ && length>=sizeof(wchar_t) && length<=sizeof(value) && value[length/sizeof(wchar_t)-1]==0)values.emplace_back(value);
+      }
+    } catch(...) {RegCloseKey(raw);throw;}
+    RegCloseKey(raw);
+    if(std::none_of(values.begin(),values.end(),[](const std::wstring& item){return same(item,L"user32.dll");}) ||
+        std::none_of(values.begin(),values.end(),[](const std::wstring& item){return same(item,L"ole32.dll");}))
+      throw std::runtime_error("Windows early clipboard dependencies are not known system DLLs");
+    return values;
+  }();
+  for(const auto& item:known)if(same(name,item))return true;
+  return name.size()>4 && (same(name.substr(0,4),L"api-") || same(name.substr(0,4),L"ext-"));
+}
+static std::vector<unsigned char> activationData(HANDLE context,ULONG type,void* index,size_t minimum) {
+  SIZE_T length=0;
+  if(QueryActCtxW(0,context,index,type,nullptr,0,&length) || GetLastError()!=ERROR_INSUFFICIENT_BUFFER ||
+      length<minimum || length>8*1024*1024)throw std::runtime_error("early activation context unavailable");
+  std::vector<unsigned char> data(length);
+  if(!QueryActCtxW(0,context,index,type,data.data(),data.size(),&length))
+    throw std::runtime_error("early activation context unavailable");
+  return data;
+}
+static void manifestXml(const void* contents,DWORD length,const std::wstring& library) {
+  if(!contents || !length || length>8*1024*1024)throw std::runtime_error("early application manifest is too large or empty");
+  IStream* stream=SHCreateMemStream(static_cast<const BYTE*>(contents),length);
+  IXmlReader* reader=nullptr;
+  if(!stream)throw std::runtime_error("early application manifest reader unavailable");
+  try {
+    if(FAILED(CreateXmlReader(__uuidof(IXmlReader),reinterpret_cast<void**>(&reader),nullptr)) || !reader ||
+        FAILED(reader->SetProperty(XmlReaderProperty_ConformanceLevel,XmlConformanceLevel_Document)) ||
+        FAILED(reader->SetProperty(XmlReaderProperty_DtdProcessing,DtdProcessing_Prohibit)) ||
+        FAILED(reader->SetProperty(XmlReaderProperty_XmlResolver,0)) ||
+        FAILED(reader->SetProperty(XmlReaderProperty_MaxElementDepth,128)) || FAILED(reader->SetInput(stream)))
+      throw std::runtime_error("early application manifest reader unavailable");
+    XmlNodeType type{};HRESULT answer=S_OK;
+    while((answer=reader->Read(&type))==S_OK) {
+      if(type!=XmlNodeType_Element)continue;
+      const wchar_t* name=nullptr;UINT count=0;
+      if(FAILED(reader->GetLocalName(&name,&count)) || !name)
+        throw std::runtime_error("early application manifest could not be verified");
+      if(!same(std::wstring(name,count),L"file"))continue;
+      if(reader->MoveToAttributeByName(L"name",nullptr)!=S_OK ||
+          FAILED(reader->GetValue(&name,&count)) || !name || !count || count>=32768)
+        throw std::runtime_error("early application manifest file name unavailable");
+      // XmlLite decodes both UTF-8/UTF-16 and XML character references. No DTD,
+      // external resolver, or application code is involved in this metadata read.
+      if(policyDependency(std::wstring(name,count),library))
+        throw std::runtime_error("application manifest redirects an early policy dependency");
+    }
+    if(answer!=S_FALSE)throw std::runtime_error("early application manifest could not be verified");
+  } catch(...) {if(reader)reader->Release();stream->Release();throw;}
+  reader->Release();stream->Release();
+}
+struct ManifestResources {
+  const std::wstring& library;
+  bool executable;
+  unsigned count=0;
+  std::exception_ptr failure;
+};
+static BOOL CALLBACK manifestLanguage(HMODULE data,LPCWSTR type,LPCWSTR name,WORD language,LONG_PTR parameter) {
+  auto& read=*reinterpret_cast<ManifestResources*>(parameter);
+  try {
+    if(++read.count>1024)throw std::runtime_error("early manifest has too many resources");
+    const HRSRC resource=FindResourceExW(data,type,name,language);
+    const HGLOBAL loaded=resource?LoadResource(data,resource):nullptr;
+    manifestXml(loaded?LockResource(loaded):nullptr,resource?SizeofResource(data,resource):0,read.library);
+    return TRUE;
+  } catch(...) {read.failure=std::current_exception();return FALSE;}
+}
+static BOOL CALLBACK manifestResource(HMODULE data,LPCWSTR type,LPWSTR name,LONG_PTR parameter) {
+  auto& read=*reinterpret_cast<ManifestResources*>(parameter);
+  // The process root selects resource 1. A resolved private assembly image's
+  // selected resource ID is not in QueryActCtx's file path; check every local
+  // RT_MANIFEST resource/language rather than silently skip an unknown one.
+  if(read.executable && (!IS_INTRESOURCE(name) || reinterpret_cast<uintptr_t>(name)!=1))return TRUE;
+  if(!EnumResourceLanguagesExW(data,type,name,manifestLanguage,parameter,RESOURCE_ENUM_LN,0)) {
+    if(!read.failure)read.failure=std::make_exception_ptr(std::runtime_error("early manifest languages unavailable"));
+    return FALSE;
+  }
+  return TRUE;
+}
+static void manifestMetadata(const std::wstring& path,const std::wstring& library,bool image,bool required=false) {
+  if(image) {
+    // DATAFILE/IMAGE_RESOURCE maps metadata only; it never resolves application
+    // imports or executes that image's DllMain/TLS during the helper's precheck.
+    HMODULE data=LoadLibraryExW(path.c_str(),nullptr,LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE|LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+    if(!data)throw std::runtime_error("early application manifest resource unavailable");
+    try {
+      ManifestResources read{library,!required};
+      const BOOL scanned=EnumResourceNamesExW(data,MAKEINTRESOURCEW(24),manifestResource,
+        reinterpret_cast<LONG_PTR>(&read),RESOURCE_ENUM_LN,0);
+      if(read.failure)std::rethrow_exception(read.failure);
+      if(!scanned) {
+        const DWORD error=GetLastError();
+        if(error!=ERROR_RESOURCE_TYPE_NOT_FOUND && error!=ERROR_RESOURCE_NAME_NOT_FOUND && error!=ERROR_RESOURCE_DATA_NOT_FOUND)
+          throw std::runtime_error("early application manifest resource unavailable");
+      }
+      if(required && !read.count)throw std::runtime_error("resolved early assembly manifest resource unavailable");
+    } catch(...) {FreeLibrary(data);throw;}
+    FreeLibrary(data);return;
+  }
+  Handle file(CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr));
+  LARGE_INTEGER length{};DWORD count=0;
+  if(file.value==INVALID_HANDLE_VALUE || !GetFileSizeEx(file.value,&length) || length.QuadPart<=0 || length.QuadPart>8*1024*1024)
+    throw std::runtime_error("early application manifest file unavailable");
+  std::vector<unsigned char> contents(size_t(length.QuadPart));
+  if(!ReadFile(file.value,contents.data(),DWORD(contents.size()),&count,nullptr) || count!=contents.size())
+    throw std::runtime_error("early application manifest file unavailable");
+  manifestXml(contents.data(),count,library);
+}
+static void activationDependencies(const std::wstring& source,const std::wstring& library,bool image) {
+  manifestMetadata(source,library,image);
+  ACTCTXW request{};request.cbSize=sizeof(request);request.lpSource=source.c_str();
+  if(image){request.dwFlags=ACTCTX_FLAG_RESOURCE_NAME_VALID;request.lpResourceName=MAKEINTRESOURCEW(1);}
+  const HANDLE context=CreateActCtxW(&request);
+  if(context==INVALID_HANDLE_VALUE) {
+    const DWORD error=GetLastError();
+    if(image && (error==ERROR_RESOURCE_TYPE_NOT_FOUND || error==ERROR_RESOURCE_NAME_NOT_FOUND || error==ERROR_RESOURCE_DATA_NOT_FOUND))return;
+    throw std::runtime_error("early application manifest could not be verified");
+  }
+  try {
+    const auto details=activationData(context,ActivationContextDetailedInformation,nullptr,sizeof(ACTIVATION_CONTEXT_DETAILED_INFORMATION));
+    const DWORD assemblies=reinterpret_cast<const ACTIVATION_CONTEXT_DETAILED_INFORMATION*>(details.data())->ulAssemblyCount;
+    if(assemblies>1024)throw std::runtime_error("early activation context is too large");
+    for(DWORD assembly=1;assembly<=assemblies;++assembly) {
+      const auto data=activationData(context,AssemblyDetailedInformationInActivationContext,&assembly,sizeof(ACTIVATION_CONTEXT_ASSEMBLY_DETAILED_INFORMATION));
+      const auto description=reinterpret_cast<const ACTIVATION_CONTEXT_ASSEMBLY_DETAILED_INFORMATION*>(data.data());
+      // ulFileCount can be zero even when DLL redirection is active. Read the
+      // manifests in the OS-resolved assembly graph as XML rather than treat a
+      // zero enumeration as proof that no file redirection exists.
+      if(!description->lpAssemblyManifestPath || !description->ulManifestPathLength || description->ulManifestPathLength>=32768)
+        throw std::runtime_error("early assembly manifest path unavailable");
+      const std::wstring path(description->lpAssemblyManifestPath);
+      if(!same(path,source))manifestMetadata(path,library,path.size()>4 &&
+        (same(path.substr(path.size()-4),L".exe") || same(path.substr(path.size()-4),L".dll")),true);
+      const DWORD files=description->ulFileCount;
+      if(files>65536)throw std::runtime_error("early activation context is too large");
+      for(DWORD file=0;file<files;++file) {
+        ACTIVATION_CONTEXT_QUERY_INDEX index{assembly,file};
+        const auto item=activationData(context,FileInformationInAssemblyOfAssemblyInActivationContext,&index,sizeof(ASSEMBLY_FILE_DETAILED_INFORMATION));
+        const auto information=reinterpret_cast<const ASSEMBLY_FILE_DETAILED_INFORMATION*>(item.data());
+        if(!information->lpFileName || policyDependency(information->lpFileName,library))
+          throw std::runtime_error("application manifest redirects an early policy dependency");
+      }
+    }
+  } catch(...) {ReleaseActCtx(context);throw;}
+  ReleaseActCtx(context);
+}
+static void earlyDependencies(const std::wstring& expected,const std::wstring& library) {
+  // Redirection precedes KnownDLL resolution, even for a fully qualified import.
+  // Inspect manifests as data with supported SxS queries, never by loading app
+  // code. Ordinary manifests/Common Controls remain supported; redirects of the
+  // policy or its system dependencies must fail before the loader can run.
+  policyDependency(L"verify-known-system-dependencies",library);
+  if(exists(expected+L".local"))throw std::runtime_error("DLL .local redirection does not support controlled early initialization");
+  if(exists(expected.substr(0,expected.find_last_of(L'\\'))+L"\\microsoft.system.package.metadata\\application.local"))
+    throw std::runtime_error("packaged DLL redirection does not support controlled early initialization");
+  activationDependencies(expected,library,true);
+  if(exists(expected+L".manifest"))activationDependencies(expected+L".manifest",library,false);
+}
+struct EarlyPolicy {
+  Handle object;
+  SakuraClipboardPolicy* data;
+  std::wstring name;
+  EarlyPolicy(const wchar_t* owner,DWORD pid,uint64_t created,uint32_t flags,uint32_t maximum):
+      object(nullptr),data(nullptr),name(mapping(owner,pid,created)) {
+    const auto token=user(GetCurrentProcess());wchar_t* sid=nullptr;
+    if(!ConvertSidToStringSidW(reinterpret_cast<const TOKEN_USER*>(token.data())->User.Sid,&sid))
+      throw std::runtime_error("early policy ACL unavailable");
+    const std::wstring descriptor=L"D:P(A;;GA;;;"+std::wstring(sid)+L")(A;;GA;;;SY)";LocalFree(sid);
+    PSECURITY_DESCRIPTOR security=nullptr;
+    if(!ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor.c_str(),SDDL_REVISION_1,&security,nullptr))
+      throw std::runtime_error("early policy ACL unavailable");
+    SECURITY_ATTRIBUTES attributes{sizeof(attributes),security,FALSE};
+    object.value=CreateFileMappingW(INVALID_HANDLE_VALUE,&attributes,PAGE_READWRITE,0,sizeof(SakuraClipboardPolicy),name.c_str());
+    const DWORD error=GetLastError();LocalFree(security);
+    if(!object.value || error==ERROR_ALREADY_EXISTS)throw std::runtime_error("fresh early policy section unavailable");
+    data=static_cast<SakuraClipboardPolicy*>(MapViewOfFile(object.value,FILE_MAP_ALL_ACCESS,0,0,sizeof(SakuraClipboardPolicy)));
+    if(!data)throw std::runtime_error("fresh early policy section unavailable");
+    std::memset(data,0,sizeof(*data));data->sequence=1;
+    data->magic=SakuraClipboardMagic;data->version=SakuraClipboardVersion;data->pid=pid;data->creationTime=created;
+    data->active=1;data->flags=flags;data->maxTextBytes=maximum;std::memcpy(data->build,SAKURA_CLIPBOARD_BUILD,65);
+    MemoryBarrier();InterlockedExchange(&data->sequence,2);
+  }
+  ~EarlyPolicy(){if(data)UnmapViewOfFile(data);}
+  void insert(HANDLE process,const std::string& library) {
+    PROCESS_MITIGATION_DYNAMIC_CODE_POLICY dynamic{};PROCESS_MITIGATION_BINARY_SIGNATURE_POLICY signatures{};
+    if(!GetProcessMitigationPolicy(process,ProcessDynamicCodePolicy,&dynamic,sizeof(dynamic)) || dynamic.ProhibitDynamicCode ||
+        !GetProcessMitigationPolicy(process,ProcessSignaturePolicy,&signatures,sizeof(signatures)) ||
+        signatures.MicrosoftSignedOnly || signatures.StoreSignedOnly)
+      throw std::runtime_error("process mitigation rejects early native policy injection");
+    SakuraClipboardEarly input{};
+    input.magic=SakuraClipboardMagic;input.version=SakuraClipboardVersion;input.pid=data->pid;input.creationTime=data->creationTime;
+    std::memcpy(input.build,SAKURA_CLIPBOARD_BUILD,65);std::copy(name.begin(),name.end(),input.section);
+    LPCSTR imported=library.c_str();
+    if(!DetourCopyPayloadToProcess(process,SakuraClipboardEarlyGuid,&input,sizeof(input)) ||
+        !DetourUpdateProcessWithDll(process,&imported,1))
+      throw std::runtime_error("suspended process rejects early policy import");
+  }
+  void ready() {
+    if(data->status!=1 || data->sequence&1 || !data->active || data->magic!=SakuraClipboardMagic ||
+        data->version!=SakuraClipboardVersion || std::memcmp(data->build,SAKURA_CLIPBOARD_BUILD,65)!=0)
+      throw std::runtime_error("early native policy did not initialize before application imports");
+  }
+};
 static void initializeLoader(HANDLE process,DWORD pid) {
-  // A just-created primary thread has not run the Windows loader. A helper
-  // thread initializes its imports while that primary thread remains suspended.
-  // Windows may run DLL/TLS initialization here; this is not an initialization sandbox.
+  // The first import is already our synchronously configured policy DLL. This
+  // thread lets the loader finish original application imports/TLS while the
+  // primary thread remains suspended; it never starts the application entry.
   const HMODULE local=GetModuleHandleW(L"ntdll.dll");
   const auto exit=GetProcAddress(local,"RtlExitUserThread");
   // Toolhelp has no module list until this fresh process's loader runs. Locate
@@ -349,6 +623,9 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
   Handle file(CreateFileW(expected.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
   if (file.value==INVALID_HANDLE_VALUE) throw std::runtime_error("application file unavailable for controlled launch");
   selectedFile(file.value,expected,digest);
+  nativeExecutable(file.value);
+  const auto imported=importPath(library);
+  earlyDependencies(expected,library);
   Handle job(CreateJobObjectW(nullptr,nullptr));
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
   limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
@@ -368,6 +645,9 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
   PROCESS_INFORMATION child{};
   const auto separator=expected.find_last_of(L'\\');
   const auto directory=expected.substr(0,separator==2?3:separator);
+  // The controller reports loader failures over its private RPC channel. A
+  // rejected injected DLL must not leave a Windows hard-error dialog pending.
+  SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|SEM_NOOPENFILEERRORBOX);
   const BOOL created=assigned && CreateProcessW(expected.c_str(),command.data(),nullptr,nullptr,FALSE,
     CREATE_SUSPENDED|CREATE_NO_WINDOW|EXTENDED_STARTUPINFO_PRESENT|CREATE_UNICODE_ENVIRONMENT,nullptr,directory.c_str(),&startup.StartupInfo,&child);
   DeleteProcThreadAttributeList(attributes);
@@ -376,6 +656,11 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
   try {
     const auto creation=processCreation(process.value);
     const auto architecture=bits(process.value);
+    using InspectPackage=LONG(WINAPI*)(HANDLE,UINT32*,PWSTR);
+    const auto inspectPackage=reinterpret_cast<InspectPackage>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"GetPackageFullName"));
+    UINT32 packageLength=0;
+    if(!inspectPackage || inspectPackage(process.value,&packageLength,nullptr)!=APPMODEL_ERROR_NO_PACKAGE)
+      throw std::runtime_error("controlled early initialization requires an unpackaged native executable");
     DWORD targetSession=0,ownSession=0;
     const auto check=[&]() {
       BOOL inJob=FALSE;
@@ -391,13 +676,23 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
     std::cout<<"{\"stage\":\"prepared\",\"launchId\":"<<json(nonce)<<",\"process\":";
     printIdentity(child.dwProcessId,creation,expected,architecture);std::cout<<'}'<<std::endl;published();
     permission(nonce,"attach");
-    check();initializeLoader(process.value,child.dwProcessId);check();
-    apply(owner,child.dwProcessId,creation,expected,library,flags,maximum,true,false);
+    check();
+    // Creating the section, changing imports and running the loader all happen
+    // after the durable ownership journal has authorized this exact child.
+    Handle policyFile(CreateFileW(library.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
+    if(policyFile.value==INVALID_HANDLE_VALUE)throw std::runtime_error("early policy file unavailable");
+    const auto policyDigest=fileDigest(policyFile.value);std::wstring policyHash(policyDigest.begin(),policyDigest.end());
+    selectedFile(policyFile.value,library,policyHash);
+    EarlyPolicy early(owner,child.dwProcessId,creation,flags,maximum);
+    earlyDependencies(expected,library);
+    early.insert(process.value,imported);check();
+    initializeLoader(process.value,child.dwProcessId);early.ready();check();
+    if(!module(child.dwProcessId,library))throw std::runtime_error("early policy loaded from an unexpected image");
     std::cout<<"{\"stage\":\"attached\",\"launchId\":"<<json(nonce)<<",\"process\":";
     printIdentity(child.dwProcessId,creation,expected,architecture);std::cout<<",\"state\":";
     state(owner,child.dwProcessId,creation,false);std::cout<<'}'<<std::endl;published();
     permission(nonce,"resume");
-    check();selectedFile(file.value,expected,digest);
+    check();early.ready();selectedFile(file.value,expected,digest);selectedFile(policyFile.value,library,policyHash);
     if (ResumeThread(thread.value)!=1) throw std::runtime_error("controlled primary thread could not resume");
     // Keep fail-closed Job ownership until resume succeeds. Only this fresh Job
     // is released; no existing application or system process is ever terminated.

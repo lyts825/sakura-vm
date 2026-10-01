@@ -13,6 +13,7 @@ import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../..
 import '../../src/features.css';
 import { stopped } from '../../src/guest-state';
 import { IngressPanel } from './IngressPanel';
+import { DependencyDownloadsEditor } from './DependencyDownloadsEditor';
 
 export function ServicesPanel(props: FeatureProps) {
   const { vm, request, refresh } = props;
@@ -121,7 +122,7 @@ export function ServicesPanel(props: FeatureProps) {
   );
 }
 
-export const networkFields: [Exclude<keyof NetworkProfile, 'dnsServers' | 'dnsDomains' | 'dnssec' | 'forwards'>, string, string][] = [
+export const networkFields: [Exclude<keyof NetworkProfile, 'dnsServers' | 'dnsDomains' | 'dnssec' | 'forwards' | 'dependencyDownloads'>, string, string][] = [
   ['httpProxy', 'HTTP 代理', 'http://10.0.2.2:7890'],
   ['httpsProxy', 'HTTPS 代理', 'http://10.0.2.2:7890'],
   ['noProxy', '不使用代理的地址', 'localhost,127.0.0.1,::1'],
@@ -350,6 +351,8 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
           <p className="subtle-note">
             自定义 DNS 地址支持 Alpine 静态网络和 systemd-resolved；私有域名路由和 DNSSEC 策略需要 systemd-resolved 及指定 DNS 服务器，应用后会核对实际状态。强制 DNSSEC 可能拒绝未签名的私有域名。
           </p>
+          <DependencyDownloadsEditor value={config} disabled={applied || action.busy}
+            change={dependencyDownloads => { setConfig({ ...config, dependencyDownloads }); setPreview(null); }} />
           <div className="feature-card">
             <label>
               <input

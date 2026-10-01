@@ -67,7 +67,7 @@ test('seccomp cancellation cleans its process group before releasing the instanc
   await f.executing;
   await assert.rejects(f.machines.locked('vm', async () => {}), /另一项操作/);
   abort.abort(); await rejected;
-  assert.ok(f.commands.some((command) => command.includes('kill -TERM --')));
+  assert.ok(f.commands.some((command) => command.includes('sakura_owned_anchor') && command.includes('.pid.stop')));
   await f.machines.locked('vm', async () => {});
 });
 

@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -17,21 +17,30 @@ after(async () => {
 const id = '11111111-1111-4111-8111-111111111111';
 const privateId = 'aabbccdd00112233';
 const sharedId = 'bbccddee11223344';
-const privateProject = { ...projectSchema.parse({
-  directory: "/workspace/editor alpha's project", networkIsolation: 'private',
-  environment: { TOKEN: 'do-not-export-project-secret' },
-}), _workspace: privateId };
+const hostPublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID3ujUDueum4uXp5BZPubggr+KFDQLX4clTCmmlVQreZ';
+const privateProject = {
+  ...projectSchema.parse({
+    directory: "/workspace/editor alpha's project",
+    networkIsolation: 'private',
+    environment: { TOKEN: 'do-not-export-project-secret' },
+  }),
+  _workspace: privateId,
+};
 const sharedProject = { ...projectSchema.parse({ directory: '/workspace/shared' }), _workspace: sharedId };
 const machines: any = {
   get: () => ({ id, name: 'test-editor', distro: 'debian' }),
-  live: new Map([[id, { sshPort: 32222 }]]), records: new Map(),
-  state: () => 'running', on: () => {}, off: () => {},
+  live: new Map([[id, { sshPort: 32222 }]]),
+  records: new Map(),
+  state: () => 'running',
+  on: () => {},
+  off: () => {},
 };
-const spacesFor = (project: typeof privateProject | typeof sharedProject) => ({
-  config: async () => project,
-  projects: { current: () => project._workspace },
-  onConfigChange: () => () => {},
-}) as any;
+const spacesFor = (project: typeof privateProject | typeof sharedProject) =>
+  ({
+    config: async () => project,
+    projects: { current: () => project._workspace },
+    onConfigChange: () => () => {},
+  }) as any;
 const savedPrivate = { ...privateProject };
 delete (savedPrivate as { _workspace?: string })._workspace;
 const report = (spaces: any, editor = 'neovim', signal = new AbortController().signal) =>
@@ -46,7 +55,9 @@ test('editor profiles honor saved private siblings and unreadable settings witho
     await assert.rejects(report(spacesFor(sharedProject)), /启用 IDE 插件/);
     await writeFile(saved, '{invalid');
     await assert.rejects(report(spacesFor(sharedProject)), /启用 IDE 插件/);
-  } finally { await rm(saved, { force: true }); }
+  } finally {
+    await rm(saved, { force: true });
+  }
   const legacy = await report(spacesFor(sharedProject));
   assert.equal(legacy.projectScoped, false);
   assert.equal(legacy.alias, 'sakura-test-editor');
@@ -54,20 +65,31 @@ test('editor profiles honor saved private siblings and unreadable settings witho
 });
 
 test('all editor exports share the checked project endpoint and refuse a missing one', async () => {
-  const spaces = spacesFor(privateProject), ide = new Ide(machines, spaces, join(directory, 'ssh-client'));
-  let endpoint: object | null = null, checked: unknown;
+  const spaces = spacesFor(privateProject),
+    ide = new Ide(machines, spaces, join(directory, 'ssh-client'));
+  let endpoint: object | null = null,
+    checked: unknown;
   const identity = join(vmDir(id), 'project-ssh', privateId, 'id_rsa');
   (ide as any).projectSsh = {
     endpoint: async (_id: string, project: unknown, signal: AbortSignal) => {
-      signal.throwIfAborted(); checked = project; return endpoint;
+      signal.throwIfAborted();
+      checked = project;
+      return endpoint;
     },
     close: async () => {},
   };
   try {
     await assert.rejects(report(spaces), /先在项目页配置/);
-    endpoint = { port: 43333, identity,
-      knownHosts: join(vmDir(id), 'project-ssh', privateId, 'known_hosts'),
-      hostKeyAlias: `sakura-${id}-${privateId}` };
+    const knownHosts = join(vmDir(id), 'project-ssh', privateId, 'known_hosts');
+    await mkdir(dirname(knownHosts), { recursive: true });
+    await writeFile(knownHosts, `sakura-${id}-${privateId} ${hostPublicKey}\n`);
+    endpoint = {
+      port: 43333,
+      identity,
+      hostPublicKey,
+      knownHosts,
+      hostKeyAlias: `sakura-${id}-${privateId}`,
+    };
     for (const editor of ['jetbrains', 'neovim', 'vscode']) {
       const value = await report(spaces, editor);
       assert.equal(checked, privateProject);
@@ -77,6 +99,19 @@ test('all editor exports share the checked project endpoint and refuse a missing
       assert.equal(value.networkIsolation, 'private');
       assert.equal(value.port, 43333);
       assert.equal(value.identityFile, identity);
+      if (editor === 'jetbrains') {
+        assert.equal(value.hostKeyVerification, 'project-and-endpoint');
+        assert.equal(value.knownHostsFile, join(dirname(knownHosts), 'known_hosts.jetbrains'));
+        assert.equal(
+          await readFile(String(value.knownHostsFile), 'utf8'),
+          `sakura-${id}-${privateId} ${hostPublicKey}\n[127.0.0.1]:43333 ${hostPublicKey}\n`,
+        );
+        assert.match(String(value.instructions), /Gateway 不支持 HostKeyAlias/);
+        assert.match(String(value.instructions), /\*_VM_OPTIONS/);
+        assert.match(String(value.instructions), /默认任意 Gateway 下载\/启动未验证/);
+        assert.match(contentFor(value), /GlobalKnownHostsFile none\n  IdentityAgent none/);
+        assert.match(contentFor(value), /PasswordAuthentication no\n  KbdInteractiveAuthentication no/);
+      } else assert.equal(value.knownHostsFile, knownHosts);
       const content = (value.download as any).content;
       assert.match(content, /StrictHostKeyChecking yes/);
       assert.match(content, /ForwardAgent no\n  ProxyCommand none\n  ProxyJump none/);
@@ -85,24 +120,42 @@ test('all editor exports share the checked project endpoint and refuse a missing
       assert.ok(!JSON.stringify(value).includes('do-not-export-project-secret'));
       assert.equal(value.remotePath, `scp://sakura-${id}-${privateId}//workspace/editor alpha's project/`);
     }
-    const abort = new AbortController(); abort.abort();
+    await writeFile(knownHosts, 'untrusted changed binding\n');
+    await assert.rejects(report(spaces, 'jetbrains'), /主机公钥绑定已变化/);
+    await writeFile(knownHosts, `sakura-${id}-${privateId} ${hostPublicKey}\n`);
+    endpoint = { ...(endpoint as object), port: 43335 };
+    const refreshed = await report(spaces, 'jetbrains');
+    const pin = await readFile(String(refreshed.knownHostsFile), 'utf8');
+    assert.match(pin, /\[127\.0\.0\.1\]:43335 /);
+    assert.ok(!pin.includes(':43333 '), 'old endpoint pin must be replaced after a new bridge port');
+    const abort = new AbortController();
+    abort.abort();
     await assert.rejects(report(spaces, 'neovim', abort.signal));
-  } finally { await ide.close(); }
+  } finally {
+    await ide.close();
+  }
   await assert.rejects(report(spaces), /启用 IDE 插件/);
 });
+
+function contentFor(value: Record<string, unknown>) {
+  return (value.download as { content: string }).content;
+}
 
 test('a shared project in an instance with a private sibling also exports its own SSH service', async () => {
   const saved = join(vmDir(id), `project-${privateId}.json`);
   await writeFile(saved, JSON.stringify(savedPrivate));
-  const spaces = spacesFor(sharedProject), ide = new Ide(machines, spaces, join(directory, 'shared-client'));
+  const spaces = spacesFor(sharedProject),
+    ide = new Ide(machines, spaces, join(directory, 'shared-client'));
   let checked: unknown;
   (ide as any).projectSsh = {
     endpoint: async (_id: string, project: unknown) => {
       checked = project;
-      return { port: 43334,
+      return {
+        port: 43334,
         identity: join(vmDir(id), 'project-ssh', sharedId, 'id_rsa'),
         knownHosts: join(vmDir(id), 'project-ssh', sharedId, 'known_hosts'),
-        hostKeyAlias: `sakura-${id}-${sharedId}` };
+        hostKeyAlias: `sakura-${id}-${sharedId}`,
+      };
     },
     close: async () => {},
   };
@@ -113,7 +166,10 @@ test('a shared project in an instance with a private sibling also exports its ow
     assert.equal(value.networkIsolation, 'host');
     assert.equal(value.projectScoped, true);
     assert.equal(value.port, 43334);
-  } finally { await ide.close(); await rm(saved, { force: true }); }
+  } finally {
+    await ide.close();
+    await rm(saved, { force: true });
+  }
 });
 
 test('Alpine project profiles require a checked SSH endpoint and refuse unsupported IDE backends', async () => {

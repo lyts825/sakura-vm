@@ -14,13 +14,21 @@ const source = resolve('native/windows-clipboard');
 const target = resolve('.tools/native-clipboard');
 const vendor = join(source, 'vendor/minhook');
 const provenance = JSON.parse(await readFile(join(vendor, 'provenance.json'), 'utf8'));
+const earlyVendor = join(source, 'vendor/detours');
+const earlyProvenance = JSON.parse(await readFile(join(earlyVendor, 'provenance.json'), 'utf8'));
 const hash = createHash('sha256');
-for (const name of ['protocol.h', 'policy.cpp', 'controller.cpp'])
+for (const name of ['protocol.h', 'early-import.h', 'early-policy.def', 'policy.cpp', 'controller.cpp'])
   hash.update(await readFile(join(source, name)));
 for (const file of provenance.files) {
   const data = await readFile(join(vendor, file.path));
   if (createHash('sha256').update(data).digest('hex') !== file.sha256)
     throw new Error(`MinHook source differs: ${file.path}`);
+  hash.update(data);
+}
+for (const file of earlyProvenance.files) {
+  const data = await readFile(join(earlyVendor, file.path));
+  if (createHash('sha256').update(data).digest('hex') !== file.sha256)
+    throw new Error(`Detours source differs: ${file.path}`);
   hash.update(data);
 }
 const build = hash.digest('hex');
@@ -63,7 +71,13 @@ const common = [
   '-static',
   '-Wl,--no-insert-timestamp',
   `-DSAKURA_CLIPBOARD_BUILD="${build}"`,
+  // MinGW's strsafe inline variadic functions otherwise duplicate libmingwex
+  // definitions. This toolchain switch leaves Microsoft's pinned source intact.
+  '-D__CRT__NO_INLINE',
 ];
+const earlySources = ['detours.cpp', 'modules.cpp', 'disasm.cpp', 'image.cpp', 'creatwth.cpp'].map((name) =>
+  join(earlyVendor, 'src', name),
+);
 for (const entry of compilers) {
   await execute(
     entry.compiler,
@@ -72,6 +86,8 @@ for (const entry of compilers) {
       '-shared',
       '-Wl,--kill-at',
       join(source, 'policy.cpp'),
+      join(source, 'early-policy.def'),
+      ...earlySources,
       ...['buffer.c', 'hook.c', 'trampoline.c', 'hde/' + entry.decoder].map((name) =>
         join(vendor, 'src', name),
       ),
@@ -89,21 +105,27 @@ for (const entry of compilers) {
       ...common,
       '-municode',
       join(source, 'controller.cpp'),
+      ...earlySources,
       '-o',
       join(target, `sakura-clipboard-controller${entry.suffix}.exe`),
       '-ladvapi32',
+      '-lxmllite',
+      '-lshlwapi',
+      '-luuid',
     ],
     { windowsHide: true, timeout: 60000 },
   );
 }
 const files = [];
 await copyFile(join(vendor, 'LICENSE.txt'), join(target, 'MinHook-LICENSE.txt'));
+await copyFile(join(earlyVendor, 'LICENSE.md'), join(target, 'Detours-LICENSE.md'));
 for (const name of [
   'SakuraClipboardPolicy.dll',
   'sakura-clipboard-controller.exe',
   'SakuraClipboardPolicy-x86.dll',
   'sakura-clipboard-controller-x86.exe',
   'MinHook-LICENSE.txt',
+  'Detours-LICENSE.md',
 ]) {
   const bytes = await readFile(join(target, name));
   if (name.endsWith('.dll') || name.endsWith('.exe')) {
@@ -115,6 +137,6 @@ for (const name of [
 }
 await writeFile(
   join(target, 'native-clipboard.json'),
-  JSON.stringify({ version: 2, architecture: 'x64', build, files }, null, 2) + '\n',
+  JSON.stringify({ version: 3, architecture: 'x64', build, files }, null, 2) + '\n',
 );
 console.log(`Built Windows native clipboard agent ${build}: ${files.map((f) => f.name).join(', ')}`);

@@ -4,3 +4,6 @@
 *.mjs text eol=lf
 *.css text eol=lf
 *.sh text eol=lf
+
+# Preserve upstream line endings and whitespace verified by the provenance manifest.
+native/windows-clipboard/vendor/detours/** -text -whitespace

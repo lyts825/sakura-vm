@@ -36,7 +36,8 @@ const workspaces = new Workspaces(machines),
 let native = desktops.clipboard;
 let vmId = '';
 const program = '/usr/local/lib/sakura-x11-test/fixture',
-  qtProgram = '/usr/local/lib/sakura-x11-test/fixture-qt';
+  qtProgram = '/usr/local/lib/sakura-x11-test/fixture-qt',
+  forkProgram = '/usr/local/lib/sakura-x11-test/fixture-fork';
 async function command(script: string, timeout = 30000) {
   const result = await machines.exec(vmId, script, timeout);
   if (result.code !== 0 && result.stdout) console.log(result.stdout);
@@ -135,7 +136,7 @@ try {
   assert.equal(installed.status, 'done', installed.error + '\n' + installed.log);
   assert.equal((await native.view(vmId)).ready, true);
   await command('mkdir -p /root/sakura-x11-build /usr/local/lib/sakura-x11-test');
-  for (const file of ['fixture.cpp', 'fixture-qt.cpp', 'smoke.py']) await upload(file);
+  for (const file of ['fixture.cpp', 'fixture-qt.cpp', 'fixture-fork.cpp', 'smoke.py']) await upload(file);
   const qt = distro === 'alpine' ? 'Qt6Gui' : 'Qt5Gui';
   await command(
     distro === 'alpine'
@@ -146,13 +147,14 @@ try {
   );
   await command(
     `set -eu\ncd /root/sakura-x11-build\ng++ -std=c++17 -O2 -Wall -Wextra fixture.cpp -o ${program} -lX11 -lX11-xcb -lxcb -pthread\n` +
-      `g++ -std=c++17 -O2 -fPIC -Wall -Wextra fixture-qt.cpp -o ${qtProgram} $(pkg-config --cflags --libs ${qt}) -lxcb\nchmod 755 ${program} ${qtProgram}`,
+      `g++ -std=c++17 -O2 -Wall -Wextra fixture-fork.cpp -o ${forkProgram} -lX11 -lX11-xcb -lxcb -pthread\n` +
+      `g++ -std=c++17 -O2 -fPIC -Wall -Wextra fixture-qt.cpp -o ${qtProgram} $(pkg-config --cflags --libs ${qt}) -lxcb\nchmod 755 ${program} ${qtProgram} ${forkProgram}`,
     90000,
   );
   const bundle = await x11SourceBundle();
   if (process.env.SAKURA_SKIP_NATIVE_SMOKE !== '1') console.log(
     await command(
-      `python3 /root/sakura-x11-build/smoke.py ${quote(bundle.directory + '/libSakuraClipboard.so')} ${program} ${bundle.manifest.build} ${qtProgram}`,
+      `${process.env.SAKURA_X11_FORK_ONLY === '1' ? 'SAKURA_X11_FORK_ONLY=1 ' : ''}python3 /root/sakura-x11-build/smoke.py ${quote(bundle.directory + '/libSakuraClipboard.so')} ${program} ${bundle.manifest.build} ${qtProgram} ${forkProgram}`,
       300000,
     ),
   );

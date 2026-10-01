@@ -81,6 +81,23 @@ async function probe(selected, expected) {
     );
     const sdk = new SakuraClient();
     assert.deepEqual(await sdk.call('core.vms.list'), []);
+    if (expected.includes('network')) {
+      const downloads = {
+        npm: { kind: 'bearer', endpoint: 'https://packages.example.com/npm/', tokenSecret: 'npm-read' },
+        pip: { kind: 'basic', endpoint: 'https://packages.example.com/simple/', username: 'reader', passwordSecret: 'pip-read' },
+      };
+      const profile = await sdk.request('/api/network-profiles', {
+        method: 'POST', body: { name: 'compiled-download-profile', config: { dependencyDownloads: downloads } },
+      });
+      assert.deepEqual(profile.config.dependencyDownloads, downloads);
+      await assert.rejects(sdk.request('/api/network-profiles', {
+        method: 'POST', body: { name: 'reject-plaintext-credential', config: {
+          dependencyDownloads: { npm: { ...downloads.npm, token: 'never-save-plaintext' } },
+        } },
+      }), error => error.status === 400);
+      await sdk.request('/api/network-profiles', { method: 'DELETE', body: { id: profile.id } });
+      assert.deepEqual(await sdk.request('/api/network-profiles'), []);
+    }
     const nativeClipboard = await sdk.call('core.native-clipboard.get');
     assert.equal(nativeClipboard.settings.enabled, false);
     assert.deepEqual(nativeClipboard.settings.applications, []);
@@ -725,3 +742,4 @@ await probe(['commands'], ['projects', 'commands']);
 await probe(['commands', 'metrics'], ['projects', 'commands', 'metrics']);
 await probe(['sandbox'], ['sandbox']);
 await probe(['backups'], ['transfers', 'snapshots', 'secrets', 'backups']);
+await probe(['network'], ['network']);

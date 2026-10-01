@@ -1317,8 +1317,8 @@ for (const bits of [64, 32] as const) {
     const assets = join(directory, 'assets');
     await mkdir(assets);
     const files = [];
-    const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'MinHook-LICENSE.txt'];
-    if (bits === 32) names.push('SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe');
+    const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'MinHook-LICENSE.txt',
+      'SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe', 'Detours-LICENSE.md'];
     for (const name of names) {
       const bytes = Buffer.from(name);
       await writeFile(join(assets, name), bytes);
@@ -1331,7 +1331,7 @@ for (const bits of [64, 32] as const) {
     await writeFile(
       join(assets, 'native-clipboard.json'),
       JSON.stringify({
-        version: bits === 32 ? 2 : 1,
+        version: 3,
         architecture: 'x64',
         build: 'b'.repeat(64),
         files,
@@ -3633,6 +3633,14 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await page.getByLabel('DNS 地址（逗号分隔，留空沿用系统设置）').fill('1.1.1.1, 8.8.8.8');
   await page.getByLabel('私有 DNS 路由域名（逗号分隔）').fill('corp.example');
   await page.getByLabel('DNSSEC 策略').selectOption('yes');
+  await page.getByText('项目依赖认证预取', { exact: true }).click();
+  await page.getByLabel('npm 认证预取', { exact: true }).check();
+  await page.getByLabel('npm 下载端点', { exact: true }).fill('https://packages.example.com/npm/');
+  await page.getByLabel('npm 下载凭证名称', { exact: true }).fill('npm-read');
+  await page.getByLabel('pip 认证预取', { exact: true }).check();
+  await page.getByLabel('pip 下载端点', { exact: true }).fill('https://packages.example.com/simple/');
+  await page.getByLabel('pip 下载用户名', { exact: true }).fill('reader');
+  await page.getByLabel('pip 下载凭证名称', { exact: true }).fill('pip-read');
   await page.getByRole('button', { name: '添加映射到档案' }).click();
   await page.getByLabel('Windows 端口', { exact: true }).fill('8090');
   await page.getByLabel('Linux 端口', { exact: true }).fill('3000');
@@ -3641,6 +3649,10 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await expect.poll(() => profiles[0]?.config.dnsServers).toEqual(['1.1.1.1', '8.8.8.8']);
   await expect.poll(() => profiles[0]?.config.dnsDomains).toEqual(['corp.example']);
   await expect.poll(() => profiles[0]?.config.dnssec).toBe('yes');
+  await expect.poll(() => profiles[0]?.config.dependencyDownloads).toEqual({
+    npm: { kind: 'bearer', endpoint: 'https://packages.example.com/npm/', tokenSecret: 'npm-read' },
+    pip: { kind: 'basic', endpoint: 'https://packages.example.com/simple/', username: 'reader', passwordSecret: 'pip-read' },
+  });
   await expect(page.getByLabel('加载已保存的档案')).toHaveValue(vm.id);
   await page.getByRole('button', { name: '预览修改' }).click();
   await expect(page.getByText('即将修改 1 个文件')).toBeVisible();
@@ -3653,6 +3665,10 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await expect(page.getByLabel('DNS 地址（逗号分隔，留空沿用系统设置）')).toHaveValue('1.1.1.1, 8.8.8.8');
   await expect(page.getByLabel('私有 DNS 路由域名（逗号分隔）')).toHaveValue('corp.example');
   await expect(page.getByLabel('DNSSEC 策略')).toHaveValue('yes');
+  await page.getByText('项目依赖认证预取', { exact: true }).click();
+  await expect(page.getByLabel('npm 下载凭证名称', { exact: true })).toHaveValue('npm-read');
+  await expect(page.getByLabel('pip 下载凭证名称', { exact: true })).toHaveValue('pip-read');
+  await expect(page.getByLabel('npm 下载端点', { exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '恢复原配置' }).click();
   await expect(page.getByText('配置已应用', { exact: true })).not.toBeVisible();
   expect(forwards).toEqual([]);

@@ -23,7 +23,7 @@ const b: NativeClipboardProcess = { ...a, pid: 2345, image: 'D:\\Other\\编辑�
 const hash = 'a'.repeat(64);
 const defaults = defaultClipboardRule();
 const id = (item: { pid: number; created: string }) => `${item.pid}:${item.created}`;
-async function fixture(t: any, extra: Record<string, unknown> = {}, dual = false) {
+async function fixture(t: any, extra: Record<string, unknown> = {}, dual = false, early = false) {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-native-clipboard-'));
   assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -35,6 +35,7 @@ async function fixture(t: any, extra: Record<string, unknown> = {}, dual = false
     'sakura-clipboard-controller.exe',
     'MinHook-LICENSE.txt',
     ...(dual ? ['SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe'] : []),
+    ...(early ? ['Detours-LICENSE.md'] : []),
   ]) {
     const contents = Buffer.from(name);
     await writeFile(join(assets, name), contents);
@@ -42,7 +43,7 @@ async function fixture(t: any, extra: Record<string, unknown> = {}, dual = false
   }
   await writeFile(
     join(assets, 'native-clipboard.json'),
-    JSON.stringify({ version: dual ? 2 : 1, architecture: 'x64', build: 'b'.repeat(64), files }),
+    JSON.stringify({ version: early ? 3 : dual ? 2 : 1, architecture: 'x64', build: 'b'.repeat(64), files }),
   );
   const file = join(directory, 'native.json');
   let inventory = [a, b],
@@ -457,7 +458,7 @@ async function launchFixture(t: any, bits: 32 | 64 = 64, dual = true) {
       throw error;
     }
   };
-  f = await fixture(t, { launch, imageBits: async () => bits }, dual);
+  f = await fixture(t, { launch, imageBits: async () => bits }, dual, dual);
   f.setInventory([]);
   await f.configure();
   return {
@@ -572,6 +573,40 @@ test('controlled launch journal write failure cleans up only its pending child a
   assert.equal(f.mutations(), 0);
   await rmdir(f.file);
   await rename(f.file + '.saved', f.file);
+});
+
+test('controlled launch requires v3 early assets and the verified Detours license without disabling legacy owned policies', async (t) => {
+  const f = await launchFixture(t);
+  const existing = {
+    present: true,
+    ready: true,
+    active: true,
+    compatible: true,
+    flags: 6,
+    maximum: 1048576,
+    blockedCopy: 2,
+    blockedPaste: 3,
+  };
+  f.policies.set(id(b), existing);
+  const path = join(f.assets, 'native-clipboard.json');
+  const manifest = JSON.parse(await readFile(path, 'utf8'));
+  await writeFile(
+    path,
+    JSON.stringify({
+      ...manifest,
+      version: 2,
+      files: manifest.files.filter((item: any) => item.name !== 'Detours-LICENSE.md'),
+    }),
+  );
+  await assert.rejects(f.launch(), /DLL\/TLS 初始化前/);
+  assert.equal(f.launches.length, 0);
+  await writeFile(path, JSON.stringify(manifest));
+  await writeFile(join(f.assets, 'Detours-LICENSE.md'), 'corrupted license');
+  await assert.rejects(f.launch(), /完整性失败/);
+  assert.equal(f.launches.length, 0);
+  assert.equal(f.mutations(), 0);
+  assert.equal(f.policies.get(id(b)), existing);
+  assert.equal(existing.active, true);
 });
 
 test('controlled launch refuses mismatched process identities and policies without resuming, retaining failed ownership for later reconciliation', async (t) => {

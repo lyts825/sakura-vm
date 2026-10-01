@@ -9,6 +9,7 @@ import { envPrefix } from './project-services.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
+import { dependencyDownloadsSchema } from './dependency-downloads.ts';
 
 const networkUrl = z
   .string()
@@ -72,6 +73,7 @@ export const networkSchema = z
     apkMirror: networkUrl,
     aptMirror: networkUrl,
     aptSecurityMirror: networkUrl,
+    dependencyDownloads: dependencyDownloadsSchema.optional(),
   })
   .strict();
 export type NetworkProfile = z.infer<typeof networkSchema>;

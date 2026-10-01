@@ -23,6 +23,28 @@ Alpine、Debian、Ubuntu 中，在“项目”页选择工作项目，再配置�
 
 每个项目固定使用自己的 `HOME=/var/lib/sakura/ssh/<项目 ID>`，编辑器服务和扩展缓存位于其中的 `.vscode-server`。这避免 Remote-SSH 在不同项目间复用共享 root 目录中的服务端进程。`HOME` 和编辑器缓存位置不由项目环境变量覆盖。此设置不改变 root 在 passwd 中的主目录；SCP/SFTP 使用明确的绝对目标路径，不能用 `~` 假定上述目录。
 
+## JetBrains Gateway 设置
+
+此节适用于 Debian、Ubuntu 的项目 SSH 入口。JetBrains 档案保留 `StrictHostKeyChecking yes`，使用另外生成的 `known_hosts.jetbrains`，将项目别名和当前 `[127.0.0.1]:<端口>` 同时固定到已经核对的同一个项目公钥。实际 Gateway 的 SSHJ 校验器不使用 OpenSSH `HostKeyAlias`；只保留别名的普通 SSH 档案不足以通过其严格校验。重建本机端口后重新导出档案，替换旧的端口绑定，不选择接受未知公钥。
+
+完整下载档案应放入 Gateway 实际解析的 OpenSSH config，再创建项目 alias 的 SSH 条目，选择 “OpenSSH config and authentication agent”。档案明确禁用认证代理、密码、交互认证和全局 known_hosts，实际使用固定的项目私钥。Windows OpenSSH 的默认目录来自 Windows 账户，单独设置 `HOME` 或 Java `user.home` 并不能改变 `ssh -G` 读取的配置；独立客户端应通过 Gateway 的 Advanced Settings 选择 OpenSSH backend 和自己的 SSH tool。下面的测试入口生成只读取所属配置文件的 `ssh.exe -F <所属 config>` 包装器，同时生成 Gateway 的 SSH 条目、配置、缓存、日志和临时目录，避免读取或改写用户全局 SSH/IDE 设置。
+
+私有网络的后端不能自行下载依赖。先在宿主下载官方 Linux x64 WebStorm 后端与对应 SHA-256，经固定公钥的项目 SSH/SFTP 上传、核对摘要后解压。每个项目使用自己的启动器，第三方只读库可以共享。当前官方 native remote launcher 不使用 `WEBIDE_PROPERTIES` 中的路径来固定 Java 配置；需要 `WEBIDE_VM_OPTIONS` 文件中的 `-Duser.home`、`-Didea.config.path`、`-Didea.system.path`、`-Didea.log.path`、`-Didea.plugins.path` 分别指向 `/var/lib/sakura/ssh/<项目 ID>` 及其独立目录。启动器也固定项目的 XDG 配置、缓存与数据目录。其他 JetBrains 产品使用其对应的产品环境变量，尚未在本批实测。任意默认 Gateway 下载/启动路径没有经过这些项目配置验证。
+
+可复现部署和连接入口是 [project-jetbrains-client-smoke.ts](../scripts/project-jetbrains-client-smoke.ts)，由项目 SSH 测试调用。设置以下环境变量后运行 `npm run test:project-ssh -- debian` 或 `ubuntu`：
+
+```powershell
+$env:SAKURA_SSH_JETBRAINS_GATEWAY = 'D:\owned-tools\gateway\bin\gateway64.exe'
+$env:SAKURA_SSH_JETBRAINS_BACKEND_ARCHIVE = 'D:\owned-tools\WebStorm-263.5701.38.tar.gz'
+$env:SAKURA_SSH_JETBRAINS_BACKEND_SHA256 = '<官方 SHA-256，64 位小写十六进制>'
+```
+
+这些地址是本机工具占位路径，需替换为事先下载和核对的官方文件；测试不安装到用户 IDE，不使用用户账户或许可证。新的所属实例分配 8 GiB 内存、4 CPU 和 16 GiB 磁盘，现有实例需要在停止时具备相应容量。辅助脚本当前限定 Windows Gateway 与 WebStorm 后端：先核对本地官方摘要，上传后再次核对；使用真正导出的 JetBrains 档案生成独立客户端配置，部署两个项目启动器，再通过原生 `jetbrains-gateway://connect` 链接自动连接。日志核对 Gateway 的实际 SSH、SFTP worker、后端状态和 TCP 转发测试；实际 `/proc` 核对后端的项目 `HOME`、cwd、环境、网络空间、cgroup 和独立 Java 配置目录，并测试外网连接被拒绝。
+
+`jetbrains-client-evidence.json` 记录传输与后端证据。`clientEditorVerified`、`clientLicensingVerified` 分别记录图形编辑和许可验证，不能由 SSH 成功推断为真。实际匹配版本的 JetBrains Client 仍可能要求登录或有效许可证；[EAP 同样需要 JetBrains Account](https://www.jetbrains.com/resources/eap/)。本批官方 WebStorm EAP Client 已实际启动，但停在强制登录界面，没有使用账号或绕过此门槛，图形文本编辑、保存与重开仍未验证。部署方式参考 [官方远程后端启动](https://www.jetbrains.com/help/idea/remote-development-a.html)、[完全离线部署](https://www.jetbrains.com/help/idea/fully-offline-mode.html) 与 [许可要求](https://www.jetbrains.com/help/idea/licensing-and-useful-links.html)。
+
+Windows 官方 Gateway 2026.2.2（build 262.10315.114）与官方 WebStorm EAP 2026.3（build 263.5701.38）已在真实 Debian 12、Ubuntu 24.04 各自的两个私有项目通过上述自动连接、严格主机公钥、实际 SFTP 上传、TCP 转发、后端独立配置与进程归属验证。定向停止验证分别核对 Alpha 所属的全部真实 cgroup 成员与后端消失、Beta 原有后端及 SSH 保持可用，随后 Beta 停止清空其进程。已启动的匹配版本 Windows JetBrains Client build 263.5701.38 因强制账户登录停在接入阶段；该结果保留图形编辑与许可未验证。
+
 ## 生命周期与保护
 
 - “停止项目 SSH”会关闭本机入口，并通过所属服务的整个 cgroup 清理 SSH、编辑器和后台进程，包括另建进程会话的子进程。Debian、Ubuntu 使用 systemd 的 `KillMode=control-group`；Alpine 使用 OpenRC 建立的真实统一 cgroup 和内核 `cgroup.kill`，等待进程终止并由 init 回收后完成停止。目录与网络模式在这些进程存在时不能修改；停用 IDE 插件后，核心服务仍执行这个检查。配置或服务文件丢失时也检查仍在运行的进程，停止不依赖这些文件。
@@ -52,7 +74,7 @@ npm run test:project-ssh -- ubuntu
 
 在 Debian、Ubuntu 测试中，可额外设置 `SAKURA_SSH_VSCODE_ARCHIVE` 为微软官方 Linux x64 服务端发布包的绝对路径，并将官方更新元数据中的 SHA-256 设置为 `SAKURA_SSH_VSCODE_SHA256`。测试核对摘要，通过真实 SFTP 上传到两个项目，分别启动官方后端、核对进程网络、经 SSH 转发版本端点并验证停止清理。已验证 VS Code Server 1.140.0 后端。
 
-设置 `SAKURA_SSH_VSCODE_CLIENT` 为本机官方 `Code.exe` 的绝对路径，可启用真实桌面 Remote-SSH 联测；`SAKURA_SSH_REMOTE_VSIX` 可指定事先下载的官方 Remote-SSH VSIX，否则从扩展市场安装。测试单独创建用户配置与扩展目录，在两个项目分别打开桌面窗口，以实际远程 workspace 扩展验证打开、修改和保存文本，创建集成终端、执行 ShellExecution 任务，核对扩展、子进程、终端和任务的实际网络空间并验证外网拒绝。客户端关闭仅针对测试窗口，随后仍执行完整 SSH 生命周期验证。结果保存为所属目录中的 `vscode-client-evidence.json`，客户端日志在其 `vscode-client-portable-data/user-data/logs`。Windows 上的官方 VS Code 1.140.0 与 Remote-SSH 0.129.2026091815 已在真实 Debian 12、Ubuntu 24.04 各自的两个私有项目通过上述流程；Alpine 明确拒绝这两项 VS Code 测试。JetBrains Gateway 当前验证了 Debian、Ubuntu 导出的档案和真实 SSH 连接，尚未执行其客户端联测。
+设置 `SAKURA_SSH_VSCODE_CLIENT` 为本机官方 `Code.exe` 的绝对路径，可启用真实桌面 Remote-SSH 联测；`SAKURA_SSH_REMOTE_VSIX` 可指定事先下载的官方 Remote-SSH VSIX，否则从扩展市场安装。测试单独创建用户配置与扩展目录，在两个项目分别打开桌面窗口，以实际远程 workspace 扩展验证打开、修改和保存文本，创建集成终端、执行 ShellExecution 任务，核对扩展、子进程、终端和任务的实际网络空间并验证外网拒绝。客户端关闭仅针对测试窗口，随后仍执行完整 SSH 生命周期验证。结果保存为所属目录中的 `vscode-client-evidence.json`，客户端日志在其 `vscode-client-portable-data/user-data/logs`。Windows 上的官方 VS Code 1.140.0 与 Remote-SSH 0.129.2026091815 已在真实 Debian 12、Ubuntu 24.04 各自的两个私有项目通过上述流程；Alpine 明确拒绝这两项 VS Code 测试。JetBrains 的传输、后端与客户端编辑验证分别记录，详见上节。
 
 设置 `SAKURA_SSH_NEOVIM_CLIENT` 为本机 `nvim.exe`（或宿主 `nvim`）的绝对路径，可启用真实 Neovim netrw 客户端打开、修改、保存和重新打开 UTF-8 文本的验证。测试使用已固定主机公钥的项目 SSH 档案，结果写入所属目录的 `neovim-client-evidence.json`，逐项目日志位于 `neovim-client`。Neovim 0.12 需要先执行 `:packadd netrw`。Windows netrw 会把绝对远程目录中的空格转义为字面反斜杠，导致 SFTP 找不到原路径；使用导出档案的 `relativeRemotePath=scp://<项目别名>/./` 作为项目 cwd 的相对入口，在其后追加文件名编辑，例如 `:edit scp://<项目别名>/./example.txt`。专属 SSH/SFTP 入口已固定初始目录；绝对 `remotePath` 继续供支持它的客户端使用。本批客户端证据覆盖文件读、改、保存、重新打开，未覆盖 netrw 目录浏览器的全部操作。
 

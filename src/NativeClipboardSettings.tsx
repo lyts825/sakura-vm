@@ -80,10 +80,10 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
       <Feedback error={action.error || remote.error} message={action.message} />
       {remote.data?.error && <p role="alert">{remote.data.error}</p>}
       <p className="subtle-note">
-        代理覆盖 Win32 与 OLE
-        剪贴板调用。受控启动会先加载已保存策略再进入应用主函数。自行启动的进程仍需等待扫描附加；DLL/TLS
-        初始化、受保护进程及自行调用底层系统接口的程序不在此保证范围内。普通 Linux X11 应用可在 KDE
-        桌面中的原生应用剪贴板入口启动。
+        代理覆盖 Win32 与 OLE 剪贴板调用。受控启动在普通、未打包原生 EXE 的原始应用 DLL/TLS
+        初始化前加载已保存策略；检测到的早期加载重定向或不兼容进程保护会拒绝启动。
+        自行启动的进程仍需等待扫描附加，自行调用底层系统接口的程序不在此保证范围内。普通 Linux X11 应用可在
+        KDE 桌面中的原生应用剪贴板入口启动。
       </p>
       <fieldset disabled={action.busy}>
         <label className="checkbox-label">

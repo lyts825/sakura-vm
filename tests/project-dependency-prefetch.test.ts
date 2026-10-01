@@ -8,7 +8,8 @@ import { createHash } from 'node:crypto';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-dependency-prefetch-'));
 process.env.SAKURA_DATA_DIR = root;
-const { npmPrefetchValidation, dependencyDownloadEnvironment, projectDependencyCacheScript } =
+const { npmPrefetchValidation, dependencyDownloadEnvironment, projectDependencyCacheScript,
+  projectDependencyCachePlan, pipCachePublication } =
   await import('../server/project-dependency-cache.ts');
 const { FeatureSuite } = await import('../server/feature-suite.ts');
 const { Jobs } = await import('../server/jobs.ts');
@@ -104,6 +105,53 @@ test('download environment accepts only separate mirrors and proxies', () => {
   assert.match(pip, /exec env -i PATH=/);
   assert.match(pip, /python3 -I -m pip --isolated download/);
   assert.match(pip, /packages\.example\.com\/simple/);
+});
+
+test('managed prefetch plans keep each task cleanup outside the published cache', () => {
+  for (const manager of ['npm', 'pip'] as const) {
+    const plans = Array.from({ length: 8 }, () => projectDependencyCachePlan(
+      '/workspace/project', 'default', manager, 'prefetch-dependencies'));
+    assert.equal(new Set(plans.map(plan => plan.temporaryDirectory)).size, plans.length);
+    for (const plan of plans) {
+      assert.match(plan.temporaryDirectory!, new RegExp(`^/var/cache/sakura/project-deps/default/\\.staging\\.${manager}\\.[a-f0-9]{32}$`));
+      assert.ok(plan.command.includes(plan.temporaryDirectory!));
+      assert.ok(plan.cleanup!.includes(plan.temporaryDirectory!));
+      assert.match(plan.command, /trap .*TERM/);
+      assert.match(plan.command, /reserved/);
+      assert.match(plan.cleanup!, /rmdir/);
+      assert.ok(!plan.cleanup!.includes(`rm -rf -- '/var/cache/sakura/project-deps/default/${manager}'`));
+      if (manager === 'pip') {
+        assert.ok(plan.command.includes('RENAME_EXCHANGE'));
+        assert.ok(!plan.command.includes('previous.$$'));
+      }
+    }
+    const install = projectDependencyCachePlan('/workspace/project', 'default', manager, 'install-cached-dependencies');
+    assert.equal(install.cleanup, undefined);
+    assert.equal(install.temporaryDirectory, undefined);
+  }
+});
+
+test('atomic publication refuses an unsupported host before touching any cache path', () => {
+  if (process.platform !== 'win32') return;
+  const result = spawnSync(process.env.SAKURA_TEST_PYTHON || 'python',
+    ['-I', '-B', '-c', pipCachePublication, join(root, 'absent-stage'), join(root, 'unchanged-cache')],
+    { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.status, 2, result.error?.message || result.stderr);
+  assert.match(result.stderr, /缓存原子发布失败/);
+  assert.ok(!result.stderr.includes('Traceback'));
+});
+
+test('authenticated plans accept exactly the old and host-selected protected directory shapes', () => {
+  for (const suffix of ['abcdef123456', '1234567890abcdef1234567890abcdef']) {
+    const directory = '/run/sakura-dependency-auth.' + suffix;
+    assert.doesNotThrow(() => projectDependencyCachePlan('/workspace/project', 'default', 'pip',
+      'prefetch-dependencies', {}, { credentialFile: directory + '/credential.json', brokerFile: directory + '/broker.py' }));
+  }
+  for (const suffix of ['short', 'a'.repeat(13), 'a'.repeat(31), 'a'.repeat(33), '../owned', 'a'.repeat(31) + '/']) {
+    const directory = '/run/sakura-dependency-auth.' + suffix;
+    assert.throws(() => projectDependencyCachePlan('/workspace/project', 'default', 'pip',
+      'prefetch-dependencies', {}, { credentialFile: directory + '/credential.json', brokerFile: directory + '/broker.py' }), /临时路径/);
+  }
 });
 
 test('shared prefetch never resolves project secrets or exports its executable environment', async () => {
