@@ -271,12 +271,17 @@ static int managedLaunch(int argc,wchar_t** argv) {
   if(argc!=6||std::wstring(argv[4]).empty()||CompareStringOrdinal(argv[4],-1,L"WinSta0",-1,TRUE)==CSTR_EQUAL)return 2;
   return ownedLaunch(argv[2],clipboardArgument(argv[2])+L" "+clipboardArgument(argv[3])+L" "+clipboardArgument(argv[4])+L" "+clipboardArgument(argv[5]),std::wstring(argv[4])+L"\\default");
 }
+static int managedHostLaunch(int argc,wchar_t** argv) {
+  if(argc!=7||std::wstring(argv[5]).empty()||CompareStringOrdinal(argv[5],-1,L"WinSta0",-1,TRUE)==CSTR_EQUAL)return 2;
+  return ownedLaunch(argv[2],clipboardArgument(argv[2])+L" "+clipboardArgument(argv[3])+L" "+clipboardArgument(argv[4])+L" "+clipboardArgument(argv[5])+L" "+clipboardArgument(argv[6]),std::wstring(argv[5])+L"\\default");
+}
 int wmain(int argc,wchar_t** argv) {
   if(argc==3&&std::wstring(argv[1])==L"--launch"){
     wchar_t executable[32768]{};if(!GetModuleFileNameW(nullptr,executable,32768))return 2;
     return ownedLaunch(executable,clipboardArgument(executable)+L" --create "+clipboardArgument(argv[2]));
   }
   if(argc>=2&&std::wstring(argv[1])==L"--managed-launch")return managedLaunch(argc,argv);
+  if(argc>=2&&std::wstring(argv[1])==L"--managed-host-launch")return managedHostLaunch(argc,argv);
   std::wstring stationArgument=argc==2?argv[1]:L"";
   const bool create=argc==3&&std::wstring(argv[1])==L"--create";
   const bool join=argc==4&&std::wstring(argv[3])==L"--native-peer";

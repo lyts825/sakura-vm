@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:net';
 import { createInterface } from 'node:readline';
+import { clipboardModernRuntimeFixture } from './clipboard-modern-runtime-fixture.mjs';
 
 assert.equal(process.platform, 'win32');
 const run = promisify(execFile),
@@ -16,6 +17,9 @@ const root = resolve('.data/native-clipboard-interface-test-temp/interface-' + b
 await mkdir(join(root, 'assets'), { recursive: true });
 process.env.TEMP = root;
 process.env.TMP = root;
+process.env.DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false';
+process.env.DOTNET_ADD_GLOBAL_TOOLS_TO_PATH = 'false';
+process.env.DOTNET_DISABLE_GUI_ERRORS = '1';
 const source = resolve('native/windows-clipboard/fixture-interfaces.cpp');
 const assets = resolve(process.env.SAKURA_NATIVE_CLIPBOARD_ASSETS || '.tools/native-clipboard');
 const manifest = JSON.parse(await readFile(join(assets, 'native-clipboard.json'), 'utf8'));
@@ -82,8 +86,8 @@ await run(
   ],
   { timeout: 60_000, windowsHide: true },
 );
-let modernExecutable;
-if (bits === 64 && process.env.SAKURA_CLIPBOARD_MODERN_DOTNET === '1') {
+let modernExecutable, modernAssembly, modernRuntime, modernConfiguration, modernSdk;
+if (process.env.SAKURA_CLIPBOARD_MODERN_DOTNET === '1') {
   const modern = join(root, 'modern');
   await mkdir(modern);
   const project = join(modern, 'fixture-interfaces-modern.csproj');
@@ -94,14 +98,23 @@ if (bits === 64 && process.env.SAKURA_CLIPBOARD_MODERN_DOTNET === '1') {
   );
   await writeFile(
     project,
-    `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><OutputType>Exe</OutputType><PlatformTarget>x64</PlatformTarget><UseWindowsForms>true</UseWindowsForms><UseWPF>true</UseWPF><EnableDefaultCompileItems>false</EnableDefaultCompileItems><NuGetAudit>false</NuGetAudit></PropertyGroup><ItemGroup><Compile Include="${managedSource}" /></ItemGroup></Project>`,
+    `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><OutputType>Exe</OutputType><PlatformTarget>${bits === 32 ? 'x86' : 'x64'}</PlatformTarget><UseAppHost>${bits !== 32}</UseAppHost><RuntimeFrameworkVersion>10.0.9</RuntimeFrameworkVersion><RollForward>Disable</RollForward><UseWindowsForms>true</UseWindowsForms><UseWPF>true</UseWPF><EnableDefaultCompileItems>false</EnableDefaultCompileItems><NuGetAudit>false</NuGetAudit></PropertyGroup><ItemGroup><Compile Include="${managedSource}" /></ItemGroup></Project>`,
   );
   const env = {
     ...process.env,
     DOTNET_CLI_HOME: join(modern, 'home'),
     DOTNET_CLI_TELEMETRY_OPTOUT: '1',
-    DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1',
     NUGET_PACKAGES: join(modern, 'packages'),
+  };
+  const sdk = await run('dotnet.exe', ['--version'], { env, windowsHide: true, timeout: 15_000 });
+  modernSdk = {
+    version: sdk.stdout.trim(),
+    cliHome: env.DOTNET_CLI_HOME,
+    packageRoot: env.NUGET_PACKAGES,
+    certificateGeneration: false,
+    globalToolsPathRegistration: false,
+    guiErrorsDisabled: true,
+    nugetSources: [],
   };
   const restored = await run(
     'dotnet.exe',
@@ -115,9 +128,25 @@ if (bits === 64 && process.env.SAKURA_CLIPBOARD_MODERN_DOTNET === '1') {
   });
   await writeFile(
     join(modern, 'offline-build.log'),
-    restored.stdout + restored.stderr + built.stdout + built.stderr,
+    sdk.stdout + sdk.stderr + restored.stdout + restored.stderr + built.stdout + built.stderr,
   );
-  modernExecutable = join(modern, 'bin/Debug/net10.0-windows/fixture-interfaces-modern.exe');
+  const output = join(modern, 'bin/Debug/net10.0-windows');
+  modernAssembly = join(output, 'fixture-interfaces-modern.dll');
+  modernConfiguration = JSON.parse(
+    await readFile(join(output, 'fixture-interfaces-modern.runtimeconfig.json'), 'utf8'),
+  );
+  assert.equal(modernConfiguration.runtimeOptions.rollForward, 'Disable');
+  assert.ok(modernConfiguration.runtimeOptions.frameworks.every((entry) => entry.version === '10.0.9'));
+  if (bits === 32) {
+    modernRuntime = await clipboardModernRuntimeFixture(
+      join(root, 'modern-runtime'),
+      process.env.SAKURA_CLIPBOARD_DOTNET_X86_RUNTIME,
+    );
+    modernExecutable = modernRuntime.host;
+    process.env.DOTNET_ROOT_X86 = modernRuntime.root;
+  } else modernExecutable = join(output, 'fixture-interfaces-modern.exe');
+  process.env.DOTNET_MULTILEVEL_LOOKUP = '0';
+  process.env.DOTNET_CLI_TELEMETRY_OPTOUT = '1';
   assert.ok(existsSync(modernExecutable));
 }
 const controller = join(root, 'assets', `sakura-clipboard-controller${bits === 32 ? '-x86' : ''}.exe`);
@@ -153,6 +182,17 @@ const report = {
         .update(await readFile(modernExecutable))
         .digest('hex')
     : undefined,
+  modernAssemblySha256: modernAssembly
+    ? createHash('sha256')
+        .update(await readFile(modernAssembly))
+        .digest('hex')
+    : undefined,
+  modernRuntimeConfiguration: modernConfiguration,
+  modernRuntime: modernRuntime?.proof,
+  modernSdk,
+  earlyClrOrAnyCpuLaunchTested: false,
+  packagedUwpTested: false,
+  managedLifecycle: [],
   tests: [],
   failures: [],
   leaks: [],
@@ -164,15 +204,11 @@ await writeFile(
   join(root, 'investigation-context.json'),
   JSON.stringify(
     {
-      observedAt: '2026-10-01',
-      externalHaEndpointFound: false,
-      haEnvironmentKeyNames: { Process: [], User: [], Machine: [] },
-      hostPeerIncomingCount: 0,
-      hostPeerOutboundCount: 0,
-      haTemplateOnly: 'docs/ha-witness-config.example.json (.invalid and REPLACE placeholders)',
-      existingJetbrainsSummary: '.data/gateway-client-test-temp/verification-summary-20261001.json',
-      jetbrainsClientEditorVerified: false,
-      jetbrainsClientLicensingVerified: false,
+      observedAt: new Date().toISOString(),
+      scope: 'owned ordinary Windows clipboard fixture',
+      externalServiceDiscoveryPerformedThisRun: false,
+      previousExternalDiscoveryEvidence:
+        '.data/native-clipboard-interface-test-temp/summary-28d6f632-b62b-4e5e-bf82-f6e92bafdfd3/verification-summary.json',
       userAccountOrLicenseUsed: false,
       userGlobalSshOrIdeReadOrEdited: false,
       realFencingOrTrafficInvoked: false,
@@ -182,7 +218,7 @@ await writeFile(
         currentWin32Hooks: 14,
         currentOleHooks: 3,
         explicitWinrtHooks: 0,
-        ordinaryMessageAndManagedFixturesPreviouslyPresent: false,
+        ordinaryMessageAndManagedFixturesPresentAtCurrentStart: true,
         controlLifecycleHooksAdded: 6,
         missingHookDoesNotEstablishBypass: true,
         controlledClrAnyCpuGuardRetained: true,
@@ -225,7 +261,9 @@ async function launch(station, managed) {
     server.listen(pipe, resolve);
   });
   const args = managed
-    ? ['--managed-launch', managed.executable, pipe, station, managed.framework]
+    ? managed.assembly
+      ? ['--managed-host-launch', managed.executable, managed.assembly, pipe, station, managed.framework]
+      : ['--managed-launch', managed.executable, pipe, station, managed.framework]
     : ['--launch', pipe];
   child = spawn(executable, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   child.stderr.on('data', (chunk) => {
@@ -284,6 +322,11 @@ async function launch(station, managed) {
   assert.equal(fixture.ready.privateStation, true);
   assert.equal(fixture.ready.jobBound, true);
   assert.ok(fixture.ready.station && fixture.ready.station.toLowerCase() !== 'winsta0');
+  if (managed && managed.framework !== '--native-peer') {
+    assert.equal(fixture.ready.processBits, bits, 'Actual managed process architecture');
+    assert.equal(fixture.ready.uiVisible, false, 'Owned managed UI must remain hidden');
+    assert.equal(fixture.ready.policyPresent, false, 'Runtime fixture starts before ordinary attachment');
+  }
   if (station) assert.equal(fixture.ready.station, station);
   return fixture;
 }
@@ -569,6 +612,128 @@ async function nestedCreationSuite(target, peer) {
       await snapshot(target, name + ' creation return boundary');
     }
 }
+async function managedLifecycleSuite(target, peer, name) {
+  const family = `${target.ready.modern ? 'modern ' : 'Framework '}${name}`;
+  const selected = 'owned selected 中文';
+  const prefix = 'prefix ',
+    suffix = ' suffix password=hidden-document-only';
+  const document = prefix + selected + suffix;
+  const prepare = (value, offset, count) =>
+    target.request(name + '-prepare-selection', `${offset}:${count}:${value}`);
+  const retains = (label, value, source, offset, count, selection) => {
+    preserved(family + ' ' + label + ' source retained', value.text, source, { result: value });
+    check(family + ' ' + label + ' selection start retained', value.selectionStart, offset);
+    check(family + ' ' + label + ' selection length retained', value.selectionLength, count);
+    preserved(family + ' ' + label + ' selected text retained', value.selectedText, selection);
+    check(family + ' ' + label + ' hidden owned control alive', value.uiAlive && !value.uiVisible, true);
+  };
+  await apply(target, 11);
+  let before = await prepare(document, prefix.length, selected.length);
+  check(family + ' initial selected document ready', before.selectedText, selected);
+  await target.request(name + '-copy-current');
+  check(
+    family + ' selected safe slice of sensitive document allowed',
+    (await peer.request('read')).text,
+    selected,
+  );
+  retains(
+    'allowed partial copy',
+    await target.request(name + '-snapshot'),
+    document,
+    prefix.length,
+    selected.length,
+    selected,
+  );
+  await apply(target, 2);
+  for (const action of ['copy', 'cut']) {
+    await peer.request('write', 'untouched marker');
+    const result = await target.request(name + '-' + action + '-current');
+    const copied = await peer.request('read');
+    blockedTransfer(family + ' hot denied partial ' + action + ' has no transfer', copied.text, selected);
+    preserved(
+      family + ' hot denied partial ' + action + ' clipboard retained',
+      copied.text,
+      'untouched marker',
+    );
+    retains('hot denied partial ' + action, result, document, prefix.length, selected.length, selected);
+  }
+  await apply(target, 11);
+  const sensitiveDocument = prefix + secret + ' suffix';
+  await prepare(sensitiveDocument, prefix.length, secret.length);
+  await peer.request('write', 'untouched marker');
+  const deniedSensitive = await target.request(name + '-cut-current');
+  preserved(
+    family + ' sensitive partial cut clipboard retained',
+    (await peer.request('read')).text,
+    'untouched marker',
+  );
+  retains('sensitive partial cut', deniedSensitive, sensitiveDocument, prefix.length, secret.length, secret);
+  const overflow = '中'.repeat(600),
+    longDocument = prefix + overflow + ' suffix';
+  await apply(target, 3, 1024);
+  await prepare(longDocument, prefix.length, overflow.length);
+  await peer.request('write', 'untouched marker');
+  const deniedLimit = await target.request(name + '-cut-current');
+  preserved(
+    family + ' UTF-8 partial cut clipboard retained',
+    (await peer.request('read')).text,
+    'untouched marker',
+  );
+  retains('UTF-8 partial cut', deniedLimit, longDocument, prefix.length, overflow.length, overflow);
+  for (let index = 0; index < 3; index++) {
+    await apply(target, 2);
+    const recreated = await target.request(name + '-recreate');
+    check(
+      family + ' destroyed old HWND before rebuilding ' + index,
+      recreated.oldDestroyedBeforeCreate,
+      true,
+      { result: recreated },
+    );
+    check(
+      family + ' new hidden owned control alive ' + index,
+      recreated.uiAlive && !recreated.uiVisible,
+      true,
+    );
+    check(family + ' new control still has policy ' + index, recreated.policyPresent, true);
+    report.managedLifecycle.push({ family, iteration: index, before: before.uiHandle, ...recreated });
+    before = recreated;
+    await prepare(document, prefix.length, selected.length);
+    await peer.request('write', 'untouched marker');
+    const denied = await target.request(name + '-cut-current');
+    preserved(
+      family + ' rebuilt denied clipboard retained ' + index,
+      (await peer.request('read')).text,
+      'untouched marker',
+    );
+    retains('rebuilt denied cut ' + index, denied, document, prefix.length, selected.length, selected);
+    await apply(target, 3);
+    await target.request(name + '-copy-current');
+    check(
+      family + ' rebuilt hot reenabled selected copy ' + index,
+      (await peer.request('read')).text,
+      selected,
+    );
+    await snapshot(target, family + ' rebuilt control ' + index);
+  }
+  await apply(target, 3, 1048576, false);
+  await target.request(name + '-cut-current');
+  check(
+    family + ' explicit disable allows ordinary selected cut',
+    (await peer.request('read')).text,
+    selected,
+  );
+  check(
+    family + ' explicit disable deletes only selected range',
+    (await target.request(name + '-snapshot')).text,
+    prefix + suffix,
+  );
+  await apply(target, 2);
+  await prepare(document, prefix.length, selected.length);
+  await peer.request('write', 'untouched marker');
+  const enabled = await target.request(name + '-cut-current');
+  preserved(family + ' reenable clipboard retained', (await peer.request('read')).text, 'untouched marker');
+  retains('reenabled cut', enabled, document, prefix.length, selected.length, selected);
+}
 let peer,
   target,
   completed = false;
@@ -632,9 +797,31 @@ try {
     await apply(target, 3, 1048576, false);
     check('explicit disable restores ordinary Win32 read', (await target.request('read')).text, plain);
     report.managedIdentities = [];
-    for (const binary of [managedExecutable, ...(modernExecutable ? [modernExecutable] : [])])
+    for (const selected of [
+      { executable: managedExecutable, modern: false },
+      ...(modernExecutable
+        ? [{ executable: modernExecutable, assembly: bits === 32 ? modernAssembly : undefined, modern: true }]
+        : []),
+    ])
       for (const name of ['winforms', 'wpf', 'winforms-ui', 'wpf-ui']) {
-        const managed = await launch(peer.ready.station, { executable: binary, framework: name });
+        const managed = await launch(peer.ready.station, { ...selected, framework: name });
+        assert.equal(managed.ready.modern, selected.modern);
+        if (selected.modern) {
+          assert.equal(managed.ready.runtime, '10.0.9');
+          assert.equal(managed.ready.processArchitecture, bits === 32 ? 'X86' : 'X64');
+          if (modernRuntime)
+            for (const [field, directory] of [
+              ['coreLibPath', 'Microsoft.NETCore.App'],
+              ['coreClrPath', 'Microsoft.NETCore.App'],
+              ['desktopAssemblyPath', 'Microsoft.WindowsDesktop.App'],
+            ])
+              assert.ok(
+                managed.ready[field]
+                  .toLowerCase()
+                  .startsWith(join(modernRuntime.root, 'shared', directory, '10.0.9').toLowerCase() + '\\'),
+                field + ' must use the verified private runtime',
+              );
+        }
         report.managedIdentities.push(managed.ready);
         await ordinarySuite(managed, peer, name);
         if (name.endsWith('-ui')) {
@@ -650,6 +837,7 @@ try {
             (await peer.request('read')).text,
             'untouched marker',
           );
+          await managedLifecycleSuite(managed, peer, name);
         }
         if (name.endsWith('-ui')) continue;
         await apply(managed, 3);

@@ -1,4 +1,4 @@
-// Offline .NET Framework WinForms/WPF ordinary clipboard probe. The native
+// Offline .NET Framework/modern .NET WinForms/WPF ordinary clipboard probe. The native
 // owned launcher assigns the private window station before the CLR starts.
 using System;
 using System.Collections.Generic;
@@ -35,6 +35,10 @@ internal static class ClipboardInterfacesFixture
     [DllImport("user32.dll", EntryPoint = "DispatchMessageW")] private static extern IntPtr DispatchMessage(ref Message message);
     [DllImport("user32.dll", EntryPoint = "PostThreadMessageW")] private static extern bool PostThreadMessage(uint thread, uint message, UIntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int count);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("kernel32.dll", EntryPoint = "GetModuleHandleW", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string name);
+    [DllImport("kernel32.dll", EntryPoint = "GetModuleFileNameW", CharSet = CharSet.Unicode)] private static extern int GetModuleFileName(IntPtr module, StringBuilder path, int count);
     private static readonly Queue<string> Commands = new Queue<string>();
     private static readonly AutoResetEvent Replied = new AutoResetEvent(false);
 #if !NETCOREAPP
@@ -44,6 +48,49 @@ internal static class ClipboardInterfacesFixture
     private static string framework;
     private static System.Windows.Forms.TextBox formsTextBox;
     private static System.Windows.Controls.TextBox wpfTextBox;
+    private static System.Windows.Window wpfWindow;
+    private static string PolicyName { get { return IntPtr.Size == 4 ? "SakuraClipboardPolicy-x86.dll" : "SakuraClipboardPolicy.dll"; } }
+    private static IntPtr UiHandle { get { return formsTextBox != null ? formsTextBox.Handle : wpfWindow == null ? IntPtr.Zero : new System.Windows.Interop.WindowInteropHelper(wpfWindow).Handle; } }
+    private static string UiClass()
+    {
+        StringBuilder name = new StringBuilder(256); if (UiHandle != IntPtr.Zero) GetClassName(UiHandle, name, 256); return name.ToString();
+    }
+    private static Dictionary<string, object> UiSnapshot(bool ok, uint error, string exception)
+    {
+        bool forms = formsTextBox != null;
+        return new Dictionary<string, object> { { "ok", ok }, { "error", error }, { "exception", exception },
+            { "text", forms ? formsTextBox.Text : wpfTextBox == null ? "" : wpfTextBox.Text },
+            { "selectionStart", forms ? formsTextBox.SelectionStart : wpfTextBox == null ? 0 : wpfTextBox.SelectionStart },
+            { "selectionLength", forms ? formsTextBox.SelectionLength : wpfTextBox == null ? 0 : wpfTextBox.SelectionLength },
+            { "selectedText", forms ? formsTextBox.SelectedText : wpfTextBox == null ? "" : wpfTextBox.SelectedText },
+            { "uiHandle", UiHandle.ToInt64().ToString() }, { "uiClass", UiClass() }, { "uiAlive", IsWindow(UiHandle) },
+            { "uiVisible", IsWindowVisible(UiHandle) }, { "policyPresent", GetModuleHandle(PolicyName) != IntPtr.Zero } };
+    }
+    private static void CreateUi()
+    {
+        if (framework == "winforms-ui")
+        {
+            formsTextBox = new System.Windows.Forms.TextBox(); formsTextBox.Multiline = true;
+            IntPtr unused = formsTextBox.Handle;
+        }
+        if (framework == "wpf-ui")
+        {
+            wpfTextBox = new System.Windows.Controls.TextBox();
+            wpfWindow = new System.Windows.Window(); wpfWindow.Content = wpfTextBox;
+            new System.Windows.Interop.WindowInteropHelper(wpfWindow).EnsureHandle();
+            wpfTextBox.Measure(new System.Windows.Size(300, 100)); wpfTextBox.Arrange(new System.Windows.Rect(0, 0, 300, 100));
+        }
+    }
+    private static void PrepareSelection(string payload)
+    {
+        int first = payload.IndexOf(':'), second = payload.IndexOf(':', first + 1);
+        if (first < 0 || second < 0) throw new ArgumentException("Owned selection probe requires start:length:document");
+        int start = Int32.Parse(payload.Substring(0, first)), length = Int32.Parse(payload.Substring(first + 1, second - first - 1));
+        string document = payload.Substring(second + 1);
+        if (start < 0 || length < 0 || start > document.Length || length > document.Length - start) throw new ArgumentException("Owned selection range");
+        if (formsTextBox != null) { formsTextBox.Text = document; formsTextBox.Select(start, length); }
+        else { wpfTextBox.Text = document; wpfTextBox.Select(start, length); }
+    }
     private static string Serialize(object value)
     {
 #if NETCOREAPP
@@ -61,17 +108,29 @@ internal static class ClipboardInterfacesFixture
         try
         {
             string action = command.StartsWith(framework + "-") ? command.Substring(framework.Length + 1) : command;
-            if (framework.EndsWith("-ui") && (action == "copy" || action == "cut" || action == "paste"))
+            if (framework.EndsWith("-ui") && action == "snapshot") return UiSnapshot(true, 0, "");
+            if (framework.EndsWith("-ui") && action == "prepare-selection") { PrepareSelection(text); return UiSnapshot(true, 0, ""); }
+            if (framework.EndsWith("-ui") && action == "recreate")
+            {
+                IntPtr previous = UiHandle;
+                if (formsTextBox != null) { formsTextBox.Dispose(); formsTextBox = null; }
+                if (wpfWindow != null) { wpfWindow.Close(); wpfWindow = null; wpfTextBox = null; }
+                bool destroyed = !IsWindow(previous); CreateUi();
+                var state = UiSnapshot(true, 0, ""); state["oldHandle"] = previous.ToInt64().ToString(); state["oldDestroyedBeforeCreate"] = destroyed; return state;
+            }
+            bool current = action.EndsWith("-current");
+            string operation = current ? action.Substring(0, action.Length - 8) : action;
+            if (framework.EndsWith("-ui") && (operation == "copy" || operation == "cut" || operation == "paste"))
             {
                 if (formsTextBox != null)
                 {
-                    formsTextBox.Text = action == "paste" ? "" : text; formsTextBox.SelectAll();
-                    if (action == "copy") formsTextBox.Copy(); else if (action == "cut") formsTextBox.Cut(); else formsTextBox.Paste();
-                    return new { ok = true, error = 0, text = formsTextBox.Text };
+                    if (!current) { formsTextBox.Text = operation == "paste" ? "" : text; formsTextBox.SelectAll(); }
+                    if (operation == "copy") formsTextBox.Copy(); else if (operation == "cut") formsTextBox.Cut(); else formsTextBox.Paste();
+                    return UiSnapshot(true, 0, "");
                 }
-                wpfTextBox.Text = action == "paste" ? "" : text; wpfTextBox.SelectAll();
-                if (action == "copy") wpfTextBox.Copy(); else if (action == "cut") wpfTextBox.Cut(); else wpfTextBox.Paste();
-                return new { ok = true, error = 0, text = wpfTextBox.Text };
+                if (!current) { wpfTextBox.Text = operation == "paste" ? "" : text; wpfTextBox.SelectAll(); }
+                if (operation == "copy") wpfTextBox.Copy(); else if (operation == "cut") wpfTextBox.Cut(); else wpfTextBox.Paste();
+                return UiSnapshot(true, 0, "");
             }
             if (action == "copy")
             {
@@ -102,6 +161,7 @@ internal static class ClipboardInterfacesFixture
         }
         catch (Exception error)
         {
+            if (framework.EndsWith("-ui")) return UiSnapshot(false, unchecked((uint)Marshal.GetHRForException(error)), error.GetType().FullName);
             return new { ok = false, error = unchecked((uint)Marshal.GetHRForException(error)), text = formsTextBox != null ? formsTextBox.Text : wpfTextBox != null ? wpfTextBox.Text : "", exception = error.GetType().FullName };
         }
     }
@@ -130,18 +190,7 @@ internal static class ClipboardInterfacesFixture
         ulong creation = ((ulong)created.High << 32) | created.Low;
         bool inJob;
         if (!IsProcessInJob(GetCurrentProcess(), IntPtr.Zero, out inJob) || !inJob) return 4;
-        string uiClass = "";
-        if (framework == "winforms-ui")
-        {
-            formsTextBox = new System.Windows.Forms.TextBox(); formsTextBox.Multiline = true;
-            StringBuilder type = new StringBuilder(256); GetClassName(formsTextBox.Handle, type, 256); uiClass = type.ToString();
-        }
-        if (framework == "wpf-ui")
-        {
-            wpfTextBox = new System.Windows.Controls.TextBox();
-            var window = new System.Windows.Window(); window.Content = wpfTextBox; window.Show();
-            StringBuilder type = new StringBuilder(256); GetClassName(new System.Windows.Interop.WindowInteropHelper(window).Handle, type, 256); uiClass = type.ToString();
-        }
+        CreateUi();
         const string pipePrefix = @"\\.\pipe\";
         if (!args[0].StartsWith(pipePrefix, StringComparison.Ordinal)) return 5;
         using (NamedPipeClientStream pipe = new NamedPipeClientStream(".", args[0].Substring(pipePrefix.Length), PipeDirection.InOut))
@@ -153,7 +202,21 @@ internal static class ClipboardInterfacesFixture
             Message message;
             PeekMessage(out message, IntPtr.Zero, 0, 0, 0);
             uint thread = GetCurrentThreadId();
-            writer.WriteLine(Serialize(new { pid = Process.GetCurrentProcess().Id, created = creation.ToString(), station = name.ToString(), privateStation = true, jobBound = true, framework = framework, uiClass = uiClass, runtime = Environment.Version.ToString(), processBits = IntPtr.Size * 8, apartment = Thread.CurrentThread.GetApartmentState().ToString() }));
+            var identity = new Dictionary<string, object> { { "pid", Process.GetCurrentProcess().Id }, { "created", creation.ToString() },
+                { "station", name.ToString() }, { "privateStation", true }, { "jobBound", true }, { "framework", framework },
+                { "uiClass", UiClass() }, { "uiHandle", UiHandle.ToInt64().ToString() }, { "uiVisible", IsWindowVisible(UiHandle) },
+                { "policyPresent", GetModuleHandle(PolicyName) != IntPtr.Zero }, { "runtime", Environment.Version.ToString() },
+                { "processBits", IntPtr.Size * 8 }, { "apartment", Thread.CurrentThread.GetApartmentState().ToString() },
+                { "coreLibPath", typeof(object).Assembly.Location }, { "desktopAssemblyPath", framework.StartsWith("winforms") ? typeof(System.Windows.Forms.Clipboard).Assembly.Location : typeof(System.Windows.Clipboard).Assembly.Location } };
+#if NETCOREAPP
+            identity["modern"] = true; identity["processArchitecture"] = RuntimeInformation.ProcessArchitecture.ToString();
+            identity["frameworkDescription"] = RuntimeInformation.FrameworkDescription;
+            StringBuilder corePath = new StringBuilder(32768); GetModuleFileName(GetModuleHandle("coreclr.dll"), corePath, corePath.Capacity); identity["coreClrPath"] = corePath.ToString();
+#else
+            identity["modern"] = false; identity["processArchitecture"] = IntPtr.Size == 4 ? "X86" : "X64";
+            identity["frameworkDescription"] = ".NET Framework CLR " + Environment.Version;
+#endif
+            writer.WriteLine(Serialize(identity));
             Thread input = new Thread(delegate()
             {
                 try

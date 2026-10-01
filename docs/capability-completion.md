@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口，以及只按进程组清理短任务的缺口，已由后续批次补齐；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## Windows 托管剪贴板双架构控件验证
+
+2026-10-01 补齐现代 .NET 10.0.9 x86 的真实 WinForms/WPF API 与 TextBox Copy/Paste/Cut 验证。x64 SDK 离线构建明确的 x86 程序，由测试目录内微软官方 32 位 dotnet host 执行，不以 AnyCPU 或 x64 运行结果代替；核心与桌面运行时 ZIP 核对固定官方 SHA-512，复用时继续核对原包和关键文件 SHA-256。实际进程的 X86/32 位、CoreCLR、CoreLib 和桌面程序集路径均记录。现代 .NET x64、Framework 4.8.1 双架构及 WinRT Desktop 同轮回归。
+
+每种架构最终各 717 项断言通过，失败、泄漏、fixture mutation 与 unsupported probe 均为零，包含 108 项选区保持断言及 12 次托管文本控件销毁重建。安全选区所在文档包含未选中的敏感文本时仍允许复制；拒绝复制或剪切保留先前剪贴板、全文、选区起点、长度和选区文本。托管窗口使用隐藏控件与非交互键盘消息，不对用户桌面发送输入。最终证据为 `.data/native-clipboard-interface-test-temp/interface-32-8f935ed7-a187-4690-bbff-3c13e7be5d2e/interfaces-proof.json` 和 `interface-64-d7c384f5-6f48-4d21-9a48-d1a277180721/interfaces-proof.json`。
+
+本轮只扩展 fixture 与烟测，生产代理和控制程序没有变化，构建摘要保持 `9fa1ac1a2c923df336c0757d967940c42090337b1e45a0df72759648993817f1`。SDK 首次构建历史日志曾出现开发证书安装提示；随后只读检查仅找到 2026-05-05 的既有匹配开发证书，没有运行前 store 基线，不能声称历史证书存储完全无变化。最终两轮使用新的 D 盘 CLI home，显式禁用开发证书生成与全局工具 PATH 注册，构建日志无该提示；未 trust、删除或导出任何证书私钥。只读审计保存在 `.data/native-clipboard-modern-x86-test-temp/sdk-audit-ff579bb8-abd6-494c-8377-23acd08e9511/`。
+
+CLR/AnyCPU 早期受控启动仍明确拒绝，打包 UWP、历史/云同步及系统级强制边界仍未由上述测试完成，剪贴板目录项保持部分实现。使用与固定运行时测试条件见 [Windows 剪贴板](native-clipboard.md)。
+
 ## 原生 Wayland、完整服务归属与 Windows 控件保护
 
 2026-10-01 接通原生 Wayland 应用剪贴板入口，桌面偏好新增 `auto`、`x11`、`wayland` 会话选择。Alpine、Debian、Ubuntu 的桌面脚本核对实际所选入口，旧准备记录缺少 Wayland 程序时重新准备；Debian/Ubuntu 安装提供 `startplasma-wayland` 的发行版软件包。X11 与 Wayland 分别保存规则、会话归属和所有者，公开 HTTP、生成 SDK、克隆与导出导入使用同一版本检查。操作方式见 [Wayland 剪贴板](wayland-clipboard.md)。
