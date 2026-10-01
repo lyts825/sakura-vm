@@ -11,6 +11,9 @@ constexpr uint32_t IncrementalMaximum = 16 * 1024 * 1024;
 constexpr uint32_t IncrementalBudget = 32 * 1024 * 1024;
 constexpr uint32_t IncrementalSlots = 32;
 constexpr uint32_t IncrementalTimeoutMs = 8000;
+constexpr uint32_t MultiplePairs = 128;
+constexpr uint32_t MultipleGroups = 32;
+constexpr uint32_t MultipleTimeoutMs = 12000;
 enum Flags : uint32_t { Copy=1, Paste=2, Files=4, Sensitive=8, Active=16 };
 struct Policy {
   uint32_t magic, version, flags, maximum;

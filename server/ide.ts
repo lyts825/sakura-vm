@@ -32,37 +32,59 @@ export async function hasPrivateProject(id: string) {
 }
 
 function projectSshConfig(entry: {
-  hostKeyAlias: string; port: number; identity: string; knownHosts: string;
+  hostKeyAlias: string;
+  port: number;
+  identity: string;
+  knownHosts: string;
 }) {
-  return `Host ${entry.hostKeyAlias}\n  HostName 127.0.0.1\n  User root\n` +
+  return (
+    `Host ${entry.hostKeyAlias}\n  HostName 127.0.0.1\n  User root\n` +
     `  Port ${entry.port}\n  IdentityFile ${sshPath(entry.identity)}\n  IdentitiesOnly yes\n` +
     `  HostKeyAlias ${entry.hostKeyAlias}\n  StrictHostKeyChecking yes\n` +
-    `  UserKnownHostsFile ${sshPath(entry.knownHosts)}\n  ForwardAgent no\n  ProxyCommand none\n  ProxyJump none\n`;
+    `  UserKnownHostsFile ${sshPath(entry.knownHosts)}\n  ForwardAgent no\n  ProxyCommand none\n  ProxyJump none\n`
+  );
 }
 
 function legacyProfile(machines: Machines, id: string, directory: string) {
-  const vm = machines.get(id), live = machines.live.get(id);
-  if (!live || machines.state(id) !== 'running')
-    throw new AppError('请先启动实例，以获取当前 SSH 端口', 409);
-  const alias = 'sakura-' + vm.name, identityFile = join(vmDir(id), 'id_rsa'),
+  const vm = machines.get(id),
+    live = machines.live.get(id);
+  if (!live || machines.state(id) !== 'running') throw new AppError('请先启动实例，以获取当前 SSH 端口', 409);
+  const alias = 'sakura-' + vm.name,
+    identityFile = join(vmDir(id), 'id_rsa'),
     knownHostsFile = join(vmDir(id), 'known_hosts');
   return {
-    alias, host: '127.0.0.1', port: live.sshPort, username: 'root', directory,
-    identityFile, knownHostsFile, projectScoped: false,
-    config: `Host ${alias}\n  HostName 127.0.0.1\n  Port ${live.sshPort}\n  User root\n` +
+    alias,
+    host: '127.0.0.1',
+    port: live.sshPort,
+    username: 'root',
+    directory,
+    vscodeSupported: vm.distro === 'debian' || vm.distro === 'ubuntu',
+    identityFile,
+    knownHostsFile,
+    projectScoped: false,
+    config:
+      `Host ${alias}\n  HostName 127.0.0.1\n  Port ${live.sshPort}\n  User root\n` +
       `  IdentityFile ${sshPath(identityFile)}\n  IdentitiesOnly yes\n` +
       `  StrictHostKeyChecking accept-new\n  UserKnownHostsFile ${sshPath(knownHostsFile)}\n`,
   };
 }
 
 /** Exports use the live IDE owner so a returned project bridge remains alive. */
-export async function editorConnectionProfile(machines: Machines, workspaces: Workspaces,
-  id: string, signal?: AbortSignal) {
+export async function editorConnectionProfile(
+  machines: Machines,
+  workspaces: Workspaces,
+  id: string,
+  signal?: AbortSignal,
+) {
   signal?.throwIfAborted();
   const service = activeIde.get(workspaces);
   if (service) return service.profile(id, signal);
   const project = await workspaces.config(id);
-  if (project.networkIsolation === 'private' || await hasPrivateProject(id))
+  if (
+    machines.get(id).distro === 'alpine' ||
+    project.networkIsolation === 'private' ||
+    (await hasPrivateProject(id))
+  )
     throw new AppError('项目 SSH 档案需要启用 IDE 插件并先配置项目连接', 409);
   signal?.throwIfAborted();
   return legacyProfile(machines, id, project.directory);
@@ -91,19 +113,31 @@ export class Ide {
   async profile(id: string, signal?: AbortSignal) {
     signal?.throwIfAborted();
     const project = await this.workspaces.config(id);
-    if (project.networkIsolation !== 'private' && !await hasPrivateProject(id))
+    if (
+      this.machines.get(id).distro !== 'alpine' &&
+      project.networkIsolation !== 'private' &&
+      !(await hasPrivateProject(id))
+    )
       return legacyProfile(this.machines, id, project.directory);
-    if (!['debian', 'ubuntu'].includes(this.machines.get(id).distro || ''))
-      throw new AppError('项目 SSH 档案支持 Debian 与 Ubuntu', 409);
+    if (!['alpine', 'debian', 'ubuntu'].includes(this.machines.get(id).distro || ''))
+      throw new AppError('项目 SSH 档案支持 Alpine、Debian 与 Ubuntu', 409);
     const endpoint = await this.ssh().endpoint(id, project, signal);
     if (!endpoint) throw new AppError('请先在项目页配置项目 SSH 连接', 409);
     signal?.throwIfAborted();
     return {
-      alias: endpoint.hostKeyAlias, host: '127.0.0.1', port: endpoint.port,
-      username: 'root', directory: project.directory, identityFile: endpoint.identity,
-      knownHostsFile: endpoint.knownHosts, hostKeyAlias: endpoint.hostKeyAlias,
-      projectScoped: true, projectId: project._workspace || 'default',
-      networkIsolation: project.networkIsolation || 'host', config: projectSshConfig(endpoint),
+      alias: endpoint.hostKeyAlias,
+      host: '127.0.0.1',
+      port: endpoint.port,
+      username: 'root',
+      directory: project.directory,
+      identityFile: endpoint.identity,
+      knownHostsFile: endpoint.knownHosts,
+      hostKeyAlias: endpoint.hostKeyAlias,
+      projectScoped: true,
+      projectId: project._workspace || 'default',
+      vscodeSupported: this.machines.get(id).distro !== 'alpine',
+      networkIsolation: project.networkIsolation || 'host',
+      config: projectSshConfig(endpoint),
     };
   }
   async update() {
@@ -112,7 +146,7 @@ export class Ide {
       .then(async () => {
         const entries = await Promise.all(
           [...this.machines.records.values()].map(async (vm) => {
-            if (await hasPrivateProject(vm.id)) return '';
+            if (vm.distro === 'alpine' || (await hasPrivateProject(vm.id))) return '';
             return `Host sakura-${vm.name}\n  HostName 127.0.0.1\n  User root\n  Port ${this.machines.live.get(vm.id)?.sshPort || 1}\n  IdentityFile ${sshPath(join(vmDir(vm.id), 'id_rsa'))}\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile ${sshPath(join(vmDir(vm.id), 'known_hosts'))}\n`;
           }),
         );
@@ -156,10 +190,19 @@ export class Ide {
     const vm = this.machines.get(id),
       project = await this.workspaces.config(id);
     const alias = `sakura-${vm.name}`;
-    const scoped = project.networkIsolation === 'private' || (await hasPrivateProject(id));
-    if (scoped && !['debian', 'ubuntu'].includes(vm.distro || ''))
-      return { supported: false, running: this.machines.state(id) === 'running',
-        alias: '', config: this.file, command: '', url: '' };
+    const scoped =
+      vm.distro === 'alpine' || project.networkIsolation === 'private' || (await hasPrivateProject(id));
+    const vscodeSupported = vm.distro === 'debian' || vm.distro === 'ubuntu';
+    if (scoped && !['alpine', 'debian', 'ubuntu'].includes(vm.distro || ''))
+      return {
+        supported: false,
+        running: this.machines.state(id) === 'running',
+        vscodeSupported: false,
+        alias: '',
+        config: this.file,
+        command: '',
+        url: '',
+      };
     if (scoped) {
       const projectId = project._workspace || 'default',
         alias = `sakura-${id}-${projectId}`;
@@ -168,6 +211,7 @@ export class Ide {
       await this.update();
       return {
         supported: true,
+        vscodeSupported,
         running: this.machines.state(id) === 'running',
         projectScoped: true,
         projectId,
@@ -175,17 +219,20 @@ export class Ide {
         runtime,
         alias,
         config: this.file,
-        command: endpoint
-          ? `code --remote ssh-remote+${alias} '${project.directory.replaceAll("'", "''")}'`
-          : '',
+        command:
+          endpoint && vscodeSupported
+            ? `code --remote ssh-remote+${alias} '${project.directory.replaceAll("'", "''")}'`
+            : '',
         sshCommand: endpoint ? `ssh ${alias}` : '',
-        url: endpoint
-          ? `vscode://vscode-remote/ssh-remote+${alias}${project.directory.split('/').map(encodeURIComponent).join('/')}`
-          : '',
+        url:
+          endpoint && vscodeSupported
+            ? `vscode://vscode-remote/ssh-remote+${alias}${project.directory.split('/').map(encodeURIComponent).join('/')}`
+            : '',
       };
     }
     return {
       supported: !!vm.distro && vm.distro !== 'alpine',
+      vscodeSupported,
       running: this.machines.state(id) === 'running',
       alias,
       config: this.file,
@@ -195,7 +242,7 @@ export class Ide {
   }
   async install(id: string, signal?: AbortSignal) {
     let view = await this.view(id);
-    if (!view.supported) throw new AppError('VS Code Remote-SSH 请使用 Debian 或 Ubuntu');
+    if (!view.supported) throw new AppError('项目 SSH 接入支持 Alpine、Debian 与 Ubuntu');
     if (!view.running) throw new AppError('请先启动发行版');
     if ('projectScoped' in view && view.projectScoped) {
       await this.ssh().start(id, signal);

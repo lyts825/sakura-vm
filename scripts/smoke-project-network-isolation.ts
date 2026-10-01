@@ -79,7 +79,9 @@ try {
   const hostNamespace = await command(vm.id, 'readlink /proc/self/ns/net');
   await ide.update();
   const sshConfig = join(directory, 'ssh', 'config');
-  assert.match(await readFile(sshConfig, 'utf8'), new RegExp(`Host sakura-${vm.name}`));
+  const originalSshConfig = await readFile(sshConfig, 'utf8');
+  if (distro === 'alpine') assert.doesNotMatch(originalSshConfig, new RegExp(`Host sakura-${vm.name}`));
+  else assert.match(originalSshConfig, new RegExp(`Host sakura-${vm.name}`));
   await features.workspaces.save(vm.id, { directory: '/workspace/first',
     networkIsolation: 'private',
     environment: { SAKURA_SCOPE: 'private' },
@@ -88,11 +90,13 @@ try {
   assert.doesNotMatch(await readFile(sshConfig, 'utf8'),
     new RegExp(`Host sakura-${vm.name}`));
   const privateIde = await ide.view(vm.id);
-  assert.equal(privateIde.supported, distro !== 'alpine');
-  if (distro !== 'alpine') {
-    assert.ok('projectScoped' in privateIde && privateIde.projectScoped);
-    assert.equal(privateIde.command, '');
-  } else await assert.rejects(ide.install(vm.id), /Debian 或 Ubuntu/);
+  assert.equal(privateIde.supported, true);
+  assert.ok('projectScoped' in privateIde && privateIde.projectScoped);
+  assert.equal(privateIde.command, '');
+  if (distro === 'alpine') {
+    assert.equal(privateIde.vscodeSupported, false);
+    assert.equal(privateIde.url, '');
+  }
   await features.workspaces.run(vm.id, 'start');
   await job(vm.id);
   const firstNamespace = await command(vm.id, 'cat /workspace/first.ns');
@@ -213,7 +217,9 @@ ${gitPath}.sakura-real -C /workspace/source-repo -c user.name=Test -c user.email
     await features.workspaces.save(vm.id, { directory: '/workspace/first',
       networkIsolation: 'host' });
   });
-  assert.match(await readFile(sshConfig, 'utf8'), new RegExp(`Host sakura-${vm.name}`));
+  const restoredSshConfig = await readFile(sshConfig, 'utf8');
+  if (distro === 'alpine') assert.doesNotMatch(restoredSshConfig, new RegExp(`Host sakura-${vm.name}`));
+  else assert.match(restoredSshConfig, new RegExp(`Host sakura-${vm.name}`));
   console.log(`Real ${distro} project namespaces, setup, services, Git, presets, pipelines and cleanup passed`);
 } finally {
   await commands.close();

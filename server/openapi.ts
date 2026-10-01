@@ -185,7 +185,7 @@ const core: {
   { id: 'native-clipboard.get', method: 'GET', path: '/api/native-clipboard',
     title: 'Windows 应用剪贴板设置、进程状态与拒绝计数', inspect: true },
   { id: 'native-clipboard.action', method: 'POST', path: '/api/native-clipboard',
-    title: '绑定程序、保存或停用 Windows 进程剪贴板策略', body: request(nativeClipboardRequest) },
+    title: '绑定、受控启动或停用 Windows 应用剪贴板策略', body: request(nativeClipboardRequest) },
   {
     id: 'assistant.get',
     method: 'GET',

@@ -73,12 +73,13 @@ class Connection {
       if(value.type==XCB_PROPERTY_NOTIFY){auto& r=*reinterpret_cast<xcb_property_notify_event_t*>(raw);value.window=r.window;value.property=r.atom;value.state=r.state;}free(raw);
     }return true;
   }
-  Value get(uint32_t property,long offset,long length,bool remove,const std::string& action,bool useXcb=false){
+  Value get(uint32_t property,long offset,long length,bool remove,const std::string& action,bool useXcb=false,uint32_t destination=0){
+    const auto readWindow=destination?destination:window;
     Value value;if(display&&!useXcb){Atom type=0;unsigned long count=0,after=0;unsigned char* bytes=nullptr;
-      XGetWindowProperty(display,window,property,offset,length,remove,AnyPropertyType,&type,&value.format,&count,&after,&bytes);value.type=type;value.count=count;value.after=after;
+      XGetWindowProperty(display,readWindow,property,offset,length,remove,AnyPropertyType,&type,&value.format,&count,&after,&bytes);value.type=type;value.count=count;value.after=after;
       if(bytes&&value.format==32){value.bytes.resize(count*4);for(size_t i=0;i<count;++i){uint32_t item=reinterpret_cast<unsigned long*>(bytes)[i];std::memcpy(value.bytes.data()+i*4,&item,4);}}
       else if(bytes&&value.format)value.bytes.assign(bytes,bytes+count*(value.format/8));if(bytes)XFree(bytes);
-    }else{auto cookie=xcb_get_property_unchecked(wire,remove,window,property,XCB_GET_PROPERTY_TYPE_ANY,offset,length);xcb_get_property_reply_t* reply=nullptr;
+    }else{auto cookie=xcb_get_property_unchecked(wire,remove,readWindow,property,XCB_GET_PROPERTY_TYPE_ANY,offset,length);xcb_get_property_reply_t* reply=nullptr;
       if(action=="wait"||action=="wait64")reply=static_cast<xcb_get_property_reply_t*>(action=="wait"?xcb_wait_for_reply(wire,cookie.sequence,nullptr):xcb_wait_for_reply64(wire,cookie.sequence,nullptr));
       else if(action=="poll"||action=="poll64"){xcb_flush(wire);void* raw=nullptr;for(unsigned i=0;i<15000;++i){if(action=="poll"?xcb_poll_for_reply(wire,cookie.sequence,&raw,nullptr):xcb_poll_for_reply64(wire,cookie.sequence,&raw,nullptr))break;usleep(1000);}reply=static_cast<xcb_get_property_reply_t*>(raw);}
       else reply=xcb_get_property_reply(wire,cookie,nullptr);
@@ -92,29 +93,122 @@ static int owner(Connection& connection,int argc,char** argv,uint32_t selection,
   const size_t chunk=first==std::string::npos?65536:std::max(1, std::atoi(mode.c_str()+first+1));const unsigned delay=second==std::string::npos?0:std::atoi(mode.c_str()+second+1);
   const auto variant=mode.substr(0,first);const auto incr=connection.atom("INCR");
   if(variant=="incr-targets"){target=targets;std::vector<uint32_t> values{connection.atom("UTF8_STRING"),targets,timestamp,connection.atom("image/png"),connection.atom("text/uri-list"),connection.atom("MULTIPLE"),incr};data.assign(reinterpret_cast<const char*>(values.data()),values.size()*4);}
-  struct Pending {size_t position=0,chunks=0;};std::map<std::pair<uint32_t,uint32_t>,Pending> pending;
+  const std::string secondData=variant=="incr-secret"||variant=="multi-secret"?"password=0123456789abcdef":variant=="incr-utf8"?std::string("\xff",1):data;
+  struct Pending {size_t position=0,chunks=0;bool second=false;};std::map<std::pair<uint32_t,uint32_t>,Pending> pending;
   const auto ready=connection.own(selection)?"READY":"REFUSED";std::cout<<ready<<std::endl;if(argc>7)std::ofstream(argv[7])<<ready;
   for(;;){Event event;if(!connection.event(event,true))return 3;
     if(event.type==PropertyNotify&&event.state==PropertyDelete){const auto key=std::make_pair(event.window,event.property);auto found=pending.find(key);if(found==pending.end())continue;
       auto& stream=found->second;if(variant=="incr-stall"&&stream.chunks)continue;
       if(variant=="incr-no-terminal"&&stream.position==data.size())continue;
       if(delay)usleep(delay*1000);
-      const size_t length=std::min(chunk,data.size()-stream.position);auto type=variant=="incr-targets"?uint32_t(XA_ATOM):target;int format=variant=="incr32"||variant=="incr-targets"?32:8;
+      const auto& payload=stream.second?secondData:data;const size_t length=std::min(chunk,payload.size()-stream.position);auto type=variant=="incr-targets"?uint32_t(XA_ATOM):target;int format=variant=="incr32"||variant=="incr-targets"?32:8;
       if(variant=="incr-bad-type"&&stream.chunks)type=XA_STRING;
       if(variant=="incr-bad-format"&&stream.chunks)format=16;
-      const auto units=length/(format/8);connection.change(event.window,event.property,type,format,data.data()+stream.position,units,PropModeAppend);stream.position+=length;++stream.chunks;
-      if(variant=="incr-pause"&&stream.chunks==1){std::cout<<"CHUNK"<<std::endl;std::string line;std::getline(std::cin,line);}
+      const auto units=length/(format/8);connection.change(event.window,event.property,type,format,payload.data()+stream.position,units,PropModeAppend);stream.position+=length;++stream.chunks;
+      if((variant=="incr-pause"||((variant=="incr-group-pause"||variant=="incr-group-window")&&stream.second))&&stream.chunks==1){std::cout<<"CHUNK"<<std::endl;std::string line;std::getline(std::cin,line);}
+      if(variant=="incr-group-window"&&stream.second&&stream.chunks==2)std::cout<<"LATE"<<std::endl;
       if(!length)pending.erase(found);continue;
     }
     if(event.type!=SelectionRequest)continue;const uint32_t property=event.property?event.property:event.target;bool accepted=true;
-    if(event.target==targets&&variant!="incr-targets"){std::vector<uint32_t> values{target,targets,timestamp,connection.atom("image/png"),connection.atom("text/uri-list"),connection.atom("MULTIPLE"),incr};connection.change(event.window,property,XA_ATOM,32,values.data(),values.size());}
+    if(event.target==connection.atom("MULTIPLE")&&(variant=="multiple-target-none"||variant=="multiple-property-none")){
+      auto list=connection.get(property,0,256,false,"read",connection.mixed,event.window);std::vector<uint32_t> pairs(list.bytes.size()/4);if(!pairs.empty())std::memcpy(pairs.data(),list.bytes.data(),pairs.size()*4);
+      accepted=list.format==32&&!list.after&&pairs.size()%2==0;
+      if(accepted){for(size_t i=0;i<pairs.size();i+=2){bool success=true;const auto child=pairs[i+1];if(!child)success=false;
+          else if(pairs[i]==target||pairs[i]==connection.atom("text/plain"))connection.change(event.window,child,target,8,data.data(),data.size());
+          else if(pairs[i]==targets){uint32_t values[3]{target,targets,timestamp};connection.change(event.window,child,XA_ATOM,32,values,3);}
+          else if(pairs[i]==timestamp){uint32_t value=0;connection.change(event.window,child,XA_INTEGER,32,&value,1);}
+          else success=false;
+          if(!success)pairs[i+(variant=="multiple-property-none"?1:0)]=0;
+        }connection.change(event.window,property,connection.atom("ATOM_PAIR"),32,pairs.data(),pairs.size());}
+    }
+    else if(event.target==targets&&variant!="incr-targets"){std::vector<uint32_t> values{target,targets,timestamp,connection.atom("image/png"),connection.atom("text/uri-list"),connection.atom("MULTIPLE"),incr};connection.change(event.window,property,XA_ATOM,32,values.data(),values.size());}
     else if(event.target==timestamp){uint32_t value=0;connection.change(event.window,property,XA_INTEGER,32,&value,1);}
-    else if(event.target==target){if(incremental){connection.select(event.window);uint32_t hint=data.size();if(variant=="incr-underhint"||variant=="incr-no-terminal")hint=0;if(variant=="incr-hint")++hint;if(variant=="incr-overhint")hint=1048577;
-        pending[{event.window,property}]={};connection.change(event.window,property,incr,variant=="incr-bad-header"?8:32,&hint,1);
-      }else connection.change(event.window,property,target,8,data.data(),data.size());
+    else if(event.target==target||event.target==connection.atom("text/plain")){const bool secondTarget=event.target==connection.atom("text/plain");const auto& payload=secondTarget?secondData:data;
+      if(incremental){connection.select(event.window);uint32_t hint=payload.size();if(variant=="incr-underhint"||variant=="incr-no-terminal")hint=0;if(variant=="incr-hint")++hint;if(variant=="incr-overhint")hint=1048577;
+        pending[{event.window,property}]={0,0,secondTarget};connection.change(event.window,property,incr,variant=="incr-bad-header"?8:32,&hint,1);
+      }else connection.change(event.window,property,target,8,payload.data(),payload.size());
+    }else if(event.target==connection.atom("DELETE")||event.target==connection.atom("INSERT_SELECTION")||event.target==connection.atom("INSERT_PROPERTY")){
+      std::cout<<"SIDEEFFECT"<<std::endl;connection.change(event.window,property,connection.atom("NULL"),8,nullptr,0);
     }else accepted=false;
     connection.notify(event,accepted?property:0);
   }
+}
+static int multiple(Connection& connection,int argc,char** argv,uint32_t selection,uint32_t parent,const std::string& action){
+  const auto variant=argc>6?std::string(argv[6]):"normal";const auto pairType=connection.atom("ATOM_PAIR"),target=connection.atom("MULTIPLE");
+  std::vector<std::string> targets{"UTF8_STRING","text/plain","TARGETS","TIMESTAMP","SAKURA_UNKNOWN","DELETE","INSERT_SELECTION","INSERT_PROPERTY","MULTIPLE"};
+  if(variant=="qt-binary"){targets[0]="application/sakura-first";targets[1]="application/sakura-second";}
+  std::vector<uint32_t> pairs;for(size_t i=0;i<targets.size();++i){pairs.push_back(connection.atom(targets[i].c_str()));pairs.push_back(connection.atom(("SAKURA_MULTIPLE_"+std::to_string(i)).c_str()));}
+  if(variant=="duplicate")pairs[3]=pairs[1];if(variant=="parent")pairs[1]=parent;
+  if(variant=="metadata-first")for(unsigned i=0;i<4;++i)std::swap(pairs[i],pairs[i+4]);
+  if(variant=="none")pairs[1]=0;if(variant=="empty")pairs.clear();if(variant=="odd")pairs.pop_back();
+  if(variant=="many"||variant=="limit"){pairs.resize(variant=="limit"?256:258);for(size_t i=0;i<pairs.size();i+=2){pairs[i]=connection.atom("UTF8_STRING");pairs[i+1]=connection.atom(("SAKURA_MANY_"+std::to_string(i)).c_str());}}
+  connection.change(connection.window,parent,variant=="type"?uint32_t(XA_INTEGER):pairType,variant=="format"?16:32,pairs.data(),pairs.size());
+  if(variant=="env"){setenv("DISPLAY",":19999",1);setenv("XAUTHORITY","/unavailable-authority",1);}
+  // Keep an old cookie across a second request, proving a late reply cannot be
+  // interpreted using the replacement group's property identity.
+  xcb_get_property_cookie_t stale{};
+  connection.convert(selection,target,variant=="no-property"?0:parent);
+  if(action=="multiple-window-reuse"){
+    std::string command;std::getline(std::cin,command);
+    free(xcb_request_check(connection.wire,xcb_destroy_window_checked(connection.wire,connection.window)));
+    auto screen=xcb_setup_roots_iterator(xcb_get_setup(connection.wire));uint32_t mask=XCB_EVENT_MASK_PROPERTY_CHANGE;
+    auto error=xcb_request_check(connection.wire,xcb_create_window_checked(connection.wire,XCB_COPY_FROM_PARENT,connection.window,screen.data->root,0,0,1,1,0,XCB_WINDOW_CLASS_INPUT_OUTPUT,screen.data->root_visual,XCB_CW_EVENT_MASK,&mask));
+    if(error){free(error);return 4;}connection.change(connection.window,parent,pairType,32,pairs.data(),pairs.size());std::cout<<"REUSED"<<std::endl;
+    std::getline(std::cin,command);usleep(300000);bool denied=true;
+    for(size_t i=1;i<pairs.size();i+=2){auto value=connection.get(pairs[i],0,1048576,false,"poll64",connection.mixed);denied=denied&&!value.type&&value.bytes.empty();}
+    Event event;while(connection.event(event))if(event.type==SelectionNotify)denied=false;
+    std::cout<<(denied?"STALE-DENIED":"STALE-EXPOSED")<<std::endl;return 0;
+  }
+  if(variant=="mutable"){uint32_t replacement[2]{connection.atom("UTF8_STRING"),parent};connection.change(connection.window,parent,pairType,32,replacement,2);}
+  if(variant=="cancel"){connection.remove(parent);}
+  Event event;bool notified=false;size_t notifications=0;const auto deadline=Clock::now()+std::chrono::seconds(15);
+  if((action=="multiple-wait"||action=="multiple-self-block")&&connection.display){XEvent raw{};auto predicate=[](Display*,XEvent* next,XPointer value)->Bool{return next->type==SelectionNotify&&next->xselection.requestor==*reinterpret_cast<uint32_t*>(value);};
+    XIfEvent(connection.display,&raw,predicate,reinterpret_cast<XPointer>(&connection.window));event.type=SelectionNotify;event.property=raw.xselection.property;notified=true;++notifications;
+  }else while(!notified&&Clock::now()<deadline){while(connection.event(event)){if(event.type==SelectionNotify){notified=true;++notifications;break;}}if(!notified)usleep(1000);}
+  if(!notified||!event.property){std::cout<<"DENIED"<<std::endl;return notified?0:3;}
+  auto expected=input(argv[4]);
+  auto inspect=[&](){const bool remove=action=="multiple-delete";auto probe=connection.get(parent,0,0,false,"read",connection.mixed);if(probe.type!=pairType||probe.format!=32||probe.count||probe.after!=pairs.size()*4)return std::string("DENIED");
+    auto list=connection.get(parent,0,1024,false,"wait64",connection.mixed);if(list.type!=pairType||list.format!=32||list.count!=pairs.size()||list.after)return std::string("DENIED");
+    std::string result;
+    for(size_t i=0;i<list.count/2;++i){uint32_t entry[2]{};std::memcpy(entry,list.bytes.data()+i*8,8);if((entry[0]&&entry[0]!=pairs[i*2])||(entry[1]&&entry[1]!=pairs[i*2+1]))return std::string("IDENTITY");
+      result+=connection.name(pairs[i*2])+":";if(!entry[0]||!entry[1]){result+="DENIED;";continue;}
+      auto value=connection.get(entry[1],0,1024*1024,remove,"poll64",connection.mixed);
+      if(value.type==connection.atom("INCR")){connection.remove(entry[1]);Value complete;const auto until=Clock::now()+std::chrono::seconds(10);
+        while(Clock::now()<until){auto part=connection.get(entry[1],0,1024*1024,false,"read",connection.mixed);if(!part.type){usleep(1000);continue;}if(!complete.type){complete.type=part.type;complete.format=part.format;}
+          if(part.type!=complete.type||part.format!=complete.format||part.after){complete.type=0;break;}complete.bytes.insert(complete.bytes.end(),part.bytes.begin(),part.bytes.end());connection.remove(entry[1]);if(part.bytes.empty()){value=std::move(complete);break;}}
+      }
+      if(!value.type||value.type==connection.atom("INCR"))result+="DENIED;";
+      else if(entry[0]==connection.atom("UTF8_STRING")||entry[0]==connection.atom("text/plain")||entry[0]==connection.atom("application/sakura-first")||entry[0]==connection.atom("application/sakura-second"))result+=std::string(value.bytes.begin(),value.bytes.end())==expected?"OK;":"DATA;";
+      else result+="OK;";
+    }
+    if(remove)connection.remove(parent);return result.empty()?std::string("EMPTY"):result;
+  };
+  std::cout<<inspect()<<std::endl;
+  if(action=="multiple-concurrent"){std::array<Value,4> values;std::vector<std::thread> workers;
+    for(unsigned i=0;i<4;++i)workers.emplace_back([&,i](){values[i]=connection.get(pairs[1],0,1048576,false,"poll64",connection.mixed&&i%2);});
+    for(auto& worker:workers)worker.join();const auto expected=input(argv[4]);const bool complete=std::all_of(values.begin(),values.end(),[&](const Value& value){return value.type&&std::string(value.bytes.begin(),value.bytes.end())==expected;});
+    std::cout<<(complete?"COMPLETE":"DENIED")<<std::endl;}
+  if(action=="multiple-cache"||action=="multiple-delete"){std::string line;std::getline(std::cin,line);std::cout<<inspect()<<std::endl;}
+  if(action=="multiple-reuse"||action=="multiple-child-reuse"){
+    auto oldParent=xcb_get_property_unchecked(connection.wire,0,connection.window,parent,XCB_GET_PROPERTY_TYPE_ANY,0,1024);
+    auto oldChild=xcb_get_property_unchecked(connection.wire,0,connection.window,pairs[1],XCB_GET_PROPERTY_TYPE_ANY,0,1048576);
+    std::getline(std::cin,expected);
+    if(action=="multiple-reuse"){connection.change(connection.window,parent,pairType,32,pairs.data(),pairs.size());connection.convert(selection,target,parent);}
+    else connection.convert(selection,pairs[0],pairs[1]);
+    notified=false;const auto until=Clock::now()+std::chrono::seconds(15);
+    while(!notified&&Clock::now()<until){while(connection.event(event))if(event.type==SelectionNotify){notified=true;++notifications;break;}if(!notified)usleep(1000);}
+    if(!notified||!event.property)return 3;
+    if(action=="multiple-reuse")std::cout<<inspect()<<std::endl;
+    else{auto value=connection.get(pairs[1],0,1048576,false,"poll64",connection.mixed);std::cout<<(std::string(value.bytes.begin(),value.bytes.end())==expected?"NEW-COMPLETE":"STALE")<<std::endl;}
+    auto first=xcb_get_property_reply(connection.wire,oldParent,nullptr),second=xcb_get_property_reply(connection.wire,oldChild,nullptr);
+    const bool denied=first&&!first->type&&second&&!second->type;free(first);free(second);std::cout<<(denied?"STALE-DENIED":"STALE-EXPOSED")<<std::endl;
+  }
+  if(variant=="late"){stale=xcb_get_property_unchecked(connection.wire,0,connection.window,parent,XCB_GET_PROPERTY_TYPE_ANY,0,1024);
+    for(size_t i=1;i<pairs.size();i+=2)connection.remove(pairs[i]);connection.remove(parent);connection.change(connection.window,parent,pairType,32,pairs.data(),pairs.size());connection.convert(selection,target,parent);
+    auto old=xcb_get_property_reply(connection.wire,stale,nullptr);const bool denied=old&&!old->type;free(old);std::cout<<(denied?"STALE-DENIED":"STALE-EXPOSED")<<std::endl;}
+  const auto until=Clock::now()+std::chrono::milliseconds(100);while(Clock::now()<until){while(connection.event(event))if(event.type==SelectionNotify)++notifications;usleep(1000);}
+  const size_t expectedNotifications=action=="multiple-reuse"||action=="multiple-child-reuse"?2:1;
+  if(variant!="late"&&notifications!=expectedNotifications){std::cerr<<"unexpected notify count "<<notifications<<std::endl;return 5;}return 0;
 }
 int main(int argc,char** argv){
   XInitThreads();
@@ -122,6 +216,15 @@ int main(int argc,char** argv){
   const auto selection=connection.atom(argc>5?argv[5]:"CLIPBOARD"),target=connection.atom(argv[3]);
   const auto property=connection.atom("SAKURA_FIXTURE_SELECTION"),targets=connection.atom("TARGETS"),timestamp=connection.atom("TIMESTAMP"),incr=connection.atom("INCR");
   if(action=="owner")return owner(connection,argc,argv,selection,target,targets,timestamp);
+  if(action=="multiple-groups"){
+    std::map<uint32_t,std::vector<uint32_t>> requests;for(unsigned i=0;i<40;++i){const auto parent=connection.atom(("SAKURA_GROUP_"+std::to_string(i)).c_str());std::vector<uint32_t> pairs{target,connection.atom(("SAKURA_GROUP_DATA_"+std::to_string(i)).c_str())};requests[parent]=pairs;
+      connection.change(connection.window,parent,connection.atom("ATOM_PAIR"),32,pairs.data(),pairs.size());connection.convert(selection,connection.atom("MULTIPLE"),parent);}
+    size_t allowed=0,denied=0,bodies=0;const auto until=Clock::now()+std::chrono::seconds(15);while(allowed+denied<40&&Clock::now()<until){Event next;while(connection.event(next)){if(next.type!=SelectionNotify)continue;if(!next.property){++denied;continue;}++allowed;
+        auto list=connection.get(next.property,0,64,false,"poll64",connection.mixed);if(list.count==2&&list.bytes.size()==8){uint32_t child=0;std::memcpy(&child,list.bytes.data()+4,4);if(child){auto value=connection.get(child,0,1048576,false,"read",connection.mixed);if(value.type)++bodies;}}}usleep(1000);}
+    std::cout<<allowed<<"/"<<denied<<"/"<<bodies<<std::endl;return allowed+denied==40?0:3;
+  }
+  if(action=="multiple-self-block"&&!connection.own(selection))return 4;
+  if(action.rfind("multiple",0)==0)return multiple(connection,argc,argv,selection,property,action);
   if(action=="maximum"){std::cout<<xcb_get_maximum_request_length(connection.wire)*4ull<<std::endl;return 0;}
   auto print=[&](const std::string& result){std::cout<<result<<std::endl;if(action=="probe"){std::ofstream(argv[4])<<result;for(;;)usleep(1000000);}};
   if(action=="stress"){size_t accepted=0,refused=0;

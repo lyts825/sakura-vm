@@ -4,7 +4,12 @@ import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rmdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { NativeClipboard, nativeClipboardRequest } from '../server/native-clipboard.ts';
+import {
+  NativeClipboard,
+  nativeClipboardRequest,
+  clipboardExecutableBits,
+  type NativeClipboardLaunch,
+} from '../server/native-clipboard.ts';
 import { defaultClipboardRule } from '../shared/clipboard-policy.ts';
 import type { NativeClipboardProcess } from '../shared/native-clipboard.ts';
 
@@ -55,6 +60,7 @@ async function fixture(t: any, extra: Record<string, unknown> = {}, dual = false
     interval: 0,
     supported: true,
     hashImage: async () => currentHash,
+    imageBits: async (): Promise<32 | 64> => 64,
     guard: () => {
       if (locked) throw new Error('locked');
     },
@@ -391,4 +397,269 @@ test('journal write failure cannot attach or leave an unpersisted in-memory owne
   await service.action({ action: 'refresh' });
   assert.equal(service.view().processes[0].state, 'enforced');
   assert.equal(JSON.parse(await readFile(f.file, 'utf8')).managed.length, 1);
+});
+
+async function launchFixture(t: any, bits: 32 | 64 = 64, dual = true) {
+  let f: Awaited<ReturnType<typeof fixture>>;
+  const created: NativeClipboardProcess = { ...a, pid: 9876, created: '134000000000000123', bits };
+  const calls: { file: string; args: string[] }[] = [];
+  const controls: {
+    beforePrepared?: () => Promise<void>;
+    afterPrepared?: () => Promise<void>;
+    beforeAttached?: () => Promise<void>;
+    waitForClose?: boolean;
+    reported?: NativeClipboardProcess;
+    state?: Record<string, unknown>;
+  } = {};
+  let attached = false,
+    resumed = false,
+    killed = false;
+  const launch: NativeClipboardLaunch = async (file, args, hooks, signal) => {
+    calls.push({ file, args });
+    const failIfClosed = () => {
+      if (signal.aborted) throw new Error('launch aborted');
+    };
+    try {
+      await controls.beforePrepared?.();
+      await hooks.prepared(controls.reported || created);
+      assert.ok(
+        JSON.parse(await readFile(f.file, 'utf8')).managed.some((item: any) => id(item) === id(created)),
+        'new process ownership is persisted before native DLL attachment',
+      );
+      await controls.afterPrepared?.();
+      failIfClosed();
+      attached = true;
+      const state = {
+        present: true as const,
+        ready: true,
+        active: true,
+        compatible: true,
+        flags: Number(args[5]),
+        maximum: Number(args[6]),
+        blockedCopy: 0,
+        blockedPaste: 0,
+        ...controls.state,
+      };
+      f.policies.set(id(created), state);
+      await controls.beforeAttached?.();
+      if (controls.waitForClose)
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('launch aborted')), { once: true });
+          if (signal.aborted) reject(new Error('launch aborted'));
+        });
+      await hooks.attached(created, state as any);
+      failIfClosed();
+      resumed = true;
+      return created;
+    } catch (error) {
+      killed = true;
+      f.policies.delete(id(created));
+      throw error;
+    }
+  };
+  f = await fixture(t, { launch, imageBits: async () => bits }, dual);
+  f.setInventory([]);
+  await f.configure();
+  return {
+    ...f,
+    created,
+    controls,
+    launches: calls,
+    launch: (args: string[] = []) =>
+      f.service.action({
+        action: 'launch',
+        version: f.service.view().version,
+        image: a.image,
+        sha256: hash,
+        args,
+      }),
+    result: () => ({ attached, resumed, killed }),
+  };
+}
+
+test('controlled launch requests accept literal argv but reject shell options, nulls and excessive argument sizes', () => {
+  const request = {
+    action: 'launch',
+    version: 1,
+    image: a.image,
+    sha256: hash,
+    args: ['', '空 格', '"', '\\', '& $() %PATH%'],
+  };
+  assert.equal(nativeClipboardRequest.safeParse(request).success, true);
+  for (const args of [['x\0y'], ['x'.repeat(2049)], Array(65).fill(''), Array(5).fill('x'.repeat(2048)), [7]])
+    assert.equal(nativeClipboardRequest.safeParse({ ...request, args }).success, false);
+  assert.equal(nativeClipboardRequest.safeParse({ ...request, shell: true }).success, false);
+  assert.equal(nativeClipboardRequest.safeParse({ ...request, version: 0 }).success, false);
+});
+
+test('controlled x86 launch persists ownership before attach, checks ready policy before resume and survives scan/restart/disable', async (t) => {
+  const f = await launchFixture(t, 32);
+  const args = ['', 'sp ace', 'with"quote', 'trailing\\', '\\"', '中文🪷', '& $() %PATH% ; >'];
+  const value = (await f.launch(args)) as { process: NativeClipboardProcess; view: any };
+  assert.deepEqual(value.process, f.created);
+  assert.equal(value.view.processes[0].state, 'enforced');
+  assert.deepEqual(f.result(), { attached: true, resumed: true, killed: false });
+  assert.ok(f.launches[0].file.endsWith('sakura-clipboard-controller-x86.exe'));
+  assert.ok(f.launches[0].args[4].endsWith('SakuraClipboardPolicy-x86.dll'));
+  assert.deepEqual(f.launches[0].args.slice(8), args);
+  assert.equal(f.calls.filter((args) => args[0] === 'apply').length, 0);
+  f.setInventory([f.created, b]);
+  await f.service.action({ action: 'refresh' });
+  assert.equal(
+    f.calls.filter((args) => args[0] === 'apply').length,
+    0,
+    'scan reuses the already-ready policy',
+  );
+  await f.service.close();
+  assert.equal(f.policies.get(id(f.created)).active, true);
+  const resumed = new NativeClipboard(f.options);
+  t.after(() => resumed.close());
+  await resumed.init();
+  assert.equal(resumed.view().processes[0].state, 'enforced');
+  assert.equal(f.calls.filter((args) => args[0] === 'apply').length, 0);
+  await resumed.action({
+    action: 'configure',
+    version: resumed.view().version,
+    settings: { ...resumed.view().settings, enabled: false },
+  });
+  assert.equal(f.policies.get(id(f.created)).active, false);
+  assert.equal(JSON.parse(await readFile(f.file, 'utf8')).managed.length, 0);
+});
+
+test('controlled launch requires current saved enablement, exact binding, intact assets and architecture before creating a process', async (t) => {
+  const f = await launchFixture(t);
+  const valid = {
+    action: 'launch',
+    version: f.service.view().version,
+    image: a.image,
+    sha256: hash,
+    args: [],
+  };
+  await assert.rejects(f.service.action({ ...valid, version: 1 }), /已改变/);
+  await assert.rejects(f.service.action({ ...valid, image: b.image }), /已保存并启用/);
+  await assert.rejects(f.service.action({ ...valid, sha256: 'f'.repeat(64) }), /已保存并启用/);
+  f.lock(true);
+  await assert.rejects(f.launch(), /locked/);
+  f.lock(false);
+  f.maintain(true);
+  await assert.rejects(f.launch(), /维护中/);
+  f.maintain(false);
+  f.changeHash();
+  await assert.rejects(f.launch(), /摘要已变化/);
+  assert.equal(f.launches.length, 0);
+  await f.configure(false);
+  await assert.rejects(f.launch(), /已保存并启用/);
+  const legacy = await launchFixture(t, 32, false);
+  await assert.rejects(legacy.launch(), /未包含 32 位/);
+  assert.equal(legacy.launches.length, 0);
+  const corrupt = await launchFixture(t);
+  await writeFile(join(corrupt.assets, 'SakuraClipboardPolicy.dll'), 'tampered');
+  await assert.rejects(corrupt.launch(), /完整性失败/);
+  assert.equal(corrupt.launches.length, 0);
+  assert.equal(f.mutations(), 0);
+});
+
+test('controlled launch journal write failure cleans up only its pending child and never attaches or resumes', async (t) => {
+  const f = await launchFixture(t);
+  f.controls.beforePrepared = async () => {
+    await rename(f.file, f.file + '.saved');
+    await mkdir(f.file);
+  };
+  await assert.rejects(f.launch());
+  assert.deepEqual(f.result(), { attached: false, resumed: false, killed: true });
+  assert.equal(JSON.parse(await readFile(f.file + '.saved', 'utf8')).managed.length, 0);
+  assert.equal(f.service.view().processes.length, 0);
+  assert.equal(f.mutations(), 0);
+  await rmdir(f.file);
+  await rename(f.file + '.saved', f.file);
+});
+
+test('controlled launch refuses mismatched process identities and policies without resuming, retaining failed ownership for later reconciliation', async (t) => {
+  const wrong = await launchFixture(t);
+  wrong.controls.reported = { ...wrong.created, image: b.image };
+  await assert.rejects(wrong.launch(), /进程身份/);
+  assert.deepEqual(wrong.result(), { attached: false, resumed: false, killed: true });
+  assert.equal(JSON.parse(await readFile(wrong.file, 'utf8')).managed.length, 0);
+  const stale = await launchFixture(t);
+  stale.controls.state = { ready: false };
+  await assert.rejects(stale.launch(), /未加载完成/);
+  assert.deepEqual(stale.result(), { attached: true, resumed: false, killed: true });
+  assert.equal(JSON.parse(await readFile(stale.file, 'utf8')).managed.length, 1);
+  await stale.service.action({ action: 'refresh' });
+  assert.equal(JSON.parse(await readFile(stale.file, 'utf8')).managed.length, 0);
+  assert.equal(stale.mutations(), 0);
+});
+
+test('lock, migration maintenance, executable changes and independent mapping failure are rechecked before controlled resume', async (t) => {
+  for (const [modify, pattern] of [
+    [(f: Awaited<ReturnType<typeof launchFixture>>) => f.lock(true), /locked/],
+    [(f: Awaited<ReturnType<typeof launchFixture>>) => f.maintain(true), /维护中/],
+    [(f: Awaited<ReturnType<typeof launchFixture>>) => f.changeHash(), /摘要已变化/],
+    [(f: Awaited<ReturnType<typeof launchFixture>>) => f.policies.delete(id(f.created)), /策略复核失败/],
+  ] as const) {
+    const f = await launchFixture(t);
+    f.controls.beforeAttached = async () => {
+      modify(f);
+    };
+    await assert.rejects(f.launch(), pattern);
+    assert.deepEqual(f.result(), { attached: true, resumed: false, killed: true });
+    assert.equal(JSON.parse(await readFile(f.file, 'utf8')).managed.length, 1);
+    assert.equal(f.mutations(), 0);
+  }
+});
+
+test('service close cancels an in-progress controlled launch and preserves persisted ownership without relaxing other processes', async (t) => {
+  const f = await launchFixture(t);
+  const otherPolicy = {
+    present: true,
+    ready: true,
+    active: true,
+    compatible: true,
+    flags: 6,
+    maximum: 1048576,
+    blockedCopy: 2,
+    blockedPaste: 3,
+  };
+  f.policies.set(id(b), otherPolicy);
+  f.controls.waitForClose = true;
+  let prepared!: () => void;
+  const started = new Promise<void>((resolve) => {
+    prepared = resolve;
+  });
+  f.controls.beforeAttached = async () => {
+    prepared();
+  };
+  const pending = f.launch();
+  const rejection = assert.rejects(pending, /aborted/);
+  await started;
+  await f.service.close();
+  await rejection;
+  assert.deepEqual(f.result(), { attached: true, resumed: false, killed: true });
+  assert.equal(JSON.parse(await readFile(f.file, 'utf8')).managed.length, 1);
+  assert.equal(f.policies.get(id(b)), otherPolicy);
+  assert.equal(otherPolicy.active, true);
+  assert.equal(f.mutations(), 0);
+});
+
+test('controlled launch architecture preflight checks PE signature, executable flags and matching optional header', async (t) => {
+  const f = await fixture(t);
+  for (const bits of [32, 64] as const) {
+    const header = Buffer.alloc(256);
+    header.writeUInt16LE(0x5a4d, 0);
+    header.writeUInt32LE(64, 60);
+    header.writeUInt32LE(0x4550, 64);
+    header.writeUInt16LE(bits === 32 ? 0x14c : 0x8664, 68);
+    header.writeUInt16LE(2, 86);
+    header.writeUInt16LE(bits === 32 ? 0x10b : 0x20b, 88);
+    const path = join(f.assets, `test-${bits}.exe`);
+    await writeFile(path, header);
+    assert.equal(await clipboardExecutableBits(path), bits);
+    header.writeUInt16LE(0x2002, 86);
+    await writeFile(path, header);
+    await assert.rejects(clipboardExecutableBits(path), /不是 Windows EXE/);
+    header.writeUInt16LE(2, 86);
+    header.writeUInt16LE(0xaa64, 68);
+    await writeFile(path, header);
+    await assert.rejects(clipboardExecutableBits(path), /仅支持 x64 或 x86/);
+  }
 });

@@ -1,7 +1,7 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile } from 'node:fs/promises';
+import { lstat, open, readFile } from 'node:fs/promises';
 import { dirname, join, win32 } from 'node:path';
 import { z } from 'zod';
 import { AppError, DATA, ROOT } from './model.ts';
@@ -65,6 +65,26 @@ export const nativeClipboardRequest = z.discriminatedUnion('action', [
     })
     .strict(),
   z.object({ action: z.literal('refresh') }).strict(),
+  z
+    .object({
+      action: z.literal('launch'),
+      version: z.number().int().positive(),
+      image: executable,
+      sha256: digest,
+      args: z
+        .array(
+          z
+            .string()
+            .max(2048)
+            .refine((value) => !value.includes('\0')),
+        )
+        .max(64)
+        .refine(
+          (values) => values.reduce((length, value) => length + value.length, 0) <= 8192,
+          '启动参数合计不能超过 8192 个字符',
+        ),
+    })
+    .strict(),
 ]);
 const identity = z
   .object({
@@ -145,6 +165,136 @@ const flags = (value: ClipboardRule) =>
   (value.copy ? 1 : 0) | (value.paste ? 2 : 0) | (value.files ? 4 : 0) | (value.sensitive ? 8 : 0);
 const key = (value: { pid: number; created: string }) => `${value.pid}:${value.created}`;
 const execute = promisify(execFile);
+export type NativeClipboardLaunchHooks = {
+  prepared: (process: NativeClipboardProcess) => Promise<void>;
+  attached: (process: NativeClipboardProcess, state: z.infer<typeof nativeState>) => Promise<void>;
+};
+export type NativeClipboardLaunch = (
+  file: string,
+  args: string[],
+  hooks: NativeClipboardLaunchHooks,
+  signal: AbortSignal,
+) => Promise<NativeClipboardProcess>;
+const launchIdentity = z
+  .object({
+    stage: z.enum(['prepared', 'attached', 'committed']),
+    launchId: z.uuid(),
+    process: identity,
+    state: nativeState.optional(),
+  })
+  .strict();
+// The helper owns a fresh kill-on-close Job atomically assigned at creation.
+// Before commit, EOF, service close or a rejected handshake kills only that Job.
+// A lost commit reply may leave an enforced child alive; retain its journal.
+const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, signal) => {
+  if (signal.aborted) throw new AppError('受控启动已取消', 503);
+  const child = spawn(file, args, {
+    shell: false,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let output = '',
+    bytes = 0,
+    sequence = 0,
+    processIdentity: NativeClipboardProcess | undefined;
+  let failure: unknown,
+    flow: Promise<void> = Promise.resolve();
+  let committed!: () => void, rejected!: (reason: unknown) => void;
+  const commitment = new Promise<void>((resolve, reject) => {
+    committed = resolve;
+    rejected = reject;
+  });
+  void commitment.catch(() => {});
+  const stop = (error: unknown) => {
+    failure ||= error;
+    rejected(failure);
+    child.stdin.destroy();
+    child.kill();
+    child.stdout.destroy();
+    child.stderr.destroy();
+  };
+  const aborted = () => stop(new AppError('受控启动确认已中止；已保存的归属保留，请刷新进程状态', 503));
+  signal.addEventListener('abort', aborted, { once: true });
+  const timeout = setTimeout(
+    () => stop(new AppError('受控启动确认超时；已保存的归属保留，请刷新进程状态', 503)),
+    120000,
+  );
+  const consume = async (line: string) => {
+    if (failure || signal.aborted) return;
+    const value: unknown = JSON.parse(line);
+    const error = z
+      .object({ error: z.string().max(256), systemError: z.number() })
+      .strict()
+      .safeParse(value);
+    if (error.success) throw new AppError(error.data.error, 503);
+    const message = launchIdentity.parse(value);
+    if (
+      message.stage !== ['prepared', 'attached', 'committed'][sequence] ||
+      message.launchId !== args[7] ||
+      (message.stage === 'attached') !== !!message.state ||
+      (processIdentity &&
+        (key(processIdentity) !== key(message.process) ||
+          samePath(processIdentity.image) !== samePath(message.process.image) ||
+          processIdentity.bits !== message.process.bits))
+    )
+      throw new AppError('受控启动握手身份或顺序无效', 503);
+    processIdentity = message.process;
+    if (message.stage === 'prepared') await hooks.prepared(message.process);
+    if (message.stage === 'attached') await hooks.attached(message.process, message.state!);
+    if (failure || signal.aborted) return;
+    sequence++;
+    if (message.stage !== 'committed')
+      child.stdin.write(`${message.stage === 'prepared' ? 'attach' : 'resume'} ${args[7]}\n`);
+    else {
+      child.stdin.end();
+      committed();
+    }
+  };
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    bytes += Buffer.byteLength(chunk);
+    if (bytes > 32768) {
+      stop(new AppError('受控启动工具返回过多数据', 503));
+      return;
+    }
+    output += chunk;
+    let index: number;
+    while ((index = output.indexOf('\n')) >= 0) {
+      const line = output.slice(0, index).replace(/\r$/, '');
+      output = output.slice(index + 1);
+      flow = flow.then(() => consume(line)).catch(stop);
+    }
+  });
+  child.stderr.on('data', (chunk: Buffer) => {
+    bytes += chunk.length;
+    if (bytes > 32768) stop(new AppError('受控启动工具返回过多数据', 503));
+  });
+  child.stdin.on('error', (error) => {
+    if (sequence < 3) stop(error);
+  });
+  try {
+    const code = await new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', resolve);
+    });
+    // Windows console lifetimes may keep a pipe open after the helper exits.
+    // Success requires its explicit commit frame and zero process exit status,
+    // rather than the lifetime of any inherited console resource.
+    if (code === 0) await commitment;
+    await flow;
+    if (failure) throw failure;
+    if (code !== 0 || sequence !== 3 || output.trim() || !processIdentity)
+      throw new AppError('受控启动未确认；已保存的归属保留，请刷新进程状态', 503);
+    return processIdentity;
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener('abort', aborted);
+    child.stdin.destroy();
+    child.stdout.destroy();
+    child.stderr.destroy();
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+  }
+};
 async function nativeCommand(file: string, args: string[]): Promise<unknown> {
   try {
     const { stdout } = await execute(file, args, {
@@ -179,6 +329,34 @@ export async function clipboardExecutableHash(path: string) {
     throw new AppError('应用程序文件正在变化，请重试', 409);
   return value;
 }
+export async function clipboardExecutableBits(path: string): Promise<32 | 64> {
+  executable.parse(path);
+  const file = await open(path, 'r');
+  try {
+    const header = Buffer.alloc(64),
+      pe = Buffer.alloc(26);
+    if (
+      (await file.read(header, 0, header.length, 0)).bytesRead !== header.length ||
+      header.readUInt16LE(0) !== 0x5a4d
+    )
+      throw new AppError('所选文件不是 Windows EXE');
+    const offset = header.readUInt32LE(60);
+    if (
+      offset < 64 ||
+      offset > 1048576 ||
+      (await file.read(pe, 0, pe.length, offset)).bytesRead !== pe.length ||
+      pe.readUInt32LE(0) !== 0x4550 ||
+      !(pe.readUInt16LE(22) & 2) ||
+      pe.readUInt16LE(22) & 0x2000
+    )
+      throw new AppError('所选文件不是 Windows EXE');
+    if (pe.readUInt16LE(4) === 0x14c && pe.readUInt16LE(24) === 0x10b) return 32;
+    if (pe.readUInt16LE(4) === 0x8664 && pe.readUInt16LE(24) === 0x20b) return 64;
+    throw new AppError('受控启动仅支持 x64 或 x86 EXE');
+  } finally {
+    await file.close();
+  }
+}
 type Options = {
   file?: string;
   assets?: string;
@@ -187,6 +365,8 @@ type Options = {
   interval?: number;
   run?: (file: string, args: string[]) => Promise<unknown>;
   hashImage?: (path: string) => Promise<string>;
+  imageBits?: (path: string) => Promise<32 | 64>;
+  launch?: NativeClipboardLaunch;
   guard?: () => void;
   maintenance?: () => boolean;
   mutation?: (delta: number) => void;
@@ -208,6 +388,7 @@ export class NativeClipboard {
   private queue: Promise<unknown> = Promise.resolve();
   private timer?: ReturnType<typeof setInterval>;
   private closed = false;
+  private readonly lifetime = new AbortController();
   private scanning = false;
   private ready = false;
   private error?: string;
@@ -219,6 +400,8 @@ export class NativeClipboard {
   private readonly pid: number;
   private readonly run: NonNullable<Options['run']>;
   private readonly hashImage: NonNullable<Options['hashImage']>;
+  private readonly imageBits: NonNullable<Options['imageBits']>;
+  private readonly start: NativeClipboardLaunch;
   constructor(private options: Options = {}) {
     this.file = options.file || join(DATA, 'native-clipboard.json');
     this.assets = options.assets || join(ROOT, '.sakura-server', 'assets', 'native-clipboard');
@@ -226,6 +409,8 @@ export class NativeClipboard {
     this.pid = options.pid ?? process.pid;
     this.run = options.run || nativeCommand;
     this.hashImage = options.hashImage || clipboardExecutableHash;
+    this.imageBits = options.imageBits || clipboardExecutableBits;
+    this.start = options.launch || nativeLaunch;
   }
   async init() {
     this.state = stateSchema.parse(await readStore(this.file, () => this.state));
@@ -471,6 +656,128 @@ export class NativeClipboard {
     this.lastScan = new Date().toISOString();
     for (const id of this.failed.keys()) if (!known.has(id)) this.failed.delete(id);
   }
+  private async controlledLaunch(
+    input: Extract<z.infer<typeof nativeClipboardRequest>, { action: 'launch' }>,
+  ) {
+    const allowed = () => {
+      if (this.closed || this.lifetime.signal.aborted) throw new AppError('剪贴板代理正在关闭', 503);
+      this.options.guard?.();
+      if (this.options.maintenance?.()) throw new AppError('数据目录迁移维护中', 409);
+      if (input.version !== this.state.version) throw new AppError('剪贴板配置已改变，请刷新后重试', 409);
+      const selected = this.state.settings.applications.find(
+        (entry) => samePath(entry.image) === samePath(input.image),
+      );
+      if (!this.state.settings.enabled || !selected || selected.sha256 !== input.sha256)
+        throw new AppError('受控启动需要已保存并启用的应用规则', 409);
+      return selected;
+    };
+    const selected = allowed();
+    if (this.state.managed.length >= 256) throw new AppError('受管进程已达到 256 个上限');
+    await this.checkedAssets(true);
+    if ((await this.hashImage(selected.image)) !== selected.sha256)
+      throw new AppError('应用文件摘要已变化，请重新选择', 409);
+    const bits = await this.imageBits(selected.image);
+    if (bits === 32 && !this.hasX86) throw new AppError('此运行包未包含 32 位应用代理，请更新运行包');
+    allowed();
+    const sameIdentity = (value: NativeClipboardProcess) => {
+      const item = identity.parse(value);
+      if (samePath(item.image) !== samePath(selected.image) || item.bits !== bits || item.pid === this.pid)
+        throw new AppError('受控启动进程身份与已保存应用不一致', 503);
+      return item;
+    };
+    let owned: NativeClipboardProcess | undefined, loaded: z.infer<typeof nativeState> | undefined;
+    try {
+      const process = await this.start(
+        this.controller(bits),
+        [
+          'launch',
+          this.state.owner,
+          win32.normalize(selected.image),
+          selected.sha256,
+          this.library(bits),
+          String(flags(selected.rule)),
+          String(selected.rule.maxTextBytes),
+          randomUUID(),
+          ...input.args,
+        ],
+        {
+          prepared: async (value) => {
+            allowed();
+            const item = sameIdentity(value);
+            if (
+              this.state.managed.some((entry) => key(entry) === key(item)) ||
+              this.inventory.some((entry) => key(entry) === key(item))
+            )
+              throw new AppError('受控启动返回了已有进程；拒绝复用其归属', 503);
+            // The helper waits with a suspended primary thread and a kill-on-close
+            // Job until this journal is durably saved, before loading any policy.
+            await this.saveManaged([...this.state.managed, { ...item, sha256: selected.sha256 }]);
+            owned = item;
+            allowed();
+          },
+          attached: async (value, state) => {
+            allowed();
+            const item = sameIdentity(value);
+            if (
+              !owned ||
+              key(owned) !== key(item) ||
+              !this.state.managed.some(
+                (entry) => key(entry) === key(item) && entry.sha256 === selected.sha256,
+              )
+            )
+              throw new AppError('受控启动缺少已保存的进程归属', 503);
+            const coherent = (value: z.infer<typeof statusSchema>) =>
+              value.present &&
+              value.ready &&
+              value.active &&
+              value.compatible &&
+              value.flags === flags(selected.rule) &&
+              value.maximum === selected.rule.maxTextBytes;
+            if (!coherent(nativeState.parse(state))) throw new AppError('受控启动策略未加载完成', 503);
+            const observed = await this.status(item);
+            if (!coherent(observed)) throw new AppError('受控启动策略复核失败', 503);
+            await this.checkedAssets(true);
+            if ((await this.hashImage(selected.image)) !== selected.sha256)
+              throw new AppError('应用文件摘要已变化，请重新选择', 409);
+            allowed();
+            loaded = nativeState.parse(observed);
+          },
+        },
+        this.lifetime.signal,
+      );
+      const item = sameIdentity(process);
+      if (!owned || key(owned) !== key(item) || !loaded)
+        throw new AppError('受控启动未返回已核对的提交身份', 503);
+      this.inventory = [...this.inventory.filter((entry) => key(entry) !== key(item)), item];
+      this.processes = [
+        ...this.processes.filter((entry) => key(entry) !== key(item)),
+        {
+          ...item,
+          state: 'enforced',
+          blockedCopy: loaded.blockedCopy,
+          blockedPaste: loaded.blockedPaste,
+        },
+      ];
+      this.error = undefined;
+      this.ready = true;
+      this.lastScan = new Date().toISOString();
+      return { process: item, view: this.view() };
+    } catch (error) {
+      if (owned) {
+        this.processes = [
+          ...this.processes.filter((entry) => key(entry) !== key(owned!)),
+          {
+            ...owned,
+            state: 'error',
+            error: (error as Error).message,
+            blockedCopy: loaded?.blockedCopy || 0,
+            blockedPaste: loaded?.blockedPaste || 0,
+          },
+        ];
+      }
+      throw error;
+    }
+  }
   action(value: unknown) {
     const input = nativeClipboardRequest.parse(value);
     return this.serial(async () => {
@@ -478,6 +785,7 @@ export class NativeClipboard {
       if (this.options.maintenance?.()) throw new AppError('数据目录迁移维护中', 409);
       this.options.mutation?.(1);
       try {
+        if (input.action === 'launch') return await this.controlledLaunch(input);
         if (input.action === 'identify') {
           await this.checkedAssets(false);
           const item = (await this.list()).find(
@@ -514,6 +822,7 @@ export class NativeClipboard {
   }
   async close() {
     this.closed = true;
+    this.lifetime.abort();
     if (this.timer) clearInterval(this.timer);
     await this.queue.catch(() => {});
   }

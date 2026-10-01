@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { defaultClipboardRule, type ClipboardRule } from '../shared/clipboard-policy';
-import type { NativeClipboardSettings as Settings, NativeClipboardView } from '../shared/native-clipboard';
+import type {
+  NativeClipboardProcess,
+  NativeClipboardSettings as Settings,
+  NativeClipboardView,
+} from '../shared/native-clipboard';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 
 export function NativeClipboardSettings({ request }: { request: Request }) {
@@ -9,6 +13,11 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
   const [draft, setDraft] = useState<Settings>({ enabled: false, applications: [] });
   const [version, setVersion] = useState(0),
     [process, setProcess] = useState('');
+  const [argumentsByImage, setArgumentsByImage] = useState<Record<string, string>>({});
+  const saved =
+    !!remote.data &&
+    version === remote.data.version &&
+    JSON.stringify(draft) === JSON.stringify(remote.data.settings);
   useEffect(() => {
     if (remote.data && remote.data.version > version) {
       setDraft(remote.data.settings);
@@ -35,6 +44,32 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
       ...draft,
       applications: draft.applications.map((item) => (item.image === image ? { ...item, rule } : item)),
     });
+  const launch = (image: string, sha256: string) =>
+    void action.run(async (signal) => {
+      let args: unknown;
+      try {
+        args = JSON.parse(argumentsByImage[image] || '[]');
+      } catch {
+        throw new Error('启动参数需填写 JSON 字符串数组，例如 ["文件路径", "--选项"]');
+      }
+      if (
+        !Array.isArray(args) ||
+        args.length > 64 ||
+        !args.every((value) => typeof value === 'string' && value.length <= 2048 && !value.includes('\0')) ||
+        args.reduce((length, value) => length + value.length, 0) > 8192
+      )
+        throw new Error('启动参数需为最多 64 项的字符串数组；每项最多 2048、合计最多 8192 个字符');
+      try {
+        await request<{ process: NativeClipboardProcess; view: NativeClipboardView }>(
+          '/native-clipboard',
+          'POST',
+          { action: 'launch', version, image, sha256, args },
+          signal,
+        );
+      } finally {
+        remote.reload();
+      }
+    }, '已按已保存规则启动应用');
   return (
     <section className="system-card native-settings native-clipboard" aria-label="Windows 应用剪贴板策略">
       <h3>Windows 应用剪贴板策略</h3>
@@ -46,8 +81,9 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
       {remote.data?.error && <p role="alert">{remote.data.error}</p>}
       <p className="subtle-note">
         代理覆盖 Win32 与 OLE
-        剪贴板调用。新进程在扫描并成功附加前尚未受限；受保护进程、自行调用底层系统接口的程序不在此保证范围内。普通
-        Linux X11 应用可在 KDE 桌面中的原生应用剪贴板入口启动。
+        剪贴板调用。受控启动会先加载已保存策略再进入应用主函数。自行启动的进程仍需等待扫描附加；DLL/TLS
+        初始化、受保护进程及自行调用底层系统接口的程序不在此保证范围内。普通 Linux X11 应用可在 KDE
+        桌面中的原生应用剪贴板入口启动。
       </p>
       <fieldset disabled={action.busy}>
         <label className="checkbox-label">
@@ -170,6 +206,27 @@ export function NativeClipboardSettings({ request }: { request: Request }) {
                 ))}
               </select>
             </label>
+            <label>
+              启动参数（JSON 字符串数组）
+              <textarea
+                value={argumentsByImage[item.image] || '[]'}
+                onChange={(event) =>
+                  setArgumentsByImage({ ...argumentsByImage, [item.image]: event.target.value })
+                }
+                rows={2}
+                spellCheck={false}
+              />
+            </label>
+            <p className="subtle-note">
+              参数逐项传给应用。受控启动使用已保存并启用的规则；修改规则后请先保存。
+            </p>
+            <button
+              className="secondary compact"
+              disabled={!saved || !draft.enabled || !remote.data?.ready}
+              onClick={() => launch(item.image, item.sha256)}
+            >
+              受控启动此应用
+            </button>
             <button
               className="text-button"
               onClick={() =>

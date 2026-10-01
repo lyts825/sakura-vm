@@ -69,7 +69,14 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.equal(spec.paths['/api/access/users'].post.security, undefined);
   assert.equal(spec.paths['/api/native-clipboard'].get.operationId, 'core.native-clipboard.get');
   assert.equal(spec.paths['/api/native-clipboard'].post.security, undefined);
-  assert.ok(spec.paths['/api/native-clipboard'].post.requestBody!.content['application/json'].schema.oneOf);
+  const nativeRequests = spec.paths['/api/native-clipboard'].post.requestBody!.content['application/json']
+    .schema.oneOf as any[];
+  const controlledStartup = nativeRequests.find((item) => item.properties.action.const === 'launch');
+  assert.ok(controlledStartup, 'Controlled startup is available through the same authenticated operation');
+  assert.deepEqual(controlledStartup.required, ['action', 'version', 'image', 'sha256', 'args']);
+  assert.equal(controlledStartup.additionalProperties, false);
+  assert.equal(controlledStartup.properties.args.maxItems, 64);
+  assert.equal(controlledStartup.properties.args.items.maxLength, 2048);
   const x11 = spec.paths['/api/vms/{vmId}/x11-clipboard'];
   assert.equal(x11.get.operationId, 'desktop.x11-clipboard-get');
   assert.ok(x11.post.requestBody!.content['application/json'].schema.oneOf);

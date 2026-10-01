@@ -116,16 +116,59 @@ test('a shared project in an instance with a private sibling also exports its ow
   } finally { await ide.close(); await rm(saved, { force: true }); }
 });
 
-test('private Alpine editor profiles fail instead of exporting system SSH', async () => {
+test('Alpine project profiles require a checked SSH endpoint and refuse unsupported IDE backends', async () => {
   const alpine = { ...machines, get: () => ({ id, name: 'test-editor', distro: 'alpine' }) };
-  const spaces = spacesFor(privateProject), ide = new Ide(alpine, spaces, join(directory, 'alpine-client'));
+  const spaces = spacesFor(privateProject),
+    ide = new Ide(alpine, spaces, join(directory, 'alpine-client'));
+  let endpoint: object | null = null;
+  (ide as any).projectSsh = {
+    status: async () => ({ present: false, running: false, valid: false, processes: 0, reason: null }),
+    endpoint: async () => endpoint,
+    entries: async () => [],
+    close: async () => {},
+  };
   try {
     const view = await ide.view(id);
-    assert.equal(view.supported, false);
+    assert.equal(view.supported, true);
+    assert.equal(view.vscodeSupported, false);
+    assert.equal(view.projectScoped, true);
     assert.equal(view.command, '');
     assert.equal(view.url, '');
-    assert.equal(view.alias, '');
-    await assert.rejects(runReport(alpine, spaces, id, 'editor-profiles', { editor: 'vscode' },
-      new AbortController().signal), /Debian 与 Ubuntu/);
-  } finally { await ide.close(); }
+    assert.equal(view.sshCommand, '');
+    await assert.rejects(
+      runReport(alpine, spaces, id, 'editor-profiles', { editor: 'neovim' }, new AbortController().signal),
+      /先在项目页配置/,
+    );
+    endpoint = {
+      port: 43335,
+      identity: join(vmDir(id), 'project-ssh', privateId, 'id_rsa'),
+      knownHosts: join(vmDir(id), 'project-ssh', privateId, 'known_hosts'),
+      hostKeyAlias: `sakura-${id}-${privateId}`,
+    };
+    const connected = await ide.view(id);
+    assert.equal(connected.sshCommand, `ssh sakura-${id}-${privateId}`);
+    assert.equal(connected.command, '');
+    assert.equal(connected.url, '');
+    const profile = await runReport(
+      alpine,
+      spaces,
+      id,
+      'editor-profiles',
+      { editor: 'neovim' },
+      new AbortController().signal,
+    );
+    assert.equal(profile.projectScoped, true);
+    assert.equal(profile.port, 43335);
+    assert.match((profile.download as any).content, /StrictHostKeyChecking yes/);
+    assert.ok(!(profile.download as any).content.includes('32222'));
+    assert.match(String(profile.instructions), /packadd netrw/);
+    assert.equal(profile.relativeRemotePath, `scp://sakura-${id}-${privateId}/./`);
+    for (const editor of ['vscode', 'jetbrains'])
+      await assert.rejects(
+        runReport(alpine, spaces, id, 'editor-profiles', { editor }, new AbortController().signal),
+        /Debian 或 Ubuntu/,
+      );
+  } finally {
+    await ide.close();
+  }
 });

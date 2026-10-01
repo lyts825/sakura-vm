@@ -1042,7 +1042,7 @@ export class NextFeatures {
         executed: false,
         adapter,
         message:
-          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 策略限制成功附加的当前用户 x64/x86 EXE 的 Win32/OLE 调用。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 应用并热更新规则，INCR 大文本收齐检查后传输。新进程附加前、MULTIPLE、其他底层接口、既有 Linux 程序及原生 Wayland 仍未覆盖。',
+          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 可按已保存规则受控启动当前用户的 x64/x86 EXE，主入口执行前核对 Win32/OLE 代理。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 应用并热更新规则，INCR 与 MULTIPLE 每项收齐检查后传输。自行启动进程附加前、DLL/TLS 初始化、其他底层接口、既有 Linux 程序及原生 Wayland 仍未覆盖。',
       };
     if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner')
       return {

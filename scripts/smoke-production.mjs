@@ -87,9 +87,38 @@ async function probe(selected, expected) {
     assert.deepEqual(nativeClipboard.processes, []);
     if (process.platform === 'win32' && process.arch === 'x64')
       assert.equal(nativeClipboard.ready, true, nativeClipboard.error);
-    await assert.rejects(sdk.call('core.native-clipboard.action', {
-      body: { action: 'configure', version: 1, settings: { enabled: true, applications: [], extra: true } },
-    }), (error) => error.status === 400);
+    await assert.rejects(
+      sdk.call('core.native-clipboard.action', {
+        body: { action: 'configure', version: 1, settings: { enabled: true, applications: [], extra: true } },
+      }),
+      (error) => error.status === 400,
+    );
+    const controlledStartup = specification.paths['/api/native-clipboard'].post.requestBody.content[
+      'application/json'
+    ].schema.oneOf.find((item) => item.properties.action.const === 'launch');
+    assert.deepEqual(controlledStartup.required, ['action', 'version', 'image', 'sha256', 'args']);
+    assert.equal(controlledStartup.additionalProperties, false);
+    // Invalid or unbound requests exercise the compiled endpoint without creating a host process.
+    const startup = {
+      action: 'launch',
+      version: nativeClipboard.version,
+      image: 'D:\\Sakura-fixture-unbound\\never-launch.exe',
+      sha256: 'a'.repeat(64),
+      args: [],
+    };
+    for (const body of [
+      { ...startup, shell: true },
+      { ...startup, args: [17] },
+      { ...startup, args: ['x'.repeat(2049)] },
+    ])
+      await assert.rejects(
+        sdk.call('core.native-clipboard.action', { body }),
+        (error) => error.status === 400,
+      );
+    await assert.rejects(
+      sdk.call('core.native-clipboard.action', { body: startup }),
+      (error) => error.status === 409,
+    );
     await sdk.call('core.native-clipboard.action', { body: { action: 'refresh' } });
     if (expected.includes('backups')) {
       const absent = randomUUID();
@@ -321,8 +350,10 @@ async function probe(selected, expected) {
         const singleAppResponse = await singleAppPage.goto(origin + '/single-app.html');
         assert.equal(singleAppResponse.status(), 200);
         assert.match(singleAppResponse.headers()['content-security-policy'], /script-src 'self';/);
-        await singleAppPage.getByRole('status')
-          .filter({ hasText: '请从 Sakura 桌面页重新打开应用窗口' }).waitFor();
+        await singleAppPage
+          .getByRole('status')
+          .filter({ hasText: '请从 Sakura 桌面页重新打开应用窗口' })
+          .waitFor();
         await singleAppPage.close();
         console.log('Standalone single-app window loads under the production CSP.');
         const page = await context.newPage();

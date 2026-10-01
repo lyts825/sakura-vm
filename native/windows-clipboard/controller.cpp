@@ -1,6 +1,10 @@
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0a00
+#endif
 #include "protocol.h"
 #include <tlhelp32.h>
 #include <sddl.h>
+#include <wincrypt.h>
 #include <algorithm>
 #include <cstring>
 #include <iostream>
@@ -162,10 +166,10 @@ static void list() {
   } while (Process32NextW(snapshot.value,&entry));
   std::cout<<"]}"<<std::endl;
 }
-static void state(const wchar_t* owner,DWORD pid,uint64_t created) {
+static void state(const wchar_t* owner,DWORD pid,uint64_t created,bool newline=true) {
   const auto name=mapping(owner,pid,created);
   Handle object(OpenFileMappingW(FILE_MAP_READ,FALSE,name.c_str()));
-  if (!object.value) { std::cout<<"{\"present\":false}"<<std::endl; return; }
+  if (!object.value) { std::cout<<"{\"present\":false}"<<(newline?"\n":""); return; }
   const auto data=static_cast<const SakuraClipboardPolicy*>(MapViewOfFile(object.value,FILE_MAP_READ,0,0,sizeof(SakuraClipboardPolicy)));
   if (!data) throw std::runtime_error("policy section unavailable");
   SakuraClipboardPolicy value{};
@@ -182,10 +186,10 @@ static void state(const wchar_t* owner,DWORD pid,uint64_t created) {
   }
   std::cout<<"{\"present\":true,\"ready\":"<<(value.status==1 ? "true":"false")<<",\"active\":"<<(value.active ? "true":"false")
     <<",\"compatible\":"<<(std::memcmp(value.build,SAKURA_CLIPBOARD_BUILD,65)==0?"true":"false")
-    <<",\"flags\":"<<value.flags<<",\"maximum\":"<<value.maxTextBytes<<",\"blockedCopy\":"<<value.blockedCopy<<",\"blockedPaste\":"<<value.blockedPaste<<'}'<<std::endl;
+    <<",\"flags\":"<<value.flags<<",\"maximum\":"<<value.maxTextBytes<<",\"blockedCopy\":"<<value.blockedCopy<<",\"blockedPaste\":"<<value.blockedPaste<<'}'<<(newline?"\n":"");
   UnmapViewOfFile(data);
 }
-static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wstring& expected,const std::wstring& library,uint32_t flags,uint32_t maximum,bool active) {
+static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wstring& expected,const std::wstring& library,uint32_t flags,uint32_t maximum,bool active,bool report=true) {
   if (flags>15 || maximum<1024 || maximum>1048576) throw std::runtime_error("invalid clipboard rule");
   Handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION|PROCESS_CREATE_THREAD|PROCESS_VM_OPERATION|PROCESS_VM_WRITE|PROCESS_VM_READ|SYNCHRONIZE,FALSE,pid));
   if (!process.value) throw std::runtime_error("process rejects native attachment");
@@ -235,7 +239,176 @@ static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wst
     }
   } catch (...) { UnmapViewOfFile(data); ReleaseMutex(writer.value); throw; }
   UnmapViewOfFile(data); ReleaseMutex(writer.value);
-  state(owner,pid,created);
+  if (report) { state(owner,pid,created); std::cout.flush(); }
+}
+static std::string fileDigest(HANDLE file) {
+  LARGE_INTEGER size{}, start{};
+  if (!GetFileSizeEx(file,&size) || size.QuadPart<=0 || size.QuadPart>512ll*1024*1024 ||
+      !SetFilePointerEx(file,start,nullptr,FILE_BEGIN)) throw std::runtime_error("invalid application file");
+  HCRYPTPROV provider=0; HCRYPTHASH hash=0;
+  if (!CryptAcquireContextW(&provider,nullptr,nullptr,PROV_RSA_AES,CRYPT_VERIFYCONTEXT))
+    throw std::runtime_error("application digest unavailable");
+  if (!CryptCreateHash(provider,CALG_SHA_256,0,0,&hash)) {
+    CryptReleaseContext(provider,0); throw std::runtime_error("application digest unavailable");
+  }
+  unsigned char buffer[65536], digest[32]; DWORD count=0,length=32;
+  bool good=true;
+  do {
+    if (!ReadFile(file,buffer,sizeof(buffer),&count,nullptr) || (count && !CryptHashData(hash,buffer,count,0))) {good=false;break;}
+  } while (count);
+  good=good && CryptGetHashParam(hash,HP_HASHVAL,digest,&length,0) && length==32;
+  CryptDestroyHash(hash); CryptReleaseContext(provider,0);
+  if (!good) throw std::runtime_error("application digest unavailable");
+  std::string value;
+  constexpr char hex[]="0123456789abcdef";
+  for (const unsigned char byte:digest) {value+=hex[byte>>4];value+=hex[byte&15];}
+  return value;
+}
+static void selectedFile(HANDLE file,const std::wstring& expected,const std::wstring& wantedDigest) {
+  if (wantedDigest.size()!=64 || !std::all_of(wantedDigest.begin(),wantedDigest.end(),[](wchar_t c){
+      return (c>=L'0'&&c<=L'9') || (c>=L'a'&&c<=L'f');})) throw std::runtime_error("invalid application digest");
+  FILE_ATTRIBUTE_TAG_INFO information{};
+  if (!GetFileInformationByHandleEx(file,FileAttributeTagInfo,&information,sizeof(information)) ||
+      (information.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT)))
+    throw std::runtime_error("application must be a regular file");
+  std::wstring actual(32768,L'\0');
+  const DWORD size=GetFinalPathNameByHandleW(file,actual.data(),DWORD(actual.size()),FILE_NAME_NORMALIZED|VOLUME_NAME_DOS);
+  if (!size || size>=actual.size()) throw std::runtime_error("application path unavailable");
+  actual.resize(size);
+  if (actual.rfind(L"\\\\?\\",0)==0) actual.erase(0,4);
+  if (!same(actual,expected) || fileDigest(file)!=utf8(wantedDigest))
+    throw std::runtime_error("application file identity changed");
+}
+static void primarySuspended(HANDLE thread) {
+  const DWORD previous=SuspendThread(thread);
+  if (previous==DWORD(-1)) throw std::runtime_error("primary thread suspension unavailable");
+  const DWORD restored=ResumeThread(thread);
+  if (previous!=1 || restored!=2) throw std::runtime_error("primary thread is no longer exclusively suspended");
+}
+static void initializeLoader(HANDLE process,DWORD pid) {
+  // A just-created primary thread has not run the Windows loader. A helper
+  // thread initializes its imports while that primary thread remains suspended.
+  // Windows may run DLL/TLS initialization here; this is not an initialization sandbox.
+  const HMODULE local=GetModuleHandleW(L"ntdll.dll");
+  const auto exit=GetProcAddress(local,"RtlExitUserThread");
+  // Toolhelp has no module list until this fresh process's loader runs. Locate
+  // the exact same mapped system ntdll image, without assuming ASLR addresses.
+  using MappedName=DWORD(WINAPI*)(HANDLE,LPVOID,LPWSTR,DWORD);
+  const auto mappedName=reinterpret_cast<MappedName>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"K32GetMappedFileNameW"));
+  wchar_t localName[32768]{};
+  if(!mappedName || !mappedName(GetCurrentProcess(),local,localName,32768))
+    throw std::runtime_error("system loader image unavailable");
+  uintptr_t base=0,address=0;
+  MEMORY_BASIC_INFORMATION information{};
+  while(VirtualQueryEx(process,reinterpret_cast<void*>(address),&information,sizeof(information))==sizeof(information)) {
+    if(information.State==MEM_COMMIT && information.Type==MEM_IMAGE && information.AllocationBase==information.BaseAddress) {
+      wchar_t targetName[32768]{};
+      if(mappedName(process,information.AllocationBase,targetName,32768) && same(localName,targetName)) {
+        base=reinterpret_cast<uintptr_t>(information.AllocationBase);break;
+      }
+    }
+    const uintptr_t next=reinterpret_cast<uintptr_t>(information.BaseAddress)+information.RegionSize;
+    if(next<=address)break;address=next;
+  }
+  if (!local || !exit || !base) throw std::runtime_error("suspended process loader unavailable");
+  Handle thread(CreateRemoteThread(process,nullptr,0,reinterpret_cast<LPTHREAD_START_ROUTINE>(
+    base+(reinterpret_cast<uintptr_t>(exit)-reinterpret_cast<uintptr_t>(local))),nullptr,0,nullptr));
+  if (!thread.value || WaitForSingleObject(thread.value,30000)!=WAIT_OBJECT_0 || !module(pid,L"kernel32.dll",true))
+    throw std::runtime_error("suspended process initialization did not complete");
+}
+static void printIdentity(DWORD pid,uint64_t created,const std::wstring& expected,unsigned architecture) {
+  std::cout<<"{\"pid\":"<<pid<<",\"created\":\""<<created<<"\",\"image\":"<<json(expected)<<",\"bits\":"<<architecture<<'}';
+}
+static void permission(const std::wstring& nonce,const char* phase) {
+  std::string line;
+  if (!std::getline(std::cin,line) || line!=std::string(phase)+" "+utf8(nonce))
+    throw std::runtime_error("controlled launch was not authorized");
+}
+static void published() {
+  std::cout.flush();
+  if(!std::cout.good())throw std::runtime_error("controlled launch response unavailable");
+}
+static void launch(const wchar_t* owner,const std::wstring& expected,const std::wstring& digest,
+    const std::wstring& library,uint32_t flags,uint32_t maximum,const std::wstring& nonce,
+    int count,wchar_t** arguments) {
+  mapping(owner,1,1); mapping(nonce.c_str(),1,1);
+  if (flags>15 || maximum<1024 || maximum>1048576 || count<0 || unsigned(count)>SakuraClipboardLaunchArguments)
+    throw std::runtime_error("invalid controlled launch arguments");
+  if (expected.size()<7 || expected[1]!=L':' || expected[2]!=L'\\' ||
+      expected.find(L'\"')!=std::wstring::npos || !same(expected.substr(expected.size()-4),L".exe"))
+    throw std::runtime_error("controlled launch requires a complete executable path");
+  std::wstring command=clipboardArgument(expected); size_t length=0;
+  for (int index=0;index<count;++index) {
+    const std::wstring argument(arguments[index]); length+=argument.size();
+    if (argument.size()>2048 || length>SakuraClipboardLaunchCharacters)
+      throw std::runtime_error("controlled launch arguments too long");
+    command+=L' ';command+=clipboardArgument(argument);
+  }
+  if (command.size()>=32767) throw std::runtime_error("controlled launch command too long");
+  // Deny writes and replacement until the selected image is created and committed.
+  Handle file(CreateFileW(expected.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
+  if (file.value==INVALID_HANDLE_VALUE) throw std::runtime_error("application file unavailable for controlled launch");
+  selectedFile(file.value,expected,digest);
+  Handle job(CreateJobObjectW(nullptr,nullptr));
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+  limits.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  if (!job.value || !SetInformationJobObject(job.value,JobObjectExtendedLimitInformation,&limits,sizeof(limits)))
+    throw std::runtime_error("controlled launch job unavailable");
+  SIZE_T bytes=0; InitializeProcThreadAttributeList(nullptr,1,0,&bytes);
+  std::vector<unsigned char> storage(bytes);
+  auto attributes=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
+  if (!bytes || !InitializeProcThreadAttributeList(attributes,1,0,&bytes))
+    throw std::runtime_error("controlled launch attributes unavailable");
+  const BOOL assigned=UpdateProcThreadAttribute(attributes,0,PROC_THREAD_ATTRIBUTE_JOB_LIST,&job.value,sizeof(HANDLE),nullptr,nullptr);
+  STARTUPINFOEXW startup{}; startup.StartupInfo.cb=sizeof(startup); startup.lpAttributeList=attributes;
+  // A launched application must not keep the controller's private RPC pipes
+  // open after it exits. No shell or inherited standard handle is exposed.
+  startup.StartupInfo.dwFlags=STARTF_USESTDHANDLES;
+  startup.StartupInfo.hStdInput=nullptr;startup.StartupInfo.hStdOutput=nullptr;startup.StartupInfo.hStdError=nullptr;
+  PROCESS_INFORMATION child{};
+  const auto separator=expected.find_last_of(L'\\');
+  const auto directory=expected.substr(0,separator==2?3:separator);
+  const BOOL created=assigned && CreateProcessW(expected.c_str(),command.data(),nullptr,nullptr,FALSE,
+    CREATE_SUSPENDED|CREATE_NO_WINDOW|EXTENDED_STARTUPINFO_PRESENT|CREATE_UNICODE_ENVIRONMENT,nullptr,directory.c_str(),&startup.StartupInfo,&child);
+  DeleteProcThreadAttributeList(attributes);
+  if (!created) throw std::runtime_error("controlled suspended process creation failed");
+  Handle process(child.hProcess),thread(child.hThread);
+  try {
+    const auto creation=processCreation(process.value);
+    const auto architecture=bits(process.value);
+    DWORD targetSession=0,ownSession=0;
+    const auto check=[&]() {
+      BOOL inJob=FALSE;
+      if (!creation || architecture!=sizeof(void*)*8 || !ownUser(process.value) ||
+          !IsProcessInJob(process.value,job.value,&inJob) || !inJob ||
+          !ProcessIdToSessionId(child.dwProcessId,&targetSession) || !ProcessIdToSessionId(GetCurrentProcessId(),&ownSession) ||
+          targetSession!=ownSession || processCreation(process.value)!=creation || !same(image(process.value),expected) ||
+          WaitForSingleObject(process.value,0)!=WAIT_TIMEOUT || GetProcessIdOfThread(thread.value)!=child.dwProcessId)
+        throw std::runtime_error("controlled process identity changed");
+      primarySuspended(thread.value);
+    };
+    check();
+    std::cout<<"{\"stage\":\"prepared\",\"launchId\":"<<json(nonce)<<",\"process\":";
+    printIdentity(child.dwProcessId,creation,expected,architecture);std::cout<<'}'<<std::endl;published();
+    permission(nonce,"attach");
+    check();initializeLoader(process.value,child.dwProcessId);check();
+    apply(owner,child.dwProcessId,creation,expected,library,flags,maximum,true,false);
+    std::cout<<"{\"stage\":\"attached\",\"launchId\":"<<json(nonce)<<",\"process\":";
+    printIdentity(child.dwProcessId,creation,expected,architecture);std::cout<<",\"state\":";
+    state(owner,child.dwProcessId,creation,false);std::cout<<'}'<<std::endl;published();
+    permission(nonce,"resume");
+    check();selectedFile(file.value,expected,digest);
+    if (ResumeThread(thread.value)!=1) throw std::runtime_error("controlled primary thread could not resume");
+    // Keep fail-closed Job ownership until resume succeeds. Only this fresh Job
+    // is released; no existing application or system process is ever terminated.
+    limits.BasicLimitInformation.LimitFlags=0;
+    if (!SetInformationJobObject(job.value,JobObjectExtendedLimitInformation,&limits,sizeof(limits)))
+      throw std::runtime_error("controlled launch job could not commit");
+    std::cout<<"{\"stage\":\"committed\",\"launchId\":"<<json(nonce)<<",\"process\":";
+    printIdentity(child.dwProcessId,creation,expected,architecture);std::cout<<'}'<<std::endl;published();
+  } catch (...) {
+    TerminateJobObject(job.value,1);WaitForSingleObject(process.value,30000);throw;
+  }
 }
 int wmain(int argc,wchar_t** argv) {
   try {
@@ -249,6 +422,11 @@ int wmain(int argc,wchar_t** argv) {
       const auto pid=number(argv[3]),flags=number(argv[7]),maximum=number(argv[8]),active=number(argv[9]);
       if (!pid || pid>MAXDWORD || flags>15 || maximum>1048576 || active>1) throw std::runtime_error("invalid rule argument");
       apply(argv[2],DWORD(pid),number(argv[4]),argv[5],argv[6],uint32_t(flags),uint32_t(maximum),active!=0); return 0;
+    }
+    if (argc>=9 && std::wstring(argv[1])==L"launch") {
+      const auto flags=number(argv[6]),maximum=number(argv[7]);
+      if (flags>15 || maximum>1048576) throw std::runtime_error("invalid controlled launch rule");
+      launch(argv[2],argv[3],argv[4],argv[5],uint32_t(flags),uint32_t(maximum),argv[8],argc-9,argv+9); return 0;
     }
     throw std::runtime_error("invalid native controller command");
   } catch (const std::exception& error) {

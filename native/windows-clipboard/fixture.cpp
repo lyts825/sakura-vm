@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
 #include <io.h>
 #include <fcntl.h>
 
@@ -36,7 +37,8 @@ static std::string json(const std::wstring& text) {
     else if (c=='\n') result+="\\n";
     else if (c=='\r') result+="\\r";
     else if (c=='\t') result+="\\t";
-    else if (c>=32) result+=char(c);
+    else if(c<32) {constexpr char hex[]="0123456789abcdef";result+="\\u00";result+=hex[c>>4];result+=hex[c&15];}
+    else result+=char(c);
   }
   return result+'"';
 }
@@ -184,7 +186,32 @@ static LRESULT CALLBACK procedure(HWND handle,UINT message,WPARAM a,LPARAM b) {
   }
   return DefWindowProcW(handle,message,a,b);
 }
+static bool entryPolicy(const wchar_t* owner) {
+  const auto created=processCreation(GetCurrentProcess());
+  const std::wstring name=L"Local\\SakuraClipboard."+std::wstring(owner)+L"."+
+    std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(created);
+  const HANDLE section=OpenFileMappingW(FILE_MAP_READ,FALSE,name.c_str());
+  if (!section)return false;
+  const auto policy=static_cast<const SakuraClipboardPolicy*>(MapViewOfFile(section,FILE_MAP_READ,0,0,sizeof(SakuraClipboardPolicy)));
+  const bool ready=policy && policy->magic==SakuraClipboardMagic && policy->version==SakuraClipboardVersion &&
+    policy->pid==GetCurrentProcessId() && policy->creationTime==created && policy->active==1 && policy->status==1 &&
+    !(policy->sequence&1);
+  if(policy)UnmapViewOfFile(policy);CloseHandle(section);return ready;
+}
 int wmain(int argc,wchar_t** argv) {
+  // Capture the policy library at the first statement in application main.
+  // This does not claim to sandbox loader/TLS or third-party DLL initialization.
+  const bool entryLibrary=GetModuleHandleW(sizeof(void*)==4?L"SakuraClipboardPolicy-x86.dll":L"SakuraClipboardPolicy.dll")!=nullptr;
+  const bool controlled=argc>=5 && std::wstring(argv[1])==L"--controlled";
+  const bool entryReady=controlled && entryLibrary && entryPolicy(argv[4]);
+  std::wstring stationArgument=controlled?argv[3]:(argc==2?argv[1]:L"");
+  std::vector<std::wstring> literalArguments;
+  if(controlled)for(int index=5;index<argc;++index)literalArguments.emplace_back(argv[index]);
+  if(controlled && literalArguments.size()==2 && literalArguments[0]==L"--entry-marker") {
+    // Failure-path tests use an owned marker to detect an accidental resume.
+    const HANDLE marker=CreateFileW(literalArguments[1].c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(marker!=INVALID_HANDLE_VALUE)CloseHandle(marker);
+  }
   if(argc==3 && std::wstring(argv[1])==L"--launch") {
     wchar_t executable[32768]{};
     if(!GetModuleFileNameW(nullptr,executable,32768))return 2;
@@ -203,17 +230,22 @@ int wmain(int argc,wchar_t** argv) {
     DWORD code=0;GetExitCodeProcess(child.hProcess,&code);CloseHandle(child.hProcess);
     return int(code);
   }
-  if(argc==3 && std::wstring(argv[1])==L"--create") {
+  if((argc==3 && std::wstring(argv[1])==L"--create") || controlled) {
     HANDLE pipe=CreateFileW(argv[2],GENERIC_READ|GENERIC_WRITE,0,nullptr,OPEN_EXISTING,0,nullptr);
     if(pipe==INVALID_HANDLE_VALUE)return 10;
     const int file=_open_osfhandle(reinterpret_cast<intptr_t>(pipe),_O_RDWR|_O_BINARY);
-    if(file<0 || _dup2(file,0) || _dup2(file,1))return 10;
-    _setmode(0,_O_BINARY);_setmode(1,_O_BINARY);
+    // Controlled launches intentionally have no inherited standard handles.
+    // Give the CRT valid FILE descriptors before rebinding its private pipe.
+    if(file<0 || !std::freopen("NUL","rb",stdin) || !std::freopen("NUL","wb",stdout) ||
+        _dup2(file,_fileno(stdin)) || _dup2(file,_fileno(stdout)))return 10;
+    _setmode(_fileno(stdin),_O_BINARY);_setmode(_fileno(stdout),_O_BINARY);
+    std::cin.clear();std::cout.clear();
+    if(!controlled)stationArgument=L"--create";
     argc=2;
   }
   if(argc!=2)return 2;
   HWINSTA station=nullptr;
-  if(std::wstring(argv[1])==L"--create") {
+  if(stationArgument==L"--create") {
     HANDLE token=nullptr;DWORD size=0;
     if(!OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&token))return 2;
     GetTokenInformation(token,TokenUser,nullptr,0,&size);
@@ -230,7 +262,11 @@ int wmain(int argc,wchar_t** argv) {
     // makes a pre-existing station a hard failure rather than a shared test surface.
     station=CreateWindowStationW(nullptr,1,WINSTA_ALL_ACCESS,&attributes);
     LocalFree(descriptor);
-  } else station=OpenWindowStationW(argv[1],FALSE,WINSTA_ALL_ACCESS);
+  } else {
+    // Controlled tests may only join the already-created private fixture station.
+    if(stationArgument.empty() || CompareStringOrdinal(stationArgument.c_str(),-1,L"WinSta0",-1,TRUE)==CSTR_EQUAL)return 3;
+    station=OpenWindowStationW(stationArgument.c_str(),FALSE,WINSTA_ALL_ACCESS);
+  }
   if(!station){const DWORD error=GetLastError();std::cerr<<"CreateWindowStation "<<error<<std::endl;return 3;}
   if(!SetProcessWindowStation(station)){const DWORD error=GetLastError();std::cerr<<"SetProcessWindowStation "<<error<<std::endl;return 3;}
   HDESK desktop=CreateDesktopW(L"default",nullptr,nullptr,0,GENERIC_ALL,nullptr);
@@ -246,7 +282,21 @@ int wmain(int argc,wchar_t** argv) {
   const DWORD thread=GetCurrentThreadId();
   wchar_t stationName[256]{};DWORD stationBytes=0;
   if(!GetUserObjectInformationW(station,UOI_NAME,stationName,sizeof(stationName),&stationBytes))return 8;
-  std::cout<<"{\"pid\":"<<GetCurrentProcessId()<<",\"created\":\""<<processCreation(GetCurrentProcess())<<"\",\"station\":"<<json(stationName)<<'}'<<std::endl;
+  std::cout<<"{\"pid\":"<<GetCurrentProcessId()<<",\"created\":\""<<processCreation(GetCurrentProcess())<<"\",\"station\":"<<json(stationName);
+  if(controlled) {
+    wchar_t directory[32768]{};
+    const DWORD directoryLength=GetCurrentDirectoryW(32768,directory);
+    if(!directoryLength || directoryLength>=32768)return 12;
+    if(!OpenClipboard(window))return 11;
+    SetLastError(0);const HANDLE pasted=GetClipboardData(CF_UNICODETEXT);const DWORD pasteError=GetLastError();
+    SetLastError(0);const BOOL emptied=EmptyClipboard();const DWORD copyError=GetLastError();CloseClipboard();
+    std::cout<<",\"directory\":"<<json(directory)<<",\"entryLibrary\":"<<(entryLibrary?"true":"false")<<",\"entryReady\":"<<(entryReady?"true":"false")
+      <<",\"initialCopyBlocked\":"<<(!emptied&&copyError==ERROR_ACCESS_DENIED?"true":"false")
+      <<",\"initialPasteBlocked\":"<<(!pasted&&pasteError==ERROR_ACCESS_DENIED?"true":"false")<<",\"argv\":[";
+    for(size_t index=0;index<literalArguments.size();++index){if(index)std::cout<<',';std::cout<<json(literalArguments[index]);}
+    std::cout<<']';
+  }
+  std::cout<<'}'<<std::endl;
   HANDLE replied=CreateEventW(nullptr,FALSE,FALSE,nullptr);
   std::thread input([thread,replied](){std::string line;while(std::getline(std::cin,line)){
     auto contents=new std::string(std::move(line));

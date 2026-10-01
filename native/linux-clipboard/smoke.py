@@ -3,15 +3,17 @@ import os
 import pwd
 import select
 import shutil
+import socket
 import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
 MAGIC = 0x58434C50
-library, fixture, build = sys.argv[1:4]
+library, fixture, build, qt_fixture = sys.argv[1:5]
 directory = Path(tempfile.mkdtemp(prefix="sakura-x11-smoke-", dir="/var/tmp"))
 directory.chmod(0o755)
 try:
@@ -97,6 +99,248 @@ def read(toolkit, **options):
     answer = line(process)
     assert process.wait(15) == 0, process.stderr.read()
     return answer
+
+def qt_start(action, data, policy=None, selection="CLIPBOARD"):
+    global counter
+    counter += 1
+    file = directory / (str(counter) + ".qt-data")
+    file.write_bytes(data); file.chmod(0o644)
+    count = directory / (str(counter) + ".qt-incr-count")
+    count.write_text("0"); os.chown(count, user.pw_uid, user.pw_gid); count.chmod(0o600)
+    env = dict(environment, QT_QPA_PLATFORM="xcb")
+    descriptors = []
+    if policy:
+        env.update(LD_PRELOAD=library, SAKURA_CLIPBOARD_POLICY=str(policies[policy]))
+        status = directory / (str(counter) + ".status")
+        status.write_bytes(struct.pack("<IIQQQ65s31x", MAGIC, 1, 0, 0, 0, build.encode())); status.chmod(0o600)
+        descriptor = os.open(status, os.O_RDWR); descriptors.append(descriptor)
+        env["SAKURA_CLIPBOARD_STATUS_FD"] = str(descriptor)
+    process = subprocess.Popen([qt_fixture, action, str(file), str(count), selection], env=env,
+                               preexec_fn=credentials, start_new_session=True, pass_fds=descriptors,
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    process.incr_count = count
+    children.append(process)
+    for descriptor in descriptors:
+        os.close(descriptor)
+    return process
+
+def qt_headers(process, minimum):
+    until = time.monotonic() + 5
+    while time.monotonic() < until:
+        text = process.incr_count.read_text().strip()
+        if text.isdigit() and int(text) >= minimum:
+            return int(text)
+        time.sleep(.02)
+    raise AssertionError("Qt did not emit the expected real INCR headers")
+
+def stalled_broker_authentication():
+    # The first connection reaches the real owned Xvfb; later connections accept
+    # TCP but never reply to X11 authentication. Only owned protocol bytes pass
+    # through this fixture proxy, and no payload is recorded.
+    old = environment["DISPLAY"]
+    proxy_display = "127.0.0.1:95"
+    cookie = subprocess.check_output(["xauth", "-f", str(auth), "list", old], text=True).split()[-1]
+    subprocess.run(["xauth", "-f", str(auth), "add", proxy_display, ".", cookie], check=True)
+    os.chown(auth, user.pw_uid, user.pw_gid); auth.chmod(0o600)
+    listener = socket.socket(); listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 6095)); listener.listen(4); listener.settimeout(.1)
+    stopped = threading.Event(); connections = []; relays = []
+    def relay(client, upstream):
+        while not stopped.is_set():
+            try:
+                readable, _, _ = select.select([client, upstream], [], [], .1)
+                for source in readable:
+                    data = source.recv(65536)
+                    if not data:
+                        return
+                    (upstream if source is client else client).sendall(data)
+            except OSError:
+                return
+    def accept():
+        while not stopped.is_set():
+            try:
+                client, _ = listener.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            connections.append(client)
+            if len(connections)==1:
+                upstream = socket.socket(socket.AF_UNIX); upstream.connect("/tmp/.X11-unix/X93"); connections.append(upstream)
+                worker = threading.Thread(target=relay, args=(client, upstream)); relays.append(worker); worker.start()
+    worker = threading.Thread(target=accept); worker.start()
+    try:
+        environment["DISPLAY"] = proxy_display; rule("sink")
+        began = time.monotonic(); receiver = start("xcb", "multiple", policy="sink")
+        assert line(receiver)=="DENIED" and receiver.wait(5)==0
+        assert time.monotonic()-began < 5
+    finally:
+        environment["DISPLAY"] = old; stopped.set(); listener.close(); worker.join(2)
+        for connection in connections:
+            try:
+                connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            connection.close()
+        for worker in relays:
+            worker.join(2)
+    print("Broker authentication stall on the original pinned socket refused within its 2s setup bound and process exit joined workers", flush=True)
+
+def small_server_qt():
+    small = ":94"
+    subprocess.run(["xauth", "-f", str(auth), "add", small, ".", os.urandom(16).hex()], check=True)
+    os.chown(auth, user.pw_uid, user.pw_gid); auth.chmod(0o600)
+    environment["DISPLAY"] = small
+    server = subprocess.Popen(["Xvfb", small, "-screen", "0", "320x240x24", "-nolisten", "tcp",
+                               "-auth", str(auth), "-maxbigreqsize", "1"], env=environment,
+                              preexec_fn=credentials, start_new_session=True,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    children.append(server)
+    for _ in range(100):
+        assert server.poll() is None, "owned Xvfb could not set its big request limit"
+        if Path("/tmp/.X11-unix/X94").exists():
+            break
+        time.sleep(.1)
+    maximum = int(read("xcb", action="maximum"))
+    assert 262144 < maximum < 16*1024*1024, maximum
+    # This server does not permit disabling BIG-REQUESTS. Its documented
+    # -maxbigreqsize option limits the actual server, and Qt must split a body
+    # whose payload alone occupies that limit (headers need additional bytes).
+    # Xserver stores this option in request words, so Debian's real minimum is
+    # about 4MiB. Use MIME binary bodies permitted by Files, within the 16MiB
+    # item limit, rather than mislabeling oversized text as an allowed transfer.
+    phrase = b"owned official Qt INCR text\n"
+    data = (phrase * ((maximum + len(phrase) - 1)//len(phrase)))[:maximum]
+    assert len(data) > 256*1024
+    expected = ("application/sakura-first:OK;application/sakura-second:OK;TARGETS:OK;TIMESTAMP:OK;SAKURA_UNKNOWN:DENIED;"
+                "DELETE:DENIED;INSERT_SELECTION:DENIED;INSERT_PROPERTY:DENIED;MULTIPLE:DENIED;")
+    print("Owned Qt server -maxbigreqsize 1: actual maximum request bytes " + str(maximum), flush=True)
+    for selection in ["CLIPBOARD", "PRIMARY"]:
+        rule("sink"); source = qt_start("owner-binary", data, selection=selection)
+        assert line(source) == "READY"
+        count = 0
+        for receiver in ["xlib", "xcb", "mixed"]:
+            assert read(receiver, action="multiple", data=data, policy="sink", selection=selection, extra="qt-binary") == expected
+            count = qt_headers(source, count + 2)
+        receiver = qt_start("multiple-binary", data, policy="sink", selection=selection)
+        assert line(receiver) == "MULTIPLE-COMPLETE" and receiver.wait(15) == 0
+        count = qt_headers(source, count + 2)
+        print(selection + ": real Qt MULTIPLE emitted " + str(count) + " INCR headers; two complete >256KiB children reached Xlib/XCB/mixed and explicit Qt requester", flush=True)
+        source.terminate(); source.wait(15)
+        # A managed owner cannot atomically publish these bodies on this server.
+        # Keep the explicit per-pair refusal rather than exporting a prefix.
+        rule("source"); source = qt_start("owner-binary", data, policy="source", selection=selection)
+        assert line(source) == "READY"
+        result = read("mixed", action="multiple", data=data, selection=selection, extra="qt-binary")
+        assert result == expected.replace("application/sakura-first:OK;application/sakura-second:OK", "application/sakura-first:DENIED;application/sakura-second:DENIED"), result
+        qt_headers(source, 2); source.terminate(); source.wait(15)
+    print("Real Qt INCR receive completed on the small server; managed copy exceeding its atomic request limit was independently refused", flush=True)
+
+
+def multiple(toolkit, other):
+    data = ("owned MULTIPLE \u754c\u00e9 text\n".encode() * 15000)
+    assert len(data) > 256 * 1024
+    expected = ("UTF8_STRING:OK;text/plain:OK;TARGETS:OK;TIMESTAMP:OK;SAKURA_UNKNOWN:DENIED;"
+                "DELETE:DENIED;INSERT_SELECTION:DENIED;INSERT_PROPERTY:DENIED;MULTIPLE:DENIED;")
+    for selection in ["CLIPBOARD", "PRIMARY"]:
+        for guarded_source, guarded_sink in [(True, False), (False, True), (True, True)]:
+            rule("source"); rule("sink")
+            source = owner(toolkit, data=data, policy="source" if guarded_source else None,
+                           extra="incr:32767", selection=selection)
+            for receiver in [other, "mixed"]:
+                assert read(receiver, action="multiple", data=data, policy="sink" if guarded_sink else None,
+                            selection=selection) == expected
+            assert not select.select([source.stdout], [], [], .1)[0], "side-effect target reached owner"
+            source.terminate(); source.wait(15)
+    rule("source"); rule("sink")
+    source = owner(toolkit, data=b"ordinary text", policy="source")
+    assert read(other, action="multiple-wait", data=b"ordinary text", policy="sink") == expected
+    assert read(other, action="multiple", data=b"ordinary text", policy="sink", extra="env") == expected
+    for variant in ["type", "format", "odd", "many", "no-property"]:
+        assert read(other, action="multiple", policy="sink", extra=variant) == "DENIED", variant
+    assert read(other, action="multiple", policy="sink", extra="empty") == "EMPTY"
+    assert read(other, action="multiple", policy="sink", extra="duplicate") == expected.replace("UTF8_STRING:OK;text/plain:OK", "UTF8_STRING:DENIED;text/plain:DENIED")
+    for variant in ["parent", "none"]:
+        assert read(other, action="multiple", policy="sink", extra=variant) == expected.replace("UTF8_STRING:OK", "UTF8_STRING:DENIED")
+    cached = start("mixed", "multiple-cache", policy="sink")
+    assert line(cached) == expected
+    rule("sink", 21); cached.stdin.write("recheck\n"); cached.stdin.flush()
+    assert line(cached) == "DENIED" and cached.wait(15) == 0
+    rule("sink")
+    deleting = start(other, "multiple-delete", policy="sink")
+    assert line(deleting) == expected
+    deleting.stdin.write("recheck\n"); deleting.stdin.flush()
+    assert line(deleting) == "DENIED" and deleting.wait(15) == 0
+    late = start("mixed", "multiple", policy="sink", extra="late")
+    assert line(late) == expected and line(late) == "STALE-DENIED" and late.wait(15) == 0
+    source.terminate(); source.wait(15)
+    for style in ["multiple-target-none", "multiple-property-none"]:
+        source = owner(toolkit, extra=style)
+        assert read(other, action="multiple") == expected, style
+        source.terminate(); source.wait(15)
+    rule("source")
+    source = owner(toolkit, data=b"x"*2048, policy="source", extra="incr-group-window:13")
+    receiver = start("xcb", "multiple-window-reuse", data=b"x"*2048)
+    assert line(source)=="CHUNK"
+    receiver.stdin.write("destroy\n"); receiver.stdin.flush(); assert line(receiver)=="REUSED"
+    time.sleep(.2); source.stdin.write("continue\n"); source.stdin.flush(); assert line(source)=="LATE"
+    receiver.stdin.write("check\n"); receiver.stdin.flush()
+    assert line(receiver)=="STALE-DENIED" and receiver.wait(15)==0
+    source.terminate(); source.wait(15)
+    # New conversions invalidate the whole old group, including both aliases
+    # and pending parent/child cookies, even after the policy is disabled.
+    for action, flags in [("multiple-reuse", 0), ("multiple-child-reuse", 23)]:
+        rule("source"); rule("sink")
+        source = owner(toolkit, policy="source")
+        receiver = start("mixed", action, policy="sink")
+        assert line(receiver) == expected
+        source.terminate(); source.wait(15)
+        source = owner(toolkit, policy="source", data=b"new complete group body")
+        rule("sink", flags); receiver.stdin.write("new complete group body\n"); receiver.stdin.flush()
+        assert line(receiver) == (expected if action=="multiple-reuse" else "NEW-COMPLETE")
+        assert line(receiver) == "STALE-DENIED" and receiver.wait(15) == 0
+        source.terminate(); source.wait(15)
+    # Successful siblings remain available when one completed stream is denied.
+    for guarded_source in [True, False]:
+        for mode in ["multi-secret", "incr-secret:3", "incr-utf8:3"]:
+            rule("source", 31); rule("sink", 31)
+            source = owner(toolkit, policy="source" if guarded_source else None, extra=mode)
+            result = read(other, action="multiple", policy=None if guarded_source else "sink")
+            assert result == expected.replace("text/plain:OK", "text/plain:DENIED"), (mode, result)
+            source.terminate(); source.wait(15)
+    # The first child is ready privately when a second child pauses. Tightening
+    # must apply to both, before the parent advertises any usable text property.
+    for guarded_source in [True, False]:
+        for flags, maximum, data in [(23, 1024, b"x"*2048), (31, 1048576, b"password=0123456789abcdef")]:
+            rule("source"); rule("sink")
+            source = owner(toolkit, data=data, policy="source" if guarded_source else None, extra="incr-group-pause:13")
+            receiver = start(other, "multiple", data=data, policy=None if guarded_source else "sink")
+            assert line(source) == "CHUNK"
+            rule("source" if guarded_source else "sink", flags, maximum)
+            source.stdin.write("continue\n"); source.stdin.flush()
+            assert line(receiver) == expected.replace("UTF8_STRING:OK;text/plain:OK", "UTF8_STRING:DENIED;text/plain:DENIED")
+            assert receiver.wait(15) == 0
+            source.terminate(); source.wait(15)
+    rule("source"); rule("sink")
+    source = owner(toolkit, policy="source")
+    assert read("mixed", action="multiple-groups", policy="sink") == "32/8/32"
+    limit = read("mixed", action="multiple", policy="sink", extra="limit")
+    assert limit.count(":OK;") == 32 and limit.count(":DENIED;") == 96, limit
+    concurrent = start("mixed", "multiple-concurrent", policy="sink")
+    assert line(concurrent) == expected and line(concurrent) == "COMPLETE" and concurrent.wait(15) == 0
+    source.terminate(); source.wait(15)
+    if toolkit == "xlib":
+        rule("sink")
+        began = time.monotonic()
+        blocked_self = read("xlib", action="multiple-self-block", policy="sink")
+        assert blocked_self == expected.replace(":OK;", ":DENIED;") and time.monotonic()-began < 15
+    for guarded_source in [True, False]:
+        rule("source", 31); rule("sink", 31)
+        source = owner(toolkit, data=b"password=0123456789abcdef", policy="source" if guarded_source else None, extra="incr:3")
+        result = read(other, action="multiple", data=b"password=0123456789abcdef", policy=None if guarded_source else "sink")
+        assert result == expected.replace("UTF8_STRING:OK;text/plain:OK", "UTF8_STRING:DENIED;text/plain:DENIED"), result
+        source.terminate(); source.wait(15)
+    print(toolkit + ": MULTIPLE two INCR children, independent failures, live tightening, group/pair/buffer quotas, concurrent aliases, one parent notify, blocking waits, pinned authentication, malformed lists, cache/delete and stale cookies passed", flush=True)
 
 
 def incremental(toolkit, other):
@@ -195,7 +439,7 @@ def incremental(toolkit, other):
         rule("source", 19); rule("sink", 19)
         source = owner(toolkit, policy="source" if guarded_source else None, extra="incr-targets:8")
         formats = read(other, target="TARGETS", policy=None if guarded_source else "sink")
-        assert formats == "UTF8_STRING;TARGETS;TIMESTAMP;", formats
+        assert formats == "UTF8_STRING;TARGETS;TIMESTAMP;MULTIPLE;", formats
         source.terminate(); source.wait(15)
     rule("source"); rule("sink")
     source = owner(toolkit, extra="incr:7")
@@ -284,11 +528,12 @@ try:
         rule("sink", 19)
         assert read(other, target="text/uri-list", policy="sink") == "DENIED"
         formats = read(other, target="TARGETS", policy="sink")
-        assert "image/png" not in formats and "MULTIPLE" not in formats
+        assert "image/png" not in formats and "MULTIPLE" in formats
         assert "TARGETS" in formats and "TIMESTAMP" in formats
         rule("sink")
         source.terminate(); source.wait(15)
 
+        multiple(toolkit, other)
         incremental(toolkit, other)
         source = owner(toolkit, data=b"first segment subsequent text")
         assert read(other, policy="sink", extra=1) == "DENIED"
@@ -307,6 +552,8 @@ try:
             assert read(other, policy="sink", action="poll") == "DENIED"
         source.terminate(); source.wait(15)
         print(toolkit + ": directions, live tightening, cached reads, text limits, formats, secrets and invalid policy passed", flush=True)
+    stalled_broker_authentication()
+    small_server_qt()
     counts = [struct.unpack("<IIQQQ65s31x", path.read_bytes()) for path in directory.glob("*.status")]
     assert sum(value[2] for value in counts) > 10
     assert sum(value[3] for value in counts) > 0 and sum(value[4] for value in counts) > 0

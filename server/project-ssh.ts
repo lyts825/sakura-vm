@@ -33,6 +33,10 @@ export function projectSshPaths(projectId: string) {
     home: `/var/lib/sakura/ssh/${key}`,
     unit: `sakura-ssh-${key}.service`,
     unitPath: `/etc/systemd/system/sakura-ssh-${key}.service`,
+    openrcUnit: `sakura-ssh-${key}`,
+    openrcPath: `/etc/init.d/sakura-ssh-${key}`,
+    runtime: `/run/sakura-project-ssh/${key}`,
+    openrcGroup: `/openrc.sakura-ssh-${key}`,
   };
 }
 export const projectSshBinding = (project: Project) =>
@@ -41,24 +45,59 @@ export const projectSshBinding = (project: Project) =>
   );
 
 function servicePresent(p: ReturnType<typeof projectSshPaths>) {
-  return `[ -d ${p.config} ] || [ -e ${p.unitPath} ] || { command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet ${p.unit}; }`;
+  return (
+    `[ -d ${p.config} ] || [ -e ${p.unitPath} ] || [ -e ${p.openrcPath} ] || ` +
+    `[ -d ${p.runtime} ] || [ -d /sys/fs/cgroup${p.openrcGroup} ] || ` +
+    `{ command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet ${p.unit}; }`
+  );
+}
+
+/** Proc evidence is independent of a potentially damaged OpenRC receipt. */
+function projectSshMainScan(p: ReturnType<typeof projectSshPaths>) {
+  return (
+    `def project_mains():\n` +
+    ` result=[]\n` +
+    ` for entry in glob.glob('/proc/[0-9]*/stat'):\n` +
+    `  directory=entry.rsplit('/',1)[0]\n` +
+    `  try:\n` +
+    `   fields=open(entry).read().rsplit(')',1)[1].split()\n` +
+    `   if fields[0]=='Z': continue\n` +
+    `   args=open(directory+'/cmdline','rb').read().decode(errors='replace').replace(chr(0),' ').split()\n` +
+    `   fixed=${JSON.stringify(p.config + '/sshd_config')}\n` +
+    `   if not any((arg=='-f' and index+1<len(args) and args[index+1]==fixed) or arg=='-f'+fixed for index,arg in enumerate(args)): continue\n` +
+    `   executable=os.readlink(directory+'/exe')\n` +
+    `   if executable.endswith(' (deleted)'): executable=executable[:-10]\n` +
+    `   if executable=='/usr/sbin/sshd': result.append(int(directory.rsplit('/',1)[1]))\n` +
+    `  except (FileNotFoundError,ProcessLookupError): pass\n` +
+    ` return result\n`
+  );
 }
 
 /** Includes detached children that retain the service cgroup after their SSH channel closes. */
 export function projectSshBusyScript(projectId: string) {
   const p = projectSshPaths(projectId);
   return `if ${servicePresent(p)}; then python3 -I -S -c ${quote(
-    `import glob,os\nunit=${JSON.stringify('/' + p.unit)}\n` +
+    `import glob,json,os\n` +
+      projectSshMainScan(p) +
+      `units=${JSON.stringify(['/' + p.unit, p.openrcGroup])}\n` +
+      `busy=bool(project_mains())\n` +
       `for path in glob.glob('/proc/[0-9]*/cgroup'):\n` +
       ` try:\n  groups=open(path).read().splitlines()\n` +
-      `  if any(g.split(':',2)[-1].endswith(unit) or unit+'/' in g.split(':',2)[-1] for g in groups): print('SAKURA_PROJECT_SSH_BUSY'); break\n` +
-      ` except (OSError,ProcessLookupError): pass`,
+      `  if any(g.split(':',2)[-1].endswith(unit) or unit+'/' in g.split(':',2)[-1] for g in groups for unit in units): busy=True; break\n` +
+      ` except (OSError,ProcessLookupError): pass\n` +
+      `try:\n` +
+      ` owner=json.load(open(${JSON.stringify(p.runtime + '/owner.json')}))\n` +
+      ` pid=owner['pid']; fields=open('/proc/'+str(pid)+'/stat').read().rsplit(')',1)[1].split()\n` +
+      ` if owner['bootId']==open('/proc/sys/kernel/random/boot_id').read().strip() and owner['startTicks']==fields[19] and fields[0]!='Z': busy=True\n` +
+      `except (OSError,ValueError,KeyError,TypeError): pass\n` +
+      `if busy: print('SAKURA_PROJECT_SSH_BUSY')`,
   )}; fi`;
 }
 
-const recordSchema = z
+export const projectSshRecordSchema = z
   .object({
     version: z.literal(1),
+    manager: z.enum(['systemd', 'openrc']).optional(),
     runId: z.uuid(),
     projectId: projectIdSchema,
     binding: z.string().regex(/^[a-f0-9]{64}$/),
@@ -75,7 +114,7 @@ const recordSchema = z
       p.config + '/sshd_config',
       p.config + '/authorized_keys',
       p.config + '/hostkey',
-      p.unitPath,
+      ...(record.manager === 'openrc' ? [p.openrcPath, p.config + '/launch.py'] : [p.unitPath]),
     ];
     if (
       Object.keys(record.files).length !== required.length ||
@@ -83,7 +122,8 @@ const recordSchema = z
     )
       context.addIssue({ code: 'custom', message: '项目 SSH 文件绑定不完整' });
   });
-type Record = z.infer<typeof recordSchema>;
+type Record = z.infer<typeof projectSshRecordSchema>;
+type Manager = 'systemd' | 'openrc';
 const statusSchema = z
   .object({
     present: z.boolean(),
@@ -97,25 +137,147 @@ type Status = z.infer<typeof statusSchema>;
 const environmentHash = (project: Project) =>
   digest(JSON.stringify(Object.entries(project.environment || {}).sort(([a], [b]) => a.localeCompare(b))));
 
-function statusCommand(project: Project, record: Record | null) {
+function openrcCgroupCheck(p: ReturnType<typeof projectSshPaths>) {
+  return (
+    `group=${JSON.stringify(p.openrcGroup)}; base='/sys/fs/cgroup'; path=base+group\n` +
+    `def require_root():\n` +
+    ` if os.path.islink(base): raise ValueError('项目 SSH cgroup 根目录不符')\n` +
+    ` mounted=False\n` +
+    ` for row in open('/proc/self/mountinfo').read().splitlines():\n` +
+    `  fields=row.split(); separator=fields.index('-')\n` +
+    `  if fields[4]==base and fields[3]=='/' and fields[separator+1]=='cgroup2': mounted=True\n` +
+    ` if not mounted or not os.path.isfile(base+'/cgroup.controllers'): raise ValueError('项目 SSH 需要真实 cgroup v2 统一层级')\n` +
+    ` if os.path.lexists(path) and (os.path.islink(path) or not os.path.isdir(path)): raise ValueError('项目 SSH cgroup 路径不符')\n`
+  );
+}
+
+function openrcStopScript(p: ReturnType<typeof projectSshPaths>) {
+  return (
+    `import glob,json,os,time\n` +
+    openrcCgroupCheck(p) +
+    projectSshMainScan(p) +
+    `def members():\n` +
+    ` result=[]\n` +
+    ` for proc in glob.glob('/proc/[0-9]*/cgroup'):\n` +
+    `  try:\n` +
+    `   if any(row.startswith('0::') and (row[3:]==group or row[3:].startswith(group+'/')) for row in open(proc).read().splitlines()): result.append(int(proc.split('/')[2]))\n` +
+    `  except (OSError,ProcessLookupError): pass\n` +
+    ` return result\n` +
+    `owned=members()\n` +
+    `if os.getpid() in owned: raise ValueError('不能从被停止的项目 cgroup 内执行清理')\n` +
+    `if owned and not os.path.isdir(path): raise ValueError('项目 SSH cgroup 无法核对，拒绝放行')\n` +
+    `if os.path.lexists(path):\n` +
+    ` require_root()\n` +
+    ` if not os.path.isfile(path+'/cgroup.kill'): raise ValueError('项目 SSH 需要 cgroup.kill 清理全部子进程')\n` +
+    ` with open(path+'/cgroup.kill','w') as stream: stream.write('1')\n` +
+    ` deadline=time.monotonic()+10\n` +
+    ` while 'populated 1' in open(path+'/cgroup.events').read():\n` +
+    `  if time.monotonic()>=deadline: raise ValueError('项目 SSH 子进程尚未停止')\n` +
+    `  time.sleep(0.05)\n` +
+    // cgroup.events ignores zombies. Keep the kernel group until PID 1 has
+    // reaped its dead members, so a completed stop also removes their /proc records.
+    ` while members():\n` +
+    `  if time.monotonic()>=deadline: raise ValueError('项目 SSH 子进程尚未回收')\n` +
+    `  time.sleep(0.05)\n` +
+    ` for folder,children,files in os.walk(path,topdown=False): os.rmdir(folder)\n` +
+    `owner=None\n` +
+    `try: owner=json.load(open(${JSON.stringify(p.runtime + '/owner.json')}))\n` +
+    `except (FileNotFoundError,ProcessLookupError,json.JSONDecodeError,UnicodeDecodeError): pass\n` +
+    `if isinstance(owner,dict) and isinstance(owner.get('pid'),int) and not isinstance(owner['pid'],bool) and owner['pid']>0 and isinstance(owner.get('bootId'),str) and isinstance(owner.get('startTicks'),str):\n` +
+    ` fields=None\n` +
+    ` try: fields=open('/proc/'+str(owner['pid'])+'/stat').read().rsplit(')',1)[1].split()\n` +
+    ` except (FileNotFoundError,ProcessLookupError): pass\n` +
+    ` if fields is not None and owner['bootId']==open('/proc/sys/kernel/random/boot_id').read().strip() and owner['startTicks']==fields[19] and fields[0]!='Z': raise ValueError('项目 SSH 主进程仍存活，拒绝放行')\n` +
+    `if project_mains(): raise ValueError('项目 SSH 配置对应的主进程仍在 cgroup 外存活，拒绝放行')\n` +
+    `for state in ['started','starting','stopping','inactive','failed','wasinactive']:\n` +
+    ` marker='/run/openrc/'+state+${JSON.stringify('/' + p.openrcUnit)}\n` +
+    ` if os.path.lexists(marker): os.unlink(marker)\n`
+  );
+}
+
+function openrcLauncher(project: Project, runId: string) {
+  const p = projectSshPaths(project._workspace || 'default'),
+    namespace = projectNetworkNamespace(project);
+  return (
+    `#!/usr/bin/python3\n` +
+    `import json,os,stat,sys,tempfile\n` +
+    `if sys.argv[1:]==['--stop']:\n` +
+    openrcStopScript(p)
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => ' ' + line)
+      .join('\n') +
+    `\n sys.exit(0)\n` +
+    openrcCgroupCheck(p) +
+    `require_root()\n` +
+    `if not os.path.isfile(path+'/cgroup.kill') or '0::'+group not in open('/proc/self/cgroup').read().splitlines(): raise ValueError('OpenRC 没有建立项目 SSH 的真实 cgroup')\n` +
+    `runtime=${JSON.stringify(p.runtime)}\n` +
+    `for directory in ['/run','/run/sakura-project-ssh',runtime]:\n` +
+    ` info=os.lstat(directory)\n` +
+    ` if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode & 0o022: raise ValueError('项目 SSH 运行目录权限不符')\n` +
+    `owner={'version':1,'manager':'openrc','service':${JSON.stringify(p.openrcUnit)},'runId':${JSON.stringify(runId)},'bootId':open('/proc/sys/kernel/random/boot_id').read().strip(),'pid':os.getpid(),'startTicks':open('/proc/self/stat').read().rsplit(')',1)[1].split()[19],'cgroup':group}\n` +
+    `descriptor,temporary=tempfile.mkstemp(dir=runtime,prefix='.owner-',suffix='.new')\n` +
+    `with os.fdopen(descriptor,'w') as stream: json.dump(owner,stream); stream.flush(); os.fsync(stream.fileno())\n` +
+    `os.replace(temporary,runtime+'/owner.json')\n` +
+    `directory=os.open(runtime,os.O_DIRECTORY); os.fsync(directory); os.close(directory)\n` +
+    `command=${JSON.stringify(namespace ? ['/usr/bin/nsenter', '--net=/run/netns/' + namespace, '--', '/usr/sbin/sshd', '-D', '-e', '-f', p.config + '/sshd_config'] : ['/usr/sbin/sshd', '-D', '-e', '-f', p.config + '/sshd_config'])}\n` +
+    `os.execve(command[0],command,{'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C','SAKURA_PROJECT_SSH_ID':${JSON.stringify(runId)}})\n`
+  );
+}
+
+function openrcService(project: Project) {
+  const p = projectSshPaths(project._workspace || 'default');
+  return (
+    `#!/sbin/openrc-run\ndescription="Sakura project SSH ${p.key}"\n` +
+    `depend() { need cgroups; after net; }\n` +
+    `start() {\n ebegin "Starting Sakura project SSH ${p.key}"\n` +
+    ` start-stop-daemon --start --background --make-pidfile --pidfile ${p.runtime}/pid --stdout ${p.runtime}/log --stderr ${p.runtime}/log --exec /usr/bin/python3 -- -I -S ${p.config}/launch.py\n eend $?\n}\n` +
+    `stop() {\n ebegin "Stopping Sakura project SSH ${p.key}"\n` +
+    ` printf '%s\\n' "$$" > /sys/fs/cgroup/cgroup.procs || return 1\n` +
+    ` /usr/bin/python3 -I -S ${p.config}/launch.py --stop\n eend $?\n}\n` +
+    `status() { service_started; }\n`
+  );
+}
+
+function statusCommand(project: Project, record: Record | null, manager: Manager) {
   const p = projectSshPaths(project._workspace || 'default'),
     namespace = projectNetworkNamespace(project);
   const script =
     `import glob,hashlib,json,os,subprocess\n` +
+    projectSshMainScan(p) +
     `unit=${JSON.stringify(p.unit)}; config=${JSON.stringify(p.config)}\n` +
+    `manager=${JSON.stringify(manager)}; openrc=${JSON.stringify(p.openrcUnit)}; group=${JSON.stringify(p.openrcGroup)}\n` +
     `expected=${record ? JSON.stringify(record) : 'None'}\n` +
     `out={'present':os.path.exists(config+'/binding.json'),'running':False,'valid':False,'processes':0,'reason':None}\n` +
     `def show(field):\n return subprocess.check_output(['systemctl','show','--value','--property',field,unit],text=True).strip()\n` +
     `try:\n` +
-    ` pid=int(show('MainPID') or '0')\n` +
+    ` owner=None; pid=0\n` +
     ` owned=[]\n` +
     ` for path in glob.glob('/proc/[0-9]*/cgroup'):\n` +
     `  try:\n` +
-    `   if any(g.split(':',2)[-1].endswith('/'+unit) or '/'+unit+'/' in g.split(':',2)[-1] for g in open(path).read().splitlines()): owned.append(int(path.split('/')[2]))\n` +
+    `   groups=open(path).read().splitlines()\n` +
+    `   if any((g.split(':',2)[-1].endswith('/'+unit) or '/'+unit+'/' in g.split(':',2)[-1]) if manager=='systemd' else (g.startswith('0::') and (g[3:]==group or g[3:].startswith(group+'/'))) for g in groups): owned.append(int(path.split('/')[2]))\n` +
     `  except (OSError,ProcessLookupError): pass\n` +
-    ` out['processes']=len(owned); out['running']=bool(owned or pid)\n` +
+    // A malformed receipt must never hide processes proven by the kernel.
+    ` out['processes']=len(owned); out['running']=bool(owned)\n` +
+    ` if manager=='openrc':\n` +
+    `  try:\n` +
+    `   mains=project_mains(); out['running']=bool(owned or mains)\n` +
+    `  except (OSError,ValueError,IndexError):\n` +
+    `   out['running']=True\n` +
+    `   raise ValueError('无法核对项目 SSH 主进程，拒绝放行')\n` +
+    `  if any(main not in owned for main in mains): raise ValueError('项目 SSH 主进程仍在所属 cgroup 外存活，拒绝放行')\n` +
+    ` if manager=='systemd': pid=int(show('MainPID') or '0')\n` +
+    ` elif os.path.exists(${JSON.stringify(p.runtime + '/owner.json')}):\n` +
+    `  owner=json.load(open(${JSON.stringify(p.runtime + '/owner.json')})); pid=owner['pid']\n` +
+    `  if not isinstance(pid,int) or isinstance(pid,bool) or pid<1: raise ValueError('项目 SSH OpenRC PID 记录不符')\n` +
+    `  try:\n` +
+    `   fields=open('/proc/'+str(pid)+'/stat').read().rsplit(')',1)[1].split()\n` +
+    `   if owner.get('bootId')!=open('/proc/sys/kernel/random/boot_id').read().strip() or owner.get('startTicks')!=fields[19] or fields[0]=='Z': pid=0\n` +
+    `  except (FileNotFoundError,ProcessLookupError): pid=0\n` +
+    ` out['processes']=len(owned); out['running']=bool(out['running'] or pid)\n` +
     ` if not out['running']: raise ValueError('项目 SSH 尚未启动')\n` +
-    ` if expected is None or expected['binding']!=${JSON.stringify(projectSshBinding(project))}: raise ValueError('项目 SSH 绑定已变化，请停止并重建')\n` +
+    ` if expected is None or expected.get('manager','systemd')!=manager or expected['binding']!=${JSON.stringify(projectSshBinding(project))}: raise ValueError('项目 SSH 绑定已变化，请停止并重建')\n` +
     ` if json.load(open(config+'/binding.json'))!=expected: raise ValueError('项目 SSH 启动记录已变化')\n` +
     ` for path,wanted in expected['files'].items():\n` +
     `  if os.path.islink(path) or hashlib.sha256(open(path,'rb').read()).hexdigest()!=wanted: raise ValueError('项目 SSH 配置或密钥已变化')\n` +
@@ -124,7 +286,22 @@ function statusCommand(project: Project, record: Record | null) {
     ` if config+'/sshd_config' not in args: raise ValueError('项目 SSH 进程参数不符')\n` +
     // OpenSSH clears its daemon environment during initialization. Check the
     // owning systemd unit's configured start identity instead.
-    ` if 'SAKURA_PROJECT_SSH_ID='+expected['runId'] not in show('Environment').split(): raise ValueError('项目 SSH 启动标识不符')\n` +
+    ` if manager=='systemd':\n` +
+    `  if 'SAKURA_PROJECT_SSH_ID='+expected['runId'] not in show('Environment').split(): raise ValueError('项目 SSH 启动标识不符')\n` +
+    ` else:\n` +
+    openrcCgroupCheck(p)
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => '  ' + line)
+      .join('\n') +
+    `\n  require_root()\n` +
+    `  if owner is None or set(owner)!=set(['version','manager','service','runId','bootId','pid','startTicks','cgroup']) or owner['version']!=1 or owner['manager']!='openrc' or owner['service']!=openrc or owner['runId']!=expected['runId'] or owner['cgroup']!=group: raise ValueError('项目 SSH OpenRC 启动标识不符')\n` +
+    `  if owner['startTicks']!=open('/proc/'+str(pid)+'/stat').read().rsplit(')',1)[1].split()[19]: raise ValueError('项目 SSH OpenRC 进程身份已变化')\n` +
+    `  for receipt in [${JSON.stringify(p.runtime + '/owner.json')},${JSON.stringify(p.runtime + '/pid')}]:\n` +
+    `   meta=os.lstat(receipt)\n` +
+    `   if os.path.islink(receipt) or meta.st_uid!=0 or meta.st_mode & 0o022: raise ValueError('项目 SSH OpenRC 记录权限不符')\n` +
+    `  if int(open(${JSON.stringify(p.runtime + '/pid')}).read())!=pid or int(open(config+'/sshd.pid').read())!=pid: raise ValueError('项目 SSH OpenRC PID 记录不符')\n` +
+    `  if subprocess.run(['rc-service',openrc,'status'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode!=0: raise ValueError('项目 SSH OpenRC 服务未登记运行')\n` +
     ` net=os.stat(${JSON.stringify(namespace ? '/run/netns/' + namespace : '/proc/1/ns/net')})\n` +
     ` for child in owned:\n` +
     `  try:\n` +
@@ -175,7 +352,7 @@ export class ProjectSsh {
         join(this.folder(id, project._workspace || 'default'), 'runtime.json'),
         () => null,
       );
-      return value === null ? null : recordSchema.parse(value);
+      return value === null ? null : projectSshRecordSchema.parse(value);
     } catch {
       return null;
     }
@@ -202,7 +379,8 @@ export class ProjectSsh {
         environmentError = '无法解析项目 SSH 环境，请检查密钥服务';
       }
     }
-    const result = await this.machines.exec(id, statusCommand(project, record), 30_000, signal);
+    const manager = this.machines.get(id).distro === 'alpine' ? 'openrc' : 'systemd';
+    const result = await this.machines.exec(id, statusCommand(project, record, manager), 30_000, signal);
     if (result.code !== 0) throw new AppError('无法读取项目 SSH 状态', 409);
     const status = statusSchema.parse(JSON.parse(result.stdout));
     if (environmentError) {
@@ -302,8 +480,9 @@ export class ProjectSsh {
     return operation;
   }
   private async prepare(id: string, signal: AbortSignal) {
-    if (!['debian', 'ubuntu'].includes(this.machines.get(id).distro || 'alpine'))
-      throw new AppError('项目 SSH 接入支持 Debian 与 Ubuntu', 409);
+    const distro = this.machines.get(id).distro;
+    if (!distro || !['alpine', 'debian', 'ubuntu'].includes(distro))
+      throw new AppError('项目 SSH 接入支持 Alpine、Debian 与 Ubuntu', 409);
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例', 409);
     const project = await this.workspaces.resolvedConfig(id),
       projectId = project._workspace || 'default';
@@ -353,13 +532,19 @@ export class ProjectSsh {
       this.machines,
       id,
       `set -eu\n` +
-        `if ! command -v python3 >/dev/null || ! test -x /usr/sbin/sshd; then export DEBIAN_FRONTEND=noninteractive; apt-get -o Acquire::Retries=2 update; apt-get -o Acquire::Retries=2 install -y openssh-server python3; fi\n` +
+        (distro === 'alpine'
+          ? `if ! command -v python3 >/dev/null || ! test -x /usr/sbin/sshd || ! test -x /usr/lib/ssh/sftp-server || ! command -v nsenter >/dev/null; then apk add --no-cache --timeout 30 openssh-server openssh-sftp-server python3 iproute2 util-linux; fi\n` +
+            `test -x /sbin/openrc-run\nrc-service cgroups start\ntest -f /sys/fs/cgroup/cgroup.controllers\n`
+          : `if ! command -v python3 >/dev/null || ! test -x /usr/sbin/sshd; then export DEBIAN_FRONTEND=noninteractive; apt-get -o Acquire::Retries=2 update; apt-get -o Acquire::Retries=2 install -y openssh-server python3; fi\n`) +
         (namespace
           ? `if ip netns exec ${namespace} true >/dev/null 2>&1; then\n${projectNetworkCheckScript(namespace)}\nfi\n`
           : '') +
-        ensureProjectNetworkScript(project, this.machines.get(id).distro || 'debian') +
+        ensureProjectNetworkScript(project, distro) +
         `umask 077\nfor path in /etc/sakura/ssh ${p.config}; do test ! -L "$path"; mkdir -p "$path"; done\n` +
         `for path in /var/lib/sakura /var/lib/sakura/ssh ${p.home}; do test ! -L "$path"; mkdir -p "$path"; done\n` +
+        (distro === 'alpine'
+          ? `for path in /run/sakura-project-ssh ${p.runtime}; do test ! -L "$path"; mkdir -p "$path"; chmod 700 "$path"; done\n`
+          : '') +
         `mkdir -p /run/sshd ${quote(project.directory)}\nchmod 755 /run/sshd\nchmod 700 ${p.home}\n` +
         `test ! -L ${p.config}/hostkey\nif [ ! -f ${p.config}/hostkey ]; then ssh-keygen -q -t ed25519 -N '' -f ${p.config}/hostkey; fi\n` +
         `ssh-keygen -y -f ${p.config}/hostkey | awk '{print "SAKURA_SSH_HOST_KEY=" $1 " " $2}'`,
@@ -402,7 +587,7 @@ export class ProjectSsh {
       `PermitUserEnvironment no\nPermitUserRC no\nAllowAgentForwarding no\nAllowTcpForwarding local\n` +
       `PermitOpen 127.0.0.1:* localhost:* [::1]:*\nAllowStreamLocalForwarding no\n` +
       `X11Forwarding no\nPermitTunnel no\nPrintMotd no\nForceCommand ${p.config}/command\n` +
-      `Subsystem sftp /usr/lib/openssh/sftp-server -d .\n`;
+      `Subsystem sftp ${distro === 'alpine' ? '/usr/lib/ssh/sftp-server' : '/usr/lib/openssh/sftp-server'} -d .\n`;
     const unit =
       `[Unit]\nDescription=Sakura project SSH ${projectId}\nAfter=network.target\n\n[Service]\n` +
       `Type=simple\nExecStart=/usr/sbin/sshd -D -e -f ${p.config}/sshd_config\n` +
@@ -413,7 +598,12 @@ export class ProjectSsh {
       [p.config + '/command']: command,
       [p.config + '/sshd_config']: config,
       [p.config + '/authorized_keys']: publicKey + '\n',
-      [p.unitPath]: unit,
+      ...(distro === 'alpine'
+        ? {
+            [p.openrcPath]: openrcService(project),
+            [p.config + '/launch.py']: openrcLauncher(project, runId),
+          }
+        : { [p.unitPath]: unit }),
     };
     const write = Object.entries(files)
       .map(
@@ -430,6 +620,7 @@ export class ProjectSsh {
       .parse(hostKeyHash.stdout.split(' ')[0]);
     const record: Record = {
       version: 1,
+      ...(distro === 'alpine' ? { manager: 'openrc' as const } : {}),
       projectId,
       runId,
       binding: projectSshBinding(project),
@@ -447,7 +638,10 @@ export class ProjectSsh {
         id,
         `set -eu\numask 077\n${write}` +
           `chmod 700 ${p.config}/command\nprintf '%s' ${quote(Buffer.from(JSON.stringify(record)).toString('base64'))} | base64 -d > ${p.config}/binding.json\n` +
-          `/usr/sbin/sshd -t -f ${p.config}/sshd_config\nsystemctl daemon-reload\nsystemctl start ${p.unit}`,
+          `/usr/sbin/sshd -t -f ${p.config}/sshd_config\n` +
+          (distro === 'alpine'
+            ? `chmod 700 ${p.openrcPath}\nrc-service ${p.openrcUnit} zap\nrc-service ${p.openrcUnit} start`
+            : `systemctl daemon-reload\nsystemctl start ${p.unit}`),
         60_000,
         signal,
       );
@@ -475,7 +669,11 @@ export class ProjectSsh {
     this.endpoints.delete(`${id}:${projectId}`);
     const stopped = await this.machines.exec(
       id,
-      `set -eu\nsystemctl stop ${p.unit}\n${projectSshBusyScript(projectId)}`,
+      `set -eu\n` +
+        (this.machines.get(id).distro === 'alpine'
+          ? `python3 -I -S -c ${quote(openrcStopScript(p))}\n`
+          : `systemctl stop ${p.unit}\n`) +
+        projectSshBusyScript(projectId),
       30_000,
     );
     if (stopped.code !== 0 || stopped.stdout.includes('SAKURA_PROJECT_SSH_BUSY'))

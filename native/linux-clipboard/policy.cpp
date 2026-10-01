@@ -10,8 +10,11 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/socket.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cerrno>
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
@@ -24,7 +27,9 @@
 #include <regex>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>
+#include <thread>
 #include <vector>
 
 #ifndef SAKURA_CLIPBOARD_BUILD
@@ -36,6 +41,13 @@ using sakura::Flags;
 std::string policyPath;
 sakura::Status* status=nullptr;
 bool configured=false;
+std::string brokerDisplay,brokerAuthName,brokerAuthData;
+std::atomic<size_t> bufferBudget{0},bufferSlots{0},brokerSlots{0};
+std::atomic<bool> shuttingDown{false};
+bool reserveBudget(size_t amount){
+  auto used=bufferBudget.load();for(;;){if(used>sakura::IncrementalBudget||amount>sakura::IncrementalBudget-used)return false;
+    if(bufferBudget.compare_exchange_weak(used,used+amount))return true;}
+}
 template<class T> T real(const char* name) {
   auto value=reinterpret_cast<T>(dlsym(RTLD_NEXT,name));
   if (!value) _exit(126);
@@ -65,7 +77,7 @@ bool direction(bool copy,const Policy& rule) {
 void blocked(bool copy) {
   if (status) __atomic_add_fetch(copy?&status->blockedCopy:&status->blockedPaste,1,__ATOMIC_RELAXED);
 }
-bool sensitive(const std::string& text) {
+bool sensitive(std::string_view text) {
   for (size_t start=0;(start=text.find("eyJ",start))!=std::string::npos;) {
     auto valid=[](unsigned char c){return std::isalnum(c)||c=='_'||c=='-';};
     size_t end=start; while(end<text.size()&&valid(text[end]))++end;
@@ -89,7 +101,7 @@ bool sensitive(const std::string& text) {
     std::regex("\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b"),
     std::regex("\\b(?:password|passwd|api[_-]?key|access[_-]?token|client[_-]?secret|secret[_-]?key)[\"']?\\s{0,128}[:=]\\s{0,128}[\"']?[^\\s\"'`]{12}",std::regex::icase)
   };
-  for(const auto& pattern:patterns) if(std::regex_search(text,pattern)) return true;
+  for(const auto& pattern:patterns) if(std::regex_search(text.begin(),text.end(),pattern)) return true;
   return false;
 }
 bool utf8(const unsigned char* data,size_t length) {
@@ -110,22 +122,23 @@ bool utf8(const unsigned char* data,size_t length) {
 struct Atoms {
   uint32_t clipboard, targets, timestamp, multiple, incr, manager, save;
   std::array<uint32_t,6> text;
+  uint32_t pair;std::array<uint32_t,3> effects;
   bool selection(uint32_t atom) const { return atom==XA_PRIMARY||atom==clipboard||atom==manager; }
   bool plain(uint32_t atom) const { return atom && std::find(text.begin(),text.end(),atom)!=text.end(); }
   bool allowed(uint32_t atom,const Policy& rule) const {
     if(!active(rule))return true;
-    if(!atom||atom==multiple||atom==incr||atom==save)return false;
+    if(!atom||atom==multiple||atom==incr||atom==save||std::find(effects.begin(),effects.end(),atom)!=effects.end())return false;
     return atom==targets||atom==timestamp||plain(atom)||((rule.flags&sakura::Files)&&!(rule.flags&sakura::Sensitive));
   }
 };
-constexpr std::array<const char*,13> names{"CLIPBOARD","TARGETS","TIMESTAMP","MULTIPLE","INCR","CLIPBOARD_MANAGER","SAVE_TARGETS",
-  "UTF8_STRING","STRING","TEXT","text/plain","text/plain;charset=utf-8","text/plain;charset=UTF-8"};
+constexpr std::array<const char*,17> names{"CLIPBOARD","TARGETS","TIMESTAMP","MULTIPLE","INCR","CLIPBOARD_MANAGER","SAVE_TARGETS",
+  "UTF8_STRING","STRING","TEXT","text/plain","text/plain;charset=utf-8","text/plain;charset=UTF-8","ATOM_PAIR","DELETE","INSERT_SELECTION","INSERT_PROPERTY"};
 std::mutex mutex;
 std::map<std::pair<void*,bool>,Atoms> atomCache;
 std::map<xcb_connection_t*,std::pair<Display*,bool>> xlibConnections;
 Atoms atoms(void* connection,bool xcb) {
   {std::lock_guard lock(mutex);auto found=atomCache.find({connection,xcb});if(found!=atomCache.end())return found->second;}
-  std::array<uint32_t,13> values{};
+  std::array<uint32_t,17> values{};
   for(size_t i=0;i<names.size();++i) {
     if(xcb) {
       static auto intern=real<decltype(&xcb_intern_atom)>("xcb_intern_atom");
@@ -137,8 +150,8 @@ Atoms atoms(void* connection,bool xcb) {
       values[i]=intern(static_cast<Display*>(connection),names[i],False);
     }
   }
-  Atoms value{values[0],values[1],values[2],values[3],values[4],values[5],values[6],{}};
-  std::copy(values.begin()+7,values.end(),value.text.begin());
+  Atoms value{values[0],values[1],values[2],values[3],values[4],values[5],values[6],{},values[13],{values[14],values[15],values[16]}};
+  std::copy(values.begin()+7,values.begin()+13,value.text.begin());
   {std::lock_guard lock(mutex);atomCache[{connection,xcb}]=value;}
   return value;
 }
@@ -153,18 +166,67 @@ struct Incremental {
   bool notified=false;
   Clock::time_point deadline=Clock::now()+std::chrono::milliseconds(sakura::IncrementalTimeoutMs);
   std::vector<unsigned char> bytes;
+  size_t reservation=0;bool slot=false;
+  ~Incremental(){std::vector<unsigned char>().swap(bytes);if(reservation)bufferBudget.fetch_sub(reservation);if(slot)bufferSlots.fetch_sub(1);}
 };
+void releaseBuffer(Incremental& stream){std::vector<unsigned char>().swap(stream.bytes);if(stream.reservation){bufferBudget.fetch_sub(stream.reservation);stream.reservation=0;}if(stream.slot){bufferSlots.fetch_sub(1);stream.slot=false;}}
+bool reserveBuffer(Incremental& stream,size_t amount,bool slot=true){
+  if(!amount)return true;
+  if(stream.reservation||(slot&&bufferSlots.load()>=sakura::IncrementalSlots)||!reserveBudget(amount))return false;
+  try{stream.bytes.reserve(amount);}catch(...){bufferBudget.fetch_sub(amount);return false;}
+  const auto actual=stream.bytes.capacity();
+  if(actual>amount&&!reserveBudget(actual-amount)){std::vector<unsigned char>().swap(stream.bytes);bufferBudget.fetch_sub(amount);return false;}
+  if(actual<amount)bufferBudget.fetch_sub(amount-actual);
+  stream.reservation=actual;stream.slot=slot;if(slot)bufferSlots.fetch_add(1);return true;
+}
+bool reserveExternal(Incremental& stream,size_t amount){if(stream.reservation||!reserveBudget(amount))return false;stream.reservation=amount;return true;}
+bool compactBuffer(Incremental& stream){
+  const auto size=stream.bytes.size();if(size>=stream.reservation)return true;
+  if(size<=4096){std::array<unsigned char,4096> small{};if(size)std::memcpy(small.data(),stream.bytes.data(),size);const bool slot=stream.slot;releaseBuffer(stream);
+    if(!reserveBuffer(stream,size,slot))return false;stream.bytes.resize(size);if(size)std::memcpy(stream.bytes.data(),small.data(),size);return true;}
+  Incremental compact;if(!reserveBuffer(compact,size,false))return true;compact.bytes=stream.bytes;stream.bytes.swap(compact.bytes);std::swap(stream.reservation,compact.reservation);return true;
+}
+struct Group;
 struct Transfer {
   bool copy=false,denied=false;
   uint32_t target=0,selection=0,time=0;
   std::shared_ptr<Incremental> incremental;
+  uint64_t generation=0;std::weak_ptr<Group> group;bool control=false,completed=false;
 };
 using Key=std::tuple<void*,uint32_t,uint32_t>;
 std::map<Key,std::shared_ptr<Transfer>> transfers;
-struct Reply {Key key;uint32_t offset,length,type;bool remove;};
+struct Reply {Key key;uint32_t offset,length,type;bool remove;std::shared_ptr<Transfer> transfer;};
 std::map<std::pair<void*,uint64_t>,Reply> replies;
 size_t pendingReplies=0;
 std::condition_variable changed;
+uint64_t nextTransfer=0;
+struct Pair {uint32_t target,property;std::shared_ptr<Transfer> transfer;};
+struct Group {
+  void* connection;bool xcb,copy;uint32_t window,property,selection,time;
+  Atoms names;Policy strict{};std::string endpoint;
+  Clock::time_point deadline=Clock::now()+std::chrono::milliseconds(sakura::MultipleTimeoutMs);
+  bool cancelled=false,complete=false;std::shared_ptr<Transfer> parent;std::vector<Pair> pairs;
+  Incremental originalAllocation;
+  std::vector<uint32_t> original;
+};
+std::map<Key,std::shared_ptr<Group>> groups;
+struct Broker {std::thread worker;std::atomic<bool> done{false};int fd=-1,connected=0;bool interrupted=false;
+  Clock::time_point deadline;std::weak_ptr<Group> group;};
+std::vector<std::shared_ptr<Broker>> brokers;
+std::thread brokerWatchdog;
+void watchBrokers(){while(!shuttingDown.load()){
+    {std::lock_guard lock(mutex);for(auto& broker:brokers){auto group=broker->group.lock();if(broker->fd>=0&&!broker->interrupted&&
+        (Clock::now()>=broker->deadline||(group&&group->cancelled))){broker->interrupted=true;shutdown(broker->fd,SHUT_RDWR);}}}
+    usleep(20000);
+  }}
+void reapBrokers(){std::vector<std::shared_ptr<Broker>> finished;{std::lock_guard lock(mutex);for(auto it=brokers.begin();it!=brokers.end();)if((*it)->done.load()){finished.push_back(*it);it=brokers.erase(it);}else ++it;}
+  for(auto& item:finished)if(item->worker.joinable())item->worker.join();}
+void shutdownBrokers(){shuttingDown.store(true);std::vector<std::shared_ptr<Broker>> running;
+  {std::lock_guard lock(mutex);for(auto& entry:groups)entry.second->cancelled=true;running=brokers;for(auto& item:running)if(item->fd>=0)shutdown(item->fd,SHUT_RDWR);}
+  for(auto& item:running)if(item->worker.joinable())item->worker.join();
+  if(brokerWatchdog.joinable())brokerWatchdog.join();}
+void forget(void* connection,uint32_t window=0);
+void refreshGroup(const std::shared_ptr<Group>& group,const Policy& rule);
 // Xlib and XCB can share one connection and mix property APIs. Keep both keys
 // tied to the same transfer rather than letting a toolkit switch bypass it.
 void* peer(void* connection) {
@@ -173,15 +235,39 @@ void* peer(void* connection) {
   for(const auto& item:xlibConnections)if(item.second.first==connection)return item.first;
   return nullptr;
 }
+void retireGroup(const std::shared_ptr<Group>& group){
+  group->cancelled=true;
+  auto discard=[](const std::shared_ptr<Transfer>& transfer){transfer->denied=true;if(auto stream=transfer->incremental){stream->stage=Stage::Deleted;releaseBuffer(*stream);}};
+  discard(group->parent);for(auto& pair:group->pairs)discard(pair.transfer);
+  for(auto it=transfers.begin();it!=transfers.end();)if(it->second==group->parent||it->second->group.lock()==group)it=transfers.erase(it);else ++it;
+  for(auto it=groups.begin();it!=groups.end();)if(it->second==group)it=groups.erase(it);else ++it;
+  changed.notify_all();
+}
+bool busy(const std::shared_ptr<Transfer>& transfer){
+  if(auto group=transfer->group.lock())return !group->complete;
+  if(auto stream=transfer->incremental)return stream->stage==Stage::Collecting||(stream->stage==Stage::Ready&&!transfer->completed);
+  return !transfer->completed&&!transfer->denied;
+}
+void finished(void* connection,uint32_t window,uint32_t property,uint32_t selection,uint32_t target,uint32_t time,bool copy){
+  std::lock_guard lock(mutex);
+  for(auto& entry:transfers)if(std::get<0>(entry.first)==connection&&std::get<1>(entry.first)==window&&(!property||std::get<2>(entry.first)==property)){
+    auto transfer=entry.second;if(transfer->copy==copy&&transfer->selection==selection&&transfer->target==target&&transfer->time==time)transfer->completed=true;
+  }
+}
 bool remember(void* connection,uint32_t window,uint32_t property,Transfer value) {
   std::lock_guard lock(mutex);
   const Key key{connection,window,property};
+  auto previous=transfers.find(key);if(previous!=transfers.end())if(auto group=previous->second->group.lock()){
+    if(!group->complete)return false;retireGroup(group);
+  }
   const auto other=peer(connection);const Key alias{other,window,property};
   const size_t additional=(!transfers.count(key)?1:0)+(other&&!transfers.count(alias)?1:0);
   if(transfers.size()+additional>2048)return false;
   auto entry=std::make_shared<Transfer>(std::move(value));
+  entry->generation=++nextTransfer;
   transfers[key]=entry;if(other)transfers[alias]=entry;return true;
 }
+std::shared_ptr<Transfer> reference(void* connection,uint32_t window,uint32_t property){std::lock_guard lock(mutex);auto found=transfers.find({connection,window,property});return found==transfers.end()?nullptr:found->second;}
 bool lookup(void* connection,uint32_t window,uint32_t property,Transfer& value) {
   std::lock_guard lock(mutex);
   auto found=transfers.find({connection,window,property});
@@ -193,14 +279,14 @@ void deny(void* connection,uint32_t window,uint32_t property) {
   auto found=transfers.find({connection,window,property});
   if(found!=transfers.end()){
     found->second->denied=true;
-    if(auto stream=found->second->incremental){stream->stage=Stage::Denied;std::vector<unsigned char>().swap(stream->bytes);changed.notify_all();}
+    if(auto stream=found->second->incremental){stream->stage=Stage::Denied;releaseBuffer(*stream);changed.notify_all();}
   }
 }
 void denyIncremental(void* connection,uint32_t window,uint32_t property) {
   std::lock_guard lock(mutex);auto found=transfers.find({connection,window,property});if(found==transfers.end())return;
   found->second->denied=true;
   if(!found->second->incremental)found->second->incremental=std::make_shared<Incremental>();
-  auto stream=found->second->incremental;stream->stage=Stage::Denied;std::vector<unsigned char>().swap(stream->bytes);changed.notify_all();
+  auto stream=found->second->incremental;stream->stage=Stage::Denied;releaseBuffer(*stream);changed.notify_all();
 }
 bool checkContent(const Atoms& names,uint32_t target,uint32_t type,int format,const void* bytes,size_t count,const Policy& rule) {
   if(!active(rule))return true;
@@ -211,16 +297,18 @@ bool checkContent(const Atoms& names,uint32_t target,uint32_t type,int format,co
   if(names.plain(target)||names.plain(type)) {
     if(format!=8||(!bytes&&count)||count>rule.maximum)return false;
     const auto first=static_cast<const unsigned char*>(bytes);
-    std::string text;
+    Incremental converted;
     if(type==XA_STRING) {
-      text.reserve(count*2);
-      for(size_t i=0;i<count;++i){unsigned c=first[i];if(c<128)text+=char(c);else{text+=char(0xc0|(c>>6));text+=char(0x80|(c&63));}}
-      if(text.size()>rule.maximum)return false;
+      size_t size=count;for(size_t i=0;i<count;++i)if(first[i]>=128)++size;
+      if(size>rule.maximum)return false;
+      if(!(rule.flags&sakura::Sensitive))return true;
+      if(!reserveBuffer(converted,size,false))return false;
+      for(size_t i=0;i<count;++i){unsigned c=first[i];if(c<128)converted.bytes.push_back(c);else{converted.bytes.push_back(0xc0|(c>>6));converted.bytes.push_back(0x80|(c&63));}}
+      return !sensitive(std::string_view(converted.bytes.empty()?"":reinterpret_cast<const char*>(converted.bytes.data()),converted.bytes.size()));
     } else {
       if(!utf8(first,count))return false;
-      if(count)text.assign(static_cast<const char*>(bytes),count);
+      return !(rule.flags&sakura::Sensitive)||!sensitive(std::string_view(bytes?static_cast<const char*>(bytes):"",count));
     }
-    return !(rule.flags&sakura::Sensitive)||!sensitive(text);
   }
   return format>0&&(format==8||format==16||format==32)&&count<=size_t(16*1024*1024)/(format/8);
 }
@@ -235,7 +323,7 @@ bool metadataOnly(const Atoms& names,uint32_t target,uint32_t type,int format,si
 }
 template<class AtomType> size_t filter(const Atoms& names,AtomType* data,size_t length,const Policy& rule) {
   size_t output=0;
-  for(size_t i=0;i<length;++i)if(names.allowed(data[i],rule))data[output++]=data[i];
+  for(size_t i=0;i<length;++i)if(names.allowed(data[i],rule)||data[i]==names.multiple)data[output++]=data[i];
   return output;
 }
 // A Display and its XCB peer always share the same buffer and state. No X11
@@ -259,23 +347,17 @@ std::shared_ptr<Incremental> begin(void* connection,uint32_t window,uint32_t pro
   if(created)*created=false;
   std::lock_guard lock(mutex);
   auto found=transfers.find({connection,window,property});
-  if(found==transfers.end()||found->second->denied)return {};
+  if(found==transfers.end()||found->second->denied||found->second->generation!=transfer.generation)return {};
   if(found->second->incremental)return found->second->incremental;
   auto stream=std::make_shared<Incremental>();stream->strict=current();stream->hint=hint;
   stream->limit=incrementalLimit(names,transfer.target,stream->strict);
-  size_t budget=0,slots=0;std::set<Incremental*> unique;
-  for(const auto& entry:transfers)if(auto existing=entry.second->incremental;existing&&unique.insert(existing.get()).second) {
-    if(existing->bytes.capacity()){budget+=existing->bytes.capacity();++slots;}
-  }
-  if(!direction(transfer.copy,stream->strict)||!stream->limit||hint>stream->limit||
-    slots>=sakura::IncrementalSlots||budget+stream->limit>sakura::IncrementalBudget)return {};
-  try {stream->bytes.reserve(stream->limit);}catch(...){return {};}
+  if(!direction(transfer.copy,stream->strict)||!stream->limit||hint>stream->limit||!reserveBuffer(*stream,stream->limit))return {};
   found->second->incremental=stream;if(created)*created=true;return stream;
 }
 bool reject(const std::shared_ptr<Incremental>& stream) {
   std::lock_guard lock(mutex);
   if(stream->stage==Stage::Denied||stream->stage==Stage::Deleted)return false;
-  stream->stage=Stage::Denied;std::vector<unsigned char>().swap(stream->bytes);changed.notify_all();return true;
+  stream->stage=Stage::Denied;releaseBuffer(*stream);changed.notify_all();return true;
 }
 bool update(const std::shared_ptr<Incremental>& stream,const Atoms& names,uint32_t target,bool copy) {
   std::lock_guard lock(mutex);tighten(stream->strict,current());
@@ -297,7 +379,7 @@ bool append(const std::shared_ptr<Incremental>& stream,const Atoms& names,uint32
   else if(count)std::memcpy(stream->bytes.data()+previous,data,count*unit);
   if(count)return true;
   if(stream->bytes.size()<stream->hint||!content(names,target,stream->type,stream->format,stream->bytes.data(),stream->bytes.size()/unit,stream->strict))return false;
-  stream->stage=Stage::Ready;changed.notify_all();return true;
+  if(!compactBuffer(*stream))return false;stream->stage=Stage::Ready;changed.notify_all();return true;
 }
 struct Property {
   uint32_t type=0;int format=0;size_t count=0,after=0;unsigned char* bytes=nullptr;bool nativeLong=false,ok=false;
@@ -320,6 +402,14 @@ void readProperty(void* connection,bool xcb,uint32_t window,uint32_t property,si
     value.ok=get(static_cast<Display*>(connection),window,property,0,(limit+3)/4,False,AnyPropertyType,
       &type,&value.format,&count,&after,&value.bytes)==Success;
     value.type=type;value.count=count;value.after=after;
+  }
+}
+void reuseMultiple(void* connection,bool xcb,uint32_t window,uint32_t property,const Atoms& names){
+  Property list;readProperty(connection,xcb,window,property,sakura::MultiplePairs*8,list);
+  if(!list.ok||list.after||(list.type!=names.pair&&list.type!=XA_ATOM)||list.format!=32||list.count%2||list.count>sakura::MultiplePairs*2)return;
+  std::lock_guard lock(mutex);
+  for(size_t i=1;i<list.count;i+=2){uint32_t atom=0;if(list.nativeLong)atom=reinterpret_cast<unsigned long*>(list.bytes)[i];else std::memcpy(&atom,list.bytes+i*4,4);
+    auto previous=transfers.find({connection,window,atom});if(previous!=transfers.end())if(auto group=previous->second->group.lock();group&&group->complete)retireGroup(group);
   }
 }
 void deleteProperty(void* connection,bool xcb,uint32_t window,uint32_t property) {
@@ -363,8 +453,8 @@ bool publish(void* connection,bool xcb,uint32_t window,uint32_t property,const A
   const auto type=stream->type;const auto format=stream->format;const auto count=stream->bytes.size()/(format/8);
   // Keep a bounded private snapshot while the checked XCB request runs. Xlib's
   // shared-connection locking callbacks must never reenter our state mutex.
-  std::vector<unsigned char> payload;try{payload=stream->bytes;}catch(...){return false;}
-  lock.unlock();const auto cookie=write(wire,XCB_PROP_MODE_REPLACE,window,property,type,format,count,payload.data());auto error=check(wire,cookie);
+  Incremental payload;if(!reserveBuffer(payload,stream->bytes.size(),false))return false;payload.bytes=stream->bytes;
+  lock.unlock();const auto cookie=write(wire,XCB_PROP_MODE_REPLACE,window,property,type,format,count,payload.bytes.data());auto error=check(wire,cookie);
   const bool allowed=!error;free(error);return allowed;
 }
 bool capture(void* connection,bool xcb,uint32_t window,uint32_t property,uint32_t type,int format,int mode,const void* data,
@@ -390,7 +480,7 @@ bool capture(void* connection,bool xcb,uint32_t window,uint32_t property,uint32_
   if(stage==Stage::Ready){
     if(!publish(connection,xcb,window,property,names,transfer)){
       if(reject(stream))blocked(true);deny(connection,window,property);deleteProperty(connection,xcb,window,property);sendResult(connection,xcb,window,property,transfer,false);
-    }else{sendResult(connection,xcb,window,property,transfer,true);std::lock_guard lock(mutex);stream->stage=Stage::Exported;std::vector<unsigned char>().swap(stream->bytes);}
+    }else{sendResult(connection,xcb,window,property,transfer,true);std::lock_guard lock(mutex);stream->stage=Stage::Exported;releaseBuffer(*stream);}
   }else acknowledge(connection,xcb,window,property);
   return true;
 }
@@ -407,14 +497,13 @@ bool holdNotification(void* connection,bool xcb,uint32_t window,uint32_t propert
   return true;
 }
 bool collect(void* connection,bool xcb,uint32_t window,uint32_t property,const Atoms& names,Transfer transfer) {
-  lookup(connection,window,property,transfer);
   auto stream=transfer.incremental;
   auto join=[&](const std::shared_ptr<Incremental>& existing){std::unique_lock lock(mutex);while(existing->stage==Stage::Collecting&&Clock::now()<existing->deadline)changed.wait_until(lock,existing->deadline);return existing->stage==Stage::Ready;};
   if(stream)return join(stream);
   if(!stream){
     Property header;readProperty(connection,xcb,window,property,4,header);
     if(!header.ok||header.type!=names.incr||header.format!=32||header.count!=1||header.after||!header.bytes){
-      lookup(connection,window,property,transfer);return transfer.incremental?join(transfer.incremental):false;
+      Transfer latest;return lookup(connection,window,property,latest)&&latest.generation==transfer.generation&&latest.incremental?join(latest.incremental):false;
     }
     uint32_t hint=0;if(header.nativeLong)hint=*reinterpret_cast<unsigned long*>(header.bytes);else std::memcpy(&hint,header.bytes,4);
     bool created=false;stream=begin(connection,window,property,names,transfer,hint,&created);
@@ -423,7 +512,11 @@ bool collect(void* connection,bool xcb,uint32_t window,uint32_t property,const A
     deleteProperty(connection,xcb,window,property);
     for(;;){
       if(!update(stream,names,transfer.target,false))break;
-      Property part;readProperty(connection,xcb,window,property,stream->limit,part);
+      Property metadata;readProperty(connection,xcb,window,property,0,metadata);
+      if(!metadata.ok||metadata.after>stream->limit)break;
+      if(!metadata.type){usleep(1000);continue;}
+      Incremental scratch;if(!reserveExternal(scratch,metadata.after*(metadata.format==32&&!xcb?2:1)+sizeof(xcb_get_property_reply_t)+8))break;
+      Property part;readProperty(connection,xcb,window,property,metadata.after,part);
       if(!part.ok||part.after)break;
       if(!part.type){usleep(1000);continue;}
       if(!append(stream,names,transfer.target,part.type,part.format,part.bytes,part.count,part.nativeLong,false))break;
@@ -437,16 +530,17 @@ bool collect(void* connection,bool xcb,uint32_t window,uint32_t property,const A
 void clearCache(void* connection,uint32_t window,uint32_t property) {
   std::lock_guard lock(mutex);auto found=transfers.find({connection,window,property});
   if(found!=transfers.end()&&!found->second->copy&&found->second->incremental){
-    auto stream=found->second->incremental;stream->stage=Stage::Deleted;std::vector<unsigned char>().swap(stream->bytes);changed.notify_all();
+    auto stream=found->second->incremental;stream->stage=Stage::Deleted;releaseBuffer(*stream);changed.notify_all();
+    if(auto group=found->second->group.lock();group&&found->second->control&&!group->complete)group->cancelled=true;
   }
 }
 void expireCopies(void* connection,bool xcb) {
   std::vector<std::pair<Key,Transfer>> expired;const auto rule=current();
-  {std::lock_guard lock(mutex);const auto cached=atomCache.find({connection,xcb});for(const auto& entry:transfers)if(std::get<0>(entry.first)==connection&&entry.second->copy&&entry.second->incremental){
+  {std::lock_guard lock(mutex);const auto cached=atomCache.find({connection,xcb});for(const auto& entry:transfers)if(std::get<0>(entry.first)==connection&&entry.second->copy&&entry.second->incremental&&entry.second->group.expired()){
     auto stream=entry.second->incremental;tighten(stream->strict,rule);
     if(stream->stage==Stage::Collecting&&(Clock::now()>=stream->deadline||!direction(true,stream->strict)||
       cached==atomCache.end()||stream->bytes.size()>incrementalLimit(cached->second,entry.second->target,stream->strict))){
-      stream->stage=Stage::Denied;entry.second->denied=true;std::vector<unsigned char>().swap(stream->bytes);
+      stream->stage=Stage::Denied;entry.second->denied=true;releaseBuffer(*stream);
       if(stream->notified)expired.push_back({entry.first,*entry.second});blocked(true);changed.notify_all();
     }
   }}
@@ -460,34 +554,43 @@ bool xlibOwns(xcb_connection_t* connection) {
 }
 bool hiddenProperty(void* connection,uint32_t window,uint32_t property) {
   std::lock_guard lock(mutex);auto found=transfers.find({connection,window,property});
-  return found!=transfers.end()&&!found->second->copy&&found->second->incremental;
+  if(found==transfers.end()||found->second->copy||!found->second->incremental)return false;
+  if(auto group=found->second->group.lock();group&&group->complete)return false;
+  return true;
 }
 bool readyBuffer(const Atoms& names,const Transfer& transfer,long offset,long length,uint32_t requested,
-  uint32_t& type,int& format,size_t& count,size_t& after,std::vector<unsigned char>& output) {
+  uint32_t& type,int& format,size_t& count,size_t& after,Incremental& allocation) {
+  auto& output=allocation.bytes;
   auto stream=transfer.incremental;if(!stream)return false;
-  const auto rule=current();std::lock_guard lock(mutex);
+  const auto rule=current();std::lock_guard lock(mutex);tighten(stream->strict,rule);
+  auto group=transfer.group.lock();if(group)refreshGroup(group,rule);
   if(stream->stage!=Stage::Ready||transfer.denied||!direction(false,stream->strict)||!direction(false,rule)||offset!=0||length<0||
-    !content(names,transfer.target,stream->type,stream->format,stream->bytes.data(),stream->bytes.size()/(stream->format/8),rule))return false;
+    (group&&(!group->complete||group->cancelled||!direction(group->copy,group->strict)))||
+    (!transfer.control&&!content(names,transfer.target,stream->type,stream->format,stream->bytes.data(),stream->bytes.size()/(stream->format/8),stream->strict)))return false;
   type=stream->type;format=stream->format;size_t size=stream->bytes.size();
   if(transfer.target==names.targets&&active(rule)) {
-    output=stream->bytes;const auto filtered=filter(names,reinterpret_cast<uint32_t*>(output.data()),size/4,rule);output.resize(filtered*4);size=output.size();
+    const auto values=reinterpret_cast<const uint32_t*>(stream->bytes.data());size=std::count_if(values,values+size/4,[&](uint32_t value){return names.allowed(value,stream->strict)||value==names.multiple;})*4;
   }
   if(requested&&requested!=type){count=0;after=size;output.clear();return true;}
   if(length==0){count=0;after=size;output.clear();return true;}
   // The application receives either the whole checked selection or no bytes.
   if(size_t(length)<(size+3)/4)return false;
-  count=size/(format/8);after=0;if(output.empty()&&size)output=stream->bytes;return true;
+  if(!reserveBuffer(allocation,stream->bytes.size(),false))return false;output=stream->bytes;
+  if(transfer.target==names.targets&&active(rule))output.resize(filter(names,reinterpret_cast<uint32_t*>(output.data()),output.size()/4,stream->strict)*4);
+  count=size/(format/8);after=0;return true;
 }
 bool cachedXlib(Display* display,Window window,Atom property,long offset,long length,Bool remove,Atom requested,
-  Atom* type,int* format,unsigned long* count,unsigned long* after,unsigned char** bytes,Transfer transfer) {
+  Atom* type,int* format,unsigned long* count,unsigned long* after,unsigned char** bytes,Transfer transfer,const std::shared_ptr<Transfer>& expected) {
   const auto names=atoms(display,false);
-  if(!transfer.incremental&&*type!=names.incr)return false;
-  if(!collect(display,false,window,property,names,transfer)){denyIncremental(display,window,property);blocked(false);}
-  lookup(display,window,property,transfer);
+  if(!transfer.incremental&&*type!=names.incr&&transfer.group.expired())return false;
+  if(transfer.group.expired()&&!collect(display,false,window,property,names,transfer)){if(reference(display,window,property)==expected)denyIncremental(display,window,property);blocked(false);}
   if(*bytes)XFree(*bytes);*bytes=nullptr;*type=None;*format=0;*count=0;*after=0;
-  uint32_t outputType=0;int outputFormat=0;size_t outputCount=0,outputAfter=0;std::vector<unsigned char> output;
-  if(!readyBuffer(names,transfer,offset,length,requested,outputType,outputFormat,outputCount,outputAfter,output)){blocked(false);return true;}
+  if(reference(display,window,property)!=expected){blocked(false);return true;}
+  {std::lock_guard lock(mutex);transfer=*expected;}
+  uint32_t outputType=0;int outputFormat=0;size_t outputCount=0,outputAfter=0;Incremental allocation;auto& output=allocation.bytes;
+  if(!readyBuffer(names,transfer,offset,length,requested,outputType,outputFormat,outputCount,outputAfter,allocation)){blocked(false);return true;}
   const size_t size=outputFormat==32?outputCount*sizeof(unsigned long):output.size();
+  Incremental returned;if(!reserveExternal(returned,size+1)){blocked(false);return true;}
   auto allocated=static_cast<unsigned char*>(calloc(size+1,1));if(!allocated){blocked(false);return true;}
   if(outputFormat==32){auto values=reinterpret_cast<unsigned long*>(allocated);for(size_t i=0;i<outputCount;++i){uint32_t value=0;std::memcpy(&value,output.data()+i*4,4);values[i]=value;}}
   else if(!output.empty())std::memcpy(allocated,output.data(),output.size());
@@ -497,12 +600,15 @@ bool cachedXlib(Display* display,Window window,Atom property,long offset,long le
 }
 bool cachedXcb(xcb_connection_t* connection,const Reply& request,xcb_get_property_reply_t** reply,Transfer transfer) {
   const auto names=atoms(connection,true);const auto window=std::get<1>(request.key),property=std::get<2>(request.key);
-  if(!transfer.incremental&&(*reply)->type!=names.incr)return false;
-  if(!collect(connection,true,window,property,names,transfer)){denyIncremental(connection,window,property);blocked(false);}
-  lookup(connection,window,property,transfer);
-  uint32_t type=0;int format=0;size_t count=0,after=0;std::vector<unsigned char> output;
-  const bool accepted=readyBuffer(names,transfer,request.offset,request.length,request.type,type,format,count,after,output);
-  const size_t padded=(output.size()+3)&~size_t(3);auto value=static_cast<xcb_get_property_reply_t*>(calloc(sizeof(xcb_get_property_reply_t)+padded,1));
+  if(!transfer.incremental&&(*reply)->type!=names.incr&&transfer.group.expired())return false;
+  if(transfer.group.expired()&&!collect(connection,true,window,property,names,transfer)){if(reference(connection,window,property)==request.transfer)denyIncremental(connection,window,property);blocked(false);}
+  if(reference(connection,window,property)!=request.transfer){auto value=*reply;std::memset(value+1,0,size_t(value->length)*4);value->type=0;value->format=0;value->value_len=0;value->bytes_after=0;value->length=0;blocked(false);return true;}
+  {std::lock_guard lock(mutex);transfer=*request.transfer;}
+  uint32_t type=0;int format=0;size_t count=0,after=0;Incremental allocation;auto& output=allocation.bytes;
+  const bool accepted=readyBuffer(names,transfer,request.offset,request.length,request.type,type,format,count,after,allocation);
+  const size_t padded=(output.size()+3)&~size_t(3);Incremental returned;
+  const bool room=reserveExternal(returned,sizeof(xcb_get_property_reply_t)+padded);
+  auto value=room?static_cast<xcb_get_property_reply_t*>(calloc(sizeof(xcb_get_property_reply_t)+padded,1)):nullptr;
   if(!value){auto raw=*reply;std::memset(raw+1,0,size_t(raw->length)*4);raw->type=0;raw->format=0;raw->value_len=0;raw->bytes_after=0;raw->length=0;blocked(false);return true;}
   value->response_type=1;value->sequence=(*reply)->sequence;
   if(accepted){value->type=type;value->format=format;value->value_len=count;value->bytes_after=after;value->length=padded/4;if(!output.empty())std::memcpy(value+1,output.data(),output.size());}
@@ -523,14 +629,229 @@ void notify(xcb_connection_t* connection,const xcb_selection_request_event_t& re
   std::array<char,32> bytes{};std::memcpy(bytes.data(),&event,sizeof(event));
   send(connection,0,request.requestor,0,bytes.data());xcb_flush(connection);
 }
+std::string socketPeer(xcb_connection_t* connection){sockaddr_storage address{};socklen_t length=sizeof(address);
+  return getpeername(xcb_get_file_descriptor(connection),reinterpret_cast<sockaddr*>(&address),&length)==0?std::string(reinterpret_cast<char*>(&address),length):std::string{};
+}
+int brokerSocket(const std::string& endpoint){
+  sockaddr_storage address{};if(endpoint.size()>sizeof(address)||endpoint.size()<sizeof(sa_family_t))return -1;
+  std::memcpy(&address,endpoint.data(),endpoint.size());
+  if(address.ss_family!=AF_UNIX&&address.ss_family!=AF_INET&&address.ss_family!=AF_INET6)return -1;
+  const int fd=socket(address.ss_family,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);if(fd<0)return -1;
+  const int result=connect(fd,reinterpret_cast<sockaddr*>(&address),endpoint.size());
+  if(result<0){if(errno!=EINPROGRESS){close(fd);return -1;}pollfd waiting{fd,POLLOUT,0};int error=0;socklen_t length=sizeof(error);
+    if(poll(&waiting,1,2000)<=0||getsockopt(fd,SOL_SOCKET,SO_ERROR,&error,&length)||error){close(fd);return -1;}}
+  return fd;
+}
+void pinBroker(){
+  const char* display=getenv("DISPLAY");if(!display||std::strlen(display)>256)return;brokerDisplay=display;
+  const char* authority=getenv("XAUTHORITY");std::string file;
+  if(authority)file=authority;else if(const char* home=getenv("HOME"))file=std::string(home)+"/.Xauthority";
+  if(file.empty()||file.size()>1024)return;
+  int fd=open(file.c_str(),O_RDONLY|O_CLOEXEC);if(fd<0)return;struct stat info{};
+  std::vector<unsigned char> bytes;
+  if(fstat(fd,&info)==0&&S_ISREG(info.st_mode)&&info.st_size>0&&info.st_size<=65536){bytes.resize(info.st_size);if(pread(fd,bytes.data(),bytes.size(),0)!=ssize_t(bytes.size()))bytes.clear();}close(fd);
+  const auto colon=brokerDisplay.rfind(':');if(colon==std::string::npos)return;
+  const auto number=brokerDisplay.substr(colon+1,brokerDisplay.find('.',colon)-colon-1);size_t cursor=0;
+  auto field=[&](std::string& output){if(cursor+2>bytes.size())return false;size_t size=bytes[cursor]*256+bytes[cursor+1];cursor+=2;if(size>bytes.size()-cursor)return false;output.assign(reinterpret_cast<char*>(bytes.data()+cursor),size);cursor+=size;return true;};
+  while(cursor+2<=bytes.size()){cursor+=2;std::string address,entry,name,data;if(!field(address)||!field(entry)||!field(name)||!field(data))break;
+    if(entry==number&&name=="MIT-MAGIC-COOKIE-1"&&data.size()==16){brokerAuthName=name;brokerAuthData=data;break;}}
+}
+void refreshGroup(const std::shared_ptr<Group>& group,const Policy& rule){
+  tighten(group->strict,rule);
+  for(auto& pair:group->pairs){auto transfer=pair.transfer;auto stream=transfer->incremental;
+    if(!stream||stream->stage!=Stage::Ready)continue;tighten(stream->strict,group->strict);
+    if(!direction(group->copy,stream->strict)||!content(group->names,pair.target,stream->type,stream->format,stream->bytes.data(),stream->bytes.size()/(stream->format/8),stream->strict)){
+      transfer->denied=true;stream->stage=Stage::Denied;releaseBuffer(*stream);blocked(group->copy);}
+  }
+  if(group->complete&&!group->cancelled&&group->parent->incremental->stage==Stage::Ready){auto stream=group->parent->incremental;stream->bytes.resize(group->pairs.size()*8);
+    for(size_t i=0;i<group->pairs.size();++i){auto& pair=group->pairs[i];const uint32_t values[2]{pair.target,pair.transfer->denied?0:pair.property};std::memcpy(stream->bytes.data()+i*8,values,8);}}
+}
+bool groupLive(const std::shared_ptr<Group>& group,bool timed=true){std::lock_guard lock(mutex);tighten(group->strict,current());
+  auto found=transfers.find({group->connection,group->window,group->property});
+  return !shuttingDown.load()&&!group->cancelled&&found!=transfers.end()&&found->second==group->parent&&direction(group->copy,group->strict)&&(!timed||Clock::now()<group->deadline);
+}
+bool storeGroup(const std::shared_ptr<Group>& group,const std::shared_ptr<Transfer>& transfer,uint32_t type,int format,const void* data,size_t count,bool nativeLong){
+  std::lock_guard lock(mutex);tighten(group->strict,current());
+  if(group->cancelled||transfer->denied||(format!=8&&format!=16&&format!=32)||!direction(group->copy,group->strict)||
+    !content(group->names,transfer->target,type,format,data,count,group->strict))return false;
+  auto stream=std::make_shared<Incremental>();stream->strict=group->strict;stream->type=type;stream->format=format;stream->stage=Stage::Ready;
+  const size_t size=count*(format/8);if(!reserveBuffer(*stream,size))return false;stream->bytes.resize(size);
+  if(format==32&&nativeLong){auto values=static_cast<const unsigned long*>(data);for(size_t i=0;i<count;++i){uint32_t item=values[i];std::memcpy(stream->bytes.data()+i*4,&item,4);}}
+  else if(size)std::memcpy(stream->bytes.data(),data,size);transfer->incremental=stream;return true;
+}
+void brokerEvent(const std::shared_ptr<Group>& group,const xcb_generic_event_t* event){
+  if((event->response_type&127)==XCB_DESTROY_NOTIFY&&reinterpret_cast<const xcb_destroy_notify_event_t*>(event)->window==group->window){
+    std::lock_guard lock(mutex);group->cancelled=true;changed.notify_all();}
+}
+void drainBroker(const std::shared_ptr<Group>& group,xcb_connection_t* wire){
+  static auto events=real<decltype(&xcb_poll_for_event)>("xcb_poll_for_event");
+  while(auto event=events(wire)){brokerEvent(group,event);free(event);}
+}
+void finishPrivate(void* connection,uint32_t window){
+  std::lock_guard lock(mutex);const auto other=peer(connection);
+  for(auto it=transfers.begin();it!=transfers.end();)if((std::get<0>(it->first)==connection||(other&&std::get<0>(it->first)==other))&&std::get<1>(it->first)==window&&it->second->copy){
+    auto transfer=it->second;auto stream=transfer->incremental;
+    if((stream&&stream->stage==Stage::Exported)||(!stream&&transfer->completed)){it=transfers.erase(it);continue;}
+    // A timed-out sender may still issue late chunks. Keep a bounded denied
+    // identity instead of forgetting it and allowing those writes through.
+    transfer->denied=true;if(stream){stream->stage=Stage::Denied;releaseBuffer(*stream);}++it;
+  }else ++it;
+}
+// The broker owns its event queue. No application Display lock or predicate is
+// entered, and Qt's event-reader thread cannot consume these private replies.
+bool receiveGroup(const std::shared_ptr<Group>& group,xcb_connection_t* wire,uint32_t window,const Pair& pair,Clock::time_point until){
+  static auto events=real<decltype(&xcb_poll_for_event)>("xcb_poll_for_event");
+  bool notified=false;uint32_t property=0;
+  while(groupLive(group)&&Clock::now()<until){auto event=events(wire);
+    if(!event){if(xcb_connection_has_error(wire))return false;pollfd fd{xcb_get_file_descriptor(wire),POLLIN,0};poll(&fd,1,10);continue;}
+    brokerEvent(group,event);
+    if((event->response_type&127)==XCB_SELECTION_NOTIFY){const auto& response=*reinterpret_cast<xcb_selection_notify_event_t*>(event);
+      if(response.requestor==window&&response.selection==group->selection&&response.target==pair.target&&response.time==group->time){notified=true;property=response.property;}}
+    free(event);if(notified)break;
+  }
+  if(!notified||property!=group->names.pair||!groupLive(group))return false;
+  Property probe;readProperty(wire,true,window,property,0,probe);Incremental temporary;
+  {std::lock_guard lock(mutex);tighten(group->strict,current());const auto limit=incrementalLimit(group->names,pair.target,group->strict);
+    if(!probe.ok||(probe.type==group->names.incr?probe.after!=4:probe.after>limit)||!reserveExternal(temporary,probe.after+sizeof(xcb_get_property_reply_t)+3))return false;}
+  Property first;readProperty(wire,true,window,property,probe.after,first);
+  if(!first.ok||first.after)return false;
+  if(first.type!=group->names.incr)return storeGroup(group,pair.transfer,first.type,first.format,first.bytes,first.count,false);
+  if(first.format!=32||first.count!=1||!first.bytes)return false;uint32_t hint=0;std::memcpy(&hint,first.bytes,4);
+  std::shared_ptr<Incremental> stream;
+  {std::lock_guard lock(mutex);tighten(group->strict,current());stream=std::make_shared<Incremental>();stream->strict=group->strict;stream->hint=hint;
+    stream->limit=incrementalLimit(group->names,pair.target,stream->strict);stream->deadline=until;
+    if(!stream->limit||hint>stream->limit||!reserveBuffer(*stream,stream->limit))return false;pair.transfer->incremental=stream;}
+  deleteProperty(wire,true,window,property);
+  while(groupLive(group)&&Clock::now()<until){Property metadata;readProperty(wire,true,window,property,0,metadata);
+    drainBroker(group,wire);if(!groupLive(group))return false;
+    if(!metadata.ok||metadata.after>stream->limit)return false;if(!metadata.type){usleep(1000);continue;}
+    Incremental scratch;{std::lock_guard lock(mutex);if(!reserveExternal(scratch,metadata.after+sizeof(xcb_get_property_reply_t)+3))return false;}
+    Property part;readProperty(wire,true,window,property,metadata.after,part);
+    if(!part.ok||part.after)return false;if(!part.type){usleep(1000);continue;}
+    if(!append(stream,group->names,pair.target,part.type,part.format,part.bytes,part.count,false,group->copy))return false;
+    deleteProperty(wire,true,window,property);{std::lock_guard lock(mutex);if(stream->stage==Stage::Ready)return true;}
+  }return false;
+}
+bool publishGroup(const std::shared_ptr<Group>& group,xcb_connection_t* wire,uint32_t property,const std::shared_ptr<Transfer>& transfer){
+  static auto maximum=real<decltype(&xcb_get_maximum_request_length)>("xcb_get_maximum_request_length");
+  static auto write=real<decltype(&xcb_change_property_checked)>("xcb_change_property_checked");static auto check=real<decltype(&xcb_request_check)>("xcb_request_check");
+  const auto limit=maximum(wire);Incremental snapshot;
+  {std::lock_guard lock(mutex);refreshGroup(group,current());auto stream=transfer->incremental;
+    if(group->cancelled||!direction(group->copy,group->strict)||!stream||stream->stage!=Stage::Ready||transfer->denied)return false;
+    snapshot.type=stream->type;snapshot.format=stream->format;
+    // Incoming bodies live in the validated cache, including on servers whose
+    // maximum request is smaller than a complete INCR selection. The public
+    // property is an empty typed placeholder; Get hooks supply one full reply.
+    if(group->copy||transfer->control){if((stream->bytes.size()+3)/4+7>limit||!reserveBuffer(snapshot,stream->bytes.size(),false))return false;snapshot.bytes=stream->bytes;}
+    if(transfer->target==group->names.targets&&active(group->strict)){const auto count=filter(group->names,reinterpret_cast<uint32_t*>(snapshot.bytes.data()),snapshot.bytes.size()/4,group->strict);snapshot.bytes.resize(count*4);}}
+  drainBroker(group,wire);if(!groupLive(group,false))return false;
+  {std::lock_guard lock(mutex);refreshGroup(group,current());snapshot.strict=group->strict;
+    if(group->cancelled||transfer->denied||!direction(group->copy,snapshot.strict)||
+      (!transfer->control&&group->copy&&!content(group->names,transfer->target,snapshot.type,snapshot.format,snapshot.bytes.data(),snapshot.bytes.size()/(snapshot.format/8),snapshot.strict)))return false;
+    if(transfer->control)snapshot.bytes=transfer->incremental->bytes;}
+  auto error=check(wire,write(wire,XCB_PROP_MODE_REPLACE,group->window,property,snapshot.type,snapshot.format,snapshot.bytes.size()/(snapshot.format/8),snapshot.bytes.data()));const bool ok=!error;free(error);return ok;
+}
+void runGroup(const std::shared_ptr<Group>& group,xcb_connection_t* wire){
+  static auto create=real<decltype(&xcb_create_window_checked)>("xcb_create_window_checked");static auto check=real<decltype(&xcb_request_check)>("xcb_request_check");
+  static auto convert=real<decltype(&xcb_convert_selection)>("xcb_convert_selection");
+  static auto select=real<decltype(&xcb_change_window_attributes_checked)>("xcb_change_window_attributes_checked");
+  int screen=0;const auto colon=brokerDisplay.rfind(':');const auto dot=brokerDisplay.find('.',colon);if(dot!=std::string::npos)screen=std::atoi(brokerDisplay.c_str()+dot+1);
+  bool valid=!xcb_connection_has_error(wire);
+  if(valid){uint32_t events=XCB_EVENT_MASK_STRUCTURE_NOTIFY;auto error=check(wire,select(wire,group->window,XCB_CW_EVENT_MASK,&events));valid=!error;free(error);}
+  if(valid){auto screens=xcb_setup_roots_iterator(xcb_get_setup(wire));while(screen--&&screens.rem)xcb_screen_next(&screens);valid=screens.rem!=0;
+    for(auto& pair:group->pairs){if(!valid||!groupLive(group))break;bool denied;{std::lock_guard lock(mutex);denied=pair.transfer->denied;}if(denied)continue;
+      const auto window=xcb_generate_id(wire);uint32_t mask=XCB_EVENT_MASK_PROPERTY_CHANGE;auto error=check(wire,create(wire,XCB_COPY_FROM_PARENT,window,screens.data->root,0,0,1,1,0,XCB_WINDOW_CLASS_INPUT_OUTPUT,screens.data->root_visual,XCB_CW_EVENT_MASK,&mask));
+      if(error){free(error);deny(group->connection,group->window,pair.property);continue;}
+      convert(wire,window,group->selection,pair.target,group->names.pair,group->time);xcb_flush(wire);
+      const auto until=std::min(group->deadline,Clock::now()+std::chrono::milliseconds(sakura::IncrementalTimeoutMs));
+      if(!receiveGroup(group,wire,window,pair,until)){std::lock_guard lock(mutex);pair.transfer->denied=true;if(auto stream=pair.transfer->incremental){stream->stage=Stage::Denied;releaseBuffer(*stream);}blocked(group->copy);}
+      // Owner hooks retain private request keys until their normal stream ends.
+      finishPrivate(group->connection,window);
+    }
+  }
+  drainBroker(group,wire);bool allowed=valid&&groupLive(group,false);
+  if(allowed){Property original;readProperty(wire,true,group->window,group->property,sakura::MultiplePairs*8,original);
+    allowed=original.ok&&!original.after&&original.type==group->parent->incremental->type&&original.format==32&&original.count==group->original.size()&&
+      (group->original.empty()||std::memcmp(original.bytes,group->original.data(),group->original.size()*4)==0);}
+  {std::lock_guard lock(mutex);refreshGroup(group,current());allowed=allowed&&!group->cancelled&&direction(group->copy,group->strict);
+    for(auto& pair:group->pairs)if(!pair.transfer->incremental||pair.transfer->incremental->stage!=Stage::Ready)pair.transfer->denied=true;
+    group->complete=true;group->parent->incremental->type=group->names.pair;group->parent->incremental->format=32;group->parent->incremental->stage=allowed?Stage::Ready:Stage::Denied;
+    refreshGroup(group,current());changed.notify_all();}
+  if(allowed){for(auto& pair:group->pairs){bool denied;{std::lock_guard lock(mutex);denied=pair.transfer->denied;}if(!denied&&!publishGroup(group,wire,pair.property,pair.transfer)){
+        std::lock_guard lock(mutex);pair.transfer->denied=true;if(auto stream=pair.transfer->incremental){stream->stage=Stage::Denied;releaseBuffer(*stream);}blocked(group->copy);}
+    }
+    allowed=publishGroup(group,wire,group->property,group->parent);}
+  drainBroker(group,wire);bool cancelled;{std::lock_guard lock(mutex);cancelled=group->cancelled;if(!allowed){group->parent->denied=true;group->parent->incremental->stage=Stage::Denied;
+      for(auto& pair:group->pairs){pair.transfer->denied=true;if(auto stream=pair.transfer->incremental){stream->stage=Stage::Denied;releaseBuffer(*stream);}}}}
+  if(!cancelled)sendResult(wire,true,group->window,group->property,*group->parent,allowed);
+  if(group->copy){std::lock_guard lock(mutex);for(auto it=transfers.begin();it!=transfers.end();)if(it->second==group->parent||it->second->group.lock()==group)it=transfers.erase(it);else ++it;
+    for(auto it=groups.begin();it!=groups.end();)if(it->second==group)it=groups.erase(it);else ++it;}
+  // Let a source's final property callback finish before closing its requestor.
+  usleep(100000);
+}
+bool startGroup(void* connection,bool xcb,bool copy,uint32_t window,uint32_t property,uint32_t selection,uint32_t time,const Atoms& names){
+  reapBrokers();if(shuttingDown.load()||!property||brokerDisplay.empty())return false;
+  auto wire=xcb?static_cast<xcb_connection_t*>(connection):XGetXCBConnection(static_cast<Display*>(connection));if(!xcb)XFlush(static_cast<Display*>(connection));
+  Property list;readProperty(wire,true,window,property,sakura::MultiplePairs*8,list);
+  if(!list.ok||list.after||(list.type!=names.pair&&list.type!=XA_ATOM)||list.format!=32||list.count%2||list.count>sakura::MultiplePairs*2)return false;
+  auto group=std::make_shared<Group>();group->connection=connection;group->xcb=xcb;group->copy=copy;group->window=window;group->property=property;group->selection=selection;group->time=time;group->names=names;group->strict=current();group->endpoint=socketPeer(wire);
+  if(group->endpoint.empty()||!direction(copy,group->strict))return false;
+  group->original.resize(list.count);for(size_t i=0;i<list.count;++i){if(list.nativeLong)group->original[i]=reinterpret_cast<unsigned long*>(list.bytes)[i];else std::memcpy(&group->original[i],list.bytes+i*4,4);}
+  std::map<uint32_t,size_t> properties;for(size_t i=1;i<group->original.size();i+=2)++properties[group->original[i]];
+  {std::lock_guard lock(mutex);const auto other=peer(connection);const Key key{connection,window,property};
+    auto previous=transfers.find(key);if(previous!=transfers.end())if(auto old=previous->second->group.lock();old&&old->complete)retireGroup(old);
+    for(size_t i=1;i<group->original.size();i+=2){auto previous=transfers.find({connection,window,group->original[i]});if(previous!=transfers.end())if(auto old=previous->second->group.lock();old&&old->complete)retireGroup(old);}
+    auto existing=transfers.find(key);if(existing!=transfers.end()&&busy(existing->second))return false;
+    std::set<Group*> unique;for(const auto& entry:groups)unique.insert(entry.second.get());
+    if(unique.size()>=sakura::MultipleGroups||brokerSlots.load()>=sakura::MultipleGroups||transfers.size()+(list.count/2+1)*(other?2:1)>2048)return false;
+    if(!reserveExternal(group->originalAllocation,group->original.capacity()*sizeof(uint32_t)))return false;
+    auto install=[&](uint32_t atom,const std::shared_ptr<Transfer>& transfer){transfers[{connection,window,atom}]=transfer;if(other)transfers[{other,window,atom}]=transfer;};
+    group->parent=std::make_shared<Transfer>();auto parent=group->parent;parent->copy=copy;parent->target=names.multiple;parent->selection=selection;parent->time=time;parent->generation=++nextTransfer;parent->group=group;parent->control=true;
+    parent->incremental=std::make_shared<Incremental>();parent->incremental->type=list.type;parent->incremental->format=32;parent->incremental->strict=group->strict;if(!reserveBuffer(*parent->incremental,list.count*4,false))return false;
+    install(property,parent);groups[key]=group;if(other)groups[{other,window,property}]=group;
+    for(size_t i=0;i<group->original.size();i+=2){const auto target=group->original[i],atom=group->original[i+1];auto child=std::make_shared<Transfer>();child->copy=copy;child->target=target;child->selection=selection;child->time=time;child->generation=++nextTransfer;child->group=group;
+      auto existing=transfers.find({connection,window,atom});const bool conflict=existing!=transfers.end()&&busy(existing->second);
+      child->denied=!target||!atom||atom==property||properties[atom]!=1||target==names.multiple||!names.allowed(target,group->strict)||std::find(names.effects.begin(),names.effects.end(),target)!=names.effects.end()||conflict;
+      group->pairs.push_back({target,atom,child});if(atom&&atom!=property&&!conflict)install(atom,child);if(child->denied)blocked(copy);}
+    brokerSlots.fetch_add(1);
+  }
+  static auto connectFd=real<decltype(&xcb_connect_to_fd)>("xcb_connect_to_fd");static auto disconnect=real<decltype(&xcb_disconnect)>("xcb_disconnect");
+  auto broker=std::make_shared<Broker>();const int inputFd=brokerSocket(group->endpoint);broker->group=group;broker->deadline=Clock::now()+std::chrono::seconds(2);
+  if(inputFd>=0)broker->fd=fcntl(inputFd,F_DUPFD_CLOEXEC,0);
+  if(broker->fd<0){if(inputFd>=0)close(inputFd);std::lock_guard lock(mutex);retireGroup(group);brokerSlots.fetch_sub(1);return false;}
+  try{std::lock_guard lock(mutex);if(!brokerWatchdog.joinable())brokerWatchdog=std::thread(watchBrokers);
+    brokers.push_back(broker);broker->worker=std::thread([group,broker,inputFd](){
+      xcb_auth_info_t auth{int(brokerAuthName.size()),const_cast<char*>(brokerAuthName.data()),int(brokerAuthData.size()),const_cast<char*>(brokerAuthData.data())};
+      auto privateWire=connectFd(inputFd,&auth);
+      const bool ready=privateWire&&!xcb_connection_has_error(privateWire)&&socketPeer(privateWire)==group->endpoint;
+      {std::lock_guard lock(mutex);broker->connected=ready?1:-1;if(ready)broker->deadline=group->deadline+std::chrono::seconds(2);changed.notify_all();}
+      try{if(ready)runGroup(group,privateWire);}catch(...){bool notify=false;{std::lock_guard lock(mutex);notify=!group->cancelled;group->complete=true;group->parent->denied=true;group->parent->incremental->stage=Stage::Denied;
+          for(auto& pair:group->pairs){pair.transfer->denied=true;if(auto stream=pair.transfer->incremental){stream->stage=Stage::Denied;releaseBuffer(*stream);}}changed.notify_all();}
+        if(notify)sendResult(privateWire,true,group->window,group->property,*group->parent,false);}
+      {std::lock_guard lock(mutex);close(broker->fd);broker->fd=-1;}if(privateWire)disconnect(privateWire);{std::lock_guard lock(mutex);brokerSlots.fetch_sub(1);broker->done.store(true);changed.notify_all();}
+    });}
+  catch(...){std::lock_guard lock(mutex);close(inputFd);close(broker->fd);retireGroup(group);broker->fd=-1;broker->done.store(true);brokerSlots.fetch_sub(1);return false;}
+  // Authentication can block inside libxcb. A known socket plus one bounded
+  // process watchdog makes setup and checked requests interruptible. The
+  // caller sends setup failures through its own still-live connection.
+  std::unique_lock lock(mutex);changed.wait_until(lock,broker->deadline,[&](){return broker->connected!=0||group->cancelled;});
+  if(broker->connected==1)return true;
+  if(broker->fd>=0)shutdown(broker->fd,SHUT_RDWR);retireGroup(group);return false;
+}
 bool observe(Display* display,XEvent* event) {
   if(!configured)return true;
   expireCopies(display,false);
   if(event->type==PropertyNotify&&hiddenProperty(display,event->xproperty.window,event->xproperty.atom))return false;
+  if(event->type==SelectionNotify){const auto& response=event->xselection;finished(display,response.requestor,response.property,response.selection,response.target,response.time,false);}
   if(event->type!=SelectionRequest)return true;
   const auto names=atoms(display,false);const auto& request=event->xselectionrequest;
   if(!names.selection(request.selection))return true;
   const auto rule=current();
+  if(request.target==names.multiple&&active(rule)){
+    if(request.selection!=names.manager&&startGroup(display,false,true,request.requestor,request.property,request.selection,request.time,names))return false;
+    blocked(true);notify(display,request);return false;
+  }
+  if(request.target==names.multiple)reuseMultiple(display,false,request.requestor,request.property,names);
   const bool tracked=remember(display,request.requestor,request.property?request.property:request.target,{true,false,uint32_t(request.target),uint32_t(request.selection),uint32_t(request.time),{}});
   if(active(rule)&&(!direction(true,rule)||!names.allowed(request.target,rule)||request.selection==names.manager||!tracked)) {
     blocked(true);notify(display,request);return false;
@@ -547,24 +868,35 @@ bool observe(xcb_connection_t* connection,xcb_generic_event_t* event) {
   if(!event)return true;
   if((event->response_type&127)==XCB_PROPERTY_NOTIFY){const auto property=reinterpret_cast<xcb_property_notify_event_t*>(event);
     if(hiddenProperty(connection,property->window,property->atom))return false;}
+  if((event->response_type&127)==XCB_SELECTION_NOTIFY){const auto& response=*reinterpret_cast<xcb_selection_notify_event_t*>(event);finished(connection,response.requestor,response.property,response.selection,response.target,response.time,false);}
   if((event->response_type&127)!=XCB_SELECTION_REQUEST)return true;
   const auto names=atoms(connection,true);const auto& request=*reinterpret_cast<xcb_selection_request_event_t*>(event);
   if(!names.selection(request.selection))return true;
   const auto rule=current();
+  if(request.target==names.multiple&&active(rule)){
+    if(request.selection!=names.manager&&startGroup(connection,true,true,request.requestor,request.property,request.selection,request.time,names))return false;
+    blocked(true);notify(connection,request);return false;
+  }
+  if(request.target==names.multiple)reuseMultiple(connection,true,request.requestor,request.property,names);
   const bool tracked=remember(connection,request.requestor,request.property?request.property:request.target,{true,false,request.target,request.selection,request.time,{}});
   if(active(rule)&&(!direction(true,rule)||!names.allowed(request.target,rule)||request.selection==names.manager||!tracked)) {
     blocked(true);notify(connection,request);return false;
   }
   return true;
 }
-void forget(void* connection,uint32_t window=0) {
+void forget(void* connection,uint32_t window) {
   std::lock_guard lock(mutex);
   const auto other=peer(connection);
+  for(auto it=groups.begin();it!=groups.end();)if((std::get<0>(it->first)==connection||(other&&std::get<0>(it->first)==other))&&(!window||std::get<1>(it->first)==window)){
+    it->second->cancelled=true;for(auto& pair:it->second->pairs){pair.transfer->denied=true;if(auto stream=pair.transfer->incremental){stream->stage=Stage::Denied;releaseBuffer(*stream);}}it=groups.erase(it);
+  }else ++it;
   for(auto it=transfers.begin();it!=transfers.end();) {
-    if((std::get<0>(it->first)==connection||(other&&std::get<0>(it->first)==other))&&(!window||std::get<1>(it->first)==window))it=transfers.erase(it);else++it;
+    if((std::get<0>(it->first)==connection||(other&&std::get<0>(it->first)==other))&&(!window||std::get<1>(it->first)==window)){
+      it->second->denied=true;if(auto stream=it->second->incremental){stream->stage=Stage::Denied;releaseBuffer(*stream);}it=transfers.erase(it);
+    }else++it;
   }
   for(auto it=replies.begin();it!=replies.end();) {
-    if((it->first.first==connection||(other&&it->first.first==other))&&(!window||std::get<1>(it->second.key)==window))it=replies.erase(it);else++it;
+    if(!window&&(it->first.first==connection||(other&&it->first.first==other)))it=replies.erase(it);else++it;
   }
   if(!window){atomCache.erase({connection,false});atomCache.erase({connection,true});
     if(other){atomCache.erase({other,false});atomCache.erase({other,true});}
@@ -576,7 +908,7 @@ void initialize() {
   const char* path=getenv("SAKURA_CLIPBOARD_POLICY");
   if(!path)return;
   if(std::strlen(path)>1024||path[0]!='/')_exit(126);
-  policyPath=path;configured=true;
+  policyPath=path;configured=true;pinBroker();
   const char* value=getenv("SAKURA_CLIPBOARD_STATUS_FD");
   if(value) {
     char* end=nullptr;const long fd=std::strtol(value,&end,10);struct stat info{};
@@ -593,7 +925,7 @@ void initialize() {
     }
   }
 }
-struct Bootstrap { Bootstrap(){initialize();} } bootstrap;
+struct Bootstrap { Bootstrap(){initialize();}~Bootstrap(){shutdownBrokers();} } bootstrap;
 }
 
 extern "C" int XSetSelectionOwner(Display* display,Atom selection,Window owner,Time time) {
@@ -623,6 +955,11 @@ extern "C" int XConvertSelection(Display* display,Atom selection,Atom target,Ato
     const auto names=atoms(display,false);
     if(names.selection(selection)) {
       const auto rule=current();
+      if(target==names.multiple&&active(rule)){
+        if(selection!=names.manager&&startGroup(display,false,false,requestor,property,selection,time,names))return 1;
+        blocked(false);XSelectionRequestEvent request{};request.requestor=requestor;request.selection=selection;request.target=target;request.time=time;notify(display,request);return 0;
+      }
+      if(target==names.multiple)reuseMultiple(display,false,requestor,property,names);
       const bool tracked=remember(display,requestor,property?property:target,{false,false,uint32_t(target),uint32_t(selection),uint32_t(time),{}});
       if(active(rule)&&(!direction(false,rule)||!names.allowed(target,rule)||selection==names.manager||!tracked)) {
         blocked(false);XSelectionRequestEvent request{};request.requestor=requestor;request.selection=selection;request.target=target;request.time=time;
@@ -653,13 +990,15 @@ extern "C" int XGetWindowProperty(Display* display,Window window,Atom property,l
   Atom* type,int* format,unsigned long* count,unsigned long* after,unsigned char** bytes) {
   ORIGINAL(XGetWindowProperty);
   Transfer transfer;
-  const bool tracked=configured&&lookup(display,window,property,transfer)&&!transfer.copy;
+  auto entry=configured?reference(display,window,property):nullptr;if(entry){std::lock_guard lock(mutex);transfer=*entry;}
+  const bool tracked=entry&&!transfer.copy;
   const auto rule=tracked?current():Policy{};
   const long bounded=tracked&&active(rule)&&length>0?std::min(length,long((incrementalLimit(atoms(display,false),transfer.target,rule)+3)/4)):length;
   const int result=original(display,window,property,offset,bounded,tracked?False:remove,requested,type,format,count,after,bytes);
   if(tracked) {
-    lookup(display,window,property,transfer);
-    if(cachedXlib(display,window,property,offset,length,remove,requested,type,format,count,after,bytes,transfer))return result;
+    if(reference(display,window,property)!=entry){if(*bytes)XFree(*bytes);*bytes=nullptr;*type=None;*format=0;*count=0;*after=0;blocked(false);return result;}
+    {std::lock_guard lock(mutex);transfer=*entry;}
+    if(cachedXlib(display,window,property,offset,length,remove,requested,type,format,count,after,bytes,transfer,entry))return result;
     const auto names=atoms(display,false);const auto rule=current();
     const bool probe=active(rule)&&offset==0&&length==0&&metadataOnly(names,transfer.target,*type,*format,*count,*after,rule);
     if((active(rule)&&transfer.denied)||!direction(false,rule)||(active(rule)&&(offset!=0||(*after!=0&&!probe)))||
@@ -684,6 +1023,7 @@ extern "C" int XSendEvent(Display* display,Window window,Bool propagate,long mas
       }
     }
   }
+  if(configured&&event->type==SelectionNotify){const auto& response=event->xselection;finished(display,response.requestor,response.property,response.selection,response.target,response.time,true);}
   return original(display,window,propagate,mask,event);
 }
 extern "C" int XNextEvent(Display* display,XEvent* event) {
@@ -728,6 +1068,9 @@ SET_OWNER(xcb_set_selection_owner)
 SET_OWNER(xcb_set_selection_owner_checked)
 #define CONVERT(name) extern "C" xcb_void_cookie_t name(xcb_connection_t* connection,xcb_window_t requestor,xcb_atom_t selection,xcb_atom_t target,xcb_atom_t property,xcb_timestamp_t time) { \
   ORIGINAL(name);if(configured){const auto names=atoms(connection,true);if(names.selection(selection)){const auto rule=current(); \
+    if(target==names.multiple&&active(rule)){if(selection!=names.manager&&startGroup(connection,true,false,requestor,property,selection,time,names))return xcb_no_operation_checked(connection); \
+      blocked(false);xcb_selection_request_event_t request{};request.requestor=requestor;request.selection=selection;request.target=target;request.time=time;notify(connection,request);return xcb_no_operation_checked(connection);} \
+    if(target==names.multiple)reuseMultiple(connection,true,requestor,property,names); \
     const bool tracked=remember(connection,requestor,property?property:target,{false,false,target,selection,time,{}});if(active(rule)&&(!direction(false,rule)||!names.allowed(target,rule)||selection==names.manager||!tracked)){ \
       blocked(false);xcb_selection_request_event_t request{};request.requestor=requestor;request.selection=selection;request.target=target;request.time=time;notify(connection,request);return xcb_no_operation_checked(connection);}}} \
   return original(connection,requestor,selection,target,property,time);}
@@ -743,12 +1086,12 @@ CONVERT(xcb_convert_selection_checked)
 CHANGE(xcb_change_property)
 CHANGE(xcb_change_property_checked)
 #define GET(name) extern "C" xcb_get_property_cookie_t name(xcb_connection_t* connection,uint8_t remove,xcb_window_t window,xcb_atom_t property,xcb_atom_t type,uint32_t offset,uint32_t length){ \
-  ORIGINAL(name);Transfer transfer;const bool tracked=configured&&lookup(connection,window,property,transfer)&&!transfer.copy; \
+  ORIGINAL(name);auto entry=configured?reference(connection,window,property):nullptr;Transfer transfer;if(entry){std::lock_guard lock(mutex);transfer=*entry;}const bool tracked=entry&&!transfer.copy; \
   bool full=false;if(tracked){std::lock_guard lock(mutex);full=replies.size()+pendingReplies>=4096;if(!full)++pendingReplies;} \
   if(full){blocked(false);return original(connection,0,window,XCB_NONE,type,0,0);} \
   const auto rule=tracked?current():Policy{};const uint32_t bounded=tracked&&active(rule)?std::min(length,uint32_t((incrementalLimit(atoms(connection,true),transfer.target,rule)+3)/4)):length; \
   const auto result=original(connection,tracked?0:remove,window,property,type,offset,bounded); \
-  if(tracked){std::lock_guard lock(mutex);--pendingReplies;replies[{connection,result.sequence}]={{connection,window,property},offset,length,type,remove!=0};} \
+  if(tracked){std::lock_guard lock(mutex);--pendingReplies;replies[{connection,result.sequence}]={{connection,window,property},offset,length,type,remove!=0,entry};} \
   return result;}
 GET(xcb_get_property)
 GET(xcb_get_property_unchecked)
@@ -757,8 +1100,10 @@ static void inspectReply(xcb_connection_t* connection,uint64_t sequence,void** r
   Reply request;{std::lock_guard lock(mutex);auto found=replies.find({connection,sequence&0xffffffff});if(found==replies.end())return;request=found->second;replies.erase(found);}
   if(!raw||!*raw)return;
   const auto& key=request.key;const auto offset=request.offset,length=request.length;
-  Transfer transfer;if(!lookup(connection,std::get<1>(key),std::get<2>(key),transfer))return;
   auto reply=static_cast<xcb_get_property_reply_t*>(*raw);
+  auto entry=reference(connection,std::get<1>(key),std::get<2>(key));
+  if(!entry||entry!=request.transfer){std::memset(reply+1,0,size_t(reply->length)*4);reply->type=0;reply->format=0;reply->value_len=0;reply->bytes_after=0;reply->length=0;blocked(false);return;}
+  Transfer transfer;{std::lock_guard lock(mutex);transfer=*entry;}
   if(cachedXcb(connection,request,&reply,transfer)){*raw=reply;return;}
   auto bytes=reinterpret_cast<unsigned char*>(reply+1);const auto names=atoms(connection,true);const auto rule=current();
   const size_t declared=reply->format?size_t(reply->value_len)*(reply->format/8):0;
@@ -803,7 +1148,8 @@ XCB_EVENT(xcb_poll_for_queued_event)
   ORIGINAL(name);if(configured&&(static_cast<unsigned char>(bytes[0])&127)==XCB_SELECTION_NOTIFY){xcb_selection_notify_event_t event{};std::memcpy(&event,bytes,sizeof(event));Transfer transfer; \
     if(event.property&&lookup(connection,event.requestor,event.property,transfer)&&transfer.copy){ \
       if(holdNotification(connection,true,event.requestor,event.property,atoms(connection,true),transfer))return xcb_no_operation_checked(connection); \
-      if((transfer.denied&&active(current()))||!direction(true,current())){std::array<char,32> denied{};std::memcpy(denied.data(),bytes,32);reinterpret_cast<xcb_selection_notify_event_t*>(denied.data())->property=0;return original(connection,propagate,destination,mask,denied.data());}}} \
+      if((transfer.denied&&active(current()))||!direction(true,current())){std::array<char,32> denied{};std::memcpy(denied.data(),bytes,32);reinterpret_cast<xcb_selection_notify_event_t*>(denied.data())->property=0;return original(connection,propagate,destination,mask,denied.data());}} \
+    finished(connection,event.requestor,event.property,event.selection,event.target,event.time,true);} \
   return original(connection,propagate,destination,mask,bytes);}
 SEND(xcb_send_event)
 SEND(xcb_send_event_checked)

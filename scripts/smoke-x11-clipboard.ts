@@ -39,6 +39,7 @@ const program = '/usr/local/lib/sakura-x11-test/fixture',
   qtProgram = '/usr/local/lib/sakura-x11-test/fixture-qt';
 async function command(script: string, timeout = 30000) {
   const result = await machines.exec(vmId, script, timeout);
+  if (result.code !== 0 && result.stdout) console.log(result.stdout);
   assert.equal(result.code, 0, result.stderr || result.stdout);
   return result.stdout.trim();
 }
@@ -145,13 +146,13 @@ try {
   );
   await command(
     `set -eu\ncd /root/sakura-x11-build\ng++ -std=c++17 -O2 -Wall -Wextra fixture.cpp -o ${program} -lX11 -lX11-xcb -lxcb -pthread\n` +
-      `g++ -std=c++17 -O2 -fPIC -Wall -Wextra fixture-qt.cpp -o ${qtProgram} $(pkg-config --cflags --libs ${qt})\nchmod 755 ${program} ${qtProgram}`,
+      `g++ -std=c++17 -O2 -fPIC -Wall -Wextra fixture-qt.cpp -o ${qtProgram} $(pkg-config --cflags --libs ${qt}) -lxcb\nchmod 755 ${program} ${qtProgram}`,
     90000,
   );
   const bundle = await x11SourceBundle();
-  console.log(
+  if (process.env.SAKURA_SKIP_NATIVE_SMOKE !== '1') console.log(
     await command(
-      `python3 /root/sakura-x11-build/smoke.py ${quote(bundle.directory + '/libSakuraClipboard.so')} ${program} ${bundle.manifest.build}`,
+      `python3 /root/sakura-x11-build/smoke.py ${quote(bundle.directory + '/libSakuraClipboard.so')} ${program} ${bundle.manifest.build} ${qtProgram}`,
       300000,
     ),
   );
@@ -286,11 +287,25 @@ try {
     await delay(100);
   }
   assert.equal(qtIncrRead, largeData.toString('hex'));
+  const multipleResult = 'UTF8_STRING:OK;text/plain:OK;TARGETS:OK;TIMESTAMP:OK;SAKURA_UNKNOWN:DENIED;DELETE:DENIED;INSERT_SELECTION:DENIED;INSERT_PROPERTY:DENIED;MULTIPLE:DENIED;';
+  for (const toolkit of ['xlib', 'xcb', 'mixed']) {
+    const multi = await command(largeRead(toolkit).replace(' read UTF8_STRING ', ' multiple UTF8_STRING '));
+    assert.equal(multi, multipleResult);
+  }
+  const qtMultipleMarker = '/home/sakura-desktop/sakura-x11-' + randomUUID();
+  const qtMultipleSink = await launch(qtProgram, ['multiple-probe', qtMultipleMarker, largeFile]);
+  assert.equal(await marker(qtMultipleMarker), 'MULTIPLE-COMPLETE');
+  await stop(qtMultipleSink.id);
   await save(qtProgram, { ...defaultClipboardRule(), maxTextBytes: 1024 });
   assert.equal(await command(largeRead('xcb')), 'DENIED');
   await save(qtProgram);
   await stop(qtIncrSource.id);
-  console.log('Real KDE/Qt >256KiB INCR in both directions, mixed aliases and live size tightening passed');
+  const selfMarker = '/home/sakura-desktop/sakura-x11-' + randomUUID();
+  const selfMultiple = await launch(qtProgram, ['self-multiple', selfMarker, largeFile]);
+  assert.equal(await marker(selfMarker), 'MULTIPLE-COMPLETE');
+  await stop(selfMultiple.id);
+  console.log('Real KDE Qt MULTIPLE with two >256KiB text children, explicit Qt requester and same-process owner/requester passed');
+  console.log('Real KDE/Qt >256KiB clipboard in both directions, forced native INCR into Qt, mixed aliases and live size tightening passed');
   const stopped = await native.view(vmId);
   assert.equal(stopped.sessions.find((row) => row.id === source.id)!.state, 'stopped');
   await action({ action: 'forget', id: source.id });

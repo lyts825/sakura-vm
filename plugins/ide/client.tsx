@@ -7,6 +7,7 @@ import '../../src/features.css';
 export function IdeConnection({ vm, request }: FeatureProps) {
   const ide = useRemote<{
     supported: boolean;
+    vscodeSupported?: boolean;
     running: boolean;
     alias: string;
     command: string;
@@ -21,7 +22,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
   return (
     <>
       <div className="feature-card">
-        <h4>在 VS Code 中开发</h4>
+        <h4>{ide.data?.vscodeSupported === false ? '项目 SSH 连接' : '在 VS Code 中开发'}</h4>
         {ide.data?.supported ? (
           <>
             <p className="subtle-note">
@@ -29,7 +30,13 @@ export function IdeConnection({ vm, request }: FeatureProps) {
                 ? '使用此项目专属的 SSH 服务，编辑器与子进程遵守项目网络设置。停止项目 SSH 会关闭其编辑器和后台进程。'
                 : '连接当前项目目录。首次配置会向本机 SSH 配置添加 Sakura 的 Include，并保留原配置备份。'}
             </p>
-            {ide.data.networkIsolation === 'private' && (
+            {ide.data.vscodeSupported === false && (
+              <p className="subtle-note">
+                Alpine 可使用普通 SSH、SFTP 和 Neovim。VS Code Remote-SSH 与 JetBrains Gateway 请使用 Debian
+                或 Ubuntu。
+              </p>
+            )}
+            {ide.data.networkIsolation === 'private' && ide.data.vscodeSupported !== false && (
               <p className="subtle-note">
                 首次连接请在 VS Code 用户设置中使用
                 <code>"remote.SSH.localServerDownload": "always"</code>， 并关闭 Remote Server Listen On
@@ -48,7 +55,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
               }
             >
               <ExternalLink size={14} />
-              配置 VS Code 连接
+              {ide.data.vscodeSupported === false ? '配置项目 SSH' : '配置 VS Code 连接'}
             </button>
             {ide.data.projectScoped && ide.data.runtime?.running && (
               <button
@@ -73,7 +80,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
               </a>
             )}
             <p className="muted">也可以在 PowerShell 中运行：</p>
-            <code className="wrap-code">{ide.data.command}</code>
+            {ide.data.command && <code className="wrap-code">{ide.data.command}</code>}
             {ide.data.sshCommand && <code className="wrap-code">{ide.data.sshCommand}</code>}
           </>
         ) : (

@@ -229,6 +229,11 @@ export async function runReport(
     };
   }
   if (featureId === 'editor-profiles') {
+    if (machines.get(id).distro === 'alpine' && ['vscode', 'jetbrains'].includes(String(p.editor)))
+      throw new AppError(
+        'Alpine 项目 SSH 支持普通 SSH、SFTP 与 Neovim；VS Code Remote-SSH 和 JetBrains Gateway 请使用 Debian 或 Ubuntu',
+        409,
+      );
     const { config, ...profile } = await editorConnectionProfile(machines, workspaces, id, signal);
     const { alias, directory } = profile;
     return {
@@ -238,9 +243,10 @@ export async function runReport(
         p.editor === 'jetbrains'
           ? '在 JetBrains Gateway 的 SSH 连接中选择此档案，项目目录见 directory。'
           : p.editor === 'neovim'
-            ? '使用下载的 SSH 档案配置 netrw 的 SSH 命令，再打开 remotePath。'
+            ? 'Neovim 0.12 先运行 :packadd netrw；使用下载的 SSH 档案配置 netrw 的 SSH 与 SCP 命令。Windows netrw 对绝对路径空格的转义有局限，建议从 relativeRemotePath 打开项目内文件；此 SSH 入口的默认目录已固定为 directory。'
             : '将档案导入 Remote-SSH 后打开指定项目目录。',
       remotePath: `scp://${alias}/${directory}/`,
+      ...(p.editor === 'neovim' ? { relativeRemotePath: `scp://${alias}/./` } : {}),
       download: { filename: alias + '-ssh.config', mime: 'text/plain', content: config },
       expiresOnRestart: true,
     };

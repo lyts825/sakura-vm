@@ -1306,7 +1306,7 @@ test('Windows integration settings save and remove real registration plans witho
 });
 
 for (const bits of [64, 32] as const) {
-  test(`Windows native clipboard settings bind ${bits}-bit executable rules, show failures, disable owned processes and fit mobile`, async ({
+  test(`Windows native clipboard settings bind and launch ${bits}-bit executable rules, show failures, disable owned processes and fit mobile`, async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -1317,13 +1317,8 @@ for (const bits of [64, 32] as const) {
     const assets = join(directory, 'assets');
     await mkdir(assets);
     const files = [];
-    const names = [
-      'SakuraClipboardPolicy.dll',
-      'sakura-clipboard-controller.exe',
-      'MinHook-LICENSE.txt',
-    ];
-    if (bits === 32)
-      names.push('SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe');
+    const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'MinHook-LICENSE.txt'];
+    if (bits === 32) names.push('SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe');
     for (const name of names) {
       const bytes = Buffer.from(name);
       await writeFile(join(assets, name), bytes);
@@ -1345,6 +1340,10 @@ for (const bits of [64, 32] as const) {
     const image = 'D:\\Programs\\很长的应用程序目录和包含空格的文件名\\clipboard editor.exe';
     const identity = { pid: 10001, created: '134000000000000001', image, bits };
     const enabledHelpers: string[] = [];
+    const launches: { file: string; args: string[] }[] = [];
+    const child = { ...identity, pid: 10002, created: '134000000000000002' };
+    let launched = false,
+      launchFailure = false;
     let policy: any = { present: false },
       fail = false;
     const native = new NativeClipboard({
@@ -1353,8 +1352,30 @@ for (const bits of [64, 32] as const) {
       interval: 0,
       supported: true,
       hashImage: async () => 'a'.repeat(64),
+      imageBits: async () => bits,
+      launch: async (file, args, hooks, signal) => {
+        launches.push({ file, args });
+        if (launchFailure) throw new Error('controlled startup refused before resume');
+        await hooks.prepared(child);
+        const journal = JSON.parse(await readFile(join(directory, 'native.json'), 'utf8'));
+        expect(journal.managed.some((item: any) => item.pid === child.pid)).toBe(true);
+        policy = {
+          present: true,
+          ready: true,
+          compatible: true,
+          active: true,
+          flags: Number(args[5]),
+          maximum: Number(args[6]),
+          blockedCopy: 5,
+          blockedPaste: 2,
+        };
+        await hooks.attached(child, policy);
+        expect(signal.aborted).toBe(false);
+        launched = true;
+        return child;
+      },
       run: async (file, args) => {
-        if (args[0] === 'list') return { processes: [identity] };
+        if (args[0] === 'list') return { processes: launched ? [identity, child] : [identity] };
         if (args[0] === 'status') return policy;
         if (args[8] === '1') enabledHelpers.push(file);
         if (fail) throw new Error('process rejects native attachment');
@@ -1388,20 +1409,18 @@ for (const bits of [64, 32] as const) {
       await page.getByRole('button', { name: '系统设置', exact: true }).click();
       await page.getByRole('button', { name: '管理 Windows 剪贴板策略', exact: true }).click();
       const panel = page.getByRole('region', { name: 'Windows 应用剪贴板策略' });
-      await expect(panel.getByRole('option').filter({ hasText: image })).toContainText(
-        `${bits} 位`,
-      );
+      await expect(panel.getByRole('option').filter({ hasText: image })).toContainText(`${bits} 位`);
       await panel.getByLabel('正在运行的应用').selectOption(`${identity.pid}:${identity.created}`);
       await panel.getByRole('button', { name: '添加或重新绑定应用' }).click();
+      const controlled = panel.getByRole('button', { name: '受控启动此应用', exact: true });
+      await expect(controlled).toBeDisabled();
       await expect(panel.getByLabel('允许复制与剪切', { exact: true })).toBeChecked();
       await panel.getByLabel('允许复制与剪切', { exact: true }).uncheck();
       await panel.getByLabel('阻止疑似敏感文本').check();
       await panel.getByLabel('文本上限').selectOption('4096');
       await panel.getByLabel('启用 Windows 应用策略').check();
       await panel.getByRole('button', { name: '保存 Windows 剪贴板策略', exact: true }).click();
-      await expect(panel.getByRole('status')).toHaveText(
-        'Windows 剪贴板配置已保存；请查看各进程的应用状态',
-      );
+      await expect(panel.getByRole('status')).toHaveText('Windows 剪贴板配置已保存；请查看各进程的应用状态');
       await expect(panel.getByText('已接入 Win32/OLE · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
       expect(policy.flags).toBe(14);
       expect(enabledHelpers.length).toBeGreaterThan(0);
@@ -1412,20 +1431,66 @@ for (const bits of [64, 32] as const) {
           ),
         ),
       ).toBe(true);
+      await expect(controlled).toBeEnabled();
+      const argumentsInput = panel.getByLabel('启动参数（JSON 字符串数组）');
+      await argumentsInput.fill('not JSON');
+      await controlled.click();
+      await expect(
+        panel.getByRole('alert').filter({ hasText: '启动参数需填写 JSON 字符串数组' }),
+      ).toBeVisible();
+      await argumentsInput.fill('[1]');
+      await controlled.click();
+      await expect(
+        panel.getByRole('alert').filter({ hasText: '启动参数需为最多 64 项的字符串数组' }),
+      ).toBeVisible();
+      expect(launches).toHaveLength(0);
+      const literalArgs = ['', 'D:\\文件目录\\待编辑 文件.txt', 'a"b', 'trailing\\', '& $() %PATH% ; >'];
+      await argumentsInput.fill(JSON.stringify(literalArgs));
+      await controlled.click();
+      await expect(panel.getByRole('status')).toHaveText('已按已保存规则启动应用');
+      await expect(panel.getByText('受管进程状态（2）')).toBeVisible();
+      expect(launches).toHaveLength(1);
+      expect(
+        launches[0].file.endsWith(
+          bits === 32 ? 'sakura-clipboard-controller-x86.exe' : 'sakura-clipboard-controller.exe',
+        ),
+      ).toBe(true);
+      expect(
+        launches[0].args[4].endsWith(
+          bits === 32 ? 'SakuraClipboardPolicy-x86.dll' : 'SakuraClipboardPolicy.dll',
+        ),
+      ).toBe(true);
+      expect(launches[0].args.slice(8)).toEqual(literalArgs);
+      expect(policy.flags).toBe(14);
+      expect(policy.maximum).toBe(4096);
+      await native.action({
+        action: 'configure',
+        version: native.view().version,
+        settings: native.view().settings,
+      });
+      await controlled.click();
+      await expect(panel.getByRole('alert').filter({ hasText: '剪贴板配置已改变' })).toBeVisible();
+      expect(launches).toHaveLength(1);
+      launchFailure = true;
+      await expect(controlled).toBeEnabled();
+      await controlled.click();
+      await expect(
+        panel.getByRole('alert').filter({ hasText: 'controlled startup refused before resume' }),
+      ).toBeVisible();
+      expect(launches).toHaveLength(2);
       await page.reload();
       await page.getByRole('button', { name: '管理 Windows 剪贴板策略', exact: true }).click();
       await expect(panel.getByLabel('允许复制与剪切', { exact: true })).not.toBeChecked();
       await panel.getByLabel('允许粘贴', { exact: true }).uncheck();
+      await expect(controlled).toBeDisabled();
       fail = true;
       await panel.getByRole('button', { name: '保存 Windows 剪贴板策略', exact: true }).click();
       await expect(
-        panel.getByRole('alert').filter({ hasText: 'process rejects native attachment' }),
+        panel.getByRole('alert').filter({ hasText: 'process rejects native attachment' }).first(),
       ).toBeVisible();
-      await expect(panel.getByText('未应用当前规则 · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
+      await expect(panel.getByText('未应用当前规则 · 拒绝复制 5 · 拒绝粘贴 2').first()).toBeVisible();
       await page.setViewportSize({ width: 390, height: 844 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-        390,
-      );
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
       const suffix = bits === 32 ? '-x86' : '';
       await page.screenshot({
         path: `artifacts/native-clipboard-mobile${suffix}.png`,
@@ -1435,7 +1500,8 @@ for (const bits of [64, 32] as const) {
       fail = false;
       await panel.getByRole('button', { name: '停用 Windows 应用策略' }).click();
       await expect(panel.getByLabel('启用 Windows 应用策略')).not.toBeChecked();
-      await expect(panel.getByText('已停用 · 拒绝复制 5 · 拒绝粘贴 2')).toBeVisible();
+      await expect(panel.getByText('已停用 · 拒绝复制 5 · 拒绝粘贴 2').first()).toBeVisible();
+      await expect(controlled).toBeDisabled();
       expect(policy.active).toBe(false);
       expect(errors).toEqual([]);
     } finally {
@@ -4159,53 +4225,96 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   await page.goto('/');
 }
 
-test('project SSH setup shows private-network settings and confirms stopping its editor processes', async ({ page }) => {
-  const pageErrors: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
-  await app(page, ['projects', 'ide'], true);
-  await page.route('**/api/vms', (route) => route.fulfill({ json: [{ ...vm,
-    distro: 'debian', status: 'running', poweredOn: true }] }));
-  await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, (route) => route.fulfill({ json: {
-    projectId: 'default', job: null, project: { directory: '/workspace/private', template: 'none',
-      repository: '', setup: '', command: '', networkIsolation: 'private' } } }));
-  let configured = false;
-  const actions: unknown[] = [];
-  const alias = `sakura-${vm.id}-default`;
-  await page.route('**/api/vms/*/ide**', (route) => {
-    if (route.request().method() === 'POST') {
-      const input = route.request().postData() ? route.request().postDataJSON() : {};
-      actions.push(input);
-      configured = input.action !== 'stop';
+for (const distro of ['debian', 'alpine'] as const) {
+  test(`project SSH ${distro} setup shows supported client settings and confirms stopping its processes`, async ({
+    page,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    await app(page, ['projects', 'ide'], true);
+    await page.route('**/api/vms', (route) =>
+      route.fulfill({ json: [{ ...vm, distro, status: 'running', poweredOn: true }] }),
+    );
+    await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, (route) =>
+      route.fulfill({
+        json: {
+          projectId: 'default',
+          job: null,
+          project: {
+            directory: '/workspace/private',
+            template: 'none',
+            repository: '',
+            setup: '',
+            command: '',
+            networkIsolation: 'private',
+          },
+        },
+      }),
+    );
+    let configured = false;
+    const actions: unknown[] = [];
+    const alias = `sakura-${vm.id}-default`;
+    const vscodeSupported = distro !== 'alpine';
+    await page.route('**/api/vms/*/ide**', (route) => {
+      if (route.request().method() === 'POST') {
+        const input = route.request().postData() ? route.request().postDataJSON() : {};
+        actions.push(input);
+        configured = input.action !== 'stop';
+      }
+      return route.fulfill({
+        json: {
+          supported: true,
+          vscodeSupported,
+          running: true,
+          projectScoped: true,
+          networkIsolation: 'private',
+          alias,
+          runtime: { present: configured, running: configured, valid: configured, reason: null },
+          command:
+            configured && vscodeSupported ? `code --remote ssh-remote+${alias} '/workspace/private'` : '',
+          sshCommand: configured ? `ssh ${alias}` : '',
+          url:
+            configured && vscodeSupported
+              ? `vscode://vscode-remote/ssh-remote+${alias}/workspace/private`
+              : '',
+        },
+      });
+    });
+    await page.reload();
+    await page.getByRole('tab', { name: '项目', exact: true }).click();
+    const downloadSetting = page.getByText('"remote.SSH.localServerDownload": "always"', { exact: true });
+    if (vscodeSupported) await expect(downloadSetting).toBeVisible();
+    else {
+      await expect(downloadSetting).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: '项目 SSH 连接', exact: true })).toBeVisible();
+      await expect(page.getByText(/Alpine 可使用普通 SSH、SFTP 和 Neovim/)).toBeVisible();
     }
-    return route.fulfill({ json: { supported: true, running: true, projectScoped: true,
-      networkIsolation: 'private', alias,
-      runtime: { present: configured, running: configured, valid: configured, reason: null },
-      command: configured ? `code --remote ssh-remote+${alias} '/workspace/private'` : '',
-      sshCommand: configured ? `ssh ${alias}` : '',
-      url: configured ? `vscode://vscode-remote/ssh-remote+${alias}/workspace/private` : '' } });
+    await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveCount(0);
+    await page
+      .getByRole('button', { name: vscodeSupported ? '配置 VS Code 连接' : '配置项目 SSH', exact: true })
+      .click();
+    const stop = page.getByRole('button', { name: '停止项目 SSH', exact: true });
+    await expect(stop).toBeVisible();
+    if (vscodeSupported)
+      await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveAttribute(
+        'href',
+        `vscode://vscode-remote/ssh-remote+${alias}/workspace/private`,
+      );
+    else await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveCount(0);
+    await expect(page.getByText(`ssh ${alias}`, { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await stop.click();
+    expect(actions).toHaveLength(1);
+    page.once('dialog', (dialog) => dialog.accept());
+    await stop.click();
+    await expect(stop).toHaveCount(0);
+    await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveCount(0);
+    expect(actions).toEqual([{}, { action: 'stop' }]);
+    expect(pageErrors).toEqual([]);
   });
-  await page.reload();
-  await page.getByRole('tab', { name: '项目', exact: true }).click();
-  await expect(page.getByText('"remote.SSH.localServerDownload": "always"', { exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: '配置 VS Code 连接', exact: true }).click();
-  const stop = page.getByRole('button', { name: '停止项目 SSH', exact: true });
-  await expect(stop).toBeVisible();
-  await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveAttribute('href',
-    `vscode://vscode-remote/ssh-remote+${alias}/workspace/private`);
-  await expect(page.getByText(`ssh ${alias}`, { exact: true })).toBeVisible();
-  await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  page.once('dialog', (dialog) => dialog.dismiss());
-  await stop.click();
-  expect(actions).toHaveLength(1);
-  page.once('dialog', (dialog) => dialog.accept());
-  await stop.click();
-  await expect(stop).toHaveCount(0);
-  await expect(page.getByRole('link', { name: '打开 VS Code', exact: true })).toHaveCount(0);
-  expect(actions).toEqual([{}, { action: 'stop' }]);
-  expect(pageErrors).toEqual([]);
-});
+}
 
 test('Dev Container workbench submits Dockerfile and configuration actions and protects configured projects', async ({ page }) => {
   await app(page, ['projects', 'containers'], true);

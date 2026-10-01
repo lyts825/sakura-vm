@@ -66,8 +66,9 @@ const readme = [
   '演练：`npm run ha:witness -- --drill-plan <config.json> <sourceVmId> --output <new-plan.json>`，再运行 `npm run ha:witness -- --observe <config.json> --plan <new-plan.json> --output <new-observations.jsonl>`。工具只读取接口、生成计划与记录，不执行故障注入，不将接口记录视为物理节点独立的证明。',
   '浏览器扩展位于 `browser-extension`，可在 Chromium/Chrome 的扩展程序页加载已解压的扩展程序；需在 Sakura 中启用账户模式并由管理员配对。',
   'Windows 可运行 `npm run tray` 打开系统托盘；菜单中可选择登录自启和由托盘启动 Sakura。',
-  'Windows x64 运行包包含 x64 与 x86 应用剪贴板代理；在系统设置中按完整 EXE 路径选择应用后保存启用。覆盖成功附加的当前用户同一会话进程的 Win32/OLE 调用，使用匹配架构的工具接入。新进程附加前及其他系统接口不受此代理保证。',
-  'Linux X11 剪贴板源码随包校验。在 KDE 桌面的“原生应用剪贴板”入口安装代理、绑定完整应用路径并启动；普通 Xlib/XCB 动态应用在当前项目网络中运行，INCR 收齐后检查且超出原子请求上限时拒绝。原生 Wayland、已运行的其他应用、静态程序及底层协议仍未覆盖，受限状态拒绝 MULTIPLE。',
+  'Windows x64 运行包包含 x64 与 x86 应用剪贴板代理；在系统设置中按完整 EXE 路径选择应用后保存启用。受控启动先保持主线程暂停并持久保存归属，核对实际代理及规则后恢复；参数使用 JSON 字符串数组，逐项传递。自行启动的进程仍需等待扫描附加，DLL/TLS 初始化、受保护进程及其他系统接口不受此代理保证。',
+  'Alpine、Debian、Ubuntu 的项目 SSH/SFTP 入口使用各自密钥、固定主机公钥、项目目录和网络。Alpine 使用 OpenRC 与真实 cgroup v2，提供普通 SSH 和 Neovim；VS Code Remote-SSH 与 JetBrains Gateway 使用 Debian 或 Ubuntu。',
+  'Linux X11 剪贴板源码随包校验。在 KDE 桌面的“原生应用剪贴板”入口安装代理、绑定完整应用路径并启动；普通 Xlib/XCB 动态应用在当前项目网络中运行，INCR 与 MULTIPLE 每项收齐检查，复制超出原子请求上限时拒绝。原生 Wayland、已运行的其他应用、静态程序及底层协议仍未覆盖。',
   '更新：从原安装目录运行 `npm run update:check -- <新包目录>`、`npm run update:stage -- <新包目录>`，',
   '然后运行 `npm run update:activate -- versions/<编号>` 并重启 Sakura。',
   '可用 `npm run update:rollback` 切回上一个版本，再重启服务。更新前请保存或备份重要数据。',
@@ -76,6 +77,5 @@ const readme = [
 await writeFile(join(output, 'README.md'), readme);
 await writeReleaseManifest(output);
 for (const name of ['graphql', 'selfsigned', 'ssh2', 'ws', 'zod'])
-  if (!Object.hasOwn(manifest.dependencies, name))
-    throw new Error(`缺少运行依赖：${name}`);
+  if (!Object.hasOwn(manifest.dependencies, name)) throw new Error(`缺少运行依赖：${name}`);
 console.log(output);
