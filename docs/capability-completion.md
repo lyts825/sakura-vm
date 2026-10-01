@@ -2,6 +2,24 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口，以及只按进程组清理短任务的缺口，已由后续批次补齐；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 主命令归属、项目账号核心与首次开机持久化
+
+2026-10-01 将未配置多服务的项目主命令接入持久 cgroup v2。主命令第 2 版回执与服务第 1 版分别保存，项目代码只在完整运行身份持久保存并提交后执行；`setsid`、双重 fork 和主进程退出后的后台后代仍可按原归属清理。跨 boot 的旧回执仅在准确旧对象全部不存在时确认停止，不向新开机进程发送信号。配置修改、暂停期间的未知旧会话和清理失败均保留保护；面板显示实际主运行状态，停止不提交未保存的草稿。取消或服务关闭时仍未确认清理的任务保留失败及具体错误码。见 [主命令生命周期](project-main-lifecycle.md) 与 [服务生命周期](project-service-lifecycle.md)。
+
+Alpine、Debian、Ubuntu 各 26 项主命令和 20 项服务实测通过，最终源码摘要与三份主命令证明一致：`project-service-scope.ts` 为 `6ef9f2fd751d3b8c9cc202dde7447dbdd096503b209e557c0f08785ea823448f`，`project-main.ts` 为 `7189b053da5bb6121b4eef1cd2409a5dcf5c6245eee13449a5924973aba9a994`，`project-services.ts` 为 `4b31d27210c4bb99a8733161699af666969034ac7f9f3715522b318605ffe0b5`，`workspaces.ts` 为 `0fcc28e807505e27752000e025cff3cba796e624d6937880707bba00a73120ea`。本轮三个发行版使用 `node --no-addons --import tsx`；没有据此声称历史原生 sshcrypto 退出已修复。证据索引为 `.data/network-remaining-test-temp/project-main-final-verification.json`。
+
+新增独立的持久项目账号核心：预留并恢复固定 UID/GID、身份和修订，核对账号、home、目录 inode 及权限；固定启动器核对命名空间与 cgroup 后降权、清空补充组和 capabilities，支持独立运行和保持上层运行域的继承入口。三个发行版各 17 项实测通过，涵盖预留恢复、真实降权、目录和账号替换拒绝、脱离父进程后代清理、重启及完整磁盘快照恢复；客户端为默认 Node 24.15.0/tsx。三个生产资产总摘要为 `217ea95f32d481e063f8c06e70e356771bd1a41fb20e88e07a4890af86778814`，TS 摘要为 `b97b2bc1789c097b20bfbeaf66a857fb5cb9ff4e7037d3752f369fff5d376f90`。证明分别保存于 `sakura-project-identity-x2Fmmn`、`sakura-project-identity-K9BMe8`、`sakura-project-identity-LSuFUk` 的 `project-identity-evidence.json`。
+
+该账号核心尚未接入所有产品执行入口，继承票据还需由上层持久登记并在清理确认后核销；已有目录也没有自动改属主。当前核心的命令与环境运输仍经过 argv，默认 `/proc` 下不能保证跨 UID 的正文保密，因此尚未接入项目密钥执行路径。新增 `Machines.execInput` 将最多 128 KiB 的 Buffer 副本通过 SSH 标准输入传输并发送 EOF，真实 Debian 9 项验证通过，其中 7 项使用实际 SSH 通道，超限在连接前拒绝；这项运输能力不等于固定启动器已完成接入。边界见 [项目账号](project-identities.md)，输入证明为所属 Debian 的 `command-input-evidence.json`。
+
+首次开机的 SSH 密钥、hostname 与初始化状态在发布 running 前同步；克隆身份更新也在移除待处理记录前同步。三个发行版各三轮新建实例、running 后立即强制停止、重新加载验证通过，首轮没有额外 SSH 或测试补充 sync。九轮都核对密钥、hostname、初始化标记和工作目录，boot ID 改变，QEMU 与 runtime 最终关闭。摘要与时序见 `.data/boot-persistence-test-temp/final-verification.json`。这不构成任意断电下所有磁盘写入的事务保证。
+
+最终全量 Node 测试 971 项，970 通过、1 项按平台跳过；类型检查、32 个插件契约和 9 个插件包、3,082 条语言文本和 74 个动态片段、完整生产构建、54 个服务模块分发与 7 种编译服务组合通过。4 个相关浏览器场景验证主命令清理失败后重试、草稿保留、未知旧主会话禁用及服务清理。日志分别为 `.data/project-main-full-unit-isolated-final.log`、`.data/project-main-all-types-final.log`、`.data/project-main-build-final.log`、`.data/project-main-production-final.log` 和 `.data/project-main-ui-playwright-final.log`。此前全轮曾因测试盘剩余空间不足触发 Golden 容量保护，未放宽该保护；保留两个已停止测试盘并进行原位 NTFS 压缩后再测。另一次全轮有单个测试文件进程退出，未给出 JS 错误；该文件单测和最终独立全轮通过，原失败日志保留，退出原因未确定。
+
+新运行包 `release/sakura-D3sMh5` 的 256 个文件校验通过，指纹为 `2d3e0eae833f8d8761ca057288be62c48b4724e529c3ddc8126eae62ea7c5d2f`，编译服务摘要为 `8a73bbadda94575dfb05ee0255771a6bf8dfcfa667ef1618ec8d5ca09d9e7b8a`。包内默认 Node 路径通过实际 Debian 的 HTTP/生成 SDK 六组验证：两个项目完整运行归属、幂等启动和配置保护、错误 boot 拒绝清理、主进程退出后的全域清理及相邻项目保留。证据为 `compiled-project-main-http-evidence.json`，日志为 `.data/project-main-release-http-default-third.log`；两次先前测试脚本的 SDK 调用错误日志保留，最终修正为路由前缀请求和独立 query 参数。结束后实例停止并重新核对同一包摘要。测试使用本机准备的 QEMU/PosixLoom 与运行依赖，未验证新机器安装；单轮默认路径成功不证明历史原生插件退出已修复。
+
+目录仍为 250 项，247 项有实现入口、3 项部分实现。网络剩余工作包括项目账号与受保护正文运输的完整产品接入、非受管系统入口与管理员路径；剪贴板的系统级边界和实际外部 HA 故障演练仍未完成。本批全部使用自有测试实例，不把本机适配器视为实际独立见证、BMC 与切流系统的证明。持续清单见 [未完成功能](unfinished-features.md)。
+
 ## Windows 托管剪贴板双架构控件验证
 
 2026-10-01 补齐现代 .NET 10.0.9 x86 的真实 WinForms/WPF API 与 TextBox Copy/Paste/Cut 验证。x64 SDK 离线构建明确的 x86 程序，由测试目录内微软官方 32 位 dotnet host 执行，不以 AnyCPU 或 x64 运行结果代替；核心与桌面运行时 ZIP 核对固定官方 SHA-512，复用时继续核对原包和关键文件 SHA-256。实际进程的 X86/32 位、CoreCLR、CoreLib 和桌面程序集路径均记录。现代 .NET x64、Framework 4.8.1 双架构及 WinRT Desktop 同轮回归。
