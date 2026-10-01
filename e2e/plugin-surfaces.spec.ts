@@ -966,7 +966,7 @@ test('real noVNC obeys clipboard policy and records, decodes, exports and persis
   }
 });
 
-test('desktop layout saves two logical monitors and restores the applied preference', async ({ page }) => {
+test('desktop layout saves two logical monitors and a native Wayland preference across reload', async ({ page }) => {
   await app(page, ['desktop'], true);
   let preferences: Record<string, unknown> = {
     resolution: '1280x800', monitorLayout: 'single', scale: 100,
@@ -991,18 +991,22 @@ test('desktop layout saves two logical monitors and restores the applied prefere
   await page.getByRole('button', { name: '外观与布局' }).click();
   const layout = page.getByLabel('逻辑屏幕布局');
   await layout.selectOption('dual-horizontal');
+  await page.getByLabel('桌面会话类型').selectOption('wayland');
   await expect(page.getByText('两个逻辑屏幕显示在同一桌面画布中')).toBeVisible();
   await page.getByRole('button', { name: '应用并重启桌面' }).click();
   await expect.poll(() => submitted?.monitorLayout).toBe('dual-horizontal');
+  expect(submitted?.sessionType).toBe('wayland');
   await page.reload();
   await page.getByRole('tab', { name: '桌面', exact: true }).click();
   await page.getByRole('button', { name: '外观与布局' }).click();
   await expect(page.getByLabel('逻辑屏幕布局')).toHaveValue('dual-horizontal');
+  await expect(page.getByLabel('桌面会话类型')).toHaveValue('wayland');
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('Linux X11 clipboard saves identities and rules, launches arguments, survives reload and cleans sessions on mobile', async ({ page }) => {
+for (const transport of ['x11', 'wayland'] as const) {
+test(`Linux ${transport} clipboard saves identities and rules, launches arguments, survives reload and cleans sessions on mobile`, async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await app(page, ['desktop', 'projects'], true);
@@ -1012,7 +1016,9 @@ test('Linux X11 clipboard saves identities and rules, launches arguments, surviv
   const image = '/usr/bin/konsole', sha256 = 'a'.repeat(64), id = randomUUID();
   const state: any = { version: 1, applications: [], ready: true, sessions: [], installation: null, build: 'b'.repeat(64) };
   const submitted: any[] = [];
-  await page.route('**/api/vms/*/x11-clipboard*', route => {
+  await page.route(`**/api/vms/*/${transport === 'wayland' ? 'x11' : 'wayland'}-clipboard*`, route =>
+    route.fulfill({ json: { version: 1, applications: [], ready: true, sessions: [], installation: null } }));
+  await page.route(`**/api/vms/*/${transport}-clipboard*`, route => {
     if (route.request().method() === 'POST') {
       const input = route.request().postDataJSON(); submitted.push(input);
       if (input.action === 'identify') return route.fulfill({ json: { image, sha256 } });
@@ -1032,7 +1038,8 @@ test('Linux X11 clipboard saves identities and rules, launches arguments, surviv
   await page.reload();
   await page.getByRole('tab', { name: '桌面', exact: true }).click();
   await page.getByRole('button', { name: '原生应用剪贴板', exact: true }).click();
-  const panel = page.getByRole('region', { name: 'Linux X11 应用剪贴板策略' });
+  await page.getByLabel('剪贴板应用类型').selectOption(transport);
+  const panel = page.getByRole('region', { name: `${transport === 'wayland' ? '原生 Wayland' : 'Linux X11'} 应用剪贴板策略` });
   await panel.getByRole('button', { name: '读取应用身份' }).click();
   const start = panel.getByRole('button', { name: '按已保存规则启动' });
   await expect(start).toBeDisabled();
@@ -1051,11 +1058,12 @@ test('Linux X11 clipboard saves identities and rules, launches arguments, surviv
   await page.reload();
   await page.getByRole('tab', { name: '桌面', exact: true }).click();
   await page.getByRole('button', { name: '原生应用剪贴板', exact: true }).click();
+  await page.getByLabel('剪贴板应用类型').selectOption(transport);
   await expect(panel.getByLabel('允许复制', { exact: true })).not.toBeChecked();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(sessions).toContainText('代理已加载');
+  await expect(sessions).toContainText('已接入策略');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await panel.screenshot({ path: resolve('.data/linux-clipboard-mobile.png') });
+  await panel.screenshot({ path: resolve(`.data/linux-${transport}-clipboard-mobile.png`) });
   await sessions.getByRole('button', { name: '停止应用及子进程' }).click();
   await expect(sessions).toContainText('已停止');
   await sessions.getByRole('button', { name: '清理已停止记录' }).click();
@@ -1064,21 +1072,26 @@ test('Linux X11 clipboard saves identities and rules, launches arguments, surviv
   await expect(panel.locator('.x11-clipboard-application')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+}
 
-test('Linux X11 clipboard refuses unsaved changes and a mismatched KDE project', async ({ page }) => {
+for (const transport of ['x11', 'wayland'] as const) {
+test(`Linux ${transport} clipboard refuses unsaved changes and a mismatched KDE project`, async ({ page }) => {
   await app(page, ['desktop'], true);
   await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
   await page.route('**/api/vms/*/desktop*', route => route.fulfill({ json: { status: 'ready', log: '', preferences: {}, bindingMismatch: true,
     projectId: '0123456789abcdef', directory: '/workspace/other', networkIsolation: 'private' } }));
-  await page.route('**/api/vms/*/x11-clipboard*', route => route.fulfill({ json: { version: 2, ready: true, installation: null, sessions: [],
+  await page.route('**/api/vms/*/x11-clipboard*', route => route.fulfill({ json: { version: 1, ready: true, installation: null, sessions: [], applications: [] } }));
+  await page.route(`**/api/vms/*/${transport}-clipboard*`, route => route.fulfill({ json: { version: 2, ready: true, installation: null, sessions: [],
     applications: [{ image: '/usr/bin/konsole', sha256: 'a'.repeat(64), rule: { copy: true, paste: true, files: true, sensitive: false, maxTextBytes: 1048576 } }] } }));
   await page.reload();
   await page.getByRole('tab', { name: '桌面', exact: true }).click();
   await page.getByRole('button', { name: '原生应用剪贴板', exact: true }).click();
-  const panel = page.getByRole('region', { name: 'Linux X11 应用剪贴板策略' });
+  await page.getByLabel('剪贴板应用类型').selectOption(transport);
+  const panel = page.getByRole('region', { name: `${transport === 'wayland' ? '原生 Wayland' : 'Linux X11'} 应用剪贴板策略` });
   await expect(panel.getByText('启动应用前，请先启动并绑定当前项目的 KDE 桌面。')).toBeVisible();
   await expect(panel.getByRole('button', { name: '按已保存规则启动' })).toBeDisabled();
 });
+}
 
 test('KDE project mismatch blocks graphics until the owner stops and rebinds the desktop', async ({ page }) => {
   await app(page, ['desktop'], true);
@@ -4240,6 +4253,48 @@ async function app(page: Page, active: string[] = [], withVm = false) {
   });
   await page.goto('/');
 }
+
+test('project service cleanup failures retain the exited state and support a visible retry on mobile', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await app(page, ['projects'], true);
+  await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, status: 'running', poweredOn: true }] }));
+  const services = ['api', 'pending', 'legacy', 'uncertain'].map(name => ({ name,
+    command: 'sleep 60', dependsOn: [], ready: '', timeout: 30 }));
+  let attempts = 0, stopped = false;
+  await page.route(/\/api\/vms\/[^/]+\/project(?:\?.*)?$/, async route => {
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON()).toEqual({ action: 'stop', service: 'api' });
+      if (++attempts === 1) return route.fulfill({ status: 503, json: { error: '服务清理未确认，请核查后重试' } });
+      stopped = true;
+      return route.fulfill({ json: { status: 'done', log: '已停止 api' } });
+    }
+    return route.fulfill({ json: { projectId: 'default', job: null, project: {
+      directory: '/workspace', template: 'none', repository: '', setup: '', command: '', services,
+    } } });
+  });
+  await page.route('**/api/vms/*/project-runtime**', route => route.fulfill({ json: {
+    status: 'unconfirmed', log: '', services: services.map((service, index) => ({ name: service.name,
+      status: index === 0 ? stopped ? 'stopped' : 'exited' : ['prepared', 'migration-required', 'unconfirmed'][index - 1],
+      log: index === 0 ? '主进程已退出，后台任务仍待清理' : '',
+    })),
+  } }));
+  await page.reload();
+  await page.getByRole('tab', { name: '项目', exact: true }).click();
+  await expect(page.getByText('服务状态未确认', { exact: true })).toBeVisible();
+  for (const text of ['api · 主进程已退出，待清理', 'pending · 启动未确认', 'legacy · 旧服务待迁移', 'uncertain · 状态未确认'])
+    await expect(page.getByText(text, { exact: true })).toBeVisible();
+  const card = page.locator('details.feature-card').filter({ has: page.getByText('api · 主进程已退出，待清理', { exact: true }) });
+  await card.locator('summary').click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await card.getByRole('button', { name: '停止服务', exact: true }).click();
+  await expect(page.getByText('服务清理未确认，请核查后重试', { exact: true })).toBeVisible();
+  await expect(page.getByText('api · 主进程已退出，待清理', { exact: true })).toBeVisible();
+  await card.getByRole('button', { name: '停止服务', exact: true }).click();
+  await expect(page.getByText('api · 已停止', { exact: true })).toBeVisible();
+  expect(attempts).toBe(2);
+  expect(pageErrors).toEqual([]);
+});
 
 for (const distro of ['debian', 'alpine'] as const) {
   test(`project SSH ${distro} setup shows supported client settings and confirms stopping its processes`, async ({

@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "wayland": "1.24.0",
+  "waylandProtocols": "1.45",
+  "files": [
+    {
+      "name": "wayland.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland/1.24.0/protocol/wayland.xml",
+      "size": 151930,
+      "sha256": "60abb5864546288a660f3d8af0c838fc87c85bb386582da23e52cb8476e9adbf"
+    },
+    {
+      "name": "xdg-shell.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/stable/xdg-shell/xdg-shell.xml",
+      "size": 62697,
+      "sha256": "9d9e27038ca722f159a361293f8c6cd270dab907ab52de5b8ecfbb8d6b9651c2"
+    },
+    {
+      "name": "viewporter.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/stable/viewporter/viewporter.xml",
+      "size": 8133,
+      "sha256": "dcb12279a03746301fe490aaed4b38a403485a925abfce2ccfceb644e104fe71"
+    },
+    {
+      "name": "presentation-time.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/stable/presentation-time/presentation-time.xml",
+      "size": 12890,
+      "sha256": "dffac93bcb2bb1d8c385e72b8a8c2c0d4d79a336866322f3ba886dce2b27b1e2"
+    },
+    {
+      "name": "primary-selection-unstable-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/primary-selection/primary-selection-unstable-v1.xml",
+      "size": 10469,
+      "sha256": "d568482ba84df6e531698b1f531810860995ca24d69495427fe43aee6017f52c"
+    },
+    {
+      "name": "xdg-decoration-unstable-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml",
+      "size": 7283,
+      "sha256": "73101094eedd2295ac48972a2562d6f99881fee68f3d4d403675837434ab7c70"
+    },
+    {
+      "name": "xdg-output-unstable-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/xdg-output/xdg-output-unstable-v1.xml",
+      "size": 9693,
+      "sha256": "363d547c3eefe8959160cac903ff90b311d4b183005557d73640d9df2cfd7f79"
+    },
+    {
+      "name": "relative-pointer-unstable-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/relative-pointer/relative-pointer-unstable-v1.xml",
+      "size": 6584,
+      "sha256": "ab4930dd3084f732b6fdd12ee6dbd0a112a758ed8a57b170366391dbeb1a22ff"
+    },
+    {
+      "name": "pointer-constraints-unstable-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/pointer-constraints/pointer-constraints-unstable-v1.xml",
+      "size": 15115,
+      "sha256": "f980fac900ba1dcfbbe97f588fc17b893926bd2b57624563653a1bfe4d035948"
+    },
+    {
+      "name": "pointer-gestures-unstable-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/pointer-gestures/pointer-gestures-unstable-v1.xml",
+      "size": 11345,
+      "sha256": "5cf5adedae4397b8aebf4d41c8c626112daf87aa689e86316b756e095ecda109"
+    },
+    {
+      "name": "text-input-unstable-v3.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/text-input/text-input-unstable-v3.xml",
+      "size": 21422,
+      "sha256": "2d08f2cddb463e169c23f1c34769de12ae255540e51ee8f515b54667d60b90ba"
+    },
+    {
+      "name": "linux-dmabuf-unstable-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/linux-dmabuf/linux-dmabuf-unstable-v1.xml",
+      "size": 28768,
+      "sha256": "0681c01199393662229b0d9f71a4bd502350ea8f782a7049fa30e392b50fb2c8"
+    },
+    {
+      "name": "fractional-scale-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/staging/fractional-scale/fractional-scale-v1.xml",
+      "size": 4636,
+      "sha256": "5941de5d28f427ecdadddc8623a6f6af0a30b0ab4726847236ba7a7652b81316"
+    },
+    {
+      "name": "cursor-shape-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/staging/cursor-shape/cursor-shape-v1.xml",
+      "size": 9142,
+      "sha256": "bb57d91e53a79dadab7c612dab87c233393cee73673feefa7442cfbfdd9aed2f"
+    },
+    {
+      "name": "xdg-activation-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/staging/xdg-activation/xdg-activation-v1.xml",
+      "size": 9016,
+      "sha256": "d8418be2d5738d50aff788bef1c7574f33f26659aa045447ff2ef9b78c58fe01"
+    },
+    {
+      "name": "ext-data-control-v1.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/staging/ext-data-control/ext-data-control-v1.xml",
+      "size": 12029,
+      "sha256": "293deba5dfdb974fbcf8dcf891a30a51a36a8bba0047dc6bdf6a03194089b7fb"
+    },
+    {
+      "name": "tablet-unstable-v2.xml",
+      "url": "https://raw.githubusercontent.com/wayland-mirror/wayland-protocols/1.45/unstable/tablet/tablet-unstable-v2.xml",
+      "size": 51690,
+      "sha256": "db291b574adb2d42d27f3d01a77723bb3350a7a32e6d33de16513521b42294a9"
+    }
+  ]
+}

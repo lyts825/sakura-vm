@@ -1,6 +1,30 @@
 # 功能实现记录
 
-以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork 和认证依赖预取缺口，已由本节所述实现补齐；历史摘要和日志保留供追溯，不代表当前范围。
+以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口，以及只按进程组清理短任务的缺口，已由后续批次补齐；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
+
+## 原生 Wayland、完整服务归属与 Windows 控件保护
+
+2026-10-01 接通原生 Wayland 应用剪贴板入口，桌面偏好新增 `auto`、`x11`、`wayland` 会话选择。Alpine、Debian、Ubuntu 的桌面脚本核对实际所选入口，旧准备记录缺少 Wayland 程序时重新准备；Debian/Ubuntu 安装提供 `startplasma-wayland` 的发行版软件包。X11 与 Wayland 分别保存规则、会话归属和所有者，公开 HTTP、生成 SDK、克隆与导出导入使用同一版本检查。操作方式见 [Wayland 剪贴板](wayland-clipboard.md)。
+
+Wayland 控制器为每次受控应用创建独立 UID、私有 DBus、home 与运行目录，检查项目目录权限及实际网络，应用和代理使用不同 cgroup。端点发现核对真正的 compositor；KWin wrapper 场景同时固定 socket creator、唯一 KWin child、创建时间、实际程序、继承的监听 FD 和内核 socket inode，child 替换后旧代理停止服务，不跟随新进程。应用连接还核对 UID、网络和所属 cgroup。普通 clipboard 与 primary selection 的复制、粘贴均先在有界内存收齐完整管道，再检查格式、UTF-8、敏感文本和大小，拒绝时不释放新正文。收紧规则取消尚未交付的数据，规则发布和首次写入同步；无法撤回合成器或工具包已经收到的缓存。常规图形协议继续转发，未知/特权管理协议和门户文件令牌拒绝，剪贴板接收 FD 必须是可写 FIFO，避免设备或文件阻塞代理。
+
+20 个固定来源资产包含控制器、代理、来源记录及 17 个上游协议 XML，保留原始许可证和字节，构建与分发均核对大小、SHA-256 及总摘要。最终构建摘要为 `7f32f2af1177e0a5edf9e6329265ad0674494202d201599e3a0cb6e0eadd33f3`。真实 Debian Weston 10 验证 Qt 5/GTK 3 双向复制粘贴、528,000 字节正文、末尾敏感文本、格式和大小拒绝、慢源超时、热更新、子连接及整域清理；真实生产 Plasma v5 另验证 primary selection、公开服务端点发现、私有项目网络、KWin child 替换及已交付缓存边界。13 项 Python 代理回归在真实 Linux 全部通过，包括 SCM_RIGHTS 晚到、独立 FD 队列、异常 FD 与同路径监听 socket 替换。Windows 宿主只执行其中适用的 7 项，其余 6 项 Linux FD 测试由实机补足。证据为所属 Debian fixture 的 `native-wayland-evidence.json`，日志为 `.data/wayland-native-nineteenth.log`。
+
+短任务现在在执行项目代码前进入专属 cgroup v2，用有限锚点、客户机 boot ID 和 cgroup inode 持有本次归属；普通新进程组、`setsid` 和双重 fork 后代仍在该域。停止通过已打开并核对的 `cgroup.kill`，确认域空且释放后才运行暂存清理，独立控制 SSH 重试三次。清理或隔离未确认时明确返回错误并保留回执，不回退到只杀 PGID。GPG 代理连接在失败路径也关闭，临时 GNUPGHOME 仅在确认任务域停止后清理。实际 Alpine、Debian、Ubuntu 分别通过 10、11、11 项任务回归；来源摘要 `43180ea1a46c3244637e8f24e5e9056447fe2be2358d3ff780664406cf959d25`，证据为各所属 fixture 的 `guest-task-cgroup-evidence.json`。见 [短任务清理](guest-task-cleanup.md)。
+
+常驻服务使用独立持久 cgroup：先保存 host intent，再准备客户机域，pane 固定启动器进入该域并发布完整身份，控制服务持久保存回执后才提交项目命令与环境。停止同时核对 live/boot/run/inode/pane/PID 创建时间，清理全域并保留已停止记录供回执丢失后的幂等重试；启动失败只回滚本次新增服务。主 pane 已退出、启动未确认、状态未确认与旧服务待迁移都有独立状态，配置修改或移除服务前必须确认旧运行停止，清理失败的 Job 保留错误码并遮盖密钥。健康检查先核对归属，清理失败时暂停自动检查与重启，成功手动操作才恢复。旧 tmux 会话不按名称猜测归属，需明确迁移。见 [常驻服务归属](project-service-lifecycle.md)。
+
+Alpine、Debian、Ubuntu 各 20 项常驻服务实机回归均完成，覆盖正常/脱离会话后代、未提交超时、全部控制连接失败、延迟准备、回执丢失、boot/run/inode/pane 替换、主进程退出后清理、Workspaces 运行视图与配置保护，以及未知旧会话拒绝。三份 `project-services-scope-evidence.json` 的源码摘要与最终文件一致：`project-services.ts` 为 `058fa900acc269c04586b40d278666d6304b04e83892e559431b64fbf4a0da1e`，`project-service-scope.ts` 为 `57ce13af3cdbb75a949f632fe9c4dde03c4acb8ff927ac53849aca41af61ef3d`。本机 Node 24.15.0 默认可选 sshcrypto 原生插件路径曾在 Debian/Ubuntu 回归后段以 `0xc0000409` 退出，未产生 JS 错误；最终这两个发行版以 `node --no-addons --import tsx` 使用 ssh2 内置纯 JS 回退完成，Alpine 默认路径完成。失败与回退日志均保留，不据此声称原生插件崩溃根因已确定或已修复。
+
+项目 SSH 启动回滚新增同一 live/boot/run 的独立连接重试，核对失败不终止替换后的服务；全部失败返回 `PROJECT_SSH_CLEANUP_FAILED` 并保留归属。三个发行版各 5 项真实回滚回归通过，来源摘要为 `407d843cdbeb2a7eb5e80725455872a8d2d26288eb18130ed6645f00f7704f1c`，证据为 `project-ssh-rollback-evidence.json`。以上三个网络 fixture 为 `sakura-guest-task-Oky2Cx`、`sakura-guest-task-i24quD`、`sakura-guest-task-dhGwI9`，最终全部停止；未操作用户实例。
+
+Windows OLE 在调用会清空旧内容的原始接口前预检完整全局内存数据，错误枚举和正文读取拒绝时保留旧剪贴板。标准 ANSI/Unicode EDIT、RichEdit 根据实际选区拦截复制/剪切消息和对应快捷键，拒绝时同时保留源文本；支持已存在、新线程创建、销毁重建及父窗口初始化内的嵌套子控件。ANSI 控件保留原生消息语义。早期代理静态依赖 Common Controls，允许系统或已核对 WinSxS 依赖，拒绝私有 DLL/manifest 重定向；Toolhelp 只对 `ERROR_BAD_LENGTH` 做有限重试。x64/x86 在私有窗口站分别通过 433/383 项接口断言，WinRT Desktop、Framework 4.8.1 双架构 WinForms/WPF，以及 .NET 10.0.9 x64 常规 API 和 TextBox Copy/Paste/Cut 已实测。现代 .NET x86、CLR/AnyCPU 的早期受控启动、打包 UWP、历史和云同步仍未据此完成。实际接口、普通受控启动及早期启动六组回归均通过，最终源码构建摘要为 `9fa1ac1a2c923df336c0757d967940c42090337b1e45a0df72759648993817f1`；最终整构建的双架构二进制与实测文件逐字节摘要一致。见 [接口边界](native-clipboard.md) 与 [早期启动](windows-clipboard-early-init.md)。
+
+最终 Node 全量回归 884 项，883 通过、1 项按平台跳过；类型检查、32 个插件契约与 9 个插件包、3,076 条语言文本与 74 个动态片段、完整生产构建及最后错误码修复后的服务端重编译、54 个服务模块分发、7 种编译服务组合通过。6 个相关浏览器场景覆盖 X11/Wayland 设置与会话、桌面会话偏好和布局，以及手机端服务清理失败保留状态后重试。日志为 `.data/wayland-services-full-unit-release-final.log`、`.data/wayland-services-release-production.log`、`.data/wayland-service-ui-playwright-final.log` 与 `.data/wayland-desktop-layout-final.log`。
+
+新运行包 `release/sakura-nrW14s` 的 252 个文件摘要校验通过，指纹为 `022721d1b18f4930166171ccb60abdf550b90aa8f7d8e307810aabfa90ab4420`。包内编译服务通过真实专用 Debian 的 HTTP/生成 SDK 验证严格请求、旧版本拒绝、原生 Plasma 发现、准确 ELF 身份、复制拒绝、规则热更新、完整文本复制粘贴与所属会话清理；证据 `compiled-wayland-http-evidence.json` 标记通过、实例已停止、错误为空，日志为 `.data/wayland-services-release-http-prepared.log`。测试使用本机已准备的固定 QEMU/PosixLoom 和运行依赖，未验证全新机器的 setup 安装；运行包没有 Sakura 开发源码目录，20 个 Wayland 资产及 Windows 二进制在包内再次核对，并在测试后重新校验同一包摘要。
+
+目录仍为 250 项，247 项有实现入口、3 项部分实现。网络仍缺持久项目 UID/GID、非受管系统入口与主项目命令的常驻后代统一归属；剪贴板仍有接入前、既有非受管程序、底层/系统路径和已交付缓存的边界；宿主失联 HA 仍缺真实独立见证、BMC、健康和切流系统的实际故障演练。未调用真实隔离接口或用户虚拟机，未将本机适配器验证当作物理节点独立证明。持续清单见 [未完成功能](unfinished-features.md)。
 
 ## 认证依赖预取、早期剪贴板策略与 fork 恢复
 

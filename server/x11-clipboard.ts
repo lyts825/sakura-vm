@@ -12,6 +12,7 @@ import { guestTask } from './guest-task.ts';
 import { Jobs } from './jobs.ts';
 import { projectNetworkCheckScript, projectNetworkNamespace } from './project-network-isolation.ts';
 import { x11SourceBundle } from './x11-clipboard-assets.ts';
+import { waylandSourceBundle } from './wayland-clipboard-assets.ts';
 import { defaultClipboardRule } from '../shared/clipboard-policy.ts';
 import type { X11ClipboardView } from '../shared/x11-clipboard.ts';
 
@@ -154,9 +155,10 @@ const matches = (a: z.infer<typeof x11ClipboardRule>, b: z.infer<typeof x11Clipb
   a.sensitive === b.sensitive &&
   a.maxTextBytes === b.maxTextBytes;
 type State = z.infer<typeof x11ClipboardConfiguration>;
-type Bundle = Awaited<ReturnType<typeof x11SourceBundle>>;
+type Bundle = Awaited<ReturnType<typeof x11SourceBundle>> | Awaited<ReturnType<typeof waylandSourceBundle>>;
 export type X11ApplicationContext = { project: Project; launcherSha256: string };
-type Options = { assets?: string; file?: (id: string) => string; jobsDirectory?: string };
+export type LinuxClipboardOptions = { assets?: string; file?: (id: string) => string; jobsDirectory?: string;
+  transport?: 'x11' | 'wayland' };
 
 export class X11Clipboard {
   readonly jobs: Jobs;
@@ -165,12 +167,13 @@ export class X11Clipboard {
   constructor(
     private machines: Machines,
     private applicationProject: (id: string) => Promise<X11ApplicationContext>,
-    private options: Options = {},
+    private options: LinuxClipboardOptions = {},
   ) {
-    this.jobs = new Jobs('x11-clipboard-install', options.jobsDirectory);
+    this.jobs = new Jobs(`${this.transport}-clipboard-install`, options.jobsDirectory);
   }
+  private get transport() { return this.options.transport || 'x11'; }
   private file(id: string) {
-    return this.options.file?.(id) || join(vmDir(id), 'x11-clipboard.json');
+    return this.options.file?.(id) || join(vmDir(id), `${this.transport}-clipboard.json`);
   }
   private state(id: string) {
     this.machines.get(id);
@@ -197,7 +200,7 @@ export class X11Clipboard {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动 Linux 实例', 409);
   }
   private async bundle() {
-    return x11SourceBundle(this.options.assets);
+    return this.transport === 'wayland' ? waylandSourceBundle(this.options.assets) : x11SourceBundle(this.options.assets);
   }
   private directoryScript(bundle: Bundle, create = true) {
     const code = `import stat\nfrom pathlib import Path\np=Path(${JSON.stringify(bundle.directory)})\nc=Path('/')\nfor part in p.parts[1:]:\n c/=part\n ${create ? 'if not c.exists(): c.mkdir(mode=0o755)\n ' : ''}s=c.lstat()\n if not stat.S_ISDIR(s.st_mode) or s.st_uid!=0 or s.st_mode&0o022: raise RuntimeError('原生源码目录身份或权限不符')`;
@@ -205,7 +208,10 @@ export class X11Clipboard {
   }
   private async publish(id: string, bundle: Bundle, name: string, signal?: AbortSignal) {
     this.require(id, signal);
-    const file = bundle.manifest.files.find((file) => file.name === name)!;
+    const data = name === 'manifest.json' && this.transport === 'wayland'
+      ? Buffer.from(JSON.stringify(bundle.manifest) + '\n') : bundle.files.get(name)!;
+    const file = bundle.manifest.files.find((file) => file.name === name) ||
+      { sha256: createHash('sha256').update(data).digest('hex') };
     const staged = bundle.directory + '/.' + randomUUID() + '.new';
     try {
       await this.machines.sftp(
@@ -216,7 +222,7 @@ export class X11Clipboard {
               ? AbortSignal.any([signal, transportSignal])
               : signal || transportSignal;
           await pipeline(
-            Readable.from([bundle.files.get(name)!]),
+            Readable.from([data]),
             ftp.createWriteStream(staged, { flags: 'wx', mode: 0o600 }),
             { signal: transferSignal },
           );
@@ -252,6 +258,11 @@ export class X11Clipboard {
     const prepared = await this.machines.exec(id, this.directoryScript(bundle), 10000, signal);
     if (prepared.code !== 0) throw new AppError('无法准备 Linux 原生控制器，请先安装桌面及 Python 3', 409);
     await this.publish(id, bundle, 'controller.py', signal);
+    if (this.transport === 'wayland') {
+      for (const file of bundle.manifest.files) if (file.name !== 'controller.py')
+        await this.publish(id, bundle, file.name, signal);
+      await this.publish(id, bundle, 'manifest.json', signal);
+    }
   }
   private script(bundle: Bundle, request: object) {
     const helper = bundle.manifest.files.find((file) => file.name === 'controller.py')!;
@@ -338,9 +349,14 @@ export class X11Clipboard {
         for (const file of bundle.manifest.files) {
           await this.publish(id, bundle, file.name, signal);
         }
+        if (this.transport === 'wayland') await this.publish(id, bundle, 'manifest.json', signal);
         const distro = this.machines.get(id).distro;
         const dependencies =
-          distro === 'alpine'
+          this.transport === 'wayland'
+            ? distro === 'alpine' ? 'apk add --no-cache --timeout 30 dbus python3'
+              : 'export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n' +
+                'apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends dbus python3'
+            : distro === 'alpine'
             ? 'apk add --no-cache --timeout 30 g++ libx11-dev libxcb-dev dbus python3'
             : 'export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n' +
               'apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends g++ libx11-dev libx11-xcb-dev libxcb1-dev dbus python3';
@@ -349,16 +365,20 @@ export class X11Clipboard {
           `q=p/'libSakuraClipboard.so'\nq.chmod(0o555)\nb=q.read_bytes()\n` +
           `m={'version':1,'build':${JSON.stringify(bundle.manifest.build)},'sha256':hashlib.sha256(b).hexdigest()}\n` +
           `f=p/'library.json.new'\nwith f.open('w') as s: json.dump(m,s);s.flush();os.fsync(s.fileno())\nf.chmod(0o444)\nos.replace(f,p/'library.json')`;
-        log('正在安装编译依赖并构建 X11 剪贴板代理…\n');
+        const prepare = this.transport === 'wayland'
+          ? `/usr/bin/python3 -I -S -c ${quote("import ast,pathlib\nfor name in ('controller.py','proxy.py'): ast.parse(pathlib.Path(name).read_bytes(),filename=name)")}`
+          : `g++ -std=c++17 -O2 -Wall -Wextra -fPIC -shared -Wl,-z,relro,-z,now ` +
+            `-DSAKURA_CLIPBOARD_BUILD=${quote('"' + bundle.manifest.build + '"')} policy.cpp ` +
+            `-o libSakuraClipboard.so.new -lX11 -lX11-xcb -lxcb -ldl -pthread\n` +
+            `chmod 555 libSakuraClipboard.so.new\n` +
+            `mv -f libSakuraClipboard.so.new libSakuraClipboard.so\n/usr/bin/python3 -I -S -c ${quote(manifestWriter)}`;
+        const label = this.transport === 'wayland' ? 'Wayland' : 'Linux X11';
+        log(`正在安装依赖并准备 ${label} 剪贴板代理…\n`);
         const build = await guestTask(
           this.machines,
           id,
           `set -eu\n${dependencies}\ncd ${quote(bundle.directory)}\n` +
-            `g++ -std=c++17 -O2 -Wall -Wextra -fPIC -shared -Wl,-z,relro,-z,now ` +
-            `-DSAKURA_CLIPBOARD_BUILD=${quote('"' + bundle.manifest.build + '"')} policy.cpp ` +
-            `-o libSakuraClipboard.so.new -lX11 -lX11-xcb -lxcb -ldl -pthread\n` +
-            `chmod 555 libSakuraClipboard.so.new\n` +
-            `mv -f libSakuraClipboard.so.new libSakuraClipboard.so\n/usr/bin/python3 -I -S -c ${quote(manifestWriter)}`,
+            prepare,
           signal,
           log,
         );
@@ -367,9 +387,9 @@ export class X11Clipboard {
         const state = await this.state(id),
           actual = await this.list(id, state, bundle, signal);
         if (!actual.ready) throw new AppError(actual.error || 'Linux 原生剪贴板未就绪', 409);
-        log('Linux X11 剪贴板代理已就绪。\n');
+        log(`${label} 剪贴板代理已就绪。\n`);
       },
-      { title: '安装 Linux X11 剪贴板代理', vmId: id, action: 'install' },
+      { title: `安装 ${this.transport === 'wayland' ? 'Wayland' : 'Linux X11'} 剪贴板代理`, vmId: id, action: 'install' },
     );
   }
   private async reconcile(id: string, state: State, bundle: Bundle, signal?: AbortSignal) {
@@ -412,7 +432,7 @@ export class X11Clipboard {
     const request = x11ClipboardRequest.parse(raw);
     this.require(id, signal);
     if (request.action === 'install') return this.install(id);
-    return this.machines.locked(`x11-clipboard:${id}`, async () => {
+    return this.machines.locked(`${this.transport}-clipboard:${id}`, async () => {
       this.require(id, signal);
       let state = await this.state(id);
       const bundle = await this.bundle();
@@ -442,7 +462,7 @@ export class X11Clipboard {
                 ([key]) =>
                   !/^(?:LD_|SAKURA_CLIPBOARD_|HOME$|USER$|LOGNAME$|DISPLAY$|XAUTHORITY$|DBUS_|WAYLAND_|XDG_|SESSION_MANAGER$|PATH$)/.test(
                     key,
-                  ),
+                  ) && !(this.transport === 'wayland' && /^(?:QT_QPA_PLATFORM|GDK_BACKEND|SDL_VIDEODRIVER)$/.test(key)),
               )
               .map(([key, value]) => [key, createHash('sha256').update(value).digest('hex')]),
           );

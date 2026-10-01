@@ -78,6 +78,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
   const [showRecording, setShowRecording] = useState(false);
   const [showApps, setShowApps] = useState(false);
   const [showX11Clipboard, setShowX11Clipboard] = useState(false);
+  const [clipboardTransport, setClipboardTransport] = useState<'x11' | 'wayland'>('x11');
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [preferenceState, setPreferenceState] = useState(() =>
     loadDesktopPreferences(vm.id, () => localStorage),
@@ -440,7 +441,16 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
       {showRecording && <DesktopRecording vm={vm} connected={connected} screen={screen} />}
       {showApps && running &&
         <SingleAppWindowsPanel vm={vm} token={token} request={request} />}
-      {showX11Clipboard && running && <X11ClipboardSettings vmId={vm.id} desktopReady={ready} request={request} />}
+      {showX11Clipboard && running && <>
+        <label className="system-card">
+          剪贴板应用类型
+          <select value={clipboardTransport} onChange={(event) => setClipboardTransport(event.target.value as 'x11' | 'wayland')}>
+            <option value="x11">X11 应用</option>
+            <option value="wayland">原生 Wayland 应用</option>
+          </select>
+        </label>
+        <X11ClipboardSettings key={clipboardTransport} vmId={vm.id} desktopReady={ready} request={request} transport={clipboardTransport} />
+      </>}
       {showCustomizer && (
         <section className="desktop-customizer" aria-label="KDE Plasma 桌面自定义">
           <div className="desktop-customizer-head">
@@ -494,6 +504,16 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             ))}
           </div>
           <div className="desktop-customizer-grid">
+            <label>
+              <span>桌面会话类型</span>
+              <select value={preferences.sessionType} onChange={(event) =>
+                updatePreferences({ sessionType: event.target.value as DesktopPreferences['sessionType'] })}>
+                <option value="auto">自动选择</option>
+                <option value="x11">X11</option>
+                <option value="wayland">原生 Wayland</option>
+              </select>
+              <small>切换类型会重启桌面，请先保存应用内容。</small>
+            </label>
             <label>
               <span>虚拟屏幕</span>
               <select

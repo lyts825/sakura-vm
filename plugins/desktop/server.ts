@@ -19,6 +19,11 @@ export const operations: Record<string, PluginOperation> = {
   } },
   'x11-clipboard-action': { request: x11ClipboardRequest, response: x11ClipboardActionResponse,
     execute(url, input, signal) { return this.desktops.clipboard.action(url.pathname.split('/')[3], input, signal); } },
+  'wayland-clipboard-get': { response: x11ClipboardViewSchema, execute(url, _, signal) {
+    return this.desktops.waylandClipboard.view(url.pathname.split('/')[3], signal);
+  } },
+  'wayland-clipboard-action': { request: x11ClipboardRequest, response: x11ClipboardActionResponse,
+    execute(url, input, signal) { return this.desktops.waylandClipboard.action(url.pathname.split('/')[3], input, signal); } },
 };
 
 export async function activate(host: PluginContext) {
@@ -28,6 +33,8 @@ export async function activate(host: PluginContext) {
   host.registerJobs(host.jobs, (job) => installIme.call(host, retryTarget(job)));
   const clipboard = host.provide('x11Clipboard', host.desktops.clipboard);
   host.registerJobs(clipboard.jobs, (job) => clipboard.install(retryTarget(job)));
+  const wayland = host.provide('waylandClipboard', host.desktops.waylandClipboard);
+  host.registerJobs(wayland.jobs, (job) => wayland.install(retryTarget(job)));
 }
 export async function route(
   this: PluginContext,
@@ -58,6 +65,7 @@ export async function route(
           action: z.enum(['install', 'start', 'configure', 'stop']),
           preferences: z
             .object({
+              sessionType: z.enum(['auto', 'x11', 'wayland']).optional(),
               resolution: z.enum(['1280x800', '1440x900', '1600x1000', '1920x1080']).optional(),
               monitorLayout: z.enum(['single', 'dual-horizontal', 'dual-vertical']).optional(),
               scale: z.number().int().min(100).max(200).optional(),

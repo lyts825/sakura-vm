@@ -77,6 +77,7 @@ function desktopConfigScript(input: DesktopPreferences) {
   return String.raw`mkdir -p /etc/sakura
 cat > /etc/sakura/desktop-preferences <<'SAKURA_PREFERENCES'
 DESKTOP=kde-plasma
+SESSION_TYPE=${shellLiteral(p.sessionType)}
 RESOLUTION=${shellLiteral(p.resolution)}
 MONITOR_LAYOUT=${shellLiteral(p.monitorLayout)}
 SCALE=${shellLiteral(String(p.scale))}
@@ -134,6 +135,7 @@ export XDG_CURRENT_DESKTOP=KDE DESKTOP_SESSION=plasma KDE_FULL_SESSION=true
 unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS WAYLAND_DISPLAY WAYLAND_SOCKET
 [ ! -f /home/sakura-desktop/.sakura-ime ] || . /home/sakura-desktop/.sakura-ime
 RESOLUTION=1280x800
+SESSION_TYPE=auto
 MONITOR_LAYOUT=single
 QT_SCALE_FACTOR=1
 THEME=sakura
@@ -145,7 +147,7 @@ WALLPAPER=sakura
 ACCENT_RGB=199,91,134
 [ ! -f /etc/sakura/desktop-preferences ] || . /etc/sakura/desktop-preferences
 ${desktopFramebufferSetup}
-export RESOLUTION MONITOR_LAYOUT QT_SCALE_FACTOR THEME ACCENT PANEL AUTO_HIDE_PANEL ANIMATIONS WALLPAPER ACCENT_RGB
+export SESSION_TYPE RESOLUTION MONITOR_LAYOUT QT_SCALE_FACTOR THEME ACCENT PANEL AUTO_HIDE_PANEL ANIMATIONS WALLPAPER ACCENT_RGB
 export LIBGL_ALWAYS_SOFTWARE=1 QT_QUICK_BACKEND=software
 write_kde() {
   if command -v kwriteconfig6 >/dev/null 2>&1; then kwriteconfig6 "$@"
@@ -202,20 +204,23 @@ mkdir -p /usr/local/libexec/sakura-plasma
 cat > /usr/local/libexec/sakura-plasma/kwin_wayland_wrapper <<'SAKURA_KWIN'
 #!/bin/sh
 # Scope the wrapper to Sakura; system Plasma sessions keep the vendor binary.
-exec /usr/bin/kwin_wayland_wrapper "$@" --x11-display :1 --width "$(printf '%s' "$FRAMEBUFFER" | cut -dx -f1)" --height "$(printf '%s' "$FRAMEBUFFER" | cut -dx -f2)" --no-lockscreen
+if [ -x /usr/bin/kwin_wayland_wrapper ]; then kwin=/usr/bin/kwin_wayland_wrapper
+else kwin=/usr/bin/kwin_wayland; fi
+exec "$kwin" "$@" --x11-display :1 --width "$(printf '%s' "$FRAMEBUFFER" | cut -dx -f1)" --height "$(printf '%s' "$FRAMEBUFFER" | cut -dx -f2)" --no-lockscreen
 SAKURA_KWIN
 chmod 755 /usr/local/libexec/sakura-plasma/kwin_wayland_wrapper
 cat > /usr/local/libexec/sakura-plasma-session <<'SAKURA_PLASMA'
 #!/bin/sh
 set -eu
 /usr/local/libexec/sakura-apply-layout &
-if command -v startplasma-x11 >/dev/null 2>&1; then
-  export XDG_SESSION_TYPE=x11
-  exec startplasma-x11
-elif command -v startplasma-wayland >/dev/null 2>&1; then
+if [ "$SESSION_TYPE" = wayland ] || { [ "$SESSION_TYPE" = auto ] && ! command -v startplasma-x11 >/dev/null 2>&1; }; then
+  command -v startplasma-wayland >/dev/null 2>&1 || { echo 'Native Wayland Plasma is not installed.' >&2; exit 1; }
   export PATH=/usr/local/libexec/sakura-plasma:$PATH
   export XDG_SESSION_TYPE=wayland KWIN_COMPOSE=QPainter
   exec startplasma-wayland
+elif command -v startplasma-x11 >/dev/null 2>&1; then
+  export XDG_SESSION_TYPE=x11
+  exec startplasma-x11
 else
   echo 'No supported Plasma session entry point was installed.' >&2
   exit 1
@@ -293,7 +298,7 @@ PAPER_WALLPAPER
 chown -R sakura-desktop:sakura-desktop /home/sakura-desktop/.config /home/sakura-desktop/.local
 rc-update add dbus default
 rc-update del sakura-desktop default >/dev/null 2>&1 || true
-printf '4\n' > /etc/sakura/desktop-version
+printf '5\n' > /etc/sakura/desktop-version
 echo 'Starting the desktop session…'
 ` +
   desktopStart +
@@ -301,14 +306,20 @@ echo 'Starting the desktop session…'
 echo 'KDE Plasma desktop is ready.'
 SAKURA_INSTALL`;
 
-export function desktopCommands(distro = 'alpine', input = defaultDesktopPreferences, project?: Project) {
+export function desktopCommands(distro = 'alpine', input: Partial<DesktopPreferences> = defaultDesktopPreferences, project?: Project) {
   const preferences = desktopPreferencesSchema.parse(input);
+  const sessionAvailable = preferences.sessionType === 'wayland'
+    ? 'command -v startplasma-wayland >/dev/null 2>&1'
+    : preferences.sessionType === 'x11'
+      ? 'command -v startplasma-x11 >/dev/null 2>&1'
+      : '(command -v startplasma-x11 >/dev/null 2>&1 || command -v startplasma-wayland >/dev/null 2>&1)';
+  const versionProbe = `grep -qx '5' /etc/sakura/desktop-version 2>/dev/null && ${sessionAvailable}`;
   const scope = (script: string) => project?.networkIsolation === 'private'
     ? script.replaceAll(displayReady, projectNetworkCommand(project, displayReady)) : script;
   const prepare = (install: string, start: string) => install.replace(start, '')
     .replace("echo 'KDE Plasma desktop is ready.'", "echo 'KDE Plasma installation prepared.'");
   const startWithPreferences = (start: string, install: string) => String.raw`set -eu
-if ! grep -qx '4' /etc/sakura/desktop-version 2>/dev/null; then
+if ! { ${versionProbe}; }; then
 ${install}
 else
 ${desktopConfigScript(preferences)}
@@ -316,8 +327,8 @@ ${start}
 fi`;
   const configure = (start: string, install: string) => String.raw`set -eu
 test -f /etc/sakura/desktop-version
-if ! grep -qx '4' /etc/sakura/desktop-version; then
-  echo 'Upgrading KDE Plasma desktop for logical monitors…'
+if ! { ${versionProbe}; }; then
+  echo 'Upgrading KDE Plasma desktop for native Wayland sessions…'
 ${install}
 else
 ${desktopConfigScript(preferences)}
@@ -333,7 +344,7 @@ echo 'KDE Plasma preferences applied.'`;
     return {
       probe: scope(desktopProbe),
       preferencesProbe: desktopPreferencesProbe,
-      versionProbe: "grep -qx '4' /etc/sakura/desktop-version 2>/dev/null",
+      versionProbe,
       start: scope(desktopStart),
       startWithPreferences: scope(startWithPreferences(desktopStart, customizedInstall)),
       install: scope(customizedInstall),
@@ -372,7 +383,7 @@ SAKURA_SERVICE`;
     .replace(/case "\$\(cat \/etc\/alpine-release\)" in[\s\S]*?esac/, '')
     .replace(
       /apk add --no-cache[\s\S]*?xauth xdpyinfo xrandr python3 iproute2 setpriv/,
-      'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y --no-install-recommends kde-plasma-desktop kwin-x11 systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd python3 iproute2 util-linux',
+      'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y --no-install-recommends kde-plasma-desktop plasma-workspace-wayland kwin-x11 kwin-wayland qtwayland5 systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd python3 iproute2 util-linux',
     )
     .replace(
       'adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop',
@@ -388,7 +399,7 @@ SAKURA_SERVICE`;
   return {
     probe: scope(probe),
     preferencesProbe: desktopPreferencesProbe,
-    versionProbe: "grep -qx '4' /etc/sakura/desktop-version 2>/dev/null",
+    versionProbe,
     start: scope(start),
     startWithPreferences: scope(startWithPreferences(start, install)),
     install: scope(install),

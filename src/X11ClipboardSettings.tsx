@@ -7,12 +7,16 @@ export function X11ClipboardSettings({
   vmId,
   desktopReady,
   request,
+  transport = 'x11',
 }: {
   vmId: string;
   desktopReady: boolean;
   request: Request;
+  transport?: 'x11' | 'wayland';
 }) {
-  const path = `/vms/${vmId}/x11-clipboard`;
+  const path = `/vms/${vmId}/${transport}-clipboard`;
+  const wayland = transport === 'wayland';
+  const label = wayland ? '原生 Wayland' : 'Linux X11';
   const remote = useRemote<X11ClipboardView>(request, path, true, 5000),
     action = useAction();
   const [version, setVersion] = useState(0),
@@ -48,15 +52,16 @@ export function X11ClipboardSettings({
     setApplications(applications.map((app) => (app.image === image ? { ...app, rule } : app)));
   const installing = remote.data?.installation?.status === 'running';
   return (
-    <section className="system-card native-settings x11-clipboard" aria-label="Linux X11 应用剪贴板策略">
-      <h3>Linux X11 应用剪贴板策略</h3>
+    <section className="system-card native-settings x11-clipboard" aria-label={`${label} 应用剪贴板策略`}>
+      <h3>{label} 应用剪贴板策略</h3>
       <p>
         绑定完整应用路径后，通过此处启动到当前 KDE
         桌面。应用及其子进程使用当前项目的目录和网络空间，运行中可收紧复制、粘贴及内容限制。
       </p>
       <p className="subtle-note">
-        代理覆盖成功加载的 64 位动态应用的 Xlib 与 XCB 调用。现有应用、原生
-        Wayland、静态程序和直接发送底层协议的程序仍未覆盖；受限状态拒绝大数据分块与复合格式传输。停用规则会放宽进程当前限制，完全卸载代理需退出应用。
+        {wayland
+          ? '需要原生 Wayland 桌面会话。各应用使用独立用户及会话总线，剪贴板数据收齐并检查后才交给接收方；不接管已运行的应用。未知扩展和特权剪贴板管理接口不可用，门户文件令牌拒绝传输。规则收紧会取消尚未交付的数据，已交付的内容无法撤回。'
+          : '代理覆盖成功加载的 64 位动态应用的 Xlib 与 XCB 调用，支持完整检查 INCR 与 MULTIPLE。现有应用、静态程序和直接发送底层协议的程序仍未覆盖；原生 Wayland 请使用对应入口。停用规则会放宽进程当前限制，完全卸载代理需退出应用。'}
       </p>
       <Feedback error={action.error || remote.error} message={action.message} />
       {remote.data?.error && <p role="alert">{remote.data.error}</p>}
@@ -64,7 +69,7 @@ export function X11ClipboardSettings({
         <button
           className="secondary compact"
           disabled={action.busy || installing}
-          onClick={() => post({ action: 'install' }, '正在安装 Linux X11 剪贴板代理')}
+          onClick={() => post({ action: 'install' }, `正在安装 ${label} 剪贴板代理`)}
         >
           {remote.data?.ready ? '重建原生代理' : '安装原生代理'}
         </button>
@@ -208,7 +213,7 @@ export function X11ClipboardSettings({
             </p>
             {session.processes?.map((process) => (
               <p className="subtle-note" key={`${process.pid}:${process.created}`}>
-                PID {process.pid} · {process.loaded ? '代理已加载' : '代理未加载'} · {process.image}
+                PID {process.pid} · {process.loaded ? '已接入策略' : '尚未连接策略'} · {process.image}
               </p>
             ))}
             {session.compatible === false && <p role="alert">代理版本已更新，请停止并重新启动此应用。</p>}

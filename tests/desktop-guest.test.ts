@@ -26,6 +26,21 @@ function run(script: string) {
 }
 
 for (const distro of ['alpine', 'debian', 'ubuntu']) {
+  test(`${distro} repairs a current desktop install missing its selected Plasma entry`, options, () => {
+    const commands = desktopCommands(distro, { sessionType: 'wayland' });
+    for (const available of [false, true]) {
+      const result = run(`
+grep() { return 0; }
+command() { [ "$1" = -v ] && [ "$2" = startplasma-wayland ] && return ${available ? 0 : 1}; return 90; }
+${commands.versionProbe}
+`);
+      assert.equal(result.status, available ? 0 : 1, result.stderr);
+    }
+    if (distro !== 'alpine') assert.match(commands.prepare, /apt-get install[^\n]*plasma-workspace-wayland/);
+    assert.ok(commands.configure.includes(commands.versionProbe));
+    assert.ok(commands.startWithPreferences.includes(commands.versionProbe));
+  });
+
   test(`${distro} readiness rejects a stale marker and live Plasma when Xvnc is gone`, options, () => {
     // Use a real, existing file for the installation marker without writing to /etc.
     const probe = desktopCommands(distro).probe.replace('/etc/sakura/desktop-version', './package.json');

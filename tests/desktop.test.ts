@@ -72,6 +72,7 @@ test('desktop discovery restores persisted preferences and tolerates one bad fie
 test('configure operations carry the full preference set into the guest restart', async () => {
   const { desktops, machines } = fixture();
   const preferences = {
+    sessionType: 'wayland' as const,
     resolution: '1600x1000' as const,
     monitorLayout: 'dual-horizontal' as const,
     scale: 150,
@@ -89,6 +90,7 @@ test('configure operations carry the full preference set into the guest restart'
   };
   const view = desktops.start('vm', 'configure', preferences);
   assert.deepEqual(view.preferences, preferences);
+  assert.match(command, /SESSION_TYPE='wayland'/);
   assert.match(command, /RESOLUTION='1600x1000'/);
   assert.match(command, /MONITOR_LAYOUT='dual-horizontal'/);
   assert.match(command, /WALLPAPER='plain'/);

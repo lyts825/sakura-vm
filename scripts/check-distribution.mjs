@@ -40,6 +40,28 @@ if (process.platform === 'win32') {
   }
   if (build.digest('hex') !== native.build) throw new Error('Linux clipboard source build digest failed');
 }
+{
+  const folder = join(root, '.sakura-server/assets/wayland-clipboard');
+  const native = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
+  const sources = JSON.parse(await readFile(join(folder, 'sources.json'), 'utf8'));
+  const names = ['controller.py', 'proxy.py', 'sources.json', ...sources.files.map(file => file.name)];
+  const build = createHash('sha256');
+  if (native.version !== 1 || sources.version !== 1 || !/^[a-f0-9]{64}$/.test(native.build) ||
+      names.length !== 20 || new Set(names).size !== 20 || !Array.isArray(native.files) || native.files.length !== 20)
+    throw new Error('Wayland clipboard source metadata is invalid');
+  for (const name of names) {
+    if (!/^[a-z0-9-]+\.(py|json|xml)$/.test(name)) throw new Error('Wayland asset name is invalid');
+    const file = native.files.find(file => file.name === name), bytes = await readFile(join(folder, name));
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    if (!file || file.size !== bytes.length || file.sha256 !== sha256)
+      throw new Error(`Wayland clipboard source integrity failed: ${name}`);
+    const original = sources.files.find(file => file.name === name);
+    if (original && (original.size !== bytes.length || original.sha256 !== sha256))
+      throw new Error(`Pinned Wayland protocol integrity failed: ${name}`);
+    build.update(name).update(bytes);
+  }
+  if (build.digest('hex') !== native.build) throw new Error('Wayland clipboard source build digest failed');
+}
 const extensionRoot = join(root, 'browser-extension');
 const extension = JSON.parse(await readFile(join(extensionRoot, 'manifest.json'), 'utf8'));
 if (extension.manifest_version !== 3 || extension.action?.default_popup !== 'popup.html' ||

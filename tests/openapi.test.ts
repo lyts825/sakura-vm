@@ -81,6 +81,10 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.equal(x11.get.operationId, 'desktop.x11-clipboard-get');
   assert.ok(x11.post.requestBody!.content['application/json'].schema.oneOf);
   assert.ok(x11.post.parameters.some(item => item.name === 'project' && item.in === 'query'));
+  const wayland = spec.paths['/api/vms/{vmId}/wayland-clipboard'];
+  assert.equal(wayland.get.operationId, 'desktop.wayland-clipboard-get');
+  assert.ok(wayland.post.requestBody!.content['application/json'].schema.oneOf);
+  assert.ok(wayland.post.parameters.some(item => item.name === 'project' && item.in === 'query'));
   assert.deepEqual(spec.paths['/api/access/changes'].post.requestBody!.content['application/json']
     .schema.required, ['vmId', 'projectId', 'summary', 'project', 'expectedVersion']);
   assert.equal(spec.paths['/api/access/changes/{id}/apply'].post.parameters[0].name, 'id');

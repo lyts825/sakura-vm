@@ -17,6 +17,8 @@
     "test:native-clipboard:early": "tsx scripts/smoke-native-clipboard-early.mjs",
     "test:native-clipboard:interfaces": "tsx scripts/smoke-native-clipboard-interfaces.mjs",
     "test:x11-clipboard": "tsx scripts/smoke-x11-clipboard.ts",
+    "test:wayland-clipboard": "tsx scripts/smoke-wayland-clipboard.ts",
+    "test:wayland-clipboard:http": "node scripts/smoke-wayland-clipboard-http.mjs",
     "test:x11-clipboard:http": "node scripts/smoke-x11-clipboard-http.mjs",
     "start": "node scripts/launch.mjs",
     "start:wsl": "node scripts/wsl-runtime.mjs",

@@ -53,6 +53,7 @@ const manifestSchema = z
     trustedBoot: trustedBootArchiveSchema.optional(),
     desktopBinding: desktopBindingSchema.optional(),
     x11Clipboard: x11ClipboardConfiguration.optional(),
+    waylandClipboard: x11ClipboardConfiguration.optional(),
     key: z.string().max(16384),
     seed: z.string().max(262144),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -89,9 +90,9 @@ export class Bundles {
       return undefined;
     }
   }
-  private async x11Clipboard(id: string) {
+  private async x11Clipboard(id: string, transport: 'x11' | 'wayland' = 'x11') {
     try {
-      return x11ClipboardConfiguration.parse(JSON.parse(await readFile(join(vmDir(id), 'x11-clipboard.json'), 'utf8')));
+      return x11ClipboardConfiguration.parse(JSON.parse(await readFile(join(vmDir(id), `${transport}-clipboard.json`), 'utf8')));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       return undefined;
@@ -169,6 +170,7 @@ export class Bundles {
           version: 1,
           desktopBinding: await new DesktopBindings(this.machines).read(id) || undefined,
           x11Clipboard: await this.x11Clipboard(id),
+          waylandClipboard: await this.x11Clipboard(id, 'wayland'),
           config: { name, memoryMiB, cpus, diskGiB: snapshot?.diskGiB || diskGiB,
             accelerator, forwards, distro, architecture, template, hardware, firmware },
           project: await this.project(id),
@@ -244,6 +246,10 @@ export class Bundles {
         }
         if (manifest.x11Clipboard) {
           try { await writeStore(join(vmDir(adopted.id), 'x11-clipboard.json'), manifest.x11Clipboard); }
+          catch (error) { await this.machines.delete(adopted.id); throw error; }
+        }
+        if (manifest.waylandClipboard) {
+          try { await writeStore(join(vmDir(adopted.id), 'wayland-clipboard.json'), manifest.waylandClipboard); }
           catch (error) { await this.machines.delete(adopted.id); throw error; }
         }
         if (trustedBoot) {
@@ -378,6 +384,7 @@ export class Bundles {
         const projects = await this.projectCatalog(id);
         const desktopBinding = await new DesktopBindings(this.machines).read(id);
         const x11Clipboard = await this.x11Clipboard(id);
+        const waylandClipboard = await this.x11Clipboard(id, 'wayland');
         signal?.throwIfAborted();
         const adopted = await this.machines.adopt(
           {
@@ -411,6 +418,10 @@ export class Bundles {
         }
         if (x11Clipboard) {
           try { await writeStore(join(vmDir(adopted.id), 'x11-clipboard.json'), x11Clipboard); }
+          catch (error) { await this.machines.delete(adopted.id); throw error; }
+        }
+        if (waylandClipboard) {
+          try { await writeStore(join(vmDir(adopted.id), 'wayland-clipboard.json'), waylandClipboard); }
           catch (error) { await this.machines.delete(adopted.id); throw error; }
         }
         if (vm.diskEncryption) {

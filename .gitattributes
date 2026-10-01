@@ -7,3 +7,5 @@
 
 # Preserve upstream line endings and whitespace verified by the provenance manifest.
 native/windows-clipboard/vendor/detours/** -text -whitespace
+native/wayland-clipboard/*.xml -text -whitespace
+native/wayland-clipboard/sources.json -text -whitespace

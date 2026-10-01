@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import type { Machines } from '../server/machines.ts';
 import { X11Clipboard, x11ClipboardRequest } from '../server/x11-clipboard.ts';
+import { WaylandClipboard } from '../server/wayland-clipboard.ts';
+import { waylandAssetNames } from '../server/wayland-clipboard-assets.ts';
 import { x11AssetNames } from '../server/x11-clipboard-assets.ts';
 import { defaultClipboardRule } from '../shared/clipboard-policy.ts';
 import type { X11ClipboardSession } from '../shared/x11-clipboard.ts';
@@ -15,7 +17,7 @@ const image = '/usr/bin/editor',
   launcher = 'b'.repeat(64);
 const rule = { ...defaultClipboardRule(), copy: false };
 const sessionId = '44444444-4444-4444-8444-444444444444';
-async function fixture(t: any) {
+async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-x11-clipboard-'));
   assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep));
   const assets = join(directory, 'assets'),
@@ -23,7 +25,7 @@ async function fixture(t: any) {
   await mkdir(assets);
   const buildHash = createHash('sha256'),
     files = [];
-  for (const name of x11AssetNames) {
+  for (const name of transport === 'wayland' ? waylandAssetNames : x11AssetNames) {
     const bytes = Buffer.from(name);
     buildHash.update(name).update(bytes);
     await writeFile(join(assets, name), bytes);
@@ -102,7 +104,8 @@ async function fixture(t: any) {
     },
   } as unknown as Machines;
   const secret = 'unit-project-private-value';
-  const service = new X11Clipboard(
+  const Service = transport === 'wayland' ? WaylandClipboard : X11Clipboard;
+  const service = new Service(
     machines,
     async () => ({
       launcherSha256: launcher,
@@ -247,6 +250,51 @@ test('X11 failed native updates remain visible and refresh retries the saved int
   assert.equal(refreshed.sessions[0].state, 'running');
   assert.equal(refreshed.sessions[0].rule.copy, false);
   await assert.rejects(f.save(), /配置已变化/);
+});
+
+test('Wayland broker service journals a distinct owner, project binding and literal arguments', async (t) => {
+  const f = await fixture(t, 'wayland');
+  await f.save();
+  const started = await f.service.action('vm', { action: 'launch', version: 2, image,
+    args: ['--name', 'space & $()'] }) as any;
+  assert.equal(started.state, 'running');
+  const launch = f.calls.find(call => call.request.action === 'launch');
+  assert.match(launch.code, /sakura-wayland-clipboard/);
+  assert.equal(launch.request.projectId, 'abcdefabcdefabcd');
+  assert.equal(launch.request.networkNamespace, 'sk-abcdefabcdefabcd');
+  assert.equal(launch.request.launcherSha256, launcher);
+  assert.deepEqual(launch.request.args, ['--name', 'space & $()']);
+  assert.deepEqual(launch.request.environment, { TOKEN: createHash('sha256').update(f.secret).digest('hex') });
+  assert.ok(!JSON.stringify(launch.request).includes(f.secret));
+  assert.equal(JSON.parse(await readFile(f.file, 'utf8')).owner, launch.request.owner);
+});
+
+test('Wayland reload retains broker ownership and incomplete tightening remains visible until refresh succeeds', async (t) => {
+  const f = await fixture(t, 'wayland');
+  f.rows([f.row()]);
+  f.fail('configure');
+  const saved = await f.save();
+  assert.equal(saved.sessions[0].state, 'error');
+  const owner = JSON.parse(await readFile(f.file, 'utf8')).owner;
+  await f.service.close();
+  const restored = new WaylandClipboard(f.machines, async () => { throw Error('unused'); },
+    { assets: f.assets, file: () => f.file, jobsDirectory: join(f.directory, 'reload-jobs') });
+  t.after(() => restored.close());
+  f.fail('');
+  const refreshed = await restored.action('vm', { action: 'refresh' }) as any;
+  assert.equal(refreshed.sessions[0].state, 'running');
+  assert.equal(refreshed.sessions[0].rule.copy, false);
+  assert.equal(f.calls.findLast(call => call.request.action === 'configure').request.owner, owner);
+  const removed = await restored.action('vm', { action: 'remove', version: 2, image }) as any;
+  assert.equal(removed.sessions[0].active, false);
+  assert.equal(f.calls.filter(call => call.request.action === 'stop').length, 0);
+});
+
+test('Wayland validates all packaged sources before any broker action', async (t) => {
+  const f = await fixture(t, 'wayland');
+  await writeFile(join(f.assets, 'primary-selection-unstable-v1.xml'), 'corrupted');
+  await assert.rejects(f.service.action('vm', { action: 'identify', image }), /源码摘要不符/);
+  assert.equal(f.calls.length, 0);
 });
 
 test('X11 disk failure cannot replace cached settings or issue an unjournaled rule update', async (t) => {

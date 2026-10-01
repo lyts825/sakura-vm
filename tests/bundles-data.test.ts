@@ -257,23 +257,31 @@ test('peer bundle imports persist an origin that prevents duplicate transfer ado
   assert.deepEqual(reopened.get(imported.id).migrationOrigin, persistedOrigin);
 });
 
-test('portable backups and clones retain X11 application identities, rules and controller ownership', async (t) => {
+test('portable backups and clones retain X11/Wayland application identities, rules and controller ownership', async (t) => {
   const { id, bundles } = await resizeFixture(t);
   const settings = { schemaVersion: 1, version: 4, owner: randomUUID(), applications: [{
     image: '/usr/bin/konsole', sha256: 'c'.repeat(64),
     rule: { copy: false, paste: true, files: false, sensitive: true, maxTextBytes: 4096 },
   }] };
   await writeFile(join(vmDir(id), 'x11-clipboard.json'), JSON.stringify(settings));
+  const wayland = { ...settings, owner: randomUUID(), version: 6 };
+  await writeFile(join(vmDir(id), 'wayland-clipboard.json'), JSON.stringify(wayland));
   const chunks: Buffer[] = [];
   await bundles.export(id, new Writable({ write(chunk, _encoding, done) {
     chunks.push(Buffer.from(chunk)); done();
   } }), () => {});
   const payload = Buffer.concat(chunks), length = payload.readUInt32BE(8);
   assert.deepEqual(JSON.parse(payload.subarray(12, 12 + length).toString()).x11Clipboard, settings);
+  assert.deepEqual(JSON.parse(payload.subarray(12, 12 + length).toString()).waylandClipboard, wayland);
   const imported = await bundles.import('clipboard-import', Readable.from([payload]));
   const cloned = await bundles.clone(id, 'clipboard-clone');
-  for (const copy of [imported, cloned])
+  for (const copy of [imported, cloned]) {
     assert.deepEqual(JSON.parse(await readFile(join(vmDir(copy.id), 'x11-clipboard.json'), 'utf8')), settings);
+    assert.deepEqual(JSON.parse(await readFile(join(vmDir(copy.id), 'wayland-clipboard.json'), 'utf8')), wayland);
+  }
+  await writeFile(join(vmDir(id), 'wayland-clipboard.json'), JSON.stringify({ ...wayland, owner: 'invalid' }));
+  await assert.rejects(bundles.clone(id, 'wayland-clipboard-invalid'));
+  await writeFile(join(vmDir(id), 'wayland-clipboard.json'), JSON.stringify(wayland));
   await writeFile(join(vmDir(id), 'x11-clipboard.json'), JSON.stringify({ ...settings, owner: 'invalid' }));
   await assert.rejects(bundles.clone(id, 'clipboard-invalid'));
 });

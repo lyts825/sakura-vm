@@ -1,6 +1,7 @@
 import type { DesktopPreferences, DesktopView } from '../server/model.ts';
 
 export const desktopPreferenceDefaults: DesktopPreferences = {
+  sessionType: 'auto',
   resolution: '1280x800',
   monitorLayout: 'single',
   scale: 100,
@@ -25,6 +26,8 @@ function valueOrDefault<T>(value: unknown, allowed: readonly T[], fallback: T) {
 export function mergeDesktopPreferences(input: unknown): DesktopPreferences {
   const value = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   return {
+    sessionType: valueOrDefault(value.sessionType, ['auto', 'x11', 'wayland'] as const,
+      desktopPreferenceDefaults.sessionType),
     resolution: valueOrDefault(value.resolution, resolutions, desktopPreferenceDefaults.resolution),
     monitorLayout: valueOrDefault(value.monitorLayout, monitorLayouts,
       desktopPreferenceDefaults.monitorLayout),

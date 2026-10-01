@@ -530,7 +530,7 @@ export const nextFeatureCatalog = [
     '按应用剪贴板策略',
     '操作系统与桌面',
     'P0',
-    '管理网页入口、Windows x64/x86 应用与显式启动 Linux X11 应用的剪贴板方向、格式、文本大小和敏感内容。',
+    '管理网页入口、Windows x64/x86 应用与显式启动的 Linux X11、原生 Wayland 应用的剪贴板方向、格式、文本大小和敏感内容。',
     'experimental',
   ],
   [
@@ -1042,7 +1042,7 @@ export class NextFeatures {
         executed: false,
         adapter,
         message:
-          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 可按已保存规则受控启动当前用户的 x64/x86 普通原生 EXE，在原始应用 DLL/TLS 前加载 Win32/OLE 代理。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 应用并热更新规则，INCR 与 MULTIPLE 每项收齐检查，普通 fork 子进程可使用新连接。自行启动进程附加前、系统级启动 DLL、其他底层接口、既有 Linux 程序及原生 Wayland 仍未覆盖。',
+          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 普通 x64/x86 应用成功附加后执行 Win32/OLE 规则，标准文本控件在复制或剪切前检查选区。受控启动普通原生 EXE 可在原始应用 DLL/TLS 前接入，托管程序仍需运行中附加。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 或原生 Wayland 应用并热更新规则；Wayland 需先选择原生桌面会话。正文完整检查后交付，不能撤回已交付或被工具包缓存的内容。接入前、系统级启动 DLL、其他底层接口及既有普通 Linux 程序仍未覆盖。',
       };
     if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner')
       return {

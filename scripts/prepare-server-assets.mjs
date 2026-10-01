@@ -2,6 +2,7 @@ import { cp, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import './prepare-monitor.mjs';
 import './prepare-linux-clipboard.mjs';
+import './prepare-wayland-clipboard.mjs';
 
 const root = process.cwd();
 const target = join(root, '.sakura-server', 'assets');
