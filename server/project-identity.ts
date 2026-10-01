@@ -1,0 +1,300 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { z } from 'zod';
+import type { Machines } from './machines.ts';
+import { AppError, ROOT } from './model.ts';
+import { quote } from './files.ts';
+
+export const projectIdentityAssetNames = ['protocol.h', 'launcher.c', 'controller.py'] as const;
+const uuid = z.uuid(), digest = z.string().regex(/^[a-f0-9]{64}$/);
+const projectId = z.string().regex(/^(default|[a-f0-9]{16})$/);
+const decimal = z.string().regex(/^(0|[1-9][0-9]*)$/);
+const directory = z.string().min(1).max(1023).refine(value => value.startsWith('/') &&
+  !/[\x00-\x1f\x7f]/.test(value) && (value === '/' || value.split('/').slice(1).every(part => part && part !== '.' && part !== '..')));
+export const projectIdentitySchema = z.object({
+  version: z.literal(1), phase: z.enum(['intent', 'active']), registryId: uuid, projectId,
+  identityId: uuid, revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  account: z.string().regex(/^skp[a-f0-9]{24}$/), uid: z.number().int().min(20000).max(59999),
+  gid: z.number().int().min(20000).max(59999), home: directory, directory,
+  directoryDevice: decimal, directoryInode: decimal, homeDevice: decimal, homeInode: decimal,
+  networkIsolation: z.enum(['host', 'private']),
+}).strict().superRefine((value, ctx) => {
+  if (value.gid !== value.uid || value.account !== 'skp' + value.identityId.replaceAll('-', '').slice(0, 24) ||
+      value.home !== '/var/lib/sakura-project-homes/' + value.identityId || value.directoryInode === '0' ||
+      (value.phase === 'active' && value.homeInode === '0'))
+    ctx.addIssue({ code: 'custom', message: '项目账户绑定不完整' });
+});
+export type ProjectIdentity = z.infer<typeof projectIdentitySchema>;
+export const projectIdentityExpectedSchema = z.object({ registryId: uuid, identityId: uuid,
+  revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER) }).strict();
+export type ProjectIdentityExpected = z.infer<typeof projectIdentityExpectedSchema>;
+export const projectIdentityRunSchema = z.object({
+  version: z.literal(1), phase: z.enum(['active', 'closed']), mode: z.enum(['independent', 'inherit-current']),
+  registryId: uuid, identityId: uuid, projectId, runId: uuid, revision: z.number().int().min(1),
+  bootId: uuid, build: digest, networkDevice: decimal, networkInode: decimal,
+  cgroupDevice: decimal, cgroupInode: decimal, cgroupName: z.string(), namespace: z.string(),
+}).strict().superRefine((value, ctx) => {
+  if (value.cgroupInode === '0' || value.networkInode === '0' ||
+      (value.mode === 'independent' ? value.cgroupName !== 'sakura-identity-' + value.runId :
+        !/^sakura-(task|main|service)-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.cgroupName)) ||
+      (value.namespace !== '' && value.namespace !== 'sk-' + value.projectId))
+    ctx.addIssue({ code: 'custom', message: '项目运行票据不完整' });
+});
+export type ProjectIdentityRun = z.infer<typeof projectIdentityRunSchema>;
+const manifestSchema = z.object({ version: z.literal(1), build: digest,
+  files: z.array(z.object({ name: z.enum(projectIdentityAssetNames), size: z.number().int().min(1).max(262144),
+    sha256: digest }).strict()).length(3),
+}).strict().refine(value => value.files.every((file, index) => file.name === projectIdentityAssetNames[index]));
+
+export async function projectIdentitySources(sourceDirectory = join(ROOT, '.sakura-server/assets/project-identity')) {
+  // Packaged operation requires the manifest. There is intentionally no fallback
+  // to a checkout's native sources or an unverified guest compiler input.
+  const manifest = manifestSchema.parse(JSON.parse(await readFile(join(sourceDirectory, 'manifest.json'), 'utf8')));
+  const files = new Map<string, Buffer>(), aggregate = createHash('sha256');
+  for (const expected of manifest.files) {
+    const bytes = await readFile(join(sourceDirectory, expected.name));
+    if (bytes.length !== expected.size || createHash('sha256').update(bytes).digest('hex') !== expected.sha256)
+      throw new AppError('项目账户启动器源码摘要不符', 503, 'PROJECT_IDENTITY_SOURCE_INVALID');
+    aggregate.update(expected.name).update(bytes); files.set(expected.name, bytes);
+  }
+  if (aggregate.digest('hex') !== manifest.build)
+    throw new AppError('项目账户启动器版本摘要不符', 503, 'PROJECT_IDENTITY_SOURCE_INVALID');
+  return { manifest, files, directory: '/usr/local/lib/sakura-project-identity/' + manifest.build };
+}
+const fixedEnvironment = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C';
+const expectedIdentity = (identity: ProjectIdentity): ProjectIdentityExpected => ({
+  registryId: identity.registryId, identityId: identity.identityId, revision: identity.revision,
+});
+const executableOptionsSchema = z.object({ command: z.string().min(1).max(65536).refine(value => !value.includes('\0')),
+  environment: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/),
+    z.string().max(8192).refine(value => !value.includes('\0'))).default({}),
+}).strict().superRefine((value, ctx) => {
+  if (Object.keys(value.environment).length > 128 || ['HOME', 'USER', 'LOGNAME'].some(key => key in value.environment) ||
+      Buffer.byteLength(value.command) + Object.entries(value.environment).reduce((sum, [key, content]) => sum + Buffer.byteLength(key + '=' + content), 0) > 65536)
+    ctx.addIssue({ code: 'custom', message: '项目命令或环境超过边界' });
+});
+export type ProjectIdentityExecution = { command: string; environment?: Record<string, string> };
+type Transport = Pick<Machines, 'get' | 'exec' | 'writeGuestFile'>;
+
+export class ProjectIdentities {
+  private installed = new Map<string, Promise<string>>();
+  constructor(private machines: Transport, private options: { sourceDirectory?: string } = {}) {}
+
+  private async build() { return await projectIdentitySources(this.options.sourceDirectory); }
+  private controlCommand(build: string, request: object) {
+    const data = Buffer.from(JSON.stringify(request)).toString('base64');
+    if (data.length > 131072) throw new AppError('项目账户请求超过边界', 413);
+    return `${fixedEnvironment} /usr/bin/python3 -I -S ${quote('/usr/local/lib/sakura-project-identity/' + digest.parse(build) + '/controller.py')} ${quote(data)}`;
+  }
+  private async control<T>(vmId: string, request: object, schema: z.ZodType<T>, signal?: AbortSignal) {
+    const build = await this.install(vmId, signal);
+    const result = await this.machines.exec(vmId, this.controlCommand(build, request), 40000, signal);
+    let reply: { ok: boolean; result?: unknown; code?: string; detail?: unknown };
+    try { reply = JSON.parse(result.stdout); } catch {
+      throw new AppError('项目账户控制器未返回可核对回执', 502, 'PROJECT_IDENTITY_CONTROL_FAILED');
+    }
+    if (result.code !== 0 || !reply.ok) {
+      const code = typeof reply.code === 'string' && /^[A-Z_]{1,80}$/.test(reply.code) ? reply.code : 'CONTROL_FAILED';
+      const toolFailure = z.object({ tool: z.enum(['groupadd', 'useradd', 'addgroup', 'adduser', 'openssl', 'chpasswd', 'ip']), exit: z.number().int() }).strict().safeParse(reply.detail);
+      const context = code === 'SYSTEM_TOOL_FAILED' && toolFailure.success ? ':' + toolFailure.data.tool : '';
+      const migration = code === 'DIRECTORY_MIGRATION_REQUIRED' ? '目录及父目录尚未授权给项目账户，请显式迁移权限' : '项目账户归属核对失败';
+      const cleanup = code === 'PROJECT_IDENTITY_CLEANUP_FAILED';
+      throw new AppError(`${migration}（${code}${context}）`, cleanup ? 503 : 409, cleanup ? code : 'PROJECT_IDENTITY_' + code);
+    }
+    try { return schema.parse(reply.result); } catch {
+      throw new AppError('项目账户回执身份不完整', 502, 'PROJECT_IDENTITY_CONTROL_FAILED');
+    }
+  }
+
+  async install(vmId: string, signal?: AbortSignal) {
+    const source = await this.build(), key = vmId + ':' + source.manifest.build;
+    const pending = this.installed.get(key);
+    if (pending) {
+      const build = await pending;
+      // A VM reboot/restore can keep its host ID while losing guest files.
+      // Revalidate the root source/launcher receipt before reusing the cache.
+      const probe = await this.machines.exec(vmId, this.controlCommand(build, { action: 'install' }), 30000, signal);
+      try {
+        const reply = JSON.parse(probe.stdout);
+        if (probe.code === 0 && reply.ok && reply.result?.build === build) return build;
+      } catch { /* A missing Python/controller is reinstalled below. */ }
+      this.installed.delete(key);
+    }
+    const install = this.installSource(vmId, source, signal);
+    this.installed.set(key, install);
+    try { return await install; } catch (error) { this.installed.delete(key); throw error; }
+  }
+  private async installSource(vmId: string, source: Awaited<ReturnType<typeof projectIdentitySources>>, signal?: AbortSignal) {
+    const distro = this.machines.get(vmId).distro || 'alpine';
+    const packages = distro === 'alpine' ? 'apk add --no-cache --timeout 30 python3 gcc musl-dev linux-headers iproute2 openssl shadow' :
+      'export DEBIAN_FRONTEND=noninteractive; apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update; apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y python3 gcc libc6-dev iproute2 openssl passwd';
+    // Installation is outside all project environment and shell initialization.
+    const ready = await this.machines.exec(vmId, `${fixedEnvironment} /bin/sh -ec ${quote(`if ! command -v python3 >/dev/null || ! command -v cc >/dev/null || ! command -v ip >/dev/null || ! command -v openssl >/dev/null || ! command -v useradd >/dev/null || ! command -v groupadd >/dev/null; then ${packages}; fi`)}`, 300000, signal);
+    if (ready.code !== 0) throw new AppError('无法安装项目账户启动器工具', 502, 'PROJECT_IDENTITY_INSTALL_FAILED');
+    const stage = '/tmp/.sakura-project-identity-' + randomUUID();
+    try {
+      const created = await this.machines.exec(vmId, `${fixedEnvironment} /bin/sh -ec ${quote(`umask 077; mkdir ${quote(stage)}`)}`, 10000, signal);
+      if (created.code !== 0) throw new AppError('无法创建项目启动器安装目录', 502);
+      for (const [name, bytes] of source.files)
+        await this.machines.writeGuestFile(vmId, stage + '/' + name, bytes.toString('utf8'));
+      await this.machines.writeGuestFile(vmId, stage + '/manifest.json', JSON.stringify(source.manifest));
+      const bootstrap = `import hashlib,json,os,stat,subprocess,sys,tempfile
+stage=${JSON.stringify(stage)}; destination=${JSON.stringify(source.directory)}; names=['protocol.h','launcher.c','controller.py']
+def secure(path):
+ info=os.lstat(path)
+ if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022: raise RuntimeError('untrusted directory')
+for folder in ['/usr','/usr/local','/usr/local/lib','/usr/local/lib/sakura-project-identity']:
+ try: os.mkdir(folder,0o755)
+ except FileExistsError: pass
+ secure(folder)
+secure(stage)
+try: os.mkdir(destination,0o755)
+except FileExistsError: pass
+secure(destination)
+manifest=json.load(open(stage+'/manifest.json')); aggregate=hashlib.sha256()
+if manifest!={${JSON.stringify('version')}:1,${JSON.stringify('build')}:${JSON.stringify(source.manifest.build)},${JSON.stringify('files')}:${JSON.stringify(source.manifest.files)}}: raise RuntimeError('manifest mismatch')
+for expected in manifest['files']:
+ name=expected['name']; descriptor=os.open(stage+'/'+name,os.O_RDONLY|os.O_NOFOLLOW)
+ with os.fdopen(descriptor,'rb') as stream:
+  info=os.fstat(stream.fileno())
+  if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022 or info.st_nlink!=1: raise RuntimeError('source permissions')
+  data=stream.read(262145)
+ if len(data)!=expected['size'] or hashlib.sha256(data).hexdigest()!=expected['sha256']: raise RuntimeError('source digest')
+ aggregate.update(name.encode()); aggregate.update(data)
+ path=destination+'/'+name
+ if os.path.lexists(path):
+  info=os.lstat(path)
+  if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o600 or info.st_nlink!=1 or open(path,'rb').read()!=data: raise RuntimeError('installed source changed')
+ else:
+  descriptor=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+  with os.fdopen(descriptor,'wb') as stream: stream.write(data); stream.flush(); os.fsync(stream.fileno())
+if aggregate.hexdigest()!=manifest['build']: raise RuntimeError('build digest')
+launch=destination+'/launch'
+if not os.path.lexists(launch):
+ descriptor,temporary=tempfile.mkstemp(prefix='.launch-',dir=destination); os.close(descriptor)
+ try:
+  subprocess.run(['/usr/bin/cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-fstack-protector-strong','-D_FORTIFY_SOURCE=2','-DPROJECT_BUILD="'+manifest['build']+'"',destination+'/launcher.c','-o',temporary],env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C','HOME':'/'},check=True,timeout=60)
+  os.chmod(temporary,0o4755); os.replace(temporary,launch)
+ finally:
+  if os.path.exists(temporary): os.unlink(temporary)
+info=os.lstat(launch)
+if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o4755 or info.st_nlink!=1: raise RuntimeError('launcher replaced')
+path=destination+'/manifest.json'; data=json.dumps(manifest,separators=(',',':')).encode()
+if os.path.lexists(path):
+ info=os.lstat(path)
+ if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or stat.S_IMODE(info.st_mode)!=0o600 or info.st_nlink!=1 or json.load(open(path))!=manifest: raise RuntimeError('manifest replaced')
+else:
+ descriptor=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+ with os.fdopen(descriptor,'wb') as stream: stream.write(data); stream.flush(); os.fsync(stream.fileno())
+directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(directory)
+`;
+      const result = await this.machines.exec(vmId, `${fixedEnvironment} /usr/bin/python3 -I -S - <<'SAKURA_IDENTITY_INSTALL'\n${bootstrap}\nSAKURA_IDENTITY_INSTALL`, 100000, signal);
+      if (result.code !== 0) throw new AppError('项目启动器安装身份或编译校验失败：' + result.stderr.slice(0, 4000), 502, 'PROJECT_IDENTITY_INSTALL_FAILED');
+      const verified = await this.machines.exec(vmId, this.controlCommand(source.manifest.build, { action: 'install' }), 30000, signal);
+      if (verified.code !== 0 || !JSON.parse(verified.stdout).ok)
+        throw new AppError('项目账户安装回执无法核对', 502, 'PROJECT_IDENTITY_INSTALL_FAILED');
+      return source.manifest.build;
+    } finally {
+      // Exact stage only; no caller-supplied path, recursive removal or project
+      // directory permission changes. Retry after an interrupted transport.
+      const cleanup = `import os,stat\np=${JSON.stringify(stage)}\ntry:\n i=os.lstat(p)\nexcept FileNotFoundError: raise SystemExit(0)\nif not stat.S_ISDIR(i.st_mode) or i.st_uid!=0 or stat.S_IMODE(i.st_mode)!=0o700: raise SystemExit(1)\nallowed={'protocol.h','launcher.c','controller.py','manifest.json'}\nif not set(os.listdir(p)).issubset(allowed): raise SystemExit(1)\nfor name in os.listdir(p):\n i=os.lstat(p+'/'+name)\n if not stat.S_ISREG(i.st_mode) or i.st_uid!=0 or i.st_nlink!=1: raise SystemExit(1)\n os.unlink(p+'/'+name)\nd=os.open(p,os.O_DIRECTORY|os.O_NOFOLLOW); os.fsync(d); os.close(d)\nos.rmdir(p)\nd=os.open('/tmp',os.O_DIRECTORY); os.fsync(d); os.close(d)\n`;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const result = await this.machines.exec(vmId, `${fixedEnvironment} /usr/bin/python3 -I -S - <<'SAKURA_IDENTITY_CLEANUP'\n${cleanup}\nSAKURA_IDENTITY_CLEANUP`, 10000);
+          if (result.code === 0) break;
+          if (attempt === 2) throw new AppError('项目启动器安装临时目录清理未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+        } catch { if (attempt === 2) throw new AppError('项目启动器安装临时目录清理未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED'); }
+      }
+    }
+  }
+
+  async ensure(vmId: string, binding: { projectId: string; directory: string; networkIsolation: 'host' | 'private' }, expected?: ProjectIdentityExpected, signal?: AbortSignal) {
+    const input = z.object({ projectId, directory, networkIsolation: z.enum(['host', 'private']) }).strict().parse(binding);
+    return await this.control(vmId, { action: 'ensure', ...input, ...(expected ? { expected: projectIdentityExpectedSchema.parse(expected) } : {}) }, projectIdentitySchema, signal);
+  }
+  async inspect(vmId: string, id: string, signal?: AbortSignal) {
+    return await this.control(vmId, { action: 'inspect', projectId: projectId.parse(id) }, projectIdentitySchema.nullable(), signal);
+  }
+  async prepare(vmId: string, identity: ProjectIdentity, options: { runId?: string } = {}, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const run = await this.control(vmId, { action: 'prepare', projectId: identity.projectId, expected: expectedIdentity(identity),
+      runId: options.runId ? uuid.parse(options.runId) : randomUUID() }, projectIdentityRunSchema, signal);
+    this.match(identity, run); return run;
+  }
+  private match(identity: ProjectIdentity, run: ProjectIdentityRun) {
+    for (const key of ['registryId', 'identityId', 'projectId', 'revision'] as const)
+      if (identity[key] !== run[key]) throw new AppError('项目运行票据属于其他账户或版本', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    if (run.namespace !== (identity.networkIsolation === 'private' ? 'sk-' + identity.projectId : ''))
+      throw new AppError('项目运行网络绑定不符', 409, 'PROJECT_IDENTITY_RUN_STALE');
+  }
+  command(identity: ProjectIdentity, run: ProjectIdentityRun, execution: ProjectIdentityExecution) {
+    identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
+    if (identity.phase !== 'active' || run.phase !== 'active') throw new AppError('项目账户或运行票据已关闭', 409, 'PROJECT_IDENTITY_RUN_CLOSED');
+    const input = executableOptionsSchema.parse(execution);
+    const args = ['/usr/local/lib/sakura-project-identity/' + run.build + '/launch', '--project', identity.projectId,
+      identity.identityId, String(identity.revision), run.runId];
+    for (const [key, value] of Object.entries(input.environment)) args.push('--env', key + '=' + value);
+    args.push('--', '/bin/sh', '-c', input.command);
+    return fixedEnvironment + ' ' + args.map(quote).join(' ');
+  }
+  selfCommand(run: ProjectIdentityRun, execution: ProjectIdentityExecution) {
+    run = projectIdentityRunSchema.parse(run);
+    if (run.phase !== 'active') throw new AppError('项目运行票据已关闭', 409);
+    const input = executableOptionsSchema.parse(execution);
+    const args = ['/usr/local/lib/sakura-project-identity/' + run.build + '/launch', '--self', run.runId];
+    for (const [key, value] of Object.entries(input.environment)) args.push('--env', key + '=' + value);
+    args.push('--', '/bin/sh', '-c', input.command);
+    return fixedEnvironment + ' ' + args.map(quote).join(' ');
+  }
+  async exec(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun, execution: ProjectIdentityExecution, signal?: AbortSignal, timeout = 30000) {
+    try { return await this.machines.exec(vmId, this.command(identity, run, execution), timeout, signal); }
+    finally { await this.stop(vmId, identity, run); }
+  }
+  async inheritedCommand(identity: ProjectIdentity, execution: ProjectIdentityExecution, options: { runId?: string } = {}) {
+    identity = projectIdentitySchema.parse(identity); const input = executableOptionsSchema.parse(execution);
+    const source = await this.build();
+    // Called inside a registered root task/main/service cgroup. The root
+    // controller captures its own actual membership; no path/FD number can be
+    // supplied by a project. The C launcher reopens and checks the pinned FD.
+    return this.controlCommand(source.manifest.build, { action: 'exec-current', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId: options.runId ? uuid.parse(options.runId) : randomUUID(),
+      argv: ['/bin/sh', '-c', input.command], environment: input.environment });
+  }
+  async status(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
+    return await this.control(vmId, { action: 'status', projectId: identity.projectId, expected: expectedIdentity(identity), runId: run.runId },
+      z.object({ run: projectIdentityRunSchema, populated: z.boolean() }).strict(), signal);
+  }
+  async run(vmId: string, identity: ProjectIdentity, runId: string, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const run = await this.control(vmId, { action: 'run', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId: uuid.parse(runId) }, projectIdentityRunSchema, signal);
+    this.match(identity, run); return run;
+  }
+  async stop(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun, _signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
+    let reason = 'CONTROL_FAILED';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        // Cleanup deliberately uses an independent, uncancelled connection.
+        const stopped = await this.control(vmId, { action: 'stop', projectId: identity.projectId,
+          expected: expectedIdentity(identity), runId: run.runId }, projectIdentityRunSchema);
+        if (stopped.phase !== 'closed' || Object.keys(run).some(key => key !== 'phase' &&
+          stopped[key as keyof ProjectIdentityRun] !== run[key as keyof ProjectIdentityRun]))
+          throw new AppError('停止回执不属于原运行票据', 503, 'STOP_RECEIPT_CHANGED');
+        return stopped;
+      } catch (error) {
+        reason = error instanceof AppError && error.code ? error.code : 'CONTROL_UNCONFIRMED';
+        if (attempt !== 2) await delay(100 * (attempt + 1));
+      }
+    }
+    throw new AppError(`项目账户运行清理未确认（${reason}）`, 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+  }
+  async rebind(vmId: string, identity: ProjectIdentity, binding: { directory: string; networkIsolation: 'host' | 'private' }, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const input = z.object({ directory, networkIsolation: z.enum(['host', 'private']) }).strict().parse(binding);
+    return await this.control(vmId, { action: 'rebind', projectId: identity.projectId, expected: expectedIdentity(identity), ...input }, projectIdentitySchema, signal);
+  }
+}
