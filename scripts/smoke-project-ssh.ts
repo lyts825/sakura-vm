@@ -39,6 +39,7 @@ const { quote } = await import('../server/files.ts');
 const { vmDir } = await import('../server/model.ts');
 const { runReport } = await import('../server/capability-reports.ts');
 const { secureSshPaths } = await import('../server/ssh-files.ts');
+const { ProjectDirectoryMigrations } = await import('../server/project-directory-migration.ts');
 const { projectVscodeClientSmoke } = await import('./project-vscode-client-smoke.ts');
 const { projectNeovimClientSmoke } = await import('./project-neovim-client-smoke.ts');
 const { projectJetbrainsClientSmoke } = await import('./project-jetbrains-client-smoke.ts');
@@ -100,7 +101,7 @@ async function external(alias: string, script: string, timeout = 30_000) {
   );
   return result.stdout.trim();
 }
-type TestProject = { id: string; name: string; path: string; alias: string };
+type TestProject = { id: string; name: string; path: string; alias: string; home: string; uid: number; gid: number };
 async function clientFor(project: TestProject, keyProject = project.id) {
   const record = JSON.parse(
     await readFile(join(vmDir(vmId), 'project-ssh', project.id, 'runtime.json'), 'utf8'),
@@ -301,6 +302,18 @@ try {
   const secrets = process.platform === 'win32' ? new Secrets(machines) : undefined;
   if (secrets) await secrets.save(vmId, { name: 'project-ssh-token', value: privateValue });
   workspaces = new Workspaces(machines, { secrets });
+  await within('default', () => workspaces!.save(vmId, { directory: '/workspace/ssh-shared' }));
+  const migrations = new ProjectDirectoryMigrations(machines, workspaces);
+  const migrate = async (id: string, path: string) => {
+    await command('mkdir -p ' + quote(path));
+    return within(id, async () => {
+      const preview = await migrations.preview(vmId); assert.ok(preview.plan);
+      const applied = await migrations.apply(vmId, { action: 'apply', version: 1,
+        planId: preview.plan.proposal.planId, sha256: preview.plan.sha256, reviewed: true });
+      assert.equal(applied.plan?.state, 'applied'); assert.ok(applied.plan?.activatedIdentity);
+      return applied.plan.activatedIdentity;
+    });
+  };
   ide = new Ide(machines, workspaces, join(directory, 'ssh-client'));
   const projects: TestProject[] = [];
   for (const name of ['alpha', 'beta']) {
@@ -347,6 +360,7 @@ try {
         },
       });
     });
+    const identity = await migrate(id, path);
     const view = await within(id, () => ide!.install(vmId));
     assert.equal(view.supported, true);
     assert.ok('runtime' in view && view.runtime?.valid);
@@ -376,10 +390,12 @@ try {
     assert.deepEqual(result.slice(0, 2), [path, name]);
     assert.equal(result[2], await command(`ip netns exec sk-${id} readlink /proc/self/ns/net`));
     assert.notEqual(result[2], await command('readlink /proc/1/ns/net'));
-    assert.equal(await external(view.alias, 'printf %s "$HOME"'), '/var/lib/sakura/ssh/' + id);
+    assert.equal(await external(view.alias, 'printf %s "$HOME"'), identity.home);
+    assert.equal(await external(view.alias, 'id -u'), String(identity.uid));
+    assert.equal(await external(view.alias, 'id -g'), String(identity.gid));
     assert.equal(
       await external(view.alias, 'printf %s "$VSCODE_AGENT_FOLDER"'),
-      '/var/lib/sakura/ssh/' + id + '/.vscode-server',
+      identity.home + '/.vscode-server',
     );
     for (const editor of distro === 'alpine' ? ['neovim'] : ['jetbrains', 'neovim', 'vscode']) {
       const profile = await within(id, () =>
@@ -405,7 +421,7 @@ try {
         (await external(view.alias, 'printf %s "$TOKEN"')) === privateValue,
         'project SSH must resolve the frozen secret without printing its value',
       );
-    projects.push({ id, name, path, alias: view.alias });
+    projects.push({ id, name, path, alias: view.alias, home: identity.home, uid: identity.uid, gid: identity.gid });
     if (distro === 'alpine') {
       const stored = JSON.parse(await readFile(join(vmDir(vmId), 'project-ssh', id, 'runtime.json'), 'utf8'));
       assert.equal(stored.manager, 'openrc');
@@ -566,7 +582,7 @@ try {
               .digest('hex'),
             process.env.SAKURA_SSH_VSCODE_SHA256,
           );
-          const remote = '/var/lib/sakura/ssh/' + project.id + '/vscode-server.tar.gz';
+          const remote = project.home + '/vscode-server.tar.gz';
           console.log(`${distro}: transferring official VS Code Server to ${project.name}`);
           await new Promise<void>((resolve, reject) =>
             ftp.fastPut(archive, remote, { concurrency: 8, chunkSize: 64 * 1024 }, (error) =>
@@ -643,6 +659,7 @@ try {
     await within('default', () =>
       workspaces!.save(vmId, { directory: '/workspace/ssh-shared', environment: { SAKURA_SCOPE: 'shared' } }),
     );
+    const sharedIdentity = await migrate('default', '/workspace/ssh-shared');
     const shared = await within('default', () => ide!.install(vmId));
     assert.ok('projectScoped' in shared && shared.projectScoped);
     assert.equal(await external(shared.alias, 'printf %s "$SAKURA_SCOPE"'), 'shared');
@@ -650,7 +667,7 @@ try {
       await external(shared.alias, 'readlink /proc/self/ns/net'),
       await command('readlink /proc/1/ns/net'),
     );
-    assert.equal(await external(shared.alias, 'printf %s "$HOME"'), '/var/lib/sakura/ssh/default');
+    assert.equal(await external(shared.alias, 'printf %s "$HOME"'), sharedIdentity.home);
     assert.ok(
       !(await readFile(join(directory, 'ssh/config'), 'utf8')).split('\n').includes('Host sakura-' + vm.name),
     );
@@ -658,7 +675,7 @@ try {
     console.log(`${distro}: shared project uses its own key and binding without restoring a VM-wide alias`);
     if (distro === 'alpine') {
       const project = projects[0],
-        home = '/var/lib/sakura/ssh/' + project.id;
+        home = project.home;
       const children = (await command(`cat ${home}/http.pid ${home}/child.pid`)).split('\n').map(Number);
       await command(`rc-service sakura-ssh-${project.id} stop`);
       for (const pid of children)
@@ -712,7 +729,7 @@ try {
     for (const project of projects) await within(project.id, () => ide!.view(vmId));
     const children: number[] = [];
     for (const project of projects) {
-      const home = '/var/lib/sakura/ssh/' + project.id;
+      const home = project.home;
       children.push(...(await command(`cat ${home}/http.pid ${home}/child.pid`)).split('\n').map(Number));
       if (process.env.SAKURA_SSH_VSCODE_ARCHIVE)
         children.push(Number(await command(`cat ${home}/vscode.pid`)));

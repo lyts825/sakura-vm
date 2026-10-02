@@ -8,7 +8,8 @@ import { Machines } from '../server/machines.ts';
 import type { Project } from '../server/workspaces.ts';
 import { AppError } from '../server/model.ts';
 import { ProjectRunScopes } from '../server/project-run-scope.ts';
-import { projectIdentitySchema, projectIdentityRunSchema } from '../server/project-identity.ts';
+import { projectIdentitySchema, projectIdentityRunSchema, type ProjectIdentitySshDaemon,
+  type ProjectIdentityRun } from '../server/project-identity.ts';
 import { OwnedForwardAgent, type SshAgentContext } from '../server/ssh-agent-scope.ts';
 import { OwnedGpgForward } from '../server/gpg-agent-host.ts';
 import { gpgAgentHomePath, type GpgAgentContext } from '../server/gpg-agent-scope.ts';
@@ -32,7 +33,7 @@ async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void
     registryId: identity.registryId, identityId, projectId: 'default', runId: owner.runId, revision: 1,
     bootId, build: 'a'.repeat(64), networkDevice: '4', networkInode: '5', cgroupDevice: '6', cgroupInode: '7',
     cgroupName: 'sakura-task-' + owner.runId, namespace: '' });
-  const calls: string[] = [], expected: unknown[] = [], instance = {}, locks = new Machines({} as never);
+  const calls: string[] = [], expected: unknown[] = [], confirmCommands: string[] = [], instance = {}, locks = new Machines({} as never);
   const machines = {
     live: new Map([[vmId, instance]]),
     locked: locks.locked.bind(locks),
@@ -41,7 +42,7 @@ async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void
         return { code: 0, stderr: '', stdout: JSON.stringify(directoryLatch) };
       if (command.trim().endsWith('/proc/sys/kernel/random/boot_id'))
         return { code: 0, stderr: '', stdout: currentBoot };
-      assert.ok(!command.includes('private-frame-value')); calls.push('confirm');
+      assert.ok(!command.includes('private-frame-value')); calls.push('confirm'); confirmCommands.push(command);
       return { code: absent ? 0 : 1, stderr: absent ? '' : 'scope exists',
         stdout: JSON.stringify({ bootId: currentBoot, absent: true }) };
     },
@@ -60,6 +61,18 @@ async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void
       calls.push('payload'); const input = Buffer.from(execution.command);
       return { command: '/fixed/launch --payload ' + createHash('sha256').update(input).digest('hex'), input,
         sha256: createHash('sha256').update(input).digest('hex'), runId: options.runId };
+    },
+    sshSnapshotInput: async (_identity: typeof identity, runId: string, environment: Record<string, string> = {}) => {
+      calls.push('ssh-snapshot'); const input = Buffer.from(JSON.stringify(environment));
+      const sha256 = createHash('sha256').update(input).digest('hex');
+      return { command: '/fixed/controller --ssh-snapshot ' + sha256, input, sha256, build: run.build, runId };
+    },
+    prepareSsh: async (_vm: string, _identity: typeof identity,
+      options: { runId: string; snapshotSha256: string; daemon: ProjectIdentitySshDaemon }) => {
+      calls.push('ssh-prepare');
+      Object.assign(run, { mode: 'inherit-current', runId: options.runId,
+        bootId: options.daemon.bootId, cgroupName: options.daemon.cgroupName });
+      return { ...run };
     },
     run: async () => {
       calls.push('run');
@@ -88,7 +101,7 @@ async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void
   const project = { directory: identity.directory, networkIsolation: 'host' } as Project;
   const file = join(directory, 'project-identities', 'default.json');
   const view = async () => JSON.parse(await readFile(file, 'utf8'));
-  return { scopes, machines, core, identity, owner, run, project, vmId, file, view, calls, expected,
+  return { scopes, machines, core, identity, owner, run, project, vmId, file, view, calls, expected, confirmCommands,
     setAbsent: (value: boolean) => { absent = value; }, setMissing: (value: boolean) => { missing = value; },
     setUnknown: (value: boolean) => { unknown = value; }, setCleanupFail: (value: boolean) => { cleanupFail = value; },
     setMigration: (value: boolean) => { migration = value; }, setIdentity: (value: typeof identity) => { actual = value; },
@@ -935,4 +948,451 @@ test('a bundle handoff pinned to an earlier guest boot cannot admit project code
     new AbortController().signal, { expectedBootId: randomUUID() }), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
   assert.equal(f.calls.includes('run'), false);
   await assert.rejects(f.view(), { code: 'ENOENT' });
+});
+
+type ScopeFixture = Awaited<ReturnType<typeof fixture>>;
+const sshOwner = (f: ScopeFixture, cgroupName = 'openrc.sakura-ssh-default') =>
+  ({ ...f.owner, kind: 'ssh' as const, cgroupName });
+const sshDaemon = (owner: ReturnType<typeof sshOwner>): ProjectIdentitySshDaemon =>
+  ({ pid: 321, startTicks: '91', bootId: owner.bootId, cgroupName: owner.cgroupName });
+async function issuedSshFixture(cgroupName = 'openrc.sakura-ssh-default') {
+  const f = await fixture(), owner = sshOwner(f, cgroupName), daemon = sshDaemon(owner);
+  const begun = await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, { TOKEN: 'private-ssh-environment' });
+  const issued = await f.scopes.activateSsh(f.vmId, 'default', owner.runId, daemon);
+  return { ...f, sshOwner: owner, daemon, begun, issued };
+}
+
+test('SSH host intent is durable before native preparation and contains the exact owner and digest without environment bodies', async () => {
+  const f = await fixture(), owner = sshOwner(f), daemon = sshDaemon(owner);
+  const begun = await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner,
+    { TOKEN: 'private-ssh-environment-雪', BASH_ENV: 'private-ssh-init;$(id)' });
+  const entry = (await f.view()).runs[0], bytes = await readFile(f.file, 'utf8');
+  assert.deepEqual(entry, { version: 1, projectId: 'default', identity: f.identity,
+    runId: owner.runId, owner, sha256: begun.snapshot.sha256, phase: 'intent', run: null });
+  assert.equal(begun.snapshot.sha256, createHash('sha256').update(begun.snapshot.input).digest('hex'));
+  assert.ok(begun.snapshot.input.includes(Buffer.from('private-ssh-environment-雪')));
+  assert.ok(!bytes.includes('private-ssh-')); assert.ok(!begun.snapshot.command.includes('private-ssh-'));
+  assert.equal(f.calls.includes('ssh-prepare'), false); assert.equal(f.calls.includes('run'), false);
+  f.calls.length = 0;
+  assert.deepEqual(await f.reopened().sshRuns(f.vmId, 'default'), [{ runId: owner.runId, owner,
+    identity: f.identity, sha256: entry.sha256, phase: 'intent', run: null }]);
+  await assert.rejects(f.reopened().sshRun(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  assert.equal(f.calls.length, 0); assert.equal(await readFile(f.file, 'utf8'), bytes);
+  const prepare = f.core.prepareSsh;
+  f.core.prepareSsh = async (...args) => {
+    assert.equal(await readFile(f.file, 'utf8'), bytes, 'the durable intent predates the native prepare call');
+    assert.deepEqual(args[1], f.identity);
+    assert.deepEqual(args[2], { runId: owner.runId, daemon, snapshotSha256: entry.sha256 });
+    return prepare(...args);
+  };
+  const active = await f.reopened().activateSsh(f.vmId, 'default', owner.runId, daemon);
+  assert.deepEqual((await f.view()).runs[0], { ...entry, phase: 'active', run: active.run });
+  assert.deepEqual(f.calls, ['ssh-prepare']);
+});
+
+test('SSH owner validation refuses another project, run, owner kind or traversal before issuing any snapshot or identity', async () => {
+  for (const cgroupName of ['openrc.sakura-ssh-0123456789abcdef', 'system.slice/sakura-ssh-0123456789abcdef.service']) {
+    const f = await fixture(), owner = sshOwner(f, cgroupName);
+    await assert.rejects(f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, { TOKEN: 'must-not-persist' }),
+      { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.deepEqual(f.calls, []); await assert.rejects(f.view(), { code: 'ENOENT' });
+  }
+  for (const cgroupName of ['openrc.sakura-ssh-default/child', 'system.slice/../openrc.sakura-ssh-default',
+    '/system.slice/sakura-ssh-default.service', 'system.slice//sakura-ssh-default.service']) {
+    const f = await fixture(), owner = sshOwner(f, cgroupName);
+    await assert.rejects(f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {}));
+    assert.deepEqual(f.calls, []); await assert.rejects(f.view(), { code: 'ENOENT' });
+  }
+  const f = await fixture(), owner = sshOwner(f);
+  await assert.rejects(f.scopes.beginSsh(f.vmId, f.project, randomUUID(), owner, {}), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  await assert.rejects(f.scopes.beginSsh(f.vmId, f.project, f.owner.runId, f.owner, {}), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  assert.deepEqual(f.calls, []); await assert.rejects(f.view(), { code: 'ENOENT' });
+});
+
+test('SSH snapshot digest or run substitution and a changed live instance cannot become a host intent', async () => {
+  for (const change of ['digest', 'run', 'live', 'boot']) {
+    const f = await fixture(), owner = sshOwner(f), snapshot = f.core.sshSnapshotInput;
+    f.core.sshSnapshotInput = async (...args) => {
+      const result = await snapshot(...args);
+      if (change === 'live') f.machines.live.set(f.vmId, {} as never);
+      if (change === 'boot') f.setBoot(randomUUID());
+      return { ...result, ...(change === 'digest' ? { sha256: 'f'.repeat(64) } : {}),
+        ...(change === 'run' ? { runId: randomUUID() } : {}) };
+    };
+    await assert.rejects(f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, { TOKEN: 'private-ssh-environment' }),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.deepEqual((await f.view()).runs, []); assert.equal(f.calls.includes('ssh-prepare'), false);
+  }
+});
+
+test('SSH activation preserves its original intent on daemon mismatch, lost acknowledgement and changed receipt ownership', async () => {
+  const f = await fixture(), owner = sshOwner(f), daemon = sshDaemon(owner);
+  await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+  const bytes = await readFile(f.file, 'utf8'); f.calls.length = 0;
+  for (const changed of [{ ...daemon, bootId: randomUUID() },
+    { ...daemon, cgroupName: 'system.slice/sakura-ssh-default.service' },
+    { ...daemon, cgroupName: 'openrc.sakura-ssh-0123456789abcdef' }]) {
+    await assert.rejects(f.reopened().activateSsh(f.vmId, 'default', owner.runId, changed),
+      { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.equal(await readFile(f.file, 'utf8'), bytes);
+  }
+  assert.equal(f.calls.length, 0);
+  f.core.prepareSsh = async () => { f.calls.push('ssh-prepare'); throw new Error('owned SSH prepare acknowledgement lost'); };
+  await assert.rejects(f.reopened().activateSsh(f.vmId, 'default', owner.runId, daemon), /owned SSH prepare acknowledgement lost/);
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+  const original: ProjectIdentityRun = { ...f.run, mode: 'inherit-current', cgroupName: owner.cgroupName };
+  const mutations: Partial<ProjectIdentityRun>[] = [{ phase: 'closed' }, { mode: 'independent' },
+    { registryId: randomUUID() }, { identityId: randomUUID() }, { revision: 2 },
+    { projectId: '0123456789abcdef' }, { runId: randomUUID() }, { bootId: randomUUID() },
+    { cgroupName: 'system.slice/sakura-ssh-default.service' }];
+  for (const mutation of mutations) {
+    f.core.prepareSsh = async () => ({ ...original, ...mutation });
+    await assert.rejects(f.reopened().activateSsh(f.vmId, 'default', owner.runId, daemon),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.equal(await readFile(f.file, 'utf8'), bytes);
+  }
+  f.core.prepareSsh = async () => { f.machines.live.set(f.vmId, {} as never); return original; };
+  await assert.rejects(f.reopened().activateSsh(f.vmId, 'default', owner.runId, daemon),
+    { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes); assert.equal(f.calls.includes('stop'), false);
+});
+
+test('SSH reload uses only readonly native probes and pins every immutable field without advancing host phases', async () => {
+  const f = await issuedSshFixture('system.slice/sakura-ssh-default.service');
+  const bytes = await readFile(f.file, 'utf8'), original = { ...f.issued.run }; f.calls.length = 0;
+  f.core.ensure = async () => { assert.fail('readonly SSH reload must not ensure or install identities'); };
+  f.core.prepareSsh = async () => { assert.fail('readonly SSH reload must not prepare another daemon receipt'); };
+  f.core.stop = async () => { assert.fail('readonly SSH reload must not retire the original receipt'); };
+  assert.deepEqual(await f.reopened().sshRun(f.vmId, 'default', f.sshOwner.runId), f.issued);
+  assert.deepEqual(f.calls, ['run-readonly']);
+  assert.deepEqual(await f.reopened().sshRuns(f.vmId, 'default'), [{ runId: f.sshOwner.runId,
+    owner: f.sshOwner, identity: f.identity, sha256: f.begun.snapshot.sha256, phase: 'active', run: original }]);
+  const mutations: Partial<ProjectIdentityRun>[] = [{ phase: 'closed' }, { mode: 'independent' },
+    { registryId: randomUUID() }, { identityId: randomUUID() }, { revision: 2 }, { projectId: '0123456789abcdef' },
+    { runId: randomUUID() }, { bootId: randomUUID() }, { build: 'b'.repeat(64) },
+    { networkDevice: '99' }, { networkInode: '99' }, { cgroupDevice: '99' }, { cgroupInode: '99' },
+    { namespace: 'sk-default' }, { cgroupName: 'openrc.sakura-ssh-default' }];
+  for (const mutation of mutations) {
+    f.core.runReadonly = async () => { f.calls.push('run-readonly'); return { ...original, ...mutation }; };
+    await assert.rejects(f.reopened().sshRun(f.vmId, 'default', f.sshOwner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.equal(await readFile(f.file, 'utf8'), bytes);
+  }
+  f.core.runReadonly = async () => { f.machines.live.set(f.vmId, {} as never); return original; };
+  await assert.rejects(f.reopened().sshRun(f.vmId, 'default', f.sshOwner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+  assert.ok(f.calls.every(call => call === 'run-readonly')); assert.deepEqual(f.confirmCommands, []);
+});
+
+test('SSH cannot replace an unresolved intent or active service with a new run and phase lists perform no guest work', async () => {
+  for (const activate of [false, true]) {
+    const f = await fixture(), owner = sshOwner(f), daemon = sshDaemon(owner);
+    await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+    if (activate) await f.scopes.activateSsh(f.vmId, 'default', owner.runId, daemon);
+    const bytes = await readFile(f.file, 'utf8'); f.calls.length = 0;
+    const entries = await f.reopened().sshRuns(f.vmId, 'default');
+    assert.equal(entries.length, 1); assert.equal(entries[0].phase, activate ? 'active' : 'intent');
+    assert.equal(f.calls.length, 0);
+    for (const runId of [owner.runId, randomUUID()])
+      await assert.rejects(f.reopened().beginSsh(f.vmId, f.project, runId, { ...owner, runId }, {}),
+        { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.equal(f.calls.includes('ssh-snapshot'), false); assert.equal(f.calls.includes('ssh-prepare'), false);
+    assert.equal(await readFile(f.file, 'utf8'), bytes);
+  }
+});
+
+test('SSH closure requires the entire original service cgroup gone before native ticket retirement', async () => {
+  for (const cgroupName of ['openrc.sakura-ssh-default', 'system.slice/sakura-ssh-default.service']) {
+    const f = await issuedSshFixture(cgroupName), bytes = await readFile(f.file, 'utf8');
+    f.calls.length = 0; f.setAbsent(false);
+    await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId),
+      { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    assert.deepEqual(f.calls, ['confirm']); assert.equal(await readFile(f.file, 'utf8'), bytes);
+    assert.ok(f.confirmCommands.every(command => command.includes('name=' + JSON.stringify(cgroupName)) &&
+      command.includes('assert not os.path.lexists')));
+    f.setAbsent(true); f.calls.length = 0;
+    await f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId);
+    assert.deepEqual(f.calls, ['confirm', 'run', 'confirm', 'stop']);
+    const closed = (await f.view()).runs[0];
+    assert.equal(closed.phase, 'closed'); assert.deepEqual(closed.run, { ...f.issued.run, phase: 'closed' });
+    assert.deepEqual(await f.reopened().sshRuns(f.vmId, 'default'), []);
+    await f.reopened().guard(f.vmId, 'default');
+    f.calls.length = 0;
+    await f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId);
+    assert.deepEqual(f.calls, [], 'retiring the confirmed original SSH ticket is idempotent');
+  }
+});
+
+test('SSH cleanup failure preserves an unissued intent and only exact RECORD_ABSENT after full domain removal can close it', async () => {
+  const f = await fixture(), owner = sshOwner(f);
+  await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+  const bytes = await readFile(f.file, 'utf8'); f.setUnknown(true); f.calls.length = 0;
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', owner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes); assert.equal(f.calls.includes('stop'), false);
+  f.setUnknown(false); f.setMissing(true); f.setAbsent(false);
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', owner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+  f.setAbsent(true); f.calls.length = 0;
+  await f.reopened().closeAfterScopeStopped(f.vmId, 'default', owner.runId);
+  assert.deepEqual(f.calls, ['confirm', 'run', 'confirm']);
+  const closed = (await f.view()).runs[0]; assert.equal(closed.phase, 'closed'); assert.equal(closed.run, null);
+});
+
+test('SSH full receipts survive missing tickets, retargeted reads, failed stops and mismatched stop receipts for exact recovery', async () => {
+  const f = await issuedSshFixture(), bytes = await readFile(f.file, 'utf8'), run = { ...f.issued.run };
+  f.calls.length = 0; f.setMissing(true);
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes); assert.equal(f.calls.includes('stop'), false);
+  f.setMissing(false); const readRun = f.core.run;
+  f.core.run = async () => ({ ...run, cgroupInode: '99' });
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes); f.core.run = readRun;
+  f.setCleanupFail(true);
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+  const stop = f.core.stop; f.setCleanupFail(false);
+  f.core.stop = async () => ({ ...run, phase: 'closed', networkInode: '99' });
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+  f.core.stop = stop;
+  await f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId);
+  assert.deepEqual((await f.view()).runs[0].run, { ...run, phase: 'closed' });
+});
+
+test('SSH old-boot intent and active receipts retire with their original ticket unchanged and never invoke native stop', async () => {
+  for (const activate of [false, true]) {
+    const f = await fixture(), owner = sshOwner(f), daemon = sshDaemon(owner);
+    await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+    if (activate) await f.scopes.activateSsh(f.vmId, 'default', owner.runId, daemon);
+    const original = (await f.view()).runs[0], bootId = randomUUID();
+    f.setBoot(bootId); f.setMissing(true); f.calls.length = 0;
+    await f.reopened().closeAfterScopeStopped(f.vmId, 'default', owner.runId);
+    assert.deepEqual(f.calls, ['confirm', 'confirm']);
+    const retired = (await f.view()).runs[0];
+    assert.deepEqual(retired, { ...original, phase: 'closed', retirement: { reason: 'guest-reboot', bootId } });
+    assert.deepEqual(await f.reopened().sshRuns(f.vmId, 'default'), []);
+    await f.reopened().guard(f.vmId, 'default');
+    await assert.rejects(f.reopened().sshRun(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    await assert.rejects(f.reopened().beginSsh(f.vmId, f.project, owner.runId, { ...owner, bootId }, {}),
+      { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.equal(f.calls.includes('run'), false); assert.equal(f.calls.includes('stop'), false);
+    assert.equal(f.calls.includes('ssh-prepare'), false);
+  }
+});
+
+test('SSH reboot retirement refuses a recreated original cgroup or an unstable current boot while retaining the full receipt', async () => {
+  const f = await issuedSshFixture('system.slice/sakura-ssh-default.service');
+  const bytes = await readFile(f.file, 'utf8'); f.setBoot(randomUUID()); f.setAbsent(false); f.calls.length = 0;
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+  f.setAbsent(true); const exec = f.machines.exec;
+  f.machines.exec = async (...args) => { const result = await exec(...args); f.setBoot(randomUUID()); return result; };
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+  assert.equal(f.calls.includes('run'), false); assert.equal(f.calls.includes('stop'), false);
+});
+
+test('SSH recovery pins a lost activation acknowledgement before stop and readonly state still refuses the unresolved intent', async () => {
+  for (const cgroupName of ['openrc.sakura-ssh-default', 'system.slice/sakura-ssh-default.service']) {
+    const f = await fixture(), owner = sshOwner(f, cgroupName), daemon = sshDaemon(owner);
+    const begun = await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, { TOKEN: 'private-ssh-recovery-token' });
+    const prepare = f.core.prepareSsh;
+    f.core.prepareSsh = async (...args) => {
+      await prepare(...args); throw new Error('owned activation acknowledgement lost after native issuance');
+    };
+    await assert.rejects(f.scopes.activateSsh(f.vmId, 'default', owner.runId, daemon), /owned activation acknowledgement lost/);
+    const bytes = await readFile(f.file, 'utf8'), intent = (await f.view()).runs[0];
+    assert.equal(intent.phase, 'intent'); assert.equal(intent.run, null);
+    f.calls.length = 0;
+    await assert.rejects(f.reopened().sshRun(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.equal(f.calls.length, 0); assert.equal(await readFile(f.file, 'utf8'), bytes);
+    f.core.prepareSsh = async () => { assert.fail('recovery must not prepare a second SSH ticket'); };
+    const recovered = await f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId);
+    assert.deepEqual(recovered, { runId: owner.runId, owner, identity: f.identity,
+      sha256: begun.snapshot.sha256, run: f.run, phase: 'active' });
+    assert.deepEqual(f.calls, ['run']);
+    assert.deepEqual((await f.view()).runs[0], { ...intent, phase: 'active', run: f.run });
+    assert.ok(!(await readFile(f.file, 'utf8')).includes('private-ssh-recovery-token'));
+    assert.deepEqual(await f.reopened().sshRuns(f.vmId, 'default'), [recovered]);
+    await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+    assert.deepEqual((await f.reopened().sshRun(f.vmId, 'default', owner.runId)).run, f.run);
+  }
+});
+
+test('SSH recovery validates the full schema and original owner before pinning any unacknowledged native receipt', async () => {
+  const f = await fixture(), owner = sshOwner(f), daemon = sshDaemon(owner);
+  await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+  await f.core.prepareSsh(f.vmId, f.identity, { runId: owner.runId, daemon, snapshotSha256: 'a'.repeat(64) });
+  const bytes = await readFile(f.file, 'utf8'), run = { ...f.run };
+  const mutations: Partial<ProjectIdentityRun>[] = [{ mode: 'independent', cgroupName: 'sakura-identity-' + owner.runId },
+    { registryId: randomUUID() }, { identityId: randomUUID() }, { revision: 2 }, { runId: randomUUID() },
+    { bootId: randomUUID() }, { cgroupName: 'system.slice/sakura-ssh-default.service' },
+    { projectId: '0123456789abcdef', cgroupName: 'openrc.sakura-ssh-0123456789abcdef' },
+    { namespace: 'sk-default' }, { networkInode: '0' }, { cgroupInode: '0' }];
+  for (const mutation of mutations) {
+    f.core.run = async () => ({ ...run, ...mutation });
+    await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.equal(await readFile(f.file, 'utf8'), bytes);
+  }
+  f.core.run = async () => { const { cgroupDevice: _discard, ...incomplete } = run; return incomplete as ProjectIdentityRun; };
+  await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+});
+
+test('SSH recovery preserves every pinned immutable inode, boot, run and build and never downgrades a full receipt to absence', async () => {
+  const f = await issuedSshFixture(), bytes = await readFile(f.file, 'utf8'), run = { ...f.issued.run };
+  const mutations: Partial<ProjectIdentityRun>[] = [{ registryId: randomUUID() }, { identityId: randomUUID() },
+    { revision: 2 }, { runId: randomUUID() }, { bootId: randomUUID() }, { build: 'b'.repeat(64) },
+    { networkDevice: '99' }, { networkInode: '99' }, { cgroupDevice: '99' }, { cgroupInode: '99' },
+    { cgroupName: 'system.slice/sakura-ssh-default.service' }, { namespace: 'sk-default' }];
+  for (const mutation of mutations) {
+    f.core.run = async () => ({ ...run, ...mutation });
+    await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', f.sshOwner.runId),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.equal(await readFile(f.file, 'utf8'), bytes);
+  }
+  const missing = new AppError('owned complete ticket disappeared', 409, 'PROJECT_IDENTITY_RECORD_ABSENT');
+  f.core.run = async () => { throw missing; };
+  await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', f.sshOwner.runId), error => error === missing);
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+});
+
+test('SSH recovery accepts only exact RECORD_ABSENT for an originally unissued intent and preserves all other query errors', async () => {
+  const f = await fixture(), owner = sshOwner(f);
+  await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+  const bytes = await readFile(f.file, 'utf8'); f.setMissing(true); f.calls.length = 0;
+  assert.equal(await f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId), null);
+  assert.deepEqual(f.calls, ['run']); assert.equal(await readFile(f.file, 'utf8'), bytes);
+  await assert.rejects(f.reopened().sshRun(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  const failures = [new AppError('owned lost native query', 502, 'PROJECT_IDENTITY_CONTROL_FAILED'),
+    new AppError('owned malformed native record', 409, 'PROJECT_IDENTITY_RECORD_SIZE'), new Error('owned transport failure'),
+    new Error('PROJECT_IDENTITY_RECORD_ABSENT')];
+  for (const failure of failures) {
+    f.core.run = async () => { throw failure; };
+    await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId), error => error === failure);
+    assert.equal(await readFile(f.file, 'utf8'), bytes);
+  }
+});
+
+test('SSH closed native recovery remains a guarded host run until its whole original cgroup is stopped', async () => {
+  const f = await issuedSshFixture('system.slice/sakura-ssh-default.service'), original = (await f.view()).runs[0];
+  const closed: ProjectIdentityRun = { ...f.issued.run, phase: 'closed' };
+  f.core.run = async () => { f.calls.push('run'); return closed; };
+  const recovered = await f.reopened().recoverSshTicket(f.vmId, 'default', f.sshOwner.runId);
+  assert.equal(recovered?.phase, 'active'); assert.deepEqual(recovered?.run, closed);
+  assert.deepEqual((await f.view()).runs[0], { ...original, run: closed, phase: 'active' });
+  await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+  f.core.runReadonly = async () => closed;
+  await assert.rejects(f.reopened().sshRun(f.vmId, 'default', f.sshOwner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  const bytes = await readFile(f.file, 'utf8');
+  f.core.run = async () => ({ ...closed, phase: 'active' });
+  await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', f.sshOwner.runId), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+  f.core.run = async () => { f.calls.push('run'); return closed; }; f.setAbsent(false); f.calls.length = 0;
+  await assert.rejects(f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId),
+    { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes); assert.deepEqual(f.calls, ['confirm']);
+  f.setAbsent(true); f.calls.length = 0;
+  await f.reopened().closeAfterScopeStopped(f.vmId, 'default', f.sshOwner.runId);
+  assert.deepEqual(f.calls, ['confirm', 'run']); assert.equal((await f.view()).runs[0].phase, 'closed');
+  assert.equal(f.calls.includes('stop'), false);
+});
+
+test('SSH closed native recovery pins a previously unissued intent without falsely retiring its host domain', async () => {
+  const f = await fixture(), owner = sshOwner(f), daemon = sshDaemon(owner);
+  await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+  await f.core.prepareSsh(f.vmId, f.identity, { runId: owner.runId, daemon, snapshotSha256: 'a'.repeat(64) });
+  f.run.phase = 'closed'; f.calls.length = 0;
+  const recovered = await f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId);
+  assert.equal(recovered?.phase, 'active'); assert.deepEqual(recovered?.run, f.run);
+  assert.deepEqual(f.calls, ['run']);
+  await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+  f.setMissing(true); const bytes = await readFile(f.file, 'utf8');
+  await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_RECORD_ABSENT' });
+  assert.equal(await readFile(f.file, 'utf8'), bytes);
+});
+
+test('SSH recovery refuses cold-boot queries and leaves old intent or full tickets to the existing reboot retirement path', async () => {
+  for (const activate of [false, true]) {
+    const f = await fixture(), owner = sshOwner(f), daemon = sshDaemon(owner);
+    await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+    if (activate) await f.scopes.activateSsh(f.vmId, 'default', owner.runId, daemon);
+    const bytes = await readFile(f.file, 'utf8'), original = (await f.view()).runs[0], bootId = randomUUID();
+    f.setBoot(bootId); f.calls.length = 0;
+    await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.equal(await readFile(f.file, 'utf8'), bytes); assert.equal(f.calls.length, 0);
+    await f.reopened().closeAfterScopeStopped(f.vmId, 'default', owner.runId);
+    assert.deepEqual(f.calls, ['confirm', 'confirm']);
+    assert.deepEqual((await f.view()).runs[0], { ...original, phase: 'closed', retirement: { reason: 'guest-reboot', bootId } });
+    f.calls.length = 0;
+    await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.equal(f.calls.length, 0);
+  }
+});
+
+test('SSH recovery rejects a changed live instance, boot or host metadata before pinning a query or accepting absence', async () => {
+  for (const absent of [false, true]) for (const change of ['live', 'boot', 'host']) {
+    const f = await fixture(), owner = sshOwner(f), daemon = sshDaemon(owner);
+    await f.scopes.beginSsh(f.vmId, f.project, owner.runId, owner, {});
+    await f.core.prepareSsh(f.vmId, f.identity, { runId: owner.runId, daemon, snapshotSha256: 'a'.repeat(64) });
+    const bytes = await readFile(f.file, 'utf8'); let expectedBytes = bytes;
+    f.core.run = async () => {
+      if (change === 'live') f.machines.live.set(f.vmId, {} as never);
+      if (change === 'boot') f.setBoot(randomUUID());
+      if (change === 'host') {
+        const journal = await f.view(); journal.runs[0].sha256 = 'b'.repeat(64);
+        expectedBytes = JSON.stringify(journal); await writeFile(f.file, expectedBytes);
+      }
+      if (absent) throw new AppError('owned absent receipt', 409, 'PROJECT_IDENTITY_RECORD_ABSENT');
+      return { ...f.run };
+    };
+    await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', owner.runId), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.equal(await readFile(f.file, 'utf8'), expectedBytes);
+    assert.equal((await f.view()).runs[0].run, null); assert.equal((await f.view()).runs[0].phase, 'intent');
+  }
+});
+
+test('SSH recovery requires the original unresolved SSH entry and never adopts a task, missing UUID or closed host ticket', async () => {
+  const f = await fixture(); await f.scopes.inherited(f.vmId, f.project, { command: 'true' }, f.owner);
+  const bytes = await readFile(f.file, 'utf8'); f.calls.length = 0;
+  for (const runId of [f.owner.runId, randomUUID()]) {
+    await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    assert.equal(await readFile(f.file, 'utf8'), bytes); assert.equal(f.calls.length, 0);
+  }
+  const g = await issuedSshFixture(); await g.scopes.closeAfterScopeStopped(g.vmId, 'default', g.sshOwner.runId);
+  const closed = await readFile(g.file, 'utf8'); g.calls.length = 0;
+  await assert.rejects(g.reopened().recoverSshTicket(g.vmId, 'default', g.sshOwner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  assert.equal(await readFile(g.file, 'utf8'), closed); assert.equal(g.calls.length, 0);
+});
+
+test('SSH recovery serializes manager instances under the project lock and honors cancellation before persistence', async () => {
+  const f = await issuedSshFixture(); f.calls.length = 0;
+  let entered!: () => void, proceed!: () => void;
+  const firstQuery = new Promise<void>(resolve => { entered = resolve; });
+  const releaseQuery = new Promise<void>(resolve => { proceed = resolve; });
+  let queries = 0;
+  f.core.run = async () => {
+    f.calls.push('run'); queries++;
+    if (queries === 1) { entered(); await releaseQuery; }
+    return { ...f.run };
+  };
+  const first = f.reopened().recoverSshTicket(f.vmId, 'default', f.sshOwner.runId);
+  await firstQuery;
+  const second = f.reopened().recoverSshTicket(f.vmId, 'default', f.sshOwner.runId);
+  await new Promise<void>(resolve => setImmediate(resolve)); assert.equal(queries, 1);
+  proceed();
+  const [a, b] = await Promise.all([first, second]); assert.deepEqual(a, b); assert.equal(queries, 2);
+  const bytes = await readFile(f.file, 'utf8'), cancellation = new AbortController();
+  f.core.run = async () => { cancellation.abort(new Error('owned recovery cancellation')); return { ...f.run }; };
+  await assert.rejects(f.reopened().recoverSshTicket(f.vmId, 'default', f.sshOwner.runId, cancellation.signal),
+    /owned recovery cancellation/);
+  assert.equal(await readFile(f.file, 'utf8'), bytes); assert.equal(f.calls.includes('ssh-prepare'), false);
 });

@@ -58,10 +58,7 @@ test('editor profiles honor saved private siblings and unreadable settings witho
   } finally {
     await rm(saved, { force: true });
   }
-  const legacy = await report(spacesFor(sharedProject));
-  assert.equal(legacy.projectScoped, false);
-  assert.equal(legacy.alias, 'sakura-test-editor');
-  assert.equal(legacy.port, 32222);
+  await assert.rejects(report(spacesFor(sharedProject)), /启用 IDE 插件/);
 });
 
 test('all editor exports share the checked project endpoint and refuse a missing one', async () => {
@@ -141,9 +138,7 @@ function contentFor(value: Record<string, unknown>) {
   return (value.download as { content: string }).content;
 }
 
-test('a shared project in an instance with a private sibling also exports its own SSH service', async () => {
-  const saved = join(vmDir(id), `project-${privateId}.json`);
-  await writeFile(saved, JSON.stringify(savedPrivate));
+test('a host-network project exports its own SSH service even without private siblings', async () => {
   const spaces = spacesFor(sharedProject),
     ide = new Ide(machines, spaces, join(directory, 'shared-client'));
   let checked: unknown;
@@ -168,7 +163,6 @@ test('a shared project in an instance with a private sibling also exports its ow
     assert.equal(value.port, 43334);
   } finally {
     await ide.close();
-    await rm(saved, { force: true });
   }
 });
 

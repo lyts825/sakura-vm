@@ -6,7 +6,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import type { Machines } from '../server/machines.ts';
 import { AppError } from '../server/model.ts';
 import { ProjectIdentities, projectIdentityAssetNames, projectIdentitySchema, projectIdentityRunSchema,
-  projectIdentitySources, projectIdentityPayload, projectIdentityNetworkSchema, type ProjectIdentityRun } from '../server/project-identity.ts';
+  projectIdentitySources, projectIdentityPayload, projectIdentityNetworkSchema, projectIdentitySshDaemonSchema,
+  type ProjectIdentityRun } from '../server/project-identity.ts';
 
 const parent = resolve('.data/project-identity-unit-tests');
 await mkdir(parent, { recursive: true });
@@ -26,22 +27,23 @@ after(async () => {
   assert.match(basename(owned), /^sakura-project-identity-unit-/);
   await rm(owned, { recursive: true, force: true });
 });
-function fixture() {
+function fixture(projectId = 'default') {
   const identityId = randomUUID(), registryId = randomUUID();
-  const identity = projectIdentitySchema.parse({ version: 1, phase: 'active', registryId, projectId: 'default',
+  const identity = projectIdentitySchema.parse({ version: 1, phase: 'active', registryId, projectId,
     identityId, revision: 1, uid: 20000, gid: 20000, account: 'skp' + identityId.replaceAll('-', '').slice(0, 24),
     home: '/var/lib/sakura-project-homes/' + identityId, homeDevice: '2049', homeInode: '800',
     directory: '/srv/project', directoryDevice: '2049', directoryInode: '900', networkIsolation: 'private' });
   const runId = randomUUID(), bootId = randomUUID();
   const run = projectIdentityRunSchema.parse({ version: 1, phase: 'active', mode: 'independent', registryId,
-    identityId, projectId: 'default', runId, revision: 1, bootId, build: manifest.build,
+    identityId, projectId, runId, revision: 1, bootId, build: manifest.build,
     networkDevice: '4', networkInode: '4026531992', cgroupDevice: '29', cgroupInode: '8100',
-    cgroupName: 'sakura-identity-' + runId, namespace: 'sk-default' });
-  const network = projectIdentityNetworkSchema.parse({ version: 1, registryId, identityId, projectId: 'default',
-    revision: 1, bootId, namespace: 'sk-default', networkDevice: run.networkDevice, networkInode: run.networkInode, generation: randomUUID() });
+    cgroupName: 'sakura-identity-' + runId, namespace: 'sk-' + projectId });
+  const network = projectIdentityNetworkSchema.parse({ version: 1, registryId, identityId, projectId,
+    revision: 1, bootId, namespace: 'sk-' + projectId, networkDevice: run.networkDevice, networkInode: run.networkInode, generation: randomUUID() });
   const commands: string[] = [], requests: Record<string, unknown>[] = [];
   const inputs: Buffer[] = [];
   let uploads = 0, cleanups = 0, mode = '', stopAttempts = 0, probeLost = false;
+  let sshRunReply: unknown, readonlyRunReply: unknown, snapshotReply: unknown, snapshotExit = 0;
   const reply = (result: unknown) => ({ code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result }) });
   const machines = {
     get: () => ({ distro: 'alpine' }),
@@ -49,6 +51,15 @@ function fixture() {
     execInput: async (_id: string, command: string, input: Buffer, _timeout?: number, signal?: AbortSignal) => {
       commands.push(command); inputs.push(Buffer.from(input));
       if (signal?.aborted) throw new AppError('owned cancellation', 409);
+      const encoded = command.match(/\/controller\.py' '([A-Za-z0-9+/=]+)'$/)?.[1];
+      if (encoded) {
+        const request = JSON.parse(Buffer.from(encoded, 'base64').toString()); requests.push(request);
+        assert.equal(request.action, 'ssh-snapshot');
+        if (mode === 'snapshot-lost') throw new Error('owned snapshot acknowledgement lost');
+        if (mode === 'snapshot-malformed') return { code: 0, stderr: '', stdout: 'not-json' };
+        return { ...reply(snapshotReply === undefined ? { version: 1, projectId: request.projectId,
+          runId: request.runId, snapshotSha256: request.snapshotSha256 } : snapshotReply), code: snapshotExit };
+      }
       return { code: 0, stdout: '', stderr: '' };
     },
     exec: async (_id: string, command: string, _timeout?: number, signal?: AbortSignal) => {
@@ -66,6 +77,8 @@ function fixture() {
           return reply({ version: 1, build: manifest.build, registryId, bootId });
         }
         if (request.action === 'prepare') return reply(mode === 'retarget' ? { ...run, identityId: randomUUID() } : run);
+        if (request.action === 'ssh-prepare') return reply(sshRunReply === undefined ? { ...run, mode: 'inherit-current',
+          runId: request.runId, bootId: request.daemon.bootId, cgroupName: request.daemon.cgroupName } : sshRunReply);
         if (request.action === 'network') return reply(mode === 'network-absent' ? null :
           mode === 'network-foreign' ? { ...network, identityId: randomUUID() } : network);
         if (request.action === 'begin-network-release') {
@@ -84,7 +97,8 @@ function fixture() {
         if (request.action === 'run-readonly') {
           if (mode === 'readonly-missing') return { code: 127, stderr: 'missing controller', stdout: '' };
           if (mode === 'readonly-absent') return { code: 1, stderr: '', stdout: JSON.stringify({ ok: false, code: 'RECORD_ABSENT' }) };
-          return reply(mode === 'readonly-old-build' ? { ...run, build: 'f'.repeat(64) } : run);
+          return reply(mode === 'readonly-old-build' ? { ...run, build: 'f'.repeat(64) } :
+            readonlyRunReply === undefined ? run : readonlyRunReply);
         }
         if (request.action === 'terminal-probe' || request.action === 'terminal-create') {
           if (mode === 'terminal-lost') throw new Error('owned terminal reply lost');
@@ -111,9 +125,17 @@ function fixture() {
   };
   return { core: new ProjectIdentities(machines as unknown as Machines, { sourceDirectory: root }), identity, run, network,
     commands, requests, inputs, setMode: (value: string) => { mode = value; }, loseProbe: () => { probeLost = true; },
+    setSshRunReply: (value: unknown) => { sshRunReply = value; },
+    setReadonlyRunReply: (value: unknown) => { readonlyRunReply = value; },
+    setSnapshotReply: (value: unknown, code = 0) => { snapshotReply = value; snapshotExit = code; },
     counts: () => ({ uploads, cleanups, stopAttempts }) };
 }
 const cleanupFailure = (error: unknown) => error instanceof AppError && error.status === 503 && error.code === 'PROJECT_IDENTITY_CLEANUP_FAILED';
+const sshMetadata = (command: string) => {
+  const encoded = command.match(/\/controller\.py' '([A-Za-z0-9+/=]+)'$/)?.[1];
+  assert.ok(encoded, 'the controller receives only a fixed metadata argument');
+  return JSON.parse(Buffer.from(encoded, 'base64').toString());
+};
 
 test('explicit asset directory is verified and substitution fails before guest installation', async () => {
   const source = await projectIdentitySources(root); assert.equal(source.manifest.build, manifest.build);
@@ -307,4 +329,141 @@ test('release rejects local foreign leases before transport and retains uncertai
   await assert.rejects(f.core.releaseNetwork('owned-vm', f.identity, lease, cancellation.signal),
     (error: unknown) => error instanceof AppError && error.status === 503 && error.code === 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED');
   assert.ok(f.requests.filter(request => request.action === 'release-network').every(request => request.releaseId === lease.releaseId));
+});
+
+test('SSH snapshot generation and publication keep exact UTF8 environment bytes on stdin and only identity plus digest in argv', async () => {
+  const f = fixture('0123456789abcdef'), runId = randomUUID();
+  const environment = { TOKEN: 'private-ssh-token-雪', BASH_ENV: 'private-ssh-init;$(id)', LD_PRELOAD: 'private-ssh-library' };
+  const expected = { registryId: f.identity.registryId, identityId: f.identity.identityId, revision: f.identity.revision };
+  const snapshot = await f.core.sshSnapshotInput(f.identity, runId, environment);
+  assert.deepEqual(JSON.parse(snapshot.input.toString('utf8')),
+    { version: 1, projectId: f.identity.projectId, runId, identity: expected, environment });
+  assert.equal(snapshot.sha256, createHash('sha256').update(snapshot.input).digest('hex'));
+  assert.equal(snapshot.build, manifest.build); assert.equal(snapshot.runId, runId);
+  const metadata = { action: 'ssh-snapshot', projectId: f.identity.projectId, expected, runId, snapshotSha256: snapshot.sha256 };
+  assert.deepEqual(sshMetadata(snapshot.command), metadata);
+  assert.equal(f.commands.length, 0, 'creating the frozen snapshot does not contact or install guest helpers');
+  await f.core.publishSshSnapshot('owned-vm', f.identity, snapshot);
+  assert.deepEqual(f.inputs, [snapshot.input]); assert.deepEqual(f.requests, [metadata]);
+  assert.equal(f.commands.length, 1); assert.equal(f.counts().uploads, 0); assert.equal(f.counts().cleanups, 0);
+  assert.match(f.commands[0], /^env -i .* \/usr\/bin\/python3 -I -S /);
+  assert.ok(!f.commands[0].includes('private-ssh-') && !JSON.stringify(sshMetadata(f.commands[0])).includes('private-ssh-'));
+});
+
+test('SSH snapshot refusal prevents changed bytes, builds, identity environment and invalid UTF8 from reaching guest transport', async () => {
+  const f = fixture(), runId = randomUUID();
+  const invalidEnvironments: Record<string, string>[] = [{ HOME: '/foreign' }, { USER: 'root' }, { LOGNAME: 'root' },
+    { TOKEN: 'bad\0value' }, { TOKEN: '\ud800' }, { 'INVALID-NAME': 'value' },
+    { TOKEN: 'x'.repeat(8193) }, Object.fromEntries(Array.from({ length: 129 }, (_, index) => ['KEY' + index, 'value']))];
+  for (const environment of invalidEnvironments) {
+    await assert.rejects(f.core.sshSnapshotInput(f.identity, runId, environment));
+  }
+  await assert.rejects(f.core.sshSnapshotInput({ ...f.identity, phase: 'intent' }, runId),
+    { code: 'PROJECT_IDENTITY_INCOMPLETE' });
+  const snapshot = await f.core.sshSnapshotInput(f.identity, runId, { TOKEN: 'frozen-value' });
+  await assert.rejects(f.core.publishSshSnapshot('owned-vm', f.identity,
+    { ...snapshot, input: Buffer.from(snapshot.input.toString().replace('frozen-value', 'foreign-value')) }),
+    { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  await assert.rejects(f.core.publishSshSnapshot('owned-vm', f.identity, { ...snapshot, build: 'f'.repeat(64) }),
+    { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  assert.deepEqual(f.commands, []); assert.deepEqual(f.inputs, []); assert.equal(f.counts().uploads, 0);
+});
+
+test('SSH snapshot publication requires the exact successful project, run and digest receipt', async () => {
+  const f = fixture(), snapshot = await f.core.sshSnapshotInput(f.identity, randomUUID(), { TOKEN: 'private-ssh-token' });
+  const receipt = { version: 1, projectId: f.identity.projectId, runId: snapshot.runId, snapshotSha256: snapshot.sha256 };
+  for (const value of [{ ...receipt, projectId: '0123456789abcdef' }, { ...receipt, runId: randomUUID() },
+    { ...receipt, snapshotSha256: 'f'.repeat(64) }, { ...receipt, version: 2 }, { ...receipt, extra: true }, null]) {
+    f.setSnapshotReply(value);
+    await assert.rejects(f.core.publishSshSnapshot('owned-vm', f.identity, snapshot),
+      { code: 'PROJECT_IDENTITY_SSH_SNAPSHOT_FAILED' });
+  }
+  f.setSnapshotReply(receipt, 1);
+  await assert.rejects(f.core.publishSshSnapshot('owned-vm', f.identity, snapshot),
+    { code: 'PROJECT_IDENTITY_SSH_SNAPSHOT_FAILED' });
+  f.setSnapshotReply(receipt); f.setMode('snapshot-malformed');
+  await assert.rejects(f.core.publishSshSnapshot('owned-vm', f.identity, snapshot),
+    { code: 'PROJECT_IDENTITY_SSH_SNAPSHOT_FAILED' });
+  f.setMode('snapshot-lost');
+  await assert.rejects(f.core.publishSshSnapshot('owned-vm', f.identity, snapshot), /owned snapshot acknowledgement lost/);
+  assert.ok(f.inputs.every(input => input.equals(snapshot.input)));
+  assert.ok(f.requests.every(request => request.action === 'ssh-snapshot'));
+  assert.equal(f.counts().uploads, 0);
+});
+
+test('SSH ForceCommand is one fixed isolated Python entry that preserves sshd client environment without placing code in argv', async () => {
+  const f = fixture(), snapshot = await f.core.sshSnapshotInput(f.identity, randomUUID(), { TOKEN: 'private-ssh-client-token' });
+  const command = await f.core.sshSessionCommand(f.identity, snapshot);
+  assert.match(command, new RegExp("^/usr/bin/python3 -I -S '/usr/local/lib/sakura-project-identity/" + manifest.build + "/controller\\.py' "));
+  assert.ok(!command.includes('env -i') && !command.includes('/bin/sh') && !command.includes('SSH_ORIGINAL_COMMAND'));
+  assert.deepEqual(sshMetadata(command), { action: 'ssh-session', projectId: f.identity.projectId,
+    expected: { registryId: f.identity.registryId, identityId: f.identity.identityId, revision: f.identity.revision },
+    runId: snapshot.runId, snapshotSha256: snapshot.sha256 });
+  assert.ok(!command.includes('private-ssh-client-token') && !JSON.stringify(sshMetadata(command)).includes('private-ssh-client-token'));
+  await assert.rejects(f.core.sshSessionCommand(f.identity, { ...snapshot, build: 'f'.repeat(64) }),
+    { code: 'PROJECT_IDENTITY_RUN_BUILD_STALE' });
+  assert.deepEqual(f.commands, []); assert.equal(f.counts().uploads, 0);
+});
+
+test('SSH inherited cgroups accept only the exact project OpenRC or systemd service while UUID domains and independent mode keep their rules', () => {
+  for (const projectId of ['default', '0123456789abcdef']) {
+    const f = fixture(projectId), names = ['openrc.sakura-ssh-' + projectId, 'system.slice/sakura-ssh-' + projectId + '.service'];
+    for (const cgroupName of names) {
+      assert.equal(projectIdentityRunSchema.safeParse({ ...f.run, mode: 'inherit-current', cgroupName }).success, true);
+      assert.equal(projectIdentitySshDaemonSchema.safeParse({ pid: 321, startTicks: '91', bootId: f.run.bootId, cgroupName }).success, true);
+      assert.equal(projectIdentityRunSchema.safeParse({ ...f.run, cgroupName }).success, false);
+    }
+    const foreign = projectId === 'default' ? '0123456789abcdef' : 'default';
+    for (const cgroupName of ['openrc.sakura-ssh-' + foreign, 'system.slice/sakura-ssh-' + foreign + '.service',
+      names[0] + '/child', names[1] + '/child', 'system.slice/../' + names[0], '/' + names[1],
+      'system.slice//sakura-ssh-' + projectId + '.service', 'user.slice/sakura-ssh-' + projectId + '.service',
+      'sakura-ssh-' + projectId, names[1] + '.suffix'])
+      assert.equal(projectIdentityRunSchema.safeParse({ ...f.run, mode: 'inherit-current', cgroupName }).success, false, cgroupName);
+    for (const kind of ['task', 'main', 'service'])
+      assert.equal(projectIdentityRunSchema.safeParse({ ...f.run, mode: 'inherit-current', cgroupName: 'sakura-' + kind + '-' + randomUUID() }).success, true);
+    assert.equal(projectIdentityRunSchema.safeParse(f.run).success, true);
+  }
+});
+
+test('SSH native preparation pins the exact daemon and binding metadata and requires an active inherited receipt', async () => {
+  for (const cgroupName of ['openrc.sakura-ssh-default', 'system.slice/sakura-ssh-default.service']) {
+    const f = fixture(), runId = randomUUID(), daemon = { pid: 321, startTicks: '91', bootId: f.run.bootId, cgroupName };
+    const snapshot = await f.core.sshSnapshotInput(f.identity, runId, { TOKEN: 'private-ssh-token' });
+    const issued = await f.core.prepareSsh('owned-vm', f.identity, { runId, daemon, snapshotSha256: snapshot.sha256 });
+    assert.deepEqual(issued, { ...f.run, mode: 'inherit-current', runId, bootId: daemon.bootId, cgroupName });
+    const request = f.requests.find(request => request.action === 'ssh-prepare');
+    assert.deepEqual(request, { action: 'ssh-prepare', projectId: f.identity.projectId,
+      expected: { registryId: f.identity.registryId, identityId: f.identity.identityId, revision: f.identity.revision },
+      runId, snapshotSha256: snapshot.sha256, daemon });
+    assert.ok(!JSON.stringify(request).includes('private-ssh-token'));
+    const mutations: Partial<ProjectIdentityRun>[] = [{ identityId: randomUUID() }, { registryId: randomUUID() },
+      { revision: 2 }, { projectId: '0123456789abcdef', namespace: 'sk-0123456789abcdef', cgroupName: 'openrc.sakura-ssh-0123456789abcdef' },
+      { phase: 'closed' }, { mode: 'independent', cgroupName: 'sakura-identity-' + runId },
+      { runId: randomUUID() }, { bootId: randomUUID() }, { namespace: '' },
+      { cgroupName: cgroupName.startsWith('openrc.') ? 'system.slice/sakura-ssh-default.service' : 'openrc.sakura-ssh-default' }];
+    for (const mutation of mutations) {
+      f.setSshRunReply({ ...issued, ...mutation });
+      await assert.rejects(f.core.prepareSsh('owned-vm', f.identity, { runId, daemon, snapshotSha256: snapshot.sha256 }),
+        { code: 'PROJECT_IDENTITY_RUN_STALE' });
+    }
+    f.setSshRunReply({ ...issued, cgroupInode: '0' });
+    await assert.rejects(f.core.prepareSsh('owned-vm', f.identity, { runId, daemon, snapshotSha256: snapshot.sha256 }),
+      { code: 'PROJECT_IDENTITY_CONTROL_FAILED' });
+  }
+});
+
+test('SSH daemon scope validation refuses another project or traversal before installation and readonly probes never install', async () => {
+  const f = fixture(), runId = randomUUID(), daemon = { pid: 321, startTicks: '91', bootId: f.run.bootId,
+    cgroupName: 'openrc.sakura-ssh-0123456789abcdef' };
+  await assert.rejects(f.core.prepareSsh('owned-vm', f.identity, { runId, daemon, snapshotSha256: 'b'.repeat(64) }),
+    { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  for (const cgroupName of ['system.slice/../openrc.sakura-ssh-default', 'openrc.sakura-ssh-default/child'])
+    await assert.rejects(f.core.prepareSsh('owned-vm', f.identity,
+      { runId, daemon: { ...daemon, cgroupName }, snapshotSha256: 'b'.repeat(64) }));
+  assert.equal(f.commands.length, 0); assert.equal(f.counts().uploads, 0);
+  const run = { ...f.run, mode: 'inherit-current' as const, runId, cgroupName: 'system.slice/sakura-ssh-default.service' };
+  f.setReadonlyRunReply(run);
+  assert.deepEqual(await f.core.runReadonly('owned-vm', f.identity, runId), run);
+  assert.deepEqual(f.requests.map(request => request.action), ['run-readonly']);
+  assert.equal(f.counts().uploads, 0); assert.equal(f.counts().cleanups, 0);
 });

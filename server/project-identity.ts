@@ -38,7 +38,8 @@ export const projectIdentityRunSchema = z.object({
 }).strict().superRefine((value, ctx) => {
   if (value.cgroupInode === '0' || value.networkInode === '0' ||
       (value.mode === 'independent' ? value.cgroupName !== 'sakura-identity-' + value.runId :
-        !/^sakura-(task|main|service)-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.cgroupName)) ||
+        !/^sakura-(task|main|service)-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.cgroupName) &&
+        !['openrc.sakura-ssh-' + value.projectId, 'system.slice/sakura-ssh-' + value.projectId + '.service'].includes(value.cgroupName)) ||
       (value.namespace !== '' && value.namespace !== 'sk-' + value.projectId))
     ctx.addIssue({ code: 'custom', message: '项目运行票据不完整' });
 });
@@ -93,6 +94,12 @@ const executableOptionsSchema = z.object({ command: z.string().min(1).max(65536)
 export type ProjectIdentityExecution = { command: string; environment?: Record<string, string> };
 export type ProjectIdentityInput = { command: string; input: Buffer; sha256: string };
 export type ProjectIdentityInheritedInput = ProjectIdentityInput & { runId: string };
+export const projectIdentitySshDaemonSchema = z.object({ pid: z.number().int().min(1),
+  startTicks: decimal.refine(value => value !== '0'), bootId: uuid,
+  cgroupName: z.string().regex(/^(openrc\.sakura-ssh-(default|[a-f0-9]{16})|system\.slice\/sakura-ssh-(default|[a-f0-9]{16})\.service)$/),
+}).strict();
+export type ProjectIdentitySshDaemon = z.infer<typeof projectIdentitySshDaemonSchema>;
+export type ProjectIdentitySshSnapshot = ProjectIdentityInput & { build: string; runId: string };
 export const projectIdentityTerminalSchema = z.object({ version: z.literal(1), terminalId: uuid,
   run: projectIdentityRunSchema, name: z.string().regex(/^sakura-terminal-(default|[a-f0-9]{16})-[a-z0-9-]{1,48}$/),
   serverPid: z.number().int().min(1), serverTicks: decimal,
@@ -132,7 +139,7 @@ export class ProjectIdentities {
     const build = readonly ? (await this.build()).manifest.build : await this.install(vmId, signal);
     // Full admission can validate 1024 receipts and durably retire 512. Keep
     // its finite budget separate from ordinary reads and exact cancellation.
-    const timeoutMs = 'action' in request && (request.action === 'prepare' || request.action === 'terminal-create') ? 180000 : 40000;
+    const timeoutMs = 'action' in request && ['prepare', 'terminal-create', 'ssh-prepare'].includes(String(request.action)) ? 180000 : 40000;
     const result = await this.machines.exec(vmId, this.controlCommand(build, request), timeoutMs, signal);
     let reply: { ok: boolean; result?: unknown; code?: string; detail?: unknown };
     try { reply = JSON.parse(result.stdout); } catch {
@@ -265,6 +272,62 @@ directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(dir
     const run = await this.control(vmId, { action: 'prepare', projectId: identity.projectId, expected: expectedIdentity(identity),
       runId: options.runId ? uuid.parse(options.runId) : randomUUID() }, projectIdentityRunSchema, signal);
     this.match(identity, run); return run;
+  }
+  async sshSnapshotInput(identity: ProjectIdentity, runId: string,
+    environment: Record<string, string> = {}): Promise<ProjectIdentitySshSnapshot> {
+    identity = projectIdentitySchema.parse(identity); runId = uuid.parse(runId);
+    if (identity.phase !== 'active') throw new AppError('项目账户尚未完成', 409, 'PROJECT_IDENTITY_INCOMPLETE');
+    const validated = executableOptionsSchema.parse({ command: 'true', environment });
+    const input = Buffer.from(JSON.stringify({ version: 1, projectId: identity.projectId, runId,
+      identity: expectedIdentity(identity), environment: validated.environment }));
+    if (input.length > 131072) throw new AppError('项目 SSH 环境超过传输边界', 413);
+    const sha256 = createHash('sha256').update(input).digest('hex'), build = (await this.build()).manifest.build;
+    return { input, sha256, build, runId, command: this.controlCommand(build, { action: 'ssh-snapshot',
+      projectId: identity.projectId, expected: expectedIdentity(identity), runId, snapshotSha256: sha256 }) };
+  }
+  async publishSshSnapshot(vmId: string, identity: ProjectIdentity, snapshot: ProjectIdentitySshSnapshot,
+    signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const source = await this.build();
+    if (snapshot.build !== source.manifest.build || createHash('sha256').update(snapshot.input).digest('hex') !== snapshot.sha256)
+      throw new AppError('项目 SSH 环境快照已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+    const command = this.controlCommand(snapshot.build, { action: 'ssh-snapshot', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId: uuid.parse(snapshot.runId), snapshotSha256: digest.parse(snapshot.sha256) });
+    const result = await this.machines.execInput(vmId, command, snapshot.input, 40000, signal);
+    const schema = z.object({ ok: z.literal(true), result: z.object({ version: z.literal(1), projectId,
+      runId: uuid, snapshotSha256: digest }).strict() }).strict();
+    let reply: z.infer<typeof schema>;
+    try { reply = schema.parse(JSON.parse(result.stdout)); } catch {
+      throw new AppError('项目 SSH 环境快照写入未确认', 409, 'PROJECT_IDENTITY_SSH_SNAPSHOT_FAILED');
+    }
+    if (result.code !== 0 || reply.result.projectId !== identity.projectId || reply.result.runId !== snapshot.runId ||
+        reply.result.snapshotSha256 !== snapshot.sha256)
+      throw new AppError('项目 SSH 环境快照不属于本次运行', 409, 'PROJECT_IDENTITY_SSH_SNAPSHOT_FAILED');
+  }
+  async prepareSsh(vmId: string, identity: ProjectIdentity, options: { runId: string;
+    snapshotSha256: string; daemon: ProjectIdentitySshDaemon }, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const daemon = projectIdentitySshDaemonSchema.parse(options.daemon);
+    const names = ['openrc.sakura-ssh-' + identity.projectId, 'system.slice/sakura-ssh-' + identity.projectId + '.service'];
+    if (!names.includes(daemon.cgroupName)) throw new AppError('SSH 服务域属于其他项目', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    const run = await this.control(vmId, { action: 'ssh-prepare', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId: uuid.parse(options.runId),
+      snapshotSha256: digest.parse(options.snapshotSha256), daemon }, projectIdentityRunSchema, signal);
+    this.match(identity, run);
+    if (run.mode !== 'inherit-current' || run.phase !== 'active' || run.runId !== options.runId ||
+        run.bootId !== daemon.bootId || run.cgroupName !== daemon.cgroupName)
+      throw new AppError('项目 SSH 完整运行归属未确认', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    return run;
+  }
+  async sshSessionCommand(identity: ProjectIdentity, snapshot: Pick<ProjectIdentitySshSnapshot, 'build' | 'runId' | 'sha256'>) {
+    identity = projectIdentitySchema.parse(identity);
+    const source = await this.build();
+    if (source.manifest.build !== snapshot.build) throw new AppError('SSH 启动器构建已改变', 409, 'PROJECT_IDENTITY_RUN_BUILD_STALE');
+    // SSH_ORIGINAL_COMMAND and the environment snapshot are data consumed by
+    // the fixed controller; neither is included in this privileged argv.
+    return this.controlCommand(snapshot.build, { action: 'ssh-session', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId: uuid.parse(snapshot.runId), snapshotSha256: digest.parse(snapshot.sha256) })
+      .slice(fixedEnvironment.length + 1);
   }
   private match(identity: ProjectIdentity, run: ProjectIdentityRun) {
     for (const key of ['registryId', 'identityId', 'projectId', 'revision'] as const)

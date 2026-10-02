@@ -45,6 +45,13 @@ RUN_LIMIT = 1024
 RUN_ARCHIVE_BATCH = 512
 RUN_ARCHIVE_BUCKET_LIMIT = 4096
 TERMINALS = '/run/sakura-project-terminals'
+SSH_CONFIG = '/etc/sakura/ssh'
+SSH_SNAPSHOT_LIMIT = 131072
+SSH_TEXT_LIMIT = 65536
+SSH_ENV_LIMIT = 128
+SSH_ENTRY_LIMIT = 8192
+SSH_INPUT_TIMEOUT = 8
+SSH_SESSION_ERRORS = False
 
 
 class Refusal(Exception):
@@ -260,7 +267,8 @@ def run_decode(run, data):
     if mode == 'independent':
         if cgroup != 'sakura-identity-' + run:
             refuse('CGROUP_IDENTITY')
-    elif not re.fullmatch('sakura-(task|main|service)-' + UUID.pattern, cgroup):
+    elif not re.fullmatch('sakura-(task|main|service)-' + UUID.pattern, cgroup) and \
+         cgroup not in ('openrc.sakura-ssh-' + project, 'system.slice/sakura-ssh-' + project + '.service'):
         refuse('CGROUP_IDENTITY')
     if namespace and namespace != 'sk-' + project:
         refuse('NETWORK_BINDING')
@@ -792,7 +800,7 @@ def network_ready(value, boot):
             refuse('NETWORK_RETIREMENT_PENDING')
 
 
-def network_fd(value, boot):
+def network_fd(value, boot, readonly=False):
     network_ready(value, boot)
     namespace = 'sk-' + value['projectId'] if value['networkIsolation'] == 'private' else ''
     try:
@@ -835,8 +843,12 @@ def network_fd(value, boot):
         if epoch is not None and epoch['phase'] == 'active' and (prior is None or network_plain(epoch['network']) != pinned):
             refuse('NETWORK_REPLACED')
         if prior is None:
+            if readonly:
+                refuse('NETWORK_ABSENT')
             json_write(pin_path, pinned)
         if namespace and (epoch is None or epoch['phase'] == 'retired'):
+            if readonly:
+                refuse('NETWORK_GENERATION_INVALID')
             network = dict(pinned, projectId=value['projectId'], generation=str(uuid.uuid4()))
             json_write(network_path(value['projectId'], '.generation.json'), {'version': 1, 'phase': 'active', 'network': network})
         return descriptor, info, namespace
@@ -1154,18 +1166,37 @@ def release_network(value, request, boot, control_lock):
             os.close(descriptor)
 
 
-def cgroup_fd(value):
-    cgroup_available(False)
+def cgroup_name_fd(name):
+    # Service cgroups can have a system.slice parent. Verify every component,
+    # rather than passing a slash-containing name to one final nofollow open.
+    if not isinstance(name, str) or any(not part or part in ('.', '..') for part in name.split('/')):
+        refuse('CGROUP_IDENTITY')
     parent = directory_fd(CGROUP)
     try:
-        try:
-            descriptor = os.open(value['cgroupName'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
-        except FileNotFoundError:
-            return None
+        for part in name.split('/'):
+            descriptor = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+            try:
+                trusted(os.fstat(descriptor), True)
+            except BaseException:
+                os.close(descriptor)
+                raise
+            os.close(parent)
+            parent = descriptor
+        descriptor = parent
+        parent = None
+        return descriptor
     finally:
-        os.close(parent)
+        if parent is not None:
+            os.close(parent)
+
+
+def cgroup_fd(value):
+    cgroup_available(False)
+    try:
+        descriptor = cgroup_name_fd(value['cgroupName'])
+    except FileNotFoundError:
+        return None
     info = os.fstat(descriptor)
-    trusted(info, True)
     if not same(info, value, 'cgroup'):
         os.close(descriptor)
         refuse('CGROUP_REPLACED')
@@ -1382,9 +1413,14 @@ def check_run(value, run, boot, require_active=True):
         refuse('RUN_CLOSED')
 
 
-def current_cgroup():
+def current_cgroup(inherited_name=None):
     with open('/proc/self/cgroup', 'r') as stream:
         membership = stream.read(4097)
+    if inherited_name is not None:
+        if not re.fullmatch(r'(openrc\.sakura-ssh-(default|[a-f0-9]{16})|system\.slice/sakura-ssh-(default|[a-f0-9]{16})\.service)', inherited_name) or \
+           membership != '0::/' + inherited_name + '\n':
+            refuse('CGROUP_MEMBERSHIP')
+        return inherited_name
     if not re.fullmatch('0::/(sakura-(task|main|service)-' + UUID.pattern + r')\n', membership):
         refuse('INHERITED_CGROUP_UNREGISTERED')
     return membership[4:].strip()
@@ -1495,7 +1531,12 @@ def migration_retire_applied(value):
     durable_unlink(MIGRATIONS + '/' + value['projectId'] + '/latch.json')
 
 
-def prepare(value, request, boot, build, inherit=False):
+def prepare(value, request, boot, build, inherit=False, inherited_name=None, inherited_info=None, before_publish=None):
+    # Only ssh-prepare supplies this internal extension after proving the root
+    # daemon. exec-current still requires its own exact UUID owner domain.
+    if inherited_name is not None and (not inherit or inherited_name not in
+            ('openrc.sakura-ssh-' + value['projectId'], 'system.slice/sakura-ssh-' + value['projectId'] + '.service') or inherited_info is None):
+        refuse('INHERITED_CGROUP_UNREGISTERED')
     migration_ready(value)
     network_ready(value, boot)
     # One bounded, validated snapshot under the same registry EX lock. Every
@@ -1531,12 +1572,16 @@ def prepare(value, request, boot, build, inherit=False):
             check_run(value, run, boot)
             if run['build'] != build or run['mode'] != ('inherit-current' if inherit else 'independent'):
                 refuse('RUN_STALE')
-            if inherit and current_cgroup() != run['cgroupName']:
+            if inherit and (inherited_name if inherited_name is not None else current_cgroup()) != run['cgroupName']:
                 refuse('CGROUP_MEMBERSHIP')
             descriptor = cgroup_fd(run)
             if descriptor is None:
                 refuse('CGROUP_ABSENT')
-            os.close(descriptor)
+            try:
+                if inherited_info is not None and (os.fstat(descriptor).st_dev, os.fstat(descriptor).st_ino) != (inherited_info.st_dev, inherited_info.st_ino):
+                    refuse('CGROUP_REPLACED')
+            finally:
+                os.close(descriptor)
             fd, info, namespace = network_fd(value, boot)
             os.close(fd)
             if not same(info, run, 'network') or namespace != run['namespace']:
@@ -1551,21 +1596,23 @@ def prepare(value, request, boot, build, inherit=False):
         refuse('RUN_ID_COLLISION')
     network, network_info, namespace = network_fd(value, boot)
     try:
-        name = current_cgroup() if inherit else 'sakura-identity-' + run_id
-        parent = directory_fd(CGROUP)
-        try:
-            if not inherit:
+        name = (inherited_name if inherited_name is not None else current_cgroup()) if inherit else 'sakura-identity-' + run_id
+        if not inherit:
+            parent = directory_fd(CGROUP)
+            try:
                 try:
                     os.mkdir(name, 0o755, dir_fd=parent)
                 except FileExistsError:
                     # No ticket authorizes adoption of an existing namespace.
                     refuse('CGROUP_ALREADY_EXISTS')
-            descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
-        finally:
-            os.close(parent)
+            finally:
+                os.close(parent)
+        descriptor = cgroup_name_fd(name)
         try:
             info = os.fstat(descriptor)
             trusted(info, True)
+            if inherited_info is not None and (info.st_dev, info.st_ino) != (inherited_info.st_dev, inherited_info.st_ino):
+                refuse('CGROUP_REPLACED')
             # Independent cancellation must include detached descendants.
             if not inherit:
                 kill = os.open('cgroup.kill', os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=descriptor)
@@ -1576,6 +1623,8 @@ def prepare(value, request, boot, build, inherit=False):
                    'networkDevice': str(network_info.st_dev), 'networkInode': str(network_info.st_ino),
                    'cgroupDevice': str(info.st_dev), 'cgroupInode': str(info.st_ino), 'cgroupName': name,
                    'namespace': namespace}
+            if before_publish is not None:
+                before_publish(run)
             run_write(run)
             return run
         finally:
@@ -1584,8 +1633,31 @@ def prepare(value, request, boot, build, inherit=False):
         os.close(network)
 
 
-def stop(value, run, boot):
+def stop(value, run, boot, partial_ssh=False):
     check_run(value, run, boot, False)
+    ssh = run['mode'] == 'inherit-current' and run['cgroupName'] in \
+        ('openrc.sakura-ssh-' + value['projectId'], 'system.slice/sakura-ssh-' + value['projectId'] + '.service')
+    if partial_ssh and not ssh:
+        refuse('SSH_RECEIPT_STALE')
+    if ssh:
+        # A missing receipt can result from an interrupted ticket publication;
+        # cleanup remains reachable, but can never authorize a session.
+        ssh_receipt_read(run['runId'], run, missing=True, closed=True)
+        descriptor = cgroup_fd(run)
+        if descriptor is not None:
+            os.close(descriptor)
+            # The host owns the complete service domain. A native closed
+            # phase must never be published while that original group exists.
+            refuse('PROJECT_IDENTITY_CLEANUP_FAILED')
+        if partial_ssh:
+            # Preserve the full original proof before retiring a receipt that
+            # was published before an interrupted native ticket write. This
+            # cannot launch: its original group is absent, and the EX lock is
+            # held through receipt retirement and the final closed phase.
+            ssh_cleanup_materialize(run)
+        # Receipt retirement is confirmed first. Failure leaves the active
+        # native ticket/host intent blocking recovery; sessions fail closed.
+        ssh_receipt_retire(run['runId'])
     run['phase'] = 'closed'
     run_write(run)
     if run['mode'] == 'inherit-current':
@@ -1688,7 +1760,7 @@ def initialize():
                        (BASE + '/uids', 0o700), (HOMES, 0o711), (RUNTIME, 0o700),
                        (RUNTIME + '/runs', 0o700), (RUNTIME + '/archives', 0o700),
                        (RUNTIME + '/networks', 0o700), (RUNTIME + '/terminals', 0o700),
-                       (RUNTIME + '/terminal-locks', 0o700),
+                       (RUNTIME + '/terminal-locks', 0o700), (RUNTIME + '/ssh', 0o700),
                        (TERMINALS, 0o711)):
         if path == '/var/lib/sakura' and os.path.exists(path):
             fd = directory_fd(path)
@@ -1740,6 +1812,571 @@ def launch_argv(value, run, request, build):
     # parses, interprets or records any project command/environment.
     return [BUILDS + '/' + build + '/launch', '--project', value['projectId'], value['identityId'],
             str(value['revision']), run['runId'], '--payload', digest]
+
+
+def ssh_json(raw):
+    def pairs(items):
+        result = {}
+        for key, item in items:
+            if key in result:
+                refuse('SSH_RECORD_INVALID')
+            result[key] = item
+        return result
+    try:
+        return json.loads(raw.decode('utf-8', 'strict'), object_pairs_hook=pairs)
+    except (ValueError, UnicodeError):
+        refuse('SSH_RECORD_INVALID')
+
+
+def ssh_digest(value):
+    return identifier(value, re.compile('[a-f0-9]{64}'), 'SSH_SNAPSHOT_DIGEST')
+
+
+def ssh_identity(value):
+    if not isinstance(value, dict) or set(value) != {'registryId', 'identityId', 'revision'} or \
+       type(value['revision']) is not int or not 1 <= value['revision'] <= 9007199254740991:
+        refuse('EXPECTED_IDENTITY')
+    for key in ('registryId', 'identityId'):
+        identifier(value[key], UUID, 'EXPECTED_IDENTITY')
+    return value
+
+
+def ssh_request(request):
+    keys = {'action', 'projectId', 'expected', 'runId', 'snapshotSha256'}
+    if request['action'] == 'ssh-prepare':
+        keys.add('daemon')
+    if set(request) != keys:
+        refuse('REQUEST_SCHEMA')
+    ssh_identity(request['expected'])
+    identifier(request['runId'], UUID, 'RUN_ID')
+    ssh_digest(request['snapshotSha256'])
+
+
+def ssh_text(value, code):
+    if not isinstance(value, str) or '\0' in value:
+        refuse(code)
+    try:
+        return value.encode('utf-8', 'strict')
+    except UnicodeError:
+        refuse(code)
+
+
+def ssh_environment(environment):
+    if not isinstance(environment, dict) or len(environment) > SSH_ENV_LIMIT:
+        refuse('SSH_ENVIRONMENT_BOUND')
+    total = 0
+    for key, value in environment.items():
+        if not isinstance(key, str) or not re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,127}', key):
+            refuse('SSH_ENVIRONMENT_NAME')
+        if key in ('HOME', 'USER', 'LOGNAME'):
+            refuse('SSH_ENVIRONMENT_IDENTITY')
+        size = len(key.encode('ascii')) + 1 + len(ssh_text(value, 'SSH_ENVIRONMENT_VALUE'))
+        if size > SSH_ENTRY_LIMIT:
+            refuse('SSH_ENVIRONMENT_BOUND')
+        total += size
+        if total > SSH_TEXT_LIMIT:
+            refuse('SSH_ENVIRONMENT_BOUND')
+    return total
+
+
+def ssh_snapshot_path(project):
+    return SSH_CONFIG + '/' + identifier(project, PROJECT, 'PROJECT_ID') + '/session.json'
+
+
+def ssh_receipt_path(run_id):
+    return RUNTIME + '/ssh/' + identifier(run_id, UUID, 'RUN_ID') + '.json'
+
+
+def ssh_receipt_retire(run_id):
+    path = ssh_receipt_path(run_id)
+    authority = directory_fd(os.path.dirname(path))
+    try:
+        parent = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=authority)
+    finally:
+        os.close(authority)
+    try:
+        try:
+            os.unlink(os.path.basename(path), dir_fd=parent)
+        except FileNotFoundError:
+            pass
+        # Even absence must be fsynced: a previous unlink may have succeeded
+        # while its directory fsync failed before the closed phase was saved.
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+
+
+def ssh_atomic(path, data):
+    # Retain the fully walked root-owned parent through publication/fsync.
+    parent_path = os.path.dirname(path)
+    authority = directory_fd(parent_path)
+    try:
+        parent = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=authority)
+    finally:
+        os.close(authority)
+    temporary = '.record-' + str(uuid.uuid4())
+    created = False
+    try:
+        try:
+            trusted(os.stat(os.path.basename(path), dir_fd=parent, follow_symlinks=False), mode=0o600)
+        except FileNotFoundError:
+            pass
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                             0o600, dir_fd=parent)
+        created = True
+        try:
+            os.fchmod(descriptor, 0o600)
+            trusted(os.fstat(descriptor), mode=0o600)
+            view = memoryview(data)
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    refuse('SSH_RECORD_WRITE_FAILED')
+                view = view[written:]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(temporary, os.path.basename(path), src_dir_fd=parent, dst_dir_fd=parent)
+        created = False
+        os.fsync(parent)
+    finally:
+        try:
+            if created:
+                os.unlink(temporary, dir_fd=parent)
+        finally:
+            os.close(parent)
+
+
+def ssh_snapshot_decode(raw, value=None, run_id=None, digest=None):
+    if len(raw) > SSH_SNAPSHOT_LIMIT:
+        refuse('SSH_SNAPSHOT_BOUND')
+    if digest is not None and hashlib.sha256(raw).hexdigest() != digest:
+        refuse('SSH_SNAPSHOT_DIGEST')
+    record = ssh_json(raw)
+    if not isinstance(record, dict) or set(record) != {'version', 'projectId', 'runId', 'identity', 'environment'} or \
+       type(record['version']) is not int or record['version'] != 1:
+        refuse('SSH_SNAPSHOT_INVALID')
+    identifier(record['projectId'], PROJECT, 'SSH_SNAPSHOT_INVALID')
+    identifier(record['runId'], UUID, 'SSH_SNAPSHOT_INVALID')
+    ssh_identity(record['identity'])
+    ssh_environment(record['environment'])
+    if value is not None and (record['projectId'] != value['projectId'] or any(
+            record['identity'][key] != value[key] for key in ('registryId', 'identityId', 'revision'))):
+        refuse('SSH_SNAPSHOT_STALE')
+    if run_id is not None and record['runId'] != run_id:
+        refuse('SSH_SNAPSHOT_STALE')
+    return record
+
+
+def ssh_snapshot_input():
+    descriptor = 0
+    flags = fcntl.fcntl(descriptor, fcntl.F_GETFL)
+    if flags & os.O_ACCMODE == os.O_WRONLY:
+        refuse('SSH_SNAPSHOT_INPUT')
+    fcntl.fcntl(descriptor, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+    result = bytearray()
+    deadline = time.monotonic() + SSH_INPUT_TIMEOUT
+    try:
+        # select also accepts regular input files; epoll would reject them.
+        with selectors.SelectSelector() as poller:
+            poller.register(descriptor, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not poller.select(remaining):
+                    refuse('SSH_SNAPSHOT_TIMEOUT')
+                try:
+                    data = os.read(descriptor, min(4096, SSH_SNAPSHOT_LIMIT + 1 - len(result)))
+                except (BlockingIOError, InterruptedError):
+                    continue
+                if not data:
+                    return bytes(result)
+                result.extend(data)
+                if len(result) > SSH_SNAPSHOT_LIMIT:
+                    refuse('SSH_SNAPSHOT_BOUND')
+    finally:
+        fcntl.fcntl(descriptor, fcntl.F_SETFL, flags)
+
+
+def ssh_payload(value, environment, original, term):
+    import shlex
+    command = ssh_text(original, 'SSH_COMMAND_BOUND')
+    if len(command) > SSH_TEXT_LIMIT:
+        refuse('SSH_COMMAND_BOUND')
+    term = 'xterm-256color' if term is None else term
+    if not isinstance(term, str) or not re.fullmatch('[\x20-\x7e]{1,128}', term):
+        refuse('SSH_TERM_BOUND')
+    script = ('exec /bin/sh -c ' + shlex.quote(original)) if original else 'exec /bin/sh -l'
+    script_bytes = ssh_text(script, 'SSH_COMMAND_BOUND')
+    environment = dict(environment)
+    environment['VSCODE_AGENT_FOLDER'] = value['home'] + '/.vscode-server'
+    environment['TERM'] = term
+    total = ssh_environment(environment) + len(script_bytes)
+    if total > SSH_TEXT_LIMIT:
+        refuse('SSH_PAYLOAD_BOUND')
+    body = bytearray(script_bytes)
+    for key, content in sorted(environment.items()):
+        key_bytes, content_bytes = key.encode('ascii'), ssh_text(content, 'SSH_ENVIRONMENT_VALUE')
+        body.extend(struct.pack('<II', len(key_bytes), len(content_bytes)))
+        body.extend(key_bytes)
+        body.extend(content_bytes)
+    payload = struct.pack('<8sIIIIII', b'SKIDP001', 1, 2, len(body), len(environment), len(script_bytes), 0) + body
+    if len(payload) > SSH_SNAPSHOT_LIMIT:
+        refuse('SSH_PAYLOAD_BOUND')
+    return payload
+
+
+def ssh_daemon_record(daemon, project):
+    if not isinstance(daemon, dict) or set(daemon) != {'pid', 'startTicks', 'bootId', 'cgroupName'} or \
+       type(daemon['pid']) is not int or not 1 <= daemon['pid'] <= 2147483647:
+        refuse('SSH_DAEMON_INVALID')
+    identifier(daemon['bootId'], UUID, 'SSH_DAEMON_INVALID')
+    if not isinstance(daemon['startTicks'], str) or not re.fullmatch('[1-9][0-9]{0,19}', daemon['startTicks']) or \
+       int(daemon['startTicks']) > 18446744073709551615:
+        refuse('SSH_DAEMON_INVALID')
+    if daemon['cgroupName'] not in ('openrc.sakura-ssh-' + project, 'system.slice/sakura-ssh-' + project + '.service'):
+        refuse('SSH_DAEMON_SCOPE')
+    return daemon
+
+
+def ssh_receipt_read(run_id, run=None, missing=False, closed=False):
+    raw = read(ssh_receipt_path(run_id), 8192, missing)
+    if raw is None:
+        return None
+    receipt = ssh_json(raw)
+    if not isinstance(receipt, dict) or set(receipt) != {'version', 'run', 'daemon', 'snapshotSha256'} or \
+       type(receipt['version']) is not int or receipt['version'] != 1:
+        refuse('SSH_RECEIPT_INVALID')
+    recorded = receipt['run']
+    keys = {'version', 'phase', 'mode', 'registryId', 'identityId', 'projectId', 'runId', 'revision', 'bootId',
+            'build', 'networkDevice', 'networkInode', 'cgroupDevice', 'cgroupInode', 'cgroupName', 'namespace'}
+    if not isinstance(recorded, dict) or set(recorded) != keys or any(
+            type(item) is not (int if key in ('version', 'revision') else str) for key, item in recorded.items()) or \
+       not 1 <= recorded['revision'] <= 9007199254740991:
+        refuse('SSH_RECEIPT_INVALID')
+    for key in ('networkDevice', 'networkInode', 'cgroupDevice', 'cgroupInode'):
+        if not re.fullmatch('0|[1-9][0-9]{0,19}', recorded[key]) or int(recorded[key]) > 18446744073709551615:
+            refuse('SSH_RECEIPT_INVALID')
+    if recorded != run_decode(run_id, run_bytes(recorded)) or recorded['phase'] != 'active' or \
+       recorded['mode'] != 'inherit-current' or recorded['networkInode'] == '0' or recorded['cgroupInode'] == '0':
+        refuse('SSH_RECEIPT_INVALID')
+    daemon = ssh_daemon_record(receipt['daemon'], recorded['projectId'])
+    if daemon['bootId'] != recorded['bootId'] or daemon['cgroupName'] != recorded['cgroupName']:
+        refuse('SSH_RECEIPT_INVALID')
+    ssh_digest(receipt['snapshotSha256'])
+    if run is not None and recorded != (dict(run, phase='active') if closed else run):
+        refuse('SSH_RECEIPT_STALE')
+    return receipt
+
+
+def ssh_cleanup_receipt(value, run_id, boot):
+    receipt = ssh_receipt_read(run_id, missing=True)
+    if receipt is None:
+        refuse('RECORD_ABSENT')
+    run = receipt['run']
+    check_run(value, run, boot)
+    if run['mode'] != 'inherit-current' or run['cgroupName'] not in (
+            'openrc.sakura-ssh-' + value['projectId'], 'system.slice/sakura-ssh-' + value['projectId'] + '.service'):
+        refuse('SSH_RECEIPT_STALE')
+    return run
+
+
+def ssh_cleanup_materialize(run):
+    # The caller has proved the original group absent while holding EX. Never
+    # replace a hot ticket or revive an archived UUID, including on retries.
+    run_id = run['runId']
+    ssh_receipt_read(run_id, run)
+    if run_archive_read(run_id) is not None:
+        refuse('RUN_ARCHIVED')
+    if read(run_path(run_id), RUN.size, True) is not None:
+        refuse('RUN_ID_COLLISION')
+    if len(run_entries()) >= RUN_LIMIT:
+        refuse('RUN_LIMIT')
+    authority = directory_fd(RUNTIME + '/runs')
+    try:
+        parent = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=authority)
+    finally:
+        os.close(authority)
+    temporary = '.record-' + str(uuid.uuid4())
+    created = published = False
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                             0o600, dir_fd=parent)
+        created = True
+        try:
+            os.fchmod(descriptor, 0o600)
+            trusted(os.fstat(descriptor), mode=0o600)
+            view = memoryview(run_bytes(run))
+            while view:
+                written = os.write(descriptor, view)
+                if written <= 0:
+                    refuse('SSH_RECORD_WRITE_FAILED')
+                view = view[written:]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        if run_archive_read(run_id) is not None:
+            refuse('RUN_ARCHIVED')
+        run_archive_publish(parent, temporary, run_id + '.bin')
+        published = True
+        os.fsync(parent)
+    finally:
+        try:
+            if created and not published:
+                try:
+                    os.unlink(temporary, dir_fd=parent)
+                except FileNotFoundError:
+                    pass
+        finally:
+            os.close(parent)
+
+
+def ssh_daemon_arguments(raw, project):
+    fixed = SSH_CONFIG + '/' + project + '/sshd_config'
+    if not raw or not raw.endswith(b'\0'):
+        refuse('SSH_DAEMON_COMMAND')
+    try:
+        arguments = raw.rstrip(b'\0').decode('utf-8', 'strict').split('\0')
+    except UnicodeError:
+        refuse('SSH_DAEMON_COMMAND')
+    if arguments == ['/usr/sbin/sshd', '-D', '-e', '-f', fixed]:
+        return
+    # OpenSSH's listener title retains its complete original argv. Only that
+    # fixed command and the known listener counters can replace NUL argv.
+    title = 'sshd: /usr/sbin/sshd -D -e -f ' + fixed + ' [listener] '
+    if len(arguments) != 1 or not re.fullmatch(re.escape(title) + '[0-9]{1,10} of [0-9]{1,10}-[0-9]{1,10} startups', arguments[0]):
+        refuse('SSH_DAEMON_COMMAND')
+
+
+def ssh_daemon_check(value, daemon, boot, run=None):
+    ssh_daemon_record(daemon, value['projectId'])
+    if daemon['bootId'] != boot:
+        refuse('SSH_DAEMON_BOOT')
+    cgroup_available(False)
+    scope = cgroup_name_fd(daemon['cgroupName'])
+    try:
+        scope_info = os.fstat(scope)
+        if run is not None and (run['cgroupName'] != daemon['cgroupName'] or not same(scope_info, run, 'cgroup')):
+            refuse('CGROUP_REPLACED')
+        parent = directory_fd('/proc')
+        try:
+            process = os.open(str(daemon['pid']), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        finally:
+            os.close(parent)
+        try:
+            trusted(os.fstat(process), True)
+            def proc_read(name, limit):
+                descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=process)
+                try:
+                    result = bytearray()
+                    while len(result) <= limit:
+                        data = os.read(descriptor, min(4096, limit + 1 - len(result)))
+                        if not data:
+                            return bytes(result)
+                        result.extend(data)
+                    refuse('SSH_DAEMON_PROCESS_BOUND')
+                finally:
+                    os.close(descriptor)
+            def process_ticks():
+                raw = proc_read('stat', 4096).decode('ascii', 'strict')
+                fields = raw[raw.rindex(')') + 2:].split()
+                if len(fields) < 20 or fields[0] in ('Z', 'X', 'x') or fields[19] != daemon['startTicks']:
+                    refuse('SSH_DAEMON_CHANGED')
+                return fields[19]
+            process_ticks()
+            if not re.search(rb'^Uid:\s+0\s+0\s+0\s+0$', proc_read('status', 65536), re.M) or \
+               os.readlink('exe', dir_fd=process) != '/usr/sbin/sshd':
+                refuse('SSH_DAEMON_IDENTITY')
+            ssh_daemon_arguments(proc_read('cmdline', 8192), value['projectId'])
+            if proc_read('cgroup', 4096) != ('0::/' + daemon['cgroupName'] + '\n').encode('ascii'):
+                refuse('SSH_DAEMON_SCOPE')
+            if run is not None:
+                namespace_parent = os.open('ns', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=process)
+                try:
+                    namespace = os.open('net', os.O_RDONLY | os.O_CLOEXEC, dir_fd=namespace_parent)
+                finally:
+                    os.close(namespace_parent)
+                try:
+                    info = os.fstat(namespace)
+                    if info.st_uid != 0 or fcntl.ioctl(namespace, 0xb703) != 0x40000000 or not same(info, run, 'network'):
+                        refuse('SSH_DAEMON_NETWORK')
+                finally:
+                    os.close(namespace)
+            process_ticks()
+            if os.readlink('exe', dir_fd=process) != '/usr/sbin/sshd':
+                refuse('SSH_DAEMON_CHANGED')
+        finally:
+            os.close(process)
+        # Reopening through the protected name detects a substituted group.
+        current = cgroup_name_fd(daemon['cgroupName'])
+        try:
+            now = os.fstat(current)
+            if (now.st_dev, now.st_ino) != (scope_info.st_dev, scope_info.st_ino):
+                refuse('CGROUP_REPLACED')
+        finally:
+            os.close(current)
+        return scope_info
+    finally:
+        os.close(scope)
+
+
+def ssh_snapshot(value, request, raw, boot, build):
+    digest, run_id = request['snapshotSha256'], request['runId']
+    record = ssh_snapshot_decode(raw, value, run_id, digest)
+    migration_ready(value)
+    # Reserve enough entries/bytes for fixed identity-local editor storage and
+    # a TERM, and prove that even an empty login command fits the native frame.
+    ssh_payload(value, record['environment'], '', None)
+    if run_archive_read(run_id) is not None:
+        refuse('RUN_ARCHIVED')
+    receipt = ssh_receipt_read(run_id, missing=True)
+    if receipt is not None:
+        check_run(value, receipt['run'], boot)
+        if receipt['snapshotSha256'] != digest or receipt['run']['build'] != build:
+            refuse('SSH_SNAPSHOT_STALE')
+    for run in runs_for(value):
+        if run['runId'] == run_id:
+            check_run(value, run, boot)
+            if receipt is None or receipt['run'] != run or run['build'] != build:
+                refuse('SSH_RECEIPT_STALE')
+        elif run['phase'] == 'active' and run['cgroupName'] in (
+                'openrc.sakura-ssh-' + value['projectId'], 'system.slice/sakura-ssh-' + value['projectId'] + '.service'):
+            refuse('SSH_RUNS_MUST_STOP')
+    for path in ('/etc/sakura', SSH_CONFIG, SSH_CONFIG + '/' + value['projectId']):
+        parent = directory_fd(os.path.dirname(path))
+        try:
+            try:
+                os.mkdir(os.path.basename(path), 0o700, dir_fd=parent)
+            except FileExistsError:
+                pass
+        finally:
+            os.close(parent)
+        descriptor = directory_fd(path)
+        os.close(descriptor)
+    prior = read(ssh_snapshot_path(value['projectId']), SSH_SNAPSHOT_LIMIT, True)
+    if prior is not None:
+        old = ssh_snapshot_decode(prior)
+        if old['runId'] == run_id and prior != raw:
+            refuse('SSH_SNAPSHOT_CHANGED')
+    if prior != raw:
+        ssh_atomic(ssh_snapshot_path(value['projectId']), raw)
+    return {'version': 1, 'projectId': value['projectId'], 'runId': run_id, 'snapshotSha256': digest}
+
+
+def ssh_prepare(value, request, boot, build):
+    snapshot = read(ssh_snapshot_path(value['projectId']), SSH_SNAPSHOT_LIMIT)
+    ssh_snapshot_decode(snapshot, value, request['runId'], request['snapshotSha256'])
+    daemon = ssh_daemon_record(request['daemon'], value['projectId'])
+    info = ssh_daemon_check(value, daemon, boot)
+    prior = ssh_receipt_read(request['runId'], missing=True)
+    if prior is not None and (prior['daemon'] != daemon or prior['snapshotSha256'] != request['snapshotSha256']):
+        refuse('SSH_RECEIPT_STALE')
+    if prior is None and read(run_path(request['runId']), RUN.size, True) is not None:
+        refuse('SSH_RECEIPT_ABSENT')
+    def publish(run):
+        ssh_daemon_check(value, daemon, boot, run)
+        receipt = {'version': 1, 'run': run, 'daemon': daemon, 'snapshotSha256': request['snapshotSha256']}
+        if prior is not None:
+            if prior != receipt:
+                refuse('SSH_RECEIPT_STALE')
+        else:
+            # Pin the original daemon before making its ticket launchable. A
+            # crash between these writes can retry only the identical proof.
+            ssh_atomic(ssh_receipt_path(run['runId']),
+                       (json.dumps(receipt, separators=(',', ':'), sort_keys=True) + '\n').encode('utf-8'))
+    run = prepare(value, request, boot, build, True, daemon['cgroupName'], info, publish)
+    receipt = ssh_receipt_read(run['runId'], run)
+    if receipt['daemon'] != daemon or receipt['snapshotSha256'] != request['snapshotSha256']:
+        refuse('SSH_RECEIPT_STALE')
+    ssh_daemon_check(value, daemon, boot, run)
+    return run
+
+
+def ssh_checked_run(value, run, boot, build, snapshot_sha256=None):
+    check_run(value, run, boot)
+    if run['mode'] != 'inherit-current' or run['build'] != build:
+        refuse('SSH_RUN_STALE')
+    receipt = ssh_receipt_read(run['runId'], run)
+    if snapshot_sha256 is not None and receipt['snapshotSha256'] != snapshot_sha256:
+        refuse('SSH_SNAPSHOT_STALE')
+    ssh_daemon_check(value, receipt['daemon'], boot, run)
+    migration_ready(value)
+    descriptor, info, namespace = network_fd(value, boot, readonly=True)
+    try:
+        if not same(info, run, 'network') or namespace != run['namespace']:
+            refuse('NETWORK_REPLACED')
+    finally:
+        os.close(descriptor)
+    record = ssh_snapshot_decode(read(ssh_snapshot_path(value['projectId']), SSH_SNAPSHOT_LIMIT),
+                                 value, run['runId'], receipt['snapshotSha256'])
+    return record
+
+
+def ssh_session(value, request, boot, build, original, term):
+    run = run_read(request['runId'])
+    current_cgroup(run['cgroupName'])
+    record = ssh_checked_run(value, run, boot, build, request['snapshotSha256'])
+    return run, ssh_payload(value, record['environment'], original, term)
+
+
+def ssh_launch(value, run, build, payload):
+    info = os.fstat(0)
+    flags = fcntl.fcntl(0, fcntl.F_GETFL)
+    if flags & os.O_ACCMODE == os.O_WRONLY or not (stat.S_ISFIFO(info.st_mode) or stat.S_ISSOCK(info.st_mode) or
+                                                  (stat.S_ISCHR(info.st_mode) and os.isatty(0))):
+        refuse('SSH_SESSION_INPUT')
+    arguments = launch_argv(value, run, {'payloadSha256': hashlib.sha256(payload).hexdigest()}, build)
+    # main has closed every metadata/authority descriptor. fd 3 is exclusively
+    # the untouched SSH input channel; the frame gets a separate stdin pipe.
+    os.dup2(0, 3)
+    try:
+        child = subprocess.Popen(arguments, stdin=subprocess.PIPE, stdout=None, stderr=None,
+                                 env=CLEAN_ENV, close_fds=True, pass_fds=(3,))
+    finally:
+        os.close(3)
+    prior_signals = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGQUIT, signal.SIGHUP, signal.SIGTERM)}
+    def cancelled(signum, _frame):
+        if child.poll() is None:
+            child.send_signal(signum)
+        refuse('CONTROL_CANCELLED')
+    try:
+        for signum in (signal.SIGINT, signal.SIGQUIT):
+            signal.signal(signum, signal.SIG_IGN)
+        for signum in (signal.SIGHUP, signal.SIGTERM):
+            signal.signal(signum, cancelled)
+        os.set_blocking(child.stdin.fileno(), False)
+        deadline = time.monotonic() + SSH_INPUT_TIMEOUT
+        with selectors.DefaultSelector() as poller:
+            poller.register(child.stdin, selectors.EVENT_WRITE)
+            view = memoryview(payload)
+            while view:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not poller.select(remaining):
+                    refuse('SSH_PAYLOAD_TIMEOUT')
+                try:
+                    written = os.write(child.stdin.fileno(), view)
+                except (BlockingIOError, InterruptedError):
+                    continue
+                if written <= 0:
+                    refuse('SSH_PAYLOAD_INPUT')
+                view = view[written:]
+        child.stdin.close()
+        code = child.wait()
+        return code if code >= 0 else 128 - code
+    finally:
+        for signum, handler in prior_signals.items():
+            signal.signal(signum, handler)
+        if not child.stdin.closed:
+            child.stdin.close()
+        if child.poll() is None:
+            child.terminate()
+            try:
+                child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                try:
+                    child.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    refuse('SSH_SESSION_CLEANUP_FAILED')
 
 
 def terminal_path(run_id):
@@ -2049,14 +2686,11 @@ def terminal_retire(value, run):
 
 
 def main():
-    if os.getuid() != 0 or os.geteuid() != 0:
-        refuse('ROOT_CONTROL_REQUIRED')
-    os.environ.clear()
-    os.environ.update(CLEAN_ENV)
-    def interrupted(_signum, _frame):
-        refuse('CONTROL_CANCELLED')
-    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(signum, interrupted)
+    global SSH_SESSION_ERRORS
+    SSH_SESSION_ERRORS = False
+    # Only these two SSH values can affect a session. Capture before clearing
+    # the root environment; snapshot keys never select the client command.
+    original, term = os.environ.get('SSH_ORIGINAL_COMMAND', ''), os.environ.get('TERM')
     if len(sys.argv) != 2 or len(sys.argv[1]) > 131072:
         refuse('REQUEST_BOUND')
     try:
@@ -2066,6 +2700,15 @@ def main():
         request = json.loads(raw)
     except (ValueError, UnicodeError):
         refuse('REQUEST_JSON')
+    SSH_SESSION_ERRORS = isinstance(request, dict) and request.get('action') == 'ssh-session'
+    os.environ.clear()
+    os.environ.update(CLEAN_ENV)
+    if os.getuid() != 0 or os.geteuid() != 0:
+        refuse('ROOT_CONTROL_REQUIRED')
+    def interrupted(_signum, _frame):
+        refuse('CONTROL_CANCELLED')
+    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(signum, interrupted)
     if not isinstance(request, dict) or not isinstance(request.get('action'), str):
         refuse('REQUEST_SCHEMA')
     action = request['action']
@@ -2079,6 +2722,9 @@ def main():
                'release-network': {'projectId', 'expected', 'releaseId', 'network'},
                'rebind': {'projectId', 'expected', 'directory', 'networkIsolation'},
                'exec-current': {'projectId', 'expected', 'runId', 'payloadSha256'},
+               'ssh-snapshot': {'projectId', 'expected', 'runId', 'snapshotSha256'},
+               'ssh-prepare': {'projectId', 'expected', 'runId', 'snapshotSha256', 'daemon'},
+               'ssh-session': {'projectId', 'expected', 'runId', 'snapshotSha256'},
                'terminal-create': {'projectId', 'expected', 'runId', 'name'},
                'terminal-probe': {'projectId', 'expected', 'runId', 'name'},
                'terminal-attach': {'projectId', 'expected', 'runId', 'name', 'readOnly'},
@@ -2087,13 +2733,17 @@ def main():
         refuse('REQUEST_SCHEMA')
     if action != 'install':
         identifier(request.get('projectId'), PROJECT, 'PROJECT_ID')
+    if action in ('ssh-snapshot', 'ssh-prepare', 'ssh-session'):
+        ssh_request(request)
     build = sources()
     boot = open('/proc/sys/kernel/random/boot_id').read().strip()
     identifier(boot, UUID, 'BOOT_ID')
-    readonly = action in ('run-readonly', 'terminal-probe', 'terminal-attach')
+    snapshot_input = ssh_snapshot_input() if action == 'ssh-snapshot' else None
+    readonly = action in ('run-readonly', 'terminal-probe', 'terminal-attach', 'ssh-session')
     lock = initialize_readonly() if readonly else initialize()
     args = None
     terminal = None
+    ssh = None
     try:
         store = registry(readonly)
         if action == 'install':
@@ -2114,6 +2764,15 @@ def main():
             result = prepare(value, request, boot, build, action == 'exec-current')
             if action == 'exec-current':
                 args = launch_argv(value, result, request, build)
+        elif action in ('ssh-snapshot', 'ssh-prepare', 'ssh-session'):
+            value = active(request['projectId'], request, store)
+            if action == 'ssh-snapshot':
+                result = ssh_snapshot(value, request, snapshot_input, boot, build)
+            elif action == 'ssh-prepare':
+                result = ssh_prepare(value, request, boot, build)
+            else:
+                run, payload = ssh_session(value, request, boot, build, original, term)
+                ssh = (value, run, payload)
         elif action.startswith('terminal-'):
             value = binding_read(request['projectId'])
             reservation_check(value, store)
@@ -2139,12 +2798,25 @@ def main():
             reservation_check(value, store)
             expected(value, request)
             run_id = identifier(request.get('runId'), UUID, 'RUN_ID')
-            run = run_read(run_id)
+            partial_ssh = False
+            try:
+                run = run_read(run_id)
+            except Refusal as error:
+                if action not in ('run', 'stop') or error.code != 'RECORD_ABSENT':
+                    raise
+                # Cleanup reads may recover an original pre-ticket receipt.
+                # Readonly probes and sessions always require a native ticket.
+                run = ssh_cleanup_receipt(value, run_id, boot)
+                partial_ssh = True
             check_run(value, run, boot, False)
             if action in ('run', 'run-readonly'):
+                if action == 'run-readonly' and run['phase'] == 'active' and run['mode'] == 'inherit-current' and run['cgroupName'] in (
+                        'openrc.sakura-ssh-' + value['projectId'], 'system.slice/sakura-ssh-' + value['projectId'] + '.service'):
+                    value = active(request['projectId'], request, store)
+                    ssh_checked_run(value, run, boot, build)
                 result = run
             elif action == 'stop':
-                result = stop(value, run, boot)
+                result = stop(value, run, boot, partial_ssh)
             else:
                 descriptor = cgroup_fd(run)
                 try:
@@ -2177,6 +2849,9 @@ def main():
         os.close(lock)
     if args is not None:
         os.execve(args[0], args, CLEAN_ENV)
+    if ssh is not None:
+        value, run, payload = ssh
+        raise SystemExit(ssh_launch(value, run, build, payload))
     if terminal is not None:
         # Launcher entry must not inherit or wait behind our registry lock.
         value, run, name, terminal_descriptor = terminal
@@ -2211,8 +2886,10 @@ if __name__ == '__main__':
     try:
         main()
     except Refusal as error:
-        print(json.dumps({'ok': False, 'code': error.code, 'detail': error.detail}, separators=(',', ':')))
+        print(json.dumps({'ok': False, 'code': error.code, 'detail': error.detail}, separators=(',', ':')),
+              file=sys.stderr if SSH_SESSION_ERRORS else sys.stdout)
         sys.exit(1)
     except (OSError, ValueError, KeyError, TypeError, struct.error):
-        print('{"ok":false,"code":"CONTROL_STATE_INVALID","detail":null}')
+        print('{"ok":false,"code":"CONTROL_STATE_INVALID","detail":null}',
+              file=sys.stderr if SSH_SESSION_ERRORS else sys.stdout)
         sys.exit(1)

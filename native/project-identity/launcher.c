@@ -170,10 +170,10 @@ static void current_cgroup(char out[64]) {
     if (strncmp(raw, "0::/", 4) || raw[n - 1] != '\n' || memchr(raw, '\n', (size_t)n - 1))
         refuse("CGROUP_MEMBERSHIP");
     raw[n - 1] = 0;
-    if (strlen(raw + 4) >= 64 || strchr(raw + 4, '/')) refuse("CGROUP_MEMBERSHIP");
+    if (strlen(raw + 4) >= 64) refuse("CGROUP_MEMBERSHIP");
     strcpy(out, raw + 4);
 }
-static bool cgroup_name(const struct sk_run *r) {
+static bool cgroup_name(const struct sk_run *r, const struct sk_binding *b) {
     if (r->mode == SK_RUN_INDEPENDENT) {
         char expected[64]; path(expected, sizeof(expected), "sakura-identity-%s%s", r->run, "");
         return !strcmp(r->cgroup, expected);
@@ -183,7 +183,28 @@ static bool cgroup_name(const struct sk_run *r) {
         size_t n = strlen(prefixes[i]);
         if (!strncmp(r->cgroup, prefixes[i], n) && uuid(r->cgroup + n)) return true;
     }
-    return false;
+    char expected[64]; path(expected, sizeof(expected), "openrc.sakura-ssh-%s%s", b->project, "");
+    if (!strcmp(r->cgroup, expected)) return true;
+    path(expected, sizeof(expected), "system.slice/sakura-ssh-%s.service", b->project, "");
+    return !strcmp(r->cgroup, expected);
+}
+static int cgroup_directory(const char *name) {
+    char copy[64];
+    if (!name[0] || name[0] == '/' || strlen(name) >= sizeof(copy)) refuse("CGROUP_REPLACED");
+    strcpy(copy, name);
+    int fd = open_directory("/sys/fs/cgroup", true);
+    for (char *part = copy;;) {
+        char *slash = strchr(part, '/');
+        if (slash) *slash = 0;
+        if (!part[0] || !strcmp(part, ".") || !strcmp(part, "..")) refuse("CGROUP_REPLACED");
+        int next = openat(fd, part, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+        close(fd); fd = next;
+        struct stat s;
+        if (fd < 0 || fstat(fd, &s)) refuse("CGROUP_REPLACED");
+        trusted(&s, true);
+        if (!slash) return fd;
+        part = slash + 1;
+    }
 }
 static void validate_binding(const struct sk_binding *b, const char *project) {
     if (memcmp(b->magic, "SKIDB001", 8) || b->version != SK_ID_VERSION || b->flags != SK_ID_ACTIVE ||
@@ -233,7 +254,7 @@ static void validate_run(const struct sk_run *r, const struct sk_binding *b, con
     char boot[37]; boot_id(boot);
     if (strcmp(r->registry, b->registry) || strcmp(r->identity, b->identity) || strcmp(r->project, b->project) ||
         strcmp(r->run, run) || !uuid(r->run) || r->revision != b->revision || strcmp(r->boot, boot) ||
-        strcmp(r->build, PROJECT_BUILD) || !cgroup_name(r)) refuse("RUN_IDENTITY");
+        strcmp(r->build, PROJECT_BUILD) || !cgroup_name(r, b)) refuse("RUN_IDENTITY");
     char namespace_name[32] = "";
     if (b->network == SK_NETWORK_PRIVATE) path(namespace_name, sizeof(namespace_name), "sk-%s%s", b->project, "");
     if (strcmp(r->namespace_name, namespace_name)) refuse("NETWORK_BINDING");
@@ -272,16 +293,24 @@ static void capabilities_drop(uint32_t uid, uint32_t gid) {
         saved_gid != gid || getgroups(0, NULL) != 0 || syscall(SYS_capget, &header, data) ||
         !zero(data, sizeof(data)) || prctl(PR_GET_NO_NEW_PRIVS, 0L, 0L, 0L, 0L) != 1) refuse("ACCOUNT_DROP_VERIFY");
 }
-static void close_extra_fds_except(int preserve) {
+static bool session_input_valid(void) {
+    struct stat s;
+    int flags = fcntl(3, F_GETFL);
+    return flags >= 0 && !(flags & O_PATH) &&
+        ((flags & O_ACCMODE) == O_RDONLY || (flags & O_ACCMODE) == O_RDWR) &&
+        !fstat(3, &s) && (S_ISFIFO(s.st_mode) || S_ISSOCK(s.st_mode) || (S_ISCHR(s.st_mode) && isatty(3)));
+}
+static void close_extra_fds_except(int preserve, bool keep_session) {
 #ifdef SYS_close_range
-    bool first = preserve <= 3 || !syscall(SYS_close_range, 3u, (unsigned)preserve - 1u, 0u);
-    bool second = !syscall(SYS_close_range, (unsigned)(preserve < 3 ? 3 : preserve + 1), ~0u, 0u);
+    unsigned start = keep_session ? 4u : 3u;
+    bool first = preserve <= (int)start || !syscall(SYS_close_range, start, (unsigned)preserve - 1u, 0u);
+    bool second = !syscall(SYS_close_range, preserve < (int)start ? start : (unsigned)preserve + 1u, ~0u, 0u);
     if (first && second) return;
     if (errno != ENOSYS && errno != EINVAL) refuse("FD_CLEANUP");
 #endif
     long limit = sysconf(_SC_OPEN_MAX);
     if (limit < 0 || limit > 1048576) refuse("FD_BOUND");
-    for (int fd = 3; fd < limit; ++fd) if (fd != preserve) close(fd);
+    for (int fd = 3; fd < limit; ++fd) if (fd != preserve && (!keep_session || fd != 3)) close(fd);
 }
 static uint32_t rotate(uint32_t v, unsigned n) { return (v >> n) | (v << (32u - n)); }
 static void sha_block(uint32_t state[8], const unsigned char block[64]) {
@@ -352,7 +381,7 @@ struct payload {
     char *keys[SK_PAYLOAD_ENV_LIMIT], *values[SK_PAYLOAD_ENV_LIMIT];
 };
 static uint32_t little(const unsigned char *p) { return p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24); }
-static struct payload payload_read(const char *expected) {
+static struct payload payload_read(const char *expected, bool session_input) {
     struct payload value = {0}; struct stat input_info;
     if (fstat(STDIN_FILENO,&input_info) || (!S_ISFIFO(input_info.st_mode) && !S_ISSOCK(input_info.st_mode))) refuse("PAYLOAD_INPUT_TYPE");
     int flags=fcntl(STDIN_FILENO,F_GETFL);
@@ -373,7 +402,7 @@ static struct payload payload_read(const char *expected) {
     if (value.wire_size<sizeof(struct sk_payload_header)) refuse("PAYLOAD_TRUNCATED");
     struct sk_payload_header header; memcpy(&header,value.wire,sizeof(header));
     if (memcmp(header.magic,"SKIDP001",8) || header.version!=SK_PAYLOAD_VERSION ||
-        (header.flags & ~SK_PAYLOAD_TERMINAL) || header.reserved)
+        (header.flags && header.flags!=SK_PAYLOAD_TERMINAL && header.flags!=SK_PAYLOAD_SESSION) || header.reserved)
         refuse("PAYLOAD_HEADER");
     if (header.body_size!=value.wire_size-sizeof(header)) refuse("PAYLOAD_LENGTH");
     if (!header.script_size || header.script_size>SK_PAYLOAD_TEXT_LIMIT || header.script_size>header.body_size ||
@@ -389,6 +418,8 @@ static struct payload payload_read(const char *expected) {
             fstat(STDOUT_FILENO,&terminal_info) || !S_ISCHR(terminal_info.st_mode) ||
             !isatty(STDOUT_FILENO)) refuse("PAYLOAD_TERMINAL_REQUIRED");
     }
+    if ((value.flags & SK_PAYLOAD_SESSION) && (!session_input || !session_input_valid()))
+        refuse("PAYLOAD_SESSION_REQUIRED");
     size_t offset=sizeof(header)+header.script_size, total=header.script_size;
     for (unsigned i=0;i<header.environment_count;++i) {
         if (value.wire_size-offset<8) refuse("PAYLOAD_LENGTH");
@@ -414,6 +445,17 @@ static struct payload payload_read(const char *expected) {
 }
 static void wipe(void *buffer, size_t size) { volatile unsigned char *p=buffer; while (size--) *p++=0; }
 static void payload_exec(struct payload *value) {
+    if (value->flags & SK_PAYLOAD_SESSION) {
+        if (dup2(3,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
+    } else if (value->flags & SK_PAYLOAD_TERMINAL) {
+        if (dup2(STDOUT_FILENO,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
+    } else {
+        int input=open("/dev/null",O_RDONLY|O_CLOEXEC); if (input<0 || dup2(input,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
+        if (input!=STDIN_FILENO) close(input);
+    }
+    /* The accepted session descriptor is no longer needed after dup2. Release
+     * it before the sealed script takes fd 3; no authority fd reaches exec. */
+    close(3);
     int descriptor=memfd_create("sakura-project-script",MFD_CLOEXEC|MFD_ALLOW_SEALING);
     if (descriptor<0) refuse("PAYLOAD_MEMFD");
     size_t done=0;
@@ -434,19 +476,16 @@ static void payload_exec(struct payload *value) {
         free(value->keys[i]);free(value->values[i]);
     }
     wipe(value->wire,value->wire_size);free(value->wire);
-    if (value->flags & SK_PAYLOAD_TERMINAL) {
-        if (dup2(STDOUT_FILENO,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
-    } else {
-        int input=open("/dev/null",O_RDONLY|O_CLOEXEC); if (input<0 || dup2(input,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
-        if (input!=STDIN_FILENO) close(input);
-    }
     if (readable!=3) { if (dup2(readable,3)<0) refuse("PAYLOAD_MEMFD"); close(readable); }
     if (fcntl(3,F_SETFD,0)) refuse("PAYLOAD_MEMFD");
-    close_extra_fds_except(3);
+    close_extra_fds_except(3, false);
     char *arguments[]={"/bin/sh","/proc/self/fd/3",NULL};
     execv(arguments[0],arguments); refuse("COMMAND_EXEC");
 }
 int main(int argc, char **argv) {
+    /* Snapshot fd 3 before native_image/record_fd can reuse an absent fd for a
+     * root authority file. Only an already-readable client channel is kept. */
+    bool session_input = session_input_valid();
     uid_t caller = getuid();
     if (geteuid() != 0) refuse("ELEVATION_REQUIRED");
     if (clearenv() || setenv("PATH", "/usr/sbin:/usr/bin:/sbin:/bin", 1) || setenv("LANG", "C", 1)) refuse("CLEAN_ENVIRONMENT");
@@ -507,8 +546,7 @@ int main(int argc, char **argv) {
     struct statfs fs;
     if (network < 0 || fstat(network, &s) || !same_stat(&s, r.network_device, r.network_inode) ||
         fstatfs(network, &fs) || (unsigned long)fs.f_type != NSFS_MAGIC || s.st_uid != 0) refuse("NETWORK_REPLACED");
-    int root = open_directory("/sys/fs/cgroup", true);
-    int cgroup = openat(root, r.cgroup, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW); close(root);
+    int cgroup = cgroup_directory(r.cgroup);
     if (cgroup < 0 || fstat(cgroup, &s) || !same_stat(&s, r.cgroup_device, r.cgroup_inode) ||
         fstatfs(cgroup, &fs) || (unsigned long)fs.f_type != CGROUP2_SUPER_MAGIC) refuse("CGROUP_REPLACED");
     trusted(&s, true);
@@ -526,8 +564,9 @@ int main(int argc, char **argv) {
     if (strcmp(membership, r.cgroup)) refuse("CGROUP_VERIFY");
     close(cgroup);
     // Root scope anchors may inherit cgroup.kill or control locks. Keep only
-    // our own registry lock until the complete frame is accepted.
-    close_extra_fds_except(lock);
+    // our own registry lock and the validated inherited session input until
+    // the complete frame is accepted after dropping credentials.
+    close_extra_fds_except(lock, session_input);
     capabilities_drop(b.uid, b.gid);
     directory = open_directory(b.directory, false);
     if (fstat(directory, &s) || !same_stat(&s, b.directory_device, b.directory_inode) ||
@@ -535,7 +574,7 @@ int main(int argc, char **argv) {
     close(directory);
     if (clearenv() || setenv("HOME", b.home, 1) || setenv("USER", b.account, 1) || setenv("LOGNAME", b.account, 1) ||
         setenv("PATH", "/usr/local/bin:/usr/bin:/bin", 1) || setenv("LANG", "C.UTF-8", 1)) refuse("PROJECT_ENVIRONMENT");
-    struct payload body=payload_read(payload_sha);
+    struct payload body=payload_read(payload_sha, session_input);
     close(lock);
     payload_exec(&body);
 }

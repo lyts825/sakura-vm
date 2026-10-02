@@ -9,7 +9,13 @@ import type { Project, Workspaces } from './workspaces.ts';
 import { quote } from './files.ts';
 import { readStore, writeStore, regularDirectory } from './local-store.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { envPrefix } from './project-services.ts';
+import {
+  ProjectIdentities,
+  projectIdentitySchema,
+  projectIdentitySshDaemonSchema,
+  type ProjectIdentityRun,
+} from './project-identity.ts';
+import { ProjectRunScopes } from './project-run-scope.ts';
 import {
   ensureProjectNetworkScript,
   projectNetworkCheckScript,
@@ -103,6 +109,15 @@ export const projectSshRecordSchema = z
     binding: z.string().regex(/^[a-f0-9]{64}$/),
     guestPort: z.number().int().min(1024).max(65535),
     environment: z.string().regex(/^[a-f0-9]{64}$/),
+    execution: z
+      .object({
+        identity: projectIdentitySchema,
+        bootId: z.uuid(),
+        build: z.string().regex(/^[a-f0-9]{64}$/),
+        snapshotSha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict()
+      .optional(),
     hostPublicKey: z.string().regex(/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/),
     files: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)),
   })
@@ -114,26 +129,59 @@ export const projectSshRecordSchema = z
       p.config + '/sshd_config',
       p.config + '/authorized_keys',
       p.config + '/hostkey',
+      ...(record.execution ? [p.config + '/session.json'] : []),
       ...(record.manager === 'openrc' ? [p.openrcPath, p.config + '/launch.py'] : [p.unitPath]),
     ];
     if (
       Object.keys(record.files).length !== required.length ||
-      required.some((path) => !(path in record.files))
+      required.some((path) => !(path in record.files)) ||
+      (record.execution &&
+        (record.execution.identity.projectId !== record.projectId ||
+          record.execution.identity.phase !== 'active' ||
+          record.files[p.config + '/session.json'] !== record.execution.snapshotSha256 ||
+          record.binding !==
+            digest(
+              JSON.stringify([
+                record.projectId,
+                record.execution.identity.directory,
+                record.execution.identity.networkIsolation,
+              ]),
+            )))
     )
       context.addIssue({ code: 'custom', message: '项目 SSH 文件绑定不完整' });
   });
 type Record = z.infer<typeof projectSshRecordSchema>;
 type Manager = 'systemd' | 'openrc';
-type RollbackOwner = { instance: object; bootId: string; runId: string };
+type RollbackOwner = { instance: object; bootId: string; runId: string; run?: ProjectIdentityRun };
 
 function rollbackOwnerCommand(project: Project, owner: RollbackOwner) {
   const p = projectSshPaths(project._workspace || 'default');
   return (
     '# SAKURA_PROJECT_SSH_ROLLBACK_CHECK\npython3 -I -S -c ' +
     quote(
-      `import glob,json,os\n` +
+      `import glob,json,os,stat,sys\n` +
         projectSshMainScan(p) +
         `if open('/proc/sys/kernel/random/boot_id').read().strip()!=${JSON.stringify(owner.bootId)}: raise ValueError('客户机启动身份已改变；拒绝旧项目 SSH 回滚')\n` +
+        `pinned=False\n` +
+        (owner.run
+          ? `if not any(row.split()[4]=='/sys/fs/cgroup' and row.split()[3]=='/' and ' - cgroup2 ' in row for row in open('/proc/self/mountinfo')): raise ValueError('项目 SSH 服务域根目录不符')\n` +
+            `path='/sys/fs/cgroup'\n` +
+            `info=os.lstat(path)\n` +
+            `if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022: raise ValueError('项目 SSH 服务域根权限不符')\n` +
+            `for part in ${JSON.stringify(owner.run.cgroupName)}.split('/'):\n` +
+            ` path+='/'+part\n` +
+            ` if not os.path.lexists(path): break\n` +
+            ` info=os.lstat(path)\n` +
+            ` if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022: raise ValueError('项目 SSH 服务域权限已改变')\n` +
+            `else:\n` +
+            ` if str(info.st_dev)!=${JSON.stringify(owner.run.cgroupDevice)} or str(info.st_ino)!=${JSON.stringify(owner.run.cgroupInode)}: raise ValueError('项目 SSH 服务域已被替换，拒绝终止其他运行')\n` +
+            ` pinned=True\n`
+          : '') +
+        (owner.run
+          ? `if pinned:\n print('SAKURA_PROJECT_SSH_OWNED'); sys.exit(0)\n` +
+            `if project_mains(): raise ValueError('项目 SSH 主进程仍在原服务域外存活')\n` +
+            `print('SAKURA_PROJECT_SSH_ABSENT'); sys.exit(0)\n`
+          : '') +
         `binding=None\n` +
         `try: binding=json.load(open(${JSON.stringify(p.config + '/binding.json')}))\n` +
         `except FileNotFoundError: pass\n` +
@@ -144,8 +192,8 @@ function rollbackOwnerCommand(project: Project, owner: RollbackOwner) {
         `  try:\n` +
         `   if any(row.split(':',2)[-1].endswith(unit) or unit+'/' in row.split(':',2)[-1] for row in open(path).read().splitlines() for unit in units): busy=True\n` +
         `  except FileNotFoundError: pass\n` +
-        ` if busy: raise ValueError('项目 SSH 启动绑定缺失但仍有进程；拒绝未核对回滚')\n` +
-        ` print('SAKURA_PROJECT_SSH_ABSENT')\n` +
+        ` if busy and not pinned: raise ValueError('项目 SSH 启动绑定缺失但仍有进程；拒绝未核对回滚')\n` +
+        ` print('SAKURA_PROJECT_SSH_OWNED' if pinned else 'SAKURA_PROJECT_SSH_ABSENT')\n` +
         `else:\n` +
         ` if not isinstance(binding,dict) or binding.get('runId')!=${JSON.stringify(owner.runId)}: raise ValueError('项目 SSH 运行身份已改变；拒绝终止其他启动')\n` +
         ` print('SAKURA_PROJECT_SSH_OWNED')\n`,
@@ -159,11 +207,38 @@ const statusSchema = z
     valid: z.boolean(),
     processes: z.number().int().nonnegative(),
     reason: z.string().nullable(),
+    daemon: projectIdentitySshDaemonSchema.optional(),
   })
   .strict();
 type Status = z.infer<typeof statusSchema>;
 const environmentHash = (project: Project) =>
   digest(JSON.stringify(Object.entries(project.environment || {}).sort(([a], [b]) => a.localeCompare(b))));
+
+function trustedSshPaths(projectId: string, distro: string) {
+  const p = projectSshPaths(projectId);
+  const source =
+    `import os,stat\nprivate=${JSON.stringify([p.config, p.home, p.runtime])}\nfolders=private+${JSON.stringify(['/run/sshd', distro === 'alpine' ? '/etc/init.d' : '/etc/systemd/system'])}\n` +
+    `for path in folders:\n` +
+    ` parent=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)\n` +
+    ` try:\n` +
+    `  parts=path.split('/')[1:]\n` +
+    `  for index,part in enumerate(parts):\n` +
+    `   try: os.mkdir(part,0o700 if index==len(parts)-1 and path in private else 0o755,dir_fd=parent)\n` +
+    `   except FileExistsError: pass\n` +
+    `   child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent)\n` +
+    `   info=os.fstat(child)\n` +
+    `   if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022: os.close(child); raise ValueError('项目 SSH 管理目录归属不符')\n` +
+    `   os.close(parent); parent=child\n` +
+    ` finally: os.close(parent)\n` +
+    `for path in ${JSON.stringify([...['command', 'sshd_config', 'authorized_keys', 'hostkey', 'hostkey.pub', 'binding.json', 'launch.py', 'session.json'].map((name) => p.config + '/' + name), distro === 'alpine' ? p.openrcPath : p.unitPath])}:\n` +
+    ` try: descriptor=os.open(path,os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW)\n` +
+    ` except FileNotFoundError: continue\n` +
+    ` try:\n` +
+    `  info=os.fstat(descriptor)\n` +
+    `  if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022 or info.st_nlink!=1: raise ValueError('项目 SSH 管理文件归属不符')\n` +
+    ` finally: os.close(descriptor)\n`;
+  return '/usr/bin/python3 -I -S -c ' + quote(source) + '\n';
+}
 
 function openrcCgroupCheck(p: ReturnType<typeof projectSshPaths>) {
   return (
@@ -271,7 +346,7 @@ function statusCommand(project: Project, record: Record | null, manager: Manager
   const p = projectSshPaths(project._workspace || 'default'),
     namespace = projectNetworkNamespace(project);
   const script =
-    `import glob,hashlib,json,os,subprocess\n` +
+    `import glob,hashlib,json,os,stat,subprocess\n` +
     projectSshMainScan(p) +
     `unit=${JSON.stringify(p.unit)}; config=${JSON.stringify(p.config)}\n` +
     `manager=${JSON.stringify(manager)}; openrc=${JSON.stringify(p.openrcUnit)}; group=${JSON.stringify(p.openrcGroup)}\n` +
@@ -306,9 +381,21 @@ function statusCommand(project: Project, record: Record | null, manager: Manager
     ` out['processes']=len(owned); out['running']=bool(out['running'] or pid)\n` +
     ` if not out['running']: raise ValueError('项目 SSH 尚未启动')\n` +
     ` if expected is None or expected.get('manager','systemd')!=manager or expected['binding']!=${JSON.stringify(projectSshBinding(project))}: raise ValueError('项目 SSH 绑定已变化，请停止并重建')\n` +
-    ` if json.load(open(config+'/binding.json'))!=expected: raise ValueError('项目 SSH 启动记录已变化')\n` +
+    ` descriptor=os.open(config+'/binding.json',os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW)\n` +
+    ` with os.fdopen(descriptor,'rb') as stream:\n` +
+    `  info=os.fstat(stream.fileno())\n` +
+    `  if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022 or info.st_nlink!=1 or json.loads(stream.read(262145))!=expected: raise ValueError('项目 SSH 启动记录已变化')\n` +
     ` for path,wanted in expected['files'].items():\n` +
-    `  if os.path.islink(path) or hashlib.sha256(open(path,'rb').read()).hexdigest()!=wanted: raise ValueError('项目 SSH 配置或密钥已变化')\n` +
+    `  parent='/'; parts=path.split('/')[1:]\n` +
+    `  for part in parts[:-1]:\n` +
+    `   parent=os.path.join(parent,part); info=os.lstat(parent)\n` +
+    `   if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022: raise ValueError('项目 SSH 管理目录权限已变化')\n` +
+    `  descriptor=os.open(path,os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW)\n` +
+    `  with os.fdopen(descriptor,'rb') as stream:\n` +
+    `   info=os.fstat(stream.fileno())\n` +
+    `   if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode&0o022 or info.st_nlink!=1: raise ValueError('项目 SSH 配置归属已变化')\n` +
+    `   if path.endswith('/session.json') and stat.S_IMODE(info.st_mode)!=0o600: raise ValueError('项目 SSH 环境快照权限已变化')\n` +
+    `   if hashlib.sha256(stream.read(262145)).hexdigest()!=wanted: raise ValueError('项目 SSH 配置或密钥已变化')\n` +
     ` if pid not in owned or os.path.realpath('/proc/'+str(pid)+'/exe')!='/usr/sbin/sshd': raise ValueError('项目 SSH 服务进程不符')\n` +
     ` args=open('/proc/'+str(pid)+'/cmdline','rb').read().decode().replace(chr(0),' ')\n` +
     ` if config+'/sshd_config' not in args: raise ValueError('项目 SSH 进程参数不符')\n` +
@@ -348,6 +435,10 @@ function statusCommand(project: Project, record: Record | null, manager: Manager
         ` for family in ['-4','-6']:\n` +
         `  if subprocess.check_output(['ip','-n',${JSON.stringify(namespace)},'-o',family,'route','show'],text=True).strip(): raise ValueError('项目 SSH 网络已有额外路由')\n`
       : '') +
+    ` cgroup=group[1:] if manager=='openrc' else 'system.slice/'+unit\n` +
+    ` if '0::/'+cgroup not in open('/proc/'+str(pid)+'/cgroup').read().splitlines(): raise ValueError('项目 SSH 服务域路径不符')\n` +
+    ` if os.stat('/proc/'+str(pid)).st_uid!=0: raise ValueError('项目 SSH 守护进程账户不符')\n` +
+    ` out['daemon']={'pid':pid,'startTicks':open('/proc/'+str(pid)+'/stat').read().rsplit(')',1)[1].split()[19],'bootId':open('/proc/sys/kernel/random/boot_id').read().strip(),'cgroupName':cgroup}\n` +
     ` out['valid']=True\n` +
     `except (OSError,ValueError,KeyError,TypeError,subprocess.CalledProcessError) as error: out['reason']=str(error) if isinstance(error,ValueError) else '无法核对项目 SSH 服务'\n` +
     `print(json.dumps(out))\n`;
@@ -358,6 +449,11 @@ function statusCommand(project: Project, record: Record | null, manager: Manager
 }
 
 export class ProjectSsh {
+  private identities: Pick<ProjectIdentities, 'publishSshSnapshot' | 'sshSessionCommand'>;
+  private scopes: Pick<
+    ProjectRunScopes,
+    'beginSsh' | 'activateSsh' | 'sshRun' | 'sshRuns' | 'recoverSshTicket' | 'closeAfterScopeStopped'
+  >;
   private bridges: ProjectNetworkBridges;
   private endpoints = new Map<string, { port: number; record: Record; project: Project }>();
   private pending = new Set<Promise<unknown>>();
@@ -365,7 +461,16 @@ export class ProjectSsh {
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
+    options: {
+      identities?: Pick<ProjectIdentities, 'publishSshSnapshot' | 'sshSessionCommand'>;
+      scopes?: Pick<
+        ProjectRunScopes,
+        'beginSsh' | 'activateSsh' | 'sshRun' | 'sshRuns' | 'recoverSshTicket' | 'closeAfterScopeStopped'
+      >;
+    } = {},
   ) {
+    this.identities = options.identities || new ProjectIdentities(machines);
+    this.scopes = options.scopes || new ProjectRunScopes(machines);
     this.bridges = new ProjectNetworkBridges(machines, async (id, project, signal) => {
       const status = await this.status(id, project, signal);
       if (!status.valid) throw new AppError(status.reason || '项目 SSH 不可用', 409);
@@ -415,6 +520,10 @@ export class ProjectSsh {
       status.valid = false;
       status.reason = environmentError;
     }
+    if (status.valid && !record) {
+      status.valid = false;
+      status.reason = '项目 SSH 原启动记录无法核对，请停止并重建';
+    }
     if (status.valid && record) {
       try {
         const folder = this.folder(id, record.projectId);
@@ -440,6 +549,29 @@ export class ProjectSsh {
       } catch {
         status.valid = false;
         status.reason = '项目 SSH 客户端密钥或主机公钥记录已变化，请停止并重建';
+      }
+    }
+    if (status.valid && record) {
+      if (!record.execution) {
+        status.valid = false;
+        status.reason = '项目 SSH 尚未登记项目账号，请停止并重建';
+      } else {
+        try {
+          const ticket = await this.scopes.sshRun(id, record.projectId, record.runId, signal);
+          if (
+            JSON.stringify(ticket.identity) !== JSON.stringify(record.execution.identity) ||
+            ticket.sha256 !== record.execution.snapshotSha256 ||
+            ticket.run.build !== record.execution.build ||
+            ticket.run.bootId !== record.execution.bootId ||
+            !status.daemon ||
+            status.daemon.bootId !== ticket.run.bootId ||
+            status.daemon.cgroupName !== ticket.run.cgroupName
+          )
+            throw new Error('changed SSH account receipt');
+        } catch {
+          status.valid = false;
+          status.reason = '项目 SSH 的完整账号票据无法核对，请停止并重建';
+        }
       }
     }
     return status;
@@ -525,6 +657,10 @@ export class ProjectSsh {
       ]);
       return this.endpoint(id, project, signal);
     }
+    // Fixed service names must retire their old receipts before another boot
+    // or run can populate the same cgroup. Absence is verified by the kernel.
+    for (const old of await this.scopes.sshRuns(id, projectId))
+      await this.scopes.closeAfterScopeStopped(id, projectId, old.runId);
     const p = projectSshPaths(projectId),
       namespace = projectNetworkNamespace(project),
       runId = randomUUID();
@@ -570,12 +706,13 @@ export class ProjectSsh {
           ? `if ip netns exec ${namespace} true >/dev/null 2>&1; then\n${projectNetworkCheckScript(namespace)}\nfi\n`
           : '') +
         ensureProjectNetworkScript(project, distro) +
+        trustedSshPaths(projectId, distro) +
         `umask 077\nfor path in /etc/sakura/ssh ${p.config}; do test ! -L "$path"; mkdir -p "$path"; done\n` +
         `for path in /var/lib/sakura /var/lib/sakura/ssh ${p.home}; do test ! -L "$path"; mkdir -p "$path"; done\n` +
         (distro === 'alpine'
           ? `for path in /run/sakura-project-ssh ${p.runtime}; do test ! -L "$path"; mkdir -p "$path"; chmod 700 "$path"; done\n`
           : '') +
-        `mkdir -p /run/sshd ${quote(project.directory)}\nchmod 755 /run/sshd\nchmod 700 ${p.home}\n` +
+        `mkdir -p /run/sshd\nchmod 755 /run/sshd\nchmod 700 ${p.home}\n` +
         `test ! -L ${p.config}/hostkey\nif [ ! -f ${p.config}/hostkey ]; then ssh-keygen -q -t ed25519 -N '' -f ${p.config}/hostkey; fi\n` +
         `ssh-keygen -y -f ${p.config}/hostkey | awk '{print "SAKURA_SSH_HOST_KEY=" $1 " " $2}'\n` +
         `printf 'SAKURA_SSH_BOOT_ID=%s\\n' "$(cat /proc/sys/kernel/random/boot_id)"`,
@@ -611,84 +748,124 @@ export class ProjectSsh {
     );
     if (portResult.code !== 0) throw new AppError('无法选择项目 SSH 端口', 409);
     const guestPort = z.coerce.number().int().min(1024).max(65535).parse(portResult.stdout.trim());
-    const command =
-      `#!/bin/sh\nset -eu\nset -- "\${SSH_ORIGINAL_COMMAND-}"\n` +
-      (namespace ? projectNetworkCheckScript(namespace) + '\n' : '') +
-      `${envPrefix(project.environment)}\nexport HOME=${quote(p.home)}\nexport VSCODE_AGENT_FOLDER="$HOME/.vscode-server"\n` +
-      `cd ${quote(project.directory)}\nif [ -n "$1" ]; then exec /bin/sh -c "$1"; else exec /bin/sh -l; fi\n`;
-    const config =
-      `Port ${guestPort}\nListenAddress 127.0.0.1\nAddressFamily inet\n` +
-      `HostKey ${p.config}/hostkey\nPidFile ${p.config}/sshd.pid\nAuthorizedKeysFile ${p.config}/authorized_keys\n` +
-      `AllowUsers root\nPermitRootLogin prohibit-password\nAuthenticationMethods publickey\n` +
-      `PasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nUsePAM no\n` +
-      `PermitUserEnvironment no\nPermitUserRC no\nAllowAgentForwarding no\nAllowTcpForwarding local\n` +
-      `PermitOpen 127.0.0.1:* localhost:* [::1]:*\nAllowStreamLocalForwarding no\n` +
-      `X11Forwarding no\nPermitTunnel no\nPrintMotd no\nForceCommand ${p.config}/command\n` +
-      `Subsystem sftp ${distro === 'alpine' ? '/usr/lib/ssh/sftp-server' : '/usr/lib/openssh/sftp-server'} -d .\n`;
-    const unit =
-      `[Unit]\nDescription=Sakura project SSH ${projectId}\nAfter=network.target\n\n[Service]\n` +
-      `Type=simple\nExecStart=/usr/sbin/sshd -D -e -f ${p.config}/sshd_config\n` +
-      `Environment=SAKURA_PROJECT_SSH_ID=${runId}\nKillMode=control-group\nTimeoutStopSec=10s\nRestart=no\n` +
-      (namespace ? `NetworkNamespacePath=/run/netns/${namespace}\n` : '') +
-      `\n[Install]\n`;
-    const files = {
-      [p.config + '/command']: command,
-      [p.config + '/sshd_config']: config,
-      [p.config + '/authorized_keys']: publicKey + '\n',
-      ...(distro === 'alpine'
-        ? {
-            [p.openrcPath]: openrcService(project),
-            [p.config + '/launch.py']: openrcLauncher(project, runId),
-          }
-        : { [p.unitPath]: unit }),
-    };
-    const write = Object.entries(files)
-      .map(
-        ([path, text]) =>
-          `test ! -L ${quote(path)}\nprintf '%s' ${quote(Buffer.from(text).toString('base64'))} | base64 -d > ${quote(path)}\n`,
-      )
-      .join('');
-    const hashes = Object.fromEntries(Object.entries(files).map(([path, text]) => [path, digest(text)]));
     const hostKeyHash = await this.machines.exec(id, `sha256sum ${p.config}/hostkey`, 10_000, signal);
     if (hostKeyHash.code !== 0) throw new AppError('无法核对项目 SSH 主机密钥', 409);
-    hashes[p.config + '/hostkey'] = z
+    const hostKeyDigest = z
       .string()
       .regex(/^[a-f0-9]{64}$/)
       .parse(hostKeyHash.stdout.split(' ')[0]);
-    const record: Record = {
-      version: 1,
-      ...(distro === 'alpine' ? { manager: 'openrc' as const } : {}),
-      projectId,
+    const admission = await this.scopes.beginSsh(
+      id,
+      project,
       runId,
-      binding: projectSshBinding(project),
-      guestPort,
-      hostPublicKey,
-      environment: environmentHash(project),
-      files: hashes,
-    };
-    await writeStore(join(folder, 'runtime.json'), record);
-    await writeFile(join(folder, 'known_hosts'), `sakura-${id}-${projectId} ${hostPublicKey}\n`, {
-      mode: 0o600,
-    });
+      {
+        kind: 'ssh',
+        runId,
+        bootId,
+        cgroupName: distro === 'alpine' ? 'openrc.sakura-ssh-' + projectId : 'system.slice/' + p.unit,
+      },
+      project.environment || {},
+      signal,
+    );
+    let serviceAttempted = false;
     try {
-      const started = await this.machines.exec(
+      const command =
+        '#!/bin/sh\nexec ' +
+        (await this.identities.sshSessionCommand(admission.identity, admission.snapshot)) +
+        '\n';
+      const config =
+        `Port ${guestPort}\nListenAddress 127.0.0.1\nAddressFamily inet\n` +
+        `HostKey ${p.config}/hostkey\nPidFile ${p.config}/sshd.pid\nAuthorizedKeysFile ${p.config}/authorized_keys\n` +
+        `AllowUsers root\nPermitRootLogin prohibit-password\nAuthenticationMethods publickey\n` +
+        `PasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nUsePAM no\n` +
+        `PermitUserEnvironment no\nPermitUserRC no\nAllowAgentForwarding no\nAllowTcpForwarding local\n` +
+        `PermitOpen 127.0.0.1:* localhost:* [::1]:*\nAllowStreamLocalForwarding no\n` +
+        `X11Forwarding no\nPermitTunnel no\nPrintMotd no\nForceCommand ${p.config}/command\n` +
+        `Subsystem sftp ${distro === 'alpine' ? '/usr/lib/ssh/sftp-server' : '/usr/lib/openssh/sftp-server'} -d .\n`;
+      const unit =
+        `[Unit]\nDescription=Sakura project SSH ${projectId}\nAfter=network.target\n\n[Service]\n` +
+        `Type=simple\nExecStart=/usr/sbin/sshd -D -e -f ${p.config}/sshd_config\n` +
+        `Environment=SAKURA_PROJECT_SSH_ID=${runId}\nKillMode=control-group\nTimeoutStopSec=10s\nRestart=no\n` +
+        (namespace ? `NetworkNamespacePath=/run/netns/${namespace}\n` : '') +
+        `\n[Install]\n`;
+      const files = {
+        [p.config + '/command']: command,
+        [p.config + '/sshd_config']: config,
+        [p.config + '/authorized_keys']: publicKey + '\n',
+        ...(distro === 'alpine'
+          ? {
+              [p.openrcPath]: openrcService(project),
+              [p.config + '/launch.py']: openrcLauncher(project, runId),
+            }
+          : { [p.unitPath]: unit }),
+      };
+      const write = Object.entries(files)
+        .map(
+          ([path, text]) =>
+            `test ! -L ${quote(path)}\nprintf '%s' ${quote(Buffer.from(text).toString('base64'))} | base64 -d > ${quote(path)}\n`,
+        )
+        .join('');
+      const hashes = Object.fromEntries(Object.entries(files).map(([path, text]) => [path, digest(text)]));
+      hashes[p.config + '/hostkey'] = hostKeyDigest;
+      hashes[p.config + '/session.json'] = admission.snapshot.sha256;
+      const record: Record = {
+        version: 1,
+        ...(distro === 'alpine' ? { manager: 'openrc' as const } : {}),
+        projectId,
+        runId,
+        binding: projectSshBinding(project),
+        guestPort,
+        hostPublicKey,
+        environment: environmentHash(project),
+        execution: {
+          identity: admission.identity,
+          bootId,
+          build: admission.snapshot.build,
+          snapshotSha256: admission.snapshot.sha256,
+        },
+        files: hashes,
+      };
+      await writeStore(join(folder, 'runtime.json'), record);
+      await writeFile(join(folder, 'known_hosts'), `sakura-${id}-${projectId} ${hostPublicKey}\n`, {
+        mode: 0o600,
+      });
+      await this.identities.publishSshSnapshot(id, admission.identity, admission.snapshot, signal);
+      const published = await this.machines.exec(
         id,
         `set -eu\numask 077\n` +
           `[ "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(bootId)} ] || { echo '客户机启动身份已改变；项目 SSH 未启动' >&2; exit 1; }\n${write}` +
           `chmod 700 ${p.config}/command\nprintf '%s' ${quote(Buffer.from(JSON.stringify(record)).toString('base64'))} | base64 -d > ${p.config}/binding.json\n` +
           `/usr/sbin/sshd -t -f ${p.config}/sshd_config\n` +
-          (distro === 'alpine'
-            ? `chmod 700 ${p.openrcPath}\nrc-service ${p.openrcUnit} zap\nrc-service ${p.openrcUnit} start`
-            : `systemctl daemon-reload\nsystemctl start ${p.unit}`),
+          (distro === 'alpine' ? `chmod 700 ${p.openrcPath}` : `systemctl daemon-reload`),
         60_000,
+        signal,
+      );
+      if (published.code !== 0) throw new AppError(published.stderr || '项目 SSH 配置发布失败', 409);
+      serviceAttempted = true;
+      const started = await this.machines.exec(
+        id,
+        `set -eu\n[ "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(bootId)} ]\n` +
+          (distro === 'alpine'
+            ? `rc-service ${p.openrcUnit} zap\nrc-service ${p.openrcUnit} start`
+            : `systemctl start ${p.unit}`),
+        60000,
         signal,
       );
       if (started.code !== 0) throw new AppError(started.stderr || '项目 SSH 启动失败', 409);
       let reason = '项目 SSH 未就绪';
       for (let attempt = 0; attempt < 40; attempt++) {
         signal.throwIfAborted();
-        const status = await this.status(id, project, signal);
+        const result = await this.machines.exec(
+          id,
+          statusCommand(project, record, distro === 'alpine' ? 'openrc' : 'systemd'),
+          30000,
+          signal,
+        );
+        if (result.code !== 0) throw new AppError('无法核对项目 SSH 服务启动', 409);
+        const status = statusSchema.parse(JSON.parse(result.stdout));
         if (status.valid) {
+          if (!status.daemon) throw new AppError('项目 SSH 守护进程身份缺失', 409);
+          await this.scopes.activateSsh(id, projectId, runId, status.daemon, signal);
           return this.endpoint(id, project, signal);
         }
         reason = status.reason || reason;
@@ -703,7 +880,13 @@ export class ProjectSsh {
           break;
         }
         try {
-          await this.stopRuntime(id, project, { instance, bootId, runId });
+          if (serviceAttempted) await this.stopRuntime(id, project, { instance, bootId, runId });
+          else {
+            const busy = await this.machines.exec(id, projectSshBusyScript(projectId), 10000);
+            if (busy.code !== 0 || busy.stdout.includes('SAKURA_PROJECT_SSH_BUSY'))
+              throw new Error('项目 SSH 仍有未核对的进程');
+            await this.scopes.closeAfterScopeStopped(id, projectId, runId);
+          }
           if (this.machines.live.get(id) !== instance) throw new Error('客户机实例已改变');
           failure = undefined;
           break;
@@ -727,12 +910,87 @@ export class ProjectSsh {
     const projectId = project._workspace || 'default',
       p = projectSshPaths(projectId),
       key = `${id}:${projectId}`;
+    const stored = await this.record(id, project);
+    let runs = await this.scopes.sshRuns(id, projectId);
+    if (stored?.execution) {
+      let prior = runs.find((entry) => entry.runId === stored.runId);
+      if (
+        runs.some((entry) => entry.runId !== stored.runId) ||
+        (prior &&
+          (JSON.stringify(prior.identity) !== JSON.stringify(stored.execution.identity) ||
+            prior.sha256 !== stored.execution.snapshotSha256 ||
+            prior.owner.bootId !== stored.execution.bootId))
+      )
+        throw new AppError('项目 SSH 的主机登记已改变，原停止未确认', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+      const instance = this.machines.live.get(id);
+      const bootResult = await this.machines.exec(id, 'cat /proc/sys/kernel/random/boot_id', 10000);
+      const bootId = bootResult.code === 0 ? z.uuid().parse(bootResult.stdout.trim()) : null;
+      if (!instance || this.machines.live.get(id) !== instance || !bootId)
+        throw new AppError('项目 SSH 客户机身份无法核对', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+      if (bootId !== stored.execution.bootId) {
+        if (owner) throw new AppError('客户机已重启，原启动回滚未确认', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+        if (this.endpoints.get(key) && this.endpoints.get(key)!.record.runId !== stored.runId)
+          throw new AppError('SSH 桥接属于其他运行，拒绝旧停止', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+        if (prior) await this.scopes.closeAfterScopeStopped(id, projectId, prior.runId);
+        else {
+          const busy = await this.machines.exec(id, projectSshBusyScript(projectId), 10000);
+          if (busy.code !== 0 || busy.stdout.includes('SAKURA_PROJECT_SSH_BUSY'))
+            throw new AppError('新开机仍有项目 SSH 进程，拒绝旧停止', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+        }
+        await this.bridges.stop(id, projectId);
+        this.endpoints.delete(key);
+        return;
+      }
+      if (!prior)
+        throw new AppError('项目 SSH 原账号登记缺失，停止未确认', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+      const recovered = await this.scopes.recoverSshTicket(id, projectId, stored.runId);
+      if (recovered) {
+        if (recovered.run?.build !== stored.execution.build)
+          throw new AppError('项目 SSH 原启动器构建已改变，停止未确认', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+        prior = recovered;
+        runs = runs.map((entry) => (entry.runId === recovered.runId ? recovered : entry));
+      }
+      owner ||= { instance, bootId: stored.execution.bootId, runId: stored.runId };
+      if (prior?.run) owner = { ...owner, run: prior.run };
+    } else if (runs.length) {
+      if (stored || runs.length !== 1)
+        throw new AppError('项目 SSH 原启动记录无法核对，保留账号登记', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+      let prior = runs[0];
+      const instance = this.machines.live.get(id);
+      if (!instance) throw new AppError('项目 SSH 客户机身份无法核对', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+      const bootResult = await this.machines.exec(id, 'cat /proc/sys/kernel/random/boot_id', 10000);
+      const bootId = bootResult.code === 0 ? z.uuid().parse(bootResult.stdout.trim()) : null;
+      if (!bootId || this.machines.live.get(id) !== instance)
+        throw new AppError('项目 SSH 客户机身份无法核对', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+      if (prior.owner.bootId === bootId) {
+        const recovered = await this.scopes.recoverSshTicket(id, projectId, prior.runId);
+        if (recovered) {
+          prior = recovered;
+          runs = [recovered];
+        }
+      }
+      if (!prior.run || prior.owner.bootId !== bootId) {
+        const busy = await this.machines.exec(id, projectSshBusyScript(projectId), 10000);
+        if (busy.code !== 0 || busy.stdout.includes('SAKURA_PROJECT_SSH_BUSY'))
+          throw new AppError('项目 SSH 原服务身份缺失，停止未确认', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+        await this.scopes.closeAfterScopeStopped(id, projectId, prior.runId);
+        if (this.endpoints.get(key) && this.endpoints.get(key)!.record.runId !== prior.runId)
+          throw new AppError('SSH 桥接属于其他运行，拒绝旧停止', 503, 'PROJECT_SSH_CLEANUP_FAILED');
+        await this.bridges.stop(id, projectId);
+        this.endpoints.delete(key);
+        return;
+      }
+      owner ||= { instance, bootId: prior.owner.bootId, runId: prior.runId, run: prior.run };
+    }
     if (owner) {
       if (this.machines.live.get(id) !== owner.instance)
         throw new AppError('客户机实例已改变，拒绝旧项目 SSH 回滚', 409);
       const record = await this.record(id, project),
         endpoint = this.endpoints.get(key);
-      if (record?.runId !== owner.runId || (endpoint && endpoint.record.runId !== owner.runId))
+      if (
+        (record ? record.runId !== owner.runId : !owner.run) ||
+        (endpoint && endpoint.record.runId !== owner.runId)
+      )
         throw new AppError('项目 SSH 主机运行身份已改变，拒绝旧回滚', 409);
       const checked = await this.machines.exec(id, rollbackOwnerCommand(project, owner), 10000);
       if (checked.code !== 0) throw new AppError(checked.stderr.trim() || '项目 SSH 回滚身份无法核对', 409);
@@ -768,6 +1026,7 @@ export class ProjectSsh {
         owner && stopped.stderr.trim() ? stopped.stderr.trim() : '项目 SSH 子进程尚未停止，绑定不可修改',
         409,
       );
+    for (const run of runs) await this.scopes.closeAfterScopeStopped(id, projectId, run.runId);
   }
   async stop(id: string) {
     const project = await this.workspaces.config(id);

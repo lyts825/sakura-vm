@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { quote } from '../server/files.ts';
 
 const run = promisify(execFile);
-type Project = { id: string; name: string; path: string; alias: string };
+type Project = { id: string; name: string; path: string; alias: string; home: string; uid: number; gid: number };
 export type JetbrainsProfile = {
   alias: string;
   host: string;
@@ -143,8 +143,9 @@ export async function prepareJetbrainsGatewayProfile(
   };
 }
 
-export function projectJetbrainsGatewayLink(profile: JetbrainsProfile, idePath: string) {
-  assert.ok(idePath.startsWith(`/var/lib/sakura/ssh/${profile.projectId}/.jetbrains/ide-`));
+export function projectJetbrainsGatewayLink(profile: JetbrainsProfile, idePath: string, home: string) {
+  assert.match(home, /^\/var\/lib\/sakura-project-homes\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/);
+  assert.ok(idePath.startsWith(home + '/.jetbrains/ide-'));
   assert.ok(!/[\0\r\n]/.test(idePath));
   const fields = new URLSearchParams({
     idePath,
@@ -224,7 +225,7 @@ export async function projectJetbrainsClientSmoke(
     assert.equal(profile.alias, project.alias);
     assert.equal(profile.projectId, project.id);
     assert.equal(profile.directory, project.path);
-    const home = '/var/lib/sakura/ssh/' + project.id,
+    const home = project.home,
       state = home + '/.jetbrains',
       ide = state + '/ide-' + checksum.slice(0, 16);
     const properties =
@@ -277,7 +278,7 @@ export async function projectJetbrainsClientSmoke(
         `-name 'remote-dev-worker_*' -delete; fi\n`,
       120_000,
     );
-    const link = projectJetbrainsGatewayLink(profile, ide);
+    const link = projectJetbrainsGatewayLink(profile, ide, home);
     const linkFile = join(clientRoot, 'gateway-' + project.id + '.txt');
     await writeFile(linkFile, link + '\n', { mode: 0o600 });
     const startLogLength = (await readFile(join(clientRoot, 'log/idea.log'), 'utf8').catch(() => '')).length;
@@ -313,12 +314,16 @@ export async function projectJetbrainsClientSmoke(
       );
       assert.ok(logs.includes('uploading via SFTP'), 'Actual Gateway SFTP worker upload was not observed');
       const processEvidence = JSON.parse(await external(project.alias, backendProcessProbe(project, ide)));
+      assert.equal(processEvidence.sshUid, project.uid);
+      assert.equal(processEvidence.sshGid, project.gid);
       assert.equal(processEvidence.sshNetwork, processEvidence.expectedNetwork);
       assert.equal(processEvidence.externalBlocked, true);
       assert.ok(processEvidence.backends.length > 0, 'No actual native IDE backend belongs to the project');
       for (const record of processEvidence.backends) {
         assert.equal(record.network, processEvidence.expectedNetwork);
         assert.equal(record.home, home);
+        assert.deepEqual(record.uids, Array(4).fill(project.uid));
+        assert.deepEqual(record.gids, Array(4).fill(project.gid));
         assert.equal(record.scope, project.name);
         assert.equal(record.cwd, project.path);
         assert.equal(record.properties, state + '/ide.properties');
@@ -376,11 +381,12 @@ for path in pathlib.Path('/proc').glob('[0-9]*'):
   exe=os.readlink(path/'exe')
   if exe!=ide+'/bin/remote-dev-server': continue
   env=dict(v.split(b'=',1) for v in (path/'environ').read_bytes().split(b'\\0') if b'=' in v)
-  records.append({'pid':int(path.name),'executable':exe,'home':env.get(b'HOME',b'').decode(),'scope':env.get(b'SAKURA_SCOPE',b'').decode(),'cwd':os.readlink(path/'cwd'),'network':os.readlink(path/'ns/net'),'cgroup':(path/'cgroup').read_text().strip(),'properties':env.get(b'WEBIDE_PROPERTIES',b'').decode(),'vmOptions':env.get(b'WEBIDE_VM_OPTIONS',b'').decode()})
+  status=dict(line.split(':',1) for line in (path/'status').read_text().splitlines() if ':' in line)
+  records.append({'pid':int(path.name),'executable':exe,'uids':[int(v) for v in status['Uid'].split()],'gids':[int(v) for v in status['Gid'].split()],'home':env.get(b'HOME',b'').decode(),'scope':env.get(b'SAKURA_SCOPE',b'').decode(),'cwd':os.readlink(path/'cwd'),'network':os.readlink(path/'ns/net'),'cgroup':(path/'cgroup').read_text().strip(),'properties':env.get(b'WEBIDE_PROPERTIES',b'').decode(),'vmOptions':env.get(b'WEBIDE_VM_OPTIONS',b'').decode()})
  except (FileNotFoundError,PermissionError,ValueError): pass
 try:
  c=socket.create_connection(('1.1.1.1',443),timeout=2);c.close();blocked=False
 except OSError: blocked=True
-print(json.dumps({'sshNetwork':os.readlink('/proc/self/ns/net'),'expectedNetwork':expected,'externalBlocked':blocked,'backends':records}))`;
+print(json.dumps({'sshUid':os.getuid(),'sshGid':os.getgid(),'sshNetwork':os.readlink('/proc/self/ns/net'),'expectedNetwork':expected,'externalBlocked':blocked,'backends':records}))`;
   return 'python3 -c ' + quote(source);
 }

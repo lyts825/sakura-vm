@@ -121,6 +121,7 @@
     "test:network": "tsx scripts/smoke-network.ts",
     "test:project-network-isolation": "tsx scripts/smoke-project-network-isolation.ts",
     "test:project-ssh": "tsx scripts/smoke-project-ssh.ts",
+    "test:project-ssh:identity": "node --import tsx scripts/smoke-project-ssh-identity.ts",
     "test:single-app-windows": "tsx scripts/smoke-single-app-windows.ts",
     "test:project-desktop": "tsx scripts/smoke-project-desktop.ts",
     "test:http-ingress": "tsx scripts/smoke-http-ingress.ts",

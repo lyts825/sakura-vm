@@ -8,7 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { quote } from '../server/files.ts';
 
 const run = promisify(execFile);
-type Project = { id: string; name: string; path: string; alias: string };
+type Project = { id: string; name: string; path: string; alias: string; home: string; uid: number; gid: number };
 
 /** Runs an actual desktop Remote-SSH window with an isolated profile and workspace extension. */
 export async function projectVscodeClientSmoke(root: string, sshConfig: string,
@@ -68,7 +68,7 @@ export async function projectVscodeClientSmoke(root: string, sshConfig: string,
   for (const project of projects) {
     const output = project.path + '/.sakura-vscode-client-result.json';
     const code = workspaceProbe(project, output, randomUUID());
-    const remoteExtension = `/var/lib/sakura/ssh/${project.id}/.vscode-server/extensions/sakura.project-network-probe-0.0.1`;
+    const remoteExtension = project.home + '/.vscode-server/extensions/sakura.project-network-probe-0.0.1';
     const manifest = JSON.stringify({ name: 'project-network-probe', displayName: 'Sakura project network probe',
       publisher: 'sakura', version: '0.0.1', engines: { vscode: '^1.90.0' }, extensionKind: ['workspace'],
       activationEvents: ['onStartupFinished'], main: './extension.cjs',
@@ -109,7 +109,11 @@ export async function projectVscodeClientSmoke(root: string, sshConfig: string,
       assert.equal(record.uiKind, 1);
       assert.equal(record.platform, 'linux');
       assert.equal(record.scope, project.name);
-      assert.equal(record.home, '/var/lib/sakura/ssh/' + project.id);
+      assert.equal(record.home, project.home);
+      for (const prefix of ['', 'child', 'terminal', 'task']) {
+        assert.equal(record[prefix ? prefix + 'Uid' : 'uid'], project.uid);
+        assert.equal(record[prefix ? prefix + 'Gid' : 'gid'], project.gid);
+      }
       assert.equal(record.network, record.expectedNetwork);
       assert.equal(record.terminalNetwork, record.expectedNetwork);
       assert.equal(record.taskNetwork, record.expectedNetwork);
@@ -137,14 +141,15 @@ function workspaceProbe(project: Project, output: string, nonce: string) {
   return `const vscode=require('vscode'), fs=require('node:fs'), cp=require('node:child_process'), net=require('node:net');
 const project=${JSON.stringify(project)}, output=${JSON.stringify(output)};
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const ready=file=>fs.existsSync(file)&&fs.statSync(file).size>0;
+const ready=file=>fs.existsSync(file)&&fs.statSync(file).size>0&&fs.readFileSync(file,'utf8').trim().split('\\n').length===3;
 const check=(condition,message)=>{if(!condition)throw new Error(message)};
 exports.activate=async()=>{
  const result={ok:false,remoteName:vscode.env.remoteName,uiKind:vscode.env.uiKind,platform:process.platform,
-  scope:process.env.SAKURA_SCOPE,home:process.env.HOME,network:fs.readlinkSync('/proc/self/ns/net'),
+  scope:process.env.SAKURA_SCOPE,home:process.env.HOME,uid:process.getuid(),gid:process.getgid(),network:fs.readlinkSync('/proc/self/ns/net'),
   expectedNetwork:'net:['+fs.statSync('/run/netns/sk-'+project.id).ino+']'};
  try {
   check(result.platform==='linux'&&result.remoteName==='ssh-remote','probe must run in the Linux workspace extension host');
+  check(result.uid===project.uid&&result.gid===project.gid,'extension host project account mismatch');
   check(result.network===result.expectedNetwork,'extension host network mismatch');
   const folder=vscode.workspace.workspaceFolders[0];
   result.workspaceUri=folder.uri.toString();result.workspaceAuthority=folder.uri.authority;
@@ -158,24 +163,28 @@ exports.activate=async()=>{
   check(await vscode.workspace.applyEdit(edit),'editor edit failed'); await document.save();
   result.editorText=document.getText();check(result.editorText===project.name+' desktop','remote text editor contents mismatch');
   check(fs.readFileSync(file.fsPath,'utf8')===result.editorText,'remote file was not saved');
-  const child=cp.spawnSync('/bin/sh',['-c','readlink /proc/self/ns/net'],{encoding:'utf8'});
-  result.childNetwork=child.stdout.trim();
+  const child=cp.spawnSync(process.execPath,['-e',"console.log(JSON.stringify({uid:process.getuid(),gid:process.getgid(),network:require('node:fs').readlinkSync('/proc/self/ns/net')}))"],{encoding:'utf8'});
+  const childIdentity=JSON.parse(child.stdout);result.childNetwork=childIdentity.network;
+  result.childUid=childIdentity.uid;result.childGid=childIdentity.gid;
   check(child.status===0&&result.childNetwork===result.expectedNetwork,'extension child network mismatch');
+  check(result.childUid===project.uid&&result.childGid===project.gid,'extension child project account mismatch');
   result.externalBlocked=await new Promise(resolve=>{const socket=net.createConnection({host:'1.1.1.1',port:443});
    socket.setTimeout(2000);socket.once('connect',()=>{socket.destroy();resolve(false)});
    socket.once('error',()=>resolve(true));socket.once('timeout',()=>{socket.destroy();resolve(true)})});
   check(result.externalBlocked,'workspace extension unexpectedly reached external network');
-  const terminalFile=project.path+'/.sakura-vscode-terminal-network';
+  const terminalFile=project.path+${JSON.stringify('/.sakura-vscode-terminal-account-' + nonce)};
   const terminal=vscode.window.createTerminal({name:'Sakura private terminal check',shellPath:'/bin/sh',
-   shellArgs:['-c','readlink /proc/self/ns/net > '+JSON.stringify(terminalFile)],cwd:folder.uri});terminal.show();
+   shellArgs:['-c','{ id -u; id -g; readlink /proc/self/ns/net; } > '+JSON.stringify(terminalFile)],cwd:folder.uri});terminal.show();
   for(let i=0;i<1200&&!ready(terminalFile);i++)await wait(50);
   check(ready(terminalFile),'integrated terminal did not create its result');
-  result.terminalNetwork=fs.readFileSync(terminalFile,'utf8').trim();terminal.dispose();
+  const terminalIdentity=fs.readFileSync(terminalFile,'utf8').trim().split('\\n');terminal.dispose();
+  result.terminalUid=Number(terminalIdentity[0]);result.terminalGid=Number(terminalIdentity[1]);result.terminalNetwork=terminalIdentity[2];
   check(result.terminalNetwork===result.expectedNetwork,'integrated terminal network mismatch');
-  const taskFile=project.path+'/.sakura-vscode-task-network';
+  check(result.terminalUid===project.uid&&result.terminalGid===project.gid,'integrated terminal project account mismatch');
+  const taskFile=project.path+${JSON.stringify('/.sakura-vscode-task-account-' + nonce)};
   const shellQuote=value=>"'"+value.replaceAll("'","'\\\\''")+"'";
   const task=new vscode.Task({type:'sakura-network-probe'},folder,'Sakura private task check','Sakura',
-   new vscode.ShellExecution('readlink /proc/self/ns/net > '+shellQuote(taskFile),{executable:'/bin/sh',shellArgs:['-c']}));
+   new vscode.ShellExecution('{ id -u; id -g; readlink /proc/self/ns/net; } > '+shellQuote(taskFile),{executable:'/bin/sh',shellArgs:['-c']}));
   let taskExit;const taskEnd=vscode.tasks.onDidEndTaskProcess(event=>{
    if(event.execution.task.name===task.name)taskExit=event.exitCode;
   });
@@ -183,8 +192,10 @@ exports.activate=async()=>{
   for(let i=0;i<1200&&!ready(taskFile)&&taskExit===undefined;i++)await wait(50);
   taskEnd.dispose();result.taskExitCode=taskExit;
   check(ready(taskFile),'task did not create its result (exit '+taskExit+')');
-  result.taskNetwork=fs.readFileSync(taskFile,'utf8').trim();
+  const taskIdentity=fs.readFileSync(taskFile,'utf8').trim().split('\\n');
+  result.taskUid=Number(taskIdentity[0]);result.taskGid=Number(taskIdentity[1]);result.taskNetwork=taskIdentity[2];
   check(result.taskNetwork===result.expectedNetwork,'task network mismatch');
+  check(result.taskUid===project.uid&&result.taskGid===project.gid,'task project account mismatch');
   result.ok=true;
  }catch(error){result.error=String(error&&error.stack||error)}
  fs.writeFileSync(output,JSON.stringify(result));

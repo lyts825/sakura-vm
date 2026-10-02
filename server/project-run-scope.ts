@@ -16,9 +16,12 @@ import { GpgAgentScopes, gpgAgentResourceSchema, gpgAgentHomePath, bindTaskGpg,
 import { OwnedGpgForward } from './gpg-agent-host.ts';
 import { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema, projectIdentityNetworkSchema,
   type ProjectIdentity, type ProjectIdentityRun, type ProjectIdentityExecution } from './project-identity.ts';
+import { projectIdentitySshDaemonSchema, type ProjectIdentitySshDaemon } from './project-identity.ts';
 
 const bindingSchema = z.object({ directory: z.string().min(1), networkIsolation: z.enum(['host', 'private']) }).strict();
-const ownerSchema = z.object({ kind: z.enum(['task', 'main', 'service', 'terminal']), runId: z.uuid(), bootId: z.uuid() }).strict();
+const ownerSchema = z.object({ kind: z.enum(['task', 'main', 'service', 'terminal', 'ssh']), runId: z.uuid(), bootId: z.uuid(),
+  cgroupName: z.string().regex(/^(openrc\.sakura-ssh-(default|[a-f0-9]{16})|system\.slice\/sakura-ssh-(default|[a-f0-9]{16})\.service)$/).optional(),
+}).strict().refine(value => (value.kind === 'ssh') === Boolean(value.cgroupName));
 export type ProjectRunOwner = z.infer<typeof ownerSchema>;
 const terminalSchema = z.object({ name: z.string().regex(/^sakura-terminal-(default|[a-f0-9]{16})-[a-z0-9-]{1,48}$/),
   persistent: z.boolean() }).strict();
@@ -31,6 +34,8 @@ const entrySchema = z.object({ version: z.literal(1), projectId: projectIdSchema
   retirement: z.object({ reason: z.literal('guest-reboot'), bootId: z.uuid() }).strict().optional() }).strict()
   .superRefine((value, ctx) => {
     if (value.projectId !== value.identity.projectId || value.runId !== value.owner.runId ||
+        (value.owner.kind === 'ssh' && !['openrc.sakura-ssh-' + value.projectId,
+          'system.slice/sakura-ssh-' + value.projectId + '.service'].includes(value.owner.cgroupName!)) ||
         (Boolean(value.terminal) !== (value.owner.kind === 'terminal')) ||
         (value.terminal && !value.terminal.name.startsWith('sakura-terminal-' + value.projectId + '-')) ||
         (value.run && (value.run.runId !== value.runId || value.run.mode !== (value.owner.kind === 'terminal' ? 'independent' : 'inherit-current') ||
@@ -73,7 +78,7 @@ const journalSchema = z.object({ version: z.literal(1), projectId: projectIdSche
   });
 type Journal = z.infer<typeof journalSchema>;
 type Core = Pick<ProjectIdentities, 'ensure' | 'inspect' | 'rebind' | 'inheritedInput' | 'run' | 'stop'> &
-  Partial<Pick<ProjectIdentities, 'runReadonly' | 'prepare' | 'retireTerminal'>> & {
+  Partial<Pick<ProjectIdentities, 'runReadonly' | 'prepare' | 'retireTerminal' | 'sshSnapshotInput' | 'prepareSsh'>> & {
     beginNetworkRelease?: (vmId: string, identity: ProjectIdentity, options: { releaseId: string; bootId: string },
       signal?: AbortSignal) => Promise<z.infer<typeof networkLeaseSchema> | null>;
     releaseNetwork?: (vmId: string, identity: ProjectIdentity, lease: z.infer<typeof networkLeaseSchema>,
@@ -100,7 +105,8 @@ const binding = (project: { directory: string; networkIsolation?: 'host' | 'priv
 const expected = (identity: ProjectIdentity) => ({ registryId: identity.registryId,
   identityId: identity.identityId, revision: identity.revision });
 const projectId = (project: Project) => projectIdSchema.parse(project._workspace || 'default');
-const scopeName = (owner: ProjectRunOwner) => `sakura-${owner.kind === 'terminal' ? 'identity' : owner.kind}-${owner.runId}`;
+const scopeName = (owner: ProjectRunOwner) => owner.kind === 'ssh' ? owner.cgroupName! :
+  `sakura-${owner.kind === 'terminal' ? 'identity' : owner.kind}-${owner.runId}`;
 const sameIdentity = (left: ProjectIdentity, right: ProjectIdentity, rebind = false) => {
   const mutable = new Set(['phase', ...(rebind ? ['revision', 'directory', 'directoryDevice', 'directoryInode', 'networkIsolation'] : [])]);
   return Object.keys(left).every(key => mutable.has(key) || left[key as keyof ProjectIdentity] === right[key as keyof ProjectIdentity]) &&
@@ -433,7 +439,7 @@ export class ProjectRunScopes {
   async inherited(vmId: string, project: Project, execution: ProjectIdentityExecution,
     owner: ProjectRunOwner, signal?: AbortSignal): Promise<ProjectInheritedPayload> {
     owner = ownerSchema.parse(owner);
-    if (owner.kind === 'terminal') throw new AppError('交互终端须使用独立运行域', 400);
+    if (owner.kind === 'terminal' || owner.kind === 'ssh') throw new AppError('会话须使用专属运行登记入口', 400);
     return this.withLock(vmId, projectId(project), () =>
       this.inheritedUnlocked(vmId, project, execution, owner, signal));
   }
@@ -476,6 +482,104 @@ export class ProjectRunScopes {
     const journal = await this.read(vmId, id);
     return journal.runs.filter(entry => entry.owner.kind === 'terminal' && entry.phase !== 'closed')
       .map(entry => ({ runId: entry.runId, terminal: entry.terminal!, phase: entry.phase }));
+  }
+  async sshRuns(vmId: string, id: string) {
+    id = projectIdSchema.parse(id);
+    return (await this.read(vmId, id)).runs.filter(entry => entry.owner.kind === 'ssh' && entry.phase !== 'closed')
+      .map(entry => ({ runId: entry.runId, owner: entry.owner, identity: entry.identity,
+        sha256: entry.sha256, run: entry.run, phase: entry.phase }));
+  }
+  async beginSsh(vmId: string, project: Project, runId: string,
+    owner: ProjectRunOwner, environment: Record<string, string>, signal?: AbortSignal) {
+    runId = z.uuid().parse(runId); owner = ownerSchema.parse(owner);
+    if (owner.kind !== 'ssh' || owner.runId !== runId || !['openrc.sakura-ssh-' + projectId(project),
+        'system.slice/sakura-ssh-' + projectId(project) + '.service'].includes(owner.cgroupName!))
+      throw new AppError('SSH 登记身份不符', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    return this.withLock(vmId, projectId(project), async () => {
+      const context = await this.taskContext(vmId, signal);
+      if (context.bootId !== owner.bootId) throw new AppError('SSH 登记期间客户机已重启', 409, 'PROJECT_IDENTITY_RUN_STALE');
+      const identity = await this.reserveUnlocked(vmId, project, false, signal), id = identity.projectId;
+      await assertNoPendingProjectDirectoryMigration(this.machines, vmId, id, signal);
+      if (!this.core.sshSnapshotInput) throw new AppError('项目 SSH 登记入口不可用', 503);
+      const journal = await this.read(vmId, id);
+      if (journal.runs.some(entry => entry.runId === runId || entry.owner.kind === 'ssh' && entry.phase !== 'closed') ||
+          await this.archived(vmId, id, runId))
+        throw new AppError('项目 SSH 原运行尚未清理', 409, 'PROJECT_IDENTITY_RUN_STALE');
+      await this.compact(vmId, id, journal);
+      const snapshot = await this.core.sshSnapshotInput(identity, runId, environment);
+      if (snapshot.runId !== runId || createHash('sha256').update(snapshot.input).digest('hex') !== snapshot.sha256)
+        throw new AppError('项目 SSH 环境摘要不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      const current = await this.taskContext(vmId, signal);
+      if (current.live !== context.live || current.bootId !== context.bootId)
+        throw new AppError('项目 SSH 登记期间客户机身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      const entry: Entry = { version: 1, projectId: id, identity, owner, runId,
+        sha256: snapshot.sha256, phase: 'intent', run: null };
+      journal.runs.push(entry); await this.save(vmId, id, journal);
+      return { identity, owner, snapshot };
+    });
+  }
+  async activateSsh(vmId: string, id: string, runId: string, daemon: ProjectIdentitySshDaemon, signal?: AbortSignal) {
+    id = projectIdSchema.parse(id); runId = z.uuid().parse(runId); daemon = projectIdentitySshDaemonSchema.parse(daemon);
+    return this.withLock(vmId, id, async () => {
+      const journal = await this.read(vmId, id), entry = journal.runs.find(entry => entry.runId === runId);
+      if (!entry || entry.owner.kind !== 'ssh' || entry.phase !== 'intent' || entry.run || !this.core.prepareSsh ||
+          entry.owner.bootId !== daemon.bootId || scopeName(entry.owner) !== daemon.cgroupName)
+        throw new AppError('SSH 原启动登记或服务身份不符', 409, 'PROJECT_IDENTITY_RUN_STALE');
+      const context = await this.taskContext(vmId, signal);
+      if (context.bootId !== daemon.bootId) throw new AppError('SSH 启动期间客户机已重启', 409, 'PROJECT_IDENTITY_RUN_STALE');
+      const run = await this.core.prepareSsh(vmId, entry.identity, { runId, daemon, snapshotSha256: entry.sha256 }, signal);
+      const current = await this.taskContext(vmId, signal);
+      if (current.live !== context.live || current.bootId !== context.bootId || run.phase !== 'active' || !this.matches(entry, run))
+        throw new AppError('SSH 完整运行归属未确认，原登记保留', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      entry.run = run; entry.phase = 'active'; await this.save(vmId, id, journal);
+      return { identity: entry.identity, run, owner: entry.owner, sha256: entry.sha256 };
+    });
+  }
+  async recoverSshTicket(vmId: string, id: string, runId: string, signal?: AbortSignal) {
+    id = projectIdSchema.parse(id); runId = z.uuid().parse(runId);
+    return this.withLock(vmId, id, async () => {
+      const journal = await this.read(vmId, id), entry = journal.runs.find(entry => entry.runId === runId);
+      if (!entry || entry.owner.kind !== 'ssh' || entry.phase === 'closed')
+        throw new AppError('SSH 原启动登记不存在或已关闭，拒绝恢复其他运行', 409, 'PROJECT_IDENTITY_RUN_STALE');
+      const context = await this.taskContext(vmId, signal);
+      if (context.bootId !== entry.owner.bootId)
+        throw new AppError('客户机已重启，原 SSH 票据须在全域停止后核销', 409, 'PROJECT_IDENTITY_RUN_STALE');
+      const unchanged = async () => {
+        const current = await this.taskContext(vmId, signal);
+        if (current.live !== context.live || current.bootId !== context.bootId ||
+            !same(await this.read(vmId, id), journal))
+          throw new AppError('SSH 恢复期间客户机或主机原登记已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+        signal?.throwIfAborted();
+      };
+      let run: ProjectIdentityRun;
+      try { run = await this.core.run(vmId, entry.identity, runId, signal); }
+      catch (error) {
+        if (!(error instanceof AppError) || error.code !== 'PROJECT_IDENTITY_RECORD_ABSENT' || entry.run) throw error;
+        await unchanged(); return null;
+      }
+      const checked = projectIdentityRunSchema.safeParse(run);
+      if (!checked.success || !this.matches(entry, checked.data) ||
+          checked.data.namespace !== (entry.identity.networkIsolation === 'private' ? 'sk-' + id : '') ||
+          (entry.run?.phase === 'closed' && checked.data.phase !== 'closed'))
+        throw new AppError('SSH 完整恢复票据与原运行不可变归属不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      await unchanged();
+      // This is a cleanup query, never another prepare. Even a closed native
+      // receipt keeps the host run guarded until its whole original domain is
+      // confirmed stopped by closeAfterScopeStopped.
+      entry.run = checked.data; entry.phase = 'active'; await this.save(vmId, id, journal);
+      return { runId: entry.runId, owner: entry.owner, identity: entry.identity,
+        sha256: entry.sha256, run: entry.run, phase: entry.phase };
+    });
+  }
+  async sshRun(vmId: string, id: string, runId: string, signal?: AbortSignal) {
+    id = projectIdSchema.parse(id); runId = z.uuid().parse(runId);
+    const entry = (await this.read(vmId, id)).runs.find(entry => entry.runId === runId);
+    if (!entry || entry.owner.kind !== 'ssh' || entry.phase !== 'active' || !entry.run || !this.core.runReadonly)
+      throw new AppError('SSH 完整账号票据尚未确认，请先停止原服务', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    const instance = this.machines.live.get(vmId), run = await this.core.runReadonly(vmId, entry.identity, runId, signal);
+    if (!instance || this.machines.live.get(vmId) !== instance || run.phase !== 'active' || !this.matches(entry, run))
+      throw new AppError('SSH 原账号运行归属已改变', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    return { identity: entry.identity, run, owner: entry.owner, sha256: entry.sha256 };
   }
   async retireRebootedTerminals(vmId: string, id: string) {
     id = projectIdSchema.parse(id);
@@ -664,7 +768,7 @@ export class ProjectRunScopes {
     });
   }
   private async confirmScopeStopped(vmId: string, owner: ProjectRunOwner) {
-    const source = `import json,os,stat\nname=${JSON.stringify(scopeName(owner))}\nboot=open('/proc/sys/kernel/random/boot_id').read().strip()\nmounts=open('/proc/self/mountinfo').read().splitlines()\nassert any(len(line.split())>6 and line.split()[4]=='/sys/fs/cgroup' and ' - cgroup2 ' in line for line in mounts)\ninfo=os.lstat('/sys/fs/cgroup')\nassert stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode)\nassert not os.path.lexists('/sys/fs/cgroup/'+name)\nprint(json.dumps({'bootId':boot,'absent':True}))\n`;
+    const source = `import json,os,stat\nname=${JSON.stringify(scopeName(owner))}\nboot=open('/proc/sys/kernel/random/boot_id').read().strip()\nmounts=open('/proc/self/mountinfo').read().splitlines()\nassert any(len(line.split())>6 and line.split()[4]=='/sys/fs/cgroup' and line.split()[3]=='/' and ' - cgroup2 ' in line for line in mounts)\npath='/sys/fs/cgroup'\ninfo=os.lstat(path)\nassert stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022\nfor part in name.split('/')[:-1]:\n path+='/'+part\n if not os.path.lexists(path): break\n info=os.lstat(path)\n assert stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022\nassert not os.path.lexists('/sys/fs/cgroup/'+name)\nprint(json.dumps({'bootId':boot,'absent':True}))\n`;
     const result = await this.machines.exec(vmId, `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ${quote(source)}`, 10000);
     const schema = z.object({ bootId: z.uuid(), absent: z.literal(true) }).strict();
     if (result.code !== 0 || !schema.safeParse(parseJson(result.stdout)).success)

@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 项目 SSH、SFTP 与编辑器入口的项目账号
+
+2026-10-02 专属项目 SSH 的 Shell、命令、SFTP 与编辑器入口接入持久 UID/GID、独立 home、原项目目录及服务 cgroup。三种发行版的共享与私有项目均导出核对后的独立入口。固定 ForceCommand 只带账号、run 与摘要；真实客户端命令和环境经有界帧降权执行，独立描述符保留二进制 stdin、EOF 与 PTY。解析环境保存在 root 独占 JSON，不进入 root argv；旧 root 编辑器缓存保留。规则见 [项目 SSH](project-ssh.md)。
+
+启动前保存宿主 intent，客户机先写受保护 SSH 完整回执再发行原生票据。发行应答丢失时，清理先恢复并保存原完整 daemon、boot 与 cgroup device/inode 票据，再关闭桥接并停止原域。只有 SSH 回执的中断状态仅允许清理恢复，不能授权普通会话或只读入场；原域消失后以不可覆盖的原子发布补齐原生记录，再退休回执和核销票据。权限变化、构建不匹配、容量或同步失败保留原记录供重试。
+
+真实 Alpine 3.23 实机九项全部通过：UID/GID、home、目录、私有网络与捕获环境，512 KiB 二进制 stdin，256 KiB SFTP 与跨项目拒绝，PTY 输入/resize/Ctrl-C/退出，只读重载及权限拒绝，整域与脱离终端子进程停止、邻居保留和重建，无效 SESSION 帧，实际发行后丢失应答，以及明确注入的仅 SSH 回执持久状态。最后一项通过移除已核对的原生运行文件形成夹具，不声称捕获写入间的真实崩溃。证明为 `.data/project-ssh-identity-test-temp/sakura-ssh-identity-fMLJIu/project-ssh-identity-e022a2a6-8812-4532-8bc2-b22bc50a6d24.json`，摘要 `c0c623395f56cb75bb1d0d51925cb5d9c4eda6ab26fb7e3aeafd6bf74109584a`。268 个源码摘要未变，原缓存镜像未变，实际退出 0，实例、自有子进程和准确 QEMU/CIM 均已关闭。首轮 PTY 检查误读 ssh2 继承的 Node closed 状态，其 false 证明保留；改为实际 close 事件与退出码后完成复测。当前成功实机范围不包含 Debian/Ubuntu 或真实桌面编辑器客户端。
+
+定向后端 138 项全部通过，证明为 `.data/project-ssh-identity-backend-00c7b71a-2089-40d9-a484-a60669e02465-verification.json`；其中原生 SSH 九组事务模型与归档十四组模型属于可移植检查。插件、语言资源、完整构建、分发检查和七种生产服务组合通过，937 个受核对文件前后保持一致；证明为 `.data/project-ssh-identity-build-3be1ab45-a7a1-4b01-b719-88e09cdc866d-verification.json`。运行包 264 个文件通过完整清单核对，指纹 `cf8902fd80712d481f80ec252ceb31a52f82da4e7bcc2520392cc7a3e7aea46a`；证明为 `.data/project-ssh-identity-release-42e59838-7424-49c7-b788-99793e0c8407-verification.json`。本批未重跑整仓测试，前一终端批次 Windows rename EPERM 的原 false 证明继续保留。目录仍为 250 项、247 项有入口、3 项部分实现；浏览器 IDE、工程扩展等其余账号入口继续实现，外部 HA 演练与系统级剪贴板边界见 [未完成功能](unfinished-features.md)。
+
 ## 收藏命令与流水线步骤的项目账号
 
 2026-10-02 收藏命令和流水线步骤接入固定项目 UID/GID 启动器，命令、参数及环境通过有界保护帧运输。提交固定原项目，准备捕获一份配置和准确 live 实例，私密配置与运行时只解析这份配置。流水线各步骤独立任务 UUID、完整 cgroup 票据和时限，不在两步之间重新读取配置。准备租约保持到任务清理结束，流水线同时保持到产物收集及最终记录保存；取消和关闭会等待完整清理，借用服务的其他任务不被关闭。规则见 [项目命令任务](project-command-tasks.md)。
