@@ -29,6 +29,8 @@ for (const code of [
   'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED',
   'PROJECT_REPOSITORY_CLEANUP_FAILED',
   'RUNTIME_INSTALL_CLEANUP_FAILED',
+  'BROWSER_IDE_CLEANUP_FAILED',
+  'NOTEBOOK_CLEANUP_FAILED', 'NOTEBOOK_PREPARE_CLEANUP_FAILED',
 ]) {
   test(`cancelled ${code} cleanup remains a durable failure after restart`, async () => {
     const scope = code.toLowerCase(), jobs = new Jobs(scope, root), entered = gate();
@@ -74,7 +76,8 @@ test('shutdown waits for cleanup and preserves its failure instead of a cancelle
   assert.equal(view.error, '关闭后的任务域清理仍未确认');
 });
 
-for (const code of ['PROJECT_MAIN_CLEANUP_FAILED', 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED', 'PROJECT_REPOSITORY_CLEANUP_FAILED']) {
+for (const code of ['PROJECT_MAIN_CLEANUP_FAILED', 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED', 'PROJECT_REPOSITORY_CLEANUP_FAILED',
+  'BROWSER_IDE_CLEANUP_FAILED', 'NOTEBOOK_CLEANUP_FAILED', 'NOTEBOOK_PREPARE_CLEANUP_FAILED']) {
   test(`tracked cancellation returns the original ${code} status, code and message`, async () => {
     const jobs = new Jobs('tracked-' + code.toLowerCase(), root), entered = gate(), abort = new AbortController();
     const pending = jobs.track('owned', async (_log, signal) => {

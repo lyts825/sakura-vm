@@ -41,6 +41,8 @@ const cleanupFailureCodes = new Set([
   'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED',
   'PROJECT_REPOSITORY_CLEANUP_FAILED',
   'RUNTIME_INSTALL_CLEANUP_FAILED',
+  'BROWSER_IDE_CLEANUP_FAILED',
+  'NOTEBOOK_CLEANUP_FAILED', 'NOTEBOOK_PREPARE_CLEANUP_FAILED',
 ]);
 export class Jobs {
   static instrument?: (view: JobView, work: () => Promise<void>) => Promise<void>;

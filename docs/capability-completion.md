@@ -2,6 +2,12 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 九项有限开发任务与清理失败保留
+
+2026-10-02 能力中心的 test、test-discover、dependencies、lock、lock-check、install-locked，以及 worktree-list/add/remove 九项有限开发任务接入持久项目 UID/GID、独立 home、原网络和有界保护帧。提交同步固定原项目与 live 身份，复制保留非枚举项目 ID，准备捕获并核对一份原配置；环境只解析一次，执行和结果保存保持原租约，原 task/native 清理 503 与错误码继续传播。保留原任务中心入口、参数、退出码和日志脱敏；Lint/format 继续复用工程 UID helper。缓存安装的受限跨权限交接继续实现，缓存预取与 Docker 管理边界分别保留，使用范围见 [能力中心](feature-suite.md)。
+
+补齐 Browser IDE、Notebook 会话及 wheelhouse 的三个准确清理错误码，取消不再把这些 503 记为普通 cancelled。正式三个相关测试文件共 41 项全部通过（17 项开发模型、3 项原能力中心回归及 21 项 Jobs 清理回归），完整类型检查通过；证明为 `.data/feature-dev-identity-backend-c8f55353-0923-4048-b3d0-565021adbcde-verification.json`，实际退出 0，源码前后未变。覆盖具名项目、捕获配置/live、更换运行、参数/frame、脱敏、完整清理与结果保存租约，以及取消后重载保留失败和 tracked 503/status/code。本批未启动 VM、未重跑整仓测试；目录保持 250 项、247 项有入口、3 项部分实现。
+
 ## 轻量代码诊断的项目账号
 
 2026-10-02 Node、tsc、Python py_compile 和 JSON 诊断接入原项目 UID/GID、独立 home、捕获配置与受保护正文，保留原 HTTP/CLI API、文件范围和行列解析。请求在首次异步读取前固定原项目与 live 身份，非枚举项目标识在复制后独立保留，准备租约核对原配置摘要、项目和 live；环境只解析一次。单次任务时限 30 秒，整域及准确账号票据清理后才释放租约；结果发布前复核原绑定并脱敏，原 native 清理 503 不解析为编译诊断。每次检查独立拥有准备管理器，release 与 close 均尝试，多个失败保留全部原 cause 及 503/code，不需增加插件生命周期。使用范围见 [代码检查](development-next.md)。
