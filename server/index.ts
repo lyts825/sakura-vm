@@ -1609,8 +1609,13 @@ async function main() {
       let ssh: Awaited<ReturnType<typeof machines.connect>> | undefined;
       let terminalLease: Awaited<ReturnType<typeof projectTerminals.prepare>> | undefined;
       const terminalAbort = new AbortController();
+      const releaseTerminal = () => {
+        void Promise.resolve(terminalLease?.release()).catch(error => {
+          console.error('Terminal cleanup unconfirmed:', error);
+        });
+      };
       client.on('close', () => {
-        terminalAbort.abort(); terminalLease?.release(); ssh?.end();
+        terminalAbort.abort(); releaseTerminal(); ssh?.end();
       });
       try {
         const terminalGrant = mode === 'terminal-view' && 'id' in principal
@@ -1675,7 +1680,7 @@ async function main() {
       } catch (error: any) {
         sendData('error', error.message);
         client.close();
-        terminalLease?.release();
+        releaseTerminal();
         ssh?.end();
       }
     });

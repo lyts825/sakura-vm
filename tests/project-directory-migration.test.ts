@@ -401,7 +401,7 @@ test('lost final confirm remains visibly unconfirmed and supports explicit same-
   assert.equal(recovered.plan?.state, 'applied');
   assert.equal(recovered.lastFailure, null);
 });
-test('prepared raw terminal lease blocks preview and apply before any account or guest work', async () => {
+test('prepared task lease blocks preview and apply before any account or guest work', async () => {
   const f = await fixture(),
     plan = (await f.service.preview(f.vmId)).plan!,
     terminals = new ProjectTerminals(
@@ -410,8 +410,9 @@ test('prepared raw terminal lease blocks preview and apply before any account or
     ),
     peer = new ProjectTerminals(f.machines as unknown as Machines, f.workspaces as unknown as Workspaces),
     abort = new AbortController();
+  let lease: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
   try {
-    await terminals.prepare(f.vmId, 'default', null, false, abort.signal);
+    lease = await terminals.prepare(f.vmId, 'default', null, false, abort.signal, undefined, { mode: 'task' });
     const before = { counts: f.counts(), commands: f.commands.length, requests: f.requests.length };
     await peer.close();
     assert.throws(() => assertProjectTerminalsStopped(f.machines as unknown as Machines, f.vmId, 'default'), {
@@ -436,6 +437,7 @@ test('prepared raw terminal lease blocks preview and apply before any account or
       before,
     );
     abort.abort();
+    await lease.release();
     assert.doesNotThrow(() =>
       assertProjectTerminalsStopped(f.machines as unknown as Machines, f.vmId, 'default'),
     );
@@ -449,6 +451,7 @@ test('prepared raw terminal lease blocks preview and apply before any account or
     assert.equal(result.plan?.state, 'applied');
   } finally {
     abort.abort();
+    await lease?.release();
     await terminals.close();
     await peer.close();
   }

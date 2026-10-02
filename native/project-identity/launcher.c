@@ -348,7 +348,7 @@ static long long milliseconds(void) {
 struct payload {
     unsigned char *wire;
     size_t wire_size, script_size;
-    unsigned environment_count;
+    unsigned environment_count, flags;
     char *keys[SK_PAYLOAD_ENV_LIMIT], *values[SK_PAYLOAD_ENV_LIMIT];
 };
 static uint32_t little(const unsigned char *p) { return p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24); }
@@ -372,7 +372,8 @@ static struct payload payload_read(const char *expected) {
     }
     if (value.wire_size<sizeof(struct sk_payload_header)) refuse("PAYLOAD_TRUNCATED");
     struct sk_payload_header header; memcpy(&header,value.wire,sizeof(header));
-    if (memcmp(header.magic,"SKIDP001",8) || header.version!=SK_PAYLOAD_VERSION || header.flags || header.reserved)
+    if (memcmp(header.magic,"SKIDP001",8) || header.version!=SK_PAYLOAD_VERSION ||
+        (header.flags & ~SK_PAYLOAD_TERMINAL) || header.reserved)
         refuse("PAYLOAD_HEADER");
     if (header.body_size!=value.wire_size-sizeof(header)) refuse("PAYLOAD_LENGTH");
     if (!header.script_size || header.script_size>SK_PAYLOAD_TEXT_LIMIT || header.script_size>header.body_size ||
@@ -380,7 +381,14 @@ static struct payload payload_read(const char *expected) {
     char actual[65]; sha256(value.wire,value.wire_size,actual);
     if (strcmp(actual,expected)) refuse("PAYLOAD_DIGEST");
     if (!utf8(value.wire+sizeof(header),header.script_size)) refuse("PAYLOAD_UTF8");
-    value.script_size=header.script_size; value.environment_count=header.environment_count;
+    value.script_size=header.script_size; value.environment_count=header.environment_count; value.flags=header.flags;
+    if (value.flags & SK_PAYLOAD_TERMINAL) {
+        struct stat terminal_info;
+        int terminal_flags=fcntl(STDOUT_FILENO,F_GETFL);
+        if (terminal_flags<0 || (terminal_flags&O_ACCMODE)!=O_RDWR ||
+            fstat(STDOUT_FILENO,&terminal_info) || !S_ISCHR(terminal_info.st_mode) ||
+            !isatty(STDOUT_FILENO)) refuse("PAYLOAD_TERMINAL_REQUIRED");
+    }
     size_t offset=sizeof(header)+header.script_size, total=header.script_size;
     for (unsigned i=0;i<header.environment_count;++i) {
         if (value.wire_size-offset<8) refuse("PAYLOAD_LENGTH");
@@ -426,8 +434,12 @@ static void payload_exec(struct payload *value) {
         free(value->keys[i]);free(value->values[i]);
     }
     wipe(value->wire,value->wire_size);free(value->wire);
-    int input=open("/dev/null",O_RDONLY|O_CLOEXEC); if (input<0 || dup2(input,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
-    if (input!=STDIN_FILENO) close(input);
+    if (value->flags & SK_PAYLOAD_TERMINAL) {
+        if (dup2(STDOUT_FILENO,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
+    } else {
+        int input=open("/dev/null",O_RDONLY|O_CLOEXEC); if (input<0 || dup2(input,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
+        if (input!=STDIN_FILENO) close(input);
+    }
     if (readable!=3) { if (dup2(readable,3)<0) refuse("PAYLOAD_MEMFD"); close(readable); }
     if (fcntl(3,F_SETFD,0)) refuse("PAYLOAD_MEMFD");
     close_extra_fds_except(3);

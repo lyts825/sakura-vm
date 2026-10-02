@@ -86,6 +86,13 @@ function fixture() {
           if (mode === 'readonly-absent') return { code: 1, stderr: '', stdout: JSON.stringify({ ok: false, code: 'RECORD_ABSENT' }) };
           return reply(mode === 'readonly-old-build' ? { ...run, build: 'f'.repeat(64) } : run);
         }
+        if (request.action === 'terminal-probe' || request.action === 'terminal-create') {
+          if (mode === 'terminal-lost') throw new Error('owned terminal reply lost');
+          return reply({ version: 1, terminalId: run.runId, run: mode === 'terminal-retarget' ?
+            { ...run, cgroupInode: '9911' } : run, name: request.name, serverPid: 456, serverTicks: '92', sessionId: '$0' });
+        }
+        if (request.action === 'terminal-retire') return reply({ version: 1,
+          terminalId: mode === 'terminal-retarget' ? randomUUID() : run.runId, retired: true });
         if (request.action === 'ensure' || request.action === 'inspect') return reply(identity);
         if (request.action === 'stop') {
           stopAttempts++;
@@ -120,6 +127,32 @@ test('explicit asset directory is verified and substitution fails before guest i
     const owned = await realpath(bad); assert.equal(dirname(owned), await realpath(parent));
     assert.match(basename(owned), /^sakura-project-identity-unit-/); await rm(owned, { recursive: true });
   }
+});
+
+test('terminal readonly probes and attach plans use exact identity metadata without installation or shell bodies', async () => {
+  const f = await fixture(), name = 'sakura-terminal-default-main';
+  const checked = await f.core.terminal('owned-vm', f.identity, f.run, name);
+  assert.equal(checked.terminalId, f.run.runId); assert.equal(checked.serverPid, 456);
+  assert.deepEqual(f.requests.map(request => request.action), ['terminal-probe']);
+  assert.equal(f.counts().uploads, 0); assert.equal(f.counts().cleanups, 0);
+  const command = await f.core.terminalCommand(f.identity, f.run, name, true);
+  const request = JSON.parse(Buffer.from(command.match(/\/controller\.py' '([A-Za-z0-9+/=]+)'$/)![1], 'base64').toString());
+  assert.deepEqual(request, { action: 'terminal-attach', projectId: 'default',
+    expected: { registryId: f.identity.registryId, identityId: f.identity.identityId, revision: 1 },
+    runId: f.run.runId, name, readOnly: true });
+  assert.doesNotMatch(command, /tmux|sh -l|\/root\//);
+  assert.equal(f.requests.length, 1, 'Generating an attach command does not mutate the guest.');
+});
+
+test('terminal receipts cannot replace an original cgroup or retired UUID', async () => {
+  const f = await fixture(); f.setMode('terminal-retarget');
+  await assert.rejects(f.core.terminal('owned-vm', f.identity, f.run, 'sakura-terminal-default-main'),
+    { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  await assert.rejects(f.core.retireTerminal('owned-vm', f.identity, { ...f.run, phase: 'closed' }), cleanupFailure);
+  const before = f.requests.length;
+  await assert.rejects(f.core.terminalCommand(f.identity, { ...f.run, phase: 'closed' }, 'sakura-terminal-default-main', false),
+    { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  assert.equal(f.requests.length, before);
 });
 test('command and environment stay in the bounded input buffer and legacy argv paths refuse', async () => {
   const f = fixture(), plan = f.core.input(f.identity, f.run,

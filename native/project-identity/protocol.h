@@ -21,6 +21,7 @@
 #define SK_NETWORK_DELETING 2u
 #define SK_NETWORK_RELEASED 3u
 #define SK_PAYLOAD_VERSION 1u
+#define SK_PAYLOAD_TERMINAL 1u
 #define SK_PAYLOAD_LIMIT 131072u
 #define SK_PAYLOAD_TEXT_LIMIT 65536u
 #define SK_PAYLOAD_ENV_LIMIT 128u
@@ -67,7 +68,9 @@ struct sk_network_guard {
 };
 /* Transient stdin frame only: never written to the authority directories.
  * Body: UTF-8 script, then {key_size,value_size,key,value} environment entries.
- * Every integer is little endian, followed by an exact EOF on the channel. */
+ * Every integer is little endian, followed by an exact EOF on the channel.
+ * TERMINAL replaces stdin with the already-open read/write stdout PTY only
+ * after accepting the frame and dropping privileges; it never opens a tty. */
 struct sk_payload_header {
     char magic[8];
     uint32_t version, flags, body_size, environment_count, script_size, reserved;

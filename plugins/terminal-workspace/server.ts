@@ -4,10 +4,11 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
 import { ProjectCatalog } from '../../server/project-catalog.ts';
-import { stopTerminalsScript } from '../../server/project-terminals.ts';
-import { AppError } from '../../server/model.ts';
+import { ProjectTerminals } from '../../server/project-terminals.ts';
 
-export async function activate(host: PluginContext) {}
+export async function activate(host: PluginContext) {
+  host.provide('terminals', new ProjectTerminals(host.machines, host.workspaces));
+}
 export async function route(
   this: PluginContext,
   req: IncomingMessage,
@@ -39,15 +40,8 @@ export async function route(
       const projects = this.workspaces?.projects || new ProjectCatalog(this.machines);
       const projectId = await projects.with(id, url.searchParams.get('project'),
         async () => projects.current(id));
-      await this.machines.locked(id, async () => {
-        if (this.machines.state(id) === 'paused')
-          throw new AppError('请先恢复实例再停止项目终端', 409);
-        if (this.machines.state(id) === 'running') {
-          const result = await this.machines.exec(id, stopTerminalsScript(projectId,
-            'session' in input ? input.session : undefined), 10000, signal);
-          if (result.code !== 0) throw new AppError(result.stderr || '无法停止项目终端', 409);
-        }
-      });
+      await this.use<ProjectTerminals>('terminal-workspace', 'terminals').stop(id, projectId,
+        'session' in input ? input.session : undefined, signal);
       send({ ok: true, projectId });
       return true;
     }

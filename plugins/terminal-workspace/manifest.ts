@@ -6,5 +6,6 @@ export const manifest = definePlugin({
   description: '终端标签、分屏与 tmux 会话恢复。',
   category: 'workspace',
   optional: [pin('projects')],
+  services: ['terminals'],
   contributes: { http: [http('/api/vms/:vmId/terminal-session', ['POST'], true)], sockets: ['terminal-session'] },
 });

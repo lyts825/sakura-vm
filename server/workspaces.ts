@@ -514,6 +514,7 @@ export class Workspaces {
               if (service) return;
             }
             await stopProjectMain(this.machines, id, project, log, signal);
+            await identities.stopTerminals(id, projectId);
             if (lease) await identities.releaseNetwork(id, projectId, lease, signal);
             else await removeProjectNetwork(this.machines, id, project, signal);
             return;

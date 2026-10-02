@@ -18,17 +18,22 @@ import { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema, pro
   type ProjectIdentity, type ProjectIdentityRun, type ProjectIdentityExecution } from './project-identity.ts';
 
 const bindingSchema = z.object({ directory: z.string().min(1), networkIsolation: z.enum(['host', 'private']) }).strict();
-const ownerSchema = z.object({ kind: z.enum(['task', 'main', 'service']), runId: z.uuid(), bootId: z.uuid() }).strict();
+const ownerSchema = z.object({ kind: z.enum(['task', 'main', 'service', 'terminal']), runId: z.uuid(), bootId: z.uuid() }).strict();
 export type ProjectRunOwner = z.infer<typeof ownerSchema>;
+const terminalSchema = z.object({ name: z.string().regex(/^sakura-terminal-(default|[a-f0-9]{16})-[a-z0-9-]{1,48}$/),
+  persistent: z.boolean() }).strict();
 const entrySchema = z.object({ version: z.literal(1), projectId: projectIdSchema, identity: projectIdentitySchema,
   runId: z.uuid(), owner: ownerSchema, sha256: z.string().regex(/^[a-f0-9]{64}$/),
   phase: z.enum(['intent', 'active', 'closed']), run: projectIdentityRunSchema.nullable(),
   sshAgent: sshAgentResourceSchema.optional(),
   gpgAgent: gpgAgentResourceSchema.optional(),
+  terminal: terminalSchema.optional(),
   retirement: z.object({ reason: z.literal('guest-reboot'), bootId: z.uuid() }).strict().optional() }).strict()
   .superRefine((value, ctx) => {
     if (value.projectId !== value.identity.projectId || value.runId !== value.owner.runId ||
-        (value.run && (value.run.runId !== value.runId || value.run.mode !== 'inherit-current' ||
+        (Boolean(value.terminal) !== (value.owner.kind === 'terminal')) ||
+        (value.terminal && !value.terminal.name.startsWith('sakura-terminal-' + value.projectId + '-')) ||
+        (value.run && (value.run.runId !== value.runId || value.run.mode !== (value.owner.kind === 'terminal' ? 'independent' : 'inherit-current') ||
           value.run.projectId !== value.projectId || value.run.identityId !== value.identity.identityId ||
           value.run.registryId !== value.identity.registryId || value.run.revision !== value.identity.revision ||
           value.run.bootId !== value.owner.bootId || value.run.cgroupName !== scopeName(value.owner))) ||
@@ -68,7 +73,7 @@ const journalSchema = z.object({ version: z.literal(1), projectId: projectIdSche
   });
 type Journal = z.infer<typeof journalSchema>;
 type Core = Pick<ProjectIdentities, 'ensure' | 'inspect' | 'rebind' | 'inheritedInput' | 'run' | 'stop'> &
-  Partial<Pick<ProjectIdentities, 'runReadonly'>> & {
+  Partial<Pick<ProjectIdentities, 'runReadonly' | 'prepare' | 'retireTerminal'>> & {
     beginNetworkRelease?: (vmId: string, identity: ProjectIdentity, options: { releaseId: string; bootId: string },
       signal?: AbortSignal) => Promise<z.infer<typeof networkLeaseSchema> | null>;
     releaseNetwork?: (vmId: string, identity: ProjectIdentity, lease: z.infer<typeof networkLeaseSchema>,
@@ -95,7 +100,7 @@ const binding = (project: { directory: string; networkIsolation?: 'host' | 'priv
 const expected = (identity: ProjectIdentity) => ({ registryId: identity.registryId,
   identityId: identity.identityId, revision: identity.revision });
 const projectId = (project: Project) => projectIdSchema.parse(project._workspace || 'default');
-const scopeName = (owner: ProjectRunOwner) => `sakura-${owner.kind}-${owner.runId}`;
+const scopeName = (owner: ProjectRunOwner) => `sakura-${owner.kind === 'terminal' ? 'identity' : owner.kind}-${owner.runId}`;
 const sameIdentity = (left: ProjectIdentity, right: ProjectIdentity, rebind = false) => {
   const mutable = new Set(['phase', ...(rebind ? ['revision', 'directory', 'directoryDevice', 'directoryInode', 'networkIsolation'] : [])]);
   return Object.keys(left).every(key => mutable.has(key) || left[key as keyof ProjectIdentity] === right[key as keyof ProjectIdentity]) &&
@@ -419,7 +424,8 @@ export class ProjectRunScopes {
     return run.phase === 'active';
   }
   private matches(entry: Entry, run: ProjectIdentityRun) {
-    return run.mode === 'inherit-current' && run.cgroupName === scopeName(entry.owner) && run.bootId === entry.owner.bootId &&
+    return run.mode === (entry.owner.kind === 'terminal' ? 'independent' : 'inherit-current') &&
+      run.cgroupName === scopeName(entry.owner) && run.bootId === entry.owner.bootId &&
       run.runId === entry.runId && run.projectId === entry.projectId && run.identityId === entry.identity.identityId &&
       run.registryId === entry.identity.registryId && run.revision === entry.identity.revision &&
       (!entry.run || same({ ...run, phase: entry.run.phase }, entry.run));
@@ -427,6 +433,7 @@ export class ProjectRunScopes {
   async inherited(vmId: string, project: Project, execution: ProjectIdentityExecution,
     owner: ProjectRunOwner, signal?: AbortSignal): Promise<ProjectInheritedPayload> {
     owner = ownerSchema.parse(owner);
+    if (owner.kind === 'terminal') throw new AppError('交互终端须使用独立运行域', 400);
     return this.withLock(vmId, projectId(project), () =>
       this.inheritedUnlocked(vmId, project, execution, owner, signal));
   }
@@ -463,6 +470,101 @@ export class ProjectRunScopes {
       // launcher entry. No user command/environment is part of this argv.
       const command = `test "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(owner.bootId)} && ${payload.command}`;
       return { ...payload, command, identity, runId: owner.runId };
+  }
+  async terminalRuns(vmId: string, id: string) {
+    id = projectIdSchema.parse(id);
+    const journal = await this.read(vmId, id);
+    return journal.runs.filter(entry => entry.owner.kind === 'terminal' && entry.phase !== 'closed')
+      .map(entry => ({ runId: entry.runId, terminal: entry.terminal!, phase: entry.phase }));
+  }
+  async retireRebootedTerminals(vmId: string, id: string) {
+    id = projectIdSchema.parse(id);
+    const context = await this.taskContext(vmId), journal = await this.read(vmId, id);
+    for (const entry of journal.runs) {
+      if (entry.owner.kind === 'terminal' && entry.phase !== 'closed' && entry.owner.bootId !== context.bootId)
+        await this.stopTerminal(vmId, id, entry.runId);
+    }
+  }
+  async prepareTerminal(vmId: string, project: Project, runId: string,
+    terminal: z.infer<typeof terminalSchema>, signal?: AbortSignal) {
+    runId = z.uuid().parse(runId); terminal = terminalSchema.parse(terminal);
+    return this.withLock(vmId, projectId(project), async () => {
+      const context = await this.taskContext(vmId, signal), identity = await this.reserveUnlocked(vmId, project, false, signal);
+      const id = identity.projectId;
+      await assertNoPendingProjectDirectoryMigration(this.machines, vmId, id, signal);
+      if (!this.core.prepare) throw new AppError('项目终端独立运行入口不可用', 503);
+      const journal = await this.read(vmId, id);
+      if (journal.runs.some(entry => entry.runId === runId ||
+          (entry.owner.kind === 'terminal' && entry.phase !== 'closed' && entry.terminal?.name === terminal.name)) ||
+          await this.archived(vmId, id, runId))
+        throw new AppError('终端运行已登记，请先核对或停止原会话', 409, 'PROJECT_IDENTITY_RUN_STALE');
+      await this.compact(vmId, id, journal);
+      const owner: ProjectRunOwner = { kind: 'terminal', runId, bootId: context.bootId };
+      const entry: Entry = { version: 1, projectId: id, identity, owner, runId, terminal,
+        sha256: createHash('sha256').update(JSON.stringify({ identity, owner, terminal })).digest('hex'),
+        phase: 'intent', run: null };
+      journal.runs.push(entry); await this.save(vmId, id, journal);
+      const run = await this.core.prepare(vmId, identity, { runId }, signal);
+      const current = await this.taskContext(vmId, signal);
+      if (current.live !== context.live || current.bootId !== context.bootId || run.phase !== 'active' || !this.matches(entry, run))
+        throw new AppError('项目终端完整运行归属未确认，原 intent 保留', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      entry.run = run; entry.phase = 'active'; await this.save(vmId, id, journal);
+      return { identity, run, terminal };
+    });
+  }
+  async terminalRun(vmId: string, id: string, runId: string, signal?: AbortSignal) {
+    id = projectIdSchema.parse(id); runId = z.uuid().parse(runId);
+    const entry = (await this.read(vmId, id)).runs.find(entry => entry.runId === runId);
+    if (!entry || entry.owner.kind !== 'terminal' || entry.phase !== 'active' || !entry.run || !this.core.runReadonly)
+      throw new AppError('终端的完整运行票据尚未确认，请先停止原会话', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    const instance = this.machines.live.get(vmId), run = await this.core.runReadonly(vmId, entry.identity, runId, signal);
+    if (!instance || this.machines.live.get(vmId) !== instance || run.phase !== 'active' || !this.matches(entry, run))
+      throw new AppError('终端已结束或客户机运行归属已改变', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    return { identity: entry.identity, run, terminal: entry.terminal! };
+  }
+  async stopTerminal(vmId: string, id: string, runId: string) {
+    id = projectIdSchema.parse(id); runId = z.uuid().parse(runId);
+    return this.withLock(vmId, id, async () => {
+      const entry = (await this.read(vmId, id)).runs.find(entry => entry.runId === runId);
+      if (!entry) {
+        const prior = await this.archived(vmId, id, runId);
+        if (prior?.owner.kind === 'terminal') return;
+        throw new AppError('原终端运行记录不存在，清理未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+      }
+      if (entry.owner.kind !== 'terminal') throw new AppError('停止请求不属于交互终端', 409);
+      if (entry.phase === 'closed') return;
+      const context = await this.taskContext(vmId);
+      if (context.bootId === entry.owner.bootId) {
+        let run: ProjectIdentityRun;
+        try { run = await this.core.run(vmId, entry.identity, runId); }
+        catch (error) {
+          if (!(error instanceof AppError) || error.code !== 'PROJECT_IDENTITY_RECORD_ABSENT' || entry.run) throw error;
+          await this.closeUnlocked(vmId, id, runId); return;
+        }
+        if (!this.matches(entry, run)) throw new AppError('终端运行票据已改变，拒绝停止其他运行', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+        const stopped = await this.core.stop(vmId, entry.identity, run);
+        if (stopped.phase !== 'closed' || !same({ ...stopped, phase: run.phase }, run) || !this.core.retireTerminal)
+          throw new AppError('原终端停止回执未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+        await this.core.retireTerminal(vmId, entry.identity, stopped);
+      } else {
+        const paths = ['/run/sakura-project-terminals/' + runId, '/run/sakura-project-identities/terminals/' + runId + '.json'];
+        const result = await this.machines.exec(vmId,
+          `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /usr/bin/python3 -I -S -c ${quote(
+            `import os\nassert all(not os.path.lexists(p) for p in ${JSON.stringify(paths)})\n`)}`, 10000);
+        if (result.code !== 0) throw new AppError('新开机仍存在原终端资源，保留核销记录', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+      }
+      if (this.machines.live.get(vmId) !== context.live || await this.kernelBoot(vmId) !== context.bootId)
+        throw new AppError('终端清理期间客户机身份改变', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+      await this.closeUnlocked(vmId, id, runId);
+    }).catch(error => {
+      if (error instanceof AppError && error.code === 'PROJECT_IDENTITY_CLEANUP_FAILED') throw error;
+      throw new AppError('原终端全域或资源清理尚未确认，保留原运行记录：' +
+        (error instanceof Error ? error.message : String(error)), 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+    });
+  }
+  async stopTerminals(vmId: string, id: string, name?: string) {
+    const runs = await this.terminalRuns(vmId, id);
+    for (const entry of runs) if (!name || entry.terminal.name === name) await this.stopTerminal(vmId, id, entry.runId);
   }
   private taskKey(vmId: string, id: string, runId: string) {
     return vmId + ':' + id + ':' + runId;

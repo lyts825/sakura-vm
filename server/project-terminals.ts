@@ -7,6 +7,8 @@ import { AppError } from './model.ts';
 import { ensureProjectNetworkScript, projectNetworkCheckScript,
   projectNetworkNamespace, projectPrivateShellCommand } from './project-network-isolation.ts';
 import { terminalSessionName, terminalSessionPrefix } from '../shared/terminal-scope.ts';
+import { ProjectIdentities } from './project-identity.ts';
+import { ProjectRunScopes } from './project-run-scope.ts';
 
 export function terminalBinding(project: Project) {
   return createHash('sha256').update(JSON.stringify([project._workspace || 'default',
@@ -61,7 +63,8 @@ export function stopTerminalsScript(projectId: string, session?: string) {
     `    done\n  fi\n`) + `fi`;
 }
 
-type Lease = { vmId: string; projectId: string; task: boolean; finished: Promise<void>; release: () => void };
+type Lease = { vmId: string; projectId: string; task: boolean; terminalId?: string;
+  finished: Promise<void>; release: () => void | Promise<void> };
 const preparedTerminals = new WeakMap<Machines, Set<Lease>>();
 
 /** A prepared connection can execute after prepare returns; keep it reserved until release. */
@@ -78,11 +81,17 @@ export class ProjectTerminals {
   private pending = new Map<string, Promise<unknown>>();
   private controller = new AbortController();
   private unguard: () => void;
+  private scopes: Pick<ProjectRunScopes, 'assertAdmission' | 'terminalRuns' | 'prepareTerminal' | 'terminalRun' |
+    'hasRun' | 'stopTerminal' | 'stopTerminals' | 'retireRebootedTerminals'>;
+  private identities: Pick<ProjectIdentities, 'terminal' | 'terminalCommand'>;
 
   constructor(private machines: Machines, workspaces?: Workspaces,
-    context?: ConstructorParameters<typeof Workspaces>[1]) {
+    context?: ConstructorParameters<typeof Workspaces>[1], options: {
+      scopes?: ProjectTerminals['scopes']; identities?: ProjectTerminals['identities'] } = {}) {
     this.ownsWorkspaces = !workspaces;
     this.workspaces = workspaces || new Workspaces(machines, context);
+    this.scopes = options.scopes || new ProjectRunScopes(machines);
+    this.identities = options.identities || new ProjectIdentities(machines);
     this.unguard = this.workspaces.beforeConfigChange(async (id, previous, next) => {
       if (previous.directory === next.directory &&
           (previous.networkIsolation || 'host') === (next.networkIsolation || 'host')) return;
@@ -120,8 +129,7 @@ export class ProjectTerminals {
       const scope = project._workspace || 'default';
       let command = terminalShell(project);
       let terminalId: string | undefined;
-      const { ProjectRunScopes } = await import('./project-run-scope.ts');
-      await new ProjectRunScopes(this.machines).assertAdmission(id, scope);
+      await this.scopes.assertAdmission(id, scope);
       const { assertNoPendingProjectDirectoryMigration } = await import('./project-directory-migration.ts');
       await assertNoPendingProjectDirectoryMigration(this.machines, id, scope, abort);
       if (!readOnly) {
@@ -130,7 +138,7 @@ export class ProjectTerminals {
           'export DEBIAN_FRONTEND=noninteractive; apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update && apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y tmux';
         const namespace = projectNetworkNamespace(project);
         const prepared = await this.machines.exec(id, `set -eu\n` +
-          `${session ? `if ! command -v tmux >/dev/null; then ${install}; fi\n` : ''}` +
+          `${!task ? `if ! command -v tmux >/dev/null; then ${install}; fi\n` : ''}` +
           (namespace ? `if ip netns exec ${namespace} true >/dev/null 2>&1; then\n${projectNetworkCheckScript(namespace)}\nfi\n` : '') +
           `${ensureProjectNetworkScript(project, distro)}` + (task ?
             `if [ ! -d ${quote(project.directory)} ] || [ -L ${quote(project.directory)} ]; then\n` +
@@ -140,46 +148,68 @@ export class ProjectTerminals {
         if (prepared.code !== 0) throw new AppError(prepared.stderr || '无法准备项目终端', 409,
           task && prepared.stderr.includes('SAKURA_TASK_DIRECTORY_MISSING:') ? 'PROJECT_IDENTITY_DIRECTORY_MISSING' : undefined);
       }
-      if (session) {
-        const name = terminalSessionName(scope, session);
-        if (!readOnly) {
-          const created = await this.machines.exec(id,
-            `set -eu\nif ! tmux has-session -t =${name} 2>/dev/null; then\n` +
-            `  tmux new-session -d -s ${name} -c ${quote(project.directory)} ${quote(command)}\n` +
-            `  ${terminalTargetScript(name)}\n` +
-            `  tmux set-environment -t "$sakura_target" SAKURA_TERMINAL_BINDING ${terminalBinding(project)}\n` +
-            `  tmux set-environment -t "$sakura_target" SAKURA_TERMINAL_ID ${randomUUID()}\n` +
-            `  tmux set-option -t "$sakura_target" default-command ${quote(command)}\n` +
-            `  tmux set-option -t "$sakura_target" default-shell /bin/sh\nfi`, 10000, abort);
-          if (created.code !== 0) throw new AppError(created.stderr || '无法创建 tmux 终端', 409);
+      let createdRun: string | undefined;
+      try {
+        if (!task) {
+          if (!readOnly) {
+            await this.scopes.retireRebootedTerminals(id, scope);
+            for (const orphan of await this.scopes.terminalRuns(id, scope)) {
+              if (!orphan.terminal.persistent && ![...(preparedTerminals.get(this.machines) || [])]
+                .some(lease => lease.vmId === id && lease.terminalId === orphan.runId))
+                await this.scopes.stopTerminal(id, scope, orphan.runId);
+            }
+          }
+          const connectionId = randomUUID();
+          const name = terminalSessionName(scope, session || 'direct-' + connectionId.replaceAll('-', '').slice(0, 24));
+          const existing = (await this.scopes.terminalRuns(id, scope)).filter(entry => entry.terminal.name === name);
+          if (existing.length > 1) throw new AppError('终端运行归属重复，请先完成原会话清理', 409);
+          const prior = existing[0];
+          if (readOnly && !prior)
+            throw new AppError('原共享终端已结束，请重新授权当前会话', 409, 'PROJECT_TERMINAL_SHARE_STALE');
+          if (expectedTerminalId && prior?.runId !== z.uuid().parse(expectedTerminalId))
+            throw new AppError('原共享终端已结束，请重新授权当前会话', 409, 'PROJECT_TERMINAL_SHARE_STALE');
+          let prepared;
+          if (prior) prepared = await this.scopes.terminalRun(id, scope, prior.runId, abort);
+          else {
+            createdRun = connectionId;
+            prepared = await this.scopes.prepareTerminal(id, project, connectionId,
+              { name, persistent: Boolean(session) }, abort);
+          }
+          await this.identities.terminal(id, prepared.identity, prepared.run, name,
+            { create: Boolean(createdRun), signal: abort });
+          terminalId = prepared.run.runId;
+          command = await this.identities.terminalCommand(prepared.identity, prepared.run, name, readOnly);
         }
-        // A newly spawned pane may still be entering its namespace. Retry only
-        // checks; never replace or move an existing process to another network.
-        const verified = await this.machines.exec(id,
-          `sakura_attempt=0\nuntil (\n${verifyTerminalScript(project, session, expectedTerminalId)}\n); do\n` +
-          `  sakura_attempt=$((sakura_attempt + 1)); [ "$sakura_attempt" -lt 20 ] || exit 1\n` +
-          `  sleep 0.1\ndone\n${terminalTargetScript(name)}\n` +
-          `tmux show-environment -t "$sakura_target" SAKURA_TERMINAL_ID`, 10000, abort);
-        if (verified.code !== 0) throw new AppError(verified.stderr || '终端项目绑定检查失败', 409);
-        terminalId = z.uuid().parse(verified.stdout.trim().replace(/^SAKURA_TERMINAL_ID=/, ''));
-        // Check again in the actual SSH channel, closing the gap before attach.
-        command = `${verifyTerminalScript(project, session, terminalId)}\nexec tmux attach-session ` +
-          `${readOnly ? '-r ' : ''}-t "$sakura_target"`;
+        abort.throwIfAborted();
+        if (this.machines.live.get(id) !== live) throw new AppError('客户机运行身份在准备期间改变', 409);
+      } catch (error) {
+        if (createdRun && await this.scopes.hasRun(id, scope, createdRun))
+          await this.scopes.stopTerminal(id, scope, createdRun);
+        throw error;
       }
-      abort.throwIfAborted();
-      if (this.machines.live.get(id) !== live) throw new AppError('客户机运行身份在准备期间改变', 409);
       let finish!: () => void;
       const finished = new Promise<void>(resolve => { finish = resolve; });
-      const lease: Lease = { vmId: id, projectId: scope, task, finished,
+      const done = () => {
+        this.leases.delete(lease); preparedTerminals.get(this.machines)?.delete(lease);
+        abort.removeEventListener('abort', onAbort); finish();
+      };
+      let cleanup: Promise<void> | undefined;
+      const lease: Lease = { vmId: id, projectId: scope, task, terminalId, finished,
         release: () => {
-          this.leases.delete(lease); preparedTerminals.get(this.machines)?.delete(lease);
-          abort.removeEventListener('abort', lease.release);
-          finish();
+          if (task || session) { done(); return; }
+          if (!this.leases.has(lease)) return cleanup;
+          if (!cleanup) cleanup = this.scopes.stopTerminal(id, scope, terminalId!).then(done).catch(error => {
+            cleanup = undefined; throw error;
+          });
+          return cleanup;
         } };
+      const onAbort = () => { void Promise.resolve(lease.release()).catch(error => {
+        this.machines.emit('terminal-cleanup-error', { vmId: id, projectId: scope, terminalId, error });
+      }); };
       this.leases.add(lease);
       if (!preparedTerminals.has(this.machines)) preparedTerminals.set(this.machines, new Set());
       preparedTerminals.get(this.machines)!.add(lease);
-      if (!task) abort.addEventListener('abort', lease.release, { once: true });
+      if (!task) abort.addEventListener('abort', onAbort, { once: true });
       return { command, projectId: scope, networkIsolation: project.networkIsolation || 'host',
         terminalId, release: lease.release,
         ...(task ? { signal: abort, captured: { project, configVersion: version, live } } : {}) };
@@ -192,14 +222,23 @@ export class ProjectTerminals {
     const scope = await this.workspaces.projects.with(id, projectId,
       async () => this.workspaces.projects.current(id));
     const prepared = await this.prepare(id, scope, session, true);
-    prepared.release();
+    await prepared.release();
     return { projectId: prepared.projectId, terminalId: prepared.terminalId! };
+  }
+  async stop(id: string, projectId: string, session?: string, signal?: AbortSignal) {
+    const abort = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
+    return this.serial(id, abort, async () => {
+      if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例，再核对并停止终端', 409);
+      await this.scopes.stopTerminals(id, projectId, session ? terminalSessionName(projectId, session) : undefined);
+    });
   }
 
   async close() {
     this.controller.abort();
     await Promise.allSettled([...this.pending.values()]);
-    for (const lease of this.leases) if (!lease.task) lease.release();
+    const cleanup = await Promise.allSettled([...this.leases].filter(lease => !lease.task).map(lease => lease.release()));
+    const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), '项目终端清理未确认，运行记录继续保留');
     await Promise.all([...this.leases].map(lease => lease.finished));
     this.unguard();
     if (this.ownsWorkspaces) await this.workspaces.close();

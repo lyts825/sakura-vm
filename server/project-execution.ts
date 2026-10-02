@@ -77,7 +77,7 @@ export class ProjectExecution {
         ...await guestTask(this.machines, id, `exec /bin/sh -c ${quote(input.command)}`,
           signal, undefined, input.timeoutSeconds * 1000) }));
     }
-    const prepared = await this.terminals.prepare(id, projectId, null, false, signal);
+    const prepared = await this.terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
     try {
       // The preparation lease keeps the captured directory and network mode
       // stable. Environment changes may apply to this next command, but are

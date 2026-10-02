@@ -68,9 +68,16 @@ async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void
       return { ...run };
     },
     runReadonly: async () => { calls.push('run-readonly'); return { ...run }; },
+    prepare: async (_vm: string, _identity: unknown, options: { runId?: string }) => {
+      calls.push('terminal-prepare');
+      Object.assign(run, { mode: 'independent', runId: options.runId, cgroupName: 'sakura-identity-' + options.runId });
+      return { ...run };
+    },
+    retireTerminal: async () => { calls.push('terminal-retire'); },
     stop: async () => {
       calls.push('stop');
       if (cleanupFail) throw new AppError('not confirmed', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+      if (run.mode === 'independent') run.phase = 'closed';
       return { ...run, phase: 'closed' as const };
     },
   };
@@ -103,6 +110,59 @@ test('identities and inherited intents survive manager reload without persisting
   await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
   await f.reopened().identity(f.vmId, f.project);
   assert.deepEqual(f.expected[1], { registryId: f.identity.registryId, identityId: f.identity.identityId, revision: 1 });
+});
+
+test('independent terminal tickets persist across reload and require native stop and resource retirement before closure', async () => {
+  const f = await fixture(), terminal = { name: 'sakura-terminal-default-main', persistent: true };
+  const issued = await f.scopes.prepareTerminal(f.vmId, f.project, f.owner.runId, terminal);
+  assert.equal(issued.run.mode, 'independent');
+  assert.deepEqual(await f.reopened().terminalRuns(f.vmId, 'default'),
+    [{ runId: f.owner.runId, terminal, phase: 'active' }]);
+  await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+  const checked = await f.reopened().terminalRun(f.vmId, 'default', f.owner.runId); assert.deepEqual(checked.run, issued.run);
+  f.calls.length = 0;
+  await f.reopened().stopTerminal(f.vmId, 'default', f.owner.runId);
+  assert.ok(f.calls.indexOf('stop') < f.calls.indexOf('terminal-retire'));
+  assert.ok(f.calls.indexOf('terminal-retire') < f.calls.indexOf('confirm'));
+  const closed = (await f.view()).runs[0]; assert.equal(closed.phase, 'closed'); assert.equal(closed.run.phase, 'closed');
+  await f.reopened().guard(f.vmId, 'default');
+  await assert.rejects(f.scopes.prepareTerminal(f.vmId, f.project, f.owner.runId, terminal), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+});
+
+test('terminal resource cleanup failure retains the original full receipt and retries after native already closed', async () => {
+  const f = await fixture();
+  await f.scopes.prepareTerminal(f.vmId, f.project, f.owner.runId, { name: 'sakura-terminal-default-main', persistent: true });
+  const original = (await f.view()).runs[0];
+  f.core.retireTerminal = async () => { throw new AppError('resource changed', 409, 'PROJECT_IDENTITY_TERMINAL_SOCKET_CHANGED'); };
+  await assert.rejects(f.scopes.stopTerminal(f.vmId, 'default', f.owner.runId), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED', status: 503 });
+  assert.deepEqual((await f.view()).runs[0], original);
+  assert.equal(f.run.phase, 'closed');
+  await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+  f.core.retireTerminal = async () => { f.calls.push('terminal-retire'); };
+  await f.reopened().stopTerminal(f.vmId, 'default', f.owner.runId);
+  assert.equal((await f.view()).runs[0].phase, 'closed');
+});
+
+test('duplicate terminal labels and foreign owner kinds refuse without issuing or closing another ticket', async () => {
+  const f = await fixture(), terminal = { name: 'sakura-terminal-default-main', persistent: true };
+  await f.scopes.prepareTerminal(f.vmId, f.project, f.owner.runId, terminal);
+  const before = f.calls.filter(call => call === 'terminal-prepare').length;
+  await assert.rejects(f.scopes.prepareTerminal(f.vmId, f.project, randomUUID(), terminal), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  assert.equal(f.calls.filter(call => call === 'terminal-prepare').length, before);
+  const g = await fixture(); await g.scopes.inherited(g.vmId, g.project, { command: 'fixed' }, g.owner);
+  await assert.rejects(g.scopes.stopTerminal(g.vmId, 'default', g.owner.runId), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(g.calls.includes('stop'), false);
+});
+
+test('terminal cold-boot recovery retires the original receipt without invoking old native stop', async () => {
+  const f = await fixture();
+  await f.scopes.prepareTerminal(f.vmId, f.project, f.owner.runId, { name: 'sakura-terminal-default-main', persistent: true });
+  const original = (await f.view()).runs[0], reboot = randomUUID(); f.setBoot(reboot); f.calls.length = 0;
+  await f.reopened().retireRebootedTerminals(f.vmId, 'default');
+  const retired = (await f.view()).runs[0]; assert.equal(retired.phase, 'closed');
+  assert.deepEqual(retired.run, original.run);
+  assert.deepEqual(retired.retirement, { reason: 'guest-reboot', bootId: reboot });
+  assert.equal(f.calls.includes('stop'), false); assert.equal(f.calls.includes('terminal-retire'), false);
 });
 
 test('a fixed reservation can be previewed but cannot execute before directory migration', async () => {

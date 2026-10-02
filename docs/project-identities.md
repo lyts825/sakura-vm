@@ -1,6 +1,6 @@
 # 持久项目账号与固定启动器
 
-`server/project-identity.ts` 提供持久项目账号、固定启动器与客户机运行票据；`server/project-run-scope.ts` 保存宿主预期身份和核销记录。默认项目 `/exec`、项目初始化、主命令、普通服务、就绪与命令式健康检查、运行时版本的显式探测和选择验证，以及构建农场和单次 SSH/GPG Agent 命令使用固定项目 UID/GID。普通终端、系统 SSH、cron、用户管理器和全部扩展入口尚未完成账号迁移，网络隔离总功能仍为部分实现。运行时面板读取宿主缓存，安装共享运行时仍属于实例管理员操作，见 [运行时版本](runtime-versions.md)；构建配置捕获、并发和取消见 [构建农场](build-farm.md)；命令确认、独立入口与撤销见 [SSH Agent 转发](ssh-agent-forward.md) 和 [GPG Agent 转发](gpg-agent-forward.md)。
+`server/project-identity.ts` 提供持久项目账号、固定启动器与客户机运行票据；`server/project-run-scope.ts` 保存宿主预期身份和核销记录。默认项目 `/exec`、项目初始化、主命令、普通服务、就绪与命令式健康检查、运行时版本的显式探测和选择验证，以及构建农场和单次 SSH/GPG Agent 命令使用固定项目 UID/GID。普通网页终端与可恢复 tmux 会话也通过固定启动器使用项目账号、原网络和独立运行票据，规则见 [项目终端](project-terminals.md)。系统 SSH、cron、用户管理器和全部扩展入口尚未完成账号迁移，网络隔离总功能仍为部分实现。运行时面板读取宿主缓存，安装共享运行时仍属于实例管理员操作，见 [运行时版本](runtime-versions.md)；构建配置捕获、并发和取消见 [构建农场](build-farm.md)；命令确认、独立入口与撤销见 [SSH Agent 转发](ssh-agent-forward.md) 和 [GPG Agent 转发](gpg-agent-forward.md)。
 
 项目 [首次 Git 检出](project-repository.md) 使用系统固定代理下载对象，项目 UID 在原目录和原网络内验证摘要并检出；项目环境、Git 配置和下载认证不会进入系统 Git。检出入场同时固定 live 与原 boot，取消或失败保留未确认的准确资源。
 
@@ -46,7 +46,7 @@ home 位于 `/var/lib/sakura-project-homes/<identityId>`，叶目录为该账号
 
 私有网络固定命名空间设备号、inode、boot ID 与随机 generation。停止整个项目先保存固定 release ID 并冻结本代入口，再清理所有上层运行和账号票据，最后按同一代次核销命名空间。已发出的启动票据也受冻结检查；清理失联、删除失败或确认丢失时保留 pending/deleting 状态，只能重试同一请求。下一次启动建立新 generation；即使内核复用同一 inode，旧请求也不能删除新代。仅停止一个命名服务不会核销整个项目网络。
 
-客户机 root 仍能修改这些设施；显式实例命令、普通终端及未迁移扩展仍保留管理员路径，不能据此承诺所有 Linux 入口均有跨项目权限边界。
+客户机 root 仍能修改这些设施；显式实例命令及未迁移扩展仍保留管理员路径，不能据此承诺所有 Linux 入口均有跨项目权限边界。普通网页终端使用独立项目账号、PTY 和完整运行票据，具体连接、恢复和清理规则见 [项目终端](project-terminals.md)。
 
 ## 分发与验证
 

@@ -93,6 +93,15 @@ const executableOptionsSchema = z.object({ command: z.string().min(1).max(65536)
 export type ProjectIdentityExecution = { command: string; environment?: Record<string, string> };
 export type ProjectIdentityInput = { command: string; input: Buffer; sha256: string };
 export type ProjectIdentityInheritedInput = ProjectIdentityInput & { runId: string };
+export const projectIdentityTerminalSchema = z.object({ version: z.literal(1), terminalId: uuid,
+  run: projectIdentityRunSchema, name: z.string().regex(/^sakura-terminal-(default|[a-f0-9]{16})-[a-z0-9-]{1,48}$/),
+  serverPid: z.number().int().min(1), serverTicks: decimal,
+  sessionId: z.string().regex(/^\$[0-9]+$/) }).strict().superRefine((value, ctx) => {
+    if (value.terminalId !== value.run.runId || value.run.mode !== 'independent' || value.run.phase !== 'active' ||
+        !value.name.startsWith('sakura-terminal-' + value.run.projectId + '-') || value.serverTicks === '0')
+      ctx.addIssue({ code: 'custom', message: '项目终端回执不完整' });
+  });
+export type ProjectIdentityTerminal = z.infer<typeof projectIdentityTerminalSchema>;
 type Transport = Pick<Machines, 'get' | 'exec' | 'execInput' | 'writeGuestFile'>;
 export function projectIdentityPayload(execution: ProjectIdentityExecution) {
   const value = executableOptionsSchema.parse(execution), script = Buffer.from(value.command, 'utf8');
@@ -123,7 +132,7 @@ export class ProjectIdentities {
     const build = readonly ? (await this.build()).manifest.build : await this.install(vmId, signal);
     // Full admission can validate 1024 receipts and durably retire 512. Keep
     // its finite budget separate from ordinary reads and exact cancellation.
-    const timeoutMs = 'action' in request && request.action === 'prepare' ? 180000 : 40000;
+    const timeoutMs = 'action' in request && (request.action === 'prepare' || request.action === 'terminal-create') ? 180000 : 40000;
     const result = await this.machines.exec(vmId, this.controlCommand(build, request), timeoutMs, signal);
     let reply: { ok: boolean; result?: unknown; code?: string; detail?: unknown };
     try { reply = JSON.parse(result.stdout); } catch {
@@ -330,6 +339,40 @@ directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(dir
     if (run.build !== source.manifest.build)
       throw new AppError('只读运行票据属于其他启动器构建', 409, 'PROJECT_IDENTITY_RUN_BUILD_STALE');
     return run;
+  }
+  async terminal(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun, name: string,
+    options: { create?: boolean; signal?: AbortSignal } = {}): Promise<ProjectIdentityTerminal> {
+    identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
+    const source = await this.build();
+    if (run.mode !== 'independent' || run.phase !== 'active' || run.build !== source.manifest.build)
+      throw new AppError('项目终端运行票据已改变', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    projectIdentityTerminalSchema.shape.name.parse(name);
+    if (!name.startsWith('sakura-terminal-' + identity.projectId + '-'))
+      throw new AppError('终端名称不属于原项目', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    const reply = await this.control(vmId, { action: options.create ? 'terminal-create' : 'terminal-probe',
+      projectId: identity.projectId, expected: expectedIdentity(identity), runId: run.runId, name },
+      projectIdentityTerminalSchema, options.signal, !options.create);
+    if (reply.name !== name || JSON.stringify(reply.run) !== JSON.stringify(run))
+      throw new AppError('项目终端回执不属于原运行', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    return reply;
+  }
+  async terminalCommand(identity: ProjectIdentity, run: ProjectIdentityRun, name: string, readOnly: boolean) {
+    identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
+    const source = await this.build(); projectIdentityTerminalSchema.shape.name.parse(name);
+    if (!name.startsWith('sakura-terminal-' + identity.projectId + '-'))
+      throw new AppError('终端名称不属于原项目', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    if (run.mode !== 'independent' || run.phase !== 'active' || run.build !== source.manifest.build)
+      throw new AppError('项目终端运行票据已改变', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    return this.controlCommand(run.build, { action: 'terminal-attach', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId: run.runId, name, readOnly });
+  }
+  async retireTerminal(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun) {
+    identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);
+    const reply = await this.control(vmId, { action: 'terminal-retire', projectId: identity.projectId,
+      expected: expectedIdentity(identity), runId: run.runId },
+      z.object({ version: z.literal(1), terminalId: uuid, retired: z.literal(true) }).strict());
+    if (reply.terminalId !== run.runId)
+      throw new AppError('终端清理回执不属于原运行', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
   }
   async stop(vmId: string, identity: ProjectIdentity, run: ProjectIdentityRun, _signal?: AbortSignal) {
     identity = projectIdentitySchema.parse(identity); run = projectIdentityRunSchema.parse(run); this.match(identity, run);

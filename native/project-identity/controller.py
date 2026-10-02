@@ -15,7 +15,9 @@ import json
 import os
 import pwd
 import re
+import selectors
 import signal
+import socket
 import stat
 import struct
 import subprocess
@@ -42,6 +44,7 @@ CLEAN_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/', 'LANG': 'C', 
 RUN_LIMIT = 1024
 RUN_ARCHIVE_BATCH = 512
 RUN_ARCHIVE_BUCKET_LIMIT = 4096
+TERMINALS = '/run/sakura-project-terminals'
 
 
 class Refusal(Exception):
@@ -1684,7 +1687,9 @@ def initialize():
     for path, mode in (('/var/lib/sakura', 0o711), (BASE, 0o700), (BASE + '/projects', 0o700),
                        (BASE + '/uids', 0o700), (HOMES, 0o711), (RUNTIME, 0o700),
                        (RUNTIME + '/runs', 0o700), (RUNTIME + '/archives', 0o700),
-                       (RUNTIME + '/networks', 0o700)):
+                       (RUNTIME + '/networks', 0o700), (RUNTIME + '/terminals', 0o700),
+                       (RUNTIME + '/terminal-locks', 0o700),
+                       (TERMINALS, 0o711)):
         if path == '/var/lib/sakura' and os.path.exists(path):
             fd = directory_fd(path)
             os.close(fd)
@@ -1737,6 +1742,312 @@ def launch_argv(value, run, request, build):
             str(value['revision']), run['runId'], '--payload', digest]
 
 
+def terminal_path(run_id):
+    return RUNTIME + '/terminals/' + identifier(run_id, UUID, 'RUN_ID') + '.json'
+
+
+def terminal_lock(run_id, create=False):
+    parent = directory_fd(RUNTIME + '/terminal-locks')
+    try:
+        try:
+            descriptor = os.open(identifier(run_id, UUID, 'RUN_ID'),
+                                 os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | (os.O_CREAT if create else 0),
+                                 0o600, dir_fd=parent)
+        except FileNotFoundError:
+            if create:
+                raise
+            return None
+        try:
+            trusted(os.fstat(descriptor), mode=0o600)
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
+    finally:
+        os.close(parent)
+
+
+def terminal_acquire(descriptor, readonly):
+    if descriptor is None:
+        return
+    deadline = time.monotonic() + 20
+    while True:
+        try:
+            fcntl.flock(descriptor, (fcntl.LOCK_SH if readonly else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                refuse('TERMINAL_CONTROL_BUSY')
+            time.sleep(.02)
+
+
+def terminal_payload(script, interactive=False):
+    # Fixed controller-generated commands only. A PTY never carries the frame:
+    # the launcher reads a separate pipe, then duplicates the existing PTY.
+    body = script.encode()
+    term = b'xterm-256color'
+    body += struct.pack('<II', 4, len(term)) + b'TERM' + term
+    return struct.pack('<8sIIIIII', b'SKIDP001', 1, int(interactive), len(body), 1,
+                       len(script.encode()), 0) + body
+
+
+def terminal_launch(value, run, build, script, interactive=False, started=None):
+    payload = terminal_payload(script, interactive)
+    request = {'payloadSha256': hashlib.sha256(payload).hexdigest()}
+    child = subprocess.Popen(launch_argv(value, run, request, build), stdin=subprocess.PIPE,
+                             stdout=None if interactive else subprocess.PIPE,
+                             stderr=None if interactive else subprocess.PIPE, env=CLEAN_ENV,
+                             close_fds=True)
+    try:
+        if interactive:
+            child.stdin.write(payload)
+            child.stdin.close()
+            if started is not None:
+                started()
+            # tmux owns terminal input and terminal signals. This root waiter
+            # never reads user input, interprets it, or inherits an authority FD.
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            return child.wait(), '', ''
+        child.stdin.write(payload)
+        child.stdin.close()
+        output, errors = bytearray(), bytearray()
+        deadline = time.monotonic() + 15
+        with selectors.DefaultSelector() as poller:
+            for stream, target in ((child.stdout, output), (child.stderr, errors)):
+                os.set_blocking(stream.fileno(), False)
+                poller.register(stream, selectors.EVENT_READ, target)
+            while poller.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    refuse('TERMINAL_CONTROL_TIMEOUT')
+                for key, _event in poller.select(remaining):
+                    data = os.read(key.fileobj.fileno(), 4096)
+                    if not data:
+                        poller.unregister(key.fileobj)
+                        key.fileobj.close()
+                    else:
+                        key.data.extend(data)
+                        if len(output) + len(errors) > 65536:
+                            refuse('TERMINAL_OUTPUT_BOUND')
+        child.wait(timeout=max(.01, deadline - time.monotonic()))
+        return child.returncode, output.decode('utf-8', 'strict'), errors.decode('utf-8', 'strict')
+    except subprocess.TimeoutExpired:
+        refuse('TERMINAL_CONTROL_TIMEOUT')
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            try:
+                child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+
+
+def terminal_binary():
+    for path in ('/usr/bin/tmux', '/bin/tmux'):
+        if not os.path.exists(path):
+            continue
+        path = os.path.realpath(path)
+        fd = directory_fd(os.path.dirname(path))
+        os.close(fd)
+        info = os.lstat(path)
+        trusted(info)
+        if not info.st_mode & 0o111 or info.st_mode & 0o6000:
+            refuse('TERMINAL_BINARY_CHANGED')
+        return path
+    refuse('TERMINAL_BINARY_MISSING')
+
+
+def terminal_state(value, run, name=None, missing=False):
+    record = json_read(terminal_path(run['runId']), missing)
+    if record is None:
+        return None
+    fields = {'version', 'phase', 'run', 'name', 'uid', 'gid', 'directoryDevice', 'directoryInode',
+              'socketDevice', 'socketInode', 'serverPid', 'serverTicks', 'sessionId'}
+    if not isinstance(record, dict) or set(record) != fields or record['version'] != 1 or \
+       record['phase'] not in ('creating', 'active') or record['run'] != dict(run, phase='active') or \
+       record['uid'] != value['uid'] or record['gid'] != value['gid'] or \
+       not isinstance(record['name'], str) or not re.fullmatch('[a-z0-9-]{1,96}', record['name']) or \
+       (name is not None and record['name'] != name):
+        refuse('TERMINAL_RECORD_CHANGED')
+    for key in ('directoryDevice', 'directoryInode'):
+        if not isinstance(record[key], str) or not re.fullmatch('[1-9][0-9]*', record[key]):
+            refuse('TERMINAL_RECORD_CHANGED')
+    if record['phase'] == 'active' and (not isinstance(record['serverPid'], int) or record['serverPid'] < 1 or
+       not isinstance(record['serverTicks'], str) or not re.fullmatch('[1-9][0-9]*', record['serverTicks']) or
+       not isinstance(record['sessionId'], str) or not re.fullmatch(r'\$[0-9]+', record['sessionId']) or
+       any(not isinstance(record[key], str) or not re.fullmatch('[1-9][0-9]*', record[key])
+           for key in ('socketDevice', 'socketInode'))):
+        refuse('TERMINAL_RECORD_CHANGED')
+    return record
+
+
+def terminal_process(pid, value, run):
+    if not isinstance(pid, int) or pid < 1:
+        refuse('TERMINAL_PROCESS_CHANGED')
+    raw = open('/proc/' + str(pid) + '/stat').read()
+    ticks = raw[raw.rindex(')') + 2:].split()[19]
+    status = open('/proc/' + str(pid) + '/status').read().splitlines()
+    for label, expected_id in (('Uid:', value['uid']), ('Gid:', value['gid'])):
+        entry = next((line.split()[1:] for line in status if line.startswith(label)), None)
+        if entry != [str(expected_id)] * 4:
+            refuse('TERMINAL_PROCESS_IDENTITY')
+    membership = open('/proc/' + str(pid) + '/cgroup').read().strip()
+    if membership != '0::/' + run['cgroupName']:
+        refuse('TERMINAL_PROCESS_SCOPE')
+    if not same(os.stat('/proc/' + str(pid) + '/ns/net'), run, 'network'):
+        refuse('TERMINAL_PROCESS_NETWORK')
+    # Detect exit/PID reuse across the independent reads above.
+    raw = open('/proc/' + str(pid) + '/stat').read()
+    if raw[raw.rindex(')') + 2:].split()[19] != ticks:
+        refuse('TERMINAL_PROCESS_CHANGED')
+    return ticks
+
+
+def terminal_socket(record, value, run):
+    folder = TERMINALS + '/' + run['runId']
+    descriptor = directory_fd(folder)
+    try:
+        info = os.fstat(descriptor)
+        if info.st_uid != 0 or info.st_gid != value['gid'] or stat.S_IMODE(info.st_mode) != 0o710 or \
+           str(info.st_dev) != record['directoryDevice'] or str(info.st_ino) != record['directoryInode']:
+            refuse('TERMINAL_DIRECTORY_CHANGED')
+        info = os.stat('socket', dir_fd=descriptor, follow_symlinks=False)
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != value['uid'] or info.st_gid != value['gid'] or \
+           info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o007:
+            refuse('TERMINAL_SOCKET_CHANGED')
+        if record['phase'] == 'active' and (str(info.st_dev) != record['socketDevice'] or
+                                          str(info.st_ino) != record['socketInode']):
+            refuse('TERMINAL_SOCKET_CHANGED')
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
+            peer.settimeout(3)
+            peer.connect(folder + '/socket')
+            pid, uid, gid = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if uid != value['uid'] or gid != value['gid']:
+            refuse('TERMINAL_SERVER_IDENTITY')
+        ticks = terminal_process(pid, value, run)
+        if record['phase'] == 'active' and (pid != record['serverPid'] or ticks != record['serverTicks']):
+            refuse('TERMINAL_SERVER_CHANGED')
+        current = os.stat('socket', dir_fd=descriptor, follow_symlinks=False)
+        if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+            refuse('TERMINAL_SOCKET_CHANGED')
+        return {'socketDevice': str(info.st_dev), 'socketInode': str(info.st_ino),
+                'serverPid': pid, 'serverTicks': ticks}
+    finally:
+        os.close(descriptor)
+
+
+def terminal_tmux(value, run, build, arguments):
+    import shlex
+    args = [terminal_binary(), '-f', '/dev/null', '-S', TERMINALS + '/' + run['runId'] + '/socket']
+    code, output, _errors = terminal_launch(value, run, build, 'exec ' + shlex.join(args + arguments))
+    if code != 0:
+        refuse('TERMINAL_TMUX_REFUSED')
+    return output.strip()
+
+
+def terminal_check(value, run, build, record):
+    if record['phase'] != 'active':
+        refuse('TERMINAL_START_UNCONFIRMED')
+    terminal_socket(record, value, run)
+    sessions = terminal_tmux(value, run, build, ['list-sessions', '-F', '#{session_id} #{session_name}']).splitlines()
+    if sessions != [record['sessionId'] + ' ' + record['name']]:
+        refuse('TERMINAL_SESSION_CHANGED')
+    panes = terminal_tmux(value, run, build, ['list-panes', '-s', '-t', record['sessionId'], '-F', '#{pane_pid}']).splitlines()
+    if not panes or len(panes) > 256 or any(not re.fullmatch('[1-9][0-9]*', pid) for pid in panes):
+        refuse('TERMINAL_PANES_CHANGED')
+    for pid in panes:
+        terminal_process(int(pid), value, run)
+    terminal_socket(record, value, run)
+    return {'version': 1, 'terminalId': run['runId'], 'run': run, 'name': record['name'],
+            'serverPid': record['serverPid'], 'serverTicks': record['serverTicks'], 'sessionId': record['sessionId']}
+
+
+def terminal_create(value, run, build, name):
+    if terminal_state(value, run, missing=True) is not None:
+        refuse('TERMINAL_ALREADY_RESERVED')
+    folder = TERMINALS + '/' + run['runId']
+    os.mkdir(folder, 0o700)
+    descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        os.fchown(descriptor, value['uid'], value['gid'])
+        info = os.fstat(descriptor)
+        record = {'version': 1, 'phase': 'creating', 'run': run, 'name': name,
+                  'uid': value['uid'], 'gid': value['gid'], 'directoryDevice': str(info.st_dev),
+                  'directoryInode': str(info.st_ino), 'socketDevice': None, 'socketInode': None,
+                  'serverPid': None, 'serverTicks': None, 'sessionId': None}
+        json_write(terminal_path(run['runId']), record)
+        # No project shell/configuration before the socket directory is sealed.
+        terminal_tmux(value, run, build, ['new-session', '-d', '-s', name, '/bin/sleep 2147483647'])
+        if set(os.listdir(descriptor)) != {'socket'}:
+            refuse('TERMINAL_DIRECTORY_CHANGED')
+        os.fchown(descriptor, 0, value['gid'])
+        os.fchmod(descriptor, 0o710)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    record.update(terminal_socket(record, value, run))
+    session_id = terminal_tmux(value, run, build, ['list-sessions', '-F', '#{session_id}']).strip()
+    if not re.fullmatch(r'\$[0-9]+', session_id):
+        refuse('TERMINAL_SESSION_CHANGED')
+    record.update(phase='active', sessionId=session_id)
+    json_write(terminal_path(run['runId']), record)
+    terminal_tmux(value, run, build, ['set-option', '-t', session_id, 'default-shell', '/bin/sh'])
+    terminal_tmux(value, run, build, ['set-option', '-t', session_id, 'default-command', '/bin/sh -l'])
+    terminal_tmux(value, run, build, ['respawn-pane', '-k', '-t', session_id, '/bin/sh -l'])
+    return terminal_check(value, run, build, record)
+
+
+def terminal_retire(value, run):
+    descriptor = cgroup_fd(run)
+    if descriptor is not None:
+        os.close(descriptor)
+    if run['phase'] != 'closed' or descriptor is not None:
+        refuse('PROJECT_IDENTITY_CLEANUP_FAILED')
+    record = terminal_state(value, run, missing=True)
+    folder = TERMINALS + '/' + run['runId']
+    if record is None:
+        if os.path.lexists(folder):
+            refuse('TERMINAL_DIRECTORY_CHANGED')
+        return {'version': 1, 'terminalId': run['runId'], 'retired': True}
+    parent = directory_fd(TERMINALS)
+    readable_parent = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+    os.close(parent)
+    parent = readable_parent
+    try:
+        try:
+            descriptor = os.open(run['runId'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        except FileNotFoundError:
+            descriptor = None
+        if descriptor is not None:
+            try:
+                info = os.fstat(descriptor)
+                if str(info.st_dev) != record['directoryDevice'] or str(info.st_ino) != record['directoryInode'] or \
+                   info.st_uid not in (0, value['uid']) or info.st_gid != value['gid'] or \
+                   stat.S_IMODE(info.st_mode) not in (0o700, 0o710):
+                    refuse('TERMINAL_DIRECTORY_CHANGED')
+                if not set(os.listdir(descriptor)).issubset({'socket'}):
+                    refuse('TERMINAL_DIRECTORY_CHANGED')
+                try:
+                    info = os.stat('socket', dir_fd=descriptor, follow_symlinks=False)
+                    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != value['uid'] or info.st_nlink != 1 or \
+                       (record['phase'] == 'active' and (str(info.st_dev) != record['socketDevice'] or
+                                                       str(info.st_ino) != record['socketInode'])):
+                        refuse('TERMINAL_SOCKET_CHANGED')
+                    os.unlink('socket', dir_fd=descriptor)
+                except FileNotFoundError:
+                    pass
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            os.rmdir(run['runId'], dir_fd=parent)
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+    durable_unlink(terminal_path(run['runId']))
+    return {'version': 1, 'terminalId': run['runId'], 'retired': True}
+
+
 def main():
     if os.getuid() != 0 or os.geteuid() != 0:
         refuse('ROOT_CONTROL_REQUIRED')
@@ -1767,7 +2078,11 @@ def main():
                'begin-network-release': {'projectId', 'expected', 'releaseId', 'bootId'},
                'release-network': {'projectId', 'expected', 'releaseId', 'network'},
                'rebind': {'projectId', 'expected', 'directory', 'networkIsolation'},
-               'exec-current': {'projectId', 'expected', 'runId', 'payloadSha256'}}
+               'exec-current': {'projectId', 'expected', 'runId', 'payloadSha256'},
+               'terminal-create': {'projectId', 'expected', 'runId', 'name'},
+               'terminal-probe': {'projectId', 'expected', 'runId', 'name'},
+               'terminal-attach': {'projectId', 'expected', 'runId', 'name', 'readOnly'},
+               'terminal-retire': {'projectId', 'expected', 'runId'}}
     if action not in allowed or not set(request).issubset(allowed[action] | {'action'}):
         refuse('REQUEST_SCHEMA')
     if action != 'install':
@@ -1775,9 +2090,10 @@ def main():
     build = sources()
     boot = open('/proc/sys/kernel/random/boot_id').read().strip()
     identifier(boot, UUID, 'BOOT_ID')
-    readonly = action == 'run-readonly'
+    readonly = action in ('run-readonly', 'terminal-probe', 'terminal-attach')
     lock = initialize_readonly() if readonly else initialize()
     args = None
+    terminal = None
     try:
         store = registry(readonly)
         if action == 'install':
@@ -1798,6 +2114,26 @@ def main():
             result = prepare(value, request, boot, build, action == 'exec-current')
             if action == 'exec-current':
                 args = launch_argv(value, result, request, build)
+        elif action.startswith('terminal-'):
+            value = binding_read(request['projectId'])
+            reservation_check(value, store)
+            expected(value, request)
+            run = run_read(identifier(request.get('runId'), UUID, 'RUN_ID'))
+            check_run(value, run, boot, action != 'terminal-retire')
+            if run['mode'] != 'independent' or (action != 'terminal-retire' and run['build'] != build):
+                refuse('TERMINAL_RUN_CHANGED')
+            name = None
+            if action != 'terminal-retire':
+                name = request.get('name')
+                if not isinstance(name, str) or not re.fullmatch(
+                        'sakura-terminal-' + value['projectId'] + '-[a-z0-9-]{1,48}', name):
+                    refuse('TERMINAL_NAME')
+            if action == 'terminal-attach' and not isinstance(request.get('readOnly'), bool):
+                refuse('REQUEST_SCHEMA')
+            # Open/create under the registry lock so retirement cannot miss a
+            # preparation which passed admission. Wait outside that lock:
+            # native children acquire it independently before dropping UID.
+            terminal = (value, run, name, terminal_lock(run['runId'], action == 'terminal-create'))
         elif action in ('status', 'stop', 'run', 'run-readonly'):
             value = binding_read(request['projectId'])
             reservation_check(value, store)
@@ -1841,6 +2177,33 @@ def main():
         os.close(lock)
     if args is not None:
         os.execve(args[0], args, CLEAN_ENV)
+    if terminal is not None:
+        # Launcher entry must not inherit or wait behind our registry lock.
+        value, run, name, terminal_descriptor = terminal
+        def release_terminal():
+            nonlocal terminal_descriptor
+            if terminal_descriptor is not None:
+                os.close(terminal_descriptor)
+                terminal_descriptor = None
+        try:
+            terminal_acquire(terminal_descriptor, action in ('terminal-probe', 'terminal-attach'))
+            if action == 'terminal-create':
+                result = terminal_create(value, run, build, name)
+            elif action == 'terminal-retire':
+                result = terminal_retire(value, run)
+            else:
+                if terminal_descriptor is None:
+                    refuse('TERMINAL_RECORD_ABSENT')
+                record = terminal_state(value, run, name)
+                result = terminal_check(value, run, build, record)
+                if action == 'terminal-attach':
+                    import shlex
+                    arguments = [terminal_binary(), '-f', '/dev/null', '-S', TERMINALS + '/' + run['runId'] + '/socket',
+                                 'attach-session'] + (['-r'] if request['readOnly'] else []) + ['-t', record['sessionId']]
+                    code, _, _ = terminal_launch(value, run, build, 'exec ' + shlex.join(arguments), True, release_terminal)
+                    raise SystemExit(code)
+        finally:
+            release_terminal()
     print(json.dumps({'ok': True, 'result': result}, separators=(',', ':')))
 
 
