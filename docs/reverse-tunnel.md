@@ -1,5 +1,7 @@
 # 临时反向隧道
 
+正式 test:reverse-tunnels 脚本已适配单一公开 ExtendedFeatures/action/jobs 归属。正常运行新建且保留自己的测试实例，明确创建并核对三个项目的目录迁移，再观察实际 UID broker、完整 service/native、内核监听及保护帧；每次停止须确认原整域关闭。暂停先关闭宿主入口，恢复准确原 live 后核销。node --import tsx scripts/smoke-reverse-tunnels.ts --validate-only 不启动 VM；类型、Python 静态编译、8 个拒绝模型与准确应用检查通过，新 VM 流量与时序仍待实测。
+
 在能力中心选择运行中的实例和工作项目，选择“临时反向隧道”，将参数设为 `{"mode":"open","guestPort":8765,"durationSeconds":300}`。客户机需有 Python 3.9+，目标 TCP 服务应监听该项目网络空间的 `127.0.0.1:guestPort`。任务完成后返回宿主机上的 `127.0.0.1:localPort`，以及绑定的项目 ID、目录和网络模式；可用本机浏览器或 TCP 客户端连接。入口只绑定宿主机回环地址，不向局域网开放，每个入口最多允许四个并发连接。
 
 每个项目可独立开启一个入口；切换项目后，`status` 和 `close` 只查询或关闭当前项目的入口。Python 探测和 broker 使用原项目持久 UID/GID、独立 home、捕获配置/live 和原网络；环境只解析一次，正文、环境和随机连接凭据通过原生保护帧运输，原生目录描述符固定 cwd。既有 root 目录须明确应用 [目录迁移](project-directory-migration.md)，缺失目录不自动建立。私有模式只允许回环，不新增接口或路由；每次连接核对原完整账号、boot、cgroup/network、PID 创建时间和 UID 监听 inode。固定管理员桥接只连接经过凭据核对的 UID broker，用户指定目标由 broker 连接。共享模式使用客户机共享回环，目标应自行区分调用者。

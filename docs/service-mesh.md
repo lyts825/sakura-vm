@@ -18,7 +18,7 @@ stop 先确认原版本/校验短任务的完整域和 native 票据核销，再
 
 配置使用 Envoy 官方 [静态 listener/cluster](https://www.envoyproxy.io/docs/envoy/latest/start/quick-start/configuration-static.html) 和 [TCP proxy](https://www.envoyproxy.io/docs/envoy/latest/configuration/listeners/network_filters/tcp_proxy_filter) 结构。不提供管理端口、动态 xDS、TLS 凭据、透明流量劫持或跨主机服务发现。客户机 root 仍可改动进程、文件和空间，范围见 [项目网络隔离](project-network-isolation.md)。
 
-正式九个相关测试文件 249/249 通过、零跳过，实际退出 0 且源码前后未变，证明为 .data/mesh-identity-backend-c65614f4-cafd-415b-aa79-0700dc89050a-verification.json；完整类型检查通过。本批完成捕获配置、完整有限任务与服务票据、失联应答、取消/清理重试、只读重载和首次私有网络准备模型；生成的 root/UID Python 静态编译通过。没有启动新的 VM，实际 UID/GID/home、Envoy listener、Linux cgroup 与发行版兼容性仍需联测，原 smoke 正在适配。
+正式九个相关测试文件 249/249 通过、零跳过，实际退出 0 且源码前后未变，证明为 .data/mesh-identity-backend-c65614f4-cafd-415b-aa79-0700dc89050a-verification.json；完整类型检查通过。本批完成捕获配置、完整有限任务与服务票据、失联应答、取消/清理重试、只读重载和首次私有网络准备模型；生成的 root/UID Python 静态编译通过。没有启动新的 VM，实际 UID/GID/home、Envoy listener、Linux cgroup 与发行版兼容性仍需联测，正式 smoke 已适配：npm run test:service-mesh -- debian（或 ubuntu/alpine）。--describe 不创建运行时，--validate-only 只核对已有缓存、镜像与源码；正常执行使用新建且保留的测试实例，必须实际确认原 UID/native 整域关闭。脚本类型、嵌入 Python 静态编译和准确应用校验已通过，尚未执行新的 VM 或 Linux C 观察器。
 
 ## 旧入口的历史联测
 

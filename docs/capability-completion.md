@@ -2,6 +2,14 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 隧道与 Envoy 的项目账号验证入口
+
+2026-10-03 原 test:reverse-tunnels 和 test:service-mesh 脚本已适配正式项目账号合约。反向隧道只使用一个公开 ExtendedFeatures/action/jobs 管理器，新建保留的测试实例，明确准备目录及迁移，再核对实际 UID broker、完整票据、二进制/半关闭、路由拒绝、到期及暂停恢复。Envoy 使用固定摘要缓存和原公开任务/服务入口，实际二进制中的限定观察器区分 UID 执行与 Root 测试接收器，核对短任务、同端口项目、监听、脱离会话后代、配置变化、取消、旧入口拒绝与冷 boot。
+
+脚本停止必须先确认原整域及准确 native/host 回执，VM 关机不作为成功清理证明。测试目录、磁盘、回执及证据在成功或失败后都保留；各组件独立清理。正式脚本的只读 validate-only/describe 与完整类型检查通过；原封存还包括 Python 静态编译、反向隧道 8 个拒绝模型、准确补丁和应用后的摘要校验。Root 应用记录为 .data/reverse-identity-smoke-apply-a7f191f6-d887-48d9-9d34-1401e021f4fd.json 及 .data/service-mesh-identity-smoke-apply-6f0e200a-0558-4902-81c9-53169bd61310.json。
+
+本批没有启动新 VM，没有实际运行 Envoy 观察器或 UID broker；Linux C 观察器编译、真实流量、TCG 时序与内核清理仍待这些入口联测。保留原历史实测范围，不能用静态检查替代新实现的客户机证明。
+
 ## KDE、中文输入法与原生应用的项目账号
 
 2026-10-03 KDE Desktop 已接通捕获原项目 UID/GID、独立 home、配置/live、保护帧与独立完整 service/native 域。固定管理任务只安装软件包及发布系统适配器；实际桌面在原生降权后执行，VNC、状态/重载及 X11/Wayland 应用准入复核原票据、来源构建、真实 Plasma/Xvnc、运行目录、端点和内核进程身份。Wayland 应用与独立窗口保留各自 sandbox UID，不混同来源桌面账号，规则见 [Linux 图形桌面](linux-desktop.md)。

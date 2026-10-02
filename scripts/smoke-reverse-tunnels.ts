@@ -1,165 +1,105 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
 import { connect } from 'node:net';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
+import { reverseSmokeKernel, reverseSmokeReceiver, withOwnedReverseSmoke } from './reverse-identity-smoke-support.ts';
 
-const directory = await mkdtemp(join(tmpdir(), 'sakura-project-tunnel-vm-'));
-process.env.SAKURA_DATA_DIR = directory;
-const distro = process.argv[2] || 'alpine';
-const images: Record<string, string> = { alpine: 'alpine-3.23.qcow2', debian: 'debian-12.qcow2', ubuntu: 'ubuntu-24.04.qcow2' };
-assert.ok(images[distro]);
-process.env.SAKURA_IMAGE_DIR = resolve('.data/images');
-process.env.SAKURA_IMAGE_PATH = resolve('.data/images', images[distro]);
-const { Machines } = await import('../server/machines.ts');
-const { createRuntime } = await import('../server/runtime.ts');
-const { Workspaces } = await import('../server/workspaces.ts');
-const { ReverseTunnels } = await import('../server/reverse-tunnels.ts');
-const { ExtendedFeatures } = await import('../server/extended-features.ts');
-const machines = new Machines(await createRuntime());
-await machines.init();
-const workspaces = new Workspaces(machines), tunnels = new ReverseTunnels(machines, workspaces);
-const extended = new ExtendedFeatures(machines, workspaces);
+const selected = process.argv.find((value, index) => index > 1 && !value.startsWith('--')) || 'alpine';
+assert.ok(['alpine', 'debian', 'ubuntu'].includes(selected));
+const distro = selected as 'alpine' | 'debian' | 'ubuntu';
 
 async function exchange(port: number, bytes: Buffer | string, halfClose = false) {
   return new Promise<Buffer>((resolve, reject) => {
     const socket = connect(port, '127.0.0.1'), chunks: Buffer[] = [];
     const timer = setTimeout(() => socket.destroy(new Error('TCP exchange timed out')), 15000);
     socket.once('connect', () => halfClose ? socket.end(bytes) : socket.write(bytes));
-    socket.on('data', (chunk) => chunks.push(chunk));
-    socket.once('error', reject);
+    socket.on('data', (chunk) => chunks.push(chunk)); socket.once('error', reject);
     socket.once('close', () => { clearTimeout(timer); resolve(Buffer.concat(chunks)); });
   });
 }
 
-try {
-  const vm = await machines.create({ name: 'project-tunnel-smoke', distro, memoryMiB: 1024, cpus: 2, diskGiB: 4 });
-  await machines.start(vm.id);
-  const deadline = Date.now() + 300000;
-  while (machines.state(vm.id) !== 'running') {
-    assert.equal(machines.state(vm.id), 'starting', machines.logs.get(vm.id));
-    assert.ok(Date.now() < deadline, machines.logs.get(vm.id));
-    await delay(300);
-  }
-  const tools = await machines.exec(vm.id,
-    'command -v python3 >/dev/null || { if command -v apk >/dev/null; then apk add --no-cache python3; else apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3; fi; }', 180000);
-  assert.equal(tools.code, 0, tools.stdout + tools.stderr);
-  await workspaces.save(vm.id, { directory: '/workspace/host' });
-  const alpha = (await workspaces.projects.create(vm.id, 'Alpha', async () => {
-    await workspaces.save(vm.id, { directory: '/workspace/alpha', networkIsolation: 'private' });
-  })).active;
-  const beta = (await workspaces.projects.create(vm.id, 'Beta', async () => {
-    await workspaces.save(vm.id, { directory: '/workspace/beta', networkIsolation: 'private' });
-  })).active;
-  const scope = <T>(project: string, action: () => Promise<T>) => workspaces.projects.with(vm.id, project, action);
-  const host = await tunnels.open(vm.id, 8765, 60);
-  const first = await scope(alpha, () => tunnels.open(vm.id, 8765, 60));
-  const second = await scope(beta, () => tunnels.open(vm.id, 8765, 60));
-  assert.equal(first.projectId, alpha); assert.equal(second.projectId, beta);
-  assert.equal(first.networkIsolation, 'private');
+if (process.argv.includes('--validate-only')) {
+  console.log(JSON.stringify({ kind: 'reverse-tunnel', distro, vmStarted: false, source: 'formal public ExtendedFeatures action',
+    durableManagers: 1, dependencies: ['fixed administrator python3', 'fixed administrator tmux'],
+    migration: 'explicit mkdir and reviewed preview/apply for default plus two named projects',
+    fixture: 'fresh owned and retained', observerBytes: Buffer.byteLength(reverseSmokeKernel),
+    rootTestReceiverBytes: Buffer.byteLength(reverseSmokeReceiver), nativeCleanup: 'full original service domain before VM shutdown' }));
+} else await withOwnedReverseSmoke(distro, async ({ machines, workspaces, vmId, alpha, beta, directories,
+  namespaces, job, prove, stopped, scope, recordCase }) => {
+  const host = await job('default', 'open'), hostRecord = await prove('default');
+  const first = await job(alpha, 'open'), firstRecord = await prove(alpha);
+  const second = await job(beta, 'open'), secondRecord = await prove(beta);
+  assert.equal(first.projectId, alpha); assert.equal(second.projectId, beta); assert.equal(first.networkIsolation, 'private');
   assert.equal(new Set([host.localPort, first.localPort, second.localPort]).size, 3);
-  const source = `import os,socket,sys,threading
-server=socket.socket()
-server.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-server.bind(('127.0.0.1',8765))
-server.listen(8)
-def serve(conn):
-    try:
-        data=b''
-        while b'\\n' not in data:
-            part=conn.recv(65536)
-            if not part: return
-            data+=part
-        mode,data=data.split(b'\\n',1)
-        if mode==b'who':
-            conn.sendall((sys.argv[1]+'|'+os.readlink('/proc/self/ns/net')).encode())
-        elif mode==b'binary':
-            while True:
-                part=conn.recv(65536)
-                if not part: break
-                data+=part
-            conn.sendall(data)
-        elif mode==b'hold':
-            conn.sendall(b'ready\\n')
-            while True:
-                data=conn.recv(65536)
-                if not data: break
-                conn.sendall(data)
-    finally: conn.close()
-while True:
-    conn,_=server.accept()
-    threading.Thread(target=serve,args=(conn,),daemon=True).start()
-`;
-  await machines.writeGuestFile(vm.id, '/tmp/sakura-project-tunnel-server.py', source);
-  const namespaces = new Map<string, string>();
-  for (const project of ['default', alpha, beta]) {
-    const prefix = project === 'default' ? '' : `ip netns exec sk-${project} `;
-    const launch = await machines.exec(vm.id,
-      `nohup ${prefix}python3 -I -S /tmp/sakura-project-tunnel-server.py ${project} >/tmp/sakura-tunnel-${project}.log 2>&1 </dev/null & echo $!`);
-    assert.equal(launch.code, 0, launch.stderr);
-    namespaces.set(project, (await machines.exec(vm.id, `${prefix}readlink /proc/self/ns/net`)).stdout.trim());
-    let ready = false;
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const checked = await machines.exec(vm.id, `${prefix}python3 -I -S -c "import socket;socket.create_connection(('127.0.0.1',8765),1).close()"`);
-      if (checked.code === 0) { ready = true; break; } await delay(100);
-    }
-    assert.ok(ready, await machines.readGuestFile(vm.id, `/tmp/sakura-tunnel-${project}.log`));
-  }
-  assert.notEqual(namespaces.get(alpha), namespaces.get(beta));
-  assert.notEqual(namespaces.get(alpha), namespaces.get('default'));
+  assert.notEqual(namespaces.get(alpha), namespaces.get(beta)); assert.notEqual(namespaces.get(alpha), namespaces.get('default'));
   for (const [project, opened] of [['default', host], [alpha, first], [beta, second]] as const)
     assert.equal((await exchange(opened.localPort, 'who\n')).toString(), `${project}|${namespaces.get(project)}`);
-  await assert.rejects(scope(alpha, () => workspaces.save(vm.id,
-    { directory: '/workspace/alpha', networkIsolation: 'host' })), /先关闭.*隧道/);
-  await assert.rejects(scope(alpha, () => workspaces.save(vm.id,
-    { directory: '/workspace/changed', networkIsolation: 'private' })), /先关闭.*隧道/);
-  assert.equal(await tunnels.stop(vm.id), true);
-  assert.equal(tunnels.status(vm.id).active, false);
-  assert.equal((await scope(alpha, async () => tunnels.status(vm.id))).active, true);
+  await recordCase('three same-port namespaces through three actual UID brokers', { guestPort: 8765, localPorts: [host.localPort, first.localPort, second.localPort] });
+
+  await assert.rejects(scope(alpha, () => workspaces.save(vmId, { directory: directories.get(alpha)!, networkIsolation: 'host' })), /先关闭.*隧道/);
+  await assert.rejects(scope(alpha, () => workspaces.save(vmId, { directory: directories.get(alpha)! + '-changed', networkIsolation: 'private' })), /先关闭.*隧道/);
+  assert.equal((await job('default', 'close')).closed, true); await stopped(hostRecord);
+  assert.equal((await job('default', 'status')).active, false); assert.equal((await job(alpha, 'status')).active, true);
   await assert.rejects(exchange(host.localPort, 'who\n'));
-  const payload = Buffer.alloc(256 * 1024, 137);
+  await recordCase('configuration guards and project-specific whole-domain stop');
+
+  const payload = Buffer.alloc(256 * 1024); for (let index = 0; index < payload.length; index++) payload[index] = index & 255;
   assert.deepEqual(await exchange(first.localPort, Buffer.concat([Buffer.from('binary\n'), payload]), true), payload);
-  const idle = connect(second.localPort, '127.0.0.1');
-  idle.on('error', () => {}); await once(idle, 'connect', { signal: AbortSignal.timeout(15000) });
-  const acknowledged = once(idle, 'data', { signal: AbortSignal.timeout(15000) }); idle.write('hold\n');
-  assert.equal((await acknowledged)[0].toString(), 'ready\n');
-  await delay(6000);
-  const echoed = once(idle, 'data', { signal: AbortSignal.timeout(15000) }); idle.write('after idle');
-  assert.equal((await echoed)[0].toString(), 'after idle'); idle.destroy();
-  assert.equal((await machines.exec(vm.id, `ip -n sk-${alpha} route add blackhole 203.0.113.0/24`)).code, 0);
-  assert.equal((await exchange(first.localPort, 'who\n')).length, 0, 'a changed route must refuse the connection');
-  assert.equal((await machines.exec(vm.id, `ip -n sk-${alpha} route del blackhole 203.0.113.0/24`)).code, 0);
+  await recordCase('256 KiB binary with NUL and all octets, half-close and complete response EOF', { bytes: payload.length });
+
+  const idle = connect(second.localPort, '127.0.0.1'); idle.on('error', () => {});
+  try {
+    await once(idle, 'connect', { signal: AbortSignal.timeout(15000) });
+    const acknowledged = once(idle, 'data', { signal: AbortSignal.timeout(15000) }); idle.write('hold\n');
+    assert.equal((await acknowledged)[0].toString(), 'ready\n'); await delay(6000);
+    const echoed = once(idle, 'data', { signal: AbortSignal.timeout(15000) }); idle.write('after idle');
+    assert.equal((await echoed)[0].toString(), 'after idle');
+  } finally { idle.destroy(); }
+  await recordCase('idle connection remains usable after six seconds');
+
+  const fixedRoot = 'exec /usr/bin/env -i HOME=/ USER=root LOGNAME=root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C ';
+  let route = false;
+  try {
+    assert.equal((await machines.exec(vmId, fixedRoot + `ip -n sk-${alpha} route add blackhole 203.0.113.0/24`)).code, 0); route = true;
+    assert.equal((await exchange(first.localPort, 'who\n')).length, 0, 'Changed route must refuse a new bridge');
+  } finally { if (route) assert.equal((await machines.exec(vmId, fixedRoot + `ip -n sk-${alpha} route del blackhole 203.0.113.0/24`)).code, 0); }
   assert.equal((await exchange(first.localPort, 'who\n')).toString(), `${alpha}|${namespaces.get(alpha)}`);
-  await scope(alpha, () => tunnels.stop(vm.id));
-  const abort = new AbortController();
-  const independent = await scope(alpha, () => tunnels.open(vm.id, 8765, 60, abort.signal));
+  await recordCase('route change rejects a connection and restored original route works');
+
+  assert.equal((await job(alpha, 'close')).closed, true); await stopped(firstRecord);
+  const abort = new AbortController(), independent = await job(alpha, 'open', 300, abort.signal), independentRecord = await prove(alpha);
   abort.abort();
   assert.equal((await exchange(independent.localPort, 'who\n')).toString(), `${alpha}|${namespaces.get(alpha)}`,
-    'cancelling a completed request does not cancel the tunnel lifetime');
-  await scope(alpha, () => tunnels.stop(vm.id));
-  const run = async (project: string, mode: string) => {
-    const job = await scope(project, () => extended.action(vm.id, { action: 'run', featureId: 'reverse-tunnel',
-      options: mode === 'open' ? { mode, guestPort: 8765, durationSeconds: 10 } : { mode } })) as { key: string; id: string };
-    await extended.jobs.wait(job.key);
-    assert.equal(extended.jobs.view(job.key)?.status, 'done');
-    return extended.jobs.result(job.id) as Promise<Record<string, unknown>>;
-  };
-  const job = await run(alpha, 'open');
-  assert.equal(job.projectId, alpha);
-  assert.equal((await exchange(Number(job.localPort), 'who\n')).toString(), `${alpha}|${namespaces.get(alpha)}`);
-  assert.equal((await run(beta, 'close')).closed, false);
-  assert.equal((await exchange(Number(job.localPort), 'who\n')).toString(), `${alpha}|${namespaces.get(alpha)}`);
-  await delay(10300);
-  await assert.rejects(exchange(Number(job.localPort), 'who\n'));
-  await machines.suspend(vm.id);
-  await assert.rejects(exchange(second.localPort, 'who\n'));
-  assert.equal((await scope(beta, async () => tunnels.status(vm.id))).active, false);
-  console.log(`Real ${distro} project TCP tunnels verified three same-port namespaces, project jobs and configuration guards, binary half-close, idle connections, route rejection, independent lifetime, expiry and pause revocation.`);
-} finally {
-  await extended.close(); await tunnels.close(); await workspaces.close(); await machines.close();
-  assert.equal(dirname(directory), resolve(tmpdir()));
-  assert.ok(basename(directory).startsWith('sakura-project-tunnel-vm-'));
-  await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
-}
+    'Cancelling a completed public request does not cancel its independent tunnel lifetime');
+  assert.equal((await job(alpha, 'close')).closed, true); await stopped(independentRecord);
+  await recordCase('completed public request signal does not own tunnel lifetime');
+
+  // One public owner means closing Beta really closes its current tunnel. Prove
+  // that original domain closed, then exercise a no-op Beta close while Alpha
+  // remains live; reopening Beta provides the later pause case.
+  assert.equal((await job(beta, 'close')).closed, true); await stopped(secondRecord);
+  const expiring = await job(alpha, 'open', 10), expiringRecord = await prove(alpha);
+  assert.equal(expiring.projectId, alpha);
+  assert.equal((await exchange(expiring.localPort, 'who\n')).toString(), `${alpha}|${namespaces.get(alpha)}`);
+  assert.equal((await job(beta, 'close')).closed, false);
+  assert.equal((await exchange(expiring.localPort, 'who\n')).toString(), `${alpha}|${namespaces.get(alpha)}`);
+  await recordCase('public project jobs and no-op close preserve the other project', { expirySeconds: 10 });
+  await delay(Math.max(0, Date.parse(expiringRecord.expiresAt) - Date.now()) + 300);
+  await assert.rejects(exchange(expiring.localPort, 'who\n'));
+  // Timer revocation alone cannot prove native closure. Explicit original-owner
+  // close joins any pending timer stop before the whole-domain assertions.
+  await job(alpha, 'close'); await stopped(expiringRecord);
+  await recordCase('expiry closes the original service domain and native/host ticket');
+
+  const paused = await job(beta, 'open'), pausedRecord = await prove(beta), originalLive = machines.live.get(vmId);
+  await machines.suspend(vmId); await assert.rejects(exchange(paused.localPort, 'who\n'));
+  assert.equal((await job(beta, 'status')).active, false);
+  await recordCase('pause immediately revokes the host loopback entry');
+  // Resume the same live, then retire exactly the pre-pause service receipt.
+  // Shutdown would remove processes without confirming native ticket closure.
+  await machines.resume(vmId); assert.equal(machines.live.get(vmId), originalLive);
+  await job(beta, 'close'); await stopped(pausedRecord);
+  assert.equal((await job(beta, 'status')).active, false);
+  await recordCase('resume original VM and confirm complete pre-pause native cleanup before shutdown');
+  console.log(`Real ${distro} UID project TCP tunnel cases passed; final own VM and ticket cleanup follows.`);
+});
