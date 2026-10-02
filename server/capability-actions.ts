@@ -281,6 +281,7 @@ export class CapabilityActions {
           totalMatches += Number(result.totalMatches || 0);
           results.push({ ...target, vmName: vm.name, ...result });
         } catch (error) {
+          if (error instanceof AppError && error.status === 503) throw error;
           signal.throwIfAborted();
           results.push({ ...target, code: 1, error: (error as Error).message });
         }

@@ -7,7 +7,7 @@ import type { Workspaces } from './workspaces.ts';
 import type { ProjectTerminals } from './project-terminals.ts';
 import { Jobs } from './jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { runEngineeringOperation, requireSuccessfulResult } from './engineering-runner.ts';
+import { runEngineeringOperation, requireSuccessfulResult, type EngineeringResult } from './engineering-runner.ts';
 import { CapabilityActions } from './capability-actions.ts';
 import { capabilityViews, capabilityParameters, hasCapability } from './capability-definitions.ts';
 import { ReverseTunnels } from './reverse-tunnels.ts';
@@ -710,6 +710,7 @@ export class ExtendedFeatures {
     operation: EngineeringOperation,
     parameters: Record<string, unknown>,
     signal?: AbortSignal,
+    onResult?: (result: EngineeringResult) => Promise<void>,
   ) {
     if (operation === 'feature-run') {
       const spec = this.spec(String(parameters.featureId));
@@ -721,7 +722,9 @@ export class ExtendedFeatures {
         signal,
         (parameters.options || {}) as Record<string, unknown>,
       );
-      return { operation, code: result.ready ? 0 : 1, result };
+      const value = { operation, code: result.ready ? 0 : 1, result };
+      await onResult?.(value);
+      return value;
     }
     return runEngineeringOperation(
       this.machines,
@@ -730,6 +733,7 @@ export class ExtendedFeatures {
       operation,
       parameters,
       signal || new AbortController().signal,
+      { ...(this.projectTerminals ? { terminals: this.projectTerminals } : {}), onResult },
     );
   }
 
@@ -776,8 +780,10 @@ export class ExtendedFeatures {
       return this.jobs.start(
         `${this.workspaces.projects.key(id)}:operation:${validated.operation}`,
         async (log, taskSignal, _update, saveResult) => {
-          const result = await this.runOperation(id, validated.operation, validated.parameters, taskSignal);
-          await saveResult(result);
+          let stored = false;
+          const persist = async (result: EngineeringResult) => { await saveResult(result); stored = true; };
+          const result = await this.runOperation(id, validated.operation, validated.parameters, taskSignal, persist);
+          if (!stored) await persist(result);
           log(JSON.stringify(result) + '\n');
           requireSuccessfulResult(result);
         },

@@ -117,6 +117,8 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 [浏览器 IDE](docs/browser-ide.md) 的编辑器、集成终端和扩展宿主使用项目 UID/GID 与独立 home。入口核对完整原票据和实际监听，停止或到期清理全部后代；关闭控制服务后客户机仍执行到期清理。
 
+[工程操作](docs/engineering-project-identity.md) 的工作区、Git、测试和命令流程也使用原项目账号及受保护输入；任务固定项目、配置和运行身份，取消清理整个运行域。
+
 本轮新增了分块续传、文件预览与剪贴板上传、文本三方合并、Git 工作树与目录版本、可执行能力表单、跨实例搜索/复制/测试、签名补丁、指标与任务结果导出，以及维护窗口、同步队列、备份限速、保留锁和快照差异比较。使用方法及具体边界见 [功能实现记录](docs/capability-completion.md)；完整剩余范围见 [未完成功能清单](docs/unfinished-features.md)，可用 `npm run features:audit` 重新生成。
 
 ## Linux 图形桌面（实验性）

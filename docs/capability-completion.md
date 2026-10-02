@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 工程扩展的项目账号与配置捕获
+
+2026-10-02 工程执行器的工作区文件、归档、Git、测试、命令宏和 Runbook 等项目操作，以及平台分片、矩阵子任务和环境指纹，已接入原项目持久 UID/GID、独立 home、捕获配置和完整短任务域。提交固定原项目与 live 身份，环境只解析捕获配置；可信源码和请求通过摘要及长度绑定的有界压缩数据进入保护帧，在降权后解码，不再写入 root 临时脚本。直接操作的结果保存与任务导入保持准备租约；取消等待整域及准确票据清理，原 503 和错误码继续传播。三个现有明确管理操作使用固定 root 环境、目录与有界 stdin，不加载项目配置或钩子，规则见 [工程操作](engineering-project-identity.md)。
+
+修复了真实配置中非枚举 `_workspace` 被 `structuredClone` 丢弃的问题，原项目标识独立于 JSON 配置摘要保留并核对；同摘要的另一项目准备不能授权任务。旧能力任务夹具补齐 pinned live、非枚举项目身份与 ALS，复用真实宿主 journal 和二进制 frame，保留原 public Jobs 分片与矩阵断言。正式源码六个相关文件共 42 项全部通过，包含 19 项新模型；证明为 `.data/engineering-identity-backend-a3e6ebad-befe-4613-91c7-46fc8ca5e3c1-verification.json`，源码前后未变、实际退出 0，完整类型检查通过。首次 38/40 的旧夹具 false 证明继续保留，未检查的 sourceUnchanged=false 不代表实际源码漂移。
+
+插件、语言资源、完整构建、分发检查和七种生产服务组合全部通过，942 个受核对文件前后保持一致；证明为 `.data/engineering-identity-build-482065fa-e758-42c5-9d4f-07b61835afdc-verification.json`。运行包 257 个文件通过完整清单核对，指纹 `513886ac8c3f761d4fa5a75e1cf9396251eb627633ec3a855ec1e556b2fb3d2b`；证明为 `.data/engineering-identity-release-20ba2691-1dfc-4445-ae3b-a903360b2935-verification.json`。这批未重跑整仓测试，历史 Windows rename EPERM 的原 false 证明继续保留。
+
+这批为功能实现及本地验证，未运行新的工程 UID 客户机实测。跨实例能力的外层聚合与最终结果保存沿用原能力流程，不声明持有全部子任务租约。目录继续为 250 项、247 项有入口、3 项部分实现；Notebook、代码诊断、独立语言服务、调试适配器等其余入口仍在推进。
+
 ## 浏览器 IDE 的项目账号与到期全域清理
 
 2026-10-02 Debian/Ubuntu 的 code-server、集成终端与扩展宿主接入持久项目 UID/GID、独立 home、受保护 stdin 与完整原服务票据。配置、用户数据和扩展保存在账号 home；共享发布包与系统工具由固定管理员入口安装。所有网络模式都使用核对后的本机回环 SSH 桥接，不建立 QEMU 端口映射。启动前先保存 Browser intent，只有原账号、boot、构建、cgroup inode、pane 创建身份、正文摘要及该 UID 持有的实际监听全部核对后才开放入口；SSH 连接完成后再次核对。规则见 [浏览器 IDE](browser-ide.md)。

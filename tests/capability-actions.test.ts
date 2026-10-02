@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { runInNewContext } from 'node:vm';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 
 const directory = await mkdtemp(join(tmpdir(), 'sakura-capabilities-'));
 process.env.SAKURA_DATA_DIR = directory;
@@ -14,6 +16,9 @@ const { NextFeatures } = await import('../server/next-features.ts');
 const { ExtendedFeatures } = await import('../server/extended-features.ts');
 const { taskSlo, metricExport, baselineAnomalies } = await import('../server/capability-reports.ts');
 const { Jobs } = await import('../server/jobs.ts');
+const { scopeIdentityFixture } = await import('./project-scope-identity-fixture.ts');
+const { projectSchema } = await import('../server/workspaces.ts');
+const { setVmStorageRoot } = await import('../server/model.ts');
 after(() => rm(directory, { recursive: true, force: true }));
 const a = '11111111-1111-4111-8111-111111111111';
 const b = '22222222-2222-4222-8222-222222222222';
@@ -174,27 +179,50 @@ test('capability worker exercises actual files and subprocesses', { timeout: 900
 function fixture() {
   let result = { code: 0, shards: [] },
     calls = 0;
+  const context = new AsyncLocalStorage<{ vmId: string; projectId: string }>();
+  const current = (id: string) => context.getStore()?.vmId === id ? context.getStore()!.projectId : 'default';
+  const inScope = <T>(id: string, projectId: string, action: () => T) =>
+    context.run({ vmId: id, projectId }, action);
+  const project = projectSchema.parse({ directory: '/workspace', template: 'none', environment: {} });
+  const bootId = randomUUID(), fixtureRoot = join(directory, 'identity-fixture-' + randomUUID());
+  for (const id of [a, b, c]) setVmStorageRoot(id, join(fixtureRoot, id));
   const machines: any = {
     on() {}, off() {},
     get: (id: string) => ({ id, forwards: [], distro: 'alpine' }),
     requireUnlocked() {},
     state: () => 'running',
-    live: new Map(),
+    live: new Map([a, b, c].map(id => [id, { status: 'running' }])),
     locked: async (_: string, action: () => Promise<unknown>) => action(),
-    writeGuestFile: async () => {},
-    exec: async () => {
-      calls++;
-      return { stdout: JSON.stringify(result), stderr: '', code: result.code };
+    writeGuestFile: async () => { assert.fail('Engineering tasks must not publish a root helper file'); },
+    exec: async (_id: string, command: string) => {
+      assert.ok(!command.startsWith('# SAKURA_GUEST_TASK_RUN'), 'Project code must use the protected stdin frame');
+      // Scope fixture handles boot/latch/absence probes. Directory preparation
+      // and guest-task cleanup/confirmation/retirement are administrative controls.
+      return { stdout: '', stderr: '', code: 0 };
     },
   };
   const workspaces: any = {
     beforeConfigChange: () => () => {},
     projects: {
-      current: () => 'default',
+      current,
       key: (id: string) => id,
-      with: async (_id: string, _project: string, action: () => Promise<unknown>) => action(),
+      inScope,
+      with: <T>(id: string, projectId: string | null | undefined, action: () => T) =>
+        inScope(id, projectId || current(id), action),
     },
-    resolvedConfig: async () => ({ directory: '/workspace', environment: {} }),
+    config: async (id: string) => Object.defineProperty(structuredClone(project), '_workspace', { value: current(id) }),
+    resolveProject: async (_id: string, captured: typeof project) => captured,
+    resolvedConfig: async (id: string) => workspaces.config(id),
+  };
+  scopeIdentityFixture(machines, project, () => bootId, () => null);
+  const executeFrame = machines.execInput.bind(machines);
+  machines.execInput = async (...args: Parameters<typeof machines.execInput>) => {
+    assert.ok(String(args[1]).startsWith('# SAKURA_GUEST_TASK_RUN'));
+    // Preserve real host issuance, exact run UUID, native frame checks and
+    // cleanup receipts; only this finite UID worker's JSON response is simulated.
+    const execution = await executeFrame(...args);
+    ++calls;
+    return { ...execution, stdout: JSON.stringify(result), code: result.code };
   };
   return {
     machines,
