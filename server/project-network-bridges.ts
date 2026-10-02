@@ -167,6 +167,10 @@ export class ProjectNetworkBridges {
         client.destroy(); socket.destroy(); return;
       }
       try {
+        // Connection establishment may outlive the original live/boot proof.
+        await this.validate?.(bridge.vmId, bridge.project, abort.signal);
+        if (!this.isRunning(bridge.vmId) || this.bridges.get(key) !== bridge || abort.signal.aborted)
+          throw new AppError('原项目桥接归属已改变', 409);
         const channel = await new Promise<ClientChannel>((resolve, reject) => {
           let settled = false;
           const finish = (error?: Error, stream?: ClientChannel) => {

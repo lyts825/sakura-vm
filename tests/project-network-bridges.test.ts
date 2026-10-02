@@ -215,10 +215,29 @@ test('an explicitly allowed shared project bridge is separately stopped and stil
     const response = once(socket, 'data');
     socket.write('shared');
     assert.equal((await response)[0].toString(), 'shared');
-    assert.equal(checks, 2);
+    assert.equal(checks, 3);
     assert.ok(guest.commands.every((command) => !command.includes('ip netns exec')));
     await bridges.stop(id, shared._workspace!);
     await eventually(() => socket.destroyed && guest.clients.size === 0);
     await rejected(port);
   } finally { await bridges.close(); }
+});
+
+test('a changed guest boot during SSH connect is revalidated before any HTTP relay command', async () => {
+  const guest = new Guest();
+  let valid = true, connecting = false; let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const original = guest.connect.bind(guest);
+  guest.connect = async (vmId, timeout, signal) => { connecting = true; await gate; return original(vmId, timeout, signal); };
+  const bridges = new ProjectNetworkBridges(guest as unknown as Machines, async () => {
+    if (!valid) throw new Error('original guest boot changed');
+  });
+  try {
+    const port = await freePort(); await bridges.open(id, project, 8888, port);
+    const socket = connect(port, '127.0.0.1'); socket.on('error', () => {}); await once(socket, 'connect');
+    await eventually(() => connecting); valid = false; release();
+    await eventually(() => socket.destroyed && guest.clients.size === 0);
+    assert.equal(guest.commands.some(command => command.includes('python3 -I -S -u')), false,
+      'the authenticated SSH connection must not start a relay after its original boot proof changed');
+  } finally { release(); await bridges.close(); }
 });

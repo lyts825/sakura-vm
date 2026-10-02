@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 浏览器 IDE 的项目账号与到期全域清理
+
+2026-10-02 Debian/Ubuntu 的 code-server、集成终端与扩展宿主接入持久项目 UID/GID、独立 home、受保护 stdin 与完整原服务票据。配置、用户数据和扩展保存在账号 home；共享发布包与系统工具由固定管理员入口安装。所有网络模式都使用核对后的本机回环 SSH 桥接，不建立 QEMU 端口映射。启动前先保存 Browser intent，只有原账号、boot、构建、cgroup inode、pane 创建身份、正文摘要及该 UID 持有的实际监听全部核对后才开放入口；SSH 连接完成后再次核对。规则见 [浏览器 IDE](browser-ide.md)。
+
+停止先持久保存检查状态并关闭入口，清空原整个进程域和准确保护帧，再核销原 native/host 票据。失败保留完整归属，重载不安装或发行新票据。独立客户机守护逻辑在控制服务关闭后仍按时清理脱离终端的全部后代，重新加载后再确认核销；冷重启只在原资源确认不存在时退休旧票据，不向新 boot 发送旧停止。旧 root 会话保留检查状态，不自动接管其未知进程或缓存。
+
+正式源码的四个相关文件共 134 项回归全部通过，涵盖 Browser 21 项、现有服务域、桥接与项目运行票据；证明为 `.data/browser-ide-identity-backend-5b605e70-b59a-4eb9-bbb3-03d783a265c1-verification.json`。固定 listener、pane、commit、watchdog Python 语法和截止时间/原归属拒绝检查通过，watchdog 的 transport 带原 SHA 与字节数。旧 Debian smoke 已适配明确迁移、UID/GID/home、完整原票据、两种模式回环桥接、真实 Chromium 与到期整域清理；其固定 Python、二进制 stdin 和类型检查通过。本段只记录功能实现与本地验证，不把改造后的脚本记为已通过新客户机实测。
+
+插件、语言资源、完整构建、分发检查和七种生产服务组合通过，939 个受核对文件前后保持一致；证明为 `.data/browser-ide-identity-build-d7e2155a-ed58-4f22-98c8-08a84dca787c-verification.json`。运行包 264 个文件通过完整清单核对，指纹 `fde286cab18208d4f1af9d82a2b3256b004921421dc6679e6c323433695a04e7`；证明为 `.data/browser-ide-identity-release-f8eb3501-316b-424b-9142-ba02d5481f1b-verification.json`。新的独立 Ubuntu smoke 提供只读冻结/预检与明确运行入口，计划十项真实认证、WebSocket、账号、重载、整域、TTL 与冷重启检查；实际结果另行保存。本批未重跑整仓测试，前一 Windows rename EPERM 原 false 证明保留。目录继续为 250 项、247 项有入口、3 项部分实现，工程扩展、Notebook 及外部环境范围继续见 [未完成功能](unfinished-features.md)。
+
 ## 项目 SSH、SFTP 与编辑器入口的项目账号
 
 2026-10-02 专属项目 SSH 的 Shell、命令、SFTP 与编辑器入口接入持久 UID/GID、独立 home、原项目目录及服务 cgroup。三种发行版的共享与私有项目均导出核对后的独立入口。固定 ForceCommand 只带账号、run 与摘要；真实客户端命令和环境经有界帧降权执行，独立描述符保留二进制 stdin、EOF 与 PTY。解析环境保存在 root 独占 JSON，不进入 root argv；旧 root 编辑器缓存保留。规则见 [项目 SSH](project-ssh.md)。

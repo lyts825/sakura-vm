@@ -62,7 +62,24 @@ export const projectMainRecordSchema = z.object({
 });
 export type ProjectMainRecord = z.infer<typeof projectMainRecordSchema>;
 type ProjectScopeRecord = ProjectServiceRecord | ProjectMainRecord;
-type ScopeTarget = { kind: 'service'; name: string } | { kind: 'main' };
+type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide'; deadline?: number } | { kind: 'main' };
+export const projectBrowserIdeRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
+  name: z.literal('browser-ide'), session: z.string().regex(/^sakura-browser-ide-(default|[a-f0-9]{16})$/),
+}).strict().superRefine((record, ctx) => {
+  if (record.session !== 'sakura-browser-ide-' + record.projectId || record.scopeName !== 'sakura-service-' + record.runId)
+    ctx.addIssue({ code: 'custom', message: '浏览器 IDE 运行路径与身份不符' });
+  const panes = [record.sessionId, record.paneId, record.panePid, record.paneStartTicks];
+  if (panes.some(value => value !== null) && panes.some(value => value === null) ||
+      ['prepared', 'running'].includes(record.phase) && record.inode === null ||
+      record.phase === 'running' && record.panePid === null)
+    ctx.addIssue({ code: 'custom', message: '浏览器 IDE 的完整 cgroup/pane 身份缺失' });
+});
+export type ProjectBrowserIdeRecord = z.infer<typeof projectBrowserIdeRecordSchema>;
+export function projectBrowserIdeScopePaths(project: Project) {
+  const projectId = projectIdSchema.parse(project._workspace || 'default');
+  return { namespace: 'browser-ide' as const, projectId, name: 'browser-ide',
+    session: 'sakura-browser-ide-' + projectId, guest: '/run/sakura-browser-ide/' + projectId };
+}
 export type ProjectScopeInput = { runId: string; command: string; input: Buffer; sha256: string };
 const transportSchema = z.object({ version: z.literal(1),
   sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().min(1).max(128 * 1024),
@@ -96,7 +113,8 @@ export function projectMainScopePaths(project: Project) {
     guest: `/run/sakura-project-main/${projectId}` };
 }
 const scopePaths = (project: Project, target: ScopeTarget) => target.kind === 'main'
-  ? projectMainScopePaths(project) : projectServiceScopePaths(project, target.name);
+  ? projectMainScopePaths(project) : target.namespace === 'browser-ide'
+    ? projectBrowserIdeScopePaths(project) : projectServiceScopePaths(project, target.name);
 export function projectMainBinding(project: Project) {
   return createHash('sha256').update(JSON.stringify(['main-uid-v3',
     project._workspace || 'default', project.directory, project.networkIsolation || 'host',
@@ -117,7 +135,7 @@ const helper = `import fcntl,hashlib,json,os,re,signal,stat,subprocess,sys,tempf
 boot=open('/proc/sys/kernel/random/boot_id').read().strip()
 folder=request['guest']; owner_file=folder+'/owner.json'; cancel_file=folder+'/cancel'
 main=request.get('kind')=='main'
-root='/run/sakura-project-main' if main else '/run/sakura-project-services'
+root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-project-services'
 scope_prefix='sakura-main-' if main else 'sakura-service-'
 def refuse(message): raise RuntimeError(message)
 def trusted_directory(path):
@@ -359,7 +377,15 @@ def commit():
  if descriptor is None: refuse('服务 cgroup 已缺失')
  os.close(descriptor)
  if '0::/'+record['scopeName'] not in open('/proc/'+str(record['panePid'])+'/cgroup').read().splitlines(): refuse('服务 pane 未进入 cgroup；拒绝执行项目代码')
- record['phase']='running'; write_owner(record); result('running',record)
+ record['phase']='running'; write_owner(record)
+ if request.get('namespace')=='browser-ide':
+  deadline=request.get('deadline')
+  if not isinstance(deadline,int) or not time.time()<deadline<=time.time()+14400: refuse('浏览器 IDE 时限不符')
+  path=folder+'/watchdog-'+record['runId']+'.py'
+  descriptor=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+  with os.fdopen(descriptor,'w') as stream: stream.write(request['watchdogScript']); stream.flush(); os.fsync(stream.fileno())
+  subprocess.Popen(['/usr/bin/python3','-I','-S',path],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','HOME':'/','LANG':'C','LC_ALL':'C'},close_fds=True,start_new_session=True)
+ result('running',record)
 def stop():
  fcntl.flock(lock,fcntl.LOCK_EX)
  expected=request['record']
@@ -409,12 +435,37 @@ def stop():
    if str(os.stat(scope_path(record)).st_ino)!=record['inode']: refuse('服务 cgroup 路径在删除前已改变')
    for path,children,files in os.walk(scope_path(record),topdown=False): os.rmdir(path)
   clean_input(record)
-  try: os.unlink(folder+'/pane-'+record['runId']+'.py')
-  except FileNotFoundError: pass
+  for prefix in ['pane-','watchdog-']:
+   try: os.unlink(folder+'/'+prefix+record['runId']+'.py')
+   except FileNotFoundError: pass
   record['phase']='stopped'; write_owner(record); result('stopped',record)
  finally:
   if pidfd is not None: os.close(pidfd)
   if descriptor is not None: os.close(descriptor)
+def watchdog():
+ expected=request['record']; deadline=request['deadline']
+ if request.get('namespace')!='browser-ide' or not isinstance(deadline,int) or deadline>time.time()+14400: refuse('浏览器 IDE guard 身份不符')
+ # The guard runs outside the service. Hold the original cgroup descriptor;
+ # its inode cannot become authority over a later run with a reused name.
+ fcntl.flock(lock,fcntl.LOCK_EX)
+ record=read_owner(); expect_owner(record)
+ if record['phase']=='stopped': return
+ descriptor=scope_descriptor(record)
+ if descriptor is None: refuse('浏览器 IDE guard 缺少原完整域')
+ fcntl.flock(lock,fcntl.LOCK_UN)
+ try:
+  until=time.monotonic()+max(0,deadline-time.time())
+  while time.monotonic()<until:
+   time.sleep(max(0,min(5,until-time.monotonic())))
+   fcntl.flock(lock,fcntl.LOCK_EX)
+   record=read_owner()
+   if record is None or record['runId']!=expected['runId'] or record['phase']=='stopped': return
+   expect_owner(record)
+   fcntl.flock(lock,fcntl.LOCK_UN)
+  # stop rechecks the original receipt, boot, pane ticks and inode and removes
+  # the whole group. Native ticket retirement is left for host recovery.
+  stop()
+ finally: os.close(descriptor)
 def pane():
  deadline=time.monotonic()+30
  while time.monotonic()<deadline:
@@ -447,10 +498,14 @@ def pane():
   fcntl.flock(lock,fcntl.LOCK_UN); time.sleep(0.05)
  refuse('服务提交等待超时；项目代码未执行；归属记录已保留')
 try:
- {'status':status,'prepare':prepare,'start':launch,'commit':commit,'stop':stop,'pane':pane}[request['op']]()
+ {'status':status,'prepare':prepare,'start':launch,'commit':commit,'stop':stop,'pane':pane,'watchdog':watchdog}[request['op']]()
 except Exception as error:
  print('SAKURA_SERVICE_SCOPE_REFUSED: '+str(error),file=sys.stderr); sys.exit(73)
 `;
+
+export function projectBrowserIdeScopeCommand(project: Project, op: Operation, record?: ProjectBrowserIdeRecord, payload?: ProjectScopeInput, deadline?: number, transport?: z.infer<typeof transportSchema>) {
+  return projectScopeCommand(project, { kind: 'service', name: 'browser-ide', namespace: 'browser-ide', deadline }, op, record, payload, transport);
+}
 
 function python(request: object) {
   return `request=json.loads(${JSON.stringify(JSON.stringify(request))})\n`;
@@ -462,6 +517,15 @@ function projectScopeCommand(project: Project, target: ScopeTarget, op: Operatio
   const executionHelper = target.kind === 'main'
     ? helper.replaceAll('服务', '项目主命令').replaceAll('SAKURA_SERVICE_SCOPE_', 'SAKURA_PROJECT_MAIN_SCOPE_') : helper;
   const request: any = { op, ...paths, ...(record ? { record } : {}), ...(transport ? { transport } : {}) };
+  if (target.kind === 'service' && target.namespace === 'browser-ide' && op === 'commit') {
+    if (!record || !Number.isSafeInteger(target.deadline) || target.deadline! <= Math.floor(Date.now() / 1000) ||
+        target.deadline! > Math.floor(Date.now() / 1000) + 14400)
+      throw new AppError('浏览器 IDE 时限或原运行记录不符', 409, 'BROWSER_IDE_SCOPE_CHANGED');
+    request.deadline = target.deadline;
+    request.watchdogScript = 'import json\n' + python({ op: 'watchdog', ...paths,
+      record: { ...record, phase: 'running' }, deadline: target.deadline,
+      ...(transport ? { transport } : {}) }) + executionHelper;
+  }
   if (op === 'start') {
     if (!record || !payload || payload.runId !== record.runId || !Buffer.isBuffer(payload.input) ||
         !/^[a-f0-9]{64}$/.test(payload.sha256) || payload.input.length < 1 || payload.input.length > 128 * 1024 ||
@@ -475,7 +539,7 @@ function projectScopeCommand(project: Project, target: ScopeTarget, op: Operatio
     request.paneScript = 'import json\n' + python(paneRequest) + executionHelper;
   }
   const source = 'import json\n' + python(request) + executionHelper;
-  const { paneScript: _paneScript, ...metadata } = request;
+  const { paneScript: _paneScript, watchdogScript: _watchdogScript, ...metadata } = request;
   return `# SAKURA_PROJECT_${target.kind === 'main' ? 'MAIN' : 'SERVICE'}_${op.toUpperCase()}\n` +
     `# SAKURA_PROJECT_${target.kind === 'main' ? 'MAIN' : 'SERVICE'}_REQUEST=${Buffer.from(JSON.stringify(metadata)).toString('base64')}\n` +
     `set -eu\nif [ ! -x /usr/bin/python3 ] || [ ! -x /usr/bin/tmux ]; then ` +
@@ -505,7 +569,9 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
   }
   receipt() {
     const p = scopePaths(this.project, this.target);
-    return this.target.kind === 'main'
+    return this.target.kind === 'service' && this.target.namespace === 'browser-ide'
+      ? join(vmDir(this.id), 'project-browser-ide', p.projectId, 'runtime.json')
+      : this.target.kind === 'main'
       ? join(vmDir(this.id), 'project-main', p.projectId, 'runtime.json')
       : join(vmDir(this.id), 'project-services', p.projectId, this.target.name, 'runtime.json');
   }
@@ -547,7 +613,7 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
   private transportFile(record: Record) {
     return join(this.receipt(), '..', `transport-${record.runId}.json`);
   }
-  private async transport(record: Record) {
+  protected async transport(record: Record) {
     try {
       const value = await readStore<unknown>(this.transportFile(record), () => null);
       if (value === null) return undefined;
@@ -658,7 +724,8 @@ if boot==request['record']['bootId']:
  print(json.dumps({'bootId':boot,'retired':False}))
 else:
  folder=request['guest']
- for path in ['/run/sakura-project-services',folder.rsplit('/',1)[0],folder]:
+ root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-project-services'
+ for path in [root,folder.rsplit('/',1)[0],folder]:
   try: os.mkdir(path,0o700)
   except FileExistsError: pass
   info=os.lstat(path)
@@ -772,4 +839,22 @@ export class ProjectMainScope extends ProjectProcessScope<ProjectMainRecord> {
     super(machines, id, project, { kind: 'main' }, projectMainRecordSchema, machines.live.get(id));
   }
   intent(bootId: string) { return this.newIntent(projectMainBinding(this.project), bootId); }
+}
+
+/** A separate namespace reuses the proven service UUID domain without reserving user service names. */
+export class ProjectBrowserIdeScope extends ProjectProcessScope<ProjectBrowserIdeRecord> {
+  constructor(machines: Machines, id: string, project: Project, expiresAt?: string) {
+    super(machines, id, project, { kind: 'service', name: 'browser-ide', namespace: 'browser-ide',
+      ...(expiresAt ? { deadline: Math.floor(Date.parse(expiresAt) / 1000) } : {}) },
+      projectBrowserIdeRecordSchema, machines.live.get(id));
+  }
+  async status(signal?: AbortSignal, payloadSha256?: string) {
+    const status = await super.status(signal);
+    if (payloadSha256 !== undefined) {
+      const transport = status.record && await this.transport(status.record);
+      if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
+        throw new AppError('浏览器 IDE 受保护正文与原记录不符', 409, 'BROWSER_IDE_SCOPE_CHANGED');
+    }
+    return status;
+  }
 }

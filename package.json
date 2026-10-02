@@ -71,6 +71,7 @@
     "test:acme": "tsx scripts/smoke-acme.ts",
     "test:notebook": "tsx scripts/smoke-notebook.ts",
     "test:browser-ide": "tsx scripts/smoke-browser-ide.ts",
+    "test:browser-ide:identity": "node --import tsx scripts/smoke-browser-ide-identity.ts",
     "test:private-dns": "tsx scripts/smoke-private-dns.ts",
     "test:image-import": "tsx scripts/smoke-image-import.ts",
     "test:uefi": "tsx scripts/smoke-uefi.ts",
