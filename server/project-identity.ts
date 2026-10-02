@@ -121,7 +121,10 @@ export class ProjectIdentities {
   }
   private async control<T>(vmId: string, request: object, schema: z.ZodType<T>, signal?: AbortSignal, readonly = false) {
     const build = readonly ? (await this.build()).manifest.build : await this.install(vmId, signal);
-    const result = await this.machines.exec(vmId, this.controlCommand(build, request), 40000, signal);
+    // Full admission can validate 1024 receipts and durably retire 512. Keep
+    // its finite budget separate from ordinary reads and exact cancellation.
+    const timeoutMs = 'action' in request && request.action === 'prepare' ? 180000 : 40000;
+    const result = await this.machines.exec(vmId, this.controlCommand(build, request), timeoutMs, signal);
     let reply: { ok: boolean; result?: unknown; code?: string; detail?: unknown };
     try { reply = JSON.parse(result.stdout); } catch {
       throw new AppError('项目账户控制器未返回可核对回执', 502, 'PROJECT_IDENTITY_CONTROL_FAILED');
@@ -206,7 +209,7 @@ launch=destination+'/launch'
 if not os.path.lexists(launch):
  descriptor,temporary=tempfile.mkstemp(prefix='.launch-',dir=destination); os.close(descriptor)
  try:
-  subprocess.run(['/usr/bin/cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-fstack-protector-strong','-D_FORTIFY_SOURCE=2','-DPROJECT_BUILD="'+manifest['build']+'"',destination+'/launcher.c','-o',temporary],env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C','HOME':'/'},check=True,timeout=60)
+  subprocess.run(['/usr/bin/cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-fstack-protector-strong','-D_FORTIFY_SOURCE=2','-DPROJECT_BUILD="'+manifest['build']+'"',destination+'/launcher.c','-o',temporary],env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C','HOME':'/'},check=True,timeout=120)
   os.chmod(temporary,0o4755); os.replace(temporary,launch)
  finally:
   if os.path.exists(temporary): os.unlink(temporary)
@@ -221,7 +224,7 @@ else:
  with os.fdopen(descriptor,'wb') as stream: stream.write(data); stream.flush(); os.fsync(stream.fileno())
 directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(directory)
 `;
-      const result = await this.machines.exec(vmId, `${fixedEnvironment} /usr/bin/python3 -I -S - <<'SAKURA_IDENTITY_INSTALL'\n${bootstrap}\nSAKURA_IDENTITY_INSTALL`, 100000, signal);
+      const result = await this.machines.exec(vmId, `${fixedEnvironment} /usr/bin/python3 -I -S - <<'SAKURA_IDENTITY_INSTALL'\n${bootstrap}\nSAKURA_IDENTITY_INSTALL`, 180000, signal);
       if (result.code !== 0) throw new AppError('项目启动器安装身份或编译校验失败：' + result.stderr.slice(0, 4000), 502, 'PROJECT_IDENTITY_INSTALL_FAILED');
       const verified = await this.machines.exec(vmId, this.controlCommand(source.manifest.build, { action: 'install' }), 30000, signal);
       if (verified.code !== 0 || !JSON.parse(verified.stdout).ok)

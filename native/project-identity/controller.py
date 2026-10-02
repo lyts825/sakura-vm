@@ -6,6 +6,7 @@ reservation survives an interrupted account creation. Neither an incomplete
 reservation nor an old boot/revision can authorize an execution.
 """
 import base64
+import ctypes
 import errno
 import fcntl
 import grp
@@ -38,6 +39,9 @@ NETWORK_GUARD = struct.Struct('<8sIIQQQ37s37s17s37s37s37s14s')
 UUID = re.compile('[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}')
 PROJECT = re.compile('default|[a-f0-9]{16}')
 CLEAN_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/', 'LANG': 'C', 'LC_ALL': 'C'}
+RUN_LIMIT = 1024
+RUN_ARCHIVE_BATCH = 512
+RUN_ARCHIVE_BUCKET_LIMIT = 4096
 
 
 class Refusal(Exception):
@@ -224,21 +228,21 @@ def binding_read(project, missing=False):
 
 
 def run_path(run):
+    identifier(run, UUID, 'RUN_ID')
     return RUNTIME + '/runs/' + run + '.bin'
 
 
-def run_write(value):
-    atomic(run_path(value['runId']), RUN.pack(
+def run_bytes(value):
+    return RUN.pack(
         b'SKIDR001', 1, 1 if value['phase'] == 'active' else 2, 2 if value['mode'] == 'inherit-current' else 1, 0,
         value['revision'], int(value['networkDevice']), int(value['networkInode']),
         int(value['cgroupDevice']), int(value['cgroupInode']), text(value['registryId'], 37),
         text(value['identityId'], 37), text(value['projectId'], 17), text(value['runId'], 37),
         text(value['bootId'], 37), text(value['build'], 65), text(value['cgroupName'], 64),
-        text(value['namespace'], 32), b'\0' * 634))
+        text(value['namespace'], 32), b'\0' * 634)
 
 
-def run_read(run):
-    data = read(run_path(run), 1024)
+def run_decode(run, data):
     if len(data) != 1024:
         refuse('RUN_SIZE')
     f = RUN.unpack(data)
@@ -262,6 +266,84 @@ def run_read(run):
             'revision': f[5], 'networkDevice': str(f[6]), 'networkInode': str(f[7]),
             'cgroupDevice': str(f[8]), 'cgroupInode': str(f[9]), 'bootId': boot,
             'build': build, 'cgroupName': cgroup, 'namespace': namespace}
+
+
+def run_archive_fd(run, create=False):
+    identifier(run, UUID, 'RUN_ID')
+    parent = directory_fd(RUNTIME)
+    descriptors = [parent]
+    try:
+        for name in ('archives', run[:2]):
+            if create:
+                try:
+                    os.mkdir(name, 0o700, dir_fd=descriptors[-1])
+                    sync = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                   dir_fd=descriptors[-1])
+                    try:
+                        os.fsync(sync)
+                    finally:
+                        os.close(sync)
+                except FileExistsError:
+                    pass
+            try:
+                descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                     dir_fd=descriptors[-1])
+            except FileNotFoundError:
+                if not create:
+                    return None
+                raise
+            descriptors.append(descriptor)
+            trusted(os.fstat(descriptor), True, 0o700)
+        return descriptors.pop()
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def run_archive_read(run):
+    parent = run_archive_fd(run)
+    if parent is None:
+        return None
+    try:
+        try:
+            descriptor = os.open(run + '.bin', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        except FileNotFoundError:
+            return None
+        with os.fdopen(descriptor, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            trusted(info, mode=0o600)
+            if info.st_size != RUN.size:
+                refuse('RUN_ARCHIVE_SIZE')
+            data = stream.read(RUN.size + 1)
+        if run_decode(run, data)['phase'] != 'closed':
+            refuse('RUN_ARCHIVE_ACTIVE')
+        return data
+    finally:
+        os.close(parent)
+
+
+def run_read(run):
+    data = read(run_path(run), RUN.size, True)
+    archived = run_archive_read(run)
+    if data is None:
+        if archived is None:
+            refuse('RECORD_ABSENT')
+        return run_decode(run, archived)
+    if archived is not None and archived != data:
+        refuse('RUN_ARCHIVE_CONFLICT')
+    return run_decode(run, data)
+
+
+def run_write(value):
+    data = run_bytes(value)
+    archived = run_archive_read(value['runId'])
+    if archived is not None:
+        if value['phase'] != 'closed' or archived != data:
+            refuse('RUN_ARCHIVED')
+        # A repeated stop/read must not put the retired ticket back in the hot
+        # directory. A crash may leave an identical original alongside it.
+        return
+    atomic(run_path(value['runId']), data)
 
 
 def same(info, value, prefix):
@@ -1111,18 +1193,183 @@ def populated(descriptor):
     return b'populated 1\n' in content
 
 
-def runs_for(value):
-    entries = os.listdir(RUNTIME + '/runs')
-    if len(entries) > 1024:
-        refuse('RUN_LIMIT')
+def run_entries():
+    parent = directory_fd(RUNTIME + '/runs')
+    try:
+        descriptor = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+    finally:
+        os.close(parent)
+    try:
+        entries = []
+        with os.scandir(descriptor) as iterator:
+            for entry in iterator:
+                if len(entries) >= RUN_LIMIT:
+                    refuse('RUN_LIMIT')
+                if not entry.name.endswith('.bin') or not UUID.fullmatch(entry.name[:-4]):
+                    refuse('RUN_UNKNOWN_FILE')
+                entries.append(entry.name)
+        return sorted(entries)
+    finally:
+        os.close(descriptor)
+
+
+def runs_for(value, records=None):
     result = []
-    for entry in entries:
-        if not entry.endswith('.bin') or not UUID.fullmatch(entry[:-4]):
-            refuse('RUN_UNKNOWN_FILE')
-        run = run_read(entry[:-4])
+    for run in records if records is not None else [run_read(entry[:-4]) for entry in run_entries()]:
         if run['registryId'] == value['registryId'] and run['identityId'] == value['identityId']:
             result.append(run)
     return result
+
+
+def run_archive_publish(parent, temporary, destination):
+    # Publish a complete, fsynced file without replacing an existing tombstone.
+    # Linux guests already require pidfd/cgroup v2. An unavailable atomic
+    # no-replace primitive refuses archival and retains the original ticket.
+    libc = ctypes.CDLL(None, use_errno=True)
+    try:
+        rename = libc.renameat2
+    except AttributeError:
+        # Older musl has the kernel primitive without a libc wrapper. Use the
+        # same atomic operation only on known native 64-bit Linux ABIs.
+        number = {'x86_64': 316, 'aarch64': 276}.get(os.uname().machine)
+        if number is None or ctypes.sizeof(ctypes.c_void_p) != 8 or ctypes.sizeof(ctypes.c_long) != 8:
+            refuse('RUN_ARCHIVE_ATOMIC_UNAVAILABLE')
+        try:
+            syscall = libc.syscall
+        except AttributeError:
+            refuse('RUN_ARCHIVE_ATOMIC_UNAVAILABLE')
+        syscall.argtypes = (ctypes.c_long,)
+        syscall.restype = ctypes.c_long
+        result = syscall(ctypes.c_long(number), ctypes.c_int(parent), ctypes.c_char_p(temporary.encode()),
+                         ctypes.c_int(parent), ctypes.c_char_p(destination.encode()), ctypes.c_uint(1))
+    else:
+        rename.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+        rename.restype = ctypes.c_int
+        result = rename(parent, temporary.encode(), parent, destination.encode(), 1)
+    if result:
+        error = ctypes.get_errno()
+        if error == errno.EEXIST:
+            refuse('RUN_ARCHIVE_CONFLICT')
+        if error in (errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP):
+            refuse('RUN_ARCHIVE_ATOMIC_UNAVAILABLE')
+        refuse('RUN_ARCHIVE_PUBLISH_FAILED')
+
+
+def run_archive(value, boot):
+    if value['phase'] != 'closed' or value['bootId'] != boot:
+        refuse('RUN_ARCHIVE_STALE')
+    run = value['runId']
+    data = run_bytes(value)
+    source_parent = directory_fd(RUNTIME + '/runs')
+    source = destination = None
+    temporary = temporary_info = None
+    published = False
+    try:
+        source = os.open(run + '.bin', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=source_parent)
+        info = os.fstat(source)
+        trusted(info, mode=0o600)
+        if info.st_size != RUN.size or os.read(source, RUN.size + 1) != data:
+            refuse('RUN_ARCHIVE_CONFLICT')
+        descriptor = cgroup_fd(value)
+        try:
+            if descriptor is not None and populated(descriptor):
+                return False
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        destination = run_archive_fd(run, True)
+        archived = run_archive_read(run)
+        if archived is not None and archived != data:
+            refuse('RUN_ARCHIVE_CONFLICT')
+        if archived is None:
+            with os.scandir(destination) as iterator:
+                for index, _entry in enumerate(iterator, 1):
+                    if index >= RUN_ARCHIVE_BUCKET_LIMIT:
+                        refuse('RUN_ARCHIVE_LIMIT')
+            temporary = '.record-' + str(uuid.uuid4())
+            output = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                             0o600, dir_fd=destination)
+            try:
+                temporary_info = os.fstat(output)
+                trusted(temporary_info, mode=0o600)
+                view = memoryview(data)
+                while view:
+                    written = os.write(output, view)
+                    if written <= 0:
+                        refuse('RUN_ARCHIVE_WRITE_FAILED')
+                    view = view[written:]
+                os.fsync(output)
+                run_archive_publish(destination, temporary, run + '.bin')
+                published = True
+            finally:
+                os.close(output)
+        os.fsync(destination)
+        if run_archive_read(run) != data:
+            refuse('RUN_ARCHIVE_CONFLICT')
+        # A retained descriptor alone does not authorize removal through a new
+        # parent or a replaced leaf. The registry EX lock excludes launchers.
+        current_parent = directory_fd(RUNTIME + '/runs')
+        try:
+            old_parent = os.fstat(source_parent)
+            new_parent = os.fstat(current_parent)
+            if (old_parent.st_dev, old_parent.st_ino) != (new_parent.st_dev, new_parent.st_ino):
+                refuse('RUN_ARCHIVE_SOURCE_CHANGED')
+        finally:
+            os.close(current_parent)
+        current = os.stat(run + '.bin', dir_fd=source_parent, follow_symlinks=False)
+        trusted(current, mode=0o600)
+        fields = ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+        if any(getattr(current, field) != getattr(info, field) for field in fields):
+            refuse('RUN_ARCHIVE_SOURCE_CHANGED')
+        os.lseek(source, 0, os.SEEK_SET)
+        if os.read(source, RUN.size + 1) != data:
+            refuse('RUN_ARCHIVE_SOURCE_CHANGED')
+        descriptor = cgroup_fd(value)
+        try:
+            if descriptor is not None and populated(descriptor):
+                refuse('RUN_ARCHIVE_SCOPE_BUSY')
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        os.unlink(run + '.bin', dir_fd=source_parent)
+        sync = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=source_parent)
+        try:
+            os.fsync(sync)
+        finally:
+            os.close(sync)
+        return True
+    finally:
+        try:
+            if temporary is not None and not published and destination is not None and temporary_info is not None:
+                try:
+                    current = os.stat(temporary, dir_fd=destination, follow_symlinks=False)
+                    if (current.st_dev, current.st_ino) == (temporary_info.st_dev, temporary_info.st_ino):
+                        os.unlink(temporary, dir_fd=destination)
+                        os.fsync(destination)
+                except FileNotFoundError:
+                    pass
+        finally:
+            for descriptor in (source, destination, source_parent):
+                if descriptor is not None:
+                    os.close(descriptor)
+
+
+def compact_runs(boot, records=None):
+    # Never retire active tickets, old boots, changed groups or a closed ticket
+    # whose upper task/service domain still has live descendants.
+    candidates = []
+    for value in records if records is not None else [run_read(entry[:-4]) for entry in run_entries()]:
+        if value['phase'] == 'closed':
+            if value['bootId'] != boot:
+                refuse('RUN_ARCHIVE_STALE')
+            candidates.append(value)
+    retired = 0
+    for value in candidates:
+        if run_archive(value, boot):
+            retired += 1
+            if retired == RUN_ARCHIVE_BATCH:
+                break
+    return retired
 
 
 def check_run(value, run, boot, require_active=True):
@@ -1248,7 +1495,10 @@ def migration_retire_applied(value):
 def prepare(value, request, boot, build, inherit=False):
     migration_ready(value)
     network_ready(value, boot)
-    history = runs_for(value)
+    # One bounded, validated snapshot under the same registry EX lock. Every
+    # retired original is still opened and checked again by run_archive.
+    records = [run_read(entry[:-4]) for entry in run_entries()]
+    history = runs_for(value, records)
     # Historical privileged binaries can still consume their own active
     # tickets. An upgrade must close those exact runs before issuing a ticket
     # for the protected transport; stop remains reachable through this build.
@@ -1270,6 +1520,8 @@ def prepare(value, request, boot, build, inherit=False):
     requested = request.get('runId')
     if requested is not None:
         identifier(requested, UUID, 'RUN_ID')
+        if run_archive_read(requested) is not None:
+            refuse('RUN_ARCHIVED')
         existing = read(run_path(requested), 1024, True)
         if existing is not None:
             run = run_read(requested)
@@ -1287,9 +1539,13 @@ def prepare(value, request, boot, build, inherit=False):
             if not same(info, run, 'network') or namespace != run['namespace']:
                 refuse('NETWORK_REPLACED')
             return run
-    if sum(item['phase'] == 'active' for item in history) >= 32 or len(os.listdir(RUNTIME + '/runs')) >= 1024:
+    if len(run_entries()) >= RUN_LIMIT:
+        compact_runs(boot, records)
+    if sum(item['phase'] == 'active' for item in history) >= 32 or len(run_entries()) >= RUN_LIMIT:
         refuse('RUN_LIMIT')
     run_id = requested or str(uuid.uuid4())
+    if requested is None and (read(run_path(run_id), RUN.size, True) is not None or run_archive_read(run_id) is not None):
+        refuse('RUN_ID_COLLISION')
     network, network_info, namespace = network_fd(value, boot)
     try:
         name = current_cgroup() if inherit else 'sakura-identity-' + run_id
@@ -1427,7 +1683,8 @@ def sources():
 def initialize():
     for path, mode in (('/var/lib/sakura', 0o711), (BASE, 0o700), (BASE + '/projects', 0o700),
                        (BASE + '/uids', 0o700), (HOMES, 0o711), (RUNTIME, 0o700),
-                       (RUNTIME + '/runs', 0o700), (RUNTIME + '/networks', 0o700)):
+                       (RUNTIME + '/runs', 0o700), (RUNTIME + '/archives', 0o700),
+                       (RUNTIME + '/networks', 0o700)):
         if path == '/var/lib/sakura' and os.path.exists(path):
             fd = directory_fd(path)
             os.close(fd)

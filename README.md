@@ -235,6 +235,7 @@ npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启
 npm run test:sandbox # 真实 QEMU 沙箱网络隔离、限时执行、取消及到期清理
 npm run test:secure-erase # 真实 Alpine 项目文件预览、逻辑覆盖、校验与删除
 npm run test:gpg-agent:identity -- --describe # 原生 GPG 与项目账号实测合同；默认只读预检
+npm run test:project-identity:archive -- --describe # 新实例中核对满额票据归档；实测须 --run-new <发行版>
 npm run test:multi-monitor # 真实 Alpine Xvnc 单屏、横向双屏、纵向双屏 RandR 布局
 npm run test:native-clipboard # 独立窗口站中的真实 Windows Win32/OLE 应用与服务规则
 ```
