@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## Windows CLR 与 AnyCPU 的受控剪贴板启动
+
+2026-10-03 未打包的纯 IL CLR EXE 已接通受控早期启动，覆盖固定 x64、固定 x86、AnyCPU 和优先 32 位。服务按有界磁盘 PE/CLR 标记选择 helper；原生控制器持有原 EXE 只读锁，再核对完整启动头、准确 RVA、标记和实际挂起子进程位数。混合模式、ReadyToRun、本机入口、歧义/越界映射及未知架构拒绝；完整用户/会话/创建时间、持久归属、已保存规则、Job 和 resume 合约继续保持。页面和新 test:native-clipboard:managed-early 入口已接通，范围见 [早期启动说明](windows-clipboard-early-init.md)。
+
+真实 Windows 离线 .NET Framework fixture 的四种位数在类型初始化及 Main 各验证 ready/active/flags、原进程身份、真实位数、私有窗口站、Win32/OLE 拒绝和递增计数。故意编译不同 build 的策略 DLL 后，独立新 CLR 进程在首个应用初始化 marker 前被拒绝；准确子进程消失、原四个已提交应用存活，原失败归属在刷新确认后核销。正式证明 .data/native-clipboard-test-temp/managed-early-4c9d1158-4624-4990-9197-142c37aa6a7b/verification.json 为 passed true，测试来源未变，窗口站启动器实际 exit/close 0、两条输出流关闭，最终受管 CLR 记录为零。测试没有安装运行时、创建账号或操作交互桌面剪贴板。
+
+正式 native-clipboard 后端 22/22、零跳过、实际退出 0，以及完整 TypeScript 检查通过。相同原生 build 0b0ff3250133630bc75493a4486e3bdfcf7dbedb269666aeada47242295ba9e3 的 x64/x86 旧原生启动联测均实际退出 0，分别保留 early-fixture-5a9487a8-afd0-43a7-a473-dfb27d34f925/early-proof.json 和 early-fixture-245a22db-6cc1-46f8-9603-5acedc4281a1/early-proof.json；DLL TLS/DllMain、EXE TLS、wmain、冷 build 拒绝、准确 Job 清理和重定向拒绝均保持。
+
+两次早期测试构造失败证据保留：managed-early-08e0fc03-132a-4cfe-acac-b115f90801c8 只改 manifest，没有改变 DLL 内的 build，未触发预期拒绝；managed-early-ce31ccda-ebb3-4f14-b8b8-22e9ff032555 的第二个启用服务发现同路径已有测试程序，导致归属计数不符。最终使用真实不同 build 的 DLL 和独立 EXE 路径纠正测试隔离。上述失败不计作整组通过。历史整仓 rename 失败及三个部分实现目录项继续保留。
+
 ## 项目 UID 的共享网络出站限制
 
 2026-10-03 私有项目账号新增 inet/output/UID 规则，阻断同一账号从共享网络新建的 IPv4/IPv6 连接，包括系统 SSH、cron、用户服务和自行启动程序的连接路径。原托管命名空间回环、其他 UID 和固定管理下载保持。规则在账号创建前登记；共享模式在绑定提交后只删除原 UID 的准确表。开机入口接通 systemd/OpenRC 服务依赖及现有防火墙启动顺序，原记录、规则 handle、boot/网络身份、应答丢失和管理脚本升级中断均可核对恢复。规则与范围见 [项目账号出站限制](project-egress.md)。

@@ -679,13 +679,16 @@ test('service close cancels an in-progress controlled launch and preserves persi
 test('controlled launch architecture preflight checks PE signature, executable flags and matching optional header', async (t) => {
   const f = await fixture(t);
   for (const bits of [32, 64] as const) {
-    const header = Buffer.alloc(256);
+    const header = Buffer.alloc(512);
     header.writeUInt16LE(0x5a4d, 0);
     header.writeUInt32LE(64, 60);
     header.writeUInt32LE(0x4550, 64);
     header.writeUInt16LE(bits === 32 ? 0x14c : 0x8664, 68);
     header.writeUInt16LE(2, 86);
+    header.writeUInt16LE(bits === 32 ? 224 : 240, 84);
     header.writeUInt16LE(bits === 32 ? 0x10b : 0x20b, 88);
+    header.writeUInt16LE(3, 88 + 68);
+    header.writeUInt32LE(16, 88 + (bits === 32 ? 92 : 108));
     const path = join(f.assets, `test-${bits}.exe`);
     await writeFile(path, header);
     assert.equal(await clipboardExecutableBits(path), bits);
@@ -697,4 +700,47 @@ test('controlled launch architecture preflight checks PE signature, executable f
     await writeFile(path, header);
     await assert.rejects(clipboardExecutableBits(path), /仅支持 x64 或 x86/);
   }
+});
+
+test('CLR preflight selects the actual startup width for fixed and AnyCPU executables', async (t) => {
+  const f = await fixture(t);
+  function clr(width: 32 | 64, flags: number) {
+    const bytes = Buffer.alloc(1024), optional = 88, optionalSize = width === 32 ? 224 : 240;
+    bytes.writeUInt16LE(0x5a4d, 0); bytes.writeUInt32LE(64, 60); bytes.writeUInt32LE(0x4550, 64);
+    bytes.writeUInt16LE(width === 32 ? 0x14c : 0x8664, 68); bytes.writeUInt16LE(1, 70);
+    bytes.writeUInt16LE(optionalSize, 84); bytes.writeUInt16LE(2, 86);
+    bytes.writeUInt16LE(width === 32 ? 0x10b : 0x20b, optional);
+    bytes.writeUInt16LE(3, optional + 68); bytes.writeUInt32LE(0x4000, optional + 56);
+    const directories = width === 32 ? 96 : 112;
+    bytes.writeUInt32LE(16, optional + directories - 4);
+    bytes.writeUInt32LE(0x2000, optional + directories + 112);
+    bytes.writeUInt32LE(72, optional + directories + 116);
+    const section = optional + optionalSize;
+    bytes.writeUInt32LE(0x2000, section + 12); bytes.writeUInt32LE(512, section + 16);
+    bytes.writeUInt32LE(512, section + 20);
+    bytes.writeUInt32LE(72, 512); bytes.writeUInt32LE(0x2100, 520); bytes.writeUInt32LE(32, 524);
+    bytes.writeUInt32LE(flags, 528); bytes.writeUInt32LE(0x06000001, 532);
+    return bytes;
+  }
+  const path = join(f.assets, 'clr.exe');
+  for (const [width, flags, expected] of [[64, 1, 64], [32, 3, 32], [32, 0x20003, 32],
+    [32, 1, process.arch === 'x64' ? 64 : 32], [32, 9, process.arch === 'x64' ? 64 : 32]] as const) {
+    await writeFile(path, clr(width, flags)); assert.equal(await clipboardExecutableBits(path), expected);
+  }
+  for (const [name, mutate] of [
+    ['mixed mode', (b: Buffer) => b.writeUInt32LE(0, 528)],
+    ['native entry', (b: Buffer) => b.writeUInt32LE(0x11, 528)],
+    ['ReadyToRun', (b: Buffer) => b.writeUInt32LE(0x2200, 576)],
+    ['unknown flags', (b: Buffer) => b.writeUInt32LE(0x40000001, 528)],
+    ['missing entry', (b: Buffer) => b.writeUInt32LE(0, 532)],
+    ['missing metadata', (b: Buffer) => b.writeUInt32LE(0, 520)],
+    ['bad CLR size', (b: Buffer) => b.writeUInt32LE(71, 512)],
+    ['ambiguous RVA', (b: Buffer) => { b.writeUInt16LE(2, 70); b.copy(b, 352, 312, 352); }],
+    ['outside file', (b: Buffer) => b.writeUInt32LE(1024, 332)],
+    ['bad directory', (b: Buffer) => b.writeUInt32LE(0, 296)],
+  ] as const) {
+    const bytes = clr(32, 1); mutate(bytes); await writeFile(path, bytes);
+    await assert.rejects(clipboardExecutableBits(path), /CLR|启动头/, name);
+  }
+  await writeFile(path, clr(64, 3)); await assert.rejects(clipboardExecutableBits(path), /位数标记/);
 });

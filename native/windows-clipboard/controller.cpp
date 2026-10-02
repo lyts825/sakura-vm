@@ -300,25 +300,71 @@ static void primarySuspended(HANDLE thread) {
   const DWORD restored=ResumeThread(thread);
   if (previous!=1 || restored!=2) throw std::runtime_error("primary thread is no longer exclusively suspended");
 }
-static void nativeExecutable(HANDLE file) {
-  // Do not let Detours convert CLR/AnyCPU or a mismatched PE into a different
-  // startup path. Only native x86/x64 GUI/console images are supported here.
+static void selectedExecutable(HANDLE file) {
+  LARGE_INTEGER size{};
+  if(!GetFileSizeEx(file,&size) || size.QuadPart<64)throw std::runtime_error("executable header unavailable");
   const auto read=[&](uint64_t offset,void* output,DWORD length) {
+    if(offset>uint64_t(size.QuadPart) || length>uint64_t(size.QuadPart)-offset)return false;
     LARGE_INTEGER position{};position.QuadPart=offset;DWORD count=0;
     return SetFilePointerEx(file,position,nullptr,FILE_BEGIN) &&
       ReadFile(file,output,length,&count,nullptr) && count==length;
   };
-  IMAGE_DOS_HEADER dos{};IMAGE_NT_HEADERS pe{};
+  IMAGE_DOS_HEADER dos{};DWORD signature=0;IMAGE_FILE_HEADER header{};WORD magic=0;
   if(!read(0,&dos,sizeof(dos)) || dos.e_magic!=IMAGE_DOS_SIGNATURE || dos.e_lfanew<sizeof(dos) ||
-      dos.e_lfanew>1048576 || !read(dos.e_lfanew,&pe,sizeof(pe)) || pe.Signature!=IMAGE_NT_SIGNATURE ||
-      pe.FileHeader.Machine!=(sizeof(void*)==8?IMAGE_FILE_MACHINE_AMD64:IMAGE_FILE_MACHINE_I386) ||
-      !(pe.FileHeader.Characteristics&IMAGE_FILE_EXECUTABLE_IMAGE) || pe.FileHeader.Characteristics&IMAGE_FILE_DLL ||
-      pe.FileHeader.SizeOfOptionalHeader!=sizeof(pe.OptionalHeader) ||
-      pe.OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR_MAGIC || pe.OptionalHeader.NumberOfRvaAndSizes<16 ||
-      (pe.OptionalHeader.Subsystem!=IMAGE_SUBSYSTEM_WINDOWS_GUI && pe.OptionalHeader.Subsystem!=IMAGE_SUBSYSTEM_WINDOWS_CUI) ||
-      pe.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].VirtualAddress ||
-      pe.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].Size)
-    throw std::runtime_error("controlled early initialization requires a native matching x86/x64 executable");
+      dos.e_lfanew>1048576 || !read(dos.e_lfanew,&signature,sizeof(signature)) || signature!=IMAGE_NT_SIGNATURE ||
+      !read(dos.e_lfanew+4,&header,sizeof(header)) || !read(dos.e_lfanew+24,&magic,sizeof(magic)) ||
+      !(header.Characteristics&IMAGE_FILE_EXECUTABLE_IMAGE) || header.Characteristics&IMAGE_FILE_DLL ||
+      header.NumberOfSections>96)
+    throw std::runtime_error("controlled early initialization requires an x86/x64 executable");
+  const auto inspect=[&](const auto& optional,unsigned width) {
+    if(header.SizeOfOptionalHeader!=sizeof(optional) || optional.NumberOfRvaAndSizes<16 ||
+        (optional.Subsystem!=IMAGE_SUBSYSTEM_WINDOWS_GUI && optional.Subsystem!=IMAGE_SUBSYSTEM_WINDOWS_CUI))
+      throw std::runtime_error("executable optional header unavailable");
+    const auto cor=optional.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
+    if(cor.VirtualAddress || cor.Size) {
+      // Pure IL includes x86, x64 and AnyCPU. Reject native/mixed-mode CLR and
+      // ambiguous on-disk RVAs before creating a process or publishing ownership.
+      struct CorHeader { DWORD cb; WORD major,minor; IMAGE_DATA_DIRECTORY metadata;
+        DWORD flags,entry; IMAGE_DATA_DIRECTORY resources,strongName,codeManager,vtable,exports,native; };
+      static_assert(sizeof(CorHeader)==72,"CLR header ABI");
+      if(!cor.VirtualAddress || cor.Size<sizeof(CorHeader) || !header.NumberOfSections ||
+          uint64_t(cor.VirtualAddress)+cor.Size>optional.SizeOfImage)
+        throw std::runtime_error("CLR executable header unavailable");
+      uint64_t location=0;unsigned matches=0;
+      for(unsigned index=0;index<header.NumberOfSections;++index) {
+        IMAGE_SECTION_HEADER section{};
+        if(!read(uint64_t(dos.e_lfanew)+24+header.SizeOfOptionalHeader+index*sizeof(section),&section,sizeof(section)))
+          throw std::runtime_error("CLR executable sections unavailable");
+        if(cor.VirtualAddress>=section.VirtualAddress &&
+            uint64_t(cor.VirtualAddress)-section.VirtualAddress+cor.Size<=section.SizeOfRawData) {
+          location=uint64_t(section.PointerToRawData)+cor.VirtualAddress-section.VirtualAddress;++matches;
+        }
+      }
+      CorHeader cli{};
+      if(matches!=1 || !read(location,&cli,sizeof(cli)) || cli.cb!=sizeof(cli) || !cli.metadata.VirtualAddress ||
+          !cli.metadata.Size || uint64_t(cli.metadata.VirtualAddress)+cli.metadata.Size>optional.SizeOfImage ||
+          !(cli.flags&1) || cli.flags&~DWORD(0x3000b) || cli.native.VirtualAddress || cli.native.Size ||
+          !(cli.entry&0xffffff) || ((cli.entry>>24)!=6 && (cli.entry>>24)!=0x26))
+        throw std::runtime_error("controlled early initialization requires a pure IL CLR executable");
+      if(width==64 && cli.flags&(2|0x20000))throw std::runtime_error("x64 CLR executable has conflicting architecture flags");
+      if(width==32 && !(cli.flags&(2|0x20000))) {
+        SYSTEM_INFO native{};GetNativeSystemInfo(&native);
+        if(native.wProcessorArchitecture==PROCESSOR_ARCHITECTURE_AMD64)width=64;
+        else if(native.wProcessorArchitecture!=PROCESSOR_ARCHITECTURE_INTEL)
+          throw std::runtime_error("AnyCPU requires an x86/x64 Windows host");
+      }
+    }
+    if(width!=sizeof(void*)*8)throw std::runtime_error("controlled executable requires its matching x86/x64 helper");
+  };
+  if(header.Machine==IMAGE_FILE_MACHINE_I386 && magic==IMAGE_NT_OPTIONAL_HDR32_MAGIC) {
+    IMAGE_OPTIONAL_HEADER32 optional{};
+    if(!read(dos.e_lfanew+24,&optional,sizeof(optional)))throw std::runtime_error("executable header unavailable");
+    inspect(optional,32);
+  } else if(header.Machine==IMAGE_FILE_MACHINE_AMD64 && magic==IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+    IMAGE_OPTIONAL_HEADER64 optional{};
+    if(!read(dos.e_lfanew+24,&optional,sizeof(optional)))throw std::runtime_error("executable header unavailable");
+    inspect(optional,64);
+  } else throw std::runtime_error("controlled early initialization requires an x86/x64 executable");
 }
 static std::string importPath(const std::wstring& library) {
   if(library.size()<7 || library.size()>=MAX_PATH || library[1]!=L':' || library[2]!=L'\\' ||
@@ -639,7 +685,7 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
   Handle file(CreateFileW(expected.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
   if (file.value==INVALID_HANDLE_VALUE) throw std::runtime_error("application file unavailable for controlled launch");
   selectedFile(file.value,expected,digest);
-  nativeExecutable(file.value);
+  selectedExecutable(file.value);
   const auto imported=importPath(library);
   earlyDependencies(expected,library);
   Handle job(CreateJobObjectW(nullptr,nullptr));
@@ -676,7 +722,7 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
     const auto inspectPackage=reinterpret_cast<InspectPackage>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"GetPackageFullName"));
     UINT32 packageLength=0;
     if(!inspectPackage || inspectPackage(process.value,&packageLength,nullptr)!=APPMODEL_ERROR_NO_PACKAGE)
-      throw std::runtime_error("controlled early initialization requires an unpackaged native executable");
+      throw std::runtime_error("controlled early initialization requires an unpackaged executable");
     DWORD targetSession=0,ownSession=0;
     const auto check=[&]() {
       BOOL inJob=FALSE;

@@ -1,6 +1,6 @@
 # Windows 受控启动的早期剪贴板策略
 
-受控启动现在覆盖普通、未打包的原生 x64/x86 EXE 的原始应用 import DLL 初始化、DLL TLS、EXE TLS 与主入口。启动器先验证已保存的 EXE 路径、SHA-256、规则和匹配架构，然后将子进程以 suspended 状态原子加入本次专属 Job。服务持久保存 PID、创建时间、映像和策略归属，并授权 `attach` 后，helper 才修改这个子进程的 import 表或运行 loader；不会修改磁盘上的应用 EXE。
+受控启动覆盖普通、未打包的原生 x64/x86 EXE 的原始应用 import DLL 初始化、DLL TLS、EXE TLS 与主入口，也覆盖纯 IL CLR 应用在类型初始化与 Main 前的策略加载。CLR 的固定 x64、固定 x86、AnyCPU 及优先 32 位使用相应代理。启动器先验证已保存的 EXE 路径、SHA-256、规则和匹配架构，然后将子进程以 suspended 状态原子加入本次专属 Job。服务持久保存 PID、创建时间、映像和策略归属，并授权 `attach` 后，helper 才修改这个子进程的 import 表或运行 loader；不会修改磁盘上的应用 EXE。
 
 Microsoft Detours 将策略 DLL 插入首个 import，先于原始应用 DLL 初始化。策略 DLL 在自己的 `DllMain` 中核对仅供本次子进程使用的 payload、映射 ABI、build、PID/创建时间和已保存规则，同步提交全部 Win32/OLE hooks，再发布 ready。任一核对或事务失败都返回初始化失败，不回退到应用运行后的扫描注入。[Detours 官方说明](https://github.com/microsoft/Detours/wiki/DetourCreateProcessWithDllEx)
 
@@ -10,7 +10,7 @@ MinHook 原有运行中附加路径仍用于扫描及手动附加。它会枚举
 
 ## 支持条件和明确拒绝
 
-- 必须是匹配 helper 架构的未打包、原生 Windows GUI/console PE。CLR/AnyCPU、非 x64/x86、架构不匹配或无法核对的 PE 拒绝。
+- 必须是未打包 Windows GUI/console PE，支持原生 x86/x64 或纯 IL CLR。AnyCPU 在 x64 Windows 上使用 x64 helper；32BITREQUIRED/32BITPREFERRED 使用 x86 helper。磁盘 PE/CLR 标记和实际 suspended 子进程位数均须核对一致。非 x86/x64、混合模式 CLR、ReadyToRun/本机入口、歧义或越界 CLR 映射及未知位数标记拒绝。
 - 策略 DLL 必须具有完整本地路径，能无损往返 Windows import 使用的活动代码页，且锁定的文件身份符合已核验资产。路径过长、编码不能表示、符号缺失或实际载入其他映像拒绝。
 - 动态代码禁止、Microsoft/Store-only 映像签名限制及不能核对的进程保护拒绝。
 - EXE `.local`、包加载重定向，以及将策略 DLL、User32/Ole32/Common Controls、关键运行库、当前 OS KnownDLL 或 API-set 名称重定向的应用清单拒绝。仅允许系统目录或经过核对的架构匹配 WinSxS Common Controls；应用及策略目录中的私有 comctl32 和非系统清单重定向拒绝。普通官方 Common Controls 清单可用。
@@ -43,5 +43,7 @@ node --import tsx --test tests/native-clipboard.test.ts
 ```
 
 早期 fixture 是测试专属 EXE 和 import DLL，生成独有目录、窗口站及命名管道。DLL 的首个 TLS、首个 DllMain、EXE TLS 和首条 wmain 指令各执行真实 Win32 与 OLE 剪贴板调用；每次调用前独立确认并切换到非 WinSta0 的私有窗口站。四阶段均要求对应进程/创建时间的 ready、active、flags，Win32 `ERROR_ACCESS_DENIED`、OLE `E_ACCESSDENIED` 以及累计阻断计数。输出 proof 仅含元数据，不读取宿主交互桌面的剪贴板。
+
+`npm run test:native-clipboard:managed-early` 使用已安装的离线 .NET Framework 编译器，在测试专属窗口站实测固定 x64/x86、AnyCPU、优先 32 位。类型初始化和 Main 各核对映射身份、已加载代理、ready/active/flags、真实位数、Win32/OLE 拒绝及累计计数。故意编译不兼容的策略 DLL 后，新建的独立 CLR EXE 必须在首个应用初始化 marker 前被拒绝，由原 Job 关闭；原已提交应用保持存活，失败归属只在刷新确认后核销。该脚本不安装运行时、不创建账号，不覆盖打包应用、特殊 CLR 宿主或所有商业应用兼容性。Detours 的启动头恢复仍使用已核对的官方实现，参见 [官方启动注入说明](https://github.com/microsoft/Detours/wiki/DetourCreateProcessWithDllEx)。
 
 同一 smoke 还验证 Common Controls 和 DLL 资源内的私有程序集清单可以启动，User32 SxS、UTF-16 字符引用 sidecar 清单、私有程序集 DLL 资源重定向和 `.local` 在子进程创建前被拒绝，以及 cold build 不匹配时首个应用 TLS marker 不存在、本次 Job 清理、已提交的另一个测试进程继续存活、持久归属保留至刷新核销。旧 smoke 继续覆盖运行中附加、OLE 数据对象、更新/停用/重启及受控启动 prepared/attached/通信丢失等分支。

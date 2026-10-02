@@ -352,9 +352,51 @@ export async function clipboardExecutableBits(path: string): Promise<32 | 64> {
       pe.readUInt16LE(22) & 0x2000
     )
       throw new AppError('所选文件不是 Windows EXE');
-    if (pe.readUInt16LE(4) === 0x14c && pe.readUInt16LE(24) === 0x10b) return 32;
-    if (pe.readUInt16LE(4) === 0x8664 && pe.readUInt16LE(24) === 0x20b) return 64;
-    throw new AppError('受控启动仅支持 x64 或 x86 EXE');
+    let width: 32 | 64;
+    if (pe.readUInt16LE(4) === 0x14c && pe.readUInt16LE(24) === 0x10b) width = 32;
+    else if (pe.readUInt16LE(4) === 0x8664 && pe.readUInt16LE(24) === 0x20b) width = 64;
+    else throw new AppError('受控启动仅支持 x64 或 x86 EXE');
+    const size = (await file.stat()).size;
+    const read = async (position: number, length: number) => {
+      if (position < 0 || position > size || length > size - position)
+        throw new AppError('所选 EXE 启动头无法核对');
+      const bytes = Buffer.alloc(length);
+      if ((await file.read(bytes, 0, length, position)).bytesRead !== length)
+        throw new AppError('所选 EXE 启动头无法核对');
+      return bytes;
+    };
+    const optionalSize = width === 32 ? 224 : 240, sections = pe.readUInt16LE(6);
+    if (pe.readUInt16LE(20) !== optionalSize || sections > 96)
+      throw new AppError('所选 EXE 启动头无法核对');
+    const optional = await read(offset + 24, optionalSize);
+    const directories = width === 32 ? 96 : 112;
+    if (optional.readUInt32LE(directories - 4) < 16 || ![2, 3].includes(optional.readUInt16LE(68)))
+      throw new AppError('所选 EXE 启动头无法核对');
+    const corRva = optional.readUInt32LE(directories + 14 * 8);
+    const corSize = optional.readUInt32LE(directories + 14 * 8 + 4);
+    if (!corRva && !corSize) return width;
+    const imageSize = optional.readUInt32LE(56);
+    if (!corRva || corSize < 72 || !sections || corRva + corSize > imageSize)
+      throw new AppError('CLR 启动头无法核对');
+    const table = await read(offset + 24 + optionalSize, sections * 40);
+    const locations: number[] = [];
+    for (let index = 0; index < sections; index++) {
+      const start = index * 40, rva = table.readUInt32LE(start + 12), rawSize = table.readUInt32LE(start + 16);
+      if (corRva >= rva && corRva - rva + corSize <= rawSize)
+        locations.push(table.readUInt32LE(start + 20) + corRva - rva);
+    }
+    if (locations.length !== 1) throw new AppError('CLR 启动头映射无法核对');
+    const cli = await read(locations[0], 72), flags = cli.readUInt32LE(16), entry = cli.readUInt32LE(20);
+    if (cli.readUInt32LE(0) !== 72 || !cli.readUInt32LE(8) || !cli.readUInt32LE(12) ||
+        cli.readUInt32LE(8) + cli.readUInt32LE(12) > imageSize || !(flags & 1) || flags & ~0x3000b ||
+        cli.readUInt32LE(64) || cli.readUInt32LE(68) || !(entry & 0xffffff) || ![6, 0x26].includes(entry >>> 24))
+      throw new AppError('受控启动仅支持纯 IL CLR EXE，混合模式或启动头不明的应用无法启动');
+    if (width === 64 && flags & (2 | 0x20000)) throw new AppError('CLR 位数标记不一致');
+    if (width === 32 && !(flags & (2 | 0x20000))) {
+      if (process.arch === 'x64') return 64;
+      if (process.arch !== 'ia32') throw new AppError('AnyCPU 受控启动需要 x86/x64 Windows 宿主');
+    }
+    return width;
   } finally {
     await file.close();
   }
