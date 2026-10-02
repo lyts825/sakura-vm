@@ -107,7 +107,7 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 - 单机控制服务、随机访问凭证、同源及 Host 检查，管理端口和 QEMU 控制端口仅监听回环地址。
 - 同时最多运行 4 个实例，最多 32 个发行版、每实例 20 个快照；日志保留最近 128 KiB。
 
-新增管理功能的操作、配置示例和验证方式见 [工作空间管理](docs/workspace-management.md)。单次 [SSH Agent 转发](docs/ssh-agent-forward.md) 使用项目账号与独立入口，每次明确提交命令，结束后确认资源和账号票据清理。
+新增管理功能的操作、配置示例和验证方式见 [工作空间管理](docs/workspace-management.md)。单次 [SSH Agent 转发](docs/ssh-agent-forward.md) 和 [GPG Agent 转发](docs/gpg-agent-forward.md) 使用项目账号与独立入口，每次明确提交命令，结束后确认资源和账号票据清理。
 
 本轮新增了分块续传、文件预览与剪贴板上传、文本三方合并、Git 工作树与目录版本、可执行能力表单、跨实例搜索/复制/测试、签名补丁、指标与任务结果导出，以及维护窗口、同步队列、备份限速、保留锁和快照差异比较。使用方法及具体边界见 [功能实现记录](docs/capability-completion.md)；完整剩余范围见 [未完成功能清单](docs/unfinished-features.md)，可用 `npm run features:audit` 重新生成。
 
@@ -234,7 +234,7 @@ npm run test:features # 新功能真实 VM 集成测试（需联网安装模板�
 npm run test:vm      # 真实 QEMU 启动计时、SSH/SFTP、NAT 转发、重启、快照与旧配置迁移
 npm run test:sandbox # 真实 QEMU 沙箱网络隔离、限时执行、取消及到期清理
 npm run test:secure-erase # 真实 Alpine 项目文件预览、逻辑覆盖、校验与删除
-npm run test:gpg-agent-forward # 真实 Alpine SSH 远端 Unix 套接字与模拟 GPG extra socket
+npm run test:gpg-agent:identity -- --describe # 原生 GPG 与项目账号实测合同；默认只读预检
 npm run test:multi-monitor # 真实 Alpine Xvnc 单屏、横向双屏、纵向双屏 RandR 布局
 npm run test:native-clipboard # 独立窗口站中的真实 Windows Win32/OLE 应用与服务规则
 ```

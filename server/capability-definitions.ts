@@ -26,6 +26,7 @@ import { teamTemplateInput } from './team-templates.ts';
 import { acmeInput } from './acme-renewal.ts';
 import { processInteropInput } from './process-interop.ts';
 import { sshAgentForwardInput } from './ssh-agent-forward.ts';
+import { gpgAgentForwardInput } from './gpg-agent-forward.ts';
 import { gpuAccelerationInput } from './gpu-acceleration.ts';
 import { syscallProfileInput } from './syscall-profile.ts';
 import { serviceMeshPolicy } from './service-mesh.ts';
@@ -114,6 +115,12 @@ export const capabilityDefinitions = {
     'SSH Agent 转发', 'extended', sshAgentForwardInput.shape,
     { command: 'ssh-add -L', confirmed: true, timeoutSeconds: 60 },
     '命令使用当前项目账号、独立 home 和项目网络。每次提交均需明确命令及 confirmed=true，不能保存命令或沿用旧确认。请确认命令及其依赖可信；结束或取消后撤销本次转发并确认全部后代清理，私钥不会复制到客户机。',
+    true, false,
+  ),
+  'gpg-agent-forward': action(
+    'GPG Agent 转发', 'extended', gpgAgentForwardInput.shape,
+    { command: 'gpg --no-autostart --version', confirmed: true, timeoutSeconds: 60 },
+    '命令以当前项目账号访问宿主受限制的 extra socket，本次 GNUPGHOME 需要导入公钥。每次明确提交命令及 confirmed=true，不能保存或沿用旧确认。宿主连接当前支持 Windows x64 原生 GnuPG；签名与解密需确认命令及其依赖可信，结束后确认任务域、转发资源和账号票据清理。',
     true, false,
   ),
   'process-interop': action(

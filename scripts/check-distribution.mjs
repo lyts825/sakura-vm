@@ -78,18 +78,41 @@ if (process.platform === 'win32') {
   if (build.digest('hex') !== native.build) throw new Error('Project identity source build digest failed');
 }
 {
-  const folder = join(root, '.sakura-server/assets/ssh-agent');
-  const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
-  if (manifest.version !== 1 || manifest.file !== 'broker.py' ||
-      !Number.isSafeInteger(manifest.size) || manifest.size < 1 || manifest.size > 262144 ||
-      !/^[a-f0-9]{64}$/.test(manifest.sha256) ||
-      Object.keys(manifest).sort().join(',') !== 'file,sha256,size,version')
-    throw new Error('SSH Agent source metadata is invalid');
-  const bytes = await readFile(join(folder, manifest.file));
-  if (bytes.length !== manifest.size || createHash('sha256').update(bytes).digest('hex') !== manifest.sha256)
-    throw new Error('SSH Agent source integrity failed');
+  const folders = ['ssh-agent', 'gpg-agent'];
+  for (const name of folders) {
+    const folder = join(root, '.sakura-server/assets', name);
+    const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
+    if (manifest.version !== 1 || manifest.file !== 'broker.py' ||
+        !Number.isSafeInteger(manifest.size) || manifest.size < 1 || manifest.size > 262144 ||
+        !/^[a-f0-9]{64}$/.test(manifest.sha256) ||
+        Object.keys(manifest).sort().join(',') !== 'file,sha256,size,version')
+      throw new Error(`${name} source metadata is invalid`);
+    const bytes = await readFile(join(folder, manifest.file));
+    if (bytes.length !== manifest.size || createHash('sha256').update(bytes).digest('hex') !== manifest.sha256)
+      throw new Error(`${name} source integrity failed`);
+  }
 }
 const extensionRoot = join(root, 'browser-extension');
+if (process.platform === 'win32') {
+  const folder = join(root, '.sakura-server/assets/gpg-agent-host');
+  const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
+  const expectedKeys = ['version', 'platform', 'architecture', 'protocol', 'file', 'size', 'sha256', 'sourceSha256', 'compilerSha256'];
+  if (Object.keys(manifest).sort().join(',') !== expectedKeys.sort().join(',') ||
+      manifest.version !== 1 || manifest.protocol !== 1 || manifest.platform !== 'win32' ||
+      manifest.architecture !== 'x64' || manifest.file !== 'relay.exe' ||
+      !Number.isSafeInteger(manifest.size) || manifest.size < 1 || manifest.size > 16777216 ||
+      !['sha256', 'sourceSha256', 'compilerSha256'].every(key => /^[a-f0-9]{64}$/.test(manifest[key])))
+    throw new Error('GPG host helper metadata is invalid');
+  const bytes = await readFile(join(folder, manifest.file));
+  const source = await readFile(join(root, '.sakura-server/assets/gpg-agent-host-source.cpp'));
+  if (bytes.length !== manifest.size || createHash('sha256').update(bytes).digest('hex') !== manifest.sha256 ||
+      createHash('sha256').update(source).digest('hex') !== manifest.sourceSha256)
+    throw new Error('GPG host helper byte integrity failed');
+  const pe = bytes.length >= 128 && bytes.toString('ascii', 0, 2) === 'MZ' ? bytes.readUInt32LE(0x3c) : 0;
+  if (pe < 64 || pe + 26 > bytes.length || bytes.readUInt32LE(pe) !== 0x4550 ||
+      bytes.readUInt16LE(pe + 4) !== 0x8664 || bytes.readUInt16LE(pe + 24) !== 0x20b)
+    throw new Error('GPG host helper PE architecture is invalid');
+}
 const extension = JSON.parse(await readFile(join(extensionRoot, 'manifest.json'), 'utf8'));
 if (extension.manifest_version !== 3 || extension.action?.default_popup !== 'popup.html' ||
     extension.permissions?.join(',') !== 'storage' ||

@@ -1,21 +1,20 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { connect, type Socket } from 'node:net';
 import { isAbsolute, join, win32 } from 'node:path';
 import { promisify } from 'node:util';
-import { setTimeout as delay } from 'node:timers/promises';
-import type { Duplex } from 'node:stream';
-import type { Client } from 'ssh2';
 import { z } from 'zod';
 import { AppError } from './model.ts';
-import { quote } from './files.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
-import { guestTask } from './guest-task.ts';
-import { withProjectCommand, projectExecutionCommand, redactProjectOutput } from './project-execution.ts';
+import { projectPrivateValues } from './workspaces.ts';
+import { ProjectTerminals } from './project-terminals.ts';
+import { projectIdentityTask } from './project-run-scope.ts';
+import { redactProjectOutput } from './project-execution.ts';
+import { redactValues } from './secrets.ts';
+import { GpgAgentScopes } from './gpg-agent-scope.ts';
+import { captureHostGpgSource, OwnedGpgForward, type GpgHostSnapshot } from './gpg-agent-host.ts';
 
 const execFileAsync = promisify(execFile);
-const guestDirectory = /^\/tmp\/sakura-gpg-[A-Za-z0-9]{8}$/;
 
 export const gpgAgentForwardInput = z.object({
   command: z.string().min(1).max(8192),
@@ -28,8 +27,7 @@ function normalizeSocket(value: string) {
   const msys = process.platform === 'win32' ? /^\/([a-z])\/(.+)$/i.exec(path) : null;
   const resolved = msys ? `${msys[1].toUpperCase()}:\\${msys[2].replaceAll('/', '\\')}` : path;
   if (!resolved || resolved.length > 4096 || /[\x00-\x1f]/.test(resolved) ||
-      !(isAbsolute(resolved) || win32.isAbsolute(resolved) ||
-        resolved.startsWith('\\\\.\\pipe\\')))
+      !(isAbsolute(resolved) || win32.isAbsolute(resolved)))
     throw new AppError('GPG Agent extra socket 路径无效', 409);
   return resolved;
 }
@@ -37,260 +35,133 @@ function normalizeSocket(value: string) {
 export async function hostGpgExtraSocket() {
   if (process.env.SAKURA_GPG_EXTRA_SOCKET)
     return normalizeSocket(process.env.SAKURA_GPG_EXTRA_SOCKET);
-  const candidates = ['gpgconf'];
+  const candidates: string[] = [];
   if (process.platform === 'win32') {
-    const bundled = join(process.env.ProgramFiles || 'C:\\Program Files',
-      'Git', 'usr', 'bin', 'gpgconf.exe');
-    if (existsSync(bundled)) candidates.push(bundled);
+    for (const directory of [process.env.ProgramFiles || 'C:\\Program Files',
+      process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)']) {
+      const native = join(directory, 'GnuPG', 'bin', 'gpgconf.exe');
+      if (existsSync(native)) candidates.push(native);
+    }
   }
+  candidates.push('gpgconf');
   for (const candidate of candidates) {
     try {
-      const { stdout } = await execFileAsync(candidate,
-        ['--list-dirs', 'agent-extra-socket'],
+      const { stdout } = await execFileAsync(candidate, ['--list-dirs', 'agent-extra-socket'],
         { timeout: 5000, maxBuffer: 4096, windowsHide: true });
       if (stdout.trim()) return normalizeSocket(stdout);
-    } catch { /* Try a bundled installation or report unavailable. */ }
+    } catch { /* Query another installed client; never autostart an Agent. */ }
   }
   return '';
 }
 
+/** Readiness includes the source identity and a real restricted-extra probe. */
 export async function gpgSocketReachable(path: string, signal?: AbortSignal) {
   if (!path) return false;
   signal?.throwIfAborted();
-  return await new Promise<boolean>((resolve) => {
-    let socket: Socket;
-    try { socket = connect(path); }
-    catch { resolve(false); return; }
-    let greeting = '', settled = false;
-    const finish = (ready: boolean) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', abort);
-      socket.destroy();
-      resolve(ready);
-    };
-    const abort = () => finish(false);
-    const timer = setTimeout(() => finish(false), 3000);
-    signal?.addEventListener('abort', abort, { once: true });
-    socket.on('data', (data: Buffer) => {
-      greeting += data.toString('utf8');
-      if (greeting.length > 512) finish(false);
-      else if (greeting.includes('\n')) finish(/^OK(?:\s|$)/.test(greeting.trim()));
-    });
-    socket.once('error', () => finish(false));
-    socket.once('close', () => finish(false));
-    if (signal?.aborted) abort();
-  });
+  try { await captureHostGpgSource(path, signal); return true; }
+  catch { signal?.throwIfAborted(); return false; }
 }
 
-export async function guestGpgForwardingReady(machines: Machines, id: string,
-  signal?: AbortSignal) {
-  const config = await machines.exec(id, 'sshd -T', 10000, signal);
+export async function guestGpgForwardingReady(machines: Machines, id: string, signal?: AbortSignal) {
+  const config = await machines.exec(id,
+    'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/sbin/sshd -T', 10000, signal);
   if (config.code !== 0) return false;
   const settings = new Map(config.stdout.split(/\r?\n/)
-    .map((line) => line.trim().split(/\s+/, 2) as [string, string]));
+    .map(line => line.trim().split(/\s+/, 2) as [string, string]));
   return settings.get('disableforwarding') === 'no' &&
     ['yes', 'remote'].includes(settings.get('allowtcpforwarding') || '') &&
     ['yes', 'remote'].includes(settings.get('allowstreamlocalforwarding') || '');
 }
 
-export async function checkGpgAgentForward(machines: Machines, id: string,
-  signal?: AbortSignal) {
+const guestRequirements = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C ' +
+  '/bin/sh -c "command -v gpg >/dev/null && command -v gpgconf >/dev/null && test -x /usr/bin/python3"';
+
+export async function checkGpgAgentForward(machines: Machines, id: string, signal?: AbortSignal) {
   const socket = await hostGpgExtraSocket();
   const hostReady = await gpgSocketReachable(socket, signal);
   signal?.throwIfAborted();
   if (machines.state(id) !== 'running')
     return { ready: false, executed: false, hostReady, reason: '请先启动实例。' };
-  const guest = await machines.exec(id,
-    'command -v gpg >/dev/null && command -v mktemp >/dev/null', 10000, signal);
-  const forwardingReady = guest.code === 0 &&
-    await guestGpgForwardingReady(machines, id, signal);
-  return { ready: hostReady && guest.code === 0 && forwardingReady,
-    executed: false, hostReady, forwardingReady,
+  const guest = await machines.exec(id, guestRequirements, 10000, signal);
+  const forwardingReady = guest.code === 0 && await guestGpgForwardingReady(machines, id, signal);
+  return { ready: hostReady && guest.code === 0 && forwardingReady, executed: false, hostReady, forwardingReady,
     guestReady: guest.code === 0,
-    reason: !hostReady ? '宿主机的 GPG Agent extra socket 不可用。' :
-      guest.code !== 0 ? '客户机需要安装 GnuPG。' :
+    reason: !hostReady ? '宿主 GPG 原生 extra socket 或来源身份校验未就绪。' :
+      guest.code !== 0 ? '客户机需要安装 GnuPG 与系统 Python。' :
         !forwardingReady ? '客户机 SSH 服务需要 AllowTcpForwarding remote 和 AllowStreamLocalForwarding remote（或 yes）；修改后重启 sshd。' :
-        '仅在明确确认的单次命令期间转发受限制的 extra socket；客户机仍需导入对应公钥。' };
+          '单次命令以项目账号访问受限制的 extra socket；客户机仍需导入对应公钥。' };
 }
 
-function forwardUnix(client: Client, remote: string, host: string, signal?: AbortSignal) {
-  let closed = false;
-  const streams = new Set<Duplex>();
-  let connections = 0;
-  const onConnection = (info: { socketPath: string }, accept: () => Duplex, reject: () => void) => {
-    if (closed || info.socketPath !== remote || connections >= 8) return reject();
-    let source: Socket;
-    try { source = connect(host); }
-    catch { reject(); return; }
-    connections++;
-    let accepted = false, rejected = false;
-    streams.add(source);
-    const rejectOnce = () => {
-      if (accepted || rejected) return;
-      rejected = true;
-      reject();
-    };
-    const timer = setTimeout(() => { source.destroy(); rejectOnce(); }, 3000);
-    source.once('connect', () => {
-      clearTimeout(timer);
-      if (closed || rejected) { source.destroy(); rejectOnce(); return; }
-      let channel: Duplex;
-      try { channel = accept(); }
-      catch { source.destroy(); rejectOnce(); return; }
-      accepted = true;
-      streams.add(channel);
-      channel.once('close', () => { streams.delete(channel); source.destroy(); });
-      source.once('close', () => { streams.delete(source); channel.destroy(); });
-      channel.pipe(source).pipe(channel);
-    });
-    source.once('error', () => { clearTimeout(timer); rejectOnce(); });
-    source.once('close', () => { clearTimeout(timer); streams.delete(source); connections--; });
-  };
-  client.on('unix connection', onConnection);
-  const ready = new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      client.off('close', onClose);
-      signal?.removeEventListener('abort', onAbort);
-      error ? reject(error) : resolve();
-    };
-    const onClose = () => finish(new AppError('GPG 转发连接已关闭', 409));
-    const onAbort = () => finish(new AppError('GPG 转发已取消', 409));
-    const timer = setTimeout(() => finish(new AppError('GPG 转发建立超时', 408)), 10000);
-    client.once('close', onClose);
-    signal?.addEventListener('abort', onAbort, { once: true });
-    if (signal?.aborted) return onAbort();
-    try { client.openssh_forwardInStreamLocal(remote, (error) => finish(error || undefined)); }
-    catch (error) { finish(error as Error); }
-  });
-  const close = async () => {
-    closed = true;
-    client.off('unix connection', onConnection);
-    for (const stream of streams) stream.destroy();
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, 2000);
-      try {
-        client.openssh_unforwardInStreamLocal(remote, () => {
-          clearTimeout(timer); resolve();
-        });
-      } catch { clearTimeout(timer); resolve(); }
-    });
-  };
-  return { ready, close };
-}
-
-export async function runGpgAgentForward(
-  machines: Machines,
-  id: string,
-  input: unknown,
-  signal?: AbortSignal,
-  workspaces?: Workspaces,
-) {
-  const options = gpgAgentForwardInput.parse(input);
-  machines.requireUnlocked(id);
-  if (machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
-  const host = await hostGpgExtraSocket();
-  if (!(await gpgSocketReachable(host, signal)))
-    throw new AppError('宿主机的 GPG Agent extra socket 不可用', 409);
-  signal?.throwIfAborted();
-  return withProjectCommand(machines, id, signal, workspaces, async (project) => {
-    const installed = await machines.exec(
-      id,
-      'command -v gpg >/dev/null && command -v mktemp >/dev/null',
-      10000,
-      signal,
-    );
-    if (installed.code !== 0) throw new AppError('客户机需要安装 GnuPG', 409);
-    if (!(await guestGpgForwardingReady(machines, id, signal)))
-      throw new AppError(
-        '客户机 SSH 服务未允许远端 Unix 套接字转发；请启用 AllowTcpForwarding remote 和 AllowStreamLocalForwarding remote',
-        409,
-      );
-    signal?.throwIfAborted();
-    const directoryResult = await machines.exec(
-      id,
-      'umask 077; mktemp -d /tmp/sakura-gpg-XXXXXXXX',
-      10000,
-      signal,
-    );
-    const directory = directoryResult.stdout.trim();
-    if (directoryResult.code !== 0 || !guestDirectory.test(directory))
-      throw new AppError('无法建立临时 GPG 目录', 502);
-    const remote = directory + '/S.gpg-agent';
-    let client: Client | undefined;
-    let bridge: ReturnType<typeof forwardUnix> | undefined;
-    let result: { stdout: string; stderr: string; code: number } | undefined;
-    let taskStarted = false;
-    const instance = machines.live.get(id);
-    const closeBridge = async () => {
-      await bridge?.close().catch(() => {});
-      bridge = undefined;
-      client?.end();
-      client = undefined;
-    };
-    const cleanupDirectory = async () => {
-      await closeBridge();
-      const cleanup = await machines.exec(id, `rm -rf -- ${quote(directory)}`, 10000);
-      if (cleanup.code !== 0) throw new Error(cleanup.stderr.trim() || '临时 GPG 目录未清理');
-    };
+export class GpgAgentForwarder {
+  private terminals: ProjectTerminals;
+  private ownTerminals: boolean;
+  private runTask: typeof projectIdentityTask;
+  private scopes: GpgAgentScopes;
+  private captureHost: (signal?: AbortSignal) => Promise<GpgHostSnapshot>;
+  constructor(private machines: Machines, options: { workspaces?: Workspaces; terminals?: ProjectTerminals;
+    runTask?: typeof projectIdentityTask; sourceDirectory?: string;
+    captureHost?: (signal?: AbortSignal) => Promise<GpgHostSnapshot> } = {}) {
+    this.ownTerminals = !options.terminals;
+    this.terminals = options.terminals || new ProjectTerminals(machines, options.workspaces);
+    this.runTask = options.runTask || projectIdentityTask;
+    this.scopes = new GpgAgentScopes(machines, { sourceDirectory: options.sourceDirectory });
+    this.captureHost = options.captureHost || (async signal => captureHostGpgSource(await hostGpgExtraSocket(), signal));
+  }
+  async run(id: string, input: unknown, signal?: AbortSignal) {
+    let prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
+    let bridge: OwnedGpgForward | undefined, values: string[] = [], completed, failure: unknown;
     try {
-      client = await machines.connect(id, 10000, signal);
-      bridge = forwardUnix(client, remote, host, signal);
-      await bridge.ready;
+      const options = gpgAgentForwardInput.parse(input);
+      const projectId = this.terminals.workspaces.projects.current(id);
+      this.machines.requireUnlocked(id);
+      if (this.machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
       signal?.throwIfAborted();
-      taskStarted = true;
-      result = await guestTask(
-        machines,
-        id,
-        projectExecutionCommand(
-          project,
-          `umask 077; export GNUPGHOME=${quote(directory)}; ${options.command}`,
-        ),
-        signal || new AbortController().signal,
-        undefined,
-        options.timeoutSeconds * 1000,
-        undefined,
-        cleanupDirectory,
-      );
-    } finally {
-      await closeBridge();
-      // After a task starts, only guestTask may authorize directory cleanup:
-      // an unconfirmed scope must keep its GNUPGHOME and ownership evidence.
-      if (!taskStarted) {
-        let failure: unknown;
-        for (let attempt = 0; attempt < 3; ++attempt) {
-          if (machines.live.get(id) !== instance) {
-            failure = new Error('客户机实例已改变，临时 GPG 目录清理未确认');
-            break;
-          }
-          try {
-            await cleanupDirectory();
-            if (machines.live.get(id) !== instance) throw new Error('客户机实例已改变');
-            failure = undefined;
-            break;
-          } catch (error) {
-            failure = error;
-            if (attempt < 2) await delay(250 * (attempt + 1));
-          }
-        }
-        if (failure)
-          throw new AppError(`临时 GPG 目录清理未确认：${String(failure)}`, 503, 'GUEST_TASK_CLEANUP_FAILED');
+      const source = await this.captureHost(signal);
+      signal?.throwIfAborted();
+      prepared = await this.terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
+      const { captured, signal: executionSignal } = prepared;
+      if (!captured || !executionSignal || this.machines.live.get(id) !== captured.live)
+        throw new AppError('GPG 命令准备的客户机身份未确认', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      values = projectPrivateValues(captured.project);
+      const project = await this.terminals.workspaces.resolveProject(id, captured.project);
+      values = projectPrivateValues(project);
+      executionSignal.throwIfAborted();
+      if (this.machines.live.get(id) !== captured.live)
+        throw new AppError('GPG 项目解析期间客户机身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      const installed = await this.machines.exec(id, guestRequirements, 10000, executionSignal);
+      if (installed.code !== 0) throw new AppError('客户机需要安装 GnuPG 与系统 Python', 409);
+      if (!await guestGpgForwardingReady(this.machines, id, executionSignal))
+        throw new AppError('客户机 SSH 服务未允许远端 Unix 套接字转发；请启用 AllowTcpForwarding remote 和 AllowStreamLocalForwarding remote', 409);
+      executionSignal.throwIfAborted();
+      if (this.machines.live.get(id) !== captured.live)
+        throw new AppError('GPG 客户机检查期间运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      const { GNUPGHOME: _ignoredHome, GPG_AGENT_INFO: _ignoredAgent, ...environment } = project.environment || {};
+      bridge = new OwnedGpgForward(source, executionSignal);
+      const resource = await this.scopes.resource(options.timeoutSeconds,
+        { hostSourceSha256: bridge.hostSourceSha256, hostHelperSha256: bridge.hostHelperSha256 });
+      const result = await this.runTask(this.machines, id, project,
+        { command: options.command, environment }, executionSignal, undefined, options.timeoutSeconds * 1000,
+        undefined, undefined, { expectedLive: captured.live, gpgAgent: { resource, bridge, scopes: this.scopes } });
+      completed = { ...redactProjectOutput(project, result), ready: result.code === 0, executed: true,
+        projectId: prepared.projectId, directory: project.directory, configVersion: captured.configVersion,
+        networkIsolation: project.networkIsolation || 'host', message: '本任务 GPG 资源与账号票据已确认关闭。' };
+    } catch (error) { failure = error; }
+    finally {
+      try { await bridge?.close(); }
+      catch (error) { if (!(failure instanceof AppError && failure.code?.endsWith('_CLEANUP_FAILED'))) failure = error; }
+      prepared?.release();
+      if (this.ownTerminals) {
+        try { await this.terminals.close(); }
+        catch (error) { if (!failure) failure = error; }
       }
     }
-    if (!result) throw new AppError('GPG 命令未执行', 502);
-    return {
-      ...redactProjectOutput(project, result),
-      ready: result.code === 0,
-      executed: true,
-      projectId: project._workspace || 'default',
-      directory: project.directory,
-      networkIsolation: project.networkIsolation || 'host',
-      message: '单次命令的 GPG Agent 转发已关闭。',
-    };
-  });
+    if (failure !== undefined) throw new AppError(redactValues(String((failure as Error)?.message || failure), values),
+      failure instanceof AppError ? failure.status : 409, failure instanceof AppError ? failure.code : undefined);
+    return completed!;
+  }
+}
+
+export async function runGpgAgentForward(machines: Machines, id: string, input: unknown,
+  signal?: AbortSignal, workspaces?: Workspaces, terminals?: ProjectTerminals) {
+  return new GpgAgentForwarder(machines, { workspaces, terminals }).run(id, input, signal);
 }

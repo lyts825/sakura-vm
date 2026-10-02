@@ -2,6 +2,22 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 单次 GPG Agent 的项目账号与原生来源验证
+
+2026-10-02 能力中心单次 GPG Agent 命令接入持久项目 UID/GID、独立 home、原目录与保存的网络模式。每次明确提交命令、确认和时限，不能沿用旧确认；异步来源检查前固定原项目，准备和密钥解析使用捕获的配置。正文与环境通过受保护 stdin 交给固定降权启动器，root argv 不携带正文。每条任务有独立 GNUPGHOME，客户机仅导入公钥；用法见 [单次 GPG Agent 转发](gpg-agent-forward.md)。
+
+Windows x64 原生 helper 固定 extra socket 文件、祖先目录、属主、ACL 与原监听进程的 PID、创建时间、用户和映像。真实来源连接与每个协议帧重新核对身份，转发 helper 的出生回执在连接和发送 nonce 前持久保存；来源未确认时不发送 nonce。目录句柄只读取属性和 ACL，nonce 及回执文件仍读取数据，共享方式继续保持只读，允许 GnuPG 正常原子更新自己的密钥环。Unix、MSYS 和命名管道来源明确拒绝。此产品入口不启动或关闭宿主 Agent，不复制宿主私钥文件。
+
+固定 Linux broker 保持 root 源监听私有权限，并逐连接、逐 Assuan 请求核对 UID/GID、补充组、pidfd、创建身份、caps/NNP、boot 与完整任务 cgroup；连接、帧、数据与时间均有预算。退出、非零退出或取消先确认整个任务域停止，再确认宿主流、helper、准确 socket 和临时 home 清理，最后核销账号票据。OpenSSH 撤销转发后留下的 socket 仅在原进程已经结束、内核没有该准确路径且原目录及 inode 再次核对后删除，不终止共享 sshd 或删除未知替换对象。清理失联保留原记录与具体错误码，重载不把丢失的内存登记当作已关闭。
+
+最终整仓回归共 1223 项，1222 通过、1 项平台跳过、0 失败，628 个受检源码前后保持一致；证明为 `.data/gpg-agent-identity-full-unit-06f5c9b7-eda5-41e9-847b-39cdafec97c8-verification.json`。三个浏览器场景通过，其源码与最终版本继续一致，证明为 `.data/gpg-agent-identity-ui-a1714cc7-0936-41f8-a94c-7eb0c56bdeed-verification.json`。类型、两段客户机 Python AST 和差异检查通过；完整构建、分发检查及七种编译服务组合通过，证明为 `.data/gpg-agent-build-53051a80-560e-4b6a-bf1f-1e740b7395fa-verification.json`。
+
+Ubuntu 的 12 项真实 GPG 检查全部通过，绑定本次 38 个源、9 个资产、准确 boot/run 与项目 UID。覆盖真实签名、公钥验证、二进制解密、未确认提交拒绝、非零清理、并发独立 home/域、另一项目实际 UID 与私有命名空间拒绝访问、取消及脱离会话后代停止、邻居继续签名、只读重载，以及来源替换后在 nonce 发送前拒绝。证明为 `D:\27247\Desktop\Sakura\.data\network-remaining-test-temp\sakura-guest-task-dhGwI9\gpg-agent-project-identity-evidence-49a12621-197d-4eea-b3dc-06e864567347.json`，外层实际退出码 0 的控制证明为 `.data/gpg-fresh-native-ubuntu-controller-701808f6-d261-46c0-aa4a-b9c7158d0d32-proof.json`。测试使用明确记录的多线程 TCG、原磁盘与 seed，产品就绪检查及启动期限未更改；测试专用 Agent 仅有新生成的测试密钥。所有本次 VM、SSH、helper 和自有 Agent 关闭，live 与准确 QEMU/CIM 均为零，原账号、目录、旧票据与历史证明保持不变。
+
+先前启动超时、公钥校验目录超过 Unix socket 路径限制，以及跨项目测试遗漏正常准备流程的 false 证明和实际非零退出均保留。缺失网络的固定回复由原返回摘要与本地声明的回复候选精确匹配得到；原证明没有补写错误码。原型 Ubuntu 的早期通用清理错误继续保留其原归属，后续独立 OpenSSH 残留观察不作为该早期错误原因的证明。Windows 目录共享观察、正常旧票据退休和各次失败的完整索引见下方检查点。
+
+最终运行包包含 263 个文件，完整清单校验通过，指纹为 `1865d6d48589025cfd1fa0dee0a684692f6e1e9ea655d919b629c3104076f037`；证明为 `.data/gpg-agent-release-b21bddfe-90b6-4f15-9ff4-cef2b555f11e-verification.json`。完整索引为 `.data/gpg-agent-final-checkpoint-763329dc-eb41-4d1c-8434-708ab9ad77c8.json`。本次原生宿主与 stock GPG 实机运行覆盖 Ubuntu；原 Alpine/Debian 缺少 GPG，未安装或改动这两份旧实例。项目网络的剩余入口、真实独立外部 HA 演练与系统级剪贴板边界仍保持部分实现；目录继续为 250 项、247 项有实现入口、3 项部分实现，范围见 [未完成功能](unfinished-features.md)。
+
 ## 单次 SSH Agent 的项目账号与独立资源清理
 
 2026-10-02 能力中心单次 SSH Agent 命令接入持久项目 UID/GID、独立 home、原项目目录和保存的网络模式。每次提交明确命令、确认与时限，旧配置中的命令或确认不能沿用。准备在异步检查前固定原项目，捕获配置摘要及准确 live 实例；环境、运行时和密钥只解析该份配置，项目中的 SSH_AUTH_SOCK 不能替换本次入口。正文与环境通过原受保护 stdin 帧交给固定降权启动器，root argv 不携带正文，普通 RUN 和全部清理的固定环境保持原合同。task 准备只核对既有目录，缺失目录明确拒绝，不再由 root 自动建立。用法见 [单次 SSH Agent 转发](ssh-agent-forward.md)。

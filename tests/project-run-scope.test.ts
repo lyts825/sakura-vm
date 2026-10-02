@@ -10,11 +10,15 @@ import { AppError } from '../server/model.ts';
 import { ProjectRunScopes } from '../server/project-run-scope.ts';
 import { projectIdentitySchema, projectIdentityRunSchema } from '../server/project-identity.ts';
 import { OwnedForwardAgent, type SshAgentContext } from '../server/ssh-agent-scope.ts';
+import { OwnedGpgForward } from '../server/gpg-agent-host.ts';
+import { gpgAgentHomePath, type GpgAgentContext } from '../server/gpg-agent-scope.ts';
+import { syntheticGpgHostSnapshot } from './gpg-agent-fixture.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-project-run-scope-'));
 after(() => rm(root, { recursive: true, force: true }));
 
-async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void>) {
+async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void>,
+  gpgCleanup?: (context: GpgAgentContext) => Promise<void>) {
   const directory = await mkdtemp(join(root, 'owned-')), vmId = randomUUID(), identityId = randomUUID();
   const identity = projectIdentitySchema.parse({ version: 1, phase: 'active', registryId: randomUUID(),
     projectId: 'default', identityId, revision: 1, account: 'skp' + identityId.replaceAll('-', '').slice(0, 24),
@@ -71,7 +75,8 @@ async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void
     },
   };
   const options = { identities: core, rootDirectory: directory,
-    ...(agentCleanup ? { agentScopes: { cleanup: async (_vm: string, context: SshAgentContext) => agentCleanup(context) } } : {}) };
+    ...(agentCleanup ? { agentScopes: { cleanup: async (_vm: string, context: SshAgentContext) => agentCleanup(context) } } : {}),
+    ...(gpgCleanup ? { gpgScopes: { cleanup: async (_vm: string, context: GpgAgentContext) => gpgCleanup(context) } } : {}) };
   const scopes = new ProjectRunScopes(machines, options);
   const project = { directory: identity.directory, networkIsolation: 'host' } as Project;
   const file = join(directory, 'project-identities', 'default.json');
@@ -715,4 +720,151 @@ test('changing immutable Agent metadata disables the concurrent-task exemption',
     f.calls.length = 0; await f.reopened().recoverStoppedTasks(f.vmId, 'default');
     assert.deepEqual(f.calls, [], 'the original exact in-process owner still exists');
   } finally { admitted.release(); await agent.close(); }
+});
+
+const gpgResource = () => {
+  const snapshot = syntheticGpgHostSnapshot();
+  return { version: 1 as const, kind: 'gpg-agent' as const, leaseId: randomUUID(),
+    brokerSha256: 'a'.repeat(64), timeoutSeconds: 60,
+    hostSourceSha256: snapshot.hostSourceSha256, hostHelperSha256: snapshot.hostHelperSha256 };
+};
+const gpgBridge = () => {
+  const bridge = new OwnedGpgForward(syntheticGpgHostSnapshot(), new AbortController().signal);
+  // This file tests the project journal using synthetic host pins. Real helper
+  // births and kernel credentials are covered by the separate native smoke.
+  bridge.prepareAdmission = async (context, live) => { bridge.bind(context, live); };
+  return bridge;
+};
+
+test('GPG admission pins its source and writable home, and closes the resource before its account ticket', async () => {
+  const contexts: GpgAgentContext[] = [];
+  const f = await fixture(undefined, async context => { contexts.push(context); f.calls.push('gpg-cleanup'); });
+  const bridge = gpgBridge(), resource = gpgResource(), original = f.core.inheritedInput;
+  let environment: Record<string, string> | undefined;
+  f.core.inheritedInput = async (identity, execution, options) => {
+    environment = (execution as { environment?: Record<string, string> }).environment;
+    return original(identity, execution, options);
+  };
+  const admitted = await f.scopes.admitTask(f.vmId, f.project,
+    { command: 'private-frame-value', environment: { GNUPGHOME: '/wrong/project/home', TOKEN: 'private-environment' } },
+    new AbortController().signal, { gpgAgent: { resource, bridge } });
+  const runId = admitted.payload.runId;
+  f.core.run = async () => { f.calls.push('run'); return { ...f.run, runId, cgroupName: 'sakura-task-' + runId }; };
+  f.core.stop = async () => { f.calls.push('stop'); return { ...f.run, runId, cgroupName: 'sakura-task-' + runId, phase: 'closed' }; };
+  try {
+    assert.equal(environment?.GNUPGHOME, gpgAgentHomePath(resource.leaseId));
+    assert.equal(environment?.TOKEN, 'private-environment');
+    assert.deepEqual((await f.view()).runs[0].gpgAgent, resource);
+    const text = await readFile(f.file, 'utf8');
+    for (const value of ['private-frame-value', 'private-environment', '/wrong/project/home', 'D:\\private'])
+      assert.ok(!text.includes(value));
+    assert.deepEqual(admitted.gpgContext?.identity, f.identity);
+    assert.equal(admitted.gpgContext?.owner.runId, runId);
+    f.calls.length = 0;
+    await f.scopes.closeAfterScopeStopped(f.vmId, 'default', runId);
+    assert.equal(contexts.length, 1); assert.deepEqual(contexts[0].resource, resource);
+    assert.ok(f.calls.indexOf('gpg-cleanup') > f.calls.indexOf('confirm'));
+    assert.ok(f.calls.indexOf('gpg-cleanup') < f.calls.indexOf('stop'));
+    assert.equal((await f.view()).runs[0].phase, 'closed');
+  } finally { admitted.release(); await bridge.close(); }
+});
+
+test('a closed native GPG ticket retains its unresolved resource and recovery retries it', async () => {
+  let failed = true, attempts = 0;
+  const f = await fixture(undefined, async () => {
+    ++attempts;
+    if (failed) throw new AppError('GPG host helper close unconfirmed', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+  });
+  const bridge = gpgBridge();
+  const admitted = await f.scopes.admitTask(f.vmId, f.project, { command: 'true' }, new AbortController().signal,
+    { gpgAgent: { resource: gpgResource(), bridge } });
+  f.core.run = async () => ({ ...f.run, runId: admitted.payload.runId,
+    cgroupName: 'sakura-task-' + admitted.payload.runId, phase: 'closed' });
+  try {
+    assert.equal(await f.scopes.active(f.vmId, 'default', admitted.payload.runId), false);
+    assert.equal((await f.view()).runs[0].phase, 'active');
+    await assert.rejects(f.scopes.closeAfterScopeStopped(f.vmId, 'default', admitted.payload.runId),
+      { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    admitted.release();
+    await assert.rejects(f.reopened().guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+    failed = false; await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    assert.equal(attempts, 2); assert.equal((await f.view()).runs[0].phase, 'closed');
+    assert.equal(f.calls.includes('stop'), false);
+  } finally { admitted.release(); await bridge.close(); }
+});
+
+test('GPG source digest mismatch and two Agent kinds refuse before creating any payload', async () => {
+  const f = await fixture(), bridge = gpgBridge(), agent = new OwnedForwardAgent('unit-unused', new AbortController().signal);
+  try {
+    await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'must-not-run' }, new AbortController().signal,
+      { gpgAgent: { bridge, resource: { ...gpgResource(), hostSourceSha256: 'f'.repeat(64) } } }),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.equal(f.calls.includes('payload'), false);
+    f.calls.length = 0;
+    await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'must-not-run' }, new AbortController().signal,
+      { gpgAgent: { bridge, resource: gpgResource() }, sshAgent: { agent, resource: agentResource() } }),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.deepEqual(f.calls, []);
+  } finally { await bridge.close(); await agent.close(); }
+});
+
+test('GPG prepared resources must be cleaned even when no native execution ticket was issued', async () => {
+  const f = await fixture(undefined, async context => {
+    assert.equal(context.identity.identityId, f.identity.identityId); f.calls.push('gpg-cleanup');
+  }), bridge = gpgBridge();
+  const admitted = await f.scopes.admitTask(f.vmId, f.project, { command: 'must-not-run' }, new AbortController().signal,
+    { gpgAgent: { resource: gpgResource(), bridge } });
+  f.setMissing(true); admitted.release();
+  try {
+    await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+    assert.ok(f.calls.includes('gpg-cleanup')); assert.equal(f.calls.includes('stop'), false);
+    assert.equal((await f.view()).runs[0].run, null); assert.equal((await f.view()).runs[0].phase, 'closed');
+  } finally { await bridge.close(); }
+});
+
+test('changed GPG resource metadata cannot claim a currently active task owner', async () => {
+  const f = await fixture(), bridge = gpgBridge();
+  const admitted = await f.scopes.admitTask(f.vmId, f.project, { command: 'active' }, new AbortController().signal,
+    { gpgAgent: { resource: gpgResource(), bridge } }); f.setAbsent(false);
+  try {
+    const original = await f.view(), changed = structuredClone(original);
+    changed.runs[0].gpgAgent.hostHelperSha256 = 'f'.repeat(64);
+    admitted.gpgContext!.resource.hostHelperSha256 = changed.runs[0].gpgAgent.hostHelperSha256;
+    await writeFile(f.file, JSON.stringify(changed));
+    await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    assert.equal(f.calls.includes('stop'), false);
+    await writeFile(f.file, JSON.stringify(original)); f.calls.length = 0;
+    await f.reopened().recoverStoppedTasks(f.vmId, 'default'); assert.deepEqual(f.calls, []);
+  } finally { admitted.release(); await bridge.close(); }
+});
+
+test('a failed durable host admission cannot leave a GPG project intent without a host receipt', async () => {
+  const f = await fixture(), bridge = gpgBridge(); let preparations = 0;
+  bridge.prepareAdmission = async () => {
+    ++preparations; throw new AppError('owned host receipt write failed', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+  };
+  try {
+    await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'private-frame-value' },
+      new AbortController().signal, { gpgAgent: { resource: gpgResource(), bridge } }),
+      { code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+    assert.equal(preparations, 1); assert.deepEqual((await f.view()).runs, []);
+    assert.equal(f.calls.includes('run'), false); await f.scopes.guard(f.vmId, 'default');
+  } finally { await bridge.close(); }
+});
+
+test('the GPG host admission is persisted before a later guest boot guard can fail', async () => {
+  const f = await fixture(), bridge = gpgBridge(); let prepared = false;
+  bridge.prepareAdmission = async (context, live) => {
+    assert.deepEqual((await f.view()).runs, []);
+    bridge.bind(context, live); prepared = true; f.setBoot(randomUUID());
+  };
+  try {
+    await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'must-not-run' },
+      new AbortController().signal, { gpgAgent: { resource: gpgResource(), bridge } }),
+      { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+    assert.equal(prepared, true);
+    const journal = await f.view(); assert.equal(journal.runs.length, 1);
+    assert.equal(journal.runs[0].phase, 'intent'); assert.equal(journal.runs[0].run, null);
+    assert.equal(f.calls.includes('run'), false);
+  } finally { await bridge.close(); }
 });

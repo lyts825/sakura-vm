@@ -26,6 +26,7 @@ import { guestQuota } from './guest-quota.ts';
 import { egressPolicy } from './egress-policy.ts';
 import { natHairpin } from './nat-hairpin.ts';
 import { checkSshAgentForward, runSshAgentForward } from './ssh-agent-forward.ts';
+import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
 import { checkGpuAcceleration, runGpuAcceleration } from './gpu-acceleration.ts';
 import { checkSyscallProfile, runSyscallProfile } from './syscall-profile.ts';
 
@@ -72,6 +73,8 @@ export class CapabilityActions {
       return { ready: false, executed: false, featureId, reason: '请先启动发行版。' };
     if (featureId === 'ssh-agent-forward')
       return { featureId, ...await checkSshAgentForward(this.machines, id, signal) };
+    if (featureId === 'gpg-agent-forward')
+      return { featureId, ...await checkGpgAgentForward(this.machines, id, signal) };
     if (featureId === 'gpu-acceleration')
       return { featureId, ...await checkGpuAcceleration(this.machines, id, signal) };
     if (featureId === 'syscall-profile')
@@ -122,6 +125,8 @@ export class CapabilityActions {
     signal.throwIfAborted();
     if (featureId === 'ssh-agent-forward')
       return runSshAgentForward(this.machines, id, parameters, signal, this.workspaces, this.projectTerminals);
+    if (featureId === 'gpg-agent-forward')
+      return runGpgAgentForward(this.machines, id, parameters, signal, this.workspaces, this.projectTerminals);
     if (featureId === 'gpu-acceleration')
       return runGpuAcceleration(this.machines, id, parameters, signal);
     if (featureId === 'syscall-profile')

@@ -2575,7 +2575,10 @@ test('power policy saves while the guest is stopped and displays the actual sche
   await expect(page.getByText('电池电量：25%', { exact: true })).toBeVisible();
 });
 
-test('SSH Agent capability needs an explicit submission and preserves cleanup errors after reload', async ({ page }) => {
+for (const feature of [
+  { id: 'ssh-agent-forward', name: 'SSH Agent 转发', command: 'ssh-add -L', note: /命令使用当前项目账号、独立 home 和项目网络/ },
+  { id: 'gpg-agent-forward', name: 'GPG Agent 转发', command: 'gpg --no-autostart --version', note: /命令以当前项目账号访问宿主受限制的 extra socket/ },
+]) test(feature.name + ' needs an explicit submission and preserves cleanup errors after reload', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await app(page, ['projects', 'extensions'], true);
@@ -2586,7 +2589,7 @@ test('SSH Agent capability needs an explicit submission and preserves cleanup er
     expect(new URL(route.request().url()).searchParams.get('project')).toBe('default');
     if (route.request().method() === 'POST') {
       submitted.push(route.request().postDataJSON());
-      jobs = [{ id: 'ssh-agent-cleanup', action: 'extended:ssh-agent-forward',
+      jobs = [{ id: feature.id + '-cleanup', action: 'extended:' + feature.id,
         status: 'error', log: '', startedAt: '2026-10-01T13:00:00.000Z',
         finishedAt: '2026-10-01T13:00:01.000Z', error: 'Agent 清理未确认，原票据继续保留',
         errorCode: 'PROJECT_IDENTITY_CLEANUP_FAILED' }];
@@ -2597,17 +2600,17 @@ test('SSH Agent capability needs an explicit submission and preserves cleanup er
   });
   await page.reload();
   await page.getByRole('button', { name: '能力中心', exact: true }).click();
-  await page.getByLabel('extended 功能操作').selectOption('ssh-agent-forward');
-  await expect(page.getByText(/命令使用当前项目账号、独立 home 和项目网络/)).toBeVisible();
+  await page.getByLabel('extended 功能操作').selectOption(feature.id);
+  await expect(page.getByText(feature.note)).toBeVisible();
   expect(submitted).toEqual([]);
-  const options = { command: 'ssh-add -L', confirmed: true, timeoutSeconds: 25 };
+  const options = { command: feature.command, confirmed: true, timeoutSeconds: 25 };
   await page.getByLabel('extended 功能参数').fill(JSON.stringify(options));
-  await page.getByRole('button', { name: '提交SSH Agent 转发', exact: true }).click();
-  await expect.poll(() => submitted).toEqual([{ action: 'run', featureId: 'ssh-agent-forward', options }]);
+  await page.getByRole('button', { name: '提交' + feature.name, exact: true }).click();
+  await expect.poll(() => submitted).toEqual([{ action: 'run', featureId: feature.id, options }]);
   await expect(page.getByText('Agent 清理未确认，原票据继续保留', { exact: true })).toBeVisible();
   await expect(page.getByText('PROJECT_IDENTITY_CLEANUP_FAILED', { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByLabel('extended 功能操作').selectOption('ssh-agent-forward');
+  await page.getByLabel('extended 功能操作').selectOption(feature.id);
   await expect(page.getByText('PROJECT_IDENTITY_CLEANUP_FAILED', { exact: true })).toBeVisible();
   expect(submitted).toHaveLength(1);
   await page.setViewportSize({ width: 390, height: 844 });

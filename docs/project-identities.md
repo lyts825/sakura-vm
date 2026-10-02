@@ -1,6 +1,6 @@
 # 持久项目账号与固定启动器
 
-`server/project-identity.ts` 提供持久项目账号、固定启动器与客户机运行票据；`server/project-run-scope.ts` 保存宿主预期身份和核销记录。默认项目 `/exec`、项目初始化、主命令、普通服务、就绪与命令式健康检查、运行时版本的显式探测和选择验证，以及构建农场和单次 SSH Agent 命令使用固定项目 UID/GID。普通终端、系统 SSH、cron、用户管理器和全部扩展入口尚未完成账号迁移，网络隔离总功能仍为部分实现。运行时面板读取宿主缓存，安装共享运行时仍属于实例管理员操作，见 [运行时版本](runtime-versions.md)；构建配置捕获、并发和取消见 [构建农场](build-farm.md)；命令确认、独立入口与撤销见 [SSH Agent 转发](ssh-agent-forward.md)。
+`server/project-identity.ts` 提供持久项目账号、固定启动器与客户机运行票据；`server/project-run-scope.ts` 保存宿主预期身份和核销记录。默认项目 `/exec`、项目初始化、主命令、普通服务、就绪与命令式健康检查、运行时版本的显式探测和选择验证，以及构建农场和单次 SSH/GPG Agent 命令使用固定项目 UID/GID。普通终端、系统 SSH、cron、用户管理器和全部扩展入口尚未完成账号迁移，网络隔离总功能仍为部分实现。运行时面板读取宿主缓存，安装共享运行时仍属于实例管理员操作，见 [运行时版本](runtime-versions.md)；构建配置捕获、并发和取消见 [构建农场](build-farm.md)；命令确认、独立入口与撤销见 [SSH Agent 转发](ssh-agent-forward.md) 和 [GPG Agent 转发](gpg-agent-forward.md)。
 
 ## 账号与目录
 
@@ -29,6 +29,8 @@ home 位于 `/var/lib/sakura-project-homes/<identityId>`，叶目录为该账号
 构建的同项目槽位各自登记完整运行。当前进程只为本次原子入场保存准确 live、boot、账号、owner、正文摘要与已观察票据的活动归属，短队列串行核对和核销，正文可并行；新的槽位不会回收仍受本进程管理的准确运行。重新加载、记录变化或实例替换后不能从磁盘恢复这份活动豁免；目录变更、迁移与网络核销始终仍受全部未闭合票据保护。
 
 单次 SSH Agent 在原任务记录上同时固定 lease ID、broker 摘要和时限；活动豁免还核对这份不可变资源。原 SSH 监听维持 root 私有权限，固定 broker 在外层任务域中为项目发布独立入口；每次直接连接及协议请求核对 UID/GID、进程创建身份、boot 和完整域。上层域停止后先撤销本次宿主流并核对准确入口清理，再核销账号票据；失败保留资源及原 host owner 供正常恢复，不关闭邻居任务或宿主守护进程。
+
+单次 GPG Agent 还固定原生宿主来源和 helper 摘要；项目 intent 写入前先持久保存宿主未启动回执，helper 在读取 nonce 前保存准确进程回执。每次运行有独立项目 GNUPGHOME 和 Assuan broker，账号票据不能先于域、宿主连接和准确临时资源关闭。控制服务重载按原持久回执核对 helper 进程身份，不能将丢失的内存登记当作已关闭；客户机重启后清理固定当前 live，旧 owner 仍只授权原宿主资源的回收。
 
 ## 私有网络核销
 

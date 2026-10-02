@@ -5,10 +5,14 @@ import './prepare-linux-clipboard.mjs';
 import './prepare-wayland-clipboard.mjs';
 import './prepare-project-identity.mjs';
 import './prepare-ssh-agent.mjs';
+import './prepare-gpg-agent.mjs';
+import { prepareGpgAgentHostAssets } from './build-gpg-agent-host.mjs';
 
 const root = process.cwd();
 const target = join(root, '.sakura-server', 'assets');
 await mkdir(target, { recursive: true });
+await prepareGpgAgentHostAssets();
+await cp(join(root, 'native', 'gpg-agent', 'windows-relay.cpp'), join(target, 'gpg-agent-host-source.cpp'));
 const witnessDocs = join(root, '.sakura-witness', 'docs');
 const witnessScripts = join(root, '.sakura-witness', 'scripts');
 await mkdir(witnessDocs, { recursive: true });
