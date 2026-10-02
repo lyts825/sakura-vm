@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const directory = await mkdtemp(join(tmpdir(), 'sakura-seccomp-vm-'));
+const parent = await realpath(tmpdir());
+const directory = await mkdtemp(join(parent, 'sakura-seccomp-vm-'));
 process.env.SAKURA_DATA_DIR = directory;
 const distro = process.argv[2] || (process.env.SAKURA_SYSCALL_DISTRO === 'ubuntu' ? 'ubuntu' :
   process.env.SAKURA_SYSCALL_DEBIAN_ONLY === '1' ? 'debian' : 'alpine');
@@ -17,9 +18,12 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { checkSyscallProfile, runSyscallProfile } = await import('../server/syscall-profile.ts');
 const { Workspaces } = await import('../server/workspaces.ts');
 const { Secrets } = await import('../server/secrets.ts');
+const { ProjectDirectoryMigrations } = await import('../server/project-directory-migration.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const secrets = new Secrets(machines), workspaces = new Workspaces(machines, { secrets });
+const migrations = new ProjectDirectoryMigrations(machines, workspaces);
+let primaryFailure: unknown;
 try {
   const vm = await machines.create({ name: `seccomp-${distro}-smoke`, distro,
     memoryMiB: 1024, cpus: 2, diskGiB: 4 });
@@ -36,6 +40,17 @@ try {
   assert.equal(installed.ready, true, JSON.stringify(installed));
   const status = await checkSyscallProfile(machines, vm.id);
   assert.equal(status.ready, true, status.reason);
+  await workspaces.save(vm.id, { directory: '/workspace/seccomp-host' });
+  const created = await machines.exec(vm.id, 'mkdir -p /workspace/seccomp-host /workspace/limited');
+  assert.equal(created.code, 0, created.stderr);
+  const authorize = (projectId: string) => workspaces.projects.inScope(vm.id, projectId, async () => {
+    const preview = await migrations.preview(vm.id); assert.ok(preview.plan);
+    const applied = await migrations.apply(vm.id, { action: 'apply', version: 1, reviewed: true,
+      planId: preview.plan.proposal.planId, sha256: preview.plan.sha256 });
+    assert.equal(applied.plan?.state, 'applied'); assert.ok(applied.plan?.activatedIdentity);
+    return applied.plan.activatedIdentity;
+  });
+  const hostIdentity = await authorize('default'); assert.notEqual(hostIdentity.uid, 0);
   await assert.rejects(runSyscallProfile(machines, vm.id,
     { mode: 'run', command: 'true' }), /confirmed=true/);
   const allowed = await runSyscallProfile(machines, vm.id, {
@@ -64,6 +79,7 @@ try {
     await workspaces.save(vm.id, { directory: '/workspace/limited', networkIsolation: 'private',
       environment: { SAKURA_SECCOMP_MARKER: 'project' } });
   });
+  const privateIdentity = await authorize(index.active); assert.notEqual(privateIdentity.uid, hostIdentity.uid);
   const fallback = await runSyscallProfile(machines, vm.id, {
     mode: 'run', command: '/bin/pwd', confirmed: true,
   });
@@ -85,6 +101,13 @@ try {
   assert.equal((await machines.exec(vm.id, 'chmod 755 /workspace/seccomp-tools/python3')).code, 0);
   const execute = (input: unknown, signal?: AbortSignal) => workspaces.projects.with(vm.id, index.active,
     () => runSyscallProfile(machines, vm.id, input, signal, workspaces));
+  const account = await execute({ mode: 'run', command: '/usr/bin/python3', confirmed: true,
+    args: ['-c', 'import json,os\nprint(json.dumps({"uid":os.getuid(),"gid":os.getgid(),"home":os.environ["HOME"],"cwd":os.getcwd(),"cgroup":open("/proc/self/cgroup").read().strip()}))'] });
+  assert.equal(account.code, 0, JSON.stringify(account)); assert.ok('stdout' in account);
+  const accountState = JSON.parse(account.stdout);
+  assert.equal(accountState.uid, privateIdentity.uid); assert.equal(accountState.gid, privateIdentity.gid);
+  assert.equal(accountState.home, privateIdentity.home); assert.equal(accountState.cwd, privateIdentity.directory);
+  assert.match(accountState.cgroup, /^0::\/sakura-task-[a-f0-9-]{36}$/);
   const hostNamespace = (await machines.exec(vm.id, 'readlink /proc/self/ns/net')).stdout.trim();
   const namespace = (await machines.exec(vm.id, `ip netns exec sk-${index.active} readlink /proc/self/ns/net`)).stdout.trim();
   assert.notEqual(namespace, hostNamespace);
@@ -143,18 +166,29 @@ try {
     }
     assert.match(pids, /^\d+\n\d+\n\d+\n$/);
     await assert.rejects(workspaces.projects.with(vm.id, index.active,
-      () => workspaces.save(vm.id, { directory: '/workspace/changed' })), /另一项操作/);
+      () => workspaces.save(vm.id, { directory: '/workspace/changed' })), /另一项操作|请先结束此项目的终端或命令/);
   } finally { abort.abort(); await rejected; }
   await waitForCleanup(pids, 'cancellation');
   const code = await execute({ mode: 'run', command: '/bin/sh', args: ['-c', 'exit 23'], confirmed: true });
   assert.equal(code.code, 23);
   const terminated = await execute({ mode: 'run', command: '/bin/sh', args: ['-c', 'kill -TERM $$'], confirmed: true });
   assert.equal(terminated.code, 143);
-  console.log(`Real ${distro} seccomp verified inherited policies, project scope, secrets, literal arguments, reserved runner, route rejection, exit status and process cleanup after timeout, background exit and cancellation.`);
+  console.log(`Real ${distro} seccomp verified project UID/GID/home/task scope, inherited policies, project configuration, secrets, literal arguments, reserved runner, route rejection, exit status and process cleanup after timeout, background exit and cancellation.`);
+} catch (error) {
+  primaryFailure = error;
+  throw error;
 } finally {
-  await workspaces.close();
-  await machines.close();
-  assert.equal(dirname(directory), resolve(tmpdir()));
-  assert.ok(basename(directory).startsWith('sakura-seccomp-vm-'));
-  await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  const failures: unknown[] = [];
+  try { await workspaces.close(); } catch (error) { failures.push(error); }
+  try { await machines.close(); } catch (error) { failures.push(error); }
+  if (!primaryFailure && !failures.length) {
+    assert.equal(machines.live.size, 0);
+    const exact = await realpath(directory);
+    assert.equal(exact, directory); assert.equal(dirname(exact), parent);
+    assert.ok(basename(exact).startsWith('sakura-seccomp-vm-'));
+    await rm(exact, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  } else {
+    console.error('Retained seccomp smoke data:', directory);
+  }
+  if (failures.length) throw new AggregateError([...(primaryFailure ? [primaryFailure] : []), ...failures], 'seccomp smoke cleanup unconfirmed');
 }

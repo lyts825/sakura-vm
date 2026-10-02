@@ -4,6 +4,8 @@
 
 `POST /api/vms/:vmId/exec` 接受 `command`、可选的 `scope` 和 `timeoutSeconds`。`scope` 默认 `project`，超时默认 30 秒，允许 1–3600 秒。通过 `?project=default` 或 `?project=<16 位项目标识>` 选择其他项目；省略时使用活动项目。响应包含 `stdout`、`stderr`、`code`、`scope`，项目命令还返回 `projectId`、`directory` 和 `networkIsolation`。项目私密配置值在标准输出和错误输出中被遮盖。
 
+项目请求固定准备前的客户机 live 身份，并核对准备租约捕获的项目 ID、非枚举项目标识及配置摘要。环境只解析这份配置一次；配置、准备信号或运行身份改变会停止后续执行，不采用新配置或新实例。命令完成后复核原绑定，等待完整任务清理及异步租约释放再返回；清理 503 和多项原始原因继续保留，服务关闭也等待这些清理并报告未确认状态。正文与环境合计超过原生 64 KiB 限制返回 413，不执行部分命令。
+
 项目启动器在发行票据前拒绝时，会在确认任务域清理后返回明确的账号错误，不能作为普通命令退出码或普通健康失败处理。已发行运行的用户非零退出与任意 JSON 输出保持原有响应语义。
 
 CLI 示例：
@@ -32,7 +34,7 @@ const result = await client.call('core.vms.exec', {
 
 GPG 命令使用同样的项目账号与受保护正文，另有本次专属、项目可写的临时 `GNUPGHOME` 和固定 Assuan broker。宿主来源、helper 和关闭回执有独立的持久归属；完整域停止、准确转发资源与临时 home 清理后才核销账号票据。当前宿主支持 Windows x64 原生 GnuPG，客户机仍需导入公钥，见 [GPG Agent 转发](gpg-agent-forward.md)。`test:gpg-agent:identity -- --describe` 列出新的源码、测试所有权、依赖与实际运行合同；旧模拟 extra socket 证明不代表当前实现。
 
-“系统调用隔离”的 `run` 模式也绑定所选项目，在进入网络空间、加载环境和目录后再施加 seccomp 策略，并遮盖私密输出。固定的系统 Python 以隔离模块加载模式启动受限执行器，项目 `PATH` 和 `PYTHONPATH` 仍传给用户选择的命令。取消、超时或正常退出后，清理执行器、受限命令及同任务域的后台子进程。`status` 与 `install` 检查和安装实例工具，使用系统环境。`npm run test:syscall-profile -- alpine` 实测项目配置、策略继承、参数、额外路由拒绝和进程清理，也支持 `debian`、`ubuntu`。
+“系统调用隔离”的 `run` 模式也通过保护帧使用原项目 UID/GID、独立 home、捕获配置与完整任务域，然后施加 seccomp 策略并遮盖私密输出。固定的系统 Python 以隔离模块加载模式解释可信执行器，项目 `PATH` 和 `PYTHONPATH` 仍传给用户选择的命令。取消、超时或正常退出后清理原整个任务域。`status` 与 `install` 使用固定系统环境与 helper 归属、摘要核对，见 [项目工具任务](project-tool-tasks.md)。`npm run test:syscall-profile -- alpine` 已适配明确目录迁移与 UID/GID/home/task 检查，并保留策略、参数、路由拒绝和进程清理检查，也支持 `debian`、`ubuntu`；本次尚未执行新账号脚本的客户机联测，历史结果不替代当前验证。
 
 管理员维护整个实例时明确提交 `scope: "instance"` 或使用 CLI `--instance`。此范围使用客户机共享网络，不加载项目配置，也不接受项目查询参数。它用于系统管理，仍受实例维护、应急锁定和操作锁约束。
 
