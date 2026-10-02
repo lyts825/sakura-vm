@@ -10,6 +10,8 @@
 
 正式八个相关文件共 180 项回归通过，包含实际宿主 journal、保护帧、恢复与清理模型，以及精确 Python root helper 的 22 项 POSIX FD 模型；完整类型检查通过。证明为 `.data/feature-cache-backend-c8fb96f0-b6f3-40df-925a-45c4333cef30-verification.json`，实际退出 0、对应源码前后未变。这次没有启动新的缓存安装 VM，也没有重跑整仓测试；历史 Windows rename 失败证明保留。目录仍为 250 项、247 项有入口、3 项部分实现。
 
+官方 `scripts/smoke-project-cache.ts` 已适配明确审阅的目录迁移、公开 UID 安装和锁文件漂移失败任务；验证代码分别记录真实 UID/GID、home、cwd、网络与 task cgroup，核对管理缓存原摘要未变及完整 host/native/guest 退休回执，Python 导入也经公开项目命令执行。失败保留所属临时数据，各组件关闭均尝试。完整类型检查及两个生成 Python 正文的静态语法检查通过，证明为 `.data/cache-smoke-static-4ec330cf-c516-4eb4-9db3-f2cb46b8b25a.json`，脚本摘要 `e0883ce124b60be733fb4aeb0844d8c8602bf5403e2b54a2925303d4e35025a5`；这不是一次新的实机成功证明。
+
 此前 `c272cac` 的 Notebook、Git、工具链、seccomp 与基础命令实现共同通过插件、locale、构建、分发检查及 7 种编译服务组合，构建证明为 `.data/notebook-identity-build-07ed34a4-d860-4654-9b0f-39c6efe36bff-verification.json`，958 个捕获源码未变。其发布证明 `.data/notebook-identity-release-0e66d3c2-d56e-450c-a69b-096bc0d65e5c-verification.json` 记录真实打包退出 0、257 个文件及清单指纹 `31dba7e88988617cc29b7223bc9eb779bf89463e1660274efb56e237cfc87ad8`，目录 `release/sakura-l7LTpV`，bundle 摘要 `06f36bad9ca577ca305dffd5d24e8833632515bff78d18b51a7f75aabec9f917`。这个包先于缓存副本增量，不能作为该新增实现的生产构建证明。
 
 ## 基础命令 API 的原配置与异步清理
