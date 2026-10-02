@@ -8,7 +8,9 @@
 
 协议 intent 在下层 native 登记前持久，原完整 task/native 域核销后才 release；EOF、取消、快速调试退出、失联 ACK 与清理 503 均保存原 token 和准确回执，关闭历史归档。重载只读核对，不接管旧协议；冷 boot 不向新域发送旧 kill。共享安装清空管理环境、固定系统 cwd/registry/版本并核对可信资产；有限重命名文件读写仍保留管理员 SFTP 范围。新增语言服务 stop API、插件 disposal、语言面板刷新/原会话停止及调试失败清理入口。
 
-正式审查另补 ready 后的 SSH exec 设置预算、取消/关闭和迟到回执销毁；回调前后核对原 live，未确认 setup 不会阻塞无限等待。正式九个相关文件共 229 项通过，证明为 .data/protocol-stream-backend-f35b7403-2c96-43e3-aa7f-37a5d89ef009-verification.json，实际退出 0、对应源码前后未变；完整类型检查通过。包含原 GuestTask/缓存资源回归及六个新增 SSH 设置模型。没有启动 VM或下载共享协议工具，真实 UID/C launcher/cgroup 和 pip 安装需后续联测，原 smoke 正在适配；未重跑整仓测试，历史 Windows rename 失败证明保留。目录仍为 250 项、247 项有入口、3 项部分实现。
+正式审查另补 ready 后的 SSH exec 设置预算、取消/关闭和迟到回执销毁；回调前后核对原 live，未确认 setup 不会阻塞无限等待。正式九个相关文件共 229 项通过，证明为 .data/protocol-stream-backend-f35b7403-2c96-43e3-aa7f-37a5d89ef009-verification.json，实际退出 0、对应源码前后未变；完整类型检查通过。包含原 GuestTask/缓存资源回归及六个新增 SSH 设置模型。没有启动 VM或下载共享协议工具，真实 UID/C launcher/cgroup 和 pip 安装需后续联测，两个正式 smoke 已适配明确目录迁移、真实 UID/完整票据及脱离会话后代清理断言，validate-only 和静态 Python 检查通过，尚未运行 VM；未重跑整仓测试，历史 Windows rename 失败证明保留。目录仍为 250 项、247 项有入口、3 项部分实现。
+
+在提交 8c5ea47 的实现快照上，974 份输入源码前后未变，插件、语言包、生产构建、分发和 7 种编译服务组合全部退出 0；证明为 .data/managed-identity-build-2332672a-2f6f-4665-b2ac-8d4f8309efc4-verification.json。运行包 release/sakura-kMN1YT 的 258 个文件校验通过，指纹 e269f9dbee75eaef4c6952e52c35c5b7578a275231eeba06f629377f8240eb2e、服务 bundle SHA 25e5e40f6207a270963eb72abd80f8550942ebd28428a975d2c1e6945b46539f；证明为 .data/managed-identity-release-14ca8050-e1c5-45d4-a367-af9295f6a5c1-verification.json。这份运行包含 UID 缓存、反向隧道和 LSP/DAP，不含随后仍在实现的 Desktop/Envoy；只读生产服务验证不代替新 Linux 实机证明。
 
 ## 临时 TCP 隧道的项目账号与完整失败恢复
 

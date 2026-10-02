@@ -12,4 +12,4 @@ LSP 补全/定义请求期限为 30 秒，诊断/重命名为 120 秒；DAP 会�
 
 HTTP 入口仍为 `/api/vms/:id/language-service` 和 `/api/vms/:id/debugger`。LSP 新增 `{"action":"stop","token":"原运行UUID"}`，DAP 原 stop 格式不变。停止使用真实原记录，不接受标签或 PID 作为权限。共享工具安装属于实例管理；重命名的有限文件读取/上传继续沿用管理员 SFTP、文件版本、锁及回滚范围，不能据此声明所有文件接口已经改为 UID。
 
-正式九个相关测试文件共 229 项通过，包含真实宿主 journal/frame、LSP/DAP framing 与生命周期、GuestTask、缓存资源和清理回归，以及 SSH 命令通道设置的六个取消/超时/实例变更模型；完整类型检查通过。证明为 `.data/protocol-stream-backend-f35b7403-2c96-43e3-aa7f-37a5d89ef009-verification.json`，实际退出 0、对应源码前后未变。本批未启动 VM，真实 Linux UID/GID/home、C launcher、完整 cgroup、发行版共享工具安装还需实测；原 smoke 正在适配，旧 root 结果不代表新账号成功。
+正式九个相关测试文件共 229 项通过，包含真实宿主 journal/frame、LSP/DAP framing 与生命周期、GuestTask、缓存资源和清理回归，以及 SSH 命令通道设置的六个取消/超时/实例变更模型；完整类型检查通过。证明为 `.data/protocol-stream-backend-f35b7403-2c96-43e3-aa7f-37a5d89ef009-verification.json`，实际退出 0、对应源码前后未变。本批未启动 VM，真实 Linux UID/GID/home、C launcher、完整 cgroup、发行版共享工具安装还需实测；两个正式 smoke 已适配明确目录迁移、真实 UID/完整票据及脱离会话后代清理断言，validate-only 和静态 Python 检查通过，尚未运行 VM，旧 root 结果不代表新账号成功。
