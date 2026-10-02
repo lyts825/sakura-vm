@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 项目 UID 的共享网络出站限制
+
+2026-10-03 私有项目账号新增 inet/output/UID 规则，阻断同一账号从共享网络新建的 IPv4/IPv6 连接，包括系统 SSH、cron、用户服务和自行启动程序的连接路径。原托管命名空间回环、其他 UID 和固定管理下载保持。规则在账号创建前登记；共享模式在绑定提交后只删除原 UID 的准确表。开机入口接通 systemd/OpenRC 服务依赖及现有防火墙启动顺序，原记录、规则 handle、boot/网络身份、应答丢失和管理脚本升级中断均可核对恢复。规则与范围见 [项目账号出站限制](project-egress.md)。
+
+正式 40 个相关文件 585/585、零跳过、实际 exit/close 0、对应来源未变，证明为 .data/project-egress-backend-6eb0cc2b-7e72-4cc6-90a9-5887a2abb428-verification.json；其中新测试运行 11 组生产 Python 定义的事务与配置模型。真实 WSL Linux 内核在独立 PID/mount/network 空间验证 8 个场景，实际 UID 和 IPv4/IPv6 阻断、其他 UID/Root 保持、私有回环、私有控制器核对原网络、handle 拒绝和共享/私有切换全部通过，证明为 .data/project-egress-linux-0eb55a06-4ddc-428a-bb6c-e697a2edb8a3/verification.json。固定三个 Ubuntu nft 工具包按 SHA-256 校验后只在隔离挂载中解包；原 WSL 文件与网络空间未变，所有测试子进程及命名空间随父进程退出。
+
+这批没有创建新的系统账号或 QEMU 实例，没有实际启动 SSH/cron 守护程序，也没有证明真实冷开机依赖。客户机 Root、其他 UID 与特权代理仍在剩余边界之外；目录继续保持 250 项、247 有入口、3 部分实现。历史整仓 Windows rename 失败不由专项回归替代。
+
+此前浏览器 IDE 的 Ubuntu 联测在客户机启动阶段超时：.data/browser-ide-identity-controller-6328bceb-1a12-4b96-99a5-f8ceec819119-verification.json 对应实际 exit/close 1，0/10 功能场景、零新增项目；原历史项目与证据保留，准确 QEMU、live 和测试子进程最终均为零，源码未变。该失败不计作浏览器 IDE UID 功能通过。
+
 ## 当前项目账号实现的生产与页面验证
 
 2026-10-03 当前功能提交 7cfcff5（KDE/输入法/应用权限与清理恢复）和 a3d23d3（隧道/网格验证入口）已完成生产构建。插件契约、语言包、完整 TypeScript/Vite/native/source 资产构建、分发和编译版产品验证五步的实际 exit/close 均为 0；991 个捕获源码在构建及打包前后保持一致。32 个插件、9 个包契约和 7 种编译服务组合通过。证明为 .data/managed-identity-build-71e1ae6a-a403-4c08-b91c-3e6fcf6a1070-verification.json。

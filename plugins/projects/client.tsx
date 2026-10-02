@@ -378,8 +378,8 @@ export function ProjectPanel(props: FeatureProps) {
               <option value="private">独立命名空间（仅回环，无外网）</option>
             </select>
             <small>
-              私有项目的命令、服务和已接入的开发工具仅能访问自身回环网络；工具安装与依赖预取使用共享网络。专属容器和
-              SSH 接入支持 Debian 与 Ubuntu。
+              私有项目的托管命令仅能访问自身回环网络；同一项目账号从共享网络建立的 IPv4/IPv6 连接也被阻断。
+              工具安装与依赖预取使用共享网络，专属容器支持 Debian 与 Ubuntu。
             </small>
           </label>
           <label>

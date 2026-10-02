@@ -150,7 +150,8 @@ export class ProjectIdentities {
       const code = typeof reply.code === 'string' && /^[A-Z_]{1,80}$/.test(reply.code) ? reply.code : 'CONTROL_FAILED';
       const toolFailure = z.object({ tool: z.enum(['groupadd', 'useradd', 'addgroup', 'adduser', 'openssl', 'chpasswd', 'ip']), exit: z.number().int() }).strict().safeParse(reply.detail);
       const context = code === 'SYSTEM_TOOL_FAILED' && toolFailure.success ? ':' + toolFailure.data.tool : '';
-      const migration = code === 'DIRECTORY_MIGRATION_REQUIRED' ? '目录及父目录尚未授权给项目账户，请显式迁移权限' : '项目账户归属核对失败';
+      const migration = code === 'DIRECTORY_MIGRATION_REQUIRED' ? '目录及父目录尚未授权给项目账户，请显式迁移权限'
+        : code.startsWith('EGRESS_') ? '项目账号的共享网络出站限制无法核对，请恢复原记录后重试' : '项目账户归属核对失败';
       const cleanup = code === 'PROJECT_IDENTITY_CLEANUP_FAILED' || code === 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED';
       throw new AppError(`${migration}（${code}${context}）`, cleanup ? 503 : 409, cleanup ? code : 'PROJECT_IDENTITY_' + code);
     }
@@ -179,10 +180,10 @@ export class ProjectIdentities {
   }
   private async installSource(vmId: string, source: Awaited<ReturnType<typeof projectIdentitySources>>, signal?: AbortSignal) {
     const distro = this.machines.get(vmId).distro || 'alpine';
-    const packages = distro === 'alpine' ? 'apk add --no-cache --timeout 30 python3 gcc musl-dev linux-headers iproute2 openssl shadow' :
-      'export DEBIAN_FRONTEND=noninteractive; apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update; apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y python3 gcc libc6-dev iproute2 openssl passwd';
+    const packages = distro === 'alpine' ? 'apk add --no-cache --timeout 30 python3 gcc musl-dev linux-headers iproute2 openssl shadow nftables' :
+      'export DEBIAN_FRONTEND=noninteractive; apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update; apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y python3 gcc libc6-dev iproute2 openssl passwd nftables';
     // Installation is outside all project environment and shell initialization.
-    const ready = await this.machines.exec(vmId, `${fixedEnvironment} /bin/sh -ec ${quote(`if ! command -v python3 >/dev/null || ! command -v cc >/dev/null || ! command -v ip >/dev/null || ! command -v openssl >/dev/null || ! command -v useradd >/dev/null || ! command -v groupadd >/dev/null; then ${packages}; fi`)}`, 300000, signal);
+    const ready = await this.machines.exec(vmId, `${fixedEnvironment} /bin/sh -ec ${quote(`if ! command -v python3 >/dev/null || ! command -v cc >/dev/null || ! command -v ip >/dev/null || ! command -v openssl >/dev/null || ! command -v useradd >/dev/null || ! command -v groupadd >/dev/null || ! command -v nft >/dev/null; then ${packages}; fi`)}`, 300000, signal);
     if (ready.code !== 0) throw new AppError('无法安装项目账户启动器工具', 502, 'PROJECT_IDENTITY_INSTALL_FAILED');
     const stage = '/tmp/.sakura-project-identity-' + randomUUID();
     try {

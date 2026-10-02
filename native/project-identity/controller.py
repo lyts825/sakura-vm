@@ -52,6 +52,8 @@ SSH_ENV_LIMIT = 128
 SSH_ENTRY_LIMIT = 8192
 SSH_INPUT_TIMEOUT = 8
 SSH_SESSION_ERRORS = False
+EGRESS = BASE + '/egress'
+EGRESS_BOOT = '/etc/sakura-project-egress'
 
 
 class Refusal(Exception):
@@ -369,14 +371,14 @@ def tool(name):
     refuse('REQUIRED_TOOL', name)
 
 
-def execute(argv, data=None, timeout=15, pass_fds=(), preexec_fn=None):
+def execute(argv, data=None, timeout=15, pass_fds=(), preexec_fn=None, output_limit=65536):
     try:
         result = subprocess.run(argv, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 env=CLEAN_ENV, timeout=timeout, check=False,
                                 pass_fds=pass_fds, preexec_fn=preexec_fn)
     except (OSError, subprocess.SubprocessError):
         refuse('SYSTEM_TOOL_FAILED')
-    if result.returncode or len(result.stdout) > 65536 or len(result.stderr) > 65536:
+    if result.returncode or len(result.stdout) > output_limit or len(result.stderr) > 65536:
         refuse('SYSTEM_TOOL_FAILED', {'tool': os.path.basename(argv[0]), 'exit': result.returncode})
     return result.stdout
 
@@ -557,6 +559,9 @@ def ensure(request, store):
         refuse('BINDING_CHANGE_REQUIRES_REBIND')
     if not same(info, value, 'directory'):
         refuse('DIRECTORY_REPLACED')
+    # Reserve and block the UID before creating an account which another system
+    # entry could start. An incomplete migration keeps the blocking intent.
+    egress_prepare(value)
     if value['phase'] == 'intent':
         try:
             group = grp.getgrnam(value['account'])
@@ -629,10 +634,11 @@ def ensure(request, store):
     if prior_mapping is not None and prior_mapping != mapping:
         refuse('UID_MAPPING_REPLACED')
     atomic(uid_path, mapping)
+    egress_commit(value)
     return value
 
 
-def active(project, request, store):
+def active(project, request, store, check_egress=True):
     value = binding_read(project)
     reservation_check(value, store)
     expected(value, request)
@@ -644,6 +650,8 @@ def active(project, request, store):
                            text(project, 17), text(value['identityId'], 37), b'\0' * 149)
     if read(BASE + '/uids/' + str(value['uid']) + '.bin', 256) != mapping:
         refuse('UID_MAPPING_REPLACED')
+    if check_egress:
+        egress_check(value)
     probe(value)
     return value
 
@@ -674,6 +682,405 @@ def durable_account(value):
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+
+
+def egress_spec(value):
+    name = 'skp_uid_' + str(value['uid'])
+    marker = 'sakura-project-egress-v1:' + value['registryId'] + ':' + value['identityId']
+    common = {'family': 'inet', 'table': name}
+    return name, [
+        {'table': {'family': 'inet', 'name': name, 'comment': marker}},
+        {'chain': dict(common, name='output', type='filter', hook='output', prio=300, policy='accept')},
+        {'rule': dict(common, chain='output', comment=marker, expr=[
+            {'match': {'op': '==', 'left': {'meta': {'key': 'skuid'}}, 'right': value['uid']}}, {'drop': None}])}]
+
+
+def egress_realm():
+    descriptor = os.open('/proc/1/ns/net', os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        info = os.fstat(descriptor)
+        if info.st_uid != 0 or fcntl.ioctl(descriptor, 0xb703) != 0x40000000:
+            refuse('EGRESS_NAMESPACE_CHANGED')
+        return descriptor, {'networkDevice': str(info.st_dev), 'networkInode': str(info.st_ino)}
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def egress_nft(arguments, data=None):
+    # All queries and transactions run in PID 1's network space, including when
+    # a project SSH controller is itself inside the private namespace.
+    namespace, _realm = egress_realm()
+    binary = None
+    try:
+        path = os.path.realpath(tool('nft'))
+        parent = directory_fd(os.path.dirname(path))
+        try:
+            binary = os.open(os.path.basename(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        finally:
+            os.close(parent)
+        info = os.fstat(binary)
+        trusted(info)
+        if not info.st_mode & 0o111 or info.st_mode & 0o6000:
+            refuse('EGRESS_TOOL_CHANGED')
+        def enter():
+            library = ctypes.CDLL(None, use_errno=True)
+            if library.setns(namespace, 0x40000000) != 0:
+                raise OSError(ctypes.get_errno(), 'network namespace')
+        return execute(['/proc/self/fd/' + str(binary), '-j', '-n'] + arguments,
+                       data, timeout=15, pass_fds=(binary, namespace), preexec_fn=enter,
+                       output_limit=4 * 1024 * 1024 if arguments == ['list', 'tables'] else 65536)
+    except Refusal as error:
+        if error.code.startswith('EGRESS_'):
+            raise
+        refuse('EGRESS_TOOL_FAILED', error.detail)
+    finally:
+        if binary is not None:
+            os.close(binary)
+        os.close(namespace)
+
+
+def egress_json(raw):
+    try:
+        result = json.loads(raw)
+    except (ValueError, UnicodeError):
+        refuse('EGRESS_STATE_INVALID')
+    if not isinstance(result, dict) or set(result) != {'nftables'} or not isinstance(result['nftables'], list) or len(result['nftables']) > 8193:
+        refuse('EGRESS_STATE_INVALID')
+    if any(not isinstance(item, dict) or len(item) != 1 for item in result['nftables']):
+        refuse('EGRESS_STATE_INVALID')
+    return [item for item in result['nftables'] if set(item) != {'metainfo'}]
+
+
+def egress_table(value):
+    name, expected_objects = egress_spec(value)
+    tables = egress_json(egress_nft(['list', 'tables']))
+    seen = 0
+    for entry in tables:
+        if set(entry) != {'table'} or not isinstance(entry['table'], dict):
+            refuse('EGRESS_STATE_INVALID')
+        if entry['table'].get('family') == 'inet' and entry['table'].get('name') == name:
+            seen += 1
+    if seen == 0:
+        return None
+    if seen != 1:
+        refuse('EGRESS_TABLE_CHANGED')
+    objects = egress_json(egress_nft(['list', 'table', 'inet', name]))
+    normalized, handle = [], None
+    for entry in objects:
+        if len(entry) != 1 or next(iter(entry)) not in ('table', 'chain', 'rule'):
+            refuse('EGRESS_TABLE_CHANGED')
+        kind, fields = next(iter(entry.items()))
+        if not isinstance(fields, dict):
+            refuse('EGRESS_TABLE_CHANGED')
+        fields = dict(fields)
+        current_handle = fields.pop('handle', None)
+        if type(current_handle) is not int or current_handle <= 0:
+            refuse('EGRESS_TABLE_CHANGED')
+        if kind == 'table':
+            handle = current_handle
+        normalized.append({kind: fields})
+    if normalized != expected_objects or handle is None:
+        refuse('EGRESS_TABLE_CHANGED')
+    return handle
+
+
+def egress_path(value):
+    return EGRESS + '/' + str(value['uid']) + '.json'
+
+
+def egress_read(value):
+    state = json_read(egress_path(value), True, 4096)
+    if state is None:
+        return None
+    keys = {'version', 'registryId', 'identityId', 'projectId', 'uid', 'mode', 'phase',
+            'bootId', 'networkDevice', 'networkInode', 'handle', 'deleteIssued'}
+    if not isinstance(state, dict) or set(state) != keys or type(state['version']) is not int or state['version'] != 1 or \
+       any(state[key] != value[key] for key in ('registryId', 'identityId', 'projectId', 'uid')) or \
+       state['phase'] not in ('pending', 'applied') or state['mode'] not in ('host', 'private') or \
+       type(state['deleteIssued']) is not bool or \
+       (state['handle'] is not None and (type(state['handle']) is not int or state['handle'] <= 0)):
+        refuse('EGRESS_OWNER_CHANGED')
+    identifier(state['bootId'], UUID, 'EGRESS_OWNER_CHANGED')
+    for key in ('networkDevice', 'networkInode'):
+        if not isinstance(state[key], str) or not re.fullmatch('0|[1-9][0-9]*', state[key]):
+            refuse('EGRESS_OWNER_CHANGED')
+    if state['networkInode'] == '0' or (state['mode'] == 'private' and state['deleteIssued']):
+        refuse('EGRESS_OWNER_CHANGED')
+    return state
+
+
+def egress_context():
+    boot = open('/proc/sys/kernel/random/boot_id').read().strip()
+    identifier(boot, UUID, 'BOOT_ID')
+    descriptor, realm = egress_realm()
+    os.close(descriptor)
+    return dict(realm, bootId=boot)
+
+
+def egress_check(value):
+    state = egress_read(value)
+    if state is None and value['networkIsolation'] == 'host':
+        return
+    if state is None or state['phase'] != 'applied' or state['mode'] != value['networkIsolation'] or \
+       any(state[key] != content for key, content in egress_context().items()):
+        refuse('EGRESS_PENDING')
+    handle = egress_table(value)
+    if (state['mode'] == 'private' and (handle is None or handle != state['handle'])) or \
+       (state['mode'] == 'host' and handle is not None):
+        refuse('EGRESS_TABLE_CHANGED')
+
+
+def egress_prepare(value, transition=False, restoring=False):
+    state = egress_read(value)
+    mode = value['networkIsolation']
+    if state is None and mode == 'host':
+        return
+    context = egress_context()
+    reboot = state is not None and state['bootId'] != context['bootId']
+    if state is not None and not reboot and any(state[key] != context[key] for key in ('networkDevice', 'networkInode')):
+        refuse('EGRESS_NAMESPACE_CHANGED')
+    if state is not None and state['mode'] != mode and not (transition or (restoring and reboot)):
+        refuse('EGRESS_PENDING')
+    if state is not None and state['phase'] == 'applied' and state['mode'] == mode and not reboot:
+        egress_check(value)
+        return
+    old_handle = None if state is None or reboot else state['handle']
+    handle = egress_table(value)
+    if reboot and handle is not None:
+        refuse('EGRESS_OWNER_ABSENT')
+    if old_handle is not None and handle != old_handle and not (mode == 'host' and state['deleteIssued'] and handle is None):
+        refuse('EGRESS_TABLE_CHANGED')
+    if handle is not None and old_handle is None and state is None:
+        # No saved intent means even a similarly named canonical table is not
+        # ours to adopt. A lost creation ACK has a prior pending owner.
+        refuse('EGRESS_OWNER_ABSENT')
+    pending = dict(version=1, registryId=value['registryId'], identityId=value['identityId'],
+                   projectId=value['projectId'], uid=value['uid'], mode=mode, phase='pending',
+                   handle=handle, deleteIssued=bool(state and not reboot and state['deleteIssued']), **context)
+    if mode == 'private':
+        pending['deleteIssued'] = False
+    json_write(egress_path(value), pending)
+    if mode == 'private' and handle is None:
+        _name, objects = egress_spec(value)
+        egress_nft(['-f', '-'], json.dumps({'nftables': [
+            {'create' if index == 0 else 'add': item} for index, item in enumerate(objects)]}, separators=(',', ':')).encode())
+        pending['handle'] = egress_table(value)
+        if pending['handle'] is None:
+            refuse('EGRESS_TABLE_CHANGED')
+        json_write(egress_path(value), pending)
+
+
+def egress_commit(value, allow_intent=False):
+    state = egress_read(value)
+    if state is None and value['networkIsolation'] == 'host':
+        return
+    recorded = binding_read(value['projectId'])
+    if recorded != value or (value['phase'] != 'active' and not allow_intent) or state is None or \
+       state['mode'] != value['networkIsolation'] or any(state[key] != content for key, content in egress_context().items()):
+        refuse('EGRESS_PENDING')
+    if state['phase'] == 'applied':
+        egress_check(value)
+        return
+    handle = egress_table(value)
+    if state['mode'] == 'private':
+        if handle is None or handle != state['handle']:
+            refuse('EGRESS_TABLE_CHANGED')
+    else:
+        if handle is not None:
+            if handle != state['handle']:
+                refuse('EGRESS_TABLE_CHANGED')
+            state['deleteIssued'] = True
+            json_write(egress_path(value), state)
+            name, _objects = egress_spec(value)
+            egress_nft(['-f', '-'], json.dumps({'nftables': [{'delete': {'table': {'family': 'inet', 'name': name}}}]}, separators=(',', ':')).encode())
+            if egress_table(value) is not None:
+                refuse('EGRESS_TABLE_CHANGED')
+        elif state['handle'] is not None and not state['deleteIssued']:
+            refuse('EGRESS_TABLE_CHANGED')
+        state['handle'] = None
+    state['phase'] = 'applied'
+    json_write(egress_path(value), state)
+    egress_check(value)
+
+
+def egress_boot_plan(build, manager):
+    request = base64.b64encode(b'{"action":"restore-egress"}').decode()
+    restore = ('#!/bin/sh\nexec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C '
+               '/usr/bin/python3 -I -S ' + BUILDS + '/' + build + '/controller.py ' + request + '\n').encode()
+    files = {EGRESS_BOOT + '/restore': {'data': restore, 'mode': 0o700}}
+    links, appends = {}, {}
+    if manager == 'systemd':
+        unit = ('[Unit]\nDescription=Restore Sakura project UID network policy\nDefaultDependencies=no\n'
+                'After=local-fs.target nftables.service ufw.service firewalld.service iptables.service ip6tables.service\n'
+                'Before=network-pre.target ssh.service sshd.service cron.service crond.service '
+                'atd.service systemd-user-sessions.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\n'
+                'ExecStart=' + EGRESS_BOOT + '/restore\n[Install]\nWantedBy=multi-user.target\n').encode()
+        files['/etc/systemd/system/sakura-project-egress.service'] = {'data': unit, 'mode': 0o644}
+        gate = b'[Unit]\nRequires=sakura-project-egress.service\nAfter=sakura-project-egress.service\n'
+        for name in ('ssh.service', 'sshd.service', 'cron.service', 'crond.service', 'atd.service',
+                     'systemd-user-sessions.service', 'user@.service'):
+            files['/etc/systemd/system/' + name + '.d/sakura-project-egress.conf'] = {'data': gate, 'mode': 0o644}
+        links['/etc/systemd/system/multi-user.target.wants/sakura-project-egress.service'] = '/etc/systemd/system/sakura-project-egress.service'
+    elif manager == 'openrc':
+        init = ('#!/sbin/openrc-run\ndescription="Restore Sakura project UID network policy"\n'
+                'depend() { need localmount; after nftables iptables ip6tables; before networking net sshd crond cronie atd local; }\n'
+                'start() { ebegin "Restoring Sakura project UID network policy"; '
+                + EGRESS_BOOT + '/restore; eend $?; }\n').encode()
+        files['/etc/init.d/sakura-project-egress'] = {'data': init, 'mode': 0o755}
+        links['/etc/runlevels/boot/sakura-project-egress'] = '/etc/init.d/sakura-project-egress'
+        for service in ('sshd', 'crond', 'cronie', 'atd', 'local'):
+            path = '/etc/init.d/' + service
+            if os.path.lexists(path):
+                descriptor = directory_fd('/etc/init.d')
+                os.close(descriptor)
+                info = os.lstat(path)
+                trusted(info)
+                appends['/etc/conf.d/' + service] = b'\n# SAKURA_PROJECT_EGRESS_V1\nrc_need="${rc_need-} sakura-project-egress"\n'
+    else:
+        refuse('EGRESS_INIT_UNSUPPORTED')
+    return files, links, appends
+
+
+def egress_parent(path):
+    current = ''
+    for part in os.path.dirname(path).split('/')[1:]:
+        current += '/' + part
+        try:
+            os.mkdir(current, 0o755)
+        except FileExistsError:
+            pass
+        descriptor = directory_fd(current)
+        os.close(descriptor)
+
+
+def egress_boot_read(path):
+    parent = directory_fd(os.path.dirname(path))
+    try:
+        try:
+            descriptor = os.open(os.path.basename(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        except FileNotFoundError:
+            return None
+    finally:
+        os.close(parent)
+    with os.fdopen(descriptor, 'rb') as stream:
+        trusted(os.fstat(stream.fileno()))
+        raw = stream.read(65537)
+        if len(raw) > 65536:
+            refuse('EGRESS_BOOT_CHANGED')
+        return raw
+
+
+def egress_bootstrap(build):
+    manager = 'systemd' if os.path.isdir('/run/systemd/system') else 'openrc' if os.path.isfile('/sbin/openrc-run') else None
+    files, links, appends = egress_boot_plan(build, manager)
+    path = BASE + '/egress-boot.json'
+    prior = json_read(path, True, 262144)
+    if prior is not None and (not isinstance(prior, dict) or set(prior) != {'version', 'phase', 'manager', 'build', 'files', 'links'} or
+                              type(prior['version']) is not int or prior['version'] != 1 or prior['phase'] not in ('pending', 'applied') or prior['manager'] != manager or
+                              not isinstance(prior['build'], str) or not re.fullmatch('[a-f0-9]{64}', prior['build']) or
+                              not isinstance(prior['files'], dict) or not isinstance(prior['links'], dict)):
+        refuse('EGRESS_BOOT_CHANGED')
+    # Never accept arbitrary stored paths as write authority. Plans always come
+    # from these fixed service names and this verified controller build.
+    previous_files = {} if prior is None else prior['files']
+    if set(previous_files) - (set(files) | set(appends)) or (prior and prior['links'] != links):
+        refuse('EGRESS_BOOT_CHANGED')
+    proposed = {}
+    for filename in set(files) | set(appends):
+        egress_parent(filename)
+        raw = egress_boot_read(filename)
+        saved = previous_files.get(filename)
+        if saved is not None and (not isinstance(saved, dict) or set(saved) != {'sha256', 'mode', 'previousSha256'} or
+                                  type(saved['mode']) is not int or saved['mode'] not in (0o600, 0o644, 0o700, 0o755) or
+                                  not isinstance(saved['sha256'], str) or not re.fullmatch('[a-f0-9]{64}', saved['sha256']) or
+                                  (saved['previousSha256'] is not None and (not isinstance(saved['previousSha256'], str) or
+                                    not re.fullmatch('[a-f0-9]{64}', saved['previousSha256'])))):
+            refuse('EGRESS_BOOT_CHANGED')
+        if filename in appends:
+            block = appends[filename]
+            if raw is not None and b'SAKURA_PROJECT_EGRESS_V1' in raw:
+                if saved is None or raw.count(block) != 1 or not raw.endswith(block):
+                    refuse('EGRESS_BOOT_CHANGED')
+                data = raw
+            else:
+                if saved is not None:
+                    refuse('EGRESS_BOOT_CHANGED')
+                data = (raw or b'') + block
+            mode = 0o600
+        else:
+            data, mode = files[filename]['data'], files[filename]['mode']
+            permitted = [] if saved is None else [saved['sha256']] + ([saved['previousSha256']] if prior['phase'] == 'pending' else [])
+            if raw is not None and (saved is None or hashlib.sha256(raw).hexdigest() not in permitted):
+                refuse('EGRESS_BOOT_CHANGED')
+        if filename not in appends and raw is not None and saved is not None and prior['phase'] == 'applied' and hashlib.sha256(raw).hexdigest() != saved['sha256']:
+            refuse('EGRESS_BOOT_CHANGED')
+        if raw is not None and saved is not None and prior['phase'] == 'applied' and stat.S_IMODE(os.lstat(filename).st_mode) != saved['mode']:
+            refuse('EGRESS_BOOT_CHANGED')
+        if raw is None and saved is not None and prior['phase'] == 'applied':
+            refuse('EGRESS_BOOT_CHANGED')
+        proposed[filename] = {'data': data, 'mode': mode}
+    for filename, destination in links.items():
+        egress_parent(filename)
+        if os.path.lexists(filename):
+            info = os.lstat(filename)
+            if not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or os.readlink(filename) != destination or prior is None:
+                refuse('EGRESS_BOOT_CHANGED')
+        elif prior is not None and prior['phase'] == 'applied':
+            refuse('EGRESS_BOOT_CHANGED')
+    if prior is not None and prior['phase'] == 'applied' and prior['build'] == build and \
+       set(prior['files']) == set(proposed) and all(prior['files'][name]['sha256'] == hashlib.sha256(item['data']).hexdigest()
+                                                 for name, item in proposed.items()):
+        for filename, item in proposed.items():
+            if stat.S_IMODE(os.lstat(filename).st_mode) != item['mode']:
+                refuse('EGRESS_BOOT_CHANGED')
+        return manager
+    owner = {'version': 1, 'phase': 'pending', 'manager': manager, 'build': build,
+             'files': {name: {'sha256': hashlib.sha256(item['data']).hexdigest(), 'mode': item['mode'],
+                              'previousSha256': None if egress_boot_read(name) is None else hashlib.sha256(egress_boot_read(name)).hexdigest()}
+                       for name, item in proposed.items()},
+             'links': links}
+    json_write(path, owner)
+    for filename, item in proposed.items():
+        if egress_boot_read(filename) != item['data']:
+            atomic(filename, item['data'])
+        os.chmod(filename, item['mode'], follow_symlinks=False)
+        descriptor = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            trusted(os.fstat(descriptor), mode=item['mode'])
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    for filename, destination in links.items():
+        if not os.path.lexists(filename):
+            os.symlink(destination, filename)
+            descriptor = directory_fd(os.path.dirname(filename))
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+    if manager == 'systemd':
+        execute([tool('systemctl'), 'daemon-reload'], timeout=30)
+    else:
+        execute([tool('rc-update'), '-u'], timeout=30)
+    owner['phase'] = 'applied'
+    json_write(path, owner)
+    return manager
+
+
+def egress_restore(store):
+    count = 0
+    # Intent accounts also get their reserved UID blocked before any SSH/cron
+    # process may start, even if their directory migration is still pending.
+    for reservation in store['reserved'].values():
+        value = binding_read(reservation['projectId'], True)
+        if value is None:
+            continue
+        reservation_check(value, store)
+        egress_prepare(value, restoring=True)
+        egress_commit(value, allow_intent=True)
+        count += value['networkIsolation'] == 'private'
+    return {'version': 1, 'privateAccounts': count}
 
 
 def network_path(project, suffix='.json'):
@@ -1720,8 +2127,10 @@ def rebind(value, request, boot):
     candidate = dict(value, directory=directory, directoryDevice=str(info.st_dev), directoryInode=str(info.st_ino),
                      networkIsolation=network, revision=value['revision'] + 1)
     probe(candidate)
+    egress_prepare(candidate, transition=True)
     migration_retire_applied(value)
     binding_write(candidate)
+    egress_commit(candidate)
     for suffix in ('.json', '.generation.json', '.release.bin', '.tool.json'):
         durable_unlink(network_path(value['projectId'], suffix))
     return candidate
@@ -1757,7 +2166,7 @@ def sources():
 
 def initialize():
     for path, mode in (('/var/lib/sakura', 0o711), (BASE, 0o700), (BASE + '/projects', 0o700),
-                       (BASE + '/uids', 0o700), (HOMES, 0o711), (RUNTIME, 0o700),
+                       (BASE + '/uids', 0o700), (EGRESS, 0o700), (HOMES, 0o711), (RUNTIME, 0o700),
                        (RUNTIME + '/runs', 0o700), (RUNTIME + '/archives', 0o700),
                        (RUNTIME + '/networks', 0o700), (RUNTIME + '/terminals', 0o700),
                        (RUNTIME + '/terminal-locks', 0o700), (RUNTIME + '/ssh', 0o700),
@@ -2713,7 +3122,7 @@ def main():
     if not isinstance(request, dict) or not isinstance(request.get('action'), str):
         refuse('REQUEST_SCHEMA')
     action = request['action']
-    allowed = {'install': set(), 'ensure': {'projectId', 'directory', 'networkIsolation', 'expected'},
+    allowed = {'install': set(), 'restore-egress': set(), 'ensure': {'projectId', 'directory', 'networkIsolation', 'expected'},
                'inspect': {'projectId'}, 'prepare': {'projectId', 'expected', 'runId'},
                'status': {'projectId', 'expected', 'runId'}, 'stop': {'projectId', 'expected', 'runId'},
                'run': {'projectId', 'expected', 'runId'},
@@ -2733,7 +3142,7 @@ def main():
                'terminal-retire': {'projectId', 'expected', 'runId'}}
     if action not in allowed or not set(request).issubset(allowed[action] | {'action'}):
         refuse('REQUEST_SCHEMA')
-    if action != 'install':
+    if action not in ('install', 'restore-egress'):
         identifier(request.get('projectId'), PROJECT, 'PROJECT_ID')
     if action in ('ssh-snapshot', 'ssh-prepare', 'ssh-session'):
         ssh_request(request)
@@ -2750,14 +3159,21 @@ def main():
         store = registry(readonly)
         if action == 'install':
             result = {'version': 1, 'build': build, 'registryId': store['registryId'], 'bootId': boot}
+        elif action == 'restore-egress':
+            result = egress_restore(store)
         elif action == 'ensure':
+            if request.get('networkIsolation') == 'private':
+                egress_bootstrap(build)
             result = ensure(request, store)
         elif action == 'inspect':
             result = binding_read(request['projectId'], True)
             if result is not None:
                 reservation_check(result, store)
                 if result['phase'] == 'active':
-                    result = active(request['projectId'], request, store)
+                    # Discovery may expose a committed binding after a lost
+                    # policy ACK. Execution admission still requires the exact
+                    # applied egress proof; explicit ensure finishes recovery.
+                    result = active(request['projectId'], request, store, False)
         elif action in ('prepare', 'exec-current', 'exec-current-session'):
             value = active(request['projectId'], request, store)
             if action in ('exec-current', 'exec-current-session'):
@@ -2832,6 +3248,8 @@ def main():
             expected(value, request)
             account_check(value)
             home_check(value)
+            if request.get('networkIsolation') == 'private':
+                egress_bootstrap(build)
             result = rebind(value, request, boot)
         elif action in ('network', 'begin-network-release', 'release-network'):
             value = binding_read(request['projectId'])
