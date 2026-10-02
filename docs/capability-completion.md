@@ -2,6 +2,14 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## LSP、DAP 与双向项目协议流
+
+2026-10-03 独立 TypeScript/JavaScript/Python LSP 和 Python DAP 的服务器、被调试程序及后代接入原项目 UID/GID、独立 home、目录描述符及捕获配置/live。公开入口首个 await 前复制用户输入并固定项目/live，环境只解析一次；有界保护帧与持续二进制输入各用独立描述符。复用既有 C SESSION2，不改 C/header/ABI；controller 新 action 只复用原 exec-current 入场，拒绝走 stderr，stdout 保留协议。原补全、定义、诊断、重命名和调试/断点/调用栈/变量保持，规则见 [项目语言服务与调试器](project-protocol-streams.md)。
+
+协议 intent 在下层 native 登记前持久，原完整 task/native 域核销后才 release；EOF、取消、快速调试退出、失联 ACK 与清理 503 均保存原 token 和准确回执，关闭历史归档。重载只读核对，不接管旧协议；冷 boot 不向新域发送旧 kill。共享安装清空管理环境、固定系统 cwd/registry/版本并核对可信资产；有限重命名文件读写仍保留管理员 SFTP 范围。新增语言服务 stop API、插件 disposal、语言面板刷新/原会话停止及调试失败清理入口。
+
+正式审查另补 ready 后的 SSH exec 设置预算、取消/关闭和迟到回执销毁；回调前后核对原 live，未确认 setup 不会阻塞无限等待。正式九个相关文件共 229 项通过，证明为 .data/protocol-stream-backend-f35b7403-2c96-43e3-aa7f-37a5d89ef009-verification.json，实际退出 0、对应源码前后未变；完整类型检查通过。包含原 GuestTask/缓存资源回归及六个新增 SSH 设置模型。没有启动 VM或下载共享协议工具，真实 UID/C launcher/cgroup 和 pip 安装需后续联测，原 smoke 正在适配；未重跑整仓测试，历史 Windows rename 失败证明保留。目录仍为 250 项、247 项有入口、3 项部分实现。
+
 ## 临时 TCP 隧道的项目账号与完整失败恢复
 
 2026-10-03 项目 Python 探测及 broker 接入原项目 UID/GID、独立 home、捕获配置/live 和保护帧。启动先持久原服务 UUID/账号/摘要，原 native 与 UID 监听核对后开放仅回环入口；固定管理适配器只使用有界惰性元数据核对内核归属，用户目标由 UID broker 连接。原接口、10–600 秒时限、四连接上限、二进制背压与半关闭保留，规则见 [临时反向隧道](reverse-tunnel.md)。

@@ -125,6 +125,79 @@ test('identities and inherited intents survive manager reload without persisting
   assert.deepEqual(f.expected[1], { registryId: f.identity.registryId, identityId: f.identity.identityId, revision: 1 });
 });
 
+test('protocol task own intent callback runs before lower host intent becomes durable', async () => {
+  const f = await fixture(); let originalId = '', callbacks = 0;
+  const admission = await f.scopes.admitTask(f.vmId, f.project, { command: 'private-protocol-body', stdin: 'session' },
+    new AbortController().signal, { beforeIntent: async ({ identity, owner, sha256 }) => {
+      ++callbacks; originalId = owner.runId;
+      assert.equal(owner.kind, 'task'); assert.equal(owner.bootId, f.owner.bootId); assert.deepEqual(identity, f.identity);
+      assert.match(sha256, /^[a-f0-9]{64}$/);
+      assert.equal((await f.view()).runs.some((entry: any) => entry.runId === owner.runId), false);
+    } });
+  try { assert.equal(callbacks, 1); assert.equal(admission.payload.runId, originalId);
+    assert.equal((await f.view()).runs.find((entry: any) => entry.runId === originalId).phase, 'intent'); }
+  finally { admission.release(); }
+});
+
+test('failed protocol own intent never creates a lower executable host task intent', async () => {
+  const f = await fixture();
+  await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'not-executed', stdin: 'session' },
+    new AbortController().signal, { beforeIntent: async () => { throw new Error('own intent fsync lost'); } }), /own intent fsync lost/);
+  assert.equal((await f.view()).runs.length, 0); assert.equal(f.calls.includes('stop'), false);
+});
+
+test('readonly task API requires pre-pinned full receipt and returns exact identity, original domain and transport digest', async () => {
+  const f = await fixture(); await f.scopes.inherited(f.vmId, f.project, { command: 'stream' }, f.owner);
+  const intent = await readFile(f.file, 'utf8'); f.calls.length = 0;
+  await assert.rejects(f.reopened().readonlyTask(f.vmId, 'default', f.owner.runId), { code: 'PROJECT_IDENTITY_RUN_STALE' });
+  assert.equal(f.calls.length, 0); assert.equal(await readFile(f.file, 'utf8'), intent);
+  await f.scopes.active(f.vmId, 'default', f.owner.runId); const active = await readFile(f.file, 'utf8'); f.calls.length = 0;
+  const checked = await f.reopened().readonlyTask(f.vmId, 'default', f.owner.runId);
+  assert.deepEqual(checked.identity, f.identity); assert.deepEqual(checked.owner, f.owner); assert.deepEqual(checked.run, f.run);
+  assert.equal(checked.sha256, createHash('sha256').update('stream').digest('hex'));
+  assert.deepEqual(f.calls, ['run-readonly']); assert.equal(await readFile(f.file, 'utf8'), active);
+  f.core.runReadonly = async () => ({ ...f.run, cgroupInode: '999' });
+  await assert.rejects(f.reopened().readonlyTask(f.vmId, 'default', f.owner.runId), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  assert.equal(await readFile(f.file, 'utf8'), active);
+});
+
+for (const field of ['identity', 'owner', 'sha256', 'live'] as const) test('readonly task refuses concurrent original ' + field + ' replacement without advancing host phase', async () => {
+  const f = await fixture(); await f.scopes.inherited(f.vmId, f.project, { command: 'stream' }, f.owner);
+  await f.scopes.active(f.vmId, 'default', f.owner.runId);
+  f.core.runReadonly = async () => {
+    if (field === 'live') f.machines.live.set(f.vmId, {} as never);
+    else {
+      const journal = await f.view();
+      if (field === 'identity') journal.runs[0].identity.homeInode = '999';
+      if (field === 'owner') {
+        const replacement = randomUUID(); journal.runs[0].owner.bootId = replacement;
+        journal.runs[0].run.bootId = replacement;
+      }
+      if (field === 'sha256') journal.runs[0].sha256 = 'f'.repeat(64);
+      await writeFile(f.file, JSON.stringify(journal));
+    }
+    return { ...f.run };
+  };
+  await assert.rejects(f.reopened().readonlyTask(f.vmId, 'default', f.owner.runId), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  const row = (await f.view()).runs[0]; assert.equal(row.phase, 'active');
+  assert.ok(!f.calls.includes('stop') && !f.calls.includes('confirm'));
+});
+
+test('task receipt lookup is read only for missing, intent, closed and archived original tickets', async () => {
+  const f = await fixture(); f.calls.length = 0;
+  assert.equal(await f.reopened().taskRun(f.vmId, 'default', randomUUID()), null);
+  assert.equal(f.calls.length, 0);
+  await f.scopes.inherited(f.vmId, f.project, { command: 'stream' }, f.owner);
+  f.calls.length = 0; const intent = await readFile(f.file, 'utf8');
+  assert.equal((await f.reopened().taskRun(f.vmId, 'default', f.owner.runId))?.phase, 'intent');
+  assert.equal(await readFile(f.file, 'utf8'), intent); assert.equal(f.calls.length, 0);
+  await f.scopes.active(f.vmId, 'default', f.owner.runId);
+  await f.scopes.closeAfterScopeStopped(f.vmId, 'default', f.owner.runId);
+  const closed = await readFile(f.file, 'utf8'); f.calls.length = 0;
+  assert.equal((await f.reopened().taskRun(f.vmId, 'default', f.owner.runId))?.phase, 'closed');
+  assert.equal(await readFile(f.file, 'utf8'), closed); assert.equal(f.calls.length, 0);
+});
+
 test('independent terminal tickets persist across reload and require native stop and resource retirement before closure', async () => {
   const f = await fixture(), terminal = { name: 'sakura-terminal-default-main', persistent: true };
   const issued = await f.scopes.prepareTerminal(f.vmId, f.project, f.owner.runId, terminal);

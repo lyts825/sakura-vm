@@ -100,7 +100,8 @@ export type ProjectTaskAdmissionOptions = { resource?: {
   descriptor: ProjectTaskResourceDescriptor;
   prepare(context: ProjectTaskResourceContext): Promise<void>;
   retire(context: ProjectTaskResourceContext, receipt: ProjectTaskResourceReceipt): Promise<void>;
-}; expectedLive?: TaskContext['live']; expectedBootId?: string;
+}; beforeIntent?: (value: { identity: ProjectIdentity; owner: ProjectRunOwner; sha256: string }) => Promise<void>;
+  expectedLive?: TaskContext['live']; expectedBootId?: string;
   sshAgent?: { resource: SshAgentResource; agent: OwnedForwardAgent; scopes?: SshAgentScopes };
   gpgAgent?: { resource: GpgAgentResource; bridge: OwnedGpgForward; scopes?: GpgAgentScopes } };
 type ActiveTask = TaskContext & { file: string; entry: Entry };
@@ -478,6 +479,26 @@ export class ProjectRunScopes {
     // Reads never install a guest helper or advance host receipt phases.
     return run.phase === 'active';
   }
+  async taskRun(vmId: string, id: string, runId: string) {
+    id = projectIdSchema.parse(id); z.uuid().parse(runId);
+    const entry = (await this.read(vmId, id)).runs.find(value => value.runId === runId) || await this.archived(vmId, id, runId);
+    if (!entry) return null;
+    if (entry.owner.kind !== 'task') throw new AppError('原运行不属于任务域', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    return structuredClone({ identity: entry.identity, owner: entry.owner, sha256: entry.sha256, phase: entry.phase, run: entry.run });
+  }
+  async readonlyTask(vmId: string, id: string, runId: string, signal?: AbortSignal) {
+    id = projectIdSchema.parse(id); z.uuid().parse(runId);
+    const entry = await this.taskRun(vmId, id, runId);
+    if (!entry || entry.phase !== 'active' || !entry.run || entry.run.phase !== 'active')
+      throw new AppError('原完整任务票据未登记，拒绝只读接管', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    if (!this.core.runReadonly) throw new AppError('账号只读核对入口不可用', 409, 'PROJECT_IDENTITY_READONLY_UNAVAILABLE');
+    const live = this.machines.live.get(vmId), run = await this.core.runReadonly(vmId, entry.identity, runId, signal);
+    if (!live || this.machines.live.get(vmId) !== live || run.phase !== 'active' ||
+        !same(run, entry.run) || !same(await this.taskRun(vmId, id, runId), entry) || this.machines.live.get(vmId) !== live)
+      throw new AppError('账号只读回执与原完整任务不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+    return { identity: structuredClone(entry.identity), owner: { ...entry.owner }, sha256: entry.sha256,
+      run: structuredClone(entry.run), phase: entry.phase };
+  }
   private matches(entry: Entry, run: ProjectIdentityRun) {
     return run.mode === (entry.owner.kind === 'terminal' ? 'independent' : 'inherit-current') &&
       run.cgroupName === scopeName(entry.owner) && run.bootId === entry.owner.bootId &&
@@ -787,9 +808,11 @@ export class ProjectRunScopes {
           ...execution, environment: { ...execution.environment, GNUPGHOME: gpgAgentHomePath(gpgResource.leaseId) },
         } : execution;
       const payload = await this.inheritedUnlocked(vmId, project, body, owner, signal, resource, gpgResource,
-        gpgResource && gpgForwarding ? async (identity, sha256) => {
-          await gpgForwarding.bridge.prepareAdmission({ resource: structuredClone(gpgResource), identity,
-            owner: { ...owner, kind: 'task' }, sha256 }, context.live, signal);
+        options.beforeIntent || gpgResource && gpgForwarding ? async (identity, sha256) => {
+          await options.beforeIntent?.({ identity: structuredClone(identity), owner: { ...owner }, sha256 });
+          if (gpgResource && gpgForwarding)
+            await gpgForwarding.bridge.prepareAdmission({ resource: structuredClone(gpgResource), identity,
+              owner: { ...owner, kind: 'task' }, sha256 }, context.live, signal);
         } : undefined, cacheTransfer);
       const current = await this.taskContext(vmId);
       if (current.live !== context.live || current.bootId !== context.bootId)

@@ -13,6 +13,7 @@ export async function activate(host: PluginContext) {
   host.languageServices = new LanguageServices(host.machines, host.workspaces, host.fileLocks);
   host.debugger = new DebugAdapter(host.machines, host.workspaces);
   host.onDispose(() => host.debugger.close());
+  host.onDispose(() => host.languageServices.close());
 }
 export async function route(
   this: PluginContext,
@@ -68,6 +69,7 @@ export async function route(
         const value = z.discriminatedUnion('action', [
           z.object({ action: z.literal('install') }).strict(),
           z.object({ action: z.literal('apply'), token: z.uuid(), lockToken: z.uuid().optional() }).strict(),
+          z.object({ action: z.literal('stop'), token: z.uuid() }).strict(),
           z.object({
             action: z.enum(['completion', 'definition', 'diagnostics', 'rename']),
             path: z.string().max(4096), content: z.string().max(MAX_TEXT_BYTES),
@@ -76,6 +78,7 @@ export async function route(
           }).strict(),
         ]).parse(await readJsonBody(req, MAX_TEXT_REQUEST_BYTES, signal));
         if (value.action === 'install') return send(await this.languageServices.install(id, signal));
+        if (value.action === 'stop') return send(await this.languageServices.stop(id, value.token));
         if (value.action === 'apply') {
           if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
           return send(await this.languageServices.apply(id, value.token, value.lockToken));

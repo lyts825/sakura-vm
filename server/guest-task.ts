@@ -355,6 +355,62 @@ rmdir ${quote(directory)}`);
   return { run, cleanup, confirmStopped, retire };
 }
 
+/** A stream owner reuses the exact guest task commands and cancellation token. */
+export function guestTaskControlPlan(runId: string, token: string, script: string, timeout: number) {
+  z.uuid().parse(runId); z.uuid().parse(token);
+  if (!Number.isSafeInteger(timeout) || timeout < 1000 || timeout > 24 * 60 * 60 * 1000 || Buffer.byteLength(script) > 16384)
+    throw new AppError('协议运行域控制参数超过边界', 413, 'GUEST_INPUT_INVALID');
+  return taskCommands(runId, token, script, timeout, true, false);
+}
+
+/** Cleanup is independent of protocol EOF and confirms the whole original cgroup. */
+export async function cleanupGuestTaskPlan(machines: Machines, id: string, instance: object | undefined,
+  runId: string, commands: ReturnType<typeof guestTaskControlPlan>, afterCleanup?: () => Promise<void>,
+  log?: (text: string) => void) {
+  const { receipt } = guestTaskControlPaths(runId);
+  const control = async (operation: string | (() => Promise<void>), phase: string) => {
+    let failure: unknown;
+    for (let attempt = 0; attempt < 3; ++attempt) {
+      if (machines.live.get(id) !== instance) {
+        failure = new Error('客户机实例已改变，原任务清理未确认');
+        break;
+      }
+      try {
+        if (typeof operation === 'string') {
+          const result = await machines.exec(id, operation, 5000);
+          if (result.code !== 0)
+            throw new Error(result.stderr.trim() || result.stdout.trim() || '任务 cgroup 清理失败');
+        } else await operation();
+        if (machines.live.get(id) !== instance) throw new Error('客户机实例已改变，原任务清理未确认');
+        return;
+      } catch (error) {
+        failure = error;
+        log?.(`客户机任务${phase}第 ${attempt + 1} 次未确认，正在核对归属重试。\n`);
+        if (attempt < 2) await delay(250 * (attempt + 1));
+      }
+    }
+    const message = `客户机任务${phase}未确认，请核查归属记录 ${receipt}：${failure instanceof Error ? failure.message : String(failure)}`;
+    log?.(message + '\n');
+    throw new AppError(message, 503, failure instanceof AppError && failure.status === 503 && failure.code
+      ? failure.code : 'GUEST_TASK_CLEANUP_FAILED');
+  };
+    if (instance) {
+      await control(commands.cleanup, '清理');
+      if (machines.live.get(id) !== instance)
+        throw new AppError('客户机实例已改变，原任务清理未确认', 503, 'GUEST_TASK_CLEANUP_FAILED');
+      if (afterCleanup)
+        await control(async () => {
+          // A guest reboot can retain the host's Live object. Each callback
+          // attempt also checks the original guest boot and the removed scope.
+          const confirmed = await machines.exec(id, commands.confirmStopped, 5000);
+          if (confirmed.code !== 0) throw new Error(confirmed.stderr.trim() || '任务停止身份未确认');
+          if (machines.live.get(id) !== instance) throw new Error('客户机实例已改变');
+          await afterCleanup();
+        }, '后续清理');
+      await control(commands.retire, '归属核销');
+    }
+}
+
 // A dedicated cgroup owns descendants even after they create new groups or
 // sessions. Cleanup uses independent, bounded control connections and refuses
 // unsupported guests before executing any project code.
@@ -379,32 +435,6 @@ export async function guestTask(
       !isOwnedTaskAgent(machines, id, runId, agentPath)))
     throw new AppError('SSH Agent 必须属于本次已登记的受保护任务', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
   const commands = taskCommands(runId, randomUUID(), script, timeout, input !== undefined, options.forwardedAgent);
-  const control = async (operation: string | (() => Promise<void>), phase: string) => {
-    let failure: unknown;
-    for (let attempt = 0; attempt < 3; ++attempt) {
-      if (machines.live.get(id) !== instance) {
-        failure = new Error('客户机实例已改变，原任务清理未确认');
-        break;
-      }
-      try {
-        if (typeof operation === 'string') {
-          const result = await machines.exec(id, operation, 5000);
-          if (result.code !== 0)
-            throw new Error(result.stderr.trim() || result.stdout.trim() || '任务 cgroup 清理失败');
-        } else await operation();
-        if (machines.live.get(id) !== instance) throw new Error('客户机实例已改变，原任务清理未确认');
-        return;
-      } catch (error) {
-        failure = error;
-        log?.(`客户机任务${phase}第 ${attempt + 1} 次未确认，正在核对归属重试。\n`);
-        if (attempt < 2) await delay(250 * (attempt + 1));
-      }
-    }
-    const message = `客户机任务${phase}未确认，请核查归属记录 ${receipt}：${failure instanceof Error ? failure.message : String(failure)}`;
-    log?.(message + '\n');
-    throw new AppError(message, 503, failure instanceof AppError && failure.code === 'PROJECT_IDENTITY_CLEANUP_FAILED'
-      ? failure.code : 'GUEST_TASK_CLEANUP_FAILED');
-  };
   try {
     // BusyBox setsid can fork and return 0 before its child exits. The actual
     // worker status remains explicit and independent of the launcher PID.
@@ -415,20 +445,6 @@ export async function guestTask(
       throw new AppError(result.stderr.trim(), 409, 'GUEST_TASK_SCOPE_UNAVAILABLE');
     return result;
   } finally {
-    if (instance) {
-      await control(commands.cleanup, '清理');
-      if (machines.live.get(id) !== instance)
-        throw new AppError('客户机实例已改变，原任务清理未确认', 503, 'GUEST_TASK_CLEANUP_FAILED');
-      if (afterCleanup)
-        await control(async () => {
-          // A guest reboot can retain the host's Live object. Each callback
-          // attempt also checks the original guest boot and the removed scope.
-          const confirmed = await machines.exec(id, commands.confirmStopped, 5000);
-          if (confirmed.code !== 0) throw new Error(confirmed.stderr.trim() || '任务停止身份未确认');
-          if (machines.live.get(id) !== instance) throw new Error('客户机实例已改变');
-          await afterCleanup();
-        }, '后续清理');
-      await control(commands.retire, '归属核销');
-    }
+    await cleanupGuestTaskPlan(machines, id, instance, runId, commands, afterCleanup, log);
   }
 }

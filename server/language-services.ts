@@ -1,19 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
-import type { Duplex } from 'node:stream';
 import type { Machines } from './machines.ts';
-import type { Workspaces } from './workspaces.ts';
+import { projectVersion, type Workspaces, type Project } from './workspaces.ts';
 import type { FileLocks } from './file-locks.ts';
 import { AppError, guestPath } from './model.ts';
 import { MAX_TEXT_BYTES, quote, textVersion } from './files.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { LspTransport } from './lsp-transport.ts';
-import { projectNetworkCommand } from './project-network-isolation.ts';
+import { ProjectProtocolStreams, type ProjectProtocolCapture } from './project-protocol-stream.ts';
+import { projectProtocolInstallScript, projectProtocolInstalledCommand } from './project-protocol-assets.ts';
+import { guestTask } from './guest-task.ts';
 import { applyTextEdits, positionOffset, type LspPosition, type LspRange, type LspTextEdit } from '../shared/language-service.ts';
 
 const prefix = '/opt/sakura-language-services';
 type Kind = 'typescript' | 'python';
-type Preview = { vm: string; directory: string; expires: number; changes: { path: string; before: string; after: string; version: string }[] };
+type Preview = { vm: string; directory: string; capture: ProjectProtocolCapture; expires: number; changes: { path: string; before: string; after: string; version: string }[] };
 const uri = (path: string) => `file://${path.split('/').map(encodeURIComponent).join('/')}`;
 function fromUri(value: unknown) {
   if (typeof value !== 'string') throw new AppError('语言服务器返回了无效的文件地址');
@@ -68,33 +69,38 @@ function workspaceEdits(value: any) {
 
 export class LanguageServices {
   private previews = new Map<string, Preview>();
-  constructor(private machines: Machines, private workspaces: Workspaces, private locks: FileLocks) {}
+  private streams: Pick<ProjectProtocolStreams, 'open' | 'assertCapture' | 'recordsAll' | 'readonly' | 'recover' | 'stop' | 'close'>;
+  constructor(private machines: Machines, private workspaces: Workspaces, private locks: FileLocks,
+    private options: { streams?: LanguageServices['streams']; adminTask?: typeof guestTask } = {}) {
+    this.streams = options.streams || new ProjectProtocolStreams(machines, workspaces);
+  }
   async status(id: string, path: string, signal?: AbortSignal) {
     const project = await this.workspaces.config(id);
     path = projectFile(project.directory, path);
     const lang = language(path);
-    const bundled = `${prefix}/node_modules/.bin/${lang.executable}`;
-    const command = lang.kind === 'typescript'
-      ? `test -x ${quote(bundled)} && test -f ${quote(`${prefix}/node_modules/typescript/lib/tsserver.js`)}`
-      : `test -x ${quote(bundled)} && command -v python3 >/dev/null`;
-    const result = await this.machines.exec(id, command, 10000, signal);
-    return { language: lang.id, installed: result.code === 0, supported: true };
+    const result = await this.machines.exec(id, projectProtocolInstalledCommand('lsp'), 10000, signal);
+    let installed = false;
+    try { installed = result.code === 0 && JSON.parse(result.stdout).installed === true; } catch {}
+    const pending = [];
+    for (const record of (await this.streams.recordsAll(id)).filter(row => row.kind === 'lsp' && row.projectId === (project._workspace || 'default'))) {
+      let needsReview = record.phase !== 'active';
+      try { await this.streams.readonly(record, signal); } catch { needsReview = true; }
+      pending.push({ token: record.runId, phase: record.phase, needsReview });
+    }
+    return { language: lang.id, installed, supported: true, pending };
   }
   async install(id: string, signal?: AbortSignal) {
-    const distro = this.machines.get(id).distro;
-    const packages = !distro || distro === 'alpine'
-      ? 'apk add --no-cache --timeout 30 nodejs npm python3'
-      : 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y nodejs npm python3';
-    const command = `set -eu; if ! command -v npm >/dev/null || ! command -v python3 >/dev/null; then for attempt in 1 2 3; do if (${packages}); then break; fi; sleep 2; done; command -v npm >/dev/null; command -v python3 >/dev/null; fi; for attempt in 1 2 3; do if npm install --prefix ${quote(prefix)} --no-audit --no-fund --omit=dev typescript@5.9.3 typescript-language-server@4.3.4 pyright@1.1.414; then break; fi; sleep 2; done; test -f ${quote(`${prefix}/node_modules/typescript/lib/tsserver.js`)}; test -x ${quote(`${prefix}/node_modules/.bin/typescript-language-server`)}; test -x ${quote(`${prefix}/node_modules/.bin/pyright-langserver`)}`;
-    const result = await this.machines.exec(id, command, 360000, signal);
+    const result = await (this.options.adminTask || guestTask)(this.machines, id,
+      projectProtocolInstallScript('lsp', this.machines.get(id).distro || 'alpine'), signal || new AbortController().signal,
+      undefined, 360000);
     if (result.code !== 0) throw new AppError(`语言服务安装失败：${(result.stderr || result.stdout).slice(-2000)}`, 502);
     return { installed: true, languages: ['TypeScript', 'JavaScript', 'Python'] };
   }
-  private async session<T>(id: string, path: string, content: string, signal: AbortSignal | undefined,
+
+  private async session<T>(id: string, project: Project, path: string, content: string, signal: AbortSignal | undefined,
     action: (connection: LspTransport, address: string,
-      diagnostics: { items: any[] | null; updatedAt: number }, activeSignal: AbortSignal) => Promise<T>,
-    timeoutMs: number): Promise<T> {
-    const project = await this.workspaces.config(id);
+      diagnostics: { items: any[] | null; updatedAt: number }, activeSignal: AbortSignal, capture: ProjectProtocolCapture) => Promise<T>,
+    timeoutMs: number, expectedLive: object): Promise<T> {
     path = projectFile(project.directory, path);
     if (Buffer.byteLength(content) > MAX_TEXT_BYTES) throw new AppError('文本超过 1 MiB', 413);
     const lang = language(path);
@@ -102,15 +108,10 @@ export class LanguageServices {
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const executable = `${prefix}/node_modules/.bin/${lang.executable}`;
     const command = `if test -x ${quote(executable)}; then exec ${quote(executable)} --stdio; else echo '请先安装语言服务' >&2; exit 127; fi`;
-    const client = await this.machines.connect(id, 10000, combined);
+    const owner = await this.streams.open(id, 'lsp', project, () => ({ command }), combined, timeoutMs + 30000, expectedLive);
     let connection: LspTransport | undefined;
-    const abort = () => client.destroy();
-    combined.addEventListener('abort', abort, { once: true });
     try {
-      const stream = await new Promise<Duplex>((resolve, reject) =>
-        client.exec(projectNetworkCommand(project, command),
-          (error, channel) => error ? reject(error) : resolve(channel)));
-      connection = new LspTransport(stream);
+      connection = new LspTransport(owner.stream);
       const diagnostics = { items: null as any[] | null, updatedAt: 0 };
       const address = uri(path), rootUri = uri(project.directory);
       connection.onNotification((method, params) => {
@@ -137,11 +138,12 @@ export class LanguageServices {
       });
       connection.notify('initialized', {});
       connection.notify('textDocument/didOpen', { textDocument: { uri: address, languageId: lang.id, version: 1, text: content } });
-      return await action(connection, address, diagnostics, combined);
+      await owner.assertCurrent(); await owner.assertNative();
+      const result = await action(connection, address, diagnostics, combined, owner.capture);
+      await owner.assertCurrent(); await owner.assertNative(); return result;
     } finally {
-      combined.removeEventListener('abort', abort);
       connection?.close();
-      client.end();
+      await owner.close();
     }
   }
   execute(id: string, input: { action: 'completion'; path: string; content: string; position: LspPosition }, signal?: AbortSignal): Promise<{ path: string; items: { label: string; detail: string; insertText: string; range: LspRange | null }[] }>;
@@ -153,9 +155,24 @@ export class LanguageServices {
     action: 'completion' | 'definition' | 'diagnostics' | 'rename';
     path: string; content: string; position?: LspPosition; newName?: string; version?: string;
   }, signal?: AbortSignal): Promise<any> {
-    const project = await this.workspaces.config(id);
+    const projectId = this.workspaces.projects.current(id), live = this.machines.live.get(id), copied = structuredClone(input);
+    if (!live || this.machines.state(id) !== 'running') throw new AppError('原客户机运行身份不可用', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+    return this.workspaces.projects.inScope(id, projectId, () => this.executeCaptured(id, copied, signal, projectId, live));
+  }
+  private async executeCaptured(id: string, input: {
+    action: 'completion' | 'definition' | 'diagnostics' | 'rename';
+    path: string; content: string; position?: LspPosition; newName?: string; version?: string;
+  }, signal: AbortSignal | undefined, projectId: string, live: object): Promise<any> {
+    const current = () => { signal?.throwIfAborted();
+      if (this.workspaces.projects.current(id) !== projectId || this.machines.live.get(id) !== live || this.machines.state(id) !== 'running')
+        throw new AppError('原项目或客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED'); };
+    current();
+    const raw = await this.workspaces.config(id);
+    current(); if ((raw._workspace || 'default') !== projectId) throw new AppError('原项目配置归属不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+    const project = Object.defineProperty(structuredClone(raw), '_workspace', { value: raw._workspace, enumerable: false });
     const path = projectFile(project.directory, input.path);
     const lang = language(path);
+    if (Buffer.byteLength(input.content) > MAX_TEXT_BYTES) throw new AppError('文本超过 1 MiB', 413);
     if (input.action !== 'diagnostics') {
       if (!input.position) throw new AppError('需要光标位置');
       positionOffset(input.content, input.position);
@@ -165,11 +182,12 @@ export class LanguageServices {
         throw new AppError('需要有效的新名称');
       if (!input.version || !/^[a-f0-9]{64}$/.test(input.version) || textVersion(input.content) !== input.version)
         throw new AppError('请先保存文件再重命名', 409);
-      const current = await this.machines.readGuestFile(id, path);
-      if (textVersion(current) !== input.version) throw new AppError('文件已被修改，请刷新后重试', 409);
+      const content = await this.machines.readGuestFile(id, path); current();
+      if (textVersion(content) !== input.version) throw new AppError('文件已被修改，请刷新后重试', 409);
     }
+    await this.streams.recover(id, projectId, 'lsp', signal); current();
     const timeoutMs = input.action === 'diagnostics' || input.action === 'rename' ? 120000 : 30000;
-    return this.session(id, path, input.content, signal, async (connection, address, diagnostics, activeSignal) => {
+    return this.session(id, project, path, input.content, signal, async (connection, address, diagnostics, activeSignal, capture) => {
       if (lang.kind === 'typescript' && (input.action === 'definition' || input.action === 'rename')) {
         const deadline = Date.now() + (input.action === 'rename' ? 90000 : 3000);
         while (Date.now() < deadline) {
@@ -237,17 +255,21 @@ export class LanguageServices {
       const token = randomUUID();
       for (const [key, value] of this.previews) if (value.expires < Date.now()) this.previews.delete(key);
       if (this.previews.size >= 8) this.previews.delete(this.previews.keys().next().value!);
-      this.previews.set(token, { vm: id, directory: project.directory, expires: Date.now() + 5 * 60_000, changes });
+      this.previews.set(token, { vm: id, directory: project.directory, capture: { ...capture, signal: new AbortController().signal }, expires: Date.now() + 5 * 60_000, changes });
       return { token, files: changes.map(({ path, before, after }) => ({ path, before, after })) };
-    }, timeoutMs);
+    }, timeoutMs, live);
   }
   async apply(id: string, token: string, lockToken?: string) {
     const preview = this.previews.get(token);
     if (!preview || preview.vm !== id || preview.expires < Date.now()) throw new AppError('重命名预览已过期，请重新生成', 409);
-    if ((await this.workspaces.config(id)).directory !== preview.directory)
-      throw new AppError('当前项目已切换，请重新生成重命名预览', 409);
+    const project = await this.workspaces.config(id);
+    if (this.workspaces.projects.current(id) !== preview.capture.projectId || (project._workspace || 'default') !== preview.capture.projectId ||
+        project.directory !== preview.directory || projectVersion(project) !== preview.capture.configSha256)
+      throw new AppError('当前项目已切换或配置改变，请重新生成重命名预览', 409);
+    await this.streams.assertCapture(id, preview.capture);
     return this.locks.withMutation(id, preview.changes.map((item) => item.path), lockToken, async () => {
       for (const change of preview.changes) {
+        await this.streams.assertCapture(id, preview.capture);
         const current = await this.machines.readGuestFile(id, change.path);
         if (textVersion(current) !== change.version) throw new AppError(`文件已改变，请重新生成预览：${change.path}`, 409);
       }
@@ -255,6 +277,7 @@ export class LanguageServices {
       const written: typeof preview.changes = [];
       try {
         for (const change of preview.changes) {
+          await this.streams.assertCapture(id, preview.capture);
           await this.machines.writeGuestFile(id, change.path, change.after, true, change.version);
           written.push(change);
         }
@@ -271,4 +294,11 @@ export class LanguageServices {
       return { files: preview.changes.map(({ path, after }) => ({ path, content: after, version: textVersion(after) })) };
     });
   }
+  async close() { await this.streams.close(); this.previews.clear(); }
+  async stop(id: string, token: string) {
+    const record = (await this.streams.recordsAll(id)).find(row => row.kind === 'lsp' && row.runId === token);
+    if (!record) throw new AppError('原语言协议运行票据不存在或已经核销', 409, 'PROJECT_IDENTITY_RUN_STALE');
+    await this.streams.stop(id, record.projectId, token); return { stopped: true };
+  }
+
 }

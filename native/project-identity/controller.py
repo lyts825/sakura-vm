@@ -2700,7 +2700,8 @@ def main():
         request = json.loads(raw)
     except (ValueError, UnicodeError):
         refuse('REQUEST_JSON')
-    SSH_SESSION_ERRORS = isinstance(request, dict) and request.get('action') == 'ssh-session'
+    # Interactive stdout is protocol only. All refusals stay on stderr.
+    SSH_SESSION_ERRORS = isinstance(request, dict) and request.get('action') in ('ssh-session', 'exec-current-session')
     os.environ.clear()
     os.environ.update(CLEAN_ENV)
     if os.getuid() != 0 or os.geteuid() != 0:
@@ -2722,6 +2723,7 @@ def main():
                'release-network': {'projectId', 'expected', 'releaseId', 'network'},
                'rebind': {'projectId', 'expected', 'directory', 'networkIsolation'},
                'exec-current': {'projectId', 'expected', 'runId', 'payloadSha256'},
+               'exec-current-session': {'projectId', 'expected', 'runId', 'payloadSha256'},
                'ssh-snapshot': {'projectId', 'expected', 'runId', 'snapshotSha256'},
                'ssh-prepare': {'projectId', 'expected', 'runId', 'snapshotSha256', 'daemon'},
                'ssh-session': {'projectId', 'expected', 'runId', 'snapshotSha256'},
@@ -2756,13 +2758,13 @@ def main():
                 reservation_check(result, store)
                 if result['phase'] == 'active':
                     result = active(request['projectId'], request, store)
-        elif action in ('prepare', 'exec-current'):
+        elif action in ('prepare', 'exec-current', 'exec-current-session'):
             value = active(request['projectId'], request, store)
-            if action == 'exec-current':
+            if action in ('exec-current', 'exec-current-session'):
                 # Reject metadata before publishing an inherited ticket.
                 launch_argv(value, {'runId': identifier(request.get('runId'), UUID, 'RUN_ID')}, request, build)
-            result = prepare(value, request, boot, build, action == 'exec-current')
-            if action == 'exec-current':
+            result = prepare(value, request, boot, build, action != 'prepare')
+            if action in ('exec-current', 'exec-current-session'):
                 args = launch_argv(value, result, request, build)
         elif action in ('ssh-snapshot', 'ssh-prepare', 'ssh-session'):
             value = active(request['projectId'], request, store)

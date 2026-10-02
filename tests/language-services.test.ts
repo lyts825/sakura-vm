@@ -6,7 +6,10 @@ import { FileLocks } from '../server/file-locks.ts';
 import { textVersion } from '../server/files.ts';
 import { applyTextEdits, positionOffset } from '../shared/language-service.ts';
 import type { Machines } from '../server/machines.ts';
-import type { Workspaces } from '../server/workspaces.ts';
+import { projectVersion, type Project, type Workspaces } from '../server/workspaces.ts';
+import { projectIdentityPayload } from '../server/project-identity.ts';
+import { AppError } from '../server/model.ts';
+import { mockProtocolOwner } from './project-protocol-fixture.ts';
 
 function pair() {
   const leftToRight = new PassThrough(), rightToLeft = new PassThrough();
@@ -22,7 +25,7 @@ const frame = (message: unknown) => {
   return Buffer.concat([Buffer.from(`Content-Length: ${data.length}\r\n\r\n`), data]);
 };
 function mockLanguageServer(stream: Duplex, renameUri = 'file:///workspace/app/a.ts',
-  partialDiagnostics = false) {
+  partialDiagnostics = false, observed: any[] = []) {
   let input = Buffer.alloc(0);
   stream.on('data', (chunk: Buffer) => {
     input = Buffer.concat([input, chunk]);
@@ -32,6 +35,7 @@ function mockLanguageServer(stream: Duplex, renameUri = 'file:///workspace/app/a
       const size = Number(/Content-Length: (\d+)/.exec(input.subarray(0, header).toString())?.[1]);
       if (input.length < header + 4 + size) return;
       const message = JSON.parse(input.subarray(header + 4, header + 4 + size).toString());
+      observed.push(message);
       input = input.subarray(header + 4 + size);
       if (message.method === 'initialize') {
         const response = frame({ jsonrpc: '2.0', id: message.id, result: { capabilities: {} } });
@@ -67,11 +71,15 @@ function mockLanguageServer(stream: Duplex, renameUri = 'file:///workspace/app/a
 function fixture(renameUri?: string, partialDiagnostics = false) {
   const commands: string[] = [];
   const execCommands: string[] = [];
+  const requests: any[] = [], live = {}, liveMap = new Map([['vm', live]]);
+  const boundaries: Partial<Record<'config' | 'recover', () => Promise<void>>> = {};
+  const boundary = async (where: 'config' | 'recover') => { const operation = boundaries[where]; delete boundaries[where]; await operation?.(); };
   const files = new Map([
     ['/workspace/app/a.ts', 'export const flower = 1;\n'],
     ['/workspace/app/b.ts', 'import { flower } from "./a";\n'],
   ]);
   const machines = {
+    live: liveMap, state: () => 'running',
     get: () => ({ distro: 'alpine' }),
     connect: async () => {
       const [client, server] = pair();
@@ -95,30 +103,75 @@ function fixture(renameUri?: string, partialDiagnostics = false) {
       return { code: 0, stdout: '', stderr: '' };
     },
   } as unknown as Machines;
-  const project: { directory: string; networkIsolation?: 'host' | 'private' } = { directory: '/workspace/app' };
-  const workspaces = { config: async () => project } as unknown as Workspaces;
+  const project: Project = { directory: '/workspace/app', template: 'none', repository: '', setup: '', command: '', environment: { PROJECT_SECRET: 'private-stream-only' } };
+  let scope = 'default', cleanupFail = false, closes = 0;
+  Object.defineProperty(project, '_workspace', { get: () => scope === 'default' ? undefined : scope, enumerable: false });
+  const workspaces = { config: async () => { await boundary('config'); return project; },
+    projects: { current: () => scope, inScope: (_id: string, _scope: string, action: () => Promise<unknown>) => action() } } as unknown as Workspaces;
+  const executions: Buffer[] = [];
+  const streams = { open: async (_id: string, kind: 'lsp' | 'dap', original: Project, execute: (resolved: Project) => { command: string },
+    _signal?: AbortSignal, _timeoutMs?: number, expectedLive?: object) => {
+    assert.equal(expectedLive, live);
+    const [client, server] = pair(); mockLanguageServer(server, renameUri, partialDiagnostics, requests);
+    const execution = execute(original); commands.push(execution.command);
+    executions.push(projectIdentityPayload({ ...execution, environment: original.environment, stdin: 'session' }).input);
+    const capture = projectVersion(original), projectId = original._workspace || 'default';
+    const verify = async () => { if (scope !== projectId || capture !== projectVersion(project)) throw new AppError('原项目已切换或配置改变', 409); };
+    return mockProtocolOwner('vm', kind, original, client, verify, async () => {
+      ++closes; if (cleanupFail) throw new AppError('原完整 cgroup 仍存在', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED'); server.destroy();
+    });
+  }, assertCapture: async (_id: string, capture: { projectId: string; configSha256: string }) => {
+    if (capture.projectId !== scope || capture.configSha256 !== projectVersion(project)) throw new AppError('原项目已切换或配置改变', 409);
+  }, recordsAll: async () => [], readonly: async () => {}, recover: async () => { await boundary('recover'); }, stop: async () => {}, close: async () => {} };
   const locks = new FileLocks();
-  return { service: new LanguageServices(machines, workspaces, locks), files, locks, project,
-    commands, execCommands };
+  return { service: new LanguageServices(machines, workspaces, locks, { streams,
+    adminTask: async (_machines, _id, command) => { execCommands.push(command); return { code: 0, stdout: '', stderr: '' }; } }),
+    files, locks, project, commands, execCommands, executions, setScope: (value: string) => { scope = value; },
+    setCleanupFail: (value: boolean) => { cleanupFail = value; }, closes: () => closes, requests,
+    replaceLive: () => liveMap.set('vm', {}), setBoundary: (where: 'config' | 'recover', operation: () => Promise<void>) => { boundaries[where] = operation; } };
 }
 
 test('language service installation provisions Python for Pyright diagnostics', async () => {
   const { service, execCommands } = fixture();
   await service.install('vm');
-  assert.match(execCommands[0], /apk add --no-cache --timeout 30 nodejs npm python3/);
+  assert.match(execCommands[0], /apk add --no-cache --timeout 30 python3 py3-pip nodejs npm/);
+  assert.match(execCommands[0], /env -i HOME=\/ USER=root LOGNAME=root/);
+  assert.match(execCommands[0], /--ignore-scripts/); assert.ok(!execCommands[0].includes('private-stream-only'));
   await service.status('vm', '/workspace/app/main.py');
-  assert.match(execCommands[1], /command -v python3 >\/dev\/null/);
+  assert.match(execCommands[1], /SAKURA_PROTOCOL_ASSETS_LSP/);
+  assert.ok(!execCommands[1].includes('import debugpy'));
 });
 
-test('private project language server starts inside its network namespace', async () => {
-  const { service, files, project, commands } = fixture();
+test('private project language server supplies project code and environment only through SESSION2 frame', async () => {
+  const { service, files, project, commands, executions, closes } = fixture();
   project.networkIsolation = 'private';
   const result = await service.execute('vm', { action: 'completion',
     path: '/workspace/app/a.ts', content: files.get('/workspace/app/a.ts')!,
     position: { line: 0, character: 16 } });
   assert.equal(result.items[0].label, 'flower');
-  assert.match(commands[0], /ip netns exec sk-default sh -lc/);
-  assert.match(commands[0], /sakura_ipv4=.*ip -n sk-default/);
+  assert.match(commands[0], /typescript-language-server/);
+  assert.equal(executions[0].readUInt32LE(12), 2);
+  assert.ok(executions[0].includes(Buffer.from('private-stream-only')));
+  assert.equal(closes(), 1);
+});
+
+test('LSP successful protocol response cannot hide full-domain cleanup failure', async () => {
+  const f = fixture(); f.setCleanupFail(true);
+  await assert.rejects(f.service.execute('vm', { action: 'completion', path: '/workspace/app/a.ts',
+    content: f.files.get('/workspace/app/a.ts')!, position: { line: 0, character: 1 } }),
+    { status: 503, code: 'PROJECT_IDENTITY_CLEANUP_FAILED' });
+  assert.equal(f.closes(), 1);
+});
+
+test('named project rename preview rejects matching content hash from another non-enumerable scope', async () => {
+  const f = fixture(); f.setScope('1111111111111111');
+  assert.equal(Object.keys(f.project).includes('_workspace'), false);
+  const before = f.files.get('/workspace/app/a.ts')!, digest = projectVersion(f.project);
+  const preview = await f.service.execute('vm', { action: 'rename', path: '/workspace/app/a.ts', content: before,
+    position: { line: 0, character: 16 }, newName: 'petal', version: textVersion(before) });
+  f.setScope('2222222222222222'); assert.equal(projectVersion(f.project), digest);
+  await assert.rejects(f.service.apply('vm', preview.token), /项目已切换/);
+  assert.equal(f.files.get('/workspace/app/a.ts'), before);
 });
 
 test('TypeScript diagnostics wait past an initial empty syntax report', async () => {
@@ -182,4 +235,20 @@ test('language services reject out-of-project locations and stale rename preview
   switched.project.directory = '/workspace/other';
   await assert.rejects(switched.service.apply('vm', another.token), /项目已切换/);
   assert.equal(switched.files.get('/workspace/app/a.ts'), before);
+});
+
+for (const where of ['config', 'recover'] as const) test('LSP public request cannot authorize new live while awaiting ' + where, async () => {
+  const f = fixture(); f.setBoundary(where, async () => { await new Promise(resolve => setTimeout(resolve, 0)); f.replaceLive(); });
+  await assert.rejects(f.service.execute('vm', { action: 'completion', path: '/workspace/app/a.ts',
+    content: f.files.get('/workspace/app/a.ts')!, position: { line: 0, character: 1 } }),
+    { status: 409, code: 'PROJECT_IDENTITY_HOST_CHANGED' }); assert.equal(f.commands.length, 0);
+});
+test('LSP public request snapshots content, path and position before awaiting config', async () => {
+  const f = fixture(), original = f.files.get('/workspace/app/a.ts')!;
+  const input = { action: 'completion' as const, path: '/workspace/app/a.ts', content: original, position: { line: 0, character: 1 } };
+  f.setBoundary('config', async () => { await new Promise(resolve => setTimeout(resolve, 0)); input.path = '/etc/shadow'; input.content = 'changed'; input.position.character = 100; });
+  assert.equal((await f.service.execute('vm', input)).items[0].label, 'flower');
+  const opened = f.requests.find(message => message.method === 'textDocument/didOpen');
+  assert.equal(opened.params.textDocument.text, original); assert.equal(opened.params.textDocument.uri, 'file:///workspace/app/a.ts');
+  assert.equal(f.requests.find(message => message.method === 'textDocument/completion').params.position.character, 1);
 });

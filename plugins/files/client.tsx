@@ -118,6 +118,8 @@ export function FileBrowser({
   const cursor = useRef<LspPosition>({ line: 0, character: 0 });
   const [languageReady, setLanguageReady] = useState<boolean | null>(null);
   const [languageError, setLanguageError] = useState('');
+  const [languagePending, setLanguagePending] = useState<{ token: string; needsReview: boolean }[]>([]);
+  const [languageRefresh, setLanguageRefresh] = useState(0);
   const [completions, setCompletions] = useState<{ label: string; detail: string; insertText: string; range: LspRange | null }[]>([]);
   const [definitions, setDefinitions] = useState<{ path: string; line: number; column: number }[]>([]);
   const [renameName, setRenameName] = useState('');
@@ -144,19 +146,21 @@ export function FileBrowser({
     if (!languagePlugin || !edit || !/\.(?:[cm]?[jt]sx?|py)$/i.test(edit.path)) {
       setLanguageReady(null);
       setLanguageError('');
+      setLanguagePending([]);
       return;
     }
     const abort = new AbortController();
     let alive = true;
     setLanguageReady(null);
     setLanguageError('');
-    void requestRef.current<{ installed: boolean }>(
+    setLanguagePending([]);
+    void requestRef.current<{ installed: boolean; pending?: { token: string; needsReview: boolean }[] }>(
       `/vms/${vm.id}/language-service?path=${encodeURIComponent(edit.path)}`,
       'GET', undefined, abort.signal,
-    ).then((value) => { if (alive) setLanguageReady(value.installed); })
+    ).then((value) => { if (alive) { setLanguageReady(value.installed); setLanguagePending(value.pending || []); } })
       .catch((error) => { if (alive) setLanguageError((error as Error).message); });
     return () => { alive = false; abort.abort(); };
-  }, [edit?.id, edit?.path, vm.id, languagePlugin]);
+  }, [edit?.id, edit?.path, vm.id, languagePlugin, languageRefresh]);
   const [leaveKind, setLeaveKind] = useState<'leave' | 'replace' | 'discard' | null>(null);
   const history = useRemote<{
     items: {
@@ -397,7 +401,7 @@ export function FileBrowser({
         action: kind, path: submitted.path, content: submitted.content,
         position: cursor.current,
         ...(kind === 'rename' ? { newName: renameName, version: submitted.version } : {}),
-      }, signal);
+      }, signal).catch(error => { setLanguageRefresh(value => value + 1); throw error; });
       if (workspaceRef.current.active !== submitted.id ||
           (kind !== 'rename' && editRef.current?.content !== submitted.content)) return;
       if (kind === 'completion') {
@@ -856,6 +860,17 @@ export function FileBrowser({
                 <div className="panel-heading"><h4>语言服务</h4>
                   <span className="muted">{languageError || (languageReady === null ? '正在检查语言服务器…' : languageReady ? '已安装' : '需要安装')}</span>
                 </div>
+                <button className="secondary compact" disabled={action.busy}
+                  onClick={() => setLanguageRefresh(value => value + 1)}>刷新语言服务</button>
+                {!!languagePending.length && <div role="status">
+                  <p className="subtle-note">有未结束的语言服务会话，可以停止后重试。</p>
+                  {languagePending.map((item, index) =>
+                    <button key={item.token} className="secondary compact" disabled={action.busy}
+                      onClick={() => void action.run(async signal => {
+                        await request(`/vms/${vm.id}/language-service`, 'POST', { action: 'stop', token: item.token }, signal);
+                        setLanguageRefresh(value => value + 1);
+                      }, '原语言服务会话已清理')}>停止原语言服务 {index + 1}</button>)}
+                </div>}
                 {languageReady === false ? (
                   <button className="secondary compact" disabled={action.busy} onClick={() => void action.run(async (signal) => {
                     const path = edit.path;

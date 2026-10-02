@@ -6,6 +6,7 @@ type DebugView = {
   installed: boolean; active: boolean; token?: string;
   state?: 'starting' | 'running' | 'stopped' | 'terminated' | 'error';
   path?: string; directory?: string; reason?: string; error?: string; output?: string;
+  needsReview?: boolean; pending?: { token: string; projectId: string; phase: string }[];
   breakpoints?: { line: number; verified: boolean; message?: string }[];
   frames?: { id: number; name: string; path: string; line: number; column: number }[];
   variables?: Variable[]; selectedFrame?: number;
@@ -36,6 +37,7 @@ export function DebugPanel({ vmId, request, path, dirty, openPath }: {
     remote.reload();
   }, success);
   const token = view?.token;
+  const pending = view?.pending || (view?.needsReview && token ? [{ token }] : []);
   return (
     <div className="feature-card">
       <div className="panel-heading"><h4>Python 调试器</h4>
@@ -46,7 +48,14 @@ export function DebugPanel({ vmId, request, path, dirty, openPath }: {
         onClick={() => run({ action: 'install' }, '调试器已安装')}>
         安装 Python 调试器
       </button>}
-      {view?.installed && !view.active && <>
+      {!!pending.length && <div role="status">
+        <p className="subtle-note">上次调试尚未完成清理，请先清理原会话再启动。</p>
+        {pending.map((item, index) => <button key={item.token} className="secondary compact" disabled={action.busy}
+          onClick={() => run({ action: 'stop', token: item.token }, '原调试会话已清理')}>
+          清理上次调试{pending.length > 1 ? ` ${index + 1}` : ''}
+        </button>)}
+      </div>}
+      {view?.installed && !view.active && !pending.length && <>
         <label>断点行号（逗号或空格分隔）
           <input aria-label="断点行号" value={breakpoints} onChange={(event) => setBreakpoints(event.target.value)}
             placeholder="例如 3, 8" />

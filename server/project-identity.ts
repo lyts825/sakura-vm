@@ -83,6 +83,7 @@ const expectedIdentity = (identity: ProjectIdentity): ProjectIdentityExpected =>
 });
 const utf8String = (value: string) => !value.includes('\0') && Buffer.from(value, 'utf8').toString('utf8') === value;
 const executableOptionsSchema = z.object({ command: z.string().min(1).max(65536).refine(utf8String),
+  stdin: z.literal('session').optional(),
   environment: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/),
     z.string().max(8192).refine(utf8String)).default({}),
 }).strict().superRefine((value, ctx) => {
@@ -91,7 +92,7 @@ const executableOptionsSchema = z.object({ command: z.string().min(1).max(65536)
       Buffer.byteLength(value.command) + Object.entries(value.environment).reduce((sum, [key, content]) => sum + Buffer.byteLength(key + '=' + content), 0) > 65536)
     ctx.addIssue({ code: 'custom', message: '项目命令或环境超过边界' });
 });
-export type ProjectIdentityExecution = { command: string; environment?: Record<string, string> };
+export type ProjectIdentityExecution = { command: string; environment?: Record<string, string>; stdin?: 'session' };
 export type ProjectIdentityInput = { command: string; input: Buffer; sha256: string };
 export type ProjectIdentityInheritedInput = ProjectIdentityInput & { runId: string };
 export const projectIdentitySshDaemonSchema = z.object({ pid: z.number().int().min(1),
@@ -115,7 +116,7 @@ export function projectIdentityPayload(execution: ProjectIdentityExecution) {
   const environment = Object.entries(value.environment).map(([key, content]) => [Buffer.from(key), Buffer.from(content, 'utf8')] as const);
   const size = script.length + environment.reduce((sum, [key, content]) => sum + 8 + key.length + content.length, 0);
   const input = Buffer.alloc(32 + size);
-  input.write('SKIDP001', 0, 'ascii'); input.writeUInt32LE(1, 8); input.writeUInt32LE(size, 16);
+  input.write('SKIDP001', 0, 'ascii'); input.writeUInt32LE(1, 8); input.writeUInt32LE(value.stdin === 'session' ? 2 : 0, 12); input.writeUInt32LE(size, 16);
   input.writeUInt32LE(environment.length, 20); input.writeUInt32LE(script.length, 24);
   script.copy(input, 32); let offset = 32 + script.length;
   for (const [key, content] of environment) {
@@ -373,7 +374,7 @@ directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(dir
     // controller captures its own actual membership; no path/FD number can be
     // supplied by a project. The C launcher reopens and checks the pinned FD.
     const runId = options.runId ? uuid.parse(options.runId) : randomUUID();
-    return { ...payload, runId, command: this.controlCommand(source.manifest.build, { action: 'exec-current', projectId: identity.projectId,
+    return { ...payload, runId, command: this.controlCommand(source.manifest.build, { action: execution.stdin === 'session' ? 'exec-current-session' : 'exec-current', projectId: identity.projectId,
       expected: expectedIdentity(identity), runId, payloadSha256: payload.sha256 }) };
   }
   async inheritedCommand(_identity: ProjectIdentity, _execution: ProjectIdentityExecution, _options: { runId?: string } = {}): Promise<never> {

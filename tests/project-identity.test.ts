@@ -130,6 +130,22 @@ function fixture(projectId = 'default') {
     setSnapshotReply: (value: unknown, code = 0) => { snapshotReply = value; snapshotExit = code; },
     counts: () => ({ uploads, cleanups, stopAttempts }) };
 }
+
+test('inherited SESSION2 SDK transport chooses fixed stderr-only entry while ordinary payload remains flags0', async () => {
+  const f = fixture('1234567890abcdef');
+  const execution = { command: 'printf protected-project-code', environment: { TOKEN: 'protected-project-env' }, stdin: 'session' as const };
+  const payload = await f.core.inheritedInput(f.identity, execution, { runId: f.run.runId });
+  assert.equal(payload.input.readUInt32LE(12), 2); assert.equal(payload.sha256, createHash('sha256').update(payload.input).digest('hex'));
+  const request = JSON.parse(Buffer.from(payload.command.match(/\/controller\.py' '([A-Za-z0-9+/=]+)'$/)![1], 'base64').toString());
+  assert.equal(request.action, 'exec-current-session'); assert.equal(request.runId, f.run.runId);
+  assert.ok(!payload.command.includes('protected-project-code') && !payload.command.includes('protected-project-env'));
+  assert.equal(f.commands.length, 0); assert.equal(f.counts().uploads, 0);
+  const ordinary = await f.core.inheritedInput(f.identity, { command: execution.command, environment: execution.environment }, { runId: randomUUID() });
+  assert.equal(ordinary.input.readUInt32LE(12), 0);
+  const plain = JSON.parse(Buffer.from(ordinary.command.match(/\/controller\.py' '([A-Za-z0-9+/=]+)'$/)![1], 'base64').toString());
+  assert.equal(plain.action, 'exec-current');
+  assert.throws(() => projectIdentityPayload({ ...execution, stdin: 'terminal' as never }));
+});
 const cleanupFailure = (error: unknown) => error instanceof AppError && error.status === 503 && error.code === 'PROJECT_IDENTITY_CLEANUP_FAILED';
 const sshMetadata = (command: string) => {
   const encoded = command.match(/\/controller\.py' '([A-Za-z0-9+/=]+)'$/)?.[1];
