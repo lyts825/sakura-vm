@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
-import { textVersion } from '../server/files.ts';
+import { textVersion, quote } from '../server/files.ts';
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Machines as MachinesType } from '../server/machines.ts';
 import type { Workspaces } from '../server/workspaces.ts';
+import { projectVersion, projectSchema } from '../server/workspaces.ts';
+import type { GitWorkbenchOptions } from '../server/git-workbench.ts';
 import type { PluginContext } from '../server/plugin-api.ts';
 import type { Engine } from '../server/runtime.ts';
 import { isGitConflict } from '../shared/git.ts';
@@ -50,22 +52,34 @@ const id = '11111111-1111-4111-8111-111111111111';
 const projectId = '0123456789abcdef';
 const posix = (path: string) => path.replaceAll('\\', '/');
 
-test('private project Git commands require its checked network namespace', async (t) => {
+test('private project Git commands bind the UID task to the original checked namespace', async (t) => {
+  const live = {}, project = Object.defineProperty(projectSchema.parse({ directory: '/workspace/private', networkIsolation: 'private' as const }),
+    '_workspace', { value: projectId, enumerable: false });
   const commands: string[] = [];
-  const machines = { exec: async (_id: string, command: string) => {
-    commands.push(command);
-    return { code: 1, stdout: '', stderr: 'not a repository' };
-  } } as unknown as MachinesType;
-  const workspaces = { config: async () => ({ directory: '/workspace/private',
-    networkIsolation: 'private', _workspace: projectId }),
-    projects: { key: () => id, current: () => projectId },
+  const machines = { live: new Map([[id, live]]), state: () => 'running',
+    exec: async () => { throw new Error('Root Git fallback forbidden'); },
+  } as unknown as MachinesType;
+  const workspaces = { config: async () => project,
+    resolveProject: async (_id: string, captured: typeof project) => ({ ...captured, _workspace: projectId, environment: {} }),
+    projects: { key: () => id + ':' + projectId, current: () => projectId,
+      inScope: (_id: string, _scope: string, action: () => unknown) => action() },
   } as unknown as Workspaces;
-  const service = new GitWorkbench(machines, workspaces);
-  t.after(() => service.close());
-  await service.view(id);
-  assert.equal(commands.length, 1);
-  assert.match(commands[0], /ip netns exec sk-0123456789abcdef sh -lc/);
-  assert.match(commands[0], /额外网络接口/);
+  const options: GitWorkbenchOptions = {
+    createPreparation: () => ({ prepare: async (_id, scope, _session, _readOnly, signal, _terminal, mode) => {
+      assert.equal(scope, projectId); assert.deepEqual(mode, { mode: 'task' });
+      return { projectId, networkIsolation: 'private', command: 'unused', terminalId: undefined, signal: signal!,
+        captured: { project, configVersion: projectVersion(project), live: live as any }, release() {} };
+    }, close: async () => {} }),
+    runProjectTask: async (_machines, _id, captured, execution, _signal, _log, timeout, _agent, _cleanup, pins) => {
+      assert.equal(captured._workspace, projectId); assert.equal(captured.networkIsolation, 'private');
+      assert.equal(timeout, 30000); assert.equal(pins?.expectedLive, live); commands.push(execution.command);
+      return { code: 1, stdout: '', stderr: 'not a repository' };
+    },
+  };
+  const service = new GitWorkbench(machines, workspaces, options); t.after(() => service.close());
+  assert.equal((await service.view(id)).repository, false);
+  assert.equal(commands.length, 1); assert.match(commands[0], /rev-parse --is-inside-work-tree/);
+  assert.match(commands[0], /GIT_CONFIG_NOSYSTEM=1/);
 });
 
 after(async () => {
@@ -100,6 +114,7 @@ async function fixture(t: TestContext) {
   const machines = new Machines({} as Engine);
   machines.get = () => ({ id }) as ReturnType<MachinesType['get']>;
   machines.state = () => 'running';
+  const live = { status: 'running' }; machines.live.set(id, live as any);
   let projectDirectory = local;
   let beforeNetwork: ((command: string, signal?: AbortSignal) => Promise<void>) | undefined;
   let afterNetwork: (() => Promise<void>) | undefined;
@@ -137,9 +152,28 @@ async function fixture(t: TestContext) {
   const projects = new ProjectCatalog(machines);
   const workspaces = {
     projects,
-    config: async () => ({ directory: posix(projectDirectory) }),
+    config: async () => Object.defineProperty({ directory: posix(projectDirectory) }, '_workspace',
+      { value: projects.current(id), enumerable: false }),
+    resolveProject: async (_id: string, captured: any) => ({ ...captured, _workspace: captured._workspace, environment: {} }),
   } as unknown as Workspaces;
-  const service = new GitWorkbench(machines, workspaces);
+  const options: GitWorkbenchOptions = {
+    createPreparation: () => {
+      let held = false;
+      return { prepare: async (_id, scope, _session, _readOnly, signal, _terminal, mode) => {
+        assert.equal(scope, projectId); assert.deepEqual(mode, { mode: 'task' });
+        const project = await workspaces.config(id); held = true;
+        return { projectId: scope!, networkIsolation: 'host', command: 'unused', terminalId: undefined, signal: signal!,
+          captured: { project, configVersion: projectVersion(project), live: live as any }, release() { held = false; } };
+      }, close: async () => { assert.equal(held, false); } };
+    },
+    // This adapter runs real Git on local test repositories. It models the UID
+    // boundary and never starts a VM or claims a real credential drop.
+    runProjectTask: async (_machines, vmId, captured, execution, signal, _log, timeout, _agent, _cleanup, pins) => {
+      assert.equal(captured._workspace, projectId); assert.equal(pins?.expectedLive, live);
+      return machines.exec(vmId, 'cd ' + quote(captured.directory) + ' && ' + execution.command, timeout, signal);
+    },
+  };
+  const service = new GitWorkbench(machines, workspaces, options);
   service.jobs = new Jobs('git', join(directory, 'jobs'));
   t.after(() => service.close());
   const scope = <T>(action: () => T) => projects.inScope(id, projectId, action);
@@ -572,7 +606,7 @@ test('pull rechecks local edits and branch changes made while fetch is running',
   assert.equal(await git(f.local, 'rev-parse', 'HEAD'), head);
 });
 
-test('pull preserves ignored files and stays in the accepted project directory after configuration changes', async (t) => {
+test('pull preserves ignored files and rejects a changed original configuration before merging', async (t) => {
   const f = await fixture(t);
   const head = await git(f.local, 'rev-parse', 'HEAD');
   await writeFile(join(f.local, '.git', 'info', 'exclude'), 'ignored.txt\n');
@@ -588,8 +622,10 @@ test('pull preserves ignored files and stays in the accepted project directory a
     f.setDirectory(f.peer);
   });
   const pulled = await f.run({ action: 'pull' });
-  assert.equal(pulled.status, 'done', pulled.error);
-  assert.equal(await git(f.local, 'rev-parse', 'HEAD'), next);
+  assert.equal(pulled.status, 'error');
+  assert.equal(pulled.errorCode, 'PROJECT_IDENTITY_HOST_CHANGED');
+  assert.equal(await git(f.local, 'rev-parse', 'HEAD'), head);
+  assert.equal(await git(f.local, 'rev-parse', 'origin/main'), next);
   assert.ok(f.commands.every((value) => value.command.includes(posix(f.local)) &&
     !value.command.includes(posix(f.peer))));
 });
