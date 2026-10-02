@@ -12,6 +12,8 @@
 
 两次早期测试构造失败证据保留：managed-early-08e0fc03-132a-4cfe-acac-b115f90801c8 只改 manifest，没有改变 DLL 内的 build，未触发预期拒绝；managed-early-ce31ccda-ebb3-4f14-b8b8-22e9ff032555 的第二个启用服务发现同路径已有测试程序，导致归属计数不符。最终使用真实不同 build 的 DLL 和独立 EXE 路径纠正测试隔离。上述失败不计作整组通过。历史整仓 rename 失败及三个部分实现目录项继续保留。
 
+功能提交 a34231c 的五步生产校验实际 exit/close 均为 0，996 个捕获来源前后未变，7 种插件组合通过；证明 .data/managed-identity-build-8e8d7ba7-0865-4cd6-b3bc-e3228a08e27c-verification.json。发布包 release/sakura-onwYTY 共 258 文件完整校验，fingerprint de50b1bcf0e55dec695101f26700914f989882224f309f3b81388bc53c86dc7f，服务 bundle dd2b39aea770488564ccac96496215332fdb437649160dead9403aee99f9875a，实际退出/close 0；证明 .data/managed-identity-release-a82f136f-efeb-4b9a-86c6-b6e791ad7d0e-verification.json。双架构代理、控制程序和两份许可共 6 个文件与上述真实 CLR/原生测试资产逐字节一致，来源 build 与固定上游 provenance 重新核对；对应 .data/managed-clipboard-feature-e9cb33e5-1a81-4017-9bd7-9ca797ce4310-verification.json 和 .data/managed-clipboard-release-match-f41d6e8c-7271-4f4a-a8c6-c9091e6c7810-verification.json。随后记录结果的本文变更不属于该构建源码快照。
+
 ## 项目 UID 的共享网络出站限制
 
 2026-10-03 私有项目账号新增 inet/output/UID 规则，阻断同一账号从共享网络新建的 IPv4/IPv6 连接，包括系统 SSH、cron、用户服务和自行启动程序的连接路径。原托管命名空间回环、其他 UID 和固定管理下载保持。规则在账号创建前登记；共享模式在绑定提交后只删除原 UID 的准确表。开机入口接通 systemd/OpenRC 服务依赖及现有防火墙启动顺序，原记录、规则 handle、boot/网络身份、应答丢失和管理脚本升级中断均可核对恢复。规则与范围见 [项目账号出站限制](project-egress.md)。
