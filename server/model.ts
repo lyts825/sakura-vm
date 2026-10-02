@@ -74,6 +74,7 @@ export type DesktopView = {
   directory?: string;
   networkIsolation?: 'host' | 'private';
   bindingMismatch?: boolean;
+  cleanupPending?: boolean;
 };
 export type Snapshot = {
   id: string;

@@ -211,6 +211,14 @@ export function X11ClipboardSettings({
             <p className="subtle-note">
               拒绝复制 {session.blockedCopy || 0} 次 · 拒绝粘贴 {session.blockedPaste || 0} 次
             </p>
+            {session.desktopOwner && session.applicationOwner && (
+              <p className="subtle-note">
+                桌面账号 UID {session.desktopOwner.uid} ·{' '}
+                {session.applicationOwner.kind === 'window-sandbox'
+                  ? <>应用独立账号 UID {session.applicationOwner.uid}</>
+                  : '应用沿用桌面项目账号'}
+              </p>
+            )}
             {session.processes?.map((process) => (
               <p className="subtle-note" key={`${process.pid}:${process.created}`}>
                 PID {process.pid} · {process.loaded ? '已接入策略' : '尚未连接策略'} · {process.image}

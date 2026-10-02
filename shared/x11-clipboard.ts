@@ -17,6 +17,8 @@ export type X11ClipboardSession = {
   blockedCopy?: number;
   blockedPaste?: number;
   error?: string;
+  desktopOwner?: { projectId: string; uid: number; runId: string };
+  applicationOwner?: { uid: number; kind: 'project-desktop' | 'window-sandbox' };
   processes?: { pid: number; created: string; image: string; loaded: boolean }[];
 };
 export type X11ClipboardView = {

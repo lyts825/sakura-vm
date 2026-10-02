@@ -9,12 +9,29 @@ import { X11Clipboard, x11ClipboardRequest } from '../server/x11-clipboard.ts';
 import { WaylandClipboard } from '../server/wayland-clipboard.ts';
 import { waylandAssetNames } from '../server/wayland-clipboard-assets.ts';
 import { x11AssetNames } from '../server/x11-clipboard-assets.ts';
+import { desktopControlProofSchema } from '../server/desktop-project-control.ts';
 import { defaultClipboardRule } from '../shared/clipboard-policy.ts';
 import type { X11ClipboardSession } from '../shared/x11-clipboard.ts';
 
 const image = '/usr/bin/editor',
   hash = 'a'.repeat(64),
   launcher = 'b'.repeat(64);
+const projectId = 'abcdefabcdefabcd', identityId = '11111111-1111-4111-8111-111111111111',
+  runId = '22222222-2222-4222-8222-222222222222', bootId = '33333333-3333-4333-8333-333333333333';
+const identity = { version: 1 as const, phase: 'active' as const, projectId, registryId: bootId, identityId, revision: 3,
+  account: 'skp' + identityId.replaceAll('-', '').slice(0, 24), uid: 20001, gid: 20001,
+  home: '/var/lib/sakura-project-homes/' + identityId, directory: '/workspace/private',
+  directoryDevice: '12', directoryInode: '101', homeDevice: '12', homeInode: '102', networkIsolation: 'private' as const };
+const run = { version: 1 as const, phase: 'active' as const, mode: 'inherit-current' as const, projectId, registryId: bootId,
+  identityId, revision: 3, runId, bootId, build: 'a'.repeat(64), networkDevice: '4', networkInode: '1000',
+  cgroupDevice: '29', cgroupInode: '1001', cgroupName: 'sakura-service-' + runId, namespace: 'sk-' + projectId };
+const desktop = { version: 1 as const, identity, run, record: { version: 1 as const, projectId, name: 'desktop' as const,
+  session: 'sakura-desktop-' + projectId, runId, bootId, scopeName: run.cgroupName, inode: run.cgroupInode,
+  binding: 'b'.repeat(64), phase: 'running' as const, sessionId: '$1', paneId: '%1', panePid: 3456, paneStartTicks: '4567' },
+  sha256: launcher, runtime: '/run/sakura-desktop-uid/20001/' + runId,
+  endpoint: { plasmaPid: 1234, plasmaCreated: '2345', vncPid: 2345, vncCreated: '3456', runtimeDevice: '12',
+    runtimeInode: '2001', xauthDevice: '12', xauthInode: '2002', xauthSha256: 'c'.repeat(64), readyDevice: '12', readyInode: '2003' } };
+desktopControlProofSchema.parse({ ...desktop, build: run.build });
 const rule = { ...defaultClipboardRule(), copy: false };
 const sessionId = '44444444-4444-4444-8444-444444444444';
 async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
@@ -35,10 +52,10 @@ async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
   await writeFile(join(assets, 'manifest.json'), JSON.stringify({ version: 1, build, files }));
   let rows: X11ClipboardSession[] = [],
     locked = false,
-    failed = '',
+    failed: string[] = [],
     live = true;
   let queue = Promise.resolve();
-  const calls: any[] = [];
+  const calls: any[] = [], leases = { validated: 0, released: 0 };
   const machines = {
     get: () => ({ distro: 'debian' }),
     state: () => (live ? 'running' : 'stopped'),
@@ -64,7 +81,7 @@ async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
       }
       if (!request) return { code: 0, stdout: '', stderr: '' };
       calls.push({ request, code });
-      if (request.action === failed)
+      if (failed.includes(request.action))
         return { code: 1, stdout: JSON.stringify({ error: 'injected native failure' }), stderr: '' };
       let output: unknown;
       if (request.action === 'list') output = { ready: true, build, sessions: rows };
@@ -84,6 +101,9 @@ async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
           sha256: hash,
           projectId: request.projectId,
           directory: request.directory,
+          desktopOwner: { projectId, uid: identity.uid, runId },
+          applicationOwner: { uid: transport === 'wayland' ? 12345 : identity.uid,
+            kind: transport === 'wayland' ? 'window-sandbox' : 'project-desktop' },
           active: true,
           compatible: true,
           generation: request.generation,
@@ -100,6 +120,13 @@ async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
         if (row) row.state = 'stopped';
         output = { stopped: true };
       }
+      if (request.action === 'stop-desktop') {
+        const expected = { ...request.desktop, record: { ...request.desktop.record, phase: 'running' } };
+        assert.deepEqual(expected, desktop);
+        const selected = rows.filter(row => row.desktopOwner?.runId === request.desktop.run.runId);
+        for (const row of selected) row.state = 'stopped';
+        output = { stopped: true, sessions: selected.map(row => row.id) };
+      }
       return { code: 0, stdout: JSON.stringify(output), stderr: '' };
     },
   } as unknown as Machines;
@@ -108,7 +135,9 @@ async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
   const service = new Service(
     machines,
     async () => ({
-      launcherSha256: launcher,
+      desktop,
+      validate: async () => { ++leases.validated; },
+      release: async () => { ++leases.released; },
       project: {
         directory: '/workspace/private',
         template: 'none',
@@ -153,6 +182,7 @@ async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
     secret,
     row,
     calls,
+    leases,
     save,
     rows: (value: X11ClipboardSession[]) => {
       rows = value;
@@ -160,8 +190,8 @@ async function fixture(t: any, transport: 'x11' | 'wayland' = 'x11') {
     lock: () => {
       locked = true;
     },
-    fail: (value: string) => {
-      failed = value;
+    fail: (value: string | string[]) => {
+      failed = Array.isArray(value) ? value : value ? [value] : [];
     },
     stopVm: () => {
       live = false;
@@ -201,7 +231,9 @@ test('X11 launch journals its owner, preserves project scope and sends environme
   })) as any;
   assert.equal(started.state, 'running');
   const launch = f.calls.find((call) => call.request.action === 'launch');
-  assert.equal(launch.request.launcherSha256, launcher);
+  assert.deepEqual(launch.request.desktop, desktop);
+  assert.equal(launch.request.launcherSha256, undefined);
+  assert.match(launch.code, /env -i PATH=/);
   assert.equal(launch.request.projectId, 'abcdefabcdefabcd');
   assert.equal(launch.request.networkNamespace, 'sk-abcdefabcdefabcd');
   assert.ok(launch.code.includes('ip netns exec sk-abcdefabcdefabcd'));
@@ -262,7 +294,9 @@ test('Wayland broker service journals a distinct owner, project binding and lite
   assert.match(launch.code, /sakura-wayland-clipboard/);
   assert.equal(launch.request.projectId, 'abcdefabcdefabcd');
   assert.equal(launch.request.networkNamespace, 'sk-abcdefabcdefabcd');
-  assert.equal(launch.request.launcherSha256, launcher);
+  assert.deepEqual(launch.request.desktop, desktop);
+  assert.equal(launch.request.launcherSha256, undefined);
+  assert.match(launch.code, /env -i PATH=/);
   assert.deepEqual(launch.request.args, ['--name', 'space & $()']);
   assert.deepEqual(launch.request.environment, { TOKEN: createHash('sha256').update(f.secret).digest('hex') });
   assert.ok(!JSON.stringify(launch.request).includes(f.secret));
@@ -334,3 +368,33 @@ test('X11 launch failure cleans only the allocated session and refuses unsaved a
   assert.notEqual(stopped.id, sessionId);
   assert.equal(stopped.owner, launch.owner);
 });
+
+for (const transport of ['x11', 'wayland'] as const) {
+  test(`${transport} launch rollback503 retains preparation until exact original stop ACK`, async t => {
+    const f = await fixture(t, transport); await f.save(); f.fail(['launch', 'stop']);
+    await assert.rejects(f.service.action('vm', { action: 'launch', version: 2, image }),
+      { status: 503, code: 'LINUX_CLIPBOARD_CLEANUP_FAILED' });
+    assert.equal(f.leases.released, 0);
+    const request = f.calls.findLast(call => call.request.action === 'launch').request;
+    await assert.rejects(f.service.action('vm', { action: 'stop', id: request.id }), { status: 503 });
+    assert.equal(f.leases.released, 0); f.fail('');
+    await f.service.action('vm', { action: 'stop', id: request.id }); assert.equal(f.leases.released, 1);
+  });
+
+  test(`${transport} Desktop retirement matches full original owner and preserves neighboring application domain`, async t => {
+    const f = await fixture(t, transport); await f.save();
+    const launched = await f.service.action('vm', { action: 'launch', version: 2, image }) as X11ClipboardSession;
+    assert.equal(f.leases.validated, 2); assert.equal(f.leases.released, 1);
+    assert.equal(launched.desktopOwner!.uid, 20001);
+    assert.equal(launched.applicationOwner!.uid, transport === 'wayland' ? 12345 : 20001);
+    const neighbor: X11ClipboardSession = { ...launched, id: sessionId,
+      desktopOwner: { ...launched.desktopOwner!, runId: '55555555-5555-4555-8555-555555555555' } };
+    f.rows([launched, neighbor]); f.fail('stop-desktop');
+    await assert.rejects(f.service.retireDesktop('vm', { ...desktop, build: run.build }),
+      { status: 503, code: 'LINUX_CLIPBOARD_CLEANUP_FAILED' });
+    assert.equal(launched.state, 'running'); f.fail('');
+    await f.service.retireDesktop('vm', { ...desktop, record: { ...desktop.record, phase: 'stopped' }, build: run.build });
+    assert.equal(launched.state, 'stopped'); assert.equal(neighbor.state, 'running');
+    assert.equal(f.calls.findLast(call => call.request.action === 'stop-desktop').request.desktop.run.runId, runId);
+  });
+}

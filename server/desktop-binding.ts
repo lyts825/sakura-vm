@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { isDeepStrictEqual } from 'node:util';
 import { AppError, guestPath, vmDir } from './model.ts';
 import type { Machines } from './machines.ts';
 import type { Project } from './workspaces.ts';
@@ -14,9 +15,13 @@ import { envPrefix } from './project-services.ts';
 import { projectNetworkCommand, ensureProjectNetworkScript,
   projectNetworkNamespace, projectNetworkCheckScript } from './project-network-isolation.ts';
 import { uidCleanupScript } from './single-app-sandbox.ts';
+import { desktopPreferencesSchema } from './desktop-preferences.ts';
+import { projectIdentitySchema, projectIdentityRunSchema } from './project-identity.ts';
+import { projectDesktopRecordSchema } from './project-service-scope.ts';
+import { desktopEndpointSchema } from './desktop-project-control.ts';
 
 export const desktopLauncherPath = '/usr/local/libexec/sakura-desktop-launcher';
-export const desktopBindingSchema = z.object({ version: z.literal(1),
+export const legacyDesktopBindingSchema = z.object({ version: z.literal(1),
   projectId: projectIdSchema, directory: z.string().max(4096).refine((value) => {
     try { guestPath(value); return true; } catch { return false; }
   }),
@@ -24,7 +29,28 @@ export const desktopBindingSchema = z.object({ version: z.literal(1),
   launcherSha256: z.string().regex(/^[a-f0-9]{64}$/),
   enabled: z.boolean(),
 }).strict();
+export const projectDesktopBindingSchema = z.object({
+  ...legacyDesktopBindingSchema.shape, version: z.literal(2), configVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  preferences: desktopPreferencesSchema, state: z.enum(['starting', 'running', 'review', 'stopped']),
+  execution: z.object({ identity: projectIdentitySchema, record: projectDesktopRecordSchema,
+    run: projectIdentityRunSchema.nullable(), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    runtime: z.string(), endpoint: desktopEndpointSchema.nullable(), build: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict(),
+}).strict().superRefine((value, ctx) => {
+  const { identity, record, run, sha256, runtime, build } = value.execution;
+  if (identity.phase !== 'active' || identity.projectId !== value.projectId || identity.directory !== value.directory ||
+      identity.networkIsolation !== value.networkIsolation || record.projectId !== value.projectId ||
+      value.launcherSha256 !== sha256 || runtime !== '/run/sakura-desktop-uid/' + identity.uid + '/' + record.runId ||
+      run && (run.runId !== record.runId || run.projectId !== value.projectId || run.identityId !== identity.identityId ||
+        run.registryId !== identity.registryId || run.revision !== identity.revision || run.bootId !== record.bootId ||
+        run.build !== build || run.cgroupName !== record.scopeName || run.cgroupInode !== record.inode || run.mode !== 'inherit-current') ||
+      value.state === 'running' && (!run || run.phase !== 'active' || record.phase !== 'running' || !value.execution.endpoint) ||
+      value.state === 'stopped' && record.phase !== 'stopped')
+    ctx.addIssue({ code: 'custom', message: 'Desktop 项目与完整会话票据不符' });
+});
+export const desktopBindingSchema = z.union([legacyDesktopBindingSchema, projectDesktopBindingSchema]);
 export type DesktopBinding = z.infer<typeof desktopBindingSchema>;
+export type ProjectDesktopBinding = z.infer<typeof projectDesktopBindingSchema>;
 
 export function bindingProject(binding: DesktopBinding): Project {
   return { template: 'none', directory: binding.directory, setup: '', command: '', repository: '',
@@ -86,6 +112,7 @@ wait "$child"
 }
 
 export function desktopBindingCheck(binding: DesktopBinding) {
+  if (binding.version !== 1) throw new AppError('项目 Desktop 需要完整 UID 会话验证', 409, 'DESKTOP_SCOPE_CHANGED');
   return `test -f ${desktopLauncherPath} && test ! -L ${desktopLauncherPath} && ` +
     `test "$(stat -c %u ${desktopLauncherPath})" = 0 && ` +
     `test "$(sha256sum ${desktopLauncherPath} | cut -d' ' -f1)" = ${binding.launcherSha256}`;
@@ -105,7 +132,7 @@ export class DesktopBindings {
 
   async write(id: string, project: Project, signal?: AbortSignal) {
     const script = desktopLauncher(project, this.machines.get(id).distro || 'alpine');
-    const binding = desktopBindingSchema.parse({ version: 1, projectId: project._workspace || 'default',
+    const binding = legacyDesktopBindingSchema.parse({ version: 1, projectId: project._workspace || 'default',
       directory: project.directory, networkIsolation: project.networkIsolation || 'host',
       enabled: false,
       launcherSha256: createHash('sha256').update(script).digest('hex') });
@@ -135,9 +162,20 @@ export class DesktopBindings {
 
   async enable(id: string, binding: DesktopBinding, enabled: boolean) {
     const current = await this.read(id);
-    if (!current || current.launcherSha256 !== binding.launcherSha256)
+    if (!current || !isDeepStrictEqual(current, binding))
       throw new AppError('桌面启动绑定已变化，请重试', 409);
     await writeStore(join(vmDir(id), 'desktop-binding.json'), { ...current, enabled });
+  }
+
+  async save(id: string, binding: ProjectDesktopBinding, previous: DesktopBinding | null) {
+    const current = await this.read(id);
+    if (!isDeepStrictEqual(current, previous))
+      throw new AppError('Desktop 原绑定已变化，拒绝覆盖', 409, 'DESKTOP_SCOPE_CHANGED');
+    if (current?.version === 1)
+      throw new AppError('旧共享 Desktop 没有完整 UID 票据，只能审阅，不能自动接管', 409, 'DESKTOP_LEGACY_REVIEW_REQUIRED');
+    if (current?.version === 2 && current.execution.record.runId !== binding.execution.record.runId && current.state !== 'stopped')
+      throw new AppError('原 Desktop 完整运行域尚未核销，拒绝覆盖', 409, 'DESKTOP_SCOPE_CHANGED');
+    await writeStore(join(vmDir(id), 'desktop-binding.json'), projectDesktopBindingSchema.parse(binding));
   }
 
   async clear(id: string) {

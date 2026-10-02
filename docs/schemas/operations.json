@@ -832,6 +832,52 @@
                 "type": "string",
                 "maxLength": 256
               },
+              "desktopOwner": {
+                "type": "object",
+                "properties": {
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 20000,
+                    "maximum": 59999
+                  },
+                  "runId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "projectId",
+                  "uid",
+                  "runId"
+                ],
+                "additionalProperties": false
+              },
+              "applicationOwner": {
+                "type": "object",
+                "properties": {
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 9007199254740991
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "project-desktop",
+                      "window-sandbox"
+                    ]
+                  }
+                },
+                "required": [
+                  "uid",
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
               "processes": {
                 "maxItems": 1024,
                 "type": "array",
@@ -1304,6 +1350,52 @@
                     "type": "string",
                     "maxLength": 256
                   },
+                  "desktopOwner": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "uid": {
+                        "type": "integer",
+                        "minimum": 20000,
+                        "maximum": 59999
+                      },
+                      "runId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "projectId",
+                      "uid",
+                      "runId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "applicationOwner": {
+                    "type": "object",
+                    "properties": {
+                      "uid": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "project-desktop",
+                          "window-sandbox"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "uid",
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
                   "processes": {
                     "maxItems": 1024,
                     "type": "array",
@@ -1477,6 +1569,52 @@
             "error": {
               "type": "string",
               "maxLength": 256
+            },
+            "desktopOwner": {
+              "type": "object",
+              "properties": {
+                "projectId": {
+                  "type": "string"
+                },
+                "uid": {
+                  "type": "integer",
+                  "minimum": 20000,
+                  "maximum": 59999
+                },
+                "runId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "required": [
+                "projectId",
+                "uid",
+                "runId"
+              ],
+              "additionalProperties": false
+            },
+            "applicationOwner": {
+              "type": "object",
+              "properties": {
+                "uid": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 9007199254740991
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project-desktop",
+                    "window-sandbox"
+                  ]
+                }
+              },
+              "required": [
+                "uid",
+                "kind"
+              ],
+              "additionalProperties": false
             },
             "processes": {
               "maxItems": 1024,
@@ -1757,6 +1895,52 @@
               "error": {
                 "type": "string",
                 "maxLength": 256
+              },
+              "desktopOwner": {
+                "type": "object",
+                "properties": {
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 20000,
+                    "maximum": 59999
+                  },
+                  "runId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "projectId",
+                  "uid",
+                  "runId"
+                ],
+                "additionalProperties": false
+              },
+              "applicationOwner": {
+                "type": "object",
+                "properties": {
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 9007199254740991
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "project-desktop",
+                      "window-sandbox"
+                    ]
+                  }
+                },
+                "required": [
+                  "uid",
+                  "kind"
+                ],
+                "additionalProperties": false
               },
               "processes": {
                 "maxItems": 1024,
@@ -2230,6 +2414,52 @@
                     "type": "string",
                     "maxLength": 256
                   },
+                  "desktopOwner": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "uid": {
+                        "type": "integer",
+                        "minimum": 20000,
+                        "maximum": 59999
+                      },
+                      "runId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      }
+                    },
+                    "required": [
+                      "projectId",
+                      "uid",
+                      "runId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "applicationOwner": {
+                    "type": "object",
+                    "properties": {
+                      "uid": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "project-desktop",
+                          "window-sandbox"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "uid",
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
                   "processes": {
                     "maxItems": 1024,
                     "type": "array",
@@ -2403,6 +2633,52 @@
             "error": {
               "type": "string",
               "maxLength": 256
+            },
+            "desktopOwner": {
+              "type": "object",
+              "properties": {
+                "projectId": {
+                  "type": "string"
+                },
+                "uid": {
+                  "type": "integer",
+                  "minimum": 20000,
+                  "maximum": 59999
+                },
+                "runId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                }
+              },
+              "required": [
+                "projectId",
+                "uid",
+                "runId"
+              ],
+              "additionalProperties": false
+            },
+            "applicationOwner": {
+              "type": "object",
+              "properties": {
+                "uid": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 9007199254740991
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "project-desktop",
+                    "window-sandbox"
+                  ]
+                }
+              },
+              "required": [
+                "uid",
+                "kind"
+              ],
+              "additionalProperties": false
             },
             "processes": {
               "maxItems": 1024,

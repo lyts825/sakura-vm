@@ -62,7 +62,7 @@ export const projectMainRecordSchema = z.object({
 });
 export type ProjectMainRecord = z.infer<typeof projectMainRecordSchema>;
 type ProjectScopeRecord = ProjectServiceRecord | ProjectMainRecord;
-type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide' | 'notebook' | 'reverse-tunnel' | 'mesh'; deadline?: number } | { kind: 'main' };
+type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide' | 'notebook' | 'reverse-tunnel' | 'desktop' | 'mesh'; deadline?: number } | { kind: 'main' };
 export const projectBrowserIdeRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
   name: z.literal('browser-ide'), session: z.string().regex(/^sakura-browser-ide-(default|[a-f0-9]{16})$/),
 }).strict().superRefine((record, ctx) => {
@@ -131,6 +131,22 @@ export function projectNotebookScopePaths(project: Project) {
   return { namespace: 'notebook' as const, projectId, name: 'notebook',
     session: 'sakura-notebook-' + projectId, guest: '/run/sakura-notebook/' + projectId };
 }
+export const projectDesktopRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
+  name: z.literal('desktop'), session: z.string().regex(/^sakura-desktop-(default|[a-f0-9]{16})$/),
+}).strict().superRefine((record, ctx) => {
+  const panes = [record.sessionId, record.paneId, record.panePid, record.paneStartTicks];
+  if (record.session !== 'sakura-desktop-' + record.projectId || record.scopeName !== 'sakura-service-' + record.runId ||
+      panes.some(value => value !== null) && panes.some(value => value === null) ||
+      ['prepared', 'running'].includes(record.phase) && record.inode === null ||
+      record.phase === 'running' && record.panePid === null)
+    ctx.addIssue({ code: 'custom', message: 'Desktop 的完整 cgroup/pane 身份缺失' });
+});
+export type ProjectDesktopRecord = z.infer<typeof projectDesktopRecordSchema>;
+export function projectDesktopScopePaths(project: Project) {
+  const projectId = projectIdSchema.parse(project._workspace || 'default');
+  return { namespace: 'desktop' as const, projectId, name: 'desktop',
+    session: 'sakura-desktop-' + projectId, guest: '/run/sakura-project-desktop/' + projectId };
+}
 export type ProjectScopeInput = { runId: string; command: string; input: Buffer; sha256: string };
 const transportSchema = z.object({ version: z.literal(1),
   sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().min(1).max(128 * 1024),
@@ -168,7 +184,8 @@ const scopePaths = (project: Project, target: ScopeTarget) => target.kind === 'm
     ? projectBrowserIdeScopePaths(project) : target.namespace === 'notebook'
       ? projectNotebookScopePaths(project) : target.namespace === 'reverse-tunnel'
         ? projectReverseTunnelScopePaths(project) : target.namespace === 'mesh'
-          ? projectMeshScopePaths(project) : projectServiceScopePaths(project, target.name);
+          ? projectMeshScopePaths(project) : target.namespace === 'desktop'
+            ? projectDesktopScopePaths(project) : projectServiceScopePaths(project, target.name);
 export function projectMainBinding(project: Project) {
   return createHash('sha256').update(JSON.stringify(['main-uid-v3',
     project._workspace || 'default', project.directory, project.networkIsolation || 'host',
@@ -189,16 +206,25 @@ const helper = `import fcntl,hashlib,json,os,re,signal,stat,subprocess,sys,tempf
 boot=open('/proc/sys/kernel/random/boot_id').read().strip()
 folder=request['guest']; owner_file=folder+'/owner.json'; cancel_file=folder+'/cancel'
 main=request.get('kind')=='main'
-root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-mesh' if request.get('namespace')=='mesh' else '/run/sakura-project-services'
+root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-mesh' if request.get('namespace')=='mesh' else '/run/sakura-project-desktop' if request.get('namespace')=='desktop' else '/run/sakura-project-services'
+readonly=request.get('namespace')=='desktop' and request['op']=='status'
 scope_prefix='sakura-main-' if main else 'sakura-service-'
 def refuse(message): raise RuntimeError(message)
 def trusted_directory(path):
- try: os.mkdir(path,0o700)
- except FileExistsError: pass
+ if not readonly:
+  try: os.mkdir(path,0o700)
+  except FileExistsError: pass
  info=os.lstat(path)
  if not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_mode & 0o022: refuse('服务归属目录权限无法核对')
-for path in [root,folder.rsplit('/',1)[0],folder]: trusted_directory(path)
-lock=os.open(folder+'/lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+try:
+ for path in [root,folder.rsplit('/',1)[0],folder]: trusted_directory(path)
+ lock=os.open(folder+'/lock',(os.O_RDONLY if readonly else os.O_CREAT|os.O_RDWR)|os.O_NOFOLLOW,0o600)
+except FileNotFoundError:
+ if not readonly: raise
+ result=subprocess.run(['/usr/bin/tmux','has-session','-t','='+request['session']],capture_output=True,text=True)
+ if result.returncode==0: raise RuntimeError('Desktop 同名 pane 缺少完整归属，拒绝接管')
+ if not any(text in result.stderr for text in ["can't find session",'no server running','No such file or directory']): raise RuntimeError('Desktop 同名 pane 状态无法核对')
+ print(json.dumps({'status':'absent','bootId':boot,'record':None})); sys.exit(0)
 info=os.fstat(lock)
 if not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode & 0o022: refuse('服务归属锁权限无法核对')
 def read_owner():
@@ -347,7 +373,7 @@ def capabilities():
  descriptor=os.pidfd_open(os.getpid()); os.close(descriptor)
 def result(status,record=None): print(json.dumps({'status':status,'bootId':boot,'record':record}))
 def status():
- fcntl.flock(lock,fcntl.LOCK_EX)
+ fcntl.flock(lock,fcntl.LOCK_SH if readonly else fcntl.LOCK_EX)
  record=read_owner(); panes=tmux_panes()
  if record is None: result('unmanaged' if panes else 'absent'); return
  if record['bootId']!=boot: refuse('服务归属 boot 身份已改变')
@@ -637,6 +663,8 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
       ? join(vmDir(this.id), 'project-mesh', p.projectId, 'runtime.json')
       : this.target.kind === 'service' && this.target.namespace === 'notebook'
       ? join(vmDir(this.id), 'project-notebooks', p.projectId, 'runtime.json')
+      : this.target.kind === 'service' && this.target.namespace === 'desktop'
+      ? join(vmDir(this.id), 'project-desktop', p.projectId, 'runtime.json')
       : this.target.kind === 'main'
       ? join(vmDir(this.id), 'project-main', p.projectId, 'runtime.json')
       : join(vmDir(this.id), 'project-services', p.projectId, this.target.name, 'runtime.json');
@@ -790,7 +818,7 @@ if boot==request['record']['bootId']:
  print(json.dumps({'bootId':boot,'retired':False}))
 else:
  folder=request['guest']
- root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-mesh' if request.get('namespace')=='mesh' else '/run/sakura-project-services'
+ root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-mesh' if request.get('namespace')=='mesh' else '/run/sakura-project-desktop' if request.get('namespace')=='desktop' else '/run/sakura-project-services'
  for path in [root,folder.rsplit('/',1)[0],folder]:
   try: os.mkdir(path,0o700)
   except FileExistsError: pass
@@ -979,6 +1007,23 @@ export class ProjectMeshScope extends ProjectProcessScope<ProjectMeshRecord> {
       const transport = status.record && await this.transport(status.record);
       if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
         throw new AppError('服务网格受保护正文与原记录不符', 409, 'SERVICE_SCOPE_CHANGED');
+    }
+    return status;
+  }
+}
+
+/** Desktop owns one complete service domain in a namespace separate from user services. */
+export class ProjectDesktopScope extends ProjectProcessScope<ProjectDesktopRecord> {
+  constructor(machines: Machines, id: string, project: Project) {
+    super(machines, id, project, { kind: 'service', name: 'desktop', namespace: 'desktop' },
+      projectDesktopRecordSchema, machines.live.get(id));
+  }
+  async status(signal?: AbortSignal, payloadSha256?: string) {
+    const status = await super.status(signal);
+    if (payloadSha256 !== undefined) {
+      const transport = status.record && await this.transport(status.record);
+      if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
+        throw new AppError('Desktop 受保护正文与原记录不符', 409, 'DESKTOP_SCOPE_CHANGED');
     }
     return status;
   }

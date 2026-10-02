@@ -1026,6 +1026,9 @@ test(`Linux ${transport} clipboard saves identities and rules, launches argument
       if (input.action === 'launch') {
         const session = { id, state: 'running', image, sha256, projectId: 'default', compatible: true, active: true,
           rule: state.applications[0].rule, blockedCopy: 7, blockedPaste: 2,
+          desktopOwner: { projectId: 'default', uid: 20001, runId: id },
+          applicationOwner: { uid: transport === 'wayland' ? 30001 : 20001,
+            kind: transport === 'wayland' ? 'window-sandbox' : 'project-desktop' },
           processes: [{ pid: 1234, created: '42', image, loaded: true }] };
         state.sessions.push(session); return route.fulfill({ json: session });
       }
@@ -1053,6 +1056,8 @@ test(`Linux ${transport} clipboard saves identities and rules, launches argument
   await start.click();
   const sessions = panel.getByLabel('Linux 受控应用');
   await expect(sessions).toContainText('拒绝复制 7 次');
+  await expect(sessions).toContainText('桌面账号 UID 20001');
+  await expect(sessions).toContainText(transport === 'wayland' ? '应用独立账号 UID 30001' : '应用沿用桌面项目账号');
   expect(submitted.find(value => value.action === 'launch')).toEqual({ action: 'launch', version: 2, image, args: ['--title', 'space & $()'] });
   expect(submitted.find(value => value.action === 'save').application.rule).toEqual({ copy: false, paste: true, files: false, sensitive: true, maxTextBytes: 4096 });
   await page.reload();
@@ -1119,6 +1124,30 @@ test('KDE project mismatch blocks graphics until the owner stops and rebinds the
   await expect(page.getByRole('heading', { name: '桌面会话已停止' })).toBeVisible();
   expect(submitted).toEqual([{ action: 'stop' }]);
   await expect(page.getByRole('button', { name: '启动桌面', exact: true })).toBeVisible();
+});
+
+test('KDE cleanup failure keeps explicit stop retry available and blocks replacement installation', async ({ page }) => {
+  await app(page, ['desktop'], true);
+  let pending = true;
+  const submitted: Record<string, unknown>[] = [];
+  await page.route('**/api/vms', route =>
+    route.fulfill({ json: [{ ...vm, memoryMiB: 2048, status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/desktop*', route => {
+    if (route.request().method() === 'POST') {
+      submitted.push(route.request().postDataJSON()); pending = false;
+      return route.fulfill({ json: { stopped: true } });
+    }
+    return route.fulfill({ json: { status: pending ? 'error' : 'stopped', log: '', preferences: {},
+      projectId: 'default', ...(pending ? { cleanupPending: true, error: '原桌面清理未确认' } : {}) } });
+  });
+  await page.reload();
+  await page.getByRole('tab', { name: '桌面', exact: true }).click();
+  await expect(page.getByText('独立主目录与项目权限')).toBeVisible();
+  await expect(page.getByRole('button', { name: '重试安装与启动', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '重试停止桌面', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '桌面会话已停止' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '启动桌面', exact: true })).toBeEnabled();
+  expect(submitted).toEqual([{ action: 'stop' }]);
 });
 
 test('Debian desktop opens and stops an isolated single-app browser window', async ({ page }) => {

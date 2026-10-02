@@ -343,11 +343,11 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
         </div>
         {(ready || running) && (
           <div className="desktop-toolbar-actions">
-            {desktop && ['ready', 'starting', 'installing'].includes(desktop.status) && (
+            {desktop && (desktop.cleanupPending || ['ready', 'starting', 'installing'].includes(desktop.status)) && (
               <button className="secondary compact" disabled={submitting}
                 title="停止 KDE 会话及其程序；请先保存桌面中的工作"
                 onClick={() => void enable('stop')}>
-                <Square size={14} /> 停止桌面
+                <Square size={14} /> {desktop.cleanupPending ? '重试停止桌面' : '停止桌面'}
               </button>
             )}
             {running && <button
@@ -786,8 +786,8 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             <div>
               <HardDrive size={16} />
               <span>
-                <b>独立桌面用户</b>
-                <small>/home/sakura-desktop</small>
+                <b>项目桌面账号</b>
+                <small>独立主目录与项目权限</small>
               </span>
             </div>
             <div>
@@ -825,7 +825,7 @@ export function DesktopPanel({ vm, token, start, busy, configure, request }: Pro
             !installing && (
               <button
                 className="primary"
-                disabled={submitting}
+                disabled={submitting || desktop.cleanupPending}
                 onClick={() => void enable(desktop.status === 'stopped' ? 'start' : 'install')}
               >
                 {submitting ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}

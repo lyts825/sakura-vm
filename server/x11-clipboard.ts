@@ -15,6 +15,7 @@ import { x11SourceBundle } from './x11-clipboard-assets.ts';
 import { waylandSourceBundle } from './wayland-clipboard-assets.ts';
 import { defaultClipboardRule } from '../shared/clipboard-policy.ts';
 import type { X11ClipboardView } from '../shared/x11-clipboard.ts';
+import { desktopControlProofSchema, type DesktopAuthority } from './desktop-project-control.ts';
 
 const image = z
   .string()
@@ -99,6 +100,8 @@ const session = z
     blockedCopy: z.number().nonnegative().optional(),
     blockedPaste: z.number().nonnegative().optional(),
     error: z.string().max(256).optional(),
+    desktopOwner: z.object({ projectId: z.string(), uid: z.number().int().min(20000).max(59999), runId: z.uuid() }).strict().optional(),
+    applicationOwner: z.object({ uid: z.number().int().min(1000), kind: z.enum(['project-desktop', 'window-sandbox']) }).strict().optional(),
     processes: z
       .array(
         z
@@ -156,22 +159,47 @@ const matches = (a: z.infer<typeof x11ClipboardRule>, b: z.infer<typeof x11Clipb
   a.maxTextBytes === b.maxTextBytes;
 type State = z.infer<typeof x11ClipboardConfiguration>;
 type Bundle = Awaited<ReturnType<typeof x11SourceBundle>> | Awaited<ReturnType<typeof waylandSourceBundle>>;
-export type X11ApplicationContext = { project: Project; launcherSha256: string };
+export type X11ApplicationContext = { project: Project; desktop?: DesktopAuthority; launcherSha256?: string;
+  validate?: () => Promise<void>; release?: () => Promise<void> };
 export type LinuxClipboardOptions = { assets?: string; file?: (id: string) => string; jobsDirectory?: string;
   transport?: 'x11' | 'wayland' };
 
+type RetainedApplication = { runId: string; release: () => Promise<void> };
+const retainedApplications = new WeakMap<Machines, Map<string, RetainedApplication>>();
 export class X11Clipboard {
   readonly jobs: Jobs;
   private states = new Map<string, Promise<State>>();
   private closed = false;
+  private retained: Map<string, RetainedApplication>;
   constructor(
     private machines: Machines,
     private applicationProject: (id: string) => Promise<X11ApplicationContext>,
     private options: LinuxClipboardOptions = {},
   ) {
     this.jobs = new Jobs(`${this.transport}-clipboard-install`, options.jobsDirectory);
+    if (!retainedApplications.has(machines)) retainedApplications.set(machines, new Map());
+    this.retained = retainedApplications.get(machines)!;
   }
   private get transport() { return this.options.transport || 'x11'; }
+  private retainedKey(id: string, owner: string, sessionId: string) { return [this.transport, id, owner, sessionId].join(':'); }
+  async retireDesktop(id: string, proof: import('./desktop-project-control.ts').DesktopControlProof) {
+    if (!proof.run) return;
+    const raw = await readStore(this.file(id), () => null);
+    if (raw === null) return;
+    const state = x11ClipboardConfiguration.parse(raw), bundle = await this.bundle();
+    try {
+      const { build: _build, ...desktop } = proof;
+      const reply = z.object({ stopped: z.literal(true), sessions: z.array(z.uuid()).max(128) }).strict().parse(
+        await this.command(id, bundle, { action: 'stop-desktop', owner: state.owner, desktop }));
+      for (const sessionId of reply.sessions) {
+        const key = this.retainedKey(id, state.owner, sessionId), pending = this.retained.get(key);
+        if (pending?.runId === proof.run.runId) { await pending.release(); this.retained.delete(key); }
+      }
+    } catch (error) {
+      if (error instanceof AppError && error.status === 503) throw error;
+      throw new AppError('Desktop 所属 Linux 应用原完整域清理未确认，原票据保留', 503, 'LINUX_CLIPBOARD_CLEANUP_FAILED');
+    }
+  }
   private file(id: string) {
     return this.options.file?.(id) || join(vmDir(id), `${this.transport}-clipboard.json`);
   }
@@ -267,12 +295,13 @@ export class X11Clipboard {
   private script(bundle: Bundle, request: object) {
     const helper = bundle.manifest.files.find((file) => file.name === 'controller.py')!;
     const file = bundle.directory + '/controller.py';
-    return (
+    const script = (
       `set -eu\n${this.directoryScript(bundle, false)}\ntest -f ${quote(file)} && test ! -L ${quote(file)}\n` +
       `test "$(stat -c %u ${quote(file)})" = 0\n` +
       `test "$(sha256sum ${quote(file)} | cut -d' ' -f1)" = ${helper.sha256}\n` +
       `exec /usr/bin/python3 -I -S ${quote(file)} ${quote(Buffer.from(JSON.stringify(request)).toString('base64'))}`
     );
+    return `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ${quote(script)}`;
   }
   private async command(
     id: string,
@@ -442,20 +471,39 @@ export class X11Clipboard {
           .object({ image, sha256: digest })
           .strict()
           .parse(await this.command(id, bundle, { ...request, owner: state.owner }, signal));
-      if (request.action === 'stop' || request.action === 'forget')
-        return this.command(id, bundle, { ...request, owner: state.owner }, signal);
+      if (request.action === 'stop' || request.action === 'forget') {
+        try {
+          const raw = await this.command(id, bundle, { ...request, owner: state.owner }, signal);
+          const result = (request.action === 'stop' ? z.object({ stopped: z.literal(true) }).strict()
+            : z.union([z.object({ stopped: z.literal(true) }).strict(), z.object({ removed: z.literal(true) }).strict()])).parse(raw);
+          const key = this.retainedKey(id, state.owner, request.id), pending = this.retained.get(key);
+          if (pending) { await pending.release(); this.retained.delete(key); }
+          return result;
+        } catch (error) {
+          if (error instanceof AppError && error.status === 503) throw error;
+          throw new AppError('Linux 应用原完整域清理未确认；原会话与准备租约保留', 503, 'LINUX_CLIPBOARD_CLEANUP_FAILED');
+        }
+      }
       if ('version' in request && request.version !== state.version)
         throw new AppError('Linux 剪贴板配置已变化，请刷新', 409);
       if (request.action === 'launch') {
         const application = state.applications.find((app) => app.image === request.image);
         if (!application) throw new AppError('请先绑定应用并保存剪贴板规则', 409);
-        const { project, launcherSha256 } = await this.applicationProject(id);
+        const context = await this.applicationProject(id), { project, desktop } = context;
+        let sessionId: string | undefined;
+        let issued = false;
+        let retain = false;
+        try {
+        if (!desktop?.run) {
+          throw new AppError('Linux 应用需要原项目 Desktop 完整 UID 票据；旧 Root launcher 摘要不能授权', 409, 'DESKTOP_LEGACY_REVIEW_REQUIRED');
+        }
+        desktopControlProofSchema.parse({ ...desktop, build: desktop.run.build });
         this.require(id, signal);
-        const sessionId = randomUUID();
+        sessionId = randomUUID();
         // Persist the owner before any guest process can survive this service.
         await writeStore(this.file(id), state);
         this.require(id, signal);
-        try {
+          await context.validate?.();
           const environment = Object.fromEntries(
             Object.entries(project.environment || {})
               .filter(
@@ -466,7 +514,8 @@ export class X11Clipboard {
               )
               .map(([key, value]) => [key, createHash('sha256').update(value).digest('hex')]),
           );
-          return session.parse(
+          issued = true;
+          const launched = session.parse(
             await this.command(
               id,
               bundle,
@@ -483,20 +532,28 @@ export class X11Clipboard {
                 directory: project.directory,
                 networkNamespace: projectNetworkNamespace(project),
                 environment,
-                launcherSha256,
+                desktop,
               },
               signal,
               project,
             ),
           );
+          await context.validate?.();
+          return launched;
         } catch (error) {
           // The guest owner lock serializes cleanup after a request with an
           // unknown outcome; only this newly allocated session can be stopped.
-          await this.command(id, bundle, { action: 'stop', owner: state.owner, id: sessionId }).catch(
-            () => {},
-          );
+          if (issued && sessionId) {
+            try { z.object({ stopped: z.literal(true) }).strict().parse(
+              await this.command(id, bundle, { action: 'stop', owner: state.owner, id: sessionId })); }
+            catch {
+              if (context.release) { retain = true; this.retained.set(this.retainedKey(id, state.owner, sessionId),
+                { runId: desktop!.run.runId, release: context.release }); }
+              throw new AppError('Linux 剪贴板应用原运行域清理未确认；原会话记录与准备租约已保留', 503, 'LINUX_CLIPBOARD_CLEANUP_FAILED');
+            }
+          }
           throw error;
-        }
+        } finally { if (!retain) await context.release?.(); }
       }
       if (request.action === 'save' || request.action === 'remove') {
         if (request.action === 'save') {

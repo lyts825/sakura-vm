@@ -8,21 +8,22 @@ import {
   parseDesktopPreferencesFile,
   type DesktopPreferences,
 } from './desktop-preferences.ts';
-import { desktopCommands } from './desktop-guest.ts';
+import { desktopCommands, imeInstall } from './desktop-guest.ts';
+import { guestTask } from './guest-task.ts';
 import { ReadOnlyRfb } from './readonly-rfb.ts';
 import { SingleAppWindows } from './single-app-windows.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
-import { DesktopBindings, bindingProject, desktopBindingCheck, desktopServiceStop,
+import { DesktopBindings, desktopServiceStop,
   type DesktopBinding } from './desktop-binding.ts';
-import { projectNetworkCommand, projectNetworkNamespace, projectNetworkCheckScript } from './project-network-isolation.ts';
-import { privateLog, redactValues } from './secrets.ts';
-import { guestTask } from './guest-task.ts';
+import { redactValues } from './secrets.ts';
 import { uidCleanupScript } from './single-app-sandbox.ts';
 import { X11Clipboard } from './x11-clipboard.ts';
 import { WaylandClipboard } from './wayland-clipboard.ts';
+import { ProjectDesktops, type DesktopStartPins } from './desktop-project.ts';
 
 type Operation = {
   startedAt: string;
+  live?: DesktopStartPins['live'];
   abort: AbortController;
   view: DesktopView;
   privateValues?: string[];
@@ -37,41 +38,29 @@ export class Desktops {
   private pending = new Set<Promise<void>>();
   private closed = false;
   private bindings: DesktopBindings;
+  private projectDesktop?: ProjectDesktops;
   private unguard?: () => void;
   private watchers = new Map<string, { startedAt: string; listeners: Set<() => void> }>();
   private recovery = new Map<string, string>();
   private installed = new Set<string>();
-  constructor(private machines: Machines, private workspaces?: Workspaces) {
+  constructor(private machines: Machines, private workspaces?: Workspaces, options?: ConstructorParameters<typeof ProjectDesktops>[2]) {
     this.apps = new SingleAppWindows(machines, workspaces);
     this.bindings = new DesktopBindings(machines);
+    this.projectDesktop = workspaces ? new ProjectDesktops(machines, workspaces, { ...options,
+      beforeRetire: async (id, proof) => {
+        await this.clipboard.retireDesktop(id, proof);
+        await this.waylandClipboard.retireDesktop(id, proof);
+        await options?.beforeRetire?.(id, proof);
+      } }) : undefined;
     const applicationProject = async (id: string) => {
-      if (!this.workspaces) throw new AppError('请先启用项目工作区', 409);
-      await this.desktopCommand(id, this.workspaces.projects.current(id));
-      const binding = await this.bindings.read(id);
-      if (!binding) throw new AppError('请停止并重新启动桌面以登记项目绑定', 409);
-      const project = await this.workspaces.resolvedConfig(id);
-      return { project, launcherSha256: binding.launcherSha256 };
+      if (!this.projectDesktop) throw new AppError('请先启用项目工作区', 409);
+      return this.projectDesktop.application(id);
     };
     this.clipboard = new X11Clipboard(machines, applicationProject);
     this.waylandClipboard = new WaylandClipboard(machines, applicationProject);
     machines.on('change', this.onChange);
     machines.on('incident-lockdown', this.invalidate);
-    this.unguard = workspaces?.beforeConfigChange(async (id, previous, next) => {
-      if (previous.directory === next.directory &&
-          (previous.networkIsolation || 'host') === (next.networkIsolation || 'host')) return;
-      const binding = await this.bindings.read(id);
-      if ((binding?.projectId || 'default') !== (previous._workspace || 'default')) return;
-      if (this.machines.state(id) === 'paused')
-        throw new AppError('请先恢复实例并停止桌面，再修改项目目录或网络模式', 409);
-      if (this.machines.state(id) !== 'running') {
-        if (binding?.enabled) await this.bindings.enable(id, binding, false);
-        return;
-      }
-      const phase = await this.servicePhase(id);
-      if (['ready', 'starting'].includes(phase))
-        throw new AppError('请先停止此项目的 KDE 桌面，再修改目录或网络模式', 409);
-      if (phase === 'stopped') await this.stopService(id);
-    });
+    this.unguard = workspaces?.beforeConfigChange((id, previous, next) => this.projectDesktop!.beforeChange(id, previous, next));
     if (workspaces) queueMicrotask(() => { if (!this.closed) this.onChange(); });
   }
   private invalidate = (id: string) => {
@@ -98,6 +87,7 @@ export class Desktops {
         if (!this.closed && this.machines.live.get(id) === live && !this.operations.has(id))
           this.operations.set(id, { startedAt: live.startedAt, abort: new AbortController(),
             view: { status: 'error', log: '', error: `桌面自动恢复失败：${error.message}`,
+              ...(error instanceof AppError && error.status === 503 ? { cleanupPending: true } : {}),
               preferences: defaultDesktopPreferences } });
       });
       this.pending.add(recovered);
@@ -111,20 +101,10 @@ export class Desktops {
       if (this.installed.has(id)) this.start(id, 'start');
       return;
     }
-    const binding = await this.bindings.read(id);
-    if (!binding?.enabled || this.closed || this.operations.has(id)) return;
-    await this.workspaces.projects.with(id, binding.projectId, async () => {
-      const project = await this.workspaces!.config(id);
-      if (project.directory !== binding.directory || (project.networkIsolation || 'host') !== binding.networkIsolation) {
-        await this.bindings.enable(id, binding, false);
-        return;
-      }
-      if (this.closed || this.machines.state(id) !== 'running') return;
-      if (['ready', 'starting'].includes(await this.servicePhase(id))) {
-        await this.bindingValid(id, binding);
-        return;
-      }
-      this.start(id, 'start');
+    const restored = await this.projectDesktop!.restore(id);
+    if (!restored || this.closed || this.operations.has(id)) return;
+    await this.workspaces.projects.with(id, restored.projectId, async () => {
+      if (!this.closed && this.machines.state(id) === 'running') this.start(id, 'start', restored.preferences);
     });
   }
   async close() {
@@ -139,18 +119,9 @@ export class Desktops {
     this.unguard?.();
   }
 
-  private async servicePhase(id: string) {
-    const binding = this.workspaces ? await this.bindings.read(id) : null;
-    const result = await this.machines.exec(id, desktopCommands(this.machines.get(id).distro,
-      defaultDesktopPreferences, binding ? bindingProject(binding) : undefined).probe, 10000);
-    const phase = result.stdout.trim();
-    if (result.code !== 0 || !['not-installed', 'starting', 'ready', 'stopped'].includes(phase))
-      throw new AppError('无法检查桌面状态，请重试', 502);
-    return phase as DesktopView['status'];
-  }
-
   private async stopService(id: string) {
     this.invalidate(id);
+    if (this.projectDesktop) return this.projectDesktop.stop(id);
     let corrupted = false;
     const binding = this.workspaces ? await this.bindings.read(id).catch(() => { corrupted = true; return null; }) : null;
     if (binding?.enabled) await this.bindings.enable(id, binding, false);
@@ -174,20 +145,6 @@ export class Desktops {
     });
   }
 
-  private metadata(binding: DesktopBinding) {
-    return { projectId: binding.projectId, directory: binding.directory, networkIsolation: binding.networkIsolation };
-  }
-
-  private async bindingValid(id: string, binding: DesktopBinding) {
-    const result = await this.machines.exec(id, `set -eu\n${desktopBindingCheck(binding)}\n` +
-      (projectNetworkNamespace(bindingProject(binding)) ? projectNetworkCheckScript(projectNetworkNamespace(bindingProject(binding))!) : '') +
-      `\nexpected=$(${projectNetworkCommand(bindingProject(binding), 'readlink /proc/self/ns/net')})\n` +
-      `for pid in $(pgrep -u sakura-desktop); do\n` +
-      `actual=$(readlink /proc/"$pid"/ns/net) || continue\n` +
-      `test "$actual" = "$expected" || { echo '桌面进程网络空间不符' >&2; exit 1; }\ndone`, 10000);
-    if (result.code !== 0) throw new AppError('桌面项目绑定或实际网络空间不符，请停止并重新启动桌面', 409);
-  }
-
   async view(id: string, bound = false): Promise<DesktopView> {
     const vm = this.machines.get(id);
     if (this.machines.state(id) !== 'running')
@@ -195,8 +152,9 @@ export class Desktops {
     const operation = this.operations.get(id);
     if (operation) return { ...operation.view, ...(this.workspaces && !bound ? {
       bindingMismatch: operation.view.projectId !== this.workspaces.projects.current(id) } : {}) };
-    const binding = this.workspaces ? await this.bindings.read(id) : null;
-    const commands = desktopCommands(vm.distro, defaultDesktopPreferences, binding ? bindingProject(binding) : undefined);
+    if (this.projectDesktop) return this.projectDesktop.view(id, bound);
+    const binding: DesktopBinding | null = null;
+    const commands = desktopCommands(vm.distro, defaultDesktopPreferences);
     const result = await this.machines.exec(id, commands.probe, 10000);
     const status = result.stdout.trim();
     if (result.code !== 0 || !['not-installed', 'starting', 'ready', 'stopped'].includes(status))
@@ -208,16 +166,7 @@ export class Desktops {
     } catch {
       // A status check remains useful when an older desktop has no preferences file.
     }
-    if (binding && status === 'ready') await this.bindingValid(id, binding);
-    let bindingMismatch = false;
-    if (this.workspaces && !bound) {
-      const project = await this.workspaces.config(id);
-      bindingMismatch = ['ready', 'starting'].includes(status) && (binding ? binding.projectId !== (project._workspace || 'default') ||
-        binding.directory !== project.directory || binding.networkIsolation !== (project.networkIsolation || 'host') :
-        (project._workspace || 'default') !== 'default' || project.networkIsolation === 'private');
-    }
-    return { status: status as DesktopView['status'], log: '', preferences,
-      ...(binding ? this.metadata(binding) : {}), ...(bindingMismatch ? { bindingMismatch } : {}) };
+    return { status: status as DesktopView['status'], log: '', preferences };
   }
 
   start(
@@ -237,11 +186,13 @@ export class Desktops {
     }
     if (vm.memoryMiB < 1024)
       throw new AppError('图形桌面至少需要 1024 MiB 内存；请停机后在「配置」中调整，建议 2048 MiB', 409);
-    const preferences = desktopPreferencesSchema.parse(input || {});
+    const capturedInput = input === undefined ? undefined : structuredClone(input);
+    const preferences = desktopPreferencesSchema.parse(capturedInput || {});
     const commands = desktopCommands(vm.distro, preferences);
     const status = action === 'install' ? 'installing' : 'starting';
     const operation: Operation = {
       startedAt: live.startedAt,
+      live,
       abort: new AbortController(),
       view: {
         status,
@@ -271,7 +222,7 @@ export class Desktops {
           operation.view.log = (operation.view.log + data).slice(-16384);
         },
       );
-    const pending = (this.workspaces ? this.scopedStart(id, action, input, operation) : execute())
+    const pending = (this.workspaces ? this.scopedStart(id, action, capturedInput, operation) : execute())
       .then((result) => {
         if (result.code !== 0)
           throw new Error(result.stderr.trim() || `桌面操作失败（退出码 ${result.code}）`);
@@ -279,9 +230,10 @@ export class Desktops {
         this.installed.add(id);
       })
       .catch((error: Error) => {
-        if (!operation.abort.signal.aborted) {
+        if (!operation.abort.signal.aborted || error instanceof AppError && error.status === 503) {
           operation.view.status = 'error';
           operation.view.error = redactValues(error.message, operation.privateValues || []);
+          operation.view.cleanupPending = error instanceof AppError && error.status === 503;
         }
       });
     this.pending.add(pending);
@@ -292,66 +244,62 @@ export class Desktops {
 
   private scopedStart(id: string, action: 'install' | 'start' | 'configure', input: Partial<DesktopPreferences> | undefined,
     operation: Operation) {
-    return this.workspaces!.projects.inScope(id, operation.view.projectId!, () => this.machines.locked(id, async () => {
-      const signal = operation.abort.signal;
-      signal.throwIfAborted();
-      const project = await this.workspaces!.resolvedConfig(id), binding = await this.bindings.read(id);
-      operation.privateValues = projectPrivateValues(project);
-      const phase = await this.servicePhase(id);
-      if (phase === 'not-installed' && action === 'configure') throw new AppError('请先安装 KDE 桌面', 409);
-      if (['ready', 'starting'].includes(phase) && (binding ?
-          binding.projectId !== (project._workspace || 'default') || binding.directory !== project.directory ||
-            binding.networkIsolation !== (project.networkIsolation || 'host') :
-          (project._workspace || 'default') !== 'default' || project.networkIsolation === 'private'))
-        throw new AppError('请先停止实例中已运行的桌面，再绑定此项目', 409);
-      this.invalidate(id);
-      const captured = await this.bindings.write(id, project, signal);
-      Object.assign(operation.view, this.metadata(captured));
-      const preferences = input === undefined && action !== 'install' ?
-        parseDesktopPreferencesFile((await this.machines.exec(id,
-          desktopCommands(this.machines.get(id).distro).preferencesProbe, 10000, signal)).stdout) : operation.view.preferences!;
-      const commands = desktopCommands(this.machines.get(id).distro, preferences, project);
-      operation.view.preferences = preferences;
-      const values = operation.privateValues;
-      const log = privateLog((data) => { operation.view.log = (operation.view.log + data).slice(-16384); }, values);
-      let result;
-      try {
-        if (action === 'install' || (await this.machines.exec(id, commands.versionProbe, 10000, signal)).code !== 0) {
-          result = await guestTask(this.machines, id, commands.prepare, signal, log.write, 920000);
-          if (result.code !== 0) return { ...result, stdout: redactValues(result.stdout, values), stderr: redactValues(result.stderr, values) };
+    return this.projectDesktop!.start(id, action, input, { projectId: operation.view.projectId!, live: operation.live! },
+      operation.abort.signal, (data) => { operation.view.log = (operation.view.log + data).slice(-16384); },
+      (binding, values) => {
+        operation.privateValues = values;
+        Object.assign(operation.view, { projectId: binding.projectId, directory: binding.directory,
+          networkIsolation: binding.networkIsolation, preferences: binding.preferences });
+      });
+  }
+
+  async installIme(id: string, signal: AbortSignal, log: (line: string) => void) {
+    const live = this.machines.live.get(id), projectId = this.workspaces?.projects.current(id);
+    const vm = this.machines.get(id);
+    signal.throwIfAborted();
+    if (this.closed || this.machines.closing || live?.status !== 'running')
+      throw new AppError('请先恢复或启动实例，再安装输入法', 409);
+    const previous = this.operations.get(id);
+    if (previous && ['installing', 'starting'].includes(previous.view.status))
+      throw new AppError('桌面操作正在进行，请等待原操作完成', 409);
+    const operation: Operation = { startedAt: live.startedAt, live, abort: new AbortController(),
+      view: { status: 'installing', log: '', preferences: defaultDesktopPreferences, ...(projectId ? { projectId } : {}) } };
+    this.operations.set(id, operation);
+    const abort = () => operation.abort.abort(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    const output = (line: string) => {
+      const value = redactValues(line, operation.privateValues || []);
+      operation.view.log = (operation.view.log + value).slice(-16384); log(value);
+    };
+    const running = (this.projectDesktop
+      ? this.projectDesktop.start(id, 'ime', undefined, { projectId: projectId!, live }, operation.abort.signal, output,
+        (binding, values) => {
+          operation.privateValues = values;
+          Object.assign(operation.view, { projectId: binding.projectId, directory: binding.directory,
+            networkIsolation: binding.networkIsolation, preferences: binding.preferences });
+        })
+      : guestTask(this.machines, id, imeInstall(vm.distro), operation.abort.signal, output))
+      .then(result => {
+        if (result.code !== 0) throw new AppError(result.stderr.trim() || '输入法安装失败（退出码 ' + result.code + '）', 409);
+        if (this.operations.get(id) === operation) this.operations.delete(id);
+        this.installed.add(id);
+        return result;
+      }).catch((error: Error) => {
+        if (!operation.abort.signal.aborted || error instanceof AppError && error.status === 503) {
+          operation.view.status = 'error'; operation.view.error = redactValues(error.message, operation.privateValues || []);
+          operation.view.cleanupPending = error instanceof AppError && error.status === 503;
         }
-        signal.throwIfAborted();
-        // Init owns the persistent desktop service. Package preparation has its
-        // own cancellable process group and must not inherit that service.
-        result = await this.machines.exec(id, action === 'configure' ? commands.configure : commands.startWithPreferences,
-          180000, signal, log.write);
-      } finally { log.flush(); }
-      signal.throwIfAborted();
-      if (result.code === 0) {
-        if (await this.servicePhase(id) !== 'ready')
-          throw new AppError('桌面服务未持续就绪，请查看客户机桌面日志并重试', 409);
-        await this.bindingValid(id, captured);
-        await this.bindings.enable(id, captured, true);
-      }
-      return { ...result, stdout: redactValues(result.stdout, values), stderr: redactValues(result.stderr, values) };
-    }));
+        throw error;
+      }).finally(() => signal.removeEventListener('abort', abort));
+    const completion = running.then(() => {}, () => {});
+    operation.done = completion; this.pending.add(completion);
+    void completion.finally(() => this.pending.delete(completion));
+    return running;
   }
 
   private async desktopCommand(id: string, requestedProject?: string | null, readOnly = false) {
-    if (!this.workspaces) return 'exec nc 127.0.0.1 5901';
-    const binding = await this.bindings.read(id);
-    const requested = readOnly && !requestedProject ? binding?.projectId || 'default' : requestedProject;
-    return this.workspaces.projects.with(id, requested, async () => {
-      const project = await this.workspaces!.config(id);
-      if (binding ? binding.projectId !== (project._workspace || 'default') ||
-          binding.directory !== project.directory || binding.networkIsolation !== (project.networkIsolation || 'host') :
-        (project._workspace || 'default') !== 'default' || project.networkIsolation === 'private')
-        throw new AppError('桌面未绑定当前项目，请停止并重新启动', 409);
-      if (!binding) return 'exec nc 127.0.0.1 5901';
-      await this.bindingValid(id, binding);
-      return `set -eu\n${desktopBindingCheck(binding)}\n` +
-        projectNetworkCommand(bindingProject(binding), 'exec nc 127.0.0.1 5901');
-    });
+    if (!this.projectDesktop) return 'exec nc 127.0.0.1 5901';
+    return this.projectDesktop.command(id, requestedProject, readOnly);
   }
 
   async attach(id: string, socket: WebSocket, readOnly = false, port = 5901,

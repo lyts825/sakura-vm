@@ -2,6 +2,18 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## KDE、中文输入法与原生应用的项目账号
+
+2026-10-03 KDE Desktop 已接通捕获原项目 UID/GID、独立 home、配置/live、保护帧与独立完整 service/native 域。固定管理任务只安装软件包及发布系统适配器；实际桌面在原生降权后执行，VNC、状态/重载及 X11/Wayland 应用准入复核原票据、来源构建、真实 Plasma/Xvnc、运行目录、端点和内核进程身份。Wayland 应用与独立窗口保留各自 sandbox UID，不混同来源桌面账号，规则见 [Linux 图形桌面](linux-desktop.md)。
+
+停止先精确退休匹配的注册应用及整桌面域，再核销原 native、运行目录与防火墙。失联、启动回滚或清理 503 保留原证明及准备租约，显式停止可重试；IME 在原桌面停止后固定安装系统包，由 UID frame 仅写原 HOME 并启动新 UUID，保留 profile/偏好。页面任务捕获原项目/live，重试恢复原项目；取消后的 Desktop/Clipboard 清理码在任务历史中继续保留错误。旧共享账号绑定只供审阅，不自动转换。
+
+正式 23 个相关测试文件 399/399、零跳过、实际退出与 close 为 0、源码前后未变，证明为 .data/desktop-identity-backend-4c47c412-3920-4c1b-b86a-577f07adb7ec-verification.json；完整类型检查通过。实际 Python 源码另运行 10 个受控权限/端点/退休模型，三个生产资产 loader 通过，原始封存证据为 .data/desktop-project-identity-draft/verification/desktop-source-c319daa8-c7f8-4a75-855d-2f38b1f642ec.json 和 desktop-packaging-c319daa8-c7f8-4a75-855d-2f38b1f642ec.json。Root IME 接线初次类型检查暴露回调 Promise 类型不符，修正为 async 后正式检查通过。
+
+清理失败的 Desktop 状态新增 cleanupPending，页面保留“重试停止桌面”并阻止替换安装；取消 IME 后的 503 不再停留在 installing。前后重载和取消清理的两个新增生命周期回归通过。页面已更新项目账号提示，并区分来源桌面 UID 与 Wayland 应用独立 UID。
+
+本批没有启动新 VM 或真实 KDE，历史整仓 Windows rename 失败和原共享桌面/剪贴板真实证明原样保留。目录仍为 250 项、247 有入口、3 部分实现；其他客户机入口、系统级剪贴板边界和真实外部 HA 演练仍有剩余范围。
+
 ## Envoy 的项目账号与完整运行域
 
 2026-10-03 Envoy 版本探测、固定配置校验与长期边车已接通捕获原项目 UID/GID、独立 home、目录描述符、原配置/live/boot 与保护帧。环境只解析一次，root 只发布有界固定回环配置与读取系统/内核证明，不运行 Envoy 或项目环境。独立 Mesh namespace 与 service/native 票据不占用用户同名服务；普通状态只读取原票据和兼容性样本，规则见 [项目 Envoy 边车](service-mesh.md)。

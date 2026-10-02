@@ -1,15 +1,13 @@
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
-import { retryTarget } from '../../server/plugins/retry.ts';
+import { retryTarget, retryInProject } from '../../server/plugins/retry.ts';
 
 import { z } from 'zod';
 import { AppError } from '../../server/model.ts';
 
 import { Desktops } from '../../server/desktop.ts';
 import { Jobs } from '../../server/jobs.ts';
-import { imeInstall } from '../../server/desktop-guest.ts';
-import { guestTask } from '../../server/guest-task.ts';
 import { singleAppClipboard, singleAppInput, singleAppProgram } from '../../server/single-app-windows.ts';
 import { x11ClipboardRequest, x11ClipboardViewSchema, x11ClipboardActionResponse } from '../../server/x11-clipboard.ts';
 
@@ -30,7 +28,7 @@ export async function activate(host: PluginContext) {
   const m = host.machines;
   host.desktops = new Desktops(m, host.workspaces);
   host.jobs = new Jobs('input-method');
-  host.registerJobs(host.jobs, (job) => installIme.call(host, retryTarget(job)));
+  host.registerJobs(host.jobs, (job) => retryInProject(host, job, async () => installIme.call(host, retryTarget(job))));
   const clipboard = host.provide('x11Clipboard', host.desktops.clipboard);
   host.registerJobs(clipboard.jobs, (job) => clipboard.install(retryTarget(job)));
   const wayland = host.provide('waylandClipboard', host.desktops.waylandClipboard);
@@ -130,18 +128,20 @@ export async function route(
 }
 export function installIme(this: PluginContext, id: string) {
   if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
-  return this.jobs.start(
-    id,
-    async (log, signal) => {
-      const result = await guestTask(
-        this.machines,
-        id,
-        imeInstall(this.machines.get(id).distro),
-        signal,
-        log,
-      );
-      if (result.code !== 0) throw new Error(result.stderr || '输入法安装失败');
-    },
-    { title: '安装中文输入法', vmId: id, action: 'install' },
-  );
+  const live = this.machines.live.get(id), projectId = this.workspaces?.projects.current(id);
+  const original = () => {
+    if (!live || this.machines.live.get(id) !== live || this.machines.state(id) !== 'running')
+      throw new AppError('原客户机在输入法任务准备期间已改变', 409, 'DESKTOP_SCOPE_CHANGED');
+  };
+  original();
+  return this.jobs.start(id, async (log, signal) => {
+    const execute = async () => {
+      signal.throwIfAborted(); original();
+      const result = await this.desktops.installIme(id, signal, log);
+      original();
+      if (result.code !== 0) throw new AppError(result.stderr || '输入法安装失败', 409);
+    };
+    if (projectId && this.workspaces) await this.workspaces.projects.inScope(id, projectId, execute);
+    else await execute();
+  }, { title: '安装中文输入法', vmId: id, projectId, action: 'install' });
 }

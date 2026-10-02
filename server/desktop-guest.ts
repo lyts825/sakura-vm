@@ -6,6 +6,8 @@ import {
 import { desktopLauncher, desktopLauncherPath } from './desktop-binding.ts';
 import type { Project } from './workspaces.ts';
 import { projectNetworkCommand } from './project-network-isolation.ts';
+import { z } from 'zod';
+import { quote } from './files.ts';
 
 // These scripts run only inside the managed guest, over its existing SSH connection.
 // TigerVNC owns the outer X server. Wayland-only distros nest KWin inside it.
@@ -454,3 +456,119 @@ echo 'Chinese input installed. Restarting desktop; use Ctrl+Space to switch.'
     desktopCommands(distro).start
   );
 }
+
+/** This administration task has no project environment, cwd, HOME or startup hook. */
+export function desktopProjectImePrepare(distro: string) {
+  const packages = distro === 'alpine'
+    ? 'apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community fcitx5 fcitx5-chinese-addons fcitx5-gtk fcitx5-qt'
+    : 'export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n' +
+      'apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5';
+  return 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('set -eu\ncd /\n' + packages);
+}
+
+/** Run only inside the protected Desktop frame, after the native UID drop. */
+export const desktopProjectImeCommand = String.raw`set -eu
+umask 077
+mkdir -p "$HOME/.config/autostart" "$HOME/.config/fcitx5"
+cat > "$HOME/.config/autostart/fcitx5.desktop" <<'SAKURA_UID_IME'
+[Desktop Entry]
+Type=Application
+Name=Chinese Input
+Exec=fcitx5 -d
+SAKURA_UID_IME
+if [ ! -f "$HOME/.config/fcitx5/profile" ]; then
+cat > "$HOME/.config/fcitx5/profile" <<'SAKURA_UID_IME'
+[Groups/0]
+Name=Default
+Default Layout=us
+DefaultIM=pinyin
+[Groups/0/Items/0]
+Name=keyboard-us
+Layout=
+[Groups/0/Items/1]
+Name=pinyin
+Layout=
+[GroupOrder]
+0=Default
+SAKURA_UID_IME
+fi
+cat > "$HOME/.sakura-ime" <<'SAKURA_UID_IME'
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+SAKURA_UID_IME
+`;
+
+/** The complete session body is transported to the native UID launcher as data. */
+export function desktopUidCommand(runId: string, input: DesktopPreferences, distro: string, uid: number) {
+  z.uuid().parse(runId);
+  z.number().int().min(20000).max(59999).parse(uid);
+  const preferences = desktopPreferencesSchema.parse(input);
+  const body = (marker: string) => {
+    const match = new RegExp(`<<'${marker}'\\n([\\s\\S]*?)\\n${marker}`).exec(desktopInstall);
+    if (!match) throw new Error('Desktop trusted adapter body missing: ' + marker);
+    return match[1];
+  };
+  // Preserve Plasma preferences, nested Wayland, monitor layout and IME hooks.
+  // Every transformed path belongs to the real native project HOME, and every
+  // hook is read only after the C launcher has dropped UID/GID and all authority FDs.
+  const transform = (script: string) => script.replaceAll('/home/sakura-desktop', '$HOME')
+    .replaceAll('/run/sakura-desktop', '$SAKURA_DESKTOP_RUNTIME')
+    .replaceAll('/etc/sakura/desktop-preferences', '$SAKURA_DESKTOP_RUNTIME/preferences')
+    .replaceAll('/usr/local/libexec/sakura-plasma-session', '$SAKURA_DESKTOP_RUNTIME/plasma-session')
+    .replaceAll('/usr/local/libexec/sakura-apply-layout', '$SAKURA_DESKTOP_RUNTIME/apply-layout')
+    .replaceAll('file://$HOME/', 'file://$HOME/')
+    .replace('Xvnc :1', (distro === 'alpine' ? '/usr/bin/Xvnc' : '/usr/bin/Xtigervnc') + ' :1');
+  const configuration = desktopConfigScript(preferences).match(/<<'SAKURA_PREFERENCES'\n([\s\S]*?)\nSAKURA_PREFERENCES/)![1];
+  let session = transform(body('SAKURA_SESSION'));
+  session = session.replace('export DISPLAY=:1 XDG_RUNTIME_DIR=$SAKURA_DESKTOP_RUNTIME', 'export DISPLAY=:1 XDG_RUNTIME_DIR="$SAKURA_DESKTOP_RUNTIME"')
+    .replace('export XAUTHORITY=$SAKURA_DESKTOP_RUNTIME/Xauthority', 'export XAUTHORITY="$SAKURA_DESKTOP_RUNTIME/Xauthority"')
+    .replace('dbus-run-session -- $SAKURA_DESKTOP_RUNTIME/plasma-session', 'dbus-run-session -- "$SAKURA_DESKTOP_RUNTIME/plasma-session"');
+  // Generated UID paths are quoted, including native HOMEs with UUID names.
+  // Native HOME/runtime names contain only the fixed administrator prefix and
+  // UUIDs. Keep the original embedded Plasma JavaScript quoting intact.
+  const plasma = transform(body('SAKURA_PLASMA')), layout = transform(body('SAKURA_LAYOUT'));
+  const wallpapers = [['SAKURA_WALLPAPER', 'sakura'], ['MIDNIGHT_WALLPAPER', 'midnight'], ['PAPER_WALLPAPER', 'paper']]
+    .map(([marker, name]) => `cat > "$HOME/.local/share/wallpapers/${name}.svg" <<'${marker}'\n${body(marker)}\n${marker}`).join('\n');
+  return `set -eu\numask 077\nexport SAKURA_DESKTOP_RUNTIME=${quote('/run/sakura-desktop-uid/' + uid + '/' + runId)}\n` +
+    `test "$(id -u)" = ${uid}\ntest -d "$SAKURA_DESKTOP_RUNTIME" && test ! -L "$SAKURA_DESKTOP_RUNTIME"\n` +
+    `test "$(stat -c %u "$SAKURA_DESKTOP_RUNTIME")" = ${uid}\ntest "$(stat -c %a "$SAKURA_DESKTOP_RUNTIME")" = 700\n` +
+    'mkdir -p "$HOME/.config" "$HOME/.local/share/wallpapers"\n' +
+    `cat > "$SAKURA_DESKTOP_RUNTIME/preferences" <<'SAKURA_UID_PREFERENCES'\n${configuration}\nSAKURA_UID_PREFERENCES\n` +
+    `cat > "$SAKURA_DESKTOP_RUNTIME/session" <<'SAKURA_UID_SESSION'\n${session}\nSAKURA_UID_SESSION\n` +
+    `cat > "$SAKURA_DESKTOP_RUNTIME/plasma-session" <<'SAKURA_UID_PLASMA'\n${plasma}\nSAKURA_UID_PLASMA\n` +
+    `cat > "$SAKURA_DESKTOP_RUNTIME/apply-layout" <<'SAKURA_UID_LAYOUT'\n${layout}\nSAKURA_UID_LAYOUT\n` +
+    `${wallpapers}\nchmod 700 "$SAKURA_DESKTOP_RUNTIME/session" "$SAKURA_DESKTOP_RUNTIME/plasma-session" "$SAKURA_DESKTOP_RUNTIME/apply-layout"\n` +
+    'exec /bin/sh "$SAKURA_DESKTOP_RUNTIME/session"';
+}
+
+export function desktopProjectEnvironment(environment: Record<string, string> = {}) {
+  return Object.fromEntries(Object.entries(environment).filter(([key]) => !/^(?:HOME$|USER$|LOGNAME$|SAKURA_DESKTOP_|DISPLAY$|XAUTHORITY$|DBUS_|WAYLAND_|XDG_RUNTIME_DIR$|SESSION_MANAGER$)/.test(key)));
+}
+
+/** Packages and system adapters never receive project cwd, PATH, environment or hooks. */
+export function desktopProjectPrepare(distro: string, input: DesktopPreferences) {
+  desktopPreferencesSchema.parse(input);
+  const packages = distro === 'alpine' ? desktopInstall.match(/apk add --no-cache[\s\S]*?xauth xdpyinfo xrandr python3 iproute2 setpriv/)![0] + ' tmux iptables' :
+    'export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n' +
+    'apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends kde-plasma-desktop plasma-workspace-wayland kwin-x11 kwin-wayland qtwayland5 systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd python3 iproute2 util-linux tmux iptables';
+  const wrapper = desktopInstall.match(/<<'SAKURA_KWIN'\n([\s\S]*?)\nSAKURA_KWIN/)![1];
+  const adapter = `import os,stat,tempfile\nfrom pathlib import Path\n` +
+    `for path in ['/etc','/usr','/usr/local','/usr/local/libexec','/usr/local/libexec/sakura-plasma']:\n` +
+    ` try: os.mkdir(path,0o755)\n except FileExistsError: pass\n` +
+    ` info=os.lstat(path)\n assert stat.S_ISDIR(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022\n` +
+    `def publish(path,data,mode):\n` +
+    ` if os.path.lexists(path):\n  info=os.lstat(path)\n  assert stat.S_ISREG(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022 and info.st_nlink==1\n` +
+    ` fd,temporary=tempfile.mkstemp(dir=os.path.dirname(path),prefix='.desktop-project-')\n` +
+    ` try:\n  with os.fdopen(fd,'wb') as stream:\n   stream.write(data);stream.flush();os.fchmod(stream.fileno(),mode);os.fsync(stream.fileno())\n` +
+    `  os.replace(temporary,path)\n finally:\n  if os.path.lexists(temporary):os.unlink(temporary)\n` +
+    ` os.sync()\n` +
+    `publish('/usr/local/libexec/sakura-plasma/kwin_wayland_wrapper',${JSON.stringify(wrapper)}.encode(),0o755)\n` +
+    `publish('/etc/sakura-desktop-project-version',b'1\\n',0o644)\n`;
+  const script = 'set -eu\ncd /\n' + packages + '\n/usr/bin/python3 -I -S -c ' + quote(adapter) + '\n' +
+    (distro === 'alpine' ? 'rc-service dbus start' : 'systemctl start dbus');
+  return `env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ${quote(script)}`;
+}
+
+export const desktopProjectVersionProbe = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' +
+  quote("grep -qx '1' /etc/sakura-desktop-project-version && test -x /usr/bin/tmux && command -v iptables >/dev/null && (command -v startplasma-x11 >/dev/null || command -v startplasma-wayland >/dev/null)");

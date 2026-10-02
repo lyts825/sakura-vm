@@ -81,7 +81,7 @@ export function connectDesktop(
       report({
         connected: false,
         message: '桌面认证失败',
-        error: '桌面认证配置已改变，请检查客户机的 sakura-desktop 服务',
+        error: '桌面认证配置已改变，请检查原桌面会话并重新连接',
       });
     };
     const listeners: [ClientEvent, () => void][] = [
