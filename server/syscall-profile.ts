@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { AppError } from './model.ts';
 import { quote } from './files.ts';
 import type { Machines } from './machines.ts';
-import type { Workspaces } from './workspaces.ts';
-import { guestTask } from './guest-task.ts';
-import { withProjectCommand, projectExecutionCommand, redactProjectOutput } from './project-execution.ts';
+import { Workspaces } from './workspaces.ts';
+import { SyscallProjectTasks, type SyscallProjectTaskOptions } from './syscall-project-task.ts';
+import { createHash } from 'node:crypto';
 
 export const syscallProfileInput = z.object({
   mode: z.enum(['status', 'install', 'run']).default('status'),
@@ -167,14 +167,59 @@ if __name__ == '__main__':
 `;
 
 const helperPath = '/usr/local/lib/sakura/seccomp-run.py';
-const runner = `/usr/bin/python3 -I ${helperPath}`;
-const probe = `test -r ${helperPath} && ${runner} --self-test restricted && ${runner} --self-test networkless`;
+const helperSha256 = createHash('sha256').update(helper).digest('hex');
+const systemCommand = (body: string) =>
+  '/usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('cd /\nset -eu\n' + body);
+const systemDirectory = `import os,stat
+def open_system_directory():
+ fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+ try:
+  for name in ('','usr','local','lib','sakura'):
+   if name:
+    next_fd=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd)
+    os.close(fd)
+    fd=next_fd
+   s=os.fstat(fd)
+   if s.st_uid!=0 or s.st_gid!=0 or stat.S_IMODE(s.st_mode)&0o022:
+    raise RuntimeError('seccomp system directory ownership or mode changed')
+  return fd
+ except BaseException:
+  os.close(fd)
+  raise
+`;
+// Inspect the installed file without executing it as administrator. The self
+// tests below interpret only the trusted built-in source in isolated Python.
+const verifyHelper = systemDirectory + `import hashlib
+parent=open_system_directory()
+try:
+ fd=os.open('seccomp-run.py',os.O_RDONLY|os.O_NOFOLLOW,dir_fd=parent)
+finally:
+ os.close(parent)
+try:
+ s=os.fstat(fd)
+ if not stat.S_ISREG(s.st_mode) or s.st_uid!=0 or s.st_gid!=0 or stat.S_IMODE(s.st_mode)!=0o755 or s.st_nlink!=1:
+  raise RuntimeError('seccomp helper ownership or mode changed')
+ b=os.read(fd,${Buffer.byteLength(helper) + 1})
+ if len(b)!=${Buffer.byteLength(helper)} or hashlib.sha256(b).hexdigest()!=${JSON.stringify(helperSha256)}:
+  raise RuntimeError('seccomp helper content changed')
+finally:
+ os.close(fd)
+`;
+const fixedPython = '/usr/bin/python3 -I -c ' + quote(helper);
+const probe = systemCommand('/usr/bin/python3 -I -S -c ' + quote(verifyHelper) + '\n' +
+  fixedPython + ' --self-test restricted\n' + fixedPython + ' --self-test networkless');
+const changed = () => new AppError('受限命令原客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
 
 export async function checkSyscallProfile(machines: Machines, id: string,
   signal?: AbortSignal) {
   if (machines.state(id) !== 'running')
     return { ready: false, executed: false, reason: '请先启动实例。' };
+  const live = machines.live.get(id);
+  if (!live) throw changed();
+  signal?.throwIfAborted();
   const result = await machines.exec(id, probe, 15000, signal);
+  signal?.throwIfAborted();
+  if (machines.live.get(id) !== live || machines.state(id) !== 'running') throw changed();
   return { ready: result.code === 0, executed: false,
     profiles: ['restricted', 'networkless'],
     reason: result.code === 0 ? '客户机 seccomp 过滤器与网络禁用策略均已实测生效。' :
@@ -183,7 +228,7 @@ export async function checkSyscallProfile(machines: Machines, id: string,
 }
 
 export async function runSyscallProfile(machines: Machines, id: string,
-  input: unknown, signal?: AbortSignal, workspaces?: Workspaces) {
+  input: unknown, signal?: AbortSignal, workspaces?: Workspaces, taskOptions: SyscallProjectTaskOptions = {}) {
   const options = syscallProfileInput.parse(input);
   if (options.mode === 'status') {
     const status = await checkSyscallProfile(machines, id, signal);
@@ -192,31 +237,52 @@ export async function runSyscallProfile(machines: Machines, id: string,
   machines.requireUnlocked(id);
   if (machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
   if (options.mode === 'install') {
-    const install = await machines.exec(id,
-      'set -e\nif command -v apk >/dev/null; then apk add --no-cache python3 py3-libseccomp; elif command -v apt-get >/dev/null; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-seccomp; else exit 1; fi\ninstall -d -m 755 /usr/local/lib/sakura',
+    const live = machines.live.get(id);
+    const assertOrigin = () => {
+      signal?.throwIfAborted();
+      if (!live || machines.live.get(id) !== live || machines.state(id) !== 'running') throw changed();
+    };
+    assertOrigin();
+    const install = await machines.exec(id, systemCommand(
+      'if command -v apk >/dev/null; then apk add --no-cache python3 py3-libseccomp; elif command -v apt-get >/dev/null; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-seccomp; else exit 1; fi\ninstall -d -m 755 /usr/local/lib/sakura'),
       300000, signal);
+    assertOrigin();
     if (install.code !== 0) throw new AppError('安装 seccomp 依赖失败：' + install.stderr.slice(-1000), 409);
+    const parent = await machines.exec(id, systemCommand('# SAKURA_SECCOMP_PARENT_CHECK\n/usr/bin/python3 -I -S -c ' +
+      quote(systemDirectory + 'parent=open_system_directory()\nos.close(parent)\n')), 10000, signal);
+    assertOrigin();
+    if (parent.code !== 0) throw new AppError('seccomp 系统目录归属或权限无法核对', 409, 'SYSCALL_SYSTEM_DIRECTORY_INVALID');
     await machines.writeGuestFile(id, helperPath, helper);
-    const permissions = await machines.exec(id, `chmod 755 ${helperPath}`, 10000, signal);
+    assertOrigin();
+    const permissions = await machines.exec(id, systemCommand('chown 0:0 ' + quote(helperPath) + '\nchmod 755 ' + quote(helperPath)), 10000, signal);
+    assertOrigin();
     if (permissions.code !== 0) throw new AppError('设置 seccomp 执行器权限失败', 409);
     const checked = await checkSyscallProfile(machines, id, signal);
+    assertOrigin();
     if (!checked.ready) throw new AppError('seccomp 安装后验证失败：' +
       ('diagnostic' in checked ? checked.diagnostic || '' : checked.reason), 409);
     return { code: 0, ...checked, executed: true };
   }
   if (!options.confirmed || !options.command)
     throw new AppError('运行受限命令需要 command 与 confirmed=true', 400);
-  return withProjectCommand(machines, id, signal, workspaces, async (project) => {
+  const scope = workspaces || new Workspaces(machines);
+  const tasks = new SyscallProjectTasks(machines, scope, taskOptions);
+  const run = () => tasks.withProject(id, signal, undefined, async () => {
+    const project = tasks.project(id);
     const checked = await checkSyscallProfile(machines, id, signal);
+    await tasks.assertCurrent(id);
     if (!checked.ready) throw new AppError(checked.reason, 409);
     const args = [options.profile, String(options.timeoutSeconds), '--',
       options.command!, ...options.args].map(quote).join(' ');
-    const result = await guestTask(machines, id,
-      projectExecutionCommand(project, `${runner} --run ${args}`),
-      signal || new AbortController().signal, undefined, (options.timeoutSeconds + 15) * 1000);
-    return { ...redactProjectOutput(project, result), ready: result.code === 0, executed: true,
-      profile: options.profile, timedOut: result.code === 124,
+    const result = await tasks.exec(id, fixedPython + ' --run ' + args,
+      (options.timeoutSeconds + 15) * 1000, signal, project);
+    return { code: result.code, stdout: tasks.redact(id, result.stdout), stderr: tasks.redact(id, result.stderr),
+      ready: result.code === 0, executed: true, profile: options.profile, timedOut: result.code === 124,
       projectId: project._workspace || 'default', directory: project.directory,
       networkIsolation: project.networkIsolation || 'host' };
   });
+  try { return workspaces ? await run() : await scope.projects.with(id, undefined, run); }
+  finally {
+    try { await tasks.close(); } finally { if (!workspaces) await scope.close(); }
+  }
 }

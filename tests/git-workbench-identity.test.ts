@@ -311,3 +311,33 @@ test('an accepted job keeps the preparation lease until the last UID task has fi
   assert.equal(f.releases(), 0); assert.equal(f.closes(), 0); finish(); await f.service.jobs.wait(job.key!);
   assert.equal(job.status, 'done'); assert.deepEqual(f.events, ['prepare', 'last-domain-confirmed', 'release', 'close']);
 });
+
+test('default AbortController cancellation inside a prepared GET preserves the original DOMException', async (t) => {
+  const f = fixture(); t.after(() => f.service.close());
+  f.answer(async () => { f.abort.abort(); f.abort.signal.throwIfAborted(); return output(); });
+  await assert.rejects(f.service.view(id, f.abort.signal), error => error === f.abort.signal.reason);
+  assert.equal(f.releases(), 1); assert.equal(f.closes(), 1);
+});
+
+test('a cancelled remote job retains cancelled status when its task throws a default AbortError', async (t) => {
+  const f = fixture(); t.after(() => f.service.close()); let started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; }), run = f.options.runProjectTask!;
+  f.options.runProjectTask = async (...args) => {
+    if (!args[3].command.includes('fetch --atomic')) return run(...args);
+    started(); await new Promise<void>(resolve => args[4].addEventListener('abort', () => resolve(), { once: true }));
+    args[4].throwIfAborted(); return output();
+  };
+  const job = await f.service.run(id, { action: 'fetch', remote: 'origin' }); await ready;
+  f.service.jobs.cancel(job.id!); await f.service.jobs.wait(job.key!);
+  assert.equal(job.status, 'cancelled', job.error); assert.equal(f.releases(), 1); assert.equal(f.closes(), 1);
+});
+
+test('a frozen private cleanup error keeps its original status/code and cause without leaking the message', async (t) => {
+  const f = fixture(); t.after(() => f.service.close());
+  const failure = Object.freeze(new AppError('private-git-token original domain unknown', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED'));
+  f.options.runProjectTask = async () => { throw failure; };
+  await assert.rejects(f.service.view(id), (error: any) => {
+    assert.ok(error instanceof AppError); assert.equal(error.status, 503); assert.equal(error.code, failure.code);
+    assert.equal(error.cause, failure); assert.equal(error.message.includes('private-git-token'), false); return true;
+  });
+});

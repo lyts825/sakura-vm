@@ -31,7 +31,7 @@ Git 工作台不执行 hooks、外部 diff/textconv 或 fsmonitor 命令。未�
 
 收藏命令在项目目录中执行。参数声明为 `NAME=默认值`，执行时通过环境变量传入，命令中使用 `"$NAME"`。参数值按 Shell 数据引用，不作为命令拼接执行；未声明的参数会被拒绝。命令定义本身是用户编写的 Shell 脚本。每个实例最多 50 个收藏，执行历史进入任务中心，参数值不单独写入历史。
 
-工具管理使用发行版当前配置的软件源，因此版本取决于发行版。`package.json`、`pyproject.toml`、`requirements.txt`、`Cargo.toml`、`go.mod`、`pom.xml`、`build.gradle` 和 `composer.json` 用于提示项目需要的工具；检测结果不代替项目依赖安装。
+工具版本和项目清单探测使用捕获原项目的 UID/GID、独立 home 与网络，完整任务清理后才释放准备租约；共享工具安装继续使用固定实例管理员环境，具体范围见 [项目工具任务](project-tool-tasks.md)。工具管理使用发行版当前配置的软件源，因此版本取决于发行版。`package.json`、`pyproject.toml`、`requirements.txt`、`Cargo.toml`、`go.mod`、`pom.xml`、`build.gradle` 和 `composer.json` 用于提示项目需要的工具；检测结果不代替项目依赖安装。
 
 网络设置先预览文件修改，再凭预览校验值应用；文件在两步之间发生变化时拒绝写入。修改前会保存恢复记录，中途失败后仍可「恢复原配置」。恢复发现文件被外部修改时会保留该文件并报出路径。重新配置前先恢复上一份设置。
 

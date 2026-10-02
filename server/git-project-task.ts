@@ -69,6 +69,20 @@ export class GitProjectTasks {
   redact(id: string, value: string) {
     return redactValues(value, projectPrivateValues(this.require(id).resolved));
   }
+  private redactFailure(id: string, error: unknown) {
+    if (!(error instanceof Error)) return error;
+    const message = this.redact(id, error.message);
+    if (message === error.message) return error;
+    try {
+      Object.defineProperty(error, 'message', { value: message, writable: true, configurable: true });
+      return error;
+    } catch {
+      const reported = new AppError(message, error instanceof AppError ? error.status : 500,
+        error instanceof AppError ? error.code : undefined);
+      Object.defineProperty(reported, 'cause', { value: error });
+      return reported;
+    }
+  }
   async assertCurrent(id: string, signal?: AbortSignal) {
     const context = this.require(id);
     const origin = () => {
@@ -129,9 +143,8 @@ export class GitProjectTasks {
         await this.assertCurrent(capture.id);
         return result;
       } catch (error) {
-        failed = true; failure = error;
-        if (error instanceof Error) error.message = this.redact(capture.id, error.message);
-        throw error;
+        failed = true; failure = this.redactFailure(capture.id, error);
+        throw failure;
       } finally {
         const errors: unknown[] = [];
         try { await lease?.release(); } catch (error) { errors.push(error); }
@@ -140,8 +153,7 @@ export class GitProjectTasks {
           if (failed) errors.unshift(failure);
           const critical = errors.find((error) => error instanceof AppError && error.status === 503);
           const error = errors.length === 1 && critical ? critical : new GitCleanupErrors(errors, critical || failure || errors[0]);
-          if (error instanceof Error) error.message = this.redact(capture.id, error.message);
-          throw error;
+          throw this.redactFailure(capture.id, error);
         }
       }
     }));

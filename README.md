@@ -121,6 +121,8 @@ Windows 的 TCG 使用单线程和自动指令时钟，处理本机测试中出�
 
 [Git 工作台](docs/git-project-identity.md) 的命令也使用原项目账号、捕获配置和完整任务清理，保留状态、冲突、提交与 HTTPS 远程操作。
 
+[工具探测与受限命令](docs/project-tool-tasks.md) 也已接通项目账号；共享软件包安装和系统策略准备保留实例管理入口。
+
 本轮新增了分块续传、文件预览与剪贴板上传、文本三方合并、Git 工作树与目录版本、可执行能力表单、跨实例搜索/复制/测试、签名补丁、指标与任务结果导出，以及维护窗口、同步队列、备份限速、保留锁和快照差异比较。使用方法及具体边界见 [功能实现记录](docs/capability-completion.md)；完整剩余范围见 [未完成功能清单](docs/unfinished-features.md)，可用 `npm run features:audit` 重新生成。
 
 ## Linux 图形桌面（实验性）

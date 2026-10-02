@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import type { Machines } from '../server/machines.ts';
 import type { Workspaces } from '../server/workspaces.ts';
-import { projectSchema } from '../server/workspaces.ts';
+import { projectSchema, projectVersion } from '../server/workspaces.ts';
 import { RuntimeVersions } from '../server/runtime-versions.ts';
 import { runtimeEnvironment } from '../server/runtime-config.ts';
 import { randomUUID } from 'node:crypto';
@@ -61,21 +61,32 @@ test('private project probes stay in its namespace and SSH has no shared fallbac
     return { code: 0, stderr: '', stdout: JSON.stringify({ version: 1, ok: true, bootId: randomUUID(),
       declared: {}, actual: { node: '1.2.3', python: '3.11.0' } }) };
   } });
-  const tools = new Toolchains(machines, workspaces);
+  const tools = new Toolchains(machines, workspaces, {
+    createPreparation: () => ({ prepare: async (_id, scope, _session, _readOnly, signal, _terminalId, mode) => {
+      assert.deepEqual(mode, { mode: 'task' });
+      return { command: '', projectId: scope!, networkIsolation: 'private', terminalId: undefined, signal: signal!,
+        captured: { project, configVersion: projectVersion(project), live: machines.live.get('vm')! }, release: () => {} };
+    }, close: async () => {} }),
+    runTask: async (_machines, _id, candidate, execution, _signal, _log, timeout, _agent, _cleanup, pins) => {
+      identityProjects.push(candidate);
+      assert.equal(timeout, 20000);
+      assert.equal(pins?.expectedLive, machines.live.get('vm'));
+      assert.ok(!execution.command.includes('ip netns exec'));
+      assert.match(execution.command, /test ! -e 'package.json'/);
+      return { code: 0, stderr: '', stdout: '\nSAKURA_TOOL_node\nv1.2.3\nSAKURA_REQUIRED_node\nyes\n' };
+    },
+  });
   const ide = new Ide(machines, workspaces, tmpdir());
   try {
     assert.equal((await runtimes.inspect('vm', project)).node, '1.2.3');
     await runtimes.select('vm', { node: '1.2.3' });
-    await tools.view('vm');
-    assert.equal(identityProjects.length, 2);
+    assert.equal((await tools.view('vm')).tools.find(tool => tool.id === 'node')?.required, true);
+    assert.equal(identityProjects.length, 3);
     for (const candidate of identityProjects) assert.equal(candidate.networkIsolation, 'private');
-    assert.equal(commands.length, 2);
-    // Root only verifies the fixed install receipt; project binaries now enter
-    // the identity task. Toolchains' separate compatibility path is unchanged.
-    for (const command of commands.filter(value => !value.includes('SAKURA_RUNTIME_INSTALL'))) {
-      assert.match(command, /ip netns exec sk-default true/);
-      assert.match(command, /ip netns exec sk-default sh -lc/);
-    }
+    assert.equal(commands.length, 1);
+    // Root only verifies the fixed runtime install receipt. Toolchain versions
+    // and project markers now use the same project UID task boundary.
+    assert.match(commands[0], /SAKURA_RUNTIME_INSTALL/);
     const view = await ide.view('vm');
     assert.equal(view.supported, true);
     assert.ok('projectScoped' in view && view.projectScoped);

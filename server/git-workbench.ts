@@ -435,7 +435,17 @@ export class GitWorkbench {
             try {
               await this.remoteAction(value, execute, log, update);
             } catch (error) {
-              if (error instanceof Error) error.message = redactGitOutput(error.message);
+              if (error instanceof Error) {
+                const message = redactGitOutput(error.message);
+                if (message !== error.message) {
+                  try { Object.defineProperty(error, 'message', { value: message, writable: true, configurable: true }); }
+                  catch {
+                    const reported = new AppError(message, error instanceof AppError ? error.status : 500,
+                      error instanceof AppError ? error.code : undefined);
+                    Object.defineProperty(reported, 'cause', { value: error }); throw reported;
+                  }
+                }
+              }
               throw error;
             }
             return;

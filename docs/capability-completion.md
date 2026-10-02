@@ -2,6 +2,12 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 工具探测、seccomp 项目账号与取消异常
+
+2026-10-03 开发工具版本与项目清单探测接入单次 20 秒 UID 任务，命令及一次解析的环境通过保护帧运输；原项目标识、配置/live 和原生 cwd 固定，完整任务清理后才 release/close。工具安装保留实例管理权限，只使用固定系统命令、cwd、清空环境与管理员代理白名单，安装正文通过有界 stdin，不追逐新 live。seccomp 的策略与实际命令也已迁移到原项目账号，保留确认、参数、策略及超时行为；系统安装与只读自检固定可信源码，逐级核对 helper 系统目录以及文件归属、模式、长度和摘要。使用范围见 [项目工具任务](project-tool-tasks.md)。
+
+修复取消异常的只读 message 被无条件写入的问题，Git GET 与远程任务继续保留默认 AbortError；冻结异常需要脱敏时保留 status/code/cause。正式 seccomp 20 项、Git 39 项和 Jobs 清理 21 项共 80 项通过，证明为 `.data/syscall-git-identity-backend-be0c67c4-e52b-4c05-9909-94bdd41d0c3c-verification.json`。工具身份 21 项及原网络扩展 1 项共 22 项通过，证明为 `.data/toolchains-identity-backend-471a6397-267d-4036-b965-d515f02d9998-verification.json`。两个批次实际退出 0、对应源码前后未变，完整类型检查通过。三个生成 Python 正文静态语法检查通过，证明为 `.data/syscall-source-static-0eb4b8ac-fb6e-425a-a1a5-5ac39b31f56a.json`。本批未启动 VM、未重跑整仓测试，历史 Windows rename 失败证明保留；目录保持 250 项、247 项有入口、3 项部分实现。
+
 ## Git 工作台的项目账号与原操作租约
 
 2026-10-02 Git 状态、差异、索引、冲突探测、暂存、提交、分支及 HTTPS 远程命令接入原项目持久 UID/GID、独立 home、捕获配置/live 和保护帧。非枚举项目身份在复制后保留，原生目录描述符固定 cwd，环境只解析一次；完整 GET 操作或后台任务共用准备租约，每条命令保留原完整任务票据，全部 cgroup 清理和准确核销后才释放。配置或 live 改变停止后续步骤，清理 503 与全部 cause 保留，取消不覆盖原清理失败，规则见 [Git 项目账号](git-project-identity.md)。
