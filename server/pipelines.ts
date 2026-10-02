@@ -7,13 +7,12 @@ import { AppError, vmDir } from './model.ts';
 import type { Machines } from './machines.ts';
 import { type Workspaces, projectPrivateValues } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
-import { Files, quote } from './files.ts';
-import { guestTask } from './guest-task.ts';
-import { envPrefix } from './project-services.ts';
+import { Files } from './files.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { repositoryPath } from './git-workbench.ts';
-import { ensureProjectNetworkScript, projectNetworkCommand } from './project-network-isolation.ts';
+import { ProjectTerminals } from './project-terminals.ts';
+import { projectIdentityTask } from './project-run-scope.ts';
 
 export const pipelineSchema = z
   .object({
@@ -44,12 +43,14 @@ export type PipelineRun = {
   finishedAt?: string;
   status: 'running' | 'done' | 'error' | 'cancelled' | 'interrupted';
   error?: string;
+  errorCode?: string;
   steps: {
     name: string;
     status: 'pending' | 'running' | 'done' | 'error' | 'cancelled';
     startedAt?: string;
     finishedAt?: string;
     code?: number;
+    errorCode?: string;
     log: string;
   }[];
   artifacts: { name: string; bytes: number; index: number }[];
@@ -57,10 +58,13 @@ export type PipelineRun = {
 export class Pipelines {
   jobs = new Jobs('pipelines');
   private active = new Map<string, PipelineRun>();
+  private ownedTerminals?: ProjectTerminals;
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
     private files: Files,
+    private options: { terminals?: Pick<ProjectTerminals, 'prepare'>;
+      runTask?: typeof projectIdentityTask } = {},
   ) {}
   private file(id: string, kind = 'pipelines') {
     return this.workspaces.projects.file(id, kind);
@@ -110,16 +114,18 @@ export class Pipelines {
     };
   }
   async run(id: string, pipelineId: string) {
+    const projectId = this.workspaces.projects.current(id);
+    return this.workspaces.projects.inScope(id, projectId, () => this.runSelected(id, pipelineId, projectId));
+  }
+  private async runSelected(id: string, pipelineId: string, projectId: string) {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
     const definition = (await this.list(id)).find((p) => p.id === pipelineId);
     if (!definition) throw new AppError('流水线不存在', 404);
-    const project = await this.workspaces.resolvedConfig(id),
-      privateValues = projectPrivateValues(project);
     const record: PipelineRun = {
       id: randomUUID(),
       pipelineId,
       name: definition.name,
-      projectId: this.workspaces.projects.current(id),
+      projectId,
       startedAt: new Date().toISOString(),
       status: 'running',
       steps: definition.steps.map((s) => ({ name: s.name, status: 'pending', log: '' })),
@@ -140,10 +146,22 @@ export class Pipelines {
       this.workspaces.projects.key(id),
       async (rawLog, signal, update) => {
         this.active.set(record.id, record);
+        let prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
+        let privateValues: string[] = [];
         try {
           await persist();
+          const terminals = this.options.terminals ||
+            (this.ownedTerminals ||= new ProjectTerminals(this.machines, this.workspaces));
+          prepared = await terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
+          const { captured, signal: executionSignal } = prepared;
+          if (!captured || !executionSignal || this.machines.live.get(id) !== captured.live)
+            throw new AppError('流水线准备的客户机身份未确认', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+          privateValues = projectPrivateValues(captured.project);
+          const project = await this.workspaces.resolveProject(id, captured.project);
+          privateValues = projectPrivateValues(project);
+          executionSignal.throwIfAborted();
           for (let i = 0; i < definition.steps.length; i++) {
-            signal.throwIfAborted();
+            executionSignal.throwIfAborted();
             const step = record.steps[i],
               definitionStep = definition.steps[i];
             step.status = 'running';
@@ -155,21 +173,16 @@ export class Pipelines {
               rawLog(text);
             }, privateValues);
             try {
-              const result = await guestTask(
-                this.machines,
-                id,
-                `set -e\n${ensureProjectNetworkScript(project, this.machines.get(id).distro || 'alpine')}` +
-                  projectNetworkCommand(project,
-                    `cd ${quote(project.directory)}\n${envPrefix(project.environment)}\n${definitionStep.command}`),
-                signal,
-                output.write,
-                definitionStep.timeout * 1000,
-              );
+              const result = await (this.options.runTask || projectIdentityTask)(this.machines, id, project,
+                { command: definitionStep.command, environment: project.environment }, executionSignal,
+                output.write, definitionStep.timeout * 1000, undefined, undefined, { expectedLive: captured.live });
               step.code = result.code;
               if (result.code !== 0) throw new AppError(`步骤「${step.name}」退出码 ${result.code}`);
               step.status = 'done';
             } catch (error) {
-              step.status = signal.aborted ? 'cancelled' : 'error';
+              const cleanupFailed = error instanceof AppError && /_CLEANUP_FAILED$/.test(error.code || '');
+              step.status = signal.aborted && !cleanupFailed ? 'cancelled' : 'error';
+              step.errorCode = error instanceof AppError ? error.code : undefined;
               throw error;
             } finally {
               output.flush();
@@ -179,7 +192,7 @@ export class Pipelines {
           }
           let total = 0;
           for (const name of definition.artifacts) {
-            signal.throwIfAborted();
+            executionSignal.throwIfAborted();
             const path = posix.join(project.directory, name),
               info = await this.files.info(id, path);
             total += info.size;
@@ -193,19 +206,21 @@ export class Pipelines {
               path,
               createWriteStream(join(dir, String(index)), { flags: 'wx', mode: 0o600 }),
               () => {},
-              signal,
+              executionSignal,
             );
             record.artifacts.push({ name, bytes: info.size, index });
           }
           record.status = 'done';
         } catch (error) {
-          record.status = signal.aborted ? 'cancelled' : 'error';
+          const cleanupFailed = error instanceof AppError && /_CLEANUP_FAILED$/.test(error.code || '');
+          record.status = signal.aborted && !cleanupFailed ? 'cancelled' : 'error';
           record.error = redactValues((error as Error).message, privateValues);
-          throw new AppError(record.error);
+          record.errorCode = error instanceof AppError ? error.code : undefined;
+          throw new AppError(record.error, error instanceof AppError ? error.status : 409, record.errorCode);
         } finally {
           record.finishedAt = new Date().toISOString();
-          await persist();
-          this.active.delete(record.id);
+          try { await persist(); }
+          finally { this.active.delete(record.id); await prepared?.release(); }
         }
       },
       {
@@ -227,7 +242,8 @@ export class Pipelines {
       name: posix.basename(artifact.name),
     };
   }
-  close() {
-    return this.jobs.close();
+  async close() {
+    await this.jobs.close();
+    await this.ownedTerminals?.close();
   }
 }

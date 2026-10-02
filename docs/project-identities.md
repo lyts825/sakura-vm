@@ -1,6 +1,6 @@
 # 持久项目账号与固定启动器
 
-`server/project-identity.ts` 提供持久项目账号、固定启动器与客户机运行票据；`server/project-run-scope.ts` 保存宿主预期身份和核销记录。默认项目 `/exec`、项目初始化、主命令、普通服务、就绪与命令式健康检查、运行时版本的显式探测和选择验证，以及构建农场和单次 SSH/GPG Agent 命令使用固定项目 UID/GID。普通网页终端与可恢复 tmux 会话也通过固定启动器使用项目账号、原网络和独立运行票据，规则见 [项目终端](project-terminals.md)。系统 SSH、cron、用户管理器和全部扩展入口尚未完成账号迁移，网络隔离总功能仍为部分实现。运行时面板读取宿主缓存，安装共享运行时仍属于实例管理员操作，见 [运行时版本](runtime-versions.md)；构建配置捕获、并发和取消见 [构建农场](build-farm.md)；命令确认、独立入口与撤销见 [SSH Agent 转发](ssh-agent-forward.md) 和 [GPG Agent 转发](gpg-agent-forward.md)。
+`server/project-identity.ts` 提供持久项目账号、固定启动器与客户机运行票据；`server/project-run-scope.ts` 保存宿主预期身份和核销记录。默认项目 `/exec`、项目初始化、主命令、普通服务、就绪与命令式健康检查、运行时版本的显式探测和选择验证，以及构建农场、收藏命令、流水线步骤和单次 SSH/GPG Agent 命令使用固定项目 UID/GID。普通网页终端与可恢复 tmux 会话也通过固定启动器使用项目账号、原网络和独立运行票据，规则见 [项目终端](project-terminals.md)。收藏命令和流水线的配置捕获、步骤时限、取消及持久错误见 [项目命令任务](project-command-tasks.md)。系统 SSH、cron、用户管理器和全部扩展入口尚未完成账号迁移，网络隔离总功能仍为部分实现。运行时面板读取宿主缓存，安装共享运行时仍属于实例管理员操作，见 [运行时版本](runtime-versions.md)；构建配置捕获、并发和取消见 [构建农场](build-farm.md)；命令确认、独立入口与撤销见 [SSH Agent 转发](ssh-agent-forward.md) 和 [GPG Agent 转发](gpg-agent-forward.md)。
 
 项目 [首次 Git 检出](project-repository.md) 使用系统固定代理下载对象，项目 UID 在原目录和原网络内验证摘要并检出；项目环境、Git 配置和下载认证不会进入系统 Git。检出入场同时固定 live 与原 boot，取消或失败保留未确认的准确资源。
 
