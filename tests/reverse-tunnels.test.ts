@@ -9,6 +9,7 @@ import { ReverseTunnels } from '../server/reverse-tunnels.ts';
 import { Machines } from '../server/machines.ts';
 import type { Engine } from '../server/runtime.ts';
 import { projectSchema, type Project, type Workspaces } from '../server/workspaces.ts';
+import { reverseTunnelIdentityOptions } from './reverse-tunnel-identity-fixture.ts';
 
 const id = '11111111-1111-4111-8111-111111111111';
 
@@ -49,8 +50,10 @@ function workspace() {
       environment: { TOKEN: 'private-tunnel-value' }, secrets: { TOKEN: 'tunnel-key' } }), _workspace: alpha }],
     [beta, { ...projectSchema.parse({ directory: '/workspace/beta', networkIsolation: 'private' }), _workspace: beta }],
   ]);
+  for (const [scope, project] of configs) Object.defineProperty(project, '_workspace',
+    { value: scope === 'default' ? undefined : scope, enumerable: false, writable: true, configurable: true });
   const config = async () => configs.get(context.getStore() || 'default')!;
-  const workspaces = { config, resolvedConfig: config,
+  const workspaces = { config, resolvedConfig: config, resolveProject: async (_id: string, project: Project) => project,
     projects: { current: () => context.getStore() || 'default',
       inScope: <T>(_id: string, project: string, action: () => T) => context.run(project, action) },
     beforeConfigChange: (guard: (id: string, previous: Project, next: Project) => Promise<void>) => {
@@ -74,9 +77,10 @@ async function eventually(predicate: () => boolean) {
   assert.equal(predicate(), true);
 }
 
-test('temporary TCP entrance forwards bytes and revokes on close, stop and lockdown', async () => {
+test('temporary TCP entrance forwards bytes and revokes on close, stop and lockdown', async t => {
   const guest = new Guest();
-  const scope = workspace(), tunnels = new ReverseTunnels(guest as unknown as Machines, scope.workspaces);
+  const scope = workspace(), model = await reverseTunnelIdentityOptions(t, guest as unknown as Machines, scope.workspaces);
+  const tunnels = new ReverseTunnels(guest as unknown as Machines, scope.workspaces, model.options);
   try {
     assert.equal((await tunnels.check(id)).ready, true);
     await assert.rejects(tunnels.open(id, 0, 10), /端口/);
@@ -97,12 +101,13 @@ test('temporary TCP entrance forwards bytes and revokes on close, stop and lockd
     const stopped = await tunnels.open(id, 8765, 10);
     guest.running = false;
     guest.emit('change');
-    await tunnels.stop(id);
+    await assert.rejects(tunnels.stop(id), (error: any) => error.status === 503);
     assert.equal((await tunnels.check(id)).ready, false);
     assert.equal(tunnels.status(id).active, false);
     await rejected(stopped.localPort!);
 
     guest.running = true;
+    await tunnels.stop(id);
     const locked = await tunnels.open(id, 8765, 10);
     guest.emit('incident-lockdown', id);
     await tunnels.stop(id);
@@ -113,9 +118,10 @@ test('temporary TCP entrance forwards bytes and revokes on close, stop and lockd
   }
 });
 
-test('project tunnels keep independent bindings, protect configuration and preserve half-closed binary responses', async () => {
+test('project tunnels keep independent bindings, protect configuration and preserve half-closed binary responses', async t => {
   const guest = new Guest(), scope = workspace();
-  const tunnels = new ReverseTunnels(guest as unknown as Machines, scope.workspaces);
+  const model = await reverseTunnelIdentityOptions(t, guest as unknown as Machines, scope.workspaces);
+  const tunnels = new ReverseTunnels(guest as unknown as Machines, scope.workspaces, model.options);
   try {
     const first = await scope.inScope(scope.alpha, () => tunnels.open(id, 8765, 10));
     const second = await scope.inScope(scope.beta, () => tunnels.open(id, 8765, 10));
@@ -142,7 +148,8 @@ test('project tunnels keep independent bindings, protect configuration and prese
     assert.equal(guest.forwarded[0]._workspace, scope.alpha);
     assert.equal(guest.forwarded[0].environment, undefined);
     assert.equal(guest.forwarded[0].secrets, undefined);
-    assert.ok(guest.commands.some((command) => command.includes(`ip netns exec sk-${scope.alpha}`)));
+    assert.equal(model.tickets.get(model.records.get(scope.alpha)!.runId)!.namespace, 'sk-' + scope.alpha);
+    assert.ok(model.frames.length === 2 && model.rootLaunches.every(command => !command.includes('private-tunnel-value')));
     scope.configs.set(scope.alpha, { ...previous, networkIsolation: 'host' });
     const changed = connect(first.localPort, '127.0.0.1');
     changed.on('error', () => {});
@@ -160,9 +167,10 @@ test('project tunnels keep independent bindings, protect configuration and prese
   assert.equal(scope.guards.size, 0);
 });
 
-test('shutdown aborts an unfinished tunnel setup and releases the instance lock', async () => {
+test('shutdown aborts an unfinished tunnel setup and releases the instance lock', async t => {
   const guest = new Guest(), scope = workspace(); guest.hanging = true;
-  const tunnels = new ReverseTunnels(guest as unknown as Machines, scope.workspaces);
+  const model = await reverseTunnelIdentityOptions(t, guest as unknown as Machines, scope.workspaces);
+  const tunnels = new ReverseTunnels(guest as unknown as Machines, scope.workspaces, model.options);
   const operation = scope.inScope(scope.alpha, () => tunnels.open(id, 8765, 10));
   const rejected = assert.rejects(operation, /abort/i);
   await eventually(() => guest.commands.length > 0);

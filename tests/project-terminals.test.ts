@@ -295,12 +295,47 @@ test('closing waits for explicit task cleanup and keeps configuration guards unt
   } finally { prepared?.release(); await closing; await f.close(); }
 });
 
+test('verification-only task binding holds a lease without network repair, packages or native issuance', async () => {
+  const f = await fixture();
+  let prepared: Awaited<ReturnType<InstanceType<typeof ProjectTerminals>['prepare']>> | undefined;
+  try {
+    await f.workspaces.save(f.id, { directory: '/workspace/readonly', networkIsolation: 'private' });
+    f.commands.length = 0; f.controlCalls.length = 0;
+    prepared = await f.terminals.prepare(f.id, 'default', null, false, undefined, undefined,
+      { mode: 'task', verifyOnly: true });
+    const check = f.commands.find(command => command.includes('SAKURA_TASK_DIRECTORY_MISSING:'))!;
+    assert.ok(check.includes('SAKURA_TASK_NETWORK_MISSING:'));
+    assert.doesNotMatch(check, /apk add|apt-get|mkdir|netns add|useradd|adduser|tmux/);
+    assert.deepEqual(f.controlCalls, []);
+    assert.throws(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'),
+      { code: 'PROJECT_DIRECTORY_RUNS_MUST_STOP' });
+    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/changed', networkIsolation: 'private' }), /终端或命令/);
+    await prepared.release();
+    assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'));
+  } finally { await prepared?.release(); await f.close(); }
+});
+
+test('verification-only task binding refuses a missing namespace without issuing a lease', async () => {
+  const f = await fixture(), execute = f.machines.exec;
+  try {
+    await f.workspaces.save(f.id, { directory: '/workspace/readonly', networkIsolation: 'private' });
+    f.machines.exec = async (...args) => args[1].includes('SAKURA_TASK_NETWORK_MISSING:') ?
+      { code: 74, stdout: '', stderr: 'SAKURA_TASK_NETWORK_MISSING: missing original namespace' } : execute(...args);
+    await assert.rejects(f.terminals.prepare(f.id, 'default', null, false, undefined, undefined,
+      { mode: 'task', verifyOnly: true }), { status: 409 });
+    assert.deepEqual(f.controlCalls, []);
+    assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, 'default'));
+  } finally { await f.close(); }
+});
+
 test('task preparation rejects attaching a tmux or read-only connection before guest actions', async () => {
   const f = await fixture();
   try {
     await assert.rejects(f.terminals.prepare(f.id, 'default', 'main', false, undefined, undefined, { mode: 'task' }),
       { status: 400 });
     await assert.rejects(f.terminals.prepare(f.id, 'default', null, true, undefined, undefined, { mode: 'task' }),
+      { status: 400 });
+    await assert.rejects(f.terminals.prepare(f.id, 'default', null, false, undefined, undefined, { verifyOnly: true }),
       { status: 400 });
     assert.deepEqual(f.commands, []);
   } finally { await f.close(); }

@@ -62,7 +62,7 @@ export const projectMainRecordSchema = z.object({
 });
 export type ProjectMainRecord = z.infer<typeof projectMainRecordSchema>;
 type ProjectScopeRecord = ProjectServiceRecord | ProjectMainRecord;
-type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide' | 'notebook'; deadline?: number } | { kind: 'main' };
+type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide' | 'notebook' | 'reverse-tunnel'; deadline?: number } | { kind: 'main' };
 export const projectBrowserIdeRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
   name: z.literal('browser-ide'), session: z.string().regex(/^sakura-browser-ide-(default|[a-f0-9]{16})$/),
 }).strict().superRefine((record, ctx) => {
@@ -92,6 +92,23 @@ export const projectNotebookRecordSchema = z.object({ ...projectServiceRecordSch
     ctx.addIssue({ code: 'custom', message: 'Notebook 的完整 cgroup/pane 身份缺失' });
 });
 export type ProjectNotebookRecord = z.infer<typeof projectNotebookRecordSchema>;
+export const projectReverseTunnelRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
+  name: z.literal('reverse-tunnel'), session: z.string().regex(/^sakura-reverse-tunnel-(default|[a-f0-9]{16})$/),
+}).strict().superRefine((record, ctx) => {
+  if (record.session !== 'sakura-reverse-tunnel-' + record.projectId || record.scopeName !== 'sakura-service-' + record.runId)
+    ctx.addIssue({ code: 'custom', message: '临时隧道运行路径与身份不符' });
+  const panes = [record.sessionId, record.paneId, record.panePid, record.paneStartTicks];
+  if (panes.some(value => value !== null) && panes.some(value => value === null) ||
+      ['prepared', 'running'].includes(record.phase) && record.inode === null ||
+      record.phase === 'running' && record.panePid === null)
+    ctx.addIssue({ code: 'custom', message: '临时隧道的完整 cgroup/pane 身份缺失' });
+});
+export type ProjectReverseTunnelRecord = z.infer<typeof projectReverseTunnelRecordSchema>;
+export function projectReverseTunnelScopePaths(project: Project) {
+  const projectId = projectIdSchema.parse(project._workspace || 'default');
+  return { namespace: 'reverse-tunnel' as const, projectId, name: 'reverse-tunnel',
+    session: 'sakura-reverse-tunnel-' + projectId, guest: '/run/sakura-reverse-tunnels/' + projectId };
+}
 export function projectNotebookScopePaths(project: Project) {
   const projectId = projectIdSchema.parse(project._workspace || 'default');
   return { namespace: 'notebook' as const, projectId, name: 'notebook',
@@ -132,7 +149,8 @@ export function projectMainScopePaths(project: Project) {
 const scopePaths = (project: Project, target: ScopeTarget) => target.kind === 'main'
   ? projectMainScopePaths(project) : target.namespace === 'browser-ide'
     ? projectBrowserIdeScopePaths(project) : target.namespace === 'notebook'
-      ? projectNotebookScopePaths(project) : projectServiceScopePaths(project, target.name);
+      ? projectNotebookScopePaths(project) : target.namespace === 'reverse-tunnel'
+        ? projectReverseTunnelScopePaths(project) : projectServiceScopePaths(project, target.name);
 export function projectMainBinding(project: Project) {
   return createHash('sha256').update(JSON.stringify(['main-uid-v3',
     project._workspace || 'default', project.directory, project.networkIsolation || 'host',
@@ -153,7 +171,7 @@ const helper = `import fcntl,hashlib,json,os,re,signal,stat,subprocess,sys,tempf
 boot=open('/proc/sys/kernel/random/boot_id').read().strip()
 folder=request['guest']; owner_file=folder+'/owner.json'; cancel_file=folder+'/cancel'
 main=request.get('kind')=='main'
-root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-project-services'
+root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-services'
 scope_prefix='sakura-main-' if main else 'sakura-service-'
 def refuse(message): raise RuntimeError(message)
 def trusted_directory(path):
@@ -396,9 +414,9 @@ def commit():
  os.close(descriptor)
  if '0::/'+record['scopeName'] not in open('/proc/'+str(record['panePid'])+'/cgroup').read().splitlines(): refuse('服务 pane 未进入 cgroup；拒绝执行项目代码')
  record['phase']='running'; write_owner(record)
- if request.get('namespace')=='browser-ide':
+ if request.get('namespace') in ('browser-ide','reverse-tunnel'):
   deadline=request.get('deadline')
-  if not isinstance(deadline,int) or not time.time()<deadline<=time.time()+14400: refuse('浏览器 IDE 时限不符')
+  if not isinstance(deadline,int) or not time.time()<deadline<=time.time()+14400: refuse('限时服务时限不符')
   path=folder+'/watchdog-'+record['runId']+'.py'
   descriptor=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
   with os.fdopen(descriptor,'w') as stream: stream.write(request['watchdogScript']); stream.flush(); os.fsync(stream.fileno())
@@ -462,7 +480,7 @@ def stop():
   if descriptor is not None: os.close(descriptor)
 def watchdog():
  expected=request['record']; deadline=request['deadline']
- if request.get('namespace')!='browser-ide' or not isinstance(deadline,int) or deadline>time.time()+14400: refuse('浏览器 IDE guard 身份不符')
+ if request.get('namespace') not in ('browser-ide','reverse-tunnel') or not isinstance(deadline,int) or deadline>time.time()+14400: refuse('限时服务 guard 身份不符')
  # The guard runs outside the service. Hold the original cgroup descriptor;
  # its inode cannot become authority over a later run with a reused name.
  fcntl.flock(lock,fcntl.LOCK_EX)
@@ -540,10 +558,11 @@ function projectScopeCommand(project: Project, target: ScopeTarget, op: Operatio
   const executionHelper = target.kind === 'main'
     ? helper.replaceAll('服务', '项目主命令').replaceAll('SAKURA_SERVICE_SCOPE_', 'SAKURA_PROJECT_MAIN_SCOPE_') : helper;
   const request: any = { op, ...paths, ...(record ? { record } : {}), ...(transport ? { transport } : {}) };
-  if (target.kind === 'service' && target.namespace === 'browser-ide' && op === 'commit') {
+  if (target.kind === 'service' && ['browser-ide', 'reverse-tunnel'].includes(target.namespace || '') && op === 'commit') {
     if (!record || !Number.isSafeInteger(target.deadline) || target.deadline! <= Math.floor(Date.now() / 1000) ||
         target.deadline! > Math.floor(Date.now() / 1000) + 14400)
-      throw new AppError('浏览器 IDE 时限或原运行记录不符', 409, 'BROWSER_IDE_SCOPE_CHANGED');
+      throw new AppError('限时服务时限或原运行记录不符', 409,
+        target.namespace === 'browser-ide' ? 'BROWSER_IDE_SCOPE_CHANGED' : 'SERVICE_SCOPE_CHANGED');
     request.deadline = target.deadline;
     request.watchdogScript = 'import json\n' + python({ op: 'watchdog', ...paths,
       record: { ...record, phase: 'running' }, deadline: target.deadline,
@@ -594,6 +613,8 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
     const p = scopePaths(this.project, this.target);
     return this.target.kind === 'service' && this.target.namespace === 'browser-ide'
       ? join(vmDir(this.id), 'project-browser-ide', p.projectId, 'runtime.json')
+      : this.target.kind === 'service' && this.target.namespace === 'reverse-tunnel'
+      ? join(vmDir(this.id), 'project-reverse-tunnels', p.projectId, 'runtime.json')
       : this.target.kind === 'service' && this.target.namespace === 'notebook'
       ? join(vmDir(this.id), 'project-notebooks', p.projectId, 'runtime.json')
       : this.target.kind === 'main'
@@ -749,7 +770,7 @@ if boot==request['record']['bootId']:
  print(json.dumps({'bootId':boot,'retired':False}))
 else:
  folder=request['guest']
- root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-project-services'
+ root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-services'
  for path in [root,folder.rsplit('/',1)[0],folder]:
   try: os.mkdir(path,0o700)
   except FileExistsError: pass
@@ -896,6 +917,31 @@ export class ProjectNotebookScope extends ProjectProcessScope<ProjectNotebookRec
       const transport = status.record && await this.transport(status.record);
       if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
         throw new AppError('Notebook 受保护正文与原记录不符', 409, 'NOTEBOOK_SCOPE_CHANGED');
+    }
+    return status;
+  }
+}
+
+/** Reverse tunnels own a separate service receipt and the complete UID broker domain. */
+export class ProjectReverseTunnelScope extends ProjectProcessScope<ProjectReverseTunnelRecord> {
+  private expiration: () => string | undefined;
+  constructor(machines: Machines, id: string, project: Project, durationSeconds?: number) {
+    if (durationSeconds !== undefined) z.number().int().min(10).max(600).parse(durationSeconds);
+    let deadline: number | undefined;
+    // Start the lifetime at commit, after potentially slow prepare/pane setup.
+    // The first commit read fixes one deadline for all nested watchdog JSON.
+    const target: ScopeTarget = { kind: 'service', name: 'reverse-tunnel', namespace: 'reverse-tunnel',
+      get deadline() { return durationSeconds === undefined ? undefined : deadline ??= Math.floor(Date.now() / 1000) + durationSeconds; } };
+    super(machines, id, project, target, projectReverseTunnelRecordSchema, machines.live.get(id));
+    this.expiration = () => deadline === undefined ? undefined : new Date(deadline * 1000).toISOString();
+  }
+  expiresAt() { return this.expiration(); }
+  async status(signal?: AbortSignal, payloadSha256?: string) {
+    const status = await super.status(signal);
+    if (payloadSha256 !== undefined) {
+      const transport = status.record && await this.transport(status.record);
+      if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
+        throw new AppError('临时隧道受保护正文与原记录不符', 409, 'SERVICE_SCOPE_CHANGED');
     }
     return status;
   }

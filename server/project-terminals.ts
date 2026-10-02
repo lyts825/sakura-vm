@@ -114,8 +114,10 @@ export class ProjectTerminals {
   }
 
   async prepare(id: string, projectId: string | null | undefined, session?: string | null,
-    readOnly = false, signal?: AbortSignal, expectedTerminalId?: string, options: { mode?: 'task' } = {}) {
+    readOnly = false, signal?: AbortSignal, expectedTerminalId?: string,
+    options: { mode?: 'task'; verifyOnly?: boolean } = {}) {
     const task = options.mode === 'task';
+    if (options.verifyOnly && !task) throw new AppError('只读绑定核对仅适用于任务准备', 400);
     if (task && (readOnly || session)) throw new AppError('任务准备不能同时附加终端会话', 400);
     const abort = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
     if (readOnly && (!session || !projectId))
@@ -139,8 +141,10 @@ export class ProjectTerminals {
         const namespace = projectNetworkNamespace(project);
         const prepared = await this.machines.exec(id, `set -eu\n` +
           `${!task ? `if ! command -v tmux >/dev/null; then ${install}; fi\n` : ''}` +
-          (namespace ? `if ip netns exec ${namespace} true >/dev/null 2>&1; then\n${projectNetworkCheckScript(namespace)}\nfi\n` : '') +
-          `${ensureProjectNetworkScript(project, distro)}` + (task ?
+          (namespace ? `if ip netns exec ${namespace} true >/dev/null 2>&1; then\n${projectNetworkCheckScript(namespace)}\n` +
+            (options.verifyOnly ? `else\n  echo 'SAKURA_TASK_NETWORK_MISSING: 原项目网络空间不存在，只读核对未修复' >&2; exit 74\n` : '') +
+            `fi\n` : '') +
+          (options.verifyOnly ? '' : `${ensureProjectNetworkScript(project, distro)}`) + (task ?
             `if [ ! -d ${quote(project.directory)} ] || [ -L ${quote(project.directory)} ]; then\n` +
             `  echo 'SAKURA_TASK_DIRECTORY_MISSING: 项目目录不存在或是链接，请先显式准备并迁移原目录' >&2; exit 74\nfi` :
             `mkdir -p ${quote(project.directory)}`),
