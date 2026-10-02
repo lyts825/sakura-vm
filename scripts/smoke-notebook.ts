@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket from 'ws';
 
-const directory = await mkdtemp(join(tmpdir(), 'sakura-notebook-smoke-'));
+const parent = await realpath(tmpdir());
+const directory = await mkdtemp(join(parent, 'sakura-notebook-smoke-'));
+const projectDirectory = '/workspace/notebook-smoke';
+const marker = 'notebook-smoke-' + randomUUID();
 const isolated = process.env.SAKURA_NOTEBOOK_PRIVATE === '1';
 const distro = process.argv[2] || 'alpine';
 assert.ok(['alpine', 'debian', 'ubuntu'].includes(distro));
@@ -16,13 +19,17 @@ process.env.SAKURA_IMAGE_DIR = resolve('.data/images');
 const { createRuntime } = await import('../server/runtime.ts');
 const { Machines } = await import('../server/machines.ts');
 const { Workspaces } = await import('../server/workspaces.ts');
-const { NotebookEnvironments } = await import('../server/notebook-environments.ts');
+const { NotebookEnvironments, notebookSessionSchema } = await import('../server/notebook-environments.ts');
+const { ProjectDirectoryMigrations } = await import('../server/project-directory-migration.ts');
+const { ProjectIdentities } = await import('../server/project-identity.ts');
+const { quote } = await import('../server/files.ts');
 const { freePort } = await import('../server/qmp.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const workspaces = new Workspaces(machines);
 let notebooks = new NotebookEnvironments(machines, workspaces);
 await notebooks.init();
+let primaryFailure: unknown;
 try {
   const vm = await machines.create({ name: 'notebook-smoke', distro, memoryMiB: 2048,
     cpus: 2, diskGiB: 8, accelerator: 'auto' });
@@ -33,14 +40,37 @@ try {
     assert.ok(Date.now() < deadline, machines.logs.get(vm.id));
     await delay(200);
   }
-  if (isolated) await workspaces.save(vm.id, { directory: '/workspace',
-    template: 'python', networkIsolation: 'private' });
+  await workspaces.save(vm.id, { directory: projectDirectory, template: 'python',
+    networkIsolation: isolated ? 'private' : 'host', environment: { SAKURA_NOTEBOOK_SMOKE: marker } });
+  const prepared = await machines.exec(vm.id, 'mkdir -p ' + quote(projectDirectory), 10000);
+  assert.equal(prepared.code, 0, prepared.stderr);
+  const migrations = new ProjectDirectoryMigrations(machines, workspaces);
+  const preview = await migrations.preview(vm.id); assert.ok(preview.plan);
+  assert.equal(preview.plan.proposal.directory, projectDirectory);
+  const applied = await migrations.apply(vm.id, { action: 'apply', version: 1,
+    planId: preview.plan.proposal.planId, sha256: preview.plan.sha256, reviewed: true });
+  assert.equal(applied.plan?.state, 'applied'); assert.ok(applied.plan?.activatedIdentity);
+  const identity = applied.plan.activatedIdentity, identities = new ProjectIdentities(machines);
+  assert.notEqual(identity.uid, 0); assert.equal(identity.gid, identity.uid);
+  assert.equal(identity.home, '/var/lib/sakura-project-homes/' + identity.identityId);
   for (const [provider, guestPort] of [['marimo', 2718], ['jupyter', 8888]] as const) {
     const hostPort = await freePort();
     const input = { mode: 'start', provider, guestPort, hostPort } as const;
     const result = await notebooks.run(vm.id, input, new AbortController().signal,
       (line) => process.stdout.write(line));
     assert.equal(result.session?.status, 'running');
+    assert.equal(machines.get(vm.id).forwards.length, 0);
+    const store = JSON.parse(await readFile(join(directory, 'notebook-environments.json'), 'utf8'));
+    const owned = notebookSessionSchema.parse(store.sessions.find((row: { vmId: string; projectId: string }) =>
+      row.vmId === vm.id && row.projectId === 'default'));
+    const execution = owned.execution; assert.ok(execution?.run);
+    assert.deepEqual(execution.identity, identity);
+    assert.deepEqual(await identities.runReadonly(vm.id, identity, execution.record.runId), execution.run);
+    const account = await machines.exec(vm.id, '/usr/bin/python3 -I -S -c ' + quote(
+      'import json,os\nuid=' + identity.uid + '\ngroup=' + JSON.stringify(execution.run.cgroupName) +
+      '\npids=[int(value) for value in open("/sys/fs/cgroup/"+group+"/cgroup.procs").read().split()]\n' +
+      'assert pids\nassert any(all(int(value)==uid for value in next(line for line in open("/proc/"+str(pid)+"/status") if line.startswith("Uid:")).split()[1:]) for pid in pids)\nprint("NOTEBOOK_PROJECT_UID_OK")'), 10000);
+    assert.equal(account.code, 0, account.stderr); assert.equal(account.stdout.trim(), 'NOTEBOOK_PROJECT_UID_OK');
     const link = await notebooks.link(vm.id);
     assert.equal(link.provider, provider);
     assert.match(link.url, new RegExp(`^http://127\\.0\\.0\\.1:${hostPort}/`));
@@ -77,7 +107,7 @@ try {
           ws.once('open', () => { clearTimeout(timer); resolve(); });
           ws.once('error', (error) => { clearTimeout(timer); reject(error); });
         });
-        const code = `import os, socket\nassert os.readlink('/proc/self/ns/net') == ${JSON.stringify(namespace.stdout.trim())}\n` +
+        const code = `import os, socket\nassert os.getuid() == ${identity.uid} and os.getgid() == ${identity.gid}\nassert os.environ['HOME'] == ${JSON.stringify(identity.home)}\nassert os.environ['SAKURA_NOTEBOOK_SMOKE'] == ${JSON.stringify(marker)}\nassert os.getcwd() == ${JSON.stringify(projectDirectory)}\nassert os.readlink('/proc/self/ns/net') == ${JSON.stringify(namespace.stdout.trim())}\nassert open('/proc/self/cgroup').read().strip() == ${JSON.stringify('0::/' + execution.run.cgroupName)}\n` +
           (isolated ? `s = socket.socket()\ntry:\n s.connect(('10.0.2.2', 80))\n raise AssertionError('private kernel reached shared guest network')\nexcept OSError:\n pass\nfinally:\n s.close()\n` : '') +
           `print('SAKURA_KERNEL_NAMESPACE_OK')`;
         const msgId = randomUUID();
@@ -119,19 +149,32 @@ try {
         'test -z "$(ip -n sk-default -o -6 route show)" && ' +
         'test -n "$(ip netns pids sk-default)"', 10000);
       assert.equal(check.code, 0, check.stderr);
-      await notebooks.close();
-      notebooks = new NotebookEnvironments(machines, workspaces);
-      await notebooks.init();
-      assert.equal((await notebooks.view(vm.id, input)).session?.status, 'running');
-      assert.equal((await notebooks.link(vm.id)).url, link.url);
     }
-    console.log(`Real ${distro}/QEMU ${provider} installed, authenticated and reached through ${isolated ? 'private SSH bridge' : 'QEMU forward'} ${hostPort}.`);
+    await notebooks.close();
+    notebooks = new NotebookEnvironments(machines, workspaces);
+    await notebooks.init();
+    assert.equal((await notebooks.view(vm.id, input)).session?.status, 'running');
+    assert.equal((await notebooks.link(vm.id)).url, link.url);
+    console.log(`Real ${distro}/QEMU ${provider} project UID installed, authenticated and reached through ${isolated ? 'private' : 'host'} SSH loopback bridge ${hostPort}.`);
     await notebooks.run(vm.id, { mode: 'stop' }, new AbortController().signal, () => {});
     assert.equal(machines.get(vm.id).forwards.length, 0);
+    const absent = await machines.exec(vm.id, 'test ! -e ' + quote('/sys/fs/cgroup/' + execution.run.cgroupName), 10000);
+    assert.equal(absent.code, 0, absent.stderr);
+    assert.deepEqual(await identities.runReadonly(vm.id, identity, execution.record.runId), { ...execution.run, phase: 'closed' });
   }
+} catch (error) {
+  primaryFailure = error; throw error;
 } finally {
-  await notebooks.close();
-  await workspaces.close();
-  await machines.close();
-  await rm(directory, { recursive: true, force: true });
+  const failures: unknown[] = [];
+  for (const close of [() => notebooks.close(), () => workspaces.close(), () => machines.close()]) {
+    try { await close(); } catch (error) { failures.push(error); }
+  }
+  if (failures.length) throw new AggregateError([...(primaryFailure ? [primaryFailure] : []), ...failures],
+    'Notebook smoke cleanup failed; the owned test directory was retained');
+  assert.equal(machines.live.size, 0);
+  const owned = await realpath(directory);
+  assert.equal(dirname(owned), parent); assert.match(basename(owned), /^sakura-notebook-smoke-/);
+  // Retain a failed run's own artifacts for diagnosis. Only a fully successful
+  // fresh test directory is removed after all VM and controller closes.
+  if (!primaryFailure) await rm(owned, { recursive: true, force: true });
 }

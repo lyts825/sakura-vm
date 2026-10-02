@@ -2,6 +2,14 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## Notebook 项目账号、不可变依赖缓存与全域清理
+
+2026-10-02 Jupyter/Marimo 安装、会话、内核与后代接入原项目持久 UID/GID、独立 home、捕获配置、完整服务票据与受保护正文。非枚举项目身份在配置和环境复制后保留并核对，准备固定原 live/boot；系统依赖和二进制 wheels 由固定清空环境的管理入口下载，不加载项目配置、环境、代码或钩子，项目账号离线创建虚拟环境。所有模式均使用原 UID 实际持有的监听与完整原票据核对后的回环桥接；重载不安装或发行新票据，停止先保存检查状态，原全部 cgroup 后代、pane 与保护帧确认清理后核销，未知状态及旧 root 记录保留。冷 boot 只退休准确旧资源，不向新 boot 发送旧停止，规则见 [Notebook 环境](notebook-environments.md)。
+
+wheelhouse 固定 UUID/boot、目录及文件 device/inode、大小和 SHA，最多 512 个 wheels、合计 1 GiB；只读 manifest 最多 256 KiB。安装与退休只携带完整 manifest 摘要绑定的小型 pin，最大合法模型的 Jupyter/Marimo 安装 frame 为 5986/5974 字节，管理清理命令为 8028/8027 字节，管理命令另有 16 KiB 上限。完整原 UID 安装任务域确认关闭后才按原 parent FD 精确删除并确认不存在；垃圾、丢失应答及不确定清理保存原 lease/review，返回 503。上述大小为实际 SDK 编码及有限本地模型测量，不是实机下载证明。
+
+正式源码六个相关测试文件共 198 项全部通过（Notebook 43 项、Browser 21 项及服务域、桥接、运行票据、Jobs 清理），完整类型检查通过；证明为 `.data/notebook-identity-backend-d4ae5a40-58a3-4cc9-bbb5-e49b26e5a27e-verification.json`，实际退出 0、源码前后未变。官方新临时实例 smoke 已适配明确目录迁移、真实 UID/home/环境、Jupyter WebSocket 内核所属域、两种模式的认证/桥接重载、原票据核销与有界测试目录清理；三个生成 Python 正文的静态语法检查通过，证明为 `.data/notebook-smoke-static-977abaf0-4bee-43f0-be1c-cc1df1fe6a18.json`。这次尚未运行新的 Notebook 客户机联测，未把历史 root 结果当作当前 UID 成功，也未重跑整仓测试。目录仍为 250 项、247 项有入口、3 项部分实现。
+
 ## 九项有限开发任务与清理失败保留
 
 2026-10-02 能力中心的 test、test-discover、dependencies、lock、lock-check、install-locked，以及 worktree-list/add/remove 九项有限开发任务接入持久项目 UID/GID、独立 home、原网络和有界保护帧。提交同步固定原项目与 live 身份，复制保留非枚举项目 ID，准备捕获并核对一份原配置；环境只解析一次，执行和结果保存保持原租约，原 task/native 清理 503 与错误码继续传播。保留原任务中心入口、参数、退出码和日志脱敏；Lint/format 继续复用工程 UID helper。缓存安装的受限跨权限交接继续实现，缓存预取与 Docker 管理边界分别保留，使用范围见 [能力中心](feature-suite.md)。

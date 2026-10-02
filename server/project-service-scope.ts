@@ -62,7 +62,7 @@ export const projectMainRecordSchema = z.object({
 });
 export type ProjectMainRecord = z.infer<typeof projectMainRecordSchema>;
 type ProjectScopeRecord = ProjectServiceRecord | ProjectMainRecord;
-type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide'; deadline?: number } | { kind: 'main' };
+type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide' | 'notebook'; deadline?: number } | { kind: 'main' };
 export const projectBrowserIdeRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
   name: z.literal('browser-ide'), session: z.string().regex(/^sakura-browser-ide-(default|[a-f0-9]{16})$/),
 }).strict().superRefine((record, ctx) => {
@@ -79,6 +79,23 @@ export function projectBrowserIdeScopePaths(project: Project) {
   const projectId = projectIdSchema.parse(project._workspace || 'default');
   return { namespace: 'browser-ide' as const, projectId, name: 'browser-ide',
     session: 'sakura-browser-ide-' + projectId, guest: '/run/sakura-browser-ide/' + projectId };
+}
+export const projectNotebookRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
+  name: z.literal('notebook'), session: z.string().regex(/^sakura-notebook-(default|[a-f0-9]{16})$/),
+}).strict().superRefine((record, ctx) => {
+  if (record.session !== 'sakura-notebook-' + record.projectId || record.scopeName !== 'sakura-service-' + record.runId)
+    ctx.addIssue({ code: 'custom', message: 'Notebook 运行路径与身份不符' });
+  const panes = [record.sessionId, record.paneId, record.panePid, record.paneStartTicks];
+  if (panes.some(value => value !== null) && panes.some(value => value === null) ||
+      ['prepared', 'running'].includes(record.phase) && record.inode === null ||
+      record.phase === 'running' && record.panePid === null)
+    ctx.addIssue({ code: 'custom', message: 'Notebook 的完整 cgroup/pane 身份缺失' });
+});
+export type ProjectNotebookRecord = z.infer<typeof projectNotebookRecordSchema>;
+export function projectNotebookScopePaths(project: Project) {
+  const projectId = projectIdSchema.parse(project._workspace || 'default');
+  return { namespace: 'notebook' as const, projectId, name: 'notebook',
+    session: 'sakura-notebook-' + projectId, guest: '/run/sakura-notebook/' + projectId };
 }
 export type ProjectScopeInput = { runId: string; command: string; input: Buffer; sha256: string };
 const transportSchema = z.object({ version: z.literal(1),
@@ -114,7 +131,8 @@ export function projectMainScopePaths(project: Project) {
 }
 const scopePaths = (project: Project, target: ScopeTarget) => target.kind === 'main'
   ? projectMainScopePaths(project) : target.namespace === 'browser-ide'
-    ? projectBrowserIdeScopePaths(project) : projectServiceScopePaths(project, target.name);
+    ? projectBrowserIdeScopePaths(project) : target.namespace === 'notebook'
+      ? projectNotebookScopePaths(project) : projectServiceScopePaths(project, target.name);
 export function projectMainBinding(project: Project) {
   return createHash('sha256').update(JSON.stringify(['main-uid-v3',
     project._workspace || 'default', project.directory, project.networkIsolation || 'host',
@@ -135,7 +153,7 @@ const helper = `import fcntl,hashlib,json,os,re,signal,stat,subprocess,sys,tempf
 boot=open('/proc/sys/kernel/random/boot_id').read().strip()
 folder=request['guest']; owner_file=folder+'/owner.json'; cancel_file=folder+'/cancel'
 main=request.get('kind')=='main'
-root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-project-services'
+root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-project-services'
 scope_prefix='sakura-main-' if main else 'sakura-service-'
 def refuse(message): raise RuntimeError(message)
 def trusted_directory(path):
@@ -507,6 +525,11 @@ export function projectBrowserIdeScopeCommand(project: Project, op: Operation, r
   return projectScopeCommand(project, { kind: 'service', name: 'browser-ide', namespace: 'browser-ide', deadline }, op, record, payload, transport);
 }
 
+export function projectNotebookScopeCommand(project: Project, op: Operation, record?: ProjectNotebookRecord,
+  payload?: ProjectScopeInput, transport?: z.infer<typeof transportSchema>) {
+  return projectScopeCommand(project, { kind: 'service', name: 'notebook', namespace: 'notebook' }, op, record, payload, transport);
+}
+
 function python(request: object) {
   return `request=json.loads(${JSON.stringify(JSON.stringify(request))})\n`;
 }
@@ -571,6 +594,8 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
     const p = scopePaths(this.project, this.target);
     return this.target.kind === 'service' && this.target.namespace === 'browser-ide'
       ? join(vmDir(this.id), 'project-browser-ide', p.projectId, 'runtime.json')
+      : this.target.kind === 'service' && this.target.namespace === 'notebook'
+      ? join(vmDir(this.id), 'project-notebooks', p.projectId, 'runtime.json')
       : this.target.kind === 'main'
       ? join(vmDir(this.id), 'project-main', p.projectId, 'runtime.json')
       : join(vmDir(this.id), 'project-services', p.projectId, this.target.name, 'runtime.json');
@@ -724,7 +749,7 @@ if boot==request['record']['bootId']:
  print(json.dumps({'bootId':boot,'retired':False}))
 else:
  folder=request['guest']
- root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-project-services'
+ root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-project-services'
  for path in [root,folder.rsplit('/',1)[0],folder]:
   try: os.mkdir(path,0o700)
   except FileExistsError: pass
@@ -854,6 +879,23 @@ export class ProjectBrowserIdeScope extends ProjectProcessScope<ProjectBrowserId
       const transport = status.record && await this.transport(status.record);
       if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
         throw new AppError('浏览器 IDE 受保护正文与原记录不符', 409, 'BROWSER_IDE_SCOPE_CHANGED');
+    }
+    return status;
+  }
+}
+
+/** Notebook owns a separate receipt namespace and the complete service UUID domain. */
+export class ProjectNotebookScope extends ProjectProcessScope<ProjectNotebookRecord> {
+  constructor(machines: Machines, id: string, project: Project) {
+    super(machines, id, project, { kind: 'service', name: 'notebook', namespace: 'notebook' },
+      projectNotebookRecordSchema, machines.live.get(id));
+  }
+  async status(signal?: AbortSignal, payloadSha256?: string) {
+    const status = await super.status(signal);
+    if (payloadSha256 !== undefined) {
+      const transport = status.record && await this.transport(status.record);
+      if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
+        throw new AppError('Notebook 受保护正文与原记录不符', 409, 'NOTEBOOK_SCOPE_CHANGED');
     }
     return status;
   }
