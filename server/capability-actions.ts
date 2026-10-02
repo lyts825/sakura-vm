@@ -118,7 +118,9 @@ export class CapabilityActions {
     };
   }
 
-  async run(id: string, featureId: CapabilityId, input: unknown, signal: AbortSignal) {
+  async run(id: string, featureId: CapabilityId, input: unknown, signal: AbortSignal,
+    options: { expectedLive?: ReturnType<Machines['live']['get']>;
+      onEngineeringResult?: (result: Record<string, unknown>) => Promise<void> } = {}) {
     this.machines.get(id);
     this.machines.requireUnlocked(id);
     const parameters = capabilityParameters(featureId, input);
@@ -502,9 +504,16 @@ export class CapabilityActions {
         return { ...result, ready: result.code === 0, executed: true };
       });
     }
-    const result = await this.machines.locked('capability:' + this.workspaces.projects.key(id), () =>
-      runEngineeringOperation(this.machines, this.workspaces, id, featureId, parameters, signal),
-    );
+    const engineeringResult = (result: Record<string, unknown>) => ({ ...result,
+      ready: result.code === 0, executed: true,
+      ...(featureId === 'network-topology' ? { forwards: this.machines.get(id).forwards } : {}) });
+    const result = await this.machines.locked('capability:' + this.workspaces.projects.key(id), () => {
+      if (Object.hasOwn(options, 'expectedLive') && this.machines.live.get(id) !== options.expectedLive)
+        throw new AppError('工程任务客户机运行身份与原开发任务不符', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      return runEngineeringOperation(this.machines, this.workspaces, id, featureId, parameters, signal,
+        { ...(this.projectTerminals ? { terminals: this.projectTerminals } : {}),
+          onResult: options.onEngineeringResult ? result => options.onEngineeringResult!(engineeringResult(result)) : undefined });
+    });
     return {
       ...result,
       ready: result.code === 0,

@@ -163,7 +163,8 @@ test('shared prefetch never resolves project secrets or exports its executable e
   const machines: any = { get: () => ({ distro: 'debian' }), live: new Map(),
     exec: async (_id: string, command: string) => { commands.push(command); return { code: 0, stdout: '', stderr: '' }; } };
   let resolved = 0;
-  const spaces: any = { projects: { key: () => 'vm', current: () => 'default' }, config: async () => project,
+  const spaces: any = { projects: { key: () => 'vm', current: () => 'default',
+    inScope: (_id: string, _scope: string, action: () => unknown) => action() }, config: async () => project,
     resolvedConfig: async () => { resolved++; throw new Error('secrets must not resolve'); },
     networkEnvironment: async () => ({ NPM_CONFIG_REGISTRY: 'https://registry.example.com' }) };
   const suite = new FeatureSuite(machines, spaces); suite.jobs = new Jobs();

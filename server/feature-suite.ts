@@ -13,7 +13,6 @@ import { quote } from './files.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { distroInfo } from './images.ts';
 import { firmwareSupport } from './firmware.ts';
-import { envPrefix } from './project-services.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { CapabilityActions } from './capability-actions.ts';
 import { requireSuccessfulResult, runEngineeringOperation } from './engineering-runner.ts';
@@ -31,7 +30,7 @@ import { processInteropInput, type ProcessInterop } from './process-interop.ts';
 import type { MediaDevices } from './media-devices.ts';
 import type { HostMounts } from './host-mount.ts';
 import { PackageWorkbench } from './package-workbench.ts';
-import { ensureProjectNetworkScript, projectNetworkCommand } from './project-network-isolation.ts';
+import { ensureProjectNetworkScript, projectNetworkCheckScript, projectNetworkNamespace } from './project-network-isolation.ts';
 import { featureDevTaskOperation, runFeatureDevTask, type FeatureDevTaskOptions } from './feature-suite-dev-task.ts';
 
 /**
@@ -748,7 +747,7 @@ export class FeatureSuite {
     input = structuredClone(input);
     const branch = input.branch?.trim();
     const path = input.path?.trim();
-    const database = input.database;
+    const database = operation === 'database' ? z.enum(['postgres', 'redis', 'mysql']).parse(input.database) : input.database;
     const cacheManager = ['prefetch-dependencies', 'install-cached-dependencies'].includes(operation)
       ? dependencyManagerSchema.parse(input.manager) : undefined;
     if (operation === 'worktree-add' && (!branch || !/^(?!-)[A-Za-z0-9_./-]{1,128}$/.test(branch)))
@@ -783,7 +782,12 @@ export class FeatureSuite {
     const original = { projectId: this.workspaces.projects.current(id), live: this.machines.live.get(id) };
     return this.jobs.start(
       `${this.workspaces.projects.key(id)}:dev`,
-      async (log, taskSignal, _update, saveResult) => {
+      async (log, taskSignal, _update, saveResult) => this.workspaces.projects.inScope(id, original.projectId, async () => {
+        const assertLive = () => {
+          if (this.machines.live.get(id) !== original.live)
+            throw new AppError('开发任务客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+        };
+        assertLive();
         const combined = taskSignal && signal ? AbortSignal.any([taskSignal, signal]) : taskSignal;
         if (operation === 'lint' || operation === 'format') {
           const result = await new CapabilityActions(this.machines, this.workspaces, this.projectTerminals).run(
@@ -791,8 +795,13 @@ export class FeatureSuite {
             'format-lint',
             { mode: operation },
             combined,
+            { expectedLive: original.live, onEngineeringResult: async result => {
+              assertLive(); combined.throwIfAborted();
+              await saveResult(result);
+              assertLive(); combined.throwIfAborted();
+            } },
           );
-          await saveResult(result);
+          assertLive(); combined.throwIfAborted();
           log(JSON.stringify(result) + '\n');
           requireSuccessfulResult(result);
           return;
@@ -800,16 +809,17 @@ export class FeatureSuite {
         const uidOperation = featureDevTaskOperation.safeParse(operation);
         if (uidOperation.success) {
           await runFeatureDevTask(this.machines, this.workspaces, id,
-            { operation: uidOperation.data, branch, path }, combined, log, saveResult,
+            { operation: uidOperation.data, branch, path, manager: cacheManager }, combined, log, saveResult,
             { ...this.devTaskOptions, terminals: this.devTaskOptions.terminals || this.projectTerminals, original });
           return;
         }
-        if (!['prefetch-dependencies', 'install-cached-dependencies', 'database'].includes(operation))
+        if (!['prefetch-dependencies', 'database'].includes(operation))
           throw new AppError('没有此开发执行器', 400, 'FEATURE_DEV_OPERATION_UNSUPPORTED');
         // Shared download preparation never resolves or exports project secrets,
         // runtime selectors, import hooks or other project execution settings.
         const prefetch = operation === 'prefetch-dependencies';
-        const project = prefetch ? await this.workspaces.config(id) : await this.workspaces.resolvedConfig(id);
+        const project = await this.workspaces.config(id);
+        assertLive(); combined.throwIfAborted();
         if (prefetch) {
           const authentication = await this.workspaces.dependencyDownloadAuthentication?.(id, cacheManager!);
           if (authentication) {
@@ -840,10 +850,13 @@ export class FeatureSuite {
                 },
               );
             } catch (error) {
-              throw new AppError(redactValues((error as Error).message, authentication.privateValues));
+              if (error instanceof AppError && error.status === 503) throw error;
+              throw new AppError(redactValues((error as Error).message, authentication.privateValues),
+                error instanceof AppError ? error.status : 400, error instanceof AppError ? error.code : undefined);
             } finally {
               output.flush();
             }
+            assertLive(); combined.throwIfAborted();
             return;
           }
         }
@@ -853,16 +866,13 @@ export class FeatureSuite {
           await this.observations.privateDatabase(id, {
             database: database!, password: input.password!, name: input.name, port: input.port,
           }, combined, log);
+          assertLive(); combined.throwIfAborted();
           return;
         }
-        const directory = quote(project.directory);
-        const worktreePath = path ? quote(`${project.directory}/${path}`) : '';
-        const environment = prefetch ? '' : envPrefix(project.environment);
         let command: string | undefined;
         let cachePlan: ProjectDependencyCachePlan | undefined;
         switch (operation) {
           case 'prefetch-dependencies':
-          case 'install-cached-dependencies':
             cachePlan = projectDependencyCachePlan(project.directory,
               this.workspaces.projects.current(id), cacheManager!, operation,
               prefetch ? await this.workspaces.networkEnvironment(id) : undefined);
@@ -904,17 +914,19 @@ export class FeatureSuite {
           }
         }
         if (!command) throw new AppError('没有此开发执行器', 400, 'FEATURE_DEV_OPERATION_UNSUPPORTED');
-        const secrets = [input.password || '', ...Object.values(project.environment || {})];
+        const secrets = [input.password || ''];
         const output = privateLog(log, secrets);
-        const script = `${environment}\nset -eu\n${command}`;
+        const script = `set -eu\ncd /\n${command}`;
         const privateRuntime = project.networkIsolation === 'private' &&
           operation !== 'prefetch-dependencies';
-        const guestScript = privateRuntime
-          ? `set -e\n${ensureProjectNetworkScript(project, vm.distro || 'alpine')}\n` +
-            projectNetworkCommand(project, script)
-          : script;
+        const namespace = privateRuntime ? projectNetworkNamespace(project) : null;
+        const administrative = 'cd /\n' + (namespace ?
+          ensureProjectNetworkScript(project, vm.distro || 'alpine') + '\n' +
+          projectNetworkCheckScript(namespace) + '\nexec ip netns exec ' + namespace + ' /bin/sh -ec ' + quote(script) : script);
+        const guestScript = '/usr/bin/env -i HOME=/ USER=root LOGNAME=root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C /bin/sh -ec ' + quote(administrative);
         const cleanup = cachePlan?.cleanup;
         try {
+          assertLive(); combined.throwIfAborted();
           const result = await guestTask(
             this.machines,
             id,
@@ -925,16 +937,19 @@ export class FeatureSuite {
             undefined,
             cleanup ? () => this.cleanupDependencyStage(id, cleanup) : undefined,
           );
+          assertLive(); combined.throwIfAborted();
           if (result.code !== 0)
             throw new AppError(
               redactValues(result.stderr.trim(), secrets) || `开发操作失败（${result.code}）`,
             );
         } catch (error) {
-          throw new AppError(redactValues((error as Error).message, secrets));
+          if (error instanceof AppError && error.status === 503) throw error;
+          throw new AppError(redactValues((error as Error).message, secrets),
+            error instanceof AppError ? error.status : 400, error instanceof AppError ? error.code : undefined);
         } finally {
           output.flush();
         }
-      },
+      }),
       {
         title: `开发工具 · ${operation}`,
         vmId: id,

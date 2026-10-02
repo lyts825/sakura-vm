@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 项目缓存安装副本与开发结果租约
+
+2026-10-03 npm/pip 缓存安装接入原项目 UID/GID、捕获配置、独立 home、保护帧与完整任务票据。入场先持久保存原 native owner 和资源描述，再从固定 root 缓存复制惰性数据到 UID 私有可写副本；管理源不授予项目写权限。副本单文件最多 64 MiB、合计 512 MiB、65,536 个条目、32 层目录，源链接、特殊文件、可写管理目录和跨设备遍历拒绝。原全域及 native 关闭后，按完整 boot/账号/任务/摘要/目录 inode 退休；应答丢失恢复原资源核销，不重复安装，未知状态保留准确证明和 503，并阻止重新绑定。只读查询不修复或创建资源，规则见 [离线软件包缓存](package-cache.md)。
+
+有限开发命令保留原生目录描述符，不重新按项目路径切换 cwd；Worktree 使用相对原目录的参数。Lint/format 和显式 Docker 分支固定提交项目及原 live，工程结果保存完成后才释放准备租约；管理分支清空环境并固定系统 cwd。最终资源确认后再次核对原 live，替换时保留 pending 描述和原关闭票据。
+
+正式八个相关文件共 180 项回归通过，包含实际宿主 journal、保护帧、恢复与清理模型，以及精确 Python root helper 的 22 项 POSIX FD 模型；完整类型检查通过。证明为 `.data/feature-cache-backend-c8fb96f0-b6f3-40df-925a-45c4333cef30-verification.json`，实际退出 0、对应源码前后未变。这次没有启动新的缓存安装 VM，也没有重跑整仓测试；历史 Windows rename 失败证明保留。目录仍为 250 项、247 项有入口、3 项部分实现。
+
+此前 `c272cac` 的 Notebook、Git、工具链、seccomp 与基础命令实现共同通过插件、locale、构建、分发检查及 7 种编译服务组合，构建证明为 `.data/notebook-identity-build-07ed34a4-d860-4654-9b0f-39c6efe36bff-verification.json`，958 个捕获源码未变。其发布证明 `.data/notebook-identity-release-0e66d3c2-d56e-450c-a69b-096bc0d65e5c-verification.json` 记录真实打包退出 0、257 个文件及清单指纹 `31dba7e88988617cc29b7223bc9eb779bf89463e1660274efb56e237cfc87ad8`，目录 `release/sakura-l7LTpV`，bundle 摘要 `06f36bad9ca577ca305dffd5d24e8833632515bff78d18b51a7f75aabec9f917`。这个包先于缓存副本增量，不能作为该新增实现的生产构建证明。
+
 ## 基础命令 API 的原配置与异步清理
 
 2026-10-03 基础 /exec、SDK 与 CLI 的项目执行补齐原 live、准备阶段捕获配置及非枚举项目身份核对；环境只解析该配置一次，native 入场带 expectedLive。配置或运行身份改变停止后续步骤并拒绝旧结果，正文/环境超限明确 413。完整任务清理后等待异步 lease release；并发任务停止及准备清理失败保留 503、错误码和全部 cause，服务 close 等待并报告未确认清理，规则见 [项目命令执行](project-execution.md)。实例管理范围及旧兼容 helper 导出保持原 API。

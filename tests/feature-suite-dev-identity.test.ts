@@ -67,7 +67,8 @@ test('all nine finite dev operations use captured UID commands and protected pro
     assert.equal(f.payloads.length, 1); assert.equal(f.releases(), 1);
     const { captured, execution } = f.payloads[0];
     assert.equal(captured._workspace, projectId); assert.equal(execution.environment.TOKEN, 'fixture-private-token');
-    assert.match(execution.command, /^set -eu\ncd '\/srv\/projects\/original'\n/);
+    assert.match(execution.command, /^set -eu\n/);
+    assert.equal(execution.command.includes("cd '/srv/projects/original'"), false);
     assert.equal(execution.command.includes('export '), false); assert.equal(execution.command.includes('ip netns exec'), false);
   }
 });

@@ -6,17 +6,20 @@ import { ProjectTerminals } from './project-terminals.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 import { projectIdentityPayload } from './project-identity.ts';
 import { quote } from './files.ts';
+import { ProjectCacheTransfers, projectCachedInstallCommand } from './project-cache-transfer.ts';
+import { dependencyManagerSchema, type DependencyManager } from './project-dependency-cache.ts';
 import { privateLog, redactValues } from './secrets.ts';
 
 export const featureDevTaskOperation = z.enum([
   'test', 'test-discover', 'dependencies', 'lock', 'lock-check', 'install-locked',
-  'worktree-list', 'worktree-add', 'worktree-remove',
+  'worktree-list', 'worktree-add', 'worktree-remove', 'install-cached-dependencies',
 ]);
-export type FeatureDevTaskInput = { operation: z.infer<typeof featureDevTaskOperation>; branch?: string; path?: string };
+export type FeatureDevTaskInput = { operation: z.infer<typeof featureDevTaskOperation>; branch?: string; path?: string; manager?: DependencyManager };
 export type FeatureDevTaskResult = { code: number; stdout: string; stderr: string };
 export type FeatureDevTaskOptions = {
   terminals?: Pick<ProjectTerminals, 'prepare'>;
   runTask?: typeof projectIdentityTask;
+  cacheTransfers?: Pick<ProjectCacheTransfers, 'allocate'>;
   original?: { projectId: string; live: ReturnType<Machines['live']['get']> };
 };
 const changed = () => new AppError('开发任务原项目配置或客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
@@ -24,15 +27,15 @@ const cloneConfig = (config: Project) => Object.defineProperty(structuredClone(c
   { value: config._workspace, enumerable: false }) as Project;
 
 /** Only the native UID process interprets these finite project commands. */
-export function featureDevTaskCommand(project: Project, input: FeatureDevTaskInput) {
-  const operation = featureDevTaskOperation.parse(input.operation), directory = quote(project.directory);
+export function featureDevTaskCommand(project: Project, input: FeatureDevTaskInput, cache?: string) {
+  const operation = featureDevTaskOperation.parse(input.operation);
   const branch = input.branch?.trim(), path = input.path?.trim();
   if (operation === 'worktree-add' && (!branch || !/^(?!-)[A-Za-z0-9_./-]{1,128}$/.test(branch)))
     throw new AppError('分支名称无效');
   if (['worktree-add', 'worktree-remove'].includes(operation) && (!path || path.startsWith('/') ||
       path.split('/').includes('..') || !/^[A-Za-z0-9_./-]{1,160}$/.test(path)))
     throw new AppError('工作树路径必须是仓库内的相对路径');
-  const worktreePath = path ? quote(`${project.directory}/${path}`) : '';
+  const worktreePath = path ? quote(path) : '';
   let command: string;
   switch (operation) {
     case 'test':
@@ -53,11 +56,15 @@ export function featureDevTaskCommand(project: Project, input: FeatureDevTaskInp
     case 'install-locked':
       command = `if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then npm ci; elif [ -f yarn.lock ] && command -v yarn >/dev/null; then yarn install --frozen-lockfile; elif [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null; then pnpm install --frozen-lockfile; elif [ -f requirements.txt ]; then python3 -m pip install -r requirements.txt; elif [ -f Cargo.lock ]; then cargo fetch --locked; elif [ -f go.sum ]; then go mod download; else echo '没有识别到受支持的锁文件' >&2; exit 1; fi`;
       break;
+    case 'install-cached-dependencies':
+      if (!cache) throw new AppError('缓存安装缺少本次任务副本', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+      return projectCachedInstallCommand(project.directory, cache, dependencyManagerSchema.parse(input.manager));
     case 'worktree-list': command = 'git worktree list --porcelain'; break;
     case 'worktree-add': command = `git worktree add -- ${worktreePath} ${quote(branch!)}`; break;
     case 'worktree-remove': command = `git worktree remove -- ${worktreePath}`; break;
   }
-  return `set -eu\ncd ${directory}\n${command}`;
+  // The native launcher already changed directory through the captured directory FD.
+  return `set -eu\n${command}`;
 }
 
 /** The original preparation lease covers execution, verification and result persistence. */
@@ -66,6 +73,7 @@ export async function runFeatureDevTask(machines: Machines, workspaces: Workspac
   onResult?: (result: FeatureDevTaskResult) => Promise<void>, options: FeatureDevTaskOptions = {}) {
   featureDevTaskOperation.parse(input.operation);
   input = structuredClone(input);
+  if (input.operation === 'install-cached-dependencies') input.manager = dependencyManagerSchema.parse(input.manager);
   const { projectId, live } = options.original || {
     projectId: workspaces.projects.current(id), live: machines.live.get(id),
   };
@@ -99,13 +107,19 @@ export async function runFeatureDevTask(machines: Machines, workspaces: Workspac
       await assertCurrent(); executionSignal.throwIfAborted();
       if ((resolved._workspace || 'default') !== projectId || resolved.directory !== capturedConfig.directory ||
           resolved.networkIsolation !== capturedConfig.networkIsolation) throw changed();
-      const execution = { command: featureDevTaskCommand(capturedConfig, input), environment: resolved.environment };
+      // Allocate no guest storage until the native task has durably saved its intent.
+      const cache = input.operation === 'install-cached-dependencies'
+        ? await (options.cacheTransfers || new ProjectCacheTransfers(machines)).allocate(id, capturedConfig, input.manager!, executionSignal, live)
+        : undefined;
+      await assertCurrent(); executionSignal.throwIfAborted();
+      const execution = { command: featureDevTaskCommand(capturedConfig, input, cache?.directory), environment: resolved.environment };
       projectIdentityPayload(execution);
       const secrets = Object.values(resolved.environment || {}), output = privateLog(log, secrets);
       try {
         // Transport and native cleanup errors propagate before parsing or result publication.
         const result = await (options.runTask || projectIdentityTask)(machines, id, capturedConfig, execution,
-          executionSignal, output.write, 600000, undefined, undefined, { expectedLive: live });
+          executionSignal, output.write, 600000, undefined, undefined, { expectedLive: live,
+            ...(cache ? { resource: cache.resource } : {}) });
         await assertCurrent(); executionSignal.throwIfAborted();
         const redacted = { code: result.code, stdout: redactValues(result.stdout, secrets),
           stderr: redactValues(result.stderr, secrets) };
