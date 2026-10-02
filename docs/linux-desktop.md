@@ -20,6 +20,8 @@ X11/Wayland 策略应用均复核完整原 Desktop/native 证明及来源构建�
 
 清理失败的 Desktop 状态新增 cleanupPending，页面保留“重试停止桌面”并阻止替换安装；取消 IME 后的 503 不再停留在 installing。前后重载和取消清理的两个新增生命周期回归通过。页面已更新项目账号提示，并区分来源桌面 UID 与 Wayland 应用独立 UID。
 
+生产构建与分发通过；真实 Chromium 在生产前端完成清理重试、跨项目拒绝和 X11/Wayland 账号展示的 4 个场景。页面使用明确 HTTP 测试数据，不能证明真实 KDE 或 Linux 内核归属。当前发布包及完整证据见 [本轮实现记录](capability-completion.md)。
+
 ## 旧共享桌面入口的历史验证
 
 以下记录保留当时的账号、启动与验证范围。旧系统服务、共享桌面用户和旧 smoke 的成功结果均属于历史入口。

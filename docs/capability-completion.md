@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 当前项目账号实现的生产与页面验证
+
+2026-10-03 当前功能提交 7cfcff5（KDE/输入法/应用权限与清理恢复）和 a3d23d3（隧道/网格验证入口）已完成生产构建。插件契约、语言包、完整 TypeScript/Vite/native/source 资产构建、分发和编译版产品验证五步的实际 exit/close 均为 0；991 个捕获源码在构建及打包前后保持一致。32 个插件、9 个包契约和 7 种编译服务组合通过。证明为 .data/managed-identity-build-71e1ae6a-a403-4c08-b91c-3e6fcf6a1070-verification.json。
+
+发布包为 release/sakura-GBtWyz，258 个文件经过完整 SHA-256 校验，fingerprint 为 53c973ffb166ae05423de9422991a03aeb3cdf062a6ced343ae017349c285900，服务 bundle 摘要为 876c4ea28c2d07913c5f4cf0ca60f4e4d0f0793cd799493353e4b44dd71c3af1；实际退出/close 0，证明为 .data/managed-identity-release-a7b4ceb0-fee5-4ec7-8f53-3e246b611fe0-verification.json。本快照包含 Envoy、KDE/输入法、X11/Wayland 新控制器与此前 Cache/Reverse/LSP/DAP 实现；两个新剪贴板 controller 字节与正式源码一致，全部来源包同时核对摘要。
+
+真实 Chromium 在生产前端上通过 4 个场景：清理失败可重试停止并禁止替换安装、跨项目图形连接拒绝、X11 桌面项目账号展示、Wayland 独立应用账号展示与手机宽度/规则/重载/停止。测试使用明确 HTTP 测试数据，不运行 VM 或真实 KDE；来源前后未变、实际退出/close 0，证明为 .data/desktop-recovery-ui-55d373b3-d992-4777-a679-30be60c28c95-verification.json。原截图保留，不用页面数据替代 Linux UID/native 实测。
+
+上述构建证明对应 a3d23d3 的源码快照，随后记录验证结果的文档变更不属于该快照。历史整仓 Windows rename 失败仍保留，未宣称全仓测试已经通过；三个目录条目也继续保持部分实现。
+
 ## 隧道与 Envoy 的项目账号验证入口
 
 2026-10-03 原 test:reverse-tunnels 和 test:service-mesh 脚本已适配正式项目账号合约。反向隧道只使用一个公开 ExtendedFeatures/action/jobs 管理器，新建保留的测试实例，明确准备目录及迁移，再核对实际 UID broker、完整票据、二进制/半关闭、路由拒绝、到期及暂停恢复。Envoy 使用固定摘要缓存和原公开任务/服务入口，实际二进制中的限定观察器区分 UID 执行与 Root 测试接收器，核对短任务、同端口项目、监听、脱离会话后代、配置变化、取消、旧入口拒绝与冷 boot。

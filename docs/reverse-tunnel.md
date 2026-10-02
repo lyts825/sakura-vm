@@ -12,4 +12,4 @@
 
 此实现通过 Sakura 控制的 SSH 命令通道转发字节，不要求启用客户机 SSH TCP forwarding，不修改客户机 SSH 配置。中继支持二进制、背压和 TCP 半关闭；输入 EOF 后仍可接收延迟响应，空闲连接不受最初连接超时限制。
 
-本批正式七个相关测试文件共 196 项通过，完整类型检查通过；包含真实宿主 journal、原域/租约失败模型，以及实际宿主 Python 和回环流的二进制、背压及半关闭测试。证明为 `.data/reverse-identity-backend-74d05060-4dbf-4b5f-b57f-2e2b50498abb-verification.json`。本批未启动 VM，不能据此声明真实 Linux UID、cgroup、私有网络描述符及到期后代清理已验证。既有 `npm run test:reverse-tunnels -- alpine`、`debian`、`ubuntu` 冒烟脚本仍需适配明确目录迁移及完整 UID 运行证明；旧管理员中继结果不替代新实现验证。
+本批正式七个相关测试文件共 196 项通过，完整类型检查通过；包含真实宿主 journal、原域/租约失败模型，以及实际宿主 Python 和回环流的二进制、背压及半关闭测试。证明为 `.data/reverse-identity-backend-74d05060-4dbf-4b5f-b57f-2e2b50498abb-verification.json`。本批未启动 VM，不能据此声明真实 Linux UID、cgroup、私有网络描述符及到期后代清理已验证。既有 `npm run test:reverse-tunnels -- alpine`、`debian`、`ubuntu` 冒烟脚本现已适配明确目录迁移及完整 UID 运行证明，但尚未执行新客户机联测；旧管理员中继结果不替代新实现验证。
