@@ -77,7 +77,7 @@ type Core = Pick<ProjectIdentities, 'ensure' | 'inspect' | 'rebind' | 'inherited
 const sharedCores = new WeakMap<Machines, ProjectIdentities>();
 const scopeQueues = new WeakMap<Machines, Map<string, Promise<unknown>>>();
 type TaskContext = { live: NonNullable<ReturnType<Machines['live']['get']>>; bootId: string };
-export type ProjectTaskAdmissionOptions = { expectedLive?: TaskContext['live'];
+export type ProjectTaskAdmissionOptions = { expectedLive?: TaskContext['live']; expectedBootId?: string;
   sshAgent?: { resource: SshAgentResource; agent: OwnedForwardAgent; scopes?: SshAgentScopes };
   gpgAgent?: { resource: GpgAgentResource; bridge: OwnedGpgForward; scopes?: GpgAgentScopes } };
 type ActiveTask = TaskContext & { file: string; entry: Entry };
@@ -512,7 +512,7 @@ export class ProjectRunScopes {
     return this.withLock(vmId, id, async () => {
       signal.throwIfAborted();
       const context = await this.taskContext(vmId, signal), runId = randomUUID();
-      if (expectedLive && context.live !== expectedLive)
+      if ((expectedLive && context.live !== expectedLive) || (options.expectedBootId && context.bootId !== z.uuid().parse(options.expectedBootId)))
         throw new AppError('客户机运行身份与本次任务准备不符，项目代码未执行', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
       await this.recoverStoppedTasksUnlocked(vmId, id, context);
       const owner: ProjectRunOwner = { kind: 'task', runId, bootId: context.bootId };

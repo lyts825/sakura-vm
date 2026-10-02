@@ -52,6 +52,7 @@
     "test:gpg-agent-forward": "node --import tsx scripts/smoke-gpg-agent-forward.ts",
     "test:gpg-agent:identity": "node --import tsx scripts/smoke-gpg-agent-project-identity.ts",
     "test:project-identity:archive": "node --import tsx scripts/smoke-project-identity-archive.ts",
+    "test:project-repository": "node --import tsx scripts/smoke-project-repository.ts",
     "test:multi-monitor": "tsx scripts/smoke-multi-monitor.ts",
     "test:language-services": "tsx scripts/smoke-language-services.ts",
     "test:debug-adapter": "tsx scripts/smoke-debug-adapter.ts",

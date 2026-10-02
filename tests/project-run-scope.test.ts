@@ -868,3 +868,11 @@ test('the GPG host admission is persisted before a later guest boot guard can fa
     assert.equal(f.calls.includes('run'), false);
   } finally { await bridge.close(); }
 });
+
+test('a bundle handoff pinned to an earlier guest boot cannot admit project code', async () => {
+  const f = await fixture();
+  await assert.rejects(f.scopes.admitTask(f.vmId, f.project, { command: 'must-not-checkout-old-bundle' },
+    new AbortController().signal, { expectedBootId: randomUUID() }), { code: 'PROJECT_IDENTITY_HOST_CHANGED' });
+  assert.equal(f.calls.includes('run'), false);
+  await assert.rejects(f.view(), { code: 'ENOENT' });
+});

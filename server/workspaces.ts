@@ -31,6 +31,8 @@ import { ProjectMainScope, ProjectServiceScopes } from './project-service-scope.
 import { legacyMainStatus, mainLog, mainSession, runProjectMain, stopProjectMain } from './project-main.ts';
 import type { DependencyManager } from './project-dependency-cache.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
+import { prepareProjectRepository } from './project-repository.ts';
+import { repositoryAuthorizationScope, repositoryUrl } from './repository-url.ts';
 
 export const projectSchema = z
   .object({
@@ -46,11 +48,7 @@ export const projectSchema = z
         }
       }, '需要有效的 Linux 绝对路径'),
     template: z.enum(['none', 'node', 'python', 'rust']).default('none'),
-    repository: z
-      .string()
-      .max(2048)
-      .default('')
-      .refine((v) => !v || /^https:\/\/[^\s]+$/.test(v), '仓库地址需要 HTTPS'),
+    repository: z.union([z.literal(''), repositoryUrl]).default(''),
     setup: z.string().max(8192).default(''),
     command: z.string().max(8192).default(''),
     previewPort: z.number().int().min(1024).max(65535).optional(),
@@ -233,6 +231,14 @@ export class Workspaces {
     const state = await this.context?.network?.state(id);
     const configuration = state?.appliedAt ? state.config.dependencyDownloads?.[manager] : undefined;
     return configuration
+      ? resolveDependencyAuthentication(id, configuration, this.context?.secrets)
+      : undefined;
+  }
+  async repositoryDownloadAuthentication(id: string, repository: string) {
+    const state = await this.context?.network?.state(id);
+    const configuration = state?.appliedAt ? state.config.dependencyDownloads?.git : undefined;
+    // Public repositories outside the saved scope never resolve its secret.
+    return configuration && repositoryAuthorizationScope(repository, configuration.endpoint)
       ? resolveDependencyAuthentication(id, configuration, this.context?.secrets)
       : undefined;
   }
@@ -538,22 +544,20 @@ export class Workspaces {
               const done = await this.machines.exec(id, `test -f ${marker}`, 10000, signal);
               setupNeeded = done.code !== 0;
             }
-            let prepare = 'set -eu\n';
             if (project.repository) {
-              prepare += 'if [ ! -e .git ]; then\n';
-              if (project.networkIsolation === 'private')
-                prepare += `printf '%s\\n' 'PROJECT_PRIVATE_REPOSITORY_REQUIRED: 私有项目请先通过受限下载入口准备本地仓库；项目账号不会降级到共享网络执行 Git。' >&2\nexit 73\n`;
-              else prepare += `git clone -- ${quote(project.repository)} .\n`;
-              prepare += 'fi\n';
+              await prepareProjectRepository(this.machines, id, project, async () => ({
+                authentication: await this.repositoryDownloadAuthentication(id, project.repository),
+                environment: await this.networkEnvironment(id),
+              }), signal, log);
             }
+            let prepare = 'set -eu\n';
             if (setupNeeded) prepare += project.setup + '\n';
-            if (project.repository || setupNeeded) {
+            if (setupNeeded) {
               const result = await projectIdentityTask(this.machines, id, project,
                 { command: prepare, environment: project.environment }, signal, log);
               if (result.code !== 0) {
-                const privateRepository = result.stderr.includes('PROJECT_PRIVATE_REPOSITORY_REQUIRED');
                 throw new AppError(result.stderr.slice(-2000) || `项目账号准备命令退出码 ${result.code}`, 409,
-                  privateRepository ? 'PROJECT_PRIVATE_REPOSITORY_REQUIRED' : 'PROJECT_SETUP_FAILED');
+                  'PROJECT_SETUP_FAILED');
               }
             }
             // Only the clean controller publishes /etc markers, after task

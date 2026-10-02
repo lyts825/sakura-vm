@@ -53,6 +53,7 @@ export const dependencyDownloadsSchema = z
   .object({
     npm: dependencyAuthentication.optional(),
     pip: dependencyAuthentication.optional(),
+    git: dependencyAuthentication.optional(),
   })
   .strict();
 export type DependencyAuthentication = z.infer<typeof dependencyAuthentication>;

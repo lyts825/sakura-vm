@@ -31,6 +31,7 @@ await cp(
   join(root, 'server', 'dependency-download-broker.py'),
   join(target, 'dependency-download-broker.py'),
 );
+await cp(join(root, 'server', 'project-repository-broker.py'), join(target, 'project-repository-broker.py'));
 await cp(
   join(root, '.vendor', 'posixloom', 'dist', 'src', 'core', 'assets', 'state-report.sh'),
   join(target, 'state-report.sh'),

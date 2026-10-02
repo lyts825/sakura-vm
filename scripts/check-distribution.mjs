@@ -10,7 +10,8 @@ for (const name of ['tsx', 'vite', 'react', 'react-dom', '@xterm/xterm', '@novnc
 for (const file of ['dist/index.html', 'dist/single-app.html', '.sakura-server/index.js',
   '.sakura-witness/ha-witness.js',
   '.sakura-server/assets/state-report.sh', '.sakura-server/assets/engineering-runner.py',
-  '.sakura-server/assets/secure-erase.py', '.sakura-server/assets/dependency-download-broker.py'])
+  '.sakura-server/assets/secure-erase.py', '.sakura-server/assets/dependency-download-broker.py',
+  '.sakura-server/assets/project-repository-broker.py'])
   await stat(join(root, file));
 if (process.platform === 'win32') {
   const folder = join(root, '.sakura-server', 'assets', 'native-clipboard');

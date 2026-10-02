@@ -10,18 +10,18 @@ export function DependencyDownloadsEditor({
   disabled: boolean;
   change: (value: NetworkProfile['dependencyDownloads']) => void;
 }) {
-  const patch = (manager: 'npm' | 'pip', authentication?: DependencyAuthentication) => {
+  const patch = (manager: 'npm' | 'pip' | 'git', authentication?: DependencyAuthentication) => {
     const next = { ...value.dependencyDownloads, [manager]: authentication };
-    change(next.npm || next.pip ? next : undefined);
+    change(next.npm || next.pip || next.git ? next : undefined);
   };
   return (
     <details className="feature-card">
-      <summary>项目依赖认证预取</summary>
+      <summary>项目依赖与 Git 认证预取</summary>
       <p className="subtle-note">
-        应用此档案后，项目依赖预取使用这里指定的仓库与私密配置。凭证仅用于该端点的域名、端口和目录，
+        应用此档案后，项目依赖预取和首次 Git 检出使用这里指定的仓库与私密配置。凭证仅用于该端点的域名、端口和目录，
         不进入项目环境或离线缓存。先在“开发设置 → 私密配置”保存只读下载凭证，再填写其名称。
       </p>
-      {(['npm', 'pip'] as const).map((manager) => {
+      {(['npm', 'pip', 'git'] as const).map((manager) => {
         const authentication = value.dependencyDownloads?.[manager];
         return (
           <div className="feature-card" key={manager}>
@@ -42,7 +42,7 @@ export function DependencyDownloadsEditor({
                           }
                         : {
                             kind: 'basic',
-                            endpoint: value.pipIndex || 'https://pypi.org/simple/',
+                            endpoint: manager === 'git' ? 'https://github.com/' : value.pipIndex || 'https://pypi.org/simple/',
                             username: '',
                             passwordSecret: '',
                           }
@@ -128,6 +128,7 @@ export function DependencyDownloadsEditor({
       })}
       <p className="subtle-note">
         认证下载使用系统 Python 3；npm 需要第 2 或第 3 版锁文件，Python 需要固定版本及二进制 wheel。
+        Git 使用固定 smart-HTTP 仓库地址，首次检出需要空目录，下载后由项目账号执行检出；已有仓库不自动更新。
         下载端点使用 HTTPS，客户机回环测试地址可使用 HTTP。离线安装仍在项目网络中执行。
       </p>
     </details>

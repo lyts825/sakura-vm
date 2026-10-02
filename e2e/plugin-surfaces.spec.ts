@@ -3680,7 +3680,7 @@ test('secret rotation controls show age and save only policy metadata', async ({
   await expect(page.getByLabel('轮换周期（天）')).toHaveValue('60');
 });
 
-test('network profiles preserve DNS and NAT form edits, then preview, apply and restore', async ({
+test('network profiles preserve DNS, NAT and Git authentication edits, then preview, apply and restore', async ({
   page,
 }) => {
   await app(page, ['network'], true);
@@ -3750,7 +3750,7 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await page.getByLabel('DNS 地址（逗号分隔，留空沿用系统设置）').fill('1.1.1.1, 8.8.8.8');
   await page.getByLabel('私有 DNS 路由域名（逗号分隔）').fill('corp.example');
   await page.getByLabel('DNSSEC 策略').selectOption('yes');
-  await page.getByText('项目依赖认证预取', { exact: true }).click();
+  await page.getByText('项目依赖与 Git 认证预取', { exact: true }).click();
   await page.getByLabel('npm 认证预取', { exact: true }).check();
   await page.getByLabel('npm 下载端点', { exact: true }).fill('https://packages.example.com/npm/');
   await page.getByLabel('npm 下载凭证名称', { exact: true }).fill('npm-read');
@@ -3758,6 +3758,16 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await page.getByLabel('pip 下载端点', { exact: true }).fill('https://packages.example.com/simple/');
   await page.getByLabel('pip 下载用户名', { exact: true }).fill('reader');
   await page.getByLabel('pip 下载凭证名称', { exact: true }).fill('pip-read');
+  await page.getByLabel('git 认证预取', { exact: true }).check();
+  await expect(page.getByRole('combobox', { name: 'git 下载认证方式', exact: true })).toHaveValue('basic');
+  await page.getByLabel('git 下载端点', { exact: true }).fill('https://git.example.com/team/');
+  await page.getByLabel('git 下载用户名', { exact: true }).fill('reader');
+  await page.getByLabel('git 下载凭证名称', { exact: true }).fill('git-basic-read');
+  await page.getByRole('combobox', { name: 'git 下载认证方式', exact: true }).selectOption('bearer');
+  await expect(page.getByLabel('git 下载用户名', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('git 下载凭证名称', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('git 下载端点', { exact: true })).toHaveValue('https://git.example.com/team/');
+  await page.getByLabel('git 下载凭证名称', { exact: true }).fill('git-read');
   await page.getByRole('button', { name: '添加映射到档案' }).click();
   await page.getByLabel('Windows 端口', { exact: true }).fill('8090');
   await page.getByLabel('Linux 端口', { exact: true }).fill('3000');
@@ -3769,12 +3779,16 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await expect.poll(() => profiles[0]?.config.dependencyDownloads).toEqual({
     npm: { kind: 'bearer', endpoint: 'https://packages.example.com/npm/', tokenSecret: 'npm-read' },
     pip: { kind: 'basic', endpoint: 'https://packages.example.com/simple/', username: 'reader', passwordSecret: 'pip-read' },
+    git: { kind: 'bearer', endpoint: 'https://git.example.com/team/', tokenSecret: 'git-read' },
   });
   await expect(page.getByLabel('加载已保存的档案')).toHaveValue(vm.id);
   await page.getByRole('button', { name: '预览修改' }).click();
   await expect(page.getByText('即将修改 1 个文件')).toBeVisible();
   await page.getByRole('button', { name: '应用以上修改' }).click();
   await expect.poll(() => submitted?.action).toBe('apply');
+  expect(submitted.config.dependencyDownloads.git).toEqual({
+    kind: 'bearer', endpoint: 'https://git.example.com/team/', tokenSecret: 'git-read',
+  });
   await expect(page.getByText('配置已应用', { exact: true })).toBeVisible();
   expect(forwards[0]).toMatchObject({ host: 8090, guest: 3000 });
   await page.reload();
@@ -3782,9 +3796,12 @@ test('network profiles preserve DNS and NAT form edits, then preview, apply and 
   await expect(page.getByLabel('DNS 地址（逗号分隔，留空沿用系统设置）')).toHaveValue('1.1.1.1, 8.8.8.8');
   await expect(page.getByLabel('私有 DNS 路由域名（逗号分隔）')).toHaveValue('corp.example');
   await expect(page.getByLabel('DNSSEC 策略')).toHaveValue('yes');
-  await page.getByText('项目依赖认证预取', { exact: true }).click();
+  await page.getByText('项目依赖与 Git 认证预取', { exact: true }).click();
   await expect(page.getByLabel('npm 下载凭证名称', { exact: true })).toHaveValue('npm-read');
   await expect(page.getByLabel('pip 下载凭证名称', { exact: true })).toHaveValue('pip-read');
+  await expect(page.getByLabel('git 下载凭证名称', { exact: true })).toHaveValue('git-read');
+  await expect(page.getByLabel('git 下载端点', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('combobox', { name: 'git 下载认证方式', exact: true })).toBeDisabled();
   await expect(page.getByLabel('npm 下载端点', { exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '恢复原配置' }).click();
   await expect(page.getByText('配置已应用', { exact: true })).not.toBeVisible();

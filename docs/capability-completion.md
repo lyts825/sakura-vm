@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 项目首次 Git 检出
+
+2026-10-02 共享和私有项目首次检出接入固定 smart-HTTP 对象代理。独立只读认证来自已应用网络档案，凭据通过有界 stdin 运输，不进入 Git 参数或项目环境；系统 Git 不执行工作树、项目配置、钩子和过滤器。准确项目 GID 只能读取核对后的 bundle，项目 UID 在原目录、原网络和原 boot 内核对摘要、保留默认分支并检出，之后才执行初始化命令。已有仓库不自动下载，非空目录拒绝，空仓库可初始化。用法见 [首次 Git 检出](project-repository.md)。取消或失败保留未确认的准确资源；任务清理失败的 503 和错误码在取消、服务关闭及重载后仍可读取。
+
+完整回归 1,231 项中 1,230 项通过、1 项跳过，773 个受核对文件前后一致，证明为 `.data/project-repository-full-unit-e4644444-a4d5-47a4-9ea6-7bce9542a369-verification.json`。浏览器验证 Git 的 Basic/Bearer 切换、秘密名称、档案保存、预览应用、刷新后读取和禁用状态；证明为 `.data/project-repository-ui-83165e71-a5ef-4afb-8e0e-8971d4841745-verification.json`，此检查使用路由夹具，不代表客户机权限或网络证明。构建、分发检查和七种生产服务组合通过，证明为 `.data/project-repository-build-d6e0f030-048a-4f1e-b823-650f1a14f81f-verification.json`；运行包 264 个文件通过完整清单核对，指纹 `c7240658d846dbbbb4a1902b2b42f142c281cec357b5735649da983f17003dc8`，证明为 `.data/project-repository-release-5477076c-13e6-49b9-a7f1-c155a0c216f2-verification.json`。
+
+全新 Alpine 实机已实际通过私有仓库认证检出、原默认分支与 commit、项目 UID/GID 初始化和私有网络检查，以及已有仓库不再下载或读取秘密两项场景。该次完整测试随后在主命令 pane 入场核对中拒绝，项目主命令未执行，原 false 证明继续保留：`.data/project-repository-test-temp/sakura-repository-tKfkQw/project-repository-9c2ea27d-a10e-4736-b670-4ef8073e7d3e.json`。另一全新实例在相同主命令控制源码下单独启停成功：`.data/project-repository-test-temp/sakura-repository-9MkxT4/project-repository-eafbdb45-a8d5-4910-85cd-6ec5a7b09685.json`；这不确定前次失败原因，也不替代完整 Git 测试。两次实例、自有子进程和准确 QEMU/CIM 均已关闭，原缓存镜像未变。
+
+完整七项实机验收仍待收尾；非空和空仓库、反射错误、重定向及取消已有可移植或宿主回归覆盖，不能据此声明它们已全部通过新客户机检查。按用户要求，先提交功能实现再继续其他入口迁移。实现检查点为 `.data/project-repository-implementation-checkpoint-3897ce23-ea93-444f-8b7b-30decd169cd5.json`，摘要 `a397782b27b4eb17bb8940326aeccda61d0ce5abe6c1d22817d6f8dbaa43be29`，明确保存 `fullGuestSuitePassed: false`。旧路径、磁盘容量、日志清理、任务取消分类、实机超时和浏览器定位失败记录未改写。功能目录继续保持 250 项、247 项有实现入口、3 项部分实现。
+
 ## 客户机关闭任务回执的无重启归档
 
 2026-10-02 客户机热目录满 1,024 张票据时，固定控制器在原独占锁内每批归档最多 512 张当前 boot 已关闭且准确任务域已空的完整回执，随后继续接收新任务。归档按 UUID 前两位分桶，目录 root/0700、文件 root/0600，每桶最多 4,096 项。完整临时文件同步后，通过 `renameat2(RENAME_NOREPLACE)` 原子发布，同步并读回核对，再重新检查原父目录、票据字节及文件身份和任务域，最后移除准确热票据。冲突或未确认时保留原回执；旧 ID 拒绝 prepare 和继承重放，查询与重复停止不重新占用热目录。用法与范围见 [项目账号](project-identities.md)。
