@@ -14,6 +14,10 @@
 
 ## 当前项目账号实现的生产与页面验证
 
+2026-10-03 项目 UID 共享网络限制提交 c72f132 已封存生产运行包。首次五步构建中最后一步在 commands + metrics 组合提前退出，输出为空，旧校验没有保存内部服务的退出码，原因未确认；失败证明 .data/managed-identity-build-52ac2363-c788-4852-86ba-d986225e7773-verification.json 保留，不能计作通过。相同原 bundle 的三次独立启动均成功，仅作诊断记录，见 .data/production-startup-diagnostic-f678143d-cab5-4209-9abc-c7568fcdbf8f/verification.json。
+
+正式生产校验现在保存每组服务的实际 exit/close、输出摘要、管道关闭和原临时数据；不会因等到 exit 就删除仍可能未关闭的输出流。更新校验后的五步实际 exit/close 全部为 0、994 个捕获来源未变，7 种编译服务组合通过，证明 .data/managed-identity-build-25746e93-e5aa-45b6-96a9-edde8c9c93ba-verification.json。对应 release/sakura-rxr0SO 共 258 个文件完整校验，fingerprint 07e1b3083c12aadf0f7137b50cc1af095f6adba243d1c43013df512bf2732a52，服务 bundle 3013f60701cf72403ccf8c037c9f5d38cafc23de7d1368e446ccbb8f979db41e；实际退出/close 0、原来源未变，证明 .data/managed-identity-release-b08bb24a-1a85-4f42-af20-6aa691f8c145-verification.json。此次成功校验不消除原失败或历史整仓 rename 失败，也不代替开机和 UID 图形应用的客户机联测。
+
 2026-10-03 当前功能提交 7cfcff5（KDE/输入法/应用权限与清理恢复）和 a3d23d3（隧道/网格验证入口）已完成生产构建。插件契约、语言包、完整 TypeScript/Vite/native/source 资产构建、分发和编译版产品验证五步的实际 exit/close 均为 0；991 个捕获源码在构建及打包前后保持一致。32 个插件、9 个包契约和 7 种编译服务组合通过。证明为 .data/managed-identity-build-71e1ae6a-a403-4c08-b91c-3e6fcf6a1070-verification.json。
 
 发布包为 release/sakura-GBtWyz，258 个文件经过完整 SHA-256 校验，fingerprint 为 53c973ffb166ae05423de9422991a03aeb3cdf062a6ced343ae017349c285900，服务 bundle 摘要为 876c4ea28c2d07913c5f4cf0ca60f4e4d0f0793cd799493353e4b44dd71c3af1；实际退出/close 0，证明为 .data/managed-identity-release-a7b4ceb0-fee5-4ec7-8f53-3e246b611fe0-verification.json。本快照包含 Envoy、KDE/输入法、X11/Wayland 新控制器与此前 Cache/Reverse/LSP/DAP 实现；两个新剪贴板 controller 字节与正式源码一致，全部来源包同时核对摘要。

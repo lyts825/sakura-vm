@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomUUID, createHmac, createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -11,6 +11,7 @@ import { request as httpRequest, createServer as createHttpServer } from 'node:h
 
 const root = process.cwd();
 async function probe(selected, expected) {
+  const startedAt = new Date().toISOString();
   const data = await mkdtemp(join(tmpdir(), 'sakura-production-'));
   if (!resolve(data).startsWith(resolve(tmpdir()) + sep)) throw new Error('临时数据目录越界');
   await mkdir(join(data, 'jobs'));
@@ -40,21 +41,22 @@ async function probe(selected, expected) {
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  let output = '';
-  const exited = new Promise((done) => {
-    server.once('exit', done);
-    server.once('error', done);
+  let output = '', actualExit = null, actualClose = null, spawnError = null, failure = null;
+  let terminationRequested = null;
+  server.once('exit', (code, signal) => { actualExit = { code, signal }; });
+  const closed = new Promise((done) => {
+    server.once('close', (code, signal) => { actualClose = { code, signal }; done(true); });
   });
   server.stdout.on('data', (chunk) => (output += chunk));
   server.stderr.on('data', (chunk) => (output += chunk));
-  server.on('error', (error) => (output += error.message));
+  server.on('error', (error) => { spawnError = error.message; output += error.message; });
   const origin = `http://127.0.0.1:${port}`;
   try {
     let bootstrap;
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
-      if (server.exitCode !== null || server.signalCode !== null)
-        throw new Error(`编译版服务提前退出：${output}`);
+      if (spawnError || actualExit)
+        throw new Error(`编译版服务提前退出：${JSON.stringify({ selected, actualExit, spawnError })}\n${output}`);
       try {
         const response = await fetch(`${origin}/api/bootstrap`, { signal: AbortSignal.timeout(1000) });
         if (response.ok) {
@@ -728,11 +730,32 @@ async function probe(selected, expected) {
       }
     }
     console.log(`Compiled server passed: ${expected.length} active plugins, static UI.`);
+  } catch (error) {
+    failure = String(error);
+    throw error;
   } finally {
-    if (server.exitCode === null && server.signalCode === null) server.kill('SIGTERM');
-    await Promise.race([exited, delay(10_000)]);
-    if (server.exitCode === null && server.signalCode === null) server.kill('SIGKILL');
-    await rm(data, { recursive: true, force: true });
+    async function waitForClose(milliseconds) {
+      let timeout;
+      try { return await Promise.race([closed, new Promise(done => { timeout = setTimeout(() => done(false), milliseconds); })]); }
+      finally { clearTimeout(timeout); }
+    }
+    if (!actualExit && !spawnError) { terminationRequested = 'SIGTERM'; server.kill('SIGTERM'); }
+    if (!await waitForClose(10_000)) {
+      terminationRequested = 'SIGKILL'; server.kill('SIGKILL');
+      await waitForClose(5_000);
+    }
+    // Keep the owned fixture and exact lifecycle evidence even when startup fails.
+    await writeFile(join(data, 'production-server.log'), output, { flag: 'wx' });
+    await writeFile(join(data, 'production-probe.json'), JSON.stringify({
+      version: 1, startedAt, finishedAt: new Date().toISOString(), selected, expected,
+      pid: server.pid ?? null, port, actualExit, actualClose, spawnError, terminationRequested,
+      stdoutClosed: server.stdout.closed, stderrClosed: server.stderr.closed,
+      outputSha256: createHash('sha256').update(output).digest('hex'), failure,
+    }, null, 2) + '\n', { flag: 'wx' });
+    if (failure || !actualClose) console.error(`Production probe evidence retained: ${data}`);
+    assert.ok(actualClose, `编译版服务未确认关闭；证据保留于 ${data}`);
+    assert.equal(server.stdout.closed, true);
+    assert.equal(server.stderr.closed, true);
   }
 }
 
