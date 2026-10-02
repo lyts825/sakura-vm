@@ -8,131 +8,32 @@ import { basename, dirname, join, resolve } from 'node:path';
 import type { Machines as MachineType } from '../server/machines.ts';
 import type { Engine } from '../server/runtime.ts';
 
-const root = await mkdtemp(join(tmpdir(), 'sakura-mesh-tests-'));
+const parent = process.env.SAKURA_DATA_DIR || tmpdir();
+await mkdir(parent, { recursive: true });
+const root = await mkdtemp(join(parent, 'sakura-mesh-tests-'));
 process.env.SAKURA_DATA_DIR = root;
 const { ServiceMesh, envoySidecarConfig, serviceMeshInput } = await import('../server/service-mesh.ts');
 const { Machines } = await import('../server/machines.ts');
 const { Workspaces } = await import('../server/workspaces.ts');
 const { vmDir } = await import('../server/model.ts');
 const { NextFeatures } = await import('../server/next-features.ts');
+const { meshIdentityFixture } = await import('./service-mesh-identity-fixture.ts');
 const policy = { name: 'frontend', listenPort: 15001, upstreamPort: 8080 };
 after(async () => {
-  assert.equal(dirname(resolve(root)), resolve(tmpdir()));
+  assert.equal(dirname(resolve(root)), resolve(parent));
   assert.match(basename(root), /^sakura-mesh-tests-/);
   await rm(root, { recursive: true, force: true });
 });
 
 async function fixture() {
-  const id = randomUUID(),
-    locks = new Machines({} as Engine),
-    commands: string[] = [];
-  const running = new Map<string, { binding: string; runId: string; valid: boolean; orphan: boolean }>();
-  let state = 'running',
-    envoy = true,
-    python = true,
-    enabled = true,
-    usable = true;
-  let launch: (() => void) | undefined;
-  const machines = Object.assign(new EventEmitter(), {
-    records: new Map([[id, { template: 'none' }]]),
-    live: new Map(),
-    get: () => ({ id, template: 'none', distro: 'alpine' }),
-    state: () => state,
-    locked: locks.locked.bind(locks),
-    exec: async (_id: string, command: string) => {
-      commands.push(command);
-      if (command.includes('SAKURA_PROJECT_MAIN_LEGACY_STATUS'))
-        return { code: 0, stdout: 'absent\n', stderr: '' };
-      if (command.startsWith('set +e\nprintf')) {
-        const project = /sakura-mesh-(default|[a-f0-9]{16})/.exec(command)![1];
-        return {
-          code: 0,
-          stderr: '',
-          stdout:
-            `ENVOY=${envoy ? '/usr/local/bin/envoy' : ''}\nTMUX=/usr/bin/tmux\n` +
-            `PYTHON=${python ? '/usr/bin/python3' : ''}\nDIRECTORY=yes\nNAMESPACE=yes\nRUNNING=${running.has(project) ? 'yes' : 'no'}\n`,
-        };
-      }
-      if (command.includes('import hashlib,json,os,re,select')) {
-        const literal = /data=json.loads\((".*")\)\n/.exec(command)![1];
-        const data = JSON.parse(JSON.parse(literal));
-        const project = data.session.replace('sakura-mesh-', ''),
-          current = running.get(project);
-        if (command.endsWith("stop()'")) {
-          if (!data.expectedRunId || current?.runId === data.expectedRunId) running.delete(project);
-          return { code: 0, stderr: '', stdout: '' };
-        }
-        const valid = !!current && current.valid && !current.orphan && current.binding === data.binding;
-        return {
-          code: 0,
-          stderr: '',
-          stdout: JSON.stringify({
-            sidecarRunning: !!current,
-            bindingValid: current ? valid : null,
-            bindingError: current && !valid ? '边车实际进程或项目网络绑定不一致，请先停止' : null,
-            runId: valid ? current!.runId : null,
-            processes: current ? [1234] : [],
-          }),
-        };
-      }
-      if (command.includes('tmux new-session')) {
-        const project = /-s sakura-mesh-(default|[a-f0-9]{16})/.exec(command)![1];
-        running.set(project, {
-          binding: /SAKURA_MESH_BINDING=([a-f0-9]{64})/.exec(command)![1],
-          runId: /SAKURA_MESH_RUN_ID=([a-f0-9-]{36})/.exec(command)![1],
-          valid: true,
-          orphan: false,
-        });
-        launch?.();
-      }
-      if (!usable && (command.includes('--mode validate') || command.includes('--version')))
-        return { code: 127, stdout: '', stderr: 'incompatible Envoy' };
-      return { code: 0, stdout: command.includes('--version') ? 'envoy version: fixture\n' : '', stderr: '' };
-    },
-  }) as unknown as MachineType;
-  await mkdir(vmDir(id), { recursive: true });
-  const workspaces = new Workspaces(machines),
-    file = join(root, id + '.mesh.json');
-  const create = () => new ServiceMesh(machines, workspaces, file, async () => enabled);
-  let mesh = create();
-  await mesh.init();
-  return {
-    id,
-    machines,
-    workspaces,
-    commands,
-    running,
-    file,
-    get mesh() {
-      return mesh;
-    },
-    restart: async () => {
-      await mesh.close();
-      mesh = create();
-      await mesh.init();
-    },
-    state: (value: string) => {
-      state = value;
-    },
-    envoy: (value: boolean) => {
-      envoy = value;
-    },
-    python: (value: boolean) => {
-      python = value;
-    },
-    enabled: (value: boolean) => {
-      enabled = value;
-    },
-    usable: (value: boolean) => {
-      usable = value;
-    },
-    launch: (value: () => void) => {
-      launch = value;
-    },
-    close: async () => {
-      await mesh.close();
-      await workspaces.close();
-    },
+  const model = await meshIdentityFixture();
+  return { ...model, model, get mesh() { return model.mesh; },
+    state: (value: string) => { model.state.guest = value; },
+    envoy: (value: boolean) => { model.state.envoy = value; },
+    python: (value: boolean) => { model.state.python = value; },
+    enabled: (value: boolean) => { model.state.enabled = value; },
+    usable: (value: boolean) => { model.state.usable = value; },
+    launch: (value: () => void) => { model.state.launchHook = value; },
   };
 }
 
@@ -158,15 +59,22 @@ test('mesh saves legacy-compatible policies and binds persistent sidecars to a p
     assert.equal(start.bindingValid, true);
     assert.equal(start.networkIsolation, 'private');
     assert.equal(start.directory, '/workspace/private');
-    const prepared = f.commands.find((command) => command.includes('--mode validate'))!;
-    assert.match(prepared, /ip netns exec sk-default/);
-    assert.ok(prepared.indexOf('ip netns exec sk-default') < prepared.indexOf('export SCOPE'));
-    const launch = f.commands.find((command) => command.includes('tmux new-session'))!;
-    assert.match(launch, /exec ip netns exec sk-default/);
-    assert.match(launch, /--disable-hot-restart/);
-    assert.match(launch, /SAKURA_MESH_BINDING=[a-f0-9]{64}/);
-    assert.match(launch, /SAKURA_MESH_RUN_ID=[a-f0-9-]{36}/);
-    assert.ok(!launch.includes('setsid'), 'persistent tmux must survive short task cleanup');
+    const prepared = f.executions.find(execution => execution.command.includes('--mode'))!;
+    assert.equal(prepared.project.networkIsolation, 'private');
+    assert.equal(prepared.project.directory, '/workspace/private');
+    assert.equal(prepared.environment?.SCOPE, 'private');
+    assert.match(prepared.command, /--disable-hot-restart/);
+    assert.match(prepared.command, /--concurrency/);
+    assert.equal(f.frames[0].subarray(0, 8).toString(), 'SKIDP001');
+    assert.equal(f.frames[0].readUInt32LE(12), 0);
+    assert.match(f.frames[0].toString(), /SCOPE/);
+    assert.equal(f.rootLaunches.length, 1);
+    assert.ok(!f.rootLaunches[0].includes('SCOPE'));
+    assert.ok(!f.rootLaunches[0].includes('/workspace/private'));
+    const account = f.identities.get('default')!;
+    assert.equal(account.gid, account.uid);
+    assert.notEqual(account.home, '/root');
+    assert.equal(f.held.get('default'), 0, 'completed persistent service releases its finite preparation');
     await assert.rejects(
       f.workspaces.save(f.id, { directory: '/workspace/changed', networkIsolation: 'private' }),
       /停止.*边车/,
@@ -310,14 +218,16 @@ test('an installed but unusable Envoy is reported unready and cannot leave a run
   try {
     await f.mesh.action(f.id, { mode: 'save', policy }, 'run');
     f.usable(false);
-    const current = await f.mesh.status(f.id);
+    const unprobed = await f.mesh.status(f.id);
+    assert.equal(unprobed.envoyUsable, null);
+    const current = await f.mesh.action(f.id, { mode: 'status' }, 'check');
     assert.equal(current.envoyInstalled, true);
     assert.equal(current.envoyUsable, false);
     assert.equal(current.ready, false);
     await assert.rejects(f.mesh.action(f.id, { mode: 'start' }, 'run'), /incompatible Envoy/);
     assert.equal(f.running.size, 0);
     assert.equal(
-      f.commands.some((command) => command.includes('tmux new-session')),
+      f.model.state.starts > 0,
       false,
     );
   } finally {
@@ -329,6 +239,7 @@ test('public capability settings persist and the real enabled callback rejects s
   const f = await fixture(),
     next = new NextFeatures(f.machines, f.workspaces);
   try {
+    Object.assign(next.serviceMesh, { options: f.options, scopes: f.options.scopes, identities: f.options.identities, file: f.file });
     await next.init();
     await next.serviceMesh.action(f.id, { mode: 'save', policy }, 'run');
     await next.configure(f.id, { featureId: 'service-mesh', enabled: false, options: {} });

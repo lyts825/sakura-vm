@@ -2,6 +2,16 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## Envoy 的项目账号与完整运行域
+
+2026-10-03 Envoy 版本探测、固定配置校验与长期边车已接通捕获原项目 UID/GID、独立 home、目录描述符、原配置/live/boot 与保护帧。环境只解析一次，root 只发布有界固定回环配置与读取系统/内核证明，不运行 Envoy 或项目环境。独立 Mesh namespace 与 service/native 票据不占用用户同名服务；普通状态只读取原票据和兼容性样本，规则见 [项目 Envoy 边车](service-mesh.md)。
+
+有限版本/校验任务 beforeIntent 持久准确 identity/owner/SHA，taskRun 与整个原 task/native 域核销后才允许删除原配置或释放准备；长期服务退出核对原完整 cgroup、后代、native 与配置。丢失启动/配置应答、取消、清理或 release 失败保留原记录/配置/租约并返回 503，明确 stop 重试。健康长期服务在宿主关闭/重载后保持，冷 boot 不重用旧 kill；未知 root 运行需原证明处理。
+
+正式接入另修首次私有项目：固定 preparation 创建网络空间后重读工具状态并核对最初 boot/二进制；明确 check 可准备，普通 status 保持只读。原入场状态改变在 UID 执行前拒绝。正式九个相关测试文件 249/249、零跳过、实际退出与 close 为 0、对应源码前后未变，证明为 .data/mesh-identity-backend-c65614f4-cafd-415b-aa79-0700dc89050a-verification.json；完整类型检查通过。首次测试仅四个新断言写错已有错误码而失败，原失败记录保留，修正后重新完整核对。原补丁检查另有 Root/UID 生成 Python 静态编译/AST 证明。
+
+没有启动 VM 或执行真实 Envoy/UID/cgroup；旧 root 入口的历史联测单独保留，不代表新入口实测。桌面仍有未迁移范围，目录保持 250 项、247 有入口、3 部分实现，历史整仓 Windows rename 失败证明未被本批结果替代。
+
 ## LSP、DAP 与双向项目协议流
 
 2026-10-03 独立 TypeScript/JavaScript/Python LSP 和 Python DAP 的服务器、被调试程序及后代接入原项目 UID/GID、独立 home、目录描述符及捕获配置/live。公开入口首个 await 前复制用户输入并固定项目/live，环境只解析一次；有界保护帧与持续二进制输入各用独立描述符。复用既有 C SESSION2，不改 C/header/ABI；controller 新 action 只复用原 exec-current 入场，拒绝走 stderr，stdout 保留协议。原补全、定义、诊断、重命名和调试/断点/调用栈/变量保持，规则见 [项目语言服务与调试器](project-protocol-streams.md)。

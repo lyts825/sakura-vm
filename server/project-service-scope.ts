@@ -62,7 +62,7 @@ export const projectMainRecordSchema = z.object({
 });
 export type ProjectMainRecord = z.infer<typeof projectMainRecordSchema>;
 type ProjectScopeRecord = ProjectServiceRecord | ProjectMainRecord;
-type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide' | 'notebook' | 'reverse-tunnel'; deadline?: number } | { kind: 'main' };
+type ScopeTarget = { kind: 'service'; name: string; namespace?: 'browser-ide' | 'notebook' | 'reverse-tunnel' | 'mesh'; deadline?: number } | { kind: 'main' };
 export const projectBrowserIdeRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
   name: z.literal('browser-ide'), session: z.string().regex(/^sakura-browser-ide-(default|[a-f0-9]{16})$/),
 }).strict().superRefine((record, ctx) => {
@@ -104,6 +104,23 @@ export const projectReverseTunnelRecordSchema = z.object({ ...projectServiceReco
     ctx.addIssue({ code: 'custom', message: '临时隧道的完整 cgroup/pane 身份缺失' });
 });
 export type ProjectReverseTunnelRecord = z.infer<typeof projectReverseTunnelRecordSchema>;
+export const projectMeshRecordSchema = z.object({ ...projectServiceRecordSchema.shape,
+  name: z.literal('mesh'), session: z.string().regex(/^sakura-mesh-uid-(default|[a-f0-9]{16})$/),
+}).strict().superRefine((record, ctx) => {
+  if (record.session !== 'sakura-mesh-uid-' + record.projectId || record.scopeName !== 'sakura-service-' + record.runId)
+    ctx.addIssue({ code: 'custom', message: '服务网格运行路径与身份不符' });
+  const panes = [record.sessionId, record.paneId, record.panePid, record.paneStartTicks];
+  if (panes.some(value => value !== null) && panes.some(value => value === null) ||
+      ['prepared', 'running'].includes(record.phase) && record.inode === null ||
+      record.phase === 'running' && record.panePid === null)
+    ctx.addIssue({ code: 'custom', message: '服务网格完整 cgroup/pane 身份缺失' });
+});
+export type ProjectMeshRecord = z.infer<typeof projectMeshRecordSchema>;
+export function projectMeshScopePaths(project: Project) {
+  const projectId = projectIdSchema.parse(project._workspace || 'default');
+  return { namespace: 'mesh' as const, projectId, name: 'mesh',
+    session: 'sakura-mesh-uid-' + projectId, guest: '/run/sakura-project-mesh/' + projectId };
+}
 export function projectReverseTunnelScopePaths(project: Project) {
   const projectId = projectIdSchema.parse(project._workspace || 'default');
   return { namespace: 'reverse-tunnel' as const, projectId, name: 'reverse-tunnel',
@@ -150,7 +167,8 @@ const scopePaths = (project: Project, target: ScopeTarget) => target.kind === 'm
   ? projectMainScopePaths(project) : target.namespace === 'browser-ide'
     ? projectBrowserIdeScopePaths(project) : target.namespace === 'notebook'
       ? projectNotebookScopePaths(project) : target.namespace === 'reverse-tunnel'
-        ? projectReverseTunnelScopePaths(project) : projectServiceScopePaths(project, target.name);
+        ? projectReverseTunnelScopePaths(project) : target.namespace === 'mesh'
+          ? projectMeshScopePaths(project) : projectServiceScopePaths(project, target.name);
 export function projectMainBinding(project: Project) {
   return createHash('sha256').update(JSON.stringify(['main-uid-v3',
     project._workspace || 'default', project.directory, project.networkIsolation || 'host',
@@ -171,7 +189,7 @@ const helper = `import fcntl,hashlib,json,os,re,signal,stat,subprocess,sys,tempf
 boot=open('/proc/sys/kernel/random/boot_id').read().strip()
 folder=request['guest']; owner_file=folder+'/owner.json'; cancel_file=folder+'/cancel'
 main=request.get('kind')=='main'
-root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-services'
+root='/run/sakura-project-main' if main else '/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-mesh' if request.get('namespace')=='mesh' else '/run/sakura-project-services'
 scope_prefix='sakura-main-' if main else 'sakura-service-'
 def refuse(message): raise RuntimeError(message)
 def trusted_directory(path):
@@ -615,6 +633,8 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
       ? join(vmDir(this.id), 'project-browser-ide', p.projectId, 'runtime.json')
       : this.target.kind === 'service' && this.target.namespace === 'reverse-tunnel'
       ? join(vmDir(this.id), 'project-reverse-tunnels', p.projectId, 'runtime.json')
+      : this.target.kind === 'service' && this.target.namespace === 'mesh'
+      ? join(vmDir(this.id), 'project-mesh', p.projectId, 'runtime.json')
       : this.target.kind === 'service' && this.target.namespace === 'notebook'
       ? join(vmDir(this.id), 'project-notebooks', p.projectId, 'runtime.json')
       : this.target.kind === 'main'
@@ -770,7 +790,7 @@ if boot==request['record']['bootId']:
  print(json.dumps({'bootId':boot,'retired':False}))
 else:
  folder=request['guest']
- root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-services'
+ root='/run/sakura-browser-ide' if request.get('namespace')=='browser-ide' else '/run/sakura-notebook' if request.get('namespace')=='notebook' else '/run/sakura-reverse-tunnels' if request.get('namespace')=='reverse-tunnel' else '/run/sakura-project-mesh' if request.get('namespace')=='mesh' else '/run/sakura-project-services'
  for path in [root,folder.rsplit('/',1)[0],folder]:
   try: os.mkdir(path,0o700)
   except FileExistsError: pass
@@ -942,6 +962,23 @@ export class ProjectReverseTunnelScope extends ProjectProcessScope<ProjectRevers
       const transport = status.record && await this.transport(status.record);
       if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
         throw new AppError('临时隧道受保护正文与原记录不符', 409, 'SERVICE_SCOPE_CHANGED');
+    }
+    return status;
+  }
+}
+
+/** A mesh run owns a separate receipt without reserving a user service name. */
+export class ProjectMeshScope extends ProjectProcessScope<ProjectMeshRecord> {
+  constructor(machines: Machines, id: string, project: Project) {
+    super(machines, id, project, { kind: 'service', name: 'mesh', namespace: 'mesh' },
+      projectMeshRecordSchema, machines.live.get(id));
+  }
+  async status(signal?: AbortSignal, payloadSha256?: string) {
+    const status = await super.status(signal);
+    if (payloadSha256 !== undefined) {
+      const transport = status.record && await this.transport(status.record);
+      if (!/^[a-f0-9]{64}$/.test(payloadSha256) || !transport || transport.sha256 !== payloadSha256)
+        throw new AppError('服务网格受保护正文与原记录不符', 409, 'SERVICE_SCOPE_CHANGED');
     }
     return status;
   }
