@@ -38,4 +38,6 @@ systemd 的首次提交顺序为：保存 pending 归属、持久写入全部策
 
 需要另选有足够空间的验证盘时，可设置 `SAKURA_EGRESS_FIXTURE_ROOT` 为绝对目录。入口核对实际目录路径，并在其中创建独立的新夹具，不搬移已有实例、镜像或证明；目录须允许当前用户创建文件及管理自己的 SSH 文件权限。证明保存实际父目录，仍逐项核对原始镜像、来源和自有进程关闭。连接诊断只记录正式状态检查、桥接验证、实际控制器错误及 relay 的错误流和退出，不读取 relay 正文或放宽准入。
 
+公网软件源在模拟客户机中下载过慢时，可将 `SAKURA_EGRESS_APK_FIXTURE` 指向绝对路径的官方包夹具清单。清单固定 Alpine v3.23 x86_64、main/community 的签名索引与每个官方包的来源、长度和 SHA-256；适配器只在宿主回环提供已冻结文件，拒绝其他路径和写请求。只在全新自有 VM 中临时选择该软件源，仍执行同一生产安装命令、五分钟时限和客户机默认签名校验；安装后原软件源逐字节恢复，签名密钥摘要前后不变。本地源请求、缓存复核、实际服务关闭及零残留连接纳入完整证明。该模式验证功能与签名包安装，不代表默认公网源的安装性能；不会重启或修改历史失败 VM。
+
 规则的 `inet`、output hook 和 socket UID 语义参照 [nftables 官方手册](https://netfilter.org/projects/nftables/manpage.html)；服务依赖参照 [OpenRC 服务脚本指南](https://github.com/OpenRC/openrc/blob/master/service-script-guide.md)。

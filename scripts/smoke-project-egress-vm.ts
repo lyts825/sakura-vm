@@ -9,10 +9,11 @@ import ssh2 from 'ssh2';
 import ts from 'typescript';
 import type { Engine } from '../server/runtime.ts';
 import { diskOptions } from '../shared/hardware.ts';
+import { startAlpineApkFixture } from './project-egress-apk-fixture.ts';
 
 if (process.argv.length === 2 || process.argv[2] === '--describe') {
   console.log(
-    'Fresh Alpine only: --run-new alpine. Real UID IPv4/IPv6 egress, system SSH/cron, managed SSH and cold-boot policy restoration. Retains the owned VM, logs and closed-process evidence.',
+    'Fresh Alpine only: --run-new alpine. Real UID IPv4/IPv6 egress, system SSH/cron, managed SSH and cold-boot policy restoration. Retains the owned VM, logs and closed-process evidence. Optional SAKURA_EGRESS_APK_FIXTURE selects a frozen official package fixture; the proof distinguishes this from default public repository performance.',
   );
 } else {
   const diagnostic = process.argv[2] === '--inspect-owned';
@@ -27,6 +28,11 @@ if (process.argv.length === 2 || process.argv[2] === '--describe') {
 
 async function run(diagnosticDirectory?: string) {
   const workspace = await realpath('.');
+  const configuredApkFixture = process.env.SAKURA_EGRESS_APK_FIXTURE;
+  if (configuredApkFixture) {
+    assert.ok(isAbsolute(configuredApkFixture));
+    assert.equal(diagnosticDirectory, undefined, 'Package fixtures apply only to a new owned VM');
+  }
   const configuredParent = process.env.SAKURA_EGRESS_FIXTURE_ROOT;
   if (configuredParent) assert.ok(isAbsolute(configuredParent));
   const parent = resolve(configuredParent || join(workspace, '.data/project-egress-vm-test-temp'));
@@ -78,6 +84,7 @@ async function run(diagnosticDirectory?: string) {
     bridgeValidationDiagnostics: [],
     controlDiagnostics: [],
     machineConnectionDiagnostics: [],
+    apkRepositoryFixture: { mode: 'default-public-repositories' },
     sourceSha256: {},
     cleanupErrors: [],
     client: { node: process.version, execArgv: process.execArgv },
@@ -184,6 +191,7 @@ async function run(diagnosticDirectory?: string) {
   let vmId = '',
     qemuActive = false,
     boot = 0;
+  let apkFixture: Awaited<ReturnType<typeof startAlpineApkFixture>> | undefined;
   const phase = (name: string) => {
     proof.phases.push({ name, at: new Date().toISOString() });
     console.log('PHASE ' + name);
@@ -953,6 +961,10 @@ print(json.dumps({'tools':records,'scripts':scripts}))`);
       proof.bodyPassed = true;
     } else {
       assert.equal((await machines.list()).length, 0);
+      if (configuredApkFixture) {
+        apkFixture = await startAlpineApkFixture(configuredApkFixture);
+        proof.apkRepositoryFixture = apkFixture.proof;
+      }
       vmId = (
         await machines.create({
           name: 'egress-alpine',
@@ -965,9 +977,32 @@ print(json.dumps({'tools':records,'scripts':scripts}))`);
       ).id;
       proof.vmId = vmId;
       await bootVm();
+      let originalRepositories = '';
+      if (apkFixture) {
+        phase('new owned guest uses frozen official signed package fixture');
+        const original = await machines.exec(vmId, 'test -f /etc/apk/repositories && test ! -L /etc/apk/repositories && cat /etc/apk/repositories', 30000);
+        assert.equal(original.code, 0, original.stderr);
+        originalRepositories = original.stdout;
+        const keys = await guest('for key in /etc/apk/keys/*; do test -f "$key" && sha256sum "$key"; done');
+        assert.ok(keys.trim().length > 0);
+        proof.apkRepositoryFixture.originalRepositoriesSha256 = hash(originalRepositories);
+        proof.apkRepositoryFixture.signatureKeysBefore = keys;
+        await guest('printf %s ' + quote(apkFixture.repositories) + ' > /etc/apk/repositories');
+      }
       phase('install native UID policy');
       await guest('test -x /etc/init.d/crond');
       await identities.install(vmId);
+      if (apkFixture) {
+        await guest('printf %s ' + quote(originalRepositories) + ' > /etc/apk/repositories');
+        const restored = await machines.exec(vmId, 'cat /etc/apk/repositories', 30000);
+        assert.equal(restored.code, 0, restored.stderr);
+        assert.equal(restored.stdout, originalRepositories);
+        const keys = await guest('for key in /etc/apk/keys/*; do test -f "$key" && sha256sum "$key"; done');
+        assert.equal(keys, proof.apkRepositoryFixture.signatureKeysBefore);
+        proof.apkRepositoryFixture.defaultRepositoriesRestored = true;
+        proof.apkRepositoryFixture.signatureKeysUnchanged = true;
+        await apkFixture.close();
+      }
       await guest(
         'mkdir -p /srv/projects; mkdir ' +
           quote(projectParent) +
@@ -1179,6 +1214,10 @@ print(json.dumps(result))`);
     }
     proof.liveEntries = machines.live.size;
     proof.ownedChildren = children.size;
+    if (apkFixture) {
+      try { await apkFixture.close(); }
+      catch (error) { proof.cleanupErrors.push('APK fixture: ' + String(error)); }
+    }
     if (vmId && process.platform === 'win32') {
       const query =
         "$ProgressPreference='SilentlyContinue';$r=[Console]::In.ReadToEnd()|ConvertFrom-Json;[Console]::Write(@(Get-CimInstance Win32_Process|Where-Object { $_.ExecutablePath -eq $r.image -and $_.CommandLine -and $_.CommandLine.Contains($r.disk) }).Count)";
@@ -1223,6 +1262,10 @@ print(json.dumps(result))`);
       proof.liveEntries === 0 &&
       proof.ownedChildren === 0 &&
       proof.exactQemuMatches === 0 &&
+      (!apkFixture || (proof.apkRepositoryFixture.actualServerClosed &&
+        proof.apkRepositoryFixture.cacheUnchanged && proof.apkRepositoryFixture.activeSockets === 0 &&
+        proof.apkRepositoryFixture.defaultRepositoriesRestored && proof.apkRepositoryFixture.signatureKeysUnchanged &&
+        proof.apkRepositoryFixture.requests.every((entry: any) => entry.finishedAt && entry.closedAt))) &&
       clients.size === 0 && channels.size === 0 &&
       proof.machineConnectionDiagnostics.every((entry: any) => !entry.readyAt || !!entry.closedAt) &&
       proof.relayDiagnostics.length === (diagnosticDirectory ? 0 : 1) &&

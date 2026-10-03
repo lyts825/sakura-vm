@@ -30,6 +30,12 @@ HA 见证持久状态升级为第 4 版，新增离线 `--migrate`、`--reconfig
 
 停止整仓负载后的独立夹具 `sakura-egress-9RX9RG/project-egress-vm-a5d3d43b-ad54-4a8a-bbd9-c49477b2e91d.json` 仍在同一工具安装阶段超时，零功能场景、来源未变、原镜像未变、自有进程全部实际关闭。继续检查安装路径时只使用已关闭失败磁盘的独立诊断副本，原虚拟机及磁盘不再启动或修改；副本诊断不作为全新九项或物理 HA 演练通过证明。已通过的整仓来源快照用于构建和分发，完整 Linux 实机证明仍单独核对。
 
+功能批次已提交 `a9207ef`。该来源的五步生产校验、七种编译后服务组合及 259 文件运行包通过，1022 个构建输入前后未变；验证 `.data/validated-feature-release-match-406df994-ecb1-424f-acaf-53a37593ba0e.json` 逐字节核对六份真实剪贴板资产、项目账号原生资产和独立见证程序。该证明明确保留完整 Linux 实机验证待完成状态。
+
+安装诊断通过新的 COW 副本读取原 APK 日志、路由、DNS、磁盘与内存，原失败磁盘和原始镜像未变；日志止于约 60MiB 的 GCC 包，未发现内存或磁盘耗尽，公网完整包下载过慢。为后续全新 VM 新增显式官方签名包夹具适配，安装时限、生产命令和默认签名密钥不变；只提供冻结清单文件，安装后逐字节恢复软件源，记录全部 HTTP 请求和服务实际关闭。三个专项回归与类型检查通过。新的整仓证明 `.data/feature-full-unit-51c6a16c-6c76-4ad4-a8b3-f6972b995480-verification.json` 覆盖 222 个文件、1702 项，1701 通过、0 失败、1 项预期跳过；995 个来源及 Node 二进制前后未变，实际 exit/close 0，结构化失败事件为零。前一次 `.data/feature-full-unit-3c4aadc6-ff9d-4899-85dc-8b8ba7ce6097-verification.json` 的快照文件退出失败保留原样；独立七项和后续完整回归均通过，未将失败重记为成功。
+
+最终全新原始镜像夹具 `sakura-egress-lTqPYo/project-egress-vm-dea2bd50-5f83-4d8d-94f8-dc5d9aeb972e.json` 的九项真实功能全部通过，SHA-256 `cf955eb83a2d9bd78ab7e1fa9d9117ac7e513b29e472cc1373c4b4c7766931df`。涵盖实际双栈 UID 规则、其他账号与 Root 可用、普通系统 SSH 提权及连接阻断、托管 SSH 命令/PTY/私有双栈回环、真实 cron，以及冷启动后在控制器修复前恢复规则和 SSH/cron 限制。当前 native build `aa9bd7ca8c42546fec8293ada08579148a7b1a39cb3e3fbfb97a9d405a1d9a72` 完整执行，原镜像和所有捕获来源未变；自有 QEMU、live 与其他子进程残留为零，已 ready 的管理 SSH、三个功能客户端、四个功能通道和唯一 relay 均实际关闭。外层 `.data/project-egress-vm-controller-9281ec8a-7944-44ca-851f-72c0ffcfbd62-verification.json` 实际 exit/close 0。该组安装使用单独冻结的官方签名包夹具，Alpine 自行选择依赖并校验默认签名，原软件源逐字节恢复、签名密钥前后不变；不是默认公网下载性能通过证明，也不替代物理 HA 演练或其他未覆盖路径。
+
 本批不修改 247 个已有入口和 3 个部分实现目录项的分类。历史失败证明、虚拟机和镜像继续保留；新增证明只表示其明列范围通过。
 
 ## Windows CLR 与 AnyCPU 的受控剪贴板启动
