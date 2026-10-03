@@ -50,6 +50,7 @@ export const HOST_BUDGETS: Readonly<Record<string, Budget>> = Object.freeze({
   'process.helper': { capacity: 16, reserved: 2 },
   jobs: { capacity: 16, reserved: 2 },
   execution: { capacity: 16, reserved: 2 },
+  'execution.session': { capacity: 64, reserved: 4 },
   io: { capacity: 8, reserved: 2 },
   'io.buffers': { capacity: 64 * 1024 * 1024, reserved: 4 * 1024 * 1024 },
   'io.files': { capacity: 128, reserved: 8 },

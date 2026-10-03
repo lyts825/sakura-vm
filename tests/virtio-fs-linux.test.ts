@@ -4,6 +4,7 @@ import { chmod, mkdtemp, mkdir, readFile, writeFile, lstat, rm } from 'node:fs/p
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Machines } from '../server/machines.ts';
+import { vmBootProviders } from '../server/vm-lifetime.ts';
 
 test('Linux Virtio-FS manages the daemon socket, QEMU device and guest mount lifecycle',
   { skip: process.platform !== 'linux' }, async () => {
@@ -61,7 +62,7 @@ process.on('SIGTERM', () => server.close(() => process.exit(0)));
       running = true;
       machines.live.set(id, boot as never);
       const exits: string[] = [];
-      const attachment = await machines.prepareBootAttachment!(vm as never,
+      const attachment = await vmBootProviders(machines).find(([name]) => name === 'virtio-fs')![1].prepare(vm as never,
         (error) => exits.push(error));
       assert.ok(attachment);
       const socketArgument = attachment.args[attachment.args.indexOf('-chardev') + 1];

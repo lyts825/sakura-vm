@@ -10,6 +10,7 @@ import { ProjectRunScopes } from './project-run-scope.ts';
 import { terminalShell } from './project-shell.ts';
 import { quote } from './shell.ts';
 import { Workspaces } from './workspaces.ts';
+import { vmLifetime, type VmIdentity } from './vm-lifetime.ts';
 
 type Lease = {
   vmId: string;
@@ -35,6 +36,7 @@ export type PreparationContext = {
   version: string;
   live: NonNullable<ReturnType<Machines['live']['get']>>;
   abort: AbortSignal;
+  identity?: VmIdentity;
 };
 export type PreparedProject = {
   command: string;
@@ -43,7 +45,12 @@ export type PreparedProject = {
   terminalId?: string;
   release: () => void | Promise<void>;
   signal?: AbortSignal;
-  captured?: { project: Project; configVersion: string; live: PreparationContext['live'] };
+  captured?: {
+    project: Project;
+    configVersion: string;
+    live: PreparationContext['live'];
+    identity?: VmIdentity;
+  };
 };
 
 /** Shared configuration capture and admission lease for tasks and terminals. */
@@ -81,12 +88,17 @@ export class ProjectPreparation {
         throw new AppError('请先结束此项目的终端或命令，再修改目录或网络模式', 409);
     });
   }
-  serial<T>(id: string, signal: AbortSignal, action: () => Promise<T>) {
+  serial<T>(id: string, signal: AbortSignal, action: (signal: AbortSignal) => Promise<T>) {
     const operation = (this.pending.get(id) || Promise.resolve())
       .catch(() => {})
       .then(() => {
         signal.throwIfAborted();
-        return this.machines.locked(id, action);
+        const live = this.machines.live.get(id);
+        if (!live) throw new AppError('客户机运行身份未确认', 409);
+        const activity = vmLifetime(id, live).enter();
+        return this.machines
+          .locked(`project-preparation:${id}`, () => action(AbortSignal.any([signal, activity.signal])))
+          .finally(activity.release);
       });
     this.pending.set(id, operation);
     void operation
@@ -110,11 +122,14 @@ export class ProjectPreparation {
   ) {
     const { task, readOnly = false } = options;
     const abort = AbortSignal.any([this.signal, ...(signal ? [signal] : [])]);
-    return this.serial(id, abort, () =>
+    return this.serial(id, abort, (abort) =>
       this.workspaces.projects.with(id, projectId, async () => {
         if (this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例', 409);
         const live = this.machines.live.get(id);
         if (!live) throw new AppError('客户机运行身份未确认', 409);
+        const lifetime = vmLifetime(id, live),
+          identity = lifetime.capture();
+        const executionAbort = AbortSignal.any([abort, lifetime.signal]);
         const project = await this.workspaces.config(id);
         const version = projectVersion(project);
         const scope = project._workspace || 'default';
@@ -156,7 +171,9 @@ export class ProjectPreparation {
                 : undefined,
             );
         }
-        return action({ id, scope, project, version, live, abort });
+        lifetime.assert(identity);
+        executionAbort.throwIfAborted();
+        return action({ id, scope, project, version, live, abort: executionAbort, identity });
       }),
     );
   }
@@ -222,7 +239,12 @@ export class ProjectPreparation {
         networkIsolation: context.project.networkIsolation || 'host',
         release: this.retain(context, true),
         signal: context.abort,
-        captured: { project: context.project, configVersion: context.version, live: context.live },
+        captured: {
+          project: context.project,
+          configVersion: context.version,
+          live: context.live,
+          identity: context.identity,
+        },
       };
     });
   }

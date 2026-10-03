@@ -55,6 +55,7 @@ export function trustedBootArguments(socket: string) {
 }
 
 export class TrustedBootService {
+  private unregisterBoot?: () => void;
   private lifetime = new AbortController();
   private starting = new Set<Promise<BootAttachment | undefined>>();
   private policies: Record<string, Policy> = {};
@@ -71,18 +72,17 @@ export class TrustedBootService {
     this.policies = z
       .record(z.uuid(), policySchema)
       .parse(await readStore(join(DATA, 'trusted-boot.json'), () => ({})));
-    this.machines.prepareTrustedFirmware = async (vm) => {
+    this.unregisterBoot = registerVmBootProvider(this.machines, 'trusted-boot', { allowInitialReset: true, firmware: async (vm) => {
       if (!this.policies[vm.id]?.enabled) return undefined;
       if (this.closed || this.blocked()) throw new AppError('TPM 与安全启动暂不可启动', 409);
       await this.requireSupported(vm);
       return this.firmware(vm.id);
-    };
-    this.machines.prepareTrustedBootAttachment = (vm, onExit) => {
+    }, prepare: (vm, onExit) => {
       const task = this.prepare(vm, onExit);
       this.starting.add(task);
       void task.finally(() => this.starting.delete(task)).catch(() => {});
       return task;
-    };
+    } });
     this.machines.trustedBootStateFingerprint = (id) => this.fingerprint(id);
     this.machines.trustedBootSnapshot = {
       capture: (id, snapshotId) => this.saveSnapshot(id, snapshotId),
@@ -457,11 +457,11 @@ export class TrustedBootService {
         if (this.active.get(id) === entry) this.active.delete(id);
       }),
     );
-    this.machines.prepareTrustedFirmware = undefined;
-    this.machines.prepareTrustedBootAttachment = undefined;
+    this.unregisterBoot?.();
     this.machines.trustedBootStateFingerprint = undefined;
     this.machines.trustedBootSnapshot = undefined;
     const failed = cleanup.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
     if (failed.length) throw new AggregateError(failed, 'TPM 进程清理尚未确认');
   }
 }
+import { registerVmBootProvider } from './vm-lifetime.ts';

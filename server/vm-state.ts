@@ -2,8 +2,10 @@ import type { Socket } from 'node:net';
 import type { Client } from 'ssh2';
 import type { VMStatus } from '../shared/contracts/vm.ts';
 import type { VmNetworkLease } from './network/index.ts';
+import type { VmLifetime } from './vm-lifetime.ts';
 
 export type Live = {
+  lifetime?: VmLifetime;
   status: VMStatus;
   incoming?: boolean;
   accelerator: 'tcg' | 'whpx';

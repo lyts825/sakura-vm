@@ -45,6 +45,9 @@ async function fixture() {
       return { stdout: 'private-value\noutput', stderr: 'private-value', code: 7 };
     },
   }) as unknown as MachineType;
+  // The lock facade shares the same live process inventory as the transport fixture.
+  locks.live = machines.live;
+  locks.records = machines.records;
   await mkdir(vmDir(id), { recursive: true });
   const workspaces = new Workspaces(machines, { secrets: {
     resolve: async () => ({ TOKEN: 'private-value' }),
@@ -97,13 +100,15 @@ test('abort and service shutdown clean the guest process group and release execu
     const abort = new AbortController();
     const operation = f.service.run(f.id, { command: 'sleep 600' }, null, abort.signal);
     await f.executing;
-    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/other' }), /另一项操作/);
+    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/other' }), /另一项操作|请先结束此项目/);
     const cancelled = assert.rejects(operation);
     abort.abort(); await cancelled;
     assert.ok(f.commands.some((value) => value.includes('sakura_owned_anchor') && value.includes('.pid.stop')));
     await f.workspaces.save(f.id, { directory: '/workspace/other' });
     const second = f.service.run(f.id, { command: 'sleep 600', scope: 'instance' });
     const stopped = assert.rejects(second);
+    // Admission is asynchronous; wait for this command to enter before testing shutdown cleanup.
+    await new Promise<void>(resolve => setImmediate(resolve));
     await f.service.close(); await stopped;
     assert.ok(f.commands.filter((value) => value.includes('sakura_owned_anchor') && value.includes('.pid.stop')).length >= 2);
   } finally { await f.close(); }
@@ -124,4 +129,25 @@ test('agent command setup resolves the persisted active project and preserves an
       withProjectCommand(f.machines, f.id, undefined, f.workspaces, inspect)),
       { projectId: 'default', directory: '/workspace', networkIsolation: 'host' });
   } finally { await f.close(); }
+});
+
+test('independent projects execute concurrently while VM configuration writes remain excluded', async () => {
+  const f = await fixture(); f.wait();
+  const abort = new AbortController();
+  try {
+    const index = await f.workspaces.projects.create(f.id, 'Parallel', async () => {
+      await f.workspaces.save(f.id, { directory: '/workspace/parallel' });
+    });
+    const first = f.service.run(f.id, { command: 'sleep 600' }, 'default', abort.signal);
+    await f.executing;
+    const second = f.service.run(f.id, { command: 'sleep 600' }, index.active, abort.signal);
+    const settled = Promise.allSettled([first, second]);
+    const deadline = Date.now() + 5000;
+    while (f.payloads.length < 2 && Date.now() < deadline)
+      await new Promise<void>(resolve => setTimeout(resolve, 10));
+    assert.equal(f.payloads.length, 2);
+    await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace' }), { code: 'VM_EXECUTION_ACTIVE' });
+    abort.abort();
+    assert.ok((await settled).every(result => result.status === 'rejected'));
+  } finally { abort.abort(); await f.close(); }
 });

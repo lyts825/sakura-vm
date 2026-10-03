@@ -158,6 +158,7 @@ export function virtioFsArguments(vm: Pick<VMRecord, 'memoryMiB'>, socketPath: s
 }
 
 export class VirtioFsShares {
+  private unregisterBoot?: () => void;
   private policies: Record<string, Policy> = {};
   private active = new Map<string, Active>();
   private observations = new Map<string, Observation>();
@@ -178,12 +179,12 @@ export class VirtioFsShares {
     this.policies = z
       .record(z.uuid(), policySchema)
       .parse(await readStore(join(DATA, 'virtio-fs.json'), () => ({})));
-    this.machines.prepareBootAttachment = (vm, onExit) => {
+    this.unregisterBoot = registerVmBootProvider(this.machines, 'virtio-fs', { prepare: (vm, onExit) => {
       const task = this.prepare(vm, onExit);
       this.starting.add(task);
       void task.finally(() => this.starting.delete(task)).catch(() => {});
       return task;
-    };
+    } });
     this.timer = setInterval(() => {
       if (!this.tick && !this.closed)
         this.tick = this.reconcile().finally(() => {
@@ -434,8 +435,9 @@ export class VirtioFsShares {
         if (this.active.get(id) === entry) this.active.delete(id);
       }),
     );
-    if (this.machines.prepareBootAttachment) this.machines.prepareBootAttachment = undefined;
+    this.unregisterBoot?.();
     const failed = cleanup.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
     if (failed.length) throw new AggregateError(failed, 'Virtio-FS 进程清理尚未确认');
   }
 }
+import { registerVmBootProvider } from './vm-lifetime.ts';

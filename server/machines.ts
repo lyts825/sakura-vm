@@ -79,14 +79,14 @@ export type MigrationFingerprint = { recordHash: string; diskSize: number; diskM
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
 
 import type { Live } from './vm-state.ts';
+import { VmLifetime, vmLifetime, vmBootProviders } from './vm-lifetime.ts';
+import { ExecutionScope } from './execution-scope.ts';
+import { withResourceContext } from './host-runtime/index.ts';
 
 const { connectLocal: createConnection } = networkFor('core:machines');
 export type BootAttachment = { args: string[]; close: () => Promise<void>; machine?: string };
 export class Machines extends EventEmitter {
   storagePools = new StoragePools(this);
-  prepareBootAttachment?: (vm: VMRecord, onExit: (error: string) => void) => Promise<BootAttachment | undefined>;
-  prepareTrustedFirmware?: (vm: VMRecord) => Promise<{ code: string; vars: string } | undefined>;
-  prepareTrustedBootAttachment?: (vm: VMRecord, onExit: (error: string) => void) => Promise<BootAttachment | undefined>;
   trustedBootStateFingerprint?: (id: string) => Promise<string>;
   trustedBootSnapshot?: {
     capture: (id: string, snapshotId: string) => Promise<void>;
@@ -415,7 +415,7 @@ export class Machines extends EventEmitter {
   isBusy(id: string) {
     return this.locks.has(id);
   }
-  async locked<T>(id: string, action: () => Promise<T>, allowIncident = false): Promise<T> {
+  async locked<T>(id: string, action: () => Promise<T>, allowIncident = false, allowFailedExecutions = false): Promise<T> {
     if (this.closing) throw new AppError('服务正在关闭', 503);
     if (!allowIncident) for (const part of id.split(':')) this.requireUnlocked(part);
     if (this.maintenance) throw new AppError('数据目录迁移维护中，请等待完成并重启服务', 409);
@@ -427,12 +427,22 @@ export class Machines extends EventEmitter {
     });
     this.operations.add(operation);
     try {
-      return await action();
+      const live = this.live.get(id);
+      return await (live ? vmLifetime(id, live).exclusive(action, allowFailedExecutions) : action());
     } finally {
       this.locks.delete(id);
       this.operations.delete(operation);
       complete();
     }
+  }
+  /** Lock order: close VM execution admission -> await native cleanup -> VM lock -> domain/I/O locks.
+   * Never hold the VM lock while waiting for an execution that needs control cleanup in this guest. */
+  private transition<T>(id: string, action: () => Promise<T>, allowIncident = false, force = false) {
+    const live = this.live.get(id);
+    if (!live) return this.locked(id, action, allowIncident, force);
+    if (ExecutionScope.current()?.identity.vmId === id)
+      throw new AppError('项目执行不能等待自身退出后切换实例状态', 409, 'VM_EXECUTION_REENTRANT');
+    return vmLifetime(id, live).barrier(() => this.locked(id, action, allowIncident, force), true, force);
   }
   get(id: string) {
     const vm = this.records.get(id);
@@ -896,9 +906,16 @@ export class Machines extends EventEmitter {
         if (vm.diskEncryption && !(await new Secrets(this).list(id)).some(
           (item) => item.name === vm.diskEncryption!.secretName))
           throw new AppError(`缺少私密配置：${vm.diskEncryption.secretName}`, 409);
-        const firmware = vm.firmware === 'uefi'
-          ? (await this.prepareTrustedFirmware?.(vm)) ||
-            await ensureUefiFirmware(id, vm.architecture) : null;
+        const providers = vmBootProviders(this);
+        let firmware: { code: string; vars: string } | null = null;
+        if (vm.firmware === 'uefi') {
+          for (const [, provider] of providers) {
+            const selected = await provider.firmware?.(vm);
+            if (selected && firmware) throw new AppError('实例固件提供者冲突', 409);
+            if (selected) firmware = selected;
+          }
+          firmware ||= await ensureUefiFirmware(id, vm.architecture);
+        }
         const [sshPort, qmpPort, serialPort, agentPort] = await Promise.all([freePort(), freePort(), freePort(), freePort()]);
         await recordBootAttempt(id);
         const accelerator = vm.architecture === 'aarch64' ? 'tcg'
@@ -921,6 +938,8 @@ export class Machines extends EventEmitter {
           done: Promise.resolve(),
           clients: new Set(),
         };
+        const lifetime = new VmLifetime(id, live.abort);
+        live.lifetime = lifetime;
         this.live.set(id, live);
         const previousError = vm.lastError;
         const previousUsedAt = vm.lastUsedAt;
@@ -931,6 +950,7 @@ export class Machines extends EventEmitter {
           await this.save();
         } catch (error) {
           this.live.delete(id);
+          await lifetime.close();
           vm.lastUsedAt = previousUsedAt;
           if (previousError !== undefined) vm.lastError = previousError;
           throw error;
@@ -939,11 +959,11 @@ export class Machines extends EventEmitter {
         // The deadline can pass while reserving ports or persisting startup state.
         if (vm.sandbox && sandboxExpired(vm.sandbox)) {
           this.live.delete(id);
+          await lifetime.close();
           this.requireSandboxLifetime(vm);
         }
         let diskSecret: Awaited<ReturnType<typeof openDiskSecret>> | undefined;
-        let attachment: BootAttachment | undefined;
-        let trustedAttachment: BootAttachment | undefined;
+        const attachments: BootAttachment[] = [];
         try {
           live.network = await this.network.attachVm({
             vmId: id, generation: randomUUID(), isolated: vm.sandbox?.network === 'isolated',
@@ -958,37 +978,33 @@ export class Machines extends EventEmitter {
               live.bootAbort.abort(); live.abort.abort(); this.emit('change');
             },
           });
+          await lifetime.setNetwork(live.network);
           if (vm.diskEncryption)
-            diskSecret = await openDiskSecret(this, id, vm.diskEncryption.secretName);
-          attachment = await this.prepareBootAttachment?.(vm, (error) => {
-            if (this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted ||
-                this.live.get(id)?.status === 'stopping') return;
-            live.error = `Virtio-FS 守护程序退出：${error.slice(-1024)}`;
-            this.live.get(id)!.error = live.error;
-            vm.lastError = live.error;
-            this.log(id, `\r\n${live.error}\r\n`);
-            this.emit('change');
-            live.abort.abort();
-          });
-          trustedAttachment = await this.prepareTrustedBootAttachment?.(vm, (error) => {
-            if (this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted ||
-                this.live.get(id)?.status === 'stopping') return;
-            live.error = `TPM 守护程序退出：${error.slice(-1024)}`;
-            this.live.get(id)!.error = live.error;
-            vm.lastError = live.error;
-            this.log(id, `\r\n${live.error}\r\n`);
-            this.emit('change');
-            live.abort.abort();
-          });
-          live.allowInitialReset = !!trustedAttachment;
+            diskSecret = await lifetime.own('disk-secret', await openDiskSecret(this, id, vm.diskEncryption.secretName), 10);
+          for (const [name, provider] of providers) {
+            const attachment = await provider.prepare(vm, (error) => {
+              if (this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted ||
+                  this.live.get(id)?.status === 'stopping') return;
+              live.error = `${name} 守护程序退出：${error.slice(-1024)}`;
+              this.live.get(id)!.error = live.error;
+              vm.lastError = live.error;
+              this.log(id, `\r\n${live.error}\r\n`);
+              this.emit('change');
+              live.abort.abort();
+            });
+            if (attachment) {
+              attachments.push(await lifetime.own(`attachment:${name}`, attachment, 30));
+              if (provider.allowInitialReset) live.allowInitialReset = true;
+            }
+          }
+          if (attachments.filter(value => value.machine).length > 1)
+            throw new AppError('实例机器类型提供者冲突', 409);
         } catch (error) {
           this.live.delete(id);
-          await live.network?.close().catch(() => {});
-          await trustedAttachment?.close().catch(() => {});
-          await attachment?.close().catch(() => {});
-          await diskSecret?.close().catch(() => {});
           vm.lastError = (error as Error).message;
           this.emit('change');
+          try { await lifetime.close(); }
+          catch (cleanup) { throw new AppError(`实例启动资源清理尚未确认：${String(cleanup)}`, 503, 'VM_CLEANUP_PENDING'); }
           throw error;
         }
         const escape = (s: string) => s.replaceAll(',', ',,');
@@ -996,7 +1012,7 @@ export class Machines extends EventEmitter {
           '-name',
           `sakura-${vm.name}`,
           '-machine',
-          trustedAttachment?.machine || (vm.architecture === 'aarch64' ? 'virt' : 'q35'),
+          attachments.find(value => value.machine)?.machine || (vm.architecture === 'aarch64' ? 'virt' : 'q35'),
           '-nodefaults',
           ...(vm.sandbox ? ['-no-user-config'] : []),
           '-boot',
@@ -1012,8 +1028,7 @@ export class Machines extends EventEmitter {
             ? ['-icount', 'shift=auto,sleep=on']
             : []),
           ...hardwareArguments(vm),
-          ...(attachment?.args || []),
-          ...(trustedAttachment?.args || []),
+          ...attachments.flatMap(value => value.args),
           ...(vm.rescueOf
             ? [
                 '-device',
@@ -1030,7 +1045,7 @@ export class Machines extends EventEmitter {
           'none',
           // Some signed UEFI fallback loaders register a boot entry and reset
           // once before the first Linux boot. Keep that reset inside QEMU.
-          ...(trustedAttachment ? [] : ['-no-reboot']),
+          ...(live.allowInitialReset ? [] : ['-no-reboot']),
           ...(firmware
             ? [
                 '-drive',
@@ -1061,14 +1076,14 @@ export class Machines extends EventEmitter {
           `tcp:127.0.0.1:${serialPort},server=on,wait=off`,
           ...(incoming ? ['-incoming', 'defer'] : []),
         ];
-        live.done = this.engine
+        live.done = withResourceContext({ ...lifetime.capture(), owner: `vm:${id}` }, () => this.engine
           .run(vm.architecture === 'aarch64' ? 'sakura-qemu-aarch64' : 'sakura-qemu', args, {
             owner: `vm:${id}`,
             processKind: 'vm',
             signal: live.abort.signal,
             timeoutMs: 2147483647,
             output: (b) => this.log(id, b),
-          })
+          }))
           .then(
             () => {},
             async (error) => {
@@ -1076,6 +1091,7 @@ export class Machines extends EventEmitter {
               if (this.live.get(id)?.abort === live.abort) this.live.get(id)!.error = live.error;
               vm.lastError = live.error;
               this.log(id, `\r\n${live.error}\r\n`);
+              if (error instanceof AppError && error.status === 503) throw error;
             },
           )
           .finally(async () => {
@@ -1083,21 +1099,23 @@ export class Machines extends EventEmitter {
             live.abort.abort();
             live.bootAbort.abort();
             const active = this.live.get(id);
-            await (active?.abort === live.abort ? active.network : live.network)?.close()
-              .catch((error) => this.log(id, `\r\n清理统一网络失败：${String(error)}\r\n`));
-            await trustedAttachment?.close().catch((error) => this.log(id, `\r\n清理 TPM 守护程序失败：${String(error)}\r\n`));
-            await attachment?.close().catch((error) => this.log(id, `\r\n清理 Virtio-FS 守护程序失败：${String(error)}\r\n`));
-            await diskSecret?.close().catch((error) => this.log(id, `\r\n清理磁盘临时口令失败：${String(error)}\r\n`));
+            let cleanupFailure: unknown;
+            await lifetime.close().catch(error => {
+              cleanupFailure = error;
+              this.log(id, `\r\n清理实例资源失败：${String(error)}\r\n`);
+            });
             live.bootAbort.abort();
             live.serial?.destroy();
             if (active?.abort === live.abort) active.serial?.destroy();
             for (const client of live.clients) client.end();
             await live.bootDone;
-            this.live.delete(id);
+            if (this.live.get(id)?.abort === live.abort) this.live.delete(id);
             vm.lastUsedAt = new Date().toISOString();
             await this.save().catch((error) => this.log(id, `\r\n保存实例状态失败：${String(error)}\r\n`));
             this.emit('change');
+            if (cleanupFailure) throw new AppError('实例资源清理尚未确认', 503, 'VM_CLEANUP_PENDING');
           });
+        void live.done.catch(() => {});
         if (diskSecret) {
           const secret = diskSecret;
           void (async () => {
@@ -1307,7 +1325,7 @@ export class Machines extends EventEmitter {
     });
   }
   async stop(id: string, force = false) {
-    return this.locked(id, async () => this.stopInternal(id, force), true);
+    return this.transition(id, async () => this.stopInternal(id, force), true, force);
   }
   async bootGuard(id: string, reset = false) {
     this.get(id);
@@ -1319,7 +1337,7 @@ export class Machines extends EventEmitter {
     return bootGuardStatus(id);
   }
   async suspend(id: string) {
-    return this.locked(id, async () => {
+    return this.transition(id, async () => {
       const live = this.live.get(id);
       if (!live || live.status !== 'running') throw new AppError('只有运行中的发行版可以暂停', 409);
       await qmp(live.qmpPort, 'stop');
@@ -1883,7 +1901,7 @@ export class Machines extends EventEmitter {
     });
   }
   async onlineSnapshot(id: string, name: string) {
-    return this.locked(id, async () => {
+    return this.transition(id, async () => {
       const vm = this.get(id);
       const live = this.live.get(id);
       if (!live || live.status !== 'running') throw new AppError('在线快照要求实例正在运行', 409);
@@ -1930,7 +1948,7 @@ export class Machines extends EventEmitter {
     });
   }
   async memorySnapshot(id: string, name: string) {
-    return this.locked(id, async () => {
+    return this.transition(id, async () => {
       const vm = this.get(id);
       const live = this.live.get(id);
       if (!live || live.status !== 'running')
@@ -1947,7 +1965,7 @@ export class Machines extends EventEmitter {
     });
   }
   async restoreMemory(id: string, snapshotId: string, backup = false) {
-    return this.locked(id, async () => {
+    return this.transition(id, async () => {
       const vm = this.get(id);
       const shot = vm.snapshots.find((item) => item.id === snapshotId);
       if (!shot || shot.consistency !== 'vmstate' || !shot.stateFingerprint)
@@ -1977,6 +1995,8 @@ export class Machines extends EventEmitter {
       }
       // Block new SSH work while network and RAM move to the restored generation.
       live.status = 'paused';
+      const lifetime = vmLifetime(id, live);
+      lifetime.advanceExecution();
       this.emit('change');
       try {
         if (live.network) {
@@ -1988,11 +2008,13 @@ export class Machines extends EventEmitter {
             await live.network.close();
             throw new AppError('实例在恢复网络期间已退出', 409);
           }
-          // In-flight project operations compare the captured Live object; invalidate it as well.
-          const restored = { ...live, serialConnected: false };
-          this.live.set(id, restored);
-          this.connectSerial(id, restored);
+          await lifetime.setNetwork(live.network);
         }
+        // Keep compatibility checks in callers that pin the Live object, even without a NIC.
+        const restored = { ...live, serialConnected: false };
+        this.live.set(id, restored);
+        live.serial?.destroy();
+        if (live.network) this.connectSerial(id, restored);
         for (const client of live.clients) client.destroy();
         await qmpSnapshotJob(live.qmpPort, 'snapshot-load', shot.id);
         const status = await qmp(live.qmpPort, 'query-status');
@@ -2427,9 +2449,12 @@ export class Machines extends EventEmitter {
       // Launch and disk operations admitted before shutdown must settle before
       // taking the final live-process snapshot or releasing their runtime.
       await Promise.allSettled([...this.operations]);
-      await Promise.allSettled([...this.live.keys()].map((id) => this.stopInternal(id, false)));
+      const stopped = await Promise.allSettled([...this.live].map(([id, live]) =>
+        vmLifetime(id, live).barrier(() => this.stopInternal(id, false), true, true)));
       await this.saveQueue.catch(() => {});
       await this.engine.runtime.close();
+      const failures = stopped.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+      if (failures.length) throw new AppError('实例关闭清理尚未确认', 503, 'VM_CLEANUP_PENDING');
     })();
     return this.closeTask;
   }

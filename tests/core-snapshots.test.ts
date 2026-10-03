@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Engine } from '../server/runtime.ts';
+import { vmLifetime } from '../server/vm-lifetime.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-core-snapshots-'));
 process.env.SAKURA_DATA_DIR = root;
@@ -152,6 +153,67 @@ test('a guest exiting during network renewal releases the new generation without
   await assert.rejects(restoring, /已退出/);
   assert.equal(renewed.signal.aborted, true);
   assert.equal(machines.live.has(id), false);
+});
+
+test('RAM restore advances execution and NIC generations while preserving process identity and observing the real restored boot', async (t) => {
+  const { machines, id } = await fixture(t);
+  const shot = await machines.snapshot(id, 'memory-fixture');
+  shot.consistency = 'vmstate'; shot.stateFingerprint = 'fixture';
+  (machines as any).vmStateFingerprint = async () => 'fixture';
+  const commands: string[] = [];
+  let jobId = '', serialConnections = 0, serialCloses = 0;
+  (machines as any).connectSerial = () => { serialConnections++; };
+  const monitor = createServer(socket => {
+    socket.write(JSON.stringify({ QMP: { version: {}, capabilities: [] } }) + '\n');
+    socket.setEncoding('utf8');
+    let input = '';
+    socket.on('data', (data: string) => {
+      input += data;
+      let index: number;
+      while ((index = input.indexOf('\n')) >= 0) {
+        const command = JSON.parse(input.slice(0, index)); input = input.slice(index + 1);
+        commands.push(command.execute);
+        if (command.execute === 'snapshot-load') jobId = command.arguments['job-id'];
+        const result = command.execute === 'query-block'
+          ? [{ device: 'sakura-disk', inserted: { 'node-name': 'disk-node', drv: 'qcow2', ro: false } }]
+          : command.execute === 'query-jobs' ? [{ id: jobId, status: 'concluded' }]
+          : command.execute === 'query-status' ? { running: true } : {};
+        socket.write(JSON.stringify({ id: command.id, return: result }) + '\n');
+      }
+    });
+  });
+  monitor.listen(0, '127.0.0.1'); await once(monitor, 'listening');
+  const qmpPort = (monitor.address() as { port: number }).port;
+  const network = await fakeVmNetwork.attachVm({ vmId: id, generation: 'initial', sshPort: 35001,
+    forwards: [], isolated: false, onFailure: () => {} });
+  const live = { status: 'running', accelerator: 'tcg', network, qmpPort,
+    clients: new Set(), serial: { destroy: () => { serialCloses++; } },
+    abort: new AbortController(), bootAbort: new AbortController() } as any;
+  machines.live.set(id, live);
+  const lifetime = vmLifetime(id, live), rebootedBoot = randomUUID(), restoredBoot = randomUUID();
+  await lifetime.setNetwork(network); lifetime.observeBoot(rebootedBoot);
+  const identity = lifetime.capture();
+  try {
+    await machines.restoreMemory(id, shot.id);
+    const restored = machines.live.get(id)!;
+    assert.notEqual(restored, live); assert.equal(restored.lifetime, lifetime);
+    assert.equal(restored.status, 'running');
+    assert.equal(lifetime.capture().vmProcessId, identity.vmProcessId);
+    assert.notEqual(lifetime.capture().executionGeneration, identity.executionGeneration);
+    assert.notEqual(lifetime.capture().networkGeneration, identity.networkGeneration);
+    assert.equal(lifetime.capture().bootId, undefined);
+    assert.equal(lifetime.lastObservedBootId, rebootedBoot);
+    const generation = lifetime.capture().executionGeneration;
+    lifetime.observeBoot(restoredBoot);
+    assert.equal(lifetime.capture().bootId, restoredBoot);
+    assert.equal(lifetime.capture().executionGeneration, generation);
+    assert.equal(serialConnections, 1); assert.equal(serialCloses, 1);
+    assert.equal(commands.includes('stop') || commands.includes('cont'), false);
+    assert.ok(commands.includes('snapshot-load'));
+  } finally {
+    await lifetime.close(); machines.live.delete(id);
+    await new Promise<void>(resolve => monitor.close(() => resolve()));
+  }
 });
 
 test('failed online disk snapshot thaws the guest and removes its identity metadata', async (t) => {

@@ -5,7 +5,8 @@ import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Machines } from '../server/machines.ts';
+import type { Machines, BootAttachment } from '../server/machines.ts';
+import { vmBootProviders } from '../server/vm-lifetime.ts';
 
 if (process.platform !== 'linux') {
   console.log('Virtio-FS backend smoke requires Linux; skipped.');
@@ -30,7 +31,7 @@ const machines = {
   requireUnlocked: () => {},
 } as unknown as Machines;
 const service = new VirtioFsShares(machines);
-let attachment: Awaited<ReturnType<NonNullable<Machines['prepareBootAttachment']>>>;
+let attachment: BootAttachment | undefined;
 let qemu: ReturnType<typeof spawn> | undefined;
 let sidecarExit: string | undefined;
 try {
@@ -39,7 +40,7 @@ try {
     policy: { enabled: true, hostPath: share, readOnly: true } });
   running = true;
   machines.live.set(id, {} as never);
-  attachment = await machines.prepareBootAttachment!(vm as never,
+  attachment = await vmBootProviders(machines).find(([name]) => name === 'virtio-fs')![1].prepare(vm as never,
     (error) => { sidecarExit = error; });
   assert.ok(attachment);
   const qmpSocket = join(root, 'qmp.sock');

@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
+import { ExecutionScope } from './execution-scope.ts';
+import { vmLifetime } from './vm-lifetime.ts';
 import type { Project } from './project-config.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
@@ -826,6 +828,7 @@ export class ProjectRunScopes {
     const bootId = z.uuid().safeParse(result.stdout.trim());
     if (result.code !== 0 || !bootId.success || !live || this.machines.live.get(vmId) !== live)
       throw new AppError('无法固定客户机开机身份，项目代码未执行', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+    vmLifetime(vmId, live).observeBoot(bootId.data);
     return { live, bootId: bootId.data };
   }
   /** Only this admission creates an in-process owner; disk receipts never do. */
@@ -996,6 +999,15 @@ export async function projectIdentityTask(machines: Machines, vmId: string, proj
   execution: ProjectIdentityExecution, signal: AbortSignal, log?: (text: string) => void,
   timeout = 1200000, agentPath?: string, afterCleanup?: () => Promise<void>,
   options: ProjectTaskAdmissionOptions = {}) {
+  return ExecutionScope.run({ machines, vmId, projectId: projectId(project), live: options.expectedLive, signal },
+    scope => projectIdentityTaskInScope(machines, vmId, project, execution, scope.signal, log, timeout,
+      agentPath, afterCleanup, options));
+}
+
+async function projectIdentityTaskInScope(machines: Machines, vmId: string, project: Project,
+  execution: ProjectIdentityExecution, signal: AbortSignal, log: ((text: string) => void) | undefined,
+  timeout: number, agentPath: string | undefined, afterCleanup: (() => Promise<void>) | undefined,
+  options: ProjectTaskAdmissionOptions) {
   signal.throwIfAborted();
   const scopes = new ProjectRunScopes(machines), admission = await scopes.admitTask(vmId, project, execution, signal, options);
   const { payload } = admission, runId = payload.runId;
