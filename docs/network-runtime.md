@@ -57,7 +57,7 @@ S3 必须同时显式提供托管 `requestHandler()` 和凭据。对象备份继
 
 `SAKURA_NETWORK_SCALE_AT` 不得大于 `SAKURA_NETWORK_CONNECTIONS`。池按活动租约数量扩缩，不根据 CPU 使用率调度；只有完全空闲的 worker 才会被回收，定期检查可能使实际回收稍晚于配置时间。服务启动先检查一个宿主 worker 能否启动，VM 网络进程在 VM 接入时才创建。
 
-VM 池每个 worker 固定最多 4 个 VM 租约，优先把新增 VM 分散到尚可创建的 worker，再在已有 worker 间分配。因此默认最多 8 个同时接入的 VM。宿主与 VM 两组池分开，数据负载不会消耗本地管理通道的 worker 配额。
+VM 池每个 worker 固定最多 4 个 VM 租约，优先把新增 VM 分散到尚可创建的 worker，再在已有 worker 间分配。该网络池默认提供 8 个 VM 接入名额；实际启动还受宿主客户机 QEMU 默认 4 个额度等约束。宿主与 VM 两组池分开，数据负载不会消耗本地管理通道的 worker 配额。
 
 池配置允许的网络子进程上限为 `SAKURA_NETWORK_WORKERS + 2 × SAKURA_NETWORK_VM_WORKERS`，默认最多 8 个，其中最多 6 个 Node worker 和 2 个无客户机 CPU 的 QEMU。实际创建还受宿主统一 `process` 和 `network.worker` 预算约束；默认网络预算总量为 8，调高单个池的上限不会绕过总预算。VM worker 创建前一起预留 Node 和后端名额；扩容额度不足时可复用仍有容量的 worker，否则返回 `NETWORK_BUSY`。这不包含真正运行客户机的 QEMU、服务主进程、独立 CLI 或其他原生辅助进程，但宿主的全部受管子进程另外共享总进程预算。
 
