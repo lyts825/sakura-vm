@@ -203,3 +203,58 @@ test('bounded owner queues protect unrelated owners and reject callbacks cannot 
   lease.release(); (await queued).release(); (await other).release();
   assert.equal(runtime.snapshot().queued, 0); runtime.close();
 });
+
+test('lease resize checks all held dimensions atomically and rejects new dimensions', async () => {
+  const runtime = new HostRuntime({ budgets: { jobs: { capacity: 4 }, io: { capacity: 4 } } });
+  const first = await runtime.acquire(request('first', { jobs: 1, io: 1 }));
+  const second = await runtime.acquire(request('second', { io: 2 }));
+  assert.throws(() => first.resize({ jobs: 3, io: 3 }), { code: 'RESOURCE_CAPACITY' });
+  assert.deepEqual(runtime.snapshot().resources.find(v => v.id === first.id)?.cost, { jobs: 1, io: 1 });
+  assert.deepEqual(runtime.snapshot().budgets.map(v => v.used), [1, 3]);
+  assert.throws(() => second.resize({ jobs: 1 }), { code: 'RESOURCE_INVALID' });
+  for (const amount of [-1, NaN, 0.5, Number.MAX_SAFE_INTEGER + 1])
+    assert.throws(() => first.resize({ jobs: amount }), { code: 'RESOURCE_INVALID' });
+  first.resize({ jobs: 3, io: 2 });
+  assert.deepEqual(runtime.snapshot().budgets.map(v => v.used), [3, 4]);
+  first.release(); second.release(); runtime.close();
+});
+
+test('shrinking a lease wakes queued work and zero-cost partitions retain their definition', async () => {
+  const runtime = new HostRuntime({ budgets: { jobs: { capacity: 1 } } });
+  const first = await runtime.acquire({ ...request('first'), partitions: [{ key: 'temporary', limit: 10, amount: 10 }] });
+  const waiting = runtime.acquire({ ...request('waiting'), partitions: [{ key: 'temporary', limit: 10, amount: 5 }] });
+  first.resize({ jobs: 0, 'partition:temporary': 0 });
+  const second = await waiting;
+  assert.equal(runtime.snapshot().budgets.find(v => v.key === 'partition:temporary')?.used, 5);
+  second.release();
+  assert.ok(runtime.snapshot().budgets.some(v => v.key === 'partition:temporary'));
+  await assert.rejects(runtime.acquire({ ...request('conflict'), partitions: [{ key: 'temporary', limit: 11 }] }), { code: 'RESOURCE_PARTITION_CONFLICT' });
+  first.resize({ jobs: 1, 'partition:temporary': 10 });
+  first.release();
+  assert.ok(!runtime.snapshot().budgets.some(v => v.key === 'partition:temporary'));
+  runtime.close();
+});
+
+test('resize preserves control reserve while allowing reductions under control pressure', async () => {
+  const runtime = new HostRuntime({ budgets: { jobs: { capacity: 4, reserved: 2 } } });
+  const ordinary = await runtime.acquire(request('ordinary'));
+  ordinary.resize({ jobs: 2 });
+  assert.throws(() => ordinary.resize({ jobs: 3 }), { code: 'RESOURCE_CAPACITY' });
+  const control = await runtime.acquire({ ...request('control'), lane: 'control' });
+  control.resize({ jobs: 2 });
+  ordinary.resize({ jobs: 1 });
+  assert.equal(runtime.snapshot().budgets[0].used, 3);
+  assert.throws(() => ordinary.resize({ jobs: 2 }), { code: 'RESOURCE_CAPACITY' });
+  ordinary.release(); control.release(); runtime.close();
+});
+
+test('cleanup-pending and released leases cannot change their reserved amounts', async () => {
+  const runtime = new HostRuntime({ budgets: { jobs: { capacity: 2 } } });
+  const lease = await runtime.acquire(request('pending'));
+  lease.cleanupPending(new Error('physical close unconfirmed'));
+  assert.throws(() => lease.resize({ jobs: 0 }), { code: 'RESOURCE_CLEANUP_PENDING' });
+  assert.equal(runtime.snapshot().budgets[0].used, 1);
+  lease.release();
+  assert.throws(() => lease.resize({ jobs: 1 }), { code: 'RESOURCE_RELEASED' });
+  runtime.close();
+});

@@ -3,7 +3,6 @@
 import { createServer, createConnection } from 'node:net';
 import { lookup } from 'node:dns/promises';
 import { randomBytes } from 'node:crypto';
-import { spawn } from 'node:child_process';
 
 const limit = Number(process.env.SAKURA_NETWORK_WORKER_LIMIT || 128);
 if (!Number.isInteger(limit) || limit < 1 || limit > 1024) process.exit(1);
@@ -13,9 +12,7 @@ const tickets = new Map(),
   controls = new Map();
 let closing = false,
   shutdownTask;
-let qemu,
-  qemuReady,
-  qemuStopped,
+let backend,
   qmpInput = '',
   qmpSequence = 0;
 const qmpPending = new Map();
@@ -42,7 +39,7 @@ function rejectQmp(error) {
   qmpPending.clear();
 }
 function qmp(execute, args) {
-  if (closing || !qemu?.stdin.writable) return Promise.reject(failed('Network backend is unavailable'));
+  if (closing || !backend || backend.closed) return Promise.reject(failed('Network backend is unavailable'));
   if (qmpPending.size >= limit + 16)
     return Promise.reject(failed('Network QMP queue is full', 'NETWORK_BUSY'));
   const id = String(++qmpSequence);
@@ -60,75 +57,78 @@ function qmp(execute, args) {
       void shutdown(1);
     }, 10_000);
     qmpPending.set(id, { resolve, reject, timer });
-    qemu.stdin.write(bytes, (error) => {
-      if (error) {
-        rejectQmp(error);
-        void shutdown(1);
-      }
-    });
+    send({ event: 'backend-write', backendId: backend.id, bytes });
   });
 }
-function startQemu(binary) {
-  if (closing) return Promise.reject(failed('Network worker is closing'));
-  return (qemuReady ||= new Promise((resolve, reject) => {
-    qemu = spawn(
-      binary,
-      ['-machine', 'none', '-nodefaults', '-display', 'none', '-m', '0', '-qmp', 'stdio'],
-      { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
-    );
-    qemuStopped = new Promise((done) => qemu.once('close', done));
-    qemu.once('spawn', () => send({ event: 'backend', pid: qemu.pid }));
-    const timer = setTimeout(() => {
-      reject(failed('Network backend startup timed out', 'ETIMEDOUT'));
+function openBackend(id) {
+  if (backend || typeof id !== 'string' || !id) return void shutdown(1);
+  let resolveReady, rejectReady, stopped;
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  void ready.catch(() => {});
+  backend = {
+    id,
+    ready,
+    resolveReady,
+    rejectReady,
+    closed: false,
+    greeted: false,
+    stopped: new Promise((done) => {
+      stopped = done;
+    }),
+    resolveStopped: stopped,
+    timer: setTimeout(() => {
+      rejectReady(failed('Network backend startup timed out', 'ETIMEDOUT'));
       void shutdown(1);
-    }, 10_000);
-    const backendFailed = (error) => {
-      clearTimeout(timer);
-      reject(error);
-      rejectQmp(error);
-      // Lost NAT state must revoke every affected lease, never silently reattach it.
-      if (!closing) void shutdown(1);
-    };
-    qemu.stdin.on('error', backendFailed);
-    qemu.stderr.on('data', () => {});
-    qemu.once('error', backendFailed);
-    qemu.once('exit', () => backendFailed(failed('Network backend exited')));
-    qemu.once('close', () => {
-      clearTimeout(timer);
-      send({ event: 'backend', pid: null });
-    });
-    let greeted = false;
-    qemu.stdout.on('data', (bytes) => {
-      qmpInput += bytes;
-      if (qmpInput.length > 1024 * 1024) return backendFailed(failed('Network QMP response is too large'));
-      let end;
-      while ((end = qmpInput.indexOf('\n')) >= 0) {
-        const line = qmpInput.slice(0, end);
-        qmpInput = qmpInput.slice(end + 1);
-        let message;
-        try {
-          message = JSON.parse(line);
-        } catch {
-          return backendFailed(failed('Invalid network QMP response'));
-        }
-        if (!message || typeof message !== 'object')
-          return backendFailed(failed('Invalid network QMP response'));
-        if (message.QMP && !greeted) {
-          greeted = true;
-          qmp('qmp_capabilities').then(() => {
-            clearTimeout(timer);
-            resolve();
-          }, backendFailed);
-        }
-        const pending = qmpPending.get(message.id);
-        if (pending) {
-          qmpPending.delete(message.id);
-          clearTimeout(pending.timer);
-          message.error ? pending.reject(failed(message.error.desc)) : pending.resolve(message.return);
-        }
-      }
-    });
-  }));
+    }, 10_000),
+  };
+}
+function receiveBackend(bytes) {
+  if (typeof bytes !== 'string') return void shutdown(1);
+  qmpInput += bytes;
+  if (Buffer.byteLength(qmpInput) > 1024 * 1024) return void shutdown(1);
+  let end;
+  while ((end = qmpInput.indexOf('\n')) >= 0) {
+    const line = qmpInput.slice(0, end);
+    qmpInput = qmpInput.slice(end + 1);
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return void shutdown(1);
+    }
+    if (!message || typeof message !== 'object') return void shutdown(1);
+    if (message.QMP && !backend.greeted) {
+      backend.greeted = true;
+      qmp('qmp_capabilities').then(
+        () => {
+          clearTimeout(backend.timer);
+          backend.resolveReady();
+        },
+        (error) => {
+          backend.rejectReady(error);
+          void shutdown(1);
+        },
+      );
+    }
+    const pending = qmpPending.get(message.id);
+    if (pending) {
+      qmpPending.delete(message.id);
+      clearTimeout(pending.timer);
+      message.error ? pending.reject(failed(message.error.desc)) : pending.resolve(message.return);
+    }
+  }
+}
+function backendClosed() {
+  backend.closed = true;
+  clearTimeout(backend.timer);
+  backend.resolveStopped();
+  const error = failed('Network backend exited');
+  backend.rejectReady(error);
+  rejectQmp(error);
+  if (!closing) void shutdown(1);
 }
 function release(id) {
   const ticket = tickets.get(id);
@@ -226,8 +226,22 @@ server.on('error', () => {
 });
 server.listen(0, '127.0.0.1', () => send({ event: 'ready', port: server.address().port }));
 process.on('message', async (message) => {
-  if (!message || typeof message !== 'object' || closing) return;
+  if (!message || typeof message !== 'object') return;
   const { requestId, command, id } = message;
+  if (command === 'backend-closed' && backend && message.backendId === backend.id) {
+    backendClosed();
+    return;
+  }
+  if (closing) return;
+  if (command === 'backend-open') {
+    openBackend(message.backendId);
+    return;
+  }
+  if (command === 'backend-data') {
+    if (backend && message.backendId === backend.id) receiveBackend(message.bytes);
+    else void shutdown(1);
+    return;
+  }
   if (command === 'close') {
     void shutdown();
     return;
@@ -291,7 +305,8 @@ process.on('message', async (message) => {
       });
       value = { token };
     } else if (command === 'qmp') {
-      await startQemu(message.binary);
+      if (!backend || message.backendId !== backend.id) throw failed('Network backend is not authorized');
+      await backend.ready;
       value = await qmp(message.execute, message.args);
     } else if (command === 'lookup') value = await lookup(message.hostname, message.options);
     else throw failed('Unknown network command');
@@ -307,7 +322,6 @@ function shutdown(exitCode = 0) {
   return (shutdownTask ||= (async () => {
     closing = true;
     const fallback = setTimeout(() => {
-      qemu?.kill('SIGKILL');
       process.exit(1);
     }, 1500);
     rejectQmp(failed('Network worker is closing'));
@@ -315,9 +329,11 @@ function shutdown(exitCode = 0) {
     for (const id of new Set([...tickets.keys(), ...connections.keys()])) release(id);
     for (const client of clients) client.destroy();
     const serverClosed = new Promise((resolve) => server.close(resolve));
-    if (qemu && qemu.exitCode === null && qemu.signalCode === null) {
-      qemu.kill('SIGKILL');
-      await qemuStopped;
+    if (backend && !backend.closed) {
+      clearTimeout(backend.timer);
+      backend.rejectReady(failed('Network worker is closing'));
+      send({ event: 'backend-stop', backendId: backend.id });
+      if (process.connected) await backend.stopped;
     }
     await serverClosed;
     clearTimeout(fallback);

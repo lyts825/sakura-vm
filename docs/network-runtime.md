@@ -23,7 +23,7 @@ flowchart LR
 
 HTTP、HTTPS、WebSocket、SSH 和 S3 的协议处理仍在托管的主进程适配器中。TLS 在主进程封装 worker 返回的 TCP 流，因此原来的 CA、服务器身份、mTLS 和固定证书检查仍由协议适配器执行。HTTP/TLS 解析与加解密没有迁到 worker，不能将这次拆分理解为全部网络计算都已并行化。
 
-VM 使用另一组 Node worker。每个 VM worker 按需启动至多一个 QEMU，参数包含 `-machine none -m 0 -nodefaults -display none -qmp stdio`。它只承载 user/slirp 网络及 QMP，不运行客户机 CPU、内存或磁盘；每个 VM 拥有独立的 user 网络与 hub。真正运行客户机的 QEMU 只通过 `stream` 接入该后端。默认网段和地址保持 `10.0.2.0/24`、客户机 `10.0.2.15`、网关 `10.0.2.2`、DNS `10.0.2.3`。
+VM 使用另一组 Node worker。每个 VM worker 对应至多一个由宿主直接启动并持有进程句柄的 QEMU，参数包含 `-machine none -m 0 -nodefaults -display none -qmp stdio`。worker 通过有界 IPC 处理授权后的 QMP 控制流，客户机数据直接流经后端。它只承载 user/slirp 网络及 QMP，不运行客户机 CPU、内存或磁盘；每个 VM 拥有独立的 user 网络与 hub。真正运行客户机的 QEMU 只通过 `stream` 接入该后端。默认网段和地址保持 `10.0.2.0/24`、客户机 `10.0.2.15`、网关 `10.0.2.2`、DNS `10.0.2.3`。
 
 同一个 VM 的连接始终固定到一个 worker。多个 VM 可以分散到不同网络进程，一个 worker 也可以承载多个相互分开的 VM 网络；增加 worker 数量不意味着单个 VM 的 NAT 可以使用多个 CPU 核。隔离模式继续设置 user 后端的 `restrict` 并禁用 IPv6；非隔离 VM 按原配置选择 IPv6。SSH 和显式端口转发绑定宿主回环地址。
 
@@ -59,11 +59,13 @@ S3 必须同时显式提供托管 `requestHandler()` 和凭据。对象备份继
 
 VM 池每个 worker 固定最多 4 个 VM 租约，优先把新增 VM 分散到尚可创建的 worker，再在已有 worker 间分配。因此默认最多 8 个同时接入的 VM。宿主与 VM 两组池分开，数据负载不会消耗本地管理通道的 worker 配额。
 
-网络子进程上限为 `SAKURA_NETWORK_WORKERS + 2 × SAKURA_NETWORK_VM_WORKERS`，默认最多 8 个，其中最多 6 个 Node worker 和 2 个无客户机 CPU 的 QEMU。这不包含真正运行客户机的 QEMU、服务主进程、独立 CLI 或其他原生辅助进程。
+池配置允许的网络子进程上限为 `SAKURA_NETWORK_WORKERS + 2 × SAKURA_NETWORK_VM_WORKERS`，默认最多 8 个，其中最多 6 个 Node worker 和 2 个无客户机 CPU 的 QEMU。实际创建还受宿主统一 `process` 和 `network.worker` 预算约束；默认网络预算总量为 8，调高单个池的上限不会绕过总预算。VM worker 创建前一起预留 Node 和后端名额；扩容额度不足时可复用仍有容量的 worker，否则返回 `NETWORK_BUSY`。这不包含真正运行客户机的 QEMU、服务主进程、独立 CLI 或其他原生辅助进程，但宿主的全部受管子进程另外共享总进程预算。
 
 核心另有按 owner、操作种类和通道计算的租约限制：默认数据操作每类每 owner 256，管理操作每类每 owner 128；全局监听上限 128、接入连接上限 1024，单个受管 server 最多接入 256 条连接。超限返回 `NETWORK_BUSY`，不通过创建无界队列绕过限制。
 
 ## 故障、退出与诊断
+
+宿主只在原始进程句柄收到实际 `close` 后归还进程预算。无法确认退出时保留 `cleanup-pending` 和资源 ID，池的 `retryCleanup(resourceId)` 仅重试该句柄的清理，不按裸 PID 终止其它进程。Node worker 故障也由宿主回收其直接持有的后端，不依赖已死亡 worker 自报退出。
 
 worker 或其网络 QEMU 退出后，现有连接失败，受影响 VM 的租约被撤销并停止这些 VM。不会无声切换 NAT 后端，也不会自动重放请求或已建立连接。其他 worker 上的连接继续按自身状态运行；后续新的宿主连接可按容量创建新的 worker。需要重新运行的 VM 由用户重新启动。
 

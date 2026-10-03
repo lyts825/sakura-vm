@@ -25,6 +25,7 @@ export type VmNetworkLease = {
   }>;
   readonly signal: AbortSignal;
   readonly connected: boolean;
+  readonly resources?: Readonly<{ worker: string; backend?: string }>;
   setConnected(connected: boolean): Promise<void>;
   forward(verb: 'add' | 'remove', port: { host: number; guest: number }): Promise<void>;
   renew(generation: string): Promise<VmNetworkLease>;
@@ -101,6 +102,9 @@ export class VmNetworkBackend {
       const lease: VmNetworkLease = {
         vmId: options.vmId,
         generation,
+        get resources() {
+          return pin.resources();
+        },
         get netdev() {
           return netdev;
         },
@@ -223,11 +227,12 @@ export class VmNetworkBackend {
     }
   }
   snapshot() {
-    return [...this.leases.values()].map(({ vmId, generation, policy, connected }) => ({
+    return [...this.leases.values()].map(({ vmId, generation, policy, connected, resources }) => ({
       vmId,
       generation,
       policy,
       connected,
+      resources,
     }));
   }
   async close() {

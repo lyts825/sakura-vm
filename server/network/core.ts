@@ -75,13 +75,15 @@ export class NetworkRuntime {
         throw new Error(`Invalid network limit: ${name}`);
     if (options.scaleAt > options.connectionsPerWorker)
       throw new Error('Network scale threshold exceeds connection capacity');
-    this.host = new HostNetworkPool(options);
+    this.host = new HostNetworkPool({ ...options, owner: 'core:network-host' });
     this.vm = new VmNetworkBackend(
       new HostNetworkPool({
         maxWorkers: options.maxVmWorkers,
         connectionsPerWorker: 4,
         scaleAt: 1,
         idleMs: options.idleMs,
+        owner: 'core:network-vm',
+        reserveBackend: true,
       }),
     );
   }
@@ -371,6 +373,9 @@ export class NetworkRuntime {
           return lease.netdev;
         },
         signal: lease.signal,
+        get resources() {
+          return lease.resources;
+        },
         get connected() {
           return lease.connected;
         },
@@ -405,7 +410,7 @@ export class NetworkRuntime {
     return {
       state: this.closed ? 'closed' : this.draining ? 'draining' : 'running',
       limits: { ...this.options, authorize: undefined },
-      // Each VM worker has one Node supervisor and at most one CPU-less QEMU backend.
+      // Node workers and CPU-less backends share the host's global process/network budgets.
       maxChildProcesses: this.options.maxWorkers + 2 * this.options.maxVmWorkers,
       hostWorkers: this.host.snapshot(),
       vmWorkers: this.vm.pool.snapshot(),
@@ -434,7 +439,10 @@ export class NetworkRuntime {
       for (const result of [...disposed, ...closed])
         if (result.status === 'rejected') errors.push(result.reason);
       if (errors.length) throw new AggregateError(errors, 'Network cleanup failed');
-    })());
+    })().catch((error) => {
+      this.closeTask = undefined;
+      throw error;
+    }));
   }
 }
 
