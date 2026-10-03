@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
+import { writeStore } from './local-store.ts';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { freePort, qmp } from './qmp.ts';
@@ -13,6 +14,7 @@ import { ROOT, DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { qemuCpuModel } from '../shared/hardware.ts';
 import { processSupervisor, type ProcessAdmission } from './process-supervisor.ts';
+import { configureHostProcessNativeOwner } from './host-process.ts';
 
 type RunOptions = {
   signal?: AbortSignal;
@@ -37,12 +39,12 @@ export async function createRuntime() {
   const qemuIoAvailable = existsSync(binaries['sakura-io']);
   const data = join(DATA, 'posixloom');
   await mkdir(join(data, 'config'), { recursive: true });
-  await writeFile(
+  await writeStore(
     join(data, 'config/config.json'),
-    JSON.stringify({
+    {
       process: { maxConcurrent: 16, maxConcurrentPerClient: 16, defaultTimeoutMs: 30000 },
       updates: { enabled: false, autoApply: false },
-    }),
+    },
   );
   process.env.POSIXLOOM_DATA_ROOT = data;
   const runtime = await RuntimeManager.create(join(ROOT, '.vendor/posixloom'), {
@@ -76,6 +78,7 @@ export async function createRuntime() {
     throw new AppError('请先构建 PosixLoom Native Host：npm run setup', 503);
   }
   const service = new PosixLoomService(runtime);
+  configureHostProcessNativeOwner(runtime.findNativeHost());
   const execute = async (tool: keyof typeof binaries, args: string[], options: RunOptions) => {
     if (!Object.hasOwn(binaries, tool) || !existsSync(binaries[tool]))
       throw new AppError('未登记或不可用的 QEMU 工具', 503);

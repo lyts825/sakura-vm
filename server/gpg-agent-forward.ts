@@ -1,7 +1,6 @@
-import { execFile } from 'node:child_process';
+import { hostExecFile } from './host-process.ts';
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, win32 } from 'node:path';
-import { promisify } from 'node:util';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
@@ -14,7 +13,6 @@ import { redactValues } from './secrets.ts';
 import { GpgAgentScopes } from './gpg-agent-scope.ts';
 import { captureHostGpgSource, OwnedGpgForward, type GpgHostSnapshot } from './gpg-agent-host.ts';
 
-const execFileAsync = promisify(execFile);
 
 export const gpgAgentForwardInput = z.object({
   command: z.string().min(1).max(8192),
@@ -46,10 +44,13 @@ export async function hostGpgExtraSocket() {
   candidates.push('gpgconf');
   for (const candidate of candidates) {
     try {
-      const { stdout } = await execFileAsync(candidate, ['--list-dirs', 'agent-extra-socket'],
-        { timeout: 5000, maxBuffer: 4096, windowsHide: true });
+      const { stdout } = await hostExecFile('gpg-discovery', candidate, ['--list-dirs', 'agent-extra-socket'],
+        { timeout: 5000, maxBuffer: 4096 });
       if (stdout.trim()) return normalizeSocket(stdout);
-    } catch { /* Query another installed client; never autostart an Agent. */ }
+    } catch (error) {
+      if (error instanceof AppError && error.status === 503) throw error;
+      /* Query another installed client; never autostart an Agent. */
+    }
   }
   return '';
 }

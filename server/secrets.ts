@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { hostExecFile } from './host-process.ts';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
@@ -23,42 +23,22 @@ export type Protector = (operation: 'protect' | 'unprotect', value: string) => P
 const dpapiScript = `$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Security; $request=[Console]::In.ReadToEnd() | ConvertFrom-Json; $bytes=[Convert]::FromBase64String($request.value); $entropy=[Text.Encoding]::UTF8.GetBytes('Sakura private configuration v1'); $scope=[Security.Cryptography.DataProtectionScope]::CurrentUser; if ($request.operation -eq 'protect') { $result=[Security.Cryptography.ProtectedData]::Protect($bytes,$entropy,$scope) } else { $result=[Security.Cryptography.ProtectedData]::Unprotect($bytes,$entropy,$scope) }; [Console]::Out.Write([Convert]::ToBase64String($result))`;
 export const dpapi: Protector = async (operation, value) => {
   if (process.platform !== 'win32') throw new AppError('私密配置需要 Windows 用户账户保护');
-  return new Promise((resolve, reject) => {
-    const processPath = join(
-      process.env.SystemRoot || 'C:\\Windows',
-      'System32/WindowsPowerShell/v1.0/powershell.exe',
+  const processPath = join(
+    process.env.SystemRoot || 'C:\\Windows',
+    'System32/WindowsPowerShell/v1.0/powershell.exe',
+  );
+  try {
+    const result = await hostExecFile(
+      'dpapi',
+      processPath,
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', dpapiScript],
+      { timeout: 15000, maxBuffer: 65536, input: JSON.stringify({ operation, value }) },
     );
-    const child = spawn(processPath, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', dpapiScript], {
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    let output = '',
-      settled = false;
-    const timer = setTimeout(() => {
-      child.kill();
-      finish(new AppError('Windows 数据保护超时'));
-    }, 15000);
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      error ? reject(error) : resolve(output.trim());
-    };
-    child.on('error', () => finish(new AppError('无法调用 Windows 数据保护')));
-    child.stdin.on('error', () => finish(new AppError('无法传递数据给 Windows 数据保护')));
-    child.stdout.on('data', (data: Buffer) => {
-      output += data.toString();
-      if (output.length > 65536) {
-        child.kill();
-        finish(new AppError('数据保护响应过大'));
-      }
-    });
-    child.stderr.resume();
-    child.on('close', (code) =>
-      finish(code === 0 ? undefined : new AppError('无法解密或保护配置，请使用创建它的 Windows 账户')),
-    );
-    child.stdin.end(JSON.stringify({ operation, value }));
-  });
+    return result.stdout.trim();
+  } catch (cause) {
+    if (cause instanceof AppError && cause.status === 503) throw cause;
+    throw new AppError('无法解密或保护配置，请使用创建它的 Windows 账户');
+  }
 };
 export class Secrets {
   constructor(

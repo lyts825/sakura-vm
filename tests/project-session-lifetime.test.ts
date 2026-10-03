@@ -7,6 +7,7 @@ import { ProjectSessionLifetime } from '../server/project-session-lifetime.ts';
 import { ExecutionScope } from '../server/execution-scope.ts';
 import { vmLifetime } from '../server/vm-lifetime.ts';
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
+import { withOperationCheck } from '../server/operation-context.ts';
 
 const deferred = () => {
   let resolve!: () => void;
@@ -197,6 +198,50 @@ test('a retained session cannot admit or control a replacement Live even when it
     code: 'PROJECT_IDENTITY_HOST_CHANGED',
   });
   assert.equal(f.used(), 1);
+  await session.close();
+  await f.lifetime.close();
+  f.governor.close();
+});
+
+test('revoked request cannot admit sessions but original full-receipt cleanup retains its authority', async () => {
+  const f = fixture();
+  let cleaned = false;
+  const session = await ProjectSessionLifetime.acquire({
+    ...f,
+    kind: 'dap',
+    cleanup: async (receipt) => {
+      assert.deepEqual(receipt, f.receipt);
+      const lease = await f.governor.acquire({
+        owner: 'original-cleanup',
+        kind: 'cleanup',
+        label: 'original',
+        cost: { execution: 1 },
+      });
+      lease.release();
+      cleaned = true;
+    },
+  });
+  await withOperationCheck(
+    async () => {
+      throw new Error('request revoked');
+    },
+    async () => {
+      await assert.rejects(
+        ProjectSessionLifetime.acquire({
+          ...f,
+          kind: 'dap',
+          receipt: { ...f.receipt, runId: randomUUID() },
+          cleanup: async () => {},
+        }),
+        /request revoked/,
+      );
+      await ProjectSessionLifetime.retireOriginal(f.machines, f.vmId, f.receipt, async () =>
+        assert.fail('lost owner'),
+      );
+    },
+  );
+  assert.equal(cleaned, true);
+  assert.equal(f.used(), 0);
   await session.close();
   await f.lifetime.close();
   f.governor.close();

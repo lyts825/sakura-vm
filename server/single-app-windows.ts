@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ProjectSessionLifetime } from './project-session-lifetime.ts';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
@@ -78,6 +79,13 @@ export const singleAppRunRecordSchema = z.object({ version: z.literal(1), id: z.
     ctx.addIssue({ code: 'custom', message: '单应用持久运行记录不完整' });
 });
 type Session = z.infer<typeof singleAppRunRecordSchema>;
+function sessionReceipt(session: Session) {
+  return { runId: session.id, bootId: session.bootId, projectId: session.projectId, vmId: session.vmId,
+    program: session.program, args: session.args, resolution: session.resolution, clipboard: session.clipboard,
+    startedAt: session.startedAt, directory: session.directory, networkIsolation: session.networkIsolation,
+    configVersion: session.configVersion, build: session.build, nativeBuild: session.nativeBuild,
+    identity: session.identity, run: session.run };
+}
 const journalSchema = z.object({ version: z.literal(1), sessions: z.array(singleAppRunRecordSchema).max(1024) }).strict()
   .refine(value => new Set(value.sessions.map(session => session.id)).size === value.sessions.length);
 type Live = NonNullable<ReturnType<Machines['live']['get']>>;
@@ -205,6 +213,10 @@ export class SingleAppWindows {
     for (const listener of listeners || []) listener();
   }
   private async retireLease(session: Session) {
+    return ProjectSessionLifetime.retireOriginal(this.machines, session.vmId, sessionReceipt(session),
+      () => this.retireLeaseNative(session));
+  }
+  private async retireLeaseNative(session: Session) {
     this.disconnect(session.id); clearTimeout(this.watchers.get(session.id)); this.watchers.delete(session.id);
     await this.leases.get(session.id)?.(); this.leases.delete(session.id); this.livePins.delete(session.id);
   }
@@ -409,11 +421,25 @@ export class SingleAppWindows {
         // The stable UUID and captured boot/account precede native prepare.
         await this.save(id);
         published = true;
+        const originalSession = session;
+        const lifetime = await ProjectSessionLifetime.acquire({ machines: this.machines, vmId: id,
+          live, kind: 'single-app', receipt: sessionReceipt(session), signal: abort,
+          cleanup: async () => {
+            await this.sync(id);
+            const saved = this.sessions.get(originalSession.id);
+            if (!saved) throw new AppError('单应用原归属登记缺失', 503, 'SINGLE_APP_CLEANUP_FAILED');
+            matchOriginal(originalSession, saved);
+            if (saved.phase === 'stopped') await this.retireLeaseNative(originalSession);
+            else await this.terminateNative(originalSession);
+          } });
+        return await lifetime.perform(async abort => {
+        const session = originalSession;
         const run = projectIdentityRunSchema.parse(await this.control.prepareRun(id, session.build,
           { id: session.id, identity, bootId: session.bootId, nativeBuild: session.nativeBuild }, abort));
         singleAppRunRecordSchema.parse({ ...session, run }); origin({ ...session, run });
         session.run = run;
         await this.save(id);
+        lifetime.pin(sessionReceipt(session));
         await this.validateCapture(id, live, scope, captured.configVersion, abort);
         session.receipt = this.matchReceipt(session, await this.control.call(id, build, 'prepare', origin(session), undefined, abort));
         session.phase = 'prepared'; await this.save(id); await this.validateCapture(id, live, scope, captured.configVersion, abort);
@@ -425,6 +451,7 @@ export class SingleAppWindows {
         if (this.closed || this.machines.closing) throw new AppError('应用窗口服务正在关闭', 503);
         this.watch(session.id);
         return this.view(session);
+        }, abort);
       } catch (error) {
         if (session && retained && !published) {
           // No native prepare was issued. A failed host intent write never
@@ -440,6 +467,10 @@ export class SingleAppWindows {
     this.pending.add(pending); try { return await pending; } finally { this.pending.delete(pending); }
   }
   private async terminate(session: Session) {
+    return ProjectSessionLifetime.retireOriginal(this.machines, session.vmId, sessionReceipt(session),
+      () => this.terminateNative(session));
+  }
+  private async terminateNative(session: Session) {
     clearTimeout(this.watchers.get(session.id)); this.watchers.delete(session.id);
     this.disconnect(session.id); session.phase = 'stopping'; await this.save(session.vmId);
     try {
@@ -456,7 +487,7 @@ export class SingleAppWindows {
             throw new AppError('原单应用不存在证明的客户机 boot 已变化', 503, 'SINGLE_APP_CLEANUP_UNCONFIRMED');
           singleAppRunRecordSchema.parse({ ...session, absence: recovered.absence, phase: 'stopped' });
           session.absence = recovered.absence; session.phase = 'stopped';
-          await this.save(session.vmId); await this.retireLease(session); return;
+          await this.save(session.vmId); await this.retireLeaseNative(session); return;
         }
         const run = projectIdentityRunSchema.parse({ ...recovered.run!, phase: 'active' });
         singleAppRunRecordSchema.parse({ ...session, run }); origin({ ...session, run });
@@ -474,7 +505,7 @@ export class SingleAppWindows {
         throw new AppError('单应用原运行关闭回执不符', 503, 'SINGLE_APP_CLEANUP_UNCONFIRMED');
       session.receipt = stopped.receipt; session.retirement = stopped.retirement; session.closure = stopped.run;
       session.phase = 'stopped'; delete session.lastError;
-      await this.save(session.vmId); await this.retireLease(session);
+      await this.save(session.vmId); await this.retireLeaseNative(session);
     } catch (error) {
       session.phase = 'cleanup-failed'; session.lastError = error instanceof AppError ? error.code || 'SINGLE_APP_CLEANUP_FAILED' : 'SINGLE_APP_CLEANUP_FAILED';
       await this.save(session.vmId); throw error;

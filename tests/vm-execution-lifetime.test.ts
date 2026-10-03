@@ -8,6 +8,7 @@ import { ExecutionScope } from '../server/execution-scope.ts';
 import { VmLifetime, vmLifetime, registerVmBootProvider, vmBootProviders } from '../server/vm-lifetime.ts';
 import type { Live } from '../server/vm-state.ts';
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
+import { withOperationCheck } from '../server/operation-context.ts';
 
 const deferred = () => {
   let resolve!: () => void;
@@ -434,6 +435,35 @@ test('only the original cleanup closure can retire a failed execution after a su
   assert.equal(f.lifetime.active, 0);
   await recover();
   assert.equal(attempts, 3);
+  f.governor.close();
+});
+
+test('execution cleanup uses its original capability after request authority is revoked', async () => {
+  const f = fixture(2);
+  let revoked = false,
+    cleaned = false;
+  await withOperationCheck(
+    async () => {
+      if (revoked) throw new Error('authority revoked');
+    },
+    () =>
+      ExecutionScope.run(f.options, async (scope) => {
+        scope.deferCleanup(async () => {
+          const child = await f.governor.acquire({
+            owner: 'original-cleanup',
+            kind: 'cleanup',
+            label: 'receipt',
+            cost: { execution: 1 },
+          });
+          assert.equal(f.used(), 2);
+          child.release();
+          cleaned = true;
+        });
+        revoked = true;
+      }),
+  );
+  assert.equal(cleaned, true);
+  assert.equal(f.used(), 0);
   f.governor.close();
 });
 

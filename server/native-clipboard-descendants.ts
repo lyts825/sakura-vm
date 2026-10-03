@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { processSupervisor, spawnObserved as spawn } from './process-supervisor.ts';
 import { z } from 'zod';
 import type { NativeClipboardProcess } from '../shared/native-clipboard.ts';
 
@@ -49,11 +49,12 @@ export const nativeClipboardDescendants: NativeClipboardDescendantFactory = asyn
   receive,
   failed,
 ) => {
-  const child = spawn(file, ['descendants', owner], {
+  const owned = await processSupervisor.observe('clipboard-descendants', () => spawn(file, ['descendants', owner], {
     shell: false,
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
-  });
+  }), { owner: `clipboard:${owner}` });
+  const child = owned.child as import('node:child_process').ChildProcessWithoutNullStreams;
   let alive = true,
     closing = false,
     output = '',
@@ -65,12 +66,7 @@ export const nativeClipboardDescendants: NativeClipboardDescendantFactory = asyn
   });
   const active = new Map<string, Promise<void>>();
   let closure: NativeClipboardDescendantChannel['closure'];
-  const closed = new Promise<void>((resolve) =>
-    child.once('close', (code, signal) => {
-      closure = { code, signal, at: new Date().toISOString() };
-      resolve();
-    }),
-  );
+  child.once('close', (code, signal) => { closure = { code, signal, at: new Date().toISOString() }; });
   const stop = (error: Error) => {
     rejectReady(error);
     if (!closing) failed(error);
@@ -154,6 +150,10 @@ export const nativeClipboardDescendants: NativeClipboardDescendantFactory = asyn
   const timeout = setTimeout(() => stop(new Error('子进程策略通道启动超时')), 15000);
   try {
     await ready;
+  } catch (error) {
+    child.stdin.end(); child.kill();
+    await owned.waitForClose();
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -170,7 +170,7 @@ export const nativeClipboardDescendants: NativeClipboardDescendantFactory = asyn
       child.stdin.end();
       const timeout = setTimeout(() => child.kill(), 5000);
       try {
-        await closed;
+        await owned.waitForClose(10000);
         await Promise.allSettled([...active.values()]);
       } finally {
         clearTimeout(timeout);

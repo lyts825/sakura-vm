@@ -1,4 +1,5 @@
-import { execFile } from 'node:child_process';
+import { hostProcess } from './host-process.ts';
+import { AppError } from '../shared/errors.ts';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -25,11 +26,14 @@ async function regularFirmware(path: string) {
   return Boolean(info?.isFile() && info.size >= 65536);
 }
 
-function commandOutput(file: string, args: string[]) {
-  return new Promise<{ ok: boolean; output: string }>((resolve) => {
-    execFile(file, args, { timeout: 5000, maxBuffer: 256 * 1024, windowsHide: true },
-      (error, stdout, stderr) => resolve({ ok: !error, output: `${stdout}\n${stderr}` }));
-  });
+async function commandOutput(file: string, args: string[]) {
+  try {
+    const result = await hostProcess('trusted-boot-probe', file, args, { timeout: 5000, maxBuffer: 256 * 1024 });
+    return { ok: result.code === 0, output: `${result.stdout}\n${result.stderr}` };
+  } catch (error) {
+    if (error instanceof AppError && error.status === 503) throw error;
+    return { ok: false, output: '' };
+  }
 }
 
 export function supportsQmpRebootAction(version: string) {

@@ -15,6 +15,7 @@ import { AppError } from '../server/model.ts';
 import { Jobs } from '../server/jobs.ts';
 import { projectVersion, type Project, type Workspaces } from '../server/workspaces.ts';
 import type { Machines } from '../server/machines.ts';
+import { hostRuntime } from '../server/host-runtime/index.ts';
 import { identityFor, runFor } from './project-protocol-fixture.ts';
 
 const directory = await mkdtemp(join(tmpdir(), 'sakura-owned-protocol-'));
@@ -123,11 +124,15 @@ test('owned SESSION2 admission persists own intent before lower intent and sends
 
 test('detached child prevents native closure and retains original ticket plus leases until explicit retry', async () => {
   const f = await fixture(), owner = await f.open(), original = owner.record(); f.setCleanupFailure(true);
+  const budget = () => hostRuntime.snapshot().resources.find(value => value.owner === `session:${original.runId}`);
+  assert.equal(budget()?.kind, 'execution.session');
   await assert.rejects(owner.close(), { status: 503, code: 'GUEST_TASK_CLEANUP_FAILED' });
   assert.deepEqual((await f.record()).run, original.run); assert.equal((await f.record()).phase, 'review');
   assert.equal(f.nativeClosed(), false); assert.deepEqual(f.leases(), [1, 1]);
+  assert.equal(budget()?.state, 'cleanup-pending');
   assert.equal(f.calls.includes('native-close-after-scope'), false); assert.equal(f.calls.includes('root-owner-retire'), false);
   f.setCleanupFailure(false); await owner.close(); assert.deepEqual(f.leases(), [0, 0]); assert.equal((await f.archived()).phase, 'closed');
+  assert.equal(budget(), undefined);
 });
 
 test('native cleanup failure preserves full original scope receipt and status code', async () => {

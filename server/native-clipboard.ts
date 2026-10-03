@@ -1,5 +1,5 @@
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
+import { hostExecFile } from './host-process.ts';
+import { processSupervisor, spawnObserved as spawn } from './process-supervisor.ts';
 import { randomUUID } from 'node:crypto';
 import { lstat, open, readFile } from 'node:fs/promises';
 import { dirname, join, win32 } from 'node:path';
@@ -186,7 +186,6 @@ const assetsSchema = z
 const flags = (value: ClipboardRule) =>
   (value.copy ? 1 : 0) | (value.paste ? 2 : 0) | (value.files ? 4 : 0) | (value.sensitive ? 8 : 0);
 const key = (value: { pid: number; created: string }) => `${value.pid}:${value.created}`;
-const execute = promisify(execFile);
 export type NativeClipboardLaunchHooks = {
   prepared: (process: NativeClipboardProcess) => Promise<void>;
   attached: (process: NativeClipboardProcess, state: z.infer<typeof nativeState>) => Promise<void>;
@@ -210,12 +209,12 @@ const launchIdentity = z
 // A lost commit reply may leave an enforced child alive; retain its journal.
 export const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, signal) => {
   if (signal.aborted) throw new AppError('受控启动已取消', 503);
-  const child = spawn(file, args, {
+  const owned = await processSupervisor.observe('clipboard-launch', () => spawn(file, args, {
     shell: false,
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+  }), { signal });
+  const child = owned.child as import('node:child_process').ChildProcessWithoutNullStreams;
   let output = '',
     bytes = 0,
     sequence = 0,
@@ -316,19 +315,21 @@ export const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, sig
     child.stdout.destroy();
     child.stderr.destroy();
     if (child.exitCode === null && child.signalCode === null) child.kill();
-    await closed;
+    await owned.waitForClose();
   }
 };
 export async function nativeCommand(file: string, args: string[]): Promise<unknown> {
   try {
-    const { stdout } = await execute(file, args, {
-      windowsHide: true,
+    const { stdout } = await hostExecFile('clipboard-command', file, args, {
       timeout: 70000,
       maxBuffer: 8 * 1024 * 1024,
-      encoding: 'utf8',
+      // Status validates an already captured process birth; disabling only retires
+      // the owner's existing policy. New attachment remains ordinary admission.
+      lane: args[0] === 'status' || (args[0] === 'apply' && args[8] === '0') ? 'control' : 'background',
     });
     return JSON.parse(stdout);
   } catch (error) {
+    if (error instanceof AppError && error.code === 'HOST_PROCESS_CLEANUP_PENDING') throw error;
     const output = (error as { stdout?: string }).stdout;
     let reason = '原生剪贴板工具未完成';
     if (output) {

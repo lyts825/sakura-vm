@@ -1,6 +1,7 @@
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { AppError } from '../shared/errors.ts';
+import { hostProcess } from './host-process.ts';
+import { processSupervisor, spawnObserved as spawn } from './process-supervisor.ts';
 
 export type RegistryEntry = { path: string; name: string; value: string };
 export type RegistryApply = (previous: RegistryEntry[], next: RegistryEntry[]) => Promise<void>;
@@ -87,59 +88,46 @@ export function systemExecutable(name: 'powershell.exe' | 'explorer.exe' | 'note
 export function windowsRegistry(root = 'Software\\Classes'): RegistryApply {
   if (root !== 'Software\\Classes' && !/^Software\\Sakura\\IntegrationTests\\[a-f0-9-]{36}$/.test(root))
     throw new Error('Invalid registry root');
-  return (previous, next) =>
-    new Promise((resolve, reject) => {
-      const child = spawn(
-        systemExecutable('powershell.exe'),
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-WindowStyle',
-          'Hidden',
-          '-EncodedCommand',
-          Buffer.from(registryScript, 'utf16le').toString('base64'),
-        ],
-        { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
+  return async (previous, next) => {
+    const result = await hostProcess(
+      'windows-registry',
+      systemExecutable('powershell.exe'),
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-EncodedCommand',
+        Buffer.from(registryScript, 'utf16le').toString('base64'),
+      ],
+      { timeout: 30000, maxBuffer: 65536, input: JSON.stringify({ root, previous, next }) },
+    );
+    if (result.code !== 0 || result.stdout !== '{"ok":true}')
+      throw new AppError(
+        result.stdout.includes('"conflict"')
+          ? '注册项已被其他程序修改，请先恢复原值后重试；未覆盖其他程序设置'
+          : 'Windows 集成注册未完成，请重试修复',
+        409,
       );
-      const chunks: Buffer[] = [];
-      let bytes = 0;
-      const timer = setTimeout(() => child.kill(), 30000);
-      child.stdout.on('data', (data: Buffer) => {
-        bytes += data.length;
-        if (bytes > 65536) child.kill();
-        else chunks.push(data);
-      });
-      child.stderr.resume();
-      child.stdin.on('error', () => {});
-      child.once('error', () => {
-        clearTimeout(timer);
-        reject(new AppError('无法运行 Windows 注册表工具', 503));
-      });
-      child.once('close', (code) => {
-        clearTimeout(timer);
-        const result = Buffer.concat(chunks).toString('utf8');
-        if (code === 0 && result === '{"ok":true}') resolve();
-        else
-          reject(
-            new AppError(
-              result.includes('"conflict"')
-                ? '注册项已被其他程序修改，请先恢复原值后重试；未覆盖其他程序设置'
-                : 'Windows 集成注册未完成，请重试修复',
-              409,
-            ),
-          );
-      });
-      child.stdin.end(JSON.stringify({ root, previous, next }));
-    });
+  };
 }
 
-export function launchNative(file: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(file, args, { shell: false, windowsHide: true, detached: true, stdio: 'ignore' });
-    child.once('error', () => reject(new AppError('无法打开 Windows 程序，请检查编辑器是否安装', 503)));
-    child.once('spawn', () => {
-      child.unref();
-      resolve();
+export async function launchNative(file: string, args: string[]): Promise<void> {
+  const owned = await processSupervisor.observe('windows-user-application', () =>
+    spawn(file, args, { shell: false, windowsHide: true, detached: true, stdio: 'ignore' }),
+  );
+  const child = owned.child;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.once('error', () => reject(new AppError('无法打开 Windows 程序，请检查编辑器是否安装', 503)));
+      child.once('spawn', () => {
+        child.unref();
+        owned.handoffToUser();
+        resolve();
+      });
     });
-  });
+  } catch (error) {
+    await owned.waitForClose();
+    throw error;
+  }
 }

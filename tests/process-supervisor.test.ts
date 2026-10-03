@@ -5,7 +5,8 @@ import { PassThrough } from 'node:stream';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { HostRuntime } from '../server/host-runtime/index.ts';
-import { ProcessSupervisor } from '../server/process-supervisor.ts';
+import { ProcessSupervisor, spawnObserved } from '../server/process-supervisor.ts';
+import { withOperationCheck } from '../server/operation-context.ts';
 
 function deferred() {
   let resolve!: () => void;
@@ -205,4 +206,93 @@ test('a real dedicated helper is killed and accounted until its observed close',
   }
   assert.equal(host.snapshot().resources.length, 0);
   assert.ok(child.exitCode !== null || child.signalCode !== null);
+});
+
+test('observed protocol error and exit retain quota until physical close, including a late receipt', async () => {
+  const host = governor(),
+    fake = fakeChild(),
+    supervisor = new ProcessSupervisor(host);
+  const owned = await supervisor.observe('gpg-native-relay', () => fake.child);
+  fake.child.emit('error', new Error('protocol stopped'));
+  fake.child.emit('exit', 1, null);
+  await assert.rejects(owned.waitForClose(5), { code: 'HOST_PROCESS_CLEANUP_PENDING' });
+  assert.equal(host.snapshot().resources[0].state, 'cleanup-pending');
+  await assert.rejects(
+    supervisor.observe('gpg-native-relay', () => assert.fail('over capacity')),
+    { code: 'RESOURCE_CAPACITY' },
+  );
+  fake.child.emit('close', 1, null);
+  assert.equal((await owned.waitForClose()).failure, 'protocol stopped');
+  assert.equal(host.snapshot().resources.length, 0);
+  host.close();
+});
+
+test('raw launcher capability expires after one synchronous admitted spawn and constructor failure awaits cleanup', async () => {
+  assert.throws(() => spawnObserved(process.execPath, ['--version']), /admission/);
+  const host = governor(),
+    supervisor = new ProcessSupervisor(host);
+  let child!: ChildProcess, detached!: Promise<void>;
+  const owned = await supervisor.observe('gpg-native-relay', () => {
+    child = spawnObserved(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    assert.throws(() => spawnObserved(process.execPath, ['--version']), /admission/);
+    detached = Promise.resolve().then(() => {
+      assert.throws(() => spawnObserved(process.execPath, ['--version']), /admission/);
+    });
+    return child;
+  });
+  await detached;
+  child.kill();
+  await owned.waitForClose();
+  await assert.rejects(
+    supervisor.observe('gpg-native-relay', () => {
+      child = spawnObserved(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      throw new Error('bad constructor frame');
+    }),
+    /bad constructor frame/,
+  );
+  assert.ok(child.exitCode !== null || child.signalCode !== null);
+  assert.equal(host.snapshot().resources.length, 0);
+  host.close();
+});
+
+test('only explicitly handed-off user applications can release a still-running observed child', async () => {
+  const host = governor(),
+    supervisor = new ProcessSupervisor(host),
+    fake = fakeChild();
+  const owned = await supervisor.observe('clipboard-command', () => fake.child);
+  assert.throws(() => owned.handoffToUser(), /handed off/);
+  assert.equal(host.snapshot().resources.length, 1);
+  fake.child.emit('close', 0, null);
+  await owned.closed;
+  const user = await supervisor.observe('windows-user-application', () => fakeChild().child);
+  user.handoffToUser();
+  assert.equal(host.snapshot().resources.length, 0);
+  host.close();
+});
+
+test('helper admission rechecks authority while exact recovery retains control capacity', async () => {
+  const host = governor(),
+    supervisor = new ProcessSupervisor(host),
+    fake = fakeChild();
+  await withOperationCheck(
+    async () => {
+      throw new Error('authority revoked');
+    },
+    async () => {
+      await assert.rejects(
+        supervisor.observe('gpg-native-relay', () => assert.fail('unauthorized spawn')),
+        /authority revoked/,
+      );
+      const recovery = await supervisor.observe('gpg-native-relay', () => fake.child, { lane: 'control' });
+      fake.child.emit('close', 0, null);
+      await recovery.closed;
+    },
+  );
+  host.close();
 });

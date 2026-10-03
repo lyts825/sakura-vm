@@ -1,8 +1,8 @@
 import {
-  spawn,
   type ChildProcessWithoutNullStreams,
   type SpawnOptionsWithoutStdio,
 } from 'node:child_process';
+import { processSupervisor, spawnObserved as spawn, type ObservedHostProcess } from './process-supervisor.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join, win32, resolve } from 'node:path';
 import type { Duplex } from 'node:stream';
@@ -170,15 +170,35 @@ try{
 
 type ChildResult={code:number|null;signal:NodeJS.Signals|null};
 class ProcessOwner {
+  accounting?:ObservedHostProcess;
   readonly closed:Promise<ChildResult>;actual?:ChildResult;failed?:Error;
   constructor(readonly child:ChildProcessWithoutNullStreams){
     child.stdin.on('error',()=>{});child.stdout.on('error',()=>{});child.stderr.on('error',()=>{});
     this.closed=new Promise(resolve=>{child.once('error',error=>{this.failed=error;});child.once('close',(code,signal)=>{this.actual={code,signal};resolve(this.actual);});});
   }
-  async close(timeout:number){if(this.actual)return;this.child.stdin.destroy();this.child.stdout.resume();await boundedWait(this.closed,timeout,cleanupFailure);}
+  async close(timeout:number){if(this.actual)return;this.child.stdin.destroy();this.child.stdout.resume();
+    try{await boundedWait(this.closed,timeout,cleanupFailure);}catch(error){this.accounting?.cleanupPending(error);throw error;}}
+}
+async function closeGuardAfterHelper(helper:ProcessOwner|undefined,guard:ProcessOwner,timeout:number){
+  try{await helper?.close(timeout);}
+  catch(error){
+    guard.accounting?.cleanupPending(error);
+    // Keep the original asset handles until this exact helper ends; late physical
+    // closure then completes both retained owners without an unrelated ID release.
+    void helper!.closed.then(()=>guard.close(timeout)).catch(()=>{});
+    throw error;
+  }
+  await guard.close(timeout);
 }
 type GuardAsset={manifest:z.infer<typeof manifestSchema>;path:string;id:string;birthRoot:string;birthRootId:string};
 class AssetGuard extends ProcessOwner {
+  static async create(options:GpgHostOptions,signal?:AbortSignal,context?:GpgAgentContext,recoveryContext?:GpgAgentContext){
+    let guard!:AssetGuard;
+    const owned=await processSupervisor.observe('gpg-asset-guard',()=>{
+      guard=new AssetGuard(options,signal,context,recoveryContext);return guard.child;
+    },{signal,...(context?{owner:`gpg:${context.owner.runId}`}:{ }),...(recoveryContext?{lane:'control' as const}:{})});
+    guard.accounting=owned;return guard;
+  }
   private requests=new Map<string,{resolve:(value:any)=>void;reject:(error:Error)=>void}>();
   readonly asset:Promise<GuardAsset>;private cancelled=false;
   constructor(options:GpgHostOptions,signal?:AbortSignal,context?:GpgAgentContext,recoveryContext?:GpgAgentContext){
@@ -214,6 +234,13 @@ function validListenerClosure(value:ListenerClosure){
   return value.listenerClosure==='ssh-transport-closed'&&(value.originalListenerCreated===true||value.originalListenerCreated===null)&&value.actualSshClose===true&&value.actualUnforward===false;
 }
 class NativeRelay extends ProcessOwner {
+  static async create(asset:GuardAsset,operation:'capture'|'relay'|'identity'|'dead-check',body:Record<string,unknown>,options:GpgHostOptions){
+    let relay!:NativeRelay;
+    const owned=await processSupervisor.observe('gpg-native-relay',()=>{
+      relay=new NativeRelay(asset,operation,body,options);return relay.child;
+    },{...(operation==='dead-check'?{lane:'control' as const}:{})});
+    relay.accounting=owned;return relay;
+  }
   readonly ready:Promise<void>;readonly captured:Promise<z.infer<typeof sourcePins>>;readonly identified:Promise<z.infer<typeof processPin>>;identity?:z.infer<typeof processPin>;physicalClose=false;private events:Record<string,unknown>[]=[];
   constructor(asset:GuardAsset,operation:'capture'|'relay'|'identity'|'dead-check',body:Record<string,unknown>,options:GpgHostOptions){
     const create=options.spawn||spawn as SpawnHost;const child=create(asset.path,[operation],{windowsHide:true,stdio:'pipe'});super(child);
@@ -241,10 +268,10 @@ class NativeRelay extends ProcessOwner {
 export async function captureHostGpgSource(path?:string,signal?:AbortSignal,options:GpgHostOptions={}):Promise<GpgHostSnapshot>{
   signal?.throwIfAborted();if((options.platform||process.platform)!=='win32')throw unavailable('GPG_HOST_FORMAT_UNSUPPORTED','当前宿主平台不支持可核实的 GPG Agent 转发');
   if(!path)throw unavailable('GPG_HOST_SOURCE_UNAVAILABLE');const parsedPath=localPath.safeParse(path);if(!parsedPath.success)throw unavailable('GPG_HOST_FORMAT_UNSUPPORTED');path=parsedPath.data;
-  const guard=new AssetGuard(options,signal);let helper:NativeRelay|undefined;
-  try{const asset=await boundedWait(guard.asset,10000,()=>unavailable('GPG_HOST_ASSET_INVALID'));await guard.command('check');signal?.throwIfAborted();helper=new NativeRelay(asset,'capture',{path,timeoutSeconds:60},options);const abort=()=>helper?.child.stdin.destroy();signal?.addEventListener('abort',abort,{once:true});
+  const guard=await AssetGuard.create(options,signal);let helper:NativeRelay|undefined;
+  try{const asset=await boundedWait(guard.asset,10000,()=>unavailable('GPG_HOST_ASSET_INVALID'));await guard.command('check');signal?.throwIfAborted();helper=await NativeRelay.create(asset,'capture',{path,timeoutSeconds:60},options);const abort=()=>helper?.child.stdin.destroy();signal?.addEventListener('abort',abort,{once:true});
     try{const pins=await boundedWait(helper.captured,13000,()=>unavailable('GPG_HOST_SOURCE_UNAVAILABLE'));const exit=await boundedWait(helper.closed,5000,cleanupFailure);signal?.throwIfAborted();if(exit.code!==0||exit.signal||!helper.physicalClose)throw unavailable('GPG_HOST_SOURCE_REFUSED');const body={version:1 as const,pins,hostHelperSha256:asset.manifest.sha256};return frozen(gpgHostSnapshotSchema.parse({...body,hostSourceSha256:gpgHostSnapshotSha256(body)}));}finally{signal?.removeEventListener('abort',abort);}
-  }finally{await helper?.close(options.closeTimeoutMs||5000);await guard.close(options.closeTimeoutMs||5000);}
+  }finally{await closeGuardAfterHelper(helper,guard,options.closeTimeoutMs||5000);}
 }
 
 /** A run owns one SSH listener, a pinned asset guard, and at most eight relays. */
@@ -273,7 +300,7 @@ export class OwnedGpgForward {
     if((this.options.platform||process.platform)!=='win32')throw unavailable('GPG_HOST_FORMAT_UNSUPPORTED');
     if(this.admission)return this.admission;
     const operation=(async()=>{
-      this.guard=new AssetGuard(this.options,undefined,this.binding!.context);
+      this.guard=await AssetGuard.create(this.options,undefined,this.binding!.context);
       const asset=await boundedWait(this.guard.asset,10000,()=>unavailable('GPG_HOST_ASSET_INVALID'));
       if(asset.manifest.sha256!==this.hostHelperSha256||this.revoked)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
       await this.guard.command('check');this.signal.throwIfAborted();signal?.throwIfAborted();
@@ -294,7 +321,7 @@ export class OwnedGpgForward {
       this.onConnection=(raw,accept,reject)=>{
         const info=raw as {socketPath?:string};if(this.revoked||this.admissions>=8||performance.now()>=deadline||info.socketPath!==remoteSourcePath){try{reject();}catch{}return;}this.admissions++;
         let channel:Duplex|undefined,helper:NativeRelay|undefined;
-        const open=(async()=>{try{await this.guard!.command('check');if(this.revoked)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');helper=new NativeRelay(asset,'relay',{pins:this.snapshot.pins,context:this.binding!.context,timeoutSeconds:Math.max(1,Math.min(300,Math.ceil((deadline-performance.now())/1000)))},this.options);this.helpers.add(helper);void helper.closed.then(()=>this.helpers.delete(helper!));await boundedWait(helper.identified,5000,()=>unavailable('GPG_HOST_SOURCE_UNAVAILABLE'));if(this.revoked||machines.live.get(vmId)!==this.binding!.live||performance.now()>=deadline)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
+        const open=(async()=>{try{await this.guard!.command('check');if(this.revoked)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');helper=await NativeRelay.create(asset,'relay',{pins:this.snapshot.pins,context:this.binding!.context,timeoutSeconds:Math.max(1,Math.min(300,Math.ceil((deadline-performance.now())/1000)))},this.options);this.helpers.add(helper);void helper.closed.then(()=>this.helpers.delete(helper!));await boundedWait(helper.identified,5000,()=>unavailable('GPG_HOST_SOURCE_UNAVAILABLE'));if(this.revoked||machines.live.get(vmId)!==this.binding!.live||performance.now()>=deadline)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
           const birthIdentity={...helper.identity!,hostHelperSha256:this.hostHelperSha256,hostSourceSha256:this.hostSourceSha256};const receipt:GpgHostHelperReceipt={...birthIdentity,actualClose:false,exitCode:null,signal:null,physicalSocketClose:null};this.receipts.push(receipt);const observed=helper;void helper.closed.then(result=>{receipt.actualClose=true;receipt.exitCode=result.code;receipt.signal=result.signal;receipt.physicalSocketClose=observed.physicalClose;});
           const born=await this.guard!.command('birth',{...birthIdentity,context:this.binding!.context});if(born.event!=='BIRTH_RECORDED'||!filePin.shape.id.safeParse(born.fileId).success||!digest.safeParse(born.sha256).success||born.path!==join(asset.birthRoot,born.id+'.json'))throw unavailable('GPG_HOST_PROTOCOL_INVALID');receipt.birth={path:born.path,fileId:born.fileId,sha256:born.sha256};
           if(this.revoked||performance.now()>=deadline)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');helper.authorize({birthRoot:asset.birthRoot,birthRootId:asset.birthRootId,relative:born.id+'.json',fileId:born.fileId,sha256:born.sha256,context:this.binding!.context,hostSourceSha256:this.hostSourceSha256,hostHelperSha256:this.hostHelperSha256});await boundedWait(helper.ready,9000,()=>unavailable('GPG_HOST_SOURCE_UNAVAILABLE'));if(this.revoked||machines.live.get(vmId)!==this.binding!.live||performance.now()>=deadline)throw unavailable('PROJECT_IDENTITY_HOST_CHANGED');
@@ -327,7 +354,7 @@ export class OwnedGpgForward {
 export async function closeGpgHostLease(context:GpgAgentContext,options:GpgHostOptions={}){
   const timeout=options.closeTimeoutMs||5000;
   if((options.platform||process.platform)!=='win32')throw cleanupFailure();
-  const guard=new AssetGuard(options,undefined,undefined,context);let active:NativeRelay|undefined;
+  const guard=await AssetGuard.create(options,undefined,undefined,context);let active:NativeRelay|undefined;
   try{
     const asset=await boundedWait(guard.asset,10000,cleanupFailure);
     if(asset.manifest.sha256!==context.resource.hostHelperSha256)throw cleanupFailure();
@@ -346,7 +373,7 @@ export async function closeGpgHostLease(context:GpgAgentContext,options:GpgHostO
     for(;;){
       let allDead=ledger.originalGuardDead===true;
       for(const birth of ledger.births){
-        await guard.command('check');active=new NativeRelay(asset,'dead-check',{identity:birth.record},options);
+        await guard.command('check');active=await NativeRelay.create(asset,'dead-check',{identity:birth.record},options);
         const result=await boundedWait(active.closed,timeout,cleanupFailure);if(result.code!==0||result.signal)throw cleanupFailure();
         const observation=active.metadata.find(event=>event.event==='DEAD_CHECK');if(typeof observation?.originalDead!=='boolean')throw cleanupFailure();if(!observation.originalDead)allDead=false;active=undefined;
       }
@@ -354,5 +381,5 @@ export async function closeGpgHostLease(context:GpgAgentContext,options:GpgHostO
     }
     // No process is terminated. PID reuse proves only the original birth ended.
   }catch{throw cleanupFailure();}
-  finally{await active?.close(timeout);await guard.close(timeout);}
+  finally{await closeGuardAfterHelper(active,guard,timeout);}
 }

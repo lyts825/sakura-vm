@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { AppError } from '../server/model.ts';
 import { SingleAppWindows } from '../server/single-app-windows.ts';
 import { singleAppFixture } from './single-app-fixture.ts';
+import { hostRuntime } from '../server/host-runtime/index.ts';
 
 test('native prepare lost ACK recovers only the same existing UUID and closes it without relaunch or double release', async () => {
   const f = await singleAppFixture();
@@ -80,11 +81,15 @@ test('forged endpoint or stop cgroup receipt never releases the original lease o
   const f = await singleAppFixture();
   try {
     const session = await f.apps.start(f.id, { program: 'xterm' }); f.faults.endpointChanged = true;
+    const budget = () => hostRuntime.snapshot().resources.find(value => value.owner === `session:${session.id}`);
+    assert.equal(budget()?.kind, 'execution.session');
     await assert.rejects(f.apps.port(f.id, session.id), /监听已变化/);
     f.faults.endpointChanged = false; f.faults.stopForeignRun = true;
     await assert.rejects(f.apps.stop(f.id, session.id), /关闭回执不符/); assert.equal(f.releaseCount(), 0);
     assert.equal((await f.journal()).sessions[0].phase, 'cleanup-failed');
+    assert.equal(budget()?.state, 'cleanup-pending');
     f.faults.stopForeignRun = false; await f.apps.stop(f.id, session.id); assert.equal(f.releaseCount(), 1);
+    assert.equal(budget(), undefined);
   } finally { await f.close(); }
 });
 
@@ -97,7 +102,7 @@ test('reloaded stop retires the original RAM lease without repeating guest stop 
     const second = await reopened.start(f.id, { program: 'xterm' });
     await reopened.saveClipboardPolicy(f.id, 'xterm', { copy: false, paste: true });
     const disk = await readFile(f.file, 'utf8'), actionCount = f.actions.length;
-    assert.equal(f.releaseCount(), 0);
+    assert.equal(f.releaseCount(), 1);
     await f.apps.stop(f.id, first.id);
     assert.equal(f.releaseCount(), 1); assert.equal(f.actions.length, actionCount);
     assert.equal(await readFile(f.file, 'utf8'), disk);
@@ -208,7 +213,7 @@ test('same-boot live replacement keeps cleanup retryable and a proven later boot
   try {
     const window = await f.apps.start(f.id, { program: 'xterm' }), original = (await f.journal()).sessions[0].run;
     f.machines.live.set(f.id, { ...f.machines.live.get(f.id)! });
-    await assert.rejects(f.apps.stop(f.id, window.id), (error: unknown) => (error as AppError).code === 'SINGLE_APP_LIVE_CHANGED');
+    await assert.rejects(f.apps.stop(f.id, window.id), (error: unknown) => (error as AppError).code === 'SESSION_CLEANUP_PENDING');
     assert.equal(f.releaseCount(), 0); assert.deepEqual((await f.journal()).sessions[0].run, original);
     assert.equal(f.actions.filter(action => action.action === 'stop').length, 0);
     f.faults.reboot = true; await f.apps.stop(f.id, window.id);

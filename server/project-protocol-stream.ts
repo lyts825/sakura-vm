@@ -26,6 +26,7 @@ import {
 import { guestTaskControlPlan, guestTaskControlPaths, cleanupGuestTaskPlan } from './guest-task.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { redactValues } from './secrets.ts';
+import { ProjectSessionLifetime } from './project-session-lifetime.ts';
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/), uuidFile = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.json$/;
 const same = isDeepStrictEqual;
@@ -50,6 +51,7 @@ export const projectProtocolStreamSchema = z.object({ version: z.literal(1), vmI
       value.run && !matches(value, value.run)) context.addIssue({ code: 'custom', message: '协议流原完整运行归属不符' });
 });
 export type ProjectProtocolStreamRecord = z.infer<typeof projectProtocolStreamSchema>;
+const sessionReceipt = (record: ProjectProtocolStreamRecord) => ({ ...immutable(record), run: record.run });
 export type ProjectProtocolCapture = { projectId: string; project: Project; resolved: Project; configSha256: string;
   live: object; bootId: string; signal: AbortSignal };
 function matches(record: Pick<ProjectProtocolStreamRecord, 'identity' | 'runId' | 'bootId' | 'projectId'>, run: ProjectIdentityRun) {
@@ -318,11 +320,17 @@ export class ProjectProtocolStreams {
     const preparation = this.options.createPreparation?.() || new ProjectTerminals(this.machines, this.workspaces);
     let prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined, admission: Admission | undefined;
     let record: ProjectProtocolStreamRecord | undefined, capture: ProjectProtocolCapture | undefined;
+    let session: ProjectSessionLifetime<ReturnType<typeof sessionReceipt>> | undefined;
+    let settleStartup!: () => void;
+    const startupSettled = new Promise<void>(resolve => { settleStartup = resolve; });
     let channel: { wire: Wire; close: () => void } | undefined, owner: OwnedProjectProtocolStream | undefined, cleanup: Promise<void> | undefined;
     let abortProtocol: (() => void) | undefined;
     let resolveDone!: () => void, rejectDone!: (error: unknown) => void;
     const done = new Promise<void>((resolve, reject) => { resolveDone = resolve; rejectDone = reject; }); void done.catch(() => {});
-    const finish = async () => {
+    const finish = () => session && record
+      ? ProjectSessionLifetime.retireOriginal(this.machines, id, sessionReceipt(record), finishNative)
+      : finishNative();
+    const finishNative = async () => {
       // Assign before abort/destroy emits nested close callbacks.
       if (!cleanup) cleanup = Promise.resolve().then(async () => {
         try { if (record) { if (record.phase !== 'closed' && !await this.acceptedClosure(record)) { record.phase = 'review'; await this.save(record); await this.stopRecord(record, live); }
@@ -367,6 +375,12 @@ export class ProjectProtocolStreams {
           record = projectProtocolStreamSchema.parse({ version: 1, vmId: id, projectId, kind, controlToken, timeoutMs,
             runId: outer.runId, bootId: outer.bootId, identity, sha256, configSha256, phase: 'intent', issued: false, run: null });
           await this.save(record);
+          session = await ProjectSessionLifetime.acquire({ machines: this.machines, vmId: id, live, kind,
+            receipt: sessionReceipt(record), signal: prepared!.signal,
+            cleanup: async () => { controller.abort(); await startupSettled; await finishNative(); } });
+          const cancel = () => controller.abort(session!.signal.reason);
+          session.signal.addEventListener('abort', cancel, { once: true });
+          if (session.signal.aborted) cancel();
           this.recoveries.set(id + ':' + record.runId, { projectId, close: finish, record: () => structuredClone(record!) });
         } };
       admission = await this.scopes.admitTask(id, project, body, prepared.signal, options);
@@ -402,13 +416,15 @@ export class ProjectProtocolStreams {
         if (await this.scopes.active(id, projectId, record.runId, prepared.signal)) {
           const run = await this.identities.runReadonly(id, record.identity, record.runId, prepared.signal);
           if (!matches(record, run) || run.phase !== 'active') throw changed();
-          await this.assertCapture(id, capture); record.run = run; record.phase = 'active'; await this.save(record); return owner;
+          await this.assertCapture(id, capture); record.run = run; record.phase = 'active'; await this.save(record);
+          session!.pin(sessionReceipt(record)); settleStartup(); return owner;
         }
         if (channel.wire.destroyed) throw new AppError('协议适配器未就绪：' + redactValues(stderr, secrets), 409);
         await delay(50, undefined, { signal: prepared.signal });
       }
       throw new AppError('项目账号协议适配器入场超时：' + redactValues(stderr, secrets), 409);
     } catch (error) {
+      settleStartup();
       try { await finish(); } catch (cleanupError) {
         const failure = cleanupError instanceof AppError ? cleanupError : new AppError('协议原完整运行域清理未确认', 503, 'GUEST_TASK_CLEANUP_FAILED');
         Object.defineProperty(failure, 'cause', { value: new AggregateError([error, cleanupError]), configurable: true }); throw failure;
@@ -459,9 +475,11 @@ export class ProjectProtocolStreams {
     const file = this.file(id, projectId, runId);
     const value = await readStore<unknown>(file, () => null) || await readStore<unknown>(join(dirname(file), 'closed', runId + '.json'), () => null);
     const record = projectProtocolStreamSchema.parse(value); if (record.vmId !== id || record.projectId !== projectId || record.runId !== runId) throw changed();
-    if (record.phase === 'closed') return;
-    const live = this.machines.live.get(id); if (!live) throw new AppError('请先恢复原实例核对协议运行域', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
-    record.phase = 'review'; await this.save(record); await this.stopRecord(record, live);
+    await ProjectSessionLifetime.retireOriginal(this.machines, id, sessionReceipt(record), async () => {
+      if (record.phase === 'closed') return;
+      const live = this.machines.live.get(id); if (!live) throw new AppError('请先恢复原实例核对协议运行域', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+      record.phase = 'review'; await this.save(record); await this.stopRecord(record, live);
+    });
     } catch (error) {
       if ((error as any)?.status === 503) throw error;
       const failure = new AppError('原协议运行登记或完整域清理未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');

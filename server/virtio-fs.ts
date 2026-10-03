@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { hostProcess } from './host-process.ts';
 import { existsSync } from 'node:fs';
 import { lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -29,24 +29,15 @@ export const virtioFsPaths = (architecture: string): Paths => {
     virtiofsd: process.env.SAKURA_VIRTIOFSD_PATH || installedDaemon || 'virtiofsd',
   };
 };
-const binaryProbe: BinaryProbe = (file, args) =>
-  processSupervisor.run(
-    {
-      owner: 'core:virtio-fs',
-      kind: 'tool',
-      label: 'virtio-fs capability probe',
-      lane: 'control',
-    },
-    () =>
-      new Promise((resolve) => {
-        execFile(
-          file,
-          args,
-          { timeout: 5000, maxBuffer: 256 * 1024, windowsHide: true },
-          (error, stdout, stderr) => resolve({ ok: !error, output: `${stdout}\n${stderr}` }),
-        );
-      }),
-  );
+const binaryProbe: BinaryProbe = async (file, args) => {
+  try {
+    const result = await hostProcess('virtio-fs-probe', file, args, { timeout: 5000, maxBuffer: 256 * 1024 });
+    return { ok: result.code === 0, output: `${result.stdout}\n${result.stderr}` };
+  } catch (error) {
+    if (error instanceof AppError && error.status === 503) throw error;
+    return { ok: false, output: '' };
+  }
+};
 
 export const guestVirtioFsScript = `set +e
 printf 'VIRTIOFS='; if grep -qw virtiofs /proc/filesystems; then echo yes; else echo no; fi

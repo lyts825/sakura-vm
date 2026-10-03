@@ -1,11 +1,9 @@
-import { execFile } from 'node:child_process';
+import { hostExecFile } from './host-process.ts';
 import { chmod, lstat } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { promisify } from 'node:util';
+import { dirname, join } from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { regularDirectory } from './local-store.ts';
 
-const execute = promisify(execFile);
 const literal = (value: string) => "'" + value.replaceAll("'", "''") + "'";
 
 /** Windows OpenSSH rejects inherited access by ordinary users and groups. */
@@ -35,12 +33,14 @@ export async function secureSshPaths(paths: string[]) {
     ` if ($directory) { [System.IO.Directory]::SetAccessControl($path,$acl) } else { [System.IO.File]::SetAccessControl($path,$acl) }\n` +
     `}\n`;
   try {
-    await execute(
-      'powershell.exe',
+    await hostExecFile(
+      'ssh-permissions',
+      join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
       ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
-      { windowsHide: true, timeout: 15_000 },
+      { timeout: 15_000 },
     );
   } catch (cause) {
+    if (cause instanceof AppError && cause.status === 503) throw cause;
     const error = new AppError('无法设置 Windows OpenSSH 文件权限', 409);
     Object.defineProperty(error, 'cause', { value: cause });
     throw error;

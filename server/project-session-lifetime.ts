@@ -7,6 +7,7 @@ import {
 } from './host-runtime/index.ts';
 import type { Machines } from './machines.ts';
 import { vmLifetime, type VmIdentity } from './vm-lifetime.ts';
+import { captureOperationCheck, withoutOperationContext } from './operation-context.ts';
 
 export type SessionReceipt = { runId: string; bootId: string; projectId: string; [key: string]: unknown };
 type Options<R extends SessionReceipt> = {
@@ -65,6 +66,7 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
     this.signal = AbortSignal.any([this.controller.signal, this.lifetime.signal]);
   }
   static async acquire<R extends SessionReceipt>(options: Options<R>): Promise<ProjectSessionLifetime<R>> {
+    await captureOperationCheck()();
     const sessionKey = key(options.vmId, options.receipt);
     let registry = sessions.get(options.machines);
     if (!registry) sessions.set(options.machines, (registry = new Map()));
@@ -155,7 +157,9 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
       this.closeTask = Promise.resolve()
         .then(async () => {
           await Promise.allSettled([...this.active]);
-          await this.cleanup(structuredClone(this.receipt));
+          // Only this original domain capability can discharge the captured receipt.
+          // Revoking the originating request must not revoke its cleanup authority.
+          await withoutOperationContext(() => this.cleanup(structuredClone(this.receipt)));
           this.closed = true;
           this.detach();
           this.removeOwned();
@@ -195,6 +199,18 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
     // request cleanup, but the native handler receives our fuller pinned receipt, never that intent.
     owned.assertReceipt(receipt, true);
     owned.cleanup = cleanup;
+    await owned.close();
+  }
+  /** Reloaded domain handlers may request the original owner, including its preparation children. */
+  static async retireOriginal<R extends SessionReceipt>(
+    machines: Machines,
+    vmId: string,
+    receipt: R,
+    fallback: () => Promise<void>,
+  ): Promise<void> {
+    const owned = sessions.get(machines)?.get(key(vmId, receipt)) as ProjectSessionLifetime<R> | undefined;
+    if (!owned) return fallback();
+    owned.assertReceipt(receipt, true);
     await owned.close();
   }
 }

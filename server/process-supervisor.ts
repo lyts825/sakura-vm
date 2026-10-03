@@ -1,7 +1,24 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
-import { hostRuntime, type ResourceLease } from './host-runtime/index.ts';
+import { hostRuntime, resourceContext, type ResourceLease } from './host-runtime/index.ts';
 import { AppError } from '../shared/errors.ts';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { captureOperationCheck } from './operation-context.ts';
+
+const nativeSpawnAdmission = new AsyncLocalStorage<{
+  active: boolean;
+  lease: ResourceLease;
+  adapter: HostProcessAdapter;
+  created?: ObservedHostProcess;
+}>();
+/** Only a synchronous, already-budgeted adapter construction may call the raw launcher. */
+export const spawnObserved = ((...args: unknown[]) => {
+  const admission = nativeSpawnAdmission.getStore();
+  if (!admission?.active || admission.created) throw new Error('Host process has no unused active admission');
+  const child = Reflect.apply(spawn, undefined, args) as ChildProcess;
+  admission.created = new ObservedHostProcess(child, admission.lease, admission.adapter);
+  return child;
+}) as typeof spawn;
 
 export type ProcessAdmission = {
   owner: string;
@@ -21,6 +38,23 @@ type HelperOptions = Omit<ProcessAdmission, 'kind'> & {
   closeTimeoutMs?: number;
 };
 type SpawnHelper = (file: string, args: string[]) => ChildProcess;
+export const hostProcessAdapters = {
+  'windows-probe': 'tool',
+  'ssh-permissions': 'tool',
+  'trusted-boot-probe': 'tool',
+  'virtio-fs-probe': 'tool',
+  dpapi: 'tool',
+  'process-interop': 'tool',
+  'windows-registry': 'tool',
+  'windows-user-application': 'tool',
+  'clipboard-command': 'tool',
+  'clipboard-launch': 'tool',
+  'clipboard-descendants': 'helper',
+  'gpg-discovery': 'tool',
+  'gpg-asset-guard': 'helper',
+  'gpg-native-relay': 'helper',
+} as const;
+export type HostProcessAdapter = keyof typeof hostProcessAdapters;
 const startHelper: SpawnHelper = (file, args) =>
   spawn(file, args, {
     shell: false,
@@ -33,7 +67,7 @@ const cleanupError = () =>
 /** The governor owns admission; adapters retain their native ownership protocols. */
 export class ProcessSupervisor {
   constructor(
-    private governor: Pick<typeof hostRuntime, 'acquire'> = hostRuntime,
+    private governor: Pick<typeof hostRuntime, 'acquire' | 'tryAcquire'> = hostRuntime,
     private spawnHelper: SpawnHelper = startHelper,
   ) {}
 
@@ -47,6 +81,59 @@ export class ProcessSupervisor {
       timeoutMs: options.queueTimeoutMs,
       cost: { process: 1, ['process.' + options.kind]: 1 },
     });
+  }
+
+  /** A protocol adapter retains its own handshake; this observes only the actual host child. */
+  async observe(
+    adapter: HostProcessAdapter,
+    create: () => ChildProcess,
+    options: Partial<Omit<ProcessAdmission, 'kind'>> = {},
+  ) {
+    if (!Object.hasOwn(hostProcessAdapters, adapter)) throw new Error('Unknown host process adapter');
+    const request = {
+      owner: options.owner || resourceContext()?.owner || `core:${adapter}`,
+      label: adapter,
+      ...options,
+      kind: hostProcessAdapters[adapter],
+    };
+    if (request.kind === 'helper' && request.lane !== 'control') await captureOperationCheck()();
+    // A protocol guard can already own a helper when it admits a relay. Queueing another
+    // helper would deadlock at capacity; fail atomically so its domain can reject/clean up.
+    const lease =
+      request.kind === 'helper'
+        ? this.governor.tryAcquire({
+            ...request,
+            kind: 'process.helper',
+            cost: { process: 1, 'process.helper': 1 },
+          })
+        : await this.acquire(request);
+    if (!lease) throw new AppError('宿主辅助进程已达到资源额度', 429, 'RESOURCE_CAPACITY');
+    const admission: NonNullable<ReturnType<typeof nativeSpawnAdmission.getStore>> = {
+      active: true,
+      lease,
+      adapter,
+    };
+    try {
+      options.signal?.throwIfAborted();
+      try {
+        return nativeSpawnAdmission.run(admission, () => {
+          const child = create();
+          if (admission.created && admission.created.child !== child)
+            throw new Error('Host adapter returned another process');
+          return admission.created || new ObservedHostProcess(child, lease, adapter);
+        });
+      } finally {
+        admission.active = false;
+      }
+    } catch (error) {
+      if (admission.created) {
+        // A protocol constructor can throw after spawning. Retain admission until
+        // the exact child has physically closed, even though construction failed.
+        admission.created.child.kill('SIGKILL');
+        await admission.created.waitForClose();
+      } else lease.release();
+      throw error;
+    }
   }
 
   async run<T>(
@@ -82,6 +169,54 @@ export class ProcessSupervisor {
       lease.release();
       throw error;
     }
+  }
+}
+
+/** EOF/abort/exit are not physical closure. A late close can retire a previously pending slot. */
+export class ObservedHostProcess {
+  readonly closed: Promise<HelperExit>;
+  private actual?: HelperExit;
+  private error?: Error;
+  constructor(
+    readonly child: ChildProcess,
+    private lease: ResourceLease,
+    private adapter: HostProcessAdapter,
+  ) {
+    child.on('error', (error) => {
+      this.error = error;
+    });
+    this.closed = new Promise((resolve) =>
+      child.once('close', (code, signal) => {
+        this.actual = { code, signal, failure: this.error?.message || '' };
+        lease.release();
+        resolve(this.actual);
+      }),
+    );
+  }
+  cleanupPending(error: unknown) {
+    if (!this.actual) this.lease.cleanupPending(error);
+  }
+  async waitForClose(timeoutMs = 5000) {
+    if (this.actual) return this.actual;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.closed,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(cleanupError()), timeoutMs);
+        }),
+      ]);
+    } catch (error) {
+      this.cleanupPending(error);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  handoffToUser() {
+    if (this.adapter !== 'windows-user-application') throw new Error('This process cannot be handed off');
+    this.lease.transfer('user:desktop');
+    this.lease.release();
   }
 }
 

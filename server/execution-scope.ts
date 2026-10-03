@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
+import { withoutOperationContext } from './operation-context.ts';
 import {
   hostRuntime,
   withResourceContext,
@@ -112,7 +113,7 @@ export class ExecutionScope {
     if (!entry.task) {
       entry.attempted = true;
       entry.task = Promise.resolve()
-        .then(entry.work)
+        .then(() => withoutOperationContext(entry.work))
         .then(
           () => {
             entry.complete = true;
