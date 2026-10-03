@@ -61,7 +61,8 @@ import { ProjectExecution } from './project-execution.ts';
 import { ProjectPermissions, type ProjectPermission } from './project-permissions.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { RemoteAuditLock, remoteAuditAction } from './remote-audit.ts';
-import { ResourceScope } from './resource-scope.ts';
+import { ResourceScope, ClosePhase } from './resource-scope.ts';
+import { hostRuntime } from './host-runtime/index.ts';
 import { createRuntime } from './runtime.ts';
 import { generateSdk } from './sdk.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
@@ -86,10 +87,17 @@ const memberProjectRoutes: Record<string, Partial<Record<'GET' | 'PUT' | 'POST',
 };
 
 export async function startApplication() {
-  const resources = new ResourceScope();
+  const resources = new ResourceScope({ owner: 'core:application' });
+  const closeResources = async () => {
+    const failures: unknown[] = [];
+    try { await resources.close(); } catch (error) { failures.push(error); }
+    try { hostRuntime.close(); } catch (error) { failures.push(error); }
+    if (failures.length) throw new AggregateError(failures, 'Host resources require cleanup');
+  };
   try {
-    resources.defer('network-drain', () => networkRuntime.beginDrain(), 0);
-    resources.own('network', networkRuntime, 900);
+    resources.defer('host-admission-drain', () => hostRuntime.beginDrain(), ClosePhase.admission);
+    resources.defer('network-drain', () => networkRuntime.beginDrain(), ClosePhase.admission);
+    resources.own('network', networkRuntime, ClosePhase.transport);
     await networkRuntime.start();
     let token = randomBytes(32).toString('hex');
     let sessionChanged = (_locked: boolean, _transitioned: boolean) => {};
@@ -109,8 +117,8 @@ export async function startApplication() {
     const plugins = new PluginManager();
     const selectedPlugins = await plugins.init();
     const engine = await createRuntime();
-    const releaseRuntimeOwnership = resources.defer('runtime', () => engine.runtime.close(), 1000);
-    const machines = resources.own('machines', new Machines(engine), 390);
+    const releaseRuntimeOwnership = resources.defer('runtime', () => engine.runtime.close(), ClosePhase.engine);
+    const machines = resources.own('machines', new Machines(engine), ClosePhase.machines);
     releaseRuntimeOwnership();
     await machines.init();
     const terminalSharing = resources.own('terminalSharing', new TerminalSharing(machines), 50);
@@ -121,7 +129,7 @@ export async function startApplication() {
     await browserExtensions.init();
     const communityPlugins = resources.own('communityPlugins', new CommunityPlugins(), 140);
     await communityPlugins.init();
-    const audit = resources.own('audit', hostAudit(), 400);
+    const audit = resources.own('audit', hostAudit(), ClosePhase.audit);
     const remoteAudit = resources.own('remoteAudit', new RemoteAuditLock(audit), 350);
     await remoteAudit.init();
     Jobs.instrument = (job, work) =>
@@ -151,7 +159,7 @@ export async function startApplication() {
     features = resources.own(
       'features',
       await Features.create(machines, selectedPlugins, (id) => rollouts.decision(id).allowed),
-      380,
+      ClosePhase.plugins,
     );
     const projectTerminals = resources.own(
       'projectTerminals',
@@ -974,6 +982,11 @@ export async function startApplication() {
       if (await features.downloads?.route(req, res, url)) return;
       const principal = authorized(req);
       const accountPrincipal = access.enabled ? access.authorize(req.headers['x-sakura-token']) : null;
+      if (url.pathname === '/api/host-runtime') {
+        if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
+        if (access.enabled && accountPrincipal?.role !== 'owner') throw new AppError('仅管理员可查看系统资源状态', 403);
+        return send(res, hostRuntime.snapshot());
+      }
       if (url.pathname === '/api/network-runtime') {
         if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
         if (access.enabled && accountPrincipal?.role !== 'owner') throw new AppError('仅管理员可查看网络运行状态', 403);
@@ -2123,7 +2136,7 @@ export async function startApplication() {
       console.log('Stopping managed virtual machines…');
       let failed = false;
       try {
-        await resources.close();
+        await closeResources();
       } catch (error) {
         failed = true;
         console.error('Shutdown cleanup failed:', error);
@@ -2134,7 +2147,7 @@ export async function startApplication() {
     process.on('SIGTERM', () => void close());
   } catch (error) {
     try {
-      await resources.close();
+      await closeResources();
     } catch (cleanup) {
       throw new AggregateError([error, cleanup], 'Application startup and cleanup failed');
     }

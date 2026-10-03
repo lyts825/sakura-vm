@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { AuditLog, traceExport, type AuditEvent } from '../server/audit.ts';
+import { HostRuntime, withResourceContext } from '../server/host-runtime/index.ts';
 const root = await mkdtemp(join(tmpdir(), 'sakura-audit-'));
 after(() => rm(root, { recursive: true, force: true }));
 const event: AuditEvent = {
@@ -14,6 +15,25 @@ const event: AuditEvent = {
   traceId: '1'.repeat(32),
   spanId: '2'.repeat(16),
 };
+
+test('resource admission inherits audit span identity without changing the durable audit format', async () => {
+  const audit = new AuditLog(join(root, 'resources')), runtime = new HostRuntime();
+  let resourceTrace = '', resourceSpan = '';
+  await withResourceContext({ owner: 'plugin:build', operationId: 'owned-operation' }, () =>
+    audit.span({ kind: 'job', name: 'build' }, async () => {
+      const lease = await runtime.acquire({ owner: 'plugin:build', kind: 'job', label: 'build', cost: { jobs: 1 } });
+      const resource = runtime.snapshot().resources[0];
+      assert.equal(resource.identity.operationId, 'owned-operation');
+      resourceTrace = resource.identity.traceId!; resourceSpan = resource.identity.spanId!;
+      lease.release();
+    }));
+  const entries = await audit.read();
+  assert.equal(entries.valid, true);
+  assert.equal(entries.records[0].event.traceId, resourceTrace);
+  assert.equal(entries.records[0].event.spanId, resourceSpan);
+  assert.equal(entries.records.length, 2);
+  runtime.close(); await audit.close();
+});
 
 test('audit serializes concurrent append, verifies restart and excludes arbitrary data fields', async () => {
   const folder = join(root, 'ordered'),

@@ -8,6 +8,7 @@ import { z, ZodError } from 'zod';
 import { DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { withResourceContext } from './host-runtime/context.ts';
 
 const hex = z.string().regex(/^[a-f0-9]{64}$/);
 const eventSchema = z
@@ -212,7 +213,10 @@ export class AuditLog {
     return context.run(span, async () => {
       let code = 500;
       try {
-        const result = await work();
+        const result = await withResourceContext({
+          traceId: span.traceId, spanId: span.spanId, actorId: event.actorId,
+          vmId: event.vmId, projectId: event.projectId, jobId: event.jobId,
+        }, work);
         code = status();
         return result;
       } catch (error) {

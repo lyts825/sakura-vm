@@ -175,6 +175,7 @@ const core: {
     title: '更换管理员密码并撤销全部会话', body: request(accessPasswordInput) },
   { id: 'system', method: 'GET', path: '/api/system', title: '主机与插件状态', inspect: true },
   { id: 'network-runtime', method: 'GET', path: '/api/network-runtime', title: '统一网络层运行状态（账户管理员）', inspect: true },
+  { id: 'host-runtime', method: 'GET', path: '/api/host-runtime', title: '系统资源与准入状态（账户管理员）', inspect: true },
   { id: 'monitor', method: 'GET', path: '/api/monitor', title: '只读监控快照', inspect: true },
   { id: 'storage-pools.get', method: 'GET', path: '/api/storage-pools',
     title: '本机存储池容量、实例分配与迁移清理状态', inspect: true },
