@@ -155,12 +155,22 @@ test('owned application natural exit closes the exact independent run including 
   } finally { await f.close(); }
 });
 
-test('natural exit cleanup failure preserves its original lease and read-only reload does not resume an owner watcher', async () => {
+test('natural exit cleanup failure preserves its original lease and read-only reload does not resume an owner watcher', { timeout: 5000 }, async () => {
   const f = await singleAppFixture({ exitPollMs: 10 }); let reopened: SingleAppWindows | undefined;
   try {
     const window = await f.apps.start(f.id, { program: 'xterm' });
+    const call = f.options.control.call;
+    const stopped = new Promise<void>(resolve => {
+      f.options.control.call = async (...args) => {
+        try { return await call(...args); }
+        finally { if (args[2] === 'stop') resolve(); }
+      };
+    });
     f.faults.statusExited = f.faults.stopFail = true;
-    for (let attempt = 0; attempt < 100 && (await f.journal()).sessions[0].phase !== 'cleanup-failed'; attempt++) await delay(10);
+    await stopped;
+    // Wait for this owner's actual journal publication, rather than repeatedly opening its
+    // rename target while Windows is publishing the cleanup receipt.
+    await Promise.allSettled([...(f.apps as unknown as { pending: Set<Promise<unknown>> }).pending]);
     assert.equal((await f.journal()).sessions[0].phase, 'cleanup-failed'); assert.equal(f.releaseCount(), 0);
     const before = await readFile(f.file, 'utf8'), actionCount = f.actions.length;
     reopened = new SingleAppWindows(f.machines, f.workspaces, f.options);

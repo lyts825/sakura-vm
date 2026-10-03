@@ -168,7 +168,8 @@ export async function stopProjectMain(machines: Machines, id: string, project: P
   signal?.throwIfAborted();
   const record = await scope.metadata();
   if (!record) throw new AppError('项目主命令归属记录已缺失，停止未确认', 409, 'PROJECT_MAIN_SCOPE_CHANGED');
-  if (await confirmRebootedMainStop(machines, id, project, scope, record, log, instance)) return;
-  await scope.stop(record, log);
-  log('项目主命令已停止\n');
+  let rebooted = false;
+  await scope.stop(record, log, async () =>
+    rebooted = await confirmRebootedMainStop(machines, id, project, scope, record, log, instance));
+  if (!rebooted) log('项目主命令已停止\n');
 }

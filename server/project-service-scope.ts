@@ -790,6 +790,14 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
     projectScopeCommand(this.project, this.target, 'start', record, payload);
     payload = { ...payload, input: Buffer.from(payload.input) };
     await this.persistIntent(record);
+    const session = await ProjectSessionLifetime.acquire({ machines: this.machines, vmId: this.id,
+      kind: this.target.kind, receipt: record, signal,
+      live: this.instance as NonNullable<ReturnType<Machines['live']['get']>>,
+      cleanup: current => this.stopNative(current) });
+    return session.perform(active => this.startNative(record, payload, active, session), signal);
+  }
+  private async startNative(record: Record, payload: ProjectScopeInput, signal: AbortSignal,
+    session: ProjectSessionLifetime<Record>) {
     if (!await new (await import('./project-run-scope.ts')).ProjectRunScopes(this.machines).hasRun(this.id, record.projectId, record.runId))
       throw new AppError(`${this.label}缺少已保存的项目账号运行票据，项目代码未执行`, 409, this.code('IDENTITY_REQUIRED'));
     signal.throwIfAborted();
@@ -797,15 +805,18 @@ class ProjectProcessScope<Record extends ProjectScopeRecord> {
     if (prepared.status !== 'prepared' || !prepared.record)
       throw new AppError(`${this.label} prepared 回执不完整`, 409, this.code('SCOPE_CHANGED'));
     await this.save(prepared.record);
+    session.pin(prepared.record);
     await this.saveTransport(prepared.record, payload);
     const pane = await this.execute('start', prepared.record, payload, signal);
     if (pane.status !== 'prepared' || !pane.record?.panePid)
       throw new AppError(`${this.label} pane 回执不完整`, 409, this.code('SCOPE_CHANGED'));
     await this.save(pane.record);
+    session.pin(pane.record);
     const committed = await this.execute('commit', pane.record, undefined, signal);
     if (committed.status !== 'running' || !committed.record)
       throw new AppError(`${this.label}提交回执未确认`, 409, this.code('SCOPE_CHANGED'));
     await this.save(committed.record);
+    session.pin(committed.record);
     return committed.record;
   }
   private async retireRebootedService(record: Record, log?: (text: string) => void) {
@@ -862,7 +873,13 @@ else:
     await unchanged(); log?.(`${this.label}所属旧 boot 已结束；未向新 boot 进程发送停止信号\n`);
     return true;
   }
-  async stop(record: Record, log?: (text: string) => void) {
+  async stop(record: Record, log?: (text: string) => void, verifyReboot?: () => Promise<boolean>) {
+    return ProjectSessionLifetime.retire(this.machines, this.id, record, async current => {
+      if (await verifyReboot?.()) return;
+      await this.stopNative(current, log);
+    });
+  }
+  private async stopNative(record: Record, log?: (text: string) => void) {
     let failure: unknown;
     for (let attempt = 0; attempt < 3; ++attempt) {
       try {
@@ -1029,3 +1046,4 @@ export class ProjectDesktopScope extends ProjectProcessScope<ProjectDesktopRecor
     return status;
   }
 }
+import { ProjectSessionLifetime } from './project-session-lifetime.ts';

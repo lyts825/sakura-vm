@@ -32,6 +32,13 @@ const cleanupFailed = (error: unknown): boolean =>
   error instanceof AppError &&
   error.status === 503 &&
   /(?:CLEANUP|RETIRE|UNCONFIRMED)/.test(error.code || '');
+type Cleanup = {
+  owner: ExecutionScope;
+  work: () => Promise<void>;
+  complete: boolean;
+  attempted: boolean;
+  task?: Promise<void>;
+};
 
 /** One actual operation owns a budget; a delegated native runner borrows only within its call chain. */
 export class ExecutionScope {
@@ -48,10 +55,17 @@ export class ExecutionScope {
   private finished = false;
   private activity!: ReturnType<ReturnType<typeof vmLifetime>['enter']>;
   private lease!: ResourceLease;
+  private readonly root: ExecutionScope;
+  private cleanups = new Set<Cleanup>();
+  private cleanupErrors = new Map<unknown, Cleanup>();
+  private failures = new Set<unknown>();
+  private settled = false;
+  private retired = false;
   private constructor(
     readonly options: ExecutionOptions,
     parent?: ExecutionScope,
   ) {
+    this.root = parent?.root || this;
     if (options.machines.closing) throw new AppError('服务正在关闭', 503, 'RESOURCE_DRAINING');
     const live = options.live || options.machines.live.get(options.vmId);
     if (!live || options.machines.live.get(options.vmId) !== live)
@@ -85,6 +99,72 @@ export class ExecutionScope {
   }
   static current() {
     return context.getStore()?.scope;
+  }
+  /** Only the original domain owner receives this closure. Cancellation never confirms it. */
+  deferCleanup(work: () => Promise<void>): () => Promise<void> {
+    if (this.finished) throw new AppError('执行作用域已经结束', 409, 'EXECUTION_SCOPE_CLOSED');
+    const entry: Cleanup = { owner: this, work, complete: false, attempted: false };
+    this.root.cleanups.add(entry);
+    return () => this.clean(entry);
+  }
+  private async clean(entry: Cleanup): Promise<void> {
+    if (entry.complete) return;
+    if (!entry.task) {
+      entry.attempted = true;
+      entry.task = Promise.resolve()
+        .then(entry.work)
+        .then(
+          () => {
+            entry.complete = true;
+            this.root.tryRetire();
+          },
+          (cause) => {
+            const error = cleanupFailed(cause)
+              ? cause
+              : new AppError(
+                  `原执行资源清理尚未确认：${cause instanceof Error ? cause.message : String(cause)}`,
+                  503,
+                  'EXECUTION_CLEANUP_PENDING',
+                );
+            this.root.cleanupErrors.set(error, entry);
+            this.root.recordFailure(error);
+            throw error;
+          },
+        )
+        .finally(() => {
+          entry.task = undefined;
+        });
+    }
+    return entry.task;
+  }
+  /** A domain handler stores this capability beside its exact immutable ticket, not a resource ID. */
+  recovery(): () => Promise<void> {
+    const owner = this;
+    return async () => {
+      if (!owner.root.settled)
+        throw new AppError('原执行尚未退出，不能并行核销', 409, 'EXECUTION_RECOVERY_ACTIVE');
+      for (const entry of owner.root.cleanups) if (entry.owner === owner) await owner.clean(entry);
+      owner.root.tryRetire();
+    };
+  }
+  hasPendingCleanup() {
+    return [...this.root.cleanups].some((entry) => entry.owner === this && !entry.complete);
+  }
+  private recordFailure(error: unknown) {
+    this.root.failure ||= error;
+    this.root.failures.add(error);
+  }
+  private tryRetire() {
+    if (!this.settled || this.retired || [...this.cleanups].some((entry) => !entry.complete)) return;
+    const confirmed = (error: unknown): boolean => {
+      if (this.cleanupErrors.get(error)?.complete) return true;
+      const errors = (error as { errors?: unknown[] } | null)?.errors;
+      return Array.isArray(errors) && errors.length > 0 && errors.every(confirmed);
+    };
+    if (![...this.failures].every(confirmed)) return;
+    this.retired = true;
+    this.activity?.release();
+    this.lease.release();
   }
   private matches(options: ExecutionOptions) {
     return (
@@ -127,7 +207,10 @@ export class ExecutionScope {
     this.children.add(task);
     void task
       .catch((error) => {
-        if (cleanupFailed(error)) this.failure = error;
+        if (cleanupFailed(error)) {
+          this.failure = error;
+          this.recordFailure(error);
+        }
       })
       .finally(() => this.children.delete(task));
     return task;
@@ -165,20 +248,26 @@ export class ExecutionScope {
       detach = () => scope.activity.signal.removeEventListener('abort', cancel);
       return await scope.invoke(work, !!options.delegate);
     } catch (error) {
-      if (cleanupFailed(error)) scope.failure = error;
+      if (cleanupFailed(error)) {
+        scope.failure = error;
+        scope.recordFailure(error);
+      }
       scope.controller.abort(error);
       throw error;
     } finally {
       scope.finished = true;
       await Promise.allSettled([...scope.children]);
+      for (const cleanup of scope.cleanups)
+        if (!cleanup.attempted) await scope.clean(cleanup).catch(() => {});
       detach();
       scope.controller.abort();
+      scope.settled = true;
+      scope.tryRetire();
       if (scope.failure !== undefined) {
-        scope.lease.cleanupPending(scope.failure);
-        scope.activity?.cleanupPending(scope.failure);
-      } else {
-        scope.activity?.release();
-        scope.lease.release();
+        if (!scope.retired) {
+          scope.lease.cleanupPending(scope.failure);
+          scope.activity?.cleanupPending(scope.failure);
+        }
       }
       if (scope.failure !== undefined) throw scope.failure;
     }

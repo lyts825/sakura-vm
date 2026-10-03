@@ -9,6 +9,9 @@ import { Machines } from '../server/machines.ts';
 import type { Project } from '../server/workspaces.ts';
 import { AppError } from '../server/model.ts';
 import { ProjectRunScopes } from '../server/project-run-scope.ts';
+import { ExecutionScope } from '../server/execution-scope.ts';
+import { HostRuntime } from '../server/host-runtime/index.ts';
+import { vmLifetime } from '../server/vm-lifetime.ts';
 import { projectIdentitySchema, projectIdentityRunSchema, type ProjectIdentitySshDaemon,
   type ProjectIdentityRun } from '../server/project-identity.ts';
 import { OwnedForwardAgent, type SshAgentContext } from '../server/ssh-agent-scope.ts';
@@ -110,6 +113,39 @@ async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void
     setBoot: (value: string) => { currentBoot = value; },
     reopened: () => new ProjectRunScopes(machines, options) };
 }
+
+test('domain recovery validates the original full task binding before retrying its owned cleanup closure', async () => {
+  const f = await fixture(), governor = new HostRuntime({ budgets: { execution: { capacity: 1 } } });
+  const failure = new AppError('original cgroup receipt still owned', 503, 'GUEST_TASK_CLEANUP_FAILED');
+  let confirmed = false, calls = 0, runId = '';
+  f.core.run = async () => { throw new AppError('unissued', 409, 'PROJECT_IDENTITY_RECORD_ABSENT'); };
+  await assert.rejects(ExecutionScope.run({ machines: f.machines, vmId: f.vmId, projectId: 'default',
+    signal: new AbortController().signal, governor }, async scope => {
+    const admission = await f.scopes.admitTask(f.vmId, f.project, { command: 'owned-frame' }, scope.signal);
+    runId = admission.payload.runId;
+    const cleanup = scope.deferCleanup(async () => {
+      calls++;
+      if (!confirmed) throw failure;
+      // This callback reacquires the identity lock; recovery must not hold that lock while calling it.
+      await f.scopes.closeAfterScopeStopped(f.vmId, 'default', runId);
+    });
+    try { await cleanup(); } finally { admission.release(); }
+  }), error => error === failure);
+  assert.equal(governor.snapshot().resources[0].state, 'cleanup-pending');
+  const original = await f.view(), changed = structuredClone(original);
+  changed.runs[0].sha256 = 'f'.repeat(64);
+  await writeFile(f.file, JSON.stringify(changed));
+  confirmed = true;
+  await assert.rejects(f.reopened().recoverStoppedTasks(f.vmId, 'default'), { code: 'EXECUTION_CLEANUP_PENDING' });
+  assert.equal(calls, 1, 'a changed journal cannot exercise another operation cleanup capability');
+  await writeFile(f.file, JSON.stringify(original));
+  await f.reopened().recoverStoppedTasks(f.vmId, 'default');
+  assert.equal(calls, 2);
+  assert.equal(governor.snapshot().resources.length, 0);
+  assert.equal(vmLifetime(f.vmId, f.machines.live.get(f.vmId)!).active, 0);
+  await f.reopened().recoverStoppedTasks(f.vmId, 'default'); assert.equal(calls, 2);
+  governor.close();
+});
 
 test('identities and inherited intents survive manager reload without persisting payload bodies', async () => {
   const f = await fixture();
@@ -228,6 +264,23 @@ test('terminal resource cleanup failure retains the original full receipt and re
   f.core.retireTerminal = async () => { f.calls.push('terminal-retire'); };
   await f.reopened().stopTerminal(f.vmId, 'default', f.owner.runId);
   assert.equal((await f.view()).runs[0].phase, 'closed');
+});
+
+test('VM drain refuses a replaced terminal journal and only the original complete receipt can retire its session', async () => {
+  const f = await fixture();
+  await f.scopes.prepareTerminal(f.vmId, f.project, f.owner.runId, { name: 'sakura-terminal-default-main', persistent: true });
+  const lifetime = vmLifetime(f.vmId, f.machines.live.get(f.vmId)!);
+  const original = await f.view(), changed = structuredClone(original);
+  changed.runs[0].run.cgroupInode = '999';
+  await writeFile(f.file, JSON.stringify(changed)); f.calls.length = 0;
+  await assert.rejects(lifetime.barrier(async () => assert.fail('unconfirmed session may not snapshot')),
+    { code: 'EXECUTION_CLEANUP_PENDING' });
+  assert.equal(f.calls.includes('stop'), false); assert.equal(lifetime.active, 1);
+  await assert.rejects(f.scopes.guard(f.vmId, 'default'), { code: 'PROJECT_IDENTITY_RUNS_MUST_STOP' });
+  await writeFile(f.file, JSON.stringify(original));
+  await f.reopened().stopTerminal(f.vmId, 'default', f.owner.runId);
+  assert.equal(lifetime.active, 0);
+  await lifetime.barrier(async () => {}); await lifetime.close();
 });
 
 test('duplicate terminal labels and foreign owner kinds refuse without issuing or closing another ticket', async () => {

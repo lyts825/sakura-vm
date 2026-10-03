@@ -405,3 +405,56 @@ test('cancellation never releases an unconfirmed native cleanup quota or allows 
   assert.equal(stopped, true);
   assert.equal(f.used(), 1, 'guest stop alone is not a host resource retirement receipt');
 });
+
+test('only the original cleanup closure can retire a failed execution after a successful explicit retry', async () => {
+  const f = fixture(),
+    failure = new AppError('guest cleanup pending', 503, 'GUEST_TASK_CLEANUP_FAILED');
+  let ready = false,
+    attempts = 0,
+    recover!: () => Promise<void>;
+  await assert.rejects(
+    ExecutionScope.run(f.options, async (scope) => {
+      recover = scope.recovery();
+      const cleanup = scope.deferCleanup(async () => {
+        attempts++;
+        if (!ready) throw failure;
+      });
+      await cleanup();
+    }),
+    (error) => error === failure,
+  );
+  assert.equal(f.used(), 1);
+  assert.equal(f.lifetime.active, 1);
+  await assert.rejects(recover(), (error) => error === failure);
+  assert.equal(f.used(), 1);
+  ready = true;
+  await recover();
+  assert.equal(attempts, 3);
+  assert.equal(f.used(), 0);
+  assert.equal(f.lifetime.active, 0);
+  await recover();
+  assert.equal(attempts, 3);
+  f.governor.close();
+});
+
+test('a child recovery cannot retire an unrelated parent cleanup failure', async () => {
+  const f = fixture(),
+    native = new AppError('native', 503, 'GUEST_TASK_CLEANUP_FAILED');
+  let ready = false,
+    recover!: () => Promise<void>;
+  await assert.rejects(
+    ExecutionScope.run({ ...f.options, delegate: true }, async () => {
+      await ExecutionScope.run(f.options, async (scope) => {
+        recover = scope.recovery();
+        await scope.deferCleanup(async () => {
+          if (!ready) throw native;
+        })();
+      }).catch(() => {});
+      throw new AppError('another owner remains', 503, 'HOST_PROCESS_CLEANUP_PENDING');
+    }),
+  );
+  ready = true;
+  await recover();
+  assert.equal(f.used(), 1);
+  assert.equal(f.governor.snapshot().resources[0].state, 'cleanup-pending');
+});

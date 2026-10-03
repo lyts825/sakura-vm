@@ -33,7 +33,13 @@ export type VmIdentity = Readonly<{
   bootId?: string;
   networkGeneration?: string;
 }>;
-type Activity = { abort: AbortController; done: Promise<void>; failure?: unknown; release(): void };
+type Activity = {
+  abort: AbortController;
+  done: Promise<void>;
+  persistent: boolean;
+  failure?: unknown;
+  release(): void;
+};
 const legacy = new WeakMap<object, VmLifetime>();
 const exclusiveContext = new AsyncLocalStorage<{ lifetime: VmLifetime; active: boolean }>();
 const changed = () => new AppError('客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
@@ -139,7 +145,7 @@ export class VmLifetime {
       throw error;
     }
   }
-  enter(identity = this.capture()) {
+  enter(identity = this.capture(), options: { persistent?: boolean } = {}) {
     this.assert(identity);
     const exclusive = exclusiveContext.getStore();
     if (!this.admitting && !(exclusive?.lifetime === this && exclusive.active))
@@ -148,6 +154,7 @@ export class VmLifetime {
     let finish!: () => void;
     const activity: Activity = {
       abort,
+      persistent: !!options.persistent,
       done: new Promise((resolve) => {
         finish = resolve;
       }),
@@ -167,7 +174,11 @@ export class VmLifetime {
   }
   /** Synchronous exclusion prevents an execution admission racing an already-held VM lock. */
   async exclusive<T>(work: () => Promise<T>, allowFailed = false): Promise<T> {
-    if ([...this.activities].some((activity) => !allowFailed || activity.failure === undefined))
+    if (
+      [...this.activities].some(
+        (activity) => !activity.persistent && (!allowFailed || activity.failure === undefined),
+      )
+    )
       throw new AppError('该实例的另一项操作正在进行', 409, 'VM_EXECUTION_ACTIVE');
     this.barriers++;
     const context = { lifetime: this, active: true };

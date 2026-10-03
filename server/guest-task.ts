@@ -435,6 +435,8 @@ export async function guestTask(
       !isOwnedTaskAgent(machines, id, runId, agentPath)))
     throw new AppError('SSH Agent 必须属于本次已登记的受保护任务', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
   const commands = taskCommands(runId, randomUUID(), script, timeout, input !== undefined, options.forwardedAgent);
+  const cleanup = () => cleanupGuestTaskPlan(machines, id, instance, runId, commands, afterCleanup, log);
+  const retire = ExecutionScope.current()?.deferCleanup(cleanup) || cleanup;
   try {
     // BusyBox setsid can fork and return 0 before its child exits. The actual
     // worker status remains explicit and independent of the launcher PID.
@@ -445,6 +447,7 @@ export async function guestTask(
       throw new AppError(result.stderr.trim(), 409, 'GUEST_TASK_SCOPE_UNAVAILABLE');
     return result;
   } finally {
-    await cleanupGuestTaskPlan(machines, id, instance, runId, commands, afterCleanup, log);
+    await retire();
   }
 }
+import { ExecutionScope } from './execution-scope.ts';

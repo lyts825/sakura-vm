@@ -30,6 +30,8 @@ import { freePort } from './qmp.ts';
 import { guestTask } from './guest-task.ts';
 import ssh2 from 'ssh2';
 import { secureSshPaths } from './ssh-files.ts';
+import { ProjectSessionLifetime, type SessionReceipt } from './project-session-lifetime.ts';
+import { isDeepStrictEqual } from 'node:util';
 
 const digest = (text: string) => createHash('sha256').update(text).digest('hex');
 export function projectSshPaths(projectId: string) {
@@ -669,6 +671,7 @@ export class ProjectSsh {
       namespace = projectNetworkNamespace(project),
       runId = randomUUID();
     const instance = this.machines.live.get(id);
+    if (!instance) throw new AppError('客户机运行身份未确认', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
     const folder = this.folder(id, projectId);
     await regularDirectory(folder);
     await mkdir(folder, { recursive: true });
@@ -772,6 +775,7 @@ export class ProjectSsh {
       signal,
     );
     let serviceAttempted = false;
+    let session: ProjectSessionLifetime<SessionReceipt> | undefined;
     try {
       const command =
         '#!/bin/sh\nexec ' +
@@ -833,6 +837,17 @@ export class ProjectSsh {
       await writeFile(join(folder, 'known_hosts'), `sakura-${id}-${projectId} ${hostPublicKey}\n`, {
         mode: 0o600,
       });
+      session = await ProjectSessionLifetime.acquire<SessionReceipt>({ machines: this.machines, vmId: id, kind: 'ssh',
+        signal, live: instance, receipt: { ...record, bootId }, cleanup: async receipt => {
+          if (serviceAttempted) await this.stopRuntimeNative(id, project, { instance, bootId, runId }, receipt);
+          else {
+            const busy = await this.machines.exec(id, projectSshBusyScript(projectId), 10000);
+            if (busy.code !== 0 || busy.stdout.includes('SAKURA_PROJECT_SSH_BUSY'))
+              throw new Error('项目 SSH 仍有未核对的进程');
+            await this.scopes.closeAfterScopeStopped(id, projectId, runId);
+          }
+        } });
+      return await session.perform(async signal => {
       await this.identities.publishSshSnapshot(id, admission.identity, admission.snapshot, signal);
       const published = await this.machines.exec(
         id,
@@ -876,6 +891,7 @@ export class ProjectSsh {
         await delay(200, undefined, { signal });
       }
       throw new AppError(reason, 409);
+      }, signal);
     } catch (error) {
       let failure: unknown;
       for (let attempt = 0; attempt < 3; ++attempt) {
@@ -884,7 +900,8 @@ export class ProjectSsh {
           break;
         }
         try {
-          if (serviceAttempted) await this.stopRuntime(id, project, { instance, bootId, runId });
+          if (session) await session.close();
+          else if (serviceAttempted) await this.stopRuntime(id, project, { instance, bootId, runId });
           else {
             const busy = await this.machines.exec(id, projectSshBusyScript(projectId), 10000);
             if (busy.code !== 0 || busy.stdout.includes('SAKURA_PROJECT_SSH_BUSY'))
@@ -911,10 +928,18 @@ export class ProjectSsh {
     }
   }
   private async stopRuntime(id: string, project: Project, owner?: RollbackOwner) {
+    const record = await this.record(id, project);
+    if (!record?.execution) return this.stopRuntimeNative(id, project, owner);
+    return ProjectSessionLifetime.retire(this.machines, id, { ...record, bootId: record.execution.bootId },
+      receipt => this.stopRuntimeNative(id, project, owner, receipt));
+  }
+  private async stopRuntimeNative(id: string, project: Project, owner?: RollbackOwner, expected?: SessionReceipt) {
     const projectId = project._workspace || 'default',
       p = projectSshPaths(projectId),
       key = `${id}:${projectId}`;
     const stored = await this.record(id, project);
+    if (expected && (!stored?.execution || !isDeepStrictEqual({ ...stored, bootId: stored.execution.bootId }, expected)))
+      throw new AppError('原项目 SSH 完整启动票据已改变，清理未确认', 503, 'PROJECT_SSH_CLEANUP_FAILED');
     let runs = await this.scopes.sshRuns(id, projectId);
     if (stored?.execution) {
       let prior = runs.find((entry) => entry.runId === stored.runId);

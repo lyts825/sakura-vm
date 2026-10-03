@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Machines } from './machines.ts';
 import { ExecutionScope } from './execution-scope.ts';
 import { vmLifetime } from './vm-lifetime.ts';
+import { ProjectSessionLifetime } from './project-session-lifetime.ts';
 import type { Project } from './project-config.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
@@ -129,6 +130,8 @@ export type ProjectTaskAdmissionOptions = { resource?: {
   gpgAgent?: { resource: GpgAgentResource; bridge: OwnedGpgForward; scopes?: GpgAgentScopes } };
 type ActiveTask = TaskContext & { file: string; entry: Entry };
 const activeTasks = new WeakMap<Machines, Map<string, ActiveTask>>();
+type TaskRecovery = { record: ActiveTask; recover: () => Promise<void> };
+const taskRecoveries = new WeakMap<Machines, Map<string, TaskRecovery>>();
 export type ProjectInheritedPayload = { identity: ProjectIdentity; runId: string; command: string; input: Buffer; sha256: string };
 type Access = {
   reserve(project: Project, signal?: AbortSignal): Promise<ProjectIdentity>;
@@ -734,12 +737,18 @@ export class ProjectRunScopes {
         sha256: createHash('sha256').update(JSON.stringify({ identity, owner, terminal })).digest('hex'),
         phase: 'intent', run: null };
       journal.runs.push(entry); await this.save(vmId, id, journal);
-      const run = await this.core.prepare(vmId, identity, { runId }, signal);
-      const current = await this.taskContext(vmId, signal);
+      const session = await ProjectSessionLifetime.acquire({ machines: this.machines, vmId, kind: 'terminal',
+        live: context.live, signal, receipt: { projectId: id, runId, bootId: context.bootId, identity, terminal, run: null as ProjectIdentityRun | null },
+        cleanup: receipt => this.stopTerminalNative(vmId, id, runId, receipt) });
+      return session.perform(async active => {
+      const run = await this.core.prepare!(vmId, identity, { runId }, active);
+      const current = await this.taskContext(vmId, active);
       if (current.live !== context.live || current.bootId !== context.bootId || run.phase !== 'active' || !this.matches(entry, run))
         throw new AppError('项目终端完整运行归属未确认，原 intent 保留', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
       entry.run = run; entry.phase = 'active'; await this.save(vmId, id, journal);
+      session.pin({ projectId: id, runId, bootId: context.bootId, identity, terminal, run });
       return { identity, run, terminal };
+      }, signal);
     });
   }
   async terminalRun(vmId: string, id: string, runId: string, signal?: AbortSignal) {
@@ -754,13 +763,29 @@ export class ProjectRunScopes {
   }
   async stopTerminal(vmId: string, id: string, runId: string) {
     id = projectIdSchema.parse(id); runId = z.uuid().parse(runId);
+    const entry = (await this.read(vmId, id)).runs.find(entry => entry.runId === runId);
+    if (!entry || entry.owner.kind !== 'terminal') return this.stopTerminalNative(vmId, id, runId);
+    return ProjectSessionLifetime.retire(this.machines, vmId, { projectId: id, runId,
+      bootId: entry.owner.bootId, identity: entry.identity, terminal: entry.terminal, run: entry.run },
+      receipt => this.stopTerminalNative(vmId, id, runId, receipt));
+  }
+  private async stopTerminalNative(vmId: string, id: string, runId: string,
+    expected?: { bootId: string; identity: unknown; terminal: unknown; run: ProjectIdentityRun | null }) {
+    id = projectIdSchema.parse(id); runId = z.uuid().parse(runId);
     return this.withLock(vmId, id, async () => {
       const entry = (await this.read(vmId, id)).runs.find(entry => entry.runId === runId);
+      const original = (candidate: Entry) => {
+        if (expected && (candidate.owner.bootId !== expected.bootId ||
+            !same(candidate.identity, expected.identity) || !same(candidate.terminal, expected.terminal) ||
+            (expected.run && (!candidate.run || !same({ ...candidate.run, phase: expected.run.phase }, expected.run)))))
+          throw new AppError('原终端完整归属已改变，清理未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+      };
       if (!entry) {
         const prior = await this.archived(vmId, id, runId);
-        if (prior?.owner.kind === 'terminal') return;
+        if (prior?.owner.kind === 'terminal') { original(prior); return; }
         throw new AppError('原终端运行记录不存在，清理未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
       }
+      original(entry);
       if (entry.owner.kind !== 'terminal') throw new AppError('停止请求不属于交互终端', 409);
       if (entry.phase === 'closed') return;
       const context = await this.taskContext(vmId);
@@ -892,9 +917,16 @@ export class ProjectRunScopes {
       if (!registry) { registry = new Map(); activeTasks.set(this.machines, registry); }
       const key = this.taskKey(vmId, id, runId);
       registry.set(key, record);
+      const executionScope = ExecutionScope.current();
+      if (executionScope) {
+        let recoveries = taskRecoveries.get(this.machines);
+        if (!recoveries) taskRecoveries.set(this.machines, recoveries = new Map());
+        recoveries.set(key, { record, recover: executionScope.recovery() });
+      }
       return { payload, live: context.live, owner: { ...owner, kind: 'task' as const }, agentContext, forwarding, gpgContext, gpgForwarding, release: () => {
         unbind?.(); unbindGpg?.();
         if (registry.get(key) === record) registry.delete(key);
+        if (executionScope && !executionScope.hasPendingCleanup()) taskRecoveries.get(this.machines)?.delete(key);
       } };
     });
   }
@@ -912,7 +944,28 @@ export class ProjectRunScopes {
   }
   async recoverStoppedTasks(vmId: string, id: string) {
     id = projectIdSchema.parse(id);
-    return this.withLock(vmId, id, access => access.recoverStoppedTasks());
+    const owned = await this.withLock(vmId, id, async access => {
+      await access.recoverStoppedTasks();
+      const journal = await this.read(vmId, id), selected: { key: string; recovery: TaskRecovery }[] = [];
+      for (const entry of journal.runs) {
+        const key = this.taskKey(vmId, id, entry.runId), recovery = taskRecoveries.get(this.machines)?.get(key);
+        if (!recovery || activeTasks.get(this.machines)?.has(key)) continue;
+        const expected = recovery.record.entry;
+        const normalized = { ...entry, ...(entry.cacheTransfer ? { cacheTransfer: { ...entry.cacheTransfer, phase: expected.cacheTransfer?.phase } } : {}) } as Entry;
+        if (recovery.record.file !== this.file(vmId, id) || entry.phase !== 'closed' ||
+            !this.taskMetadataMatches(recovery.record, normalized) ||
+            (expected.run && (!entry.run || !same({ ...entry.run, phase: expected.run.phase }, expected.run))))
+          throw new AppError('原执行清理能力与完整运行票据不符', 503, 'EXECUTION_CLEANUP_PENDING');
+        selected.push({ key, recovery });
+      }
+      return selected;
+    });
+    // Original cleanup can re-enter the identity lock through its afterCleanup callback.
+    // Domain proof is obtained first; never invoke the owned closure while holding this lock.
+    for (const { key, recovery } of owned) {
+      await recovery.recover();
+      if (taskRecoveries.get(this.machines)?.get(key) === recovery) taskRecoveries.get(this.machines)!.delete(key);
+    }
   }
   private async recoverStoppedTasksUnlocked(vmId: string, id: string, context?: TaskContext) {
     const journal = await this.read(vmId, id);
@@ -1014,6 +1067,17 @@ async function projectIdentityTaskInScope(machines: Machines, vmId: string, proj
   const resourceContext: ProjectTaskResourceContext = { identity: structuredClone(payload.identity),
     owner: admission.owner, sha256: payload.sha256, live: admission.live };
   let launched = false;
+  const closeBeforeLaunch = async () => {
+    if (launched) return;
+    if (machines.live.get(vmId) !== admission.live)
+      throw new AppError('客户机运行身份改变，任务资源核销未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
+    await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
+    if (options.resource) {
+      await options.resource.retire(resourceContext, await scopes.taskResourceReceipt(vmId, resourceContext));
+      await scopes.completeTaskResource(vmId, resourceContext, options.resource.descriptor);
+    }
+  };
+  const retirePreflight = ExecutionScope.current()?.deferCleanup(closeBeforeLaunch) || closeBeforeLaunch;
   try {
     await options.resource?.prepare(resourceContext);
     if (machines.live.get(vmId) !== admission.live)
@@ -1054,15 +1118,10 @@ async function projectIdentityTaskInScope(machines: Machines, vmId: string, proj
     await scopes.assertTaskIssued(vmId, projectId(project), runId, executed);
     return executed;
   } catch (error) {
-    if (!launched && (admission.agentContext || admission.gpgContext || options.resource)) {
-      if (machines.live.get(vmId) !== admission.live)
-        throw new AppError('客户机运行身份改变，任务资源核销未确认', 503, 'PROJECT_IDENTITY_CLEANUP_FAILED');
-      await scopes.closeAfterScopeStopped(vmId, projectId(project), runId);
-      if (options.resource) {
-        await options.resource.retire(resourceContext, await scopes.taskResourceReceipt(vmId, resourceContext));
-        await scopes.completeTaskResource(vmId, resourceContext, options.resource.descriptor);
-      }
-    }
+    if (!launched) await retirePreflight();
     throw error;
-  } finally { admission.release(); }
+  } finally {
+    try { if (launched) await retirePreflight(); }
+    finally { admission.release(); }
+  }
 }
