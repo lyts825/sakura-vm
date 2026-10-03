@@ -6,6 +6,7 @@ import type { Features } from './features.ts';
 import type { Jobs } from './jobs.ts';
 import { pluginDataFile } from './plugin-data.ts';
 import type { PluginScope } from './plugin-scope.ts';
+import { networkFor, type NetworkScope } from './network/index.ts';
 
 import { SERVICE_KEYS } from './plugin-services.ts';
 import type { ServiceRef } from './service-ref.ts';
@@ -16,6 +17,7 @@ type LegacyPluginContext = Pick<
   ServiceKey | 'machines' | 'require' | 'jobStores' | 'retryHandler' | 'mutations' | 'importing'
 >;
 export type PluginContext = LegacyPluginContext & {
+  readonly networking: NetworkScope;
   readonly signal: AbortSignal;
   provide<T>(service: ServiceRef<T>, value: T): T;
   provide<T>(key: string, value: T): T;
@@ -55,6 +57,8 @@ export function pluginContext(
   catalog: PluginManifest[],
   scope: PluginScope,
 ): PluginContext {
+  const networking = networkFor(`plugin:${manifest.id}`, 'plugin-network', scope.signal);
+  scope.add(() => networking.close());
   const owned = new Set(manifest.services);
   const dependencies = new Set([...manifest.requires, ...manifest.optional].map((item) => item.id));
   const readable = new Set(
@@ -64,6 +68,7 @@ export function pluginContext(
   );
   return new Proxy(host, {
     get(target, key) {
+      if (key === 'networking') return networking;
       if (key === 'signal') return scope.signal;
       if (key === 'provide')
         return <T>(reference: string | ServiceRef<T>, value: T) => {

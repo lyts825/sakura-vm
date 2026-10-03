@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -13,7 +14,7 @@ const { createSchema } = await import('../server/model.ts');
 const engine = { runtime: { close: async () => {} } } as Engine;
 
 test('a durable witness enrollment blocks ordinary starts even without the HA plugin', async () => {
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   const id = randomUUID(), targetHostId = randomUUID();
   try {
     await machines.init();
@@ -22,7 +23,7 @@ test('a durable witness enrollment blocks ordinary starts even without the HA pl
     await machines.enrollHaWitness(id, targetHostId, 3);
     await assert.rejects(machines.start(id), { code: 'HA_WITNESS_UNAVAILABLE' });
     await assert.rejects(machines.delete(id), { code: 'HA_WITNESS_ENROLLED' });
-    const reopened = new Machines(engine);
+    const reopened = new Machines(engine, fakeVmNetwork);
     await reopened.init();
     try {
       assert.equal(reopened.get(id).haWitnessEnrollment?.targetHostId, targetHostId);

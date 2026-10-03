@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat, readdir } from 'node:fs/promises';
@@ -84,7 +85,7 @@ test('cancelled encryption and decryption never overwrite an existing destinatio
 
 test('encrypted backup jobs never retry as plaintext and wrong passwords do not import any data', async () => {
   const id = randomUUID(),
-    machines = new Machines({} as Engine);
+    machines = new Machines({} as Engine, fakeVmNetwork);
   machines.get = () => ({ id, name: 'encrypted-test' }) as ReturnType<MachinesType['get']>;
   const data = Buffer.from('fake disk content'),
     manifest = Buffer.from(JSON.stringify({ sha256: createHash('sha256').update(data).digest('hex') })),
@@ -177,7 +178,7 @@ test('encrypted uploads are authenticated before import and temporary uploads ar
 
 test('private values are stored encrypted, listed as metadata and redacted across every chunk boundary', async () => {
   const id = randomUUID(),
-    locks = new Machines({} as Engine);
+    locks = new Machines({} as Engine, fakeVmNetwork);
   locks.get = () => ({ id }) as ReturnType<MachinesType['get']>;
   const secrets = new Secrets(
     locks,
@@ -280,7 +281,7 @@ test('command parameters are quoted as data and stored presets preserve their id
     false,
   );
   const id = randomUUID(),
-    locks = new Machines({} as Engine);
+    locks = new Machines({} as Engine, fakeVmNetwork);
   locks.get = () => ({ id }) as ReturnType<MachinesType['get']>;
   const commands = new CommandPresets(locks, {} as WorkspacesType);
   try {
@@ -415,7 +416,7 @@ test('migration checks stale previews, preserves originals, and activates only a
     target = join(root, 'migration-target');
   await mkdir(source);
   await writeFile(join(source, 'important.txt'), 'original');
-  const machines = new Machines({ run: async () => '{}' } as unknown as Engine);
+  const machines = new Machines({ run: async () => '{}' } as unknown as Engine, fakeVmNetwork);
   const migration = new DataMigration(machines, () => [], source);
   try {
     await assert.rejects(migration.plan(source), /相同或相互包含/);
@@ -447,7 +448,7 @@ test('migration refuses live guests, interrupted copies and unverified redirecti
     target = join(root, 'interrupted-target');
   await mkdir(source);
   await writeFile(join(source, 'data'), Buffer.alloc(1024 * 1024));
-  const machines = new Machines({} as Engine),
+  const machines = new Machines({} as Engine, fakeVmNetwork),
     migration = new DataMigration(machines, () => [], source);
   try {
     const plan = await migration.plan(target);
@@ -483,7 +484,7 @@ test('flushing unchanged job history does not invalidate a reviewed migration pl
     target = join(root, 'history-migration-target');
   await mkdir(source);
   const jobs = new Jobs('existing-task', join(source, 'jobs'));
-  const machines = new Machines({} as Engine),
+  const machines = new Machines({} as Engine, fakeVmNetwork),
     migration = new DataMigration(machines, () => [jobs], source);
   try {
     jobs.start('example', async () => {});
@@ -514,7 +515,7 @@ test('SSH includes from a previous migrated directory are repaired without editi
     join(root, '.sakura-migration.json'),
     JSON.stringify({ source: previous, id: 'ssh-migration', completedAt: 'now' }),
   );
-  const machines = new Machines({} as Engine),
+  const machines = new Machines({} as Engine, fakeVmNetwork),
     ide = new Ide(machines, {} as WorkspacesType, join(root, 'test-user-ssh'));
   try {
     await ide.update();
@@ -843,7 +844,7 @@ for (const failure of ['cleanup', 'scope'] as const) {
 
 test('interrupted network changes can be restored but externally changed files are protected', async () => {
   const id = randomUUID(),
-    locks = new Machines({} as Engine),
+    locks = new Machines({} as Engine, fakeVmNetwork),
     files = new Map([['/etc/profile.d/sakura-network.sh', 'before']]);
   locks.get = () => ({ id, distro: 'alpine' }) as ReturnType<MachinesType['get']>;
   locks.sftp = (async (_id: string, work: (ftp: unknown) => Promise<unknown>) =>

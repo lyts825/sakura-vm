@@ -1,17 +1,9 @@
+import { networkFor } from './network/index.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual, X509Certificate } from 'node:crypto';
 import { stat } from 'node:fs/promises';
-import {
-  request as httpsRequest,
-  createServer as createHttpsServer,
-  type Server as HttpsServer,
-} from 'node:https';
+import { type Server as HttpsServer } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import {
-  createConnection,
-  createServer as createTcpServer,
-  type Server as TcpServer,
-  type Socket,
-} from 'node:net';
+import { type Server as TcpServer, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { createSecureContext, type TLSSocket } from 'node:tls';
 import type { Duplex, Writable } from 'node:stream';
@@ -26,6 +18,8 @@ import { featureRolloutRequest } from './feature-rollouts.ts';
 import { qmp } from './qmp.ts';
 import { liveMigrationProjectsSchema } from './live-migration-projects.ts';
 import { haWitnessReplicaInventorySchema, type HaWitnessReplicaInventory } from './ha-witness-core.ts';
+
+const { httpsRequest, createHttpsServer, dial, createServer: createTcpServer } = networkFor('core:host-peers');
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
@@ -372,7 +366,7 @@ export class HostPeers {
     response.end(JSON.stringify(payload));
   }
 
-  private acceptMigrationStream(request: IncomingMessage, socket: Duplex, head: Buffer) {
+  private async acceptMigrationStream(request: IncomingMessage, socket: Duplex, head: Buffer) {
     socket.on('error', () => {});
     const reject = (status: number) => {
       socket.end(`HTTP/1.1 ${status} Rejected\r\nConnection: close\r\n\r\n`);
@@ -387,22 +381,23 @@ export class HostPeers {
       if (!session || session.requesterId !== peer.requesterId ||
           session.expiresAt <= this.now()) return reject(404);
       if (session.active.size >= 4) return reject(429);
-      const upstream = createConnection({ host: '127.0.0.1',
-        port: session.ports[match[2] as MigrationChannel] });
       socket.pause();
       session.active.add(socket);
+      const abort = new AbortController();
+      socket.once('close', () => { session.active.delete(socket); abort.abort(); });
+      const upstream = await dial({ host: '127.0.0.1',
+        port: session.ports[match[2] as MigrationChannel] }, abort.signal);
+      if (socket.destroyed || this.migrationSessions.get(match[1]) !== session || session.expiresAt <= this.now()) {
+        upstream.destroy(); return socket.destroy();
+      }
       const cleanup = () => { session.active.delete(socket); upstream.destroy(); };
       socket.once('close', cleanup);
       socket.once('error', () => upstream.destroy());
       upstream.once('error', () => socket.destroy());
-      upstream.once('connect', () => {
-        if (socket.destroyed) return upstream.destroy();
-        socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        if (head.length) upstream.write(head);
-        socket.pipe(upstream);
-        upstream.pipe(socket);
-        socket.resume();
-      });
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      if (head.length) upstream.write(head);
+      socket.pipe(upstream); upstream.pipe(socket);
+      socket.resume(); upstream.resume();
     } catch (error) {
       reject(error instanceof AppError ? error.status : 400);
     }

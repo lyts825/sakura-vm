@@ -1,3 +1,4 @@
+import { networkFor } from './network/index.ts';
 import { existsSync, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -7,6 +8,8 @@ import { pipeline } from 'node:stream/promises';
 import { DATA, IMAGE } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { Jobs } from './jobs.ts';
+
+const { fetch } = networkFor('core:images');
 
 export const distributions = {
   alpine: {

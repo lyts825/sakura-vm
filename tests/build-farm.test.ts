@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
@@ -26,7 +27,7 @@ const build = (name: string, labels: string[] = []) => ({ name,
   command: `printf ${name}`, cwd: '/workspace', labels, timeoutSeconds: 30 });
 function guest(records: Map<string, { id: string; name: string }>, state: () => string,
   execute: (...args: any[]) => Promise<any>) {
-  const locks = new Machines({} as any);
+  const locks = new Machines({} as any, fakeVmNetwork);
   const commands: string[] = [];
   const executions: { project: any; execution: { command: string; environment?: Record<string, string> };
     signal: AbortSignal; expectedLive: unknown }[] = [];

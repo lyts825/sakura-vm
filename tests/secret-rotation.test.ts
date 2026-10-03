@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -37,7 +38,7 @@ test('only changing the protected value resets secret age; policy and reminder m
     decryptions = 0;
   t.mock.method(Date, 'now', () => now);
   const id = randomUUID(),
-    machines = new Machines({} as any);
+    machines = new Machines({} as any, fakeVmNetwork);
   machines.get = (() => ({ id })) as any;
   const protector = async (operation: 'protect' | 'unprotect', value: string) => {
     if (operation === 'unprotect') {

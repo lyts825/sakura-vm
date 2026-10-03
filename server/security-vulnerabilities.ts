@@ -1,5 +1,8 @@
+import { networkFor } from './network/index.ts';
 import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
+
+const { fetch } = networkFor('core:security-vulnerabilities');
 
 type PackageVersion = { name: string; version: string };
 export type VulnerabilityMatch = PackageVersion & { ids: string[] };

@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -125,7 +126,7 @@ test('HTTP ingress routes requests, checks health, rejects port collisions and r
     occupied = await port();
   const blocker = createServer();
   await new Promise<void>((resolve) => blocker.listen(occupied, '127.0.0.1', resolve));
-  const machines = new Machines({} as Engine);
+  const machines = new Machines({} as Engine, fakeVmNetwork);
   const id = randomUUID();
   machines.records.set(id, {
     ...createSchema.parse({
@@ -268,7 +269,7 @@ test('HTTP ingress forwards WebSocket upgrades and releases the listener on dele
   wsServer.on('connection', (socket, req) => socket.on('message', () => socket.send(req.url || '')));
   const upstreamPort = await serve(upstream),
     listenPort = await port();
-  const machines = new Machines({} as Engine),
+  const machines = new Machines({} as Engine, fakeVmNetwork),
     id = randomUUID();
   machines.records.set(id, {
     ...createSchema.parse({ name: 'ws-test', forwards: [{ host: upstreamPort, guest: 8080 }] }),
@@ -319,7 +320,7 @@ test('HTTPS ingress routes verified TLS and WebSocket connections through live c
   );
   const upstreamPort = await serve(upstream),
     listenPort = await port();
-  const machines = new Machines({} as Engine),
+  const machines = new Machines({} as Engine, fakeVmNetwork),
     id = randomUUID();
   machines.records.set(id, {
     ...createSchema.parse({ name: 'tls-test', forwards: [{ host: upstreamPort, guest: 8080 }] }),
@@ -390,7 +391,7 @@ test('HTTPS ingress enforces route-specific mTLS for HTTP and WebSocket through 
   const wsServer = new WebSocketServer({ server: upstream });
   wsServer.on('connection', (socket) => socket.on('message', () => socket.send('ok')));
   const upstreamPort = await serve(upstream), listenPort = await port();
-  const machines = new Machines({} as Engine), id = randomUUID();
+  const machines = new Machines({} as Engine, fakeVmNetwork), id = randomUUID();
   machines.records.set(id, {
     ...createSchema.parse({ name: 'mtls-test', forwards: [{ host: upstreamPort, guest: 8080 }] }),
     id, createdAt: new Date().toISOString(), snapshots: [],
@@ -495,7 +496,7 @@ test('generated local domains isolate same-path virtual hosts and use a verified
   const second = createServer((req, res) => res.writeHead(200).end(`second:${req.headers['x-forwarded-host']}`));
   const firstPort = await serve(first), secondPort = await serve(second);
   const httpPort = await port(), httpsPort = await port();
-  const machines = new Machines({} as Engine), id = randomUUID();
+  const machines = new Machines({} as Engine, fakeVmNetwork), id = randomUUID();
   machines.records.set(id, {
     ...createSchema.parse({ name: 'aliases', forwards: [
       { host: firstPort, guest: 80 }, { host: secondPort, guest: 81 },
@@ -548,7 +549,7 @@ test('generated local domains isolate same-path virtual hosts and use a verified
 
 test('network plugin exposes typed ingress operations and rejects unknown instances', async () => {
   const { Features } = await import('../server/features.ts');
-  const machines = new Machines({} as Engine);
+  const machines = new Machines({} as Engine, fakeVmNetwork);
   const features = await Features.create(machines, ['network']);
   const invoke = async (method: string, input?: unknown, path = '/api/ingress') => {
     let status = 0,

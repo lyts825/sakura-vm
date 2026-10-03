@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -20,7 +21,7 @@ test('pool assignment, verified moves and cleanup survive a controller restart',
   const source = join(root, 'source.qcow2');
   const disk = Buffer.from('qcow2-storage-pool-proof');
   await writeFile(source, disk);
-  let machines = new Machines(engine);
+  let machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const pool = await machines.storagePools.create('fast-disk', external);
   const vm = await machines.adopt({ name: 'pooled', storagePoolId: pool.id },
@@ -52,7 +53,7 @@ test('pool assignment, verified moves and cleanup survive a controller restart',
   await migration.close();
   await machines.close();
 
-  machines = new Machines(engine);
+  machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   assert.equal(vmDir(vm.id), defaultDir);
   assert.equal((await machines.storagePools.view(vm.id)).currentPoolId, 'default');
@@ -76,7 +77,7 @@ test('pool assignment, verified moves and cleanup survive a controller restart',
 test('a tampered ownership marker disables the external pool', async () => {
   const external = join(root, 'tampered');
   await mkdir(external);
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const pool = await machines.storagePools.create('tamper-check', external);
   const marker = join(external, 'sakura-machines', '.sakura-pool.json');

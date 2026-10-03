@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -73,7 +74,7 @@ test('byte budgets constrain real stream throughput and cancel waiting transfers
 
 test('backup retention survives policy changes and restart, protects pruning, and expires', async (t) => {
   const id = randomUUID(),
-    machines = new Machines({} as Engine);
+    machines = new Machines({} as Engine, fakeVmNetwork);
   machines.get = () => ({ id, name: 'backup-lock' }) as ReturnType<typeof machines.get>;
   const payload = Buffer.from('actual backup payload'),
     manifest = Buffer.from(JSON.stringify({ sha256: createHash('sha256').update(payload).digest('hex') }));
@@ -111,7 +112,7 @@ test('backup retention survives policy changes and restart, protects pruning, an
 
 test('maintenance policy is persisted and actually blocks scheduled backups', async (t) => {
   const id = randomUUID(),
-    machines = new Machines({} as Engine);
+    machines = new Machines({} as Engine, fakeVmNetwork);
   machines.records.set(id, { id } as any);
   const backups = new Backups(machines, {} as Bundles);
   t.after(() => backups.close());

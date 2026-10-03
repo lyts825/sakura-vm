@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import assert from 'node:assert/strict';
 import test, { after, type TestContext } from 'node:test';
 import { randomUUID } from 'node:crypto';
@@ -75,7 +76,7 @@ async function fixture(t: TestContext) {
       return '';
     },
   } as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await mkdir(join(root, 'machines'), { recursive: true });
   machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
   const source = await machines.create({ name: 'source-' + randomUUID().slice(0, 8) });
@@ -261,7 +262,7 @@ test('host shutdown drains active rescue and restart removes the orphan record w
   assert.equal(f.machines.isBusy(f.source.id), false);
   const saved = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8'));
   assert.equal(saved.filter((vm: any) => vm.rescueOf).length, 1);
-  const restarted = new Machines(f.machines.engine);
+  const restarted = new Machines(f.machines.engine, fakeVmNetwork);
   await restarted.init();
   t.after(() => restarted.close());
   assert.equal(restarted.records.size, 1);

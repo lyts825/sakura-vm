@@ -1,13 +1,7 @@
+import { networkFor } from './network/index.ts';
 import { randomUUID, X509Certificate } from 'node:crypto';
-import {
-  createServer as createHttpServer,
-  request,
-  type ClientRequest,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from 'node:http';
-import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
+import { type ClientRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { type Server as HttpsServer } from 'node:https';
 import type { Duplex } from 'node:stream';
 import { join } from 'node:path';
 import { TLSSocket } from 'node:tls';
@@ -27,6 +21,8 @@ import { AppError } from '../shared/errors.ts';
 import { DATA, PORT } from './paths.ts';
 import type { Machines } from './machines.ts';
 import type { IngressCertificates } from './ingress-certificates.ts';
+
+const { createHttpServer, httpRequest: request, createHttpsServer } = networkFor('core:http-ingress');
 
 const OWNER = 'http-ingress';
 const storedSchema = z.array(ingressEntrySchema).max(24);

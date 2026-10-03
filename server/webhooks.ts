@@ -1,3 +1,4 @@
+import { networkFor } from './network/index.ts';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
@@ -17,6 +18,8 @@ import {
   type WebhookView,
   type WebhookDelivery,
 } from '../shared/webhooks.ts';
+
+const { fetch } = networkFor('core:webhooks');
 
 const limits = { subscriptions: 16, pending: 500, history: 200, attempts: 5, sourceHours: 24 };
 const hour = 3600000;

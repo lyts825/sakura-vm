@@ -22,7 +22,10 @@ async function listen(server: Server) {
 
 test('migration streams use pinned peer TLS, session authority and revocable local forwards', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-peer-stream-'));
-  const echo = createServer((socket) => socket.pipe(socket));
+  const echo = createServer((socket) => {
+    socket.on('error', () => {}); // Revoking the tunnel can reset this fixture connection.
+    socket.pipe(socket);
+  });
   const targetFile = join(root, 'target.json');
   const sourceFile = join(root, 'source.json');
   let target = new HostPeers(status, targetFile, 'Target');
@@ -110,7 +113,11 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
     const received = once(client, 'data', { signal: AbortSignal.timeout(10_000) });
     client.write('verified migration bytes');
     assert.equal((await received)[0].toString(), 'verified migration bytes');
-    const closed = once(client, 'close', { signal: AbortSignal.timeout(10_000) });
+    // Revocation may close with EOF or ECONNRESET; both must finish with close.
+    const closed = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Revoked migration stream did not close')), 10_000);
+      client!.once('close', () => { clearTimeout(timer); resolve(); });
+    });
     await target.configure({ operation: 'allow-activate', id: inbound.id, enabled: false });
     await closed;
     assert.throws(() => target.registerMigrationSession(inbound.requesterId,

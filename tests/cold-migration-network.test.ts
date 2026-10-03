@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -32,8 +33,8 @@ test('pinned peer TLS streams a real validated bundle into a distinct machine ma
       if (args[0] === 'convert') await copyFile(args.at(-2)!, args.at(-1)!);
       return '{}';
     } } as Engine;
-  const source = new Machines(engine);
-  const destination = new Machines(engine);
+  const source = new Machines(engine, fakeVmNetwork);
+  const destination = new Machines(engine, fakeVmNetwork);
   await source.init();
   await destination.init();
   const id = randomUUID();

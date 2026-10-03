@@ -1,3 +1,6 @@
+import { networkFor } from './network-client.mjs';
+const setupNetwork = networkFor('tool:setup');
+const { fetch } = setupNetwork;
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync, createReadStream, createWriteStream } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -10,12 +13,17 @@ import { POSIXLOOM_COMMIT, QEMU_URL, QEMU_SHA512, ALPINE_URL, ALPINE_SHA512 } fr
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 process.chdir(root);
-const run = (exe, args, cwd = root) =>
-  new Promise((res, rej) => {
-    const child = spawn(exe, args, { cwd, stdio: 'inherit', windowsHide: true });
-    child.on('error', rej);
-    child.on('exit', (code) => (code === 0 ? res() : rej(new Error(`${exe} exited ${code}`))));
-  });
+const run = async (exe, args, cwd = root) => {
+  const proxy = await setupNetwork.proxyEnvironment();
+  try {
+    await new Promise((res, rej) => {
+      const child = spawn(exe, args, { cwd, stdio: 'inherit', windowsHide: true,
+        env: { ...process.env, ...proxy.env } });
+      child.on('error', rej);
+      child.on('exit', (code) => (code === 0 ? res() : rej(new Error(`${exe} exited ${code}`))));
+    });
+  } finally { await proxy.close(); }
+};
 const npm = (args, cwd) =>
   run(
     process.platform === 'win32' ? process.env.ComSpec || 'cmd.exe' : 'npm',

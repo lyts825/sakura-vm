@@ -1,6 +1,7 @@
+import { networkFor } from './network/index.ts';
 import { stat, statfs, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createServer } from 'node:net';
+
 import { DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
@@ -16,6 +17,8 @@ import {
 } from './disk-maintenance.ts';
 import { inMaintenance } from './automation-policy.ts';
 import { backupBlocks } from './backup-blocks.ts';
+
+const { createServer } = networkFor('core:maintenance');
 
 export type DiagnosticCheck = {
   name: string;

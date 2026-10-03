@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback, spawn } from 'node:child_process';
@@ -111,7 +112,7 @@ async function fixture(t: TestContext) {
   await git(directory, 'clone', bare, peer);
   await git(local, 'remote', 'set-url', 'origin', 'https://example.test/repository.git');
   const commands: { command: string; timeout?: number; signal?: AbortSignal }[] = [];
-  const machines = new Machines({} as Engine);
+  const machines = new Machines({} as Engine, fakeVmNetwork);
   machines.get = () => ({ id }) as ReturnType<MachinesType['get']>;
   machines.state = () => 'running';
   const live = { status: 'running' }; machines.live.set(id, live as any);

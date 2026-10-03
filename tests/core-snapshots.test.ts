@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +27,7 @@ async function fixture(t: TestContext) {
       commands.push(args);
       return '';
     },
-  } as Engine);
+  } as Engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
   machines.records.set(id, {
@@ -124,6 +125,33 @@ test('legacy snapshots without identity metadata keep their existing controller 
   assert.equal(await readFile(join(dir, 'id_rsa'), 'utf8'), 'original-private-key');
   assert.equal((await machines.snapshotIdentity(id, legacy.id)).key, 'original-private-key');
   await assert.rejects(machines.snapshotIdentity(id, randomUUID()), /不存在/);
+});
+
+test('a guest exiting during network renewal releases the new generation without reviving its Live', async (t) => {
+  const { machines, id } = await fixture(t);
+  const shot = await machines.snapshot(id, 'memory-fixture');
+  shot.consistency = 'vmstate';
+  shot.stateFingerprint = 'fixture';
+  (machines as any).vmStateFingerprint = async () => 'fixture';
+  const options = { vmId: id, generation: 'before', isolated: false,
+    sshPort: 35001, forwards: [], onFailure: () => {} };
+  const old = await fakeVmNetwork.attachVm(options);
+  const renewed = await fakeVmNetwork.attachVm({ ...options, generation: 'after' });
+  let startRenew!: () => void, finishRenew!: () => void;
+  const started = new Promise<void>((resolve) => { startRenew = resolve; });
+  const finished = new Promise<void>((resolve) => { finishRenew = resolve; });
+  old.renew = async () => { startRenew(); await finished; return renewed; };
+  const live = { status: 'running', accelerator: 'tcg', network: old,
+    clients: new Set(), abort: new AbortController(), bootAbort: new AbortController() } as any;
+  machines.live.set(id, live);
+  const restoring = machines.restoreMemory(id, shot.id);
+  await started;
+  live.abort.abort();
+  machines.live.delete(id);
+  finishRenew();
+  await assert.rejects(restoring, /已退出/);
+  assert.equal(renewed.signal.aborted, true);
+  assert.equal(machines.live.has(id), false);
 });
 
 test('failed online disk snapshot thaws the guest and removes its identity metadata', async (t) => {

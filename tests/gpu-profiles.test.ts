@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -14,7 +15,7 @@ after(() => rm(root, { recursive: true, force: true }));
 
 test('GPU profiles preview a real hardware change and preserve applied provenance', async (t) => {
   const machines = new Machines({ whpxAvailable: false,
-    runtime: { close: async () => {} } } as any);
+    runtime: { close: async () => {} } } as any, fakeVmNetwork);
   await machines.init();
   t.after(() => machines.close());
   const vmId = randomUUID();
@@ -61,7 +62,7 @@ test('GPU profiles preview a real hardware change and preserve applied provenanc
 
 test('GPU preview rejects an unavailable 3D backend and insufficient instance memory', async (t) => {
   const machines = new Machines({ whpxAvailable: false,
-    runtime: { close: async () => {} } } as any);
+    runtime: { close: async () => {} } } as any, fakeVmNetwork);
   await machines.init();
   t.after(() => machines.close());
   const vmId = randomUUID();

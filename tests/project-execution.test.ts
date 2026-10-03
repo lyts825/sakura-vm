@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -20,7 +21,7 @@ const { guestTask } = await import('../server/guest-task.ts');
 after(() => rm(root, { recursive: true, force: true }));
 
 async function fixture() {
-  const id = randomUUID(), locks = new Machines({} as Engine), commands: string[] = [];
+  const id = randomUUID(), locks = new Machines({} as Engine, fakeVmNetwork), commands: string[] = [];
   const live = { status: 'running' };
   let wait = false;
   let started!: () => void;

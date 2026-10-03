@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -32,7 +33,7 @@ async function fixture() {
   });
   await new Promise<void>(resolve => server.listen(path, resolve));
   const previous = process.env.SSH_AUTH_SOCK; process.env.SSH_AUTH_SOCK = path;
-  const vmId = randomUUID(), locks = new Machines({} as never), live = {}, commands: string[] = [];
+  const vmId = randomUUID(), locks = new Machines({} as never, fakeVmNetwork), live = {}, commands: string[] = [];
   let projectId = '1111111111111111', releases = 0, closes = 0, resolves = 0;
   const raw = { ...projectSchema.parse({ directory: '/srv/projects/agent', networkIsolation: 'private',
     environment: { TOKEN: 'raw-value', SSH_AUTH_SOCK: '/tmp/wrong-agent' }, secrets: { TOKEN: 'own-key' } }), _workspace: projectId };

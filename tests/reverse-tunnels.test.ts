@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
@@ -16,7 +17,7 @@ const id = '11111111-1111-4111-8111-111111111111';
 class Guest extends EventEmitter {
   running = true;
   live = new Map([[id, {}]]);
-  locks = new Machines({} as Engine);
+  locks = new Machines({} as Engine, fakeVmNetwork);
   locked = this.locks.locked.bind(this.locks);
   commands: string[] = [];
   forwarded: Project[] = [];

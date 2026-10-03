@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -26,7 +27,7 @@ type Call = { project: any; execution: any; signal: AbortSignal;
   log?: (text: string) => void; timeout?: number; expectedLive: unknown };
 
 async function fixture() {
-  const id = randomUUID(), locks = new Machines({} as any), live = { status: 'running' };
+  const id = randomUUID(), locks = new Machines({} as any, fakeVmNetwork), live = { status: 'running' };
   const commands: string[] = [], calls: Call[] = [];
   let status = 'running', migrations = 'null\n', resolveCount = 0;
   let resolveHook = async () => {};

@@ -1,9 +1,12 @@
+import { networkFor } from './network/index.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
+
 import { hostname } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { AppError } from '../shared/errors.ts';
+
+const { createServer } = networkFor('core:ha-witness-lock');
 
 type Owner = { version: 1; host: string; pid: number; token: string };
 

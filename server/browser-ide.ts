@@ -1,3 +1,4 @@
+import { networkFor } from './network/index.ts';
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -49,6 +50,8 @@ import {
 } from './project-service-scope.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
+
+const { fetch } = networkFor('core:browser-ide');
 const executionSchema = z.object({ identity: projectIdentitySchema,
   record: projectBrowserIdeRecordSchema, run: projectIdentityRunSchema.nullable(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),

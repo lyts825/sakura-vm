@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
@@ -35,7 +36,7 @@ test('first-checkout repository URLs are credential-free HTTPS or guest loopback
 });
 
 test('only an applied matching Git scope resolves its separate secret', async () => {
-  const machines = new Machines({} as any), id = randomUUID();
+  const machines = new Machines({} as any, fakeVmNetwork), id = randomUUID();
   machines.records.set(id, { id, template: 'none' } as any);
   let appliedAt: string | undefined = new Date().toISOString();
   const configuration = { kind: 'bearer' as const, endpoint: 'https://git.example.com/org/', tokenSecret: 'git-reader' };

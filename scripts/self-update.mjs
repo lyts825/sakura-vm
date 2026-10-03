@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { networkFor } from './network-client.mjs';
+const updateNetwork = networkFor('tool:self-update');
+const { fetch, createServer } = updateNetwork;
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:net';
 import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,11 +13,15 @@ import { inside, releaseEntriesFor, verifyReleaseManifest } from './release-mani
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 async function run(command, args, cwd) {
-  const child = spawn(command, args, { cwd, stdio: 'inherit', windowsHide: true });
-  return await new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`${command} 退出码 ${code}`)));
-  });
+  const proxy = await updateNetwork.proxyEnvironment();
+  try {
+    const child = spawn(command, args, { cwd, stdio: 'inherit', windowsHide: true,
+      env: { ...process.env, ...proxy.env } });
+    return await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`${command} 退出码 ${code}`)));
+    });
+  } finally { await proxy.close(); }
 }
 
 export async function portAvailable() {

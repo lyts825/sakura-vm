@@ -9,6 +9,9 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { dpapi, type Protector } from './secrets.ts';
+import { networkFor } from './network/index.ts';
+const { fetch: managedFetch } = networkFor('core:sso', 'oidc');
+const oidcFetch: oidc.CustomFetch = (url, options) => managedFetch(url, options as RequestInit);
 
 const provider = z.enum(['oidc', 'saml']);
 export type SsoProvider = z.infer<typeof provider>;
@@ -211,7 +214,8 @@ export class SingleSignOn {
         setting.authMethod === 'client_secret_post' ? oidc.ClientSecretPost(secret) :
           oidc.ClientSecretBasic(secret);
       const config = await this.discover(new URL(setting.issuer), setting.clientId,
-        { token_endpoint_auth_method: setting.authMethod }, authentication, { timeout: 10 });
+        { token_endpoint_auth_method: setting.authMethod }, authentication,
+        { timeout: 10, [oidc.customFetch]: oidcFetch });
       const metadata = config.serverMetadata();
       if (metadata.issuer !== setting.issuer || !metadata.authorization_endpoint ||
           !metadata.token_endpoint || !metadata.jwks_uri ||

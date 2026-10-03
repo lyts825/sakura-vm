@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -96,7 +97,7 @@ test('hardware capabilities persist through restart, reject live edits and enfor
       return '';
     },
   };
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
   await mkdir(vmDir(id));
@@ -127,7 +128,7 @@ test('hardware capabilities persist through restart, reject live edits and enfor
   );
   await actions.run(id, 'device-profiles', { mode: 'apply', name: 'trim' }, signal);
   await actions.run(id, 'ipv6', { mode: 'save', enabled: true }, signal);
-  const reloaded = new Machines(engine);
+  const reloaded = new Machines(engine, fakeVmNetwork);
   await reloaded.init();
   t.after(() => reloaded.close());
   assert.equal(reloaded.get(id).hardware?.cpu?.cores, 4);
@@ -141,9 +142,8 @@ test('hardware capabilities persist through restart, reject live edits and enfor
   assert.equal(launched.length, 1);
   assert.ok(launched[0].includes('1,sockets=1,cores=4,threads=1,maxcpus=4'));
   assert.ok(launched[0].some((arg) => arg.includes('discard=unmap')));
-  assert.ok(
-    launched[0].some((arg) => arg.startsWith('user,') && arg.includes('ipv4=on') && arg.includes('ipv6=on')),
-  );
+  assert.ok(launched[0].some((arg) => arg.startsWith('stream,id=sakura-net,')));
+  assert.equal(machines.live.get(id)!.network!.policy.ipv6, true);
   machines.live.get(id)!.abort.abort();
   await machines.live.get(id)!.done;
   await saveResourcePolicy({ enabled: false });

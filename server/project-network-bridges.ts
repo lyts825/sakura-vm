@@ -1,11 +1,14 @@
+import { networkFor } from './network/index.ts';
 import { randomUUID } from 'node:crypto';
-import { createServer, type Server, type Socket } from 'node:net';
+import { type Server, type Socket } from 'node:net';
 import type { ClientChannel } from 'ssh2';
 import type { Machines } from './machines.ts';
 import type { Project } from './project-config.ts';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';
 import { projectNetworkCommand, projectNetworkNamespace } from './project-network-isolation.ts';
+
+const { createServer } = networkFor('core:project-network-bridges');
 
 type Bridge = {
   vmId: string;

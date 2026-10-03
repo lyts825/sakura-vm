@@ -20,12 +20,14 @@ import { backupLocked, verifyBackup } from './backups.ts';
 import type { Bundles } from './bundles.ts';
 import { withDecrypted } from './encrypted-backups.ts';
 import type { Machines } from './machines.ts';
+import { networkFor } from './network/index.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { fileHash, readStore, writeStore } from './local-store.ts';
 import { secretName, type Secrets } from './secrets.ts';
 
+const objectNetwork = networkFor('core:object-backup', 's3');
 const uuid = z.uuid();
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
 const prefix = z.string().max(120).regex(/^(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)?$/);
@@ -157,6 +159,7 @@ export class ObjectBackup {
       throw new AppError('对象存储凭据必须是含 accessKeyId 和 secretAccessKey 的私密配置 JSON', 400);
     }
     return new S3Client({
+      requestHandler: objectNetwork.requestHandler(),
       region: target.region,
       ...(target.endpoint ? { endpoint: target.endpoint } : {}),
       forcePathStyle: true,

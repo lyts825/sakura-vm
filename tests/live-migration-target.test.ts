@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -30,7 +31,7 @@ test('a QEMU launch failure removes the unpublished incoming target', async () =
       throw new Error('injected QEMU launch failure');
     },
   } as unknown as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   let registered = false;
   const peers = { registerMigrationSession: () => { registered = true; return randomUUID(); },
@@ -57,7 +58,7 @@ test('incoming target atomically adopts source identity and persists a non-boota
       await writeFile(args.at(-2)!, 'synthetic overlay');
     },
   } as unknown as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const source = { sourceHostId: randomUUID(), sourceVmId: randomUUID(),
     transferId: randomUUID() };
@@ -75,7 +76,7 @@ test('incoming target atomically adopts source identity and persists a non-boota
     await assert.rejects(machines.start(target.id), /尚未接收客户机状态/);
     await assert.rejects(machines.createIncomingTarget({ name: 'other' }, identity, source),
       /已创建目标实例/);
-    const restored = new Machines(engine);
+    const restored = new Machines(engine, fakeVmNetwork);
     await restored.init();
     try {
       assert.equal(restored.get(target.id).liveMigrationOrigin?.status, 'prepared');

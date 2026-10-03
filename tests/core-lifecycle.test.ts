@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -41,7 +42,7 @@ async function fixture(t: TestContext) {
       return '';
     },
   } as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
   machines.records.set(id, {
@@ -87,7 +88,7 @@ test('boot circuit persists failed launches across controller restarts and expli
     await machines.live.get(id)?.done;
   }
   assert.equal((await machines.bootGuard(id)).blocked, true);
-  const reloaded = new Machines(machines.engine);
+  const reloaded = new Machines(machines.engine, fakeVmNetwork);
   await reloaded.init();
   t.after(() => reloaded.close());
   assert.equal((await reloaded.bootGuard(id)).failures, 5);

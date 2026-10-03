@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -22,7 +23,7 @@ const { vmDir } = await import('../server/model.ts');
 after(() => rm(root, { recursive: true, force: true }));
 
 async function fixture() {
-  const id = randomUUID(), locks = new Machines({} as Engine);
+  const id = randomUUID(), locks = new Machines({} as Engine, fakeVmNetwork);
   const commands: string[] = [];
   let status = 'running', persistent = false, verified = true;
   let migration: 'applying' | 'failed' | 'directory-applied' | 'invalid' | null = null;

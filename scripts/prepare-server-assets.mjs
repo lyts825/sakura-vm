@@ -1,4 +1,5 @@
-import { cp, mkdir } from 'node:fs/promises';
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import './prepare-monitor.mjs';
 import './prepare-linux-clipboard.mjs';
@@ -12,13 +13,49 @@ import { prepareGpgAgentHostAssets } from './build-gpg-agent-host.mjs';
 const root = process.cwd();
 const target = join(root, '.sakura-server', 'assets');
 await mkdir(target, { recursive: true });
+await cp(join(root, 'server/network/worker.mjs'), join(target, 'network-worker.mjs'));
+await mkdir(join(root, '.sakura-server/docs'), { recursive: true });
+await cp(join(root, 'docs/network-runtime.md'), join(root, '.sakura-server/docs/network-runtime.md'));
+const networkSources = [
+  'server/network-entry.ts',
+  'server/network/core.ts',
+  'server/network/index.ts',
+  'server/network/host-pool.ts',
+  'server/network/vm-backend.ts',
+  'server/network/worker.mjs',
+];
+const describe = async (base, file) => {
+  const bytes = await readFile(join(base, file));
+  return { file, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+};
+await writeFile(
+  join(target, 'network-runtime.json'),
+  JSON.stringify(
+    {
+      version: 1,
+      files: await Promise.all(
+        ['network-entry.js', 'assets/network-worker.mjs'].map((file) =>
+          describe(join(root, '.sakura-server'), file),
+        ),
+      ),
+      sources: await Promise.all(networkSources.map((file) => describe(root, file))),
+    },
+    null,
+    2,
+  ) + '\n',
+);
 await prepareGpgAgentHostAssets();
 await cp(join(root, 'native', 'gpg-agent', 'windows-relay.cpp'), join(target, 'gpg-agent-host-source.cpp'));
 const witnessDocs = join(root, '.sakura-witness', 'docs');
 const witnessScripts = join(root, '.sakura-witness', 'scripts');
 await mkdir(witnessDocs, { recursive: true });
 await mkdir(witnessScripts, { recursive: true });
-for (const file of ['ha-failover-check.md', 'ha-external-drill.md', 'ha-witness-maintenance.md', 'ha-witness-config.example.json'])
+for (const file of [
+  'ha-failover-check.md',
+  'ha-external-drill.md',
+  'ha-witness-maintenance.md',
+  'ha-witness-config.example.json',
+])
   await cp(join(root, 'docs', file), join(witnessDocs, file));
 await cp(
   join(root, 'scripts', 'ha-witness.service.example'),

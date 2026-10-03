@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -74,7 +75,7 @@ test('saving project configuration cannot race a start that is still loading its
   await mkdir(vmDir(id), { recursive: true });
   const file = join(vmDir(id), 'project.json');
   await writeFile(file, JSON.stringify({ command: 'npm start' }));
-  const locks = new Machines({} as Engine);
+  const locks = new Machines({} as Engine, fakeVmNetwork);
   machines.locked = locks.locked.bind(locks);
   machines.get = () => ({ template: 'none' }) as ReturnType<MachinesType['get']>;
   machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
@@ -129,7 +130,7 @@ test('core project binding protection includes SSH children when the IDE plugin 
   const { machines, workspaces } = fixture(id);
   await mkdir(vmDir(id), { recursive: true });
   machines.get = () => ({ template: 'none' }) as ReturnType<MachinesType['get']>;
-  const locks = new Machines({} as Engine);
+  const locks = new Machines({} as Engine, fakeVmNetwork);
   machines.locked = locks.locked.bind(locks);
   let busy = true;
   machines.exec = async (_id, command) => ({ code: 0, stderr: '',
@@ -149,7 +150,7 @@ test('an unreadable SSH process scope fails closed before changing a project bin
   const id = randomUUID();
   const { machines, workspaces } = fixture(id);
   machines.get = () => ({ template: 'none' }) as ReturnType<MachinesType['get']>;
-  const locks = new Machines({} as Engine);
+  const locks = new Machines({} as Engine, fakeVmNetwork);
   machines.locked = locks.locked.bind(locks);
   machines.exec = async (_id, command) => command.startsWith('# SAKURA_PROJECT_MAIN_LEGACY_STATUS')
     ? { code: 0, stdout: 'absent\n', stderr: '' }

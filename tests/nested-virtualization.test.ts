@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +27,7 @@ after(async () => {
 
 test('nested virtualization records actual guest flags and KVM availability without claiming a second VM boot', async () => {
   assert.equal(nextFeatureCatalog.find(([id]) => id === 'nested-virtualization')?.[5], 'available');
-  const machines = new Machines({} as Engine),
+  const machines = new Machines({} as Engine, fakeVmNetwork),
     id = randomUUID();
   machines.records.set(id, {
     ...createSchema.parse({ name: 'nested-test' }),

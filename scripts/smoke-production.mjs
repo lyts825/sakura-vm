@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, mkdir, readFile, writeFile, symlink, unlink, rm } from 'node:fs/promises';
 import { randomUUID, createHmac, createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -68,6 +68,11 @@ async function probe(selected, expected) {
     }
     assert.ok(bootstrap?.token, `编译版服务未启动：${output}`);
     const headers = { 'x-sakura-token': bootstrap.token };
+    assert.equal((await fetch(origin + '/api/network-runtime')).status, 401);
+    const network = await fetch(origin + '/api/network-runtime', { headers }).then((response) => response.json());
+    assert.equal(network.state, 'running');
+    assert.ok(network.hostWorkers.length >= 1);
+    assert.equal(network.maxChildProcesses, network.limits.maxWorkers + 2 * network.limits.maxVmWorkers);
     const specification = await fetch(origin + '/api/openapi', { headers }).then((response) =>
       response.json(),
     );
@@ -766,3 +771,48 @@ await probe(['commands', 'metrics'], ['projects', 'commands', 'metrics']);
 await probe(['sandbox'], ['sandbox']);
 await probe(['backups'], ['transfers', 'snapshots', 'secrets', 'backups']);
 await probe(['network'], ['network']);
+
+// Exercise the installed-layout branch with no source tree or TypeScript entry.
+const networkFixture = await mkdtemp(join(tmpdir(), 'sakura-network-release-'));
+assert.ok(resolve(networkFixture).startsWith(resolve(tmpdir()) + sep));
+const peer = createHttpServer((_request, response) => response.end('compiled-network-worker'));
+let dependenciesLinked = false;
+try {
+  await new Promise((done, fail) => peer.listen(0, '127.0.0.1', done).once('error', fail));
+  for (const folder of ['scripts', '.sakura-server/assets'])
+    await mkdir(join(networkFixture, folder), { recursive: true });
+  for (const file of ['scripts/network-client.mjs', '.sakura-server/network-entry.js',
+    '.sakura-server/assets/network-worker.mjs'])
+    await copyFile(resolve(file), join(networkFixture, file));
+  await writeFile(join(networkFixture, 'package.json'), '{"type":"module"}\n');
+  await symlink(resolve('node_modules'), join(networkFixture, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  dependenciesLinked = true;
+  const code = `
+    import assert from 'node:assert/strict';
+    const { networkFor, networkRuntime } = await import('./scripts/network-client.mjs');
+    try {
+      const scope = networkFor('tool:installed-fixture');
+      const response = await scope.fetch(process.env.SAKURA_TEST_NETWORK_URL);
+      assert.equal(await response.text(), 'compiled-network-worker');
+      assert.equal(networkRuntime.snapshot().hostWorkers.length, 1);
+    } finally { await networkRuntime.close(); }
+    assert.equal(networkRuntime.snapshot().hostWorkers.length, 0);
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', code], {
+    cwd: networkFixture, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, SAKURA_TEST_NETWORK_URL: `http://127.0.0.1:${peer.address().port}` },
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk; });
+  child.stderr.on('data', (chunk) => { output += chunk; });
+  const timeout = setTimeout(() => child.kill(), 15_000);
+  try {
+    const status = await new Promise((done, fail) => child.once('close', done).once('error', fail));
+    assert.equal(status, 0, output);
+  } finally { clearTimeout(timeout); }
+  console.log('Installed network entry and standalone worker passed without the source tree.');
+} finally {
+  await new Promise((done) => peer.close(done));
+  if (dependenciesLinked) await unlink(join(networkFixture, 'node_modules'));
+  await rm(networkFixture, { recursive: true, force: true });
+}

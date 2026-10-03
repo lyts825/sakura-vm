@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { networkFor } from './network-client.mjs';
+const { createServer } = networkFor('tool:launch');
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

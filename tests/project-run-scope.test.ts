@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -33,7 +34,7 @@ async function fixture(agentCleanup?: (context: SshAgentContext) => Promise<void
     registryId: identity.registryId, identityId, projectId: 'default', runId: owner.runId, revision: 1,
     bootId, build: 'a'.repeat(64), networkDevice: '4', networkInode: '5', cgroupDevice: '6', cgroupInode: '7',
     cgroupName: 'sakura-task-' + owner.runId, namespace: '' });
-  const calls: string[] = [], expected: unknown[] = [], confirmCommands: string[] = [], instance = {}, locks = new Machines({} as never);
+  const calls: string[] = [], expected: unknown[] = [], confirmCommands: string[] = [], instance = {}, locks = new Machines({} as never, fakeVmNetwork);
   const machines = {
     live: new Map([[vmId, instance]]),
     locked: locks.locked.bind(locks),

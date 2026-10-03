@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -42,8 +43,8 @@ test('pinned TLS replicates selected historical snapshot with verified receipt a
         await writeFile(args.at(-1)!, args.includes('-l') ? historical : current);
       return '{}';
     } } as Engine;
-  const source = new Machines(engine);
-  const destination = new Machines(engine);
+  const source = new Machines(engine, fakeVmNetwork);
+  const destination = new Machines(engine, fakeVmNetwork);
   await source.init();
   await destination.init();
   const id = randomUUID();

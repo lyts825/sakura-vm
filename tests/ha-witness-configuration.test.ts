@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -21,7 +22,7 @@ after(async () => {
 });
 
 test('HA policy enrollment and revocation follow witness acknowledgments', async () => {
-  const machines = new Machines({ runtime: { close: async () => {} } } as Engine);
+  const machines = new Machines({ runtime: { close: async () => {} } } as Engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID(), targetHostId = randomUUID();
   machines.records.set(id, { ...createSchema.parse({ name: 'ha-policy' }),
@@ -40,7 +41,7 @@ test('HA policy enrollment and revocation follow witness acknowledgments', async
     await features.configure(id, { featureId: 'ha-failover', enabled: true,
       options: { targetHostId, failureThreshold: 3, autoHostFailover: true } });
     assert.equal(machines.get(id).haWitnessEnrollment?.targetHostId, targetHostId);
-    const restored = new Machines({ runtime: { close: async () => {} } } as Engine);
+    const restored = new Machines({ runtime: { close: async () => {} } } as Engine, fakeVmNetwork);
     await restored.init();
     try { assert.equal(restored.get(id).haWitnessEnrollment?.failureThreshold, 3); }
     finally { await restored.close(); }

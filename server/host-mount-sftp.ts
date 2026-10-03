@@ -16,6 +16,8 @@ import type { FileHandle } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import ssh2, { type Attributes, type SFTPWrapper, type Connection } from 'ssh2';
 import { AppError } from '../shared/errors.ts';
+import { networkFor } from './network/index.ts';
+const hostMountNetwork = networkFor('core:host-mount', 'sftp');
 import { regularDirectory, within } from './local-store.ts';
 
 const { Server, utils } = ssh2;
@@ -261,7 +263,7 @@ export async function serveHostMount(root: string, readOnly: boolean) {
   const parsed = utils.parseKey(clientKeys.public);
   if (parsed instanceof Error) throw parsed;
   const connections = new Set<Connection>();
-  const server = new Server({ hostKeys: [hostKeys.private] }, (client) => {
+  const sshServer = new Server({ hostKeys: [hostKeys.private] }, (client) => {
     connections.add(client);
     client.on('authentication', (context) => {
       if (context.method !== 'publickey' || context.username !== 'sakura-host' ||
@@ -279,6 +281,8 @@ export async function serveHostMount(root: string, readOnly: boolean) {
     client.on('close', () => connections.delete(client));
     client.on('error', () => {});
   });
+  const server = hostMountNetwork.createServer((socket) => sshServer.injectSocket(socket));
+  sshServer.on('error', () => {});
   server.on('error', () => {});
   await new Promise<void>((done, reject) => {
     server.once('error', reject);

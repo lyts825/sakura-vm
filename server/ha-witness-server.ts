@@ -1,4 +1,5 @@
-import { createServer as createHttpsServer, type Server } from 'node:https';
+import { networkFor } from './network/index.ts';
+import { type Server } from 'node:https';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -15,6 +16,8 @@ import {
 } from './ha-witness-core.ts';
 import { haHttpsRequest } from './ha-witness-http.ts';
 import { lockHaWitnessState } from './ha-witness-lock.ts';
+
+const { createHttpsServer } = networkFor('core:ha-witness-server');
 
 const httpsUrl = z.url().refine((value) => {
   const url = new URL(value);

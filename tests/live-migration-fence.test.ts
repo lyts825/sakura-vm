@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -20,7 +21,7 @@ after(async () => {
 
 test('migration fence is written only at QEMU switchover and blocks source restart after recovery', async () => {
   const engine = { runtime: { close: async () => {} } } as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -49,7 +50,7 @@ test('migration fence is written only at QEMU switchover and blocks source resta
     await assert.rejects(machines.start(id), { code: 'LIVE_MIGRATION_SOURCE_FENCED' });
     machines.live.delete(id);
     await assert.rejects(machines.delete(id), { code: 'LIVE_MIGRATION_SOURCE_FENCED' });
-    const restored = new Machines(engine);
+    const restored = new Machines(engine, fakeVmNetwork);
     await restored.init();
     try {
       assert.equal(restored.get(id).liveMigrationFence?.transferId, identity.transferId);

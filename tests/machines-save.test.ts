@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -37,7 +38,7 @@ function gate() {
 const save = (machines: MachineType) => (machines as unknown as { save(): Promise<void> }).save();
 async function fixture() {
   let closes = 0;
-  const machines = new Machines({ runtime: { close: async () => { ++closes; } } } as unknown as Engine);
+  const machines = new Machines({ runtime: { close: async () => { ++closes; } } } as unknown as Engine, fakeVmNetwork);
   const record: VMRecord = { ...createSchema.parse({ name: 'old-owned',
     forwards: [{ name: 'old-nested', host: 24601, guest: 24602 }] }),
     id: randomUUID(), createdAt: new Date().toISOString(), snapshots: [], bootstrapped: true };

@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Client, type BaseAgent, type ClientCallback, type ExecOptions, type SFTPWrapper } from 'ssh2';
 import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
+import { networkRuntime } from './network/index.ts';
 import { vmDir } from './paths.ts';
 import type { Project } from './project-config.ts';
 import { projectNetworkCommand } from './project-network-isolation.ts';
@@ -14,7 +15,7 @@ import type { Live } from './vm-state.ts';
 
 /** Stateless transport; the facade retains VM identities, locks and client ownership. */
 export class MachineTransport {
-  constructor(private host: Pick<Machines, 'live' | 'requireUnlocked' | 'connect'>) {}
+  constructor(private host: Pick<Machines, 'live' | 'requireUnlocked' | 'connect'> & { closing?: boolean }) {}
   async connect(id: string, timeout = 10000, signal?: AbortSignal, agentPath?: string | BaseAgent) {
     this.host.requireUnlocked(id);
     const live = this.host.live.get(id);
@@ -30,7 +31,9 @@ export class MachineTransport {
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new Error('SSH connection timed out');
       try {
-        return await this.connectOnce(live, key, remaining, signal, agentPath);
+        // Leave room for a fresh handshake when a restored guest drops the first
+        // connection. No command has been submitted until connect() returns.
+        return await this.connectOnce(live, key, Math.min(remaining, 5000), signal, agentPath);
       } catch (error) {
         // An interrupted clone rekey may have updated the guest before the host
         // key file. Recover using the pending key without replaying commands.
@@ -50,12 +53,15 @@ export class MachineTransport {
             agentPath,
           );
         }
-        // QEMU's user-network listener can refuse simultaneous TCP connects.
-        // Retry only before a TCP connection exists, never replay a command or
-        // an authentication failure, and stay within the caller's deadline.
+        // QEMU/sshd can refuse or reset an admission during boot or RAM restore.
+        // Retry only connection establishment, never commands or authentication
+        // rejection, and keep every attempt inside the caller's deadline.
         const wait = 100 * 2 ** attempt;
+        const transient = ['ECONNREFUSED', 'ECONNRESET'].includes((error as NodeJS.ErrnoException).code || '') ||
+          ['Connection lost before handshake', 'SSH connection timed out', 'Timed out while waiting for handshake']
+            .includes((error as Error).message);
         if (
-          (error as NodeJS.ErrnoException).code !== 'ECONNREFUSED' ||
+          !transient ||
           attempt >= 3 ||
           deadline - performance.now() <= wait
         )
@@ -64,7 +70,7 @@ export class MachineTransport {
       }
     }
   }
-  connectOnce(
+  async connectOnce(
     live: Live,
     key: Buffer,
     timeout: number,
@@ -72,8 +78,16 @@ export class MachineTransport {
     agentPath?: string | BaseAgent,
   ) {
     signal?.throwIfAborted();
+    const started = performance.now();
+    const transportSignal = AbortSignal.any([...(signal ? [signal] : []),
+      ...(live.network ? [live.network.signal] : []), ...(live.abort ? [live.abort.signal] : [])]);
+    const socket = await networkRuntime.dial({ owner: 'core:vm-transport', purpose: this.host.closing ? 'vm-shutdown' : 'vm-session',
+      ...(live.network ? { vmId: live.network.vmId, generation: live.network.generation } : {}) },
+      { host: '127.0.0.1', port: live.sshPort }, transportSignal, timeout, !!this.host.closing);
+    timeout = Math.max(1, timeout - (performance.now() - started));
     return new Promise<Client>((resolve, reject) => {
       const client = new Client();
+      client.once('close', () => socket.destroy());
       const abort = () => client.destroy();
       const timer = setTimeout(() => {
         reject(new Error('SSH connection timed out'));
@@ -101,8 +115,7 @@ export class MachineTransport {
       });
       try {
         client.connect({
-          host: '127.0.0.1',
-          port: live.sshPort,
+          sock: socket,
           username: 'root',
           privateKey: key,
           readyTimeout: timeout,
@@ -117,10 +130,12 @@ export class MachineTransport {
               }
             : {}),
         });
+        socket.resume();
       } catch (error) {
         cleanup();
         live.clients.delete(client);
         client.destroy();
+        socket.destroy();
         reject(error);
       }
     });

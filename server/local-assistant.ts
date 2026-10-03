@@ -1,3 +1,4 @@
+import { networkFor } from './network/index.ts';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -12,6 +13,8 @@ import {
   type AssistantResult,
   type AssistantMode,
 } from '../shared/assistant.ts';
+
+const { fetch } = networkFor('core:local-assistant');
 
 const modelName = z
   .string()

@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -236,7 +237,7 @@ test('real Workspaces candidate resolver does not reread config and preserves on
 });
 
 test('real Workspaces commit guard runs after an async guard and prevents publication', async () => {
-  const id = randomUUID(), live = { status: 'running' }, locks = new Machines({} as any);
+  const id = randomUUID(), live = { status: 'running' }, locks = new Machines({} as any, fakeVmNetwork);
   const machines = Object.assign(new EventEmitter(), { records: new Map([[id, { template: 'none' }]]), live: new Map([[id, live]]),
     state: () => 'running', get: () => ({ template: 'none' }), locked: locks.locked.bind(locks) }) as unknown as MachinesType;
   const workspaces = new Workspaces(machines);
@@ -251,7 +252,7 @@ test('real Workspaces commit guard runs after an async guard and prevents public
 });
 
 test('real Workspaces rechecks CAS after an async guard and preserves a concurrent file update', async () => {
-  const id = randomUUID(), live = { status: 'running' }, locks = new Machines({} as any);
+  const id = randomUUID(), live = { status: 'running' }, locks = new Machines({} as any, fakeVmNetwork);
   const machines = Object.assign(new EventEmitter(), { records: new Map([[id, { template: 'none' }]]), live: new Map([[id, live]]),
     state: () => 'running', get: () => ({ template: 'none' }), locked: locks.locked.bind(locks) }) as unknown as MachinesType;
   const workspaces = new Workspaces(machines);

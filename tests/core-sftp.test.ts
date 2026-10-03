@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -36,7 +37,7 @@ async function fixture(t: TestContext, ready: (ftp: SFTPWrapper, peer: Connectio
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
-  const machines = new Machines({} as Engine);
+  const machines = new Machines({} as Engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
   machines.records.set(id, {

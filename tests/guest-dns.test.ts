@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -45,7 +46,7 @@ test('DNS diagnostic parses resolver evidence without claiming DNSSEC validation
 
 test('DNS diagnostic checks the guest, runs as a recorded task and reports unreadable configuration', async () => {
   assert.equal(nextFeatureCatalog.find(([name]) => name === 'private-dns-dnssec')?.[5], 'available');
-  const machines = new Machines({} as Engine), id = randomUUID();
+  const machines = new Machines({} as Engine, fakeVmNetwork), id = randomUUID();
   machines.records.set(id, {
     ...createSchema.parse({ name: 'dns-test' }), id,
     createdAt: new Date().toISOString(), snapshots: [],

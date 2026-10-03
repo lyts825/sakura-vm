@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { networkFor } from './network-client.mjs';
+const { fetch, webSocket } = networkFor('tool:cli');
 import { WebSocket } from 'ws';
 import { createReadStream } from 'node:fs';
 import { readFile, open, lstat, unlink } from 'node:fs/promises';
@@ -577,7 +579,7 @@ async function main() {
       process.exitCode = result.code < 0 ? 1 : result.code;
       return;
     }
-    const socket = new WebSocket(
+    const socket = webSocket(
       `${base.replace('http:', 'ws:')}/ws/${vm.id}/terminal?token=${encodeURIComponent(bootstrap.token)}` +
         (guest?.project ? `&project=${encodeURIComponent(guest.project)}` : ''),
     );

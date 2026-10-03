@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// These scripts also run directly in a minimal release package without a TypeScript build.
+// Launcher fixtures share the real managed transport. Standalone release assets are
+// checked separately by dist:check and the production smoke.
 // @ts-ignore JavaScript release modules intentionally have no generated declaration file.
 import { releaseFiles, writeReleaseManifest, verifyReleaseManifest } from '../scripts/release-manifest.mjs';
 // @ts-ignore JavaScript release modules intentionally have no generated declaration file.
@@ -35,6 +36,8 @@ async function fixture() {
     await writeFile(join(root, 'dist', 'index.html'), '<html></html>');
     await writeFile(join(root, 'browser-extension', 'manifest.json'), '{}');
     await writeFile(join(root, 'scripts', 'versions.mjs'), 'export const PIN = "test";\n');
+    await writeFile(join(root, 'scripts', 'network-client.mjs'),
+      `export { networkFor, networkRuntime } from ${JSON.stringify(new URL('../scripts/network-client.mjs', import.meta.url).href)};\n`);
     await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'sakura-vm', version: '0.1.1', type: 'module' }));
     await writeFile(join(root, 'package-lock.json'), '{}');
     await writeFile(join(root, 'README.md'), 'candidate');

@@ -1,3 +1,4 @@
+import { networkFor } from './network/index.ts';
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -37,6 +38,8 @@ import {
   type NotebookProvider,
 } from './notebook-wheelhouse.ts';
 import { privateLog, redactValues } from './secrets.ts';
+
+const { fetch } = networkFor('core:notebook-environments');
 
 export const notebookInput = z.object({
   mode: z.enum(['status', 'install', 'start', 'stop']).default('status'),

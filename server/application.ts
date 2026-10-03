@@ -1,6 +1,7 @@
+import { networkFor, networkRuntime } from './network/index.ts';
 import { randomBytes } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { type IncomingMessage, type ServerResponse } from 'node:http';
 import { arch, cpus, freemem, hostname, loadavg, platform, totalmem } from 'node:os';
 import { extname, join, resolve, sep } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -74,6 +75,8 @@ import { VirtioFsShares } from './virtio-fs.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { Workspaces } from './workspaces.ts';
 
+const { createHttpServer: createServer } = networkFor('core:application');
+
 const memberProjectRoutes: Record<string, Partial<Record<'GET' | 'PUT' | 'POST', ProjectPermission>>> = {
   project: { GET: 'read', PUT: 'write', POST: 'execute' },
   'project-runtime': { GET: 'read' },
@@ -85,6 +88,9 @@ const memberProjectRoutes: Record<string, Partial<Record<'GET' | 'PUT' | 'POST',
 export async function startApplication() {
   const resources = new ResourceScope();
   try {
+    resources.defer('network-drain', () => networkRuntime.beginDrain(), 0);
+    resources.own('network', networkRuntime, 900);
+    await networkRuntime.start();
     let token = randomBytes(32).toString('hex');
     let sessionChanged = (_locked: boolean, _transitioned: boolean) => {};
     const session = resources.own(
@@ -968,6 +974,11 @@ export async function startApplication() {
       if (await features.downloads?.route(req, res, url)) return;
       const principal = authorized(req);
       const accountPrincipal = access.enabled ? access.authorize(req.headers['x-sakura-token']) : null;
+      if (url.pathname === '/api/network-runtime') {
+        if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
+        if (access.enabled && accountPrincipal?.role !== 'owner') throw new AppError('仅管理员可查看网络运行状态', 403);
+        return send(res, networkRuntime.snapshot());
+      }
       if (url.pathname === '/api/access/sso') {
         if (req.method !== 'GET' || !accountPrincipal) throw new AppError('不支持此方法', 405);
         return send(res, sso.view(accountPrincipal.role === 'owner' ? undefined : accountPrincipal.id));

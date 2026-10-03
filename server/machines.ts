@@ -1,3 +1,4 @@
+import { networkFor, networkRuntime, type NetworkRuntime } from './network/index.ts';
 import { isUtf8 } from 'node:buffer';
 import { createHash, createPrivateKey, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -15,7 +16,7 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { createConnection } from 'node:net';
+
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -78,6 +79,8 @@ export type MigrationFingerprint = { recordHash: string; diskSize: number; diskM
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
 
 import type { Live } from './vm-state.ts';
+
+const { connectLocal: createConnection } = networkFor('core:machines');
 export type BootAttachment = { args: string[]; close: () => Promise<void>; machine?: string };
 export class Machines extends EventEmitter {
   storagePools = new StoragePools(this);
@@ -168,7 +171,7 @@ export class Machines extends EventEmitter {
       throw new AppError('请停止全部实例并等待正在执行的操作完成', 409);
     this.maintenance = true;
   }
-  constructor(public engine: Engine) {
+  constructor(public engine: Engine, readonly network: Pick<NetworkRuntime, 'attachVm'> = networkRuntime) {
     super();
   }
   async init() {
@@ -942,21 +945,36 @@ export class Machines extends EventEmitter {
         let attachment: BootAttachment | undefined;
         let trustedAttachment: BootAttachment | undefined;
         try {
+          live.network = await this.network.attachVm({
+            vmId: id, generation: randomUUID(), isolated: vm.sandbox?.network === 'isolated',
+            ipv6: vm.hardware?.ipv6, sshPort, forwards: vm.forwards,
+            managementPorts: { qmp: qmpPort, serial: serialPort, agent: agentPort },
+            onFailure: (error) => {
+              if (this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted) return;
+              live.error = `统一网络工作进程退出：${error.message}`;
+              this.live.get(id)!.error = live.error;
+              vm.lastError = live.error;
+              this.log(id, `\r\n${live.error}\r\n`);
+              live.bootAbort.abort(); live.abort.abort(); this.emit('change');
+            },
+          });
           if (vm.diskEncryption)
             diskSecret = await openDiskSecret(this, id, vm.diskEncryption.secretName);
           attachment = await this.prepareBootAttachment?.(vm, (error) => {
-            if (this.live.get(id) !== live || live.abort.signal.aborted ||
-                live.status === 'stopping') return;
+            if (this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted ||
+                this.live.get(id)?.status === 'stopping') return;
             live.error = `Virtio-FS 守护程序退出：${error.slice(-1024)}`;
+            this.live.get(id)!.error = live.error;
             vm.lastError = live.error;
             this.log(id, `\r\n${live.error}\r\n`);
             this.emit('change');
             live.abort.abort();
           });
           trustedAttachment = await this.prepareTrustedBootAttachment?.(vm, (error) => {
-            if (this.live.get(id) !== live || live.abort.signal.aborted ||
-                live.status === 'stopping') return;
+            if (this.live.get(id)?.abort !== live.abort || live.abort.signal.aborted ||
+                this.live.get(id)?.status === 'stopping') return;
             live.error = `TPM 守护程序退出：${error.slice(-1024)}`;
+            this.live.get(id)!.error = live.error;
             vm.lastError = live.error;
             this.log(id, `\r\n${live.error}\r\n`);
             this.emit('change');
@@ -965,6 +983,7 @@ export class Machines extends EventEmitter {
           live.allowInitialReset = !!trustedAttachment;
         } catch (error) {
           this.live.delete(id);
+          await live.network?.close().catch(() => {});
           await trustedAttachment?.close().catch(() => {});
           await attachment?.close().catch(() => {});
           await diskSecret?.close().catch(() => {});
@@ -973,10 +992,6 @@ export class Machines extends EventEmitter {
           throw error;
         }
         const escape = (s: string) => s.replaceAll(',', ',,');
-        const forwards = [
-          `hostfwd=tcp:127.0.0.1:${sshPort}-:22`,
-          ...vm.forwards.map((p) => `hostfwd=tcp:127.0.0.1:${p.host}-:${p.guest}`),
-        ];
         const args = [
           '-name',
           `sakura-${vm.name}`,
@@ -1030,7 +1045,7 @@ export class Machines extends EventEmitter {
           '-drive',
           `file=${escape(join(dir, 'seed.iso'))},${vm.distro && vm.distro !== 'alpine' ? 'if=virtio,format=raw' : 'media=cdrom'},readonly=on`,
           '-netdev',
-          `user,id=sakura-net,ipv4=on,net=10.0.2.0/24,host=10.0.2.2,dns=10.0.2.3,${vm.sandbox?.network === 'isolated' ? 'restrict=on,ipv6=off,' : vm.hardware?.ipv6 === undefined ? '' : `ipv6=${vm.hardware.ipv6 ? 'on' : 'off'},`}${forwards.join(',')}`,
+          live.network.netdev,
           ...audioArguments(vm),
           ...deviceArguments(vm),
           ...(vm.architecture === 'aarch64' ? [] : ['-device', 'qemu-xhci,id=sakura-usb']),
@@ -1056,16 +1071,24 @@ export class Machines extends EventEmitter {
             () => {},
             async (error) => {
               live.error = String(error.message || error);
+              if (this.live.get(id)?.abort === live.abort) this.live.get(id)!.error = live.error;
               vm.lastError = live.error;
               this.log(id, `\r\n${live.error}\r\n`);
             },
           )
           .finally(async () => {
+            // Mark this process lifetime ended before awaiting any generation cleanup.
+            live.abort.abort();
+            live.bootAbort.abort();
+            const active = this.live.get(id);
+            await (active?.abort === live.abort ? active.network : live.network)?.close()
+              .catch((error) => this.log(id, `\r\n清理统一网络失败：${String(error)}\r\n`));
             await trustedAttachment?.close().catch((error) => this.log(id, `\r\n清理 TPM 守护程序失败：${String(error)}\r\n`));
             await attachment?.close().catch((error) => this.log(id, `\r\n清理 Virtio-FS 守护程序失败：${String(error)}\r\n`));
             await diskSecret?.close().catch((error) => this.log(id, `\r\n清理磁盘临时口令失败：${String(error)}\r\n`));
             live.bootAbort.abort();
             live.serial?.destroy();
+            if (active?.abort === live.abort) active.serial?.destroy();
             for (const client of live.clients) client.end();
             await live.bootDone;
             this.live.delete(id);
@@ -1095,6 +1118,14 @@ export class Machines extends EventEmitter {
       }),
     );
   }
+  private connectSerial(id: string, live: Live) {
+    const socket = createConnection({ host: '127.0.0.1', port: live.serialPort });
+    socket.on('error', () => {});
+    socket.on('connect', () => { live.serialConnected = true; });
+    socket.on('close', () => { live.serialConnected = false; });
+    socket.on('data', (data) => this.log(id, data));
+    live.serial = socket;
+  }
   private async watchBoot(id: string, live: Live) {
     const deadline = performance.now() + BOOT_TIMEOUT_MS;
     const { signal } = live.bootAbort;
@@ -1105,16 +1136,7 @@ export class Machines extends EventEmitter {
       !signal.aborted
     ) {
       if (!live.serial || live.serial.destroyed) {
-        const socket = createConnection({ host: '127.0.0.1', port: live.serialPort });
-        socket.on('error', () => {});
-        socket.on('connect', () => {
-          live.serialConnected = true;
-        });
-        socket.on('close', () => {
-          live.serialConnected = false;
-        });
-        socket.on('data', (data) => this.log(id, data));
-        live.serial = socket;
+        this.connectSerial(id, live);
       }
       // A newly created disk emits SAKURA_READY only after its one-time cloud
       // provisioning has completed. Once the serial channel is connected,
@@ -1798,6 +1820,7 @@ export class Machines extends EventEmitter {
     const memoryDevices = await qmp(qmpPort, 'query-memory-devices');
     return createHash('sha256').update(JSON.stringify({
       version, accelerator, architecture: vm.architecture || 'x86_64',
+      networkBackend: 'sakura-managed-user-v1',
       ...(vm.architecture === 'aarch64' ? {} : { cpuModel: qemuCpuModel(vm.architecture) }),
       distro: vm.distro || 'alpine', firmware: vm.firmware || 'bios',
       memoryMiB: vm.memoryMiB, cpus: vm.cpus, diskGiB: vm.diskGiB,
@@ -1950,13 +1973,42 @@ export class Machines extends EventEmitter {
           throw new AppError('请先删除一个旧快照，为恢复前备份留出位置', 409);
         await this.createSnapshot(vm, '恢复前整机状态自动备份', live.qmpPort, fingerprint);
       }
-      await qmpSnapshotJob(live.qmpPort, 'snapshot-load', shot.id);
-      const status = await qmp(live.qmpPort, 'query-status');
-      if (!status || typeof status !== 'object' ||
-          (status as { running?: boolean }).running !== true)
-        throw new AppError('整机状态已加载，但客户机尚未恢复运行，请检查实例', 409);
-      for (const client of live.clients) client.destroy();
+      // Block new SSH work while network and RAM move to the restored generation.
+      live.status = 'paused';
       this.emit('change');
+      try {
+        if (live.network) {
+          // Isolate Ethernet while changing generations. Let snapshot-load own the
+          // CPU pause/resume transition, preserving QEMU's running-state restore path.
+          await live.network.setConnected(false);
+          live.network = await live.network.renew(randomUUID());
+          if (live.abort.signal.aborted || this.live.get(id)?.abort !== live.abort) {
+            await live.network.close();
+            throw new AppError('实例在恢复网络期间已退出', 409);
+          }
+          // In-flight project operations compare the captured Live object; invalidate it as well.
+          const restored = { ...live, serialConnected: false };
+          this.live.set(id, restored);
+          this.connectSerial(id, restored);
+        }
+        for (const client of live.clients) client.destroy();
+        await qmpSnapshotJob(live.qmpPort, 'snapshot-load', shot.id);
+        const status = await qmp(live.qmpPort, 'query-status');
+        if (!status || typeof status !== 'object' ||
+            (status as { running?: boolean }).running !== true)
+          throw new AppError('整机状态已加载，但客户机尚未恢复运行，请检查实例', 409);
+        await live.network?.setConnected(true);
+        if (live.abort.signal.aborted || this.live.get(id)?.abort !== live.abort) {
+          await live.network?.close();
+          throw new AppError('实例在恢复网络期间已退出', 409);
+        }
+        this.live.get(id)!.status = 'running';
+      } catch (error) {
+        // A partially restored guest must never regain network access implicitly.
+        if (this.live.get(id)?.abort === live.abort)
+          await this.stopInternal(id, true).catch(() => {});
+        throw error;
+      } finally { this.emit('change'); }
       return this.view(id);
     });
   }
@@ -2174,14 +2226,8 @@ export class Machines extends EventEmitter {
           const applied: typeof parsed = [],
             taken: typeof parsed = [];
           const command = async (verb: 'add' | 'remove', p: (typeof parsed)[number]) => {
-            const output = await qmp(live.qmpPort, 'human-monitor-command', {
-              'command-line':
-                verb === 'add'
-                  ? `hostfwd_add sakura-net tcp:127.0.0.1:${p.host}-:${p.guest}`
-                  : `hostfwd_remove sakura-net tcp:127.0.0.1:${p.host}`,
-            });
-            if (typeof output === 'string' && /could not|error|invalid|not found/i.test(output))
-              throw new AppError(output.trim());
+            if (!live.network) throw new AppError('实例缺少统一网络租约', 503);
+            await live.network.forward(verb, p);
           };
           rollback = async () => {
             const failures: string[] = [];

@@ -1,3 +1,5 @@
+import { networkFor } from './network-client.mjs';
+const { fetch } = networkFor('tool:development-cli');
 import { readFile, open, lstat, unlink } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';

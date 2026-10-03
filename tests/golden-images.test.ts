@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -33,7 +34,7 @@ async function fixture(t: TestContext) {
       return '{}';
     },
   } as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   const source = {
     ...createSchema.parse({ name: 'gold-source', diskGiB: 2, forwards: [{ host: 22111, guest: 8080 }] }),
     id,

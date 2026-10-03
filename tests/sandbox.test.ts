@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -39,7 +40,7 @@ async function fixture(t: TestContext) {
       return '';
     },
   } as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await mkdir(join(root, 'machines'), { recursive: true });
   machines.exec = async () => ({ stdout: '', stderr: '', code: 0 });
   const jobsDirectory = join(root, randomUUID());
@@ -160,13 +161,15 @@ test('QEMU isolates network while keeping only the controller SSH forward', asyn
   await machines.start(vm.id);
   const args = launches[0],
     network = args[args.indexOf('-netdev') + 1];
-  assert.match(network, /restrict=on,ipv6=off/);
-  assert.equal(network.match(/hostfwd=/g)?.length, 1);
-  assert.match(network, /hostfwd=tcp:127\.0\.0\.1:\d+-:22/);
+  assert.match(network, /^stream,id=sakura-net,/);
+  const lease = machines.live.get(vm.id)!.network!;
+  assert.equal(lease.policy.isolated, true);
+  assert.equal(lease.policy.ipv6, false);
+  assert.deepEqual(lease.policy.forwards, [{ host: machines.live.get(vm.id)!.sshPort, guest: 22 }]);
   assert.ok(args.includes('-no-user-config'));
   const ordinary = await add(false);
   await machines.start(ordinary.id);
-  assert.doesNotMatch(launches[1][launches[1].indexOf('-netdev') + 1], /restrict=on/);
+  assert.equal(machines.live.get(ordinary.id)!.network!.policy.isolated, false);
 });
 
 test('expiry terminates powered-on guests even while a separate instance operation holds the lock', async (t) => {
@@ -196,7 +199,7 @@ test('startup without the plugin removes expired disposable disks but retains st
   const retained = await add(true, true, 'stop');
   const ordinary = await add(false);
   await writeFile(join(root, 'machines.json'), JSON.stringify([...machines.records.values()]));
-  const restarted = new Machines(machines.engine);
+  const restarted = new Machines(machines.engine, fakeVmNetwork);
   try {
     await restarted.init();
     assert.equal(restarted.records.has(disposable.id), false);

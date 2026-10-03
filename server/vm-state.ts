@@ -1,6 +1,7 @@
 import type { Socket } from 'node:net';
 import type { Client } from 'ssh2';
 import type { VMStatus } from '../shared/contracts/vm.ts';
+import type { VmNetworkLease } from './network/index.ts';
 
 export type Live = {
   status: VMStatus;
@@ -11,6 +12,7 @@ export type Live = {
   qmpPort: number;
   agentPort: number;
   serialPort: number;
+  network?: VmNetworkLease;
   abort: AbortController;
   bootAbort: AbortController;
   bootstrapKnown?: boolean;

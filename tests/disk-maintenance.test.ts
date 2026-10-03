@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
@@ -29,7 +30,7 @@ async function fixture() {
       return '';
     },
   };
-  const machines = new Machines(engine),
+  const machines = new Machines(engine, fakeVmNetwork),
     id = randomUUID();
   machines.records.set(id, {
     ...createSchema.parse({ name: 'disk-test', hardware: { devices: { discard: true } } }),

@@ -1,7 +1,10 @@
-import { createConnection, createServer } from 'node:net';
+import { networkFor } from './network/index.ts';
+
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+
+const { connectLocal: createConnection, createServer } = networkFor('core:qmp');
 
 export async function freePort() {
   const server = createServer();

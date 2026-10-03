@@ -1,6 +1,7 @@
+import { networkFor } from './network/index.ts';
 import { createHash, createPublicKey, randomUUID, verify, type KeyObject } from 'node:crypto';
 import { readFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
-import { get as httpsGet } from 'node:https';
+
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { z } from 'zod';
@@ -9,6 +10,8 @@ import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { eventSchema } from './webhooks.ts';
 import { webhookTypes, type WebhookEvent } from '../shared/webhooks.ts';
+
+const { httpsGet } = networkFor('core:community-plugins');
 
 const pluginId = z.string().regex(/^[a-z][a-z0-9-]{1,63}$/);
 const version = z.string().regex(/^\d+\.\d+\.\d+$/);

@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -20,7 +21,7 @@ after(async () => {
 
 function fixture(distro: 'alpine' | 'debian' | 'ubuntu' = 'alpine') {
   const id = randomUUID(),
-    machines = new Machines({} as Engine);
+    machines = new Machines({} as Engine, fakeVmNetwork);
   const record = {
     ...createSchema.parse({ name: 'network-test', distro, forwards: [{ host: 8080, guest: 80 }] }),
     id,

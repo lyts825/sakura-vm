@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -128,7 +129,7 @@ test('deletion and garbage collection wait until an active reconstruction releas
 
 test('backup policy stores blocks, verifies and restores them, preserves retention and never silently downgrades encryption', async () => {
   const vm = randomUUID(),
-    machines = new Machines({} as any);
+    machines = new Machines({} as any, fakeVmNetwork);
   machines.get = () => ({ id: vm, name: 'dedup' }) as ReturnType<MachinesType['get']>;
   const disk = Buffer.alloc(3 * 1024 ** 2, 7),
     manifest = Buffer.from(JSON.stringify({ sha256: checksum(disk) })),

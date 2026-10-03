@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -67,7 +68,7 @@ test('download authentication accepts only named secrets and a fixed HTTPS or lo
 });
 
 test('prefetch resolves only its separately applied download credential, without project secret resolution', async () => {
-  const machines = new Machines({} as any),
+  const machines = new Machines({} as any, fakeVmNetwork),
     id = randomUUID();
   machines.records.set(id, { id, template: 'none' } as any);
   const calls: string[] = [];

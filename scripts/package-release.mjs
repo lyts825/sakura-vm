@@ -1,9 +1,21 @@
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { writeReleaseManifest } from './release-manifest.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+for (const name of ['graphql', 'selfsigned', 'ssh2', 'ws', 'zod', 'undici'])
+  if (!Object.hasOwn(manifest.dependencies, name)) throw new Error(`缺少运行依赖：${name}`);
+// Validate the completed build before creating a package or release manifest.
+const checked = spawnSync(process.execPath, [join(root, 'scripts/check-distribution.mjs')], {
+  cwd: root,
+  encoding: 'utf8',
+  windowsHide: true,
+});
+if (checked.status !== 0)
+  throw new Error(`发行资产检查失败：${checked.stderr || checked.error?.message || checked.status}`);
 const outputRoot = join(root, 'release');
 await mkdir(outputRoot, { recursive: true });
 const output = await mkdtemp(join(outputRoot, 'sakura-'));
@@ -11,7 +23,6 @@ for (const folder of ['dist', '.sakura-server', '.sakura-witness'])
   await cp(join(root, folder), join(output, folder), { recursive: true });
 await cp(join(root, 'browser-extension'), join(output, 'browser-extension'), { recursive: true });
 await cp(join(root, 'package-lock.json'), join(output, 'package-lock.json'));
-const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 manifest.scripts = {
   setup: manifest.scripts.setup,
   start: manifest.scripts.start,
@@ -31,6 +42,7 @@ await writeFile(join(output, 'package.json'), JSON.stringify(manifest, null, 2) 
 await mkdir(join(output, 'scripts'));
 for (const file of [
   'setup.mjs',
+  'network-client.mjs',
   'versions.mjs',
   'cli.mjs',
   'guest-cli.mjs',
@@ -62,6 +74,8 @@ const readme = [
   '`setup` 准备固定版本的 PosixLoom、QEMU 和基础镜像。运行依赖以随包 `package.json` 为准。',
   '已配置含 Linux QEMU、swtpm、virtiofsd 和 OVMF 的 WSL 发行版时，也可先运行 `npm run check:wsl`，再用 `npm run start:wsl` 启动可用 TPM 与 Virtio-FS 的 Linux 后端；数据单独保存在该发行版的 Linux 文件系统中。',
   '默认插件选择为空；内置插件代码随运行包提供，选择后重启服务加载。',
+  '统一网络运行时属于基础设施，始终启用。宿主 TCP/DNS 使用有界 Node worker 池；VM 使用单独的 Node worker 与无客户机 CPU 的 QEMU user/slirp 后端。默认最多 4 个宿主 worker、2 个 VM worker 及其最多 2 个 QEMU 网络进程，不需要管理员权限或额外网络驱动。每个 VM 固定在一个 worker；该 worker 故障会停止受影响的 VM，不自动重放连接。配置、诊断接口、退出顺序及限制见 `.sakura-server/docs/network-runtime.md`。',
+  '升级注意：旧网络后端的内存快照因运行时指纹变化不能恢复；磁盘快照保持兼容。远程审计现在须向服务显式提供 AWS_ACCESS_KEY_ID、AWS_SECRET_ACCESS_KEY，以及临时凭据所需的 AWS_SESSION_TOKEN，不再自动调用 AWS 默认 IAM/元数据凭据链。',
   '独立第三节点可运行 `npm run ha:witness -- --preflight <config.json>` 检查见证配置，再运行 `npm run ha:witness -- <config.json>`；见证入口随活动版本切换，完整性失败时拒绝启动。部署说明和配置模板位于 `.sakura-witness/docs/ha-external-drill.md`，systemd 示例位于 `.sakura-witness/scripts/ha-witness.service.example`；这些文件均纳入运行包摘要。',
   '见证状态升级、配置更换及从备份恢复使用 `--migrate`、`--reconfigure` 和 `--recover`，要求新的备份和回执路径；具体参数及恢复封锁流程见 `.sakura-witness/docs/ha-witness-maintenance.md`。恢复后先核对并退役全部历史副本，再放行来源；启用自动回切时，在来源应用健康和流量确认后完成。',
   '演练：`npm run ha:witness -- --drill-plan <config.json> <sourceVmId> --output <new-plan.json>`，再运行 `npm run ha:witness -- --observe <config.json> --plan <new-plan.json> --output <new-observations.jsonl>`。工具只读取接口、生成计划与记录，不执行故障注入，不将接口记录视为物理节点独立的证明。',
@@ -85,6 +99,4 @@ const readme = [
 ].join('\n');
 await writeFile(join(output, 'README.md'), readme);
 await writeReleaseManifest(output);
-for (const name of ['graphql', 'selfsigned', 'ssh2', 'ws', 'zod'])
-  if (!Object.hasOwn(manifest.dependencies, name)) throw new Error(`缺少运行依赖：${name}`);
 console.log(output);

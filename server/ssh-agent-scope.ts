@@ -1,7 +1,8 @@
+import { networkFor } from './network/index.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { connect, type Socket } from 'node:net';
+import { type Socket } from 'node:net';
 import { deflateSync } from 'node:zlib';
 import ssh2, { type GetStreamCallback } from 'ssh2';
 import { z } from 'zod';
@@ -10,6 +11,8 @@ import { ROOT } from './paths.ts';
 import type { Machines } from './machines.ts';
 import { quote } from './shell.ts';
 import { projectIdentitySchema } from './project-identity.ts';
+
+const { connectLocal: connect } = networkFor('core:ssh-agent-scope');
 const { OpenSSHAgent } = ssh2;
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);

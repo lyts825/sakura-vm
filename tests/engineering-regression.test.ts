@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -215,7 +216,7 @@ test('idle shutdown requires fresh continuous low CPU samples and resets on acti
 });
 
 test('lockdown is persisted and blocks machine starts, writes and guest connections after restart', async () => {
-  const machines = new Machines({} as any);
+  const machines = new Machines({} as any, fakeVmNetwork);
   machines.records.set(id, { id } as any);
   (machines as any).stopInternal = async () => {};
   await machines.setIncidentLockdown(id, true);
@@ -225,7 +226,7 @@ test('lockdown is persisted and blocks machine starts, writes and guest connecti
     machines.locked('git:' + id + ':default', async () => {}),
     /应急锁定/,
   );
-  const restored = new Machines({} as any);
+  const restored = new Machines({} as any, fakeVmNetwork);
   await restored.init();
   restored.records.set(id, { id } as any);
   assert.equal(restored.incidentLocked(id), true);

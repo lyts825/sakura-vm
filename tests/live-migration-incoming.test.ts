@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -27,7 +28,7 @@ test('incoming QEMU stays paused until transfer completes and cannot be resumed 
         () => resolve(), { once: true }));
     },
   } as unknown as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
   await mkdir(vmDir(id));

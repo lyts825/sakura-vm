@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable, Writable } from 'node:stream';
@@ -123,7 +124,7 @@ function fixture(
       cb();
     },
   } as unknown as SFTPWrapper;
-  const machines = new Machines({} as Engine);
+  const machines = new Machines({} as Engine, fakeVmNetwork);
   machines.sftp = async (_id, work, signal) => {
     const abort = () => {
       connected = false;

@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -18,7 +19,7 @@ test('hot/cold policy previews, moves and periodically rebalances only stopped i
   await mkdir(external);
   const disk = join(root, 'source.qcow2');
   await writeFile(disk, 'tiering-disk-proof');
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const pool = await machines.storagePools.create('cold-hdd', external);
   const vm = await machines.adopt({ name: 'tiered' }, disk, 'key', Buffer.from('seed'));

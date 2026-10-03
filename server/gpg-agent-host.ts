@@ -12,6 +12,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA, ROOT } from './paths.ts';
 import type { Machines } from './machines.ts';
 import type { GpgAgentContext } from './gpg-agent-scope.ts';
+import { networkRuntime } from './network/index.ts';
 
 const digest=z.string().regex(/^[a-f0-9]{64}$/);
 const localPath=z.string().min(4).max(32767).regex(/^[A-Za-z]:\\[^\x00-\x1f]*$/).refine(value=>win32.normalize(value)===value&&!value.split('\\').slice(1).some(part=>!part||part==='.'||part==='..'||/[\/:*?"<>|]/.test(part)||/[ .]$/.test(part)));
@@ -216,6 +217,10 @@ class NativeRelay extends ProcessOwner {
   readonly ready:Promise<void>;readonly captured:Promise<z.infer<typeof sourcePins>>;readonly identified:Promise<z.infer<typeof processPin>>;identity?:z.infer<typeof processPin>;physicalClose=false;private events:Record<string,unknown>[]=[];
   constructor(asset:GuardAsset,operation:'capture'|'relay'|'identity'|'dead-check',body:Record<string,unknown>,options:GpgHostOptions){
     const create=options.spawn||spawn as SpawnHost;const child=create(asset.path,[operation],{windowsHide:true,stdio:'pipe'});super(child);
+    try {
+      const release = networkRuntime.nativeLease({ owner: 'core:gpg-agent', purpose: operation }, () => child.stdin.destroy());
+      void this.closed.then(release, release);
+    } catch (error) { child.stdin.destroy(); throw error; }
     let readyResolve!:()=>void,readyReject!:(reason:unknown)=>void,captureResolve!:(pins:z.infer<typeof sourcePins>)=>void,captureReject!:(reason:unknown)=>void,identityResolve!:(pin:z.infer<typeof processPin>)=>void,identityReject!:(error:unknown)=>void;
     this.ready=new Promise((yes,no)=>{readyResolve=yes;readyReject=no;});this.captured=new Promise((yes,no)=>{captureResolve=yes;captureReject=no;});this.ready.catch(()=>{});this.captured.catch(()=>{});
     this.identified=new Promise((yes,no)=>{identityResolve=yes;identityReject=no;});this.identified.catch(()=>{});let pending='',total=0;

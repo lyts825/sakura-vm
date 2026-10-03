@@ -1,11 +1,14 @@
+import { networkFor } from './network/index.ts';
 import { lstat, open, readFile } from 'node:fs/promises';
-import { lookup } from 'node:dns/promises';
+
 import { join } from 'node:path';
 import { z } from 'zod';
 import { localAliasActionSchema, type LocalAliasView } from '../shared/local-aliases.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
+
+const { lookup } = networkFor('core:local-aliases');
 
 const BEGIN = '# BEGIN SAKURA LOCAL ALIASES';
 const END = '# END SAKURA LOCAL ALIASES';

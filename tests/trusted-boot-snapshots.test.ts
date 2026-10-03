@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -20,7 +21,7 @@ after(async () => {
 test('stopped snapshots keep TPM and NVRAM with their disk and reject damaged or legacy state', async (t) => {
   const commands: string[][] = [];
   const machines = new Machines({ runtime: { close: async () => {} },
-    run: async (_tool, args) => { commands.push(args); return ''; } } as Engine);
+    run: async (_tool, args) => { commands.push(args); return ''; } } as Engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
   machines.records.set(id, { ...createSchema.parse({ name: 'trusted-snapshot',
@@ -82,7 +83,7 @@ test('stopped snapshots keep TPM and NVRAM with their disk and reject damaged or
 
 test('online disk snapshots reject active TPM state before freezing the guest', async (t) => {
   const machines = new Machines({ runtime: { close: async () => {} },
-    run: async (_tool, _args) => '' } as Engine);
+    run: async (_tool, _args) => '' } as Engine, fakeVmNetwork);
   await machines.init();
   const id = randomUUID();
   machines.records.set(id, { ...createSchema.parse({ name: 'online-trusted',

@@ -1,8 +1,9 @@
+import { networkFor } from './network/index.ts';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createServer, type Server, type Socket } from 'node:net';
+import { type Server, type Socket } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual as same } from 'node:util';
@@ -37,6 +38,8 @@ import {
   type ReverseTunnelListener,
 } from './reverse-tunnel-transport.ts';
 import { redactValues } from './secrets.ts';
+
+const { createServer } = networkFor('core:reverse-tunnels');
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const changed = () => new AppError('原临时隧道项目、账号、boot、完整运行域或监听归属无法核对', 409, 'SERVICE_SCOPE_CHANGED');

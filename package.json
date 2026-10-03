@@ -11,7 +11,7 @@
     "setup": "node scripts/setup.mjs",
     "dev": "tsx server/index.ts --dev",
     "preview": "vite preview",
-    "build": "tsc --noEmit && node scripts/build-native-clipboard.mjs && node scripts/build-gpg-agent-host.mjs && vite build && vite build --ssr server/index.ts --outDir .sakura-server && vite build --ssr scripts/ha-witness.ts --outDir .sakura-witness && node scripts/prepare-server-assets.mjs",
+    "build": "tsc --noEmit && node scripts/build-native-clipboard.mjs && node scripts/build-gpg-agent-host.mjs && vite build && vite build --ssr server/index.ts --outDir .sakura-server && vite build --ssr scripts/ha-witness.ts --outDir .sakura-witness && vite build --ssr server/network-entry.ts --outDir .sakura-server --emptyOutDir false && node scripts/prepare-server-assets.mjs",
     "build:gpg-agent-host": "node scripts/build-gpg-agent-host.mjs",
     "build:native-clipboard": "node scripts/build-native-clipboard.mjs",
     "test:native-clipboard": "tsx scripts/smoke-native-clipboard.mjs",
@@ -172,6 +172,7 @@
     "openid-client": "6.8.8",
     "selfsigned": "^5.5.0",
     "ssh2": "^1.17.0",
+    "undici": "^7.30.0",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
   },

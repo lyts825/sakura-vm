@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import assert from 'node:assert/strict';
 import test, { after, type TestContext } from 'node:test';
 import { createHash, randomUUID } from 'node:crypto';
@@ -53,7 +54,7 @@ async function fixture(t: TestContext) {
     directory = join(root, 'backups', id),
     artifactsDirectory = join(root, 'artifacts', id);
   await mkdir(directory, { recursive: true });
-  const machines = new Machines({ run: async () => '{}', runtime: { close: async () => {} } } as unknown as Engine);
+  const machines = new Machines({ run: async () => '{}', runtime: { close: async () => {} } } as unknown as Engine, fakeVmNetwork);
   machines.records.set(id, {
     ...createSchema.parse({ name: 'source' }),
     id,

@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -23,7 +24,7 @@ after(async () => {
 
 test('process-only takeover fences source before promotion and retires target before rejoin', async () => {
   const engine = { runtime: { close: async () => {} } } as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const sourceId = randomUUID(), targetId = randomUUID();
   const snapshotId = randomUUID(), transferId = randomUUID();
@@ -99,7 +100,7 @@ test('process-only takeover fences source before promotion and retires target be
     await failover.sample();
     assert.equal(starts, 2, 'a starting standby is observed rather than started again');
     assert.equal(machines.get(sourceId).haPromotion?.status, 'fenced');
-    const waiting = new Machines(engine);
+    const waiting = new Machines(engine, fakeVmNetwork);
     await waiting.init();
     try {
       assert.equal(waiting.get(sourceId).haPromotion?.status, 'fenced');
@@ -109,7 +110,7 @@ test('process-only takeover fences source before promotion and retires target be
     await failover.sample();
     assert.equal(machines.get(sourceId).haPromotion?.status, 'accepted');
     await assert.rejects(machines.start(sourceId), { code: 'HA_SOURCE_FENCED' });
-    const reopened = new Machines(engine);
+    const reopened = new Machines(engine, fakeVmNetwork);
     await reopened.init();
     try {
       await assert.rejects(reopened.start(sourceId), { code: 'HA_SOURCE_FENCED' });
@@ -124,7 +125,7 @@ test('process-only takeover fences source before promotion and retires target be
     assert.equal(machines.get(sourceId).haPromotion, undefined);
     assert.ok(machines.get(targetId).haRetirement);
     await assert.rejects(machines.start(targetId), { code: 'HA_REPLICA_RETIRED' });
-    const final = new Machines(engine);
+    const final = new Machines(engine, fakeVmNetwork);
     await final.init();
     try {
       assert.equal(final.get(sourceId).haPromotion, undefined);
@@ -138,7 +139,7 @@ test('process-only takeover fences source before promotion and retires target be
 });
 
 test('a witness-enrolled source needs serialized disarm before local fencing and every pending retry', async () => {
-  const machines = new Machines({ runtime: { close: async () => {} } } as Engine);
+  const machines = new Machines({ runtime: { close: async () => {} } } as Engine, fakeVmNetwork);
   await machines.init();
   const sourceId = randomUUID(), targetId = randomUUID(), sourceHostId = randomUUID();
   const targetHostId = randomUUID(), snapshotId = randomUUID(), transferId = randomUUID(), peerId = randomUUID();

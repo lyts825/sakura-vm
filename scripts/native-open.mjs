@@ -1,3 +1,5 @@
+import { networkFor } from './network-client.mjs';
+const { fetch } = networkFor('tool:native-open');
 import { spawn } from 'node:child_process';
 import { join, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';

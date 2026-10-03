@@ -1,4 +1,5 @@
-import { connect } from 'node:net';
+import { networkFor } from './network/index.ts';
+
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
@@ -9,6 +10,8 @@ import { projectIdentityTask } from './project-run-scope.ts';
 import { redactProjectOutput } from './project-execution.ts';
 import { redactValues } from './secrets.ts';
 import { OwnedForwardAgent, SshAgentScopes } from './ssh-agent-scope.ts';
+
+const { connectLocal: connect } = networkFor('core:ssh-agent-forward');
 
 export const sshAgentForwardInput = z.object({
   command: z.string().min(1).max(8192),

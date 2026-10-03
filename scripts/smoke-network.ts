@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { createConnection } from 'node:net';
+import { createConnection, createServer } from 'node:net';
+import { createSocket } from 'node:dgram';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Features as FeaturesType } from '../server/features';
 
@@ -20,6 +21,8 @@ const { networkEmulation } = await import('../server/network-emulation.ts');
 const { networkQuota } = await import('../server/network-quota.ts');
 const { egressPolicy } = await import('../server/egress-policy.ts');
 const { natHairpin } = await import('../server/nat-hairpin.ts');
+const { ProjectDirectoryMigrations } = await import('../server/project-directory-migration.ts');
+const { networkRuntime } = await import('../server/network/index.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 let features: FeaturesType | undefined;
@@ -56,6 +59,37 @@ try {
     300000,
   );
   assert.equal(installed.code, 0, installed.stderr);
+  const datagrams = createSocket('udp4');
+  const ipv6 = createServer((socket) => socket.pipe(socket));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      datagrams.once('error', reject);
+      datagrams.bind(0, '127.0.0.1', resolve);
+    });
+    datagrams.on('message', (message, peer) => datagrams.send(message, peer.port, peer.address));
+    await new Promise<void>((resolve, reject) => {
+      ipv6.once('error', reject);
+      ipv6.listen(0, '::1', resolve);
+    });
+    const dualStack = await machines.exec(vm.id, `python3 - <<'PY'
+import socket
+with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as connection:
+    connection.settimeout(5)
+    connection.sendto(b'managed-udp', ('10.0.2.2', ${datagrams.address().port}))
+    assert connection.recv(64) == b'managed-udp'
+with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as connection:
+    connection.settimeout(5)
+    connection.connect(('fec0::2', ${(ipv6.address() as { port: number }).port}))
+    connection.sendall(b'managed-ipv6')
+    assert connection.recv(64) == b'managed-ipv6'
+print('UDP and IPv6 forwarding passed')
+PY`, 20000);
+    assert.equal(dualStack.code, 0, dualStack.stdout + dualStack.stderr);
+    console.log('Real UDP and IPv6 guest traffic passed through the managed backend');
+  } finally {
+    datagrams.close();
+    await new Promise<void>((resolve) => ipv6.close(() => resolve()));
+  }
   const quotaTools = await machines.exec(vm.id,
     'set -e; iptables --version; iptables -N SAKURA_Q_PROBE; trap "iptables -F SAKURA_Q_PROBE; iptables -X SAKURA_Q_PROBE" EXIT; iptables -A SAKURA_Q_PROBE -p tcp -m conntrack --ctstate NEW -m connlimit --connlimit-above 2 -j REJECT; iptables -A SAKURA_Q_PROBE -p tcp -m conntrack --ctstate NEW -m limit --limit 2/second --limit-burst 2 -j RETURN',
     10000);
@@ -154,7 +188,15 @@ PY`, 45000);
   const clearedPolicy = await egressPolicy(machines, vm.id, { mode: 'clear' }, 'run');
   assert.equal('active' in clearedPolicy && clearedPolicy.active, false);
   console.log('Real guest IPv4 allow/deny, live policy replacement and cleanup passed');
-  await features.workspaces.save(vm.id, { directory: '/workspace/app' });
+  await features.workspaces.save(vm.id, { directory: '/workspace/app',
+    environment: { PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' } });
+  // This freshly created fixture owns its root-created directory. Use the same
+  // explicit migration contract as the UI before asking a project UID to run probes.
+  const migrations = new ProjectDirectoryMigrations(machines, features.workspaces);
+  const permission = await migrations.preview(vm.id);
+  assert.ok(permission.plan);
+  await migrations.apply(vm.id, { action: 'apply', version: 1,
+    planId: permission.plan.proposal.planId, sha256: permission.plan.sha256, reviewed: true });
   const before = await machines.readGuestFile(vm.id, '/etc/resolv.conf');
   const port = await freePort();
   const saved = await features.network.saveProfile({
@@ -224,6 +266,7 @@ PY`, 10000);
 } finally {
   await features?.close();
   await machines.close();
+  await networkRuntime.close();
   assert.equal(dirname(directory), resolve(tmpdir()));
   assert.ok(basename(directory).startsWith('sakura-network-vm-'));
   await rm(directory, { recursive: true, force: true });

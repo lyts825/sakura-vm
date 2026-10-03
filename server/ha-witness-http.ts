@@ -1,7 +1,10 @@
+import { networkFor } from './network/index.ts';
 import { X509Certificate } from 'node:crypto';
-import { request as httpsRequest } from 'node:https';
+
 import type { TLSSocket } from 'node:tls';
 import { AppError } from '../shared/errors.ts';
+
+const { httpsRequest } = networkFor('core:ha-witness-http');
 
 type HttpsOptions = {
   bearer?: string; basic?: { username: string; password: string };

@@ -1,3 +1,4 @@
+import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -36,7 +37,7 @@ test('startup finalizes published encryption and rolls back an uncommitted conve
   const engine = { run: async (_name: string, args: string[]) => JSON.stringify({
     format: 'qcow2', encrypted: args.at(-1)?.includes(encrypted) }),
     runtime: { close: async () => {} } } as unknown as Engine;
-  const machines = new Machines(engine);
+  const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   try {
     assert.equal(machines.get(encrypted).diskEncryption?.secretName, 'DiskPassphrase');
@@ -50,7 +51,7 @@ test('startup finalizes published encryption and rolls back an uncommitted conve
         await assert.rejects(readFile(join(vmDir(id), file)), { code: 'ENOENT' });
   } finally { await machines.close(); }
   const mismatch = new Machines({ ...engine,
-    run: async () => JSON.stringify({ format: 'qcow2', encrypted: false }) } as Engine);
+    run: async () => JSON.stringify({ format: 'qcow2', encrypted: false }) } as Engine, fakeVmNetwork);
   await assert.rejects(mismatch.init(), /加密标记与磁盘格式不一致/);
   await mismatch.close();
 });
