@@ -8,7 +8,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { X11ClipboardSession } from '../shared/x11-clipboard.ts';
 import type { AppReceipt } from '../server/single-app-sandbox.ts';
 import { defaultClipboardRule, type ClipboardRule } from '../shared/clipboard-policy.ts';
-import { LinuxDesktopOwnedFixture, captureDesktopSources, closeOwnedDesktopSshClient, desktopFixtureParent, desktopFixtureSource, sha256 } from './linux-desktop-owned-fixture.ts';
+import { LinuxDesktopOwnedFixture, captureDesktopSources, closeOwnedDesktopSshClient, desktopFixtureParent, desktopFixtureSource, ownedDesktopBootstrapTimeout, parseOwnedDesktopBootstrapReply, sha256 } from './linux-desktop-owned-fixture.ts';
 import { probeOwnedDesktopRfb } from './linux-desktop-rfb-probe.ts';
 
 const singleAppFdClassifier = String.raw`
@@ -75,6 +75,19 @@ async function run(transport: 'x11' | 'wayland') {
   const checked = (name: string, details?: unknown) => { proof.cases.push({ name, passed: true, details }); console.log('PASS ' + name); };
   const errorValue = (error: unknown) => ({ message: error instanceof Error ? error.message : String(error), code: error instanceof Error ? Reflect.get(error, 'code') || null : null });
 
+  function watchChannel(stream: ClientChannel, channel?: any) {
+    const known = channelStates.get(stream);
+    if (known) return known;
+    assert.ok(channel, 'Owned SSH channel has no transport ledger');
+    stream.stderr.on('data', (bytes: Buffer) => { channel.stderr = (channel.stderr + bytes.toString()).slice(-8192); });
+    stream.once('exit', (code: number | null, signal?: string) => { channel.exit = { code, signal: signal || null }; });
+    channelStates.set(stream, channel);
+    channelClosures.set(stream, new Promise<void>((done) => stream.once('close', () => {
+      channel.closed = true; channel.closedAt = new Date().toISOString(); channel.stdoutClosed = stream.closed; channel.stderrClosed = stream.stderr.closed; done();
+    })));
+    return channel;
+  }
+
   function watchClient(client: Client, role: string, live?: object) {
     if (clientClosures.has(client)) return;
     clients.add(client);
@@ -94,14 +107,7 @@ async function run(transport: 'x11' | 'wayland') {
         proof.sshChannels.push(channel);
         args[args.length - 1] = (error: Error | undefined, stream: ClientChannel) => {
           if (error) { channel.setupError = errorValue(error); channel.notCreated = true; }
-          if (stream) {
-            stream.stderr.on('data', (bytes: Buffer) => { channel.stderr = (channel.stderr + bytes.toString()).slice(-8192); });
-            stream.once('exit', (code: number | null, signal?: string) => { channel.exit = { code, signal: signal || null }; });
-            channelStates.set(stream, channel);
-            channelClosures.set(stream, new Promise<void>((done) => stream.once('close', () => {
-              channel.closed = true; channel.closedAt = new Date().toISOString(); channel.stdoutClosed = stream.closed; channel.stderrClosed = stream.stderr.closed; done();
-            })));
-          }
+          if (stream) watchChannel(stream, channel);
           callback(error, stream);
         };
       }
@@ -877,21 +883,71 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
       } catch { await closeClient(candidate); await delay(1000); }
     }
     assert.ok(bootstrap, 'Owned source test-key bootstrap failed');
-    async function bootstrapCommand(source: string, input = '') {
-      return new Promise<string>((done, reject) => bootstrap!.exec('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /bin/sh -c ' + quote(source), (error, channel) => {
-      if (error) return reject(error); let stdout = '', stderr = '';
-      const timer = setTimeout(() => { channel.close(); reject(new Error('Owned bootstrap command timeout')); }, 15000);
-      channel.on('data', (bytes: Buffer) => { stdout += bytes.toString(); }); channel.stderr.on('data', (bytes: Buffer) => { stderr += bytes.toString(); });
-      channel.once('close', (code: number) => { clearTimeout(timer); if (code !== 0) reject(new Error(stderr)); else done(stdout); });
-      channel.end(input);
-      }));
+    const bootstrapLive = machines.live.get(fixture.vmId);
+    proof.bootstrapReadiness = { budgetMilliseconds: 180000, deadline: new Date(until).toISOString(), probes: [], ready: false };
+    async function bootstrapCommand(source: string, input = '', role: 'readiness' | 'rekey' = 'readiness') {
+      assert.equal(machines!.live.get(fixture.vmId), bootstrapLive, 'Owned bootstrap VM live changed');
+      const row: any = { role, commandSha256: sha256(source), startedAt: new Date().toISOString(),
+        timeoutMilliseconds: role === 'readiness' ? ownedDesktopBootstrapTimeout(until, Date.now()) : 15000, exit: null, close: null };
+      (proof.bootstrapCommands ||= []).push(row);
+      const output: Record<'stdout' | 'stderr', Buffer[]> = { stdout: [], stderr: [] };
+      let error: unknown, commandChannel: ClientChannel | undefined;
+      try {
+        await new Promise<void>((done, reject) => bootstrap!.exec('env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C /bin/sh -c ' + quote(source), (setupError, channel) => {
+          if (setupError) { row.setupError = errorValue(setupError); return reject(setupError); }
+          commandChannel = channel;
+          const ledger = watchChannel(channel); row.channelId = ledger.id; row.connectionId = ledger.connectionId;
+          let size = 0;
+          const timer = setTimeout(() => { row.timedOut = true; channel.close(); reject(new Error('Owned bootstrap command timeout')); }, row.timeoutMilliseconds);
+          for (const stream of ['stdout', 'stderr'] as const) (stream === 'stdout' ? channel : channel.stderr).on('data', (bytes: Buffer) => {
+            size += bytes.length;
+            if (size > 65536) { row.outputExceeded = true; channel.close(); reject(new Error('Owned bootstrap command output exceeded its fixed budget')); }
+            else output[stream].push(Buffer.from(bytes));
+          });
+          channel.once('exit', (code: number | null, signal?: string) => { row.exit = { code, signal: signal || null }; });
+          channel.once('close', (code: number | null, signal?: string) => {
+            clearTimeout(timer); row.close = { code, signal: signal || null }; row.closedAt = new Date().toISOString(); row.physicallyClosed = ledger.closed;
+            done();
+          });
+          channel.end(input);
+        }));
+      } catch (failure) { error = failure; }
+      if (commandChannel) {
+        try { await boundedTransport(channelClosures.get(commandChannel)!, 'Owned bootstrap channel physical close'); }
+        catch (failure) { row.physicalCloseError = errorValue(failure); error ||= failure; }
+        row.physicallyClosed = channelStates.get(commandChannel).closed;
+      }
+      for (const stream of ['stdout', 'stderr'] as const) {
+        const bytes = Buffer.concat(output[stream]);
+        const path = join(fixture.root, 'logs', (row.channelId || randomUUID()) + '.bootstrap.' + stream + '.bin');
+        await writeFile(path, bytes, { flag: 'wx' });
+        row[stream] = { path, size: bytes.length, sha256: sha256(bytes) };
+        assert.equal(sha256(await readFile(path)), row[stream].sha256);
+      }
+      assert.equal(machines!.live.get(fixture.vmId), bootstrapLive, 'Owned bootstrap VM live changed');
+      if (error) throw error;
+      assert.deepEqual(row.exit, { code: 0, signal: null }, 'Owned bootstrap ' + role + ' command exit refusal: ' + JSON.stringify(row.exit));
+      assert.deepEqual(row.close, row.exit); assert.equal(row.physicallyClosed, true);
+      return Buffer.concat(output.stdout).toString();
     }
     // Establish the owned guest tuple before the first mutation. The rekey
     // repeats it on the same actual transport immediately before writing.
-    const ids = await bootstrapCommand('set -eu; test -f /var/lib/cloud/instance/boot-finished; cat /sys/class/dmi/id/product_uuid; cat /proc/sys/kernel/random/boot_id');
-    const [dmi, boot] = ids.trim().split(/\r?\n/); assert.equal(dmi.toLowerCase(), fixture.vmId); assert.match(boot, /^[a-f0-9-]{36}$/); proof.bootId = boot;
+    const readinessCommand = `set -eu\ndmi=$(cat /sys/class/dmi/id/product_uuid)\nboot=$(cat /proc/sys/kernel/random/boot_id)\nready=false\nif [ -f /var/lib/cloud/instance/boot-finished ]; then ready=true; fi\nprintf '{"version":1,"kind":"owned-desktop-bootstrap","dmi":"%s","bootId":"%s","cloudInitReady":%s}\\n' "$dmi" "$boot" "$ready"\n`;
+    let boot: string | undefined;
+    while (Date.now() < until) {
+      const probeStartedAt = new Date().toISOString();
+      const reply = parseOwnedDesktopBootstrapReply(await bootstrapCommand(readinessCommand), fixture.vmId, boot);
+      boot ||= reply.bootId; proof.bootId = boot;
+      const receivedAt = Date.now();
+      proof.bootstrapReadiness.probes.push({ startedAt: probeStartedAt, finishedAt: new Date(receivedAt).toISOString(), withinDeadline: receivedAt <= until, ...reply });
+      assert.ok(receivedAt <= until, 'Owned bootstrap readiness reply arrived after the original deadline');
+      if (reply.cloudInitReady) { proof.bootstrapReadiness.ready = true; break; }
+      await delay(1000);
+    }
+    assert.equal(proof.bootstrapReadiness.ready, true, 'Owned cloud-init was not ready within the original bootstrap budget');
+    assert.ok(boot);
     const rekey = `set -eu\ntest "$(cat /sys/class/dmi/id/product_uuid | tr A-F a-f)" = ${quote(fixture.vmId)}\ntest "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(boot)}\ntest ! -L /root/.ssh/authorized_keys\numask 077\nIFS= read -r key\ntest -n "$key"\nprintf '%s\\n' "$key" > /root/.ssh/authorized_keys.sakura-current-cow\nchmod 600 /root/.ssh/authorized_keys.sakura-current-cow\nmv /root/.ssh/authorized_keys.sakura-current-cow /root/.ssh/authorized_keys\n/bin/sync\n`;
-    await bootstrapCommand(rekey, freshKey.publicText + '\n');
+    await bootstrapCommand(rekey, freshKey.publicText + '\n', 'rekey');
     await closeClient(bootstrap); oldKey.fill(0); oldKey = undefined;
     const bootUntil = Date.now() + 120000;
     while (machines.state(fixture.vmId) === 'starting' && Date.now() < bootUntil) await delay(500);

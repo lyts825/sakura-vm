@@ -8,8 +8,30 @@ import { createServer, type Socket } from 'node:net';
 import test from 'node:test';
 import ssh2 from 'ssh2';
 import { WebSocket, WebSocketServer } from 'ws';
-import { closeOwnedDesktopSshClient, desktopFixtureLogPath, desktopFixtureParent, LinuxDesktopOwnedFixture, ownedDesktopQemuArguments } from '../scripts/linux-desktop-owned-fixture.ts';
+import { closeOwnedDesktopSshClient, desktopFixtureLogPath, desktopFixtureParent, LinuxDesktopOwnedFixture, ownedDesktopQemuArguments, ownedDesktopBootstrapTimeout, parseOwnedDesktopBootstrapReply } from '../scripts/linux-desktop-owned-fixture.ts';
 import { probeOwnedDesktopRfb } from '../scripts/linux-desktop-rfb-probe.ts';
+
+test('pending bootstrap readiness still pins the new DMI and boot and refuses malformed or changed guest replies', () => {
+  const vmId = randomUUID(), bootId = randomUUID();
+  const pending = { version: 1, kind: 'owned-desktop-bootstrap', dmi: vmId.toUpperCase(), bootId, cloudInitReady: false };
+  assert.equal(parseOwnedDesktopBootstrapReply(JSON.stringify(pending), vmId).cloudInitReady, false);
+  const ready = parseOwnedDesktopBootstrapReply(JSON.stringify({ ...pending, cloudInitReady: true }), vmId, bootId);
+  assert.equal(ready.cloudInitReady, true); assert.equal(ready.dmi, vmId);
+  for (const reply of [
+    { ...pending, dmi: randomUUID() }, { ...pending, bootId: randomUUID() }, { ...pending, bootId: 'invalid' },
+    { ...pending, cloudInitReady: 'false' }, { ...pending, version: 2 }, { ...pending, kind: 'other' },
+    { ...pending, extra: null }, { dmi: vmId, bootId, cloudInitReady: true }, null, [],
+  ]) assert.throws(() => parseOwnedDesktopBootstrapReply(JSON.stringify(reply), vmId, bootId));
+  assert.throws(() => parseOwnedDesktopBootstrapReply('{', vmId));
+  assert.throws(() => parseOwnedDesktopBootstrapReply(' '.repeat(1025), vmId));
+  for (const remaining of [1, 2, 14999, 15000, 15001, 180000]) {
+    const timeout = ownedDesktopBootstrapTimeout(180000, 180000 - remaining);
+    assert.ok(timeout > 0 && timeout <= 15000 && timeout <= remaining);
+  }
+  assert.throws(() => ownedDesktopBootstrapTimeout(180000, 180000));
+  assert.throws(() => ownedDesktopBootstrapTimeout(180000, 180001));
+  assert.throws(() => ownedDesktopBootstrapTimeout(Number.NaN, 0));
+});
 
 test('fixed guest FD classifier distinguishes original management objects from legitimate mapped and GUI descriptors', () => {
   const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');

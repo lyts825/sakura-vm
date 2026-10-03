@@ -20,6 +20,30 @@ export const sha256 = (bytes: Buffer | string) => createHash('sha256').update(by
 
 export type OwnedDesktopSshState = { ready: boolean; closed: boolean; notCreated?: boolean; closeForced?: boolean };
 
+export function ownedDesktopBootstrapTimeout(deadline: number, now: number) {
+  assert.ok(Number.isSafeInteger(deadline) && Number.isSafeInteger(now), 'Owned bootstrap deadline is invalid');
+  const remaining = deadline - now;
+  assert.ok(remaining > 0, 'Owned bootstrap readiness deadline expired');
+  return Math.min(15000, remaining);
+}
+
+/** A pending cloud-init flag never relaxes the exact new guest identity. */
+export function parseOwnedDesktopBootstrapReply(text: string, vmId: string, previousBootId?: string) {
+  assert.ok(Buffer.byteLength(text) <= 1024, 'Owned bootstrap reply exceeded its fixed budget');
+  const value: unknown = JSON.parse(text);
+  assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'Owned bootstrap reply must be an object');
+  assert.deepEqual(Object.keys(value).sort(), ['bootId', 'cloudInitReady', 'dmi', 'kind', 'version']);
+  const reply = value as { version: number; kind: string; dmi: string; bootId: string; cloudInitReady: boolean };
+  assert.equal(reply.version, 1); assert.equal(reply.kind, 'owned-desktop-bootstrap');
+  const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+  assert.match(vmId, uuid); assert.equal(typeof reply.dmi, 'string'); assert.match(reply.dmi.toLowerCase(), uuid);
+  assert.equal(reply.dmi.toLowerCase(), vmId, 'Owned bootstrap DMI does not match the new VM');
+  assert.equal(typeof reply.bootId, 'string'); assert.match(reply.bootId, uuid);
+  if (previousBootId !== undefined) assert.equal(reply.bootId, previousBootId, 'Owned bootstrap boot changed during readiness');
+  assert.equal(typeof reply.cloudInitReady, 'boolean');
+  return { ...reply, dmi: reply.dmi.toLowerCase() };
+}
+
 /** SSH2 never emits close for a client whose connect did not create a socket. */
 export async function closeOwnedDesktopSshClient(client: Client, state: OwnedDesktopSshState,
   physicalClose: Promise<void>, timeoutMs = 10000) {
