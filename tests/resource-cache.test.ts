@@ -109,6 +109,26 @@ test('resource cache bounds retained entries and never evicts an active observer
   } finally { stop(); cache.close(); }
 });
 
+test('unchanged reconciliation preserves form data identity while changed fields and hostile JSON keys remain correct', async () => {
+  const cache = new ResourceCache(); let reads = 0;
+  const request = (async () => { reads++; return JSON.parse('{"policy":{"days":7},"count":' +
+    (reads < 3 ? 1 : 2) + ',"__proto__":{"polluted":true}}'); }) as ResourceRequest;
+  let current: ResourceSnapshot<any> | undefined;
+  const stop = cache.watch(request, '/log-retention', value => { current = value; }, 0);
+  try {
+    await until(() => current?.data !== null);
+    const first = current!.data;
+    cache.mutation('/log-retention'); await until(() => reads === 2 && !current?.loading);
+    assert.equal(current!.data, first);
+    cache.invalidate(); await until(() => current?.data.count === 2);
+    assert.notEqual(current!.data, first);
+    assert.equal(current!.data.policy, first.policy);
+    assert.equal(Object.getPrototypeOf(current!.data), Object.prototype);
+    assert.equal(Object.hasOwn(current!.data, '__proto__'), true);
+    assert.equal(({} as Record<string, unknown>).polluted, undefined);
+  } finally { stop(); cache.close(); }
+});
+
 test('task presentation distinguishes queue, cancellation, cleanup and uncertain restart outcomes', () => {
   const base: JobView = { status: 'running', startedAt: new Date().toISOString(), log: '' };
   assert.equal(jobPresentation({ ...base, admission: 'queued' }).label, '等待资源');

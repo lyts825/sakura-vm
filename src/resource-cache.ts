@@ -7,6 +7,31 @@ type Entry = {
   pending?: Promise<void>; abort?: AbortController; timer?: ReturnType<typeof setTimeout>;
 };
 
+/** Keep equal JSON subtrees stable across polling and mutation reconciliation.
+ * Form effects must not mistake an unchanged server reply for a new saved draft. */
+function shareJson(previous: unknown, incoming: unknown): unknown {
+  let remaining = 20000;
+  const visit = (old: unknown, next: unknown, depth: number): unknown => {
+    if (Object.is(old, next)) return old;
+    if (--remaining < 0 || depth > 64 || !old || !next || typeof old !== 'object' || typeof next !== 'object') return next;
+    if (Array.isArray(old) && Array.isArray(next)) {
+      const values = next.map((value, index) => visit(old[index], value, depth + 1));
+      return old.length === values.length && values.every((value, index) => Object.is(value, old[index])) ? old : values;
+    }
+    if (Object.getPrototypeOf(old) !== Object.prototype || Object.getPrototypeOf(next) !== Object.prototype) return next;
+    const before = old as Record<string, unknown>, after = next as Record<string, unknown>;
+    const keys = Object.keys(after), value: Record<string, unknown> = {};
+    let equal = Object.keys(before).length === keys.length;
+    for (const key of keys) {
+      const shared = visit(before[key], after[key], depth + 1);
+      Object.defineProperty(value, key, { value: shared, enumerable: true, writable: true, configurable: true });
+      if (!Object.hasOwn(before, key) || !Object.is(shared, before[key])) equal = false;
+    }
+    return equal ? old : value;
+  };
+  return visit(previous, incoming, 0);
+}
+
 /** A request capability plus its complete path/query identifies one cached resource. */
 export class ResourceCache {
   private identities = new WeakMap<ResourceRequest, number>();
@@ -54,7 +79,7 @@ export class ResourceCache {
     const pending = Promise.resolve().then(() => entry.request(entry.path, 'GET', undefined, abort.signal))
       .then(data => {
         if (generation === entry.generation && !abort.signal.aborted)
-          this.emit(entry, { data, error: '', loading: false, updatedAt: Date.now() });
+          this.emit(entry, { data: shareJson(entry.snapshot.data, data), error: '', loading: false, updatedAt: Date.now() });
       }, error => {
         if (generation === entry.generation && entry.listeners.size)
           this.emit(entry, { error: (abort.signal.reason as Error)?.message || (error as Error).message, loading: false });
