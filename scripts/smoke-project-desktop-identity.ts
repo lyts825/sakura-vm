@@ -62,6 +62,83 @@ function ownedAdmissionControlAction(command: string, build: string) {
   return null;
 }
 
+function parseOwnedBootstrapCloudReply(text: string, vmId: string, bootId: string) {
+  assert.ok(Buffer.byteLength(text) <= 384 * 1024);
+  const value = JSON.parse(text);
+  assert.equal(value.version, 1); assert.equal(value.kind, 'owned-desktop-bootstrap-cloud-readonly');
+  for (const tuple of [value.bindingBefore, value.bindingAfter]) {
+    assert.equal(tuple.dmi, vmId); assert.equal(tuple.bootId, bootId);
+  }
+  assert.equal(value.maximumFileBytes, 65536); assert.equal(value.snapshotOnly, true);
+  const paths = ['/var/lib/cloud/data/status.json', '/var/lib/cloud/data/result.json', '/var/log/cloud-init.log', '/var/log/cloud-init-output.log'];
+  assert.ok(Array.isArray(value.files)); assert.deepEqual(value.files.map((row: any) => row.path), paths);
+  for (const row of value.files) {
+    assert.ok(['captured', 'missing', 'refused'].includes(row.status));
+    if (row.status !== 'captured') continue;
+    assert.equal(row.fdClosed, true); assert.equal(row.before.uid, 0); assert.equal(row.before.type, 32768);
+    for (const metadata of [row.before, row.after]) {
+      for (const key of ['device', 'inode', 'mtime', 'ctime']) assert.match(metadata[key], /^(0|[1-9][0-9]*)$/);
+      assert.ok(Number.isSafeInteger(metadata.size) && metadata.size >= 0);
+    }
+    assert.ok(Number.isSafeInteger(row.offset) && row.offset === Math.max(0, row.before.size - 65536));
+    const bytes = Buffer.from(row.raw.base64, 'base64');
+    assert.equal(bytes.toString('base64'), row.raw.base64); assert.equal(bytes.length, row.raw.bytes);
+    assert.ok(bytes.length <= 65536 && row.offset + bytes.length <= row.before.size);
+    assert.equal(sha256(bytes), row.raw.sha256);
+    assert.equal(row.originalFileComplete, row.offset === 0 && bytes.length === row.before.size);
+    assert.equal(row.fullFileStable, false);
+  }
+  return value;
+}
+
+// One bounded snapshot on the existing old-key bootstrap transport. These
+// observations never establish readiness or describe the subsequent state.
+const bootstrapCloudDiagnostic = String.raw`
+import os,sys,json,stat,hashlib,base64,time
+request=json.loads(sys.argv[1]);limit=65536
+paths=('/var/lib/cloud/data/status.json','/var/lib/cloud/data/result.json','/var/log/cloud-init.log','/var/log/cloud-init-output.log')
+def binding():
+ values=[]
+ for path in ('/sys/class/dmi/id/product_uuid','/proc/sys/kernel/random/boot_id'):
+  with open(path,'rb') as source:data=source.read(129)
+  assert len(data)<=128,'BOOTSTRAP_BINDING_SIZE';values.append(data.decode('ascii').strip().lower())
+ return {'dmi':values[0],'bootId':values[1]}
+def metadata(info):
+ return {'device':str(info.st_dev),'inode':str(info.st_ino),'uid':info.st_uid,'gid':info.st_gid,'mode':stat.S_IMODE(info.st_mode),'type':stat.S_IFMT(info.st_mode),'links':info.st_nlink,'size':info.st_size,'mtime':str(info.st_mtime_ns),'ctime':str(info.st_ctime_ns)}
+def sample(path):
+ row={'path':path,'startedAt':str(time.time_ns()),'status':'refused','fdClosed':False};parent=None;fd=None
+ try:
+  parent=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
+  parts=path.split('/')[1:]
+  for part in parts[:-1]:
+   child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=parent);os.close(parent);parent=child
+   info=os.fstat(parent);assert info.st_uid==0 and not info.st_mode&0o022,'BOOTSTRAP_CLOUD_PARENT'
+  fd=os.open(parts[-1],os.O_RDONLY|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=parent)
+  before=os.fstat(fd);row['before']=metadata(before)
+  assert stat.S_ISREG(before.st_mode) and before.st_uid==0 and before.st_nlink==1 and not before.st_mode&0o022,'BOOTSTRAP_CLOUD_FILE'
+  offset=max(0,before.st_size-limit);count=before.st_size-offset;os.lseek(fd,offset,os.SEEK_SET);data=b''
+  while len(data)<count:
+   piece=os.read(fd,count-len(data))
+   if not piece:break
+   data+=piece
+  row.update(status='captured',offset=offset,raw={'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')},originalFileComplete=offset==0 and len(data)==before.st_size,fullFileStable=False)
+  row['after']=metadata(os.fstat(fd))
+  try:row['pathAfter']=metadata(os.stat(parts[-1],dir_fd=parent,follow_symlinks=False))
+  except FileNotFoundError:row['pathAfter']=None
+  row['heldMetadataChanged']=row['before']!=row['after'];row['pathIdentityChanged']=row['pathAfter'] is None or (row['pathAfter']['device'],row['pathAfter']['inode'],row['pathAfter']['type'])!=(row['before']['device'],row['before']['inode'],row['before']['type'])
+ except FileNotFoundError as error:row.update(status='missing',error={'type':type(error).__name__,'errno':error.errno})
+ except BaseException as error:row.update(status='refused',error={'type':type(error).__name__,'errno':getattr(error,'errno',None),'message':str(error)})
+ finally:
+  if fd is not None:os.close(fd)
+  if parent is not None:os.close(parent)
+  row['fdClosed']=True;row['finishedAt']=str(time.time_ns())
+ return row
+before=binding();assert before==request,'BOOTSTRAP_BINDING_CHANGED'
+report={'version':1,'kind':'owned-desktop-bootstrap-cloud-readonly','maximumFileBytes':limit,'snapshotOnly':True,'bindingBefore':before,'files':[sample(path) for path in paths],'bindingAfter':binding()}
+assert report['bindingAfter']==before,'BOOTSTRAP_BINDING_CHANGED'
+print(json.dumps(report,separators=(',',':')))
+`;
+
 const singleAppFdClassifier = String.raw`
 def classify_descriptor(row, objects, process_role):
  assert isinstance(row,dict) and type(row['number']) is int and row['number']>=0,'FD_NUMBER_INVALID'
@@ -1341,10 +1418,11 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     assert.ok(bootstrap, 'Owned source test-key bootstrap failed');
     const bootstrapLive = machines.live.get(fixture.vmId);
     proof.bootstrapReadiness = { budgetMilliseconds: 180000, deadline: new Date(until).toISOString(), probes: [], ready: false };
-    async function bootstrapCommand(source: string, input = '', role: 'readiness' | 'rekey' = 'readiness') {
+    async function bootstrapCommand(source: string, input = '', role: 'readiness' | 'cloud-diagnostic' | 'rekey' = 'readiness') {
       assert.equal(machines!.live.get(fixture.vmId), bootstrapLive, 'Owned bootstrap VM live changed');
       const row: any = { role, commandSha256: sha256(source), startedAt: new Date().toISOString(),
-        timeoutMilliseconds: role === 'readiness' ? ownedDesktopBootstrapTimeout(until, Date.now()) : 15000, exit: null, close: null };
+        timeoutMilliseconds: role === 'rekey' ? 15000 : ownedDesktopBootstrapTimeout(until, Date.now()),
+        maximumOutputBytes: role === 'cloud-diagnostic' ? 384 * 1024 : 65536, exit: null, close: null };
       (proof.bootstrapCommands ||= []).push(row);
       const output: Record<'stdout' | 'stderr', Buffer[]> = { stdout: [], stderr: [] };
       let error: unknown, commandChannel: ClientChannel | undefined;
@@ -1357,7 +1435,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
           const timer = setTimeout(() => { row.timedOut = true; channel.close(); reject(new Error('Owned bootstrap command timeout')); }, row.timeoutMilliseconds);
           for (const stream of ['stdout', 'stderr'] as const) (stream === 'stdout' ? channel : channel.stderr).on('data', (bytes: Buffer) => {
             size += bytes.length;
-            if (size > 65536) { row.outputExceeded = true; channel.close(); reject(new Error('Owned bootstrap command output exceeded its fixed budget')); }
+            if (size > row.maximumOutputBytes) { row.outputExceeded = true; channel.close(); reject(new Error('Owned bootstrap command output exceeded its fixed budget')); }
             else output[stream].push(Buffer.from(bytes));
           });
           channel.once('exit', (code: number | null, signal?: string) => { row.exit = { code, signal: signal || null }; });
@@ -1398,6 +1476,21 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
       proof.bootstrapReadiness.probes.push({ startedAt: probeStartedAt, finishedAt: new Date(receivedAt).toISOString(), withinDeadline: receivedAt <= until, ...reply });
       assert.ok(receivedAt <= until, 'Owned bootstrap readiness reply arrived after the original deadline');
       if (reply.cloudInitReady) { proof.bootstrapReadiness.ready = true; break; }
+      if (!proof.bootstrapDiagnostic) {
+        const diagnostic: any = proof.bootstrapDiagnostic = { startedAt: new Date().toISOString(), snapshotOnly: true,
+          readinessProbeIndex: proof.bootstrapReadiness.probes.length - 1, remainingBudgetMilliseconds: Math.max(0, until - Date.now()) };
+        try {
+          const command = '/usr/bin/python3 -I -S -c ' + quote(bootstrapCloudDiagnostic) + ' ' + quote(JSON.stringify({ dmi: fixture.vmId, bootId: boot }));
+          const observed = parseOwnedBootstrapCloudReply(await bootstrapCommand(command, '', 'cloud-diagnostic'), fixture.vmId, boot);
+          for (const row of observed.files) if (row.status === 'captured') {
+            const bytes = Buffer.from(row.raw.base64, 'base64'), path = join(fixture.root, 'logs', randomUUID() + '.cloud-tail.bin');
+            await writeFile(path, bytes, { flag: 'wx' }); assert.equal(sha256(await readFile(path)), row.raw.sha256);
+            row.raw.path = path; delete row.raw.base64;
+          }
+          diagnostic.observation = observed;
+        } catch (error) { diagnostic.error = errorValue(error); }
+        diagnostic.finishedAt = new Date().toISOString(); diagnostic.withinOriginalDeadline = Date.now() <= until;
+      }
       await delay(1000);
     }
     assert.equal(proof.bootstrapReadiness.ready, true, 'Owned cloud-init was not ready within the original bootstrap budget');
@@ -1631,6 +1724,14 @@ print(json.dumps({'runtimeAbsent':not os.path.lexists(${JSON.stringify(initial.e
       await finish('WebSocket server physical close', () => new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done())));
     }
     oldKey?.fill(0);
+    if (machines && fixture.rootExists) await finish('retained host machine log snapshot', async () => {
+      const text = machines!.logs.get(fixture.vmId) || '', bytes = Buffer.from(text, 'utf8');
+      const path = join(fixture.root, 'logs', randomUUID() + '.host-machine-retained-utf8.bin');
+      await writeFile(path, bytes, { flag: 'wx' }); assert.equal(sha256(await readFile(path)), sha256(bytes));
+      proof.hostMachineLog = { path, bytes: bytes.length, characters: text.length, sha256: sha256(bytes),
+        capturedAt: new Date().toISOString(), boundary: 'Machines.logs retained decoded text encoded as UTF-8',
+        serialWireBytesCaptured: false, completeSerialLog: false, retainedLimitCharacters: 128 * 1024 };
+    });
     // A retained cleanup ticket must not prevent physical owned-VM shutdown.
     // Any timed-out product cleanup stays a failure and is never inferred closed.
     if (machines?.live.has(fixture.vmId)) await finish('VM stop', () => machines!.stop(fixture.vmId, true));

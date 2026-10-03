@@ -9,7 +9,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import ssh2 from 'ssh2';
 import { WebSocket, WebSocketServer } from 'ws';
-import { closeOwnedDesktopSshClient, desktopFixtureLogPath, desktopFixtureParent, LinuxDesktopOwnedFixture, ownedDesktopQemuArguments, ownedDesktopBootstrapTimeout, parseOwnedDesktopBootstrapReply } from '../scripts/linux-desktop-owned-fixture.ts';
+import { closeOwnedDesktopSshClient, desktopFixtureLogPath, desktopFixtureParent, LinuxDesktopOwnedFixture, ownedDesktopQemuArguments, ownedDesktopBootstrapTimeout, parseOwnedDesktopBootstrapReply, sha256 } from '../scripts/linux-desktop-owned-fixture.ts';
 import { probeOwnedDesktopRfb } from '../scripts/linux-desktop-rfb-probe.ts';
 
 function admissionParsers() {
@@ -17,7 +17,7 @@ function admissionParsers() {
   const start = source.indexOf('function parseOwnedAdmissionServiceReply('), end = source.indexOf('const singleAppFdClassifier =', start);
   assert.ok(start >= 0 && end > start);
   const program = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
-  return new Function('assert', 'Buffer', program + '\nreturn { parseOwnedAdmissionServiceReply, ownedAdmissionRetryRemaining, ownedAdmissionControlAction };')(assert, Buffer);
+  return new Function('assert', 'Buffer', 'sha256', program + '\nreturn { parseOwnedAdmissionServiceReply, ownedAdmissionRetryRemaining, ownedAdmissionControlAction, parseOwnedBootstrapCloudReply };')(assert, Buffer, sha256);
 }
 
 test('ordinary service admission restarts only loaded real fragments and skips only explicit not-found', () => {
@@ -85,6 +85,34 @@ test('pending bootstrap readiness still pins the new DMI and boot and refuses ma
   assert.throws(() => ownedDesktopBootstrapTimeout(180000, 180000));
   assert.throws(() => ownedDesktopBootstrapTimeout(180000, 180001));
   assert.throws(() => ownedDesktopBootstrapTimeout(Number.NaN, 0));
+});
+
+test('bootstrap cloud snapshot binds the observed guest and bounded original ranges without asserting later or full-log stability', () => {
+  const { parseOwnedBootstrapCloudReply: parse } = admissionParsers();
+  const vmId = '00000000-0000-4000-8000-000000000001', bootId = '00000000-0000-4000-8000-000000000002';
+  const paths = ['/var/lib/cloud/data/status.json', '/var/lib/cloud/data/result.json', '/var/log/cloud-init.log', '/var/log/cloud-init-output.log'];
+  const bytes = Buffer.from('observed tail'), metadata = { device: '8', inode: '12', uid: 0, gid: 4, mode: 416, type: 32768, links: 1, size: bytes.length, mtime: '20', ctime: '21' };
+  const captured = { path: paths[0], status: 'captured', fdClosed: true, before: metadata, after: { ...metadata, size: metadata.size + 100, mtime: '22' },
+    offset: 0, raw: { bytes: bytes.length, sha256: sha256(bytes), base64: bytes.toString('base64') }, originalFileComplete: true, fullFileStable: false, heldMetadataChanged: true, pathIdentityChanged: false };
+  const value = { version: 1, kind: 'owned-desktop-bootstrap-cloud-readonly', maximumFileBytes: 65536, snapshotOnly: true,
+    bindingBefore: { dmi: vmId, bootId }, bindingAfter: { dmi: vmId, bootId }, files: [captured, ...paths.slice(1).map(path => ({ path, status: 'missing' }))] };
+  assert.equal(parse(JSON.stringify(value), vmId, bootId).files[0].heldMetadataChanged, true);
+  const replaced = structuredClone(value); Object.assign(replaced.files[0], { pathIdentityChanged: true });
+  assert.equal(parse(JSON.stringify(replaced), vmId, bootId).files[0].pathIdentityChanged, true);
+  for (const change of [
+    (v: any) => v.bindingBefore.dmi = bootId, (v: any) => v.bindingAfter.bootId = vmId,
+    (v: any) => v.files[1].path = '/root/.ssh/authorized_keys', (v: any) => v.files.push(v.files[0]),
+    (v: any) => v.files[0].before.uid = 1000, (v: any) => v.files[0].before.type = 40960,
+    (v: any) => v.files[0].fdClosed = false, (v: any) => v.files[0].offset = 1,
+    (v: any) => v.files[0].raw.sha256 = '0'.repeat(64), (v: any) => v.files[0].raw.bytes++,
+    (v: any) => v.files[0].fullFileStable = true, (v: any) => v.snapshotOnly = false,
+  ]) { const invalid = structuredClone(value); change(invalid); assert.throws(() => parse(JSON.stringify(invalid), vmId, bootId)); }
+  const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('const bootstrapCloudDiagnostic = String.raw`'), end = source.indexOf('`;', start + 42);
+  const program = source.slice(start, end);
+  assert.ok(program.includes('O_NOFOLLOW') && program.includes('count=before.st_size-offset') && !program.includes('subprocess'));
+  assert.ok(source.includes('if (!proof.bootstrapDiagnostic)') && source.includes("role === 'rekey' ? 15000 : ownedDesktopBootstrapTimeout(until, Date.now())"));
+  assert.ok(source.includes('serialWireBytesCaptured: false, completeSerialLog: false'));
 });
 
 test('fixed nft atomic fixture refuses occupied accounts, incomplete objects, changed handles and non-refusal exits', () => {
