@@ -33,6 +33,67 @@ test('pending bootstrap readiness still pins the new DMI and boot and refuses ma
   assert.throws(() => ownedDesktopBootstrapTimeout(Number.NaN, 0));
 });
 
+test('fixed nft atomic fixture refuses occupied accounts, incomplete objects, changed handles and non-refusal exits', () => {
+  const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
+  const prefix = 'const nftAtomicFixture = String.raw`', start = source.indexOf(prefix), end = source.indexOf('`;', start + prefix.length);
+  assert.ok(start >= 0 && end > start);
+  const program = source.slice(start + prefix.length, end); assert.ok(!program.includes('${'));
+  const controller = readFileSync(new URL('../native/project-identity/controller.py', import.meta.url), 'utf8');
+  // Execute only pure production/fixture parsers. No guest, process, account,
+  // namespace or nft transaction runs in this model.
+  const model = String.raw`
+import ast,sys,json,re,hashlib,base64,copy
+input_=json.load(sys.stdin)
+names={'UUID','Refusal','refuse','identifier','egress_spec','egress_create_text','egress_json','egress_same_json','egress_objects','egress_table_text'}
+def select(source,names):
+ tree=ast.parse(source);nodes=[node for node in tree.body if isinstance(node,(ast.FunctionDef,ast.ClassDef)) and node.name in names or isinstance(node,ast.Assign) and any(isinstance(target,ast.Name) and target.id in names for target in node.targets)]
+ assert len(nodes)==len(names);return ast.Module(body=nodes,type_ignores=[])
+ns={'re':re,'json':json};exec(compile(select(input_['controller'],names),'<production-pure-nft>','exec'),ns)
+fixture_names={'digest','raw','invalid_third_statement','assert_unused_fixture','snapshot','unchanged','rejected'}
+scope={'hashlib':hashlib,'base64':base64,'ns':ns};exec(compile(select(input_['program'],fixture_names),'<fixed-fixture-pure-nft>','exec'),scope)
+value={'uid':59999,'registryId':'00000000-0000-4000-8000-000000000001','identityId':'00000000-0000-4000-8000-000000000002'}
+project={'uid':20000};store={'reserved':{'20000':{'projectId':'0123456789abcdef','identityId':'00000000-0000-4000-8000-000000000003'}}};passwd=b'root:x:0:0:root:/root:/bin/sh\n';group=b'root:x:0:\n';checks=0
+def refuse(fn):
+ global checks
+ try:fn()
+ except (AssertionError,ns['Refusal']):checks+=1;return
+ raise RuntimeError('invalid fixed fixture state accepted')
+unused=scope['assert_unused_fixture'];unused(store,passwd,group,[],None,value,project)
+refuse(lambda:unused(store,passwd,group,[],None,value,{'uid':59999}))
+refuse(lambda:unused({'reserved':{'59999':{}}},passwd,group,[],None,value,project))
+refuse(lambda:unused(store,passwd+b'foreign:x:59999:9::/:/bin/sh\n',group,[],None,value,project))
+refuse(lambda:unused(store,passwd,group+b'foreign:x:59999:\n',[],None,value,project))
+refuse(lambda:unused(store,passwd,group,[],{'unknown':True},value,project))
+refuse(lambda:unused(store,passwd,group,[{'table':{'family':'inet','name':'skp_uid_59999'}}],None,value,project))
+batch=ns['egress_create_text'](value);invalid=scope['invalid_third_statement'](batch,value)
+assert len(invalid.splitlines())==3 and invalid.splitlines()[:2]==batch.splitlines()[:2] and b' skp_uid_59999 sakura_fixture_absent_chain meta skuid 59999 ' in invalid.splitlines()[2]
+refuse(lambda:scope['invalid_third_statement'](b'create table inet skp_uid_59999 { chain output {} }\n',value))
+name,expected=ns['egress_spec'](value);objects=copy.deepcopy(expected)
+for index,(entry,handle) in enumerate(zip(objects,(10,20,30))):entry[next(iter(entry))]['handle']=handle
+objects[0]['table'].pop('comment');marker=expected[0]['table']['comment']
+human=('table inet '+name+' { # handle 10\n\tcomment "'+marker+'"\n\tchain output { # handle 20\n\t\ttype filter hook output priority 300; policy accept;\n\t\tmeta skuid 59999 drop comment "'+marker+'" # handle 30\n\t}\n}\n').encode()
+def query(role,args,data=None,output=True):return json.dumps({'nftables':[{'metainfo':{'version':'1.0.6'}}]+objects}).encode() if output else human
+scope['nft']=query;before=scope['snapshot'](value,'model');assert before['handles']==[10,20,30];scope['unchanged'](before,copy.deepcopy(before))
+changed=copy.deepcopy(before);changed['handles'][0]=11;refuse(lambda:scope['unchanged'](before,changed))
+changed=copy.deepcopy(before);changed['objects'][0]['table']['handle']=True;refuse(lambda:scope['unchanged'](before,changed))
+complete=objects;objects=objects[:1];refuse(lambda:scope['snapshot'](value,'old-table-only'))
+objects=copy.deepcopy(complete);objects[2]['rule']['expr'][0]['match']['right']=20000;refuse(lambda:scope['snapshot'](value,'foreign-uid'))
+objects=copy.deepcopy(complete);human=human.replace(marker.encode(),b'foreign-marker');refuse(lambda:scope['snapshot'](value,'foreign-marker'))
+report={'commands':[]};scope['report']=report
+def rejection(role,args,data=None,output=True):
+ report['commands'].append({'returncode':1,'stdin':scope['raw'](data)});raise ns['Refusal']('EGRESS_TOOL_FAILED',{'exit':1})
+scope['nft']=rejection;assert scope['rejected']('expected',batch)['refusal']['detail']['exit']==1
+for bad_exit in (0,-9):
+ def no_refusal(role,args,data=None,output=True):
+  report['commands'].append({'returncode':bad_exit,'stdin':scope['raw'](data)});raise ns['Refusal']('EGRESS_TOOL_FAILED',{'exit':bad_exit})
+ scope['nft']=no_refusal;refuse(lambda:scope['rejected']('invalid-exit',batch))
+assert checks==14;print('fixed nft fixture pure refusals passed:14; no nft transaction executed')
+`;
+  const python = process.env.SAKURA_TEST_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+  assert.equal(execFileSync(python, ['-I', '-S', '-c', model], { input: JSON.stringify({ program, controller }), encoding: 'utf8', timeout: 10000, windowsHide: true }).trim(),
+    'fixed nft fixture pure refusals passed:14; no nft transaction executed');
+});
+
 test('fixed guest FD classifier distinguishes original management objects from legitimate mapped and GUI descriptors', () => {
   const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
   const prefix = 'const singleAppFdClassifier = String.raw`', start = source.indexOf(prefix), end = source.indexOf('`;', start + prefix.length);

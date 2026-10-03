@@ -153,8 +153,153 @@ finally:
  print(json.dumps(report,separators=(',',':'),sort_keys=True));sys.exit(0 if report['passed'] else 1)
 `;
 
+// Only the fresh owned COW may create these unused-UID tables. The public
+// migration and the verified production core must succeed before this runs.
+const nftAtomicFixture = String.raw`
+import os,sys,json,stat,hashlib,base64,subprocess,time,traceback
+request=json.loads(sys.argv[1]);report={'version':1,'kind':'owned-nft-atomic-fixture','passed':False,'commands':[],'checks':[],'errors':[],'files':[]}
+held=[];native_popen=subprocess.Popen;current_role='none';ns=None;owned=None;known=None;attempted=False
+def digest(data):return hashlib.sha256(data).hexdigest()
+def raw(data):return {'bytes':len(data),'sha256':digest(data),'base64':base64.b64encode(data).decode('ascii')}
+def tuple_(i):return (str(i.st_dev),str(i.st_ino),i.st_uid,i.st_gid,i.st_mode,i.st_nlink,i.st_size,str(i.st_mtime_ns),str(i.st_ctime_ns))
+def birth(pid):return open('/proc/'+str(pid)+'/stat').read().rsplit(')',1)[1].split()[19]
+def read_root(path,limit,mode=None,missing=False,single_link=True):
+ parts=path.split('/')[1:];assert parts and all(p and p not in ('.','..') for p in parts),'ATOMIC_PATH'
+ parent=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
+ try:
+  for part in parts[:-1]:
+   child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=parent);os.close(parent);parent=child
+   i=os.fstat(parent);assert i.st_uid==i.st_gid==0 and not i.st_mode&0o022,'ATOMIC_PARENT'
+  try:fd=os.open(parts[-1],os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=parent)
+  except FileNotFoundError:
+   if missing:return None
+   raise
+ finally:os.close(parent)
+ i=os.fstat(fd);held.append((fd,path,tuple_(i)));assert stat.S_ISREG(i.st_mode) and i.st_uid==i.st_gid==0 and not i.st_mode&0o022 and (not single_link or i.st_nlink==1),'ATOMIC_FILE'
+ assert mode is None or stat.S_IMODE(i.st_mode)==mode,'ATOMIC_MODE';assert i.st_size<=limit,'ATOMIC_SIZE';data=b''
+ while len(data)<=limit:
+  piece=os.read(fd,min(65536,limit+1-len(data)))
+  if not piece:break
+  data+=piece
+ assert len(data)==i.st_size and len(data)<=limit and tuple_(os.fstat(fd))==tuple_(i),'ATOMIC_FILE_CHANGED'
+ report['files'].append({'path':path,'tuple':tuple_(i),'raw':raw(data)});return data
+class ObservedPopen(native_popen):
+ def __init__(self,*args,**kwargs):
+  self.receipt={'role':current_role,'argv':args[0] if args else kwargs.get('args'),'startedAt':time.time_ns(),'completeOutput':False};report['commands'].append(self.receipt);self.birth_fd=None
+  super().__init__(*args,**kwargs);self.receipt['pid']=self.pid
+  try:self.receipt['startTicks']=birth(self.pid);self.birth_fd=os.pidfd_open(self.pid,0);self.receipt['birthPinned']=True
+  except OSError as error:self.receipt['birthError']=str(error)
+ def communicate(self,*args,**kwargs):
+  data=args[0] if args else kwargs.get('input')
+  if data is not None:self.receipt['stdin']=raw(data);self.receipt['stdinObservation']='exact bytes passed to the original production Popen.communicate; child reads are not syscall-traced'
+  try:
+   out,err=super().communicate(*args,**kwargs);self.receipt.update({'stdout':raw(out or b''),'stderr':raw(err or b''),'completeOutput':True});return out,err
+  except subprocess.TimeoutExpired:self.receipt['timedOut']=True;raise
+ def __exit__(self,*args):
+  try:return super().__exit__(*args)
+  finally:
+   if self.birth_fd is not None:os.close(self.birth_fd);self.birth_fd=None
+   self.receipt.update({'returncode':self.returncode,'waited':self.returncode is not None,'pidfdClosed':self.birth_fd is None,'stdinClosed':self.stdin is None or self.stdin.closed,'stdoutClosed':self.stdout is None or self.stdout.closed,'stderrClosed':self.stderr is None or self.stderr.closed,'finishedAt':time.time_ns()})
+def nft(role,args,data=None,output=True):
+ global current_role
+ current_role=role;return ns['egress_nft'](args,data,json_output=output)
+def invalid_third_statement(batch,value):
+ name='skp_uid_'+str(value['uid']);marker='sakura-project-egress-v1:'+value['registryId']+':'+value['identityId'];lines=batch.decode('ascii').splitlines()
+ assert lines==['create table inet '+name+' { comment "'+marker+'"; }','add chain inet '+name+' output { type filter hook output priority 300; policy accept; }','add rule inet '+name+' output meta skuid '+str(value['uid'])+' drop comment "'+marker+'"'],'ATOMIC_BATCH_NOT_THREE_EXPLICIT_COMMANDS'
+ lines[2]=lines[2].replace(' '+name+' output ',' '+name+' sakura_fixture_absent_chain ',1);return ('\n'.join(lines)+'\n').encode('ascii')
+def assert_unused_fixture(store,passwd,group,tables,owner,value,project):
+ assert type(value['uid']) is int and value['uid']==59999 and value['uid']!=project['uid'],'ATOMIC_FIXTURE_UID'
+ assert str(value['uid']) not in store['reserved'] and owner is None,'ATOMIC_FIXTURE_RESERVED'
+ for data in (passwd,group):
+  for line in data.decode('utf8','strict').splitlines():
+   fields=line.split(':');assert len(fields)>=3 and fields[2].isdigit(),'ATOMIC_ACCOUNT_FILE'
+   assert int(fields[2])!=value['uid'],'ATOMIC_FIXTURE_ACCOUNT_EXISTS'
+ name='skp_uid_'+str(value['uid'])
+ for entry in tables:
+  assert set(entry)=={'table'} and isinstance(entry['table'],dict),'ATOMIC_TABLE_LIST'
+  assert not(entry['table'].get('family')=='inet' and entry['table'].get('name')==name),'ATOMIC_FIXTURE_TABLE_EXISTS'
+def snapshot(value,label):
+ name,expected=ns['egress_spec'](value);objects=ns['egress_json'](nft(label+'-json-before',['list','table','inet',name]))
+ missing=bool(objects and 'comment' not in objects[0].get('table',{}));normalized,handles=ns['egress_objects'](objects,expected,allow_missing_comment=missing)
+ text=nft(label+'-human',['-a','list','table','inet',name],output=False);ns['egress_table_text'](text,name,expected[0]['table']['comment'],handles[0])
+ after=ns['egress_json'](nft(label+'-json-after',['list','table','inet',name]));assert ns['egress_same_json'](objects,after),'ATOMIC_SNAPSHOT_CHANGED'
+ return {'objects':objects,'normalized':normalized,'handles':handles,'human':raw(text),'marker':expected[0]['table']['comment']}
+def unchanged(before,after):
+ assert ns['egress_same_json'](before,after),'ATOMIC_DUPLICATE_CHANGED_OBJECT_MARKER_OR_HANDLE'
+def absent(value,label):
+ name,_=ns['egress_spec'](value);tables=ns['egress_json'](nft(label,['list','tables']))
+ assert not any(entry.get('table',{}).get('family')=='inet' and entry['table'].get('name')==name for entry in tables),'ATOMIC_PARTIAL_TABLE_REMAINS';return tables
+def rejected(role,batch):
+ count=len(report['commands']);error=None
+ try:nft(role,['-f','-'],batch,False)
+ except ns['Refusal'] as caught:error={'code':caught.code,'detail':caught.detail}
+ assert error and error['code']=='EGRESS_TOOL_FAILED' and len(report['commands'])==count+1,'ATOMIC_EXPECTED_REFUSAL_MISSING'
+ command=report['commands'][-1];assert type(command.get('returncode')) is int and command['returncode']>0 and command.get('stdin')==raw(batch),'ATOMIC_REFUSAL_EXIT_OR_STDIN'
+ return {'refusal':error,'commandIndex':count,'failureStage':'nft rejection; parsing, semantic and kernel stages are not inferred from a nonzero exit'}
+def remove_owned():
+ global owned,known
+ current=snapshot(owned,'cleanup');assert known is not None,'ATOMIC_CLEANUP_HANDLE_UNKNOWN';unchanged(known,current)
+ name,_=ns['egress_spec'](owned);report['cleanupAuthorization']={'value':owned,'handles':known['handles'],'marker':known['marker'],'context':context}
+ nft('cleanup-exact-owned-table',['-f','-'],json.dumps({'nftables':[{'delete':{'table':{'family':'inet','name':name}}}]}).encode())
+ absent(owned,'cleanup-confirm-absent');owned=None;known=None;report['ownedTableClosed']=True
+try:
+ assert os.getuid()==os.getgid()==0,'ATOMIC_ROOT';self_birth=birth(os.getpid());report.update({'pid':os.getpid(),'startTicks':self_birth})
+ dmi=open('/sys/class/dmi/id/product_uuid').read().strip().lower();boot=open('/proc/sys/kernel/random/boot_id').read().strip();assert (dmi,boot)==(request['vmId'],request['bootId']),'ATOMIC_GUEST_IDENTITY'
+ report.update({'vmId':dmi,'bootId':boot,'fixture':request['fixture'],'identity':request['identity']});manifest=request['manifest'];destination='/usr/local/lib/sakura-project-identity/'+manifest['build'];sources={};aggregate=hashlib.sha256()
+ for item in manifest['files']:
+  assert item['name'] in ('protocol.h','launcher.c','controller.py') and item['name'] not in sources,'ATOMIC_SOURCE_NAME'
+  data=read_root(destination+'/'+item['name'],262144,0o600);assert len(data)==item['size'] and digest(data)==item['sha256'],'ATOMIC_SOURCE_SHA';aggregate.update(item['name'].encode());aggregate.update(data);sources[item['name']]=data
+ assert set(sources)=={'protocol.h','launcher.c','controller.py'} and aggregate.hexdigest()==manifest['build'],'ATOMIC_BUILD'
+ assert json.loads(read_root(destination+'/manifest.json',65536,0o600))==manifest,'ATOMIC_MANIFEST';report['build']=manifest['build']
+ ns={'__name__':'sakura_owned_atomic_nft_fixture','__file__':destination+'/controller.py'};exec(compile(sources['controller.py'],ns['__file__'],'exec'),ns)
+ value=request['fixture'];assert set(value)=={'uid','registryId','identityId'},'ATOMIC_FIXTURE_SHAPE'
+ for key in ('registryId','identityId'):ns['identifier'](value[key],ns['UUID'],'ATOMIC_FIXTURE_MARKER');assert value[key]!=request['identity'][key],'ATOMIC_REAL_IDENTITY_REUSED'
+ store=ns['registry'](readonly=True);project=ns['binding_read'](request['identity']['projectId'],True);assert project==request['identity'] and project['phase']=='active' and project['networkIsolation']=='private','ATOMIC_REAL_BINDING';ns['reservation_check'](project,store)
+ for path,limit in ((ns['BASE']+'/registry.json',1048576),(ns['BASE']+'/registry.bin',256),(ns['binding_path'](project['projectId']),2048),(ns['egress_path'](project),4096)):read_root(path,limit,0o600)
+ # Account tools can retain a root-owned hard-link backup; the original
+ # owner/mode/content/link count are still pinned and are never changed here.
+ passwd=read_root('/etc/passwd',1048576,single_link=False);group=read_root('/etc/group',1048576,single_link=False);owner=read_root(ns['egress_path'](value),4096,0o600,True)
+ assert read_root(ns['BASE']+'/uids/59999.bin',256,0o600,True) is None,'ATOMIC_FIXTURE_UID_BINDING'
+ binary=os.path.realpath(ns['tool']('nft'));read_root(binary,16777216);report['nftPath']=binary
+ context=ns['egress_context']();assert context['bootId']==boot,'ATOMIC_REALM';report['contextBefore']=context;subprocess.Popen=ObservedPopen;report['nftVersion']=raw(nft('nft-version',['--version'],output=False))
+ original_tables=absent(value,'preflight-list-tables');assert_unused_fixture(store,passwd,group,original_tables,owner,value,project)
+ for database,getter in (('passwd',ns['pwd'].getpwuid),('group',ns['grp'].getgrgid)):
+  try:getter(59999);raise AssertionError('ATOMIC_NSS_'+database.upper()+'_EXISTS')
+  except KeyError:pass
+ report['projectTableBefore']=snapshot(project,'real-project-before');batch=ns['egress_create_text'](value);invalid=invalid_third_statement(batch,value);report['generatedBatch']=raw(batch);report['invalidBatch']=raw(invalid)
+ owned=value;attempted=True;report['ownedTableClosed']=False;nft('positive-three-command-batch',['-f','-'],batch,False);known=snapshot(value,'positive')
+ report['checks'].append({'name':'native-nft-explicit-batch-creates-complete-owned-table-chain-rule','passed':True,'snapshot':known})
+ duplicate=rejected('duplicate-exact-create',batch);duplicate['snapshot']=snapshot(value,'duplicate');unchanged(known,duplicate['snapshot']);report['checks'].append({'name':'native-nft-duplicate-create-refuses-with-unchanged-owned-objects-and-handles','passed':True,**duplicate})
+ remove_owned();assert ns['egress_same_json'](original_tables,absent(value,'invalid-before')),'ATOMIC_OTHER_TABLE_CHANGED'
+ owned=value;report['ownedTableClosed']=False
+ invalid_result=rejected('invalid-third-nonexistent-chain',invalid);after=absent(value,'invalid-after');assert ns['egress_same_json'](original_tables,after),'ATOMIC_OTHER_TABLE_CHANGED';owned=None;report['ownedTableClosed']=True
+ report['checks'].append({'name':'native-nft-failed-third-command-leaves-no-partial-table','passed':True,'claim':'actual input rejected and no partial configuration observed; kernel netlink rollback is not inferred',**invalid_result})
+except BaseException as error:report['errors'].append({'type':type(error).__name__,'code':getattr(error,'code',None),'message':str(error),'traceback':traceback.format_exc()})
+finally:
+ if owned is not None:
+  try:remove_owned()
+  except BaseException as error:report['errors'].append({'phase':'exact-owned-table-cleanup','message':str(error),'traceback':traceback.format_exc()})
+ try:
+  if ns is not None and 'context' in globals():
+   report['projectTableAfter']=snapshot(project,'real-project-after');unchanged(report['projectTableBefore'],report['projectTableAfter']);assert ns['registry'](readonly=True)==store and ns['binding_read'](project['projectId'],True)==project,'ATOMIC_RECORD_CHANGED'
+   assert read_root(ns['egress_path'](value),4096,0o600,True) is None and read_root(ns['BASE']+'/uids/59999.bin',256,0o600,True) is None,'ATOMIC_FIXTURE_OWNER_APPEARED'
+   report['contextAfter']=ns['egress_context']();assert report['contextAfter']==context,'ATOMIC_REALM_CHANGED'
+   for fd,path,before in held:assert tuple_(os.fstat(fd))==before and tuple_(os.stat(path,follow_symlinks=False))==before,'ATOMIC_HELD_FILE_CHANGED'
+   assert birth(os.getpid())==self_birth and open('/sys/class/dmi/id/product_uuid').read().strip().lower()==dmi and open('/proc/sys/kernel/random/boot_id').read().strip()==boot,'ATOMIC_GUEST_CHANGED'
+   report['sourceContextBookendsUnchanged']=True
+ except BaseException as error:report['errors'].append({'phase':'readonly-bookends','message':str(error),'traceback':traceback.format_exc()})
+ subprocess.Popen=native_popen;close_errors=[]
+ for fd,path,before in held:
+  try:os.close(fd)
+  except OSError as error:close_errors.append({'path':path,'message':str(error)})
+ report['heldDescriptorsClosed']=not close_errors;report['errors'].extend(close_errors)
+ report['allCommandsClosed']=all(row.get('birthPinned') and row.get('waited') and row.get('pidfdClosed') and row.get('stdinClosed') and row.get('stdoutClosed') and row.get('stderrClosed') and row.get('completeOutput') and not row.get('timedOut') for row in report['commands'])
+ report['passed']=len(report['checks'])==3 and not report['errors'] and report.get('ownedTableClosed') is True and report.get('sourceContextBookendsUnchanged') is True and report['heldDescriptorsClosed'] and report['allCommandsClosed']
+ print(json.dumps(report,separators=(',',':'),sort_keys=True));sys.exit(0 if report['passed'] else 1)
+`;
+
 if (process.argv.length === 2 || process.argv[2] === '--describe') {
-  console.log('Windows owned Debian KDE COW only: --run-cow x11|wayland. The registered project-desktop and single-app-windows tests describe this fixture by default. Uses real directory migration, current project UID, full Desktop/native authority, public clipboard and SingleApp APIs. SingleApp checks independent UID, unchanged 0700/0600 project, real authenticated RFB pixels, live-listener port isolation, readonly reload, manual full-run stop and automatic full-domain retirement after natural xterm exit. Wayland additionally checks the production directory view and private 0700 application ELF. Historical source disk stays read locked. Keeps failures, logs and physical closes. Not fresh-image provisioning.');
+  console.log('Windows owned Debian KDE COW only: --run-cow x11|wayland. The registered project-desktop and single-app-windows tests describe this fixture by default. Checks the current production nft three-command batch, duplicate refusal and invalid-third no-partial-state before GUI. Uses real directory migration, current project UID, full Desktop/native authority, public clipboard and SingleApp APIs. SingleApp checks independent UID, unchanged 0700/0600 project, real authenticated RFB pixels, live-listener port isolation, readonly reload, manual full-run stop and automatic full-domain retirement after natural xterm exit. Wayland additionally checks the production directory view and private 0700 application ELF. Historical source disk stays read locked. Keeps failures, logs and physical closes. Not fresh-image provisioning.');
 } else {
   assert.equal(process.argv.length, 4); assert.equal(process.argv[2], '--run-cow');
   assert.ok(process.argv[3] === 'x11' || process.argv[3] === 'wayland');
@@ -300,6 +445,70 @@ async function run(transport: 'x11' | 'wayland') {
       const bytes = Buffer.from(command[name].base64, 'base64'); assert.equal(bytes.length, command[name].bytes); assert.equal(sha256(bytes), command[name].sha256);
     }
   }
+
+  async function nftAtomicChecks() {
+    const live = machines!.live.get(fixture.vmId); assert.ok(live);
+    const manifestBytes = await readFile(join(workspace, '.sakura-server/assets/project-identity/manifest.json'));
+    assert.equal(sha256(manifestBytes), proof.sourceBefore['.sakura-server/assets/project-identity/manifest.json']);
+    const input = { vmId: fixture.vmId, bootId: proof.bootId, manifest: JSON.parse(manifestBytes.toString()), identity: alpha.identity,
+      fixture: { uid: 59999, registryId: randomUUID(), identityId: randomUUID() } };
+    const command = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' + quote(nftAtomicFixture) + ' ' + quote(JSON.stringify(input));
+    const row: any = { version: 1, role: 'fixed-root-unused-uid-nft-atomic', inputSha256: sha256(JSON.stringify(input)),
+      programSha256: sha256(nftAtomicFixture), commandSha256: sha256(command), vmId: fixture.vmId, bootId: proof.bootId,
+      fixture: input.fixture, identity: alpha.identity, timeoutMilliseconds: 90000, startedAt: new Date().toISOString(), exit: null, close: null };
+    proof.nftAtomicFixture = row;
+    const client = await machines!.connect(fixture.vmId), output: Record<'stdout' | 'stderr', Buffer[]> = { stdout: [], stderr: [] };
+    let channel: ClientChannel | undefined, failure: unknown;
+    try {
+      await new Promise<void>((done, reject) => client.exec(command, (setupError, stream) => {
+        if (setupError) { row.setupError = errorValue(setupError); return reject(setupError); }
+        channel = stream; const ledger = watchChannel(stream); row.channelId = ledger.id; row.connectionId = ledger.connectionId;
+        let size = 0;
+        const timer = setTimeout(() => { row.timedOut = true; stream.close(); reject(new Error('Fixed Root nft atomic fixture timed out')); }, row.timeoutMilliseconds);
+        for (const name of ['stdout', 'stderr'] as const) (name === 'stdout' ? stream : stream.stderr).on('data', (bytes: Buffer) => {
+          size += bytes.length;
+          if (size > 1048576) { row.outputExceeded = true; stream.close(); reject(new Error('Fixed Root nft atomic fixture output exceeded its fixed budget')); }
+          else output[name].push(Buffer.from(bytes));
+        });
+        stream.once('exit', (code: number | null, signal?: string) => { row.exit = { code, signal: signal || null }; });
+        stream.once('close', (code: number | null, signal?: string) => { clearTimeout(timer); row.close = { code, signal: signal || null }; row.closedAt = new Date().toISOString(); done(); });
+        stream.end();
+      }));
+    } catch (error) { failure = error; }
+    if (channel) {
+      try { await boundedTransport(channelClosures.get(channel)!, 'Fixed Root nft atomic fixture physical close'); }
+      catch (error) { row.physicalCloseError = errorValue(error); failure ||= error; }
+      row.physicallyClosed = channelStates.get(channel).closed;
+    }
+    for (const name of ['stdout', 'stderr'] as const) {
+      const bytes = Buffer.concat(output[name]), path = join(fixture.root, 'logs', (row.channelId || randomUUID()) + '.nft-atomic.' + name + '.bin');
+      await writeFile(path, bytes, { flag: 'wx' }); row[name] = { path, size: bytes.length, sha256: sha256(bytes) };
+      assert.equal(sha256(await readFile(path)), row[name].sha256);
+    }
+    assert.equal(machines!.live.get(fixture.vmId), live, 'NFT atomic fixture VM live changed');
+    if (failure) throw failure;
+    assert.deepEqual(row.close, row.exit); assert.equal(row.physicallyClosed, true);
+    row.result = JSON.parse(Buffer.concat(output.stdout).toString());
+    assert.equal(row.result.version, 1); assert.equal(row.result.kind, 'owned-nft-atomic-fixture');
+    assert.equal(row.result.vmId, fixture.vmId); assert.equal(row.result.bootId, proof.bootId);
+    assert.deepEqual(row.result.fixture, input.fixture); assert.deepEqual(row.result.identity, alpha.identity);
+    assert.equal(row.result.build, input.manifest.build);
+    for (const item of row.result.commands || []) for (const name of ['stdin', 'stdout', 'stderr'] as const) {
+      if (!item[name]) continue;
+      const bytes = Buffer.from(item[name].base64, 'base64'); assert.equal(bytes.length, item[name].bytes); assert.equal(sha256(bytes), item[name].sha256);
+    }
+    const names = ['native-nft-explicit-batch-creates-complete-owned-table-chain-rule', 'native-nft-duplicate-create-refuses-with-unchanged-owned-objects-and-handles', 'native-nft-failed-third-command-leaves-no-partial-table'];
+    assert.ok(Array.isArray(row.result.checks) && row.result.checks.length <= names.length);
+    for (const [index, item] of row.result.checks.entries()) {
+      assert.equal(item.name, names[index]); assert.equal(item.passed, true);
+      checked(item.name, item);
+    }
+    assert.deepEqual(row.exit, { code: 0, signal: null }, 'NFT atomic fixture refused: ' + JSON.stringify(row.result.errors));
+    assert.equal(row.result.passed, true); assert.equal(row.result.checks.length, names.length);
+    for (const key of ['ownedTableClosed', 'sourceContextBookendsUnchanged', 'heldDescriptorsClosed', 'allCommandsClosed']) assert.equal(row.result[key], true, key);
+    assert.deepEqual(row.result.errors, []);
+  }
+
   async function binding() {
     const { projectDesktopBindingSchema } = await import('../server/desktop-binding.ts');
     return projectDesktopBindingSchema.parse(JSON.parse(await readFile(join(fixture.root, 'machines', fixture.vmId, 'desktop-binding.json'), 'utf8')));
@@ -1179,6 +1388,8 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
         proof.privateAncestorPreparation = { originalIdentity, task: prepared, preview, applied };
       });
     }
+    phase('real-unused-uid-nft-atomic-contract');
+    await nftAtomicChecks();
     desktops = new Desktops(machines, spaces);
     await spaces.projects.with(fixture.vmId, alpha.id, async () => {
       phase('public-current-uid-desktop-start');
