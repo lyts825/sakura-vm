@@ -9,10 +9,14 @@ type AppSession = {
   program: string;
   resolution: string;
   password: string;
-  networkIsolation: 'host' | 'private';
+  networkIsolation?: 'host' | 'private';
   dataDirectory: string;
   clipboard?: { copy: boolean; paste: boolean };
-  status: 'running' | 'stopped' | 'relaunch-required';
+  status: 'running' | 'stopped' | 'relaunch-required' | 'preparing' | 'cleanup-pending' | 'review-required';
+  cleanupPending?: boolean;
+  lastError?: string;
+  projectOwner?: { uid: number; user: string };
+  applicationOwner?: { uid: number; user: string };
   startedAt: string;
 };
 
@@ -54,11 +58,12 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
   };
 
   const open = async (session: AppSession) => {
-    const popup = createSingleAppPopup();
+    let popup: Window | undefined;
     try {
+      popup = createSingleAppPopup();
       await connectSingleAppPopup(popup, vm.id, session, token);
     } catch (cause) {
-      popup.close();
+      popup?.close();
       setError((cause as Error).message);
     }
   };
@@ -78,15 +83,20 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     try {
       session = await request<AppSession>(`/vms/${vm.id}/single-app`, 'POST', {
         action: 'start', program: program.trim(),
-        args: args.split('\n').map((arg) => arg.trim()).filter(Boolean),
+        args: args.split('\n').filter((arg) => arg !== ''),
         resolution, clipboard: { copy: allowCopy, paste: allowPaste },
       });
       await connectSingleAppPopup(popup, vm.id, session, token);
     } catch (cause) {
       popup.close();
-      if (session) await request(`/vms/${vm.id}/single-app`, 'POST',
-        { action: 'stop', id: session.id }).catch(() => {});
-      setError((cause as Error).message);
+      let cleanupError: string | undefined;
+      if (session) {
+        try {
+          await request(`/vms/${vm.id}/single-app`, 'POST', { action: 'stop', id: session.id });
+        } catch (cleanupCause) { cleanupError = (cleanupCause as Error).message; }
+      }
+      setError((cause as Error).message + (cleanupError
+        ? `；停止未确认：${cleanupError}。请在原窗口记录中重试停止。` : ''));
     } finally {
       list.reload();
       setBusy(false);
@@ -98,10 +108,10 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     setError('');
     try {
       await request(`/vms/${vm.id}/single-app`, 'POST', { action: 'stop', id: session.id });
-      list.reload();
     } catch (cause) {
       setError((cause as Error).message);
     } finally {
+      list.reload();
       setBusy(false);
     }
   };
@@ -122,7 +132,7 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
         pattern="[A-Za-z][A-Za-z0-9+._-]{0,63}" maxLength={64} required
         placeholder="xterm" /></label>
       <label>参数（每行一个）<textarea value={args} onChange={(event) => setArgs(event.target.value)}
-        placeholder="可选" rows={2} /></label>
+        placeholder="可选；空行忽略，每行空格保留" rows={2} /></label>
       <label>窗口尺寸<select value={resolution} onChange={(event) => setResolution(event.target.value)}>
         <option value="800x600">800 × 600</option>
         <option value="1024x768">1024 × 768</option>
@@ -147,16 +157,25 @@ export function SingleAppWindowsPanel({ vm, token, request }: {
     <Feedback error={error || list.error} />
     {!!list.data?.sessions.length && <div className="desktop-single-app-sessions">
       {list.data.sessions.map((session) => <div key={session.id}>
-        <span><b>{session.program}</b><small>{session.resolution} · {session.status === 'running' ? '运行中'
-          : session.status === 'relaunch-required' ? '规则已收紧，需停止并重开' : '已退出'} ·
+        <span><b>{session.program}</b><small>{session.resolution} · {session.cleanupPending || session.status === 'cleanup-pending'
+          ? '清理未确认，请重试停止' : session.status === 'running' ? '运行中'
+            : session.status === 'preparing' ? '准备中' : session.status === 'review-required' ? '原归属待核对'
+              : session.status === 'relaunch-required' ? '规则已收紧，需停止并重开' : '已退出'} ·
           复制{session.clipboard?.copy === false ? '关闭' : '开启'} ·
           粘贴{session.clipboard?.paste === false ? '关闭' : '开启'}</small>
-        <small>{session.networkIsolation === 'private' ? '私有网络' : '共享网络'} ·
-          数据目录 {session.dataDirectory}</small></span>
-        <button className="secondary compact" disabled={session.status !== 'running'}
+        <small>{session.networkIsolation === 'private' ? '私有网络'
+          : session.networkIsolation === 'host' ? '共享网络' : '网络归属未核实'} ·
+          数据目录 {session.dataDirectory}</small>
+        {session.projectOwner && session.applicationOwner && <small>
+          项目账号 {session.projectOwner.user}（UID {session.projectOwner.uid}） ·
+          应用账号 {session.applicationOwner.user}（UID {session.applicationOwner.uid}）</small>}
+        {session.lastError && <small>{session.lastError}</small>}</span>
+        <button className="secondary compact" disabled={session.status !== 'running' || session.cleanupPending}
           onClick={() => void open(session)}><ExternalLink size={13} /> 打开</button>
-        <button className="secondary compact" disabled={busy}
-          onClick={() => void stop(session)}><Square size={13} /> 停止</button>
+        <button className="secondary compact" disabled={busy || session.status === 'review-required'}
+          onClick={() => void stop(session)}><Square size={13} />
+          {session.status === 'review-required' ? '归属待核对'
+            : session.cleanupPending || session.status === 'cleanup-pending' ? '重试停止' : '停止'}</button>
       </div>)}
     </div>}
   </section>;

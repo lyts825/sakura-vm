@@ -1150,10 +1150,11 @@ test('KDE cleanup failure keeps explicit stop retry available and blocks replace
   expect(submitted).toEqual([{ action: 'stop' }]);
 });
 
-test('Debian desktop opens and stops an isolated single-app browser window', async ({ page }) => {
+test('single-app window preserves literal args, retries original cleanup and labels legacy ownership on mobile', async ({ page }) => {
   await app(page, ['desktop'], true);
   const sessions: Array<Record<string, unknown>> = [];
   let started: Record<string, unknown> | undefined;
+  let stops = 0;
   await page.route('**/api/vms', (route) =>
     route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
   await page.route('**/api/vms/*/desktop*', (route) =>
@@ -1167,12 +1168,26 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
         program: input.program, resolution: input.resolution, clipboard: input.clipboard,
         password: 'c2FrdXJh', networkIsolation: 'private',
         dataDirectory: '/home/skapp0123456789abcdef01234567',
+        projectOwner: { uid: 20005, user: 'project-fixture' },
+        applicationOwner: { uid: 15002, user: 'skapp0123456789abcdef01234567' },
         status: 'running',
         startedAt: new Date().toISOString() };
       sessions.push(session);
       return route.fulfill({ status: 201, json: session });
     }
-    sessions.splice(sessions.findIndex((session) => session.id === input.id), 1);
+    const index = sessions.findIndex((session) => session.id === input.id);
+    expect(index).toBe(0);
+    if (++stops === 1) {
+      Object.assign(sessions[index], { status: 'cleanup-pending', cleanupPending: true,
+        lastError: '原窗口清理未确认' });
+      return route.fulfill({ status: 503, json: { error: '原窗口清理未确认', code: 'SINGLE_APP_CLEANUP_UNCONFIRMED' } });
+    }
+    sessions.splice(index, 1);
+    sessions.push({ id: '3a450211-822f-4586-a4d2-c5768d2f7846', program: 'legacy',
+      resolution: '1024x768', clipboard: { copy: false, paste: false }, password: '',
+      dataDirectory: '/home/skapplegacy-fixture', status: 'review-required',
+      cleanupPending: false, startedAt: '',
+      lastError: '旧窗口缺少原运行归属，请管理员核对' });
     return route.fulfill({ json: { stopped: true } });
   });
   await page.reload();
@@ -1180,6 +1195,7 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
   await page.getByRole('button', { name: '单应用窗口' }).click();
   const panel = page.getByRole('region', { name: '单应用 Linux 窗口' });
   await panel.getByLabel('程序名').fill('xterm');
+  await panel.getByLabel('参数（每行一个）').fill('  literal space  \n\n$(not code)\n雪');
   await panel.getByLabel('允许粘贴到应用').uncheck();
   const popupPromise = page.waitForEvent('popup');
   await panel.getByRole('button', { name: '启动应用' }).click();
@@ -1190,16 +1206,89 @@ test('Debian desktop opens and stops an isolated single-app browser window', asy
   expect(popup.url()).not.toContain('c2FrdXJh');
   await expect.poll(() => popup.evaluate(() => window.opener === null)).toBe(true);
   expect(started).toMatchObject({ action: 'start', program: 'xterm',
+    args: ['  literal space  ', '$(not code)', '雪'],
     resolution: '1024x768', clipboard: { copy: true, paste: false } });
   await expect(panel.getByText('复制开启 · 粘贴关闭')).toBeVisible();
   await expect(panel.getByText('私有网络 · 数据目录 /home/skapp0123456789abcdef01234567')).toBeVisible();
+  await expect(panel.getByText('项目账号 project-fixture（UID 20005） · 应用账号 skapp0123456789abcdef01234567（UID 15002）')).toBeVisible();
+  await page.evaluate(() => {
+    const owned = window as Window & { _singleAppOriginalOpen?: typeof window.open };
+    owned._singleAppOriginalOpen = window.open;
+    window.open = () => null;
+  });
+  await panel.getByRole('button', { name: '打开', exact: true }).click();
+  await expect(panel.getByText('浏览器阻止了应用窗口，请允许 Sakura 打开弹出窗口')).toBeVisible();
+  await page.evaluate(() => {
+    const owned = window as Window & { _singleAppOriginalOpen?: typeof window.open };
+    window.open = owned._singleAppOriginalOpen!;
+    delete owned._singleAppOriginalOpen;
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await panel.getByRole('button', { name: '停止' }).click();
+  await expect(panel.getByText('清理未确认，请重试停止', { exact: false })).toBeVisible();
+  await expect(panel.getByRole('button', { name: '打开', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: '重试停止' })).toBeEnabled();
+  expect(sessions[0].id).toBe('a45e91ec-c630-414e-befc-b66e53c76730');
+  await panel.getByRole('button', { name: '重试停止' }).click();
   await expect(panel.getByText('1024x768 · 运行中')).toHaveCount(0);
+  await expect.poll(() => stops).toBe(2);
+  await expect(panel.getByText('网络归属未核实 · 数据目录 /home/skapplegacy-fixture')).toBeVisible();
+  await expect(panel.getByText('旧窗口缺少原运行归属，请管理员核对')).toBeVisible();
+  await expect(panel.getByRole('button', { name: '归属待核对' })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: '打开', exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.close();
   await expect(popup).toHaveTitle('xterm · Sakura');
   await popup.close();
+});
+
+test('closed popup retains failed stop and retries the same single-app session', async ({ page }) => {
+  await app(page, ['desktop'], true);
+  const sessions: Array<Record<string, unknown>> = [];
+  const identifier = '145de481-0423-45eb-b17b-65d852a07459';
+  let releaseStart!: () => void;
+  const responseAllowed = new Promise<void>(resolve => { releaseStart = resolve; });
+  let starts = 0, stops = 0;
+  await page.route('**/api/vms', route => route.fulfill({ json: [{ ...vm, distro: 'debian', status: 'running', poweredOn: true }] }));
+  await page.route('**/api/vms/*/desktop*', route => route.fulfill({ json: { status: 'stopped', log: '', preferences: {} } }));
+  await page.route('**/api/vms/*/single-app*', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { sessions } });
+    const input = route.request().postDataJSON() as Record<string, unknown>;
+    if (input.action === 'start') {
+      starts++;
+      await responseAllowed;
+      const session = { id: identifier, program: input.program, resolution: input.resolution,
+        password: 'c2FrdXJh', networkIsolation: 'private', dataDirectory: '/home/owned-popup-fixture',
+        status: 'running', clipboard: input.clipboard, startedAt: new Date().toISOString() };
+      sessions.push(session);
+      return route.fulfill({ status: 201, json: session });
+    }
+    expect(input).toMatchObject({ action: 'stop', id: identifier });
+    if (++stops === 1) {
+      Object.assign(sessions[0], { status: 'cleanup-pending', cleanupPending: true, lastError: '原窗口清理未确认' });
+      return route.fulfill({ status: 503, json: { error: '原窗口清理未确认', code: 'SINGLE_APP_CLEANUP_UNCONFIRMED' } });
+    }
+    sessions.splice(0);
+    return route.fulfill({ json: { stopped: true } });
+  });
+  try {
+    await page.reload();
+    await page.getByRole('tab', { name: '桌面', exact: true }).click();
+    await page.getByRole('button', { name: '单应用窗口' }).click();
+    const panel = page.getByRole('region', { name: '单应用 Linux 窗口' });
+    const popupPromise = page.waitForEvent('popup');
+    await panel.getByRole('button', { name: '启动应用' }).click();
+    const popup = await popupPromise;
+    await expect.poll(() => starts).toBe(1);
+    await popup.close();
+    releaseStart();
+    await expect(panel.getByText('应用窗口已关闭；停止未确认：原窗口清理未确认。请在原窗口记录中重试停止。')).toBeVisible();
+    await expect(panel.getByRole('button', { name: '打开', exact: true })).toBeDisabled();
+    await panel.getByRole('button', { name: '重试停止' }).click();
+    await expect.poll(() => sessions.length).toBe(0);
+    expect(starts).toBe(1); expect(stops).toBe(2);
+  } finally { releaseStart(); }
 });
 
 test('single-app window applies desktop clipboard policy to its RFB bridge', async ({ page, context }) => {

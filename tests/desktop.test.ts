@@ -22,6 +22,28 @@ function fixture() {
   return { machines, live, desktops: new Desktops(machines) };
 }
 
+test('desktop shutdown reports application cleanup failure, closes other bridges and retries the original service', async () => {
+  const { desktops } = fixture();
+  const originalAppClose = desktops.apps.close.bind(desktops.apps);
+  const originalX11Close = desktops.clipboard.close.bind(desktops.clipboard);
+  const originalWaylandClose = desktops.waylandClipboard.close.bind(desktops.waylandClipboard);
+  const cleanupError = new Error('original application cgroup cleanup unconfirmed');
+  let appAttempts = 0, x11Attempts = 0, waylandAttempts = 0;
+  desktops.apps.close = async () => {
+    if (++appAttempts === 1) throw cleanupError;
+    await originalAppClose();
+  };
+  desktops.clipboard.close = async () => { x11Attempts++; await originalX11Close(); };
+  desktops.waylandClipboard.close = async () => { waylandAttempts++; await originalWaylandClose(); };
+  try {
+    await assert.rejects(desktops.close(), error => error instanceof AggregateError &&
+      error.errors.length === 1 && error.errors[0] === cleanupError);
+    assert.equal(appAttempts, 1); assert.equal(x11Attempts, 1); assert.equal(waylandAttempts, 1);
+    await desktops.close();
+    assert.equal(appAttempts, 2); assert.equal(x11Attempts, 2); assert.equal(waylandAttempts, 2);
+  } finally { await originalAppClose(); }
+});
+
 test('desktop discovery reads the guest disk and does not connect before boot completes', async () => {
   const { desktops, machines, live } = fixture();
   live.status = 'starting';

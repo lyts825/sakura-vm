@@ -113,7 +113,10 @@ export class Desktops {
     this.machines.off('incident-lockdown', this.invalidate);
     for (const id of this.watchers.keys()) this.invalidate(id);
     for (const operation of this.operations.values()) operation.abort.abort();
-    await Promise.allSettled([this.apps.close(), this.clipboard.close(), this.waylandClipboard.close(), ...this.pending]);
+    const results = await Promise.allSettled([this.apps.close(), this.clipboard.close(), this.waylandClipboard.close(), ...this.pending]);
+    const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason),
+      '桌面与应用原运行清理未确认；保留原记录并重试关闭');
     this.operations.clear();
     this.recovery.clear();
     this.unguard?.();
