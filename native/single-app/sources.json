@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "directoryViewOrigin": "native/wayland-clipboard/controller.py",
+  "originControllerSha256": "5f5f3660e8c55ae14f4b879e2607c4ec5628d23b511efb67c7a5a13571fb5234",
+  "functionAstSha256": "db2688bea5ee0b7c6037df5a1df120159ed132def45d87d219266de4042112e4",
+  "functions": [
+    "DirectoryViewError",
+    "directory_view_call",
+    "directory_view_open",
+    "directory_view_namespace",
+    "directory_view_wait",
+    "directory_view_helper",
+    "directory_view_userns",
+    "directory_view_ancestor",
+    "directory_view_route_guard",
+    "directory_view_create",
+    "directory_view_member",
+    "directory_view_enter",
+    "directory_view_proof"
+  ]
+}

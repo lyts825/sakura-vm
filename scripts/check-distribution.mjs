@@ -18,7 +18,7 @@ if (process.platform === 'win32') {
   const folder = join(root, '.sakura-server', 'assets', 'native-clipboard');
   const native = JSON.parse(await readFile(join(folder, 'native-clipboard.json'), 'utf8'));
   const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe', 'MinHook-LICENSE.txt', 'Detours-LICENSE.md'];
-  if (native.version !== 5 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
+  if (native.version !== 7 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
       !Array.isArray(native.files) || native.files.length !== names.length ||
       new Set(native.files.map((file) => file.name)).size !== names.length)
     throw new Error('Native clipboard distribution metadata is invalid');
@@ -95,6 +95,21 @@ if (process.platform === 'win32') {
   }
 }
 const extensionRoot = join(root, 'browser-extension');
+{
+  const folder = join(root, '.sakura-server/assets/single-app');
+  const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
+  const names = ['controller.py', 'directory-view.py', 'sources.json'], build = createHash('sha256');
+  if (manifest.version !== 1 || !/^[a-f0-9]{64}$/.test(manifest.build) || !Array.isArray(manifest.files) ||
+      manifest.files.length !== names.length || !manifest.files.every((file, index) => file.name === names[index]))
+    throw new Error('Single-app source metadata is invalid');
+  for (const name of names) {
+    const expected = manifest.files.find(file => file.name === name), bytes = await readFile(join(folder, name));
+    if (!expected || expected.size !== bytes.length || expected.sha256 !== createHash('sha256').update(bytes).digest('hex'))
+      throw new Error(`Single-app source integrity failed: ${name}`);
+    build.update(name).update(bytes);
+  }
+  if (build.digest('hex') !== manifest.build) throw new Error('Single-app source build digest failed');
+}
 if (process.platform === 'win32') {
   const folder = join(root, '.sakura-server/assets/gpg-agent-host');
   const manifest = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));

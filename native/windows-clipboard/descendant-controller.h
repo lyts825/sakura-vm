@@ -51,10 +51,11 @@ static void descendantClient(HANDLE input,std::wstring owner) {
     process.value=descendantAcquire(parent.value,request.process);thread.value=descendantAcquire(parent.value,request.thread);
     job.value=descendantAcquire(parent.value,request.job);file.value=descendantAcquire(parent.value,request.file);
     const DWORD pid=GetProcessId(process.value);const auto created=processCreation(process.value);const auto architecture=bits(process.value);
+    const auto childToken=descendantProcessToken(process.value);
     BOOL inJob=FALSE;JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
     if(!pid || !created || (architecture!=32 && architecture!=64) || GetProcessIdOfThread(thread.value)!=pid ||
         !IsProcessInJob(process.value,job.value,&inJob) || !inJob || !ownUser(process.value) ||
-        !ProcessIdToSessionId(pid,&clientSession) || clientSession!=ownSession || WaitForSingleObject(process.value,0)!=WAIT_TIMEOUT ||
+        !ProcessIdToSessionId(pid,&clientSession) || clientSession!=ownSession || childToken.session!=ownSession || childToken.statistics.TokenType!=TokenPrimary || WaitForSingleObject(process.value,0)!=WAIT_TIMEOUT ||
         !QueryInformationJobObject(job.value,JobObjectBasicAccountingInformation,&accounting,sizeof(accounting),nullptr) ||
         accounting.TotalProcesses!=1 || accounting.ActiveProcesses!=1 || accounting.TotalTerminatedProcesses)
       throw std::runtime_error("descendant exact suspended handles differ");
@@ -190,7 +191,9 @@ static void descendantAdopt(const wchar_t* owner,const std::wstring& expected,co
   Handle parent(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION|SYNCHRONIZE,FALSE,parentPid));
   const DWORD pid=GetProcessId(process.value);const uint64_t creation=processCreation(process.value);const unsigned architecture=bits(process.value);
   try {
+    const auto token=descendantProcessToken(process.value);
     const auto check=[&]{BOOL inJob=FALSE;DWORD targetSession=0,ownSession=0;
+      const auto actualToken=descendantProcessToken(process.value);
       Handle endpoint(OpenFileMappingW(FILE_MAP_READ,FALSE,descendantEndpointName(owner).c_str()));
       const auto current=endpoint.value?static_cast<const SakuraDescendantEndpoint*>(MapViewOfFile(endpoint.value,FILE_MAP_READ,0,0,sizeof(SakuraDescendantEndpoint))):nullptr;
       const bool brokerCurrent=current && current->magic==SakuraDescendantMagic && current->version==SakuraDescendantVersion &&
@@ -202,6 +205,8 @@ static void descendantAdopt(const wchar_t* owner,const std::wstring& expected,co
           WaitForSingleObject(parent.value,0)!=WAIT_TIMEOUT)throw std::runtime_error("descendant exact parent ended before commit");
       if(!pid || !creation || architecture!=sizeof(void*)*8 || processCreation(process.value)!=creation || !same(image(process.value),expected) ||
           !ownUser(process.value) || !ProcessIdToSessionId(pid,&targetSession) || !ProcessIdToSessionId(GetCurrentProcessId(),&ownSession) || targetSession!=ownSession ||
+          actualToken.statistics.TokenType!=TokenPrimary || actualToken.session!=ownSession ||
+          !descendantTokenLuid(actualToken.statistics.AuthenticationId,token.statistics.AuthenticationId) || !descendantTokenSameSid(actualToken,token) ||
           GetProcessIdOfThread(thread.value)!=pid || !IsProcessInJob(process.value,job.value,&inJob) || !inJob || WaitForSingleObject(process.value,0)!=WAIT_TIMEOUT)
         throw std::runtime_error("descendant process identity changed");primarySuspended(thread.value);};
     check();selectedFile(file.value,expected,digest);selectedExecutable(file.value);

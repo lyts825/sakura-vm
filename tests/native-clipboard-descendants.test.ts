@@ -52,7 +52,10 @@ const request = (process = child, ancestor = parent): NativeClipboardDescendantR
   handles: { process: '101', thread: '102', job: '103', file: '104' },
 });
 async function fixture(t: any, launch?: NativeClipboardLaunch) {
-  const base = resolve('.data/native-clipboard-test-temp/descendant-units');
+  const base = resolve(
+    process.env.SAKURA_NATIVE_CLIPBOARD_TEST_BASE || '.data/native-clipboard-test-temp',
+    'descendant-units',
+  );
   await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, 'unit-'));
   const assets = join(directory, 'assets');
@@ -72,7 +75,7 @@ async function fixture(t: any, launch?: NativeClipboardLaunch) {
   }
   await writeFile(
     join(assets, 'native-clipboard.json'),
-    JSON.stringify({ version: 5, architecture: 'x64', build: 'b'.repeat(64), files }),
+    JSON.stringify({ version: 7, architecture: 'x64', build: 'b'.repeat(64), files }),
   );
   const file = join(directory, 'native.json');
   let inventory: NativeClipboardProcess[] = [parent],
@@ -646,5 +649,37 @@ test('legacy v4 assets recover and disable owned policies but cannot authorize r
     settings: { enabled: false, applications: [] },
   });
   assert.equal(f.policies.get(key(parent)).active, false);
+  assert.equal(JSON.parse(await readFile(f.file, 'utf8')).managed.length, 0);
+});
+
+for (const version of [5, 6]) test(`legacy v${version} assets keep reservation-based descendant adoption, recovery and disable with the v7 service`, async (t) => {
+  const f = await fixture(t);
+  await f.configure();
+  await f.service.close();
+  const manifestPath = join(f.assets, 'native-clipboard.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  await writeFile(manifestPath, JSON.stringify({ ...manifest, version }));
+  const restored = new NativeClipboard(f.options);
+  t.after(() => restored.close());
+  await restored.init();
+  assert.equal(restored.view().processes.find((item) => item.pid === parent.pid)?.state, 'enforced');
+  await f.receive();
+  assert.equal(f.commands.length, 1);
+  assert.equal(f.commands[0].args[0], 'adopt');
+  const journal = JSON.parse(await readFile(f.file, 'utf8'));
+  assert.equal(
+    journal.managed.find((item: any) => item.pid === child.pid)?.inheritance.parent.pid,
+    parent.pid,
+  );
+  f.inventory([parent, child]);
+  await restored.action({ action: 'refresh' });
+  assert.equal(restored.view().processes.find((item) => item.pid === child.pid)?.state, 'enforced');
+  await restored.action({
+    action: 'configure',
+    version: restored.view().version,
+    settings: { enabled: false, applications: [] },
+  });
+  assert.equal(f.policies.get(key(parent)).active, false);
+  assert.equal(f.policies.get(key(child)).active, false);
   assert.equal(JSON.parse(await readFile(f.file, 'utf8')).managed.length, 0);
 });

@@ -1,4 +1,5 @@
 #include "fixture-descendant.h"
+#include "fixture-descendant-token.h"
 #include <cstdio>
 #include <sstream>
 
@@ -46,9 +47,12 @@ int wmain() {
     GetCurrentProcessId(),static_cast<unsigned long long>(processCreation(GetCurrentProcess())),entry?"true":"false",
     initial->started?"true":"false",initial->pid,static_cast<unsigned long long>(initial->created),initial->error);
   if(!lineWrite(pipe,first))return 96;
-  std::vector<PROCESS_INFORMATION> children;std::string line;
+  std::vector<PROCESS_INFORMATION> children;std::vector<TokenFixtureEvidence> tokenOwners;std::string line;
   while(lineRead(pipe,line)) {
     if(line=="exit")break;
+    if(line=="token-source-check"){
+      try{lineWrite(pipe,tokenFixtureSourceCheck());}catch(...){lineWrite(pipe,"{\"sourceCheckFailed\":true}\n");}continue;
+    }
     std::istringstream input(line);std::vector<std::string> fields;std::string field;
     while(std::getline(input,field,'\t'))fields.push_back(field);
     if(fields.size()==2 && fields[0]=="resume") {
@@ -56,12 +60,34 @@ int wmain() {
       for(auto& child:children)if(child.dwProcessId==pid)previous=ResumeThread(child.hThread);
       char answer[128]{};std::snprintf(answer,sizeof(answer),"{\"resumed\":%lu}\n",previous);lineWrite(pipe,answer);continue;
     }
+    if(fields.size()==5 && fields[0]=="std-identities"){
+      const DWORD pid=DWORD(std::stoul(fields[1]));bool identical=false;
+      using Compare=BOOL(WINAPI*)(HANDLE,HANDLE);
+      const auto compare=reinterpret_cast<Compare>(GetProcAddress(GetModuleHandleW(L"kernelbase.dll"),"CompareObjectHandles"));
+      for(size_t index=0;index<children.size();++index)if(children[index].dwProcessId==pid && tokenOwners[index].standard && compare){
+        const auto& original=tokenOwners[index].standard;const HANDLE values[]{original->input,original->output,original->error};identical=true;
+        for(size_t handle=0;handle<3;++handle){
+          const auto value=std::stoull(fields[handle+2]);HANDLE copied=nullptr;
+          if(value>UINTPTR_MAX || !DuplicateHandle(children[index].hProcess,reinterpret_cast<HANDLE>(uintptr_t(value)),GetCurrentProcess(),&copied,0,FALSE,DUPLICATE_SAME_ACCESS)){identical=false;break;}
+          if(!compare(copied,values[handle]))identical=false;CloseHandle(copied);
+        }
+        break;
+      }
+      lineWrite(pipe,identical?"{\"stdSameObjects\":true}\n":"{\"stdSameObjects\":false}\n");continue;
+    }
     if(fields.size()!=7 || fields[0]!="spawn")return 97;
     const auto image=fromUtf8(fields[2]),childPipe=fromUtf8(fields[3]),kind=fromUtf8(fields[4]),marker=fromUtf8(fields[5]),directory=fromUtf8(fields[6]);
     auto command=descendantFixtureCommand(image,childPipe,stationName,owner,kind,marker);
     std::wstring childDesktop=stationName+L"\\default";STARTUPINFOW startup{};startup.cb=sizeof(startup);startup.lpDesktop=childDesktop.data();
     PROCESS_INFORMATION child{};BOOL created=FALSE;const DWORD flags=CREATE_NO_WINDOW|(fields[1]=="suspended"?CREATE_SUSPENDED:0);
-    if(fields[1]=="A") {
+    TokenFixtureEvidence tokenEvidence{};
+    if(tokenFixtureMode(fields[1])) {
+      if(kind==L"token"){
+        command=clipboardArgument(image);
+        for(const auto& argument:std::vector<std::wstring>{L"--token-station="+stationName,L"--token-owner="+owner,L"--token-pipe="+childPipe,L"--token-marker="+marker,L"--token-literal="+std::wstring(SakuraTokenLiteral),L""})command+=L" "+clipboardArgument(argument);
+      }
+      created=tokenFixtureCreate(fields[1],image,command,childDesktop,directory,kind==L"token",child,tokenEvidence);
+    }else if(fields[1]=="A") {
       const int pathSize=WideCharToMultiByte(CP_ACP,0,image.c_str(),-1,nullptr,0,nullptr,nullptr),
         commandSize=WideCharToMultiByte(CP_ACP,0,command.c_str(),-1,nullptr,0,nullptr,nullptr),
         desktopSize=WideCharToMultiByte(CP_ACP,0,childDesktop.c_str(),-1,nullptr,0,nullptr,nullptr);
@@ -78,10 +104,13 @@ int wmain() {
       created=CreateProcessW(fields[1]=="implicit"?nullptr:image.c_str(),command.data(),nullptr,nullptr,FALSE,flags,nullptr,directory.empty()?nullptr:directory.c_str(),&startup,&child);
     }
     const DWORD error=created?0:GetLastError();DWORD suspension=DWORD(-1);uint64_t time=0;
-    if(created){time=processCreation(child.hProcess);suspension=SuspendThread(child.hThread);if(suspension!=DWORD(-1))ResumeThread(child.hThread);children.push_back(child);}
-    char answer[1024]{};
-    std::snprintf(answer,sizeof(answer),"{\"started\":%s,\"pid\":%lu,\"created\":\"%llu\",\"error\":%lu,\"suspension\":%lu}\n",
-      created?"true":"false",child.dwProcessId,static_cast<unsigned long long>(time),error,suspension);
+    if(created){time=processCreation(child.hProcess);suspension=SuspendThread(child.hThread);if(suspension!=DWORD(-1))ResumeThread(child.hThread);children.push_back(child);tokenOwners.push_back(tokenEvidence);}
+    char answer[1536]{};
+    std::snprintf(answer,sizeof(answer),"{\"started\":%s,\"pid\":%lu,\"created\":\"%llu\",\"error\":%lu,\"suspension\":%lu,\"token\":{\"processInheritable\":%s,\"threadInheritable\":%s,\"sameUser\":%s,\"session\":%lu,\"type\":%lu,\"authentication\":\"%llu\",\"stdin\":\"%llu\",\"stdout\":\"%llu\",\"stderr\":\"%llu\",\"sourceObserved\":%s,\"sourceUnchanged\":%s,\"sourceToken\":\"%llu\",\"sourceModifiedBefore\":\"%llu\",\"sourceModifiedAfter\":\"%llu\"}}\n",
+      created?"true":"false",child.dwProcessId,static_cast<unsigned long long>(time),error,suspension,
+      tokenEvidence.processInheritable?"true":"false",tokenEvidence.threadInheritable?"true":"false",tokenEvidence.sameUser?"true":"false",tokenEvidence.session,tokenEvidence.tokenType,
+      static_cast<unsigned long long>(tokenEvidence.authentication),static_cast<unsigned long long>(tokenEvidence.input),static_cast<unsigned long long>(tokenEvidence.output),static_cast<unsigned long long>(tokenEvidence.error),
+      tokenEvidence.sourceObserved?"true":"false",tokenEvidence.sourceUnchanged?"true":"false",static_cast<unsigned long long>(tokenEvidence.sourceToken),static_cast<unsigned long long>(tokenEvidence.sourceModifiedBefore),static_cast<unsigned long long>(tokenEvidence.sourceModifiedAfter));
     if(!lineWrite(pipe,answer))break;
   }
   for(const auto& child:children){CloseHandle(child.hThread);CloseHandle(child.hProcess);}

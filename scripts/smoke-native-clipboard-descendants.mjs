@@ -13,7 +13,11 @@ import { nativeClipboardDescendants } from '../server/native-clipboard-descendan
 
 assert.equal(process.platform, 'win32');
 assert.equal(process.arch, 'x64');
-const root = resolve('.data/native-clipboard-test-temp/descendant-' + randomUUID());
+const tokenMode = process.argv.includes('--token');
+const root = resolve(
+  process.env.SAKURA_NATIVE_CLIPBOARD_TEST_BASE || '.data/native-clipboard-test-temp',
+  (tokenMode ? 'token-' : 'descendant-') + randomUUID(),
+);
 await mkdir(root, { recursive: true });
 process.env.TEMP = process.env.TMP = root;
 console.log('Descendant private fixture: ' + root);
@@ -22,7 +26,11 @@ const hash = (bytes) => createHash('sha256').update(bytes).digest('hex'),
 const sourceFiles = [
   'native/windows-clipboard/descendant.h',
   'native/windows-clipboard/descendant-reservation.h',
+  'native/windows-clipboard/descendant-token.h',
   'native/windows-clipboard/descendant-policy.h',
+  'native/windows-clipboard/shell-provenance.h',
+  'native/windows-clipboard/descendant-cleanup.h',
+  'native/windows-clipboard/shell-policy.h',
   'native/windows-clipboard/descendant-controller.h',
   'native/windows-clipboard/controller.cpp',
   'native/windows-clipboard/policy.cpp',
@@ -34,17 +42,22 @@ const sourceFiles = [
   'native/windows-clipboard/fixture-descendant-parent.cpp',
   'native/windows-clipboard/fixture-descendant-managed.cs',
   'native/windows-clipboard/fixture-descendant-terminate.cs',
+  'native/windows-clipboard/fixture-descendant-token.h',
+  'native/windows-clipboard/fixture-descendant-token.cpp',
   'server/native-clipboard.ts',
   'server/native-clipboard-descendants.ts',
   'scripts/build-native-clipboard.mjs',
   'scripts/smoke-native-clipboard-descendants.mjs',
+  'scripts/smoke-native-clipboard-token.mjs',
 ];
 const sourceSha256 = Object.fromEntries(
   await Promise.all(sourceFiles.map(async (file) => [file, hash(await readFile(file))])),
 );
 const proof = {
   version: 1,
-  kind: 'actual-createprocess-descendant-clipboard',
+  kind: tokenMode
+    ? 'actual-createprocess-asuser-descendant-clipboard'
+    : 'actual-createprocess-descendant-clipboard',
   passed: false,
   startedAt: new Date().toISOString(),
   sourceSha256,
@@ -199,7 +212,7 @@ async function channel() {
   const result = {
     pipe,
     name: pipe.substring(9),
-    write: (text) => socket?.write(text),
+    write: (text) => !ended && socket?.write(text),
     next: () =>
       queued.length
         ? Promise.resolve(queued.shift())
@@ -332,6 +345,7 @@ async function parentLaunch(image, initialization) {
       '--spawn-kind=' + initialization.kind,
       '--spawn-marker=' + initialization.marker,
     );
+  if (initialization?.api) args.push('--spawn-api=' + initialization.api);
   const result = await service.action({
     action: 'launch',
     version: service.view().version,
@@ -352,13 +366,19 @@ async function childSpawn(parent, image, kind = 'native', mode = 'W', expected =
     ['spawn', mode, image, connection.pipe, kind, marker, dirname(image)].join('\t') + '\n',
   );
   const process = await parent.connection.next();
-  assert.equal(
-    process.started,
-    expected,
-    JSON.stringify({ process, error: service.view().error, processes: service.view().processes }),
-  );
-  if (expected) children.push({ process, connection, marker });
-  return { process, connection, marker };
+  if (expected !== null)
+    assert.equal(
+      process.started,
+      expected,
+      JSON.stringify({ process, error: service.view().error, processes: service.view().processes }),
+    );
+  if (expected === true && process.started && mode.startsWith('as-user-')) {
+    assert.equal(process.token.sourceObserved, true);
+    assert.equal(process.token.sourceUnchanged, true);
+    assert.equal(process.token.sourceModifiedBefore, process.token.sourceModifiedAfter);
+  }
+  if (process.started) children.push({ process, connection, marker, ancestor: parent });
+  return { process, connection, marker, image, ancestor: parent };
 }
 async function verifyChild(child, ancestor, kind = 'native', source = ancestor.process) {
   const evidence = await child.connection.next();
@@ -399,10 +419,167 @@ async function verifyChild(child, ancestor, kind = 'native', source = ancestor.p
   assert.equal(managed.sha256, hash(await readFile(managed.image)));
   return { process: child.process, inheritance: managed.inheritance, evidence };
 }
+const tokenLiteral = 'empty space 中文 \\ trailing\\ "quoted"';
+async function verifyTokenParameters(child, active = true, remappedHandles = false) {
+  const evidence = await child.connection.next();
+  assert.equal(evidence.pid, child.process.pid);
+  assert.equal(evidence.created, child.process.created);
+  assert.equal(evidence.entryReady, active);
+  assert.equal(evidence.station, stationIdentity.station);
+  assert.equal(evidence.directory, dirname(child.image));
+  assert.equal(evidence.literal, tokenLiteral);
+  assert.equal(evidence.argv.at(-1), '');
+  assert.equal(evidence.argv.at(-2), '--token-literal=' + tokenLiteral);
+  assert.equal(evidence.session, child.process.token.session);
+  assert.equal(evidence.tokenType, 1);
+  assert.equal(evidence.authentication, child.process.token.authentication);
+  assert.equal(child.process.token.sameUser, true);
+  if (!remappedHandles)
+    for (const handle of ['stdin', 'stdout', 'stderr'])
+      assert.equal(evidence[handle], child.process.token[handle]);
+  child.ancestor.connection.write(
+    ['std-identities', String(child.process.pid), evidence.stdin, evidence.stdout, evidence.stderr].join(
+      '\t',
+    ) + '\n',
+  );
+  const standardHandleIdentity = await child.ancestor.connection.next();
+  assert.equal(standardHandleIdentity.stdSameObjects, true);
+  assert.equal(existsSync(child.marker), true);
+  return { process: child.process, evidence, standardHandleIdentity };
+}
+async function bareParent(image) {
+  const connection = await channel(),
+    arguments_ = [
+      '--descendant-station=' + stationIdentity.station,
+      '--descendant-owner=' + randomUUID(),
+      '--descendant-pipe=' + connection.pipe,
+    ];
+  const fixture = spawn(
+    image,
+    arguments_.map((value) => '"' + value + '"'),
+    { windowsHide: true, windowsVerbatimArguments: true, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  fixture.stdout.resume();
+  fixture.stderr.resume();
+  const close = new Promise((resolve) => {
+    fixture.once('close', (code, signal) => {
+      const receipt = { pid: fixture.pid, code, signal, at: new Date().toISOString() };
+      (proof.bareFixtureClosures ||= []).push(receipt);
+      resolve(receipt);
+    });
+  });
+  const evidence = await connection.next();
+  assert.equal(evidence.entryReady, false);
+  const parent = { process: { ...evidence, image, bits: 64 }, connection, close };
+  parents.push(parent);
+  return parent;
+}
+async function legacyAssetsRoundtrip(image, childImage, version = 5) {
+  const originalAssets = process.env[version === 5 ? 'SAKURA_NATIVE_CLIPBOARD_LEGACY_ASSETS' : 'SAKURA_NATIVE_CLIPBOARD_LEGACY_ASSETS6'];
+  if (!originalAssets) return;
+  const legacyAssets = join(root, `legacy-v${version}-assets`);
+  await cp(resolve(originalAssets), legacyAssets, { recursive: true });
+  const legacyManifest = JSON.parse(await readFile(join(legacyAssets, 'native-clipboard.json'), 'utf8'));
+  assert.equal(legacyManifest.version, version);
+  for (const entry of legacyManifest.files)
+    assert.equal(hash(await readFile(join(legacyAssets, entry.name))), entry.sha256);
+  const legacyFile = join(root, `legacy-v${version}-native.json`);
+  const legacyOptions = { ...options, assets: legacyAssets, file: legacyFile };
+  let legacy = new NativeClipboard(legacyOptions);
+  try {
+    await legacy.init();
+    const digest = hash(await readFile(image));
+    await legacy.action({
+      action: 'configure',
+      version: legacy.view().version,
+      settings: {
+        enabled: true,
+        applications: [
+          {
+            image,
+            sha256: digest,
+            rule: { copy: false, paste: false, files: false, sensitive: true, maxTextBytes: 1048576 },
+          },
+        ],
+      },
+    });
+    const connection = await channel();
+    const legacyOwner = JSON.parse(await readFile(legacyFile, 'utf8')).owner;
+    const launched = await legacy.action({
+      action: 'launch',
+      version: legacy.view().version,
+      image,
+      sha256: digest,
+      args: [
+        '--descendant-station=' + stationIdentity.station,
+        '--descendant-owner=' + legacyOwner,
+        '--descendant-pipe=' + connection.pipe,
+      ],
+    });
+    const entry = await connection.next();
+    assert.equal(entry.entryReady, true);
+    const ancestor = { process: launched.process, connection, evidence: entry };
+    parents.push(ancestor);
+    const verify = async (mode = 'W') => {
+      const child = await childSpawn(ancestor, childImage, 'native', mode);
+      const evidence = await child.connection.next();
+      assert.equal(evidence.phases.length, 4);
+      for (const phase of evidence.phases) {
+        assert.equal(phase.ready, true);
+        assert.equal(phase.active, true);
+        assert.equal(phase.flags, 8);
+        assert.equal(phase.privateStation, true);
+        assert.equal(phase.copyError, 5);
+        assert.equal(phase.pasteError, 5);
+        assert.equal(phase.oleCopy, 0x80070005);
+        assert.equal(phase.olePaste, 0x80070005);
+      }
+      const managed = JSON.parse(await readFile(legacyFile, 'utf8')).managed.find((item) =>
+        same(item, child.process),
+      );
+      assert.equal(managed.inheritance.parent.pid, ancestor.process.pid);
+      assert.equal(managed.inheritance.parent.created, ancestor.process.created);
+      assert.equal(managed.inheritance.application.image, image);
+      assert.equal(managed.inheritance.application.sha256, digest);
+      return { process: child.process, inheritance: managed.inheritance, evidence };
+    };
+    const before = await verify();
+    await legacy.close();
+    legacy = new NativeClipboard(legacyOptions);
+    await legacy.init();
+    assert.equal(legacy.view().processes.find((item) => same(item, before.process))?.state, 'enforced');
+    const after = await verify(version === 6 ? 'as-user-W' : 'W');
+    await legacy.action({
+      action: 'configure',
+      version: legacy.view().version,
+      settings: { enabled: false, applications: [] },
+    });
+    assert.equal(JSON.parse(await readFile(legacyFile, 'utf8')).managed.length, 0);
+    const state = await nativeCommand(join(legacyAssets, 'sakura-clipboard-controller.exe'), [
+      'status',
+      legacyOwner,
+      String(ancestor.process.pid),
+      ancestor.process.created,
+    ]);
+    assert.equal(state.active, false);
+    proof.cases.push({
+      kind: `actual-v${version}-assets-retain-ordinary-descendants-recovery-and-disable`,
+      build: legacyManifest.build,
+      assets: legacyManifest.files,
+      ancestor: ancestor.process,
+      before,
+      after,
+      disabledState: state,
+    });
+    proof[`legacyV${version}Validated`] = true;
+  } finally {
+    await legacy.close();
+  }
+}
 try {
   await cp(resolve('.tools/native-clipboard'), assets, { recursive: true });
   const manifest = JSON.parse(await readFile(join(assets, 'native-clipboard.json'), 'utf8'));
-  assert.equal(manifest.version, 5);
+  assert.equal(manifest.version, 7);
   proof.build = manifest.build;
   proof.assets = manifest.files;
   const compiler64 = process.env.SAKURA_NATIVE_CLIPBOARD_CXX || 'g++.exe',
@@ -410,7 +587,8 @@ try {
       process.env.SAKURA_NATIVE_CLIPBOARD_CXX32 || resolve('.tools/mingw32-16.2.0/mingw32/bin/g++.exe');
   const common = ['-std=c++17', '-O2', '-s', '-static', '-Wl,--no-insert-timestamp'];
   const nativeParents = {},
-    nativeChildren = {};
+    nativeChildren = {},
+    tokenChildren = {};
   for (const [bits, compiler] of [
     [64, compiler64],
     [32, compiler32],
@@ -454,6 +632,7 @@ try {
         resolve('native/windows-clipboard/fixture-descendant-dll.cpp'),
         '-o',
         join(folder, 'DescendantInitializer.dll'),
+        '-ladvapi32',
       ],
       'parent-initializer-' + bits,
     );
@@ -467,11 +646,29 @@ try {
         '-o',
         join(folder, 'parent.exe'),
         '-luser32',
+        '-ladvapi32',
       ],
       'parent-' + bits,
     );
     nativeParents[bits] = join(folder, 'parent.exe');
     nativeChildren[bits] = join(folder, 'child.exe');
+    if (tokenMode) {
+      tokenChildren[bits] = join(folder, 'token-child.exe');
+      await compile(
+        compiler,
+        [
+          ...common,
+          '-municode',
+          resolve('native/windows-clipboard/fixture-descendant-token.cpp'),
+          '-o',
+          tokenChildren[bits],
+          '-ladvapi32',
+          '-lshell32',
+          '-luser32',
+        ],
+        'token-child-' + bits,
+      );
+    }
   }
   const holder = join(root, 'station.exe');
   await compile(
@@ -853,6 +1050,228 @@ try {
         ' Process.Start during type initialization creates protected cross-architecture child.',
     );
   }
+  if (tokenMode) {
+    for (const [ancestor, bits] of [
+      [parent64, 64],
+      [parent32, 32],
+    ]) {
+      ancestor.connection.write('token-source-check\n');
+      const evidence = await ancestor.connection.next();
+      for (const field of [
+        'sourceHandleClosedStillPinned',
+        'beforeCallRejected',
+        'childCheckRejected',
+        'restoredSnapshotRejected',
+        'implicitChangedRejected',
+      ])
+        assert.equal(evidence[field], true);
+      assert.notEqual(evidence.modifiedChanged, evidence.modifiedBefore);
+      assert.notEqual(evidence.modifiedRestored, evidence.modifiedBefore);
+      proof.cases.push({ kind: 'mutable-source-token-and-recycled-caller-handle-' + bits, evidence });
+    }
+    for (const [ancestor, image, mode] of [
+      [parent64, nativeChildren[32], 'as-user-W'],
+      [parent32, nativeChildren[64], 'as-user-A'],
+      [parent64, nativeChildren[64], 'as-user-null'],
+      [parent32, nativeChildren[32], 'as-user-restricted'],
+      [parent64, nativeChildren[32], 'as-user-implicit'],
+    ]) {
+      const child = await childSpawn(ancestor, image, 'native', mode);
+      assert.equal(child.process.suspension, 0);
+      assert.equal(child.process.token.sameUser, true);
+      assert.equal(child.process.token.type, 1);
+      proof.cases.push({ kind: mode + '-protected-DLL-TLS-Main', ...(await verifyChild(child, ancestor)) });
+    }
+    for (const [ancestor, bits, mode] of [
+      [parent64, 32, 'as-user-W'],
+      [parent32, 64, 'as-user-A'],
+    ]) {
+      const child = await childSpawn(ancestor, tokenChildren[bits], 'token', mode);
+      assert.equal(child.process.token.processInheritable, true);
+      assert.equal(child.process.token.threadInheritable, true);
+      proof.cases.push({
+        kind: mode + '-preserves-literal-parameters-security-and-std-handles',
+        ...(await verifyTokenParameters(child)),
+      });
+    }
+    const paused = await childSpawn(parent64, nativeChildren[32], 'native', 'as-user-suspended');
+    assert.equal(paused.process.suspension, 1);
+    await delay(100);
+    assert.equal(paused.connection.connected, false);
+    const hot = await ordinaryApply({ ...paused.process, image: nativeChildren[32], bits: 32 }, 8192);
+    assert.equal(hot.reserved, false);
+    assert.equal(hot.maximum, 8192);
+    await service.action({ action: 'refresh' });
+    assert.equal((await actualStatus(paused.process)).maximum, 1048576);
+    assert.equal(paused.connection.connected, false);
+    parent64.connection.write('resume\t' + paused.process.pid + '\n');
+    assert.equal((await parent64.connection.next()).resumed, 1);
+    proof.cases.push({
+      kind: 'AsUser-caller-suspension-and-committed-hot-update',
+      hotState: hot,
+      ...(await verifyChild(paused, parent64)),
+    });
+
+    brokerGate = gatePoint('broker');
+    const reservedLaunch = childSpawn(parent64, nativeParents[64], 'parent', 'as-user-W');
+    const request = await brokerGate.ready;
+    const pendingState = await actualStatus(request.process);
+    assert.equal(pendingState.present, false);
+    assert.equal(pendingState.reserved, true);
+    await assert.rejects(ordinaryApply(request.process), /controlled child creation is pending/);
+    assert.equal((await actualStatus(request.process)).present, false);
+    const offset = nativeCalls.length;
+    await service.action({ action: 'refresh' });
+    assert.equal(scannedApplies(request.process, offset), 0);
+    assert.equal(
+      JSON.parse(await readFile(file, 'utf8')).managed.some((item) => same(item, request.process)),
+      false,
+    );
+    brokerGate.release();
+    brokerGate = undefined;
+    const committed = await sameExeParent(await reservedLaunch, parent64);
+    const grandson = await childSpawn(committed.parent, nativeChildren[32], 'native', 'as-user-W');
+    proof.cases.push({
+      kind: 'AsUser-pre-broker-exact-Job-reservation-and-grandchild',
+      pendingState,
+      scannerApplies: 0,
+      inheritance: committed.inheritance,
+      protectedGrandchild: await verifyChild(grandson, committed.parent, 'native', parent64.process),
+    });
+
+    for (const [mode, error] of [
+      ['as-user-invalid', 5],
+      ['as-user-no-query', 5],
+      ['as-user-impersonation', 5],
+      ['as-user-null-impersonated', 5],
+      ['as-user-null-anonymous', 5],
+      ['as-user-extended', 50],
+      ['with-token', 50],
+      ['with-token-invalid', 5],
+      ['with-token-no-query', 5],
+      ['with-logon', 50],
+    ]) {
+      const child = await childSpawn(parent64, tokenChildren[32], 'token', mode, false);
+      assert.equal(child.process.error, error);
+      assert.equal(child.process.pid, 0);
+      assert.equal(existsSync(child.marker), false);
+      proof.cases.push({
+        kind: 'active-' + mode + '-before-application-refusal',
+        evidence: child.process,
+        applicationMarkerAbsent: true,
+      });
+    }
+    for (const phase of ['dll-tls', 'dll-main', 'exe-tls']) {
+      const connection = await channel(),
+        marker = join(root, 'as-user-' + phase + '-marker-' + randomUUID());
+      const ancestor = await parentLaunch(nativeParents[64], {
+        phase,
+        image: nativeChildren[32],
+        connection,
+        marker,
+        kind: 'native',
+        api: 'as-user-W',
+      });
+      assert.equal(ancestor.evidence.initial.started, true);
+      const child = { process: ancestor.evidence.initial, connection, marker };
+      children.push(child);
+      proof.cases.push({ kind: 'AsUser-ancestor-' + phase, ...(await verifyChild(child, ancestor)) });
+    }
+    for (const [platform, image] of Object.entries(managedChildren)) {
+      const child = await childSpawn(parent64, image, 'managed', 'as-user-W');
+      proof.cases.push({
+        kind: 'AsUser-CLR-child-' + platform,
+        ...(await verifyChild(child, parent64, 'managed')),
+      });
+    }
+    const concurrent = await Promise.all([
+      childSpawn(parent64, nativeChildren[32], 'native', 'as-user-W'),
+      childSpawn(parent32, nativeChildren[64], 'native', 'as-user-A'),
+    ]);
+    proof.cases.push({
+      kind: 'concurrent-AsUser-W-A-cross-architecture',
+      children: await Promise.all(
+        concurrent.map((item, index) => verifyChild(item, index ? parent32 : parent64)),
+      ),
+    });
+    for (const stage of ['prepared', 'attached']) {
+      fault = stage;
+      const previous = JSON.parse(await readFile(file, 'utf8')).managed;
+      const refused = await childSpawn(parent64, nativeChildren[32], 'native', 'as-user-W', false);
+      fault = undefined;
+      const created = JSON.parse(await readFile(file, 'utf8')).managed.find(
+        (item) => !previous.some((before) => same(before, item)),
+      );
+      assert.ok(created);
+      await gone(created);
+      assert.equal(existsSync(refused.marker), stage === 'attached');
+      assert.ok((await inventory()).some((item) => same(item, parent32.process)));
+      proof.cases.push({
+        kind: 'AsUser-failure-after-' + stage,
+        process: created,
+        evidence: refused.process,
+      });
+    }
+    const endedParent = await parentLaunch(nativeParents[64]);
+    brokerGate = gatePoint('broker');
+    const unreachable = join(root, 'as-user-eof-marker-' + randomUUID());
+    const pendingChild = childSpawn(
+      endedParent,
+      nativeChildren[32],
+      'native',
+      'as-user-W',
+      true,
+      unreachable,
+    );
+    void pendingChild.catch(() => {});
+    const pending = await brokerGate.ready;
+    assert.equal((await actualStatus(pending.process)).reserved, true);
+    const termination = JSON.parse(
+      (
+        await execute(
+          terminateFixture,
+          [String(endedParent.process.pid), endedParent.process.created, endedParent.process.image],
+          { windowsHide: true, timeout: 15000 },
+        )
+      ).stdout,
+    );
+    assert.equal(termination.exactHandleVerified, true);
+    await gone(endedParent.process);
+    await gone(pending.process);
+    assert.equal((await actualStatus(pending.process)).present, false);
+    assert.equal(existsSync(unreachable), false);
+    await assert.rejects(pendingChild, /fixture pipe closed/);
+    const beforeRejection = proof.channelErrors?.length || 0;
+    brokerGate.release();
+    brokerGate = undefined;
+    const rejectionDeadline = Date.now() + 10000;
+    while (
+      Date.now() < rejectionDeadline &&
+      !(proof.channelErrors || [])
+        .slice(beforeRejection)
+        .some((item) => item.message.includes('caller ended before authorization'))
+    )
+      await delay(20);
+    assert.ok(
+      (proof.channelErrors || [])
+        .slice(beforeRejection)
+        .some((item) => item.message.includes('caller ended before authorization')),
+    );
+    assert.equal(
+      JSON.parse(await readFile(file, 'utf8')).managed.some((item) => same(item, pending.process)),
+      false,
+    );
+    assert.ok((await inventory()).some((item) => same(item, parent32.process)));
+    proof.cases.push({
+      kind: 'AsUser-caller-EOF-before-service-adoption',
+      parent: endedParent.process,
+      process: pending.process,
+      termination,
+      childGoneBeforeServiceAdoption: true,
+      childWasNotJournaled: true,
+      applicationMarkerAbsent: true,
+    });
+  }
   const unsupported = await childSpawn(parent64, nativeChildren[32], 'native', 'extended', false);
   assert.equal(unsupported.process.error, 50);
   assert.equal(existsSync(unsupported.marker), false);
@@ -908,7 +1327,16 @@ try {
     previous: beforeProof,
     ...(await verifyChild(after, parent64)),
   });
-  for (const boundary of ['configure', 'close']) {
+  for (const [boundary, mode] of [
+    ['configure', 'W'],
+    ['close', 'W'],
+    ...(tokenMode
+      ? [
+          ['configure', 'as-user-W'],
+          ['close', 'as-user-W'],
+        ]
+      : []),
+  ]) {
     fault = 'gate';
     aborted = false;
     let enteredResolve;
@@ -916,7 +1344,7 @@ try {
       enteredResolve = yes;
     });
     entered = enteredResolve;
-    const pending = childSpawn(parent64, nativeChildren[32], 'native', 'W', false);
+    const pending = childSpawn(parent64, nativeChildren[32], 'native', mode, false);
     const prepared = await enteredPromise;
     if (boundary === 'configure')
       await service.action({
@@ -935,7 +1363,7 @@ try {
     await gone(prepared);
     assert.equal(existsSync(response.marker), false);
     proof.cases.push({
-      kind: 'generation-' + boundary + '-while-prepared',
+      kind: (mode === 'W' ? '' : 'AsUser-') + 'generation-' + boundary + '-while-prepared',
       process: prepared,
       evidence: response.process,
     });
@@ -955,6 +1383,44 @@ try {
   });
   assert.equal(JSON.parse(await readFile(file, 'utf8')).managed.length, 0);
   proof.disableClearedAllOwnedProcesses = true;
+  if (tokenMode) {
+    const baseline = await bareParent(nativeParents[64]);
+    for (const mode of ['as-user-invalid', 'as-user-no-query', 'as-user-impersonation', 'with-token']) {
+      const original = await childSpawn(baseline, tokenChildren[32], 'token', mode, null);
+      const disabled = await childSpawn(parent64, tokenChildren[32], 'token', mode, null);
+      assert.equal(disabled.process.started, original.process.started);
+      assert.equal(disabled.process.error, original.process.error);
+      if (original.process.started) {
+        await verifyTokenParameters(original, false, mode === 'with-token');
+        await verifyTokenParameters(disabled, false, mode === 'with-token');
+      } else {
+        assert.equal(existsSync(original.marker), false);
+        assert.equal(existsSync(disabled.marker), false);
+      }
+      proof.cases.push({
+        kind: 'inactive-' + mode + '-preserves-original-Windows-result',
+        original: original.process,
+        disabled: disabled.process,
+      });
+    }
+    const originalLogon = await childSpawn(baseline, tokenChildren[32], 'token', 'with-logon');
+    const disabledLogon = await childSpawn(parent64, tokenChildren[32], 'token', 'with-logon');
+    proof.cases.push({
+      kind: 'inactive-WithLogon-preserves-original-parameters-and-local-identity',
+      original: await verifyTokenParameters(originalLogon, false, true),
+      disabled: await verifyTokenParameters(disabledLogon, false, true),
+    });
+    // Original bInheritHandles can keep this bare parent's Node stdio open in
+    // its exact children. Settle those owned fixtures before awaiting close.
+    for (const child of children.filter((item) => item.ancestor === baseline)) {
+      child.connection.write('exit\n');
+      await gone(child.process);
+    }
+    baseline.connection.write('exit\n');
+    assert.equal((await baseline.close).code, 0);
+    await legacyAssetsRoundtrip(nativeParents[64], nativeChildren[32]);
+    await legacyAssetsRoundtrip(nativeParents[64], nativeChildren[32], 6);
+  }
   proof.passed = true;
   console.log('Descendant ownership, exact cleanup, restart, generation retirement and disable passed.');
 } catch (error) {

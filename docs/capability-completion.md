@@ -2,6 +2,26 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## Shell 子进程继承与私有项目图形程序
+
+单应用窗口接入捕获的原项目账号、配置、boot 与独立 native run。应用另用不复用的 sandbox UID，通过专属目录视图读写项目私有文件，原盘权限不扩宽。固定降权入口在清除组与 capabilities、设置 NoNewPrivs 后才使用应用正文；准确应用与窗口管理器执行成功、进程及真实 RFB 监听核对后才发布运行状态。主机 intent 先于首次 native prepare 持久保存，应答失联恢复原 UUID；重载读取原记录，不重新发行票据或启动监视。停止及创建者观察到的自然退出清理原完整 cgroup，包括 setsid 子进程；失败保留票据、租约与配置门闩供重试。另一服务实例核销后的原 owner 只释放内存租约，不重写其他 UUID 或再发停止。新真实桌面联测仍待执行，旧 UID-only 路径的历史测试不作为新实现的证明；当前接口见 [单应用窗口](single-app-windows.md)。
+
+单应用窗口页面保留每行参数的原空格，分别显示项目与应用账号。弹窗连接失败后的停止错误会显示在原记录中，清理未确认时可重试停止；未知旧窗口显示归属待核对，不能凭端口或账号猜测重开、停止。移动布局、关闭弹窗、原 UUID 清理重试和 RFB 剪贴板共 3 个浏览器场景通过，使用实际生产前端与明确 HTTP/RFB 夹具，不作为客户机权限或进程域证明。证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/single-app-browser-725cc46e-9b35-4e3b-8263-96f4e93fe307/verification.json` SHA-256 为 `2728f36b8567b5d166c83d1cafab5890eeb9de980fff8eba58692436ea0f78e4`，实际 exit/close 0、零失败和跳过、前端来源不变。桌面关闭组合层传播原应用清理错误，并继续关闭其他桥接，允许同一服务重试；相关 11 项回归通过。
+
+当前单应用 native build `cee5b3848594b3e6c83d24d01f2ec67128afc580e9e16c0a299745afd837076d` 通过 26 项专项单测，其中 21 个生产源码 Python 模型，以及 7 个自有 WSL 真实 namespace 场景。验证涵盖私有目录读写、映射 ELF、降权和管理 FD 关闭；Supervisor 在 Popen/pass_fds 后重新设置全部管理描述符的 close-on-exec，真实替代 ELF 在应用存活时即观察到准确 ready 管道 EOF。原未封口反例及原始失败证据保留。专项、完整 TypeScript 检查和 Linux 场景三条进程均实际 exit/close 0、输出流关闭；15 份来源和 4 份正常打包资产核对一致。证明 `E:/Sakura-single-app-resealed-7ca9648e-a345-45ba-b58e-fba4e4860455/verification.json` SHA-256 为 `3950f294f43bf6466adbd2b6f81f70435dbacc650bdddab1d06bd4459eab727d`。这些内核原语验证不替代尚待执行的新桌面公共入口联测。
+
+2026-10-03 Windows 第 7 版接通普通本地 EXE 的 ShellExecuteW/A，以及调用者原本带 SEE_MASK_NOASYNC 的 ShellExecuteExW/A open。入口核对规范绝对路径、显式 asInvoker 清单与直接 exefile 关联；公开属性列表的初始化、更新、删除和同步创建在原表上按线程与代次核对，容量允许时附加准确原 Job。失败、停用及规则换代同时终止准确已创建 child 并等待关闭；未核对的属性表、异步执行、提权、DDE/DropTarget/DelegateExecute、打包激活及其他底层路径仍明确拒绝或不在覆盖范围。普通 CreateProcess/AsUser 的早期继承、原命令环境与暂停语义继续保持。
+
+当前第 7 版 build `77ae2eefeb5683e906a04547301275d1f585f29b3633622ab95ae3d0f12b4fea` 通过 40 项专项单测、71 个 Token/普通创建场景和 133 份 Shell 场景回执。Shell 两份双架构公开属性表生命周期回执各含 24 条断言，其余为实际启动、拒绝和标准参数比较；还包含 5 个后附加父进程场景。Token 16 个 broker 和 Shell 14 个 broker、各自对照程序与 holder 均实际 exit/close 0，stdio 关闭且自有进程残留为零。完整 v5/v6 旧资产的恢复、停用与普通创建仍通过。冻结证明 `E:/Sakura-Clipboard-v7/6c354dd6-123c-4360-ade8-d53fa0bc5d98/freeze-46b1f061-a227-42e5-99aa-aa147682026a/descendant-freeze.json` SHA-256 为 `02487e5a0362e6f0c0f0092ca4b7f2b0ac954d0e263e7499083d2cd0876cacc7`，包含 43 份相关来源、37 个 native 构建输入及 6 份生产/实测/冻结资产；初轮失败及原证明均保留。下方 v6/v5 记录为历史范围，当前 Windows 接口见 [Windows 策略](native-clipboard.md)。
+
+2026-10-03 Windows 第 6 版继续保留普通 `CreateProcessW/A` 的提前继承，新增 `CreateProcessAsUserW/A`，覆盖 x64/x86、跨 EXE、原生 DLL/TLS、纯 IL CLR、NULL 和受限 primary token。保留命令、Unicode 环境、cwd、安全属性、标准句柄内核对象及调用者暂停语义；复制准确源令牌对象和访问权限，固定 TokenId/ModifiedId、用户与会话，并在调用前后复核源令牌及真实 child primary token。创建前原子分配准确 Job、持久归属和扫描仲裁继续保持。真实 OS 拒绝 WithTokenW/WithLogonW 的 Job 扩展启动形式，因此 active 规则明确返回不支持；inactive 保留原 API，合法句柄数值重映射按同一内核对象核对。ShellExecute、打包激活及其他底层路径仍有剩余范围。
+
+最终 v6 build `3459e281575251e4b87e06d462c1ddc7c185cbdd8975a683b1cfc668962147c9` 通过 70 个真实场景和 39 个专项单测，并使用完整原 v5 资产验证普通创建、恢复和停用。`E:/Sakura-Clipboard-v6/efdc76a4-9f8d-41ae-8de0-72d605159468/token-8c19ee4d-54ee-4e13-b330-78bb66329c17/descendant-proof.json` SHA-256 为 `59648744a3e0d7f1b604abd4ab43be88a4ccf646104fed1b6cfef06648664018`；同目录 freeze SHA-256 为 `b99295f6e7b456f8b3c4c3125ca8d2d637622709afbe67a964ab9afbd73a1de4`，包含 23 个自有文件、32 个相关来源、34 个 native 构建输入、57 个来源快照及 6 个生产资产。12 个 broker、窗口站启动器及对照父进程实际退出和 stdio 关闭均为 0，自有进程残留为零。初轮失败和夹具标准句柄继承等待的精确处理记录保留。没有创建账号、安装运行时或访问交互剪贴板；接口与范围见 [Windows 策略](native-clipboard.md)。
+
+Linux 桌面分别固定外层 VNC 与嵌套 XWayland 的 display、认证文件和 cookie、项目 UID 监听 socket、真实内核 inode及原 cgroup/网络中的 XWayland/KWin 进程。初次启动只等待明确尚未创建的端点，身份错误立即回滚原会话，已有绑定不得跟随新端点。Wayland 应用新增专属 idmapped mount，独立 sandbox UID 可读写项目 0700 目录及 0600 文件，新文件在原盘仍归项目账号；私人祖先只在本次 namespace 建立必要路径，其他内容隐藏。原 owner/mode/ACL 不扩宽，unsupported 内核、文件系统和 HOME/runtime 路径重叠明确拒绝。
+
+私有项目 ELF 在降权后重新打开映射视图，核对原 inode、元数据、摘要和无文件能力后按 FD 执行，原 Root FD 在应用前关闭。当前 20 资产 build `d3f26de18d95089f26883e2258d189743e1eaf0def5c4a9a853e7857613b87e5` 在自有 WSL/ext4 实际通过 8 个场景，其中两个正例同时证明旧挂载私有 ELF FD 执行返回 EACCES、映射后的同一 ELF 执行成功并读取 0600 文件，实际应用确认管理 FD 关闭、NNP=1、有效 capabilities 为空；原 owner/mode/ACL 和 ELF 摘要保持，准确 helper 均实际 wait 回收，原 namespace 和 FD 数不变。32 项相关回归零失败、零跳过、实际 exit/close 0；证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/wayland-mapped-38638ca7-5452-44d4-a581-0170b4908fdc/verification.json` SHA-256 为 `ec0caf919f78d020688e94893c65d4b2d14bc78c4daac22b235dadf85f79557a`。此前目录视图 58 项回归及原 43e3 资产冻结作为历史保留，新的源码子集和全部 20 打包字节已核对前后不变。这不替代新 UID KDE/Qt/GTK 的真实公共入口验证；独立单应用窗口的旧账号启动路径正在另行迁移，三个目录条目仍保持部分实现。
+
 ## 普通子进程剪贴板继承、见证维护与账号提权限制
 
 2026-10-03 Windows 第 5 版原生运行包接通普通 `CreateProcessW/A` 子进程和孙进程的提前策略继承。跨 EXE、x64/x86 与原生/CLR 初始化阶段均先完成准确持久归属，再插入策略并恢复应用代码；保留调用者命令、环境、cwd、标准句柄及 `CREATE_SUSPENDED`。创建前发布具名 Job 保留并原子分配，普通 apply 在建立 mapping 或任何 remote loader 前拒绝准备中的 child；服务在扫描、写归属、采用和每个异步边界按准确身份仲裁，旧快照不会删除 prepared 记录，helper 实际关闭后才释放仲裁。OS 认证 broker 自行复制并保留父进程原句柄到原请求结束；父进程退出或管道 EOF 时清理准确 Job，最后恢复前再核对准确父身份和存活。规则换代、服务关闭和失败准备收敛到各自 Job。普通扫描、热更新、停用与控制服务重载沿用原规则来源。

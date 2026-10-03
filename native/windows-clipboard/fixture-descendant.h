@@ -28,8 +28,13 @@ inline SakuraDescendantInitEvidence descendantFixtureInitialize(const wchar_t* p
   auto command=descendantFixtureCommand(image,pipe,station,owner,descendantFixtureArgument(L"--spawn-kind="),marker);
   std::wstring desktop=station+L"\\default";
   STARTUPINFOW startup{};startup.cb=sizeof(startup);startup.lpDesktop=desktop.data();PROCESS_INFORMATION child{};
-  answer.started=CreateProcessW(image.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&startup,&child);
+  const auto api=descendantFixtureArgument(L"--spawn-api=");HANDLE token=nullptr;
+  if(api==L"as-user-W"){
+    if(!OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY|TOKEN_DUPLICATE|TOKEN_ASSIGN_PRIMARY,&token)){answer.error=GetLastError();return answer;}
+    answer.started=CreateProcessAsUserW(token,image.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&startup,&child);
+  }else answer.started=CreateProcessW(image.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&startup,&child);
   answer.error=answer.started?0:GetLastError();
+  if(token)CloseHandle(token);
   if(answer.started){answer.pid=child.dwProcessId;answer.created=processCreation(child.hProcess);CloseHandle(child.hThread);CloseHandle(child.hProcess);}
   return answer;
 }

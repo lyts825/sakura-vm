@@ -11,7 +11,7 @@ Windows x64 宿主的原生代理为显式选择的 x64 和 x86 普通 EXE 应�
 5. 查看每个进程的状态。「已接入 Win32/OLE」表示此进程的代理已成功加载且规则与当前保存值一致；拒绝计数不含剪贴板文本。附加失败、架构未知、文件变化与版本不一致分别显示错误。启动结果未确认时先刷新进程状态，避免重复启动已经运行的应用。
 6. 更新应用程序后，重新选择正在运行的新版本，重新绑定摘要并保存。同一代理构建切换安装目录时复用进程中的已有 DLL；更换代理构建后，旧进程需要重启才能使用新代理，显式停用仍可解除同一 ABI 的旧规则。
 
-默认停用。已成功接入的应用通过普通 `CreateProcessW/A` 创建子进程时，子进程和后续孙进程自动继承原应用已保存的规则，包括不同 EXE 和 x64/x86 跨架构创建；服务保存每个子进程自身的摘要、准确父进程 PID/创建时间，以及原应用规则来源。继承进程持续使用原应用规则，修改、停用或移除原应用规则会一并核对和更新这些进程。这个提前继承路径需要第 5 版原生运行包和运行中的控制服务。
+默认停用。已成功接入的应用通过普通 `CreateProcessW/A` 创建子进程时，子进程和后续孙进程自动继承原应用已保存的规则，包括不同 EXE 和 x64/x86 跨架构创建；服务保存每个子进程自身的摘要、准确父进程 PID/创建时间，以及原应用规则来源。继承进程持续使用原应用规则，修改、停用或移除原应用规则会一并核对和更新这些进程。普通创建需要第 5 版或更新原生运行包和运行中的控制服务；第 6 版新增同用户、同会话 `CreateProcessAsUserW/A`，第 7 版新增以下有界普通 Shell EXE open 路径。
 
 禁用其他格式或启用敏感检测时，只允许 Windows 纯文本及其语言区域元数据，文件、图片、HTML、RTF 和其他自定义格式均被拒绝；OLE 混合格式复制会过滤被禁格式并保留允许的纯文本。敏感检测涵盖常见私钥、令牌、JWT、带凭据的 URL 与明文凭据赋值，不能识别所有秘密或图片中的内容。文本上限为 1 KiB 到 1 MiB，按 UTF-8 字节计算。
 
@@ -23,7 +23,7 @@ OLE 复制在调用原始 `OleSetClipboard` 前检查完整的可接受全局内
 
 ## 执行范围
 
-代理只附加当前 Windows 用户、同一会话的 x64 或 x86 EXE 进程，服务核对架构后用对应控制程序和 DLL 接入，使用 Win32 剪贴板函数与 OLE `IDataObject` 包装执行规则。未知架构继续拒绝；旧的第 1 版原生运行包只支持 x64，第 2 版支持双架构运行中附加，第 3 版支持受控早期启动，第 5 版支持具备创建保留的普通子进程提前继承；旧第 4 版资产保留已有归属恢复和停用能力，但不启用旧子通道。读取时再次检查当前权限与内容，包括代理接入后通过包装取得的 OLE 对象、源对象延迟提供的数据以及 Win32 延迟渲染。OLE 自身对象与格式元数据仅在已经授权的 OLE 操作内传递，应用实际内容仍由包装层检查。`GetDataHere` 通过检查过的临时全局内存填充调用者缓冲区；启用时暂不支持该方法的流、存储或文件介质，较大的全局内存介质也可能被拒绝。
+代理只附加当前 Windows 用户、同一会话的 x64 或 x86 EXE 进程，服务核对架构后用对应控制程序和 DLL 接入，使用 Win32 剪贴板函数与 OLE `IDataObject` 包装执行规则。未知架构继续拒绝；旧的第 1 版原生运行包只支持 x64，第 2 版支持双架构运行中附加，第 3 版支持受控早期启动，第 5 版支持具备创建保留的普通子进程提前继承，第 6 版增加已核验令牌的 `CreateProcessAsUserW/A`，第 7 版加入有界普通 Shell EXE open；旧第 4 版资产保留已有归属恢复和停用能力，但不启用旧子通道。读取时再次检查当前权限与内容，包括代理接入后通过包装取得的 OLE 对象、源对象延迟提供的数据以及 Win32 延迟渲染。OLE 自身对象与格式元数据仅在已经授权的 OLE 操作内传递，应用实际内容仍由包装层检查。`GetDataHere` 通过检查过的临时全局内存填充调用者缓冲区；启用时暂不支持该方法的流、存储或文件介质，较大的全局内存介质也可能被拒绝。
 
 每个代理使用仅当前用户与 SYSTEM 可访问的命名内存段，只保存规则、版本、进程身份与计数。控制服务在附加前写入进程归属记录；PID 复用、进程列表短暂不可见与附加失败都不能被视为已成功应用。停用解除方向、内容与大小限制，但不卸载仍可能被使用的函数跳板或 OLE 包装；包装只提供受管接口，其他扩展接口在代理存续期间不可用。完全移除代理需要退出该应用。
 
@@ -33,9 +33,17 @@ OLE 复制在调用原始 `OleSetClipboard` 前检查完整的可接受全局内
 
 恢复主线程之前的失败、控制工具 EOF 或异常退出由专属 Job 结束本次子进程。恢复成功后清除该 Job 的关闭终止标志，使应用在 Sakura 关闭后继续保留已加载规则。若最终提交回执丢失，已受限的子进程可能仍然存活；服务保留持久归属，报告「启动未确认」并通过刷新或后台扫描核对，不把丢失回复视为成功或保证已终止。
 
-受控启动覆盖普通未打包原生 EXE 的原始应用 import DLL、DLL TLS、EXE TLS 与主入口，以及纯 IL CLR/AnyCPU 的应用代码。第 5 版也覆盖已接入原生/CLR 应用在这些应用初始化阶段通过普通 `CreateProcessW/A` 创建的子进程，子进程仍先持久登记再插入策略 import。需要初始化回调运行在主线程的应用可能不兼容。`.local`、关键依赖清单重定向、混合模式 CLR、ReadyToRun、本机入口、进程保护或无法核对的加载条件明确拒绝。系统 DLL 初始化引入的第三方启动 DLL、检查后恶意改写目录或系统设置，以及绕过这两个创建 API 的路径仍不在承诺范围内。检查、loader lock、暂停语义和创建路径边界见 [早期启动范围](windows-clipboard-early-init.md)。自行启动的应用及代理接入前已创建的子进程仍需等待周期扫描并成功附加。
+受控启动覆盖普通未打包原生 EXE 的原始应用 import DLL、DLL TLS、EXE TLS 与主入口，以及纯 IL CLR/AnyCPU 的应用代码。第 5 版也覆盖已接入原生/CLR 应用在这些应用初始化阶段通过普通 `CreateProcessW/A` 创建的子进程，第 6 版同样覆盖已核验令牌的 `CreateProcessAsUserW/A`；子进程仍先持久登记再插入策略 import。需要初始化回调运行在主线程的应用可能不兼容。`.local`、关键依赖清单重定向、混合模式 CLR、ReadyToRun、本机入口、进程保护或无法核对的加载条件明确拒绝。系统 DLL 初始化引入的第三方启动 DLL、检查后恶意改写目录或系统设置，以及其他创建路径仍不在承诺范围内。检查、loader lock、暂停语义和创建路径边界见 [早期启动范围](windows-clipboard-early-init.md)。自行启动的应用及代理接入前已创建的子进程仍需等待周期扫描并成功附加。
 
 普通子进程提前继承保留调用者的命令行、环境、工作目录、标准句柄和继承标志；调用者指定 `CREATE_SUSPENDED` 时，返回后主线程仍保持一次暂停，由调用者继续恢复。无法安全合并调用者的 opaque `STARTUPINFOEX` 属性列表，因此此路径及调试创建标志明确返回 `ERROR_NOT_SUPPORTED`，不会启动未受管子进程。控制服务关闭、迁移维护或规则代际正在切换时，正在准备的子进程由其独立 Job 清理；控制服务不可用期间，仍启用规则的应用无法新建这些受管子进程，服务恢复后可重试。显式停用规则后创建 API 恢复普通行为。
+
+`CreateProcessAsUserW/A` 使用调用者原令牌的同一内核对象和原访问权限，保留进程/线程安全属性、句柄继承及其他参数，不另造令牌代替 Windows 原函数。源令牌必须能核验为当前用户、同会话的 primary token；调用前及实际子进程核验前后重新读取 TokenId、ModifiedId、类型、认证标识、SID 和会话。实际 child token 另核对 SID、会话、primary 类型与源认证标识，broker/helper 在创建时 Job 内继续独立核验。源令牌在这段期间发生变化、跨用户/会话、缺少查询权、非令牌句柄或 impersonation token 都明确拒绝。`hToken=NULL` 仅支持没有线程 impersonation 且能核对当前 primary 的调用，仍传入原 NULL。规则启用时，已核验的 `CreateProcessWithTokenW` 和 `CreateProcessWithLogonW` 返回 `ERROR_NOT_SUPPORTED`；无法核验的 WithToken 令牌先返回 `ERROR_ACCESS_DENIED`。它们尚无安全的创建时 Job 路径，不能先创建再补归属。停用后这些函数均调用原系统 API，保留原 Windows 结果和错误语义。
+
+第 7 版的 `ShellExecuteExW/A` 支持显式 `open`、规范的本地绝对 EXE 路径和原调用已指定的 `SEE_MASK_NOASYNC`，允许 `NOCLOSEPROCESS`、`FLAG_NO_UI`、`NO_CONSOLE` 与 `WAITFORINPUTIDLE`。`ShellExecuteW/A` 支持同样的普通 EXE open，并须实际完成同线程创建。源 EXE 必须具有嵌入的显式 `asInvoker`、`uiAccess=false` 清单，使用直接 EXE 关联，且没有外部激活或委托注册。调用保留原 Shell 函数、参数、返回句柄和 Windows 错误；没有改用裸 CreateProcess，也不补加 NOASYNC/site 或事后分配 Job。
+
+代理只接受当前 Shell 调用同线程内完整观察到的公开属性初始化、更新及删除。在原表有剩余容量且没有已有 JOB_LIST 时，通过公开 Update 原样追加本次独立 Job；Shell 的未知属性及其原值指针保留。容量不足、来源缺失、表重入/复用、跨线程变更、调用者 opaque EX、原 Job、普通 startup 降级及属性生命周期不完整均拒绝。成功必须核对恰好一个已持久归属且提前加载策略的准确 child；Shell 内部暂停由 Shell 按原行为恢复。默认异步 Ex、NULL/未知 verb、runas、DDE/COM/DropTarget 委托、文件关联或打包激活等不能证明的路径返回 `ERROR_NOT_SUPPORTED`，不把无 child 的 Shell success 当作已受控成功。停用时全部 Shell 调用按原 API 转发，包括默认异步、NULL verb、无返回 child 句柄及 Windows 原错误。Shell API 本身不能用于 DllMain/loader lock，早期初始化回调中的 Shell 创建不在此承诺范围。[Shell 参数与异步语义](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-shellexecuteinfoa)、[公开创建属性生命周期](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)、[Shell 注册与委托](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration)
+
+新服务仍接受第 5、6 版资产，分别保留其普通 W/A 或 W/A+AsUser 提前继承、归属恢复和停用；旧资产不会获得 Shell 支持。切换到第 7 版的不同 build 后，原已接入应用保留旧规则，需重启才能使用新代理；同 ABI 的显式停用仍可解除旧规则。原 v5/v6 源码、六份资产、失败日志及 proof 均独立保留。
 
 这不是内核级 DLP 边界。受保护进程、其他用户、其他会话、ARM 应用和通过其他底层接口绕过常规 API 的程序不在保证范围内，也不能撤回应用先前已经读出的文本或接入前取得的原始数据对象。对恶意本机程序强制执行策略仍需独立系统设施。Linux 应用可从 KDE 的原生入口显式启动，范围分别见 [X11 策略](x11-clipboard.md) 和 [Wayland 策略](wayland-clipboard.md)；已有未接入进程与其他底层路径仍未覆盖，因此总清单保持部分实现。
 
@@ -53,11 +61,13 @@ npm run test:native-clipboard -- 32
 node --import tsx scripts/smoke-native-clipboard-early.mjs 64
 node --import tsx scripts/smoke-native-clipboard-early.mjs 32
 node --import tsx scripts/smoke-native-clipboard-descendants.mjs
+node --import tsx scripts/smoke-native-clipboard-token.mjs
+node --import tsx scripts/smoke-native-clipboard-shell.mjs
 npm run test:native-clipboard:interfaces -- 64
 npm run test:native-clipboard:interfaces -- 32
 ```
 
-源码编译到 `.tools/native-clipboard`，生产构建复制到 `.sakura-server/assets/native-clipboard`。第 5 版原生清单仍覆盖两种架构的代理 DLL、控制程序及 MinHook、Detours 两份许可，均有大小与 SHA-256；服务运行前逐项核对，完整性失败拒绝附加。主控制程序保留相同的 128 字节剪贴板共享 ABI，子进程 broker 使用独立 ABI；即使 x86 DLL 或附加工具不可用，仍可停用已归属且加载完成的进程规则，无须重新加载 DLL。运行包的整体摘要与更新也包含这些文件。Linux 构建不生成 Windows 二进制，相关页面会显示不可用。
+源码编译到 `.tools/native-clipboard`，生产构建复制到 `.sakura-server/assets/native-clipboard`。第 7 版原生清单仍覆盖两种架构的代理 DLL、控制程序及 MinHook、Detours 两份许可，均有大小与 SHA-256；服务运行前逐项核对，完整性失败拒绝附加。主控制程序保留相同的 128 字节剪贴板共享 ABI，子进程 broker 和创建保留 ABI 与第 5 版相同；即使 x86 DLL 或附加工具不可用，仍可停用已归属且加载完成的进程规则，无须重新加载 DLL。运行包的整体摘要与更新也包含这些文件。Linux 构建不生成 Windows 二进制，相关页面会显示不可用。
 
 `test:native-clipboard` 编译并启动真实 Win32/OLE 测试应用，创建只属于测试的新窗口站和桌面。默认测试 x64，参数 `32` 测试 x86 受管应用与 x64 对端交换内容。测试启动器使用新的本机登录标识，但保留当前用户的本机权限；不创建账户、不加载配置文件、不使用网络凭据，不读写交互桌面的剪贴板。两种架构均实测方向限制、格式枚举、错误进程身份、UTF-8 大小、敏感文本、畸形数据、二进制格式、OLE 缓存对象与 `GetDataHere`、混合格式、延迟渲染、自动扫描、会话锁定、控制重载和显式停用。Node 测试使用模拟原生适配器验证持久归属与异常处理，另检查双架构路由、旧清单拒绝和 x86 工具损坏时通过主控制程序停用；浏览器测试验证实际服务配置类的保存和失败状态。其他 Windows 版本及商业图形应用仍需独立兼容性验证。
 
@@ -73,6 +83,12 @@ MinHook 固定为官方 1.3.4、提交 `c3fcafdc10146beb5919319d0683e44e3c30d537
 
 `smoke-native-clipboard-descendants.mjs` 的 30 个真实场景覆盖跨 EXE、x64/x86 双向创建、隐式 EXE、实际孙进程与并发、四种 CLR 子进程、原生 DLL/TLS 和 CLR 类型初始化期间创建、调用者暂停及提交后热更新、创建前具名 Job 保留、broker 请求到达服务前的普通附加拒绝、扫描 list/status 与 prepared/attached 的交错、父进程 EOF 精确清理、持久写失败、准备及附加阶段拒绝、控制服务重载、关闭与配置切换期间取消，以及显式停用。每轮保留 `descendant-proof.json`、源码/资产摘要、原始归属文件、编译日志和实际 broker/窗口站启动器 `close` 回执；失败轮次也保留。测试只在自己的私有窗口站执行剪贴板调用，不操作交互剪贴板。
 
+`smoke-native-clipboard-token.mjs` 在同一隔离环境通过 70 个实际场景，包含上述 30 个普通创建场景，以及 AsUserW/A 双向跨架构、NULL/受限 primary、隐式映像、字面参数、Unicode 环境、工作目录、安全属性与原标准句柄对象、四种 CLR child、原生 DLL TLS/DllMain/EXE TLS 祖先、调用者暂停及提交后热更新、并发、Job 保留、父 EOF、准备/附加失败和规则代际取消。实际源令牌在普通 AsUser 调用前后保持 TokenId/ModifiedId；两种架构另验证源修改及恢复后拒绝旧快照、关闭原句柄后仍固定同一对象，以及 NULL 后新增 impersonation 的拒绝。测试对停用 API 与未接入父进程的原 Windows 结果逐项对照，核对 WithLogon 重映射后的标准句柄仍指向原内核对象，并复用完整历史 v5 资产验证普通创建、恢复和停用；新 Node 单元共 39 项通过。证据含 12 个独立 broker 的实际进程/stdio `close`、窗口站启动器和对照父进程的 `close`，均为退出码 0；本轮自有进程全部退出。新临时目录在 E 盘，不覆盖历史 proof 或资产。[句柄对象比较](https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-compareobjecthandles)
+
 受控创建的系统接口依据微软 [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)、[创建属性与 Job 列表](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) 和 [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) 文档；实现与实机测试承诺范围以上述普通原生应用及早期启动说明为准。
+
+第 7 版最终 build `77ae2eefeb5683e906a04547301275d1f585f29b3633622ab95ae3d0f12b4fea` 的新 Shell smoke 通过 133 个场景回执，其中 x64/x86 公开属性生命周期 fixture 各有 24 项独立断言。其余场景实测原 W/A/ExW/ExA、STA/MTA、cold Shell DLL、无返回句柄、跨架构孙进程、同父双线程、运行中 MinHook 接入后的父进程、字面 argv/env/cwd、原 startup 与标准句柄对象、Shell 自有暂停、scope 内规则切换、prepared/attached 失败、关闭/代际取消、普通扫描先见 child、父 EOF 及明确不支持的路径。策略在首个应用 DLL TLS、DllMain、EXE TLS 和 Main 前已 ready/active/build 一致，成功不依赖普通扫描。14 个 broker、4 个模型/未接入/运行中对照父进程及窗口站启动器取得真实进程/stdio close 0，自有进程为 0。
+
+同 build 重跑 token smoke 的原 70 项，并新增历史 v6 资产下普通创建、服务重载后 AsUser 创建及停用，共 71 个场景；历史 v5 兼容继续通过。此轮 16 个 broker、未接入对照父进程和窗口站启动器均实际 close 0，另取得准确自有目录进程清单为 0 的回执。40 项 Node 单元通过。Shell 不调用剪贴板 API；旧入口回归中的剪贴板调用仍仅在各自的私有窗口站执行。所有源码、资产、原 proof、失败轮次和实际关闭证据保存在 E 盘各自 UUID 目录，最终冻结逐项记录 SHA-256，不覆盖 v5/v6 历史证明。
 
 接口行为依据微软的 [剪贴板操作](https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-operations)、[OLE 剪贴板读取](https://learn.microsoft.com/en-us/windows/win32/api/ole2/nf-ole2-olegetclipboard) 和 [GetDataHere](https://learn.microsoft.com/en-us/windows/win32/api/objidl/nf-objidl-idataobject-getdatahere) 文档实现。测试隔离遵循 [窗口站创建](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowstationw) 与 [CreateProcessWithLogonW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw) 的本机权限和登录语义；钩子库来源为 [MinHook 官方仓库](https://github.com/TsudaKageyu/minhook)。

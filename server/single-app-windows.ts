@@ -1,383 +1,498 @@
 import { randomUUID } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
-import { z } from 'zod';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { z } from 'zod';
 import type { Machines } from './machines.ts';
 import { AppError, vmDir } from './model.ts';
-import { quote } from './files.ts';
 import { readStore, writeStore } from './local-store.ts';
-import type { Project, Workspaces } from './workspaces.ts';
-import { ensureProjectNetworkScript, projectNetworkCommand } from './project-network-isolation.ts';
-import { appCleanupScript, appIdentity, appIdentityScript, appSupervisedCommand,
-  appVncFirewallScript, appVncFirewallRemoveScript } from './single-app-sandbox.ts';
+import { projectVersion, type Project, type Workspaces } from './workspaces.ts';
+import { ProjectTerminals } from './project-terminals.ts';
+import { ProjectRunScopes } from './project-run-scope.ts';
+import { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema, projectIdentitySources } from './project-identity.ts';
+import { appIdentity, appOriginSchema, appReceiptSchema, appStatusSchema, appStopSchema, appRetirementSchema,
+  appAbsenceSchema, appRecoverySchema, SingleAppControl, type AppOrigin, type AppReceipt } from './single-app-sandbox.ts';
 
 export const singleAppProgram = z.string().regex(/^[A-Za-z][A-Za-z0-9+._-]{0,63}$/);
 export const singleAppClipboard = z.object({ copy: z.boolean(), paste: z.boolean() }).strict();
-const clipboardStoreSchema = z.object({ version: z.literal(1),
-  rules: z.record(singleAppProgram, singleAppClipboard),
-}).strict().refine((value) => Object.keys(value.rules).length <= 64,
-  '单应用剪贴板规则不能超过 64 条');
-export const singleAppInput = z.object({
-  program: singleAppProgram,
-  args: z.array(z.string().max(256).refine((value) => !/[\x00-\x1f]/.test(value))).max(12).default([]),
+const clipboardStoreSchema = z.object({ version: z.literal(1), rules: z.record(singleAppProgram, singleAppClipboard) }).strict()
+  .refine(value => Object.keys(value.rules).length <= 64, '单应用剪贴板规则不能超过 64 条');
+export const singleAppInput = z.object({ program: singleAppProgram,
+  args: z.array(z.string().max(256).refine(value => !/[\x00-\x1f]/.test(value))).max(12).default([]),
   resolution: z.enum(['800x600', '1024x768', '1280x800']).default('1024x768'),
   clipboard: singleAppClipboard.default({ copy: true, paste: true }),
 }).strict();
+export const singleAppViewSchema = z.object({ id: z.uuid(), vmId: z.uuid(), program: z.string(), display: z.number().int(),
+  port: z.number().int(), resolution: z.string(), clipboard: singleAppClipboard, startedAt: z.string(), projectId: z.string().optional(),
+  networkIsolation: z.enum(['host', 'private']).optional(), password: z.string(), dataDirectory: z.string(), revoked: z.boolean(),
+  projectOwner: z.object({ uid: z.number().int().min(20000).max(59999), user: z.string() }).strict().optional(),
+  applicationOwner: z.object({ uid: z.number().int().min(1000), user: z.string() }).strict().optional(),
+  cleanupPending: z.boolean(), lastError: z.string().optional(),
+  status: z.enum(['running', 'stopped', 'relaunch-required', 'preparing', 'cleanup-pending', 'review-required']),
+}).strict();
+export type SingleAppWindowView = z.infer<typeof singleAppViewSchema>;
+const digest = z.string().regex(/^[a-f0-9]{64}$/);
+export const singleAppRunRecordSchema = z.object({ version: z.literal(1), id: z.uuid(), vmId: z.uuid(),
+  program: singleAppProgram, args: singleAppInput.shape.args, resolution: singleAppInput.shape.resolution,
+  clipboard: singleAppClipboard, startedAt: z.string(), projectId: z.string().regex(/^(default|[a-f0-9]{16})$/),
+  directory: z.string().startsWith('/'), networkIsolation: z.enum(['host', 'private']), configVersion: digest,
+  bootId: z.uuid(), build: digest, nativeBuild: digest,
+  phase: z.enum(['intent', 'prepared', 'starting', 'running', 'stopping', 'stopped', 'cleanup-failed']),
+  identity: projectIdentitySchema, run: projectIdentityRunSchema.nullable(), receipt: appReceiptSchema.nullable(),
+  revoked: z.boolean().default(false), retirement: appRetirementSchema.nullable(), closure: projectIdentityRunSchema.nullable(),
+  lastError: z.string().max(128).optional(),
+  absence: appAbsenceSchema.optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.identity.projectId !== value.projectId || value.identity.directory !== value.directory ||
+      value.identity.networkIsolation !== value.networkIsolation || value.identity.phase !== 'active' ||
+      (value.run && (value.run.runId !== value.id || value.run.bootId !== value.bootId || value.run.mode !== 'independent' ||
+        value.run.build !== value.nativeBuild || (['registryId', 'identityId', 'projectId', 'revision'] as const)
+          .some(key => value.identity[key] !== value.run![key]))) ||
+      (value.receipt && (!value.run || value.receipt.id !== value.id || value.receipt.build !== value.build ||
+        JSON.stringify(value.receipt.origin) !== JSON.stringify(origin(value)))) ||
+      (['prepared', 'starting', 'running'].includes(value.phase) && (!value.run || !value.receipt)) ||
+      (value.phase === 'running' && value.receipt?.state !== 'running') ||
+      (value.closure && (!value.run || !sameRun(value.closure, value.run) ||
+        (value.retirement ? value.retirement.bootId === value.bootId : value.closure.phase !== 'closed'))) ||
+      (value.phase === 'stopped' && (value.run ? !value.closure : !value.absence)) ||
+      (value.retirement && (!['stopped', 'stopping', 'cleanup-failed'].includes(value.phase) || value.retirement.bootId === value.bootId)) ||
+      (value.absence && (!['stopped', 'stopping', 'cleanup-failed'].includes(value.phase) || value.run || value.receipt || value.absence.id !== value.id ||
+        value.absence.bootId !== value.bootId || value.absence.nativeBuild !== value.nativeBuild)))
+    ctx.addIssue({ code: 'custom', message: '单应用持久运行记录不完整' });
+});
+type Session = z.infer<typeof singleAppRunRecordSchema>;
+const journalSchema = z.object({ version: z.literal(1), sessions: z.array(singleAppRunRecordSchema).max(1024) }).strict()
+  .refine(value => new Set(value.sessions.map(session => session.id)).size === value.sessions.length);
+type Live = NonNullable<ReturnType<Machines['live']['get']>>;
+type Preparation = Awaited<ReturnType<ProjectTerminals['prepare']>>;
+type Options = { rootDirectory?: string; terminals?: Pick<ProjectTerminals, 'prepare' | 'close'>;
+  scopes?: Pick<ProjectRunScopes, 'identity'>; identities?: Pick<ProjectIdentities, 'install'>;
+  control?: Pick<SingleAppControl, 'install' | 'call' | 'streamCommand' | 'recover' | 'legacy' | 'prepareRun'>;
+  nativeBuild?: () => Promise<string>; exitPollMs?: number };
+const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+function sameRun(left: z.infer<typeof projectIdentityRunSchema>, right: z.infer<typeof projectIdentityRunSchema>) {
+  return Object.keys(left).every(key => key === 'phase' || left[key as keyof typeof left] === right[key as keyof typeof right]);
+}
+function matchOriginal(old: Session, session: Session) {
+  const immutable = ['id', 'vmId', 'program', 'args', 'resolution', 'clipboard', 'startedAt', 'projectId', 'directory',
+    'networkIsolation', 'configVersion', 'bootId', 'build', 'nativeBuild', 'identity'] as const;
+  if (immutable.some(key => !same(old[key], session[key])) ||
+      (old.run && !same(old.run, session.run)) ||
+      (old.receipt && (!session.receipt ||
+        (['uid', 'gid', 'user', 'home', 'runtime', 'password', 'display', 'port', 'image', 'tools'] as const)
+          .some(key => !same(old.receipt![key], session.receipt![key])) ||
+        (['homeDevice', 'homeInode', 'runtimeDevice', 'runtimeInode', 'directoryView', 'supervisor', 'endpoint', 'processes'] as const)
+          .some(key => old.receipt![key] !== null && !same(old.receipt![key], session.receipt![key])))))
+    throw new AppError('单应用原持久票据已变化，保留原记录', 409, 'SINGLE_APP_HOST_CHANGED');
+}
+function origin(session: Pick<Session, 'identity' | 'run' | 'program' | 'args' | 'resolution' | 'clipboard' | 'configVersion'>): AppOrigin {
+  if (!session.run) throw new AppError('单应用原完整运行票据尚未确认', 503, 'SINGLE_APP_RUN_PENDING');
+  return appOriginSchema.parse({ identity: session.identity, run: session.run, program: session.program, args: session.args,
+    resolution: session.resolution, clipboard: session.clipboard, configVersion: session.configVersion });
+}
 
-type AppSession = { id: string; vmId: string; program: string; display: number;
-  port: number; resolution: string; clipboard: { copy: boolean; paste: boolean };
-  startedAt: string; revoked?: boolean; projectId: string; networkIsolation: 'host' | 'private';
-  password: string; uid: number; project: Project };
-const sessionName = (id: string) => `sakura-single-app-${id.slice(0, 12)}`;
-const sessionLog = (id: string) => `/tmp/${sessionName(id)}.log`;
-const sessionPid = (id: string) => `/tmp/sakura-single-app-${id}.pid`;
-
+/** Persisted exact original runs remain cleanup-retryable across service reloads. */
 export class SingleAppWindows {
-  private sessions = new Map<string, AppSession>();
+  private sessions = new Map<string, Session>();
+  private loaded = new Map<string, Promise<void>>();
+  private leases = new Map<string, () => void | Promise<void>>();
+  private livePins = new Map<string, Live>();
   private sessionListeners = new Map<string, Set<() => void>>();
   private pending = new Set<Promise<unknown>>();
+  private watchers = new Map<string, NodeJS.Timeout>();
   private closed = false;
   private closeAbort = new AbortController();
   private removeConfigGuard?: () => void;
-  constructor(private machines: Machines, private workspaces?: Workspaces) {
+  private terminals?: Pick<ProjectTerminals, 'prepare' | 'close'>;
+  private scopes: Pick<ProjectRunScopes, 'identity'>;
+  private identities: Pick<ProjectIdentities, 'install'>;
+  private control: Pick<SingleAppControl, 'install' | 'call' | 'streamCommand' | 'recover' | 'legacy' | 'prepareRun'>;
+  constructor(private machines: Machines, private workspaces?: Workspaces, private options: Options = {}) {
+    this.terminals = options.terminals || (workspaces ? new ProjectTerminals(machines, workspaces) : undefined);
+    this.scopes = options.scopes || new ProjectRunScopes(machines);
+    this.identities = options.identities || new ProjectIdentities(machines);
+    this.control = options.control || new SingleAppControl(machines);
     machines.on('change', this.onChange);
     machines.on('incident-lockdown', this.onLock);
     this.removeConfigGuard = workspaces?.beforeConfigChange(async (id, previous, next) => {
-      if (previous.directory === next.directory &&
-          (previous.networkIsolation || 'host') === (next.networkIsolation || 'host')) return;
-      for (const session of this.sessions.values())
-        if (session.vmId === id && session.projectId === (previous._workspace || 'default') &&
-            (this.machines.state(id) === 'paused' || await this.alive(session)))
-          throw new AppError('请先停止此项目的单应用窗口，再修改目录或网络隔离模式', 409);
+      if (previous.directory === next.directory && (previous.networkIsolation || 'host') === (next.networkIsolation || 'host')) return;
+      await this.load(id);
+      await this.sync(id);
+      if ([...this.sessions.values()].some(session => session.vmId === id &&
+          session.projectId === (previous._workspace || 'default') && session.phase !== 'stopped'))
+        throw new AppError('请先停止此项目的单应用窗口并确认原运行清理，再修改目录或网络隔离模式', 409, 'SINGLE_APP_RUNS_MUST_STOP');
     });
+  }
+  private file(id: string) { return join(this.options.rootDirectory || vmDir(id), 'single-app-runs.json'); }
+  private async readJournal(id: string) {
+    let journal: z.infer<typeof journalSchema>;
+    try { journal = journalSchema.parse(await readStore(this.file(id), () => ({ version: 1, sessions: [] }))); }
+    catch { throw new AppError('单应用主机登记无法核对，保留原记录', 409, 'SINGLE_APP_HOST_CHANGED'); }
+    if (journal.sessions.some(session => session.vmId !== id)) throw new AppError('单应用登记属于其他实例', 409, 'SINGLE_APP_HOST_CHANGED');
+    return journal;
+  }
+  private async sync(id: string) {
+    const journal = await this.readJournal(id);
+    for (const saved of journal.sessions) {
+      const current = this.sessions.get(saved.id);
+      if (current) {
+        matchOriginal(current, saved);
+        saved.revoked ||= current.revoked;
+        current.revoked ||= saved.revoked;
+        if (saved.phase !== 'stopped') continue;
+        this.disconnect(saved.id);
+      }
+      this.sessions.set(saved.id, saved);
+      if (saved.phase !== 'stopped') this.enforcePolicy(saved);
+    }
+    return journal;
+  }
+  private async load(id: string) {
+    let loading = this.loaded.get(id);
+    if (!loading) {
+      loading = (async () => {
+        const journal = await this.readJournal(id);
+        for (const session of journal.sessions) {
+          this.sessions.set(session.id, session);
+          if (session.phase !== 'stopped') this.enforcePolicy(session);
+        }
+      })();
+      this.loaded.set(id, loading);
+    }
+    return loading;
+  }
+  private async save(id: string) {
+    const previous = await this.readJournal(id);
+    const merged = new Map(previous.sessions.map(session => [session.id, session]));
+    for (const session of this.sessions.values()) if (session.vmId === id) {
+      const old = merged.get(session.id);
+      if (old) {
+        matchOriginal(old, session);
+        // A concurrently reloaded owner can retire this same run. Never erase
+        // another UUID, resurrect a stopped row, or relax its saved revocation.
+        if (old.phase === 'stopped') { old.revoked ||= session.revoked; merged.set(session.id, old); continue; }
+        session.revoked ||= old.revoked;
+      }
+      merged.set(session.id, session);
+    }
+    return writeStore(this.file(id), journalSchema.parse({ version: 1, sessions: [...merged.values()] }));
   }
   private onChange = () => {
-    for (const [id, session] of this.sessions)
-      if (!this.machines.records.has(session.vmId) ||
-          this.machines.state(session.vmId) !== 'running') {
-        this.disconnect(id);
-        if (this.machines.records.has(session.vmId) &&
-            this.machines.state(session.vmId) === 'paused') continue;
-        this.sessions.delete(id);
-      }
-  };
-  private onLock = (id: string) => {
     for (const session of this.sessions.values())
-      if (session.vmId === id) this.disconnect(session.id);
+      if (this.machines.state(session.vmId) !== 'running' || this.machines.live.get(session.vmId) !== this.livePins.get(session.id))
+        this.disconnect(session.id);
   };
-
-  private disconnect(sessionId: string) {
-    const listeners = this.sessionListeners.get(sessionId);
-    this.sessionListeners.delete(sessionId);
+  private onLock = (id: string) => { for (const session of this.sessions.values()) if (session.vmId === id) this.disconnect(session.id); };
+  private disconnect(id: string) {
+    const listeners = this.sessionListeners.get(id); this.sessionListeners.delete(id);
     for (const listener of listeners || []) listener();
   }
-
+  private async retireLease(session: Session) {
+    this.disconnect(session.id); clearTimeout(this.watchers.get(session.id)); this.watchers.delete(session.id);
+    await this.leases.get(session.id)?.(); this.leases.delete(session.id); this.livePins.delete(session.id);
+  }
+  private watch(id: string) {
+    if (this.closed || this.watchers.has(id) || !this.leases.has(id) || this.sessions.get(id)?.phase !== 'running') return;
+    const timer = setTimeout(() => {
+      this.watchers.delete(id); const known = this.sessions.get(id);
+      if (!known || this.closed || !this.leases.has(id) || known.phase !== 'running') return;
+      let entered = false;
+      const operation = this.machines.locked(`single-app:${known.vmId}`, async () => {
+        entered = true;
+        await this.sync(known.vmId);
+        const session = this.sessions.get(id)!;
+        if (!this.leases.has(id)) return;
+        if (session.phase === 'stopped') { await this.retireLease(session); return; }
+        if (session.phase !== 'running' || this.closed || this.machines.state(session.vmId) !== 'running') return;
+        this.live(session.vmId, this.livePins.get(id));
+        const status = await this.status(session);
+        if (status.state === 'exited' || status.state === 'stopped') await this.terminate(session);
+      }).catch(error => {
+        if (entered) {
+          this.disconnect(id);
+          const current = this.sessions.get(id);
+          if (current) current.lastError = error instanceof AppError ? error.code || 'SINGLE_APP_EXIT_UNCONFIRMED' : 'SINGLE_APP_EXIT_UNCONFIRMED';
+        }
+      }).finally(() => { this.pending.delete(operation); this.watch(id); });
+      this.pending.add(operation);
+    }, this.options.exitPollMs ?? 2000);
+    timer.unref(); this.watchers.set(id, timer);
+  }
   onSessionInvalidated(id: string, sessionId: string, listener: () => void) {
     const session = this.sessions.get(z.uuid().parse(sessionId));
-    if (!session || session.vmId !== id || session.revoked ||
-        this.machines.state(id) !== 'running')
+    if (session) this.enforcePolicy(session);
+    if (!session || session.vmId !== id || session.phase !== 'running' || session.revoked || this.machines.state(id) !== 'running')
       throw new AppError('应用窗口会话已失效，请停止并重开', 409);
-    const listeners = this.sessionListeners.get(sessionId) || new Set<() => void>();
-    listeners.add(listener);
+    const listeners = this.sessionListeners.get(sessionId) || new Set<() => void>(); listeners.add(listener);
     this.sessionListeners.set(sessionId, listeners);
-    return () => {
-      listeners.delete(listener);
-      if (!listeners.size && this.sessionListeners.get(sessionId) === listeners)
-        this.sessionListeners.delete(sessionId);
-    };
+    return () => { listeners.delete(listener); if (!listeners.size && this.sessionListeners.get(sessionId) === listeners)
+      this.sessionListeners.delete(sessionId); };
   }
-
-  private clipboardFile(id: string) {
-    return join(vmDir(id), 'single-app-clipboard.json');
+  private clipboardFile(id: string) { return join(vmDir(id), 'single-app-clipboard.json'); }
+  private enforcePolicy(session: Session) {
+    let rules: z.infer<typeof clipboardStoreSchema>['rules'];
+    try { rules = clipboardStoreSchema.parse(JSON.parse(readFileSync(this.clipboardFile(session.vmId), 'utf8'))).rules; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') rules = {};
+      else { this.disconnect(session.id); throw new AppError('单应用剪贴板规则无法核对', 409, 'SINGLE_APP_CLIPBOARD_POLICY_CHANGED'); }
+    }
+    const rule = rules[session.program];
+    if (rule && ((session.clipboard.copy && !rule.copy) || (session.clipboard.paste && !rule.paste))) {
+      session.revoked = true; this.disconnect(session.id);
+    }
   }
-
   async clipboardPolicies(id: string) {
     this.machines.get(id);
-    return clipboardStoreSchema.parse(await readStore(this.clipboardFile(id),
-      () => ({ version: 1, rules: {} }))).rules;
+    return clipboardStoreSchema.parse(await readStore(this.clipboardFile(id), () => ({ version: 1, rules: {} }))).rules;
   }
-
   async saveClipboardPolicy(id: string, program: string, raw: unknown) {
-    singleAppProgram.parse(program);
-    const clipboard = singleAppClipboard.parse(raw);
-    this.machines.get(id);
-    this.machines.requireUnlocked(id);
+    singleAppProgram.parse(program); const clipboard = singleAppClipboard.parse(raw);
+    this.machines.get(id); this.machines.requireUnlocked(id);
     return this.machines.locked(`single-app:${id}`, async () => {
-      const rules = await this.clipboardPolicies(id);
-      const next = clipboardStoreSchema.parse({ version: 1,
-        rules: { ...rules, [program]: clipboard } });
-      await writeStore(this.clipboardFile(id), next);
-      for (const session of this.sessions.values()) {
-        if (session.vmId !== id || session.program !== program || session.revoked) continue;
-        if ((session.clipboard.copy && !clipboard.copy) ||
-            (session.clipboard.paste && !clipboard.paste)) {
-          session.revoked = true;
-          this.disconnect(session.id);
-        }
+      await this.load(id); await this.sync(id); const rules = await this.clipboardPolicies(id);
+      for (const session of this.sessions.values()) if (session.vmId === id && session.program === program && session.phase !== 'stopped' &&
+          ((session.clipboard.copy && !clipboard.copy) || (session.clipboard.paste && !clipboard.paste))) {
+        session.revoked = true; this.disconnect(session.id);
       }
-      return { program, clipboard };
+      await writeStore(this.clipboardFile(id), clipboardStoreSchema.parse({ version: 1, rules: { ...rules, [program]: clipboard } }));
+      await this.save(id); return { program, clipboard };
     });
   }
-
   async removeClipboardPolicy(id: string, program: string) {
-    singleAppProgram.parse(program);
-    this.machines.get(id);
-    this.machines.requireUnlocked(id);
+    singleAppProgram.parse(program); this.machines.get(id); this.machines.requireUnlocked(id);
     return this.machines.locked(`single-app:${id}`, async () => {
-      const rules = await this.clipboardPolicies(id);
-      const removed = Object.hasOwn(rules, program);
-      const remaining = Object.fromEntries(Object.entries(rules).filter(([key]) => key !== program));
-      await writeStore(this.clipboardFile(id), { version: 1, rules: remaining });
+      const rules = await this.clipboardPolicies(id), removed = Object.hasOwn(rules, program);
+      await writeStore(this.clipboardFile(id), { version: 1, rules: Object.fromEntries(Object.entries(rules).filter(([key]) => key !== program)) });
       return { removed, program };
     });
   }
-
-  private async alive(session: AppSession) {
-    if (this.machines.state(session.vmId) !== 'running') return false;
-    const result = await this.machines.exec(session.vmId,
-      `tmux has-session -t =${sessionName(session.id)} 2>/dev/null`, 5000);
-    return result.code === 0;
+  private live(id: string, expected?: Live) {
+    const live = this.machines.live.get(id);
+    if (this.machines.state(id) !== 'running' || !live || (expected && live !== expected))
+      throw new AppError('原单应用客户机运行身份已变化，请保留原票据并恢复核对', 409, 'SINGLE_APP_LIVE_CHANGED');
+    return live;
   }
-
-  private async terminate(session: AppSession) {
-    const command = `set -eu
-${appCleanupScript(session.id, session.uid)}
-${projectNetworkCommand(session.project,
-  appVncFirewallRemoveScript(session.id, session.uid, session.port))}
-closed=no
-for attempt in $(seq 1 25); do
-  if ${projectNetworkCommand(session.project,
-    `! nc -z 127.0.0.1 ${session.port} >/dev/null 2>&1`)}; then closed=yes; break; fi
-  sleep 0.2
-done
-tmux kill-session -t =${sessionName(session.id)} 2>/dev/null || true
-test "$closed" = yes`;
-    const result = await this.machines.exec(session.vmId, command, 30000);
-    if (result.code !== 0) throw new AppError('无法停止应用窗口的图形进程', 409);
+  private async boot(id: string, live: Live) {
+    this.live(id, live); const result = await this.machines.exec(id, 'cat /proc/sys/kernel/random/boot_id', 5000); this.live(id, live);
+    if (result.code !== 0) throw new AppError('单应用原客户机 boot 无法核对', 409, 'SINGLE_APP_BOOT_CHANGED');
+    return z.uuid().parse(result.stdout.trim());
   }
-
+  private async validateCapture(id: string, live: Live, projectId: string, version: string, signal?: AbortSignal) {
+    signal?.throwIfAborted(); this.live(id, live); this.machines.requireUnlocked(id);
+    const current = await this.workspaces!.projects.inScope(id, projectId, () => this.workspaces!.config(id));
+    signal?.throwIfAborted(); this.live(id, live);
+    if (projectVersion(current) !== version || (current._workspace || 'default') !== projectId)
+      throw new AppError('原单应用项目配置已变化，请按原配置重试', 409, 'SINGLE_APP_CONFIG_CHANGED');
+  }
+  private matchReceipt(session: Session, raw: unknown): AppReceipt {
+    const receipt = appReceiptSchema.parse(raw);
+    if (receipt.id !== session.id || receipt.build !== session.build || !same(receipt.origin, origin(session)))
+      throw new AppError('单应用客户机回执不属于原运行', 409, 'SINGLE_APP_RECEIPT_CHANGED');
+    if (session.receipt) matchOriginal(session, { ...session, receipt });
+    return receipt;
+  }
+  private async status(session: Session) {
+    const live = this.live(session.vmId);
+    const result = appStatusSchema.parse(await this.control.call(session.vmId, session.build, 'status', origin(session)));
+    this.live(session.vmId, live); this.matchReceipt(session, result.receipt);
+    if (result.state === 'running' && (session.receipt?.endpoint === null || !same(result.endpoint, session.receipt?.endpoint)))
+      throw new AppError('单应用真实图形监听已变化', 409, 'SINGLE_APP_LISTENER_CHANGED');
+    return result;
+  }
+  private view(session: Session, status: SingleAppWindowView['status'] = session.phase === 'running' ?
+    (session.revoked ? 'relaunch-required' : 'running') : session.phase === 'stopped' ? 'stopped' : 'cleanup-pending'): SingleAppWindowView {
+    return singleAppViewSchema.parse({ id: session.id, vmId: session.vmId, program: session.program, display: session.receipt?.display || 0,
+      port: session.receipt?.port || 0, resolution: session.resolution, clipboard: session.clipboard, startedAt: session.startedAt,
+      projectId: session.projectId, networkIsolation: session.networkIsolation, password: session.receipt?.password || '',
+      dataDirectory: appIdentity(session.id).home, revoked: session.revoked, projectOwner: { uid: session.identity.uid, user: session.identity.account },
+      applicationOwner: session.receipt ? { uid: session.receipt.uid, user: session.receipt.user } : undefined,
+      cleanupPending: status === 'cleanup-pending' || (session.phase !== 'running' && session.phase !== 'stopped'), lastError: session.lastError,
+      status });
+  }
   async list(id: string) {
-    this.machines.get(id);
-    const rows = [...this.sessions.values()].filter((session) => session.vmId === id);
-    return Promise.all(rows.map(async (session) => ({ ...this.view(session),
-      status: await this.alive(session) ?
-        (session.revoked ? 'relaunch-required' : 'running') : 'stopped' })));
-  }
-
-  private view(session: AppSession) {
-    const { uid: _, project: __, ...view } = session;
-    return { ...view, dataDirectory: appIdentity(session.id).home };
-  }
-
-  async port(id: string, sessionId: string) {
-    const session = this.sessions.get(z.uuid().parse(sessionId));
-    if (!session || session.vmId !== id || this.machines.state(id) !== 'running')
-      throw new AppError('应用窗口会话不存在或已停止', 404);
-    if (session.revoked)
-      throw new AppError('剪贴板规则已收紧，请停止并重开此窗口', 409);
-    if (!await this.alive(session)) throw new AppError('应用窗口会话已退出', 409);
-    if (session.revoked)
-      throw new AppError('剪贴板规则已收紧，请停止并重开此窗口', 409);
-    if (this.sessions.get(sessionId) !== session)
-      throw new AppError('应用窗口会话已停止', 409);
-    return session.port;
-  }
-
-  async connectionCommand(id: string, sessionId: string, port: number) {
-    if (await this.port(id, sessionId) !== port)
-      throw new AppError('应用窗口端口不匹配', 409);
-    this.machines.requireUnlocked(id);
-    const session = this.sessions.get(sessionId);
-    if (!session || session.revoked) throw new AppError('应用窗口会话已失效', 409);
-    return projectNetworkCommand(session.project, `exec nc 127.0.0.1 ${session.port}`);
-  }
-
-  async start(id: string, raw: unknown, signal?: AbortSignal) {
-    const input = singleAppInput.parse(raw);
-    const activeSignal = signal
-      ? AbortSignal.any([signal, this.closeAbort.signal]) : this.closeAbort.signal;
-    const pending = this.machines.locked(`single-app:${id}`, () => this.machines.locked(id, async () => {
-      activeSignal.throwIfAborted();
-      if (this.closed || this.machines.closing)
-        throw new AppError('应用窗口服务正在关闭', 503);
-      const vm = this.machines.get(id);
-      if (this.machines.state(id) !== 'running') throw new AppError('请先启动实例', 409);
-      this.machines.requireUnlocked(id);
-      if (!this.workspaces) throw new AppError('单应用窗口需要项目工作区服务', 409);
-      const project = await this.workspaces.config(id);
-      const rules = await this.clipboardPolicies(id);
-      const savedClipboard = Object.hasOwn(rules, input.program) ? rules[input.program] : undefined;
-      const clipboard = { copy: input.clipboard.copy && (savedClipboard?.copy ?? true),
-        paste: input.clipboard.paste && (savedClipboard?.paste ?? true) };
-      const existing = [...this.sessions.values()].filter((session) => session.vmId === id);
-      const active = [];
-      for (const session of existing) {
-        if (await this.alive(session)) active.push(session);
-        else { this.disconnect(session.id); this.sessions.delete(session.id); }
-      }
-      if (active.length >= 4) throw new AppError('每个实例最多运行四个单应用窗口', 409);
-      const alpine = !vm.distro || vm.distro === 'alpine';
-      const install = alpine
-        ? 'apk add --no-cache --timeout 30 tigervnc openbox xauth xdpyinfo tmux xterm font-dejavu iptables util-linux python3'
-        : 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && ' +
-          'apt-get install -y -qq --no-install-recommends ' +
-          'tigervnc-standalone-server tigervnc-tools openbox xauth x11-utils tmux xterm fonts-dejavu-core netcat-openbsd iptables util-linux python3';
-      const provision = await this.machines.exec(id,
-        `set -eu\nif ! (command -v Xvnc >/dev/null || command -v Xtigervnc >/dev/null) || ` +
-          `! command -v openbox >/dev/null || ! command -v xauth >/dev/null || ` +
-          `! command -v xdpyinfo >/dev/null || ! command -v tmux >/dev/null || ` +
-          `! command -v xterm >/dev/null || ` +
-          `! (command -v vncpasswd >/dev/null || command -v tigervncpasswd >/dev/null) || ` +
-          `! command -v iptables >/dev/null || ! command -v ip6tables >/dev/null || ` +
-          `! command -v flock >/dev/null || ` +
-          `! command -v python3 >/dev/null || ` +
-          `! command -v nc >/dev/null; then ${install}; fi\n` +
-          `command -v ${input.program} >/dev/null\n` +
-          `python3 -I -S -c 'import os,signal; fd=os.pidfd_open(os.getpid()); signal.pidfd_send_signal(fd,0); os.close(fd)'\n` +
-          ensureProjectNetworkScript(project, vm.distro || 'alpine') +
-          `mkdir -p ${quote(project.directory)}\n`, 240000, activeSignal);
-      if (provision.code !== 0)
-        throw new AppError(provision.stderr.slice(-1000) || '应用或图形环境安装失败', 409);
-      let display = 0;
-      for (const candidate of [10, 11, 12, 13, 14, 15, 16, 17]) {
-        if (active.some((session) => session.display === candidate)) continue;
-        activeSignal.throwIfAborted();
-        const check = await this.machines.exec(id,
-          `test ! -e /tmp/.X11-unix/X${candidate} && ` +
-          projectNetworkCommand(project,
-            `! nc -z 127.0.0.1 ${5900 + candidate} >/dev/null 2>&1`), 5000, activeSignal);
-        if (check.code === 0) { display = candidate; break; }
-      }
-      if (!display) throw new AppError('没有可用的应用窗口显示端口', 409);
-      const session: AppSession = { id: randomUUID(), vmId: id, program: input.program,
-        display, port: 5900 + display, resolution: input.resolution,
-        clipboard,
-        startedAt: new Date().toISOString(), project, projectId: project._workspace || 'default',
-        networkIsolation: project.networkIsolation || 'host',
-        password: '', uid: 0 };
-      const identity = await this.machines.exec(id, appIdentityScript(session.id, alpine),
-        10000, activeSignal);
-      const [uid, password] = identity.stdout.trim().split('\n');
-      session.uid = Number(uid);
-      session.password = password || '';
-      if (identity.code !== 0 || !Number.isSafeInteger(session.uid) || session.uid < 1000 ||
-          !/^[A-Za-z0-9+/]{8}$/.test(session.password))
-        throw new AppError(identity.stderr || '无法创建独立应用用户', 409);
-      const { user, home } = appIdentity(session.id);
-      const app = [input.program, ...input.args.map(quote)].join(' ');
-      const script = `set -eu
-umask 077
-export HOME=${quote(home)} USER=${quote(user)} LOGNAME=${quote(user)}
-cd ${quote(project.directory)}
-sakura_app_id=${session.id}
-pid_file=${sessionPid(session.id)}
-printf '%s\n' "$$" > "$pid_file"
-directory=$(mktemp -d /tmp/${sessionName(session.id)}.XXXXXXXX)
-chmod 700 "$directory"
-export DISPLAY=:${display} XAUTHORITY="$directory/Xauthority"
-xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')"
-vnc_binary=$(command -v Xvnc || command -v Xtigervnc)
-"$vnc_binary" "$DISPLAY" -geometry ${input.resolution} -depth 24 -rfbport ${session.port} -interface 127.0.0.1 -localhost -SecurityTypes VncAuth -PasswordFile "$HOME/.sakura-vnc-password" -AlwaysShared -nolisten tcp -auth "$XAUTHORITY" -AllowOverride=desktop -SendCutText=${clipboard.copy ? 1 : 0} -SendPrimary=${clipboard.copy ? 1 : 0} -AcceptCutText=${clipboard.paste ? 1 : 0} -SetPrimary=${clipboard.paste ? 1 : 0} >"$directory/xvnc.log" 2>&1 &
-vnc_pid=$!
-wm_pid=''
-app_pid=''
-cleanup() {
-  trap - EXIT HUP INT TERM
-  [ -z "$app_pid" ] || kill "$app_pid" 2>/dev/null || true
-  [ -z "$wm_pid" ] || kill "$wm_pid" 2>/dev/null || true
-  kill "$vnc_pid" 2>/dev/null || true
-  wait "$vnc_pid" 2>/dev/null || true
-  rm -rf -- "$directory"
-  rm -f -- "$pid_file"
-}
-trap cleanup EXIT HUP INT TERM
-ready=no
-for attempt in $(seq 1 40); do
-  if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then ready=yes; break; fi
-  kill -0 "$vnc_pid" 2>/dev/null || break
-  sleep 0.25
-done
-[ "$ready" = yes ] || { cat "$directory/xvnc.log" >&2; exit 1; }
-openbox >"$directory/openbox.log" 2>&1 &
-wm_pid=$!
-timeout 14400 ${app} >"$directory/app.log" 2>&1 &
-app_pid=$!
-wait "$app_pid"
-`;
-      try {
-        activeSignal.throwIfAborted();
-        const firewall = await this.machines.exec(id, projectNetworkCommand(project,
-          appVncFirewallScript(session.id, session.uid, session.port)), 10000, activeSignal);
-        if (firewall.code !== 0)
-          throw new AppError(firewall.stderr || '无法隔开应用窗口与其他图形会话的连接', 409);
-        const cleanup = projectNetworkCommand(project,
-          appVncFirewallRemoveScript(session.id, session.uid, session.port));
-        const launch = await this.machines.exec(id,
-          `tmux new-session -d -s ${sessionName(session.id)} ` +
-            quote(appSupervisedCommand(session.id, session.uid,
-              `${projectNetworkCommand(project, `exec su ${user} -s /bin/sh -c ${quote(script)}`)} ` +
-              `> ${quote(sessionLog(session.id))} 2>&1`, cleanup)),
-          10000, activeSignal);
-        if (launch.code !== 0) throw new AppError(launch.stderr || '无法启动单应用窗口', 409);
-        const deadline = Date.now() + 15000;
-        while (Date.now() < deadline) {
-          activeSignal.throwIfAborted();
-          const status = await this.machines.exec(id,
-            `tmux has-session -t =${sessionName(session.id)} 2>/dev/null && ` +
-            projectNetworkCommand(project,
-              `nc -z 127.0.0.1 ${session.port} >/dev/null 2>&1`), 5000, activeSignal);
-          if (status.code === 0) {
-            activeSignal.throwIfAborted();
-            if (this.closed || this.machines.closing)
-              throw new AppError('应用窗口服务正在关闭', 503);
-            this.sessions.set(session.id, session);
-            return this.view(session);
-          }
-          if (!(await this.alive(session))) break;
-          await delay(250);
-        }
-        const log = await this.machines.exec(id, `tail -c 2000 ${quote(sessionLog(session.id))}`, 5000);
-        throw new AppError(log.stdout || '应用窗口未能启动', 409);
-      } catch (error) {
-        await this.terminate(session).catch(() => {});
-        throw error;
-      }
+    this.machines.get(id); await this.load(id); await this.sync(id);
+    const rows = await Promise.all([...this.sessions.values()].filter(session => session.vmId === id).map(async session => {
+      if (session.phase === 'stopped') return this.view(session, 'stopped');
+      try { this.enforcePolicy(session); }
+      catch { return { ...this.view(session, 'cleanup-pending'), cleanupPending: true, lastError: 'SINGLE_APP_CLIPBOARD_POLICY_CHANGED' }; }
+      if (this.machines.state(id) === 'paused') return this.view(session, 'cleanup-pending');
+      if (session.phase !== 'running' || this.machines.state(id) !== 'running') return this.view(session,
+        ['intent', 'prepared', 'starting'].includes(session.phase) ? 'preparing' : 'cleanup-pending');
+      try { const state = await this.status(session); return this.view(session, state.state === 'running'
+        ? (session.revoked ? 'relaunch-required' : 'running') : 'cleanup-pending'); }
+      catch (error) { return { ...this.view(session, 'cleanup-pending'), cleanupPending: true,
+        lastError: error instanceof AppError ? error.code || 'SINGLE_APP_CONTROL_FAILED' : 'SINGLE_APP_CONTROL_FAILED' }; }
     }));
-    this.pending.add(pending);
-    try { return await pending; }
-    finally { this.pending.delete(pending); }
+    if (this.machines.state(id) === 'running') {
+      const live = this.live(id), legacy = await this.control.legacy(id);
+      this.live(id, live);
+      for (const entry of legacy) if (!this.sessions.has(entry.id)) rows.push({
+        id: entry.id, vmId: id, program: 'legacy', display: 0, port: 0, resolution: '1024x768',
+        clipboard: { copy: false, paste: false }, startedAt: '', projectId: undefined, networkIsolation: undefined,
+        password: '', dataDirectory: entry.home, revoked: true, projectOwner: undefined,
+        applicationOwner: { uid: entry.uid, user: entry.user }, cleanupPending: false,
+        lastError: '旧窗口缺少原项目、boot、cgroup 和 namespace 票据；请管理员人工核对', status: 'review-required',
+      });
+    }
+    return rows;
   }
-
+  async port(id: string, sessionId: string) {
+    await this.load(id); await this.sync(id); const session = this.sessions.get(z.uuid().parse(sessionId));
+    if (!session || session.vmId !== id || session.phase !== 'running') throw new AppError('应用窗口会话不存在或待清理', 404);
+    this.enforcePolicy(session);
+    if (session.revoked) throw new AppError('剪贴板规则已收紧，请停止并重开此窗口', 409);
+    this.machines.requireUnlocked(id); const status = await this.status(session);
+    this.enforcePolicy(session);
+    if (status.state !== 'running' || session.revoked || this.sessions.get(sessionId) !== session || session.phase !== 'running')
+      throw new AppError('应用窗口会话已退出或变化', 409);
+    this.livePins.set(session.id, this.live(id)); return session.receipt!.port;
+  }
+  async connectionCommand(id: string, sessionId: string, port: number) {
+    if (await this.port(id, sessionId) !== port) throw new AppError('应用窗口端口不匹配', 409);
+    this.machines.requireUnlocked(id); const session = this.sessions.get(sessionId)!;
+    return this.control.streamCommand(session.build, origin(session));
+  }
+  async start(id: string, raw: unknown, signal?: AbortSignal) {
+    const input = singleAppInput.parse(raw), scope = this.workspaces?.projects.current(id), live = this.live(id);
+    const abort = AbortSignal.any([this.closeAbort.signal, ...(signal ? [signal] : [])]);
+    const pending = this.machines.locked(`single-app:${id}`, async () => {
+      if (!this.workspaces || !this.terminals || !scope) throw new AppError('单应用窗口需要项目工作区服务', 409);
+      if (this.closed || this.machines.closing) throw new AppError('应用窗口服务正在关闭', 503);
+      abort.throwIfAborted(); this.machines.requireUnlocked(id); this.live(id, live); await this.load(id); await this.sync(id);
+      const all = [...this.sessions.values()].filter(session => session.vmId === id);
+      if (all.filter(session => session.phase !== 'stopped').length >= 4)
+        throw new AppError('每个实例最多保留四个未清理的单应用窗口，请先确认原窗口停止', 409);
+      if (all.length >= 1024) throw new AppError('单应用历史票据达到上限，请保留记录并显式整理', 409, 'SINGLE_APP_HOST_LIMIT');
+      let preparation: Preparation | undefined, retained = false, published = false, session: Session | undefined;
+      try {
+        preparation = await this.terminals.prepare(id, scope, null, false, abort, undefined, { mode: 'task' });
+        if (!preparation.captured) throw new AppError('单应用项目准备未返回捕获配置', 409);
+        const captured = preparation.captured;
+        if (captured.live !== live || preparation.projectId !== scope) throw new AppError('单应用原项目或 live 已变化', 409, 'SINGLE_APP_LIVE_CHANGED');
+        const project: Project = structuredClone(captured.project);
+        Object.defineProperty(project, '_workspace', { value: scope, enumerable: false });
+        await this.validateCapture(id, live, scope, captured.configVersion, abort);
+        const rules = await this.clipboardPolicies(id), rule = rules[input.program];
+        const clipboard = { copy: input.clipboard.copy && (rule?.copy ?? true), paste: input.clipboard.paste && (rule?.paste ?? true) };
+        const identity = await this.scopes.identity(id, project, abort);
+        await this.validateCapture(id, live, scope, captured.configVersion, abort);
+        const build = await this.control.install(id, abort);
+        await this.validateCapture(id, live, scope, captured.configVersion, abort);
+        const nativeBuild = await this.identities.install(id, abort);
+        await this.validateCapture(id, live, scope, captured.configVersion, abort);
+        const expectedNativeBuild = await (this.options.nativeBuild?.() || projectIdentitySources().then(source => source.manifest.build));
+        if (nativeBuild !== expectedNativeBuild) throw new AppError('原项目 native 构建在捕获中已变化', 409, 'SINGLE_APP_NATIVE_CHANGED');
+        const bootId = await this.boot(id, live);
+        await this.validateCapture(id, live, scope, captured.configVersion, abort);
+        session = singleAppRunRecordSchema.parse({ version: 1, id: randomUUID(), vmId: id, ...input, clipboard,
+          startedAt: new Date().toISOString(), projectId: scope, directory: project.directory, networkIsolation: project.networkIsolation || 'host',
+          configVersion: captured.configVersion, bootId, build, nativeBuild, phase: 'intent', identity,
+          run: null, receipt: null, revoked: false, retirement: null, closure: null });
+        this.sessions.set(session.id, session); this.leases.set(session.id, preparation.release); this.livePins.set(session.id, live); retained = true;
+        // The stable UUID and captured boot/account precede native prepare.
+        await this.save(id);
+        published = true;
+        const run = projectIdentityRunSchema.parse(await this.control.prepareRun(id, session.build,
+          { id: session.id, identity, bootId: session.bootId, nativeBuild: session.nativeBuild }, abort));
+        singleAppRunRecordSchema.parse({ ...session, run }); origin({ ...session, run });
+        session.run = run;
+        await this.save(id);
+        await this.validateCapture(id, live, scope, captured.configVersion, abort);
+        session.receipt = this.matchReceipt(session, await this.control.call(id, build, 'prepare', origin(session), undefined, abort));
+        session.phase = 'prepared'; await this.save(id); await this.validateCapture(id, live, scope, captured.configVersion, abort);
+        session.phase = 'starting'; await this.save(id);
+        const running = this.matchReceipt(session, await this.control.call(id, build, 'start', origin(session), project.environment || {}, abort));
+        if (running.state !== 'running') throw new AppError('单应用图形监听尚未确认', 409, 'SINGLE_APP_START_FAILED');
+        session.receipt = running; session.phase = 'running'; await this.save(id);
+        await this.validateCapture(id, live, scope, captured.configVersion, abort);
+        if (this.closed || this.machines.closing) throw new AppError('应用窗口服务正在关闭', 503);
+        this.watch(session.id);
+        return this.view(session);
+      } catch (error) {
+        if (session && retained && !published) {
+          // No native prepare was issued. A failed host intent write never
+          // authorizes creating guest resources merely to clean them up.
+          this.sessions.delete(session.id); this.leases.delete(session.id); this.livePins.delete(session.id); retained = false;
+        } else if (session && retained) {
+          try { await this.terminate(session); retained = false; preparation = undefined; }
+          catch { throw new AppError('单应用原运行清理未确认；票据和准备租约已保留，请重试停止原会话', 503, 'SINGLE_APP_CLEANUP_FAILED'); }
+        }
+        throw error;
+      } finally { if (!retained && preparation) await preparation.release(); }
+    });
+    this.pending.add(pending); try { return await pending; } finally { this.pending.delete(pending); }
+  }
+  private async terminate(session: Session) {
+    clearTimeout(this.watchers.get(session.id)); this.watchers.delete(session.id);
+    this.disconnect(session.id); session.phase = 'stopping'; await this.save(session.vmId);
+    try {
+      const live = this.live(session.vmId);
+      const cleanupBoot = await this.boot(session.vmId, live);
+      if (this.livePins.has(session.id) && this.livePins.get(session.id) !== live && cleanupBoot === session.bootId)
+        throw new AppError('原单应用 live 已变化且尚未证明客户机重启', 409, 'SINGLE_APP_LIVE_CHANGED');
+      if (!session.run) {
+        const recovered = appRecoverySchema.parse(await this.control.recover(session.vmId, session.build,
+          { id: session.id, identity: session.identity, bootId: session.bootId, nativeBuild: session.nativeBuild }));
+        this.live(session.vmId, live);
+        if (recovered.absence) {
+          if (recovered.absence.currentBootId !== cleanupBoot)
+            throw new AppError('原单应用不存在证明的客户机 boot 已变化', 503, 'SINGLE_APP_CLEANUP_UNCONFIRMED');
+          singleAppRunRecordSchema.parse({ ...session, absence: recovered.absence, phase: 'stopped' });
+          session.absence = recovered.absence; session.phase = 'stopped';
+          await this.save(session.vmId); await this.retireLease(session); return;
+        }
+        const run = projectIdentityRunSchema.parse({ ...recovered.run!, phase: 'active' });
+        singleAppRunRecordSchema.parse({ ...session, run }); origin({ ...session, run });
+        session.run = run; await this.save(session.vmId);
+      }
+      this.live(session.vmId, live);
+      const stopped = appStopSchema.parse(await this.control.call(session.vmId, session.build, 'stop', origin(session)));
+      this.live(session.vmId, live);
+      const original = session.run;
+      if (Object.keys(original).some(key => key !== 'phase' && original[key as keyof typeof original] !== stopped.run[key as keyof typeof stopped.run]) ||
+          (stopped.retirement ? stopped.retirement.bootId !== cleanupBoot || stopped.retirement.bootId === session.bootId
+            : cleanupBoot !== session.bootId || stopped.run.phase !== 'closed') ||
+          (stopped.receipt && (this.matchReceipt(session, stopped.receipt).state !== 'stopped' ||
+            !same(stopped.receipt.retirement, stopped.retirement))))
+        throw new AppError('单应用原运行关闭回执不符', 503, 'SINGLE_APP_CLEANUP_UNCONFIRMED');
+      session.receipt = stopped.receipt; session.retirement = stopped.retirement; session.closure = stopped.run;
+      session.phase = 'stopped'; delete session.lastError;
+      await this.save(session.vmId); await this.retireLease(session);
+    } catch (error) {
+      session.phase = 'cleanup-failed'; session.lastError = error instanceof AppError ? error.code || 'SINGLE_APP_CLEANUP_FAILED' : 'SINGLE_APP_CLEANUP_FAILED';
+      await this.save(session.vmId); throw error;
+    }
+  }
   async stop(id: string, sessionId: string) {
     return this.machines.locked(`single-app:${id}`, async () => {
-      const session = this.sessions.get(z.uuid().parse(sessionId));
+      await this.load(id); await this.sync(id); const session = this.sessions.get(z.uuid().parse(sessionId));
       if (!session || session.vmId !== id) throw new AppError('应用窗口会话不存在', 404);
-      if (this.machines.state(id) === 'paused')
-        throw new AppError('请先恢复实例，再停止应用窗口', 409);
-      this.disconnect(session.id);
-      if (this.machines.state(id) === 'running') await this.terminate(session);
-      this.sessions.delete(session.id);
-      return { stopped: true };
+      if (session.phase === 'stopped') {
+        // The validated durable row carries the exact closed run or complete
+        // absence/retirement proof. A reloaded owner already closed it. Only
+        // retire this owner's RAM lease; never rewrite a stale journal or
+        // invoke native stop/prepare again.
+        await this.retireLease(session);
+        return { stopped: true };
+      }
+      if (this.machines.state(id) === 'paused') throw new AppError('请先恢复实例，再停止应用窗口', 409);
+      await this.terminate(session); return { stopped: true };
     });
   }
-
   async close() {
-    this.closed = true;
-    this.closeAbort.abort();
-    this.machines.off('change', this.onChange);
-    this.machines.off('incident-lockdown', this.onLock);
+    this.closed = true; this.closeAbort.abort();
+    for (const timer of this.watchers.values()) clearTimeout(timer); this.watchers.clear();
     await Promise.allSettled([...this.pending]);
-    const groups = new Map<string, AppSession[]>();
-    for (const session of this.sessions.values()) {
-      const group = groups.get(session.vmId) || [];
-      group.push(session);
-      groups.set(session.vmId, group);
-    }
-    await Promise.allSettled([...groups.values()].map(async (sessions) => {
-      for (const session of sessions) await this.stop(session.vmId, session.id).catch(() => {});
+    // Serialize each VM; parallel stop calls would collide on Machines.locked.
+    const ids = [...new Set([...this.sessions.values()].filter(session => session.phase !== 'stopped' || this.leases.has(session.id)).map(session => session.vmId))];
+    const results = await Promise.allSettled(ids.map(async id => {
+      const failures: unknown[] = [];
+      for (const session of [...this.sessions.values()].filter(value => value.vmId === id && (value.phase !== 'stopped' || this.leases.has(value.id))))
+        try { await this.stop(id, session.id); } catch (error) { failures.push(error); }
+      if (failures.length) throw new AggregateError(failures, '原实例单应用清理未确认');
     }));
-    this.removeConfigGuard?.();
-    this.sessions.clear();
-    this.sessionListeners.clear();
+    const failed = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failed.length) throw new AggregateError(failed.map(result => result.reason), '单应用原运行清理未确认；记录和配置门闩继续保留');
+    this.machines.off('change', this.onChange); this.machines.off('incident-lockdown', this.onLock); this.removeConfigGuard?.();
+    if (!this.options.terminals) await this.terminals?.close(); this.sessionListeners.clear();
   }
 }

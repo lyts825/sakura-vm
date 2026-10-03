@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import './prepare-monitor.mjs';
 import './prepare-linux-clipboard.mjs';
 import './prepare-wayland-clipboard.mjs';
+import './prepare-single-app.mjs';
 import './prepare-project-identity.mjs';
 import './prepare-ssh-agent.mjs';
 import './prepare-gpg-agent.mjs';

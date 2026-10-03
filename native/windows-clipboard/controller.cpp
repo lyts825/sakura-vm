@@ -5,6 +5,7 @@
 #include "early-import.h"
 #include "control-system.h"
 #include "descendant-reservation.h"
+#include "descendant-token.h"
 #include <tlhelp32.h>
 #include <sddl.h>
 #include <wincrypt.h>
@@ -400,7 +401,7 @@ static bool policyDependency(const std::wstring& path,const std::wstring& librar
   const auto name=path.substr(path.find_last_of(L"\\/")+1);
   const auto policy=library.substr(library.find_last_of(L"\\/")+1);
   if(same(name,policy))return true;
-  const std::wstring protectedNames[]{L"kernel32.dll",L"kernelbase.dll",L"user32.dll",L"ole32.dll",L"combase.dll",L"comctl32.dll",L"ucrtbase.dll",L"msvcrt.dll"};
+  const std::wstring protectedNames[]{L"kernel32.dll",L"kernelbase.dll",L"user32.dll",L"ole32.dll",L"combase.dll",L"comctl32.dll",L"advapi32.dll",L"sechost.dll",L"shell32.dll",L"windows.storage.dll",L"ucrtbase.dll",L"msvcrt.dll"};
   for(const auto& item:protectedNames)if(same(name,item))return true;
   // KnownDLL's own dependencies are also resolved from Windows. A manifest can
   // precede that resolution, so protect the current OS's entire KnownDLL set,

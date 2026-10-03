@@ -1,12 +1,27 @@
 #pragma once
 #include "descendant.h"
 #include "descendant-reservation.h"
+#include "descendant-token.h"
 #include <memory>
 
 using DescendantCreateW=BOOL(WINAPI*)(LPCWSTR,LPWSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,LPVOID,LPCWSTR,LPSTARTUPINFOW,LPPROCESS_INFORMATION);
 using DescendantCreateA=BOOL(WINAPI*)(LPCSTR,LPSTR,LPSECURITY_ATTRIBUTES,LPSECURITY_ATTRIBUTES,BOOL,DWORD,LPVOID,LPCSTR,LPSTARTUPINFOA,LPPROCESS_INFORMATION);
 static DescendantCreateW originalProcessW=nullptr;
 static DescendantCreateA originalProcessA=nullptr;
+static decltype(&CreateProcessAsUserW) originalProcessAsUserW=nullptr;
+static decltype(&CreateProcessAsUserA) originalProcessAsUserA=nullptr;
+static decltype(&CreateProcessWithTokenW) originalProcessWithTokenW=nullptr;
+static decltype(&CreateProcessWithLogonW) originalProcessWithLogonW=nullptr;
+static thread_local unsigned descendantSystemDepth=0;
+struct DescendantSystemScope {
+  DescendantSystemScope(){++descendantSystemDepth;}
+  ~DescendantSystemScope(){--descendantSystemDepth;}
+};
+struct DescendantFailure {
+  DWORD error=ERROR_ACCESS_DENIED;
+  bool failed=false;
+  ~DescendantFailure(){if(failed)SetLastError(error);}
+};
 struct DescendantHandle {
   HANDLE value;
   explicit DescendantHandle(HANDLE input=nullptr):value(input){}
@@ -90,16 +105,23 @@ struct DescendantAttributes {
   LPPROC_THREAD_ATTRIBUTE_LIST value;
   ~DescendantAttributes(){if(value)DeleteProcThreadAttributeList(value);}
 };
+#include "shell-policy.h"
 template<class Startup,class Extended,class Call>
 static BOOL descendantCreate(const std::wstring& application,const std::wstring& command,DWORD flags,
-    Startup* startup,PROCESS_INFORMATION* output,Call call) {
-  if(!current().active)return call(flags,startup,output);
+    Startup* startup,PROCESS_INFORMATION* output,Call call,const DescendantToken* token=nullptr) {
+  if(!current().active){if(shellScope){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}return call(flags,startup,output);}
   // Windows exposes no API for cloning an opaque caller attribute list and
   // adding a creation-time Job. Refuse that unsupported path explicitly.
-  if(!startup || !output || startup->cb!=sizeof(Startup) ||
-      flags&(EXTENDED_STARTUPINFO_PRESENT|DEBUG_PROCESS|DEBUG_ONLY_THIS_PROCESS)){
+  const bool shellExtended=shellScope && startup && startup->cb==sizeof(Extended) && (flags&EXTENDED_STARTUPINFO_PRESENT);
+  if(!startup || !output || (shellScope && !shellExtended) || (!shellExtended && startup->cb!=sizeof(Startup)) ||
+      flags&(DEBUG_PROCESS|DEBUG_ONLY_THIS_PROCESS) || ((flags&EXTENDED_STARTUPINFO_PRESENT) && !shellExtended)){
     SetLastError(ERROR_NOT_SUPPORTED);return FALSE;
   }
+  ShellAttributeLedger::Pointer shellTable;
+  if(shellExtended){
+    if(!shellScope->sourceValid() || !(shellTable=shellAttributes.claim(reinterpret_cast<Extended*>(startup)->lpAttributeList,shellScope->generation,GetCurrentThreadId()))){SetLastError(ERROR_NOT_SUPPORTED);return FALSE;}
+  }
+  DescendantFailure result;
   DWORD failure=ERROR_ACCESS_DENIED;PROCESS_INFORMATION child{};
   DescendantHandle job,pipe,broker,endpointSection;
   std::unique_ptr<DescendantReservation> reservation;
@@ -129,17 +151,33 @@ static BOOL descendantCreate(const std::wstring& application,const std::wstring&
         processCreation(broker.value)!=endpoint.creationTime)throw std::runtime_error("child pipe owner differs");
     reservation=std::make_unique<DescendantReservation>(sectionName.substr(prefix.size(),36));
     job.value=reservation->releaseJob();
-    SIZE_T size=0;InitializeProcThreadAttributeList(nullptr,1,0,&size);
-    std::vector<unsigned char> storage(size);auto attributes=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
-    if(!size || !InitializeProcThreadAttributeList(attributes,1,0,&size))throw std::runtime_error("child attributes unavailable");
-    DescendantAttributes attributeOwner{attributes};
-    const BOOL assigned=UpdateProcThreadAttribute(attributes,0,PROC_THREAD_ATTRIBUTE_JOB_LIST,&job.value,sizeof(HANDLE),nullptr,nullptr);
-    Extended extended{};extended.StartupInfo=*startup;extended.StartupInfo.cb=sizeof(Extended);extended.lpAttributeList=attributes;
+    SIZE_T size=0;std::vector<unsigned char> storage;DescendantAttributes attributeOwner{nullptr};
+    Extended extended{};extended.StartupInfo=*startup;extended.StartupInfo.cb=sizeof(Extended);
+    BOOL assigned=FALSE;
+    if(shellExtended){
+      if(!shellScope->sourceValid())throw std::runtime_error("Shell source policy changed before attributes");
+      extended.lpAttributeList=reinterpret_cast<Extended*>(startup)->lpAttributeList;
+      assigned=shellAttributes.append(shellTable,job.value,originalShellUpdate);
+    }else{
+      InitializeProcThreadAttributeList(nullptr,1,0,&size);storage.resize(size);
+      auto attributes=reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
+      if(!size || !InitializeProcThreadAttributeList(attributes,1,0,&size))throw std::runtime_error("child attributes unavailable");
+      attributeOwner.value=attributes;extended.lpAttributeList=attributes;
+      assigned=UpdateProcThreadAttribute(attributes,0,PROC_THREAD_ATTRIBUTE_JOB_LIST,&job.value,sizeof(HANDLE),nullptr,nullptr);
+    }
     DescendantPins pins(application,command);
-    const BOOL created=assigned && call(flags|CREATE_SUSPENDED|EXTENDED_STARTUPINFO_PRESENT,&extended.StartupInfo,&child);
-    failure=GetLastError();DeleteProcThreadAttributeList(attributes);attributeOwner.value=nullptr;
-    if(!created){SetLastError(failure);return FALSE;}
-    failure=ERROR_ACCESS_DENIED;HANDLE imageFile=pins.matching(child.hProcess);
+    BOOL created=FALSE;
+    if(assigned){
+      if(token)token->verifySource();DescendantSystemScope systemCall;
+      const auto create=[&]{if(shellExtended && !shellScope->sourceValid()){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}return call(flags|CREATE_SUSPENDED|EXTENDED_STARTUPINFO_PRESENT,shellExtended?startup:&extended.StartupInfo,&child);};
+      created=shellExtended?shellAttributes.invoke(shellTable,child,create):create();
+    }
+    failure=GetLastError();if(attributeOwner.value){DeleteProcThreadAttributeList(attributeOwner.value);attributeOwner.value=nullptr;}
+    if(!created){result.failed=true;result.error=failure;return FALSE;}
+    failure=ERROR_ACCESS_DENIED;
+    if(shellExtended && (!shellScope->matches(child.hProcess) || !shellAttributes.created(shellTable)))throw std::runtime_error("Shell creation identity or attribute lifetime changed");
+    if(token)token->verifyChild(child.hProcess);
+    HANDLE imageFile=pins.matching(child.hProcess);
     if(!imageFile)throw std::runtime_error("OS-selected child image was not locked before creation");
     SakuraDescendantRequest request{SakuraDescendantMagic,SakuraDescendantVersion,GetCurrentProcessId(),(flags&CREATE_SUSPENDED)?1u:0u,
       processCreation(GetCurrentProcess()),uint64_t(uintptr_t(child.hProcess)),uint64_t(uintptr_t(child.hThread)),uint64_t(uintptr_t(job.value)),uint64_t(uintptr_t(imageFile))};
@@ -148,23 +186,59 @@ static BOOL descendantCreate(const std::wstring& application,const std::wstring&
     if(!descendantTransfer(pipe.value,&reply,sizeof(reply),false) || reply.magic!=SakuraDescendantMagic || reply.version!=SakuraDescendantVersion || reply.reserved || reply.error)throw std::runtime_error("child policy was not committed");
     uint32_t acknowledged=SakuraDescendantMagic;
     descendantTransfer(pipe.value,&acknowledged,sizeof(acknowledged),true,5000);
+    if(shellExtended && !shellAttributes.commit(shellTable))throw std::runtime_error("Shell attribute lifetime changed before commit");
     *output=child;return TRUE;
   } catch(...) {
-    if(child.hProcess){if(job.value)TerminateJobObject(job.value,1);else TerminateProcess(child.hProcess,1);WaitForSingleObject(child.hProcess,30000);CloseHandle(child.hThread);CloseHandle(child.hProcess);}
-    SetLastError(failure);return FALSE;
+    if(child.hProcess){sakuraTerminateOwnedChild(job.value,child.hProcess);CloseHandle(child.hThread);CloseHandle(child.hProcess);}
+    result.failed=true;result.error=failure;return FALSE;
   }
 }
 static BOOL WINAPI descendantCreateW(LPCWSTR application,LPWSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
     BOOL inherit,DWORD flags,LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
-  if(!current().active)return originalProcessW(application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
+  if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessW(application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
   try{return descendantCreate<STARTUPINFOW,STARTUPINFOEXW>(application?application:L"",command?command:L"",flags,startup,output,
     [&](DWORD actual,LPSTARTUPINFOW info,LPPROCESS_INFORMATION result){return originalProcessW(application,command,processSecurity,threadSecurity,inherit,actual,environment,directory,info,result);});}
   catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
 }
 static BOOL WINAPI descendantCreateA(LPCSTR application,LPSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
     BOOL inherit,DWORD flags,LPVOID environment,LPCSTR directory,LPSTARTUPINFOA startup,LPPROCESS_INFORMATION output) {
-  if(!current().active)return originalProcessA(application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
+  if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessA(application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
   try{return descendantCreate<STARTUPINFOA,STARTUPINFOEXA>(descendantWide(application),descendantWide(command),flags,startup,output,
     [&](DWORD actual,LPSTARTUPINFOA info,LPPROCESS_INFORMATION result){return originalProcessA(application,command,processSecurity,threadSecurity,inherit,actual,environment,directory,info,result);});}
   catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
+}
+static BOOL WINAPI descendantCreateAsUserW(HANDLE token,LPCWSTR application,LPWSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
+    BOOL inherit,DWORD flags,LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
+  if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessAsUserW(token,application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
+  try{
+    DescendantToken identity(token,true);
+    return descendantCreate<STARTUPINFOW,STARTUPINFOEXW>(application?application:L"",command?command:L"",flags,startup,output,
+      [&](DWORD actual,LPSTARTUPINFOW info,LPPROCESS_INFORMATION result){return originalProcessAsUserW(identity.argument(),application,command,processSecurity,threadSecurity,inherit,actual,environment,directory,info,result);},&identity);
+  }catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
+}
+static BOOL WINAPI descendantCreateAsUserA(HANDLE token,LPCSTR application,LPSTR command,LPSECURITY_ATTRIBUTES processSecurity,LPSECURITY_ATTRIBUTES threadSecurity,
+    BOOL inherit,DWORD flags,LPVOID environment,LPCSTR directory,LPSTARTUPINFOA startup,LPPROCESS_INFORMATION output) {
+  if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessAsUserA(token,application,command,processSecurity,threadSecurity,inherit,flags,environment,directory,startup,output);
+  try{
+    DescendantToken identity(token,true);
+    return descendantCreate<STARTUPINFOA,STARTUPINFOEXA>(descendantWide(application),descendantWide(command),flags,startup,output,
+      [&](DWORD actual,LPSTARTUPINFOA info,LPPROCESS_INFORMATION result){return originalProcessAsUserA(identity.argument(),application,command,processSecurity,threadSecurity,inherit,actual,environment,directory,info,result);},&identity);
+  }catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
+}
+static BOOL WINAPI descendantCreateWithTokenW(HANDLE token,DWORD logon,LPCWSTR application,LPWSTR command,DWORD flags,
+    LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
+  if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessWithTokenW(token,logon,application,command,flags,environment,directory,startup,output);
+  try{DescendantToken identity(token,false);}catch(...){SetLastError(ERROR_ACCESS_DENIED);return FALSE;}
+  // The documented extended structure is rejected with ERROR_INVALID_PARAMETER
+  // by the actual WithToken implementation on the verified host, even with an
+  // empty attribute list. Never create first and assign a Job afterward.
+  SetLastError(ERROR_NOT_SUPPORTED);return FALSE;
+}
+static BOOL WINAPI descendantCreateWithLogonW(LPCWSTR user,LPCWSTR domain,LPCWSTR password,DWORD logon,LPCWSTR application,LPWSTR command,DWORD flags,
+    LPVOID environment,LPCWSTR directory,LPSTARTUPINFOW startup,LPPROCESS_INFORMATION output) {
+  if(descendantSystemDepth || (!shellScope && !current().active))return originalProcessWithLogonW(user,domain,password,logon,application,command,flags,environment,directory,startup,output);
+  // WithLogon documents STARTUPINFO only and the verified system rejects the
+  // Job-bearing extended form. No authentication, profile or network side
+  // effect is attempted while the controlled policy is active.
+  SetLastError(ERROR_NOT_SUPPORTED);return FALSE;
 }

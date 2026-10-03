@@ -1,3 +1,5 @@
+// Historical fixture for the former UID-only controller. The current npm
+// entry uses smoke-project-desktop-identity.ts and requires --run-cow x11|wayland.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';

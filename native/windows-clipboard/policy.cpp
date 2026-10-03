@@ -706,7 +706,7 @@ static bool earlyConfigure(const SakuraClipboardEarly* input) {
       input->pid!=GetCurrentProcessId() || input->creationTime!=processCreation(GetCurrentProcess()) ||
       std::memcmp(input->build,SAKURA_CLIPBOARD_BUILD,65)!=0 ||
       std::find(input->section,input->section+192,L'\0')==input->section+192 ||
-      !earlySystemModule(L"user32.dll") || !earlySystemModule(L"ole32.dll") || !systemControlsLoaded())return false;
+      !earlySystemModule(L"user32.dll") || !earlySystemModule(L"ole32.dll") || !earlySystemModule(L"advapi32.dll") || !earlySystemModule(L"shell32.dll") || !systemControlsLoaded())return false;
   section=OpenFileMappingW(FILE_MAP_ALL_ACCESS,FALSE,input->section);
   if(!section)return false;
   shared=static_cast<SakuraClipboardPolicy*>(MapViewOfFile(section,FILE_MAP_ALL_ACCESS,0,0,sizeof(SakuraClipboardPolicy)));
@@ -730,6 +730,17 @@ static bool earlyConfigure(const SakuraClipboardEarly* input) {
       !earlyHook(&originalOleFlush,&OleFlushClipboard,reinterpret_cast<void*>(&oleFlush)) ||
       !earlyHook(&originalProcessW,&CreateProcessW,reinterpret_cast<void*>(&descendantCreateW)) ||
       !earlyHook(&originalProcessA,&CreateProcessA,reinterpret_cast<void*>(&descendantCreateA)) ||
+      !earlyHook(&originalProcessAsUserW,&CreateProcessAsUserW,reinterpret_cast<void*>(&descendantCreateAsUserW)) ||
+      !earlyHook(&originalProcessAsUserA,&CreateProcessAsUserA,reinterpret_cast<void*>(&descendantCreateAsUserA)) ||
+      !earlyHook(&originalProcessWithTokenW,&CreateProcessWithTokenW,reinterpret_cast<void*>(&descendantCreateWithTokenW)) ||
+      !earlyHook(&originalProcessWithLogonW,&CreateProcessWithLogonW,reinterpret_cast<void*>(&descendantCreateWithLogonW)) ||
+      !earlyHook(&originalShellExW,&ShellExecuteExW,reinterpret_cast<void*>(&shellExecuteExW)) ||
+      !earlyHook(&originalShellExA,&ShellExecuteExA,reinterpret_cast<void*>(&shellExecuteExA)) ||
+      !earlyHook(&originalShellW,&ShellExecuteW,reinterpret_cast<void*>(&shellExecuteW)) ||
+      !earlyHook(&originalShellA,&ShellExecuteA,reinterpret_cast<void*>(&shellExecuteA)) ||
+      !earlyHook(&originalShellInitialize,&InitializeProcThreadAttributeList,reinterpret_cast<void*>(&shellInitialize)) ||
+      !earlyHook(&originalShellUpdate,&UpdateProcThreadAttribute,reinterpret_cast<void*>(&shellUpdate)) ||
+      !earlyHook(&originalShellDelete,&DeleteProcThreadAttributeList,reinterpret_cast<void*>(&shellDelete)) ||
       !earlyHook(&originalCreateW,&CreateWindowExW,reinterpret_cast<void*>(&createControlW)) ||
       !earlyHook(&originalCreateA,&CreateWindowExA,reinterpret_cast<void*>(&createControlA)) ||
       !earlyHook(&originalMessageW,&GetMessageW,reinterpret_cast<void*>(&messageControlW)) ||
@@ -763,7 +774,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* poi
       else {
         sectionName=input->section;
         if (!LoadLibraryExW(L"user32.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32) ||
-            !LoadLibraryExW(L"ole32.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32) || !systemControlsLoaded() || MH_Initialize()!=MH_OK ||
+            !LoadLibraryExW(L"ole32.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32) || !LoadLibraryExW(L"shell32.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32) || !earlySystemModule(L"shell32.dll") || !systemControlsLoaded() || MH_Initialize()!=MH_OK ||
             !hook(L"user32","GetClipboardData",reinterpret_cast<void*>(&getData),&originalGet) ||
             !hook(L"user32","SetClipboardData",reinterpret_cast<void*>(&setData),&originalSet) ||
             !hook(L"user32","EmptyClipboard",reinterpret_cast<void*>(&empty),&originalEmpty) ||
@@ -777,6 +788,17 @@ extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* poi
             !hook(L"ole32","OleFlushClipboard",reinterpret_cast<void*>(&oleFlush),&originalOleFlush) ||
             !hook(L"kernel32","CreateProcessW",reinterpret_cast<void*>(&descendantCreateW),&originalProcessW) ||
             !hook(L"kernel32","CreateProcessA",reinterpret_cast<void*>(&descendantCreateA),&originalProcessA) ||
+            !hook(L"advapi32","CreateProcessAsUserW",reinterpret_cast<void*>(&descendantCreateAsUserW),&originalProcessAsUserW) ||
+            !hook(L"advapi32","CreateProcessAsUserA",reinterpret_cast<void*>(&descendantCreateAsUserA),&originalProcessAsUserA) ||
+            !hook(L"advapi32","CreateProcessWithTokenW",reinterpret_cast<void*>(&descendantCreateWithTokenW),&originalProcessWithTokenW) ||
+            !hook(L"advapi32","CreateProcessWithLogonW",reinterpret_cast<void*>(&descendantCreateWithLogonW),&originalProcessWithLogonW) ||
+            !hook(L"shell32","ShellExecuteExW",reinterpret_cast<void*>(&shellExecuteExW),&originalShellExW) ||
+            !hook(L"shell32","ShellExecuteExA",reinterpret_cast<void*>(&shellExecuteExA),&originalShellExA) ||
+            !hook(L"shell32","ShellExecuteW",reinterpret_cast<void*>(&shellExecuteW),&originalShellW) ||
+            !hook(L"shell32","ShellExecuteA",reinterpret_cast<void*>(&shellExecuteA),&originalShellA) ||
+            !hook(L"kernel32","InitializeProcThreadAttributeList",reinterpret_cast<void*>(&shellInitialize),&originalShellInitialize) ||
+            !hook(L"kernel32","UpdateProcThreadAttribute",reinterpret_cast<void*>(&shellUpdate),&originalShellUpdate) ||
+            !hook(L"kernel32","DeleteProcThreadAttributeList",reinterpret_cast<void*>(&shellDelete),&originalShellDelete) ||
             !hook(L"user32","CreateWindowExW",reinterpret_cast<void*>(&createControlW),&originalCreateW) ||
             !hook(L"user32","CreateWindowExA",reinterpret_cast<void*>(&createControlA),&originalCreateA) ||
             !hook(L"user32","GetMessageW",reinterpret_cast<void*>(&messageControlW),&originalMessageW) ||
