@@ -1597,45 +1597,109 @@ def egress_nnp_process(parent, pid):
             os.close(descriptor)
 
 
+def egress_nnp_birth(parent, pid):
+    descriptor, file_descriptor = None, None
+    try:
+        descriptor = os.open(str(pid), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        file_descriptor = os.open('stat', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=descriptor)
+        raw = os.read(file_descriptor, 16385)
+        prefix, separator, rest = raw.rpartition(b') ')
+        fields = rest.split()
+        if len(raw) > 16384 or not separator or not prefix.startswith(str(pid).encode() + b' (') or \
+           len(fields) < 20 or any(not re.fullmatch(b'0|[1-9][0-9]*', fields[index]) for index in (6, 19)) or \
+           int(fields[6]) > 0xffffffff:
+            refuse('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-birth-invalid'})
+        # Linux fs/proc/array.c emits task->flags at stat field 9 (index 6
+        # after the comm); sched.h defines PF_KTHREAD as 0x00200000. Only
+        # these kernel facts, never comm, justify a missing userspace image.
+        return dict(startTicks=fields[19].decode('ascii'), inactive=fields[0] in (b'Z', b'X') or bool(int(fields[6]) & 0x00200000))
+    except (FileNotFoundError, ProcessLookupError):
+        if descriptor is not None:
+            try:
+                os.stat(str(pid), dir_fd=parent, follow_symlinks=False)
+            except (FileNotFoundError, ProcessLookupError):
+                return None
+            refuse('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-birth-unavailable'})
+        return None
+    finally:
+        if file_descriptor is not None:
+            os.close(file_descriptor)
+        if descriptor is not None:
+            os.close(descriptor)
+
+
 def egress_nnp_snapshot(parent, manager):
-    # No service/account authorization has consumed this collection yet. A
-    # short-lived unrelated process can change while /proc is read. Retry only
-    # this complete initial collection, never an already used SSH authority or
-    # parent chain. Every retry still reads all current PIDs and its bookend.
-    deadline = None
+    # The first collection is complete. Afterwards, bounded censuses add every
+    # enumerated new process instead of requiring the whole machine to stop
+    # forking. A cached PID still needs its actual kernel birth checked. The
+    # final census is the observation boundary, not a claim about future forks.
+    deadline, increment = None, 0
+    def budget():
+        if deadline is not None and time.monotonic() >= deadline:
+            refuse('EGRESS_NNP_PROCESS_CHANGED', {'reason': 'process-snapshot-deadline'})
+    def entries():
+        budget()
+        found = [int(name) for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name)]
+        budget()
+        if len(found) > 32768:
+            refuse('EGRESS_NNP_PROCESS_LIMIT')
+        return found
+    def changed(error):
+        detail = dict(error.detail) if isinstance(error.detail, dict) else {'reason': 'process-read-changed'}
+        detail.update(manager=manager, stage='process-snapshot', snapshotAttempts=attempt, incrementRounds=increment)
+        return detail
+    def read_process(pid):
+        budget()
+        process = egress_nnp_process(parent, pid)
+        budget()
+        if process is None:
+            remaining = egress_nnp_birth(parent, pid)
+            budget()
+            if remaining is not None and not remaining['inactive']:
+                refuse('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-read-incomplete'})
+        return process
     for attempt in range(1, 4):
-        def budget():
-            if attempt > 1 and time.monotonic() >= deadline:
-                refuse('EGRESS_NNP_PROCESS_CHANGED', {'reason': 'process-snapshot-retry-deadline'})
         try:
-            budget()
-            entries = [name for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name)]
-            if len(entries) > 32768:
-                refuse('EGRESS_NNP_PROCESS_LIMIT')
-            entry_set = set(entries)
             processes = {}
-            for name in entries:
-                budget()
-                process = egress_nnp_process(parent, int(name))
-                budget()
+            for pid in entries():
+                process = read_process(pid)
                 if process is not None:
-                    processes[process['pid']] = process
-            budget()
-            created = [name for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name) and name not in entry_set]
-            budget()
-            if created:
-                refuse('EGRESS_NNP_PROCESS_CHANGED', {'reason': 'process-census-changed', 'pid': int(created[0]),
-                       'newPidCount': len(created)})
-            return processes
+                    processes[pid] = process
+            break
         except Refusal as error:
             if error.code != 'EGRESS_NNP_PROCESS_CHANGED':
                 raise
-            detail = dict(error.detail) if isinstance(error.detail, dict) else {'reason': 'process-read-changed'}
-            detail.update(manager=manager, stage='process-snapshot', snapshotAttempts=attempt)
             if deadline is None:
-                deadline = time.monotonic() + 5
+                deadline = time.monotonic() + 15
             if attempt == 3 or time.monotonic() >= deadline:
-                refuse(error.code, detail)
+                refuse(error.code, changed(error))
+    if deadline is None:
+        deadline = time.monotonic() + 15
+    try:
+        for increment in range(1, 4):
+            added = False
+            for pid in entries():
+                budget()
+                previous = processes.get(pid)
+                if previous is not None:
+                    birth = egress_nnp_birth(parent, pid)
+                    if birth is not None and birth['startTicks'] != previous['startTicks']:
+                        refuse('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-pid-reused'})
+                else:
+                    process = read_process(pid)
+                    if process is not None:
+                        processes[pid] = process
+                        added = True
+                        if len(processes) > 32768:
+                            refuse('EGRESS_NNP_PROCESS_LIMIT')
+                budget()
+            if not added:
+                break
+        return processes
+    except Refusal as error:
+        if error.code != 'EGRESS_NNP_PROCESS_CHANGED':
+            raise
+        refuse(error.code, changed(error))
 
 
 def egress_nnp_live(value, manager):

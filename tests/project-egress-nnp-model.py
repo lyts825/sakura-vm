@@ -66,6 +66,7 @@ def live_fixture():
     ns['directory_fd'] = lambda _path: 10
     ns['egress_nnp_directory'] = lambda _path: 10
     ns['egress_nnp_process'] = lambda _parent, pid: copy.deepcopy(processes.get(pid))
+    ns['egress_nnp_birth'] = lambda _parent, pid: dict(startTicks=processes[pid]['startTicks'], inactive=False) if pid in processes else None
     ns['egress_boot_read'] = lambda path: pid_files.get(path)
     return ns, processes, pid_files, flags
 
@@ -486,77 +487,104 @@ def initial_snapshot_recovers_unrelated_churn():
         ns['os'].listdir, ns['egress_nnp_process'] = listed, read
         ns['egress_nnp_live']({'uid': 20000}, 'systemd')
         assert queries == ['ssh.service', 'ssh.service'] and closed.count(20) == 1
-        assert calls['listdir'] == (4 if variant == 'new-unrelated-pid' else 3)
-        assert reads[9000] == (1 if variant == 'new-unrelated-pid' else 2), 'the retry must read the actual new/transient PID'
+        assert calls['listdir'] == 3
+        assert reads[9000] == (1 if variant == 'new-unrelated-pid' else 2), 'incremental collection must read the actual new/transient PID'
         assert processes[1743]['parentPid'] == 1040 and processes[1743]['startTicks'] == '78472'
 
 
 def initial_snapshot_rejects_dangerous_new_pids():
-    for variant, code in (('ssh-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'), ('project-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'),
-                          ('project-capability', 'EGRESS_NNP_ACCOUNT_PRIVILEGED'), ('project-mixed-uid', 'EGRESS_NNP_ACCOUNT_PRIVILEGED')):
-        ns, processes, _responses, _queries, closed, _flags = systemd_fixture()
-        ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
-        calls, read_pids = dict(listdir=0), []
-        original_list, original_read = ns['os'].listdir, ns['egress_nnp_process']
-        child = process(9000, 1040, group='/user.slice/user-1000.slice/session-99.scope', nnp=0, uid=1000,
-                        arguments=[b'sshd: ordinary@notty'])
-        if variant.startswith('project-'):
-            child.update(executable='/bin/sh', image=image(90), uids=[20000] * 4, nnp=0 if variant == 'project-nnp-zero' else 1)
-            if variant == 'project-capability':
-                child['caps'] = [0, 1, 0]
-            elif variant == 'project-mixed-uid':
-                child['uids'][1] = 0
-        def listed(fd):
-            calls['listdir'] += 1
-            if calls['listdir'] == 2:
-                processes[9000] = child
-            return original_list(fd)
-        def read(parent, pid):
-            read_pids.append(pid)
-            return original_read(parent, pid)
-        ns['os'].listdir, ns['egress_nnp_process'] = listed, read
-        detail = refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'systemd'), code)
-        assert detail['pid'] == 9000 and calls['listdir'] == 4 and 9000 in read_pids
-        assert detail.get('stage') != 'process-snapshot' and closed.count(20) == 1
+    for born_at in (2, 4):
+        for variant, code in (('ssh-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'), ('cron-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'),
+                              ('unknown-ssh-owner', 'EGRESS_NNP_SERVICE_UNVERIFIED'), ('project-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'),
+                              ('project-capability', 'EGRESS_NNP_ACCOUNT_PRIVILEGED'), ('project-mixed-uid', 'EGRESS_NNP_ACCOUNT_PRIVILEGED')):
+            ns, processes, _responses, _queries, closed, _flags = systemd_fixture()
+            ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
+            calls, read_pids = dict(listdir=0), []
+            original_list, original_read = ns['os'].listdir, ns['egress_nnp_process']
+            child = process(9000, 1040, group='/user.slice/user-1000.slice/session-99.scope', nnp=0, uid=1000,
+                            arguments=[b'sshd: ordinary@notty'])
+            if variant == 'unknown-ssh-owner':
+                child.update(nnp=1, parentPid=1, cgroupName='/unknown.scope')
+            elif variant == 'cron-nnp-zero':
+                child = process(9000, 1, executable='/usr/sbin/crond', inode=2, nnp=0, group='/system.slice/crond.service')
+            elif variant.startswith('project-'):
+                child.update(executable='/bin/sh', image=image(90), uids=[20000] * 4, nnp=0 if variant == 'project-nnp-zero' else 1)
+                if variant == 'project-capability':
+                    child['caps'] = [0, 1, 0]
+                elif variant == 'project-mixed-uid':
+                    child['uids'][1] = 0
+            def listed(fd):
+                calls['listdir'] += 1
+                if calls['listdir'] >= 2:
+                    pid = 9100 + calls['listdir']
+                    processes[pid] = process(pid, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
+                if calls['listdir'] == born_at:
+                    processes[9000] = child
+                return original_list(fd)
+            def read(parent, pid):
+                read_pids.append(pid)
+                return original_read(parent, pid)
+            ns['os'].listdir, ns['egress_nnp_process'] = listed, read
+            detail = refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'systemd'), code)
+            assert detail['pid'] == 9000 and calls['listdir'] == 4 and read_pids.count(9000) == 1
+            assert all(pid in read_pids for pid in processes), 'the final census must read every new actual PID before admission'
+            assert detail.get('stage') != 'process-snapshot' and closed.count(20) == 1
 
 
 def initial_snapshot_retry_bounds_and_safe_reasons():
-    for variant in ('continuous-fork', 'continuous-read-change', 'before-read-deadline', 'after-read-deadline', 'after-census-deadline'):
+    for variant in ('continuous-read-change', 'before-read-deadline', 'after-read-deadline', 'after-birth-deadline',
+                    'after-census-deadline', 'between-increments-deadline', 'retry-read-deadline'):
         ns, processes, _responses, queries, closed, _flags = systemd_fixture()
-        clock, calls, reads = [0], dict(listdir=0), []
-        ns['time'] = types.SimpleNamespace(monotonic=lambda: clock[0])
-        original_list, original_read = ns['os'].listdir, ns['egress_nnp_process']
-        if variant == 'continuous-read-change':
+        clock, calls, reads, births = [0], dict(listdir=0, monotonic=0), [], []
+        def monotonic():
+            calls['monotonic'] += 1
+            if variant == 'before-read-deadline' and calls['monotonic'] == 4:
+                clock[0] = 15
+            return clock[0]
+        ns['time'] = types.SimpleNamespace(monotonic=monotonic)
+        original_list, original_read, original_birth = ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_birth']
+        if variant in ('continuous-read-change', 'retry-read-deadline'):
             processes[9000] = process(9000, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
         def listed(fd):
             calls['listdir'] += 1
-            if variant == 'continuous-fork' and calls['listdir'] % 2 == 0:
-                pid = 9000 + calls['listdir'] // 2
-                processes[pid] = process(pid, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
-            elif variant.endswith('deadline') and calls['listdir'] == 2:
+            if variant.endswith('deadline') and calls['listdir'] == 2:
                 processes[9000] = process(9000, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
-            if (variant == 'before-read-deadline' and calls['listdir'] == 3) or \
-               (variant == 'after-census-deadline' and calls['listdir'] == 4):
-                clock[0] = 5
+            if (variant == 'after-census-deadline' and calls['listdir'] == 2) or \
+               (variant == 'between-increments-deadline' and calls['listdir'] == 3):
+                clock[0] = 15
             return original_list(fd)
         def read(parent, pid):
             reads.append(pid)
-            if variant == 'continuous-read-change' and pid == 9000:
+            if pid == 9000 and (variant == 'continuous-read-change' or (variant == 'retry-read-deadline' and calls['listdir'] == 1)):
                 ns['refuse']('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-identity-or-image-changed'})
             current = original_read(parent, pid)
-            if variant == 'after-read-deadline' and calls['listdir'] == 3:
-                clock[0] = 5.1
+            if (variant == 'after-read-deadline' and pid == 9000) or \
+               (variant == 'retry-read-deadline' and calls['listdir'] == 2):
+                clock[0] = 15.1
             return current
-        ns['os'].listdir, ns['egress_nnp_process'] = listed, read
+        def birth(parent, pid):
+            births.append(pid)
+            current = original_birth(parent, pid)
+            if variant == 'after-birth-deadline':
+                clock[0] = 15.1
+            return current
+        ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_birth'] = listed, read, birth
         detail = refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'systemd'), 'EGRESS_NNP_PROCESS_CHANGED')
         assert detail['manager'] == 'systemd' and detail['stage'] == 'process-snapshot' and not queries and 20 not in closed
-        assert detail['snapshotAttempts'] == (3 if variant.startswith('continuous-') else 2)
-        expected_reason = 'process-census-changed' if variant == 'continuous-fork' else \
-                          'process-identity-or-image-changed' if variant == 'continuous-read-change' else 'process-snapshot-retry-deadline'
+        assert detail['snapshotAttempts'] == (3 if variant == 'continuous-read-change' else 2 if variant == 'retry-read-deadline' else 1)
+        assert detail['incrementRounds'] == (0 if variant in ('continuous-read-change', 'retry-read-deadline') else
+                                             2 if variant == 'between-increments-deadline' else 1)
+        expected_reason = 'process-identity-or-image-changed' if variant == 'continuous-read-change' else 'process-snapshot-deadline'
         assert detail['reason'] == expected_reason
         assert not any(key in detail for key in ('arguments', 'environment', 'cmdline', 'status'))
         if variant == 'after-read-deadline':
-            assert reads.count(100) == 2 and reads.count(200) == 1, 'a single read crossing five seconds stops the retry before its next PID'
+            assert reads.count(100) == reads.count(200) == reads.count(9000) == 1, 'a single incremental read crossing fifteen seconds stops immediately'
+        elif variant == 'after-birth-deadline':
+            assert births == [100], 'a single birth read crossing the window must stop before the next PID'
+        elif variant == 'before-read-deadline':
+            assert not births and 9000 not in reads
+        elif variant == 'retry-read-deadline':
+            assert reads.count(100) == 2 and reads.count(200) == 1
     # The first ordinary collection retains its original host-controlled
     # timeout rather than rejecting a slow but internally stable guest.
     ns, _processes, _responses, queries, _closed, _flags = systemd_fixture()
@@ -569,6 +597,152 @@ def initial_snapshot_retry_bounds_and_safe_reasons():
     ns['egress_nnp_process'] = slow
     ns['egress_nnp_live']({'uid': 20000}, 'systemd')
     assert clock[0] > 5 and queries == ['ssh.service', 'ssh.service']
+
+
+def incremental_census_includes_continuous_births():
+    ns, processes, _responses, queries, closed, _flags = systemd_fixture()
+    calls, reads, snapshots = dict(listdir=0), [], []
+    ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
+    original_list, original_read, original_snapshot = ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_snapshot']
+    def listed(fd):
+        calls['listdir'] += 1
+        if calls['listdir'] > 1:
+            for offset in range(2):
+                pid = 9000 + calls['listdir'] * 2 + offset
+                processes[pid] = process(pid, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
+        return original_list(fd)
+    def read(parent, pid):
+        reads.append(pid)
+        return original_read(parent, pid)
+    def snapshot(parent, manager):
+        current = original_snapshot(parent, manager)
+        snapshots.append(current)
+        return current
+    ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_snapshot'] = listed, read, snapshot
+    ns['egress_nnp_live']({'uid': 20000}, 'systemd')
+    assert calls['listdir'] == 4 and set(snapshots[0]) == set(processes)
+    assert all(reads.count(pid) == 1 for pid in processes if pid >= 9000), 'all six actual new processes, including the last pair, are read once'
+    assert reads.count(100) == reads.count(200) == reads.count(300) == 1, 'birth checks must not restart the entire expensive collection'
+    assert queries == ['ssh.service', 'ssh.service'] and closed.count(20) == closed.count(11) == 1
+
+
+def incremental_census_rejects_pid_reuse_and_unstable_reads():
+    for variant in ('reused-first-increment', 'reused-last-increment', 'vanished-then-reused', 'new-read-changed', 'cached-birth-invalid'):
+        ns, processes, _responses, queries, closed, _flags = systemd_fixture()
+        calls, reads, births = dict(listdir=0), [], []
+        ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
+        processes[9000] = process(9000, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
+        original_list, original_read, original_birth = ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_birth']
+        def listed(fd):
+            calls['listdir'] += 1
+            if calls['listdir'] > 1:
+                pid = 9100 + calls['listdir']
+                processes[pid] = process(pid, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
+            if (variant == 'reused-first-increment' and calls['listdir'] == 2) or \
+               (variant in ('reused-last-increment', 'vanished-then-reused') and calls['listdir'] == 4):
+                processes[9000] = process(9000, 1, executable='/bin/sh', inode=91, uid=20000, nnp=0)
+                processes[9000]['startTicks'] = '900001'
+            return original_list(fd)
+        def read(parent, pid):
+            reads.append(pid)
+            if variant == 'new-read-changed' and pid == 9102:
+                ns['refuse']('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-identity-or-image-changed'})
+            return original_read(parent, pid)
+        def birth(parent, pid):
+            births.append(pid)
+            if variant == 'vanished-then-reused' and pid == 9000 and calls['listdir'] < 4:
+                return None
+            if variant == 'cached-birth-invalid' and pid == 9000:
+                ns['refuse']('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-birth-invalid'})
+            return original_birth(parent, pid)
+        ns['os'].listdir, ns['egress_nnp_process'], ns['egress_nnp_birth'] = listed, read, birth
+        detail = refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'systemd'), 'EGRESS_NNP_PROCESS_CHANGED')
+        assert detail['snapshotAttempts'] == 1 and detail['stage'] == 'process-snapshot'
+        assert detail['incrementRounds'] == (3 if variant in ('reused-last-increment', 'vanished-then-reused') else 1)
+        expected = 'process-identity-or-image-changed' if variant == 'new-read-changed' else \
+                   'process-birth-invalid' if variant == 'cached-birth-invalid' else 'process-pid-reused'
+        assert detail['reason'] == expected and not queries and 20 not in closed and closed.count(11) == 1
+        assert reads.count(9000) == 1, 'a changed kernel birth is rejected rather than silently overwriting the cached PID'
+
+
+def pinned_process_birth_and_fd_cleanup():
+    for variant in ('valid', 'name-contains-parentheses', 'zombie', 'dead', 'kernel-thread', 'fake-kthread-name',
+                    'wrong-pid', 'truncated', 'invalid-birth', 'invalid-flags', 'overflow-flags', 'too-large',
+                    'missing-directory', 'missing-stat', 'gone-after-stat-open', 'read-failed'):
+        ns, opened, closed = namespace(), [], []
+        fields = [b'S', b'1'] + [b'0'] * 17 + [b'7000']
+        raw = b'70 (sshd arbitrary) ' + b' '.join(fields)
+        if variant == 'name-contains-parentheses':
+            raw = b'70 (name) with (parentheses) ' + b' '.join(fields)
+        elif variant in ('zombie', 'dead', 'kernel-thread', 'invalid-flags', 'overflow-flags'):
+            if variant in ('zombie', 'dead'):
+                fields[0] = b'Z' if variant == 'zombie' else b'X'
+            else:
+                fields[6] = b'2097152' if variant == 'kernel-thread' else b'unknown' if variant == 'invalid-flags' else b'4294967296'
+            raw = b'70 (sshd arbitrary) ' + b' '.join(fields)
+        elif variant == 'fake-kthread-name':
+            raw = b'70 (kthreadd) ' + b' '.join(fields)
+        elif variant == 'wrong-pid':
+            raw = b'71 (sshd arbitrary) ' + b' '.join(fields)
+        elif variant == 'truncated':
+            raw = b'70 (sshd arbitrary) S 1'
+        elif variant == 'invalid-birth':
+            raw = raw.replace(b'7000', b'+7000')
+        elif variant == 'too-large':
+            raw = b'x' * 16385
+        def open_fd(name, flags, **kwargs):
+            opened.append((name, flags, kwargs))
+            if (variant == 'missing-directory' and name == '70') or (variant in ('missing-stat', 'gone-after-stat-open') and name == 'stat'):
+                raise FileNotFoundError('model-gone')
+            return 20 if name == '70' else 21
+        def read(fd, count):
+            assert fd == 21 and count == 16385
+            if variant == 'read-failed':
+                raise PermissionError('model-read-refused')
+            return raw
+        def exists(name, **kwargs):
+            assert name == '70' and kwargs == dict(dir_fd=10, follow_symlinks=False)
+            if variant == 'gone-after-stat-open':
+                raise ProcessLookupError('model-process-exited')
+            return types.SimpleNamespace(st_mode=stat.S_IFDIR)
+        ns['os'] = types.SimpleNamespace(O_RDONLY=1, O_DIRECTORY=2, O_NOFOLLOW=4, O_CLOEXEC=8,
+                                        open=open_fd, close=closed.append, read=read, stat=exists)
+        if variant in ('valid', 'name-contains-parentheses', 'zombie', 'dead', 'kernel-thread', 'fake-kthread-name'):
+            assert ns['egress_nnp_birth'](10, 70) == dict(startTicks='7000', inactive=variant in ('zombie', 'dead', 'kernel-thread'))
+        elif variant in ('missing-directory', 'gone-after-stat-open'):
+            assert ns['egress_nnp_birth'](10, 70) is None
+        elif variant == 'missing-stat':
+            assert refused(ns, lambda: ns['egress_nnp_birth'](10, 70), 'EGRESS_NNP_PROCESS_CHANGED') == \
+                   {'pid': 70, 'reason': 'process-birth-unavailable'}
+        elif variant == 'read-failed':
+            try:
+                ns['egress_nnp_birth'](10, 70)
+            except PermissionError:
+                pass
+            else:
+                raise AssertionError('an unknown stat-read error was accepted')
+        else:
+            assert refused(ns, lambda: ns['egress_nnp_birth'](10, 70), 'EGRESS_NNP_PROCESS_CHANGED') == \
+                   {'pid': 70, 'reason': 'process-birth-invalid'}
+        assert opened[0] == ('70', 15, dict(dir_fd=10))
+        if variant != 'missing-directory':
+            assert opened[1] == ('stat', 13, dict(dir_fd=20))
+        assert closed == ([] if variant == 'missing-directory' else [20] if variant in ('missing-stat', 'gone-after-stat-open') else [21, 20])
+        # Exercise the real snapshot's incomplete-read branch with the same
+        # production stat decoder and pinned-FD fixture, not a duplicated rule.
+        if variant in ('valid', 'fake-kthread-name', 'zombie', 'dead', 'kernel-thread', 'invalid-flags'):
+            closed.clear()
+            ns['os'].listdir = lambda _: ['70']
+            ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
+            ns['egress_nnp_process'] = lambda *_: None
+            if variant in ('zombie', 'dead', 'kernel-thread'):
+                assert ns['egress_nnp_snapshot'](10, 'systemd') == {}
+                assert closed == [21, 20, 21, 20]
+            else:
+                detail = refused(ns, lambda: ns['egress_nnp_snapshot'](10, 'systemd'), 'EGRESS_NNP_PROCESS_CHANGED')
+                assert detail['reason'] == ('process-birth-invalid' if variant == 'invalid-flags' else 'process-read-incomplete')
+                assert detail['snapshotAttempts'] == 3 and detail['incrementRounds'] == 0
+                assert closed == [21, 20] * 3
 
 
 def root_ancestor_failures_and_used_nodes_are_not_retried():
@@ -652,6 +826,24 @@ def pinned_process_identity():
     files['cmdline'] = b'x' * 65537
     detail = refused(ns, lambda: ns['egress_nnp_process'](10, 70), 'EGRESS_NNP_PROCESS_CHANGED')
     assert detail == {'pid': 70, 'reason': 'process-field-too-large', 'file': 'cmdline'}
+    files['cmdline'] = b'/usr/sbin/sshd\0-D\0'
+    original_open, original_readlink = ns['os'].open, ns['os'].readlink
+    ns['os'].listdir = lambda _: ['70']
+    ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
+    for missing in ('stat', 'status', 'cmdline', 'cgroup', 'exe'):
+        def missing_open(name, *args, **kwargs):
+            if name == missing:
+                raise FileNotFoundError('model-live-source-missing')
+            return original_open(name, *args, **kwargs)
+        def missing_exe(*args, **kwargs):
+            if missing == 'exe':
+                raise FileNotFoundError('model-live-executable-missing')
+            return original_readlink(*args, **kwargs)
+        ns['os'].open, ns['os'].readlink = missing_open, missing_exe
+        assert ns['egress_nnp_process'](10, 70) is None
+        detail = refused(ns, lambda: ns['egress_nnp_snapshot'](10, 'systemd'), 'EGRESS_NNP_PROCESS_CHANGED')
+        assert detail['reason'] == ('process-birth-unavailable' if missing == 'stat' else 'process-read-incomplete')
+        assert detail['pid'] == 70 and detail['snapshotAttempts'] == 3 and detail['incrementRounds'] == 0
 
 
 def openrc_current_launchers():
@@ -748,7 +940,9 @@ checks = [live_services_and_root_management, surviving_pre_auth_and_nonroot_sess
           systemd_pam_sessions_and_bounded_authority, systemd_scope_and_listener_refusals,
           systemd_authority_changes_and_fd_cleanup, systemd_pam_identity_changes_and_chain_bounds,
           initial_snapshot_recovers_unrelated_churn, initial_snapshot_rejects_dangerous_new_pids,
-          initial_snapshot_retry_bounds_and_safe_reasons, root_ancestor_failures_and_used_nodes_are_not_retried]
+          initial_snapshot_retry_bounds_and_safe_reasons, root_ancestor_failures_and_used_nodes_are_not_retried,
+          incremental_census_includes_continuous_births, incremental_census_rejects_pid_reuse_and_unstable_reads,
+          pinned_process_birth_and_fd_cleanup]
 for check in checks:
     check()
 print(json.dumps(dict(passed=True, kind='portable-model-only', sourceSha256=hashlib.sha256(source).hexdigest(),

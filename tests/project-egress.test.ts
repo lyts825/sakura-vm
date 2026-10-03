@@ -37,7 +37,9 @@ test('private UID admission verifies protected OpenRC and systemd PAM SSH ancest
     'systemd_pam_sessions_and_bounded_authority', 'systemd_scope_and_listener_refusals',
     'systemd_authority_changes_and_fd_cleanup', 'systemd_pam_identity_changes_and_chain_bounds',
     'initial_snapshot_recovers_unrelated_churn', 'initial_snapshot_rejects_dangerous_new_pids',
-    'initial_snapshot_retry_bounds_and_safe_reasons', 'root_ancestor_failures_and_used_nodes_are_not_retried']);
+    'initial_snapshot_retry_bounds_and_safe_reasons', 'root_ancestor_failures_and_used_nodes_are_not_retried',
+    'incremental_census_includes_continuous_births', 'incremental_census_rejects_pid_reuse_and_unstable_reads',
+    'pinned_process_birth_and_fd_cleanup']);
 });
 
 test('systemd admission verifies effective NNP, authoritative exec flags, SSH templates and future service drop-ins', async () => {

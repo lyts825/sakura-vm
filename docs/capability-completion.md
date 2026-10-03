@@ -4,6 +4,10 @@
 
 ## Shell 子进程继承与私有项目图形程序
 
+独立桌面日志诊断实例在公开项目迁移阶段返回 `EGRESS_NNP_PROCESS_CHANGED`，尚未进入桌面，因此没有生成窗格日志。原 native 回执明确为 `process-census-changed`：初始快照第三轮末尾又发现两个尚未读取的 PID；不能从 PID 数字推断其权限或用途。失败证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-4a2b5875-2092-4c7a-aa29-40ba52d0fdd5/desktop-identity-evidence.json` SHA-256 为 `170580934e8a4f44fcab3f7ee9639a60cb9da974a36e800547efa8f65da7dd4b`；VM、进程及连接全部关闭。
+
+原生采集现先完整读取，再最多三轮有界增量列举；所有实际列举的新增 PID 都由原完整进程读取程序采集，再经过原项目 UID、SSH、定时服务和权限核对。已记录 PID 的内核启动时刻复核防止复用；仍存在的普通进程读取不完整即拒绝，仅内核 stat 明确为僵尸、退出或内核线程可略过。初始变化与增量共用 15 秒窗口，已用 SSH 父链和服务权威仍原样严格复核，最终列举之后出生的进程不属于原子快照。新 `9ed9b6a03c4c204c6c62747989703a42b466d7eab708a73e2a407f5f4a8411d7` 构建的 32 项定向 Node、61 组生产模型和 TypeScript 检查通过；实机功能仍待新鲜实例验证。
+
 再一次新鲜 X11 中，两个公开项目迁移和三项 nft 实机事务通过；公开桌面启动返回固定诊断 `probe/AUTHORITY/OBJECT_ABSENT/check=0; exit=73`，只证明权限核对阶段遇到缺失对象，尚无法判断缺失项。原失败 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-68c178f5-176b-41ac-8768-283dad1179d4/desktop-identity-evidence.json` SHA-256 为 `07a0b8fa9be4b1768bc5994b0b03d66f44e0a21ec6d7982b4b99ecd9dbd10d2f`；VM、进程及连接全部关闭，图形正式场景仍未开始。固定 adapter 现在也为系统对象错误提取可信固定源码函数中的受限行号，最多遍历 64 帧；没有可信行号返回 0，不返回异常文本或文件名。缺失 pane、受保护正文和 runtime 的生产源码 Python 模型定位到各自调用行；31 项定向 Node、17 项模型及 TypeScript 检查通过，证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/desktop-adapter-narrow-b60f104f-20ed-4d75-b731-e0a087cc7a80/verification.json` SHA-256 为 `e49059e26ae6fd29b239cbe23731a483c16ee307501dcd1368f2fb10b0d21e11`。新的实机回执待验证。
 
 最新 `dec047e1f2b5e412115ff4ff5a32c979b27ba7a8cda56e89e6815144c8b07076` 构建的新鲜 X11 实例完成两个公开项目迁移、三项 nftables 1.0.6 事务，APT 成功安装缺少的桌面依赖，桌面路径的原生 UID/NNP 准入返回成功。随后固定 Desktop adapter 以退出码 73 拒绝完整 UID、运行域或 VNC guard 核对；原适配器回执只含通用拒绝，无法判断具体检查失败。图形、剪贴板、单应用和 RFB 正式场景尚未开始。原失败证明保留，VM、进程和连接全部关闭；`E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-26613781-f0f5-49bf-8d86-0a66b37d2e2f/desktop-identity-evidence.json` SHA-256 为 `91f90441445e3287d9adae3d0537b5cb084e1eef513a2a716808f5d89868716c`。
