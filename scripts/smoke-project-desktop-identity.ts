@@ -1360,7 +1360,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     assert.equal(sha256(seed), fixture.before.snapshot.files.find((entry: any) => entry.path === join(fixture.sourceRoot, 'machines', desktopFixtureSource.vmId, 'seed.iso')).sha256);
     await writeFile(join(vmDirectory, 'seed.iso'), seed, { flag: 'wx' });
     await writeFile(join(fixture.root, 'machines.json'), JSON.stringify([{ id: fixture.vmId, name: 'desktop-uid-' + fixture.invocation.slice(0, 8),
-      memoryMiB: 2048, cpus: 2, diskGiB: 6, distro: 'debian', accelerator: 'tcg', forwards: [], snapshots: [], bootstrapped: true,
+      memoryMiB: 2048, cpus: 2, diskGiB: 6, distro: 'debian', accelerator: 'tcg', forwards: [], snapshots: [], bootstrapped: false,
       createdAt: new Date().toISOString(), lastUsedAt: new Date().toISOString() }], null, 2), { flag: 'wx' });
     machines = new Machines(fixture.engine());
     const identityManifestBytes = await readFile(join(workspace, '.sakura-server/assets/project-identity/manifest.json'));
@@ -1495,7 +1495,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     }
     assert.equal(proof.bootstrapReadiness.ready, true, 'Owned cloud-init was not ready within the original bootstrap budget');
     assert.ok(boot);
-    const rekey = `set -eu\ntest "$(cat /sys/class/dmi/id/product_uuid | tr A-F a-f)" = ${quote(fixture.vmId)}\ntest "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(boot)}\ntest ! -L /root/.ssh/authorized_keys\numask 077\nIFS= read -r key\ntest -n "$key"\nprintf '%s\\n' "$key" > /root/.ssh/authorized_keys.sakura-current-cow\nchmod 600 /root/.ssh/authorized_keys.sakura-current-cow\nmv /root/.ssh/authorized_keys.sakura-current-cow /root/.ssh/authorized_keys\n/bin/sync\n`;
+    const rekey = `set -eu\ntest "$(cat /sys/class/dmi/id/product_uuid | tr A-F a-f)" = ${quote(fixture.vmId)}\ntest "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(boot)}\ntest ! -L /root/.ssh/authorized_keys\numask 077\nIFS= read -r key\ntest -n "$key"\nprintf '%s\\n' "$key" > /root/.ssh/authorized_keys.sakura-current-cow\nchmod 600 /root/.ssh/authorized_keys.sakura-current-cow\nmv /root/.ssh/authorized_keys.sakura-current-cow /root/.ssh/authorized_keys\n/bin/sync\nprintf 'SAKURA_READY\\n' > /dev/ttyS0\n`;
     await bootstrapCommand(rekey, freshKey.publicText + '\n', 'rekey');
     await closeClient(bootstrap); oldKey.fill(0); oldKey = undefined;
     const bootUntil = Date.now() + 120000;

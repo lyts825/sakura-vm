@@ -85,6 +85,14 @@ test('pending bootstrap readiness still pins the new DMI and boot and refuses ma
   assert.throws(() => ownedDesktopBootstrapTimeout(180000, 180000));
   assert.throws(() => ownedDesktopBootstrapTimeout(180000, 180001));
   assert.throws(() => ownedDesktopBootstrapTimeout(Number.NaN, 0));
+  const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
+  const catalog = source.slice(source.indexOf("await writeFile(join(fixture.root, 'machines.json')"), source.indexOf('machines = new Machines('));
+  assert.ok(catalog.includes('bootstrapped: false') && !catalog.includes('bootstrapped: true'));
+  const rekeyStart = source.indexOf('const rekey ='), rekeyEnd = source.indexOf('await bootstrapCommand(rekey,', rekeyStart);
+  const rekey = source.slice(rekeyStart, rekeyEnd), syncAt = rekey.indexOf('/bin/sync\\n'), markerAt = rekey.indexOf("printf 'SAKURA_READY\\\\n' > /dev/ttyS0");
+  assert.ok(rekey.includes('cat /sys/class/dmi/id/product_uuid') && rekey.includes('cat /proc/sys/kernel/random/boot_id'));
+  assert.ok(syncAt > rekey.indexOf('mv /root/.ssh/authorized_keys.sakura-current-cow /root/.ssh/authorized_keys') && markerAt > syncAt);
+  assert.ok(source.indexOf('assert.equal(proof.bootstrapReadiness.ready, true,') < rekeyStart);
 });
 
 test('bootstrap cloud snapshot binds the observed guest and bounded original ranges without asserting later or full-log stability', () => {

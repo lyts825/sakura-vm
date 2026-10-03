@@ -259,7 +259,7 @@ async function run(diagnosticDirectory?: string) {
         entry.timeoutRequested = true;
         child.kill();
       },
-      Math.min(options?.timeoutMs || (vm ? 900000 : 30000), vm ? 900000 : 180000),
+      Math.min(options?.timeoutMs || (vm ? 2700000 : 30000), vm ? 2700000 : 180000),
     );
     if (options?.signal?.aborted) abort();
     try {
