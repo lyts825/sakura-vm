@@ -1063,6 +1063,8 @@ export class Machines extends EventEmitter {
         ];
         live.done = this.engine
           .run(vm.architecture === 'aarch64' ? 'sakura-qemu-aarch64' : 'sakura-qemu', args, {
+            owner: `vm:${id}`,
+            processKind: 'vm',
             signal: live.abort.signal,
             timeoutMs: 2147483647,
             output: (b) => this.log(id, b),

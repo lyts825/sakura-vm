@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { POSIXLOOM_COMMIT, QEMU_URL, QEMU_SHA512, ALPINE_URL, ALPINE_SHA512 } from './versions.mjs';
+import { patchPosixLoomProcess } from './patch-posixloom-process.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 process.chdir(root);
@@ -17,12 +18,18 @@ const run = async (exe, args, cwd = root) => {
   const proxy = await setupNetwork.proxyEnvironment();
   try {
     await new Promise((res, rej) => {
-      const child = spawn(exe, args, { cwd, stdio: 'inherit', windowsHide: true,
-        env: { ...process.env, ...proxy.env } });
+      const child = spawn(exe, args, {
+        cwd,
+        stdio: 'inherit',
+        windowsHide: true,
+        env: { ...process.env, ...proxy.env },
+      });
       child.on('error', rej);
       child.on('exit', (code) => (code === 0 ? res() : rej(new Error(`${exe} exited ${code}`))));
     });
-  } finally { await proxy.close(); }
+  } finally {
+    await proxy.close();
+  }
 };
 const npm = (args, cwd) =>
   run(
@@ -53,7 +60,9 @@ const vendor = join(root, '.vendor/posixloom');
 if (!existsSync(vendor)) await run('git', ['clone', 'https://github.com/lyts825/posixloom.git', vendor]);
 await run('git', ['checkout', '--detach', POSIXLOOM_COMMIT], vendor);
 await npm(['ci'], vendor);
+await patchPosixLoomProcess(vendor, { distribution: false });
 await npm(['run', 'build:all'], vendor);
+await patchPosixLoomProcess(vendor);
 if (
   process.platform === 'win32' &&
   !process.env.SAKURA_QEMU_DIR &&
@@ -99,6 +108,8 @@ await writeFile(
   '.data/images/alpine-3.23.source.json',
   JSON.stringify({ url: ALPINE_URL, sha512: ALPINE_SHA512 }, null, 2),
 );
-console.log(existsSync('.sakura-server/index.js')
-  ? '\nSakura is ready. Run npm start.'
-  : '\nSakura is ready. Run npm run build, then npm start.');
+console.log(
+  existsSync('.sakura-server/index.js')
+    ? '\nSakura is ready. Run npm start.'
+    : '\nSakura is ready. Run npm run build, then npm start.',
+);

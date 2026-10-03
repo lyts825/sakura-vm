@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "commit": "92688083ff25d98f44194356f9ec93df0f1f0027",
+  "source": "src/core/process/native.ts",
+  "original": "f3d1b8fad727081f888b9cb7f28381275e1a3091bb95c71b952ec6d4e9e578f4",
+  "patched": "816a32e3b98d303333e1a8fd1ae7cb2fa8c9818433e6fda782f3ba0f262d5c48",
+  "changes": [
+    {
+      "start": 20,
+      "end": 21,
+      "old": [" * 默认 2000ms）内宿主仍无响应，直接 kill 宿主并判 cancelled。"],
+      "replacement": [
+        " * 默认 2000ms）内宿主仍无响应，kill 宿主后等待 close；缺少进程树退出回执时保留清理未确认状态。"
+      ]
+    },
+    {
+      "start": 69,
+      "end": 69,
+      "old": [],
+      "replacement": [
+        "  let hostClosed = false;",
+        "  let spawnFailed = false;",
+        "  let pendingOutcome: CommandOutcome | undefined;"
+      ]
+    },
+    {
+      "start": 91,
+      "end": 91,
+      "old": [],
+      "replacement": [
+        "    // Sending a kill is not confirmation that the native owner or its Job closed.",
+        "    if (!hostClosed) { pendingOutcome = outcome; return; }"
+      ]
+    },
+    {
+      "start": 97,
+      "end": 98,
+      "old": ["      const finalOutcome = outputForwarder.failed"],
+      "replacement": [
+        "      // A normal terminal frame follows Job.finish()/wait_empty(). Killing the",
+        "      // host only requests kill-on-close; without that receipt descendants have",
+        "      // no verified retirement, even when the host's own close was observed.",
+        "      const unconfirmed = executionSent && !spawnFailed &&",
+        "        (!exitOutcome || exitOutcome.kind === \"crashed\");",
+        "      const finalOutcome = unconfirmed",
+        "        ? { kind: \"crashed\" as const, errorCode: \"NATIVE_HOST_CLEANUP_UNCONFIRMED\" }",
+        "        : outputForwarder.failed"
+      ]
+    },
+    {
+      "start": 178,
+      "end": 179,
+      "old": [
+        "  host.once(\"error\", (error) => complete({ kind: \"spawn-failed\", errorCode: (error as NodeJS.ErrnoException).code ?? \"HOST_SPAWN_FAILED\" }));"
+      ],
+      "replacement": [
+        "  host.on(\"error\", (error) => {",
+        "    if (host.pid === undefined) {",
+        "      spawnFailed = true;",
+        "      complete({ kind: \"spawn-failed\", errorCode: (error as NodeJS.ErrnoException).code ?? \"HOST_SPAWN_FAILED\" });",
+        "    } else {",
+        "      protocolError = String(error);",
+        "    }",
+        "  });"
+      ]
+    },
+    {
+      "start": 184,
+      "end": 184,
+      "old": [],
+      "replacement": ["    hostClosed = true;"]
+    },
+    {
+      "start": 185,
+      "end": 186,
+      "old": [
+        "    if (protocolError) complete({ kind: \"crashed\", errorCode: \"NATIVE_HOST_PROTOCOL_FAILED\" });"
+      ],
+      "replacement": [
+        "    if (pendingOutcome) complete(pendingOutcome);",
+        "    else if (protocolError) complete({ kind: \"crashed\", errorCode: \"NATIVE_HOST_PROTOCOL_FAILED\" });"
+      ]
+    },
+    {
+      "start": 213,
+      "end": 214,
+      "old": ["    catch (error) { host.kill(); throw error; }"],
+      "replacement": ["    catch (error) { protocolError = String(error); host.kill(); }"]
+    }
+  ]
+}

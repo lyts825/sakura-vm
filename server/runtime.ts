@@ -12,6 +12,16 @@ import {
 import { ROOT, DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { qemuCpuModel } from '../shared/hardware.ts';
+import { processSupervisor, type ProcessAdmission } from './process-supervisor.ts';
+
+type RunOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  output?: (data: Buffer) => void;
+  owner?: string;
+  processKind?: 'vm' | 'tool';
+  lane?: ProcessAdmission['lane'];
+};
 
 export async function createRuntime() {
   const qemuDir = process.env.SAKURA_QEMU_DIR || join(ROOT, '.tools/qemu');
@@ -66,58 +76,75 @@ export async function createRuntime() {
     throw new AppError('请先构建 PosixLoom Native Host：npm run setup', 503);
   }
   const service = new PosixLoomService(runtime);
-  const runStatus = async (
-    tool: keyof typeof binaries,
-    args: string[],
-    options: { signal?: AbortSignal; timeoutMs?: number } = {},
-  ) => {
-    const sessionId = service.createSession();
-    try {
-      const result = await service.execute({
-        sessionId,
-        kind: 'argv',
-        argv: [tool, ...args],
-        statePolicy: 'isolated',
-        timeoutMs: options.timeoutMs || 30000,
-        signal: options.signal,
-      });
-      if (result.command.kind !== 'exited')
-        throw new Error(result.stderr.toString().trim() || `QEMU: ${JSON.stringify(result.command)}`);
-      return {
-        code: result.command.exitCode,
-        stdout: result.stdout.toString(),
-        stderr: result.stderr.toString(),
-      };
-    } finally {
-      service.sessions.close(sessionId);
-    }
+  const execute = async (tool: keyof typeof binaries, args: string[], options: RunOptions) => {
+    if (!Object.hasOwn(binaries, tool) || !existsSync(binaries[tool]))
+      throw new AppError('未登记或不可用的 QEMU 工具', 503);
+    const kind =
+      options.processKind || (tool.startsWith('sakura-qemu') && !args.includes('--version') ? 'vm' : 'tool');
+    return processSupervisor.run(
+      { owner: options.owner || 'core:qemu', kind, label: tool, lane: options.lane, signal: options.signal },
+      async (control) => {
+        const sessionId = service.createSession();
+        let mayHaveStarted = false,
+          completed = false;
+        try {
+          const result = await service.execute(
+            {
+              sessionId,
+              kind: 'argv',
+              argv: [tool, ...args],
+              statePolicy: 'isolated',
+              timeoutMs: options.timeoutMs ?? 30000,
+              signal: options.signal,
+            },
+            {
+              onStarted: () => {
+                mayHaveStarted = true;
+              },
+              onOutput: (event) => options.output?.(event.data),
+            },
+          );
+          completed = true;
+          if (
+            result.command.kind === 'crashed' &&
+            result.command.errorCode === 'NATIVE_HOST_CLEANUP_UNCONFIRMED'
+          ) {
+            const error = new AppError(
+              '原生宿主未确认进程树退出，保留资源名额',
+              503,
+              'HOST_PROCESS_CLEANUP_PENDING',
+            );
+            control.cleanupPending(error);
+            throw error;
+          }
+          return result;
+        } catch (error) {
+          // An exception after dispatch is not a native terminal acknowledgement.
+          if (mayHaveStarted && !completed) control.cleanupPending(error);
+          throw error;
+        } finally {
+          service.sessions.close(sessionId);
+        }
+      },
+    );
   };
-  const run = async (
-    tool: keyof typeof binaries,
-    args: string[],
-    options: { signal?: AbortSignal; timeoutMs?: number; output?: (data: Buffer) => void } = {},
-  ) => {
-    const sessionId = service.createSession();
-    try {
-      const result = await service.execute(
-        {
-          sessionId,
-          kind: 'argv',
-          argv: [tool, ...args],
-          statePolicy: 'isolated',
-          timeoutMs: options.timeoutMs || 30000,
-          signal: options.signal,
-        },
-        { onOutput: (e) => options.output?.(e.data) },
-      );
-      if (result.command.kind !== 'exited' || result.command.exitCode !== 0) {
-        if (options.signal?.aborted) return '';
-        throw new Error(result.stderr.toString().trim() || `QEMU: ${JSON.stringify(result.command)}`);
-      }
-      return result.stdout.toString();
-    } finally {
-      service.sessions.close(sessionId);
+  const runStatus = async (tool: keyof typeof binaries, args: string[], options: RunOptions = {}) => {
+    const result = await execute(tool, args, options);
+    if (result.command.kind !== 'exited')
+      throw new Error(result.stderr.toString().trim() || `QEMU: ${JSON.stringify(result.command)}`);
+    return {
+      code: result.command.exitCode,
+      stdout: result.stdout.toString(),
+      stderr: result.stderr.toString(),
+    };
+  };
+  const run = async (tool: keyof typeof binaries, args: string[], options: RunOptions = {}) => {
+    const result = await execute(tool, args, options);
+    if (result.command.kind !== 'exited' || result.command.exitCode !== 0) {
+      if (options.signal?.aborted) return '';
+      throw new Error(result.stderr.toString().trim() || `QEMU: ${JSON.stringify(result.command)}`);
     }
+    return result.stdout.toString();
   };
   const version = (await run('sakura-qemu', ['--version'])).split(/\r?\n/)[0];
   // Probe a paused, diskless VM. A compiled-in accelerator is not sufficient:
@@ -143,7 +170,7 @@ export async function createRuntime() {
         '-qmp',
         `tcp:127.0.0.1:${port},server=on,wait=off`,
       ],
-      { signal: abort.signal, timeoutMs: 5000 },
+      { signal: abort.signal, timeoutMs: 5000, processKind: 'tool', lane: 'control' },
     )
       .catch(() => {})
       .finally(() => {
@@ -165,7 +192,15 @@ export async function createRuntime() {
       await probe;
     }
   }
-  return { runtime, service, run, runStatus, version, whpxAvailable, qemuIoAvailable,
-    aarch64Available: existsSync(binaries['sakura-qemu-aarch64']) };
+  return {
+    runtime,
+    service,
+    run,
+    runStatus,
+    version,
+    whpxAvailable,
+    qemuIoAvailable,
+    aarch64Available: existsSync(binaries['sakura-qemu-aarch64']),
+  };
 }
 export type Engine = Awaited<ReturnType<typeof createRuntime>>;

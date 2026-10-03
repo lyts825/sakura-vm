@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
@@ -16,7 +15,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
+import { processSupervisor, type ManagedHelper } from './process-supervisor.ts';
 import { z } from 'zod';
 import type { BootAttachment, Machines } from './machines.ts';
 import { AppError } from '../shared/errors.ts';
@@ -43,31 +42,47 @@ type Active = { boot: object; close: () => Promise<void> };
 
 export function trustedBootArguments(socket: string) {
   const path = socket.replaceAll(',', ',,');
-  return ['-global', 'driver=cfi.pflash01,property=secure,value=on',
-    '-chardev', `socket,id=sakura-tpm,path=${path}`,
-    '-tpmdev', 'emulator,id=sakura-tpmdev,chardev=sakura-tpm',
-    '-device', 'tpm-tis,tpmdev=sakura-tpmdev'];
+  return [
+    '-global',
+    'driver=cfi.pflash01,property=secure,value=on',
+    '-chardev',
+    `socket,id=sakura-tpm,path=${path}`,
+    '-tpmdev',
+    'emulator,id=sakura-tpmdev,chardev=sakura-tpm',
+    '-device',
+    'tpm-tis,tpmdev=sakura-tpmdev',
+  ];
 }
 
 export class TrustedBootService {
+  private lifetime = new AbortController();
+  private starting = new Set<Promise<BootAttachment | undefined>>();
   private policies: Record<string, Policy> = {};
   private active = new Map<string, Active>();
   private writes = Promise.resolve();
   private closed = false;
-  constructor(private machines: Machines,
+  constructor(
+    private machines: Machines,
     private blocked: () => boolean = () => false,
-    private mutation: (delta: number) => void = () => {}) {}
+    private mutation: (delta: number) => void = () => {},
+  ) {}
 
   async init() {
-    this.policies = z.record(z.uuid(), policySchema).parse(
-      await readStore(join(DATA, 'trusted-boot.json'), () => ({})));
+    this.policies = z
+      .record(z.uuid(), policySchema)
+      .parse(await readStore(join(DATA, 'trusted-boot.json'), () => ({})));
     this.machines.prepareTrustedFirmware = async (vm) => {
       if (!this.policies[vm.id]?.enabled) return undefined;
       if (this.closed || this.blocked()) throw new AppError('TPM 与安全启动暂不可启动', 409);
       await this.requireSupported(vm);
       return this.firmware(vm.id);
     };
-    this.machines.prepareTrustedBootAttachment = (vm, onExit) => this.prepare(vm, onExit);
+    this.machines.prepareTrustedBootAttachment = (vm, onExit) => {
+      const task = this.prepare(vm, onExit);
+      this.starting.add(task);
+      void task.finally(() => this.starting.delete(task)).catch(() => {});
+      return task;
+    };
     this.machines.trustedBootStateFingerprint = (id) => this.fingerprint(id);
     this.machines.trustedBootSnapshot = {
       capture: (id, snapshotId) => this.saveSnapshot(id, snapshotId),
@@ -78,11 +93,13 @@ export class TrustedBootService {
   }
 
   private async save(id: string, policy: Policy) {
-    const operation = this.writes.catch(() => {}).then(async () => {
-      const next = { ...this.policies, [id]: policy };
-      await writeStore(join(DATA, 'trusted-boot.json'), next);
-      this.policies = next;
-    });
+    const operation = this.writes
+      .catch(() => {})
+      .then(async () => {
+        const next = { ...this.policies, [id]: policy };
+        await writeStore(join(DATA, 'trusted-boot.json'), next);
+        this.policies = next;
+      });
     this.writes = operation;
     await operation;
   }
@@ -92,9 +109,12 @@ export class TrustedBootService {
   }
 
   private async saveSnapshot(id: string, snapshotId: string) {
-    const state = await this.capture(id) || { enabled: false, files: [] };
-    await writeFile(this.snapshotFile(id, snapshotId),
-      JSON.stringify(encodeTrustedBootArchive(state)), { flag: 'wx', mode: 0o600, flush: true });
+    const state = (await this.capture(id)) || { enabled: false, files: [] };
+    await writeFile(this.snapshotFile(id, snapshotId), JSON.stringify(encodeTrustedBootArchive(state)), {
+      flag: 'wx',
+      mode: 0o600,
+      flush: true,
+    });
   }
 
   private async readSnapshot(id: string, snapshotId: string): Promise<TrustedBootFiles | undefined> {
@@ -111,11 +131,16 @@ export class TrustedBootService {
     if (!info.isFile() || info.isSymbolicLink() || info.size > 48 * 1024 ** 2)
       throw new AppError('快照 TPM 状态文件类型或大小无效', 409);
     let state: TrustedBootFiles;
-    try { state = decodeTrustedBootArchive(JSON.parse(await readFile(file, 'utf8'))); }
-    catch { throw new AppError('快照 TPM 状态编码或校验失败', 409); }
+    try {
+      state = decodeTrustedBootArchive(JSON.parse(await readFile(file, 'utf8')));
+    } catch {
+      throw new AppError('快照 TPM 状态编码或校验失败', 409);
+    }
     const vm = this.machines.get(id);
-    if (state.enabled && (vm.firmware !== 'uefi' || vm.architecture === 'aarch64' ||
-        !vm.distro || vm.distro === 'alpine'))
+    if (
+      state.enabled &&
+      (vm.firmware !== 'uefi' || vm.architecture === 'aarch64' || !vm.distro || vm.distro === 'alpine')
+    )
       throw new AppError('历史 TPM 快照与当前实例固件或发行版不兼容', 409);
     return state;
   }
@@ -123,7 +148,9 @@ export class TrustedBootService {
   private async prepareSnapshotRestore(id: string, snapshotId: string) {
     const state = await this.readSnapshot(id, snapshotId);
     await this.capture(id); // Validate the current state before qemu-img changes the disk.
-    return async () => { if (state) await this.replaceCurrent(id, state); };
+    return async () => {
+      if (state) await this.replaceCurrent(id, state);
+    };
   }
 
   private async removeSnapshot(id: string, snapshotId: string) {
@@ -147,11 +174,15 @@ export class TrustedBootService {
     const oldTpm = join(stage, 'previous-tpm');
     const newVars = join(stage, 'new-vars');
     const newTpm = join(stage, 'new-tpm');
-    const exists = async (path: string) => lstat(path).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return null;
-      throw error;
-    });
-    let movedVars = false, movedTpm = false, installedVars = false, installedTpm = false;
+    const exists = async (path: string) =>
+      lstat(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      });
+    let movedVars = false,
+      movedTpm = false,
+      installedVars = false,
+      installedTpm = false;
     let preserveStage = false;
     try {
       for (const file of state.files) {
@@ -159,14 +190,29 @@ export class TrustedBootService {
           await writeFile(newVars, file.data, { flag: 'wx', mode: 0o600, flush: true });
         else {
           await mkdir(newTpm, { recursive: true, mode: 0o700 });
-          await writeFile(join(newTpm, file.name.slice(5)), file.data,
-            { flag: 'wx', mode: 0o600, flush: true });
+          await writeFile(join(newTpm, file.name.slice(5)), file.data, {
+            flag: 'wx',
+            mode: 0o600,
+            flush: true,
+          });
         }
       }
-      if (await exists(vars)) { await rename(vars, oldVars); movedVars = true; }
-      if (await exists(tpm)) { await rename(tpm, oldTpm); movedTpm = true; }
-      if (await exists(newVars)) { await rename(newVars, vars); installedVars = true; }
-      if (await exists(newTpm)) { await rename(newTpm, tpm); installedTpm = true; }
+      if (await exists(vars)) {
+        await rename(vars, oldVars);
+        movedVars = true;
+      }
+      if (await exists(tpm)) {
+        await rename(tpm, oldTpm);
+        movedTpm = true;
+      }
+      if (await exists(newVars)) {
+        await rename(newVars, vars);
+        installedVars = true;
+      }
+      if (await exists(newTpm)) {
+        await rename(newTpm, tpm);
+        installedTpm = true;
+      }
       await this.save(id, { enabled: state.enabled });
     } catch (error) {
       try {
@@ -197,8 +243,7 @@ export class TrustedBootService {
     const files: TrustedBootFiles['files'] = [];
     let total = 0;
     const add = async (name: string, path: string, size: number) => {
-      if (size > MAX_TRUSTED_BOOT_FILE || total + size > MAX_TRUSTED_BOOT_TOTAL ||
-          files.length >= 16)
+      if (size > MAX_TRUSTED_BOOT_FILE || total + size > MAX_TRUSTED_BOOT_TOTAL || files.length >= 16)
         throw new AppError('实例 TPM 状态文件数量或大小超限', 409);
       const data = await readFile(path);
       files.push({ name, data });
@@ -231,8 +276,7 @@ export class TrustedBootService {
           throw new AppError('实例 TPM 状态文件名无效', 409);
         const path = join(stateDir, name);
         const info = await lstat(path);
-        if (!info.isFile() || info.isSymbolicLink())
-          throw new AppError('实例 TPM 状态文件无效', 409);
+        if (!info.isFile() || info.isSymbolicLink()) throw new AppError('实例 TPM 状态文件无效', 409);
         await add(`tpm2/${name}`, path, info.size);
       }
     }
@@ -249,8 +293,7 @@ export class TrustedBootService {
     this.machines.requireStopped(id);
     const directory = await regularDirectory(vmDir(id));
     for (const { name, data } of snapshot.files) {
-      const [folder, file] = name.startsWith('tpm2/')
-        ? ['tpm2', name.slice(5)] : ['', name];
+      const [folder, file] = name.startsWith('tpm2/') ? ['tpm2', name.slice(5)] : ['', name];
       const targetDir = folder ? join(directory, folder) : directory;
       if (folder) {
         await mkdir(targetDir, { recursive: true, mode: 0o700 });
@@ -272,13 +315,18 @@ export class TrustedBootService {
   private async requireSupported(vm: VMRecord) {
     if (process.platform !== 'linux' || vm.architecture === 'aarch64')
       throw new AppError('TPM 与安全启动目前需要 Linux x86_64 宿主和客户机', 503);
-    if (vm.firmware !== 'uefi')
-      throw new AppError('启用安全启动前，请先把实例固件设为 UEFI', 409);
+    if (vm.firmware !== 'uefi') throw new AppError('启用安全启动前，请先把实例固件设为 UEFI', 409);
     if (!vm.distro || vm.distro === 'alpine')
       throw new AppError('当前安全启动链仅支持 Debian 和 Ubuntu 镜像', 409);
     const host = await probeTrustedBootHost();
-    if (!host.secureFirmware || !host.varsTemplate || !host.smm ||
-        !host.tpmBackend || !host.swtpm || !host.rebootAction)
+    if (
+      !host.secureFirmware ||
+      !host.varsTemplate ||
+      !host.smm ||
+      !host.tpmBackend ||
+      !host.swtpm ||
+      !host.rebootAction
+    )
       throw new AppError('宿主缺少预登记安全启动固件、QEMU 6.0+ TPM/SMM 后端或 swtpm', 503);
   }
 
@@ -299,8 +347,7 @@ export class TrustedBootService {
     return { code: paths.secureFirmware, vars };
   }
 
-  private async prepare(vm: VMRecord,
-    onExit: (error: string) => void): Promise<BootAttachment | undefined> {
+  private async prepare(vm: VMRecord, onExit: (error: string) => void): Promise<BootAttachment | undefined> {
     if (!this.policies[vm.id]?.enabled) return undefined;
     if (this.closed || this.blocked()) throw new AppError('TPM 与安全启动暂不可启动', 409);
     await this.requireSupported(vm);
@@ -310,54 +357,56 @@ export class TrustedBootService {
     await chmod(stateDir, 0o700);
     const dir = await mkdtemp(join(tmpdir(), 'sakura-tpm-'));
     const socket = join(dir, 'tpm.sock');
-    const child = spawn(trustedBootPaths().swtpm,
-      ['socket', '--tpm2', '--tpmstate', `dir=${stateDir},mode=0600`,
-        '--ctrl', `type=unixio,path=${socket},mode=0600`, '--terminate'],
-      { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
-    let closing = false, exited = false, failure = '';
-    child.stderr?.on('data', (chunk: Buffer) => {
-      failure = (failure + chunk.toString()).slice(-16_384);
-    });
-    child.on('error', (error) => { failure = error.message; exited = true; });
-    child.on('exit', (code, signal) => {
-      exited = true;
-      // With --terminate, swtpm exits cleanly when QEMU closes its control
-      // socket during a guest shutdown or reboot. Only abnormal exits should
-      // turn the VM into an error while it is otherwise running.
-      if (!closing && (code !== 0 || signal || failure.trim()))
-        onExit(failure.trim() || `exit=${code}, signal=${signal}`);
-    });
-    const close = async () => {
-      if (closing) return;
-      closing = true;
-      if (!exited) {
-        const stopped = new Promise<void>((resolve) => child.once('close', () => resolve()));
-        child.kill('SIGTERM');
-        await Promise.race([stopped, delay(2000)]);
-        if (!exited) {
-          child.kill('SIGKILL');
-          await stopped;
-        }
-      }
-      await rm(dir, { recursive: true, force: true });
-    };
+    const boot = this.machines.live.get(vm.id);
+    let daemon: ManagedHelper | undefined, cleanup: Promise<void> | undefined;
+    const close = () =>
+      (cleanup ||= (async () => {
+        await daemon?.close();
+        await rm(dir, { recursive: true, force: true });
+      })().catch((error) => {
+        cleanup = undefined;
+        throw error;
+      }));
     try {
-      const deadline = performance.now() + 5000;
-      while (performance.now() < deadline && !exited) {
-        if ((await lstat(socket).catch(() => null))?.isSocket()) {
-          const active: Active = { boot: this.machines.live.get(vm.id)!, close };
-          this.active.set(vm.id, active);
-          return { args: trustedBootArguments(socket),
-            machine: 'q35,smm=on', close: async () => {
-              if (this.active.get(vm.id) === active) this.active.delete(vm.id);
-              await close();
-            } };
-        }
-        await delay(50);
-      }
-      throw new AppError(failure.trim() || 'swtpm 未在限时内创建套接字', 503);
+      daemon = await processSupervisor.helper({
+        owner: `vm:${vm.id}`,
+        helper: 'swtpm',
+        label: 'TPM',
+        file: trustedBootPaths().swtpm,
+        args: [
+          'socket',
+          '--tpm2',
+          '--tpmstate',
+          `dir=${stateDir},mode=0600`,
+          '--ctrl',
+          `type=unixio,path=${socket},mode=0600`,
+          '--terminate',
+        ],
+        signal: AbortSignal.any([this.lifetime.signal, ...(boot?.abort ? [boot.abort.signal] : [])]),
+        onExit: ({ code, signal, failure }) => {
+          // --terminate permits a clean exit when QEMU closes its control socket.
+          if (code !== 0 || signal || failure) onExit(failure || `exit=${code}, signal=${signal}`);
+        },
+      });
+      await daemon.ready(async () => !!(await lstat(socket).catch(() => null))?.isSocket());
+      if (this.closed || this.machines.live.get(vm.id) !== boot) throw new AppError('实例启动已取消', 409);
+      const active: Active = { boot: boot!, close };
+      this.active.set(vm.id, active);
+      return {
+        args: trustedBootArguments(socket),
+        machine: 'q35,smm=on',
+        close: async () => {
+          await close();
+          if (this.active.get(vm.id) === active) this.active.delete(vm.id);
+        },
+      };
     } catch (error) {
-      await close();
+      try {
+        await close();
+      } catch (cleanupError) {
+        this.active.set(vm.id, { boot: boot!, close });
+        throw cleanupError;
+      }
       throw error;
     }
   }
@@ -365,10 +414,12 @@ export class TrustedBootService {
   async view(id: string) {
     this.machines.get(id);
     const active = this.active.get(id);
-    return { policy: this.policies[id] || { enabled: false },
+    return {
+      policy: this.policies[id] || { enabled: false },
       stopped: this.machines.state(id) === 'stopped',
-      attached: !!active && active.boot === this.machines.live.get(id) &&
-        this.machines.state(id) === 'running' };
+      attached:
+        !!active && active.boot === this.machines.live.get(id) && this.machines.state(id) === 'running',
+    };
   }
 
   async action(id: string, raw: unknown) {
@@ -378,7 +429,10 @@ export class TrustedBootService {
     this.machines.requireUnlocked(id);
     if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
     if (input.operation === 'check')
-      return { ...await inspectTrustedBoot(this.machines, id), policy: this.policies[id] || { enabled: false } };
+      return {
+        ...(await inspectTrustedBoot(this.machines, id)),
+        policy: this.policies[id] || { enabled: false },
+      };
     this.mutation(1);
     try {
       await this.machines.locked(id, async () => {
@@ -387,17 +441,27 @@ export class TrustedBootService {
         await this.save(id, input.policy);
       });
       return this.view(id);
-    } finally { this.mutation(-1); }
+    } finally {
+      this.mutation(-1);
+    }
   }
 
   async close() {
     this.closed = true;
+    this.lifetime.abort();
     await this.writes;
-    await Promise.allSettled([...this.active.values()].map((entry) => entry.close()));
-    this.active.clear();
+    await Promise.allSettled([...this.starting]);
+    const cleanup = await Promise.allSettled(
+      [...this.active].map(async ([id, entry]) => {
+        await entry.close();
+        if (this.active.get(id) === entry) this.active.delete(id);
+      }),
+    );
     this.machines.prepareTrustedFirmware = undefined;
     this.machines.prepareTrustedBootAttachment = undefined;
     this.machines.trustedBootStateFingerprint = undefined;
     this.machines.trustedBootSnapshot = undefined;
+    const failed = cleanup.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
+    if (failed.length) throw new AggregateError(failed, 'TPM 进程清理尚未确认');
   }
 }
