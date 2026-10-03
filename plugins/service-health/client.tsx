@@ -1,4 +1,4 @@
-import type { JobView } from '../../server/jobs';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import type { ProjectService } from '../../server/project-services';
 import type { HealthView } from '../../server/service-health';
 import '../../src/development.css';

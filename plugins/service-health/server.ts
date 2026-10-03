@@ -1,10 +1,11 @@
+import { services as serviceHealthServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { ServiceHealth } from '../../server/service-health.ts';
 export async function activate(host: PluginContext) {
-  host.health = new ServiceHealth(host.machines, host.workspaces);
+  host.provide(serviceHealthServices.health, new ServiceHealth(host.machines, host.workspaces));
 }
 export async function route(
   this: PluginContext,

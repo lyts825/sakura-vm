@@ -6,9 +6,10 @@ import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { SANDBOX_ARTIFACT_BYTES, type SandboxArtifact } from '../shared/sandbox.ts';
 import { ftpStat } from './files.ts';
-import type { JobView } from './jobs.ts';
+import type { JobView } from '../shared/contracts/jobs.ts';
 import type { Machines } from './machines.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 
 export const artifactPathSchema = z
   .string()

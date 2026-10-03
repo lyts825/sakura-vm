@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, DATA } from './model.ts';
-import type { Jobs, JobView } from './jobs.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import type { Jobs } from './jobs.ts';
+import type { JobView } from '../shared/contracts/jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { LogRetentionPolicy, LogRetentionSummary, LogRetentionView } from '../shared/log-retention.ts';
 

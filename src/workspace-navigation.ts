@@ -1,4 +1,4 @@
-import type { VMStatus, VMView } from '../server/model';
+import type { VMStatus, VMView } from '../shared/contracts/vm.ts';
 
 export type WorkspaceTarget = { id?: string; page?: string; tab?: string };
 

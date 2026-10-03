@@ -1,12 +1,17 @@
-import {spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio} from 'node:child_process';
-import {createHash,randomUUID} from 'node:crypto';
-import {join,win32,resolve} from 'node:path';
-import type {Duplex} from 'node:stream';
-import type {Client} from 'ssh2';
-import {z} from 'zod';
-import {AppError,DATA,ROOT} from './model.ts';
-import type {Machines} from './machines.ts';
-import type {GpgAgentContext} from './gpg-agent-scope.ts';
+import {
+  spawn,
+  type ChildProcessWithoutNullStreams,
+  type SpawnOptionsWithoutStdio,
+} from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { join, win32, resolve } from 'node:path';
+import type { Duplex } from 'node:stream';
+import type { Client } from 'ssh2';
+import { z } from 'zod';
+import { AppError } from '../shared/errors.ts';
+import { DATA, ROOT } from './paths.ts';
+import type { Machines } from './machines.ts';
+import type { GpgAgentContext } from './gpg-agent-scope.ts';
 
 const digest=z.string().regex(/^[a-f0-9]{64}$/);
 const localPath=z.string().min(4).max(32767).regex(/^[A-Za-z]:\\[^\x00-\x1f]*$/).refine(value=>win32.normalize(value)===value&&!value.split('\\').slice(1).some(part=>!part||part==='.'||part==='..'||/[\/:*?"<>|]/.test(part)||/[ .]$/.test(part)));

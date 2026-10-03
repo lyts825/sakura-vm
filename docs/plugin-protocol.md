@@ -11,6 +11,7 @@ plugins/
   commands/
     manifest.ts            纯数据声明，Web 和服务端共用
     server.ts              受信任的服务入口，只在启用时导入
+    services.ts            提供者拥有的带类型服务引用
     client.tsx             可选的浏览器入口，按需导入
   packs/
     development.ts         组合清单，无运行代码
@@ -92,6 +93,8 @@ HTTP 声明拥有完整命名空间及其子路径，例如快照插件的 `/api
 WebSocket 入口仍是宿主支持的固定通道。页面、标签和开发功能区使用受校验的标识：内置旧入口保持兼容，新入口从同包 `client.tsx` 的导出按需加载；目录检查会拒绝缺少浏览器入口的自定义声明。界面隐藏只是呈现逻辑，HTTP 与 WebSocket 均有服务端启用检查。
 
 ## 服务访问与生命周期
+
+内置插件现在通过同包 `services.ts` 导出 `ServiceRef<T>`，使用 `host.provide(services.commands, value)` 和 `host.use(services.commands)` 注册与访问服务，返回类型由提供者确定。`host.optional(ref)` 返回可选服务。宿主检查引用的提供者、声明归属和直接依赖；旧字符串 API 与服务字段保留兼容，所有服务共享一份存储。详见 [架构与依赖边界](architecture.md)。
 
 `server.ts` 导出同包 `manifest`、`activate(context)`、`route(...)`，可选导出 `operations` 和 `deactivate(context)`。完整签名在 [plugin-api.ts](../server/plugin-api.ts)，不从某个业务插件的函数反推接口。新服务通过 `context.provide('name', value)` 注册，通过 `use(provider, 'name')` 或 `optional(provider, 'name')` 读取直接依赖提供的服务；无需给宿主增加新的服务字段。
 

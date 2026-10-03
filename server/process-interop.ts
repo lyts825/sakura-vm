@@ -4,7 +4,8 @@ import { createReadStream } from 'node:fs';
 import { lstat, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { Machines } from './machines.ts';
 

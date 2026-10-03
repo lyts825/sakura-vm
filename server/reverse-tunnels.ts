@@ -7,18 +7,35 @@ import type { Duplex } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual as same } from 'node:util';
 import { z } from 'zod';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import type { Machines } from './machines.ts';
-import { projectPrivateValues, projectVersion, type Workspaces, type Project } from './workspaces.ts';
+import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { writeStore } from './local-store.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
-import { ProjectIdentities, projectIdentityPayload, projectIdentitySchema, projectIdentityRunSchema,
-  type ProjectIdentity, type ProjectIdentityRun } from './project-identity.ts';
-import { ProjectReverseTunnelScope, projectReverseTunnelRecordSchema, type ProjectReverseTunnelRecord } from './project-service-scope.ts';
-import { reverseTunnelBrokerCommand, reverseTunnelListenerCommand, reverseTunnelListenerSchema,
-  openReverseTunnelBridge, type ReverseTunnelListener } from './reverse-tunnel-transport.ts';
+import {
+  ProjectIdentities,
+  projectIdentityPayload,
+  projectIdentitySchema,
+  projectIdentityRunSchema,
+  type ProjectIdentity,
+  type ProjectIdentityRun,
+} from './project-identity.ts';
+import {
+  ProjectReverseTunnelScope,
+  projectReverseTunnelRecordSchema,
+  type ProjectReverseTunnelRecord,
+} from './project-service-scope.ts';
+import {
+  reverseTunnelBrokerCommand,
+  reverseTunnelListenerCommand,
+  reverseTunnelListenerSchema,
+  openReverseTunnelBridge,
+  type ReverseTunnelListener,
+} from './reverse-tunnel-transport.ts';
 import { redactValues } from './secrets.ts';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);

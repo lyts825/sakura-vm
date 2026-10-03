@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DATA, AppError, createSchema } from './model.ts';
+import { DATA } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
+import { createSchema } from '../shared/contracts/vm.ts';
 import type { Machines } from './machines.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { deviceProfileSchema, hardwareArguments } from '../shared/hardware.ts';

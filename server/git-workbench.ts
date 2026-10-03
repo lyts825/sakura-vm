@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import type { Project, Workspaces } from './workspaces.ts';
-import { AppError } from './model.ts';
-import { quote, textVersion } from './files.ts';
+import type { Project } from './project-config.ts';
+import type { Workspaces } from './workspaces.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
+import { textVersion } from './files.ts';
 import { posix } from 'node:path';
 import { Jobs } from './jobs.ts';
 import { isGitConflict, type GitChange, type GitUpstream } from '../shared/git.ts';

@@ -1,14 +1,15 @@
+import { services as extensionsServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { ExtendedFeatures } from '../../server/extended-features.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.extended = new ExtendedFeatures(m, host.workspaces);
+  host.provide(extensionsServices.extended, new ExtendedFeatures(m, host.workspaces));
   host.registerJobs(host.extended.jobs, (job) => {
     if (job.action?.startsWith('operation:'))
       throw new AppError('此工程操作包含参数，请回到能力中心重新执行');

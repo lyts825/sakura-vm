@@ -1,7 +1,8 @@
 import { stat, statfs, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
-import { DATA, AppError } from './model.ts';
+import { DATA } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import { distributions } from './images.ts';
 import { Jobs } from './jobs.ts';

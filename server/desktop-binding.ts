@@ -5,17 +5,23 @@ import { pipeline } from 'node:stream/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { isDeepStrictEqual } from 'node:util';
-import { AppError, guestPath, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { guestPath } from '../shared/paths.ts';
+import { vmDir } from './paths.ts';
 import type { Machines } from './machines.ts';
-import type { Project } from './workspaces.ts';
+import type { Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import { writeStore } from './local-store.ts';
 import { envPrefix } from './project-services.ts';
-import { projectNetworkCommand, ensureProjectNetworkScript,
-  projectNetworkNamespace, projectNetworkCheckScript } from './project-network-isolation.ts';
+import {
+  projectNetworkCommand,
+  ensureProjectNetworkScript,
+  projectNetworkNamespace,
+  projectNetworkCheckScript,
+} from './project-network-isolation.ts';
 import { uidCleanupScript } from './single-app-sandbox.ts';
-import { desktopPreferencesSchema } from './desktop-preferences.ts';
+import { desktopPreferencesSchema } from '../shared/desktop-preferences.ts';
 import { projectIdentitySchema, projectIdentityRunSchema } from './project-identity.ts';
 import { projectDesktopRecordSchema } from './project-service-scope.ts';
 import { desktopEndpointSchema } from './desktop-project-control.ts';

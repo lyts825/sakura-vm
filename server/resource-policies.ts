@@ -1,7 +1,9 @@
 import { cpus, totalmem, freemem } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DATA, AppError, type VMRecord } from './model.ts';
+import { DATA } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
+import { type VMRecord } from '../shared/contracts/vm.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 export const reservationSchema = z

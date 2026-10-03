@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { isIP } from 'node:net';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 const path = z
   .string()

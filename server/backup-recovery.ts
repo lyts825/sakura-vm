@@ -3,11 +3,13 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { backupRecoverySchema } from '../shared/backup-recovery.ts';
 import type { SandboxExecution } from '../shared/sandbox.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import type { Machines } from './machines.ts';
 import type { Backups } from './backups.ts';
 import type { Bundles } from './bundles.ts';
-import { Jobs, type JobView } from './jobs.ts';
+import { Jobs } from './jobs.ts';
+import { type JobView } from '../shared/contracts/jobs.ts';
 import { SandboxArtifacts } from './sandbox-artifacts.ts';
 import { rescueSetup } from './rescue.ts';
 

@@ -2,20 +2,41 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import type { Project } from './workspaces.ts';
-import { AppError, vmDir } from './model.ts';
-import { quote } from './files.ts';
+import type { Project } from './project-config.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
+import { quote } from './shell.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { guestTask } from './guest-task.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { assertNoPendingProjectDirectoryMigration } from './project-directory-migration.ts';
-import { SshAgentScopes, OwnedForwardAgent, sshAgentResourceSchema, sshAgentSocketPath, bindTaskAgent,
-  type SshAgentResource, type SshAgentContext } from './ssh-agent-scope.ts';
-import { GpgAgentScopes, gpgAgentResourceSchema, gpgAgentHomePath, bindTaskGpg,
-  type GpgAgentResource, type GpgAgentContext } from './gpg-agent-scope.ts';
+import { assertNoPendingProjectDirectoryMigration } from './project-admission.ts';
+import {
+  SshAgentScopes,
+  OwnedForwardAgent,
+  sshAgentResourceSchema,
+  sshAgentSocketPath,
+  bindTaskAgent,
+  type SshAgentResource,
+  type SshAgentContext,
+} from './ssh-agent-scope.ts';
+import {
+  GpgAgentScopes,
+  gpgAgentResourceSchema,
+  gpgAgentHomePath,
+  bindTaskGpg,
+  type GpgAgentResource,
+  type GpgAgentContext,
+} from './gpg-agent-scope.ts';
 import { OwnedGpgForward } from './gpg-agent-host.ts';
-import { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema, projectIdentityNetworkSchema,
-  type ProjectIdentity, type ProjectIdentityRun, type ProjectIdentityExecution } from './project-identity.ts';
+import {
+  ProjectIdentities,
+  projectIdentitySchema,
+  projectIdentityRunSchema,
+  projectIdentityNetworkSchema,
+  type ProjectIdentity,
+  type ProjectIdentityRun,
+  type ProjectIdentityExecution,
+} from './project-identity.ts';
 import { projectIdentitySshDaemonSchema, type ProjectIdentitySshDaemon } from './project-identity.ts';
 
 const bindingSchema = z.object({ directory: z.string().min(1), networkIsolation: z.enum(['host', 'private']) }).strict();

@@ -1,9 +1,17 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual, X509Certificate } from 'node:crypto';
 import { stat } from 'node:fs/promises';
-import { request as httpsRequest, createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
+import {
+  request as httpsRequest,
+  createServer as createHttpsServer,
+  type Server as HttpsServer,
+} from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createConnection, createServer as createTcpServer, type Server as TcpServer,
-  type Socket } from 'node:net';
+import {
+  createConnection,
+  createServer as createTcpServer,
+  type Server as TcpServer,
+  type Socket,
+} from 'node:net';
 import { join } from 'node:path';
 import { createSecureContext, type TLSSocket } from 'node:tls';
 import type { Duplex, Writable } from 'node:stream';
@@ -11,7 +19,9 @@ import { generate } from 'selfsigned';
 import { z } from 'zod';
 import { readJsonBody } from './http.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, createSchema, organizationSchema, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { createSchema, organizationSchema } from '../shared/contracts/vm.ts';
+import { DATA } from './paths.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
 import { qmp } from './qmp.ts';
 import { liveMigrationProjectsSchema } from './live-migration-projects.ts';

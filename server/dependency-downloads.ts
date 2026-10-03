@@ -5,10 +5,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
-import { AppError, ROOT } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { ROOT } from './paths.ts';
 import type { Machines } from './machines.ts';
 import { secretName, type Secrets } from './secrets.ts';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 
 export const dependencyEndpoint = z
   .string()

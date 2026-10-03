@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { localAliasActionSchema, type LocalAliasView } from '../shared/local-aliases.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 
 const BEGIN = '# BEGIN SAKURA LOCAL ALIASES';
 const END = '# END SAKURA LOCAL ALIASES';

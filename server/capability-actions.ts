@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
 import type { ProjectTerminals } from './project-terminals.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { Files, ftpStat } from './files.ts';
 import { runEngineeringOperation } from './engineering-runner.ts';
 import { capabilityDefinitions, capabilityParameters, type CapabilityId } from './capability-definitions.ts';

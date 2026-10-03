@@ -1,4 +1,4 @@
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
 import type { HaWitnessClient } from './ha-witness-client.ts';
 import type { HaWitnessPlan } from './ha-witness-core.ts';

@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { DATA } from './model.ts';
+import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 const safeName = /^[a-z][a-z0-9-]{0,63}$/;

@@ -1,7 +1,7 @@
 import { Play, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { CommandPreset } from '../../server/command-presets.ts';
-import type { JobView } from '../../server/jobs.ts';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import '../../src/development.css';
 import {
   Feedback,

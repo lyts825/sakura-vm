@@ -1,7 +1,7 @@
 import { formatDateTime } from '../../src/localization';
 import { Copy, Download, Plus, Trash2 } from 'lucide-react';
 import { lazy, useState } from 'react';
-import type { Snapshot } from '../../server/model';
+import type { Snapshot } from '../../shared/contracts/vm.ts';
 import { Feedback, download, useAction, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';

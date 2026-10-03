@@ -2,7 +2,8 @@ import { lstat, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError, DATA, PORT, ROOT } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, PORT, ROOT } from './paths.ts';
 import { readStore, regularDirectory, within, writeStore } from './local-store.ts';
 import {
   launchNative,

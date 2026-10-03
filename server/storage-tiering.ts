@@ -1,7 +1,9 @@
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError, DATA, type VMRecord } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { type VMRecord } from '../shared/contracts/vm.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 const poolId = z.string().regex(/^(default|[a-f0-9]{16})$/);

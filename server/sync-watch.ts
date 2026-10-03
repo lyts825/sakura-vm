@@ -1,6 +1,6 @@
 import { watch, type FSWatcher } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import type { Machines } from './machines.ts';
 
 export type SyncWatchView = {

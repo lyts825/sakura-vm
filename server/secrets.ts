@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, DATA, checkedId } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { checkedId } from '../shared/paths.ts';
 import type { Machines } from './machines.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { rotationPolicySchema, secretRotation, type RotationPolicy } from './secret-rotation.ts';

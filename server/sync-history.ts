@@ -5,7 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { writeStore } from './local-store.ts';
 
 const sha = z.string().regex(/^[a-f0-9]{64}$/);

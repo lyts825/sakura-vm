@@ -1,7 +1,7 @@
 import { X509Certificate } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
 import type { TLSSocket } from 'node:tls';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 type HttpsOptions = {
   bearer?: string; basic?: { username: string; password: string };

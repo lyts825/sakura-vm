@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 
 const tool = z.enum(['node', 'python']), version = z.string().regex(/^\d{1,2}\.\d{1,3}\.\d{1,3}$/);
 const decimal = z.string().regex(/^(0|[1-9][0-9]*)$/);

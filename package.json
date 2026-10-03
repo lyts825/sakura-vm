@@ -149,7 +149,7 @@
     "locales:check": "node scripts/generate-locale-pack.mjs --check",
     "plugins:sync": "tsx scripts/sync-plugin-catalog.ts",
     "features:audit": "tsx scripts/audit-features.ts",
-    "verify": "npm run plugins:check && npm run locales:check && npm test && npm run build && npm run dist:check && npm run test:production && npm run test:e2e",
+    "verify": "npm run architecture:check && npm run plugins:check && npm run locales:check && npm test && npm run build && npm run dist:check && npm run test:production && npm run test:e2e",
     "dist:check": "node scripts/check-distribution.mjs",
     "release:prepare": "node scripts/package-release.mjs",
     "update:status": "node scripts/self-update.mjs status",
@@ -157,7 +157,8 @@
     "update:stage": "node scripts/self-update.mjs stage",
     "update:activate": "node scripts/self-update.mjs activate",
     "update:rollback": "node scripts/self-update.mjs rollback",
-    "sakura": "node scripts/cli.mjs"
+    "sakura": "node scripts/cli.mjs",
+    "architecture:check": "tsx scripts/check-architecture.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1141.0",

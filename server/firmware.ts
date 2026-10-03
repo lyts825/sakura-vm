@@ -1,7 +1,8 @@
 import { constants, existsSync } from 'node:fs';
 import { copyFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { AppError, ROOT, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { ROOT, vmDir } from './paths.ts';
 import { regularDirectory } from './local-store.ts';
 
 function paths(architecture: 'x86_64' | 'aarch64' = 'x86_64') {

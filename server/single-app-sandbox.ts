@@ -1,8 +1,8 @@
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { projectIdentitySchema, projectIdentityRunSchema } from './project-identity.ts';
 import { singleAppSources } from './single-app-assets.ts';
 

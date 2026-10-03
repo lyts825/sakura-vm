@@ -3,7 +3,9 @@ import { mkdir, readFile, writeFile, rename, rm, stat, open } from 'node:fs/prom
 import { join, isAbsolute } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
-import { AppError, DATA, checkedId } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { checkedId } from '../shared/paths.ts';
 import type { Machines } from './machines.ts';
 import { MAX_BUNDLE_MANIFEST, type Bundles } from './bundles.ts';
 import { decodeTrustedBootArchive } from './trusted-boot-archive.ts';

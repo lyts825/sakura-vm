@@ -3,9 +3,14 @@ import type { Duplex } from 'node:stream';
 import type { ClientChannel } from 'ssh2';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
-import { projectIdentitySchema, projectIdentityRunSchema, type ProjectIdentity, type ProjectIdentityRun } from './project-identity.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
+import {
+  projectIdentitySchema,
+  projectIdentityRunSchema,
+  type ProjectIdentity,
+  type ProjectIdentityRun,
+} from './project-identity.ts';
 
 export const reverseTunnelListenerSchema = z.object({ port: z.number().int().min(1024).max(65535),
   pid: z.number().int().min(2), startTicks: z.string().regex(/^[1-9][0-9]*$/), socketInode: z.string().regex(/^[1-9][0-9]*$/) }).strict();

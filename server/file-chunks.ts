@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Writable } from 'node:stream';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Files } from './files.ts';
 
 export const DOWNLOAD_CHUNK_BYTES = 1024 ** 2;

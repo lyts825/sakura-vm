@@ -1,7 +1,7 @@
 import { formatDateTime } from '../../src/localization';
 import { Play, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { JobView } from '../../server/jobs';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, JobLog, useAction, useRemote } from '../../src/feature-shared';

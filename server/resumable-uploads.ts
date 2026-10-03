@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
-import { AppError, DATA, checkedId, guestPath } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { checkedId, guestPath } from '../shared/paths.ts';
 import { readStore, regularDirectory, writeStore } from './local-store.ts';
 import type { Files } from './files.ts';
 

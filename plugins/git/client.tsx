@@ -2,7 +2,7 @@ import { formatDateTime } from '../../src/localization';
 import { GitBranch, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { GitChange } from '../../server/git-workbench';
-import type { JobView } from '../../server/jobs';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import { isGitConflict, type GitUpstream } from '../../shared/git';
 import '../../src/development.css';
 import type { FeatureProps } from '../../src/feature-shared';

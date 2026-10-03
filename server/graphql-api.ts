@@ -26,7 +26,7 @@ import {
   type FormattedExecutionResult,
 } from 'graphql';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import type { Jobs } from './jobs.ts';
 import { PLUGINS } from '../shared/plugins.ts';

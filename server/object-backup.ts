@@ -5,8 +5,13 @@ import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
-  DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand,
-  ListObjectsV2Command, PutObjectCommand, S3Client,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { z } from 'zod';
@@ -15,7 +20,9 @@ import { backupLocked, verifyBackup } from './backups.ts';
 import type { Bundles } from './bundles.ts';
 import { withDecrypted } from './encrypted-backups.ts';
 import type { Machines } from './machines.ts';
-import { AppError, DATA, createSchema, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, vmDir } from './paths.ts';
+import { createSchema } from '../shared/contracts/vm.ts';
 import { fileHash, readStore, writeStore } from './local-store.ts';
 import { secretName, type Secrets } from './secrets.ts';
 

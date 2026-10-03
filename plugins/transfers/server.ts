@@ -1,3 +1,4 @@
+import { services as transfersServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -7,14 +8,14 @@ import { retryTarget } from '../../server/plugins/retry.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.downloads = new Downloads(m, {
+  host.provide(transfersServices.downloads, new Downloads(m, {
     get files() {
       return host.files;
     },
     get bundles() {
       return host.bundles;
     },
-  });
+  }));
   host.registerJobs(host.downloads.jobs, async (job) => {
     host.require('snapshots');
     return host.downloads.issue(retryTarget(job), { type: 'export' });

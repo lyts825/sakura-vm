@@ -3,14 +3,32 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { projectVersion, type Project, type Workspaces } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
+import { type Workspaces } from './workspaces.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { ProjectRunScopes } from './project-run-scope.ts';
-import { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema, projectIdentitySources } from './project-identity.ts';
-import { appIdentity, appOriginSchema, appReceiptSchema, appStatusSchema, appStopSchema, appRetirementSchema,
-  appAbsenceSchema, appRecoverySchema, SingleAppControl, type AppOrigin, type AppReceipt } from './single-app-sandbox.ts';
+import {
+  ProjectIdentities,
+  projectIdentitySchema,
+  projectIdentityRunSchema,
+  projectIdentitySources,
+} from './project-identity.ts';
+import {
+  appIdentity,
+  appOriginSchema,
+  appReceiptSchema,
+  appStatusSchema,
+  appStopSchema,
+  appRetirementSchema,
+  appAbsenceSchema,
+  appRecoverySchema,
+  SingleAppControl,
+  type AppOrigin,
+  type AppReceipt,
+} from './single-app-sandbox.ts';
 
 export const singleAppProgram = z.string().regex(/^[A-Za-z][A-Za-z0-9+._-]{0,63}$/);
 export const singleAppClipboard = z.object({ copy: z.boolean(), paste: z.boolean() }).strict();

@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ProjectExecution } from '../server/project-execution.ts';
-import type { ProjectTerminals } from '../server/project-terminals.ts';
+import type { ProjectPreparation } from '../server/project-preparation.ts';
 import { AppError } from '../server/model.ts';
 import { projectIdentityPayload } from '../server/project-identity.ts';
-import { syscallIdentityFixture as fixture, syscallVmId as id, syscallProjectId as projectId,
-  copySyscallProject } from './helpers/syscall-identity.ts';
+import {
+  syscallIdentityFixture as fixture,
+  syscallVmId as id,
+  syscallProjectId as projectId,
+  copySyscallProject,
+} from './helpers/syscall-identity.ts';
 
 function setup() {
   const f = fixture();
-  const terminals = { workspaces: f.workspaces, prepare: (...args: Parameters<ProjectTerminals['prepare']>) => f.manager.prepare(...args) } as ProjectTerminals;
+  const terminals = { workspaces: f.workspaces, prepareTask: (...[vm, project, signal, options]: Parameters<ProjectPreparation['prepareTask']>) =>
+    f.manager.prepare(vm, project, null, false, signal, undefined, { ...options, mode: 'task' }) };
   const service = new ProjectExecution(f.machines, terminals, (...args) => f.options.runProjectTask!(...args));
   const run = (command = 'UID_TEST_MARKER', requested = projectId, signal = f.abort.signal) =>
     service.run(id, { command, timeoutSeconds: 30 }, requested, signal);

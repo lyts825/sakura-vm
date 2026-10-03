@@ -1,12 +1,15 @@
 import { randomBytes } from 'node:crypto';
 import {
-  generateAuthenticationOptions, generateRegistrationOptions,
-  verifyAuthenticationResponse, verifyRegistrationResponse,
-  type AuthenticationResponseJSON, type RegistrationResponseJSON,
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+  type AuthenticationResponseJSON,
+  type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import { z } from 'zod';
 import { AccessControl, type Principal } from './access-control.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 const ceremonyId = z.string().regex(/^[a-f0-9]{64}$/);
 const browserCredential = z.object({ id: z.string().min(16).max(1024) }).passthrough();

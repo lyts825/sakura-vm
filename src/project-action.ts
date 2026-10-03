@@ -1,6 +1,6 @@
-import type { JobView } from '../server/jobs';
-import type { VMView } from '../server/model';
-import type { Project } from '../server/workspaces';
+import type { JobView } from '../shared/contracts/jobs.ts';
+import type { VMView } from '../shared/contracts/vm.ts';
+import type { Project } from '../server/project-config.ts';
 import type { Request } from './feature-shared';
 
 export type ProjectAction = 'setup' | 'start' | 'stop' | 'terminal';

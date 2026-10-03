@@ -3,7 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
 import { z } from 'zod';
-import { AppError, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
 import type { Machines } from './machines.ts';
 import { readStore, writeStore } from './local-store.ts';
 

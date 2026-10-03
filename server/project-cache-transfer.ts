@@ -3,15 +3,24 @@ import { readdir, readFile, rm, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import type { Project } from './workspaces.ts';
-import { AppError, vmDir } from './model.ts';
-import { quote } from './files.ts';
+import type { Project } from './project-config.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
+import { quote } from './shell.ts';
 import { writeStore } from './local-store.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { dependencyManagerSchema, type DependencyManager } from './project-dependency-cache.ts';
-import { projectIdentityRunSchema, projectIdentitySchema, projectIdentitySources } from './project-identity.ts';
-import { ProjectRunScopes, type ProjectTaskAdmissionOptions, type ProjectTaskResourceContext,
-  type ProjectTaskResourceReceipt } from './project-run-scope.ts';
+import {
+  projectIdentityRunSchema,
+  projectIdentitySchema,
+  projectIdentitySources,
+} from './project-identity.ts';
+import {
+  ProjectRunScopes,
+  type ProjectTaskAdmissionOptions,
+  type ProjectTaskResourceContext,
+  type ProjectTaskResourceReceipt,
+} from './project-run-scope.ts';
 import { projectCacheTransferControl } from './project-cache-transfer-control.ts';
 
 export const projectCacheTransferLimits = Object.freeze({ fileBytes: 64 * 1024 * 1024,

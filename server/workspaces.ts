@@ -1,77 +1,32 @@
-import { Metrics } from './metrics.ts';
-export { metricsScript, parseMetrics } from './metrics.ts';
-import { readFile, writeFile, rename, rm } from 'node:fs/promises';
-import { z } from 'zod';
 import { createHash } from 'node:crypto';
-import { AppError, guestPath } from './model.ts';
-import type { Machines } from './machines.ts';
-import { Jobs } from './jobs.ts';
-import { quote } from './files.ts';
-import {
-  serviceSchema,
-  environmentSchema,
-  serviceOrder,
-  runServices,
-  serviceLog,
-  type ProjectService,
-} from './project-services.ts';
-import { guestTask } from './guest-task.ts';
-import { secretRefsSchema, privateLog, redactValues, type Secrets } from './secrets.ts';
-import type { NetworkProfiles } from './network-profiles.ts';
-import { ProjectCatalog } from './project-catalog.ts';
-import { runtimesSchema, runtimeEnvironment } from './runtime-config.ts';
-import { guardProjectQuotaDirectory, projectQuota, readProjectQuotaRecord } from './project-quota.ts';
-import { ensureProjectNetworkScript,
-  removeProjectNetwork } from './project-network-isolation.ts';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { AppError } from '../shared/errors.ts';
 import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
-import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
-import { projectSshBusyScript } from './project-ssh.ts';
 import { resolveDependencyAuthentication } from './dependency-downloads.ts';
-import { ProjectMainScope, ProjectServiceScopes } from './project-service-scope.ts';
-import { legacyMainStatus, mainLog, mainSession, runProjectMain, stopProjectMain } from './project-main.ts';
+import { guestTask } from './guest-task.ts';
+import { Jobs } from './jobs.ts';
+import type { Machines } from './machines.ts';
+import { Metrics } from './metrics.ts';
+import type { NetworkProfiles } from './network-profiles.ts';
+import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
+import { ProjectCatalog } from './project-catalog.ts';
+import { projectSchema, projectVersion, type Project } from './project-config.ts';
 import type { DependencyManager } from './project-dependency-cache.ts';
-import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
+import { legacyMainStatus, mainLog, mainSession, runProjectMain, stopProjectMain } from './project-main.ts';
+import { ensureProjectNetworkScript, removeProjectNetwork } from './project-network-isolation.ts';
+import { guardProjectQuotaDirectory, projectQuota, readProjectQuotaRecord } from './project-quota.ts';
 import { prepareProjectRepository } from './project-repository.ts';
-import { repositoryAuthorizationScope, repositoryUrl } from './repository-url.ts';
+import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
+import { ProjectMainScope, ProjectServiceScopes } from './project-service-scope.ts';
+import { runServices, serviceLog, type ProjectService } from './project-services.ts';
+import { projectSshBusyScript } from './project-ssh.ts';
+import { repositoryAuthorizationScope } from './repository-url.ts';
+import { runtimeEnvironment } from './runtime-config.ts';
+import { privateLog, redactValues, type Secrets } from './secrets.ts';
+import { quote } from './shell.ts';
+export { metricsScript,parseMetrics } from './metrics.ts';
 
-export const projectSchema = z
-  .object({
-    directory: z
-      .string()
-      .default('/workspace')
-      .refine((value) => {
-        try {
-          guestPath(value);
-          return true;
-        } catch {
-          return false;
-        }
-      }, '需要有效的 Linux 绝对路径'),
-    template: z.enum(['none', 'node', 'python', 'rust']).default('none'),
-    repository: z.union([z.literal(''), repositoryUrl]).default(''),
-    setup: z.string().max(8192).default(''),
-    command: z.string().max(8192).default(''),
-    previewPort: z.number().int().min(1024).max(65535).optional(),
-    networkIsolation: z.enum(['host', 'private']).optional(),
-    environment: environmentSchema.optional(),
-    secrets: secretRefsSchema.optional(),
-    runtimes: runtimesSchema.optional(),
-    services: z.array(serviceSchema).max(12).optional(),
-  })
-  .strict()
-  .superRefine((project, ctx) => {
-    try {
-      serviceOrder(project.services || []);
-    } catch (error) {
-      ctx.addIssue({ code: 'custom', message: (error as Error).message, path: ['services'] });
-    }
-    if (project.networkIsolation === 'private' && project.previewPort)
-      ctx.addIssue({ code: 'custom', message: '私有网络命名空间不开放 Windows 预览端口',
-        path: ['previewPort'] });
-  });
-export type Project = z.infer<typeof projectSchema> & { _workspace?: string };
-export const projectVersion = (project: Project) => createHash('sha256')
-  .update(JSON.stringify(project)).digest('hex');
+export { projectSchema,projectVersion,type Project } from './project-config.ts';
 export const projectSession = mainSession;
 export const projectLog = mainLog;
 export type ProjectRuntime = { status: string; log: string;

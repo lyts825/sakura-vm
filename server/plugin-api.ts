@@ -1,46 +1,15 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Features } from './features.ts';
-import type { PluginManifest } from '../shared/plugin-protocol.ts';
-import type { Jobs, JobView } from './jobs.ts';
-import type { PluginScope } from './plugin-scope.ts';
 import type { z } from 'zod';
+import type { JobView } from '../shared/contracts/jobs.ts';
+import type { PluginManifest } from '../shared/plugin-protocol.ts';
+import type { Features } from './features.ts';
+import type { Jobs } from './jobs.ts';
 import { pluginDataFile } from './plugin-data.ts';
+import type { PluginScope } from './plugin-scope.ts';
 
-// Only service slots belong here. Host lifecycle methods can never be owned by a plugin.
-export const SERVICE_KEYS = [
-  'files',
-  'fileLocks',
-  'images',
-  'bundles',
-  'downloads',
-  'workspaces',
-  'sync',
-  'jobs',
-  'backups',
-  'maintenance',
-  'ide',
-  'recipes',
-  'git',
-  'projectFiles',
-  'commands',
-  'toolchains',
-  'network',
-  'secrets',
-  'health',
-  'containers',
-  'migration',
-  'history',
-  'pipelines',
-  'runtimes',
-  'intelligence',
-  'languageServices',
-  'debugger',
-  'suite',
-  'extended',
-  'next',
-  'desktops',
-  'metrics',
-] as const satisfies readonly (keyof Features)[];
+import { SERVICE_KEYS } from './plugin-services.ts';
+import type { ServiceRef } from './service-ref.ts';
+export { SERVICE_KEYS } from './plugin-services.ts';
 export type ServiceKey = (typeof SERVICE_KEYS)[number];
 type LegacyPluginContext = Pick<
   Features,
@@ -48,8 +17,11 @@ type LegacyPluginContext = Pick<
 >;
 export type PluginContext = LegacyPluginContext & {
   readonly signal: AbortSignal;
+  provide<T>(service: ServiceRef<T>, value: T): T;
   provide<T>(key: string, value: T): T;
+  use<T>(service: ServiceRef<T>): T;
   use<T>(pluginId: string, key: string): T;
+  optional<T>(service: ServiceRef<T>): T | undefined;
   optional<T>(pluginId: string, key: string): T | undefined;
   onDispose(disposer: () => void | Promise<void>): void;
   registerJobs(store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown): void;
@@ -94,14 +66,19 @@ export function pluginContext(
     get(target, key) {
       if (key === 'signal') return scope.signal;
       if (key === 'provide')
-        return <T>(name: string, value: T) => {
+        return <T>(reference: string | ServiceRef<T>, value: T) => {
+          const name = typeof reference === 'string' ? reference : reference.key;
+          if (typeof reference !== 'string' && reference.pluginId !== manifest.id)
+            throw new Error(`插件 ${manifest.id} 不能注册其他提供者的服务：${reference.pluginId}`);
           scope.signal.throwIfAborted();
           if (!owned.has(name)) throw new Error(`插件 ${manifest.id} 不能注册非自有服务：${name}`);
           target.provideService(name, value);
           return value;
         };
       if (key === 'use' || key === 'optional')
-        return <T>(id: string, name: string): T | undefined => {
+        return <T>(reference: string | ServiceRef<T>, legacyName?: string): T | undefined => {
+          const id = typeof reference === 'string' ? reference : reference.pluginId;
+          const name = typeof reference === 'string' ? legacyName! : reference.key;
           if (id !== manifest.id && !dependencies.has(id))
             throw new Error(`插件 ${manifest.id} 未声明依赖 ${id}`);
           if (!catalog.some((item) => item.id === id && item.services.includes(name)))

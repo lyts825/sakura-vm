@@ -1,8 +1,9 @@
 import { join } from 'node:path';
 import { lstat } from 'node:fs/promises';
 import { z } from 'zod';
-import { AppError, DATA } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { quote } from './shell.ts';
 import { readStore, regularDirectory, within, writeStore } from './local-store.ts';
 import { serveHostMount } from './host-mount-sftp.ts';
 import type { Machines } from './machines.ts';

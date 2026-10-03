@@ -4,19 +4,38 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { projectVersion, type Project, type Workspaces } from './workspaces.ts';
-import { AppError, DATA, vmDir } from './model.ts';
-import { quote } from './files.ts';
+import { projectVersion, type Project } from './project-config.ts';
+import { type Workspaces } from './workspaces.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, vmDir } from './paths.ts';
+import { quote } from './shell.ts';
 import { guestTask } from './guest-task.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { ProjectNetworkBridges } from './project-network-bridges.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
-import { ProjectIdentities, projectIdentityPayload, projectIdentityRunSchema, projectIdentitySchema,
-  type ProjectIdentity, type ProjectIdentityRun } from './project-identity.ts';
-import { ProjectNotebookScope, projectNotebookRecordSchema, type ProjectNotebookRecord } from './project-service-scope.ts';
-import { notebookProviderSchema, notebookInstallExecution, notebookInstalledCommand, notebookWheelRequest,
-  notebookWheelhouseCommand, notebookWheelLeaseSchema, type NotebookProvider } from './notebook-wheelhouse.ts';
+import {
+  ProjectIdentities,
+  projectIdentityPayload,
+  projectIdentityRunSchema,
+  projectIdentitySchema,
+  type ProjectIdentity,
+  type ProjectIdentityRun,
+} from './project-identity.ts';
+import {
+  ProjectNotebookScope,
+  projectNotebookRecordSchema,
+  type ProjectNotebookRecord,
+} from './project-service-scope.ts';
+import {
+  notebookProviderSchema,
+  notebookInstallExecution,
+  notebookInstalledCommand,
+  notebookWheelRequest,
+  notebookWheelhouseCommand,
+  notebookWheelLeaseSchema,
+  type NotebookProvider,
+} from './notebook-wheelhouse.ts';
 import { privateLog, redactValues } from './secrets.ts';
 
 export const notebookInput = z.object({

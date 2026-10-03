@@ -1,7 +1,7 @@
 import { ExternalLink, Play, Save, Square } from 'lucide-react';
 import { lazy, useEffect, useMemo, useState } from 'react';
-import type { JobView } from '../../server/jobs';
-import type { Project } from '../../server/workspaces';
+import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { Project } from '../../server/project-config.ts';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import '../../src/features.css';
 import { PluginGate } from '../../src/plugin-context';

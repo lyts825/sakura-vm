@@ -1,6 +1,6 @@
 import { ExternalLink, LoaderCircle, Square, TerminalSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { VMView } from '../server/model';
+import type { VMView } from '../shared/contracts/vm.ts';
 import { Feedback, useRemote, type Request } from './feature-shared';
 import { connectSingleAppPopup, createSingleAppPopup } from './single-app-window';
 

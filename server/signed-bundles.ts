@@ -7,7 +7,7 @@ import {
   verify,
 } from 'node:crypto';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 export const bundleSignatureSchema = z

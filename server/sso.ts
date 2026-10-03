@@ -5,7 +5,8 @@ import { SAML, ValidateInResponseTo } from '@node-saml/node-saml';
 import * as oidc from 'openid-client';
 import { z } from 'zod';
 import { AccessControl } from './access-control.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { dpapi, type Protector } from './secrets.ts';
 

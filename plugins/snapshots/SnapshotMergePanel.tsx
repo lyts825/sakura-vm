@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { JobView } from '../../server/jobs';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import { Feedback, JobLog, useAction, useRemote, type FeatureProps } from '../../src/feature-shared';
 import { saveText } from '../../src/export-file';
 

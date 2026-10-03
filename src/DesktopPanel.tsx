@@ -25,8 +25,9 @@ import {
   Wifi,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { JobView } from '../server/jobs';
-import type { DesktopPreferences, DesktopView, VMView } from '../server/model';
+import type { JobView } from '../shared/contracts/jobs.ts';
+import type { DesktopPreferences } from '../shared/desktop-preferences.ts';
+import type { DesktopView, VMView } from '../shared/contracts/vm.ts';
 import { connectDesktop } from './desktop-connection';
 import {
   desktopPreferenceDefaults,

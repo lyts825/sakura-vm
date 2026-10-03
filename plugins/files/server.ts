@@ -1,9 +1,11 @@
+import { services as filesServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { posix } from 'node:path';
 import { z } from 'zod';
-import { AppError, guestPath } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
+import { guestPath } from '../../shared/paths.ts';
 import { readJsonBody, MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 import { Files, MAX_TEXT_BYTES, textVersion } from '../../server/files.ts';
 import { FileHistory } from '../../server/file-history.ts';
@@ -12,9 +14,9 @@ import { downloadManifest } from '../../server/file-chunks.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.files = new Files(m);
-  host.history = new FileHistory(m, host.files);
-  host.fileLocks = new FileLocks();
+  host.provide(filesServices.files, new Files(m));
+  host.provide(filesServices.history, new FileHistory(m, host.files));
+  host.provide(filesServices.fileLocks, new FileLocks());
   host.files.beforeReplace = (id, path, ftp, signal) => host.history.capture(id, path, ftp, signal);
   host.files.trash = (id, path, recursive) => host.history.trash(id, path, recursive);
   host.machines.fileBeforeReplace = host.files.beforeReplace;

@@ -1,7 +1,7 @@
 import { formatDateTime } from '../../src/localization';
 import { Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { JobView } from '../../server/jobs';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import type { DiagnosticCheck } from '../../server/maintenance';
 import type { DiskMaintenancePolicy, DiskMaintenanceState } from '../../server/disk-maintenance';
 import { saveText } from '../../src/export-file';

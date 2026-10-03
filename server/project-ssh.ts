@@ -3,10 +3,12 @@ import { mkdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
-import { AppError, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
 import type { Machines } from './machines.ts';
-import type { Project, Workspaces } from './workspaces.ts';
-import { quote } from './files.ts';
+import type { Project } from './project-config.ts';
+import type { Workspaces } from './workspaces.ts';
+import { quote } from './shell.ts';
 import { readStore, writeStore, regularDirectory } from './local-store.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import {

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Machines } from './machines.ts';
-import { quote } from './files.ts';
-import { AppError } from './model.ts';
+import { quote } from './shell.ts';
+import { AppError } from '../shared/errors.ts';
 import { z } from 'zod';
 import type { BaseAgent } from 'ssh2';
 import { isOwnedTaskAgent } from './ssh-agent-scope.ts';

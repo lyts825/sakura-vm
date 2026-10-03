@@ -1,8 +1,9 @@
+import { services as syncServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 import { z } from 'zod';
 
@@ -11,7 +12,7 @@ import { MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.sync = new FolderSync(m, host.workspaces.projects);
+  host.provide(syncServices.sync, new FolderSync(m, host.workspaces.projects));
   host.registerJobs(host.sync.jobs, (job) => {
     if (!job.action) throw new AppError('请回到原功能页面重新执行');
     return retryInProject(host, job, () =>

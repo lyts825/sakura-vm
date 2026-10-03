@@ -5,22 +5,27 @@ import { createHash } from 'node:crypto';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
-import { AppError, DATA, createSchema, vmDir, type VMRecord } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, vmDir } from './paths.ts';
+import { createSchema, type VMRecord } from '../shared/contracts/vm.ts';
 import type { Machines } from './machines.ts';
-import { projectSchema } from './workspaces.ts';
+import { projectSchema } from './project-config.ts';
 import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
 import ssh2 from 'ssh2';
 import { ByteRate } from './byte-rate.ts';
 import { bundleSignatureSchema, verifySignedManifest, type SignedBundles } from './signed-bundles.ts';
-import { diskEncryptionSchema, encryptedImageOptions,
-  qemuSecretObject } from './disk-encryption.ts';
+import { diskEncryptionSchema, encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 import { Secrets } from './secrets.ts';
 import { DesktopBindings, desktopBindingSchema } from './desktop-binding.ts';
 import { x11ClipboardConfiguration } from './x11-clipboard.ts';
 import { writeStore } from './local-store.ts';
 import type { TrustedBootService } from './trusted-boot-service.ts';
-import { decodeTrustedBootArchive, encodeTrustedBootArchive, trustedBootArchiveSchema,
-  type TrustedBootFiles } from './trusted-boot-archive.ts';
+import {
+  decodeTrustedBootArchive,
+  encodeTrustedBootArchive,
+  trustedBootArchiveSchema,
+  type TrustedBootFiles,
+} from './trusted-boot-archive.ts';
 
 const MAGIC = Buffer.from('SAKURA01');
 const MAX_BUNDLE = 32 * 1024 ** 3;

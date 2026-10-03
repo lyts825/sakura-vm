@@ -5,9 +5,10 @@ import { connect, type Socket } from 'node:net';
 import { deflateSync } from 'node:zlib';
 import ssh2, { type GetStreamCallback } from 'ssh2';
 import { z } from 'zod';
-import { AppError, ROOT } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { ROOT } from './paths.ts';
 import type { Machines } from './machines.ts';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import { projectIdentitySchema } from './project-identity.ts';
 const { OpenSSHAgent } = ssh2;
 

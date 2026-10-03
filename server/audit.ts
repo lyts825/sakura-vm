@@ -5,7 +5,8 @@ import { appendFile, mkdir, readFile, stat, writeFile, open } from 'node:fs/prom
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { z, ZodError } from 'zod';
-import { DATA, AppError } from './model.ts';
+import { DATA } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 const hex = z.string().regex(/^[a-f0-9]{64}$/);

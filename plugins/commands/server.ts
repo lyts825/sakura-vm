@@ -1,3 +1,4 @@
+import { services as commandsServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
@@ -5,7 +6,7 @@ import { CommandPresets } from '../../server/command-presets.ts';
 import { presetSchema } from '../../server/command-presets.ts';
 import type { PluginOperation } from '../../server/plugin-api.ts';
 export async function activate(host: PluginContext) {
-  host.provide('commands', new CommandPresets(host.machines, host.workspaces));
+  host.provide(commandsServices.commands, new CommandPresets(host.machines, host.workspaces));
 }
 const idFrom = (url: URL) => url.pathname.split('/')[3];
 const presetView = z.object({
@@ -20,7 +21,7 @@ export const operations: Record<string, PluginOperation> = {
       this.machines.get(id);
       return {
         projectId: this.workspaces.projects.current(id),
-        presets: await this.use<CommandPresets>('commands', 'commands').list(id),
+        presets: await this.use(commandsServices.commands).list(id),
         job: this.commands.jobs.view(this.workspaces.projects.key(id)),
       };
     },
@@ -29,14 +30,14 @@ export const operations: Record<string, PluginOperation> = {
     request: presetSchema,
     response: z.array(presetView),
     execute(url, input) {
-      return this.use<CommandPresets>('commands', 'commands').save(idFrom(url), input);
+      return this.use(commandsServices.commands).save(idFrom(url), input);
     },
   },
   remove: {
     request: z.object({ id: z.uuid() }).strict(),
     response: z.array(presetView),
     execute(url, input) {
-      return this.use<CommandPresets>('commands', 'commands').remove(idFrom(url), (input as { id: string }).id);
+      return this.use(commandsServices.commands).remove(idFrom(url), (input as { id: string }).id);
     },
   },
   run: {
@@ -44,7 +45,7 @@ export const operations: Record<string, PluginOperation> = {
     response: z.object({ id: z.string(), status: z.string() }).passthrough(),
     execute(url, input) {
       const value = input as { id: string; values: Record<string, string> };
-      return this.use<CommandPresets>('commands', 'commands').run(idFrom(url), value.id, value.values);
+      return this.use(commandsServices.commands).run(idFrom(url), value.id, value.values);
     },
   },
 };

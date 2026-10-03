@@ -1,3 +1,7 @@
+import { services as backupsServices } from '../backups/services.ts';
+import { services as snapshotsServices } from '../snapshots/services.ts';
+import { services as secretsServices } from '../secrets/services.ts';
+import { services as platformServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -9,7 +13,7 @@ import type { Backups } from '../../server/backups.ts';
 import type { Bundles } from '../../server/bundles.ts';
 import type { Secrets } from '../../server/secrets.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 import { z } from 'zod';
 import type { PluginOperation } from '../../server/plugin-api.ts';
 
@@ -31,14 +35,14 @@ export const operations: Record<string, PluginOperation> = {
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.next = new NextFeatures(m, host.workspaces);
+  host.provide(platformServices.next, new NextFeatures(m, host.workspaces));
   host.next.setObjectBackup(new ObjectBackup(m, () => ({
-    backups: host.optional<Backups>('backups', 'backups'),
-    bundles: host.optional<Bundles>('snapshots', 'bundles'),
-    secrets: host.optional<Secrets>('secrets', 'secrets'),
+    backups: host.optional(backupsServices.backups),
+    bundles: host.optional(snapshotsServices.bundles),
+    secrets: host.optional(secretsServices.secrets),
   })));
   host.next.setWireGuardOverlay(new WireGuardOverlay(m,
-    () => host.optional<Secrets>('secrets', 'secrets')));
+    () => host.optional(secretsServices.secrets)));
   await host.next.init();
   host.registerJobs(host.next.jobs, (job) => {
     if (!job.action?.startsWith('next:')) throw new AppError('请回到原功能页面重新执行');

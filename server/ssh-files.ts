@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { chmod, lstat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { regularDirectory } from './local-store.ts';
 
 const execute = promisify(execFile);

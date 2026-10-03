@@ -3,7 +3,9 @@ import { lstat, mkdir, readdir, rm, rmdir, stat, statfs, writeFile } from 'node:
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError, DATA, VM_ROOT, checkedId, setVmStorageRoot, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, VM_ROOT, setVmStorageRoot, vmDir } from './paths.ts';
+import { checkedId } from '../shared/paths.ts';
 import { readStore, regularDirectory, within, writeStore } from './local-store.ts';
 
 const idSchema = z.string().regex(/^(default|[a-f0-9]{16})$/);

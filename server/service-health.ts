@@ -4,7 +4,7 @@ import { runServices, serviceOrder } from './project-services.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
 import { Jobs } from './jobs.ts';
 import { privateLog, redactValues } from './secrets.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { ProjectServiceScopes, projectServiceBinding } from './project-service-scope.ts';
 
 const lifecycleRefusals = new Set([

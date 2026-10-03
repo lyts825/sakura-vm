@@ -1,9 +1,10 @@
+import { services as networkServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 import { NetworkProfiles } from '../../server/network-profiles.ts';
 import { HttpIngress } from '../../server/http-ingress.ts';
@@ -15,12 +16,12 @@ import { localAliasActionSchema, localAliasViewSchema } from '../../shared/local
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.network = new NetworkProfiles(m);
-  const certificates = host.provide('certificates', new IngressCertificates(host.dataFile('certificates')));
+  host.provide(networkServices.network, new NetworkProfiles(m));
+  const certificates = host.provide(networkServices.certificates, new IngressCertificates(host.dataFile('certificates')));
   await certificates.init();
-  const ingress = host.provide('ingress', new HttpIngress(m, host.dataFile('ingress'), certificates));
+  const ingress = host.provide(networkServices.ingress, new HttpIngress(m, host.dataFile('ingress'), certificates));
   await ingress.init();
-  await host.provide('localAliases', new LocalAliases(() => ingress.aliasNames(),
+  await host.provide(networkServices.localAliases, new LocalAliases(() => ingress.aliasNames(),
     undefined, host.dataFile('local-aliases'))).init();
   host.registerJobs(host.network.jobs, () => {
     throw new AppError('请在网络配置中重新测试当前设置');
@@ -30,42 +31,42 @@ export const operations: Record<string, PluginOperation> = {
   'ingress-certificate-view': {
     response: certificateViewSchema,
     execute() {
-      return this.use<IngressCertificates>('network', 'certificates').view();
+      return this.use(networkServices.certificates).view();
     },
   },
   'ingress-certificate-action': {
     request: certificateActionSchema,
     response: certificateViewSchema,
     execute(_url, input) {
-      return this.use<IngressCertificates>('network', 'certificates').action(input);
+      return this.use(networkServices.certificates).action(input);
     },
   },
   'ingress-view': {
     response: ingressViewSchema,
     execute() {
-      return this.use<HttpIngress>('network', 'ingress').view();
+      return this.use(networkServices.ingress).view();
     },
   },
   'ingress-action': {
     request: ingressActionSchema,
     response: ingressViewSchema,
     async execute(_url, input) {
-      const view = await this.use<HttpIngress>('network', 'ingress').action(input);
-      await this.use<LocalAliases>('network', 'localAliases').refresh();
+      const view = await this.use(networkServices.ingress).action(input);
+      await this.use(networkServices.localAliases).refresh();
       return view;
     },
   },
   'local-aliases-view': {
     response: localAliasViewSchema,
     execute() {
-      return this.use<LocalAliases>('network', 'localAliases').view();
+      return this.use(networkServices.localAliases).view();
     },
   },
   'local-aliases-action': {
     request: localAliasActionSchema,
     response: localAliasViewSchema,
     execute(_url, input) {
-      return this.use<LocalAliases>('network', 'localAliases').action(input);
+      return this.use(networkServices.localAliases).action(input);
     },
   },
 };

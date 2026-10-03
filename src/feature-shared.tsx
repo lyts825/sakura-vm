@@ -1,7 +1,7 @@
 import { formatDateTime, formatNumber } from './localization';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { VMView } from '../server/model';
-import type { JobView } from '../server/jobs';
+import type { VMView } from '../shared/contracts/vm.ts';
+import type { JobView } from '../shared/contracts/jobs.ts';
 export type Request = <T = any>(
   path: string,
   method?: string,

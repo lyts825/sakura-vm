@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import type { AccessControl, Principal } from './access-control.ts';
 import type { Machines } from './machines.ts';
 

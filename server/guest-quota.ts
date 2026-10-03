@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 import { projectQuota } from './project-quota.ts';
 
 export const guestQuotaShape = {

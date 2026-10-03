@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const MAX_TRUSTED_BOOT_FILE = 16 * 1024 ** 2;
 export const MAX_TRUSTED_BOOT_TOTAL = 32 * 1024 ** 2;

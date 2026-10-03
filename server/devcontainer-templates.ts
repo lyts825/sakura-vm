@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 const templatePath = z.string().min(1).max(512).refine((value) =>
   !value.startsWith('/') && !value.includes('\\') && !value.includes(':') &&

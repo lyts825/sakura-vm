@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { readJsonBody } from './http.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import type { AccessControl } from './access-control.ts';
 import type { AlertEvent } from './feature-suite.ts';
 

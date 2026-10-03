@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { join } from 'node:path';
-import { vmDir } from './model.ts';
+import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { withinWindow } from '../shared/time-windows.ts';
 

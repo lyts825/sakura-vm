@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { randomBytes } from 'node:crypto';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 
 export const dependencyManagerSchema = z.enum(['npm', 'pip']);
 export type DependencyManager = z.infer<typeof dependencyManagerSchema>;

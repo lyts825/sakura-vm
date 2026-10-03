@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 const ipv4Destination = z.string().refine((value) => {
   const [address, prefix, extra] = value.split('/');

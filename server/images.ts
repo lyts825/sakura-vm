@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { DATA, IMAGE, AppError } from './model.ts';
+import { DATA, IMAGE } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
 import { Jobs } from './jobs.ts';
 
 export const distributions = {

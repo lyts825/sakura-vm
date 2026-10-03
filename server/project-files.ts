@@ -3,7 +3,7 @@ import { isUtf8 } from 'node:buffer';
 import type { FileEntry, SFTPWrapper } from 'ssh2';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 const excluded = new Set([
   '.git',

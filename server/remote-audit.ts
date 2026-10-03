@@ -1,12 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
-import { GetObjectCommand, GetObjectLockConfigurationCommand, HeadObjectCommand,
-  PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  GetObjectLockConfigurationCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { z } from 'zod';
 import { AuditLog } from './audit.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 
 const hex = z.string().regex(/^[a-f0-9]{64}$/);
 const endpoint = z.url().refine((value) => {

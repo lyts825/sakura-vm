@@ -1,5 +1,5 @@
-import { quote } from './files.ts';
-import { AppError } from './model.ts';
+import { quote } from './shell.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const projectLspPrefix = '/opt/sakura-language-services';
 export const projectDapPython = '/opt/sakura-debugger/bin/python';

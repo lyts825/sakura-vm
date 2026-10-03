@@ -6,7 +6,9 @@ import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import type { SFTPWrapper } from 'ssh2';
 import type { Machines } from './machines.ts';
-import { AppError, vmDir, guestPath } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
+import { guestPath } from '../shared/paths.ts';
 import { Files, ftpStat, mutablePath, MAX_TEXT_BYTES } from './files.ts';
 import { readStore, writeStore } from './local-store.ts';
 

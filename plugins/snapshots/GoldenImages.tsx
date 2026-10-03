@@ -1,7 +1,7 @@
 import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { useState } from 'react';
-import type { VMView } from '../../server/model';
+import type { VMView } from '../../shared/contracts/vm.ts';
 import type { GoldenImages } from '../../server/golden-images';
 import type { GoldenAction, GoldenResult } from '../../shared/golden-images';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';

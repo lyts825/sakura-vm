@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError, ROOT } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { ROOT } from './paths.ts';
+import { quote } from './shell.ts';
 
 export const projectIdentityAssetNames = ['protocol.h', 'launcher.c', 'controller.py'] as const;
 const uuid = z.uuid(), digest = z.string().regex(/^[a-f0-9]{64}$/);

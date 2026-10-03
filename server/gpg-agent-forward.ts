@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { isAbsolute, join, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
 import { projectPrivateValues } from './workspaces.ts';

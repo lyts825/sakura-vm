@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
-import { projectVersion, type Project, type Workspaces } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
+import { type Workspaces } from './workspaces.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 import { projectIdentityPayload } from './project-identity.ts';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import { ProjectCacheTransfers, projectCachedInstallCommand } from './project-cache-transfer.ts';
 import { dependencyManagerSchema, type DependencyManager } from './project-dependency-cache.ts';
 import { privateLog, redactValues } from './secrets.ts';

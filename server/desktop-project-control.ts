@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 import { projectIdentitySchema, projectIdentityRunSchema } from './project-identity.ts';
 import { projectDesktopRecordSchema } from './project-service-scope.ts';
 import { desktopAuthoritySource } from './desktop-project-authority.ts';

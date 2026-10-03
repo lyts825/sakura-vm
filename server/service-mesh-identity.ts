@@ -1,10 +1,15 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { projectIdentitySchema, projectIdentityRunSchema, type ProjectIdentity, type ProjectIdentityRun } from './project-identity.ts';
+import {
+  projectIdentitySchema,
+  projectIdentityRunSchema,
+  type ProjectIdentity,
+  type ProjectIdentityRun,
+} from './project-identity.ts';
 import type { ProjectMeshRecord } from './project-service-scope.ts';
-import type { Project } from './workspaces.ts';
+import type { Project } from './project-config.ts';
 import { reverseTunnelListenerSchema, type ReverseTunnelListener } from './reverse-tunnel-transport.ts';
 
 const decimal = z.string().regex(/^[1-9][0-9]*$/), digest = z.string().regex(/^[a-f0-9]{64}$/);

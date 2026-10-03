@@ -9,7 +9,8 @@ import {
   NATIVE_COMMANDS,
   NATIVE_COMMAND_ADAPTERS,
 } from '../.vendor/posixloom/dist/src/index.js';
-import { ROOT, DATA, AppError } from './model.ts';
+import { ROOT, DATA } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
 import { qemuCpuModel } from '../shared/hardware.ts';
 
 export async function createRuntime() {

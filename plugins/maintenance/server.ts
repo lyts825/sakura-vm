@@ -1,16 +1,17 @@
+import { services as maintenanceServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 import { Maintenance } from '../../server/maintenance.ts';
 import { retryTarget } from '../../server/plugins/retry.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.maintenance = new Maintenance(m);
+  host.provide(maintenanceServices.maintenance, new Maintenance(m));
   host.registerJobs(host.maintenance.jobs, (job) => {
     const id = retryTarget(job);
     if (job.action === 'diagnose') return host.maintenance.diagnose(id);

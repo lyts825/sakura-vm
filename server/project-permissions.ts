@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectIdSchema, ProjectCatalog } from './project-catalog.ts';
 import type { AccessControl, Principal } from './access-control.ts';

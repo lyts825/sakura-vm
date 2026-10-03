@@ -1,4 +1,5 @@
-import type { DesktopPreferences, DesktopView } from '../server/model.ts';
+import type { DesktopPreferences } from '../shared/desktop-preferences.ts';
+import type { DesktopView } from '../shared/contracts/vm.ts';
 
 export const desktopPreferenceDefaults: DesktopPreferences = {
   sessionType: 'auto',

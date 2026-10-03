@@ -1,17 +1,18 @@
-import { randomUUID, createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
-import { Readable, Writable, Transform } from 'node:stream';
+import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { SFTPWrapper, Stats } from 'ssh2';
-import { AppError, guestPath } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { guestPath } from '../shared/paths.ts';
+import { previewFile } from './file-preview.ts';
 import type { Machines } from './machines.ts';
 import { ResumableUploads } from './resumable-uploads.ts';
-import { previewFile } from './file-preview.ts';
 
 export const MAX_TRANSFER = 2 * 1024 ** 3;
 export const MAX_TEXT_BYTES = 1024 ** 2;
 export const textVersion = (content: string) => createHash('sha256').update(content, 'utf8').digest('hex');
-export const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+export { quote } from './shell.ts';
 export const ftpStat = (ftp: SFTPWrapper, path: string) =>
   new Promise<Stats | null>((resolve, reject) =>
     ftp.lstat(path, (err, attrs) =>

@@ -1,17 +1,18 @@
+import { services as migrationServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 import { DataMigration } from '../../server/data-migration.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.migration = new DataMigration(m, () =>
+  host.provide(migrationServices.migration, new DataMigration(m, () =>
     host.jobStores().filter((store) => store !== host.migration?.jobs),
-  );
+  ));
 }
 export async function route(
   this: PluginContext,

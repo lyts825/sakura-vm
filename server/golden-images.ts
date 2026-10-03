@@ -12,7 +12,9 @@ import {
   type GoldenEntry,
   type GoldenResult,
 } from '../shared/golden-images.ts';
-import { AppError, DATA, checkedId } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { checkedId } from '../shared/paths.ts';
 import type { Machines } from './machines.ts';
 import type { Bundles } from './bundles.ts';
 import { Jobs } from './jobs.ts';

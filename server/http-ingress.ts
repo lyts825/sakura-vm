@@ -23,7 +23,8 @@ import {
   type IngressClientAuth,
 } from '../shared/http-ingress.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA, PORT } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, PORT } from './paths.ts';
 import type { Machines } from './machines.ts';
 import type { IngressCertificates } from './ingress-certificates.ts';
 

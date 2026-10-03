@@ -1,12 +1,13 @@
+import { services as sandboxServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import { z } from 'zod';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 import { Sandboxes, sandboxCreateSchema, sandboxRunSchema } from '../../server/sandboxes.ts';
 import { sandboxArtifactSchema, sandboxExecutionSchema, sandboxPolicySchema } from '../../shared/sandbox.ts';
 
 export async function activate(host: PluginContext) {
-  const service = host.provide('sandboxes', new Sandboxes(host.machines));
+  const service = host.provide(sandboxServices.sandboxes, new Sandboxes(host.machines));
   await service.init();
   host.registerJobs(service.jobs, () => {
     throw new AppError('请在沙箱工作台检查命令后重新执行');
@@ -37,7 +38,7 @@ const jobSchema = z
   .passthrough();
 const success = z.object({ ok: z.literal(true) });
 const idFrom = (url: URL) => url.pathname.split('/')[3];
-const service = (host: PluginContext) => host.use<Sandboxes>('sandbox', 'sandboxes');
+const service = (host: PluginContext) => host.use(sandboxServices.sandboxes);
 
 export const operations: Record<string, PluginOperation> = {
   artifact: {

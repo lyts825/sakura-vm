@@ -1,10 +1,14 @@
+import { services as serviceHealthServices } from '../service-health/services.ts';
+import { services as secretsServices } from '../secrets/services.ts';
+import { services as containersServices } from '../containers/services.ts';
+import { services as automationServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { FeatureSuite } from '../../server/feature-suite.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 import { z } from 'zod';
 import type { ServiceHealth } from '../../server/service-health.ts';
 import type { Secrets } from '../../server/secrets.ts';
@@ -12,16 +16,16 @@ import type { Containers } from '../../server/containers.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.suite = new FeatureSuite(m, host.workspaces, {
+  host.provide(automationServices.suite, new FeatureSuite(m, host.workspaces, {
     jobs: () => host.jobStores().flatMap((store) => store.list()),
-    services: (id) => host.optional<ServiceHealth>('service-health', 'health')?.observed(id) || [],
-    secrets: async (id) => host.optional<Secrets>('secrets', 'secrets')?.rotation(id),
+    services: (id) => host.optional(serviceHealthServices.health)?.observed(id) || [],
+    secrets: async (id) => host.optional(secretsServices.secrets)?.rotation(id),
     privateDatabase: async (id, input, signal, log) => {
-      const service = host.optional<Containers>('containers', 'containers');
+      const service = host.optional(containersServices.containers);
       if (!service) throw new AppError('私有数据库需要启用容器插件', 409);
       await service.privateDatabase(id, input, signal, log);
     },
-  });
+  }));
   host.registerJobs(host.suite.jobs, (job) => {
     const id = retryTarget(job);
     if (job.action?.startsWith('package:')) {

@@ -1,7 +1,7 @@
 import { ExternalLink, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { JobView } from '../../server/jobs';
-import type { VMConfig } from '../../server/model';
+import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { VMConfig } from '../../shared/contracts/vm.ts';
 import type {
   ForwardChange,
   NetworkChange,

@@ -1,0 +1,77 @@
+# 架构与依赖边界
+
+Sakura 使用一个本机 Node.js 控制进程管理 QEMU 与原生辅助进程。React 和 CLI 通过 HTTP/WebSocket 使用同一控制面；业务能力按插件选择激活。
+
+```mermaid
+flowchart TD
+  UI[React 应用与状态 hooks] --> HTTP[HTTP / WebSocket 接入]
+  CLI[CLI] --> HTTP
+  App[应用装配与资源生命周期] --> HTTP
+  HTTP --> Plugins[插件协议与服务存储]
+  HTTP --> Execution[项目命令与终端]
+  Execution --> Preparation[项目准备与租约]
+  Plugins --> Domain[业务服务]
+  Preparation --> Machines[VM 生命周期与操作锁]
+  Domain --> Machines
+  Machines --> Transport[SSH / SFTP 传输]
+  Machines --> Storage[VM 存储操作]
+  Machines --> Runtime[PosixLoom / QEMU]
+  Contracts[共享契约与功能目录] -.-> UI
+  Contracts -.-> HTTP
+  Contracts -.-> Domain
+```
+
+## 入口与生命周期
+
+- `server/index.ts` 只启动应用并报告启动失败。
+- `server/application.ts` 是组合入口，负责构造服务、绑定宿主能力和安装接入检查。
+- `server/http-machines.ts` 处理基础实例 API，只能在宿主鉴权、授权、会话锁与维护检查之后调用。
+- `server/resource-scope.ts` 在资源构造后、异步初始化前登记清理。启动失败和正常退出使用同一登记表；清理顺序保留既有服务依赖，单项失败不会跳过其余资源。VM 管理器接管运行时后，撤销运行时的独立登记，避免重复关闭。
+- `server/operation-scope.ts` 提供操作计数和请求取消范围。进入操作取得可重复释放的凭证，请求结束在 `finally` 中释放；请求断开会取消工作并移除监听器。鉴权和业务准入仍在各自边界执行。
+
+## 契约与公共原语
+
+`shared/contracts/` 存放 VM、任务与控制面数据契约。契约不能依赖 Node.js 或服务实现。错误类型和输入路径校验分别位于 `shared/errors.ts` 与 `shared/paths.ts`；宿主的数据路径、环境配置和磁盘目录映射属于 `server/paths.ts`。
+
+`shared/catalogs/` 保存自动化、工程与平台功能的纯目录和展示类型。功能聚合服务仍执行原有业务流程，目录消费者无需加载这些服务。
+
+POSIX 参数转义位于 `server/shell.ts`，项目配置和版本指纹位于 `server/project-config.ts`。调用者直接导入这些模块，不通过文件服务或工作区服务获取公共函数。
+
+`server/model.ts`、原桌面偏好入口及原业务模块中的相关导出继续作为兼容入口，供现有脚本、测试和外部调用使用。
+
+## 插件服务
+
+插件声明、服务实现和界面入口继续同包维护。`plugins/<id>/services.ts` 声明提供者拥有的 `ServiceRef<T>`：
+
+```ts
+import { services } from './services.ts';
+
+host.provide(services.commands, new CommandPresets(host.machines, host.workspaces));
+const commands = host.use(services.commands);
+```
+
+服务引用携带提供者、键和类型。宿主仍校验服务归属及直接依赖；新的服务不需要给 `Features` 增加字段。`Features` 使用一份 Map 保存所有服务，旧内置字段通过兼容访问器读取同一份数据。旧字符串形式保持 API v3 兼容，业务代码优先使用提供者声明的引用。
+
+插件激活顺序、请求取消、错误隔离和退出清理继续由 `Features` 管理。服务引用及依赖检查是可信插件的协议约束，不是第三方代码安全沙箱。
+
+## VM 与项目执行
+
+`Machines` 保留外部入口、VM 运行身份、操作锁和生命周期所有权；`MachineTransport` 承担 SSH、命令输入与 SFTP 传输，存储复制和身份文件写入使用独立模块。传输通过原宿主取得连接，保留替换运行身份检查、取消和客户端归属。
+
+`ProjectPreparation` 负责项目配置捕获、准入检查、串行准备和准备租约。普通任务通过 `prepareTask` 使用这层，`ProjectTerminals` 在同一准备层上维护终端运行与共享会话。任务取消不提前释放租约；完整执行清理完成后由调用者释放。配置变更、目录迁移和服务关闭继续等待准确的租约归属。
+
+目录迁移门闩的只读准入检查位于 `project-admission.ts`，运行作用域不再导入整个目录迁移服务。固定 UID/GID、客户机运行记录、cgroup 和原生启动器的协议保持原有行为。
+
+## 前端
+
+`src/main.tsx` 负责样式、语言包和应用挂载。`src/app/App.tsx` 组合页面、导航与交互；实例表单和通用界面元素各自维护。
+
+`useControllerState` 统一实例数据、控制面状态、事件刷新、请求去重和响应顺序保护。`useProjectSelection` 管理按 VM 保存的项目选择、加载取消与重试。会话凭证仍由 `controller-session.ts` 管理；插件界面保持懒加载。
+
+## 持久化与验证
+
+本次调整保持 JSON、实例目录、增量磁盘以及插件选择格式不变。`local-store.ts` 继续执行临时文件写入与原子替换；跨宿主文件和客户机状态的操作继续使用各自的运行记录、锁和恢复流程。
+
+`npm run architecture:check` 检查源码中的急切运行时导入与再导出，拒绝循环依赖，以及浏览器和共享模块直接或经辅助模块引用服务端实现、Node.js 内置模块。类型引用和动态导入不计入初始化依赖图，动态入口仍由插件与行为测试验证。该检查已纳入 `npm run verify`，并有循环依赖和间接边界违规的回归测试。
+
+结构调整应复用项目身份、配置捕获、迁移、传输、插件隔离和浏览器回归。宿主资源范围另有初始化失败、清理失败、所有权转移和操作计数测试。

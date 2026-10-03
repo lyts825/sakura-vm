@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 
 export const packageCacheOperations = ['cache-list', 'cache-prefetch', 'cache-install', 'cache-clear'] as const;
 export type PackageCacheOperation = (typeof packageCacheOperations)[number];

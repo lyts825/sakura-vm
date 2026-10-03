@@ -5,7 +5,8 @@ import { pipeline } from 'node:stream/promises';
 import { Transform, type Readable } from 'node:stream';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DATA, AppError } from './model.ts';
+import { DATA } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
 import { regularDirectory } from './local-store.ts';
 import type { Bundles } from './bundles.ts';
 

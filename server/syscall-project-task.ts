@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Machines } from './machines.ts';
-import { projectPrivateValues, projectVersion, type Project, type Workspaces } from './workspaces.ts';
-import { AppError } from './model.ts';
+import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
+import { AppError } from '../shared/errors.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { projectIdentityPayload } from './project-identity.ts';
 import { projectIdentityTask } from './project-run-scope.ts';

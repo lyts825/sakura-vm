@@ -2,7 +2,7 @@ import { formatDecimal } from './localization';
 import { formatDateTime } from './localization';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CapabilityActionView } from '../shared/capability-actions';
-import type { JobView } from '../server/jobs';
+import type { JobView } from '../shared/contracts/jobs.ts';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-shared';
 import { saveBlob } from './export-file';
 import { SchemaFields } from './SchemaFields';

@@ -10,7 +10,8 @@ import {
   type CertificateView,
 } from '../shared/ingress-certificates.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 
 const certificateSchema = z
   .object({

@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DATA, type VMStatus } from './model.ts';
+import { DATA } from './paths.ts';
+import { type VMStatus } from '../shared/contracts/vm.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { haFailoverOptions } from './ha-failover.ts';
 import type { Machines } from './machines.ts';

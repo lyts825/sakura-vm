@@ -1,147 +1,83 @@
-import { EventEmitter } from 'node:events';
-import { mkdir, readFile, readdir, writeFile, rename, rm, stat, copyFile, lstat, link, open } from 'node:fs/promises';
-import { existsSync, createReadStream, createWriteStream } from 'node:fs';
-import { createHash, createPrivateKey, randomUUID } from 'node:crypto';
-import { join } from 'node:path';
-import { createConnection, type Socket } from 'node:net';
-import { Client, type ClientCallback, type ExecOptions, type SFTPWrapper, type BaseAgent } from 'ssh2';
-import { StringDecoder } from 'node:string_decoder';
 import { isUtf8 } from 'node:buffer';
-import { Readable, Transform, type Duplex } from 'node:stream';
+import { createHash, createPrivateKey, randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { createReadStream, createWriteStream, existsSync } from 'node:fs';
+import {
+  copyFile,
+  link,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
+import { createConnection } from 'node:net';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
+import { type SFTPWrapper } from 'ssh2';
 import { z } from 'zod';
 import {
-  AppError,
-  DATA,
-  VM_ROOT,
   createSchema,
-  checkedId,
-  IMAGE,
-  vmDir,
-  guestPath,
-  organizationSchema,
   haPromotionSchema,
   haRetirementSchema,
   haWitnessEnrollmentSchema,
   liveMigrationFenceSchema,
   liveMigrationOriginSchema,
+  organizationSchema,
   type HaPromotion,
-  type VMRecord,
   type VMConfig,
-  type VMView,
+  type VMRecord,
   type VMStatus,
-} from './model.ts';
-import { createSshKey, seedIso, userData, metaData, bootSetup, cloudUserData, cloudNetwork } from './seed.ts';
-import { distroInfo } from './images.ts';
-import { Files, MAX_TEXT_BYTES } from './files.ts';
-import { freePort, qmp, qmpSnapshotJob, GuestAgent } from './qmp.ts';
-import type { Engine } from './runtime.ts';
+  type VMView,
+} from '../shared/contracts/vm.ts';
+import { AppError } from '../shared/errors.ts';
+import {
+  audioArguments,
+  deviceArguments,
+  diskOptions,
+  hardwareArguments,
+  hardwareSchema,
+  qemuCpuModel,
+} from '../shared/hardware.ts';
+import { checkedId, guestPath } from '../shared/paths.ts';
 import { sandboxExpired, sandboxPolicySchema, type SandboxPolicy } from '../shared/sandbox.ts';
-import { readStore, writeStore, fileHash, regularDirectory, within } from './local-store.ts';
 import { bootGuardStatus, recordBootAttempt, resetBootGuard } from './boot-guard.ts';
-import { hardwareArguments, deviceArguments, audioArguments, diskOptions, hardwareSchema, qemuCpuModel } from '../shared/hardware.ts';
-import { resourcePolicy, validateAdmission } from './resource-policies.ts';
-import { cpuSetSize } from './guest-hardware.ts';
+import {
+  diskEncryptionSchema,
+  encryptedDriveOption,
+  encryptedImageOptions,
+  openDiskSecret,
+  plainImageOptions,
+  qemuSecretObject,
+  withDiskSecret,
+} from './disk-encryption.ts';
+import { Files, MAX_TEXT_BYTES } from './files.ts';
 import { ensureUefiFirmware, requireUefiSupport } from './firmware.ts';
-import { StoragePools } from './storage-pools.ts';
-import { diskEncryptionSchema, encryptedDriveOption, encryptedImageOptions, plainImageOptions,
-  openDiskSecret, qemuSecretObject, withDiskSecret } from './disk-encryption.ts';
-import { Secrets } from './secrets.ts';
+import { cpuSetSize } from './guest-hardware.ts';
+import { distroInfo } from './images.ts';
 import { liveMigrationProjectsSchema, type LiveMigrationProjects } from './live-migration-projects.ts';
-import type { Project } from './workspaces.ts';
-import { projectNetworkCommand } from './project-network-isolation.ts';
+import { readStore, regularDirectory, within, writeStore } from './local-store.ts';
+import { DATA, IMAGE, VM_ROOT, vmDir } from './paths.ts';
+import { GuestAgent, freePort, qmp, qmpSnapshotJob } from './qmp.ts';
+import { resourcePolicy, validateAdmission } from './resource-policies.ts';
+import type { Engine } from './runtime.ts';
+import { Secrets } from './secrets.ts';
+import { bootSetup, cloudNetwork, cloudUserData, createSshKey, metaData, seedIso, userData } from './seed.ts';
+import { StoragePools } from './storage-pools.ts';
+import { copyDirectoryVerified, writeIdentityFile } from './vm-storage.ts';
+import { MachineTransport } from './vm-transport.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
 export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
 
-async function writeIdentityFile(file: string, contents: string | Buffer) {
-  const temporary = `${file}.tmp`;
-  try {
-    await writeFile(temporary, contents, { mode: 0o600, flush: true });
-    await rename(temporary, file);
-  } finally {
-    await rm(temporary, { force: true });
-  }
-}
-
-async function directoryEntries(root: string): Promise<string[]> {
-  const found: string[] = [];
-  const visit = async (folder: string, prefix: string) => {
-    for (const entry of await readdir(folder, { withFileTypes: true })) {
-      const relativePath = prefix + entry.name;
-      if (entry.isDirectory()) {
-        found.push(relativePath + '/');
-        await visit(join(folder, entry.name), relativePath + '/');
-      } else if (entry.isFile()) found.push(relativePath);
-      else throw new AppError('实例目录包含无法迁移的链接或特殊文件', 409);
-    }
-  };
-  await visit(root, '');
-  return found.sort();
-}
-
-async function copyDirectoryVerified(source: string, destination: string, signal?: AbortSignal,
-  progress: (text: string) => void = () => {}) {
-  const before = await directoryEntries(source);
-  await mkdir(destination);
-  const visit = async (folder: string, target: string) => {
-    for (const entry of await readdir(folder, { withFileTypes: true })) {
-      signal?.throwIfAborted();
-      const input = join(folder, entry.name), output = join(target, entry.name);
-      if (entry.isDirectory()) {
-        await mkdir(output);
-        await visit(input, output);
-      } else if (entry.isFile()) {
-        const sourceInfo = await lstat(input);
-        const checksum = createHash('sha256');
-        await pipeline(createReadStream(input, { signal }),
-          new Transform({ transform(chunk, _encoding, callback) {
-            checksum.update(chunk);
-            callback(null, chunk);
-          } }),
-          createWriteStream(output, { flags: 'wx', mode: sourceInfo.mode & 0o777 }),
-          { signal });
-        const destinationHash = await fileHash(output, signal);
-        if (checksum.digest('hex') !== destinationHash)
-          throw new AppError(`存储池迁移校验失败：${entry.name}`, 409);
-        const after = await lstat(input);
-        if (after.size !== sourceInfo.size || after.mtimeMs !== sourceInfo.mtimeMs)
-          throw new AppError(`迁移期间源文件发生变化：${entry.name}`, 409);
-        progress(`已校验 ${entry.name}（${after.size} 字节）\n`);
-      } else throw new AppError('实例目录包含无法迁移的链接或特殊文件', 409);
-    }
-  };
-  await visit(source, destination);
-  if (JSON.stringify(before) !== JSON.stringify(await directoryEntries(source)) ||
-      JSON.stringify(before) !== JSON.stringify(await directoryEntries(destination)))
-    throw new AppError('迁移期间实例目录发生变化', 409);
-}
-
-type Live = {
-  status: VMStatus;
-  incoming?: boolean;
-  accelerator: 'tcg' | 'whpx';
-  startedAt: string;
-  sshPort: number;
-  qmpPort: number;
-  agentPort: number;
-  serialPort: number;
-  abort: AbortController;
-  bootAbort: AbortController;
-  bootstrapKnown?: boolean;
-  serialConnected?: boolean;
-  serialReady?: boolean;
-  serialTail?: string;
-  done: Promise<void>;
-  bootDone?: Promise<void>;
-  allowInitialReset?: boolean;
-  serial?: Socket;
-  clients: Set<Client>;
-  memoryTargetMiB?: number;
-  error?: string;
-};
+import type { Live } from './vm-state.ts';
 export type BootAttachment = { args: string[]; close: () => Promise<void>; machine?: string };
 export class Machines extends EventEmitter {
   storagePools = new StoragePools(this);
@@ -1261,338 +1197,24 @@ export class Machines extends EventEmitter {
       this.emit('change');
     }
   }
-  async connect(id: string, timeout = 10000, signal?: AbortSignal, agentPath?: string | BaseAgent) {
-    this.requireUnlocked(id);
-    const live = this.live.get(id);
-    if (!live || live.status === 'stopping' || live.status === 'paused')
-      throw new AppError(live?.status === 'paused' ? '发行版已暂停，请先恢复' : '请先启动该发行版', 409);
-    const deadline = performance.now() + timeout;
-    const key = await readFile(join(vmDir(id), 'id_rsa'));
-    for (let attempt = 0; ; attempt++) {
-      this.requireUnlocked(id);
-      signal?.throwIfAborted();
-      if (this.live.get(id) !== live || this.live.get(id)?.status === 'stopping')
-        throw new AppError('发行版已停止', 409);
-      const remaining = deadline - performance.now();
-      if (remaining <= 0) throw new Error('SSH connection timed out');
-      try {
-        return await this.connectOnce(live, key, remaining, signal, agentPath);
-      } catch (error) {
-        // An interrupted clone rekey may have updated the guest before the host
-        // key file. Recover using the pending key without replaying commands.
-        if (
-          (error as Error).message.includes('authentication') &&
-          existsSync(join(vmDir(id), 'identity.json'))
-        ) {
-          const pending = JSON.parse(await readFile(join(vmDir(id), 'identity.json'), 'utf8'));
-          signal?.throwIfAborted();
-          if (this.live.get(id) !== live || this.live.get(id)?.status === 'stopping')
-            throw new AppError('发行版已停止', 409);
-          return this.connectOnce(
-            live,
-            Buffer.from(pending.privateText),
-            Math.max(1, deadline - performance.now()),
-            signal,
-            agentPath,
-          );
-        }
-        // QEMU's user-network listener can refuse simultaneous TCP connects.
-        // Retry only before a TCP connection exists, never replay a command or
-        // an authentication failure, and stay within the caller's deadline.
-        const wait = 100 * 2 ** attempt;
-        if (
-          (error as NodeJS.ErrnoException).code !== 'ECONNREFUSED' ||
-          attempt >= 3 ||
-          deadline - performance.now() <= wait
-        )
-          throw error;
-        await delay(wait, undefined, { signal });
-      }
-    }
+  private get transport() { return new MachineTransport(this); }
+  connect(...args: Parameters<MachineTransport['connect']>) {
+    return this.transport.connect(...args);
   }
-  private connectOnce(live: Live, key: Buffer, timeout: number, signal?: AbortSignal,
-    agentPath?: string | BaseAgent) {
-    signal?.throwIfAborted();
-    return new Promise<Client>((resolve, reject) => {
-      const client = new Client();
-      const abort = () => client.destroy();
-      const timer = setTimeout(() => {
-        reject(new Error('SSH connection timed out'));
-        client.destroy();
-      }, timeout);
-      const cleanup = () => {
-        clearTimeout(timer);
-        signal?.removeEventListener('abort', abort);
-      };
-      live.clients.add(client);
-      signal?.addEventListener('abort', abort, { once: true });
-      client.once('ready', () => {
-        cleanup();
-        resolve(client);
-      });
-      client.on('error', (error) => {
-        cleanup();
-        reject(error);
-        client.end();
-      });
-      client.once('close', () => {
-        cleanup();
-        live.clients.delete(client);
-        reject(new Error('SSH connection closed'));
-      });
-      try {
-        client.connect({
-          host: '127.0.0.1',
-          port: live.sshPort,
-          username: 'root',
-          privateKey: key,
-          readyTimeout: timeout,
-          keepaliveInterval: 10000,
-          keepaliveCountMax: 3,
-          ...(agentPath ? { agent: agentPath, agentForward: true,
-            // Forwarded task credentials never authenticate the VM's root login.
-            ...(typeof agentPath === 'string' ? {} : { authHandler: ['publickey'] }) } : {}),
-        });
-      } catch (error) {
-        cleanup();
-        live.clients.delete(client);
-        client.destroy();
-        reject(error);
-      }
-    });
+  exec(...args: Parameters<MachineTransport['exec']>) {
+    return this.transport.exec(...args);
   }
-  async exec(
-    id: string,
-    command: string,
-    timeout = 30000,
-    signal?: AbortSignal,
-    output?: (data: string) => void,
-    agentPath?: string | BaseAgent,
-  ) {
-    return this.execChannel(id, command, timeout, signal, output, agentPath);
+  execInput(...args: Parameters<MachineTransport['execInput']>) {
+    return this.transport.execInput(...args);
   }
-  /** Bounded command input stays on the SSH channel, outside the guest argv. */
-  async execInput(
-    id: string,
-    command: string,
-    input: Buffer,
-    timeout = 30000,
-    signal?: AbortSignal,
-    output?: (data: string) => void,
-    agentPath?: string | BaseAgent,
-  ) {
-    if (!Buffer.isBuffer(input) || input.length > 128 * 1024)
-      throw new AppError('命令输入超过 128 KiB 或类型无效', 413, 'GUEST_INPUT_INVALID');
-    // Capture before connecting so callers cannot change an in-flight payload.
-    return this.execChannel(id, command, timeout, signal, output, agentPath, Buffer.from(input));
+  openGuestTcpStream(...args: Parameters<MachineTransport['openGuestTcpStream']>) {
+    return this.transport.openGuestTcpStream(...args);
   }
-  private async execChannel(
-    id: string,
-    command: string,
-    timeout: number,
-    signal?: AbortSignal,
-    output?: (data: string) => void,
-    agentPath?: string | BaseAgent,
-    input?: Buffer,
-  ) {
-    const client = await this.connect(id, Math.min(timeout, 10000), signal, agentPath);
-    try {
-      return await new Promise<{ stdout: string; stderr: string; code: number }>((resolve, reject) => {
-        let stdout = '',
-          stderr = '',
-          size = 0;
-        let settled = false;
-        const outDecoder = new StringDecoder('utf8'),
-          errDecoder = new StringDecoder('utf8');
-        const finish = (error?: Error, code = -1) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          signal?.removeEventListener('abort', abort);
-          client.off('close', closed);
-          error
-            ? reject(error)
-            : resolve({ stdout: stdout + outDecoder.end(), stderr: stderr + errDecoder.end(), code });
-        };
-        const abort = () => {
-          finish(new AppError('Linux 命令已取消', 409));
-          client.destroy();
-        };
-        const closed = () => finish(new Error('SSH connection closed'));
-        const timer = setTimeout(() => {
-          finish(new AppError('Linux 命令执行超时', 408));
-          client.destroy();
-        }, timeout);
-        signal?.addEventListener('abort', abort, { once: true });
-        client.once('close', closed);
-        if (signal?.aborted) {
-          abort();
-          return;
-        }
-        const completed: ClientCallback = (error, stream) => {
-          if (error) {
-            finish(error);
-            return;
-          }
-          if (settled) {
-            stream.close();
-            return;
-          }
-          const collect = (data: Buffer, err = false) => {
-            if (settled) return;
-            size += data.length;
-            if (size > 1024 * 1024) {
-              finish(new AppError('输出超过 1 MiB，请使用终端'));
-              stream.close();
-              return;
-            }
-            const text = (err ? errDecoder : outDecoder).write(data);
-            if (err) stderr += text;
-            else stdout += text;
-            output?.(text);
-          };
-          stream.on('data', (data: Buffer) => collect(data));
-          stream.stderr.on('data', (data: Buffer) => collect(data, true));
-          stream.on('error', (e: Error) => finish(e));
-          stream.on('close', (code: number) => {
-            finish(undefined, code ?? -1);
-          });
-          if (input !== undefined) {
-            try { stream.end(input); }
-            catch (error) {
-              finish(error instanceof Error ? error : new Error('SSH command input failed'));
-              stream.close();
-            }
-          }
-        };
-        if (agentPath) client.exec(command, { agentForward: true } as ExecOptions, completed);
-        else client.exec(command, completed);
-      });
-    } finally {
-      client.end();
-    }
+  private connectOnce(...args: Parameters<MachineTransport['connectOnce']>) {
+    return this.transport.connectOnce(...args);
   }
-  async openGuestTcpStream(id: string, port: number, signal?: AbortSignal,
-    project?: Project): Promise<Duplex> {
-    if (!Number.isInteger(port) || port < 1 || port > 65535)
-      throw new AppError('客户机端口无效');
-    const script = [
-      'import socket,sys,threading',
-      `sock=socket.create_connection(("127.0.0.1",${port}),5)`,
-      'sock.settimeout(None)',
-      'def upstream():',
-      '  try:',
-      '    while True:',
-      '      data=sys.stdin.buffer.read1(16384)',
-      '      if not data: break',
-      '      sock.sendall(data)',
-      '  finally:',
-      '    try: sock.shutdown(socket.SHUT_WR)',
-      '    except OSError: pass',
-      'threading.Thread(target=upstream,daemon=True).start()',
-      'try:',
-      '  while True:',
-      '    data=sock.recv(16384)',
-      '    if not data: break',
-      '    sys.stdout.buffer.write(data)',
-      '    sys.stdout.buffer.flush()',
-      'finally: sock.close()',
-    ].join('\n');
-    const payload = Buffer.from(script).toString('base64');
-    const relay = `python3 -I -S -u -c "import base64;exec(base64.b64decode('${payload}'))"`;
-    const command = project ? projectNetworkCommand(project, `exec ${relay}`) : relay;
-    const client = await this.connect(id, 10000, signal);
-    try {
-      const channel = await new Promise<Duplex>((resolve, reject) => {
-        let settled = false;
-        const finish = (error?: Error, stream?: Duplex) => {
-          if (settled) {
-            stream?.destroy();
-            return;
-          }
-          settled = true;
-          signal?.removeEventListener('abort', abortPending);
-          client.off('close', closedPending);
-          error ? reject(error) : resolve(stream!);
-        };
-        const abortPending = () => finish(new AppError('临时隧道连接已取消', 409));
-        const closedPending = () => finish(new Error('SSH connection closed'));
-        signal?.addEventListener('abort', abortPending, { once: true });
-        client.once('close', closedPending);
-        if (signal?.aborted) return abortPending();
-        client.exec(command, (error, stream) => finish(error || undefined, stream));
-      });
-      channel.on('error', () => channel.destroy());
-      (channel as typeof channel & { stderr?: { resume(): void } }).stderr?.resume();
-      const abort = () => { channel.destroy(); client.destroy(); };
-      signal?.addEventListener('abort', abort, { once: true });
-      channel.once('close', () => {
-        signal?.removeEventListener('abort', abort);
-        client.end();
-      });
-      if (signal?.aborted) abort();
-      return channel;
-    } catch (error) {
-      client.destroy();
-      throw error;
-    }
-  }
-  async sftp<T>(
-    id: string,
-    work: (sftp: SFTPWrapper, transportSignal?: AbortSignal) => Promise<T>,
-    signal?: AbortSignal,
-  ) {
-    const client = await this.connect(id, 10000, signal);
-    const transport = new AbortController();
-    let finish!: (error: unknown, result?: T) => void;
-    const failed = (error: Error) => {
-      transport.abort(error);
-      finish(error);
-      client.destroy();
-    };
-    const closed = () => failed(new Error('SFTP connection closed'));
-    const abort = () => failed(signal?.reason || new AppError('文件操作已取消', 409));
-    try {
-      return await new Promise<T>((resolve, reject) => {
-        let settled = false;
-        finish = (error, result) => {
-          if (settled) return;
-          settled = true;
-          error ? reject(error) : resolve(result as T);
-        };
-        signal?.addEventListener('abort', abort, { once: true });
-        client.once('close', closed);
-        client.on('error', failed);
-        if (signal?.aborted) {
-          abort();
-          return;
-        }
-        client.sftp((error, ftp) => {
-          if (error) {
-            failed(error);
-            return;
-          }
-          // ssh2 may leave requests queued forever if a finally block submits
-          // cleanup after disconnection. Transport failure must settle this
-          // operation independently of those request callbacks.
-          ftp.on('error', failed);
-          ftp.once('close', closed);
-          ftp.once('end', closed);
-          if (settled) {
-            ftp.end();
-            return;
-          }
-          Promise.resolve()
-            .then(() => work(ftp, transport.signal))
-            .then((result) => finish(undefined, result), failed);
-        });
-      });
-    } finally {
-      signal?.removeEventListener('abort', abort);
-      client.off('close', closed);
-      client.off('error', failed);
-      client.end();
-    }
+  sftp<T>(id: string, work: (sftp: SFTPWrapper, transportSignal?: AbortSignal) => Promise<T>, signal?: AbortSignal) {
+    return this.transport.sftp(id, work, signal);
   }
   async files(id: string, path: string) {
     return this.sftp(

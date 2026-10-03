@@ -3,7 +3,7 @@ import { lstat, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { hostname } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 type Owner = { version: 1; host: string; pid: number; token: string };
 

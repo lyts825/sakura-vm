@@ -1,6 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { lazy, useEffect, useState } from 'react';
-import type { Project } from '../../server/workspaces';
+import type { Project } from '../../server/project-config.ts';
 import type { FeatureProps } from '../../src/feature-shared';
 import { PluginGate } from '../../src/plugin-context';
 const HealthEditor = lazy(() =>

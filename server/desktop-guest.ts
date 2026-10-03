@@ -2,12 +2,12 @@ import {
   defaultDesktopPreferences,
   desktopPreferencesSchema,
   type DesktopPreferences,
-} from './desktop-preferences.ts';
+} from '../shared/desktop-preferences.ts';
 import { desktopLauncher, desktopLauncherPath } from './desktop-binding.ts';
-import type { Project } from './workspaces.ts';
+import type { Project } from './project-config.ts';
 import { projectNetworkCommand } from './project-network-isolation.ts';
 import { z } from 'zod';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 
 // These scripts run only inside the managed guest, over its existing SSH connection.
 // TigerVNC owns the outer X server. Wayland-only distros nest KWin inside it.

@@ -1,7 +1,7 @@
 import type { Machines } from './machines.ts';
-import type { Project } from './workspaces.ts';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import type { Project } from './project-config.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 
 /** Names are derived only from validated project IDs, never from user labels. */
 export function projectNetworkNamespace(project: Project) {

@@ -1,9 +1,10 @@
+import { services as snapshotsServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 import { importEncrypted } from '../../server/encrypted-backups.ts';
 import { Bundles } from '../../server/bundles.ts';
@@ -12,7 +13,11 @@ import { goldenActionSchema, goldenEntrySchema, goldenResultSchema } from '../..
 import { Rescue } from '../../server/rescue.ts';
 import { SnapshotDiff } from '../../server/snapshot-diff.ts';
 import { SnapshotMerge } from '../../server/snapshot-merge.ts';
-import { snapshotMergeInputSchema, snapshotMergeJobSchema, snapshotMergeViewSchema } from '../../shared/snapshot-merge.ts';
+import {
+  snapshotMergeInputSchema,
+  snapshotMergeJobSchema,
+  snapshotMergeViewSchema,
+} from '../../shared/snapshot-merge.ts';
 import {
   snapshotDiffInputSchema,
   snapshotDiffJobSchema,
@@ -31,23 +36,23 @@ import {
 } from '../../shared/rescue.ts';
 
 export async function activate(host: PluginContext) {
-  const signatures = host.provide('signedBundles', new SignedBundles(host.dataFile('signed-bundles')));
+  const signatures = host.provide(snapshotsServices.signedBundles, new SignedBundles(host.dataFile('signed-bundles')));
   await signatures.init();
-  host.bundles = new Bundles(host.machines, signatures);
-  const golden = host.provide('goldenImages', new GoldenImages(host.machines, host.bundles));
+  host.provide(snapshotsServices.bundles, new Bundles(host.machines, signatures));
+  const golden = host.provide(snapshotsServices.goldenImages, new GoldenImages(host.machines, host.bundles));
   host.registerJobs(golden.jobs, () => {
     throw new AppError('请先刷新黄金镜像库核对结果，再明确发起操作', 409);
   });
-  const rescue = host.provide('rescue', new Rescue(host.machines));
+  const rescue = host.provide(snapshotsServices.rescue, new Rescue(host.machines));
   await rescue.init();
   host.registerJobs(rescue.jobs, () => {
     throw new AppError('请在快照页检查救援命令后重新执行', 409);
   });
-  const snapshotDiff = host.provide('snapshotDiff', new SnapshotDiff(host.machines));
+  const snapshotDiff = host.provide(snapshotsServices.snapshotDiff, new SnapshotDiff(host.machines));
   host.registerJobs(snapshotDiff.jobs, () => {
     throw new AppError('请在快照页选择快照后重新比较', 409);
   });
-  const snapshotMerge = host.provide('snapshotMerge', new SnapshotMerge(host.machines, host.bundles));
+  const snapshotMerge = host.provide(snapshotsServices.snapshotMerge, new SnapshotMerge(host.machines, host.bundles));
   host.registerJobs(snapshotMerge.jobs, () => {
     throw new AppError('请在快照页核对分支和目标后重新合并', 409);
   });
@@ -56,52 +61,52 @@ export const operations: Record<string, PluginOperation> = {
   'snapshot-merge-view': {
     response: snapshotMergeViewSchema,
     execute(url) {
-      return this.use<SnapshotMerge>('snapshots', 'snapshotMerge').view(url.pathname.split('/')[3]);
+      return this.use(snapshotsServices.snapshotMerge).view(url.pathname.split('/')[3]);
     },
   },
   'snapshot-merge-run': {
     request: snapshotMergeInputSchema,
     response: snapshotMergeJobSchema,
     execute(url, input) {
-      return this.use<SnapshotMerge>('snapshots', 'snapshotMerge').run(url.pathname.split('/')[3], input);
+      return this.use(snapshotsServices.snapshotMerge).run(url.pathname.split('/')[3], input);
     },
   },
   'snapshot-diff-view': {
     response: snapshotDiffViewSchema,
     execute(url) {
-      return this.use<SnapshotDiff>('snapshots', 'snapshotDiff').view(url.pathname.split('/')[3]);
+      return this.use(snapshotsServices.snapshotDiff).view(url.pathname.split('/')[3]);
     },
   },
   'snapshot-diff-run': {
     request: snapshotDiffInputSchema,
     response: snapshotDiffJobSchema,
     execute(url, input) {
-      return this.use<SnapshotDiff>('snapshots', 'snapshotDiff').run(url.pathname.split('/')[3], input);
+      return this.use(snapshotsServices.snapshotDiff).run(url.pathname.split('/')[3], input);
     },
   },
   'signed-bundles-view': {
     response: signedBundleViewSchema,
     execute() {
-      return this.use<SignedBundles>('snapshots', 'signedBundles').view();
+      return this.use(snapshotsServices.signedBundles).view();
     },
   },
   'signed-bundles-action': {
     request: signedBundleActionSchema,
     response: signedBundleViewSchema,
     execute(_url, input) {
-      return this.use<SignedBundles>('snapshots', 'signedBundles').action(input);
+      return this.use(snapshotsServices.signedBundles).action(input);
     },
   },
   'rescue-view': {
     response: rescueViewSchema,
     execute(url) {
-      return this.use<Rescue>('snapshots', 'rescue').view(url.pathname.split('/')[3]);
+      return this.use(snapshotsServices.rescue).view(url.pathname.split('/')[3]);
     },
   },
   'rescue-artifact': {
     response: rescueArtifactSchema,
     execute(url) {
-      return this.use<Rescue>('snapshots', 'rescue').artifact(
+      return this.use(snapshotsServices.rescue).artifact(
         url.pathname.split('/')[3],
         z.uuid().parse(url.searchParams.get('run')),
         z.uuid().parse(url.searchParams.get('artifact')),
@@ -112,7 +117,7 @@ export const operations: Record<string, PluginOperation> = {
     request: rescueRunSchema,
     response: rescueJobSchema,
     execute(url, input) {
-      return this.use<Rescue>('snapshots', 'rescue').run(url.pathname.split('/')[3], input);
+      return this.use(snapshotsServices.rescue).run(url.pathname.split('/')[3], input);
     },
   },
   'golden-list': {
@@ -129,14 +134,14 @@ export const operations: Record<string, PluginOperation> = {
       })
       .strict(),
     execute() {
-      return this.use<GoldenImages>('snapshots', 'goldenImages').view();
+      return this.use(snapshotsServices.goldenImages).view();
     },
   },
   'golden-action': {
     request: goldenActionSchema,
     response: goldenResultSchema,
     execute(_url, input, signal) {
-      return this.use<GoldenImages>('snapshots', 'goldenImages').action(input, signal);
+      return this.use(snapshotsServices.goldenImages).action(input, signal);
     },
   },
 };

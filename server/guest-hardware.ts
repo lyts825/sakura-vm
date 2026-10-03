@@ -1,4 +1,4 @@
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export function cpuSetSize(text: string) {
   if (!/^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/.test(text.trim())) return 0;

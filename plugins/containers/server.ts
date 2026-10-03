@@ -1,3 +1,4 @@
+import { services as containersServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -6,7 +7,7 @@ import { Containers } from '../../server/containers.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.containers = new Containers(m, host.workspaces);
+  host.provide(containersServices.containers, new Containers(m, host.workspaces));
 }
 export async function route(
   this: PluginContext,

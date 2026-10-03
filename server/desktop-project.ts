@@ -2,17 +2,41 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Machines } from './machines.ts';
-import { AppError, type DesktopView } from './model.ts';
-import { Workspaces, projectPrivateValues, projectVersion, type Project } from './workspaces.ts';
+import { AppError } from '../shared/errors.ts';
+import { type DesktopView } from '../shared/contracts/vm.ts';
+import { Workspaces, projectPrivateValues } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { ProjectRunScopes } from './project-run-scope.ts';
 import { ProjectIdentities, projectIdentityPayload, projectIdentitySources } from './project-identity.ts';
 import { ProjectDesktopScope } from './project-service-scope.ts';
-import { DesktopBindings, bindingProject, type ProjectDesktopBinding, type DesktopBinding } from './desktop-binding.ts';
-import { desktopProjectEnvironment, desktopProjectPrepare, desktopProjectVersionProbe, desktopUidCommand, desktopCommands,
-  desktopProjectImePrepare, desktopProjectImeCommand } from './desktop-guest.ts';
-import { defaultDesktopPreferences, desktopPreferencesSchema, type DesktopPreferences } from './desktop-preferences.ts';
-import { desktopAuthoritySchema, desktopProjectControl, desktopProjectCommand, type DesktopControlProof, type DesktopAuthority } from './desktop-project-control.ts';
+import {
+  DesktopBindings,
+  bindingProject,
+  type ProjectDesktopBinding,
+  type DesktopBinding,
+} from './desktop-binding.ts';
+import {
+  desktopProjectEnvironment,
+  desktopProjectPrepare,
+  desktopProjectVersionProbe,
+  desktopUidCommand,
+  desktopCommands,
+  desktopProjectImePrepare,
+  desktopProjectImeCommand,
+} from './desktop-guest.ts';
+import {
+  defaultDesktopPreferences,
+  desktopPreferencesSchema,
+  type DesktopPreferences,
+} from '../shared/desktop-preferences.ts';
+import {
+  desktopAuthoritySchema,
+  desktopProjectControl,
+  desktopProjectCommand,
+  type DesktopControlProof,
+  type DesktopAuthority,
+} from './desktop-project-control.ts';
 import { guestTaskControlPlan, cleanupGuestTaskPlan } from './guest-task.ts';
 import { privateLog, redactValues } from './secrets.ts';
 

@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { rolloutPolicyInput } from './feature-rollouts.ts';
 import type { HostPeers, PeerRolloutView } from './host-peers.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 
 const targetSchema = z.object({
   peerId: z.uuid(), hostId: z.uuid(), name: z.string().min(1).max(128),

@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'node:http';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { MAX_TEXT_BYTES } from './files.ts';
 
 // JSON can encode each content byte as a six-character \uXXXX escape.

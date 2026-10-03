@@ -1,12 +1,13 @@
+import { services as pipelinesServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { Pipelines } from '../../server/pipelines.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
-  host.pipelines = new Pipelines(host.machines, host.workspaces, host.files);
+  host.provide(pipelinesServices.pipelines, new Pipelines(host.machines, host.workspaces, host.files));
   host.registerJobs(host.pipelines.jobs, (job) => {
     if (!job.action?.startsWith('run:')) throw new AppError('请回到原功能页面重新执行');
     return retryInProject(host, job, () => host.pipelines.run(retryTarget(job), job.action!.slice(4)));

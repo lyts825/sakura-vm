@@ -1,10 +1,11 @@
+import { services as projectSearchServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { ProjectFiles } from '../../server/project-files.ts';
 export async function activate(host: PluginContext) {
-  host.projectFiles = new ProjectFiles(host.machines, host.workspaces);
+  host.provide(projectSearchServices.projectFiles, new ProjectFiles(host.machines, host.workspaces));
 }
 export async function route(
   this: PluginContext,

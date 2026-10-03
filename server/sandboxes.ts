@@ -6,10 +6,12 @@ import {
   type SandboxExecution,
   type SandboxPolicy,
 } from '../shared/sandbox.ts';
-import { quote } from './files.ts';
-import { Jobs, type JobView } from './jobs.ts';
+import { quote } from './shell.ts';
+import { Jobs } from './jobs.ts';
+import { type JobView } from '../shared/contracts/jobs.ts';
 import { BOOT_TIMEOUT_MS, Machines } from './machines.ts';
-import { AppError, createSchema, type VMView } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { createSchema, type VMView } from '../shared/contracts/vm.ts';
 import { SandboxArtifacts, artifactPathSchema } from './sandbox-artifacts.ts';
 
 export const sandboxCreateSchema = z

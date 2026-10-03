@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { HaWitnessHttpError, haHttpsRequest } from './ha-witness-http.ts';
 import { haWitnessHeartbeatSchema, haWitnessIdentitySchema } from './ha-witness-core.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const haWitnessClientConfigSchema = z.object({
   version: z.literal(1),

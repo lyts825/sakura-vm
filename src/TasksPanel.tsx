@@ -1,8 +1,8 @@
 import { formatDateTime } from './localization';
 import { ClipboardList, Inbox } from 'lucide-react';
 import { useState } from 'react';
-import type { JobView } from '../server/jobs';
-import type { VMView } from '../server/model';
+import type { JobView } from '../shared/contracts/jobs.ts';
+import type { VMView } from '../shared/contracts/vm.ts';
 import type { Request } from './feature-shared';
 import { Feedback, useAction, useRemote } from './feature-shared';
 import './features.css';

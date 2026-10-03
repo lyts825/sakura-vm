@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const runtimeProbeTimeout = 15_000;
 export const runtimeProbeOutputBytes = 4096;

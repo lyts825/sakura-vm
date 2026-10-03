@@ -1,12 +1,17 @@
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import type { ProjectTerminals } from './project-terminals.ts';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import type { ProjectPreparation } from './project-preparation.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 import { envPrefix } from './project-services.ts';
-import { projectNetworkCommand, ensureProjectNetworkScript, projectNetworkNamespace,
-  projectNetworkCheckScript } from './project-network-isolation.ts';
-import { Workspaces, projectPrivateValues, projectVersion, type Project } from './workspaces.ts';
+import {
+  projectNetworkCommand,
+  ensureProjectNetworkScript,
+  projectNetworkNamespace,
+  projectNetworkCheckScript,
+} from './project-network-isolation.ts';
+import { Workspaces, projectPrivateValues } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
 import { redactValues } from './secrets.ts';
 import { guestTask } from './guest-task.ts';
 import { projectIdSchema } from './project-catalog.ts';
@@ -66,7 +71,7 @@ export class ProjectExecution {
   private controller = new AbortController();
   private pending = new Set<Promise<unknown>>();
   private closing?: Promise<void>;
-  constructor(private machines: Machines, private terminals: ProjectTerminals,
+  constructor(private machines: Machines, private preparation: Pick<ProjectPreparation, 'prepareTask' | 'workspaces'>,
     private runProjectTask: typeof projectIdentityTask = projectIdentityTask) {}
 
   run(id: string, input: unknown, projectId?: string | null, signal?: AbortSignal) {
@@ -91,7 +96,7 @@ export class ProjectExecution {
     }
     const originalLive = this.machines.live.get(id);
     if (!originalLive || this.machines.state(id) !== 'running') throw new AppError('请先启动或恢复实例', 409);
-    const prepared = await this.terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
+    const prepared = await this.preparation.prepareTask(id, projectId, signal);
     let failed = false, failure: unknown;
     try {
       const { captured, signal: preparationSignal } = prepared;
@@ -103,7 +108,7 @@ export class ProjectExecution {
       const project = Object.defineProperty(structuredClone(captured.project), '_workspace',
         { value: captured.project._workspace, enumerable: false }) as Project;
       const version = captured.configVersion, active = AbortSignal.any([signal, preparationSignal]);
-      const workspaces = this.terminals.workspaces;
+      const workspaces = this.preparation.workspaces;
       return await workspaces.projects.inScope(id, prepared.projectId, async () => {
         const origin = () => {
           active.throwIfAborted();

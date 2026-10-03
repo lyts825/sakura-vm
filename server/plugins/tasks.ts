@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../plugin-api.ts';
 
-import { AppError } from '../model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 export async function route(
   this: PluginContext,

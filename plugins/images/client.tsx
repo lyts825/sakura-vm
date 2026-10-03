@@ -1,6 +1,6 @@
 import { Download, Layers, Plus, Upload } from 'lucide-react';
 import { lazy, useRef, useState } from 'react';
-import type { JobView } from '../../server/jobs';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';
 import '../../src/features.css';
 import type { PluginPageProps } from '../../src/plugin-client';

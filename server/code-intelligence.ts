@@ -1,9 +1,11 @@
 import { posix } from 'node:path';
 import type { Machines } from './machines.ts';
-import { projectPrivateValues, projectVersion, type Project, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
 import { repositoryPath } from './git-workbench.ts';
-import { quote } from './files.ts';
-import { AppError, guestPath } from './model.ts';
+import { quote } from './shell.ts';
+import { AppError } from '../shared/errors.ts';
+import { guestPath } from '../shared/paths.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { projectIdentityPayload } from './project-identity.ts';
 import { projectIdentityTask } from './project-run-scope.ts';

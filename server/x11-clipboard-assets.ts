@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { ROOT, AppError } from './model.ts';
+import { ROOT } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const x11AssetNames = ['protocol.h', 'policy.cpp', 'controller.py'] as const;
 const digest = z.string().regex(/^[a-f0-9]{64}$/);

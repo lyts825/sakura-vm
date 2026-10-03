@@ -1,3 +1,4 @@
+import { services as terminalWorkspaceServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -7,7 +8,7 @@ import { ProjectCatalog } from '../../server/project-catalog.ts';
 import { ProjectTerminals } from '../../server/project-terminals.ts';
 
 export async function activate(host: PluginContext) {
-  host.provide('terminals', new ProjectTerminals(host.machines, host.workspaces));
+  host.provide(terminalWorkspaceServices.terminals, new ProjectTerminals(host.machines, host.workspaces));
 }
 export async function route(
   this: PluginContext,
@@ -40,7 +41,7 @@ export async function route(
       const projects = this.workspaces?.projects || new ProjectCatalog(this.machines);
       const projectId = await projects.with(id, url.searchParams.get('project'),
         async () => projects.current(id));
-      await this.use<ProjectTerminals>('terminal-workspace', 'terminals').stop(id, projectId,
+      await this.use(terminalWorkspaceServices.terminals).stop(id, projectId,
         'session' in input ? input.session : undefined, signal);
       send({ ok: true, projectId });
       return true;

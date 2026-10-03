@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, checkedId, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { checkedId } from '../shared/paths.ts';
+import { DATA } from './paths.ts';
 import { readStore } from './local-store.ts';
 
 const statusSchema = z.enum([

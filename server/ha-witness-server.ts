@@ -3,11 +3,16 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { readJsonBody } from './http.ts';
-import { HaWitness, type HaWitnessActions, type HaWitnessPlan,
-  type HaWitnessVm, type HaWitnessReplicaIdentity,
-  haWitnessReplicaInventorySchema } from './ha-witness-core.ts';
+import {
+  HaWitness,
+  type HaWitnessActions,
+  type HaWitnessPlan,
+  type HaWitnessVm,
+  type HaWitnessReplicaIdentity,
+  haWitnessReplicaInventorySchema,
+} from './ha-witness-core.ts';
 import { haHttpsRequest } from './ha-witness-http.ts';
 import { lockHaWitnessState } from './ha-witness-lock.ts';
 

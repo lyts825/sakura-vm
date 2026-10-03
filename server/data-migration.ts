@@ -2,7 +2,8 @@ import { mkdir, readdir, lstat, statfs, copyFile, rename, rm, realpath } from 'n
 import { constants } from 'node:fs';
 import { join, relative, dirname, resolve, basename, isAbsolute } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { DATA, AppError } from './model.ts';
+import { DATA } from './paths.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import { Jobs } from './jobs.ts';
 import { fileHash, regularDirectory, within, readStore, writeStore } from './local-store.ts';

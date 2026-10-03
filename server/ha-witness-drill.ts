@@ -3,7 +3,7 @@ import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { HaWitnessClient, haWitnessClientConfigSchema } from './ha-witness-client.ts';
 import { haWitnessPlanSchema } from './ha-witness-core.ts';
 import { checkHaWitnessDeployment, type HaWitnessPreflightReport } from './ha-witness-preflight.ts';

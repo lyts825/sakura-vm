@@ -1,13 +1,13 @@
 import { posix } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
 import { envPrefix } from './project-services.ts';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import {
@@ -26,7 +26,7 @@ import {
   stopPrivateDocker,
   privateComposeValidator,
 } from './private-docker.ts';
-import type { Project } from './workspaces.ts';
+import type { Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
 
 const containerId = z.string().regex(/^[a-f0-9]{12,64}$/);

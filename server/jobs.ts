@@ -2,32 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { SandboxExecution } from '../shared/sandbox.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 
-export type JobMeta = {
-  title?: string;
-  vmId?: string;
-  action?: string;
-  projectId?: string;
-  execution?: SandboxExecution;
-};
-export type JobView = JobMeta & {
-  id?: string;
-  key?: string;
-  scope?: string;
-  status: 'running' | 'done' | 'error' | 'cancelled' | 'interrupted';
-  log: string;
-  error?: string;
-  errorCode?: string;
-  startedAt: string;
-  finishedAt?: string;
-  phase?: string;
-  progress?: number;
-  result?: { bytes: number; sha256: string };
-  logPruned?: { at: string; bytes: number };
-};
-export type JobUpdate = (phase: string, progress?: number) => void;
+export type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
+import type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
 type Work = (
   log: (text: string) => void,
   signal: AbortSignal,

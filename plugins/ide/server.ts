@@ -1,10 +1,11 @@
+import { services as ideServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { Ide } from '../../server/ide.ts';
 export async function activate(host: PluginContext) {
-  host.ide = new Ide(host.machines, host.workspaces);
+  host.provide(ideServices.ide, new Ide(host.machines, host.workspaces));
   await host.ide.update();
 }
 export async function route(

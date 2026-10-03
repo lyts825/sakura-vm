@@ -1,10 +1,21 @@
 import { timingSafeEqual } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readdir, mkdir, rmdir, unlink, rename, truncate, chmod, utimes } from 'node:fs/promises';
+import {
+  lstat,
+  open,
+  readdir,
+  mkdir,
+  rmdir,
+  unlink,
+  rename,
+  truncate,
+  chmod,
+  utimes,
+} from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import ssh2, { type Attributes, type SFTPWrapper, type Connection } from 'ssh2';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { regularDirectory, within } from './local-store.ts';
 
 const { Server, utils } = ssh2;

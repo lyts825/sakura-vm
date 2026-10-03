@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import { qmp } from './qmp.ts';
 
 const vendorId = z.number().int().min(1).max(0xffff);

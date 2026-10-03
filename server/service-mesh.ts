@@ -4,20 +4,51 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual as same } from 'node:util';
 import { z } from 'zod';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import { writeStore } from './local-store.ts';
 import type { Machines } from './machines.ts';
-import { projectPrivateValues, projectVersion, type Project, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
-import { ProjectIdentities, projectIdentityPayload, projectIdentitySchema, projectIdentityRunSchema,
-  type ProjectIdentity, type ProjectIdentityRun } from './project-identity.ts';
-import { ProjectMeshScope, projectMeshRecordSchema, type ProjectMeshRecord } from './project-service-scope.ts';
-import { reverseTunnelListenerCommand, reverseTunnelListenerSchema, type ReverseTunnelListener } from './reverse-tunnel-transport.ts';
-import { meshBinarySchema, meshConfigSchema, meshHostStatusSchema, meshConfigReplySchema, meshConfigCleanSchema,
-  meshProcessReplySchema, meshConfigPlan, meshInspectInput, meshConfigInput, meshProcessInput, meshEnvoyExecution,
-  meshControlCommand, type MeshBinary, type MeshConfig, type MeshConfigPlan, type MeshHostStatus } from './service-mesh-identity.ts';
+import {
+  ProjectIdentities,
+  projectIdentityPayload,
+  projectIdentitySchema,
+  projectIdentityRunSchema,
+  type ProjectIdentity,
+  type ProjectIdentityRun,
+} from './project-identity.ts';
+import {
+  ProjectMeshScope,
+  projectMeshRecordSchema,
+  type ProjectMeshRecord,
+} from './project-service-scope.ts';
+import {
+  reverseTunnelListenerCommand,
+  reverseTunnelListenerSchema,
+  type ReverseTunnelListener,
+} from './reverse-tunnel-transport.ts';
+import {
+  meshBinarySchema,
+  meshConfigSchema,
+  meshHostStatusSchema,
+  meshConfigReplySchema,
+  meshConfigCleanSchema,
+  meshProcessReplySchema,
+  meshConfigPlan,
+  meshInspectInput,
+  meshConfigInput,
+  meshProcessInput,
+  meshEnvoyExecution,
+  meshControlCommand,
+  type MeshBinary,
+  type MeshConfig,
+  type MeshConfigPlan,
+  type MeshHostStatus,
+} from './service-mesh-identity.ts';
 import { redactValues } from './secrets.ts';
 
 const policySchema = z.object({

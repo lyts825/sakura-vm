@@ -1,3 +1,4 @@
+import { services as codeChecksServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -7,11 +8,11 @@ import { LanguageServices } from '../../server/language-services.ts';
 import { DebugAdapter } from '../../server/debug-adapter.ts';
 import { readJsonBody, MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 import { MAX_TEXT_BYTES } from '../../server/files.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
-  host.intelligence = new CodeIntelligence(host.machines, host.workspaces);
-  host.languageServices = new LanguageServices(host.machines, host.workspaces, host.fileLocks);
-  host.debugger = new DebugAdapter(host.machines, host.workspaces);
+  host.provide(codeChecksServices.intelligence, new CodeIntelligence(host.machines, host.workspaces));
+  host.provide(codeChecksServices.languageServices, new LanguageServices(host.machines, host.workspaces, host.fileLocks));
+  host.provide(codeChecksServices.debugger, new DebugAdapter(host.machines, host.workspaces));
   host.onDispose(() => host.debugger.close());
   host.onDispose(() => host.languageServices.close());
 }

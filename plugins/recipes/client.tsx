@@ -1,6 +1,6 @@
 import { Download } from 'lucide-react';
 import { useState } from 'react';
-import type { Project } from '../../server/workspaces';
+import type { Project } from '../../server/project-config.ts';
 import { saveText } from '../../src/export-file';
 import type { FeatureProps, Request } from '../../src/feature-shared';
 import { Feedback, useAction } from '../../src/feature-shared';

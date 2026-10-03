@@ -1,46 +1,19 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
-import type { Bundles } from './bundles.ts';
-import type { Files } from './files.ts';
-import type { Images } from './images.ts';
-import type { Jobs, JobView } from './jobs.ts';
+import type { JobView } from '../shared/contracts/jobs.ts';
+import { type VMConfig } from '../shared/contracts/vm.ts';
+import { AppError } from '../shared/errors.ts';
+import type { Jobs } from './jobs.ts';
 import type { Machines } from './machines.ts';
-import { AppError, type VMConfig } from './model.ts';
-import type { FolderSync } from './sync.ts';
-import type { Workspaces } from './workspaces.ts';
+import { OperationTracker, requestScope } from './operation-scope.ts';
+import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 
-import type { Backups } from './backups.ts';
-import type { Downloads } from './downloads.ts';
-import type { Ide } from './ide.ts';
-import type { Maintenance } from './maintenance.ts';
-import type { Recipes } from './recipes.ts';
 
-import type { CommandPresets } from './command-presets.ts';
-import type { Containers } from './containers.ts';
-import type { DataMigration } from './data-migration.ts';
-import type { GitWorkbench } from './git-workbench.ts';
-import type { NetworkProfiles } from './network-profiles.ts';
-import type { ProjectFiles } from './project-files.ts';
-import type { Secrets } from './secrets.ts';
-import type { ServiceHealth } from './service-health.ts';
-import type { Toolchains } from './toolchains.ts';
 
-import type { CodeIntelligence } from './code-intelligence.ts';
-import type { LanguageServices } from './language-services.ts';
-import type { DebugAdapter } from './debug-adapter.ts';
-import type { ExtendedFeatures } from './extended-features.ts';
-import type { FeatureSuite } from './feature-suite.ts';
-import type { FileHistory } from './file-history.ts';
-import type { FileLocks } from './file-locks.ts';
-import type { NextFeatures } from './next-features.ts';
-import type { Pipelines } from './pipelines.ts';
-import type { RuntimeVersions } from './runtime-versions.ts';
 
 import { resolvePlugins } from '../shared/plugin-selection.ts';
 import { emptySelection, PLUGINS } from '../shared/plugins.ts';
-import type { Desktops } from './desktop.ts';
-import type { Metrics } from './metrics.ts';
-import { pluginContext, SERVICE_KEYS, type PluginContext } from './plugin-api.ts';
+import { pluginContext, type PluginContext } from './plugin-api.ts';
 import { PluginScope, withinDeadline } from './plugin-scope.ts';
 import {
   loaders,
@@ -62,41 +35,10 @@ function matchesOperation(pattern: string, pathname: string) {
 }
 
 /** Optional plugin host. No plugin services are constructed until explicitly selected. */
+export interface Features extends PluginServices {}
 export class Features {
   extraJobStores: Jobs[] = [];
-  files!: Files;
-  images!: Images;
-  bundles!: Bundles;
-  downloads!: Downloads;
-  workspaces!: Workspaces;
-  sync!: FolderSync;
-  jobs!: Jobs;
-  backups!: Backups;
-  maintenance!: Maintenance;
-  ide!: Ide;
-  recipes!: Recipes;
-  git!: GitWorkbench;
-  projectFiles!: ProjectFiles;
-  commands!: CommandPresets;
-  toolchains!: Toolchains;
-  network!: NetworkProfiles;
-  secrets!: Secrets;
-  health!: ServiceHealth;
-  containers!: Containers;
-  migration!: DataMigration;
-  history!: FileHistory;
-  fileLocks!: FileLocks;
-  pipelines!: Pipelines;
-  runtimes!: RuntimeVersions;
-  intelligence!: CodeIntelligence;
-  languageServices!: LanguageServices;
-  debugger!: DebugAdapter;
-  suite!: FeatureSuite;
-  extended!: ExtendedFeatures;
-  next!: NextFeatures;
 
-  desktops!: Desktops;
-  metrics!: Metrics;
   readonly enabled = new Set<string>();
   readonly errors: Record<string, string> = {};
   readonly lifecycle: Record<string, { phase: 'active' | 'failed' | 'skipped'; activationMs: number }> = {};
@@ -108,19 +50,26 @@ export class Features {
     Jobs,
     { owner: string; retry: (job: JobView) => Promise<unknown> | unknown }
   >();
-  mutations = 0;
+  readonly operations = new OperationTracker();
+  get mutations() { return this.operations.active; }
+  set mutations(value: number) { this.operations.active = value; }
   importing = false;
   private closed = false;
   private closing?: Promise<void>;
   private active = new Map<AbortController, Promise<boolean>>();
-  private constructor(public machines: Machines) {}
+  private constructor(public machines: Machines) {
+    for (const key of SERVICE_KEYS) Object.defineProperty(this, key, {
+      configurable: true, enumerable: true,
+      get: () => this.services.get(key),
+      set: (value: unknown) => this.provideService(key, value),
+    });
+  }
   serviceValue(key: string): unknown {
-    return this.services.has(key) ? this.services.get(key) : Reflect.get(this, key);
+    return this.services.get(key);
   }
   provideService(key: string, value: unknown) {
     if (this.serviceValue(key) !== undefined) throw new Error(`插件服务已注册：${key}`);
-    if (SERVICE_KEYS.some((known) => known === key)) Reflect.set(this, key, value);
-    else this.services.set(key, value);
+    this.services.set(key, value);
   }
   registerPluginJobs(owner: string, store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown) {
     const manifest = PLUGINS.find((item) => item.id === owner);
@@ -256,7 +205,6 @@ export class Features {
         errors.push(error);
       } finally {
         this.services.delete(key);
-        delete (this as any)[key];
       }
     }
     for (const [store, value] of this.pluginJobs) if (value.owner === id) this.pluginJobs.delete(store);
@@ -313,14 +261,8 @@ export class Features {
     const targetVm = /^\/api\/vms\/([^/]+)/.exec(url.pathname)?.[1];
     if (mutation && targetVm && !url.pathname.endsWith('/next-features'))
       this.machines.requireUnlocked?.(targetVm);
-    if (mutation) this.mutations++;
-    const abort = new AbortController();
-    const disconnected = () => {
-      if (!res.writableFinished) abort.abort();
-    };
-    req.once('aborted', disconnected);
-    res.once('close', disconnected);
-    if (req.aborted || res.destroyed) abort.abort();
+    const releaseMutation = mutation ? this.operations.enter() : () => {};
+    const scope = requestScope(req, res), abort = scope.controller;
     const pending = Promise.resolve()
       .then(() => {
         abort.signal.throwIfAborted();
@@ -372,9 +314,8 @@ export class Features {
       })
       .finally(() => {
         this.active.delete(abort);
-        if (mutation) this.mutations--;
-        req.off('aborted', disconnected);
-        res.off('close', disconnected);
+        releaseMutation();
+        scope.dispose();
       });
     this.active.set(abort, pending);
     return pending;

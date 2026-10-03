@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Feedback, JobLog, useAction, useRemote, type Request } from './feature-shared';
-import type { JobView } from '../server/jobs';
+import type { JobView } from '../shared/contracts/jobs.ts';
 
 type Node = { vmId: string; vmName: string | null; status: string;
   slots: number; busy: number; labels: string[]; enabled: boolean; projectId?: string };

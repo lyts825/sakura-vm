@@ -5352,7 +5352,7 @@ test('failover policy saves a paired target and reports an unready health check'
   await panel.getByRole('button', { name: '检查健康' }).click();
   await expect(panel).toContainText('尚无独立见证节点与源主机栅栏');
   await expect(page.locator('.catalog-item').filter({ hasText: '故障自动接管' })
-    .getByRole('button', { name: '运行' })).toBeDisabled();
+    .getByRole('button', { name: '配置接管', exact: true })).toBeDisabled();
   promotion = { remoteVmId: randomUUID(), snapshotId: randomUUID(),
     status: 'accepted', fencedAt: new Date().toISOString() };
   await page.reload();

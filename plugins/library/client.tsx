@@ -1,6 +1,6 @@
 import { Boxes, Inbox, Play, Save, Square, Star } from 'lucide-react';
 import { lazy, useState } from 'react';
-import type { VMView } from '../../server/model';
+import type { VMView } from '../../shared/contracts/vm.ts';
 import type { Request } from '../../src/feature-shared';
 import { Feedback, formatBytes, useAction } from '../../src/feature-shared';
 import '../../src/features.css';

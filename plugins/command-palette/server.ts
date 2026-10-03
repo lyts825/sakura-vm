@@ -1,3 +1,4 @@
+
 export { manifest } from './manifest.ts';
 import type { PluginContext } from '../../server/plugin-api.ts';
 

@@ -1,4 +1,4 @@
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
 import type { HaFailureMonitor } from './ha-failure-monitor.ts';
 import type { HostPeers } from './host-peers.ts';

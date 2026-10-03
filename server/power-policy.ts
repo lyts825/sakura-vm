@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { z } from 'zod';
-import { vmDir } from './model.ts';
+import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { windowsProbe } from './windows-probe.ts';
 

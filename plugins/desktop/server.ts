@@ -1,15 +1,20 @@
+import { services as desktopServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 import { retryTarget, retryInProject } from '../../server/plugins/retry.ts';
 
 import { z } from 'zod';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 import { Desktops } from '../../server/desktop.ts';
 import { Jobs } from '../../server/jobs.ts';
 import { singleAppClipboard, singleAppInput, singleAppProgram } from '../../server/single-app-windows.ts';
-import { x11ClipboardRequest, x11ClipboardViewSchema, x11ClipboardActionResponse } from '../../server/x11-clipboard.ts';
+import {
+  x11ClipboardRequest,
+  x11ClipboardViewSchema,
+  x11ClipboardActionResponse,
+} from '../../server/x11-clipboard.ts';
 
 export const operations: Record<string, PluginOperation> = {
   'x11-clipboard-get': { response: x11ClipboardViewSchema, execute(url, _, signal) {
@@ -26,12 +31,12 @@ export const operations: Record<string, PluginOperation> = {
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.desktops = new Desktops(m, host.workspaces);
-  host.jobs = new Jobs('input-method');
+  host.provide(desktopServices.desktops, new Desktops(m, host.workspaces));
+  host.provide(desktopServices.jobs, new Jobs('input-method'));
   host.registerJobs(host.jobs, (job) => retryInProject(host, job, async () => installIme.call(host, retryTarget(job))));
-  const clipboard = host.provide('x11Clipboard', host.desktops.clipboard);
+  const clipboard = host.provide(desktopServices.x11Clipboard, host.desktops.clipboard);
   host.registerJobs(clipboard.jobs, (job) => clipboard.install(retryTarget(job)));
-  const wayland = host.provide('waylandClipboard', host.desktops.waylandClipboard);
+  const wayland = host.provide(desktopServices.waylandClipboard, host.desktops.waylandClipboard);
   host.registerJobs(wayland.jobs, (job) => wayland.install(retryTarget(job)));
 }
 export async function route(

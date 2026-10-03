@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import { setTimeout as delay } from 'node:timers/promises';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 import type { Machines } from './machines.ts';
-import type { Project } from './workspaces.ts';
+import type { Project } from './project-config.ts';
 import { guestTask } from './guest-task.ts';
 import { secretRefsSchema } from './secrets.ts';
-import { ProjectServiceScopes, projectServiceBinding, type ProjectServiceRecord } from './project-service-scope.ts';
+import {
+  ProjectServiceScopes,
+  projectServiceBinding,
+  type ProjectServiceRecord,
+} from './project-service-scope.ts';
 
 export const environmentSchema = z
   .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(4096))

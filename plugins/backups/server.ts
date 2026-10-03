@@ -1,9 +1,10 @@
+import { services as backupsServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext, PluginOperation } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 import { Backups } from '../../server/backups.ts';
 import { retryTarget } from '../../server/plugins/retry.ts';
@@ -13,12 +14,12 @@ import { rescueArtifactSchema, rescueJobSchema, rescueViewSchema } from '../../s
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.backups = new Backups(m, host.bundles, host.secrets);
+  host.provide(backupsServices.backups, new Backups(m, host.bundles, host.secrets));
   host.registerJobs(host.backups.jobs, (job) => {
     if (job.action !== 'run') throw new AppError('请回到原功能页面重新执行');
     return host.backups.run(retryTarget(job));
   });
-  const recovery = host.provide('backupRecovery', new BackupRecovery(m, host.backups, host.bundles));
+  const recovery = host.provide(backupsServices.backupRecovery, new BackupRecovery(m, host.backups, host.bundles));
   await recovery.init();
   host.registerJobs(recovery.jobs, () => {
     throw new AppError('请在备份文件恢复面板重新选择备份和文件', 409);
@@ -28,20 +29,20 @@ export const operations: Record<string, PluginOperation> = {
   'recovery-view': {
     response: rescueViewSchema,
     execute(url) {
-      return this.use<BackupRecovery>('backups', 'backupRecovery').view(url.pathname.split('/')[3]);
+      return this.use(backupsServices.backupRecovery).view(url.pathname.split('/')[3]);
     },
   },
   'recovery-run': {
     request: backupRecoverySchema,
     response: rescueJobSchema,
     execute(url, input) {
-      return this.use<BackupRecovery>('backups', 'backupRecovery').run(url.pathname.split('/')[3], input);
+      return this.use(backupsServices.backupRecovery).run(url.pathname.split('/')[3], input);
     },
   },
   'recovery-artifact': {
     response: rescueArtifactSchema,
     execute(url) {
-      return this.use<BackupRecovery>('backups', 'backupRecovery').artifact(
+      return this.use(backupsServices.backupRecovery).artifact(
         url.pathname.split('/')[3],
         z.uuid().parse(url.searchParams.get('run')),
         z.uuid().parse(url.searchParams.get('artifact')),

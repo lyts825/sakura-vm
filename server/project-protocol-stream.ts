@@ -6,14 +6,23 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { projectVersion, projectPrivateValues, type Project, type Workspaces } from './workspaces.ts';
-import { AppError, vmDir } from './model.ts';
-import { quote } from './files.ts';
+import { projectVersion, type Project } from './project-config.ts';
+import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
+import { quote } from './shell.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { ProjectRunScopes, type ProjectTaskAdmissionOptions } from './project-run-scope.ts';
-import { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema, projectIdentityPayload,
-  type ProjectIdentity, type ProjectIdentityExecution, type ProjectIdentityRun } from './project-identity.ts';
+import {
+  ProjectIdentities,
+  projectIdentitySchema,
+  projectIdentityRunSchema,
+  projectIdentityPayload,
+  type ProjectIdentity,
+  type ProjectIdentityExecution,
+  type ProjectIdentityRun,
+} from './project-identity.ts';
 import { guestTaskControlPlan, guestTaskControlPaths, cleanupGuestTaskPlan } from './guest-task.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { redactValues } from './secrets.ts';

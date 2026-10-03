@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import type { ProjectIdentity } from './project-identity.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const notebookProviderSchema = z.enum(['jupyter', 'marimo']);
 export type NotebookProvider = z.infer<typeof notebookProviderSchema>;

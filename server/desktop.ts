@@ -1,20 +1,20 @@
 import { createWebSocketStream, WebSocket } from 'ws';
 import type { ClientChannel } from 'ssh2';
 import type { Machines } from './machines.ts';
-import { AppError, type DesktopView } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { type DesktopView } from '../shared/contracts/vm.ts';
 import {
   defaultDesktopPreferences,
   desktopPreferencesSchema,
   parseDesktopPreferencesFile,
   type DesktopPreferences,
-} from './desktop-preferences.ts';
+} from '../shared/desktop-preferences.ts';
 import { desktopCommands, imeInstall } from './desktop-guest.ts';
 import { guestTask } from './guest-task.ts';
 import { ReadOnlyRfb } from './readonly-rfb.ts';
 import { SingleAppWindows } from './single-app-windows.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
-import { DesktopBindings, desktopServiceStop,
-  type DesktopBinding } from './desktop-binding.ts';
+import { DesktopBindings, desktopServiceStop, type DesktopBinding } from './desktop-binding.ts';
 import { redactValues } from './secrets.ts';
 import { uidCleanupScript } from './single-app-sandbox.ts';
 import { X11Clipboard } from './x11-clipboard.ts';

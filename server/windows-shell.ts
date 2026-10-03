@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export type RegistryEntry = { path: string; name: string; value: string };
 export type RegistryApply = (previous: RegistryEntry[], next: RegistryEntry[]) => Promise<void>;

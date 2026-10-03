@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type Server, type Socket } from 'node:net';
 import type { ClientChannel } from 'ssh2';
 import type { Machines } from './machines.ts';
-import type { Project } from './workspaces.ts';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import type { Project } from './project-config.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 import { projectNetworkCommand, projectNetworkNamespace } from './project-network-isolation.ts';
 
 type Bridge = {

@@ -1,6 +1,6 @@
 import { gunzipSync } from 'node:zlib';
 import { posix } from 'node:path';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export type Preview = { kind: string; name: string; size: number; [key: string]: unknown };
 export function csvRows(text: string, limit = 200) {

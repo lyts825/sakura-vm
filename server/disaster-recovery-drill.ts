@@ -5,7 +5,8 @@ import { z } from 'zod';
 import type { Machines } from './machines.ts';
 import type { Backups } from './backups.ts';
 import type { Bundles } from './bundles.ts';
-import { AppError, guestPath } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { guestPath } from '../shared/paths.ts';
 
 const pathSchema = z.string().max(4096).refine((value) => {
   try { guestPath(value); return true; } catch { return false; }

@@ -5,7 +5,9 @@ import { join, dirname } from 'node:path';
 import { Readable, type Writable } from 'node:stream';
 import { pipeline, finished } from 'node:stream/promises';
 import { z } from 'zod';
-import { AppError, checkedId, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { checkedId } from '../shared/paths.ts';
+import { DATA } from './paths.ts';
 import { regularDirectory, writeStore } from './local-store.ts';
 
 const blockSize = 1024 * 1024;

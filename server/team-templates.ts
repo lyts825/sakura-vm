@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, DATA, createSchema } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { createSchema } from '../shared/contracts/vm.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { projectSchema, type Workspaces } from './workspaces.ts';
+import { projectSchema } from './project-config.ts';
+import { type Workspaces } from './workspaces.ts';
 import type { Machines } from './machines.ts';
 
 const resourceSchema = z.object({

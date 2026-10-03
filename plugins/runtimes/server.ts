@@ -1,12 +1,13 @@
+import { services as runtimesServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { RuntimeVersions } from '../../server/runtime-versions.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
-  host.runtimes = new RuntimeVersions(host.machines, host.workspaces);
+  host.provide(runtimesServices.runtimes, new RuntimeVersions(host.machines, host.workspaces));
   host.registerJobs(host.runtimes.jobs, (job) => {
     if (!job.action?.startsWith('install:')) throw new AppError('请回到原功能页面重新执行');
     const [, tool, version] = job.action.split(':');

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { audioArguments, deviceProfileSchema, hardwareSchema } from '../shared/hardware.ts';
 import type { Machines } from './machines.ts';
 import type { UsbHotplug } from './usb-hotplug.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { freePort, qmp } from './qmp.ts';
 
 const audioMode = z.enum(['off', 'virtual', 'host']);

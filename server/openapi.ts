@@ -1,16 +1,27 @@
 import { z } from 'zod';
-import { createSchema } from './model.ts';
+import { createSchema } from '../shared/contracts/vm.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { logRetentionRequest } from './log-retention.ts';
 import { remoteAuditAction } from './remote-audit.ts';
 import { graphqlRequest } from './graphql-api.ts';
 import { sessionLockConfiguration, sessionUnlockRequest } from './session-lock.ts';
-import { accessEnableInput, accessLoginInput, accessViewerInput, accessMemberInput, accessPasswordInput,
-  accessHandoffInput, accessHandoffRedeem } from './access-control.ts';
+import {
+  accessEnableInput,
+  accessLoginInput,
+  accessViewerInput,
+  accessMemberInput,
+  accessPasswordInput,
+  accessHandoffInput,
+  accessHandoffRedeem,
+} from './access-control.ts';
 import { projectPermissionInput } from './project-permissions.ts';
-import { policyBundleApply, policyBundleKeyAction, policyBundlePreview,
-  policyBundleTarget } from './policy-bundles.ts';
+import {
+  policyBundleApply,
+  policyBundleKeyAction,
+  policyBundlePreview,
+  policyBundleTarget,
+} from './policy-bundles.ts';
 import { changeRequestInput, changeDecisionInput } from './change-approvals.ts';
 import { passkeyRegisterStart, passkeyFinish, passkeyRemove } from './passkeys.ts';
 import { ssoBeginInput, ssoOidcInput, ssoSamlInput } from './sso.ts';

@@ -2,9 +2,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import type { Project, Workspaces } from './workspaces.ts';
-import { AppError, DATA } from './model.ts';
-import { quote } from './files.ts';
+import type { Project } from './project-config.ts';
+import type { Workspaces } from './workspaces.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { quote } from './shell.ts';
 import { guestTask } from './guest-task.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { ensureProjectNetworkScript } from './project-network-isolation.ts';
@@ -32,8 +34,19 @@ export const browserIdePackage = { version: VERSION, fileName: `${archive}.tar.g
   sha256: SHA256, url: releaseUrl, assetUrl, cachePath: `${packageCache}/${archive}.tar.gz` } as const;
 
 import { ProjectRunScopes, type ProjectInheritedPayload } from './project-run-scope.ts';
-import { ProjectIdentities, projectIdentityPayload, projectIdentityRunSchema, projectIdentitySchema, type ProjectIdentityRun } from './project-identity.ts';
-import { ProjectBrowserIdeScope, projectBrowserIdeRecordSchema, type ProjectBrowserIdeRecord, type ProjectScopeStatus } from './project-service-scope.ts';
+import {
+  ProjectIdentities,
+  projectIdentityPayload,
+  projectIdentityRunSchema,
+  projectIdentitySchema,
+  type ProjectIdentityRun,
+} from './project-identity.ts';
+import {
+  ProjectBrowserIdeScope,
+  projectBrowserIdeRecordSchema,
+  type ProjectBrowserIdeRecord,
+  type ProjectScopeStatus,
+} from './project-service-scope.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 const executionSchema = z.object({ identity: projectIdentitySchema,

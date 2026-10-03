@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { posix } from 'node:path';
-import { createSchema, AppError } from './model.ts';
-import { projectSchema, type Workspaces } from './workspaces.ts';
+import { createSchema } from '../shared/contracts/vm.ts';
+import { AppError } from '../shared/errors.ts';
+import { projectSchema } from './project-config.ts';
+import { type Workspaces } from './workspaces.ts';
 import type { Machines } from './machines.ts';
 
 export const recipeSchema = z

@@ -1,8 +1,9 @@
+import { services as projectsServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 import { z } from 'zod';
 
@@ -17,14 +18,14 @@ const directoryMigrations = new WeakMap<PluginContext, ProjectDirectoryMigration
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.workspaces = new Workspaces(m, {
+  host.provide(projectsServices.workspaces, new Workspaces(m, {
     get secrets() {
       return host.secrets;
     },
     get network() {
       return host.network;
     },
-  });
+  }));
   directoryMigrations.set(host, new ProjectDirectoryMigrations(m, host.workspaces));
   host.onDispose(() => {
     directoryMigrations.delete(host);

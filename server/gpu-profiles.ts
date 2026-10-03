@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { deviceArguments, deviceProfileSchema, hardwareSchema } from '../shared/hardware.ts';
 import type { Machines } from './machines.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import { freePort, qmp } from './qmp.ts';
 
 export const gpuProfileInput = z.object({

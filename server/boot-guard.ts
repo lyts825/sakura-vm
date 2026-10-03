@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 const WINDOW = 300000,

@@ -1,10 +1,11 @@
+import { services as recipesServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { Recipes } from '../../server/recipes.ts';
 export async function activate(host: PluginContext) {
-  host.recipes = new Recipes(host.machines, host.workspaces);
+  host.provide(recipesServices.recipes, new Recipes(host.machines, host.workspaces));
 }
 export async function route(
   this: PluginContext,

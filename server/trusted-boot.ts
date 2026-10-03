@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Machines } from './machines.ts';
-import { ROOT } from './model.ts';
+import { ROOT } from './paths.ts';
 
 export type TrustedBootPaths = { qemu: string; secureFirmware: string; varsTemplate: string; swtpm: string };
 export const trustedBootPaths = (): TrustedBootPaths => {

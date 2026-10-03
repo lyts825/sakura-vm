@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 import type { Machines } from './machines.ts';
 import { Workspaces } from './workspaces.ts';
 import { SyscallProjectTasks, type SyscallProjectTaskOptions } from './syscall-project-task.ts';

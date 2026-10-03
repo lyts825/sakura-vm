@@ -2,7 +2,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, type VMRecord } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { type VMRecord } from '../shared/contracts/vm.ts';
 import { secretName, Secrets } from './secrets.ts';
 import type { Machines } from './machines.ts';
 

@@ -1,4 +1,4 @@
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 
 export const metricsScript = String.raw`set -eu

@@ -1,7 +1,7 @@
 import type { Machines } from './machines.ts';
 import type { Bundles } from './bundles.ts';
 import type { HostPeers } from './host-peers.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { haWitnessReplicaInventorySchema } from './ha-witness-core.ts';
 
 type Receiver = Parameters<HostPeers['setImportReceiver']>[0];

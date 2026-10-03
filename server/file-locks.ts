@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { mutablePath } from './files.ts';
 
 type Lease = { path: string; token: string; expiresAt: number };

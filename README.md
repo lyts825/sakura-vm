@@ -181,6 +181,8 @@ npm run sakura -- help all
 
 ## 结构与数据
 
+模块边界、生命周期、项目执行与前端状态组织见 [架构与依赖边界](docs/architecture.md)。
+
 ```text
 src/                    React + xterm.js 控制台
 plugins/<id>/           同包维护 manifest.ts、server.ts 与可选 client.tsx
@@ -193,7 +195,10 @@ server/plugin-manager.ts 插件选择持久化与运行状态
 server/plugin-api.ts    生命周期协议、服务归属与依赖访问检查
 server/plugins/         生成的可信入口、路由归属与任务聚合
 server/plugin-data.ts   插件私有数据路径与逐版迁移
-server/index.ts         HTTP / WebSocket、鉴权、静态服务
+server/index.ts         应用启动入口
+server/application.ts   服务装配、鉴权、WebSocket 与静态服务
+server/http-machines.ts 基础实例 API
+server/resource-scope.ts 宿主资源登记与统一退出清理
 server/runtime.ts       PosixLoom 原生命令插件，精确 argv 调用 QEMU
 server/machines.ts      发行版生命周期、SSH / SFTP、快照
 server/seed.ts          本地 NoCloud ISO 与每实例 SSH 密钥

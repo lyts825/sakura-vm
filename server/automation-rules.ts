@@ -2,13 +2,17 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { Machines } from './machines.ts';
 import { matchesWebhook } from './webhooks.ts';
 import {
-  webhookAlertKinds, webhookJobStatuses, webhookTypes,
-  type WebhookEvent, type WebhookFilter,
+  webhookAlertKinds,
+  webhookJobStatuses,
+  webhookTypes,
+  type WebhookEvent,
+  type WebhookFilter,
 } from '../shared/webhooks.ts';
 
 const hour = 3600_000;

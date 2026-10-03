@@ -5,7 +5,8 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { redactValues, secretName, type Secrets } from './secrets.ts';
 

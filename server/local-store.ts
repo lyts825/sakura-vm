@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, relative, isAbsolute, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export async function readStore<T>(file: string, fallback: () => T): Promise<T> {
   try {

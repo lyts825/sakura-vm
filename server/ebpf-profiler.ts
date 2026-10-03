@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const ebpfProfileOptions = z.object({
   durationSeconds: z.number().int().min(1).max(10).default(5),

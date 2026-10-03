@@ -1,7 +1,7 @@
 import { formatDateTime } from '../../src/localization';
 import { useEffect, useState } from 'react';
 import type { BackupPolicy, BackupRecord } from '../../server/backups';
-import type { JobView } from '../../server/jobs';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import type { FeatureProps } from '../../src/feature-shared';
 import { Feedback, formatBytes, JobLog, useAction, useRemote } from '../../src/feature-shared';
 import '../../src/features.css';

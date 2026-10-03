@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { mkdir, open, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 export const haWitnessReplicaIdentitySchema = z.object({

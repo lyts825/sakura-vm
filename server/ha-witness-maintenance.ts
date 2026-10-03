@@ -2,15 +2,24 @@ import { createHash, X509Certificate } from 'node:crypto';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createSecureContext } from 'node:tls';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import { writeStore } from './local-store.ts';
-import { haWitnessBinding, haWitnessStoreSchema, persistHaWitnessState,
-  syncHaWitnessDirectory, validateHaWitnessState,
-  type HaWitnessStore } from './ha-witness-core.ts';
+import {
+  haWitnessBinding,
+  haWitnessStoreSchema,
+  persistHaWitnessState,
+  syncHaWitnessDirectory,
+  validateHaWitnessState,
+  type HaWitnessStore,
+} from './ha-witness-core.ts';
 import { haHttpsRequest } from './ha-witness-http.ts';
 import { lockHaWitnessState } from './ha-witness-lock.ts';
-import { haWitnessServerConfigSchema, redfishPowerState, witnessVms,
-  type HaWitnessServerConfig } from './ha-witness-server.ts';
+import {
+  haWitnessServerConfigSchema,
+  redfishPowerState,
+  witnessVms,
+  type HaWitnessServerConfig,
+} from './ha-witness-server.ts';
 
 type ConfigVm = HaWitnessServerConfig['vms'][number];
 type StateEntry = HaWitnessStore['entries'][string];

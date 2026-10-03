@@ -2,19 +2,16 @@ import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { Activity, Bell, Compass, HardDrive, Package, Play, Search, ShieldCheck, Wifi } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { ExtendedFeature } from '../../server/extended-features';
+import type { ExtendedFeature } from '../../shared/catalogs/engineering.ts';
+import type { AlertConfig, Schedule, MetricPoint, AlertEvent } from '../../server/feature-suite';
 import type {
-  AlertConfig,
   FeatureCatalogItem,
   ResourcePreset,
   ResourcePresetId,
-  Schedule,
-  MetricPoint,
-  AlertEvent,
-} from '../../server/feature-suite';
-import type { JobView } from '../../server/jobs';
-import type { VMView } from '../../server/model';
-import type { NextFeature } from '../../server/next-features';
+} from '../../shared/catalogs/automation.ts';
+import type { JobView } from '../../shared/contracts/jobs.ts';
+import type { VMView } from '../../shared/contracts/vm.ts';
+import type { NextFeature } from '../../shared/catalogs/platform.ts';
 import type { hardwareCompatibility } from '../../server/hardware-compatibility';
 import { featureReadiness, type FeatureExecutionState } from '../../src/feature-readiness';
 import { Feedback, JobLog, useAction, useRemote, type Request } from '../../src/feature-shared';

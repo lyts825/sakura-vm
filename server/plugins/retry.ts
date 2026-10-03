@@ -1,6 +1,6 @@
 import type { PluginContext } from '../plugin-api.ts';
-import type { JobView } from '../jobs.ts';
-import { AppError } from '../model.ts';
+import type { JobView } from '../../shared/contracts/jobs.ts';
+import { AppError } from '../../shared/errors.ts';
 
 export function retryTarget(job: JobView) {
   const id = job.vmId || job.key;

@@ -1,16 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
 import type { Machines } from './machines.ts';
-import { projectVersion, type Workspaces, type Project } from './workspaces.ts';
+import { projectVersion, type Project } from './project-config.ts';
+import { type Workspaces } from './workspaces.ts';
 import type { FileLocks } from './file-locks.ts';
-import { AppError, guestPath } from './model.ts';
-import { MAX_TEXT_BYTES, quote, textVersion } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { guestPath } from '../shared/paths.ts';
+import { MAX_TEXT_BYTES, textVersion } from './files.ts';
+import { quote } from './shell.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { LspTransport } from './lsp-transport.ts';
 import { ProjectProtocolStreams, type ProjectProtocolCapture } from './project-protocol-stream.ts';
 import { projectProtocolInstallScript, projectProtocolInstalledCommand } from './project-protocol-assets.ts';
 import { guestTask } from './guest-task.ts';
-import { applyTextEdits, positionOffset, type LspPosition, type LspRange, type LspTextEdit } from '../shared/language-service.ts';
+import {
+  applyTextEdits,
+  positionOffset,
+  type LspPosition,
+  type LspRange,
+  type LspTextEdit,
+} from '../shared/language-service.ts';
 
 const prefix = '/opt/sakura-language-services';
 type Kind = 'typescript' | 'python';

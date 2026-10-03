@@ -1,5 +1,5 @@
 import type { ClipboardRule } from './clipboard-policy.ts';
-import type { JobView } from '../server/jobs.ts';
+import type { JobView } from './contracts/jobs.ts';
 
 export type X11ClipboardApplication = { image: string; sha256: string; rule: ClipboardRule };
 export type X11ClipboardSession = {

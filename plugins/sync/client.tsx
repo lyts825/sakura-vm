@@ -2,7 +2,7 @@ import { formatDecimal } from '../../src/localization';
 import { formatDateTime } from '../../src/localization';
 import { Save, FolderSync as SyncIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { JobView } from '../../server/jobs';
+import type { JobView } from '../../shared/contracts/jobs.ts';
 import type { SyncConfig, SyncDecisions, SyncManualMerges, SyncPreview, SyncQueue } from '../../server/sync';
 import type { SyncHistoryView } from '../../server/sync-history';
 import type { SyncWatchView } from '../../server/sync-watch';

@@ -4,7 +4,9 @@ import { z } from 'zod';
 import type { Bundles } from './bundles.ts';
 import type { HostPeers } from './host-peers.ts';
 import type { Machines } from './machines.ts';
-import { AppError, createSchema, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { createSchema } from '../shared/contracts/vm.ts';
+import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 
 export const snapshotReplicationInput = z.object({

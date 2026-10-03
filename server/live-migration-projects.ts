@@ -1,9 +1,10 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, vmDir } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { vmDir } from './paths.ts';
 import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
-import { projectSchema } from './workspaces.ts';
+import { projectSchema } from './project-config.ts';
 
 export const liveMigrationProjectsSchema = projectIndexSchema.safeExtend({
   configs: z.record(projectIdSchema, projectSchema),

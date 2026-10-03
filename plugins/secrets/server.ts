@@ -1,3 +1,4 @@
+import { services as secretsServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -8,7 +9,7 @@ import { Secrets } from '../../server/secrets.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.secrets = new Secrets(m);
+  host.provide(secretsServices.secrets, new Secrets(m));
 }
 export async function route(
   this: PluginContext,

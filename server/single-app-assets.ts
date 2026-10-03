@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AppError, ROOT } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { ROOT } from './paths.ts';
 
 export const singleAppAssetNames = ['controller.py', 'directory-view.py', 'sources.json'] as const;
 const digest = z.string().regex(/^[a-f0-9]{64}$/);

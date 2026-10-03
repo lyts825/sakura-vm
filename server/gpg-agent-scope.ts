@@ -3,9 +3,10 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { z } from 'zod';
-import { AppError, ROOT } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { ROOT } from './paths.ts';
 import type { Machines } from './machines.ts';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import { projectIdentitySchema } from './project-identity.ts';
 import { OwnedGpgForward, closeGpgHostLease, type GpgHostSnapshot } from './gpg-agent-host.ts';
 

@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { lstat, open, readFile } from 'node:fs/promises';
 import { dirname, join, win32 } from 'node:path';
 import { z } from 'zod';
-import { AppError, DATA, ROOT } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, ROOT } from './paths.ts';
 import { fileHash, readStore, regularDirectory, writeStore } from './local-store.ts';
 import type { ClipboardRule } from '../shared/clipboard-policy.ts';
 import {

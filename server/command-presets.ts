@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
@@ -9,7 +9,7 @@ import { privateLog, redactValues } from './secrets.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { readVersionedStore, writeVersionedStore } from './plugin-data.ts';
 import { join } from 'node:path';
-import { vmDir } from './model.ts';
+import { vmDir } from './paths.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 

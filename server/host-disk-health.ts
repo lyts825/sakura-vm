@@ -1,7 +1,7 @@
 import { access, realpath, statfs } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { z } from 'zod';
-import { DATA } from './model.ts';
+import { DATA } from './paths.ts';
 import { windowsProbe } from './windows-probe.ts';
 
 export const diskHealthThresholds = z

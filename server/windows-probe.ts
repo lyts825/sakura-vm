@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { join } from 'node:path';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 /** Internal fixed scripts only. Input is JSON on stdin, never shell source. */
 export function windowsProbe(script: string, input: unknown, signal?: AbortSignal): Promise<unknown> {

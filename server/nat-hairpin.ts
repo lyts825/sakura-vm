@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const natHairpinShape = {
   mode: z.enum(['status', 'verify']).default('status'),

@@ -1,3 +1,4 @@
+import { services as gitServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -7,7 +8,7 @@ import { MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.git = new GitWorkbench(m, host.workspaces);
+  host.provide(gitServices.git, new GitWorkbench(m, host.workspaces));
 }
 export async function route(
   this: PluginContext,

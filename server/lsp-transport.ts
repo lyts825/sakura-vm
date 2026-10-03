@@ -1,5 +1,5 @@
 import type { Duplex } from 'node:stream';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void };
 

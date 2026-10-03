@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { PLUGINS } from '../shared/plugins.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 
 const ids = new Set<string>(PLUGINS.map((plugin) => plugin.id));
 const pluginId = z.string().refine((id) => ids.has(id), '插件不存在');

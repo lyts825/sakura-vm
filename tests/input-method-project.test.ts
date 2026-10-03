@@ -95,7 +95,10 @@ test('registered IME retry restores the saved project before capturing its new t
   const f = fixture(t), callbacks = new Map<string, (job: JobView) => unknown>();
   const activation = {
     machines: Object.assign(new EventEmitter(), { live: new Map() }),
-    provide: (_key: string, service: unknown) => service,
+    provide: (ref: string | { key: string }, service: unknown) => {
+      Reflect.set(activation, typeof ref === 'string' ? ref : ref.key, service);
+      return service;
+    },
     registerJobs: (jobs: InstanceType<typeof Jobs>, retry: (job: JobView) => unknown) =>
       callbacks.set(jobs === activation.jobs ? 'ime' : randomUUID(), retry),
   } as unknown as PluginContext;

@@ -1,17 +1,37 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { BootAttachment, Machines } from './machines.ts';
-import { AppError, DATA, vmDir, type VMRecord } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, vmDir } from './paths.ts';
+import { type VMRecord } from '../shared/contracts/vm.ts';
 import { readStore, regularDirectory, writeStore } from './local-store.ts';
 import { inspectTrustedBoot, probeTrustedBootHost, trustedBootPaths } from './trusted-boot.ts';
-import { MAX_TRUSTED_BOOT_FILE, MAX_TRUSTED_BOOT_TOTAL, decodeTrustedBootArchive,
-  encodeTrustedBootArchive, validateTrustedBootFiles, type TrustedBootFiles } from './trusted-boot-archive.ts';
+import {
+  MAX_TRUSTED_BOOT_FILE,
+  MAX_TRUSTED_BOOT_TOTAL,
+  decodeTrustedBootArchive,
+  encodeTrustedBootArchive,
+  validateTrustedBootFiles,
+  type TrustedBootFiles,
+} from './trusted-boot-archive.ts';
 
 const policySchema = z.object({ enabled: z.boolean() }).strict();
 type Policy = z.infer<typeof policySchema>;

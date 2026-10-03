@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError } from './model.ts';
+import { AppError } from '../shared/errors.ts';
 
 export const networkQuotaShape = {
   mode: z.enum(['status', 'apply', 'clear']).default('status'),

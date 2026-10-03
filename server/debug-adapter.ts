@@ -1,14 +1,19 @@
 import { posix } from 'node:path';
 import type { Machines } from './machines.ts';
 import type { Workspaces } from './workspaces.ts';
-import { AppError, guestPath } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { guestPath } from '../shared/paths.ts';
+import { quote } from './shell.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { DapTransport } from './dap-transport.ts';
 import { ProjectProtocolStreams, type OwnedProjectProtocolStream } from './project-protocol-stream.ts';
-import { projectDapPython, projectProtocolInstallScript, projectProtocolInstalledCommand } from './project-protocol-assets.ts';
+import {
+  projectDapPython,
+  projectProtocolInstallScript,
+  projectProtocolInstalledCommand,
+} from './project-protocol-assets.ts';
 import { guestTask } from './guest-task.ts';
-import { projectVersion } from './workspaces.ts';
+import { projectVersion } from './project-config.ts';
 
 const python = projectDapPython;
 const maxOutput = 64 * 1024;

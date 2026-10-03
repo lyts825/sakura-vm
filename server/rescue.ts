@@ -1,10 +1,12 @@
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import { AppError, DATA } from './model.ts';
-import { Jobs, type JobView } from './jobs.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
+import { Jobs } from './jobs.ts';
+import { type JobView } from '../shared/contracts/jobs.ts';
 import { SandboxArtifacts } from './sandbox-artifacts.ts';
-import { quote } from './files.ts';
+import { quote } from './shell.ts';
 import { rescueRunSchema } from '../shared/rescue.ts';
 import type { SandboxExecution } from '../shared/sandbox.ts';
 

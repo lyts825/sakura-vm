@@ -2,10 +2,11 @@ import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { z } from 'zod';
-import { AppError, DATA } from './model.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { Machines } from './machines.ts';
-import type { JobView } from './jobs.ts';
+import type { JobView } from '../shared/contracts/jobs.ts';
 import type { AlertEvent } from './feature-suite.ts';
 import {
   webhookTypes,

@@ -1,14 +1,15 @@
+import { services as imagesServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { Images } from '../../server/images.ts';
 import { DiskImports, diskImportSchema } from '../../server/disk-imports.ts';
-import { AppError } from '../../server/model.ts';
+import { AppError } from '../../shared/errors.ts';
 
 export async function activate(host: PluginContext) {
-  host.images = new Images();
-  host.provide('diskImports', new DiskImports(host.machines));
+  host.provide(imagesServices.images, new Images());
+  host.provide(imagesServices.diskImports, new DiskImports(host.machines));
   host.registerJobs(host.images.jobs, (job) => host.images.prepare(job.key!));
 }
 export async function route(
@@ -43,7 +44,7 @@ export async function route(
     });
     this.importing = true;
     try {
-      send(await this.use<DiskImports>('images', 'diskImports').import(input, req, signal), 201);
+      send(await this.use(imagesServices.diskImports).import(input, req, signal), 201);
     } finally {
       this.importing = false;
     }

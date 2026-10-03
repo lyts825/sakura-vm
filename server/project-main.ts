@@ -1,11 +1,16 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
-import type { Project } from './workspaces.ts';
-import { AppError } from './model.ts';
-import { quote } from './files.ts';
+import type { Project } from './project-config.ts';
+import { AppError } from '../shared/errors.ts';
+import { quote } from './shell.ts';
 import { prepareProjectScopeTools } from './project-services.ts';
-import { ProjectMainScope, projectMainBinding, projectMainScopePaths, type ProjectMainRecord } from './project-service-scope.ts';
+import {
+  ProjectMainScope,
+  projectMainBinding,
+  projectMainScopePaths,
+  type ProjectMainRecord,
+} from './project-service-scope.ts';
 import { writeStore } from './local-store.ts';
 
 export const mainSession = (project: Project) => projectMainScopePaths(project).session;

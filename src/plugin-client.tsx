@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ComponentType } from 'react';
-import type { VMView } from '../server/model';
+import type { VMView } from '../shared/contracts/vm.ts';
 import { PLUGINS } from '../shared/plugins';
 import type { FeatureProps, Request } from './feature-shared';
 

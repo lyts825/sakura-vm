@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { Project } from './workspaces.ts';
-import { quote } from './files.ts';
+import type { Project } from './project-config.ts';
+import { quote } from './shell.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { projectNetworkCheckScript, projectNetworkNamespace } from './project-network-isolation.ts';
 import { envPrefix } from './project-services.ts';

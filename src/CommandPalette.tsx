@@ -2,7 +2,7 @@ import { Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { PresetRunner } from '../plugins/commands/client';
 import type { CommandPreset } from '../server/command-presets';
-import type { VMView } from '../server/model';
+import type { VMView } from '../shared/contracts/vm.ts';
 import type { ProjectFile } from '../server/project-files';
 import { pluginNavigation } from './plugin-navigation';
 import { Feedback, useRemote, type Request } from './feature-shared';

@@ -6,8 +6,10 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { BootAttachment, Machines } from './machines.ts';
-import { AppError, DATA, ROOT, type VMRecord } from './model.ts';
-import { quote } from './files.ts';
+import { AppError } from '../shared/errors.ts';
+import { DATA, ROOT } from './paths.ts';
+import { type VMRecord } from '../shared/contracts/vm.ts';
+import { quote } from './shell.ts';
 import { readStore, regularDirectory, within, writeStore } from './local-store.ts';
 
 type BinaryResult = { ok: boolean; output: string };
