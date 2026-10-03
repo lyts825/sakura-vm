@@ -1,7 +1,7 @@
 """Portable models extracted from the actual production egress controller.
 
-The unmodified owned Debian COW captured nft 1.0.6 missing table.comment
-in both JSON and text; these models do not replace new kernel/VM evidence.
+Owned Debian COWs captured nft 1.0.6 missing table.comment and nested create
+leaving only a marked table; models do not replace new kernel/VM evidence.
 """
 import ast
 import base64
@@ -121,6 +121,45 @@ class CompatibilityModels(unittest.TestCase):
         fixture.tables = []
         self.assertIsNone(self.query(fixture))
         self.assertEqual(len(fixture.calls), 1)
+
+    def test_captured_debian_106_marked_table_only_pending_stays_refused(self):
+        # Exact closed b9 COW stdout: the table has a real ownership marker,
+        # but CMD_CREATE did not expand its nested chain/rule. A correct marker
+        # alone never authorizes repair, adoption or issuing another create.
+        raw = base64.b64decode('eyJuZnRhYmxlcyI6IFt7Im1ldGFpbmZvIjogeyJ2ZXJzaW9uIjogIjEuMC42IiwgInJlbGVhc2VfbmFtZSI6ICJMZXN0ZXIgR29vY2ggIzUiLCAianNvbl9zY2hlbWFfdmVyc2lvbiI6IDF9fSwgeyJ0YWJsZSI6IHsiZmFtaWx5IjogImluZXQiLCAibmFtZSI6ICJza3BfdWlkXzIwMDAwIiwgImhhbmRsZSI6IDF9fV19Cg==')
+        text = base64.b64decode('dGFibGUgaW5ldCBza3BfdWlkXzIwMDAwIHsgIyBoYW5kbGUgMQoJY29tbWVudCAic2FrdXJhLXByb2plY3QtZWdyZXNzLXYxOjNlNWEyYTU2LTdkMWMtNDJlYy1hOTViLTZmMjRlZjYxNjkzMjo0NGUxZTRiYy0xMDE0LTQwNTAtYWFmYy04YTAwZGJjODJkY2EiCn0K')
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), 'db9e3d584c1677889dff248b78c6b8fd50850f1ebda8384bdaa27063105b90fa')
+        self.assertEqual(hashlib.sha256(text).hexdigest(), '917a84d0d67688d0e84fe7172e87fc144a3f10029611141aebd187fb981cbf8e')
+        fixture = self.core_fixture()
+        fixture.value.update(registryId='3e5a2a56-7d1c-42ec-a95b-6f24ef616932',
+                             identityId='44e1e4bc-1014-4050-aafc-8a00dbc82dca')
+        fixture.current.update(fixture.value)
+        name, expected = draft.egress_spec(fixture.value)
+        pending = dict(version=1, registryId=fixture.value['registryId'], identityId=fixture.value['identityId'],
+                       projectId=fixture.value['projectId'], uid=20000, mode='private', phase='pending',
+                       handle=None, deleteIssued=False, **fixture.context)
+        fixture.records[fixture.ns['egress_path'](fixture.value)] = pending
+        fixture.tables[name] = [dict(table=dict(json.loads(raw)['nftables'][1]['table'],
+                                               comment=expected[0]['table']['comment']))]
+        before = copy.deepcopy(fixture.records), copy.deepcopy(fixture.tables), copy.deepcopy(fixture.events)
+        calls = []
+        def query(arguments, data=None, *, json_output=True):
+            calls.append(arguments)
+            self.assertIsNone(data)
+            self.assertIs(json_output, True)
+            self.assertIn(arguments, [['list', 'tables'], ['list', 'table', 'inet', name]])
+            return raw
+        draft.egress_nft = query
+        for action in [lambda: draft.egress_table(fixture.value),
+                       lambda: fixture.ns['egress_prepare'](fixture.value),
+                       lambda: fixture.ns['egress_prepare'](fixture.value, transition=True, restoring=True)]:
+            with self.subTest(action=action):
+                with self.assertRaises((draft.Refusal, fixture.ns['Refusal'])) as caught: action()
+                self.assertEqual(caught.exception.code, 'EGRESS_TABLE_CHANGED')
+                self.assertEqual(before, (fixture.records, fixture.tables, fixture.events))
+        self.assertEqual(len(calls), 6)
+        self.assertIsNone(pending['handle'])
+        self.assertFalse(pending['deleteIssued'])
 
     def test_duplicate_named_table_refuses_without_modifying_objects(self):
         fixture = KernelFixture(True)
@@ -257,10 +296,14 @@ class CompatibilityModels(unittest.TestCase):
         text = draft.egress_create_text(VALUE)
         name, expected = draft.egress_spec(VALUE)
         marker = expected[0]['table']['comment'].encode()
-        self.assertTrue(text.startswith(('create table inet ' + name + ' {\n').encode()))
+        self.assertEqual(text.splitlines(), [
+            ('create table inet ' + name + ' { comment "').encode() + marker + b'"; }',
+            ('add chain inet ' + name + ' output { type filter hook output priority 300; policy accept; }').encode(),
+            ('add rule inet ' + name + ' output meta skuid 20000 drop comment "').encode() + marker + b'"'])
         self.assertEqual(text.count(marker), 2)
         self.assertEqual(text.count(b'create table'), 1)
-        self.assertEqual(text.count(b'chain output'), 1)
+        self.assertEqual(text.count(b'add chain'), 1)
+        self.assertEqual(text.count(b'add rule'), 1)
         self.assertIn(b'priority 300; policy accept;', text)
         self.assertIn(b'meta skuid 20000 drop comment', text)
         for key, invalid in [('uid', True), ('uid', '20000'), ('uid', -1), ('uid', 60000), ('uid', 0),
@@ -346,13 +389,42 @@ class CompatibilityModels(unittest.TestCase):
     def test_transaction_fixture_rejects_arbitrary_text_or_changed_fixed_create_syntax(self):
         fixture = self.core_fixture()
         valid = draft.egress_create_text(fixture.value)
+        name, expected = draft.egress_spec(fixture.value)
+        marker = expected[0]['table']['comment']
+        # Previous production syntax returned success on nft 1.0.6 but only
+        # created the table. Never model it as a complete atomic policy.
+        nested = (f'create table inet {name} {{\n comment "{marker}";\n chain output {{\n'
+                  '  type filter hook output priority 300; policy accept;\n'
+                  f'  meta skuid 20000 drop comment "{marker}";\n }}\n}}\n').encode()
         for invalid in [b'add table inet any\n', valid.replace(b'priority 300', b'priority 0'),
                         valid.replace(b'drop comment', b'accept comment'), valid + b'delete table inet foreign\n',
-                        valid.replace(b'skp_uid_20000', b'skp_uid_20001'), valid.replace(b'meta skuid 20000', b'meta skuid 20001')]:
+                        valid.replace(b'skp_uid_20000', b'skp_uid_20001'), valid.replace(b'meta skuid 20000', b'meta skuid 20001'),
+                        valid.replace(b'add chain inet skp_uid_20000', b'add chain inet skp_uid_20001'),
+                        valid.replace(b'add rule inet skp_uid_20000', b'add rule inet skp_uid_20001'),
+                        valid.replace(b'create table', b'add table'), valid.splitlines(keepends=True)[0], nested]:
             with self.subTest(invalid=invalid), self.assertRaises(AssertionError):
                 fixture.fixed_text_query(['-f', '-'], invalid, json_output=False)
         self.assertFalse(fixture.events)
         self.assertFalse(fixture.tables)
+
+    def test_existing_exact_table_create_rejects_without_appending_chain_or_rule(self):
+        fixture = self.core_fixture()
+        fixture.ns['egress_prepare'](fixture.value)
+        before = copy.deepcopy(fixture.tables), copy.deepcopy(fixture.records), copy.deepcopy(fixture.events)
+        with self.assertRaises(AssertionError):
+            fixture.fixed_text_query(['-f', '-'], draft.egress_create_text(fixture.value), json_output=False)
+        self.assertEqual(before, (fixture.tables, fixture.records, fixture.events))
+
+    def test_error_in_third_fixed_statement_leaves_no_partial_table_or_chain(self):
+        fixture = self.core_fixture()
+        valid = draft.egress_create_text(fixture.value)
+        self.assertEqual(len(valid.splitlines()), 3)
+        for broken in [valid.replace(b'output meta skuid', b'missing meta skuid'),
+                       valid.replace(b'drop comment', b'unknown_verdict comment')]:
+            with self.subTest(broken=broken), self.assertRaises(AssertionError):
+                fixture.fixed_text_query(['-f', '-'], broken, json_output=False)
+            self.assertFalse(fixture.events)
+            self.assertFalse(fixture.tables)
 
     def test_production_saved_handle_and_absent_owner_checks_remain_authoritative(self):
         fixture = self.core_fixture()

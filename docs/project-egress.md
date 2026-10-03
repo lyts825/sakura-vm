@@ -24,15 +24,17 @@ systemd 的首次提交顺序为：保存 pending 归属、持久写入全部策
 
 原生项目入口在运行客户机程序前检查传入描述符。标准输入、输出、错误及保护帧描述符上的 IPv4、IPv6、packet、netlink 等网络套接字被拒绝；普通管道、文件、PTY 和本地 Unix 套接字继续保留二进制输入及 EOF 语义。这不会阻止另一个特权代理在项目程序运行后通过 Unix socket 另行转交网络描述符。
 
-宿主和客户机保留原 registry、账号、boot、网络设备/inode、规则表 handle 及 pending/applied 状态。规则创建使用经严格校验的 UID 与 UUID marker 生成固定 nft 标准文本，将完整表、链和规则放在一次原子事务中；删除仍使用固定 JSON 事务，不加载项目环境。创建、删除、写入或服务配置升级的应答丢失保留待确认状态；再次明确启动同一项目会核对并完成原意图。身份查询可读取已提交绑定供恢复，执行和 SSH/终端准入仍须规则确认。
+宿主和客户机保留原 registry、账号、boot、网络设备/inode、规则表 handle 及 pending/applied 状态。规则创建使用经严格校验的 UID 与 UUID marker 生成固定 nft 标准文本：`create table` 保存表归属，`add chain` 安装 output 链，`add rule` 安装准确 UID 的 drop 规则。三个显式命令由同一次 `nft -f -` 提交为原子事务；已有同名表仍使 `create` 拒绝，不能追加或接管。删除仍使用固定 JSON 事务，不加载项目环境。创建、删除、写入或服务配置升级的应答丢失保留待确认状态；再次明确启动同一项目会核对并完成原意图。身份查询可读取已提交绑定供恢复，执行和 SSH/终端准入仍须规则确认。
 
 nftables 1.0.6 的 JSON 表创建会遗漏真实内核表 comment，JSON 列表也不显示它；新自有 Debian 12 夹具已记录该差异。固定文本创建保留真实表归属。读取时，正常 JSON 继续严格核对；仅表 comment 缺失时，才从同一 PID 1 网络空间的受保护 nft 文本输出核对准确表名、原 handle 和唯一顶层 marker，再确认前后全部三个 JSON 对象及 handle 不变。规则 comment 不能代替表 marker，未知字段、额外规则、数值类型变化、文本超限或读取间漂移均拒绝。旧版已产生的无真实表 marker 的 pending 表继续阻止准入，不自动收编、删除或补写 marker。
+
+另一份全新 Debian 12 实机失败记录确认，1.0.6 的嵌套 `create table { chain ... }` 只建立带正确 marker 的空表；该版本只对 `add` 展开嵌套对象。创建因此使用上述三个显式命令。已留下的空表同样返回 `EGRESS_TABLE_CHANGED`，保留原 pending 和未确认 handle，不自动补建链或规则。新的三语句实现仍须由新构建的真实客户机完成完整验证，失败夹具不能充当通过证明。
 
 普通准入只核对，不修复被删除、替换或修改的已应用规则。未知表、变更 handle、原 boot 中的网络空间替换和被修改的管理脚本均拒绝；不清空整机规则。切回共享模式时，先保存意图、提交账号绑定，再确认删除原表。未知状态继续阻止托管执行，可从实例控制台核对 `systemctl status sakura-project-egress` 或 `rc-service sakura-project-egress status` 及原记录。
 
 ## 范围和验证
 
-`tests/project-egress-compat-model.py` 从当前生产控制器 AST 提取实际定义，覆盖正常 JSON 快速路径、旧版缺失字段、完整文本归属、64 KiB 边界、数值类型与读取间漂移；原事务模型独立校验固定创建语法并保留 JSON 删除、handle 与应答失联条件。这些便携模型不替代更新后构建的新 Alpine/Debian 实机验证，旧构建的历史成功不作为新来源的当前证明。
+`tests/project-egress-compat-model.py` 从当前生产控制器 AST 提取实际定义，覆盖正常 JSON 快速路径、旧版缺失字段、完整文本归属、64 KiB 边界、数值类型与读取间漂移，也以实机原始字节核对无 marker 和只剩表的两种失败继续拒绝；原事务模型独立校验完整三个显式命令的固定语法，拒绝原嵌套样式、额外 token 和错表名，并保留 JSON 删除、handle 与应答失联条件。已有表重复创建、第三语句错误无部分应用也有便携反例；这些模型不替代更新后构建的新 Alpine/Debian 实机事务和功能验证，旧构建的历史成功不作为新来源的当前证明。
 
 这是对**该项目 UID 发出的 IP 数据包**的限制。其他 UID、客户机管理员、由特权代理或其他账号转交的已打开套接字，以及其他 IPC 不属于这条规则的身份边界。管理员修改或重新加载整机防火墙可能改变规则；后续托管准入会拒绝失去归属的规则。它不替代实例级断网或抵御客户机 root 的系统策略。
 
@@ -44,4 +46,4 @@ nftables 1.0.6 的 JSON 表创建会遗漏真实内核表 comment，JSON 列表�
 
 公网软件源在模拟客户机中下载过慢时，可将 `SAKURA_EGRESS_APK_FIXTURE` 指向绝对路径的官方包夹具清单。清单固定 Alpine v3.23 x86_64、main/community 的签名索引与每个官方包的来源、长度和 SHA-256；适配器只在宿主回环提供已冻结文件，拒绝其他路径和写请求。只在全新自有 VM 中临时选择该软件源，仍执行同一生产安装命令、五分钟时限和客户机默认签名校验；安装后原软件源逐字节恢复，签名密钥摘要前后不变。本地源请求、缓存复核、实际服务关闭及零残留连接纳入完整证明。该模式验证功能与签名包安装，不代表默认公网源的安装性能；不会重启或修改历史失败 VM。
 
-规则的 `inet`、output hook 和 socket UID 语义参照 [nftables 官方手册](https://netfilter.org/projects/nftables/manpage.html)；服务依赖参照 [OpenRC 服务脚本指南](https://github.com/OpenRC/openrc/blob/master/service-script-guide.md)。
+规则的 `inet`、output hook 和 socket UID 语义参照 [nftables 官方手册](https://netfilter.org/projects/nftables/manpage.html)，单次 `-f` 提交参照 [nftables 原子规则替换文档](https://wiki.nftables.org/wiki-nftables/index.php/Atomic_rule_replacement)，1.0.6 的命令展开参照 [官方 1.0.6 源码包](https://netfilter.org/projects/nftables/files/nftables-1.0.6.tar.xz) 中 `src/libnftables.c` 的 `nft_evaluate`；服务依赖参照 [OpenRC 服务脚本指南](https://github.com/OpenRC/openrc/blob/master/service-script-guide.md)。

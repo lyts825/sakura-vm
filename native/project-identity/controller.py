@@ -708,15 +708,12 @@ def egress_create_text(value):
         identifier(value.get(key), UUID, 'EGRESS_OWNER_CHANGED')
     name, objects = egress_spec(value)
     marker = objects[0]['table']['comment']
-    # The 1.0.6 JSON input silently omits table comments. One fixed standard
-    # create statement keeps the table, chain and rule in one nft transaction
-    # and preserves the actual kernel ownership marker on those versions.
-    return (f'create table inet {name} {{\n'
-            f' comment "{marker}";\n'
-            ' chain output {\n'
-            '  type filter hook output priority 300; policy accept;\n'
-            f'  meta skuid {value["uid"]} drop comment "{marker}";\n'
-            ' }\n}\n').encode('ascii')
+    # The 1.0.6 JSON input omits table comments, and CMD_CREATE does not
+    # expand nested chains/rules. Three explicit commands in one -f batch
+    # preserve the marker and atomicity; create still refuses an existing table.
+    return (f'create table inet {name} {{ comment "{marker}"; }}\n'
+            f'add chain inet {name} output {{ type filter hook output priority 300; policy accept; }}\n'
+            f'add rule inet {name} output meta skuid {value["uid"]} drop comment "{marker}"\n').encode('ascii')
 
 
 def egress_realm():

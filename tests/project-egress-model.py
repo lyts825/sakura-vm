@@ -66,14 +66,15 @@ def fixture(mode='private'):
             # production generator/spec; every policy token is fixed here.
             assert isinstance(data, bytes)
             marker = rb'sakura-project-egress-v1:[a-f0-9-]{36}:[a-f0-9-]{36}'
-            syntax = (rb'create table inet skp_uid_([0-9]+) \{\n comment "(' + marker + rb')";\n'
-                      rb' chain output \{\n  type filter hook output priority 300; policy accept;\n'
-                      rb'  meta skuid ([0-9]+) drop comment "(' + marker + rb')";\n \}\n\}\n')
+            syntax = (rb'create table inet skp_uid_([0-9]+) \{ comment "(' + marker + rb')"; \}\n'
+                      rb'add chain inet skp_uid_([0-9]+) output \{ type filter hook output priority 300; policy accept; \}\n'
+                      rb'add rule inet skp_uid_([0-9]+) output meta skuid ([0-9]+) drop comment "(' + marker + rb')"\n')
             matched = re.fullmatch(syntax, data)
             assert matched is not None, 'unknown fixed create syntax or extra token'
-            uid, owner, rule_uid, rule_owner = [item.decode('ascii') for item in matched.groups()]
+            uid, owner, chain_table_uid, rule_table_uid, rule_uid, rule_owner = [item.decode('ascii') for item in matched.groups()]
             expected_owner = 'sakura-project-egress-v1:' + value['registryId'] + ':' + value['identityId']
-            assert uid == rule_uid == str(value['uid']) and owner == rule_owner == expected_owner
+            assert uid == chain_table_uid == rule_table_uid == rule_uid == str(value['uid'])
+            assert owner == rule_owner == expected_owner
             name = 'skp_uid_' + uid
             common = {'family': 'inet', 'table': name}
             items = [{'table': {'family': 'inet', 'name': name, 'comment': owner}},
