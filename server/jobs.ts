@@ -30,6 +30,8 @@ const cleanupFailureCodes = new Set([
   'DESKTOP_CLEANUP_FAILED', 'LINUX_CLIPBOARD_CLEANUP_FAILED',
   'HOST_PROCESS_CLEANUP_PENDING', 'STORAGE_CLEANUP_PENDING',
   'VM_CLEANUP_PENDING', 'EXECUTION_CLEANUP_PENDING',
+  'PLUGIN_CLEANUP_PENDING',
+  'SESSION_CLEANUP_PENDING',
 ]);
 type JobResource = Awaited<ReturnType<typeof hostRuntime.acquire>>;
 type JobContext = { id: string; lease: JobResource; signal: AbortSignal; open: boolean;

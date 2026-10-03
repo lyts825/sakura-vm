@@ -6,14 +6,8 @@ import type { VMView } from '../shared/contracts/vm.ts';
 import type { Request } from './feature-shared';
 import { Feedback, useAction, useRemote } from './feature-shared';
 import './features.css';
-
-export const taskLabels = {
-  running: '执行中',
-  done: '已完成',
-  error: '失败',
-  cancelled: '已取消',
-  interrupted: '已中断',
-};
+import { jobPresentation, taskLabels } from './job-presentation';
+export { taskLabels } from './job-presentation';
 
 export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }) {
   const remote = useRemote<{ jobs: JobView[]; warnings: string[] }>(request, '/jobs', true, 2000),
@@ -28,7 +22,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
     [machine, setMachine] = useState('all');
   const jobs =
     remote.data?.jobs.filter(
-      (job) => (filter === 'all' || job.status === filter) && (machine === 'all' || job.vmId === machine),
+      (job) => (filter === 'all' || jobPresentation(job).state === filter) && (machine === 'all' || job.vmId === machine),
     ) || [];
   const taskStatus = remote.error
     ? { tone: 'error', label: '暂时离线' }
@@ -55,6 +49,9 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
           任务状态
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="all">全部状态</option>
+            <option value="queued">等待资源</option>
+            <option value="cancelling">正在取消</option>
+            <option value="cleanup-pending">清理待确认</option>
             {Object.entries(taskLabels).map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
@@ -105,7 +102,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
       {jobs.map((job) => (
         <details className="feature-card" key={job.id} open={job.status === 'running'}>
           <summary>
-            {job.title || '后台操作'} · {taskLabels[job.status]} ·{' '}
+            {job.title || '后台操作'} · {jobPresentation(job).label} ·{' '}
             {vms.find((vm) => vm.id === job.vmId)?.name || '系统'}
           </summary>
           <p className="subtle-note">
@@ -120,7 +117,8 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
             秒
           </p>
           <p role="status">{job.phase}</p>
-          {job.status === 'running' && <progress aria-label="任务进度" max={100} value={job.progress} />}
+          {jobPresentation(job).detail && <p className="subtle-note">{jobPresentation(job).detail}</p>}
+          {job.status === 'running' && job.admission !== 'queued' && <progress aria-label="任务进度" max={100} value={job.progress} />}
           <Feedback error={job.error} />
           <pre className="feature-log">
             {job.log ||
@@ -145,7 +143,7 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
                 取消任务
               </button>
             )}
-            {job.status !== 'running' && job.action && (
+            {jobPresentation(job).retryable && job.action && (
               <button
                 className="secondary compact"
                 disabled={action.busy}

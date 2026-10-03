@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
@@ -80,19 +81,20 @@ export function wireGuardPublicKey(privateKey: string) {
 }
 
 export class WireGuardOverlay {
-  private timer: ReturnType<typeof setInterval>;
+  private timer: ScheduleHandle;
   private ticking?: Promise<void>;
   private booted = new Map<string, object>();
   private failures = new Map<string, { at: number; reason: string }>();
   private abort = new AbortController();
   private closed = false;
   constructor(private machines: Machines, private secrets: () => Secrets | undefined) {
-    this.timer = setInterval(() => {
-      if (!this.ticking) this.ticking = this.tick().catch(() => {}).finally(() => {
+    this.timer = scheduler.register({ owner: 'plugin:network', label: 'WireGuard 状态校准', intervalMs: 30000,
+      overlap: 'skip', run: async () => {
+      if (!this.ticking) this.ticking = this.tick().finally(() => {
         this.ticking = undefined;
       });
-    }, 30_000);
-    this.timer.unref();
+      await this.ticking;
+    } });
   }
   private file(id: string) { return join(vmDir(id), 'wireguard-overlay.json'); }
   private async config(id: string) {
@@ -282,8 +284,8 @@ export class WireGuardOverlay {
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
     this.abort.abort();
+    await this.timer.close();
     await this.ticking;
   }
 }

@@ -2,6 +2,8 @@ import { formatDateTime, formatNumber } from './localization';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VMView } from '../shared/contracts/vm.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
+import { resourceCache, type ResourceSnapshot } from './resource-cache';
+import { jobPresentation } from './job-presentation';
 export type Request = <T = any>(
   path: string,
   method?: string,
@@ -25,50 +27,20 @@ export const formatBytes = (value: number) =>
   value >= 1024 ** 3 ? `${formatNumber(value / 1024 ** 3, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} GiB`
     : `${formatNumber(value / 1024 ** 2, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MiB`;
 export function useRemote<T>(request: Request, path: string, enabled = true, interval = 5000) {
-  const [data, setData] = useState<T | null>(null),
-    [error, setError] = useState(''),
-    [revision, bump] = useState(0);
+  const [state, setState] = useState<{ request: Request; path: string; generation: number; snapshot: ResourceSnapshot<T> }>();
   useEffect(() => {
-    if (!enabled) {
-      setData(null);
-      setError('');
-      return;
-    }
-    const abort = new AbortController();
-    const isVisible = () => document.visibilityState !== 'hidden';
-    let alive = true,
-      pending = false,
-      timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      if (!alive || pending || !isVisible()) return;
-      pending = true;
-      try {
-        const value = await request<T>(path, 'GET', undefined, abort.signal);
-        if (alive) {
-          setData(value);
-          setError('');
-        }
-      } catch (e) {
-        if (alive) setError((e as Error).message);
-      } finally {
-        pending = false;
-        if (alive && interval && isVisible()) timer = setTimeout(poll, interval);
-      }
-    };
-    const visible = () => {
-      clearTimeout(timer);
-      if (isVisible()) void poll();
-    };
-    document.addEventListener('visibilitychange', visible);
-    void poll();
-    return () => {
-      alive = false;
-      abort.abort();
-      document.removeEventListener('visibilitychange', visible);
-      clearTimeout(timer);
-    };
-  }, [request, path, enabled, interval, revision]);
-  return { data, error, reload: useCallback(() => bump((n) => n + 1), []) };
+    if (!enabled) return;
+    return resourceCache.watch<T>(request, path, snapshot => setState({ request, path, generation: resourceCache.generation, snapshot }), interval);
+  }, [request, path, enabled, interval]);
+  const current = enabled && state?.request === request && state.path === path && state.generation === resourceCache.generation ? state.snapshot : undefined;
+  return { data: current?.data ?? null, error: current?.error || '',
+    reload: useCallback(() => resourceCache.invalidate(request, path), [request, path]) };
+}
+
+if (typeof document !== 'undefined') {
+  const visibility = () => resourceCache.setVisible(document.visibilityState !== 'hidden');
+  document.addEventListener('visibilitychange', visibility);
+  visibility();
 }
 export function useAction() {
   const pending = useRef(false),
@@ -134,17 +106,10 @@ export function JobLog({ job }: { job?: JobView | null }) {
       <span
         className={`badge ${job.status === 'running' ? 'starting' : job.status === 'done' ? 'running' : 'error'}`}
       >
-        {
-          {
-            running: '正在执行',
-            done: '已完成',
-            error: '执行失败',
-            cancelled: '已取消',
-            interrupted: '已中断',
-          }[job.status]
-        }
+        {jobPresentation(job).label}
       </span>
       <Feedback error={job.error} />
+      {jobPresentation(job).detail && <p className="subtle-note">{jobPresentation(job).detail}</p>}
       {job.errorCode && <p className="subtle-note"><code>{job.errorCode}</code></p>}
       {job.logPruned && !job.log && (
         <p className="subtle-note">日志已按保留策略清理（{formatDateTime(new Date(job.logPruned.at))}）。</p>

@@ -1,4 +1,5 @@
 import type { ControllerSession } from './controller-session';
+import { resourceCache } from './resource-cache';
 
 type Options = {
   session: Pick<ControllerSession, 'authenticate'>;
@@ -74,9 +75,17 @@ export function watchController(options: Options) {
       socket = events;
       events.onopen = () => {
         failures = 0;
+        resourceCache.invalidate();
         schedulePoll();
       };
-      events.onmessage = () => {
+      events.onmessage = (event) => {
+        let resources = ['*'];
+        try {
+          const message = JSON.parse(String(event?.data));
+          if (Array.isArray(message.data?.resources) && message.data.resources.every((item: unknown) => typeof item === 'string'))
+            resources = message.data.resources;
+        } catch { /* Old hosts only signal that state changed. Reconcile all active resources. */ }
+        resourceCache.invalidateResources(resources);
         if (!visible() || changed) return;
         changed = setTimeout(() => {
           changed = undefined;

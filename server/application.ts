@@ -50,7 +50,8 @@ import { NativeIntegration, nativeMappings } from './native-integration.ts';
 import { NotebookEnvironments } from './notebook-environments.ts';
 import { apiDocument } from './openapi.ts';
 import { Passkeys, passkeyRemove } from './passkeys.ts';
-import { PORT, ROOT } from './paths.ts';
+import { DATA, PORT, ROOT } from './paths.ts';
+import { DataDirectoryOwner } from './data-directory-owner.ts';
 import { PluginManager } from './plugin-manager.ts';
 import { routeContribution, validateRegistry } from './plugins/registry.ts';
 import { PolicyBundles, policyBundlePreview, policyBundleTarget } from './policy-bundles.ts';
@@ -89,13 +90,23 @@ const memberProjectRoutes: Record<string, Partial<Record<'GET' | 'PUT' | 'POST',
 
 export async function startApplication() {
   const resources = new ResourceScope({ owner: 'core:application' });
+  let dataOwner: DataDirectoryOwner | undefined;
   const closeResources = async () => {
     const failures: unknown[] = [];
     try { await resources.close(); } catch (error) { failures.push(error); }
-    try { hostRuntime.close(); } catch (error) { failures.push(error); }
+    // Keep the OS ownership guard if any domain still has unconfirmed cleanup.
+    if (!failures.length) {
+      const pending = hostRuntime.snapshot().resources.filter(resource => resource.id !== dataOwner?.resourceId);
+      if (pending.length) failures.push(new AppError(`仍有 ${pending.length} 项资源未确认释放`, 503, 'RESOURCE_CLEANUP_PENDING'));
+    }
+    if (!failures.length) {
+      try { await dataOwner?.close(); } catch (error) { failures.push(error); }
+      try { hostRuntime.close(); } catch (error) { failures.push(error); }
+    }
     if (failures.length) throw new AggregateError(failures, 'Host resources require cleanup');
   };
   try {
+    dataOwner = await DataDirectoryOwner.acquire(DATA);
     resources.defer('host-admission-drain', () => hostRuntime.beginDrain(), ClosePhase.admission);
     resources.defer('scheduler-drain', () => scheduler.beginDrain(), ClosePhase.admission);
     resources.own('scheduler', scheduler, ClosePhase.plugins + 1);

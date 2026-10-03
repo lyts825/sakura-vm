@@ -164,7 +164,7 @@ export class VirtioFsShares {
   private observations = new Map<string, Observation>();
   private tasks = new Map<string, Promise<unknown>>();
   private writes = Promise.resolve();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private tick?: Promise<void>;
   private closed = false;
   private lifetime = new AbortController();
@@ -185,13 +185,14 @@ export class VirtioFsShares {
       void task.finally(() => this.starting.delete(task)).catch(() => {});
       return task;
     } });
-    this.timer = setInterval(() => {
+    this.timer = scheduler.register({ owner: 'core:virtio-fs', label: 'Virtio-FS 共享目录状态校准', intervalMs: 10000,
+      overlap: 'skip', run: async () => {
       if (!this.tick && !this.closed)
         this.tick = this.reconcile().finally(() => {
           this.tick = undefined;
         });
-    }, 10_000);
-    this.timer.unref();
+      await this.tick;
+    } });
   }
 
   private locked<T>(id: string, work: () => Promise<T>): Promise<T> {
@@ -423,7 +424,7 @@ export class VirtioFsShares {
   async close() {
     this.closed = true;
     this.lifetime.abort();
-    if (this.timer) clearInterval(this.timer);
+    await this.timer?.close();
     await this.tick;
     await Promise.allSettled([...this.tasks.values()]);
     await this.writes;
@@ -441,3 +442,4 @@ export class VirtioFsShares {
   }
 }
 import { registerVmBootProvider } from './vm-lifetime.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';

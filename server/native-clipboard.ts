@@ -8,6 +8,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA, ROOT } from './paths.ts';
 import { fileHash, readStore, regularDirectory, writeStore } from './local-store.ts';
 import type { ClipboardRule } from '../shared/clipboard-policy.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import {
   nativeClipboardDescendants,
   nativeClipboardDescendantRequest,
@@ -474,7 +475,7 @@ export class NativeClipboard {
   private processes: NativeClipboardProcessState[] = [];
   private queue: Promise<unknown> = Promise.resolve();
   private stateQueue: Promise<unknown> = Promise.resolve();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private closed = false;
   private readonly lifetime = new AbortController();
   private scanning = false;
@@ -505,19 +506,20 @@ export class NativeClipboard {
     await this.serial(() => this.scan());
     const interval = this.options.interval ?? 4000;
     if (interval > 0) {
-      this.timer = setInterval(() => {
+      this.timer = scheduler.register({ owner: 'core:native-clipboard', label: '原生剪贴板应用状态校准', intervalMs: interval,
+        overlap: 'skip', run: async () => {
         if (this.closed || this.scanning || (!this.state.settings.enabled && !this.state.managed.length))
           return;
         this.scanning = true;
-        void this.serial(() => this.scan())
+        await this.serial(() => this.scan())
           .catch((error) => {
             this.error = (error as Error).message;
+            throw error;
           })
           .finally(() => {
             this.scanning = false;
           });
-      }, interval);
-      this.timer.unref();
+      } });
     }
   }
   view(): NativeClipboardView {
@@ -1202,8 +1204,8 @@ export class NativeClipboard {
   async close() {
     this.closed = true;
     this.lifetime.abort();
-    if (this.timer) clearInterval(this.timer);
     await this.stopDescendants();
+    await this.timer?.close();
     await this.queue.catch(() => {});
     await this.stateQueue.catch(() => {});
   }

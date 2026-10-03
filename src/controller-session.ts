@@ -1,5 +1,6 @@
 import type { SessionLockView } from '../shared/session-lock';
 import type { AccessPrincipal } from '../shared/access-control';
+import { resourceCache } from './resource-cache';
 
 /** A controller credential belongs to one unlocked host session, not to the browser tab. */
 export class ControllerSession {
@@ -158,6 +159,7 @@ export class ControllerSession {
               : '') ||
             `请求失败（${response.status}）`,
         );
+      if (method !== 'GET' && method !== 'HEAD') resourceCache.mutation(path);
       return data as T;
     }
   };
@@ -165,6 +167,7 @@ export class ControllerSession {
 
 export const controllerSession = new ControllerSession();
 export const api = controllerSession.request;
+controllerSession.subscribe(() => resourceCache.reset());
 
 /** Bursts share one read, with one fresh pass for changes received in flight. */
 export class RefreshQueue {
