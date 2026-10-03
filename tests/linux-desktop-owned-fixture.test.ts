@@ -6,10 +6,45 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer, type Socket } from 'node:net';
 import test from 'node:test';
+import ts from 'typescript';
 import ssh2 from 'ssh2';
 import { WebSocket, WebSocketServer } from 'ws';
 import { closeOwnedDesktopSshClient, desktopFixtureLogPath, desktopFixtureParent, LinuxDesktopOwnedFixture, ownedDesktopQemuArguments, ownedDesktopBootstrapTimeout, parseOwnedDesktopBootstrapReply } from '../scripts/linux-desktop-owned-fixture.ts';
 import { probeOwnedDesktopRfb } from '../scripts/linux-desktop-rfb-probe.ts';
+
+function admissionParsers() {
+  const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('function parseOwnedAdmissionServiceReply('), end = source.indexOf('const singleAppFdClassifier =', start);
+  assert.ok(start >= 0 && end > start);
+  const program = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  return new Function('assert', program + '\nreturn { parseOwnedAdmissionServiceReply, ownedAdmissionRetryRemaining };')(assert);
+}
+
+test('ordinary service admission restarts only loaded real fragments and skips only explicit not-found', () => {
+  const { parseOwnedAdmissionServiceReply: parse } = admissionParsers();
+  const loaded = 'LoadState=loaded\nFragmentPath=/lib/systemd/system/ssh.service\nId=ssh.service\nActiveState=active\nNoNewPrivileges=yes\nMainPID=354\n';
+  const absent = 'LoadState=not-found\nFragmentPath=\nId=cron.service\nActiveState=inactive\nNoNewPrivileges=no\nMainPID=0\n';
+  assert.equal(parse(loaded, 'ssh.service').restart, true); assert.equal(parse(absent, 'cron.service').restart, false);
+  for (const reply of [loaded.replace('LoadState=loaded', 'LoadState=error'), loaded.replace('LoadState=loaded', 'LoadState=masked'),
+    loaded.replace('/lib/systemd/system/ssh.service', ''), loaded.replace('/lib/systemd/system/ssh.service', '/lib/../ssh.service'),
+    loaded.replace('Id=ssh.service', 'Id=foreign.service'), loaded.replace('MainPID=354', 'MainPID=-1'),
+    loaded + 'LoadState=loaded\n', loaded.replace('NoNewPrivileges=yes\n', ''), loaded + 'Unknown=yes\n'])
+    assert.throws(() => parse(reply, 'ssh.service'));
+  assert.throws(() => parse(absent.replace('FragmentPath=\n', 'FragmentPath=/lib/systemd/system/cron.service\n'), 'cron.service'));
+  assert.throws(() => parse(absent.replace('MainPID=0', 'MainPID=345'), 'cron.service'));
+  assert.throws(() => parse(loaded, 'foreign.service')); assert.throws(() => parse(' '.repeat(8193), 'ssh.service'));
+});
+
+test('post-restart admission retries only the original typed refusal inside its fixed deadline', () => {
+  const { ownedAdmissionRetryRemaining: remaining } = admissionParsers();
+  const refusal = Object.assign(new Error('original service session still alive'), { code: 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED' });
+  assert.equal(remaining(refusal, 30000, 0), 500); assert.equal(remaining(refusal, 30000, 29999), 1);
+  for (const error of [new Error('connection lost'), Object.assign(new Error('changed'), { code: 'PROJECT_IDENTITY_EGRESS_TABLE_CHANGED' }),
+    { code: refusal.code }, null]) assert.throws(() => remaining(error, 30000, 0), (actual: unknown) => actual === error);
+  assert.throws(() => remaining(refusal, 30000, 30000), (actual: unknown) => actual === refusal);
+  assert.throws(() => remaining(refusal, 30000, 30001), (actual: unknown) => actual === refusal);
+  assert.throws(() => remaining(refusal, Number.NaN, 0), (actual: unknown) => actual === refusal);
+});
 
 test('pending bootstrap readiness still pins the new DMI and boot and refuses malformed or changed guest replies', () => {
   const vmId = randomUUID(), bootId = randomUUID();

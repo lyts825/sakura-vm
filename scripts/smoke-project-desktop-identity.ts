@@ -11,6 +11,36 @@ import { defaultClipboardRule, type ClipboardRule } from '../shared/clipboard-po
 import { LinuxDesktopOwnedFixture, captureDesktopSources, closeOwnedDesktopSshClient, desktopFixtureParent, desktopFixtureSource, ownedDesktopBootstrapTimeout, parseOwnedDesktopBootstrapReply, sha256 } from './linux-desktop-owned-fixture.ts';
 import { probeOwnedDesktopRfb } from './linux-desktop-rfb-probe.ts';
 
+function parseOwnedAdmissionServiceReply(text: string, requested: 'ssh.service' | 'cron.service') {
+  assert.ok(requested === 'ssh.service' || requested === 'cron.service');
+  assert.ok(text.length > 0 && text.length <= 8192 && !text.includes('\0'));
+  const fields: Record<string, string> = {};
+  for (const line of text.trim().split('\n')) {
+    const match = /^(LoadState|FragmentPath|Id|ActiveState|NoNewPrivileges|MainPID)=([^\r\n]*)$/.exec(line);
+    assert.ok(match && !Object.hasOwn(fields, match[1]), 'Unknown or duplicate ordinary service property');
+    fields[match[1]] = match[2];
+  }
+  assert.deepEqual(Object.keys(fields).sort(), ['ActiveState', 'FragmentPath', 'Id', 'LoadState', 'MainPID', 'NoNewPrivileges']);
+  assert.equal(fields.Id, requested);
+  assert.match(fields.MainPID, /^(0|[1-9][0-9]*)$/); assert.ok(Number.isSafeInteger(Number(fields.MainPID)));
+  assert.match(fields.NoNewPrivileges, /^(yes|no)$/);
+  assert.match(fields.ActiveState, /^(active|inactive|failed|activating|deactivating|reloading)$/);
+  if (fields.LoadState === 'not-found') {
+    assert.equal(fields.FragmentPath, ''); assert.equal(fields.MainPID, '0'); assert.equal(fields.ActiveState, 'inactive');
+    return { ...fields, restart: false };
+  }
+  assert.equal(fields.LoadState, 'loaded', 'Unknown ordinary service load state');
+  assert.match(fields.FragmentPath, /^\/(?:[A-Za-z0-9_.@+-]+\/)*[A-Za-z0-9_.@+-]+\.service$/);
+  assert.ok(!fields.FragmentPath.split('/').some((part) => part === '.' || part === '..'));
+  return { ...fields, restart: true };
+}
+
+function ownedAdmissionRetryRemaining(error: unknown, deadline: number, now: number) {
+  if (!(error instanceof Error) || Reflect.get(error, 'code') !== 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED' ||
+    !Number.isSafeInteger(deadline) || !Number.isSafeInteger(now) || now >= deadline) throw error;
+  return Math.min(500, deadline - now);
+}
+
 const singleAppFdClassifier = String.raw`
 def classify_descriptor(row, objects, process_role):
  assert isinstance(row,dict) and type(row['number']) is int and row['number']>=0,'FD_NUMBER_INVALID'
@@ -1350,9 +1380,56 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
             throw error;
           }
           if (Reflect.get(error as object, 'code') !== 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED') throw error;
-          proof.admissionServicesBefore = await guest('systemctl show ssh.service cron.service -p Id -p FragmentPath -p ActiveState -p NoNewPrivileges -p MainPID');
-          await guest('set -eu; systemctl restart ssh.service; systemctl restart cron.service');
-          preview = await migrations.preview(fixture.vmId);
+          const live = machines!.live.get(fixture.vmId); assert.ok(live);
+          const recovery: any = { originalRefusal: errorValue(error), services: [], oldRootConnections: [],
+            retries: [], retryBudgetMilliseconds: 30000, startedAt: new Date().toISOString() };
+          (proof.admissionRecoveries ||= []).push(recovery);
+          const tuple = `test "$(cat /sys/class/dmi/id/product_uuid | tr A-F a-f)" = ${quote(fixture.vmId)}\ntest "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(proof.bootId)}\n`;
+          for (const unit of ['ssh.service', 'cron.service'] as const) {
+            assert.equal(machines!.live.get(fixture.vmId), live);
+            const raw = await guest('set -eu\n' + tuple + 'env LC_ALL=C systemctl show ' + unit + ' -p LoadState -p FragmentPath -p Id -p ActiveState -p NoNewPrivileges -p MainPID');
+            const service = parseOwnedAdmissionServiceReply(raw, unit);
+            recovery.services.push({ unit, raw, parsed: service, restarted: false });
+          }
+          for (const entry of recovery.services) if (entry.parsed.restart) {
+            // Only this new owned COW is mutated. An absent unit is never
+            // installed, and a query failure is not interpreted as absence.
+            await guest('set -eu\n' + tuple + 'test -f ' + quote(entry.parsed.FragmentPath) + '\nsystemctl restart ' + entry.unit);
+            entry.restarted = true;
+          }
+          const oldRootClients = [...live.clients];
+          for (const client of oldRootClients) {
+            const state = clientStates.get(client); assert.ok(state && state.row.vmId === fixture.vmId && state.row.role === 'production');
+            recovery.oldRootConnections.push(state.row.connectionId);
+          }
+          for (const client of oldRootClients) await closeClient(client);
+          assert.equal(machines!.live.get(fixture.vmId), live); assert.equal(live.clients.size, 0);
+          assert.ok(oldRootClients.every((client) => clientStates.get(client)!.row.closed));
+          recovery.oldRootConnectionsPhysicallyClosed = true;
+          // Machines has no reusable SSH pool: each public preview now reads
+          // this COW's new key and authenticates a new Root SSH transport.
+          const deadline = Date.now() + recovery.retryBudgetMilliseconds;
+          recovery.retryDeadline = new Date(deadline).toISOString();
+          let previousError: unknown = error;
+          while (true) {
+            ownedAdmissionRetryRemaining(previousError, deadline, Date.now());
+            assert.equal(machines!.live.get(fixture.vmId), live);
+            const controller = new AbortController(), row: any = { startedAt: new Date().toISOString() };
+            recovery.retries.push(row);
+            const timer = setTimeout(() => controller.abort(new Error('Owned NNP restart retry deadline')), Math.max(1, deadline - Date.now()));
+            try {
+              preview = await migrations.preview(fixture.vmId, controller.signal);
+              assert.ok(Date.now() <= deadline, 'Owned NNP restart retry replied after its deadline');
+              row.passed = true; row.finishedAt = new Date().toISOString(); break;
+            } catch (retryError) {
+              row.error = errorValue(retryError); row.finishedAt = new Date().toISOString(); previousError = retryError;
+              if (retryError instanceof Error && Reflect.get(retryError, 'code') === 'PROJECT_IDENTITY_EGRESS_TABLE_CHANGED') {
+                try { await observeMigrationNftRefusal(index.active, directory); }
+                catch (diagnosticError) { proof.migrationNftDiagnosis ||= {}; proof.migrationNftDiagnosis.error = errorValue(diagnosticError); }
+              }
+              await delay(ownedAdmissionRetryRemaining(retryError, deadline, Date.now()));
+            } finally { clearTimeout(timer); }
+          }
         }
         assert.ok(preview.plan);
         const applied = await migrations.apply(fixture.vmId, { action: 'apply', version: 1, planId: preview.plan.proposal.planId, sha256: preview.plan.sha256, reviewed: true });
