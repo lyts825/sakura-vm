@@ -4,6 +4,10 @@
 
 ## Shell 子进程继承与私有项目图形程序
 
+新的独立 Debian COW 已完成 boot 核对和新 SSH 认证，随后公开项目目录迁移实际拒绝 `PROJECT_IDENTITY_EGRESS_TABLE_CHANGED`。只读诊断确认 nftables 1.0.6 的原 JSON 创建没有保存表的归属 comment；JSON 与同一 PID 1 网络空间的文本输出均缺少该标记，chain、rule、数值 UID 和规则 comment 与预期相同。修复使用仅含已核对 UID/UUID 的固定文本原子创建；旧 JSON 输出缺少表 comment 时，读取准确表的文本标记，并核对前后全部对象与句柄不变。未知规则、错误或缺失标记、原已损坏 pending 仍拒绝接管。原失败证明保留为 false、零产品场景；只读诊断及关闭核验 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-nft-close-6b7415dc-b2fe-4d61-a409-ece0f63b1156/verification.json` SHA-256 为 `9905057bd525f69afe5aaa1399874362abae16a60b25e53a81ccd9de0c6cd9ae`。新的修复后桌面联测仍待完成。
+
+新 project-identity build `04ff35b6316b483f9eed3a7b905491ab9cb5fd548598ef50c418cd2baff66906` 已通过 32 项定向 Node 测试和 21 项直接生产 AST 兼容模型，含原实机 JSON/文本输出重放、64 KiB 边界、严格数值类型、原 handle/应答丢失恢复和完整固定创建语法。三条检查进程均实际 exit/close 0、输出流关闭；5 份专属来源与原 92 份 normal 资产前后不变，未在此阶段启动 VM。证明 `E:/Sakura-egress-compat-integrated-71f353d0-9e77-44a2-a212-e0acccf35e43/verification.json` SHA-256 为 `3b4977f1f6162806cfb8fa7849f620f596b7d5ed914e982b4575a414800f9985`。旧 `aa9bd7ca` 构建的九项 Alpine 成功仍作历史保存，不替代此新构建的实机验证。
+
 单应用窗口接入捕获的原项目账号、配置、boot 与独立 native run。应用另用不复用的 sandbox UID，通过专属目录视图读写项目私有文件，原盘权限不扩宽。固定降权入口在清除组与 capabilities、设置 NoNewPrivs 后才使用应用正文；准确应用与窗口管理器执行成功、进程及真实 RFB 监听核对后才发布运行状态。主机 intent 先于首次 native prepare 持久保存，应答失联恢复原 UUID；重载读取原记录，不重新发行票据或启动监视。停止及创建者观察到的自然退出清理原完整 cgroup，包括 setsid 子进程；失败保留票据、租约与配置门闩供重试。另一服务实例核销后的原 owner 只释放内存租约，不重写其他 UUID 或再发停止。新真实桌面联测仍待执行，旧 UID-only 路径的历史测试不作为新实现的证明；当前接口见 [单应用窗口](single-app-windows.md)。
 
 单应用窗口页面保留每行参数的原空格，分别显示项目与应用账号。弹窗连接失败后的停止错误会显示在原记录中，清理未确认时可重试停止；未知旧窗口显示归属待核对，不能凭端口或账号猜测重开、停止。移动布局、关闭弹窗、原 UUID 清理重试和 RFB 剪贴板共 3 个浏览器场景通过，使用实际生产前端与明确 HTTP/RFB 夹具，不作为客户机权限或进程域证明。证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/single-app-browser-725cc46e-9b35-4e3b-8263-96f4e93fe307/verification.json` SHA-256 为 `2728f36b8567b5d166c83d1cafab5890eeb9de980fff8eba58692436ea0f78e4`，实际 exit/close 0、零失败和跳过、前端来源不变。桌面关闭组合层传播原应用清理错误，并继续关闭其他桥接，允许同一服务重试；相关 11 项回归通过。
@@ -20,7 +24,7 @@
 
 Linux 桌面分别固定外层 VNC 与嵌套 XWayland 的 display、认证文件和 cookie、项目 UID 监听 socket、真实内核 inode及原 cgroup/网络中的 XWayland/KWin 进程。初次启动只等待明确尚未创建的端点，身份错误立即回滚原会话，已有绑定不得跟随新端点。Wayland 应用新增专属 idmapped mount，独立 sandbox UID 可读写项目 0700 目录及 0600 文件，新文件在原盘仍归项目账号；私人祖先只在本次 namespace 建立必要路径，其他内容隐藏。原 owner/mode/ACL 不扩宽，unsupported 内核、文件系统和 HOME/runtime 路径重叠明确拒绝。
 
-私有项目 ELF 在降权后重新打开映射视图，核对原 inode、元数据、摘要和无文件能力后按 FD 执行，原 Root FD 在应用前关闭。当前 20 资产 build `d3f26de18d95089f26883e2258d189743e1eaf0def5c4a9a853e7857613b87e5` 在自有 WSL/ext4 实际通过 8 个场景，其中两个正例同时证明旧挂载私有 ELF FD 执行返回 EACCES、映射后的同一 ELF 执行成功并读取 0600 文件，实际应用确认管理 FD 关闭、NNP=1、有效 capabilities 为空；原 owner/mode/ACL 和 ELF 摘要保持，准确 helper 均实际 wait 回收，原 namespace 和 FD 数不变。32 项相关回归零失败、零跳过、实际 exit/close 0；证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/wayland-mapped-38638ca7-5452-44d4-a581-0170b4908fdc/verification.json` SHA-256 为 `ec0caf919f78d020688e94893c65d4b2d14bc78c4daac22b235dadf85f79557a`。此前目录视图 58 项回归及原 43e3 资产冻结作为历史保留，新的源码子集和全部 20 打包字节已核对前后不变。这不替代新 UID KDE/Qt/GTK 的真实公共入口验证；独立单应用窗口的旧账号启动路径正在另行迁移，三个目录条目仍保持部分实现。
+私有项目 ELF 在降权后重新打开映射视图，核对原 inode、元数据、摘要和无文件能力后按 FD 执行，原 Root FD 在应用前关闭。当前 20 资产 build `d3f26de18d95089f26883e2258d189743e1eaf0def5c4a9a853e7857613b87e5` 在自有 WSL/ext4 实际通过 8 个场景，其中两个正例同时证明旧挂载私有 ELF FD 执行返回 EACCES、映射后的同一 ELF 执行成功并读取 0600 文件，实际应用确认管理 FD 关闭、NNP=1、有效 capabilities 为空；原 owner/mode/ACL 和 ELF 摘要保持，准确 helper 均实际 wait 回收，原 namespace 和 FD 数不变。32 项相关回归零失败、零跳过、实际 exit/close 0；证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/wayland-mapped-38638ca7-5452-44d4-a581-0170b4908fdc/verification.json` SHA-256 为 `ec0caf919f78d020688e94893c65d4b2d14bc78c4daac22b235dadf85f79557a`。此前目录视图 58 项回归及原 43e3 资产冻结作为历史保留，新的源码子集和全部 20 打包字节已核对前后不变。这不替代新 UID KDE/Qt/GTK 的真实公共入口验证；独立单应用窗口已接通原项目绑定、独立应用 UID 和完整运行票据，新的公共桌面联测仍待完成，三个目录条目保持部分实现。
 
 ## 普通子进程剪贴板继承、见证维护与账号提权限制
 

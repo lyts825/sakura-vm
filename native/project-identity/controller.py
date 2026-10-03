@@ -701,6 +701,24 @@ def egress_spec(value):
             {'match': {'op': '==', 'left': {'meta': {'key': 'skuid'}}, 'right': value['uid']}}, {'drop': None}])}]
 
 
+def egress_create_text(value):
+    if type(value.get('uid')) is not int or not 20000 <= value['uid'] < 60000:
+        refuse('EGRESS_OWNER_CHANGED')
+    for key in ('registryId', 'identityId'):
+        identifier(value.get(key), UUID, 'EGRESS_OWNER_CHANGED')
+    name, objects = egress_spec(value)
+    marker = objects[0]['table']['comment']
+    # The 1.0.6 JSON input silently omits table comments. One fixed standard
+    # create statement keeps the table, chain and rule in one nft transaction
+    # and preserves the actual kernel ownership marker on those versions.
+    return (f'create table inet {name} {{\n'
+            f' comment "{marker}";\n'
+            ' chain output {\n'
+            '  type filter hook output priority 300; policy accept;\n'
+            f'  meta skuid {value["uid"]} drop comment "{marker}";\n'
+            ' }\n}\n').encode('ascii')
+
+
 def egress_realm():
     descriptor = os.open('/proc/1/ns/net', os.O_RDONLY | os.O_CLOEXEC)
     try:
@@ -713,9 +731,11 @@ def egress_realm():
         raise
 
 
-def egress_nft(arguments, data=None):
+def egress_nft(arguments, data=None, *, json_output=True):
     # All queries and transactions run in PID 1's network space, including when
     # a project SSH controller is itself inside the private namespace.
+    if type(json_output) is not bool:
+        refuse('EGRESS_STATE_INVALID')
     namespace, _realm = egress_realm()
     binary = None
     try:
@@ -733,7 +753,8 @@ def egress_nft(arguments, data=None):
             library = ctypes.CDLL(None, use_errno=True)
             if library.setns(namespace, 0x40000000) != 0:
                 raise OSError(ctypes.get_errno(), 'network namespace')
-        return execute(['/proc/self/fd/' + str(binary), '-j', '-n'] + arguments,
+        prefix = ['-j', '-n'] if json_output else ['-n']
+        return execute(['/proc/self/fd/' + str(binary)] + prefix + arguments,
                        data, timeout=15, pass_fds=(binary, namespace), preexec_fn=enter,
                        output_limit=4 * 1024 * 1024 if arguments == ['list', 'tables'] else 65536)
     except Refusal as error:
@@ -758,8 +779,104 @@ def egress_json(raw):
     return [item for item in result['nftables'] if set(item) != {'metainfo'}]
 
 
+def egress_same_json(left, right):
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return set(left) == set(right) and all(egress_same_json(left[key], right[key]) for key in left)
+    if isinstance(left, list):
+        return len(left) == len(right) and all(egress_same_json(a, b) for a, b in zip(left, right))
+    return left == right
+
+
+def egress_objects(objects, expected, *, allow_missing_comment):
+    normalized, handles = [], []
+    if len(objects) != 3:
+        refuse('EGRESS_TABLE_CHANGED')
+    for index, entry in enumerate(objects):
+        if not isinstance(entry, dict) or set(entry) != set(expected[index]):
+            refuse('EGRESS_TABLE_CHANGED')
+        kind, original = next(iter(entry.items()))
+        if not isinstance(original, dict):
+            refuse('EGRESS_TABLE_CHANGED')
+        fields = dict(original)
+        handle = fields.pop('handle', None)
+        if type(handle) is not int or not 0 < handle <= 0xffffffffffffffff:
+            refuse('EGRESS_TABLE_CHANGED')
+        handles.append(handle)
+        comparison = dict(fields)
+        if index == 0 and allow_missing_comment and 'comment' not in comparison:
+            # Only an expectation for validation, never an ownership receipt.
+            # The caller must obtain the actual marker from the pinned text
+            # query and check an unchanged second kernel JSON snapshot.
+            comparison['comment'] = expected[0]['table']['comment']
+        if not egress_same_json({kind: comparison}, expected[index]):
+            refuse('EGRESS_TABLE_CHANGED')
+        normalized.append({kind: fields})
+    return normalized, handles
+
+
+def egress_table_text(raw, name, marker, table_handle):
+    if not isinstance(raw, bytes) or len(raw) > 65536:
+        refuse('EGRESS_TABLE_CHANGED')
+    try:
+        text = raw.decode('ascii')
+    except UnicodeError:
+        refuse('EGRESS_TABLE_CHANGED')
+    if any(ord(character) < 32 and character not in '\t\n' for character in text) or not text.endswith('\n'):
+        refuse('EGRESS_TABLE_CHANGED')
+    lines = text.splitlines()
+    if not lines or lines[0] != f'table inet {name} {{ # handle {table_handle}':
+        refuse('EGRESS_TABLE_CHANGED')
+    # Lex strings before braces. Escapes, braces and embedded line breaks in
+    # quoted values are unsupported here, so they cannot falsify depth.
+    token = re.compile(r'[ \t]+|"[^"\\{}\n\r]*"|#[^\n]*|[{};]|[^\s{};"#\\]+')
+    depth, comments, chains = 1, 0, 0
+    for line_index, line in enumerate(lines[1:], 1):
+        parts, offset = [], 0
+        while offset < len(line):
+            match = token.match(line, offset)
+            if match is None:
+                refuse('EGRESS_TABLE_CHANGED')
+            piece = match.group(0)
+            offset = match.end()
+            if piece.startswith('#'):
+                if not re.fullmatch(r'# handle [1-9][0-9]{0,19}', piece):
+                    refuse('EGRESS_TABLE_CHANGED')
+                if int(piece[len('# handle '):]) > 0xffffffffffffffff:
+                    refuse('EGRESS_TABLE_CHANGED')
+                break
+            if not piece.isspace():
+                parts.append(piece)
+        if depth == 0:
+            refuse('EGRESS_TABLE_CHANGED')
+        if not parts:
+            continue
+        if depth == 1 and parts[0] == 'comment':
+            if parts != ['comment', '"' + marker + '"'] or chains:
+                refuse('EGRESS_TABLE_CHANGED')
+            comments += 1
+        elif depth == 1 and parts[0] == 'chain':
+            if parts != ['chain', 'output', '{'] or comments != 1:
+                refuse('EGRESS_TABLE_CHANGED')
+            chains += 1
+        elif depth == 1 and parts != ['}']:
+            refuse('EGRESS_TABLE_CHANGED')
+        for piece in parts:
+            if piece == '{':
+                depth += 1
+            elif piece == '}':
+                depth -= 1
+            if depth < 0 or depth > 2:
+                refuse('EGRESS_TABLE_CHANGED')
+        if depth == 0 and line_index != len(lines) - 1:
+            refuse('EGRESS_TABLE_CHANGED')
+    if depth != 0 or comments != 1 or chains != 1:
+        refuse('EGRESS_TABLE_CHANGED')
+
+
 def egress_table(value):
-    name, expected_objects = egress_spec(value)
+    name, expected = egress_spec(value)
     tables = egress_json(egress_nft(['list', 'tables']))
     seen = 0
     for entry in tables:
@@ -772,23 +889,17 @@ def egress_table(value):
     if seen != 1:
         refuse('EGRESS_TABLE_CHANGED')
     objects = egress_json(egress_nft(['list', 'table', 'inet', name]))
-    normalized, handle = [], None
-    for entry in objects:
-        if len(entry) != 1 or next(iter(entry)) not in ('table', 'chain', 'rule'):
-            refuse('EGRESS_TABLE_CHANGED')
-        kind, fields = next(iter(entry.items()))
-        if not isinstance(fields, dict):
-            refuse('EGRESS_TABLE_CHANGED')
-        fields = dict(fields)
-        current_handle = fields.pop('handle', None)
-        if type(current_handle) is not int or current_handle <= 0:
-            refuse('EGRESS_TABLE_CHANGED')
-        if kind == 'table':
-            handle = current_handle
-        normalized.append({kind: fields})
-    if normalized != expected_objects or handle is None:
+    missing = bool(objects and isinstance(objects[0].get('table'), dict) and 'comment' not in objects[0]['table'])
+    normalized, handles = egress_objects(objects, expected, allow_missing_comment=missing)
+    if not missing:
+        return handles[0]
+    text = egress_nft(['-a', 'list', 'table', 'inet', name], json_output=False)
+    egress_table_text(text, name, expected[0]['table']['comment'], handles[0])
+    following = egress_json(egress_nft(['list', 'table', 'inet', name]))
+    normalized_after, handles_after = egress_objects(following, expected, allow_missing_comment=True)
+    if not egress_same_json(normalized, normalized_after) or handles != handles_after:
         refuse('EGRESS_TABLE_CHANGED')
-    return handle
+    return handles[0]
 
 
 def egress_path(value):
@@ -870,9 +981,7 @@ def egress_prepare(value, transition=False, restoring=False):
         pending['deleteIssued'] = False
     json_write(egress_path(value), pending)
     if mode == 'private' and handle is None:
-        _name, objects = egress_spec(value)
-        egress_nft(['-f', '-'], json.dumps({'nftables': [
-            {'create' if index == 0 else 'add': item} for index, item in enumerate(objects)]}, separators=(',', ':')).encode())
+        egress_nft(['-f', '-'], egress_create_text(value), json_output=False)
         pending['handle'] = egress_table(value)
         if pending['handle'] is None:
             refuse('EGRESS_TABLE_CHANGED')

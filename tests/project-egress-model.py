@@ -41,16 +41,19 @@ def fixture(mode='private'):
             raise OSError('owned durable write ACK lost')
     ns['json_write'] = write
     ns['binding_read'] = lambda *_args: copy.deepcopy(current)
-    def kernel(arguments, data=None):
+    def kernel(arguments, data=None, *, json_output=True):
         if arguments == ['list', 'tables']:
+            assert json_output is True and data is None
             return json.dumps({'nftables': [{'metainfo': {'json_schema_version': 1}}] +
                               [{'table': {'family': 'inet', 'name': name, 'handle': items[0]['table']['handle']}}
                                for name, items in tables.items()]}).encode()
         if arguments[:3] == ['list', 'table', 'inet']:
+            assert json_output is True and data is None
             return json.dumps({'nftables': tables[arguments[3]]}).encode()
         assert arguments == ['-f', '-']
-        batch = json.loads(data)['nftables']
-        if 'delete' in batch[0]:
+        if json_output:
+            batch = json.loads(data)['nftables']
+            assert len(batch) == 1 and set(batch[0]) == {'delete'}, 'only deletion uses JSON transactions'
             name = batch[0]['delete']['table']['name']
             events.append(('delete', name))
             del tables[name]
@@ -58,9 +61,25 @@ def fixture(mode='private'):
                 flags['lost_delete'] = False
                 raise OSError('owned delete ACK lost')
         else:
-            assert list(batch[0]) == ['create'] and all(list(item) == ['add'] for item in batch[1:])
-            items = [copy.deepcopy(next(iter(item.values()))) for item in batch]
-            name = items[0]['table']['name']
+            # Independently parse the entire controlled syntax. Never accept
+            # arbitrary strings or construct the fake kernel by echoing the
+            # production generator/spec; every policy token is fixed here.
+            assert isinstance(data, bytes)
+            marker = rb'sakura-project-egress-v1:[a-f0-9-]{36}:[a-f0-9-]{36}'
+            syntax = (rb'create table inet skp_uid_([0-9]+) \{\n comment "(' + marker + rb')";\n'
+                      rb' chain output \{\n  type filter hook output priority 300; policy accept;\n'
+                      rb'  meta skuid ([0-9]+) drop comment "(' + marker + rb')";\n \}\n\}\n')
+            matched = re.fullmatch(syntax, data)
+            assert matched is not None, 'unknown fixed create syntax or extra token'
+            uid, owner, rule_uid, rule_owner = [item.decode('ascii') for item in matched.groups()]
+            expected_owner = 'sakura-project-egress-v1:' + value['registryId'] + ':' + value['identityId']
+            assert uid == rule_uid == str(value['uid']) and owner == rule_owner == expected_owner
+            name = 'skp_uid_' + uid
+            common = {'family': 'inet', 'table': name}
+            items = [{'table': {'family': 'inet', 'name': name, 'comment': owner}},
+                     {'chain': dict(common, name='output', type='filter', hook='output', prio=300, policy='accept')},
+                     {'rule': dict(common, chain='output', comment=owner, expr=[
+                         {'match': {'op': '==', 'left': {'meta': {'key': 'skuid'}}, 'right': int(uid)}}, {'drop': None}])}]
             assert name not in tables
             for item in items:
                 flags['handle'] += 1
