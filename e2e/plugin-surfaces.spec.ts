@@ -458,9 +458,8 @@ test('golden image library saves templates, verifies, restores after refresh, cr
 }) => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-golden-browser-'));
   expect(resolve(directory).startsWith(resolve(tmpdir()) + sep)).toBe(true);
-  // The mock export is tiny; use a small virtual disk so the capacity preflight
-  // does not depend on the test host having 16 GiB free in its temp volume.
-  const sourceVm = { ...vm, diskGiB: 2 };
+  // A sparse template reserves its measured output, not its virtual capacity.
+  const sourceVm = { ...vm, diskGiB: 128 };
   const derived: any[] = [];
   const machines = {
     records: new Map([[sourceVm.id, sourceVm]]),
@@ -471,6 +470,11 @@ test('golden image library saves templates, verifies, restores after refresh, cr
   const library = new GoldenImages(
     machines,
     {
+      withExportBudget: async (_id: string, signal: AbortSignal, work: (...args: any[]) => Promise<unknown>) =>
+        work(Buffer.byteLength('golden-browser-content'), async (target: any, headers: () => void) => {
+          headers();
+          await pipeline(Readable.from(['golden-browser-content']), target, { signal });
+        }),
       export: async (_id: string, target: any, headers: () => void, signal: AbortSignal) => {
         headers();
         await pipeline(Readable.from(['golden-browser-content']), target, { signal });

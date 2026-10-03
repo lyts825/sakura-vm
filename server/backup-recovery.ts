@@ -75,44 +75,58 @@ export class BackupRecovery {
         log('备份：' + config.backupId + '\n选定文件：\n' + config.paths.join('\n') + '\n');
         try {
           update('校验并准备备份磁盘');
-          await this.backups.withVerifiedFile(id, config.backupId, config.password, combined, (file, lease) =>
-            this.bundles.withDisk(createReadStream(file), combined, (disk, diskEncryption) => {
-              if (diskEncryption)
-                throw new AppError('加密实例备份暂不支持只读文件提取；可恢复为新实例并录入磁盘口令', 409);
-              return this.machines.withRescue(
-                id,
+          await this.backups.withVerifiedFile(
+            id,
+            config.backupId,
+            config.password,
+            combined,
+            (file, lease) =>
+              this.bundles.withDisk(
+                createReadStream(file),
                 combined,
-                update,
-                async (rescueId, lifetime) => {
-                  log('备份与磁盘校验通过；在临时系统中只读读取。\n');
-                  const prepared = await this.machines.exec(
-                    rescueId,
-                    rescueSetup(config.partition),
-                    30000,
-                    lifetime,
-                    log,
-                  );
-                  if (prepared.code !== 0)
-                    throw new AppError('备份分区无法只读挂载，请检查分区编号和文件系统', 409);
-                  update('提取选定文件');
-                  const transfer = AbortSignal.any([lifetime, AbortSignal.timeout(120000)]);
-                  await this.artifacts.collect(
-                    rescueId,
-                    job.id!,
-                    '/mnt/source',
-                    config.paths,
-                    (artifact) => {
-                      execution.artifacts.push(artifact);
-                      log('已提取：' + artifact.path + '（' + artifact.bytes + ' 字节）\n');
+                (disk, diskEncryption) => {
+                  if (diskEncryption)
+                    throw new AppError('加密实例备份暂不支持只读文件提取；可恢复为新实例并录入磁盘口令', 409);
+                  return this.machines.withRescue(
+                    id,
+                    combined,
+                    update,
+                    async (rescueId, lifetime) => {
+                      log('备份与磁盘校验通过；在临时系统中只读读取。\n');
+                      const prepared = await this.machines.exec(
+                        rescueId,
+                        rescueSetup(config.partition),
+                        30000,
+                        lifetime,
+                        log,
+                      );
+                      if (prepared.code !== 0)
+                        throw new AppError('备份分区无法只读挂载，请检查分区编号和文件系统', 409);
+                      update('提取选定文件');
+                      const transfer = AbortSignal.any([lifetime, AbortSignal.timeout(120000)]);
+                      await this.artifacts.collect(
+                        rescueId,
+                        job.id!,
+                        '/mnt/source',
+                        config.paths,
+                        (artifact) => {
+                          execution.artifacts.push(artifact);
+                          log('已提取：' + artifact.path + '（' + artifact.bytes + ' 字节）\n');
+                        },
+                        transfer,
+                        lease,
+                      );
+                      transfer.throwIfAborted();
                     },
-                    transfer,
+                    log,
+                    disk,
                   );
-                  transfer.throwIfAborted();
                 },
-                log,
-                disk,
-              );
-            }, lease),
+                lease,
+              ),
+            // Disk extraction and selected artifact output belong to one I/O
+            // operation. Acquiring another writer inside it would wait on itself.
+            { extraBuffers: 1024 ** 2, writePaths: this.artifacts.storagePaths() },
           );
           combined.throwIfAborted();
           execution.outcome = 'success';

@@ -1,12 +1,13 @@
 import { networkFor } from './network/index.ts';
 import { existsSync, createWriteStream } from 'node:fs';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { DATA, IMAGE } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
+import { writeStore } from './local-store.ts';
 import { Jobs } from './jobs.ts';
 import { storageRuntime, storageGrowth } from './storage-runtime.ts';
 
@@ -142,19 +143,12 @@ export class Images {
               );
               if (hash.digest('hex') !== expected) throw new Error('镜像校验失败，请重试');
               await rename(temp, info.file);
-              await writeFile(
-                `${info.file}.source.json`,
-                JSON.stringify(
-                  {
-                    url: info.url,
-                    algorithm: info.algorithm,
-                    checksum: expected,
-                    downloadedAt: new Date().toISOString(),
-                  },
-                  null,
-                  2,
-                ),
-              );
+              await writeStore(`${info.file}.source.json`, {
+                url: info.url,
+                algorithm: info.algorithm,
+                checksum: expected,
+                downloadedAt: new Date().toISOString(),
+              });
               log('校验通过，镜像已就绪。\n');
             } finally {
               try {

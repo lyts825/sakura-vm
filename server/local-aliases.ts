@@ -199,10 +199,8 @@ export class LocalAliases {
     const parsed = localAliasActionSchema.parse(input);
     return this.serialize(async () => {
       if (parsed.action === 'set-enabled') {
-        const previous = this.enabled;
+        await writeStore(this.file, { enabled: parsed.enabled });
         this.enabled = parsed.enabled;
-        try { await writeStore(this.file, { enabled: this.enabled }); }
-        catch (error) { this.enabled = previous; throw error; }
       }
       try { await this.syncNow(); }
       catch (error) {

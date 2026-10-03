@@ -29,7 +29,7 @@ import { guestTask } from './guest-task.ts';
 import type { HostMounts } from './host-mount.ts';
 import { distroInfo } from './images.ts';
 import { Jobs } from './jobs.ts';
-import { readStore, writeStore } from './local-store.ts';
+import { metadataFile } from './metadata-store.ts';
 import type { Machines } from './machines.ts';
 import type { MediaDevices } from './media-devices.ts';
 import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
@@ -190,9 +190,6 @@ export type FeatureAction =
 
 export class FeatureSuite {
   jobs = new Jobs('feature-suite');
-  private stateValue?: FeatureState;
-  private loading?: Promise<FeatureState>;
-  private writes: Promise<void> = Promise.resolve();
   private backgroundEnabled = false;
   private closed = false;
   private idleSince = new Map<string, number>();
@@ -238,21 +235,8 @@ export class FeatureSuite {
   private file() {
     return join(DATA, 'feature-suite.json');
   }
-  private async state() {
-    if (this.stateValue) return this.stateValue;
-    return (this.loading ||= readStore(this.file(), defaultState)
-      .then((state) => (this.stateValue = state))
-      .finally(() => {
-        this.loading = undefined;
-      }));
-  }
-  private async save(state: FeatureState) {
-    this.stateValue = state;
-    const snapshot = structuredClone(state);
-    const write = this.writes.catch(() => {}).then(() => writeStore(this.file(), snapshot));
-    this.writes = write;
-    await write;
-  }
+  private store() { return metadataFile(this.file(), defaultState); }
+  private async state() { return (await this.store().read()).value; }
   private settingsFor(state: FeatureState, id: string) {
     const value = state.settings[id] || {
       schedule: defaultSchedule(),
@@ -501,12 +485,12 @@ export class FeatureSuite {
       result.controlPlane = 'signed-isolated-wasm-extensions';
       result.reason = '插件中心支持签名 WebAssembly 插件、脱敏事件订阅、定时触发、管理员 HTTP 操作及声明式表单面板；插件不能执行宿主 I/O 或注入前端代码。';
     }
-    const state = await this.state();
-    state.featureRuns ||= {};
-    const history = (state.featureRuns[id] ||= []);
-    history.push({ featureId, startedAt, finishedAt: new Date().toISOString(), result });
-    while (history.length > 50) history.shift();
-    await this.save(state);
+    await this.store().update(state => {
+      state.featureRuns ||= {};
+      const history = (state.featureRuns[id] ||= []);
+      history.push({ featureId, startedAt, finishedAt: new Date().toISOString(), result });
+      while (history.length > 50) history.shift();
+    });
     signal?.throwIfAborted();
     return result;
   }
@@ -516,41 +500,39 @@ export class FeatureSuite {
       .object({ schedule: scheduleSchema.optional(), alerts: alertSchema.optional() })
       .strict()
       .parse(input);
-    const state = await this.state();
-    const settings = this.settingsFor(state, id);
-    if (value.schedule) {
-      settings.schedule = value.schedule;
-      this.idleSince.delete(id);
-      this.lastSampleAt.delete(id);
-    }
-    if (value.alerts) settings.alerts = value.alerts;
-    settings.updatedAt = new Date().toISOString();
-    await this.save(state);
-    return settings;
+    const result = await this.store().update(state => {
+      const settings = this.settingsFor(state, id);
+      if (value.schedule) settings.schedule = value.schedule;
+      if (value.alerts) settings.alerts = value.alerts;
+      settings.updatedAt = new Date().toISOString();
+      return settings;
+    });
+    if (value.schedule) { this.idleSince.delete(id); this.lastSampleAt.delete(id); }
+    return result.result;
   }
   async sample(id: string) {
     const boot = this.machines.live?.get(id)?.startedAt;
     const point = await this.workspaces.metrics(id);
     if (boot !== this.machines.live?.get(id)?.startedAt)
       throw new AppError('实例已重启，本次采样已失效', 409);
-    const state = await this.state();
-    const history = (state.history[id] ||= []);
-    if (history.some((entry) => entry.sampledAt === point.sampledAt)) return point;
-    history.push({
-      sampledAt: point.sampledAt,
-      cpuPercent: point.cpuPercent,
-      memoryUsed: point.memoryUsed,
-      memoryTotal: point.memoryTotal,
-      diskUsed: point.diskUsed,
-      diskTotal: point.diskTotal,
-      networkReceivedBytes: point.networkReceivedBytes,
-      networkTransmittedBytes: point.networkTransmittedBytes,
-      networkReceiveBytesPerSecond: point.networkReceiveBytesPerSecond,
-      networkTransmitBytesPerSecond: point.networkTransmitBytesPerSecond,
+    await this.store().update(state => {
+      const history = (state.history[id] ||= []);
+      if (history.some((entry) => entry.sampledAt === point.sampledAt)) return;
+      history.push({
+        sampledAt: point.sampledAt,
+        cpuPercent: point.cpuPercent,
+        memoryUsed: point.memoryUsed,
+        memoryTotal: point.memoryTotal,
+        diskUsed: point.diskUsed,
+        diskTotal: point.diskTotal,
+        networkReceivedBytes: point.networkReceivedBytes,
+        networkTransmittedBytes: point.networkTransmittedBytes,
+        networkReceiveBytesPerSecond: point.networkReceiveBytesPerSecond,
+        networkTransmitBytesPerSecond: point.networkTransmitBytesPerSecond,
+      });
+      while (history.length > 720) history.shift();
+      if (this.backgroundEnabled) this.checkAlerts(id, point, state);
     });
-    while (history.length > 720) history.shift();
-    await this.save(state);
-    if (this.backgroundEnabled) await this.checkAlerts(id, point, state);
     return point;
   }
   async memoryTarget(id: string, memoryMiB: number) {
@@ -833,7 +815,7 @@ export class FeatureSuite {
       },
     );
   }
-  private async checkAlerts(id: string, point: MetricPoint, state: FeatureState) {
+  private checkAlerts(id: string, point: MetricPoint, state: FeatureState) {
     const settings = this.settingsFor(state, id).alerts;
     if (!settings.enabled) return;
     const values: Array<[AlertEvent['kind'], number, number, string]> = [
@@ -852,7 +834,6 @@ export class FeatureSuite {
       ],
     ];
     const previous = (state.lastAlerts[id] ||= {});
-    let changed = false;
     for (const [kind, value, threshold, message] of values) {
       if (!Number.isFinite(value) || value < threshold) continue;
       const last = previous[kind] || 0;
@@ -866,12 +847,10 @@ export class FeatureSuite {
         createdAt: new Date().toISOString(),
         acknowledged: false,
       });
-      changed = true;
     }
     if (state.events.length > 500) state.events.splice(0, state.events.length - 500);
-    if (changed) await this.save(state);
   }
-  private async checkOperationalAlerts(id: string, state: FeatureState) {
+  private checkOperationalAlerts(id: string, state: FeatureState, secrets?: SecretRotationItem[]) {
     const settings = this.settingsFor(state, id);
     if (!settings.alerts.enabled) return;
     const now = Date.now(),
@@ -903,7 +882,6 @@ export class FeatureSuite {
     }
     state.notifiedJobs[id] = [...seen].slice(-10000);
     if (settings.alerts.secretRotation !== false) {
-      const secrets = await this.observations.secrets?.(id);
       if (secrets) {
         state.notifiedSecretRotations ||= {};
         const notified = (state.notifiedSecretRotations[id] ||= {});
@@ -950,12 +928,12 @@ export class FeatureSuite {
   }
   async acknowledge(id: string, eventId: string) {
     this.machines.get(id);
-    const state = await this.state();
-    const event = state.events.find((value) => value.vmId === id && value.id === eventId);
-    if (!event) throw new AppError('告警不存在', 404);
-    event.acknowledged = true;
-    await this.save(state);
-    return event;
+    return (await this.store().update(state => {
+      const event = state.events.find((value) => value.vmId === id && value.id === eventId);
+      if (!event) throw new AppError('告警不存在', 404);
+      event.acknowledged = true;
+      return event;
+    })).result;
   }
   async search(id: string, input: { query: string; path?: string; content?: boolean }, signal?: AbortSignal) {
     this.machines.get(id);
@@ -1185,7 +1163,6 @@ export class FeatureSuite {
     if (signal.aborted) return;
     this.ticking = true;
     try {
-      const state = await this.state();
       const now = new Date();
       const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const policy = await resourcePolicy();
@@ -1196,19 +1173,26 @@ export class FeatureSuite {
       for (const vm of scheduled) {
         if (this.closed || signal.aborted) break;
         const maintenance = await inMaintenance(vm.id, now);
+        const state = await this.state();
         const settings = this.settingsFor(state, vm.id);
-        if (this.backgroundEnabled) await this.checkOperationalAlerts(vm.id, state);
+        if (this.backgroundEnabled) {
+          // Observe external services outside the metadata transaction. Only
+          // applying the observation holds the per-file writer.
+          const secrets = settings.alerts.enabled && settings.alerts.secretRotation !== false
+            ? await this.observations.secrets?.(vm.id) : undefined;
+          await this.store().update(current => this.checkOperationalAlerts(vm.id, current, secrets), { signal });
+        }
         const schedule = settings.schedule;
         let sampled = false;
+        let point = state.history[vm.id]?.at(-1);
         if (this.machines.state(vm.id) === 'running') {
           try {
-            await this.sample(vm.id);
+            point = await this.sample(vm.id);
             sampled = true;
           } catch {
             /* Missing samples break the idle interval. */
           }
         }
-        const point = state.history[vm.id]?.at(-1);
         const sampledAt = point ? Date.parse(point.sampledAt) : NaN;
         const previous = this.lastSampleAt.get(vm.id);
         const probeHealthy =
@@ -1218,13 +1202,15 @@ export class FeatureSuite {
           Date.now() - sampledAt < 120_000;
         const fresh = probeHealthy && (previous === undefined || sampledAt > previous);
         if (this.backgroundEnabled) {
-          state.availability ||= {};
           const status = this.machines.state(vm.id);
-          observeAvailability(
-            (state.availability[vm.id] ||= []),
-            status === 'running' && !probeHealthy ? 'unreachable' : status,
-            Date.now(),
-          );
+          await this.store().update(current => {
+            current.availability ||= {};
+            observeAvailability(
+              (current.availability[vm.id] ||= []),
+              status === 'running' && !probeHealthy ? 'unreachable' : status,
+              Date.now(),
+            );
+          }, { signal });
         }
         if (
           !fresh ||
@@ -1272,7 +1258,6 @@ export class FeatureSuite {
           }
         }
       }
-      if (!this.closed && !signal.aborted) await this.save(state);
     } finally {
       this.ticking = false;
     }
@@ -1282,6 +1267,6 @@ export class FeatureSuite {
     this.powerAbort.abort();
     this.backgroundEnabled = false;
     await this.jobs.close();
-    await this.writes;
+    await this.store().flush();
   }
 }

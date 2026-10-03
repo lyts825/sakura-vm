@@ -24,7 +24,7 @@ import { hostScoreInput, type HostPeers, type HostScoreInput } from './host-peer
 import { Jobs } from './jobs.ts';
 import { LiveMigrationRunner } from './live-migration-runner.ts';
 import { liveMigrationInput, planLiveMigration } from './live-migration.ts';
-import { readStore, writeStore } from './local-store.ts';
+import { metadataFile } from './metadata-store.ts';
 import type { Machines } from './machines.ts';
 import type { MediaDevices } from './media-devices.ts';
 import { networkEmulation } from './network-emulation.ts';
@@ -126,9 +126,6 @@ export class NextFeatures {
   private mobileCheck?: () => { ready: boolean; devices: number; reason?: string };
   private remoteAuditCheck?: () => Promise<{ ready: boolean; configured: boolean;
     anchoredSequence: number; reason?: string }>;
-  private stateValue?: NextState;
-  private stateLoading?: Promise<NextState>;
-  private writes = Promise.resolve();
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
@@ -248,19 +245,13 @@ export class NextFeatures {
   private file() {
     return join(DATA, 'next-features.json');
   }
-  private async state() {
-    const state = (this.stateValue ||= await (this.stateLoading ||= readStore(this.file(), defaultState)));
-    state.settings ||= {};
-    state.executions ||= {};
-    state.records ||= {};
-    return state;
+  private store() {
+    return metadataFile(this.file(), defaultState, raw => {
+      const value = raw as NextState;
+      value.settings ||= {}; value.executions ||= {}; value.records ||= {}; return value;
+    });
   }
-  private async save(state: NextState) {
-    this.stateValue = state;
-    const snapshot = structuredClone(state);
-    this.writes = this.writes.catch(() => {}).then(() => writeStore(this.file(), snapshot));
-    await this.writes;
-  }
+  private async state() { return (await this.store().read()).value; }
   private spec(featureId: string) {
     const id = idSchema.parse(featureId) as NextFeatureId;
     return catalog.find((item) => item.id === id)!;
@@ -319,11 +310,12 @@ export class NextFeatures {
     if (value.featureId === 'service-mesh') {
       value.options = z.object({}).strict().parse(value.options);
       return this.serviceMesh.configure(id, value.enabled, async () => {
-        const state = await this.state();
-        const settings = (state.settings[id] ||= {});
-        settings[value.featureId] = { enabled: value.enabled, options: value.options, updatedAt: now() };
-        await this.save(state);
-        return settings[value.featureId];
+        return (await this.store().update(state => {
+          const settings = (state.settings[id] ||= {});
+          settings[value.featureId] = { enabled: value.enabled, options: value.options, updatedAt: now() };
+
+          return settings[value.featureId];
+        })).result;
       });
     }
     if (value.featureId === 'vtpm-key-enrollment' || value.featureId === 'pci-usb-passthrough')
@@ -366,12 +358,13 @@ export class NextFeatures {
     }
     if (value.featureId === 'process-interop' && !value.enabled && this.processInterop)
       await this.processInterop.action(id, { mode: 'disable' }, 'run');
-    const state = await this.state();
-    const settings = (state.settings[id] ||= {});
-    settings[value.featureId] = { enabled: value.enabled, options: value.options, updatedAt: now() };
-    await this.save(state);
+    const setting = (await this.store().update(state => {
+      const settings = (state.settings[id] ||= {});
+      settings[value.featureId] = { enabled: value.enabled, options: value.options, updatedAt: now() };
+      return settings[value.featureId];
+    })).result;
     if (value.featureId === 'ha-failover') await this.haFailureMonitor.reconfigure(id);
-    return settings[value.featureId];
+    return setting;
   }
 
   private hostSnapshot() {
@@ -973,19 +966,19 @@ export class NextFeatures {
     const result = await this.probe(id, spec, signal, options, action, log);
     const historyResult = spec.id === 'flamegraph' || spec.id === 'ebpf-profiler'
       ? compactProfileResult(result) : result;
-    const state = await this.state();
-    const history = (state.executions[id] ||= []);
-    history.push({
-      featureId: spec.id,
-      action,
-      startedAt,
-      finishedAt: now(),
-      ready: Boolean(result.ready),
-      executed: Boolean(result.executed),
-      result: historyResult,
+    await this.store().update(state => {
+      const history = (state.executions[id] ||= []);
+      history.push({
+        featureId: spec.id,
+        action,
+        startedAt,
+        finishedAt: now(),
+        ready: Boolean(result.ready),
+        executed: Boolean(result.executed),
+        result: historyResult,
+      });
+      while (history.length > 80) history.shift();
     });
-    while (history.length > 80) history.shift();
-    await this.save(state);
     return result;
   }
 
@@ -1064,5 +1057,6 @@ export class NextFeatures {
       this.objectBackup?.close(),
       this.wireGuardOverlay?.close(), this.acmeRenewal.close(),
       this.haFailureMonitor.close()]);
+    await this.store().flush();
   }
 }

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readCommittedStore, readStore } from './local-store.ts';
+import { replaceMetadata } from './metadata-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { resolveDependencyAuthentication } from './dependency-downloads.ts';
@@ -164,7 +165,10 @@ export class Workspaces {
     this.configGuards.add(guard);
     return () => this.configGuards.delete(guard);
   }
-  async config(id: string): Promise<Project> {
+  async config(id: string): Promise<Project> { return this.readConfig(id, readStore); }
+  /** Queue-free committed snapshot for admission checks and final commit guards. */
+  async readCommittedConfig(id: string): Promise<Project> { return this.readConfig(id, readCommittedStore); }
+  private async readConfig(id: string, reader: typeof readStore): Promise<Project> {
     const vm = this.machines.get(id);
     const scope = this.projects.current(id);
     const contextual = (project: Project) =>
@@ -172,12 +176,8 @@ export class Workspaces {
         value: scope === 'default' ? undefined : scope,
         enumerable: false,
       });
-    try {
-      return contextual(projectSchema.parse(JSON.parse(await readFile(this.projects.file(id), 'utf8'))));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      return contextual(projectSchema.parse({ template: vm.template || 'none' }));
-    }
+    return contextual(projectSchema.parse(await reader(this.projects.file(id), () =>
+      ({ template: vm.template || 'none' }))));
   }
   networkEnvironment(id: string) {
     return this.context?.network?.environment(id) || Promise.resolve({});
@@ -240,7 +240,7 @@ export class Workspaces {
       if (expectedVersion !== undefined && projectVersion(previous) !== expectedVersion)
         throw new AppError('项目配置已变化，请重新审阅并提交变更', 409);
       const verifyVersion = async () => {
-        if (expectedVersion !== undefined && projectVersion(await this.config(id)) !== expectedVersion)
+        if (expectedVersion !== undefined && projectVersion(await this.readCommittedConfig(id)) !== expectedVersion)
           throw new AppError('项目配置已变化，请重新审阅并提交变更', 409);
       };
       if (allowedDirectory !== undefined &&
@@ -390,15 +390,12 @@ export class Workspaces {
       const file = this.projects.file(id);
       await verifyVersion();
       commitGuard?.();
-      try {
-        await writeFile(`${file}.tmp`, JSON.stringify(project, null, 2));
-        await verifyVersion();
-        commitGuard?.();
-        await rename(`${file}.tmp`, file);
-      } catch (error) {
-        await rm(`${file}.tmp`, { force: true });
-        throw error;
-      }
+      await replaceMetadata(file, project, {
+        // This final domain guard reads the existing file directly: reentering
+        // its metadata queue here would deadlock. Keep approval/project checks
+        // immediately before each atomic publication attempt.
+        beforeCommit: async () => { await verifyVersion(); commitGuard?.(); },
+      });
       await Promise.allSettled([...this.configListeners].map((listener) => listener()));
       return project;
     });

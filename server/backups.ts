@@ -250,6 +250,7 @@ export class Backups {
     restore = false,
     extraBuffers = 0,
     writes = false,
+    writePaths: readonly string[] = [],
   ) {
     const file = this.recordFile(id, item);
     const bytes =
@@ -266,13 +267,13 @@ export class Backups {
           taskId: 'backup-read:' + randomUUID(),
           label: restore ? 'Verify and restore backup' : 'Read and verify backup',
           mode: materialized || restore || writes ? 'write' : 'read',
-          paths: [file, DATA],
+          paths: [file, DATA, ...writePaths],
           signal,
           buffers:
             (item.storage === 'blocks' ? 36 * 1024 ** 2 : 2 * MAX_BUNDLE_MANIFEST + 4 * 1024 ** 2) +
             extraBuffers,
           files: 8,
-          dynamicTemporary: [DATA],
+          dynamicTemporary: [DATA, ...writePaths],
           temporary: [{ path: DATA, bytes: bytes * ((materialized ? 1 : 0) + (restore ? 2 : 0)) }],
         },
         work,
@@ -795,7 +796,7 @@ export class Backups {
     password: string | undefined,
     signal: AbortSignal,
     work: (file: string, lease: StorageLease, sourceFile: string) => Promise<T>,
-    options: { extraBuffers?: number; writes?: boolean } = {},
+    options: { extraBuffers?: number; writes?: boolean; writePaths?: readonly string[] } = {},
   ) {
     if (this.closed) throw new AppError('备份服务正在关闭', 503);
     return this.machines.locked(`backups:${id}`, async () => {
@@ -833,6 +834,7 @@ export class Backups {
         false,
         options.extraBuffers || 0,
         options.writes ?? true,
+        options.writePaths,
       );
     });
   }

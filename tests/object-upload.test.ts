@@ -7,6 +7,47 @@ import type { S3Client } from '@aws-sdk/client-s3';
 import { HostRuntime } from '../server/host-runtime/index.ts';
 import { StorageRuntime, type StorageLease } from '../server/storage-runtime.ts';
 import { OBJECT_PART_BYTES, OBJECT_UPLOAD_BUFFERS, uploadObjectFile } from '../server/object-upload.ts';
+import { captureOperationCheck, withOperationCheck } from '../server/operation-context.ts';
+
+test('revoked upload authority still permits exact multipart recovery while normal transfers retain checks', async () => {
+  const f = await fixture(1);
+  let revoked = false,
+    aborted = false,
+    checks = 0;
+  const client = {
+    send: async (command: object) => {
+      // A new managed network transport performs the same delayed admission check.
+      await captureOperationCheck()();
+      if (command.constructor.name === 'CreateMultipartUploadCommand') return { UploadId: 'owned' };
+      if (command.constructor.name === 'UploadPartCommand') {
+        revoked = true;
+        throw new Error('part failed');
+      }
+      if (command.constructor.name === 'AbortMultipartUploadCommand') {
+        aborted = true;
+        return {};
+      }
+      throw new Error('unexpected upload command');
+    },
+  } as S3Client;
+  try {
+    await assert.rejects(
+      withOperationCheck(
+        async () => {
+          checks++;
+          if (revoked) throw new Error('request authority revoked');
+        },
+        () => f.upload(client),
+      ),
+      /part failed/,
+    );
+    assert.ok(checks >= 2);
+    assert.equal(aborted, true);
+    assert.equal(f.host.snapshot().resources.length, 0);
+  } finally {
+    await f.close();
+  }
+});
 
 const deferred = () => {
   let resolve!: () => void;

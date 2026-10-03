@@ -23,7 +23,7 @@ import {
 } from './engineering-runner.ts';
 import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
 import { Jobs } from './jobs.ts';
-import { readStore, writeStore } from './local-store.ts';
+import { metadataFile } from './metadata-store.ts';
 import type { Machines } from './machines.ts';
 import { DATA, ROOT, vmDir } from './paths.ts';
 import { projectVersion } from './project-config.ts';
@@ -84,9 +84,6 @@ export class ExtendedFeatures {
   private trustedBoot?: TrustedBootService;
   private projectTerminals?: ProjectTerminals;
   private tunnels: ReverseTunnels;
-  private stateValue?: ExtendedState;
-  private stateLoading?: Promise<ExtendedState>;
-  private writes = Promise.resolve();
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
@@ -99,15 +96,13 @@ export class ExtendedFeatures {
   private file() {
     return join(DATA, 'extended-features.json');
   }
-  private async state() {
-    return (this.stateValue ||= await (this.stateLoading ||= readStore(this.file(), defaultState)));
+  private store() {
+    return metadataFile(this.file(), defaultState, raw => {
+      const value = raw as ExtendedState;
+      value.executions ||= {}; return value;
+    });
   }
-  private async save(state: ExtendedState) {
-    this.stateValue = state;
-    const snapshot = structuredClone(state);
-    this.writes = this.writes.catch(() => {}).then(() => writeStore(this.file(), snapshot));
-    await this.writes;
-  }
+  private async state() { return (await this.store().read()).value; }
   private spec(featureId: string) {
     const id = idSchema.parse(featureId) as ExtendedFeatureId;
     return catalog.find((item) => item.id === id)!;
@@ -155,15 +150,16 @@ export class ExtendedFeatures {
     if (oneShotFeatures.has(value.featureId) &&
         Object.keys(value.options).length)
       throw new AppError('一次性命令与确认不能保存为持久配置', 409);
-    const state = await this.state();
-    const settings = (state.settings[id] ||= {});
-    settings[value.featureId] = {
-      enabled: value.enabled,
-      options: value.options,
-      updatedAt: new Date().toISOString(),
-    };
-    await this.save(state);
-    return settings[value.featureId];
+    return (await this.store().update(state => {
+      const settings = (state.settings[id] ||= {});
+      settings[value.featureId] = {
+        enabled: value.enabled,
+        options: value.options,
+        updatedAt: new Date().toISOString(),
+      };
+
+      return settings[value.featureId];
+    })).result;
   }
   private async probe(
     id: string,
@@ -522,19 +518,19 @@ export class ExtendedFeatures {
       result = await this.probe(id, spec, signal, merged);
       if (spec.state !== 'available') result = { ...result, ready: false, executed: false };
     }
-    const state = await this.state();
-    state.executions ||= {};
-    const history = (state.executions[id] ||= []);
-    history.push({
-      featureId: spec.id,
-      action,
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      ready: Boolean(result.ready),
-      result,
+    await this.store().update(state => {
+      state.executions ||= {};
+      const history = (state.executions[id] ||= []);
+      history.push({
+        featureId: spec.id,
+        action,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        ready: Boolean(result.ready),
+        result,
+      });
+      while (history.length > 50) history.shift();
     });
-    while (history.length > 50) history.shift();
-    await this.save(state);
     return result;
   }
   private async runGuest(id: string, command: string, signal?: AbortSignal) {
@@ -658,6 +654,7 @@ export class ExtendedFeatures {
       await this.jobs.close();
     } finally {
       await this.tunnels.close();
+      await this.store().flush();
     }
   }
 }

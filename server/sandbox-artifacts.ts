@@ -3,7 +3,7 @@ import { mkdir, readdir, lstat, readFile, rename, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { createWriteStream } from 'node:fs';
-import { storageRuntime, storageGrowth } from './storage-runtime.ts';
+import { storageRuntime, storageGrowth, withStorageLease, type StorageLease } from './storage-runtime.ts';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { SANDBOX_ARTIFACT_BYTES, type SandboxArtifact } from '../shared/sandbox.ts';
@@ -32,6 +32,11 @@ export class SandboxArtifacts {
     private directory = join(DATA, 'plugins', 'sandbox', 'artifacts'),
   ) {}
 
+  /** Include these destination devices in an enclosing operation's atomic admission. */
+  storagePaths() {
+    return [this.directory];
+  }
+
   async collect(
     vmId: string,
     runId: string,
@@ -39,10 +44,11 @@ export class SandboxArtifacts {
     paths: string[],
     saved: (item: SandboxArtifact) => void,
     signal: AbortSignal,
+    borrowed?: StorageLease,
   ) {
     if (!paths.length) return;
     z.uuid().parse(runId);
-    return storageRuntime.run(
+    return withStorageLease(
       {
         owner: 'core:sandbox-artifacts',
         taskId: 'artifacts:' + runId,
@@ -54,6 +60,7 @@ export class SandboxArtifacts {
         files: 3,
         signal,
       },
+      borrowed,
       async (lease) => {
         let total = 0;
         await mkdir(this.directory, { recursive: true });

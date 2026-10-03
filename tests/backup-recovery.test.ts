@@ -19,6 +19,7 @@ const { BackupRecovery } = await import('../server/backup-recovery.ts');
 const { Jobs } = await import('../server/jobs.ts');
 const { SandboxArtifacts } = await import('../server/sandbox-artifacts.ts');
 const { backupBlocks } = await import('../server/backup-blocks.ts');
+const { storageRuntime } = await import('../server/storage-runtime.ts');
 const { createSchema } = await import('../server/model.ts');
 const { createSshKey, seedIso } = await import('../server/seed.ts');
 const { encryptFile } = await import('../server/encrypted-backups.ts');
@@ -54,7 +55,10 @@ async function fixture(t: TestContext) {
     directory = join(root, 'backups', id),
     artifactsDirectory = join(root, 'artifacts', id);
   await mkdir(directory, { recursive: true });
-  const machines = new Machines({ run: async () => '{}', runtime: { close: async () => {} } } as unknown as Engine, fakeVmNetwork);
+  const machines = new Machines(
+    { run: async () => '{}', runtime: { close: async () => {} } } as unknown as Engine,
+    fakeVmNetwork,
+  );
   machines.records.set(id, {
     ...createSchema.parse({ name: 'source' }),
     id,
@@ -168,6 +172,17 @@ test('file recovery requires explicit valid backup, partition and bounded file s
 
 test('plain, encrypted and deduplicated backups yield verified disks, files and durable reports without registering an instance', async (t) => {
   const f = await fixture(t);
+  const acquire = storageRuntime.acquire.bind(storageRuntime);
+  const requests: Parameters<typeof acquire>[0][] = [];
+  t.mock.method(storageRuntime, 'acquire', (request: Parameters<typeof acquire>[0]) => {
+    requests.push(request);
+    assert.notEqual(
+      request.owner,
+      'core:sandbox-artifacts',
+      'Recovery collection must borrow its enclosing writer',
+    );
+    return acquire(request);
+  });
   for (const kind of ['plain', 'encrypted', 'blocks'] as const) {
     const item = await f.add(kind);
     const job = f.service.run(f.id, {
@@ -185,6 +200,9 @@ test('plain, encrypted and deduplicated backups yield verified disks, files and 
     assert.ok(!JSON.stringify(job).includes('fixture-password'));
     assert.ok(!JSON.stringify(job).includes(privateKey));
   }
+  const recovery = requests.filter((request) => request.owner === 'core:backups');
+  assert.equal(recovery.length, 3);
+  assert.ok(recovery.every((request) => request.dynamicTemporary?.includes(f.artifactsDirectory)));
   await f.jobs.flush();
   const restored = new Jobs('backup-recovery', join(root, 'jobs', f.id));
   t.after(() => restored.close());

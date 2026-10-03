@@ -2,48 +2,18 @@ import { createHash } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { AppError } from '../shared/errors.ts';
-import { writeStore } from './local-store.ts';
+import { atomicMetadataWrite } from './metadata-io.ts';
+import { serializedMetadata, flushMetadataFile } from './metadata-queue.ts';
+export { metadataKey, flushMetadata } from './metadata-queue.ts';
 
 export type MetadataRevision = string;
 export type MetadataSnapshot<T> = { value: T; revision: MetadataRevision };
-export type MetadataWriteOptions = { expectedRevision?: MetadataRevision; signal?: AbortSignal };
-type Queue = { tail: Promise<unknown>; pending: number; failure?: unknown };
-const queues = new Map<string, Queue>();
+export type MetadataWriteOptions = {
+  expectedRevision?: MetadataRevision;
+  signal?: AbortSignal;
+  beforeCommit?: () => void | Promise<void>;
+};
 const revision = (bytes: string) => createHash('sha256').update(bytes).digest('hex');
-
-/** Lexical path aliases and Windows case aliases share a writer. This is an
- * in-process coordinator, not a cross-process or symlink/hardlink lock. */
-export function metadataKey(file: string) {
-  const path = resolve(file);
-  return process.platform === 'win32' ? path.toLowerCase() : path;
-}
-
-function serialized<T>(file: string, write: boolean, work: () => Promise<T>): Promise<T> {
-  const key = metadataKey(file);
-  let queue = queues.get(key);
-  if (!queue) {
-    queue = { tail: Promise.resolve(), pending: 0 };
-    queues.set(key, queue);
-  }
-  const state = queue;
-  state.pending++;
-  const operation = state.tail.catch(() => {}).then(work);
-  // Keep the failure for flush(), but do not poison subsequent attempts.
-  state.tail = operation
-    .then(
-      () => {
-        if (write) state.failure = undefined;
-      },
-      (error) => {
-        if (write) state.failure = error;
-      },
-    )
-    .finally(() => {
-      state.pending--;
-      if (!state.pending && state.failure === undefined && queues.get(key) === state) queues.delete(key);
-    });
-  return operation;
-}
 
 function capture<T>(value: T): T {
   const text = JSON.stringify(value);
@@ -82,7 +52,7 @@ export class MetadataStore<T> {
       throw new AppError('元数据已改变，请重新读取后重试', 409, 'METADATA_REVISION_CONFLICT');
   }
   read(signal?: AbortSignal): Promise<MetadataSnapshot<T>> {
-    return serialized(this.file, false, async () => {
+    return serializedMetadata(this.file, false, async () => {
       signal?.throwIfAborted();
       return this.load();
     });
@@ -90,13 +60,21 @@ export class MetadataStore<T> {
   replace(value: T, options: MetadataWriteOptions = {}): Promise<MetadataSnapshot<T>> {
     // Capture immediately, not when an earlier queued write finishes.
     const snapshot = capture(value);
-    return serialized(this.file, true, async () => {
+    return serializedMetadata(this.file, true, async (mark) => {
       options.signal?.throwIfAborted();
       if (options.expectedRevision !== undefined) this.check((await this.load()).revision, options);
       const next = this.parse(snapshot);
       const text = JSON.stringify(next, null, 2);
       options.signal?.throwIfAborted();
-      await writeStore(this.file, next);
+      await atomicMetadataWrite(
+        this.file,
+        text,
+        async () => {
+          options.signal?.throwIfAborted();
+          await options.beforeCommit?.();
+        },
+        mark,
+      );
       return { value: next, revision: revision(text) };
     });
   }
@@ -104,39 +82,38 @@ export class MetadataStore<T> {
     edit: (value: T) => R | Promise<R>,
     options: MetadataWriteOptions = {},
   ): Promise<MetadataSnapshot<T> & { result: R }> {
-    return serialized(this.file, true, async () => {
+    return serializedMetadata(this.file, true, async (mark) => {
       options.signal?.throwIfAborted();
       const current = await this.load();
       this.check(current.revision, options);
       const result = await edit(current.value);
       const next = this.parse(capture(current.value));
       options.signal?.throwIfAborted();
-      await writeStore(this.file, next);
+      await atomicMetadataWrite(
+        this.file,
+        JSON.stringify(next, null, 2),
+        async () => {
+          options.signal?.throwIfAborted();
+          await options.beforeCommit?.();
+        },
+        mark,
+      );
       return { value: next, revision: revision(JSON.stringify(next, null, 2)), result };
     });
   }
   remove(options: MetadataWriteOptions = {}) {
-    return serialized(this.file, true, async () => {
+    return serializedMetadata(this.file, true, async (mark) => {
       options.signal?.throwIfAborted();
       if (options.expectedRevision !== undefined) this.check((await this.load()).revision, options);
       options.signal?.throwIfAborted();
+      mark();
       await rm(this.file, { force: true });
     });
   }
   /** Wait for already admitted work; report the last uncorrected write failure. */
   async flush() {
-    const state = queues.get(metadataKey(this.file));
-    if (!state) return;
-    await state.tail;
-    if (state.failure !== undefined) throw state.failure;
+    await flushMetadataFile(this.file);
   }
-}
-
-export async function flushMetadata() {
-  const pending = [...queues.values()];
-  await Promise.all(pending.map((state) => state.tail));
-  const failures = pending.filter((state) => state.failure !== undefined).map((state) => state.failure);
-  if (failures.length) throw new AggregateError(failures, 'Metadata writes are not confirmed');
 }
 
 export function metadataFile<T>(file: string, fallback: () => T, parse?: (value: unknown) => T) {

@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, rm, rename, writeFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
@@ -7,6 +6,7 @@ import type { Workspaces } from './workspaces.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { quote } from './shell.ts';
+import { metadataFile } from './metadata-store.ts';
 
 export const projectQuotaShape = {
   mode: z.enum(['status', 'apply', 'grow', 'clear']).default('status'),
@@ -29,19 +29,14 @@ const marker = (projectId: string) => `# sakura-project-quota-${projectId}`;
 const recordFile = (vmId: string, projectId: string) =>
   join(vmDir(vmId), `project-quota-${projectId}.json`);
 
+const store = (vmId: string, projectId: string) => metadataFile<Record | null>(
+  recordFile(vmId, projectId), () => null, value => value === null ? null : recordSchema.parse(value),
+);
 export async function readProjectQuotaRecord(vmId: string, projectId: string): Promise<Record | null> {
-  try {
-    return recordSchema.parse(JSON.parse(await readFile(recordFile(vmId, projectId), 'utf8')));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  }
+  return (await store(vmId, projectId).read()).value;
 }
-
 async function saveRecord(vmId: string, projectId: string, record: Record) {
-  const file = recordFile(vmId, projectId);
-  await writeFile(`${file}.tmp`, JSON.stringify(record, null, 2));
-  await rename(`${file}.tmp`, file);
+  await store(vmId, projectId).replace(record);
 }
 
 export async function guardProjectQuotaDirectory(
@@ -191,7 +186,7 @@ export async function projectQuota(
           `rm -rf ${staged}`,
           `rm -f ${disk}`,
         ].join('\n'), 30000, true);
-        if (clean.code === 0) await rm(recordFile(vmId, projectId), { force: true });
+        if (clean.code === 0) await store(vmId, projectId).remove();
         throw error;
       }
       const entry = `${image(projectId)} ${directory} ext4 loop,nofail 0 0 ${marker(projectId)}`;
@@ -223,7 +218,7 @@ export async function projectQuota(
           `! grep -Fq ${quote(marker(projectId))} /etc/fstab`, 15000, true);
         if (restored.code === 0) {
           await exec(`rm -f ${disk}`);
-          await rm(recordFile(vmId, projectId), { force: true });
+          await store(vmId, projectId).remove();
         }
         throw error;
       }
@@ -268,7 +263,7 @@ export async function projectQuota(
           `mv ${quote(image(projectId))} ${quote(`${root}/archive-${projectId}-${randomBytes(6).toString('hex')}.img`)}`,
           `rm -f ${quote(`/etc/local.d/sakura-project-quota-${projectId}.start`)}`,
         ].join('\n'), 60000);
-        await rm(recordFile(vmId, projectId), { force: true });
+        await store(vmId, projectId).remove();
         return { ready: true, executed: true, projectId, directory, limitMiB: null,
           active: false, persistent: false,
           reason: '已保留原始目录备份与配额镜像归档，项目内容已迁回普通目录。' };

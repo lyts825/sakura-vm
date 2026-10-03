@@ -9,6 +9,7 @@ import {
   type S3Client,
 } from '@aws-sdk/client-s3';
 import { AppError } from '../shared/errors.ts';
+import { withoutOperationContext } from './operation-context.ts';
 import type { StorageLease } from './storage-runtime.ts';
 
 export const OBJECT_PART_BYTES = 8 * 1024 ** 2;
@@ -98,63 +99,68 @@ export async function uploadObjectFile(
     );
     completed = true;
   } catch (error) {
-    const cleanupSignal = AbortSignal.timeout(30_000);
-    if (createAttempted && !uploadId) {
-      // A lost create response may still have allocated an upload. Reconcile the
-      // exact object key before declaring cancellation complete.
-      try {
-        let keyMarker: string | undefined, uploadMarker: string | undefined;
-        for (let page = 0; ; page++) {
-          const listed = await client.send(
-            new ListMultipartUploadsCommand({
-              Bucket: bucket,
-              Prefix: key,
-              KeyMarker: keyMarker,
-              UploadIdMarker: uploadMarker,
-            }),
-            { abortSignal: cleanupSignal },
-          );
-          for (const item of listed.Uploads || [])
-            if (item.Key === key && item.UploadId)
-              await client.send(
-                new AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: item.UploadId }),
-                { abortSignal: cleanupSignal },
-              );
-          if (!listed.IsTruncated) break;
-          if (page >= 99 || !listed.NextKeyMarker || !listed.NextUploadIdMarker)
-            throw new AppError('无法完整核对未确认的 multipart 创建', 503);
-          keyMarker = listed.NextKeyMarker;
-          uploadMarker = listed.NextUploadIdMarker;
-        }
-      } catch (cleanup) {
-        lease.cleanupPending(cleanup);
-        throw cleanup;
-      }
-    }
-    if (uploadId && !completed) {
-      try {
-        await client.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId }), {
-          abortSignal: cleanupSignal,
-        });
-      } catch (cleanup) {
-        if ((cleanup as Error).name !== 'NoSuchUpload') {
+    await withoutOperationContext(async () => {
+      const cleanupSignal = AbortSignal.timeout(30_000);
+      if (createAttempted && !uploadId) {
+        // A lost create response may still have allocated an upload. Reconcile the
+        // exact object key before declaring cancellation complete.
+        try {
+          let keyMarker: string | undefined, uploadMarker: string | undefined;
+          for (let page = 0; ; page++) {
+            const listed = await client.send(
+              new ListMultipartUploadsCommand({
+                Bucket: bucket,
+                Prefix: key,
+                KeyMarker: keyMarker,
+                UploadIdMarker: uploadMarker,
+              }),
+              { abortSignal: cleanupSignal },
+            );
+            for (const item of listed.Uploads || [])
+              if (item.Key === key && item.UploadId)
+                await client.send(
+                  new AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: item.UploadId }),
+                  { abortSignal: cleanupSignal },
+                );
+            if (!listed.IsTruncated) break;
+            if (page >= 99 || !listed.NextKeyMarker || !listed.NextUploadIdMarker)
+              throw new AppError('无法完整核对未确认的 multipart 创建', 503);
+            keyMarker = listed.NextKeyMarker;
+            uploadMarker = listed.NextUploadIdMarker;
+          }
+        } catch (cleanup) {
           lease.cleanupPending(cleanup);
           throw cleanup;
         }
       }
-    }
-    if (completeAttempted && !completed) {
-      // NoSuchUpload after a lost complete response can mean the object was
-      // committed. Remove that exact unpublished key as well as the multipart.
-      try {
-        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }), {
-          abortSignal: cleanupSignal,
-        });
-      } catch (cleanup) {
-        lease.cleanupPending(cleanup);
-        throw cleanup;
+      if (uploadId && !completed) {
+        try {
+          await client.send(
+            new AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId: uploadId }),
+            {
+              abortSignal: cleanupSignal,
+            },
+          );
+        } catch (cleanup) {
+          if ((cleanup as Error).name !== 'NoSuchUpload') {
+            lease.cleanupPending(cleanup);
+            throw cleanup;
+          }
+        }
       }
-    }
+      if (completeAttempted && !completed) {
+        // NoSuchUpload after a lost complete response can mean the object was
+        // committed. Remove that exact unpublished key as well as the multipart.
+        try {
+          await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }), {
+            abortSignal: cleanupSignal,
+          });
+        } catch (cleanup) {
+          lease.cleanupPending(cleanup);
+          throw cleanup;
+        }
+      }
+    });
     throw error;
   } finally {
     try {

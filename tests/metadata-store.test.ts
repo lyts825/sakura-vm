@@ -6,6 +6,110 @@ import { join, resolve, sep } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
 import { MetadataStore, metadataKey } from '../server/metadata-store.ts';
+import { readCommittedStore, readStore, writeStore } from '../server/local-store.ts';
+import { metadataQueueLimits, metadataQueueSnapshot, serializedMetadata } from '../server/metadata-queue.ts';
+
+test('legacy writers and readers share the transaction queue; committed reads never wait for it', async (t) => {
+  const { root, file, store } = await fixture(t);
+  await store.replace({ count: 1, entries: [] });
+  let enter!: () => void, finish!: () => void;
+  const entered = new Promise<void>((done) => {
+    enter = done;
+  });
+  const gate = new Promise<void>((done) => {
+    finish = done;
+  });
+  const edit = store.update(async (value) => {
+    value.count = 2;
+    enter();
+    await gate;
+  });
+  await entered;
+  const snapshot = { count: 3, entries: ['captured'] };
+  const legacy = writeStore(join(root, 'unused', '..', 'state.json'), snapshot);
+  snapshot.count = 999;
+  const read = readStore(file, () => ({ count: 0, entries: [] }));
+  assert.equal((await readCommittedStore(file, () => ({ count: 0 }))).count, 1);
+  assert.equal(metadataQueueSnapshot().pending, 3);
+  finish();
+  await Promise.all([edit, legacy]);
+  assert.deepEqual(await read, { count: 3, entries: ['captured'] });
+  assert.equal((await store.read()).value.count, 3);
+});
+
+test('per-file admission is bounded and overflow cannot cancel or reorder admitted publications', async (t) => {
+  const { file, store } = await fixture(t);
+  let finish!: () => void;
+  const gate = new Promise<void>((done) => {
+    finish = done;
+  });
+  const first = store.update(async (value) => {
+    await gate;
+    value.count++;
+  });
+  const rest = Array.from({ length: metadataQueueLimits.perFile - 1 }, () =>
+    store.update((value) => {
+      value.count++;
+    }),
+  );
+  await assert.rejects(writeStore(file, { count: 999, entries: [] }), { code: 'METADATA_QUEUE_FULL' });
+  const snapshot = metadataQueueSnapshot();
+  assert.equal(snapshot.pending, metadataQueueLimits.perFile);
+  assert.ok(snapshot.files.every((entry) => !('value' in entry) && /^[a-f0-9]{64}$/.test(entry.key)));
+  finish();
+  await Promise.all([first, ...rest]);
+  await store.flush();
+  assert.equal((await store.read()).value.count, metadataQueueLimits.perFile);
+});
+
+test('commit-guard and revision refusals preserve bytes and do not leave an unconfirmed write', async (t) => {
+  const { root, file, store } = await fixture(t);
+  const saved = await store.replace({ count: 1, entries: [] });
+  await assert.rejects(
+    store.replace(
+      { count: 2, entries: [] },
+      {
+        beforeCommit: () => {
+          throw new Error('approval revoked');
+        },
+      },
+    ),
+    /approval revoked/,
+  );
+  await store.flush();
+  await assert.rejects(store.replace({ count: 3, entries: [] }, { expectedRevision: 'stale' }), {
+    code: 'METADATA_REVISION_CONFLICT',
+  });
+  await store.flush();
+  assert.deepEqual(await store.read(), saved);
+  assert.deepEqual(await readdir(root), ['state.json']);
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).count, 1);
+});
+
+test('global metadata admission counts running and queued work across files until actual settlement', async (t) => {
+  const { root } = await fixture(t);
+  let finish!: () => void;
+  const gate = new Promise<void>((done) => {
+    finish = done;
+  });
+  const work = Array.from({ length: metadataQueueLimits.pending }, (_, index) =>
+    serializedMetadata(
+      join(root, `${Math.floor(index / metadataQueueLimits.perFile)}.json`),
+      false,
+      () => gate,
+    ),
+  );
+  await assert.rejects(
+    serializedMetadata(join(root, 'overflow.json'), false, async () => {}),
+    {
+      code: 'METADATA_QUEUE_FULL',
+    },
+  );
+  assert.equal(metadataQueueSnapshot().pending, metadataQueueLimits.pending);
+  finish();
+  await Promise.all(work);
+  await serializedMetadata(join(root, 'overflow.json'), false, async () => {});
+});
 
 test('a fresh process resumes the same JSON revision and commits without sidecars or queue state', async (t) => {
   const { root, file, store } = await fixture(t);
@@ -130,7 +234,7 @@ test('content revisions survive reopening and refuse stale or externally changed
   assert.equal((await store.read()).value.count, 4);
 });
 
-test('failed edits and publication errors remain visible to flush, but do not poison retries', async (t) => {
+test('refused edits do not taint flush; physical publication failures remain visible and retryable', async (t) => {
   const { root, store } = await fixture(t);
   await store.replace({ count: 1, entries: [] });
   await assert.rejects(
@@ -141,7 +245,7 @@ test('failed edits and publication errors remain visible to flush, but do not po
     /edit refused/,
   );
   assert.equal((await store.read()).value.count, 1);
-  await assert.rejects(store.flush(), /edit refused/);
+  await store.flush();
   await store.update((value) => {
     value.count++;
   });

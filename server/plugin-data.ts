@@ -1,8 +1,10 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { z } from 'zod';
 import { DATA } from './paths.ts';
-import { readStore, writeStore } from './local-store.ts';
+import { readStore } from './local-store.ts';
+import { serializedMetadata } from './metadata-queue.ts';
+import { atomicMetadataWrite } from './metadata-io.ts';
 
 const safeName = /^[a-z][a-z0-9-]{0,63}$/;
 export function pluginDataFile(pluginId: string, name: string) {
@@ -35,28 +37,35 @@ export async function readVersionedStore<T>(
   return schema.parse(data);
 }
 
-export async function writeVersionedStore<T>(
-  file: string,
-  version: number,
-  schema: z.ZodType<T>,
-  value: T,
-) {
-  const data = schema.parse(value);
-  try {
-    const existing = await readFile(file, 'utf8');
-    const raw = JSON.parse(existing) as unknown;
-    const prior = raw !== null && typeof raw === 'object' && !Array.isArray(raw) && 'schemaVersion' in raw
-      ? (raw as { schemaVersion: unknown }).schemaVersion : 0;
-    if (!Number.isInteger(prior) || (prior as number) < 0 || (prior as number) > version)
-      throw new Error('插件数据版本不兼容');
-    if ((prior as number) < version) {
-      await mkdir(dirname(file), { recursive: true });
-      await writeFile(`${file}.v${prior}.bak`, existing, { flag: 'wx', mode: 0o600 }).catch((error) => {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      });
+export async function writeVersionedStore<T>(file: string, version: number, schema: z.ZodType<T>, value: T) {
+  if (!Number.isInteger(version) || version < 1) throw new Error('插件数据版本无效');
+  const contents = JSON.stringify({ schemaVersion: version, data: schema.parse(value) }, null, 2);
+  file = resolve(file);
+  return serializedMetadata(file, true, async (mark) => {
+    let existing: string | undefined;
+    try {
+      existing = await readFile(file, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-  await writeStore(file, { schemaVersion: version, data });
+    if (existing !== undefined) {
+      const raw = JSON.parse(existing) as unknown;
+      const prior =
+        raw !== null && typeof raw === 'object' && !Array.isArray(raw) && 'schemaVersion' in raw
+          ? (raw as { schemaVersion: unknown }).schemaVersion
+          : 0;
+      if (!Number.isInteger(prior) || (prior as number) < 0 || (prior as number) > version)
+        throw new Error('插件数据版本不兼容');
+      if ((prior as number) < version) {
+        mark();
+        await mkdir(dirname(file), { recursive: true });
+        await writeFile(`${file}.v${prior}.bak`, existing, { flag: 'wx', mode: 0o600, flush: true }).catch(
+          (error) => {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          },
+        );
+      }
+    }
+    await atomicMetadataWrite(file, contents, undefined, mark);
+  });
 }

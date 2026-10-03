@@ -1,12 +1,16 @@
-import { readFile, mkdir, writeFile, rename, rm, lstat } from 'node:fs/promises';
+import { readFile, lstat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { finished } from 'node:stream/promises';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { dirname, relative, isAbsolute, resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
+import { serializedMetadata } from './metadata-queue.ts';
+import { atomicMetadataWrite } from './metadata-io.ts';
 import { AppError } from '../shared/errors.ts';
 
-export async function readStore<T>(file: string, fallback: () => T): Promise<T> {
+/** Observe only the last atomically published JSON without waiting for an
+ * admitted mutation. Use for authorization rechecks while holding another
+ * runtime/domain lease; never use this as an unguarded read-modify-write. */
+export async function readCommittedStore<T>(file: string, fallback: () => T): Promise<T> {
   try {
     return JSON.parse(await readFile(file, 'utf8'));
   } catch (error) {
@@ -14,31 +18,19 @@ export async function readStore<T>(file: string, fallback: () => T): Promise<T> 
     return fallback();
   }
 }
+export async function readStore<T>(file: string, fallback: () => T): Promise<T> {
+  const target = resolve(file);
+  return serializedMetadata(target, false, () => readCommittedStore(target, fallback));
+}
 export async function writeStore(file: string, value: unknown) {
   // Capture before the first asynchronous step; callers may mutate their state
   // after handing this publication to a queue.
   const contents = JSON.stringify(value, null, 2);
   if (contents === undefined) throw new TypeError('Metadata must be JSON serializable');
-  await mkdir(dirname(file), { recursive: true });
-  const temp = `${file}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temp, contents, { mode: 0o600, flag: 'wx', flush: true });
-    const deadline = performance.now() + 1000;
-    for (let attempt = 0; ; attempt++) {
-      try { await rename(temp, file); break; }
-      catch (error) {
-        const remaining = deadline - performance.now();
-        if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException)?.code || '') || remaining <= 0)
-          throw error;
-        // Windows can briefly deny replacement while another handle is open.
-        // Keep the original file and this exact flushed temporary file intact.
-        await delay(Math.min(remaining, 25 * 2 ** Math.min(attempt, 3)));
-      }
-    }
-  } finally {
-    await rm(temp, { force: true });
-  }
+  const target = resolve(file);
+  return serializedMetadata(target, true, (mark) => atomicMetadataWrite(target, contents, undefined, mark));
 }
+
 export function within(root: string, target: string) {
   const path = relative(resolve(root), resolve(target));
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
@@ -62,7 +54,11 @@ export async function regularDirectory(path: string) {
 export async function fileHash(file: string, signal?: AbortSignal) {
   const hash = createHash('sha256');
   const input = createReadStream(file, { signal });
-  try { for await (const chunk of input) hash.update(chunk); }
-  finally { input.destroy(); await finished(input).catch(() => {}); }
+  try {
+    for await (const chunk of input) hash.update(chunk);
+  } finally {
+    input.destroy();
+    await finished(input).catch(() => {});
+  }
   return hash.digest('hex');
 }

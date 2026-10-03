@@ -23,6 +23,8 @@ import { networkFor } from './network/index.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
+import { withoutOperationContext } from './operation-context.ts';
+import { metadataFile } from './metadata-store.ts';
 import { fileHash, readStore, writeStore } from './local-store.ts';
 import { secretName, type Secrets } from './secrets.ts';
 import { storageRuntime, type StorageLease } from './storage-runtime.ts';
@@ -147,10 +149,12 @@ export class ObjectBackup {
   }
   private async updateSync(vmId: string, update: (state: SyncState) => void) {
     return this.machines.locked(`object-backup-sync:${vmId}`, async () => {
-      const state = await this.syncState(vmId);
-      update(state);
-      await writeStore(this.syncFile(vmId), state);
-      return state;
+      const result = await metadataFile(
+        this.syncFile(vmId),
+        () => ({ mirrored: {} }),
+        syncStateSchema.parse,
+      ).update(update);
+      return result.value;
     });
   }
   private async markMirrored(vmId: string, backupId: string, checksum: string) {
@@ -492,13 +496,15 @@ export class ObjectBackup {
               } catch (error) {
                 if (uploaded) {
                   try {
-                    const cleanupSignal = AbortSignal.timeout(30_000);
-                    // A lost manifest PUT response may already have advertised
-                    // the object. Withdraw its manifest before removing data.
-                    for (const key of [keys.metadata, keys.data])
-                      await client.send(new DeleteObjectCommand({ Bucket: target.bucket, Key: key }), {
-                        abortSignal: cleanupSignal,
-                      });
+                    await withoutOperationContext(async () => {
+                      const cleanupSignal = AbortSignal.timeout(30_000);
+                      // A lost manifest PUT response may already have advertised
+                      // the object. Withdraw its manifest before removing data.
+                      for (const key of [keys.metadata, keys.data])
+                        await client.send(new DeleteObjectCommand({ Bucket: target.bucket, Key: key }), {
+                          abortSignal: cleanupSignal,
+                        });
+                    });
                   } catch (cleanup) {
                     lease.cleanupPending(cleanup);
                     throw cleanup;
