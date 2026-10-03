@@ -83,7 +83,7 @@ const journalSchema = z.object({ version: z.literal(1), projectId: projectIdSche
   });
 type Journal = z.infer<typeof journalSchema>;
 type Core = Pick<ProjectIdentities, 'ensure' | 'inspect' | 'rebind' | 'inheritedInput' | 'run' | 'stop'> &
-  Partial<Pick<ProjectIdentities, 'runReadonly' | 'prepare' | 'retireTerminal' | 'sshSnapshotInput' | 'prepareSsh'>> & {
+  Partial<Pick<ProjectIdentities, 'runReadonly' | 'networkReadonly' | 'prepare' | 'retireTerminal' | 'sshSnapshotInput' | 'prepareSsh'>> & {
     beginNetworkRelease?: (vmId: string, identity: ProjectIdentity, options: { releaseId: string; bootId: string },
       signal?: AbortSignal) => Promise<z.infer<typeof networkLeaseSchema> | null>;
     releaseNetwork?: (vmId: string, identity: ProjectIdentity, lease: z.infer<typeof networkLeaseSchema>,
@@ -351,6 +351,38 @@ export class ProjectRunScopes {
         throw new AppError('项目网络核销尚未确认，请先重试原停止操作', 409, 'PROJECT_IDENTITY_NETWORK_RETIREMENT_PENDING');
       if (journal.pending)
         throw new AppError('项目账号绑定尚未确认，请先恢复原配置核对', 409, 'PROJECT_IDENTITY_BINDING_PENDING');
+    });
+  }
+  /** Read the complete saved host/guest network proof without issuing a run. */
+  async networkStatus(vmId: string, project: Project, signal?: AbortSignal) {
+    const id = projectId(project), target = binding(project);
+    return this.withLock(vmId, id, async () => {
+      signal?.throwIfAborted();
+      const live = this.machines.live.get(vmId), journal = await this.read(vmId, id);
+      const unchanged = () => {
+        signal?.throwIfAborted();
+        if (!live || this.machines.live.get(vmId) !== live || this.machines.state(vmId) !== 'running')
+          throw new AppError('网络检查期间客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      };
+      unchanged();
+      if (journal.pending)
+        throw new AppError('项目账号绑定尚未确认，请先恢复原配置核对', 409, 'PROJECT_IDENTITY_BINDING_PENDING');
+      if (journal.networkRelease && journal.networkRelease.phase !== 'released')
+        throw new AppError('项目网络核销尚未确认，请先重试原停止操作', 409, 'PROJECT_IDENTITY_NETWORK_RETIREMENT_PENDING');
+      if (!journal.identity || journal.identity.phase !== 'active' || target.networkIsolation !== 'private' ||
+          !same(binding(journal.identity), target))
+        throw new AppError('当前项目尚无已确认的私有网络账号绑定，请先启动项目', 409, 'PROJECT_IDENTITY_NETWORK_UNPREPARED');
+      await assertNoPendingProjectDirectoryMigration(this.machines, vmId, id, signal);
+      if (!this.core.networkReadonly)
+        throw new AppError('项目网络只读检查入口不可用', 409, 'PROJECT_IDENTITY_READONLY_UNAVAILABLE');
+      const proof = await this.core.networkReadonly(vmId, journal.identity, signal);
+      unchanged();
+      const current = await this.read(vmId, id);
+      if (!same(current.identity, journal.identity) || !same(current.pending, journal.pending) ||
+          !same(current.networkRelease, journal.networkRelease))
+        throw new AppError('网络检查期间原项目绑定已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      unchanged();
+      return proof;
     });
   }
   private async kernelBoot(vmId: string, signal?: AbortSignal) {

@@ -95,7 +95,7 @@ export const nextFeatureCatalog = [
     '远程主机与集群',
     'P0',
     '监测本机 QEMU 故障；见证确认隔离后接管副本，支持状态迁移、恢复封锁、完整副本退役及来源健康后的流量回切。',
-    'experimental',
+    'available',
   ],
   [
     'cross-host-snapshots',
@@ -531,7 +531,7 @@ export const nextFeatureCatalog = [
     '操作系统与桌面',
     'P0',
     '管理网页、Windows x64/x86 应用及其普通子进程、显式启动的 Linux X11/Wayland 应用的剪贴板方向、格式、大小和敏感内容。',
-    'experimental',
+    'available',
   ],
   [
     'media-passthrough',
@@ -1001,7 +1001,8 @@ export class NextFeatures {
       id: spec.id,
       enabled: configured?.enabled ?? true,
       options: spec.id === 'acme-renewal' ? options : merged,
-      actions: spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
+      actions: spec.id === 'clipboard-policy' ? ['configure', 'check'] :
+        spec.state === 'available' ? ['configure', 'check', 'run'] : ['configure', 'check'],
     };
     if (action === 'run' && configured?.enabled === false && spec.id !== 'acme-renewal')
       throw new AppError('此能力已禁用', 409);
@@ -1042,7 +1043,7 @@ export class NextFeatures {
         executed: false,
         adapter,
         message:
-          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 普通 x64/x86 应用成功附加后执行 Win32/OLE 规则，标准文本控件在复制或剪切前检查选区。受控启动普通原生 EXE 可在原始应用 DLL/TLS 前接入，托管程序仍需运行中附加。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 或原生 Wayland 应用并热更新规则；Wayland 需先选择原生桌面会话。正文完整检查后交付，不能撤回已交付或被工具包缓存的内容。接入前、系统级启动 DLL、其他底层接口及既有普通 Linux 程序仍未覆盖。',
+          '系统设置 → 剪贴板敏感检测管理网页入口；Windows 普通 x64/x86 应用可附加或受控启动，执行 Win32/OLE 规则，标准文本控件在复制或剪切前检查选区。受控启动覆盖普通原生 EXE 的应用 DLL/TLS 前阶段及支持的纯 IL CLR 初始化前阶段，普通 CreateProcess、同用户 AsUser 与同步本地 EXE Shell open 后代可提前继承规则。KDE 桌面 → 原生应用剪贴板，可按完整 ELF 路径与摘要启动 X11 或原生 Wayland 应用并热更新规则；Wayland 需先选择原生桌面会话。正文完整检查后交付，已交付或被工具包缓存的内容不能撤回。受保护或打包程序、未接入进程、系统级启动 DLL 与其他底层接口不属于受管入口范围。',
       };
     if (spec.id === 'local-ai-assistant' || spec.id === 'natural-command-planner')
       return {
@@ -1615,6 +1616,9 @@ export class NextFeatures {
     const spec = this.spec(value.featureId);
     if (value.action === 'check' || spec.id === 'incident-lockdown')
       return this.executeFeature(id, spec, value.action, signal, value.options);
+    if (spec.id === 'clipboard-policy')
+      throw new AppError('请在系统设置的剪贴板管理或桌面的原生应用剪贴板入口配置并应用策略；目录检查可查看使用说明',
+        409, 'CAPABILITY_ENTRYPOINT_REQUIRED');
     if (spec.state !== 'available') throw new AppError('此功能尚未完成实现', 501);
     if (hasCapability(spec.id)) {
       const configured = spec.id === 'acme-renewal' ? {} :

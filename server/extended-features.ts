@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { z } from 'zod';
 import { AppError, DATA, ROOT, vmDir } from './model.ts';
 import type { Machines } from './machines.ts';
-import type { Workspaces } from './workspaces.ts';
+import { projectVersion, type Workspaces } from './workspaces.ts';
 import type { ProjectTerminals } from './project-terminals.ts';
 import { Jobs } from './jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
@@ -13,10 +13,10 @@ import { capabilityViews, capabilityParameters, hasCapability } from './capabili
 import { ReverseTunnels } from './reverse-tunnels.ts';
 import { encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 import { secretName } from './secrets.ts';
-import { quote } from './files.ts';
 import { checkSecureErase, runSecureErase } from './secure-erase.ts';
 import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
-import { projectNetworkCheckScript, projectNetworkNamespace } from './project-network-isolation.ts';
+import { projectNetworkNamespace } from './project-network-isolation.ts';
+import { ProjectRunScopes } from './project-run-scope.ts';
 import { inspectTrustedBoot } from './trusted-boot.ts';
 import type { TrustedBootService } from './trusted-boot-service.ts';
 import {
@@ -123,7 +123,7 @@ export const extendedFeatureCatalog = [
   ['ipv6', 'IPv6 客户机网络', '网络', 'P1', '为客户机提供 IPv6 网络能力。', 'available'],
   ['static-routes', '静态租约与路由', '网络', 'P1', '保存 DHCP 租约和自定义路由。', 'available'],
   ['network-isolation', '项目网络隔离', '网络', 'P1',
-    '为托管项目入口提供独立网络命名空间，并按项目 UID 限制共享网络连接、核对普通 SSH/定时服务的提权限制。', 'experimental'],
+    '为托管项目入口提供独立网络命名空间，并按项目 UID 限制共享网络连接、核对普通 SSH/定时服务的提权限制。', 'available'],
   ['egress-policy', '出站白名单', '网络', 'P1', '限制客户机可访问的目标。', 'available'],
   ['network-quota', '网络带宽配额', '网络', 'P2', '限制出站带宽、并发 TCP 连接和新建连接速率。', 'available'],
   ['ssh-agent-forward', 'SSH Agent 转发', '网络', 'P1', '在确认后仅向单次客户机命令转发宿主机 SSH Agent。', 'available'],
@@ -256,7 +256,7 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
   id: spec.id,
   category: spec.category,
   mode: spec.category === '虚拟机' || spec.category === '网络' ? 'guest-aware' : 'portable',
-  actions: spec.id === 'self-update' || spec.id === 'locale-packs' ? ['check'] :
+  actions: ['self-update', 'locale-packs', 'network-isolation'].includes(spec.id) ? ['check'] :
     spec.state === 'available' || hasCapability(spec.id) ? ['configure', 'check', 'run'] : ['configure', 'check'],
   persistent: spec.id !== 'self-update' && spec.id !== 'locale-packs',
 });
@@ -365,14 +365,32 @@ export class ExtendedFeatures {
     if (spec.id === 'network-isolation') {
       const project = await this.workspaces.config(id);
       const namespace = projectNetworkNamespace(project);
-      const active = namespace && this.machines.state(id) === 'running'
-        ? (await this.machines.exec(id,
-            `sh -ec ${quote(projectNetworkCheckScript(namespace))}`,
-            5000, signal).catch(() => null))?.code === 0
-        : false;
-      return { ready: active, executed: false, state: spec.state, adapter,
-        mode: project.networkIsolation || 'host', namespace, active,
-        reason: '在项目设置中选择私有网络并启动项目。该模式覆盖托管项目命令及开发工具，不限制客户机管理员终端及其他进程。' };
+      const base = { executed: false, state: spec.state, adapter,
+        mode: project.networkIsolation || 'host', namespace, projectId: project._workspace || 'default' };
+      if (!namespace) return { ...base, ready: false, active: false, verification: 'not-configured',
+        reason: '在项目设置中选择独立命名空间，完成目录权限迁移后启动项目。' };
+      if (this.machines.state(id) !== 'running') return { ...base, ready: false, active: false,
+        verification: 'stopped', reason: '启动或恢复实例后，可只读核对原项目账号及网络策略。' };
+      const live = this.machines.live.get(id);
+      try {
+        const proof = await new ProjectRunScopes(this.machines).networkStatus(id, project, signal);
+        const current = await this.workspaces.config(id);
+        signal?.throwIfAborted();
+        if (!live || this.machines.live.get(id) !== live || this.machines.state(id) !== 'running' ||
+            (current._workspace || 'default') !== base.projectId || projectVersion(current) !== projectVersion(project))
+          throw new AppError('网络检查期间项目配置已改变，请重新检查', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+        return { ...base, ready: true, active: true, verification: 'verified',
+          identity: { account: proof.identity.account, uid: proof.identity.uid, gid: proof.identity.gid,
+            identityId: proof.identity.identityId, revision: proof.identity.revision },
+          network: proof.network,
+          checks: { namespace: true, projectAccount: true, uidEgress: true, noNewPrivileges: true },
+          reason: '原项目账号、独立回环网络、共享网络 UID 出站规则及普通服务提权限制已核对。客户机管理员及其他账号保持各自的权限范围。' };
+      } catch (error) {
+        signal?.throwIfAborted();
+        return { ...base, ready: false, active: false, verification: 'unverified',
+          code: error instanceof AppError && error.code ? error.code : 'PROJECT_IDENTITY_NETWORK_UNVERIFIED',
+          reason: error instanceof AppError ? error.message : '原项目网络策略未能完整核对，请恢复原运行记录后重试。' };
+      }
     }
     if (spec.id === 'tpm-secure-boot') {
       const [inspection, configured] = await Promise.all([

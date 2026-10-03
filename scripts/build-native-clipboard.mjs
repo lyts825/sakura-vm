@@ -21,6 +21,7 @@ for (const name of [
   'protocol.h',
   'early-import.h',
   'control-system.h',
+  'ole-text-stream.h',
   'descendant.h',
   'descendant-reservation.h',
   'descendant-token.h',
@@ -156,6 +157,6 @@ for (const name of [
 }
 await writeFile(
   join(target, 'native-clipboard.json'),
-  JSON.stringify({ version: 7, architecture: 'x64', build, files }, null, 2) + '\n',
+  JSON.stringify({ version: 8, architecture: 'x64', build, files }, null, 2) + '\n',
 );
 console.log(`Built Windows native clipboard agent ${build}: ${files.map((f) => f.name).join(', ')}`);

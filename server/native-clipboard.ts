@@ -151,7 +151,7 @@ const dualAssetNames = [
 const earlyAssetNames = [...dualAssetNames, 'Detours-LICENSE.md'] as const;
 const assetsSchema = z
   .object({
-    version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8)]),
     architecture: z.literal('x64'),
     build: digest,
     files: z

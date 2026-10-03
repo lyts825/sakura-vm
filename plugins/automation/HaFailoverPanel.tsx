@@ -17,7 +17,8 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
   promotion?: Promotion | null; localFailover?: { error: string | null } | null;
   hostFailover?: { configured: boolean; armed: boolean; phase: string | null;
     targetVmId: string | null; error: string | null;
-    failback?: 'pending' | 'completed' | null; recoveryHeld?: boolean } | null;
+    failback?: 'pending' | 'completed' | null; recoveryHeld?: boolean;
+    statusPending?: boolean } | null;
   reload: () => void;
 }) {
   const peers = useRemote<PeerView>(request, '/host-peers', true, 10000);
@@ -49,7 +50,8 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
   }, [setting?.updatedAt]);
   const options = { ...(targetHostId ? { targetHostId } : {}),
     failureThreshold, maxReplicaAgeMinutes, autoProcessFailover, autoHostFailover };
-  return <div className="ha-failover-panel" aria-label="故障接管策略与健康检查">
+  return <div id={`ha-failover-${vmId}`} tabIndex={-1}
+    className="ha-failover-panel" aria-label="故障接管策略与健康检查">
     <h4>故障接管策略与健康检查</h4>
     <p className="muted">本机每 15 秒观察主实例。进程接管先持久封锁来源再启动副本；宿主失联接管还需独立见证节点、带外电源隔离、应用健康检查与流量切换配置。</p>
     {monitor && <p role={monitor.suspected ? 'alert' : undefined}>
@@ -81,9 +83,11 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
         disabled={!hostFailover?.configured}
         onChange={(event) => setAutoHostFailover(event.target.checked)} />独立见证节点确认宿主隔离后自动接管</label>
     </div>
-    {(autoHostFailover || hostFailover?.failback || hostFailover?.recoveryHeld) && hostFailover &&
+    {(autoHostFailover || hostFailover?.failback || hostFailover?.recoveryHeld ||
+      hostFailover?.statusPending) && hostFailover &&
       <p role={hostFailover.error || hostFailover.recoveryHeld ? 'alert' : undefined}>
       见证节点：{hostFailover.recoveryHeld ? '恢复封锁，等待核对全部历史副本' :
+        hostFailover.statusPending ? '正在恢复见证状态，将自动重试' :
         hostFailover.failback === 'pending' ? '等待来源健康并回切流量' :
         hostFailover.failback === 'completed' ? '流量已回切来源' :
         hostFailover.phase === 'promoted' ? '目标已接管' :

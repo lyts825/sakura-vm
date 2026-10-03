@@ -474,6 +474,19 @@ directory=os.open(destination,os.O_DIRECTORY); os.fsync(directory); os.close(dir
       throw new AppError('项目网络记录不属于当前身份', 409, 'PROJECT_IDENTITY_NETWORK_STALE');
     return network;
   }
+  /** Inspect an existing private binding without installation or policy repair. */
+  async networkReadonly(vmId: string, identity: ProjectIdentity, signal?: AbortSignal) {
+    identity = projectIdentitySchema.parse(identity);
+    const schema = z.object({ version: z.literal(1), identity: projectIdentitySchema,
+      network: projectIdentityNetworkSchema }).strict();
+    const result = await this.control(vmId, { action: 'network-readonly', projectId: identity.projectId,
+      expected: expectedIdentity(identity) }, schema, signal, true);
+    if (identity.phase !== 'active' || identity.networkIsolation !== 'private' ||
+        JSON.stringify(result.identity) !== JSON.stringify(identity) ||
+        (['registryId', 'identityId', 'projectId', 'revision'] as const).some(key => result.network[key] !== identity[key]))
+      throw new AppError('项目网络检查回执不属于原账号绑定', 409, 'PROJECT_IDENTITY_NETWORK_STALE');
+    return result;
+  }
   async beginNetworkRelease(vmId: string, identity: ProjectIdentity, options: { releaseId: string; bootId: string }, signal?: AbortSignal) {
     identity = projectIdentitySchema.parse(identity);
     const releaseId = uuid.parse(options.releaseId), bootId = uuid.parse(options.bootId);

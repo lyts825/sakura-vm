@@ -1,6 +1,7 @@
 import { X509Certificate } from 'node:crypto';
 import { createSecureContext } from 'node:tls';
 import { readFile } from 'node:fs/promises';
+import { z } from 'zod';
 import { HaWitness, type HaWitnessPlan } from './ha-witness-core.ts';
 import { haHttpsRequest } from './ha-witness-http.ts';
 import { haWitnessServerConfigSchema, redfishPowerState, witnessVms,
@@ -111,10 +112,12 @@ export async function checkHaWitnessDeployment(raw: unknown) {
       const result = await haHttpsRequest(url.toString(), 'GET', undefined,
         { bearer: vm.traffic.token,
           fingerprint: vm.traffic.fingerprint }) as { activeVmId?: unknown };
-      if (result?.activeVmId !== null &&
-          typeof result?.activeVmId !== 'string')
-        throw new Error('流量状态接口未返回 activeVmId');
+      if (result?.activeVmId !== null && !z.uuid().safeParse(result?.activeVmId).success)
+        throw new Error('流量状态接口未返回有效实例身份或明确空路由');
       observed.activeVmId = result.activeVmId as string | null;
+      if (plan && result.activeVmId !== null && result.activeVmId !== vm.sourceVmId &&
+          result.activeVmId !== plan.remoteVmId)
+        throw new Error('流量入口指向未知实例，接管不会覆盖现有路由');
       if (phase === 'promoted' && result.activeVmId !== plan?.remoteVmId)
         throw new Error('已接管实例未成为流量入口');
       if (failback?.phase === 'completed' && result.activeVmId !== vm.sourceVmId)
@@ -145,6 +148,6 @@ export async function checkHaWitnessDeployment(raw: unknown) {
         vm.failback?.plan.transferId === after.failback?.plan.transferId &&
         vm.recoveryHeld === after.recoveryHeld };
   }));
-  return { ok: listener.ok && completed.every((vm) => vm.ok), listener, vms: completed };
+  return { ok: listener.ok && completed.every((vm) => vm.ok && vm.stable), listener, vms: completed };
 }
 export type HaWitnessPreflightReport = Awaited<ReturnType<typeof checkHaWitnessDeployment>>;

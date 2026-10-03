@@ -2204,6 +2204,26 @@ def network_capture(value, boot):
         os.close(descriptor)
 
 
+def network_inspect(value, boot):
+    # Capability checks must never create a pin/generation or finish a pending
+    # transition. Only already admitted, active private networks are ready.
+    if value['networkIsolation'] != 'private':
+        refuse('NETWORK_MODE')
+    migration_ready(value)
+    descriptor, info, _namespace = network_fd(value, boot, readonly=True)
+    try:
+        epoch = network_generation(value['projectId'])
+        if epoch is None or epoch['phase'] != 'active':
+            refuse('NETWORK_GENERATION_INVALID')
+        network = epoch['network']
+        network_matches(value, network)
+        if network['bootId'] != boot or (network['networkDevice'], network['networkInode']) != (str(info.st_dev), str(info.st_ino)):
+            refuse('NETWORK_REPLACED')
+        return {'version': 1, 'identity': value, 'network': network}
+    finally:
+        os.close(descriptor)
+
+
 def begin_network_release(value, request, boot):
     # The host persists this boot/nonce before asynchronous stop begins. A
     # receipt lost across reboot must never select a newly created namespace.
@@ -4056,6 +4076,7 @@ def main():
                'run': {'projectId', 'expected', 'runId'},
                'run-readonly': {'projectId', 'expected', 'runId'},
                'network': {'projectId', 'expected'},
+               'network-readonly': {'projectId', 'expected'},
                'begin-network-release': {'projectId', 'expected', 'releaseId', 'bootId'},
                'release-network': {'projectId', 'expected', 'releaseId', 'network'},
                'rebind': {'projectId', 'expected', 'directory', 'networkIsolation'},
@@ -4078,7 +4099,7 @@ def main():
     boot = open('/proc/sys/kernel/random/boot_id').read().strip()
     identifier(boot, UUID, 'BOOT_ID')
     snapshot_input = ssh_snapshot_input() if action == 'ssh-snapshot' else None
-    readonly = action in ('run-readonly', 'terminal-probe', 'terminal-attach', 'ssh-session')
+    readonly = action in ('run-readonly', 'network-readonly', 'terminal-probe', 'terminal-attach', 'ssh-session')
     lock = initialize_readonly() if readonly else initialize()
     args = None
     terminal = None
@@ -4102,6 +4123,12 @@ def main():
                     # policy ACK. Execution admission still requires the exact
                     # applied egress proof; explicit ensure finishes recovery.
                     result = active(request['projectId'], request, store, False)
+        elif action == 'network-readonly':
+            if request.get('expected') is None:
+                refuse('EXPECTED_IDENTITY_REQUIRED')
+            # active verifies the exact account, directory, UID egress table
+            # and actual NNP service/process state without applying policy.
+            result = network_inspect(active(request['projectId'], request, store), boot)
         elif action in ('prepare', 'exec-current', 'exec-current-session'):
             value = active(request['projectId'], request, store)
             if action in ('exec-current', 'exec-current-session'):

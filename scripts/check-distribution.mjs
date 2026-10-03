@@ -18,7 +18,7 @@ if (process.platform === 'win32') {
   const folder = join(root, '.sakura-server', 'assets', 'native-clipboard');
   const native = JSON.parse(await readFile(join(folder, 'native-clipboard.json'), 'utf8'));
   const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe', 'MinHook-LICENSE.txt', 'Detours-LICENSE.md'];
-  if (native.version !== 7 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
+  if (native.version !== 8 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
       !Array.isArray(native.files) || native.files.length !== names.length ||
       new Set(native.files.map((file) => file.name)).size !== names.length)
     throw new Error('Native clipboard distribution metadata is invalid');

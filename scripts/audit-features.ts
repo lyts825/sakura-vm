@@ -5,50 +5,62 @@ import { nextFeatureCatalog } from '../server/next-features.ts';
 
 const convert = (rows: readonly (readonly string[])[]) =>
   rows.map(([id, name, category, priority, summary, state]) => ({
-    id,
-    name,
-    category,
-    priority,
-    summary,
-    state,
+    id, name, category, priority, summary, state,
   }));
 const groups = [
   { name: '第一批', file: 'server/feature-suite.ts', rows: featureCatalogView() },
   { name: '第二批', file: 'server/extended-features.ts', rows: convert(extendedFeatureCatalog) },
   { name: '第三批', file: 'server/next-features.ts', rows: convert(nextFeatureCatalog) },
 ];
-const all = groups.flatMap((group) => group.rows),
-  unfinished = all.filter((item) => item.state !== 'available');
-const notes: Record<string, string> = {
-  'ha-failover': "本机 QEMU 进程退出接管已可用；与宿主失联接管并存时先确认见证撤防，撤防和慢速目标核对后重新检查策略及故障状态。独立 HTTPS 见证节点提供来源持久启动登记、Redfish 系统 UUID 核对与带外关机确认、目标副本启动、应用健康和流量切换；含只读部署预检及正常关闭时等待隔离操作。持久状态使用跨进程独占锁；恢复及每次接管核对来源仍关闭、精确目标身份、应用和流量，已接管目标停机可重启同一副本，状态写入失败禁止来源启动。退出接管支持失败阶段和重试，先确认目标持久退役再解除来源；只读演练工具生成具体计划并记录基线及两次稳定接管，接口观察不证明物理节点独立。见证程序纳入运行包摘要与更新，入口随活动版本切换，校验失败拒绝运行。独立服务进程已联测真实 Linux 历史快照、副本虚拟机及 HTTP 应用，覆盖错误 BMC 身份、未就绪和切流拒绝、见证重启与目标退役；BMC 和流量控制仍使用同一测试电脑上的适配器。2026-10-01 只读检查未发现可用外部见证、目标主机、Redfish、健康或切流配置，未调用实际隔离或用户虚拟机。真实第三节点、BMC、健康端点和流量系统尚未完成故障演练，故保持部分实现。第 4 版见证状态已接通离线版本迁移、受控配置更换和损坏/缺失状态恢复，原字节备份与提交未确认回执保留。恢复封锁须逐一核对全部历史副本并确认持久退役后解除；可选自动回切在来源健康、精确退役和流量确认后持久完成，策略关闭后已有待回切仍继续。用法见见证维护文档，新增接口与状态回归通过，物理外部演练仍未完成。",
-  'network-isolation': "单应用窗口新增独立完整 native 运行域、固定降权入口、专属目录映射视图及原账号、boot、构建和真实监听核对；主机 intent 先于首次 native prepare 持久保存，应答失联只恢复原 UUID，重载只读恢复，不重发票据。应用及 WM 的准确 exec 成功后才发布 running；停止及创建者观察到的自然退出按原完整域清理 detached 子进程，失败保留票据、租约和配置门闩。多个服务实例保留其他 UUID 与已核销、已收紧记录，原 owner 只退休自己的内存租约；旧 UID-only 窗口显示归属待核对，不自动重开或清理。当前单应用 26 项专项、21 个生产 Python 模型及 7 个自有 WSL 真实 namespace 场景通过；原私有目录与映射 ELF、降权及管理 FD 关闭已验证，Supervisor 在 pass_fds 后重新封口，真实应用存活时准确 ready 管道已 EOF。15 份来源与 4 份生产资产一致，专项、完整 TypeScript 与原语实测均实际 exit/close 0、输出流关闭。新的真实桌面公共入口联测仍待完成。托管项目入口已接通仅回环的独立网络命名空间，涵盖项目命令、服务、终端、工程任务、编辑器、Agent、构建与相关桥接；各入口的准备、恢复、绑定保护和实测范围见项目网络隔离文档。默认项目 API/SDK/CLI、初始化、主命令、普通服务、就绪与命令式健康检查、运行时显式探测和版本选择验证，以及构建农场、收藏命令、流水线步骤和单次 SSH/GPG Agent 命令使用持久项目 UID/GID、独立 home 和固定启动器，命令与环境通过有界 stdin 或 root 独占保护帧运输，降权后运行密封只读脚本，root argv 不携带正文；宿主持久保存准确账号票据并在上层全域清理确认后核销，冷重启保留原票据并登记退休，关闭历史持久归档且 run ID 不可重放。构建每次准备捕获准确配置和 live 身份，子目录保留原目录绑定，同项目多个槽位具有独立完整票据；取消保留租约到全域清理结束，清理失败的错误码和原记录在重载后保留。单次 SSH/GPG Agent 固定提交项目及捕获配置，每次明确确认；root 源监听保持私有权限，项目入口逐连接/协议请求核对 UID/GID、进程创建身份、boot 和完整任务域。同项目多任务转发互不关闭；域和准确资源清理确认后才核销账号票据，失败保留原资源、错误码与本次宿主流供恢复。GPG 当前支持 Windows x64 原生 extra socket，固定来源文件和原进程，宿主 helper 在发送 nonce 前持久保存准确回执，临时 GNUPGHOME 按原归属清理；Unix、MSYS 和命名管道来源明确拒绝。既有 root 目录须明确核对并应用保存的迁移计划，缺失目录不会自动建立，链接、权限扩展、跨挂载、其他项目重叠与超限回执均拒绝，中断/绑定确认失联保留门闩和原计划重试；读取不自动安装或应用，项目成员不得迁移属主。私有项目停止先冻结固定 generation/release ID，再清理所有归属，最后核销准确命名空间；同 inode 新代也拒绝旧请求，失联继续保留 pending。旧 root 运行按原完整回执停止，不自动视为新账号运行。共享及私有项目的首次 Git 检出已接通固定 smart-HTTP 对象预取，使用已应用网络档案中的独立只读认证；源码与凭据通过有界 stdin 运送，系统下载器不执行工作树、项目环境、Git 配置、钩子或过滤器。数据完整核对后仅授予原项目 GID 只读 bundle，项目 UID 在原网络内核对摘要、默认分支并检出，origin 保留原仓库地址；空仓库可初始化，已有仓库不自动更新，非空目录拒绝。下载前保存准确 boot、任务 UUID、账号与 nonce 归属，失败/取消后只在全域停止和准确对象确认后清理，未知状态保留记录；旧下载不得在新 boot 入场。普通网页终端与持久 tmux 会话已接通项目账号、独立 home、固定原生 PTY 入口和独立完整运行票据。全部窗格与服务器复核真实 UID/GID、创建身份、网络及 cgroup；socket 在项目 Shell 启动前封闭，重连和只读授权固定原运行 UUID。退出或停止清理整个 cgroup 和准确资源，准备与清理共用运行锁；失败保留原票据及租约，重载恢复孤立匿名运行，冷重启只在原资源确认不存在后登记退休，同名新会话不复活旧授权。收藏命令和流水线步骤固定原项目、捕获配置及准确 live 实例，环境仅解析一次，正文与参数使用保护帧；流水线各步骤独立任务 UUID、cgroup 和时限，准备租约保持到产物及最终记录保存，取消等待完整清理，原 503 和错误码在步骤、运行及任务历史重载后保留。专属项目 SSH 的 Shell、命令、SFTP 与编辑器入口已迁移为持久项目 UID/GID、独立 home 和原服务 cgroup。固定 ForceCommand 只带账号、run 与摘要，真实客户端命令和环境通过有界帧降权执行，独立描述符保留二进制 stdin、EOF 和 PTY；环境快照为 root 独占 JSON。所有发行版的共享与私有项目均导出核对后的独立入口。启动前保存宿主 intent，原完整 daemon/boot/cgroup inode 票据用于重载及清理，应答丢失先恢复原票据，原全域停止后才退休受保护 SSH 回执并核销；中断只留下 SSH 回执时仅允许清理恢复，不能授权会话。浏览器 IDE、集成终端和扩展宿主已接入项目 UID/GID、独立 home、受保护 stdin 及完整原服务票据；密码与项目环境不进入 root argv。共享和私有模式都使用本机回环桥接，原账号、boot、构建、cgroup inode、进程创建身份、正文摘要和实际 UID 持有的监听核对后才开放；连接完成后再次核对，重载不安装或发行新票据。停止失败先保留检查状态，禁止原入口重开；客户机守护逻辑在控制服务关闭后仍按时清理整个 cgroup，最终核销由活跃或重载的控制服务确认。旧 root 会话保留原记录供明确处理，不自动收编。工程扩展的工作区、Git、测试、命令宏和 Runbook，以及分片、矩阵子任务和环境指纹已接通原项目账号、捕获配置、完整短任务票据与保护帧；可信源码在降权后解压校验，直接结果保存与任务导入保持原租约，原清理 503 及错误码继续传播。轻量代码诊断已接通捕获配置、非枚举原项目身份、受保护正文和完整任务清理，结果继续脱敏，取消或清理 503 不转换为编译诊断。Notebook 安装、Jupyter/Marimo 与内核已接入捕获配置、项目账号和完整服务票据，系统预取与 UID 离线安装分开，所有模式经实际 UID 监听核对的回环桥接；停止先保留检查状态，整域和准确资源确认后核销，失败保留原票据和清理错误。Git 工作台的所有 Git 命令与路径探测已接入原账号、配置、live、保护帧及完整任务清理，操作保持原租约，冲突编辑器文件读写保留管理员 SFTP 范围。开发工具版本与清单探测、seccomp 受限命令已接入捕获项目、保护帧和完整 UID 任务；系统软件包安装及策略自检保持固定管理环境，原 live 变化停止后续步骤。离线缓存安装使用原完整任务的 UID 可写副本，原管理缓存只复制惰性数据；原任务域及 native 关闭后才按完整归属退休，未知状态保留原证明并阻止重新绑定。Lint/format 保存结果保持原工程租约，有限开发命令保留原生 cwd。临时 TCP 隧道的 Python 探测与 broker 已接通原项目账号、捕获配置、保护帧和独立完整服务票据；桥接核对原 UID 监听，失联启动保持准备租约到整域核销，重载不安装或修复网络。独立 LSP/DAP 已接通原项目账号、捕获配置及调用者输入、保护帧与持续二进制协议，原完整 task/native 域核销后才释放准备租约，失联原 token 保留可重试；SSH 通道应答有界且拒绝迟到或替换 live。Envoy 版本探测、固定配置校验和长期边车已接通原项目 UID/GID、捕获配置/live、保护帧及独立完整任务/服务票据。有限任务在配置删除前精确核销，失联启动与清理保留原配置、票据及租约供停止重试；普通状态不执行 Envoy 或安装，首次明确检查/启动在固定网络准备后重读原 boot/二进制。KDE、中文输入法与 X11/Wayland 应用入口已接通捕获原项目 UID/GID、独立 home、保护帧和完整 Desktop/native 票据。图形与应用入口复核原运行、端点及真实进程，停止先核销匹配的应用及整桌面域，再清理原运行目录和防火墙；失联/清理失败保留原证明及租约供停止重试。私有项目账号在共享网络新建的 IPv4/IPv6 连接也已按 UID 阻断，涵盖以该账号从系统 SSH、cron、用户服务及自行启动程序发起的连接。固定 systemd/OpenRC 入口恢复原绑定的规则并设置 SSH/定时服务依赖；创建/删除应答丢失和配置升级中断保留原意图，未知表及 handle 变化拒绝。其他 UID、特权代理转交的套接字、显式管理员命令及客户机 root 修改策略仍不属于该账号边界。客户机热目录最多保留 1,024 张票据，满额时在固定控制器内每批归档最多 512 张本次 boot 已关闭且任务域无进程的完整原回执；归档不覆盖未知对象，写入核对失败保留原票据，旧 run ID 仍拒绝重放，归档查询与重复关闭不恢复热票据；普通服务与主命令生命周期和真实故障证明按批次保留。这是网络分段与已接通入口的权限改进，不能承诺实例级断网或覆盖所有入口，功能保持部分实现。普通 SSH、cron/at 和用户会话启动器新增 NoNewPrivileges 设置及真实 root 守护/旧会话进程核对；未继承时保留原意图并要求明确重启，不自动中断服务。该系统服务设置影响客户机中所有普通账号的执行时提权，删除项目不会自动撤回。原生入口拒绝标准描述符及保护帧上的网络 socket，保留文件、管道、PTY 和 Unix socket；运行后由特权代理另行传递描述符仍在范围外。首次准入、有效 systemd/OpenRC 配置和旧版本中断恢复的 72 项专项回归通过。真实 Alpine 诊断确认原 O_PATH 目录同步返回 errno 9；启动链接现使用同一受控目录的可读句柄同步，pending 重试已有链接时也须同步成功后才 reload/applied。新的独立 Alpine VM 验证入口保留提权基线、真实 SSH/cron、冷启动与完整进程关闭证据，其结果另按实际场景记录。 新独立 Debian 只读诊断确认 nftables 1.0.6 的 JSON 创建未保存表 comment，原公开迁移失败与零产品场景保留。控制器已改用仅含核对 UID/UUID 的固定文本原子事务创建规则；旧 JSON 缺表 comment 时读取准确表的唯一顶层标记，并核对前后全部对象及句柄不变。错误、缺失标记和原损坏 pending 不自动接管，24 项生产源码兼容模型覆盖此路径，其中重放了两轮原实机 JSON 和文本输出。首轮嵌套 create table 实际仅生成表，原失败继续保留；当前使用明确 create table、add chain、add rule 三语句的一次标准事务，空表 pending 仍拒绝接管。新的修复后真实桌面及冷启动验证另按实际场景记录。 本轮独立 Debian X11 已完成两个公开项目目录迁移，并通过 nftables 1.0.6 的完整创建、重复创建保持原对象及句柄、错误第三命令无部分表三项实机事务；固定测试表已关闭，真实项目表未变。随后桌面启动因 systemd SSH 会话归属核对拒绝 EGRESS_NNP_SERVICE_UNVERIFIED，未进入图形、剪贴板、单应用或 RFB 场景；原证明仍为失败，VM、进程及连接全部关闭。systemd PAM 会话归属现通过准确服务 MainPID、真实 SSH 映像及最多128个内核父节点核对，保留 NNP=1 和全部身份前后复核，未知、孤立、重挂接及权威变化仍拒绝。新构建32项定向回归通过，出站模型覆盖54组检查，40份正常运行资产与源码一致。新构建完整桌面及冷启动实机结果另行记录。 最新 dc1f 构建新鲜 X11 的两个公开迁移和三项 nft 事务成功，桌面随后被 unattended-upgrades 的 dpkg 锁拒绝，未进入 PAM 与图形场景；原失败保留，VM、进程及全部连接已关闭。Debian/Ubuntu 桌面和输入法准备现核对固定包集的真实 installed ok 状态，完整时跳过重复 APT，缺包、半安装、错误标志或查询失败仍安装，并最多等待锁 120 秒。生成 shell 27 项、相关回归 44 项与 TypeScript 检查通过；自有 WSL APT 隔离目录真实短锁正例返回 0，有限等待负例返回 100，未修改系统状态。修复后真实桌面验收仍待完成。 APT 修复后新鲜 X11 在第一个项目迁移时返回 EGRESS_NNP_PROCESS_CHANGED，原始 detail:null 无法定位具体变化进程，零正式场景；失败磁盘和回执保留，VM、进程与连接全部关闭。生产 AST 模型证明初始 /proc 全量采集在无关新 PID 或无关进程瞬态变化时返回相同错误；现仅在尚未授权的初始采集最多三轮、五秒内完整重新核对，新增 SSH/项目账号进程仍检查 NNP 与权限，已使用的 SSH 父链和服务权威变化不重试。错误回执增加固定阶段、原因和尝试次数。新 dec047e1 构建的 32 项定向回归、58 组生产模型与 TypeScript 检查通过；原实机失败的精确分支仍未知，新构建完整实机验收待完成。 最新 dec047 构建的新鲜 X11 已完成双项目迁移、三项真实 nft 事务，APT 缺包安装及桌面路径的原生 UID/NNP 准入均成功。固定 Desktop adapter 后续以 exit73 拒绝完整运行域/VNC guard，原回执仅有通用拒绝，尚未进行正式 GUI、剪贴板、单应用或 RFB 场景；原失败与磁盘保留，VM/进程/连接全关闭。适配器现仅向原管理入口提供严格核对的固定阶段、原因与受限检查行号，不公开原错误文本、凭据或环境；原等待、拒绝、二进制 RFB 及清理语义保留。31 项定向 Node、16 项生产 Python 模型及 TypeScript 检查通过，原实际 exit73 的具体原因待新的独立实例回执定位，不能视为 Desktop 已通过。 后续新鲜 X11 的双项目迁移和三项 nft 实机事务成功，桌面返回 probe/AUTHORITY/OBJECT_ABSENT/check=0; exit73，仅证明授权阶段有缺失对象，不能确定对象；VM、进程、连接全部关闭，GUI正式场景未开始。固定 adapter 现为 OSError 在最多64帧内提取可信固定源码函数的受限检查行号，无可信帧仍0，不返回异常文本/文件名。缺失pane、正文和runtime的生产Python模型分别准确定位调用行，31项定向Node、17项模型及TypeScript检查通过，新实机具体失败位置仍待验证。 后续新鲜X11固定行号定位到 Desktop authority 读取原 tmux pane 的 /proc/stat 时该进程已不存在，未证明退出原因；所有资源关闭。独立诊断实例在更早迁移阶段发生三轮快照仍新增2PID的 process-census-changed，未进入Desktop或收集pane日志；原失败证据保留。原生准入现初始全量后最多三次有界增量采集，末轮列举的新PID也实际读取并接受原UID/NNP/服务检查，旧PID按stat出生时刻防复用，存活普通进程读取不完整仍拒绝；僵尸、退出和内核线程才可略过，后生未来进程非原子保证。新9ed9b6构建的32项定向Node、61组生产模型与TypeScript检查通过；新鲜实机与pane日志仍待验证。",
-  'clipboard-policy': "已实现网页应用入口、独立 Linux 窗口的方向、实例覆盖、格式和敏感文本规则，收紧 noVNC 规则断开旧桥接并拒绝重连。Windows x64 宿主支持普通 x64/x86 进程按完整映像路径与摘要接入，核对用户、会话、PID/创建时间和架构，规则热更新、重载、拒绝计数与停用已实现。Win32/OLE 检查当前规则、延迟数据与包装缓存；标准 ANSI/Unicode Edit/RichEdit 在复制或剪切前检查实际选区，拒绝时保留旧剪贴板及源文本，支持旧控件、新控件、重建和父窗口初始化内的嵌套子控件。OLE 在清空旧内容前预检完整全局内存正文。真实 Windows Runtime Desktop Clipboard、.NET Framework 4.8.1 WinForms/WPF 双架构、现代 .NET 10.0.9 双架构常规 API及文本控件已验证；实际32位运行时来自测试目录内固定官方包并核对摘要，双架构各717项断言包含选区保持及控件销毁重建。普通未打包原生 EXE 可受控早期启动，在原始应用 DLL/TLS 前同步加载策略，持久归属后才恢复主线程；丢失提交回执时保留并刷新归属，纯 IL CLR 的固定 x64/x86、AnyCPU 和优先 32 位已接通受控启动，磁盘标记与实际挂起进程位数双重核对；CLR 类型初始化和 Main 前已有 ready 策略。混合模式、ReadyToRun、本机入口及歧义 CLR 映射拒绝。系统或已核对 WinSxS Common Controls 可用，私有 DLL与清单重定向拒绝。KDE 原生入口可按 ELF 路径与摘要显式启动 X11 或原生 Wayland 应用，分别保存规则、归属和会话。X11 的 INCR/MULTIPLE 双向完整检查、每项独立身份、预算与超时、普通 fork 新连接及整个会话清理已实测。原生 Wayland 支持 Plasma v5会话偏好、Qt/GTK clipboard 与 primary selection 双向完整正文检查，收紧取消未交付数据，FD队列允许晚到，格式、敏感、UTF-8和大小受规则限制；正文只接收可写FIFO，门户传输令牌及未知/特权管理协议拒绝，慢源可能超时。公开服务现在从完整原项目 Desktop/native 票据发现端点，桌面实际使用项目 UID；停止桌面先精确退休匹配的注册应用域。新增 desktopOwner/applicationOwner 分别展示桌面项目账号与应用账号，Wayland 与独立窗口继续使用各自 sandbox UID。当前完整桌面权限和嵌套 XWayland 凭据通过 14 个实际源码模型；初次启动只对明确未就绪错误重试，身份错误立即按原完整域回滚。Wayland 新 UID 通过专属 idmapped mount 访问原项目目录，0700/0600 读写和项目私有0700 ELF执行已通过8个自有真实Linux helper场景，原属主、权限、ACL及源摘要不变。程序降权后从映射视图重新打开并核对原inode/元数据/摘要，通过该FD执行，关闭原Root文件句柄；两个旧挂载FD实际拒绝执行，实际映射ELF确认管理FD关闭、NNP=1及有效capabilities为空。32项相关回归通过，当前20资产源码与打包字节吻合；尚未完成新的真实桌面联测。原入口历史联测继续保留。公开服务从真实绑定的桌面发现端点，固定 socket creator、KWin child、继承FD及内核inode，child替换后旧代理不自动跟随；应用使用新UID、私有DBus/runtime及应用/代理独立cgroup，并核对项目网络和目录权限。20个固定来源资产带原始协议许可证、摘要与分发校验，规则和归属支持重载、克隆及导出导入。Debian真实原生桌面、Qt/GTK、私有项目网络、528000字节正文、热更新、primary和子进程清理已通过，编译HTTP/SDK也通过。无法撤回已交付或合成器/工具包缓存的内容；接入前、系统级启动 DLL、受保护或打包程序、自定义底层接口、既有普通Linux程序、特殊fork路径和系统级强制边界仍未完成，因此保持部分实现。第 6 版原生运行包已接通普通 CreateProcessW/A 及 CreateProcessAsUserW/A 子孙进程提前继承，包括跨 EXE、x64/x86、原生 DLL/TLS 和 CLR 初始化阶段创建；保留命令、环境、cwd、标准句柄及调用者 CREATE_SUSPENDED 语义。创建前发布准确具名 Job 保留并原子分配；普通 apply 在建立 mapping 或任何 remote loader 前拒绝准备中 child。服务按准确身份仲裁扫描与采用，持久归属先于早期插入，旧快照不会删除 prepared 记录；helper 实际关闭后才释放仲裁。broker 在父进程退出或管道 EOF 时清理准确 Job，并保留复制句柄到原请求结束，最后恢复前复核原父身份。第 4 版初轮证明继续保留；第 5 版实际 30 场景及 38 个专项单测和旧资产保留。第 6 版实际 70 场景及 39 个专项单测通过，来源未变，12 个 broker、窗口站启动器及对照父进程实际关闭且自有进程残留为零。AsUser 固定源 primary token 的准确内核对象、访问权限、TokenId/ModifiedId、用户和会话，调用前后复核源令牌与真实 child primary token；NULL 保留原 Windows 语义并拒绝新增 impersonation。规则 active 时 WithTokenW/WithLogonW 因真实 OS 不接受带 Job 属性的扩展启动形式而明确返回不支持；inactive 调用原 API，标准句柄按内核对象比较。调用者 opaque STARTUPINFOEX、调试标志明确拒绝。第 7 版新增普通本地 EXE 的 ShellExecuteW/A 和带原 SEE_MASK_NOASYNC 的 ShellExecuteExW/A open：核对显式 asInvoker 清单与直接关联，通过公开属性列表生命周期在原表附加准确 Job，保留原命令、环境、cwd、句柄及 Shell 暂停恢复语义。属性表公开操作与原同步创建共用短锁，准备失败同时回收准确 child 句柄，不能仅凭 Job 推断清理。异步、委托、打包激活及其他底层路径仍未覆盖；当前第 7 版 40 项专项单测、71 个 Token/普通创建场景和 133 份 Shell 回执通过；其中两份双架构公开属性表生命周期回执各含 24 条断言，另外包括 5 个后附加父进程场景。Token 16 个与 Shell 14 个 broker、对照程序及 holder 均实际 exit/close 0、stdio 关闭、自有进程残留为零，完整 v5/v6 旧资产恢复和停用保留。43 份相关来源、37 个 native 输入与 6 份生产、实测及冻结资产核对一致；初轮失败及历史证明保留。",
-  'availability-report': '目前为 uptime 探测，尚无持续可用性记录与完整报告。',
-  'multi-host-inventory': '目前返回本机信息，尚未实现多主机汇总。',
-  'hardware-compatibility': '目前返回本机信息，尚未建立经验证的硬件兼容矩阵。',
-  'host-disk-health': '目前返回本机信息，尚未实现实际磁盘健康检查。',
-};
+const all = groups.flatMap((group) => group.rows);
+const unfinished = all.filter((item) => item.state !== 'available');
 const count = (rows: typeof all, state: string) => rows.filter((item) => item.state === state).length;
-let output = `# 未完成功能清单\n\n根据当前工作区源码生成。最初基线为 \`c669881\`，其目录中有 200 条未完成记录。\n\n目前共 ${all.length} 条目录记录，其中 ${count(all, 'available')} 条有实现入口，**${unfinished.length} 条仍未完成**（${count(all, 'planned')} 条规划、${count(all, 'experimental')} 条部分实现）。按标识去重后为 ${new Set(unfinished.map((item) => item.id)).size} 个未完成标识；不同条目仍有范围重叠。\n\n本轮已接通 ${200 - unfinished.length} 条原未完成目录记录，包括 Git 和目录同步冲突的图形解决。实现范围、使用方式与验证见 [本轮实现记录](capability-completion.md)。**这不表示全部功能已经完成**；available 也不代表当前实例已安装所需工具。\n\n| 目录 | 总数 | 已有入口 | 部分实现 | 规划 | 未完成 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n`;
+
+// Implementation and acceptance are independent: changing catalog state must
+// never turn a deferred integration check or historical failure into a pass.
+const acceptance = [
+  {
+    id: 'network-isolation',
+    scope: '项目独立网络命名空间、持久 UID 出站限制、托管入口归属和清理、重启恢复，以及完整只读状态检查。客户机管理员、其他 UID 和特权代理不在项目账号限制范围内。',
+    pending: '新构建的 Debian/Ubuntu/Alpine 项目入口及冷启动；新项目 UID 桌面、单应用窗口、RFB 与剪贴板完整联测；noexec 运行目录的桌面启动修复。',
+    guide: 'project-network-isolation.md',
+  },
+  {
+    id: 'ha-failover',
+    scope: '本机故障接管、独立见证与 Redfish 隔离、精确副本启动、健康及切流、持久封锁与状态恢复、退出接管和自动回切。需要部署见证、目标、BMC 与流量端点。',
+    pending: '本轮见证失联后的恢复重试及切流归属检查；独立物理第三节点、真实 BMC、健康和流量端点的完整故障及回切演练。',
+    guide: 'ha-external-drill.md',
+  },
+  {
+    id: 'clipboard-policy',
+    scope: '网页和 noVNC、Windows x64/x86 Win32/OLE 及受控普通后代、显式启动的 Linux X11/Wayland 应用；支持方向、格式、大小、敏感文本和规则更新。既有未接入程序、受保护或打包应用与任意底层绕过不属于受管入口。',
+    pending: '本轮 Windows OLE IStream 路径的双架构普通应用验收；新项目 UID 桌面的 X11/Wayland、热更新、子进程和停止清理联测。',
+    guide: 'clipboard-policy.md',
+  },
+];
+
+let output = `# 未完成功能清单\n\n根据当前工作区源码生成。最初基线为 \`c669881\`，其目录中有 200 条未完成记录。\n\n目前共 ${all.length} 条目录记录，其中 **${count(all, 'available')} 条已实现，${unfinished.length} 条实现未完成**（${count(all, 'planned')} 条规划、${count(all, 'experimental')} 条部分实现）。按标识去重后为 ${new Set(unfinished.map((item) => item.id)).size} 个未完成标识；不同条目仍有范围重叠。\n\n实现完成表示目录描述范围内已有实际功能流程，不代表所有环境已经验收或安装依赖。本轮按要求先完成功能，测试留待后续；下方待验收项目不会计为测试通过。实际改动见 [本轮实现记录](capability-completion.md)，原失败和历史验证见 [历史清单](feature-completion-history.md)。\n\n| 目录 | 总数 | 已实现 | 部分实现 | 规划 | 实现未完成 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n`;
 for (const group of groups)
   output += `| ${group.name} | ${group.rows.length} | ${count(group.rows, 'available')} | ${count(group.rows, 'experimental')} | ${count(group.rows, 'planned')} | ${group.rows.filter((item) => item.state !== 'available').length} |\n`;
+
+output += '\n## 实现待办\n\n';
+if (!unfinished.length) output += '目录声明范围内无剩余实现待办。后续测试发现的缺陷仍需修复。\n';
 for (const group of groups) {
   if (!group.rows.some((item) => item.state !== 'available')) continue;
   const source = await readFile(group.file, 'utf8');
-  output += `\n## ${group.name}\n`;
-  let category = '';
+  output += `\n### ${group.name}\n\n`;
   for (const item of group.rows.filter((item) => item.state !== 'available')) {
-    if (category !== item.category) {
-      category = item.category;
-      output += `\n### ${category}\n\n`;
-    }
     const line = source.slice(0, source.indexOf("'" + item.id + "'")).split('\n').length;
-    output += `- [ ] **${item.name}**（${item.priority} · ${item.state === 'planned' ? '规划' : '部分实现'}） · [\`${item.id}\`](../${group.file}#L${line}) — ${notes[item.id] || item.summary + ' 对应完整流程尚未实现。'}\n`;
+    output += `- [ ] **${item.name}**（${item.priority} · ${item.state === 'planned' ? '规划' : '部分实现'}） · [\`${item.id}\`](../${group.file}#L${line}) — ${item.summary}\n`;
   }
 }
-output +=
-  '\n重新生成：`npm run features:audit`。上述目录状态由源码声明，真实硬件、多主机和外部身份服务仍需要对应环境验证。\n';
+
+output += '\n## 本轮收尾范围与待验收\n\n以下验收尚未在本轮执行；旧版本的成功记录不能代替当前构建验收。\n';
+for (const entry of acceptance) {
+  const item = all.find((candidate) => candidate.id === entry.id);
+  if (!item) throw new Error(`Acceptance record has no catalog entry: ${entry.id}`);
+  output += `\n### ${item.name}\n\n- 实现状态：${item.state === 'available' ? '已实现' : '仍待完成'}。\n- 范围：${entry.scope}\n- [ ] 待验收：${entry.pending}\n- 使用与部署：[相关文档](${entry.guide})。\n`;
+}
+output += '\n重新生成：`npm run features:audit`。该命令只读取目录并生成文档，不运行功能测试。\n';
 await writeFile('docs/unfinished-features.md', output);
-console.log(
-  `Unfinished: ${unfinished.length}; available entries: ${count(all, 'available')}; catalog records: ${all.length}`,
-);
+console.log(`Unfinished implementation: ${unfinished.length}; implemented: ${count(all, 'available')}; catalog records: ${all.length}; deferred acceptance groups: ${acceptance.length}`);

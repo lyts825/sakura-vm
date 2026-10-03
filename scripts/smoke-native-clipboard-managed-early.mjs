@@ -17,6 +17,7 @@ process.env.TEMP = process.env.TMP = root;
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const sources = ['server/native-clipboard.ts', 'native/windows-clipboard/controller.cpp',
   'native/windows-clipboard/policy.cpp', 'native/windows-clipboard/protocol.h',
+  'native/windows-clipboard/ole-text-stream.h',
   'native/windows-clipboard/early-import.h', 'native/windows-clipboard/control-system.h',
   'native/windows-clipboard/fixture.cpp', 'native/windows-clipboard/fixture-early-managed.cs',
   'scripts/build-native-clipboard.mjs', 'scripts/smoke-native-clipboard-managed-early.mjs'];

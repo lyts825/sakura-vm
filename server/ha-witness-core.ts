@@ -438,7 +438,10 @@ export class HaWitness {
       if (!await this.actions.applicationReady(vm, plan))
         throw new AppError('目标应用尚未通过健康检查，保持来源隔离', 409);
       await this.actions.confirmFence(vm);
-      if (await this.actions.trafficTarget(vm, plan) !== plan.remoteVmId)
+      const activeVmId = await this.actions.trafficTarget(vm, plan);
+      if (activeVmId && activeVmId !== vm.sourceVmId && activeVmId !== plan.remoteVmId)
+        throw new AppError('流量入口指向未知实例，拒绝覆盖现有路由', 409);
+      if (activeVmId !== plan.remoteVmId)
         await this.actions.switchTraffic(vm, plan);
       if (await this.actions.trafficTarget(vm, plan) !== plan.remoteVmId)
         throw new AppError('流量入口没有确认目标实例', 409);

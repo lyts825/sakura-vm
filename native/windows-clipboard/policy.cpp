@@ -64,10 +64,10 @@ static void blocked(bool copy) {
   if (shared) InterlockedIncrement64(copy ? &shared->blockedCopy : &shared->blockedPaste);
   SetLastError(ERROR_ACCESS_DENIED);
 }
-static bool direction(bool copy) {
-  const auto rule=current();
+static bool directionAllowed(bool copy,const Rule& rule) {
   return !rule.active || (rule.flags & (copy ? CopyAllowed : PasteAllowed));
 }
+static bool direction(bool copy) { return directionAllowed(copy,current()); }
 static bool formatAllowed(UINT format, const Rule& rule) {
   return !rule.active || format==CF_TEXT || format==CF_UNICODETEXT || format==CF_OEMTEXT ||
     format==CF_LOCALE || ((rule.flags & FilesAllowed) && !(rule.flags & Sensitive));
@@ -459,6 +459,8 @@ static bool attachExistingControls() {
   return controls.ready;
 }
 
+#include "ole-text-stream.h"
+
 // OLE uses cached IDataObject proxies as well as user32 calls. Check data at each
 // GetData, including a proxy obtained before a later policy tightening.
 class GuardedFormats final:public IEnumFORMATETC {
@@ -487,8 +489,8 @@ public:
       if(!count)break;
       const auto rule=current();
       const bool plain=value.cfFormat==CF_TEXT || value.cfFormat==CF_UNICODETEXT || value.cfFormat==CF_OEMTEXT;
-      if(direction(copy) && formatAllowed(value.cfFormat,rule) && (!rule.active || !plain || (value.tymed&TYMED_HGLOBAL))){
-        if(rule.active && plain)value.tymed=TYMED_HGLOBAL;
+      if(directionAllowed(copy,rule) && formatAllowed(value.cfFormat,rule) && (!rule.active || !plain || (value.tymed&(TYMED_HGLOBAL|TYMED_ISTREAM)))){
+        if(rule.active && plain)value.tymed&=TYMED_HGLOBAL|TYMED_ISTREAM;
         out[accepted++]=value;
       }else if(value.ptd)CoTaskMemFree(value.ptd);
     }
@@ -533,14 +535,32 @@ public:
     if (!format || !result) return E_POINTER;
     *result={};
     auto rule=current();
-    if (!direction(copy) || !formatAllowed(format->cfFormat,rule)) { blocked(copy); return E_ACCESSDENIED; }
+    if (!directionAllowed(copy,rule) || !formatAllowed(format->cfFormat,rule)) { blocked(copy); return E_ACCESSDENIED; }
+    FORMATETC request=*format;
+    if(rule.active && plainFormat(request.cfFormat)){
+      request.tymed&=TYMED_HGLOBAL|TYMED_ISTREAM;
+      if(!request.tymed)return DV_E_TYMED;
+    }
     STGMEDIUM data{};
-    const HRESULT answer=source->GetData(format,&data);
+    const HRESULT answer=source->GetData(&request,&data);
     if (FAILED(answer)) return answer;
     rule=current();
-    const bool plain=format->cfFormat==CF_TEXT || format->cfFormat==CF_UNICODETEXT || format->cfFormat==CF_OEMTEXT;
-    if (!direction(copy) || (rule.active && ((plain && data.tymed!=TYMED_HGLOBAL) ||
-        (data.tymed==TYMED_HGLOBAL && !contentAllowed(format->cfFormat,data.hGlobal,rule))))) {
+    if(rule.active && !(request.tymed&data.tymed)){
+      ReleaseStgMedium(&data);blocked(copy);return DV_E_TYMED;
+    }
+    if(rule.active && plainFormat(format->cfFormat) && data.tymed==TYMED_ISTREAM){
+      ClipboardTextStream snapshot;
+      const HRESULT captured=snapshot.capture(data.pstm,rule.maximum);
+      // The original provider may mutate its stream after GetData or while
+      // releasing it. Only the private checked bytes reach the consumer.
+      ReleaseStgMedium(&data);data={};
+      const auto latest=current();
+      if(FAILED(captured) || !directionAllowed(copy,latest) || !snapshot.allowed(format->cfFormat,latest)){
+        blocked(copy);return E_ACCESSDENIED;
+      }
+      return snapshot.releaseTo(result);
+    }
+    if (!clipboardMediumAllowed(format->cfFormat,data,copy)) {
       ReleaseStgMedium(&data); blocked(copy); return E_ACCESSDENIED;
     }
     *result=data; return answer;
@@ -548,13 +568,35 @@ public:
   HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC* format,STGMEDIUM* result) override {
     if (!current().active) return source->GetDataHere(format,result);
     if (!format || !result) return E_POINTER;
-    if (format->tymed!=TYMED_HGLOBAL || result->tymed!=TYMED_HGLOBAL || !result->hGlobal || result->pUnkForRelease)
+    const bool stream=format->tymed==TYMED_ISTREAM && result->tymed==TYMED_ISTREAM &&
+      result->pstm && plainFormat(format->cfFormat);
+    if (result->pUnkForRelease || (!stream &&
+        (format->tymed!=TYMED_HGLOBAL || result->tymed!=TYMED_HGLOBAL || !result->hGlobal)))
       return DV_E_TYMED;
     // Render into an owned temporary and inspect it before touching the
     // caller's buffer; never delegate a direct write to an unguarded source.
     STGMEDIUM data{};
     const HRESULT answer=GetData(format,&data);
     if (FAILED(answer)) return answer;
+    if(stream){
+      ClipboardTextStream snapshot;
+      const auto rule=current();
+      const HRESULT captured=data.tymed==TYMED_ISTREAM?
+        snapshot.capture(data.pstm,rule.active?rule.maximum:1048576):DV_E_TYMED;
+      ReleaseStgMedium(&data);
+      const auto latest=current();
+      if(FAILED(captured) || !directionAllowed(copy,latest) || !snapshot.allowed(format->cfFormat,latest)){
+        blocked(copy);return E_ACCESSDENIED;
+      }
+      const void* bytes=GlobalLock(snapshot.bytes);
+      if(!bytes)return E_OUTOFMEMORY;
+      ULONG written=0;
+      // GetDataHere appends at the caller's current cursor. Do not seek,
+      // truncate, replace, or take ownership of the caller's stream.
+      const HRESULT copied=result->pstm->Write(bytes,snapshot.length,&written);
+      GlobalUnlock(snapshot.bytes);
+      return FAILED(copied)?copied:written==snapshot.length?S_OK:STG_E_MEDIUMFULL;
+    }
     HRESULT outcome=S_OK;
     const SIZE_T length=data.tymed==TYMED_HGLOBAL ? GlobalSize(data.hGlobal) : 0;
     if (!direction(copy) || (data.tymed==TYMED_HGLOBAL && !contentAllowed(format->cfFormat,data.hGlobal,current()))) {
@@ -573,12 +615,28 @@ public:
   }
   HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* format) override {
     if (!format) return E_POINTER;
-    if (!direction(copy) || !formatAllowed(format->cfFormat,current())) return E_ACCESSDENIED;
-    return source->QueryGetData(format);
+    const auto rule=current();
+    if (!directionAllowed(copy,rule) || !formatAllowed(format->cfFormat,rule)) return E_ACCESSDENIED;
+    FORMATETC request=*format;
+    if(rule.active && plainFormat(request.cfFormat)){
+      request.tymed&=TYMED_HGLOBAL|TYMED_ISTREAM;
+      if(!request.tymed)return DV_E_TYMED;
+    }
+    return source->QueryGetData(&request);
   }
   HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC* a,FORMATETC* b) override { return source->GetCanonicalFormatEtc(a,b); }
   HRESULT STDMETHODCALLTYPE SetData(FORMATETC* format,STGMEDIUM* value,BOOL release) override {
     if (!format || !value) return E_POINTER;
+    if(current().active && value->tymed==TYMED_ISTREAM && plainFormat(format->cfFormat)){
+      if(format->tymed!=TYMED_ISTREAM)return DV_E_TYMED;
+      STGMEDIUM snapshot{};
+      const HRESULT captured=clipboardSnapshotStream(format->cfFormat,*value,true,&snapshot);
+      if(FAILED(captured)){blocked(true);return E_ACCESSDENIED;}
+      const HRESULT answer=source->SetData(format,&snapshot,release);
+      if(FAILED(answer) || !release)ReleaseStgMedium(&snapshot);
+      else ReleaseStgMedium(value); // Ownership transfers only on success.
+      return answer;
+    }
     if (!direction(true) || (current().active && (value->tymed!=TYMED_HGLOBAL || !contentAllowed(format->cfFormat,value->hGlobal,current())))) {
       blocked(true); return E_ACCESSDENIED;
     }
@@ -629,17 +687,27 @@ static bool preflightOleCopy(IDataObject* data) {
     const bool plain=plainFormat(format.cfFormat);
     // Keep mixed-format filtering: unapproved alternate formats are hidden by
     // GuardedData, rather than rejecting an otherwise valid plain-text copy.
-    if(formatAllowed(format.cfFormat,rule) && (!plain || (format.tymed&TYMED_HGLOBAL))){
+    if(formatAllowed(format.cfFormat,rule) && (!plain || (format.tymed&(TYMED_HGLOBAL|TYMED_ISTREAM)))){
       if(format.cfFormat!=CF_LOCALE)eligible=true;
       if(plain){
-        format.tymed=TYMED_HGLOBAL;STGMEDIUM medium{};
-        const HRESULT supplied=data->GetData(&format,&medium);
-        if(FAILED(supplied))allowed=false;
-        else {
-          const auto latest=current();
-          allowed=direction(true) && medium.tymed==TYMED_HGLOBAL && medium.hGlobal &&
-            contentAllowed(format.cfFormat,medium.hGlobal,latest);
-          ReleaseStgMedium(&medium);
+        const DWORD offered=format.tymed;
+        // Check every text medium we advertise, including objects that expose
+        // different bytes in HGLOBAL and IStream for the same format.
+        for(const DWORD kind:{DWORD(TYMED_HGLOBAL),DWORD(TYMED_ISTREAM)}){
+          if(!allowed || !(offered&kind))continue;
+          format.tymed=kind;STGMEDIUM medium{};
+          const HRESULT supplied=data->GetData(&format,&medium);
+          if(FAILED(supplied))allowed=false;
+          else {
+            if(medium.tymed!=kind)allowed=false;
+            else if(kind==TYMED_ISTREAM){
+              ClipboardTextStream snapshot;
+              const HRESULT captured=snapshot.capture(medium.pstm,current().maximum);
+              const auto latest=current();
+              allowed=SUCCEEDED(captured) && directionAllowed(true,latest) && snapshot.allowed(format.cfFormat,latest);
+            }else allowed=clipboardMediumAllowed(format.cfFormat,medium,true);
+            ReleaseStgMedium(&medium);
+          }
         }
       }
     }

@@ -26,6 +26,7 @@ const sources = [
   'native/windows-clipboard/descendant-policy.h', 'native/windows-clipboard/descendant-controller.h',
   'native/windows-clipboard/shell-provenance.h', 'native/windows-clipboard/shell-policy.h',
   'native/windows-clipboard/early-policy.def', 'native/windows-clipboard/policy.cpp',
+  'native/windows-clipboard/ole-text-stream.h',
   'native/windows-clipboard/controller.cpp', 'native/windows-clipboard/fixture.cpp',
   'native/windows-clipboard/fixture-shell.h', 'native/windows-clipboard/fixture-shell-call.h',
   'native/windows-clipboard/fixture-shell-dll.cpp', 'native/windows-clipboard/fixture-shell-child.cpp',
@@ -182,7 +183,7 @@ async function bareLaunch(image, args) {
 }
 try {
   await cp(resolve('.tools/native-clipboard'), assets, { recursive: true });
-  const manifest = JSON.parse(await readFile(join(assets, 'native-clipboard.json'), 'utf8')); assert.equal(manifest.version, 7); proof.build = manifest.build; proof.assets = manifest.files;
+  const manifest = JSON.parse(await readFile(join(assets, 'native-clipboard.json'), 'utf8')); assert.equal(manifest.version, 8); proof.build = manifest.build; proof.assets = manifest.files;
   for (const item of manifest.files) assert.equal(hash(await readFile(join(assets, item.name))), item.sha256);
   const snapshot = join(root, 'source-snapshot'); await cp(resolve('native/windows-clipboard'), join(snapshot, 'native/windows-clipboard'), { recursive: true });
   const include = join(snapshot, 'native/windows-clipboard');

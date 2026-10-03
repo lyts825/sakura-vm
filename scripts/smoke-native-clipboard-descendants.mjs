@@ -34,6 +34,7 @@ const sourceFiles = [
   'native/windows-clipboard/descendant-controller.h',
   'native/windows-clipboard/controller.cpp',
   'native/windows-clipboard/policy.cpp',
+  'native/windows-clipboard/ole-text-stream.h',
   'native/windows-clipboard/protocol.h',
   'native/windows-clipboard/early-import.h',
   'native/windows-clipboard/control-system.h',
@@ -579,7 +580,7 @@ async function legacyAssetsRoundtrip(image, childImage, version = 5) {
 try {
   await cp(resolve('.tools/native-clipboard'), assets, { recursive: true });
   const manifest = JSON.parse(await readFile(join(assets, 'native-clipboard.json'), 'utf8'));
-  assert.equal(manifest.version, 7);
+  assert.equal(manifest.version, 8);
   proof.build = manifest.build;
   proof.assets = manifest.files;
   const compiler64 = process.env.SAKURA_NATIVE_CLIPBOARD_CXX || 'g++.exe',

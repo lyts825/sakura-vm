@@ -128,8 +128,10 @@ export async function createHaWitnessActions(config: HaWitnessServerConfig): Pro
     const vm = entry(identity), url = new URL('/status', vm.traffic.baseUrl);
     url.searchParams.set('sourceVmId', vm.sourceVmId);
     const result = await haHttpsRequest(url.toString(), 'GET', undefined,
-      { bearer: vm.traffic.token, fingerprint: vm.traffic.fingerprint }) as { activeVmId?: string };
-    return result?.activeVmId || '';
+      { bearer: vm.traffic.token, fingerprint: vm.traffic.fingerprint }) as { activeVmId?: unknown };
+    if (result?.activeVmId !== null && !z.uuid().safeParse(result?.activeVmId).success)
+      throw new AppError('流量状态接口未返回有效实例身份或明确空路由', 502);
+    return result.activeVmId === null ? '' : result.activeVmId as string;
   };
   return {
     fence: async (identity) => {

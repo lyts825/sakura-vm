@@ -21,6 +21,7 @@ export class HaHostFailover {
   private phases: Record<string, string> = {};
   private targetVmIds: Record<string, string> = {};
   private pendingReturns = new Map<string, number>();
+  private statusPending = new Set<string>();
   private failbackPhases: Record<string, 'pending' | 'completed' | null> = {};
   private recoveries: Record<string, boolean> = {};
 
@@ -35,6 +36,7 @@ export class HaHostFailover {
     targetVmId: this.targetVmIds[id] || null,
     failback: this.failbackPhases[id] || null,
     recoveryHeld: !!this.recoveries[id],
+    statusPending: this.statusPending.has(id),
     error: this.errors[id] || null }; }
 
   private identity(id: string) {
@@ -120,12 +122,10 @@ export class HaHostFailover {
   async init() {
     // A completed rejoin survives local policy revocation and source-service
     // restart. Discover its pending routing work from the durable witness.
-    if (this.client) await Promise.all([...this.machines.records.values()].map(async (vm) => {
-      try {
-        const status = await this.client!.status(this.identity(vm.id));
-        this.recordStatus(vm.id, status);
-      } catch { /* Unregistered VMs do not participate in witness failover. */ }
-    }));
+    if (this.client) {
+      for (const id of this.machines.records.keys()) this.statusPending.add(id);
+      await this.refreshPendingStatuses();
+    }
     await this.keepalive();
     this.keepaliveTimer = setInterval(() => void this.keepalive().catch((error) =>
       console.error('宿主失联独立心跳失败：', error)), 5_000);
@@ -145,6 +145,7 @@ export class HaHostFailover {
   }
 
   private recordStatus(id: string, status: Awaited<ReturnType<HaWitnessClient['status']>>) {
+    this.statusPending.delete(id);
     this.phases[id] = status.phase || '';
     this.targetVmIds[id] = status.targetVmId || '';
     this.recoveries[id] = !!status.recoveryHeld;
@@ -154,7 +155,30 @@ export class HaHostFailover {
       this.rememberReturn(id, status.failureThreshold, status.failback?.phase || null);
   }
 
+  private async refreshPendingStatuses() {
+    if (!this.client || this.closed) return;
+    await Promise.all([...this.statusPending].map(async (id) => {
+      if (!this.machines.records.has(id)) { this.statusPending.delete(id); return; }
+      try {
+        const status = await this.client!.status(this.identity(id));
+        if (!status.error) delete this.errors[id];
+        this.recordStatus(id, status);
+      } catch (error) {
+        // An authenticated absence is final for unrelated VMs. Transient
+        // outages must remain retryable even after policy/enrollment removal.
+        if (error instanceof AppError && error.code === 'HA_WITNESS_NOT_REGISTERED') {
+          this.statusPending.delete(id);
+          if (this.machines.get(id).haWitnessEnrollment)
+            this.errors[id] = error.message;
+          else delete this.errors[id];
+        } else this.errors[id] = (error as Error).message;
+      }
+    }));
+  }
+
   private async scan() {
+    if (this.closed) return;
+    await this.refreshPendingStatuses();
     if (this.closed) return;
     const policies = await this.policies();
     for (const vm of this.machines.records.values()) {
@@ -256,13 +280,19 @@ export class HaHostFailover {
     if (!this.client) throw new AppError('见证节点未配置', 503);
     const result = await this.client.rejoin({ ...this.identity(id), dataReconciled: true });
     if (result.failback === 'pending') {
-      const status = await this.client.status(this.identity(id));
-      this.recordStatus(id, status);
+      // The release has already been durably accepted. A lost follow-up status
+      // must not discard pending routing work or report the release as failed.
+      this.statusPending.add(id);
+      this.failbackPhases[id] = 'pending';
+      const enrollment = this.machines.get(id).haWitnessEnrollment;
+      if (enrollment) this.pendingReturns.set(id, enrollment.failureThreshold);
+      try { this.recordStatus(id, await this.client.status(this.identity(id))); }
+      catch (error) { this.errors[id] = (error as Error).message; }
     }
     this.armed[id] = false;
     this.phases[id] = 'source';
     this.recoveries[id] = false;
-    delete this.errors[id];
+    if (!this.statusPending.has(id)) delete this.errors[id];
     return { ready: true, executed: true, ...result,
       message: result.failback === 'pending'
         ? '目标副本已退役，来源可重新启动；见证将确认来源应用健康后回切流量。'

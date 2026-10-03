@@ -8,6 +8,13 @@ type HttpsOptions = {
   fingerprint?: string; ca?: Buffer; timeoutMs?: number; maxResponseBytes?: number;
 };
 
+/** Keep the authenticated HTTP status available without forwarding upstream bodies. */
+export class HaWitnessHttpError extends AppError {
+  constructor(readonly upstreamStatus: number) {
+    super(`见证上游返回 HTTP ${upstreamStatus}`, 502);
+  }
+}
+
 /** JSON/empty HTTPS request with bounded bodies and either PKI or an exact certificate pin. */
 export function haHttpsRequest(urlText: string, method: 'GET' | 'POST',
   payload: unknown, options: HttpsOptions = {}): Promise<unknown> {
@@ -40,7 +47,7 @@ export function haHttpsRequest(urlText: string, method: 'GET' | 'POST',
       response.on('end', () => {
         try {
           if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300)
-            throw new AppError(`见证上游返回 HTTP ${response.statusCode || 0}`, 502);
+            throw new HaWitnessHttpError(response.statusCode || 0);
           const raw = Buffer.concat(chunks).toString('utf8');
           resolve(raw ? JSON.parse(raw) : null);
         } catch (error) { reject(error); }

@@ -541,15 +541,24 @@ export function desktopUidCommand(runId: string, input: DesktopPreferences, dist
     .replaceAll('/usr/local/libexec/sakura-apply-layout', '$SAKURA_DESKTOP_RUNTIME/apply-layout')
     .replaceAll('file://$HOME/', 'file://$HOME/')
     .replace('Xvnc :1', (distro === 'alpine' ? '/usr/bin/Xvnc' : '/usr/bin/Xtigervnc') + ' :1');
+  const interpreterEntry = (script: string, direct: string, interpreted: string) => {
+    if (script.split(direct).length !== 2) throw new Error('Desktop trusted runtime entry changed');
+    return script.replace(direct, interpreted);
+  };
   const configuration = desktopConfigScript(preferences).match(/<<'SAKURA_PREFERENCES'\n([\s\S]*?)\nSAKURA_PREFERENCES/)![1];
   let session = transform(body('SAKURA_SESSION'));
+  // /run can be mounted noexec. The generated session already enters via
+  // /bin/sh; Plasma and layout must use the same interpreter entry.
   session = session.replace('export DISPLAY=:1 XDG_RUNTIME_DIR=$SAKURA_DESKTOP_RUNTIME', 'export DISPLAY=:1 XDG_RUNTIME_DIR="$SAKURA_DESKTOP_RUNTIME"')
-    .replace('export XAUTHORITY=$SAKURA_DESKTOP_RUNTIME/Xauthority', 'export XAUTHORITY="$SAKURA_DESKTOP_RUNTIME/Xauthority"')
-    .replace('dbus-run-session -- $SAKURA_DESKTOP_RUNTIME/plasma-session', 'dbus-run-session -- "$SAKURA_DESKTOP_RUNTIME/plasma-session"');
+    .replace('export XAUTHORITY=$SAKURA_DESKTOP_RUNTIME/Xauthority', 'export XAUTHORITY="$SAKURA_DESKTOP_RUNTIME/Xauthority"');
+  session = interpreterEntry(session, 'dbus-run-session -- $SAKURA_DESKTOP_RUNTIME/plasma-session',
+    'dbus-run-session -- /bin/sh "$SAKURA_DESKTOP_RUNTIME/plasma-session"');
   // Generated UID paths are quoted, including native HOMEs with UUID names.
   // Native HOME/runtime names contain only the fixed administrator prefix and
   // UUIDs. Keep the original embedded Plasma JavaScript quoting intact.
-  const plasma = transform(body('SAKURA_PLASMA')), layout = transform(body('SAKURA_LAYOUT'));
+  const plasma = interpreterEntry(transform(body('SAKURA_PLASMA')), '$SAKURA_DESKTOP_RUNTIME/apply-layout &',
+    '/bin/sh "$SAKURA_DESKTOP_RUNTIME/apply-layout" &');
+  const layout = transform(body('SAKURA_LAYOUT'));
   const wallpapers = [['SAKURA_WALLPAPER', 'sakura'], ['MIDNIGHT_WALLPAPER', 'midnight'], ['PAPER_WALLPAPER', 'paper']]
     .map(([marker, name]) => `cat > "$HOME/.local/share/wallpapers/${name}.svg" <<'${marker}'\n${body(marker)}\n${marker}`).join('\n');
   return `set -eu\numask 077\nexport SAKURA_DESKTOP_RUNTIME=${quote('/run/sakura-desktop-uid/' + uid + '/' + runId)}\n` +

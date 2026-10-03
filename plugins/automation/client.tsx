@@ -140,7 +140,8 @@ type NextView = {
   haLocalFailover?: { error: string | null } | null;
   haHostFailover?: { configured: boolean; armed: boolean; phase: string | null;
     targetVmId: string | null; error: string | null;
-    failback?: 'pending' | 'completed' | null; recoveryHeld?: boolean } | null;
+    failback?: 'pending' | 'completed' | null; recoveryHeld?: boolean;
+    statusPending?: boolean } | null;
   executions?: Array<{
     featureId: string;
     action: string;
@@ -404,6 +405,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   const runExtended = (featureId: string) =>
     action.run(async () => {
       const instructions: Record<string, string> = {
+        'network-isolation':
+          '打开工作空间 → 项目，选择当前工作项目，在“项目网络”中选择“独立命名空间（仅回环，无外网）”并保存。按页面提示完成目录权限迁移后点击“启动开发”；修改已有项目网络前先停止其运行。返回能力中心点击“检查”，只读核对账号、网络及出站限制。',
         'image-import': '打开镜像库 → 导入其他镜像，选择 RAW、VMDK、VHDX 或 OVA 文件及对应 Linux 发行版。镜像须支持 NoCloud/Tiny Cloud 初始化。',
         'rescue-boot':
           '启用磁盘快照插件，在停止实例的快照页使用“只读救援”。临时系统只读检查源盘，执行结束后清理；需要保留的文件请复制到 /workspace 并列为产物。',
@@ -472,7 +475,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       });
       setExtendedResult(JSON.stringify(result, null, 2));
       extended.reload();
-    }, '扩展能力任务已提交');
+    }, featureId === 'network-isolation' ? '' : '扩展能力任务已提交');
   const runExtendedOperation = () =>
     action.run(async () => {
       const item = extended.data?.operations.find((value) => value.id === extendedOperation);
@@ -507,6 +510,19 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
     });
   const runNext = (featureId: string) =>
     action.run(async () => {
+      if (featureId === 'ha-failover') {
+        const panel = document.getElementById(`ha-failover-${active.id}`);
+        panel?.scrollIntoView({ block: 'start' });
+        panel?.focus({ preventScroll: true });
+        return;
+      }
+      if (featureId === 'clipboard-policy') {
+        const result = await request(`/vms/${active.id}/next-features`, 'POST',
+          { action: 'check', featureId });
+        setNextResult(typeof result?.message === 'string' ? result.message : JSON.stringify(result, null, 2));
+        next.reload();
+        return;
+      }
       if (featureId === 'usb-hotplug') {
         setShowUsbHotplug((value) => !value);
         return;
@@ -568,7 +584,8 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
       const result = await request(`/vms/${active.id}/next-features`, 'POST', { action: 'run', featureId });
       setNextResult(JSON.stringify(result, null, 2));
       next.reload();
-    }, '第三批能力任务已提交');
+    }, featureId === 'ha-failover' || featureId === 'clipboard-policy'
+      ? undefined : '第三批能力任务已提交');
 
   return (
     <div className="content-panel feature-panel management-page">
@@ -1044,6 +1061,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   onClick={() => runExtended(feature.id)}
                 >
                   {[
+                    'network-isolation',
                     'terminal-layouts',
                     'sync-window',
                     'sync-queue',
@@ -1143,9 +1161,11 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
                   disabled={
                     action.busy || feature.state !== 'available' || feature.id === 'incident-lockdown'
                   }
+                  aria-controls={feature.id === 'ha-failover' ? `ha-failover-${active.id}` : undefined}
                   onClick={() => runNext(feature.id)}
                 >
-                  {feature.id === 'backup-throttle' ? '使用说明' : '运行'}
+                  {feature.id === 'ha-failover' ? '配置接管' :
+                    feature.id === 'backup-throttle' || feature.id === 'clipboard-policy' ? '使用说明' : '运行'}
                 </button>
               </div>
             ))}

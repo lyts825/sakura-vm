@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { haHttpsRequest } from './ha-witness-http.ts';
+import { HaWitnessHttpError, haHttpsRequest } from './ha-witness-http.ts';
 import { haWitnessHeartbeatSchema, haWitnessIdentitySchema } from './ha-witness-core.ts';
 import { AppError } from './model.ts';
 
@@ -52,7 +52,11 @@ export class HaWitnessClient {
 
   async status(input: unknown) {
     const value = haWitnessIdentitySchema.parse(input);
-    const result = await this.call('/v1/status', value) as {
+    const result = await this.call('/v1/status', value).catch((error: unknown) => {
+      if (error instanceof HaWitnessHttpError && error.upstreamStatus === 404)
+        throw new AppError('见证节点未登记此来源实例', 404, 'HA_WITNESS_NOT_REGISTERED');
+      throw error;
+    }) as {
       phase?: string; armed?: boolean; lastHeartbeatAt?: number;
       targetVmId?: string | null; targetHostId?: string;
       failureThreshold?: number; error?: string | null;
