@@ -1,28 +1,30 @@
 import type { FeatureSuite } from './feature-suite.ts';
+import { scheduler, type Scheduler, type ScheduleHandle } from './scheduler.ts';
 
-/** The periodic worker is owned by its own plugin. */
+/** The plugin owns its registration; the host scheduler owns periodic wakeups. */
 export class FeatureScheduler {
-  private timer: ReturnType<typeof setInterval>;
-  private pending?: Promise<void>;
-  private closed = false;
+  private registration: ScheduleHandle;
   private disable: () => void;
-  constructor(private suite: FeatureSuite) {
+  private closeTask?: Promise<void>;
+  constructor(private suite: FeatureSuite, schedules: Scheduler = scheduler) {
     this.disable = suite.enableBackground();
-    this.timer = setInterval(() => this.run(), 30_000);
-    this.timer.unref();
-    this.run();
+    try { this.registration = schedules.register({ owner: 'plugin:automation-scheduler', label: 'Feature suite background checks',
+      intervalMs: 30_000, immediate: true, overlap: 'skip', catchUp: 'once', timeoutMs: 120_000,
+      backoff: { initialMs: 30_000, maxMs: 5 * 60_000 },
+      run: async ({ signal }) => {
+        signal.throwIfAborted();
+        this.disable = this.suite.enableBackground();
+        const disable = this.disable;
+        signal.addEventListener('abort', disable, { once: true });
+        try { await this.suite.tick(); }
+        finally { signal.removeEventListener('abort', disable); }
+      } }); }
+    catch (error) { this.disable(); throw error; }
   }
-  private run() {
-    if (this.closed || this.pending) return;
-    const task = this.suite.tick().catch(() => {}).finally(() => {
-      if (this.pending === task) this.pending = undefined;
-    });
-    this.pending = task;
-  }
-  async close() {
-    this.closed = true;
-    clearInterval(this.timer);
-    this.disable();
-    await this.pending;
+  close(): Promise<void> {
+    return this.closeTask ||= (async () => {
+      this.disable();
+      await this.registration.close();
+    })().catch((error) => { this.closeTask = undefined; throw error; });
   }
 }

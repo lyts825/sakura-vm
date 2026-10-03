@@ -6,12 +6,25 @@ export type JobMeta = {
   action?: string;
   projectId?: string;
   execution?: SandboxExecution;
+  /** Stable resource owner; defaults to the Jobs scope. */
+  owner?: string;
+  lane?: 'interactive' | 'background' | 'control';
+  admissionTimeoutMs?: number;
 };
 export type JobView = JobMeta & {
   id?: string;
   key?: string;
   scope?: string;
   status: 'running' | 'done' | 'error' | 'cancelled' | 'interrupted';
+  /** Queued jobs remain status=running for existing consumers. */
+  admission?: 'queued' | 'running' | 'cancelling' | 'cleanup-pending';
+  queuedAt?: string;
+  executionStartedAt?: string;
+  resourceWait?: { resource: string; reason: string; since: string };
+  resourceLeaseId?: string;
+  cleanupLeaseId?: string;
+  cleanupResolvedAt?: string;
+  delegatedFrom?: string;
   log: string;
   error?: string;
   errorCode?: string;
