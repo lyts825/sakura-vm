@@ -4,7 +4,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Readable, Writable } from 'node:stream';
+import { PassThrough, Readable, Writable } from 'node:stream';
+import { hostRuntime } from '../server/host-runtime/index.ts';
 import ssh2 from 'ssh2';
 import type { Machines } from '../server/machines.ts';
 import type { Engine } from '../server/runtime.ts';
@@ -100,10 +101,12 @@ test('clone cancellation after conversion does not publish a VM or remove its so
   const machines = {
     locked: async (_id: string, work: () => Promise<unknown>) => work(),
     requireStopped: () => {},
+    storagePools: { directory: (id: string) => join(root, 'machines', id) },
     get: () => ({ ...createSchema.parse({ name: 'original' }), snapshots: [] }),
     engine: {
       run: async (_command: string, args: string[], options?: { signal?: AbortSignal }) => {
         signal = options?.signal;
+        if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
         await writeFile(args.at(-1)!, disk);
         abort.abort();
         return '';
@@ -133,9 +136,14 @@ test('cloning an older snapshot uses its controller identity instead of the curr
   const machines = {
     locked: async (_id: string, work: () => Promise<unknown>) => work(),
     requireStopped: () => {},
+    storagePools: { directory: (id: string) => join(root, 'machines', id) },
     get: () => ({ ...createSchema.parse({ name: 'original' }), snapshots: [{ id: snapshot }] }),
     engine: {
       run: async (_command: string, args: string[]) => {
+        if (args[0] === 'measure') {
+          assert.equal(args[args.indexOf('-l') + 1], snapshot);
+          return JSON.stringify({ required: disk.length });
+        }
         assert.deepEqual(args.slice(5, 7), ['-l', snapshot]);
         await writeFile(args.at(-1)!, disk);
         return '';
@@ -160,7 +168,8 @@ async function resizeFixture(t: TestContext) {
   const machines = new MachineManager({
     runtime: { close: async () => {} },
     run: async (_tool, args) => {
-      if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
+      if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
+    if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
       return '{}';
     },
   } as Engine);
@@ -304,6 +313,7 @@ test('bundle export selects historical snapshot disk, identity, and resize state
   const calls: string[][] = [];
   machines.engine.run = async (_tool, args) => {
     calls.push(args);
+    if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
     if (args[0] === 'convert') await writeFile(args.at(-1)!, args.includes('-l') ? historicalDisk : disk);
     return '{}';
   };
@@ -311,7 +321,8 @@ test('bundle export selects historical snapshot disk, identity, and resize state
   const sha256 = await bundles.export(id, new Writable({
     write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
   }), () => {}, undefined, 0, snapshot);
-  assert.deepEqual(calls[0].slice(5, 7), ['-l', snapshot]);
+  assert.equal(calls.find((call) => call[0] === 'measure')![7], snapshot);
+  assert.deepEqual(calls.find((call) => call[0] === 'convert')!.slice(5, 7), ['-l', snapshot]);
   assert.equal(sha256, createHash('sha256').update(historicalDisk).digest('hex'));
   const contents = Buffer.concat(chunks);
   const length = contents.readUInt32BE(8);
@@ -354,10 +365,12 @@ test('UEFI firmware choice survives portable export, import, and clone', async (
   const machines = {
     locked: async (_id: string, work: () => Promise<unknown>) => work(),
     requireStopped: () => {},
+    storagePools: { directory: (id: string) => join(root, 'machines', id) },
     get: () => vm,
     snapshotIdentity: async () => ({ key: key.privateText, seed }),
     engine: { run: async (_tool: string, args: string[]) => {
-      if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
+      if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
+    if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
       return '{}';
     } },
     adopt: async (config: unknown) => { adopted.push(config); return { id: randomUUID() }; },
@@ -449,4 +462,34 @@ test('tampered TPM state is rejected before import and backup verification', asy
   const file = join(root, `${id}-tampered.sakura`);
   await writeFile(file, tampered);
   await assert.rejects(verifyBackup(file, new AbortController().signal), /TPM 状态校验失败/);
+});
+
+
+test('two opposite bundle transfers sharing one host runtime leave admission for their inbound writes', { timeout: 10_000 }, async (t) => {
+  const a = await resizeFixture(t), b = await resizeFixture(t);
+  const payload = Buffer.alloc(2 * 1024 ** 2); disk.copy(payload);
+  let converted = 0;
+  for (const fixture of [a, b]) {
+    await writeFile(join(vmDir(fixture.id), 'disk.qcow2'), payload);
+    fixture.machines.engine.run = async (_tool, args) => {
+      if (args[0] === 'measure') return JSON.stringify({ required: payload.length });
+      if (args[0] === 'convert') {
+        converted++;
+        const slots = hostRuntime.snapshot().budgets.find((item) => item.key === 'partition:storage.outbound');
+        assert.equal(slots?.used, 1, 'Only one network export can consume the host outbound allowance');
+        await writeFile(args.at(-1)!, payload);
+      }
+      return '{}';
+    };
+  }
+  const ab = new PassThrough({ highWaterMark: 16 * 1024 }), ba = new PassThrough({ highWaterMark: 16 * 1024 });
+  const abort = AbortSignal.timeout(8000);
+  const [receivedB, receivedA] = await Promise.all([
+    b.bundles.import('received-a', ab, abort), a.bundles.import('received-b', ba, abort),
+    a.bundles.export(a.id, ab, () => {}, abort), b.bundles.export(b.id, ba, () => {}, abort),
+  ]);
+  assert.equal(converted, 2);
+  assert.deepEqual(await readFile(join(vmDir(receivedB.id), 'disk.qcow2')), payload);
+  assert.deepEqual(await readFile(join(vmDir(receivedA.id), 'disk.qcow2')), payload);
+  assert.equal(hostRuntime.snapshot().resources.filter((item) => item.kind === 'storage').length, 0);
 });

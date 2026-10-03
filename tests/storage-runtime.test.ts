@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { HostRuntime } from '../server/host-runtime/index.ts';
 import { StorageRuntime, type StorageLease, type StorageRequest } from '../server/storage-runtime.ts';
 
@@ -163,4 +166,74 @@ test('buffer and file budgets reject impossible declarations without filesystem 
   assert.equal(mutations, 0);
   assert.equal(used(host, 'io'), 0);
   host.close();
+});
+
+test('incremental reservations count materialized bytes once and reject before writing past free space', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sakura-growth-')),
+    file = join(root, 'part');
+  const host = governor();
+  const runtime = new StorageRuntime(host, async (path) => ({
+    key: 'disk',
+    path,
+    totalBytes: 100,
+    freeBytes: 100 - (await stat(file).catch(() => ({ size: 0 }))).size,
+  }));
+  const abort = new AbortController();
+  const lease = await runtime.acquire(
+    request('growth', { paths: [file], dynamicTemporary: [file], signal: abort.signal }),
+  );
+  try {
+    await lease.reserveTemporary(file, 60);
+    await writeFile(file, Buffer.alloc(60));
+    await lease.reserveTemporary(file, 90);
+    await writeFile(file, Buffer.alloc(90));
+    assert.equal(used(host, 'storage.temporary:disk'), 90);
+    await assert.rejects(lease.reserveTemporary(file, 101), { code: 'STORAGE_SPACE_REQUIRED' });
+    assert.equal((await stat(file)).size, 90, 'Denied growth must not reach the writer');
+    assert.equal(used(host, 'storage.temporary:disk'), 90, 'A failed growth keeps the prior reservation');
+    abort.abort();
+    await assert.rejects(lease.reserveTemporary(file, 91), { name: 'AbortError' });
+    await rm(file);
+    await lease.releaseTemporary(file); // Cleanup is allowed after cancellation.
+    assert.equal(used(host, 'storage.temporary:disk'), 1);
+  } finally {
+    lease.release();
+    host.close();
+    assert.equal(dirname(root), resolve(tmpdir()));
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('governor resize refusal rolls the storage ledger back across runtime instances', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sakura-growth-ledger-'));
+  const host = governor(),
+    inspect = async (path: string) => ({ key: 'disk', path, totalBytes: 100, freeBytes: 100 });
+  const runtime = new StorageRuntime(host, inspect),
+    sibling = new StorageRuntime(host, inspect);
+  const lease = await runtime.acquire(request('growth', { paths: [root], dynamicTemporary: [root] }));
+  const external = await host.acquire({
+    owner: 'test:capacity',
+    kind: 'fixture',
+    label: 'Other committed allocation',
+    cost: {},
+    partitions: [{ key: 'storage.temporary:disk', limit: 100, amount: 20 }],
+  });
+  try {
+    await lease.reserveTemporary(join(root, 'first'), 60);
+    await assert.rejects(lease.reserveTemporary(join(root, 'first'), 90), { code: 'RESOURCE_CAPACITY' });
+    assert.equal(used(host, 'storage.temporary:disk'), 80);
+    external.release();
+    const second = await sibling.acquire(
+      request('second', { paths: [root], temporary: [{ path: root, bytes: 40 }] }),
+    );
+    second.release(); // Would fail free-space recheck if the rejected growth left 90 in the shared ledger.
+    await lease.reserveTemporary(join(root, 'first'), 100);
+    assert.equal(used(host, 'storage.temporary:disk'), 100);
+  } finally {
+    external.release();
+    lease.release();
+    host.close();
+    assert.equal(dirname(root), resolve(tmpdir()));
+    await rm(root, { recursive: true, force: true });
+  }
 });

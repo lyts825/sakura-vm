@@ -30,6 +30,7 @@ async function fixture(t: TestContext) {
     folder = join(root, 'library-' + id);
   const engine = {
     run: async (_tool: string, args: string[]) => {
+      if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
       if (args[0] === 'convert') await copyFile(args.at(-2)!, args.at(-1)!);
       return '{}';
     },
@@ -119,12 +120,12 @@ test('golden image operations reject running and sandbox sources, require review
   const running = new Promise<void>((resolve) => {
     entered = resolve;
   });
-  f.bundles.export = async (_id, _target, _headers, signal) => {
+  f.bundles.withExportBudget = async (_id, signal) => {
     entered();
     await new Promise<void>((_resolve, reject) =>
       signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }),
     );
-    return '0'.repeat(64);
+    throw new Error('Cancelled operation cannot publish');
   };
   const abort = new AbortController();
   const pending = f.service.action(

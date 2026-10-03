@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { DATA, IMAGE } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { Jobs } from './jobs.ts';
+import { storageRuntime, storageGrowth } from './storage-runtime.ts';
 
 const { fetch } = networkFor('core:images');
 
@@ -51,8 +52,7 @@ export const distributions = {
 } as const;
 export type Distro = keyof typeof distributions;
 export function distroInfo(id: string = 'alpine', architecture: string = 'x86_64') {
-  if (architecture !== 'x86_64' && architecture !== 'aarch64')
-    throw new AppError('未知客户机架构');
+  if (architecture !== 'x86_64' && architecture !== 'aarch64') throw new AppError('未知客户机架构');
   const key = architecture === 'aarch64' ? `${id}-arm64` : id;
   if (!Object.hasOwn(distributions, key)) throw new AppError('未知发行版或架构');
   return distributions[key as Distro];
@@ -84,56 +84,88 @@ export class Images {
       id,
       async (log, signal, update) => {
         const timeout = AbortSignal.any([signal, AbortSignal.timeout(30 * 60 * 1000)]);
-        await mkdir(dirname(info.file), { recursive: true });
-        const temp = `${info.file}.${randomUUID()}.part`;
-        try {
-          log('读取官方校验清单…\n');
-          const sums = await fetch(info.sums, { signal: timeout });
-          if (!sums.ok) throw new Error(`校验清单下载失败：${sums.status}`);
-          const expected = checksumFor(await sums.text(), info.url.split('/').at(-1)!);
-          const response = await fetch(info.url, { signal: timeout });
-          if (!response.ok || !response.body) throw new Error(`镜像下载失败：${response.status}`);
-          const hash = createHash(info.algorithm);
-          const total = Number(response.headers.get('content-length'));
-          let size = 0,
-            reported = 0;
-          await pipeline(
-            Readable.fromWeb(response.body as any),
-            new Transform({
-              transform(chunk, _encoding, cb) {
-                size += chunk.length;
-                if (size > 4 * 1024 ** 3) return cb(new Error('镜像超过 4 GiB'));
-                hash.update(chunk);
-                if (size - reported >= 32 * 1024 ** 2) {
-                  reported = size;
-                  log(`已下载 ${Math.round(size / 1024 ** 2)} MiB\n`);
-                  update('下载镜像', total > 0 ? (size / total) * 95 : undefined);
-                }
-                cb(null, chunk);
-              },
-            }),
-            createWriteStream(temp, { flags: 'wx' }),
-            { signal: timeout },
-          );
-          if (hash.digest('hex') !== expected) throw new Error('镜像校验失败，请重试');
-          await rename(temp, info.file);
-          await writeFile(
-            `${info.file}.source.json`,
-            JSON.stringify(
-              {
-                url: info.url,
-                algorithm: info.algorithm,
-                checksum: expected,
-                downloadedAt: new Date().toISOString(),
-              },
-              null,
-              2,
-            ),
-          );
-          log('校验通过，镜像已就绪。\n');
-        } finally {
-          await rm(temp, { force: true });
-        }
+        return storageRuntime.run(
+          {
+            owner: 'core:images',
+            taskId: 'image:' + id,
+            label: 'Download verified image',
+            mode: 'write',
+            paths: [info.file],
+            dynamicTemporary: [info.file],
+            buffers: 3 * 1024 ** 2,
+            files: 3,
+            signal: timeout,
+          },
+          async (lease) => {
+            await mkdir(dirname(info.file), { recursive: true });
+            const temp = `${info.file}.${randomUUID()}.part`;
+            try {
+              log('读取官方校验清单…\n');
+              const sums = await fetch(info.sums, { signal: timeout });
+              if (!sums.ok) throw new Error(`校验清单下载失败：${sums.status}`);
+              if (!sums.body) throw new Error('校验清单缺失');
+              const chunks: Buffer[] = [];
+              let sumBytes = 0;
+              for await (const chunk of Readable.fromWeb(sums.body as any)) {
+                sumBytes += (chunk as Buffer).length;
+                if (sumBytes > 1024 ** 2) throw new Error('校验清单超过 1 MiB');
+                chunks.push(chunk as Buffer);
+              }
+              const expected = checksumFor(
+                Buffer.concat(chunks).toString('utf8'),
+                info.url.split('/').at(-1)!,
+              );
+              const response = await fetch(info.url, { signal: timeout });
+              if (!response.ok || !response.body) throw new Error(`镜像下载失败：${response.status}`);
+              const hash = createHash(info.algorithm);
+              const total = Number(response.headers.get('content-length'));
+              let size = 0,
+                reported = 0;
+              await pipeline(
+                Readable.fromWeb(response.body as any),
+                new Transform({
+                  transform(chunk, _encoding, cb) {
+                    size += chunk.length;
+                    if (size > 4 * 1024 ** 3) return cb(new Error('镜像超过 4 GiB'));
+                    hash.update(chunk);
+                    if (size - reported >= 32 * 1024 ** 2) {
+                      reported = size;
+                      log(`已下载 ${Math.round(size / 1024 ** 2)} MiB\n`);
+                      update('下载镜像', total > 0 ? (size / total) * 95 : undefined);
+                    }
+                    cb(null, chunk);
+                  },
+                }),
+                storageGrowth(lease, temp, 4 * 1024 ** 3),
+                createWriteStream(temp, { flags: 'wx' }),
+                { signal: timeout },
+              );
+              if (hash.digest('hex') !== expected) throw new Error('镜像校验失败，请重试');
+              await rename(temp, info.file);
+              await writeFile(
+                `${info.file}.source.json`,
+                JSON.stringify(
+                  {
+                    url: info.url,
+                    algorithm: info.algorithm,
+                    checksum: expected,
+                    downloadedAt: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              );
+              log('校验通过，镜像已就绪。\n');
+            } finally {
+              try {
+                await rm(temp, { force: true });
+              } catch (error) {
+                lease.cleanupPending(error);
+                throw error;
+              }
+            }
+          },
+        );
       },
       { title: `下载 ${info.name}`, action: 'prepare' },
     );

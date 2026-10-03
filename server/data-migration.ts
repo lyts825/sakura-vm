@@ -3,6 +3,8 @@ import { constants } from 'node:fs';
 import { join, relative, dirname, resolve, basename, isAbsolute } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { DATA } from './paths.ts';
+import { storageRuntime } from './storage-runtime.ts';
+import { DataDirectoryOwner } from './data-directory-owner.ts';
 import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import { Jobs } from './jobs.ts';
@@ -14,6 +16,7 @@ export class DataMigration {
   jobs = new Jobs('migration');
   private target?: string;
   private copyPublished = false;
+  private retainedOwner?: DataDirectoryOwner;
   blocked = false;
   constructor(
     private machines: Machines,
@@ -66,8 +69,7 @@ export class DataMigration {
       throw new AppError('目标目录不能与当前数据目录相同或相互包含');
     if (this.machines.storagePools.conflictsWithDataTarget(target))
       throw new AppError('目标目录不能与已注册存储池相互包含', 409);
-    if ([...this.machines.records.values()].some((vm) =>
-      vm.storagePoolId && vm.storagePoolId !== 'default'))
+    if ([...this.machines.records.values()].some((vm) => vm.storagePoolId && vm.storagePoolId !== 'default'))
       throw new AppError('请先将外部存储池的实例迁回默认池，再迁移数据目录', 409);
     const exists = await lstat(target).catch((error) => {
       if (error.code !== 'ENOENT') throw error;
@@ -101,120 +103,163 @@ export class DataMigration {
       const job = this.jobs.start(
         'data',
         async (log, signal, update) => {
-          let staged = false;
+          const owner = await DataDirectoryOwner.acquire(plan.target, { create: false });
+          let unsafeCleanup = false;
           try {
-            await mkdir(dirname(stage), { recursive: true });
-            await mkdir(stage, { mode: 0o700 });
-            staged = true;
-            let copied = 0;
-            for (const file of plan.files) {
-              signal.throwIfAborted();
-              const sourceFile = join(this.source, file.path),
-                destination = join(stage, file.path);
-              if (!within(stage, destination)) throw new AppError('迁移路径越界');
-              await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
-              update(`复制与校验 ${file.path}`, plan.bytes ? (copied / plan.bytes) * 75 : 0);
-              await copyFile(sourceFile, destination, constants.COPYFILE_EXCL);
-              const [before, after] = await Promise.all([
-                fileHash(sourceFile, signal),
-                fileHash(destination, signal),
-              ]);
-              const info = await lstat(sourceFile);
-              if (before !== after || info.size !== file.bytes || info.mtimeMs !== file.modified)
-                throw new AppError(`源文件发生变化或校验失败：${file.path}`);
-              copied += file.bytes;
-            }
-            for (const vm of this.machines.records.values()) {
-              signal.throwIfAborted();
-              const disk = join(stage, 'machines', vm.id, 'disk.qcow2');
-              const info = JSON.parse(
-                await this.machines.engine.run('sakura-img', ['info', '--output=json', '-f', 'qcow2', disk], {
-                  signal,
-                }),
-              );
-              const backing: string | undefined = info['full-backing-filename'] || info['backing-filename'];
-              if (backing && within(this.source, resolve(backing))) {
-                const next = join(plan.target, relative(this.source, resolve(backing)));
-                await this.machines.engine.run(
-                  'sakura-img',
-                  ['rebase', '-u', '-f', 'qcow2', '-F', 'qcow2', '-b', next, disk],
-                  { signal },
-                );
-                log(`已修复 ${vm.name} 的基础镜像路径。\n`);
-              }
-            }
-            for (const file of plan.files.filter((item) =>
-              /^backups[\\/][^\\/]+[\\/]index\.json$/.test(item.path),
-            )) {
-              const backup = await readStore<{
-                policy: { directory?: string };
-                items: { directory?: string }[];
-              }>(join(stage, file.path), () => ({ policy: {}, items: [] }));
-              let changed = false;
-              for (const entry of [backup.policy, ...backup.items])
-                if (entry.directory && within(this.source, entry.directory)) {
-                  entry.directory = join(plan.target, relative(this.source, entry.directory));
-                  changed = true;
-                }
-              if (changed) await writeStore(join(stage, file.path), backup);
-            }
-            // Managed SSH entries are regenerated after restart, before using any VM.
-            await rm(join(stage, 'ssh', 'config'), { force: true });
-            signal.throwIfAborted();
-            await rename(stage, plan.target);
-            staged = false;
-            update('核对迁移后的虚拟磁盘', 85);
-            for (const vm of this.machines.records.values()) {
-              signal.throwIfAborted();
-              const sourceDisk = join(this.source, 'machines', vm.id, 'disk.qcow2');
-              const targetDisk = join(plan.target, 'machines', vm.id, 'disk.qcow2');
-              if (vm.diskEncryption)
-                await this.machines.withDiskSecret(vm, (secret) => this.machines.engine.run(
-                  'sakura-img', ['compare', '--object', qemuSecretObject(secret),
-                    '--image-opts', encryptedImageOptions(sourceDisk),
-                    encryptedImageOptions(targetDisk)], { signal }));
-              else await this.machines.engine.run(
-                'sakura-img',
-                [
-                  'compare',
-                  '-f',
-                  'qcow2',
-                  '-F',
-                  'qcow2',
-                  sourceDisk,
-                  targetDisk,
-                ],
-                { signal },
-              );
-            }
-            const marker = {
-              id,
-              source: resolve(this.source),
-              target: plan.target,
-              completedAt: new Date().toISOString(),
-              bytes: plan.bytes,
-              files: plan.count,
-            };
-            await writeStore(join(plan.target, '.sakura-migration.json'), marker);
-            signal.throwIfAborted();
-            await writeStore(join(this.source, '.sakura-redirect.json'), {
-              version: 1,
-              target: plan.target,
-              id,
-            });
-            this.copyPublished = true;
-            log('复制、校验和路径修复已完成。重启服务后使用新目录；原目录仍保留。\n');
-          } catch (error) {
-            this.blocked = false;
-            this.machines.maintenance = false;
-            throw error;
-          } finally {
             if (
-              staged &&
-              dirname(stage) === dirname(plan.target) &&
-              basename(stage) === `.sakura-migrate-${id}`
+              await lstat(plan.target).catch((error) => {
+                if (error.code === 'ENOENT') return null;
+                throw error;
+              })
             )
-              await rm(stage, { recursive: true, force: true });
+              throw new AppError('迁移目标已被其他操作创建，请重新预览', 409);
+            return await storageRuntime.run(
+              {
+                owner: 'core:data-migration',
+                taskId: 'data-migration:' + id,
+                label: 'Copy and verify data directory',
+                mode: 'write',
+                paths: [this.source, plan.target],
+                temporary: [{ path: plan.target, bytes: plan.bytes + 64 * 1024 ** 2 }],
+                buffers: 1024 ** 2,
+                files: 8,
+                signal,
+              },
+              async (lease) => {
+                let staged = false;
+                try {
+                  await mkdir(dirname(stage), { recursive: true });
+                  await mkdir(stage, { mode: 0o700 });
+                  staged = true;
+                  let copied = 0;
+                  for (const file of plan.files) {
+                    signal.throwIfAborted();
+                    const sourceFile = join(this.source, file.path),
+                      destination = join(stage, file.path);
+                    if (!within(stage, destination)) throw new AppError('迁移路径越界');
+                    await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+                    update(`复制与校验 ${file.path}`, plan.bytes ? (copied / plan.bytes) * 75 : 0);
+                    await copyFile(sourceFile, destination, constants.COPYFILE_EXCL);
+                    const [before, after] = await Promise.all([
+                      fileHash(sourceFile, signal),
+                      fileHash(destination, signal),
+                    ]);
+                    const info = await lstat(sourceFile);
+                    if (before !== after || info.size !== file.bytes || info.mtimeMs !== file.modified)
+                      throw new AppError(`源文件发生变化或校验失败：${file.path}`);
+                    copied += file.bytes;
+                  }
+                  for (const vm of this.machines.records.values()) {
+                    signal.throwIfAborted();
+                    const disk = join(stage, 'machines', vm.id, 'disk.qcow2');
+                    const info = JSON.parse(
+                      await this.machines.engine.run(
+                        'sakura-img',
+                        ['info', '--output=json', '-f', 'qcow2', disk],
+                        {
+                          signal,
+                        },
+                      ),
+                    );
+                    const backing: string | undefined =
+                      info['full-backing-filename'] || info['backing-filename'];
+                    if (backing && within(this.source, resolve(backing))) {
+                      const next = join(plan.target, relative(this.source, resolve(backing)));
+                      await this.machines.engine.run(
+                        'sakura-img',
+                        ['rebase', '-u', '-f', 'qcow2', '-F', 'qcow2', '-b', next, disk],
+                        { signal },
+                      );
+                      log(`已修复 ${vm.name} 的基础镜像路径。\n`);
+                    }
+                  }
+                  for (const file of plan.files.filter((item) =>
+                    /^backups[\\/][^\\/]+[\\/]index\.json$/.test(item.path),
+                  )) {
+                    const backup = await readStore<{
+                      policy: { directory?: string };
+                      items: { directory?: string }[];
+                    }>(join(stage, file.path), () => ({ policy: {}, items: [] }));
+                    let changed = false;
+                    for (const entry of [backup.policy, ...backup.items])
+                      if (entry.directory && within(this.source, entry.directory)) {
+                        entry.directory = join(plan.target, relative(this.source, entry.directory));
+                        changed = true;
+                      }
+                    if (changed) await writeStore(join(stage, file.path), backup);
+                  }
+                  // Managed SSH entries are regenerated after restart, before using any VM.
+                  await rm(join(stage, 'ssh', 'config'), { force: true });
+                  signal.throwIfAborted();
+                  await rename(stage, plan.target);
+                  staged = false;
+                  update('核对迁移后的虚拟磁盘', 85);
+                  for (const vm of this.machines.records.values()) {
+                    signal.throwIfAborted();
+                    const sourceDisk = join(this.source, 'machines', vm.id, 'disk.qcow2');
+                    const targetDisk = join(plan.target, 'machines', vm.id, 'disk.qcow2');
+                    if (vm.diskEncryption)
+                      await this.machines.withDiskSecret(vm, (secret) =>
+                        this.machines.engine.run(
+                          'sakura-img',
+                          [
+                            'compare',
+                            '--object',
+                            qemuSecretObject(secret),
+                            '--image-opts',
+                            encryptedImageOptions(sourceDisk),
+                            encryptedImageOptions(targetDisk),
+                          ],
+                          { signal },
+                        ),
+                      );
+                    else
+                      await this.machines.engine.run(
+                        'sakura-img',
+                        ['compare', '-f', 'qcow2', '-F', 'qcow2', sourceDisk, targetDisk],
+                        { signal },
+                      );
+                  }
+                  const marker = {
+                    id,
+                    source: resolve(this.source),
+                    target: plan.target,
+                    completedAt: new Date().toISOString(),
+                    bytes: plan.bytes,
+                    files: plan.count,
+                  };
+                  await writeStore(join(plan.target, '.sakura-migration.json'), marker);
+                  signal.throwIfAborted();
+                  await writeStore(join(this.source, '.sakura-redirect.json'), {
+                    version: 1,
+                    target: plan.target,
+                    id,
+                  });
+                  this.copyPublished = true;
+                  log('复制、校验和路径修复已完成。重启服务后使用新目录；原目录仍保留。\n');
+                } catch (error) {
+                  this.blocked = false;
+                  this.machines.maintenance = false;
+                  throw error;
+                } finally {
+                  if (
+                    staged &&
+                    dirname(stage) === dirname(plan.target) &&
+                    basename(stage) === `.sakura-migrate-${id}`
+                  )
+                    try {
+                      await rm(stage, { recursive: true, force: true });
+                    } catch (error) {
+                      unsafeCleanup = true;
+                      lease.cleanupPending(error);
+                      throw error;
+                    }
+                }
+              },
+            );
+          } finally {
+            if (unsafeCleanup) this.retainedOwner = owner;
+            else await owner.close();
           }
         },
         { title: '数据目录迁移' },
@@ -243,5 +288,7 @@ export class DataMigration {
   }
   async close() {
     await this.jobs.close();
+    if (this.retainedOwner)
+      throw new AppError('迁移目录清理尚未确认，保留目标归属', 503, 'STORAGE_CLEANUP_PENDING');
   }
 }

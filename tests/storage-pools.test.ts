@@ -5,6 +5,7 @@ import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import type { Engine } from '../server/runtime.ts';
+import { hostRuntime } from '../server/host-runtime/index.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-pools-'));
 assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep));
@@ -13,7 +14,9 @@ const { Machines } = await import('../server/machines.ts');
 const { DataMigration } = await import('../server/data-migration.ts');
 const { vmDir } = await import('../server/model.ts');
 const engine = { runtime: { close: async () => {} } } as unknown as Engine;
-after(async () => { await rm(root, { recursive: true, force: true }); });
+after(async () => {
+  await rm(root, { recursive: true, force: true });
+});
 
 test('pool assignment, verified moves and cleanup survive a controller restart', async () => {
   const external = join(root, 'external');
@@ -24,8 +27,13 @@ test('pool assignment, verified moves and cleanup survive a controller restart',
   let machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
   const pool = await machines.storagePools.create('fast-disk', external);
-  const vm = await machines.adopt({ name: 'pooled', storagePoolId: pool.id },
-    source, 'test-key', Buffer.from('test-seed'), { enabled: true });
+  const vm = await machines.adopt(
+    { name: 'pooled', storagePoolId: pool.id },
+    source,
+    'test-key',
+    Buffer.from('test-seed'),
+    { enabled: true },
+  );
   const externalDir = join(external, 'sakura-machines', vm.id);
   assert.equal(vmDir(vm.id), externalDir);
   assert.deepEqual(await readFile(join(externalDir, 'disk.qcow2')), disk);
@@ -33,10 +41,8 @@ test('pool assignment, verified moves and cleanup survive a controller restart',
   const migration = new DataMigration(machines, () => []);
   await assert.rejects(migration.plan(join(root, 'new-data')), /迁回默认池/);
   await assert.rejects(machines.storagePools.remove(pool.id), /仍有实例/);
-  await assert.rejects(machines.storagePools.create('nested', join(external, 'sakura-machines')),
-    /重叠/);
-  await assert.rejects(machines.storagePools.create('data', process.env.SAKURA_DATA_DIR!),
-    /数据目录重叠/);
+  await assert.rejects(machines.storagePools.create('nested', join(external, 'sakura-machines')), /重叠/);
+  await assert.rejects(machines.storagePools.create('data', process.env.SAKURA_DATA_DIR!), /数据目录重叠/);
 
   const defaultDir = machines.storagePools.directory(vm.id, 'default');
   await mkdir(defaultDir);
@@ -83,9 +89,44 @@ test('a tampered ownership marker disables the external pool', async () => {
   const marker = join(external, 'sakura-machines', '.sakura-pool.json');
   await writeFile(marker, JSON.stringify({ id: 'ffffffffffffffff' }));
   await assert.rejects(machines.storagePools.ensure(pool.id), /标记不匹配/);
-  assert.equal((await machines.storagePools.view()).pools.find((item) => item.id === pool.id)?.available,
-    false);
+  assert.equal(
+    (await machines.storagePools.view()).pools.find((item) => item.id === pool.id)?.available,
+    false,
+  );
   await writeFile(marker, JSON.stringify({ id: pool.id }));
   await machines.storagePools.remove(pool.id);
   await machines.close();
+});
+
+test('a failed cleanup receipt keeps its original admission until the existing pool recovery confirms deletion', async () => {
+  const external = join(root, 'cleanup-receipt'),
+    source = join(root, 'cleanup-source');
+  await mkdir(external);
+  await writeFile(source, 'disk');
+  const machines = new Machines(engine, fakeVmNetwork);
+  await machines.init();
+  const pool = await machines.storagePools.create('cleanup-proof', external);
+  const vm = await machines.adopt({ name: 'cleanup-proof' }, source, 'key', Buffer.from('seed'));
+  const clear = machines.storagePools.clearCleanup.bind(machines.storagePools);
+  machines.storagePools.clearCleanup = async () => {
+    throw new Error('simulated metadata flush failure');
+  };
+  try {
+    await assert.rejects(machines.moveStoragePool(vm.id, pool.id), { code: 'STORAGE_CLEANUP_PENDING' });
+    const held = hostRuntime.snapshot().resources.find((item) => item.owner === 'core:storage-pool-move');
+    assert.equal(held?.state, 'cleanup-pending');
+    assert.equal(machines.storagePools.hasPendingCleanup(vm.id), true);
+    assert.equal(await readFile(join(vmDir(vm.id), 'disk.qcow2'), 'utf8'), 'disk');
+    machines.storagePools.clearCleanup = clear;
+    assert.deepEqual(await machines.storagePools.cleanup(), { completed: [vm.id], errors: [] });
+    assert.equal(
+      hostRuntime.snapshot().resources.some((item) => item.id === held!.id),
+      false,
+    );
+    await machines.delete(vm.id);
+    await machines.storagePools.remove(pool.id);
+  } finally {
+    machines.storagePools.clearCleanup = clear;
+    await machines.close();
+  }
 });

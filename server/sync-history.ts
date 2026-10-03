@@ -6,7 +6,8 @@ import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import { writeStore } from './local-store.ts';
+import { writeStore, fileHash } from './local-store.ts';
+import { storageGrowth, type StorageLease } from './storage-runtime.ts';
 
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
 const path = z
@@ -54,6 +55,7 @@ type Source = { stream: Readable; mode: number; uid?: number; gid?: number };
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 async function optionalFile(file: string) {
   try {
+    if ((await lstat(file)).size > 32 * 1024 ** 2) throw new AppError('同步基线超过回滚限制');
     return await readFile(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
@@ -126,6 +128,7 @@ export class SyncHistory {
     files: { host: Map<string, string>; guest: Map<string, string> },
     source: (side: SyncSide, name: string) => Promise<Source>,
     signal: AbortSignal,
+    lease?: StorageLease,
   ) {
     const prior = await this.list();
     // Retain unresolved recovery points. Completed points are capped at ten.
@@ -156,6 +159,7 @@ export class SyncHistory {
         if (bytes) {
           if (bytes.length > 32 * 1024 ** 2) throw new AppError('同步基线超过回滚限制');
           point[kind] = digest(bytes);
+          await lease?.reserveTemporary(join(directory, kind + '.json'), bytes.length);
           await writeFile(join(directory, kind + '.json'), bytes, { flag: 'wx', mode: 0o600 });
         }
       }
@@ -185,6 +189,7 @@ export class SyncHistory {
             await pipeline(
               input.stream,
               check,
+              ...(lease ? [storageGrowth(lease, join(directory, expected), 256 * 1024 ** 2)] : []),
               createWriteStream(join(directory, expected), { flags: 'wx', mode: 0o600 }),
               { signal },
             );
@@ -207,9 +212,17 @@ export class SyncHistory {
         }
       await this.save(point);
     } catch (error) {
-      await this.remove(point.id);
+      try {
+        await this.remove(point.id);
+      } catch (cleanup) {
+        lease?.cleanupPending(cleanup);
+        throw cleanup;
+      }
       throw error;
     }
+    if (lease)
+      for (const name of [...blobs, 'state.json', 'base.json'])
+        await lease.releaseTemporary(join(directory, name));
     return {
       prepare: async (entries: { side: SyncSide; path: string; after: string | null }[]) => {
         for (const entry of entries) {
@@ -222,10 +235,8 @@ export class SyncHistory {
       finish: async (error?: unknown) => {
         point.status = error ? 'failed' : 'done';
         if (error) point.error = String((error as Error)?.message || error).slice(0, 1000);
-        const state = await optionalFile(this.stateFile),
-          base = await optionalFile(this.baseFile);
-        point.afterState = state ? digest(state) : null;
-        point.afterBase = base ? digest(base) : null;
+        point.afterState = await optionalHash(this.stateFile);
+        point.afterBase = await optionalHash(this.baseFile);
         await this.save(point);
       },
     };
@@ -246,16 +257,16 @@ export class SyncHistory {
       directory = this.directory(id);
     if (point.host !== roots.host || point.guest !== roots.guest)
       throw new AppError('同步目录已改变，无法应用此回滚点', 409);
-    const baseline: Record<string, Buffer | null> = {};
+    const baseline: Record<string, string | null> = {};
     for (const kind of ['state', 'base'] as const) {
       const file = kind === 'state' ? this.stateFile : this.baseFile;
-      const actual = await optionalFile(file),
-        actualHash = actual ? digest(actual) : null;
+      const actualHash = await optionalHash(file);
       const after = kind === 'state' ? point.afterState : point.afterBase;
       if (actualHash !== point[kind] && actualHash !== after)
         throw new AppError('同步基线已改变，请先回滚后续操作', 409);
-      baseline[kind] = point[kind] ? await readFile(join(directory, kind + '.json')) : null;
-      if (baseline[kind] && digest(baseline[kind]!) !== point[kind]) throw new AppError('回滚基线校验失败');
+      baseline[kind] = point[kind] ? join(directory, kind + '.json') : null;
+      if (baseline[kind] && (await fileHash(baseline[kind]!, signal)) !== point[kind])
+        throw new AppError('回滚基线校验失败');
     }
     const verified = new Set<string>(),
       expected = new Map<string, string | null>();
@@ -285,8 +296,12 @@ export class SyncHistory {
     }
     for (const kind of ['state', 'base'] as const) {
       const file = kind === 'state' ? this.stateFile : this.baseFile;
-      if (baseline[kind]) await writeStore(file, JSON.parse(baseline[kind]!.toString('utf8')));
-      else await rm(file, { force: true });
+      if (baseline[kind]) {
+        const bytes = await readFile(baseline[kind]!);
+        if (bytes.length > 32 * 1024 ** 2 || digest(bytes) !== point[kind])
+          throw new AppError('回滚基线校验失败');
+        await writeStore(file, JSON.parse(bytes.toString('utf8')));
+      } else await rm(file, { force: true });
     }
     point.status = 'rolled-back';
     delete point.error;
@@ -296,4 +311,12 @@ export class SyncHistory {
 }
 function dirnameIsSymlink(info: Awaited<ReturnType<typeof lstat>>) {
   return info.isSymbolicLink() || !info.isDirectory();
+}
+async function optionalHash(file: string) {
+  try {
+    return await fileHash(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    return null;
+  }
 }

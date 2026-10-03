@@ -26,6 +26,7 @@ const { containerActionSchema, Containers } = await import('../server/containers
 const { verifyDevcontainerTemplateMetadata } = await import('../server/devcontainer-templates.ts');
 const { Machines } = await import('../server/machines.ts');
 const { DataMigration } = await import('../server/data-migration.ts');
+const { DataDirectoryOwner } = await import('../server/data-directory-owner.ts');
 const { dataDirectory } = await import('../server/data-directory.ts');
 const { ServiceHealth } = await import('../server/service-health.ts');
 const { runServices } = await import('../server/project-services.ts');
@@ -878,4 +879,21 @@ test('interrupted network changes can be restored but externally changed files a
   } finally {
     await network.close();
   }
+});
+
+
+test('data migration cannot publish into a target owned by another host', async () => {
+  const source = join(root, 'owned-migration-source'), target = join(root, 'owned-migration-target');
+  await mkdir(source); await writeFile(join(source, 'proof'), 'unchanged');
+  const machines = new Machines({} as Engine, fakeVmNetwork), migration = new DataMigration(machines, () => [], source);
+  const owner = await DataDirectoryOwner.acquire(target, { create: false });
+  try {
+    const plan = await migration.plan(target);
+    await migration.start(target, plan.token); await migration.jobs.wait('data');
+    assert.equal(migration.jobs.view('data')?.status, 'error');
+    assert.match(migration.jobs.view('data')?.error || '', /数据目录已由另一宿主/);
+    await assert.rejects(stat(target), { code: 'ENOENT' });
+    assert.equal(await readFile(join(source, 'proof'), 'utf8'), 'unchanged');
+    assert.equal(machines.maintenance, false);
+  } finally { await owner.close(); await migration.close(); }
 });

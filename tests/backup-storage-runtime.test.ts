@@ -226,3 +226,153 @@ test('backup verification failure releases I/O, but an actual materialized-file 
     host.close();
   }
 });
+
+async function interruptedPublication(
+  f: ReturnType<typeof fixture>,
+  options: { indexed?: boolean; corrupt?: boolean; stagedOnly?: boolean } = {},
+) {
+  const { backupPublication } = await import('../server/backup-journal.ts');
+  const directory = join(root, 'backups', f.id),
+    backupId = randomUUID(),
+    bytes = Buffer.from('verified publication fixture');
+  await mkdir(directory, { recursive: true });
+  const record = {
+    id: backupId,
+    createdAt: new Date().toISOString(),
+    bytes: bytes.length,
+    checksum: digest(bytes),
+  };
+  const file = join(directory, backupId + '.sakura');
+  if (!options.stagedOnly) await writeFile(file, options.corrupt ? Buffer.from('tampered') : bytes);
+  await writeFile(file + '.part', 'interrupted owned staging');
+  const journal = backupPublication(join(directory, 'publication.json'));
+  await journal.replace({
+    version: 1,
+    id: backupId,
+    encrypted: false,
+    deduplicate: false,
+    record,
+    obsolete: [],
+  });
+  if (options.indexed)
+    await metadataFile(join(directory, 'index.json'), () => ({})).replace({
+      policy: backupPolicySchema.parse({}),
+      items: [record],
+    });
+  return { directory, file, record, journal };
+}
+
+test('restarted backup controller reconciles publish-before-index and index-before-cleanup without another export', async () => {
+  for (const indexed of [false, true]) {
+    const f = fixture(),
+      item = await interruptedPublication(f, { indexed });
+    f.bundles.withExportBudget = async () => {
+      throw new Error('Recovery must never replay source export');
+    };
+    try {
+      const restarted = new Backups(f.machines, f.bundles, undefined, f.storage);
+      const view = await restarted.view(f.id);
+      assert.deepEqual(
+        view.items.map((value) => value.id),
+        [item.record.id],
+      );
+      assert.equal(view.items[0].checksum, item.record.checksum);
+      assert.deepEqual(await readFile(item.file), Buffer.from('verified publication fixture'));
+      await assert.rejects(stat(item.file + '.part'), { code: 'ENOENT' });
+      assert.equal((await item.journal.read()).value, null);
+      assert.equal((await restarted.view(f.id)).items.length, 1, 'Reconciliation is idempotent');
+      assert.equal(f.host.snapshot().resources.length, 0);
+      await restarted.close();
+    } finally {
+      await f.backups.close();
+      f.host.close();
+    }
+  }
+});
+
+test('interrupted staging is discarded, while a changed published backup remains available for inspection', async () => {
+  const staged = fixture(),
+    draft = await interruptedPublication(staged, { stagedOnly: true });
+  try {
+    assert.equal((await staged.backups.view(staged.id)).items.length, 0);
+    await assert.rejects(stat(draft.file + '.part'), { code: 'ENOENT' });
+    assert.equal((await draft.journal.read()).value, null);
+  } finally {
+    await staged.backups.close();
+    staged.host.close();
+  }
+  const corrupt = fixture(),
+    damaged = await interruptedPublication(corrupt, { corrupt: true });
+  try {
+    await assert.rejects(corrupt.backups.view(corrupt.id), { code: 'BACKUP_RECOVERY_REQUIRED' });
+    assert.equal((await readFile(damaged.file)).toString(), 'tampered');
+    assert.ok((await damaged.journal.read()).value, 'Failed verification preserves the recovery record');
+    assert.equal(
+      corrupt.host.snapshot().resources.length,
+      0,
+      'Verification failure alone does not retain I/O',
+    );
+  } finally {
+    await corrupt.backups.close();
+    corrupt.host.close();
+  }
+});
+
+test('reconciliation completes a journaled obsolete-file cleanup and preserves newly protected backups', async () => {
+  const f = fixture(),
+    item = await interruptedPublication(f, { indexed: true });
+  const obsolete = { ...item.record, id: randomUUID() },
+    protectedItem = {
+      ...item.record,
+      id: randomUUID(),
+      retainUntil: new Date(Date.now() + 60_000).toISOString(),
+    };
+  const index = metadataFile<any>(join(item.directory, 'index.json'), () => ({}));
+  await index.update((value) => {
+    value.items.push(obsolete, protectedItem);
+  });
+  await writeFile(join(item.directory, obsolete.id + '.sakura'), 'old');
+  await writeFile(join(item.directory, protectedItem.id + '.sakura'), 'protected');
+  await item.journal.update((value) => {
+    value!.obsolete = [obsolete, protectedItem];
+  });
+  try {
+    const view = await f.backups.view(f.id);
+    assert.deepEqual(
+      view.items.map((value) => value.id),
+      [item.record.id, protectedItem.id],
+    );
+    await assert.rejects(stat(join(item.directory, obsolete.id + '.sakura')), { code: 'ENOENT' });
+    assert.equal(
+      (await readFile(join(item.directory, protectedItem.id + '.sakura'))).toString(),
+      'protected',
+    );
+  } finally {
+    await f.backups.close();
+    f.host.close();
+  }
+});
+
+test('an obstructed recovery temporary file retains I/O and repeat reads report the same failure without queueing again', async () => {
+  const f = fixture(),
+    item = await interruptedPublication(f);
+  const temporary = item.file + '.part';
+  await rm(temporary);
+  await mkdir(temporary);
+  await writeFile(join(temporary, 'held'), 'fixture');
+  try {
+    await assert.rejects(f.backups.view(f.id), { code: 'STORAGE_CLEANUP_PENDING' });
+    const held = f.host.snapshot().resources[0];
+    assert.equal(held.state, 'cleanup-pending');
+    await assert.rejects(f.backups.view(f.id), { code: 'STORAGE_CLEANUP_PENDING' });
+    assert.equal(f.host.snapshot().queued, 0);
+    assert.ok((await item.journal.read()).value);
+    assert.equal(f.host.snapshot().resources[0].id, held.id);
+    await rm(temporary, { recursive: true, force: true });
+    f.leases.at(-1)!.release();
+  } finally {
+    for (const lease of f.leases) lease.release();
+    await f.backups.close();
+    f.host.close();
+  }
+});

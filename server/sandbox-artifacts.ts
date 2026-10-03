@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, lstat, readFile, rename, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';
-import { Readable, Writable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
+import { createWriteStream } from 'node:fs';
+import { storageRuntime, storageGrowth } from './storage-runtime.ts';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { SANDBOX_ARTIFACT_BYTES, type SandboxArtifact } from '../shared/sandbox.ts';
@@ -40,63 +42,83 @@ export class SandboxArtifacts {
   ) {
     if (!paths.length) return;
     z.uuid().parse(runId);
-    let total = 0;
-    await mkdir(this.directory, { recursive: true });
-    await this.machines.sftp(
-      vmId,
-      async (ftp, transport) => {
-        const combined = transport ? AbortSignal.any([signal, transport]) : signal;
-        const realpath = (path: string) =>
-          new Promise<string>((done, fail) =>
-            ftp.realpath(path, (error, value) => (error ? fail(error) : done(value))),
-          );
-        const root = await realpath(cwd);
-        for (const path of paths) {
-          combined.throwIfAborted();
-          artifactPathSchema.parse(path);
-          const actual = await realpath(posix.join(root, path));
-          if (!actual.startsWith(root.replace(/\/$/, '') + '/'))
-            throw new AppError('产物链接不能指向工作目录之外');
-          const attrs = await ftpStat(ftp, actual);
-          if (!attrs?.isFile()) throw new AppError('产物不存在或不是普通文件：' + path, 404);
-          if (total + attrs.size > SANDBOX_ARTIFACT_BYTES)
-            throw new AppError('每次执行的产物总量最多 8 MiB', 413);
-          const chunks: Buffer[] = [];
-          let bytes = 0;
-          const hash = createHash('sha256');
-          const target = new Writable({
-            write(chunk: Buffer, _encoding, callback) {
-              bytes += chunk.length;
-              if (bytes > attrs.size || total + bytes > SANDBOX_ARTIFACT_BYTES)
-                return callback(new AppError('产物大小发生变化', 409));
-              const copy = Buffer.from(chunk);
-              chunks.push(copy);
-              hash.update(copy);
-              callback();
-            },
-          });
-          await pipeline(
-            attrs.size ? ftp.createReadStream(actual, { start: 0, end: attrs.size - 1 }) : Readable.from([]),
-            target,
-            { signal: combined },
-          );
-          combined.throwIfAborted();
-          if (bytes !== attrs.size) throw new AppError('产物读取不完整：' + path, 409);
-          const id = randomUUID(),
-            file = join(this.directory, `${runId}.${id}.bin`),
-            temporary = file + '.part';
-          try {
-            await writeFile(temporary, Buffer.concat(chunks), { flag: 'wx', mode: 0o600, flush: true });
-            combined.throwIfAborted();
-            await rename(temporary, file);
-            saved({ id, name: posix.basename(path), path, bytes, sha256: hash.digest('hex') });
-            total += bytes;
-          } finally {
-            await rm(temporary, { force: true });
-          }
-        }
+    return storageRuntime.run(
+      {
+        owner: 'core:sandbox-artifacts',
+        taskId: 'artifacts:' + runId,
+        label: 'Collect sandbox artifacts',
+        mode: 'write',
+        paths: [this.directory],
+        dynamicTemporary: [this.directory],
+        buffers: 1024 ** 2,
+        files: 3,
+        signal,
       },
-      signal,
+      async (lease) => {
+        let total = 0;
+        await mkdir(this.directory, { recursive: true });
+        await this.machines.sftp(
+          vmId,
+          async (ftp, transport) => {
+            const combined = transport ? AbortSignal.any([signal, transport]) : signal;
+            const realpath = (path: string) =>
+              new Promise<string>((done, fail) =>
+                ftp.realpath(path, (error, value) => (error ? fail(error) : done(value))),
+              );
+            const root = await realpath(cwd);
+            for (const path of paths) {
+              combined.throwIfAborted();
+              artifactPathSchema.parse(path);
+              const actual = await realpath(posix.join(root, path));
+              if (!actual.startsWith(root.replace(/\/$/, '') + '/'))
+                throw new AppError('产物链接不能指向工作目录之外');
+              const attrs = await ftpStat(ftp, actual);
+              if (!attrs?.isFile()) throw new AppError('产物不存在或不是普通文件：' + path, 404);
+              if (total + attrs.size > SANDBOX_ARTIFACT_BYTES)
+                throw new AppError('每次执行的产物总量最多 8 MiB', 413);
+              const id = randomUUID(),
+                file = join(this.directory, `${runId}.${id}.bin`),
+                temporary = file + '.part';
+              let bytes = 0;
+              const hash = createHash('sha256');
+              const inspect = new Transform({
+                transform(chunk: Buffer, _encoding, callback) {
+                  bytes += chunk.length;
+                  if (bytes > attrs.size || total + bytes > SANDBOX_ARTIFACT_BYTES)
+                    return callback(new AppError('产物大小发生变化', 409));
+                  hash.update(chunk);
+                  callback(null, chunk);
+                },
+              });
+              try {
+                await pipeline(
+                  attrs.size
+                    ? ftp.createReadStream(actual, { start: 0, end: attrs.size - 1 })
+                    : Readable.from([]),
+                  inspect,
+                  storageGrowth(lease, temporary, SANDBOX_ARTIFACT_BYTES),
+                  createWriteStream(temporary, { flags: 'wx', mode: 0o600, flush: true }),
+                  { signal: combined },
+                );
+                if (bytes !== attrs.size) throw new AppError('产物读取不完整：' + path, 409);
+                combined.throwIfAborted();
+                await rename(temporary, file);
+                saved({ id, name: posix.basename(path), path, bytes, sha256: hash.digest('hex') });
+                total += bytes;
+              } finally {
+                try {
+                  await rm(temporary, { force: true });
+                } catch (error) {
+                  lease.cleanupPending(error);
+                  throw error;
+                }
+                if (!lease.pendingCleanup) await lease.releaseTemporary(temporary);
+              }
+            }
+          },
+          signal,
+        );
+      },
     );
   }
 
@@ -106,13 +128,33 @@ export class SandboxArtifacts {
     const runId = z.uuid().parse(job?.id);
     const artifact = job?.execution?.artifacts.find((item) => item.id === artifactId);
     if (!artifact) throw new AppError('产物不存在或执行记录已过期', 404);
-    const data = await readFile(join(this.directory, `${runId}.${artifactId}.bin`)).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('产物文件已不可用', 404);
-      throw error;
-    });
-    if (data.length !== artifact.bytes || createHash('sha256').update(data).digest('hex') !== artifact.sha256)
-      throw new AppError('产物校验失败', 409);
-    return { ...artifact, base64: data.toString('base64') };
+    const file = join(this.directory, `${runId}.${artifactId}.bin`);
+    return storageRuntime.run(
+      {
+        owner: 'core:sandbox-artifact-read',
+        taskId: 'artifact-read:' + randomUUID(),
+        label: 'Read sandbox artifact',
+        mode: 'read',
+        paths: [file],
+        buffers: SANDBOX_ARTIFACT_BYTES * 3,
+        files: 1,
+      },
+      async () => {
+        const info = await lstat(file);
+        if (!info.isFile() || info.size > SANDBOX_ARTIFACT_BYTES || info.size !== artifact.bytes)
+          throw new AppError('产物校验失败：文件长度无效', 409);
+        const data = await readFile(file).catch((error) => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('产物文件已不可用', 404);
+          throw error;
+        });
+        if (
+          data.length !== artifact.bytes ||
+          createHash('sha256').update(data).digest('hex') !== artifact.sha256
+        )
+          throw new AppError('产物校验失败', 409);
+        return { ...artifact, base64: data.toString('base64') };
+      },
+    );
   }
 
   async prune(jobs: JobView[]) {

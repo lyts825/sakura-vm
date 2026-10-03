@@ -6,6 +6,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { AppError } from '../shared/errors.ts';
 import { fileHash } from './local-store.ts';
+import { storageGrowth, type StorageLease } from './storage-runtime.ts';
 
 export async function writeIdentityFile(file: string, contents: string | Buffer) {
   const temporary = `${file}.tmp`;
@@ -38,6 +39,7 @@ export async function copyDirectoryVerified(
   destination: string,
   signal?: AbortSignal,
   progress: (text: string) => void = () => {},
+  lease?: StorageLease,
 ) {
   const before = await directoryEntries(source);
   await mkdir(destination);
@@ -52,6 +54,7 @@ export async function copyDirectoryVerified(
       } else if (entry.isFile()) {
         const sourceInfo = await lstat(input);
         const checksum = createHash('sha256');
+        if (lease) await lease.reserveTemporary(output, sourceInfo.size);
         await pipeline(
           createReadStream(input, { signal }),
           new Transform({
@@ -60,6 +63,7 @@ export async function copyDirectoryVerified(
               callback(null, chunk);
             },
           }),
+          ...(lease ? [storageGrowth(lease, output, sourceInfo.size)] : []),
           createWriteStream(output, { flags: 'wx', mode: sourceInfo.mode & 0o777 }),
           { signal },
         );

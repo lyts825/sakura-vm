@@ -9,6 +9,7 @@ import { AppError } from '../shared/errors.ts';
 import { checkedId } from '../shared/paths.ts';
 import { DATA } from './paths.ts';
 import { regularDirectory, writeStore } from './local-store.ts';
+import { storageRuntime } from './storage-runtime.ts';
 
 const blockSize = 1024 * 1024;
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
@@ -231,7 +232,10 @@ export class BackupBlocks {
     });
   }
   inspect(collect = false, signal?: AbortSignal) {
-    return this.serial(async () => {
+    // Admission precedes the immutable-block queue, matching every backup caller.
+    return storageRuntime.run({ owner: 'core:backup-block-inspect', taskId: 'block-inspect:' + randomUUID(),
+      label: 'Inspect immutable backup blocks', mode: collect ? 'write' : 'read', paths: [this.root],
+      buffers: 36 * 1024 ** 2, files: 3, signal }, () => this.serial(async () => {
       await regularDirectory(this.root);
       const references = new Map<string, number>();
       let logicalBytes = 0,
@@ -314,7 +318,7 @@ export class BackupBlocks {
         chunkCount,
         blockSize,
       };
-    }, signal);
+    }, signal));
   }
   async close() {
     await this.queue.catch(() => {});

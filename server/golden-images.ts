@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readdir, lstat, readFile, rename, rm, rmdir, statfs } from 'node:fs/promises';
+import { mkdir, readdir, lstat, readFile, rename, rm, rmdir } from 'node:fs/promises';
 import { once } from 'node:events';
 import { finished } from 'node:stream/promises';
 import { join } from 'node:path';
@@ -16,7 +16,8 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
 import type { Machines } from './machines.ts';
-import type { Bundles } from './bundles.ts';
+import { MAX_BUNDLE_MANIFEST, type Bundles } from './bundles.ts';
+import { storageRuntime } from './storage-runtime.ts';
 import { Jobs } from './jobs.ts';
 import { fileHash, regularDirectory, writeStore } from './local-store.ts';
 
@@ -109,65 +110,88 @@ export class GoldenImages {
     if (view.issues.length) throw new AppError('请先处理未完成或损坏的模板', 409);
     if (view.templates.length >= goldenLimits.count) throw new AppError('最多保留 16 个黄金镜像', 409);
     const root = await this.directory();
-    await mkdir(root, { recursive: true, mode: 0o700 });
-    const volume = await statfs(root);
-    if (volume.bavail * volume.bsize < source.diskGiB * 1024 ** 3 * 2 + 64 * 1024 ** 2)
-      throw new AppError('磁盘空间不足，制作模板需要预留两倍虚拟磁盘容量和 64 MiB 临时空间', 409);
     signal.throwIfAborted();
     const id = randomUUID(),
       directory = await this.directory(id);
-    await mkdir(directory, { mode: 0o700 });
-    let published = false;
-    try {
-      const part = join(directory, 'template.sakura.part');
-      const target = createWriteStream(part, { flags: 'wx', mode: 0o600 });
-      // Conversion precedes pipeline setup; observe a file-open error immediately.
-      const drained = finished(target).catch(() => {});
-      try {
-        await once(target, 'open');
-        log('正在固化停止后的磁盘与项目配置…\n');
-        await this.bundles.export(
-          input.vmId,
-          target,
-          () => {
-            source = { ...this.machines.get(input.vmId) };
-          },
+    return this.bundles.withExportBudget(input.vmId, signal, (diskBytes, exportFile) =>
+      storageRuntime.run(
+        {
+          owner: 'core:golden-image',
+          taskId: 'golden:' + id,
+          label: 'Publish golden image',
+          mode: 'write',
+          paths: [root, DATA],
+          buffers: 20 * 1024 ** 2,
+          files: 8,
           signal,
-        );
-      } finally {
-        target.destroy();
-        await drained;
-      }
-      this.sourceAllowed(input.vmId);
-      const bytes = (await this.regular(part)).size;
-      if (view.templates.reduce((sum, row) => sum + row.bytes, 0) + bytes > goldenLimits.bytes)
-        throw new AppError('黄金镜像库总容量不能超过 128 GiB', 409);
-      log('正在校验独立实例包…\n');
-      const sha256 = await fileHash(part, signal);
-      const entry = goldenEntrySchema.parse({
-        version: 1,
-        id,
-        name: input.name,
-        note: input.note,
-        createdAt: new Date().toISOString(),
-        sourceId: source.id,
-        sourceName: source.name,
-        distro: source.distro || 'alpine',
-        architecture: source.architecture,
-        diskGiB: source.diskGiB,
-        bytes,
-        sha256,
-      });
-      signal.throwIfAborted();
-      this.sourceAllowed(input.vmId);
-      await rename(part, join(directory, 'template.sakura'));
-      await writeStore(join(directory, 'manifest.json'), entry);
-      published = true;
-      log('黄金镜像已保存，可独立于源实例重复创建新实例。\n');
-      return { kind: 'template', id } as const;
-    } finally {
-      if (!published) await this.remove(id);
-    }
+          temporary: [
+            { path: DATA, bytes: diskBytes },
+            { path: root, bytes: diskBytes + MAX_BUNDLE_MANIFEST + 12 },
+          ],
+        },
+        async (lease) => {
+          await mkdir(root, { recursive: true, mode: 0o700 });
+          await mkdir(directory, { mode: 0o700 });
+          let published = false;
+          try {
+            const part = join(directory, 'template.sakura.part');
+            const target = createWriteStream(part, { flags: 'wx', mode: 0o600 });
+            // Conversion precedes pipeline setup; observe a file-open error immediately.
+            const drained = finished(target).catch(() => {});
+            try {
+              await once(target, 'open');
+              log('正在固化停止后的磁盘与项目配置…\n');
+              await exportFile(
+                target,
+                () => {
+                  source = { ...this.machines.get(input.vmId) };
+                },
+                0,
+                (error) => lease.cleanupPending(error),
+              );
+            } finally {
+              target.destroy();
+              await drained;
+            }
+
+            const bytes = (await this.regular(part)).size;
+            if (view.templates.reduce((sum, row) => sum + row.bytes, 0) + bytes > goldenLimits.bytes)
+              throw new AppError('黄金镜像库总容量不能超过 128 GiB', 409);
+            log('正在校验独立实例包…\n');
+            const sha256 = await fileHash(part, signal);
+            const entry = goldenEntrySchema.parse({
+              version: 1,
+              id,
+              name: input.name,
+              note: input.note,
+              createdAt: new Date().toISOString(),
+              sourceId: source.id,
+              sourceName: source.name,
+              distro: source.distro || 'alpine',
+              architecture: source.architecture,
+              diskGiB: source.diskGiB,
+              bytes,
+              sha256,
+            });
+            signal.throwIfAborted();
+
+            await rename(part, join(directory, 'template.sakura'));
+            await writeStore(join(directory, 'manifest.json'), entry);
+            published = true;
+            log('黄金镜像已保存，可独立于源实例重复创建新实例。\n');
+            return { kind: 'template', id } as const;
+          } finally {
+            if (!published)
+              try {
+                await this.remove(id);
+              } catch (error) {
+                lease.cleanupPending(error);
+                throw error;
+              }
+          }
+        },
+      ),
+    );
   }
   async action(raw: unknown, signal?: AbortSignal): Promise<GoldenResult> {
     const input = goldenActionSchema.parse(raw);
@@ -184,19 +208,55 @@ export class GoldenImages {
         const { entry, bundle } = await this.entry(input.id);
         this.sourceAllowed(entry.sourceId);
         log('正在检查模板 SHA-256…\n');
-        if ((await fileHash(bundle, abort)) !== entry.sha256)
-          throw new AppError('模板 SHA-256 校验失败', 409);
+        const checksum = await storageRuntime.run(
+          {
+            owner: 'core:golden-verify',
+            taskId: 'golden-verify:' + entry.id,
+            label: 'Verify golden image',
+            mode: 'read',
+            paths: [bundle],
+            buffers: 256 * 1024,
+            files: 1,
+            signal: abort,
+          },
+          () => fileHash(bundle, abort),
+        );
+        if (checksum !== entry.sha256) throw new AppError('模板 SHA-256 校验失败', 409);
         this.sourceAllowed(entry.sourceId);
         if (input.action === 'verify') {
           log('模板文件校验通过。\n');
           return { kind: 'verified', id: input.id };
         }
         log('正在创建独立实例…\n');
-        const vm = await this.bundles.import(
-          input.name,
-          createReadStream(bundle, { signal: abort }),
-          abort,
-          () => this.sourceAllowed(entry.sourceId),
+        const vm = await storageRuntime.run(
+          {
+            owner: 'core:golden-import',
+            taskId: 'golden-import:' + entry.id,
+            label: 'Instantiate golden image',
+            mode: 'write',
+            paths: [bundle, DATA],
+            dynamicTemporary: [DATA],
+            buffers: 20 * 1024 ** 2,
+            files: 8,
+            signal: abort,
+          },
+          async (lease) => {
+            const source = createReadStream(bundle, { signal: abort });
+            try {
+              return await this.bundles.import(
+                input.name,
+                source,
+                abort,
+                () => this.sourceAllowed(entry.sourceId),
+                undefined,
+                lease.cleanupPending,
+                lease,
+              );
+            } finally {
+              source.destroy();
+              await finished(source).catch(() => {});
+            }
+          },
         );
         log(`已创建 ${vm.name}；首次启动将更新控制连接身份。\n`);
         return { kind: 'vm', id: vm.id };

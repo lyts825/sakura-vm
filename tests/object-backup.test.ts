@@ -11,6 +11,7 @@ test('S3 target checks, multipart upload, integrity, restore and deletion', asyn
   process.env.SAKURA_DATA_DIR = join(root, 'data');
   const { ObjectBackup } = await import('../server/object-backup.ts');
   const { verifyBackup } = await import('../server/backups.ts');
+  const { storageRuntime } = await import('../server/storage-runtime.ts');
   const { vmDir } = await import('../server/model.ts');
   const id = randomUUID(), backupId = randomUUID(), restoredId = randomUUID();
   const payload = Buffer.alloc(9 * 1024 * 1024, 0x61);
@@ -32,9 +33,11 @@ test('S3 target checks, multipart upload, integrity, restore and deletion', asyn
     jobs: { view: () => null },
     view: async () => ({ items: [item] }),
     withVerifiedFile: async (_id: string, _backupId: string, _password: string | undefined,
-      signal: AbortSignal, work: (file: string) => Promise<unknown>) => {
-      await verifyBackup(file, signal); return work(file);
-    },
+      signal: AbortSignal, work: (...args: any[]) => Promise<unknown>) => storageRuntime.run({
+      owner: 'test:object-backup', taskId: 'object-fixture', label: 'Verify and upload fixture', mode: 'read',
+      paths: [file], buffers: 40 * 1024 ** 2, files: 8, signal }, async (lease) => {
+      await verifyBackup(file, signal, lease); return work(file, lease, file);
+    }),
     downloadable: async () => ({ type: 'file' as const, path: file }),
   };
   const restored: string[] = [];

@@ -28,6 +28,13 @@ import {
   detectSyncRenames,
 } from '../shared/sync-policy.ts';
 import { SyncHistory, type SyncSide } from './sync-history.ts';
+import {
+  storageRuntime,
+  storageGrowth,
+  removeStorageTemporary,
+  type StorageLease,
+} from './storage-runtime.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { SyncWatchers } from './sync-watch.ts';
 
 export const syncSchema = z
@@ -110,11 +117,14 @@ function configuredDriver(path: string, config: SyncConfig) {
   const driver = mergeDriver(path, config.drivers);
   if (!driver) return null;
   const requested = {
-    manual: 'skip', 'keep-both': 'both', 'prefer-host': 'push',
-    'prefer-guest': 'pull', 'merge-text': 'merge',
+    manual: 'skip',
+    'keep-both': 'both',
+    'prefer-host': 'push',
+    'prefer-guest': 'pull',
+    'merge-text': 'merge',
   }[driver.mode] as NonNullable<SyncChange['suggestedDecision']>;
   const permitted = requested === 'skip' || policyAllows(path, requested, config.policies);
-  return { driver: driver.mode, decision: permitted ? requested : 'skip' as const };
+  return { driver: driver.mode, decision: permitted ? requested : ('skip' as const) };
 }
 
 const SYNC_TEXT_BYTES = 1024 ** 2;
@@ -130,16 +140,20 @@ function decodeSyncText(bytes: Buffer) {
 async function readSyncText(stream: Readable, signal: AbortSignal) {
   const chunks: Buffer[] = [];
   let bytes = 0;
-  await pipeline(stream, new Writable({
-    write(chunk: Buffer, _encoding, done) {
-      bytes += chunk.length;
-      if (bytes > SYNC_TEXT_BYTES) done(new AppError('三方同步只支持 1 MiB 以内的 UTF-8 文本'));
-      else {
-        chunks.push(Buffer.from(chunk));
-        done();
-      }
-    },
-  }), { signal });
+  await pipeline(
+    stream,
+    new Writable({
+      write(chunk: Buffer, _encoding, done) {
+        bytes += chunk.length;
+        if (bytes > SYNC_TEXT_BYTES) done(new AppError('三方同步只支持 1 MiB 以内的 UTF-8 文本'));
+        else {
+          chunks.push(Buffer.from(chunk));
+          done();
+        }
+      },
+    }),
+    { signal },
+  );
   return decodeSyncText(Buffer.concat(chunks));
 }
 export const ignored = matchesSyncPattern;
@@ -210,8 +224,7 @@ async function hash(stream: Readable, signal: AbortSignal) {
 }
 export class FolderSync {
   jobs = new Jobs('sync');
-  private timer: ReturnType<typeof setInterval>;
-  private ticking?: Promise<void>;
+  private schedule: ScheduleHandle;
   private closed = false;
   private watchers: SyncWatchers;
   private debounce?: ReturnType<typeof setTimeout>;
@@ -230,22 +243,19 @@ export class FolderSync {
       if (this.closed || this.debounce) return;
       this.debounce = setTimeout(() => {
         this.debounce = undefined;
-        if (!this.closed && !this.ticking)
-          this.ticking = this.tick().finally(() => {
-            this.ticking = undefined;
-          });
+        if (!this.closed) this.schedule.trigger();
       }, 500);
       this.debounce.unref();
     });
     machines.on('change', this.onChange);
-    this.timer = setInterval(() => {
-      if (!this.ticking) {
-        this.ticking = this.tick().finally(() => {
-          this.ticking = undefined;
-        });
-      }
-    }, 15000);
-    this.timer.unref();
+    this.schedule = scheduler.register({
+      owner: 'core:sync',
+      label: 'Queued and watched folder sync',
+      intervalMs: 15_000,
+      overlap: 'coalesce',
+      catchUp: 'once',
+      run: ({ signal }) => this.tick(Date.now(), signal),
+    });
   }
   private key(id: string) {
     return this.projects?.key(id) || id;
@@ -268,11 +278,10 @@ export class FolderSync {
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
     clearTimeout(this.debounce);
     await this.watchers.close();
     this.machines.off('change', this.onChange);
-    await this.ticking;
+    await this.schedule.close();
     await this.jobs.close();
   }
   async config(id: string): Promise<SyncConfig | null> {
@@ -315,9 +324,23 @@ export class FolderSync {
       job: this.jobs.view(this.key(id)),
       queue: await this.queued(id),
       maintenance: await inMaintenance(id),
-      history: await this.history(id).list(),
+      history: await this.readHistory(id, () => this.history(id).list()),
       watching: this.watchers.view(this.key(id)),
     };
+  }
+  private readHistory<T>(id: string, work: () => Promise<T>) {
+    return storageRuntime.run(
+      {
+        owner: 'core:sync-history',
+        taskId: 'sync-history:' + randomUUID(),
+        label: 'Read synchronization recovery metadata',
+        mode: 'read',
+        paths: [vmDir(id)],
+        buffers: 36 * 1024 ** 2,
+        files: 2,
+      },
+      work,
+    );
   }
   private async queued(id: string) {
     const { value } = await metadataFile<unknown>(this.file(id, 'sync-queue'), () => null).read();
@@ -344,10 +367,10 @@ export class FolderSync {
       return entry;
     });
   }
-  async tick(now = Date.now()) {
+  async tick(now = Date.now(), signal?: AbortSignal) {
     this.watchers.retain((_key, id) => this.machines.records.has(id));
     for (const id of this.machines.records.keys()) {
-      if (this.closed) return;
+      if (this.closed || signal?.aborted) return;
       try {
         const keys = new Set<string>();
         await this.eachProject(id, async () => {
@@ -415,7 +438,12 @@ export class FolderSync {
       return this.execute(id, config, 'both', () => {}, signal, true);
     });
   }
-  async mergePreview(id: string, inputPath: string, token: string, signal: AbortSignal = new AbortController().signal) {
+  async mergePreview(
+    id: string,
+    inputPath: string,
+    token: string,
+    signal: AbortSignal = new AbortController().signal,
+  ) {
     const name = safeRelative(inputPath);
     return this.machines.locked(`sync:${this.key(id)}`, async () => {
       if (this.jobs.view(this.key(id))?.status === 'running') throw new AppError('请等待同步完成', 409);
@@ -423,8 +451,10 @@ export class FolderSync {
       if (!config?.mergeText) throw new AppError('请先启用共同文本版本并完成一次同步', 409);
       const plan = await this.execute(id, config, 'both', () => {}, signal, true);
       if (plan.token !== token) throw new AppError('预览后文件或配置已变化，请重新预览', 409);
-      if (!plan.changes.some((change) => change.path === name && change.action === 'conflict') ||
-          !policyAllows(name, 'merge', config.policies))
+      if (
+        !plan.changes.some((change) => change.path === name && change.action === 'conflict') ||
+        !policyAllows(name, 'merge', config.policies)
+      )
         throw new AppError('此路径没有可合并的文本冲突', 409);
       const root = await realpath(config.host);
       if (root !== config.host) throw new AppError('本机目录位置已改变，请重新保存', 409);
@@ -438,36 +468,60 @@ export class FolderSync {
         if (attrs.isSymbolicLink()) throw new AppError('同步不会穿过符号链接或目录联接');
       }
       if (!(await lstat(local)).isFile()) throw new AppError('Windows 冲突路径不是普通文件', 409);
-      const stateFile = this.file(id, 'sync-state'), baseFile = this.file(id, 'sync-base');
-      if ((await lstat(baseFile)).size > 32 * 1024 ** 2) throw new AppError('同步共同版本文件超过限制');
-      const previous = JSON.parse(await readFile(stateFile, 'utf8')) as Record<string, string>;
-      const bases = JSON.parse(await readFile(baseFile, 'utf8')) as Record<string, string>;
-      const base = bases[name];
-      if (typeof base !== 'string' ||
-          createHash('sha256').update(base).digest('hex') !== previous[name])
-        throw new AppError('没有可校验的共同版本，请重新建立同步基线', 409);
-      decodeSyncText(Buffer.from(base));
-      const ours = await readSyncText(createReadStream(local), signal);
-      const theirs = await this.machines.sftp(id, async (ftp, transportSignal) => {
-        const active = transportSignal ? AbortSignal.any([signal, transportSignal]) : signal;
-        const remote = posix.join(config.guest, name);
-        let path = '';
-        for (const part of posix.dirname(remote).split('/').filter(Boolean)) {
-          path += '/' + part;
-          if (!(await ftpStat(ftp, path))?.isDirectory())
-            throw new AppError('Linux 冲突路径包含非普通目录', 409);
-        }
-        if (!(await ftpStat(ftp, remote))?.isFile())
-          throw new AppError('Linux 冲突路径不是普通文件', 409);
-        return readSyncText(ftp.createReadStream(remote), active);
-      }, signal);
+      const { base, ours, theirs } = await storageRuntime.run(
+        {
+          owner: 'core:sync-merge',
+          taskId: 'sync-merge:' + this.key(id),
+          label: 'Read reviewed merge versions',
+          mode: 'read',
+          paths: [config.host, vmDir(id)],
+          buffers: 36 * 1024 ** 2,
+          files: 4,
+          signal,
+        },
+        async () => {
+          const stateFile = this.file(id, 'sync-state'),
+            baseFile = this.file(id, 'sync-base');
+          if ((await lstat(baseFile)).size > 32 * 1024 ** 2) throw new AppError('同步共同版本文件超过限制');
+          const previous = JSON.parse(await readFile(stateFile, 'utf8')) as Record<string, string>;
+          const bases = JSON.parse(await readFile(baseFile, 'utf8')) as Record<string, string>;
+          const base = bases[name];
+          if (typeof base !== 'string' || createHash('sha256').update(base).digest('hex') !== previous[name])
+            throw new AppError('没有可校验的共同版本，请重新建立同步基线', 409);
+          decodeSyncText(Buffer.from(base));
+          const ours = await readSyncText(createReadStream(local), signal);
+          const theirs = await this.machines.sftp(
+            id,
+            async (ftp, transportSignal) => {
+              const active = transportSignal ? AbortSignal.any([signal, transportSignal]) : signal;
+              const remote = posix.join(config.guest, name);
+              let path = '';
+              for (const part of posix.dirname(remote).split('/').filter(Boolean)) {
+                path += '/' + part;
+                if (!(await ftpStat(ftp, path))?.isDirectory())
+                  throw new AppError('Linux 冲突路径包含非普通目录', 409);
+              }
+              if (!(await ftpStat(ftp, remote))?.isFile())
+                throw new AppError('Linux 冲突路径不是普通文件', 409);
+              return readSyncText(ftp.createReadStream(remote), active);
+            },
+            signal,
+          );
+          return { base, ours, theirs };
+        },
+      );
       const after = await this.execute(id, config, 'both', () => {}, signal, true);
       if (after.token !== token) throw new AppError('读取合并内容时文件发生变化，请重新预览', 409);
       return { path: name, token, base, ours, theirs };
     });
   }
-  async run(id: string, direction: 'both' | 'push' | 'pull', token?: string,
-    decisions: SyncDecisions = {}, merges: SyncManualMerges = {}) {
+  async run(
+    id: string,
+    direction: 'both' | 'push' | 'pull',
+    token?: string,
+    decisions: SyncDecisions = {},
+    merges: SyncManualMerges = {},
+  ) {
     return this.machines.locked(`sync:${this.key(id)}`, () =>
       this.runInternal(id, direction, token, decisions, merges),
     );
@@ -479,137 +533,153 @@ export class FolderSync {
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
       if (this.jobs.view(this.key(id))?.status === 'running') throw new AppError('请等待同步完成', 409);
       const history = this.history(id);
-      await history.read(checkpoint);
+      await this.readHistory(id, () => history.read(checkpoint));
       return this.jobs.start(
         this.key(id),
         async (log, signal) => {
-          const root = await realpath(config.host);
-          if (root !== config.host) throw new AppError('本机目录位置已改变');
-          const localPath = async (name: string) => {
-            let file = root;
-            for (const part of safeRelative(name).split('/')) {
-              file = join(file, part);
-              const info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
-                if (error.code !== 'ENOENT') throw error;
-                return null;
-              });
-              if (info?.isSymbolicLink()) throw new AppError('回滚不会穿过符号链接或目录联接');
-            }
-            return file;
-          };
-          await this.machines.sftp(
-            id,
-            async (ftp, transportSignal) => {
-              const active = transportSignal ? AbortSignal.any([signal, transportSignal]) : signal;
-              const guestPath = async (name: string, create = false) => {
-                const target = posix.join(config.guest, safeRelative(name));
-                let path = '';
-                for (const part of posix.dirname(target).split('/').filter(Boolean)) {
-                  path += '/' + part;
-                  const info = await ftpStat(ftp, path);
-                  if (info && !info.isDirectory()) throw new AppError('回滚不会穿过非普通目录：' + path);
-                  if (!info && create)
-                    await new Promise<void>((resolve, reject) =>
-                      ftp.mkdir(path, (error) => (error ? reject(error) : resolve())),
-                    );
-                }
-                return target;
-              };
-              const current = async (side: SyncSide, name: string) => {
-                active.throwIfAborted();
-                if (side === 'host') {
-                  const file = await localPath(name),
-                    info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
-                      if (error.code !== 'ENOENT') throw error;
-                      return null;
-                    });
-                  if (!info) return null;
-                  if (!info.isFile() || info.size > 256 * 1024 ** 2)
-                    throw new AppError('回滚目标不是普通文件：' + name);
-                  return hash(createReadStream(file), active);
-                }
-                const file = await guestPath(name),
-                  info = await ftpStat(ftp, file);
-                if (!info) return null;
-                if (!info.isFile() || info.size > 256 * 1024 ** 2)
-                  throw new AppError('回滚目标不是普通文件：' + name);
-                return hash(ftp.createReadStream(file), active);
-              };
-              const result = await history.restore(
-                checkpoint,
-                config,
-                current,
-                async (entry, blob, expected) => {
-                  if ((await current(entry.side, entry.path)) !== expected)
-                    throw new AppError('恢复前文件已变化：' + entry.path, 409);
-                  if (entry.side === 'host') {
-                    const target = await localPath(entry.path);
-                    if (!blob) await rm(target);
-                    else {
-                      await mkdir(dirname(target), { recursive: true });
-                      await localPath(entry.path);
-                      const temp = join(dirname(target), '.sakura-restore-' + randomUUID());
-                      try {
-                        await pipeline(
-                          createReadStream(blob),
-                          createWriteStream(temp, { flags: 'wx', mode: entry.before!.mode }),
-                          { signal: active },
-                        );
-                        if ((await current(entry.side, entry.path)) !== expected)
-                          throw new AppError('恢复前文件已变化：' + entry.path, 409);
-                        await rename(temp, target);
-                      } finally {
-                        await rm(temp, { force: true });
-                      }
-                    }
-                  } else {
-                    const target = await guestPath(entry.path, !!blob);
-                    if (!blob)
-                      await new Promise<void>((resolve, reject) =>
-                        ftp.unlink(target, (error) => (error ? reject(error) : resolve())),
-                      );
-                    else {
-                      const temp = posix.join(posix.dirname(target), '.sakura-restore-' + randomUUID());
-                      try {
-                        await pipeline(
-                          createReadStream(blob),
-                          ftp.createWriteStream(temp, { flags: 'wx', mode: entry.before!.mode }),
-                          { signal: active },
-                        );
-                        if (entry.before!.uid !== undefined && entry.before!.gid !== undefined)
-                          await new Promise<void>((resolve, reject) =>
-                            ftp.chown(temp, entry.before!.uid!, entry.before!.gid!, (error) =>
-                              error ? reject(error) : resolve(),
-                            ),
-                          );
-                        await new Promise<void>((resolve, reject) =>
-                          ftp.chmod(temp, entry.before!.mode & 0o7777, (error) =>
-                            error ? reject(error) : resolve(),
-                          ),
-                        );
-                        if (
-                          (await hash(ftp.createReadStream(temp), active)) !== entry.before!.sha ||
-                          (await current(entry.side, entry.path)) !== expected
-                        )
-                          throw new AppError('恢复前文件变化或校验失败：' + entry.path, 409);
-                        await new Promise<void>((resolve, reject) =>
-                          ftp.ext_openssh_rename(temp, target, (error) =>
-                            error ? reject(error) : resolve(),
-                          ),
-                        );
-                      } finally {
-                        if (!transportSignal?.aborted)
-                          await new Promise<void>((resolve) => ftp.unlink(temp, () => resolve()));
-                      }
-                    }
-                  }
-                  log(`恢复 ${entry.side === 'host' ? 'Windows' : 'Linux'}：${entry.path}\n`);
-                },
-                active,
-              );
-              log(`已回滚 ${result.restored} 项文件变更，恢复共同版本；保留新建的空目录。\n`);
+          return storageRuntime.run(
+            {
+              owner: 'core:sync-rollback',
+              taskId: 'sync:' + this.key(id),
+              label: 'Restore synchronization checkpoint',
+              mode: 'write',
+              paths: [config.host, vmDir(id)],
+              dynamicTemporary: [config.host, vmDir(id)],
+              buffers: 40 * 1024 ** 2,
+              files: 16,
+              signal,
             },
-            signal,
+            async (lease) => {
+              const root = await realpath(config.host);
+              if (root !== config.host) throw new AppError('本机目录位置已改变');
+              const localPath = async (name: string) => {
+                let file = root;
+                for (const part of safeRelative(name).split('/')) {
+                  file = join(file, part);
+                  const info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
+                    if (error.code !== 'ENOENT') throw error;
+                    return null;
+                  });
+                  if (info?.isSymbolicLink()) throw new AppError('回滚不会穿过符号链接或目录联接');
+                }
+                return file;
+              };
+              await this.machines.sftp(
+                id,
+                async (ftp, transportSignal) => {
+                  const active = transportSignal ? AbortSignal.any([signal, transportSignal]) : signal;
+                  const guestPath = async (name: string, create = false) => {
+                    const target = posix.join(config.guest, safeRelative(name));
+                    let path = '';
+                    for (const part of posix.dirname(target).split('/').filter(Boolean)) {
+                      path += '/' + part;
+                      const info = await ftpStat(ftp, path);
+                      if (info && !info.isDirectory()) throw new AppError('回滚不会穿过非普通目录：' + path);
+                      if (!info && create)
+                        await new Promise<void>((resolve, reject) =>
+                          ftp.mkdir(path, (error) => (error ? reject(error) : resolve())),
+                        );
+                    }
+                    return target;
+                  };
+                  const current = async (side: SyncSide, name: string) => {
+                    active.throwIfAborted();
+                    if (side === 'host') {
+                      const file = await localPath(name),
+                        info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
+                          if (error.code !== 'ENOENT') throw error;
+                          return null;
+                        });
+                      if (!info) return null;
+                      if (!info.isFile() || info.size > 256 * 1024 ** 2)
+                        throw new AppError('回滚目标不是普通文件：' + name);
+                      return hash(createReadStream(file), active);
+                    }
+                    const file = await guestPath(name),
+                      info = await ftpStat(ftp, file);
+                    if (!info) return null;
+                    if (!info.isFile() || info.size > 256 * 1024 ** 2)
+                      throw new AppError('回滚目标不是普通文件：' + name);
+                    return hash(ftp.createReadStream(file), active);
+                  };
+                  const result = await history.restore(
+                    checkpoint,
+                    config,
+                    current,
+                    async (entry, blob, expected) => {
+                      if ((await current(entry.side, entry.path)) !== expected)
+                        throw new AppError('恢复前文件已变化：' + entry.path, 409);
+                      if (entry.side === 'host') {
+                        const target = await localPath(entry.path);
+                        if (!blob) await rm(target);
+                        else {
+                          await mkdir(dirname(target), { recursive: true });
+                          await localPath(entry.path);
+                          const temp = join(dirname(target), '.sakura-restore-' + randomUUID());
+                          try {
+                            await pipeline(
+                              createReadStream(blob),
+                              storageGrowth(lease, temp, 256 * 1024 ** 2),
+                              createWriteStream(temp, { flags: 'wx', mode: entry.before!.mode }),
+                              { signal: active },
+                            );
+                            if ((await current(entry.side, entry.path)) !== expected)
+                              throw new AppError('恢复前文件已变化：' + entry.path, 409);
+                            await rename(temp, target);
+                          } finally {
+                            await removeStorageTemporary(lease, temp);
+                          }
+                        }
+                      } else {
+                        const target = await guestPath(entry.path, !!blob);
+                        if (!blob)
+                          await new Promise<void>((resolve, reject) =>
+                            ftp.unlink(target, (error) => (error ? reject(error) : resolve())),
+                          );
+                        else {
+                          const temp = posix.join(posix.dirname(target), '.sakura-restore-' + randomUUID());
+                          try {
+                            await pipeline(
+                              createReadStream(blob),
+                              ftp.createWriteStream(temp, { flags: 'wx', mode: entry.before!.mode }),
+                              { signal: active },
+                            );
+                            if (entry.before!.uid !== undefined && entry.before!.gid !== undefined)
+                              await new Promise<void>((resolve, reject) =>
+                                ftp.chown(temp, entry.before!.uid!, entry.before!.gid!, (error) =>
+                                  error ? reject(error) : resolve(),
+                                ),
+                              );
+                            await new Promise<void>((resolve, reject) =>
+                              ftp.chmod(temp, entry.before!.mode & 0o7777, (error) =>
+                                error ? reject(error) : resolve(),
+                              ),
+                            );
+                            if (
+                              (await hash(ftp.createReadStream(temp), active)) !== entry.before!.sha ||
+                              (await current(entry.side, entry.path)) !== expected
+                            )
+                              throw new AppError('恢复前文件变化或校验失败：' + entry.path, 409);
+                            await new Promise<void>((resolve, reject) =>
+                              ftp.ext_openssh_rename(temp, target, (error) =>
+                                error ? reject(error) : resolve(),
+                              ),
+                            );
+                          } finally {
+                            if (!transportSignal?.aborted)
+                              await new Promise<void>((resolve) => ftp.unlink(temp, () => resolve()));
+                          }
+                        }
+                      }
+                      log(`恢复 ${entry.side === 'host' ? 'Windows' : 'Linux'}：${entry.path}\n`);
+                    },
+                    active,
+                  );
+                  log(`已回滚 ${result.restored} 项文件变更，恢复共同版本；保留新建的空目录。\n`);
+                },
+                signal,
+              );
+            },
           );
         },
         {
@@ -633,7 +703,8 @@ export class FolderSync {
     if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
     if (Object.keys(decisions).length && !token) throw new AppError('处理冲突前请先预览');
     const mergeEntries = Object.entries(merges);
-    if (mergeEntries.length && (direction !== 'both' || !token)) throw new AppError('手动合并需要双向同步预览', 409);
+    if (mergeEntries.length && (direction !== 'both' || !token))
+      throw new AppError('手动合并需要双向同步预览', 409);
     if (mergeEntries.length > 8) throw new AppError('一次最多手动合并 8 个文件');
     let mergeBytes = 0;
     for (const [name, content] of mergeEntries) {
@@ -645,8 +716,11 @@ export class FolderSync {
       if (content.includes('\0') || Buffer.from(content, 'utf8').toString('utf8') !== content)
         throw new AppError('手动合并需要有效的 UTF-8 文本');
     }
-    if (Object.entries(decisions).some(([name, decision]) => decision === 'manual' &&
-        !Object.hasOwn(merges, name)))
+    if (
+      Object.entries(decisions).some(
+        ([name, decision]) => decision === 'manual' && !Object.hasOwn(merges, name),
+      )
+    )
       throw new AppError('手动合并缺少已审阅的文本内容');
     return this.jobs.start(
       this.key(id),
@@ -666,13 +740,31 @@ export class FolderSync {
     token?: string,
     decisions: SyncDecisions = {},
     merges: SyncManualMerges = {},
-  ) {
+    lease?: StorageLease,
+  ): Promise<SyncPreview> {
+    if (!lease)
+      return storageRuntime.run(
+        {
+          owner: 'core:sync',
+          taskId: 'sync:' + this.key(id),
+          label: preview ? 'Scan synchronization files' : 'Synchronize files with recovery checkpoint',
+          mode: preview ? 'read' : 'write',
+          paths: [config.host, vmDir(id)],
+          dynamicTemporary: [config.host, vmDir(id)],
+          buffers: 40 * 1024 ** 2,
+          files: 16,
+          signal,
+        },
+        (owned) => this.execute(id, config, direction, log, signal, preview, token, decisions, merges, owned),
+      );
+    lease.assertActive();
     let plan: SyncPreview = { token: '', changes: [], unchanged: 0 };
     const root = await realpath(config.host);
     if (root !== config.host) throw new AppError('本机目录位置已改变，请重新保存');
     const stateFile = this.file(id, 'sync-state');
     let previous: Record<string, string> = Object.create(null);
     try {
+      if ((await lstat(stateFile)).size > 32 * 1024 ** 2) throw new AppError('同步状态文件超过限制');
       previous = Object.assign(Object.create(null), JSON.parse(await readFile(stateFile, 'utf8')));
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
@@ -876,8 +968,12 @@ export class FolderSync {
           for (const name of Object.keys(merges)) {
             if (!changes.some((change) => change.path === name && change.action === 'conflict'))
               throw new AppError('手动合并只允许处理当前预览中的冲突：' + name, 409);
-            if (!config.mergeText || !allowed(name, 'merge') || typeof bases[name] !== 'string' ||
-                digest(bases[name]) !== previous[name])
+            if (
+              !config.mergeText ||
+              !allowed(name, 'merge') ||
+              typeof bases[name] !== 'string' ||
+              digest(bases[name]) !== previous[name]
+            )
               throw new AppError('没有可校验的共同版本或路径策略禁止合并：' + name, 409);
             decodeSyncText(Buffer.from(bases[name]));
           }
@@ -899,6 +995,7 @@ export class FolderSync {
                 return { stream: ftp.createReadStream(file), mode: info.mode, uid: info.uid, gid: info.gid };
               },
               transferSignal,
+              lease,
             );
           }
           await ensureGuest(config.guest);
@@ -1012,9 +1109,7 @@ export class FolderSync {
               else {
                 const selected = configuredDriver(name, config);
                 const automatic = !Object.hasOwn(decisions, name) && !!selected;
-                const decision = Object.hasOwn(decisions, name)
-                  ? decisions[name]
-                  : selected?.decision;
+                const decision = Object.hasOwn(decisions, name) ? decisions[name] : selected?.decision;
                 const requested =
                   decision === 'restore-host' ? 'pull' : decision === 'restore-guest' ? 'push' : decision;
                 if (requested && requested !== 'skip' && !allowed(name, requested))
@@ -1101,6 +1196,7 @@ export class FolderSync {
                   const hostTemp = join(dirname(local), '.sakura-sync-' + randomUUID());
                   const guestTemp = posix.join(posix.dirname(remote), '.sakura-sync-' + randomUUID());
                   try {
+                    await lease.reserveTemporary(hostTemp, merged.length);
                     await writeFile(hostTemp, merged, { flag: 'wx', mode: localAttrs.mode });
                     await pipeline(
                       Readable.from([merged]),
@@ -1139,7 +1235,7 @@ export class FolderSync {
                     changed++;
                     log('已完成三方文本合并：' + name + '\n');
                   } finally {
-                    await rm(hostTemp, { force: true });
+                    await removeStorageTemporary(lease, hostTemp);
                     if (!transportSignal?.aborted)
                       await new Promise<void>((resolve) => ftp.unlink(guestTemp, () => resolve()));
                   }
@@ -1164,6 +1260,7 @@ export class FolderSync {
                     await pipeline(
                       ftp.createReadStream(remoteOriginal),
                       rate.stream(transferSignal),
+                      storageGrowth(lease, temp, 256 * 1024 ** 2),
                       createWriteStream(temp, { flags: 'wx' }),
                       { signal: transferSignal },
                     );
@@ -1191,7 +1288,7 @@ export class FolderSync {
                     next[backup] = guestHash!;
                     log(`Linux 版本另存为 ${backup}\n`);
                   } finally {
-                    await rm(temp, { force: true });
+                    await removeStorageTemporary(lease, temp);
                   }
                   way = 'push';
                 } else {
@@ -1270,6 +1367,7 @@ export class FolderSync {
                 await pipeline(
                   ftp.createReadStream(remote),
                   rate.stream(transferSignal),
+                  storageGrowth(lease, temp, 256 * 1024 ** 2),
                   createWriteStream(temp, { flags: 'wx' }),
                   {
                     signal: transferSignal,
@@ -1287,7 +1385,7 @@ export class FolderSync {
                 await rename(temp, local);
                 next[name] = guestHash;
               } finally {
-                await rm(temp, { force: true });
+                await removeStorageTemporary(lease, temp);
               }
             } else {
               if (previous[name]) next[name] = previous[name];

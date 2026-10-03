@@ -53,9 +53,10 @@ export class DisasterRecoveryDrill {
     try {
       log(`正在校验备份 ${value.backupId} 并恢复临时实例…\n`);
       await this.backups.withVerifiedFile(id, value.backupId, undefined, combined,
-        async (file) => {
+        async (file, lease) => {
           combined.throwIfAborted();
-          const vm = await this.bundles.import(name, createReadStream(file), combined);
+          const vm = await this.bundles.import(name, createReadStream(file), combined, undefined, undefined,
+            lease.cleanupPending, lease);
           restoredId = vm.id;
           restoreMs = Math.round(performance.now() - started);
           log(`备份已恢复到临时实例 ${name}；正在启动并检查。\n`);

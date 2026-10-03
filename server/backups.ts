@@ -18,7 +18,9 @@ import { StorageRuntime, storageRuntime, type StorageLease } from './storage-run
 import { encryptFile, withDecrypted, passwordSchema } from './encrypted-backups.ts';
 import { inMaintenance } from './automation-policy.ts';
 import { backupBlocks } from './backup-blocks.ts';
-import type { Writable } from 'node:stream';
+import { Writable } from 'node:stream';
+import { backupPublication } from './backup-journal.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 
 export const backupPolicySchema = z
   .object({
@@ -140,23 +142,30 @@ async function verifyBackupContents(file: string, signal: AbortSignal) {
 }
 export class Backups {
   jobs = new Jobs('backups');
-  private timer: ReturnType<typeof setInterval>;
-  private ticking?: Promise<void>;
+  private schedule: ScheduleHandle;
   private closed = false;
   private attempts = new Map<string, number>();
+  private recovery = new Map<string, Promise<void>>();
+  private activePublication = new Set<string>();
+  private cleanupErrors = new Map<string, unknown>();
+  private failedCleanup(id: string, error: unknown): never {
+    if ((error as { code?: string }).code === 'STORAGE_CLEANUP_PENDING') this.cleanupErrors.set(id, error);
+    throw error;
+  }
   constructor(
     private machines: Machines,
     private bundles: Bundles,
     private secrets = new Secrets(machines),
     private storage: StorageRuntime = storageRuntime,
   ) {
-    this.timer = setInterval(() => {
-      if (!this.ticking)
-        this.ticking = this.tick().finally(() => {
-          this.ticking = undefined;
-        });
-    }, 60000);
-    this.timer.unref();
+    this.schedule = scheduler.register({
+      owner: 'core:backups',
+      label: 'Scheduled backup policies',
+      intervalMs: 60_000,
+      overlap: 'skip',
+      catchUp: 'once',
+      run: ({ signal }) => this.tick(Date.now(), signal),
+    });
   }
   private directory(id: string) {
     return join(DATA, 'backups', checkedId(id));
@@ -192,6 +201,7 @@ export class Backups {
               taskId: 'backup-download:' + randomUUID(),
               label: 'Stream content blocks',
               mode: 'read',
+              transfer: 'outbound',
               paths: [DATA],
               signal,
               buffers: 36 * 1024 ** 2,
@@ -201,7 +211,7 @@ export class Backups {
               try {
                 await backupBlocks().writeTo(id, item.id, item.checksum, output, signal);
               } finally {
-                output.destroy();
+                if (!output.writableFinished) output.destroy();
                 await finished(output).catch(() => {});
               }
             },
@@ -230,7 +240,7 @@ export class Backups {
     if (!item.encrypted) return work(file);
     const value = password || (item.passwordSecret ? await this.secrets.value(id, item.passwordSecret) : '');
     if (!value) throw new AppError('请输入这份备份的加密密码');
-    return withDecrypted(file, value, work, signal, lease.cleanupPending);
+    return withDecrypted(file, value, work, signal, lease.cleanupPending, lease);
   }
   private async withReadBudget<T>(
     id: string,
@@ -238,6 +248,8 @@ export class Backups {
     signal: AbortSignal,
     work: (lease: StorageLease) => Promise<T>,
     restore = false,
+    extraBuffers = 0,
+    writes = false,
   ) {
     const file = this.recordFile(id, item);
     const bytes =
@@ -247,20 +259,25 @@ export class Backups {
     if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > 129 * 1024 ** 3)
       throw new AppError('备份文件大小无效');
     const materialized = !!item.encrypted || item.storage === 'blocks';
-    return this.storage.run(
-      {
-        owner: 'core:backups',
-        taskId: 'backup-read:' + randomUUID(),
-        label: restore ? 'Verify and restore backup' : 'Read and verify backup',
-        mode: materialized || restore ? 'write' : 'read',
-        paths: [file, DATA],
-        signal,
-        buffers: item.storage === 'blocks' ? 36 * 1024 ** 2 : 2 * MAX_BUNDLE_MANIFEST + 4 * 1024 ** 2,
-        files: 8,
-        temporary: [{ path: DATA, bytes: bytes * ((materialized ? 1 : 0) + (restore ? 2 : 0)) }],
-      },
-      work,
-    );
+    return this.storage
+      .run(
+        {
+          owner: 'core:backups',
+          taskId: 'backup-read:' + randomUUID(),
+          label: restore ? 'Verify and restore backup' : 'Read and verify backup',
+          mode: materialized || restore || writes ? 'write' : 'read',
+          paths: [file, DATA],
+          signal,
+          buffers:
+            (item.storage === 'blocks' ? 36 * 1024 ** 2 : 2 * MAX_BUNDLE_MANIFEST + 4 * 1024 ** 2) +
+            extraBuffers,
+          files: 8,
+          dynamicTemporary: [DATA],
+          temporary: [{ path: DATA, bytes: bytes * ((materialized ? 1 : 0) + (restore ? 2 : 0)) }],
+        },
+        work,
+      )
+      .catch((error) => this.failedCleanup(id, error));
   }
   private blockManifest(id: string, item: BackupRecord, signal?: AbortSignal) {
     return this.storage.run(
@@ -279,7 +296,128 @@ export class Backups {
   }
   private async state(id: string): Promise<BackupState> {
     this.machines.get(id);
+    if (this.cleanupErrors.has(id)) throw this.cleanupErrors.get(id);
+    if (!this.closed && !this.activePublication.has(id) && this.jobs.view(id)?.status !== 'running')
+      await this.reconcile(id);
     return (await this.metadata(id).read()).value;
+  }
+  private publication(id: string) {
+    return backupPublication(join(this.directory(id), 'publication.json'));
+  }
+  /** Reconcile only exact, previously verified identities; never replay an export. */
+  private reconcile(id: string): Promise<void> {
+    const existing = this.recovery.get(id);
+    if (existing) return existing;
+    const task = (async () => {
+      const journal = this.publication(id),
+        entry = (await journal.read()).value;
+      if (!entry) return;
+      const file = this.file(id, entry.id, entry.directory, entry.encrypted);
+      await this.storage.run(
+        {
+          owner: 'core:backup-recovery',
+          taskId: 'backup-recovery:' + id,
+          label: 'Reconcile interrupted backup publication',
+          mode: 'write',
+          paths: [DATA, file, ...entry.obsolete.map((item) => this.recordFile(id, item))],
+          buffers: 36 * 1024 ** 2,
+          files: 8,
+        },
+        async (lease) => {
+          try {
+            if (entry.record) {
+              let published = true;
+              try {
+                if (entry.record.storage === 'blocks') {
+                  await backupBlocks().read(id, entry.id, entry.record.checksum);
+                  try {
+                    await backupBlocks().writeTo(
+                      id,
+                      entry.id,
+                      entry.record.checksum,
+                      new Writable({
+                        write(_chunk, _encoding, done) {
+                          done();
+                        },
+                      }),
+                      new AbortController().signal,
+                    );
+                  } catch (error) {
+                    throw new AppError(
+                      '已发布的备份块无法验证：' + (error as Error).message,
+                      409,
+                      'BACKUP_RECOVERY_REQUIRED',
+                    );
+                  }
+                } else if (
+                  (await stat(file)).size !== entry.record.bytes ||
+                  (await fileHash(file)) !== entry.record.checksum
+                )
+                  throw new AppError('中断备份的已发布文件与日志校验值不符', 409, 'BACKUP_RECOVERY_REQUIRED');
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+                published = false;
+              }
+              const saved = (await this.metadata(id).read()).value.items.find((item) => item.id === entry.id);
+              if (saved && (!published || saved.checksum !== entry.record.checksum))
+                throw new AppError(
+                  '备份索引与中断发布日志不一致，需要人工检查',
+                  409,
+                  'BACKUP_RECOVERY_REQUIRED',
+                );
+              if (published && !saved)
+                await this.metadata(id).update((state) => {
+                  state.items.unshift(entry.record!);
+                  if (!state.lastSuccess || state.lastSuccess < entry.record!.createdAt)
+                    state.lastSuccess = entry.record!.createdAt;
+                });
+            }
+            for (const old of entry.obsolete) {
+              const current = (await this.metadata(id).read()).value.items.find((item) => item.id === old.id);
+              if (
+                current &&
+                (current.checksum !== old.checksum ||
+                  current.directory !== old.directory ||
+                  current.storage !== old.storage)
+              )
+                throw new AppError('待清理备份身份已变化', 409, 'BACKUP_RECOVERY_REQUIRED');
+              if (backupLocked(current || old)) continue;
+              await this.metadata(id).update((state) => {
+                state.items = state.items.filter((item) => item.id !== old.id);
+              });
+              try {
+                await this.removeFile(id, old);
+              } catch (error) {
+                lease.cleanupPending(error);
+                throw error;
+              }
+            }
+            const cleanup = await Promise.allSettled([
+              rm(file + '.part', { force: true }),
+              rm(file + '.plain.part', { force: true }),
+            ]);
+            const failure = cleanup.find((result) => result.status === 'rejected');
+            if (failure?.status === 'rejected') {
+              lease.cleanupPending(failure.reason);
+              throw failure.reason;
+            }
+            await journal.remove();
+          } catch (error) {
+            throw error;
+          }
+        },
+      );
+    })();
+    this.recovery.set(id, task);
+    void task.then(
+      () => {
+        this.recovery.delete(id);
+      },
+      () => {
+        /* Preserve one failed recovery until restart. */
+      },
+    );
+    return task;
   }
   private metadata(id: string) {
     return metadataFile<BackupState>(join(this.directory(id), 'index.json'), () => ({
@@ -312,8 +450,9 @@ export class Backups {
       return state;
     });
   }
-  async tick(now = Date.now()) {
+  async tick(now = Date.now(), signal?: AbortSignal) {
     for (const id of this.machines.records.keys()) {
+      if (signal?.aborted) return;
       if (this.closed || this.machines.live.has(id) || this.jobs.view(id)?.status === 'running') continue;
       try {
         if (await inMaintenance(id, now)) continue;
@@ -350,159 +489,181 @@ export class Backups {
             file = this.file(id, backupId, state.policy.directory, encrypted),
             temp = file + '.part',
             plainTemp = file + '.plain.part';
-          return this.bundles.withExportBudget(
-            id,
-            signal,
-            async (diskBytes, exportFile) => {
-              const bundleBytes = Math.min(32 * 1024 ** 3, diskBytes + MAX_BUNDLE_MANIFEST + 12);
-              return this.storage.run(
-                {
-                  owner: 'core:backups',
-                  taskId: 'backup:' + backupId,
-                  label: 'Create and verify backup',
-                  mode: 'write',
-                  paths: [join(vmDir(id), 'disk.qcow2'), file, DATA],
-                  buffers: 2 * MAX_BUNDLE_MANIFEST + 4 * 1024 ** 2,
-                  files: 8,
-                  signal,
-                  temporaryPhases: [
-                    [
-                      { path: DATA, bytes: diskBytes },
-                      { path: file, bytes: bundleBytes },
+          return this.bundles
+            .withExportBudget(
+              id,
+              signal,
+              async (diskBytes, exportFile) => {
+                const bundleBytes = Math.min(32 * 1024 ** 3, diskBytes + MAX_BUNDLE_MANIFEST + 12);
+                return this.storage.run(
+                  {
+                    owner: 'core:backups',
+                    taskId: 'backup:' + backupId,
+                    label: 'Create and verify backup',
+                    mode: 'write',
+                    paths: [join(vmDir(id), 'disk.qcow2'), file, DATA],
+                    buffers: 2 * MAX_BUNDLE_MANIFEST + 4 * 1024 ** 2,
+                    files: 8,
+                    signal,
+                    temporaryPhases: [
+                      [
+                        { path: DATA, bytes: diskBytes },
+                        { path: file, bytes: bundleBytes },
+                      ],
+                      ...(encrypted
+                        ? [
+                            [
+                              { path: DATA, bytes: bundleBytes },
+                              { path: file, bytes: 2 * bundleBytes + 52 },
+                            ],
+                          ]
+                        : []),
+                      ...(state.policy.deduplicate
+                        ? [
+                            [
+                              { path: DATA, bytes: bundleBytes },
+                              { path: file, bytes: bundleBytes },
+                            ],
+                          ]
+                        : []),
                     ],
-                    ...(encrypted
-                      ? [
-                          [
-                            { path: DATA, bytes: bundleBytes },
-                            { path: file, bytes: 2 * bundleBytes + 52 },
-                          ],
-                        ]
-                      : []),
-                    ...(state.policy.deduplicate
-                      ? [
-                          [
-                            { path: DATA, bytes: bundleBytes },
-                            { path: file, bytes: bundleBytes },
-                          ],
-                        ]
-                      : []),
-                  ],
-                },
-                async (lease) => {
-                  await mkdir(this.directory(id), { recursive: true });
-                  if (state.policy.directory)
-                    await mkdir(join(state.policy.directory, 'sakura-backups', id), { recursive: true });
-                  let published = false,
-                    indexed = false;
-                  try {
-                    log('正在生成独立备份包…\n');
-                    update('导出磁盘', 10);
-                    const output = createWriteStream(encrypted ? plainTemp : temp, {
-                      flags: 'wx',
-                      mode: 0o600,
-                    });
-                    output.on('error', () => {});
-                    try {
-                      await exportFile(
-                        output,
-                        () => {},
-                        (state.policy.bandwidthMiBps || 0) * 1024 ** 2,
-                        lease.cleanupPending,
-                      );
-                    } finally {
-                      output.destroy();
-                      await finished(output).catch(() => {});
-                    }
-                    signal.throwIfAborted();
-                    update('校验备份', 80);
-                    await verifyBackup(encrypted ? plainTemp : temp, signal, lease);
-                    if (encrypted) {
-                      update('加密备份', 90);
-                      await encryptFile(plainTemp, temp, encryptionPassword!, signal);
-                      await withDecrypted(
-                        temp,
-                        encryptionPassword!,
-                        (plain) => verifyBackup(plain, signal, lease),
-                        signal,
-                        lease.cleanupPending,
-                      );
-                    }
-                    const checksum = await fileHash(temp, signal),
-                      bytes = (await stat(temp)).size;
-                    if (bytes > state.policy.maxGiB * 1024 ** 3)
-                      throw new AppError('单个备份超过容量上限，请提高备份容量限制');
-                    signal.throwIfAborted();
-                    if (state.policy.deduplicate) {
-                      update('校验并复用内容块', 95);
-                      await backupBlocks().pack(id, backupId, temp, checksum, signal, lease.cleanupPending);
-                    } else await rename(temp, file);
-                    published = true;
-                    const record: BackupRecord = {
+                  },
+                  async (lease) => {
+                    await mkdir(this.directory(id), { recursive: true });
+                    if (state.policy.directory)
+                      await mkdir(join(state.policy.directory, 'sakura-backups', id), { recursive: true });
+                    let prepared = false,
+                      completed = false;
+                    const journal = this.publication(id);
+                    await journal.replace({
+                      version: 1,
                       id: backupId,
-                      bytes,
-                      checksum,
-                      createdAt: new Date().toISOString(),
-                      verifiedAt: new Date().toISOString(),
-                      directory: state.policy.directory || undefined,
                       encrypted,
-                      ...(state.policy.deduplicate ? { storage: 'blocks' as const } : {}),
-                      passwordSecret: encrypted && !password ? state.policy.passwordSecret : undefined,
-                      retainUntil: state.policy.lockDays
-                        ? new Date(Date.now() + state.policy.lockDays * 86400000).toISOString()
-                        : undefined,
-                    };
-                    state.items.unshift(record);
-                    state.lastSuccess = record.createdAt;
-                    // Publish the verified backup before pruning any previous good copy.
-                    await this.saveState(id, state);
-                    indexed = true;
-                    while (
-                      state.items.length > state.policy.keep ||
-                      state.items.reduce((sum, v) => sum + v.bytes, 0) > state.policy.maxGiB * 1024 ** 3
-                    ) {
-                      const old = state.items.findLast((item) => item.id !== backupId && !backupLocked(item));
-                      if (!old) {
-                        log('保留期内的备份受到保护，暂时超过份数或总容量上限；到期后再清理。\n');
-                        break;
-                      }
-                      state.items = state.items.filter((item) => item.id !== old.id);
-                      await this.saveState(id, state);
-                      await this.removeFile(id, old);
-                    }
-                    log(`备份已完成并校验，保留 ${state.items.length} 份。\n`);
-                  } catch (error) {
+                      directory: state.policy.directory || undefined,
+                      deduplicate: !!state.policy.deduplicate,
+                      obsolete: [],
+                    });
                     try {
-                      if (published && !indexed) {
-                        if (state.policy.deduplicate) await backupBlocks().remove(id, backupId);
-                        else await rm(file, { force: true });
+                      log('正在生成独立备份包…\n');
+                      update('导出磁盘', 10);
+                      const output = createWriteStream(encrypted ? plainTemp : temp, {
+                        flags: 'wx',
+                        mode: 0o600,
+                      });
+                      output.on('error', () => {});
+                      try {
+                        await exportFile(
+                          output,
+                          () => {},
+                          (state.policy.bandwidthMiBps || 0) * 1024 ** 2,
+                          lease.cleanupPending,
+                        );
+                      } finally {
+                        output.destroy();
+                        await finished(output).catch(() => {});
                       }
-                    } catch (cleanup) {
-                      lease.cleanupPending(cleanup);
-                      throw new AggregateError([error, cleanup], 'Backup cleanup is not confirmed');
-                    }
-                    throw error;
-                  } finally {
-                    const removed = await Promise.allSettled([
-                      rm(temp, { force: true }),
-                      rm(plainTemp, { force: true }),
-                    ]);
-                    const failed = removed
-                      .filter((item) => item.status === 'rejected')
-                      .map((item) => item.reason);
-                    if (failed.length) {
-                      const error = new AggregateError(
-                        failed,
-                        'Backup temporary-file cleanup is not confirmed',
-                      );
-                      lease.cleanupPending(error);
+                      signal.throwIfAborted();
+                      update('校验备份', 80);
+                      await verifyBackup(encrypted ? plainTemp : temp, signal, lease);
+                      if (encrypted) {
+                        update('加密备份', 90);
+                        await encryptFile(plainTemp, temp, encryptionPassword!, signal, lease);
+                        await withDecrypted(
+                          temp,
+                          encryptionPassword!,
+                          (plain) => verifyBackup(plain, signal, lease),
+                          signal,
+                          lease.cleanupPending,
+                          lease,
+                        );
+                      }
+                      const checksum = await fileHash(temp, signal),
+                        bytes = (await stat(temp)).size;
+                      if (bytes > state.policy.maxGiB * 1024 ** 3)
+                        throw new AppError('单个备份超过容量上限，请提高备份容量限制');
+                      signal.throwIfAborted();
+                      const record: BackupRecord = {
+                        id: backupId,
+                        bytes,
+                        checksum,
+                        createdAt: new Date().toISOString(),
+                        verifiedAt: new Date().toISOString(),
+                        directory: state.policy.directory || undefined,
+                        encrypted,
+                        ...(state.policy.deduplicate ? { storage: 'blocks' as const } : {}),
+                        passwordSecret: encrypted && !password ? state.policy.passwordSecret : undefined,
+                        retainUntil: state.policy.lockDays
+                          ? new Date(Date.now() + state.policy.lockDays * 86400000).toISOString()
+                          : undefined,
+                      };
+                      await journal.update((entry) => {
+                        entry!.record = record;
+                      });
+                      prepared = true;
+                      if (state.policy.deduplicate) {
+                        update('校验并复用内容块', 95);
+                        await backupBlocks().pack(id, backupId, temp, checksum, signal, lease.cleanupPending);
+                      } else await rename(temp, file);
+                      state.items.unshift(record);
+                      state.lastSuccess = record.createdAt;
+                      // Publish the verified backup before pruning any previous good copy.
+                      await this.saveState(id, state);
+                      while (
+                        state.items.length > state.policy.keep ||
+                        state.items.reduce((sum, v) => sum + v.bytes, 0) > state.policy.maxGiB * 1024 ** 3
+                      ) {
+                        const old = state.items.findLast(
+                          (item) => item.id !== backupId && !backupLocked(item),
+                        );
+                        if (!old) {
+                          log('保留期内的备份受到保护，暂时超过份数或总容量上限；到期后再清理。\n');
+                          break;
+                        }
+                        await journal.update((entry) => {
+                          entry!.obsolete.push(old);
+                        });
+                        state.items = state.items.filter((item) => item.id !== old.id);
+                        await this.saveState(id, state);
+                        try {
+                          await this.removeFile(id, old);
+                        } catch (error) {
+                          lease.cleanupPending(error);
+                          throw error;
+                        }
+                        await journal.update((entry) => {
+                          entry!.obsolete = entry!.obsolete.filter((item) => item.id !== old.id);
+                        });
+                      }
+                      log(`备份已完成并校验，保留 ${state.items.length} 份。\n`);
+                      completed = true;
+                    } catch (error) {
+                      // A verified publication survives index-write failure; its durable
+                      // journal lets the next controller reconcile rather than regenerate.
                       throw error;
+                    } finally {
+                      const removed = await Promise.allSettled([
+                        rm(temp, { force: true }),
+                        rm(plainTemp, { force: true }),
+                      ]);
+                      const failed = removed
+                        .filter((item) => item.status === 'rejected')
+                        .map((item) => item.reason);
+                      if (failed.length) {
+                        const error = new AggregateError(
+                          failed,
+                          'Backup temporary-file cleanup is not confirmed',
+                        );
+                        lease.cleanupPending(error);
+                        throw error;
+                      }
+                      if ((completed || !prepared) && !lease.pendingCleanup) await journal.remove();
                     }
-                  }
-                },
-              );
-            },
-            this.storage,
-          );
+                  },
+                );
+              },
+              this.storage,
+            )
+            .catch((error) => this.failedCleanup(id, error));
         },
         {
           title: encryptionPassword ? '创建加密备份' : '创建备份',
@@ -527,10 +688,44 @@ export class Backups {
       if (action === 'delete') {
         if (backupLocked(item))
           throw new AppError('备份在保留锁定期内，不能删除：' + item.retainUntil, 423, 'BACKUP_LOCKED');
-        state.items = state.items.filter((v) => v !== item);
-        await this.saveState(id, state);
-        await this.removeFile(id, item);
-        return { ok: true };
+        this.activePublication.add(id);
+        try {
+          return await this.storage
+            .run(
+              {
+                owner: 'core:backup-delete',
+                taskId: 'backup-delete:' + id,
+                label: 'Remove selected backup',
+                mode: 'write',
+                paths: [DATA, this.recordFile(id, item)],
+                buffers: 65536,
+                files: 2,
+              },
+              async (lease) => {
+                const journal = this.publication(id);
+                await journal.replace({
+                  version: 1,
+                  id: randomUUID(),
+                  encrypted: false,
+                  deduplicate: false,
+                  obsolete: [item],
+                });
+                state.items = state.items.filter((v) => v !== item);
+                await this.saveState(id, state);
+                try {
+                  await this.removeFile(id, item);
+                } catch (error) {
+                  lease.cleanupPending(error);
+                  throw error;
+                }
+                await journal.remove();
+                return { ok: true };
+              },
+            )
+            .catch((error) => this.failedCleanup(id, error));
+        } finally {
+          this.activePublication.delete(id);
+        }
       }
       if (action === 'restore' && !/^[a-z][a-z0-9-]{0,31}$/.test(name || ''))
         throw new AppError('请输入新实例名称');
@@ -569,6 +764,7 @@ export class Backups {
                           undefined,
                           undefined,
                           lease.cleanupPending,
+                          lease,
                         );
                         log(`已恢复为新实例 ${vm.name}。\n`);
                       } finally {
@@ -598,7 +794,8 @@ export class Backups {
     backupId: string,
     password: string | undefined,
     signal: AbortSignal,
-    work: (file: string) => Promise<T>,
+    work: (file: string, lease: StorageLease, sourceFile: string) => Promise<T>,
+    options: { extraBuffers?: number; writes?: boolean } = {},
   ) {
     if (this.closed) throw new AppError('备份服务正在关闭', 503);
     return this.machines.locked(`backups:${id}`, async () => {
@@ -607,34 +804,43 @@ export class Backups {
       const state = await this.state(id),
         item = state.items.find((value) => value.id === checkedId(backupId));
       if (!item) throw new AppError('备份不存在', 404);
-      return this.withReadBudget(id, item, signal, async (lease) => {
-        if (
-          item.storage !== 'blocks' &&
-          (await fileHash(this.recordFile(id, item), signal)) !== item.checksum
-        )
-          throw new AppError('备份包与记录的校验值不符');
-        return this.plain(
-          id,
-          item,
-          password,
-          signal,
-          async (file) => {
-            const checksum = await verifyBackup(file, signal, lease);
-            if (!item.encrypted && checksum !== item.checksum) throw new AppError('备份包与记录的校验值不符');
-            signal.throwIfAborted();
-            this.machines.requireUnlocked(id);
-            return work(file);
-          },
-          lease,
-        );
-      });
+      return this.withReadBudget(
+        id,
+        item,
+        signal,
+        async (lease) => {
+          if (
+            item.storage !== 'blocks' &&
+            (await fileHash(this.recordFile(id, item), signal)) !== item.checksum
+          )
+            throw new AppError('备份包与记录的校验值不符');
+          return this.plain(
+            id,
+            item,
+            password,
+            signal,
+            async (file) => {
+              const checksum = await verifyBackup(file, signal, lease);
+              if (!item.encrypted && checksum !== item.checksum)
+                throw new AppError('备份包与记录的校验值不符');
+              signal.throwIfAborted();
+              this.machines.requireUnlocked(id);
+              return work(file, lease, item.storage === 'blocks' ? file : this.recordFile(id, item));
+            },
+            lease,
+          );
+        },
+        false,
+        options.extraBuffers || 0,
+        options.writes ?? true,
+      );
     });
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
-    await this.ticking;
+    await this.schedule.close();
     await this.jobs.close();
+    await Promise.allSettled(this.recovery.values());
   }
 }
 

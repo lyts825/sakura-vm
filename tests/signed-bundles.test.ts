@@ -31,6 +31,7 @@ const machines = {
   snapshotIdentity: async () => ({ key: identity.privateText, seed }),
   engine: {
     run: async (_tool: string, args: string[]) => {
+      if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
       if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
       return '{}';
     },

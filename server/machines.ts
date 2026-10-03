@@ -72,6 +72,7 @@ import { Secrets } from './secrets.ts';
 import { bootSetup, cloudNetwork, cloudUserData, createSshKey, metaData, seedIso, userData } from './seed.ts';
 import { StoragePools } from './storage-pools.ts';
 import { copyDirectoryVerified, writeIdentityFile } from './vm-storage.ts';
+import { storageRuntime, withStorageLease, type StorageLease } from './storage-runtime.ts';
 import { MachineTransport } from './vm-transport.ts';
 
 export const BOOT_TIMEOUT_MS = 270_000;
@@ -2106,7 +2107,7 @@ export class Machines extends EventEmitter {
       if (this.storagePools.hasPendingCleanup(id))
         throw new AppError('请先清理此前存储池迁移的旧副本', 409);
       if (sourcePoolId === targetPoolId)
-        return { moved: false, from: sourcePoolId, to: targetPoolId, vm: await this.view(id) };
+        return { moved: false, from: sourcePoolId, to: targetPoolId, cleanupPending: false, vm: await this.view(id) };
       const sourceRoot = await this.storagePools.ensure(sourcePoolId);
       const targetRoot = await this.storagePools.ensure(targetPoolId);
       const source = await regularDirectory(vmDir(id));
@@ -2120,21 +2121,26 @@ export class Machines extends EventEmitter {
         throw error;
       });
       if (existing) throw new AppError('目标存储池中已有同标识目录，请先检查', 409);
+      return storageRuntime.run({ owner: 'core:storage-pool-move', taskId: 'pool-move:' + id,
+        label: 'Copy and verify VM storage', mode: 'write', paths: [source, targetRoot],
+        dynamicTemporary: [targetRoot], buffers: 1024 ** 2, files: 6, signal }, async (lease) => {
       log('正在复制并校验实例目录…\n');
       try {
-        await copyDirectoryVerified(source, stage, signal, log);
+        await copyDirectoryVerified(source, stage, signal, log, lease);
         signal?.throwIfAborted();
         await rename(stage, target);
       } catch (error) {
         await regularDirectory(stage);
-        await rm(stage, { recursive: true, force: true });
+        try { await rm(stage, { recursive: true, force: true }); }
+        catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }
         throw error;
       }
       try {
         await this.storagePools.registerCleanup(id, sourcePoolId, targetPoolId);
       } catch (error) {
         await regularDirectory(target);
-        await rm(target, { recursive: true, force: true });
+        try { await rm(target, { recursive: true, force: true }); }
+        catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }
         throw error;
       }
       vm.storagePoolId = targetPoolId === 'default' ? undefined : targetPoolId;
@@ -2145,7 +2151,8 @@ export class Machines extends EventEmitter {
         vm.storagePoolId = sourcePoolId === 'default' ? undefined : sourcePoolId;
         this.storagePools.bind(id, sourcePoolId);
         await regularDirectory(target);
-        await rm(target, { recursive: true, force: true });
+        try { await rm(target, { recursive: true, force: true }); }
+        catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }
         await this.storagePools.clearCleanup(id, sourcePoolId, targetPoolId);
         throw error;
       }
@@ -2156,11 +2163,13 @@ export class Machines extends EventEmitter {
         await this.storagePools.clearCleanup(id, sourcePoolId, targetPoolId);
       } catch (error) {
         cleanupPending = true;
+        this.storagePools.retainCleanup(id, sourcePoolId, targetPoolId, lease, error);
         log(`旧存储池目录待清理：${String((error as Error).message || error)}\n`);
       }
       this.emit('change');
       return { moved: true, from: sourcePoolId, to: targetPoolId, cleanupPending,
         vm: await this.view(id) };
+      });
     }));
   }
   async delete(id: string, expected?: MigrationFingerprint) {
@@ -2304,7 +2313,7 @@ export class Machines extends EventEmitter {
   async importDisk(
     input: unknown,
     disk: string,
-    options: { signal?: AbortSignal; pendingResize?: boolean } = {},
+    options: { signal?: AbortSignal; pendingResize?: boolean; storage?: StorageLease } = {},
   ) {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const { signal, pendingResize } = options;
@@ -2327,7 +2336,13 @@ export class Machines extends EventEmitter {
         bootstrapped: false,
         pendingResize: !!pendingResize,
       };
+      const destination = this.storagePools.directory(vm.id, vm.storagePoolId || 'default');
+      return withStorageLease({ owner: 'core:disk-adoption', taskId: 'disk-adoption:' + vm.id,
+        label: 'Publish imported disk', mode: 'write', paths: [disk, destination],
+        dynamicTemporary: [destination], buffers: 1024 ** 2, files: 6, signal }, options.storage, async (lease) => {
+      lease.assertActive();
       const dir = await this.prepareVmDirectory(vm);
+      const output = join(dir, 'disk.qcow2');
       let saved = false;
       try {
         signal?.throwIfAborted();
@@ -2341,6 +2356,7 @@ export class Machines extends EventEmitter {
                 vm.architecture === 'aarch64' ? '/dev/ttyAMA0' : '/dev/ttyS0'),
           ...(vm.distro === 'alpine' ? {} : { 'network-config': cloudNetwork }),
         });
+        await lease.reserveTemporary(output, (await stat(disk)).size);
         await pipeline(
           createReadStream(disk),
           createWriteStream(join(dir, 'disk.qcow2'), { flags: 'wx', mode: 0o600 }),
@@ -2353,15 +2369,18 @@ export class Machines extends EventEmitter {
         await this.save();
         saved = true;
         signal?.throwIfAborted();
+        await lease.releaseTemporary(output);
         this.emit('change');
         return this.view(vm.id);
       } catch (error) {
         this.records.delete(vm.id);
         if (saved) await this.save();
-        await this.removeVmDirectory(vm);
+        try { await this.removeVmDirectory(vm); }
+        catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }
         this.storagePools.unbind(vm.id);
         throw error;
       }
+      });
     }));
   }
   // Publish a validated standalone disk and rotate its controller key at first boot.
@@ -2376,6 +2395,8 @@ export class Machines extends EventEmitter {
     migrationOrigin?: VMRecord['migrationOrigin'],
     diskEncryption?: VMRecord['diskEncryption'],
     branchOrigin?: VMRecord['branchOrigin'],
+    storage?: StorageLease,
+    signal?: AbortSignal,
   ) {
     return this.locked('storage-pools', () => this.locked('create', async () => {
       const config = createSchema.parse(input);
@@ -2397,10 +2418,20 @@ export class Machines extends EventEmitter {
         ...(diskEncryption ? { diskEncryption: diskEncryptionSchema.parse(diskEncryption) } : {}),
         ...(branchOrigin ? { branchOrigin } : {}),
       };
+      const destination = this.storagePools.directory(vm.id, vm.storagePoolId || 'default');
+      return withStorageLease({ owner: 'core:disk-adoption', taskId: 'disk-adoption:' + vm.id,
+        label: 'Publish imported disk', mode: 'write', paths: [disk, destination],
+        dynamicTemporary: [destination], buffers: 1024 ** 2, files: 6, signal }, storage, async (lease) => {
+      lease.assertActive();
       const dir = await this.prepareVmDirectory(vm);
+      const output = join(dir, 'disk.qcow2');
       try {
-        await copyFile(disk, join(dir, 'disk.qcow2'));
+        signal?.throwIfAborted();
+        await lease.reserveTemporary(output, (await stat(disk)).size);
+        if (branchOrigin) await lease.reserveTemporary(join(dir, 'branch-base.qcow2'), (await stat(disk)).size);
+        await copyFile(disk, output);
         if (branchOrigin) await copyFile(disk, join(dir, 'branch-base.qcow2'));
+        signal?.throwIfAborted();
         await writeFile(join(dir, 'id_rsa'), key, { mode: 0o600 });
         await writeFile(join(dir, 'seed.iso'), seed);
         await writeFile(join(dir, 'identity.json'), JSON.stringify(createSshKey()), { mode: 0o600 });
@@ -2418,14 +2449,18 @@ export class Machines extends EventEmitter {
         } else if (project) await writeFile(join(dir, 'project.json'), JSON.stringify(project, null, 2));
         this.records.set(vm.id, vm);
         await this.save();
+        await lease.releaseTemporary(output);
+        if (branchOrigin) await lease.releaseTemporary(join(dir, 'branch-base.qcow2'));
         this.emit('change');
         return this.view(vm.id);
       } catch (error) {
         this.records.delete(vm.id);
-        await this.removeVmDirectory(vm);
+        try { await this.removeVmDirectory(vm); }
+        catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }
         this.storagePools.unbind(vm.id);
         throw error;
       }
+      });
     }));
   }
   async recordMerge(id: string, origin: NonNullable<VMRecord['mergeOrigin']>) {

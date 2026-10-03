@@ -9,9 +9,8 @@ import type { Files } from './files.ts';
 import type { Bundles } from './bundles.ts';
 import { Jobs } from './jobs.ts';
 import { lstat } from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
-import { pipeline } from 'node:stream/promises';
 import type { Writable } from 'node:stream';
+import { streamStoredFile } from './storage-streams.ts';
 
 export const downloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('file'), path: z.string() }).strict(),
@@ -131,12 +130,7 @@ export class Downloads {
         headers();
         await target.write(res, abort.signal);
       } else if (target.type === 'local') {
-        const info = await lstat(target.path);
-        if (!info.isFile()) throw new AppError('备份文件不可用');
-        headers(info.size);
-        await pipeline(createReadStream(target.path, { end: Math.max(0, info.size - 1) }), res, {
-          signal: abort.signal,
-        });
+        await streamStoredFile(target.path, res, abort.signal, headers);
       } else if (target.type === 'file')
         await this.files.download(target.id, target.path, res, headers, abort.signal);
       else

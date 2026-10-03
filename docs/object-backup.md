@@ -3,7 +3,7 @@
 启用平台、快照实例包、备份策略和私密配置插件后，在实例的“能力中心”选择 **S3/MinIO 备份目标**。先在该实例的私密配置中保存对象存储凭据，值为 JSON：
 
 ```json
-{"accessKeyId":"your-access-key","secretAccessKey":"your-secret-key"}
+{ "accessKeyId": "your-access-key", "secretAccessKey": "your-secret-key" }
 ```
 
 临时凭据还可加 `sessionToken`。私密值由现有私密配置服务保护；目标配置只保存私密配置的名称，不包含密钥。生产对象存储请使用 HTTPS；HTTP 适用于受信任的本机 MinIO 测试。
@@ -11,7 +11,17 @@
 在能力参数中提交以下 JSON，`endpoint` 省略时使用 AWS S3，设置时应为无路径、查询和凭据的 S3 兼容服务地址：
 
 ```json
-{"mode":"save","target":{"endpoint":"https://minio.example.com","bucket":"sakura-backups","region":"us-east-1","prefix":"workstations","credentialSecret":"S3Credentials","autoUpload":true}}
+{
+  "mode": "save",
+  "target": {
+    "endpoint": "https://minio.example.com",
+    "bucket": "sakura-backups",
+    "region": "us-east-1",
+    "prefix": "workstations",
+    "credentialSecret": "S3Credentials",
+    "autoUpload": true
+  }
+}
 ```
 
 保存时会用凭据检查存储桶。`check` 动作搭配相同参数仅验证，不保存。`autoUpload: true` 会每分钟检查当前实例的本地备份，把尚未上传的备份依次传至目标；失败状态在 `{"mode":"status"}` 的 `sync` 字段中显示，五分钟后重试。关闭自动上传可把该字段设为 `false`。自动上传依赖仍可读取的本地备份；建议让本地保留策略覆盖服务停机和上传失败的时间窗口。
@@ -31,3 +41,5 @@
 远端对象保留与本地备份策略独立；自动上传不会自动清理远端历史。对象键为 `<prefix>/sakura-backups/<来源实例 UUID>/<备份 UUID>.sakura[.enc]`，相邻的 `.json` 是校验清单。请为存储桶单独配置访问权限、容量与生命周期策略。
 
 专项验证：`npm run test:object-backup` 使用真实 Alpine/QEMU 实例分别创建内容块和加密备份，自动上传到本地 S3 协议服务，删除本地备份后从远端恢复、启动并核对文件。`npm test` 还覆盖分片上传、重复上传、损坏远端对象后的拒绝恢复、保留锁定、自动补传和远端删除。
+
+上传的宿主资源由 [受管存储与恢复](storage-runtime.md) 统一记录。取消会等所有在途分片结束及 `AbortMultipartUpload` 回执；清理无法确认时保留 `STORAGE_CLEANUP_PENDING`，不会把取消当作已经回收。创建分片响应丢失时，会按精确对象键查询未完成上传并中止；完成响应丢失时，也会删除可能已提交、尚无已验证清单的对象。因此凭据除了普通读写/删除权限，还需 `s3:AbortMultipartUpload` 和 `s3:ListBucketMultipartUploads`（后者用于响应丢失后的核对）。可以另设存储桶的未完成 multipart 生命周期作为停机后的兜底回收；应用不会自动重放一次结果未知的上传。

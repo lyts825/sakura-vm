@@ -26,6 +26,7 @@ let adopted = 0;
 const machines = {
   engine: {
     run: async (_tool: string, args: string[]) => {
+      if (args[0] === 'measure') return JSON.stringify({ required: qcow.length });
       if (args[0] === 'convert') {
         await writeFile(args.at(-1)!, qcow);
         return '';
@@ -104,6 +105,7 @@ test('a small cloud image is expanded to the distribution minimum before publica
   const small = {
     engine: { run: async (_tool: string, args: string[]) => {
       calls.push(args);
+      if (args[0] === 'measure') return JSON.stringify({ required: qcow.length });
       if (args[0] === 'convert') { await writeFile(args.at(-1)!, qcow); return ''; }
       return JSON.stringify(args[2] === 'qcow2'
         ? { format: 'qcow2', 'virtual-size': 4 * GiB }
