@@ -95,7 +95,11 @@ test('OpenAPI describes real core and typed operations, optional defaults, proje
   assert.equal(spec.paths['/api/audit/remote'].post.security, undefined);
   assert.deepEqual(spec.paths['/api/session/unlock'].post.security, []);
   assert.equal(spec.paths['/api/session/settings'].patch.security, undefined);
-  assert.ok(!spec.paths['/api/images']); // This declaration is a dispatcher prefix, not a POST endpoint.
+  assert.ok(spec.paths['/api/images'].get); // Exact read endpoint, never the old dispatcher POST prefix.
+  assert.equal(spec.paths['/api/images'].post, undefined);
+  assert.ok(spec.paths['/api/images/{imageId}'].post);
+  assert.ok(spec['x-sakura-operations']?.some(item => item.method === 'UPGRADE'));
+  assert.deepEqual(spec.paths['/api/host-runtime'].get['x-sakura-operation']?.roles, ['owner']);
   assert.ok(spec['x-sakura-route-prefixes'].some((item) => item.path === '/api/images'));
   assert.equal(
     apiPath('/api/vms/{vmId}/commands', { vmId: 'vm' }, { project: 'default', q: 'a&b' }),

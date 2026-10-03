@@ -10,7 +10,7 @@ import type { PluginScope } from './plugin-scope.ts';
 import { storageRuntime, type StorageLease, type StorageRequest } from './storage-runtime.ts';
 
 type PluginExecution = Pick<ExecutionOptions, 'vmId' | 'projectId' | 'configVersion'> & { signal?: AbortSignal };
-type PluginStorage = Omit<StorageRequest, 'owner' | 'taskId'>;
+type PluginStorage = Omit<StorageRequest, 'owner' | 'taskId' | 'transfer'>;
 type JobOptions = { persistent?: boolean; /** Existing first-party history name, during migration only. */ compatHistoryName?: string };
 
 class PluginJobs extends Jobs {
@@ -61,7 +61,7 @@ export function pluginCapabilities(pluginId: string, machines: Machines, scope: 
       run<T>(request: PluginStorage, work: (lease: StorageLease, signal: AbortSignal) => Promise<T>): Promise<T> {
         const signal = signalFor(request.signal);
         return scope.run(() => withResourceContext(identity, () => storageRuntime.run({ ...request,
-          owner, taskId: randomUUID(), signal }, (lease) => work(lease, signal))));
+          transfer: undefined, owner, taskId: randomUUID(), signal }, (lease) => work(lease, signal))));
       },
     }),
     jobs: Object.freeze({

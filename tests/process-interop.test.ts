@@ -17,6 +17,7 @@ test('Windows process interop permits only registered, unchanged EXEs from an in
       await copyFile(process.execPath, executable);
       const files = new Map<string, string>();
       const machines = {
+        live: new Map([[id, { abort: new AbortController() }]]),
         get: (value: string) => { assert.equal(value, id); return { id }; },
         requireUnlocked: (value: string) => assert.equal(value, id),
         state: (value: string) => { assert.equal(value, id); return 'running'; },
@@ -62,3 +63,41 @@ test('Windows process interop permits only registered, unchanged EXEs from an in
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+test('queued guest host launches recheck their specific grant, program and VM generation', async () => {
+  const { ProcessInterop } = await import('../server/process-interop.ts');
+  const { HostRuntime } = await import('../server/host-runtime/index.ts');
+  const { vmLifetime } = await import('../server/vm-lifetime.ts');
+  const { createHash } = await import('node:crypto');
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', token = 'a'.repeat(64);
+  for (const change of ['disabled', 'program', 'live', 'generation']) {
+    const live = { abort: new AbortController() } as any;
+    const machines = { live: new Map([[id, live]]), get: () => ({ id }), requireUnlocked() {},
+      state: () => 'running' } as unknown as Machines;
+    const runtime = new HostRuntime({ budgets: { process: { capacity: 1 } } });
+    const resource = { owner: 'test:interop', kind: 'tool', label: 'interop', cost: { process: 1 } };
+    const held = await runtime.acquire(resource);
+    let entered!: () => void, launched = false;
+    const queued = new Promise<void>(resolve => { entered = resolve; });
+    const interop = new ProcessInterop(machines, 7337, () => {}, async (_program, signal) => {
+      entered();
+      const lease = await runtime.acquire({ ...resource, signal });
+      try { launched = true; return { exitCode: 0, stdout: '', stderr: '' }; }
+      finally { lease.release(); }
+    });
+    const entry = { enabled: true, tokenHash: createHash('sha256').update(token).digest('hex'),
+      programs: { sample: { executable: 'C:\\approved.exe', fixedArgs: [], sha256: 'b'.repeat(64) } } };
+    (interop as any).stateValue = { [id]: entry }; // Model the domain's already committed state publication.
+    const result = interop.guest({ vmId: id, programId: 'sample' }, token);
+    const rejected = assert.rejects(result);
+    await queued;
+    if (change === 'disabled') entry.enabled = false;
+    if (change === 'program') entry.programs.sample.sha256 = 'c'.repeat(64);
+    if (change === 'live') machines.live.set(id, { abort: new AbortController() } as any);
+    if (change === 'generation') vmLifetime(id, live).advanceExecution();
+    held.release(); await rejected;
+    assert.equal(launched, false, change);
+    assert.equal(runtime.snapshot().resources.length, 0);
+    runtime.close();
+  }
+});

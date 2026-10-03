@@ -82,20 +82,20 @@ export class ProjectPermissions {
     return task;
   }
 
-  private async existing(vmId: string, projectId: string) {
-    const index = await this.catalog.list(vmId);
+  private async existing(vmId: string, projectId: string, committed = false) {
+    const index = await (committed ? this.catalog.readCommittedList(vmId) : this.catalog.list(vmId));
     if (!index.projects.some((item) => item.id === projectIdSchema.parse(projectId)))
       throw new AppError('项目不存在', 404);
     return index;
   }
 
   private async requireIsolated(vmId: string, projectId: string,
-    index: Awaited<ReturnType<ProjectCatalog['list']>>) {
+    index: Awaited<ReturnType<ProjectCatalog['list']>>, committed = false) {
     if (!this.workspaces) throw new AppError('项目工作区插件未启用', 403);
     const paths = await Promise.all(index.projects.map(async (item) => ({
       id: item.id,
       directory: posix.normalize((await this.workspaces!.projects.inScope(vmId, item.id,
-        () => this.workspaces!.config(vmId))).directory).replace(/\/$/, '') || '/',
+        () => committed ? this.workspaces!.readCommittedConfig(vmId) : this.workspaces!.config(vmId))).directory).replace(/\/$/, '') || '/',
     })));
     const selected = paths.find((item) => item.id === projectId)!.directory;
     const conflict = paths.find((item) => item.id !== projectId &&
@@ -174,16 +174,31 @@ export class ProjectPermissions {
 
   async require(principal: Principal, vmId: string, projectId: string,
     required: ProjectPermission) {
+    return this.checkPermission(principal, vmId, projectId, required, false);
+  }
+
+  /** Full role and isolation check without acquiring a metadata RMW queue in reverse order. */
+  async requireCommitted(principal: Principal, vmId: string, projectId: string,
+    required: ProjectPermission) {
+    return this.checkPermission(principal, vmId, projectId, required, true);
+  }
+
+  private async checkPermission(principal: Principal, vmId: string, projectId: string,
+    required: ProjectPermission, committed: boolean) {
     if (principal.role === 'owner') return;
     if (principal.role !== 'member') throw new AppError('账户没有项目权限', 403);
     const live = this.access.users().some((item) => item.id === principal.id && item.role === 'member');
     if (!live || principal.expiresAt <= Date.now()) throw new AppError('账户已失效', 401);
-    const index = await this.existing(vmId, projectId);
+    const index = await this.existing(vmId, projectId, committed);
+    const version = this.version(vmId, projectId);
     const item = this.scopes.find((entry) => entry.vmId === vmId && entry.projectId === projectId);
     const grant = item?.grants.find((entry) => entry.accountId === principal.id);
     const role = item?.roles.find((entry) => entry.id === grant?.roleId);
     if (!role?.permissions.includes(required)) throw new AppError('账户没有此项目操作权限', 403);
-    await this.requireIsolated(vmId, projectId, index);
+    await this.requireIsolated(vmId, projectId, index, committed);
+    if (version !== this.version(vmId, projectId) || principal.expiresAt <= Date.now() ||
+        !this.access.users().some((item) => item.id === principal.id && item.role === 'member'))
+      throw new AppError('项目授权在校验期间已改变', 403);
   }
 
   requiresApproval(vmId: string, projectId: string) {

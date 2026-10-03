@@ -5,12 +5,14 @@ export function generateSdk(document: ApiDocument) {
     Object.entries(document.paths).flatMap(([path, methods]) =>
       Object.entries(methods).map(([method, operation]) => [
         operation.operationId,
-        { path, method: method.toUpperCase(), public: operation.security?.length === 0 },
+        { path, method: method.toUpperCase(), public: operation['x-sakura-operation']
+          ? operation['x-sakura-operation'].access !== 'controller' : operation.security?.length === 0,
+          policy: operation['x-sakura-operation'] },
       ]),
     ),
   );
   return (
-    `// Generated Sakura ES module. Node.js 22+ or a modern browser. No dependencies.\n// import { SakuraClient } from './sakura-client.mjs';\n// const client = new SakuraClient();\n// const machines = await client.call('core.vms.list');\n// JSON responses are parsed; binary responses return a Response for streaming.\nexport const operations = ${JSON.stringify(operations, null, 2)};\n` +
+    `// Generated Sakura ES module. Node.js 22+ or a modern browser. No dependencies.\n// import { SakuraClient } from './sakura-client.mjs';\n// const client = new SakuraClient();\n// const machines = await client.call('core.vms.list');\n// JSON responses are parsed; binary responses return a Response for streaming.\nexport const operations = ${JSON.stringify(operations, null, 2)};\nexport const operationDirectory = [...Object.values(operations).map(operation => operation.policy).filter(Boolean), ...${JSON.stringify(document['x-sakura-operations']?.filter(operation => operation.method === 'UPGRADE') || [])}];\n` +
     String.raw`
 export class SakuraApiError extends Error {
   constructor(message, status, code) { super(message); this.name = 'SakuraApiError'; this.status = status; this.code = code; }
@@ -44,7 +46,7 @@ export class SakuraClient {
     try { await this.request('/api/access/logout', { method: 'POST', signal }); }
     finally { this.#token = ''; }
   }
-  async call(operationId, { path: parameters = {}, query = {}, body, signal, response: result = 'auto' } = {}) {
+  async call(operationId, { path: parameters = {}, query = {}, body, binary = false, headers = {}, signal, response: result = 'auto' } = {}) {
     if (!Object.hasOwn(operations, operationId)) throw new Error('Unknown operation: ' + operationId);
     const operation = operations[operationId];
     const path = operation.path.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, key) => {
@@ -52,14 +54,14 @@ export class SakuraClient {
       if (typeof value !== 'string' || !value || value === '.' || value === '..' || /[\\/\u0000-\u001f]/.test(value)) throw new Error('Invalid path parameter: ' + key);
       return encodeURIComponent(value);
     });
-    return this.request(path, { method: operation.method, query, body, signal, response: result, authenticated: !operation.public });
+    return this.request(path, { method: operation.method, query, body, binary, headers, signal, response: result, authenticated: !operation.public });
   }
-  async request(path, { method = 'GET', query = {}, body, binary = false, contentType = 'application/octet-stream', signal, response: result = 'auto', authenticated = true } = {}) {
+  async request(path, { method = 'GET', query = {}, body, binary = false, contentType = 'application/octet-stream', signal, response: result = 'auto', authenticated = true, headers: suppliedHeaders = {} } = {}) {
     if (typeof path !== 'string' || !path.startsWith('/api/') || /[?#\\\u0000-\u001f]/.test(path)) throw new Error('Use an /api/ path and a separate query object');
     const url = new URL(path, this.#base);
     if (url.origin !== this.#base || !url.pathname.startsWith('/api/') || url.pathname !== path) throw new Error('Invalid API path');
     method = method.toUpperCase();
-    if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) throw new Error('Unsupported HTTP method');
+    if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method)) throw new Error('Unsupported HTTP method');
     if ((method === 'GET' || method === 'HEAD') && body !== undefined) throw new Error('Read requests cannot have a body');
     for (const [key, value] of Object.entries(query)) {
       if (value === undefined || value === null) continue;
@@ -69,7 +71,7 @@ export class SakuraClient {
     signal?.throwIfAborted();
     if (authenticated && !this.#token) await this.authenticate(signal);
     signal?.throwIfAborted();
-    const headers = authenticated ? { 'X-Sakura-Token': this.#token } : {};
+    const headers = { ...suppliedHeaders, ...(authenticated ? { 'X-Sakura-Token': this.#token } : {}) };
     if (body !== undefined) headers['Content-Type'] = binary ? contentType : 'application/json';
     const response = await this.#fetch(url.href, { method, headers, signal, cache: 'no-store', redirect: 'error', body: body === undefined ? undefined : binary ? body : JSON.stringify(body) });
     if (!response.ok) {

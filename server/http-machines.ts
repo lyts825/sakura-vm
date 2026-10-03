@@ -14,6 +14,8 @@ import type { ProjectPermissions } from './project-permissions.ts';
 import { guestExecutionInput, type ProjectExecution } from './project-execution.ts';
 import { storagePoolInput } from './storage-pools.ts';
 import { requestScope } from './operation-scope.ts';
+import { captureOperationCheck } from './operation-context.ts';
+import { withResourceContext } from './host-runtime/context.ts';
 import { sendJson as send } from './http-response.ts';
 
 export type MachineApiContext = {
@@ -26,7 +28,7 @@ export type MachineApiContext = {
   projectExecution: Pick<ProjectExecution, 'run'>;
   authorizedBody: (req: IncomingMessage, limit?: number, signal?: AbortSignal) => Promise<any>;
 };
-/** Called only after the host authentication, authorization and maintenance gates. */
+/** Production dispatch inherits the gateway authority; standalone callers retain their own gate. */
 export function createMachineApi(context: MachineApiContext) {
   const {
     machines,
@@ -39,6 +41,7 @@ export function createMachineApi(context: MachineApiContext) {
     authorizedBody,
   } = context;
   return async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> => {
+    await captureOperationCheck()();
     const route = url.pathname.split('/').filter(Boolean);
     if (req.method === 'GET' && url.pathname === '/api/system')
       return send(res, {
@@ -116,7 +119,9 @@ export function createMachineApi(context: MachineApiContext) {
           const input = guestExecutionInput.parse(await authorizedBody(req, 512 * 1024, abort.signal));
           return send(
             res,
-            await projectExecution.run(id, input, url.searchParams.get('project'), abort.signal),
+            await withResourceContext({ projectId: input.scope === 'instance' ? '@instance' :
+              url.searchParams.get('project') || undefined }, () =>
+              projectExecution.run(id, input, url.searchParams.get('project'), abort.signal)),
           );
         } finally {
           operation.dispose();

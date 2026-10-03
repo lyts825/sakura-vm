@@ -6,7 +6,7 @@ import { posix } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../../shared/errors.ts';
 import { guestPath } from '../../shared/paths.ts';
-import { readJsonBody, MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
+import { MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 import { Files, MAX_TEXT_BYTES, textVersion } from '../../server/files.ts';
 import { FileHistory } from '../../server/file-history.ts';
 import { FileLocks } from '../../server/file-locks.ts';
@@ -34,7 +34,7 @@ export async function route(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  body: (req: IncomingMessage) => Promise<any>,
+  body: (req: IncomingMessage, signal?: AbortSignal, limit?: number) => Promise<any>,
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -122,7 +122,7 @@ export async function route(
         lockToken: z.uuid().optional(),
       })
       .strict()
-      .parse(await readJsonBody(req, MAX_TEXT_REQUEST_BYTES, signal));
+      .parse(await body(req, signal, MAX_TEXT_REQUEST_BYTES));
     if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
     await this.fileLocks.withMutation(id, [guestPath(value.path)], value.lockToken,
       () => this.machines.writeGuestFile(

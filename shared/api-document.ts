@@ -1,3 +1,5 @@
+import type { OperationDeclaration } from './contracts/operations.ts';
+
 export type ApiParameter = {
   name: string;
   in: 'path' | 'query';
@@ -20,6 +22,7 @@ export type ApiOperation = {
   'x-sakura-enabled': boolean;
   'x-sakura-inspectable': boolean;
   'x-sakura-contract': 'declared' | 'partial';
+  'x-sakura-operation'?: OperationDeclaration;
 };
 export type ApiDocument = {
   openapi: string;
@@ -28,6 +31,7 @@ export type ApiDocument = {
   security: Record<string, string[]>[];
   components: Record<string, unknown>;
   paths: Record<string, Record<string, ApiOperation>>;
+  'x-sakura-operations'?: OperationDeclaration[];
   'x-sakura-route-prefixes': {
     owner: string;
     path: string;

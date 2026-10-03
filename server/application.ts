@@ -34,7 +34,7 @@ import { HostPeers } from './host-peers.ts';
 import { listenHttpServer } from './http-listener.ts';
 import { createMachineApi } from './http-machines.ts';
 import { sendJson as send } from './http-response.ts';
-import { readJsonBody as body, requestUrl } from './http.ts';
+import { readJsonBody, requestUrl } from './http.ts';
 import { JitPrivileges } from './jit-privileges.ts';
 import { Jobs } from './jobs.ts';
 import { LiveMigrationReceiver } from './live-migration-receiver.ts';
@@ -59,12 +59,17 @@ import { ProcessInterop, guestInteropRequest } from './process-interop.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { projectSchema } from './project-config.ts';
 import { ProjectExecution } from './project-execution.ts';
-import { ProjectPermissions, type ProjectPermission } from './project-permissions.ts';
+import { ProjectPermissions } from './project-permissions.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import { RemoteAuditLock, remoteAuditAction } from './remote-audit.ts';
 import { ResourceScope, ClosePhase } from './resource-scope.ts';
 import { hostRuntime } from './host-runtime/index.ts';
 import { scheduler } from './scheduler.ts';
+import { computeRuntime } from './compute-runtime.ts';
+import { OperationGateway, validateOperationInput } from './operation-gateway.ts';
+import { projectRoutePermissions as memberProjectRoutes } from './operation-catalog.ts';
+import { createOperationAuthority } from './operation-authority.ts';
+import { metadataQueueSnapshot, flushMetadata } from './metadata-queue.ts';
 import { createRuntime } from './runtime.ts';
 import { generateSdk } from './sdk.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
@@ -80,13 +85,8 @@ import { Workspaces } from './workspaces.ts';
 
 const { createHttpServer: createServer } = networkFor('core:application');
 
-const memberProjectRoutes: Record<string, Partial<Record<'GET' | 'PUT' | 'POST', ProjectPermission>>> = {
-  project: { GET: 'read', PUT: 'write', POST: 'execute' },
-  'project-runtime': { GET: 'read' },
-  'project-files': { GET: 'read' },
-  git: { GET: 'read', POST: 'execute' },
-  health: { GET: 'read' },
-};
+const body = async (req: IncomingMessage, limit?: number, signal?: AbortSignal) =>
+  validateOperationInput(await readJsonBody(req, limit, signal));
 
 export async function startApplication() {
   const resources = new ResourceScope({ owner: 'core:application' });
@@ -94,6 +94,7 @@ export async function startApplication() {
   const closeResources = async () => {
     const failures: unknown[] = [];
     try { await resources.close(); } catch (error) { failures.push(error); }
+    try { await flushMetadata(); } catch (error) { failures.push(error); }
     // Keep the OS ownership guard if any domain still has unconfirmed cleanup.
     if (!failures.length) {
       const pending = hostRuntime.snapshot().resources.filter(resource => resource.id !== dataOwner?.resourceId);
@@ -110,6 +111,8 @@ export async function startApplication() {
     resources.defer('host-admission-drain', () => hostRuntime.beginDrain(), ClosePhase.admission);
     resources.defer('scheduler-drain', () => scheduler.beginDrain(), ClosePhase.admission);
     resources.own('scheduler', scheduler, ClosePhase.plugins + 1);
+    resources.defer('compute-drain', () => computeRuntime.beginDrain(), ClosePhase.admission);
+    resources.own('compute', computeRuntime, ClosePhase.plugins + 2);
     resources.defer('network-drain', () => networkRuntime.beginDrain(), ClosePhase.admission);
     resources.own('network', networkRuntime, ClosePhase.transport);
     await networkRuntime.start();
@@ -743,6 +746,10 @@ export async function startApplication() {
       authorized(req);
       return input;
     };
+    const gateway = new OperationGateway({ enabled: () => features.enabled,
+      bind: createOperationAuthority({ machines, features, access, session, projectPermissions,
+        browserExtensions, equalToken, socketAuthorization }),
+    });
     const sendSsoPage = (
       res: ServerResponse,
       origin: string | null,
@@ -996,10 +1003,11 @@ export async function startApplication() {
       if (await features.downloads?.route(req, res, url)) return;
       const principal = authorized(req);
       const accountPrincipal = access.enabled ? access.authorize(req.headers['x-sakura-token']) : null;
+      if (url.pathname === '/api/operations') return send(res, { operations: gateway.directory() });
       if (url.pathname === '/api/host-runtime') {
         if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
         if (access.enabled && accountPrincipal?.role !== 'owner') throw new AppError('仅管理员可查看系统资源状态', 403);
-        return send(res, { ...hostRuntime.snapshot(), schedules: scheduler.snapshot() });
+        return send(res, { ...hostRuntime.snapshot(), schedules: scheduler.snapshot(), metadata: metadataQueueSnapshot() });
       }
       if (url.pathname === '/api/network-runtime') {
         if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
@@ -1759,33 +1767,37 @@ export async function startApplication() {
       throw new AppError('接口不存在', 404);
     };
 
+    const dispatchApi = (req: IncomingMessage, res: ServerResponse, url: URL) =>
+      gateway.run(req, url, () => api(req, res, url));
     const server = createServer(async (req, res) => {
       try {
         if (req.url === '/api/guest/interop') {
-          if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
-          if (
-            !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '') ||
-            ![`127.0.0.1:${PORT}`, `localhost:${PORT}`].includes(req.headers.host || '') ||
-            req.headers.origin ||
-            req.headers['sec-fetch-site']
-          )
-            throw new AppError('仅接受本机客户机连接', 403);
-          const input = guestInteropRequest.parse(await body(req, 4096));
-          const vmId = input.vmId;
-          return await audit.span(
-            { kind: 'request', name: 'POST /api/guest/interop', vmId },
-            async () =>
-              send(
-                res,
-                await processInterop.guest(
-                  input,
-                  Array.isArray(req.headers['x-sakura-guest-token'])
-                    ? undefined
-                    : req.headers['x-sakura-guest-token'],
+          return await gateway.run(req, new URL(req.url, `http://localhost:${PORT}`), async () => {
+            if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+            if (
+              !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '') ||
+              ![`127.0.0.1:${PORT}`, `localhost:${PORT}`].includes(req.headers.host || '') ||
+              req.headers.origin ||
+              req.headers['sec-fetch-site']
+            )
+              throw new AppError('仅接受本机客户机连接', 403);
+            const input = guestInteropRequest.parse(await body(req, 4096));
+            const vmId = input.vmId;
+            return await audit.span(
+              { kind: 'request', name: 'POST /api/guest/interop', vmId },
+              async () =>
+                send(
+                  res,
+                  await processInterop.guest(
+                    input,
+                    Array.isArray(req.headers['x-sakura-guest-token'])
+                      ? undefined
+                      : req.headers['x-sakura-guest-token'],
+                  ),
                 ),
-              ),
-            () => res.statusCode,
-          );
+              () => res.statusCode,
+            );
+          });
         }
         if (req.url?.startsWith('/api/extension/')) {
           const extensionUrl = requestUrl(req.url, PORT);
@@ -1795,7 +1807,7 @@ export async function startApplication() {
           )
             return await audit.span(
               { kind: 'request', name: (req.method + ' ' + extensionUrl.pathname).slice(0, 200) },
-              () => extensionApi(req, res, extensionUrl),
+              () => gateway.run(req, extensionUrl, () => extensionApi(req, res, extensionUrl)),
               () => res.statusCode,
             );
         }
@@ -1818,7 +1830,7 @@ export async function startApplication() {
           )
             return await audit.span(
               { kind: 'request', name: 'POST ' + url.pathname },
-              () => api(req, res, url),
+              () => dispatchApi(req, res, url),
               () => res.statusCode,
             );
           let actorId: string | undefined;
@@ -1839,11 +1851,11 @@ export async function startApplication() {
                 ...(vmId && z.uuid().safeParse(vmId).success ? { vmId } : {}),
                 ...(actorId ? { actorId } : {}),
               },
-              () => api(req, res, url),
+              () => dispatchApi(req, res, url),
               () => res.statusCode,
             );
           }
-          return await api(req, res, url);
+          return await dispatchApi(req, res, url);
         }
         if (vite) return vite.middlewares(req, res);
         if (req.method !== 'GET' && req.method !== 'HEAD') throw new AppError('不支持此方法', 405);
@@ -1917,7 +1929,7 @@ export async function startApplication() {
       },
       0,
     );
-    server.on('upgrade', (req, socket, head) => {
+    server.on('upgrade', async (req, socket, head) => {
       const url = requestUrl(req.url, PORT);
       if (!url) {
         socket.destroy();
@@ -1933,6 +1945,9 @@ export async function startApplication() {
         socket.end('HTTP/1.1 423 Locked\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
         return;
       }
+      let admission: Awaited<ReturnType<OperationGateway['prepare']>>;
+      try { admission = await gateway.prepare(req, url, 'UPGRADE'); }
+      catch { socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); return; }
       const parts = url.pathname.split('/');
       const id = parts[2];
       const mode = parts[3];
@@ -1964,174 +1979,180 @@ export async function startApplication() {
         socket.destroy();
         return;
       }
-      ws.handleUpgrade(req, socket, head, async (client) => {
-        try {
-          session.requireUnlocked();
-        } catch {
-          client.terminate();
-          return;
-        }
-        const principal = socketAuthorization(credential, mode, id, terminalSession, terminalProject);
-        if (!principal) {
-          client.terminate();
-          return;
-        }
-        socketCredentials.set(client, credential);
-        if ('id' in principal) {
-          socketAccounts.set(client, principal.id);
-          const timer = setTimeout(() => client.terminate(), Math.max(1, principal.expiresAt - Date.now()));
-          client.once('close', () => clearTimeout(timer));
-        }
-        if (mode === 'terminal-view' && 'id' in principal) {
-          const grant = terminalSharing.find(principal.id, id, terminalSession!, terminalProject);
-          if (!grant) {
+      if (socket.destroyed) return;
+      try { ws.handleUpgrade(req, socket, head, (client) => {
+        void admission.run(async () => {
+          await admission.check();
+          try {
+            session.requireUnlocked();
+          } catch {
             client.terminate();
             return;
           }
-          socketTerminalGrants.set(client, grant.id);
-          const timer = setTimeout(() => client.terminate(), Math.max(1, grant.expiresAt - Date.now()));
-          client.once('close', () => clearTimeout(timer));
-        }
-        if (!events) socketVms.set(client, id);
-        if (!events && mode !== 'logs' && machines.incidentLocked(id)) {
-          client.close(1008, 'Incident lockdown');
-          return;
-        }
-        const sendData = (type: string, data: unknown) => {
-          if (client.readyState === WebSocket.OPEN) {
-            if (client.bufferedAmount > 1024 * 1024) {
-              client.close(1008, 'slow consumer');
-              return;
-            }
-            client.send(JSON.stringify({ type, data }));
-          }
-        };
-        client.on('error', () => {});
-        if (mode === 'desktop' || mode === 'desktop-view') {
-          try {
-            const port = appSession ? await features.desktops.apps.port(id, appSession) : 5901;
-            await features.desktops.attach(
-              id,
-              client,
-              mode === 'desktop-view',
-              port,
-              appSession || undefined,
-              terminalProject,
-            );
-          } catch {
-            client.close(1011, 'Desktop unavailable');
-          }
-          return;
-        }
-        if (events) {
-          const listener = () => sendData('change', null);
-          machines.on('change', listener);
-          client.on('close', () => machines.off('change', listener));
-          listener();
-          return;
-        }
-        if (mode === 'logs') {
-          sendData('data', machines.logs.get(id) || '等待 Linux 启动…\r\n');
-          const listener = (data: string) => sendData('data', data);
-          machines.on(`log:${id}`, listener);
-          client.on('close', () => machines.off(`log:${id}`, listener));
-          return;
-        }
-        let ssh: Awaited<ReturnType<typeof machines.connect>> | undefined;
-        let terminalLease: Awaited<ReturnType<typeof projectTerminals.prepare>> | undefined;
-        const terminalAbort = new AbortController();
-        const releaseTerminal = () => {
-          void Promise.resolve(terminalLease?.release()).catch((error) => {
-            console.error('Terminal cleanup unconfirmed:', error);
-          });
-        };
-        client.on('close', () => {
-          terminalAbort.abort();
-          releaseTerminal();
-          ssh?.end();
-        });
-        try {
-          const terminalGrant =
-            mode === 'terminal-view' && 'id' in principal
-              ? terminalSharing.find(principal.id, id, terminalSession!, terminalProject)
-              : null;
-          if (mode === 'terminal-view' && 'id' in principal && !terminalGrant?.terminalId)
-            throw new AppError('此共享授权未绑定运行会话，请让管理员重新共享终端', 409);
-          terminalLease = await projectTerminals.prepare(
-            id,
-            terminalProject,
-            terminalSession,
-            mode === 'terminal-view',
-            terminalAbort.signal,
-            terminalGrant?.terminalId,
-          );
-          ssh = await machines.connect(id, 10000, terminalAbort.signal);
-          if (client.readyState !== WebSocket.OPEN) {
-            ssh.end();
+          const principal = socketAuthorization(credential, mode, id, terminalSession, terminalProject);
+          if (!principal) {
+            client.terminate();
             return;
           }
-          ssh.on('error', (error) => sendData('error', error.message));
-          ssh.once('close', () => client.close());
-          const connected = (error: Error | undefined, stream: ClientChannel) => {
-            if (!error && (terminalAbort.signal.aborted || client.readyState !== WebSocket.OPEN)) {
-              stream.close();
-              ssh?.end();
+          socketCredentials.set(client, credential);
+          if ('id' in principal) {
+            socketAccounts.set(client, principal.id);
+            const timer = setTimeout(() => client.terminate(), Math.max(1, principal.expiresAt - Date.now()));
+            client.once('close', () => clearTimeout(timer));
+          }
+          if (mode === 'terminal-view' && 'id' in principal) {
+            const grant = terminalSharing.find(principal.id, id, terminalSession!, terminalProject);
+            if (!grant) {
+              client.terminate();
               return;
             }
-            if (error) {
-              sendData('error', error.message);
-              client.close();
-              ssh?.end();
-              return;
-            }
-            sendData('ready', {
-              projectId: terminalLease!.projectId,
-              networkIsolation: terminalLease!.networkIsolation,
-            });
-            const stdout = new StringDecoder('utf8'),
-              stderr = new StringDecoder('utf8');
-            stream.on('data', (data: Buffer) => sendData('data', stdout.write(data)));
-            stream.stderr.on('data', (data: Buffer) => sendData('data', stderr.write(data)));
-            stream.on('error', (error: Error) => sendData('error', error.message));
-            stream.on('close', () => {
-              sendData('exit', true);
-              client.close();
-              ssh?.end();
-            });
-            client.on('message', (raw) => {
-              try {
-                session.requireUnlocked();
-                if (mode === 'terminal-view') {
-                  client.close(1008, 'Read-only terminal');
-                  return;
-                }
-                const msg = JSON.parse(raw.toString());
-                if (msg.type === 'input' && typeof msg.data === 'string' && msg.data.length <= 32768)
-                  stream.write(msg.data);
-                if (msg.type === 'resize' && Number.isInteger(msg.cols) && Number.isInteger(msg.rows))
-                  stream.setWindow(
-                    Math.max(2, Math.min(200, msg.rows)),
-                    Math.max(10, Math.min(400, msg.cols)),
-                    0,
-                    0,
-                  );
-              } catch {
-                client.close(1008, 'invalid message');
+            socketTerminalGrants.set(client, grant.id);
+            const timer = setTimeout(() => client.terminate(), Math.max(1, grant.expiresAt - Date.now()));
+            client.once('close', () => clearTimeout(timer));
+          }
+          if (!events) socketVms.set(client, id);
+          if (!events && mode !== 'logs' && machines.incidentLocked(id)) {
+            client.close(1008, 'Incident lockdown');
+            return;
+          }
+          const sendData = (type: string, data: unknown) => {
+            if (client.readyState === WebSocket.OPEN) {
+              if (client.bufferedAmount > 1024 * 1024) {
+                client.close(1008, 'slow consumer');
+                return;
               }
+              client.send(JSON.stringify({ type, data }));
+            }
+          };
+          client.on('error', () => {});
+          if (mode === 'desktop' || mode === 'desktop-view') {
+            try {
+              const port = appSession ? await features.desktops.apps.port(id, appSession) : 5901;
+              await admission.check();
+              await features.desktops.attach(
+                id,
+                client,
+                mode === 'desktop-view',
+                port,
+                appSession || undefined,
+                terminalProject,
+              );
+            } catch {
+              client.close(1011, 'Desktop unavailable');
+            }
+            return;
+          }
+          if (events) {
+            const listener = () => sendData('change', null);
+            machines.on('change', listener);
+            client.on('close', () => machines.off('change', listener));
+            listener();
+            return;
+          }
+          if (mode === 'logs') {
+            sendData('data', machines.logs.get(id) || '等待 Linux 启动…\r\n');
+            const listener = (data: string) => sendData('data', data);
+            machines.on(`log:${id}`, listener);
+            client.on('close', () => machines.off(`log:${id}`, listener));
+            return;
+          }
+          let ssh: Awaited<ReturnType<typeof machines.connect>> | undefined;
+          let terminalLease: Awaited<ReturnType<typeof projectTerminals.prepare>> | undefined;
+          const terminalAbort = new AbortController();
+          const releaseTerminal = () => {
+            void Promise.resolve(terminalLease?.release()).catch((error) => {
+              console.error('Terminal cleanup unconfirmed:', error);
             });
           };
-          ssh.exec(
-            terminalLease.command,
-            { pty: { term: 'xterm-256color', cols: 100, rows: 28 } },
-            connected,
-          );
-        } catch (error: any) {
-          sendData('error', error.message);
-          client.close();
-          releaseTerminal();
-          ssh?.end();
-        }
-      });
+          client.on('close', () => {
+            terminalAbort.abort();
+            releaseTerminal();
+            ssh?.end();
+          });
+          try {
+            const terminalGrant =
+              mode === 'terminal-view' && 'id' in principal
+                ? terminalSharing.find(principal.id, id, terminalSession!, terminalProject)
+                : null;
+            if (mode === 'terminal-view' && 'id' in principal && !terminalGrant?.terminalId)
+              throw new AppError('此共享授权未绑定运行会话，请让管理员重新共享终端', 409);
+            terminalLease = await projectTerminals.prepare(
+              id,
+              terminalProject,
+              terminalSession,
+              mode === 'terminal-view',
+              terminalAbort.signal,
+              terminalGrant?.terminalId,
+            );
+            ssh = await machines.connect(id, 10000, terminalAbort.signal);
+            await admission.check();
+            if (client.readyState !== WebSocket.OPEN) {
+              ssh.end();
+              return;
+            }
+            ssh.on('error', (error) => sendData('error', error.message));
+            ssh.once('close', () => client.close());
+            const connected = (error: Error | undefined, stream: ClientChannel) => {
+              if (!error && (terminalAbort.signal.aborted || client.readyState !== WebSocket.OPEN)) {
+                stream.close();
+                ssh?.end();
+                return;
+              }
+              if (error) {
+                sendData('error', error.message);
+                client.close();
+                ssh?.end();
+                return;
+              }
+              sendData('ready', {
+                projectId: terminalLease!.projectId,
+                networkIsolation: terminalLease!.networkIsolation,
+              });
+              const stdout = new StringDecoder('utf8'),
+                stderr = new StringDecoder('utf8');
+              stream.on('data', (data: Buffer) => sendData('data', stdout.write(data)));
+              stream.stderr.on('data', (data: Buffer) => sendData('data', stderr.write(data)));
+              stream.on('error', (error: Error) => sendData('error', error.message));
+              stream.on('close', () => {
+                sendData('exit', true);
+                client.close();
+                ssh?.end();
+              });
+              client.on('message', (raw) => {
+                try {
+                  session.requireUnlocked();
+                  if (mode === 'terminal-view') {
+                    client.close(1008, 'Read-only terminal');
+                    return;
+                  }
+                  const msg = JSON.parse(raw.toString());
+                  if (msg.type === 'input' && typeof msg.data === 'string' && msg.data.length <= 32768)
+                    stream.write(msg.data);
+                  if (msg.type === 'resize' && Number.isInteger(msg.cols) && Number.isInteger(msg.rows))
+                    stream.setWindow(
+                      Math.max(2, Math.min(200, msg.rows)),
+                      Math.max(10, Math.min(400, msg.cols)),
+                      0,
+                      0,
+                    );
+                } catch {
+                  client.close(1008, 'invalid message');
+                }
+              });
+            };
+            ssh.exec(
+              terminalLease.command,
+              { pty: { term: 'xterm-256color', cols: 100, rows: 28 } },
+              connected,
+            );
+          } catch (error: any) {
+            sendData('error', error.message);
+            client.close();
+            releaseTerminal();
+            ssh?.end();
+          }
+        }).catch(() => client.terminate());
+      }); } catch { socket.destroy(); }
     });
     if (dev) {
       const { createServer } = await import('vite');

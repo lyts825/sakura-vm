@@ -3,6 +3,49 @@ import { validateCatalog } from '../../shared/plugin-selection.ts';
 import { loaders } from './loaders.generated.ts';
 export { loaders } from './loaders.generated.ts';
 export type { PluginModule } from '../plugin-api.ts';
+/** Exact dispatch endpoints. Prefix declarations remain package ownership metadata only. */
+export function pluginHttpRoutes() {
+  return PLUGINS.flatMap((plugin) => {
+    const routes = plugin.contributes.http.flatMap((route) => {
+    const base = { ...route, owner: plugin.id };
+    if (plugin.id === 'images' && route.path === '/api/images') return [
+      { ...base, methods: ['GET'] as HttpContribution['methods'] },
+      { ...base, path: '/api/images/{imageId}', methods: ['POST'] as HttpContribution['methods'] },
+    ];
+    if (plugin.id === 'snapshots' && route.path.endsWith('/snapshots')) return [
+      { ...base, methods: ['POST'] as HttpContribution['methods'] },
+      { ...base, path: route.path + '/{snapshotId}', methods: ['PATCH', 'DELETE'] as HttpContribution['methods'] },
+      { ...base, path: route.path + '/{snapshotId}/restore', methods: ['POST'] as HttpContribution['methods'] },
+    ];
+    return [base];
+    });
+    const normalize = (path: string) => path.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
+    for (const operation of plugin.contributes.operations) {
+      if (routes.some(route => normalize(route.path) === normalize(operation.path) && route.methods.includes(operation.method))) continue;
+      const contribution = plugin.contributes.http.find(route => normalize(operation.path) === normalize(route.path) ||
+        normalize(operation.path).startsWith(normalize(route.path) + '/'));
+      if (!contribution) throw new Error(`插件操作没有路由归属：${plugin.id}.${operation.id}`);
+      routes.push({ ...contribution, owner: plugin.id, path: operation.path, methods: [operation.method] });
+    }
+    return routes;
+  });
+}
+export function matchOperationPath(pattern: string, path: string): Record<string, string> | undefined {
+  const expected = pattern.replace(/:([a-zA-Z0-9_]+)/g, '{$1}').split('/');
+  const actual = path.split('/');
+  if (expected.length !== actual.length) return;
+  const parameters: Record<string, string> = {};
+  for (let i = 0; i < expected.length; i++) {
+    const variable = /^\{([a-zA-Z0-9_]+)\}$/.exec(expected[i]);
+    if (!variable) { if (actual[i] !== expected[i]) return; continue; }
+    let value: string;
+    try { value = decodeURIComponent(actual[i]); } catch { return; }
+    if (!value || value === '.' || value === '..' || /[\\/\x00-\x1f\x7f]/.test(value) ||
+        (variable[1] === 'vmId' && value === 'batch')) return;
+    parameters[variable[1]] = value;
+  }
+  return parameters;
+}
 export function validateRegistry() {
   validateCatalog(PLUGINS, PLUGIN_PACKS);
   if (
@@ -15,24 +58,15 @@ export function routeContribution(path: string): (HttpContribution & { owner: st
   const parts = path.split('/').filter(Boolean);
   if (parts[0] !== 'api') return undefined;
   // Task aggregation is a host endpoint; it only sees services of active plugins.
-  if (['jobs', 'events'].includes(parts[1]))
+  if ((parts[1] === 'events' && parts.length === 2) ||
+      (parts[1] === 'jobs' && (parts.length === 2 || (parts.length === 4 && ['cancel', 'retry', 'result'].includes(parts[3])))))
     return {
       owner: 'tasks',
       path: '/api/' + parts[1],
-      methods: parts[1] === 'jobs' ? ['GET', 'POST'] : ['GET'],
+      methods: parts.length === 4 && parts[3] !== 'result' ? ['POST'] : ['GET'],
       projectScoped: false,
     };
-  for (const plugin of PLUGINS)
-    for (const route of plugin.contributes.http) {
-      const pattern = route.path.split('/').filter(Boolean);
-      if (parts.length < pattern.length) continue;
-      if (
-        pattern.every((part, i) =>
-          part === ':vmId' ? !!parts[i] && parts[i] !== 'batch' : part === parts[i],
-        )
-      )
-        return { ...route, owner: plugin.id };
-    }
+  return pluginHttpRoutes().find((route) => matchOperationPath(route.path, path));
 }
 export const routeOwner = (path: string) => routeContribution(path)?.owner;
 export function socketOwner(channel: 'desktop' | 'terminal-session') {

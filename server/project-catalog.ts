@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import type { Machines } from './machines.ts';
-import { readStore, writeStore } from './local-store.ts';
+import { readStore, readCommittedStore, writeStore } from './local-store.ts';
 
 export const projectIdSchema = z.string().regex(/^(default|[a-f0-9]{16})$/);
 export const projectIndexSchema = z
@@ -48,6 +48,13 @@ export class ProjectCatalog {
         projects: [{ id: 'default', name: '默认项目' }],
       })),
     );
+  }
+  /** Admission checkpoints may hold a metadata writer; observe its last committed publication without queueing. */
+  async readCommittedList(id: string) {
+    this.machines.get(id);
+    return projectIndexSchema.parse(await readCommittedStore(join(vmDir(id), 'projects.json'), () => ({
+      active: 'default', projects: [{ id: 'default', name: '默认项目' }],
+    })));
   }
   async with<T>(id: string, requested: string | null | undefined, action: () => Promise<T>) {
     const index = await this.list(id),

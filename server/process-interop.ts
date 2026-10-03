@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { hostProcess } from './host-process.ts';
 import { createReadStream } from 'node:fs';
 import { lstat, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -8,6 +8,9 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { Machines } from './machines.ts';
+import { captureOperationCheck, withOperationCheck } from './operation-context.ts';
+import { vmLifetime } from './vm-lifetime.ts';
+import { withResourceContext } from './host-runtime/context.ts';
 
 const programId = z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,39}$/);
 const executable = z.string().max(512).regex(/^[a-zA-Z]:\\[^\x00-\x1f"<>|?*]+\.exe$/i);
@@ -53,43 +56,20 @@ function sameToken(expected: string | undefined, actual: string | undefined) {
 }
 
 async function runProgram(program: Program, signal?: AbortSignal) {
-  if (await checkedExecutable(program.executable) !== program.sha256)
-    throw new AppError('Windows 程序已改变，请重新登记', 409);
   signal?.throwIfAborted();
-  return new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolveResult, reject) => {
-    const env: NodeJS.ProcessEnv = {};
+  const authority = captureOperationCheck();
+  const env: NodeJS.ProcessEnv = {};
     for (const name of ['SystemRoot', 'WINDIR', 'Path', 'PATH', 'TEMP', 'TMP', 'USERPROFILE']) {
       if (process.env[name] !== undefined) env[name] = process.env[name];
     }
-    const child = spawn(program.executable, program.fixedArgs, {
-      shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env,
-    });
-    let stdout = '';
-    let stderr = '';
-    let bytes = 0;
-    let limited = false;
-    let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, 30000);
-    const abort = () => child.kill();
-    signal?.addEventListener('abort', abort, { once: true });
-    const collect = (chunk: Buffer, stream: 'stdout' | 'stderr') => {
-      bytes += chunk.length;
-      if (bytes > 128 * 1024) { limited = true; child.kill(); return; }
-      if (stream === 'stdout') stdout += chunk.toString('utf8');
-      else stderr += chunk.toString('utf8');
-    };
-    child.stdout.on('data', (chunk: Buffer) => collect(chunk, 'stdout'));
-    child.stderr.on('data', (chunk: Buffer) => collect(chunk, 'stderr'));
-    child.once('error', reject);
-    child.once('close', (code) => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', abort);
-      if (signal?.aborted) return reject(new AppError('进程调用已取消', 409));
-      if (timedOut) return reject(new AppError('Windows 程序运行超时', 409));
-      if (limited) return reject(new AppError('Windows 程序输出超过 128 KiB', 409));
-      resolveResult({ exitCode: code ?? -1, stdout, stderr });
-    });
-  });
+  const result = await withOperationCheck(async () => {
+    // Check the registered image after process-budget admission, not before an arbitrarily long queue.
+    if (await checkedExecutable(program.executable) !== program.sha256)
+      throw new AppError('Windows 程序已改变，请重新登记', 409);
+    await authority();
+  }, () => hostProcess('process-interop', program.executable, program.fixedArgs,
+    { signal, env, timeout: 30000, maxBuffer: 128 * 1024 }));
+  return { exitCode: result.code, stdout: result.stdout, stderr: result.stderr };
 }
 
 export class ProcessInterop {
@@ -99,7 +79,7 @@ export class ProcessInterop {
   private busy = new Set<string>();
 
   constructor(private machines: Machines, private port: number,
-    private allowed: () => void = () => {}) {}
+    private allowed: () => void = () => {}, private execute: typeof runProgram = runProgram) {}
 
   private async state() {
     return this.stateValue ||= await (this.loading ||= readStore<State>(file(), () => ({}))
@@ -212,15 +192,35 @@ export class ProcessInterop {
   async guest(request: unknown, token: string | undefined, signal?: AbortSignal) {
     const { vmId, programId: name } = guestInteropRequest.parse(request);
     this.guard(vmId);
+    const live = this.machines.live.get(vmId);
+    if (!live) throw new AppError('实例未运行', 409);
+    const lifetime = vmLifetime(vmId, live), identity = lifetime.capture();
+    const executionSignal = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
     const entry = (await this.state())[vmId];
     if (!entry?.enabled || !sameToken(entry.tokenHash, digest(token || '')))
       throw new AppError('客户机调用未授权', 403);
     if (this.machines.state(vmId) !== 'running') throw new AppError('实例未运行', 409);
-    const program = entry.programs[name];
-    if (!program) throw new AppError('程序未获准调用', 403);
+    if (!entry.programs[name]) throw new AppError('程序未获准调用', 403);
+    const program = structuredClone(entry.programs[name]);
+    const fingerprint = JSON.stringify(program);
+    const check = async () => {
+      this.guard(vmId);
+      // stateValue is published only after writeStore confirms the atomic write. Never re-enter its writer queue.
+      const current = this.stateValue?.[vmId];
+      if (!current?.enabled || !sameToken(current.tokenHash, digest(token || '')) ||
+          JSON.stringify(current.programs[name]) !== fingerprint)
+        throw new AppError('客户机程序授权已改变', 403, 'INTEROP_AUTHORITY_CHANGED');
+      if (this.machines.live.get(vmId) !== live || this.machines.state(vmId) !== 'running')
+        throw new AppError('客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
+      lifetime.assert(identity);
+    };
+    await check();
     if (this.busy.has(vmId)) throw new AppError('实例已有程序在运行', 409);
     this.busy.add(vmId);
-    try { return { programId: name, ...await runProgram(program, signal) }; }
+    try {
+      return { programId: name, ...await withResourceContext(identity, () =>
+        withOperationCheck(check, () => this.execute(program, executionSignal))) };
+    }
     finally { this.busy.delete(vmId); }
   }
 }
