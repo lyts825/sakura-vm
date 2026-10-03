@@ -4,7 +4,7 @@ import { createHash, createPublicKey, randomUUID, verify, type KeyObject } from 
 import { readFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 
 import { join } from 'node:path';
-import { Worker } from 'node:worker_threads';
+import { computeRuntime } from './compute-runtime.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
@@ -111,6 +111,12 @@ const defaults = (): State => ({
   observed: {},
 });
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+async function confirmComputations(tasks: Promise<unknown>[]) {
+  const results = await Promise.allSettled(tasks);
+  for (const result of results)
+    if (result.status === 'rejected' && result.reason instanceof AppError && result.reason.code === 'COMPUTE_CLEANUP_PENDING')
+      throw result.reason;
+}
 
 export const communityPluginRequest = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('trust'), name: label, publicKey: z.string().min(100).max(1000) }).strict(),
@@ -286,7 +292,7 @@ const { parentPort, workerData } = require('node:worker_threads');
 export class CommunityPlugins {
   private state: State = defaults();
   private writes: Promise<unknown> = Promise.resolve();
-  private running = new Map<string, Set<Worker>>();
+  private running = new Map<string, Set<{ abort: AbortController; done: Promise<unknown> }>>();
   private problems: Record<string, string> = {};
   private inFlight = 0;
   private source?: () => Promise<WebhookEvent[]>;
@@ -490,7 +496,9 @@ export class CommunityPlugins {
           }
         await this.save(next);
         delete this.problems[input.pluginId];
-        await Promise.all([...(this.running.get(input.pluginId) || [])].map((worker) => worker.terminate()));
+        const active = [...(this.running.get(input.pluginId) || [])];
+        for (const task of active) task.abort.abort(new AppError('插件已卸载', 409));
+        await confirmComputations(active.map((task) => task.done));
         await rm(this.wasmFile(old), { force: true });
         return this.view();
       } else if (input.operation === 'subscribe') {
@@ -671,7 +679,11 @@ export class CommunityPlugins {
       const payload = JSON.stringify(input);
       if (payload === undefined || Buffer.byteLength(payload) > 32 * 1024)
         throw new AppError('插件输入必须是小于 32 KiB 的 JSON', 400);
-      const bytes = await readFile(this.wasmFile(item));
+      const abort = new AbortController();
+      const done = computeRuntime.run<unknown>({ owner: `community:${id}`, label: '隔离插件计算',
+        memoryBytes: 48 * 1024 ** 2, timeoutMs: 1000, signal: abort.signal,
+        partition: { key: `community:${id}`, limit: 2 } }, async (signal) => {
+      const bytes = await readFile(this.wasmFile(item), { signal });
       if (sha256(bytes) !== item.sha256) throw new AppError('插件文件 SHA-256 不匹配', 409);
       const signer = this.state.publishers.find((trusted) => trusted.fingerprint === item.publisher);
       if (
@@ -686,6 +698,8 @@ export class CommunityPlugins {
         throw new AppError('插件签名或发布者信任无效', 409);
       await validatePluginWasm(bytes);
       if (this.closed) throw new AppError('插件市场正在关闭', 503);
+      if (!this.state.publishers.some((trusted) => trusted.fingerprint === signer.fingerprint && trusted.publicKey === signer.publicKey))
+        throw new AppError('插件发布者信任已撤销', 409);
       if (
         !this.state.installed.some(
           (current) =>
@@ -693,35 +707,15 @@ export class CommunityPlugins {
         )
       )
         throw new AppError('插件在执行前已被卸载或更新', 409);
-      return await new Promise<{ result: unknown; pluginId: string; version: string }>((resolve, reject) => {
-        const worker = new Worker(workerSource, {
-          eval: true,
-          workerData: { wasm: bytes, input },
-          resourceLimits: { maxOldGenerationSizeMb: 32, maxYoungGenerationSizeMb: 8, stackSizeMb: 1 },
-        });
-        const active = this.running.get(id) || new Set<Worker>();
-        active.add(worker);
-        this.running.set(id, active);
-        let done = false;
-        const finish = (error?: Error, result?: unknown) => {
-          if (done) return;
-          done = true;
-          clearTimeout(timer);
-          active.delete(worker);
-          if (!active.size) this.running.delete(id);
-          void worker.terminate();
-          if (error) reject(error);
-          else resolve({ pluginId: id, version: item.version, result });
-        };
-        const timer = setTimeout(() => finish(new AppError('插件执行超过 1 秒', 408)), 1000);
-        worker.once('message', (message: { ok: boolean; result?: unknown; error?: string }) =>
-          message.ok
-            ? finish(undefined, message.result)
-            : finish(new AppError(`插件执行失败：${message.error || '未知错误'}`, 409)),
-        );
-        worker.once('error', (error) => finish(error));
-        worker.once('exit', () => finish(new AppError('插件执行已终止', 409)));
+      return { source: workerSource, options: { eval: true,
+        workerData: { wasm: bytes, input: JSON.parse(payload) },
+        resourceLimits: { maxOldGenerationSizeMb: 32, maxYoungGenerationSizeMb: 8, stackSizeMb: 1 } } };
       });
+      const active = this.running.get(id) || new Set<{ abort: AbortController; done: Promise<unknown> }>();
+      const task = { abort, done };
+      active.add(task); this.running.set(id, active);
+      try { return { pluginId: id, version: item.version, result: await done }; }
+      finally { active.delete(task); if (!active.size) this.running.delete(id); }
     } finally {
       this.inFlight--;
     }
@@ -732,9 +726,8 @@ export class CommunityPlugins {
     await this.timer?.close();
     await this.pending;
     await this.writes;
-    await Promise.all(
-      [...this.running.values()].flatMap((set) => [...set]).map((worker) => worker.terminate()),
-    );
-    this.running.clear();
+    const active = [...this.running.values()].flatMap((set) => [...set]);
+    for (const task of active) task.abort.abort(new AppError('插件市场正在关闭', 503));
+    await confirmComputations(active.map((task) => task.done));
   }
 }

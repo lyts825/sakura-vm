@@ -64,13 +64,18 @@ const encode = (value: Buffer, rawLimit: number, compressedLimit: number) => {
   if (compressed.length > compressedLimit) throw boundary();
   return { data: compressed.toString('base64'), bytes: value.length, sha256: digest(value) };
 };
+// The installed runner source is immutable. Keep one exact-source cache rather
+// than recompressing it for every project operation or caching private requests.
+let encodedSource: { source: string; packed: ReturnType<typeof encode> } | undefined;
 /** Trusted source is unpacked only by the selected process after UID drop. */
 export function engineeringInvocation(moduleSource: string, request: object, administrative = false) {
   const rawSource = Buffer.from(moduleSource, 'utf8');
   if (rawSource.toString('utf8') !== moduleSource || moduleSource.includes('\0')) throw boundary();
   const rawRequest = Buffer.from(JSON.stringify(request), 'utf8');
   if (rawRequest.length > engineeringLimits.requestBytes) throw boundary();
-  const packedSource = encode(rawSource, engineeringLimits.sourceBytes, engineeringLimits.compressedSourceBytes);
+  const packedSource = encodedSource?.source === moduleSource ? encodedSource.packed :
+    encode(rawSource, engineeringLimits.sourceBytes, engineeringLimits.compressedSourceBytes);
+  encodedSource = { source: moduleSource, packed: packedSource };
   const packedRequest = administrative ? undefined : encode(rawRequest, engineeringLimits.requestBytes, engineeringLimits.compressedRequestBytes);
   const python = [
     'import base64,hashlib,io,sys,zlib',

@@ -71,6 +71,8 @@ worker 或其网络 QEMU 退出后，现有连接失败，受影响 VM 的租约
 
 关闭顺序是：停止接受新的普通数据操作，保留管理通道完成插件与 VM 清理，随后关闭 scope、监听、租约和两个 worker 池。启动中途失败使用同一资源清理登记表。worker 关闭有有界等待和终止处理，父进程 IPC 断开也会触发子进程清理。
 
+网络 Node worker 和网络 QEMU 都由宿主直接持有进程句柄。Windows 使用非 detached 的子进程及 libuv 的父进程 Job 生命周期；Linux 通过随包的 Python 3 小型启动器设置 `PR_SET_PDEATHSIG`，在 `exec` 前后检查父进程身份，并拒绝会改变执行权限的目标。启动器 `exec` 后不额外占用常驻进程。这样宿主强制退出时也能回收后台网络进程；Windows 和 Linux 均有真实强制终止、启动窗口及负面对照测试。此保护不代替正常退出时对 socket 和进程 `close` 的确认。
+
 通过已鉴权的 `GET /api/network-runtime` 查看 `running`、`draining` 或 `closed` 状态、限制、子进程上限、worker PID、网络 QEMU PID、活动租约数、VM generation/策略和管理端口归属。启用账户模式时仅 owner 可查看；该接口不提供流量内容、凭据或任意网络执行能力。错误排查先核对容量、worker 状态、QEMU 路径和 VM 日志；不要假定写请求因连接失败而未在对端执行。
 
 ## 源码门禁和运行包

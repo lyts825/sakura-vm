@@ -6,6 +6,7 @@ import type { SFTPWrapper, Stats } from 'ssh2';
 import { AppError } from '../shared/errors.ts';
 import { guestPath } from '../shared/paths.ts';
 import { previewFile } from './file-preview.ts';
+import { previewInWorker } from './file-preview-runtime.ts';
 import type { Machines } from './machines.ts';
 import { ResumableUploads } from './resumable-uploads.ts';
 
@@ -89,19 +90,27 @@ export class Files {
         const info = await ftpStat(ftp, guestPath(path));
         if (!info?.isFile()) throw new AppError('请选择普通文件', 404);
         const maximum = info.size <= 16 * 1024 ** 2 ? info.size : 4096;
-        const chunks: Buffer[] = [];
-        if (maximum)
-          await pipeline(
-            ftp.createReadStream(path, { start: 0, end: maximum - 1 }),
-            new Writable({
-              write(chunk, _encoding, done) {
-                chunks.push(Buffer.from(chunk));
-                done();
-              },
-            }),
-            { signal },
-          );
-        return previewFile(path, Buffer.concat(chunks), info.size);
+        const read = async (active?: AbortSignal) => {
+          const chunks: Buffer[] = [];
+          let received = 0;
+          if (maximum)
+            await pipeline(
+              ftp.createReadStream(path, { start: 0, end: maximum - 1 }),
+              new Writable({
+                write(chunk, _encoding, done) {
+                  received += chunk.length;
+                  if (received > maximum) return done(new AppError('预览读取超过声明长度', 409));
+                  chunks.push(Buffer.from(chunk)); done();
+                },
+              }),
+              { signal: active },
+            );
+          if (received !== maximum) throw new AppError('预览期间文件长度变化', 409);
+          return Buffer.concat(chunks);
+        };
+        if (info.size <= 16 * 1024 ** 2 && (maximum > 256 * 1024 || /\.(tar\.gz|tgz)$/i.test(path)))
+          return previewInWorker(`vm:${id}`, path, info.size, read, signal);
+        return previewFile(path, await read(signal), info.size);
       },
       signal,
     );

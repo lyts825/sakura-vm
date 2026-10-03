@@ -22,6 +22,14 @@ flowchart TD
   Contracts[共享契约与功能目录] -.-> UI
   Contracts -.-> HTTP
   Contracts -.-> Domain
+  HTTP --> Gateway[操作契约与权限复核]
+  Domain --> Host[HostRuntime 原子预算与所有权]
+  Plugins --> Host
+  Network --> Host
+  Storage --> Host
+  Runtime --> Host
+  Host --> Jobs[Jobs 与普通周期 Scheduler]
+  Host --> Compute[有界计算工作线程]
 ```
 
 ## 入口与生命周期
@@ -60,6 +68,8 @@ const commands = host.use(services.commands);
 
 插件网络能力通过 `ctx.networking` 获得，身份与插件作用域由宿主分配，随插件取消和退出回收。可选 `network` 插件的网络档案等业务服务与必需网络核心各有生命周期，停用前者不会移除后者。
 
+同一作用域提供 `execution`、`storage`、`jobs` 和诊断能力。宿主固定 owner 与插件身份，排队和活动任务都响应作用域撤销；卸载会停止新准入、按依赖关闭服务，并等待真实清理。清理失败时保留原作用域和资源，重试只处理未完成部分。兼容的服务引用继续经过宿主依赖检查。
+
 ## 网络与传输边界
 
 `NetworkRuntime` 统一登记连接、监听、本地管理通道和 VM generation；`NetworkScope` 为服务提供 HTTP(S)、fetch、WebSocket、TCP、DNS 和 SDK 适配器。宿主原始 TCP/DNS 由有界 Node worker 池承载，HTTP/SSH 协议与 TLS 仍在主进程适配器执行。本地管理和原生适配器有独立的准入与取消登记；GPG relay 继续执行 peer PID、nonce 与回执验证。
@@ -75,6 +85,8 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 `ProjectPreparation` 负责项目配置捕获、准入检查、串行准备和准备租约。普通任务通过 `prepareTask` 使用这层，`ProjectTerminals` 在同一准备层上维护终端运行与共享会话。任务取消不提前释放租约；完整执行清理完成后由调用者释放。配置变更、目录迁移和服务关闭继续等待准确的租约归属。
 
 目录迁移门闩的只读准入检查位于 `project-admission.ts`，运行作用域不再导入整个目录迁移服务。固定 UID/GID、客户机运行记录、cgroup 和原生启动器的协议保持原有行为。
+
+`VmLifetime` 区分进程身份、执行代次、boot 与网络代次；附件和活动绑定原始 Live。`ExecutionScope` 将短任务的全局、VM 和项目额度一起取得，嵌套执行显式借用父作用域。`ProjectSessionLifetime` 为主进程、服务、SSH 和终端持有独立的常驻会话额度。VM 停止先阻止新准入，再取消并等待原作用域清理；失败不能由“VM 已退出”或任意资源 ID 直接核销，恢复必须拿原票据和原清理回调再次确认。
 
 ## 前端
 
@@ -93,6 +105,12 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 全系统迁移和完整验收范围记录在 [系统资源架构实施记录](system-runtime-plan.md)。基础治理接口存在并不表示所有领域路径已经迁移；该记录逐项说明接入和验证状态。
 
 普通周期工作通过 `Scheduler` 登记 owner、周期、重叠策略和失败退避，再由 `Jobs` 取得宿主预算。日志清理、维护、内存采样、共享目录校准、证书续期、服务与入口健康检查、构建调度、宿主状态刷新、Webhook、社区插件事件和远程审计均使用这条路径。调度器使用独立身份，不继承注册请求的账户、VM 或任务额度；构建队列派生的独立构建各自准入。协议超时和高可用心跳仍保留专用时限。应用先停止新调度并取消已派发工作，再按依赖顺序等待实际收尾；`/api/host-runtime` 同时提供周期任务状态。
+
+`Jobs` 的有界等待与可见任务历史分开：历史不是外部副作用的执行承诺。嵌套任务借用父任务槽位并串行协调子任务，依赖环直接拒绝。`HostRuntime` 与委托任务在出队后再次执行原操作权限检查，检查失败归还尚未交付的预算；控制清理不被调用者撤权阻断。独立调度清除请求权限上下文。
+
+计算密集的文件预览与社区 WASM 通过同一 `ComputeRuntime` 按需创建线程，受总线程数和内存预算限制，实际退出后归还额度。固定工程源码仅压缩一次。测量、输入边界、故障处理和发布校验见 [计算运行时](compute-runtime.md)。
+
+大文件操作经 `StorageRuntime` 取得宿主/设备 I/O、缓冲、文件句柄和暂存空间预算；增量空间在写入前扩充额度。备份、同步、镜像、bundle、对象存储和目录迁移共享这些约束。双向传输给接收端保留预算，避免双方都占满写入槽后互等。备份发布日志与既有迁移、同步和原生恢复票据各自保留权威，详见 [存储运行时](storage-runtime.md)。
 
 ## 持久化与验证
 

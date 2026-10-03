@@ -2,6 +2,8 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { Worker } from 'node:worker_threads';
+import { pathToFileURL } from 'node:url';
 
 const root = process.cwd();
 const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -18,7 +20,11 @@ for (const file of [
   'dist/single-app.html',
   '.sakura-server/index.js',
   '.sakura-server/network-entry.js',
+  '.sakura-server/compute-task.js',
+  '.sakura-server/assets/compute-worker.mjs',
+  '.sakura-server/assets/compute-runtime.json',
   '.sakura-server/assets/network-worker.mjs',
+  '.sakura-server/assets/network-parent-exec.py',
   '.sakura-server/assets/network-runtime.json',
   '.sakura-server/docs/network-runtime.md',
   '.sakura-witness/ha-witness.js',
@@ -31,6 +37,37 @@ for (const file of [
 ])
   await stat(join(root, file));
 {
+  const metadata = JSON.parse(await readFile(join(root, '.sakura-server/assets/compute-runtime.json'), 'utf8'));
+  const files = ['compute-task.js', 'assets/compute-worker.mjs'];
+  const sources = ['server/compute-task.ts', 'server/compute-worker.mjs', 'server/file-preview.ts',
+    'server/file-preview-runtime.ts', 'server/compute-runtime.ts'];
+  if (metadata.version !== 1 || !Array.isArray(metadata.files) || !Array.isArray(metadata.sources) ||
+      metadata.files.map((entry) => entry.file).join(',') !== files.join(',') ||
+      metadata.sources.map((entry) => entry.file).join(',') !== sources.join(','))
+    throw new Error('Compute runtime asset metadata is invalid');
+  for (const [base, entries] of [[join(root, '.sakura-server'), metadata.files], [root, metadata.sources]])
+    for (const expected of entries) {
+      const bytes = await readFile(join(base, expected.file));
+      if (expected.size !== bytes.length || expected.sha256 !== createHash('sha256').update(bytes).digest('hex'))
+        throw new Error(`Compute runtime asset is stale or damaged; rebuild: ${expected.file}`);
+    }
+  if (metadata.files[1].sha256 !== metadata.sources[1].sha256)
+    throw new Error('Distributed compute worker differs from its source');
+  // No tsx loader or source checkout is needed by the shipped entry point.
+  const worker = new Worker(pathToFileURL(join(root, '.sakura-server/assets/compute-worker.mjs')), {
+    execArgv: [], workerData: { task: 'file-preview', path: 'release.csv', size: 7, data: Buffer.from('a,b\n1,2') },
+  });
+  const timer = setTimeout(() => { void worker.terminate(); }, 10_000);
+  try {
+    const result = await new Promise((resolve, reject) => {
+      worker.once('message', resolve); worker.once('error', reject);
+      worker.once('exit', () => reject(new Error('Distributed compute worker exited without a result')));
+    });
+    if (!result?.ok || result.result?.kind !== 'table' || result.result.rows?.[1]?.[1] !== '2')
+      throw new Error('Distributed compute worker returned an invalid result');
+  } finally { clearTimeout(timer); await worker.terminate(); }
+}
+{
   const metadata = JSON.parse(
     await readFile(join(root, '.sakura-server/assets/network-runtime.json'), 'utf8'),
   );
@@ -41,8 +78,9 @@ for (const file of [
     'server/network/host-pool.ts',
     'server/network/vm-backend.ts',
     'server/network/worker.mjs',
+    'server/network/parent-exec.py',
   ];
-  const files = ['network-entry.js', 'assets/network-worker.mjs'];
+  const files = ['network-entry.js', 'assets/network-worker.mjs', 'assets/network-parent-exec.py'];
   if (
     metadata.version !== 1 ||
     !Array.isArray(metadata.files) ||
@@ -64,7 +102,8 @@ for (const file of [
         throw new Error(`Network runtime asset is stale or damaged; rebuild: ${expected.file}`);
     }
   }
-  if (metadata.files[1].sha256 !== metadata.sources.at(-1).sha256)
+  if (metadata.files[1].sha256 !== metadata.sources.find((item) => item.file === 'server/network/worker.mjs').sha256 ||
+      metadata.files[2].sha256 !== metadata.sources.find((item) => item.file === 'server/network/parent-exec.py').sha256)
     throw new Error('Distributed network worker differs from its source');
 }
 if (process.platform === 'win32') {

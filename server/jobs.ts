@@ -9,6 +9,7 @@ import { writeStore } from './local-store.ts';
 import { hostRuntime, withResourceContext } from './host-runtime/index.ts';
 import { withNewResourceContext } from './host-runtime/context.ts';
 import { withoutAuditParent } from './audit.ts';
+import { captureOperationCheck, withoutOperationContext } from './operation-context.ts';
 
 export type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
 import type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
@@ -32,6 +33,7 @@ const cleanupFailureCodes = new Set([
   'VM_CLEANUP_PENDING', 'EXECUTION_CLEANUP_PENDING',
   'PLUGIN_CLEANUP_PENDING',
   'SESSION_CLEANUP_PENDING',
+  'COMPUTE_CLEANUP_PENDING',
 ]);
 type JobResource = Awaited<ReturnType<typeof hostRuntime.acquire>>;
 type JobContext = { id: string; lease: JobResource; signal: AbortSignal; open: boolean;
@@ -72,7 +74,7 @@ function waitFor(promise: Promise<void>, signal: AbortSignal) {
 export class Jobs {
   /** Schedule independent background work without borrowing the registering job's slot or credentials. */
   static detached<T>(work: () => T): T {
-    return withoutAuditParent(() => context.exit(() => withNewResourceContext({}, work)));
+    return withoutOperationContext(() => withoutAuditParent(() => context.exit(() => withNewResourceContext({}, work))));
   }
   static instrument?: (view: JobView, work: () => Promise<void>) => Promise<void>;
   private closed = false;
@@ -239,6 +241,7 @@ export class Jobs {
     const inherited = context.getStore(), parent = inherited?.open ? inherited : undefined;
     const owner = meta.owner || `jobs:${this.scope || 'anonymous'}`;
     const control = meta.lane === 'control';
+    const check = captureOperationCheck();
     if (pendingJobs >= pendingJobLimit - (control ? 0 : pendingControlReserve) ||
         (pendingOwners.get(owner) || 0) >= ownerPendingLimit - (control ? 0 : ownerControlReserve))
       throw new AppError('任务等待队列已满，请稍后重试', 429, 'JOB_QUEUE_FULL');
@@ -292,6 +295,7 @@ export class Jobs {
             identity: { operationId: view.id, jobId: view.id, vmId: meta.vmId, projectId: meta.projectId },
             signal: abort.signal, ...(meta.admissionTimeoutMs === undefined ? {} : { timeoutMs: meta.admissionTimeoutMs }) });
         }
+        if (!control) await check();
         abort.signal.throwIfAborted();
         view.admission = 'running'; view.executionStartedAt = new Date().toISOString();
         view.resourceLeaseId = lease.id; view.resourceWait = undefined; view.phase = '准备中';

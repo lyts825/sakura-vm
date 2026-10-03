@@ -7,6 +7,7 @@ import type {
   ResourceView,
 } from '../../shared/contracts/host-runtime.ts';
 import { captureResourceContext } from './context.ts';
+import { captureOperationCheck } from '../operation-context.ts';
 
 export type Budget = { capacity: number; reserved?: number };
 export type ResourceRequest = {
@@ -56,6 +57,7 @@ export const HOST_BUDGETS: Readonly<Record<string, Budget>> = Object.freeze({
   'io.files': { capacity: 128, reserved: 8 },
   'network.worker': { capacity: 8 },
   'compute.worker': { capacity: 4 },
+  'compute.memory': { capacity: 512 * 1024 ** 2, reserved: 32 * 1024 ** 2 },
 });
 
 function identifier(value: string, name: string) {
@@ -215,6 +217,7 @@ export class HostRuntime {
   }
 
   acquire(input: ResourceRequest): Promise<ResourceLease> {
+    const check = captureOperationCheck();
     try {
       const { dimensions, partitions, timeoutMs } = this.prepare(input);
       const view = this.createView(input, 'queued', Object.fromEntries(dimensions));
@@ -264,6 +267,17 @@ export class HostRuntime {
         }
         if (input.signal?.aborted && this.resources.has(view.id)) cancelled();
         this.pump();
+      }).then(async (lease) => {
+        try {
+          // Queue admission is not authorization. Recheck the original operation
+          // before handing its owner any usable resource; cleanup keeps its lane.
+          if (input.lane !== 'control') await check();
+          input.signal?.throwIfAborted();
+          return lease;
+        } catch (error) {
+          lease.release();
+          throw error;
+        }
       });
     } catch (error) {
       return Promise.reject(error);

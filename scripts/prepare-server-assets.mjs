@@ -13,6 +13,7 @@ import { prepareGpgAgentHostAssets } from './build-gpg-agent-host.mjs';
 const root = process.cwd();
 const target = join(root, '.sakura-server', 'assets');
 await mkdir(target, { recursive: true });
+await cp(join(root, 'server/compute-worker.mjs'), join(target, 'compute-worker.mjs'));
 await cp(join(root, 'server/network/worker.mjs'), join(target, 'network-worker.mjs'));
 await cp(join(root, 'server/network/parent-exec.py'), join(target, 'network-parent-exec.py'));
 await mkdir(join(root, '.sakura-server/docs'), { recursive: true });
@@ -30,6 +31,11 @@ const describe = async (base, file) => {
   const bytes = await readFile(join(base, file));
   return { file, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
 };
+await writeFile(join(target, 'compute-runtime.json'), JSON.stringify({ version: 1,
+  files: await Promise.all(['compute-task.js', 'assets/compute-worker.mjs'].map((file) => describe(join(root, '.sakura-server'), file))),
+  sources: await Promise.all(['server/compute-task.ts', 'server/compute-worker.mjs', 'server/file-preview.ts',
+    'server/file-preview-runtime.ts', 'server/compute-runtime.ts'].map((file) => describe(root, file))),
+}, null, 2) + '\n');
 await writeFile(
   join(target, 'network-runtime.json'),
   JSON.stringify(
