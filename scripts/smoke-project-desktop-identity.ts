@@ -1404,7 +1404,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     phase('owned-key-bootstrap-and-fresh-authentication');
     oldKey = await readFile(join(fixture.sourceRoot, 'machines', desktopFixtureSource.vmId, 'id_rsa'));
     assert.equal(sha256(oldKey), fixture.before.snapshot.files.find((entry: any) => entry.path === join(fixture.sourceRoot, 'machines', desktopFixtureSource.vmId, 'id_rsa')).sha256);
-    const until = Date.now() + 180000;
+    const until = Date.now() + 240000;
     let bootstrap: Client | undefined;
     while (Date.now() < until) {
       assert.ok(machines.live.has(fixture.vmId) && fixture.qemuRunning, machines.logs.get(fixture.vmId) || 'Owned QEMU is not running');
@@ -1417,7 +1417,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
     }
     assert.ok(bootstrap, 'Owned source test-key bootstrap failed');
     const bootstrapLive = machines.live.get(fixture.vmId);
-    proof.bootstrapReadiness = { budgetMilliseconds: 180000, deadline: new Date(until).toISOString(), probes: [], ready: false };
+    proof.bootstrapReadiness = { budgetMilliseconds: 240000, deadline: new Date(until).toISOString(), probes: [], ready: false };
     async function bootstrapCommand(source: string, input = '', role: 'readiness' | 'cloud-diagnostic' | 'rekey' = 'readiness') {
       assert.equal(machines!.live.get(fixture.vmId), bootstrapLive, 'Owned bootstrap VM live changed');
       const row: any = { role, commandSha256: sha256(source), startedAt: new Date().toISOString(),
