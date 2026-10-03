@@ -14,6 +14,7 @@ const root = process.cwd();
 const target = join(root, '.sakura-server', 'assets');
 await mkdir(target, { recursive: true });
 await cp(join(root, 'server/network/worker.mjs'), join(target, 'network-worker.mjs'));
+await cp(join(root, 'server/network/parent-exec.py'), join(target, 'network-parent-exec.py'));
 await mkdir(join(root, '.sakura-server/docs'), { recursive: true });
 await cp(join(root, 'docs/network-runtime.md'), join(root, '.sakura-server/docs/network-runtime.md'));
 const networkSources = [
@@ -23,6 +24,7 @@ const networkSources = [
   'server/network/host-pool.ts',
   'server/network/vm-backend.ts',
   'server/network/worker.mjs',
+  'server/network/parent-exec.py',
 ];
 const describe = async (base, file) => {
   const bytes = await readFile(join(base, file));
@@ -34,7 +36,7 @@ await writeFile(
     {
       version: 1,
       files: await Promise.all(
-        ['network-entry.js', 'assets/network-worker.mjs'].map((file) =>
+        ['network-entry.js', 'assets/network-worker.mjs', 'assets/network-parent-exec.py'].map((file) =>
           describe(join(root, '.sakura-server'), file),
         ),
       ),

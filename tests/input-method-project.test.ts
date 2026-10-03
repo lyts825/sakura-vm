@@ -14,6 +14,8 @@ process.env.SAKURA_DATA_DIR = root;
 const { Jobs } = await import('../server/jobs.ts');
 const { AppError } = await import('../server/model.ts');
 const { activate, installIme } = await import('../plugins/desktop/server.ts');
+const { pluginCapabilities } = await import('../server/plugin-capabilities.ts');
+const { PluginScope } = await import('../server/plugin-scope.ts');
 after(async () => {
   const owned = await realpath(root);
   assert.equal(dirname(owned), parent); assert.match(basename(owned), /^sakura-ime-project-/);
@@ -93,8 +95,11 @@ test('cancelled IME cleanup failure remains visible as an error in the public jo
 
 test('registered IME retry restores the saved project before capturing its new task', async t => {
   const f = fixture(t), callbacks = new Map<string, (job: JobView) => unknown>();
+  const activationMachines = Object.assign(new EventEmitter(), { live: new Map() });
+  const scope = new PluginScope();
   const activation = {
-    machines: Object.assign(new EventEmitter(), { live: new Map() }),
+    machines: activationMachines,
+    capabilities: pluginCapabilities('desktop', activationMachines as never, scope),
     provide: (ref: string | { key: string }, service: unknown) => {
       Reflect.set(activation, typeof ref === 'string' ? ref : ref.key, service);
       return service;
@@ -104,7 +109,7 @@ test('registered IME retry restores the saved project before capturing its new t
   } as unknown as PluginContext;
   await activate(activation);
   const installed = activation.desktops, jobStore = activation.jobs;
-  t.after(async () => { await installed.close(); await jobStore.close(); });
+  t.after(async () => { await installed.close(); await jobStore.close(); await scope.dispose(); });
   activation.machines = f.host.machines; activation.workspaces = f.host.workspaces;
   activation.desktops = f.host.desktops; activation.jobs = f.jobs;
   f.select('beta');

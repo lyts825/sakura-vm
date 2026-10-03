@@ -2,7 +2,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Agent as FetchAgent } from 'undici';
 import { WebSocket } from 'ws';
 import { networkRuntime, type NetworkIdentity, type NetworkRuntime } from './core.ts';
@@ -25,12 +25,12 @@ export class NetworkScope {
     private runtime: NetworkRuntime,
     signal?: AbortSignal,
   ) {
-    this.identity = Object.freeze({ ...identity });
+    this.identity = Object.freeze({ ...identity, scopeId: randomUUID() });
     this.release = runtime.own(() => this.close());
-    if (signal?.aborted) void this.close(signal.reason);
+    if (signal?.aborted) void this.close(signal.reason).catch(() => {});
     else if (signal) {
       const close = () => {
-        void this.close(signal.reason);
+        void this.close(signal.reason).catch(() => {});
       };
       signal.addEventListener('abort', close, { once: true });
       this.detachParent = () => signal.removeEventListener('abort', close);
@@ -461,7 +461,9 @@ export class NetworkScope {
     return globalThis.fetch(input, { ...init, signal, dispatcher: this.fetchAgent } as RequestInit);
   };
   close(reason?: unknown) {
-    return (this.closeTask ||= (async () => {
+    if (this.closeTask) return this.closeTask;
+    const closing = (async () => {
+      const released = this.runtime.whenReleased(this.identity);
       this.detachParent?.();
       this.abort.abort(reason);
       for (const agent of this.agents) agent.destroy();
@@ -469,9 +471,13 @@ export class NetworkScope {
       try {
         await this.fetchAgent?.destroy();
       } finally {
-        this.release();
+        await released;
       }
-    })());
+      this.release();
+    })();
+    this.closeTask = closing;
+    void closing.catch(() => { if (this.closeTask === closing) this.closeTask = undefined; });
+    return closing;
   }
 }
 

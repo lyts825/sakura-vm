@@ -5,7 +5,7 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { ProjectFiles } from '../../server/project-files.ts';
 export async function activate(host: PluginContext) {
-  host.provide(projectSearchServices.projectFiles, new ProjectFiles(host.machines, host.workspaces));
+  host.provide(projectSearchServices.projectFiles, new ProjectFiles(host.compat.machines, host.workspaces));
 }
 export async function route(
   this: PluginContext,
@@ -32,12 +32,13 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'project-files' && req.method === 'GET') {
       send(
-        await this.projectFiles.scan(
+        await this.execution.run({ vmId: id, projectId: this.workspaces.projects.current(id), signal },
+          (execution) => this.projectFiles.scan(
           id,
           url.searchParams.get('q') || '',
           url.searchParams.get('content') === '1',
-          signal,
-        ),
+          execution.signal,
+        )),
       );
       return true;
     }

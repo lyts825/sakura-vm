@@ -9,6 +9,7 @@ export type NetworkIdentity = Readonly<{
   vmId?: string;
   generation?: string;
   projectId?: string;
+  scopeId?: string;
 }>;
 export type NetworkOperation = 'dial' | 'listen' | 'lookup' | 'vm' | 'accept' | 'native';
 type Lease = NetworkIdentity & {
@@ -53,6 +54,7 @@ export class NetworkRuntime {
   readonly host: HostNetworkPool;
   readonly vm: VmNetworkBackend;
   private leases = new Map<string, Lease>();
+  private releaseWaiters = new Map<string, Set<() => void>>();
   private disposers = new Set<() => void | Promise<void>>();
   private servers = new WeakMap<Server, (done?: () => void) => void>();
   private vmControl = new Map<number, { identity: NetworkIdentity; signal: AbortSignal }>();
@@ -130,7 +132,21 @@ export class NetworkRuntime {
       throw unavailable('Network owner resource limit reached', 'NETWORK_BUSY');
     const id = randomUUID();
     this.leases.set(id, { ...identity, id, kind, lane, startedAt: new Date().toISOString(), close });
-    return () => this.leases.delete(id);
+    return () => {
+      this.leases.delete(id);
+      for (const done of this.releaseWaiters.get(id) || []) done();
+      this.releaseWaiters.delete(id);
+    };
+  }
+  /** Capture existing handles only; a later scope with the same owner is independent. */
+  whenReleased(identity: NetworkIdentity) {
+    return Promise.all([...this.leases.values()]
+      .filter((lease) => identity.scopeId ? lease.scopeId === identity.scopeId :
+        lease.owner === identity.owner && lease.purpose === identity.purpose)
+      .map((lease) => new Promise<void>((done) => {
+        const waiters = this.releaseWaiters.get(lease.id) || new Set<() => void>();
+        waiters.add(done); this.releaseWaiters.set(lease.id, waiters);
+      }))).then(() => {});
   }
   async dial(
     identity: NetworkIdentity,
@@ -431,9 +447,7 @@ export class NetworkRuntime {
           errors.push(error);
         }
       }
-      this.leases.clear();
       const disposed = await Promise.allSettled([...this.disposers].map(async (dispose) => dispose()));
-      this.disposers.clear();
       const closed = await Promise.allSettled([this.vm.close(), this.host.close()]);
       this.vmControl.clear();
       for (const result of [...disposed, ...closed])

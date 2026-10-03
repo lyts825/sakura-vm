@@ -1,4 +1,4 @@
-import { networkFor } from './network/index.ts';
+import { networkFor, type NetworkScope } from './network/index.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { randomUUID, X509Certificate } from 'node:crypto';
 import { type ClientRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -22,8 +22,6 @@ import { AppError } from '../shared/errors.ts';
 import { DATA, PORT } from './paths.ts';
 import type { Machines } from './machines.ts';
 import type { IngressCertificates } from './ingress-certificates.ts';
-
-const { createHttpServer, httpRequest: request, createHttpsServer } = networkFor('core:http-ingress');
 
 const OWNER = 'http-ingress';
 const storedSchema = z.array(ingressEntrySchema).max(24);
@@ -147,6 +145,7 @@ export class HttpIngress {
     private machines: Machines,
     private file = join(DATA, 'plugins', 'network', 'ingress.json'),
     private certificates?: IngressCertificates,
+    private networking: NetworkScope = networkFor('core:http-ingress'),
   ) {}
 
   async init() {
@@ -311,8 +310,8 @@ export class HttpIngress {
     const listener = (req: IncomingMessage, res: ServerResponse) => this.proxy(req, res, port);
     const server: Server =
       protocol === 'https'
-        ? createHttpsServer(this.secureOptions(port, entries), listener)
-        : createHttpServer(listener);
+        ? this.networking.createHttpsServer(this.secureOptions(port, entries), listener)
+        : this.networking.createHttpServer(listener);
     server.on('error', (error) => {
       this.listenerErrors[String(port)] = error.message;
     });
@@ -416,7 +415,7 @@ export class HttpIngress {
     headers['x-forwarded-host'] = req.headers.host || `127.0.0.1:${port}`;
     headers['x-forwarded-proto'] = target.entry.protocol;
     if (target.entry.pathPrefix !== '/') headers['x-forwarded-prefix'] = target.entry.pathPrefix;
-    const upstream = request(
+    const upstream = this.networking.httpRequest(
       {
         hostname: '127.0.0.1',
         port: target.entry.upstreamPort,
@@ -467,7 +466,7 @@ export class HttpIngress {
     headers['x-forwarded-for'] = '127.0.0.1';
     headers['x-forwarded-host'] = req.headers.host || `127.0.0.1:${port}`;
     headers['x-forwarded-proto'] = target.entry.protocol;
-    const upstream = request({
+    const upstream = this.networking.httpRequest({
       hostname: '127.0.0.1',
       port: target.entry.upstreamPort,
       path: target.path,
@@ -504,7 +503,7 @@ export class HttpIngress {
       return;
     }
     const status = await new Promise<IngressHealth>((resolve) => {
-      const probe = request(
+      const probe = this.networking.httpRequest(
         {
           hostname: '127.0.0.1',
           port: entry.upstreamPort,
@@ -549,5 +548,6 @@ export class HttpIngress {
     this.listeners.clear();
     if (hadListeners) this.machines.reserveHostPorts(OWNER, []);
     this.unsubscribe?.();
+    await this.networking.close();
   }
 }

@@ -15,11 +15,12 @@ import { LocalAliases } from '../../server/local-aliases.ts';
 import { localAliasActionSchema, localAliasViewSchema } from '../../shared/local-aliases.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.compat.machines;
   host.provide(networkServices.network, new NetworkProfiles(m));
-  const certificates = host.provide(networkServices.certificates, new IngressCertificates(host.dataFile('certificates')));
-  await certificates.init();
-  const ingress = host.provide(networkServices.ingress, new HttpIngress(m, host.dataFile('ingress'), certificates));
+  const certificates = host.provide(networkServices.certificates, new IngressCertificates(host.compat.dataFile('certificates')));
+  await host.storage.run({ label: '加载入口证书', paths: [host.compat.dataFile('certificates')], mode: 'write',
+    buffers: 1024 * 1024, files: 2 }, async () => certificates.init());
+  const ingress = host.provide(networkServices.ingress, new HttpIngress(m, host.compat.dataFile('ingress'), certificates, host.networking));
   await ingress.init();
   await host.provide(networkServices.localAliases, new LocalAliases(() => ingress.aliasNames(),
     undefined, host.dataFile('local-aliases'))).init();
@@ -37,8 +38,10 @@ export const operations: Record<string, PluginOperation> = {
   'ingress-certificate-action': {
     request: certificateActionSchema,
     response: certificateViewSchema,
-    execute(_url, input) {
-      return this.use(networkServices.certificates).action(input);
+    execute(_url, input, signal) {
+      return this.storage.run({ label: '保存入口证书', paths: [this.compat.dataFile('certificates')],
+        mode: 'write', buffers: 1024 * 1024, files: 2, signal },
+      async () => this.use(networkServices.certificates).action(input));
     },
   },
   'ingress-view': {

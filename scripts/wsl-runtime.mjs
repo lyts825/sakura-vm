@@ -22,6 +22,7 @@ if (process.platform !== 'win32') {
     'mode=$1; data=$2; port=$3',
     'repo=$(pwd -P)',
     'command -v node >/dev/null || { echo "WSL 缺少 Linux Node.js 22+" >&2; exit 1; }',
+    'command -v python3 >/dev/null || { echo "WSL 缺少网络生命周期 helper 所需的 Python 3" >&2; exit 1; }',
     'node -e "const [major, minor] = process.versions.node.split(String.fromCharCode(46)).map(Number); process.exit(major > 22 || (major === 22 && minor >= 12) ? 0 : 1)" || { echo "WSL 需要 Node.js 22.12+" >&2; exit 1; }',
     'command -v qemu-system-x86_64 >/dev/null || { echo "WSL 缺少 qemu-system-x86_64" >&2; exit 1; }',
     'command -v qemu-img >/dev/null || { echo "WSL 缺少 qemu-img" >&2; exit 1; }',

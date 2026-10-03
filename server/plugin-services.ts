@@ -31,7 +31,9 @@ import type { NextFeatures } from './next-features.ts';
 import type { Desktops } from './desktop.ts';
 import type { Metrics } from './metrics.ts';
 
-/** Compatibility view of built-in services. New services use provider-owned ServiceRefs. */
+/** Compatibility view of built-in services. New services use provider-owned ServiceRefs.
+ * ServiceRefs preserve object identity; resource ownership and revocation belong to capabilities,
+ * so retaining a legacy service reference is not a security boundary. */
 export interface PluginServices {
   files: Files;
   images: Images;

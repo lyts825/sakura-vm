@@ -8,7 +8,6 @@ import { z } from 'zod';
 import { AppError } from '../../shared/errors.ts';
 
 import { Desktops } from '../../server/desktop.ts';
-import { Jobs } from '../../server/jobs.ts';
 import { singleAppClipboard, singleAppInput, singleAppProgram } from '../../server/single-app-windows.ts';
 import {
   x11ClipboardRequest,
@@ -32,7 +31,7 @@ export const operations: Record<string, PluginOperation> = {
 export async function activate(host: PluginContext) {
   const m = host.machines;
   host.provide(desktopServices.desktops, new Desktops(m, host.workspaces));
-  host.provide(desktopServices.jobs, new Jobs('input-method'));
+  host.provide(desktopServices.jobs, host.capabilities.jobs.create('input-method', { compatHistoryName: 'input-method' }));
   host.registerJobs(host.jobs, (job) => retryInProject(host, job, async () => installIme.call(host, retryTarget(job))));
   const clipboard = host.provide(desktopServices.x11Clipboard, host.desktops.clipboard);
   host.registerJobs(clipboard.jobs, (job) => clipboard.install(retryTarget(job)));

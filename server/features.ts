@@ -6,6 +6,7 @@ import { AppError } from '../shared/errors.ts';
 import type { Jobs } from './jobs.ts';
 import type { Machines } from './machines.ts';
 import { OperationTracker, requestScope } from './operation-scope.ts';
+import { withResourceContext } from './host-runtime/index.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 
 
@@ -57,6 +58,10 @@ export class Features {
   private closed = false;
   private closing?: Promise<void>;
   private active = new Map<AbortController, Promise<boolean>>();
+  private cleanupPending = new Set<string>();
+  pluginResources() {
+    return [...this.scopes].map(([id, scope]) => ({ id, cleanupPending: this.cleanupPending.has(id), ...scope.diagnostics() }));
+  }
   private constructor(public machines: Machines) {
     for (const key of SERVICE_KEYS) Object.defineProperty(this, key, {
       configurable: true, enumerable: true,
@@ -82,9 +87,27 @@ export class Features {
       throw new Error(`插件 ${owner} 只能注册自有任务存储`);
     if (this.pluginJobs.has(store)) throw new Error(`任务存储已注册：${owner}`);
     this.pluginJobs.set(store, { owner, retry });
+    const scope = this.scopes.get(owner);
+    if (scope) {
+      const cancel = () => { for (const job of store.list()) if (job.status === 'running') store.cancel(job.id!); };
+      scope.signal.addEventListener('abort', cancel, { once: true });
+      scope.add(async () => {
+        await store.close();
+        if (store.list().some((job) => job.admission === 'cleanup-pending'))
+          throw new AppError('插件任务仍有资源等待领域恢复', 503, 'PLUGIN_CLEANUP_PENDING');
+        scope.signal.removeEventListener('abort', cancel);
+      });
+    }
   }
   retryHandler(store: Jobs) {
-    return this.pluginJobs.get(store)?.retry;
+    const registration = this.pluginJobs.get(store);
+    return registration && ((job: JobView) => {
+      this.require(registration.owner);
+      const current = job.id ? store.get(job.id) : undefined;
+      if ((current || job).admission === 'cleanup-pending' && !(current || job).cleanupResolvedAt)
+        throw new AppError('资源清理尚未确认，请先执行领域恢复', 409, 'PLUGIN_CLEANUP_PENDING');
+      return this.scopes.get(registration.owner)!.run(() => registration.retry(job));
+    });
   }
   static async create(machines: Machines, selected: string[] = [],
     rolloutAllowed: (pluginId: string) => boolean = () => true) {
@@ -124,12 +147,26 @@ export class Features {
           )
         )
           throw new Error(`插件操作实现与声明不一致：${id}`);
-        const scope = new PluginScope();
+        const scope = new PluginScope(`plugin:${id}`);
         host.scopes.set(id, scope);
+        // Register before activation so partial construction is still owned after activation fails.
+        const closedServices = new Set<unknown>();
+        for (const key of manifest.services) scope.add(async () => {
+          const service = host.serviceValue(key) as { close?: () => Promise<void> | void; jobs?: Jobs } | undefined;
+          if (!service || closedServices.has(service)) return;
+          if (service.close) await service.close();
+          else if (service.jobs) await service.jobs.close();
+          if (service.jobs?.list().some((job) => job.admission === 'cleanup-pending'))
+            throw new AppError('插件任务仍有资源等待领域恢复', 503, 'PLUGIN_CLEANUP_PENDING');
+          closedServices.add(service);
+        });
         const context = pluginContext(host, manifest, PLUGINS, scope);
         host.contexts.set(id, context);
+        if (module.deactivate) scope.add(() => module!.deactivate!(context));
+        host.modules.set(id, module);
         started = true;
-        await withinDeadline(module.activate(context), manifest.lifecycle.activateMs, `${id} 激活`, () =>
+        await withinDeadline(scope.run(() => withResourceContext({ owner: `plugin:${id}`, pluginId: id },
+          () => module!.activate(context))), manifest.lifecycle.activateMs, `${id} 激活`, () =>
           scope.abort(),
         );
         for (const key of manifest.services)
@@ -180,41 +217,43 @@ export class Features {
     return stores;
   }
   private async dispose(module: PluginModule) {
-    const errors: unknown[] = [];
     const id = module.manifest.id;
     const scope = this.scopes.get(id);
     const closeMs = module.manifest.lifecycle.closeMs;
+    this.enabled.delete(id);
     scope?.abort();
     try {
-      if (module.deactivate)
-        await withinDeadline(module.deactivate(this.contexts.get(id)!), closeMs, `${id} 停用`);
+      await withinDeadline(scope?.dispose((disposer) =>
+        withinDeadline(disposer(), closeMs, `${id} 资源关闭`)), closeMs, `${id} 资源清理`);
     } catch (error) {
-      errors.push(error);
+      this.cleanupPending.add(id);
+      scope?.cleanupPending(error);
+      this.errors[id] = '插件清理未完成：' + (error as Error).message;
+      throw error;
     }
-    try {
-      await scope?.dispose((disposer) => withinDeadline(disposer(), closeMs, `${id} 资源清理`));
-    } catch (error) {
-      errors.push(error);
-    }
-    for (const key of [...module.manifest.services].reverse()) {
-      const service = this.serviceValue(key) as { close?: () => Promise<void>; jobs?: Jobs } | undefined;
-      try {
-        if (service?.close) await withinDeadline(service.close(), closeMs, `${id}.${key} 关闭`);
-        else if (service?.jobs) await withinDeadline(service.jobs.close(), closeMs, `${id}.${key} 任务关闭`);
-      } catch (error) {
-        errors.push(error);
-      } finally {
-        this.services.delete(key);
-      }
-    }
+    for (const key of module.manifest.services) this.services.delete(key);
     for (const [store, value] of this.pluginJobs) if (value.owner === id) this.pluginJobs.delete(store);
     this.contexts.delete(id);
     this.scopes.delete(id);
-    if (errors.length) throw new AggregateError(errors, '插件清理失败');
+    this.modules.delete(id);
+    this.cleanupPending.delete(id);
+  }
+  /** Stop new dispatch immediately. Providers remain until their dependents have unloaded. */
+  async unload(id: string) {
+    const module = this.modules.get(id);
+    if (!module) return;
+    const dependents = [...this.modules.values()].filter((item) => item.manifest.id !== id &&
+      (this.enabled.has(item.manifest.id) || this.cleanupPending.has(item.manifest.id)) &&
+      [...item.manifest.requires, ...item.manifest.optional].some((dependency) => dependency.id === id));
+    if (dependents.length) throw new AppError('请先停用依赖此插件的插件：' +
+      dependents.map((item) => item.manifest.id).join('、'), 409, 'PLUGIN_DEPENDENTS_ACTIVE');
+    await this.dispose(module);
   }
   async close() {
     if (!this.closing) {
       this.closed = true;
+      this.enabled.clear();
+      for (const scope of this.scopes.values()) scope.abort();
       for (const abort of this.active.keys()) abort.abort();
       this.closing = (async () => {
         // Dispose dependents before their providers; always attempt all cleanup.
@@ -226,7 +265,7 @@ export class Features {
         }
         for (const module of [...this.modules.values()].reverse()) {
           try {
-            await this.dispose(module);
+            await this.unload(module.manifest.id);
           } catch (error) {
             errors.push(error);
           }
@@ -234,7 +273,8 @@ export class Features {
         if (errors.length) throw new AggregateError(errors, '插件关闭失败');
       })();
     }
-    await this.closing;
+    try { await this.closing; }
+    catch (error) { this.closing = undefined; throw error; }
   }
   async route(
     req: IncomingMessage,
@@ -263,6 +303,10 @@ export class Features {
       this.machines.requireUnlocked?.(targetVm);
     const releaseMutation = mutation ? this.operations.enter() : () => {};
     const scope = requestScope(req, res), abort = scope.controller;
+    const pluginScope = this.scopes.get(owner);
+    const revoke = () => abort.abort(pluginScope?.signal.reason);
+    pluginScope?.signal.addEventListener('abort', revoke, { once: true });
+    if (pluginScope?.signal.aborted) revoke();
     const pending = Promise.resolve()
       .then(() => {
         abort.signal.throwIfAborted();
@@ -308,13 +352,15 @@ export class Features {
                 abort.signal,
               );
         const vm = /^\/api\/vms\/([^/]+)\//.exec(url.pathname)?.[1];
-        return this.workspaces && vm && contribution.projectScoped && /^[0-9a-f-]{36}$/i.test(vm)
+        const dispatch = () => this.workspaces && vm && contribution.projectScoped && /^[0-9a-f-]{36}$/i.test(vm)
           ? this.workspaces.projects.with(vm, url.searchParams.get('project'), route)
           : route();
+        return pluginScope ? pluginScope.run(() => withResourceContext({ owner: `plugin:${owner}`, pluginId: owner }, dispatch)) : dispatch();
       })
       .finally(() => {
         this.active.delete(abort);
         releaseMutation();
+        pluginScope?.signal.removeEventListener('abort', revoke);
         scope.dispose();
       });
     this.active.set(abort, pending);

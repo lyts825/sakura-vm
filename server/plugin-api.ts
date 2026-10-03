@@ -6,7 +6,8 @@ import type { Features } from './features.ts';
 import type { Jobs } from './jobs.ts';
 import { pluginDataFile } from './plugin-data.ts';
 import type { PluginScope } from './plugin-scope.ts';
-import { networkFor, type NetworkScope } from './network/index.ts';
+import type { NetworkScope } from './network/index.ts';
+import { pluginCapabilities, type PluginCapabilities } from './plugin-capabilities.ts';
 
 import { SERVICE_KEYS } from './plugin-services.ts';
 import type { ServiceRef } from './service-ref.ts';
@@ -17,6 +18,11 @@ type LegacyPluginContext = Pick<
   ServiceKey | 'machines' | 'require' | 'jobStores' | 'retryHandler' | 'mutations' | 'importing'
 >;
 export type PluginContext = LegacyPluginContext & {
+  readonly capabilities: PluginCapabilities;
+  readonly execution: PluginCapabilities['execution'];
+  readonly storage: PluginCapabilities['storage'];
+  /** Broad first-party migration surface; prefer capabilities for new resource work. */
+  readonly compat: { readonly machines: Features['machines']; dataFile(name: string): string };
   readonly networking: NetworkScope;
   readonly signal: AbortSignal;
   provide<T>(service: ServiceRef<T>, value: T): T;
@@ -27,6 +33,7 @@ export type PluginContext = LegacyPluginContext & {
   optional<T>(pluginId: string, key: string): T | undefined;
   onDispose(disposer: () => void | Promise<void>): void;
   registerJobs(store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown): void;
+  /** @deprecated Compatibility path only; perform new I/O through storage.run. */
   dataFile(name: string): string;
 };
 export type PluginRoute = (
@@ -57,8 +64,9 @@ export function pluginContext(
   catalog: PluginManifest[],
   scope: PluginScope,
 ): PluginContext {
-  const networking = networkFor(`plugin:${manifest.id}`, 'plugin-network', scope.signal);
-  scope.add(() => networking.close());
+  const capabilities = pluginCapabilities(manifest.id, host.machines, scope);
+  const compat = Object.freeze({ get machines() { return host.machines; },
+    dataFile: (name: string) => pluginDataFile(manifest.id, name) });
   const owned = new Set(manifest.services);
   const dependencies = new Set([...manifest.requires, ...manifest.optional].map((item) => item.id));
   const readable = new Set(
@@ -68,7 +76,9 @@ export function pluginContext(
   );
   return new Proxy(host, {
     get(target, key) {
-      if (key === 'networking') return networking;
+      if (key === 'capabilities') return capabilities;
+      if (key === 'compat') return compat;
+      if (key === 'networking' || key === 'execution' || key === 'storage') return capabilities[key];
       if (key === 'signal') return scope.signal;
       if (key === 'provide')
         return <T>(reference: string | ServiceRef<T>, value: T) => {

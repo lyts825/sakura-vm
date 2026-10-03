@@ -48,6 +48,12 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 
 const cleanupFailure = () =>
   new AppError('Network process cleanup is not confirmed', 503, 'HOST_PROCESS_CLEANUP_PENDING');
+function parentExecArgs(program: string) {
+  const source = join(ROOT, 'server/network/parent-exec.py');
+  const helper = existsSync(source) ? source : join(ROOT, '.sakura-server/assets/network-parent-exec.py');
+  if (!existsSync(helper)) throw failure('Network parent ownership helper is unavailable');
+  return ['-I', '-S', helper, String(process.pid), program];
+}
 function waitForClose(closed: Promise<void>, timeoutMs: number): Promise<boolean> {
   let timer: NodeJS.Timeout;
   return Promise.race([
@@ -107,7 +113,10 @@ class HostWorker {
     this.child = dependencies.forkWorker
       ? dependencies.forkWorker(file, options.connectionsPerWorker)
       : fork(file, [], {
-          execArgv: [],
+          ...(process.platform === 'linux'
+            ? { execPath: 'python3', execArgv: parentExecArgs(process.execPath) }
+            : { execArgv: [] }),
+          detached: false,
           windowsHide: true,
           stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
           env: { ...process.env, SAKURA_NETWORK_WORKER_LIMIT: String(options.connectionsPerWorker) },
@@ -260,7 +269,12 @@ class HostWorker {
       const args = ['-machine', 'none', '-nodefaults', '-display', 'none', '-m', '0', '-qmp', 'stdio'];
       child = this.dependencies.spawnBackend
         ? this.dependencies.spawnBackend(binary, args)
-        : spawn(binary, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+        // On Windows libuv assigns non-detached children to its kill-on-close Job.
+        // Keep that ownership: QMP stdio EOF alone does NOT terminate QEMU.
+        : process.platform === 'linux'
+          ? spawn('python3', [...parentExecArgs(binary), ...args],
+            { detached: false, stdio: ['pipe', 'pipe', 'pipe'] })
+          : spawn(binary, args, { detached: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (error) {
       lease.release();
       throw error;
