@@ -7,7 +7,7 @@ import type { Machines } from './machines.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { DATA } from './paths.ts';
-import { readStore, writeStore } from './local-store.ts';
+import { MetadataStore } from './metadata-store.ts';
 
 export const snapshotReplicationInput = z.object({
   peerId: z.uuid(), snapshotId: z.uuid(), targetName: createSchema.shape.name,
@@ -28,13 +28,16 @@ type Receipt = NonNullable<Awaited<ReturnType<HostPeers['importStatus']>>>;
 
 export class SnapshotReplications {
   private state?: z.infer<typeof storeSchema>;
-  private writes: Promise<unknown> = Promise.resolve();
+  private metadata: MetadataStore<z.infer<typeof storeSchema>>;
   private active = new Set<string>();
   constructor(private machines: Machines, private bundles: Bundles, private peers: HostPeers,
-    private file = join(DATA, 'snapshot-replications.json')) {}
+    private file = join(DATA, 'snapshot-replications.json')) {
+    this.metadata = new MetadataStore(file, { fallback: () => ({ version: 1, entries: [] }),
+      parse: (value) => storeSchema.parse(value) });
+  }
 
   async init() {
-    this.state = storeSchema.parse(await readStore(this.file, () => ({ version: 1, entries: [] })));
+    this.state = (await this.metadata.read()).value;
     if (this.state.entries.some((entry) => entry.status === 'transferring'))
       await this.change((state) => {
         for (const entry of state.entries) if (entry.status === 'transferring') {
@@ -50,15 +53,9 @@ export class SnapshotReplications {
   }
 
   private async change<T>(edit: (state: z.infer<typeof storeSchema>) => T) {
-    const operation = this.writes.catch(() => {}).then(async () => {
-      const next = structuredClone(this.state!);
-      const result = edit(next);
-      await writeStore(this.file, next);
-      this.state = next;
-      return result;
-    });
-    this.writes = operation;
-    return operation;
+    const committed = await this.metadata.update(edit);
+    this.state = committed.value;
+    return committed.result;
   }
 
   private async source(id: string, snapshotId: string) {

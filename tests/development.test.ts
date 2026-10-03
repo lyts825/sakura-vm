@@ -94,6 +94,8 @@ test('encrypted backup jobs never retry as plaintext and wrong passwords do not 
   const bundle = Buffer.concat([Buffer.from('SAKURA01'), length, manifest, data]);
   let imported = false;
   const bundles = {
+    withExportBudget: async (_id: string, _signal: AbortSignal, work: any) =>
+      work(data.length, (output: NodeJS.WritableStream) => pipeline(Readable.from([bundle]), output)),
     export: async (_id: string, output: NodeJS.WritableStream) => {
       await pipeline(Readable.from([bundle]), output);
     },

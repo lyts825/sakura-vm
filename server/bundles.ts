@@ -19,6 +19,7 @@ import { Secrets } from './secrets.ts';
 import { DesktopBindings, desktopBindingSchema } from './desktop-binding.ts';
 import { x11ClipboardConfiguration } from './x11-clipboard.ts';
 import { writeStore } from './local-store.ts';
+import { storageRuntime, type StorageRuntime } from './storage-runtime.ts';
 import type { TrustedBootService } from './trusted-boot-service.ts';
 import {
   decodeTrustedBootArchive,
@@ -128,8 +129,39 @@ export class Bundles {
     return mkdtemp(join(DATA, 'transfers', 'bundle-'));
   }
   async export(id: string, target: Writable, headers: () => void, signal?: AbortSignal,
-    bytesPerSecond = 0, snapshotId?: string) {
+    bytesPerSecond = 0, snapshotId?: string, onCleanupError?: (error: unknown) => void) {
+    return this.machines.locked(id, () => this.exportLocked(id, target, headers, signal,
+      bytesPerSecond, snapshotId, onCleanupError));
+  }
+  /** Measure the actual compact QCOW2 output while holding the same VM lock as
+   * conversion. A queued storage admission cannot invalidate the measured disk. */
+  async withExportBudget<T>(id: string, signal: AbortSignal,
+    work: (diskBytes: number, exportFile: (target: Writable, headers: () => void,
+      bytesPerSecond?: number, onCleanupError?: (error: unknown) => void) => Promise<string>) => Promise<T>,
+    storage: StorageRuntime = storageRuntime) {
     return this.machines.locked(id, async () => {
+      this.machines.requireStopped(id);
+      signal.throwIfAborted();
+      const vm = this.machines.get(id);
+      const measure = await storage.run({ owner: 'core:backup-measure', taskId: 'backup-measure:' + id,
+        label: 'Measure compact backup disk', mode: 'read', paths: [vmDir(id), DATA],
+        buffers: 256 * 1024, files: 2, signal }, async () => vm.diskEncryption
+        ? await this.machines.withDiskSecret(vm, (secret) => this.machines.engine.run('sakura-img',
+          ['measure', '--output=json', '--object', qemuSecretObject(secret), '--image-opts', '-O', 'qcow2',
+            '-o', 'encrypt.format=luks,encrypt.key-secret=sakura-disk-key',
+            encryptedImageOptions(join(vmDir(id), 'disk.qcow2'))], { signal }))
+        : await this.machines.engine.run('sakura-img',
+          ['measure', '--output=json', '-f', 'qcow2', '-O', 'qcow2', join(vmDir(id), 'disk.qcow2')], { signal }));
+      const bytes: unknown = JSON.parse(measure).required;
+      if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 1 || bytes > MAX_BUNDLE)
+        throw new AppError('无法为导出的 QCOW2 磁盘确认空间预算', 507, 'STORAGE_SPACE_REQUIRED');
+      signal.throwIfAborted();
+      return work(bytes, (target, headers, rate = 0, cleanup) =>
+        this.exportLocked(id, target, headers, signal, rate, undefined, cleanup));
+    });
+  }
+  private async exportLocked(id: string, target: Writable, headers: () => void, signal?: AbortSignal,
+    bytesPerSecond = 0, snapshotId?: string, onCleanupError?: (error: unknown) => void) {
       this.machines.requireStopped(id);
       const vm = this.machines.get(id);
       const snapshot = snapshotId ? vm.snapshots.find((item) => item.id === snapshotId) : undefined;
@@ -209,13 +241,13 @@ export class Bundles {
         );
         return unsigned.sha256;
       } finally {
-        await rm(dir, { recursive: true, force: true });
+        try { await rm(dir, { recursive: true, force: true }); }
+        catch (error) { onCleanupError?.(error); throw error; }
       }
-    });
   }
   async import(name: string, source: Readable, signal?: AbortSignal, beforeAdopt?: () => void,
-    migrationOrigin?: VMRecord['migrationOrigin']) {
-    return this.importCore(name, source, signal, beforeAdopt, false, migrationOrigin);
+    migrationOrigin?: VMRecord['migrationOrigin'], onCleanupError?: (error: unknown) => void) {
+    return this.importCore(name, source, signal, beforeAdopt, false, migrationOrigin, onCleanupError);
   }
   async importExternal(name: string, source: Readable, signal?: AbortSignal) {
     return this.importCore(name, source, signal, undefined, true);
@@ -227,6 +259,7 @@ export class Bundles {
     beforeAdopt?: () => void,
     external = false,
     migrationOrigin?: VMRecord['migrationOrigin'],
+    onCleanupError?: (error: unknown) => void,
   ) {
     return this.withContents(source, signal, async (disk, manifest, seed, trustedBoot) => {
       if (trustedBoot && !this.trustedBoot)
@@ -269,7 +302,7 @@ export class Bundles {
       return external && this.signatures
         ? this.signatures.withAuthorizedExternal(manifest.signature, publish)
         : publish();
-    });
+    }, onCleanupError);
   }
   /** A verified standalone disk exists only for the duration of the callback. */
   async withDisk<T>(source: Readable, signal: AbortSignal,
@@ -282,6 +315,7 @@ export class Bundles {
     signal: AbortSignal | undefined,
     work: (disk: string, manifest: z.infer<typeof manifestSchema>, seed: Buffer,
       trustedBoot?: TrustedBootFiles) => Promise<T>,
+    onCleanupError?: (error: unknown) => void,
   ) {
     signal?.throwIfAborted();
     const dir = await this.temp();
@@ -356,7 +390,8 @@ export class Bundles {
       signal?.throwIfAborted();
       return await work(disk, manifest, seed, trustedBoot);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      try { await rm(dir, { recursive: true, force: true }); }
+      catch (error) { onCleanupError?.(error); throw error; }
     }
   }
   async clone(id: string, name: string, snapshot?: string, signal?: AbortSignal) {

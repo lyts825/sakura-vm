@@ -90,6 +90,7 @@ export async function withDecrypted<T>(
   password: string,
   work: (file: string) => Promise<T>,
   signal?: AbortSignal,
+  onCleanupError?: (error: unknown) => void,
 ) {
   await regularDirectory(DATA);
   const dir = await mkdtemp(join(DATA, '.decrypt-')),
@@ -98,8 +99,8 @@ export async function withDecrypted<T>(
     await decryptFile(source, file, password, signal);
     return await work(file);
   } finally {
-    await rm(file, { force: true });
-    await rmdir(dir);
+    try { await rm(file, { force: true }); await rmdir(dir); }
+    catch (error) { onCleanupError?.(error); throw error; }
   }
 }
 export async function importEncrypted(

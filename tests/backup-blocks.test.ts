@@ -138,6 +138,8 @@ test('backup policy stores blocks, verifies and restores them, preserves retenti
   const bundle = Buffer.concat([Buffer.from('SAKURA01'), size, manifest, disk]);
   let imports = 0;
   const bundles = {
+    withExportBudget: async (_id: string, _signal: AbortSignal, work: any) =>
+      work(disk.length, (output: Writable) => pipeline(Readable.from([bundle]), output)),
     export: async (_id: string, output: Writable) => pipeline(Readable.from([bundle]), output),
     import: async (_name: string, input: Readable) => {
       const chunks = [];

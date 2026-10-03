@@ -14,7 +14,7 @@ import type { ProjectCatalog } from './project-catalog.ts';
 import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge.ts';
 import { inMaintenance, timeWindowSchema } from './automation-policy.ts';
 import { withinWindow } from '../shared/time-windows.ts';
-import { readStore, writeStore } from './local-store.ts';
+import { metadataFile, replaceMetadata } from './metadata-store.ts';
 import { ByteRate } from './byte-rate.ts';
 import {
   matchesSyncPattern,
@@ -296,13 +296,14 @@ export class FolderSync {
       this.machines.get(id);
       const previous = await this.config(id);
       const file = this.file(id, 'sync');
-      await writeStore(file, config);
+      await replaceMetadata(file, config);
       if (previous?.host !== config.host || previous?.guest !== config.guest) {
-        await rm(this.file(id, 'sync-state'), { force: true });
-        await rm(this.file(id, 'sync-base'), { force: true });
-        await rm(this.file(id, 'sync-queue'), { force: true });
+        await metadataFile(this.file(id, 'sync-state'), () => null).remove();
+        await metadataFile(this.file(id, 'sync-base'), () => null).remove();
+        await metadataFile(this.file(id, 'sync-queue'), () => null).remove();
       }
-      if (!config.mergeText && previous?.mergeText) await rm(this.file(id, 'sync-base'), { force: true });
+      if (!config.mergeText && previous?.mergeText)
+        await metadataFile(this.file(id, 'sync-base'), () => null).remove();
       this.watchers.ensure(this.key(id), id, config);
       return config;
     });
@@ -319,7 +320,7 @@ export class FolderSync {
     };
   }
   private async queued(id: string) {
-    const value = await readStore<unknown>(this.file(id, 'sync-queue'), () => null);
+    const { value } = await metadataFile<unknown>(this.file(id, 'sync-queue'), () => null).read();
     return value === null ? null : queueSchema.parse(value);
   }
   async queue(id: string, cancel = false) {
@@ -328,7 +329,7 @@ export class FolderSync {
       const pending = await this.queued(id);
       if (cancel) {
         if (pending?.jobId) this.jobs.cancel(pending.jobId);
-        await rm(this.file(id, 'sync-queue'), { force: true });
+        await metadataFile(this.file(id, 'sync-queue'), () => null).remove();
         return null;
       }
       if (!(await this.config(id))) throw new AppError('请先保存同步目录');
@@ -339,7 +340,7 @@ export class FolderSync {
         attempts: 0,
         nextAttemptAt: 0,
       };
-      await writeStore(this.file(id, 'sync-queue'), entry);
+      await replaceMetadata(this.file(id, 'sync-queue'), entry);
       return entry;
     });
   }
@@ -361,13 +362,13 @@ export class FolderSync {
                 const job = this.jobs.get(pending.jobId);
                 if (job?.status === 'running') return;
                 if (job?.status === 'done') {
-                  await rm(this.file(id, 'sync-queue'), { force: true });
+                  await metadataFile(this.file(id, 'sync-queue'), () => null).remove();
                   pending = null;
                 } else {
                   delete pending.jobId;
                   pending.lastError = (job?.error || '同步中断，将重新比较文件后重试').slice(0, 1000);
                   pending.nextAttemptAt = now + Math.min(600000, 15000 * 2 ** Math.min(6, pending.attempts));
-                  await writeStore(this.file(id, 'sync-queue'), pending);
+                  await replaceMetadata(this.file(id, 'sync-queue'), pending);
                 }
               }
               if (this.jobs.view(this.key(id))?.status === 'running') return;
@@ -382,7 +383,7 @@ export class FolderSync {
                   attempts: 0,
                   nextAttemptAt: 0,
                 };
-                await writeStore(this.file(id, 'sync-queue'), pending);
+                await replaceMetadata(this.file(id, 'sync-queue'), pending);
               }
               if (this.machines.state(id) !== 'running' || now < pending.nextAttemptAt) return;
               try {
@@ -394,7 +395,7 @@ export class FolderSync {
                 pending.lastError = (error as Error).message.slice(0, 1000);
                 pending.nextAttemptAt = now + Math.min(600000, 15000 * 2 ** Math.min(6, pending.attempts));
               }
-              await writeStore(this.file(id, 'sync-queue'), pending);
+              await replaceMetadata(this.file(id, 'sync-queue'), pending);
             });
           } catch {
             /* Each project retains its previous queued request on transient failures. */
@@ -1344,11 +1345,9 @@ export class FolderSync {
             serializedBytes += cost;
           }
         }
-        await writeFile(baseFile + '.tmp', JSON.stringify(retained), { mode: 0o600 });
-        await rename(baseFile + '.tmp', baseFile);
+        await metadataFile<Record<string, string>>(baseFile, () => ({})).replace(retained);
       }
-      await writeFile(stateFile + '.tmp', JSON.stringify(next), { mode: 0o600 });
-      await rename(stateFile + '.tmp', stateFile);
+      await metadataFile<Record<string, string>>(stateFile, () => ({})).replace(next);
       await journal?.finish();
     } catch (error) {
       await journal?.finish(error);

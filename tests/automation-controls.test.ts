@@ -82,6 +82,8 @@ test('backup retention survives policy changes and restart, protects pruning, an
   length.writeUInt32BE(manifest.length);
   const bytes = Buffer.concat([Buffer.from('SAKURA01'), length, manifest, payload]);
   const bundles = {
+    withExportBudget: async (_id: string, _signal: AbortSignal, work: any) =>
+      work(payload.length, (output: Writable) => pipeline(Readable.from([bytes]), output)),
     export: async (_id: string, output: Writable) => pipeline(Readable.from([bytes]), output),
   } as unknown as Bundles;
   const backups = new Backups(machines, bundles);

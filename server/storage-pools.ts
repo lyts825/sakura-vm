@@ -6,7 +6,8 @@ import type { Machines } from './machines.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA, VM_ROOT, setVmStorageRoot, vmDir } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
-import { readStore, regularDirectory, within, writeStore } from './local-store.ts';
+import { readStore, regularDirectory, within } from './local-store.ts';
+import { MetadataStore } from './metadata-store.ts';
 
 const idSchema = z.string().regex(/^(default|[a-f0-9]{16})$/);
 export const storagePoolInput = z.object({
@@ -36,12 +37,14 @@ const marker = (root: string) => join(poolFolder(root), '.sakura-pool.json');
 
 export class StoragePools {
   private state?: z.infer<typeof storeSchema>;
-  private writes: Promise<unknown> = Promise.resolve();
-  constructor(private machines: Machines, private file = join(DATA, 'storage-pools.json')) {}
+  private metadata: MetadataStore<z.infer<typeof storeSchema>>;
+  constructor(private machines: Machines, private file = join(DATA, 'storage-pools.json')) {
+    this.metadata = new MetadataStore(file, { fallback: () => ({ version: 1, pools: [], pendingCleanup: [] }),
+      parse: (value) => storeSchema.parse(value) });
+  }
 
   async init() {
-    this.state = storeSchema.parse(await readStore(this.file,
-      () => ({ version: 1, pools: [], pendingCleanup: [] })));
+    this.state = (await this.metadata.read()).value;
     const paths = [DATA, ...this.state.pools.map((pool) => pool.root)];
     for (const root of paths) {
       if (!isAbsolute(root) || /[\x00-\x1f]/.test(root))
@@ -54,15 +57,9 @@ export class StoragePools {
   }
 
   private async change<T>(edit: (state: z.infer<typeof storeSchema>) => T) {
-    const operation = this.writes.catch(() => {}).then(async () => {
-      const next = structuredClone(this.state!);
-      const result = edit(next);
-      await writeStore(this.file, next);
-      this.state = next;
-      return result;
-    });
-    this.writes = operation;
-    return operation;
+    const committed = await this.metadata.update(edit);
+    this.state = committed.value;
+    return committed.result;
   }
 
   private pool(id: string): Pool | null {

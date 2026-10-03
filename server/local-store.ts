@@ -1,5 +1,6 @@
 import { readFile, mkdir, writeFile, rename, rm, lstat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import { finished } from 'node:stream/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, relative, isAbsolute, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -14,10 +15,14 @@ export async function readStore<T>(file: string, fallback: () => T): Promise<T> 
   }
 }
 export async function writeStore(file: string, value: unknown) {
+  // Capture before the first asynchronous step; callers may mutate their state
+  // after handing this publication to a queue.
+  const contents = JSON.stringify(value, null, 2);
+  if (contents === undefined) throw new TypeError('Metadata must be JSON serializable');
   await mkdir(dirname(file), { recursive: true });
   const temp = `${file}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temp, JSON.stringify(value, null, 2), { mode: 0o600, flag: 'wx', flush: true });
+    await writeFile(temp, contents, { mode: 0o600, flag: 'wx', flush: true });
     const deadline = performance.now() + 1000;
     for (let attempt = 0; ; attempt++) {
       try { await rename(temp, file); break; }
@@ -56,6 +61,8 @@ export async function regularDirectory(path: string) {
 }
 export async function fileHash(file: string, signal?: AbortSignal) {
   const hash = createHash('sha256');
-  for await (const chunk of createReadStream(file, { signal })) hash.update(chunk);
+  const input = createReadStream(file, { signal });
+  try { for await (const chunk of input) hash.update(chunk); }
+  finally { input.destroy(); await finished(input).catch(() => {}); }
   return hash.digest('hex');
 }

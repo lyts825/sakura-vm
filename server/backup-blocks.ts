@@ -82,7 +82,8 @@ export class BackupBlocks {
   read(vmId: string, id: string, expected?: string) {
     return this.serial(() => this.manifest(vmId, id, expected));
   }
-  async pack(vmId: string, id: string, file: string, expected: string, signal: AbortSignal) {
+  async pack(vmId: string, id: string, file: string, expected: string, signal: AbortSignal,
+    onCleanupError?: (error: unknown) => void) {
     return this.serial(async () => {
       signal.throwIfAborted();
       const path = this.manifestPath(vmId, id);
@@ -137,7 +138,8 @@ export class BackupBlocks {
                 signal.throwIfAborted();
                 await rename(temp, block);
               } finally {
-                await rm(temp, { force: true });
+                try { await rm(temp, { force: true }); }
+                catch (error) { onCleanupError?.(error); throw error; }
               }
             }
             checked.add(hash);
@@ -202,6 +204,7 @@ export class BackupBlocks {
     expected: string,
     signal: AbortSignal,
     work: (file: string) => Promise<T>,
+    onCleanupError?: (error: unknown) => void,
   ) {
     const directory = join(this.root, 'materialized');
     await regularDirectory(directory);
@@ -216,7 +219,8 @@ export class BackupBlocks {
     } finally {
       output.destroy();
       await closed;
-      await rm(file, { force: true });
+      try { await rm(file, { force: true }); }
+      catch (error) { onCleanupError?.(error); throw error; }
     }
   }
   remove(vmId: string, id: string) {
