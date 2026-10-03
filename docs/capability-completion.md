@@ -4,6 +4,10 @@
 
 ## Shell 子进程继承与私有项目图形程序
 
+APT 修复后的新鲜 X11 实例在原时限内完成启动与 SSH 认证，原生组件安装成功，系统 SSH 服务按既有恢复流程继承 NoNewPrivileges。第一个项目迁移的后续准入返回 `EGRESS_NNP_PROCESS_CHANGED`，原始回执 `detail:null`，尚未进入 APT、图形和正式功能场景；不能据此判定发生变化的具体进程。原失败和磁盘保留，全部 VM、进程和连接已经关闭。证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-8ae09e4b-c926-4eb2-bd7d-4e2576639b49/desktop-identity-evidence.json` SHA-256 为 `ddccd51e2d2564ae40ea5d1d3a69101cc4501a844f3df405b8e5d3a709fc7b37`。
+
+生产源码模型复现了初始 `/proc` 采集中无关新 PID 和无关进程映像瞬态变化均返回相同无详情错误。准入前的完整采集现最多重新进行三轮，重试窗口五秒，逐 PID 读取前后及最后的 PID 集合都受约束；新增 SSH 或项目账号进程仍须经过原 NNP、能力与归属检查。已经用于准入的 SSH 父链、服务权威或进程身份变化不重试，持续变化仍拒绝。错误回执增加固定阶段和原因，不输出命令行或环境。新 `dec047e1f2b5e412115ff4ff5a32c979b27ba7a8cda56e89e6815144c8b07076` 构建的定向 Node 32 项、生产模型 58 组及 TypeScript 检查通过；模型仅证明这两类初始采集反例，前次实机原始错误的具体分支仍未确定。修复后完整实机结果另行记录。
+
 Debian/Ubuntu 的桌面与输入法准备已改为核对固定包集的真实安装状态和错误标志；全部为 `installed ok` 时跳过重复 APT，缺包、半安装、错误标志或查询失败时进入原安装流程，并最多等待 dpkg 锁 120 秒。原非交互环境、下载预算、安装选项与 Alpine 路径保持。生成 shell 的 27 项、相关入口的 44 项回归及 TypeScript 检查通过；自有 WSL APT 3.2.0 隔离目录中，真实 fcntl 锁释放后返回 0，有限等待到期返回 100，持锁进程与输出流均关闭。该实测没有修改系统 APT 状态或锁，也不等同于 Debian 2.6.1 实机。
 
 当前 `dc1f262befd8bfcb9e7e74823abbc39d4ec147b0631a183afa4df73803587b9d` 构建的新鲜 X11 实例完成两个公开项目目录迁移和 nftables 1.0.6 的三项事务，随后桌面依赖安装被 unattended-upgrades 的 dpkg 锁拒绝，尚未进入 PAM 准入与图形场景。原失败与磁盘保留，VM、进程、SSH 和 WebSocket 全部关闭。证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-88073595-ac26-4c5e-b7ae-9e196424c20e/desktop-identity-evidence.json` SHA-256 为 `cef8e8eca8c95a7edcf9bace62414df99fa1d9cf6f1e294929280bc973f0c566`。APT 修复后的完整桌面结果另行记录。

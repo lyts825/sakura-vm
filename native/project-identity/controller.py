@@ -1564,20 +1564,20 @@ def egress_nnp_process(parent, pid):
             try:
                 raw = os.read(fd, limit + 1)
                 if len(raw) > limit:
-                    refuse('EGRESS_NNP_PROCESS_CHANGED')
+                    refuse('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-field-too-large', 'file': name})
                 return raw
             finally:
                 os.close(fd)
         def identity():
             fields = part('stat').rsplit(b') ', 1)[1].split()
             if len(fields) < 20 or any(not re.fullmatch(b'0|[1-9][0-9]*', fields[index]) for index in (1, 19)):
-                refuse('EGRESS_NNP_PROCESS_CHANGED')
+                refuse('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-stat-invalid'})
             return int(fields[1]), fields[19].decode('ascii')
         parent_pid, start = identity()
         status = dict(line.split(b':', 1) for line in part('status').splitlines() if b':' in line)
         uids = [int(item) for item in status[b'Uid'].split()]
         if len(uids) != 4 or status[b'NoNewPrivs'].strip() not in (b'0', b'1'):
-            refuse('EGRESS_NNP_PROCESS_CHANGED')
+            refuse('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-uid-or-nnp-invalid'})
         executable = os.readlink('exe', dir_fd=descriptor)
         image = os.stat('exe', dir_fd=descriptor)
         arguments = part('cmdline', 65536).rstrip(b'\0').split(b'\0')
@@ -1586,7 +1586,7 @@ def egress_nnp_process(parent, pid):
         final_image = os.stat('exe', dir_fd=descriptor)
         if identity() != (parent_pid, start) or (final_image.st_dev, final_image.st_ino) != (image.st_dev, image.st_ino) or \
            os.readlink('exe', dir_fd=descriptor) != executable:
-            refuse('EGRESS_NNP_PROCESS_CHANGED')
+            refuse('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-identity-or-image-changed'})
         return dict(pid=pid, parentPid=parent_pid, startTicks=start, executable=executable, image=image, uids=uids,
                     nnp=int(status[b'NoNewPrivs']), arguments=arguments, cgroupName=membership,
                     caps=[int(status[key].strip(), 16) for key in (b'CapEff', b'CapPrm', b'CapAmb')])
@@ -1595,6 +1595,47 @@ def egress_nnp_process(parent, pid):
     finally:
         if descriptor is not None:
             os.close(descriptor)
+
+
+def egress_nnp_snapshot(parent, manager):
+    # No service/account authorization has consumed this collection yet. A
+    # short-lived unrelated process can change while /proc is read. Retry only
+    # this complete initial collection, never an already used SSH authority or
+    # parent chain. Every retry still reads all current PIDs and its bookend.
+    deadline = None
+    for attempt in range(1, 4):
+        def budget():
+            if attempt > 1 and time.monotonic() >= deadline:
+                refuse('EGRESS_NNP_PROCESS_CHANGED', {'reason': 'process-snapshot-retry-deadline'})
+        try:
+            budget()
+            entries = [name for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name)]
+            if len(entries) > 32768:
+                refuse('EGRESS_NNP_PROCESS_LIMIT')
+            entry_set = set(entries)
+            processes = {}
+            for name in entries:
+                budget()
+                process = egress_nnp_process(parent, int(name))
+                budget()
+                if process is not None:
+                    processes[process['pid']] = process
+            budget()
+            created = [name for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name) and name not in entry_set]
+            budget()
+            if created:
+                refuse('EGRESS_NNP_PROCESS_CHANGED', {'reason': 'process-census-changed', 'pid': int(created[0]),
+                       'newPidCount': len(created)})
+            return processes
+        except Refusal as error:
+            if error.code != 'EGRESS_NNP_PROCESS_CHANGED':
+                raise
+            detail = dict(error.detail) if isinstance(error.detail, dict) else {'reason': 'process-read-changed'}
+            detail.update(manager=manager, stage='process-snapshot', snapshotAttempts=attempt)
+            if deadline is None:
+                deadline = time.monotonic() + 5
+            if attempt == 3 or time.monotonic() >= deadline:
+                refuse(error.code, detail)
 
 
 def egress_nnp_live(value, manager):
@@ -1635,14 +1676,7 @@ def egress_nnp_live(value, manager):
     parent = egress_nnp_directory('/proc')
     systemd_descriptor = None
     try:
-        entries = [name for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name)]
-        if len(entries) > 32768:
-            refuse('EGRESS_NNP_PROCESS_LIMIT')
-        processes = {}
-        for name in entries:
-            process = egress_nnp_process(parent, int(name))
-            if process is not None:
-                processes[process['pid']] = process
+        processes = egress_nnp_snapshot(parent, manager)
         # Only the verified controller's real, all-root ancestor chain proves
         # an already authenticated Root administration connection. A mutable
         # sshd title naming "root" is not authentication evidence. The listener
@@ -1651,15 +1685,13 @@ def egress_nnp_live(value, manager):
         ancestor = processes.get(os.getpid())
         while ancestor is not None and ancestor['uids'] == [0] * 4:
             if ancestor['pid'] in root_ancestors or len(root_ancestors) >= 128:
-                refuse('EGRESS_NNP_PROCESS_CHANGED')
+                refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'reason': 'root-ancestor-cycle-or-limit',
+                       'pid': ancestor['pid']})
             root_ancestors.add(ancestor['pid'])
             ancestor = processes.get(ancestor['parentPid'])
         if os.getpid() not in root_ancestors:
-            refuse('EGRESS_NNP_PROCESS_CHANGED')
-        # A newly forked process must not be omitted from the admission scan.
-        # The following request may retry once a busy process tree is stable.
-        if any(name not in entries for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name)):
-            refuse('EGRESS_NNP_PROCESS_CHANGED')
+            refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'reason': 'controller-process-not-root-or-missing',
+                   'pid': os.getpid()})
         listeners = {}
         def checked(process):
             current = egress_nnp_process(parent, process['pid'])

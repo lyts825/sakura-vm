@@ -10,6 +10,7 @@ import re
 import stat
 import struct
 import sys
+import time
 import types
 import uuid
 
@@ -19,7 +20,7 @@ definitions = ast.Module(body=[node for node in tree.body if isinstance(node, (a
 
 
 def namespace():
-    ns = dict(base64=base64, hashlib=hashlib, json=json, os=os, re=re, stat=stat, struct=struct, uuid=uuid)
+    ns = dict(base64=base64, hashlib=hashlib, json=json, os=os, re=re, stat=stat, struct=struct, time=time, uuid=uuid)
     exec(compile(definitions, 'production-egress-nnp-definitions', 'exec'), ns)
     return ns
 
@@ -462,6 +463,146 @@ def openrc_ssh_descendants_and_listener_identity():
     refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'openrc'), 'EGRESS_NNP_PROCESS_CHANGED')
 
 
+def initial_snapshot_recovers_unrelated_churn():
+    for variant in ('new-unrelated-pid', 'unrelated-transient-image'):
+        ns, processes, _responses, queries, closed, _flags = systemd_fixture()
+        calls, reads = dict(listdir=0), {}
+        ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
+        original_list, original_read = ns['os'].listdir, ns['egress_nnp_process']
+        unrelated = process(9000, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0,
+                            group='/user.slice/user-1000.slice/session-99.scope')
+        if variant == 'unrelated-transient-image':
+            processes[9000] = unrelated
+        def listed(fd):
+            calls['listdir'] += 1
+            if variant == 'new-unrelated-pid' and calls['listdir'] == 2:
+                processes[9000] = unrelated
+            return original_list(fd)
+        def read(parent, pid):
+            reads[pid] = reads.get(pid, 0) + 1
+            if variant == 'unrelated-transient-image' and pid == 9000 and reads[pid] == 1:
+                ns['refuse']('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-identity-or-image-changed'})
+            return original_read(parent, pid)
+        ns['os'].listdir, ns['egress_nnp_process'] = listed, read
+        ns['egress_nnp_live']({'uid': 20000}, 'systemd')
+        assert queries == ['ssh.service', 'ssh.service'] and closed.count(20) == 1
+        assert calls['listdir'] == (4 if variant == 'new-unrelated-pid' else 3)
+        assert reads[9000] == (1 if variant == 'new-unrelated-pid' else 2), 'the retry must read the actual new/transient PID'
+        assert processes[1743]['parentPid'] == 1040 and processes[1743]['startTicks'] == '78472'
+
+
+def initial_snapshot_rejects_dangerous_new_pids():
+    for variant, code in (('ssh-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'), ('project-nnp-zero', 'EGRESS_NNP_RESTART_REQUIRED'),
+                          ('project-capability', 'EGRESS_NNP_ACCOUNT_PRIVILEGED'), ('project-mixed-uid', 'EGRESS_NNP_ACCOUNT_PRIVILEGED')):
+        ns, processes, _responses, _queries, closed, _flags = systemd_fixture()
+        ns['time'] = types.SimpleNamespace(monotonic=lambda: 0)
+        calls, read_pids = dict(listdir=0), []
+        original_list, original_read = ns['os'].listdir, ns['egress_nnp_process']
+        child = process(9000, 1040, group='/user.slice/user-1000.slice/session-99.scope', nnp=0, uid=1000,
+                        arguments=[b'sshd: ordinary@notty'])
+        if variant.startswith('project-'):
+            child.update(executable='/bin/sh', image=image(90), uids=[20000] * 4, nnp=0 if variant == 'project-nnp-zero' else 1)
+            if variant == 'project-capability':
+                child['caps'] = [0, 1, 0]
+            elif variant == 'project-mixed-uid':
+                child['uids'][1] = 0
+        def listed(fd):
+            calls['listdir'] += 1
+            if calls['listdir'] == 2:
+                processes[9000] = child
+            return original_list(fd)
+        def read(parent, pid):
+            read_pids.append(pid)
+            return original_read(parent, pid)
+        ns['os'].listdir, ns['egress_nnp_process'] = listed, read
+        detail = refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'systemd'), code)
+        assert detail['pid'] == 9000 and calls['listdir'] == 4 and 9000 in read_pids
+        assert detail.get('stage') != 'process-snapshot' and closed.count(20) == 1
+
+
+def initial_snapshot_retry_bounds_and_safe_reasons():
+    for variant in ('continuous-fork', 'continuous-read-change', 'before-read-deadline', 'after-read-deadline', 'after-census-deadline'):
+        ns, processes, _responses, queries, closed, _flags = systemd_fixture()
+        clock, calls, reads = [0], dict(listdir=0), []
+        ns['time'] = types.SimpleNamespace(monotonic=lambda: clock[0])
+        original_list, original_read = ns['os'].listdir, ns['egress_nnp_process']
+        if variant == 'continuous-read-change':
+            processes[9000] = process(9000, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
+        def listed(fd):
+            calls['listdir'] += 1
+            if variant == 'continuous-fork' and calls['listdir'] % 2 == 0:
+                pid = 9000 + calls['listdir'] // 2
+                processes[pid] = process(pid, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
+            elif variant.endswith('deadline') and calls['listdir'] == 2:
+                processes[9000] = process(9000, 1, executable='/usr/bin/sleep', inode=90, uid=1000, nnp=0)
+            if (variant == 'before-read-deadline' and calls['listdir'] == 3) or \
+               (variant == 'after-census-deadline' and calls['listdir'] == 4):
+                clock[0] = 5
+            return original_list(fd)
+        def read(parent, pid):
+            reads.append(pid)
+            if variant == 'continuous-read-change' and pid == 9000:
+                ns['refuse']('EGRESS_NNP_PROCESS_CHANGED', {'pid': pid, 'reason': 'process-identity-or-image-changed'})
+            current = original_read(parent, pid)
+            if variant == 'after-read-deadline' and calls['listdir'] == 3:
+                clock[0] = 5.1
+            return current
+        ns['os'].listdir, ns['egress_nnp_process'] = listed, read
+        detail = refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'systemd'), 'EGRESS_NNP_PROCESS_CHANGED')
+        assert detail['manager'] == 'systemd' and detail['stage'] == 'process-snapshot' and not queries and 20 not in closed
+        assert detail['snapshotAttempts'] == (3 if variant.startswith('continuous-') else 2)
+        expected_reason = 'process-census-changed' if variant == 'continuous-fork' else \
+                          'process-identity-or-image-changed' if variant == 'continuous-read-change' else 'process-snapshot-retry-deadline'
+        assert detail['reason'] == expected_reason
+        assert not any(key in detail for key in ('arguments', 'environment', 'cmdline', 'status'))
+        if variant == 'after-read-deadline':
+            assert reads.count(100) == 2 and reads.count(200) == 1, 'a single read crossing five seconds stops the retry before its next PID'
+    # The first ordinary collection retains its original host-controlled
+    # timeout rather than rejecting a slow but internally stable guest.
+    ns, _processes, _responses, queries, _closed, _flags = systemd_fixture()
+    clock = [0]
+    ns['time'] = types.SimpleNamespace(monotonic=lambda: clock[0])
+    original_read = ns['egress_nnp_process']
+    def slow(parent, pid):
+        clock[0] += 3
+        return original_read(parent, pid)
+    ns['egress_nnp_process'] = slow
+    ns['egress_nnp_live']({'uid': 20000}, 'systemd')
+    assert clock[0] > 5 and queries == ['ssh.service', 'ssh.service']
+
+
+def root_ancestor_failures_and_used_nodes_are_not_retried():
+    for variant in ('cycle', 'missing-controller', 'nonroot-controller', 'used-node-reparented'):
+        ns, processes, _responses, queries, closed, _flags = systemd_fixture()
+        calls = dict(listdir=0)
+        original_list = ns['os'].listdir
+        def listed(fd):
+            calls['listdir'] += 1
+            return original_list(fd)
+        ns['os'].listdir = listed
+        if variant == 'cycle':
+            processes[200]['parentPid'] = 300
+        elif variant == 'missing-controller':
+            del processes[300]
+        elif variant == 'nonroot-controller':
+            processes[300]['uids'] = [1000] * 4
+        else:
+            read = ns['egress_nnp_process']
+            def changed(parent, pid):
+                current = read(parent, pid)
+                if pid == 1743 and len(queries) >= 2:
+                    current['parentPid'] = 1
+                return current
+            ns['egress_nnp_process'] = changed
+        detail = refused(ns, lambda: ns['egress_nnp_live']({'uid': 20000}, 'systemd'), 'EGRESS_NNP_PROCESS_CHANGED')
+        assert calls['listdir'] == 2 and detail.get('stage') != 'process-snapshot'
+        if variant == 'used-node-reparented':
+            assert detail['pid'] == 1743 and queries == ['ssh.service', 'ssh.service'] and closed.count(20) == 1
+        else:
+            assert not queries and 20 not in closed
+            assert detail['reason'] == ('root-ancestor-cycle-or-limit' if variant == 'cycle' else 'controller-process-not-root-or-missing')
+
+
 def existing_account_flags_and_capabilities():
     ns, processes, _pid_files, _flags = live_fixture()
     processes[600] = process(600, 1, executable='/bin/sh', inode=5, uid=20000, group='/sakura/project')
@@ -480,7 +621,7 @@ def existing_account_flags_and_capabilities():
 
 def pinned_process_identity():
     ns = namespace()
-    flags = dict(stat_reads=0, parent_changed=False, image_changed=False)
+    flags = dict(stat_reads=0, image_reads=0, parent_changed=False, image_changed=False)
     files = {
         'status': b'Uid:\t0\t0\t0\t0\nNoNewPrivs:\t1\nCapEff:\t0\nCapPrm:\t0\nCapAmb:\t0\n',
         'cmdline': b'/usr/sbin/sshd\0-D\0',
@@ -494,14 +635,23 @@ def pinned_process_identity():
         if flags['parent_changed'] and flags['stat_reads'] > 1:
             fields[1] = b'2'
         return b'70 (sshd arbitrary) ' + b' '.join(fields)
+    def current_image(*_args, **_kwargs):
+        flags['image_reads'] += 1
+        return image(2 if flags['image_changed'] and flags['image_reads'] > 1 else 1)
     ns['os'] = types.SimpleNamespace(O_RDONLY=0, O_DIRECTORY=0, O_NOFOLLOW=0, O_CLOEXEC=0,
                                     open=lambda name, *_args, **_kwargs: name, close=lambda *_: None,
                                     read=read, readlink=lambda *_args, **_kwargs: '/usr/sbin/sshd',
-                                    stat=lambda *_args, **_kwargs: image(2 if flags['image_changed'] and flags['stat_reads'] > 1 else 1))
+                                    stat=current_image)
     item = ns['egress_nnp_process'](10, 70)
     assert item['parentPid'] == 1 and item['startTicks'] == '7000' and item['nnp'] == 1
-    flags.update(stat_reads=0, parent_changed=True)
-    refused(ns, lambda: ns['egress_nnp_process'](10, 70), 'EGRESS_NNP_PROCESS_CHANGED')
+    for parent_changed, image_changed in ((True, False), (False, True)):
+        flags.update(stat_reads=0, image_reads=0, parent_changed=parent_changed, image_changed=image_changed)
+        detail = refused(ns, lambda: ns['egress_nnp_process'](10, 70), 'EGRESS_NNP_PROCESS_CHANGED')
+        assert detail == {'pid': 70, 'reason': 'process-identity-or-image-changed'}
+    flags.update(stat_reads=0, image_reads=0, parent_changed=False, image_changed=False)
+    files['cmdline'] = b'x' * 65537
+    detail = refused(ns, lambda: ns['egress_nnp_process'](10, 70), 'EGRESS_NNP_PROCESS_CHANGED')
+    assert detail == {'pid': 70, 'reason': 'process-field-too-large', 'file': 'cmdline'}
 
 
 def openrc_current_launchers():
@@ -596,7 +746,9 @@ checks = [live_services_and_root_management, surviving_pre_auth_and_nonroot_sess
           openrc_ssh_descendants_and_listener_identity, existing_account_flags_and_capabilities, pinned_process_identity,
           openrc_current_launchers, configuration_is_separate_from_live_admission, readable_pinned_directories,
           systemd_pam_sessions_and_bounded_authority, systemd_scope_and_listener_refusals,
-          systemd_authority_changes_and_fd_cleanup, systemd_pam_identity_changes_and_chain_bounds]
+          systemd_authority_changes_and_fd_cleanup, systemd_pam_identity_changes_and_chain_bounds,
+          initial_snapshot_recovers_unrelated_churn, initial_snapshot_rejects_dangerous_new_pids,
+          initial_snapshot_retry_bounds_and_safe_reasons, root_ancestor_failures_and_used_nodes_are_not_retried]
 for check in checks:
     check()
 print(json.dumps(dict(passed=True, kind='portable-model-only', sourceSha256=hashlib.sha256(source).hexdigest(),
