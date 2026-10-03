@@ -34,6 +34,7 @@ class Kernel:
     def __init__(self):
         self.nodes, self.fds, self.next_fd, self.writes, self.removed = {}, {}, 20, [], []
         self.now, self.before_open, self.opens = 0, None, []
+        self.before_read = None
         self.add('/', mode=stat.S_IFDIR | 0o755)
 
     def add(self, path, raw=b'', mode=stat.S_IFREG | 0o600, uid=0, gid=0, inode=None, device=12, link=None):
@@ -52,8 +53,13 @@ class Kernel:
                 if str(self) not in kernel.nodes: raise FileNotFoundError(str(self))
                 return kernel.nodes[str(self)].info
             stat = lstat
-            def read_bytes(self): return kernel.nodes[str(self)].raw
+            def read_bytes(self):
+                if kernel.before_read: kernel.before_read(str(self))
+                return kernel.nodes[str(self)].raw
             def read_text(self): return self.read_bytes().decode()
+            def resolve(self, strict=False):
+                if strict: self.lstat()
+                return self
             def exists(self): return str(self) in kernel.nodes
             def is_symlink(self): return self.exists() and stat.S_ISLNK(self.lstat().st_mode)
             def iterdir(self):
@@ -95,6 +101,7 @@ class Kernel:
                 return len(value)
             @staticmethod
             def readlink(path):
+                if str(path) not in kernel.nodes: raise FileNotFoundError(str(path))
                 row = kernel.nodes[str(path)]
                 if row.link is None: raise OSError(errno.EINVAL, str(path))
                 return row.link
@@ -208,6 +215,94 @@ class Kernel:
 
 
 class AuthorityTests(unittest.TestCase):
+    def nested(self, source=X11, mutation=None):
+        k = Kernel(); f = k.authority(source)
+        environment = dict(HOME=f.identity['home'], USER=f.identity['account'], DISPLAY=':2',
+            XDG_RUNTIME_DIR=f.runtime, XAUTHORITY='/tmp/xauth_owned', XDG_SESSION_TYPE='wayland', WAYLAND_DISPLAY='wayland-0')
+        k.process(901, 20001, f.run['cgroupName'], '/usr/bin/plasmashell', environment=environment)
+        k.process(904, 20001, f.run['cgroupName'], '/usr/bin/kwin_wayland_wrapper', ticks='888')
+        k.add('/tmp/.X11-unix', mode=stat.S_IFDIR | 0o1777)
+        k.add('/tmp/.X11-unix/X2', mode=stat.S_IFSOCK | 0o777, uid=20001, gid=20001, inode=708)
+        parts=[b'owned-host', b'2', b'MIT-MAGIC-COOKIE-1', bytes(range(16))]
+        cookie=struct.pack('>H',256)+b''.join(struct.pack('>H',len(item))+item for item in parts)
+        k.add('/tmp/xauth_owned', cookie, uid=20001, gid=20001, inode=709)
+        k.add('/proc/904/fd/9',link='socket:[987]')
+        k.add('/proc/904/net/unix',b'header\n0: 00000002 00000000 00010000 0001 01 987 /tmp/.X11-unix/X2\n')
+        closed=[]
+        class Peer:
+            def settimeout(self,value): pass
+            def connect(self,path): self.path=path
+            def getsockopt(self,*args): return struct.pack('3i',904,20002 if mutation=='peer-uid' else 20001,20001)
+            def close(self): closed.append(True)
+        f.ns['socket']=SimpleNamespace(socket=lambda *args:Peer(), AF_UNIX=1,SOCK_STREAM=1,SOCK_CLOEXEC=524288,SOL_SOCKET=1,SO_PEERCRED=17)
+        if mutation=='credential-mode': k.nodes['/tmp/xauth_owned'].info.st_mode |= 0o040
+        elif mutation=='credential-owner': k.nodes['/tmp/xauth_owned'].info.st_uid=20002
+        elif mutation=='cookie-display': k.nodes['/tmp/xauth_owned'].raw=cookie.replace(b'\0\x012',b'\0\x013')
+        elif mutation=='cookie-short': k.nodes['/tmp/xauth_owned'].raw=cookie[:-1]; k.nodes['/tmp/xauth_owned'].info.st_size-=1
+        elif mutation=='socket-owner': k.nodes['/tmp/.X11-unix/X2'].info.st_uid=20002
+        elif mutation=='socket-parent': k.nodes['/tmp/.X11-unix'].info.st_mode=stat.S_IFDIR|0o777
+        elif mutation=='listener': k.nodes['/proc/904/fd/9'].link='socket:[988]'
+        elif mutation=='peer-group': k.nodes['/proc/904/cgroup'].raw=b'0::/unrelated-domain\n'
+        elif mutation=='peer-image': k.nodes['/proc/904/exe'].link='/usr/bin/python3'
+        elif mutation=='peer-reuse':
+            def reuse(path):
+                if path=='/proc/904/net/unix': k.nodes['/proc/904/stat'].raw=k.nodes['/proc/904/stat'].raw.replace(b'888',b'889')
+            k.before_read=reuse
+        elif mutation=='socket-replace':
+            def replace(path):
+                if path=='/proc/904/net/unix':
+                    k.nodes['/tmp/.X11-unix/X2'].info=copy.copy(k.nodes['/tmp/.X11-unix/X2'].info)
+                    k.nodes['/tmp/.X11-unix/X2'].info.st_ino=710
+            k.before_read=replace
+        return k,f,closed
+
+    def test_nested_wayland_retains_outer_vnc_and_authenticates_actual_inner_display(self):
+        for source in (X11,WAYLAND):
+            k,f,closed=self.nested(source)
+            value=f.ns['desktop_authority'](f.proof)
+            endpoint=value['endpoint']; nested=endpoint['nestedX11']
+            self.assertEqual(endpoint['vncPid'],902); self.assertEqual(endpoint['xauthInode'],'705')
+            self.assertEqual(nested['display'],':2'); self.assertEqual(nested['xauthInode'],'709')
+            self.assertEqual(nested['peerPid'],904); self.assertEqual(nested['kernelInode'],'987')
+            self.assertNotIn('private-cookie-body',json.dumps(endpoint)); self.assertNotIn('owned-host',json.dumps(endpoint))
+            self.assertEqual(value['source']['XAUTHORITY'],'/tmp/xauth_owned')
+            f.ns['os'].close(value['directoryFd']); self.assertEqual(closed,[True]); self.assertFalse(k.fds)
+
+    def test_nested_credentials_peer_listener_and_identity_changes_are_rejected(self):
+        for source in (X11,WAYLAND):
+            for mutation in ('credential-mode','credential-owner','cookie-display','cookie-short','socket-owner',
+                             'socket-parent','peer-uid','listener','peer-group','peer-image','peer-reuse','socket-replace'):
+                k,f,closed=self.nested(source,mutation)
+                with self.subTest(source=source,mutation=mutation),self.assertRaises(Exception):
+                    f.ns['desktop_authority'](f.proof)
+                self.assertFalse(k.fds)
+                self.assertLessEqual(len(closed),1)
+
+    def test_nested_endpoint_is_bound_and_x11_launcher_uses_checked_inner_credentials(self):
+        k,f,_=self.nested()
+        value=f.ns['desktop_authority'](f.proof); f.ns['os'].close(value['directoryFd'])
+        f.proof['endpoint']=copy.deepcopy(value['endpoint'])
+        f.ns['os'].readlink=lambda path: 'net:[54321]' if str(path)=='/proc/901/ns/net' else k.nodes[str(path)].link
+        user,environment,checked=f.ns['desktop_environment']('net:[54321]',{},f.proof)
+        self.assertEqual(user.pw_uid,20001); self.assertEqual(environment['DISPLAY'],':2')
+        self.assertEqual(environment['XAUTHORITY'],'/tmp/xauth_owned'); f.ns['os'].close(checked['directoryFd'])
+        f.proof['endpoint']['nestedX11']['peerCreated']='889'
+        with self.assertRaises(Exception): f.ns['desktop_authority'](f.proof)
+        self.assertFalse(k.fds)
+
+    def test_only_uncommitted_initial_endpoint_absence_is_retryable(self):
+        for name in ('Xauthority','ready'):
+            k=Kernel(); f=k.authority(); del k.nodes[f.runtime+'/'+name]
+            with self.assertRaisesRegex(RuntimeError,'^SAKURA_DESKTOP_NOT_READY:credential$'):
+                f.ns['desktop_authority'](f.proof)
+            f.proof['endpoint']={'committed':True}
+            with self.assertRaises(FileNotFoundError): f.ns['desktop_authority'](f.proof)
+            self.assertFalse(k.fds)
+        k=Kernel(); f=k.authority(); del k.nodes['/proc/901/exe']
+        with self.assertRaisesRegex(RuntimeError,'^SAKURA_DESKTOP_NOT_READY:process$'):
+            f.ns['desktop_authority'](f.proof)
+        self.assertFalse(k.fds)
+
     def test_full_readonly_authority_closes_every_root_fd_and_ignores_neighbors(self):
         for source in (X11, WAYLAND):
             k = Kernel(); f = k.authority(source); value = f.ns['desktop_authority'](f.proof)
@@ -326,7 +421,7 @@ class AuthorityTests(unittest.TestCase):
         account=ast.unparse(next(node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name=='create_account'))
         self.assertIn('range(1000, 20000)',account); self.assertIn('user.pw_uid == uid',account)
         self.assertIn('user.pw_gid == uid',account)
-        child=ast.unparse(next(node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name=='launch'))
+        child=ast.unparse(next(node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name=='launch_with_directory'))
         self.assertLess(child.index('os.setuid'),child.index('os.fchdir'))
         self.assertIn('cwd=None',child); self.assertNotIn('cwd=request',child)
 

@@ -4,6 +4,7 @@ The protocol broker is a separate pinned process, not a preload library. A new
 Unix account and private session bus keep each application's new connections
 on its own broker endpoint. Accounts are deliberately never recycled.
 """
+import array
 import base64
 import ctypes
 import errno
@@ -16,6 +17,7 @@ from pathlib import Path
 import pwd
 import re
 import select
+import signal
 import socket
 import stat
 import struct
@@ -298,6 +300,73 @@ def compositor_actor(peer, endpoint):
 
 # Shared verbatim by the fixed Desktop adapter and both Linux clipboard controllers.
 # This file is a draft generator input, not a guest-installed authority record.
+
+def desktop_wait(condition, reason):
+    if not condition: raise RuntimeError('SAKURA_DESKTOP_NOT_READY:' + reason)
+
+def desktop_nested_x11(source, identity, run):
+    display, filename = source.get('DISPLAY', ''), source.get('XAUTHORITY', '')
+    match = re.fullmatch(r':([0-9]{1,5})(?:\.0)?', display)
+    require(match is not None and int(match[1]) != 1, 'Desktop 内层 XWayland display 不符')
+    auth = Path(filename)
+    require(auth.is_absolute() and str(auth) == str(auth.resolve(strict=True))
+            and len(os.fsencode(auth)) <= 1023 and not re.search(r'[\x00-\x1f]', str(auth)),
+            'Desktop 内层 XWayland 凭据路径不符')
+    descriptor = os.open(auth, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        info = os.fstat(descriptor)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == identity['uid'] and info.st_nlink == 1
+                and not info.st_mode & 0o077 and 0 < info.st_size <= 8192, 'Desktop 内层 XWayland 凭据权限不符')
+        raw = os.read(descriptor, 8193)
+        require(len(raw) == info.st_size, 'Desktop 内层 XWayland 凭据正在变化')
+        # Validate the bounded Xauthority structure without exporting its cookie.
+        offset, permitted = 0, False
+        while offset < len(raw):
+            require(offset + 2 <= len(raw), 'Desktop 内层 XWayland 凭据格式不符')
+            family = struct.unpack_from('>H', raw, offset)[0]; offset += 2
+            fields = []
+            for _ in range(4):
+                require(offset + 2 <= len(raw), 'Desktop 内层 XWayland 凭据格式不符')
+                length = struct.unpack_from('>H', raw, offset)[0]; offset += 2
+                require(offset + length <= len(raw), 'Desktop 内层 XWayland 凭据格式不符')
+                fields.append(raw[offset:offset+length]); offset += length
+            permitted |= family in (256, 65535) and fields[1] == str(int(match[1])).encode() \
+                and fields[2] == b'MIT-MAGIC-COOKIE-1' and len(fields[3]) == 16
+        require(permitted, 'Desktop 内层 XWayland 缺少准确 display cookie')
+        current = auth.lstat()
+        require((info.st_dev, info.st_ino, info.st_uid, info.st_mode, info.st_size)
+                == (current.st_dev, current.st_ino, current.st_uid, current.st_mode, current.st_size),
+                'Desktop 内层 XWayland 凭据身份已变化')
+    finally: os.close(descriptor)
+    endpoint = Path('/tmp/.X11-unix/X' + str(int(match[1])))
+    root = endpoint.parent.lstat(); before = endpoint.lstat()
+    require(stat.S_ISDIR(root.st_mode) and root.st_uid == 0 and stat.S_IMODE(root.st_mode) == 0o1777
+            and stat.S_ISSOCK(before.st_mode) and before.st_uid == identity['uid'], 'Desktop 内层 X11 socket 身份不符')
+    peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM | socket.SOCK_CLOEXEC)
+    try:
+        peer.settimeout(2); peer.connect(str(endpoint))
+        pid, uid, gid = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        require(uid == identity['uid'] and gid == identity['gid'], 'Desktop 内层 X11 peer 账号不符')
+        actor = desktop_process(pid, identity, run)
+        require(actor['image'] in ('/usr/bin/Xwayland', '/usr/bin/kwin_wayland', '/usr/bin/kwin_wayland_wrapper'),
+                'Desktop 内层 X11 peer 映像不符')
+        held = set()
+        for item in (Path('/proc') / str(pid) / 'fd').iterdir():
+            try: held.add(os.readlink(item))
+            except FileNotFoundError: pass
+        rows = [line.split() for line in (Path('/proc') / str(pid) / 'net/unix').read_text().splitlines()[1:]]
+        listeners = [row[6] for row in rows if len(row) == 8 and row[7] == str(endpoint)
+                     and int(row[3], 16) & 0x10000 and row[4] == '0001' and row[5] == '01'
+                     and 'socket:[' + row[6] + ']' in held]
+        require(len(listeners) == 1 and re.fullmatch('[1-9][0-9]*', listeners[0]), 'Desktop 内层 X11 原监听归属不符')
+        after = endpoint.lstat()
+        require((before.st_dev, before.st_ino, before.st_uid) == (after.st_dev, after.st_ino, after.st_uid)
+                and desktop_process(pid, identity, run) == actor, 'Desktop 内层 X11 原 endpoint 已变化')
+        return {'display': display, 'xauthPath': str(auth), 'xauthDevice': str(info.st_dev), 'xauthInode': str(info.st_ino),
+                'xauthSha256': hashlib.sha256(raw).hexdigest(), 'socketPath': str(endpoint), 'socketDevice': str(before.st_dev),
+                'socketInode': str(before.st_ino), 'kernelInode': listeners[0], 'peerPid': pid,
+                'peerCreated': actor['created'], 'peerImage': actor['image']}
+    finally: peer.close()
 def desktop_native(build):
     require(isinstance(build, str) and re.fullmatch('[a-f0-9]{64}', build), 'Desktop native build 无效')
     folder = Path('/usr/local/lib/sakura-project-identity') / build
@@ -436,7 +505,10 @@ def desktop_authority(proof):
                 and (guard.get('networkDevice'), guard.get('networkInode')) == (run['networkDevice'], run['networkInode']),
                 'Desktop 固定 adapter 原 runtime/网络证明已变化')
         def credential(name, limit):
-            fd = os.open(runtime / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try: fd = os.open(runtime / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            except FileNotFoundError:
+                if proof['endpoint'] is None: desktop_wait(False, 'credential')
+                raise
             try:
                 info = os.fstat(fd)
                 require(stat.S_ISREG(info.st_mode) and info.st_uid == identity['uid'] and info.st_nlink == 1
@@ -464,14 +536,23 @@ def desktop_authority(proof):
                                 'Desktop Xvnc cookie 路径不符')
                         servers.append(row)
             except (FileNotFoundError, ProcessLookupError, PermissionError): pass
+        if proof['endpoint'] is None: desktop_wait(candidates and servers, 'process')
         require(len(candidates) == 1 and len(servers) == 1, '需要原完整域中唯一就绪的 Plasma/Xvnc')
         plasma, vnc = candidates[0], servers[0]
         raw = (Path('/proc') / str(plasma['pid']) / 'environ').read_bytes()
         require(len(raw) <= 1048576, 'Desktop 环境过大')
         source = dict(entry.decode().split('=', 1) for entry in raw.split(b'\0') if b'=' in entry)
         require(source.get('HOME') == identity['home'] and source.get('USER') == identity['account']
-                and source.get('DISPLAY') == ':1' and source.get('XDG_RUNTIME_DIR') == str(runtime)
-                and source.get('XAUTHORITY') == str(runtime / 'Xauthority'), 'Desktop 原 UID/environment authority 不符')
+                and source.get('XDG_RUNTIME_DIR') == str(runtime), 'Desktop 原 UID/environment authority 不符')
+        nested = None
+        if source.get('XDG_SESSION_TYPE') == 'wayland':
+            try: nested = desktop_nested_x11(source, identity, run)
+            except (FileNotFoundError, ConnectionRefusedError):
+                if proof['endpoint'] is None: desktop_wait(False, 'nested-x11')
+                raise
+        else:
+            require(source.get('DISPLAY') == ':1' and source.get('XAUTHORITY') == str(runtime / 'Xauthority'),
+                    'Desktop 原 X11 display/cookie authority 不符')
         fd_sockets = set()
         for item in (Path('/proc') / str(vnc['pid']) / 'fd').iterdir():
             try: fd_sockets.add(os.readlink(item))
@@ -483,6 +564,7 @@ def desktop_authority(proof):
                     'runtimeDevice': str(runtime.stat().st_dev), 'runtimeInode': str(runtime.stat().st_ino),
                     'xauthDevice': str(auth_info.st_dev), 'xauthInode': str(auth_info.st_ino), 'xauthSha256': hashlib.sha256(auth).hexdigest(),
                     'readyDevice': str(ready_info.st_dev), 'readyInode': str(ready_info.st_ino)}
+        if nested is not None: endpoint['nestedX11'] = nested
         require(proof['endpoint'] is None or proof['endpoint'] == endpoint, 'Desktop 原 Plasma/VNC/cookie 已被替换')
         require(desktop_process(plasma['pid'], identity, run) == plasma and desktop_process(vnc['pid'], identity, run) == vnc,
                 'Desktop 原进程正在变化')
@@ -548,6 +630,9 @@ def application_retire(group, value, uid, network, field='cgroup'):
                 require(not row or row['uid'] == uid and row['network'] == network
                         and (Path('/proc') / item / 'cgroup').read_text() == '0::/' + group.name + '\n'
                         and process(int(item))['created'] == row['created'], '应用原执行 UID、网络或 PID 证明已改变')
+                if row and field == 'applicationProof' and value.get('directoryView') is not None:
+                    directory_view_member(int(item), value['directoryView'])
+                    require(process(int(item))['created'] == row['created'], '应用原目录 namespace 的 PID 已变化')
             except (FileNotFoundError, ProcessLookupError): pass
         # This FD remains the original pinned domain even if its pathname is
         # replaced. Never reopen a replacement cgroup to deliver the kill.
@@ -667,6 +752,393 @@ def compositor_context(request, network):
     except BaseException:
         os.close(checked["directoryFd"]); raise
 
+class DirectoryViewError(RuntimeError):
+    def __init__(self, stage, number=0):
+        self.stage, self.errno = stage, number
+        super().__init__("WAYLAND_DIRECTORY_VIEW_UNAVAILABLE: " + stage + " (errno " + str(number) + ")")
+
+
+def directory_view_call(stage, result):
+    if result < 0:
+        raise DirectoryViewError(stage, ctypes.get_errno())
+    return result
+
+
+def directory_view_open(path):
+    # Reopen in the current mount namespace, without following any component.
+    # A descriptor from before unshare refers to the old mount tree and cannot
+    # be used as the new open_tree(CLONE) source (EINVAL on actual Linux).
+    path = Path(path)
+    require(path.is_absolute() and str(path) != '/' and len(path.parts) <= 64
+            and '..' not in path.parts and '.' not in path.parts, '应用目录视图路径无效')
+    descriptor = os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for part in path.parts[1:]:
+            current = os.open(part, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = current
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def directory_view_namespace(descriptor, kind, owner):
+    require(fcntl.ioctl(descriptor, 0xb703) == kind, '应用 namespace FD 类型不符')  # NS_GET_NSTYPE
+    parent = fcntl.ioctl(descriptor, 0xb702 if kind == 0x10000000 else 0xb701)
+    try:
+        expected, actual = os.fstat(owner), os.fstat(parent)
+        require((expected.st_dev, expected.st_ino) == (actual.st_dev, actual.st_ino),
+                '应用 namespace 不属于原 Root user namespace')
+    finally:
+        os.close(parent)
+
+
+def directory_view_wait(pid, deadline):
+    while True:
+        child, status = os.waitpid(pid, os.WNOHANG)
+        if child == pid:
+            return status
+        if time.monotonic() >= deadline:
+            # An unreaped direct child cannot have its PID reused. This exact
+            # child is the only process to which a helper timeout delivers kill.
+            os.kill(pid, signal.SIGKILL)
+            child, status = os.waitpid(pid, 0)
+            require(child == pid, '应用目录 helper 未确认实际 wait')
+            raise DirectoryViewError('helper-timeout', errno.ETIMEDOUT)
+        time.sleep(.01)
+
+
+def directory_view_helper(kind, initialize, parent_initialize=None):
+    # Only manifest-bound Python functions run in these short-lived helpers;
+    # they never execute an application or import a project directory.
+    parent, channel = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET | socket.SOCK_CLOEXEC)
+    parent.settimeout(10)
+    channel.settimeout(10)
+    original_parent = os.getpid()
+    try:
+        child = os.fork()
+    except BaseException:
+        parent.close()
+        channel.close()
+        raise
+    if child == 0:
+        parent.close()
+        descriptor = -1
+        code = 1
+        try:
+            libc = ctypes.CDLL(None, use_errno=True)
+            directory_view_call('helper-parent-death', libc.prctl(1, signal.SIGKILL, 0, 0, 0))
+            require(os.getppid() == original_parent, '应用 helper 原父进程已退出')
+            directory_view_call('unshare', libc.unshare(kind))
+            result = initialize()
+            descriptor = os.open('/proc/self/ns/' + ('user' if kind == 0x10000000 else 'mnt'), os.O_RDONLY | os.O_CLOEXEC)
+            info = os.fstat(descriptor)
+            message = json.dumps({'ok': True, 'result': result, 'device': str(info.st_dev), 'inode': str(info.st_ino)}).encode()
+            require(len(message) <= 4096 and channel.sendmsg([message], [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                    array.array('i', [descriptor]))]) == len(message), '应用 namespace FD 回执未完成')
+            require(channel.recv(1) == b'1', '应用 namespace 接收者已关闭')
+            code = 0
+        except BaseException as error:
+            try:
+                message = json.dumps({'ok': False, 'stage': error.stage if isinstance(error, DirectoryViewError)
+                                      else 'namespace-setup', 'errno': getattr(error, 'errno', 0) or 0}).encode()
+                channel.send(message)
+            except BaseException:
+                pass
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            channel.close()
+            os._exit(code)
+    channel.close()
+    owner = -1
+    received, descriptor, reaped = [], -1, False
+    try:
+        owner = os.open('/proc/self/ns/user', os.O_RDONLY | os.O_CLOEXEC)
+        raw, ancillary, flags, _ = parent.recvmsg(4096, socket.CMSG_SPACE(4), socket.MSG_CMSG_CLOEXEC)
+        valid_ancillary = True
+        for level, type_, data in ancillary:
+            if level == socket.SOL_SOCKET and type_ == socket.SCM_RIGHTS and len(data) % 4 == 0:
+                values = array.array('i')
+                values.frombytes(data)
+                received.extend(values)
+            else:
+                valid_ancillary = False
+        require(valid_ancillary, '应用 namespace FD 回执类型不符')
+        require(raw and not flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC), '应用 namespace FD 回执为空或不完整')
+        message = json.loads(raw)
+        if message.get('ok') is not True:
+            raise DirectoryViewError(message.get('stage', 'namespace-setup'), message.get('errno', 0))
+        require(set(message) == {'ok', 'result', 'device', 'inode'} and len(received) == 1,
+                '应用 namespace FD 回执不符')
+        descriptor = received[0]
+        os.set_inheritable(descriptor, False)
+        info = os.fstat(descriptor)
+        require((str(info.st_dev), str(info.st_ino)) == (message['device'], message['inode']),
+                '应用 namespace FD inode 不符')
+        directory_view_namespace(descriptor, kind, owner)
+        current = os.stat('/proc/' + str(child) + '/ns/' + ('user' if kind == 0x10000000 else 'mnt'))
+        require((current.st_dev, current.st_ino) == (info.st_dev, info.st_ino), '应用 helper namespace 已改变')
+        if parent_initialize is not None:
+            parent_initialize(child)
+        parent.sendall(b'1')
+        try:
+            status = directory_view_wait(child, time.monotonic() + 10)
+        except DirectoryViewError:
+            # directory_view_wait raises only after killing and really waiting
+            # this exact helper. Do not issue a second wait for that PID.
+            reaped = True
+            raise
+        reaped = True
+        require(status == 0, '应用 namespace helper 未正常结束')
+        received.clear()
+        return descriptor, message['result']
+    except socket.timeout:
+        raise DirectoryViewError('helper-receipt-timeout', errno.ETIMEDOUT)
+    finally:
+        parent.close()
+        if owner >= 0:
+            os.close(owner)
+        for item in received:
+            os.close(item)
+        if not reaped:
+            # Closing the private socket wakes the waiting exact helper with
+            # EOF; wait still observes its real exit, including setup failure.
+            try:
+                directory_view_wait(child, time.monotonic() + 2)
+            except DirectoryViewError:
+                pass
+
+
+def directory_view_userns(identity, user):
+    require(identity['uid'] != user.pw_uid and identity['gid'] != user.pw_gid
+            and identity['uid'] >= 20000 and identity['gid'] >= 20000
+            and 1000 <= user.pw_uid < 20000 and 1000 <= user.pw_gid < 20000,
+            '应用目录映射需要不同的项目与 sandbox UID/GID')
+    def mappings(pid):
+        root = Path('/proc') / str(pid)
+        for name, content in [('setgroups', 'deny'), ('uid_map', str(identity['uid']) + ' ' + str(user.pw_uid) + ' 1'),
+                              ('gid_map', str(identity['gid']) + ' ' + str(user.pw_gid) + ' 1')]:
+            fd = os.open(root / name, os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                raw = content.encode()
+                require(os.write(fd, raw) == len(raw), '应用 UID/GID map 写入不完整')
+            finally:
+                os.close(fd)
+            require((root / name).read_text().split() == content.split(), '应用 UID/GID map 回读不符')
+    descriptor, _ = directory_view_helper(0x10000000, lambda: {}, mappings)
+    return descriptor
+
+
+def directory_view_ancestor(path, user):
+    parents = list(reversed(Path(path).parents))
+    reader, writer = os.pipe2(os.O_CLOEXEC)
+    original_parent = os.getpid()
+    try:
+        child = os.fork()
+    except BaseException:
+        os.close(reader)
+        os.close(writer)
+        raise
+    if child == 0:
+        os.close(reader)
+        try:
+            libc = ctypes.CDLL(None, use_errno=True)
+            directory_view_call('ancestor-parent-death', libc.prctl(1, signal.SIGKILL, 0, 0, 0))
+            require(os.getppid() == original_parent, '应用 ancestor helper 原父进程已退出')
+            directory_view_call('ancestor-nnp', libc.prctl(38, 1, 0, 0, 0))
+            os.setgroups([])
+            os.setgid(user.pw_gid)
+            os.setuid(user.pw_uid)
+            # setuid clears PDEATHSIG, so re-arm after the real UID transition.
+            directory_view_call('ancestor-parent-death', libc.prctl(1, signal.SIGKILL, 0, 0, 0))
+            require(os.getppid() == original_parent, '应用 ancestor helper 原父进程已退出')
+            index = next((index for index, parent in enumerate(parents) if not os.access(parent, os.X_OK)), 255)
+            os.write(writer, bytes([index]))
+            os._exit(0)
+        except BaseException:
+            os._exit(1)
+    os.close(writer)
+    reaped = False
+    try:
+        require(select.select([reader], [], [], 5)[0], '应用目录 ancestor 检查未就绪')
+        raw = os.read(reader, 2)
+        require(len(raw) == 1 and (raw[0] == 255 or raw[0] < len(parents)), '应用目录 ancestor 检查回执无效')
+        try:
+            status = directory_view_wait(child, time.monotonic() + 5)
+        except DirectoryViewError:
+            reaped = True
+            raise
+        reaped = True
+        require(status == 0, '应用目录 ancestor helper 未正常结束')
+        return None if raw[0] == 255 else parents[raw[0]]
+    finally:
+        os.close(reader)
+        if not reaped:
+            try:
+                directory_view_wait(child, time.monotonic() + 2)
+            except DirectoryViewError:
+                pass
+
+
+def directory_view_route_guard(route, user):
+    require(str(route) != '/', '应用目录 ancestor route 不能覆盖根目录')
+    for protected in (Path(user.pw_dir), RUNTIME):
+        if route == protected or route in protected.parents or protected in route.parents:
+            raise DirectoryViewError('route-private-account-overlap', errno.EXDEV)
+
+
+def directory_view_create(checked, user):
+    identity = checked['identity']
+    path = Path(identity['directory'])
+    require(os.uname().machine in ('x86_64', 'aarch64'), '应用目录映射不支持当前架构')
+    require(Path('/proc/self/uid_map').read_text().split() == ['0', '0', '4294967295'],
+            '应用目录映射需要原 Root user namespace')
+    original = os.fstat(checked['directoryFd'])
+    require(stat.S_ISDIR(original.st_mode) and original.st_uid == identity['uid'] and original.st_gid == identity['gid'],
+            '应用原项目目录需要准确 project UID/GID ownership')
+    mapper = directory_view_userns(identity, user)
+    def initialize():
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.syscall.restype = ctypes.c_long
+        # Only the short-lived Root namespace creator uses this umask. Route
+        # directories must remain traversable under a normal SSH umask 077.
+        os.umask(0o022)
+        directory_view_call('mount-private', libc.mount(None, b'/', None, ctypes.c_ulong(16384 | (1 << 18)), None))
+        local = directory_view_open(path)
+        tree = target = route_tree = route_target = -1
+        route = None
+        try:
+            current = os.fstat(local)
+            require((current.st_dev, current.st_ino) == (original.st_dev, original.st_ino), '应用原目录在新 namespace 中已被替换')
+            tree = directory_view_call('open-tree', libc.syscall(428, ctypes.c_int(local), ctypes.c_char_p(b''),
+                                         ctypes.c_uint(1 | os.O_CLOEXEC | 0x1000 | 0x8000)))
+            # uid_map is filesystem/project ID -> initial-namespace sandbox ID.
+            # The application never enters this user namespace itself.
+            attributes = (ctypes.c_uint64 * 4)(0x100000 | 2 | 4, 0, 0, mapper)
+            directory_view_call('mount-idmap', libc.syscall(442, ctypes.c_int(tree), ctypes.c_char_p(b''),
+                                ctypes.c_uint(0x1000 | 0x8000), ctypes.byref(attributes), ctypes.c_size_t(32)))
+            route = directory_view_ancestor(path, user)
+            if route is not None:
+                directory_view_route_guard(route, user)
+                route_target = directory_view_open(route)
+                filesystem = directory_view_call('route-fsopen', libc.syscall(430, ctypes.c_char_p(b'tmpfs'), ctypes.c_uint(1)))
+                try:
+                    for key, value in [(b'size', b'1048576'), (b'nr_inodes', b'128'), (b'mode', b'0755'), (b'uid', b'0'), (b'gid', b'0')]:
+                        directory_view_call('route-config', libc.syscall(431, ctypes.c_int(filesystem), ctypes.c_uint(1),
+                                            ctypes.c_char_p(key), ctypes.c_char_p(value), ctypes.c_int(0)))
+                    directory_view_call('route-create', libc.syscall(431, ctypes.c_int(filesystem), ctypes.c_uint(6),
+                                        ctypes.c_void_p(), ctypes.c_void_p(), ctypes.c_int(0)))
+                    route_tree = directory_view_call('route-fsmount', libc.syscall(432, ctypes.c_int(filesystem),
+                                                        ctypes.c_uint(1), ctypes.c_uint(2 | 4 | 8)))
+                finally:
+                    os.close(filesystem)
+                info = os.fstat(route_tree)
+                directory_view_call('route-move', libc.syscall(429, ctypes.c_int(route_tree), ctypes.c_char_p(b''),
+                                    ctypes.c_int(route_target), ctypes.c_char_p(b''), ctypes.c_uint(0x4 | 0x40)))
+                target = directory_view_open(route)
+                current = os.fstat(target)
+                require((info.st_dev, info.st_ino) == (current.st_dev, current.st_ino)
+                        and current.st_uid == current.st_gid == 0 and stat.S_IMODE(current.st_mode) == 0o755,
+                        '应用 private ancestor route 身份不符')
+                for part in path.relative_to(route).parts:
+                    os.mkdir(part, 0o755, dir_fd=target)
+                    next_ = os.open(part, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=target)
+                    os.close(target)
+                    target = next_
+            else:
+                target = directory_view_open(path)
+                current = os.fstat(target)
+                require((original.st_dev, original.st_ino) == (current.st_dev, current.st_ino), '应用原目录 mount target 已改变')
+            directory_view_call('move-mount', libc.syscall(429, ctypes.c_int(tree), ctypes.c_char_p(b''),
+                                ctypes.c_int(target), ctypes.c_char_p(b''), ctypes.c_uint(0x4 | 0x40)))
+            mapped = directory_view_open(path)
+            try:
+                current = os.fstat(mapped)
+                require((original.st_dev, original.st_ino) == (current.st_dev, current.st_ino), '应用映射目录 inode 不符')
+            finally:
+                os.close(mapped)
+            return {'route': str(route) if route is not None else None, 'mountFlags': int(os.fstatvfs(tree).f_flag)}
+        finally:
+            for descriptor in (local, tree, target, route_tree, route_target):
+                if descriptor >= 0:
+                    os.close(descriptor)
+    namespace = -1
+    try:
+        namespace, result = directory_view_helper(0x20000, initialize)
+        info = os.fstat(namespace)
+        proof = {'version': 1, 'device': str(info.st_dev), 'inode': str(info.st_ino),
+                 'directoryDevice': str(original.st_dev), 'directoryInode': str(original.st_ino),
+                 'directoryMode': stat.S_IMODE(original.st_mode), 'mountFlags': result['mountFlags'],
+                 'projectUid': identity['uid'], 'projectGid': identity['gid'], 'uid': user.pw_uid, 'gid': user.pw_gid,
+                 'desktopRunId': checked['run']['runId'], 'bootId': checked['run']['bootId'], 'route': result['route']}
+        return namespace, proof
+    except BaseException:
+        if namespace >= 0:
+            os.close(namespace)
+        raise
+    finally:
+        os.close(mapper)
+
+
+def directory_view_member(pid, proof):
+    info = (Path('/proc') / str(pid) / 'ns/mnt').stat()
+    require((str(info.st_dev), str(info.st_ino)) == (proof['device'], proof['inode']),
+            '应用进程已离开原目录 namespace')
+
+
+def directory_view_enter(descriptor, proof, path):
+    try:
+        info = os.fstat(descriptor)
+        require((str(info.st_dev), str(info.st_ino)) == (proof['device'], proof['inode']), '应用原目录 namespace FD 不符')
+        libc = ctypes.CDLL(None, use_errno=True)
+        directory_view_call('setns', libc.setns(descriptor, 0x20000))
+    finally:
+        os.close(descriptor)
+    directory_view_member(os.getpid(), proof)
+    mapped = directory_view_open(path)
+    try:
+        info = os.fstat(mapped)
+        require((str(info.st_dev), str(info.st_ino)) == (proof['directoryDevice'], proof['directoryInode']),
+                '应用原映射目录在启动前已改变')
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == proof['uid'] and info.st_gid == proof['gid']
+                and stat.S_IMODE(info.st_mode) == proof['directoryMode'], '应用映射目录 UID/GID 或模式不符')
+        flags = int(os.fstatvfs(mapped).f_flag)
+        require(flags == proof['mountFlags'] and flags & 6 == 6, '应用映射目录 mount flags 不符')
+        return mapped
+    except BaseException:
+        os.close(mapped)
+        raise
+
+
+def directory_view_proof(value):
+    proof = value.get('directoryView')
+    if proof is None:
+        # Older stopped receipts and a new launch before namespace publication
+        # have no live view. Their exact cgroup receipts still permit cleanup.
+        return None
+    identity = value['desktop']['identity']
+    require(isinstance(proof, dict) and set(proof) == {'version', 'device', 'inode', 'directoryDevice',
+            'directoryInode', 'directoryMode', 'mountFlags', 'projectUid', 'projectGid', 'uid', 'gid', 'desktopRunId', 'bootId', 'route'} and type(proof['version']) is int
+            and proof['version'] == 1 and all(isinstance(proof[key], str) and re.fullmatch(r'[0-9]+', proof[key])
+            for key in ('device', 'inode', 'directoryDevice', 'directoryInode'))
+            and int(proof['inode']) > 0 and int(proof['directoryInode']) > 0
+            and type(proof['directoryMode']) is int and 0 <= proof['directoryMode'] <= 0o7777
+            and type(proof['mountFlags']) is int and 0 <= proof['mountFlags'] < 2**32 and proof['mountFlags'] & 6 == 6
+            and (proof['directoryDevice'], proof['directoryInode']) == (identity['directoryDevice'], identity['directoryInode'])
+            and proof['projectUid'] == identity['uid'] and proof['projectGid'] == identity['gid']
+            and proof['uid'] == value['uid'] and proof['gid'] == value['gid']
+            and isinstance(proof['desktopRunId'], str) and UUID.fullmatch(proof['desktopRunId'])
+            and proof['desktopRunId'] == value['desktop']['run']['runId']
+            and isinstance(proof['bootId'], str) and UUID.fullmatch(proof['bootId'])
+            and proof['bootId'] == value['bootId'] == value['desktop']['run']['bootId']
+            and value['directory'] == identity['directory']
+            and (proof['route'] is None or isinstance(proof['route'], str) and proof['route'] != '/'
+                 and Path(proof['route']) in Path(value['directory']).parents), '应用原目录视图完整票据不符')
+    return proof
+
+
 def create_account(session):
     name = "skwl" + session.replace("-", "")[:24]
     home = Path("/home") / name
@@ -713,10 +1185,11 @@ def metadata(directory, owner, check_account=True):
         require(user.pw_uid == value["uid"] and user.pw_gid == value["gid"] and user.pw_dir == value["home"], "应用账户已变化")
     require(value['desktop']['identity']['uid'] != value['uid'] and value['desktop']['identity']['projectId'] == value['projectId']
             and value['desktop']['run']['bootId'] == value['bootId'], '应用独立 sandbox UID 与 Desktop owner 关系不符')
+    directory_view_proof(value)
     return value
 
 
-def group_rows(path, uid, network):
+def group_rows(path, uid, network, directory_view=None):
     result = []
     if not path.exists():
         return result
@@ -728,6 +1201,9 @@ def group_rows(path, uid, network):
                 require(row["uid"] == uid and row["network"] == network, "会话进程用户或网络空间不符")
                 require("0::/" + path.name in (Path("/proc") / item / "cgroup").read_text().splitlines()
                         and process(int(item))["created"] == row["created"], "应用进程身份或 cgroup 已变化")
+                if directory_view is not None:
+                    directory_view_member(int(item), directory_view)
+                    require(process(int(item))['created'] == row['created'], '应用目录 namespace 的 PID 已变化')
                 result.append(row)
         except (FileNotFoundError, ProcessLookupError):
             pass
@@ -755,7 +1231,7 @@ def view(directory, owner):
     for path, field in [(Path(value['applicationCgroup']), 'applicationProof'), (Path(value['brokerCgroup']), 'brokerProof')]:
         domain = application_group(path, value, field)
         if domain is not None: os.close(domain)
-    rows = group_rows(Path(value["applicationCgroup"]), value["uid"], value["network"])
+    rows = group_rows(Path(value["applicationCgroup"]), value["uid"], value["network"], value.get('directoryView'))
     brokers = group_rows(Path(value["brokerCgroup"]), 0, value["network"])
     broker = next((row for row in brokers if row["pid"] == data["pid"] and row["created"] == data.get("created")), None)
     if broker:
@@ -804,6 +1280,41 @@ def stop(directory, owner):
     return {"stopped": True}
 
 
+APPLICATION_EXEC_SOURCE = r"""import errno,hashlib,os,stat,sys
+source=int(sys.argv[1]); selected=-1
+try:
+    assert os.execve in os.supports_fd, 'Pinned executable FD execution is unavailable'
+    selected=os.open(sys.argv[3],os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    pinned,before=os.fstat(source),os.fstat(selected)
+    fields=('st_dev','st_ino','st_mode','st_size','st_mtime_ns','st_ctime_ns')
+    assert all(getattr(pinned,key)==getattr(before,key) for key in fields), 'Mapped application image changed'
+    assert stat.S_ISREG(before.st_mode) and not before.st_mode&0o6000 and before.st_size<=536870912, 'Mapped application image is unsupported'
+    try: capabilities=os.getxattr(selected,'security.capability')
+    except OSError as error:
+        if error.errno not in (errno.ENODATA,errno.ENOTSUP): raise
+        capabilities=b''
+    assert not capabilities, 'Mapped application file capabilities are unsupported'
+    digest=hashlib.sha256(); total=0
+    while True:
+        data=os.read(selected,1048576)
+        if not data: break
+        total+=len(data)
+        assert total<=before.st_size, 'Mapped application image grew during validation'
+        digest.update(data)
+    assert total==before.st_size and digest.hexdigest()==sys.argv[2], 'Mapped application image digest changed'
+    after=os.fstat(selected)
+    assert all(getattr(before,key)==getattr(after,key) for key in fields), 'Mapped application image changed during validation'
+    original_after=os.fstat(source)
+    assert all(getattr(pinned,key)==getattr(original_after,key) for key in fields), 'Original application image changed during validation'
+    os.close(source); source=-1
+    os.set_inheritable(selected,False)
+    os.execve(selected,sys.argv[3:],os.environ)
+finally:
+    if source>=0: os.close(source)
+    if selected>=0: os.close(selected)
+"""
+
+
 def launch(base, owner, request):
     proxy_hash = proxy_valid()
     app = identify(request["image"])
@@ -814,7 +1325,13 @@ def launch(base, owner, request):
     cgroup_root()
     network = project_network(request)
     compositor, values, checked = compositor_context(request, network)
+    try:
+        return launch_with_directory(base, owner, request, proxy_hash, app, network, compositor, values, checked)
+    finally:
+        os.close(checked['directoryFd'])
 
+
+def launch_with_directory(base, owner, request, proxy_hash, app, network, compositor, values, checked):
     session = request["id"]
     require(UUID.fullmatch(session) and sum(bool(UUID.fullmatch(item.name)) for item in base.iterdir()) < 128,
             "应用会话身份无效或过多，请先清理已停止的会话")
@@ -836,7 +1353,7 @@ def launch(base, owner, request):
              "user": user.pw_name, "home": user.pw_dir, "build": BUILD, "proxy": str(PROXY), "proxySha256": proxy_hash,
              "directory": request["directory"], "projectId": request["projectId"], "network": network,
              "runtime": str(runtime), "socket": str(runtime / "wayland-sakura"), "applicationCgroup": str(app_group),
-             "brokerCgroup": str(broker_group), "desktop": request["desktop"], "bootId": request["desktop"]["run"]["bootId"], "applicationProof": None, "brokerProof": None, "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **compositor}
+             "brokerCgroup": str(broker_group), "desktop": request["desktop"], "bootId": request["desktop"]["run"]["bootId"], "directoryView": None, "applicationProof": None, "brokerProof": None, "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **compositor}
     atomic(directory / "session.json", json.dumps(value).encode())
     atomic(directory / "policy", policy)
     atomic(directory / "policy-lock", b"")
@@ -849,16 +1366,20 @@ def launch(base, owner, request):
     libc = ctypes.CDLL(None, use_errno=True)
     def child():
         application_join(app_descriptor)
+        mapped = directory_view_enter(namespace, value['directoryView'], value['directory'])
+        os.close(checked['directoryFd'])
         require(libc.prctl(38, 1, 0, 0, 0) == 0, "无法禁用提权")
         os.setgroups([])
         os.setgid(user.pw_gid)
         os.setuid(user.pw_uid)
-        os.fchdir(checked["directoryFd"])
-        os.close(checked["directoryFd"])
+        try:
+            os.fchdir(mapped)
+        finally:
+            os.close(mapped)
     def broker_child():
         application_join(broker_descriptor)
     app_descriptor = broker_descriptor = -1
-    descriptor = -1
+    descriptor = namespace = -1
     try:
         app_group.mkdir(mode=0o755)
         broker_group.mkdir(mode=0o755)
@@ -867,6 +1388,9 @@ def launch(base, owner, request):
         broker_descriptor = application_group(broker_group, value, 'brokerProof')
         atomic(directory / 'session.json', json.dumps(value).encode())
         require((app_group / "cgroup.kill").exists() and (broker_group / "cgroup.kill").exists(), "需要支持 cgroup.kill 的内核")
+        namespace, value['directoryView'] = directory_view_create(checked, user)
+        directory_view_proof(value)
+        atomic(directory / 'session.json', json.dumps(value).encode())
         proxy = subprocess.Popen(["/usr/bin/python3", "-I", "-S", str(PROXY), str(directory)],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                                  env={"PATH": "/usr/local/bin:/usr/bin:/bin"}, preexec_fn=broker_child, start_new_session=True, pass_fds=[broker_descriptor])
@@ -885,16 +1409,16 @@ def launch(base, owner, request):
                 raise RuntimeError("原生 Wayland 代理 endpoint 未就绪")
         finally:
             proxy.stderr.close()
-        # Probe cwd as the exact new UID; never chmod/chown an arbitrary
-        # project or inherit an existing user's private home as a shortcut.
+        # Probe the idmapped view as the exact new UID. The original ownership,
+        # permissions and ACLs were not rewritten to grant that access.
         access = subprocess.run(["/usr/bin/python3", "-I", "-S", "-c",
                                  "import os,sys;sys.exit(0 if os.access('.',os.R_OK|os.W_OK|os.X_OK) else 1)"],
                                 cwd=None, env=environment_values, preexec_fn=child,
-                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, pass_fds=[checked["directoryFd"], app_descriptor])
-        require(access.returncode == 0, "项目目录不允许独立应用账户读写，请选择已授权的共享项目目录")
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, pass_fds=[checked["directoryFd"], app_descriptor, namespace])
+        require(access.returncode == 0, "项目目录映射后的准确应用 UID 仍无读写或访问权限")
         bus = subprocess.Popen(["/usr/bin/dbus-daemon", "--session", "--nofork", "--nopidfile", "--print-address=1"],
                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                               env=environment_values, cwd=None, preexec_fn=child, start_new_session=True, pass_fds=[checked["directoryFd"], app_descriptor])
+                               env=environment_values, cwd=None, preexec_fn=child, start_new_session=True, pass_fds=[checked["directoryFd"], app_descriptor, namespace])
         try:
             readable, _, _ = select.select([bus.stdout], [], [], 5)
             require(readable, "应用私有 D-Bus 未就绪")
@@ -905,13 +1429,14 @@ def launch(base, owner, request):
         environment_values["DBUS_SESSION_BUS_ADDRESS"] = address
         descriptor = os.open(app["image"], os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
         require(digest_fd(descriptor) == app["sha256"] and digest(PROXY) == proxy_hash, "应用或协议代理在启动前已变化")
-        # Execute the pinned ELF through Python's supported fexecve path after
-        # the UID transition; no pathname reopen or identity fallback.
-        execute_fd = "import os,sys;fd=int(sys.argv[1]);assert os.execve in os.supports_fd;os.set_inheritable(fd,False);os.execve(fd,sys.argv[2:],os.environ)"
-        subprocess.Popen(["/usr/bin/python3", "-I", "-S", "-c", execute_fd, str(descriptor), app["image"], *request["args"]],
+        # The original FD belongs to the original mount tree. Owner-only ELF
+        # permissions must be evaluated on the application's idmapped view.
+        # After the UID drop, reopen that view and check the original inode and
+        # digest before fexecve; close the Root-opened FD before application code.
+        subprocess.Popen(["/usr/bin/python3", "-I", "-S", "-c", APPLICATION_EXEC_SOURCE, str(descriptor), app["sha256"], app["image"], *request["args"]],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          env=environment_values, cwd=None, preexec_fn=child, start_new_session=True,
-                         pass_fds=[descriptor, checked["directoryFd"], app_descriptor])
+                         pass_fds=[descriptor, checked["directoryFd"], app_descriptor, namespace])
         for _ in range(100):
             result = view(directory, owner)
             if result["state"] == "running" and any(row["loaded"] for row in result["processes"]):
@@ -924,11 +1449,11 @@ def launch(base, owner, request):
         stop(directory, owner)
         raise
     finally:
+        if namespace >= 0: os.close(namespace)
         if app_descriptor >= 0: os.close(app_descriptor)
         if broker_descriptor >= 0: os.close(broker_descriptor)
         if descriptor >= 0:
             os.close(descriptor)
-        os.close(checked["directoryFd"])
 
 
 def readiness():

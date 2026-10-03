@@ -7,10 +7,20 @@ import { projectDesktopRecordSchema } from './project-service-scope.ts';
 import { desktopAuthoritySource } from './desktop-project-authority.ts';
 
 const decimal = z.string().regex(/^[1-9][0-9]*$/), digest = z.string().regex(/^[a-f0-9]{64}$/);
+const nestedX11EndpointSchema = z.object({
+  display: z.string().regex(/^:[0-9]{1,5}(?:\.0)?$/),
+  xauthPath: z.string().min(1).max(1023).regex(/^\/[^\x00-\x1f]*$/),
+  xauthDevice: decimal, xauthInode: decimal, xauthSha256: digest,
+  socketPath: z.string().regex(/^\/tmp\/\.X11-unix\/X[0-9]{1,5}$/),
+  socketDevice: decimal, socketInode: decimal, kernelInode: decimal,
+  peerPid: z.number().int().min(2), peerCreated: decimal,
+  peerImage: z.enum(['/usr/bin/Xwayland', '/usr/bin/kwin_wayland', '/usr/bin/kwin_wayland_wrapper']),
+}).strict();
 export const desktopEndpointSchema = z.object({
   plasmaPid: z.number().int().min(2), plasmaCreated: decimal, vncPid: z.number().int().min(2), vncCreated: decimal,
   runtimeDevice: decimal, runtimeInode: decimal, xauthDevice: decimal, xauthInode: decimal,
   xauthSha256: digest, readyDevice: decimal, readyInode: decimal,
+  nestedX11: nestedX11EndpointSchema.optional(),
 }).strict();
 export const desktopControlProofSchema = z.object({ version: z.literal(1), identity: projectIdentitySchema,
   run: projectIdentityRunSchema.nullable(), record: projectDesktopRecordSchema, sha256: digest,
@@ -246,10 +256,12 @@ try:
   if request['op']=='stream': stream(authority); sys.exit(0)
   checked=desktop_authority(authority); os.close(checked['directoryFd']); result={'endpoint':checked['endpoint']}
  print(json.dumps({'ok':True,'result':result}))
-except Exception:
+except Exception as error:
  # Binary RFB must never receive diagnostics or JSON error bytes on stdout.
  print('SAKURA_DESKTOP_ADAPTER_REFUSED',file=sys.stderr)
- if 'request' not in globals() or request.get('op')!='stream': print(json.dumps({'ok':False,'code':'DESKTOP_SCOPE_CHANGED'}))
+ if 'request' not in globals() or request.get('op')!='stream':
+  waiting=str(error) in ('SAKURA_DESKTOP_NOT_READY:credential','SAKURA_DESKTOP_NOT_READY:process','SAKURA_DESKTOP_NOT_READY:nested-x11')
+  print(json.dumps({'ok':False,'code':'DESKTOP_NOT_READY' if waiting else 'DESKTOP_SCOPE_CHANGED'}))
  sys.exit(73)
 `;
 
@@ -263,10 +275,14 @@ export function desktopProjectCommand(op: 'probe' | 'stream' | 'guard' | 'guard-
 export async function desktopProjectControl(machines: Machines, id: string, op: 'probe' | 'guard' | 'guard-probe' | 'unguard',
   proof: DesktopControlProof, signal?: AbortSignal) {
   const result = await machines.exec(id, desktopProjectCommand(op, proof), 40000, signal);
-  let reply: { ok?: boolean; result?: unknown };
+  let reply: { ok?: boolean; code?: string; result?: unknown };
   try { reply = JSON.parse(result.stdout); } catch { throw new AppError('Desktop 固定 adapter 没有可核对回执', 503, 'DESKTOP_CONTROL_FAILED'); }
-  if (result.code !== 0 || !reply.ok) throw new AppError('Desktop 原 UID、完整运行域或 VNC guard 未确认',
+  if (result.code !== 0 || !reply.ok) {
+    if (op === 'probe' && proof.endpoint === null && reply.ok === false && reply.code === 'DESKTOP_NOT_READY')
+      throw new AppError('Desktop 原会话正在准备图形端点', 409, 'DESKTOP_NOT_READY');
+    throw new AppError('Desktop 原 UID、完整运行域或 VNC guard 未确认',
     op === 'unguard' ? 503 : 409, op === 'unguard' ? 'DESKTOP_CLEANUP_FAILED' : 'DESKTOP_SCOPE_CHANGED');
+  }
   return op === 'probe' ? z.object({ endpoint: desktopEndpointSchema }).strict().parse(reply.result)
     : z.object({ guarded: z.boolean() }).strict().parse(reply.result);
 }

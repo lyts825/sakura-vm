@@ -787,6 +787,23 @@ class Broker:
         require(group.parent == Path("/sys/fs/cgroup") and
                 identity["uid"] == uid and identity["network"] == self.session["network"] and
                 "0::/" + group.name in identity["cgroup"], "Unowned client process")
+        view = self.session.get('directoryView')
+        if view is not None:
+            source = self.session['desktop']['identity']
+            require(isinstance(view, dict) and set(view) == {'version', 'device', 'inode', 'directoryDevice',
+                    'directoryInode', 'directoryMode', 'mountFlags', 'projectUid', 'projectGid', 'uid', 'gid', 'desktopRunId', 'bootId', 'route'}
+                    and type(view['version']) is int and view['version'] == 1
+                    and type(view['directoryMode']) is int and 0 <= view['directoryMode'] <= 0o7777
+                    and type(view['mountFlags']) is int and 0 <= view['mountFlags'] < 2**32 and view['mountFlags'] & 6 == 6
+                    and view['projectUid'] == source['uid'] and view['projectGid'] == source['gid']
+                    and view['uid'] == uid and view['gid'] == self.session['gid']
+                    and view['desktopRunId'] == self.session['desktop']['run']['runId']
+                    and view['bootId'] == self.session['bootId'] == self.session['desktop']['run']['bootId']
+                    and (view['directoryDevice'], view['directoryInode']) == (source['directoryDevice'], source['directoryInode']),
+                    'Application directory view receipt changed')
+            namespace = (Path('/proc') / str(pid) / 'ns/mnt').stat()
+            require((str(namespace.st_dev), str(namespace.st_ino)) == (view['device'], view['inode'])
+                    and process_identity(pid)['created'] == identity['created'], 'Application directory namespace changed')
         return identity
 
     def compositor_identity(self):

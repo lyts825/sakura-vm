@@ -4,7 +4,13 @@
 
 生产入口从完整原项目 Desktop/native 票据中发现真实项目 UID 的 Plasma/Wayland 端点，核对账号、boot、原 cgroup、保护帧及来源构建、PID 创建身份、项目网络、运行目录与 socket 身份。desktopOwner 显示来源桌面项目 UID/run，applicationOwner 显示该应用独立 sandbox UID。KWin wrapper 创建监听端点时，还固定其唯一直属 KWin 子进程、继承 FD 与内核监听 inode；子进程重启后旧代理停止接入，须重新启动应用会话。公开 API 不接受任意合成器路径或用户身份。X11 桌面上启动此模式会明确拒绝。
 
-每个会话分配新的独立 Linux 用户、家目录、私有 D-Bus 和 0700 运行目录。应用使用固定的原生 Wayland 后端和专属协议代理；不传入 `DISPLAY`、`XAUTHORITY` 或继承的 Wayland socket。启动前以准确的应用 UID 核对项目目录读写和访问权限，权限不足时拒绝，不自动更改已有项目或私人目录。接受与客户机架构匹配的普通 64 位 ELF，拒绝 setuid/setgid 与文件能力提权程序。参数逐项按字面传递。
+每个会话分配新的独立 Linux 用户、家目录、私有 D-Bus 和 0700 运行目录。应用使用固定的原生 Wayland 后端和专属协议代理；不传入 `DISPLAY`、`XAUTHORITY` 或继承的 Wayland socket。接受与客户机架构匹配的普通 64 位 ELF，拒绝 setuid/setgid 与文件能力提权程序。参数逐项按字面传递。
+
+应用的专属 mount namespace 在原项目路径挂入 idmapped 目录视图，把真实项目 UID/GID 映为本次应用独立 UID/GID。普通 0700 项目目录和其中的 0600 项目文件可正常读写；应用新建文件在原文件系统仍归项目 UID/GID。控制器不改写原目录和文件的 owner、mode、ACL。固定 Root helper 在新 namespace 重开并核对原目录 dev/inode，设置 `nosuid`、`nodev`，随后由控制器核对映射身份、模式、挂载标志和准确应用 UID 的实际访问权限。需要 x86_64 或 aarch64、原 Root user namespace，以及客户机内核和文件系统实际支持 idmapped mount；Linux 5.12 起提供该机制，但版本号不能代替实际检查。任何创建、映射或访问检查失败均拒绝本次启动，不放宽共享权限或改用项目 UID。
+
+若私人父目录阻止新 UID 遍历，helper 只在本次应用 namespace 用 Root 所有的 tmpfs 建立到准确项目叶目录的必要路径，并隐藏该阻塞祖先下的其他内容。此路由只提供项目子树，不授予私人父目录中的其他文件；原系统 namespace 仍使用原路径和权限。覆盖根目录，或与应用家目录、代理运行目录重叠的路由会明确拒绝，不能隐式替换 HOME 或运行目录。
+
+项目内 0700 私有 ELF 的执行也使用映射视图。固定 Python 引导程序已进入本次 mount namespace 并永久降权后，重新打开准确路径，复核原 dev/inode、模式、大小、修改时间、完整摘要及无文件 capabilities，再以新 FD 执行。原挂载中的 Root 句柄在应用代码执行前关闭，拒绝身份变化、内容变化或不支持 FD 执行的环境。
 
 ## 内容与规则
 
@@ -18,12 +24,14 @@
 
 ## 生命周期与范围
 
-停止来源桌面先以完整原证明退休匹配的应用和代理域；失败保留原归属及准备租约供停止重试。2026-10-03 新权限检查和退休顺序已通过正式回归与实际 Python 源码模型，尚未运行新 UID 桌面的真实 Wayland 联测；此前真实 Qt/GTK 结果继续作为历史协议验证保留。
+停止来源桌面先以完整原证明退休匹配的应用和代理域；失败保留原归属及准备租约供停止重试。2026-10-03 当前目录视图在自有 WSL/ext4 namespace 通过 8 个真实场景：0700/0600 读写、私人父目录路由、直接合成器拒绝、procfs 不支持映射的拒绝，以及取消/EOF/超时清理。两个正例另验证项目私有 0700 ELF：旧挂载 FD 执行实际返回 EACCES，当前固定引导程序重新打开映射 FD 后执行成功，实际应用读取 0600 文件并确认管理描述符关闭、NoNewPrivileges=1、有效 capabilities 为空；原 owner/mode/ACL 与 ELF 摘要不变。当前 20 资产构建为 `d3f26de18d95089f26883e2258d189743e1eaf0def5c4a9a853e7857613b87e5`，32 项相关回归零失败，原 58 项目录视图回归保留。这不替代新 UID 桌面的真实 Wayland 联测。此前真实 Qt/GTK 结果继续作为历史协议验证保留。
 
-应用、私有 D-Bus 及普通子进程进入应用专属 cgroup；根用户代理进入另一个专属 cgroup。接入核对实际 UID、创建时间、网络及 cgroup。停止先关闭代理，再结束所属应用进程并等待释放两组域，请先保存内容。只有已停止会话可清理记录。服务重载保留归属，克隆与导出/导入保留身份和规则，不重放 PID 或自动启动应用。
+应用、私有 D-Bus 及普通子进程进入应用专属 cgroup；根用户代理进入另一个专属 cgroup。目录视图票据绑定原 Desktop run/boot、项目与应用 UID/GID、原目录 dev/inode/mode、挂载标志和 mount namespace dev/inode。接入、状态和停止同时核对实际 UID、创建时间、网络、cgroup 及原 namespace；替换或迁出的活进程会拒绝。准确原 cgroup 已空时仍可完成停止和记录清理，不因 namespace 已释放而失去清理入口。
+
+短期 Root helper 通过私有 SCM_RIGHTS 回传单个 namespace FD，核对内核类型、Root 归属及实际 helper namespace 后才确认接收，并实际等待精确子进程退出。取消、EOF、超时或回执错误会关闭接收 FD 和 socket，只结束本次仍未回收的 helper。应用在降权前进入已核对 namespace，原 Root 目录和 namespace FD 在执行应用前关闭。停止先关闭代理，再结束所属应用进程并等待释放两组域，请先保存内容。只有已停止会话可清理记录。服务重载保留归属，克隆与导出/导入保留身份和规则，不重放 PID 或自动启动应用。
 
 协议定义固定来自 Wayland 1.24.0 与 wayland-protocols 1.45。17 个官方 XML 保留原字节和许可证，连同两个 Python 源文件及来源清单组成 20 个打包资产，构建、上传和启动均核对摘要。未知接口、`ext/wlr data-control` 及 KDE 特权剪贴板管理接口隐藏，直接绑定同样拒绝；新工具包依赖的图形扩展可能需要显式适配。
 
 这仍不是系统级 DLP，不接管已运行的普通程序、其他用户或客户机管理员，也不限制其他文件、网络或人工输入方式。项目目录共享不等于文件内容隔离。总目录状态继续保持部分实现。真实 Qt/GTK、规则更新及原生桌面入口的最终验证范围见本轮实现记录，不能用协议单元测试替代真实桌面验证。
 
-依据：[Wayland 消息、对象与 FD 队列](https://wayland.freedesktop.org/docs/book/Protocol.html)，[固定来源清单](../native/wayland-clipboard/sources.json)，[Linux cgroup v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html)。
+依据：[Wayland 消息、对象与 FD 队列](https://wayland.freedesktop.org/docs/book/Protocol.html)，[固定来源清单](../native/wayland-clipboard/sources.json)，[Linux idmapped mount](https://docs.kernel.org/filesystems/idmappings.html)，[Linux cgroup v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html)。

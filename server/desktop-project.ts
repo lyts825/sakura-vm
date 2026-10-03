@@ -309,7 +309,7 @@ export class ProjectDesktops {
                     execution: { ...binding.execution, endpoint: probe.endpoint } }, pins.live);
                   ready = true; break;
                 } catch (error) {
-                  if (error instanceof AppError && error.code !== 'DESKTOP_SCOPE_CHANGED') throw error;
+                  if (!(error instanceof AppError) || error.code !== 'DESKTOP_NOT_READY') throw error;
                 }
               }
               await delay(500, undefined, { signal: executionSignal });

@@ -8,11 +8,15 @@ auto、x11、wayland 会话偏好和单屏/横向双屏/纵向双屏、分辨率
 
 宿主 desktop-binding.json 第 2 版保存准确原账号、配置摘要、boot、完整 service/native 票据、保护帧摘要、构建与实际端点。状态、恢复、图形和应用准入复核原 cgroup device/inode、进程创建身份、实际 Plasma/Xvnc、UID 网络、原运行目录及 Xauthority。只读查询不安装、不重发 native 票据或启动桌面。更换项目时关闭不匹配的图形连接，须先保存工作并停止原会话。
 
+嵌套 Wayland 会话分别核对外层 VNC 与内层 XWayland 的凭据和显示号。内层来源必须有匹配的 Xauthority cookie、原账号持有的本地监听 socket、准确内核 inode，以及属于原桌面域的 XWayland/KWin 进程；已有绑定继续固定这些身份。X11 策略应用使用实际 Plasma 环境中的显示号和认证文件。初次启动只等待尚未创建的凭据、进程或内层 socket；身份错误或已有端点变化立即回滚原会话。
+
 Xvnc 固定监听原项目网络 127.0.0.1:5901。固定 Root 适配器在核对完整原证明后进入其网络，仅桥接该端点，连接后再次核对；只读分享沿用已运行的绑定。运行目录为 /run/sakura-desktop-uid/<uid>/<runUUID>，短路径支持实际 Wayland socket 长度。原目录和防火墙凭完整归属退休；目录内容由降权 worker 有界清理，Root 不递归遍历项目内容。
 
 “安装中文输入法”固定提交时的项目与准确 live。先停止原桌面及匹配的注册应用，固定管理任务安装 Fcitx5 包，再由原项目 UID 在 HOME 写入自动启动与环境钩子并重启桌面；保留已有输入法 profile 和桌面偏好。任务重试恢复保存的项目，切换项目或客户机重启不会把原任务接到新实例。
 
 X11/Wayland 策略应用均复核完整原 Desktop/native 证明及来源构建。X11 应用使用桌面项目 UID；Wayland 应用继续分配自己的 sandbox UID、home、代理和应用 cgroup。独立单应用窗口继续使用独立用户与显示器。desktopOwner/applicationOwner 分别显示来源桌面与实际应用归属，见 [X11 策略](x11-clipboard.md) 与 [Wayland 策略](wayland-clipboard.md)。
+
+Wayland 应用现在通过自己的 mount namespace 访问原项目路径的 idmapped 目录视图。0700 项目目录及 0600 文件可由该应用账号读写，新文件在原文件系统仍归项目账号；原属主、权限与 ACL 不扩宽。私人父目录只在本次 namespace 建立必要路径，其他私人内容保持隐藏；不支持映射或与应用 home/runtime 冲突时明确拒绝。程序降权后从映射目录重新打开原 ELF，核对 inode、元数据和摘要后通过该描述符执行，关闭旧挂载中 Root 打开的原句柄。8 个自有 Linux/ext4 真实 helper 场景包含两个 0700 私有 ELF 执行场景；两个旧挂载句柄均实际返回 EACCES，映射后的同一 ELF 均成功读取 0600 文件，应用确认无管理描述符、NoNewPrivileges=1、有效 capabilities 为空。新修复的 32 项相关回归全部通过；此前目录视图的 58 项回归保留。仍需另行核对新桌面的实际端点和工具包行为。
 
 停止、启动回滚和冷 boot 恢复按原完整票据退休匹配应用、整桌面域、native、准确运行目录与防火墙，最后释放准备租约。清理应答丢失或失败返回 503 并保留原记录及租约，明确“停止桌面”可以重试。健康桌面在宿主服务关闭或重载后保持；未知旧共享账号、旧启动脚本与第 1 版绑定只供审阅，不能自动收编。无项目工作区的显式实例管理路径仍保留原管理员入口。
 

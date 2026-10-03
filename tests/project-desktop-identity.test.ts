@@ -11,6 +11,33 @@ import type { Project, Workspaces as WorkspacesType } from '../server/workspaces
 import type { ProjectDesktopRecord } from '../server/project-service-scope.ts';
 
 import { fixture, projectVersion, ProjectDesktops, ProjectDesktopScope, DesktopBindings, projectDesktopBindingSchema, desktopProjectCommand, desktopAdapterSource, desktopUidCommand, desktopProjectPrepare, desktopProjectEnvironment, desktopProjectImePrepare, desktopProjectImeCommand, projectIdentityPayload, assertProjectTerminalsStopped, vmDir, AppError, defaultDesktopPreferences } from './desktop-identity-fixture.ts';
+import { desktopProjectControl, type DesktopControlProof } from '../server/desktop-project-control.ts';
+
+test('initial endpoint absence retries but permanent authority refusal rolls back immediately', async (t) => {
+  const f = await fixture(t); let first = true;
+  f.state.onProbe = async () => {
+    if (first) { first = false; throw new AppError('waiting for actual Plasma', 409, 'DESKTOP_NOT_READY'); }
+  };
+  await f.start(); assert.ok(f.state.probes >= 2);
+  await f.manager.stop(f.id); f.state.onProbe = undefined; f.state.probeFailure = true;
+  const before = f.state.probes;
+  await assert.rejects(f.start(), { code: 'DESKTOP_SCOPE_CHANGED' });
+  assert.equal(f.state.probes - before, 1);
+  const stoppedBinding = await f.bindings.read(f.id);
+  if (stoppedBinding?.version !== 2) assert.fail();
+  assert.equal(stoppedBinding.state, 'stopped');
+});
+
+test('typed adapter waiting can authorize retry only for an uncommitted probe', async (t) => {
+  const f = await fixture(t); await f.start();
+  const binding = await f.bindings.read(f.id); if (binding?.version !== 2) assert.fail();
+  const proof: DesktopControlProof = { version: 1, ...binding.execution };
+  const machines = { exec: async () => ({ code: 73, stdout: JSON.stringify({ ok: false, code: 'DESKTOP_NOT_READY' }), stderr: '' }) } as unknown as MachinesType;
+  await assert.rejects(desktopProjectControl(machines, f.id, 'probe', { ...proof, endpoint: null }), { code: 'DESKTOP_NOT_READY' });
+  await assert.rejects(desktopProjectControl(machines, f.id, 'probe', proof), { code: 'DESKTOP_SCOPE_CHANGED' });
+  await assert.rejects(desktopProjectControl(machines, f.id, 'guard', { ...proof, endpoint: null }), { code: 'DESKTOP_SCOPE_CHANGED' });
+  await assert.rejects(desktopProjectControl(machines, f.id, 'unguard', proof), { status: 503, code: 'DESKTOP_CLEANUP_FAILED' });
+});
 
 test('named Desktop captures non-enumerable scope, binary body, native HOME/UID and original service ticket', async (t) => {
   const f = await fixture(t); await f.start();

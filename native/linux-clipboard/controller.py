@@ -262,6 +262,73 @@ def stop(directory, owner):
 
 # Shared verbatim by the fixed Desktop adapter and both Linux clipboard controllers.
 # This file is a draft generator input, not a guest-installed authority record.
+
+def desktop_wait(condition, reason):
+    if not condition: raise RuntimeError('SAKURA_DESKTOP_NOT_READY:' + reason)
+
+def desktop_nested_x11(source, identity, run):
+    display, filename = source.get('DISPLAY', ''), source.get('XAUTHORITY', '')
+    match = re.fullmatch(r':([0-9]{1,5})(?:\.0)?', display)
+    require(match is not None and int(match[1]) != 1, 'Desktop 内层 XWayland display 不符')
+    auth = Path(filename)
+    require(auth.is_absolute() and str(auth) == str(auth.resolve(strict=True))
+            and len(os.fsencode(auth)) <= 1023 and not re.search(r'[\x00-\x1f]', str(auth)),
+            'Desktop 内层 XWayland 凭据路径不符')
+    descriptor = os.open(auth, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        info = os.fstat(descriptor)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == identity['uid'] and info.st_nlink == 1
+                and not info.st_mode & 0o077 and 0 < info.st_size <= 8192, 'Desktop 内层 XWayland 凭据权限不符')
+        raw = os.read(descriptor, 8193)
+        require(len(raw) == info.st_size, 'Desktop 内层 XWayland 凭据正在变化')
+        # Validate the bounded Xauthority structure without exporting its cookie.
+        offset, permitted = 0, False
+        while offset < len(raw):
+            require(offset + 2 <= len(raw), 'Desktop 内层 XWayland 凭据格式不符')
+            family = struct.unpack_from('>H', raw, offset)[0]; offset += 2
+            fields = []
+            for _ in range(4):
+                require(offset + 2 <= len(raw), 'Desktop 内层 XWayland 凭据格式不符')
+                length = struct.unpack_from('>H', raw, offset)[0]; offset += 2
+                require(offset + length <= len(raw), 'Desktop 内层 XWayland 凭据格式不符')
+                fields.append(raw[offset:offset+length]); offset += length
+            permitted |= family in (256, 65535) and fields[1] == str(int(match[1])).encode() \
+                and fields[2] == b'MIT-MAGIC-COOKIE-1' and len(fields[3]) == 16
+        require(permitted, 'Desktop 内层 XWayland 缺少准确 display cookie')
+        current = auth.lstat()
+        require((info.st_dev, info.st_ino, info.st_uid, info.st_mode, info.st_size)
+                == (current.st_dev, current.st_ino, current.st_uid, current.st_mode, current.st_size),
+                'Desktop 内层 XWayland 凭据身份已变化')
+    finally: os.close(descriptor)
+    endpoint = Path('/tmp/.X11-unix/X' + str(int(match[1])))
+    root = endpoint.parent.lstat(); before = endpoint.lstat()
+    require(stat.S_ISDIR(root.st_mode) and root.st_uid == 0 and stat.S_IMODE(root.st_mode) == 0o1777
+            and stat.S_ISSOCK(before.st_mode) and before.st_uid == identity['uid'], 'Desktop 内层 X11 socket 身份不符')
+    peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM | socket.SOCK_CLOEXEC)
+    try:
+        peer.settimeout(2); peer.connect(str(endpoint))
+        pid, uid, gid = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        require(uid == identity['uid'] and gid == identity['gid'], 'Desktop 内层 X11 peer 账号不符')
+        actor = desktop_process(pid, identity, run)
+        require(actor['image'] in ('/usr/bin/Xwayland', '/usr/bin/kwin_wayland', '/usr/bin/kwin_wayland_wrapper'),
+                'Desktop 内层 X11 peer 映像不符')
+        held = set()
+        for item in (Path('/proc') / str(pid) / 'fd').iterdir():
+            try: held.add(os.readlink(item))
+            except FileNotFoundError: pass
+        rows = [line.split() for line in (Path('/proc') / str(pid) / 'net/unix').read_text().splitlines()[1:]]
+        listeners = [row[6] for row in rows if len(row) == 8 and row[7] == str(endpoint)
+                     and int(row[3], 16) & 0x10000 and row[4] == '0001' and row[5] == '01'
+                     and 'socket:[' + row[6] + ']' in held]
+        require(len(listeners) == 1 and re.fullmatch('[1-9][0-9]*', listeners[0]), 'Desktop 内层 X11 原监听归属不符')
+        after = endpoint.lstat()
+        require((before.st_dev, before.st_ino, before.st_uid) == (after.st_dev, after.st_ino, after.st_uid)
+                and desktop_process(pid, identity, run) == actor, 'Desktop 内层 X11 原 endpoint 已变化')
+        return {'display': display, 'xauthPath': str(auth), 'xauthDevice': str(info.st_dev), 'xauthInode': str(info.st_ino),
+                'xauthSha256': hashlib.sha256(raw).hexdigest(), 'socketPath': str(endpoint), 'socketDevice': str(before.st_dev),
+                'socketInode': str(before.st_ino), 'kernelInode': listeners[0], 'peerPid': pid,
+                'peerCreated': actor['created'], 'peerImage': actor['image']}
+    finally: peer.close()
 def desktop_native(build):
     require(isinstance(build, str) and re.fullmatch('[a-f0-9]{64}', build), 'Desktop native build 无效')
     folder = Path('/usr/local/lib/sakura-project-identity') / build
@@ -400,7 +467,10 @@ def desktop_authority(proof):
                 and (guard.get('networkDevice'), guard.get('networkInode')) == (run['networkDevice'], run['networkInode']),
                 'Desktop 固定 adapter 原 runtime/网络证明已变化')
         def credential(name, limit):
-            fd = os.open(runtime / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try: fd = os.open(runtime / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            except FileNotFoundError:
+                if proof['endpoint'] is None: desktop_wait(False, 'credential')
+                raise
             try:
                 info = os.fstat(fd)
                 require(stat.S_ISREG(info.st_mode) and info.st_uid == identity['uid'] and info.st_nlink == 1
@@ -428,14 +498,23 @@ def desktop_authority(proof):
                                 'Desktop Xvnc cookie 路径不符')
                         servers.append(row)
             except (FileNotFoundError, ProcessLookupError, PermissionError): pass
+        if proof['endpoint'] is None: desktop_wait(candidates and servers, 'process')
         require(len(candidates) == 1 and len(servers) == 1, '需要原完整域中唯一就绪的 Plasma/Xvnc')
         plasma, vnc = candidates[0], servers[0]
         raw = (Path('/proc') / str(plasma['pid']) / 'environ').read_bytes()
         require(len(raw) <= 1048576, 'Desktop 环境过大')
         source = dict(entry.decode().split('=', 1) for entry in raw.split(b'\0') if b'=' in entry)
         require(source.get('HOME') == identity['home'] and source.get('USER') == identity['account']
-                and source.get('DISPLAY') == ':1' and source.get('XDG_RUNTIME_DIR') == str(runtime)
-                and source.get('XAUTHORITY') == str(runtime / 'Xauthority'), 'Desktop 原 UID/environment authority 不符')
+                and source.get('XDG_RUNTIME_DIR') == str(runtime), 'Desktop 原 UID/environment authority 不符')
+        nested = None
+        if source.get('XDG_SESSION_TYPE') == 'wayland':
+            try: nested = desktop_nested_x11(source, identity, run)
+            except (FileNotFoundError, ConnectionRefusedError):
+                if proof['endpoint'] is None: desktop_wait(False, 'nested-x11')
+                raise
+        else:
+            require(source.get('DISPLAY') == ':1' and source.get('XAUTHORITY') == str(runtime / 'Xauthority'),
+                    'Desktop 原 X11 display/cookie authority 不符')
         fd_sockets = set()
         for item in (Path('/proc') / str(vnc['pid']) / 'fd').iterdir():
             try: fd_sockets.add(os.readlink(item))
@@ -447,6 +526,7 @@ def desktop_authority(proof):
                     'runtimeDevice': str(runtime.stat().st_dev), 'runtimeInode': str(runtime.stat().st_ino),
                     'xauthDevice': str(auth_info.st_dev), 'xauthInode': str(auth_info.st_ino), 'xauthSha256': hashlib.sha256(auth).hexdigest(),
                     'readyDevice': str(ready_info.st_dev), 'readyInode': str(ready_info.st_ino)}
+        if nested is not None: endpoint['nestedX11'] = nested
         require(proof['endpoint'] is None or proof['endpoint'] == endpoint, 'Desktop 原 Plasma/VNC/cookie 已被替换')
         require(desktop_process(plasma['pid'], identity, run) == plasma and desktop_process(vnc['pid'], identity, run) == vnc,
                 'Desktop 原进程正在变化')
@@ -573,7 +653,7 @@ def desktop_environment(network, expected, proof):
     try:
         user, runtime, source = checked['user'], checked['runtime'], checked['source']
         require(os.readlink('/proc/'+str(checked['plasma']['pid'])+'/ns/net') == network, 'Desktop 与应用项目的原网络空间不符')
-        authority = runtime / 'Xauthority'
+        authority = source['XAUTHORITY']
         require(isinstance(expected, dict) and len(expected) <= 256, "项目环境摘要无效")
         values = {}
         for key, value in expected.items():
@@ -593,8 +673,8 @@ def desktop_environment(network, expected, proof):
                     "桌面用户运行目录身份不符")
             values["XDG_RUNTIME_DIR"] = runtime_path
         return user, {**values, "HOME": user.pw_dir, "USER": user.pw_name, "LOGNAME": user.pw_name,
-                      "PATH": "/usr/local/bin:/usr/bin:/bin", "SHELL": "/bin/sh", "DISPLAY": ":1",
-                      "XAUTHORITY": str(authority), "QT_QPA_PLATFORM": "xcb", "GDK_BACKEND": "x11",
+                      "PATH": "/usr/local/bin:/usr/bin:/bin", "SHELL": "/bin/sh", "DISPLAY": source['DISPLAY'],
+                      "XAUTHORITY": authority, "QT_QPA_PLATFORM": "xcb", "GDK_BACKEND": "x11",
                       "SDL_VIDEODRIVER": "x11", "XDG_SESSION_TYPE": "x11"}, checked
 
     except BaseException:
