@@ -15,6 +15,7 @@
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
@@ -28,7 +29,7 @@
 #error Unsupported record byte order
 #endif
 
-static void refuse(const char *code) {
+static _Noreturn void refuse(const char *code) {
     fprintf(stderr, "SAKURA_PROJECT_IDENTITY:%s\n", code);
     exit(126);
 }
@@ -293,6 +294,21 @@ static void capabilities_drop(uint32_t uid, uint32_t gid) {
         saved_gid != gid || getgroups(0, NULL) != 0 || syscall(SYS_capget, &header, data) ||
         !zero(data, sizeof(data)) || prctl(PR_GET_NO_NEW_PRIVS, 0L, 0L, 0L, 0L) != 1) refuse("ACCOUNT_DROP_VERIFY");
 }
+/* A socket retains its original network namespace and file credentials after
+ * setns()/setresuid(). Never pass an already-open network socket to a project
+ * through stdio or the inherited SSH channel. OpenSSH uses pipes, AF_UNIX
+ * socketpairs or a PTY for these channels. */
+static void local_transport(int fd) {
+    struct stat s;
+    if (fstat(fd, &s)) {
+        if (errno == EBADF) return;
+        refuse("NETWORK_CHANNEL");
+    }
+    if (!S_ISSOCK(s.st_mode)) return;
+    int family = 0; socklen_t size = sizeof(family);
+    if (getsockopt(fd, SOL_SOCKET, SO_DOMAIN, &family, &size) || size != sizeof(family) || family != AF_UNIX)
+        refuse("NETWORK_CHANNEL");
+}
 static bool session_input_valid(void) {
     struct stat s;
     int flags = fcntl(3, F_GETFL);
@@ -444,7 +460,7 @@ static struct payload payload_read(const char *expected, bool session_input) {
     return value;
 }
 static void wipe(void *buffer, size_t size) { volatile unsigned char *p=buffer; while (size--) *p++=0; }
-static void payload_exec(struct payload *value) {
+static _Noreturn void payload_exec(struct payload *value) {
     if (value->flags & SK_PAYLOAD_SESSION) {
         if (dup2(3,STDIN_FILENO)<0) refuse("PAYLOAD_STDIN");
     } else if (value->flags & SK_PAYLOAD_TERMINAL) {
@@ -483,6 +499,7 @@ static void payload_exec(struct payload *value) {
     execv(arguments[0],arguments); refuse("COMMAND_EXEC");
 }
 int main(int argc, char **argv) {
+    for (int fd = 0; fd <= 3; ++fd) local_transport(fd);
     /* Snapshot fd 3 before native_image/record_fd can reuse an absent fd for a
      * root authority file. Only an already-readable client channel is kept. */
     bool session_input = session_input_valid();

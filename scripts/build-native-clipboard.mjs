@@ -21,6 +21,10 @@ for (const name of [
   'protocol.h',
   'early-import.h',
   'control-system.h',
+  'descendant.h',
+  'descendant-reservation.h',
+  'descendant-policy.h',
+  'descendant-controller.h',
   'early-policy.def',
   'policy.cpp',
   'controller.cpp',
@@ -104,6 +108,7 @@ for (const entry of compilers) {
       '-lcomctl32',
       '-lole32',
       '-luuid',
+      '-ladvapi32',
     ],
     { windowsHide: true, timeout: 60000 },
   );
@@ -120,6 +125,7 @@ for (const entry of compilers) {
       '-lxmllite',
       '-lshlwapi',
       '-luuid',
+      '-lole32',
     ],
     { windowsHide: true, timeout: 60000 },
   );
@@ -145,6 +151,6 @@ for (const name of [
 }
 await writeFile(
   join(target, 'native-clipboard.json'),
-  JSON.stringify({ version: 3, architecture: 'x64', build, files }, null, 2) + '\n',
+  JSON.stringify({ version: 5, architecture: 'x64', build, files }, null, 2) + '\n',
 );
 console.log(`Built Windows native clipboard agent ${build}: ${files.map((f) => f.name).join(', ')}`);

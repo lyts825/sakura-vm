@@ -33,11 +33,13 @@ function DirectoryPermissions({
   request,
   vmId,
   enabled,
+  networkPrivate,
   applied,
 }: {
   request: FeatureProps['request'];
   vmId: string;
   enabled: boolean;
+  networkPrivate: boolean;
   applied: () => void;
 }) {
   const endpoint = `/vms/${vmId}/project-directory-migration`;
@@ -51,6 +53,10 @@ function DirectoryPermissions({
       <summary>目录账户权限</summary>
       <p>请先保存项目配置，再生成权限预览；应用前必须停止全部入口。</p>
       <p className="subtle-note">生成预览会为已保存项目保留独立账户，不修改项目目录权限。</p>
+      {networkPrivate && <p className="subtle-note">
+        私有项目预览也会配置本实例的普通 SSH、定时任务和用户服务提权限制，影响所有普通账号的 sudo/su。
+        首次准入可能要求管理员重启相关服务并结束旧会话；不会自动中断连接。
+      </p>}
       <p className="subtle-note">仅支持独立项目目录；父目录权限、链接和其他项目不会自动调整。</p>
       <Feedback error={action.error || remote.error} message={action.message} />
       <div className="feature-actions">
@@ -381,6 +387,9 @@ export function ProjectPanel(props: FeatureProps) {
               私有项目的托管命令仅能访问自身回环网络；同一项目账号从共享网络建立的 IPv4/IPv6 连接也被阻断。
               工具安装与依赖预取使用共享网络，专属容器支持 Debian 与 Ubuntu。
             </small>
+            {project.networkIsolation === 'private' && <small>
+              系统服务提权限制会影响本实例所有普通账号的 sudo/su；首次启用可能需要管理员重启相关服务，关闭私有项目不会自动撤回。
+            </small>}
           </label>
           <label>
             预览的 Windows 端口（在“服务”中配置转发）
@@ -494,6 +503,7 @@ export function ProjectPanel(props: FeatureProps) {
         request={request}
         vmId={vm.id}
         enabled={vm.status === 'running'}
+        networkPrivate={remote.data?.project.networkIsolation === 'private'}
         applied={() => {
           remote.reload();
           runtime.reload();

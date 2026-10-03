@@ -2,6 +2,7 @@ import type { Machines } from './machines.ts';
 import type { Bundles } from './bundles.ts';
 import type { HostPeers } from './host-peers.ts';
 import { AppError } from './model.ts';
+import { haWitnessReplicaInventorySchema } from './ha-witness-core.ts';
 
 type Receiver = Parameters<HostPeers['setImportReceiver']>[0];
 type Activation = Parameters<NonNullable<Receiver['activate']>>[0];
@@ -64,6 +65,35 @@ export function createHostImportReceiver(machines: Machines, services: {
     sourceVmId: input.sourceVmId, snapshotId: input.snapshotId, sha256: input.sha256,
   });
   return {
+    inspectReplicas: async ({ requesterId, sourceVmId, targetHostId }) => {
+      requireAvailable();
+      if ([...machines.records.values()].some((vm) =>
+        vm.migrationOrigin?.sourceHostId === requesterId &&
+        ((vm.migrationOrigin.snapshotId && !vm.migrationOrigin.sourceVmId) ||
+          (vm.migrationOrigin.sourceVmId && !vm.migrationOrigin.snapshotId))))
+        throw new AppError('来源宿主存在归属不完整的历史副本，不能声明清单完整', 409);
+      const replicas = [...machines.records.values()].filter((vm) =>
+        (vm.migrationOrigin?.sourceHostId === requesterId &&
+          vm.migrationOrigin.sourceVmId === sourceVmId) ||
+        (vm.haRetirement?.sourceHostId === requesterId &&
+          vm.haRetirement.sourceVmId === sourceVmId)).map((vm) => {
+        const origin = vm.migrationOrigin;
+        if (!origin || origin.sourceHostId !== requesterId || origin.sourceVmId !== sourceVmId ||
+            !origin.snapshotId || !origin.diskSha256)
+          throw new AppError('历史故障副本登记损坏，不能声明清单完整', 409);
+        const identity = { sourceHostId: requesterId, sourceVmId, targetHostId,
+          transferId: origin.transferId, remoteVmId: vm.id,
+          snapshotId: origin.snapshotId, sha256: origin.diskSha256 };
+        if (vm.haRetirement && ['sourceHostId', 'sourceVmId', 'transferId', 'snapshotId', 'sha256']
+          .some((key) => vm.haRetirement![key as keyof typeof vm.haRetirement] !==
+            identity[key as keyof typeof identity]))
+          throw new AppError('历史故障副本退役证据与导入记录不一致', 409);
+        return { identity, status: machines.state(vm.id),
+          retirement: vm.haRetirement ? { ...identity, retiredAt: vm.haRetirement.retiredAt } : null };
+      });
+      return haWitnessReplicaInventorySchema.parse({ version: 1, complete: true,
+        hostId: targetHostId, sourceHostId: requesterId, sourceVmId, replicas });
+    },
     status: async ({ requesterId, transferId }) => {
       bundles();
       const vm = imported(requesterId, transferId), origin = vm?.migrationOrigin;

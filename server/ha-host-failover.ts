@@ -20,6 +20,9 @@ export class HaHostFailover {
   private armed: Record<string, boolean> = {};
   private phases: Record<string, string> = {};
   private targetVmIds: Record<string, string> = {};
+  private pendingReturns = new Map<string, number>();
+  private failbackPhases: Record<string, 'pending' | 'completed' | null> = {};
+  private recoveries: Record<string, boolean> = {};
 
   constructor(private machines: Machines, private peers: HostPeers,
     private replications: SnapshotReplications,
@@ -30,6 +33,8 @@ export class HaHostFailover {
   view(id: string) { return { configured: !!this.client,
     armed: !!this.armed[id], phase: this.phases[id] || null,
     targetVmId: this.targetVmIds[id] || null,
+    failback: this.failbackPhases[id] || null,
+    recoveryHeld: !!this.recoveries[id],
     error: this.errors[id] || null }; }
 
   private identity(id: string) {
@@ -53,8 +58,9 @@ export class HaHostFailover {
 
   private async disarmNow(id: string, failureThreshold: number) {
     if (!this.client) throw new AppError('见证节点未配置，不能安全撤销宿主失联策略', 503);
-    await this.client.heartbeat({ ...this.identity(id),
+    const result = await this.client.heartbeat({ ...this.identity(id),
       failureThreshold, plan: null });
+    this.rememberReturn(id, failureThreshold, result.failback);
     this.armed[id] = false;
     this.phases[id] = 'source';
   }
@@ -83,6 +89,15 @@ export class HaHostFailover {
     const policies = await this.policies();
     await Promise.all([...this.machines.records.values()].map(async (vm) => {
       const enrollment = vm.haWitnessEnrollment;
+      const returning = this.pendingReturns.get(vm.id);
+      if (returning && this.machines.state(vm.id) === 'running' && !vm.haPromotion) {
+        try {
+          const result = await this.client!.heartbeat({ ...this.identity(vm.id),
+            failureThreshold: returning, plan: null });
+          this.rememberReturn(vm.id, returning, result.failback);
+        } catch (error) { this.errors[vm.id] = (error as Error).message; }
+        return;
+      }
       const policy = policies[vm.id];
       const parsed = haFailoverOptions.safeParse(policy?.options);
       if (!enrollment || !policy?.enabled || !parsed.success ||
@@ -94,6 +109,7 @@ export class HaHostFailover {
         const result = await this.client!.heartbeat({ ...this.identity(vm.id),
           failureThreshold: enrollment.failureThreshold });
         this.armed[vm.id] = this.machines.state(vm.id) === 'running' && !vm.haPromotion && result.armed;
+        this.rememberReturn(vm.id, enrollment.failureThreshold, result.failback);
       } catch (error) {
         this.armed[vm.id] = false;
         this.errors[vm.id] = (error as Error).message;
@@ -102,6 +118,14 @@ export class HaHostFailover {
   }
 
   async init() {
+    // A completed rejoin survives local policy revocation and source-service
+    // restart. Discover its pending routing work from the durable witness.
+    if (this.client) await Promise.all([...this.machines.records.values()].map(async (vm) => {
+      try {
+        const status = await this.client!.status(this.identity(vm.id));
+        this.recordStatus(vm.id, status);
+      } catch { /* Unregistered VMs do not participate in witness failover. */ }
+    }));
     await this.keepalive();
     this.keepaliveTimer = setInterval(() => void this.keepalive().catch((error) =>
       console.error('宿主失联独立心跳失败：', error)), 5_000);
@@ -110,6 +134,24 @@ export class HaHostFailover {
     this.timer = setInterval(() => void this.sample().catch((error) =>
       console.error('宿主失联心跳扫描失败：', error)), INTERVAL_MS);
     this.timer.unref();
+  }
+
+  private rememberReturn(id: string, threshold: number,
+    phase: 'pending' | 'completed' | null | undefined) {
+    if (phase === 'pending') this.pendingReturns.set(id, threshold);
+    else if (phase === 'completed' || phase === null) this.pendingReturns.delete(id);
+    if (phase !== undefined) this.failbackPhases[id] = phase;
+    if (phase === 'completed') delete this.errors[id];
+  }
+
+  private recordStatus(id: string, status: Awaited<ReturnType<HaWitnessClient['status']>>) {
+    this.phases[id] = status.phase || '';
+    this.targetVmIds[id] = status.targetVmId || '';
+    this.recoveries[id] = !!status.recoveryHeld;
+    if (status.error) this.errors[id] = status.error;
+    if (status.recoveryHeld) this.pendingReturns.delete(id);
+    else if (status.phase === 'source' && status.failureThreshold)
+      this.rememberReturn(id, status.failureThreshold, status.failback?.phase || null);
   }
 
   private async scan() {
@@ -141,6 +183,7 @@ export class HaHostFailover {
         const liveness = await this.client.heartbeat({ ...this.identity(id),
           failureThreshold: options.failureThreshold });
         this.armed[id] = liveness.armed;
+        this.rememberReturn(id, options.failureThreshold, liveness.failback);
         let plan: HaWitnessPlan | null = null;
         if (this.machines.state(id) === 'running' && !this.machines.get(id).haPromotion) {
           const checked = await checkHaFailover(this.machines, this.peers,
@@ -188,8 +231,7 @@ export class HaHostFailover {
         if (this.client) {
           try {
             const status = await this.client.status(this.identity(id));
-            this.phases[id] = status.phase || '';
-            this.targetVmIds[id] = status.targetVmId || '';
+            this.recordStatus(id, status);
           } catch { /* The last known phase remains visible. */ }
         }
       }
@@ -202,17 +244,31 @@ export class HaHostFailover {
     catch (error) { return { configured: true, error: (error as Error).message }; }
   }
 
-  async rejoin(id: string, dataReconciled: boolean) {
+  rejoin(id: string, dataReconciled: boolean) {
+    return this.enqueue(() => this.rejoinNow(id, dataReconciled));
+  }
+
+  private async rejoinNow(id: string, dataReconciled: boolean) {
     if (!dataReconciled)
       throw new AppError('请先回迁目标期间的写入，或明确接受丢失目标新数据', 409);
     this.machines.requireUnlocked(id);
     this.machines.requireStopped(id);
     if (!this.client) throw new AppError('见证节点未配置', 503);
     const result = await this.client.rejoin({ ...this.identity(id), dataReconciled: true });
+    if (result.failback === 'pending') {
+      const status = await this.client.status(this.identity(id));
+      this.recordStatus(id, status);
+    }
     this.armed[id] = false;
     this.phases[id] = 'source';
+    this.recoveries[id] = false;
+    delete this.errors[id];
     return { ready: true, executed: true, ...result,
-      message: '见证节点确认目标副本已退役，来源可重新启动。' };
+      message: result.failback === 'pending'
+        ? '目标副本已退役，来源可重新启动；见证将确认来源应用健康后回切流量。'
+        : result.failback === 'completed'
+          ? '目标副本已退役，流量已确认指向来源实例。'
+          : '见证节点确认目标副本已退役，来源可重新启动；来源健康后请恢复流量。' };
   }
 
   async close() {

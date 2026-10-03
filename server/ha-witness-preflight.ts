@@ -31,6 +31,7 @@ export async function checkHaWitnessDeployment(raw: unknown) {
     fence: denyControl, confirmFence: denyControl, targetStatus: denyControl, activate: denyControl,
     applicationReady: denyControl, switchTraffic: denyControl,
     trafficTarget: denyControl, retire: denyControl,
+    sourceApplicationReady: denyControl, restoreTraffic: denyControl,
   });
   await witness.init();
   const listener = await check(async () => {
@@ -45,7 +46,7 @@ export async function checkHaWitnessDeployment(raw: unknown) {
     return `证书有效至 ${parsed.validTo}`;
   });
   const vms = await Promise.all(config.vms.map(async (vm) => {
-    const { phase, plan } = await witness.deploymentState({
+    const { phase, plan, failback, recoveryHeld } = await witness.deploymentState({
       sourceHostId: vm.sourceHostId, sourceVmId: vm.sourceVmId,
     });
     const observed: Observed = {};
@@ -87,15 +88,17 @@ export async function checkHaWitnessDeployment(raw: unknown) {
         throw new Error('已接管的目标副本未运行');
       return `vmId=${result.id}, status=${result.status}`;
     }) : null;
-    const application = plan ? check(async () => {
-      const url = new URL(vm.application.url);
-      url.searchParams.set('vmId', plan.remoteVmId);
+    const applicationConfig = plan ? vm.application : failback ? vm.failback?.application : null;
+    const applicationVmId = plan?.remoteVmId || (failback ? vm.sourceVmId : null);
+    const application = applicationConfig && applicationVmId ? check(async () => {
+      const url = new URL(applicationConfig.url);
+      url.searchParams.set('vmId', applicationVmId);
       const result = await haHttpsRequest(url.toString(), 'GET', undefined,
-        { bearer: vm.application.token,
-          fingerprint: vm.application.fingerprint }) as {
+        { bearer: applicationConfig.token,
+          fingerprint: applicationConfig.fingerprint }) as {
         ready?: unknown; vmId?: unknown };
-      if (result?.vmId !== plan.remoteVmId || typeof result.ready !== 'boolean')
-        throw new Error('应用健康接口未返回目标实例及布尔就绪状态');
+      if (result?.vmId !== applicationVmId || typeof result.ready !== 'boolean')
+        throw new Error('应用健康接口未返回对应实例及布尔就绪状态');
       observed.applicationVmId = result.vmId as string;
       observed.applicationReady = result.ready;
       if (phase === 'promoted' && !result.ready)
@@ -114,6 +117,11 @@ export async function checkHaWitnessDeployment(raw: unknown) {
       observed.activeVmId = result.activeVmId as string | null;
       if (phase === 'promoted' && result.activeVmId !== plan?.remoteVmId)
         throw new Error('已接管实例未成为流量入口');
+      if (failback?.phase === 'completed' && result.activeVmId !== vm.sourceVmId)
+        throw new Error('已完成回切，但流量入口不再指向来源实例');
+      if (failback?.phase === 'pending' && result.activeVmId !== vm.sourceVmId &&
+          result.activeVmId !== failback.plan.remoteVmId)
+        throw new Error('待回切流量入口指向未知实例');
       return `activeVmId=${result.activeVmId || 'none'}`;
     });
     const checks = { redfish: await redfish, target: await target,
@@ -121,8 +129,8 @@ export async function checkHaWitnessDeployment(raw: unknown) {
       application: application ? await application : null,
       traffic: await traffic };
     return { sourceVmId: vm.sourceVmId, phase,
-      armed: !!plan, plan, observed, checks,
-      ok: Object.values(checks).every((item) => !item || item.ok) };
+      armed: !!plan && !recoveryHeld, plan, failback, recoveryHeld, observed, checks,
+      ok: !recoveryHeld && Object.values(checks).every((item) => !item || item.ok) };
   }));
   // Reads happen across external systems. Mark phase/plan changes during the
   // sample so an observer does not mistake a normal transition for split-brain.
@@ -132,7 +140,10 @@ export async function checkHaWitnessDeployment(raw: unknown) {
     const after = await witness.deploymentState({ sourceHostId: configVm.sourceHostId,
       sourceVmId: vm.sourceVmId });
     return { ...vm, phaseAfter: after.phase,
-      stable: vm.phase === after.phase && vm.plan?.transferId === after.plan?.transferId };
+      stable: vm.phase === after.phase && vm.plan?.transferId === after.plan?.transferId &&
+        vm.failback?.phase === after.failback?.phase &&
+        vm.failback?.plan.transferId === after.failback?.plan.transferId &&
+        vm.recoveryHeld === after.recoveryHeld };
   }));
   return { ok: listener.ok && completed.every((vm) => vm.ok), listener, vms: completed };
 }

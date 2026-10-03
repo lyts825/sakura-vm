@@ -151,6 +151,8 @@ export class ProjectIdentities {
       const toolFailure = z.object({ tool: z.enum(['groupadd', 'useradd', 'addgroup', 'adduser', 'openssl', 'chpasswd', 'ip']), exit: z.number().int() }).strict().safeParse(reply.detail);
       const context = code === 'SYSTEM_TOOL_FAILED' && toolFailure.success ? ':' + toolFailure.data.tool : '';
       const migration = code === 'DIRECTORY_MIGRATION_REQUIRED' ? '目录及父目录尚未授权给项目账户，请显式迁移权限'
+        : code === 'EGRESS_NNP_RESTART_REQUIRED' ? '普通 SSH 或定时服务尚未继承提权限制，请管理员重启对应服务并结束旧会话后重试'
+        : code === 'EGRESS_NNP_PENDING' ? '系统提权限制配置尚未生效，请管理员核对原配置及服务管理器状态后重试'
         : code.startsWith('EGRESS_') ? '项目账号的共享网络出站限制无法核对，请恢复原记录后重试' : '项目账户归属核对失败';
       const cleanup = code === 'PROJECT_IDENTITY_CLEANUP_FAILED' || code === 'PROJECT_IDENTITY_NETWORK_CLEANUP_FAILED';
       throw new AppError(`${migration}（${code}${context}）`, cleanup ? 503 : 409, cleanup ? code : 'PROJECT_IDENTITY_' + code);

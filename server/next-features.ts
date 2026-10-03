@@ -94,7 +94,7 @@ export const nextFeatureCatalog = [
     '故障自动接管',
     '远程主机与集群',
     'P0',
-    '监测本机 QEMU 进程故障；独立见证确认 Redfish 隔离后接管副本并持续检查应用与流量，提供只读部署预检和演练观察。',
+    '监测本机 QEMU 故障；见证确认隔离后接管副本，支持状态迁移、恢复封锁、完整副本退役及来源健康后的流量回切。',
     'experimental',
   ],
   [
@@ -530,7 +530,7 @@ export const nextFeatureCatalog = [
     '按应用剪贴板策略',
     '操作系统与桌面',
     'P0',
-    '管理网页入口、Windows x64/x86 应用与显式启动的 Linux X11、原生 Wayland 应用的剪贴板方向、格式、文本大小和敏感内容。',
+    '管理网页、Windows x64/x86 应用及其普通子进程、显式启动的 Linux X11/Wayland 应用的剪贴板方向、格式、大小和敏感内容。',
     'experimental',
   ],
   [

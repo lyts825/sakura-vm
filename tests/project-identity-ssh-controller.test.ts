@@ -34,6 +34,7 @@ test('portable SSH controller model preserves descriptor, daemon, snapshot and c
     'receipts_and_interrupted_prepare',
     'snapshot_stdin_deadline_and_eof',
     'session_descriptor_order_and_stdout',
+    'session_network_descriptors_are_rejected',
     'readonly_probe_and_stop_authority',
     'partial_receipt_cleanup_recovery',
   ]);

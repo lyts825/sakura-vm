@@ -11,7 +11,9 @@ Windows x64 宿主的原生代理为显式选择的 x64 和 x86 普通 EXE 应�
 5. 查看每个进程的状态。「已接入 Win32/OLE」表示此进程的代理已成功加载且规则与当前保存值一致；拒绝计数不含剪贴板文本。附加失败、架构未知、文件变化与版本不一致分别显示错误。启动结果未确认时先刷新进程状态，避免重复启动已经运行的应用。
 6. 更新应用程序后，重新选择正在运行的新版本，重新绑定摘要并保存。同一代理构建切换安装目录时复用进程中的已有 DLL；更换代理构建后，旧进程需要重启才能使用新代理，显式停用仍可解除同一 ABI 的旧规则。
 
-默认停用。禁用其他格式或启用敏感检测时，只允许 Windows 纯文本及其语言区域元数据，文件、图片、HTML、RTF 和其他自定义格式均被拒绝；OLE 混合格式复制会过滤被禁格式并保留允许的纯文本。敏感检测涵盖常见私钥、令牌、JWT、带凭据的 URL 与明文凭据赋值，不能识别所有秘密或图片中的内容。文本上限为 1 KiB 到 1 MiB，按 UTF-8 字节计算。
+默认停用。已成功接入的应用通过普通 `CreateProcessW/A` 创建子进程时，子进程和后续孙进程自动继承原应用已保存的规则，包括不同 EXE 和 x64/x86 跨架构创建；服务保存每个子进程自身的摘要、准确父进程 PID/创建时间，以及原应用规则来源。继承进程持续使用原应用规则，修改、停用或移除原应用规则会一并核对和更新这些进程。这个提前继承路径需要第 5 版原生运行包和运行中的控制服务。
+
+禁用其他格式或启用敏感检测时，只允许 Windows 纯文本及其语言区域元数据，文件、图片、HTML、RTF 和其他自定义格式均被拒绝；OLE 混合格式复制会过滤被禁格式并保留允许的纯文本。敏感检测涵盖常见私钥、令牌、JWT、带凭据的 URL 与明文凭据赋值，不能识别所有秘密或图片中的内容。文本上限为 1 KiB 到 1 MiB，按 UTF-8 字节计算。
 
 标准 ANSI/Unicode Edit 与 RichEdit 控件在 `WM_COPY`、`WM_CUT` 和常见复制/剪切按键执行前检查实际选区。规则拒绝时保留旧剪贴板与选区源文本；只检查选中的片段，不因未选中的敏感文本拒绝正常复制。覆盖已存在、之后创建、销毁重建以及父窗口初始化内创建的标准子控件。自定义控件仍须通过受管剪贴板 API；无法保证其自身在 API 调用前的其他副作用。
 
@@ -21,7 +23,7 @@ OLE 复制在调用原始 `OleSetClipboard` 前检查完整的可接受全局内
 
 ## 执行范围
 
-代理只附加当前 Windows 用户、同一会话的 x64 或 x86 EXE 进程，服务核对架构后用对应控制程序和 DLL 接入，使用 Win32 剪贴板函数与 OLE `IDataObject` 包装执行规则。未知架构继续拒绝；旧的第 1 版原生运行包只支持 x64，第 2 版支持双架构运行中附加，受控启动需要第 3 版早期代理。读取时再次检查当前权限与内容，包括代理接入后通过包装取得的 OLE 对象、源对象延迟提供的数据以及 Win32 延迟渲染。OLE 自身对象与格式元数据仅在已经授权的 OLE 操作内传递，应用实际内容仍由包装层检查。`GetDataHere` 通过检查过的临时全局内存填充调用者缓冲区；启用时暂不支持该方法的流、存储或文件介质，较大的全局内存介质也可能被拒绝。
+代理只附加当前 Windows 用户、同一会话的 x64 或 x86 EXE 进程，服务核对架构后用对应控制程序和 DLL 接入，使用 Win32 剪贴板函数与 OLE `IDataObject` 包装执行规则。未知架构继续拒绝；旧的第 1 版原生运行包只支持 x64，第 2 版支持双架构运行中附加，第 3 版支持受控早期启动，第 5 版支持具备创建保留的普通子进程提前继承；旧第 4 版资产保留已有归属恢复和停用能力，但不启用旧子通道。读取时再次检查当前权限与内容，包括代理接入后通过包装取得的 OLE 对象、源对象延迟提供的数据以及 Win32 延迟渲染。OLE 自身对象与格式元数据仅在已经授权的 OLE 操作内传递，应用实际内容仍由包装层检查。`GetDataHere` 通过检查过的临时全局内存填充调用者缓冲区；启用时暂不支持该方法的流、存储或文件介质，较大的全局内存介质也可能被拒绝。
 
 每个代理使用仅当前用户与 SYSTEM 可访问的命名内存段，只保存规则、版本、进程身份与计数。控制服务在附加前写入进程归属记录；PID 复用、进程列表短暂不可见与附加失败都不能被视为已成功应用。停用解除方向、内容与大小限制，但不卸载仍可能被使用的函数跳板或 OLE 包装；包装只提供受管接口，其他扩展接口在代理存续期间不可用。完全移除代理需要退出该应用。
 
@@ -31,7 +33,9 @@ OLE 复制在调用原始 `OleSetClipboard` 前检查完整的可接受全局内
 
 恢复主线程之前的失败、控制工具 EOF 或异常退出由专属 Job 结束本次子进程。恢复成功后清除该 Job 的关闭终止标志，使应用在 Sakura 关闭后继续保留已加载规则。若最终提交回执丢失，已受限的子进程可能仍然存活；服务保留持久归属，报告「启动未确认」并通过刷新或后台扫描核对，不把丢失回复视为成功或保证已终止。
 
-受控启动覆盖普通未打包原生 EXE 的原始应用 import DLL、DLL TLS、EXE TLS 与主入口，以及纯 IL CLR/AnyCPU 的应用代码；需要初始化回调运行在主线程的应用可能不兼容。`.local`、关键依赖清单重定向、混合模式 CLR、ReadyToRun、本机入口、进程保护或无法核对的加载条件明确拒绝。系统 DLL 初始化引入的第三方启动 DLL、检查后恶意改写目录或系统设置、初始化期间自行创建的子进程仍不在承诺范围内。检查、loader lock 和线程语义见 [早期启动范围](windows-clipboard-early-init.md)。自行启动的应用仍需等待周期扫描并成功附加。
+受控启动覆盖普通未打包原生 EXE 的原始应用 import DLL、DLL TLS、EXE TLS 与主入口，以及纯 IL CLR/AnyCPU 的应用代码。第 5 版也覆盖已接入原生/CLR 应用在这些应用初始化阶段通过普通 `CreateProcessW/A` 创建的子进程，子进程仍先持久登记再插入策略 import。需要初始化回调运行在主线程的应用可能不兼容。`.local`、关键依赖清单重定向、混合模式 CLR、ReadyToRun、本机入口、进程保护或无法核对的加载条件明确拒绝。系统 DLL 初始化引入的第三方启动 DLL、检查后恶意改写目录或系统设置，以及绕过这两个创建 API 的路径仍不在承诺范围内。检查、loader lock、暂停语义和创建路径边界见 [早期启动范围](windows-clipboard-early-init.md)。自行启动的应用及代理接入前已创建的子进程仍需等待周期扫描并成功附加。
+
+普通子进程提前继承保留调用者的命令行、环境、工作目录、标准句柄和继承标志；调用者指定 `CREATE_SUSPENDED` 时，返回后主线程仍保持一次暂停，由调用者继续恢复。无法安全合并调用者的 opaque `STARTUPINFOEX` 属性列表，因此此路径及调试创建标志明确返回 `ERROR_NOT_SUPPORTED`，不会启动未受管子进程。控制服务关闭、迁移维护或规则代际正在切换时，正在准备的子进程由其独立 Job 清理；控制服务不可用期间，仍启用规则的应用无法新建这些受管子进程，服务恢复后可重试。显式停用规则后创建 API 恢复普通行为。
 
 这不是内核级 DLP 边界。受保护进程、其他用户、其他会话、ARM 应用和通过其他底层接口绕过常规 API 的程序不在保证范围内，也不能撤回应用先前已经读出的文本或接入前取得的原始数据对象。对恶意本机程序强制执行策略仍需独立系统设施。Linux 应用可从 KDE 的原生入口显式启动，范围分别见 [X11 策略](x11-clipboard.md) 和 [Wayland 策略](wayland-clipboard.md)；已有未接入进程与其他底层路径仍未覆盖，因此总清单保持部分实现。
 
@@ -48,11 +52,12 @@ npm run test:native-clipboard
 npm run test:native-clipboard -- 32
 node --import tsx scripts/smoke-native-clipboard-early.mjs 64
 node --import tsx scripts/smoke-native-clipboard-early.mjs 32
+node --import tsx scripts/smoke-native-clipboard-descendants.mjs
 npm run test:native-clipboard:interfaces -- 64
 npm run test:native-clipboard:interfaces -- 32
 ```
 
-源码编译到 `.tools/native-clipboard`，生产构建复制到 `.sakura-server/assets/native-clipboard`。第 3 版原生清单覆盖两种架构的代理 DLL、控制程序及 MinHook、Detours 两份许可，均有大小与 SHA-256；服务运行前逐项核对，完整性失败拒绝附加。主控制程序使用相同的 128 字节共享 ABI，可在 x86 DLL 或附加工具不可用时仍停用已归属且加载完成的进程规则，无须重新加载 DLL。运行包的整体摘要与更新也包含这些文件。Linux 构建不生成 Windows 二进制，相关页面会显示不可用。
+源码编译到 `.tools/native-clipboard`，生产构建复制到 `.sakura-server/assets/native-clipboard`。第 5 版原生清单仍覆盖两种架构的代理 DLL、控制程序及 MinHook、Detours 两份许可，均有大小与 SHA-256；服务运行前逐项核对，完整性失败拒绝附加。主控制程序保留相同的 128 字节剪贴板共享 ABI，子进程 broker 使用独立 ABI；即使 x86 DLL 或附加工具不可用，仍可停用已归属且加载完成的进程规则，无须重新加载 DLL。运行包的整体摘要与更新也包含这些文件。Linux 构建不生成 Windows 二进制，相关页面会显示不可用。
 
 `test:native-clipboard` 编译并启动真实 Win32/OLE 测试应用，创建只属于测试的新窗口站和桌面。默认测试 x64，参数 `32` 测试 x86 受管应用与 x64 对端交换内容。测试启动器使用新的本机登录标识，但保留当前用户的本机权限；不创建账户、不加载配置文件、不使用网络凭据，不读写交互桌面的剪贴板。两种架构均实测方向限制、格式枚举、错误进程身份、UTF-8 大小、敏感文本、畸形数据、二进制格式、OLE 缓存对象与 `GetDataHere`、混合格式、延迟渲染、自动扫描、会话锁定、控制重载和显式停用。Node 测试使用模拟原生适配器验证持久归属与异常处理，另检查双架构路由、旧清单拒绝和 x86 工具损坏时通过主控制程序停用；浏览器测试验证实际服务配置类的保存和失败状态。其他 Windows 版本及商业图形应用仍需独立兼容性验证。
 
@@ -65,6 +70,8 @@ npm run test:native-clipboard:interfaces -- 32
 MinHook 固定为官方 1.3.4、提交 `c3fcafdc10146beb5919319d0683e44e3c30d537`。源码保留原许可与逐文件来源摘要，构建拒绝不匹配源码。许可随运行包分发。
 
 早期路径使用 Microsoft Detours 4.0.1、固定提交 `1dbd4ea281d73d478aa8d09a8b83fbd265f715f7`。双架构私有窗口站实测首个应用 DLL TLS、DllMain、EXE TLS 及 wmain 的 Win32/OLE 调用均受到当前策略约束；正常 Common Controls 可启动，关键依赖重定向与 cold build 不匹配明确拒绝，失败 Job 清理不影响另一已提交测试进程。来源、失败回归和许可说明见 [早期启动验证](windows-clipboard-early-init.md)。
+
+`smoke-native-clipboard-descendants.mjs` 的 30 个真实场景覆盖跨 EXE、x64/x86 双向创建、隐式 EXE、实际孙进程与并发、四种 CLR 子进程、原生 DLL/TLS 和 CLR 类型初始化期间创建、调用者暂停及提交后热更新、创建前具名 Job 保留、broker 请求到达服务前的普通附加拒绝、扫描 list/status 与 prepared/attached 的交错、父进程 EOF 精确清理、持久写失败、准备及附加阶段拒绝、控制服务重载、关闭与配置切换期间取消，以及显式停用。每轮保留 `descendant-proof.json`、源码/资产摘要、原始归属文件、编译日志和实际 broker/窗口站启动器 `close` 回执；失败轮次也保留。测试只在自己的私有窗口站执行剪贴板调用，不操作交互剪贴板。
 
 受控创建的系统接口依据微软 [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw)、[创建属性与 Job 列表](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) 和 [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) 文档；实现与实机测试承诺范围以上述普通原生应用及早期启动说明为准。
 

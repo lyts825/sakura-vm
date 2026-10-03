@@ -54,6 +54,10 @@ SSH_INPUT_TIMEOUT = 8
 SSH_SESSION_ERRORS = False
 EGRESS = BASE + '/egress'
 EGRESS_BOOT = '/etc/sakura-project-egress'
+EGRESS_SYSTEMD_UNITS = ('ssh.service', 'sshd.service', 'ssh@.service', 'sshd@.service',
+                        'cron.service', 'crond.service', 'cronie.service', 'atd.service',
+                        'systemd-user-sessions.service', 'user@.service')
+EGRESS_SYSTEMD_GATE = b'[Unit]\nRequires=sakura-project-egress.service\nAfter=sakura-project-egress.service\n[Service]\nNoNewPrivileges=yes\n'
 
 
 class Refusal(Exception):
@@ -371,11 +375,11 @@ def tool(name):
     refuse('REQUIRED_TOOL', name)
 
 
-def execute(argv, data=None, timeout=15, pass_fds=(), preexec_fn=None, output_limit=65536):
+def execute(argv, data=None, timeout=15, pass_fds=(), preexec_fn=None, output_limit=65536, executable=None, controlled_env=None):
     try:
         result = subprocess.run(argv, input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                env=CLEAN_ENV, timeout=timeout, check=False,
-                                pass_fds=pass_fds, preexec_fn=preexec_fn)
+                                env=CLEAN_ENV if controlled_env is None else controlled_env, timeout=timeout, check=False,
+                                pass_fds=pass_fds, preexec_fn=preexec_fn, executable=executable)
     except (OSError, subprocess.SubprocessError):
         refuse('SYSTEM_TOOL_FAILED')
     if result.returncode or len(result.stdout) > output_limit or len(result.stderr) > 65536:
@@ -562,6 +566,8 @@ def ensure(request, store):
     # Reserve and block the UID before creating an account which another system
     # entry could start. An incomplete migration keeps the blocking intent.
     egress_prepare(value)
+    if value['networkIsolation'] == 'private':
+        egress_nnp_check(value)
     if value['phase'] == 'intent':
         try:
             group = grp.getgrnam(value['account'])
@@ -818,7 +824,7 @@ def egress_context():
     return dict(realm, bootId=boot)
 
 
-def egress_check(value):
+def egress_check(value, check_nnp=True):
     state = egress_read(value)
     if state is None and value['networkIsolation'] == 'host':
         return
@@ -829,6 +835,8 @@ def egress_check(value):
     if (state['mode'] == 'private' and (handle is None or handle != state['handle'])) or \
        (state['mode'] == 'host' and handle is not None):
         refuse('EGRESS_TABLE_CHANGED')
+    if state['mode'] == 'private' and check_nnp:
+        egress_nnp_check(value)
 
 
 def egress_prepare(value, transition=False, restoring=False):
@@ -871,7 +879,7 @@ def egress_prepare(value, transition=False, restoring=False):
         json_write(egress_path(value), pending)
 
 
-def egress_commit(value, allow_intent=False):
+def egress_commit(value, allow_intent=False, check_nnp=True):
     state = egress_read(value)
     if state is None and value['networkIsolation'] == 'host':
         return
@@ -880,7 +888,7 @@ def egress_commit(value, allow_intent=False):
        state['mode'] != value['networkIsolation'] or any(state[key] != content for key, content in egress_context().items()):
         refuse('EGRESS_PENDING')
     if state['phase'] == 'applied':
-        egress_check(value)
+        egress_check(value, check_nnp)
         return
     handle = egress_table(value)
     if state['mode'] == 'private':
@@ -901,7 +909,77 @@ def egress_commit(value, allow_intent=False):
         state['handle'] = None
     state['phase'] = 'applied'
     json_write(egress_path(value), state)
-    egress_check(value)
+    egress_check(value, check_nnp)
+
+
+def egress_openrc_nnp(service, script, configuration):
+    if not isinstance(script, bytes) or script.splitlines()[0:1] != [b'#!/sbin/openrc-run']:
+        refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', {'service': service})
+    # Conf.d is sourced before the service script. Accept the stock default
+    # launcher or a trivial delegation, never a custom start implementation or
+    # an init script which resets the policy after the managed conf.d tail.
+    combined = re.sub(br'(?m)^\s*#.*$', b'', configuration + b'\n' + script)
+    for function in (b'default_start', b'ssd_start', b'supervise_start'):
+        if re.search(br'(?m)^\s*(?:function\s+)?' + function + br'\s*(?:\(\s*\))?\s*\{', combined):
+            refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', {'service': service})
+    starts = re.findall(br'(?ms)^\s*(?:function\s+)?start\s*(?:\(\s*\))?\s*\{(.*?)\}', combined)
+    if len(starts) > 1 or (starts and starts[0].strip().rstrip(b';').strip() != b'default_start') or \
+       re.search(br'\bno_new_privs\b', re.sub(br'(?m)^\s*#.*$', b'', script)):
+        refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', {'service': service})
+    for supervisor in re.findall(br'(?m)^\s*supervisor\s*=\s*([^\n;#]*)', combined):
+        if supervisor.strip().strip(b'\"\'') not in (b'', b'start-stop-daemon', b'supervise-daemon'):
+            refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', {'service': service})
+    # A runlevel-specific conf.d file would replace the file carrying our tail.
+    if any(name.startswith(service + '.') for name in os.listdir('/etc/conf.d')):
+        refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', {'service': service, 'reason': 'runlevel-configuration'})
+    library = next((path for path in ('/lib/rc/sh', '/usr/lib/rc/sh', '/usr/libexec/rc/sh', '/libexec/rc/sh')
+                    if os.path.isfile(path + '/openrc-run.sh')), None)
+    if library is None:
+        refuse('EGRESS_NNP_UNSUPPORTED', {'service': service})
+    library = os.path.realpath(library)
+    shell = egress_boot_read(library + '/openrc-run.sh')
+    if shell is None or b'default_start' not in shell or b'start-stop-daemon.sh' not in shell or b'supervise-daemon.sh' not in shell:
+        refuse('EGRESS_NNP_UNSUPPORTED', {'service': service})
+    for name in ('start-stop-daemon', 'supervise-daemon'):
+        raw = egress_boot_read(library + '/' + name + '.sh')
+        if raw is None or b'${no_new_privs:+--no-new-privs}' not in raw:
+            refuse('EGRESS_NNP_UNSUPPORTED', {'service': service, 'tool': name})
+        try:
+            binary = os.path.realpath(tool(name))
+        except Refusal:
+            refuse('EGRESS_NNP_UNSUPPORTED', {'service': service, 'tool': name})
+        parent = directory_fd(os.path.dirname(binary))
+        descriptor = None
+        try:
+            descriptor = os.open(os.path.basename(binary), os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+            info = os.fstat(descriptor)
+            trusted(info)
+            if not info.st_mode & 0o111 or info.st_mode & 0o6000:
+                refuse('EGRESS_NNP_UNSUPPORTED', {'service': service, 'tool': name})
+            # OpenRC dispatches by argv0. supervise-daemon also requires a
+            # matching service argument and RC_SVCNAME before processing help.
+            arguments, environment = [name, '--help'], dict(CLEAN_ENV)
+            if name == 'supervise-daemon':
+                arguments = [name, service, '--help']
+                environment['RC_SVCNAME'] = service
+            try:
+                help_text = execute(arguments, executable='/proc/self/fd/' + str(descriptor),
+                                    controlled_env=environment, pass_fds=(descriptor,))
+            except Refusal:
+                refuse('EGRESS_NNP_UNSUPPORTED', {'service': service, 'tool': name, 'reason': 'launcher-help-unavailable'})
+            if b'--no-new-privs' not in help_text:
+                refuse('EGRESS_NNP_UNSUPPORTED', {'service': service, 'tool': name, 'reason': 'launcher-flag-unavailable'})
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            os.close(parent)
+
+
+def egress_openrc_tail(service, guards=2):
+    legacy = b'\n# SAKURA_PROJECT_EGRESS_V1\nrc_need="${rc_need-} sakura-project-egress"\n'
+    if guards == 1 or service == 'local':
+        return legacy
+    return b'\n# SAKURA_PROJECT_EGRESS_V2\nrc_need="${rc_need-} sakura-project-egress"\nno_new_privs=yes\n'
 
 
 def egress_boot_plan(build, manager):
@@ -913,14 +991,14 @@ def egress_boot_plan(build, manager):
     if manager == 'systemd':
         unit = ('[Unit]\nDescription=Restore Sakura project UID network policy\nDefaultDependencies=no\n'
                 'After=local-fs.target nftables.service ufw.service firewalld.service iptables.service ip6tables.service\n'
-                'Before=network-pre.target ssh.service sshd.service cron.service crond.service '
+                'Before=network-pre.target ssh.service sshd.service cron.service crond.service cronie.service '
                 'atd.service systemd-user-sessions.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\n'
                 'ExecStart=' + EGRESS_BOOT + '/restore\n[Install]\nWantedBy=multi-user.target\n').encode()
         files['/etc/systemd/system/sakura-project-egress.service'] = {'data': unit, 'mode': 0o644}
-        gate = b'[Unit]\nRequires=sakura-project-egress.service\nAfter=sakura-project-egress.service\n'
-        for name in ('ssh.service', 'sshd.service', 'cron.service', 'crond.service', 'atd.service',
-                     'systemd-user-sessions.service', 'user@.service'):
-            files['/etc/systemd/system/' + name + '.d/sakura-project-egress.conf'] = {'data': gate, 'mode': 0o644}
+        # These daemon/user-manager settings affect every ordinary user of the
+        # same VM. Root controllers retain their existing privilege to drop UID.
+        for name in EGRESS_SYSTEMD_UNITS:
+            files['/etc/systemd/system/' + name + '.d/sakura-project-egress.conf'] = {'data': EGRESS_SYSTEMD_GATE, 'mode': 0o644}
         links['/etc/systemd/system/multi-user.target.wants/sakura-project-egress.service'] = '/etc/systemd/system/sakura-project-egress.service'
     elif manager == 'openrc':
         init = ('#!/sbin/openrc-run\ndescription="Restore Sakura project UID network policy"\n'
@@ -936,7 +1014,15 @@ def egress_boot_plan(build, manager):
                 os.close(descriptor)
                 info = os.lstat(path)
                 trusted(info)
-                appends['/etc/conf.d/' + service] = b'\n# SAKURA_PROJECT_EGRESS_V1\nrc_need="${rc_need-} sakura-project-egress"\n'
+                configuration = egress_boot_read('/etc/conf.d/' + service) or b''
+                for guards in (2, 1):
+                    tail = egress_openrc_tail(service, guards)
+                    if configuration.endswith(tail):
+                        configuration = configuration[:-len(tail)]
+                        break
+                if service != 'local':
+                    egress_openrc_nnp(service, egress_boot_read(path), configuration)
+                appends['/etc/conf.d/' + service] = egress_openrc_tail(service)
     else:
         refuse('EGRESS_INIT_UNSUPPORTED')
     return files, links, appends
@@ -976,8 +1062,11 @@ def egress_bootstrap(build):
     files, links, appends = egress_boot_plan(build, manager)
     path = BASE + '/egress-boot.json'
     prior = json_read(path, True, 262144)
-    if prior is not None and (not isinstance(prior, dict) or set(prior) != {'version', 'phase', 'manager', 'build', 'files', 'links'} or
+    if prior is not None and (not isinstance(prior, dict) or set(prior) not in (
+                              {'version', 'phase', 'manager', 'build', 'files', 'links'},
+                              {'version', 'guards', 'phase', 'manager', 'build', 'files', 'links'}) or
                               type(prior['version']) is not int or prior['version'] != 1 or prior['phase'] not in ('pending', 'applied') or prior['manager'] != manager or
+                              ('guards' in prior and (type(prior['guards']) is not int or prior['guards'] != 2)) or
                               not isinstance(prior['build'], str) or not re.fullmatch('[a-f0-9]{64}', prior['build']) or
                               not isinstance(prior['files'], dict) or not isinstance(prior['links'], dict)):
         refuse('EGRESS_BOOT_CHANGED')
@@ -999,10 +1088,19 @@ def egress_bootstrap(build):
             refuse('EGRESS_BOOT_CHANGED')
         if filename in appends:
             block = appends[filename]
-            if raw is not None and b'SAKURA_PROJECT_EGRESS_V1' in raw:
-                if saved is None or raw.count(block) != 1 or not raw.endswith(block):
+            legacy = egress_openrc_tail(os.path.basename(filename), 1)
+            if raw is not None and (b'SAKURA_PROJECT_EGRESS_V1' in raw or b'SAKURA_PROJECT_EGRESS_V2' in raw):
+                if saved is None:
                     refuse('EGRESS_BOOT_CHANGED')
-                data = raw
+                if raw.count(block) == 1 and raw.endswith(block) and (block == legacy or b'SAKURA_PROJECT_EGRESS_V1' not in raw):
+                    data = raw
+                elif prior.get('guards') != 2 and raw.count(legacy) == 1 and raw.endswith(legacy) and b'SAKURA_PROJECT_EGRESS_V2' not in raw:
+                    data = raw[:-len(legacy)] + block
+                elif prior['phase'] == 'pending' and raw.count(legacy) == 1 and raw.endswith(legacy) and \
+                     hashlib.sha256(raw).hexdigest() == saved['previousSha256'] and b'SAKURA_PROJECT_EGRESS_V2' not in raw:
+                    data = raw[:-len(legacy)] + block
+                else:
+                    refuse('EGRESS_BOOT_CHANGED')
             else:
                 if saved is not None:
                     refuse('EGRESS_BOOT_CHANGED')
@@ -1028,14 +1126,14 @@ def egress_bootstrap(build):
                 refuse('EGRESS_BOOT_CHANGED')
         elif prior is not None and prior['phase'] == 'applied':
             refuse('EGRESS_BOOT_CHANGED')
-    if prior is not None and prior['phase'] == 'applied' and prior['build'] == build and \
+    if prior is not None and prior.get('guards') == 2 and prior['phase'] == 'applied' and prior['build'] == build and \
        set(prior['files']) == set(proposed) and all(prior['files'][name]['sha256'] == hashlib.sha256(item['data']).hexdigest()
                                                  for name, item in proposed.items()):
         for filename, item in proposed.items():
             if stat.S_IMODE(os.lstat(filename).st_mode) != item['mode']:
                 refuse('EGRESS_BOOT_CHANGED')
         return manager
-    owner = {'version': 1, 'phase': 'pending', 'manager': manager, 'build': build,
+    owner = {'version': 1, 'guards': 2, 'phase': 'pending', 'manager': manager, 'build': build,
              'files': {name: {'sha256': hashlib.sha256(item['data']).hexdigest(), 'mode': item['mode'],
                               'previousSha256': None if egress_boot_read(name) is None else hashlib.sha256(egress_boot_read(name)).hexdigest()}
                        for name, item in proposed.items()},
@@ -1054,11 +1152,14 @@ def egress_bootstrap(build):
     for filename, destination in links.items():
         if not os.path.lexists(filename):
             os.symlink(destination, filename)
-            descriptor = directory_fd(os.path.dirname(filename))
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+        # A previous pending attempt may have created the link before its
+        # directory sync failed. Sync the same Root-controlled parent even
+        # when the link already exists; O_PATH pins themselves cannot fsync.
+        descriptor = egress_nnp_directory(os.path.dirname(filename))
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     if manager == 'systemd':
         execute([tool('systemctl'), 'daemon-reload'], timeout=30)
     else:
@@ -1068,7 +1169,495 @@ def egress_bootstrap(build):
     return manager
 
 
+def egress_systemd_query(descriptor, properties, unit=None):
+    arguments = ['systemctl', 'show', '--system', '--no-pager', '--all', '--property=' + ','.join(properties)]
+    if unit is not None:
+        arguments.append(unit)
+    return execute(arguments, executable='/proc/self/fd/' + str(descriptor), pass_fds=(descriptor,), timeout=15)
+
+
+def egress_systemd_paths(descriptor):
+    try:
+        lines = egress_systemd_query(descriptor, ('UnitPath',)).decode('utf-8').splitlines()
+        if len(lines) != 1 or not lines[0].startswith('UnitPath='):
+            raise ValueError()
+        entries = lines[0][len('UnitPath='):].split()
+        if not entries or len(entries) > 128 or any(not re.fullmatch('/[A-Za-z0-9_./@+-]+', entry) or
+             os.path.normpath(entry) != entry for entry in entries):
+            raise ValueError()
+        # Normal merged-/usr unit search paths may themselves be Root symlinks.
+        # Their resolved directories are pinned and owner-checked when scanned.
+        return tuple(dict.fromkeys(os.path.realpath(entry) for entry in entries))
+    except (Refusal, UnicodeError, ValueError):
+        refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', {'manager': 'systemd', 'reason': 'unit-search-path-unavailable'})
+
+
+def egress_nnp_directory(path):
+    # directory_fd pins paths with O_PATH. getdents/fdopendir require a readable
+    # descriptor, opened relative to that pin without resolving the path again.
+    parent = directory_fd(path)
+    try:
+        descriptor = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        try:
+            trusted(os.fstat(descriptor), True)
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
+    finally:
+        os.close(parent)
+
+
+def egress_systemd_entries(path):
+    if not os.path.lexists(path):
+        return []
+    descriptor = egress_nnp_directory(path)
+    try:
+        entries = os.listdir(descriptor)
+        if len(entries) > 8192:
+            refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', {'manager': 'systemd', 'reason': 'unit-search-bound'})
+        return entries
+    finally:
+        os.close(descriptor)
+
+
+def egress_systemd_absent(unit, paths):
+    # systemd does not parse drop-ins when the fragment is missing or masked.
+    # Inspect the manager's actual search paths instead of trusting its default
+    # NoNewPrivileges=false or claiming an absent daemon is already protected.
+    detail = {'manager': 'systemd', 'service': unit}
+    stem = unit[:-len('.service')]
+    template = stem.split('@', 1)[0] + '@.service' if '@' in stem else unit
+    scopes = {'service.d', unit + '.d', template + '.d'}
+    for index, character in enumerate(stem):
+        if character == '-':
+            scopes.add(stem[:index + 1] + '.service.d')
+    managed = False
+    expected = os.path.realpath('/etc/systemd/system') + '/' + template + '.d/sakura-project-egress.conf'
+    for root in paths:
+        for scope in sorted(scopes):
+            folder = root + '/' + scope
+            for name in egress_systemd_entries(folder):
+                if not name.endswith('.conf'):
+                    continue
+                filename = folder + '/' + name
+                try:
+                    raw = egress_boot_read(filename)
+                except (OSError, Refusal):
+                    refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, path=filename, reason='dropin-unverifiable'))
+                if raw == EGRESS_SYSTEMD_GATE:
+                    managed = managed or filename == expected
+                    continue
+                # Retain harmless operator/vendor settings. Policy-changing
+                # drop-ins for absent services need a loaded effective-policy
+                # check; never guess how continuations or exec prefixes parse.
+                try:
+                    section = None
+                    for line in raw.decode('utf-8').splitlines():
+                        line = line.strip()
+                        if not line or line.startswith(('#', ';')):
+                            continue
+                        if '\\' in line:
+                            raise ValueError()
+                        if line in ('[Unit]', '[Service]', '[Install]'):
+                            section = line
+                            continue
+                        key, value = line.split('=', 1)
+                        key, value = key.strip(), value.strip()
+                        if section is None or not re.fullmatch('[A-Za-z][A-Za-z0-9]*', key) or key.startswith('Exec') or \
+                           key in ('User', 'Group', 'SupplementaryGroups', 'SecureBits', 'AmbientCapabilities') or \
+                           (key == 'NoNewPrivileges' and value not in ('yes', 'true', 'on', '1')):
+                            raise ValueError()
+                except (AttributeError, UnicodeError, ValueError):
+                    refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, path=filename, reason='unqualified-extra-dropin'))
+    if not managed:
+        refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='managed-future-policy-unavailable'))
+
+
+def egress_systemd_nnp(units):
+    executable = os.path.realpath(tool('systemctl'))
+    parent = directory_fd(os.path.dirname(executable))
+    descriptor, paths = None, None
+    commands = ('ExecStart', 'ExecStartPre', 'ExecStartPost', 'ExecCondition', 'ExecReload', 'ExecStop', 'ExecStopPost')
+    base = ('Id', 'LoadState', 'ActiveState', 'NeedDaemonReload', 'NoNewPrivileges', 'User', 'AmbientCapabilities', 'SecureBits')
+    properties = base + tuple(name for command in commands for name in (command, command + 'Ex'))
+    try:
+        descriptor = os.open(os.path.basename(executable), os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        info = os.fstat(descriptor)
+        trusted(info)
+        if not info.st_mode & 0o111 or info.st_mode & 0o6000:
+            refuse('EGRESS_NNP_UNSUPPORTED', {'manager': 'systemd'})
+        pending = []
+        for unit in units:
+            if unit.endswith('@.service'):
+                unit = unit[:-len('.service')] + 'sakura-nnp-check.service'
+            pending.append(unit)
+        if any(unit.startswith(('ssh@', 'sshd@')) for unit in pending):
+            paths = egress_systemd_paths(descriptor)
+            # Instance-specific fragments/drop-ins can override the template.
+            # Qualify every currently installed SSH instance, not only a probe.
+            for root in paths:
+                for name in egress_systemd_entries(root):
+                    instance = name[:-2] if name.endswith('.service.d') else name
+                    if re.fullmatch('sshd?@[^/@]+\\.service', instance) and '@.service' not in instance:
+                        pending.append(instance)
+        pending = list(dict.fromkeys(pending))
+        if len(pending) > 1024:
+            refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', {'manager': 'systemd', 'reason': 'unit-search-bound'})
+        for unit in pending:
+            detail = {'manager': 'systemd', 'service': unit}
+            try:
+                raw = egress_systemd_query(descriptor, properties, unit)
+            except Refusal:
+                refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-policy-unavailable'))
+            values = {}
+            try:
+                for line in raw.decode('utf-8').splitlines():
+                    if not line:
+                        continue
+                    key, value = line.split('=', 1)
+                    if key not in properties or (key in values and not key.startswith('Exec')):
+                        raise ValueError()
+                    values.setdefault(key, []).append(value)
+            except (ValueError, UnicodeError):
+                refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-policy-invalid'))
+            if any(key not in values or len(values[key]) != 1 for key in base):
+                refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-policy-incomplete'))
+            aliases = {'ssh.service', 'sshd.service'} if unit in ('ssh.service', 'sshd.service') else \
+                      {'cron.service', 'crond.service', 'cronie.service'} if unit in ('cron.service', 'crond.service', 'cronie.service') else {unit}
+            if values['Id'][0] not in aliases:
+                refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-unit-changed'))
+            if values['NeedDaemonReload'][0] != 'no':
+                refuse('EGRESS_NNP_PENDING', dict(detail, reason='daemon-reload-required'))
+            state = values['LoadState'][0]
+            if state in ('not-found', 'masked') and values['ActiveState'][0] == 'inactive':
+                if paths is None:
+                    paths = egress_systemd_paths(descriptor)
+                egress_systemd_absent(unit, paths)
+                continue
+            if state != 'loaded' or values['NoNewPrivileges'][0] != 'yes':
+                refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-no-new-privileges'))
+            account = re.fullmatch('user@([1-9][0-9]*)\\.service', unit)
+            if account:
+                uid = account.group(1)
+                allowed_users = {uid}
+                try:
+                    allowed_users.add(pwd.getpwuid(int(uid)).pw_name)
+                except KeyError:
+                    pass
+                if values['User'][0] not in allowed_users or values['AmbientCapabilities'][0] or values['SecureBits'][0] != '0':
+                    refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='user-manager-identity-or-capabilities'))
+            # Both printers omit empty exec arrays even with --all. A populated
+            # legacy command must have an equally populated extended property;
+            # otherwise this systemd cannot expose authoritative prefix flags.
+            if not any(values.get('ExecStartEx', [])):
+                refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-start-unavailable'))
+            for key in commands:
+                legacy = [command for command in values.get(key, []) if command]
+                extended = [command for command in values.get(key + 'Ex', []) if command]
+                if len(legacy) != len(extended):
+                    refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-exec-flags-unavailable'))
+                for command in extended:
+                    if not command.startswith('{ path=') or not command.endswith(' }'):
+                        refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-exec-flags-invalid'))
+                    # The real flag field follows argv, which may itself contain
+                    # text resembling the printer's field names.
+                    pieces = command.rsplit(' ; flags=', 1)
+                    if len(pieces) != 2 or ' ; start_time=' not in pieces[1]:
+                        refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='effective-exec-flags-invalid'))
+                    flags = pieces[1].split(' ; start_time=', 1)[0].split()
+                    if any(flag not in ('ignore-failure', 'no-env-expand', 'via-shell') for flag in flags):
+                        refuse('EGRESS_NNP_SERVICE_UNSUPPORTED', dict(detail, reason='privileged-or-unknown-exec-flag'))
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent)
+
+
+def egress_nnp_configuration():
+    owner = json_read(BASE + '/egress-boot.json', True, 262144)
+    if not isinstance(owner, dict) or set(owner) != {'version', 'guards', 'phase', 'manager', 'build', 'files', 'links'} or \
+       type(owner['version']) is not int or owner['version'] != 1 or type(owner['guards']) is not int or owner['guards'] != 2 or \
+       owner['phase'] != 'applied' or not isinstance(owner['build'], str) or not re.fullmatch('[a-f0-9]{64}', owner['build']):
+        refuse('EGRESS_NNP_PENDING')
+    manager = 'systemd' if os.path.isdir('/run/systemd/system') else 'openrc' if os.path.isfile('/sbin/openrc-run') else None
+    if manager != owner['manager']:
+        refuse('EGRESS_NNP_UNSUPPORTED')
+    files, links, appends = egress_boot_plan(owner['build'], manager)
+    if not isinstance(owner['files'], dict) or set(owner['files']) != set(files) | set(appends) or owner['links'] != links:
+        refuse('EGRESS_NNP_PENDING')
+    for filename in set(files) | set(appends):
+        item = owner['files'][filename]
+        if not isinstance(item, dict) or set(item) != {'sha256', 'mode', 'previousSha256'} or \
+           not isinstance(item['sha256'], str) or not re.fullmatch('[a-f0-9]{64}', item['sha256']):
+            refuse('EGRESS_NNP_PENDING')
+        raw = egress_boot_read(filename)
+        expected_mode = files[filename]['mode'] if filename in files else 0o600
+        if raw is None or item['mode'] != expected_mode or stat.S_IMODE(os.lstat(filename).st_mode) != expected_mode:
+            refuse('EGRESS_NNP_PENDING')
+        if filename in files:
+            if raw != files[filename]['data'] or hashlib.sha256(raw).hexdigest() != item['sha256']:
+                refuse('EGRESS_NNP_PENDING')
+        elif not raw.endswith(appends[filename]) or raw.count(appends[filename]) != 1:
+            refuse('EGRESS_NNP_PENDING')
+    for filename, destination in links.items():
+        info = os.lstat(filename)
+        if not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or os.readlink(filename) != destination:
+            refuse('EGRESS_NNP_PENDING')
+    if manager == 'systemd':
+        egress_systemd_nnp(EGRESS_SYSTEMD_UNITS)
+    return manager
+
+
+def egress_nnp_process(parent, pid):
+    descriptor = None
+    try:
+        descriptor = os.open(str(pid), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+        def part(name, limit=16384):
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=descriptor)
+            try:
+                raw = os.read(fd, limit + 1)
+                if len(raw) > limit:
+                    refuse('EGRESS_NNP_PROCESS_CHANGED')
+                return raw
+            finally:
+                os.close(fd)
+        def identity():
+            fields = part('stat').rsplit(b') ', 1)[1].split()
+            if len(fields) < 20 or any(not re.fullmatch(b'0|[1-9][0-9]*', fields[index]) for index in (1, 19)):
+                refuse('EGRESS_NNP_PROCESS_CHANGED')
+            return int(fields[1]), fields[19].decode('ascii')
+        parent_pid, start = identity()
+        status = dict(line.split(b':', 1) for line in part('status').splitlines() if b':' in line)
+        uids = [int(item) for item in status[b'Uid'].split()]
+        if len(uids) != 4 or status[b'NoNewPrivs'].strip() not in (b'0', b'1'):
+            refuse('EGRESS_NNP_PROCESS_CHANGED')
+        executable = os.readlink('exe', dir_fd=descriptor)
+        image = os.stat('exe', dir_fd=descriptor)
+        arguments = part('cmdline', 65536).rstrip(b'\0').split(b'\0')
+        groups = part('cgroup').decode('utf-8').splitlines()
+        membership = next((line[3:] for line in groups if line.startswith('0::')), None)
+        final_image = os.stat('exe', dir_fd=descriptor)
+        if identity() != (parent_pid, start) or (final_image.st_dev, final_image.st_ino) != (image.st_dev, image.st_ino) or \
+           os.readlink('exe', dir_fd=descriptor) != executable:
+            refuse('EGRESS_NNP_PROCESS_CHANGED')
+        return dict(pid=pid, parentPid=parent_pid, startTicks=start, executable=executable, image=image, uids=uids,
+                    nnp=int(status[b'NoNewPrivs']), arguments=arguments, cgroupName=membership,
+                    caps=[int(status[key].strip(), 16) for key in (b'CapEff', b'CapPrm', b'CapAmb')])
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def egress_nnp_live(value, manager):
+    # Proc directory FDs pin the actual process while its start ticks, image and
+    # cgroup are checked. Neither a process title alone nor a stale PID file is
+    # accepted as proof that an ordinary root daemon has the required flag.
+    services = {'sshd': ('/usr/sbin/sshd', '/usr/sbin/sshd.pam', '/usr/sbin/sshd.krb5',
+                         '/usr/lib/ssh/sshd-session', '/usr/lib/ssh/sshd-auth',
+                         '/usr/lib/openssh/sshd-session', '/usr/lib/openssh/sshd-auth',
+                         '/usr/libexec/openssh/sshd-session', '/usr/libexec/openssh/sshd-auth'),
+                'cron': ('/usr/sbin/cron',), 'crond': ('/usr/sbin/crond',),
+                'cronie': ('/usr/sbin/crond',), 'atd': ('/usr/sbin/atd',)}
+    images, known_paths = {}, {}
+    for service, names in services.items():
+        for name in names:
+            if not os.path.isfile(name):
+                continue
+            resolved = os.path.realpath(name)
+            parent = directory_fd(os.path.dirname(resolved))
+            try:
+                descriptor = os.open(os.path.basename(resolved), os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+                try:
+                    info = os.fstat(descriptor)
+                    trusted(info)
+                    images.setdefault((info.st_dev, info.st_ino), []).append((service, name))
+                    known_paths.setdefault(resolved, []).append((service, name))
+                finally:
+                    os.close(descriptor)
+            finally:
+                os.close(parent)
+    def candidates_for(process):
+        candidates = images.get((process['image'].st_dev, process['image'].st_ino), [])
+        if not candidates and process['image'].st_uid == 0 and stat.S_ISREG(process['image'].st_mode) and not process['image'].st_mode & 0o022:
+            # Package replacement can leave accepted connections running the
+            # former Root-owned image. Its exact kernel exe path still matters.
+            candidates = known_paths.get(process['executable'].removesuffix(' (deleted)'), [])
+        return candidates
+    parent = egress_nnp_directory('/proc')
+    try:
+        entries = [name for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name)]
+        if len(entries) > 32768:
+            refuse('EGRESS_NNP_PROCESS_LIMIT')
+        processes = {}
+        for name in entries:
+            process = egress_nnp_process(parent, int(name))
+            if process is not None:
+                processes[process['pid']] = process
+        # Only the verified controller's real, all-root ancestor chain proves
+        # an already authenticated Root administration connection. A mutable
+        # sshd title naming "root" is not authentication evidence. The listener
+        # remains subject to NNP even when it is an ancestor of this request.
+        root_ancestors = set()
+        ancestor = processes.get(os.getpid())
+        while ancestor is not None and ancestor['uids'] == [0] * 4:
+            if ancestor['pid'] in root_ancestors or len(root_ancestors) >= 128:
+                refuse('EGRESS_NNP_PROCESS_CHANGED')
+            root_ancestors.add(ancestor['pid'])
+            ancestor = processes.get(ancestor['parentPid'])
+        if os.getpid() not in root_ancestors:
+            refuse('EGRESS_NNP_PROCESS_CHANGED')
+        # A newly forked process must not be omitted from the admission scan.
+        # The following request may retry once a busy process tree is stable.
+        if any(name not in entries for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name)):
+            refuse('EGRESS_NNP_PROCESS_CHANGED')
+        listeners = {}
+        def checked(process):
+            current = egress_nnp_process(parent, process['pid'])
+            fields = ('pid', 'parentPid', 'startTicks', 'executable', 'uids', 'nnp', 'caps', 'cgroupName')
+            image_fields = ('st_dev', 'st_ino', 'st_uid', 'st_mode')
+            if current is None or any(current[key] != process[key] for key in fields) or \
+               any(getattr(current['image'], key) != getattr(process['image'], key) for key in image_fields):
+                refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'pid': process['pid'], 'service': 'sshd'})
+            return current
+        def ssh_image(process):
+            return any(service == 'sshd' for service, _command in candidates_for(process))
+        def listener_image(process):
+            if process['uids'] != [0] * 4:
+                return False
+            arguments = process['arguments']
+            first = arguments[0] if arguments else b''
+            if any(re.fullmatch(b'/etc/sakura/ssh/(default|[a-f0-9]{16})/sshd_config', arg) for arg in arguments):
+                return False
+            return any(service == 'sshd' and os.path.basename(command) not in ('sshd-session', 'sshd-auth') and
+                       (first in (command.encode(), os.path.basename(command).encode()) or b' [listener]' in first)
+                       for service, command in candidates_for(process))
+        def protected(process):
+            if process['nnp'] != 1:
+                refuse('EGRESS_NNP_RESTART_REQUIRED', dict(manager=manager, service='sshd', pid=process['pid'],
+                       parentPid=process['parentPid'], startTicks=process['startTicks'], executable=process['executable'],
+                       cgroupName=process['cgroupName']))
+        def openrc_ssh_owned(process, aliases):
+            # Standard OpenRC daemons may inherit '/' before cgroups mount.
+            # A Root PID file anchors only an actual protected listener; its
+            # accepted/split SSH children need an unchanged kernel parent chain.
+            for alias in aliases:
+                if alias not in listeners:
+                    path = '/run/' + alias + '.pid'
+                    raw = egress_boot_read(path)
+                    listener = processes.get(int(raw.strip())) if raw is not None and re.fullmatch(b'[1-9][0-9]{0,9}', raw.strip()) else None
+                    listeners[alias] = None
+                    if listener is not None and listener_image(listener):
+                        listener = checked(listener)
+                        if listener_image(listener):
+                            protected(listener)
+                            listeners[alias] = (path, raw, listener)
+                authority = listeners[alias]
+                if authority is None:
+                    continue
+                path, raw, listener = authority
+                trail, seen, current = [], set(), process
+                while current is not None:
+                    if current['pid'] in seen or len(seen) >= 128:
+                        refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'pid': process['pid'], 'service': 'sshd'})
+                    if not ssh_image(current):
+                        break
+                    seen.add(current['pid'])
+                    current = checked(current)
+                    protected(current)
+                    trail.append(current)
+                    if current['pid'] == listener['pid']:
+                        # Recheck each relationship after reaching the fixed
+                        # listener, including UID/image changes or reparenting.
+                        for node in reversed(trail):
+                            checked(node)
+                        if not listener_image(checked(listener)) or egress_boot_read(path) != raw:
+                            refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'pid': listener['pid'], 'service': 'sshd'})
+                        return True
+                    following = processes.get(current['parentPid'])
+                    if following is not None and int(following['startTicks']) > int(current['startTicks']):
+                        refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'pid': current['pid'], 'service': 'sshd'})
+                    current = following
+            return False
+        for process in processes.values():
+            detail = dict(manager=manager, pid=process['pid'], parentPid=process['parentPid'], startTicks=process['startTicks'],
+                          executable=process['executable'], cgroupName=process['cgroupName'])
+            if value['uid'] in process['uids']:
+                # A verified setuid launcher is briefly root before its fixed
+                # native drop. Project code cannot execute in this interval.
+                native = re.fullmatch(re.escape(BUILDS) + '/[a-f0-9]{64}/launch', process['executable'])
+                if native and process['uids'][1] == 0 and process['image'].st_uid == 0 and \
+                   stat.S_IMODE(process['image'].st_mode) == 0o4755:
+                    continue
+                detail['service'] = 'project-existing-process'
+                if process['nnp'] != 1:
+                    refuse('EGRESS_NNP_RESTART_REQUIRED', detail)
+                if process['uids'] != [value['uid']] * 4 or any(process['caps']):
+                    refuse('EGRESS_NNP_ACCOUNT_PRIVILEGED', detail)
+                continue
+            for service, command in candidates_for(process):
+                arguments = process['arguments']
+                first = arguments[0] if arguments else b''
+                direct = first in (command.encode(), os.path.basename(command).encode())
+                ssh_helper = service == 'sshd' and os.path.basename(command) in ('sshd-session', 'sshd-auth')
+                listener = service == 'sshd' and not ssh_helper and (direct or b' [listener]' in first)
+                busybox = service in ('crond', 'cronie') and len(arguments) > 1 and arguments[1] == b'crond'
+                # Every live sshd image matters, including accepted/pre-auth
+                # Root children and ordinary user sessions surviving a listener
+                # restart. Cron/at daemons are Root and keep their launch argv.
+                if service != 'sshd' and (process['uids'] != [0] * 4 or not (direct or busybox)):
+                    continue
+                # Dedicated project SSH is admitted by the separate daemon/run
+                # receipt and drops in the native launcher on every session.
+                if service == 'sshd' and (any(re.fullmatch(b'/etc/sakura/ssh/(default|[a-f0-9]{16})/sshd_config', arg) for arg in arguments) or
+                   re.fullmatch('/(?:openrc\\.sakura-ssh-(?:default|[a-f0-9]{16})|system\\.slice/sakura-ssh-(?:default|[a-f0-9]{16})\\.service)(?:/.*)?',
+                                process['cgroupName'] or '')):
+                    continue
+                if service == 'sshd' and not listener and process['pid'] in root_ancestors:
+                    continue
+                aliases = ('ssh', 'sshd') if service == 'sshd' else ('cron', 'crond', 'cronie') if service in ('cron', 'crond', 'cronie') else ('atd',)
+                domains = [('/system.slice/' + alias + '.service' if manager == 'systemd' else '/openrc.' + alias) for alias in aliases]
+                owned_group = any(process['cgroupName'] == domain or (process['cgroupName'] or '').startswith(domain + '/') for domain in domains)
+                if service == 'sshd' and manager == 'systemd' and re.fullmatch(
+                   r'/system\.slice/(?:system-sshd?\.slice/)?sshd?@[^/]+\.service(?:/.*)?', process['cgroupName'] or ''):
+                    owned_group = True
+                detail['service'] = service
+                if process['nnp'] != 1:
+                    # An old orphaned sshd connection may retain its actual
+                    # installed image while its former PID file has been replaced.
+                    # Refuse it instead of claiming a listener restart secured it.
+                    refuse('EGRESS_NNP_RESTART_REQUIRED', detail)
+                if not owned_group:
+                    # OpenRC can have been started before unified cgroups were
+                    # mounted. Its exact root PID file is a second authority,
+                    # checked against the already-pinned actual daemon image.
+                    owned_pid = False
+                    if manager == 'openrc' and service == 'sshd':
+                        owned_pid = openrc_ssh_owned(process, aliases)
+                    elif manager == 'openrc':
+                        for alias in aliases:
+                            raw = egress_boot_read('/run/' + alias + '.pid')
+                            if raw is not None and raw.strip() == str(process['pid']).encode():
+                                owned_pid = True
+                                break
+                    if not owned_pid:
+                        refuse('EGRESS_NNP_SERVICE_UNVERIFIED', detail)
+                break
+    finally:
+        os.close(parent)
+
+
+def egress_nnp_check(value):
+    manager = egress_nnp_configuration()
+    if manager == 'systemd':
+        egress_systemd_nnp(('user@' + str(value['uid']) + '.service',))
+    egress_nnp_live(value, manager)
+
+
 def egress_restore(store):
+    manager = egress_nnp_configuration()
     count = 0
     # Intent accounts also get their reserved UID blocked before any SSH/cron
     # process may start, even if their directory migration is still pending.
@@ -1077,8 +1666,10 @@ def egress_restore(store):
         if value is None:
             continue
         reservation_check(value, store)
+        if value['networkIsolation'] == 'private' and manager == 'systemd':
+            egress_systemd_nnp(('user@' + str(value['uid']) + '.service',))
         egress_prepare(value, restoring=True)
-        egress_commit(value, allow_intent=True)
+        egress_commit(value, allow_intent=True, check_nnp=False)
         count += value['networkIsolation'] == 'private'
     return {'version': 1, 'privateAccounts': count}
 
@@ -2128,6 +2719,8 @@ def rebind(value, request, boot):
                      networkIsolation=network, revision=value['revision'] + 1)
     probe(candidate)
     egress_prepare(candidate, transition=True)
+    if candidate['networkIsolation'] == 'private':
+        egress_nnp_check(candidate)
     migration_retire_applied(value)
     binding_write(candidate)
     egress_commit(candidate)
@@ -2727,8 +3320,20 @@ def ssh_session(value, request, boot, build, original, term):
     return run, ssh_payload(value, record['environment'], original, term)
 
 
+def local_transport(descriptor, code):
+    info = os.fstat(descriptor)
+    if stat.S_ISSOCK(info.st_mode):
+        # An inherited socket still belongs to its creating network and UID.
+        # Only local socketpairs are valid SSH/command transport; inspecting
+        # SO_DOMAIN checks the actual descriptor, independent of Python hints.
+        with socket.fromfd(descriptor, socket.AF_UNIX, socket.SOCK_STREAM) as channel:
+            if channel.getsockopt(socket.SOL_SOCKET, socket.SO_DOMAIN) != socket.AF_UNIX:
+                refuse(code)
+    return info
+
+
 def ssh_launch(value, run, build, payload):
-    info = os.fstat(0)
+    info = local_transport(0, 'SSH_SESSION_NETWORK_CHANNEL')
     flags = fcntl.fcntl(0, fcntl.F_GETFL)
     if flags & os.O_ACCMODE == os.O_WRONLY or not (stat.S_ISFIFO(info.st_mode) or stat.S_ISSOCK(info.st_mode) or
                                                   (stat.S_ISCHR(info.st_mode) and os.isatty(0))):

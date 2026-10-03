@@ -295,8 +295,7 @@ export class FolderSync {
       this.machines.get(id);
       const previous = await this.config(id);
       const file = this.file(id, 'sync');
-      await writeFile(`${file}.tmp`, JSON.stringify(config));
-      await rename(`${file}.tmp`, file);
+      await writeStore(file, config);
       if (previous?.host !== config.host || previous?.guest !== config.guest) {
         await rm(this.file(id, 'sync-state'), { force: true });
         await rm(this.file(id, 'sync-base'), { force: true });

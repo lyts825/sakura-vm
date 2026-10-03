@@ -16,7 +16,8 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
   request: Request; vmId: string; setting?: Setting; monitor?: Monitor | null;
   promotion?: Promotion | null; localFailover?: { error: string | null } | null;
   hostFailover?: { configured: boolean; armed: boolean; phase: string | null;
-    targetVmId: string | null; error: string | null } | null;
+    targetVmId: string | null; error: string | null;
+    failback?: 'pending' | 'completed' | null; recoveryHeld?: boolean } | null;
   reload: () => void;
 }) {
   const peers = useRemote<PeerView>(request, '/host-peers', true, 10000);
@@ -33,7 +34,8 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
     setting?.options?.autoHostFailover === true);
   const [dataReconciled, setDataReconciled] = useState(false);
   const [result, setResult] = useState('');
-  const rejoinAvailable = !!promotion || ['fencing', 'fenced', 'promoted'].includes(hostFailover?.phase || '');
+  const rejoinAvailable = !!promotion || !!hostFailover?.recoveryHeld ||
+    ['fencing', 'fenced', 'promoted'].includes(hostFailover?.phase || '');
   useEffect(() => { setDataReconciled(false); },
     [vmId, promotion?.remoteVmId, hostFailover?.targetVmId, rejoinAvailable]);
   useEffect(() => {
@@ -79,13 +81,22 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
         disabled={!hostFailover?.configured}
         onChange={(event) => setAutoHostFailover(event.target.checked)} />独立见证节点确认宿主隔离后自动接管</label>
     </div>
-    {autoHostFailover && hostFailover && <p role={hostFailover.error ? 'alert' : undefined}>
-      见证节点：{hostFailover.phase === 'promoted' ? '目标已接管' :
+    {(autoHostFailover || hostFailover?.failback || hostFailover?.recoveryHeld) && hostFailover &&
+      <p role={hostFailover.error || hostFailover.recoveryHeld ? 'alert' : undefined}>
+      见证节点：{hostFailover.recoveryHeld ? '恢复封锁，等待核对全部历史副本' :
+        hostFailover.failback === 'pending' ? '等待来源健康并回切流量' :
+        hostFailover.failback === 'completed' ? '流量已回切来源' :
+        hostFailover.phase === 'promoted' ? '目标已接管' :
         hostFailover.phase === 'fencing' ? '正在隔离来源' :
         hostFailover.phase === 'fenced' ? '来源已隔离，等待目标就绪' :
         hostFailover.armed ? '已布防' : '未布防'}
       {hostFailover.targetVmId && ` · 目标 ${hostFailover.targetVmId}`}
       {hostFailover.error && ` · ${hostFailover.error}`}</p>}
+    {hostFailover?.failback === 'pending' &&
+      !(setting?.enabled && setting.options?.autoHostFailover) &&
+      <p className="muted">后续接管已关闭，已授权的流量回切仍会继续。</p>}
+    {hostFailover?.recoveryHeld &&
+      <p className="muted">解除恢复封锁前，须停止该来源的全部历史副本并核对写入数据。</p>}
     {!hostFailover?.configured && <p className="muted">需先设置 SAKURA_HA_WITNESS_CONFIG_FILE 并重启 Sakura，才能启用宿主失联接管。</p>}
     {promotion && <p role="alert">来源启动已被持久封锁；目标实例 <code>{promotion.remoteVmId}</code>：
       {promotion.status === 'accepted' ? '已接受启动' : '等待启动确认'} ·
@@ -112,9 +123,10 @@ export function HaFailoverPanel({ request, vmId, setting, monitor, promotion, lo
       {rejoinAvailable &&
         <button className="secondary" disabled={action.busy || !dataReconciled}
         onClick={() => void action.run(async () => {
-          await request(`/vms/${vmId}/next-features`, 'POST',
+          const rejoined = await request(`/vms/${vmId}/next-features`, 'POST',
             { action: 'run', featureId: 'ha-failover',
               options: { mode: 'rejoin', dataReconciled: true } });
+          setResult(JSON.stringify(rejoined, null, 2));
           setDataReconciled(false);
           reload();
         }, '目标副本已持久封锁，来源可以重新启动')}>目标停机后退出接管</button>}

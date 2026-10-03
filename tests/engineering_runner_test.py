@@ -114,6 +114,38 @@ class Engineering(unittest.TestCase):
         with self.assertRaises(runner.Failure):
             self.execute("archive", mode="extract", path="archive.tar.gz", target="expanded")
 
+    def test_directory_publication_retries_windows_sharing_without_overwriting_a_new_target(self):
+        stage, target = self.root / "stage", self.root / "published"
+        stage.mkdir()
+        (stage / "content").write_text("owned", encoding="utf-8")
+        busy = PermissionError("scanner sharing")
+        busy.winerror = 32
+        with patch.object(runner, "os", wraps=os) as platform_os, \
+             patch.object(runner.time, "sleep") as sleep:
+            platform_os.name = "nt"
+            platform_os.rename.side_effect = [busy, None]
+            runner.publish_new_directory(stage, target)
+            self.assertEqual(platform_os.rename.call_count, 2)
+            sleep.assert_called_once_with(.025)
+        self.assertTrue(stage.exists())
+        with patch.object(runner, "os", wraps=os) as platform_os, \
+             patch.object(runner.time, "sleep", side_effect=lambda _seconds: target.mkdir()):
+            platform_os.name = "nt"
+            platform_os.rename.side_effect = busy
+            with self.assertRaisesRegex(runner.Failure, "拒绝覆盖"):
+                runner.publish_new_directory(stage, target)
+            platform_os.rename.assert_called_once_with(stage, target)
+        self.assertTrue(stage.exists())
+        self.assertTrue(target.is_dir())
+        permanent = PermissionError("denied")
+        permanent.winerror = 1314
+        with patch.object(runner, "os", wraps=os) as platform_os:
+            platform_os.name = "nt"
+            platform_os.rename.side_effect = permanent
+            with self.assertRaises(PermissionError):
+                runner.publish_new_directory(stage, self.root / "other")
+            platform_os.rename.assert_called_once()
+
     def test_archive_rejects_all_members_before_writing(self):
         for index, name in enumerate(("../escape", "/outside", "a/../../escape", "C:/outside", "a\\b")):
             archive_path = self.root / ("malicious" + str(index) + ".tar")

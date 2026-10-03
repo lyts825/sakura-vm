@@ -13,6 +13,10 @@ export type NativeClipboardProcess = {
   bits: 0 | 32 | 64;
 };
 export type NativeClipboardProcessState = NativeClipboardProcess & {
+  inheritance?: {
+    application: { image: string; sha256: string };
+    parent: { pid: number; created: string };
+  };
   state: 'enforced' | 'error' | 'disabled';
   error?: string;
   blockedCopy: number;

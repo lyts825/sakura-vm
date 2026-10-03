@@ -123,7 +123,7 @@ export const extendedFeatureCatalog = [
   ['ipv6', 'IPv6 客户机网络', '网络', 'P1', '为客户机提供 IPv6 网络能力。', 'available'],
   ['static-routes', '静态租约与路由', '网络', 'P1', '保存 DHCP 租约和自定义路由。', 'available'],
   ['network-isolation', '项目网络隔离', '网络', 'P1',
-    '将网页与 CLI 终端、API/SDK/CLI 项目命令、服务、浏览器开发环境、单应用窗口、KDE 桌面、Envoy 边车和受管容器置于项目独立网络命名空间。', 'experimental'],
+    '为托管项目入口提供独立网络命名空间，并按项目 UID 限制共享网络连接、核对普通 SSH/定时服务的提权限制。', 'experimental'],
   ['egress-policy', '出站白名单', '网络', 'P1', '限制客户机可访问的目标。', 'available'],
   ['network-quota', '网络带宽配额', '网络', 'P2', '限制出站带宽、并发 TCP 连接和新建连接速率。', 'available'],
   ['ssh-agent-forward', 'SSH Agent 转发', '网络', 'P1', '在确认后仅向单次客户机命令转发宿主机 SSH Agent。', 'available'],

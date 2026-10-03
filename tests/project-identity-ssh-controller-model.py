@@ -543,6 +543,36 @@ def session_descriptor_order_and_stdout():
     assert 'client command marker' not in ns['sys'].stderr.getvalue() and not written
 
 
+def session_network_descriptors_are_rejected():
+    # Model the authoritative Linux SO_DOMAIN query, including network families
+    # other than IP. Python's fromfd family hint must never authorize a socket.
+    for family in (1, 2, 10, 16, 17, 40):
+        ns, value, run, daemon, records, events, written = session_fixture()
+        ns['os'].fstat = lambda fd: types.SimpleNamespace(st_mode=stat.S_IFSOCK | 0o600)
+        class Channel:
+            def __enter__(self): return self
+            def __exit__(self, *_): events.append('channel-copy-closed')
+            def getsockopt(self, level, option):
+                assert (level, option) == (1, 39)
+                return family
+        def fromfd(fd, hint, kind):
+            assert (fd, hint, kind) == (0, 1, 1)
+            events.append('channel-copy-opened')
+            return Channel()
+        ns['socket'] = types.SimpleNamespace(AF_UNIX=1, SOCK_STREAM=1, SOL_SOCKET=1,
+                                           SO_DOMAIN=39, fromfd=fromfd)
+        ns['signal'].signal(2, 0)
+        ns['signal'].signal(3, 0)
+        if family == 1:
+            assert ns['ssh_launch'](value, run, run['build'], b'frame') == 0
+            assert written == b'frame' and 'client-fd3' in events
+        else:
+            refuses(ns, lambda: ns['ssh_launch'](value, run, run['build'], b'frame'), 'SSH_SESSION_NETWORK_CHANNEL')
+            assert not written and 'client-fd3' not in events
+            assert not any(isinstance(item, tuple) and item[0] == 'spawn' for item in events)
+        assert events.index('channel-copy-opened') < events.index('channel-copy-closed')
+
+
 def readonly_probe_and_stop_authority():
     ns, value, run, daemon, records, events, written = session_fixture('run-readonly')
     with contextlib.redirect_stdout(io.StringIO()) as output:
@@ -761,7 +791,7 @@ def partial_receipt_cleanup_recovery():
 for check in (snapshot_and_environment_bounds, command_frame_and_identity_environment,
               service_cgroups_and_daemon_arguments, daemon_process_and_protected_atomic_paths,
               receipts_and_interrupted_prepare,
-              snapshot_stdin_deadline_and_eof, session_descriptor_order_and_stdout,
+              snapshot_stdin_deadline_and_eof, session_descriptor_order_and_stdout, session_network_descriptors_are_rejected,
               readonly_probe_and_stop_authority, partial_receipt_cleanup_recovery):
     check()
     checks.append(check.__name__)

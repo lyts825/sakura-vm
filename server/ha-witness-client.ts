@@ -35,10 +35,11 @@ export class HaWitnessClient {
   async heartbeat(input: unknown) {
     const value = haWitnessHeartbeatSchema.parse(input);
     const result = await this.call('/v1/heartbeat', value) as {
-      armed?: boolean; phase?: string };
-    if (result?.phase !== 'source' || typeof result.armed !== 'boolean')
+      armed?: boolean; phase?: string; failback?: 'pending' | 'completed' | null };
+    if (result?.phase !== 'source' || typeof result.armed !== 'boolean' ||
+        !z.enum(['pending', 'completed']).nullable().optional().safeParse(result.failback).success)
       throw new AppError('见证心跳响应无效', 502);
-    return { armed: result.armed };
+    return { armed: result.armed, ...(result.failback !== undefined ? { failback: result.failback } : {}) };
   }
 
   async authorizeStart(input: unknown) {
@@ -54,11 +55,21 @@ export class HaWitnessClient {
     const result = await this.call('/v1/status', value) as {
       phase?: string; armed?: boolean; lastHeartbeatAt?: number;
       targetVmId?: string | null; targetHostId?: string;
-      failureThreshold?: number; error?: string | null };
+      failureThreshold?: number; error?: string | null;
+      failback?: { phase: 'pending' | 'completed'; retiredVmId: string;
+        requestedAt: number; completedAt: number | null } | null;
+      recoveryHeld?: boolean; recoveredRetiredVmIds?: string[] };
     if (!['source', 'fencing', 'fenced', 'promoted'].includes(result?.phase || '') ||
         typeof result.armed !== 'boolean' ||
         !z.uuid().safeParse(result.targetHostId).success ||
-        !z.number().int().min(2).max(10).safeParse(result.failureThreshold).success)
+        !z.number().int().min(2).max(10).safeParse(result.failureThreshold).success ||
+        !z.object({ phase: z.enum(['pending', 'completed']), retiredVmId: z.uuid(),
+          requestedAt: z.number().int().nonnegative(),
+          completedAt: z.number().int().nonnegative().nullable(),
+        }).strict().nullable().optional().safeParse(result.failback).success ||
+        !z.boolean().optional().safeParse(result.recoveryHeld).success ||
+        !z.array(z.uuid()).max(1024).optional().safeParse(result.recoveredRetiredVmIds).success ||
+        (result.failback && result.phase !== 'source'))
       throw new AppError('见证状态响应无效', 502);
     return result;
   }
@@ -68,8 +79,12 @@ export class HaWitnessClient {
       dataReconciled: z.literal(true),
     }).parse(input);
     const result = await this.call('/v1/rejoin', value) as {
-      released?: boolean; retiredRemoteVmId?: string };
-    if (result?.released !== true || !z.uuid().safeParse(result.retiredRemoteVmId).success)
+      released?: boolean; retiredRemoteVmId?: string; failback?: 'pending' | 'completed';
+      recovered?: boolean; retiredVmIds?: string[] };
+    const retirementConfirmed = z.uuid().safeParse(result?.retiredRemoteVmId).success ||
+      (result?.recovered === true && z.array(z.uuid()).max(1024).safeParse(result.retiredVmIds).success);
+    if (result?.released !== true || !retirementConfirmed ||
+        !z.enum(['pending', 'completed']).optional().safeParse(result.failback).success)
       throw new AppError('见证退出接管响应无效', 502);
     return result;
   }

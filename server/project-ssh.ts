@@ -568,9 +568,11 @@ export class ProjectSsh {
             status.daemon.cgroupName !== ticket.run.cgroupName
           )
             throw new Error('changed SSH account receipt');
-        } catch {
+        } catch (error) {
           status.valid = false;
-          status.reason = '项目 SSH 的完整账号票据无法核对，请停止并重建';
+          status.reason = error instanceof AppError && error.code?.startsWith('PROJECT_IDENTITY_EGRESS_')
+            ? error.message
+            : '项目 SSH 的完整账号票据无法核对，请停止并重建';
         }
       }
     }

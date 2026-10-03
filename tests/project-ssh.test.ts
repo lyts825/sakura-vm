@@ -13,7 +13,7 @@ process.env.SAKURA_DATA_DIR = root;
 const { ProjectSsh, projectSshBinding, projectSshPaths, projectSshRecordSchema } =
   await import('../server/project-ssh.ts');
 const { createSshKey } = await import('../server/seed.ts');
-const { vmDir } = await import('../server/model.ts');
+const { vmDir, AppError } = await import('../server/model.ts');
 const { projectSchema } = await import('../server/workspaces.ts');
 const { projectIdentitySchema, projectIdentityRunSchema } = await import('../server/project-identity.ts');
 after(async () => {
@@ -140,6 +140,7 @@ for (const distro of ['alpine', 'debian'] as const) {
     await writeFile(join(folder, 'known_hosts'), knownHosts);
     let guestCalls = 0,
       state = 'running';
+    let scopeFailure: Error | undefined;
     const machines = Object.assign(new EventEmitter(), {
       get: () => ({ id, distro }),
       state: () => state,
@@ -174,12 +175,12 @@ for (const distro of ['alpine', 'debian'] as const) {
         activateSsh: async () => {
           throw new Error('status must not admit');
         },
-        sshRun: async () => ({
-          identity,
-          run,
-          owner: { kind: 'ssh', bootId, runId: run.runId, cgroupName: run.cgroupName },
-          sha256: snapshotSha256,
-        }),
+        sshRun: async () => {
+          if (scopeFailure) throw scopeFailure;
+          return { identity, run,
+            owner: { kind: 'ssh', bootId, runId: run.runId, cgroupName: run.cgroupName },
+            sha256: snapshotSha256 };
+        },
         sshRuns: async () => [],
         recoverSshTicket: async () => {
           throw new Error('status must not recover cleanup authority');
@@ -188,6 +189,19 @@ for (const distro of ['alpine', 'debian'] as const) {
       },
     });
     try {
+      assert.equal((await service.status(id, project)).valid, true);
+      for (const code of ['EGRESS_NNP_RESTART_REQUIRED', 'EGRESS_NNP_PENDING',
+        'EGRESS_NNP_SERVICE_UNVERIFIED', 'EGRESS_NNP_PROCESS_CHANGED']) {
+        scopeFailure = new AppError('account admission refused (' + code + ')', 409, 'PROJECT_IDENTITY_' + code);
+        const refused = await service.status(id, project);
+        assert.equal(refused.valid, false);
+        assert.equal(refused.reason, scopeFailure.message,
+          'an NNP admission failure must retain its actual reason instead of requesting an unrelated SSH rebuild');
+        assert.equal(await service.endpoint(id, project), null, 'a detailed failure never authorizes a bridge');
+      }
+      scopeFailure = new AppError('changed original run', 409, 'PROJECT_IDENTITY_RUN_STALE');
+      assert.match((await service.status(id, project)).reason || '', /完整账号票据/);
+      scopeFailure = undefined;
       assert.equal((await service.status(id, project)).valid, true);
       await writeFile(join(folder, 'known_hosts'), 'unreviewed host pin\n');
       const changedPin = await service.status(id, project);

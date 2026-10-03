@@ -137,7 +137,7 @@ test('backup verification rejects truncation and changed disk bytes', async () =
   assert.equal(backupPolicySchema.safeParse({ keep: 0 }).success, false);
   assert.equal(backupPolicySchema.safeParse({ intervalHours: 0 }).success, false);
 });
-test('SSH integration preserves user configuration, is idempotent and follows changed ports', async () => {
+test('SSH integration preserves user configuration, is idempotent and follows changed project ports', async (t) => {
   const id = randomUUID();
   const vm = { id, name: 'dev', distro: 'debian' };
   const machine = Object.assign(new EventEmitter(), {
@@ -154,6 +154,23 @@ test('SSH integration preserves user configuration, is idempotent and follows ch
   await mkdir(dir);
   await writeFile(join(dir, 'config'), 'Host existing\n  HostName example.com\n');
   const ide = new Ide(machine, project, dir);
+  t.after(() => ide.close());
+  const alias = `sakura-${id}-default`;
+  let port = 43333, starts = 0;
+  const endpoint = () => ({ hostKeyAlias: alias, port,
+    identity: join(root, 'project-ssh', 'default', 'id_rsa'),
+    knownHosts: join(root, 'project-ssh', 'default', 'known_hosts') });
+  Reflect.set(ide, 'projectSsh', {
+    status: async (vmId: string, config: { directory: string }) => {
+      assert.equal(vmId, id);
+      assert.equal(config.directory, (await project.config(id)).directory);
+      return { present: true, running: true, valid: true, processes: 1 };
+    },
+    endpoint: async (vmId: string) => { assert.equal(vmId, id); return endpoint(); },
+    entries: async () => [endpoint()],
+    start: async (vmId: string) => { assert.equal(vmId, id); ++starts; },
+    close: async () => {},
+  });
   await ide.install(id);
   await ide.install(id);
   const config = await readFile(join(dir, 'config'), 'utf8');
@@ -163,12 +180,20 @@ test('SSH integration preserves user configuration, is idempotent and follows ch
   assert.match(state.url, /%E4%B8%AD%E6%96%87%20path/);
   assert.equal(
     state.command,
-    "code --remote ssh-remote+sakura-dev '/workspace/中文 path/$HOME/`marker/it''s'",
+    `code --remote ssh-remote+${alias} '/workspace/中文 path/$HOME/\`marker/it''s'`,
   );
-  assert.match(await readFile(join(root, 'ssh/config'), 'utf8'), /Port 23456/);
+  assert.equal(starts, 2);
+  const generated = await readFile(join(root, 'ssh/config'), 'utf8');
+  assert.match(generated, /Port 43333/);
+  assert.match(generated, /StrictHostKeyChecking yes/);
+  assert.match(generated, /project-ssh\/default\/id_rsa/);
+  assert.equal(generated.includes('Port 23456'), false);
   machine.live.get(id)!.sshPort = 34567;
+  port = 43334;
   await ide.update();
-  assert.match(await readFile(join(root, 'ssh/config'), 'utf8'), /Port 34567/);
+  const updated = await readFile(join(root, 'ssh/config'), 'utf8');
+  assert.match(updated, /Port 43334/);
+  assert.equal(updated.includes('Port 34567'), false);
   await ide.close();
   assert.equal(machine.listenerCount('change'), 0);
 });

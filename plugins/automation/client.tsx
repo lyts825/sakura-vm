@@ -139,7 +139,8 @@ type NextView = {
     fencedAt: string; error?: string } | null;
   haLocalFailover?: { error: string | null } | null;
   haHostFailover?: { configured: boolean; armed: boolean; phase: string | null;
-    targetVmId: string | null; error: string | null } | null;
+    targetVmId: string | null; error: string | null;
+    failback?: 'pending' | 'completed' | null; recoveryHeld?: boolean } | null;
   executions?: Array<{
     featureId: string;
     action: string;

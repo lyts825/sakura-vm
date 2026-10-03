@@ -9,6 +9,7 @@ for (const name of ['tsx', 'vite', 'react', 'react-dom', '@xterm/xterm', '@novnc
   if (Object.hasOwn(manifest.dependencies, name)) throw new Error(`${name} should only be needed to build the release`);
 for (const file of ['dist/index.html', 'dist/single-app.html', '.sakura-server/index.js',
   '.sakura-witness/ha-witness.js',
+  '.sakura-witness/docs/ha-witness-maintenance.md',
   '.sakura-server/assets/state-report.sh', '.sakura-server/assets/engineering-runner.py',
   '.sakura-server/assets/secure-erase.py', '.sakura-server/assets/dependency-download-broker.py',
   '.sakura-server/assets/project-repository-broker.py'])
@@ -17,7 +18,7 @@ if (process.platform === 'win32') {
   const folder = join(root, '.sakura-server', 'assets', 'native-clipboard');
   const native = JSON.parse(await readFile(join(folder, 'native-clipboard.json'), 'utf8'));
   const names = ['SakuraClipboardPolicy.dll', 'sakura-clipboard-controller.exe', 'SakuraClipboardPolicy-x86.dll', 'sakura-clipboard-controller-x86.exe', 'MinHook-LICENSE.txt', 'Detours-LICENSE.md'];
-  if (native.version !== 3 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
+  if (native.version !== 5 || native.architecture !== 'x64' || !/^[a-f0-9]{64}$/.test(native.build) ||
       !Array.isArray(native.files) || native.files.length !== names.length ||
       new Set(native.files.map((file) => file.name)).size !== names.length)
     throw new Error('Native clipboard distribution metadata is invalid');

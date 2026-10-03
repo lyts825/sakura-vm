@@ -7,6 +7,14 @@ import { z } from 'zod';
 import { AppError, DATA, ROOT } from './model.ts';
 import { fileHash, readStore, regularDirectory, writeStore } from './local-store.ts';
 import type { ClipboardRule } from '../shared/clipboard-policy.ts';
+import {
+  nativeClipboardDescendants,
+  nativeClipboardDescendantRequest,
+  type NativeClipboardDescendantBroker,
+  type NativeClipboardDescendantChannel,
+  type NativeClipboardDescendantFactory,
+  type NativeClipboardDescendantRequest,
+} from './native-clipboard-descendants.ts';
 import type {
   NativeClipboardProcess,
   NativeClipboardProcessState,
@@ -94,7 +102,13 @@ const identity = z
     bits: z.union([z.literal(0), z.literal(32), z.literal(64)]),
   })
   .strict();
-const managed = identity.extend({ sha256: digest }).strict();
+const inheritance = z
+  .object({
+    application: z.object({ image: executable, sha256: digest }).strict(),
+    parent: identity.pick({ pid: true, created: true }).strict(),
+  })
+  .strict();
+const managed = identity.extend({ sha256: digest, inheritance: inheritance.optional() }).strict();
 const stateSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -114,9 +128,13 @@ const nativeState = z
     maximum: z.number().int().min(1024).max(1048576),
     blockedCopy: z.number().nonnegative(),
     blockedPaste: z.number().nonnegative(),
+    reserved: z.boolean().optional(),
   })
   .strict();
-const statusSchema = z.union([z.object({ present: z.literal(false) }).strict(), nativeState]);
+const statusSchema = z.union([
+  z.object({ present: z.literal(false), reserved: z.boolean().optional() }).strict(),
+  nativeState,
+]);
 const listSchema = z
   .object({ processes: z.array(identity.extend({ image: z.string().min(1).max(32768) }).strict()).max(8192) })
   .strict();
@@ -133,7 +151,7 @@ const dualAssetNames = [
 const earlyAssetNames = [...dualAssetNames, 'Detours-LICENSE.md'] as const;
 const assetsSchema = z
   .object({
-    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
     architecture: z.literal('x64'),
     build: digest,
     files: z
@@ -188,13 +206,14 @@ const launchIdentity = z
 // The helper owns a fresh kill-on-close Job atomically assigned at creation.
 // Before commit, EOF, service close or a rejected handshake kills only that Job.
 // A lost commit reply may leave an enforced child alive; retain its journal.
-const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, signal) => {
+export const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, signal) => {
   if (signal.aborted) throw new AppError('受控启动已取消', 503);
   const child = spawn(file, args, {
     shell: false,
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
   let output = '',
     bytes = 0,
     sequence = 0,
@@ -295,9 +314,10 @@ const nativeLaunch: NativeClipboardLaunch = async (file, args, hooks, signal) =>
     child.stdout.destroy();
     child.stderr.destroy();
     if (child.exitCode === null && child.signalCode === null) child.kill();
+    await closed;
   }
 };
-async function nativeCommand(file: string, args: string[]): Promise<unknown> {
+export async function nativeCommand(file: string, args: string[]): Promise<unknown> {
   try {
     const { stdout } = await execute(file, args, {
       windowsHide: true,
@@ -365,9 +385,9 @@ export async function clipboardExecutableBits(path: string): Promise<32 | 64> {
         throw new AppError('所选 EXE 启动头无法核对');
       return bytes;
     };
-    const optionalSize = width === 32 ? 224 : 240, sections = pe.readUInt16LE(6);
-    if (pe.readUInt16LE(20) !== optionalSize || sections > 96)
-      throw new AppError('所选 EXE 启动头无法核对');
+    const optionalSize = width === 32 ? 224 : 240,
+      sections = pe.readUInt16LE(6);
+    if (pe.readUInt16LE(20) !== optionalSize || sections > 96) throw new AppError('所选 EXE 启动头无法核对');
     const optional = await read(offset + 24, optionalSize);
     const directories = width === 32 ? 96 : 112;
     if (optional.readUInt32LE(directories - 4) < 16 || ![2, 3].includes(optional.readUInt16LE(68)))
@@ -381,15 +401,28 @@ export async function clipboardExecutableBits(path: string): Promise<32 | 64> {
     const table = await read(offset + 24 + optionalSize, sections * 40);
     const locations: number[] = [];
     for (let index = 0; index < sections; index++) {
-      const start = index * 40, rva = table.readUInt32LE(start + 12), rawSize = table.readUInt32LE(start + 16);
+      const start = index * 40,
+        rva = table.readUInt32LE(start + 12),
+        rawSize = table.readUInt32LE(start + 16);
       if (corRva >= rva && corRva - rva + corSize <= rawSize)
         locations.push(table.readUInt32LE(start + 20) + corRva - rva);
     }
     if (locations.length !== 1) throw new AppError('CLR 启动头映射无法核对');
-    const cli = await read(locations[0], 72), flags = cli.readUInt32LE(16), entry = cli.readUInt32LE(20);
-    if (cli.readUInt32LE(0) !== 72 || !cli.readUInt32LE(8) || !cli.readUInt32LE(12) ||
-        cli.readUInt32LE(8) + cli.readUInt32LE(12) > imageSize || !(flags & 1) || flags & ~0x3000b ||
-        cli.readUInt32LE(64) || cli.readUInt32LE(68) || !(entry & 0xffffff) || ![6, 0x26].includes(entry >>> 24))
+    const cli = await read(locations[0], 72),
+      flags = cli.readUInt32LE(16),
+      entry = cli.readUInt32LE(20);
+    if (
+      cli.readUInt32LE(0) !== 72 ||
+      !cli.readUInt32LE(8) ||
+      !cli.readUInt32LE(12) ||
+      cli.readUInt32LE(8) + cli.readUInt32LE(12) > imageSize ||
+      !(flags & 1) ||
+      flags & ~0x3000b ||
+      cli.readUInt32LE(64) ||
+      cli.readUInt32LE(68) ||
+      !(entry & 0xffffff) ||
+      ![6, 0x26].includes(entry >>> 24)
+    )
       throw new AppError('受控启动仅支持纯 IL CLR EXE，混合模式或启动头不明的应用无法启动');
     if (width === 64 && flags & (2 | 0x20000)) throw new AppError('CLR 位数标记不一致');
     if (width === 32 && !(flags & (2 | 0x20000))) {
@@ -411,16 +444,24 @@ type Options = {
   hashImage?: (path: string) => Promise<string>;
   imageBits?: (path: string) => Promise<32 | 64>;
   launch?: NativeClipboardLaunch;
+  descendants?: NativeClipboardDescendantFactory;
   guard?: () => void;
   maintenance?: () => boolean;
   mutation?: (delta: number) => void;
 };
+type ProcessClaim = { kind: 'scan' | 'adopt'; mutation?: Promise<unknown> };
 
 // Only explicitly selected, same-user/session processes are attached. The DLL
 // retains its current policy if this service closes; shutdown never relaxes it.
 export class NativeClipboard {
   private hasX86 = false;
   private hasEarly = false;
+  private hasDescendants = false;
+  private descendantChannel?: NativeClipboardDescendantChannel;
+  private descendantStarting?: Promise<void>;
+  private descendantLifetime = new AbortController();
+  private descendantTasks = new Set<Promise<void>>();
+  private processClaims = new Map<string, ProcessClaim>();
   private state: z.infer<typeof stateSchema> = {
     schemaVersion: 1,
     version: 1,
@@ -431,6 +472,7 @@ export class NativeClipboard {
   private inventory: NativeClipboardProcess[] = [];
   private processes: NativeClipboardProcessState[] = [];
   private queue: Promise<unknown> = Promise.resolve();
+  private stateQueue: Promise<unknown> = Promise.resolve();
   private timer?: ReturnType<typeof setInterval>;
   private closed = false;
   private readonly lifetime = new AbortController();
@@ -533,6 +575,7 @@ export class NativeClipboard {
     }
     this.hasX86 = manifest.version >= 2;
     this.hasEarly = manifest.version >= 3;
+    this.hasDescendants = manifest.version >= 5;
   }
   private async list() {
     return listSchema
@@ -560,10 +603,54 @@ export class NativeClipboard {
       active ? '1' : '0',
     ]).then((value) => nativeState.parse(value));
   }
-  private async saveManaged(value: z.infer<typeof managed>[]) {
-    const next = { ...this.state, managed: value };
-    await writeStore(this.file, next);
-    this.state = next;
+  private persist(change: (state: z.infer<typeof stateSchema>) => z.infer<typeof stateSchema>) {
+    const operation = this.stateQueue
+      .catch(() => {})
+      .then(async () => {
+        if (this.closed) throw new AppError('剪贴板代理正在关闭', 503);
+        const next = stateSchema.parse(change(this.state));
+        await writeStore(this.file, next);
+        this.state = next;
+      });
+    this.stateQueue = operation;
+    return operation;
+  }
+  private saveManaged(change: (items: z.infer<typeof managed>[]) => z.infer<typeof managed>[]) {
+    return this.persist((state) => ({ ...state, managed: change(state.managed) }));
+  }
+  private async ensureDescendants() {
+    if (!this.hasDescendants || this.descendantChannel?.alive) return;
+    if (!this.descendantStarting) {
+      this.descendantStarting = (async () => {
+        await this.descendantChannel?.close();
+        const create = this.options.descendants || nativeClipboardDescendants;
+        this.descendantChannel = await create(
+          this.controller(),
+          this.state.owner,
+          (request, broker) => {
+            const task = this.descendantLaunch(request, broker);
+            this.descendantTasks.add(task);
+            return task.finally(() => {
+              this.descendantTasks.delete(task);
+            });
+          },
+          (error) => {
+            this.error = error.message;
+          },
+        );
+      })().finally(() => {
+        this.descendantStarting = undefined;
+      });
+    }
+    await this.descendantStarting;
+  }
+  private async stopDescendants() {
+    this.descendantLifetime.abort();
+    await this.descendantStarting?.catch(() => {});
+    await this.descendantChannel?.close();
+    await Promise.allSettled([...this.descendantTasks]);
+    this.descendantChannel = undefined;
+    if (!this.closed) this.descendantLifetime = new AbortController();
   }
   private async scan() {
     if (this.options.maintenance?.()) {
@@ -586,6 +673,7 @@ export class NativeClipboard {
       this.inventory = await this.list();
       try {
         await this.checkedAssets(true);
+        await this.ensureDescendants();
         this.ready = true;
       } catch (error) {
         libraryError = (error as Error).message;
@@ -607,6 +695,7 @@ export class NativeClipboard {
     }
     const selected = new Map(this.state.settings.applications.map((item) => [samePath(item.image), item]));
     const states: NativeClipboardProcessState[] = [];
+    const handled = new Set<string>();
     const hashes = new Map<string, Promise<string>>();
     const check = (image: string) => {
       const path = samePath(image);
@@ -619,23 +708,55 @@ export class NativeClipboard {
       this.state.managed.map((item) => [key(item), item]),
     );
     for (const item of this.inventory)
-      if (this.state.settings.enabled && selected.has(samePath(item.image))) known.set(key(item), item);
+      if (this.state.settings.enabled && selected.has(samePath(item.image)))
+        known.set(key(item), { ...known.get(key(item)), ...item });
     for (const item of known.values()) {
+      const id = key(item);
+      if (this.processClaims.has(id)) continue;
+      const claim: ProcessClaim = { kind: 'scan' };
+      this.processClaims.set(id, claim);
+      const current = () => this.processClaims.get(id) === claim;
+      const mutate = <T>(work: () => Promise<T>) => {
+        if (!current()) throw new AppError('此进程的扫描已让出给受控子进程接入', 409);
+        const operation = work().finally(() => {
+          if (claim.mutation === operation) claim.mutation = undefined;
+        });
+        claim.mutation = operation;
+        return operation;
+      };
+      handled.add(id);
       let observed: z.infer<typeof statusSchema> = { present: false };
       try {
-        const desired = this.state.settings.enabled ? selected.get(samePath(item.image)) : undefined;
+        const owned = this.state.managed.find((entry) => key(entry) === key(item));
+        const source = owned?.inheritance?.application;
+        const desired = this.state.settings.enabled
+          ? selected.get(samePath(source?.image || item.image))
+          : undefined;
         observed = await this.status(item);
+        if (!current()) continue;
+        // The native Job reservation is published before CreateProcess. It
+        // also protects a child whose broker request has not reached Node yet.
+        if (observed.reserved) {
+          handled.delete(id);
+          continue;
+        }
         if (!desired) {
           if (observed.present && observed.active) {
-            observed = await this.apply(
-              item,
-              { copy: true, paste: true, files: true, sensitive: false, maxTextBytes: 1048576 },
-              false,
+            observed = await mutate(() =>
+              this.apply(
+                item,
+                { copy: true, paste: true, files: true, sensitive: false, maxTextBytes: 1048576 },
+                false,
+              ),
             );
+            if (!current()) continue;
             if (observed.active) throw new AppError('进程策略尚未停用');
           }
           if (this.state.managed.some((entry) => key(entry) === key(item))) {
-            await this.saveManaged(this.state.managed.filter((entry) => key(entry) !== key(item)));
+            await mutate(() =>
+              this.saveManaged((items) => (current() ? items.filter((entry) => key(entry) !== id) : items)),
+            );
+            if (!current()) continue;
           }
           states.push({
             ...item,
@@ -647,14 +768,21 @@ export class NativeClipboard {
         }
         if (!this.inventory.some((entry) => key(entry) === key(item))) {
           if (!observed.present) {
-            await this.saveManaged(this.state.managed.filter((entry) => key(entry) !== key(item)));
+            await mutate(() =>
+              this.saveManaged((items) => (current() ? items.filter((entry) => key(entry) !== id) : items)),
+            );
+            if (!current()) continue;
             continue;
           }
           throw new AppError('进程仍保留策略，但当前无法核对身份');
         }
         if (item.bits !== 64 && (item.bits !== 32 || !this.hasX86))
           throw new AppError('此进程架构不受支持；需要运行包对应的 x64 或 x86 应用');
-        if ((await check(item.image)) !== desired.sha256)
+        if (source && source.sha256 !== desired.sha256)
+          throw new AppError('继承规则的应用摘要已变化，请重新受控启动原应用');
+        const digest = await check(item.image);
+        if (!current()) continue;
+        if (digest !== (source ? owned!.sha256 : desired.sha256))
           throw new AppError('应用文件已变化，请重新选择应用并保存规则');
         if (libraryError) throw new AppError(libraryError);
         if (
@@ -669,9 +797,15 @@ export class NativeClipboard {
           if (!this.state.managed.some((entry) => key(entry) === key(item))) {
             if (this.state.managed.length >= 256) throw new AppError('受管进程已达到 256 个上限');
             // Persist ownership before attaching, including failed/pending calls.
-            await this.saveManaged([...this.state.managed, { ...item, sha256: desired.sha256 }]);
+            await mutate(() =>
+              this.saveManaged((items) =>
+                current() ? [...items, { ...item, sha256: desired.sha256 }] : items,
+              ),
+            );
+            if (!current()) continue;
           }
-          observed = await this.apply(item, desired.rule, true);
+          observed = await mutate(() => this.apply(item, desired.rule, true));
+          if (!current()) continue;
         }
         if (
           !observed.present ||
@@ -690,6 +824,7 @@ export class NativeClipboard {
           blockedPaste: observed.blockedPaste,
         });
       } catch (error) {
+        if (!current()) continue;
         this.failed.set(key(item), Date.now() + 30000);
         states.push({
           ...item,
@@ -698,11 +833,203 @@ export class NativeClipboard {
           blockedCopy: observed.present ? observed.blockedCopy : 0,
           blockedPaste: observed.present ? observed.blockedPaste : 0,
         });
+      } finally {
+        if (current()) this.processClaims.delete(id);
+        else handled.delete(id);
       }
     }
-    this.processes = states;
+    this.processes = [
+      ...states,
+      ...this.processes.filter(
+        (item) => !handled.has(key(item)) && this.state.managed.some((entry) => key(entry) === key(item)),
+      ),
+    ];
     this.lastScan = new Date().toISOString();
     for (const id of this.failed.keys()) if (!known.has(id)) this.failed.delete(id);
+  }
+  private async descendantLaunch(
+    value: NativeClipboardDescendantRequest,
+    broker: NativeClipboardDescendantBroker,
+  ) {
+    const request = nativeClipboardDescendantRequest.parse(value);
+    const id = key(request.process);
+    const previous = this.processClaims.get(id);
+    if (previous?.kind === 'adopt') throw new AppError('此准确子进程已有受控接入', 503);
+    const claim: ProcessClaim = { kind: 'adopt' };
+    const generation = this.descendantLifetime.signal,
+      version = this.state.version;
+    // Synchronous registration precedes every asset/hash/helper await. A scan
+    // gives way at its next read boundary; only already-issued writes/native
+    // calls for this identity must settle, never the ancestor's global queue.
+    this.processClaims.set(id, claim);
+    try {
+      await previous?.mutation?.catch(() => {});
+      if (this.closed || generation.aborted || this.lifetime.signal.aborted || this.state.version !== version)
+        throw new AppError('等待同一进程的扫描期间子进程策略代际已改变', 503);
+      await this.descendantAdopt(request, broker);
+    } finally {
+      // nativeLaunch settles after real helper close and exact Job cleanup.
+      if (this.processClaims.get(id) === claim) this.processClaims.delete(id);
+    }
+  }
+  private async descendantAdopt(
+    value: NativeClipboardDescendantRequest,
+    broker: NativeClipboardDescendantBroker,
+  ) {
+    const request = nativeClipboardDescendantRequest.parse(value);
+    const child = identity.parse(request.process),
+      parent = identity.parse(request.parent);
+    if (child.pid === parent.pid || child.pid === this.pid) throw new AppError('子进程归属身份无效', 503);
+    const version = this.state.version;
+    const generation = this.descendantLifetime.signal;
+    const ancestor = this.state.managed.find((entry) => key(entry) === key(parent));
+    if (!ancestor || samePath(ancestor.image) !== samePath(parent.image) || ancestor.bits !== parent.bits)
+      throw new AppError('子进程没有已保存的父进程归属', 503);
+    const source = ancestor.inheritance?.application || { image: ancestor.image, sha256: ancestor.sha256 };
+    const allowed = () => {
+      if (this.closed || this.lifetime.signal.aborted || generation.aborted)
+        throw new AppError('子进程策略代际已关闭', 503);
+      if (this.options.maintenance?.()) throw new AppError('数据目录迁移维护中；子进程启动未授权', 409);
+      if (this.state.version !== version) throw new AppError('子进程启动期间剪贴板配置已改变', 409);
+      const selected = this.state.settings.applications.find(
+        (entry) => samePath(entry.image) === samePath(source.image),
+      );
+      if (
+        !this.state.settings.enabled ||
+        !selected ||
+        selected.sha256 !== source.sha256 ||
+        !this.state.managed.some((entry) => key(entry) === key(parent) && entry.sha256 === ancestor.sha256)
+      )
+        throw new AppError('子进程需要已保存并启用的父应用规则', 409);
+      return selected;
+    };
+    const selected = allowed();
+    if (this.state.managed.some((entry) => key(entry) === key(child)))
+      throw new AppError('此子进程已有独立持久归属；拒绝替换为父应用继承规则', 503);
+    this.options.mutation?.(1);
+    let owned = false,
+      loaded: z.infer<typeof nativeState> | undefined;
+    const inherited = {
+      ...child,
+      sha256: request.sha256,
+      inheritance: { application: source, parent: { pid: parent.pid, created: parent.created } },
+    };
+    const sameIdentity = (value: NativeClipboardProcess) => {
+      const actual = identity.parse(value);
+      if (
+        key(actual) !== key(child) ||
+        samePath(actual.image) !== samePath(child.image) ||
+        actual.bits !== child.bits
+      )
+        throw new AppError('子进程控制工具返回了其他身份', 503);
+    };
+    const coherent = (value: z.infer<typeof statusSchema>) =>
+      value.present &&
+      value.ready &&
+      value.active &&
+      value.compatible &&
+      value.flags === flags(selected.rule) &&
+      value.maximum === selected.rule.maxTextBytes;
+    try {
+      await this.checkedAssets(true);
+      if (!this.hasDescendants) throw new AppError('子进程提前继承需要第 5 版具备创建保留的策略通道', 503);
+      if (
+        (await this.hashImage(child.image)) !== request.sha256 ||
+        (await this.hashImage(source.image)) !== source.sha256
+      )
+        throw new AppError('子进程或父应用文件摘要已变化', 409);
+      if ((await this.imageBits(child.image)) !== child.bits)
+        throw new AppError('子进程实际架构与映像不一致', 503);
+      allowed();
+      const result = await this.start(
+        this.controller(child.bits),
+        [
+          'adopt',
+          this.state.owner,
+          win32.normalize(child.image),
+          request.sha256,
+          this.library(child.bits),
+          String(flags(selected.rule)),
+          String(selected.rule.maxTextBytes),
+          request.id,
+          String(broker.pid),
+          broker.created,
+          request.handles.process,
+          request.handles.thread,
+          request.handles.job,
+          request.handles.file,
+          request.suspended ? '1' : '0',
+          String(parent.pid),
+          parent.created,
+        ],
+        {
+          prepared: async (value) => {
+            sameIdentity(value);
+            allowed();
+            // A short storage queue protects concurrent child/grandchild journals.
+            // It never waits for a loader or the ancestor's controlled-launch queue.
+            await this.saveManaged((items) => {
+              allowed();
+              if (items.length >= 256 || items.some((entry) => key(entry) === key(child)))
+                throw new AppError('子进程归属重复或受管进程达到上限', 503);
+              return [...items, inherited];
+            });
+            owned = true;
+            allowed();
+          },
+          attached: async (value, state) => {
+            sameIdentity(value);
+            allowed();
+            const journal = this.state.managed.find((entry) => key(entry) === key(child));
+            if (
+              !owned ||
+              journal?.sha256 !== request.sha256 ||
+              journal.inheritance?.application.sha256 !== source.sha256 ||
+              journal.inheritance.parent.pid !== parent.pid ||
+              journal.inheritance.parent.created !== parent.created ||
+              !coherent(nativeState.parse(state))
+            )
+              throw new AppError('子进程缺少已保存归属或已加载规则', 503);
+            const observed = await this.status(child);
+            if (!coherent(observed)) throw new AppError('子进程真实共享策略复核失败', 503);
+            await this.checkedAssets(true);
+            if ((await this.hashImage(child.image)) !== request.sha256)
+              throw new AppError('子进程文件摘要已变化', 409);
+            allowed();
+            loaded = nativeState.parse(observed);
+          },
+        },
+        generation,
+      );
+      sameIdentity(result);
+      allowed();
+      if (!owned || !loaded) throw new AppError('子进程未返回已核对提交身份', 503);
+      this.inventory = [...this.inventory.filter((entry) => key(entry) !== key(child)), child];
+      this.processes = [
+        ...this.processes.filter((entry) => key(entry) !== key(child)),
+        {
+          ...inherited,
+          state: 'enforced',
+          blockedCopy: loaded.blockedCopy,
+          blockedPaste: loaded.blockedPaste,
+        },
+      ];
+    } catch (error) {
+      if (owned)
+        this.processes = [
+          ...this.processes.filter((entry) => key(entry) !== key(child)),
+          {
+            ...inherited,
+            state: 'error',
+            error: (error as Error).message,
+            blockedCopy: loaded?.blockedCopy || 0,
+            blockedPaste: loaded?.blockedPaste || 0,
+          },
+        ];
+      throw error;
+    } finally {
+      this.options.mutation?.(-1);
+    }
   }
   private async controlledLaunch(
     input: Extract<z.infer<typeof nativeClipboardRequest>, { action: 'launch' }>,
@@ -727,6 +1054,7 @@ export class NativeClipboard {
     const bits = await this.imageBits(selected.image);
     if (bits === 32 && !this.hasX86) throw new AppError('此运行包未包含 32 位应用代理，请更新运行包');
     if (!this.hasEarly) throw new AppError('此运行包未包含应用 DLL/TLS 初始化前的策略代理，请更新运行包');
+    await this.ensureDescendants();
     allowed();
     const sameIdentity = (value: NativeClipboardProcess) => {
       const item = identity.parse(value);
@@ -760,7 +1088,7 @@ export class NativeClipboard {
               throw new AppError('受控启动返回了已有进程；拒绝复用其归属', 503);
             // The helper waits with a suspended primary thread and a kill-on-close
             // Job until this journal is durably saved, before loading any policy.
-            await this.saveManaged([...this.state.managed, { ...item, sha256: selected.sha256 }]);
+            await this.saveManaged((items) => [...items, { ...item, sha256: selected.sha256 }]);
             owned = item;
             allowed();
           },
@@ -857,9 +1185,10 @@ export class NativeClipboard {
               if ((await this.hashImage(item.image)) !== item.sha256)
                 throw new AppError('应用文件摘要已变化，请重新选择', 409);
           this.options.guard?.();
-          const next = { ...this.state, version: this.state.version + 1, settings: input.settings };
-          await writeStore(this.file, next);
-          this.state = next;
+          // Retire the old descendant generation before saving new rules.
+          // Existing pending helpers cannot resume under the preceding version.
+          await this.stopDescendants();
+          await this.persist((state) => ({ ...state, version: state.version + 1, settings: input.settings }));
         }
         this.failed.clear();
         await this.reconcile();
@@ -873,6 +1202,8 @@ export class NativeClipboard {
     this.closed = true;
     this.lifetime.abort();
     if (this.timer) clearInterval(this.timer);
+    await this.stopDescendants();
     await this.queue.catch(() => {});
+    await this.stateQueue.catch(() => {});
   }
 }

@@ -2,6 +2,7 @@
 import ast
 import base64
 import copy
+import errno
 import hashlib
 import json
 import os
@@ -28,6 +29,9 @@ def fixture(mode='private'):
     records, tables, events = {}, {}, []
     flags = dict(lost_create=False, lost_delete=False, lost_write=False, handle=50)
     ns['egress_context'] = lambda: dict(context)
+    ns['egress_nnp_check'] = lambda _value: None
+    ns['egress_nnp_configuration'] = lambda: 'systemd'
+    ns['egress_systemd_nnp'] = lambda _units: None
     ns['json_read'] = lambda path, *_args: copy.deepcopy(records.get(path))
     def write(path, record):
         records[path] = copy.deepcopy(record)
@@ -204,9 +208,10 @@ def boot_service_plans():
     assert b'env -i' in restore and b'python3 -I -S' in restore
     assert base64.b64encode(b'{"action":"restore-egress"}') in restore
     assert b'DefaultDependencies=no' in files['/etc/systemd/system/sakura-project-egress.service']['data']
-    for name in ('ssh.service', 'cron.service', 'systemd-user-sessions.service', 'user@.service'):
+    for name in ('ssh.service', 'sshd.service', 'ssh@.service', 'sshd@.service', 'cron.service', 'crond.service',
+                 'cronie.service', 'atd.service', 'systemd-user-sessions.service', 'user@.service'):
         assert files['/etc/systemd/system/' + name + '.d/sakura-project-egress.conf']['data'] == \
-            b'[Unit]\nRequires=sakura-project-egress.service\nAfter=sakura-project-egress.service\n'
+            b'[Unit]\nRequires=sakura-project-egress.service\nAfter=sakura-project-egress.service\n[Service]\nNoNewPrivileges=yes\n'
     assert len(links) == 1
     f.ns['os'] = types.SimpleNamespace(path=types.SimpleNamespace(lexists=lambda _path: False))
     files, links, appends = f.ns['egress_boot_plan']('b' * 64, 'openrc')
@@ -234,15 +239,21 @@ def rebind_commit_order():
     assert next(i for i, event in enumerate(f.events) if event[0] == 'binding') < next(i for i, event in enumerate(f.events) if event[0] == 'delete')
 
 
-def boot_install_and_interrupted_upgrade(openrc=False):
+def boot_install_and_interrupted_upgrade(openrc=False, directory_sync_failures=False):
     f = fixture()
     files, links, modes, owner_records, events = {}, {}, {}, {}, []
-    flags = {'atomic_loss': False, 'reload_loss': False}
+    flags = {'atomic_loss': False, 'reload_loss': False, 'directory_loss': False}
+    descriptors, sequence = {}, dict(next=10)
+    # Linux flag values are independent of the host OS running this model.
+    # The owned Alpine observation confirmed O_PATH fsync errno=EBADF and a
+    # readable FD to the same inode succeeding; do not mock both as equivalent.
+    linux_path, linux_directory, linux_nofollow, linux_cloexec = 0x200000, 0x10000, 0x20000, 0x80000
     init_services = {'/etc/init.d/sshd', '/etc/init.d/crond', '/etc/init.d/local'} if openrc else set()
     if openrc:
         files['/etc/conf.d/sshd'] = b'OPERATOR_OPTION=yes\n'
         modes['/etc/conf.d/sshd'] = 0o644
     f.ns['egress_parent'] = lambda _path: None
+    f.ns['egress_openrc_nnp'] = lambda *_args: None
     f.ns['egress_boot_read'] = lambda path: files.get(path)
     f.ns['json_read'] = lambda path, *_args: copy.deepcopy(owner_records.get(path))
     def record(path, value):
@@ -258,30 +269,102 @@ def boot_install_and_interrupted_upgrade(openrc=False):
     f.ns['atomic'] = atomic
     def info(path):
         return types.SimpleNamespace(st_mode=stat.S_IFLNK | 0o777 if path in links else stat.S_IFREG | modes.get(path, 0o755), st_uid=0, st_nlink=1)
+    def descriptor_open(path, permissions, **kwargs):
+        if 'dir_fd' in kwargs:
+            assert path == '.'
+            parent = descriptors[kwargs['dir_fd']]
+            assert parent['directory']
+            path = parent['path']
+        sequence['next'] += 1
+        descriptor = sequence['next']
+        descriptors[descriptor] = dict(path=path, flags=permissions, directory=bool(permissions & linux_directory))
+        return descriptor
+    def descriptor_info(descriptor):
+        entry = descriptors[descriptor]
+        return types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o755 if entry['directory'] else stat.S_IFREG | modes[entry['path']],
+                                     st_uid=0, st_nlink=1)
+    def descriptor_sync(descriptor):
+        entry = descriptors[descriptor]
+        if entry['flags'] & linux_path:
+            raise OSError(errno.EBADF, 'O_PATH cannot fsync')
+        if entry['directory']:
+            events.append(('parent-sync', entry['path']))
+            if flags['directory_loss']:
+                flags['directory_loss'] = False
+                raise OSError(errno.EIO, 'owned parent sync failure after symlink publication')
+    def create_link(destination, path):
+        events.append(('symlink', path))
+        links[path] = destination
     f.ns['os'] = types.SimpleNamespace(path=types.SimpleNamespace(
         isdir=lambda path: not openrc and path == '/run/systemd/system',
         isfile=lambda path: openrc and path == '/sbin/openrc-run',
         dirname=os.path.dirname,
+        basename=os.path.basename,
         lexists=lambda path: path in files or path in links or path in init_services),
         lstat=info, readlink=lambda path: links[path],
         chmod=lambda path, mode, **_kwargs: modes.update({path: mode}),
-        symlink=lambda destination, path: links.update({path: destination}),
-        O_RDONLY=os.O_RDONLY, O_NOFOLLOW=0, O_CLOEXEC=0, open=lambda path, _flags: path,
-        fstat=lambda path: types.SimpleNamespace(st_mode=stat.S_IFREG | modes[path], st_uid=0, st_nlink=1),
-        fsync=lambda *_: None, close=lambda *_: None)
-    f.ns['directory_fd'] = lambda _path: 10
+        symlink=create_link,
+        O_RDONLY=0, O_DIRECTORY=linux_directory, O_PATH=linux_path, O_NOFOLLOW=linux_nofollow, O_CLOEXEC=linux_cloexec,
+        open=descriptor_open, fstat=descriptor_info, fsync=descriptor_sync, close=lambda descriptor: descriptors.pop(descriptor))
+    f.ns['directory_fd'] = lambda path: descriptor_open(path, linux_path | linux_directory | linux_nofollow | linux_cloexec)
     f.ns['tool'] = lambda name: '/usr/bin/' + name
     def reload(argv, **_kwargs):
         assert argv == (['/usr/bin/rc-update', '-u'] if openrc else ['/usr/bin/systemctl', 'daemon-reload'])
+        owner = next(iter(owner_records.values()))
+        assert owner['phase'] == 'pending'
+        assert all(hashlib.sha256(files[path]).hexdigest() == item['sha256'] and modes[path] == item['mode']
+                   for path, item in owner['files'].items()), 'publish and sync every managed policy before daemon reload'
+        assert all(links.get(path) == destination for path, destination in owner['links'].items())
+        assert events[-1] == ('parent-sync', os.path.dirname(next(iter(owner['links'])))), 'sync the link parent before reload/applied'
         events.append(('reload',))
         if flags['reload_loss']:
             flags['reload_loss'] = False
             raise OSError('owned reload ACK lost')
     f.ns['execute'] = reload
+    if directory_sync_failures:
+        pin = f.ns['directory_fd']('/controlled')
+        try:
+            descriptor_sync(pin)
+        except OSError as error:
+            assert error.errno == errno.EBADF
+        else:
+            raise AssertionError('O_PATH must have the observed Linux fsync refusal')
+        finally:
+            f.ns['os'].close(pin)
+        for attempt in range(2):
+            flags['directory_loss'] = True
+            try:
+                f.ns['egress_bootstrap']('a' * 64)
+            except OSError as error:
+                assert error.errno == errno.EIO
+            else:
+                raise AssertionError('failed parent sync must prevent reload and applied on both new and existing links')
+            assert next(iter(owner_records.values()))['phase'] == 'pending' and links and not descriptors
+            assert not any(event[0] == 'reload' or event == ('record', 'applied') for event in events)
+            assert len([event for event in events if event[0] == 'symlink']) == 1, 'recover the existing exact symlink without replacing it'
+            assert len([event for event in events if event[0] == 'parent-sync']) == attempt + 1
     assert f.ns['egress_bootstrap']('a' * 64) == ('openrc' if openrc else 'systemd')
+    assert not descriptors
     before = len(events)
     f.ns['egress_bootstrap']('a' * 64)
     assert len(events) == before, 'healthy current boot files must not reload services'
+    # Upgrade an owned V1 restore-only installation without losing the operator
+    # prefix. An interruption retains exact previous hashes for safe recovery.
+    prior = next(iter(owner_records.values()))
+    del prior['guards']
+    for filename in prior['files']:
+        if openrc and filename.startswith('/etc/conf.d/'):
+            files[filename] = files[filename].replace(b'# SAKURA_PROJECT_EGRESS_V2', b'# SAKURA_PROJECT_EGRESS_V1').replace(b'no_new_privs=yes\n', b'')
+        elif not openrc and filename.endswith('/sakura-project-egress.conf'):
+            files[filename] = files[filename].replace(b'[Service]\nNoNewPrivileges=yes\n', b'')
+        prior['files'][filename]['sha256'] = hashlib.sha256(files[filename]).hexdigest()
+    flags['atomic_loss'] = True
+    try: f.ns['egress_bootstrap']('a' * 64)
+    except OSError: pass
+    else: raise AssertionError('V1 guard upgrade interruption must remain pending')
+    assert next(iter(owner_records.values()))['phase'] == 'pending'
+    f.ns['egress_bootstrap']('a' * 64)
+    assert next(iter(owner_records.values()))['guards'] == 2
     flags['atomic_loss'] = True
     try: f.ns['egress_bootstrap']('b' * 64)
     except OSError: pass
@@ -298,7 +381,7 @@ def boot_install_and_interrupted_upgrade(openrc=False):
     if openrc:
         conf = '/etc/conf.d/sshd'
         assert files[conf].startswith(b'OPERATOR_OPTION=yes\n')
-        assert files[conf].endswith(b'rc_need="${rc_need-} sakura-project-egress"\n')
+        assert files[conf].endswith(b'rc_need="${rc_need-} sakura-project-egress"\nno_new_privs=yes\n')
         files[conf] = files[conf].replace(b'OPERATOR_OPTION=yes', b'OPERATOR_OPTION=changed')
         f.ns['egress_bootstrap']('c' * 64)
         assert files[conf].startswith(b'OPERATOR_OPTION=changed\n'), 'keep operator settings before the managed tail'
@@ -317,6 +400,11 @@ def openrc_dependencies_and_operator_settings():
     boot_install_and_interrupted_upgrade(True)
 
 
+def boot_symlink_sync_and_pending_recovery():
+    boot_install_and_interrupted_upgrade(False, True)
+    boot_install_and_interrupted_upgrade(True, True)
+
+
 def bounded_kernel_json():
     f = fixture()
     for value in [[], {'nftables': {}}, {'nftables': [None]}, {'nftables': [{'table': {}, 'rule': {}}]},
@@ -327,7 +415,8 @@ def bounded_kernel_json():
 
 checks = [private_and_host_rules, create_ack_and_record_loss, foreign_or_tampered_table, modes_and_exact_delete,
           owner_and_namespace_refusals, reboot_restores_intents, boot_service_plans, rebind_commit_order,
-          boot_install_and_interrupted_upgrade, openrc_dependencies_and_operator_settings, bounded_kernel_json]
+          boot_install_and_interrupted_upgrade, openrc_dependencies_and_operator_settings,
+          boot_symlink_sync_and_pending_recovery, bounded_kernel_json]
 for check in checks: check()
 print(json.dumps({'passed': True, 'kind': 'portable-model-only', 'sourceSha256': hashlib.sha256(source).hexdigest(),
                   'checks': [check.__name__ for check in checks]}, separators=(',', ':')))

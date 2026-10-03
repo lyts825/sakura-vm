@@ -206,6 +206,23 @@ def archive_members(archive):
     return entries
 
 
+def publish_new_directory(stage, target):
+    deadline = time.monotonic() + 1
+    while True:
+        if os.path.lexists(target):
+            raise Failure("目标目录已存在，拒绝覆盖：" + target.name)
+        try:
+            os.rename(stage, target)
+            return
+        except PermissionError as error:
+            # Windows scanners can briefly open files in the completed staging
+            # directory without delete sharing. Never retry over a new target.
+            if (os.name != "nt" or getattr(error, "winerror", None) not in (5, 32, 33)
+                    or time.monotonic() >= deadline):
+                raise
+            time.sleep(.025)
+
+
 def archive_operation(root, p, template=False):
     target = safe_path(root, p.get("target", "sakura-archive.tar.gz"))
     mode = "create" if template else p["mode"]
@@ -260,7 +277,7 @@ def archive_operation(root, p, template=False):
                     with archive.extractfile(member) as stream, destination.open("xb") as output:
                         shutil.copyfileobj(stream, output)
                     destination.chmod(member.mode & 0o777 & ~0o022)
-            os.rename(stage, target)
+            publish_new_directory(stage, target)
     return dict(target=target.relative_to(root).as_posix(), members=listing)
 
 

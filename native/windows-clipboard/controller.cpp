@@ -4,6 +4,7 @@
 #include "protocol.h"
 #include "early-import.h"
 #include "control-system.h"
+#include "descendant-reservation.h"
 #include <tlhelp32.h>
 #include <sddl.h>
 #include <wincrypt.h>
@@ -182,9 +183,10 @@ static void list() {
   std::cout<<"]}"<<std::endl;
 }
 static void state(const wchar_t* owner,DWORD pid,uint64_t created,bool newline=true) {
+  const bool reserved=descendantCreationPending(owner,pid,created);
   const auto name=mapping(owner,pid,created);
   Handle object(OpenFileMappingW(FILE_MAP_READ,FALSE,name.c_str()));
-  if (!object.value) { std::cout<<"{\"present\":false}"<<(newline?"\n":""); return; }
+  if (!object.value) { std::cout<<"{\"present\":false,\"reserved\":"<<(reserved?"true":"false")<<'}'<<(newline?"\n":""); return; }
   const auto data=static_cast<const SakuraClipboardPolicy*>(MapViewOfFile(object.value,FILE_MAP_READ,0,0,sizeof(SakuraClipboardPolicy)));
   if (!data) throw std::runtime_error("policy section unavailable");
   SakuraClipboardPolicy value{};
@@ -201,7 +203,8 @@ static void state(const wchar_t* owner,DWORD pid,uint64_t created,bool newline=t
   }
   std::cout<<"{\"present\":true,\"ready\":"<<(value.status==1 ? "true":"false")<<",\"active\":"<<(value.active ? "true":"false")
     <<",\"compatible\":"<<(std::memcmp(value.build,SAKURA_CLIPBOARD_BUILD,65)==0?"true":"false")
-    <<",\"flags\":"<<value.flags<<",\"maximum\":"<<value.maxTextBytes<<",\"blockedCopy\":"<<value.blockedCopy<<",\"blockedPaste\":"<<value.blockedPaste<<'}'<<(newline?"\n":"");
+    <<",\"flags\":"<<value.flags<<",\"maximum\":"<<value.maxTextBytes<<",\"blockedCopy\":"<<value.blockedCopy<<",\"blockedPaste\":"<<value.blockedPaste
+    <<",\"reserved\":"<<(reserved?"true":"false")<<'}'<<(newline?"\n":"");
   UnmapViewOfFile(data);
 }
 static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wstring& expected,const std::wstring& library,uint32_t flags,uint32_t maximum,bool active,bool report=true) {
@@ -215,6 +218,7 @@ static void apply(const wchar_t* owner,DWORD pid,uint64_t created,const std::wst
   const auto architecture=bits(process.value);
   if (architecture!=32 && architecture!=64) throw std::runtime_error("native process architecture unsupported");
   const auto name=mapping(owner,pid,created);
+  if(descendantCreationPending(owner,pid,created))throw std::runtime_error("controlled child creation is pending; ordinary attachment refused");
   const auto token=user(GetCurrentProcess()); wchar_t* sid=nullptr;
   if (!ConvertSidToStringSidW(reinterpret_cast<const TOKEN_USER*>(token.data())->User.Sid,&sid)) throw std::runtime_error("policy ACL unavailable");
   const std::wstring descriptor=L"D:P(A;;GA;;;"+std::wstring(sid)+L")(A;;GA;;;SY)";
@@ -767,8 +771,15 @@ static void launch(const wchar_t* owner,const std::wstring& expected,const std::
     TerminateJobObject(job.value,1);WaitForSingleObject(process.value,30000);throw;
   }
 }
+#include "descendant-controller.h"
 int wmain(int argc,wchar_t** argv) {
   try {
+    if(argc==3 && std::wstring(argv[1])==L"descendants"){descendantBroker(argv[2]);return 0;}
+    if(argc==18 && std::wstring(argv[1])==L"adopt"){
+      const auto flags=number(argv[6]),maximum=number(argv[7]),broker=number(argv[9]),suspended=number(argv[15]),parent=number(argv[16]);
+      if(flags>15 || maximum>1048576 || !broker || broker>MAXDWORD || suspended>1 || !parent || parent>MAXDWORD)throw std::runtime_error("invalid descendant helper arguments");
+      descendantAdopt(argv[2],argv[3],argv[4],argv[5],uint32_t(flags),uint32_t(maximum),argv[8],DWORD(broker),number(argv[10]),argv[11],argv[12],argv[13],argv[14],suspended!=0,DWORD(parent),number(argv[17]));return 0;
+    }
     if (argc==2 && std::wstring(argv[1])==L"list") { list(); return 0; }
     if (argc==5 && std::wstring(argv[1])==L"status") {
       const auto pid=number(argv[3]);

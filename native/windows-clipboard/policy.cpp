@@ -1,3 +1,6 @@
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0a00
+#endif
 #include "protocol.h"
 #include "early-import.h"
 #include "control-system.h"
@@ -13,6 +16,7 @@
 #include <regex>
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 // MinGW declares these helpers without dllimport. Keep the address used for
 // dependency validation bound to the actual OS import, rather than our thunk.
@@ -55,6 +59,7 @@ static Rule current() {
   }
   return {true,0,1024};
 }
+#include "descendant-policy.h"
 static void blocked(bool copy) {
   if (shared) InterlockedIncrement64(copy ? &shared->blockedCopy : &shared->blockedPaste);
   SetLastError(ERROR_ACCESS_DENIED);
@@ -723,6 +728,8 @@ static bool earlyConfigure(const SakuraClipboardEarly* input) {
       !earlyHook(&originalOleGet,&OleGetClipboard,reinterpret_cast<void*>(&oleGet)) ||
       !earlyHook(&originalOleSet,&OleSetClipboard,reinterpret_cast<void*>(&oleSet)) ||
       !earlyHook(&originalOleFlush,&OleFlushClipboard,reinterpret_cast<void*>(&oleFlush)) ||
+      !earlyHook(&originalProcessW,&CreateProcessW,reinterpret_cast<void*>(&descendantCreateW)) ||
+      !earlyHook(&originalProcessA,&CreateProcessA,reinterpret_cast<void*>(&descendantCreateA)) ||
       !earlyHook(&originalCreateW,&CreateWindowExW,reinterpret_cast<void*>(&createControlW)) ||
       !earlyHook(&originalCreateA,&CreateWindowExA,reinterpret_cast<void*>(&createControlA)) ||
       !earlyHook(&originalMessageW,&GetMessageW,reinterpret_cast<void*>(&messageControlW)) ||
@@ -768,6 +775,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI SakuraConfigureClipboard(void* poi
             !hook(L"ole32","OleGetClipboard",reinterpret_cast<void*>(&oleGet),&originalOleGet) ||
             !hook(L"ole32","OleSetClipboard",reinterpret_cast<void*>(&oleSet),&originalOleSet) ||
             !hook(L"ole32","OleFlushClipboard",reinterpret_cast<void*>(&oleFlush),&originalOleFlush) ||
+            !hook(L"kernel32","CreateProcessW",reinterpret_cast<void*>(&descendantCreateW),&originalProcessW) ||
+            !hook(L"kernel32","CreateProcessA",reinterpret_cast<void*>(&descendantCreateA),&originalProcessA) ||
             !hook(L"user32","CreateWindowExW",reinterpret_cast<void*>(&createControlW),&originalCreateW) ||
             !hook(L"user32","CreateWindowExA",reinterpret_cast<void*>(&createControlA),&originalCreateA) ||
             !hook(L"user32","GetMessageW",reinterpret_cast<void*>(&messageControlW),&originalMessageW) ||

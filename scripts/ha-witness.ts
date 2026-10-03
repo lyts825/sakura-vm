@@ -5,23 +5,29 @@ import { haWitnessServerConfigSchema, startHaWitnessServer,
   witnessVms } from '../server/ha-witness-server.ts';
 import { checkHaWitnessDeployment } from '../server/ha-witness-preflight.ts';
 import { observeHaFailoverDrill, prepareHaFailoverDrill } from '../server/ha-witness-drill.ts';
+import { maintainHaWitnessState } from '../server/ha-witness-maintenance.ts';
 
 const mode = process.argv[2];
-const command = ['--initialize', '--preflight', '--drill-plan', '--observe'].includes(mode) ? mode : null;
+const command = ['--initialize', '--preflight', '--drill-plan', '--observe',
+  '--migrate', '--reconfigure', '--recover'].includes(mode) ? mode : null;
 const configPath = process.argv[command ? 3 : 2];
 if (!configPath)
-  throw new Error('用法：npm run ha:witness -- [--initialize|--preflight|--drill-plan|--observe] <config.json>');
+  throw new Error('用法：npm run ha:witness -- [--initialize|--preflight|--drill-plan|--observe|--migrate|--reconfigure|--recover] <config.json>');
 const config = haWitnessServerConfigSchema.parse(
   JSON.parse(await readFile(resolve(configPath), 'utf8')));
 const flags = new Map<string, string>();
-if (command === '--drill-plan' || command === '--observe') {
+if (command === '--drill-plan' || command === '--observe' ||
+    command === '--migrate' || command === '--reconfigure' || command === '--recover') {
   const tail = process.argv.slice(command === '--drill-plan' ? 5 : 4);
   const allowed = command === '--drill-plan' ? ['--output', '--witness-url']
-    : ['--plan', '--output', '--timeout-seconds', '--witness-url'];
+    : command === '--observe' ? ['--plan', '--output', '--timeout-seconds', '--witness-url']
+      : command === '--migrate' ? ['--backup', '--output']
+        : command === '--recover' ? ['--from-state', '--backup', '--output']
+        : ['--next-config', '--backup', '--output'];
   for (let index = 0; index < tail.length; index += 2) {
     const key = tail[index], value = tail[index + 1];
     if (!allowed.includes(key) || !value || value.startsWith('--') || flags.has(key))
-      throw new Error('演练命令参数无效或重复');
+      throw new Error('见证命令参数无效或重复');
     flags.set(key, value);
   }
 }
@@ -32,6 +38,21 @@ if (command === '--initialize') {
 }
 if (command === '--preflight') {
   const report = await checkHaWitnessDeployment(config);
+  console.log(JSON.stringify(report, null, 2));
+  if (!report.ok) process.exitCode = 1;
+} else if (command === '--migrate' || command === '--reconfigure' || command === '--recover') {
+  if (!flags.has('--backup') || !flags.has('--output') ||
+      (command === '--reconfigure' && !flags.has('--next-config')) ||
+      (command === '--recover' && !flags.has('--from-state')))
+    throw new Error('用法：--migrate <config.json> --backup <new-backup.json> --output <new-receipt.json>；--reconfigure 另须 --next-config <new-config.json>；--recover 另须 --from-state <valid-state-backup.json>');
+  const next = command === '--reconfigure'
+    ? haWitnessServerConfigSchema.parse(JSON.parse(await readFile(resolve(flags.get('--next-config')!), 'utf8')))
+    : config;
+  const report = await maintainHaWitnessState(config, next, {
+    mode: command === '--migrate' ? 'migrate' : command === '--recover' ? 'recover' : 'reconfigure',
+    ...(command === '--recover' ? { recoveryStateFile: flags.get('--from-state')! } : {}),
+    backupFile: flags.get('--backup')!, output: flags.get('--output')!,
+  });
   console.log(JSON.stringify(report, null, 2));
   if (!report.ok) process.exitCode = 1;
 } else if (command === '--drill-plan') {

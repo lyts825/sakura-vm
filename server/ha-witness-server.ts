@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { AppError } from './model.ts';
 import { readJsonBody } from './http.ts';
 import { HaWitness, type HaWitnessActions, type HaWitnessPlan,
-  type HaWitnessVm } from './ha-witness-core.ts';
+  type HaWitnessVm, type HaWitnessReplicaIdentity,
+  haWitnessReplicaInventorySchema } from './ha-witness-core.ts';
 import { haHttpsRequest } from './ha-witness-http.ts';
 import { lockHaWitnessState } from './ha-witness-lock.ts';
 
@@ -19,6 +20,8 @@ const baseUrl = httpsUrl.refine((value) => new URL(value).pathname === '/' &&
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
 const bearerToken = z.string().regex(/^[a-f0-9]{64}$/);
 const systemUuid = z.string().regex(/^[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}$/);
+const applicationConfigSchema = z.object({ url: httpsUrl, token: bearerToken,
+  fingerprint: fingerprint.optional() }).strict();
 
 export function redfishPowerState(raw: unknown, expectedUuid: string) {
   const result = raw as { UUID?: unknown; PowerState?: unknown } | null;
@@ -40,10 +43,10 @@ const witnessVmConfigSchema = z.object({
   }).strict().refine((value) => !!value.caFile !== !!value.fingerprint,
     '带外接口必须选择 CA 文件或证书指纹'),
   target: z.object({ baseUrl, fingerprint, token: bearerToken }).strict(),
-  application: z.object({ url: httpsUrl, token: bearerToken,
-    fingerprint: fingerprint.optional() }).strict(),
+  application: applicationConfigSchema,
   traffic: z.object({ baseUrl, token: bearerToken,
     fingerprint: fingerprint.optional() }).strict(),
+  failback: z.object({ application: applicationConfigSchema }).strict().optional(),
 }).strict().refine((vm) => vm.sourceHostId !== vm.targetHostId,
   '来源宿主与目标宿主必须不同');
 export const haWitnessServerConfigSchema = z.object({
@@ -72,15 +75,20 @@ export function witnessVms(config: HaWitnessServerConfig): HaWitnessVm[] {
   return config.vms.map((vm) => ({ sourceHostId: vm.sourceHostId,
     sourceVmId: vm.sourceVmId, targetHostId: vm.targetHostId,
     failureThreshold: vm.failureThreshold,
-    sourceSystemUuid: vm.redfish.systemUuid.toLowerCase() }));
+    sourceSystemUuid: vm.redfish.systemUuid.toLowerCase(),
+    ...(vm.failback ? { failbackBinding: createHash('sha256').update(JSON.stringify({
+      sourceApplication: vm.failback.application.url,
+      sourceApplicationFingerprint: vm.failback.application.fingerprint || null,
+      traffic: vm.traffic.baseUrl, trafficFingerprint: vm.traffic.fingerprint || null,
+    })).digest('hex') } : {}) }));
 }
 
-function targetInput(plan: HaWitnessPlan) {
+function targetInput(plan: HaWitnessReplicaIdentity) {
   return { transferId: plan.transferId, remoteVmId: plan.remoteVmId,
     sha256: plan.sha256, sourceVmId: plan.sourceVmId, snapshotId: plan.snapshotId };
 }
 
-async function actionsFor(config: HaWitnessServerConfig): Promise<HaWitnessActions> {
+export async function createHaWitnessActions(config: HaWitnessServerConfig): Promise<HaWitnessActions> {
   const entries = new Map(config.vms.map((vm) => [vm.sourceVmId, vm]));
   const ca = new Map<string, Buffer>();
   for (const vm of config.vms)
@@ -106,6 +114,22 @@ async function actionsFor(config: HaWitnessServerConfig): Promise<HaWitnessActio
       throw new AppError('目标主机身份与见证配置不一致', 409);
     return haHttpsRequest(new URL(path, vm.target.baseUrl).toString(), 'POST', body,
       { bearer: vm.target.token, fingerprint: vm.target.fingerprint, timeoutMs: 30_000 });
+  };
+  const applicationReady = async (application: z.infer<typeof applicationConfigSchema>,
+    vmId: string) => {
+    const url = new URL(application.url);
+    url.searchParams.set('vmId', vmId);
+    const result = await haHttpsRequest(url.toString(), 'GET', undefined,
+      { bearer: application.token, fingerprint: application.fingerprint }) as {
+      ready?: boolean; vmId?: string };
+    return result?.ready === true && result.vmId === vmId;
+  };
+  const trafficTarget = async (identity: HaWitnessVm) => {
+    const vm = entry(identity), url = new URL('/status', vm.traffic.baseUrl);
+    url.searchParams.set('sourceVmId', vm.sourceVmId);
+    const result = await haHttpsRequest(url.toString(), 'GET', undefined,
+      { bearer: vm.traffic.token, fingerprint: vm.traffic.fingerprint }) as { activeVmId?: string };
+    return result?.activeVmId || '';
   };
   return {
     fence: async (identity) => {
@@ -148,12 +172,7 @@ async function actionsFor(config: HaWitnessServerConfig): Promise<HaWitnessActio
     },
     applicationReady: async (identity, plan) => {
       const vm = entry(identity);
-      const url = new URL(vm.application.url);
-      url.searchParams.set('vmId', plan.remoteVmId);
-      const result = await haHttpsRequest(url.toString(), 'GET', undefined,
-        { bearer: vm.application.token,
-          fingerprint: vm.application.fingerprint }) as { ready?: boolean; vmId?: string };
-      return result?.ready === true && result.vmId === plan.remoteVmId;
+      return applicationReady(vm.application, plan.remoteVmId);
     },
     switchTraffic: async (identity, plan) => {
       const vm = entry(identity);
@@ -164,20 +183,45 @@ async function actionsFor(config: HaWitnessServerConfig): Promise<HaWitnessActio
       if (result?.accepted !== true || result.activeVmId !== plan.remoteVmId)
         throw new AppError('流量切换接口未确认目标实例', 409);
     },
-    trafficTarget: async (identity, plan) => {
+    trafficTarget,
+    recoveryTrafficTarget: trafficTarget,
+    inspectReplicas: async (identity) => {
       const vm = entry(identity);
-      const url = new URL('/status', vm.traffic.baseUrl);
-      url.searchParams.set('sourceVmId', plan.sourceVmId);
-      const result = await haHttpsRequest(url.toString(), 'GET', undefined,
-        { bearer: vm.traffic.token,
-          fingerprint: vm.traffic.fingerprint }) as { activeVmId?: string };
-      return result?.activeVmId || '';
+      const peer = await haHttpsRequest(new URL('/peer/status', vm.target.baseUrl).toString(),
+        'GET', undefined, { bearer: vm.target.token, fingerprint: vm.target.fingerprint }) as {
+        version?: unknown; id?: unknown };
+      if (peer?.version !== 1 || peer.id !== vm.targetHostId)
+        throw new AppError('目标主机身份与见证配置不一致', 409);
+      const url = new URL('/peer/replicas-status', vm.target.baseUrl);
+      url.searchParams.set('sourceVmId', vm.sourceVmId);
+      const result = haWitnessReplicaInventorySchema.parse(await haHttpsRequest(url.toString(),
+        'GET', undefined, { bearer: vm.target.token, fingerprint: vm.target.fingerprint,
+          maxResponseBytes: 1024 * 1024 }));
+      if (result.hostId !== vm.targetHostId || result.sourceHostId !== vm.sourceHostId ||
+          result.sourceVmId !== vm.sourceVmId)
+        throw new AppError('目标完整副本清单身份不一致', 409);
+      return result;
     },
     retire: async (identity, plan) => {
       const result = await target(entry(identity), '/peer/replica-retire',
         targetInput(plan)) as { id?: string; retired?: boolean };
       if (result?.id !== plan.remoteVmId || result.retired !== true)
         throw new AppError('目标副本未确认持久退役', 409);
+    },
+    sourceApplicationReady: async (identity) => {
+      const vm = entry(identity);
+      if (!vm.failback) throw new AppError('未配置来源应用健康接口，不能自动回切', 409);
+      return applicationReady(vm.failback.application, vm.sourceVmId);
+    },
+    restoreTraffic: async (identity, plan) => {
+      const vm = entry(identity);
+      if (!vm.failback) throw new AppError('自动流量回切未配置', 409);
+      const result = await haHttpsRequest(new URL('/restore', vm.traffic.baseUrl).toString(),
+        'POST', { sourceVmId: vm.sourceVmId, retiredVmId: plan.remoteVmId },
+        { bearer: vm.traffic.token, fingerprint: vm.traffic.fingerprint }) as {
+        accepted?: boolean; activeVmId?: string };
+      if (result?.accepted !== true || result.activeVmId !== vm.sourceVmId)
+        throw new AppError('流量回切接口未确认来源实例', 409);
     },
   };
 }
@@ -204,7 +248,7 @@ async function startHaWitnessServerUnlocked(raw: unknown,
     ? Object.entries(config.sourceTokens)
     : [[config.vms[0].sourceHostId, config.sourceToken!]]);
   const witness = new HaWitness(config.stateFile, witnessVms(config),
-    await actionsFor(config), now);
+    await createHaWitnessActions(config), now);
   await witness.init();
   const server: Server = createHttpsServer({
     cert: await readFile(config.listen.certFile), key: await readFile(config.listen.keyFile),

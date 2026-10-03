@@ -2,6 +2,36 @@
 
 以下按批次保存实际实现和验证。较早批次中标记的 DLL/TLS、普通 fork、认证依赖预取、原生 Wayland 受控入口、短任务进程归属，以及项目账号的 argv 正文运输和产品接入缺口，已有后续改进；历史摘要、摘要值和日志保留供追溯，不代表当前范围。最新范围与限制以下方第一节为准。
 
+## 普通子进程剪贴板继承、见证维护与账号提权限制
+
+2026-10-03 Windows 第 5 版原生运行包接通普通 `CreateProcessW/A` 子进程和孙进程的提前策略继承。跨 EXE、x64/x86 与原生/CLR 初始化阶段均先完成准确持久归属，再插入策略并恢复应用代码；保留调用者命令、环境、cwd、标准句柄及 `CREATE_SUSPENDED`。创建前发布具名 Job 保留并原子分配，普通 apply 在建立 mapping 或任何 remote loader 前拒绝准备中的 child；服务在扫描、写归属、采用和每个异步边界按准确身份仲裁，旧快照不会删除 prepared 记录，helper 实际关闭后才释放仲裁。OS 认证 broker 自行复制并保留父进程原句柄到原请求结束；父进程退出或管道 EOF 时清理准确 Job，最后恢复前再核对准确父身份和存活。规则换代、服务关闭和失败准备收敛到各自 Job。普通扫描、热更新、停用与控制服务重载沿用原规则来源。
+
+最终第 5 版 build `22613f6876ce559b23de63c696db3130e42b3cd7f1950556d85782f20885dfce` 双架构编译通过，38 个专项单测及 30 个真实场景通过。证明 `.data/native-clipboard-test-temp/descendant-b5a62adf-adae-428b-8504-3f075d8b8964/descendant-proof.json` 的来源前后未变，包含 broker 请求未到服务时的准确保留、list/status 与 prepared/attached 交错、提交后调用者暂停进程热更新和父 EOF 清理；父 EOF child 在服务采用前已消失，未留下归属或 mapping。6 次 broker 及私有窗口站启动器实际 close 均为 code 0，最终自有进程残留为零。冻结回执 `descendant-freeze.json` 核对 19 个 owned 文件、28 个相关来源、33 个 native 构建输入和 6 个生产/实测资产，SHA-256 `497cbb57498d06dcea83df801764cb0b014d69661dc43825ae000225710f2a1e`。测试未访问交互桌面剪贴板、创建账号或安装运行时。调用者 opaque `STARTUPINFOEX`、调试标志明确拒绝；ShellExecute、token 创建、打包激活及其他底层路径仍未覆盖，范围见 [Windows 策略](native-clipboard.md)。
+
+第 4 版初轮 build `58f555c800dde0db8b440d2e771bc6fcbbe614a97cbb8df2a27e5a64c3970eab` 的 29 个专项单测、23 个真实场景及原冻结证明仍保留于 `descendant-34b948fe-18dc-4183-b7a2-4254cc61de6d`。后续审计补齐创建保留、扫描仲裁和父 EOF，旧第 4 版资产可以恢复或停用已有归属，但不再启用旧子通道。
+
+HA 见证持久状态升级为第 4 版，新增离线 `--migrate`、`--reconfigure`、`--recover` 命令，保留原字节备份、失败回执和未确认提交。恢复持久封锁来源，须从目标取得受配对认证的全部历史副本清单、逐个确认停机和退役，再核对第二份完整清单后解除。可选自动流量回切保存原精确退役计划，在来源健康、退役及流量确认后完成；关闭策略后已有待回切仍继续。UI 显示恢复封锁、待回切和回切完成，目标的保存退役回执同时复核完整来源/快照身份。60 项见证、接管、主机配对和接收器回归通过，日志 `artifacts/ha-witness-tests/final-53b43563-8e19-48b0-b08a-f55247e0bf6c/checks.log`。这些接口测试不证明第三节点或 BMC 物理独立，外部故障演练仍未完成；使用见 [见证维护](ha-witness-maintenance.md)。
+
+项目 UID 网络规则新增标准 SSH、cron/at 和用户会话启动器的 `NoNewPrivileges` 配置、有效启动配置及实际 root 守护/旧 SSH 会话核对。启动器尚未继承时保留原意图、拒绝新账号和执行准入，并返回需要明确重启的错误；不会自动中断既有系统连接。这会限制客户机内所有普通账号经这些服务执行时提权，删除项目不会自动撤回。固定原生入口还拒绝 stdin/stdout/stderr/保护帧中的 IP、packet、netlink 等网络 socket，保留文件、管道、PTY 和 Unix socket。运行后由特权代理另行转交描述符仍在范围外。新增独立 Alpine/QEMU 验证入口保存原始镜像摘要、账号迁移、真实 SSH/cron、提权基线、冷启动规则和实际进程关闭证据，使用与限制见 [项目账号共享网络限制](project-egress.md)。
+
+真实 Alpine 首次安装定位到启动链接父目录使用 `O_PATH` 句柄执行 `fsync`，实际 errno 9；同一目录 inode 的可读句柄同步成功。诊断 `.data/owned-egress-directory-219db4e4-f8c0-441c-90eb-09e05bc1bed6.json` 保留 pending 归属及已创建准确链接，SSH client/channel 实际关闭。修复后 native build 为 `c3ae1129ef9136dd7125bb7f52b3d2a78e3677527567dd68a24025c0728b678d`，pending 恢复已存在链接时也须同步父目录后才能 reload/applied；72 项专项回归通过，冻结证明 `artifacts/project-egress-nnp-final-a9280581-96c2-43f8-b8c9-5b56d73b0139/verification.json`。失败完整联测及只读重启超时夹具、日志和原始镜像全部保留，没有把诊断通过记为完整功能通过。
+
+后续全新夹具正确完成首次准入拒绝、明确重启自有服务及账号迁移，随后严格 FD 测试器重命名 `main` 时暴露 Alpine GCC 返回路径错误；失败证明保留于 `sakura-egress-adGIS8/project-egress-vm-bcf22609-dd3a-4e6d-bf3e-8b77bc274e1d.json`。固定启动器的退出拒绝与最终执行函数现明确声明 C11 `_Noreturn`，未放宽编译告警或任何权限检查；最终 native build `6585b440ffa83b7e2f15c0f3c0033cc2054b2b713b84e23b029ab52288d3be84` 再次通过 72 项专项，冻结证明 `artifacts/project-egress-nnp-final-6ddc1b8e-d262-431e-846f-8c107cc9e63e/verification.json`。
+
+目录同步配置保存复用已有 `writeStore`，保留完整原文件与准确已同步临时文件，在 Windows 短暂占用时有界重试原子替换。此前完整回归的 `sync.json` rename/EPERM 失败证明 `.data/project-terminal-full-unit-6ac7d683-1a95-48ac-98c7-834fbd565c11-verification.json` 继续保留，后续完整回归另行记录。
+
+工程归档发布在 Windows 临时文件占用时也加入一秒内的有限重试，只重试系统占用错误，每次重新拒绝已存在的目标；永久权限错误和其他平台错误仍原样返回。完整回归更新了有限 UID 任务、项目 SSH 导出和 X11 整域退休的测试调用，并在新的自有 E 盘目录运行真实磁盘容量及 SSH 文件权限检查，没有放宽生产容量或权限规则。来源快照的 221 个测试文件共 1699 项，1698 通过、0 失败、1 项 Windows 上预期不适用的 Linux Virtio-FS 跳过；992 份来源和 Node 二进制前后未变，实际 exit/close 0，证明 `.data/feature-full-unit-4b10b1cd-b8ce-40d7-8dd3-0196c5da1781-verification.json`。随后新增的 VM 连接诊断不在该单测快照内，最终构建前须重新绑定来源。
+
+严格 FD 验证入口已修正 Python subprocess 同时传入 `stdin` 和 `input` 的测试构造错误，八个独立调用回归通过，证明 `artifacts/project-identity-fd-invoke-3c94bb02-7589-474c-86e5-5224b20fc34c/verification.json`。新 Alpine 内核真实通过全部九项描述符场景，覆盖五种网络 socket 在 FD 0–3 拒绝、文件/管道/Unix socket/PTY 保留及二进制 EOF/NoNewPrivileges。新 VM 还通过账号双栈限制、其他账号与 Root 可用、普通系统 SSH 提权及连接阻断；完整托管 SSH/cron/冷启动验证尚在定位桥接断连，不能把这三项和 FD 前置通过计作整组通过。失败夹具 `sakura-egress-hmi4X6` 与 `sakura-egress-QchdTL`、原始镜像和全部进程关闭证明继续保留在新自有验证目录。
+
+第三个新鲜夹具 `sakura-egress-IF345R/project-egress-vm-e1c86375-ce95-4ad0-9e3b-7426bf589f51.json` 定位到第二次桥接验证返回 `EGRESS_NNP_SERVICE_UNVERIFIED`：真实标准 SSH helper `4407 → 3326` 已继承 NNP，但位于 OpenRC 根 cgroup，原 PIDfile fallback 只认领监听器。控制器现只按受控 PIDfile 中已核对的 Root SSH 监听器追溯真实 SSH 父子链，双次复核创建时间、PPID、真实 executable、UID、能力与 cgroup，链上仍强制 NNP=1；孤儿、未知中间进程、错角色、伪标题和身份变化继续拒绝。SSH 只读状态保留原账号出站准入错误原因，失败不会开放入口，32 项 SSH/桥接回归通过。最终该修复 native build `aa9bd7ca8c42546fec8293ada08579148a7b1a39cb3e3fbfb97a9d405a1d9a72` 的 72 项专项及八组 NNP 生产 AST 模型通过，冻结证明 `artifacts/project-egress-nnp-final-aca824bf-f336-43e1-bb9b-f030585de1ca/verification.json`；同一新增模型针对旧冻结资产精准重现原错误。未自动重启服务或终止既有会话；新鲜完整 VM 与当前来源整仓回归另行记录。
+
+修复后的最终来源整仓回归为 `.data/feature-full-unit-917ebbf3-4828-4a1f-81bc-0fb22bf5c975-verification.json`：221 个测试文件、1699 项，1698 通过、0 失败、1 项预期跳过；992 份来源和 Node 二进制前后未变，实际 exit/close 0。并行新 VM 在系统工具安装的五分钟预算内超时，Python 尚未安装，未进入任何功能场景；`sakura-egress-8mQ3O7/project-egress-vm-e801fa5b-4a87-4544-bbcd-75c856d2964d.json` 和 controller 证明保留，四个已 ready 的 SSH 连接全部实际关闭，自有 QEMU 和其他子进程均为零。该安装失败不计成功，停止整仓负载后另起新夹具完整验证，未放宽安装时限或使用历史 VM 充作新基线。
+
+停止整仓负载后的独立夹具 `sakura-egress-9RX9RG/project-egress-vm-a5d3d43b-ad54-4a8a-bbd9-c49477b2e91d.json` 仍在同一工具安装阶段超时，零功能场景、来源未变、原镜像未变、自有进程全部实际关闭。继续检查安装路径时只使用已关闭失败磁盘的独立诊断副本，原虚拟机及磁盘不再启动或修改；副本诊断不作为全新九项或物理 HA 演练通过证明。已通过的整仓来源快照用于构建和分发，完整 Linux 实机证明仍单独核对。
+
+本批不修改 247 个已有入口和 3 个部分实现目录项的分类。历史失败证明、虚拟机和镜像继续保留；新增证明只表示其明列范围通过。
+
 ## Windows CLR 与 AnyCPU 的受控剪贴板启动
 
 2026-10-03 未打包的纯 IL CLR EXE 已接通受控早期启动，覆盖固定 x64、固定 x86、AnyCPU 和优先 32 位。服务按有界磁盘 PE/CLR 标记选择 helper；原生控制器持有原 EXE 只读锁，再核对完整启动头、准确 RVA、标记和实际挂起子进程位数。混合模式、ReadyToRun、本机入口、歧义/越界映射及未知架构拒绝；完整用户/会话/创建时间、持久归属、已保存规则、Job 和 resume 合约继续保持。页面和新 test:native-clipboard:managed-early 入口已接通，范围见 [早期启动说明](windows-clipboard-early-init.md)。

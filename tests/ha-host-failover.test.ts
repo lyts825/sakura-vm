@@ -115,3 +115,25 @@ test('source heartbeat arms only a verified compatible standby and start checks 
     assert.equal(heartbeats.at(-1)?.plan, null, 'planned service close disarms witness');
   }
 });
+
+test('pending return heartbeats resume after source restart even with the HA policy revoked', async () => {
+  const id = randomUUID(), sourceHostId = randomUUID(), targetHostId = randomUUID();
+  const vm = { id, snapshots: [] };
+  const machines = { records: new Map([[id, vm]]), get: () => vm,
+    state: () => 'running' } as unknown as Machines;
+  const heartbeats: unknown[] = [];
+  const client = { status: async () => ({ phase: 'source', armed: false,
+    targetHostId, failureThreshold: 3, failback: { phase: 'pending' } }),
+    heartbeat: async (value: unknown) => {
+      heartbeats.push(value); return { armed: false, failback: 'pending' };
+    } } as unknown as HaWitnessClient;
+  const peers = { view: () => ({ hostId: sourceHostId }) } as unknown as HostPeers;
+  const failover = new HaHostFailover(machines, peers, {} as SnapshotReplications,
+    async () => ({}), client);
+  try {
+    await failover.init();
+    assert.deepEqual(heartbeats, [{ sourceHostId, sourceVmId: id, failureThreshold: 3, plan: null }]);
+    assert.equal(failover.view(id).armed, false);
+    assert.equal(failover.view(id).failback, 'pending', 'routing return remains visible separately from policy arming');
+  } finally { await failover.close(); }
+});

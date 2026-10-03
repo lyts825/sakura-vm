@@ -15,6 +15,7 @@ import { AppError, createSchema, organizationSchema, DATA } from './model.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
 import { qmp } from './qmp.ts';
 import { liveMigrationProjectsSchema } from './live-migration-projects.ts';
+import { haWitnessReplicaInventorySchema, type HaWitnessReplicaInventory } from './ha-witness-core.ts';
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
@@ -139,6 +140,8 @@ type ImportReceiver = {
     Promise<z.infer<typeof activateResult>>;
   retireReplica?: (input: ImportIdentity & z.infer<typeof replicaActivateInput>) =>
     Promise<z.infer<typeof retireResult>>;
+  inspectReplicas?: (input: { requesterId: string; sourceVmId: string; targetHostId: string }) =>
+    Promise<HaWitnessReplicaInventory>;
 };
 const pairInput = z.object({ code: z.string().regex(/^[A-F0-9]{10}$/),
   requesterId: z.uuid(), name: hostName }).strict();
@@ -744,6 +747,25 @@ export class HostPeers {
         const transferId = z.uuid().parse(url.searchParams.get('id'));
         return this.send(response, await this.importReceiver.status({
           transferId, requesterId: peer.requesterId }));
+      }
+      if (request.method === 'GET' && request.url?.startsWith('/peer/replicas-status?')) {
+        const peer = this.inbound(request);
+        if (!peer.allowImport || !peer.allowFailover)
+          throw new AppError('此同伴未获故障副本核对权限', 403);
+        if (!this.importReceiver?.inspectReplicas)
+          throw new AppError('目标主机尚未提供完整故障副本清单', 503);
+        const url = new URL(request.url, 'https://peer.invalid');
+        if (url.pathname !== '/peer/replicas-status' ||
+            [...url.searchParams.keys()].some((key) => key !== 'sourceVmId') ||
+            url.searchParams.getAll('sourceVmId').length !== 1)
+          throw new AppError('无效的故障副本清单请求');
+        const sourceVmId = z.uuid().parse(url.searchParams.get('sourceVmId'));
+        const result = haWitnessReplicaInventorySchema.parse(await this.importReceiver.inspectReplicas({
+          requesterId: peer.requesterId, sourceVmId, targetHostId: this.state.hostId }));
+        if (result.hostId !== this.state.hostId || result.sourceHostId !== peer.requesterId ||
+            result.sourceVmId !== sourceVmId)
+          throw new AppError('完整故障副本清单身份不一致', 409);
+        return this.send(response, result);
       }
       if (request.method === 'POST' &&
           (request.url === '/peer/activate' || request.url === '/peer/activate-check')) {

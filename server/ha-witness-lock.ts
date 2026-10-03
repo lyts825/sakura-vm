@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstat, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { hostname } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { AppError } from './model.ts';
 
 type Owner = { version: 1; host: string; pid: number; token: string };
@@ -15,10 +16,16 @@ function livePid(pid: number) {
 }
 
 /** One authority per canonical state file. Kernel IPC serializes local stale-lock recovery. */
-export async function lockHaWitnessState(file: string) {
-  const canonical = await realpath(file);
-  const info = await lstat(canonical);
-  if (!info.isFile() || info.nlink !== 1)
+export async function lockHaWitnessState(file: string, options: { allowMissing?: boolean } = {}) {
+  const canonical = await realpath(file).catch(async (error) => {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !options.allowMissing) throw error;
+    return join(await realpath(dirname(file)), basename(file));
+  });
+  const info = await lstat(canonical).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !options.allowMissing) throw error;
+    return null;
+  });
+  if (info && (!info.isFile() || info.nlink !== 1))
     throw new AppError('见证状态须为独立普通文件，不能使用硬链接', 503, 'HA_WITNESS_STATE_LOCKED');
   const key = createHash('sha256').update(process.platform === 'win32'
     ? canonical.toLowerCase() : canonical).digest('hex');

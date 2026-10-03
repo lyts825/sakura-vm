@@ -5,7 +5,7 @@ import { AppError } from './model.ts';
 
 type HttpsOptions = {
   bearer?: string; basic?: { username: string; password: string };
-  fingerprint?: string; ca?: Buffer; timeoutMs?: number;
+  fingerprint?: string; ca?: Buffer; timeoutMs?: number; maxResponseBytes?: number;
 };
 
 /** JSON/empty HTTPS request with bounded bodies and either PKI or an exact certificate pin. */
@@ -33,7 +33,8 @@ export function haHttpsRequest(urlText: string, method: 'GET' | 'POST',
       let size = 0;
       response.on('data', (chunk: Buffer) => {
         size += chunk.length;
-        if (size > 64 * 1024) request.destroy(new AppError('见证响应过大', 502));
+        if (size > (options.maxResponseBytes || 64 * 1024))
+          request.destroy(new AppError('见证响应过大', 502));
         else chunks.push(chunk);
       });
       response.on('end', () => {

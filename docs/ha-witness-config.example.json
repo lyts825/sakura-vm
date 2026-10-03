@@ -34,6 +34,12 @@
       "traffic": {
         "baseUrl": "https://replace-traffic-controller.invalid/",
         "token": "REPLACE_WITH_TRAFFIC_CONTROLLER_TOKEN_64_HEX"
+      },
+      "failback": {
+        "application": {
+          "url": "https://replace-source-application-host.invalid/health",
+          "token": "REPLACE_WITH_SOURCE_APPLICATION_TOKEN_64_HEX"
+        }
       }
     }
   ]

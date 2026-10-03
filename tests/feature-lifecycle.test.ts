@@ -7,11 +7,13 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Machines } from '../server/machines.ts';
+import type { FeatureDevTaskOptions } from '../server/feature-suite-dev-task.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-feature-lifecycle-'));
 process.env.SAKURA_DATA_DIR = root;
 const { Features } = await import('../server/features.ts');
 const { MAX_TEXT_REQUEST_BYTES } = await import('../server/http.ts');
+const { projectVersion } = await import('../server/workspaces.ts');
 after(async () => {
   assert.equal(dirname(root), resolve(tmpdir()));
   assert.ok(basename(root).startsWith('sakura-feature-lifecycle-'));
@@ -82,12 +84,37 @@ test('scoped feature endpoints hand the selected project through to views and jo
     JSON.stringify({ directory: '/workspace/selected', template: 'none' }),
   );
   const { features, machines } = await fixture();
-  const commands: string[] = [];
+  const executedProjects: { projectId: string; directory: string }[] = [];
+  let releases = 0;
   machines.live.set(id, {} as any);
-  machines.exec = async (_vmId: string, command: string) => {
-    commands.push(command);
+  machines.exec = async () => {
     return { stdout: '', stderr: '', code: 0 };
   };
+  const devTaskOptions: FeatureDevTaskOptions = {
+    terminals: {
+      prepare: async (vmId, scope, session, readOnly, signal, _terminal, mode) => {
+        assert.equal(vmId, id);
+        assert.equal(scope, projectId);
+        assert.equal(session, null);
+        assert.equal(readOnly, false);
+        assert.deepEqual(mode, { mode: 'task' });
+        const project = await features.workspaces.config(id);
+        return { command: 'unused', projectId: scope, networkIsolation: project.networkIsolation || 'host',
+          signal: signal!, terminalId: undefined,
+          captured: { project, configVersion: projectVersion(project), live: machines.live.get(id)! },
+          release: () => { ++releases; } };
+      },
+    },
+    runTask: async (_machines, vmId, project, execution, signal) => {
+      assert.equal(vmId, id);
+      assert.equal(features.workspaces.projects.current(id), projectId);
+      assert.equal(signal.aborted, false);
+      assert.match(execution.command, /npm test/);
+      executedProjects.push({ projectId: project._workspace!, directory: project.directory });
+      return { stdout: '', stderr: '', code: 0 };
+    },
+  };
+  Reflect.set(features.suite, 'devTaskOptions', devTaskOptions);
   const request = Object.assign(new EventEmitter(), { method: 'GET', headers: {} }) as IncomingMessage;
   const response = () =>
     Object.assign(new EventEmitter(), {
@@ -134,7 +161,9 @@ test('scoped feature endpoints hand the selected project through to views and jo
     assert.equal(jobResponse.payload.projectId, projectId);
     assert.equal(jobResponse.payload.key, `${id}:${projectId}:dev`);
     await features.suite.jobs.wait(jobResponse.payload.key);
-    assert.ok(commands.some((command) => command.includes('/workspace/selected')));
+    assert.equal(features.suite.jobs.view(jobResponse.payload.key)?.status, 'done');
+    assert.deepEqual(executedProjects, [{ projectId, directory: '/workspace/selected' }]);
+    assert.equal(releases, 1);
   } finally {
     await features.close();
   }

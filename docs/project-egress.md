@@ -10,6 +10,20 @@
 
 systemd 为系统 SSH、cron、at、用户会话及 `user@.service` 添加 Requires/After 依赖。OpenRC 为已安装的 sshd、crond/cronie、atd 和 local 服务追加 `rc_need`，保留原配置内容；固定服务加入 boot 级别。恢复失败时这些依赖不会成功启动。首次配置之后另行安装或自定义的其他启动器须重新核对其依赖。
 
+## 普通 SSH 与定时任务的提权限制
+
+首次准备私有项目时，固定 systemd/OpenRC 配置还会给标准 SSH、cron/at 和用户会话启动器设置 `NoNewPrivileges`。这些启动器及其后代不能通过 setuid、setgid 或文件 capability 获得新的权限，项目账号的普通登录 Shell 保持 `/bin/sh`。systemd 检查实际合并后的配置、用户服务实例及执行标志，拒绝被后续配置覆盖或使用特权执行标志的入口；OpenRC 核对系统启动库、工具支持和标准启动流程，不把任意自定义脚本视为已保护。
+
+这项服务设置会影响同一客户机中经这些服务登录或运行任务的**所有普通账号**，包括共享项目和非项目账号；其 `sudo`、`su` 及其他依赖执行时提权的程序可能无法提权。已具有权限的固定 root 管理入口继续按原权限执行。删除最后一个私有项目也不会自动撤回这些系统启动配置。
+
+安装配置不会自动重启系统服务或中断既有连接。若实际 root 守护进程或既有 SSH 会话尚未继承限制，新的项目账号和托管执行会返回 `PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED`，保留原意图及详细进程身份。管理员应核对后重启对应服务、结束旧会话，再重试原准备操作；只读身份查询和停止清理仍可使用。仅凭新监听进程的配置不够，仍存在的旧认证或会话进程也会被核对。
+
+OpenRC 标准 SSH 若在统一 cgroup 挂载前启动，可通过受控 PIDfile 中已核对的真实 Root 监听器确认归属。接受连接和拆分的 SSH helper 必须沿真实内核父子链追溯该监听器，每个节点仍须 NNP=1，并再次核对原创建时间、父进程、映像、账号、能力及 cgroup。孤立或被重新挂接的进程、未知父节点、身份变化和错角色的 PIDfile 均拒绝，进程标题本身不会授予归属。托管 SSH 状态保留实际出站准入失败原因，状态读取不会修复配置或开放失败入口。
+
+systemd 的首次提交顺序为：保存 pending 归属、持久写入全部策略文件和启动链接、执行 `daemon-reload`、保存 applied 归属。以后只读核对仍发现管理器需要重新加载时，返回 `PROJECT_IDENTITY_EGRESS_NNP_PENDING`；管理员核对原配置并执行 `systemctl daemon-reload` 后重试原意图。恢复不初始化另一套账号或放宽原限制。
+
+原生项目入口在运行客户机程序前检查传入描述符。标准输入、输出、错误及保护帧描述符上的 IPv4、IPv6、packet、netlink 等网络套接字被拒绝；普通管道、文件、PTY 和本地 Unix 套接字继续保留二进制输入及 EOF 语义。这不会阻止另一个特权代理在项目程序运行后通过 Unix socket 另行转交网络描述符。
+
 宿主和客户机保留原 registry、账号、boot、网络设备/inode、规则表 handle 及 pending/applied 状态。规则创建和删除使用固定 JSON 事务，不加载项目环境。创建、删除、写入或服务配置升级的应答丢失保留待确认状态；再次明确启动同一项目会核对并完成原意图。身份查询可读取已提交绑定供恢复，执行和 SSH/终端准入仍须规则确认。
 
 普通准入只核对，不修复被删除、替换或修改的已应用规则。未知表、变更 handle、原 boot 中的网络空间替换和被修改的管理脚本均拒绝；不清空整机规则。切回共享模式时，先保存意图、提交账号绑定，再确认删除原表。未知状态继续阻止托管执行，可从实例控制台核对 `systemctl status sakura-project-egress` 或 `rc-service sakura-project-egress status` 及原记录。
@@ -19,5 +33,9 @@ systemd 为系统 SSH、cron、at、用户会话及 `user@.service` 添加 Requi
 这是对**该项目 UID 发出的 IP 数据包**的限制。其他 UID、客户机管理员、由特权代理或其他账号转交的已打开套接字，以及其他 IPC 不属于这条规则的身份边界。管理员修改或重新加载整机防火墙可能改变规则；后续托管准入会拒绝失去归属的规则。它不替代实例级断网或抵御客户机 root 的系统策略。
 
 `tests/project-egress.test.ts` 执行生产 Python 定义的事务模型，覆盖应答丢失、模式切换、原身份和表替换、重启恢复、systemd/OpenRC 配置、升级中断及配置保留。`scripts/smoke-project-egress-linux.py` 要求调用方创建独立 PID、mount、network 空间，并提供已校验的 nft 工具；它验证真实 UID、IPv4/IPv6、私有回环、其他 UID、原网络中的规则核对、handle 拒绝和模式切换。该脚本不创建系统账号，不代表 QEMU 开机或真实 SSH/cron 启动验证。
+
+`npm run test:project-egress:vm -- --run-new alpine` 使用原始 Alpine 镜像的独立副本、新的数据目录和真实 QEMU。它先验证测试用 setuid 和文件 capability 程序确实能够提权，再验证受限普通系统 SSH、cron、托管 SSH、双栈回环和冷启动恢复；保留虚拟机、来源摘要、进程退出及输出关闭证据。`--inspect-owned alpine <测试目录>` 仅可对该脚本已确认关闭的自有夹具执行只读工具诊断，诊断通过不代表整组功能验证通过。
+
+需要另选有足够空间的验证盘时，可设置 `SAKURA_EGRESS_FIXTURE_ROOT` 为绝对目录。入口核对实际目录路径，并在其中创建独立的新夹具，不搬移已有实例、镜像或证明；目录须允许当前用户创建文件及管理自己的 SSH 文件权限。证明保存实际父目录，仍逐项核对原始镜像、来源和自有进程关闭。连接诊断只记录正式状态检查、桥接验证、实际控制器错误及 relay 的错误流和退出，不读取 relay 正文或放宽准入。
 
 规则的 `inet`、output hook 和 socket UID 语义参照 [nftables 官方手册](https://netfilter.org/projects/nftables/manpage.html)；服务依赖参照 [OpenRC 服务脚本指南](https://github.com/OpenRC/openrc/blob/master/service-script-guide.md)。
