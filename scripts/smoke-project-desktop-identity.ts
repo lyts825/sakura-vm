@@ -38,6 +38,121 @@ def classify_descriptor(row, objects, process_role):
          'closeOnExec':bool(int(row['flags'],8)&os.O_CLOEXEC),'unattributedPipe':row['target'].startswith('pipe:[') and not original}
 `;
 
+// This runs only after a real migration refusal, against the verified current
+// installed module. Its only controller calls are explicit readonly queries.
+const migrationNftDiagnostic = String.raw`
+import os,sys,json,stat,hashlib,base64,platform,traceback,subprocess,time
+request=json.loads(sys.argv[1]);report={'version':1,'kind':'owned-migration-nft-readonly','bound':False,'commands':[],'calls':[],'files':[],'errors':[]}
+held=[];native_popen=subprocess.Popen;current_role='none'
+def digest(data):return hashlib.sha256(data).hexdigest()
+def raw(data):return {'bytes':len(data),'sha256':digest(data),'base64':base64.b64encode(data).decode('ascii')}
+def tuple_(i):return {'device':str(i.st_dev),'inode':str(i.st_ino),'uid':i.st_uid,'gid':i.st_gid,'mode':stat.S_IMODE(i.st_mode),'type':stat.S_IFMT(i.st_mode),'links':i.st_nlink,'size':i.st_size,'mtime':str(i.st_mtime_ns),'ctime':str(i.st_ctime_ns)}
+def read_root(path,limit,mode=None,missing=False):
+ parts=path.split('/')[1:];assert parts and all(p and p not in ('.','..') for p in parts),'DIAGNOSTIC_PATH'
+ parent=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
+ try:
+  for component in parts[:-1]:
+   child=os.open(component,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=parent);os.close(parent);parent=child
+   i=os.fstat(parent);assert i.st_uid==0 and i.st_gid==0 and not i.st_mode&0o022,'DIAGNOSTIC_PARENT'
+  try:fd=os.open(parts[-1],os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=parent)
+  except FileNotFoundError:
+   if missing:return None
+   raise
+ finally:os.close(parent)
+ i=os.fstat(fd);held.append((fd,path,tuple_(i)));assert stat.S_ISREG(i.st_mode) and i.st_uid==0 and i.st_gid==0 and not i.st_mode&0o022 and i.st_nlink==1,'DIAGNOSTIC_FILE'
+ if mode is not None:assert stat.S_IMODE(i.st_mode)==mode,'DIAGNOSTIC_MODE'
+ assert i.st_size<=limit,'DIAGNOSTIC_SIZE';data=b''
+ while len(data)<=limit:
+  piece=os.read(fd,min(65536,limit+1-len(data)))
+  if not piece:break
+  data+=piece
+ assert len(data)<=limit and len(data)==i.st_size and tuple_(os.fstat(fd))==tuple_(i),'DIAGNOSTIC_FILE_CHANGED'
+ report['files'].append({'path':path,'tuple':tuple_(i),'sha256':digest(data),'bytes':len(data)})
+ return data
+def call(role,fn):
+ global current_role
+ current_role=role;row={'role':role,'startedAt':time.time_ns()};report['calls'].append(row)
+ try:row['result']=fn();return row['result']
+ except BaseException as error:row['error']={'type':type(error).__name__,'code':getattr(error,'code',None),'detail':getattr(error,'detail',None),'message':str(error),'traceback':traceback.format_exc()};return None
+ finally:row['finishedAt']=time.time_ns()
+class ObservedPopen(native_popen):
+ def __init__(self,*args,**kwargs):
+  self.receipt={'role':current_role,'argv':args[0] if args else kwargs.get('args'),'startedAt':time.time_ns(),'completeOutput':False};report['commands'].append(self.receipt)
+  try:super().__init__(*args,**kwargs);self.receipt['pid']=self.pid
+  except BaseException as error:self.receipt['spawnError']=str(error);raise
+ def communicate(self,*args,**kwargs):
+  try:
+   out,err=super().communicate(*args,**kwargs);self.receipt['stdout']=raw(out or b'');self.receipt['stderr']=raw(err or b'');self.receipt['completeOutput']=True;return out,err
+  except subprocess.TimeoutExpired as error:
+   self.receipt['timedOut']=True;self.receipt['stdout']=raw(error.output or b'');self.receipt['stderr']=raw(error.stderr or b'');raise
+ def __exit__(self,*args):
+  try:return super().__exit__(*args)
+  finally:
+   self.receipt.update({'returncode':self.returncode,'waited':self.returncode is not None,'stdinClosed':self.stdin is None or self.stdin.closed,'stdoutClosed':self.stdout is None or self.stdout.closed,'stderrClosed':self.stderr is None or self.stderr.closed,'finishedAt':time.time_ns()})
+try:
+ assert os.getuid()==0 and os.getgid()==0,'DIAGNOSTIC_ROOT'
+ dmi=open('/sys/class/dmi/id/product_uuid').read().strip().lower();boot=open('/proc/sys/kernel/random/boot_id').read().strip()
+ assert dmi==request['vmId'] and boot==request['bootId'],'DIAGNOSTIC_GUEST_IDENTITY';report.update({'vmId':dmi,'bootId':boot,'kernel':platform.uname()._asdict()})
+ manifest=request['manifest'];destination='/usr/local/lib/sakura-project-identity/'+manifest['build'];aggregate=hashlib.sha256();sources={}
+ for item in manifest['files']:
+  assert item['name'] in ('protocol.h','launcher.c','controller.py'),'DIAGNOSTIC_SOURCE_NAME'
+  data=read_root(destination+'/'+item['name'],262144,0o600);assert len(data)==item['size'] and digest(data)==item['sha256'],'DIAGNOSTIC_SOURCE_SHA'
+  aggregate.update(item['name'].encode());aggregate.update(data);sources[item['name']]=data
+ assert set(sources)=={'protocol.h','launcher.c','controller.py'} and aggregate.hexdigest()==manifest['build'],'DIAGNOSTIC_BUILD'
+ installed=read_root(destination+'/manifest.json',65536,0o600);assert json.loads(installed)==manifest,'DIAGNOSTIC_MANIFEST'
+ ns={'__name__':'sakura_readonly_nft_diagnostic','__file__':destination+'/controller.py'};exec(compile(sources['controller.py'],ns['__file__'],'exec'),ns)
+ store=call('registry-readonly',lambda:ns['registry'](readonly=True));binding=call('binding-readonly',lambda:ns['binding_read'](request['projectId'],True))
+ assert store is not None and binding is not None,'DIAGNOSTIC_EXACT_BINDING_MISSING'
+ assert binding['projectId']==request['projectId'] and binding['directory']==request['directory'] and binding['networkIsolation']=='private','DIAGNOSTIC_PROJECT_BINDING'
+ assert binding['registryId']==store['registryId'] and store['reserved'].get(str(binding['uid']))=={'projectId':binding['projectId'],'identityId':binding['identityId']},'DIAGNOSTIC_REGISTRY_BINDING'
+ report.update({'bound':True,'binding':binding,'registry':store})
+ report['registryRaw']=raw(read_root(ns['BASE']+'/registry.json',1048576,0o600));report['registryAnchorRaw']=raw(read_root(ns['BASE']+'/registry.bin',256,0o600))
+ report['bindingRaw']=raw(read_root(ns['binding_path'](binding['projectId']),2048,0o600))
+ owner=read_root(ns['egress_path'](binding),4096,0o600,True);report['egressOwnerRaw']=None if owner is None else raw(owner)
+ report['egressOwner']=call('egress-readonly',lambda:ns['egress_read'](binding));report['networkContext']=call('egress-context-readonly',ns['egress_context'])
+ assert report['networkContext'] is not None and report['networkContext']['bootId']==boot,'DIAGNOSTIC_CONTEXT'
+ report['expectedName'],report['expectedObjects']=ns['egress_spec'](binding)
+ nft=os.path.realpath(ns['tool']('nft'));nft_bytes=read_root(nft,16777216);report['nft']={'path':nft,'sha256':digest(nft_bytes),'bytes':len(nft_bytes)}
+ for library in ('/usr/lib/x86_64-linux-gnu/libnftables.so.1',):
+  resolved=os.path.realpath(library)
+  if os.path.isfile(resolved):data=read_root(resolved,16777216);report['libnftables']={'path':resolved,'sha256':digest(data),'bytes':len(data)}
+ subprocess.Popen=ObservedPopen
+ call('nft-version-readonly',lambda:ns['execute']([nft,'--version']).decode('utf8','strict'))
+ tables=call('nft-production-list-tables-readonly',lambda:ns['egress_nft'](['list','tables']))
+ table=call('nft-production-list-exact-table-readonly',lambda:ns['egress_nft'](['list','table','inet',report['expectedName']]))
+ realm,_context=ns['egress_realm']()
+ try:
+  nft_fd=next(fd for fd,path,before in held if path==nft)
+  def enter_realm():
+   library=ns['ctypes'].CDLL(None,use_errno=True)
+   if library.setns(realm,0x40000000)!=0:raise OSError(ns['ctypes'].get_errno(),'readonly nft network namespace')
+  call('nft-human-exact-table-readonly',lambda:ns['execute'](['/proc/self/fd/'+str(nft_fd),'-a','-n','list','table','inet',report['expectedName']],pass_fds=(nft_fd,realm),preexec_fn=enter_realm).decode('utf8','strict'))
+ finally:os.close(realm)
+ report['tablesRaw']=None if tables is None else raw(tables);report['tableRaw']=None if table is None else raw(table)
+ # Byte outputs live in the command receipts. Replace only unserializable
+ # result bytes, preserving metainfo and the exact decoded object sequence.
+ for row in report['calls']:
+  if isinstance(row.get('result'),bytes):row['result']=raw(row['result'])
+ if table is not None:
+  report['tableJson']=json.loads(table);objects=ns['egress_json'](table);normalized=[]
+  for entry in objects:
+   kind,fields=next(iter(entry.items()));fields=dict(fields);fields.pop('handle',None);normalized.append({kind:fields})
+  report['normalizedObjects']=normalized;report['normalizedEqualsExpected']=normalized==report['expectedObjects']
+ call('nft-original-egress-table-verifier-readonly',lambda:ns['egress_table'](binding))
+ for fd,path,before in held:assert tuple_(os.fstat(fd))==before and tuple_(os.stat(path,follow_symlinks=False))==before,'DIAGNOSTIC_HELD_FILE_CHANGED'
+ assert open('/sys/class/dmi/id/product_uuid').read().strip().lower()==dmi and open('/proc/sys/kernel/random/boot_id').read().strip()==boot,'DIAGNOSTIC_GUEST_CHANGED'
+ report['sourceBookendsUnchanged']=True
+except BaseException as error:report['errors'].append({'type':type(error).__name__,'message':str(error),'traceback':traceback.format_exc()})
+finally:
+ subprocess.Popen=native_popen
+ for fd,path,before in held:
+  try:os.close(fd)
+  except OSError as error:report['errors'].append({'type':type(error).__name__,'message':str(error),'path':path})
+ report['heldDescriptorsClosed']=not report['errors']
+ report['passed']=report['bound'] and report.get('sourceBookendsUnchanged',False) and not report['errors'] and all(row.get('waited') and row.get('stdinClosed') and row.get('stdoutClosed') and row.get('stderrClosed') and row.get('completeOutput') and row.get('returncode')==0 and not row.get('timedOut') for row in report['commands'])
+ print(json.dumps(report,separators=(',',':'),sort_keys=True));sys.exit(0 if report['passed'] else 1)
+`;
+
 if (process.argv.length === 2 || process.argv[2] === '--describe') {
   console.log('Windows owned Debian KDE COW only: --run-cow x11|wayland. The registered project-desktop and single-app-windows tests describe this fixture by default. Uses real directory migration, current project UID, full Desktop/native authority, public clipboard and SingleApp APIs. SingleApp checks independent UID, unchanged 0700/0600 project, real authenticated RFB pixels, live-listener port isolation, readonly reload, manual full-run stop and automatic full-domain retirement after natural xterm exit. Wayland additionally checks the production directory view and private 0700 application ELF. Historical source disk stays read locked. Keeps failures, logs and physical closes. Not fresh-image provisioning.');
 } else {
@@ -135,6 +250,56 @@ async function run(transport: 'x11' | 'wayland') {
     return result.stdout.trim();
   }
   const python = async (source: string) => JSON.parse(await guest('/usr/bin/python3 -I -S -c ' + quote(source)));
+  async function observeMigrationNftRefusal(projectId: string, directory: string) {
+    assert.match(projectId, /^[a-f0-9]{16}$/); assert.match(proof.bootId, /^[a-f0-9-]{36}$/);
+    const live = machines!.live.get(fixture.vmId); assert.ok(live);
+    const manifestBytes = await readFile(join(workspace, '.sakura-server/assets/project-identity/manifest.json'));
+    assert.equal(sha256(manifestBytes), proof.sourceBefore['.sakura-server/assets/project-identity/manifest.json']);
+    const input = { vmId: fixture.vmId, bootId: proof.bootId, projectId, directory, manifest: JSON.parse(manifestBytes.toString()) };
+    const command = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' + quote(migrationNftDiagnostic) + ' ' + quote(JSON.stringify(input));
+    const row: any = { version: 1, role: 'fixed-root-migration-nft-readonly', inputSha256: sha256(JSON.stringify(input)),
+      commandSha256: sha256(command), programSha256: sha256(migrationNftDiagnostic), startedAt: new Date().toISOString(),
+      vmId: fixture.vmId, bootId: proof.bootId, projectId, directory, timeoutMilliseconds: 90000, exit: null, close: null };
+    proof.migrationNftDiagnosis = row;
+    const client = await machines!.connect(fixture.vmId), output: Record<'stdout' | 'stderr', Buffer[]> = { stdout: [], stderr: [] };
+    let channel: ClientChannel | undefined, failure: unknown;
+    try {
+      await new Promise<void>((done, reject) => client.exec(command, (setupError, stream) => {
+        if (setupError) { row.setupError = errorValue(setupError); return reject(setupError); }
+        channel = stream; const ledger = watchChannel(stream); row.channelId = ledger.id; row.connectionId = ledger.connectionId;
+        let size = 0;
+        const timer = setTimeout(() => { row.timedOut = true; stream.close(); reject(new Error('Fixed Root migration diagnostic timed out')); }, row.timeoutMilliseconds);
+        for (const name of ['stdout', 'stderr'] as const) (name === 'stdout' ? stream : stream.stderr).on('data', (bytes: Buffer) => {
+          size += bytes.length;
+          if (size > 1048576) { row.outputExceeded = true; stream.close(); reject(new Error('Fixed Root migration diagnostic output exceeded its budget')); }
+          else output[name].push(Buffer.from(bytes));
+        });
+        stream.once('exit', (code: number | null, signal?: string) => { row.exit = { code, signal: signal || null }; });
+        stream.once('close', (code: number | null, signal?: string) => {
+          clearTimeout(timer); row.close = { code, signal: signal || null }; row.closedAt = new Date().toISOString(); done();
+        }); stream.end();
+      }));
+    } catch (error) { failure = error; }
+    if (channel) {
+      try { await boundedTransport(channelClosures.get(channel)!, 'Fixed Root migration diagnostic physical close'); }
+      catch (error) { row.physicalCloseError = errorValue(error); failure ||= error; }
+      row.physicallyClosed = channelStates.get(channel).closed;
+    }
+    for (const name of ['stdout', 'stderr'] as const) {
+      const bytes = Buffer.concat(output[name]), path = join(fixture.root, 'logs', (row.channelId || randomUUID()) + '.nft-diagnosis.' + name + '.bin');
+      await writeFile(path, bytes, { flag: 'wx' }); row[name] = { path, size: bytes.length, sha256: sha256(bytes) };
+      assert.equal(sha256(await readFile(path)), row[name].sha256);
+    }
+    assert.equal(machines!.live.get(fixture.vmId), live, 'Migration diagnostic VM live changed');
+    if (failure) throw failure;
+    assert.deepEqual(row.close, row.exit); assert.equal(row.physicallyClosed, true);
+    row.result = JSON.parse(Buffer.concat(output.stdout).toString());
+    row.observationComplete = row.exit?.code === 0 && row.result.passed === true;
+    for (const command of row.result.commands || []) for (const name of ['stdout', 'stderr'] as const) {
+      if (!command[name]) continue;
+      const bytes = Buffer.from(command[name].base64, 'base64'); assert.equal(bytes.length, command[name].bytes); assert.equal(sha256(bytes), command[name].sha256);
+    }
+  }
   async function binding() {
     const { projectDesktopBindingSchema } = await import('../server/desktop-binding.ts');
     return projectDesktopBindingSchema.parse(JSON.parse(await readFile(join(fixture.root, 'machines', fixture.vmId, 'desktop-binding.json'), 'utf8')));
@@ -970,6 +1135,11 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
         try { preview = await migrations.preview(fixture.vmId); }
         catch (error) {
           proof.admissionRefusal = errorValue(error);
+          if (Reflect.get(error as object, 'code') === 'PROJECT_IDENTITY_EGRESS_TABLE_CHANGED') {
+            try { await observeMigrationNftRefusal(index.active, directory); }
+            catch (diagnosticError) { proof.migrationNftDiagnosis ||= {}; proof.migrationNftDiagnosis.error = errorValue(diagnosticError); }
+            throw error;
+          }
           if (Reflect.get(error as object, 'code') !== 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED') throw error;
           proof.admissionServicesBefore = await guest('systemctl show ssh.service cron.service -p Id -p FragmentPath -p ActiveState -p NoNewPrivileges -p MainPID');
           await guest('set -eu; systemctl restart ssh.service; systemctl restart cron.service');
