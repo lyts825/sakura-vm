@@ -37,6 +37,7 @@ export type AuditEvent = z.infer<typeof eventSchema>;
 export type AuditRecord = z.infer<typeof recordSchema>;
 type TraceContext = Pick<AuditEvent, 'traceId' | 'spanId' | 'parentSpanId'>;
 const context = new AsyncLocalStorage<TraceContext>();
+export function withoutAuditParent<T>(work: () => T): T { return context.exit(work); }
 const zero = '0'.repeat(64);
 
 export class AuditLog {

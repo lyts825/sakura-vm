@@ -1,4 +1,5 @@
 import { networkFor } from './network/index.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { createHash, createPublicKey, randomUUID, verify, type KeyObject } from 'node:crypto';
 import { readFile, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 
@@ -289,7 +290,7 @@ export class CommunityPlugins {
   private problems: Record<string, string> = {};
   private inFlight = 0;
   private source?: () => Promise<WebhookEvent[]>;
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private pending?: Promise<void>;
   private eventError?: string;
   private blocked = () => false;
@@ -378,17 +379,21 @@ export class CommunityPlugins {
     };
   }
 
-  setEventSource(source: () => Promise<WebhookEvent[]>, schedule = true,
+  async setEventSource(source: () => Promise<WebhookEvent[]>, schedule = true,
     blocked: () => boolean = () => false, mutation: (delta: number) => void = () => {}) {
+    if (this.closed) throw new AppError('插件市场正在关闭', 503);
+    if (this.timer) await this.timer.close();
+    this.timer = undefined;
     if (this.closed) throw new AppError('插件市场正在关闭', 503);
     this.source = source;
     this.blocked = blocked;
     this.mutation = mutation;
-    if (this.timer) clearInterval(this.timer);
     if (schedule) {
-      this.timer = setInterval(() => void this.tick(), 5000);
-      this.timer.unref();
-      void this.tick();
+      this.timer = scheduler.register({ owner: 'core:community-plugins', label: '社区插件事件与计划任务', intervalMs: 5000,
+        immediate: true, overlap: 'skip', backoff: { initialMs: 5000, maxMs: 60000 }, run: async () => {
+          await this.tick();
+          if (this.eventError) throw new AppError(this.eventError, 503);
+        } });
     }
   }
 
@@ -724,7 +729,7 @@ export class CommunityPlugins {
 
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
+    await this.timer?.close();
     await this.pending;
     await this.writes;
     await Promise.all(

@@ -3,12 +3,50 @@ import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Scheduler } from '../server/scheduler.ts';
 import { Jobs } from '../server/jobs.ts';
-import { hostRuntime } from '../server/host-runtime/index.ts';
+import { hostRuntime, resourceContext, withResourceContext } from '../server/host-runtime/index.ts';
 import { AppError } from '../shared/errors.ts';
 
 function gate() { let resolve!: () => void; const promise = new Promise<void>((done) => { resolve = done; }); return { promise, resolve }; }
 async function eventually(check: () => boolean) { const end = Date.now() + 2000;
   while (!check()) { assert.ok(Date.now() < end, 'Scheduler did not settle'); await delay(5); } }
+
+test('periodic work owns its budget independently of the registering job and actor', async () => {
+  const scheduler = new Scheduler(), jobs = new Jobs(), entered = gate(), release = gate();
+  let actor: string | undefined, owner: string | undefined;
+  const handle = scheduler.register({ owner: 'plugin:periodic', label: 'Independent fixture', intervalMs: 60000,
+    run: async () => { actor = resourceContext()?.actorId; owner = resourceContext()?.owner; entered.resolve(); await release.promise; } });
+  try {
+    await withResourceContext({ actorId: 'registrant', vmId: 'old-vm' }, () => jobs.track('register', async () => {
+      handle.trigger(); await entered.promise;
+      assert.equal(actor, undefined); assert.equal(owner, 'plugin:periodic');
+      assert.equal(hostRuntime.snapshot().budgets.find(budget => budget.key === 'jobs')?.used, 2);
+      // The registering task can finish while the schedule remains active.
+    }));
+    assert.equal(handle.snapshot().state, 'running');
+    release.resolve(); await scheduler.close(); await jobs.close();
+  } finally { release.resolve(); await scheduler.close(); await jobs.close(); }
+});
+
+test('application drain stops new schedules and exposes cancellation until physical work finishes', async () => {
+  const scheduler = new Scheduler(), entered = gate(), release = gate();
+  let signal: AbortSignal | undefined;
+  const handle = scheduler.register({ owner: 'test:drain', label: 'Drain fixture', intervalMs: 60000,
+    run: async (context) => { signal = context.signal; entered.resolve(); await release.promise; } });
+  try {
+    handle.trigger(); await entered.promise;
+    scheduler.beginDrain();
+    assert.equal(signal?.aborted, true);
+    assert.equal(handle.snapshot().state, 'cancelling');
+    assert.equal(handle.trigger(), false);
+    assert.throws(() => scheduler.register({ owner: 'test:late', label: 'Late', intervalMs: 10, run: async () => {} }),
+      { code: 'SCHEDULER_CLOSED' });
+    let closed = false;
+    const closing = scheduler.close().then(() => { closed = true; });
+    await delay(10); assert.equal(closed, false);
+    release.resolve(); await closing;
+    assert.deepEqual(scheduler.snapshot(), []);
+  } finally { release.resolve(); await scheduler.close(); }
+});
 
 test('overlapping triggers coalesce into one followup while skip never overlaps', async () => {
   const scheduler = new Scheduler(), entered = gate(), release = gate(); let runs = 0, active = 0, peak = 0;

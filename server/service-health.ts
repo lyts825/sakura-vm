@@ -3,6 +3,7 @@ import { type Workspaces, projectPrivateValues } from './workspaces.ts';
 import { runServices, serviceOrder } from './project-services.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
 import { Jobs } from './jobs.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { AppError } from '../shared/errors.ts';
 import { ProjectServiceScopes, projectServiceBinding } from './project-service-scope.ts';
@@ -35,7 +36,7 @@ export class ServiceHealth {
   private blockedChecks = new Map<string, Set<string>>();
   private pending?: Promise<void>;
   private closed = false;
-  private timer: ReturnType<typeof setInterval>;
+  private timer: ScheduleHandle;
   private onChange = () => {
     for (const key of this.states.keys())
       if (!this.machines.live.has(key.split(':')[0])) {
@@ -53,15 +54,15 @@ export class ServiceHealth {
     private machines: Machines,
     private workspaces: Workspaces,
   ) {
-    this.timer = setInterval(() => {
+    this.timer = scheduler.register({ owner: 'plugin:service-health', label: '项目服务健康检查', intervalMs: 5000,
+      overlap: 'skip', run: async () => {
       if (!this.pending)
         this.pending = this.tick()
-          .catch(() => {})
           .finally(() => {
             this.pending = undefined;
           });
-    }, 5000);
-    this.timer.unref();
+      await this.pending;
+    } });
     machines.on('change', this.onChange);
     workspaces.onAction = (id, action, service) => this.expect(id, action, service);
   }
@@ -281,10 +282,10 @@ export class ServiceHealth {
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
     this.machines.off('change', this.onChange);
     this.workspaces.onAction = undefined;
     for (const abort of this.checks.values()) abort.abort();
+    await this.timer.close();
     await this.pending;
     await this.jobs.close();
   }

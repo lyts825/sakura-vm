@@ -1,4 +1,5 @@
 import { networkFor } from './network/index.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { randomUUID, X509Certificate } from 'node:crypto';
 import { type ClientRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { type Server as HttpsServer } from 'node:https';
@@ -138,7 +139,7 @@ export class HttpIngress {
   private probes = new Set<ClientRequest>();
   private listenerErrors: Record<string, string> = {};
   private health = new Map<string, IngressHealth>();
-  private timer?: NodeJS.Timeout;
+  private timer?: ScheduleHandle;
   private unsubscribe?: () => void;
   private closed = false;
 
@@ -178,9 +179,8 @@ export class HttpIngress {
         this.listenerErrors[String(port)] = (error as Error).message;
       }
     }
-    this.timer = setInterval(() => void this.checkAll().catch(() => {}), 15000);
-    this.timer.unref();
-    void this.checkAll().catch(() => {});
+    this.timer = scheduler.register({ owner: 'plugin:network', label: 'HTTP 入口健康检查', intervalMs: 15000,
+      immediate: true, overlap: 'skip', run: () => this.checkAll() });
   }
 
   view(): IngressView {
@@ -542,8 +542,8 @@ export class HttpIngress {
 
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
     for (const probe of this.probes) probe.destroy();
+    await this.timer?.close();
     const hadListeners = this.listeners.size > 0;
     await Promise.all([...this.listeners].map(([port, server]) => this.closeListener(port, server)));
     this.listeners.clear();

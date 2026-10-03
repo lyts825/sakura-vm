@@ -1,4 +1,5 @@
 import { networkFor } from './network/index.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual, X509Certificate } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { type Server as HttpsServer } from 'node:https';
@@ -277,7 +278,7 @@ function connectPinnedPeerStream(urlText: string, pin: string, path: string, tok
 export class HostPeers {
   private state!: Store;
   private server?: HttpsServer;
-  private timer?: NodeJS.Timeout;
+  private timer?: ScheduleHandle;
   private code?: { value: string; expiresAt: number };
   private attempts = new Map<string, { count: number; until: number }>();
   private observations = new Map<string, Observation>();
@@ -333,9 +334,8 @@ export class HostPeers {
       catch (error) { this.listenerError = (error as Error).message; }
     }
     if (schedule) {
-      this.timer = setInterval(() => void this.refresh(), 30_000);
-      this.timer.unref();
-      void this.refresh();
+      this.timer = scheduler.register({ owner: 'core:host-peers', label: '协作宿主状态刷新', intervalMs: 30000,
+        immediate: true, overlap: 'skip', run: () => this.refresh() });
     }
   }
 
@@ -1325,7 +1325,7 @@ export class HostPeers {
     for (const peerId of this.migrationForwards.keys()) this.closeMigrationForwards(peerId);
     for (const active of this.activeImports.values())
       for (const controller of active) controller.abort(new AppError('服务正在关闭', 503));
-    if (this.timer) clearInterval(this.timer);
+    await this.timer?.close();
     if (this.server) {
       const closing = new Promise<void>((resolve) => this.server!.close(() => resolve()));
       this.server.closeAllConnections();

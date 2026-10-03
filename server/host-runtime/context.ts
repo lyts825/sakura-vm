@@ -33,3 +33,8 @@ export function captureResourceContext(identity: Partial<ResourceIdentity> = {})
 export function withResourceContext<T>(identity: Partial<ResourceIdentity>, work: () => T): T {
   return contexts.run(captureResourceContext(identity), work);
 }
+
+/** Independently owned background work must not retain a registrant's actor or VM identity. */
+export function withNewResourceContext<T>(identity: Partial<ResourceIdentity>, work: () => T): T {
+  return contexts.run(contexts.exit(() => captureResourceContext(identity)), work);
+}

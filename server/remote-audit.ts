@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { z } from 'zod';
 import { AuditLog } from './audit.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
@@ -229,7 +230,7 @@ export class S3RemoteAuditStore implements RemoteAuditStore {
 export class RemoteAuditLock {
   private state?: State;
   private pending = Promise.resolve();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private closed = false;
   private backgroundAllowed = () => true;
   constructor(
@@ -269,10 +270,11 @@ export class RemoteAuditLock {
     if (created) await writeStore(this.file, state);
     this.state = state;
     if (this.intervalMs > 0) {
-      this.timer = setInterval(() => {
-        if (this.state?.target && !this.closed && this.backgroundAllowed()) void this.sync().catch(() => {});
-      }, this.intervalMs);
-      this.timer.unref();
+      this.timer = scheduler.register({ owner: 'core:remote-audit', label: '审计远程锚点发布', intervalMs: this.intervalMs,
+        overlap: 'skip', backoff: { initialMs: this.intervalMs, maxMs: Math.min(2147483647, this.intervalMs * 4) },
+        run: async () => {
+          if (this.state?.target && !this.closed && this.backgroundAllowed()) await this.sync();
+        } });
     }
   }
   setBackgroundAllowed(check: () => boolean) {
@@ -462,7 +464,7 @@ export class RemoteAuditLock {
   }
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
+    await this.timer?.close();
     await this.pending;
   }
 }

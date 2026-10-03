@@ -7,6 +7,7 @@ import { quote } from './shell.ts';
 import { readStore, regularDirectory, within, writeStore } from './local-store.ts';
 import { serveHostMount } from './host-mount-sftp.ts';
 import type { Machines } from './machines.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 
 const policySchema = z.object({
   enabled: z.boolean(),
@@ -33,7 +34,7 @@ export class HostMounts {
   private observations = new Map<string, Observation>();
   private tasks = new Map<string, Promise<unknown>>();
   private writes = Promise.resolve();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private tick?: Promise<void>;
   private closed = false;
   constructor(private machines: Machines,
@@ -43,11 +44,12 @@ export class HostMounts {
   async init() {
     this.policies = z.record(z.uuid(), policySchema).parse(
       await readStore(hostFile(), () => ({})));
-    this.timer = setInterval(() => {
+    this.timer = scheduler.register({ owner: 'core:host-mount', label: '宿主共享目录状态校准', intervalMs: 10000,
+      overlap: 'skip', run: async () => {
       if (!this.tick && !this.closed)
         this.tick = this.reconcile().finally(() => { this.tick = undefined; });
-    }, 10_000);
-    this.timer.unref();
+      await this.tick;
+    } });
   }
 
   private locked<T>(id: string, work: () => Promise<T>): Promise<T> {
@@ -231,7 +233,7 @@ export class HostMounts {
 
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
+    await this.timer?.close();
     await this.tick;
     await Promise.allSettled([...this.tasks.values()]);
     await this.writes;

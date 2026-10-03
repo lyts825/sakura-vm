@@ -181,7 +181,7 @@ export function collectWebhookEvents(
 export class Webhooks {
   private state: State = { version: 1, subscriptions: [], deliveries: [], observed: {} };
   private queue: Promise<unknown> = Promise.resolve();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private pending?: Promise<void>;
   private active?: { id: string; subscriptionId: string; abort: AbortController };
   private closed = false;
@@ -209,9 +209,11 @@ export class Webhooks {
     )
       throw new AppError('Webhook 存储记录无效');
     if (schedule) {
-      this.timer = setInterval(() => void this.tick(), 5000);
-      this.timer.unref();
-      void this.tick();
+      this.timer = scheduler.register({ owner: 'core:webhooks', label: 'Webhook 事件投递', intervalMs: 5000,
+        immediate: true, overlap: 'skip', backoff: { initialMs: 5000, maxMs: 60000 }, run: async () => {
+          await this.tick();
+          if (this.error) throw new AppError(this.error, 503);
+        } });
     }
   }
   view(): WebhookView {
@@ -501,9 +503,10 @@ export class Webhooks {
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
     this.active?.abort.abort();
+    await this.timer?.close();
     await this.pending;
     await this.queue.catch(() => {});
   }
 }
+import { scheduler, type ScheduleHandle } from './scheduler.ts';

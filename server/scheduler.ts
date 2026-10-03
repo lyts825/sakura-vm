@@ -74,9 +74,9 @@ export class Scheduler {
 
   private describe(entry: Entry): ScheduleView {
     const job = entry.jobs.view('run'), admission = job?.admission;
-    const state = entry.cleanupFailure ? 'cleanup-pending' : entry.closed ? 'closed' : entry.pending
+    const state = entry.cleanupFailure ? 'cleanup-pending' : entry.pending
       ? entry.abort?.signal.aborted ? 'cancelling' : admission === 'queued' ? 'queued' : 'running'
-      : entry.notBefore > Date.now() ? 'backoff' : 'scheduled';
+      : entry.closed ? 'closed' : entry.notBefore > Date.now() ? 'backoff' : 'scheduled';
     return { ...entry.view, state, jobId: job?.id, cleanupLeaseId: admission === 'cleanup-pending' ? job?.cleanupLeaseId : undefined,
       nextAt: entry.closed ? undefined : new Date(Math.max(entry.nextAt, entry.notBefore)).toISOString() };
   }
@@ -119,7 +119,7 @@ export class Scheduler {
     entry.queued = false;
     const abort = new AbortController(); entry.abort = abort;
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const pending = entry.jobs.track('run', async (_log, signal) => {
+    const pending = Jobs.detached(() => entry.jobs.track('run', async (_log, signal) => {
       entry.view.runs++; entry.view.lastStartedAt = new Date().toISOString(); entry.view.timedOutAt = undefined;
       const began = performance.now();
       if (entry.definition.timeoutMs !== undefined) timeout = setTimeout(() => {
@@ -128,7 +128,7 @@ export class Scheduler {
       }, entry.definition.timeoutMs);
       try { await entry.definition.run({ signal, scheduledAt: new Date(scheduledAt).toISOString() }); }
       finally { clearTimeout(timeout); entry.view.lastDurationMs = performance.now() - began; }
-    }, { owner: entry.definition.owner, title: entry.definition.label, lane: 'background' }, abort.signal)
+    }, { owner: entry.definition.owner, title: entry.definition.label, lane: 'background' }, abort.signal))
       .then(() => { entry.view.failures = 0; entry.view.lastError = undefined; entry.notBefore = 0; })
       .catch((error: unknown) => {
         if (entry.jobs.view('run')?.admission === 'cleanup-pending') {
@@ -167,10 +167,17 @@ export class Scheduler {
       entry.cleanupFailure = error; entry.lease.cleanupPending(error); entry.closeTask = undefined; throw error;
     });
   }
+  beginDrain() {
+    this.closed = true; clearTimeout(this.timer); this.timer = undefined;
+    for (const entry of this.entries.values()) {
+      entry.closed = true; entry.queued = false;
+      entry.abort?.abort(new AppError('周期任务正在关闭', 503, 'SCHEDULE_CLOSED'));
+    }
+  }
   close(): Promise<void> {
     if (this.closeTask) return this.closeTask;
     return this.closeTask = (async () => {
-      this.closed = true; clearTimeout(this.timer); this.timer = undefined;
+      this.beginDrain();
       const results = await Promise.allSettled([...this.entries.values()].map((entry) => this.closeEntry(entry)));
       const errors = results.flatMap((result) => result.status === 'rejected' ? [result.reason] : []);
       if (errors.length === 1) throw errors[0];

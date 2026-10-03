@@ -7,6 +7,7 @@ import type { Jobs } from './jobs.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { LogRetentionPolicy, LogRetentionSummary, LogRetentionView } from '../shared/log-retention.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 
 export const logRetentionPolicy = z
   .object({
@@ -121,7 +122,7 @@ export class LogRetention {
   private state: z.infer<typeof stateSchema> = { version: 1, policy: defaults() };
   private warning?: string;
   private queue: Promise<unknown> = Promise.resolve();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private closed = false;
   private scheduled = false;
   constructor(
@@ -138,16 +139,14 @@ export class LogRetention {
       this.warning = '日志策略读取失败，自动清理已停用；请检查并重新保存策略。';
     }
     if (schedule) {
-      this.timer = setInterval(() => {
+      this.timer = scheduler.register({ owner: 'core:log-retention', label: '日志保留清理', intervalMs: 60000,
+        overlap: 'skip', backoff: { initialMs: 60000, maxMs: 600000 }, run: async () => {
         if (this.scheduled || this.closed || this.blocked() || !this.state.policy.enabled) return;
         this.scheduled = true;
-        void this.sweep()
-          .catch(() => {})
-          .finally(() => {
+        await this.sweep().finally(() => {
             this.scheduled = false;
           });
-      }, 60000);
-      this.timer.unref();
+      } });
     }
   }
   private serialized<T>(work: () => Promise<T>): Promise<T> {
@@ -231,7 +230,7 @@ export class LogRetention {
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
+    await this.timer?.close();
     await this.queue.catch(() => {});
   }
 }

@@ -63,6 +63,7 @@ import { ProjectTerminals } from './project-terminals.ts';
 import { RemoteAuditLock, remoteAuditAction } from './remote-audit.ts';
 import { ResourceScope, ClosePhase } from './resource-scope.ts';
 import { hostRuntime } from './host-runtime/index.ts';
+import { scheduler } from './scheduler.ts';
 import { createRuntime } from './runtime.ts';
 import { generateSdk } from './sdk.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
@@ -96,6 +97,8 @@ export async function startApplication() {
   };
   try {
     resources.defer('host-admission-drain', () => hostRuntime.beginDrain(), ClosePhase.admission);
+    resources.defer('scheduler-drain', () => scheduler.beginDrain(), ClosePhase.admission);
+    resources.own('scheduler', scheduler, ClosePhase.plugins + 1);
     resources.defer('network-drain', () => networkRuntime.beginDrain(), ClosePhase.admission);
     resources.own('network', networkRuntime, ClosePhase.transport);
     await networkRuntime.start();
@@ -567,7 +570,7 @@ export async function startApplication() {
         features.jobStores().flatMap((store) => store.list()),
         (await features.suite?.alertEvents()) || [],
       );
-    communityPlugins.setEventSource(
+    await communityPlugins.setEventSource(
       eventSource,
       true,
       () => !!features.migration?.blocked,
@@ -985,7 +988,7 @@ export async function startApplication() {
       if (url.pathname === '/api/host-runtime') {
         if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
         if (access.enabled && accountPrincipal?.role !== 'owner') throw new AppError('仅管理员可查看系统资源状态', 403);
-        return send(res, hostRuntime.snapshot());
+        return send(res, { ...hostRuntime.snapshot(), schedules: scheduler.snapshot() });
       }
       if (url.pathname === '/api/network-runtime') {
         if (req.method !== 'GET') throw new AppError('不支持此方法', 405);

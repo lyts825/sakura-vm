@@ -7,6 +7,7 @@ import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { Machines } from './machines.ts';
 import { matchesWebhook } from './webhooks.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import {
   webhookAlertKinds,
   webhookJobStatuses,
@@ -94,7 +95,7 @@ export class AutomationRules {
   private readonly activeRunbooks = new Set<AbortController>();
   private state: State = defaultState();
   private queue: Promise<unknown> = Promise.resolve();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private pending?: Promise<void>;
   private closed = false;
   private error?: string;
@@ -127,9 +128,8 @@ export class AutomationRules {
         Object.keys(this.state.lastAttempt).length > limits.rules)
       throw new AppError('事件自动化存储记录无效');
     if (schedule) {
-      this.timer = setInterval(() => void this.tick(), 5000);
-      this.timer.unref();
-      void this.tick();
+      this.timer = scheduler.register({ owner: 'core:automation-rules', label: '事件自动化规则', intervalMs: 5000,
+        immediate: true, overlap: 'skip', backoff: { initialMs: 5000, maxMs: 60000 }, run: () => this.tick() });
     }
   }
   view(): AutomationView {
@@ -338,8 +338,8 @@ export class AutomationRules {
   }
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
     for (const controller of this.activeRunbooks) controller.abort();
+    await this.timer?.close();
     await this.pending;
     await this.queue.catch(() => {});
   }

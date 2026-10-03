@@ -12,6 +12,7 @@ import {
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 
 const certificateSchema = z
   .object({
@@ -49,7 +50,7 @@ export class IngressCertificates {
   private state: State = defaults();
   private listeners = new Set<(certificate: Certificate) => void>();
   private pending = Promise.resolve();
-  private timer?: NodeJS.Timeout;
+  private timer?: ScheduleHandle;
   private closed = false;
   private rotationError?: string;
 
@@ -66,18 +67,19 @@ export class IngressCertificates {
       await this.rotate().catch((error) => {
         this.rotationError = (error as Error).message;
       });
-    this.timer = setInterval(() => {
+    this.timer = scheduler.register({ owner: 'plugin:network', label: '本地入口证书轮换', intervalMs: 3600000,
+      overlap: 'skip', backoff: { initialMs: 60000, maxMs: 3600000 }, run: async () => {
       const certificate = this.state.certificate;
       if (
         this.state.policy.autoRotate &&
         certificate &&
         rotationAt(certificate, this.state.policy).getTime() <= Date.now()
       )
-        void this.rotate().catch((error) => {
+        await this.rotate().catch((error) => {
           this.rotationError = (error as Error).message;
+          throw error;
         });
-    }, 3600000);
-    this.timer.unref();
+    } });
   }
 
   view(): CertificateView {
@@ -217,7 +219,7 @@ export class IngressCertificates {
 
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
+    await this.timer?.close();
     await this.pending;
     this.listeners.clear();
   }

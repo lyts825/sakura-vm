@@ -5,6 +5,7 @@ import { DATA } from './paths.ts';
 import type { Machines } from './machines.ts';
 import { distroInfo } from './images.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 
 const policySchema = z.object({
   enabled: z.boolean(),
@@ -59,7 +60,7 @@ export class MemoryReclaim {
   private highSamples = new Map<string, number>();
   private lastAdjustment = new Map<string, number>();
   private active = new Set<string>();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private tick?: Promise<void>;
   private closed = false;
   private writes = Promise.resolve();
@@ -77,10 +78,11 @@ export class MemoryReclaim {
   async init() {
     const saved = await readStore(join(DATA, 'memory-reclaim.json'), () => ({}));
     this.policies = z.record(z.uuid(), policySchema).parse(saved);
-    this.timer = setInterval(() => {
+    this.timer = scheduler.register({ owner: 'core:memory-reclaim', label: '客户机内存回收采样', intervalMs: 15000,
+      overlap: 'skip', run: async () => {
       if (!this.tick && !this.closed) this.tick = this.sampleAll().finally(() => { this.tick = undefined; });
-    }, 15_000);
-    this.timer.unref();
+      await this.tick;
+    } });
   }
   async view(id: string) {
     const vm = this.machines.get(id);
@@ -170,7 +172,7 @@ export class MemoryReclaim {
   }
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
+    await this.timer?.close();
     await this.tick;
     await this.writes;
   }

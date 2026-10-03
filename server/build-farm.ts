@@ -4,6 +4,7 @@ import { join, posix } from 'node:path';
 import { z } from 'zod';
 import type { Machines } from './machines.ts';
 import { Jobs } from './jobs.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { type JobView } from '../shared/contracts/jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
@@ -55,7 +56,7 @@ export class BuildFarm {
   readonly jobs: Jobs;
   private state: Store = initial();
   private queue: Promise<unknown> = Promise.resolve();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private pumping = false;
   private closed = false;
   private schedulerError?: string;
@@ -93,9 +94,8 @@ export class BuildFarm {
       changed = true;
     }
     if (changed) await writeStore(this.file, this.state);
-    this.timer = setInterval(() => void this.pump(), 2000);
-    this.timer.unref();
-    void this.pump();
+    this.timer = scheduler.register({ owner: 'core:build-farm', label: '构建队列调度', intervalMs: 2000,
+      immediate: true, overlap: 'coalesce', run: () => this.pump() });
   }
   view() {
     const running = new Map<string, number>();
@@ -154,7 +154,7 @@ export class BuildFarm {
         const nodes = [...this.state.nodes.filter((node) => node.vmId !== vm.id), node];
         if (nodes.length > 32) throw new AppError('构建节点已达上限', 409);
         await this.save({ ...this.state, nodes });
-        void this.pump();
+        this.timer?.trigger();
         return node;
       }
       if (value.operation === 'remove-node') {
@@ -187,7 +187,7 @@ export class BuildFarm {
         if (tasks.length > 256) tasks.splice(tasks.findIndex((item) =>
           !['queued', 'running'].includes(item.status)), 1);
         await this.save({ ...this.state, tasks });
-        void this.pump();
+        this.timer?.trigger();
         return task;
       }
       const task = this.state.tasks.find((item) => item.id === value.id);
@@ -254,7 +254,7 @@ export class BuildFarm {
           return { taskId: chosen.task.id, vmId: chosen.node.vmId, projectId: chosen.node.projectId! };
         });
         if (!selected) break;
-        void this.execute(selected.taskId, selected.vmId, selected.projectId);
+        void Jobs.detached(() => this.execute(selected.taskId, selected.vmId, selected.projectId));
       }
     } catch (error) {
       this.schedulerError = `构建调度暂不可用：${String((error as Error).message || error)}`;
@@ -334,11 +334,11 @@ export class BuildFarm {
       }).catch((failure) => {
         this.schedulerError = `构建失败记录保存未确认：${String((failure as Error).message || failure)}`;
       });
-    } finally { void this.pump(); }
+    } finally { this.timer?.trigger(); }
   }
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
+    await this.timer?.close();
     await this.jobs.close();
     if (this.ownsTerminals) await this.terminals.close();
     await this.queue.catch(() => {});

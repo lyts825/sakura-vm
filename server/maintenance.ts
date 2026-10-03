@@ -7,6 +7,7 @@ import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import { distributions } from './images.ts';
 import { Jobs } from './jobs.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { guestTask } from './guest-task.ts';
 import {
   diskMaintenanceDue,
@@ -78,13 +79,11 @@ export class Maintenance {
   private resizeAttempted = new Set<string>();
   private closed = false;
   private ticking?: Promise<void>;
-  private timer: ReturnType<typeof setInterval>;
+  private timer: ScheduleHandle;
   constructor(private machines: Machines) {
     machines.on('change', this.onChange);
-    this.timer = setInterval(() => {
-      void this.tick().catch(() => {});
-    }, 60000);
-    this.timer.unref();
+    this.timer = scheduler.register({ owner: 'plugin:maintenance', label: '磁盘维护检查', intervalMs: 60000,
+      overlap: 'skip', backoff: { initialMs: 60000, maxMs: 600000 }, run: () => this.tick() });
   }
   async storage() {
     const filesystem = await statfs(DATA);
@@ -296,8 +295,8 @@ export class Maintenance {
   }
   async close() {
     this.closed = true;
-    clearInterval(this.timer);
     this.machines.off('change', this.onChange);
+    await this.timer.close();
     await this.ticking;
     await this.jobs.close();
   }

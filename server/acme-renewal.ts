@@ -4,6 +4,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { Machines } from './machines.ts';
+import { scheduler, type ScheduleHandle } from './scheduler.ts';
 
 export const acmeInput = z.object({
   mode: z.enum(['status', 'save', 'renew', 'dry-run']).default('status'),
@@ -30,7 +31,7 @@ export class AcmeRenewal {
   private state: Store = defaults();
   private writes = Promise.resolve();
   private active = new Map<string, { promise: Promise<unknown>; controller: AbortController }>();
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ScheduleHandle;
   private ticking?: Promise<void>;
   private closed = false;
   private allowed = () => false;
@@ -43,9 +44,8 @@ export class AcmeRenewal {
     this.state = storeSchema.parse(await readStore(this.file, defaults));
     if (new Set(this.state.policies.map((item) => item.vmId)).size !== this.state.policies.length)
       throw new AppError('证书续期目录包含重复实例', 503);
-    this.timer = setInterval(() => void this.tick().catch(() => {}), 60_000);
-    this.timer.unref();
-    queueMicrotask(() => void this.tick().catch(() => {}));
+    this.timer = scheduler.register({ owner: 'core:acme-renewal', label: '客户机证书续期检查', intervalMs: 60_000,
+      immediate: true, overlap: 'coalesce', backoff: { initialMs: 60000, maxMs: 600000 }, run: () => this.tick() });
   }
 
   setAllowed(check: () => boolean) {
@@ -55,10 +55,7 @@ export class AcmeRenewal {
   setMutationCounter(change: (delta: number) => void) { this.mutation = change; }
 
   private kick() {
-    queueMicrotask(() => {
-      if (this.ticking) void this.ticking.catch(() => {}).finally(() => this.tick().catch(() => {}));
-      else void this.tick().catch(() => {});
-    });
+    this.timer?.trigger();
   }
 
   private serial<T>(work: () => Promise<T>) {
@@ -210,8 +207,8 @@ export class AcmeRenewal {
 
   async close() {
     this.closed = true;
-    if (this.timer) clearInterval(this.timer);
     for (const item of this.active.values()) item.controller.abort();
+    await this.timer?.close();
     await this.ticking?.catch(() => {});
     await Promise.allSettled([...this.active.values()].map((item) => item.promise));
     await this.writes;

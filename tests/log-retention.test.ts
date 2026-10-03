@@ -232,7 +232,7 @@ test('invalid persisted settings fail closed and a failed policy write never sta
 });
 
 test('the minute scheduler applies the durable policy and shutdown drains an admitted cleanup', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval'] });
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now });
   const data = await setup(t, []);
   const manager = new LogRetention(
     () => [data.store],
@@ -248,10 +248,22 @@ test('the minute scheduler applies the durable policy and shutdown drains an adm
   });
   await data.store.wait('scheduled-output');
   later.finishedAt = new Date(now - 20 * day).toISOString();
+  let entered!: () => void, release!: () => void;
+  const admitted = new Promise<void>(resolve => { entered = resolve; });
+  const finish = new Promise<void>(resolve => { release = resolve; });
+  const clear = data.store.clearCompletedLogs.bind(data.store);
+  t.mock.method(data.store, 'clearCompletedLogs', async (...args: Parameters<typeof clear>) => {
+    entered(); await finish; return clear(...args);
+  });
   t.mock.timers.tick(59999);
   assert.equal(later.log, 'scheduler expiry');
   t.mock.timers.tick(1);
-  await manager.close();
+  await admitted;
+  let closed = false;
+  const closing = manager.close().then(() => { closed = true; });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(closed, false);
+  release(); await closing;
   assert.equal(later.log, '');
   assert.equal(manager.view().lastRun?.removedLogs, 1);
 });

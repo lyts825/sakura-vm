@@ -7,6 +7,8 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { writeStore } from './local-store.ts';
 import { hostRuntime, withResourceContext } from './host-runtime/index.ts';
+import { withNewResourceContext } from './host-runtime/context.ts';
+import { withoutAuditParent } from './audit.ts';
 
 export type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
 import type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
@@ -27,6 +29,7 @@ const cleanupFailureCodes = new Set([
   'NOTEBOOK_CLEANUP_FAILED', 'NOTEBOOK_PREPARE_CLEANUP_FAILED',
   'DESKTOP_CLEANUP_FAILED', 'LINUX_CLIPBOARD_CLEANUP_FAILED',
   'HOST_PROCESS_CLEANUP_PENDING', 'STORAGE_CLEANUP_PENDING',
+  'VM_CLEANUP_PENDING', 'EXECUTION_CLEANUP_PENDING',
 ]);
 type JobResource = Awaited<ReturnType<typeof hostRuntime.acquire>>;
 type JobContext = { id: string; lease: JobResource; signal: AbortSignal; open: boolean;
@@ -65,6 +68,10 @@ function waitFor(promise: Promise<void>, signal: AbortSignal) {
   });
 }
 export class Jobs {
+  /** Schedule independent background work without borrowing the registering job's slot or credentials. */
+  static detached<T>(work: () => T): T {
+    return withoutAuditParent(() => context.exit(() => withNewResourceContext({}, work)));
+  }
   static instrument?: (view: JobView, work: () => Promise<void>) => Promise<void>;
   private closed = false;
   private closeTask?: Promise<void>;
