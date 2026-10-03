@@ -17,7 +17,7 @@ function admissionParsers() {
   const start = source.indexOf('function parseOwnedAdmissionServiceReply('), end = source.indexOf('const singleAppFdClassifier =', start);
   assert.ok(start >= 0 && end > start);
   const program = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
-  return new Function('assert', program + '\nreturn { parseOwnedAdmissionServiceReply, ownedAdmissionRetryRemaining };')(assert);
+  return new Function('assert', 'Buffer', program + '\nreturn { parseOwnedAdmissionServiceReply, ownedAdmissionRetryRemaining, ownedAdmissionControlAction };')(assert, Buffer);
 }
 
 test('ordinary service admission restarts only loaded real fragments and skips only explicit not-found', () => {
@@ -35,7 +35,7 @@ test('ordinary service admission restarts only loaded real fragments and skips o
   assert.throws(() => parse(loaded, 'foreign.service')); assert.throws(() => parse(' '.repeat(8193), 'ssh.service'));
 });
 
-test('post-restart admission retries only the original typed refusal inside its fixed deadline', () => {
+test('post-restart admission bounds only waiting for the original typed refusal and preserves public call timeouts', () => {
   const { ownedAdmissionRetryRemaining: remaining } = admissionParsers();
   const refusal = Object.assign(new Error('original service session still alive'), { code: 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED' });
   assert.equal(remaining(refusal, 30000, 0), 500); assert.equal(remaining(refusal, 30000, 29999), 1);
@@ -44,6 +44,25 @@ test('post-restart admission retries only the original typed refusal inside its 
   assert.throws(() => remaining(refusal, 30000, 30000), (actual: unknown) => actual === refusal);
   assert.throws(() => remaining(refusal, 30000, 30001), (actual: unknown) => actual === refusal);
   assert.throws(() => remaining(refusal, Number.NaN, 0), (actual: unknown) => actual === refusal);
+  const source = readFileSync(new URL('../scripts/smoke-project-desktop-identity.ts', import.meta.url), 'utf8');
+  const retry = source.slice(source.indexOf('const deadline = Date.now() + recovery.retryWaitBudgetMilliseconds;'), source.indexOf('assert.ok(preview.plan);'));
+  assert.ok(retry.includes('preview = await migrations.preview(fixture.vmId);'));
+  assert.ok(!retry.includes('new AbortController') && !retry.includes('setTimeout') && !retry.includes('Date.now() <= deadline'));
+  assert.ok(retry.includes('ownedAdmissionRetryRemaining(retryError, deadline, Date.now())'));
+});
+
+test('fixed native observer selects only current Root install ensure inspect and excludes environments and other builds', () => {
+  const { ownedAdmissionControlAction: action } = admissionParsers(), build = '1'.repeat(64);
+  const command = (request: unknown, selectedBuild = build) => "env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S '/usr/local/lib/sakura-project-identity/" + selectedBuild + "/controller.py' '" + Buffer.from(JSON.stringify(request)).toString('base64') + "'";
+  const ensure = { action: 'ensure', projectId: '0123456789abcdef', directory: '/srv/projects/owned', networkIsolation: 'private' };
+  assert.equal(action(command({ action: 'install' }), build), 'install');
+  assert.equal(action(command({ action: 'inspect', projectId: ensure.projectId }), build), 'inspect');
+  assert.equal(action(command(ensure), build), 'ensure'); assert.equal(action(command({ ...ensure, expected: {} }), build), 'ensure');
+  for (const request of [{ ...ensure, environment: { SECRET: 'not collected' } }, { action: 'install', environment: {} },
+    { action: 'run', projectId: ensure.projectId }, { action: 'inspect', projectId: 'foreign' }, { ...ensure, directory: '/srv/\nsecret' }, null])
+    assert.equal(action(command(request), build), null);
+  assert.equal(action(command(ensure, '2'.repeat(64)), build), null); assert.equal(action(command(ensure) + '; extra', build), null);
+  assert.throws(() => action(command(ensure), 'invalid'));
 });
 
 test('pending bootstrap readiness still pins the new DMI and boot and refuses malformed or changed guest replies', () => {

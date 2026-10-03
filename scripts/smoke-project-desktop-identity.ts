@@ -41,6 +41,27 @@ function ownedAdmissionRetryRemaining(error: unknown, deadline: number, now: num
   return Math.min(500, deadline - now);
 }
 
+function ownedAdmissionControlAction(command: string, build: string) {
+  assert.match(build, /^[a-f0-9]{64}$/);
+  const prefix = "env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S '/usr/local/lib/sakura-project-identity/" + build + "/controller.py' ";
+  if (!command.startsWith(prefix)) return null;
+  const encoded = /^'([A-Za-z0-9+/]+={0,2})'$/.exec(command.slice(prefix.length));
+  if (!encoded || encoded[1].length > 131072) return null;
+  try {
+    const bytes = Buffer.from(encoded[1], 'base64');
+    if (bytes.toString('base64') !== encoded[1]) return null;
+    const request = JSON.parse(bytes.toString('utf8'));
+    if (!request || typeof request !== 'object' || Array.isArray(request)) return null;
+    const keys = Object.keys(request).sort();
+    if (request.action === 'install' && keys.join() === 'action') return 'install';
+    if (request.action === 'inspect' && keys.join() === 'action,projectId' && /^[a-f0-9]{16}$/.test(request.projectId)) return 'inspect';
+    if (request.action === 'ensure' && keys.join() === (Object.hasOwn(request, 'expected') ? 'action,directory,expected,networkIsolation,projectId' : 'action,directory,networkIsolation,projectId') &&
+      /^[a-f0-9]{16}$/.test(request.projectId) && typeof request.directory === 'string' && request.directory.startsWith('/') &&
+      request.directory.length <= 1023 && !/[\x00-\x1f\x7f]/.test(request.directory) && ['host', 'private'].includes(request.networkIsolation)) return 'ensure';
+  } catch { /* Other commands and malformed requests are never observed. */ }
+  return null;
+}
+
 const singleAppFdClassifier = String.raw`
 def classify_descriptor(row, objects, process_role):
  assert isinstance(row,dict) and type(row['number']) is int and row['number']>=0,'FD_NUMBER_INVALID'
@@ -1265,6 +1286,37 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
       memoryMiB: 2048, cpus: 2, diskGiB: 6, distro: 'debian', accelerator: 'tcg', forwards: [], snapshots: [], bootstrapped: true,
       createdAt: new Date().toISOString(), lastUsedAt: new Date().toISOString() }], null, 2), { flag: 'wx' });
     machines = new Machines(fixture.engine());
+    const identityManifestBytes = await readFile(join(workspace, '.sakura-server/assets/project-identity/manifest.json'));
+    assert.equal(sha256(identityManifestBytes), proof.sourceBefore['.sakura-server/assets/project-identity/manifest.json']);
+    const observedIdentityBuild = JSON.parse(identityManifestBytes.toString()).build;
+    const originalExec = machines.exec;
+    Reflect.set(machines, 'exec', async (...args: unknown[]) => {
+      const action = args[0] === fixture.vmId && typeof args[1] === 'string' ? ownedAdmissionControlAction(args[1], observedIdentityBuild) : null;
+      if (!action) return Reflect.apply(originalExec, machines, args);
+      const signal = args[3] as AbortSignal | undefined;
+      const row: any = { id: randomUUID(), action, build: observedIdentityBuild, vmId: fixture.vmId,
+        commandSha256: sha256(String(args[1])), timeoutMilliseconds: args[2] ?? 30000, startedAt: new Date().toISOString(),
+        signalPassed: signal !== undefined, signalAbortedAtStart: signal?.aborted ?? false, cancellationEvents: [],
+        captureBoundary: 'unaltered Machines.exec return values; UTF-8 bytes of original decoded stdout and stderr', nativeWireBytesCaptured: false };
+      (proof.nativeControlObservations ||= []).push(row);
+      const cancelled = () => row.cancellationEvents.push({ at: new Date().toISOString(), aborted: signal!.aborted });
+      signal?.addEventListener('abort', cancelled, { once: true });
+      try {
+        const result = await Reflect.apply(originalExec, machines, args);
+        row.returnedAt = new Date().toISOString(); row.code = result.code;
+        for (const stream of ['stdout', 'stderr'] as const) {
+          const bytes = Buffer.from(result[stream], 'utf8'), path = join(fixture.root, 'logs', row.id + '.native-' + action + '.' + stream + '.bin');
+          await writeFile(path, bytes, { flag: 'wx' }); row[stream] = { path, size: bytes.length, sha256: sha256(bytes) };
+          assert.equal(sha256(await readFile(path)), row[stream].sha256);
+        }
+        row.channelIds = proof.sshChannels.filter((channel: any) => channel.commandSha256 === row.commandSha256 &&
+          Date.parse(channel.startedAt) >= Date.parse(row.startedAt) && Date.parse(channel.startedAt) <= Date.parse(row.returnedAt)).map((channel: any) => channel.id);
+        assert.equal(row.channelIds.length, 1, 'Fixed native observation requires one original SSH channel');
+        row.completed = true;
+        return result;
+      } catch (error) { row.error = errorValue(error); row.failedAt = new Date().toISOString(); throw error; }
+      finally { signal?.removeEventListener('abort', cancelled); row.signalAbortedAtEnd = signal?.aborted ?? false; }
+    });
     const originalConnect = Reflect.get(machines, 'connectOnce');
     Reflect.set(machines, 'connectOnce', (...args: unknown[]) => {
       const pending = Reflect.apply(originalConnect, machines, args);
@@ -1382,7 +1434,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
           if (Reflect.get(error as object, 'code') !== 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED') throw error;
           const live = machines!.live.get(fixture.vmId); assert.ok(live);
           const recovery: any = { originalRefusal: errorValue(error), services: [], oldRootConnections: [],
-            retries: [], retryBudgetMilliseconds: 30000, startedAt: new Date().toISOString() };
+            retries: [], retryWaitBudgetMilliseconds: 30000, startedAt: new Date().toISOString() };
           (proof.admissionRecoveries ||= []).push(recovery);
           const tuple = `test "$(cat /sys/class/dmi/id/product_uuid | tr A-F a-f)" = ${quote(fixture.vmId)}\ntest "$(cat /proc/sys/kernel/random/boot_id)" = ${quote(proof.bootId)}\n`;
           for (const unit of ['ssh.service', 'cron.service'] as const) {
@@ -1408,18 +1460,17 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
           recovery.oldRootConnectionsPhysicallyClosed = true;
           // Machines has no reusable SSH pool: each public preview now reads
           // this COW's new key and authenticates a new Root SSH transport.
-          const deadline = Date.now() + recovery.retryBudgetMilliseconds;
-          recovery.retryDeadline = new Date(deadline).toISOString();
+          const deadline = Date.now() + recovery.retryWaitBudgetMilliseconds;
+          recovery.retryWaitDeadline = new Date(deadline).toISOString();
+          recovery.retryDeadlineScope = 'Only waiting and starting another attempt after the same typed NNP refusal; each public preview retains its original production timeouts';
           let previousError: unknown = error;
           while (true) {
             ownedAdmissionRetryRemaining(previousError, deadline, Date.now());
             assert.equal(machines!.live.get(fixture.vmId), live);
-            const controller = new AbortController(), row: any = { startedAt: new Date().toISOString() };
+            const row: any = { startedAt: new Date().toISOString(), hostAbortControllerPassed: false };
             recovery.retries.push(row);
-            const timer = setTimeout(() => controller.abort(new Error('Owned NNP restart retry deadline')), Math.max(1, deadline - Date.now()));
             try {
-              preview = await migrations.preview(fixture.vmId, controller.signal);
-              assert.ok(Date.now() <= deadline, 'Owned NNP restart retry replied after its deadline');
+              preview = await migrations.preview(fixture.vmId);
               row.passed = true; row.finishedAt = new Date().toISOString(); break;
             } catch (retryError) {
               row.error = errorValue(retryError); row.finishedAt = new Date().toISOString(); previousError = retryError;
@@ -1428,7 +1479,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
                 catch (diagnosticError) { proof.migrationNftDiagnosis ||= {}; proof.migrationNftDiagnosis.error = errorValue(diagnosticError); }
               }
               await delay(ownedAdmissionRetryRemaining(retryError, deadline, Date.now()));
-            } finally { clearTimeout(timer); }
+            }
           }
         }
         assert.ok(preview.plan);
