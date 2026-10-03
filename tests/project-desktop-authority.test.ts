@@ -13,5 +13,5 @@ test('both packaged clipboard controllers share exact fixed Desktop authority; s
   }
   const result = spawnSync('python', [fileURLToPath(new URL('./project-desktop-authority-model.py', import.meta.url)), '-v'],
     { encoding: 'utf8', input: desktopAdapterSource });
-  assert.equal(result.status, 0, result.stderr); assert.match(result.stderr, /Ran 16 tests/); assert.match(result.stderr, /\bOK\b/);
+  assert.equal(result.status, 0, result.stderr); assert.match(result.stderr, /Ran 17 tests/); assert.match(result.stderr, /\bOK\b/);
 });

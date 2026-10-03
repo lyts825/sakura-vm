@@ -4,6 +4,8 @@
 
 ## Shell 子进程继承与私有项目图形程序
 
+再一次新鲜 X11 中，两个公开项目迁移和三项 nft 实机事务通过；公开桌面启动返回固定诊断 `probe/AUTHORITY/OBJECT_ABSENT/check=0; exit=73`，只证明权限核对阶段遇到缺失对象，尚无法判断缺失项。原失败 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-68c178f5-176b-41ac-8768-283dad1179d4/desktop-identity-evidence.json` SHA-256 为 `07a0b8fa9be4b1768bc5994b0b03d66f44e0a21ec6d7982b4b99ecd9dbd10d2f`；VM、进程及连接全部关闭，图形正式场景仍未开始。固定 adapter 现在也为系统对象错误提取可信固定源码函数中的受限行号，最多遍历 64 帧；没有可信行号返回 0，不返回异常文本或文件名。缺失 pane、受保护正文和 runtime 的生产源码 Python 模型定位到各自调用行；31 项定向 Node、17 项模型及 TypeScript 检查通过，证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/desktop-adapter-narrow-b60f104f-20ed-4d75-b731-e0a087cc7a80/verification.json` SHA-256 为 `e49059e26ae6fd29b239cbe23731a483c16ee307501dcd1368f2fb10b0d21e11`。新的实机回执待验证。
+
 最新 `dec047e1f2b5e412115ff4ff5a32c979b27ba7a8cda56e89e6815144c8b07076` 构建的新鲜 X11 实例完成两个公开项目迁移、三项 nftables 1.0.6 事务，APT 成功安装缺少的桌面依赖，桌面路径的原生 UID/NNP 准入返回成功。随后固定 Desktop adapter 以退出码 73 拒绝完整 UID、运行域或 VNC guard 核对；原适配器回执只含通用拒绝，无法判断具体检查失败。图形、剪贴板、单应用和 RFB 正式场景尚未开始。原失败证明保留，VM、进程和连接全部关闭；`E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-26613781-f0f5-49bf-8d86-0a66b37d2e2f/desktop-identity-evidence.json` SHA-256 为 `91f90441445e3287d9adae3d0537b5cb084e1eef513a2a716808f5d89868716c`。
 
 固定 Desktop adapter 的拒绝回执现只提供预设阶段、原因和受限检查行号；公开入口只接受严格结构，未知或恶意回执仍使用通用拒绝。原三种明确的图形就绪等待仅在未提交的 probe 中重试，stream 不把诊断写进 RFB 字节流，unguard 失败仍按清理错误处理。31 项定向 Node 回归、16 项生产 Python 模型和 TypeScript 检查通过；证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/desktop-adapter-narrow-dd5bfcdb-cf4b-4733-af66-0ee99739f6c0/verification.json` SHA-256 为 `7adc3a6925032b458c87e6f0a39c2e594e66a2a3cee3a76396c90e1e60c3c799`。本次仅改善真实失败定位，尚未证明 adapter 原拒绝已经修复；新的完整桌面结果另行记录。

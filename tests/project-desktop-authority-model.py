@@ -117,7 +117,7 @@ class Kernel:
             struct=struct, UUID=re.compile(r'^[a-f0-9-]{36}$'), DIGEST=re.compile(r'^[a-f0-9]{64}$'),
             fcntl=SimpleNamespace(LOCK_SH=1, LOCK_NB=4, flock=lambda *args: None),
             time=SimpleNamespace(monotonic=lambda: self.now, sleep=lambda seconds: setattr(self, 'now', self.now + seconds)))
-        exec(compile(definitions(source), str(source), 'exec'), namespace)
+        exec(compile(definitions(source), '<string>' if source == 'adapter' else str(source), 'exec'), namespace)
         return namespace
 
     def process(self, pid, uid, group, image, ticks='777', environment=None, args=None):
@@ -266,6 +266,55 @@ class AuthorityTests(unittest.TestCase):
             else:
                 reply = json.loads(out.getvalue()); self.assertEqual(reply['stage'], 'GUARD_NETWORK')
                 self.assertEqual(reply['reason'], 'CHECK_REJECTED'); self.assertGreater(reply['checkLine'], 0)
+
+    def test_fixed_adapter_oserror_uses_only_bounded_trusted_source_frames(self):
+        class Missing(FileNotFoundError):
+            def __str__(self): raise AssertionError('OSError text must not be inspected')
+        for mutation in ('pane', 'frame', 'runtime'):
+            k = Kernel(); f = k.authority('adapter'); Path = f.ns['Path']
+            target, statement = {'pane': ('/proc/900/stat', "fields = (pane / 'stat').read_text().rsplit(') ', 1)[1].split()"),
+                                 'frame': (f.frame, "raw = core['read'](str(folder / ('input-' + run['runId'] + '.bin')), 135168)"),
+                                 'runtime': (f.runtime, 'info = runtime.lstat()')}[mutation]
+            del k.nodes[target]
+            if mutation == 'frame':
+                original = f.core['read']
+                def read(path, limit):
+                    if str(path) == target: raise Missing(errno.ENOENT, 'private-cookie-path', target)
+                    return original(path, limit)
+                f.core['read'] = read
+            else:
+                method = 'read_bytes' if mutation == 'pane' else 'lstat'; original = getattr(Path, method)
+                def read(path):
+                    if str(path) == target: raise Missing(errno.ENOENT, 'private-cookie-path', target)
+                    return original(path)
+                setattr(Path, method, read)
+            try: f.ns['desktop_authority'](f.proof)
+            except OSError as error: reply = f.ns['desktop_adapter_refusal'](error, 'AUTHORITY')
+            else: self.fail('Missing original authority object was accepted')
+            self.assertEqual(reply['code'], 'DESKTOP_SCOPE_CHANGED'); self.assertEqual(reply['reason'], 'OBJECT_ABSENT')
+            self.assertEqual(reply['checkLine'], next(line for line, text in enumerate(ADAPTER.splitlines(), 1) if statement in text))
+            self.assertNotIn('private-cookie-path', json.dumps(reply)); self.assertNotIn(target, json.dumps(reply))
+            self.assertFalse(k.fds); self.assertFalse(k.writes)
+        ns = Kernel().module('adapter')
+        for filename, name, offset in [('<foreign>', 'desktop_authority', 0), ('<string>', 'unknown_function', 0),
+                                       ('<string>', 'desktop_authority', 8192)]:
+            tree = ast.parse('def ' + name + '():\n raise FileNotFoundError(errno.ENOENT, "private-cookie-path")\n')
+            ast.increment_lineno(tree, offset); exec(compile(tree, filename, 'exec'), ns)
+            try: ns[name]()
+            except OSError as error:
+                error.desktop_check_line = 42
+                reply = ns['desktop_adapter_refusal'](error, 'AUTHORITY')
+            else: self.fail('Injected OSError did not execute')
+            self.assertEqual(reply['checkLine'], 0); self.assertEqual(reply['reason'], 'OBJECT_ABSENT')
+        def descend(remaining):
+            if remaining: return descend(remaining - 1)
+            raise Missing(errno.ENOENT, 'private-cookie-path')
+        ns['descend'] = descend
+        exec(compile('def desktop_authority():\n descend(70)\n', '<string>', 'exec'), ns)
+        try: ns['desktop_authority']()
+        except OSError as error: reply = ns['desktop_adapter_refusal'](error, 'AUTHORITY')
+        else: self.fail('Long traceback did not execute')
+        self.assertEqual(reply['checkLine'], 0); self.assertEqual(reply['reason'], 'OBJECT_ABSENT')
 
     def nested(self, source=X11, mutation=None):
         k = Kernel(); f = k.authority(source)

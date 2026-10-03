@@ -56,10 +56,19 @@ def desktop_adapter_refusal(error,stage):
  waiting={'SAKURA_DESKTOP_NOT_READY:credential':'NOT_READY_CREDENTIAL','SAKURA_DESKTOP_NOT_READY:process':'NOT_READY_PROCESS','SAKURA_DESKTOP_NOT_READY:nested-x11':'NOT_READY_NESTED_X11'}
  line=getattr(error,'desktop_check_line',0)
  if type(line) is not int or not 0<=line<=8192: line=0
- reason=waiting.get(str(error),'CHECK_REJECTED' if line else 'VALIDATION_REJECTED')
+ reason='CHECK_REJECTED' if line else 'VALIDATION_REJECTED'
  if isinstance(error,OSError):
+  line=0; trace=error.__traceback__; frames=0
+  while trace is not None and frames<64:
+   code=trace.tb_frame.f_code
+   if code.co_filename=='<string>' and code.co_name in ('secure_directory','retire_runtime','erase','guard','original_group_absent','invoke','stream','desktop_native','protected','desktop_process','desktop_authority','credential','desktop_nested_x11') and 0<trace.tb_lineno<=8192:
+    line=trace.tb_lineno
+   trace=trace.tb_next; frames+=1
+  if trace is not None: line=0
   reason={errno.ENOENT:'OBJECT_ABSENT',errno.ESRCH:'OBJECT_ABSENT',errno.EACCES:'PERMISSION_DENIED',errno.EPERM:'PERMISSION_DENIED',errno.ELOOP:'SYMLINK_REFUSED',errno.EBUSY:'OBJECT_BUSY',errno.EAGAIN:'OBJECT_BUSY'}.get(error.errno,'IO_FAILED')
- elif isinstance(error,(ValueError,KeyError,IndexError,TypeError)): reason='DATA_INVALID'
+ else:
+  reason=waiting.get(str(error),reason)
+  if isinstance(error,(ValueError,KeyError,IndexError,TypeError)): reason='DATA_INVALID'
  retry=reason in waiting.values() and stage=='AUTHORITY'
  return {'ok':False,'code':'DESKTOP_NOT_READY' if retry else 'DESKTOP_SCOPE_CHANGED','stage':stage,'reason':reason,'checkLine':line}
 
