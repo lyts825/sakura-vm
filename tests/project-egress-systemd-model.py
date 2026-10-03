@@ -198,9 +198,51 @@ def admission_and_restore_check_real_user_instances():
     assert not any(event[0] == 'live' for event in events), 'early restoration does not wait for daemons or restart sessions'
 
 
+def ssh_listener_authority_strict_properties():
+    ns, responses, queries, _files, _directories = fixture()
+    values = dict(Id='ssh.service', LoadState='loaded', ActiveState='active', SubState='running',
+                  NeedDaemonReload='no', NoNewPrivileges='yes', MainPID='1040', ControlGroup='/system.slice/ssh.service')
+    def raw(changes=None):
+        result = dict(values, **(changes or {}))
+        return ('\n'.join(key + '=' + value for key, value in result.items()) + '\n').encode()
+    responses['ssh.service'] = raw()
+    assert ns['egress_systemd_ssh_state'](20, 'ssh.service') == values
+    # An installed alias must use the actual returned unit Id's ControlGroup.
+    responses['sshd.service'] = raw()
+    assert ns['egress_systemd_ssh_state'](20, 'sshd.service') == values
+    assert queries == ['ssh.service', 'sshd.service']
+    for state in ('loaded', 'not-found', 'masked'):
+        responses['ssh.service'] = raw(dict(LoadState=state, ActiveState='inactive', SubState='dead', MainPID='0', ControlGroup=''))
+        assert ns['egress_systemd_ssh_state'](20, 'ssh.service') is None
+    for key in values:
+        for variant in ('missing', 'duplicate'):
+            if variant == 'missing':
+                responses['ssh.service'] = b'\n'.join(line for line in raw().splitlines() if not line.startswith(key.encode() + b'='))
+            else:
+                responses['ssh.service'] = raw() + (key + '=' + values[key] + '\n').encode()
+            refused(ns, lambda: ns['egress_systemd_ssh_state'](20, 'ssh.service'), 'EGRESS_NNP_SERVICE_UNVERIFIED')
+    for value in ('', '01', '-1', 'true', '1.0', '2147483648', '12345678901', '1040 1041'):
+        responses['ssh.service'] = raw(dict(MainPID=value))
+        refused(ns, lambda: ns['egress_systemd_ssh_state'](20, 'ssh.service'), 'EGRESS_NNP_SERVICE_UNVERIFIED')
+    for changes in (dict(Id='unrelated.service'), dict(LoadState='not-found'), dict(ActiveState='activating'),
+                    dict(SubState='start'), dict(NoNewPrivileges='no'), dict(MainPID='0'),
+                    dict(ControlGroup='/user.slice/user-0.slice/session-84.scope'),
+                    dict(ControlGroup='/system.slice/sshd.service'), dict(ControlGroup='/system.slice/ssh.service/child')):
+        responses['ssh.service'] = raw(changes)
+        refused(ns, lambda: ns['egress_systemd_ssh_state'](20, 'ssh.service'), 'EGRESS_NNP_SERVICE_UNVERIFIED')
+    for value in (raw() + b'UnknownProperty=x\n', raw() + b'invalid-line\n', raw() + b'\xff', b'x' * 65537):
+        responses['ssh.service'] = value
+        refused(ns, lambda: ns['egress_systemd_ssh_state'](20, 'ssh.service'), 'EGRESS_NNP_SERVICE_UNVERIFIED')
+    responses['ssh.service'] = raw(dict(NeedDaemonReload='yes'))
+    refused(ns, lambda: ns['egress_systemd_ssh_state'](20, 'ssh.service'), 'EGRESS_NNP_PENDING')
+    previous = list(queries)
+    refused(ns, lambda: ns['egress_systemd_ssh_state'](20, 'arbitrary.service'), 'EGRESS_NNP_SERVICE_UNVERIFIED')
+    assert queries == previous, 'only the two fixed standard SSH unit names can be queried'
+
+
 checks = [effective_values_and_template_instance, full_privilege_prefix_and_complete_flags,
           absent_units_are_separate_from_live_protection, ssh_templates_and_installed_instances,
-          admission_and_restore_check_real_user_instances]
+          admission_and_restore_check_real_user_instances, ssh_listener_authority_strict_properties]
 for check in checks:
     check()
 print(json.dumps(dict(passed=True, kind='portable-model-only', sourceSha256=hashlib.sha256(source).hexdigest(),

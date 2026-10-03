@@ -21,7 +21,7 @@ test('production project UID egress transactions preserve exact owners, boot res
     'boot_symlink_sync_and_pending_recovery', 'bounded_kernel_json']);
 });
 
-test('private UID admission distinguishes configured NNP from old SSH sessions and validates current OpenRC launchers', async () => {
+test('private UID admission verifies protected OpenRC and systemd PAM SSH ancestry, including live authority changes', async () => {
   const controller = fileURLToPath(new URL('../native/project-identity/controller.py', import.meta.url));
   const model = fileURLToPath(new URL('./project-egress-nnp-model.py', import.meta.url));
   const result = spawnSync(process.env.SAKURA_TEST_PYTHON || 'python', ['-I', model, controller],
@@ -33,7 +33,9 @@ test('private UID admission distinguishes configured NNP from old SSH sessions a
   assert.equal(proof.sourceSha256, createHash('sha256').update(await readFile(controller)).digest('hex'));
   assert.deepEqual(proof.checks, ['live_services_and_root_management', 'surviving_pre_auth_and_nonroot_sessions',
     'openrc_ssh_descendants_and_listener_identity', 'existing_account_flags_and_capabilities', 'pinned_process_identity', 'openrc_current_launchers',
-    'configuration_is_separate_from_live_admission', 'readable_pinned_directories']);
+    'configuration_is_separate_from_live_admission', 'readable_pinned_directories',
+    'systemd_pam_sessions_and_bounded_authority', 'systemd_scope_and_listener_refusals',
+    'systemd_authority_changes_and_fd_cleanup', 'systemd_pam_identity_changes_and_chain_bounds']);
 });
 
 test('systemd admission verifies effective NNP, authoritative exec flags, SSH templates and future service drop-ins', async () => {
@@ -48,7 +50,7 @@ test('systemd admission verifies effective NNP, authoritative exec flags, SSH te
   assert.equal(proof.sourceSha256, createHash('sha256').update(await readFile(controller)).digest('hex'));
   assert.deepEqual(proof.checks, ['effective_values_and_template_instance', 'full_privilege_prefix_and_complete_flags',
     'absent_units_are_separate_from_live_protection', 'ssh_templates_and_installed_instances',
-    'admission_and_restore_check_real_user_instances']);
+    'admission_and_restore_check_real_user_instances', 'ssh_listener_authority_strict_properties']);
 });
 
 test('production nft compatibility preserves actual table ownership, exact snapshots and three explicit commands in one fixed transaction', async () => {

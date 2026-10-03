@@ -1282,6 +1282,46 @@ def egress_systemd_query(descriptor, properties, unit=None):
     return execute(arguments, executable='/proc/self/fd/' + str(descriptor), pass_fds=(descriptor,), timeout=15)
 
 
+def egress_systemd_ssh_state(descriptor, unit):
+    # A PAM session is moved out of the service's cgroup. Only the loaded
+    # standard SSH service can supply its listener authority, never the scope
+    # name or the accepted process's mutable title.
+    properties = ('Id', 'LoadState', 'ActiveState', 'SubState', 'NeedDaemonReload', 'NoNewPrivileges', 'MainPID', 'ControlGroup')
+    detail = {'manager': 'systemd', 'service': unit}
+    if unit not in ('ssh.service', 'sshd.service'):
+        refuse('EGRESS_NNP_SERVICE_UNVERIFIED', dict(detail, reason='ssh-unit-invalid'))
+    try:
+        raw = egress_systemd_query(descriptor, properties, unit)
+    except Refusal:
+        refuse('EGRESS_NNP_SERVICE_UNVERIFIED', dict(detail, reason='ssh-listener-authority-unavailable'))
+    values = {}
+    try:
+        if len(raw) > 65536:
+            raise ValueError()
+        for line in raw.decode('utf-8').splitlines():
+            if not line:
+                continue
+            key, value = line.split('=', 1)
+            if key not in properties or key in values:
+                raise ValueError()
+            values[key] = value
+        if set(values) != set(properties) or values['Id'] not in ('ssh.service', 'sshd.service') or \
+           not re.fullmatch('0|[1-9][0-9]{0,9}', values['MainPID']) or int(values['MainPID']) > 2147483647:
+            raise ValueError()
+    except (UnicodeError, ValueError):
+        refuse('EGRESS_NNP_SERVICE_UNVERIFIED', dict(detail, reason='ssh-listener-authority-invalid'))
+    if values['NeedDaemonReload'] != 'no':
+        refuse('EGRESS_NNP_PENDING', dict(detail, reason='daemon-reload-required'))
+    group = '/system.slice/' + values['Id']
+    if values['LoadState'] in ('loaded', 'not-found', 'masked') and values['ActiveState'] == 'inactive' and \
+       values['MainPID'] == '0' and values['ControlGroup'] in ('', group):
+        return None
+    if values['LoadState'] != 'loaded' or values['ActiveState'] != 'active' or values['SubState'] != 'running' or \
+       values['NoNewPrivileges'] != 'yes' or values['MainPID'] == '0' or values['ControlGroup'] != group:
+        refuse('EGRESS_NNP_SERVICE_UNVERIFIED', dict(detail, reason='ssh-listener-authority-unqualified'))
+    return values
+
+
 def egress_systemd_paths(descriptor):
     try:
         lines = egress_systemd_query(descriptor, ('UnitPath',)).decode('utf-8').splitlines()
@@ -1593,6 +1633,7 @@ def egress_nnp_live(value, manager):
             candidates = known_paths.get(process['executable'].removesuffix(' (deleted)'), [])
         return candidates
     parent = egress_nnp_directory('/proc')
+    systemd_descriptor = None
     try:
         entries = [name for name in os.listdir(parent) if re.fullmatch('[1-9][0-9]*', name)]
         if len(entries) > 32768:
@@ -1687,6 +1728,68 @@ def egress_nnp_live(value, manager):
                         refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'pid': current['pid'], 'service': 'sshd'})
                     current = following
             return False
+        systemd_listeners, systemd_authorities, systemd_nodes = {}, {}, {}
+        def systemd_ssh_image(process):
+            info = process['image']
+            return info.st_uid == 0 and stat.S_ISREG(info.st_mode) and not info.st_mode & 0o6022 and \
+                   bool(info.st_mode & 0o111) and \
+                   any(service == 'sshd' for service, _command in images.get((info.st_dev, info.st_ino), [])) and \
+                   any(service == 'sshd' for service, _command in known_paths.get(process['executable'], []))
+        def systemd_ssh_owned(process, aliases):
+            nonlocal systemd_descriptor
+            scope = process['cgroupName'] or ''
+            if not re.fullmatch(r'/user\.slice/user-(?:0|[1-9][0-9]*)\.slice/session-(?:[1-9][0-9]*|c[1-9][0-9]*)\.scope', scope):
+                return False
+            if systemd_descriptor is None:
+                executable = os.path.realpath(tool('systemctl'))
+                directory = directory_fd(os.path.dirname(executable))
+                try:
+                    systemd_descriptor = os.open(os.path.basename(executable), os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
+                    info = os.fstat(systemd_descriptor)
+                    trusted(info)
+                    if not info.st_mode & 0o111 or info.st_mode & 0o6000:
+                        refuse('EGRESS_NNP_UNSUPPORTED', {'manager': 'systemd'})
+                finally:
+                    os.close(directory)
+            for alias in aliases:
+                unit = alias + '.service'
+                if unit not in systemd_listeners:
+                    authority = egress_systemd_ssh_state(systemd_descriptor, unit)
+                    systemd_listeners[unit] = None
+                    listener = processes.get(int(authority['MainPID'])) if authority is not None else None
+                    if listener is not None and systemd_ssh_image(listener) and listener_image(listener) and \
+                       listener['cgroupName'] == authority['ControlGroup']:
+                        listener = checked(listener)
+                        protected(listener)
+                        if listener_image(listener):
+                            systemd_listeners[unit] = (authority, listener)
+                receipt = systemd_listeners[unit]
+                if receipt is None:
+                    continue
+                authority, listener = receipt
+                trail, seen, current = [], set(), process
+                while current is not None:
+                    if current['pid'] in seen or len(seen) >= 128:
+                        refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'pid': process['pid'], 'service': 'sshd'})
+                    if not systemd_ssh_image(current) or current['cgroupName'] not in (scope, authority['ControlGroup']):
+                        break
+                    seen.add(current['pid'])
+                    current = checked(current)
+                    protected(current)
+                    trail.append(current)
+                    if current['pid'] == listener['pid']:
+                        for node in reversed(trail):
+                            checked(node)
+                            systemd_nodes[node['pid']] = node
+                        if not listener_image(checked(listener)):
+                            refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'pid': listener['pid'], 'service': 'sshd'})
+                        systemd_authorities[unit] = authority
+                        return True
+                    following = processes.get(current['parentPid'])
+                    if following is not None and int(following['startTicks']) > int(current['startTicks']):
+                        refuse('EGRESS_NNP_PROCESS_CHANGED', {'manager': manager, 'pid': current['pid'], 'service': 'sshd'})
+                    current = following
+            return False
         for process in processes.values():
             detail = dict(manager=manager, pid=process['pid'], parentPid=process['parentPid'], startTicks=process['startTicks'],
                           executable=process['executable'], cgroupName=process['cgroupName'])
@@ -1742,6 +1845,8 @@ def egress_nnp_live(value, manager):
                     owned_pid = False
                     if manager == 'openrc' and service == 'sshd':
                         owned_pid = openrc_ssh_owned(process, aliases)
+                    elif manager == 'systemd' and service == 'sshd':
+                        owned_pid = systemd_ssh_owned(process, aliases)
                     elif manager == 'openrc':
                         for alias in aliases:
                             raw = egress_boot_read('/run/' + alias + '.pid')
@@ -1751,7 +1856,23 @@ def egress_nnp_live(value, manager):
                     if not owned_pid:
                         refuse('EGRESS_NNP_SERVICE_UNVERIFIED', detail)
                 break
+        # Each used standard service is queried once before its first PAM
+        # chain and once here. Even many sessions use at most four queries;
+        # revalidate the pinned kernel chains after the final authority query.
+        for unit, authority in systemd_authorities.items():
+            detail = {'manager': manager, 'service': unit, 'reason': 'ssh-listener-authority-changed'}
+            try:
+                current = egress_systemd_ssh_state(systemd_descriptor, unit)
+            except Refusal:
+                refuse('EGRESS_NNP_PROCESS_CHANGED', detail)
+            if current != authority:
+                refuse('EGRESS_NNP_PROCESS_CHANGED', detail)
+        for node in systemd_nodes.values():
+            checked(node)
+            protected(node)
     finally:
+        if systemd_descriptor is not None:
+            os.close(systemd_descriptor)
         os.close(parent)
 
 

@@ -20,6 +20,8 @@ systemd 为系统 SSH、cron、at、用户会话及 `user@.service` 添加 Requi
 
 OpenRC 标准 SSH 若在统一 cgroup 挂载前启动，可通过受控 PIDfile 中已核对的真实 Root 监听器确认归属。接受连接和拆分的 SSH helper 必须沿真实内核父子链追溯该监听器，每个节点仍须 NNP=1，并再次核对原创建时间、父进程、映像、账号、能力及 cgroup。孤立或被重新挂接的进程、未知父节点、身份变化和错角色的 PIDfile 均拒绝，进程标题本身不会授予归属。托管 SSH 状态保留实际出站准入失败原因，状态读取不会修复配置或开放失败入口。
 
+systemd 的 PAM 登录会把 SSH 会话移入对应的 `session-*.scope`。该路径只接受仍能沿最多 128 个真实 SSH 映像节点追溯到标准 `ssh.service`/`sshd.service` 监听器的会话，包括普通账号和拆分的 session/auth helper。监听器必须符合受控 systemctl 文件描述符返回的 loaded、active/running、有效 NNP、MainPID 和准确 ControlGroup；链中每个节点仍须 NNP=1，且只能位于原会话 scope 或该服务域。准入结束前重新读取服务权威并核对所有已使用节点的原身份；未知或孤立的父链、重新挂接、UID/能力/映像变化及任何权威漂移均拒绝。scope 名称和进程标题不会单独授予归属。标准服务域的原快速路径不增加 systemctl 查询；PAM 路径缓存两种服务的查询，每个已使用服务在检查前后各一次，总计至多四次，沿用固定查询超时。
+
 systemd 的首次提交顺序为：保存 pending 归属、持久写入全部策略文件和启动链接、执行 `daemon-reload`、保存 applied 归属。以后只读核对仍发现管理器需要重新加载时，返回 `PROJECT_IDENTITY_EGRESS_NNP_PENDING`；管理员核对原配置并执行 `systemctl daemon-reload` 后重试原意图。恢复不初始化另一套账号或放宽原限制。
 
 原生项目入口在运行客户机程序前检查传入描述符。标准输入、输出、错误及保护帧描述符上的 IPv4、IPv6、packet、netlink 等网络套接字被拒绝；普通管道、文件、PTY 和本地 Unix 套接字继续保留二进制输入及 EOF 语义。这不会阻止另一个特权代理在项目程序运行后通过 Unix socket 另行转交网络描述符。
@@ -46,4 +48,4 @@ nftables 1.0.6 的 JSON 表创建会遗漏真实内核表 comment，JSON 列表�
 
 公网软件源在模拟客户机中下载过慢时，可将 `SAKURA_EGRESS_APK_FIXTURE` 指向绝对路径的官方包夹具清单。清单固定 Alpine v3.23 x86_64、main/community 的签名索引与每个官方包的来源、长度和 SHA-256；适配器只在宿主回环提供已冻结文件，拒绝其他路径和写请求。只在全新自有 VM 中临时选择该软件源，仍执行同一生产安装命令、五分钟时限和客户机默认签名校验；安装后原软件源逐字节恢复，签名密钥摘要前后不变。本地源请求、缓存复核、实际服务关闭及零残留连接纳入完整证明。该模式验证功能与签名包安装，不代表默认公网源的安装性能；不会重启或修改历史失败 VM。
 
-规则的 `inet`、output hook 和 socket UID 语义参照 [nftables 官方手册](https://netfilter.org/projects/nftables/manpage.html)，单次 `-f` 提交参照 [nftables 原子规则替换文档](https://wiki.nftables.org/wiki-nftables/index.php/Atomic_rule_replacement)，1.0.6 的命令展开参照 [官方 1.0.6 源码包](https://netfilter.org/projects/nftables/files/nftables-1.0.6.tar.xz) 中 `src/libnftables.c` 的 `nft_evaluate`；服务依赖参照 [OpenRC 服务脚本指南](https://github.com/OpenRC/openrc/blob/master/service-script-guide.md)。
+规则的 `inet`、output hook 和 socket UID 语义参照 [nftables 官方手册](https://netfilter.org/projects/nftables/manpage.html)，单次 `-f` 提交参照 [nftables 原子规则替换文档](https://wiki.nftables.org/wiki-nftables/index.php/Atomic_rule_replacement)，1.0.6 的命令展开参照 [官方 1.0.6 源码包](https://netfilter.org/projects/nftables/files/nftables-1.0.6.tar.xz) 中 `src/libnftables.c` 的 `nft_evaluate`；服务依赖参照 [OpenRC 服务脚本指南](https://github.com/OpenRC/openrc/blob/master/service-script-guide.md)。PAM 会话的 scope 归属参照 [pam_systemd 官方文档](https://github.com/systemd/systemd/blob/main/man/pam_systemd.xml)，服务状态及 MainPID/ControlGroup 属性参照 [systemd D-Bus 官方文档](https://github.com/systemd/systemd/blob/main/man/org.freedesktop.systemd1.xml)。
