@@ -72,6 +72,29 @@ function shellLiteral(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+const desktopDebianPackages = 'kde-plasma-desktop plasma-workspace-wayland kwin-x11 kwin-wayland qtwayland5 systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd python3 iproute2 util-linux'.split(' ');
+const imeDebianPackages = ['fcitx5', 'fcitx5-chinese-addons', 'fcitx5-frontend-gtk3', 'fcitx5-frontend-qt5'];
+
+function aptPrepare(packages: readonly string[], noRecommends = true) {
+  const names = packages.map(quote).join(' ');
+  const statusFormat = quote('${db:Status-Status} ${db:Status-Eflag}');
+  // A complete fixed package set needs no APT writer lock. Query both the
+  // actual install phase and error flag; selection holds do not make an
+  // already configured package incomplete. Failed queries must not skip APT.
+  return String.raw`export DEBIAN_FRONTEND=noninteractive
+sakura_packages_ready=1
+for sakura_package in ${names}; do
+  if ! sakura_package_status=$(dpkg-query -W -f=${statusFormat} "$sakura_package" 2>/dev/null) || [ "$sakura_package_status" != 'installed ok' ]; then
+    sakura_packages_ready=0
+    break
+  fi
+done
+if [ "$sakura_packages_ready" != 1 ]; then
+  apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update
+  apt-get -o DPkg::Lock::Timeout=120 -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y${noRecommends ? ' --no-install-recommends' : ''} ${names}
+fi`;
+}
+
 function desktopConfigScript(input: DesktopPreferences) {
   const p = desktopPreferencesSchema.parse(input);
   const factor = (p.scale / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
@@ -385,7 +408,7 @@ SAKURA_SERVICE`;
     .replace(/case "\$\(cat \/etc\/alpine-release\)" in[\s\S]*?esac/, '')
     .replace(
       /apk add --no-cache[\s\S]*?xauth xdpyinfo xrandr python3 iproute2 setpriv/,
-      'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y --no-install-recommends kde-plasma-desktop plasma-workspace-wayland kwin-x11 kwin-wayland qtwayland5 systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd python3 iproute2 util-linux',
+      aptPrepare(desktopDebianPackages),
     )
     .replace(
       'adduser -D -h /home/sakura-desktop -s /bin/sh sakura-desktop',
@@ -415,7 +438,7 @@ export function imeInstall(distro = 'alpine') {
   const install =
     distro === 'alpine'
       ? 'apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community fcitx5 fcitx5-chinese-addons fcitx5-gtk fcitx5-qt'
-      : 'export DEBIAN_FRONTEND=noninteractive\napt-get update\napt-get install -y fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5';
+      : aptPrepare(imeDebianPackages, false);
   return (
     `set -eu\nid sakura-desktop >/dev/null\n${install}\n` +
     String.raw`
@@ -461,8 +484,7 @@ echo 'Chinese input installed. Restarting desktop; use Ctrl+Space to switch.'
 export function desktopProjectImePrepare(distro: string) {
   const packages = distro === 'alpine'
     ? 'apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/v3.23/community fcitx5 fcitx5-chinese-addons fcitx5-gtk fcitx5-qt'
-    : 'export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n' +
-      'apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5';
+    : aptPrepare(imeDebianPackages);
   return 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /bin/sh -c ' + quote('set -eu\ncd /\n' + packages);
 }
 
@@ -550,8 +572,7 @@ export function desktopProjectEnvironment(environment: Record<string, string> = 
 export function desktopProjectPrepare(distro: string, input: DesktopPreferences) {
   desktopPreferencesSchema.parse(input);
   const packages = distro === 'alpine' ? desktopInstall.match(/apk add --no-cache[\s\S]*?xauth xdpyinfo xrandr python3 iproute2 setpriv/)![0] + ' tmux iptables' :
-    'export DEBIAN_FRONTEND=noninteractive\napt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update\n' +
-    'apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y --no-install-recommends kde-plasma-desktop plasma-workspace-wayland kwin-x11 kwin-wayland qtwayland5 systemsettings breeze breeze-icon-theme konsole dolphin tigervnc-standalone-server dbus-x11 fonts-dejavu fonts-noto-cjk xauth x11-utils x11-xserver-utils netcat-openbsd python3 iproute2 util-linux tmux iptables';
+    aptPrepare([...desktopDebianPackages, 'tmux', 'iptables']);
   const wrapper = desktopInstall.match(/<<'SAKURA_KWIN'\n([\s\S]*?)\nSAKURA_KWIN/)![1];
   const adapter = `import os,stat,tempfile\nfrom pathlib import Path\n` +
     `for path in ['/etc','/usr','/usr/local','/usr/local/libexec','/usr/local/libexec/sakura-plasma']:\n` +

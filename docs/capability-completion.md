@@ -4,6 +4,10 @@
 
 ## Shell 子进程继承与私有项目图形程序
 
+Debian/Ubuntu 的桌面与输入法准备已改为核对固定包集的真实安装状态和错误标志；全部为 `installed ok` 时跳过重复 APT，缺包、半安装、错误标志或查询失败时进入原安装流程，并最多等待 dpkg 锁 120 秒。原非交互环境、下载预算、安装选项与 Alpine 路径保持。生成 shell 的 27 项、相关入口的 44 项回归及 TypeScript 检查通过；自有 WSL APT 3.2.0 隔离目录中，真实 fcntl 锁释放后返回 0，有限等待到期返回 100，持锁进程与输出流均关闭。该实测没有修改系统 APT 状态或锁，也不等同于 Debian 2.6.1 实机。
+
+当前 `dc1f262befd8bfcb9e7e74823abbc39d4ec147b0631a183afa4df73803587b9d` 构建的新鲜 X11 实例完成两个公开项目目录迁移和 nftables 1.0.6 的三项事务，随后桌面依赖安装被 unattended-upgrades 的 dpkg 锁拒绝，尚未进入 PAM 准入与图形场景。原失败与磁盘保留，VM、进程、SSH 和 WebSocket 全部关闭。证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-88073595-ac26-4c5e-b7ae-9e196424c20e/desktop-identity-evidence.json` SHA-256 为 `cef8e8eca8c95a7edcf9bace62414df99fa1d9cf6f1e294929280bc973f0c566`。APT 修复后的完整桌面结果另行记录。
+
 systemd SSH 的 PAM 会话归属已接通准确服务 MainPID 与内核父进程链核对。只接受 loaded、active/running、有效 NNP 和准确 ControlGroup 中的真实 Root 监听器；最多 128 个真实 SSH 映像节点必须保留原身份与 NNP=1，结束前重读服务权威及全部已使用节点。未知、孤立、循环、重挂接、服务或进程身份变化均拒绝，原 OpenRC 和 nft 条件保持。新 project-identity build `dc1f262befd8bfcb9e7e74823abbc39d4ec147b0631a183afa4df73803587b9d` 的 32 项定向回归通过，其中出站模型覆盖 54 组检查。检查进程实际 exit/close 0、全部标准流关闭，682 份相关来源和 40 份正常运行资产前后不变；证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/systemd-pam-nnp-regression-353d69d1-b0ef-4482-8943-71421e864f6b/verification.json` SHA-256 为 `9a3a93c18306ffa9134ee14e22b41e7da6d3e93e540b44568286d7f1323d0feb`。当前模型与新资产已核对，新构建完整桌面及冷启动实机结果另行记录。
 
 新的独立 Debian X11 COW 使用明确三语句 build `bcb0f0b3d7ddc95cedbeda237a86efb6e38f1222b3ac364706d11f1f0b1e4d41`，两次公开项目目录迁移成功，并通过 nftables 1.0.6 的三项实机事务：一次创建完整表、链与规则；重复创建拒绝且原对象和句柄不变；错误的第三条命令拒绝且未留下部分表。固定测试表已准确关闭，真实项目表及来源未变，24 个命令均已等待退出并关闭描述符。随后公开桌面启动拒绝 `EGRESS_NNP_SERVICE_UNVERIFIED`，涉及 `/user.slice/user-0.slice/session-84.scope` 中的真实 sshd；本轮未进入图形、剪贴板、单应用窗口或 RFB 验收。原证明保持 false，VM、进程和连接全部关闭，清理无错误。证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-c6d3ba91-832a-4109-95ff-8ceee7f078c1/desktop-identity-evidence.json` SHA-256 为 `d81fcc1b36c32fca9544b666dedd67c8764abeac2609dc6a8728c4665d9b30ff`。后续会话归属修复和新构建实机结果另行记录，三项事务成功不表示完整桌面已通过。
