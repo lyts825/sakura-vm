@@ -26,7 +26,7 @@ ADAPTER = sys.stdin.read()
 
 
 def definitions(path):
-    tree = ast.parse(path.read_text(encoding='utf-8'))
+    tree = ast.parse(ADAPTER if path == 'adapter' else path.read_text(encoding='utf-8'))
     return ast.Module(body=[node for node in tree.body if isinstance(node, ast.FunctionDef)], type_ignores=[])
 
 
@@ -113,7 +113,7 @@ class Kernel:
 
     def module(self, source=X11):
         Path, OS = self.path_class(), self.fake_os()
-        namespace = dict(Path=Path, os=OS, stat=stat, json=json, hashlib=hashlib, re=re, errno=errno,
+        namespace = dict(Path=Path, os=OS, stat=stat, json=json, hashlib=hashlib, re=re, errno=errno, sys=sys,
             struct=struct, UUID=re.compile(r'^[a-f0-9-]{36}$'), DIGEST=re.compile(r'^[a-f0-9]{64}$'),
             fcntl=SimpleNamespace(LOCK_SH=1, LOCK_NB=4, flock=lambda *args: None),
             time=SimpleNamespace(monotonic=lambda: self.now, sleep=lambda seconds: setattr(self, 'now', self.now + seconds)))
@@ -215,6 +215,58 @@ class Kernel:
 
 
 class AuthorityTests(unittest.TestCase):
+    def test_fixed_adapter_reports_actual_check_lines_without_changing_full_authority(self):
+        k = Kernel(); f = k.authority('adapter'); value = f.ns['desktop_authority'](f.proof)
+        f.ns['os'].close(value['directoryFd']); self.assertFalse(k.fds); self.assertFalse(k.writes)
+        for mutation in ('frame','pane','runtime','guard','credential','environment','listener'):
+            k = Kernel(); f = k.authority('adapter')
+            if mutation == 'frame':
+                header, frame = k.nodes[f.frame].raw.split(b'\n', 1)
+                header = json.loads(header); header['extra'] = 'private-cookie-path'
+                k.nodes[f.frame].raw = json.dumps(header).encode() + b'\n' + frame
+            elif mutation == 'pane': k.nodes['/proc/900/stat'].raw = k.nodes['/proc/900/stat'].raw.replace(b'777', b'888')
+            elif mutation == 'runtime': k.nodes[f.runtime].info.st_uid = 20002
+            elif mutation == 'guard': f.guard['networkInode'] = 'unknown-original-object'
+            elif mutation == 'credential': k.nodes[f.runtime + '/Xauthority'].info.st_mode |= 0o040
+            elif mutation == 'environment': k.nodes['/proc/901/environ'].raw = b'HOME=/private-cookie-path\0USER=foreign\0'
+            elif mutation == 'listener': k.nodes['/proc/902/fd/7'].link = 'socket:[replaced]'
+            with self.subTest(mutation=mutation):
+                try: f.ns['desktop_authority'](f.proof)
+                except Exception as error: refusal = f.ns['desktop_adapter_refusal'](error, 'AUTHORITY')
+                else: self.fail('Changed full authority was accepted')
+                self.assertEqual(refusal['code'], 'DESKTOP_SCOPE_CHANGED'); self.assertEqual(refusal['reason'], 'CHECK_REJECTED')
+                self.assertGreater(refusal['checkLine'], 0)
+                self.assertIn('require(', ADAPTER.splitlines()[refusal['checkLine'] - 1])
+                self.assertNotIn('private-cookie-path', json.dumps(refusal))
+                self.assertFalse(k.fds); self.assertFalse(k.writes)
+
+    def test_fixed_adapter_classifies_unknown_exceptions_and_keeps_stream_stdout_binary(self):
+        import base64, contextlib, io
+        k = Kernel(); ns = k.module('adapter')
+        for error, reason in [(RuntimeError('private-cookie-path'), 'VALIDATION_REJECTED'),
+                              (PermissionError(errno.EACCES, 'private-cookie-path'), 'PERMISSION_DENIED'),
+                              (ValueError('private-cookie-path'), 'DATA_INVALID')]:
+            reply = ns['desktop_adapter_refusal'](error, 'AUTHORITY')
+            self.assertEqual(reply['reason'], reason); self.assertEqual(reply['checkLine'], 0)
+            self.assertNotIn('private-cookie-path', json.dumps(reply))
+        entry = ast.parse(ADAPTER).body[-1]; self.assertIsInstance(entry, ast.Try)
+        for op in ('guard','stream'):
+            ns = k.module('adapter'); ns.update(base64=base64, adapter_stage='REQUEST', os=SimpleNamespace(environ={}))
+            exec(compile("def guard(proof,op):\n global adapter_stage\n adapter_stage='GUARD_NETWORK'\n require(False,'private-cookie-path')\n", '<fixed-test-guard>', 'exec'), ns)
+            out, err, original = io.StringIO(), io.StringIO(), sys.argv
+            sys.argv = ['adapter', base64.b64encode(json.dumps({'op':op,'proof':{'run':{}}}).encode()).decode()]
+            try:
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+                    exec(compile(ast.Module(body=[entry], type_ignores=[]), '<fixed-adapter-entry>', 'exec'), ns)
+                self.assertEqual(raised.exception.code, 73)
+            finally: sys.argv = original
+            self.assertNotIn('private-cookie-path', out.getvalue() + err.getvalue())
+            self.assertIn('GUARD_NETWORK:CHECK_REJECTED:', err.getvalue())
+            if op == 'stream': self.assertEqual(out.getvalue(), '')
+            else:
+                reply = json.loads(out.getvalue()); self.assertEqual(reply['stage'], 'GUARD_NETWORK')
+                self.assertEqual(reply['reason'], 'CHECK_REJECTED'); self.assertGreater(reply['checkLine'], 0)
+
     def nested(self, source=X11, mutation=None):
         k = Kernel(); f = k.authority(source)
         environment = dict(HOME=f.identity['home'], USER=f.identity['account'], DISPLAY=':2',

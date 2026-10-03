@@ -39,11 +39,33 @@ export type DesktopControlProof = z.infer<typeof desktopControlProofSchema>;
 export const desktopAuthoritySchema = desktopControlProofSchema.transform(({ build: _build, ...proof }) => proof);
 export type DesktopAuthority = z.output<typeof desktopAuthoritySchema> & { run: NonNullable<DesktopControlProof['run']> };
 const fixedEnvironment = 'env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C';
+const adapterStages = ['REQUEST', 'GUARD_IDENTITY', 'GUARD_RECORD', 'GUARD_NETWORK', 'GUARD_RUNTIME',
+  'GUARD_FIREWALL', 'AUTHORITY', 'RUNTIME_CLEANUP', 'STREAM_NETWORK', 'STREAM_RELAY'] as const;
+const adapterReasons = ['CHECK_REJECTED', 'NOT_READY_CREDENTIAL', 'NOT_READY_PROCESS', 'NOT_READY_NESTED_X11',
+  'OBJECT_ABSENT', 'PERMISSION_DENIED', 'SYMLINK_REFUSED', 'OBJECT_BUSY', 'IO_FAILED', 'DATA_INVALID', 'VALIDATION_REJECTED'] as const;
+const adapterRefusalSchema = z.object({ ok: z.literal(false), code: z.enum(['DESKTOP_NOT_READY', 'DESKTOP_SCOPE_CHANGED']),
+  stage: z.enum(adapterStages), reason: z.enum(adapterReasons), checkLine: z.number().int().min(0).max(8192) }).strict();
 
 export const desktopAdapterSource = String.raw`import base64,ctypes,errno,fcntl,hashlib,json,os,pwd,re,select,signal,socket,stat,struct,subprocess,sys,tempfile,time
 from pathlib import Path
+adapter_stage='REQUEST'
+
+def desktop_adapter_refusal(error,stage):
+ # Publish only fixed classifications and a line in this trusted program.
+ # Exception messages, filenames and the project environment never leave it.
+ waiting={'SAKURA_DESKTOP_NOT_READY:credential':'NOT_READY_CREDENTIAL','SAKURA_DESKTOP_NOT_READY:process':'NOT_READY_PROCESS','SAKURA_DESKTOP_NOT_READY:nested-x11':'NOT_READY_NESTED_X11'}
+ line=getattr(error,'desktop_check_line',0)
+ if type(line) is not int or not 0<=line<=8192: line=0
+ reason=waiting.get(str(error),'CHECK_REJECTED' if line else 'VALIDATION_REJECTED')
+ if isinstance(error,OSError):
+  reason={errno.ENOENT:'OBJECT_ABSENT',errno.ESRCH:'OBJECT_ABSENT',errno.EACCES:'PERMISSION_DENIED',errno.EPERM:'PERMISSION_DENIED',errno.ELOOP:'SYMLINK_REFUSED',errno.EBUSY:'OBJECT_BUSY',errno.EAGAIN:'OBJECT_BUSY'}.get(error.errno,'IO_FAILED')
+ elif isinstance(error,(ValueError,KeyError,IndexError,TypeError)): reason='DATA_INVALID'
+ retry=reason in waiting.values() and stage=='AUTHORITY'
+ return {'ok':False,'code':'DESKTOP_NOT_READY' if retry else 'DESKTOP_SCOPE_CHANGED','stage':stage,'reason':reason,'checkLine':line}
+
 def require(condition,message):
- if not condition: raise RuntimeError(message)
+ if not condition:
+  error=RuntimeError(message); error.desktop_check_line=sys._getframe(1).f_lineno; raise error
 def secure_directory(path):
  current=Path('/')
  for part in Path(path).parts[1:]:
@@ -52,6 +74,8 @@ def secure_directory(path):
  return path
 ` + desktopAuthoritySource + String.raw`
 def retire_runtime(proof,receipt):
+ global adapter_stage
+ adapter_stage='RUNTIME_CLEANUP'
  identity=proof['identity']; path=Path(proof['runtime'])
  secure_directory(path.parent)
  try: fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
@@ -109,6 +133,8 @@ def retire_runtime(proof,receipt):
  finally: os.close(fd)
 
 def guard(proof,op):
+ global adapter_stage
+ adapter_stage='GUARD_IDENTITY'
  identity,record=proof['identity'],proof['record']; core=desktop_native(proof['build'])
  require(record['name']=='desktop' and record['session']=='sakura-desktop-'+identity['projectId']
          and record['projectId']==identity['projectId'] and record['scopeName']=='sakura-service-'+record['runId']
@@ -122,6 +148,7 @@ def guard(proof,op):
    require(value==identity,'Desktop guard 原项目账户改变')
   if op!='unguard': require(boot==record['bootId'],'Desktop guard boot 改变')
  finally: os.close(lock)
+ adapter_stage='GUARD_RECORD'
  root=Path('/run/sakura-project-desktop-guards'); path=root/(record['runId']+'.json')
  def original_group_absent():
   parent=core['directory_fd']('/sys/fs/cgroup'); os.close(parent)
@@ -146,6 +173,7 @@ def guard(proof,op):
  if op=='unguard': original_group_absent()
  if boot!=record['bootId']:
   require(op=='unguard' and receipt is None,'Desktop 旧 boot guard 尚有不明证明'); return {'guarded':False}
+ adapter_stage='GUARD_NETWORK'
  namespace='sk-'+identity['projectId'] if identity['networkIsolation']=='private' else None
  if namespace:
   parent=core['directory_fd']('/run/netns')
@@ -162,6 +190,7 @@ def guard(proof,op):
   if proof['run'] is not None: require((str(network.st_dev),str(network.st_ino))==(proof['run']['networkDevice'],proof['run']['networkInode']),'Desktop guard native 网络票据不符')
   require(ctypes.CDLL(None,use_errno=True).setns(net,0x40000000)==0,'Desktop guard 无法进入原网络')
  finally: os.close(net)
+ adapter_stage='GUARD_FIREWALL'
  chain='SDK_'+record['runId'].replace('-','')[:24]; comment='sakura-desktop:'+record['runId']
  program=core['tool']('iptables')
  def invoke(arguments,accept=False):
@@ -173,6 +202,7 @@ def guard(proof,op):
  rules=[['-m','owner','--uid-owner','0','-j','RETURN'],['-m','owner','--uid-owner',str(identity['uid']),'-j','RETURN'],['-j','REJECT']]
  if op=='guard':
   require(invoke(['-S',chain],True).returncode!=0,'Desktop 同名 guard 不明，拒绝接管')
+  adapter_stage='GUARD_RUNTIME'
   for parent in ['/run/sakura-desktop-uid','/run/sakura-desktop-uid/'+str(identity['uid'])]: core['make_directory'](parent,0o711)
   require(len(list(Path(proof['runtime']).parent.iterdir()))<128,'Desktop 私有 runtime 达到上限')
   os.mkdir(proof['runtime'],0o700)
@@ -188,6 +218,7 @@ def guard(proof,op):
     raise
    os.fchown(runtime,identity['uid'],identity['gid'])
   finally: os.close(runtime)
+  adapter_stage='GUARD_FIREWALL'
   invoke(['-N',chain])
   for rule in rules: invoke(['-A',chain,*rule])
   invoke(['-I','OUTPUT','1',*jump]); expected['phase']='active'; core['json_write'](str(path),expected); return {'guarded':True}
@@ -210,16 +241,22 @@ def guard(proof,op):
  return {'guarded':True}
 
 def stream(proof):
+ global adapter_stage
+ adapter_stage='AUTHORITY'
  checked=desktop_authority(proof)
  os.close(checked['directoryFd'])
+ adapter_stage='STREAM_NETWORK'
  core=desktop_native(proof['run']['build']); lock=core['initialize_readonly']()
  try: net,_,_=core['network_fd'](proof['identity'],proof['run']['bootId'],True)
  finally: os.close(lock)
  try: require(ctypes.CDLL(None,use_errno=True).setns(net,0x40000000)==0,'Desktop VNC 无法进入原网络')
  finally: os.close(net)
+ adapter_stage='STREAM_RELAY'
  peer=socket.create_connection(('127.0.0.1',5901),timeout=3)
  try:
+  adapter_stage='AUTHORITY'
   checked=desktop_authority(proof); os.close(checked['directoryFd'])
+  adapter_stage='STREAM_RELAY'
   peer.setblocking(False); os.set_blocking(0,False); os.set_blocking(1,False)
   upstream=bytearray(); downstream=bytearray(); input_open=True; peer_open=True
   while peer_open or downstream:
@@ -254,14 +291,15 @@ try:
   authority={key:value for key,value in proof.items() if key!='build'}
   guard(proof,'guard-probe')
   if request['op']=='stream': stream(authority); sys.exit(0)
+  adapter_stage='AUTHORITY'
   checked=desktop_authority(authority); os.close(checked['directoryFd']); result={'endpoint':checked['endpoint']}
  print(json.dumps({'ok':True,'result':result}))
 except Exception as error:
  # Binary RFB must never receive diagnostics or JSON error bytes on stdout.
- print('SAKURA_DESKTOP_ADAPTER_REFUSED',file=sys.stderr)
+ refusal=desktop_adapter_refusal(error,adapter_stage)
+ print('SAKURA_DESKTOP_ADAPTER_REFUSED '+refusal['stage']+':'+refusal['reason']+':'+str(refusal['checkLine']),file=sys.stderr)
  if 'request' not in globals() or request.get('op')!='stream':
-  waiting=str(error) in ('SAKURA_DESKTOP_NOT_READY:credential','SAKURA_DESKTOP_NOT_READY:process','SAKURA_DESKTOP_NOT_READY:nested-x11')
-  print(json.dumps({'ok':False,'code':'DESKTOP_NOT_READY' if waiting else 'DESKTOP_SCOPE_CHANGED'}))
+  print(json.dumps(refusal))
  sys.exit(73)
 `;
 
@@ -275,12 +313,17 @@ export function desktopProjectCommand(op: 'probe' | 'stream' | 'guard' | 'guard-
 export async function desktopProjectControl(machines: Machines, id: string, op: 'probe' | 'guard' | 'guard-probe' | 'unguard',
   proof: DesktopControlProof, signal?: AbortSignal) {
   const result = await machines.exec(id, desktopProjectCommand(op, proof), 40000, signal);
-  let reply: { ok?: boolean; code?: string; result?: unknown };
+  let reply: { ok?: boolean; code?: string; result?: unknown } | null;
   try { reply = JSON.parse(result.stdout); } catch { throw new AppError('Desktop 固定 adapter 没有可核对回执', 503, 'DESKTOP_CONTROL_FAILED'); }
-  if (result.code !== 0 || !reply.ok) {
-    if (op === 'probe' && proof.endpoint === null && reply.ok === false && reply.code === 'DESKTOP_NOT_READY')
+  if (result.code !== 0 || !reply || typeof reply !== 'object' || reply.ok !== true) {
+    const refusal = adapterRefusalSchema.safeParse(reply);
+    const waiting = refusal.success && refusal.data.stage === 'AUTHORITY' &&
+      ['NOT_READY_CREDENTIAL', 'NOT_READY_PROCESS', 'NOT_READY_NESTED_X11'].includes(refusal.data.reason);
+    if (op === 'probe' && proof.endpoint === null && refusal.success && refusal.data.code === 'DESKTOP_NOT_READY' && waiting)
       throw new AppError('Desktop 原会话正在准备图形端点', 409, 'DESKTOP_NOT_READY');
-    throw new AppError('Desktop 原 UID、完整运行域或 VNC guard 未确认',
+    const code = Number.isInteger(result.code) && result.code >= -1 && result.code <= 255 ? String(result.code) : 'unknown';
+    const detail = refusal.success ? refusal.data.stage + '/' + refusal.data.reason + '/check=' + refusal.data.checkLine : 'UNVERIFIED_REPLY';
+    throw new AppError('Desktop 原 UID、完整运行域或 VNC guard 未确认（' + op + '/' + detail + '；exit=' + code + '）',
     op === 'unguard' ? 503 : 409, op === 'unguard' ? 'DESKTOP_CLEANUP_FAILED' : 'DESKTOP_SCOPE_CHANGED');
   }
   return op === 'probe' ? z.object({ endpoint: desktopEndpointSchema }).strict().parse(reply.result)

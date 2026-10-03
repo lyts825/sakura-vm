@@ -32,11 +32,50 @@ test('typed adapter waiting can authorize retry only for an uncommitted probe', 
   const f = await fixture(t); await f.start();
   const binding = await f.bindings.read(f.id); if (binding?.version !== 2) assert.fail();
   const proof: DesktopControlProof = { version: 1, ...binding.execution };
-  const machines = { exec: async () => ({ code: 73, stdout: JSON.stringify({ ok: false, code: 'DESKTOP_NOT_READY' }), stderr: '' }) } as unknown as MachinesType;
-  await assert.rejects(desktopProjectControl(machines, f.id, 'probe', { ...proof, endpoint: null }), { code: 'DESKTOP_NOT_READY' });
+  let waitingReason = 'NOT_READY_PROCESS';
+  const machines = { exec: async () => ({ code: 73, stdout: JSON.stringify({ ok: false, code: 'DESKTOP_NOT_READY',
+    stage: 'AUTHORITY', reason: waitingReason, checkLine: 0 }), stderr: '' }) } as unknown as MachinesType;
+  for (const reason of ['NOT_READY_CREDENTIAL', 'NOT_READY_PROCESS', 'NOT_READY_NESTED_X11']) {
+    waitingReason = reason;
+    await assert.rejects(desktopProjectControl(machines, f.id, 'probe', { ...proof, endpoint: null }), { code: 'DESKTOP_NOT_READY' });
+  }
   await assert.rejects(desktopProjectControl(machines, f.id, 'probe', proof), { code: 'DESKTOP_SCOPE_CHANGED' });
   await assert.rejects(desktopProjectControl(machines, f.id, 'guard', { ...proof, endpoint: null }), { code: 'DESKTOP_SCOPE_CHANGED' });
   await assert.rejects(desktopProjectControl(machines, f.id, 'unguard', proof), { status: 503, code: 'DESKTOP_CLEANUP_FAILED' });
+});
+
+test('adapter public refusals retain only validated fixed stages and lines, including malformed null replies', async t => {
+  const f = await fixture(t); await f.start();
+  const binding = await f.bindings.read(f.id); if (binding?.version !== 2) assert.fail();
+  const proof: DesktopControlProof = { version: 1, ...binding.execution };
+  const refusal = { ok: false, code: 'DESKTOP_SCOPE_CHANGED', stage: 'AUTHORITY', reason: 'CHECK_REJECTED', checkLine: 215 };
+  let stdout = JSON.stringify(refusal);
+  const machines = { exec: async () => ({ code: 73, stdout, stderr: 'private-cookie-path' }) } as unknown as MachinesType;
+  await assert.rejects(desktopProjectControl(machines, f.id, 'probe', proof), (error: unknown) => {
+    assert.ok(error instanceof AppError); assert.equal(error.code, 'DESKTOP_SCOPE_CHANGED'); assert.equal(error.status, 409);
+    assert.match(error.message, /probe\/AUTHORITY\/CHECK_REJECTED\/check=215/); assert.doesNotMatch(error.message, /private-cookie-path/);
+    return true;
+  });
+  await assert.rejects(desktopProjectControl(machines, f.id, 'unguard', proof), { status: 503, code: 'DESKTOP_CLEANUP_FAILED' });
+  for (const reply of [null, [], 'private-cookie-path', { ...refusal, stage: 'private-cookie-path' },
+    { ...refusal, reason: 'private-cookie-path' }, { ...refusal, checkLine: -1 }, { ...refusal, checkLine: 8193 },
+    { ...refusal, checkLine: 1.5 }, { ...refusal, details: 'private-cookie-path' }]) {
+    stdout = JSON.stringify(reply);
+    await assert.rejects(desktopProjectControl(machines, f.id, 'probe', { ...proof, endpoint: null }), (error: unknown) => {
+      assert.ok(error instanceof AppError); assert.equal(error.code, 'DESKTOP_SCOPE_CHANGED');
+      assert.match(error.message, /UNVERIFIED_REPLY/); assert.doesNotMatch(error.message, /private-cookie-path/); return true;
+    });
+  }
+  for (const reply of [{ ...refusal, code: 'DESKTOP_NOT_READY' },
+    { ...refusal, code: 'DESKTOP_NOT_READY', stage: 'GUARD_RECORD', reason: 'NOT_READY_PROCESS' }]) {
+    stdout = JSON.stringify(reply);
+    await assert.rejects(desktopProjectControl(machines, f.id, 'probe', { ...proof, endpoint: null }), { code: 'DESKTOP_SCOPE_CHANGED' });
+  }
+  stdout = 'private-cookie-path{';
+  await assert.rejects(desktopProjectControl(machines, f.id, 'probe', proof), (error: unknown) => {
+    assert.ok(error instanceof AppError); assert.equal(error.code, 'DESKTOP_CONTROL_FAILED'); assert.equal(error.status, 503);
+    assert.doesNotMatch(error.message, /private-cookie-path/); return true;
+  });
 });
 
 test('named Desktop captures non-enumerable scope, binary body, native HOME/UID and original service ticket', async (t) => {

@@ -4,6 +4,10 @@
 
 ## Shell 子进程继承与私有项目图形程序
 
+最新 `dec047e1f2b5e412115ff4ff5a32c979b27ba7a8cda56e89e6815144c8b07076` 构建的新鲜 X11 实例完成两个公开项目迁移、三项 nftables 1.0.6 事务，APT 成功安装缺少的桌面依赖，桌面路径的原生 UID/NNP 准入返回成功。随后固定 Desktop adapter 以退出码 73 拒绝完整 UID、运行域或 VNC guard 核对；原适配器回执只含通用拒绝，无法判断具体检查失败。图形、剪贴板、单应用和 RFB 正式场景尚未开始。原失败证明保留，VM、进程和连接全部关闭；`E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-26613781-f0f5-49bf-8d86-0a66b37d2e2f/desktop-identity-evidence.json` SHA-256 为 `91f90441445e3287d9adae3d0537b5cb084e1eef513a2a716808f5d89868716c`。
+
+固定 Desktop adapter 的拒绝回执现只提供预设阶段、原因和受限检查行号；公开入口只接受严格结构，未知或恶意回执仍使用通用拒绝。原三种明确的图形就绪等待仅在未提交的 probe 中重试，stream 不把诊断写进 RFB 字节流，unguard 失败仍按清理错误处理。31 项定向 Node 回归、16 项生产 Python 模型和 TypeScript 检查通过；证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/desktop-adapter-narrow-dd5bfcdb-cf4b-4733-af66-0ee99739f6c0/verification.json` SHA-256 为 `7adc3a6925032b458c87e6f0a39c2e594e66a2a3cee3a76396c90e1e60c3c799`。本次仅改善真实失败定位，尚未证明 adapter 原拒绝已经修复；新的完整桌面结果另行记录。
+
 APT 修复后的新鲜 X11 实例在原时限内完成启动与 SSH 认证，原生组件安装成功，系统 SSH 服务按既有恢复流程继承 NoNewPrivileges。第一个项目迁移的后续准入返回 `EGRESS_NNP_PROCESS_CHANGED`，原始回执 `detail:null`，尚未进入 APT、图形和正式功能场景；不能据此判定发生变化的具体进程。原失败和磁盘保留，全部 VM、进程和连接已经关闭。证明 `E:/Sakura-verification-6fb9a7f4-3e97-42fa-a3f8-2db21f22ca9c/linux-desktop-identity-cow-8ae09e4b-c926-4eb2-bd7d-4e2576639b49/desktop-identity-evidence.json` SHA-256 为 `ddccd51e2d2564ae40ea5d1d3a69101cc4501a844f3df405b8e5d3a709fc7b37`。
 
 生产源码模型复现了初始 `/proc` 采集中无关新 PID 和无关进程映像瞬态变化均返回相同无详情错误。准入前的完整采集现最多重新进行三轮，重试窗口五秒，逐 PID 读取前后及最后的 PID 集合都受约束；新增 SSH 或项目账号进程仍须经过原 NNP、能力与归属检查。已经用于准入的 SSH 父链、服务权威或进程身份变化不重试，持续变化仍拒绝。错误回执增加固定阶段和原因，不输出命令行或环境。新 `dec047e1f2b5e412115ff4ff5a32c979b27ba7a8cda56e89e6815144c8b07076` 构建的定向 Node 32 项、生产模型 58 组及 TypeScript 检查通过；模型仅证明这两类初始采集反例，前次实机原始错误的具体分支仍未确定。修复后完整实机结果另行记录。
