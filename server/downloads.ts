@@ -4,7 +4,7 @@ import { posix } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { guestPath } from '../shared/paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Files } from './files.ts';
 import type { Bundles } from './bundles.ts';
 import { Jobs } from './jobs.ts';

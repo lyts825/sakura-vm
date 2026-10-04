@@ -30,7 +30,7 @@ import type { HostMounts } from './host-mount.ts';
 import { distroInfo } from './images.ts';
 import { Jobs } from './jobs.ts';
 import { metadataFile } from './metadata-store.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { MediaDevices } from './media-devices.ts';
 import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
 import { PackageWorkbench } from './package-workbench.ts';
@@ -47,7 +47,7 @@ import {
   projectNetworkCheckScript,
   projectNetworkNamespace,
 } from './project-network-isolation.ts';
-import type { ProjectTerminals } from './project-terminals.ts';
+import { type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { resourcePolicy } from './resource-policies.ts';
 import type { SecretRotationItem } from './secret-rotation.ts';
 import { privateLog, redactValues } from './secrets.ts';

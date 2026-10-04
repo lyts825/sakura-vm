@@ -10,7 +10,7 @@ import type { Client } from 'ssh2';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA, ROOT } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { GpgAgentContext } from './gpg-agent-scope.ts';
 import { networkRuntime } from './network/index.ts';
 

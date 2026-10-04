@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import { ExecutionScope, type ExecutionOptions } from './execution-scope.ts';
-import { withResourceContext } from './host-runtime/index.ts';
+import { withResourceContext, resourceContext } from './host-runtime/index.ts';
 import { Jobs, type JobMeta } from './jobs.ts';
 import type { Machines } from './machines.ts';
 import { networkFor } from './network/index.ts';
@@ -10,9 +10,14 @@ import type { PluginScope } from './plugin-scope.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import { withPluginAuthority } from './plugin-authority.ts';
 import { storageRuntime, type StorageLease, type StorageRequest } from './storage-runtime.ts';
+import { vmAccess } from './vm-access.ts';
+import { pluginMetadata } from './plugin-metadata.ts';
+import { projectTerminalsFor } from './terminal-backend.ts';
 
 type PluginExecution = Pick<ExecutionOptions, 'vmId' | 'projectId' | 'configVersion'> & { signal?: AbortSignal };
 type PluginStorage = Omit<StorageRequest, 'owner' | 'taskId' | 'transfer'>;
+export type PluginExecutionScope = Pick<ExecutionScope, 'identity' | 'signal' | 'owner' | 'assert' | 'deferCleanup' | 'recovery' | 'hasPendingCleanup'>;
+export type PluginStorageLease = Omit<StorageLease, 'transfer'>;
 type JobOptions = { persistent?: boolean; /** Existing first-party history name, during migration only. */ compatHistoryName?: string };
 
 class PluginJobs extends Jobs {
@@ -57,27 +62,29 @@ export function pluginCapabilities(pluginId: string, machines: Machines, scope: 
   const signalFor = (signal?: AbortSignal) => signal ? AbortSignal.any([scope.signal, signal]) : scope.signal;
   let stores = 0;
   return Object.freeze({
+    sessions: Object.freeze({ terminals: () => run('execution', () => projectTerminalsFor(machines)) }),
     networking,
-    vm: Object.freeze({
-      state(id: string) { return run('vm', () => machines.state(id)); },
-      get(id: string) { return run('vm', () => structuredClone(machines.get(id))); },
-      boot(id: string) { return run('vm', () => machines.live.get(id)?.startedAt); },
-      async exec(id: string, command: string, timeoutMs = 10000, signal?: AbortSignal) {
-        return scope.run(() => run('execution', () => ExecutionScope.run({ machines, vmId: id, projectId: 'default',
-          owner, signal: signalFor(signal), delegate: true }, () => machines.exec(id, command, timeoutMs, signalFor(signal)))));
-      },
-    }),
+    vm: vmAccess(machines, scope, instance, (vmId, signal, work) => run('execution', () => ExecutionScope.run({ machines,
+      vmId, projectId: resourceContext()?.projectId || 'default', owner: ExecutionScope.current()?.owner || owner, signal, delegate: true }, work))),
+    metadata: pluginMetadata(pluginId, owner, scope, run),
     execution: Object.freeze({
-      run<T>(options: PluginExecution, work: (execution: ExecutionScope) => Promise<T>): Promise<T> {
+      run<T>(options: PluginExecution, work: (execution: PluginExecutionScope) => Promise<T>): Promise<T> {
         return scope.run(() => run('execution', () => ExecutionScope.run({ ...options,
-          machines, owner, signal: signalFor(options.signal), delegate: true }, work)));
+          machines, owner: ExecutionScope.current()?.owner || owner, signal: signalFor(options.signal), delegate: true }, execution => work(Object.freeze({
+            identity: execution.identity, signal: execution.signal, owner: execution.owner, assert: () => execution.assert(),
+            deferCleanup: (cleanup: () => Promise<void>) => execution.deferCleanup(cleanup),
+            recovery: () => execution.recovery(), hasPendingCleanup: () => execution.hasPendingCleanup(),
+          })))));
       },
     }),
     storage: Object.freeze({
-      run<T>(request: PluginStorage, work: (lease: StorageLease, signal: AbortSignal) => Promise<T>): Promise<T> {
+      run<T>(request: PluginStorage, work: (lease: PluginStorageLease, signal: AbortSignal) => Promise<T>): Promise<T> {
         const signal = signalFor(request.signal);
         return scope.run(() => run('storage', () => storageRuntime.run({ ...request,
-          transfer: undefined, owner, taskId: randomUUID(), signal }, (lease) => work(lease, signal))));
+          transfer: undefined, owner, taskId: randomUUID(), signal }, (lease) => {
+            const { transfer: _transfer, ...publicLease } = lease;
+            return work(Object.freeze(publicLease), signal);
+          })));
       },
     }),
     jobs: Object.freeze({
@@ -93,8 +100,6 @@ export function pluginCapabilities(pluginId: string, machines: Machines, scope: 
       },
     }),
     diagnostics: () => scope.diagnostics(),
-    /** Only the owning domain may supply this callback, after retrying and confirming cleanup. */
-    recoverCleanup: (id: string, recover: () => Promise<void>) => scope.recoverCleanup(id, recover),
   });
 }
 

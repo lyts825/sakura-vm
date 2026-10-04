@@ -5,14 +5,14 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { ROOT } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { projectVersion } from './project-config.ts';
 import { guestTask } from './guest-task.ts';
 import { quote } from './shell.ts';
 import { redactValues } from './secrets.ts';
 import { CommandPresets, presetSchema } from './command-presets.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 import { projectIdentityPayload } from './project-identity.ts';
 import { projectNetworkCheckScript, projectNetworkNamespace } from './project-network-isolation.ts';
@@ -149,7 +149,7 @@ export async function runEngineeringOperation(
     };
     await assertCurrent();
     let ownedTerminals: ProjectTerminals | undefined;
-    const terminals = options.terminals || (ownedTerminals = new ProjectTerminals(machines, workspaces));
+    const terminals = options.terminals || (ownedTerminals = projectTerminalsFor(machines, workspaces));
     let prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
     let failed = false, failure: unknown;
     try {

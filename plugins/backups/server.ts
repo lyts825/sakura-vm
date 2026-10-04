@@ -13,7 +13,7 @@ import { backupRecoverySchema } from '../../shared/backup-recovery.ts';
 import { rescueArtifactSchema, rescueJobSchema, rescueViewSchema } from '../../shared/rescue.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.vm;
   host.provide(backupsServices.backups, new Backups(m, host.bundles, host.secrets));
   host.registerJobs(host.backups.jobs, (job) => {
     if (job.action !== 'run') throw new AppError('请回到原功能页面重新执行');
@@ -70,7 +70,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'backup-download' && req.method === 'POST') {
       const input = z

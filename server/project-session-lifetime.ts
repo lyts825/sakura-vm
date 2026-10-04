@@ -5,7 +5,7 @@ import {
   type HostRuntime,
   type ResourceLease,
 } from './host-runtime/index.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { vmLifetime, type VmIdentity } from './vm-lifetime.ts';
 import { captureOperationCheck, withoutOperationContext } from './operation-context.ts';
 

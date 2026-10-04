@@ -10,9 +10,9 @@ import { MAX_TEXT_REQUEST_BYTES } from '../../server/http.ts';
 import { MAX_TEXT_BYTES } from '../../server/files.ts';
 import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
-  host.provide(codeChecksServices.intelligence, new CodeIntelligence(host.machines, host.workspaces));
-  host.provide(codeChecksServices.languageServices, new LanguageServices(host.machines, host.workspaces, host.fileLocks));
-  host.provide(codeChecksServices.debugger, new DebugAdapter(host.machines, host.workspaces));
+  host.provide(codeChecksServices.intelligence, new CodeIntelligence(host.vm, host.workspaces));
+  host.provide(codeChecksServices.languageServices, new LanguageServices(host.vm, host.workspaces, host.fileLocks));
+  host.provide(codeChecksServices.debugger, new DebugAdapter(host.vm, host.workspaces));
 }
 export async function route(
   this: PluginContext,
@@ -35,7 +35,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'debugger') {
       if (req.method === 'GET') return send(await this.debugger.status(id, signal));

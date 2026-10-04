@@ -13,14 +13,13 @@ import { FileLocks } from '../../server/file-locks.ts';
 import { downloadManifest } from '../../server/file-chunks.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.vm;
   const files = host.provide(filesServices.files, new Files(m));
   const history = host.provide(filesServices.history, new FileHistory(m, files));
   const locks = host.provide(filesServices.fileLocks, new FileLocks());
-  files.beforeReplace = (id, path, ftp, signal) => history.capture(id, path, ftp, signal);
+  const unregister = m.beforeFileReplace((id, path, ftp, signal) => history.capture(id, path, ftp, signal));
   files.trash = (id, path, recursive) => history.trash(id, path, recursive);
-  m.fileBeforeReplace = files.beforeReplace;
-  host.onDispose(() => { m.fileBeforeReplace = undefined; locks.clear(); files.beforeReplace = undefined; files.trash = undefined; });
+  host.onDispose(() => { unregister(); locks.clear(); files.trash = undefined; });
 }
 export async function route(
   this: PluginContext,
@@ -42,7 +41,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4 && action === 'download-chunks' && req.method === 'GET') {
     const path = guestPath(url.searchParams.get('path'));
     return send(
@@ -73,7 +72,7 @@ export async function route(
     }
   }
   if (parts.length === 4 && action === 'uploads') {
-    this.machines.requireUnlocked(id);
+    this.vm.requireUnlocked(id);
     if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
     const uploadId = url.searchParams.get('id');
     const lockToken = req.headers['x-sakura-file-lock'];
@@ -97,9 +96,9 @@ export async function route(
     }
   }
   if (req.method === 'GET' && parts.length === 4 && parts[3] === 'files')
-    return send(await this.machines.files(id, guestPath(url.searchParams.get('path') || '/workspace')));
+    return send(await this.vm.files(id, guestPath(url.searchParams.get('path') || '/workspace')));
   if (req.method === 'GET' && parts.length === 4 && parts[3] === 'file') {
-    const content = await this.machines.readGuestFile(id, guestPath(url.searchParams.get('path')));
+    const content = await this.vm.readGuestFile(id, guestPath(url.searchParams.get('path')));
     return send({ content, version: textVersion(content) });
   }
   if (req.method === 'PUT' && parts.length === 4 && parts[3] === 'file') {
@@ -118,7 +117,7 @@ export async function route(
       .parse(await body(req, signal, MAX_TEXT_REQUEST_BYTES));
     if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
     await this.fileLocks.withMutation(id, [guestPath(value.path)], value.lockToken,
-      () => this.machines.writeGuestFile(
+      () => this.vm.writeGuestFile(
         id,
         guestPath(value.path),
         value.content,

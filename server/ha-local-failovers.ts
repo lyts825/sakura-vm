@@ -2,7 +2,7 @@ import { AppError } from '../shared/errors.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
 import type { HaFailureMonitor } from './ha-failure-monitor.ts';
 import type { HostPeers } from './host-peers.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { SnapshotReplications } from './snapshot-replications.ts';
 
 type Policy = { enabled: boolean; options: unknown };

@@ -156,6 +156,7 @@ export class StorageRuntime {
         })),
       ],
     });
+    try { lifetime?.check('storage', true); } catch (error) { lease.release(); throw error; }
     let released = false;
     let cleanupPending = false;
     for (const [key, value] of reserved) {
@@ -285,7 +286,10 @@ export class StorageRuntime {
       get pendingCleanup() {
         return cleanupPending;
       },
-      transfer: (owner: string) => lease.transfer(owner),
+      transfer: (owner: string) => {
+        if (lifetime && owner !== lifetime.owner) throw new AppError('插件不能转移资源归属', 403, 'PLUGIN_RESOURCE_OWNER');
+        lease.transfer(owner);
+      },
     };
   }
   async run<T>(request: StorageRequest, work: (lease: StorageLease) => Promise<T>): Promise<T> {

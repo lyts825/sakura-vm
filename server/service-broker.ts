@@ -5,6 +5,7 @@ import type { PluginInstance } from './plugin-instance.ts';
 import type { PluginDirectory } from './plugin-directory.ts';
 import { withPluginAuthority } from './plugin-authority.ts';
 import { resourceContext, withResourceContext } from './host-runtime/context.ts';
+import { isVmLiveView } from './vm-reference.ts';
 
 type Registration = { instance: PluginInstance; version: number; value: unknown };
 const hidden = new Set(['constructor', '__proto__', 'prototype', 'machines', 'engine', 'options']);
@@ -12,6 +13,7 @@ const cleanupReturns = new Set(['onConfigChange', 'beforeConfigChange', 'beforeA
 function executable(value: any, seen = new WeakSet<object>()): boolean {
   if (typeof value === 'function') return true;
   if (!value || typeof value !== 'object' || seen.has(value)) return false;
+  if (value instanceof AbortSignal || isVmLiveView(value)) return false;
   seen.add(value);
   if (Object.getPrototypeOf(value) !== Object.prototype && !Array.isArray(value)) return true;
   return Object.values(value).some(item => executable(item, seen));
@@ -60,7 +62,7 @@ export class ServiceBroker {
     const wrap = (value: any): any => {
       if (value === null || typeof value !== 'object' && typeof value !== 'function') return value;
       if (value instanceof Promise) return value.then(wrap);
-      if (Array.isArray(value) || value instanceof Date || ArrayBuffer.isView(value) || value instanceof Error) return value;
+      if (Array.isArray(value) || value instanceof Date || ArrayBuffer.isView(value) || value instanceof Error || value instanceof AbortSignal || isVmLiveView(value)) return value;
       // Data responses have no executable authority. Class instances and capability objects do.
       if (Object.getPrototypeOf(value) === Object.prototype && !executable(value)) return value;
       if (typeof value === 'function') return (...args: unknown[]) => {

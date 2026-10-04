@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { deviceProfileSchema, hardwareArguments } from '../shared/hardware.ts';
 import { hostResources, resourcePolicy, saveResourcePolicy } from './resource-policies.ts';

@@ -36,23 +36,23 @@ import {
 } from '../../shared/rescue.ts';
 
 export async function activate(host: PluginContext) {
-  const signatures = host.provide(snapshotsServices.signedBundles, new SignedBundles(host.dataFile('signed-bundles')));
+  const signatures = host.provide(snapshotsServices.signedBundles, new SignedBundles(host.capabilities.metadata.reference('signed-bundles')));
   await signatures.init();
-  host.provide(snapshotsServices.bundles, new Bundles(host.machines, signatures));
-  const golden = host.provide(snapshotsServices.goldenImages, new GoldenImages(host.machines, host.bundles));
+  host.provide(snapshotsServices.bundles, new Bundles(host.vm, signatures));
+  const golden = host.provide(snapshotsServices.goldenImages, new GoldenImages(host.vm, host.bundles));
   host.registerJobs(golden.jobs, () => {
     throw new AppError('请先刷新黄金镜像库核对结果，再明确发起操作', 409);
   });
-  const rescue = host.provide(snapshotsServices.rescue, new Rescue(host.machines));
+  const rescue = host.provide(snapshotsServices.rescue, new Rescue(host.vm));
   await rescue.init();
   host.registerJobs(rescue.jobs, () => {
     throw new AppError('请在快照页检查救援命令后重新执行', 409);
   });
-  const snapshotDiff = host.provide(snapshotsServices.snapshotDiff, new SnapshotDiff(host.machines));
+  const snapshotDiff = host.provide(snapshotsServices.snapshotDiff, new SnapshotDiff(host.vm));
   host.registerJobs(snapshotDiff.jobs, () => {
     throw new AppError('请在快照页选择快照后重新比较', 409);
   });
-  const snapshotMerge = host.provide(snapshotsServices.snapshotMerge, new SnapshotMerge(host.machines, host.bundles));
+  const snapshotMerge = host.provide(snapshotsServices.snapshotMerge, new SnapshotMerge(host.vm, host.bundles));
   host.registerJobs(snapshotMerge.jobs, () => {
     throw new AppError('请在快照页核对分支和目标后重新合并', 409);
   });
@@ -191,7 +191,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (req.method === 'POST' && parts[3] === 'snapshots' && parts.length === 4) {
     const { name, online, memory } = z
       .object({ name: z.string().trim().min(1).max(60), online: z.boolean().optional(),
@@ -199,8 +199,8 @@ export async function route(
       .strict()
       .parse(await body(req));
     if (memory && !online) throw new AppError('整机状态快照要求运行中的实例', 409);
-    return send(await (memory ? this.machines.memorySnapshot(id, name)
-      : online ? this.machines.onlineSnapshot(id, name) : this.machines.snapshot(id, name)), 201);
+    return send(await (memory ? this.vm.memorySnapshot(id, name)
+      : online ? this.vm.onlineSnapshot(id, name) : this.vm.snapshot(id, name)), 201);
   }
   if (
     req.method === 'POST' &&
@@ -215,17 +215,17 @@ export async function route(
           .strict()
           .parse(await body(req))
       : { backup: false };
-    return send(await (input.memory ? this.machines.restoreMemory(id, parts[4], input.backup)
-      : this.machines.restore(id, parts[4], input.backup)));
+    return send(await (input.memory ? this.vm.restoreMemory(id, parts[4], input.backup)
+      : this.vm.restore(id, parts[4], input.backup)));
   }
   if (action === 'snapshots' && parts[4] && parts.length === 5) {
     if (req.method === 'DELETE') {
-      send(await this.machines.editSnapshot(id, parts[4], null));
+      send(await this.vm.editSnapshot(id, parts[4], null));
       return true;
     }
     if (req.method === 'PATCH') {
       send(
-        await this.machines.editSnapshot(
+        await this.vm.editSnapshot(
           id,
           parts[4],
           z
@@ -239,7 +239,7 @@ export async function route(
   }
   if (parts.length === 4) {
     if (action === 'export' && req.method === 'GET') {
-      await this.downloads.send({ id, type: 'export', name: this.machines.get(id).name + '.sakura' }, res);
+      await this.downloads.send({ id, type: 'export', name: this.vm.get(id).name + '.sakura' }, res);
       return true;
     }
   }

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { lstat, mkdir, readdir, rm, rmdir, stat, statfs, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA, VM_ROOT, setVmStorageRoot, vmDir } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';

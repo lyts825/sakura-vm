@@ -24,12 +24,12 @@ import {
 import { checkGpgAgentForward, runGpgAgentForward } from './gpg-agent-forward.ts';
 import { Jobs } from './jobs.ts';
 import { metadataFile } from './metadata-store.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { DATA, ROOT, vmDir } from './paths.ts';
 import { projectVersion } from './project-config.ts';
 import { projectNetworkNamespace } from './project-network-isolation.ts';
 import { ProjectRunScopes } from './project-run-scope.ts';
-import type { ProjectTerminals } from './project-terminals.ts';
+import { type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ReverseTunnels } from './reverse-tunnels.ts';
 import { secretName } from './secrets.ts';
 import { checkSecureErase, runSecureErase } from './secure-erase.ts';

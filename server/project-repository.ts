@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { ROOT, vmDir } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
 import { quote } from './shell.ts';
 import { guestTask } from './guest-task.ts';

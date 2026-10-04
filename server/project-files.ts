@@ -1,7 +1,7 @@
 import { posix } from 'node:path';
 import { isUtf8 } from 'node:buffer';
 import type { FileEntry, SFTPWrapper } from 'ssh2';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
 import { AppError } from '../shared/errors.ts';
 

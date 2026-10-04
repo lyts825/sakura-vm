@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { captureOperationCheck, withOperationCheck } from './operation-context.ts';
 import { vmLifetime } from './vm-lifetime.ts';
 import { withResourceContext } from './host-runtime/context.ts';

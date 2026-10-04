@@ -82,12 +82,13 @@ type DiskIdentity = { key: string; seed: Buffer; pending?: string };
 import type { Live } from './vm-state.ts';
 import { VmLifetime, vmLifetime, vmBootProviders } from './vm-lifetime.ts';
 import { ExecutionScope } from './execution-scope.ts';
+import { ManagedHooks } from './managed-hooks.ts';
 import { withResourceContext } from './host-runtime/index.ts';
 
 const { connectLocal: createConnection } = networkFor('core:machines');
 export type BootAttachment = { args: string[]; close: () => Promise<void>; machine?: string };
 export class Machines extends EventEmitter {
-  storagePools = new StoragePools(this);
+  storagePools: StoragePools = new StoragePools(this);
   trustedBootStateFingerprint?: (id: string) => Promise<string>;
   trustedBootSnapshot?: {
     capture: (id: string, snapshotId: string) => Promise<void>;
@@ -95,7 +96,13 @@ export class Machines extends EventEmitter {
     remove: (id: string, snapshotId: string) => Promise<void>;
     ensureOnlineAllowed: (id: string) => Promise<void>;
   };
-  fileBeforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
+  private fileInterceptors = new ManagedHooks<[string, string, SFTPWrapper, AbortSignal | undefined]>();
+  beforeFileReplace(callback: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>) {
+    return this.fileInterceptors.register(callback);
+  }
+  fileReplacing(id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) {
+    return this.fileInterceptors.dispatch(id, path, ftp, signal);
+  }
   records = new Map<string, VMRecord>();
   live = new Map<string, Live>();
   logs = new Map<string, string>();
@@ -171,6 +178,8 @@ export class Machines extends EventEmitter {
     if (this.closing || this.maintenance || this.operations.size || this.live.size)
       throw new AppError('请停止全部实例并等待正在执行的操作完成', 409);
     this.maintenance = true;
+    let released = false;
+    return () => { if (!released) { released = true; this.maintenance = false; } };
   }
   constructor(public engine: Engine, readonly network: Pick<NetworkRuntime, 'attachVm'> = networkRuntime) {
     super();
@@ -1321,7 +1330,6 @@ export class Machines extends EventEmitter {
     if (bytes.length > MAX_TEXT_BYTES) throw new AppError('仅支持保存 1 MiB 以内的文本文件', 413);
     await this.locked(`text:${id}:${path}`, () => {
       const files = new Files(this);
-      files.beforeReplace = this.fileBeforeReplace;
       return files.upload(id, path, Readable.from(bytes), overwrite, undefined, expectedVersion);
     });
   }

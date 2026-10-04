@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { AppError } from '../shared/errors.ts';
 import { ResourceScope } from './resource-scope.ts';
 import type { Live } from './vm-state.ts';
+import { vmLiveIdentity, type VmLive } from './vm-reference.ts';
 import type { VmNetworkLease } from './network/index.ts';
 import type { VMRecord } from '../shared/contracts/vm.ts';
 import type { BootAttachment } from './machines.ts';
@@ -216,7 +217,8 @@ export class VmLifetime {
 }
 
 /** Legacy in-process fixtures receive the same checks; absence never bypasses identity capture. */
-export function vmLifetime(vmId: string, live: Live): VmLifetime {
+export function vmLifetime(vmId: string, reference: Live | VmLive): VmLifetime {
+  const live = vmLiveIdentity(reference);
   const current = live.lifetime || legacy.get(live);
   if (current) {
     if (current.vmId !== vmId) throw changed();

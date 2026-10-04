@@ -3,10 +3,10 @@ import { existsSync } from 'node:fs';
 import { isAbsolute, join, win32 } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
 import { projectPrivateValues } from './workspaces.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 import { redactProjectOutput } from './project-execution.ts';
 import { redactValues } from './secrets.ts';
@@ -103,7 +103,7 @@ export class GpgAgentForwarder {
     runTask?: typeof projectIdentityTask; sourceDirectory?: string;
     captureHost?: (signal?: AbortSignal) => Promise<GpgHostSnapshot> } = {}) {
     this.ownTerminals = !options.terminals;
-    this.terminals = options.terminals || new ProjectTerminals(machines, options.workspaces);
+    this.terminals = options.terminals || projectTerminalsFor(machines, options.workspaces);
     this.runTask = options.runTask || projectIdentityTask;
     this.scopes = new GpgAgentScopes(machines, { sourceDirectory: options.sourceDirectory });
     this.captureHost = options.captureHost || (async signal => captureHostGpgSource(await hostGpgExtraSocket(), signal));

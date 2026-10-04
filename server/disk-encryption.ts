@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { type VMRecord } from '../shared/contracts/vm.ts';
 import { secretName, Secrets } from './secrets.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 export const diskEncryptionSchema = z.object({
   format: z.literal('luks'),

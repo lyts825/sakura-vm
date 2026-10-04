@@ -1,4 +1,4 @@
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { X11Clipboard, type X11ApplicationContext, type LinuxClipboardOptions } from './x11-clipboard.ts';
 
 /** The same persisted rule/API semantics with a distinct owned Wayland broker. */

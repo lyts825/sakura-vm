@@ -27,7 +27,7 @@ import {
 } from 'graphql';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Jobs } from './jobs.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 

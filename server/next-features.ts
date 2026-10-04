@@ -25,7 +25,7 @@ import { Jobs } from './jobs.ts';
 import { LiveMigrationRunner } from './live-migration-runner.ts';
 import { liveMigrationInput, planLiveMigration } from './live-migration.ts';
 import { metadataFile } from './metadata-store.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { MediaDevices } from './media-devices.ts';
 import { networkEmulation } from './network-emulation.ts';
 import type { NotebookEnvironments } from './notebook-environments.ts';

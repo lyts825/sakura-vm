@@ -5,14 +5,14 @@ import { Duplex, type Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { quote } from './shell.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ProjectRunScopes, type ProjectTaskAdmissionOptions } from './project-run-scope.ts';
 import {
   ProjectIdentities,
@@ -317,7 +317,7 @@ export class ProjectProtocolStreams {
     const detachRequest = () => incoming?.removeEventListener('abort', abortRequest);
     const lifetime = AbortSignal.any([this.controller.signal, controller.signal]);
     const timer = setTimeout(() => controller.abort(new AppError('协议会话期限已到', 408)), timeoutMs); timer.unref();
-    const preparation = this.options.createPreparation?.() || new ProjectTerminals(this.machines, this.workspaces);
+    const preparation = this.options.createPreparation?.() || projectTerminalsFor(this.machines, this.workspaces);
     let prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined, admission: Admission | undefined;
     let record: ProjectProtocolStreamRecord | undefined, capture: ProjectProtocolCapture | undefined;
     let session: ProjectSessionLifetime<ReturnType<typeof sessionReceipt>> | undefined;

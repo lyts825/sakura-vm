@@ -1,3 +1,4 @@
+import { assertProjectPreparationIdle } from './project-preparation-registry.ts';
 import { createHash } from 'node:crypto';
 import { readCommittedStore, readStore } from './local-store.ts';
 import { replaceMetadata } from './metadata-store.ts';
@@ -6,7 +7,7 @@ import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { resolveDependencyAuthentication } from './dependency-downloads.ts';
 import { guestTask } from './guest-task.ts';
 import { Jobs } from './jobs.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { Metrics } from './metrics.ts';
 import type { NetworkProfiles } from './network-profiles.ts';
 import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
@@ -100,7 +101,7 @@ export function provisionScript(template: Project['template'], distro = 'alpine'
   return `set -eu\nsakura_attempt=0\nuntil (\nset -e\n${install}\n); do\n  sakura_attempt=$((sakura_attempt + 1))\n  [ "$sakura_attempt" -lt 3 ] || exit 1\n  echo '软件源暂时不可用，正在重试…'\n  sleep 2\ndone\nmkdir -p /etc/sakura /workspace\ntouch /etc/sakura/template-${template}\n`;
 }
 export class Workspaces {
-  jobs = new Jobs('projects');
+  jobs: Jobs;
   projects: ProjectCatalog;
   private configListeners = new Set<() => Promise<void>>();
   private configGuards = new Set<(id: string, previous: Project, next: Project) => Promise<void>>();
@@ -120,10 +121,12 @@ export class Workspaces {
   constructor(
     private machines: Machines,
     private context?: { secrets?: Secrets; network?: NetworkProfiles },
+    options: { background?: boolean } = {},
   ) {
+    this.jobs = new Jobs(options.background === false ? undefined : 'projects');
     this.sampler = new Metrics(machines);
     this.projects = new ProjectCatalog(machines);
-    machines.on('change', this.onChange);
+    if (options.background !== false) machines.on('change', this.onChange);
   }
   private onChange = () => {
     for (const id of this.observed.keys()) if (!this.machines.records.has(id)) this.observed.delete(id);
@@ -256,6 +259,8 @@ export class Workspaces {
       if (allowedDirectory !== undefined &&
           (project.directory !== allowedDirectory || previous.directory !== allowedDirectory))
         throw new AppError('项目成员不能修改项目目录', 403);
+      if (previous.directory !== project.directory || previous.networkIsolation !== project.networkIsolation)
+        assertProjectPreparationIdle(this.machines, id, previous._workspace || 'default');
       for (const guard of this.configGuards) await guard(id, previous, project);
       const mainBindingInput = (value: Project) => JSON.stringify([value.directory, value.command,
         value.networkIsolation || 'host', value.environment || {}, value.secrets || {}, value.runtimes || {},

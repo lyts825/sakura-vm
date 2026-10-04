@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { rotationPolicySchema, secretRotation, type RotationPolicy } from './secret-rotation.ts';
 

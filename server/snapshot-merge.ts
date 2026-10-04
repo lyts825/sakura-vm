@@ -2,7 +2,7 @@ import { copyFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { Bundles } from './bundles.ts';
 import { Jobs } from './jobs.ts';
 import { quote } from './shell.ts';

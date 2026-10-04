@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { Jobs } from './jobs.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { type JobView } from '../shared/contracts/jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { redactProjectOutput } from './project-execution.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
@@ -70,7 +70,7 @@ export class BuildFarm {
     private runTask: typeof projectIdentityTask = projectIdentityTask) {
     this.jobs = jobs || new Jobs('build-farm');
     this.ownsTerminals = !terminals;
-    this.terminals = terminals || new ProjectTerminals(machines);
+    this.terminals = terminals || projectTerminalsFor(machines);
   }
   async init() {
     const info = await stat(this.file).catch((error: NodeJS.ErrnoException) => {

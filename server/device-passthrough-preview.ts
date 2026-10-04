@@ -1,7 +1,7 @@
 import { basename, join } from 'node:path';
 import { readlink, readdir, stat } from 'node:fs/promises';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 const usb = z
   .object({

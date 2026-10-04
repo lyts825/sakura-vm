@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { ProjectPreparation } from './project-preparation.ts';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';

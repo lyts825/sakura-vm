@@ -5,10 +5,10 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 
 import { z } from 'zod';
 import { ProjectCatalog } from '../../server/project-catalog.ts';
-import { ProjectTerminals } from '../../server/project-terminals.ts';
+
 
 export async function activate(host: PluginContext) {
-  host.provide(terminalWorkspaceServices.terminals, new ProjectTerminals(host.machines, host.workspaces));
+  host.provide(terminalWorkspaceServices.terminals, host.capabilities.sessions.terminals());
 }
 export async function route(
   this: PluginContext,
@@ -30,7 +30,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'terminal-session' && req.method === 'POST') {
       const input = z.union([
@@ -38,7 +38,7 @@ export async function route(
         z.object({ action: z.literal('stop-all') }).strict(),
       ])
         .parse(await body(req));
-      const projects = this.workspaces?.projects || new ProjectCatalog(this.machines);
+      const projects = this.workspaces?.projects || new ProjectCatalog(this.vm);
       const projectId = await projects.with(id, url.searchParams.get('project'),
         async () => projects.current(id));
       await this.use(terminalWorkspaceServices.terminals).stop(id, projectId,

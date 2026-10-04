@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { quote } from './shell.ts';

@@ -9,7 +9,7 @@ import { AppError } from '../../shared/errors.ts';
 
 export async function activate(host: PluginContext) {
   host.provide(imagesServices.images, new Images());
-  host.provide(imagesServices.diskImports, new DiskImports(host.machines));
+  host.provide(imagesServices.diskImports, new DiskImports(host.vm));
   host.registerJobs(host.images.jobs, (job) => host.images.prepare(job.key!));
 }
 export async function route(
@@ -60,6 +60,6 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   return false;
 }

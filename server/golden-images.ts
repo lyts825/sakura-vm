@@ -15,7 +15,7 @@ import {
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { MAX_BUNDLE_MANIFEST, type Bundles } from './bundles.ts';
 import { storageRuntime } from './storage-runtime.ts';
 import { Jobs } from './jobs.ts';

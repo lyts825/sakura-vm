@@ -7,7 +7,7 @@ import { Downloads } from '../../server/downloads.ts';
 import { retryTarget } from '../../server/plugins/retry.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.vm;
   host.provide(transfersServices.downloads, new Downloads(m, {
     get files() {
       return host.files;
@@ -41,7 +41,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'download' && req.method === 'POST') {
       const input = await body(req);

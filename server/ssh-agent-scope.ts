@@ -8,7 +8,7 @@ import ssh2, { type GetStreamCallback } from 'ssh2';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { ROOT } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { quote } from './shell.ts';
 import { projectIdentitySchema } from './project-identity.ts';
 

@@ -5,7 +5,7 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { ServiceHealth } from '../../server/service-health.ts';
 export async function activate(host: PluginContext) {
-  host.provide(serviceHealthServices.health, new ServiceHealth(host.machines, host.workspaces));
+  host.provide(serviceHealthServices.health, new ServiceHealth(host.vm, host.workspaces));
 }
 export async function route(
   this: PluginContext,
@@ -28,7 +28,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'health' && req.method === 'GET') {
       send(await this.health.view(id));

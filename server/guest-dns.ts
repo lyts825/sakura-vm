@@ -1,4 +1,4 @@
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 const probeCommand = `set -eu
 test -r /etc/resolv.conf

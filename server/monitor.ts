@@ -1,5 +1,5 @@
 import { hostname } from 'node:os';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Jobs } from './jobs.ts';
 
 /** Deliberately excludes job titles, logs, commands, results, paths and credentials. */

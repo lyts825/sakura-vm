@@ -312,7 +312,8 @@ export class Jobs {
             identity: { operationId: view.id, jobId: view.id, vmId: meta.vmId, projectId: meta.projectId },
             signal: abort.signal, ...(meta.admissionTimeoutMs === undefined ? {} : { timeoutMs: meta.admissionTimeoutMs }) });
         }
-        if (!control) await check();
+        if (!control || this.pluginLifetime) await check();
+        this.pluginLifetime?.check('jobs', true);
         abort.signal.throwIfAborted();
         view.admission = 'running'; view.executionStartedAt = new Date().toISOString();
         view.resourceLeaseId = lease.id; view.resourceWait = undefined; view.phase = '准备中';

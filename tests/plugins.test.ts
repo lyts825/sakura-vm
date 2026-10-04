@@ -216,7 +216,7 @@ test('files activate only their declared services and cannot export through down
     assert.equal(host.workspaces, undefined);
     assert.equal(host.backups, undefined);
     assert.equal(vm.listenerCount('change'), 0);
-    assert.equal(typeof vm.fileBeforeReplace, 'function');
+    assert.equal(Object.hasOwn(vm, 'fileBeforeReplace'), false);
     const { req, res } = request('POST');
     await assert.rejects(
       host.route(req, res, new URL('http://localhost/api/vms/vm/download'), async () => ({ type: 'export' })),
@@ -226,7 +226,7 @@ test('files activate only their declared services and cannot export through down
   } finally {
     await host.close();
   }
-  assert.equal(vm.fileBeforeReplace, undefined);
+  assert.equal(Object.hasOwn(vm, 'fileBeforeReplace'), false);
 });
 
 test('file-lock route grants one lease and guards file mutations until release', async () => {
@@ -343,7 +343,7 @@ test('the complete pack activates all adapters and releases every lifecycle list
     await host.close();
   }
   assert.equal(vm.listenerCount('change'), 0);
-  assert.equal(vm.fileBeforeReplace, undefined);
+  assert.equal(Object.hasOwn(vm, 'fileBeforeReplace'), false);
 });
 
 test('disabling a plugin preserves instance and plugin data on disk', async () => {

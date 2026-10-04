@@ -7,7 +7,7 @@ import { Sandboxes, sandboxCreateSchema, sandboxRunSchema } from '../../server/s
 import { sandboxArtifactSchema, sandboxExecutionSchema, sandboxPolicySchema } from '../../shared/sandbox.ts';
 
 export async function activate(host: PluginContext) {
-  const service = host.provide(sandboxServices.sandboxes, new Sandboxes(host.machines));
+  const service = host.provide(sandboxServices.sandboxes, new Sandboxes(host.vm));
   await service.init();
   host.registerJobs(service.jobs, () => {
     throw new AppError('请在沙箱工作台检查命令后重新执行');

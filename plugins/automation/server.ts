@@ -15,7 +15,7 @@ import type { Secrets } from '../../server/secrets.ts';
 import type { Containers } from '../../server/containers.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.vm;
   host.provide(automationServices.suite, new FeatureSuite(m, host.workspaces, {
     jobs: () => host.jobStores().flatMap((store) => store.list()),
     services: (id) => host.optional(serviceHealthServices.health)?.observed(id) || [],
@@ -94,11 +94,11 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4 && req.method === 'POST' && action === 'suspend')
-    return send(await this.machines.suspend(id));
+    return send(await this.vm.suspend(id));
   if (parts.length === 4 && req.method === 'POST' && action === 'resume')
-    return send(await this.machines.resume(id));
+    return send(await this.vm.resume(id));
   if (parts.length === 4) {
     if (action === 'packages') {
       if (req.method === 'GET') {

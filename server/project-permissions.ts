@@ -6,7 +6,7 @@ import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectIdSchema, ProjectCatalog } from './project-catalog.ts';
 import type { AccessControl, Principal } from './access-control.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
 
 const permission = z.enum(['read', 'write', 'execute', 'approve']);

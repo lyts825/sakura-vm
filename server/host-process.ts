@@ -6,6 +6,7 @@ import { AppError } from '../shared/errors.ts';
 import { runViaNativeHost } from '../.vendor/posixloom/dist/src/core/process/native.js';
 import { ROOT } from './paths.ts';
 import { resourceContext } from './host-runtime/index.ts';
+import { pluginAuthority, pluginCleanup } from './plugin-authority.ts';
 import { processSupervisor, hostProcessAdapters, type HostProcessAdapter } from './process-supervisor.ts';
 
 type Options = {
@@ -70,6 +71,11 @@ export async function hostProcess(
   args: string[],
   options: Options = {},
 ) {
+  const instance = pluginAuthority();
+  if (instance && pluginCleanup() !== instance) {
+    instance.check('process', true);
+    options = { ...options, signal: options.signal ? AbortSignal.any([options.signal, instance.signal]) : instance.signal };
+  }
   if (
     !Object.hasOwn(hostProcessAdapters, adapter) ||
     hostProcessAdapters[adapter] !== 'tool' ||

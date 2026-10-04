@@ -1,6 +1,6 @@
 import { networkFor } from './network/index.ts';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 const { fetch } = networkFor('core:security-vulnerabilities');
 

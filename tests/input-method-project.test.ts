@@ -98,7 +98,7 @@ test('registered IME retry restores the saved project before capturing its new t
   const activationMachines = Object.assign(new EventEmitter(), { live: new Map() });
   const scope = new PluginScope();
   const activation = {
-    machines: activationMachines,
+    vm: activationMachines,
     capabilities: pluginCapabilities('desktop', activationMachines as never, scope),
     provide: (ref: string | { key: string }, service: unknown) => {
       Reflect.set(activation, typeof ref === 'string' ? ref : ref.key, service);
@@ -110,7 +110,7 @@ test('registered IME retry restores the saved project before capturing its new t
   await activate(activation);
   const installed = activation.desktops, jobStore = activation.jobs;
   t.after(async () => { await installed.close(); await jobStore.close(); await scope.dispose(); });
-  Object.assign(activation, { machines: f.host.machines, workspaces: f.host.workspaces,
+  Object.assign(activation, { vm: f.host.vm, workspaces: f.host.workspaces,
     desktops: f.host.desktops, jobs: f.jobs });
   f.select('beta');
   const retried = await callbacks.get('ime')!({ key: f.id, vmId: f.id, projectId: 'alpha',

@@ -10,12 +10,12 @@ import { isDeepStrictEqual as same } from 'node:util';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { writeStore } from './local-store.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
 import {
   ProjectIdentities,
@@ -205,7 +205,7 @@ export class ReverseTunnels {
     if (this.closed || this.workspaces.projects.current(id) !== projectId || this.machines.live.get(id) !== live ||
         !this.isRunning(id) || (original._workspace || 'default') !== projectId) throw changed();
     const project = copy(original, projectId), version = projectVersion(project);
-    const preparation = this.options.createPreparation?.() || new ProjectTerminals(this.machines, this.workspaces);
+    const preparation = this.options.createPreparation?.() || projectTerminalsFor(this.machines, this.workspaces);
     let lease: Lease | undefined;
     try {
       lease = await preparation.prepare(id, projectId, null, false, signal, undefined,

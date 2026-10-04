@@ -215,8 +215,8 @@ async function fixture(t: TestContext) {
 
 test('three-way Git editor reads index stages, rejects stale edits and stages the resolved content', async (t) => {
   const f = await fixture(t);
-  (f.host.machines as any).readGuestFile = async (_id: string, path: string) => readFile(path, 'utf8');
-  (f.host.machines as any).writeGuestFile = async (
+  (f.host.vm as any).readGuestFile = async (_id: string, path: string) => readFile(path, 'utf8');
+  (f.host.vm as any).writeGuestFile = async (
     _id: string,
     path: string,
     content: string,

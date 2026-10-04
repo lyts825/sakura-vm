@@ -3,7 +3,7 @@ import { join, posix } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { ROOT } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
 
 const relativeFile = z.string().min(1).max(4096).refine((value) =>

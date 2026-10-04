@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { type Workspaces } from './workspaces.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 import { projectIdentityPayload } from './project-identity.ts';
 import { quote } from './shell.ts';
@@ -94,7 +94,7 @@ export async function runFeatureDevTask(machines: Machines, workspaces: Workspac
     };
     await assertCurrent();
     let ownedTerminals: ProjectTerminals | undefined;
-    const terminals = options.terminals || (ownedTerminals = new ProjectTerminals(machines, workspaces));
+    const terminals = options.terminals || (ownedTerminals = projectTerminalsFor(machines, workspaces));
     let prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
     let failed = false, failure: unknown;
     try {

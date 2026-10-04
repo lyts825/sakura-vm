@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
 import { envPrefix } from './project-services.ts';
 import { quote } from './shell.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityPayload } from './project-identity.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 import { redactValues, privateLog } from './secrets.ts';
@@ -166,7 +166,7 @@ export class Toolchains {
           projectVersion(project) !== version) throw changed();
     };
     await assertCurrent();
-    const preparation = this.options.createPreparation?.() || new ProjectTerminals(this.machines, this.workspaces);
+    const preparation = this.options.createPreparation?.() || projectTerminalsFor(this.machines, this.workspaces);
     let lease: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
     let failed = false, failure: unknown;
     try {

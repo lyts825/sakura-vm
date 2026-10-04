@@ -5,7 +5,7 @@ import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import type { AccessControl, Principal } from './access-control.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 const operation = z.enum(['start', 'stop']);
 const status = z.enum(['pending', 'approved', 'denied', 'revoked', 'claimed', 'completed', 'failed']);

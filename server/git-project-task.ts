@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { AppError } from '../shared/errors.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityPayload } from './project-identity.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 import { redactValues } from './secrets.ts';
@@ -124,7 +124,7 @@ export class GitProjectTasks {
     const signal = AbortSignal.any([this.controller.signal, ...(external ? [external] : [])]);
     const operation = this.inScope(capture, () => this.context.run({ ...capture, signal, resolved: capture.project }, async () => {
       await this.assertCurrent(capture.id);
-      const preparation = this.options.createPreparation?.() || new ProjectTerminals(this.machines, this.workspaces);
+      const preparation = this.options.createPreparation?.() || projectTerminalsFor(this.machines, this.workspaces);
       let lease: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
       let failed = false, failure: unknown;
       try {

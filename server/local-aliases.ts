@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { localAliasActionSchema, type LocalAliasView } from '../shared/local-aliases.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { metadataPath, type PluginMetadata } from './plugin-metadata.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 
@@ -81,11 +82,12 @@ export class LocalAliases {
   private enabled = false;
   private lastError?: string;
   private writes: Promise<unknown> = Promise.resolve();
+  private file: string;
   constructor(private names: () => string[], private hostsFile: string | null = defaultHosts,
-    private file = join(DATA, 'plugins', 'network', 'local-aliases.json'),
+    file: string | PluginMetadata = join(DATA, 'plugins', 'network', 'local-aliases.json'),
     private resolver: ((name: string) => Promise<string>) | undefined =
       hostsFile && hostsFile === defaultHosts
-        ? async (name) => (await lookup(name, { family: 4 })).address : undefined) {}
+        ? async (name) => (await lookup(name, { family: 4 })).address : undefined) { this.file = metadataPath(file); }
 
   async init() {
     this.enabled = configSchema.parse(await readStore(this.file, () => ({ enabled: false }))).enabled;

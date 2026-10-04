@@ -5,7 +5,7 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 import { z } from 'zod';
 import { Ide } from '../../server/ide.ts';
 export async function activate(host: PluginContext) {
-  host.provide(ideServices.ide, new Ide(host.machines, host.workspaces));
+  host.provide(ideServices.ide, new Ide(host.vm, host.workspaces));
   await host.ide.update();
 }
 export async function route(
@@ -29,7 +29,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'ide') {
       if (req.method === 'GET') {

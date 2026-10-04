@@ -5,7 +5,7 @@ import { DATA } from './paths.ts';
 import { type VMStatus } from '../shared/contracts/vm.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { haFailoverOptions } from './ha-failover.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 const INTERVAL_MS = 15_000;
 const monitorSchema = z.object({
@@ -19,7 +19,7 @@ const monitorSchema = z.object({
 });
 export type HaMonitorStatus = z.infer<typeof monitorSchema>;
 type Policy = { enabled: boolean; options: unknown; updatedAt?: string };
-type MachineStates = Pick<Machines, 'state'> & EventEmitter;
+type MachineStates = Pick<Machines, 'state' | 'on' | 'off'>;
 
 export function advanceHaMonitor(previous: HaMonitorStatus | undefined, source: VMStatus,
   policy: Policy, at: string, countFailure: boolean): HaMonitorStatus {

@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { type DesktopView } from '../shared/contracts/vm.ts';
 import { Workspaces, projectPrivateValues } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ProjectRunScopes } from './project-run-scope.ts';
 import { ProjectIdentities, projectIdentityPayload, projectIdentitySources } from './project-identity.ts';
 import { ProjectDesktopScope } from './project-service-scope.ts';
@@ -244,7 +244,7 @@ export class ProjectDesktops {
         if ((current._workspace || 'default') !== pins.projectId || projectVersion(current) !== version) throw changed();
         this.assertLive(id, pins.live);
       };
-      const terminals = new ProjectTerminals(this.machines, this.workspaces);
+      const terminals = projectTerminalsFor(this.machines, this.workspaces);
       let prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
       let pending: PendingStart | undefined;
       try {
@@ -380,7 +380,7 @@ export class ProjectDesktops {
   }
   async application(id: string) {
     const projectId = this.workspaces.projects.current(id), live = this.machines.live.get(id);
-    const terminals = new ProjectTerminals(this.machines, this.workspaces);
+    const terminals = projectTerminalsFor(this.machines, this.workspaces);
     let prepared: Awaited<ReturnType<ProjectTerminals['prepare']>> | undefined;
     const release = async () => { try { await prepared?.release(); } finally { await terminals.close(); } };
     try {

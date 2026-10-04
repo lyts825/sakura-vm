@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
 import { guestTask } from './guest-task.ts';
 import { secretRefsSchema } from './secrets.ts';

@@ -60,7 +60,7 @@ import { projectIdSchema } from './project-catalog.ts';
 import { projectSchema } from './project-config.ts';
 import { ProjectExecution } from './project-execution.ts';
 import { ProjectPermissions } from './project-permissions.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+
 import { RemoteAuditLock, remoteAuditAction } from './remote-audit.ts';
 import { ResourceScope, ClosePhase } from './resource-scope.ts';
 import { hostRuntime } from './host-runtime/index.ts';
@@ -180,14 +180,7 @@ export async function startApplication() {
     );
     const projectTerminals = resources.own(
       'projectTerminals',
-      new ProjectTerminals(machines, features.workspaces, {
-        get secrets() {
-          return features.secrets;
-        },
-        get network() {
-          return features.network;
-        },
-      }),
+      features.terminalHandle(),
       70,
     );
     const projectExecution = resources.own(

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { DATA, vmDir } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectSchema } from './project-config.ts';
 import { type Workspaces } from './workspaces.ts';
 import { readStore, regularDirectory } from './local-store.ts';

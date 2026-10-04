@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Backups } from './backups.ts';
 import type { Bundles } from './bundles.ts';
 import { AppError } from '../shared/errors.ts';

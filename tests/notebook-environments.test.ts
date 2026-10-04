@@ -139,7 +139,7 @@ async function fixture(t: { after: (work: () => Promise<unknown>) => void }, net
   const bridges = { async open(_vm: string, _project: Project, _guest: number, _host: number, _abort?: AbortSignal, allowShared?: boolean) {
     assert.equal(allowShared, true); events.push('bridge-open'); bridge = true;
   }, async stop() { events.push('bridge-stop'); bridge = false; }, async close() { bridge = false; } };
-  const adminTask = (async (_machines: Machines, _vm: string, command: string) => {
+  const adminTask = (async (_machines: Parameters<typeof import('../server/guest-task.ts').guestTask>[0], _vm: string, command: string) => {
     assert.equal(activeLease, true); rootCommands.push(command); events.push(command.startsWith('# SAKURA_NOTEBOOK_WHEELS') ?
       command.startsWith('# SAKURA_NOTEBOOK_WHEELS_DOWNLOAD') ? 'root-wheel-download' : 'root-wheel-cleanup' : 'root-system-tools');
     if (command.startsWith('# SAKURA_NOTEBOOK_WHEELS_DOWNLOAD')) {

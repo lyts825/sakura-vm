@@ -9,7 +9,7 @@ import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { ftpStat, mutablePath, preserveFileMetadata } from './files.ts';
 import { Jobs } from './jobs.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { ProjectCatalog } from './project-catalog.ts';
 import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge.ts';
 import { inMaintenance, timeWindowSchema } from './automation-policy.ts';

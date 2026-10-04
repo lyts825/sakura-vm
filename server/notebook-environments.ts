@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { type Workspaces } from './workspaces.ts';
 import { AppError } from '../shared/errors.ts';
@@ -13,7 +13,7 @@ import { quote } from './shell.ts';
 import { guestTask } from './guest-task.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { ProjectNetworkBridges } from './project-network-bridges.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
 import {
   ProjectIdentities,
@@ -280,7 +280,7 @@ export class NotebookEnvironments {
     });
   }
   private async prepared<T>(id: string, projectId: string, signal: AbortSignal, work: (capture: Capture) => Promise<T>) {
-    const terminals = this.options.terminals || (this.ownedTerminals ||= new ProjectTerminals(this.machines, this.workspaces));
+    const terminals = this.options.terminals || (this.ownedTerminals ||= projectTerminalsFor(this.machines, this.workspaces));
     const prepared = await terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
     try {
       const original = prepared.captured;

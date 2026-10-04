@@ -4,7 +4,7 @@ import type { PluginContext } from '../plugin-api.ts';
 import { AppError } from '../../shared/errors.ts';
 
 export async function route(
-  this: PluginContext,
+  this: Pick<PluginContext, 'vm' | 'jobStores' | 'retryHandler'>,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
@@ -47,7 +47,7 @@ export async function route(
         return true;
       }
       if (parts[3] === 'retry') {
-        if (job.vmId) this.machines.requireUnlocked?.(job.vmId);
+        if (job.vmId) this.vm.requireUnlocked?.(job.vmId);
         if (job.status === 'running') throw new AppError('任务仍在执行', 409);
         const pluginRetry = this.retryHandler(store);
         if (pluginRetry) {

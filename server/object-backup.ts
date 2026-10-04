@@ -18,7 +18,7 @@ import type { Backups } from './backups.ts';
 import { backupLocked, verifyBackup } from './backups.ts';
 import type { Bundles } from './bundles.ts';
 import { withDecrypted } from './encrypted-backups.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { networkFor } from './network/index.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';

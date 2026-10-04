@@ -5,7 +5,7 @@ import { rm } from 'node:fs/promises';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { readStore, readCommittedStore, writeStore } from './local-store.ts';
 
 export const projectIdSchema = z.string().regex(/^(default|[a-f0-9]{16})$/);

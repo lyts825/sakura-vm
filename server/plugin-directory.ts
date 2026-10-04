@@ -17,7 +17,7 @@ export class PluginDirectory {
     if (previous && !['inactive', 'failed', 'skipped'].includes(previous.phase))
       throw new AppError('原插件实例尚未确认清理', 409, 'PLUGIN_CLEANUP_PENDING');
     const instance = new PluginInstance(source, id, version, digest, permissions);
-    instance.desired = this.desired.has(key);
+    instance.desired = source === 'system' || this.desired.has(key);
     this.instances.set(key, instance);
     return instance;
   }

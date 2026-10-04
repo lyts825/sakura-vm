@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { quote } from './shell.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 export type SyncWatchView = {
   host: 'watching' | 'polling';

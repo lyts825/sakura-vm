@@ -17,7 +17,7 @@ import {
 const directoryMigrations = new WeakMap<PluginContext, ProjectDirectoryMigrations>();
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.vm;
   host.provide(projectsServices.workspaces, new Workspaces(m, {
     get secrets() {
       return host.secrets;
@@ -62,7 +62,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4 && action === 'project-directory-migration') {
     const service = directoryMigrations.get(this);
     if (!service) throw new AppError('目录迁移服务未初始化', 503);

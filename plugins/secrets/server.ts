@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { Secrets } from '../../server/secrets.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.vm;
   host.provide(secretsServices.secrets, new Secrets(m));
 }
 export async function route(
@@ -31,7 +31,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4 && action === 'secret-rotation') {
     if (req.method === 'GET') return send({ items: await this.secrets.rotation(id) });
     if (req.method === 'PATCH') return send({ items: await this.secrets.setRotation(id, await body(req)) });

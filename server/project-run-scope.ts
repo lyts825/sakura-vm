@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { ExecutionScope } from './execution-scope.ts';
 import { vmLifetime } from './vm-lifetime.ts';
 import { ProjectSessionLifetime } from './project-session-lifetime.ts';

@@ -1,4 +1,4 @@
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Bundles } from './bundles.ts';
 import type { HostPeers } from './host-peers.ts';
 import { AppError } from '../shared/errors.ts';

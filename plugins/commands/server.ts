@@ -6,7 +6,7 @@ import { CommandPresets } from '../../server/command-presets.ts';
 import { presetSchema } from '../../server/command-presets.ts';
 import type { PluginOperation } from '../../server/plugin-api.ts';
 export async function activate(host: PluginContext) {
-  host.provide(commandsServices.commands, new CommandPresets(host.machines, host.workspaces));
+  host.provide(commandsServices.commands, new CommandPresets(host.vm, host.workspaces));
 }
 const idFrom = (url: URL) => url.pathname.split('/')[3];
 const presetView = z.object({
@@ -18,7 +18,7 @@ export const operations: Record<string, PluginOperation> = {
     response: z.object({ projectId: z.string(), presets: z.array(presetView), job: z.any().nullable() }),
     async execute(url) {
       const id = idFrom(url);
-      this.machines.get(id);
+      this.vm.get(id);
       return {
         projectId: this.workspaces.projects.current(id),
         presets: await this.use(commandsServices.commands).list(id),

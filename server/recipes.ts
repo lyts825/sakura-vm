@@ -4,7 +4,7 @@ import { createSchema } from '../shared/contracts/vm.ts';
 import { AppError } from '../shared/errors.ts';
 import { projectSchema } from './project-config.ts';
 import { type Workspaces } from './workspaces.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 export const recipeSchema = z
   .object({

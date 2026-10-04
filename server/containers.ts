@@ -2,7 +2,7 @@ import { posix } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';

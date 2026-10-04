@@ -6,13 +6,14 @@ import { DATA } from './paths.ts';
 import { storageRuntime } from './storage-runtime.ts';
 import { DataDirectoryOwner } from './data-directory-owner.ts';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { Jobs } from './jobs.ts';
 import { fileHash, regularDirectory, within, readStore, writeStore } from './local-store.ts';
 import { encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 
 type MigrationFile = { path: string; bytes: number; modified: number };
 export class DataMigration {
+  private releaseMaintenance?: () => void;
   jobs = new Jobs('migration');
   private target?: string;
   private copyPublished = false;
@@ -91,7 +92,7 @@ export class DataMigration {
     if (this.blocked) throw new AppError('另一项迁移正在进行或等待重启', 409);
     if (this.stores().some((store) => store.list().some((job) => job.status === 'running')))
       throw new AppError('请等待全部后台任务结束', 409);
-    this.machines.enterMaintenance();
+    this.releaseMaintenance = this.machines.enterMaintenance();
     this.blocked = true;
     try {
       await Promise.all(this.stores().map((store) => store.flush()));
@@ -239,7 +240,7 @@ export class DataMigration {
                   log('复制、校验和路径修复已完成。重启服务后使用新目录；原目录仍保留。\n');
                 } catch (error) {
                   this.blocked = false;
-                  this.machines.maintenance = false;
+                  this.releaseMaintenance?.();
                   throw error;
                 } finally {
                   if (
@@ -267,13 +268,13 @@ export class DataMigration {
       void this.jobs.wait('data').then(() => {
         if (!this.copyPublished) {
           this.blocked = false;
-          this.machines.maintenance = false;
+          this.releaseMaintenance?.();
         }
       });
       return job;
     } catch (error) {
       this.blocked = false;
-      this.machines.maintenance = false;
+      this.releaseMaintenance?.();
       throw error;
     }
   }
@@ -283,7 +284,7 @@ export class DataMigration {
     await rm(join(this.source, '.sakura-redirect.json'));
     this.copyPublished = false;
     this.blocked = false;
-    this.machines.maintenance = false;
+    this.releaseMaintenance?.();
     return this.view();
   }
   async close() {

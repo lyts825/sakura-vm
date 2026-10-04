@@ -2,7 +2,7 @@ import { networkFor } from './network/index.ts';
 import { randomUUID } from 'node:crypto';
 import { type Server, type Socket } from 'node:net';
 import type { ClientChannel } from 'ssh2';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';

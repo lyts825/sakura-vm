@@ -4,9 +4,7 @@ import type { JobView } from '../shared/contracts/jobs.ts';
 import type { PluginManifest } from '../shared/plugin-protocol.ts';
 import type { PluginRuntime } from './plugin-runtime.ts';
 import type { Jobs } from './jobs.ts';
-import type { Machines } from './machines.ts';
 import type { PluginInstance } from './plugin-instance.ts';
-import { pluginDataFile } from './plugin-data.ts';
 import { pluginCapabilities, type PluginCapabilities } from './plugin-capabilities.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 import { serviceRef, type ServiceRef } from './service-ref.ts';
@@ -20,8 +18,7 @@ export type PluginContext = Readonly<PluginServices> & {
   readonly networking: PluginCapabilities['networking'];
   readonly signal: AbortSignal;
   readonly instance: Readonly<Pick<PluginInstance, 'identity' | 'generation' | 'version' | 'artifactDigest'>>;
-  readonly machines: Machines;
-  readonly compat: { readonly machines: Machines; dataFile(name: string): string };
+  readonly vm: PluginCapabilities['vm'];
   readonly activity: {
     readonly mutations: number;
     readonly importing: boolean;
@@ -38,7 +35,6 @@ export type PluginContext = Readonly<PluginServices> & {
   registerJobs(store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown): void;
   jobStores(): Jobs[];
   retryHandler(store: Jobs): ((job: JobView) => Promise<unknown>) | undefined;
-  dataFile(name: string): string;
 };
 export type PluginRoute = (
   this: PluginContext, req: IncomingMessage, res: ServerResponse, url: URL,
@@ -73,8 +69,7 @@ export function pluginContext(host: PluginRuntime, manifest: PluginManifest,
     signal: instance.signal,
     instance: Object.freeze({ identity: instance.identity, generation: instance.generation,
       version: instance.version, artifactDigest: instance.artifactDigest }),
-    machines: host.machines,
-    compat: Object.freeze({ machines: host.machines, dataFile: (name: string) => pluginDataFile(manifest.id, name) }),
+    vm: capabilities.vm,
     activity: Object.freeze({
       get mutations() { return host.operations.active; },
       get importing() { return host.importing; },
@@ -98,7 +93,6 @@ export function pluginContext(host: PluginRuntime, manifest: PluginManifest,
     },
     jobStores: () => host.jobStores(),
     retryHandler: (store: Jobs) => host.retryHandler(store),
-    dataFile: (name: string) => { instance.check('metadata', true); return pluginDataFile(manifest.id, name); },
   };
   for (const key of SERVICE_KEYS) Object.defineProperty(context, key, {
     enumerable: true,

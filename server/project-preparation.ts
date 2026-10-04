@@ -1,5 +1,5 @@
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import {
   ensureProjectNetworkScript,
@@ -11,24 +11,9 @@ import { terminalShell } from './project-shell.ts';
 import { quote } from './shell.ts';
 import { Workspaces } from './workspaces.ts';
 import { vmLifetime, type VmIdentity } from './vm-lifetime.ts';
+import { preparationLeases, type PreparationLease as Lease } from './project-preparation-registry.ts';
+export { assertProjectPreparationIdle } from './project-preparation-registry.ts';
 
-type Lease = {
-  vmId: string;
-  projectId: string;
-  task: boolean;
-  terminalId?: string;
-  finished: Promise<void>;
-  release: () => void | Promise<void>;
-};
-const preparedProjects = new WeakMap<Machines, Set<Lease>>();
-export function assertProjectPreparationIdle(machines: Machines, vmId: string, projectId: string) {
-  if (
-    [...(preparedProjects.get(machines) || [])].some(
-      (lease) => lease.vmId === vmId && lease.projectId === projectId,
-    )
-  )
-    throw new AppError('请先关闭项目终端连接并等待终端准备完成', 409, 'PROJECT_DIRECTORY_RUNS_MUST_STOP');
-}
 export type PreparationContext = {
   id: string;
   scope: string;
@@ -109,7 +94,7 @@ export class ProjectPreparation {
     return operation;
   }
   hasTerminal(vmId: string, terminalId: string) {
-    return [...(preparedProjects.get(this.machines) || [])].some(
+    return [...preparationLeases(this.machines)].some(
       (lease) => lease.vmId === vmId && lease.terminalId === terminalId,
     );
   }
@@ -185,7 +170,7 @@ export class ProjectPreparation {
     });
     const done = () => {
       this.leases.delete(lease);
-      preparedProjects.get(this.machines)?.delete(lease);
+      preparationLeases(this.machines).delete(lease);
       abort.removeEventListener('abort', onAbort);
       finish();
     };
@@ -218,8 +203,7 @@ export class ProjectPreparation {
       });
     };
     this.leases.add(lease);
-    if (!preparedProjects.has(this.machines)) preparedProjects.set(this.machines, new Set());
-    preparedProjects.get(this.machines)!.add(lease);
+    preparationLeases(this.machines).add(lease);
     if (!task) abort.addEventListener('abort', onAbort, { once: true });
     return lease.release;
   }

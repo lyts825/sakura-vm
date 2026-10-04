@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { MAX_BUNDLE_MANIFEST, type Bundles } from './bundles.ts';
 import { decodeTrustedBootArchive } from './trusted-boot-archive.ts';
 import { Jobs } from './jobs.ts';

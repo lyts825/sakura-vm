@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { terminalSessionName, terminalSessionPrefix } from '../shared/terminal-scope.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { type Project } from './project-config.ts';
 import { ProjectIdentities } from './project-identity.ts';
 import { projectNetworkCheckScript, projectNetworkNamespace } from './project-network-isolation.ts';

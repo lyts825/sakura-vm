@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
 import type { Workspaces } from './workspaces.ts';
 import { quote } from './shell.ts';

@@ -9,9 +9,11 @@ import {
   type HostRuntime,
   type ResourceLease,
 } from './host-runtime/index.ts';
-import type { Machines } from './machines.ts';
-import type { Live } from './vm-state.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
+import { vmLiveIdentity, type VmLive as Live } from './vm-reference.ts';
 import { vmLifetime, type VmIdentity } from './vm-lifetime.ts';
+import { vmHostIdentity } from './vm-access.ts';
+import { pluginAuthority, withPluginCleanup } from './plugin-authority.ts';
 
 export type ExecutionIdentity = Readonly<
   VmIdentity & { projectId: string; configVersion?: string; operationId: string }
@@ -34,6 +36,7 @@ const cleanupFailed = (error: unknown): boolean =>
   error.status === 503 &&
   /(?:CLEANUP|RETIRE|UNCONFIRMED)/.test(error.code || '');
 type Cleanup = {
+  instance?: ReturnType<typeof pluginAuthority>;
   owner: ExecutionScope;
   work: () => Promise<void>;
   complete: boolean;
@@ -104,7 +107,7 @@ export class ExecutionScope {
   /** Only the original domain owner receives this closure. Cancellation never confirms it. */
   deferCleanup(work: () => Promise<void>): () => Promise<void> {
     if (this.finished) throw new AppError('执行作用域已经结束', 409, 'EXECUTION_SCOPE_CLOSED');
-    const entry: Cleanup = { owner: this, work, complete: false, attempted: false };
+    const entry: Cleanup = { owner: this, work, complete: false, attempted: false, instance: pluginAuthority() };
     this.root.cleanups.add(entry);
     return () => this.clean(entry);
   }
@@ -113,7 +116,7 @@ export class ExecutionScope {
     if (!entry.task) {
       entry.attempted = true;
       entry.task = Promise.resolve()
-        .then(() => withoutOperationContext(entry.work))
+        .then(() => withoutOperationContext(() => entry.instance ? withPluginCleanup(entry.instance, entry.work) : entry.work()))
         .then(
           () => {
             entry.complete = true;
@@ -170,10 +173,10 @@ export class ExecutionScope {
   private matches(options: ExecutionOptions) {
     return (
       !this.finished &&
-      this.options.machines === options.machines &&
+      vmHostIdentity(this.options.machines) === vmHostIdentity(options.machines) &&
       this.identity.vmId === options.vmId &&
       this.identity.projectId === options.projectId &&
-      (!options.live || options.live === this.live) &&
+      (!options.live || vmLiveIdentity(options.live) === vmLiveIdentity(this.live)) &&
       (!options.owner || options.owner === this.owner) &&
       (!options.configVersion || this.identity.configVersion === options.configVersion)
     );

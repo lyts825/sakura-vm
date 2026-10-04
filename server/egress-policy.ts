@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 
 const ipv4Destination = z.string().refine((value) => {

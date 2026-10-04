@@ -1,6 +1,6 @@
 import { serviceRef } from '../../server/service-ref.ts';
-import type { ProjectTerminals } from '../../server/project-terminals.ts';
+import type { TerminalService } from '../../server/terminal-backend.ts';
 
 export const services = {
-  terminals: serviceRef<ProjectTerminals>('terminal-workspace', 'terminals'),
+  terminals: serviceRef<TerminalService>('terminal-workspace', 'terminals'),
 };

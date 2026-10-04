@@ -5,7 +5,7 @@ import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import type { SFTPWrapper } from 'ssh2';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { guestPath } from '../shared/paths.ts';

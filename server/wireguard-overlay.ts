@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';

@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
 import { PluginDirectory } from './plugin-directory.ts';
 import { ServiceBroker } from './service-broker.ts';
-import { withPluginAuthority } from './plugin-authority.ts';
+import { withPluginAuthority, withPluginCleanup } from './plugin-authority.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import { type VMConfig } from '../shared/contracts/vm.ts';
 import { AppError } from '../shared/errors.ts';
@@ -12,6 +12,8 @@ import type { Machines } from './machines.ts';
 import { OperationTracker, requestScope } from './operation-scope.ts';
 import { withResourceContext } from './host-runtime/index.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
+import { TerminalBackend, type TerminalService } from './terminal-backend.ts';
+import type { PluginInstance } from './plugin-instance.ts';
 
 
 
@@ -58,6 +60,7 @@ export class PluginRuntime {
   >();
   readonly operations = new OperationTracker();
   get mutations() { return this.operations.active; }
+  get vm() { return this.machines; }
   set mutations(value: number) { this.operations.active = value; }
   importing = false;
   private exclusives = new Set<string>();
@@ -71,11 +74,20 @@ export class PluginRuntime {
   private closing?: Promise<void>;
   private active = new Map<AbortController, Promise<boolean>>();
   private cleanupPending = new Set<string>();
+  private terminalBackend: TerminalBackend;
+  private terminalInstance: PluginInstance;
+  terminalHandle(): TerminalService { return this.terminalBackend.handle(); }
   pluginResources() {
     return [...this.scopes].map(([id, scope]) => ({ id, cleanupPending: this.cleanupPending.has(id), ...scope.diagnostics() }));
   }
   private constructor(public machines: Machines, readonly directory = new PluginDirectory()) {
     this.broker = new ServiceBroker(directory, PLUGINS);
+    this.terminalInstance = directory.begin('system', 'terminal-backend', '1', 'builtin:terminal-backend');
+    this.terminalBackend = new TerminalBackend(machines, this.terminalInstance, {
+      get secrets() { return host.secrets; }, get network() { return host.network; },
+    });
+    const host = this;
+    directory.publish(this.terminalInstance);
     for (const key of SERVICE_KEYS) Object.defineProperty(this, key, {
       configurable: true, enumerable: true,
       get: () => this.services.get(key),
@@ -254,7 +266,7 @@ export class PluginRuntime {
     scope?.abort();
     try {
       await withinDeadline(scope?.dispose((disposer) =>
-        withinDeadline(disposer(), closeMs, `${id} 资源关闭`)), closeMs, `${id} 资源清理`);
+        withinDeadline(withPluginCleanup(instance, disposer), closeMs, `${id} 资源关闭`)), closeMs, `${id} 资源清理`);
     } catch (error) {
       this.cleanupPending.add(id);
       scope?.cleanupPending(error);
@@ -303,6 +315,12 @@ export class PluginRuntime {
             errors.push(error);
           }
         }
+        this.terminalInstance.revoke();
+        try {
+          await this.terminalInstance.scope.dispose(dispose => Promise.resolve(withPluginCleanup(this.terminalInstance, dispose)));
+          this.terminalInstance.phase = 'inactive';
+        } catch (error) { this.terminalInstance.phase = 'cleanup-pending'; this.terminalInstance.error = String(error); errors.push(error); }
+        this.directory.changed();
         if (errors.length) throw new AggregateError(errors, '插件关闭失败');
       })();
     }
@@ -371,7 +389,7 @@ export class PluginRuntime {
                 res.end(JSON.stringify(result));
                 return true;
               })()
-            : handler.call(
+            : (handler as import('./plugin-api.ts').PluginRoute).call(
                 owner === 'tasks' ? (this as unknown as PluginContext) : this.contexts.get(owner)!,
                 req,
                 res,

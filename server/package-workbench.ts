@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 const packageName = z.string().min(1).max(128)
   .regex(/^[A-Za-z0-9][A-Za-z0-9+_.-]*$/, '软件包名称无效')

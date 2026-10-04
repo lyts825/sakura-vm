@@ -1,4 +1,4 @@
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { type Workspaces, projectPrivateValues } from './workspaces.ts';
 import { runServices, serviceOrder } from './project-services.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';

@@ -11,7 +11,7 @@ import { distroInfo } from './images.ts';
 import { requireUefiSupport } from './firmware.ts';
 import { regularDirectory, within } from './local-store.ts';
 import { validateDiskHeader } from './bundles.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { storageRuntime, storageGrowth, type StorageLease } from './storage-runtime.ts';
 
 const GiB = 1024 ** 3;

@@ -6,7 +6,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
 import { readStore, writeStore } from './local-store.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import { editorConnectionProfile } from './ide.ts';

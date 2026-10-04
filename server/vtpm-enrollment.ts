@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 const fingerprint = z.string().regex(/^[0-9a-f]{64}$/);
 export const vtpmEnrollmentInput = z.discriminatedUnion('mode', [

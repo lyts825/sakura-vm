@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 export const gpuComputeInput = z
   .object({

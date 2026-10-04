@@ -3,13 +3,13 @@ import { ProjectSessionLifetime } from './project-session-lifetime.ts';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { type Workspaces } from './workspaces.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ProjectRunScopes } from './project-run-scope.ts';
 import {
   ProjectIdentities,
@@ -133,7 +133,7 @@ export class SingleAppWindows {
   private identities: Pick<ProjectIdentities, 'install'>;
   private control: Pick<SingleAppControl, 'install' | 'call' | 'streamCommand' | 'recover' | 'legacy' | 'prepareRun'>;
   constructor(private machines: Machines, private workspaces?: Workspaces, private options: Options = {}) {
-    this.terminals = options.terminals || (workspaces ? new ProjectTerminals(machines, workspaces) : undefined);
+    this.terminals = options.terminals || (workspaces ? projectTerminalsFor(machines, workspaces) : undefined);
     this.scopes = options.scopes || new ProjectRunScopes(machines);
     this.identities = options.identities || new ProjectIdentities(machines);
     this.control = options.control || new SingleAppControl(machines);

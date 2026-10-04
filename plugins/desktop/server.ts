@@ -29,7 +29,7 @@ export const operations: Record<string, PluginOperation> = {
 };
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.vm;
   host.provide(desktopServices.desktops, new Desktops(m, host.workspaces));
   host.provide(desktopServices.jobs, host.capabilities.jobs.create('input-method', { compatHistoryName: 'input-method' }));
   host.registerJobs(host.jobs, (job) => retryInProject(host, job, async () => installIme.call(host, retryTarget(job))));
@@ -58,7 +58,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts[3] === 'desktop' && parts.length === 4) {
     if (req.method === 'GET') return send(await this.desktops.view(id));
     if (req.method === 'POST') {
@@ -122,7 +122,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
+        if (this.vm.state(id) !== 'running') throw new AppError('请先启动发行版');
         send(installIme.call(this, id), 202);
         return true;
       }
@@ -131,10 +131,10 @@ export async function route(
   return false;
 }
 export function installIme(this: PluginContext, id: string) {
-  if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
-  const live = this.machines.live.get(id), projectId = this.workspaces?.projects.current(id);
+  if (this.vm.state(id) !== 'running') throw new AppError('请先启动发行版');
+  const live = this.vm.live.get(id), projectId = this.workspaces?.projects.current(id);
   const original = () => {
-    if (!live || this.machines.live.get(id) !== live || this.machines.state(id) !== 'running')
+    if (!live || this.vm.live.get(id) !== live || this.vm.state(id) !== 'running')
       throw new AppError('原客户机在输入法任务准备期间已改变', 409, 'DESKTOP_SCOPE_CHANGED');
   };
   original();

@@ -7,7 +7,7 @@ import { RuntimeVersions } from '../../server/runtime-versions.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
-  host.provide(runtimesServices.runtimes, new RuntimeVersions(host.machines, host.workspaces));
+  host.provide(runtimesServices.runtimes, new RuntimeVersions(host.vm, host.workspaces));
   host.registerJobs(host.runtimes.jobs, (job) => {
     if (!job.action?.startsWith('install:')) throw new AppError('请回到原功能页面重新执行');
     const [, tool, version] = job.action.split(':');
@@ -35,7 +35,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'runtimes') {
       if (req.method === 'GET') {

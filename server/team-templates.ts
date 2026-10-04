@@ -7,7 +7,7 @@ import { createSchema } from '../shared/contracts/vm.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectSchema } from './project-config.ts';
 import { type Workspaces } from './workspaces.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 const resourceSchema = z.object({
   cpus: createSchema.shape.cpus,

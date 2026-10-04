@@ -7,7 +7,7 @@ import { Pipelines } from '../../server/pipelines.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../shared/errors.ts';
 export async function activate(host: PluginContext) {
-  host.provide(pipelinesServices.pipelines, new Pipelines(host.machines, host.workspaces, host.files));
+  host.provide(pipelinesServices.pipelines, new Pipelines(host.vm, host.workspaces, host.files));
   host.registerJobs(host.pipelines.jobs, (job) => {
     if (!job.action?.startsWith('run:')) throw new AppError('请回到原功能页面重新执行');
     return retryInProject(host, job, () => host.pipelines.run(retryTarget(job), job.action!.slice(4)));
@@ -34,7 +34,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'pipelines') {
       if (req.method === 'GET') {

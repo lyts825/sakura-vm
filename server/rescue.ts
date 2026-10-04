@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { Jobs } from './jobs.ts';

@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { HostPeers } from './host-peers.ts';
 import { AppError } from '../shared/errors.ts';
 import { type VMConfig, type VMRecord } from '../shared/contracts/vm.ts';

@@ -3,7 +3,7 @@ import { AppError } from '../shared/errors.ts';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { ROOT } from './paths.ts';
 
 export type TrustedBootPaths = { qemu: string; secureFirmware: string; varsTemplate: string; swtpm: string };

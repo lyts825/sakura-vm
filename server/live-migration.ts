@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { HostPeers } from './host-peers.ts';
 import { qmp } from './qmp.ts';
 import { readLiveMigrationProjects } from './live-migration-projects.ts';

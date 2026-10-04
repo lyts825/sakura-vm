@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import type { AlertEvent } from './feature-suite.ts';
 import {

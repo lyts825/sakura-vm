@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { SANDBOX_ARTIFACT_BYTES, type SandboxArtifact } from '../shared/sandbox.ts';
 import { ftpStat } from './files.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 

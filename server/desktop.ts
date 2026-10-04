@@ -1,6 +1,6 @@
 import { createWebSocketStream, WebSocket } from 'ws';
 import type { ClientChannel } from 'ssh2';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { type DesktopView } from '../shared/contracts/vm.ts';
 import {

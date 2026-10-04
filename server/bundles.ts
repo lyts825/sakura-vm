@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
 import { createSchema, type VMRecord } from '../shared/contracts/vm.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectSchema } from './project-config.ts';
 import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
 import ssh2 from 'ssh2';

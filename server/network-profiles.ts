@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
 import { type VMConfig } from '../shared/contracts/vm.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { Files, ftpStat, textVersion } from './files.ts';
 import { quote } from './shell.ts';
 import { envPrefix } from './project-services.ts';

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 export const gpuAccelerationInput = z.object({
   mode: z.enum(['status', 'install-mesa']).default('status'),

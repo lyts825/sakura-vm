@@ -7,7 +7,7 @@ import { AppError } from '../shared/errors.ts';
 import { guestPath } from '../shared/paths.ts';
 import { previewFile } from './file-preview.ts';
 import { previewInWorker } from './file-preview-runtime.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { ResumableUploads } from './resumable-uploads.ts';
 
 export const MAX_TRANSFER = 2 * 1024 ** 3;
@@ -36,7 +36,6 @@ export async function preserveFileMetadata(ftp: SFTPWrapper, path: string, attrs
 }
 export class Files {
   readonly uploads = new ResumableUploads(this);
-  beforeReplace?: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>;
   trash?: (id: string, path: string, recursive: boolean) => Promise<unknown>;
   constructor(private machines: Machines) {}
   private async downloadInfo(ftp: SFTPWrapper, path: string) {
@@ -179,7 +178,7 @@ export class Files {
               { signal: transferSignal },
             );
             if (existing) await preserveFileMetadata(ftp, temp, existing);
-            if (existing) await this.beforeReplace?.(id, path, ftp, transferSignal);
+            if (existing) await this.machines.fileReplacing?.(id, path, ftp, transferSignal);
             await checkVersion();
             transferSignal?.throwIfAborted();
             if (overwrite)

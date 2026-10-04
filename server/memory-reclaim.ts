@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { distroInfo } from './images.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';

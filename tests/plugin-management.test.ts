@@ -45,9 +45,9 @@ test('manager reads live unload and cleanup state without an activation snapshot
     assert.deepEqual(manager.view().active, ['metrics']);
     await assert.rejects(manager.unload('metrics'), AggregateError);
     assert.deepEqual(manager.view().active, []);
-    assert.equal(manager.view().runtime?.instances[0].phase, 'cleanup-pending');
+    assert.equal(manager.view().runtime?.instances.find(item => item.identity === 'official:metrics')?.phase, 'cleanup-pending');
     await manager.unload('metrics');
-    assert.equal(manager.view().runtime?.instances[0].phase, 'inactive');
+    assert.equal(manager.view().runtime?.instances.find(item => item.identity === 'official:metrics')?.phase, 'inactive');
   } finally {
     await manager.close(); loaders.metrics = original;
     await rm(root, { recursive: true, force: true });

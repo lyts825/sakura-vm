@@ -18,9 +18,10 @@ import {
   type IngressClientAuth,
 } from '../shared/http-ingress.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { metadataPath, type PluginMetadata } from './plugin-metadata.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA, PORT } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { IngressCertificates } from './ingress-certificates.ts';
 
 const OWNER = 'http-ingress';
@@ -140,13 +141,14 @@ export class HttpIngress {
   private timer?: ScheduleHandle;
   private unsubscribe?: () => void;
   private closed = false;
+  private file: string;
 
   constructor(
     private machines: Machines,
-    private file = join(DATA, 'plugins', 'network', 'ingress.json'),
+    file: string | PluginMetadata = join(DATA, 'plugins', 'network', 'ingress.json'),
     private certificates?: IngressCertificates,
     private networking: NetworkScope = networkFor('core:http-ingress'),
-  ) {}
+  ) { this.file = metadataPath(file); }
 
   async init() {
     this.entries = storedSchema.parse(await readStore(this.file, () => []));

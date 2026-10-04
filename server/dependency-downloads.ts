@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { ROOT } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { secretName, type Secrets } from './secrets.ts';
 import { quote } from './shell.ts';
 

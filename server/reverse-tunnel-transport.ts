@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Duplex } from 'node:stream';
 import type { ClientChannel } from 'ssh2';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';
 import {

@@ -34,7 +34,7 @@ export const operations: Record<string, PluginOperation> = {
 };
 
 export async function activate(host: PluginContext) {
-  const m = host.machines;
+  const m = host.vm;
   host.provide(platformServices.next, new NextFeatures(m, host.workspaces));
   host.next.setObjectBackup(new ObjectBackup(m, () => ({
     backups: host.optional(backupsServices.backups),
@@ -75,7 +75,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'next-features') {
       if (req.method === 'GET') {

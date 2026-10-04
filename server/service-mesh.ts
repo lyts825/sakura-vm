@@ -7,11 +7,11 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { writeStore } from './local-store.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ProjectRunScopes, projectIdentityTask } from './project-run-scope.ts';
 import {
   ProjectIdentities,
@@ -297,7 +297,7 @@ export class ServiceMesh {
     if ((project._workspace || 'default') !== context.projectId || projectVersion(project) !== context.version) throw changed();
   }
   private async capture(context: Context) {
-    const preparation = this.options.createPreparation?.() || new ProjectTerminals(this.machines, this.workspaces);
+    const preparation = this.options.createPreparation?.() || projectTerminalsFor(this.machines, this.workspaces);
     let lease: Lease | undefined;
     try {
       lease = await preparation.prepare(context.vmId, context.projectId, null, false, context.signal, undefined, { mode: 'task' });

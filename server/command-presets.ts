@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
 import { envPrefix } from './project-services.ts';
@@ -10,7 +10,7 @@ import { readStore, writeStore } from './local-store.ts';
 import { readVersionedStore, writeVersionedStore } from './plugin-data.ts';
 import { join } from 'node:path';
 import { vmDir } from './paths.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 
 export const presetSchema = z
@@ -105,7 +105,7 @@ export class CommandPresets {
       this.workspaces.projects?.key(id) || id,
       async (log, signal) => {
         const terminals = this.options.terminals ||
-          (this.ownedTerminals ||= new ProjectTerminals(this.machines, this.workspaces));
+          (this.ownedTerminals ||= projectTerminalsFor(this.machines, this.workspaces));
         const prepared = await terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
         let privateValues: string[] = [];
         try {

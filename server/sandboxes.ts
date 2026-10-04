@@ -9,7 +9,8 @@ import {
 import { quote } from './shell.ts';
 import { Jobs } from './jobs.ts';
 import { type JobView } from '../shared/contracts/jobs.ts';
-import { BOOT_TIMEOUT_MS, Machines } from './machines.ts';
+import { BOOT_TIMEOUT_MS } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema, type VMView } from '../shared/contracts/vm.ts';
 import { SandboxArtifacts, artifactPathSchema } from './sandbox-artifacts.ts';

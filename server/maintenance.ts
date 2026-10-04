@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { distributions } from './images.ts';
 import { Jobs } from './jobs.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';

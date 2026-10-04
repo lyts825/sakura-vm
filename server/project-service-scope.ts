@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { lstat, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
 import type { ProjectService } from './project-services.ts';
 import { AppError } from '../shared/errors.ts';

@@ -5,14 +5,14 @@ import { createWriteStream } from 'node:fs';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { type Workspaces, projectPrivateValues } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
 import { Files } from './files.ts';
 import { privateLog, redactValues } from './secrets.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { repositoryPath } from './git-workbench.ts';
-import { ProjectTerminals } from './project-terminals.ts';
+import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 
 export const pipelineSchema = z
@@ -152,7 +152,7 @@ export class Pipelines {
         try {
           await persist();
           const terminals = this.options.terminals ||
-            (this.ownedTerminals ||= new ProjectTerminals(this.machines, this.workspaces));
+            (this.ownedTerminals ||= projectTerminalsFor(this.machines, this.workspaces));
           prepared = await terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
           const { captured, signal: executionSignal } = prepared;
           if (!captured || !executionSignal || this.machines.live.get(id) !== captured.live)

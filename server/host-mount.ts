@@ -6,7 +6,7 @@ import { DATA } from './paths.ts';
 import { quote } from './shell.ts';
 import { readStore, regularDirectory, within, writeStore } from './local-store.ts';
 import { serveHostMount } from './host-mount-sftp.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
 
 const policySchema = z.object({

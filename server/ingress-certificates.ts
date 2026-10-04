@@ -10,6 +10,7 @@ import {
   type CertificateView,
 } from '../shared/ingress-certificates.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { metadataPath, type PluginMetadata } from './plugin-metadata.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
@@ -54,7 +55,8 @@ export class IngressCertificates {
   private closed = false;
   private rotationError?: string;
 
-  constructor(private file = join(DATA, 'plugins', 'network', 'certificates.json')) {}
+  private file: string;
+  constructor(file: string | PluginMetadata = join(DATA, 'plugins', 'network', 'certificates.json')) { this.file = metadataPath(file); }
 
   async init() {
     this.state = stateSchema.parse(await readStore(this.file, defaults));

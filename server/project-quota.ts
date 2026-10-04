@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';

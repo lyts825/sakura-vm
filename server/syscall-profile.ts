@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { Workspaces } from './workspaces.ts';
 import { SyscallProjectTasks, type SyscallProjectTaskOptions } from './syscall-project-task.ts';
 import { createHash } from 'node:crypto';

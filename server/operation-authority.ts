@@ -5,7 +5,7 @@ import { vmLifetime } from './vm-lifetime.ts';
 import { extensionOrigin, type BrowserExtensions } from './browser-extensions.ts';
 import type { AccessControl, Principal } from './access-control.ts';
 import type { SessionLock } from './session-lock.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import type { Features } from './features.ts';
 import type { ProjectPermissions } from './project-permissions.ts';
 import type { OperationEntry } from './operation-catalog.ts';

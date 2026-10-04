@@ -9,6 +9,7 @@ import {
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { metadataPath, type PluginMetadata } from './plugin-metadata.ts';
 
 export const bundleSignatureSchema = z
   .object({
@@ -117,7 +118,8 @@ export function verifySignedManifest(manifest: Record<string, unknown> & { signa
 export class SignedBundles {
   private state: State = { version: 1, revision: 0, requireTrustedOnImport: false, trustedKeys: [] };
   private pending: Promise<unknown> = Promise.resolve();
-  constructor(private file: string) {}
+  private file: string;
+  constructor(file: string | PluginMetadata) { this.file = metadataPath(file); }
   async init() {
     const state = stateSchema.parse(await readStore(this.file, () => this.state));
     const seen = new Set<string>();

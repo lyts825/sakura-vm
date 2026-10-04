@@ -15,15 +15,14 @@ import { LocalAliases } from '../../server/local-aliases.ts';
 import { localAliasActionSchema, localAliasViewSchema } from '../../shared/local-aliases.ts';
 
 export async function activate(host: PluginContext) {
-  const m = host.compat.machines;
+  const m = host.vm;
   host.provide(networkServices.network, new NetworkProfiles(m));
-  const certificates = host.provide(networkServices.certificates, new IngressCertificates(host.compat.dataFile('certificates')));
-  await host.storage.run({ label: '加载入口证书', paths: [host.compat.dataFile('certificates')], mode: 'write',
-    buffers: 1024 * 1024, files: 2 }, async () => certificates.init());
-  const ingress = host.provide(networkServices.ingress, new HttpIngress(m, host.compat.dataFile('ingress'), certificates, host.networking));
+  const certificates = host.provide(networkServices.certificates, new IngressCertificates(host.capabilities.metadata.reference('certificates')));
+  await host.capabilities.metadata.run('certificates', async () => certificates.init());
+  const ingress = host.provide(networkServices.ingress, new HttpIngress(m, host.capabilities.metadata.reference('ingress'), certificates, host.networking));
   await ingress.init();
   await host.provide(networkServices.localAliases, new LocalAliases(() => ingress.aliasNames(),
-    undefined, host.dataFile('local-aliases'))).init();
+    undefined, host.capabilities.metadata.reference('local-aliases'))).init();
   host.registerJobs(host.network.jobs, () => {
     throw new AppError('请在网络配置中重新测试当前设置');
   });
@@ -39,8 +38,7 @@ export const operations: Record<string, PluginOperation> = {
     request: certificateActionSchema,
     response: certificateViewSchema,
     execute(_url, input, signal) {
-      return this.storage.run({ label: '保存入口证书', paths: [this.compat.dataFile('certificates')],
-        mode: 'write', buffers: 1024 * 1024, files: 2, signal },
+      return this.capabilities.metadata.run('certificates',
       async () => this.use(networkServices.certificates).action(input));
     },
   },
@@ -106,7 +104,7 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'network') {
       if (req.method === 'GET') {
@@ -142,13 +140,13 @@ export async function route(
           .object({ forwards: z.unknown() })
           .strict()
           .parse(await body(req));
-        send(await this.machines.setForwards(id, forwards));
+        send(await this.vm.setForwards(id, forwards));
         return true;
       }
       if (req.method === 'GET') {
         let listening = new Set<number>();
-        if (this.machines.state(id) === 'running') {
-          const result = await this.machines.exec(id, 'cat /proc/net/tcp /proc/net/tcp6', 10000);
+        if (this.vm.state(id) === 'running') {
+          const result = await this.vm.exec(id, 'cat /proc/net/tcp /proc/net/tcp6', 10000);
           if (result.code !== 0) throw new AppError('无法读取客户机监听端口');
           listening = new Set(
             result.stdout
@@ -159,7 +157,7 @@ export async function route(
           );
         }
         send({
-          forwards: this.machines.get(id).forwards.map((p) => ({ ...p, listening: listening.has(p.guest) })),
+          forwards: this.vm.get(id).forwards.map((p) => ({ ...p, listening: listening.has(p.guest) })),
           listening: [...listening],
         });
         return true;

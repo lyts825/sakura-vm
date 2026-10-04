@@ -4,9 +4,9 @@ import { z } from 'zod';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import type { ProjectTerminals } from './project-terminals.ts';
+import { type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 
 const sessionId = z.string().regex(/^[a-z0-9-]{1,48}$/);
 const grant = z.object({

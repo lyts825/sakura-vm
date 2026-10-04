@@ -32,7 +32,7 @@ export async function route(
     for (const id of new Set(ids)) {
       signal.throwIfAborted();
       try {
-        await this.machines[action](id);
+        await this.vm[action](id);
         results.push({ id, ok: true });
       } catch (error) {
         results.push({ id, ok: false, error: (error as Error).message });
@@ -44,10 +44,10 @@ export async function route(
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
-  this.machines.get(id);
+  this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'organization' && req.method === 'PUT') {
-      send(await this.machines.organize(id, await body(req)));
+      send(await this.vm.organize(id, await body(req)));
       return true;
     }
   }

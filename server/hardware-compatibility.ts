@@ -1,5 +1,5 @@
 import { deviceProfileSchema, hardwareIssues } from '../shared/hardware.ts';
-import type { Machines } from './machines.ts';
+import type { VmAccess as Machines } from './vm-access.ts';
 
 type Probe = { ok: boolean; output: string; error?: string };
 type Row = { id: string; name: string; available: boolean; evidence: string; reason?: string };
