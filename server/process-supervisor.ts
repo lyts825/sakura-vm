@@ -27,9 +27,11 @@ export type ProcessAdmission = {
   lane?: 'interactive' | 'background' | 'control';
   signal?: AbortSignal;
   queueTimeoutMs?: number;
+  /** Known launch participants: a direct child or Native Host plus its target. */
+  mode?: 'direct' | 'native-owner';
 };
 export type HelperExit = { code: number | null; signal: NodeJS.Signals | null; failure: string };
-type HelperOptions = Omit<ProcessAdmission, 'kind'> & {
+type HelperOptions = Omit<ProcessAdmission, 'kind' | 'mode'> & {
   helper: 'virtiofsd' | 'swtpm';
   file: string;
   args: string[];
@@ -72,6 +74,9 @@ export class ProcessSupervisor {
   ) {}
 
   private acquire(options: ProcessAdmission) {
+    const mode = options.mode || 'direct';
+    if (!['direct', 'native-owner'].includes(mode) || (mode === 'native-owner' && options.kind === 'helper'))
+      throw new Error('Invalid process ownership mode');
     return this.governor.acquire({
       owner: options.owner,
       kind: 'process.' + options.kind,
@@ -79,7 +84,7 @@ export class ProcessSupervisor {
       lane: options.lane || 'background',
       signal: options.signal,
       timeoutMs: options.queueTimeoutMs,
-      cost: { process: 1, ['process.' + options.kind]: 1 },
+      cost: { process: mode === 'native-owner' ? 2 : 1, ['process.' + options.kind]: 1 },
     });
   }
 
@@ -87,7 +92,7 @@ export class ProcessSupervisor {
   async observe(
     adapter: HostProcessAdapter,
     create: () => ChildProcess,
-    options: Partial<Omit<ProcessAdmission, 'kind'>> = {},
+    options: Partial<Omit<ProcessAdmission, 'kind' | 'mode'>> = {},
   ) {
     if (!Object.hasOwn(hostProcessAdapters, adapter)) throw new Error('Unknown host process adapter');
     const request = {
@@ -95,6 +100,7 @@ export class ProcessSupervisor {
       label: adapter,
       ...options,
       kind: hostProcessAdapters[adapter],
+      mode: 'direct' as const,
     };
     if (request.kind === 'helper' && request.lane !== 'control') await captureOperationCheck()();
     // A protocol guard can already own a helper when it admits a relay. Queueing another
@@ -161,7 +167,7 @@ export class ProcessSupervisor {
     for (const value of [options.graceMs ?? 2000, options.closeTimeoutMs ?? 5000])
       if (!Number.isSafeInteger(value) || value < 0 || value > 2147483647)
         throw new Error('Invalid helper close deadline');
-    const lease = await this.acquire({ ...options, kind: 'helper' });
+    const lease = await this.acquire({ ...options, kind: 'helper', mode: 'direct' });
     try {
       options.signal?.throwIfAborted();
       return new ManagedHelper(this.spawnHelper(options.file, [...options.args]), lease, options);

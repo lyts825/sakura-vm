@@ -103,7 +103,7 @@ export async function hostProcess(
     if (args.some((argument) => argument.includes('\0')) || !(await stat(cwd)).isDirectory())
       throw new AppError('宿主工具参数无效', 409, 'HOST_PROCESS_FAILED');
     const program = await windowsExecutable(file, env, cwd);
-    return processSupervisor.run(admission, async (control) => {
+    return processSupervisor.run({ ...admission, mode: 'native-owner' }, async (control) => {
       const result = await runViaNativeHost({
         program,
         args: [...args],

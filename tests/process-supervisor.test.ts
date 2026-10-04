@@ -276,6 +276,99 @@ test('only explicitly handed-off user applications can release a still-running o
   host.close();
 });
 
+test('Native Host atomically reserves wrapper plus target while classification and direct children remain single', async () => {
+  const host = new HostRuntime({
+    budgets: {
+      process: { capacity: 4 },
+      'process.vm': { capacity: 1 },
+      'process.tool': { capacity: 1 },
+      'process.helper': { capacity: 1 },
+    },
+  });
+  const supervisor = new ProcessSupervisor(host),
+    done = deferred(),
+    fake = fakeChild();
+  const vm = supervisor.run(
+    { owner: 'vm:native', kind: 'vm', label: 'QEMU', mode: 'native-owner' },
+    () => done.promise,
+  );
+  await delay(0);
+  assert.deepEqual(host.snapshot().resources[0].cost, { process: 2, 'process.vm': 1 });
+  const direct = await supervisor.observe('gpg-native-relay', () => fake.child);
+  assert.deepEqual(host.snapshot().resources.find((value) => value.kind === 'process.helper')!.cost, {
+    process: 1,
+    'process.helper': 1,
+  });
+  assert.equal(host.snapshot().budgets.find((value) => value.key === 'process')!.used, 3);
+  fake.child.emit('close', 0, null);
+  await direct.closed;
+  done.resolve();
+  await vm;
+  assert.equal(host.snapshot().resources.length, 0);
+  host.close();
+});
+
+test('Native Host exhaustion holds no partial classification and reserved control admits one whole cleanup owner', async () => {
+  const host = new HostRuntime({
+    budgets: {
+      process: { capacity: 4, reserved: 2 },
+      'process.vm': { capacity: 1 },
+      'process.tool': { capacity: 2, reserved: 1 },
+    },
+  });
+  const supervisor = new ProcessSupervisor(host),
+    done = deferred(),
+    cancel = new AbortController();
+  const vm = supervisor.run(
+    { owner: 'vm:native', kind: 'vm', label: 'QEMU', mode: 'native-owner' },
+    () => done.promise,
+  );
+  await delay(0);
+  const queued = supervisor.run(
+    { owner: 'tool:queued', kind: 'tool', label: 'disk', mode: 'native-owner', signal: cancel.signal },
+    async () => assert.fail('cancelled capacity waiter started'),
+  );
+  const rejected = assert.rejects(queued);
+  await delay(0);
+  assert.equal(host.snapshot().queued, 1);
+  assert.equal(host.snapshot().budgets.find((value) => value.key === 'process.tool')!.used, 0);
+  const cleanup = supervisor.run(
+    { owner: 'cleanup:original', kind: 'tool', label: 'receipt', mode: 'native-owner', lane: 'control' },
+    () => done.promise,
+  );
+  await delay(0);
+  assert.equal(host.snapshot().budgets.find((value) => value.key === 'process')!.used, 4);
+  assert.equal(host.snapshot().budgets.find((value) => value.key === 'process.tool')!.used, 1);
+  cancel.abort();
+  await rejected;
+  assert.equal(host.snapshot().budgets.find((value) => value.key === 'process')!.used, 4);
+  done.resolve();
+  await Promise.all([vm, cleanup]);
+  host.close();
+});
+
+test('Native Host unresolved cleanup retains both participants after cancellation', async () => {
+  const host = new HostRuntime({ budgets: { process: { capacity: 2 }, 'process.tool': { capacity: 1 } } });
+  const supervisor = new ProcessSupervisor(host),
+    cancel = new AbortController();
+  await assert.rejects(
+    supervisor.run(
+      { owner: 'native:pending', kind: 'tool', label: 'tool', mode: 'native-owner', signal: cancel.signal },
+      async (control) => {
+        cancel.abort();
+        const error = new Error('whole tree unconfirmed');
+        control.cleanupPending(error);
+        throw error;
+      },
+    ),
+    /whole tree unconfirmed/,
+  );
+  assert.equal(host.snapshot().resources[0].state, 'cleanup-pending');
+  assert.deepEqual(host.snapshot().resources[0].cost, { process: 2, 'process.tool': 1 });
+  assert.equal(host.snapshot().budgets.find((value) => value.key === 'process')!.used, 2);
+  assert.throws(() => host.close(), /未确认释放/);
+});
+
 test('helper admission rechecks authority while exact recovery retains control capacity', async () => {
   const host = governor(),
     supervisor = new ProcessSupervisor(host),

@@ -156,7 +156,34 @@ async function run(ownedDirectory?: string) {
     const config = projectSchema.parse({ directory, networkIsolation: 'private', template: 'none' });
     const index = await spaces.projects.create(vmId, name + '-' + invocation.slice(0, 8), () => writeStore(spaces.projects.file(vmId), config));
     const identity = await spaces.projects.with(vmId, index.active, async () => {
-      const preview = await migrations.preview(vmId); assert.ok(preview.plan);
+      let preview: Awaited<ReturnType<typeof migrations.preview>>;
+      try { preview = await migrations.preview(vmId); }
+      catch (error) {
+        // The new private-project binding installs the OpenRC NNP configuration.
+        // Its already-running ordinary daemons must explicitly adopt that policy.
+        // This matches smoke-project-egress-vm; production refusal stays intact.
+        if (ownedDirectory || proof.nnpServiceRestart ||
+            (error as { code?: string }).code !== 'PROJECT_IDENTITY_EGRESS_NNP_RESTART_REQUIRED') throw error;
+        const live = machines.live.get(vmId); assert.ok(live);
+        const bootId = await guest('cat /proc/sys/kernel/random/boot_id'); assert.match(bootId, /^[a-f0-9-]{36}$/);
+        phase('new owned VM explicitly restarts SSH and cron after NNP admission refusal');
+        proof.nnpServiceRestart = { refusal: { code: (error as { code: string }).code,
+          message: error instanceof Error ? error.message : String(error) }, vmId, bootId,
+          boundary: 'Only sshd/crond in this invocation fresh owned test VM; no preexisting VM or user session.',
+          restarted: [] };
+        // The engine already binds this VM to its exclusive private disk and
+        // generated SSH key. Alpine Tiny Cloud does not expose cloud-init IDs.
+        const sameBoot = 'test "$(cat /proc/sys/kernel/random/boot_id)" = ' + quote(bootId);
+        for (const service of ['sshd', 'crond']) {
+          assert.equal(machines.live.get(vmId), live);
+          await guest('set -eu; ' + sameBoot + '; rc-service ' + service + ' restart');
+          proof.nnpServiceRestart.restarted.push(service);
+        }
+        assert.equal(machines.live.get(vmId), live); await guest('set -eu; ' + sameBoot);
+        preview = await migrations.preview(vmId);
+        proof.nnpServiceRestart.retryAccepted = true;
+      }
+      assert.ok(preview.plan);
       const applied = await migrations.apply(vmId, { action: 'apply', version: 1, planId: preview.plan.proposal.planId,
         sha256: preview.plan.sha256, reviewed: true }); assert.equal(applied.plan?.state, 'applied');
       return applied.plan!.activatedIdentity!;

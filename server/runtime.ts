@@ -39,13 +39,10 @@ export async function createRuntime() {
   const qemuIoAvailable = existsSync(binaries['sakura-io']);
   const data = join(DATA, 'posixloom');
   await mkdir(join(data, 'config'), { recursive: true });
-  await writeStore(
-    join(data, 'config/config.json'),
-    {
-      process: { maxConcurrent: 16, maxConcurrentPerClient: 16, defaultTimeoutMs: 30000 },
-      updates: { enabled: false, autoApply: false },
-    },
-  );
+  await writeStore(join(data, 'config/config.json'), {
+    process: { maxConcurrent: 16, maxConcurrentPerClient: 16, defaultTimeoutMs: 30000 },
+    updates: { enabled: false, autoApply: false },
+  });
   process.env.POSIXLOOM_DATA_ROOT = data;
   const runtime = await RuntimeManager.create(join(ROOT, '.vendor/posixloom'), {
     plugins: [
@@ -85,7 +82,14 @@ export async function createRuntime() {
     const kind =
       options.processKind || (tool.startsWith('sakura-qemu') && !args.includes('--version') ? 'vm' : 'tool');
     return processSupervisor.run(
-      { owner: options.owner || 'core:qemu', kind, label: tool, lane: options.lane, signal: options.signal },
+      {
+        owner: options.owner || 'core:qemu',
+        kind,
+        label: tool,
+        lane: options.lane,
+        signal: options.signal,
+        mode: runtime.findNativeHost() ? 'native-owner' : 'direct',
+      },
       async (control) => {
         const sessionId = service.createSession();
         let mayHaveStarted = false,
