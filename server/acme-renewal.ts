@@ -34,14 +34,14 @@ export class AcmeRenewal {
   private timer?: ScheduleHandle;
   private ticking?: Promise<void>;
   private closed = false;
-  private allowed = () => false;
-  private mutation = (_delta: number) => {};
+  private get allowed() { return this.controls.allowed; }
+  private get mutation() { return this.controls.mutation; }
 
   constructor(private machines: Machines,
     private file = join(DATA, 'acme-renewal.json'), private now = Date.now,
-    controls?: { allowed: () => boolean; mutation: (delta: number) => void }) {
-    if (controls) { this.allowed = controls.allowed; this.mutation = controls.mutation; }
-  }
+    private readonly controls: { allowed: () => boolean; mutation: (delta: number) => void } = {
+      allowed: () => false, mutation: () => {},
+    }) {}
 
   async init() {
     this.state = storeSchema.parse(await readStore(this.file, defaults));
@@ -50,12 +50,6 @@ export class AcmeRenewal {
     this.timer = scheduler.register({ owner: 'core:acme-renewal', label: '客户机证书续期检查', intervalMs: 60_000,
       immediate: true, overlap: 'coalesce', backoff: { initialMs: 60000, maxMs: 600000 }, run: () => this.tick() });
   }
-
-  setAllowed(check: () => boolean) {
-    this.allowed = check;
-    this.kick();
-  }
-  setMutationCounter(change: (delta: number) => void) { this.mutation = change; }
 
   private kick() {
     this.timer?.trigger();

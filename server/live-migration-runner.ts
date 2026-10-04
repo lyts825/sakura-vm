@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -33,7 +34,7 @@ function sourceDiskNode(value: unknown) {
 /** Coordinates one source-side transfer; the durable fence remains on the VM if cutover is uncertain. */
 export class LiveMigrationRunner {
   private active = new Set<string>();
-  constructor(private machines: Machines, private peers: HostPeers,
+  constructor(private machines: Machines, private peers: ServiceInterface<HostPeers>,
     private query: Query = qmp, private transport: Transport = migrateQemuWithMirroredDisk) {}
 
   async run(id: string, raw: unknown, signal?: AbortSignal,
@@ -95,7 +96,7 @@ export class LiveMigrationRunner {
       organization: vm.organization,
     });
     log(`目标实例 ${prepared.targetVmId} 已暂停，迁移标识 ${transferId}。\n`);
-    const forwards: Array<Awaited<ReturnType<HostPeers['openMigrationForward']>>> = [];
+    const forwards: Array<Awaited<ReturnType<ServiceInterface<HostPeers>['openMigrationForward']>>> = [];
     let completed = false;
     try {
       signal?.throwIfAborted();

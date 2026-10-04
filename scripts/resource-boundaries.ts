@@ -3,7 +3,7 @@ import { staticString } from './network-boundaries.ts';
 
 const processes = new Set(['server/host-process.ts', 'server/process-supervisor.ts', 'server/network/host-pool.ts']);
 // These are protocol/authority deadlines, not ordinary periodic business jobs.
-const protocolTimers = new Set(['server/ha-failure-monitor.ts', 'server/ha-host-failover.ts',
+const protocolTimers = new Set(['server/ha-host-failover.ts',
   'server/ha-local-failovers.ts', 'server/ha-witness-server.ts', 'server/machines.ts',
   'server/network/host-pool.ts', 'server/session-lock.ts']);
 // Exclusive creation and domain recovery receipts have their own publication rules.

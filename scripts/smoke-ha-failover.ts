@@ -271,7 +271,7 @@ WantedBy=multi-user.target
   const policies = async () => ({ [vmId]: { enabled: true, options: {
     targetHostId: ready.hostId, failureThreshold: 2, maxReplicaAgeMinutes: 60, autoHostFailover: true } } });
   hostHa = new HaHostFailover(machines, peers, replications, policies, client);
-  machines.setHaStartGuard((id) => hostHa!.authorizeStart(id));
+  machines.beforeHaStart((id) => hostHa!.authorizeStart(id));
   await machines.enrollHaWitness(vmId, ready.hostId, 2);
   await machines.start(vmId);
   await waitUntil('enrolled source boot', async () => machines!.state(vmId) !== 'starting');

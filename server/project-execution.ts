@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { ProjectPreparation } from './project-preparation.ts';
@@ -45,10 +46,11 @@ export async function withProjectCommand<T>(
   machines: Machines,
   id: string,
   signal: AbortSignal | undefined,
-  workspaces: Workspaces | undefined,
+  workspaces: ServiceInterface<Workspaces> | undefined,
   action: (project: Project) => Promise<T>,
 ) {
-  const scope = workspaces || new Workspaces(machines);
+  const owned = workspaces ? undefined : new Workspaces(machines);
+  const scope = workspaces || owned!;
   try {
     const run = () =>
       machines.locked(id, async () => {
@@ -73,7 +75,7 @@ export async function withProjectCommand<T>(
       });
     return workspaces ? await run() : await scope.projects.with(id, undefined, run);
   } finally {
-    if (!workspaces) await scope.close();
+    await owned?.close();
   }
 }
 
@@ -136,7 +138,7 @@ export class ProjectExecution {
         throw new AppError('实例管理命令不能同时指定项目', 400);
       return this.machines.locked(id, () =>
         ExecutionScope.run(
-          { machines: this.machines, vmId: id, projectId: '@instance', signal },
+          { machines: this.machines, vmId: id, projectId: '@instance', signal, delegate: true },
           async (scope) => ({
             scope: 'instance' as const,
             ...(await guestTask(

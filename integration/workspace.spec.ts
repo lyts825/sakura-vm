@@ -4,10 +4,20 @@ import { startTestController } from '../scripts/test-controller';
 
 test('compiled controller: VM lifecycle, plugin panels, restart recovery and retained sandbox artifacts', async ({
   page,
-}) => {
+}, testInfo) => {
   const backend = await startTestController();
   const errors: string[] = [];
+  let failure: unknown;
+  let directoryRefusal = '';
   page.on('pageerror', (error) => errors.push(error.message));
+  page.on('websocket', (socket) => {
+    if (!socket.url().includes('/terminal?')) return;
+    socket.on('framereceived', ({ payload }) => {
+      const message = JSON.parse(payload.toString());
+      if (message.type === 'error' && String(message.data).includes('DIRECTORY_MIGRATION_REQUIRED'))
+        directoryRefusal = message.data;
+    });
+  });
   try {
     await page.goto(backend.origin);
     await page.getByRole('button', { name: '创建发行版', exact: true }).click();
@@ -17,10 +27,41 @@ test('compiled controller: VM lifecycle, plugin panels, restart recovery and ret
       await dialog.getByLabel('执行模式').selectOption('tcg');
     await dialog.getByRole('button', { name: '创建发行版', exact: true }).click();
     await expect(dialog).not.toBeVisible();
-    await expect(page.locator('.terminal-session')).toContainText('SSH 已连接', { timeout: 280000 });
     const vm = (await backend.request('/vms')).find(
       (item: { name: string }) => item.name === 'browser-lifecycle',
     );
+    await expect
+      .poll(async () => (await backend.request(`/vms/${vm.id}`)).status, { timeout: 280000 })
+      .toBe('running');
+    // Let the original fixed-tool installation complete before starting a migration.
+    await expect.poll(() => directoryRefusal, { timeout: 280000 }).toContain('DIRECTORY_MIGRATION_REQUIRED');
+    // Close the initial refused terminal before reviewing the test-owned directory.
+    await page.goto('about:blank');
+    await backend.request(`/vms/${vm.id}/project`, 'PUT', { directory: '/workspace' }, 360000);
+    const migration = await backend.request(
+      `/vms/${vm.id}/project-directory-migration`,
+      'POST',
+      { action: 'preview', version: 1 },
+      360000,
+    );
+    expect(migration.plan.proposal.directory).toBe('/workspace');
+    expect(migration.plan.proposal.vmId).toBe(vm.id);
+    expect(migration.plan.proposal.projectId).toBe('default');
+    const applied = await backend.request(
+      `/vms/${vm.id}/project-directory-migration`,
+      'POST',
+      {
+        action: 'apply',
+        version: 1,
+        planId: migration.plan.proposal.planId,
+        sha256: migration.plan.sha256,
+        reviewed: true,
+      },
+      360000,
+    );
+    expect(applied.plan.state).toBe('applied');
+    await page.goto(backend.origin);
+    await expect(page.locator('.terminal-session')).toContainText('SSH 已连接', { timeout: 280000 });
     const executed = await backend.request(`/vms/${vm.id}/exec`, 'POST', {
       command: 'printf browser-real > /workspace/browser.txt; cat /workspace/browser.txt',
     });
@@ -31,7 +72,8 @@ test('compiled controller: VM lifecycle, plugin panels, restart recovery and ret
     await expect
       .poll(async () => (await backend.request(`/vms/${vm.id}`)).poweredOn, { timeout: 30000 })
       .toBe(false);
-    await page.getByRole('tab', { name: '快照', exact: true }).click();
+    await page.getByRole('button', { name: '更多插件功能', exact: true }).click();
+    await page.getByRole('menuitem', { name: '快照', exact: true }).click();
     await expect(page.getByRole('heading', { name: '快照与迁移' })).toBeVisible();
     await backend.restart();
     // The existing page must acquire the new credential without reloading.
@@ -74,7 +116,18 @@ test('compiled controller: VM lifecycle, plugin panels, restart recovery and ret
     expect(record.execution.timings.totalMs).toBeGreaterThanOrEqual(0);
     expect(await backend.request('/vms')).toEqual([]);
     expect(errors).toEqual([]);
-  } finally {
+  } catch (error) {
+    failure = error;
+  }
+  try {
     await backend.close();
+  } catch (cleanup) {
+    failure = failure
+      ? new AggregateError([failure, cleanup], 'Browser scenario and controller cleanup failed')
+      : cleanup;
+  }
+  if (failure) {
+    await testInfo.attach('controller.log', { body: backend.logs(), contentType: 'text/plain' });
+    throw failure;
   }
 });

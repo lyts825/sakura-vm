@@ -1,19 +1,23 @@
+import type { ServiceInterface } from './service-interface.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { Bundles } from './bundles.ts';
-import type { HostPeers } from './host-peers.ts';
+import type { HostPeerDependencies } from './host-peers.ts';
 import { AppError } from '../shared/errors.ts';
 import { haWitnessReplicaInventorySchema } from './ha-witness-core.ts';
 
-type Receiver = Parameters<HostPeers['setImportReceiver']>[0];
+type Receiver = NonNullable<HostPeerDependencies['importReceiver']>;
 type Activation = Parameters<NonNullable<Receiver['activate']>>[0];
 type ReplicaActivation = Parameters<NonNullable<Receiver['activateReplica']>>[0];
 
 /** The production receiver is also used by multi-process guest integration checks. */
-export function createHostImportReceiver(machines: Machines, services: {
-  bundles: () => Bundles | undefined;
-  requireSessionUnlocked: () => void;
-  migrationBlocked: () => boolean;
-}): Receiver {
+export function createHostImportReceiver(
+  machines: Machines,
+  services: {
+    bundles: () => ServiceInterface<Bundles> | undefined;
+    requireSessionUnlocked: () => void;
+    migrationBlocked: () => boolean;
+  },
+): Receiver {
   const bundles = () => {
     const service = services.bundles();
     if (!service) throw new AppError('请先启用快照与实例包插件', 503);
@@ -24,16 +28,19 @@ export function createHostImportReceiver(machines: Machines, services: {
     return bundles();
   };
   const imported = (requesterId: string, transferId: string) =>
-    [...machines.records.values()].find((vm) =>
-      vm.migrationOrigin?.sourceHostId === requesterId &&
-      vm.migrationOrigin.transferId === transferId);
+    [...machines.records.values()].find(
+      (vm) =>
+        vm.migrationOrigin?.sourceHostId === requesterId && vm.migrationOrigin.transferId === transferId,
+    );
   const inspectImported = ({ requesterId, transferId, remoteVmId, sha256 }: Activation) => {
     services.requireSessionUnlocked();
     requireAvailable();
     const vm = machines.get(remoteVmId);
-    if (vm.migrationOrigin?.sourceHostId !== requesterId ||
-        vm.migrationOrigin.transferId !== transferId ||
-        vm.migrationOrigin.diskSha256 !== sha256)
+    if (
+      vm.migrationOrigin?.sourceHostId !== requesterId ||
+      vm.migrationOrigin.transferId !== transferId ||
+      vm.migrationOrigin.diskSha256 !== sha256
+    )
       throw new AppError('目标实例身份或校验值与导入记录不一致', 409);
     if (vm.migrationOrigin.sourceVmId || vm.migrationOrigin.snapshotId)
       throw new AppError('快照复制副本不能通过冷迁移目标启动接口启动', 409);
@@ -43,15 +50,23 @@ export function createHostImportReceiver(machines: Machines, services: {
       throw new AppError(`目标实例当前为 ${status}，需要人工复核`, 409);
     return { id: remoteVmId, status };
   };
-  const inspectReplica = ({ requesterId, transferId, remoteVmId, sha256,
-    sourceVmId, snapshotId }: ReplicaActivation) => {
+  const inspectReplica = ({
+    requesterId,
+    transferId,
+    remoteVmId,
+    sha256,
+    sourceVmId,
+    snapshotId,
+  }: ReplicaActivation) => {
     requireAvailable();
     const vm = machines.get(remoteVmId);
-    if (vm.migrationOrigin?.sourceHostId !== requesterId ||
-        vm.migrationOrigin.transferId !== transferId ||
-        vm.migrationOrigin.diskSha256 !== sha256 ||
-        vm.migrationOrigin.sourceVmId !== sourceVmId ||
-        vm.migrationOrigin.snapshotId !== snapshotId)
+    if (
+      vm.migrationOrigin?.sourceHostId !== requesterId ||
+      vm.migrationOrigin.transferId !== transferId ||
+      vm.migrationOrigin.diskSha256 !== sha256 ||
+      vm.migrationOrigin.sourceVmId !== sourceVmId ||
+      vm.migrationOrigin.snapshotId !== snapshotId
+    )
       throw new AppError('故障副本身份或快照校验值与导入记录不一致', 409);
     machines.requireUnlocked(remoteVmId);
     if (vm.haRetirement) throw new AppError('故障副本已退出接管', 409);
@@ -61,57 +76,114 @@ export function createHostImportReceiver(machines: Machines, services: {
     return { id: remoteVmId, status };
   };
   const replicaIdentity = (input: ReplicaActivation) => ({
-    sourceHostId: input.requesterId, transferId: input.transferId,
-    sourceVmId: input.sourceVmId, snapshotId: input.snapshotId, sha256: input.sha256,
+    sourceHostId: input.requesterId,
+    transferId: input.transferId,
+    sourceVmId: input.sourceVmId,
+    snapshotId: input.snapshotId,
+    sha256: input.sha256,
   });
   return {
     inspectReplicas: async ({ requesterId, sourceVmId, targetHostId }) => {
       requireAvailable();
-      if ([...machines.records.values()].some((vm) =>
-        vm.migrationOrigin?.sourceHostId === requesterId &&
-        ((vm.migrationOrigin.snapshotId && !vm.migrationOrigin.sourceVmId) ||
-          (vm.migrationOrigin.sourceVmId && !vm.migrationOrigin.snapshotId))))
+      if (
+        [...machines.records.values()].some(
+          (vm) =>
+            vm.migrationOrigin?.sourceHostId === requesterId &&
+            ((vm.migrationOrigin.snapshotId && !vm.migrationOrigin.sourceVmId) ||
+              (vm.migrationOrigin.sourceVmId && !vm.migrationOrigin.snapshotId)),
+        )
+      )
         throw new AppError('来源宿主存在归属不完整的历史副本，不能声明清单完整', 409);
-      const replicas = [...machines.records.values()].filter((vm) =>
-        (vm.migrationOrigin?.sourceHostId === requesterId &&
-          vm.migrationOrigin.sourceVmId === sourceVmId) ||
-        (vm.haRetirement?.sourceHostId === requesterId &&
-          vm.haRetirement.sourceVmId === sourceVmId)).map((vm) => {
-        const origin = vm.migrationOrigin;
-        if (!origin || origin.sourceHostId !== requesterId || origin.sourceVmId !== sourceVmId ||
-            !origin.snapshotId || !origin.diskSha256)
-          throw new AppError('历史故障副本登记损坏，不能声明清单完整', 409);
-        const identity = { sourceHostId: requesterId, sourceVmId, targetHostId,
-          transferId: origin.transferId, remoteVmId: vm.id,
-          snapshotId: origin.snapshotId, sha256: origin.diskSha256 };
-        if (vm.haRetirement && ['sourceHostId', 'sourceVmId', 'transferId', 'snapshotId', 'sha256']
-          .some((key) => vm.haRetirement![key as keyof typeof vm.haRetirement] !==
-            identity[key as keyof typeof identity]))
-          throw new AppError('历史故障副本退役证据与导入记录不一致', 409);
-        return { identity, status: machines.state(vm.id),
-          retirement: vm.haRetirement ? { ...identity, retiredAt: vm.haRetirement.retiredAt } : null };
+      const replicas = [...machines.records.values()]
+        .filter(
+          (vm) =>
+            (vm.migrationOrigin?.sourceHostId === requesterId &&
+              vm.migrationOrigin.sourceVmId === sourceVmId) ||
+            (vm.haRetirement?.sourceHostId === requesterId && vm.haRetirement.sourceVmId === sourceVmId),
+        )
+        .map((vm) => {
+          const origin = vm.migrationOrigin;
+          if (
+            !origin ||
+            origin.sourceHostId !== requesterId ||
+            origin.sourceVmId !== sourceVmId ||
+            !origin.snapshotId ||
+            !origin.diskSha256
+          )
+            throw new AppError('历史故障副本登记损坏，不能声明清单完整', 409);
+          const identity = {
+            sourceHostId: requesterId,
+            sourceVmId,
+            targetHostId,
+            transferId: origin.transferId,
+            remoteVmId: vm.id,
+            snapshotId: origin.snapshotId,
+            sha256: origin.diskSha256,
+          };
+          if (
+            vm.haRetirement &&
+            ['sourceHostId', 'sourceVmId', 'transferId', 'snapshotId', 'sha256'].some(
+              (key) =>
+                vm.haRetirement![key as keyof typeof vm.haRetirement] !==
+                identity[key as keyof typeof identity],
+            )
+          )
+            throw new AppError('历史故障副本退役证据与导入记录不一致', 409);
+          return {
+            identity,
+            status: machines.state(vm.id),
+            retirement: vm.haRetirement ? { ...identity, retiredAt: vm.haRetirement.retiredAt } : null,
+          };
+        });
+      return haWitnessReplicaInventorySchema.parse({
+        version: 1,
+        complete: true,
+        hostId: targetHostId,
+        sourceHostId: requesterId,
+        sourceVmId,
+        replicas,
       });
-      return haWitnessReplicaInventorySchema.parse({ version: 1, complete: true,
-        hostId: targetHostId, sourceHostId: requesterId, sourceVmId, replicas });
     },
     status: async ({ requesterId, transferId }) => {
       bundles();
-      const vm = imported(requesterId, transferId), origin = vm?.migrationOrigin;
-      return vm && origin ? { id: vm.id, name: origin.targetName,
-        ...(origin.diskSha256 ? { sha256: origin.diskSha256 } : {}),
-        ...(origin.sourceVmId ? { sourceVmId: origin.sourceVmId } : {}),
-        ...(origin.snapshotId ? { snapshotId: origin.snapshotId } : {}) } : null;
+      const vm = imported(requesterId, transferId),
+        origin = vm?.migrationOrigin;
+      return vm && origin
+        ? {
+            id: vm.id,
+            name: origin.targetName,
+            ...(origin.diskSha256 ? { sha256: origin.diskSha256 } : {}),
+            ...(origin.sourceVmId ? { sourceVmId: origin.sourceVmId } : {}),
+            ...(origin.snapshotId ? { snapshotId: origin.snapshotId } : {}),
+          }
+        : null;
     },
     receive: async ({ requesterId, transferId, name, sourceVmId, snapshotId, source, signal }) => {
       services.requireSessionUnlocked();
       const service = requireAvailable();
-      const vm = await service.import(name, source, signal, () => {
-        services.requireSessionUnlocked(); requireAvailable();
-      }, { sourceHostId: requesterId, transferId, targetName: name,
-        ...(sourceVmId ? { sourceVmId } : {}), ...(snapshotId ? { snapshotId } : {}) });
-      return { id: vm.id, name,
+      const vm = await service.import(
+        name,
+        source,
+        signal,
+        () => {
+          services.requireSessionUnlocked();
+          requireAvailable();
+        },
+        {
+          sourceHostId: requesterId,
+          transferId,
+          targetName: name,
+          ...(sourceVmId ? { sourceVmId } : {}),
+          ...(snapshotId ? { snapshotId } : {}),
+        },
+      );
+      return {
+        id: vm.id,
+        name,
         ...(vm.migrationOrigin?.diskSha256 ? { sha256: vm.migrationOrigin.diskSha256 } : {}),
-        ...(sourceVmId ? { sourceVmId } : {}), ...(snapshotId ? { snapshotId } : {}) };
+        ...(sourceVmId ? { sourceVmId } : {}),
+        ...(snapshotId ? { snapshotId } : {}),
+      };
     },
     inspectActivation: async (input) => inspectImported(input),
     inspectReplicaActivation: async (input) => inspectReplica(input),

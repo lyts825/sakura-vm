@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
@@ -227,7 +228,7 @@ export class ServiceMesh {
   private unguard: () => void;
   private scopes: NonNullable<ServiceMeshOptions['scopes']>;
   private identities: NonNullable<ServiceMeshOptions['identities']>;
-  constructor(private machines: Machines, private workspaces: Workspaces,
+  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
     private file = join(DATA, 'service-mesh.json'),
     private canStart: (id: string) => Promise<boolean> = async () => true,
     private options: ServiceMeshOptions = {}) {

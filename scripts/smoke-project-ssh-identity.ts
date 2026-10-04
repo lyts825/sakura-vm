@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -338,7 +339,7 @@ async function run(ownedDirectory?: string) {
       environment,
     });
     const index = await spaces.projects.create(vmId, name + '-' + invocation.slice(0, 8), () =>
-      writeStore(spaces.projects.file(vmId), config),
+      writeStore(projectMetadataFile(vmId, spaces.projects.current(vmId)), config),
     );
     const identity = await spaces.projects.with(vmId, index.active, async () => {
       const preview = await migrations.preview(vmId);

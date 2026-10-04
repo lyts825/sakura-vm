@@ -307,9 +307,6 @@ export async function withOwnedProtocolSmoke(kind: 'lsp' | 'dap', run: (context:
     if (prepared) await close('Original namespace preparation lease', async () => prepared!.release());
     if (preparation) await close('Original namespace preparation owner', () => preparation!.close());
     if (features) {
-      await close('LanguageServices', () => features!.languageServices.close());
-      await close('DebugAdapter', () => features!.debugger.close());
-      await close('Workspaces', () => features!.workspaces.close());
       await close('Features', () => features!.close());
     }
     if (machines) await close('Machines', () => machines!.close());

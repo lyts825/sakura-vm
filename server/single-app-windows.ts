@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { ProjectSessionLifetime } from './project-session-lifetime.ts';
 import { join } from 'node:path';
@@ -132,7 +133,7 @@ export class SingleAppWindows {
   private scopes: Pick<ProjectRunScopes, 'identity'>;
   private identities: Pick<ProjectIdentities, 'install'>;
   private control: Pick<SingleAppControl, 'install' | 'call' | 'streamCommand' | 'recover' | 'legacy' | 'prepareRun'>;
-  constructor(private machines: Machines, private workspaces?: Workspaces, private options: Options = {}) {
+  constructor(private machines: Machines, private workspaces?: ServiceInterface<Workspaces>, private options: Options = {}) {
     this.terminals = options.terminals || (workspaces ? projectTerminalsFor(machines, workspaces) : undefined);
     this.scopes = options.scopes || new ProjectRunScopes(machines);
     this.identities = options.identities || new ProjectIdentities(machines);

@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { posix } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -56,7 +57,7 @@ export class Containers {
   jobs = new Jobs('containers');
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
   ) {}
   private supported(id: string) {
     const vm = this.machines.get(id);
@@ -396,7 +397,7 @@ export class Containers {
             }
             const values =
               'secrets' in project
-                ? projectPrivateValues(project as Awaited<ReturnType<Workspaces['resolvedConfig']>>)
+                ? projectPrivateValues(project as Awaited<ReturnType<ServiceInterface<Workspaces>['resolvedConfig']>>)
                 : [];
             const output = privateLog(log, values);
             try {

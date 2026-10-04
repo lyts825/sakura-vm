@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { AppError } from '../shared/errors.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
 import type { HaFailureMonitor } from './ha-failure-monitor.ts';
@@ -15,34 +16,44 @@ export class HaLocalFailovers {
   private closed = false;
   private errors: Record<string, string> = {};
   private observedLive = new Set<string>();
-  private witnessDisarm?: (id: string, failureThreshold: number) => Promise<void>;
-
-  constructor(private machines: Machines, private monitor: HaFailureMonitor,
-    private peers: HostPeers, private replications: SnapshotReplications,
-    private policies: () => Promise<Record<string, Policy>>,
-    private allowed: () => boolean = () => true) {}
-
-  setWitnessDisarmGuard(guard: (id: string, failureThreshold: number) => Promise<void>) {
-    this.witnessDisarm = guard;
+  private get witnessDisarm() {
+    return this.dependencies.disarmWitness;
   }
+
+  constructor(
+    private machines: Machines,
+    private monitor: HaFailureMonitor,
+    private peers: ServiceInterface<HostPeers>,
+    private replications: ServiceInterface<SnapshotReplications>,
+    private policies: () => Promise<Record<string, Policy>>,
+    private allowed: () => boolean = () => true,
+    private dependencies: { disarmWitness?: (id: string, failureThreshold: number) => Promise<void> } = {},
+  ) {}
 
   private async disarmWitness(id: string) {
     const enrollment = this.machines.get(id).haWitnessEnrollment;
     if (!enrollment) return;
     if (!this.witnessDisarm)
-      throw new AppError('见证撤防校验不可用，不能执行本机故障接管',
-        503, 'HA_WITNESS_UNAVAILABLE');
+      throw new AppError('见证撤防校验不可用，不能执行本机故障接管', 503, 'HA_WITNESS_UNAVAILABLE');
     await this.witnessDisarm(id, enrollment.failureThreshold);
   }
 
   private async requireAttemptAuthority(id: string, targetHostId: string, firstFence = false) {
     const latest = (await this.policies())[id];
     const parsed = haFailoverOptions.safeParse(latest?.options);
-    if (!latest?.enabled || !parsed.success || !parsed.data.autoProcessFailover ||
-        parsed.data.targetHostId !== targetHostId)
+    if (
+      !latest?.enabled ||
+      !parsed.success ||
+      !parsed.data.autoProcessFailover ||
+      parsed.data.targetHostId !== targetHostId
+    )
       throw new AppError('接管策略已变化，取消接管', 409);
-    if (this.closed || !this.allowed() || this.machines.live.has(id) ||
-        (firstFence && (!this.observedLive.has(id) || !this.monitor.view(id)?.suspected)))
+    if (
+      this.closed ||
+      !this.allowed() ||
+      this.machines.live.has(id) ||
+      (firstFence && (!this.observedLive.has(id) || !this.monitor.view(id)?.suspected))
+    )
       throw new AppError('来源实例故障状态已变化，取消接管', 409);
     this.machines.requireStopped(id);
   }
@@ -51,8 +62,10 @@ export class HaLocalFailovers {
     this.machines.on('change', this.observeLive);
     this.observeLive();
     await this.sample();
-    this.timer = setInterval(() => void this.sample().catch((error) =>
-      console.error('本机 QEMU 故障接管扫描失败：', error)), INTERVAL_MS);
+    this.timer = setInterval(
+      () => void this.sample().catch((error) => console.error('本机 QEMU 故障接管扫描失败：', error)),
+      INTERVAL_MS,
+    );
     this.timer.unref();
   }
 
@@ -61,8 +74,12 @@ export class HaLocalFailovers {
       if (this.machines.state(id) === 'running') this.observedLive.add(id);
   };
 
-  view(id: string) { return { error: this.errors[id] || null }; }
-  hasObservedLive(id: string) { return this.observedLive.has(id); }
+  view(id: string) {
+    return { error: this.errors[id] || null };
+  }
+  hasObservedLive(id: string) {
+    return this.observedLive.has(id);
+  }
 
   sample() {
     const current = this.work.catch(() => {}).then(() => this.scan());
@@ -71,26 +88,36 @@ export class HaLocalFailovers {
   }
 
   rejoin(id: string, dataReconciled: boolean) {
-    const current = this.work.catch(() => {}).then(async () => {
-      if (this.closed || !this.allowed())
-        throw new AppError('故障接管服务当前不可用', 503);
-      if (!dataReconciled)
-        throw new AppError('请先回迁目标期间的写入数据，或明确接受丢失目标新数据', 409);
-      this.machines.requireUnlocked(id);
-      const promotion = this.machines.get(id).haPromotion;
-      if (!promotion) throw new AppError('来源实例没有故障接管栅栏', 409);
-      this.machines.requireStopped(id);
-      await this.peers.retireReplica(promotion.peerId, {
-        transferId: promotion.transferId, remoteVmId: promotion.remoteVmId,
-        sha256: promotion.sha256, sourceVmId: id, snapshotId: promotion.snapshotId,
+    const current = this.work
+      .catch(() => {})
+      .then(async () => {
+        if (this.closed || !this.allowed()) throw new AppError('故障接管服务当前不可用', 503);
+        if (!dataReconciled) throw new AppError('请先回迁目标期间的写入数据，或明确接受丢失目标新数据', 409);
+        this.machines.requireUnlocked(id);
+        const promotion = this.machines.get(id).haPromotion;
+        if (!promotion) throw new AppError('来源实例没有故障接管栅栏', 409);
+        this.machines.requireStopped(id);
+        await this.peers.retireReplica(promotion.peerId, {
+          transferId: promotion.transferId,
+          remoteVmId: promotion.remoteVmId,
+          sha256: promotion.sha256,
+          sourceVmId: id,
+          snapshotId: promotion.snapshotId,
+        });
+        await this.monitor.reconfigure(id);
+        await this.machines.releaseHaPromotion(id, promotion.transferId);
+        delete this.errors[id];
+        return {
+          ready: true,
+          executed: true,
+          retiredRemoteVmId: promotion.remoteVmId,
+          message: '目标副本已持久封锁，来源实例的启动栅栏已解除。',
+        };
       });
-      await this.monitor.reconfigure(id);
-      await this.machines.releaseHaPromotion(id, promotion.transferId);
-      delete this.errors[id];
-      return { ready: true, executed: true, retiredRemoteVmId: promotion.remoteVmId,
-        message: '目标副本已持久封锁，来源实例的启动栅栏已解除。' };
-    });
-    this.work = current.then(() => {}, () => {});
+    this.work = current.then(
+      () => {},
+      () => {},
+    );
     return current;
   }
 
@@ -120,26 +147,48 @@ export class HaLocalFailovers {
     if (!promotion) {
       if (!this.observedLive.has(id) || !this.monitor.view(id)?.suspected) return;
       this.machines.requireUnlocked(id);
-      const checked = await checkHaFailover(this.machines, this.peers,
-        this.replications, id, policy.options, policy.enabled, undefined, true, true);
+      const checked = await checkHaFailover(
+        this.machines,
+        this.peers,
+        this.replications,
+        id,
+        policy.options,
+        policy.enabled,
+        undefined,
+        true,
+        true,
+      );
       const replica = checked.replica;
-      if (!checked.localProcessReady || !replica?.remoteVmId || !replica.sha256)
-        return;
+      if (!checked.localProcessReady || !replica?.remoteVmId || !replica.sha256) return;
       if (this.closed || !this.allowed()) return;
       const at = new Date().toISOString();
-      promotion = await this.machines.fenceForHa(id, {
-        peerId: replica.peerId, targetHostId: checked.policy.targetHostId!,
-        transferId: replica.transferId, remoteVmId: replica.remoteVmId,
-        snapshotId: replica.snapshotId, sha256: replica.sha256,
-        fencedAt: at, status: 'fenced', updatedAt: at,
-      }, async () => {
-        await this.requireAttemptAuthority(id, checked.policy.targetHostId!, true);
-        await this.disarmWitness(id);
-        await this.requireAttemptAuthority(id, checked.policy.targetHostId!, true);
-      });
+      promotion = await this.machines.fenceForHa(
+        id,
+        {
+          peerId: replica.peerId,
+          targetHostId: checked.policy.targetHostId!,
+          transferId: replica.transferId,
+          remoteVmId: replica.remoteVmId,
+          snapshotId: replica.snapshotId,
+          sha256: replica.sha256,
+          fencedAt: at,
+          status: 'fenced',
+          updatedAt: at,
+        },
+        async () => {
+          await this.requireAttemptAuthority(id, checked.policy.targetHostId!, true);
+          await this.disarmWitness(id);
+          await this.requireAttemptAuthority(id, checked.policy.targetHostId!, true);
+        },
+      );
     }
-    const input = { transferId: promotion.transferId, remoteVmId: promotion.remoteVmId,
-      sha256: promotion.sha256, sourceVmId: id, snapshotId: promotion.snapshotId };
+    const input = {
+      transferId: promotion.transferId,
+      remoteVmId: promotion.remoteVmId,
+      sha256: promotion.sha256,
+      sourceVmId: id,
+      snapshotId: promotion.snapshotId,
+    };
     try {
       if (this.closed || !this.allowed()) return;
       if (retrying) {
@@ -152,21 +201,26 @@ export class HaLocalFailovers {
       await this.requireAttemptAuthority(id, promotion.targetHostId);
       if (this.machines.get(id).haPromotion?.transferId !== promotion.transferId)
         throw new AppError('来源实例接管栅栏已变化，取消接管', 409);
-      const result = target.status === 'stopped'
-        ? await this.peers.activateReplica(promotion.peerId, input) : target;
+      const result =
+        target.status === 'stopped' ? await this.peers.activateReplica(promotion.peerId, input) : target;
       if (result.status === 'starting') {
         if (promotion.error)
-          await this.machines.updateHaPromotion(id, promotion.transferId,
-            { status: 'fenced', error: undefined });
+          await this.machines.updateHaPromotion(id, promotion.transferId, {
+            status: 'fenced',
+            error: undefined,
+          });
         return;
       }
-      if (result.status !== 'running')
-        throw new AppError(`故障副本当前为 ${result.status}，尚未接管`, 409);
-      await this.machines.updateHaPromotion(id, promotion.transferId,
-        { status: 'accepted', error: undefined });
+      if (result.status !== 'running') throw new AppError(`故障副本当前为 ${result.status}，尚未接管`, 409);
+      await this.machines.updateHaPromotion(id, promotion.transferId, {
+        status: 'accepted',
+        error: undefined,
+      });
     } catch (error) {
-      await this.machines.updateHaPromotion(id, promotion.transferId,
-        { status: 'fenced', error: (error as Error).message.slice(0, 500) });
+      await this.machines.updateHaPromotion(id, promotion.transferId, {
+        status: 'fenced',
+        error: (error as Error).message.slice(0, 500),
+      });
       throw error;
     }
   }

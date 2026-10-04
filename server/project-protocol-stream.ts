@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -207,7 +208,7 @@ export class ProjectProtocolStreams {
   private writes = new Map<string, Promise<unknown>>();
   private controller = new AbortController();
   private pending = new Set<Promise<unknown>>();
-  constructor(private machines: Machines, private workspaces: Workspaces, private options: Options = {}) {
+  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private options: Options = {}) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);
     this.identities = options.identities || new ProjectIdentities(machines);
   }

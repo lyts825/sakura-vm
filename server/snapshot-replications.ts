@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -24,13 +25,13 @@ const entrySchema = z.object({
 }).strict();
 const storeSchema = z.object({ version: z.literal(1), entries: z.array(entrySchema).max(128) }).strict();
 type Entry = z.infer<typeof entrySchema>;
-type Receipt = NonNullable<Awaited<ReturnType<HostPeers['importStatus']>>>;
+type Receipt = NonNullable<Awaited<ReturnType<ServiceInterface<HostPeers>['importStatus']>>>;
 
 export class SnapshotReplications {
   private state?: z.infer<typeof storeSchema>;
   private metadata: MetadataStore<z.infer<typeof storeSchema>>;
   private active = new Set<string>();
-  constructor(private machines: Machines, private bundles: Bundles, private peers: HostPeers,
+  constructor(private machines: Machines, private bundles: ServiceInterface<Bundles>, private peers: ServiceInterface<HostPeers>,
     private file = join(DATA, 'snapshot-replications.json')) {
     this.metadata = new MetadataStore(file, { fallback: () => ({ version: 1, entries: [] }),
       parse: (value) => storeSchema.parse(value) });

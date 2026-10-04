@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -34,21 +35,21 @@ try {
     runningVms: machines!.live.size });
   const port = await freePort();
   const peerFile = join(process.env.SAKURA_DATA_DIR!, 'target-peer.json');
-  peers = new HostPeers(status, peerFile, 'Target');
+  peers = new HostPeers(status, peerFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await peers.init(false);
   await peers.configure({ operation: 'listener', listener: {
     enabled: true, host: '127.0.0.1', port,
   } });
   await peers.close();
-  peers = new HostPeers(status, peerFile, 'Target');
+  peers = new HostPeers(status, peerFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await peers.init(true);
   const receiver = new LiveMigrationReceiver(machines, peers);
-  peers.setLiveMigrationReceiver({
+  peerHandlers.set(peers, { ...peerHandlers.get(peers), liveMigrationReceiver: {
     prepare: (input) => receiver.prepare(input),
     complete: (input) => receiver.complete(input),
     abort: (input) => receiver.abort(input),
     status: (input) => Promise.resolve(receiver.status(input)),
-  });
+  } });
   const code = await peers.configure({ operation: 'create-code' });
   if (!('pairing' in code) || !code.pairing) throw new Error('Pairing code unavailable');
   send({ type: 'ready', port, fingerprint: peers.view().fingerprint,

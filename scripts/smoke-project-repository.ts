@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -196,7 +197,7 @@ print(json.dumps(result))`;
     const config = projectSchema.parse({ directory, networkIsolation, repository: endpoint + '/' + remote,
       template: 'none', setup, environment: { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath',
         GIT_CONFIG_VALUE_0: fixtureDirectory, PYTHONPATH: fixtureDirectory, GIT_ASKPASS: fixtureDirectory + '/forbidden-askpass' } });
-    const index = await spaces.projects.create(vmId, name, () => writeStore(spaces.projects.file(vmId), config));
+    const index = await spaces.projects.create(vmId, name, () => writeStore(projectMetadataFile(vmId, spaces.projects.current(vmId)), config));
     const id = index.active;
     const applied = await projectScope(id, async () => {
       const preview = await migrations.preview(vmId); assert.ok(preview.plan); assert.equal(preview.plan.state, 'preview');

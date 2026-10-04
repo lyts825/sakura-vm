@@ -3,6 +3,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { authorizeOwnedProjectFixture } from './owned-project-fixture.ts';
 
 const directory = await mkdtemp(join(tmpdir(), 'sakura-engineering-vm-'));
 await mkdir(join(directory, 'images'), { recursive: true });
@@ -15,6 +16,8 @@ const { Features } = await import('../server/features.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const features = await Features.create(machines, ['extensions', 'platform', 'git', 'commands']);
+features.system.construct('engineering-fixture', () => ({}));
+const projectVm = features.system.vm('engineering-fixture', machines);
 let id: string | undefined;
 try {
   const vm = await machines.create({
@@ -85,7 +88,7 @@ try {
   console.log('Installing guest test tools');
   const install = await machines.exec(
     id,
-    'apk add --no-cache python3 git coreutils iproute2 acl openssl nodejs npm tcpdump && mkdir -p /workspace/regression/server /workspace/regression/tests /workspace/app',
+    'apk add --no-cache python3 tmux git coreutils iproute2 acl openssl nodejs npm tcpdump && mkdir -p /workspace/regression/server /workspace/regression/tests /workspace/app',
     600000,
   );
   assert.equal(install.code, 0, install.stderr);
@@ -119,6 +122,7 @@ try {
     false,
   );
   await machines.writeGuestFile(id, '/workspace/app/file.txt', 'hello', false);
+  await authorizeOwnedProjectFixture(machines, features.workspaces, id);
   const operate = async (
     operation: string,
     parameters: Record<string, unknown>,
@@ -156,20 +160,30 @@ try {
   console.log('Checking reviewed npm dependency upgrade in the guest');
   const fixture = '/workspace/dependency-bot-fixture';
   assert.equal((await machines.exec(id, `mkdir -p ${fixture}`)).code, 0);
-  await machines.writeGuestFile(id, fixture + '/package.json',
-    JSON.stringify({ name: 'sakura-bot-smoke', version: '1.0.0', dependencies: { 'is-number': '6.0.0' } }), false);
-  const npmLock = await machines.exec(id,
-    `cd ${fixture} && npm install --package-lock-only --ignore-scripts --no-audit --no-fund`, 90000);
+  await machines.writeGuestFile(
+    id,
+    fixture + '/package.json',
+    JSON.stringify({ name: 'sakura-bot-smoke', version: '1.0.0', dependencies: { 'is-number': '6.0.0' } }),
+    false,
+  );
+  const npmLock = await machines.exec(
+    id,
+    `cd ${fixture} && npm install --package-lock-only --ignore-scripts --no-audit --no-fund`,
+    90000,
+  );
   assert.equal(npmLock.code, 0, npmLock.stderr);
   await features.workspaces.save(id, { directory: fixture, environment: {} });
+  await authorizeOwnedProjectFixture(machines, features.workspaces, id);
   const botRun = async (options: Record<string, unknown>) => {
     const job: any = await features.next.action(id!, {
-      action: 'run', featureId: 'dependency-bot', options,
+      action: 'run',
+      featureId: 'dependency-bot',
+      options,
     });
     await features.next.jobs.wait(job.key);
     const state = features.next.jobs.view(job.key)!;
     assert.equal(state.status, 'done', state.log + '\n' + state.error);
-    return await features.next.jobs.result(job.id) as any;
+    return (await features.next.jobs.result(job.id)) as any;
   };
   const upgradeScan = await botRun({ mode: 'scan', allowMajor: true });
   const upgradePlan = upgradeScan.candidates.find((candidate: any) => candidate.name === 'is-number');
@@ -183,25 +197,44 @@ try {
   const restoredManifest = await machines.exec(id, `cat ${fixture}/package.json`);
   assert.equal(JSON.parse(restoredManifest.stdout).dependencies['is-number'], '6.0.0');
   await features.workspaces.save(id, {
-    directory: '/workspace/app', environment: { MODE: 'dev', FLAG: 'true' },
+    directory: '/workspace/app',
+    environment: { MODE: 'dev', FLAG: 'true' },
   });
   console.log('Checking commit gate and process cancellation');
   const gitSetup = await machines.exec(
     id,
-    'cd /workspace/app && git init && git config user.name Test && git config user.email test@example.invalid && git add package.json && git commit -m initial',
+    'git config --global --add safe.directory /workspace/app && cd /workspace/app && git init && git config user.name Test && git config user.email test@example.invalid && git add package.json && git commit -m initial',
     30000,
   );
   assert.equal(gitSetup.code, 0, gitSetup.stderr);
+  await authorizeOwnedProjectFixture(machines, features.workspaces, id);
   console.log('Checking worktree project switching');
   const { CapabilityActions } = await import('../server/capability-actions.ts');
-  const capabilities = new CapabilityActions(machines, features.workspaces);
+  const capabilities = new CapabilityActions(projectVm, features.workspaces);
   const capabilitySignal = new AbortController().signal;
-  const capture = capabilities.run(id, 'packet-capture', {
-    interface: 'eth0', durationSeconds: 3, maxPackets: 200, protocol: 'tcp', port: 22,
-  }, capabilitySignal);
-  await delay(500);
-  await machines.exec(id, 'echo capture-trigger');
-  const captured = await capture;
+  let captureFinished = false;
+  const capture = capabilities.run(
+    id,
+    'packet-capture',
+    {
+      interface: 'eth0',
+      durationSeconds: 3,
+      maxPackets: 200,
+      protocol: 'tcp',
+      port: 22,
+    },
+    capabilitySignal,
+  ).finally(() => { captureFinished = true; });
+  // Preparation verifies project ownership before tcpdump starts. Keep real SSH
+  // traffic flowing through that admission and the bounded capture window.
+  const [captured] = await Promise.all([capture, (async () => {
+    const trafficDeadline = Date.now() + 60000;
+    while (!captureFinished && Date.now() < trafficDeadline) {
+      const trigger = await machines.exec(id, 'echo capture-trigger');
+      assert.equal(trigger.code, 0, trigger.stderr);
+      await delay(200);
+    }
+  })()]);
   assert.equal(captured.code, 0, JSON.stringify(captured));
   assert.ok('capturedPackets' in captured, JSON.stringify(captured));
   assert.ok('redacted' in captured && 'payloadIncluded' in captured, JSON.stringify(captured));
@@ -210,13 +243,15 @@ try {
   assert.equal(captured.payloadIncluded, false);
   assert.doesNotMatch(JSON.stringify(captured), /\b(?:\d{1,3}\.){3}\d{1,3}\b/);
   console.log('PASS bounded guest tcpdump capture with anonymous flows');
-  const httpServer = await machines.exec(id,
-    'cd /workspace/app\nnohup python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/sakura-tunnel-http.log 2>&1 </dev/null &\necho $!');
+  const httpServer = await machines.exec(
+    id,
+    'cd /workspace/app\nnohup python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/sakura-tunnel-http.log 2>&1 </dev/null &\necho $!',
+  );
   assert.equal(httpServer.code, 0, httpServer.stderr);
   const httpPid = Number(httpServer.stdout.trim());
   assert.ok(Number.isInteger(httpPid) && httpPid > 1, httpServer.stdout);
   const { ReverseTunnels } = await import('../server/reverse-tunnels.ts');
-  const tunnels = new ReverseTunnels(machines, features.workspaces);
+  const tunnels = new ReverseTunnels(projectVm, features.workspaces);
   try {
     await delay(500);
     const guestResponse = await machines.exec(id, 'wget -qO- http://127.0.0.1:8765/file.txt');
@@ -238,22 +273,28 @@ try {
   } finally {
     await tunnels.close();
   }
-  const tunnelCheck: any = await features.extended.action(id,
-    { action: 'check', featureId: 'reverse-tunnel' });
+  const tunnelCheck: any = await features.extended.action(id, {
+    action: 'check',
+    featureId: 'reverse-tunnel',
+  });
   assert.equal(tunnelCheck.ready, true);
   const tunnelJob: any = await features.extended.action(id, {
-    action: 'run', featureId: 'reverse-tunnel',
+    action: 'run',
+    featureId: 'reverse-tunnel',
     options: { mode: 'open', guestPort: 8765, durationSeconds: 10 },
   });
   await features.extended.jobs.wait(tunnelJob.key);
   assert.equal(features.extended.jobs.view(tunnelJob.key)?.status, 'done');
   const tunnelResult: any = await features.extended.jobs.result(tunnelJob.id);
   assert.equal(tunnelResult.active, true);
-  const routed = await fetch(`http://127.0.0.1:${tunnelResult.localPort}/file.txt`,
-    { headers: { connection: 'close' } });
+  const routed = await fetch(`http://127.0.0.1:${tunnelResult.localPort}/file.txt`, {
+    headers: { connection: 'close' },
+  });
   assert.equal(await routed.text(), 'hello');
   const closeJob: any = await features.extended.action(id, {
-    action: 'run', featureId: 'reverse-tunnel', options: { mode: 'close' },
+    action: 'run',
+    featureId: 'reverse-tunnel',
+    options: { mode: 'close' },
   });
   await features.extended.jobs.wait(closeJob.key);
   assert.equal(features.extended.jobs.view(closeJob.key)?.status, 'done');

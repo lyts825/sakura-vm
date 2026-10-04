@@ -1,3 +1,4 @@
+const witnessGuards: { disarmWitness?: (id: string, failureThreshold: number) => Promise<void> } = {};
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,42 +27,79 @@ test('process-only takeover fences source before promotion and retires target be
   const engine = { runtime: { close: async () => {} } } as Engine;
   const machines = new Machines(engine, fakeVmNetwork);
   await machines.init();
-  const sourceId = randomUUID(), targetId = randomUUID();
-  const snapshotId = randomUUID(), transferId = randomUUID();
-  const peerId = randomUUID(), targetHostId = randomUUID(), sourceHostId = randomUUID();
-  const sha256 = 'a'.repeat(64), now = new Date().toISOString();
-  machines.records.set(sourceId, { ...createSchema.parse({ name: 'source' }),
-    id: sourceId, createdAt: now, snapshots: [{ id: snapshotId, name: 'standby',
-      createdAt: now }], lastError: 'QEMU exited unexpectedly' });
-  machines.records.set(targetId, { ...createSchema.parse({ name: 'standby' }),
-    id: targetId, createdAt: now, snapshots: [], migrationOrigin: {
-      sourceHostId, transferId, targetName: 'standby', sourceVmId: sourceId,
-      snapshotId, diskSha256: sha256,
-    } });
+  const sourceId = randomUUID(),
+    targetId = randomUUID();
+  const snapshotId = randomUUID(),
+    transferId = randomUUID();
+  const peerId = randomUUID(),
+    targetHostId = randomUUID(),
+    sourceHostId = randomUUID();
+  const sha256 = 'a'.repeat(64),
+    now = new Date().toISOString();
+  machines.records.set(sourceId, {
+    ...createSchema.parse({ name: 'source' }),
+    id: sourceId,
+    createdAt: now,
+    snapshots: [{ id: snapshotId, name: 'standby', createdAt: now }],
+    lastError: 'QEMU exited unexpectedly',
+  });
+  machines.records.set(targetId, {
+    ...createSchema.parse({ name: 'standby' }),
+    id: targetId,
+    createdAt: now,
+    snapshots: [],
+    migrationOrigin: {
+      sourceHostId,
+      transferId,
+      targetName: 'standby',
+      sourceVmId: sourceId,
+      snapshotId,
+      diskSha256: sha256,
+    },
+  });
   await assert.rejects(machines.start(targetId), { code: 'HA_REPLICA_STANDBY' });
-  await assert.rejects(machines.startHaReplica(targetId, { sourceHostId, transferId,
-    sourceVmId: sourceId, snapshotId, sha256: 'b'.repeat(64) }),
-  { code: 'HA_REPLICA_STANDBY' });
-  let suspected = true, starts = 0, retires = 0, failStartOnce = true;
+  await assert.rejects(
+    machines.startHaReplica(targetId, {
+      sourceHostId,
+      transferId,
+      sourceVmId: sourceId,
+      snapshotId,
+      sha256: 'b'.repeat(64),
+    }),
+    { code: 'HA_REPLICA_STANDBY' },
+  );
+  let suspected = true,
+    starts = 0,
+    retires = 0,
+    failStartOnce = true;
   let targetStatus: 'stopped' | 'starting' | 'running' = 'stopped';
   const monitor = {
     view: () => ({ suspected }),
-    reconfigure: async () => { suspected = false; },
+    reconfigure: async () => {
+      suspected = false;
+    },
   } as unknown as HaFailureMonitor;
   const peers = {
-    score: async () => ({ candidates: [
-      { id: sourceHostId, source: 'local', status: { platform: 'win32', arch: 'x64' } },
-      { id: targetHostId, source: 'peer', name: 'standby', eligible: true,
-        reasons: [], observedAt: Date.now(),
-        status: { platform: 'win32', arch: 'x64' } },
-    ] }),
+    score: async () => ({
+      candidates: [
+        { id: sourceHostId, source: 'local', status: { platform: 'win32', arch: 'x64' } },
+        {
+          id: targetHostId,
+          source: 'peer',
+          name: 'standby',
+          eligible: true,
+          reasons: [],
+          observedAt: Date.now(),
+          status: { platform: 'win32', arch: 'x64' },
+        },
+      ],
+    }),
     view: () => ({ outbound: [{ id: peerId, remoteId: targetHostId }] }),
     importStatus: async () => ({ id: targetId, sha256, sourceVmId: sourceId, snapshotId }),
     checkReplicaActivation: async () => ({ ready: true, id: targetId, status: targetStatus }),
     activateReplica: async () => {
       const saved = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8'));
-      assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId,
-        transferId);
+      assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId, transferId);
       starts++;
       if (failStartOnce) {
         failStartOnce = false;
@@ -72,17 +110,43 @@ test('process-only takeover fences source before promotion and retires target be
     },
     retireReplica: async () => {
       retires++;
-      await machines.retireHaReplica(targetId, { sourceHostId, transferId,
-        sourceVmId: sourceId, snapshotId, sha256 });
+      await machines.retireHaReplica(targetId, {
+        sourceHostId,
+        transferId,
+        sourceVmId: sourceId,
+        snapshotId,
+        sha256,
+      });
       return { id: targetId, retired: true };
     },
   } as unknown as HostPeers;
-  const replications = { view: () => ({ entries: [{ vmId: sourceId, peerId,
-    snapshotId, transferId, remoteVmId: targetId, sha256, status: 'replicated',
-    createdAt: now, updatedAt: now }] }) } as unknown as SnapshotReplications;
+  const replications = {
+    view: () => ({
+      entries: [
+        {
+          vmId: sourceId,
+          peerId,
+          snapshotId,
+          transferId,
+          remoteVmId: targetId,
+          sha256,
+          status: 'replicated',
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }),
+  } as unknown as SnapshotReplications;
   const policy = { enabled: true, options: { targetHostId, autoProcessFailover: true } };
-  const failover = new HaLocalFailovers(machines, monitor, peers, replications,
-    async () => ({ [sourceId]: policy }));
+  const failover = new HaLocalFailovers(
+    machines,
+    monitor,
+    peers,
+    replications,
+    async () => ({ [sourceId]: policy }),
+    undefined,
+    witnessGuards,
+  );
   try {
     await failover.init();
     assert.equal(starts, 0, 'persisted suspicion alone is not process-exit evidence');
@@ -105,7 +169,9 @@ test('process-only takeover fences source before promotion and retires target be
     try {
       assert.equal(waiting.get(sourceId).haPromotion?.status, 'fenced');
       await assert.rejects(waiting.start(sourceId), { code: 'HA_SOURCE_FENCED' });
-    } finally { await waiting.close(); }
+    } finally {
+      await waiting.close();
+    }
     targetStatus = 'running';
     await failover.sample();
     assert.equal(machines.get(sourceId).haPromotion?.status, 'accepted');
@@ -114,7 +180,9 @@ test('process-only takeover fences source before promotion and retires target be
     await reopened.init();
     try {
       await assert.rejects(reopened.start(sourceId), { code: 'HA_SOURCE_FENCED' });
-    } finally { await reopened.close(); }
+    } finally {
+      await reopened.close();
+    }
     machines.live.set(targetId, { status: 'running' } as never);
     await assert.rejects(failover.rejoin(sourceId, true), /请先停止/);
     assert.ok(machines.get(sourceId).haPromotion);
@@ -130,7 +198,9 @@ test('process-only takeover fences source before promotion and retires target be
     try {
       assert.equal(final.get(sourceId).haPromotion, undefined);
       await assert.rejects(final.start(targetId), { code: 'HA_REPLICA_RETIRED' });
-    } finally { await final.close(); }
+    } finally {
+      await final.close();
+    }
   } finally {
     await failover.close();
     machines.live.clear();
@@ -141,75 +211,138 @@ test('process-only takeover fences source before promotion and retires target be
 test('a witness-enrolled source needs serialized disarm before local fencing and every pending retry', async () => {
   const machines = new Machines({ runtime: { close: async () => {} } } as Engine, fakeVmNetwork);
   await machines.init();
-  const sourceId = randomUUID(), targetId = randomUUID(), sourceHostId = randomUUID();
-  const targetHostId = randomUUID(), snapshotId = randomUUID(), transferId = randomUUID(), peerId = randomUUID();
-  const sha256 = 'c'.repeat(64), now = new Date().toISOString();
-  machines.records.set(sourceId, { ...createSchema.parse({ name: 'witness-arbitration' }),
-    id: sourceId, createdAt: now, snapshots: [{ id: snapshotId, name: 'standby', createdAt: now }],
-    lastError: 'QEMU exited unexpectedly', haWitnessEnrollment: { targetHostId,
-      failureThreshold: 3, registeredAt: now } });
+  const sourceId = randomUUID(),
+    targetId = randomUUID(),
+    sourceHostId = randomUUID();
+  const targetHostId = randomUUID(),
+    snapshotId = randomUUID(),
+    transferId = randomUUID(),
+    peerId = randomUUID();
+  const sha256 = 'c'.repeat(64),
+    now = new Date().toISOString();
+  machines.records.set(sourceId, {
+    ...createSchema.parse({ name: 'witness-arbitration' }),
+    id: sourceId,
+    createdAt: now,
+    snapshots: [{ id: snapshotId, name: 'standby', createdAt: now }],
+    lastError: 'QEMU exited unexpectedly',
+    haWitnessEnrollment: { targetHostId, failureThreshold: 3, registeredAt: now },
+  });
   const calls: string[] = [];
   let targetStatus: 'stopped' | 'starting' | 'running' = 'stopped';
-  let checkGate: Promise<void> | null = null, checkEntered = () => {};
+  let checkGate: Promise<void> | null = null,
+    checkEntered = () => {};
   const peers = {
-    score: async () => ({ candidates: [
-      { id: sourceHostId, source: 'local', status: { platform: 'win32', arch: 'x64' } },
-      { id: targetHostId, source: 'peer', name: 'standby', eligible: true, reasons: [],
-        observedAt: Date.now(), status: { platform: 'win32', arch: 'x64' } },
-    ] }),
+    score: async () => ({
+      candidates: [
+        { id: sourceHostId, source: 'local', status: { platform: 'win32', arch: 'x64' } },
+        {
+          id: targetHostId,
+          source: 'peer',
+          name: 'standby',
+          eligible: true,
+          reasons: [],
+          observedAt: Date.now(),
+          status: { platform: 'win32', arch: 'x64' },
+        },
+      ],
+    }),
     view: () => ({ outbound: [{ id: peerId, remoteId: targetHostId }] }),
     importStatus: async () => ({ id: targetId, sha256, sourceVmId: sourceId, snapshotId }),
     checkReplicaActivation: async () => {
       calls.push('target-check');
-      if (checkGate && machines.get(sourceId).haPromotion) { checkEntered(); await checkGate; }
+      if (checkGate && machines.get(sourceId).haPromotion) {
+        checkEntered();
+        await checkGate;
+      }
       return { ready: true, id: targetId, status: targetStatus };
     },
     activateReplica: async () => {
       const saved = JSON.parse(await readFile(join(root, 'machines.json'), 'utf8'));
       assert.equal(saved.find((vm: { id: string }) => vm.id === sourceId).haPromotion.transferId, transferId);
-      calls.push('activate'); targetStatus = 'starting'; return { id: targetId, status: targetStatus };
+      calls.push('activate');
+      targetStatus = 'starting';
+      return { id: targetId, status: targetStatus };
     },
   } as unknown as HostPeers;
   const monitor = { view: () => ({ suspected: true }) } as unknown as HaFailureMonitor;
-  const replications = { view: () => ({ entries: [{ vmId: sourceId, peerId, snapshotId,
-    transferId, remoteVmId: targetId, sha256, status: 'replicated', createdAt: now, updatedAt: now }] })
+  const replications = {
+    view: () => ({
+      entries: [
+        {
+          vmId: sourceId,
+          peerId,
+          snapshotId,
+          transferId,
+          remoteVmId: targetId,
+          sha256,
+          status: 'replicated',
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }),
   } as unknown as SnapshotReplications;
-  const policy = { enabled: true, options: { targetHostId, failureThreshold: 3,
-    autoProcessFailover: true, autoHostFailover: true } };
-  let failover = new HaLocalFailovers(machines, monitor, peers, replications,
-    async () => ({ [sourceId]: policy }));
+  const policy = {
+    enabled: true,
+    options: { targetHostId, failureThreshold: 3, autoProcessFailover: true, autoHostFailover: true },
+  };
+  let failover = new HaLocalFailovers(
+    machines,
+    monitor,
+    peers,
+    replications,
+    async () => ({ [sourceId]: policy }),
+    undefined,
+    witnessGuards,
+  );
   try {
     await failover.init();
-    machines.live.set(sourceId, { status: 'running' } as never); machines.emit('change');
+    machines.live.set(sourceId, { status: 'running' } as never);
+    machines.emit('change');
     machines.live.delete(sourceId);
     await failover.sample();
     assert.match(failover.view(sourceId).error || '', /见证撤防校验不可用/);
     assert.equal(machines.get(sourceId).haPromotion, undefined);
     assert.equal(calls.includes('activate'), false);
-    failover.setWitnessDisarmGuard(async () => { throw new Error('witness already fencing'); });
+    witnessGuards.disarmWitness = async () => {
+      throw new Error('witness already fencing');
+    };
     await failover.sample();
     assert.match(failover.view(sourceId).error || '', /already fencing/);
     assert.equal(machines.get(sourceId).haPromotion, undefined);
     assert.equal(calls.includes('activate'), false);
-    let releaseDisarm = () => {}, disarmEntered = () => {};
-    let disarmGate = new Promise<void>((done) => { releaseDisarm = done; });
-    let entered = new Promise<void>((done) => { disarmEntered = done; });
-    failover.setWitnessDisarmGuard(async () => { disarmEntered(); await disarmGate; });
+    let releaseDisarm = () => {},
+      disarmEntered = () => {};
+    let disarmGate = new Promise<void>((done) => {
+      releaseDisarm = done;
+    });
+    let entered = new Promise<void>((done) => {
+      disarmEntered = done;
+    });
+    witnessGuards.disarmWitness = async () => {
+      disarmEntered();
+      await disarmGate;
+    };
     const policyChanging = failover.sample();
     await entered;
     policy.enabled = false;
     releaseDisarm();
     await policyChanging;
     assert.match(failover.view(sourceId).error || '', /策略已变化/);
-    assert.equal(machines.get(sourceId).haPromotion, undefined,
-      'a strategy disabled while withdrawal waits cannot persist a local fence');
+    assert.equal(
+      machines.get(sourceId).haPromotion,
+      undefined,
+      'a strategy disabled while withdrawal waits cannot persist a local fence',
+    );
     assert.equal(calls.includes('activate'), false);
     policy.enabled = true;
-    failover.setWitnessDisarmGuard(async (id, threshold) => {
-      assert.equal(id, sourceId); assert.equal(threshold, 3);
+    witnessGuards.disarmWitness = async (id, threshold) => {
+      assert.equal(id, sourceId);
+      assert.equal(threshold, 3);
       assert.equal(machines.get(sourceId).haPromotion, undefined);
       calls.push('disarm');
-    });
+    };
     calls.length = 0;
     await failover.sample();
     assert.equal(calls.includes('disarm'), true);
@@ -217,9 +350,15 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     assert.equal(machines.get(sourceId).haPromotion?.status, 'fenced');
     assert.equal(calls.filter((call) => call === 'activate').length, 1);
     let releaseCheck = () => {};
-    checkGate = new Promise<void>((done) => { releaseCheck = done; });
-    const checked = new Promise<void>((done) => { checkEntered = done; });
-    failover.setWitnessDisarmGuard(async () => { calls.push('check-disarm'); });
+    checkGate = new Promise<void>((done) => {
+      releaseCheck = done;
+    });
+    const checked = new Promise<void>((done) => {
+      checkEntered = done;
+    });
+    witnessGuards.disarmWitness = async () => {
+      calls.push('check-disarm');
+    };
     targetStatus = 'stopped';
     calls.length = 0;
     const checking = failover.sample();
@@ -227,48 +366,86 @@ test('a witness-enrolled source needs serialized disarm before local fencing and
     policy.options.autoProcessFailover = false;
     releaseCheck();
     await checking;
-    assert.equal(calls.includes('activate'), false,
-      'a policy disabled during slow target inspection cannot start the standby');
+    assert.equal(
+      calls.includes('activate'),
+      false,
+      'a policy disabled during slow target inspection cannot start the standby',
+    );
     assert.equal(machines.get(sourceId).haPromotion?.status, 'fenced');
     assert.match(machines.get(sourceId).haPromotion?.error || '', /策略已变化/);
     policy.options.autoProcessFailover = true;
     checkGate = null;
     targetStatus = 'starting';
-    failover.setWitnessDisarmGuard(async () => { throw new Error('witness unavailable during retry'); });
+    witnessGuards.disarmWitness = async () => {
+      throw new Error('witness unavailable during retry');
+    };
     calls.length = 0;
     await failover.sample();
     assert.equal(calls.includes('activate'), false);
-    assert.equal(calls.includes('target-check'), false,
-      'an existing pending local fence cannot bypass the witness on a new run');
+    assert.equal(
+      calls.includes('target-check'),
+      false,
+      'an existing pending local fence cannot bypass the witness on a new run',
+    );
     assert.match(machines.get(sourceId).haPromotion?.error || '', /unavailable during retry/);
-    disarmGate = new Promise<void>((done) => { releaseDisarm = done; });
-    entered = new Promise<void>((done) => { disarmEntered = done; });
-    failover.setWitnessDisarmGuard(async () => { disarmEntered(); await disarmGate; });
+    disarmGate = new Promise<void>((done) => {
+      releaseDisarm = done;
+    });
+    entered = new Promise<void>((done) => {
+      disarmEntered = done;
+    });
+    witnessGuards.disarmWitness = async () => {
+      disarmEntered();
+      await disarmGate;
+    };
     const changingTarget = failover.sample();
     await entered;
     policy.options.targetHostId = randomUUID();
     releaseDisarm();
     await changingTarget;
-    assert.equal(calls.includes('target-check'), false,
-      'pending retries recheck the durable target after witness withdrawal');
+    assert.equal(
+      calls.includes('target-check'),
+      false,
+      'pending retries recheck the durable target after witness withdrawal',
+    );
     assert.match(machines.get(sourceId).haPromotion?.error || '', /策略已变化/);
     policy.options.targetHostId = targetHostId;
-    disarmGate = new Promise<void>((done) => { releaseDisarm = done; });
-    entered = new Promise<void>((done) => { disarmEntered = done; });
+    disarmGate = new Promise<void>((done) => {
+      releaseDisarm = done;
+    });
+    entered = new Promise<void>((done) => {
+      disarmEntered = done;
+    });
     const stopping = failover.sample();
     await entered;
     const stopped = failover.close();
     releaseDisarm();
     await Promise.all([stopping, stopped]);
-    assert.equal(calls.includes('target-check'), false,
-      'service shutdown during withdrawal cannot touch the target');
+    assert.equal(
+      calls.includes('target-check'),
+      false,
+      'service shutdown during withdrawal cannot touch the target',
+    );
     assert.equal(machines.get(sourceId).haPromotion?.status, 'fenced');
-    failover = new HaLocalFailovers(machines, monitor, peers, replications,
-      async () => ({ [sourceId]: policy }));
-    failover.setWitnessDisarmGuard(async () => { calls.push('retry-disarm'); });
+    failover = new HaLocalFailovers(
+      machines,
+      monitor,
+      peers,
+      replications,
+      async () => ({ [sourceId]: policy }),
+      undefined,
+      witnessGuards,
+    );
+    witnessGuards.disarmWitness = async () => {
+      calls.push('retry-disarm');
+    };
     targetStatus = 'running';
     await failover.init();
     assert.equal(calls[0], 'retry-disarm');
     assert.equal(machines.get(sourceId).haPromotion?.status, 'accepted');
-  } finally { await failover.close(); machines.live.clear(); await machines.close(); }
+  } finally {
+    await failover.close();
+    machines.live.clear();
+    await machines.close();
+  }
 });

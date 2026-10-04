@@ -1,3 +1,5 @@
+import { projectMetadataFile } from './project-catalog.ts';
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -555,7 +557,7 @@ export class ProjectDirectoryMigrations {
   private identities: ProjectIdentities;
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private options: { scopes?: RunScopes; sourceDirectory?: string; rootDirectory?: string } = {},
   ) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);
@@ -590,7 +592,7 @@ export class ProjectDirectoryMigrations {
   private async saved(vmId: string) {
     // config() has defaults for unsaved projects. Migration requires an actual saved configuration.
     try {
-      await readFile(this.workspaces.projects.file(vmId));
+      await readFile(projectMetadataFile(vmId, this.workspaces.projects.current(vmId)));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT')
         throw new AppError('请先保存项目配置', 409, 'PROJECT_DIRECTORY_CONFIG_NOT_SAVED');

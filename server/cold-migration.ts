@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -44,7 +45,7 @@ export class ColdMigrations {
   private writes: Promise<unknown> = Promise.resolve();
   private activeRuns = new Set<string>();
   private draining = false;
-  constructor(private machines: Machines, private bundles: Bundles, private peers: HostPeers,
+  constructor(private machines: Machines, private bundles: ServiceInterface<Bundles>, private peers: ServiceInterface<HostPeers>,
     private file = join(DATA, 'cold-migrations.json')) {}
 
   async init() {
@@ -220,7 +221,7 @@ export class ColdMigrations {
       let queuePersisted = true;
       try { await update('moved', receipt.id); }
       catch { queuePersisted = false; }
-      let targetStart: Awaited<ReturnType<HostPeers['activateImport']>> | undefined;
+      let targetStart: Awaited<ReturnType<ServiceInterface<HostPeers>['activateImport']>> | undefined;
       if (activation) {
         try { targetStart = await this.peers.activateImport(options.peerId, activation); }
         catch (error) {

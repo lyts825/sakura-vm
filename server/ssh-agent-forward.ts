@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { networkFor } from './network/index.ts';
 
 import { z } from 'zod';
@@ -70,7 +71,7 @@ export class SshAgentForwarder {
   private ownTerminals: boolean;
   private runTask: typeof projectIdentityTask;
   private scopes: SshAgentScopes;
-  constructor(private machines: Machines, options: { workspaces?: Workspaces; terminals?: ProjectTerminals;
+  constructor(private machines: Machines, options: { workspaces?: ServiceInterface<Workspaces>; terminals?: ProjectTerminals;
     runTask?: typeof projectIdentityTask; sourceDirectory?: string } = {}) {
     this.ownTerminals = !options.terminals;
     this.terminals = options.terminals || projectTerminalsFor(machines, options.workspaces);
@@ -127,6 +128,6 @@ export class SshAgentForwarder {
 }
 
 export async function runSshAgentForward(machines: Machines, id: string,
-  input: unknown, signal?: AbortSignal, workspaces?: Workspaces, terminals?: ProjectTerminals) {
+  input: unknown, signal?: AbortSignal, workspaces?: ServiceInterface<Workspaces>, terminals?: ProjectTerminals) {
   return new SshAgentForwarder(machines, { workspaces, terminals }).run(id, input, signal);
 }

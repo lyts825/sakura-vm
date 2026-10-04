@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { HostPeers } from './host-peers.ts';
@@ -12,7 +13,7 @@ type PrepareInput = { requesterId: string; transferId: string; sourceVmId: strin
 
 export class LiveMigrationReceiver {
   private finalizing = new Set<string>();
-  constructor(private machines: Machines, private peers: HostPeers,
+  constructor(private machines: Machines, private peers: ServiceInterface<HostPeers>,
     private requireAvailable: () => void = () => {}) {}
 
   async prepare(input: PrepareInput) {

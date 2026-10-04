@@ -1,6 +1,6 @@
 # 插件与整合包协议
 
-独立下载的第三方计算插件使用单独的 [签名 WebAssembly 插件协议](community-plugins.md)，不共享此文中的可信 Node.js 服务上下文。
+独立下载的第三方计算插件使用 [签名 WebAssembly 执行协议](community-plugins.md)，与官方插件共享管理状态、实例代次与清理责任；其执行适配器不开放可信 Node.js 服务上下文。
 
 Sakura 将可独立启用的运行服务作为插件，将功能组合声明为整合包。当前提供 32 个内置插件、9 个整合包。完整清单见 [架构与分包](plugin-architecture.md)。
 
@@ -25,10 +25,14 @@ shared/
 server/
   plugin-api.ts             生命周期协议与服务访问约束
   plugin-data.ts            私有数据命名空间与版本迁移
-  plugin-manager.ts         用户选择与 active/planned 状态
+  plugin-manager.ts         统一选择、目录、运行与必需服务入口
+  plugin-directory.ts       官方/社区/系统实例状态与贡献版本
+  plugin-runtime.ts         可信模块的激活、准入与退出
+  service-broker.ts         可撤销的版本化公共服务调用
+  system-services.ts        必需服务构造、依赖与资源归属
   plugins/loaders.generated.ts 自动生成的可信入口
   plugins/registry.ts       根据声明查找 HTTP/WS 归属
-  features.ts              激活、请求作用域、退出清理
+  features.ts              PluginRuntime 的组合入口导出
 scripts/
   sync-plugin-catalog.ts   扫描包目录，生成声明和加载器
 ```
@@ -36,8 +40,8 @@ scripts/
 | 字段                 | 当前值  | 含义                             |
 | -------------------- | ------- | -------------------------------- |
 | 声明 `schemaVersion` | `1`     | 插件和整合包数据结构版本         |
-| 插件 `apiVersion`    | `3`     | 宿主提供的生命周期和服务访问协议 |
-| 包 `version`         | `0.3.0` | 当前随源码交付的插件/整合包版本  |
+| 插件 `apiVersion`    | `4`     | 宿主提供的生命周期和服务访问协议 |
+| 包 `version`         | `1.0.0` | 当前随源码交付的插件/整合包版本  |
 | 选择 `schemaVersion` | `3`     | `plugins.json` 的用户选择格式    |
 
 这些版本分别校验。依赖使用完整的 `major.minor.patch` 精确版本；首版不解析范围、不下载包、不同时安装多个版本。声明里的 `version` 只表达当前内置版本，既有选择文件保存标识和用户意图，升级时依据当前发行版的目录重新解析。
@@ -79,12 +83,14 @@ export const manifest = definePlugin({
 | `requires`                        | 直接必需依赖及精确版本；自动补齐，依赖失败则跳过消费者   |
 | `optional`                        | 直接可选配套及精确版本；不自动启用，不改变必需依赖顺序   |
 | `services`                        | 本插件唯一拥有的服务槽位，也是初始化完整性和退出清理清单 |
-| `lifecycle.activateMs/closeMs`   | 激活与单步清理的最长等待时间                             |
+| `systemDependencies`              | 显式允许访问的必需宿主服务，启动完成时核对完整性         |
+| `lifecycle.activateMs/closeMs`    | 激活与单步清理的最长等待时间                             |
 | `contributes.http`                | 所属 API 命名空间、允许方法、是否使用项目作用域          |
 | `contributes.operations`          | 逐操作声明 ID、方法、精确路径及成功状态                  |
 | `contributes.sockets`             | 已支持的桌面或命名终端 WebSocket 入口                    |
 | `contributes.pages` / `tabs`      | 已支持的页面/实例标签入口                                |
 | `contributes.developmentSections` | 开发页中独立挂载的功能区                                 |
+| `contributes.managed`             | Jobs、重试、调度、事件与拦截器等受管注册种类             |
 
 HTTP 声明拥有完整命名空间及其子路径，例如快照插件的 `/api/vms/:vmId/snapshots` 包括快照恢复子路径。宿主先检查插件是否激活和 HTTP 方法。声明了 `operations` 的请求还会按精确路径和方法匹配，使用同包 `server.ts` 的 Zod `request`/`response` Schema 验证载荷与返回值，并由宿主输出声明的成功状态。暂未迁移的路由仍由插件 `route` 验证具体子路径、载荷和状态。不允许两个插件共享同一命名空间，也不能覆盖核心入口。
 
@@ -94,25 +100,25 @@ WebSocket 入口仍是宿主支持的固定通道。页面、标签和开发功�
 
 ## 服务访问与生命周期
 
-内置插件现在通过同包 `services.ts` 导出 `ServiceRef<T>`，使用 `host.provide(services.commands, value)` 和 `host.use(services.commands)` 注册与访问服务，返回类型由提供者确定。`host.optional(ref)` 返回可选服务。宿主检查引用的提供者、声明归属和直接依赖；旧字符串 API 与服务字段保留兼容，所有服务共享一份存储。详见 [架构与依赖边界](architecture.md)。
+内置插件通过同包 `services.ts` 导出 `ServiceRef<ServiceInterface<T>>`，使用 `host.provide(services.commands, value)` 和 `host.use(services.commands)` 注册与访问服务。`host.optional(ref)` 返回可选服务。宿主检查提供者、声明归属、直接依赖、接口版本与两端原代实例。字符串注册/读取 API 已删除，声明的上下文字段也返回同一 Broker 的公共句柄。详见 [架构与依赖边界](architecture.md)。
 
-`server.ts` 导出同包 `manifest`、`activate(context)`、`route(...)`，可选导出 `operations` 和 `deactivate(context)`。完整签名在 [plugin-api.ts](../server/plugin-api.ts)，不从某个业务插件的函数反推接口。新服务通过 `context.provide('name', value)` 注册，通过 `use(provider, 'name')` 或 `optional(provider, 'name')` 读取直接依赖提供的服务；无需给宿主增加新的服务字段。
+`server.ts` 导出同包 `manifest`、`activate(context)`、`route(...)`，可选导出 `operations` 和 `deactivate(context)`。完整签名在 [plugin-api.ts](../server/plugin-api.ts)。新服务声明类型化引用，再通过 `provide(ref, value)` 注册，通过 `use(ref)` 或 `optional(ref)` 读取直接依赖提供的公共接口；消费者不能关闭提供者、取得实现对象或修改服务字段。
 
 1. 初始化前校验完整目录：数据结构、未知依赖、必需/可选版本、重复服务、路由/WS 冲突、核心入口、项目作用域和循环。
 2. 按必需依赖顺序导入入口，验证入口声明与目录一致，然后提供 `PluginContext`。
 3. 插件只能注册声明的自有服务；重复注册、读取未声明依赖的服务以及遗漏承诺的服务都会使激活失败。`activateMs` 到期会取消激活，已登记的资源按逆序清理，其他插件继续启动。
-4. `route` 或操作处理器接收同一上下文和取消信号。插件可用 `onDispose` 登记定时器、监听器等非服务资源，并用 `registerJobs` 注册自有任务存储的重试处理器。
-5. 停止接收新请求，取消并最多等待 10 秒在途请求，然后逆依赖顺序退出插件。`deactivate`、资源清理和服务关闭分别受 `closeMs` 限制；最后关闭实例与运行时。状态接口暴露每个插件的激活阶段与耗时。
+4. 激活成功后原子发布操作、HTTP、WS 和界面贡献。Jobs、Scheduler、VM 事件及领域拦截器登记实例归属、声明种类与注销回执；业务构造也在原实例权限上下文内执行。插件可用 `onDispose` 登记自己的清理，并用 `registerJobs` 登记重试处理器。
+5. 停止准入，撤销后台触发、旧句柄、排队工作和所属连接，再按必需依赖关闭并等待真实清理。`deactivate`、资源清理和服务关闭受 `closeMs` 限制；超时保留 `cleanup-pending` 与原代预算，使用原资源回执恢复后才能注销或重新激活。状态接口统一暴露期望状态、实际阶段、代次、产物摘要和耗时。
 
 必需依赖要声明**实际直接使用的提供者**。例如流水线直接使用项目、文件和传输服务，三个都需要声明，不能借助“文件已经依赖传输”来隐式读取服务。
 
 可选服务应延迟读取并处理不存在的情况。`transfers` 在回调中获取 `files` 和 `snapshots` 的提供者，既不会提前构建它们，也不会把可选配套变成激活依赖。可选关系不提供卸载顺序保证；清理方法只清理自身资源，不能假定可选服务还在运行。
 
-当前服务上下文检查是受信任模块的协议约束。插件仍与宿主共享 Node.js 进程和实例原语，不构成第三方代码沙箱，也不代表已有权限授权系统。
+上下文是独立冻结的能力对象。VM 操作使用 `host.vm`；常驻终端使用 `capabilities.sessions`；执行、网络、存储、元数据和 Jobs 固定实例身份，调用时与出队后均复核权限。可选依赖发现不阻挡卸载，在途借用另行观察。可信模块仍与宿主共享 Node.js 进程，第三方代码继续使用签名 WASM 适配器。
 
 ## 数据与错误协议
 
-插件通过 `context.dataFile('name')` 获取数据目录中 `plugins/<plugin-id>/name.json` 的私有路径。新数据可用 `readVersionedStore`、`writeVersionedStore` 包装为 `{ "schemaVersion": 1, "data": ... }`；读取较旧版本时必须提供逐版迁移，未来版本会明确拒绝。首次覆盖旧格式前保留 `.v0.bak`，写入沿用原子替换。现有 `commands` 数据在首次写入时从未包装的数组迁移。
+插件通过 `context.capabilities.metadata.reference('name', fallback)` 取得不透明回执，使用 `read()` 和 `replace()` 读写；回执不包含宿主路径。宿主领域构造器可以解析该回执以沿用原持久化实现。元数据排队与原子发布前复核原代权限；业务撤权后，清理只使用保留的原回执。已有数据格式与目录不变，版本化数据继续支持逐版迁移、未来版本拒绝和 `.v0.bak`。
 
 操作请求的 Schema 错误返回 HTTP 400 与 `INVALID_INPUT`；响应不符合声明返回 HTTP 502 与 `INVALID_PLUGIN_RESPONSE`。宿主统一返回机器可读的 `code` 和面向用户的 `error`。旧路由仍可在迁移期间保留，由插件自己的校验逻辑处理。
 
@@ -149,6 +155,7 @@ flowchart LR
 
 ```powershell
 npm run plugins:sync
+npm run plugins:contracts
 npm run plugins:check
 npm run plugins:schema
 npm test
@@ -156,7 +163,7 @@ npm run build
 npm run test:e2e
 ```
 
-`plugins:check` 校验完整目录及所有可信入口，不激活服务，并检查 JSON Schema 是否与源码同步。`plugins:schema` 从同一严格 Schema 生成文档文件，供编辑器和后续工具使用：
+`plugins:contracts` 从类的公共成员生成 Broker 接口目录；`plugins:check` 核对该目录、完整插件声明、所有可信入口与 JSON Schema，不激活服务。`plugins:schema` 从同一严格 Schema 生成文档文件，供编辑器和后续工具使用：
 
 - [插件 JSON Schema](schemas/plugin.schema.json)
 - [整合包 JSON Schema](schemas/pack.schema.json)

@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';
@@ -367,9 +368,9 @@ test('real paired inventory endpoint binds its requester and requires import plu
   const address = portServer.address();
   if (!address || typeof address === 'string') throw new Error('missing port');
   await new Promise<void>((done) => portServer.close(() => done()));
-  const target = new HostPeers(metrics, join(root, 'target.json'), 'Inventory target');
+  const target = new HostPeers(metrics, join(root, 'target.json'), 'Inventory target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   const sourceFile = join(root, 'source.json');
-  const source = new HostPeers(metrics, sourceFile, 'Inventory source');
+  const source = new HostPeers(metrics, sourceFile, 'Inventory source', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   try {
     await target.init(false); await source.init(false);
     await target.configure({ operation: 'listener', listener: {
@@ -383,14 +384,14 @@ test('real paired inventory endpoint binds its requester and requires import plu
     const sourceVmId = randomUUID();
     const expectedSource = source.view().hostId, expectedTarget = target.view().hostId;
     let wrongReply = false, calls = 0;
-    target.setImportReceiver({ status: async () => null,
+    peerHandlers.set(target, { ...peerHandlers.get(target), importReceiver: { status: async () => null,
       receive: async () => { throw new Error('read-only inventory cannot import'); },
       inspectReplicas: async ({ requesterId, sourceVmId: requested, targetHostId }) => {
         assert.equal(requesterId, expectedSource); assert.equal(requested, sourceVmId);
         assert.equal(targetHostId, expectedTarget); calls++;
         return { version: 1, complete: true, hostId: wrongReply ? randomUUID() : targetHostId,
           sourceHostId: requesterId, sourceVmId: requested, replicas: [] };
-      } });
+      } } });
     const credentials = JSON.parse(await readFile(sourceFile, 'utf8')).outbound[0];
     const readInventory = (query = `sourceVmId=${sourceVmId}`) => haHttpsRequest(
       `${url}peer/replicas-status?${query}`, 'GET', undefined,

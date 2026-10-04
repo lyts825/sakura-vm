@@ -53,7 +53,7 @@ import { distroName, type Request } from '../feature-shared';
 import { mayLeaveEditor } from '../file-editor-state';
 
 import type { VMView } from '../../shared/contracts/vm.ts';
-import { PLUGINS, pluginSurfaceEnabled } from '../../shared/plugins';
+import { pluginSurfaceOwner, pluginSurfaceEnabled } from '../../shared/plugins';
 import { ClipboardSettings } from '../ClipboardSettings';
 import type { PaletteAction, PaletteTarget } from '../CommandPalette';
 import { LocaleSettings } from '../LocaleSettings';
@@ -178,22 +178,18 @@ export function App() {
   const enabled = system?.pluginRuntime ? system.pluginRuntime.instances.filter(item =>
     item.source === 'official' && item.phase === 'running').map(item => item.pluginId) : system?.plugins || [];
   const has = (id: string) => enabled.includes(id);
-  const page = pluginSurfaceEnabled(enabled, 'pages', requestedPage) ? requestedPage : 'workspace';
-  const tab = pluginSurfaceEnabled(enabled, 'tabs', requestedTab) ? requestedTab : 'terminal';
-  const visiblePages = pluginNavigation(enabled, 'pages').map((item) => ({
+  const page = pluginSurfaceEnabled(enabled, 'pages', requestedPage, system?.pluginRuntime) ? requestedPage : 'workspace';
+  const tab = pluginSurfaceEnabled(enabled, 'tabs', requestedTab, system?.pluginRuntime) ? requestedTab : 'terminal';
+  const visiblePages = pluginNavigation(enabled, 'pages', system?.pluginRuntime).map((item) => ({
     ...item,
     icon: pageIcons[item.id as keyof typeof pageIcons] || Boxes,
   }));
-  const visibleWorkspaceTabs = pluginNavigation(enabled, 'tabs').map((item) => ({
+  const visibleWorkspaceTabs = pluginNavigation(enabled, 'tabs', system?.pluginRuntime).map((item) => ({
     ...item,
     icon: workspaceTabIcons[item.id as keyof typeof workspaceTabIcons] || Boxes,
   }));
-  const pluginPageOwner = PLUGINS.find(
-    (plugin) => enabled.includes(plugin.id) && plugin.contributes.pages.includes(page),
-  )?.id;
-  const pluginTabOwner = PLUGINS.find(
-    (plugin) => enabled.includes(plugin.id) && plugin.contributes.tabs.includes(tab),
-  )?.id;
+  const pluginPageOwner = pluginSurfaceOwner(enabled, 'pages', page, system?.pluginRuntime);
+  const pluginTabOwner = pluginSurfaceOwner(enabled, 'tabs', tab, system?.pluginRuntime);
   const primaryWorkspaceTabs =
     visibleWorkspaceTabs.length <= 4
       ? visibleWorkspaceTabs
@@ -382,8 +378,8 @@ export function App() {
         (command === 'search' && (page !== 'workspace' || focusMode)) ||
         (command === 'focus' && (page !== 'workspace' || !vm)) ||
         (['terminal', 'files', 'project'].includes(command) && !vm) ||
-        (['files', 'project'].includes(command) && !pluginSurfaceEnabled(enabled, 'tabs', command)) ||
-        (command === 'tasks' && !pluginSurfaceEnabled(enabled, 'pages', 'tasks'))
+        (['files', 'project'].includes(command) && !pluginSurfaceEnabled(enabled, 'tabs', command, system?.pluginRuntime)) ||
+        (command === 'tasks' && !pluginSurfaceEnabled(enabled, 'pages', 'tasks', system?.pluginRuntime))
       )
         return;
       event.preventDefault();
@@ -468,7 +464,7 @@ export function App() {
     .filter(
       (command) =>
         (!['suspend', 'resume'].includes(command.action) || has('automation')) &&
-        (!command.target?.page || pluginSurfaceEnabled(enabled, 'pages', command.target.page)),
+        (!command.target?.page || pluginSurfaceEnabled(enabled, 'pages', command.target.page, system?.pluginRuntime)),
     )
     .map((command) => ({
       key: command.key,

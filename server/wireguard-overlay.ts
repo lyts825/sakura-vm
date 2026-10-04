@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { join } from 'node:path';
@@ -87,7 +88,7 @@ export class WireGuardOverlay {
   private failures = new Map<string, { at: number; reason: string }>();
   private abort = new AbortController();
   private closed = false;
-  constructor(private machines: Machines, private secrets: () => Secrets | undefined) {
+  constructor(private machines: Machines, private secrets: () => ServiceInterface<Secrets> | undefined) {
     this.timer = scheduler.register({ owner: 'plugin:network', label: 'WireGuard 状态校准', intervalMs: 30000,
       overlap: 'skip', run: async () => {
       if (!this.ticking) this.ticking = this.tick().finally(() => {

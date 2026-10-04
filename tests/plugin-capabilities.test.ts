@@ -1,3 +1,4 @@
+import { services as metricsContract } from '../plugins/metrics/services.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { once } from 'node:events';
@@ -117,7 +118,7 @@ test('unload aborts active requests, blocks capabilities and retains failed serv
   const original = loaders.metrics, started = deferred(), cleanup = deferred(); let context!: PluginContext, closeCalls = 0;
   loaders.metrics = async () => ({ ...(await original()), activate: async (host) => {
     context = host;
-    host.provide('metrics', { close: async () => { if (++closeCalls === 1) throw new Error('retry cleanup'); } });
+    host.provide(metricsContract.metrics, { close: async () => { if (++closeCalls === 1) throw new Error('retry cleanup'); } } as any);
   }, operations: { sample: { response: (await original()).operations!.sample.response,
     async execute(_url, _input, signal) { started.resolve(); await cleanup.promise; signal.throwIfAborted(); return {}; } } } });
   let host: Features | undefined;
@@ -171,7 +172,7 @@ test('plugin job retry cannot bypass unresolved cleanup with a forged view', asy
   let jobs!: ReturnType<PluginContext['capabilities']['jobs']['create']>, retried = 0;
   loaders.metrics = async () => ({ ...(await original()), activate: async (host) => {
     context = host; jobs = host.capabilities.jobs.create('retry', { persistent: false });
-    host.provide('metrics', { jobs }); host.registerJobs(jobs, () => { retried++; });
+    host.provide(metricsContract.metrics, { jobs } as any); host.registerJobs(jobs, () => { retried++; });
   } });
   let host: Features | undefined;
   try {

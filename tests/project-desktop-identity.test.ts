@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import test, { after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -121,7 +122,7 @@ test('asynchronous selection keeps the original named project; config/live repla
 });
 test('configuration drift before resolution refuses launch and releases the preparation lease', async (t) => {
   const f = await fixture(t); f.state.beforeResolve = async () => {
-    await writeFile(f.workspaces.projects.file(f.id), JSON.stringify({ ...f.config, command: 'changed-during-resolution' }));
+    await writeFile(projectMetadataFile(f.id, f.workspaces.projects.current(f.id)), JSON.stringify({ ...f.config, command: 'changed-during-resolution' }));
   };
   await assert.rejects(f.start(), { code: 'DESKTOP_SCOPE_CHANGED' }); assert.equal(f.identity.inputs.length, 0);
   assert.doesNotThrow(() => assertProjectTerminalsStopped(f.machines, f.id, f.alpha));

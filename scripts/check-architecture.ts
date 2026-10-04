@@ -4,6 +4,7 @@ import { isBuiltin } from 'node:module';
 import ts from 'typescript';
 import { networkBoundaryErrors, staticString } from './network-boundaries.ts';
 import { resourceBoundaryErrors } from './resource-boundaries.ts';
+import { pluginBoundaryErrors } from './plugin-boundaries.ts';
 
 // Check eager value dependencies. Type imports and lazy plugin loading do not
 // participate in module initialization and are deliberately excluded.
@@ -139,6 +140,7 @@ async function visitNetwork(file: string) {
   }
   errors.push(...networkBoundaryErrors(label(file), source));
   errors.push(...resourceBoundaryErrors(label(file), source));
+  errors.push(...pluginBoundaryErrors(label(file), source));
   const dependencies: string[] = [];
   function collect(node: ts.Node) {
     if (

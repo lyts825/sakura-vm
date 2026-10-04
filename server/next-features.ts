@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { PlatformDomainServices } from './platform-domain-services.ts';
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { arch, cpus, freemem, hostname, loadavg, platform, release, totalmem } from 'node:os';
@@ -104,24 +105,24 @@ export class NextFeatures {
   get acmeRenewal() { return this.domains.acmeRenewal; }
   get teamTemplates() { return this.domains.teamTemplates; }
   get haFailureMonitor() { return this.domains.haFailureMonitor; }
-  private get haLocalFailovers(): HaLocalFailovers | undefined { return this.dependencies.optional('haLocalFailovers'); }
-  private get haHostFailover(): HaHostFailover | undefined { return this.dependencies.optional('haHostFailover'); }
+  private get haLocalFailovers(): ServiceInterface<HaLocalFailovers> | undefined { return this.dependencies.optional('haLocalFailovers'); }
+  private get haHostFailover(): ServiceInterface<HaHostFailover> | undefined { return this.dependencies.optional('haHostFailover'); }
   private get scoreHosts() { return this.dependencies.optional('capabilityChecks')?.scoreHosts; }
-  private get hostPeers(): HostPeers | undefined { return this.dependencies.optional('hostPeers'); }
+  private get hostPeers(): ServiceInterface<HostPeers> | undefined { return this.dependencies.optional('hostPeers'); }
   private get liveMigrationRunner() { return this.hostPeers ? new LiveMigrationRunner(this.machines, this.hostPeers) : undefined; }
-  private get coldMigrations(): ColdMigrations | undefined { return this.dependencies.optional('coldMigrations'); }
-  private get snapshotReplications(): SnapshotReplications | undefined { return this.dependencies.optional('snapshotReplications'); }
-  private get notebookEnvironments(): NotebookEnvironments | undefined { return this.dependencies.optional('notebookEnvironments'); }
-  private get browserIde(): BrowserIde | undefined { return this.dependencies.optional('browserIde'); }
-  private get disasterRecovery(): DisasterRecoveryDrill | undefined { return this.dependencies.optional('disasterRecovery'); }
+  private get coldMigrations(): ServiceInterface<ColdMigrations> | undefined { return this.dependencies.optional('coldMigrations'); }
+  private get snapshotReplications(): ServiceInterface<SnapshotReplications> | undefined { return this.dependencies.optional('snapshotReplications'); }
+  private get notebookEnvironments(): ServiceInterface<NotebookEnvironments> | undefined { return this.dependencies.optional('notebookEnvironments'); }
+  private get browserIde(): ServiceInterface<BrowserIde> | undefined { return this.dependencies.optional('browserIde'); }
+  private get disasterRecovery(): ServiceInterface<DisasterRecoveryDrill> | undefined { return this.dependencies.optional('disasterRecovery'); }
   private get objectBackup() { return this.domains.optional.objectBackup; }
   private get wireGuardOverlay() { return this.domains.optional.wireGuardOverlay; }
-  private get processInterop(): ProcessInterop | undefined { return this.dependencies.optional('processInterop'); }
-  private get mediaDevices(): MediaDevices | undefined { return this.dependencies.optional('mediaDevices'); }
-  private get hostMounts(): HostMounts | undefined { return this.dependencies.optional('hostMounts'); }
-  private get virtioFsShares(): VirtioFsShares | undefined { return this.dependencies.optional('virtioFsShares'); }
+  private get processInterop(): ServiceInterface<ProcessInterop> | undefined { return this.dependencies.optional('processInterop'); }
+  private get mediaDevices(): ServiceInterface<MediaDevices> | undefined { return this.dependencies.optional('mediaDevices'); }
+  private get hostMounts(): ServiceInterface<HostMounts> | undefined { return this.dependencies.optional('hostMounts'); }
+  private get virtioFsShares(): ServiceInterface<VirtioFsShares> | undefined { return this.dependencies.optional('virtioFsShares'); }
   private get snapshotMerge() { return this.domains.optional.snapshotMerge?.(); }
-  private get communityPlugins(): CommunityPlugins | undefined { return this.dependencies.optional('communityPlugins'); }
+  private get communityPlugins(): ServiceInterface<CommunityPlugins> | undefined { return this.dependencies.optional('communityPlugins'); }
   private get sharedDesktopCheck() { return this.dependencies.optional('capabilityChecks')?.sharedDesktopCheck; }
   private get sharedTerminalCheck() { return this.dependencies.optional('capabilityChecks')?.sharedTerminalCheck; }
   private get passkeyCheck() { return this.dependencies.optional('capabilityChecks')?.passkeyCheck; }
@@ -130,9 +131,9 @@ export class NextFeatures {
   private get remoteAuditCheck() { return this.dependencies.optional('capabilityChecks')?.remoteAuditCheck; }
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private dependencies: HostServiceResolver = noHostServices,
-    domains: { objectBackup?: ObjectBackup; wireGuardOverlay?: WireGuardOverlay; snapshotMerge?: () => SnapshotMerge | undefined } = {},
+    domains: { objectBackup?: ObjectBackup; wireGuardOverlay?: WireGuardOverlay; snapshotMerge?: () => ServiceInterface<SnapshotMerge> | undefined } = {},
   ) { this.domains = new PlatformDomainServices(machines, workspaces, dependencies, () => this.haPolicies(),
       async id => (await this.state()).settings[id]?.['service-mesh']?.enabled !== false, domains); }
 

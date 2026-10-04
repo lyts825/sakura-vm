@@ -1,3 +1,5 @@
+import { projectMetadataFile } from './project-catalog.ts';
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { mkdir, rm } from 'node:fs/promises';
@@ -62,13 +64,13 @@ export class Pipelines {
   private ownedTerminals?: ProjectTerminals;
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
-    private files: Files,
+    private workspaces: ServiceInterface<Workspaces>,
+    private files: ServiceInterface<Files>,
     private options: { terminals?: Pick<ProjectTerminals, 'prepare'>;
       runTask?: typeof projectIdentityTask } = {},
   ) {}
   private file(id: string, kind = 'pipelines') {
-    return this.workspaces.projects.file(id, kind);
+    return projectMetadataFile(id, this.workspaces.projects.current(id), kind);
   }
   async list(id: string) {
     this.machines.get(id);

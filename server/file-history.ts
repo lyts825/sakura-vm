@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID, createHash } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
@@ -31,7 +32,7 @@ export type HistoryEntry = z.infer<typeof entrySchema>;
 export class FileHistory {
   constructor(
     private machines: Machines,
-    private files: Files,
+    private files: ServiceInterface<Files>,
   ) {}
   private root(id: string) {
     this.machines.get(id);

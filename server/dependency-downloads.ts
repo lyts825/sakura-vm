@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -67,7 +68,7 @@ export type ResolvedDependencyAuthentication = {
 export async function resolveDependencyAuthentication(
   id: string,
   input: DependencyAuthentication,
-  secrets?: Secrets,
+  secrets?: ServiceInterface<Secrets>,
 ): Promise<ResolvedDependencyAuthentication> {
   const config = dependencyAuthentication.parse(input);
   if (!secrets) throw new AppError('认证依赖预取需要启用私密配置插件', 409);

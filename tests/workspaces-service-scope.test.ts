@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -50,7 +51,7 @@ async function fixture(status = 'exited', metadata = true) {
     panePid: 100, paneStartTicks: '12345', paneId: '%1', sessionId: '$1' };
   if (metadata) await writeStore(scopes.receipt('api'), record);
   const spaces = new Workspaces(machines, { secrets: { resolve: async () => ({ TOKEN: 'owned-private-token' }) } as any });
-  await writeStore(spaces.projects.file(id), project);
+  await writeStore(projectMetadataFile(id, spaces.projects.current(id)), project);
   return { id, spaces, scopes, project, record, commands, machines, paused: () => { machineState = 'paused'; } };
 }
 for (const field of ['remove', 'directory', 'network', 'command', 'environment', 'secrets', 'runtimes'] as const) {
@@ -144,7 +145,7 @@ test('paused stopped services without a main receipt require resume before chang
 test('paused unknown legacy services refuse command changes and partial removal before any guest access', async () => {
   const f = await fixture('running', false);
   const project = projectSchema.parse({ ...f.project, services: [...f.project.services!, { name: 'second', command: 'sleep 600' }] });
-  await writeStore(f.spaces.projects.file(f.id), project); f.paused();
+  await writeStore(projectMetadataFile(f.id, f.spaces.projects.current(f.id)), project); f.paused();
   try {
     for (const services of [[{ ...project.services![0], command: 'sleep 601' }, project.services![1]], [project.services![1]]])
       await assert.rejects(f.spaces.save(f.id, { ...project, services }), { code: 'SERVICE_SCOPE_UNMANAGED' });

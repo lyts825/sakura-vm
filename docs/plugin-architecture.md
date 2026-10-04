@@ -12,7 +12,7 @@ Sakura 的初始版本只负责让用户创建、启动、使用和停止一个�
 | 可选插件       | 文件、项目、桌面、开发、监控、备份等业务服务与入口                                      | 显式选择后，下一次启动加载     |
 | 插件整合包     | 版本化的插件成员清单                                                                    | 只解析组合，不运行独立业务代码 |
 
-基本网络初始化、SSH 通道、磁盘锁、关机保护、输入校验和请求鉴权属于宿主可靠运行所需的基础设施，不能通过停用插件关闭。`Machines` 保留磁盘、SSH/SFTP、进程和 QMP 操作原语，插件复用这些原语；快照、文件管理、端口管理等业务入口由对应插件拥有。
+基本网络初始化、SSH 通道、磁盘锁、关机保护、输入校验和请求鉴权属于必需系统服务。`Machines` 保留宿主原语；插件及业务实现通过实例绑定的 `VmAccess` 和能力接口调用，不取得整个管理器。快照、文件管理、端口管理等业务入口由对应插件拥有。管理入口与资源责任见 [统一插件管理实施记录](plugin-system.md)。
 
 “一切皆插件”约束的是能力的归属与组合，不要求把每个按钮、工具函数或安全检查都变成一个独立安装单元。首版保留唯一的 QEMU 运行实现，避免为尚不存在的第二个运行后端引入抽象。
 
@@ -20,61 +20,57 @@ Sakura 的初始版本只负责让用户创建、启动、使用和停止一个�
 
 ```mermaid
 flowchart TB
-  UI[Web 与 CLI] --> Host[本地鉴权与插件宿主]
+  UI[Web 与 CLI] --> Gateway[本地鉴权与统一准入]
+  Gateway --> Host[PluginManager 与统一实例目录]
   Catalog[共享插件声明] --> UI
   Catalog --> Host
   Selection[plugins.json 独立选择与整合包] --> Resolve[依赖解析与版本检查]
   Resolve --> Host
-  Host --> Base[基础实例与单终端]
-  Host --> Files[文件插件]
-  Host --> Dev[开发插件]
-  Host --> Ops[运维插件]
-  Host --> Other[其他已选择插件]
-  Files --> Primitives[磁盘 / SSH / SFTP / QMP 原语]
-  Dev --> Primitives
-  Ops --> Primitives
-  Base --> Primitives
-  Primitives --> Runtime[PosixLoom 与 QEMU]
+  Host --> Broker[ServiceBroker 与公共服务接口]
+  Broker --> Services[必需服务 / 官方插件 / 社区执行适配器]
+  Services --> Caps[实例能力与受管会话]
+  Caps --> Runtime[现有网络、执行、存储、计算、进程与调度运行时]
+  Runtime --> Resources[HostRuntime 预算与清理]
 ```
 
 ## 插件划分
 
 当前有 **32 个插件、9 个整合包**。每个插件在 `plugins/<id>/` 内维护 `manifest.ts`、`server.ts` 和可选的 `client.tsx`。运行 `npm run plugins:sync` 从目录生成共享声明与可信加载器；路由和项目作用域直接从声明生成。插件标识不会与磁盘导入导出的 `.sakura` 包混用。协议和 JSON Schema 见 [插件协议](plugin-protocol.md)。
 
-| 插件标识               | 业务范围                                        | 直接依赖                      |
-| ---------------------- | ----------------------------------------------- | ----------------------------- |
-| `transfers`            | 文件、磁盘包及本地文件的传输基础；任务记录      | 无                            |
-| `files`                | SFTP 浏览、上传下载、编辑器、历史与回收站       | transfers                     |
-| `images`               | 发行版镜像目录、下载与校验                      | 无                            |
-| `terminal-workspace`   | 多终端、分屏与 tmux 会话恢复                    | 无                            |
-| `snapshots`            | 快照、恢复、克隆、普通磁盘包导入导出            | transfers                     |
-| `backups`              | 定时、保留策略、加密与外部目录备份              | snapshots、secrets、transfers |
-| `projects`             | 多项目、开发模板、初始化与项目服务              | 无                            |
-| `recipes`              | 环境配方的导入、导出和应用                      | projects                      |
-| `ide`                  | VS Code Remote-SSH 配置和项目连接               | projects                      |
-| `toolchains`           | 工具检查和安装                                  | projects                      |
-| `project-search`       | 项目文件名与内容搜索                            | projects、files               |
+| 插件标识               | 业务范围                                                              | 直接依赖                      |
+| ---------------------- | --------------------------------------------------------------------- | ----------------------------- |
+| `transfers`            | 文件、磁盘包及本地文件的传输基础；任务记录                            | 无                            |
+| `files`                | SFTP 浏览、上传下载、编辑器、历史与回收站                             | transfers                     |
+| `images`               | 发行版镜像目录、下载与校验                                            | 无                            |
+| `terminal-workspace`   | 多终端、分屏与 tmux 会话恢复                                          | 无                            |
+| `snapshots`            | 快照、恢复、克隆、普通磁盘包导入导出                                  | transfers                     |
+| `backups`              | 定时、保留策略、加密与外部目录备份                                    | snapshots、secrets、transfers |
+| `projects`             | 多项目、开发模板、初始化与项目服务                                    | 无                            |
+| `recipes`              | 环境配方的导入、导出和应用                                            | projects                      |
+| `ide`                  | VS Code Remote-SSH 配置和项目连接                                     | projects                      |
+| `toolchains`           | 工具检查和安装                                                        | projects                      |
+| `project-search`       | 项目文件名与内容搜索                                                  | projects、files               |
 | `code-checks`          | 代码诊断、TypeScript/JavaScript/Python LSP 语言服务与 Python DAP 调试 | projects、files               |
-| `commands`             | 参数化收藏命令、执行和日志                      | projects                      |
-| `pipelines`            | 构建步骤、运行记录和产物下载                    | projects、files、transfers    |
-| `runtimes`             | 项目运行时版本选择和安装                        | projects                      |
-| `git`                  | Git 操作与远程仓库                              | projects                      |
-| `containers`           | Docker / Compose                                | projects                      |
-| `sandbox`              | 隔离虚拟机、限时命令、执行历史和到期清理        | 无                            |
-| `sync`                 | 双向目录同步与冲突决策                          | projects                      |
-| `network`              | 端口转发、代理、软件源与诊断                    | 无                            |
-| `secrets`              | 私密配置及环境变量引用                          | 无                            |
-| `metrics`              | 按请求采样客户机资源                            | 无                            |
-| `service-health`       | 项目服务持续健康检查                            | projects                      |
-| `desktop`              | KDE Plasma、noVNC 与输入法，实验性              | 无                            |
-| `library`              | 分组、标签、收藏与批量启停                      | 无                            |
-| `maintenance`          | 故障诊断、磁盘扩容与整理                        | 无                            |
-| `migration`            | 数据目录迁移                                    | 无                            |
-| `automation`           | 暂停/恢复、资源策略、包管理与开发任务及计划配置 | projects                      |
-| `automation-scheduler` | 计划启停、定期采样与阈值告警后台调度            | automation                    |
-| `extensions`           | 工程扩展能力与操作适配器，实验性                | projects                      |
-| `platform`             | 远程、灾备、安全与协作适配器，实验性            | projects                      |
-| `command-palette`      | 全局导航与已启用能力的搜索                      | 无                            |
+| `commands`             | 参数化收藏命令、执行和日志                                            | projects                      |
+| `pipelines`            | 构建步骤、运行记录和产物下载                                          | projects、files、transfers    |
+| `runtimes`             | 项目运行时版本选择和安装                                              | projects                      |
+| `git`                  | Git 操作与远程仓库                                                    | projects                      |
+| `containers`           | Docker / Compose                                                      | projects                      |
+| `sandbox`              | 隔离虚拟机、限时命令、执行历史和到期清理                              | 无                            |
+| `sync`                 | 双向目录同步与冲突决策                                                | projects                      |
+| `network`              | 端口转发、代理、软件源与诊断                                          | 无                            |
+| `secrets`              | 私密配置及环境变量引用                                                | 无                            |
+| `metrics`              | 按请求采样客户机资源                                                  | 无                            |
+| `service-health`       | 项目服务持续健康检查                                                  | projects                      |
+| `desktop`              | KDE Plasma、noVNC 与输入法，实验性                                    | 无                            |
+| `library`              | 分组、标签、收藏与批量启停                                            | 无                            |
+| `maintenance`          | 故障诊断、磁盘扩容与整理                                              | 无                            |
+| `migration`            | 数据目录迁移                                                          | 无                            |
+| `automation`           | 暂停/恢复、资源策略、包管理与开发任务及计划配置                       | projects                      |
+| `automation-scheduler` | 计划启停、定期采样与阈值告警后台调度                                  | automation                    |
+| `extensions`           | 工程扩展能力与操作适配器，实验性                                      | projects                      |
+| `platform`             | 远程、灾备、安全与协作适配器，实验性                                  | projects                      |
+| `command-palette`      | 全局导航与已启用能力的搜索                                            | 无                            |
 
 `transfers` 只拥有下载票据、流式传输与任务服务。`Files` 和文件历史属于 `files`，`Bundles` 属于 `snapshots`；传输服务通过延迟读取的可选提供者复用它们，单独启用传输不会创建文件或磁盘包服务。下载票据签发再次检查具体业务所属插件；已有导出任务的重试也必须启用 `snapshots`。
 
@@ -96,7 +92,7 @@ flowchart TB
 | `environment` 环境互通组合 | 项目环境与 IDE        | recipes、ide                                                                                               |
 | `monitoring` 监控组合      | 资源与服务监控        | metrics、service-health                                                                                    |
 
-没有默认整合包。`complete` 是迁移便利选项，不是首次启动配置。整合包通过带 `kind` 的成员引用，精确锁定插件或子整合包的版本。当前插件和整合包版本均为 `0.3.0`，声明格式版本为 `1`，宿主插件 API 为 `3`。解析前校验完整目录，包括未选包的声明、服务/路由/操作冲突、版本和循环；必需依赖先于消费者初始化，可选配套不会自动启用。
+没有默认整合包。`complete` 是迁移便利选项，不是首次启动配置。整合包通过带 `kind` 的成员引用，精确锁定插件或子整合包的版本。当前插件和整合包版本均为 `1.0.0`，声明格式版本为 `1`，宿主插件 API 为 `4`。解析前校验完整目录，包括未选包的声明、服务/路由/操作冲突、版本和循环；必需依赖先于消费者初始化，可选配套不会自动启用。
 
 整合包不复制插件代码，不覆盖插件配置，也不代表新的运行实例。两个整合包引用同一插件时只激活一次。停用整合包后，独立选择及其他整合包所需的插件继续保留；只有不再被引用的依赖才从下次启动清单移除。
 

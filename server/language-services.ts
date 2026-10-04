@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -79,7 +80,7 @@ function workspaceEdits(value: any) {
 export class LanguageServices {
   private previews = new Map<string, Preview>();
   private streams: Pick<ProjectProtocolStreams, 'open' | 'assertCapture' | 'recordsAll' | 'readonly' | 'recover' | 'stop' | 'close'>;
-  constructor(private machines: Machines, private workspaces: Workspaces, private locks: FileLocks,
+  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private locks: ServiceInterface<FileLocks>,
     private options: { streams?: LanguageServices['streams']; adminTask?: typeof guestTask } = {}) {
     this.streams = options.streams || new ProjectProtocolStreams(machines, workspaces);
   }

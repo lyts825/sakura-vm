@@ -1,3 +1,4 @@
+import { projectMetadataFile } from './project-catalog.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { lstat, readdir, realpath, mkdir, rename, readFile, writeFile, rm, link } from 'node:fs/promises';
 import { join, resolve, relative, isAbsolute, sep, dirname, posix } from 'node:path';
@@ -261,7 +262,7 @@ export class FolderSync {
     return this.projects?.key(id) || id;
   }
   private file(id: string, name: string) {
-    return this.projects?.file(id, name) || join(vmDir(id), `${name}.json`);
+    return projectMetadataFile(id, this.projects?.current(id) || 'default', name);
   }
   private history(id: string) {
     return new SyncHistory(

@@ -1,4 +1,5 @@
 import { services as extensionsServices } from './services.ts';
+import { services as ideServices } from '../ide/services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -9,7 +10,7 @@ import { AppError } from '../../shared/errors.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.vm;
-  host.provide(extensionsServices.extended, new ExtendedFeatures(m, host.workspaces, host.system));
+  host.provide(extensionsServices.extended, new ExtendedFeatures(m, host.workspaces, host.system, () => host.optional(ideServices.ide)));
   host.registerJobs(host.extended.jobs, (job) => {
     if (job.action?.startsWith('operation:'))
       throw new AppError('此工程操作包含参数，请回到能力中心重新执行');

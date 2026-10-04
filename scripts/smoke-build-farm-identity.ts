@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -607,7 +608,7 @@ async function runSmoke(setup: Setup) {
   assert.ok(originalCatalog.projects.length <= (distro === 'alpine' ? 20 : 18));
   const oldConfigs = new Map<string, { file: string; sha256: string }>();
   for (const value of originalCatalog.projects) {
-    const file = spaces.projects.inScope(vmId, value.id, () => spaces.projects.file(vmId));
+    const file = spaces.projects.inScope(vmId, value.id, () => projectMetadataFile(vmId, spaces.projects.current(vmId)));
     try { oldConfigs.set(value.id, { file, sha256: hash(await readFile(file)) }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }

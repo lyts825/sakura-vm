@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { cpus, freemem, totalmem } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -9,7 +10,7 @@ import { readStore, writeStore } from './local-store.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
-import { editorConnectionProfile } from './ide.ts';
+import { editorConnectionProfile, type Ide } from './ide.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { capabilityViews, type CapabilityId } from './capability-definitions.ts';
 
@@ -180,11 +181,12 @@ export function baselineAnomalies(history: Point[], window: number, sigma: numbe
 
 export async function runReport(
   machines: Machines,
-  workspaces: Workspaces,
+  workspaces: ServiceInterface<Workspaces>,
   id: string,
   featureId: CapabilityId,
   p: Record<string, unknown>,
   signal: AbortSignal,
+  editor?: Pick<Ide, 'profile'>,
 ): Promise<Record<string, unknown>> {
   signal.throwIfAborted();
   const projectId = workspaces.projects.current(id);
@@ -242,6 +244,7 @@ export async function runReport(
       id,
       signal,
       p.editor === 'jetbrains' ? 'jetbrains' : 'openssh',
+      editor,
     );
     const { alias, directory } = profile;
     return {

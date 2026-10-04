@@ -4,41 +4,21 @@ Sakura 使用一个本机 Node.js 控制进程管理 QEMU 与原生辅助进程�
 
 ```mermaid
 flowchart TD
-  UI[React 应用与状态 hooks] --> HTTP[HTTP / WebSocket 接入]
-  CLI[CLI] --> HTTP
-  App[应用装配与资源生命周期] --> HTTP
-  HTTP --> Gateway[操作契约与权限复核]
-  Gateway --> Plugins[插件协议与作用域能力]
-  Gateway --> Execution[项目命令与终端]
-  Execution --> Preparation[项目准备与租约]
-  Plugins --> Domain[业务服务]
-  Preparation --> Machines[VM 生命周期与操作锁]
-  Domain --> Machines
-  Machines --> Transport[SSH / SFTP 传输]
-  Machines --> Storage[VM 存储操作]
-  Machines --> Runtime[PosixLoom / QEMU]
-  Transport --> Network[必需网络核心与有界 worker 池]
-  Runtime --> Network
-  Domain --> Network
-  Contracts[共享契约与功能目录] -.-> UI
-  Contracts -.-> HTTP
-  Contracts -.-> Domain
-  Domain --> Host[HostRuntime 原子预算与所有权]
-  Plugins --> Host
-  Network --> Host
-  Storage --> Host
-  Runtime --> Host
-  Domain --> Jobs[Jobs 与普通周期 Scheduler]
-  Domain --> Compute[有界计算工作线程]
-  Jobs --> Host
-  Compute --> Host
-  Domain --> Metadata[按文件串行的 MetadataStore]
+  Entry[Web / CLI / HTTP / WS / 后台触发] --> Gateway[统一操作准入]
+  Gateway --> Manager[PluginManager：状态、权限、实例、贡献]
+  Manager --> Broker[ServiceBroker：版本与代次检查]
+  Broker --> Domain[官方业务服务 / 社区 WASM 适配器 / 必需服务]
+  Domain --> Caps[绑定实例的 VM、会话与能力接口]
+  Caps --> Runtime[网络 / 执行 / 进程 / 存储 / 计算 / 调度 / 元数据]
+  Runtime --> Host[HostRuntime：预算、排队、归属、清理]
+  Manager --> Catalog[原子发布的贡献目录版本]
+  Catalog -.-> Entry
 ```
 
 ## 入口与生命周期
 
 - `server/index.ts` 只启动应用并报告启动失败。
-- `server/application.ts` 是组合入口，负责构造服务、绑定宿主能力和安装接入检查。
+- `server/application.ts` 是组合入口，通过 `PluginManager.system` 构造必需服务并声明依赖，负责安装接入检查。
 - `server/network/` 是始终启用的网络核心；启动时预检 worker，退出先 drain，待插件与 VM 清理后关闭连接和网络子进程。
 - `server/http-machines.ts` 处理基础实例 API，只能在宿主鉴权、授权、会话锁与维护检查之后调用。
 - `server/resource-scope.ts` 在资源构造后、异步初始化前登记清理。启动失败和正常退出使用同一登记表；清理顺序保留既有服务依赖，单项失败不会跳过其余资源。VM 管理器接管运行时后，撤销运行时的独立登记，避免重复关闭。
@@ -69,19 +49,21 @@ POSIX 参数转义位于 `server/shell.ts`，项目配置和版本指纹位于 `
 ```ts
 import { services } from './services.ts';
 
-host.provide(services.commands, new CommandPresets(host.machines, host.workspaces));
+host.provide(services.commands, new CommandPresets(host.vm, host.workspaces));
 const commands = host.use(services.commands);
 ```
 
-服务引用携带提供者、键和类型。宿主仍校验服务归属及直接依赖；新的服务不需要给 `Features` 增加字段。`Features` 使用一份 Map 保存所有服务，旧内置字段通过兼容访问器读取同一份数据。旧字符串形式保持 API v3 兼容，业务代码优先使用提供者声明的引用。
+`PluginManager` 是统一管理入口，`PluginDirectory` 是实际状态的唯一来源；`PluginRuntime` 执行可信模块生命周期，`Features` 只保留组合入口名称。官方、社区和必需系统服务分别使用 `official:`、`community:`、`system:` 身份。每次激活固定版本、产物 SHA-256、代次、权限、取消信号与资源作用域。用户期望选择与实际状态分别展示，官方选择变更仍明确提示重启。
 
-插件激活顺序、请求取消、错误隔离和退出清理继续由 `Features` 管理。服务引用及依赖检查是可信插件的协议约束，不是第三方代码安全沙箱。
+`ServiceRef<ServiceInterface<T>>` 携带提供者、服务键与接口版本。消费者必须声明直接依赖；可选发现不增加卸载阻挡，实际在途调用由消费者和提供者的作用域共同观察。`ServiceBroker` 为两端原代实例创建只读、可撤销的句柄，嵌套对象和缓存方法同样受控。每次调用与资源出队都检查权限、代次及原操作身份。提供者重新激活不会恢复旧句柄。公共成员目录从 TypeScript 生成，私有字段、实现对象、文件路径及消费者的生命周期操作不可访问。
 
 插件网络能力通过 `ctx.networking` 获得，身份与插件作用域由宿主分配，随插件取消和退出回收。可选 `network` 插件的网络档案等业务服务与必需网络核心各有生命周期，停用前者不会移除后者。
 
-同一作用域提供 `execution`、`storage`、`jobs` 和诊断能力。宿主固定 owner 与插件身份，排队和活动任务都响应作用域撤销；卸载会停止新准入、按依赖关闭服务，并等待真实清理。清理失败时保留原作用域和资源，重试只处理未完成部分。兼容的服务引用继续经过宿主依赖检查。
+独立冻结的上下文提供 `vm`、`execution`、`storage`、`networking`、受管 Jobs、会话和不透明元数据回执，没有 `compat.machines`、原始 `Machines`、可写全局槽位或 `dataFile`。业务实现也使用实例绑定的 `VmAccess`；VM 记录只读，SSH/SFTP 保留句柄在每次新命令时复核权限与 VM 身份，不能取得内部 socket。Jobs、网络范围、周期任务和事件注册捕获创建它们的实例，后台触发清除旧请求身份并恢复正确资源归属。
 
-现有 `Machines`、`dataFile` 和 `ServiceRef` 兼容接口仍保留；底层资源适配器与源码边界检查约束这些调用。不能据此宣称所有插件都只接触新能力接口，或者可信进程内插件已经具备操作系统沙箱。
+退出先停止准入、撤销触发与连接，再等待原代在途工作和实际清理。超时或清理失败进入 `cleanup-pending`，保留产物、预算、作用域和恢复回执，禁止新实例覆盖。清理回执只关闭原资源，并可在业务撤权后重试。官方可信模块仍与宿主共享进程；社区代码只运行在现有无宿主导入的签名 WASM 计算边界内。
+
+五批迁移范围与验证说明见 [统一插件管理实施记录](plugin-system.md)。
 
 ## 网络与传输边界
 
@@ -95,7 +77,7 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 
 `Machines` 保留外部入口、VM 运行身份、操作锁和生命周期所有权；`MachineTransport` 承担 SSH、命令输入与 SFTP 传输，存储复制和身份文件写入使用独立模块。传输通过原宿主取得连接，保留替换运行身份检查、取消和客户端归属。
 
-`ProjectPreparation` 负责项目配置捕获、准入检查、串行准备和准备租约。普通任务通过 `prepareTask` 使用这层，`ProjectTerminals` 在同一准备层上维护终端运行与共享会话。任务取消不提前释放租约；完整执行清理完成后由调用者释放。配置变更、目录迁移和服务关闭继续等待准确的租约归属。
+`ProjectPreparation` 负责项目配置捕获、准入检查、串行准备和准备租约。统一 `TerminalBackend` 持有终端后端，基础终端、插件终端和共享观看取得独立子句柄。退出只回收自身租约；任务取消不提前释放租约。配置变更、目录迁移和服务关闭按同一个宿主身份检查准确归属。文件替换、工作区配置和启动附件采用可注销的受管注册。
 
 目录迁移门闩的只读准入检查位于 `project-admission.ts`，运行作用域不再导入整个目录迁移服务。固定 UID/GID、客户机运行记录、cgroup 和原生启动器的协议保持原有行为。
 
@@ -109,7 +91,7 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 
 `src/main.tsx` 负责样式、语言包和应用挂载。`src/app/App.tsx` 组合页面、导航与交互；实例表单和通用界面元素各自维护。
 
-`useControllerState` 统一实例数据、控制面状态、事件刷新、请求去重和响应顺序保护。`useProjectSelection` 管理按 VM 保存的项目选择、加载取消与重试。会话凭证仍由 `controller-session.ts` 管理；插件界面保持懒加载。
+`useControllerState` 统一实例数据、控制面状态、事件刷新、请求去重和响应顺序保护。导航、插件中心和面板消费宿主已发布且运行中的贡献；插件目录代次变化时取消请求、失效缓存并忽略旧响应。`useProjectSelection` 管理按 VM 保存的项目选择、加载取消与重试。会话凭证仍由 `controller-session.ts` 管理；插件界面保持懒加载。
 
 插件与管理页面的 `useRemote` 通过 `resource-cache.ts` 按请求能力和完整路径/查询参数共享读取、缓存与轮询。同一资源的订阅者共用正在进行的请求；最后一位订阅者离开才取消该请求。写操作按 VM 或接口前缀失效关联数据，事件和断线重连重新校准活动订阅；旧代响应不能覆盖刷新结果。内容未变的 JSON 子树保留引用，避免刷新意外清空表单草稿或预览。账户切换和会话锁会立即清除缓存，后台页面暂停轮询，缓存数量与空闲保留时间都有上限。任务展示单独区分等待额度、执行、取消中、清理待确认和重启后待核对。
 
@@ -138,5 +120,7 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 `npm run architecture:check` 检查源码中的急切运行时导入与再导出，拒绝循环依赖，以及浏览器和共享模块直接或经辅助模块引用服务端实现、Node.js 内置模块。类型引用和动态导入不计入初始化依赖图；网络检查另行追踪插件服务与发布脚本的静态、动态本地依赖，拒绝仓库代码绕过托管传输。该检查已纳入 `npm run verify`，并有循环依赖、间接边界、网络别名、插件辅助模块与发布脚本的回归测试。
 
 资源检查进一步拒绝适配器以外的 `child_process` 和 Worker 构造、普通服务的周期定时器、插件直接导入私有资源入口，以及未经审核的直接 JSON 发布和旧 S3 Upload 管线。HA、会话安全期限与专用恢复票据采用精确文件清单保留原协议；新增例外必须有明确领域理由。原生长连接通过预算已授予的同步 `spawnObserved` 能力构造，缺少准入上下文时不能启动进程。静态规则用于发现常见源码绕行，不能验证任意生成代码。
+
+插件边界检查覆盖 `plugins/` 入口及 `server/` 业务实现，拒绝业务导入原始 `Machines`、模块顶层 Jobs、重复终端后端、单值全局拦截器和插件导入宿主权限/路径适配器。宿主适配器的固定清单是基础设施边界，业务兼容豁免为零。`plugins:check` 同时验证公共成员目录、贡献声明、精确版本、加载器和 Schema 同步。
 
 结构调整应复用项目身份、配置捕获、迁移、传输、插件隔离和浏览器回归。宿主资源范围另有初始化失败、清理失败、所有权转移和操作计数测试。

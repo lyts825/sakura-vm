@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { Transform, Writable } from 'node:stream';
@@ -5,6 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
+import type { Ide } from './ide.ts';
 import { type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { AppError } from '../shared/errors.ts';
 import { Files, ftpStat } from './files.ts';
@@ -55,8 +57,9 @@ export function dependencyOrder(root: string, graph: Record<string, string[]>) {
 export class CapabilityActions {
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private projectTerminals?: ProjectTerminals,
+    private editor?: Pick<Ide, 'profile'>,
   ) {}
 
   async check(id: string, featureId: CapabilityId, signal?: AbortSignal) {
@@ -299,7 +302,7 @@ export class CapabilityActions {
       };
     }
     if (reportCapabilities.has(featureId)) {
-      const result = await runReport(this.machines, this.workspaces, id, featureId, parameters, signal);
+      const result = await runReport(this.machines, this.workspaces, id, featureId, parameters, signal, this.editor);
       return { ...result, code: 0, ready: true, executed: true };
     }
     if (featureId === 'vm-dependency-start') {

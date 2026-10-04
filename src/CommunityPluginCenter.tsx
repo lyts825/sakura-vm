@@ -25,6 +25,7 @@ type View = {
   deliveries?: Array<{ id: string; pluginId: string; event: { type: string; occurredAt: string };
     status: 'pending' | 'done' | 'failed'; error?: string; resultPreview?: string }>;
   eventError?: string;
+  runtime?: import('../shared/plugins').PluginRuntimeView;
 };
 const validView = (value: unknown): value is View => {
   if (!value || typeof value !== 'object') return false;
@@ -306,6 +307,9 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                       {item.id}@{item.version}
                     </code>
                     {view.problems?.[item.id] && <small role="alert"> · {view.problems[item.id]}</small>}
+                    {['draining', 'cleanup-pending'].includes(view.runtime?.instances.find(instance =>
+                      instance.identity === 'community:' + item.id)?.phase || '') &&
+                      <small role="status"> · 清理待恢复，请重试卸载</small>}
                   </span>
                   <div className="community-plugin-actions">
                     {(() => {

@@ -1,4 +1,6 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { EngineeringDomainServices } from './engineering-domain-services.ts';
+import type { Ide } from './ide.ts';
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -83,14 +85,15 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
 
 export class ExtendedFeatures {
   jobs = new Jobs('extended-features');
-  private get trustedBoot(): TrustedBootService | undefined { return this.domains.trustedBoot; }
+  private get trustedBoot(): ServiceInterface<TrustedBootService> | undefined { return this.domains.trustedBoot; }
   private get projectTerminals(): ProjectTerminals | undefined { return this.domains.projectTerminals; }
   private domains: EngineeringDomainServices;
   private get tunnels() { return this.domains.tunnels; }
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private dependencies: HostServiceResolver = noHostServices,
+    private editor?: () => Pick<Ide, 'profile'> | undefined,
   ) {
     this.domains = new EngineeringDomainServices(machines, workspaces, dependencies);
   }
@@ -476,7 +479,7 @@ export class ExtendedFeatures {
         result = { ready: status.enabled && status.encrypted, executed: true, ...status };
       } else result = await this.probe(id, spec, signal, merged);
     } else if (hasCapability(spec.id)) {
-      const runner = new CapabilityActions(this.machines, this.workspaces, this.projectTerminals);
+      const runner = new CapabilityActions(this.machines, this.workspaces, this.projectTerminals, this.editor?.());
       result =
         action === 'run'
           ? await runner.run(id, spec.id, merged, signal || new AbortController().signal)

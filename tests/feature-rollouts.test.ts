@@ -42,10 +42,9 @@ test('versioned host rollout survives restart and gates selected plugin activati
   const machines = Object.assign(new EventEmitter(), {
     records: new Map(), get: () => ({}),
   }) as unknown as Machines;
-  const skipped = await Features.create(machines, selected,
+  const skipped = await installed.start(machines,
     (id) => restarted.decision(id).allowed);
   try {
-    installed.activated(skipped.enabled, skipped.errors, skipped.lifecycle);
     assert.equal(skipped.enabled.has('metrics'), false);
     assert.equal(skipped.lifecycle.metrics.phase, 'skipped');
     assert.match(skipped.errors.metrics, /灰度/);

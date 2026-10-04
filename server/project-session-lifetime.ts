@@ -8,6 +8,8 @@ import {
 import type { VmAccess as Machines } from './vm-access.ts';
 import { vmLifetime, type VmIdentity } from './vm-lifetime.ts';
 import { captureOperationCheck, withoutOperationContext } from './operation-context.ts';
+import { pluginAuthority, withPluginCleanup } from './plugin-authority.ts';
+import { withResourceContext } from './host-runtime/context.ts';
 
 export type SessionReceipt = { runId: string; bootId: string; projectId: string; [key: string]: unknown };
 type Options<R extends SessionReceipt> = {
@@ -54,6 +56,9 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
   private removeOwned = () => {};
   private detach = () => {};
   private cleanup: (receipt: R) => Promise<void>;
+  private readonly instance = pluginAuthority();
+  private readonly cleanupFailures = new Set<unknown>();
+  private confirmPluginCleanup: (error: unknown) => void = () => {};
   private constructor(private options: Options<R>) {
     const live = options.machines.live.get(options.vmId);
     if (!live || (options.live && options.live !== live) || options.machines.closing)
@@ -63,7 +68,11 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
     this.identity = this.lifetime.capture();
     this.receipt = structuredClone(options.receipt);
     this.cleanup = options.cleanup;
-    this.signal = AbortSignal.any([this.controller.signal, this.lifetime.signal]);
+    this.signal = AbortSignal.any([
+      this.controller.signal,
+      this.lifetime.signal,
+      ...(this.instance ? [this.instance.signal] : []),
+    ]);
   }
   static async acquire<R extends SessionReceipt>(options: Options<R>): Promise<ProjectSessionLifetime<R>> {
     await captureOperationCheck()();
@@ -113,7 +122,14 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
         void owned.close().catch(() => {});
       };
       owned.activity.signal.addEventListener('abort', cancel, { once: true });
-      owned.detach = () => owned.activity.signal.removeEventListener('abort', cancel);
+      if (owned.instance) {
+        owned.confirmPluginCleanup = owned.instance.scope.retainCleanup(() => owned.close());
+        owned.instance.signal.addEventListener('abort', cancel, { once: true });
+      }
+      owned.detach = () => {
+        owned.activity.signal.removeEventListener('abort', cancel);
+        owned.instance?.signal.removeEventListener('abort', cancel);
+      };
       return owned;
     } catch (error) {
       owned.activity?.release();
@@ -159,12 +175,24 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
           await Promise.allSettled([...this.active]);
           // Only this original domain capability can discharge the captured receipt.
           // Revoking the originating request must not revoke its cleanup authority.
-          await withoutOperationContext(() => this.cleanup(structuredClone(this.receipt)));
+          const cleanup = () =>
+            withoutOperationContext(() =>
+              withResourceContext(
+                {
+                  vmId: this.options.vmId,
+                  projectId: this.receipt.projectId,
+                },
+                () => this.cleanup(structuredClone(this.receipt)),
+              ),
+            );
+          await (this.instance ? withPluginCleanup(this.instance, cleanup) : cleanup());
           this.closed = true;
           this.detach();
           this.removeOwned();
           this.activity.release();
           this.lease.release();
+          for (const error of this.cleanupFailures) this.confirmPluginCleanup(error);
+          this.cleanupFailures.clear();
           const registry = sessions.get(this.options.machines),
             sessionKey = key(this.options.vmId, this.receipt);
           if (registry?.get(sessionKey) === this) registry.delete(sessionKey);
@@ -180,9 +208,11 @@ export class ProjectSessionLifetime<R extends SessionReceipt> {
                 );
           this.lease.cleanupPending(error);
           this.activity.cleanupPending(error);
+          this.cleanupFailures.add(error);
           this.closeTask = undefined;
           throw error;
         });
+      this.instance?.scope.observe(this.closeTask);
     }
     return this.closeTask;
   }

@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -517,7 +518,7 @@ async function runSmoke(setup: Setup, frozen: any) {
       const directory = parent + '/' + name; await guest('mkdir ' + quote(directory));
       const config = projectSchema.parse({ directory, template: 'none', networkIsolation: network,
         environment: { SAKURA_BROWSER_IDE_UID_TEST: marker, SAKURA_BROWSER_IDE_FRAME_ENV: frameEnv } });
-      const index = await spaces.projects.create(fixture.vmId, 'browser-' + name + '-' + invocation.slice(0, 8), () => writeStore(spaces.projects.file(fixture.vmId), config));
+      const index = await spaces.projects.create(fixture.vmId, 'browser-' + name + '-' + invocation.slice(0, 8), () => writeStore(projectMetadataFile(fixture.vmId, spaces.projects.current(fixture.vmId)), config));
       const identity = await spaces.projects.with(fixture.vmId, index.active, async () => {
         const preview = await migrations.preview(fixture.vmId); assert.ok(preview.plan);
         const applied = await migrations.apply(fixture.vmId, { action: 'apply', version: 1,

@@ -1,23 +1,27 @@
 # 第三方 WebAssembly 插件
 
-插件中心可管理独立的第三方插件。管理员先登记 Ed25519 发布者公钥，再添加 HTTPS 目录 URL，刷新目录并安装。安装时 Sakura 下载不超过 512 KiB 的 WebAssembly 文件，核对 SHA-256 和签名；运行前再次核对文件。卸载会终止正在执行的对应工作线程并移除文件。内置插件仍使用原有受信任的生命周期协议，两类插件互不冒充。
+插件中心通过统一 `PluginManager` 管理第三方插件，实际状态来自同一个 `PluginDirectory`。社区使用 `community:<id>` 身份，官方使用 `official:<id>`，同名插件不会混淆。管理员先登记 Ed25519 发布者公钥，再添加 HTTPS 目录 URL，刷新目录并安装。安装时下载不超过 512 KiB 的 WebAssembly 文件，核对 SHA-256 和签名；运行前再次核对文件。执行继续使用现有受限 WASM 适配器。
+
+安装、升级和卸载固定记录版本、产物摘要、激活代次和资源范围。退出先持久化 `draining`，阻止新调用并撤销原代计算，再等待工作线程实际退出和作用域清理，最后注销贡献并修改安装记录。清理失败保留原安装信息、文件与代次，显示 `cleanup-pending`；重试卸载恢复同一份清理，完成前不能通过重新安装覆盖。安装记录保存失败时恢复原产物，保留可重试入口。
 
 目录返回以下 JSON。`wasmUrl` 必须解析到目录 URL 的同一 HTTPS origin；重定向不会跟随。
 
 ```json
 {
   "schemaVersion": 1,
-  "plugins": [{
-    "schemaVersion": 1,
-    "id": "example-plugin",
-    "name": "Example",
-    "description": "Returns JSON from a bounded computation.",
-    "version": "1.0.0",
-    "sha256": "<64 lowercase hex characters>",
-    "publisher": "<SHA-256 of Ed25519 SPKI DER, lowercase hex>",
-    "signature": "<base64 Ed25519 signature>",
-    "wasmUrl": "./example.wasm"
-  }]
+  "plugins": [
+    {
+      "schemaVersion": 1,
+      "id": "example-plugin",
+      "name": "Example",
+      "description": "Returns JSON from a bounded computation.",
+      "version": "1.0.0",
+      "sha256": "<64 lowercase hex characters>",
+      "publisher": "<SHA-256 of Ed25519 SPKI DER, lowercase hex>",
+      "signature": "<base64 Ed25519 signature>",
+      "wasmUrl": "./example.wasm"
+    }
+  ]
 }
 ```
 
@@ -26,7 +30,18 @@
 可选的签名扩展声明示例：
 
 ```json
-{"routes":[{"id":"inspect","name":"Inspect"}],"panels":[{"id":"summary","title":"Summary","description":"Inspect JSON","routeId":"inspect","fields":[{"key":"text","label":"Text","type":"text","required":true}]}]}
+{
+  "routes": [{ "id": "inspect", "name": "Inspect" }],
+  "panels": [
+    {
+      "id": "summary",
+      "title": "Summary",
+      "description": "Inspect JSON",
+      "routeId": "inspect",
+      "fields": [{ "key": "text", "label": "Text", "type": "text", "required": true }]
+    }
+  ]
+}
 ```
 
 将这个对象作为单个插件条目的 `extensions` 字段。最多声明 8 个固定路由、4 个面板，每个面板最多 8 个纯表单字段。面板只能引用已声明的路由，只渲染文本、数字和布尔值输入；插件不能注入 HTML、脚本或任意导航页面。管理员调用 `POST /api/community-plugins/extensions/{pluginId}/{routeId}` 时，服务再次验签并将 `{ "kind":"http", "routeId":"...", "body":... }` 交给隔离 WASM；该路径需要管理员会话，不能绕过输入、时间和内存限制。

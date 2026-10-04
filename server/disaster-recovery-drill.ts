@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -22,7 +23,7 @@ export const disasterRecoveryInput = z.object({
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
 export class DisasterRecoveryDrill {
-  constructor(private machines: Machines, private backups: Backups, private bundles: Bundles) {}
+  constructor(private machines: Machines, private backups: ServiceInterface<Backups>, private bundles: ServiceInterface<Bundles>) {}
 
   async status(id: string) {
     const state = await this.backups.view(id);

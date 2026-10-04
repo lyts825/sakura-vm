@@ -1,4 +1,4 @@
-import { PLUGINS, pluginSurfaceEnabled } from '../shared/plugins';
+import { PLUGINS, pluginSurfaceEnabled, type PluginRuntimeView } from '../shared/plugins';
 
 export const pageLabels: Record<string, string> = {
   workspace: '工作空间',
@@ -34,11 +34,11 @@ export const sectionLabels: Record<string, string> = {
 };
 
 /** The catalog owns availability; labels only name the shared surfaces. */
-export function pluginNavigation(active: readonly string[], kind: 'pages' | 'tabs') {
+export function pluginNavigation(active: readonly string[], kind: 'pages' | 'tabs', runtime?: PluginRuntimeView) {
   const labels = kind === 'pages' ? pageLabels : tabLabels;
   const ids = new Set([...Object.keys(labels), ...PLUGINS.flatMap((plugin) => plugin.contributes[kind])]);
   return [...ids]
-    .filter((id) => pluginSurfaceEnabled(active, kind, id))
+    .filter((id) => pluginSurfaceEnabled(active, kind, id, runtime))
     .map((id) => ({
       id,
       label:

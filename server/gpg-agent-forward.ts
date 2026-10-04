@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { hostExecFile } from './host-process.ts';
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, win32 } from 'node:path';
@@ -99,7 +100,7 @@ export class GpgAgentForwarder {
   private runTask: typeof projectIdentityTask;
   private scopes: GpgAgentScopes;
   private captureHost: (signal?: AbortSignal) => Promise<GpgHostSnapshot>;
-  constructor(private machines: Machines, options: { workspaces?: Workspaces; terminals?: ProjectTerminals;
+  constructor(private machines: Machines, options: { workspaces?: ServiceInterface<Workspaces>; terminals?: ProjectTerminals;
     runTask?: typeof projectIdentityTask; sourceDirectory?: string;
     captureHost?: (signal?: AbortSignal) => Promise<GpgHostSnapshot> } = {}) {
     this.ownTerminals = !options.terminals;
@@ -163,6 +164,6 @@ export class GpgAgentForwarder {
 }
 
 export async function runGpgAgentForward(machines: Machines, id: string, input: unknown,
-  signal?: AbortSignal, workspaces?: Workspaces, terminals?: ProjectTerminals) {
+  signal?: AbortSignal, workspaces?: ServiceInterface<Workspaces>, terminals?: ProjectTerminals) {
   return new GpgAgentForwarder(machines, { workspaces, terminals }).run(id, input, signal);
 }

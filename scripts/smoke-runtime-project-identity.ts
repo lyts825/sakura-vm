@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -188,7 +189,7 @@ const originalCatalog = await spaces.projects.list(vmId);
 assert.ok(originalCatalog.projects.length <= 18);
 const preservedHostFiles = [...oldFiles];
 for (const entry of originalCatalog.projects) {
-  const path = spaces.projects.inScope(vmId, entry.id, () => spaces.projects.file(vmId));
+  const path = spaces.projects.inScope(vmId, entry.id, () => projectMetadataFile(vmId, spaces.projects.current(vmId)));
   try { preservedHostFiles.push({ file: path, sha256: digest(await readFile(path)) }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
 }

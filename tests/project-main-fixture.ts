@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -118,7 +119,7 @@ export async function mainFixture(mode = 'normal') {
     runId => state.main?.runId === runId ? state.main : [...state.services.values()].find(item => item.runId === runId) || null);
   const scope = new ProjectMainScope(machines, id, project);
   const spaces = new Workspaces(machines, { secrets: { resolve: async () => ({ TOKEN: 'owned-main-private-token' }) } as any });
-  await writeStore(spaces.projects.file(id), project);
+  await writeStore(projectMetadataFile(id, spaces.projects.current(id)), project);
   return { id, bootId, project, machines, scope, spaces, state, events, commands, controller, identity,
     startMain: async () => {
       const intent = scope.intent(state.currentBoot);
@@ -129,5 +130,5 @@ export async function mainFixture(mode = 'normal') {
       await services.persistIntent(record);
       return services.start(record, await identity.payload(id, record, { command: 'sleep 600' }), controller.signal);
     },
-    saveConfig: async (value: unknown) => writeStore(spaces.projects.file(id), value) };
+    saveConfig: async (value: unknown) => writeStore(projectMetadataFile(id, spaces.projects.current(id)), value) };
 }

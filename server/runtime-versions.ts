@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -42,7 +43,7 @@ export class RuntimeVersions {
   private closed = false;
   private closing?: Promise<void>;
   private unsubscribe: () => void;
-  constructor(private machines: Machines, private workspaces: Workspaces,
+  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
     private options: { runTask?: typeof projectIdentityTask; runInstallTask?: typeof guestTask;
       now?: () => number } = {}) {
     this.unsubscribe = workspaces.onConfigChange(() => {

@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
@@ -206,7 +207,7 @@ export class GitWorkbench {
   private tasks: GitProjectTasks;
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     options: GitWorkbenchOptions = {},
   ) { this.tasks = new GitProjectTasks(machines, workspaces, options); }
   private async command(

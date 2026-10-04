@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
@@ -30,13 +31,13 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
   const targetFile = join(root, 'target.json');
   let targetMetrics = { ...await status(), cpus: 2, memoryFree: 512 * 1024 ** 2 };
   const targetStatus = async () => targetMetrics;
-  const first = new HostPeers(targetStatus, targetFile, 'Target');
+  const first = new HostPeers(targetStatus, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await first.init(false);
   await first.configure({ operation: 'listener', listener: {
     enabled: true, host: '127.0.0.1', port,
   } });
   await first.close();
-  let target = new HostPeers(targetStatus, targetFile, 'Target');
+  let target = new HostPeers(targetStatus, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await target.init(true);
   assert.equal(target.view().listener.active, true);
   const issued = await target.configure({ operation: 'create-code' });
@@ -44,7 +45,7 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
   const code = issued.pairing!.value;
   const address = `https://127.0.0.1:${port}/`;
   const initiatorFile = join(root, 'initiator.json');
-  const initiator = new HostPeers(status, initiatorFile, 'Initiator');
+  const initiator = new HostPeers(status, initiatorFile, 'Initiator', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await initiator.init(false);
   try {
     await assert.rejects(initiator.configure({ operation: 'connect', url: address,
@@ -63,13 +64,13 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     const importedId = randomUUID();
     let imported = '';
     let receipt: { id: string; name: string } | null = null;
-    target.setImportReceiver({
+    peerHandlers.set(target, { ...peerHandlers.get(target), importReceiver: {
       status: async () => receipt,
       receive: async ({ source, name }) => {
         for await (const chunk of source) imported += chunk.toString();
         return (receipt = { id: importedId, name });
       },
-    });
+    } });
     const produce = async (stream: NodeJS.WritableStream) =>
       pipeline(Readable.from(['verified ', 'bundle']), stream);
     const outboundId = initiator.view().outbound[0].id;
@@ -90,7 +91,7 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     const digest = 'a'.repeat(64);
     let activated = 0;
     let snapshotImport = false;
-    target.setImportReceiver({
+    peerHandlers.set(target, { ...peerHandlers.get(target), importReceiver: {
       status: async () => ({ id: importedId, name: 'migrated', sha256: digest,
         ...(snapshotImport ? { sourceVmId: randomUUID(), snapshotId: randomUUID() } : {}) }),
       receive: async () => { throw new Error('启动检查不得重新导入'); },
@@ -99,7 +100,7 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
         activated++;
         return { id: remoteVmId, status: 'starting' };
       },
-    });
+    } });
     const activation = { transferId, remoteVmId: importedId, sha256: digest };
     await assert.rejects(initiator.checkImportActivation(outboundId, activation), /HTTP 403/);
     await assert.rejects(initiator.activateImport(outboundId, activation), /HTTP 403/);
@@ -122,7 +123,7 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     const sourceVmId = randomUUID(), snapshotId = randomUUID();
     const replica = { ...activation, sourceVmId, snapshotId };
     let replicaStarts = 0, replicaRetires = 0;
-    target.setImportReceiver({
+    peerHandlers.set(target, { ...peerHandlers.get(target), importReceiver: {
       status: async () => ({ id: importedId, name: 'standby', sha256: digest,
         sourceVmId, snapshotId }),
       receive: async () => { throw new Error('副本接管不得重新导入'); },
@@ -135,7 +136,7 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
         replicaRetires++;
         return { id: importedId, retired: true };
       },
-    });
+    } });
     await assert.rejects(initiator.checkReplicaActivation(outboundId, replica), /HTTP 403/);
     await target.configure({ operation: 'allow-failover', id: inboundId, enabled: true });
     assert.deepEqual(await initiator.checkReplicaActivation(outboundId, replica),
@@ -152,10 +153,10 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     await target.configure({ operation: 'allow-failover', id: inboundId, enabled: false });
     await assert.rejects(initiator.retireReplica(outboundId, replica), /HTTP 403/);
     let checks = 0;
-    target.setImportReceiver({
+    peerHandlers.set(target, { ...peerHandlers.get(target), importReceiver: {
       status: async () => ++checks === 1 ? null : { id: importedId, name: 'migrated' },
       receive: async () => { throw new Error('重复传输不得再次导入'); },
-    });
+    } });
     assert.deepEqual(await initiator.upload(outboundId, randomUUID(), 'migrated', produce,
       new AbortController().signal), { id: importedId, name: 'migrated' });
     await target.configure({ operation: 'allow-import', id: inboundId, enabled: false });
@@ -165,7 +166,7 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     let started!: () => void;
     const receiving = new Promise<void>((resolve) => { started = resolve; });
     let aborted = false;
-    target.setImportReceiver({
+    peerHandlers.set(target, { ...peerHandlers.get(target), importReceiver: {
       status: async () => null,
       receive: async ({ source, signal }) => {
         for await (const _chunk of source) { /* consume the bounded test stream */ }
@@ -175,7 +176,7 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
           reject(new Error('transfer revoked'));
         }, { once: true }));
       },
-    });
+    } });
     await target.configure({ operation: 'allow-import', id: inboundId, enabled: true });
     const inFlight = initiator.upload(outboundId, randomUUID(), 'migrated', produce,
       new AbortController().signal);
@@ -192,14 +193,14 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     const recommended = await initiator.score({ cpus: 4, memoryMiB: 1024 });
     assert.equal(recommended.candidates[0].source, 'peer');
     assert.equal(recommended.candidates[0].eligible, true);
-    const third = new HostPeers(status, join(root, 'third.json'), 'Third');
+    const third = new HostPeers(status, join(root, 'third.json'), 'Third', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
     await third.init(false);
     try {
       await assert.rejects(third.configure({ operation: 'connect', url: address,
         fingerprint: target.view().fingerprint, code }), /HTTP 403/);
     } finally { await third.close(); }
     await target.close();
-    target = new HostPeers(targetStatus, targetFile, 'Target');
+    target = new HostPeers(targetStatus, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
     await target.init(true);
     await initiator.refresh();
     assert.equal(initiator.view().outbound[0].observation?.status?.runningVms, 2);
@@ -210,7 +211,7 @@ test('short-code pairing pins TLS, persists a peer, polls live resources and rev
     assert.equal(unavailable.candidates[0].source, 'local');
     assert.equal(unavailable.candidates[1].eligible, false);
     await initiator.close();
-    const restored = new HostPeers(status, initiatorFile, 'Initiator');
+    const restored = new HostPeers(status, initiatorFile, 'Initiator', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
     await restored.init(false);
     assert.equal(restored.view().outbound.length, 1);
     await restored.refresh();

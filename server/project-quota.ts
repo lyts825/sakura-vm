@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomBytes } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
@@ -61,7 +62,7 @@ function directoryAllowed(directory: string) {
 
 export async function projectQuota(
   machines: Machines,
-  workspaces: Workspaces,
+  workspaces: ServiceInterface<Workspaces>,
   vmId: string,
   input: unknown,
   action: 'check' | 'run',

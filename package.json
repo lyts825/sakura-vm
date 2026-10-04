@@ -1,6 +1,6 @@
 {
   "name": "sakura-vm",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "A WSL-inspired local Linux workspace, powered by PosixLoom and QEMU",
@@ -143,7 +143,7 @@
     "test:project-terminals:identity": "node --import tsx scripts/smoke-project-terminal-identity.ts",
     "test:reverse-tunnels": "tsx scripts/smoke-reverse-tunnels.ts",
     "test:development": "tsx scripts/smoke-development.ts",
-    "plugins:check": "tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",
+    "plugins:check": "tsx scripts/service-contracts.ts --check && tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",
     "plugins:schema": "tsx scripts/plugin-schema.ts",
     "locales:build": "node scripts/generate-locale-pack.mjs",
     "locales:check": "node scripts/generate-locale-pack.mjs --check",
@@ -158,7 +158,9 @@
     "update:activate": "node scripts/self-update.mjs activate",
     "update:rollback": "node scripts/self-update.mjs rollback",
     "sakura": "node scripts/cli.mjs",
-    "architecture:check": "tsx scripts/check-architecture.ts"
+    "architecture:check": "tsx scripts/check-architecture.ts",
+    "plugins:contracts": "tsx scripts/service-contracts.ts",
+    "test:plugins:vm": "tsx scripts/smoke-plugin-lifecycle.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1141.0",

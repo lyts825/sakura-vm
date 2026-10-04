@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm, stat, open } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
@@ -154,8 +155,8 @@ export class Backups {
   }
   constructor(
     private machines: Machines,
-    private bundles: Bundles,
-    private secrets = new Secrets(machines),
+    private bundles: ServiceInterface<Bundles>,
+    private secrets: ServiceInterface<Secrets> = new Secrets(machines),
     private storage: StorageRuntime = storageRuntime,
   ) {
     this.schedule = scheduler.register({

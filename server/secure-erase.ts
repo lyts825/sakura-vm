@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { readFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
@@ -24,7 +25,7 @@ function guestScript() {
     readFile(join(ROOT, '.sakura-server', 'assets', 'secure-erase.py'), 'utf8')));
 }
 
-export async function checkSecureErase(machines: Machines, workspaces: Workspaces,
+export async function checkSecureErase(machines: Machines, workspaces: ServiceInterface<Workspaces>,
   id: string, signal?: AbortSignal) {
   if (machines.state(id) !== 'running')
     return { ready: false, executed: false, reason: '请先启动实例。' };
@@ -39,7 +40,7 @@ export async function checkSecureErase(machines: Machines, workspaces: Workspace
       : '客户机需要 Python 3。' };
 }
 
-export async function runSecureErase(machines: Machines, workspaces: Workspaces,
+export async function runSecureErase(machines: Machines, workspaces: ServiceInterface<Workspaces>,
   id: string, input: unknown, signal?: AbortSignal) {
   const options = secureEraseInput.parse(input);
   machines.requireUnlocked(id);

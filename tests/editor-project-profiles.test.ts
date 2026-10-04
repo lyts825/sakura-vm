@@ -43,8 +43,8 @@ const spacesFor = (project: typeof privateProject | typeof sharedProject) =>
   }) as any;
 const savedPrivate = { ...privateProject };
 delete (savedPrivate as { _workspace?: string })._workspace;
-const report = (spaces: any, editor = 'neovim', signal = new AbortController().signal) =>
-  runReport(machines, spaces, id, 'editor-profiles', { editor }, signal);
+const report = (spaces: any, editor = 'neovim', signal = new AbortController().signal, service?: InstanceType<typeof Ide>) =>
+  runReport(machines, spaces, id, 'editor-profiles', { editor }, signal, service);
 
 test('editor profiles honor saved private siblings and unreadable settings without the IDE plugin', async () => {
   await mkdir(vmDir(id), { recursive: true });
@@ -76,7 +76,7 @@ test('all editor exports share the checked project endpoint and refuse a missing
     close: async () => {},
   };
   try {
-    await assert.rejects(report(spaces), /先在项目页配置/);
+    await assert.rejects(report(spaces, 'neovim', undefined, ide), /先在项目页配置/);
     const knownHosts = join(vmDir(id), 'project-ssh', privateId, 'known_hosts');
     await mkdir(dirname(knownHosts), { recursive: true });
     await writeFile(knownHosts, `sakura-${id}-${privateId} ${hostPublicKey}\n`);
@@ -88,7 +88,7 @@ test('all editor exports share the checked project endpoint and refuse a missing
       hostKeyAlias: `sakura-${id}-${privateId}`,
     };
     for (const editor of ['jetbrains', 'neovim', 'vscode']) {
-      const value = await report(spaces, editor);
+      const value = await report(spaces, editor, undefined, ide);
       assert.equal(checked, privateProject);
       assert.equal(value.editor, editor);
       assert.equal(value.projectScoped, true);
@@ -118,16 +118,16 @@ test('all editor exports share the checked project endpoint and refuse a missing
       assert.equal(value.remotePath, `scp://sakura-${id}-${privateId}//workspace/editor alpha's project/`);
     }
     await writeFile(knownHosts, 'untrusted changed binding\n');
-    await assert.rejects(report(spaces, 'jetbrains'), /主机公钥绑定已变化/);
+    await assert.rejects(report(spaces, 'jetbrains', undefined, ide), /主机公钥绑定已变化/);
     await writeFile(knownHosts, `sakura-${id}-${privateId} ${hostPublicKey}\n`);
     endpoint = { ...(endpoint as object), port: 43335 };
-    const refreshed = await report(spaces, 'jetbrains');
+    const refreshed = await report(spaces, 'jetbrains', undefined, ide);
     const pin = await readFile(String(refreshed.knownHostsFile), 'utf8');
     assert.match(pin, /\[127\.0\.0\.1\]:43335 /);
     assert.ok(!pin.includes(':43333 '), 'old endpoint pin must be replaced after a new bridge port');
     const abort = new AbortController();
     abort.abort();
-    await assert.rejects(report(spaces, 'neovim', abort.signal));
+    await assert.rejects(report(spaces, 'neovim', abort.signal, ide));
   } finally {
     await ide.close();
   }
@@ -155,7 +155,7 @@ test('a host-network project exports its own SSH service even without private si
     close: async () => {},
   };
   try {
-    const value = await report(spaces);
+    const value = await report(spaces, 'neovim', undefined, ide);
     assert.equal(checked, sharedProject);
     assert.equal(value.projectId, sharedId);
     assert.equal(value.networkIsolation, 'host');
@@ -186,7 +186,7 @@ test('Alpine project profiles require a checked SSH endpoint and refuse unsuppor
     assert.equal(view.url, '');
     assert.equal(view.sshCommand, '');
     await assert.rejects(
-      runReport(alpine, spaces, id, 'editor-profiles', { editor: 'neovim' }, new AbortController().signal),
+      runReport(alpine, spaces, id, 'editor-profiles', { editor: 'neovim' }, new AbortController().signal, ide),
       /先在项目页配置/,
     );
     endpoint = {
@@ -206,6 +206,7 @@ test('Alpine project profiles require a checked SSH endpoint and refuse unsuppor
       'editor-profiles',
       { editor: 'neovim' },
       new AbortController().signal,
+      ide,
     );
     assert.equal(profile.projectScoped, true);
     assert.equal(profile.port, 43335);

@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -464,7 +465,7 @@ export class ProjectSsh {
   private controller = new AbortController();
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     options: {
       identities?: Pick<ProjectIdentities, 'publishSshSnapshot' | 'sshSessionCommand'>;
       scopes?: Pick<

@@ -8,6 +8,11 @@ import { ExecutionScope } from '../server/execution-scope.ts';
 import { vmLifetime } from '../server/vm-lifetime.ts';
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import { withOperationCheck } from '../server/operation-context.ts';
+import { PluginDirectory } from '../server/plugin-directory.ts';
+import { pluginCleanup, withPluginAuthority } from '../server/plugin-authority.ts';
+import { vmAccess } from '../server/vm-access.ts';
+import { resourceContext } from '../server/host-runtime/context.ts';
+import { AppError } from '../shared/errors.ts';
 
 const deferred = () => {
   let resolve!: () => void;
@@ -35,6 +40,92 @@ function fixture() {
   const used = () => governor.snapshot().budgets.find((b) => b.key === 'execution.session')!.used;
   return { machines, vmId, live, lifetime, governor, receipt, used };
 }
+
+test('VM barriers retire the original plugin session through its receipt after revocation without new execution admission', async () => {
+  const f = fixture(),
+    directory = new PluginDirectory();
+  const instance = directory.begin('official', 'session-owner', '1', 'artifact');
+  directory.publish(instance);
+  let scheduled = 0,
+    commands = 0,
+    cleaned = false;
+  f.machines.exec = async () => {
+    ++commands;
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  const port = vmAccess(f.machines, instance.scope, instance, async (_id, _signal, work) => {
+    ++scheduled;
+    assert.equal(
+      f.lifetime.admitting,
+      true,
+      'cleanup must not request new execution while VM admission is closed',
+    );
+    return work();
+  });
+  await withPluginAuthority(instance, () => port.exec(f.vmId, 'original setup'));
+  const session = await withPluginAuthority(instance, () =>
+    ProjectSessionLifetime.acquire({
+      ...f,
+      machines: port,
+      live: port.live.get(f.vmId),
+      kind: 'terminal',
+      cleanup: async (receipt) => {
+        assert.deepEqual(receipt, f.receipt);
+        assert.equal(pluginCleanup(), instance);
+        assert.equal(resourceContext()?.pluginGeneration, instance.generation);
+        assert.equal(resourceContext()?.vmId, f.vmId);
+        assert.equal(resourceContext()?.projectId, receipt.projectId);
+        await port.exec(f.vmId, 'original fixed stop protocol');
+        cleaned = true;
+      },
+    }),
+  );
+  instance.revoke();
+  await f.lifetime.barrier(async () => assert.equal(cleaned, true));
+  assert.equal(scheduled, 1);
+  assert.equal(commands, 2);
+  assert.equal(f.used(), 0);
+  await session.close();
+  await instance.scope.dispose();
+  await f.lifetime.close();
+  f.governor.close();
+});
+
+test('plugin exit retains failed session cleanup and quota until the original receipt succeeds', async () => {
+  const f = fixture(),
+    directory = new PluginDirectory();
+  const instance = directory.begin('official', 'session-owner', '1', 'artifact');
+  directory.publish(instance);
+  const failure = new AppError('original native descendants still live', 503, 'SESSION_CLEANUP_PENDING');
+  let confirmed = false,
+    attempts = 0;
+  const session = await withPluginAuthority(instance, () =>
+    ProjectSessionLifetime.acquire({
+      ...f,
+      kind: 'service',
+      cleanup: async (receipt) => {
+        assert.deepEqual(receipt, f.receipt);
+        assert.equal(pluginCleanup(), instance);
+        ++attempts;
+        if (!confirmed) throw failure;
+      },
+    }),
+  );
+  instance.revoke();
+  await instance.scope.settled();
+  assert.equal(attempts, 1);
+  assert.equal(f.used(), 1);
+  assert.equal(instance.scope.diagnostics().cleanup.length, 1);
+  await assert.rejects(instance.scope.dispose(), AggregateError);
+  assert.equal(f.used(), 1);
+  confirmed = true;
+  await session.close();
+  assert.equal(f.used(), 0);
+  assert.equal(instance.scope.diagnostics().cleanup.length, 0);
+  await instance.scope.dispose();
+  await f.lifetime.close();
+  f.governor.close();
+});
 
 test('persistent sessions use independent atomic budgets and retain ordinary domain start/stop access', async () => {
   const f = fixture();

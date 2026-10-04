@@ -9,6 +9,9 @@ import { ServiceBroker } from '../server/service-broker.ts';
 import { serviceRef } from '../server/service-ref.ts';
 import { definePlugin, pin } from '../shared/plugin-protocol.ts';
 import { HostRuntime, resourceContext } from '../server/host-runtime/index.ts';
+import { pluginAuthority } from '../server/plugin-authority.ts';
+import { PluginScope } from '../server/plugin-scope.ts';
+import { AppError } from '../shared/errors.ts';
 
 const provider = definePlugin({ id: 'provider', name: 'Provider', description: 'test',
   category: 'operations', services: ['example'] });
@@ -91,9 +94,95 @@ test('optional discovery does not pin an idle provider and retained nested handl
   await owner.scope.dispose(); await client.scope.dispose();
 });
 
+test('cached returned async callables retain both scopes until their original invocation finishes', async () => {
+  const { directory, owner, client, broker, manifest } = fixture();
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  const ref = serviceRef<{ callable(): (callback: () => string | undefined) => Promise<void> }>('provider', 'example');
+  broker.register(owner, ref, { callable: () => async (callback) => {
+    assert.equal(pluginAuthority(), owner);
+    assert.equal(resourceContext()?.callerPluginGeneration, client.generation);
+    assert.equal(callback(), client.generation);
+    await blocked;
+  } });
+  directory.publish(owner);
+  const callable = broker.lookup(client, manifest, ref)!.callable();
+  const pending = callable(() => pluginAuthority()?.generation);
+  assert.equal(broker.activeBorrows(owner), 1);
+  assert.equal(owner.scope.diagnostics().active, 1);
+  assert.equal(client.scope.diagnostics().active, 1);
+  let ownerDisposed = false, clientDisposed = false;
+  owner.revoke(); client.revoke();
+  const ownerClosing = owner.scope.dispose().then(() => { ownerDisposed = true; });
+  const clientClosing = client.scope.dispose().then(() => { clientDisposed = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ownerDisposed, false); assert.equal(clientDisposed, false);
+  assert.throws(() => callable(() => undefined), { code: 'PLUGIN_REVOKED' });
+  release();
+  await Promise.all([pending, ownerClosing, clientClosing]);
+  assert.equal(broker.activeBorrows(owner), 0);
+});
+
+test('nested calls through returned callables preserve the original caller and callback authority', async () => {
+  const directory = new PluginDirectory();
+  const middleManifest = { ...consumer, services: ['example'] };
+  const originalManifest = definePlugin({ id: 'original', name: 'Original', description: 'test',
+    category: 'operations', requires: [pin('consumer')] });
+  const owner = directory.begin('official', 'provider', provider.version, 'a'.repeat(64));
+  const middle = directory.begin('official', 'consumer', consumer.version, 'b'.repeat(64));
+  const original = directory.begin('official', 'original', originalManifest.version, 'c'.repeat(64));
+  const broker = new ServiceBroker(directory, [provider, middleManifest, originalManifest]);
+  const ref = serviceRef<{ callable(): (callback: () => void) => void }>('provider', 'example');
+  broker.register(owner, ref, { callable: () => (callback) => {
+    assert.equal(pluginAuthority(), owner);
+    assert.equal(resourceContext()?.callerPluginGeneration, original.generation);
+    callback();
+  } });
+  directory.publish(owner);
+  const callable = broker.lookup(middle, middleManifest, ref)!.callable();
+  const middleRef = serviceRef<{ run(callback: () => void): void }>('consumer', 'example');
+  broker.register(middle, middleRef, { run: (callback) => callable(callback) });
+  directory.publish(middle); directory.publish(original);
+  let called = false;
+  broker.lookup(original, originalManifest, middleRef)!.run(() => {
+    called = true;
+    assert.equal(pluginAuthority(), original);
+    assert.equal(resourceContext()?.callerPluginGeneration, original.generation);
+  });
+  assert.equal(called, true);
+  await Promise.all([owner.scope.dispose(), middle.scope.dispose(), original.scope.dispose()]);
+});
+
+test('observed and scoped cleanup failures retain one original recovery while ordinary cancellation does not', async () => {
+  const scope = new PluginScope();
+  const error = new AppError('original physical cleanup unconfirmed', 503, 'TEST_CLEANUP_UNCONFIRMED');
+  const observed = Promise.reject(error);
+  scope.observe(observed);
+  await assert.rejects(observed, (failure) => failure === error);
+  assert.equal(scope.diagnostics().cleanup.length, 1);
+  const pending = scope.run(async () => { throw error; });
+  scope.observe(pending);
+  await assert.rejects(pending, (failure) => failure === error);
+  const repeated = Promise.reject(error);
+  scope.observe(repeated);
+  await assert.rejects(repeated, (failure) => failure === error);
+  const cancelled = Promise.reject(new DOMException('cancelled', 'AbortError'));
+  scope.observe(cancelled);
+  await assert.rejects(cancelled, { name: 'AbortError' });
+  assert.equal(scope.diagnostics().cleanup.length, 1);
+  let cleanupConfirmed = false;
+  scope.retainCleanup(async () => { if (!cleanupConfirmed) throw error; });
+  await assert.rejects(scope.dispose(), (failure) =>
+    failure instanceof AggregateError && failure.errors.length === 1 && failure.errors[0] === error);
+  const [{ id }] = scope.diagnostics().cleanup;
+  let recovered = 0;
+  await scope.recoverCleanup(id, async () => { ++recovered; cleanupConfirmed = true; });
+  await scope.dispose();
+  assert.equal(recovered, 1);
+});
+
 test('contexts are immutable independent objects with no writable service slots', async () => {
   const host = await Features.create(new EventEmitter() as Machines);
   assert.deepEqual(host.pluginResources(), []);
   await host.close();
 });
-

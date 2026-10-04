@@ -1052,7 +1052,7 @@ export async function projectIdentityTask(machines: Machines, vmId: string, proj
   execution: ProjectIdentityExecution, signal: AbortSignal, log?: (text: string) => void,
   timeout = 1200000, agentPath?: string, afterCleanup?: () => Promise<void>,
   options: ProjectTaskAdmissionOptions = {}) {
-  return ExecutionScope.run({ machines, vmId, projectId: projectId(project), live: options.expectedLive, signal },
+  return ExecutionScope.run({ machines, vmId, projectId: projectId(project), live: options.expectedLive, signal, delegate: true },
     scope => projectIdentityTaskInScope(machines, vmId, project, execution, scope.signal, log, timeout,
       agentPath, afterCleanup, options));
 }

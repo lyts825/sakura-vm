@@ -65,10 +65,18 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
     version: '1.0.0',
     sha256: createHash('sha256').update(bytes).digest('hex'),
     publisher: fingerprint,
-    extensions: { routes: [{ id: 'inspect', name: 'Inspect' }],
-      panels: [{ id: 'summary', title: 'Summary', description: 'Inspect JSON',
-        routeId: 'inspect', fields: [{ key: 'text', label: 'Text',
-          type: 'text' as const, required: true }] }] },
+    extensions: {
+      routes: [{ id: 'inspect', name: 'Inspect' }],
+      panels: [
+        {
+          id: 'summary',
+          title: 'Summary',
+          description: 'Inspect JSON',
+          routeId: 'inspect',
+          fields: [{ key: 'text', label: 'Text', type: 'text' as const, required: true }],
+        },
+      ],
+    },
   };
   const entry = {
     ...base,
@@ -91,8 +99,11 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
       await service.action({ operation: 'run', pluginId: base.id, input: { hello: 'world' } }),
       { pluginId: base.id, version: '1.0.0', result: { ok: true } },
     );
-    assert.deepEqual(await service.invokeRoute(base.id, 'inspect', { text: 'hello' }),
-      { pluginId: base.id, version: '1.0.0', result: { ok: true } });
+    assert.deepEqual(await service.invokeRoute(base.id, 'inspect', { text: 'hello' }), {
+      pluginId: base.id,
+      version: '1.0.0',
+      result: { ok: true },
+    });
     await assert.rejects(service.invokeRoute(base.id, 'unknown', {}), /未声明/);
     const restored = new CommunityPlugins(file, directory);
     await restored.init();
@@ -112,12 +123,23 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
     );
     assert.equal(service.view().installed[0].name, base.name);
 
-    listing = { schemaVersion: 1, plugins: [{ ...entry,
-      extensions: { ...entry.extensions, panels: [{ ...entry.extensions.panels[0],
-        title: 'Tampered panel' }] } }] };
+    listing = {
+      schemaVersion: 1,
+      plugins: [
+        {
+          ...entry,
+          extensions: {
+            ...entry.extensions,
+            panels: [{ ...entry.extensions.panels[0], title: 'Tampered panel' }],
+          },
+        },
+      ],
+    };
     await service.action({ operation: 'refresh', id: source.id });
-    await assert.rejects(service.action({ operation: 'install', sourceId: source.id,
-      pluginId: base.id }), /签名验证失败/);
+    await assert.rejects(
+      service.action({ operation: 'install', sourceId: source.id, pluginId: base.id }),
+      /签名验证失败/,
+    );
 
     await writeFile(
       join(directory, `${base.id}-${base.version}-${base.sha256}.wasm`),
@@ -129,15 +151,26 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
     assert.match(damaged.view().problems[base.id], /文件损坏/);
     await damaged.close();
     const recovery = computeRuntime.recover;
-    computeRuntime.recover = async () => { throw new Error('original worker cleanup unconfirmed'); };
+    computeRuntime.recover = async () => {
+      throw new Error('original worker cleanup unconfirmed');
+    };
     try {
       await assert.rejects(service.action({ operation: 'uninstall', pluginId: base.id }), /unconfirmed/);
       assert.equal(service.view().installed[0].phase, 'cleanup-pending');
-      assert.equal(service.view().runtime.instances.find(item => item.identity === 'community:' + base.id)?.phase, 'cleanup-pending');
-      await assert.rejects(service.action({ operation: 'run', pluginId: base.id, input: {} }), { code: 'PLUGIN_REVOKED' });
-      await assert.rejects(service.action({ operation: 'install', sourceId: source.id, pluginId: base.id }), { code: 'PLUGIN_CLEANUP_PENDING' });
+      assert.equal(
+        service.view().runtime.instances.find((item) => item.identity === 'community:' + base.id)?.phase,
+        'cleanup-pending',
+      );
+      await assert.rejects(service.action({ operation: 'run', pluginId: base.id, input: {} }), {
+        code: 'PLUGIN_REVOKED',
+      });
+      await assert.rejects(service.action({ operation: 'install', sourceId: source.id, pluginId: base.id }), {
+        code: 'PLUGIN_CLEANUP_PENDING',
+      });
       assert.equal(JSON.parse(await readFile(file, 'utf8')).installed[0].sha256, base.sha256);
-    } finally { computeRuntime.recover = recovery; }
+    } finally {
+      computeRuntime.recover = recovery;
+    }
     await service.action({ operation: 'uninstall', pluginId: base.id });
     await assert.rejects(service.action({ operation: 'run', pluginId: base.id, input: {} }), /未安装/);
     await service.action({ operation: 'untrust', fingerprint });
@@ -157,76 +190,134 @@ test('isolated plugin validation requires bounded memory and no host imports', a
 test('event subscriptions trigger signed WASM once for new metadata-only events', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sakura-community-events-'));
   assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep));
-  const file = join(root, 'state.json'), directory = join(root, 'wasm');
+  const file = join(root, 'state.json'),
+    directory = join(root, 'wasm');
   const bytes = wasm();
   const pair = generateKeyPairSync('ed25519');
   const pem = pair.publicKey.export({ format: 'pem', type: 'spki' }).toString();
   const fingerprint = createHash('sha256')
-    .update(pair.publicKey.export({ format: 'der', type: 'spki' })).digest('hex');
+    .update(pair.publicKey.export({ format: 'der', type: 'spki' }))
+    .digest('hex');
   let now = Date.parse('2026-01-01T00:00:00.000Z');
-  const base = { schemaVersion: 1 as const, id: 'event-plugin', name: 'Event',
-    description: 'Event computation', version: '1.0.0',
-    sha256: createHash('sha256').update(bytes).digest('hex'), publisher: fingerprint };
-  const entry = { ...base, signature: sign(null, signedPluginPayload(base), pair.privateKey)
-    .toString('base64'), wasmUrl: './event.wasm' };
+  const base = {
+    schemaVersion: 1 as const,
+    id: 'event-plugin',
+    name: 'Event',
+    description: 'Event computation',
+    version: '1.0.0',
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    publisher: fingerprint,
+  };
+  const entry = {
+    ...base,
+    signature: sign(null, signedPluginPayload(base), pair.privateKey).toString('base64'),
+    wasmUrl: './event.wasm',
+  };
   const catalog = Buffer.from(JSON.stringify({ schemaVersion: 1, plugins: [entry] }));
-  const service = new CommunityPlugins(file, directory,
-    async (url) => url.endsWith('catalog.json') ? catalog : bytes, () => now);
-  const events: Array<{ id: string; type: 'job.finished'; occurredAt: string;
-    status: 'done'; tags: string[] }> = [];
+  const service = new CommunityPlugins(
+    file,
+    directory,
+    async (url) => (url.endsWith('catalog.json') ? catalog : bytes),
+    () => now,
+    undefined,
+    { events: async () => events, schedule: false },
+  );
+  const events: Array<{
+    id: string;
+    type: 'job.finished';
+    occurredAt: string;
+    status: 'done';
+    tags: string[];
+  }> = [];
   try {
     await service.init();
     await service.action({ operation: 'trust', name: 'Publisher', publicKey: pem });
-    await service.action({ operation: 'add-source', name: 'Source',
-      url: 'https://plugins.example/catalog.json' });
+    await service.action({
+      operation: 'add-source',
+      name: 'Source',
+      url: 'https://plugins.example/catalog.json',
+    });
     const sourceId = service.view().sources[0].id;
     await service.action({ operation: 'refresh', id: sourceId });
     await service.action({ operation: 'install', sourceId, pluginId: base.id });
-    service.setEventSource(async () => events, false);
-    await service.action({ operation: 'subscribe', pluginId: base.id,
-      types: ['job.finished'], enabled: true });
-    events.push({ id: 'a'.repeat(64), type: 'job.finished',
-      occurredAt: '2025-12-31T23:59:59.000Z', status: 'done', tags: [] });
+
+    await service.action({
+      operation: 'subscribe',
+      pluginId: base.id,
+      types: ['job.finished'],
+      enabled: true,
+    });
+    events.push({
+      id: 'a'.repeat(64),
+      type: 'job.finished',
+      occurredAt: '2025-12-31T23:59:59.000Z',
+      status: 'done',
+      tags: [],
+    });
     await service.tick();
     assert.equal(service.view().deliveries.length, 0);
     now += 1000;
-    events.push({ id: 'b'.repeat(64), type: 'job.finished',
-      occurredAt: new Date(now).toISOString(), status: 'done', tags: [] });
+    events.push({
+      id: 'b'.repeat(64),
+      type: 'job.finished',
+      occurredAt: new Date(now).toISOString(),
+      status: 'done',
+      tags: [],
+    });
     await service.tick();
     assert.equal(service.view().deliveries.length, 1);
     assert.equal(service.view().deliveries[0].status, 'done');
     assert.equal(service.view().deliveries[0].resultPreview, '{"ok":true}');
     await service.tick();
     assert.equal(service.view().deliveries.length, 1);
-    await service.action({ operation: 'subscribe', pluginId: base.id,
-      types: ['job.finished'], enabled: false });
+    await service.action({
+      operation: 'subscribe',
+      pluginId: base.id,
+      types: ['job.finished'],
+      enabled: false,
+    });
     now += 1000;
-    events.push({ id: 'd'.repeat(64), type: 'job.finished',
-      occurredAt: new Date(now).toISOString(), status: 'done', tags: [] });
+    events.push({
+      id: 'd'.repeat(64),
+      type: 'job.finished',
+      occurredAt: new Date(now).toISOString(),
+      status: 'done',
+      tags: [],
+    });
     await service.tick();
     assert.equal(service.view().deliveries.length, 1);
-    await service.action({ operation: 'subscribe', pluginId: base.id,
-      types: ['job.finished'], enabled: true });
+    await service.action({
+      operation: 'subscribe',
+      pluginId: base.id,
+      types: ['job.finished'],
+      enabled: true,
+    });
     await service.tick();
     assert.equal(service.view().deliveries.length, 1);
     await service.close();
     const persisted = JSON.parse(await readFile(file, 'utf8'));
-    const resumedEvent = { id: 'c'.repeat(64), type: 'job.finished',
-      occurredAt: new Date(now).toISOString(), status: 'done', tags: [] };
+    const resumedEvent = {
+      id: 'c'.repeat(64),
+      type: 'job.finished',
+      occurredAt: new Date(now).toISOString(),
+      status: 'done',
+      tags: [],
+    };
     const resumedId = createHash('sha256').update(`${base.id}:${resumedEvent.id}`).digest('hex');
-    persisted.deliveries.push({ id: resumedId, pluginId: base.id,
-      event: resumedEvent, status: 'pending' });
+    persisted.deliveries.push({ id: resumedId, pluginId: base.id, event: resumedEvent, status: 'pending' });
     persisted.observed[resumedId] = now;
     await writeFile(file, JSON.stringify(persisted));
-    const restored = new CommunityPlugins(file, directory, undefined, () => now);
+    const restored = new CommunityPlugins(file, directory, undefined, () => now, undefined, {
+      events: async () => events,
+      schedule: false,
+    });
     await restored.init();
-    restored.setEventSource(async () => events, false);
+
     now += 50 * 3600000;
     await restored.tick();
     assert.equal(restored.view().deliveries.length, 2);
     assert.equal(restored.view().deliveries[0].status, 'done');
-    await restored.action({ operation: 'schedule', pluginId: base.id,
-      intervalMinutes: 1, enabled: true });
+    await restored.action({ operation: 'schedule', pluginId: base.id, intervalMinutes: 1, enabled: true });
     now += 60_001;
     await restored.tick();
     assert.equal(restored.view().deliveries.length, 3);

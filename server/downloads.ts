@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { posix } from 'node:path';
@@ -55,7 +56,7 @@ export class Downloads {
   private closed = false;
   constructor(
     private machines: Machines,
-    private providers: { files?: Files; bundles?: Bundles },
+    private providers: { files?: ServiceInterface<Files>; bundles?: ServiceInterface<Bundles> },
   ) {}
   private get files() {
     if (!this.providers.files) throw new AppError('文件插件未启用', 403);

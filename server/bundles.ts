@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, open, stat } from 'node:fs/promises';
@@ -119,10 +120,10 @@ export function validateDiskHeader(header: Buffer, allowEncryption = false) {
   if (header.readBigUInt64BE(24) > 128n * 1024n ** 3n) throw new AppError('虚拟磁盘不能超过 128 GiB');
 }
 export class Bundles {
-  private get trustedBoot(): TrustedBootService | undefined { return this.dependencies.optional('trustedBoot'); }
+  private get trustedBoot(): ServiceInterface<TrustedBootService> | undefined { return this.dependencies.optional('trustedBoot'); }
   constructor(
     private machines: Machines,
-    private signatures?: SignedBundles,
+    private signatures?: ServiceInterface<SignedBundles>,
     private dependencies: HostServiceResolver = noHostServices,
   ) {}
   

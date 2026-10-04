@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { type Workspaces, projectPrivateValues } from './workspaces.ts';
 import { runServices, serviceOrder } from './project-services.ts';
@@ -53,7 +54,7 @@ export class ServiceHealth {
   };
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
   ) {
     this.timer = scheduler.register({ owner: 'plugin:service-health', label: '项目服务健康检查', intervalMs: 5000,
       overlap: 'skip', run: async () => {

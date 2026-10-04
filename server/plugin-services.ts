@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import type { Files } from './files.ts';
 import type { Images } from './images.ts';
 import type { Bundles } from './bundles.ts';
@@ -31,42 +32,40 @@ import type { NextFeatures } from './next-features.ts';
 import type { Desktops } from './desktop.ts';
 import type { Metrics } from './metrics.ts';
 
-/** Compatibility view of built-in services. New services use provider-owned ServiceRefs.
- * ServiceRefs preserve object identity; resource ownership and revocation belong to capabilities,
- * so retaining a legacy service reference is not a security boundary. */
+/** Read-only public contracts. Every convenience access resolves a revocable ServiceRef. */
 export interface PluginServices {
-  files: Files;
-  images: Images;
-  bundles: Bundles;
-  downloads: Downloads;
-  workspaces: Workspaces;
-  sync: FolderSync;
+  files: ServiceInterface<Files>;
+  images: ServiceInterface<Images>;
+  bundles: ServiceInterface<Bundles>;
+  downloads: ServiceInterface<Downloads>;
+  workspaces: ServiceInterface<Workspaces>;
+  sync: ServiceInterface<FolderSync>;
   jobs: Jobs;
-  backups: Backups;
-  maintenance: Maintenance;
-  ide: Ide;
-  recipes: Recipes;
-  git: GitWorkbench;
-  projectFiles: ProjectFiles;
-  commands: CommandPresets;
-  toolchains: Toolchains;
-  network: NetworkProfiles;
-  secrets: Secrets;
-  health: ServiceHealth;
-  containers: Containers;
-  migration: DataMigration;
-  history: FileHistory;
-  fileLocks: FileLocks;
-  pipelines: Pipelines;
-  runtimes: RuntimeVersions;
-  intelligence: CodeIntelligence;
-  languageServices: LanguageServices;
-  debugger: DebugAdapter;
-  suite: FeatureSuite;
-  extended: ExtendedFeatures;
-  next: NextFeatures;
-  desktops: Desktops;
-  metrics: Metrics;
+  backups: ServiceInterface<Backups>;
+  maintenance: ServiceInterface<Maintenance>;
+  ide: ServiceInterface<Ide>;
+  recipes: ServiceInterface<Recipes>;
+  git: ServiceInterface<GitWorkbench>;
+  projectFiles: ServiceInterface<ProjectFiles>;
+  commands: ServiceInterface<CommandPresets>;
+  toolchains: ServiceInterface<Toolchains>;
+  network: ServiceInterface<NetworkProfiles>;
+  secrets: ServiceInterface<Secrets>;
+  health: ServiceInterface<ServiceHealth>;
+  containers: ServiceInterface<Containers>;
+  migration: ServiceInterface<DataMigration>;
+  history: ServiceInterface<FileHistory>;
+  fileLocks: ServiceInterface<FileLocks>;
+  pipelines: ServiceInterface<Pipelines>;
+  runtimes: ServiceInterface<RuntimeVersions>;
+  intelligence: ServiceInterface<CodeIntelligence>;
+  languageServices: ServiceInterface<LanguageServices>;
+  debugger: ServiceInterface<DebugAdapter>;
+  suite: ServiceInterface<FeatureSuite>;
+  extended: ServiceInterface<ExtendedFeatures>;
+  next: ServiceInterface<NextFeatures>;
+  desktops: ServiceInterface<Desktops>;
+  metrics: ServiceInterface<Metrics>;
 }
 export const SERVICE_KEYS = [
   'files',

@@ -281,6 +281,7 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     assert.equal(targetStartCount, 0);
     bmcIdentity = sourceSystemUuid;
     changeIdentityAfterForceOff = true;
+    await witnessService.witness.drain();
     await witnessService.witness.sample();
     assert.equal(bmcOffCount, 1);
     assert.equal(targetStartCount, 0,
@@ -289,6 +290,7 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     bmcIdentity = sourceSystemUuid;
     changeIdentityAfterForceOff = false;
     targetIdentity = randomUUID();
+    await witnessService.witness.drain();
     await witnessService.witness.sample();
     assert.equal(targetStartCount, 0, 'wrong target host identity must not activate a replica');
     assert.equal((await client.status({ sourceHostId, sourceVmId })).phase, 'fenced');
@@ -302,6 +304,7 @@ test('independent HTTPS witness powers off source before promoting a paired targ
     await assert.rejects(client.authorizeStart({ sourceHostId, sourceVmId }));
     bmcIdentity = sourceSystemUuid;
     targetIdentity = targetHostId;
+    await witnessService.witness.drain();
     await witnessService.witness.sample();
     assert.equal(targetStartCount, 1);
     assert.equal(activeVmId, remoteVmId);

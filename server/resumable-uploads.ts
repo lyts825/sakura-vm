@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, stat, statfs } from 'node:fs/promises';
@@ -48,7 +49,7 @@ type Session = z.infer<typeof requestSchema> & {
 export class ResumableUploads {
   private active = new Set<string>();
   constructor(
-    private files: Files,
+    private files: ServiceInterface<Files>,
     private root = join(DATA, 'uploads'),
   ) {}
   private folder(vmId: string, id: string) {

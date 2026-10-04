@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { deflateSync, inflateSync } from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import type { Machines } from '../server/machines.ts';
+import { vmLiveView } from '../server/vm-reference.ts';
 import type { Workspaces } from '../server/workspaces.ts';
 import { projectSchema, projectVersion } from '../server/workspaces.ts';
 import { AppError } from '../server/model.ts';
@@ -129,6 +130,25 @@ test('a matching config hash cannot authorize preparation captured for another p
   await assert.rejects(f.run(), (error: any) => error.code === 'PROJECT_IDENTITY_HOST_CHANGED');
   assert.equal(f.payloads.length + f.administrative.length, 0);
   assert.equal(f.releases(), 1);
+});
+
+test('a preparation live view authorizes only its original VM runtime', async () => {
+  for (const sameRuntime of [true, false]) {
+    const f = fixture(), prepare = f.options.terminals!.prepare;
+    f.options.terminals = { prepare: async (...args) => {
+      const result = await prepare(...args);
+      const raw = sameRuntime ? f.live : { ...f.live };
+      return { ...result, captured: { ...result.captured!, live: vmLiveView(raw as any) } };
+    } };
+    if (sameRuntime) {
+      await f.run();
+      assert.equal(f.payloads.length, 1);
+    } else {
+      await assert.rejects(f.run(), (error: any) => error.code === 'PROJECT_IDENTITY_HOST_CHANGED');
+      assert.equal(f.payloads.length + f.administrative.length, 0);
+    }
+    assert.equal(f.releases(), 1);
+  }
 });
 
 test('the current complete helper fits the native payload and the packed bootstrap preserves UTF-8 request data', async () => {

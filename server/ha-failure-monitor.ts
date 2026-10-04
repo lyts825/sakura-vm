@@ -1,4 +1,5 @@
 import { scheduler } from './scheduler.ts';
+import { pluginAuthority } from './plugin-authority.ts';
 import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -22,30 +23,53 @@ export type HaMonitorStatus = z.infer<typeof monitorSchema>;
 type Policy = { enabled: boolean; options: unknown; updatedAt?: string };
 type MachineStates = Pick<Machines, 'state' | 'on' | 'off'>;
 
-export function advanceHaMonitor(previous: HaMonitorStatus | undefined, source: VMStatus,
-  policy: Policy, at: string, countFailure: boolean): HaMonitorStatus {
+export function advanceHaMonitor(
+  previous: HaMonitorStatus | undefined,
+  source: VMStatus,
+  policy: Policy,
+  at: string,
+  countFailure: boolean,
+): HaMonitorStatus {
   const options = haFailoverOptions.parse(policy.options);
   if (previous?.policyVersion !== policy.updatedAt) previous = undefined;
   if (previous && !countFailure && previous.observedState === source) return previous;
   const base: HaMonitorStatus = previous || {
-    armed: false, consecutiveFailures: 0, observedState: source, observedAt: at,
+    armed: false,
+    consecutiveFailures: 0,
+    observedState: source,
+    observedAt: at,
     policyVersion: policy.updatedAt,
   };
   if (!policy.enabled || !options.targetHostId || source === 'stopping' || source === 'paused')
-    return { armed: false, consecutiveFailures: 0, observedState: source, observedAt: at,
+    return {
+      armed: false,
+      consecutiveFailures: 0,
+      observedState: source,
+      observedAt: at,
       policyVersion: policy.updatedAt,
-      lastHealthyAt: base.lastHealthyAt };
+      lastHealthyAt: base.lastHealthyAt,
+    };
   if (source === 'running')
-    return { armed: true, consecutiveFailures: 0, observedState: source, observedAt: at,
+    return {
+      armed: true,
+      consecutiveFailures: 0,
+      observedState: source,
+      observedAt: at,
       policyVersion: policy.updatedAt,
-      lastHealthyAt: at };
-  if (source === 'starting')
-    return { ...base, observedState: source, observedAt: at };
-  const failures = base.armed && countFailure
-    ? Math.min(options.failureThreshold, base.consecutiveFailures + 1)
-    : base.consecutiveFailures;
-  return { ...base, consecutiveFailures: failures, observedState: source, observedAt: at,
-    suspectedAt: failures >= options.failureThreshold ? base.suspectedAt || at : undefined };
+      lastHealthyAt: at,
+    };
+  if (source === 'starting') return { ...base, observedState: source, observedAt: at };
+  const failures =
+    base.armed && countFailure
+      ? Math.min(options.failureThreshold, base.consecutiveFailures + 1)
+      : base.consecutiveFailures;
+  return {
+    ...base,
+    consecutiveFailures: failures,
+    observedState: source,
+    observedAt: at,
+    suspectedAt: failures >= options.failureThreshold ? base.suspectedAt || at : undefined,
+  };
 }
 
 export class HaFailureMonitor {
@@ -54,10 +78,13 @@ export class HaFailureMonitor {
   private work = Promise.resolve();
   private closed = false;
   private initialized = false;
+  private readonly instance = pluginAuthority();
 
-  constructor(private machines: MachineStates,
+  constructor(
+    private machines: MachineStates,
     private policies: () => Promise<Record<string, Policy>>,
-    private file = join(DATA, 'ha-failure-monitor.json')) {}
+    private file = join(DATA, 'ha-failure-monitor.json'),
+  ) {}
 
   private enqueue(task: () => Promise<void>) {
     this.work = this.work.catch(() => {}).then(task);
@@ -65,22 +92,34 @@ export class HaFailureMonitor {
   }
 
   private change = () => {
+    if (this.closed || this.instance?.signal.aborted) return;
     const observed = new Map<string, VMStatus>();
     for (const id of Object.keys(this.statuses)) {
-      try { observed.set(id, this.machines.state(id)); } catch { /* Deleted instance. */ }
+      try {
+        observed.set(id, this.machines.state(id));
+      } catch {
+        /* Deleted instance. */
+      }
     }
-    void this.enqueue(() => this.scan(false, observed)).catch((error) =>
-      console.error('HA 状态观察失败：', error));
+    void this.enqueue(() => this.scan(false, observed)).catch((error) => {
+      if (!this.closed && !this.instance?.signal.aborted) console.error('HA 状态观察失败：', error);
+    });
   };
 
   private stopRequested = (id: string) => {
     const status = this.statuses[id];
     if (!status || this.closed) return;
-    this.statuses[id] = { ...status, armed: false, consecutiveFailures: 0,
-      observedState: 'stopping', observedAt: new Date().toISOString(),
-      suspectedAt: undefined };
-    void this.enqueue(() => writeStore(this.file, this.statuses)).catch((error) =>
-      console.error('HA 停机观察失败：', error));
+    this.statuses[id] = {
+      ...status,
+      armed: false,
+      consecutiveFailures: 0,
+      observedState: 'stopping',
+      observedAt: new Date().toISOString(),
+      suspectedAt: undefined,
+    };
+    void this.enqueue(() => writeStore(this.file, this.statuses)).catch((error) => {
+      if (!this.closed && !this.instance?.signal.aborted) console.error('HA 停机观察失败：', error);
+    });
   };
 
   async init() {
@@ -94,8 +133,15 @@ export class HaFailureMonitor {
     this.initialized = true;
     this.machines.on('change', this.change);
     this.machines.on('stop-requested', this.stopRequested);
-    this.timer = scheduler.register({ owner: 'core:ha-failure-monitor', label: 'HA 故障采样', intervalMs: INTERVAL_MS,
-      overlap: 'skip', run: async () => { await this.sample(); } });
+    this.timer = scheduler.register({
+      owner: 'core:ha-failure-monitor',
+      label: 'HA 故障采样',
+      intervalMs: INTERVAL_MS,
+      overlap: 'skip',
+      run: async () => {
+        await this.sample();
+      },
+    });
   }
 
   private async scan(countFailure: boolean, observed?: Map<string, VMStatus>) {
@@ -106,10 +152,17 @@ export class HaFailureMonitor {
     for (const id of Object.keys(next)) if (!(id in policies)) delete next[id];
     for (const [id, policy] of Object.entries(policies)) {
       let source = observed?.get(id);
-      try { source ||= this.machines.state(id); }
-      catch { delete next[id]; continue; }
+      try {
+        source ||= this.machines.state(id);
+      } catch {
+        delete next[id];
+        continue;
+      }
       const options = haFailoverOptions.safeParse(policy.options);
-      if (!options.success) { delete next[id]; continue; }
+      if (!options.success) {
+        delete next[id];
+        continue;
+      }
       next[id] = advanceHaMonitor(next[id], source, policy, at, countFailure);
     }
     if (JSON.stringify(next) !== JSON.stringify(this.statuses)) {
@@ -118,7 +171,9 @@ export class HaFailureMonitor {
     }
   }
 
-  sample() { return this.enqueue(() => this.scan(true)); }
+  sample() {
+    return this.enqueue(() => this.scan(true));
+  }
 
   async reconfigure(id: string) {
     await this.enqueue(async () => {
@@ -129,8 +184,9 @@ export class HaFailureMonitor {
 
   view(id: string) {
     const status = this.statuses[id];
-    return status ? { ...status, suspected: !!status.suspectedAt,
-      sampleIntervalSeconds: INTERVAL_MS / 1000 } : null;
+    return status
+      ? { ...status, suspected: !!status.suspectedAt, sampleIntervalSeconds: INTERVAL_MS / 1000 }
+      : null;
   }
 
   async close() {

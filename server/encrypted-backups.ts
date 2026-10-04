@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { appendFile, open, stat, mkdtemp, rm, rmdir } from 'node:fs/promises';
 import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'node:crypto';
@@ -197,7 +198,7 @@ export async function withDecrypted<T>(
   }
 }
 export async function importEncrypted(
-  bundles: Bundles,
+  bundles: ServiceInterface<Bundles>,
   name: string,
   source: Readable,
   password: string,

@@ -29,7 +29,7 @@ test('a durable witness enrollment blocks ordinary starts even without the HA pl
       assert.equal(reopened.get(id).haWitnessEnrollment?.targetHostId, targetHostId);
       await assert.rejects(reopened.start(id), { code: 'HA_WITNESS_UNAVAILABLE' });
       let checked = false;
-      reopened.setHaStartGuard(async () => {
+      reopened.beforeHaStart(async () => {
         checked = true;
         throw new Error('witness rejects a promoted source');
       });

@@ -10,7 +10,7 @@ export async function startTestController() {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-browser-integration-'));
   await writeFile(
     join(directory, 'plugins.json'),
-    JSON.stringify({ schemaVersion: 3, plugins: ['sandbox', 'files', 'snapshots'], packs: [] }),
+    JSON.stringify({ schemaVersion: 3, plugins: ['sandbox', 'files', 'snapshots', 'projects'], packs: [] }),
   );
   const listener = createServer();
   await new Promise<void>((done, fail) => listener.listen(0, '127.0.0.1', done).once('error', fail));
@@ -22,12 +22,22 @@ export async function startTestController() {
     spawnError: Error | undefined,
     token = '',
     output = '';
-  const request = async <T = any>(path: string, method = 'GET', body?: unknown): Promise<T> => {
+  const request = async <T = any>(
+    path: string,
+    method = 'GET',
+    body?: unknown,
+    timeoutMs = 30000,
+  ): Promise<T> => {
     const response = await fetch(origin + '/api' + path, {
       method,
-      headers: { 'x-sakura-token': token, 'content-type': 'application/json' },
+      headers: { 'x-sakura-token': token, 'content-type': 'application/json', connection: 'close' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(timeoutMs),
+    }).catch((error: Error & { cause?: { code?: string } }) => {
+      throw new Error(
+        `${method} ${path}: ${error.message}${error.cause?.code ? ' (' + error.cause.code + ')' : ''}`,
+        { cause: error },
+      );
     });
     const value = await response.json();
     if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
@@ -47,7 +57,10 @@ export async function startTestController() {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     exited = new Promise((done) => {
-      child!.once('exit', done);
+      child!.once('exit', (code, signal) => {
+        output += `\nController exited: ${JSON.stringify({ code, signal })}\n`;
+        done({ code, signal });
+      });
       child!.once('error', (error) => {
         spawnError = error;
         done(error);
@@ -113,6 +126,7 @@ export async function startTestController() {
   return {
     origin,
     request,
+    logs: () => output,
     restart: async () => {
       await stop();
       await start();

@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { HostPeers } from './host-peers.ts';
@@ -11,8 +12,8 @@ export const haFailoverOptions = z.object({
   autoHostFailover: z.boolean().default(false),
 }).strict();
 
-export async function checkHaFailover(machines: Machines, peers: HostPeers,
-  replications: SnapshotReplications | undefined, id: string, raw: unknown,
+export async function checkHaFailover(machines: Machines, peers: ServiceInterface<HostPeers>,
+  replications: ServiceInterface<SnapshotReplications> | undefined, id: string, raw: unknown,
   enabled: boolean, signal?: AbortSignal, processObserved = false,
   failureSuspected = false) {
   const policy = haFailoverOptions.parse(raw);
@@ -23,7 +24,7 @@ export async function checkHaFailover(machines: Machines, peers: HostPeers,
   if (!policy.targetHostId) blockers.push('尚未选择已配对的目标主机。');
   if (sourceState !== 'running') blockers.push(`源实例当前为 ${sourceState}，没有运行中的主实例可监测。`);
   signal?.throwIfAborted();
-  let target: Awaited<ReturnType<HostPeers['score']>>['candidates'][number] | undefined;
+  let target: Awaited<ReturnType<ServiceInterface<HostPeers>['score']>>['candidates'][number] | undefined;
   let compatible = false;
   try {
     const score = await peers.score({ cpus: vm.cpus, memoryMiB: vm.memoryMiB });
@@ -53,7 +54,7 @@ export async function checkHaFailover(machines: Machines, peers: HostPeers,
   const ageMinutes = snapshot ? Math.max(0,
     Math.ceil((Date.now() - Date.parse(snapshot.createdAt)) / 60_000)) : null;
   let receiptVerified = false;
-  let standbyStatus: Awaited<ReturnType<HostPeers['checkReplicaActivation']>>['status'] | null = null;
+  let standbyStatus: Awaited<ReturnType<ServiceInterface<HostPeers>['checkReplicaActivation']>>['status'] | null = null;
   if (latest && peer) {
     try {
       signal?.throwIfAborted();

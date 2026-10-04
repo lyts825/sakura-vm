@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -64,17 +65,17 @@ test('pinned TLS replicates selected historical snapshot with verified receipt a
     load: [0, 0, 0], vmCount: 1, runningVms: 0 });
   const port = await freePort();
   const targetFile = join(root, 'target-peers.json');
-  const setup = new HostPeers(status, targetFile, 'Target');
+  const setup = new HostPeers(status, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await setup.init(false);
   await setup.configure({ operation: 'listener', listener: {
     enabled: true, host: '127.0.0.1', port } });
   await setup.close();
-  const target = new HostPeers(status, targetFile, 'Target');
+  const target = new HostPeers(status, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await target.init(true);
-  const local = new HostPeers(status, join(root, 'local-peers.json'), 'Local');
+  const local = new HostPeers(status, join(root, 'local-peers.json'), 'Local', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await local.init(false);
   const targetBundles = new Bundles(destination);
-  target.setImportReceiver({
+  peerHandlers.set(target, { ...peerHandlers.get(target), importReceiver: {
     status: async ({ requesterId, transferId }) => {
       const found = [...destination.records.values()].find((vm) =>
         vm.migrationOrigin?.sourceHostId === requesterId &&
@@ -92,7 +93,7 @@ test('pinned TLS replicates selected historical snapshot with verified receipt a
       return { id: imported.id, name, sha256: imported.migrationOrigin?.diskSha256,
         sourceVmId, snapshotId };
     },
-  });
+  } });
   try {
     const issue = await target.configure({ operation: 'create-code' });
     assert.ok('pairing' in issue && issue.pairing);

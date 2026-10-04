@@ -30,10 +30,7 @@ export class PluginManager {
   readonly system = new SystemServices(this.directory);
   private runtime?: PluginRuntime;
   private selection = emptySelection();
-  private active: string[] = [];
   private startupPlanned: string[] = [];
-  private errors: Record<string, string> = {};
-  private lifecycle: PluginStatus['lifecycle'] = {};
   private migrations: string[] = [];
   private queue: Promise<unknown> = Promise.resolve();
   constructor(private file = join(DATA, 'plugins.json')) {}
@@ -44,31 +41,32 @@ export class PluginManager {
     this.startupPlanned = resolvePlugins(this.selection);
     return [...this.startupPlanned];
   }
-  activated(active: Iterable<string>, errors: Record<string, string> = {}, lifecycle: PluginStatus['lifecycle'] = {}) {
-    this.active = [...active];
-    this.errors = { ...errors };
-    this.lifecycle = { ...lifecycle };
-  }
   async start(machines: Machines, rolloutAllowed?: (id: string) => boolean) {
     if (this.runtime) throw new AppError('插件管理层已经启动', 409);
     this.runtime = await PluginRuntime.create(machines, this.startupPlanned, rolloutAllowed, this.directory, this.system);
     return this.runtime;
   }
   async unload(id: string) { await this.runtime?.unload(id); }
+  get community() { return this.system.resolver(this.system.caller, ['communityPlugins']).optional('communityPlugins')!; }
+  assertReady() {
+    for (const plugin of PLUGINS.filter(item => this.runtime?.enabled.has(item.id)))
+      for (const dependency of plugin.systemDependencies) if (!this.system.has(dependency))
+        throw new AppError(`插件 ${plugin.id} 缺少必需宿主服务：${dependency}`, 503, 'PLUGIN_SERVICE_UNAVAILABLE');
+  }
   async close() { await this.runtime?.close(); await this.system.close(); }
   view(): PluginStatus {
     const planned = resolvePlugins(this.selection);
     return {
       selection: structuredClone(this.selection),
-      active: this.runtime ? [...this.runtime.enabled] : [...this.active],
+      active: this.runtime ? [...this.runtime.enabled] : [],
       planned,
       reasons: explainPlugins(this.selection),
       migrations: [...this.migrations],
       restartRequired:
         planned.length !== this.startupPlanned.length ||
         planned.some((id) => !this.startupPlanned.includes(id)),
-      errors: { ...(this.runtime?.errors ?? this.errors) },
-      lifecycle: structuredClone(this.runtime?.lifecycle ?? this.lifecycle),
+      errors: { ...this.runtime?.errors },
+      lifecycle: structuredClone(this.runtime?.lifecycle ?? {}),
       runtime: this.directory.view(),
       plugins: PLUGINS,
       packs: PLUGIN_PACKS,

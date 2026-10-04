@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { copyFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { AppError } from '../shared/errors.ts';
@@ -74,7 +75,7 @@ function mergeFileCommand(path: string, file?: SnapshotDiffFile) {
 export class SnapshotMerge {
   readonly jobs = new Jobs('snapshot-merge');
   private closed = false;
-  constructor(private machines: Machines, private bundles: Bundles) {}
+  constructor(private machines: Machines, private bundles: ServiceInterface<Bundles>) {}
 
   view(id: string) {
     const vm = this.machines.get(id);

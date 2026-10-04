@@ -3,28 +3,78 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { AppError } from '../shared/errors.ts';
 import { ResourceScope } from './resource-scope.ts';
 import type { Live } from './vm-state.ts';
-import { vmLiveIdentity, type VmLive } from './vm-reference.ts';
+import { vmHostIdentity, vmLiveIdentity, type VmLive } from './vm-reference.ts';
 import type { VmNetworkLease } from './network/index.ts';
 import type { VMRecord } from '../shared/contracts/vm.ts';
 import type { BootAttachment } from './machines.ts';
+import { pluginAuthority, withPluginAuthority, withPluginCleanup } from './plugin-authority.ts';
+import { cleanupReceipt } from './cleanup-receipt.ts';
+
+export type VmSnapshotProvider = {
+  capture(id: string, snapshotId: string): Promise<void>;
+  prepareRestore(id: string, snapshotId: string): Promise<() => Promise<void>>;
+  remove(id: string, snapshotId: string): Promise<void>;
+  ensureOnlineAllowed(id: string): Promise<void>;
+};
 
 export type VmBootProvider = {
   prepare(vm: VMRecord, onExit: (error: string) => void): Promise<BootAttachment | undefined>;
   firmware?(vm: VMRecord): Promise<{ code: string; vars: string } | undefined>;
   allowInitialReset?: boolean;
+  stateFingerprint?(id: string): Promise<string>;
+  snapshot?: VmSnapshotProvider;
 };
 const bootProviders = new WeakMap<object, Map<string, VmBootProvider>>();
 export function registerVmBootProvider(owner: object, name: string, provider: VmBootProvider) {
+  owner = vmHostIdentity(owner);
+  const instance = pluginAuthority();
+  instance?.check('events', true);
   let providers = bootProviders.get(owner);
   if (!providers) bootProviders.set(owner, (providers = new Map()));
   if (providers.has(name)) throw new Error(`VM boot provider already registered: ${name}`);
-  providers.set(name, provider);
-  return () => {
-    if (providers.get(name) === provider) providers.delete(name);
-  };
+  const removeContribution = instance?.contribute('interceptor', 'vm-boot:' + name);
+  const bind =
+    <A extends unknown[], R>(work: (...args: A) => R) =>
+    (...args: A): R => {
+      if (!instance) return work(...args);
+      const value = withPluginAuthority(instance, () => work(...args));
+      if (value instanceof Promise) instance.scope.observe(value);
+      return value;
+    };
+  const managed: VmBootProvider = instance
+    ? {
+        allowInitialReset: provider.allowInitialReset,
+        prepare: bind(async (...args: Parameters<VmBootProvider['prepare']>) => {
+          const attachment = await provider.prepare(...args);
+          return (
+            attachment && {
+              ...attachment,
+              close: cleanupReceipt(() => withPluginCleanup(instance, attachment.close)),
+            }
+          );
+        }),
+        firmware: provider.firmware && bind(provider.firmware.bind(provider)),
+        stateFingerprint: provider.stateFingerprint && bind(provider.stateFingerprint.bind(provider)),
+        snapshot: provider.snapshot && {
+          capture: bind(provider.snapshot.capture.bind(provider.snapshot)),
+          remove: bind(provider.snapshot.remove.bind(provider.snapshot)),
+          ensureOnlineAllowed: bind(provider.snapshot.ensureOnlineAllowed.bind(provider.snapshot)),
+          prepareRestore: bind(async (id: string, snapshotId: string) =>
+            bind(await provider.snapshot!.prepareRestore(id, snapshotId)),
+          ),
+        },
+      }
+    : provider;
+  providers.set(name, managed);
+  const unregister = cleanupReceipt(() => {
+    if (providers!.get(name) === managed) providers!.delete(name);
+    removeContribution?.();
+  });
+  if (instance) instance.scope.add(unregister);
+  return unregister;
 }
 export function vmBootProviders(owner: object): ReadonlyArray<readonly [string, VmBootProvider]> {
-  return [...(bootProviders.get(owner) || [])];
+  return [...(bootProviders.get(vmHostIdentity(owner)) || [])];
 }
 
 export type VmIdentity = Readonly<{

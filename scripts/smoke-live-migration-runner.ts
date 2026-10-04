@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -34,15 +35,15 @@ try {
     load: [0, 0, 0], vmCount: 1, runningVms: 0 });
   const port = await freePort();
   const targetFile = join(root, 'target-peer.json');
-  targetPeers = new HostPeers(peerStatus, targetFile, 'Target');
+  targetPeers = new HostPeers(peerStatus, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await targetPeers.init(false);
   await targetPeers.configure({ operation: 'listener', listener: {
     enabled: true, host: '127.0.0.1', port,
   } });
   await targetPeers.close();
-  targetPeers = new HostPeers(peerStatus, targetFile, 'Target');
+  targetPeers = new HostPeers(peerStatus, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await targetPeers.init(true);
-  sourcePeers = new HostPeers(peerStatus, join(root, 'source-peer.json'), 'Source');
+  sourcePeers = new HostPeers(peerStatus, join(root, 'source-peer.json'), 'Source', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await sourcePeers.init(false);
   const code = await targetPeers.configure({ operation: 'create-code' });
   if (!('pairing' in code) || !code.pairing) throw new Error('Missing pairing code');
@@ -54,12 +55,12 @@ try {
   await targetPeers.configure({ operation: 'allow-import', id: inboundId, enabled: true });
   await targetPeers.configure({ operation: 'allow-activate', id: inboundId, enabled: true });
   const receiver = new LiveMigrationReceiver(target, targetPeers);
-  targetPeers.setLiveMigrationReceiver({
+  peerHandlers.set(targetPeers, { ...peerHandlers.get(targetPeers), liveMigrationReceiver: {
     prepare: (input) => receiver.prepare(input),
     complete: (input) => receiver.complete(input),
     abort: (input) => receiver.abort(input),
     status: (input) => Promise.resolve(receiver.status(input)),
-  });
+  } });
   const vm = await source.create({ name: 'migration-source', accelerator: 'tcg',
     memoryMiB: 256, cpus: 1, diskGiB: 2 });
   sourceVmId = vm.id;

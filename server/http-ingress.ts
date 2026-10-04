@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { networkFor, type NetworkScope } from './network/index.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { randomUUID, X509Certificate } from 'node:crypto';
@@ -146,7 +147,7 @@ export class HttpIngress {
   constructor(
     private machines: Machines,
     file: string | PluginMetadata = join(DATA, 'plugins', 'network', 'ingress.json'),
-    private certificates?: IngressCertificates,
+    private certificates?: ServiceInterface<IngressCertificates>,
     private networking: NetworkScope = networkFor('core:http-ingress'),
   ) { this.file = metadataPath(file); }
 

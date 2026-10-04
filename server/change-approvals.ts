@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -35,7 +36,7 @@ export class ChangeApprovals {
   private pending = Promise.resolve();
   private closed = false;
 
-  constructor(private permissions: ProjectPermissions, private workspaces: Workspaces,
+  constructor(private permissions: ProjectPermissions, private workspaces: ServiceInterface<Workspaces>,
     private file = join(DATA, 'change-approvals.json'), private now = Date.now) {}
 
   async init() {

@@ -8,8 +8,8 @@ import type {
   operationContributionSchema,
 } from './plugin-schema.ts';
 
-export const PLUGIN_API_VERSION = 3;
-export const BUILTIN_PLUGIN_VERSION = '0.3.0';
+export const PLUGIN_API_VERSION = 4;
+export const BUILTIN_PLUGIN_VERSION = '1.0.0';
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginPack = z.infer<typeof pluginPackSchema>;
 export type PluginSelection = z.infer<typeof pluginSelectionSchema>;

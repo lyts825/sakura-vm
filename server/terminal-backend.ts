@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import type { Machines } from './machines.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import type { PreparedProject } from './project-preparation.ts';
@@ -10,6 +11,7 @@ import { ExecutionScope } from './execution-scope.ts';
 import { resourceContext, withResourceContext } from './host-runtime/context.ts';
 import { AppError } from '../shared/errors.ts';
 import { cleanupReceipt } from './cleanup-receipt.ts';
+import type { ServiceBroker } from './service-broker.ts';
 
 export type TerminalService = Pick<ProjectTerminals, keyof ProjectTerminals>;
 const backends = new WeakMap<object, TerminalBackend>();
@@ -18,12 +20,14 @@ const backends = new WeakMap<object, TerminalBackend>();
 export class TerminalBackend {
   private root: ProjectTerminals;
   constructor(machines: Machines, readonly instance: PluginInstance,
-    context?: ConstructorParameters<typeof Workspaces>[1]) {
+    context?: ConstructorParameters<typeof Workspaces>[1], private broker?: ServiceBroker, private host?: PluginInstance) {
     const port = vmAccess(machines, instance.scope, instance, (vmId, signal, work) =>
       ExecutionScope.run({ machines, vmId, projectId: resourceContext()?.projectId || 'default',
         signal, owner: ExecutionScope.current()?.owner || instance.owner, delegate: true }, work));
-    this.root = withPluginAuthority(instance, () => new ProjectTerminals(port, new Workspaces(port, context, { background: false })));
-    instance.scope.add(() => this.root.workspaces.close());
+    const workspace = withPluginAuthority(instance, () => new Workspaces(port, context, { background: false }));
+    this.root = withPluginAuthority(instance, () => new ProjectTerminals(port, workspace));
+    instance.scope.add(() => workspace.close());
+    broker?.registerSystem(instance, this.root);
     backends.set(machines, this);
     instance.scope.add(() => withPluginCleanup(instance, () => this.root.close()));
   }
@@ -53,9 +57,10 @@ export class TerminalBackend {
     const close = async () => { lifetime.abort(); await Promise.all([...leases].map(lease => lease.release())); };
     if (consumer) consumer.scope.add(close);
     const root = this.root;
+    const publicRoot = this.broker ? this.broker.system<TerminalService>(consumer || this.host!, 'terminal-backend', ['terminal-backend'])! : root;
     return Object.freeze({
-      get workspaces() { check(); return root.workspaces; },
-      get preparation() { check(); return root.preparation; },
+      get workspaces() { check(); return publicRoot.workspaces; },
+      get preparation() { check(); return publicRoot.preparation; },
       prepare: (...args: Parameters<ProjectTerminals['prepare']>) => invoke(() => {
         args[4] = args[4] ? AbortSignal.any([signal, args[4]]) : signal; return retain(root.prepare(...args));
       }),
@@ -73,9 +78,10 @@ export class TerminalBackend {
 }
 
 export function projectTerminalsFor(machines: ConstructorParameters<typeof ProjectTerminals>[0],
-  workspaces?: Workspaces, context?: ConstructorParameters<typeof Workspaces>[1],
+  workspaces?: ServiceInterface<Workspaces>, context?: ConstructorParameters<typeof Workspaces>[1],
   options?: ConstructorParameters<typeof ProjectTerminals>[3]): TerminalService {
   const backend = backends.get(vmHostIdentity(machines));
   if (backend) return backend.handle();
+  if (pluginAuthority()) throw new AppError('插件终端提供者尚未运行', 503, 'PLUGIN_SERVICE_UNAVAILABLE');
   return new ProjectTerminals(machines, workspaces, context, options);
 }

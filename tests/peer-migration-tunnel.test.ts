@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -28,8 +29,8 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
   });
   const targetFile = join(root, 'target.json');
   const sourceFile = join(root, 'source.json');
-  let target = new HostPeers(status, targetFile, 'Target');
-  const source = new HostPeers(status, sourceFile, 'Source');
+  let target = new HostPeers(status, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
+  const source = new HostPeers(status, sourceFile, 'Source', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   let forward: Awaited<ReturnType<HostPeers['openMigrationForward']>> | undefined;
   let client: Socket | undefined;
   try {
@@ -42,7 +43,7 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
       enabled: true, host: '127.0.0.1', port: peerPort,
     } });
     await target.close();
-    target = new HostPeers(status, targetFile, 'Target');
+    target = new HostPeers(status, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
     await target.init(true);
     await source.init(false);
     const issued = await target.configure({ operation: 'create-code' });
@@ -63,7 +64,7 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
     await target.configure({ operation: 'allow-activate', id: inbound.id, enabled: true });
     const prepared = { targetVmId: randomUUID(), sessionId: randomUUID(),
       targetDiskNode: '#block23', diskPort: echoPort, statePort: echoPort };
-    target.setLiveMigrationReceiver({ prepare: async (input) => {
+    peerHandlers.set(target, { ...peerHandlers.get(target), liveMigrationReceiver: { prepare: async (input) => {
       assert.equal(input.requesterId, inbound.requesterId);
       assert.equal(input.transferId, prepare.transferId);
       assert.equal(input.key, identity.key);
@@ -83,7 +84,7 @@ test('migration streams use pinned peer TLS, session authority and revocable loc
       assert.equal(input.requesterId, inbound.requesterId);
       return { targetVmId: prepared.targetVmId,
         status: 'paused' as const, originStatus: 'prepared' as const };
-    } });
+    } } });
     assert.deepEqual(await source.prepareLiveTarget(outbound.id, prepare), prepared);
     assert.equal((await source.inspectLiveTarget(outbound.id, {
       targetVmId: prepared.targetVmId, transferId: prepare.transferId,

@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
@@ -6,6 +7,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { ROOT } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
+import { vmLiveIdentity } from './vm-reference.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
 import { projectVersion } from './project-config.ts';
 import { guestTask } from './guest-task.ts';
@@ -112,7 +114,7 @@ export type EngineeringRunOptions = {
   onResult?: (result: EngineeringResult) => Promise<void>;
 };
 export async function runEngineeringOperation(
-  machines: Machines, workspaces: Workspaces, id: string, operation: string,
+  machines: Machines, workspaces: ServiceInterface<Workspaces>, id: string, operation: string,
   parameters: Record<string, unknown>, signal: AbortSignal, options: EngineeringRunOptions = {},
 ): Promise<EngineeringResult> {
   // Choose the original scope/live synchronously, before any asynchronous read.
@@ -155,7 +157,8 @@ export async function runEngineeringOperation(
     try {
       prepared = await terminals.prepare(id, projectId, null, false, signal, undefined, { mode: 'task' });
       const { captured, signal: executionSignal } = prepared;
-      if (!captured || !executionSignal || prepared.projectId !== projectId || captured.live !== live ||
+      if (!captured || !executionSignal || prepared.projectId !== projectId ||
+          vmLiveIdentity(captured.live) !== vmLiveIdentity(live) ||
           (captured.project._workspace || 'default') !== projectId ||
           projectVersion(captured.project) !== version)
         throw new AppError('工程任务准备租约不属于原项目或客户机', 409, 'PROJECT_IDENTITY_HOST_CHANGED');

@@ -35,7 +35,7 @@ export async function preserveFileMetadata(ftp: SFTPWrapper, path: string, attrs
   );
 }
 export class Files {
-  readonly uploads = new ResumableUploads(this);
+  readonly uploads: ResumableUploads = new ResumableUploads(this);
   trash?: (id: string, path: string, recursive: boolean) => Promise<unknown>;
   constructor(private machines: Machines) {}
   private async downloadInfo(ftp: SFTPWrapper, path: string) {

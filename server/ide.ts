@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { mkdir, readFile, readdir, writeFile, rename, copyFile, lstat, rm } from 'node:fs/promises';
 import { join, resolve, isAbsolute, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -13,7 +14,6 @@ import { secureSshPaths } from './ssh-files.ts';
 
 export const sshPath = (value: string) =>
   '"' + value.replaceAll('\\', '/').replaceAll('%', '%%').replaceAll('"', '\\"') + '"';
-const activeIde = new WeakMap<Workspaces, Ide>();
 
 /** Saved private settings apply to every generated editor entry, including sibling projects. */
 export async function hasPrivateProject(id: string) {
@@ -51,13 +51,13 @@ function projectSshConfig(entry: {
 /** Exports use the live IDE owner so a returned project bridge remains alive. */
 export async function editorConnectionProfile(
   machines: Machines,
-  workspaces: Workspaces,
+  workspaces: ServiceInterface<Workspaces>,
   id: string,
   signal?: AbortSignal,
   client: 'openssh' | 'jetbrains' = 'openssh',
+  service?: Pick<Ide, 'profile'>,
 ) {
   signal?.throwIfAborted();
-  const service = activeIde.get(workspaces);
   if (service) return service.profile(id, signal, client);
   throw new AppError('项目 SSH 档案需要启用 IDE 插件并先配置项目连接', 409);
 }
@@ -75,12 +75,11 @@ export class Ide {
   };
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private sshDirectory = join(homedir(), '.ssh'),
   ) {
     machines.on('change', this.onChange);
     this.unsubscribeConfig = workspaces.onConfigChange?.(() => this.update()) || (() => {});
-    activeIde.set(workspaces, this);
   }
   async profile(id: string, signal?: AbortSignal, client: 'openssh' | 'jetbrains' = 'openssh') {
     signal?.throwIfAborted();
@@ -255,7 +254,6 @@ export class Ide {
     });
   }
   async close() {
-    if (activeIde.get(this.workspaces) === this) activeIde.delete(this.workspaces);
     this.machines.off('change', this.onChange);
     this.unsubscribeConfig();
     await this.projectSsh?.close();

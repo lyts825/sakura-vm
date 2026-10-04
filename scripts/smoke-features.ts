@@ -5,6 +5,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname, basename } from 'node:path';
 import { PassThrough, Readable, Writable } from 'node:stream';
+import { authorizeOwnedProjectFixture } from './owned-project-fixture.ts';
 const root = await mkdtemp(join(tmpdir(), 'sakura-features-'));
 process.env.SAKURA_DATA_DIR = root;
 process.env.SAKURA_IMAGE_PATH = resolve('.data/images/alpine-3.23.qcow2');
@@ -60,6 +61,9 @@ try {
     const id = vm.id;
     console.log('Starting isolated Alpine feature tests');
     await boot(id);
+    // Configuration interceptors inspect existing guest ownership before a template is installed.
+    const prerequisites = await machines.exec(id, 'apk add --no-cache python3 tmux', 180000);
+    assert.equal(prerequisites.code, 0, prerequisites.stderr);
     await features.files.operation(id, 'mkdir', '/workspace/files');
     const binary = Buffer.from([0, 255, 127, 128, 10, 13, ...Buffer.from('中文 binary')]);
     await features.files.upload(id, '/workspace/files/test.bin', Readable.from(binary));
@@ -157,6 +161,7 @@ try {
       setup: 'printf prepared > ready.txt; printf x >> setup-runs.txt',
       command: 'python3 -m http.server 8088 --bind 0.0.0.0',
     });
+    await authorizeOwnedProjectFixture(machines, features.workspaces, id);
     await features.workspaces.run(id, 'start');
     await job(features.workspaces.jobs, id);
     assert.equal((await features.workspaces.runtime(id)).status, 'running');
@@ -182,7 +187,10 @@ try {
     // Already-running projects must be detected before a newly edited setup command runs.
     await features.workspaces.run(id, 'start');
     await job(features.workspaces.jobs, id);
-    await features.workspaces.save(id, { ...savedProject, setup: 'printf unsafe > ready.txt' });
+    await features.workspaces.save(id, {
+      ...(await features.workspaces.config(id)),
+      setup: 'printf unsafe > ready.txt',
+    });
     await features.workspaces.run(id, 'start');
     await job(features.workspaces.jobs, id);
     assert.equal(await machines.readGuestFile(id, '/workspace/app/ready.txt'), 'prepared');
@@ -239,8 +247,12 @@ try {
     await features.sync.run(id, 'push');
     await job(features.sync.jobs, id);
     assert.equal(await machines.readGuestFile(id, '/workspace/shared/hello.txt'), 'host-conflict');
-    await features.sync.save(id, { host, guest: '/workspace/shared', auto: false,
-      drivers: [{ pattern: 'hello.txt', mode: 'prefer-guest' }] });
+    await features.sync.save(id, {
+      host,
+      guest: '/workspace/shared',
+      auto: false,
+      drivers: [{ pattern: 'hello.txt', mode: 'prefer-guest' }],
+    });
     await writeFile(join(host, 'hello.txt'), 'host-second');
     await machines.writeGuestFile(id, '/workspace/shared/hello.txt', 'guest-second');
     const driven = await features.sync.preview(id);

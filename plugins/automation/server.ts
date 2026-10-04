@@ -2,6 +2,7 @@ import { services as serviceHealthServices } from '../service-health/services.ts
 import { services as secretsServices } from '../secrets/services.ts';
 import { services as containersServices } from '../containers/services.ts';
 import { services as automationServices } from './services.ts';
+import { services as ideServices } from '../ide/services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginContext } from '../../server/plugin-api.ts';
@@ -17,6 +18,7 @@ import type { Containers } from '../../server/containers.ts';
 export async function activate(host: PluginContext) {
   const m = host.vm;
   host.provide(automationServices.suite, new FeatureSuite(m, host.workspaces, {
+    editor: () => host.optional(ideServices.ide),
     jobs: () => [...host.jobViews()],
     services: (id) => host.optional(serviceHealthServices.health)?.observed(id) || [],
     secrets: async (id) => host.optional(secretsServices.secrets)?.rotation(id),

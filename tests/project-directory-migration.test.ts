@@ -1,3 +1,5 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
+import { setVmStorageRoot } from '../server/paths.ts';
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { createHash, randomUUID } from 'node:crypto';
@@ -44,7 +46,9 @@ async function fixture() {
     vmId = randomUUID(),
     identityId = randomUUID();
   let project = projectSchema.parse({ directory: '/srv/projects/alpha', networkIsolation: 'private' });
-  const configFile = join(directory, 'project.json');
+  setVmStorageRoot(vmId, directory);
+  const configFile = projectMetadataFile(vmId, 'default');
+  await mkdir(dirname(configFile), { recursive: true });
   await writeFile(configFile, JSON.stringify(project));
   let identity = projectIdentitySchema.parse({
     version: 1,
@@ -183,7 +187,6 @@ async function fixture() {
     config: async () => project,
     projects: {
       current: () => 'default',
-      file: () => configFile,
       list: async () => ({
         projects: [{ id: 'default' }, ...(otherDirectory ? [{ id: 'aaaaaaaaaaaaaaaa' }] : [])],
       }),

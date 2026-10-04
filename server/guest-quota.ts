@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { Workspaces } from './workspaces.ts';
@@ -14,7 +15,7 @@ export const guestQuotaSchema = z.object(guestQuotaShape).strict();
 
 export async function guestQuota(
   machines: Machines,
-  workspaces: Workspaces,
+  workspaces: ServiceInterface<Workspaces>,
   vmId: string,
   input: unknown,
   action: 'check' | 'run',

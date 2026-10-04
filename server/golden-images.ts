@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readdir, lstat, readFile, rename, rm, rmdir } from 'node:fs/promises';
 import { once } from 'node:events';
@@ -25,7 +26,7 @@ export class GoldenImages {
   readonly jobs: Jobs;
   constructor(
     private machines: Machines,
-    private bundles: Bundles,
+    private bundles: ServiceInterface<Bundles>,
     private root = join(DATA, 'golden-images'),
     jobs = new Jobs('golden-images'),
   ) {

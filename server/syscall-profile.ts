@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';
@@ -228,7 +229,7 @@ export async function checkSyscallProfile(machines: Machines, id: string,
 }
 
 export async function runSyscallProfile(machines: Machines, id: string,
-  input: unknown, signal?: AbortSignal, workspaces?: Workspaces, taskOptions: SyscallProjectTaskOptions = {}) {
+  input: unknown, signal?: AbortSignal, workspaces?: ServiceInterface<Workspaces>, taskOptions: SyscallProjectTaskOptions = {}) {
   const options = syscallProfileInput.parse(input);
   if (options.mode === 'status') {
     const status = await checkSyscallProfile(machines, id, signal);
@@ -265,7 +266,8 @@ export async function runSyscallProfile(machines: Machines, id: string,
   }
   if (!options.confirmed || !options.command)
     throw new AppError('运行受限命令需要 command 与 confirmed=true', 400);
-  const scope = workspaces || new Workspaces(machines);
+  const owned = workspaces ? undefined : new Workspaces(machines);
+  const scope = workspaces || owned!;
   const tasks = new SyscallProjectTasks(machines, scope, taskOptions);
   const run = () => tasks.withProject(id, signal, undefined, async () => {
     const project = tasks.project(id);
@@ -283,6 +285,6 @@ export async function runSyscallProfile(machines: Machines, id: string,
   });
   try { return workspaces ? await run() : await scope.projects.with(id, undefined, run); }
   finally {
-    try { await tasks.close(); } finally { if (!workspaces) await scope.close(); }
+    try { await tasks.close(); } finally { await owned?.close(); }
   }
 }

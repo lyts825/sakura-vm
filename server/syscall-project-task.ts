@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectPrivateValues, type Workspaces } from './workspaces.ts';
@@ -40,7 +41,7 @@ export class SyscallProjectTasks {
   private context = new AsyncLocalStorage<Context>();
   private controller = new AbortController();
   private pending = new Set<Promise<unknown>>();
-  constructor(private machines: Machines, private workspaces: Workspaces, private options: SyscallProjectTaskOptions = {}) {}
+  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private options: SyscallProjectTaskOptions = {}) {}
 
   async capture(id: string, candidate?: Project): Promise<SyscallProjectCapture> {
     const projectId = this.workspaces.projects.current(id), live = this.machines.live.get(id);

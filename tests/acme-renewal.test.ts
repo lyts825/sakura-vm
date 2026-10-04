@@ -11,7 +11,7 @@ const vmId = '00000000-0000-4000-8000-000000000001';
 test('Certbot renewal checks existing lineages, schedules due runs, and persists results', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-acme-'));
   const file = join(directory, 'acme.json');
-  let now = Date.UTC(2026, 0, 1), ready = false, running = true;
+  let now = Date.UTC(2026, 0, 1), ready = false, running = true, allowed = false;
   const commands: string[] = [];
   const machines = {
     records: new Map([[vmId, {}]]), get: () => ({}),
@@ -22,9 +22,8 @@ test('Certbot renewal checks existing lineages, schedules due runs, and persists
         stdout: '', stderr: '' };
     },
   } as unknown as Machines;
-  const service = new AcmeRenewal(machines, file, () => now);
+  const service = new AcmeRenewal(machines, file, () => now, { allowed: () => allowed, mutation: () => {} });
   await service.init();
-  service.setAllowed(() => false);
   try {
     assert.equal((await service.check(vmId)).ready, false);
     await assert.rejects(service.run(vmId, { mode: 'renew' }, 'run'), /锁定或数据迁移/);
@@ -34,7 +33,7 @@ test('Certbot renewal checks existing lineages, schedules due runs, and persists
       { mode: 'save', enabled: true, intervalHours: 12 });
     assert.equal(saved.policy?.enabled, true);
     assert.equal(commands.filter((item) => item.startsWith('certbot renew')).length, 0);
-    service.setAllowed(() => true);
+    allowed = true;
     await new Promise<void>((resolve) => setImmediate(resolve));
     await service.tick();
     assert.equal(commands.filter((item) => item ===
@@ -86,11 +85,10 @@ test('failed renewal records failure and exact guest command is not replayed whi
       return { code: 2, stdout: '', stderr: 'challenge failed' };
     },
   } as unknown as Machines;
-  const service = new AcmeRenewal(machines, join(directory, 'acme.json'), () => now);
-  await service.init();
   let mutations = 0;
-  service.setMutationCounter((delta) => { mutations += delta; });
-  service.setAllowed(() => true);
+  const service = new AcmeRenewal(machines, join(directory, 'acme.json'), () => now,
+    { allowed: () => true, mutation: delta => { mutations += delta; } });
+  await service.init();
   try {
     await assert.rejects(service.run(vmId, { mode: 'renew' }, 'run'), /Certbot/);
     assert.equal(service.view(vmId).attempts[0].status, 'failed');

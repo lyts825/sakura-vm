@@ -83,14 +83,12 @@ export class TrustedBootService {
       this.starting.add(task);
       void task.finally(() => this.starting.delete(task)).catch(() => {});
       return task;
-    } });
-    this.machines.trustedBootStateFingerprint = (id) => this.fingerprint(id);
-    this.machines.trustedBootSnapshot = {
+    }, stateFingerprint: (id) => this.fingerprint(id), snapshot: {
       capture: (id, snapshotId) => this.saveSnapshot(id, snapshotId),
       prepareRestore: (id, snapshotId) => this.prepareSnapshotRestore(id, snapshotId),
       remove: (id, snapshotId) => this.removeSnapshot(id, snapshotId),
       ensureOnlineAllowed: (id) => this.ensureOnlineSnapshotAllowed(id),
-    };
+    } });
   }
 
   private async save(id: string, policy: Policy) {
@@ -458,11 +456,9 @@ export class TrustedBootService {
         if (this.active.get(id) === entry) this.active.delete(id);
       }),
     );
-    this.unregisterBoot?.();
-    this.machines.trustedBootStateFingerprint = undefined;
-    this.machines.trustedBootSnapshot = undefined;
     const failed = cleanup.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
     if (failed.length) throw new AggregateError(failed, 'TPM 进程清理尚未确认');
+    this.unregisterBoot?.();
   }
 }
 import { registerVmBootProvider } from './vm-lifetime.ts';

@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
@@ -62,7 +63,7 @@ export class ProjectPermissions {
   private catalog: ProjectCatalog;
 
   constructor(private access: AccessControl, private machines: Machines,
-    private workspaces?: Workspaces,
+    private workspaces?: ServiceInterface<Workspaces>,
     private file = join(DATA, 'project-permissions.json')) {
     this.catalog = new ProjectCatalog(machines);
   }

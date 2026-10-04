@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
@@ -64,12 +65,12 @@ export function stopTerminalsScript(projectId: string, session?: string) {
 }
 
 export class ProjectTerminals {
-  readonly workspaces: Workspaces;
+  readonly workspaces: ServiceInterface<Workspaces>;
   readonly preparation: ProjectPreparation;
   private scopes: Pick<ProjectRunScopes, 'assertAdmission' | 'terminalRuns' | 'prepareTerminal' | 'terminalRun' |
     'hasRun' | 'stopTerminal' | 'stopTerminals' | 'retireRebootedTerminals'>;
   private identities: Pick<ProjectIdentities, 'terminal' | 'terminalCommand'>;
-  constructor(private machines: Machines, workspaces?: Workspaces,
+  constructor(private machines: Machines, workspaces?: ServiceInterface<Workspaces>,
     context?: ConstructorParameters<typeof Workspaces>[1], options: {
       scopes?: ProjectTerminals['scopes']; identities?: ProjectTerminals['identities'] } = {}) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);

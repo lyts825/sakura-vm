@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -254,7 +255,7 @@ test('pipeline records stay in the original project when the saved active select
     assert.equal(job.status, 'done'); assert.equal(job.projectId, f.projectId);
     assert.equal((await f.scope(() => f.pipelines.runs(f.id)))[0].projectId, f.projectId);
     assert.equal((await f.workspaces.projects.inScope(f.id, f.otherProjectId, () => f.pipelines.runs(f.id))).length, 0);
-    const persisted = await readFile(f.scope(() => f.workspaces.projects.file(f.id, 'pipeline-runs')), 'utf8');
+    const persisted = await readFile(f.scope(() => projectMetadataFile(f.id, f.workspaces.projects.current(f.id), 'pipeline-runs')), 'utf8');
     assert.equal(JSON.parse(persisted)[0].status, 'done');
   } finally { await f.close(); }
 });

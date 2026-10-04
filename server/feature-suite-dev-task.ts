@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -69,7 +70,7 @@ export function featureDevTaskCommand(project: Project, input: FeatureDevTaskInp
 }
 
 /** The original preparation lease covers execution, verification and result persistence. */
-export async function runFeatureDevTask(machines: Machines, workspaces: Workspaces, id: string,
+export async function runFeatureDevTask(machines: Machines, workspaces: ServiceInterface<Workspaces>, id: string,
   input: FeatureDevTaskInput, signal: AbortSignal, log: (value: string) => void,
   onResult?: (result: FeatureDevTaskResult) => Promise<void>, options: FeatureDevTaskOptions = {}) {
   featureDevTaskOperation.parse(input.operation);

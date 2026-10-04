@@ -36,10 +36,6 @@ export class ProjectCatalog {
     const project = this.current(id);
     return project === 'default' ? id : `${id}:${project}`;
   }
-  file(id: string, name = 'project') {
-    const project = this.current(id);
-    return join(vmDir(id), `${name}${project === 'default' ? '' : '-' + project}.json`);
-  }
   async list(id: string) {
     this.machines.get(id);
     return projectIndexSchema.parse(
@@ -99,4 +95,10 @@ export class ProjectCatalog {
       return index;
     });
   }
+}
+/** Host domain storage adapter. Public project services expose identities, never filesystem paths. */
+export function projectMetadataFile(id: string, project: string, name = 'project') {
+  projectIdSchema.parse(project);
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(name)) throw new AppError('项目元数据类型无效', 400);
+  return join(vmDir(id), `${name}${project === 'default' ? '' : '-' + project}.json`);
 }

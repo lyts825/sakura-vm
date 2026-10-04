@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
-import { createHash } from 'node:crypto';
+import { pluginArtifactDigest, systemArtifactDigest } from './plugin-artifact.ts';
 import { PluginDirectory } from './plugin-directory.ts';
 import { ServiceBroker } from './service-broker.ts';
 import { withPluginAuthority, withPluginCleanup } from './plugin-authority.ts';
@@ -15,9 +15,6 @@ import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 import { TerminalBackend, type TerminalService } from './terminal-backend.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import { SystemServices } from './system-services.ts';
-
-
-
 
 import { resolvePlugins } from '../shared/plugin-selection.ts';
 import { emptySelection, PLUGINS } from '../shared/plugins.ts';
@@ -46,11 +43,36 @@ function matchesOperation(pattern: string, pathname: string) {
 export interface PluginRuntime extends PluginServices {}
 export class PluginRuntime {
   readonly broker: ServiceBroker;
-  extraJobStores: Jobs[] = [];
-
-  readonly enabled = new Set<string>();
-  readonly errors: Record<string, string> = {};
-  readonly lifecycle: Record<string, { phase: 'active' | 'failed' | 'skipped'; activationMs: number }> = {};
+  get enabled(): ReadonlySet<string> {
+    return new Set(
+      this.directory
+        .view()
+        .instances.filter((item) => item.source === 'official' && item.phase === 'running')
+        .map((item) => item.pluginId),
+    );
+  }
+  get errors(): Record<string, string> {
+    return Object.fromEntries(
+      this.directory
+        .view()
+        .instances.filter((item) => item.source === 'official' && item.error)
+        .map((item) => [item.pluginId, item.error!]),
+    );
+  }
+  get lifecycle(): Record<string, { phase: 'active' | 'failed' | 'skipped'; activationMs: number }> {
+    return Object.fromEntries(
+      this.directory
+        .view()
+        .instances.filter((item) => item.source === 'official' && item.phase !== 'inactive')
+        .map((item) => [
+          item.pluginId,
+          {
+            phase: item.phase === 'running' ? 'active' : item.phase === 'skipped' ? 'skipped' : 'failed',
+            activationMs: item.activationMs,
+          },
+        ]),
+    );
+  }
   private modules = new Map<string, PluginModule>();
   private contexts = new Map<string, PluginContext>();
   private scopes = new Map<string, PluginScope>();
@@ -60,16 +82,27 @@ export class PluginRuntime {
     { owner: string; retry: (job: JobView) => Promise<unknown> | unknown }
   >();
   readonly operations = new OperationTracker();
-  get mutations() { return this.operations.active; }
-  get vm() { return this.machines; }
-  set mutations(value: number) { this.operations.active = value; }
+  get mutations() {
+    return this.operations.active;
+  }
+  get vm() {
+    return this.machines;
+  }
+  set mutations(value: number) {
+    this.operations.active = value;
+  }
   importing = false;
   private exclusives = new Set<string>();
   async exclusive<T>(name: string, work: () => Promise<T>): Promise<T> {
     if (this.exclusives.has(name)) throw new AppError('另一项操作仍在进行', 409);
-    this.exclusives.add(name); this.importing = this.exclusives.has('import');
-    try { return await work(); }
-    finally { this.exclusives.delete(name); this.importing = this.exclusives.has('import'); }
+    this.exclusives.add(name);
+    this.importing = this.exclusives.has('import');
+    try {
+      return await work();
+    } finally {
+      this.exclusives.delete(name);
+      this.importing = this.exclusives.has('import');
+    }
   }
   private closed = false;
   private closing?: Promise<void>;
@@ -78,22 +111,50 @@ export class PluginRuntime {
   private ownsSystem = false;
   private terminalBackend: TerminalBackend;
   private terminalInstance: PluginInstance;
-  terminalHandle(): TerminalService { return this.terminalBackend.handle(); }
-  pluginResources() {
-    return [...this.scopes].map(([id, scope]) => ({ id, cleanupPending: this.cleanupPending.has(id), ...scope.diagnostics() }));
+  terminalHandle(): TerminalService {
+    return this.terminalBackend.handle();
   }
-  private constructor(public machines: Machines, readonly directory = new PluginDirectory(), readonly system = new SystemServices(directory)) {
+  pluginResources() {
+    return [...this.scopes].map(([id, scope]) => ({
+      id,
+      cleanupPending: this.cleanupPending.has(id),
+      ...scope.diagnostics(),
+    }));
+  }
+  private constructor(
+    public machines: Machines,
+    readonly directory = new PluginDirectory(),
+    readonly system = new SystemServices(directory),
+  ) {
     this.broker = system.broker;
-    this.terminalInstance = directory.begin('system', 'terminal-backend', '1', 'builtin:terminal-backend');
-    this.terminalBackend = new TerminalBackend(machines, this.terminalInstance, {
-      get secrets() { return host.secrets; }, get network() { return host.network; },
-    });
+    this.terminalInstance = directory.begin(
+      'system',
+      'terminal-backend',
+      '1.0.0',
+      systemArtifactDigest('terminal-backend'),
+    );
+    this.terminalBackend = new TerminalBackend(
+      machines,
+      this.terminalInstance,
+      {
+        get secrets() {
+          return host.secrets;
+        },
+        get network() {
+          return host.network;
+        },
+      },
+      this.broker,
+      this.system.caller,
+    );
     const host = this;
     directory.publish(this.terminalInstance);
-    for (const key of SERVICE_KEYS) Object.defineProperty(this, key, {
-      configurable: true, enumerable: true,
-      get: () => this.system.official(key),
-    });
+    for (const key of SERVICE_KEYS)
+      Object.defineProperty(this, key, {
+        configurable: true,
+        enumerable: true,
+        get: () => this.system.official(key),
+      });
   }
   serviceValue<T = unknown>(key: string): T | undefined {
     return this.services.get(key) as T | undefined;
@@ -116,7 +177,9 @@ export class PluginRuntime {
     this.directory.get('official', owner)?.contribute('job-retry', owner);
     const scope = this.scopes.get(owner);
     if (scope) {
-      const cancel = () => { for (const job of store.list()) if (job.status === 'running') store.cancel(job.id!); };
+      const cancel = () => {
+        for (const job of store.list()) if (job.status === 'running') store.cancel(job.id!);
+      };
       scope.signal.addEventListener('abort', cancel, { once: true });
       scope.add(async () => {
         await store.close();
@@ -128,16 +191,31 @@ export class PluginRuntime {
   }
   retryHandler(store: Jobs) {
     const registration = this.pluginJobs.get(store);
-    return registration && ((job: JobView) => {
-      this.require(registration.owner);
-      const current = job.id ? store.get(job.id) : undefined;
-      if ((current || job).admission === 'cleanup-pending' && !(current || job).cleanupResolvedAt)
-        throw new AppError('资源清理尚未确认，请先执行领域恢复', 409, 'PLUGIN_CLEANUP_PENDING');
-      return this.scopes.get(registration.owner)!.run(() => registration.retry(job));
-    });
+    const instance = registration && this.directory.get('official', registration.owner);
+    return (
+      registration &&
+      instance &&
+      ((job: JobView) => {
+        const check = () => {
+          instance.check('jobs');
+          if (this.directory.get('official', registration.owner) !== instance)
+            throw new AppError('插件任务重试代次已改变', 403, 'PLUGIN_REVOKED');
+        };
+        check();
+        const current = job.id ? store.get(job.id) : undefined;
+        if ((current || job).admission === 'cleanup-pending' && !(current || job).cleanupResolvedAt)
+          throw new AppError('资源清理尚未确认，请先执行领域恢复', 409, 'PLUGIN_CLEANUP_PENDING');
+        return instance.scope.run(() => withPluginAuthority(instance, () => registration.retry(job), check));
+      })
+    );
   }
-  static async create(machines: Machines, selected: string[] = [],
-    rolloutAllowed: (pluginId: string) => boolean = () => true, directory = new PluginDirectory(), system?: SystemServices) {
+  static async create(
+    machines: Machines,
+    selected: string[] = [],
+    rolloutAllowed: (pluginId: string) => boolean = () => true,
+    directory = new PluginDirectory(),
+    system?: SystemServices,
+  ) {
     validateRegistry();
     const host = new PluginRuntime(machines, directory, system);
     host.ownsSystem = !system;
@@ -145,19 +223,25 @@ export class PluginRuntime {
     for (const id of resolvePlugins({ ...emptySelection(), plugins: selected })) {
       const startedAt = performance.now();
       const manifest = PLUGINS.find((item) => item.id === id)!;
-      const instance = directory.begin('official', id, manifest.version,
-        createHash('sha256').update(JSON.stringify(manifest)).digest('hex'));
+      const instance = directory.begin(
+        'official',
+        id,
+        manifest.version,
+        await pluginArtifactDigest(manifest),
+      );
       instance.declareManaged(manifest.contributes.managed);
       if (!rolloutAllowed(id)) {
-        host.errors[id] = '当前主机未命中功能灰度策略；请在系统设置中调整并重启 Sakura 服务';
-        host.lifecycle[id] = { phase: 'skipped', activationMs: 0 };
-        instance.phase = 'skipped'; instance.error = host.errors[id]; await instance.scope.dispose();
+        instance.error = '当前主机未命中功能灰度策略；请在系统设置中调整并重启 Sakura 服务';
+        instance.phase = 'skipped';
+        await instance.scope.dispose();
+        directory.changed();
         continue;
       }
       if (manifest.requires.some((dependency) => !host.enabled.has(dependency.id))) {
-        host.errors[id] = '依赖插件启动失败';
-        host.lifecycle[id] = { phase: 'skipped', activationMs: 0 };
-        instance.phase = 'skipped'; instance.error = host.errors[id]; await instance.scope.dispose();
+        instance.error = '依赖插件启动失败';
+        instance.phase = 'skipped';
+        await instance.scope.dispose();
+        directory.changed();
         continue;
       }
       let module: PluginModule | undefined;
@@ -185,54 +269,69 @@ export class PluginRuntime {
         host.scopes.set(id, scope);
         // Register before activation so partial construction is still owned after activation fails.
         const closedServices = new Set<unknown>();
-        for (const key of manifest.services) scope.add(async () => {
-          const service = host.serviceValue(key) as { close?: () => Promise<void> | void; jobs?: Jobs } | undefined;
-          if (!service || closedServices.has(service)) return;
-          if (service.close) await service.close();
-          else if (service.jobs) await service.jobs.close();
-          if (service.jobs?.list().some((job) => job.admission === 'cleanup-pending'))
-            throw new AppError('插件任务仍有资源等待领域恢复', 503, 'PLUGIN_CLEANUP_PENDING');
-          closedServices.add(service);
-        });
+        for (const key of manifest.services)
+          scope.add(async () => {
+            const service = host.serviceValue(key) as
+              { close?: () => Promise<void> | void; jobs?: Jobs } | undefined;
+            if (!service || closedServices.has(service)) return;
+            if (service.close) await service.close();
+            else if (service.jobs) await service.jobs.close();
+            if (service.jobs?.list().some((job) => job.admission === 'cleanup-pending'))
+              throw new AppError('插件任务仍有资源等待领域恢复', 503, 'PLUGIN_CLEANUP_PENDING');
+            closedServices.add(service);
+          });
         const context = pluginContext(host, manifest, PLUGINS, instance);
         host.contexts.set(id, context);
         if (module.deactivate) scope.add(() => module!.deactivate!(context));
         host.modules.set(id, module);
         started = true;
-        await withinDeadline(scope.run(() => withPluginAuthority(instance,
-          () => module!.activate(context))), manifest.lifecycle.activateMs, `${id} 激活`, () =>
-          scope.abort(),
+        await withinDeadline(
+          scope.run(() => withPluginAuthority(instance, () => module!.activate(context))),
+          manifest.lifecycle.activateMs,
+          `${id} 激活`,
+          () => scope.abort(),
         );
         for (const key of manifest.services)
           if (host.serviceValue(key) === undefined) throw new Error(`插件未注册声明的服务：${id}.${key}`);
         host.modules.set(id, module);
-        host.enabled.add(id);
         for (const [kind, targets] of Object.entries(manifest.contributes)) {
           if (kind === 'managed') continue;
-          const name = ({ sockets: 'socket', pages: 'page', tabs: 'tab', developmentSections: 'developmentSection', operations: 'operation' } as Record<string, string>)[kind] || kind;
-          for (const target of targets) instance.contribute(name as import('../shared/contracts/plugin-runtime.ts').PluginContributionKind,
-            typeof target === 'string' ? target : 'path' in target ? target.path : String(target));
+          const name =
+            (
+              {
+                sockets: 'socket',
+                pages: 'page',
+                tabs: 'tab',
+                developmentSections: 'developmentSection',
+                operations: 'operation',
+              } as Record<string, string>
+            )[kind] || kind;
+          for (const target of targets)
+            instance.contribute(
+              name as import('../shared/contracts/plugin-runtime.ts').PluginContributionKind,
+              typeof target === 'string' ? target : 'path' in target ? target.path : String(target),
+            );
         }
         directory.publish(instance);
         instance.activationMs = Math.round(performance.now() - startedAt);
-        host.lifecycle[id] = { phase: 'active', activationMs: Math.round(performance.now() - startedAt) };
       } catch (error) {
-        host.errors[id] = (error as Error).message;
-        host.lifecycle[id] = { phase: 'failed', activationMs: Math.round(performance.now() - startedAt) };
-        instance.error = host.errors[id]; instance.activationMs = host.lifecycle[id].activationMs;
+        instance.error = (error as Error).message;
+        instance.activationMs = Math.round(performance.now() - startedAt);
         if (module && started) {
           try {
             await host.dispose(module);
           } catch (cleanup) {
-            host.errors[id] += '；清理失败：' + (cleanup as Error).message;
+            instance.error += '；清理失败：' + (cleanup as Error).message;
           }
         }
         if (instance.phase !== 'cleanup-pending') {
           instance.phase = 'failed';
           await instance.scope.dispose().catch((cleanup) => {
-            instance.phase = 'cleanup-pending'; instance.error = String(cleanup);
+            instance.phase = 'cleanup-pending';
+            instance.error = String(cleanup);
           });
         }
+        directory.changed();
       }
     }
     return host;
@@ -257,11 +356,11 @@ export class PluginRuntime {
       this.require('network');
   }
   jobStores(): Jobs[] {
-    const stores: Jobs[] = [...this.extraJobStores];
+    const stores: Jobs[] = [...this.system.jobStores()];
     for (const module of this.modules.values())
       for (const key of module.manifest.services) {
         const service = this.serviceValue(key) as { jobs?: Jobs } | undefined;
-        const store = key === 'jobs' ? this.jobs : service?.jobs;
+        const store = key === 'jobs' ? this.serviceValue<Jobs>(key) : service?.jobs;
         if (store && !stores.includes(store)) stores.push(store);
       }
     return stores;
@@ -271,17 +370,23 @@ export class PluginRuntime {
     const scope = this.scopes.get(id);
     const closeMs = module.manifest.lifecycle.closeMs;
     const instance = this.directory.get('official', id)!;
-    instance.revoke(); this.directory.changed();
-    this.enabled.delete(id);
+    instance.revoke();
+    this.directory.changed();
     scope?.abort();
     try {
-      await withinDeadline(scope?.dispose((disposer) =>
-        withinDeadline(withPluginCleanup(instance, disposer), closeMs, `${id} 资源关闭`)), closeMs, `${id} 资源清理`);
+      await withinDeadline(
+        scope?.dispose((disposer) =>
+          withinDeadline(withPluginCleanup(instance, disposer), closeMs, `${id} 资源关闭`),
+        ),
+        closeMs,
+        `${id} 资源清理`,
+      );
     } catch (error) {
       this.cleanupPending.add(id);
       scope?.cleanupPending(error);
-      this.errors[id] = '插件清理未完成：' + (error as Error).message;
-      instance.phase = 'cleanup-pending'; instance.error = this.errors[id]; this.directory.changed();
+      instance.phase = 'cleanup-pending';
+      instance.error = '插件清理未完成：' + (error as Error).message;
+      this.directory.changed();
       throw error;
     }
     for (const key of module.manifest.services) this.services.delete(key);
@@ -291,23 +396,33 @@ export class PluginRuntime {
     this.scopes.delete(id);
     this.modules.delete(id);
     this.cleanupPending.delete(id);
-    instance.phase = 'inactive'; this.directory.changed();
+    instance.phase = 'inactive';
+    this.directory.changed();
   }
   /** Stop new dispatch immediately. Providers remain until their dependents have unloaded. */
   async unload(id: string) {
     const module = this.modules.get(id);
     if (!module) return;
-    const dependents = [...this.modules.values()].filter((item) => item.manifest.id !== id &&
-      (this.enabled.has(item.manifest.id) || this.cleanupPending.has(item.manifest.id)) &&
-      item.manifest.requires.some((dependency) => dependency.id === id));
-    if (dependents.length) throw new AppError('请先停用依赖此插件的插件：' +
-      dependents.map((item) => item.manifest.id).join('、'), 409, 'PLUGIN_DEPENDENTS_ACTIVE');
+    const dependents = [...this.modules.values()].filter(
+      (item) =>
+        item.manifest.id !== id &&
+        (this.enabled.has(item.manifest.id) || this.cleanupPending.has(item.manifest.id)) &&
+        item.manifest.requires.some((dependency) => dependency.id === id),
+    );
+    if (dependents.length)
+      throw new AppError(
+        '请先停用依赖此插件的插件：' + dependents.map((item) => item.manifest.id).join('、'),
+        409,
+        'PLUGIN_DEPENDENTS_ACTIVE',
+      );
     await this.dispose(module);
   }
   async close() {
     if (!this.closing) {
       this.closed = true;
-      this.enabled.clear();
+      for (const instance of this.directory.all())
+        if (instance.source === 'official' && instance.phase === 'running') instance.revoke();
+      this.directory.changed();
       for (const scope of this.scopes.values()) scope.abort();
       for (const abort of this.active.keys()) abort.abort();
       this.closing = (async () => {
@@ -327,18 +442,32 @@ export class PluginRuntime {
         }
         this.terminalInstance.revoke();
         try {
-          await this.terminalInstance.scope.dispose(dispose => Promise.resolve(withPluginCleanup(this.terminalInstance, dispose)));
+          await this.terminalInstance.scope.dispose((dispose) =>
+            Promise.resolve(withPluginCleanup(this.terminalInstance, dispose)),
+          );
           this.terminalInstance.phase = 'inactive';
-        } catch (error) { this.terminalInstance.phase = 'cleanup-pending'; this.terminalInstance.error = String(error); errors.push(error); }
+        } catch (error) {
+          this.terminalInstance.phase = 'cleanup-pending';
+          this.terminalInstance.error = String(error);
+          errors.push(error);
+        }
         this.directory.changed();
         if (this.ownsSystem) {
-          try { await this.system.close(); } catch (error) { errors.push(error); }
+          try {
+            await this.system.close();
+          } catch (error) {
+            errors.push(error);
+          }
         }
         if (errors.length) throw new AggregateError(errors, '插件关闭失败');
       })();
     }
-    try { await this.closing; }
-    catch (error) { this.closing = undefined; throw error; }
+    try {
+      await this.closing;
+    } catch (error) {
+      this.closing = undefined;
+      throw error;
+    }
   }
   async route(
     req: IncomingMessage,
@@ -366,7 +495,8 @@ export class PluginRuntime {
     if (mutation && targetVm && !url.pathname.endsWith('/next-features'))
       this.machines.requireUnlocked?.(targetVm);
     const releaseMutation = mutation ? this.operations.enter() : () => {};
-    const scope = requestScope(req, res), abort = scope.controller;
+    const scope = requestScope(req, res),
+      abort = scope.controller;
     const pluginScope = this.scopes.get(owner);
     const revoke = () => abort.abort(pluginScope?.signal.reason);
     pluginScope?.signal.addEventListener('abort', revoke, { once: true });
@@ -416,10 +546,13 @@ export class PluginRuntime {
                 abort.signal,
               );
         const vm = /^\/api\/vms\/([^/]+)\//.exec(url.pathname)?.[1];
-        const dispatch = () => this.workspaces && vm && contribution.projectScoped && /^[0-9a-f-]{36}$/i.test(vm)
-          ? this.workspaces.projects.with(vm, url.searchParams.get('project'), route)
-          : route();
-        return pluginScope ? pluginScope.run(() => withPluginAuthority(this.directory.get('official', owner)!, dispatch)) : dispatch();
+        const dispatch = () =>
+          this.workspaces && vm && contribution.projectScoped && /^[0-9a-f-]{36}$/i.test(vm)
+            ? this.workspaces.projects.with(vm, url.searchParams.get('project'), route)
+            : route();
+        return pluginScope
+          ? pluginScope.run(() => withPluginAuthority(this.directory.get('official', owner)!, dispatch))
+          : dispatch();
       })
       .finally(() => {
         this.active.delete(abort);

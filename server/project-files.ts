@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { posix } from 'node:path';
 import { isUtf8 } from 'node:buffer';
 import type { FileEntry, SFTPWrapper } from 'ssh2';
@@ -43,7 +44,7 @@ async function textFile(ftp: SFTPWrapper, path: string, signal: AbortSignal) {
 export class ProjectFiles {
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
   ) {}
   async scan(id: string, query = '', content = false, signal?: AbortSignal) {
     if (query.length > 200) throw new AppError('搜索词最多 200 个字符');

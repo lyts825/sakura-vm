@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -1513,7 +1514,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
       const directory = directoryParent + '/' + name;
       await guest(`set -eu; mkdir ${quote(directory)}; chmod 700 ${quote(directory)}; printf %s ${quote('owned-' + name)} > ${quote(directory + '/private.txt')}; chmod 600 ${quote(directory + '/private.txt')}`);
       const config = projectSchema.parse({ directory, networkIsolation: 'private', template: 'none', environment: { SAKURA_CURRENT_UID_PROBE: fixture.invocation, HOME: '/root', DISPLAY: ':99' } });
-      const index = await spaces!.projects.create(fixture.vmId, name + '-' + fixture.invocation, () => writeStore(spaces!.projects.file(fixture.vmId), config));
+      const index = await spaces!.projects.create(fixture.vmId, name + '-' + fixture.invocation, () => writeStore(projectMetadataFile(fixture.vmId, spaces!.projects.current(fixture.vmId)), config));
       return spaces!.projects.with(fixture.vmId, index.active, async () => {
         let preview;
         try { preview = await migrations.preview(fixture.vmId); }
@@ -1599,7 +1600,7 @@ print(json.dumps({'groupsEmpty':all(not os.path.exists(path) or not open(path+'/
         const outer = alpha.directory, originalIdentity = structuredClone(alpha.identity);
         const { _workspace: _context, ...originalConfig } = await spaces!.config(fixture.vmId);
         const config = projectSchema.parse({ ...originalConfig, directory: outer + '/current' });
-        await writeStore(spaces!.projects.file(fixture.vmId), config);
+        await writeStore(projectMetadataFile(fixture.vmId, spaces!.projects.current(fixture.vmId)), config);
         const preview = await migrations.preview(fixture.vmId); assert.ok(preview.plan);
         const applied = await migrations.apply(fixture.vmId, { action: 'apply', version: 1, planId: preview.plan.proposal.planId, sha256: preview.plan.sha256, reviewed: true });
         assert.equal(applied.plan?.state, 'applied'); assert.ok(applied.plan?.activatedIdentity);

@@ -17,6 +17,7 @@ import { requestScope } from './operation-scope.ts';
 import { captureOperationCheck } from './operation-context.ts';
 import { withResourceContext } from './host-runtime/context.ts';
 import { sendJson as send } from './http-response.ts';
+import { APP_VERSION } from '../shared/version.ts';
 
 export type MachineApiContext = {
   machines: Machines;
@@ -47,7 +48,7 @@ export function createMachineApi(context: MachineApiContext) {
     if (req.method === 'GET' && url.pathname === '/api/system')
       return send(res, {
         name: 'Sakura',
-        version: '0.1.0',
+        version: APP_VERSION,
         engine: engine.version,
         posixloom: '0.1.0',
         nativeHost: Boolean(engine.runtime.findNativeHost()),
@@ -121,9 +122,13 @@ export function createMachineApi(context: MachineApiContext) {
           const input = guestExecutionInput.parse(await authorizedBody(req, 512 * 1024, abort.signal));
           return send(
             res,
-            await withResourceContext({ projectId: input.scope === 'instance' ? '@instance' :
-              url.searchParams.get('project') || undefined }, () =>
-              projectExecution.run(id, input, url.searchParams.get('project'), abort.signal)),
+            await withResourceContext(
+              {
+                projectId:
+                  input.scope === 'instance' ? '@instance' : url.searchParams.get('project') || undefined,
+              },
+              () => projectExecution.run(id, input, url.searchParams.get('project'), abort.signal),
+            ),
           );
         } finally {
           operation.dispose();

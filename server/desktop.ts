@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createWebSocketStream, WebSocket } from 'ws';
 import type { ClientChannel } from 'ssh2';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -43,7 +44,7 @@ export class Desktops {
   private watchers = new Map<string, { startedAt: string; listeners: Set<() => void> }>();
   private recovery = new Map<string, string>();
   private installed = new Set<string>();
-  constructor(private machines: Machines, private workspaces?: Workspaces, options?: ConstructorParameters<typeof ProjectDesktops>[2]) {
+  constructor(private machines: Machines, private workspaces?: ServiceInterface<Workspaces>, options?: ConstructorParameters<typeof ProjectDesktops>[2]) {
     this.apps = new SingleAppWindows(machines, workspaces);
     this.bindings = new DesktopBindings(machines);
     this.projectDesktop = workspaces ? new ProjectDesktops(machines, workspaces, { ...options,

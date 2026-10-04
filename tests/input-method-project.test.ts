@@ -40,13 +40,14 @@ function fixture(t: TestContext) {
     state: () => live.get(id)?.status || 'stopped',
     exec: () => { throw new Error('The IME route must use the Desktop lifecycle'); },
   });
-  const host = { vm: machines, workspaces, jobs, desktops: { installIme: async (_id: string, signal: AbortSignal,
+  const desktops = { installIme: async (_id: string, signal: AbortSignal,
     log: (text: string) => void) => {
       signal.throwIfAborted(); calls.push(workspaces.projects.current()); log('安装完成\n');
       return { code: 0, stdout: '', stderr: '' };
-    } } } as unknown as PluginContext;
+    } };
+  const host = { vm: machines, workspaces, jobs, desktops } as unknown as PluginContext;
   t.after(() => jobs.close());
-  return { id, host, jobs, workspaces, live, calls, select: (project: string) => { selected = project; } };
+  return { id, host, desktops, jobs, workspaces, live, calls, select: (project: string) => { selected = project; } };
 }
 
 test('queued IME work keeps its original project after the user selects another project', async t => {
@@ -69,7 +70,7 @@ test('a replacement live is refused before a queued IME operation can start', as
 
 test('a replacement live during IME installation cannot report success for the new guest', async t => {
   const f = fixture(t), entered = gate(), finished = gate();
-  f.host.desktops.installIme = async () => {
+  f.desktops.installIme = async () => {
     f.calls.push(f.workspaces.projects.current()); entered.resolve(); await finished.promise;
     return { code: 0, stdout: '', stderr: '' };
   };
@@ -82,7 +83,7 @@ test('a replacement live during IME installation cannot report success for the n
 
 test('cancelled IME cleanup failure remains visible as an error in the public job', async t => {
   const f = fixture(t), entered = gate();
-  f.host.desktops.installIme = async (_id, signal) => {
+  f.desktops.installIme = async (_id, signal) => {
     const aborted = new Promise<void>(done => signal.addEventListener('abort', () => done(), { once: true }));
     entered.resolve(); await aborted;
     throw new AppError('原桌面清理未确认', 503, 'DESKTOP_CLEANUP_FAILED');
@@ -108,7 +109,7 @@ test('registered IME retry restores the saved project before capturing its new t
       callbacks.set(jobs === activation.jobs ? 'ime' : randomUUID(), retry),
   } as unknown as PluginContext;
   await activate(activation);
-  const installed = activation.desktops, jobStore = activation.jobs;
+  const installed = activation.desktops as import('../server/desktop.ts').Desktops, jobStore = activation.jobs;
   t.after(async () => { await installed.close(); await jobStore.close(); await scope.dispose(); });
   Object.assign(activation, { vm: f.host.vm, workspaces: f.host.workspaces,
     desktops: f.host.desktops, jobs: f.jobs });

@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { networkFor } from './network/index.ts';
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
@@ -214,7 +215,7 @@ export class NotebookEnvironments {
   private scopes: NonNullable<Options['scopes']>;
   private identities: NonNullable<Options['identities']>;
   private closed = false;
-  constructor(private machines: Machines, private workspaces: Workspaces,
+  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
     private file = join(DATA, 'notebook-environments.json'), private probeHttp: (session: Session) => Promise<boolean> = httpReady,
     private options: Options = {}) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);

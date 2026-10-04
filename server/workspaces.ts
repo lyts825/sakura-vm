@@ -1,8 +1,11 @@
+import { projectMetadataFile } from './project-catalog.ts';
+import type { ServiceInterface } from './service-interface.ts';
 import { assertProjectPreparationIdle } from './project-preparation-registry.ts';
 import { createHash } from 'node:crypto';
 import { readCommittedStore, readStore } from './local-store.ts';
 import { replaceMetadata } from './metadata-store.ts';
 import { AppError } from '../shared/errors.ts';
+import { cleanupReceipt } from './cleanup-receipt.ts';
 import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { resolveDependencyAuthentication } from './dependency-downloads.ts';
 import { guestTask } from './guest-task.ts';
@@ -110,7 +113,7 @@ export class Workspaces {
   private actionHooks = new Set<(id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>>();
   beforeAction(hook: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>) {
     this.actionHooks.add(hook);
-    return () => { this.actionHooks.delete(hook); };
+    return cleanupReceipt(() => { this.actionHooks.delete(hook); });
   }
   private async prepareAction(id: string, action: 'start' | 'stop', service?: string) {
     const receipts: ((success: boolean) => void)[] = [];
@@ -120,7 +123,7 @@ export class Workspaces {
   }
   constructor(
     private machines: Machines,
-    private context?: { secrets?: Secrets; network?: NetworkProfiles },
+    private context?: { secrets?: ServiceInterface<Secrets>; network?: ServiceInterface<NetworkProfiles> },
     options: { background?: boolean } = {},
   ) {
     this.jobs = new Jobs(options.background === false ? undefined : 'projects');
@@ -172,11 +175,11 @@ export class Workspaces {
   }
   onConfigChange(listener: () => Promise<void>) {
     this.configListeners.add(listener);
-    return () => this.configListeners.delete(listener);
+    return cleanupReceipt(() => { this.configListeners.delete(listener); });
   }
   beforeConfigChange(guard: (id: string, previous: Project, next: Project) => Promise<void>) {
     this.configGuards.add(guard);
-    return () => this.configGuards.delete(guard);
+    return cleanupReceipt(() => { this.configGuards.delete(guard); });
   }
   async config(id: string): Promise<Project> { return this.readConfig(id, readStore); }
   /** Queue-free committed snapshot for admission checks and final commit guards. */
@@ -189,7 +192,7 @@ export class Workspaces {
         value: scope === 'default' ? undefined : scope,
         enumerable: false,
       });
-    return contextual(projectSchema.parse(await reader(this.projects.file(id), () =>
+    return contextual(projectSchema.parse(await reader(projectMetadataFile(id, this.projects.current(id)), () =>
       ({ template: vm.template || 'none' }))));
   }
   networkEnvironment(id: string) {
@@ -402,7 +405,7 @@ export class Workspaces {
         if (lease) await identities.releaseNetwork(id, projectId, lease);
         else await removeProjectNetwork(this.machines, id, previous);
       }
-      const file = this.projects.file(id);
+      const file = projectMetadataFile(id, this.projects.current(id));
       await verifyVersion();
       commitGuard?.();
       await replaceMetadata(file, project, {

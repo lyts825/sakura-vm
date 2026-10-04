@@ -232,13 +232,13 @@ export class RemoteAuditLock {
   private pending = Promise.resolve();
   private timer?: ScheduleHandle;
   private closed = false;
-  private backgroundAllowed = () => true;
   constructor(
     private audit: AuditLog,
     private file = join(DATA, 'remote-audit.json'),
     private store: RemoteAuditStore = new S3RemoteAuditStore(),
     private now = Date.now,
     private intervalMs = 3_600_000,
+    private backgroundAllowed = () => true,
   ) {}
 
   async init() {
@@ -270,15 +270,17 @@ export class RemoteAuditLock {
     if (created) await writeStore(this.file, state);
     this.state = state;
     if (this.intervalMs > 0) {
-      this.timer = scheduler.register({ owner: 'core:remote-audit', label: '审计远程锚点发布', intervalMs: this.intervalMs,
-        overlap: 'skip', backoff: { initialMs: this.intervalMs, maxMs: Math.min(2147483647, this.intervalMs * 4) },
+      this.timer = scheduler.register({
+        owner: 'core:remote-audit',
+        label: '审计远程锚点发布',
+        intervalMs: this.intervalMs,
+        overlap: 'skip',
+        backoff: { initialMs: this.intervalMs, maxMs: Math.min(2147483647, this.intervalMs * 4) },
         run: async () => {
           if (this.state?.target && !this.closed && this.backgroundAllowed()) await this.sync();
-        } });
+        },
+      });
     }
-  }
-  setBackgroundAllowed(check: () => boolean) {
-    this.backgroundAllowed = check;
   }
   private ready() {
     if (!this.state) throw new AppError('远程审计服务尚未启动', 503);

@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -123,7 +124,7 @@ export class ObjectBackup {
   private automaticAbort = new AbortController();
   constructor(
     private machines: Machines,
-    private services: () => { backups?: Backups; bundles?: Bundles; secrets?: Secrets },
+    private services: () => { backups?: ServiceInterface<Backups>; bundles?: ServiceInterface<Bundles>; secrets?: ServiceInterface<Secrets> },
   ) {
     this.schedule = scheduler.register({
       owner: 'core:object-backup',
@@ -203,7 +204,7 @@ export class ObjectBackup {
       }
     }
   }
-  private async client(vmId: string, target: z.infer<typeof objectTargetSchema>, secrets: Secrets) {
+  private async client(vmId: string, target: z.infer<typeof objectTargetSchema>, secrets: ServiceInterface<Secrets>) {
     let credential: z.infer<typeof credentialSchema>;
     try {
       credential = credentialSchema.parse(JSON.parse(await secrets.value(vmId, target.credentialSecret)));

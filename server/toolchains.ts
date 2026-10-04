@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -134,7 +135,7 @@ export class Toolchains {
   private closing?: Promise<void>;
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private options: ToolchainsOptions = {},
   ) {}
   async view(id: string, signal?: AbortSignal) {

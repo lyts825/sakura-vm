@@ -1,4 +1,7 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { AutomationDomainServices } from './automation-domain-services.ts';
+import type { Ide } from './ide.ts';
+import { cleanupReceipt } from './cleanup-receipt.ts';
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -198,17 +201,18 @@ export class FeatureSuite {
   private lastSampleAt = new Map<string, number>();
   private ticking = false;
   private powerAbort = new AbortController();
-  private get processInterop(): ProcessInterop | undefined { return this.domains.processInterop; }
-  private get mediaDevices(): MediaDevices | undefined { return this.domains.mediaDevices; }
-  private get hostMounts(): HostMounts | undefined { return this.domains.hostMounts; }
+  private get processInterop(): ServiceInterface<ProcessInterop> | undefined { return this.domains.processInterop; }
+  private get mediaDevices(): ServiceInterface<MediaDevices> | undefined { return this.domains.mediaDevices; }
+  private get hostMounts(): ServiceInterface<HostMounts> | undefined { return this.domains.hostMounts; }
   private get projectTerminals(): ProjectTerminals | undefined { return this.domains.projectTerminals; }
   private domains: AutomationDomainServices;
   get packageWorkbench() { return this.domains.packageWorkbench; }
 
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private observations: {
+      editor?: () => Pick<Ide, 'profile'> | undefined;
       jobs?: () => JobView[];
       services?: (id: string) => Array<HealthView & { projectId: string }>;
       secrets?: (id: string) => Promise<SecretRotationItem[] | undefined>;
@@ -231,10 +235,10 @@ export class FeatureSuite {
     if (this.powerAbort.signal.aborted) this.powerAbort = new AbortController();
     const controller = this.powerAbort;
     this.backgroundEnabled = true;
-    return () => {
+    return cleanupReceipt(() => {
       if (this.powerAbort === controller) this.backgroundEnabled = false;
       controller.abort();
-    };
+    });
   }
   private file() {
     return join(DATA, 'feature-suite.json');
@@ -323,7 +327,7 @@ export class FeatureSuite {
       );
     }
     if (hasCapability(featureId)) {
-      const runner = new CapabilityActions(this.machines, this.workspaces, this.projectTerminals);
+      const runner = new CapabilityActions(this.machines, this.workspaces, this.projectTerminals, this.observations.editor?.());
       if (input.action === 'check') return runner.check(id, featureId, signal);
       this.machines.requireUnlocked(id);
       const parameters = capabilityParameters(featureId, input.options || {});
@@ -651,7 +655,7 @@ export class FeatureSuite {
         assertLive();
         const combined = taskSignal && signal ? AbortSignal.any([taskSignal, signal]) : taskSignal;
         if (operation === 'lint' || operation === 'format') {
-          const result = await new CapabilityActions(this.machines, this.workspaces, this.projectTerminals).run(
+          const result = await new CapabilityActions(this.machines, this.workspaces, this.projectTerminals, this.observations.editor?.()).run(
             id,
             'format-lint',
             { mode: operation },

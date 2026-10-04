@@ -9,7 +9,8 @@ import type { ProjectTerminals } from '../server/project-terminals.ts';
 
 test('shared terminal grants require an exact running tmux session, persist and expire', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-terminal-share-'));
-  let now = Date.UTC(2026, 0, 1), found = false;
+  let now = Date.UTC(2026, 0, 1),
+    found = false;
   const commands: string[] = [];
   const machines = {
     state: () => 'running',
@@ -29,8 +30,10 @@ test('shared terminal grants require an exact running tmux session, persist and 
     assert.deepEqual(service.list(), []);
     found = true;
     const grant = await service.create(input);
-    assert.equal(commands.at(-1),
-      'command -v tmux >/dev/null && tmux has-session -t =sakura-terminal-abc-123');
+    assert.equal(
+      commands.at(-1),
+      'command -v tmux >/dev/null && tmux has-session -t =sakura-terminal-abc-123',
+    );
     assert.equal(service.find(viewerId, vmId, input.session)?.id, grant.id);
     assert.equal(service.list('00000000-0000-4000-8000-000000000003').length, 0);
     await assert.rejects(service.create({ ...input, session: '../../other' }));
@@ -56,13 +59,21 @@ test('terminal grants persist exact projects and never retarget old or other-pro
   const directory = await mkdtemp(join(tmpdir(), 'sakura-scoped-terminal-share-'));
   const vmId = '00000000-0000-4000-8000-000000000001';
   const viewerId = '00000000-0000-4000-8000-000000000002';
-  const service = new TerminalSharing({ state: () => 'running' } as unknown as Machines,
-    join(directory, 'grants.json'));
-  let active = 'default', valid = true;
-  service.useProjectTerminals({ validate: async (_vm: string, scope: string | undefined) => {
-    if (!valid) throw new Error('终端窗格未处于项目网络空间');
-    return { projectId: scope || active, terminalId: '00000000-0000-4000-8000-000000000003' };
-  } } as unknown as ProjectTerminals);
+  const service = new TerminalSharing(
+    { state: () => 'running' } as unknown as Machines,
+    join(directory, 'grants.json'),
+    undefined,
+    () =>
+      ({
+        validate: async (_vm: string, scope: string | undefined) => {
+          if (!valid) throw new Error('终端窗格未处于项目网络空间');
+          return { projectId: scope || active, terminalId: '00000000-0000-4000-8000-000000000003' };
+        },
+      }) as unknown as ProjectTerminals,
+  );
+  let active = 'default',
+    valid = true;
+
   await service.init();
   try {
     const input = { vmId, viewerId, session: 'main' };
@@ -85,5 +96,8 @@ test('terminal grants persist exact projects and never retarget old or other-pro
     assert.equal(restored.find(viewerId, vmId, 'main', active)?.id, second.id);
     assert.equal(restored.find(viewerId, vmId, 'main'), null);
     await restored.close();
-  } finally { await service.close(); await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await service.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });

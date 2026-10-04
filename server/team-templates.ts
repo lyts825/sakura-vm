@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -57,7 +58,7 @@ const defaults = (): State => ({ version: 1, templates: [] });
 export class TeamTemplates {
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private file = join(DATA, 'team-templates.json'),
   ) {}
 

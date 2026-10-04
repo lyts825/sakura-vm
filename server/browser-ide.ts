@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { networkFor } from './network/index.ts';
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
@@ -187,7 +188,7 @@ export class BrowserIde {
   private bridges: Pick<ProjectNetworkBridges, 'open' | 'stop' | 'close'>;
   private scopes: NonNullable<Options['scopes']>;
   private identities: NonNullable<Options['identities']>;
-  constructor(private machines: Machines, private workspaces: Workspaces,
+  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
     private file = join(DATA, 'browser-ide.json'), private probeHttp: (session: Session) => Promise<boolean> = httpReady,
     private options: Options = {}) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);

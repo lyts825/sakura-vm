@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
@@ -32,15 +33,15 @@ try {
     load: [0, 0, 0], vmCount: 1, runningVms: 0 });
   const peerPort = await freePort();
   const targetPeerFile = join(root, 'target-peer.json');
-  targetPeers = new HostPeers(peerStatus, targetPeerFile, 'Target');
+  targetPeers = new HostPeers(peerStatus, targetPeerFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await targetPeers.init(false);
   await targetPeers.configure({ operation: 'listener', listener: {
     enabled: true, host: '127.0.0.1', port: peerPort,
   } });
   await targetPeers.close();
-  targetPeers = new HostPeers(peerStatus, targetPeerFile, 'Target');
+  targetPeers = new HostPeers(peerStatus, targetPeerFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await targetPeers.init(true);
-  sourcePeers = new HostPeers(peerStatus, join(root, 'source-peer.json'), 'Source');
+  sourcePeers = new HostPeers(peerStatus, join(root, 'source-peer.json'), 'Source', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await sourcePeers.init(false);
   const code = await targetPeers.configure({ operation: 'create-code' });
   if (!('pairing' in code) || !code.pairing) throw new Error('Missing peer code');
@@ -52,12 +53,12 @@ try {
   await targetPeers.configure({ operation: 'allow-import', id: inboundId, enabled: true });
   await targetPeers.configure({ operation: 'allow-activate', id: inboundId, enabled: true });
   const receiver = new LiveMigrationReceiver(machines, targetPeers);
-  targetPeers.setLiveMigrationReceiver({
+  peerHandlers.set(targetPeers, { ...peerHandlers.get(targetPeers), liveMigrationReceiver: {
     prepare: (input) => receiver.prepare(input),
     complete: (input) => receiver.complete(input),
     abort: (input) => receiver.abort(input),
     status: (input) => Promise.resolve(receiver.status(input)),
-  });
+  } });
   const key = createSshKey().privateText;
   const seed = seedIso({ 'meta-data': 'migration smoke', 'user-data': 'smoke setup' });
   const prepared = await sourcePeers.prepareLiveTarget(outboundId, {

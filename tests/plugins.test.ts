@@ -1,3 +1,4 @@
+import { services as imagesContract } from '../plugins/images/services.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -55,9 +56,8 @@ test('a fresh install has no optional plugins, listeners, job stores or optional
   const manager = new PluginManager(join(directory, 'fresh.json'));
   assert.deepEqual(await manager.init(), []);
   const vm = machines(),
-    host = await Features.create(vm);
+    host = await manager.start(vm);
   try {
-    manager.activated(host.enabled, host.errors);
     assert.equal(manager.view().restartRequired, false);
     assert.deepEqual([...host.enabled], []);
     assert.deepEqual(host.jobStores(), []);
@@ -143,7 +143,6 @@ test('selection updates are serialized, dependency-safe and survive a restart', 
   assert.ok(!manager.view().planned.includes('git'));
   const restored = new PluginManager(file);
   const order = await restored.init();
-  restored.activated(order);
   assert.equal(restored.view().restartRequired, false);
   assert.deepEqual(restored.view().selection, manager.view().selection);
   await restored.change({ kind: 'pack', id: 'operations', enabled: false });
@@ -593,7 +592,7 @@ test('service contracts reject undeclared reads and writes and await asynchronou
       ...(await original()),
       activate: async (host) => {
         if (violation === 'missing') return;
-        host.provide('images', {
+        host.provide(imagesContract.images, {
           close: async () => {
             events.push('close');
           },

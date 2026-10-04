@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
@@ -25,18 +26,18 @@ test('fleet rollout requires per-peer permission, reviews versions, publishes an
   t.after(() => rm(root, { recursive: true, force: true }));
   const port = await freePort();
   const targetFile = join(root, 'target-peers.json');
-  const setup = new HostPeers(status, targetFile, 'Target');
+  const setup = new HostPeers(status, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await setup.init(false);
   await setup.configure({ operation: 'listener', listener: { enabled: true,
     host: '127.0.0.1', port } });
   await setup.close();
-  const target = new HostPeers(status, targetFile, 'Target');
+  const target = new HostPeers(status, targetFile, 'Target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await target.init(true);
   const rollout = new FeatureRollouts(join(root, 'rollout.json'));
   await rollout.init();
-  target.setRolloutReceiver({ view: () => ({ hostId: target.view().hostId,
-    policies: rollout.view().policies }), save: (input) => rollout.configure(input) });
-  const source = new HostPeers(status, join(root, 'source-peers.json'), 'Source');
+  peerHandlers.set(target, { ...peerHandlers.get(target), rolloutReceiver: { view: () => ({ hostId: target.view().hostId,
+    policies: rollout.view().policies }), save: (input) => rollout.configure(input) } });
+  const source = new HostPeers(status, join(root, 'source-peers.json'), 'Source', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {});
   await source.init(false);
   const fleetFile = join(root, 'fleet.json');
   const fleet = new FleetPolicyRollouts(source, fleetFile);

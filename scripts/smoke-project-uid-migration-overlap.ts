@@ -1,3 +1,4 @@
+import { projectMetadataFile } from '../server/project-catalog.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -134,7 +135,7 @@ const originalCatalog = await spaces.projects.list(owned.vmId);
 assert.ok(originalCatalog.projects.length <= 18, 'Two new owned catalog entries require space.');
 const originalConfigs: { file: string; sha256: string }[] = [];
 for (const project of originalCatalog.projects) {
-  const file = spaces.projects.inScope(owned.vmId, project.id, () => spaces.projects.file(owned.vmId));
+  const file = spaces.projects.inScope(owned.vmId, project.id, () => projectMetadataFile(owned.vmId, spaces.projects.current(owned.vmId)));
   try { originalConfigs.push({ file, sha256: digest(await readFile(file)) }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
 }

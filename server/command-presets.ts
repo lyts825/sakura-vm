@@ -1,3 +1,5 @@
+import { projectMetadataFile } from './project-catalog.ts';
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
@@ -47,14 +49,14 @@ export class CommandPresets {
   private ownedTerminals?: ProjectTerminals;
   constructor(
     private machines: Machines,
-    private workspaces: Workspaces,
+    private workspaces: ServiceInterface<Workspaces>,
     private options: { terminals?: Pick<ProjectTerminals, 'prepare'>;
       runTask?: typeof projectIdentityTask } = {},
   ) {}
   async list(id: string) {
     this.machines.get(id);
     return readVersionedStore(
-      this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+      projectMetadataFile(id, this.workspaces.projects?.current(id) || 'default', 'commands') || join(vmDir(id), 'commands.json'),
       1,
       savedPresets,
       () => [],
@@ -70,7 +72,7 @@ export class CommandPresets {
         throw new AppError('最多收藏 50 个命令');
       const next = [...records.filter((v) => v.id !== value.id), value];
       await writeVersionedStore(
-        this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+        projectMetadataFile(id, this.workspaces.projects?.current(id) || 'default', 'commands') || join(vmDir(id), 'commands.json'),
         1,
         savedPresets,
         next,
@@ -83,7 +85,7 @@ export class CommandPresets {
     return this.machines.locked(`commands:${this.workspaces.projects?.key(id) || id}`, async () => {
       const next = (await this.list(id)).filter((v) => v.id !== presetId);
       await writeVersionedStore(
-        this.workspaces.projects?.file(id, 'commands') || join(vmDir(id), 'commands.json'),
+        projectMetadataFile(id, this.workspaces.projects?.current(id) || 'default', 'commands') || join(vmDir(id), 'commands.json'),
         1,
         savedPresets,
         next,

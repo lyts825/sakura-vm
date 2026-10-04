@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -60,7 +61,7 @@ export class ProjectDesktops {
   private scopes: ProjectRunScopes;
   private identities: ProjectIdentities;
   private pending: Map<string, PendingStart>;
-  constructor(private machines: Machines, private workspaces: Workspaces, private options: {
+  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private options: {
     control?: Control; build?: () => Promise<string>; readyTimeoutMs?: number;
     beforeRetire?: (id: string, proof: DesktopControlProof) => Promise<void>;
   } = {}) {

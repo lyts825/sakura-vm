@@ -1,3 +1,5 @@
+import { services as sandboxesContract } from '../plugins/sandbox/services.ts';
+import { services as metricsContract } from '../plugins/metrics/services.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -39,7 +41,7 @@ test('declared operations validate responses before writing to the client', asyn
     return {
       ...module,
       activate: async (host) => {
-        host.provide('metrics', { close: async () => {} });
+        host.provide(metricsContract.metrics, { close: async () => {} } as any);
       },
       operations: {
         sample: {
@@ -112,7 +114,7 @@ test('bodyless declared DELETE works without a JSON header while write schemas r
     return {
       ...module,
       activate: async (host) => {
-        host.provide('sandboxes', { close: async () => {} });
+        host.provide(sandboxesContract.sandboxes, { close: async () => {} } as any);
       },
       operations: {
         ...module.operations,

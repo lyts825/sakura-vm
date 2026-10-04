@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -37,7 +38,7 @@ export class FleetPolicyRollouts {
   private state: Store = initial();
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
-  constructor(private peers: HostPeers,
+  constructor(private peers: ServiceInterface<HostPeers>,
     private file = join(DATA, 'fleet-policy-rollouts.json'),
     private blocked: () => boolean = () => false,
     private mutation: (delta: number) => void = () => {}) {}

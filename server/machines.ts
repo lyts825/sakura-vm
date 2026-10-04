@@ -89,13 +89,8 @@ const { connectLocal: createConnection } = networkFor('core:machines');
 export type BootAttachment = { args: string[]; close: () => Promise<void>; machine?: string };
 export class Machines extends EventEmitter {
   storagePools: StoragePools = new StoragePools(this);
-  trustedBootStateFingerprint?: (id: string) => Promise<string>;
-  trustedBootSnapshot?: {
-    capture: (id: string, snapshotId: string) => Promise<void>;
-    prepareRestore: (id: string, snapshotId: string) => Promise<() => Promise<void>>;
-    remove: (id: string, snapshotId: string) => Promise<void>;
-    ensureOnlineAllowed: (id: string) => Promise<void>;
-  };
+  private get trustedBootStateFingerprint() { return vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].stateFingerprint; }
+  private get trustedBootSnapshot() { return vmBootProviders(this).find(([name]) => name === 'trusted-boot')?.[1].snapshot; }
   private fileInterceptors = new ManagedHooks<[string, string, SFTPWrapper, AbortSignal | undefined]>();
   beforeFileReplace(callback: (id: string, path: string, ftp: SFTPWrapper, signal?: AbortSignal) => Promise<void>) {
     return this.fileInterceptors.register(callback);
@@ -117,8 +112,8 @@ export class Machines extends EventEmitter {
   private incidentWrites = Promise.resolve();
   private rescueControllers = new Set<AbortController>();
   private hostPortReservations = new Map<string, Set<number>>();
-  private haStartGuard?: (id: string) => Promise<void>;
-  setHaStartGuard(guard: (id: string) => Promise<void>) { this.haStartGuard = guard; }
+  private haStartGuards = new ManagedHooks<[string]>();
+  beforeHaStart(guard: (id: string) => Promise<void>) { return this.haStartGuards.register(guard); }
   reserveHostPorts(owner: string, ports: Iterable<number>) {
     const next = new Set(ports);
     for (const port of next) {
@@ -893,10 +888,10 @@ export class Machines extends EventEmitter {
           throw new AppError('迁移目标实例必须处于停止状态', 409);
         if (this.live.has(id)) return this.view(id);
         if (vm.haWitnessEnrollment) {
-          if (!this.haStartGuard)
+          if (!this.haStartGuards.size)
             throw new AppError('见证启动校验不可用，拒绝启动已登记实例',
               503, 'HA_WITNESS_UNAVAILABLE');
-          await this.haStartGuard(id);
+          await this.haStartGuards.dispatch(id);
         }
         validateAdmission(
           await resourcePolicy(),

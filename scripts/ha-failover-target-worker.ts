@@ -1,3 +1,4 @@
+const peerHandlers = new WeakMap<InstanceType<typeof HostPeers>, import('../server/host-peers.ts').HostPeerDependencies>();
 import assert from 'node:assert/strict';
 import { randomUUID, X509Certificate } from 'node:crypto';
 import { createServer, type Server } from 'node:https';
@@ -52,14 +53,14 @@ try {
     cpus: cpus().length, memoryTotal: totalmem(), memoryFree: freemem(), load: [0, 0, 0],
     vmCount: machines!.records.size, runningVms: machines!.live.size });
   const port = await freePort(), file = join(process.env.SAKURA_DATA_DIR!, 'target-peer.json');
-  peers = new HostPeers(status, file, 'HA integration target'); await peers.init(false);
+  peers = new HostPeers(status, file, 'HA integration target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {}); await peers.init(false);
   await peers.configure({ operation: 'listener', listener: { enabled: true, host: '127.0.0.1', port } });
-  await peers.close(); peers = new HostPeers(status, file, 'HA integration target'); await peers.init(true);
+  await peers.close(); peers = new HostPeers(status, file, 'HA integration target', undefined, undefined, undefined, peer => peerHandlers.get(peer) || {}); await peers.init(true);
   const bundles = new Bundles(machines);
   session = new SessionLock(); await session.init(false);
-  peers.setImportReceiver(createHostImportReceiver(machines, { bundles: () => bundles,
+  peerHandlers.set(peers, { ...peerHandlers.get(peers), importReceiver: createHostImportReceiver(machines, { bundles: () => bundles,
     migrationBlocked: () => false,
-    requireSessionUnlocked: () => session!.requireUnlocked() }));
+    requireSessionUnlocked: () => session!.requireUnlocked() }) });
   const cert = await generate([{ name: 'commonName', value: 'localhost' }], {
     keyType: 'ec', curve: 'P-256', algorithm: 'sha256',
     notBeforeDate: new Date(Date.now() - 60_000), notAfterDate: new Date(Date.now() + 3600_000) });

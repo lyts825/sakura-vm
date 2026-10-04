@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -20,8 +21,8 @@ export class BackupRecovery {
   };
   constructor(
     private machines: Machines,
-    private backups: Backups,
-    private bundles: Bundles,
+    private backups: ServiceInterface<Backups>,
+    private bundles: ServiceInterface<Bundles>,
     readonly jobs = new Jobs('backup-recovery'),
     private artifacts = new SandboxArtifacts(machines, join(DATA, 'plugins', 'backups', 'recovered-files')),
   ) {

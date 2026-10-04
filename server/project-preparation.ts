@@ -1,3 +1,4 @@
+import type { ServiceInterface } from './service-interface.ts';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
@@ -40,8 +41,8 @@ export type PreparedProject = {
 
 /** Shared configuration capture and admission lease for tasks and terminals. */
 export class ProjectPreparation {
-  readonly workspaces: Workspaces;
-  private ownsWorkspaces: boolean;
+  readonly workspaces: ServiceInterface<Workspaces>;
+  private ownedWorkspaces?: Workspaces;
   private leases = new Set<Lease>();
   private pending = new Map<string, Promise<unknown>>();
   private controller = new AbortController();
@@ -52,12 +53,12 @@ export class ProjectPreparation {
   }
   constructor(
     private machines: Machines,
-    workspaces?: Workspaces,
+    workspaces?: ServiceInterface<Workspaces>,
     context?: ConstructorParameters<typeof Workspaces>[1],
     scopes?: Pick<ProjectRunScopes, 'assertAdmission'>,
   ) {
-    this.ownsWorkspaces = !workspaces;
-    this.workspaces = workspaces || new Workspaces(machines, context);
+    this.ownedWorkspaces = workspaces ? undefined : new Workspaces(machines, context);
+    this.workspaces = workspaces || this.ownedWorkspaces!;
     this.scopes = scopes || new ProjectRunScopes(machines);
     this.unguard = this.workspaces.beforeConfigChange(async (id, previous, next) => {
       if (
@@ -199,7 +200,7 @@ export class ProjectPreparation {
     };
     const onAbort = () => {
       void Promise.resolve(lease.release()).catch((error) => {
-        this.machines.emit('terminal-cleanup-error', { vmId: id, projectId: scope, terminalId, error });
+        console.error('Terminal cleanup unconfirmed:', { vmId: id, projectId: scope, terminalId, error });
       });
     };
     this.leases.add(lease);
@@ -248,6 +249,6 @@ export class ProjectPreparation {
       );
     await Promise.all([...this.leases].map((lease) => lease.finished));
     this.unguard();
-    if (this.ownsWorkspaces) await this.workspaces.close();
+    await this.ownedWorkspaces?.close();
   }
 }
