@@ -5,6 +5,10 @@ export type ResourceIdentity = {
   owner: string;
   actorId?: string;
   pluginId?: string;
+  pluginInstanceId?: string;
+  pluginGeneration?: string;
+  callerPluginInstanceId?: string;
+  callerPluginGeneration?: string;
   vmId?: string;
   projectId?: string;
   jobId?: string;

@@ -175,7 +175,7 @@ export async function startApplication() {
     await rollouts.init();
     features = resources.own(
       'features',
-      await Features.create(machines, selectedPlugins, (id) => rollouts.decision(id).allowed),
+      await plugins.start(machines, (id) => rollouts.decision(id).allowed),
       ClosePhase.plugins,
     );
     const projectTerminals = resources.own(
@@ -652,7 +652,6 @@ export async function startApplication() {
       new GraphApi(async () => querySnapshot(machines, features.jobStores(), features.enabled)),
       340,
     );
-    plugins.activated(features.enabled, features.errors, features.lifecycle);
     const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
     resources.defer(
       'websockets',

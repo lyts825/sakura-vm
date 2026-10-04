@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { PluginInstanceView } from './contracts/plugin-runtime.ts';
 import type {
   pluginManifestSchema,
   pluginPackSchema,
@@ -26,6 +27,7 @@ export type PluginStatus = {
   lifecycle: Record<string, { phase: 'active' | 'failed' | 'skipped'; activationMs: number }>;
   plugins: PluginManifest[];
   packs: PluginPack[];
+  runtime?: { version: number; instances: PluginInstanceView[] };
 };
 
 type PluginInput = Pick<PluginManifest, 'id' | 'name' | 'description' | 'category'> &

@@ -23,8 +23,8 @@ export class PluginScope {
     this.signal.throwIfAborted();
     this.disposers.push({ work: disposer });
   }
-  abort() {
-    this.controller.abort();
+  abort(reason?: unknown) {
+    this.controller.abort(reason);
   }
   run<T>(work: () => Promise<T> | T): Promise<T> {
     this.signal.throwIfAborted();

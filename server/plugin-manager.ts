@@ -11,6 +11,9 @@ import {
   type PluginStatus,
 } from '../shared/plugins.ts';
 import { migratePlugins, explainPlugins, resolvePlugins } from '../shared/plugin-selection.ts';
+import { PluginDirectory } from './plugin-directory.ts';
+import { PluginRuntime } from './plugin-runtime.ts';
+import type { Machines } from './machines.ts';
 
 const changeSchema = z
   .object({
@@ -20,8 +23,10 @@ const changeSchema = z
   })
   .strict();
 
-/** Persist intent only. Activation changes at the next process start, never under a live VM job. */
+/** The single management entry: persistent intent and live instance authority. */
 export class PluginManager {
+  readonly directory = new PluginDirectory();
+  private runtime?: PluginRuntime;
   private selection = emptySelection();
   private active: string[] = [];
   private startupPlanned: string[] = [];
@@ -42,19 +47,27 @@ export class PluginManager {
     this.errors = { ...errors };
     this.lifecycle = { ...lifecycle };
   }
+  async start(machines: Machines, rolloutAllowed?: (id: string) => boolean) {
+    if (this.runtime) throw new AppError('插件管理层已经启动', 409);
+    this.runtime = await PluginRuntime.create(machines, this.startupPlanned, rolloutAllowed, this.directory);
+    return this.runtime;
+  }
+  async unload(id: string) { await this.runtime?.unload(id); }
+  async close() { await this.runtime?.close(); }
   view(): PluginStatus {
     const planned = resolvePlugins(this.selection);
     return {
       selection: structuredClone(this.selection),
-      active: [...this.active],
+      active: this.runtime ? [...this.runtime.enabled] : [...this.active],
       planned,
       reasons: explainPlugins(this.selection),
       migrations: [...this.migrations],
       restartRequired:
         planned.length !== this.startupPlanned.length ||
         planned.some((id) => !this.startupPlanned.includes(id)),
-      errors: { ...this.errors },
-      lifecycle: structuredClone(this.lifecycle),
+      errors: { ...(this.runtime?.errors ?? this.errors) },
+      lifecycle: structuredClone(this.runtime?.lifecycle ?? this.lifecycle),
+      runtime: this.directory.view(),
       plugins: PLUGINS,
       packs: PLUGIN_PACKS,
     };
@@ -92,6 +105,7 @@ export class PluginManager {
         }
         await writeStore(this.file, next);
         this.selection = next;
+        this.directory.setDesired('official', planned);
         this.migrations = [];
         return this.view();
       });

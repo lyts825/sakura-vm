@@ -18,7 +18,7 @@ export function captureResourceContext(identity: Partial<ResourceIdentity> = {})
   };
   // Explicitly serialize identities only; accidental request payloads must never
   // flow into diagnostics or later IPC envelopes through an object spread.
-  const keys: (keyof ResourceIdentity)[] = ['operationId', 'owner', 'actorId', 'pluginId', 'vmId',
+  const keys: (keyof ResourceIdentity)[] = ['operationId', 'owner', 'actorId', 'pluginId', 'pluginInstanceId', 'pluginGeneration', 'callerPluginInstanceId', 'callerPluginGeneration', 'vmId',
     'projectId', 'jobId', 'vmProcessId', 'executionGeneration', 'bootId', 'networkGeneration', 'traceId', 'spanId'];
   for (const key of keys) {
     const value = identity[key];
