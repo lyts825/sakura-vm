@@ -8,6 +8,8 @@ import { computeRuntime } from './compute-runtime.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
+import { PluginDirectory } from './plugin-directory.ts';
+import { withPluginAuthority } from './plugin-authority.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { eventSchema } from './webhooks.ts';
 import { webhookTypes, type WebhookEvent } from '../shared/webhooks.ts';
@@ -69,7 +71,8 @@ const entry = z
 const catalog = z.object({ schemaVersion: z.literal(1), plugins: z.array(entry).max(100) }).strict();
 const installed = entry
   .omit({ wasmUrl: true })
-  .extend({ sourceId: z.uuid(), installedAt: z.number().int().positive() })
+  .extend({ sourceId: z.uuid(), installedAt: z.number().int().positive(),
+    phase: z.enum(['running', 'draining', 'cleanup-pending']).optional() })
   .strict();
 const subscribedTypes = z.array(z.enum(webhookTypes)).min(1).max(2)
   .refine((values) => new Set(values).size === values.length, '事件类型不能重复');
@@ -307,6 +310,7 @@ export class CommunityPlugins {
     private directory = join(DATA, 'community-plugins'),
     private fetchBytes = download,
     private now = Date.now,
+    readonly pluginDirectory = new PluginDirectory(),
   ) {}
 
   async init() {
@@ -335,6 +339,9 @@ export class CommunityPlugins {
       if (publicKey(trusted.publicKey).fingerprint !== trusted.fingerprint)
         throw new AppError('第三方插件发布者指纹无效', 503);
     for (const item of this.state.installed) {
+      const instance = this.pluginDirectory.begin('community', item.id, item.version, item.sha256, ['compute']);
+      if (item.phase && item.phase !== 'running') instance.phase = 'cleanup-pending';
+      else this.pluginDirectory.publish(instance);
       const bytes = await readFile(this.wasmFile(item)).catch(() => null);
       if (!bytes || sha256(bytes) !== item.sha256) this.problems[item.id] = '插件文件损坏或丢失';
       const signer = this.state.publishers.find((trusted) => trusted.fingerprint === item.publisher);
@@ -349,10 +356,32 @@ export class CommunityPlugins {
       )
         this.problems[item.id] = '插件签名或发布者信任无效';
     }
+    this.pluginDirectory.setDesired('community', this.state.installed.map(item => item.id));
   }
 
   private wasmFile(item: Pick<Entry, 'id' | 'version' | 'sha256'>) {
     return join(this.directory, `${item.id}-${item.version}-${item.sha256}.wasm`);
+  }
+  private async retire(item: State['installed'][number]) {
+    const instance = this.pluginDirectory.get('community', item.id)!;
+    instance.revoke(); this.pluginDirectory.changed();
+    const retiring = structuredClone(this.state);
+    retiring.installed.find(current => current.id === item.id)!.phase = 'draining';
+    try {
+      await this.save(retiring);
+      const active = [...(this.running.get(item.id) || [])];
+      for (const task of active) task.abort.abort(new DOMException('插件退出中', 'AbortError'));
+      await confirmComputations(active.map(task => task.done));
+      await instance.scope.dispose();
+      instance.phase = 'inactive'; this.pluginDirectory.changed();
+    } catch (error) {
+      instance.phase = 'cleanup-pending'; instance.error = String(error);
+      instance.scope.cleanupPending(error); this.pluginDirectory.changed();
+      const failed = structuredClone(this.state);
+      failed.installed.find(current => current.id === item.id)!.phase = 'cleanup-pending';
+      await this.save(failed).catch(() => {});
+      throw error;
+    }
   }
   private serial<T>(work: () => Promise<T>) {
     const task = this.writes
@@ -382,6 +411,7 @@ export class CommunityPlugins {
       schedules: this.state.schedules,
       deliveries: this.state.deliveries.slice(-40).reverse(),
       eventError: this.eventError,
+      runtime: this.pluginDirectory.view(),
     };
   }
 
@@ -450,6 +480,9 @@ export class CommunityPlugins {
         const source = next.sources.find((item) => item.id === input.sourceId);
         const item = next.catalogs[input.sourceId]?.find((item) => item.id === input.pluginId);
         if (!source || !item) throw new AppError('请先刷新目录并选择插件', 404);
+        const previous = next.installed.find(current => current.id === item.id);
+        if (previous && previous.phase && previous.phase !== 'running')
+          throw new AppError('原插件清理尚未完成，请先重试卸载', 409, 'PLUGIN_CLEANUP_PENDING');
         const signer = next.publishers.find((trusted) => trusted.fingerprint === item.publisher);
         if (!signer) throw new AppError('发布者未受信任', 403);
         const bytes = await this.fetchBytes(artifactUrl(source.url, item.wasmUrl), 512 * 1024);
@@ -472,6 +505,7 @@ export class CommunityPlugins {
           },
         );
         const old = next.installed.find((installed) => installed.id === item.id);
+        if (old) await this.retire(old);
         const { wasmUrl: _, ...signed } = item;
         next.installed = [
           ...next.installed.filter((installed) => installed.id !== item.id),
@@ -481,10 +515,14 @@ export class CommunityPlugins {
         await this.save(next);
         delete this.problems[item.id];
         if (old && this.wasmFile(old) !== target) await rm(this.wasmFile(old), { force: true });
+        const instance = this.pluginDirectory.begin('community', item.id, item.version, item.sha256, ['compute']);
+        this.pluginDirectory.setDesired('community', next.installed.map(current => current.id));
+        this.pluginDirectory.publish(instance);
         return this.view();
       } else if (input.operation === 'uninstall') {
         const old = next.installed.find((item) => item.id === input.pluginId);
         if (!old) throw new AppError('插件未安装', 404);
+        await this.retire(old);
         next.installed = next.installed.filter((item) => item.id !== input.pluginId);
         next.subscriptions = next.subscriptions.filter((item) => item.pluginId !== input.pluginId);
         next.schedules = next.schedules.filter((item) => item.pluginId !== input.pluginId);
@@ -494,12 +532,10 @@ export class CommunityPlugins {
             item.processedAt = this.now();
             item.error = '插件已卸载';
           }
+        await rm(this.wasmFile(old), { force: true });
         await this.save(next);
         delete this.problems[input.pluginId];
-        const active = [...(this.running.get(input.pluginId) || [])];
-        for (const task of active) task.abort.abort(new AppError('插件已卸载', 409));
-        await confirmComputations(active.map((task) => task.done));
-        await rm(this.wasmFile(old), { force: true });
+        this.pluginDirectory.setDesired('community', next.installed.map(current => current.id));
         return this.view();
       } else if (input.operation === 'subscribe') {
         if (!next.installed.some((item) => item.id === input.pluginId))
@@ -676,11 +712,13 @@ export class CommunityPlugins {
     try {
       const item = this.state.installed.find((value) => value.id === id);
       if (!item) throw new AppError('插件未安装', 404);
+      const instance = this.pluginDirectory.get('community', id)!;
+      instance.check('compute');
       const payload = JSON.stringify(input);
       if (payload === undefined || Buffer.byteLength(payload) > 32 * 1024)
         throw new AppError('插件输入必须是小于 32 KiB 的 JSON', 400);
       const abort = new AbortController();
-      const done = computeRuntime.run<unknown>({ owner: `community:${id}`, label: '隔离插件计算',
+      const done = withPluginAuthority(instance, () => computeRuntime.run<unknown>({ owner: instance.owner, label: '隔离插件计算',
         memoryBytes: 48 * 1024 ** 2, timeoutMs: 1000, signal: abort.signal,
         partition: { key: `community:${id}`, limit: 2 } }, async (signal) => {
       const bytes = await readFile(this.wasmFile(item), { signal });
@@ -710,7 +748,7 @@ export class CommunityPlugins {
       return { source: workerSource, options: { eval: true,
         workerData: { wasm: bytes, input: JSON.parse(payload) },
         resourceLimits: { maxOldGenerationSizeMb: 32, maxYoungGenerationSizeMb: 8, stackSizeMb: 1 } } };
-      });
+      }));
       const active = this.running.get(id) || new Set<{ abort: AbortController; done: Promise<unknown> }>();
       const task = { abort, done };
       active.add(task); this.running.set(id, active);
@@ -728,6 +766,10 @@ export class CommunityPlugins {
     await this.writes;
     const active = [...this.running.values()].flatMap((set) => [...set]);
     for (const task of active) task.abort.abort(new AppError('插件市场正在关闭', 503));
+    for (const instance of this.pluginDirectory.all().filter(item => item.source === 'community')) instance.revoke();
     await confirmComputations(active.map((task) => task.done));
+    for (const instance of this.pluginDirectory.all().filter(item => item.source === 'community')) {
+      await instance.scope.dispose(); instance.phase = 'inactive';
+    }
   }
 }

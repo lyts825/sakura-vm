@@ -4,9 +4,10 @@ declare const serviceType: unique symbol;
 export type ServiceRef<T> = Readonly<{
   pluginId: string;
   key: string;
+  version: number;
   [serviceType]?: (value: T) => T;
 }>;
 
-export function serviceRef<T>(pluginId: string, key: string): ServiceRef<T> {
-  return Object.freeze({ pluginId, key });
+export function serviceRef<T>(pluginId: string, key: string, version = 1): ServiceRef<T> {
+  return Object.freeze({ pluginId, key, version });
 }

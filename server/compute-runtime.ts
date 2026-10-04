@@ -1,5 +1,6 @@
 import { Worker, type WorkerOptions } from 'node:worker_threads';
 import { AppError } from '../shared/errors.ts';
+import { pluginAuthority, withPluginAuthority } from './plugin-authority.ts';
 import { hostRuntime, type HostRuntime, type ResourceLease } from './host-runtime/index.ts';
 
 export type ComputeWork = { source: string | URL; options?: WorkerOptions };
@@ -17,8 +18,17 @@ export class ComputeRuntime {
     private readonly spawn = (source: string | URL, options?: WorkerOptions) => new Worker(source, options)) {}
 
   run<T>(options: ComputeOptions, prepare: (signal: AbortSignal) => ComputeWork | Promise<ComputeWork>): Promise<T> {
+    const instance = pluginAuthority();
+    instance?.check('compute', true);
+    if (instance) {
+      options = { ...options, owner: instance.owner,
+        signal: options.signal ? AbortSignal.any([options.signal, instance.signal]) : instance.signal };
+      const original = prepare;
+      prepare = signal => withPluginAuthority(instance, () => original(signal), () => instance.check('compute', true));
+    }
     if (this.abort.signal.aborted) return Promise.reject(new AppError('计算服务正在关闭', 503, 'RESOURCE_DRAINING'));
     const task = this.execute<T>(options, prepare);
+    instance?.scope.observe(task);
     this.tasks.add(task);
     void task.then(() => this.tasks.delete(task), () => this.tasks.delete(task));
     return task;

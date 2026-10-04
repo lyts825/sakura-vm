@@ -411,9 +411,11 @@ test('standalone metrics invalidate a cached sample when the guest restarts with
     const first = host.metrics.sample('vm');
     const rejected = assert.rejects(first, /previous boot/);
     assert.equal(host.metrics.sample('vm'), first);
+    await new Promise<void>(done => setImmediate(done));
     vm.live.set('vm', { startedAt: 'second' } as any);
     const second = host.metrics.sample('vm');
     assert.notEqual(second, first);
+    await new Promise<void>(done => setImmediate(done));
     pending[0].reject(new Error('previous boot'));
     await rejected;
     assert.equal(host.metrics.sample('vm'), second);
@@ -591,12 +593,13 @@ test('service contracts reject undeclared reads and writes and await asynchronou
       ...(await original()),
       activate: async (host) => {
         if (violation === 'missing') return;
-        host.images = {
+        host.provide('images', {
           close: async () => {
             events.push('close');
           },
-        } as any;
+        } as any);
         if (violation === 'read') void host.workspaces;
+        // @ts-expect-error public service slots are immutable
         else host.files = {} as any;
       },
       deactivate: async () => {
@@ -608,7 +611,7 @@ test('service contracts reject undeclared reads and writes and await asynchronou
       const host = await Features.create(machines(), ['images']);
       assert.match(
         host.errors.images,
-        violation === 'read' ? /未声明服务读取/ : violation === 'write' ? /非自有服务/ : /未注册声明的服务/,
+        violation === 'read' ? /未声明服务读取/ : violation === 'write' ? /getter|read only|不可写/ : /未注册声明的服务/,
       );
       assert.equal(host.images, undefined);
       assert.equal(host.files, undefined);

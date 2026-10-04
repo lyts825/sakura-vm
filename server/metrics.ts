@@ -1,5 +1,7 @@
 import { AppError } from '../shared/errors.ts';
-import type { Machines } from './machines.ts';
+type MetricsVm = { state(id: string): string; boot?(id: string): string | undefined;
+  live?: ReadonlyMap<string, { startedAt?: string }>;
+  exec(id: string, command: string, timeout?: number): Promise<{ code: number; stdout: string; stderr: string }> };
 
 export const metricsScript = String.raw`set -eu
 echo CPU
@@ -120,7 +122,7 @@ export class Metrics {
     string,
     { at: number; boot: string | undefined; promise: Promise<ReturnType<typeof parseMetrics>> }
   >();
-  constructor(private machines: Machines) {}
+  constructor(private vm: MetricsVm) {}
   forget(id: string) {
     this.samples.delete(id);
     this.last.delete(id);
@@ -131,17 +133,17 @@ export class Metrics {
     this.last.clear();
   }
   sample(id: string) {
-    if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
+    if (this.vm.state(id) !== 'running') throw new AppError('请先启动发行版', 409);
     const previous = this.samples.get(id);
-    const boot = this.machines.live.get(id)?.startedAt;
+    const boot = this.vm.boot ? this.vm.boot(id) : this.vm.live?.get(id)?.startedAt;
     if (previous && previous.boot === boot && Date.now() - previous.at < 3000) return previous.promise;
-    const promise = this.machines
+    const promise = this.vm
       .exec(id, metricsScript, 10000)
       .then((result) => {
         if (result.code !== 0) throw new AppError('客户机采样失败', 502);
         const old = this.last.get(id),
           point = networkRates(parseMetrics(result.stdout), old && old.boot === boot ? old.point : undefined);
-        if (this.samples.get(id)?.promise === promise && this.machines.live.get(id)?.startedAt === boot)
+        if (this.samples.get(id)?.promise === promise && (this.vm.boot ? this.vm.boot(id) : this.vm.live?.get(id)?.startedAt) === boot)
           this.last.set(id, { boot, point });
         return point;
       })

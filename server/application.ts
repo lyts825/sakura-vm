@@ -144,7 +144,7 @@ export async function startApplication() {
     await jitPrivileges.init();
     const browserExtensions = resources.own('browserExtensions', new BrowserExtensions(access), 120);
     await browserExtensions.init();
-    const communityPlugins = resources.own('communityPlugins', new CommunityPlugins(), 140);
+    const communityPlugins = resources.own('communityPlugins', new CommunityPlugins(undefined, undefined, undefined, undefined, plugins.directory), 140);
     await communityPlugins.init();
     const audit = resources.own('audit', hostAudit(), ClosePhase.audit);
     const remoteAudit = resources.own('remoteAudit', new RemoteAuditLock(audit), 350);

@@ -30,7 +30,7 @@ export async function route(
     return true;
   };
   if (url.pathname === '/api/image-import' && req.method === 'POST') {
-    if (this.importing) throw new AppError('另一个导入仍在进行', 409);
+    if (this.activity.importing) throw new AppError('另一个导入仍在进行', 409);
     const input = diskImportSchema.parse({
       name: url.searchParams.get('name'),
       format: url.searchParams.get('format'),
@@ -42,12 +42,9 @@ export async function route(
       firmware: url.searchParams.get('firmware') || 'bios',
       ...(url.searchParams.has('sha256') ? { sha256: url.searchParams.get('sha256') } : {}),
     });
-    this.importing = true;
-    try {
+    await this.activity.exclusive('import', async () => {
       send(await this.use(imagesServices.diskImports).import(input, req, signal), 201);
-    } finally {
-      this.importing = false;
-    }
+    });
     return true;
   }
   if (parts[1] === 'images') {

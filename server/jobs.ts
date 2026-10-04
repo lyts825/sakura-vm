@@ -10,6 +10,7 @@ import { hostRuntime, withResourceContext } from './host-runtime/index.ts';
 import { withNewResourceContext } from './host-runtime/context.ts';
 import { withoutAuditParent } from './audit.ts';
 import { captureOperationCheck, withoutOperationContext } from './operation-context.ts';
+import { pluginAuthority, withPluginAuthority } from './plugin-authority.ts';
 
 export type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
 import type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
@@ -88,10 +89,22 @@ export class Jobs {
   private results = new Map<string, string>();
   private cleanups = new Map<string, { view: JobView; lease?: JobResource }>();
   persistenceError?: string;
+  private pluginLifetime = pluginAuthority();
   constructor(
     private scope?: string,
     directory = join(DATA, 'jobs'),
   ) {
+    if (this.pluginLifetime) {
+      const lifetime = this.pluginLifetime;
+      lifetime.check('jobs', true);
+      const cancel = () => { for (const item of this.items.values()) item.abort.abort(lifetime.signal.reason); };
+      lifetime.signal.addEventListener('abort', cancel, { once: true });
+      lifetime.scope.add(async () => {
+        await this.close();
+        if (this.cleanups.size) throw new AppError('插件任务仍有资源等待恢复', 503, 'PLUGIN_CLEANUP_PENDING');
+        lifetime.signal.removeEventListener('abort', cancel);
+      });
+    }
     if (!scope) return;
     this.file = join(directory, `${scope}.json`);
     try {
@@ -235,11 +248,15 @@ export class Jobs {
       throw new AppError('任务结果校验失败', 409);
     return JSON.parse(data);
   }
-  start(key: string, work: Work, meta: JobMeta = {}) {
+  start(key: string, work: Work, meta: JobMeta = {}): JobView {
+    if (this.pluginLifetime && pluginAuthority() !== this.pluginLifetime)
+      return withPluginAuthority(this.pluginLifetime, () => this.start(key, work, meta));
+    this.pluginLifetime?.check('jobs', true);
     if (this.closed) throw new AppError('服务正在关闭', 503);
     if (this.items.get(key)?.view.status === 'running') throw new AppError('另一项操作仍在进行', 409);
     const inherited = context.getStore(), parent = inherited?.open ? inherited : undefined;
-    const owner = meta.owner || `jobs:${this.scope || 'anonymous'}`;
+    const owner = this.pluginLifetime?.owner || meta.owner || `jobs:${this.scope || 'anonymous'}`;
+    meta = { ...meta, owner };
     const control = meta.lane === 'control';
     const check = captureOperationCheck();
     if (pendingJobs >= pendingJobLimit - (control ? 0 : pendingControlReserve) ||

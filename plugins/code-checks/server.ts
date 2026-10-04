@@ -13,8 +13,6 @@ export async function activate(host: PluginContext) {
   host.provide(codeChecksServices.intelligence, new CodeIntelligence(host.machines, host.workspaces));
   host.provide(codeChecksServices.languageServices, new LanguageServices(host.machines, host.workspaces, host.fileLocks));
   host.provide(codeChecksServices.debugger, new DebugAdapter(host.machines, host.workspaces));
-  host.onDispose(() => host.debugger.close());
-  host.onDispose(() => host.languageServices.close());
 }
 export async function route(
   this: PluginContext,

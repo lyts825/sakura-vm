@@ -15,7 +15,7 @@ export class PluginInstance {
   error?: string;
   private permissions: Set<string>;
   constructor(readonly source: PluginSource, readonly pluginId: string,
-    readonly version: string, readonly artifactDigest: string, permissions: readonly string[] = ['vm', 'execution', 'network', 'process', 'storage', 'metadata', 'compute', 'jobs', 'schedule', 'events']) {
+    readonly version: string, readonly artifactDigest: string, permissions: readonly string[] = ['vm', 'execution', 'network', 'process', 'storage', 'metadata', 'compute', 'jobs', 'schedule', 'events', 'services']) {
     this.identity = `${source}:${pluginId}`;
     this.permissions = new Set(permissions);
     this.scope = withResourceContext(this.resourceIdentity, () => new PluginScope(this.owner));

@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
 import { PluginDirectory } from './plugin-directory.ts';
+import { ServiceBroker } from './service-broker.ts';
+import { withPluginAuthority } from './plugin-authority.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import { type VMConfig } from '../shared/contracts/vm.ts';
 import { AppError } from '../shared/errors.ts';
@@ -40,6 +42,7 @@ function matchesOperation(pattern: string, pathname: string) {
 /** Optional plugin host. No plugin services are constructed until explicitly selected. */
 export interface PluginRuntime extends PluginServices {}
 export class PluginRuntime {
+  readonly broker: ServiceBroker;
   extraJobStores: Jobs[] = [];
 
   readonly enabled = new Set<string>();
@@ -57,6 +60,13 @@ export class PluginRuntime {
   get mutations() { return this.operations.active; }
   set mutations(value: number) { this.operations.active = value; }
   importing = false;
+  private exclusives = new Set<string>();
+  async exclusive<T>(name: string, work: () => Promise<T>): Promise<T> {
+    if (this.exclusives.has(name)) throw new AppError('另一项操作仍在进行', 409);
+    this.exclusives.add(name); this.importing = this.exclusives.has('import');
+    try { return await work(); }
+    finally { this.exclusives.delete(name); this.importing = this.exclusives.has('import'); }
+  }
   private closed = false;
   private closing?: Promise<void>;
   private active = new Map<AbortController, Promise<boolean>>();
@@ -65,6 +75,7 @@ export class PluginRuntime {
     return [...this.scopes].map(([id, scope]) => ({ id, cleanupPending: this.cleanupPending.has(id), ...scope.diagnostics() }));
   }
   private constructor(public machines: Machines, readonly directory = new PluginDirectory()) {
+    this.broker = new ServiceBroker(directory, PLUGINS);
     for (const key of SERVICE_KEYS) Object.defineProperty(this, key, {
       configurable: true, enumerable: true,
       get: () => this.services.get(key),
@@ -167,12 +178,12 @@ export class PluginRuntime {
             throw new AppError('插件任务仍有资源等待领域恢复', 503, 'PLUGIN_CLEANUP_PENDING');
           closedServices.add(service);
         });
-        const context = pluginContext(host, manifest, PLUGINS, scope);
+        const context = pluginContext(host, manifest, PLUGINS, instance);
         host.contexts.set(id, context);
         if (module.deactivate) scope.add(() => module!.deactivate!(context));
         host.modules.set(id, module);
         started = true;
-        await withinDeadline(scope.run(() => withResourceContext(instance.resourceIdentity,
+        await withinDeadline(scope.run(() => withPluginAuthority(instance,
           () => module!.activate(context))), manifest.lifecycle.activateMs, `${id} 激活`, () =>
           scope.abort(),
         );
@@ -252,6 +263,7 @@ export class PluginRuntime {
       throw error;
     }
     for (const key of module.manifest.services) this.services.delete(key);
+    this.broker.remove(instance);
     for (const [store, value] of this.pluginJobs) if (value.owner === id) this.pluginJobs.delete(store);
     this.contexts.delete(id);
     this.scopes.delete(id);
@@ -376,7 +388,7 @@ export class PluginRuntime {
         const dispatch = () => this.workspaces && vm && contribution.projectScoped && /^[0-9a-f-]{36}$/i.test(vm)
           ? this.workspaces.projects.with(vm, url.searchParams.get('project'), route)
           : route();
-        return pluginScope ? pluginScope.run(() => withResourceContext(this.directory.get('official', owner)!.resourceIdentity, dispatch)) : dispatch();
+        return pluginScope ? pluginScope.run(() => withPluginAuthority(this.directory.get('official', owner)!, dispatch)) : dispatch();
       })
       .finally(() => {
         this.active.delete(abort);

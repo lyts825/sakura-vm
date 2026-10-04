@@ -163,13 +163,12 @@ export async function route(
     return true;
   };
   if (parts[1] === 'import' && parts.length === 2 && req.method === 'POST') {
-    if (this.importing) throw new AppError('另一个导入仍在进行', 409);
+    if (this.activity.importing) throw new AppError('另一个导入仍在进行', 409);
     const name = z
       .string()
       .regex(/^[a-z][a-z0-9-]{0,31}$/)
       .parse(url.searchParams.get('name'));
-    this.importing = true;
-    try {
+    await this.activity.exclusive('import', async () => {
       const passphrase = req.headers['x-sakura-passphrase'];
       if (passphrase !== undefined) this.require('backups');
       if (passphrase !== undefined && (typeof passphrase !== 'string' || passphrase.length > 6000))
@@ -186,9 +185,7 @@ export async function route(
           : await this.bundles.importExternal(name, req, signal),
         201,
       );
-    } finally {
-      this.importing = false;
-    }
+    });
     return true;
   }
   if (parts[1] !== 'vms' || !parts[2]) return false;

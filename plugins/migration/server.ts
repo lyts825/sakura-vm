@@ -50,7 +50,7 @@ export async function route(
         const { files: _files, ...plan } = await this.migration.plan(input.target || '');
         send(plan);
       } else {
-        if (this.mutations || this.importing) throw new AppError('请等待正在执行的请求完成', 409);
+        if (this.activity.mutations || this.activity.importing) throw new AppError('请等待正在执行的请求完成', 409);
         send(await this.migration.start(input.target || '', input.token || ''), 202);
       }
       return true;

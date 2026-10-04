@@ -37,6 +37,7 @@ export class ServiceHealth {
   private pending?: Promise<void>;
   private closed = false;
   private timer: ScheduleHandle;
+  private removeAction: () => void;
   private onChange = () => {
     for (const key of this.states.keys())
       if (!this.machines.live.has(key.split(':')[0])) {
@@ -64,7 +65,7 @@ export class ServiceHealth {
       await this.pending;
     } });
     machines.on('change', this.onChange);
-    workspaces.onAction = (id, action, service) => this.expect(id, action, service);
+    this.removeAction = workspaces.beforeAction((id, action, service) => this.expect(id, action, service));
   }
   async expect(id: string, action: 'start' | 'stop', service?: string) {
     const key = this.workspaces.projects?.key(id) || id;
@@ -283,7 +284,7 @@ export class ServiceHealth {
   async close() {
     this.closed = true;
     this.machines.off('change', this.onChange);
-    this.workspaces.onAction = undefined;
+    this.removeAction();
     for (const abort of this.checks.values()) abort.abort();
     await this.timer.close();
     await this.pending;

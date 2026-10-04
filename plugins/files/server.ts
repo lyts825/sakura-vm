@@ -14,20 +14,13 @@ import { downloadManifest } from '../../server/file-chunks.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.machines;
-  host.provide(filesServices.files, new Files(m));
-  host.provide(filesServices.history, new FileHistory(m, host.files));
-  host.provide(filesServices.fileLocks, new FileLocks());
-  host.files.beforeReplace = (id, path, ftp, signal) => host.history.capture(id, path, ftp, signal);
-  host.files.trash = (id, path, recursive) => host.history.trash(id, path, recursive);
-  host.machines.fileBeforeReplace = host.files.beforeReplace;
-}
-export function deactivate(host: PluginContext) {
-  host.machines.fileBeforeReplace = undefined;
-  host.fileLocks?.clear();
-  if (host.files) {
-    host.files.beforeReplace = undefined;
-    host.files.trash = undefined;
-  }
+  const files = host.provide(filesServices.files, new Files(m));
+  const history = host.provide(filesServices.history, new FileHistory(m, files));
+  const locks = host.provide(filesServices.fileLocks, new FileLocks());
+  files.beforeReplace = (id, path, ftp, signal) => history.capture(id, path, ftp, signal);
+  files.trash = (id, path, recursive) => history.trash(id, path, recursive);
+  m.fileBeforeReplace = files.beforeReplace;
+  host.onDispose(() => { m.fileBeforeReplace = undefined; locks.clear(); files.beforeReplace = undefined; files.trash = undefined; });
 }
 export async function route(
   this: PluginContext,

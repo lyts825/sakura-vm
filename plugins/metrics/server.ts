@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Metrics } from '../../server/metrics.ts';
 import type { PluginOperation } from '../../server/plugin-api.ts';
 export async function activate(host: PluginContext) {
-  host.provide(metricsServices.metrics, new Metrics(host.machines));
+  host.provide(metricsServices.metrics, new Metrics(host.capabilities.vm));
 }
 export const operations: Record<string, PluginOperation> = {
   sample: {

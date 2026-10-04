@@ -41,6 +41,10 @@ export class PluginScope {
     });
     return pending;
   }
+  observe(pending: Promise<unknown>) {
+    this.active.add(pending);
+    void pending.then(() => this.active.delete(pending), () => this.active.delete(pending));
+  }
   diagnostics() {
     return { resourceId: this.resource?.id, active: this.active.size, revoked: this.signal.aborted,
       cleanup: [...this.failures].map(([id, error]) => ({ id, error: String(error) })) };

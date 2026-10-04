@@ -1,6 +1,7 @@
 import { realpath, stat, statfs, rm } from 'node:fs/promises';
 import { dirname, parse, resolve } from 'node:path';
 import { AppError } from '../shared/errors.ts';
+import { pluginAuthority } from './plugin-authority.ts';
 import { hostRuntime } from './host-runtime/index.ts';
 import { Transform } from 'node:stream';
 
@@ -77,6 +78,10 @@ export class StorageRuntime {
   }
 
   async acquire(request: StorageRequest) {
+    const lifetime = pluginAuthority();
+    lifetime?.check('storage', true);
+    if (lifetime) request = { ...request, owner: lifetime.owner,
+      signal: request.signal ? AbortSignal.any([request.signal, lifetime.signal]) : lifetime.signal };
     request.signal?.throwIfAborted();
     if (
       !request.owner ||

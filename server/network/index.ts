@@ -7,6 +7,9 @@ import { Agent as FetchAgent } from 'undici';
 import { WebSocket } from 'ws';
 import { networkRuntime, type NetworkIdentity, type NetworkRuntime } from './core.ts';
 import type { Destination } from './host-pool.ts';
+import { pluginAuthority } from '../plugin-authority.ts';
+import type { PluginInstance } from '../plugin-instance.ts';
+import { withResourceContext } from '../host-runtime/context.ts';
 export { networkRuntime, NetworkRuntime, networkDefaults } from './core.ts';
 export type { NetworkIdentity } from './core.ts';
 export type { VmNetworkLease } from './vm-backend.ts';
@@ -482,5 +485,32 @@ export class NetworkScope {
 }
 
 export function networkFor(owner: string, purpose = owner, signal?: AbortSignal) {
-  return new NetworkScope({ owner, purpose }, networkRuntime, signal);
+  const origin = pluginAuthority();
+  const scopes = new WeakMap<PluginInstance, NetworkScope>();
+  let core: NetworkScope | undefined;
+  const get = (closing = false) => {
+    const instance = origin || pluginAuthority();
+    if (!instance) return core ||= new NetworkScope({ owner, purpose }, networkRuntime, signal);
+    if (!closing) instance.check('network', true);
+    let scope = scopes.get(instance);
+    if (!scope) {
+      if (closing) return undefined;
+      scope = withResourceContext(instance.resourceIdentity, () => new NetworkScope({ owner: instance.owner, purpose }, networkRuntime,
+        signal ? AbortSignal.any([signal, instance.signal]) : instance.signal));
+      scopes.set(instance, scope);
+      instance.scope.add(() => scope!.close());
+    }
+    return scope;
+  };
+  return new Proxy(Object.create(null), {
+    get(_target, key) {
+      if (key === 'close') return (reason?: unknown) => get(true)?.close(reason) || Promise.resolve();
+      if (key === 'identity') return get()!.identity;
+      return (...args: unknown[]) => {
+        const scope = get()!;
+        return Reflect.apply(Reflect.get(scope, key, scope), scope, args);
+      };
+    },
+    set: () => false,
+  }) as NetworkScope;
 }

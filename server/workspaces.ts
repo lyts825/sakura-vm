@@ -106,7 +106,17 @@ export class Workspaces {
   private configGuards = new Set<(id: string, previous: Project, next: Project) => Promise<void>>();
   private observed = new Map<string, string>();
   private sampler: Metrics;
-  onAction?: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>;
+  private actionHooks = new Set<(id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>>();
+  beforeAction(hook: (id: string, action: 'start' | 'stop', service?: string) => Promise<(success: boolean) => void>) {
+    this.actionHooks.add(hook);
+    return () => { this.actionHooks.delete(hook); };
+  }
+  private async prepareAction(id: string, action: 'start' | 'stop', service?: string) {
+    const receipts: ((success: boolean) => void)[] = [];
+    try { for (const hook of this.actionHooks) receipts.push(await hook(id, action, service)); }
+    catch (error) { for (const receipt of receipts) receipt(false); throw error; }
+    return (success: boolean) => { for (const receipt of receipts) receipt(success); };
+  }
   constructor(
     private machines: Machines,
     private context?: { secrets?: Secrets; network?: NetworkProfiles },
@@ -424,7 +434,7 @@ export class Workspaces {
     return this.machines.locked(id, async () => {
       const finish =
         !automatic && (action === 'start' || action === 'stop')
-          ? await this.onAction?.(id, action, service)
+          ? await this.prepareAction(id, action, service)
           : undefined;
       try {
         const job = await this.runInternal(id, action, service);

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import { Jobs } from './jobs.ts';
 import { hostRuntime, type ResourceLease } from './host-runtime/index.ts';
+import { pluginAuthority, withPluginBackground } from './plugin-authority.ts';
+import type { PluginInstance } from './plugin-instance.ts';
 
 export type ScheduleDefinition = {
   id?: string;
@@ -28,6 +30,7 @@ export type ScheduleView = {
 export type ScheduleHandle = { id: string; trigger(): boolean; snapshot(): ScheduleView; close(): Promise<void>;
   resolveCleanup(jobId: string): Promise<void> };
 type Entry = { definition: ScheduleDefinition; view: ScheduleView; jobs: Jobs; lease: ResourceLease; nextAt: number;
+  lifetime?: PluginInstance;
   notBefore: number; queued: boolean; closed: boolean; abort?: AbortController;
   pending?: Promise<void>; closeTask?: Promise<void>; cleanupFailure?: unknown };
 
@@ -44,6 +47,9 @@ export class Scheduler {
   private closeTask?: Promise<void>;
 
   register(definition: ScheduleDefinition): ScheduleHandle {
+    const lifetime = pluginAuthority();
+    lifetime?.check('schedule', true);
+    if (lifetime) definition = { ...definition, owner: lifetime.owner };
     if (this.closed) throw new AppError('周期调度正在关闭', 503, 'SCHEDULER_CLOSED');
     duration(definition.intervalMs, 'schedule interval');
     if (definition.timeoutMs !== undefined) duration(definition.timeoutMs, 'schedule timeout');
@@ -60,7 +66,7 @@ export class Scheduler {
     if (this.entries.has(id)) throw new AppError('周期任务标识已存在', 409, 'SCHEDULE_EXISTS');
     if (this.entries.size >= 1024 || [...this.entries.values()].filter((entry) => entry.definition.owner === definition.owner).length >= 64)
       throw new AppError('周期任务登记已达到上限', 429, 'SCHEDULE_LIMIT');
-    const entry: Entry = { definition: { ...definition, backoff: definition.backoff && { ...definition.backoff } },
+    const entry: Entry = { lifetime, definition: { ...definition, backoff: definition.backoff && { ...definition.backoff } },
       view: { id, owner: definition.owner, label: definition.label, intervalMs: definition.intervalMs,
         overlap: definition.overlap || 'skip', catchUp: definition.catchUp || 'once', state: 'scheduled',
         runs: 0, failures: 0, skipped: 0, coalesced: 0 },
@@ -68,6 +74,11 @@ export class Scheduler {
       nextAt: Date.now() + (definition.immediate ? 0 : definition.intervalMs),
       notBefore: 0, queued: false, closed: false };
     this.entries.set(id, entry); this.arm();
+    if (lifetime) {
+      const cancel = () => { void this.closeEntry(entry).catch(() => {}); };
+      lifetime.signal.addEventListener('abort', cancel, { once: true });
+      lifetime.scope.add(async () => { await this.closeEntry(entry); lifetime.signal.removeEventListener('abort', cancel); });
+    }
     return { id, trigger: () => this.trigger(entry), snapshot: () => this.describe(entry), close: () => this.closeEntry(entry),
       resolveCleanup: (jobId) => entry.jobs.resolveCleanup(jobId) };
   }
@@ -116,10 +127,12 @@ export class Scheduler {
     this.launch(entry, Date.now()); this.arm(); return true;
   }
   private launch(entry: Entry, scheduledAt: number) {
+    if (entry.lifetime?.phase === 'activating') { entry.nextAt = Date.now() + 50; return; }
+    if (entry.lifetime?.signal.aborted) { void this.closeEntry(entry).catch(() => {}); return; }
     entry.queued = false;
     const abort = new AbortController(); entry.abort = abort;
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const pending = Jobs.detached(() => entry.jobs.track('run', async (_log, signal) => {
+    const launch = () => Jobs.detached(() => entry.jobs.track('run', async (_log, signal) => {
       entry.view.runs++; entry.view.lastStartedAt = new Date().toISOString(); entry.view.timedOutAt = undefined;
       const began = performance.now();
       if (entry.definition.timeoutMs !== undefined) timeout = setTimeout(() => {
@@ -128,7 +141,8 @@ export class Scheduler {
       }, entry.definition.timeoutMs);
       try { await entry.definition.run({ signal, scheduledAt: new Date(scheduledAt).toISOString() }); }
       finally { clearTimeout(timeout); entry.view.lastDurationMs = performance.now() - began; }
-    }, { owner: entry.definition.owner, title: entry.definition.label, lane: 'background' }, abort.signal))
+    }, { owner: entry.definition.owner, title: entry.definition.label, lane: 'background' }, abort.signal));
+    const pending = (entry.lifetime ? withPluginBackground(entry.lifetime, launch) : launch())
       .then(() => { entry.view.failures = 0; entry.view.lastError = undefined; entry.notBefore = 0; })
       .catch((error: unknown) => {
         if (entry.jobs.view('run')?.admission === 'cleanup-pending') {

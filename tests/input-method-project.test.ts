@@ -110,8 +110,8 @@ test('registered IME retry restores the saved project before capturing its new t
   await activate(activation);
   const installed = activation.desktops, jobStore = activation.jobs;
   t.after(async () => { await installed.close(); await jobStore.close(); await scope.dispose(); });
-  activation.machines = f.host.machines; activation.workspaces = f.host.workspaces;
-  activation.desktops = f.host.desktops; activation.jobs = f.jobs;
+  Object.assign(activation, { machines: f.host.machines, workspaces: f.host.workspaces,
+    desktops: f.host.desktops, jobs: f.jobs });
   f.select('beta');
   const retried = await callbacks.get('ime')!({ key: f.id, vmId: f.id, projectId: 'alpha',
     status: 'error', log: '', startedAt: new Date().toISOString() }) as JobView;
