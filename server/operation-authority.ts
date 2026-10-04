@@ -30,7 +30,7 @@ export function createOperationAuthority(options: AuthorityOptions) {
     equalToken, socketAuthorization } = options;
   const gatewayProjects = options.projects || new ProjectCatalog(machines);
   return async (req: IncomingMessage, url: URL, entry: OperationEntry,
-    parameters: Readonly<Record<string, string>>): Promise<OperationBinding> => {
+    parameters: Readonly<Record<string, string>>, requireEnabled: () => void): Promise<OperationBinding> => {
 
     const policy = entry.declaration;
     // Credentials and target are captured before the first await. Never re-read a mutable request.
@@ -60,7 +60,11 @@ export function createOperationAuthority(options: AuthorityOptions) {
     const principal = ['controller', 'socket'].includes(policy.access) ? authenticate() : undefined;
     // Reject before loading project metadata. A GET endpoint still requires its explicit role grant.
     if (principal && !policy.roles.includes(principal.role)) throw new AppError('账户没有此操作权限', 403);
-    if (vmId) machines.get(vmId);
+    requireEnabled();
+    // Declared non-project plugin handlers validate input before their own VM lookup.
+    // Project authority still requires the VM before loading grants or project metadata.
+    const deferVmLookup = policy.owner !== 'core' && policy.contract === 'declared' && !projectScoped;
+    if (vmId && !deferVmLookup) machines.get(vmId);
     const bindProject = async () => {
       if (!vmId) return;
       if (principal?.role === 'member' && !projectId) throw new AppError('项目成员请求必须指定项目 ID', 400);
@@ -92,6 +96,7 @@ export function createOperationAuthority(options: AuthorityOptions) {
         const currentPrincipal = principal ? authenticate() : undefined;
         if (!principal && policy.access !== 'guest' && req.method !== 'OPTIONS' && !publicWhileLocked.has(policy.id))
           session.requireUnlocked();
+        requireEnabled();
         if (policy.maintenance === 'block' && features.migration?.blocked)
           throw new AppError('数据目录迁移维护中', 409, 'MAINTENANCE');
         if (policy.access === 'extension' && req.method !== 'OPTIONS') {

@@ -16,6 +16,8 @@ import type { Principal } from '../server/access-control.ts';
 import { hostRuntimeDiagnosticSchema, networkRuntimeDiagnosticSchema } from '../shared/contracts/operations.ts';
 import { networkRuntime } from '../server/network/index.ts';
 import { metadataQueueSnapshot } from '../server/metadata-queue.ts';
+import { backupRecoverySchema } from '../shared/backup-recovery.ts';
+import { ZodError } from 'zod';
 
 const vmId = 'd2f574eb-44c5-40b8-a2ac-581b56cb4a12';
 const otherProject = '1234567890abcdef';
@@ -105,6 +107,53 @@ test('resource queues recheck captured credentials, return their slot, and prese
   assert.equal(runtime.snapshot().resources.length, 0);
   await admission.run(async () => { (await runtime.acquire({ ...resource, lane: 'control' })).release(); });
   runtime.close();
+});
+
+test('disabled plugins retain 403 before VM lookup, after credential and session checks', async () => {
+  for (const state of ['disabled', 'unauthenticated', 'locked'] as const) {
+    const f = fixture(), request = req();
+    f.enabled.delete('backups');
+    f.machines.records.delete(vmId);
+    if (state === 'unauthenticated') delete request.headers['x-sakura-token'];
+    if (state === 'locked') f.lock();
+    await assert.rejects(f.gateway.prepare(request, url(`/api/vms/${vmId}/backup-recovery`)), {
+      status: state === 'disabled' ? 403 : state === 'unauthenticated' ? 401 : 423,
+      ...(state === 'disabled' ? { message: '请在插件中心启用插件「backups」，并重启 Sakura 服务' } : {}),
+    });
+  }
+});
+
+test('queued plugin checks preserve credential and session priority when the plugin unloads', async () => {
+  for (const state of ['disabled', 'revoked', 'locked'] as const) {
+    const f = fixture(), runtime = new HostRuntime({ budgets: { jobs: { capacity: 1 } } });
+    const resource = { owner: 'test:plugin-authority', kind: 'test', label: 'queued', cost: { jobs: 1 } };
+    const held = await runtime.acquire(resource);
+    const admission = await f.gateway.prepare(req(), url(`/api/vms/${vmId}/backup-recovery`));
+    const queued = admission.run(() => runtime.acquire(resource));
+    const refused = assert.rejects(queued, {
+      status: state === 'disabled' ? 403 : state === 'revoked' ? 401 : 423,
+    });
+    f.enabled.delete('backups');
+    if (state === 'revoked') f.revoke();
+    if (state === 'locked') f.lock();
+    held.release();
+    await refused;
+    assert.equal(runtime.snapshot().resources.length, 0);
+    runtime.close();
+  }
+});
+
+test('typed plugin input validation precedes its domain lookup for a missing VM', async () => {
+  const f = fixture(), target = `/api/vms/${vmId}/backup-recovery`;
+  f.machines.records.delete(vmId);
+  const dispatch = (input: unknown) => f.gateway.run(req('POST'), url(target), async () => {
+    // Features.route validates this declared schema before invoking the domain operation.
+    backupRecoverySchema.parse(await validateOperationInput(input));
+    return f.machines.get(vmId);
+  });
+  await assert.rejects(dispatch({ backupId: vmId, paths: ['../outside'] }), (error) => error instanceof ZodError);
+  await assert.rejects(dispatch({ backupId: vmId, paths: ['workspace/readme'] }), { status: 404 });
+  await assert.rejects(f.gateway.run(req(), url(target), () => f.machines.get(vmId)), { status: 404 });
 });
 
 test('project scope is pinned at admission while lifecycle operations can advance their own VM', async () => {

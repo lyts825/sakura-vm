@@ -17,7 +17,7 @@ export type OperationBinding = {
 type GatewayOptions = {
   enabled(): Iterable<string>;
   bind(req: IncomingMessage, url: URL, entry: OperationEntry,
-    parameters: Readonly<Record<string, string>>): Promise<OperationBinding>;
+    parameters: Readonly<Record<string, string>>, requireEnabled: () => void): Promise<OperationBinding>;
 };
 const current = new AsyncLocalStorage<{ entry: OperationEntry; binding: OperationBinding }>();
 
@@ -52,12 +52,11 @@ export class OperationGateway {
     const { declaration } = entry;
     const enabled = () => {
       if (declaration.owner !== 'core' && !new Set(this.options.enabled()).has(declaration.owner))
-        throw new AppError('此操作所属插件未启用', 409, 'PLUGIN_DISABLED');
+        throw new AppError('请在插件中心启用插件「' + declaration.owner + '」，并重启 Sakura 服务', 403);
     };
-    enabled();
-    const binding = await this.options.bind(req, url, entry, Object.freeze(parameters));
+    // The authority checks availability after credentials, before reading target metadata.
+    const binding = await this.options.bind(req, url, entry, Object.freeze(parameters), enabled);
     const check = async () => {
-      enabled();
       const role = await binding.check();
       if (['controller', 'socket'].includes(declaration.access) && (!role || !declaration.roles.includes(role)))
         throw new AppError('当前账户没有此操作的访问权限', 403, 'OPERATION_FORBIDDEN');
