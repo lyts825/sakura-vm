@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { LiveMigrationReceiver } from '../server/live-migration-receiver.ts';
 import type { Machines } from '../server/machines.ts';
-import type { HostPeers } from '../server/host-peers.ts';
+import { HostPeers } from '../server/host-peers.ts';
 
 test('target completion binds the session and transfer, then permits idempotent readiness polling', async () => {
   const requesterId = randomUUID(), transferId = randomUUID();
@@ -75,4 +75,17 @@ test('target abort requires the original session and a still-prepared receiver',
   assert.deepEqual(await receiver.abort({ requesterId, transferId, targetVmId,
     sessionId, sourceRunning: true }), { targetVmId, aborted: true });
   assert.deepEqual([closes, stops, deletes], [1, 1, 1]);
+});
+
+test('public peer callers cannot forge a stopped-source declaration to cold-start a target', async () => {
+  const peers = new HostPeers(async () => ({ platform: process.platform, arch: process.arch,
+    cpus: 4, memoryTotal: 8 * 1024 ** 3, memoryFree: 4 * 1024 ** 3,
+    load: [0, 0, 0], vmCount: 0, runningVms: 0 }));
+  await assert.rejects(peers.completeLiveTarget(randomUUID(), { targetVmId: randomUUID(),
+    transferId: randomUUID(), sessionId: randomUUID(), sourceStopped: true }),
+  { status: 403, code: 'LIVE_MIGRATION_SYSTEM_ONLY' });
+  const receiver = new LiveMigrationReceiver({} as Machines, peers);
+  await assert.rejects(receiver.complete({ requesterId: randomUUID(), targetVmId: randomUUID(),
+    transferId: randomUUID(), sessionId: randomUUID(), sourceStopped: true }),
+  { status: 403, code: 'LIVE_MIGRATION_SYSTEM_ONLY' });
 });

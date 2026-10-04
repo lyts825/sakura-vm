@@ -25,6 +25,7 @@ import { DATA } from './paths.ts';
 import { featureRolloutRequest } from './feature-rollouts.ts';
 import { qmp } from './qmp.ts';
 import { liveMigrationProjectsSchema } from './live-migration-projects.ts';
+import { isLiveMigrationStoppedRequest } from './live-migration-proof.ts';
 import { haWitnessReplicaInventorySchema, type HaWitnessReplicaInventory } from './ha-witness-core.ts';
 
 const {
@@ -33,6 +34,8 @@ const {
   dial,
   createServer: createTcpServer,
 } = networkFor('core:host-peers');
+const authenticatedMigrationCompletions = new WeakSet<object>();
+export const isAuthenticatedMigrationCompletion = (value: object) => authenticatedMigrationCompletions.has(value);
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const fingerprint = z.string().regex(/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/);
@@ -172,13 +175,13 @@ const liveTargetPrepareInput = z
   .strict();
 const liveTargetReceipt = liveMigrationPrepareReceiptSchema;
 const liveTargetCompleteInput = z
-  .object({ targetVmId: z.uuid(), transferId: z.uuid(), sessionId: z.uuid() })
+  .object({ targetVmId: z.uuid(), transferId: z.uuid(), sessionId: z.uuid(), sourceStopped: z.literal(true).optional() })
   .strict();
-const liveTargetAbortInput = liveTargetCompleteInput.safeExtend({
+const liveTargetAbortInput = liveTargetCompleteInput.omit({ sourceStopped: true }).safeExtend({
   sourceRunning: z.literal(true),
 });
 const liveTargetAbortResult = z.object({ targetVmId: z.uuid(), aborted: z.literal(true) }).strict();
-const liveTargetStatusInput = liveTargetCompleteInput.omit({ sessionId: true });
+const liveTargetStatusInput = liveTargetCompleteInput.omit({ sessionId: true, sourceStopped: true });
 const liveTargetStatus = liveMigrationTargetStatusSchema;
 type ImportReceiver = {
   status: (identity: ImportIdentity) => Promise<ImportReceipt | null>;
@@ -524,7 +527,7 @@ export class HostPeers {
     return this.migration.acceptMigrationStream(request, socket, head);
   }
   registerMigrationSession(requesterId: string, ports: Record<MigrationChannel, number> & {
-    qmp?: number; targetDiskNode?: string; targetVmId?: string; transferId?: string;
+    qmp?: number; targetDiskNode?: string; targetVmId?: string; transferId?: string; sessionId?: string;
   }) { return this.migration.registerMigrationSession(requesterId, ports); }
   matchesMigrationSession(id: string, requesterId: string, targetVmId: string, transferId: string) {
     return this.migration.matchesMigrationSession(id, requesterId, targetVmId, transferId);
@@ -576,6 +579,9 @@ export class HostPeers {
   async completeLiveTarget(peerId: string, raw: unknown) {
     const check = captureOperationCheck();
     await check();
+    const input = liveTargetCompleteInput.parse(raw);
+    if (input.sourceStopped && !isLiveMigrationStoppedRequest(raw))
+      throw new AppError('来源退出声明仅允许原迁移域核验端口提交', 403, 'LIVE_MIGRATION_SYSTEM_ONLY');
     if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
     const peer = this.state.outbound.find((item) => item.id === peerId);
     if (!peer) throw new AppError('远端主机不存在', 404);
@@ -586,7 +592,7 @@ export class HostPeers {
         peer.fingerprint,
         '/peer/live-target-complete',
         'POST',
-        liveTargetCompleteInput.parse(raw),
+        input,
         peer.token,
         30_000,
       ),
@@ -751,9 +757,11 @@ export class HostPeers {
             !this.state.incoming.some((item) => item.id === peer.id && item.allowImport && item.allowActivate)
           )
             throw new AppError('在线迁移接收权限已撤销', 403);
-          const result = liveTargetStatus.parse(await this.liveMigrationReceiver.complete({
-            ...input, requesterId: peer.requesterId,
-          }));
+          const admitted = Object.freeze({ ...input, requesterId: peer.requesterId });
+          authenticatedMigrationCompletions.add(admitted);
+          let result: z.infer<typeof liveTargetStatus>;
+          try { result = liveTargetStatus.parse(await this.liveMigrationReceiver.complete(admitted)); }
+          finally { authenticatedMigrationCompletions.delete(admitted); }
           const current = this.inbound(request);
           if (current.id !== peer.id || !current.allowImport || !current.allowActivate)
             throw new AppError('在线迁移接收权限已撤销', 403);

@@ -378,4 +378,60 @@ const entry = /src="\/assets\/([^/" ]+\.js)"/.exec(html)?.[1];
 if (!entry) throw new Error('Frontend entry bundle is missing');
 const bytes = (await stat(join(root, 'dist', 'assets', entry))).size;
 if (bytes > 450_000) throw new Error(`Frontend entry exceeds 450 KB: ${bytes}`);
-console.log(`Distribution checked: ${jsFiles.length} server modules, ${bytes} byte frontend entry.`);
+// Vite records all static imports. Count the transitive graph once per page; lazy chunks are excluded.
+const frontendManifest = JSON.parse(await readFile(join(root, 'dist', '.vite', 'manifest.json'), 'utf8'));
+async function initialJavaScript(entryFile, page) {
+  const key = Object.keys(frontendManifest).find(key => frontendManifest[key].file === 'assets/' + entryFile);
+  if (!key) throw new Error(`Frontend entry is missing from Vite manifest: ${entryFile}`);
+  const visited = new Set(), files = new Set(), assets = new Set();
+  const walk = key => {
+    if (visited.has(key)) return;
+    visited.add(key);
+    const chunk = frontendManifest[key];
+    if (!chunk || typeof chunk.file !== 'string' || !/^assets\/[^/]+\.js$/.test(chunk.file))
+      throw new Error(`Invalid static chunk: ${key}`);
+    files.add(chunk.file);
+    for (const asset of [...(chunk.css || []), ...(chunk.assets || [])]) {
+      if (!/^assets\/[a-zA-Z0-9_.-]+$/.test(asset)) throw new Error(`Invalid static asset: ${asset}`);
+      assets.add(asset);
+    }
+    for (const dependency of chunk.imports || []) walk(dependency);
+  };
+  walk(key);
+  for (const tag of page.matchAll(/<(?:script|link)\b[^>]*>/g)) {
+    if (tag[0].startsWith('<link') && !/rel="modulepreload"/.test(tag[0])) continue;
+    const url = /(?:src|href)="([^"]+)"/.exec(tag[0])?.[1];
+    if (!url) continue;
+    if (!/^\/[a-zA-Z0-9_./-]+\.js$/.test(url) || url.includes('..'))
+      throw new Error(`Unbudgeted initial JavaScript URL: ${url}`);
+    const file = url.slice(1);
+    const dependency = Object.keys(frontendManifest).find(key => frontendManifest[key].file === file);
+    if (dependency) walk(dependency); else files.add(file);
+  }
+  for (const tag of page.matchAll(/<link\b[^>]*>/g)) {
+    if (!/rel="(?:preload|stylesheet|icon)"/.test(tag[0])) continue;
+    const url = /href="([^"]+)"/.exec(tag[0])?.[1];
+    if (!url || !/^\/[a-zA-Z0-9_./-]+$/.test(url) || url.includes('..'))
+      throw new Error(`Unbudgeted initial asset URL: ${url}`);
+    if (!files.has(url.slice(1))) assets.add(url.slice(1));
+  }
+  const sizes = await Promise.all([...files].map(async file => (await stat(join(root, 'dist', file))).size));
+  const assetSizes = await Promise.all([...assets].filter(file => !files.has(file)).map(async file => (await stat(join(root, 'dist', file))).size));
+  const bytes = sizes.reduce((sum, size) => sum + size, 0);
+  return { bytes, chunks: files.size, assetBytes: bytes + Buffer.byteLength(page) + assetSizes.reduce((sum, size) => sum + size, 0) };
+}
+const initial = await initialJavaScript(entry, html), singleAppInitial = await initialJavaScript(singleAppEntry, singleAppHtml);
+// 2.1.0 measured about 878 KB for the main page. Allow a small explicit margin, not an entry-only escape.
+const initialBudget = 950_000;
+// The unchanged fonts, CSS and painted background add about 680 KB to the JS graph.
+// The first complete measurement is 1.57 MB; cap growth at roughly five percent.
+const initialAssetBudget = 1_650_000;
+for (const [name, measurement] of [['main', initial], ['single-app', singleAppInitial]]) {
+  if (measurement.bytes > initialBudget)
+    throw new Error(`${name} initial static JavaScript exceeds ${initialBudget} bytes: ${measurement.bytes} (${measurement.chunks} chunks)`);
+  if (measurement.assetBytes > initialAssetBudget)
+    throw new Error(`${name} initial static assets exceed ${initialAssetBudget} bytes: ${measurement.assetBytes}`);
+}
+console.log(`Distribution checked: ${jsFiles.length} server modules, ${bytes} byte frontend entry; ` +
+  `initial JS main=${initial.bytes} (${initial.chunks} chunks), single-app=${singleAppInitial.bytes} (${singleAppInitial.chunks} chunks), budget=${initialBudget}; ` +
+  `initial static assets main=${initial.assetBytes}, single-app=${singleAppInitial.assetBytes}, budget=${initialAssetBudget}.`);

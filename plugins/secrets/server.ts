@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as secretsServices } from './services.ts';
@@ -42,9 +43,7 @@ export async function route(
         return true;
       }
       if (req.method === 'DELETE') {
-        const input = z
-          .object({ name: z.string() })
-          .strict()
+        const input = httpRouteRequests["secrets.legacy.delete.vms.vmId.secrets"]
           .parse(await body(req));
         send(await this.secrets.remove(id, input.name));
         return true;

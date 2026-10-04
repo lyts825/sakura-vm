@@ -34,7 +34,7 @@ export type ResourceView = {
   finishedAt?: string;
   previousOwner?: string;
   error?: string;
-  timings?: { queueMs: number; executionMs: number; cleanupMs: number };
+  timings?: { queueMs: number; /** @deprecated Held-resource time before cleanup; use phaseTimings for task execution. */ executionMs: number; cleanupMs: number; lifetimeMs?: number };
 };
 export type HostRuntimeView = {
   state: 'accepting' | 'draining' | 'closed';

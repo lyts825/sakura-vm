@@ -7,15 +7,41 @@ import { withPluginAuthority, withPluginCleanup } from './plugin-authority.ts';
 import { serviceRef } from './service-ref.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import type { HostServiceResolver, HostServiceContracts } from './host-service-contracts.ts';
-import { cleanupReceipt } from './cleanup-receipt.ts';
 import { vmAccess } from './vm-access.ts';
 import type { Machines } from './machines.ts';
 import { ExecutionScope } from './execution-scope.ts';
 import { resourceContext } from './host-runtime/context.ts';
 import type { Jobs } from './jobs.ts';
 import { systemArtifactDigest } from './plugin-artifact.ts';
-import { ServiceLifecycle, type ServiceDefinition } from './service-lifecycle.ts';
+import { ServiceLifecycle, type ServiceDefinition, type ServiceDependencyResolver } from './service-lifecycle.ts';
 import type { SystemServiceContracts } from './service-contracts.ts';
+import type { Features } from './features.ts';
+import type { AuditLog } from './audit.ts';
+
+export interface SystemExternalDependencies {
+  '@machines': Machines;
+  '@plugins': Features;
+  '@audit': AuditLog;
+  '@pluginDirectory': PluginDirectory;
+}
+type DependencyContracts = SystemServiceContracts & SystemExternalDependencies;
+type DependencyId = keyof DependencyContracts;
+export type SystemFactoryResolver<K extends keyof SystemServiceContracts = keyof SystemServiceContracts,
+  R extends readonly DependencyId[] = readonly DependencyId[], L extends readonly DependencyId[] = readonly DependencyId[],
+  D extends readonly DependencyId[] = readonly DependencyId[]> = Readonly<{
+    get<I extends R[number]>(id: I): DependencyContracts[I];
+    late<I extends R[number] | L[number] | D[number]>(id: I): DependencyContracts[I];
+    self(): SystemServiceContracts[K];
+    vm: '@machines' extends R[number] ? () => ReturnType<typeof vmAccess> : never;
+  }>;
+type SystemDefinition<K extends keyof SystemServiceContracts, T extends SystemServiceContracts[K],
+  R extends readonly DependencyId[], L extends readonly DependencyId[], D extends readonly DependencyId[]> =
+  Omit<ServiceDefinition<T>, 'id' | 'requires' | 'lateRequires' | 'disposeRequires' | 'create' | 'initialize' | 'dispose'> & {
+    id: K; requires: R; lateRequires?: L; disposeRequires?: D;
+    create(dependencies: SystemFactoryResolver<K, R, L, D>): T | Promise<T>;
+    initialize(value: T, dependencies: SystemFactoryResolver<K, R, L, D>): void | Promise<void>;
+    dispose(value: T | undefined, dependencies: SystemFactoryResolver<K, R, L, D>): void | Promise<void>;
+  };
 
 /** Required host providers share the same instance, broker and cleanup machinery. */
 export class SystemServices {
@@ -34,40 +60,25 @@ export class SystemServices {
     );
     directory.publish(this.caller);
   }
-  construct<T>(id: string, create: () => T): T {
-    if (this.owned.has(id)) throw new AppError('系统服务已注册：' + id, 409);
-    const instance = this.directory.begin('system', id, APP_VERSION, systemArtifactDigest(id));
-    let value: T;
-    try {
-      value = withPluginAuthority(instance, create);
-    } catch (error) {
-      instance.error = String(error);
-      instance.revoke();
-      instance.phase = 'cleanup-pending';
-      this.owned.set(id, { instance, value: undefined });
-      throw error;
-    }
-    this.owned.set(id, { instance, value });
-    const close = (value as any)?.close;
-    if (typeof close === 'function') instance.scope.add(() => close.call(value));
-    this.broker.registerSystem(instance, value);
-    this.directory.publish(instance);
-    const handle = this.broker.system<T>(this.caller, id, [id])!;
-    if (typeof close !== 'function') return handle;
-    // The application's close order selects when to retire this provider; ownership stays here.
-    return new Proxy(Object.create(null), {
-      get: (_target, key) =>
-        key === 'close' ? cleanupReceipt(() => this.retire(id)) : Reflect.get(handle as object, key),
-      set: () => {
-        throw new AppError('系统服务接口不可写', 403, 'PLUGIN_SERVICE_READONLY');
-      },
-    }) as T;
-  }
   /** Startup-only API. Public handles are published after the initializer succeeds. */
-  register<T>(definition: ServiceDefinition<T>) {
+  register<K extends keyof SystemServiceContracts, T extends SystemServiceContracts[K],
+    const R extends readonly DependencyId[], const L extends readonly DependencyId[] = readonly [],
+    const D extends readonly DependencyId[] = readonly []>(definition: SystemDefinition<K, T, R, L, D>) {
+    definition = Object.freeze({ ...definition });
+    const resolver = (raw: ServiceDependencyResolver, instance: PluginInstance): SystemFactoryResolver<K, R, L, D> => {
+      const lookup = (id: DependencyId, late: boolean) => {
+        const value = late ? raw.late(id) : raw.get(id);
+        return id.startsWith('@') ? value : this.broker.system(instance, id, [id]);
+      };
+      return Object.freeze({ get: (id: R[number]) => lookup(id, false),
+        late: (id: R[number] | L[number] | D[number]) => lookup(id, true),
+        self: () => { raw.self(); return this.broker.system(instance, definition.id, [definition.id])!; },
+        vm: () => this.vm(definition.id, raw.get<Machines>('@machines')),
+      }) as SystemFactoryResolver<K, R, L, D>;
+    };
     this.lifecycle.register({
       ...definition,
-      create: async () => {
+      create: async (raw) => {
         if (this.owned.has(definition.id)) throw new AppError('系统服务已注册：' + definition.id, 409);
         const instance = this.directory.begin(
           'system',
@@ -77,9 +88,10 @@ export class SystemServices {
         );
         const entry: { instance: PluginInstance; value: T | undefined } = { instance, value: undefined };
         this.owned.set(definition.id, entry);
-        instance.scope.add(() => Promise.resolve(definition.dispose(entry.value)));
+        const dependencies = resolver(raw, instance);
+        instance.scope.add(() => Promise.resolve(definition.dispose(entry.value, dependencies)));
         try {
-          entry.value = await withPluginAuthority(instance, definition.create);
+          entry.value = await withPluginAuthority(instance, () => definition.create(dependencies));
           return entry.value;
         } catch (error) {
           instance.error = String(error);
@@ -89,11 +101,11 @@ export class SystemServices {
           throw error;
         }
       },
-      initialize: async (value) => {
+      initialize: async (value, raw) => {
         const instance = this.owned.get(definition.id)!.instance;
         const started = performance.now();
         try {
-          await withPluginAuthority(instance, () => definition.initialize(value));
+          await withPluginAuthority(instance, () => definition.initialize(value, resolver(raw, instance)));
           if (!this.lifecycle.accepting) throw new AppError('初始化期间服务已关闭', 503, 'SERVICE_DRAINING');
           this.broker.registerSystem(instance, value);
           instance.activationMs = performance.now() - started;
@@ -109,13 +121,15 @@ export class SystemServices {
       dispose: () => this.retire(definition.id),
     });
   }
-  async start<K extends keyof SystemServiceContracts, T>(definition: ServiceDefinition<T> & { id: K }): Promise<SystemServiceContracts[K]> {
+  async start<K extends keyof SystemServiceContracts, T extends SystemServiceContracts[K],
+    const R extends readonly DependencyId[], const L extends readonly DependencyId[] = readonly [],
+    const D extends readonly DependencyId[] = readonly []>(definition: SystemDefinition<K, T, R, L, D>): Promise<SystemServiceContracts[K]> {
     this.register(definition);
     await this.lifecycle.start<T>(definition.id);
     return this.broker.system<SystemServiceContracts[K]>(this.caller, definition.id, [definition.id])!;
   }
-  ready(id: string) {
-    this.lifecycle.ready(id);
+  ready<K extends keyof SystemExternalDependencies>(id: K, value: SystemExternalDependencies[K]) {
+    this.lifecycle.ready(id, value);
   }
   async startAll() {
     await this.lifecycle.startAll();

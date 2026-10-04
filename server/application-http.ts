@@ -1,10 +1,10 @@
 import type { ResourceScopeV1 } from './service-contracts/v1.ts';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, resolve, sep } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
-import { ZodError, z } from 'zod';
+import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { accessHandoffInput, accessPasswordInput } from './access-control.ts';
 import type { ApplicationServices } from './application-services.ts';
@@ -26,9 +26,9 @@ import { networkFor, networkRuntime } from './network/index.ts';
 import { apiDocument } from './openapi.ts';
 import { createOperationAuthority } from './operation-authority.ts';
 import { operationEntries } from './operation-catalog.ts';
-import { loaders } from './plugins/registry.ts';
+import { loaders, matchOperationPath } from './plugins/registry.ts';
 import { PLUGINS } from '../shared/plugins.ts';
-import { OperationGateway, currentOperation, validateOperationInput } from './operation-gateway.ts';
+import { OperationGateway, currentOperation, validateOperationInput, operationPreflightFailure } from './operation-gateway.ts';
 import { passkeyRemove } from './passkeys.ts';
 import { PORT, ROOT } from './paths.ts';
 import { policyBundlePreview, policyBundleTarget } from './policy-bundles.ts';
@@ -42,9 +42,42 @@ import { generateSdk } from './sdk.ts';
 import { sameOrigin, tokenMatches } from './security.ts';
 import { ssoCallbackPage, type SsoProvider } from './sso.ts';
 import { terminalShareInput } from './terminal-sharing.ts';
+import { OperationResults, noteOperationResultActor, noteOperationBusinessResult } from './operation-results.ts';
+import type { OperationResult } from '../shared/contracts/operation-results.ts';
+import { publicApiFailure } from './api-errors.ts';
+import { stageOperationResponse } from './operation-response.ts';
+import { resourceContext } from './host-runtime/context.ts';
+import { runtimeTimings } from './runtime-timings.ts';
+import { withAuditFailureObserver } from './operation-context.ts';
 const { createHttpServer: createServer } = networkFor('core:application');
 const body = async (req: IncomingMessage, limit?: number, signal?: AbortSignal) =>
   validateOperationInput(await readJsonBody(req, limit, signal));
+
+/** Rejections have no admitted operation context; never record credentials, query or body. */
+export function rejectedRequestAuditEvent(req: Pick<IncomingMessage, 'method' | 'url'>, entries = operationEntries) {
+  const method = req.method && /^[A-Z]{1,16}$/.test(req.method) ? req.method : 'UNKNOWN';
+  const url = requestUrl(req.url, PORT);
+  if (!url?.pathname.startsWith('/api/')) return;
+  const matches = entries.filter(entry => matchOperationPath(entry.declaration.path, url.pathname))
+    .sort((a, b) => (a.declaration.path.match(/\{/g)?.length || 0) -
+      (b.declaration.path.match(/\{/g)?.length || 0));
+  const path = matches[0]?.declaration.path;
+  const entry = matches.find(candidate => candidate.declaration.path === path && candidate.declaration.method === method);
+  if (['GET', 'HEAD', 'OPTIONS'].includes(method) && !entry?.declaration.mutating) return;
+  const safePath = path || (url.pathname.length > 180 ? '/api/<redacted>' : url.pathname.split('/')
+    .map(segment => !segment || /^[a-z][a-z-]{0,31}$/.test(segment) ? segment : '<redacted>').join('/'));
+  return { kind: 'request' as const, name: (method + ' ' + safePath).slice(0, 200),
+    ...(entry ? { operationId: entry.declaration.id } : {}) };
+}
+
+/** The rejection is already primary; a failed start/end audit must only add a diagnostic. */
+export async function auditRejectedRequest(audit: Pick<ApplicationServices['audit'], 'span'>,
+  event: NonNullable<ReturnType<typeof rejectedRequestAuditEvent>>, error: unknown, onAuditFailure: () => void) {
+  await withAuditFailureObserver(onAuditFailure, async () => {
+    try { await audit.span(event, async () => { throw error; }); }
+    catch { /* The HTTP catch retains its exact original rejection, including primitive throws. */ }
+  });
+}
 
 export async function startApplicationHttp(services: ApplicationServices, resources: ResourceScopeV1) {
   const { engine, usbHotplug, projectExecution } = services;
@@ -208,6 +241,11 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     }),
   });
   const documentResponses = new DocumentResponseCache();
+  const operationResults = new OperationResults();
+  const receipts = new WeakMap<ServerResponse, OperationResult>();
+  const queryableReceipts = new WeakSet<ServerResponse>();
+  const auditFailedResponses = new WeakSet<ServerResponse>();
+  const enteredHandlers = new WeakSet<ServerResponse>();
   const sendSsoPage = (
     res: ServerResponse,
     origin: string | null,
@@ -239,7 +277,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
     if (form.getAll('SAMLResponse').length !== 1 || form.getAll('RelayState').length !== 1)
       throw new AppError('SAML 响应缺少唯一的状态与断言', 400);
-    return { SAMLResponse: form.get('SAMLResponse')!, RelayState: form.get('RelayState')! };
+    return validateOperationInput({ SAMLResponse: form.get('SAMLResponse')!, RelayState: form.get('RelayState')! });
   };
   const extensionApi = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (![`127.0.0.1:${PORT}`, `localhost:${PORT}`].includes(req.headers.host || ''))
@@ -342,6 +380,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
         throw new AppError('控制面未启用通行密钥解锁', 409);
       requirePasskeyOrigin(req);
       const { login, lockGeneration } = await passkeys.finishUnlock(await body(req, 65536));
+      noteOperationResultActor(login.principal.id);
       try {
         const unlocked = await session.unlockWithPasskey(lockGeneration!);
         return send(res, { ...login, session: unlocked });
@@ -367,6 +406,8 @@ export async function startApplicationHttp(services: ApplicationServices, resour
                 new URL(url.search, `http://localhost:${PORT}/api/access/sso/oidc/callback`),
               )
             : await sso.completeSaml(post!);
+        if ('principal' in completed.result) noteOperationResultActor(completed.result.principal.id);
+        else if ('binding' in completed.result) noteOperationResultActor(completed.result.binding.accountId);
         try {
           session.requireUnlocked();
         } catch (error) {
@@ -380,7 +421,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
           origin,
           state,
           undefined,
-          error instanceof Error ? error.message : '单点登录失败',
+          publicApiFailure(error, String(res.getHeader('X-Sakura-Correlation-Id'))).dto.error,
         );
       }
     }
@@ -396,6 +437,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
       session.requireUnlocked();
       const credential = req.headers['x-sakura-token'];
       const started = await sso.begin(input, typeof credential === 'string' ? credential : undefined);
+      if (typeof credential === 'string') noteOperationResultActor(access.authorize(credential).id);
       try {
         session.requireUnlocked();
       } catch (error) {
@@ -407,6 +449,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     if (url.pathname === '/api/access/login') {
       if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
       const login = await access.login(await body(req, 4096));
+      noteOperationResultActor(login.principal.id);
       try {
         session.requireUnlocked();
       } catch (error) {
@@ -418,6 +461,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     if (url.pathname === '/api/access/handoff/redeem') {
       if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
       const { sourceToken, ...login } = await access.redeemHandoff(await body(req, 4096));
+      noteOperationResultActor(login.principal.id);
       try {
         session.requireUnlocked();
       } catch (error) {
@@ -440,6 +484,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
       requirePasskeyOrigin(req);
       if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
       const login = await passkeys.finishAuthentication(await body(req, 65536));
+      noteOperationResultActor(login.principal.id);
       try {
         session.requireUnlocked();
       } catch (error) {
@@ -463,9 +508,13 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     const principal = authorized(req);
     const accountPrincipal = access.enabled ? access.authorize(req.headers['x-sakura-token']) : null;
     if (url.pathname === '/api/recoveries') {
-      if (req.method === 'GET') return send(res, { version: 1, records: await services.recoveries.refresh() });
+      if (req.method === 'GET') return send(res, { version: 1, records: await services.recoveries.refresh(), diagnostics: services.recoveries.diagnostics() });
       return send(res, await services.recoveries.retry(await authorizedBody(req, 4096)));
     }
+    if (url.pathname === '/api/recoveries/rebuild')
+      return send(res, await services.recoveries.rebuild(await authorizedBody(req, 4096)));
+    const resultId = /^\/api\/operation-results\/([a-f0-9-]{36})$/.exec(url.pathname)?.[1];
+    if (resultId) return send(res, await operationResults.get(resultId, access.enabled ? 'account' : 'local-owner', accountPrincipal?.id));
     if (url.pathname === '/api/operations')
       return send(res, { version: gateway.version, operations: gateway.directory() });
     if (url.pathname === '/api/host-runtime') {
@@ -747,6 +796,8 @@ export async function startApplicationHttp(services: ApplicationServices, resour
       if (req.method !== 'POST' || access.enabled) throw new AppError('不支持此方法', 405);
       if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
       const result = await access.enable(await authorizedBody(req, 4096));
+      const owner = access.users().find(account => account.role === 'owner')!;
+      noteOperationResultActor(owner.id);
       services.token = randomBytes(32).toString('hex');
       for (const client of ws.clients) client.terminate();
       return send(res, result);
@@ -1167,14 +1218,59 @@ export async function startApplicationHttp(services: ApplicationServices, resour
   for (const [id, handler] of Object.entries(implementedHandlers)) {
     const entry = operationEntries.find(candidate => candidate.declaration.id === id);
     if (!entry) throw new Error('处理器缺少操作声明，禁止发布：' + id);
-    gateway.register(entry, (req, res, url) => audit.span(
-      { kind: 'request', name: entry.declaration.id, operationId: entry.declaration.id },
-      async () => handler(req, res, url, entry), () => res.statusCode));
+    gateway.register(entry, async (req, res, url) => {
+      enteredHandlers.add(res);
+      if (!entry.declaration.mutating)
+        return runtimeTimings.measure('http', 'execution', () => handler(req, res, url, entry));
+      let receipt: Awaited<ReturnType<OperationResults['start']>>;
+      const invoke = () => audit.span(
+        { kind: 'request', name: entry.declaration.id, operationId: entry.declaration.id },
+        async () => {
+          await operationResults.begin(receipt);
+          const result = await runtimeTimings.measure('http', 'execution', () => handler(req, res, url, entry));
+          noteOperationBusinessResult(res.statusCode);
+          return result;
+        }, () => res.statusCode);
+      const correlationId = String(res.getHeader('X-Sakura-Correlation-Id'));
+      const actorId = resourceContext()?.actorId;
+      try { receipt = await operationResults.start(correlationId, entry.declaration.id,
+        access.enabled ? actorId ? 'account' : 'anonymous:' + correlationId : 'local-owner', actorId); }
+      catch (error) {
+        receipts.set(res, { correlationId, operationId: entry.declaration.id, outcome: 'failed', executed: false,
+          startedAt: new Date().toISOString(), responseValidated: false, auditRecorded: false, delivery: 'failed',
+          errorCode: 'OPERATION_RESULT_UNAVAILABLE' });
+        if (error instanceof AppError) throw error;
+        throw new AppError('操作结果存储暂不可用', 503, 'OPERATION_RESULT_UNAVAILABLE');
+      }
+      const staged = ['json', 'text', 'empty'].includes(entry.responseContract?.kind || '')
+        ? stageOperationResponse(res) : undefined;
+      try {
+        const result = await operationResults.run(receipt, invoke);
+        receipts.set(res, await operationResults.finish(receipt, undefined, undefined, true));
+        staged?.publish();
+        await operationResults.finish(receipt, undefined, res.writableEnded);
+        return result;
+      } catch (error) {
+        staged?.discard();
+        if (operationResults.auditFailed(receipt)) auditFailedResponses.add(res);
+        if (operationResults.queryable(receipt)) queryableReceipts.add(res);
+        try { receipts.set(res, await operationResults.finish(receipt, error, res.writableEnded, false, true)); }
+        catch (receiptError) {
+          console.error('Operation receipt publication failed', { correlationId, error: receiptError });
+          receipts.set(res, { correlationId, operationId: entry.declaration.id, outcome: 'unknown',
+            executed: receipt.executed, startedAt: receipt.startedAt, responseValidated: receipt.responseValidated,
+            auditRecorded: false, delivery: 'unknown', errorCode: 'OPERATION_RESULT_UNAVAILABLE' });
+        }
+        throw error;
+      }
+    });
   }
   gateway.seal();
   const dispatchApi = (req: IncomingMessage, res: ServerResponse, url: URL) =>
     gateway.dispatch(req, res, url);
   const server = createServer(async (req, res) => {
+    const correlationId = randomUUID();
+    res.setHeader('X-Sakura-Correlation-Id', correlationId);
     try {
       if (req.url === '/api/guest/interop')
         return await dispatchApi(req, res, new URL(req.url, `http://localhost:${PORT}`));
@@ -1184,11 +1280,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
           extensionUrl &&
           ['/api/extension/connect', '/api/extension/inventory'].includes(extensionUrl.pathname)
         )
-          return await audit.span(
-            { kind: 'request', name: (req.method + ' ' + extensionUrl.pathname).slice(0, 200) },
-            () => dispatchApi(req, res, extensionUrl),
-            () => res.statusCode,
-          );
+          return await dispatchApi(req, res, extensionUrl);
       }
       const url = requestUrl(req.url, PORT);
       if (!url) throw new AppError('无效的请求地址', 400);
@@ -1199,43 +1291,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
         (req.url === '/api/access/sso/saml/callback' && req.method === 'POST');
       if (!allowedRequest(req) && !(ssoCallback && req.headers.host === `localhost:${PORT}`))
         throw new AppError('仅接受本机同源访问', 403);
-      if (url.pathname.startsWith('/api/')) {
-        if (
-          (url.pathname === '/api/access/login' ||
-            url.pathname === '/api/access/handoff/redeem' ||
-            url.pathname === '/api/access/passkeys/login/verify' ||
-            url.pathname === '/api/session/unlock/passkey/verify') &&
-          req.method === 'POST'
-        )
-          return await audit.span(
-            { kind: 'request', name: 'POST ' + url.pathname },
-            () => dispatchApi(req, res, url),
-            () => res.statusCode,
-          );
-        let actorId: string | undefined;
-        if (access.enabled) {
-          try {
-            actorId = access.authorize(req.headers['x-sakura-token']).id;
-          } catch {}
-        }
-        if (
-          !['GET', 'HEAD'].includes(req.method || '') &&
-          (actorId || (!access.enabled && equalToken(req.headers['x-sakura-token'])))
-        ) {
-          const vmId = /^\/api\/vms\/([a-f0-9-]{36})(?:\/|$)/.exec(url.pathname)?.[1];
-          return await audit.span(
-            {
-              kind: 'request',
-              name: (req.method + ' ' + url.pathname).slice(0, 200),
-              ...(vmId && z.uuid().safeParse(vmId).success ? { vmId } : {}),
-              ...(actorId ? { actorId } : {}),
-            },
-            () => dispatchApi(req, res, url),
-            () => res.statusCode,
-          );
-        }
-        return await dispatchApi(req, res, url);
-      }
+      if (url.pathname.startsWith('/api/')) return await dispatchApi(req, res, url);
       if (vite) return vite.middlewares(req, res);
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new AppError('不支持此方法', 405);
       const dist = join(ROOT, 'dist');
@@ -1264,38 +1320,34 @@ export async function startApplicationHttp(services: ApplicationServices, resour
           "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: blob:; media-src 'self' blob:; object-src blob:; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'",
       });
       res.end(req.method === 'HEAD' ? undefined : data);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      let rejectedMutation = false;
+      if (!enteredHandlers.has(res) && !receipts.has(res)) {
+        const event = rejectedRequestAuditEvent(req);
+        if (event) {
+          rejectedMutation = true;
+          let actorId: string | undefined;
+          try { if (access.enabled) actorId = access.authorize(req.headers['x-sakura-token']).id; }
+          catch { /* Invalid credentials have no attributable account and are never logged. */ }
+          await auditRejectedRequest(audit, { ...event, ...(actorId ? { actorId } : {}) }, error,
+            () => auditFailedResponses.add(res));
+        }
+      }
       if (res.destroyed) return;
       if (res.headersSent) {
         res.end();
         return;
       }
-      const message =
-        error instanceof ZodError
-          ? error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('；')
-          : error.message;
-      const status = error instanceof ZodError ? 400 : error.status || 500;
-      const code =
-        error instanceof ZodError
-          ? 'INVALID_INPUT'
-          : error.code ||
-            (
-              {
-                400: 'INVALID_INPUT',
-                401: 'UNAUTHORIZED',
-                403: 'FORBIDDEN',
-                404: 'NOT_FOUND',
-                405: 'METHOD_NOT_ALLOWED',
-                409: 'CONFLICT',
-                413: 'PAYLOAD_TOO_LARGE',
-                415: 'UNSUPPORTED_MEDIA_TYPE',
-                503: 'UNAVAILABLE',
-              } as Record<number, string>
-            )[status] ||
-            'INTERNAL_ERROR';
+      const { status, dto } = publicApiFailure(error, correlationId, auditFailedResponses.has(res));
+      const result = receipts.get(res);
+      if (result) dto.operationResult = { correlationId, outcome: result.outcome,
+        executed: result.executed, ...(!queryableReceipts.has(res) || result.errorCode === 'OPERATION_RESULT_UNAVAILABLE' ? {} : {
+          query: '/api/operation-results/' + correlationId }) };
+      else if (rejectedMutation || operationPreflightFailure(error))
+        dto.operationResult = { correlationId, outcome: 'failed', executed: false };
       send(
         res,
-        { error: message || '操作失败', code, ...(status === 423 ? { session: session.view() } : {}) },
+        { ...dto, ...(status === 423 ? { session: session.view() } : {}) },
         status,
       );
     }

@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as filesServices } from './services.ts';
@@ -51,10 +52,7 @@ export async function route(
     const path = guestPath(url.searchParams.get('path'));
     if (req.method === 'GET') return send(this.fileLocks.view(id, path));
     if (req.method === 'POST') {
-      const input = z.object({
-        action: z.enum(['acquire', 'renew', 'release']),
-        token: z.uuid().optional(),
-      }).strict().parse(await body(req));
+      const input = httpRouteRequests["files.legacy.post.vms.vmId.file-lock"].parse(await body(req));
       if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
       if (input.action === 'acquire') {
         if (input.token) throw new AppError('获取文件锁时不能提供旧令牌');
@@ -97,18 +95,7 @@ export async function route(
     return send({ content, version: textVersion(content) });
   }
   if (req.method === 'PUT' && parts.length === 4 && parts[3] === 'file') {
-    const value = z
-      .object({
-        path: z.string(),
-        content: z.string().max(MAX_TEXT_BYTES),
-        overwrite: z.boolean().default(true),
-        expectedVersion: z
-          .string()
-          .regex(/^[a-f0-9]{64}$/)
-          .optional(),
-        lockToken: z.uuid().optional(),
-      })
-      .strict()
+    const value = httpRouteRequests["files.legacy.put.vms.vmId.file"]
       .parse(await body(req, signal, MAX_TEXT_REQUEST_BYTES));
     if (this.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
     await this.fileLocks.withMutation(id, [guestPath(value.path)], value.lockToken,
@@ -130,17 +117,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const input = z
-          .object({
-            action: z.enum(['restore', 'purge']),
-            id: z.uuid(),
-            expectedVersion: z
-              .string()
-              .regex(/^[a-f0-9]{64}$/)
-              .optional(),
-            lockToken: z.uuid().optional(),
-          })
-          .strict()
+        const input = httpRouteRequests["files.legacy.post.vms.vmId.history"]
           .parse(await body(req));
         if (input.action === 'restore') {
           const entry = (await this.history.list(id)).find((item) => item.id === input.id);
@@ -171,15 +148,7 @@ export async function route(
   }
   if (parts.length === 4) {
     if (action === 'file-operation' && req.method === 'POST') {
-      const input = z
-        .object({
-          action: z.enum(['mkdir', 'rename', 'delete']),
-          path: z.string(),
-          destination: z.string().optional(),
-          recursive: z.boolean().default(false),
-          lockToken: z.uuid().optional(),
-        })
-        .strict()
+      const input = httpRouteRequests["files.legacy.post.vms.vmId.file-operation"]
         .parse(await body(req));
       send(await this.fileLocks.withMutation(id,
         [input.path, ...(input.destination ? [input.destination] : [])], input.lockToken,

@@ -29,6 +29,8 @@ async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:h
     admittedRouteFixtures.set(host, fixture);
   }
   fixture.bodies.set(req, body);
+  const input = fixture.gateway.resolve(req.method || 'GET', url.pathname).entry.requestContract!;
+  if (input.kind !== 'none') req.headers['content-type'] ||= input.media;
   return await fixture.gateway.dispatch(req, res, url) as boolean;
 }
 import { PLUGINS } from '../shared/plugins.ts';

@@ -19,10 +19,12 @@ const { HostPeers } = await import('../server/host-peers.ts');
 const { LiveMigrationRunner } = await import('../server/live-migration-runner.ts');
 const { createLiveMigrationCompletionPort } = await import('../server/live-migration-proof.ts');
 const { vmDir } = await import('../server/model.ts');
+const { qmp } = await import('../server/qmp.ts');
 
 type Reply = { id?: number; type?: 'ready' | 'error'; ok?: boolean; error?: string;
   port?: number; fingerprint?: string; hostId?: string; code?: string;
   result?: { status: string; originStatus: string; marker: string;
+    persistentMarker: string; sessionId: string;
     projectCommand: string; projectCount: number } };
 let worker: ChildProcess | undefined;
 let engine: Awaited<ReturnType<typeof createRuntime>> | undefined;
@@ -33,7 +35,7 @@ let workerOutput = '';
 const pending = new Map<number, { resolve: (value: Reply) => void; reject: (error: Error) => void }>();
 let sequence = 0;
 
-function request(action: 'grant' | 'inspect', payload: Record<string, unknown>) {
+function request(action: 'grant' | 'inspect' | 'restart', payload: Record<string, unknown>) {
   const id = ++sequence;
   return new Promise<Reply>((resolve, reject) => {
     pending.set(id, { resolve, reject });
@@ -105,7 +107,7 @@ try {
     await delay(500);
   }
   assert.equal((await machines.exec(vmId,
-    'printf distributed-guest > /tmp/sakura-migration-marker', 15_000)).code, 0);
+    'printf distributed-guest > /tmp/sakura-migration-marker; printf persistent-guest > /workspace/sakura-migration-marker; sync', 15_000)).code, 0);
   await writeFile(join(vmDir(vmId), 'projects.json'), JSON.stringify({ active: 'default',
     projects: [{ id: 'default', name: '默认项目' }] }));
   await writeFile(join(vmDir(vmId), 'project.json'), JSON.stringify({
@@ -113,13 +115,70 @@ try {
   }));
   const runner = new LiveMigrationRunner(machines, peers, undefined, undefined,
     createLiveMigrationCompletionPort(machines, () => peers!));
-  const result = await runner.run(vmId, { targetHostId: outbound.remoteId,
-    targetName: 'distributed-target' }, undefined, (line) => process.stdout.write(line));
-  assert.equal(result.ready, true);
-  const inspected = (await request('inspect', { targetVmId: result.targetVmId })).result;
+  const prepare = peers.prepareLiveTarget.bind(peers), complete = peers.completeLiveTarget.bind(peers);
+  let preparedTransfer: string | undefined, preparedSession: string | undefined;
+  let losePrepare = true;
+  peers.prepareLiveTarget = async (peerId, input) => {
+    const transferId = (input as { transferId: string }).transferId;
+    if (preparedTransfer) assert.equal(transferId, preparedTransfer);
+    preparedTransfer = transferId;
+    const receipt = await prepare(peerId, input);
+    if (preparedSession) assert.equal(receipt.sessionId, preparedSession);
+    preparedSession = receipt.sessionId;
+    if (losePrepare) { losePrepare = false; throw new Error('injected prepare response loss'); }
+    return receipt;
+  };
+  peers.completeLiveTarget = async (peerId, input) => {
+    let receipt = await complete(peerId, input);
+    const deadline = Date.now() + 120_000;
+    while (receipt.status !== 'running' || receipt.originStatus !== 'ready') {
+      if (Date.now() >= deadline) throw new Error('Target did not become ready before injected reply loss');
+      await delay(500);
+      receipt = await peers!.inspectLiveTarget(peerId, {
+        targetVmId: receipt.targetVmId, transferId: preparedTransfer,
+      });
+    }
+    throw new Error('injected cutover response loss');
+  };
+  const options = { targetHostId: outbound.remoteId, targetName: 'distributed-target' };
+  await assert.rejects(runner.run(vmId, options), /injected prepare response loss/);
+  assert.equal(machines.state(vmId), 'running');
+  await assert.rejects(runner.run(vmId, { ...options, transferId: preparedTransfer },
+    undefined, line => process.stdout.write(line)), /injected cutover response loss/);
+  const originalFence = machines.get(vmId).liveMigrationFence!;
+  const inspected = (await request('inspect', { targetVmId: originalFence.targetVmId })).result;
   assert.deepEqual(inspected, { status: 'running', originStatus: 'ready',
-    marker: 'distributed-guest', projectCommand: 'printf distributed-project',
+    marker: 'distributed-guest', persistentMarker: 'persistent-guest', sessionId: preparedSession,
+    projectCommand: 'printf distributed-project',
     projectCount: 1 });
+  await assert.rejects(machines.suspend(vmId), { code: 'LIVE_MIGRATION_SOURCE_FENCED' });
+  await assert.rejects(machines.resume(vmId), { code: 'LIVE_MIGRATION_SOURCE_FENCED' });
+  const sourceQmp = machines.live.get(vmId)!.qmpPort;
+  const sourceState = await qmp(sourceQmp, 'query-status') as { running?: boolean };
+  assert.equal(sourceState.running, false);
+  await machines.stop(vmId);
+  assert.equal(machines.live.has(vmId), false);
+  assert.equal(machines.get(vmId).liveMigrationFence?.sourceStopped?.sourceProcessId,
+    originalFence.sourceProcessId);
+  await machines.close();
+  await peers.close();
+  await engine.runtime.close();
+  await request('restart', {});
+  engine = await createRuntime();
+  machines = new Machines(engine);
+  await machines.init();
+  peers = new HostPeers(status, join(sourceRoot, 'source-peer.json'), 'Source');
+  await peers.init(false);
+  const restarted = new LiveMigrationRunner(machines, peers, undefined, undefined,
+    createLiveMigrationCompletionPort(machines, () => peers!));
+  const result = await restarted.run(vmId, { ...options, transferId: preparedTransfer },
+    undefined, line => process.stdout.write(line));
+  assert.equal(result.ready, true);
+  const recovered = (await request('inspect', { targetVmId: result.targetVmId })).result!;
+  assert.equal(recovered.status, 'running');
+  assert.equal(recovered.originStatus, 'ready');
+  assert.equal(recovered.persistentMarker, 'persistent-guest');
+  assert.equal(recovered.sessionId, preparedSession);
   assert.equal(machines.state(vmId), 'stopped');
   const sourceRecords = JSON.parse(await readFile(join(sourceRoot, 'machines.json'), 'utf8'));
   const targetRecords = JSON.parse(await readFile(join(targetRoot, 'machines.json'), 'utf8'));
@@ -129,7 +188,7 @@ try {
     ?.liveMigrationOrigin?.status, 'ready');
   assert.deepEqual(targetRecords.find((entry: { id: string }) => entry.id === result.targetVmId)
     ?.organization, { group: 'migration', tags: ['distributed'], favorite: true });
-  console.log('Two isolated Sakura services migrated a live Alpine guest, project configuration and durable source/target records over pinned TLS.');
+  console.log('Two isolated Sakura services recovered lost prepare and cutover replies with the original transfer/session after both services restarted; guest data and project configuration survived, and the source remained fenced.');
 } finally {
   if (machines && vmId) await machines.stop(vmId, true).catch(() => {});
   await machines?.close();

@@ -9,6 +9,15 @@ import { requestUrl } from './http.ts';
 import { OperationGateway } from './operation-gateway.ts';
 import { PORT } from './paths.ts';
 import { projectIdSchema } from './project-catalog.ts';
+import { encodeSocketOutput, parseSocketInput, SOCKET_CLIENT_BYTES, SOCKET_SERVER_BYTES, type SocketChannel } from '../shared/contracts/websocket.ts';
+
+/** Only this explicit domain code has a public recovery instruction; never expose exception messages. */
+export function terminalConnectionFailure(error: unknown) {
+  if (error instanceof AppError && error.code === 'PROJECT_IDENTITY_DIRECTORY_MIGRATION_REQUIRED')
+    return '目录及父目录尚未授权给项目账户，请显式迁移权限（PROJECT_IDENTITY_DIRECTORY_MIGRATION_REQUIRED）。';
+  return '终端连接暂不可用，请重试。';
+}
+
 type SocketContext = {
   allowedRequest: (req: IncomingMessage) => boolean;
   dev: ApplicationServices['dev'];
@@ -80,7 +89,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
     }
     const { parameters } = gateway.resolve('UPGRADE', url.pathname);
     const id = parameters.vmId || 'events';
-    const mode = admission.declaration.socketChannel || '';
+    const mode = admission.declaration.socketChannel as SocketChannel;
     const terminalSession = url.searchParams.get('session');
     const terminalProject = url.searchParams.get('project');
     const appSession = url.searchParams.get('app');
@@ -111,6 +120,19 @@ export function attachApplicationWebSocket(context: SocketContext) {
     if (socket.destroyed) return;
     try {
       ws.handleUpgrade(req, socket, head, (client) => {
+        client.on('error', () => {});
+        // Install before any asynchronous domain preparation. Read-only channels accept no app input.
+        client.on('message', (raw, binary) => {
+          const bytes = Array.isArray(raw) ? raw.reduce((sum, part) => sum + part.byteLength, 0) : raw.byteLength;
+          const desktop = mode === 'desktop' || mode === 'desktop-view';
+          if (bytes > SOCKET_CLIENT_BYTES) client.close(1009, 'Message too large');
+          else if (desktop ? !binary : binary) client.close(1003, 'Unsupported message type');
+          else if (!desktop && mode !== 'terminal') client.close(1008, 'Read-only channel');
+          else if (!desktop) {
+            try { parseSocketInput(mode, raw.toString()); }
+            catch { client.close(1008, 'Invalid message'); }
+          }
+        });
         void admission
           .run(async () => {
             await admission.check();
@@ -172,10 +194,13 @@ export function attachApplicationWebSocket(context: SocketContext) {
                   client.close(1008, 'slow consumer');
                   return;
                 }
-                client.send(JSON.stringify({ type, data }));
+                try {
+                  const payload = encodeSocketOutput(mode, { type, data });
+                  if (Buffer.byteLength(payload) > SOCKET_SERVER_BYTES) { client.close(1009, 'Message too large'); return; }
+                  client.send(payload);
+                } catch { client.close(1011, 'Invalid server message'); }
               }
             };
-            client.on('error', () => {});
             if (mode === 'desktop' || mode === 'desktop-view') {
               try {
                 const port = appSession ? await features.desktops.apps.port(id, appSession) : 5901;
@@ -241,7 +266,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
                 ssh.end();
                 return;
               }
-              ssh.on('error', (error) => sendData('error', error.message));
+              ssh.on('error', () => sendData('error', '终端连接暂不可用，请重试。'));
               ssh.once('close', () => client.close());
               const connected = (error: Error | undefined, stream: ClientChannel) => {
                 if (!error && (terminalAbort.signal.aborted || client.readyState !== WebSocket.OPEN)) {
@@ -250,7 +275,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
                   return;
                 }
                 if (error) {
-                  sendData('error', error.message);
+                  sendData('error', '终端连接暂不可用，请重试。');
                   client.close();
                   ssh?.end();
                   return;
@@ -263,23 +288,23 @@ export function attachApplicationWebSocket(context: SocketContext) {
                   stderr = new StringDecoder('utf8');
                 stream.on('data', (data: Buffer) => sendData('data', stdout.write(data)));
                 stream.stderr.on('data', (data: Buffer) => sendData('data', stderr.write(data)));
-                stream.on('error', (error: Error) => sendData('error', error.message));
+                stream.on('error', () => sendData('error', '终端连接暂不可用，请重试。'));
                 stream.on('close', () => {
                   sendData('exit', true);
                   client.close();
                   ssh?.end();
                 });
-                client.on('message', (raw) => {
+                client.on('message', (raw, binary) => {
                   try {
+                    if (client.readyState !== WebSocket.OPEN || binary) return;
                     session.requireUnlocked();
                     if (mode === 'terminal-view') {
                       client.close(1008, 'Read-only terminal');
                       return;
                     }
-                    const msg = JSON.parse(raw.toString());
-                    if (msg.type === 'input' && typeof msg.data === 'string' && msg.data.length <= 32768)
-                      stream.write(msg.data);
-                    if (msg.type === 'resize' && Number.isInteger(msg.cols) && Number.isInteger(msg.rows))
+                    const msg = parseSocketInput(mode, raw.toString());
+                    if (msg.type === 'input') stream.write(msg.data);
+                    if (msg.type === 'resize')
                       stream.setWindow(
                         Math.max(2, Math.min(200, msg.rows)),
                         Math.max(10, Math.min(400, msg.cols)),
@@ -296,8 +321,8 @@ export function attachApplicationWebSocket(context: SocketContext) {
                 { pty: { term: 'xterm-256color', cols: 100, rows: 28 } },
                 connected,
               );
-            } catch (error: any) {
-              sendData('error', error.message);
+            } catch (error: unknown) {
+              sendData('error', terminalConnectionFailure(error));
               client.close();
               releaseTerminal();
               ssh?.end();

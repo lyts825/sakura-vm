@@ -74,7 +74,7 @@ async function ok(path: string, method = 'GET', body?: unknown) {
   return result.body;
 }
 async function boot(id: string) {
-  await ok(`/api/vms/${id}/start`, 'POST', {});
+  await ok(`/api/vms/${id}/start`, 'POST');
   const deadline = Date.now() + 300000;
   for (;;) {
     const current = await ok(`/api/vms/${id}`);
@@ -293,10 +293,10 @@ try {
   const plain = await terminal(id, null, privateId);
   assert.equal((await request(`/api/vms/${id}/project?project=${privateId}`, 'PUT', { directory: '/workspace/changed', networkIsolation: 'host' })).status, 409);
   await plain.close(); await delay(200);
-  await ok(`/api/vms/${id}/suspend`, 'POST', {});
+  await ok(`/api/vms/${id}/suspend`, 'POST');
   assert.equal((await request(`/api/vms/${id}/project?project=${privateId}`, 'PUT', { directory: '/workspace/changed', networkIsolation: 'host' })).status, 409);
   assert.equal((await request(`/api/vms/${id}/terminal-session?project=${privateId}`, 'POST', { action: 'stop-all' })).status, 409);
-  await ok(`/api/vms/${id}/resume`, 'POST', {});
+  await ok(`/api/vms/${id}/resume`, 'POST');
   await ok('/api/plugins', 'PATCH', { kind: 'plugin', id: 'automation', enabled: false });
   await ok('/api/plugins', 'PATCH', { kind: 'plugin', id: 'projects', enabled: false });
   // Persist a normal guest shutdown before restarting the controller. On

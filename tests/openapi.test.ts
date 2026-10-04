@@ -5,11 +5,101 @@ import { apiDocument } from '../server/openapi.ts';
 import { generateSdk } from '../server/sdk.ts';
 import { apiPath } from '../shared/api-document.ts';
 import { PLUGINS } from '../shared/plugins.ts';
+import { operationEntries } from '../server/operation-catalog.ts';
+import { createOperationClient } from '../shared/api-client.ts';
+import { encodeOperationBody } from '../shared/http-transport.ts';
+import { ControllerSession } from '../src/controller-session.ts';
 const sdk = async (port = 7337) =>
   import(
     'data:text/javascript;base64,' +
       Buffer.from(generateSdk(apiDocument(['commands'], port))).toString('base64')
   );
+
+test('all HTTP inputs declare a body protocol and expose query/header contracts without unknown bodies', () => {
+  const spec = apiDocument([], 7337);
+  for (const entry of operationEntries.filter(entry => entry.declaration.method !== 'UPGRADE')) {
+    assert.ok(entry.requestContract, entry.declaration.id);
+    assert.ok(entry.declaration.request, entry.declaration.id);
+    if (entry.requestContract!.kind !== 'none' && entry.requestContract!.kind !== 'binary') assert.ok(entry.body);
+  }
+  const saml = spec.paths['/api/access/sso/saml/callback'].post;
+  assert.deepEqual(saml.requestBody!.content['application/x-www-form-urlencoded'].schema.required, ['SAMLResponse', 'RelayState']);
+  assert.equal(spec.paths['/api/vms/{vmId}/start'].post.requestBody, undefined);
+  assert.ok(spec.paths['/api/image-import'].post.requestBody!.content['application/octet-stream']);
+  assert.ok(spec.paths['/api/vms/{vmId}/uploads'].put.parameters.some(item => item.in === 'query' && item.name === 'chunk' && item.required));
+  assert.ok(spec.paths['/api/vms/{vmId}/uploads'].put.parameters.some(item => item.in === 'header' && item.name === 'x-sakura-file-lock'));
+  assert.ok(spec.paths['/api/extension/connect'].post.parameters.some(item => item.in === 'header' && item.name === 'origin' && item.required));
+  assert.ok(spec.paths['/api/extension/connect'].post.parameters.some(item => item.in === 'header' && item.name === 'x-sakura-extension-origin' && item.required));
+  assert.ok(spec.paths['/api/extension/inventory'].get.parameters.some(item => item.in === 'header' && item.name === 'x-sakura-extension-origin' && item.required));
+  assert.ok(spec.paths['/api/extension/connect'].options.parameters.some(item => item.in === 'header' && item.name === 'origin' && item.required));
+  assert.equal(spec.paths['/api/extension/connect'].options.parameters.some(item => item.in === 'header' && item.name === 'x-sakura-extension-origin'), false);
+  assert.equal(spec['x-sakura-operations']!.filter(entry => entry.method === 'UPGRADE' && entry.contract === 'declared').length, 6);
+});
+
+test('SDK and typed frontend use the same form, no-body and binary encoding and retain failure identities', async () => {
+  const { SakuraClient } = await sdk();
+  const captured: RequestInit[] = [];
+  const fetcher = async (_url: string | URL | Request, init?: RequestInit) => {
+    captured.push(init!);
+    return new Response('<html>callback</html>', { headers: { 'content-type': 'text/html' } });
+  };
+  const client = new SakuraClient({ fetcher });
+  const controller = new ControllerSession(fetcher as typeof fetch);
+  const body = { SAMLResponse: 'a+/=& assertion', RelayState: 'relay&state' };
+  assert.equal(await client.call('core.access.ssoSamlCallback', { body }), '<html>callback</html>');
+  assert.equal(await controller.operation('core.access.ssoSamlCallback', { body }), '<html>callback</html>');
+  assert.equal(String(captured[0].body), String(captured[1].body));
+  assert.equal(new URLSearchParams(String(captured[0].body)).get('SAMLResponse'), body.SAMLResponse);
+  assert.equal(new Headers(captured[0].headers).get('content-type'), 'application/x-www-form-urlencoded; charset=utf-8');
+  assert.deepEqual(captured[0].headers, captured[1].headers);
+  await assert.rejects(client.call('core.vms.start', { path: { vmId: 'vm' }, body: {} }), /不接受请求体/);
+  const bytes = new Uint8Array([0, 255, 1]);
+  assert.equal(encodeOperationBody('binary', bytes).body, bytes);
+  const transfers: any[] = [];
+  const typed = createOperationClient(async (_path, options) => { transfers.push(options); return {}; });
+  await typed('files.legacy.put.vms.vmId.uploads', { path: { vmId: 'vm' }, query: { id: 'upload', chunk: '0' }, body: bytes });
+  assert.equal(transfers[0].bodyKind, 'binary'); assert.equal(transfers[0].body, bytes);
+  const correlationId = '11111111-1111-4111-8111-111111111111';
+  const failing = new SakuraClient({ fetcher: async () => Response.json({ error: '响应校验失败', code: 'INVALID_OPERATION_RESPONSE', correlationId,
+    operationResult: { correlationId, outcome: 'succeeded', executed: true, query: '/api/operation-results/' + correlationId } }, { status: 502 }) });
+  await assert.rejects(failing.call('core.access.ssoSamlCallback', { body }), (error: any) =>
+    error.status === 502 && error.code === 'INVALID_OPERATION_RESPONSE' && error.correlationId === correlationId &&
+    error.operationResult.outcome === 'succeeded' && error.message.includes(correlationId));
+});
+
+test('VM project hints are declared and optional query values encode consistently in SDK and typed clients', async () => {
+  const spec = apiDocument(['files'], 7337), id = 'files.legacy.get.vms.vmId.files' as const;
+  const entry = operationEntries.find(candidate => candidate.declaration.id === id)!;
+  assert.equal(entry.declaration.projectScoped, false);
+  assert.equal(entry.declaration.projectBinding, 'none');
+  assert.ok(spec.paths['/api/vms/{vmId}/files'].get.parameters.some(item =>
+    item.in === 'query' && item.name === 'project' && !item.required));
+  const { SakuraClient } = await sdk();
+  const sdkPaths: string[] = [], typedPaths: string[] = [];
+  const client = new SakuraClient({ fetcher: async (target: string) => {
+    const url = new URL(target);
+    if (url.pathname === '/api/bootstrap') return Response.json({ token: 'credential' });
+    sdkPaths.push(url.pathname + url.search);
+    return Response.json([]);
+  } });
+  const typed = createOperationClient(async path => { typedPaths.push(path); return []; });
+  for (const query of [{ path: '/workspace/a&b', project: 'default' }, { path: '', project: undefined },
+    { path: undefined, project: undefined }]) {
+    await client.call(id, { path: { vmId: 'test-vm' }, query });
+    await typed(id, { path: { vmId: 'test-vm' }, query });
+    entry.requestContract!.query.parse(query);
+  }
+  assert.deepEqual(sdkPaths, typedPaths);
+  assert.deepEqual(typedPaths, ['/api/vms/test-vm/files?path=%2Fworkspace%2Fa%26b&project=default',
+    '/api/vms/test-vm/files?path=', '/api/vms/test-vm/files']);
+  for (const candidate of operationEntries.filter(item => item.declaration.method !== 'UPGRADE' &&
+    item.declaration.path.includes('{vmId}'))) {
+    const field = candidate.requestContract!.query.shape.project;
+    assert.ok(field, candidate.declaration.id);
+    assert.equal(field.safeParse('default').success, true, candidate.declaration.id);
+    assert.equal(field.safeParse(undefined).success, true, candidate.declaration.id);
+  }
+});
 
 test('OpenAPI describes real core and typed operations, optional defaults, project queries and plugin availability', () => {
   const spec = apiDocument(['commands'], 7337);

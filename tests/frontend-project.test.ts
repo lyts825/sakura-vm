@@ -29,6 +29,14 @@ test('workspace-scoped requests carry the selected development project', async (
     '/vms/test-vm/project?project=0123456789abcdef',
   );
   assert.equal(workspacePath('/vms/test-vm/advanced', undefined), '/vms/test-vm/advanced');
+  assert.equal(workspacePath('/vms/test-vm/files?path=%2Fworkspace', 'default'),
+    '/vms/test-vm/files?path=%2Fworkspace&project=default');
+  assert.equal(workspacePath('/api/vms/test-vm/files?path=', 'default'),
+    '/api/vms/test-vm/files?path=&project=default');
+  assert.equal(workspacePath('/access/terminal-shares?vmId=test-vm', 'default'),
+    '/access/terminal-shares?vmId=test-vm&project=default');
+  for (const path of ['/jobs/test-job/result', '/jobs/test-job/cancel', '/recipes', '/network-profiles', '/images'])
+    assert.equal(workspacePath(path, 'default'), path, path);
 
   const calls: { path: string; method?: string; body?: unknown; signal?: AbortSignal }[] = [];
   const base = async <T>(path: string, method?: string, body?: unknown, signal?: AbortSignal) => {
@@ -48,6 +56,8 @@ test('workspace-scoped requests carry the selected development project', async (
     body: { action: 'sample' },
     signal,
   });
+  await workspaceRequest(base, 'default')('/jobs/test-job/cancel', 'POST', undefined, signal);
+  assert.deepEqual(calls[1], { path: '/jobs/test-job/cancel', method: 'POST', body: undefined, signal });
 });
 
 function deferred<T>() {

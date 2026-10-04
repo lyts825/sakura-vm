@@ -13,7 +13,7 @@ import { readStore, regularDirectory, writeStore } from './local-store.ts';
 
 export const UPLOAD_CHUNK_BYTES = 1024 ** 2;
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
-const requestSchema = z
+export const requestSchema = z
   .object({
     path: z.string().refine((value) => {
       try {

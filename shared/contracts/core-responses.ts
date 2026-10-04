@@ -2,7 +2,8 @@ import { z } from 'zod';
 import * as dto from './core-dtos.ts';
 import { controllerResponses, sessionViewSchema } from './controller-api.ts';
 import { hostRuntimeDiagnosticSchema, networkRuntimeDiagnosticSchema, operationDeclarationSchema } from './operations.ts';
-import { recoveryViewSchema } from './recovery.ts';
+import { recoveryViewSchema, recoveryListSchema } from './recovery.ts';
+import { operationResultSchema } from './operation-results.ts';
 import { jsonValueSchema } from './json-values.ts';
 import type { HttpResponseContract } from './http-response.ts';
 
@@ -99,11 +100,12 @@ const documentSchema = z.record(z.string(), jsonValueSchema);
 const content = z.record(z.string(), z.object({ schema: documentSchema }).strict());
 const apiOperation = z.object({
   operationId: z.string(), summary: z.string(), description: z.string(), tags: z.array(z.string()),
-  parameters: z.array(z.object({ name: z.string(), in: z.enum(['path', 'query']), required: z.boolean(), schema: documentSchema, description: z.string().optional() }).strict()),
+  parameters: z.array(z.object({ name: z.string(), in: z.enum(['path', 'query', 'header']), required: z.boolean(), schema: documentSchema, description: z.string().optional() }).strict()),
   requestBody: z.object({ required: z.boolean(), content }).strict().optional(),
   responses: z.record(z.string(), z.object({ description: z.string(), content: content.optional() }).strict()),
   security: z.array(securityRequirement).optional(), 'x-sakura-enabled': z.boolean(), 'x-sakura-inspectable': z.boolean(),
   'x-sakura-contract': z.enum(['declared', 'partial']), 'x-sakura-operation': operationDeclarationSchema.optional(),
+  'x-sakura-response': z.object({ kind: z.enum(['json', 'text', 'binary', 'event-stream', 'empty']) }).strict().optional(),
 }).strict();
 export const openApiResponseSchema = z.object({
   openapi: z.literal('3.1.1'), info: z.object({ title: z.string(), version: z.string(), description: z.string() }).strict(),
@@ -182,7 +184,9 @@ export const coreResponseSchemas: Readonly<Record<string, z.ZodType>> = {
   'browserExtensions.list': z.object({ connections: dto.extensionConnectionsSchema }).strict(), 'browserExtensions.pair': dto.extensionPairingSchema, 'browserExtensions.revoke': dto.extensionRevokedSchema,
   'extension.connect': dto.extensionConnectedSchema, 'extension.inventory': z.object({ permissions: z.array(z.string()), expiresAt: z.number(), checkedAt: z.string(), vms: z.array(vmSummary) }).strict(),
   'guest.interop': dto.guestInteropSchema,
-  'recoveries.list': z.object({ version: z.literal(1), records: z.array(recoveryViewSchema) }).strict(), 'recoveries.retry': recoveryViewSchema,
+  'operation-results.get': operationResultSchema,
+  'recoveries.rebuild': recoveryListSchema,
+  'recoveries.list': recoveryListSchema, 'recoveries.retry': recoveryViewSchema,
   operations: z.object({ version: z.number(), operations: z.array(operationDeclarationSchema) }).strict(),
   'host-runtime': hostRuntimeDiagnosticSchema, 'network-runtime': networkRuntimeDiagnosticSchema,
 };

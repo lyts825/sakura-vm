@@ -26,6 +26,10 @@ type GatewayOptions = {
     parameters: Readonly<Record<string, string>>, requireEnabled: () => void): Promise<OperationBinding>;
 };
 const current = new AsyncLocalStorage<{ entry: OperationEntry; binding: OperationBinding }>();
+const preflightFailures = new WeakMap<object, string>();
+/** A resolved operation rejected before its registered HTTP handler was invoked. */
+export const operationPreflightFailure = (error: unknown) => error !== null && typeof error === 'object'
+  ? preflightFailures.get(error) : undefined;
 export const currentOperation = () => current.getStore()?.entry.declaration;
 export type HttpOperationHandler = (req: IncomingMessage, res: ServerResponse, url: URL,
   entry: OperationEntry) => unknown | Promise<unknown>;
@@ -33,7 +37,7 @@ export type HttpOperationHandler = (req: IncomingMessage, res: ServerResponse, u
 /** Validate the already bounded JSON read without consuming streams or binary bodies twice. */
 export async function validateOperationInput(input: any) {
   const context = current.getStore();
-  if (context?.entry.declaration.transport === 'json') context.entry.requestSchema?.parse(input);
+  context?.entry.requestSchema?.parse(input);
   await context?.binding.input?.(input);
   await captureOperationCheck()();
   return input;
@@ -63,11 +67,31 @@ export class OperationGateway {
   async dispatch(req: IncomingMessage, res: ServerResponse, url: URL) {
     if (!this.sealed) throw new AppError('操作处理器目录尚未就绪', 503, 'OPERATIONS_NOT_READY');
     const { entry } = this.resolve(req.method || 'GET', url.pathname);
+    let handlerEntered = false;
+    try {
     const handler = this.handlers.get(entry.declaration.id);
     if (!handler) throw new AppError('操作没有已登记处理器', 503, 'OPERATION_HANDLER_MISSING');
     const admission = await this.prepare(req, url);
+    const input = entry.requestContract!;
+    input.headers.parse(Object.fromEntries(Object.keys(input.headers.shape).filter(name => req.headers[name] !== undefined)
+      .map(name => [name, req.headers[name]])));
+    const hasBody = Number(req.headers['content-length'] || 0) > 0 || req.headers['transfer-encoding'] !== undefined;
+    const uploadCommit = entry.declaration.id === 'files.legacy.post.vms.vmId.uploads' && url.searchParams.has('id');
+    if ((input.kind === 'none' || uploadCommit) && hasBody)
+      throw new AppError('此操作不接受请求体', 400, 'UNEXPECTED_REQUEST_BODY');
+    if (input.kind !== 'none' && (input.required || hasBody) && !uploadCommit) {
+      const media = req.headers['content-type']?.split(';')[0].trim().toLowerCase();
+      if (media !== input.media) throw new AppError('请求媒体类型不符合契约', 415, 'UNSUPPORTED_MEDIA_TYPE');
+    }
     guardOperationResponse(res, { id: entry.declaration.id, contract: entry.responseContract });
-    return admission.run(() => handler(req, res, url, entry));
+    return await admission.run(() => { handlerEntered = true; return handler(req, res, url, entry); });
+    } catch (error) {
+      if (error !== null && typeof error === 'object') {
+        if (handlerEntered) preflightFailures.delete(error);
+        else preflightFailures.set(error, entry.declaration.id);
+      }
+      throw error;
+    }
   }
   directory() { return operationDirectory(this.options.enabled()); }
   get version() { return this.options.catalogVersion?.() || 0; }
@@ -107,6 +131,11 @@ export class OperationGateway {
       enabled();
     };
     await check();
+    const input = entry.requestContract!;
+    const query = Object.fromEntries(url.searchParams);
+    if ([...url.searchParams.keys()].some(key => url.searchParams.getAll(key).length !== 1))
+      throw new AppError('请求不能包含重复查询参数', 400, 'INVALID_INPUT');
+    input.query.parse(query);
     return {
       declaration, check, instance,
       run<T>(work: () => T): T {

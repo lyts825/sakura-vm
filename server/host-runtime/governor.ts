@@ -8,6 +8,7 @@ import type {
 } from '../../shared/contracts/host-runtime.ts';
 import { captureResourceContext } from './context.ts';
 import { captureOperationCheck } from '../operation-context.ts';
+import { runtimeTimings } from '../runtime-timings.ts';
 
 export type Budget = { capacity: number; reserved?: number };
 export type ResourceRequest = {
@@ -101,6 +102,8 @@ export class HostRuntime {
     const clock = this.clocks.get(view)!;
     const now = performance.now();
     return { queueMs: Math.max(0, (clock.admitted ?? now) - clock.created),
+      lifetimeMs: clock.admitted === undefined ? 0 : Math.max(0, now - clock.admitted),
+      // Kept for V1 consumers; this historical field measures held-resource time, not task work.
       executionMs: clock.admitted === undefined ? 0 : Math.max(0, (clock.cleanup ?? now) - clock.admitted),
       cleanupMs: clock.cleanup === undefined ? 0 : Math.max(0, now - clock.cleanup) };
   }
@@ -330,6 +333,9 @@ export class HostRuntime {
   private finish(view: ResourceView, state: 'released' | 'rejected') {
     view.timings = this.elapsed(view);
     const clock = this.clocks.get(view)!;
+    runtimeTimings.observe('resource', 'queue', view.timings.queueMs);
+    if (clock.admitted !== undefined) runtimeTimings.observe('resource', 'resource-lifetime', view.timings.lifetimeMs!);
+    if (clock.cleanup !== undefined) runtimeTimings.observe('resource', 'cleanup', view.timings.cleanupMs);
     for (const phase of ['queue', 'execution', 'cleanup'] as const) {
       if (phase === 'execution' && clock.admitted === undefined || phase === 'cleanup' && clock.cleanup === undefined) continue;
       const value = view.timings[`${phase}Ms`], aggregate = this.timings[phase];

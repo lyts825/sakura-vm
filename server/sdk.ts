@@ -1,4 +1,5 @@
 import type { ApiDocument } from '../shared/api-document.ts';
+import { encodeOperationBody } from '../shared/http-transport.ts';
 
 export function generateSdk(document: ApiDocument) {
   const operations = Object.fromEntries(
@@ -7,16 +8,22 @@ export function generateSdk(document: ApiDocument) {
         operation.operationId,
         { path, method: method.toUpperCase(), public: operation['x-sakura-operation']
           ? operation['x-sakura-operation'].access !== 'controller' : operation.security?.length === 0,
-          policy: operation['x-sakura-operation'] },
+          policy: operation['x-sakura-operation'], body: operation['x-sakura-operation']?.request?.kind,
+          response: operation['x-sakura-response']?.kind },
       ]),
     ),
   );
   return (
+    `const encodeOperationBody = ${encodeOperationBody.toString()};\n` +
     `export const catalogVersion = ${document['x-sakura-catalog-version'] || 0};\n` +
     `// Generated Sakura ES module. Node.js 22+ or a modern browser. No dependencies.\n// import { SakuraClient } from './sakura-client.mjs';\n// const client = new SakuraClient();\n// const machines = await client.call('core.vms.list');\n// JSON responses are parsed; binary responses return a Response for streaming.\nexport const operations = ${JSON.stringify(operations, null, 2)};\nexport const operationDirectory = [...Object.values(operations).map(operation => operation.policy).filter(Boolean), ...${JSON.stringify(document['x-sakura-operations']?.filter(operation => operation.method === 'UPGRADE') || [])}];\n` +
     String.raw`
 export class SakuraApiError extends Error {
-  constructor(message, status, code) { super(message); this.name = 'SakuraApiError'; this.status = status; this.code = code; }
+  constructor(message, status, code, correlationId, operationResult, auditFailure) {
+    super(message + (correlationId ? '（关联 ID：' + correlationId + '）' : ''));
+    this.name = 'SakuraApiError'; this.status = status; this.code = code; this.correlationId = correlationId;
+    this.operationResult = operationResult; this.auditFailure = auditFailure;
+  }
 }
 export class SakuraClient {
   #base; #fetch; #token = '';
@@ -28,7 +35,7 @@ export class SakuraClient {
   async authenticate(signal) {
     const response = await this.#fetch(this.#base + '/api/bootstrap', { cache: 'no-store', redirect: 'error', signal });
     const value = await response.json();
-    if (!response.ok) { this.#token = ''; throw new SakuraApiError(value.error || 'Authentication failed', response.status, value.code || 'UNAUTHORIZED'); }
+    if (!response.ok) { this.#token = ''; throw new SakuraApiError(value.error || 'Authentication failed', response.status, value.code || 'UNAUTHORIZED', value.correlationId, value.operationResult, value.auditFailure); }
     if (typeof value.token !== 'string' || !value.token) throw new Error('Invalid controller credential');
     this.#token = value.token;
   }
@@ -55,9 +62,11 @@ export class SakuraClient {
       if (typeof value !== 'string' || !value || value === '.' || value === '..' || /[\\/\u0000-\u001f]/.test(value)) throw new Error('Invalid path parameter: ' + key);
       return encodeURIComponent(value);
     });
-    return this.request(path, { method: operation.method, query, body, binary, headers, signal, response: result, authenticated: !operation.public });
+    if (binary && operation.body !== 'binary') throw new Error('Operation does not accept a binary body');
+    return this.request(path, { method: operation.method, query, body, bodyKind: operation.body, headers, signal,
+      response: result === 'auto' ? operation.response || 'auto' : result, authenticated: !operation.public });
   }
-  async request(path, { method = 'GET', query = {}, body, binary = false, contentType = 'application/octet-stream', signal, response: result = 'auto', authenticated = true, headers: suppliedHeaders = {} } = {}) {
+  async request(path, { method = 'GET', query = {}, body, binary = false, bodyKind, signal, response: result = 'auto', authenticated = true, headers: suppliedHeaders = {} } = {}) {
     if (typeof path !== 'string' || !path.startsWith('/api/') || /[?#\\\u0000-\u001f]/.test(path)) throw new Error('Use an /api/ path and a separate query object');
     const url = new URL(path, this.#base);
     if (url.origin !== this.#base || !url.pathname.startsWith('/api/') || url.pathname !== path) throw new Error('Invalid API path');
@@ -69,22 +78,28 @@ export class SakuraClient {
       if (!['string', 'number', 'boolean'].includes(typeof value)) throw new Error('Query values must be scalar');
       url.searchParams.set(key, String(value));
     }
+    const encoded = encodeOperationBody(bodyKind || (body === undefined ? 'none' : binary ? 'binary' : 'json'), body,
+      suppliedHeaders);
     signal?.throwIfAborted();
     if (authenticated && !this.#token) await this.authenticate(signal);
     signal?.throwIfAborted();
-    const headers = { ...suppliedHeaders, ...(authenticated ? { 'X-Sakura-Token': this.#token } : {}) };
-    if (body !== undefined) headers['Content-Type'] = binary ? contentType : 'application/json';
-    const response = await this.#fetch(url.href, { method, headers, signal, cache: 'no-store', redirect: 'error', body: body === undefined ? undefined : binary ? body : JSON.stringify(body) });
+    if (authenticated) {
+      for (const key of Object.keys(encoded.headers)) if (key.toLowerCase() === 'x-sakura-token') delete encoded.headers[key];
+      encoded.headers['X-Sakura-Token'] = this.#token;
+    }
+    const response = await this.#fetch(url.href, { method, headers: encoded.headers, signal, cache: 'no-store', redirect: 'error', body: encoded.body });
     if (!response.ok) {
       if (response.status === 401 || response.status === 423) this.#token = '';
       let failure = {}; try { failure = await response.json(); } catch {}
       const message = failure.error || (Array.isArray(failure.errors) ? failure.errors.slice(0, 10).map(error => error.message).filter(Boolean).join('; ') : '') || 'Request failed';
-      throw new SakuraApiError(message, response.status, failure.code);
+      throw new SakuraApiError(message, response.status, failure.code || 'HTTP_ERROR', failure.correlationId || response.headers.get('x-sakura-correlation-id'), failure.operationResult, failure.auditFailure);
     }
     // Never replay requests after an HTTP rejection, a disconnect, or cancellation.
-    if (method === 'HEAD' || response.status === 204) return undefined;
+    if (method === 'HEAD' || response.status === 204 || result === 'empty') return undefined;
     if (result === 'stream') return response;
     if (result === 'buffer') return response.arrayBuffer();
+    if (result === 'text') return response.text();
+    if (result === 'binary' || result === 'event-stream') return response;
     const mime = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
     return result === 'json' || mime === 'application/json' || mime?.endsWith('+json') ? response.json() : response;
   }

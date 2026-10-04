@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ServerResponse } from 'node:http';
 import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
 import { AppError } from '../shared/errors.ts';
+import { runtimeTimings } from './runtime-timings.ts';
 
 type ResponseBinding = { id: string; contract?: HttpResponseContract };
 const response = new AsyncLocalStorage<ResponseBinding>();
@@ -21,6 +22,27 @@ type DocumentSnapshotProof = {
 };
 const documentSnapshots = new WeakMap<DocumentJsonSnapshot, DocumentSnapshotProof>();
 const normalizedMedia = (media: string) => media.split(';')[0].trim().toLowerCase();
+
+/** Mutations publish their finite response only after the audit and durable receipt finish. */
+export function stageOperationResponse(res: ServerResponse) {
+  const head = res.writeHead, end = res.end, write = res.write, flush = res.flushHeaders;
+  let argumentsHead: unknown[] | undefined, argumentsEnd: unknown[] | undefined;
+  res.writeHead = function (...args: unknown[]) { argumentsHead = args; res.statusCode = args[0] as number; return res; } as ServerResponse['writeHead'];
+  res.end = function (...args: unknown[]) { argumentsEnd = args; return res; } as ServerResponse['end'];
+  const rejectStreaming = () => invalid(response.getStore() || { id: 'finite-response' }, '有限响应不能在提交审计前发送流式字节');
+  res.write = rejectStreaming as ServerResponse['write'];
+  res.flushHeaders = rejectStreaming;
+  const restore = () => { res.writeHead = head; res.end = end; res.write = write; res.flushHeaders = flush; };
+  return {
+    discard: restore,
+    publish() {
+      restore();
+      if (!argumentsEnd) invalid(response.getStore() || { id: 'finite-response' }, '有限响应缺少结束边界');
+      if (argumentsHead) Reflect.apply(head, res, argumentsHead);
+      if (argumentsEnd) Reflect.apply(end, res, argumentsEnd);
+    },
+  };
+}
 
 /** The admitted operation owns its response, including asynchronous stream setup. */
 export function withOperationResponse<T>(binding: ResponseBinding, work: () => T): T {
@@ -52,15 +74,20 @@ export function validateResponseJson(value: unknown, status: number, media = 'ap
   if (!binding?.contract) return;
   const contract = binding.contract;
   if (status >= 400 && !contract.statuses.includes(status)) return;
-  validateResponseHead(status, media);
-  if (contract.kind !== 'json' || !contract.schema) invalid(binding, '未声明 JSON 响应');
-  const result = contract.schema.safeParse(value);
-  if (!result.success) {
-    // Paths explain contract drift without including credentials or response contents.
-    const paths = result.error.issues.slice(0, 5).map(issue => issue.path.join('.') || '<root>');
-    invalid(binding, `字段 ${paths.join(', ')}`);
+  const finish = runtimeTimings.start('http', 'response');
+  try {
+    validateResponseHead(status, media);
+    if (contract.kind !== 'json' || !contract.schema) invalid(binding, '未声明 JSON 响应');
+    const result = contract.schema.safeParse(value);
+    if (!result.success) {
+      // Paths explain contract drift without including credentials or response contents.
+      const paths = result.error.issues.slice(0, 5).map(issue => issue.path.join('.') || '<root>');
+      invalid(binding, `字段 ${paths.join(', ')}`);
+    }
+    if (res) validated.set(res, { binding, status, media: normalizedMedia(media) });
+  } finally {
+    finish();
   }
-  if (res) validated.set(res, { binding, status, media: normalizedMedia(media) });
 }
 
 /** Create a document snapshot once, using the same serialized-JSON validation as sendJson. */

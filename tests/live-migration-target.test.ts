@@ -69,6 +69,7 @@ test('incoming target atomically adopts source identity and persists a non-boota
       key: 'not a private key', seed: identity.seed,
     }, source), /身份数据无效|控制密钥无效/);
     const target = await machines.createIncomingTarget({ name: 'target' }, identity, source);
+    assert.equal((await machines.createIncomingTarget({ name: 'target' }, identity, source)).id, target.id);
     assert.equal(target.liveMigrationOrigin?.status, 'prepared');
     assert.equal(target.liveMigrationOrigin?.sourceVmId, source.sourceVmId);
     assert.equal(await readFile(join(vmDir(target.id), 'id_rsa'), 'utf8'), identity.key);
@@ -83,4 +84,54 @@ test('incoming target atomically adopts source identity and persists a non-boota
       await assert.rejects(restored.start(target.id), /尚未接收客户机状态/);
     } finally { await restored.close(); }
   } finally { await machines.close(); }
+});
+
+test('target preparation replays its original receipt and reconstructs the same transfer after host restart', async () => {
+  await writeFile(process.env.SAKURA_IMAGE_PATH!, 'synthetic base');
+  const engine = { qemuIoAvailable: false, whpxAvailable: false, runtime: { close: async () => {} },
+    run: async (tool: string, args: string[], options?: { signal: AbortSignal }) => {
+      if (tool === 'sakura-img') return writeFile(args.at(-2)!, 'synthetic overlay');
+      await new Promise<void>(resolve => options!.signal.addEventListener('abort', () => resolve(), { once: true }));
+    },
+  } as unknown as Engine;
+  const machines = new Machines(engine, fakeVmNetwork);
+  await machines.init();
+  const sessions = new Set<string>();
+  let registered = 0;
+  const peers = {
+    registerMigrationSession: (_requester: string, ports: { sessionId?: string }) => {
+      registered++; const id = ports.sessionId || randomUUID(); sessions.add(id); return id;
+    },
+    matchesMigrationSession: (id: string) => sessions.has(id),
+    closeMigrationSession: (id: string) => sessions.delete(id),
+  } as unknown as HostPeers;
+  const query = async (_port: number, command: string) => command === 'query-status'
+    ? { running: false, status: 'inmigrate' }
+    : [{ device: 'sakura-disk', inserted: { ro: false, 'node-name': '#target', image: { 'virtual-size': 8 * 1024 ** 3 } } }];
+  const input = { requesterId: randomUUID(), sourceVmId: randomUUID(), transferId: randomUUID(), completionProtocol: 1 as const,
+    config: { name: 'replay-target', memoryMiB: 512, cpus: 2, diskGiB: 8, accelerator: 'tcg' as const, forwards: [] },
+    key: createSshKey().privateText, seed: seedIso({ 'meta-data': 'original', 'user-data': 'original' }) };
+  let restored: InstanceType<typeof Machines> | undefined;
+  try {
+    const receiver = new LiveMigrationReceiver(machines, peers, undefined, query);
+    const receipt = await receiver.prepare(input);
+    assert.deepEqual(await receiver.prepare(input), receipt);
+    assert.equal(registered, 1);
+    await assert.rejects(receiver.prepare({ ...input, sourceVmId: randomUUID() }), /身份不匹配/);
+    await machines.close();
+    sessions.clear();
+    restored = new Machines(engine, fakeVmNetwork);
+    await restored.init();
+    const restarted = new LiveMigrationReceiver(restored, peers, undefined, query);
+    const replayed = await restarted.prepare(input);
+    assert.equal(replayed.targetVmId, receipt.targetVmId);
+    assert.equal(replayed.sessionId, receipt.sessionId);
+    assert.equal(restored.get(replayed.targetVmId).liveMigrationOrigin?.transferId, input.transferId);
+    assert.equal(restored.get(replayed.targetVmId).liveMigrationOrigin?.sessionId, replayed.sessionId);
+    await assert.rejects(restarted.abort({ requesterId: input.requesterId, transferId: input.transferId,
+      targetVmId: replayed.targetVmId, sessionId: randomUUID(), sourceRunning: true }), /会话与目标实例不匹配/);
+    await restarted.abort({ requesterId: input.requesterId, transferId: input.transferId,
+      targetVmId: replayed.targetVmId, sessionId: replayed.sessionId, sourceRunning: true });
+    assert.equal(restored.records.has(receipt.targetVmId), false);
+  } finally { await restored?.close(); await machines.close(); }
 });

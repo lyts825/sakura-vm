@@ -5,6 +5,7 @@ import {
   execute,
   getNamedType,
   getOperationAST,
+  getVariableValues,
   GraphQLError,
   isListType,
   isNonNullType,
@@ -168,6 +169,10 @@ const introspectionBounds: Record<string, number> = {
   'Query.plugins': PLUGINS.length,
 };
 const fail = (message: string, code = 'QUERY_LIMIT') => new GraphQLError(message, { extensions: { code } });
+const invalidQuery = (errors: readonly GraphQLError[], code: string) => ({
+  status: 400,
+  body: { errors: errors.slice(0, 10).map(error => ({ ...error.toJSON(), extensions: { ...error.extensions, code } })) },
+});
 
 // Count every fragment expansion before GraphQL validation or execution. List fan-out is
 // conservative, including introspection lists; aliases cannot avoid the same budget.
@@ -301,13 +306,19 @@ export class GraphApi {
     };
     try {
       cancelled();
-      document = parse(value.query, { maxTokens: graphqlLimits.tokens });
+      try { document = parse(value.query, { maxTokens: graphqlLimits.tokens }); }
+      catch (error) {
+        if (error instanceof GraphQLError) return invalidQuery([error], 'GRAPHQL_PARSE_FAILED');
+        throw error;
+      }
       boundedDocument(document);
       const errors = validate(schema, document, undefined, { maxErrors: 10 });
-      if (errors.length) return { status: 400, body: { errors: errors.map((error) => error.toJSON()) } };
+      if (errors.length) return invalidQuery(errors, 'GRAPHQL_VALIDATION_FAILED');
       const operation = getOperationAST(document, value.operationName);
       if (!operation) throw fail('需要指定有效的 operationName', 'INVALID_QUERY');
       if (operation.operation !== 'query') throw fail('此 GraphQL API 只支持 query', 'READ_ONLY');
+      const variables = getVariableValues(schema, operation.variableDefinitions || [], value.variables || {}, { maxErrors: 10 });
+      if (variables.errors) return invalidQuery(variables.errors, 'BAD_USER_INPUT');
     } catch (error) {
       return {
         status: 400,

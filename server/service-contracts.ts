@@ -4,6 +4,7 @@ import type { ServiceContract } from './service-ref.ts';
 
 /** Stable descriptor IDs are independent of implementation names and paths. */
 export const serviceContracts = {
+  RecoveryCatalog: PUBLIC_SERVICE_CONTRACTS['sakura.service.recovery-catalog.v1'] as ServiceContract<V1.RecoveryCatalogV1>,
   FeatureSuite: PUBLIC_SERVICE_CONTRACTS['sakura.service.feature-suite.v1'] as ServiceContract<V1.FeatureSuiteV1>,
   FeatureScheduler: PUBLIC_SERVICE_CONTRACTS['sakura.service.feature-scheduler.v1'] as ServiceContract<V1.FeatureSchedulerV1>,
   Backups: PUBLIC_SERVICE_CONTRACTS['sakura.service.backups.v1'] as ServiceContract<V1.BackupsV1>,

@@ -1,5 +1,7 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
+import { publicApiFailure } from '../../server/api-errors.ts';
 
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -19,9 +21,7 @@ export async function route(
   const parts = url.pathname.split('/').filter(Boolean);
   const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'vms' && parts[2] === 'batch' && parts.length === 3 && req.method === 'POST') {
-    const { ids, action } = z
-      .object({ ids: z.array(z.string().uuid()).min(1).max(32), action: z.enum(['start', 'stop']) })
-      .strict()
+    const { ids, action } = httpRouteRequests["library.legacy.post.vms.batch"]
       .parse(await body(req));
     const results = [];
     for (const id of new Set(ids)) {
@@ -30,7 +30,9 @@ export async function route(
         await this.vm[action](id);
         results.push({ id, ok: true });
       } catch (error) {
-        results.push({ id, ok: false, error: (error as Error).message });
+        const correlationId = res.getHeader?.('X-Sakura-Correlation-Id');
+        const { dto } = publicApiFailure(error, typeof correlationId === 'string' ? correlationId : '');
+        results.push({ id, ok: false, error: dto.error + (dto.correlationId ? `（关联 ID：${dto.correlationId}）` : '') });
       }
     }
     send({ results });

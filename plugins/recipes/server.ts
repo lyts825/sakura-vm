@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as recipesServices } from './services.ts';
@@ -20,9 +21,7 @@ export async function route(
   const parts = url.pathname.split('/').filter(Boolean);
   const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'recipes' && parts.length === 2 && req.method === 'POST') {
-    const { name, recipe } = z
-      .object({ name: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/), recipe: z.unknown() })
-      .strict()
+    const { name, recipe } = httpRouteRequests["recipes.legacy.post.recipes"]
       .parse(await body(req));
     send(await this.recipes.create(name, recipe), 201);
     return true;
@@ -42,9 +41,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const { action: kind } = z
-          .object({ action: z.enum(['read', 'write']) })
-          .strict()
+        const { action: kind } = httpRouteRequests["recipes.legacy.post.vms.vmId.recipe"]
           .parse(await body(req));
         send(await this.recipes[kind](id));
         return true;

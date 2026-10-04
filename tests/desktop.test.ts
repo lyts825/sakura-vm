@@ -316,4 +316,13 @@ test('shared desktop bridge forwards framebuffer requests but closes on keyboard
   client.send(Buffer.from([4, 1, 0, 0, 0, 0, 0, 65]));
   await closed;
   assert.deepEqual(received, allowed);
+  for (const invalid of ['RFB 003.008\n', Buffer.alloc(65_537, 3)]) {
+    const invalidClient = new WebSocket(`ws://127.0.0.1:${(http.address() as { port: number }).port}`);
+    t.after(() => invalidClient.terminate());
+    await once(invalidClient, 'message');
+    const rejected = once(invalidClient, 'close');
+    invalidClient.send(invalid);
+    await rejected;
+    assert.deepEqual(received, allowed, 'text and oversized frames must be rejected before forwarding any bytes');
+  }
 });

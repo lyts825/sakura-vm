@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as runtimesServices } from './services.ts';
@@ -38,20 +39,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const input = z
-          .discriminatedUnion('action', [
-            z.object({ action: z.literal('probe') }).strict(),
-            z
-              .object({
-                action: z.literal('select'),
-                node: z.string().optional(),
-                python: z.string().optional(),
-              })
-              .strict(),
-            z
-              .object({ action: z.literal('install'), tool: z.enum(['node', 'python']), version: z.string() })
-              .strict(),
-          ])
+        const input = httpRouteRequests["runtimes.legacy.post.vms.vmId.runtimes"]
           .parse(await body(req));
         if (input.action === 'probe') return send(await this.runtimes.probe(id, signal));
         if (input.action === 'select')

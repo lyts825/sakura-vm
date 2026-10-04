@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as pipelinesServices } from './services.ts';
@@ -41,17 +42,13 @@ export async function route(
         return true;
       }
       if (req.method === 'DELETE') {
-        const input = z
-          .object({ id: z.uuid() })
-          .strict()
+        const input = httpRouteRequests["pipelines.legacy.delete.vms.vmId.pipelines"]
           .parse(await body(req));
         send(await this.pipelines.remove(id, input.id));
         return true;
       }
       if (req.method === 'POST') {
-        const input = z
-          .object({ action: z.literal('run'), pipelineId: z.uuid() })
-          .strict()
+        const input = httpRouteRequests["pipelines.legacy.post.vms.vmId.pipelines"]
           .parse(await body(req));
         send(await this.pipelines.run(id, input.pipelineId), 202);
         return true;
@@ -60,9 +57,7 @@ export async function route(
   }
   if (parts.length === 4) {
     if (action === 'pipeline-artifact' && req.method === 'POST') {
-      const input = z
-        .object({ runId: z.uuid(), index: z.number().int().min(0).max(19) })
-        .strict()
+      const input = httpRouteRequests["pipelines.legacy.post.vms.vmId.pipeline-artifact"]
         .parse(await body(req));
       const target = await this.pipelines.artifact(id, input.runId, input.index);
       send(await this.downloads.issueLocal(id, { path: target.file, name: target.name }));

@@ -1,3 +1,4 @@
+import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { HostMountsV1, IdeV1, MediaDevicesV1, ProcessInteropV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { AutomationDomainServices } from './automation-domain-services.ts';
 
@@ -192,6 +193,86 @@ export type FeatureAction =
   | { action: 'acknowledge'; id: string }
   | { action: 'feature-check'; featureId: FeatureId }
   | { action: 'feature-run'; featureId: FeatureId; options?: Record<string, unknown> };
+
+export const featureSuiteUpdateRequest = z
+      .object({ schedule: scheduleSchema.optional(), alerts: alertSchema.optional() })
+      .strict();
+
+export const featureSuiteActionRequest = z
+      .discriminatedUnion('action', [
+        z.object({ action: z.literal('sample') }).strict(),
+        z
+          .object({ action: z.literal('memory-target'), memoryMiB: z.number().int().min(256).max(8192) })
+          .strict(),
+        z
+          .object({
+            action: z.literal('apply-preset'),
+            preset: z.enum(['light', 'development', 'build', 'desktop']),
+          })
+          .strict(),
+        z.object({ action: z.literal('disk-analysis'), path: z.string().optional() }).strict(),
+        z
+          .object({
+            action: z.literal('dev'),
+            operation: z.enum([
+              'test',
+              'test-discover',
+              'lint',
+              'format',
+              'dependencies',
+              'lock',
+              'lock-check',
+              'install-locked',
+              'prefetch-dependencies',
+              'install-cached-dependencies',
+              'worktree-list',
+              'worktree-add',
+              'worktree-remove',
+              'database',
+            ]),
+            branch: z.string().optional(),
+            path: z.string().optional(),
+            database: z.enum(['postgres', 'redis', 'mysql']).optional(),
+            name: z.string().optional(),
+            port: z.number().int().min(1024).max(65535).optional(),
+            password: z.string().optional(),
+            manager: dependencyManagerSchema.optional(),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('search'),
+            query: z.string(),
+            path: z.string().optional(),
+            content: z.boolean().optional(),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('package'),
+            operation: z.enum(['list', 'search', 'install', 'remove', 'update',
+              ...packageCacheOperations]),
+            name: z.string().optional(),
+          })
+          .strict(),
+        z.object({ action: z.literal('network-test'), target: z.string() }).strict(),
+        z.object({ action: z.literal('security-scan') }).strict(),
+        z.object({ action: z.literal('discover-ports') }).strict(),
+        z.object({ action: z.literal('acknowledge'), id: z.string().min(1).max(160) }).strict(),
+        z
+          .object({
+            action: z.literal('feature-check'),
+            featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('feature-run'),
+            featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]),
+            options: z.record(z.string(), jsonValueSchema).default({}),
+          })
+          .strict(),
+      ]);
 
 export class FeatureSuite {
   jobs = new Jobs('feature-suite');
@@ -504,9 +585,7 @@ export class FeatureSuite {
   }
   async update(id: string, input: unknown) {
     this.machines.get(id);
-    const value = z
-      .object({ schedule: scheduleSchema.optional(), alerts: alertSchema.optional() })
-      .strict()
+    const value = featureSuiteUpdateRequest
       .parse(input);
     const result = await this.store().update(state => {
       const settings = this.settingsFor(state, id);
@@ -1075,81 +1154,7 @@ export class FeatureSuite {
       vulnerabilityScan };
   }
   async action(id: string, input: unknown, signal?: AbortSignal) {
-    const value = z
-      .discriminatedUnion('action', [
-        z.object({ action: z.literal('sample') }).strict(),
-        z
-          .object({ action: z.literal('memory-target'), memoryMiB: z.number().int().min(256).max(8192) })
-          .strict(),
-        z
-          .object({
-            action: z.literal('apply-preset'),
-            preset: z.enum(['light', 'development', 'build', 'desktop']),
-          })
-          .strict(),
-        z.object({ action: z.literal('disk-analysis'), path: z.string().optional() }).strict(),
-        z
-          .object({
-            action: z.literal('dev'),
-            operation: z.enum([
-              'test',
-              'test-discover',
-              'lint',
-              'format',
-              'dependencies',
-              'lock',
-              'lock-check',
-              'install-locked',
-              'prefetch-dependencies',
-              'install-cached-dependencies',
-              'worktree-list',
-              'worktree-add',
-              'worktree-remove',
-              'database',
-            ]),
-            branch: z.string().optional(),
-            path: z.string().optional(),
-            database: z.enum(['postgres', 'redis', 'mysql']).optional(),
-            name: z.string().optional(),
-            port: z.number().int().min(1024).max(65535).optional(),
-            password: z.string().optional(),
-            manager: dependencyManagerSchema.optional(),
-          })
-          .strict(),
-        z
-          .object({
-            action: z.literal('search'),
-            query: z.string(),
-            path: z.string().optional(),
-            content: z.boolean().optional(),
-          })
-          .strict(),
-        z
-          .object({
-            action: z.literal('package'),
-            operation: z.enum(['list', 'search', 'install', 'remove', 'update',
-              ...packageCacheOperations]),
-            name: z.string().optional(),
-          })
-          .strict(),
-        z.object({ action: z.literal('network-test'), target: z.string() }).strict(),
-        z.object({ action: z.literal('security-scan') }).strict(),
-        z.object({ action: z.literal('discover-ports') }).strict(),
-        z.object({ action: z.literal('acknowledge'), id: z.string().min(1).max(160) }).strict(),
-        z
-          .object({
-            action: z.literal('feature-check'),
-            featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]),
-          })
-          .strict(),
-        z
-          .object({
-            action: z.literal('feature-run'),
-            featureId: z.enum(featureCatalog.map(([id]) => id) as [FeatureId, ...FeatureId[]]),
-            options: z.record(z.string(), z.unknown()).default({}),
-          })
-          .strict(),
-      ])
+    const value = featureSuiteActionRequest
       .parse(input) as FeatureAction;
     if (value.action === 'sample') return this.sample(id);
     if (value.action === 'memory-target') return this.memoryTarget(id, value.memoryMiB);

@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as migrationServices } from './services.ts';
@@ -32,13 +33,7 @@ export async function route(
       return true;
     }
     if (req.method === 'POST') {
-      const input = z
-        .object({
-          action: z.enum(['preview', 'start', 'cancel-activation']),
-          target: z.string().max(4096).optional(),
-          token: z.string().optional(),
-        })
-        .strict()
+      const input = httpRouteRequests["migration.legacy.post.migration"]
         .parse(await body(req));
       if (input.action === 'cancel-activation') send(await this.migration.cancelActivation());
       else if (input.action === 'preview') {

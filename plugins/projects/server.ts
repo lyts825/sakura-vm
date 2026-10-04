@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as projectsServices } from './services.ts';
@@ -63,8 +64,7 @@ export async function route(
     if (!service) throw new AppError('目录迁移服务未初始化', 503);
     if (req.method === 'GET') return send(await service.view(id));
     if (req.method === 'POST') {
-      const input = z
-        .union([directoryMigrationPreviewSchema, directoryMigrationApplySchema])
+      const input = httpRouteRequests["projects.legacy.post.vms.vmId.project-directory-migration"]
         .parse(await body(req));
       return send(
         input.action === 'preview'
@@ -80,12 +80,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const input = z
-          .discriminatedUnion('action', [
-            z.object({ action: z.literal('create'), name: z.string(), config: z.unknown() }).strict(),
-            z.object({ action: z.literal('select'), projectId: z.string() }).strict(),
-            z.object({ action: z.literal('rename'), projectId: z.string(), name: z.string() }).strict(),
-          ])
+        const input = httpRouteRequests["projects.legacy.post.vms.vmId.projects"]
           .parse(await body(req));
         send(
           input.action === 'create'
@@ -113,15 +108,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const input = z
-          .object({
-            action: z.enum(['setup', 'start', 'stop', 'terminal']),
-            service: z
-              .string()
-              .regex(/^[a-z][a-z0-9-]{0,31}$/)
-              .optional(),
-          })
-          .strict()
+        const input = httpRouteRequests["projects.legacy.post.vms.vmId.project"]
           .parse(await body(req));
         send(await this.workspaces.run(id, input.action, input.service), 202);
         return true;

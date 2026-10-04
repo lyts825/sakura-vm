@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AppError } from '../shared/errors.ts';
 import { PLUGINS } from '../shared/plugins.ts';
-import { OperationGateway, validateOperationInput } from '../server/operation-gateway.ts';
+import { OperationGateway, validateOperationInput, operationPreflightFailure } from '../server/operation-gateway.ts';
 import { createOperationAuthority } from '../server/operation-authority.ts';
 import { operationEntries } from '../server/operation-catalog.ts';
 import { apiDocument } from '../server/openapi.ts';
@@ -24,6 +24,28 @@ const otherProject = '1234567890abcdef';
 const req = (method = 'GET', token = 'credential') => ({ method,
   headers: { 'x-sakura-token': token } }) as unknown as IncomingMessage;
 const url = (path: string) => new URL(path, 'http://localhost:7337');
+
+test('resolved admission and media rejections identify a handler that never executed, while business failures cannot inherit that marker', async () => {
+  const entry = operationEntries.find(item => item.declaration.id === 'core.access.password')!;
+  const original = new AppError('private credential details', 403, 'REVOKED');
+  let allowed = false, executions = 0;
+  const gateway = new OperationGateway({ enabled: () => [], bind: async () => ({ check: async () => {
+    if (!allowed) throw original; return 'owner';
+  } }) }, [entry]);
+  gateway.register(entry, () => { executions++; throw original; }); gateway.seal();
+  const request = req('POST'), response = {} as ServerResponse;
+  await assert.rejects(gateway.dispatch(request, response, url(entry.declaration.path)), error => error === original);
+  assert.equal(operationPreflightFailure(original), entry.declaration.id); assert.equal(executions, 0);
+  allowed = true;
+  await assert.rejects(gateway.dispatch(request, response, url(entry.declaration.path)), (error: any) => {
+    assert.equal(error.code, 'UNSUPPORTED_MEDIA_TYPE');
+    return operationPreflightFailure(error) === entry.declaration.id;
+  });
+  assert.equal(executions, 0);
+  request.headers['content-type'] = 'application/json';
+  await assert.rejects(gateway.dispatch(request, response, url(entry.declaration.path)), error => error === original);
+  assert.equal(executions, 1); assert.equal(operationPreflightFailure(original), undefined);
+});
 function fixture(role: Principal['role'] = 'owner') {
   let allowed = true, locked = false, projectAllowed = true, active = 'default', approved = false;
   let roleNow = role;
@@ -93,6 +115,22 @@ test('GET requires an explicit role and member projects must be named and curren
   const a = await f.gateway.prepare(req(), url(`/api/vms/${vmId}/project?project=default`));
   f.revokeProject();
   await assert.rejects(a.check(), { code: 'PROJECT_REVOKED' });
+});
+
+test('VM lifecycle queries accept the selected project hint without changing scope or role grants', async () => {
+  const f = fixture();
+  f.revokeProject();
+  const path = `/api/vms/${vmId}/files?path=%2Fworkspace&project=default`;
+  const admitted = await f.gateway.prepare(req(), url(path));
+  assert.equal(admitted.declaration.projectScoped, false);
+  assert.equal(admitted.declaration.projectBinding, 'none');
+  await admitted.check();
+  await f.gateway.prepare(req(), url(`/api/vms/${vmId}/files?path=&project=${otherProject}`));
+  for (const query of ['path=%2Fworkspace&project=arbitrary', 'path=%2Fworkspace&project=default&unknown=1'])
+    await assert.rejects(f.gateway.prepare(req(), url(`/api/vms/${vmId}/files?${query}`)), ZodError);
+  await assert.rejects(f.gateway.prepare(req(), url('/api/network-profiles?project=default')), ZodError);
+  f.role('member');
+  await assert.rejects(f.gateway.prepare(req(), url(path)), { status: 403 });
 });
 
 test('resource queues recheck captured credentials, return their slot, and preserve control cleanup', async () => {

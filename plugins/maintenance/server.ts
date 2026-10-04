@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as maintenanceServices } from './services.ts';
@@ -44,9 +45,7 @@ export async function route(
     if (req.method === 'GET') return send(await this.maintenance.diskView(id));
     if (req.method === 'PUT') return send(await this.maintenance.diskPolicy(id, await body(req)));
     if (req.method === 'POST') {
-      const input = z
-        .object({ mode: z.enum(['trim', 'compact']) })
-        .strict()
+      const input = httpRouteRequests["maintenance.legacy.post.vms.vmId.disk-maintenance"]
         .parse(await body(req));
       return send(this.maintenance.diskRun(id, input.mode), 202);
     }
@@ -65,9 +64,7 @@ export async function route(
   }
   if (parts.length === 4) {
     if (action === 'resize' && req.method === 'POST') {
-      const value = z
-        .object({ diskGiB: z.number().int().min(2).max(128).optional(), finish: z.boolean().optional() })
-        .strict()
+      const value = httpRouteRequests["maintenance.legacy.post.vms.vmId.resize"]
         .parse(await body(req));
       if (value.finish) send(this.maintenance.finishResize(id), 202);
       else if (value.diskGiB) send(this.maintenance.resize(id, value.diskGiB), 202);

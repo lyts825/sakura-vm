@@ -3,6 +3,8 @@ import type { HttpOperationHandler } from './operation-gateway.ts';
 /** The adapter explicitly registers implemented operation IDs. Keep additions beside their handlers. */
 export function coreHttpHandlers(api: HttpOperationHandler, guest: HttpOperationHandler, extension: HttpOperationHandler): Record<string, HttpOperationHandler> {
   return {
+    "core.operation-results.get": api,
+    "core.recoveries.rebuild": api,
     "core.recoveries.list": api,
     "core.recoveries.retry": api,
     "core.bootstrap": api,

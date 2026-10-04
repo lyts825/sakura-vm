@@ -123,7 +123,8 @@ test('system composition preserves brokered terminal preparation and its origina
   const provider = directory.begin('system', 'terminal-backend', '1', 'backend');
   const backend = new TerminalBackend(host(), provider, undefined, services.broker, services.caller);
   directory.publish(provider);
-  const terminals = services.construct('projectTerminals', () => backend.handle());
+  const terminals = await services.start({ id: 'projectTerminals', requires: [],
+    create: () => backend.handle(), initialize: () => {}, dispose: value => value?.close() });
   const prepareTask = terminals.preparation.prepareTask;
   assert.equal(typeof prepareTask, 'function');
   assert.equal(typeof terminals.preparation.workspaces.projects.with, 'function');

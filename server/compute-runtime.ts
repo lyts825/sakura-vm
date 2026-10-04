@@ -4,6 +4,7 @@ import { pluginAuthority, withPluginAuthority } from './plugin-authority.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import { withinDeadline } from './plugin-scope.ts';
 import { hostRuntime, type HostRuntime, type ResourceLease } from './host-runtime/index.ts';
+import { runtimeTimings } from './runtime-timings.ts';
 
 export type ComputeWork = { source: string | URL; options?: WorkerOptions };
 type ComputeOptions = { owner: string; label: string; memoryBytes: number; signal?: AbortSignal;
@@ -41,9 +42,9 @@ export class ComputeRuntime {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000)
       throw new AppError('计算执行期限无效', 400, 'RESOURCE_INVALID');
     const signal = options.signal ? AbortSignal.any([this.abort.signal, options.signal]) : this.abort.signal;
-    const lease = await this.registry.acquire({ owner: options.owner, kind: 'compute-worker', label: options.label,
+    const lease = await runtimeTimings.measure('compute', 'queue', () => this.registry.acquire({ owner: options.owner, kind: 'compute-worker', label: options.label,
       cost: { 'compute.worker': 1, 'compute.memory': options.memoryBytes }, signal,
-      partitions: options.partition ? [options.partition] : undefined });
+      partitions: options.partition ? [options.partition] : undefined }));
     let worker: Worker;
     try {
       // Reserve memory before loading/copying any input, including while queued.
@@ -51,6 +52,8 @@ export class ComputeRuntime {
       signal.throwIfAborted();
       worker = this.spawn(work.source, work.options);
     } catch (error) { lease.release(); throw error; }
+    const endExecution = runtimeTimings.start('compute', 'execution');
+    let endCleanup: (() => void) | undefined;
     const result = await new Promise<T>((resolve, reject) => {
       let complete = false, outcome: { result?: T; error?: unknown } | undefined;
       let ended!: () => void;
@@ -65,6 +68,7 @@ export class ComputeRuntime {
       };
       const stop = (next: NonNullable<typeof outcome>) => {
         if (outcome) return;
+        endExecution(); endCleanup = runtimeTimings.start('compute', 'cleanup');
         outcome = next; cleanListeners();
         // The exit event is the physical release receipt. A rejected terminate
         // keeps ownership registered and is retried by close(), never guessed.
@@ -84,6 +88,7 @@ export class ComputeRuntime {
       });
       worker.once('error', (error) => stop({ error }));
       worker.once('exit', () => {
+        endExecution(); endCleanup?.();
         cleanListeners(); lease.release(); this.retiring.delete(retiring); ended(); settle();
       });
       signal.addEventListener('abort', aborted, { once: true });

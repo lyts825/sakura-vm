@@ -49,15 +49,19 @@ class Capabilities(unittest.TestCase):
                     with connection:
                         connection.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n')
 
+            # Keep real hostname resolution coverage separate from this IPv4-only
+            # listener: a rejected ::1 attempt can consume the probe deadline on Windows.
+            dns = self.execute('network-diagnostics', target='localhost', port=port,
+                               probes=['dns'], timeout=3)
             worker = threading.Thread(target=refuse_tls, daemon=True)
             worker.start()
-            result = self.execute('network-diagnostics', target='localhost', port=port,
-                                  probes=['dns', 'tcp', 'https'], timeout=3)
+            result = self.execute('network-diagnostics', target='127.0.0.1', port=port,
+                                  probes=['tcp', 'https'], timeout=3)
             worker.join(6)
             self.assertFalse(worker.is_alive())
-            self.assertEqual([row['code'] for row in result['results']], [0, 0, 1], result)
+            self.assertEqual([row['code'] for row in dns['results'] + result['results']], [0, 0, 1], (dns, result))
             self.assertEqual(result['code'], 1)
-            self.assertIn('127.0.0.1', result['results'][0]['addresses'])
+            self.assertIn('127.0.0.1', dns['results'][0]['addresses'])
             self.assertNotIn('HTTP/1.1', json.dumps(result))
         closed = self.execute('network-diagnostics', target='127.0.0.1', port=port, probes=['tcp'], timeout=2)
         self.assertEqual(closed['code'], 1)

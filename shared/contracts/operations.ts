@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { socketContractSchema } from './websocket.ts';
 
 /** Security and transport semantics are required input, never inferred from a URL or verb. */
 export const operationPolicySchema = z.object({
@@ -21,6 +22,8 @@ export type OperationPolicy = z.infer<typeof operationPolicySchema>;
 export const operationDeclarationSchema = operationPolicySchema.extend({
   id: z.string(), owner: z.string(), method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'UPGRADE']),
   path: z.string(), contract: z.enum(['declared', 'partial']), enabled: z.boolean(),
+  request: z.object({ kind: z.enum(['none', 'json', 'form', 'binary']), required: z.boolean(), media: z.string().optional() }).strict().optional(),
+  socketContract: socketContractSchema.optional(),
 }).strict();
 export type OperationDeclaration = z.infer<typeof operationDeclarationSchema>;
 export type OperationRole = OperationDeclaration['roles'][number];
@@ -35,7 +38,7 @@ const resource = z.object({ id: z.string(), owner: z.string(), kind: z.string(),
   lane: z.enum(['interactive', 'background', 'control']), state: z.enum(['queued', 'active', 'cleanup-pending', 'released', 'rejected']),
   identity, cost: z.record(z.string(), z.number()), createdAt: z.string(), admittedAt: z.string().optional(),
   finishedAt: z.string().optional(), previousOwner: z.string().optional(), error: z.string().optional(),
-  timings: z.object({ queueMs: z.number(), executionMs: z.number(), cleanupMs: z.number() }).strict().optional() }).strict();
+  timings: z.object({ queueMs: z.number(), executionMs: z.number(), cleanupMs: z.number(), lifetimeMs: z.number().optional() }).strict().optional() }).strict();
 export const scheduleDiagnosticSchema = z.object({ id: z.string(), owner: z.string(), label: z.string(), intervalMs: z.number(),
   overlap: z.enum(['skip', 'coalesce']), catchUp: z.enum(['skip', 'once']),
   state: z.enum(['scheduled', 'queued', 'running', 'cancelling', 'backoff', 'cleanup-pending', 'closed']),
@@ -45,6 +48,11 @@ export const scheduleDiagnosticSchema = z.object({ id: z.string(), owner: z.stri
 }).strict();
 export const hostRuntimeDiagnosticSchema = z.object({ state: z.enum(['accepting', 'draining', 'closed']),
   diagnostics: z.object({ measuredForMs: z.number(), state: z.enum(['closed', 'measuring']),
+    phaseTimings: z.object({ windowMs: z.number(), maxSamplesPerSeries: z.number(),
+      series: z.array(z.object({ source: z.enum(['http', 'job', 'compute', 'resource']),
+        phase: z.enum(['queue', 'execution', 'cleanup', 'response', 'audit', 'resource-lifetime']),
+        samples: z.number(), totalMs: z.number(), maxMs: z.number(), p95Ms: z.number(), p99Ms: z.number() }).strict()),
+    }).strict().optional(),
     eventLoop: z.object({ samples: z.number(), meanMs: z.number(), p99Ms: z.number(), maxMs: z.number(), utilization: z.number() }).strict() }).strict().optional(),
   budgets: z.array(z.object({ key: z.string(), capacity: z.number(), reserved: z.number(), used: z.number() }).strict()),
   resources: z.array(resource), recent: z.array(resource), queued: z.number(),

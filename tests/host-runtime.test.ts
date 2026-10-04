@@ -1,4 +1,22 @@
 import assert from 'node:assert/strict';
+import { RuntimeTimings } from '../server/runtime-timings.ts';
+
+test('phase quantiles use a bounded rolling window and separate resource lifetime from task execution', async () => {
+  let clock = 0;
+  const timings = new RuntimeTimings(() => clock);
+  for (let index = 1; index <= 1200; index++) timings.observe('job', 'execution', index);
+  timings.observe('resource', 'resource-lifetime', 90_000);
+  const view = timings.snapshot();
+  assert.equal(view.series[0].samples, 1024);
+  assert.equal(view.series[0].p95Ms, 1149);
+  assert.equal(view.series[0].p99Ms, 1190);
+  assert.equal(view.series[1].p99Ms, 90_000);
+  const finish = timings.start('compute', 'cleanup'); clock = 10; finish(); finish();
+  assert.equal(timings.snapshot().series.find(entry => entry.source === 'compute')!.samples, 1);
+  const primary = new Error('primary');
+  await assert.rejects(timings.measure('http', 'execution', () => { throw primary; }), error => error === primary);
+  clock = 60_011; assert.deepEqual(timings.snapshot().series, []);
+});
 import test from 'node:test';
 import { HostRuntime, withResourceContext, resourceContext, captureResourceContext } from '../server/host-runtime/index.ts';
 import { ResourceScope } from '../server/resource-scope.ts';

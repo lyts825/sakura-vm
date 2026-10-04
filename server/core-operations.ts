@@ -4,7 +4,7 @@ import { recoveryViewSchema } from '../shared/contracts/controller-api.ts';
 import { coreResponseContracts } from '../shared/contracts/core-responses.ts';
 import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
 export { coreResponseContracts, coreResponseSchemas, coreResponseSchema } from '../shared/contracts/core-responses.ts';
-import { recoveryRequest } from '../shared/contracts/recovery.ts';
+import { recoveryRequest, recoveryRebuildRequest, recoveryListSchema } from '../shared/contracts/recovery.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { logRetentionRequest } from './log-retention.ts';
 import { remoteAuditAction } from './remote-audit.ts';
@@ -78,8 +78,17 @@ export const coreOperations: {
   policy: OperationPolicy;
   projectScoped?: boolean;
 }[] = [
+  { id: 'operation-results.get', method: 'GET', path: '/api/operation-results/{correlationId}', title: '查询当前账户操作的持久结果回执',
+    policy: { access: 'controller', roles: ['owner', 'member', 'viewer'], projectScoped: false, identity: 'host', maintenance: 'allow',
+      transport: 'json', mutating: false, session: 'required', vmLock: 'allow-locked', projectBinding: 'none',
+      approval: 'none', extensionAuth: 'none' } },
+  { id: 'recoveries.rebuild', method: 'POST', path: '/api/recoveries/rebuild', title: '按当前目录摘要隔离原目录并从领域权威重建恢复索引',
+    body: request(recoveryRebuildRequest),
+    policy: { access: 'controller', roles: ['owner'], projectScoped: false, identity: 'host', maintenance: 'allow',
+      transport: 'json', mutating: true, session: 'required', vmLock: 'allow-locked', projectBinding: 'none',
+      approval: 'none', extensionAuth: 'none' } },
   { id: 'recoveries.list', method: 'GET', path: '/api/recoveries', title: '按原领域票据列出资源恢复记录', inspect: true,
-    response: z.toJSONSchema(z.object({ version: z.literal(1), records: z.array(recoveryViewSchema) }).strict()),
+    response: z.toJSONSchema(recoveryListSchema),
     policy: { access: 'controller', roles: ['owner'], projectScoped: false, identity: 'host', maintenance: 'allow',
       transport: 'json', mutating: false, session: 'required', vmLock: 'allow-locked', projectBinding: 'none',
       approval: 'none', extensionAuth: 'none' } },

@@ -49,3 +49,6 @@ id_ed25519
 /tests/startup-review.local.test.ts
 /tests/recovery-panel.local.*
 /tests/fence-recovery-sources.local.test.ts
+
+# Local fault-injection verification for the 2.2.0 iteration
+/tests/live-migration-recovery.local.test.ts

@@ -2,7 +2,7 @@ import type { OperationDeclaration } from './contracts/operations.ts';
 
 export type ApiParameter = {
   name: string;
-  in: 'path' | 'query';
+  in: 'path' | 'query' | 'header';
   required: boolean;
   schema: Record<string, unknown>;
   description?: string;
@@ -23,6 +23,7 @@ export type ApiOperation = {
   'x-sakura-inspectable': boolean;
   'x-sakura-contract': 'declared' | 'partial';
   'x-sakura-operation'?: OperationDeclaration;
+  'x-sakura-response'?: { kind: 'json' | 'text' | 'binary' | 'event-stream' | 'empty' };
 };
 export type ApiDocument = {
   openapi: string;
@@ -44,7 +45,7 @@ export type ApiDocument = {
 export function apiPath(
   template: string,
   path: Record<string, string> = {},
-  query: Record<string, string> = {},
+  query: Record<string, string | undefined> = {},
 ) {
   if (!template.startsWith('/api/') || template.includes('?') || template.includes('#'))
     throw new Error('无效 API 路径');
@@ -55,6 +56,6 @@ export function apiPath(
     return encodeURIComponent(value);
   });
   const url = new URL(filled, 'http://localhost');
-  for (const [key, value] of Object.entries(query)) if (value !== '') url.searchParams.set(key, value);
+  for (const [key, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(key, value);
   return url.pathname + url.search;
 }

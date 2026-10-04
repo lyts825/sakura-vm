@@ -5,6 +5,7 @@ export default defineConfig(({ isSsrBuild }) => ({
   plugins: [react()],
   build: {
     outDir: 'dist',
+    manifest: !isSsrBuild,
     chunkSizeWarningLimit: 650,
     rollupOptions: {
       input: { main: resolve('index.html'), singleApp: resolve('single-app.html') },

@@ -5,9 +5,96 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
+import { RecoveryCatalog, RECOVERY_LIMITS, type RecoveryCandidate } from '../server/recovery-catalog.ts';
+import { HostRuntime } from '../server/host-runtime/governor.ts';
 import { MetadataStore, metadataKey } from '../server/metadata-store.ts';
 import { readCommittedStore, readStore, writeStore } from '../server/local-store.ts';
 import { metadataQueueLimits, metadataQueueSnapshot, serializedMetadata } from '../server/metadata-queue.ts';
+
+test('damaged recovery index starts read-only and explicit rebuild preserves original bytes and domain authority', async (t) => {
+  const { root, file } = await fixture(t);
+  await writeFile(file, '{corrupt recovery index');
+  let recoveries = 0, confirmations = 0;
+  const runtime = new HostRuntime({ budgets: { execution: { capacity: 1 } } });
+  const lease = await runtime.acquire({ owner: 'source', kind: 'migration', label: 'original-transfer', cost: { execution: 1 } });
+  lease.cleanupPending(new Error('original process exit unconfirmed'));
+  t.after(() => { lease.release(); runtime.close(); });
+  const catalog = new RecoveryCatalog(file, () => runtime.snapshot().resources);
+  const candidate: RecoveryCandidate = { binding: { domain: 'migration', ticketId: 'original-transfer', owner: 'source' },
+    resourceIds: [lease.id], actions: [{ id: 'verify', title: 'verify original transfer' }] };
+  catalog.register({ id: 'migration', discover: () => [candidate], recover: async () => { recoveries++; },
+    confirmed: () => { confirmations++; return true; } });
+  await catalog.init();
+  assert.equal(catalog.diagnostics().state, 'degraded');
+  assert.equal(catalog.view()[0].available, false);
+  const record = catalog.view()[0];
+  await assert.rejects(catalog.retry({ id: record.id, digest: record.digest, action: 'verify' }), { code: 'RECOVERY_DEGRADED' });
+  await assert.rejects(catalog.rebuild({ revision: '0'.repeat(64) }), { code: 'RECOVERY_STALE' });
+  const rebuilt = await catalog.rebuild({ revision: catalog.diagnostics().revision });
+  assert.equal(await readFile(join(root, rebuilt.diagnostics!.quarantineFile!), 'utf8'), '{corrupt recovery index');
+  assert.equal(rebuilt.records[0].state, 'pending');
+  assert.equal(recoveries, 0); assert.equal(confirmations, 0);
+  assert.equal(runtime.snapshot().budgets[0].used, 1);
+  const reloaded = new RecoveryCatalog(file, () => runtime.snapshot().resources);
+  await reloaded.init();
+  assert.equal(reloaded.diagnostics().state, 'healthy');
+  assert.equal(reloaded.view()[0].state, 'pending');
+  await catalog.close(); await reloaded.close();
+});
+
+test('recovery read and write byte limits agree; capacity never replaces the last readable index', async (t) => {
+  const { file } = await fixture(t);
+  const catalog = new RecoveryCatalog(file, () => []);
+  let many = false;
+  const ticket = (index: number): RecoveryCandidate => ({ binding: { domain: 'capacity', ticketId: String(index), owner: 'test' },
+    resourceIds: Array.from({ length: 32 }, (_, resource) => `${resource}-${'界'.repeat(60)}`), actions: [] });
+  catalog.register({ id: 'capacity', discover: () => many ? Array.from({ length: 4096 }, (_, index) => ticket(index)) : [ticket(0)] });
+  await catalog.init();
+  const original = await readFile(file);
+  many = true; await catalog.refresh();
+  assert.equal(catalog.diagnostics().code, 'RECOVERY_CAPACITY');
+  assert.deepEqual(await readFile(file), original);
+  assert.ok(original.byteLength <= RECOVERY_LIMITS.maxBytes);
+  const reloaded = new RecoveryCatalog(file, () => []);
+  await reloaded.init(); assert.equal(reloaded.diagnostics().state, 'healthy');
+  assert.equal(reloaded.view().length, 1);
+  many = false; await catalog.close(); await reloaded.close();
+});
+
+test('recovery prunes only completed history, refuses incomplete discovery, and retains an unwritable path', async (t) => {
+  const { root, file } = await fixture(t);
+  const checksum = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const records = Array.from({ length: 300 }, (_, index) => {
+    const binding = { domain: 'retention', ticketId: String(index), owner: 'test' };
+    return { id: checksum(binding), binding, resourceIds: [], state: index === 0 ? 'pending' : 'resolved',
+      firstSeenAt: new Date(0).toISOString(), updatedAt: new Date(index).toISOString(), attempts: 0 };
+  });
+  await writeStore(file, { version: 1, records, digest: checksum(records) });
+  const catalog = new RecoveryCatalog(file, () => []);
+  await catalog.init();
+  assert.equal(catalog.view().filter(record => record.state === 'resolved').length, RECOVERY_LIMITS.resolvedRetention);
+  assert.equal(catalog.view().filter(record => record.state === 'pending').length, 1);
+  const before = await readFile(file);
+  let unavailable = true;
+  catalog.register({ id: 'unavailable', discover: () => { if (unavailable) throw new Error('source unavailable'); return []; } });
+  await catalog.refresh(); assert.equal(catalog.diagnostics().state, 'degraded');
+  await assert.rejects(catalog.rebuild({ revision: catalog.diagnostics().revision }), { code: 'RECOVERY_SOURCE_UNAVAILABLE' });
+  assert.deepEqual(await readFile(file), before);
+  unavailable = false; await catalog.close();
+  const blocked = join(root, 'not-a-file'); await mkdir(blocked);
+  const invalid = new RecoveryCatalog(blocked, () => []); await invalid.init();
+  assert.equal(invalid.diagnostics().state, 'degraded');
+  await assert.rejects(invalid.rebuild({ revision: invalid.diagnostics().revision }), { code: 'RECOVERY_CORRUPT' });
+  assert.deepEqual(await readdir(blocked), []); await invalid.close();
+  const blockedParent = join(root, 'parent-is-a-file'); await writeFile(blockedParent, 'keep this file');
+  const unwritable = new RecoveryCatalog(join(blockedParent, 'recovery.json'), () => []);
+  await unwritable.init();
+  assert.equal(unwritable.diagnostics().state, 'degraded');
+  await assert.rejects(unwritable.rebuild({ revision: unwritable.diagnostics().revision }));
+  assert.equal(await readFile(blockedParent, 'utf8'), 'keep this file');
+  await unwritable.close();
+});
 
 test('legacy writers and readers share the transaction queue; committed reads never wait for it', async (t) => {
   const { root, file, store } = await fixture(t);

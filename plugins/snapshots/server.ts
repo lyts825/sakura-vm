@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as snapshotsServices } from './services.ts';
@@ -160,10 +161,7 @@ export async function route(
     action = parts[3];
   this.vm.get(id);
   if (req.method === 'POST' && parts[3] === 'snapshots' && parts.length === 4) {
-    const { name, online, memory } = z
-      .object({ name: z.string().trim().min(1).max(60), online: z.boolean().optional(),
-        memory: z.boolean().optional() })
-      .strict()
+    const { name, online, memory } = httpRouteRequests["snapshots.legacy.post.vms.vmId.snapshots"]
       .parse(await body(req));
     if (memory && !online) throw new AppError('整机状态快照要求运行中的实例', 409);
     return send(await (memory ? this.vm.memorySnapshot(id, name)
@@ -177,9 +175,7 @@ export async function route(
     parts[5] === 'restore'
   ) {
     const input = req.headers['content-type']?.startsWith('application/json')
-      ? z
-          .object({ backup: z.boolean().default(true), memory: z.boolean().optional() })
-          .strict()
+      ? httpRouteRequests["snapshots.legacy.post.vms.vmId.snapshots.snapshotId.restore"]
           .parse(await body(req))
       : { backup: false };
     return send(await (input.memory ? this.vm.restoreMemory(id, parts[4], input.backup)
@@ -195,9 +191,7 @@ export async function route(
         await this.vm.editSnapshot(
           id,
           parts[4],
-          z
-            .object({ name: z.string().trim().min(1).max(60), note: z.string().max(1000).default('') })
-            .strict()
+          httpRouteRequests["snapshots.legacy.patch.vms.vmId.snapshots.snapshotId"]
             .parse(await body(req)),
         ),
       );
@@ -212,9 +206,7 @@ export async function route(
   }
   if (parts.length === 4) {
     if (action === 'clone' && req.method === 'POST') {
-      const { name, snapshot } = z
-        .object({ name: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/), snapshot: z.string().uuid().optional() })
-        .strict()
+      const { name, snapshot } = httpRouteRequests["snapshots.legacy.post.vms.vmId.clone"]
         .parse(await body(req));
       send(await this.bundles.clone(id, name, snapshot, signal), 201);
       return true;

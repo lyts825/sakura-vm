@@ -115,6 +115,7 @@ export class PeerMigrationSessions {
       targetDiskNode?: string;
       targetVmId?: string;
       transferId?: string;
+      sessionId?: string;
     },
   ) {
     if (this.closed || this.ports.unavailable()) throw new AppError('服务不可用', 503);
@@ -134,7 +135,8 @@ export class PeerMigrationSessions {
       throw new AppError('目标实例与迁移标识必须一起登记');
     if (ports.targetVmId) z.uuid().parse(ports.targetVmId);
     if (ports.transferId) z.uuid().parse(ports.transferId);
-    const id = randomUUID();
+    const id = ports.sessionId ? z.uuid().parse(ports.sessionId) as ReturnType<typeof randomUUID> : randomUUID();
+    if (this.migrationSessions.has(id)) throw new AppError('原迁移会话仍然存在，不能覆盖', 409);
     this.migrationSessions.set(id, {
       requesterId,
       ports: { ...ports },

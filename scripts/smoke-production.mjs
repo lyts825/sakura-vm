@@ -15,6 +15,8 @@ async function probe(selected, expected) {
   const data = await mkdtemp(join(tmpdir(), 'sakura-production-'));
   if (!resolve(data).startsWith(resolve(tmpdir()) + sep)) throw new Error('临时数据目录越界');
   await mkdir(join(data, 'jobs'));
+  const damagedRecovery = '{incomplete recovery publication';
+  await writeFile(join(data, 'recovery-directory.json'), damagedRecovery);
   const logRecord = {
     id: randomUUID(),
     key: 'retention-smoke',
@@ -88,6 +90,17 @@ async function probe(selected, expected) {
     );
     const sdk = new SakuraClient();
     assert.deepEqual(await sdk.call('core.vms.list'), []);
+    const recovery = await sdk.request('/api/recoveries');
+    assert.equal(recovery.diagnostics.state, 'degraded');
+    assert.equal(await readFile(join(data, 'recovery-directory.json'), 'utf8'), damagedRecovery);
+    await assert.rejects(sdk.request('/api/recoveries/rebuild', {
+      method: 'POST', body: { revision: '0'.repeat(64) },
+    }), error => error.status === 409 && error.code === 'RECOVERY_STALE');
+    const rebuilt = await sdk.request('/api/recoveries/rebuild', {
+      method: 'POST', body: { revision: recovery.diagnostics.revision },
+    });
+    assert.equal(rebuilt.diagnostics.state, 'healthy');
+    assert.equal(await readFile(join(data, rebuilt.diagnostics.quarantineFile), 'utf8'), damagedRecovery);
     if (expected.includes('network')) {
       const downloads = {
         npm: { kind: 'bearer', endpoint: 'https://packages.example.com/npm/', tokenSecret: 'npm-read' },
@@ -617,10 +630,22 @@ async function probe(selected, expected) {
     assert.equal(native.settings.contextMenu, false);
     assert.deepEqual(native.settings.associations, []);
     assert.deepEqual(native.mappings, []);
+    let nativeFailure;
     await assert.rejects(
       sdk.call('core.native.action', { body: { action: 'receive', path: root } }),
-      /未启用|仅支持 Windows/,
+      (error) => {
+        nativeFailure = error;
+        return error.status === (process.platform === 'win32' ? 403 : 409) &&
+          error.code === (process.platform === 'win32' ? 'FORBIDDEN' : 'CONFLICT') &&
+          /^[a-f0-9-]{36}$/.test(error.correlationId) && error.operationResult?.executed === true;
+      },
     );
+    assert.ok(!nativeFailure.message.includes(root));
+    const nativeResult = await sdk.request(nativeFailure.operationResult.query);
+    assert.equal(nativeResult.correlationId, nativeFailure.correlationId);
+    assert.equal(nativeResult.executed, true);
+    assert.equal(nativeResult.outcome, 'unknown');
+    assert.equal(nativeResult.errorCode, nativeFailure.code);
     if (!expected.length) {
       const deliveries = [];
       const receiver = createHttpServer(async (req, res) => {

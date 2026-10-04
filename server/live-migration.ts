@@ -6,6 +6,7 @@ import { readLiveMigrationProjects } from './live-migration-projects.ts';
 
 export const liveMigrationInput = z.object({
   targetHostId: z.uuid().optional(),
+  transferId: z.uuid().optional(),
   targetName: z.string().trim().min(1).max(32)
     .regex(/^[a-z][a-z0-9-]*$/).optional(),
 }).strict();

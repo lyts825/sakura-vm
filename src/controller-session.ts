@@ -3,6 +3,11 @@ import type { AccessPrincipal } from '../shared/access-control';
 import { resourceCache } from './resource-cache';
 import { pluginGeneration } from './plugin-generation';
 import { createOperationClient, type OperationTransport } from '../shared/api-client';
+import { apiResponseError, SakuraApiError } from '../shared/errors';
+import { encodeOperationBody } from '../shared/http-transport';
+
+const graphqlQueryErrors = new Set(['GRAPHQL_PARSE_FAILED', 'GRAPHQL_VALIDATION_FAILED',
+  'BAD_USER_INPUT', 'INVALID_QUERY', 'QUERY_LIMIT', 'READ_ONLY', 'CANCELLED']);
 
 /** Cancel this wait, while the shared bootstrap remains available to other request owners. */
 function waitForCredential(pending: Promise<string>, signal?: AbortSignal): Promise<string> {
@@ -113,7 +118,7 @@ export class ControllerSession {
       if (generation !== this.generation) throw new Error('会话状态已变化，请重新操作');
       if (response.status === 423)
         this.updateSession(data.session || { ...this.session, enabled: true, locked: true });
-      if (!response.ok) throw new Error(data.error || '无法连接 Sakura 服务');
+      if (!response.ok) throw apiResponseError(response.status, data);
       if (data.session) this.updateSession(data.session);
       if (this.session.locked) throw new Error('控制面已锁定，请先解锁');
       if (typeof data.token !== 'string' || !data.token) throw new Error('服务返回了无效的访问凭证');
@@ -144,6 +149,7 @@ export class ControllerSession {
     signal?: AbortSignal,
     options?: Parameters<OperationTransport>[1],
   ): Promise<unknown> => {
+    const encoded = encodeOperationBody(options?.bodyKind || (body === undefined ? 'none' : 'json'), body, options?.headers);
     const pluginSignal = pluginGeneration.capture(path, method);
     if (pluginSignal) signal = signal ? AbortSignal.any([signal, pluginSignal]) : pluginSignal;
     signal?.throwIfAborted();
@@ -157,38 +163,23 @@ export class ControllerSession {
       const requestSignal = authenticated
         ? signal ? AbortSignal.any([signal, this.credentialAbort.signal]) : this.credentialAbort.signal
         : signal;
-      const payload = body !== undefined && options?.transport === 'form' &&
-        typeof body === 'object' && body !== null && !(body instanceof URLSearchParams)
-        ? new URLSearchParams(Object.entries(body).map(([key, value]) => {
-          if (typeof value !== 'string') throw new Error('表单字段必须是字符串');
-          return [key, value];
-        })) : body;
+      const headers = { ...encoded.headers };
+      if (authenticated) {
+        for (const key of Object.keys(headers)) if (key.toLowerCase() === 'x-sakura-token') delete headers[key];
+        headers['X-Sakura-Token'] = credential;
+      }
       const response = await this.fetcher(`/api${path}`, {
         method,
         signal: requestSignal,
-        headers: {
-          ...options?.headers,
-          ...(authenticated ? { 'X-Sakura-Token': credential } : {}),
-          ...(body !== undefined && (!options || options.transport === 'json') ? { 'Content-Type': 'application/json' } : {}),
-        },
-        body: payload === undefined ? undefined : !options || options.transport === 'json'
-          ? JSON.stringify(payload) : payload as BodyInit,
+        headers,
+        body: encoded.body,
       });
-      if (authenticated && generation !== this.generation) {
+      if (response.ok && authenticated && generation !== this.generation) {
         await response.body?.cancel();
         throw new Error('会话状态已变化，请重新操作');
       }
-      // The host rejects 401 before executing the operation. Never replay a
-      // mutation after a network error or an ambiguous server response.
-      if (authenticated && response.status === 401 && attempt === 0) {
-        await response.body?.cancel();
-        if (this.accountMode) {
-          this.clearCredential();
-          throw new Error('账户会话已过期，请重新登录');
-        }
-        await waitForCredential(this.authenticate(credential), signal);
-        continue;
-      }
+      // Failed writes and ambiguous replies are never replayed. A read may refresh
+      // once only when the host explicitly confirms rejection before execution.
       if (response.ok && options && options.response !== 'json') {
         signal?.throwIfAborted();
         if (method !== 'GET' && method !== 'HEAD') resourceCache.mutation(path);
@@ -201,23 +192,38 @@ export class ControllerSession {
         }
         return response;
       }
-      const data = await response.json();
-      signal?.throwIfAborted();
-      if (authenticated && generation !== this.generation) throw new Error('会话状态已变化，请重新操作');
-      if (authenticated && response.status === 423)
+      let data: any;
+      try { data = await response.json(); }
+      catch (error) { if (response.ok) throw error; throw apiResponseError(response.status, undefined); }
+      if (response.ok) signal?.throwIfAborted();
+      if (response.ok && authenticated && generation !== this.generation) throw new Error('会话状态已变化，请重新操作');
+      if (authenticated && generation === this.generation && response.status === 423)
         this.updateSession(data.session || { ...this.session, enabled: true, locked: true });
-      if (!response.ok)
-        throw new Error(
-          data.error ||
-            (path === '/graphql' && Array.isArray(data.errors)
-              ? data.errors
-                  .slice(0, 10)
-                  .map((item: { message?: string }) => item.message)
-                  .filter(Boolean)
-                  .join('；')
-              : '') ||
-            `请求失败（${response.status}）`,
-        );
+      if (!response.ok) {
+        if (authenticated && !this.accountMode && generation === this.generation && attempt === 0 &&
+          method === 'GET' && body === undefined && response.status === 401 && data?.code === 'UNAUTHORIZED' &&
+          data.operationResult?.outcome === 'failed' && data.operationResult.executed === false &&
+          typeof data.correlationId === 'string' && data.operationResult.correlationId === data.correlationId) {
+          // Keep the captured rejected token: parallel reads share the refresh,
+          // and a late old reply cannot clear a newer credential or its requests.
+          await waitForCredential(this.authenticate(credential), signal);
+          continue;
+        }
+        if (authenticated && generation === this.generation && response.status === 401 && this.token === credential)
+          this.clearCredential();
+        // Only explicitly classified query errors belong in the GraphQL workbench.
+        // Unmarked exceptions and the shared HTTP error envelope retain their safe decoder.
+        const errors: unknown = data?.errors;
+        if (path === '/graphql' && method === 'POST' && response.status === 400 &&
+          response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'application/graphql-response+json' &&
+          Array.isArray(errors) && errors.length > 0 && errors.length <= 10 && errors.every(error =>
+            error && typeof error.message === 'string' && error.message.length > 0 && error.message.length <= 32768 &&
+            typeof error.extensions?.code === 'string' && graphqlQueryErrors.has(error.extensions.code))) {
+          throw new SakuraApiError(errors.map(error => error.message.slice(0, 2000)).join('\n'), 400,
+            errors[0].extensions.code, response.headers.get('x-sakura-correlation-id') || undefined);
+        }
+        throw apiResponseError(response.status, data);
+      }
       if (method !== 'GET' && method !== 'HEAD') resourceCache.mutation(path);
       return data;
     }

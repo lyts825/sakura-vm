@@ -14,6 +14,7 @@ import type { Machines } from './machines.ts';
 import { OperationTracker, requestScope } from './operation-scope.ts';
 import { currentOperation } from './operation-gateway.ts';
 import { sendJson } from './http-response.ts';
+import { noteOperationBusinessResult } from './operation-results.ts';
 import { withResourceContext } from './host-runtime/index.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 import { TerminalBackend, type TerminalService } from './terminal-backend.ts';
@@ -541,6 +542,7 @@ export class PluginRuntime {
                   input,
                   abort.signal,
                 );
+                noteOperationBusinessResult(declaredOperation.status || 200);
                 abort.signal.throwIfAborted();
                 const parsed = operation.response.safeParse(output);
                 if (!parsed.success)

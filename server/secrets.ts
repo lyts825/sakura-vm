@@ -40,6 +40,12 @@ export const dpapi: Protector = async (operation, value) => {
     throw new AppError('无法解密或保护配置，请使用创建它的 Windows 账户');
   }
 };
+export const secretRotationRequest = z.object({ name: secretName, policy: rotationPolicySchema }).strict();
+
+export const secretSaveRequest = z
+      .object({ name: secretName, value: z.string().min(1).max(8192) })
+      .strict();
+
 export class Secrets {
   constructor(
     private machines: Machines,
@@ -62,7 +68,7 @@ export class Secrets {
     );
   }
   async setRotation(id: string, input: unknown) {
-    const value = z.object({ name: secretName, policy: rotationPolicySchema }).strict().parse(input);
+    const value = secretRotationRequest.parse(input);
     return this.machines.locked(`secrets:${id}`, async () => {
       const records = await this.records(id),
         item = records.find((record) => record.name === value.name);
@@ -73,9 +79,7 @@ export class Secrets {
     });
   }
   async save(id: string, input: unknown) {
-    const value = z
-      .object({ name: secretName, value: z.string().min(1).max(8192) })
-      .strict()
+    const value = secretSaveRequest
       .parse(input);
     return this.machines.locked(`secrets:${id}`, async () => {
       const records = await this.records(id);

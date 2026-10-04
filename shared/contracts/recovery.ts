@@ -45,9 +45,24 @@ export const recoveryViewSchema = recoveryRecord.extend({
   digest: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export type RecoveryView = z.infer<typeof recoveryViewSchema>;
+export const recoveryDiagnosticsSchema = z.object({
+  state: z.enum(['healthy', 'degraded']),
+  code: z.string().optional(),
+  message: z.string().optional(),
+  revision: z.string().regex(/^[a-f0-9]{64}$/),
+  maxBytes: z.number().int().positive(),
+  maxRecords: z.number().int().positive(),
+  resolvedRetention: z.number().int().nonnegative(),
+  recordCount: z.number().int().nonnegative(),
+  sourceFailures: z.array(token),
+  quarantineFile: token.optional(),
+}).strict();
+export type RecoveryDiagnostics = z.infer<typeof recoveryDiagnosticsSchema>;
 export const recoveryListSchema = z
-  .object({ version: z.literal(1), records: z.array(recoveryViewSchema) })
+  .object({ version: z.literal(1), records: z.array(recoveryViewSchema), diagnostics: recoveryDiagnosticsSchema.optional() })
   .strict();
+export type RecoveryCatalogView = z.infer<typeof recoveryListSchema>;
+export const recoveryRebuildRequest = z.object({ revision: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 export const recoveryRequest = z
   .object({
     id: z.string().regex(/^[a-f0-9]{64}$/),

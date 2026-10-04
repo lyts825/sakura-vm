@@ -80,7 +80,7 @@ export function liveMigrationRecoverySource(ports: MigrationRecoveryPorts): Reco
       return [{
         binding: migrationBinding(vm.id, fence),
         ticketRevision: migrationDigest(fence), resourceIds: migrationResources(vm.id, fence),
-        error: verifiable ? '来源原进程退出已确认，目标原会话的完成状态待核验；来源栅栏继续保留。' :
+        error: verifiable ? '可安全终止原来源进程并核验原会话；来源栅栏继续保留。' :
           '迁移完成状态待核验；原会话或来源原进程退出证明不足，无法判断成功或失败。来源栅栏继续保留。',
         actions: verifiable && ports.peers() ? [{ id: 'verify-completion', title: '核验原迁移完成状态' }] : [],
       }];

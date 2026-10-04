@@ -587,7 +587,7 @@ test('network plugin exposes typed ingress operations and rejects unknown instan
   const invoke = async (method: string, input?: unknown, path = '/api/ingress') => {
     let status = 0,
       result: any;
-    const req = Object.assign(new EventEmitter(), { method, headers: {} }) as IncomingMessage;
+    const req = Object.assign(new EventEmitter(), { method, headers: input === undefined ? {} : { 'content-type': 'application/json' } }) as IncomingMessage;
     const res = Object.assign(new EventEmitter(), {
       writableFinished: false,
       writeHead(code: number) {

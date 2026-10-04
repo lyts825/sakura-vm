@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as terminalWorkspaceServices } from './services.ts';
@@ -28,10 +29,7 @@ export async function route(
   this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'terminal-session' && req.method === 'POST') {
-      const input = z.union([
-        z.object({ session: z.string().regex(/^[a-z0-9-]{1,48}$/) }).strict(),
-        z.object({ action: z.literal('stop-all') }).strict(),
-      ])
+      const input = httpRouteRequests["terminal-workspace.legacy.post.vms.vmId.terminal-session"]
         .parse(await body(req));
       const projects = this.workspaces?.projects || new ProjectCatalog(this.vm);
       const projectId = await projects.with(id, url.searchParams.get('project'),

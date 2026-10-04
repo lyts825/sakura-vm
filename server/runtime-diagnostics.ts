@@ -1,4 +1,5 @@
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
+import { runtimeTimings } from './runtime-timings.ts';
 
 /** One bounded histogram per controller. Identities belong in records, never metric labels. */
 export class RuntimeDiagnostics {
@@ -14,6 +15,7 @@ export class RuntimeDiagnostics {
     return {
       measuredForMs: Math.max(0, performance.now() - this.started),
       state: this.closed ? 'closed' : 'measuring',
+      phaseTimings: runtimeTimings.snapshot(),
       eventLoop: {
         samples: count,
         meanMs: count ? this.histogram.mean / 1e6 : 0,

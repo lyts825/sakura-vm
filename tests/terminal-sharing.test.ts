@@ -6,6 +6,40 @@ import { join } from 'node:path';
 import { TerminalSharing } from '../server/terminal-sharing.ts';
 import type { Machines } from '../server/machines.ts';
 import type { ProjectTerminals } from '../server/project-terminals.ts';
+import { encodeSocketOutput, parseSocketInput, socketContracts, socketChannels, socketContractSchema } from '../shared/contracts/websocket.ts';
+import { terminalConnectionFailure } from '../server/application-websocket.ts';
+import { AppError } from '../shared/errors.ts';
+
+test('terminal directory migration refusal exposes only its explicit safe code and instruction', () => {
+  const refusal = new AppError('private C:\\secrets\\account.key TOKEN_SECRET', 409,
+    'PROJECT_IDENTITY_DIRECTORY_MIGRATION_REQUIRED');
+  const data = terminalConnectionFailure(refusal);
+  assert.match(data, /请显式迁移权限/);
+  assert.match(data, /PROJECT_IDENTITY_DIRECTORY_MIGRATION_REQUIRED/);
+  const frame = encodeSocketOutput('terminal', { type: 'error', data });
+  assert.doesNotMatch(frame, /private|secrets|account.key|TOKEN_SECRET/);
+  for (const error of [new Error(refusal.message), new AppError(refusal.message, 503, 'PROJECT_IDENTITY_CONTROL_FAILED'),
+    { code: refusal.code, message: refusal.message }, null, undefined])
+    assert.equal(terminalConnectionFailure(error), '终端连接暂不可用，请重试。');
+});
+
+test('all six socket protocols declare actual directions, JSON message shapes and binary RFB framing', () => {
+  assert.equal(socketChannels.length, 6);
+  for (const channel of socketChannels) socketContractSchema.parse(socketContracts[channel]);
+  assert.deepEqual(parseSocketInput('terminal', '{"type":"input","data":"echo hello\\n"}'), { type: 'input', data: 'echo hello\n' });
+  assert.deepEqual(parseSocketInput('terminal', '{"type":"resize","cols":80,"rows":24}'), { type: 'resize', cols: 80, rows: 24 });
+  for (const input of [{ type: 'input', data: 'x'.repeat(32769) }, { type: 'input', data: 'x', extra: true },
+    { type: 'resize', cols: 80.1, rows: 24 }, { type: 'execute', data: 'id' }])
+    assert.throws(() => parseSocketInput('terminal', JSON.stringify(input)));
+  for (const channel of ['events', 'logs', 'terminal-view'] as const)
+    assert.throws(() => parseSocketInput(channel, '{"type":"input","data":"x"}'));
+  assert.equal(encodeSocketOutput('events', { type: 'change', data: null }), '{"type":"change","data":null}');
+  assert.throws(() => encodeSocketOutput('events', { type: 'data', data: 'leak' }));
+  assert.throws(() => encodeSocketOutput('logs', { type: 'data', data: 'x', secret: 'never-public' }));
+  assert.throws(() => encodeSocketOutput('desktop', { type: 'data', data: 'not RFB' }));
+  assert.equal(socketContracts['desktop-view'].framing, 'byte-stream');
+  assert.equal(socketContracts['desktop-view'].readOnly, true);
+});
 
 test('shared terminal grants require an exact running tmux session, persist and expire', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sakura-terminal-share-'));

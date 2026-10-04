@@ -5,6 +5,7 @@ import { PLUGINS } from '../shared/plugins.ts';
 import { loaders } from '../server/plugins/registry.ts';
 import { pluginRouteResponses } from '../shared/contracts/plugin-route-responses.ts';
 import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
+import { requestContract, wireRequestSchema } from '../server/http-request-contracts.ts';
 
 const folder = new URL('../docs/schemas/', import.meta.url);
 const checking = process.argv.includes('--check');
@@ -38,11 +39,14 @@ for (const plugin of PLUGINS) {
     if (implementation && implementation.response !== contract.schema)
       throw new Error(`Handler uses a different public response contract: ${id}`);
     const declaration = plugin.contributes.operations.find(item => item.id === route.id) || route;
+    const input = requestContract(id, route.policy, route.method, implementation?.request);
     operations[id] = {
       ...declaration,
       status: contract.statuses[0], statuses: contract.statuses,
       kind: contract.kind, media: contract.media,
-      request: implementation?.request ? z.toJSONSchema(implementation.request, { io: 'input' }) : null,
+      input: { kind: input.kind, required: input.required, ...(input.media ? { media: input.media } : {}),
+        query: z.toJSONSchema(input.query, { io: 'input' }), headers: z.toJSONSchema(input.headers, { io: 'input' }) },
+      request: input.schema ? wireRequestSchema(input.schema) : null,
       response: contract.schema ? z.toJSONSchema(contract.schema) : null,
     };
   }

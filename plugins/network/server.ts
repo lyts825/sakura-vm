@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as networkServices } from './services.ts';
@@ -88,9 +89,7 @@ export async function route(
     if (parts.length === 2 && req.method === 'POST')
       return send(await this.network.saveProfile(await body(req)));
     if (parts.length === 2 && req.method === 'DELETE') {
-      const { id } = z
-        .object({ id: z.uuid() })
-        .strict()
+      const { id } = httpRouteRequests["network.legacy.delete.network-profiles"]
         .parse(await body(req));
       return send(await this.network.removeProfile(id));
     }
@@ -107,13 +106,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const input = z
-          .object({
-            action: z.enum(['preview', 'apply', 'restore', 'test']),
-            config: z.unknown().optional(),
-            token: z.string().optional(),
-          })
-          .strict()
+        const input = httpRouteRequests["network.legacy.post.vms.vmId.network"]
           .parse(await body(req));
         send(
           input.action === 'preview'
@@ -131,9 +124,7 @@ export async function route(
   if (parts.length === 4) {
     if (action === 'services') {
       if (req.method === 'PATCH') {
-        const { forwards } = z
-          .object({ forwards: z.unknown() })
-          .strict()
+        const { forwards } = httpRouteRequests["network.legacy.patch.vms.vmId.services"]
           .parse(await body(req));
         send(await this.vm.setForwards(id, forwards));
         return true;

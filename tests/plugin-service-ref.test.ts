@@ -12,6 +12,7 @@ import { HostRuntime, resourceContext } from '../server/host-runtime/index.ts';
 import { pluginAuthority } from '../server/plugin-authority.ts';
 import { PluginScope } from '../server/plugin-scope.ts';
 import { AppError } from '../shared/errors.ts';
+import { ServiceLifecycle } from '../server/service-lifecycle.ts';
 
 const provider = definePlugin({ id: 'provider', name: 'Provider', description: 'test',
   category: 'operations', services: ['example'] });
@@ -25,6 +26,33 @@ function checkTypes(context: PluginContext) {
   return value;
 }
 void checkTypes;
+
+test('lifecycle resolvers enforce declarations, readiness and drain dependency retention', async () => {
+  const graph = new ServiceLifecycle(), events: string[] = [];
+  graph.ready('@external', { ping: () => 3 });
+  graph.register({ id: 'provider', requires: [], create: () => ({ ping: () => 1 }), initialize: () => {},
+    dispose: () => { events.push('provider'); } });
+  graph.register({ id: 'late', requires: [], create: () => ({ ping: () => 2 }), initialize: () => {}, dispose: () => {} });
+  let resolver: import('../server/service-lifecycle.ts').ServiceDependencyResolver | undefined;
+  graph.register({ id: 'consumer', requires: ['provider', '@external'], lateRequires: ['late'], create: dependencies => {
+    resolver = dependencies;
+    assert.equal(dependencies.get<{ ping(): number }>('provider').ping(), 1);
+    assert.throws(() => dependencies.get('late'), { code: 'SERVICE_DEPENDENCY_DENIED' });
+    assert.throws(() => dependencies.get('undeclared'), { code: 'SERVICE_DEPENDENCY_DENIED' });
+    assert.throws(() => dependencies.late('late'), { code: 'SERVICE_NOT_READY' });
+    return {};
+  }, initialize: () => {}, dispose: (_value, dependencies) => {
+    assert.equal(dependencies.get<{ ping(): number }>('provider').ping(), 1);
+    assert.throws(() => dependencies.late('late'), { code: 'SERVICE_DRAINING' });
+    events.push('consumer');
+  } });
+  await graph.startAll();
+  assert.equal(resolver!.late<{ ping(): number }>('late').ping(), 2);
+  await graph.close();
+  assert.deepEqual(events, ['consumer', 'provider']);
+  assert.throws(() => resolver!.get('provider'), { code: 'SERVICE_NOT_READY' });
+  assert.throws(() => resolver!.get('@external'), { code: 'SERVICE_NOT_READY' });
+});
 function fixture(optional = false) {
   const directory = new PluginDirectory(), catalog = [provider, optional ? { ...consumer, requires: [], optional: [pin('provider')] } : consumer];
   const owner = directory.begin('official', 'provider', provider.version, 'a'.repeat(64));

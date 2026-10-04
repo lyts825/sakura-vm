@@ -3,6 +3,7 @@ import { LockKeyhole } from 'lucide-react';
 import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import type { SessionLockView } from '../shared/session-lock';
 import { api, controllerSession } from './controller-session';
+import { apiResponseError } from '../shared/errors';
 import { Feedback, useAction, useRemote, type Request } from './feature-shared';
 
 const useSession = () =>
@@ -113,7 +114,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
                 signal: AbortSignal.timeout(15000),
               });
               const value = await response.json();
-              if (!response.ok) throw new Error(value.error || '解锁失败');
+              if (!response.ok) throw apiResponseError(response.status, value);
               controllerSession.updateSession(value);
             } catch (error) {
               setError(error instanceof Error ? error.message : '解锁失败');
@@ -151,7 +152,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
                   body: JSON.stringify(input), signal: AbortSignal.timeout(60_000),
                 });
                 const value = await response.json();
-                if (!response.ok) throw new Error(value.error || '通行密钥解锁失败');
+                if (!response.ok) throw apiResponseError(response.status, value);
                 return value;
               };
               const begin = await request('options', {}) as

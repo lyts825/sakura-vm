@@ -15,6 +15,9 @@ export type WorkspaceRequest = <T = unknown>(
 export function workspacePath(path: string, projectId?: string) {
   if (!projectId) return path;
   const [pathname, query = ''] = path.split('?', 2);
+  // Host jobs, catalogs and shared configuration keep their own request contracts.
+  if (!/^\/(?:api\/)?vms\//.test(pathname) &&
+    !['/access/terminal-shares', '/api/access/terminal-shares'].includes(pathname)) return path;
   const params = new URLSearchParams(query);
   params.set('project', projectId);
   const serialized = params.toString();

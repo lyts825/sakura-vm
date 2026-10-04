@@ -2,6 +2,15 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 type OperationCheck = () => Promise<void>;
 const checks = new AsyncLocalStorage<OperationCheck>();
+const auditObservers = new AsyncLocalStorage<() => void>();
+
+/** Observe audit failures for this invocation even if the business throws a primitive. */
+export function withAuditFailureObserver<T>(observer: () => void, work: () => T): T {
+  return auditObservers.run(observer, work);
+}
+export function reportAuditFailure() {
+  auditObservers.getStore()?.();
+}
 
 /** Capture at admission, before a queue or a different owner's callback can change context. */
 export function captureOperationCheck(): OperationCheck {

@@ -55,10 +55,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "revokeFederatedCredential",
       "status",
       "users"
-    ],
-    "returns": {
-      "revokeFederatedCredential": "sakura.service.jobs.v1/persistenceError/charCodeAt"
-    }
+    ]
   },
   "sakura.service.acme-renewal.v1": {
     "id": "sakura.service.acme-renewal.v1",
@@ -210,10 +207,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "importExternal",
       "withDisk",
       "withExportBudget"
-    ],
-    "returns": {
-      "export": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.capability-checks.v1": {
     "id": "sakura.service.capability-checks.v1",
@@ -847,7 +841,6 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "view"
     ],
     "returns": {
-      "registerMigrationSession": "sakura.service.host-peers.v1/registerMigrationSession",
       "openMigrationForward": "sakura.service.host-peers.v1/openMigrationForward"
     }
   },
@@ -860,165 +853,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
     ],
     "methods": [
       "close"
-    ],
-    "properties": {
-      "port": "sakura.service.jobs.v1/persistenceError/charCodeAt"
-    }
-  },
-  "sakura.service.host-peers.v1/registerMigrationSession": {
-    "id": "sakura.service.host-peers.v1/registerMigrationSession",
-    "version": 1,
-    "members": [
-      "__@iterator@305",
-      "anchor",
-      "at",
-      "big",
-      "blink",
-      "bold",
-      "charAt",
-      "charCodeAt",
-      "codePointAt",
-      "concat",
-      "endsWith",
-      "fixed",
-      "fontcolor",
-      "fontsize",
-      "includes",
-      "indexOf",
-      "italics",
-      "lastIndexOf",
-      "length",
-      "link",
-      "localeCompare",
-      "match",
-      "matchAll",
-      "normalize",
-      "padEnd",
-      "padStart",
-      "repeat",
-      "replace",
-      "replaceAll",
-      "search",
-      "slice",
-      "small",
-      "split",
-      "startsWith",
-      "strike",
-      "sub",
-      "substr",
-      "substring",
-      "sup",
-      "toLocaleLowerCase",
-      "toLocaleUpperCase",
-      "toLowerCase",
-      "toString",
-      "toUpperCase",
-      "trim",
-      "trimEnd",
-      "trimLeft",
-      "trimRight",
-      "trimStart",
-      "valueOf"
-    ],
-    "methods": [
-      "__@iterator@305",
-      "anchor",
-      "at",
-      "big",
-      "blink",
-      "bold",
-      "charAt",
-      "charCodeAt",
-      "codePointAt",
-      "concat",
-      "endsWith",
-      "fixed",
-      "fontcolor",
-      "fontsize",
-      "includes",
-      "indexOf",
-      "italics",
-      "lastIndexOf",
-      "link",
-      "localeCompare",
-      "match",
-      "matchAll",
-      "normalize",
-      "padEnd",
-      "padStart",
-      "repeat",
-      "replace",
-      "replaceAll",
-      "search",
-      "slice",
-      "small",
-      "split",
-      "startsWith",
-      "strike",
-      "sub",
-      "substr",
-      "substring",
-      "sup",
-      "toLocaleLowerCase",
-      "toLocaleUpperCase",
-      "toLowerCase",
-      "toString",
-      "toUpperCase",
-      "trim",
-      "trimEnd",
-      "trimLeft",
-      "trimRight",
-      "trimStart",
-      "valueOf"
-    ],
-    "properties": {
-      "length": "sakura.service.jobs.v1/persistenceError/charCodeAt"
-    },
-    "returns": {
-      "toString": "sakura.service.jobs.v1/persistenceError",
-      "charAt": "sakura.service.jobs.v1/persistenceError",
-      "charCodeAt": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "concat": "sakura.service.jobs.v1/persistenceError",
-      "indexOf": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "lastIndexOf": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "localeCompare": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "replace": "sakura.service.jobs.v1/persistenceError",
-      "search": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "slice": "sakura.service.jobs.v1/persistenceError",
-      "split": "sakura.service.jobs.v1/persistenceError",
-      "substring": "sakura.service.jobs.v1/persistenceError",
-      "toLowerCase": "sakura.service.jobs.v1/persistenceError",
-      "toLocaleLowerCase": "sakura.service.jobs.v1/persistenceError",
-      "toUpperCase": "sakura.service.jobs.v1/persistenceError",
-      "toLocaleUpperCase": "sakura.service.jobs.v1/persistenceError",
-      "trim": "sakura.service.jobs.v1/persistenceError",
-      "substr": "sakura.service.jobs.v1/persistenceError",
-      "valueOf": "sakura.service.jobs.v1/persistenceError",
-      "codePointAt": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "normalize": "sakura.service.jobs.v1/persistenceError",
-      "repeat": "sakura.service.jobs.v1/persistenceError",
-      "anchor": "sakura.service.jobs.v1/persistenceError",
-      "big": "sakura.service.jobs.v1/persistenceError",
-      "blink": "sakura.service.jobs.v1/persistenceError",
-      "bold": "sakura.service.jobs.v1/persistenceError",
-      "fixed": "sakura.service.jobs.v1/persistenceError",
-      "fontcolor": "sakura.service.jobs.v1/persistenceError",
-      "fontsize": "sakura.service.jobs.v1/persistenceError",
-      "italics": "sakura.service.jobs.v1/persistenceError",
-      "link": "sakura.service.jobs.v1/persistenceError",
-      "small": "sakura.service.jobs.v1/persistenceError",
-      "strike": "sakura.service.jobs.v1/persistenceError",
-      "sub": "sakura.service.jobs.v1/persistenceError",
-      "sup": "sakura.service.jobs.v1/persistenceError",
-      "padStart": "sakura.service.jobs.v1/persistenceError",
-      "padEnd": "sakura.service.jobs.v1/persistenceError",
-      "trimEnd": "sakura.service.jobs.v1/persistenceError",
-      "trimStart": "sakura.service.jobs.v1/persistenceError",
-      "trimLeft": "sakura.service.jobs.v1/persistenceError",
-      "trimRight": "sakura.service.jobs.v1/persistenceError",
-      "replaceAll": "sakura.service.jobs.v1/persistenceError",
-      "at": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.http-ingress.v1": {
     "id": "sakura.service.http-ingress.v1",
@@ -1032,10 +867,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "action",
       "aliasNames",
       "view"
-    ],
-    "returns": {
-      "aliasNames": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.ide.v1": {
     "id": "sakura.service.ide.v1",
@@ -1141,193 +973,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "track",
       "view",
       "wait"
-    ],
-    "properties": {
-      "persistenceError": "sakura.service.jobs.v1/persistenceError"
-    }
-  },
-  "sakura.service.jobs.v1/persistenceError": {
-    "id": "sakura.service.jobs.v1/persistenceError",
-    "version": 1,
-    "members": [
-      "__@iterator@305",
-      "anchor",
-      "at",
-      "big",
-      "blink",
-      "bold",
-      "charAt",
-      "charCodeAt",
-      "codePointAt",
-      "concat",
-      "endsWith",
-      "fixed",
-      "fontcolor",
-      "fontsize",
-      "includes",
-      "indexOf",
-      "italics",
-      "lastIndexOf",
-      "length",
-      "link",
-      "localeCompare",
-      "match",
-      "matchAll",
-      "normalize",
-      "padEnd",
-      "padStart",
-      "repeat",
-      "replace",
-      "replaceAll",
-      "search",
-      "slice",
-      "small",
-      "split",
-      "startsWith",
-      "strike",
-      "sub",
-      "substr",
-      "substring",
-      "sup",
-      "toLocaleLowerCase",
-      "toLocaleUpperCase",
-      "toLowerCase",
-      "toString",
-      "toUpperCase",
-      "trim",
-      "trimEnd",
-      "trimLeft",
-      "trimRight",
-      "trimStart",
-      "valueOf"
-    ],
-    "methods": [
-      "__@iterator@305",
-      "anchor",
-      "at",
-      "big",
-      "blink",
-      "bold",
-      "charAt",
-      "charCodeAt",
-      "codePointAt",
-      "concat",
-      "endsWith",
-      "fixed",
-      "fontcolor",
-      "fontsize",
-      "includes",
-      "indexOf",
-      "italics",
-      "lastIndexOf",
-      "link",
-      "localeCompare",
-      "match",
-      "matchAll",
-      "normalize",
-      "padEnd",
-      "padStart",
-      "repeat",
-      "replace",
-      "replaceAll",
-      "search",
-      "slice",
-      "small",
-      "split",
-      "startsWith",
-      "strike",
-      "sub",
-      "substr",
-      "substring",
-      "sup",
-      "toLocaleLowerCase",
-      "toLocaleUpperCase",
-      "toLowerCase",
-      "toString",
-      "toUpperCase",
-      "trim",
-      "trimEnd",
-      "trimLeft",
-      "trimRight",
-      "trimStart",
-      "valueOf"
-    ],
-    "properties": {
-      "length": "sakura.service.jobs.v1/persistenceError/charCodeAt"
-    },
-    "returns": {
-      "toString": "sakura.service.jobs.v1/persistenceError",
-      "charAt": "sakura.service.jobs.v1/persistenceError",
-      "charCodeAt": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "concat": "sakura.service.jobs.v1/persistenceError",
-      "indexOf": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "lastIndexOf": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "localeCompare": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "replace": "sakura.service.jobs.v1/persistenceError",
-      "search": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "slice": "sakura.service.jobs.v1/persistenceError",
-      "split": "sakura.service.jobs.v1/persistenceError",
-      "substring": "sakura.service.jobs.v1/persistenceError",
-      "toLowerCase": "sakura.service.jobs.v1/persistenceError",
-      "toLocaleLowerCase": "sakura.service.jobs.v1/persistenceError",
-      "toUpperCase": "sakura.service.jobs.v1/persistenceError",
-      "toLocaleUpperCase": "sakura.service.jobs.v1/persistenceError",
-      "trim": "sakura.service.jobs.v1/persistenceError",
-      "substr": "sakura.service.jobs.v1/persistenceError",
-      "valueOf": "sakura.service.jobs.v1/persistenceError",
-      "codePointAt": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "normalize": "sakura.service.jobs.v1/persistenceError",
-      "repeat": "sakura.service.jobs.v1/persistenceError",
-      "anchor": "sakura.service.jobs.v1/persistenceError",
-      "big": "sakura.service.jobs.v1/persistenceError",
-      "blink": "sakura.service.jobs.v1/persistenceError",
-      "bold": "sakura.service.jobs.v1/persistenceError",
-      "fixed": "sakura.service.jobs.v1/persistenceError",
-      "fontcolor": "sakura.service.jobs.v1/persistenceError",
-      "fontsize": "sakura.service.jobs.v1/persistenceError",
-      "italics": "sakura.service.jobs.v1/persistenceError",
-      "link": "sakura.service.jobs.v1/persistenceError",
-      "small": "sakura.service.jobs.v1/persistenceError",
-      "strike": "sakura.service.jobs.v1/persistenceError",
-      "sub": "sakura.service.jobs.v1/persistenceError",
-      "sup": "sakura.service.jobs.v1/persistenceError",
-      "padStart": "sakura.service.jobs.v1/persistenceError",
-      "padEnd": "sakura.service.jobs.v1/persistenceError",
-      "trimEnd": "sakura.service.jobs.v1/persistenceError",
-      "trimStart": "sakura.service.jobs.v1/persistenceError",
-      "trimLeft": "sakura.service.jobs.v1/persistenceError",
-      "trimRight": "sakura.service.jobs.v1/persistenceError",
-      "replaceAll": "sakura.service.jobs.v1/persistenceError",
-      "at": "sakura.service.jobs.v1/persistenceError"
-    }
-  },
-  "sakura.service.jobs.v1/persistenceError/charCodeAt": {
-    "id": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-    "version": 1,
-    "members": [
-      "toExponential",
-      "toFixed",
-      "toLocaleString",
-      "toPrecision",
-      "toString",
-      "valueOf"
-    ],
-    "methods": [
-      "toExponential",
-      "toFixed",
-      "toLocaleString",
-      "toPrecision",
-      "toString",
-      "valueOf"
-    ],
-    "returns": {
-      "toString": "sakura.service.jobs.v1/persistenceError",
-      "toFixed": "sakura.service.jobs.v1/persistenceError",
-      "toExponential": "sakura.service.jobs.v1/persistenceError",
-      "toPrecision": "sakura.service.jobs.v1/persistenceError",
-      "valueOf": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "toLocaleString": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.language-services.v1": {
     "id": "sakura.service.language-services.v1",
@@ -1704,13 +1350,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
     ],
     "methods": [
       "release"
-    ],
-    "properties": {
-      "command": "sakura.service.jobs.v1/persistenceError",
-      "projectId": "sakura.service.jobs.v1/persistenceError",
-      "networkIsolation": "sakura.service.jobs.v1/persistenceError",
-      "terminalId": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.process-interop.v1": {
     "id": "sakura.service.process-interop.v1",
@@ -1746,11 +1386,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "readCommittedList",
       "update",
       "with"
-    ],
-    "returns": {
-      "current": "sakura.service.jobs.v1/persistenceError",
-      "key": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.project-execution.v1": {
     "id": "sakura.service.project-execution.v1",
@@ -1798,10 +1434,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "revokeVm",
       "version",
       "view"
-    ],
-    "returns": {
-      "version": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.project-preparation.v1": {
     "id": "sakura.service.project-preparation.v1",
@@ -1919,6 +1552,26 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "export",
       "read",
       "write"
+    ]
+  },
+  "sakura.service.recovery-catalog.v1": {
+    "id": "sakura.service.recovery-catalog.v1",
+    "version": 1,
+    "members": [
+      "close",
+      "diagnostics",
+      "rebuild",
+      "refresh",
+      "retry",
+      "view"
+    ],
+    "methods": [
+      "close",
+      "diagnostics",
+      "rebuild",
+      "refresh",
+      "retry",
+      "view"
     ]
   },
   "sakura.service.remote-audit-lock.v1": {
@@ -2063,10 +1716,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "save",
       "setRotation",
       "value"
-    ],
-    "returns": {
-      "value": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.service-health.v1": {
     "id": "sakura.service.service-health.v1",
@@ -2126,10 +1776,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "unlock",
       "unlockWithPasskey",
       "view"
-    ],
-    "returns": {
-      "getGeneration": "sakura.service.jobs.v1/persistenceError/charCodeAt"
-    }
+    ]
   },
   "sakura.service.signed-bundles.v1": {
     "id": "sakura.service.signed-bundles.v1",
@@ -2173,11 +1820,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "saveClipboardPolicy",
       "start",
       "stop"
-    ],
-    "returns": {
-      "port": "sakura.service.jobs.v1/persistenceError/charCodeAt",
-      "connectionCommand": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.single-sign-on.v1": {
     "id": "sakura.service.single-sign-on.v1",
@@ -2207,10 +1850,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "providers",
       "unlink",
       "view"
-    ],
-    "returns": {
-      "pendingOrigin": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.snapshot-diff.v1": {
     "id": "sakura.service.snapshot-diff.v1",
@@ -2293,10 +1933,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "releaseTemporary",
       "reserveTemporary",
       "transfer"
-    ],
-    "properties": {
-      "id": "sakura.service.jobs.v1/persistenceError"
-    }
+    ]
   },
   "sakura.service.storage-tiering.v1": {
     "id": "sakura.service.storage-tiering.v1",
@@ -2436,11 +2073,7 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "setNetwork"
     ],
     "properties": {
-      "vmProcessId": "sakura.service.host-peers.v1/registerMigrationSession",
-      "resources": "sakura.service.resource-scope.v1",
-      "vmId": "sakura.service.jobs.v1/persistenceError",
-      "lastObservedBootId": "sakura.service.jobs.v1/persistenceError",
-      "active": "sakura.service.jobs.v1/persistenceError/charCodeAt"
+      "resources": "sakura.service.resource-scope.v1"
     },
     "returns": {
       "enter": "sakura.service.vm-lifetime.v1/enter"

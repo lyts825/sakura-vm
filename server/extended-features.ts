@@ -1,3 +1,4 @@
+import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { IdeV1, TrustedBootServiceV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { EngineeringDomainServices } from './engineering-domain-services.ts';
 
@@ -82,6 +83,34 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
     spec.state === 'available' || hasCapability(spec.id) ? ['configure', 'check', 'run'] : ['configure', 'check'],
   persistent: spec.id !== 'self-update' && spec.id !== 'locale-packs',
 });
+
+export const extendedFeatureActionRequest = z
+      .discriminatedUnion('action', [
+        z
+          .object({
+            action: z.literal('configure'),
+            featureId: idSchema,
+            enabled: z.boolean(),
+            options: z.record(z.string(), jsonValueSchema).default({}),
+          })
+          .strict(),
+        z.object({ action: z.literal('check'), featureId: idSchema }).strict(),
+        z
+          .object({
+            action: z.literal('run'),
+            featureId: idSchema,
+            path: pathSchema,
+            options: z.record(z.string(), jsonValueSchema).default({}),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('operation'),
+            operation: z.string(),
+            parameters: z.record(z.string(), jsonValueSchema).default({}),
+          })
+          .strict(),
+      ]);
 
 export class ExtendedFeatures {
   jobs = new Jobs('extended-features');
@@ -577,33 +606,7 @@ export class ExtendedFeatures {
   }
 
   async action(id: string, input: unknown, signal?: AbortSignal) {
-    const value = z
-      .discriminatedUnion('action', [
-        z
-          .object({
-            action: z.literal('configure'),
-            featureId: idSchema,
-            enabled: z.boolean(),
-            options: z.record(z.string(), z.unknown()).default({}),
-          })
-          .strict(),
-        z.object({ action: z.literal('check'), featureId: idSchema }).strict(),
-        z
-          .object({
-            action: z.literal('run'),
-            featureId: idSchema,
-            path: pathSchema,
-            options: z.record(z.string(), z.unknown()).default({}),
-          })
-          .strict(),
-        z
-          .object({
-            action: z.literal('operation'),
-            operation: z.string(),
-            parameters: z.record(z.string(), z.unknown()).default({}),
-          })
-          .strict(),
-      ])
+    const value = extendedFeatureActionRequest
       .parse(input);
     this.machines.get(id);
     if (value.action !== 'check') this.machines.requireUnlocked?.(id);

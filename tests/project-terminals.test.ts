@@ -17,7 +17,7 @@ const { Machines } = await import('../server/machines.ts');
 const { Workspaces, projectVersion } = await import('../server/workspaces.ts');
 const { ProjectTerminals, assertProjectTerminalsStopped } = await import('../server/project-terminals.ts');
 const { ProjectRunScopes } = await import('../server/project-run-scope.ts');
-const { projectIdentitySchema, projectIdentityRunSchema } = await import('../server/project-identity.ts');
+const { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema } = await import('../server/project-identity.ts');
 const { AppError } = await import('../server/model.ts');
 const { vmDir } = await import('../server/model.ts');
 after(() => rm(root, { recursive: true, force: true }));
@@ -110,7 +110,7 @@ async function fixture() {
       `/fixed/project-terminal --run ${run.runId} --name ${name} --readonly ${readOnly}`,
   } };
   const terminals = new ProjectTerminals(machines, workspaces, undefined, options);
-  return { id, machines, commands, workspaces, terminals, options, identities, runs, controlCalls,
+  return { id, bootId, machines, commands, workspaces, terminals, options, identities, runs, controlCalls,
     status: (value: string) => { status = value; },
     persistent: (value: boolean) => { persistent = value; },
     verified: (value: boolean) => { verified = value; },
@@ -118,8 +118,20 @@ async function fixture() {
     close: async () => { await terminals.close(); await workspaces.close(); } };
 }
 
-test('terminal leases bind to the selected project and block directory or network edits until disconnected', async () => {
+test('terminal leases bind to the selected project and block directory or network edits until disconnected', async t => {
   const f = await fixture();
+  // Workspaces uses its own scope instance. Stub only the native guest boundary;
+  // the scope still persists its release intent and confirms the absent namespace.
+  const beginNetworkRelease = t.mock.method(ProjectIdentities.prototype, 'beginNetworkRelease', async (...args:
+    Parameters<InstanceType<typeof ProjectIdentities>['beginNetworkRelease']>) => {
+    const [vmId, identity, options] = args;
+    assert.equal(vmId, f.id);
+    assert.deepEqual(identity, f.identities.get('default'));
+    assert.equal(identity.networkIsolation, 'private');
+    assert.equal(options.bootId, f.bootId);
+    assert.match(options.releaseId, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+    return null;
+  });
   try {
     await f.workspaces.save(f.id, { directory: '/workspace/private', networkIsolation: 'private' });
     const privateShell = await f.terminals.prepare(f.id, 'default');
@@ -130,8 +142,12 @@ test('terminal leases bind to the selected project and block directory or networ
     assert.equal(privateShell.networkIsolation, 'private');
     await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/changed', networkIsolation: 'private' }), /终端或命令/);
     await assert.rejects(f.workspaces.save(f.id, { directory: '/workspace/private', networkIsolation: 'host' }), /终端或命令/);
+    assert.equal(beginNetworkRelease.mock.callCount(), 0);
     await privateShell.release();
+    const beforeRelease = f.commands.length;
     await f.workspaces.save(f.id, { directory: '/workspace/private', networkIsolation: 'host' });
+    assert.equal(beginNetworkRelease.mock.callCount(), 1);
+    assert.equal(f.commands.slice(beforeRelease).filter(command => command.includes('os.path.lexists(path)')).length, 2);
     const shell = await f.terminals.prepare(f.id, null);
     assert.doesNotMatch(shell.command, /netns/);
     assert.match(shell.command, /project-terminal --run/);

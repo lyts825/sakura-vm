@@ -49,6 +49,11 @@ import { featureReadiness } from '../src/feature-readiness.ts';
 import { parseMetrics } from '../server/metrics.ts';
 import { pluginRouteResponses } from '../shared/contracts/plugin-route-responses.ts';
 import type { PluginOperation } from '../server/plugin-api.ts';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { OperationResults } from '../server/operation-results.ts';
 
 test('plugin activation timeout aborts registration and cleanup is bounded', async () => {
   const scope = new PluginScope();
@@ -70,6 +75,7 @@ test('plugin activation timeout aborts registration and cleanup is bounded', asy
 });
 
 test('declared operations validate responses before writing to the client', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sakura-plugin-receipt-'));
   const original = loaders.metrics;
   const sample = parseMetrics('CPU\ncpu 10 0 10 100 0 0 0 0\ncpu 30 0 20 150 20 0 0 0\nMEMORY\nMemTotal: 1024 kB\nMemAvailable: 512 kB\nDISK\n/dev/vda1 1000 400 600 40% /\nNETWORK\n eth0: 10 0 0 0 0 0 0 0 20 0 0 0 0 0 0 0\nPROCESSES\n123 python3\nUPTIME\n120.5 10.0\n');
   let valid = false;
@@ -119,7 +125,13 @@ test('declared operations validate responses before writing to the client', asyn
       return res;
     };
     try {
-      await assert.rejects(invoke(), (error: any) => error.code === 'INVALID_PLUGIN_RESPONSE');
+      const results = new OperationResults(directory), receipt = await results.start(randomUUID(), 'metrics.sample', 'local-owner');
+      let failure: unknown;
+      try { await results.run(receipt, async () => { await results.begin(receipt); await invoke(); }); }
+      catch (error) { failure = error; }
+      assert.equal((failure as any).code, 'INVALID_PLUGIN_RESPONSE');
+      await results.finish(receipt, failure, false);
+      assert.equal((await new OperationResults(directory).get(receipt.correlationId, 'local-owner')).outcome, 'succeeded');
       assert.deepEqual(written, []);
       // A handler's local validator cannot replace the independently published response contract.
       operation.response = z.object({ sample: z.number() }).strict();
@@ -137,6 +149,7 @@ test('declared operations validate responses before writing to the client', asyn
     }
   } finally {
     loaders.metrics = original;
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

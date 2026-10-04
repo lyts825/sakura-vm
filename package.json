@@ -1,6 +1,6 @@
 {
   "name": "sakura-vm",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "type": "module",
   "description": "A WSL-inspired local Linux workspace, powered by PosixLoom and QEMU",
@@ -32,7 +32,7 @@
     "test": "tsx --test --test-concurrency=4 tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:integration": "playwright test --config playwright.integration.config.ts",
-    "verify:vm": "npm run test:vm && npm run test:sandbox && npm run test:engineering && npm run test:integration",
+    "verify:vm": "npm run test:vm && npm run test:plugins:vm && npm run test:live-migration-distributed && npm run test:sandbox && npm run test:engineering && npm run test:integration",
     "test:production": "node scripts/smoke-production.mjs",
     "test:vm": "tsx scripts/smoke-vm.ts",
     "test:sandbox": "tsx scripts/smoke-sandbox.ts",
@@ -160,6 +160,7 @@
     "sakura": "node scripts/cli.mjs",
     "architecture:check": "tsx scripts/check-architecture.ts",
     "plugins:contracts": "tsx scripts/service-contracts.ts",
+    "plugins:contracts:freeze": "tsx scripts/freeze-service-contracts.ts",
     "test:plugins:vm": "tsx scripts/smoke-plugin-lifecycle.ts"
   },
   "dependencies": {

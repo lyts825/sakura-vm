@@ -361,7 +361,7 @@ async function main() {
       return;
     }
     if (action === 'compact') {
-      console.log(await api(`/vms/${vm.id}/compact`, 'POST', {}));
+      console.log(await api(`/vms/${vm.id}/compact`, 'POST'));
       return;
     }
     if (action === 'extended') {
@@ -442,7 +442,7 @@ async function main() {
       return;
     }
     if (action === 'sync-preview') {
-      console.log(JSON.stringify(await api(`/vms/${vm.id}/sync-preview`, 'POST', {}), null, 2));
+      console.log(JSON.stringify(await api(`/vms/${vm.id}/sync-preview`, 'POST'), null, 2));
       return;
     }
     if (action === 'sync-apply') {

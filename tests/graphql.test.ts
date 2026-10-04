@@ -104,6 +104,11 @@ test('validation, cycles, cost, nesting, token and body bounds reject queries be
     assert.ok(result.body.errors?.length);
   }
   assert.equal(reads, 0);
+  const invalid = await api.query({ query: '{ unknownField }' });
+  assert.equal(invalid.body.errors?.[0].extensions?.code, 'GRAPHQL_VALIDATION_FAILED');
+  assert.match(invalid.body.errors![0].message, /unknownField/);
+  const syntax = await api.query({ query: '{' });
+  assert.equal(syntax.body.errors?.[0].extensions?.code, 'GRAPHQL_PARSE_FAILED');
   await assert.rejects(api.query({ query: '#' + '中'.repeat(graphqlLimits.queryBytes / 2) }), /16 KiB/);
   await assert.rejects(api.query([{ query: '{ apiVersion }' }]));
 });
@@ -116,6 +121,7 @@ test('invalid variables and page bounds are reported; source errors are redacted
     variables: { n: 'bad' },
   });
   assert.equal(variables.status, 400);
+  assert.equal(variables.body.errors?.[0].extensions?.code, 'BAD_USER_INPUT');
   for (const args of ['limit: 101', 'limit: -1', 'offset: -1', 'offset: 10001']) {
     const result = await api.query({ query: `{ vms(${args}) { id } }` });
     assert.equal(result.status, 200);
@@ -128,6 +134,7 @@ test('invalid variables and page bounds are reported; source errors are redacted
   const failure = await failed.query({ query: '{ host { name } }' });
   assert.ok(failure.body.errors?.length);
   assert.ok(!JSON.stringify(failure).includes('EXCLUDED_'));
+  assert.equal(failure.body.errors?.[0].extensions?.code, 'SOURCE_UNAVAILABLE');
   let release!: () => void, entered!: () => void;
   const ready = new Promise<void>((resolve) => {
     entered = resolve;

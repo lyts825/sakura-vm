@@ -6,6 +6,7 @@ import type { PublicKeyCredentialCreationOptionsJSON,
 import type { AccessPrincipal } from '../shared/access-control';
 import type { SessionLockView } from '../shared/session-lock';
 import { api, controllerSession } from './controller-session';
+import { apiResponseError } from '../shared/errors';
 
 type AccountStatus = { enabled: boolean; session: SessionLockView };
 type SharedVm = { id: string; name: string; status: string; distro?: string;
@@ -79,7 +80,7 @@ async function publicPasskeyRequest<T>(path: string, input: unknown) {
     body: JSON.stringify(input), signal: AbortSignal.timeout(60_000),
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || '通行密钥请求失败');
+  if (!response.ok) throw apiResponseError(response.status, result);
   return result as T;
 }
 
@@ -99,7 +100,7 @@ async function startSso(provider: SsoProvider, mode: 'login' | 'link') {
         signal: AbortSignal.timeout(20_000),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '无法开始单点登录');
+      if (!response.ok) throw apiResponseError(response.status, data);
       begin = data;
     }
     if (new URL(begin.redirect).protocol !== 'https:')
@@ -219,7 +220,7 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
             signal: AbortSignal.timeout(15_000),
           });
           const result = await response.json();
-          if (!response.ok) throw new Error(result.error || '登录失败');
+          if (!response.ok) throw apiResponseError(response.status, result);
           controllerSession.adoptAccount(result.token, result.principal);
           setPassword('');
         } catch (reason) {
@@ -243,7 +244,7 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
             signal: AbortSignal.timeout(15_000),
           });
           const login = await response.json();
-          if (!response.ok) throw new Error(login.error || '会话交接失败');
+          if (!response.ok) throw apiResponseError(response.status, login);
           controllerSession.adoptAccount(login.token, login.principal);
           setHandoffCode('');
         } catch (reason) { setError(reason instanceof Error ? reason.message : '会话交接失败'); }
@@ -322,7 +323,7 @@ function ProjectMemberPortal({ principal }: { principal: AccessPrincipal }) {
   }, [selected, projects, changeRefresh]);
   return <main className="app-shell"><header className="app-header">
     <h1>Sakura · 项目成员</h1><span>{principal.username}</span>
-    <button className="secondary compact" onClick={() => void api('/access/logout', 'POST', {})
+    <button className="secondary compact" onClick={() => void api('/access/logout', 'POST')
       .finally(() => controllerSession.clearCredential())}>退出登录</button>
   </header><SsoAccountLinks accountId={principal.id} /><section className="system-card" aria-label="授权项目">
     <h2>授权项目</h2>
@@ -403,7 +404,7 @@ function SharedInventory({ principal }: { principal: AccessPrincipal }) {
   return <main className="app-shell">
     <header className="app-header"><h1>Sakura · 只读分享</h1>
       <span>{principal.username}</span>
-      <button className="secondary compact" onClick={() => void api('/access/logout', 'POST', {})
+      <button className="secondary compact" onClick={() => void api('/access/logout', 'POST')
         .finally(() => controllerSession.clearCredential())}>退出登录</button>
     </header>
     <SsoAccountLinks accountId={principal.id} />
@@ -864,7 +865,7 @@ export function AccountLogoutButton() {
   const principal = usePrincipal();
   if (!principal) return null;
   return <button className="secondary compact" title="退出账户" onClick={() =>
-    void api('/access/logout', 'POST', {}).finally(() => controllerSession.clearCredential())}>
+    void api('/access/logout', 'POST').finally(() => controllerSession.clearCredential())}>
     {principal.username} · 退出
   </button>;
 }

@@ -199,10 +199,20 @@ export const liveMigrationOriginSchema = z
     status: z.enum(['prepared', 'received', 'ready']),
     completionProtocol: z.literal(1).optional(),
     sessionId: z.uuid().optional(), projectsDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    prepareDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    prepareReceipt: z.object({
+      targetVmId: z.uuid(), sessionId: z.uuid(), targetDiskNode: z.string().min(1).max(64),
+      diskPort: z.number().int().min(1024).max(65535), statePort: z.number().int().min(1024).max(65535),
+      completionProtocol: z.literal(1).optional(),
+    }).strict().optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
-  .strict();
+  .strict().superRefine((origin, context) => {
+    if (origin.prepareReceipt && (origin.prepareReceipt.sessionId !== origin.sessionId ||
+        origin.prepareReceipt.completionProtocol !== origin.completionProtocol))
+      context.addIssue({ code: 'custom', path: ['prepareReceipt'], message: '准备回执不属于原迁移会话' });
+  });
 export type LiveMigrationOrigin = z.infer<typeof liveMigrationOriginSchema>;
 export type VMView = VMRecord & {
   activeAccelerator?: 'tcg' | 'whpx';

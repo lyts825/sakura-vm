@@ -34,7 +34,7 @@ const networkUrl = z
       return false;
     }
   }, '请输入不含凭证、查询参数的 HTTP(S) 地址');
-const forwardsSchema = z
+export const forwardsSchema = z
   .array(
     z
       .object({
@@ -143,6 +143,10 @@ export function rewriteMirrors(text: string, distro: string, config: NetworkProf
     })
     .join('\n');
 }
+export const networkProfileRequest = savedProfileSchema
+      .omit({ id: true, updatedAt: true })
+      .extend({ id: z.uuid().optional() });
+
 export class NetworkProfiles {
   jobs = new Jobs('network');
   constructor(private machines: Machines) {}
@@ -164,9 +168,7 @@ export class NetworkProfiles {
       .parse(await readStore(join(DATA, 'network-profiles.json'), () => []));
   }
   async saveProfile(input: unknown) {
-    const value = savedProfileSchema
-      .omit({ id: true, updatedAt: true })
-      .extend({ id: z.uuid().optional() })
+    const value = networkProfileRequest
       .parse(input);
     return this.machines.locked('network-profiles', async () => {
       const profiles = await this.profiles();

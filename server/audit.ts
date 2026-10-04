@@ -8,7 +8,10 @@ import { z, ZodError } from 'zod';
 import { DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { resourceContext, withResourceContext } from './host-runtime/context.ts';
+import { resourceContext, withResourceContext, withNewResourceContext } from './host-runtime/context.ts';
+import { withoutOperationContext, reportAuditFailure } from './operation-context.ts';
+import { withoutPluginAuthority } from './plugin-authority.ts';
+import { runtimeTimings } from './runtime-timings.ts';
 
 const hex = z.string().regex(/^[a-f0-9]{64}$/);
 const eventSchema = z
@@ -43,6 +46,10 @@ export type AuditEvent = z.infer<typeof eventSchema>;
 export type AuditRecord = z.infer<typeof recordSchema>;
 type TraceContext = Pick<AuditEvent, 'traceId' | 'spanId' | 'parentSpanId'>;
 const context = new AsyncLocalStorage<TraceContext>();
+const auditFailures = new WeakMap<object, unknown>();
+/** Preserve the original business exception even when its end record cannot be written. */
+export const auditFailure = (error: unknown) => error !== null && typeof error === 'object'
+  ? auditFailures.get(error) : undefined;
 export function withoutAuditParent<T>(work: () => T): T { return context.exit(work); }
 const zero = '0'.repeat(64);
 
@@ -165,13 +172,17 @@ export class AuditLog {
         return await this.scan(Math.max(0, Math.min(2000, limit)), vmId, pinned);
       } catch (error) {
         this.cached = undefined;
-        return { valid: false as const, records: [], error: (error as Error).message };
+        return { valid: false as const, records: [], error: '审计日志校验失败，请检查本机审计存储' };
       }
     });
   }
   record(value: AuditEvent) {
     const event = eventSchema.parse(value);
-    return this.serial(async () => {
+    // Identities were captured before the operation. Its durable end record must
+    // survive a successful logout or another operation revoking its own authority.
+    return runtimeTimings.measure(event.kind === 'job' ? 'job' : 'http', 'audit', () =>
+      withoutOperationContext(() => withoutPluginAuthority(() =>
+        withNewResourceContext({ owner: 'core:audit' }, () => this.serial(async () => {
       try {
         const info = await stat(this.file()).catch((error: NodeJS.ErrnoException) => {
           if (error.code !== 'ENOENT') throw error;
@@ -203,7 +214,7 @@ export class AuditLog {
         this.cached = undefined;
         throw new AppError('审计写入失败：' + (error as Error).message, 503, 'AUDIT_UNAVAILABLE');
       }
-    });
+    })))));
   }
   async span<T>(
     event: Pick<AuditEvent, 'kind' | 'name' | 'vmId' | 'projectId' | 'jobId' | 'actorId' |
@@ -214,6 +225,8 @@ export class AuditLog {
     const parent = context.getStore();
     const identity = resourceContext();
     event = {
+      actorId: identity?.actorId, vmId: identity?.vmId, projectId: identity?.projectId,
+      jobId: identity?.jobId,
       pluginId: identity?.pluginId, pluginInstanceId: identity?.pluginInstanceId,
       pluginGeneration: identity?.pluginGeneration, operationId: identity?.operationId,
       recoveryId: identity?.recoveryId, ...event,
@@ -224,9 +237,12 @@ export class AuditLog {
       spanId: randomBytes(8).toString('hex'),
       ...(parent ? { parentSpanId: parent.spanId } : {}),
     };
-    await this.record({ ...event, ...span, time: new Date().toISOString(), phase: 'start' });
+    try { await this.record({ ...event, ...span, time: new Date().toISOString(), phase: 'start' }); }
+    catch (error) { reportAuditFailure(); throw error; }
     return context.run(span, async () => {
       let code = 500;
+      let businessFailure: unknown;
+      let failed = false;
       try {
         const result = await withResourceContext({
           traceId: span.traceId, spanId: span.spanId, actorId: event.actorId,
@@ -235,18 +251,33 @@ export class AuditLog {
         code = status();
         return result;
       } catch (error) {
+        failed = true;
+        businessFailure = error;
         code =
           error instanceof AppError
             ? error.status
             : error instanceof ZodError
               ? 400
-              : (error as Error).name === 'AbortError'
+              : error instanceof Error && error.name === 'AbortError'
                 ? 499
                 : 500;
         throw error;
       } finally {
-        await this.record({ ...event, ...span, time: new Date().toISOString(), phase: 'end', status: code,
-          durationMs: Math.max(0, performance.now() - started) });
+        try {
+          await this.record({ ...event, ...span, time: new Date().toISOString(), phase: 'end', status: code,
+            durationMs: Math.max(0, performance.now() - started) });
+        } catch (error) {
+          reportAuditFailure();
+          if (!failed) throw error;
+          if (businessFailure !== null && typeof businessFailure === 'object') {
+            auditFailures.set(businessFailure, error);
+            try {
+              if (Object.isExtensible(businessFailure)) Object.defineProperty(businessFailure, 'auditFailure', {
+                value: error, configurable: true, enumerable: false,
+              });
+            } catch { /* The WeakMap remains authoritative for frozen or pre-existing properties. */ }
+          }
+        }
       }
     });
   }

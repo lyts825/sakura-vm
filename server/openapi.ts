@@ -2,6 +2,7 @@ import { PLUGINS } from '../shared/plugins.ts';
 import type { ApiDocument, ApiParameter } from '../shared/api-document.ts';
 import { operationDirectory, operationEntries } from './operation-catalog.ts';
 import { APP_VERSION } from '../shared/version.ts';
+import { z } from 'zod';
 
 export function apiDocument(active: Iterable<string>, port: number, catalogVersion = 0): ApiDocument {
   const enabled = new Set(active);
@@ -44,23 +45,11 @@ export function apiDocument(active: Iterable<string>, port: number, catalogVersi
       required: true,
       schema: { type: 'string' },
     }));
-    if (policy.projectScoped)
-      parameters.push({
-        name: 'project',
-        in: 'query',
-        required: false,
-        schema: { type: 'string', pattern: '^(default|[a-f0-9]{16})$' },
-        description: '成员必须指定项目；管理员省略时在准入时固定当前活动项目。',
-      });
-    if (policy.id === 'sandbox.artifact')
-      parameters.push(
-        ...['run', 'artifact'].map((name) => ({
-          name,
-          in: 'query' as const,
-          required: true,
-          schema: { type: 'string', format: 'uuid' },
-        })),
-      );
+    for (const [location, schema] of [['query', entry.requestContract!.query], ['header', entry.requestContract!.headers]] as const) {
+      const json = z.toJSONSchema(schema, { io: 'input' });
+      for (const [name, value] of Object.entries(json.properties || {})) parameters.push({ name, in: location,
+        required: (json.required || []).includes(name), schema: value as Record<string, unknown> });
+    }
     const security =
       policy.access === 'controller'
         ? undefined
@@ -82,14 +71,15 @@ export function apiDocument(active: Iterable<string>, port: number, catalogVersi
       'x-sakura-inspectable': !!entry.inspect,
       'x-sakura-contract': policy.contract,
       'x-sakura-operation': policy,
+      'x-sakura-response': { kind: response!.kind },
       ...(security ? { security } : {}),
-      ...(entry.body
+      ...(entry.requestContract?.kind !== 'none'
         ? {
             requestBody: {
-              required: true,
+              required: entry.requestContract!.required,
               content: {
-                [policy.transport === 'form' ? 'application/x-www-form-urlencoded' : 'application/json']: {
-                  schema: entry.body,
+                [entry.requestContract!.media!]: {
+                  schema: entry.body || { type: 'string', format: 'binary' },
                 },
               },
             },

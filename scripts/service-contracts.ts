@@ -3,6 +3,8 @@ import { realpathSync } from 'node:fs';
 import { isBuiltin } from 'node:module';
 import { dirname, isAbsolute, relative, resolve, win32 } from 'node:path';
 import ts from 'typescript';
+import { assertReleasedServiceCompatibility } from './service-compatibility.ts';
+import { assertSystemServiceFactories } from './system-service-boundaries.ts';
 
 // Only independent contract declarations are inputs. Implementations never enlarge this registry.
 const sourcePath = 'server/service-contracts/v1.ts';
@@ -42,7 +44,7 @@ export function assertIndependentServiceContracts(entry: ts.SourceFile, inputs =
   const inspected = new Set<ts.SourceFile>();
   const inspectImport = (specifier: string, file: ts.SourceFile) => {
     const path = assertServiceContractImport(specifier, file.fileName);
-    if (path && inside(contractRoot, path)) {
+    if (path && (inside(contractRoot, path) || inside(sharedRoot, path))) {
       const dependency = inputs.getSourceFile(path) || inputs.getSourceFiles().find(candidate => resolve(candidate.fileName) === path);
       if (!dependency) throw new Error('Public service contract source is missing: ' + path);
       independentSource(dependency);
@@ -71,6 +73,9 @@ export function assertIndependentServiceContracts(entry: ts.SourceFile, inputs =
   independentSource(entry);
 }
 assertIndependentServiceContracts(source);
+// Generation never updates the released baseline. Incompatible V1 edits need a new contract version.
+await assertReleasedServiceCompatibility(sourcePath, parsed.options);
+assertSystemServiceFactories(parsed.fileNames, parsed.options);
 const descriptors: Record<string, { id: string; version: number; members: string[]; optional?: string[]; methods?: string[]; properties?: Record<string, string>; returns?: Record<string, string> }> = {};
 const known = new Map<ts.Type, string>();
 const assigned = new Map<ts.Type, string>();
@@ -94,9 +99,10 @@ function underlying(type: ts.Type): ts.Type | undefined {
 }
 function shape(raw: ts.Type, suggested: string, force = false): string | undefined {
   const type = underlying(raw);
-  if (!type || type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.TypeParameter)) return;
+  if (!type || !(type.flags & ts.TypeFlags.Object) || type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.TypeParameter)) return;
   if (checker.getSignaturesOfType(type, ts.SignatureKind.Call).length) return;
-  const members = type.getProperties();
+  // The broker publishes string keys. Compiler-generated unique-symbol IDs are process-local.
+  const members = type.getProperties().filter(member => !member.name.startsWith('__@'));
   const named = known.get(type);
   const mapped = type.aliasSymbol && ['Readonly', 'Pick', 'Omit', 'Partial', 'Required'].includes(type.aliasSymbol.name);
   if (!named && !mapped && type.symbol?.declarations?.some((declaration) => declaration.getSourceFile() !== source)) return;

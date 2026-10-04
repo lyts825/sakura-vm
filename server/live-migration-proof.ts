@@ -15,6 +15,11 @@ function canonical(value: unknown): unknown {
   return value;
 }
 export const migrationDigest = (value: unknown) => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+// A public HostPeers method cannot assert native source exit with a JSON boolean.
+// Only this original-owner proof closure can mint an in-process request receipt.
+const stoppedRequests = new WeakSet<object>();
+export const isLiveMigrationStoppedRequest = (value: unknown) =>
+  !!value && typeof value === 'object' && stoppedRequests.has(value);
 export function migrationFenceIdentity(fence: LiveMigrationFence) {
   const { sourceStopped: _stopped, completion: _completion, ...identity } = fence;
   return migrationDigest(identity);
@@ -35,7 +40,7 @@ type ProofOwner = {
     inspect: () => Promise<LiveMigrationTargetStatus>): Promise<LiveMigrationFence>;
 };
 export function createLiveMigrationCompletionPort(owner: ProofOwner,
-  peers: () => Pick<HostPeersV1, 'view' | 'inspectLiveTarget'>): LiveMigrationCompletionPort {
+  peers: () => Pick<HostPeersV1, 'view' | 'inspectLiveTarget'> & Partial<Pick<HostPeersV1, 'completeLiveTarget'>>): LiveMigrationCompletionPort {
   if (pluginAuthority() || vmHostIdentity(owner) !== owner)
     throw new AppError('迁移证明端口仅允许系统装配', 403, 'LIVE_MIGRATION_SYSTEM_ONLY');
   return {
@@ -53,8 +58,27 @@ export function createLiveMigrationCompletionPort(owner: ProofOwner,
         if (!expected.peerId || view.hostId !== expected.sourceHostId ||
           !view.outbound.some(peer => peer.id === expected.peerId && peer.remoteId === expected.targetHostId))
           throw new AppError('原配对主机身份已变化', 409, 'LIVE_MIGRATION_TARGET_UNCONFIRMED');
-        const result = await original.inspectLiveTarget(expected.peerId,
+        let result = await original.inspectLiveTarget(expected.peerId,
           { targetVmId: expected.targetVmId, transferId: expected.transferId });
+        // The private source owner has already published native exit evidence before any target cold recovery.
+        if ((result.status !== 'running' || result.originStatus !== 'ready') && original.completeLiveTarget) {
+          const request = Object.freeze({
+            targetVmId: expected.targetVmId, transferId: expected.transferId,
+            sessionId: expected.sessionId, sourceStopped: true,
+          });
+          stoppedRequests.add(request);
+          try { result = await original.completeLiveTarget(expected.peerId, request); }
+          finally { stoppedRequests.delete(request); }
+          const deadline = Date.now() + 120_000;
+          while (result.status !== 'running' || result.originStatus !== 'ready') {
+            await check();
+            if (Date.now() >= deadline) throw new AppError('原迁移目标恢复就绪超时；来源栅栏继续保留', 504);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            result = await original.inspectLiveTarget(expected.peerId, {
+              targetVmId: expected.targetVmId, transferId: expected.transferId,
+            });
+          }
+        }
         await check();
         if (peers() !== original) throw new AppError('原迁移核验服务已变化', 409);
         return result;

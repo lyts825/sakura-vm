@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as backupsServices } from './services.ts';
@@ -68,9 +69,7 @@ export async function route(
   this.vm.get(id);
   if (parts.length === 4) {
     if (action === 'backup-download' && req.method === 'POST') {
-      const input = z
-        .object({ backupId: z.uuid() })
-        .strict()
+      const input = httpRouteRequests["backups.legacy.post.vms.vmId.backup-download"]
         .parse(await body(req));
       const content = await this.backups.downloadable(id, input.backupId);
       send(
@@ -92,14 +91,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const input = z
-          .object({
-            action: z.enum(['run', 'verify', 'restore', 'delete']),
-            backupId: z.string().uuid().optional(),
-            name: z.string().optional(),
-            password: z.string().max(1024).optional(),
-          })
-          .strict()
+        const input = httpRouteRequests["backups.legacy.post.vms.vmId.backups"]
           .parse(await body(req));
         if (input.action === 'run') send(await this.backups.run(id, input.password), 202);
         else {

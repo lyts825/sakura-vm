@@ -3,6 +3,7 @@ import test from 'node:test';
 import { ControllerSession, RefreshQueue } from '../src/controller-session.ts';
 import { watchController } from '../src/controller-watch.ts';
 import { connectTerminal } from '../src/terminal-connection.ts';
+import { GraphApi } from '../server/graphql-api.ts';
 
 const settle = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
@@ -24,6 +25,49 @@ const sessionView = (locked: boolean) => ({
   idleMinutes: 1,
   retryAfterSeconds: 0,
 });
+test('GraphQL query validation remains visible through the controller without exposing unclassified HTTP errors', async t => {
+  const graph = new GraphApi(async () => { throw new Error('EXCLUDED_INTERNAL_SOURCE'); });
+  t.after(() => graph.close());
+  const session = new ControllerSession(async (url, init) => {
+    if (url === '/api/bootstrap') return Response.json({ token: 'ready' });
+    const result = await graph.query(JSON.parse(String(init?.body)));
+    return Response.json(result.body, { status: result.status,
+      headers: { 'content-type': 'application/graphql-response+json', 'x-sakura-correlation-id': 'query-correlation' } });
+  });
+  for (const [query, code, message] of [
+    ['{ unknownField }', 'GRAPHQL_VALIDATION_FAILED', /unknownField/],
+    ['{', 'GRAPHQL_PARSE_FAILED', /Syntax Error/],
+    ['query Read($n:Int!){ vms(limit:$n){ id } }', 'BAD_USER_INPUT', /\$n/],
+  ] as const) await assert.rejects(session.request('/graphql', 'POST', { query }), (error: any) => {
+    assert.equal(error.status, 400); assert.equal(error.code, code);
+    assert.equal(error.correlationId, 'query-correlation'); assert.match(error.message, message);
+    assert.doesNotMatch(error.message, /EXCLUDED_/); return true;
+  });
+  const secret = 'EXCLUDED_INTERNAL_EXCEPTION';
+  for (const fixture of [
+    { path: '/graphql', status: 400, media: 'application/graphql-response+json', code: undefined },
+    { path: '/graphql', status: 400, media: 'application/graphql-response+json', code: 'SOURCE_UNAVAILABLE' },
+    { path: '/graphql', status: 500, media: 'application/graphql-response+json', code: 'GRAPHQL_VALIDATION_FAILED' },
+    { path: '/graphql', status: 400, media: 'application/json', code: 'GRAPHQL_VALIDATION_FAILED' },
+    { path: '/vms', status: 400, media: 'application/graphql-response+json', code: 'GRAPHQL_VALIDATION_FAILED' },
+    { path: '/graphql', status: 400, media: 'application/graphql-response+json', code: 'GRAPHQL_VALIDATION_FAILED', count: 11 },
+  ]) {
+    const rejected = new ControllerSession(async url => url === '/api/bootstrap' ? Response.json({ token: 'ready' }) :
+      Response.json({ errors: Array.from({ length: fixture.count || 1 }, () => ({ message: secret, extensions: { code: fixture.code } })) },
+        { status: fixture.status, headers: { 'content-type': fixture.media } }));
+    await assert.rejects(rejected.request(fixture.path, 'POST', {}), (error: any) => {
+      assert.equal(error.status, fixture.status); assert.equal(error.code, 'HTTP_ERROR');
+      assert.doesNotMatch(error.message, /EXCLUDED_/); return true;
+    });
+  }
+  const longMessage = new ControllerSession(async url => url === '/api/bootstrap' ? Response.json({ token: 'ready' }) :
+    Response.json({ errors: [{ message: 'x'.repeat(3000), extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+      { status: 400, headers: { 'content-type': 'application/graphql-response+json' } }));
+  await assert.rejects(longMessage.request('/graphql', 'POST', {}), (error: any) => {
+    assert.equal(error.message.length, 2000); return true;
+  });
+});
+
 test('a locked bootstrap displays the gate and never admits a pending mutation or replays it on unlock', async () => {
   let locked = true,
     mutations = 0,
@@ -84,7 +128,7 @@ test('private data received after locking is discarded even when the old request
   assert.equal(session.getToken(), '');
 });
 
-test('concurrent expired requests obtain one new credential and retry only the rejected operation', async () => {
+test('expired replies retain their HTTP status and never automatically replay a mutation', async () => {
   let bootstraps = 0,
     writes = 0;
   const session = new ControllerSession(async (url, init) => {
@@ -97,11 +141,133 @@ test('concurrent expired requests obtain one new credential and retry only the r
   const credentials: string[] = [];
   const unsubscribe = session.subscribe(() => credentials.push(session.getToken()));
   await session.authenticate();
-  await Promise.all([session.request('/vms'), session.request('/vms/id/start', 'POST')]);
+  const rejected = await Promise.allSettled([session.request('/vms'), session.request('/vms/id/start', 'POST')]);
+  assert.ok(rejected.every(result => result.status === 'rejected' && result.reason.status === 401));
+  assert.equal(bootstraps, 1);
+  assert.equal(writes, 0);
+  await session.request('/vms/id/start', 'POST');
   assert.equal(bootstraps, 2);
   assert.equal(writes, 1);
-  assert.deepEqual(credentials, ['token-1', 'token-2']);
+  assert.equal(credentials.at(-1), 'token-2');
   unsubscribe();
+});
+
+const rejectedBeforeExecution = () => ({ error: '凭证已过期', code: 'UNAUTHORIZED',
+  correlationId: '11111111-1111-4111-8111-111111111111', operationResult: {
+    correlationId: '11111111-1111-4111-8111-111111111111', outcome: 'failed', executed: false,
+  } });
+
+test('retained artifact reads refresh a rejected controller credential once after restart', async () => {
+  for (const path of ['/sandboxes/artifact?run=run&artifact=artifact', '/vms/vm/rescue/artifact?run=run&artifact=artifact',
+    '/vms/vm/backup-recovery/artifact?run=run&artifact=artifact']) {
+    let token = 'before', bootstraps = 0, executed = 0;
+    const credentials: string[] = [];
+    const session = new ControllerSession(async (url, init) => {
+      if (url === '/api/bootstrap') { bootstraps++; return Response.json({ token }); }
+      assert.equal(url, '/api' + path);
+      const credential = new Headers(init?.headers).get('x-sakura-token')!;
+      credentials.push(credential);
+      if (credential !== token) return Response.json(rejectedBeforeExecution(), { status: 401 });
+      executed++; return Response.json({ name: 'report.txt', base64: 'cmV0YWluZWQ=' });
+    });
+    await session.authenticate(); token = 'after';
+    assert.deepEqual(await session.request(path), { name: 'report.txt', base64: 'cmV0YWluZWQ=' });
+    assert.deepEqual(credentials, ['before', 'after']); assert.equal(executed, 1); assert.equal(bootstraps, 2);
+  }
+});
+
+test('parallel rejected reads share refresh and late old replies cannot clear the fresh credential', async () => {
+  const refresh = deferred(), lateRead = deferred(), lateWrite = deferred();
+  let bootstraps = 0, oldReads = 0, newReads = 0, writes = 0;
+  const session = new ControllerSession(async (url, init) => {
+    if (url === '/api/bootstrap') {
+      if (++bootstraps === 2) await refresh.promise;
+      return Response.json({ token: bootstraps === 1 ? 'before' : 'after' });
+    }
+    if (init?.method === 'POST') { writes++; await lateWrite.promise; return Response.json(rejectedBeforeExecution(), { status: 401 }); }
+    if (new Headers(init?.headers).get('x-sakura-token') === 'before') {
+      if (++oldReads === 2) await lateRead.promise;
+      return Response.json(rejectedBeforeExecution(), { status: 401 });
+    }
+    newReads++; return Response.json({ ok: true });
+  });
+  await session.authenticate();
+  const write = assert.rejects(session.request('/vms/vm/start', 'POST'), { status: 401 });
+  const first = session.request('/sandboxes/artifact?run=run&artifact=artifact');
+  const second = session.request('/vms/vm/rescue/artifact?run=run&artifact=artifact');
+  await settle(); assert.equal(bootstraps, 2);
+  refresh.resolve(); await first;
+  assert.equal(session.getToken(), 'after');
+  lateRead.resolve(); await second;
+  lateWrite.resolve(); await write;
+  assert.equal(session.getToken(), 'after'); assert.equal(bootstraps, 2);
+  assert.equal(oldReads, 2); assert.equal(newReads, 2); assert.equal(writes, 1);
+});
+
+test('read refresh requires an explicit non-execution receipt and stops after one retry', async () => {
+  const confirmed = rejectedBeforeExecution();
+  for (const result of [{ error: 'expired' }, { ...confirmed, operationResult: undefined },
+    { ...confirmed, operationResult: { ...confirmed.operationResult, executed: true } },
+    { ...confirmed, operationResult: { ...confirmed.operationResult, outcome: 'unknown' } },
+    { ...confirmed, operationResult: { ...confirmed.operationResult, correlationId: 'different' } }]) {
+    let bootstraps = 0, reads = 0;
+    const session = new ControllerSession(async url => {
+      if (url === '/api/bootstrap') { bootstraps++; return Response.json({ token: 'before' }); }
+      reads++; return Response.json(result, { status: 401 });
+    });
+    await assert.rejects(session.request('/sandboxes/artifact'), { status: 401 });
+    assert.equal(reads, 1); assert.equal(bootstraps, 1);
+  }
+  let bootstraps = 0, reads = 0;
+  const session = new ControllerSession(async url => {
+    if (url === '/api/bootstrap') return Response.json({ token: 'token-' + ++bootstraps });
+    reads++; return Response.json(confirmed, { status: 401 });
+  });
+  await assert.rejects(session.request('/sandboxes/artifact'), { status: 401 });
+  assert.equal(reads, 2); assert.equal(bootstraps, 2); assert.equal(session.getToken(), '');
+});
+
+test('confirmed 401 reads cannot fall back from account mode or bypass cancellation and locking', async () => {
+  let bootstraps = 0, requests = 0;
+  const account = new ControllerSession(async url => {
+    if (url === '/api/bootstrap') bootstraps++;
+    requests++; return Response.json(rejectedBeforeExecution(), { status: 401 });
+  });
+  account.adoptAccount('a'.repeat(64), { id: 'owner', username: 'owner', role: 'owner', vmIds: [], expiresAt: Date.now() + 10000 });
+  await assert.rejects(account.request('/sandboxes/artifact'), { status: 401 });
+  assert.equal(bootstraps, 0); assert.equal(requests, 1);
+  const gate = deferred(); bootstraps = 0; requests = 0;
+  const cancelled = new ControllerSession(async url => {
+    if (url === '/api/bootstrap') {
+      if (++bootstraps === 2) await gate.promise;
+      return Response.json({ token: 'token-' + bootstraps });
+    }
+    requests++; return Response.json(rejectedBeforeExecution(), { status: 401 });
+  });
+  await cancelled.authenticate();
+  const abort = new AbortController(), pending = cancelled.request('/sandboxes/artifact', 'GET', undefined, abort.signal);
+  await settle(); abort.abort();
+  await assert.rejects(pending, { name: 'AbortError' }); gate.resolve(); await settle();
+  assert.equal(requests, 1);
+  let lockedReads = 0, lockedBootstraps = 0;
+  const locked = new ControllerSession(async url => {
+    if (url === '/api/bootstrap') return ++lockedBootstraps === 1 ? Response.json({ token: 'before' }) :
+      Response.json({ error: 'locked', session: sessionView(true) }, { status: 423 });
+    lockedReads++; return Response.json(rejectedBeforeExecution(), { status: 401 });
+  });
+  await assert.rejects(locked.request('/sandboxes/artifact'), { status: 423 });
+  assert.equal(lockedReads, 1); assert.equal(locked.getSession().locked, true);
+  const changed = deferred(); let changedBootstraps = 0;
+  const changedSession = new ControllerSession(async url => {
+    if (url === '/api/bootstrap') { changedBootstraps++; return Response.json({ token: 'a'.repeat(64) }); }
+    await changed.promise; return Response.json(rejectedBeforeExecution(), { status: 401 });
+  });
+  await changedSession.authenticate();
+  const oldRequest = assert.rejects(changedSession.request('/sandboxes/artifact'), { status: 401 });
+  await settle();
+  changedSession.adoptAccount('a'.repeat(64), { id: 'owner', username: 'owner', role: 'owner', vmIds: [], expiresAt: Date.now() + 10000 });
+  changed.resolve(); await oldRequest;
+  assert.equal(changedSession.getToken(), 'a'.repeat(64)); assert.equal(changedBootstraps, 1);
 });
 
 test('account credentials never fall back to public bootstrap or replay a rejected mutation', async () => {
@@ -116,7 +282,7 @@ test('account credentials never fall back to public bootstrap or replay a reject
     vmIds: [], expiresAt: Date.now() + 10000 });
   assert.equal(await session.authenticate(), 'a'.repeat(64));
   assert.equal(bootstrap, 0);
-  await assert.rejects(session.request('/vms', 'POST', {}), /重新登录/);
+  await assert.rejects(session.request('/vms', 'POST', {}), { status: 401 });
   assert.equal(writes, 1);
   assert.equal(bootstrap, 0);
   assert.equal(session.getToken(), '');

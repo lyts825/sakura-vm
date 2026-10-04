@@ -12,6 +12,20 @@ const { powerPolicySchema, powerPolicy, savePowerPolicy, powerDecision, hostPowe
 const { FeatureSuite } = await import('../server/feature-suite.ts');
 const { FeatureScheduler } = await import('../server/feature-scheduler.ts');
 const { saveMaintenancePolicy } = await import('../server/automation-policy.ts');
+
+// Deliberately near a minute boundary: metadata I/O must not change a test's schedule minute.
+const fixedPowerTime = Date.UTC(2026, 9, 5, 4, 34, 59, 990);
+
+// The production scheduler intentionally unrefs its timer. A test awaiting its
+// first query owns a bounded wait, without making idle production work keep Node alive.
+async function waitForPowerQuery(waiting: Promise<void>) {
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([waiting, new Promise<void>((_resolve, reject) => {
+      deadline = setTimeout(() => reject(new Error('Power query did not start')), 5000);
+    })]);
+  } finally { clearTimeout(deadline); }
+}
 after(async () => {
   assert.equal(dirname(root), resolve(tmpdir()));
   assert.ok(basename(root).startsWith('sakura-power-test-'));
@@ -19,7 +33,7 @@ after(async () => {
 });
 
 test('power policy fails closed for starts with stale or unknown samples, and never stops without a known low battery', () => {
-  const now = Date.now(),
+  const now = fixedPowerTime,
     sample = {
       checkedAt: new Date(now).toISOString(),
       onAC: false,
@@ -54,7 +68,8 @@ test('power policy fails closed for starts with stale or unknown samples, and ne
   );
 });
 
-test('scheduler uses persisted power policy to defer starts and stop at low battery while honoring maintenance', async () => {
+test('scheduler uses persisted power policy to defer starts and stop at low battery while honoring maintenance', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: fixedPowerTime });
   const id = randomUUID(),
     vm = { id, cpus: 1, memoryMiB: 512 };
   let status = 'stopped',
@@ -147,7 +162,8 @@ test(
   },
 );
 
-test('closing the scheduler during a power query cannot start or stop an instance afterwards', async () => {
+test('closing the scheduler during a power query cannot start or stop an instance afterwards', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: fixedPowerTime });
   const id = randomUUID();
   let complete!: (sample: any) => void,
     entered!: () => void,
@@ -209,16 +225,20 @@ test('disabling and re-enabling the scheduler cancels its power query and uses a
   });
   await savePowerPolicy(id, { enabled: true });
   let scheduler = new FeatureScheduler(suite);
-  await waiting;
-  await scheduler.close();
-  assert.equal(aborted, true);
-  aborted = false;
-  const resumed = new Promise<void>((resolve) => {
-    entered = resolve;
-  });
-  scheduler = new FeatureScheduler(suite);
-  await resumed;
-  await scheduler.close();
-  assert.equal(aborted, true);
-  await suite.close();
+  try {
+    await waitForPowerQuery(waiting);
+    await scheduler.close();
+    assert.equal(aborted, true);
+    aborted = false;
+    const resumed = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    scheduler = new FeatureScheduler(suite);
+    await waitForPowerQuery(resumed);
+    await scheduler.close();
+    assert.equal(aborted, true);
+  } finally {
+    await scheduler.close();
+    await suite.close();
+  }
 });

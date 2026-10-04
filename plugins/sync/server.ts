@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as syncServices } from './services.ts';
@@ -39,17 +40,12 @@ export async function route(
     action = parts[3];
   this.vm.get(id);
   if (parts.length === 4 && action === 'sync-rollback' && req.method === 'POST') {
-    const { checkpoint } = z
-      .object({ checkpoint: z.uuid() })
-      .strict()
+    const { checkpoint } = httpRouteRequests["sync.legacy.post.vms.vmId.sync-rollback"]
       .parse(await body(req));
     return send(await this.sync.rollback(id, checkpoint), 202);
   }
   if (parts.length === 4 && action === 'sync-merge' && req.method === 'POST') {
-    const { path, token } = z.object({
-      path: z.string().min(1).max(4096),
-      token: z.string().regex(/^[a-f0-9]{64}$/),
-    }).strict().parse(await body(req));
+    const { path, token } = httpRouteRequests["sync.legacy.post.vms.vmId.sync-merge"].parse(await body(req));
     return send(await this.sync.mergePreview(id, path, token, signal));
   }
   if (parts.length === 4 && action === 'sync-queue' && ['POST', 'DELETE'].includes(req.method || '')) {
@@ -75,33 +71,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const { direction, token, decisions, merges } = z
-          .object({
-            direction: z.enum(['both', 'push', 'pull']),
-            token: z
-              .string()
-              .regex(/^[a-f0-9]{64}$/)
-              .optional(),
-            decisions: z
-              .record(
-                z.string().max(4096),
-                z.enum([
-                  'push',
-                  'pull',
-                  'both',
-                  'skip',
-                  'merge',
-                  'manual',
-                  'delete-host',
-                  'delete-guest',
-                  'restore-host',
-                  'restore-guest',
-                ]),
-              )
-              .optional(),
-            merges: z.record(z.string().max(4096), z.string().max(1024 ** 2)).optional(),
-          })
-          .strict()
+        const { direction, token, decisions, merges } = httpRouteRequests["sync.legacy.post.vms.vmId.sync"]
           .parse(await body(req, signal, MAX_TEXT_REQUEST_BYTES));
         send(await this.sync.run(id, direction, token, decisions, merges), 202);
         return true;

@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as ideServices } from './services.ts';
@@ -32,9 +33,7 @@ export async function route(
         return true;
       }
       if (req.method === 'POST') {
-        const input = z
-          .object({ action: z.enum(['install', 'stop']).default('install') })
-          .strict()
+        const input = httpRouteRequests["ide.legacy.post.vms.vmId.ide"]
           .parse((await body(req)) || {});
         send(input.action === 'stop' ? await this.ide.stop(id) : await this.ide.install(id, signal));
         return true;

@@ -5,6 +5,22 @@ import { AppError } from '../shared/errors.ts';
 import { type VMConfig, type VMRecord } from '../shared/contracts/vm.ts';
 import { freePort, qmp } from './qmp.ts';
 import type { LiveMigrationProjects } from './live-migration-projects.ts';
+import { pluginAuthority } from './plugin-authority.ts';
+import { vmHostIdentity } from './vm-reference.ts';
+
+type TargetPort = {
+  bindSession(id: string, receipt: unknown): Promise<unknown>;
+  recover(id: string, sessionId: string): Promise<unknown>;
+  authenticated?(input: object): boolean;
+};
+const targetPorts = new WeakMap<object, TargetPort>();
+export function registerLiveMigrationTargetPort(owner: object, port: TargetPort) {
+  if (pluginAuthority() || vmHostIdentity(owner) !== owner)
+    throw new AppError('迁移目标核验端口仅允许系统装配', 403, 'LIVE_MIGRATION_SYSTEM_ONLY');
+  if (targetPorts.has(owner)) throw new Error('在线迁移目标端口已装配');
+  targetPorts.set(owner, port);
+  return () => { if (targetPorts.get(owner) === port) targetPorts.delete(owner); };
+}
 
 type PrepareInput = { requesterId: string; transferId: string; sourceVmId: string;
   config: VMConfig; key: string; seed: Buffer; projects?: LiveMigrationProjects;
@@ -13,11 +29,37 @@ type PrepareInput = { requesterId: string; transferId: string; sourceVmId: strin
 
 export class LiveMigrationReceiver {
   private finalizing = new Set<string>();
+  private preparing = new Set<string>();
+  private target: TargetPort | undefined;
   constructor(private machines: Machines, private peers: HostPeersV1,
-    private requireAvailable: () => void = () => {}, private query: typeof qmp = qmp) {}
+    private requireAvailable: () => void = () => {}, private query: typeof qmp = qmp) {
+    const owner = vmHostIdentity(machines);
+    this.target = targetPorts.get(owner);
+    // Direct host owners used by local coordinators have the same private port; VmAccess does not expose it.
+    if (!this.target && !pluginAuthority() && owner === machines) {
+      const native = machines as unknown as {
+        bindIncomingSession?: TargetPort['bindSession']; recoverIncoming?: TargetPort['recover'];
+      };
+      if (native.bindIncomingSession && native.recoverIncoming) this.target = {
+        bindSession: (id, receipt) => native.bindIncomingSession!(id, receipt),
+        recover: (id, sessionId) => native.recoverIncoming!(id, sessionId),
+      };
+    }
+  }
 
   async prepare(input: PrepareInput) {
     this.requireAvailable();
+    const identity = `${input.requesterId}:${input.transferId}`;
+    if (this.preparing.has(identity)) throw new AppError('原在线迁移目标正在准备，请重试原迁移请求', 409);
+    this.preparing.add(identity);
+    try { return await this.prepareTarget(input); }
+    finally { this.preparing.delete(identity); }
+  }
+
+  private async prepareTarget(input: PrepareInput) {
+    const existing = [...this.machines.records.values()].find(vm =>
+      vm.liveMigrationOrigin?.sourceHostId === input.requesterId &&
+      vm.liveMigrationOrigin.transferId === input.transferId);
     const created = await this.machines.createIncomingTarget(input.config,
       { key: input.key, seed: input.seed }, {
         sourceHostId: input.requesterId, sourceVmId: input.sourceVmId,
@@ -27,7 +69,14 @@ export class LiveMigrationReceiver {
     let sessionId: string | undefined;
     try {
       this.requireAvailable();
-      await this.machines.startIncoming(created.id);
+      if (created.liveMigrationOrigin?.status !== 'prepared')
+        throw new AppError('原迁移目标已接收状态，请重入原切换恢复流程', 409);
+      const previous = created.liveMigrationOrigin.prepareReceipt;
+      if (previous && this.machines.live.has(created.id) &&
+          this.peers.matchesMigrationSession(previous.sessionId, input.requesterId, created.id, input.transferId))
+        return previous;
+      if (previous) this.peers.closeMigrationSession(previous.sessionId);
+      if (!this.machines.live.has(created.id)) await this.machines.startIncoming(created.id);
       const live = this.machines.live.get(created.id);
       if (!live) throw new AppError('目标 QEMU 未启动', 502);
       const deadline = Date.now() + 15_000;
@@ -66,13 +115,19 @@ export class LiveMigrationReceiver {
       sessionId = this.peers.registerMigrationSession(input.requesterId, {
         disk: diskPort, state: statePort, qmp: live.qmpPort, targetDiskNode,
         targetVmId: created.id, transferId: input.transferId,
+        ...(previous ? { sessionId: previous.sessionId } : {}),
       });
-      return { targetVmId: created.id, sessionId, targetDiskNode,
+      const receipt = { targetVmId: created.id, sessionId, targetDiskNode,
         diskPort, statePort, ...(input.completionProtocol ? { completionProtocol: input.completionProtocol } : {}) };
+      if (!this.target) throw new AppError('原迁移目标持久核验端口尚未装配', 503);
+      await this.target.bindSession(created.id, receipt);
+      return receipt;
     } catch (error) {
       if (sessionId) this.peers.closeMigrationSession(sessionId);
-      await this.machines.stop(created.id, true).catch(() => {});
-      await this.machines.delete(created.id).catch(() => {});
+      if (!existing) {
+        await this.machines.stop(created.id, true).catch(() => {});
+        await this.machines.delete(created.id).catch(() => {});
+      }
       throw error;
     }
   }
@@ -109,20 +164,39 @@ export class LiveMigrationReceiver {
   }
 
   async complete(input: { requesterId: string; transferId: string;
-    targetVmId: string; sessionId: string }) {
+    targetVmId: string; sessionId: string; sourceStopped?: true }) {
     this.requireAvailable();
+    if (input.sourceStopped && !this.target?.authenticated?.(input))
+      throw new AppError('目标冷恢复仅允许已认证的原迁移同伴入口', 403, 'LIVE_MIGRATION_SYSTEM_ONLY');
     if (this.finalizing.has(input.targetVmId))
       throw new AppError('目标实例正在完成在线迁移操作', 409);
     this.finalizing.add(input.targetVmId);
     try {
       const before = this.status(input);
+      const durable = this.machines.get(input.targetVmId).liveMigrationOrigin;
+      if (durable?.sessionId && durable.sessionId !== input.sessionId)
+        throw new AppError('原在线迁移会话已变化', 409);
+      if (!this.machines.live?.has(input.targetVmId) && input.sourceStopped === true) {
+        if (!this.target) throw new AppError('原迁移目标恢复端口尚未装配', 503);
+        await this.target.recover(input.targetVmId, input.sessionId);
+        return this.verifiedStatus(input);
+      }
+      if (before.originStatus === 'prepared' && input.sourceStopped === true && this.target) {
+        const live = this.machines.live.get(input.targetVmId)!;
+        const state = await this.query(live.qmpPort, 'query-status') as { running?: boolean };
+        if (state.running === false) {
+          await this.target.recover(input.targetVmId, input.sessionId);
+          return this.verifiedStatus(input);
+        }
+      }
       if (before.originStatus !== 'prepared') {
         if (before.sessionId && before.sessionId !== input.sessionId)
           throw new AppError('原在线迁移会话已变化', 409);
         return this.verifiedStatus(input);
       }
       if (!this.peers.matchesMigrationSession(input.sessionId, input.requesterId,
-        input.targetVmId, input.transferId))
+        input.targetVmId, input.transferId) &&
+          !(input.sourceStopped === true && durable?.sessionId === input.sessionId))
         throw new AppError('在线迁移会话与目标实例不匹配', 409);
       await this.machines.completeIncoming(input.targetVmId, undefined, input.sessionId);
       this.peers.closeMigrationSession(input.sessionId);
@@ -141,7 +215,8 @@ export class LiveMigrationReceiver {
       if (before.originStatus !== 'prepared')
         throw new AppError('目标实例已接收迁移，不能取消', 409);
       if (!this.peers.matchesMigrationSession(input.sessionId, input.requesterId,
-        input.targetVmId, input.transferId))
+        input.targetVmId, input.transferId) &&
+          this.machines.get(input.targetVmId).liveMigrationOrigin?.sessionId !== input.sessionId)
         throw new AppError('在线迁移会话与目标实例不匹配', 409);
       // Revoke all active migration streams before checking whether the receiver
       // can still run; a late QEMU switchover must never race target deletion.

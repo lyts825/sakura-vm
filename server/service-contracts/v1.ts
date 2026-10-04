@@ -1,5 +1,6 @@
 import type WebSocket from 'ws';
 import type { DomainRecoveryTicket } from '../../shared/contracts/domain-recovery.ts';
+import type { RecoveryView, RecoveryDiagnostics, RecoveryCatalogView } from '../../shared/contracts/recovery.ts';
 
 /** JSON Schema data published by the operation catalog; Zod's builder and metadata stay private. */
 export type OperationJsonSchemaV1 = {
@@ -8325,6 +8326,7 @@ export interface ProcessInteropV1 {
 
 export interface HostPeersV1 {
   "registerMigrationSession": (requesterId: string, ports: Record<MigrationChannelV1, number> & {
+    sessionId?: string | undefined;
     qmp?: number | undefined;
     targetDiskNode?: string | undefined;
     targetVmId?: string | undefined;
@@ -11470,4 +11472,14 @@ export interface CapabilityChecksV1 {
   accountModeReady(): boolean;
   mobileCheck(): { ready: boolean; devices: number; reason?: string };
   remoteAuditCheck(): Promise<{ ready: boolean; configured: boolean; anchoredSequence: number; reason?: string }>;
+}
+
+/** Management access keeps the domain's recovery authority behind its versioned interface. */
+export interface RecoveryCatalogV1 {
+  refresh(): Promise<RecoveryView[]>;
+  view(): RecoveryView[];
+  diagnostics(): RecoveryDiagnostics;
+  retry(input: unknown): Promise<RecoveryView>;
+  rebuild(input: unknown): Promise<RecoveryCatalogView>;
+  close(): Promise<void>;
 }

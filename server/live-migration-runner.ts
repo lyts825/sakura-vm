@@ -1,13 +1,13 @@
 import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema, type LiveMigrationFence } from '../shared/contracts/vm.ts';
-import { liveMigrationTargetStatusSchema } from '../shared/contracts/live-migration.ts';
+import { liveMigrationPrepareReceiptSchema, liveMigrationTargetStatusSchema } from '../shared/contracts/live-migration.ts';
 import { captureOperationCheck } from './operation-context.ts';
 import { migrationDigest, type LiveMigrationCompletionPort } from './live-migration-proof.ts';
 import { pluginAuthority } from './plugin-authority.ts';
@@ -16,14 +16,26 @@ import { vmDir } from './paths.ts';
 import { qmp } from './qmp.ts';
 import { migrateQemuWithMirroredDisk } from './live-migration-transport.ts';
 import { readLiveMigrationProjects } from './live-migration-projects.ts';
+import { readStore, writeStore } from './local-store.ts';
 
 export const runLiveMigrationInput = z.object({
   targetHostId: z.uuid(),
   targetName: createSchema.shape.name.optional(),
+  transferId: z.uuid().optional(),
+}).strict();
+
+const attemptSchema = z.object({
+  sourceVmId: z.uuid(), sourceHostId: z.uuid(), targetHostId: z.uuid(), peerId: z.uuid(),
+  transferId: z.uuid(), requestDigest: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.iso.datetime(),
+  prepared: liveMigrationPrepareReceiptSchema.optional(),
 }).strict();
 
 type Query = typeof qmp;
 type Transport = typeof migrateQemuWithMirroredDisk;
+type MigrationResult = {
+  ready: boolean; executed: boolean; sourceVmId: string; targetHostId: string;
+  targetVmId: string; transferId: ReturnType<typeof randomUUID>; targetStatus: 'running'; sourceRetained: boolean;
+};
 
 // No lookup is exported. Plugin callers can run the admitted migration coordinator but
 // cannot obtain, replace or independently invoke its original-owner proof closures.
@@ -67,7 +79,7 @@ export class LiveMigrationRunner {
   }
 
   async run(id: string, raw: unknown, signal?: AbortSignal,
-    log: (line: string) => void = () => {}) {
+    log: (line: string) => void = () => {}): Promise<MigrationResult> {
     const input = runLiveMigrationInput.parse(raw);
     if (this.#active.has(id)) throw new AppError('此实例已有在线迁移任务', 409);
     this.#active.add(id);
@@ -76,13 +88,25 @@ export class LiveMigrationRunner {
   }
 
   async #execute(id: string, input: z.infer<typeof runLiveMigrationInput>,
-    signal: AbortSignal | undefined, log: (line: string) => void) {
+    signal: AbortSignal | undefined, log: (line: string) => void): Promise<MigrationResult> {
     const admitted = captureOperationCheck();
     const check = async () => { signal?.throwIfAborted(); await admitted(); signal?.throwIfAborted(); };
     await check();
     if (!this.#completion) throw new AppError('原在线迁移完成核验端口尚未装配', 503);
     const vm = this.#machines.get(id), live = this.#machines.live.get(id);
-    if (vm.liveMigrationFence || vm.haPromotion || vm.haRetirement)
+    if (vm.liveMigrationFence) {
+      const fence = vm.liveMigrationFence;
+      if (input.targetHostId !== fence.targetHostId ||
+          input.transferId && input.transferId !== fence.transferId)
+        throw new AppError('恢复请求不属于原在线迁移目标或迁移标识', 409);
+      log(`核验原迁移 ${fence.transferId}；来源继续保持封锁。\n`);
+      const confirmed = await this.#completion.confirm(id, fence);
+      return { ready: true, executed: true, sourceVmId: id,
+        targetHostId: confirmed.targetHostId, targetVmId: confirmed.targetVmId,
+        transferId: z.uuid().parse(confirmed.transferId) as ReturnType<typeof randomUUID>,
+        targetStatus: 'running', sourceRetained: true };
+    }
+    if (vm.haPromotion || vm.haRetirement)
       throw new AppError('来源实例已有切换栅栏或故障接管记录', 409);
     if (!live || live.status !== 'running' || live.accelerator !== 'tcg')
       throw new AppError('来源实例必须由 TCG 运行且已就绪', 409);
@@ -93,11 +117,19 @@ export class LiveMigrationRunner {
     const peer = this.#peers.view().outbound.find((entry) =>
       entry.remoteId === input.targetHostId);
     if (!peer) throw new AppError('目标主机未配对或已移除', 404);
+    const attemptFile = join(vmDir(id), 'live-migration-attempt.json');
+    const stored = await readStore<unknown>(attemptFile, () => null);
+    let attempt = stored === null ? undefined : attemptSchema.parse(stored);
+    const sourceHostId = this.#peers.view().hostId;
+    if (attempt && (attempt.sourceVmId !== id || attempt.sourceHostId !== sourceHostId ||
+        attempt.targetHostId !== input.targetHostId || attempt.peerId !== peer.id ||
+        input.transferId && input.transferId !== attempt.transferId))
+      throw new AppError('存在未核对的原迁移准备记录；请使用相同目标、名称和迁移标识重入', 409, 'LIVE_MIGRATION_ATTEMPT_CHANGED');
     const score = await this.#peers.score({ cpus: vm.cpus, memoryMiB: vm.memoryMiB });
     const target = score.candidates.find((candidate) => candidate.source === 'peer' &&
       candidate.id === input.targetHostId);
     const local = score.candidates.find((candidate) => candidate.source === 'local');
-    if (!target?.eligible || !target.status || !local?.status ||
+    if (!target || (!attempt && !target.eligible) || !target?.status || !local?.status ||
         target.status.platform !== local.status.platform ||
         target.status.arch !== local.status.arch)
       throw new AppError(`目标主机当前不可选：${target?.reasons.join('；') || '平台、架构或资源不兼容'}`, 409);
@@ -120,7 +152,16 @@ export class LiveMigrationRunner {
       readLiveMigrationProjects(id),
     ]);
     await check();
-    const transferId = randomUUID();
+    const requestDigest = migrationDigest({ config: targetConfig, key,
+      seedBase64: seed.toString('base64'), projects: projects || null, organization: vm.organization || null });
+    if (attempt && attempt.requestDigest !== requestDigest)
+      throw new AppError('存在未核对的原迁移准备记录；请使用相同目标、名称和迁移标识重入', 409, 'LIVE_MIGRATION_ATTEMPT_CHANGED');
+    if (!attempt) {
+      attempt = attemptSchema.parse({ sourceVmId: id, sourceHostId, targetHostId: input.targetHostId,
+        peerId: peer.id, transferId: input.transferId || randomUUID(), requestDigest, createdAt: new Date().toISOString() });
+      await writeStore(attemptFile, attempt);
+    }
+    const transferId = attempt.transferId as ReturnType<typeof randomUUID>;
     log(`准备目标主机 ${peer.name} 的在线迁移接收实例。\n`);
     const prepared = await this.#peers.prepareLiveTarget(peer.id, {
       sourceVmId: id, transferId, config: targetConfig,
@@ -128,6 +169,8 @@ export class LiveMigrationRunner {
       organization: vm.organization,
       completionProtocol: 1,
     });
+    attempt = { ...attempt, prepared: liveMigrationPrepareReceiptSchema.parse(prepared) };
+    await writeStore(attemptFile, attempt);
     log(`目标实例 ${prepared.targetVmId} 已暂停，迁移标识 ${transferId}。\n`);
     const forwards: Array<Awaited<ReturnType<HostPeersV1['openMigrationForward']>>> = [];
     let completed = false;
@@ -152,8 +195,15 @@ export class LiveMigrationRunner {
       };
       log('开始镜像磁盘并预复制客户机内存。\n');
       await this.#transport({
-        source: (command, args, timeoutMs) => this.#query(live.qmpPort, command,
-          args, timeoutMs),
+        source: (command, args, timeoutMs) => command === 'cont' ? this.#machines.locked(id, async () => {
+          if (this.#machines.get(id).liveMigrationFence)
+            throw new AppError('来源实例已为在线迁移设置栅栏，不能恢复客户机运行',
+              409, 'LIVE_MIGRATION_SOURCE_FENCED');
+          const current = this.#machines.live.get(id);
+          if (current !== live || current.qmpPort !== live.qmpPort)
+            throw new AppError('来源原迁移进程已变化，不能恢复客户机运行', 409);
+          return this.#query(live.qmpPort, command, args, timeoutMs);
+        }) : this.#query(live.qmpPort, command, args, timeoutMs),
         target: targetQmp,
         sourceDiskNode: diskNode,
         targetDiskNode: prepared.targetDiskNode,
@@ -215,6 +265,7 @@ export class LiveMigrationRunner {
               targetVmId: prepared.targetVmId, transferId,
               sessionId: prepared.sessionId, sourceRunning: true,
             });
+            await rm(attemptFile, { force: true });
             log('来源继续运行；暂停目标已撤销。\n');
           } catch (abortError) {
             log(`目标取消未确认，保留目标 ${prepared.targetVmId} 供核对：${String(abortError)}\n`);

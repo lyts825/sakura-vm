@@ -128,6 +128,15 @@ function installEnvironment(value: Record<string, string>) {
 const installCommand = 'exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ USER=root LOGNAME=root ' +
   'LANG=C LC_ALL=C /bin/sh -eu -s';
 
+export const toolchainInstallRequest = z
+      .object({
+        tools: z
+          .array(z.enum(['git', 'node', 'python', 'rust', 'go', 'java', 'php']))
+          .min(1)
+          .max(7),
+      })
+      .strict();
+
 export class Toolchains {
   jobs = new Jobs('toolchains');
   private controller = new AbortController();
@@ -236,14 +245,7 @@ export class Toolchains {
   }
   async install(id: string, input: unknown) {
     this.controller.signal.throwIfAborted();
-    const { tools } = z
-      .object({
-        tools: z
-          .array(z.enum(['git', 'node', 'python', 'rust', 'go', 'java', 'php']))
-          .min(1)
-          .max(7),
-      })
-      .strict()
+    const { tools } = toolchainInstallRequest
       .parse(input);
     const vm = this.machines.get(id);
     const live = this.machines.live.get(id), distro = vm.distro || 'alpine';

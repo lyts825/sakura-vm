@@ -172,7 +172,12 @@ test('natural exit cleanup failure preserves its original lease and read-only re
       };
     });
     f.faults.statusExited = f.faults.stopFail = true;
-    await stopped;
+    // The production exit watcher is unref'd; this bounded test wait must keep
+    // the event loop alive until the original owner's cleanup attempt arrives.
+    await new Promise<void>((resolve, reject) => {
+      const deadline = setTimeout(() => reject(new Error('natural exit cleanup was not attempted within 2 seconds')), 2000);
+      void stopped.then(() => { clearTimeout(deadline); resolve(); }, error => { clearTimeout(deadline); reject(error); });
+    });
     // Wait for this owner's actual journal publication, rather than repeatedly opening its
     // rename target while Windows is publishing the cleanup receipt.
     await Promise.allSettled([...(f.apps as unknown as { pending: Set<Promise<unknown>> }).pending]);

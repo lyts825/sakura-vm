@@ -1,3 +1,4 @@
+import { jsonValueSchema } from '../shared/contracts/json-values.ts';
 import type { BrowserIdeV1, ColdMigrationsV1, CommunityPluginsV1, DisasterRecoveryDrillV1, HaHostFailoverV1, HaLocalFailoversV1, HostMountsV1, HostPeersV1, MediaDevicesV1, NotebookEnvironmentsV1, ProcessInteropV1, SnapshotMergeV1, SnapshotReplicationsV1, VirtioFsSharesV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { PlatformDomainServices } from './platform-domain-services.ts';
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
@@ -92,6 +93,32 @@ function compactProfileResult(result: Record<string, unknown>) {
   const { content, ...metadata } = download;
   return { ...result, download: { ...metadata, bytes: Buffer.byteLength(content) } };
 }
+
+export const nextFeatureActionRequest = z
+      .discriminatedUnion('action', [
+        z
+          .object({
+            action: z.literal('configure'),
+            featureId: idSchema,
+            enabled: z.boolean(),
+            options: z.record(z.string(), jsonValueSchema).default({}),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('check'),
+            featureId: idSchema,
+            options: z.record(z.string(), jsonValueSchema).default({}),
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal('run'),
+            featureId: idSchema,
+            options: z.record(z.string(), jsonValueSchema).default({}),
+          })
+          .strict(),
+      ]);
 
 export class NextFeatures {
   private readonly domains: PlatformDomainServices;
@@ -534,14 +561,22 @@ export class NextFeatures {
         message: '此结果是按最近资源观测计算的放置建议，不会迁移或启动实例。' };
     }
     if (spec.id === 'live-migration') {
+      const options = liveMigrationInput.parse(merged);
+      const fence = this.machines.get(id).liveMigrationFence;
+      if (action === 'run' && (fence || options.targetHostId) && this.liveMigrationRunner) {
+        return { ...await this.liveMigrationRunner.run(id, {
+          targetHostId: options.targetHostId || fence!.targetHostId, targetName: options.targetName,
+          transferId: options.transferId || fence?.transferId,
+        }, signal, log), adapter };
+      }
       if (!this.scoreHosts) return { ready: false, executed: false, adapter,
         reason: '主机资源评分服务尚未启动。' };
       const plan = await planLiveMigration(this.machines, this.scoreHosts, id,
         merged, signal, undefined, !!this.liveMigrationRunner);
       if (action === 'run' && plan.ready && plan.targetHostId && this.liveMigrationRunner) {
-        const options = liveMigrationInput.parse(merged);
         return { ...await this.liveMigrationRunner.run(id, {
           targetHostId: plan.targetHostId, targetName: options.targetName,
+          transferId: options.transferId,
         }, signal, log), adapter };
       }
       return { ...plan, adapter };
@@ -935,31 +970,7 @@ export class NextFeatures {
   }
 
   async action(id: string, input: unknown, signal?: AbortSignal) {
-    const value = z
-      .discriminatedUnion('action', [
-        z
-          .object({
-            action: z.literal('configure'),
-            featureId: idSchema,
-            enabled: z.boolean(),
-            options: z.record(z.string(), z.unknown()).default({}),
-          })
-          .strict(),
-        z
-          .object({
-            action: z.literal('check'),
-            featureId: idSchema,
-            options: z.record(z.string(), z.unknown()).default({}),
-          })
-          .strict(),
-        z
-          .object({
-            action: z.literal('run'),
-            featureId: idSchema,
-            options: z.record(z.string(), z.unknown()).default({}),
-          })
-          .strict(),
-      ])
+    const value = nextFeatureActionRequest
       .parse(input);
     if (value.featureId !== 'incident-lockdown' && value.action !== 'check')
       this.machines.requireUnlocked(id);

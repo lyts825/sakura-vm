@@ -11,6 +11,7 @@ import { withNewResourceContext } from './host-runtime/context.ts';
 import { withoutAuditParent } from './audit.ts';
 import { captureOperationCheck, withoutOperationContext } from './operation-context.ts';
 import { pluginAuthority, withPluginAuthority } from './plugin-authority.ts';
+import { runtimeTimings } from './runtime-timings.ts';
 
 export type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
 import type { JobMeta, JobView, JobUpdate } from '../shared/contracts/jobs.ts';
@@ -356,8 +357,9 @@ export class Jobs {
           operationId: view.id, jobId: view.id, vmId: meta.vmId, projectId: meta.projectId }, () => context.run(own, async () => {
           let workError: unknown;
           try {
-            if (Jobs.instrument) await Jobs.instrument(view, execute);
-            else await execute();
+            const timed = () => runtimeTimings.measure('job', 'execution', execute);
+            if (Jobs.instrument) await Jobs.instrument(view, timed);
+            else await timed();
           } catch (error) { workError = error; childrenAbort.abort(error); }
           finally {
             own.open = false;

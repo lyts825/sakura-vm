@@ -29,12 +29,16 @@ async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:h
     admittedRouteFixtures.set(host, fixture);
   }
   fixture.bodies.set(req, body);
+  const input = fixture.gateway.resolve(req.method || 'GET', url.pathname).entry.requestContract!;
+  if (input.kind !== 'none') req.headers['content-type'] ||= input.media;
   return await fixture.gateway.dispatch(req, res, url) as boolean;
 }
 import { services as imagesContract } from '../plugins/images/services.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { randomUUID } from 'node:crypto';
+import { AppError } from '../shared/errors.ts';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -240,6 +244,21 @@ test('disabled plugins reject API calls and creation options before touching the
   } finally {
     await host.close();
   }
+});
+
+test('batch instance failures keep safe public messages and correlation IDs without internal exception details', async () => {
+  const vm = machines(), id = randomUUID(), correlationId = randomUUID();
+  vm.start = async () => { throw new AppError('PRIVATE_SECRET C:\\private\\sensitive.key', 409, 'BUSINESS_CONFLICT'); };
+  const host = await Features.create(vm, ['library']);
+  const { req, res } = request('POST');
+  res.getHeader = () => correlationId;
+  try {
+    await routeThroughGateway(host, req, res, new URL('http://localhost/api/vms/batch'), async () => ({ ids: [id], action: 'start' }));
+    assert.equal(res.status, 200); assert.equal(res.payload.results[0].id, id);
+    assert.equal(res.payload.results[0].ok, false);
+    assert.match(res.payload.results[0].error, new RegExp(correlationId));
+    assert.doesNotMatch(JSON.stringify(res.payload), /PRIVATE_SECRET|private|sensitive.key/);
+  } finally { await host.close(); }
 });
 
 test('files activate only their declared services and cannot export through download tickets', async () => {

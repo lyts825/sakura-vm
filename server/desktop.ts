@@ -1,5 +1,6 @@
 import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createWebSocketStream, WebSocket } from 'ws';
+import { Transform } from 'node:stream';
 import type { ClientChannel } from 'ssh2';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
@@ -13,6 +14,7 @@ import {
 import { desktopCommands, imeInstall } from './desktop-guest.ts';
 import { guestTask } from './guest-task.ts';
 import { ReadOnlyRfb } from './readonly-rfb.ts';
+import { SOCKET_CLIENT_BYTES, SOCKET_SERVER_BYTES } from '../shared/contracts/websocket.ts';
 import { SingleAppWindows } from './single-app-windows.ts';
 import { projectPrivateValues } from './workspaces.ts';
 import { DesktopBindings, desktopServiceStop, type DesktopBinding } from './desktop-binding.ts';
@@ -312,6 +314,17 @@ export class Desktops {
       throw new AppError('无效的桌面端口', 400);
     const abort = new AbortController();
     if (socket.readyState !== WebSocket.OPEN) return;
+    let browser: ReturnType<typeof createWebSocketStream> | undefined;
+    const binaryFrame = (raw: import('ws').RawData, binary: boolean) => {
+      const bytes = Array.isArray(raw) ? raw.reduce((sum, part) => sum + part.byteLength, 0) : raw.byteLength;
+      if (!binary || bytes > SOCKET_CLIENT_BYTES) {
+        // Destroy before ws's stream listener sees this message; rejected bytes never reach SSH.
+        browser?.destroy();
+        socket.close(binary ? 1009 : 1003, binary ? 'Message too large' : 'Binary RFB required');
+      }
+    };
+    socket.prependListener('message', binaryFrame);
+    socket.once('close', () => socket.off('message', binaryFrame));
     const stopWatching = appSession
       ? this.apps.onSessionInvalidated(id, appSession, () => socket.terminate()) : (() => {
         const watchers = this.watchers.get(id) || { startedAt: this.machines.live.get(id)?.startedAt || '', listeners: new Set<() => void>() };
@@ -353,15 +366,22 @@ export class Desktops {
       }
       // Duplex streams enforce backpressure for both graphics and input. The target
       // is fixed to the guest loopback; this endpoint is not an arbitrary TCP proxy.
-      const browser = createWebSocketStream(socket);
+      browser = createWebSocketStream(socket);
+      const frames = new Transform({ transform(chunk: Buffer, _encoding, done) {
+        for (let offset = 0; offset < chunk.length; offset += SOCKET_SERVER_BYTES)
+          this.push(chunk.subarray(offset, offset + SOCKET_SERVER_BYTES));
+        done();
+      } });
       browser.on('error', close);
+      frames.on('error', close);
       channel.on('error', close);
       browser.once('close', () => {
+        frames.destroy();
         channel.destroy();
         close();
       });
-      channel.once('close', () => browser.destroy());
-      channel.pipe(browser);
+      channel.once('close', () => { frames.destroy(); browser?.destroy(); });
+      channel.pipe(frames).pipe(browser);
       if (readOnly) {
         const filter = new ReadOnlyRfb();
         filter.on('error', close);

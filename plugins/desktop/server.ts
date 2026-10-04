@@ -1,3 +1,4 @@
+import { httpRouteRequests } from '../../server/http-route-requests.ts';
 import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
 import { sendJson } from '../../server/http-response.ts';
 import { services as desktopServices } from './services.ts';
@@ -53,29 +54,7 @@ export async function route(
   if (parts[3] === 'desktop' && parts.length === 4) {
     if (req.method === 'GET') return send(await this.desktops.view(id));
     if (req.method === 'POST') {
-      const { action, preferences } = z
-        .object({
-          action: z.enum(['install', 'start', 'configure', 'stop']),
-          preferences: z
-            .object({
-              sessionType: z.enum(['auto', 'x11', 'wayland']).optional(),
-              resolution: z.enum(['1280x800', '1440x900', '1600x1000', '1920x1080']).optional(),
-              monitorLayout: z.enum(['single', 'dual-horizontal', 'dual-vertical']).optional(),
-              scale: z.number().int().min(100).max(200).optional(),
-              theme: z.enum(['sakura', 'midnight', 'paper', 'lavender']).optional(),
-              wallpaper: z.enum(['sakura', 'midnight', 'paper', 'plain']).optional(),
-              accent: z
-                .string()
-                .regex(/^#[0-9a-fA-F]{6}$/)
-                .optional(),
-              panel: z.enum(['bottom', 'top', 'floating']).optional(),
-              autoHidePanel: z.boolean().optional(),
-              animations: z.boolean().optional(),
-            })
-            .strict()
-            .optional(),
-        })
-        .strict()
+      const { action, preferences } = httpRouteRequests["desktop.legacy.post.vms.vmId.desktop"]
         .parse(await body(req));
       if (action === 'stop') {
         if (preferences) throw new AppError('停止桌面不能提交外观设置');
@@ -88,13 +67,7 @@ export async function route(
     if (req.method === 'GET') return send({ sessions: await this.desktops.apps.list(id),
       clipboardPolicies: await this.desktops.apps.clipboardPolicies(id) });
     if (req.method === 'POST') {
-      const input = z.discriminatedUnion('action', [
-        singleAppInput.safeExtend({ action: z.literal('start') }),
-        z.object({ action: z.literal('stop'), id: z.uuid() }).strict(),
-        z.object({ action: z.literal('clipboard-save'), program: singleAppProgram,
-          clipboard: singleAppClipboard }).strict(),
-        z.object({ action: z.literal('clipboard-remove'), program: singleAppProgram }).strict(),
-      ]).parse(await body(req));
+      const input = httpRouteRequests["desktop.legacy.post.vms.vmId.single-app"].parse(await body(req));
       if (input.action === 'start') {
         const { action: _, ...options } = input;
         return send(await this.desktops.apps.start(id, options, signal), 201);

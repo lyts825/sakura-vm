@@ -43,9 +43,10 @@ import {
   type VMView,
 } from '../shared/contracts/vm.ts';
 import { AppError } from '../shared/errors.ts';
-import { liveMigrationTargetStatusSchema, type LiveMigrationTargetStatus } from '../shared/contracts/live-migration.ts';
+import { liveMigrationPrepareReceiptSchema, liveMigrationTargetStatusSchema, type LiveMigrationTargetStatus } from '../shared/contracts/live-migration.ts';
 import { captureRecoveryOrigin } from './recovery-origin.ts';
 import { captureOperationCheck } from './operation-context.ts';
+import { pluginAuthority } from './plugin-authority.ts';
 import { migrationDigest, migrationFenceIdentity } from './live-migration-proof.ts';
 import {
   audioArguments,
@@ -228,8 +229,11 @@ export class Machines extends EventEmitter {
           if (r.liveMigrationFence.completion && r.liveMigrationFence.completion.sourceVmId !== r.id)
             throw new Error('在线迁移完成证明不属于此来源实例');
         }
-        if (r.liveMigrationOrigin !== undefined)
+        if (r.liveMigrationOrigin !== undefined) {
           r.liveMigrationOrigin = liveMigrationOriginSchema.parse(r.liveMigrationOrigin);
+          if (r.liveMigrationOrigin.prepareReceipt && r.liveMigrationOrigin.prepareReceipt.targetVmId !== r.id)
+            throw new Error('在线迁移准备回执不属于此目标实例');
+        }
         if (r.rescueOf !== undefined) {
           checkedId(r.rescueOf);
           if (
@@ -414,13 +418,20 @@ export class Machines extends EventEmitter {
     if (config.firmware === 'uefi' || config.architecture === 'aarch64' ||
         config.hardware?.devices?.graphics === 'virgl')
       throw new AppError('此硬件配置尚不能安全在线迁移', 409);
-    if ([...this.records.values()].some((vm) =>
+    const prepareDigest = migrationDigest({ config, source: sourceIds,
+      key: identity.key, seed: identity.seed.toString('base64'), projects: projects || null,
+      organization: organization || null });
+    const existing = [...this.records.values()].find((vm) =>
       vm.liveMigrationOrigin?.sourceHostId === sourceIds.sourceHostId &&
-      vm.liveMigrationOrigin.transferId === sourceIds.transferId))
-      throw new AppError('此在线迁移任务已创建目标实例', 409);
+      vm.liveMigrationOrigin.transferId === sourceIds.transferId);
+    if (existing) {
+      if (existing.liveMigrationOrigin?.prepareDigest !== prepareDigest)
+        throw new AppError('此在线迁移任务已创建目标实例，但原准备请求身份不匹配', 409);
+      return existing;
+    }
     const now = new Date().toISOString();
     return this.createInternal(config, undefined, undefined, { ...identity,
-      origin: { ...sourceIds, status: 'prepared', createdAt: now, updatedAt: now,
+      origin: { ...sourceIds, status: 'prepared', createdAt: now, updatedAt: now, prepareDigest,
         projectsDigest: migrationDigest(projects ? liveMigrationProjectsSchema.parse(projects) : null) },
       ...(projects ? { projects: liveMigrationProjectsSchema.parse(projects) } : {}),
       ...(organization ? { organization: organizationSchema.parse(organization) } : {}),
@@ -590,7 +601,50 @@ export class Machines extends EventEmitter {
   async startIncoming(id: string) {
     return this.startInternal(id, undefined, true);
   }
+  async bindIncomingSession(id: string, raw: unknown) {
+    const receipt = liveMigrationPrepareReceiptSchema.parse(raw);
+    const check = captureOperationCheck();
+    return this.locked(id, async () => {
+      await check();
+      const vm = this.get(id), previous = vm.liveMigrationOrigin;
+      if (!previous || previous.status !== 'prepared' || receipt.targetVmId !== id)
+        throw new AppError('目标实例没有原迁移准备记录', 409);
+      vm.liveMigrationOrigin = liveMigrationOriginSchema.parse({ ...previous,
+        sessionId: receipt.sessionId, prepareReceipt: receipt, updatedAt: new Date().toISOString() });
+      try { await this.save(); }
+      catch (error) { vm.liveMigrationOrigin = previous; throw error; }
+      return receipt;
+    });
+  }
+  /** The authenticated original coordinator has durably stopped its source before requesting this recovery. */
+  async recoverIncoming(id: string, sessionId: string) {
+    z.uuid().parse(sessionId);
+    const check = captureOperationCheck();
+    const original = this.get(id).liveMigrationOrigin;
+    if (!original?.sessionId || original.sessionId !== sessionId ||
+        original.prepareReceipt?.sessionId !== sessionId)
+      throw new AppError('目标缺少原持久迁移会话', 409);
+    if (this.live.has(id)) await this.stop(id, true);
+    await this.locked(id, async () => {
+      await check();
+      const vm = this.get(id), previous = vm.liveMigrationOrigin;
+      if (!previous?.sessionId || previous.sessionId !== sessionId ||
+          previous.prepareReceipt?.sessionId !== sessionId)
+        throw new AppError('目标缺少原持久迁移会话', 409);
+      if (this.live.has(id)) throw new AppError('目标原迁移进程仍存在，不能冷启动恢复', 409);
+      if (previous.status === 'prepared') {
+        vm.liveMigrationOrigin = liveMigrationOriginSchema.parse({ ...previous,
+          status: 'received', updatedAt: new Date().toISOString() });
+        try { await this.save(); }
+        catch (error) { vm.liveMigrationOrigin = previous; throw error; }
+      }
+    });
+    await check();
+    return this.start(id);
+  }
   async completeIncoming(id: string, query: typeof qmp = qmp, sessionId?: string) {
+    if (pluginAuthority() && query !== qmp)
+      throw new AppError('迁移目标核验查询仅允许系统装配', 403, 'LIVE_MIGRATION_SYSTEM_ONLY');
     if (sessionId !== undefined) z.uuid().parse(sessionId);
     const check = captureOperationCheck();
     return this.locked(id, async () => {
@@ -622,6 +676,8 @@ export class Machines extends EventEmitter {
   }
   async fenceForLiveMigration(id: string, raw: unknown,
     query: typeof qmp = qmp) {
+    if (pluginAuthority() && query !== qmp)
+      throw new AppError('迁移栅栏核验查询仅允许系统装配', 403, 'LIVE_MIGRATION_SYSTEM_ONLY');
     const identity = liveMigrationFenceIdentitySchema.omit({ fencedAt: true, sourceProcessId: true, origin: true }).parse(raw);
     const origin = captureRecoveryOrigin();
     const check = captureOperationCheck();
@@ -673,6 +729,7 @@ export class Machines extends EventEmitter {
       throw new AppError('原在线迁移栅栏已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED');
     if (original.sourceStopped) {
       if (this.live.has(id)) throw new AppError('来源原进程尚未确认停止', 409);
+      await this.save();
       return original;
     }
     if (!run || run.identity !== identity || run.processId !== original.sourceProcessId ||
@@ -680,9 +737,10 @@ export class Machines extends EventEmitter {
       throw new AppError('原来源进程退出回执不可用，保持栅栏等待核验', 409, 'LIVE_MIGRATION_SOURCE_UNCONFIRMED');
     if (!run.stoppedAt) {
       if (!run.live) throw new AppError('来源原进程退出回执不可用', 409);
+      const originalLive = run.live;
       try {
         await this.stop(id, true);
-        await run.live.done;
+        await originalLive.done;
       } catch (error) { this.migrationRuns.delete(id); throw error; }
       if (this.live.has(id)) throw new AppError('来源原进程仍未退出', 409);
       run.stoppedAt = new Date().toISOString();
@@ -691,8 +749,12 @@ export class Machines extends EventEmitter {
     return this.locked(id, async () => {
       await check();
       const current = this.get(id).liveMigrationFence;
-      if (!current || migrationDigest(current) !== migrationDigest(original) || this.live.has(id))
+      if (!current || migrationFenceIdentity(current) !== identity || this.live.has(id))
         throw new AppError('原在线迁移栅栏或来源进程已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED');
+      if (current.sourceStopped) {
+        await this.save();
+        return structuredClone(current);
+      }
       const next = liveMigrationFenceSchema.parse({ ...current,
         sourceStopped: { sourceProcessId: run.processId, stoppedAt: run.stoppedAt } });
       this.get(id).liveMigrationFence = next;
@@ -705,9 +767,10 @@ export class Machines extends EventEmitter {
   /** The domain supplies an authenticated target query; this owner validates and atomically publishes its evidence. */
   canConfirmLiveMigrationCompletion(id: string, expected: LiveMigrationFence) {
     const current = this.records.get(id)?.liveMigrationFence, run = this.migrationRuns.get(id);
-    if (!current || this.live.has(id) || migrationDigest(current) !== migrationDigest(expected)) return false;
-    return !!current.sourceStopped || !!run?.stoppedAt && run.identity === migrationFenceIdentity(expected) &&
-      run.processId === expected.sourceProcessId;
+    if (!current || migrationDigest(current) !== migrationDigest(expected)) return false;
+    return !!current.sourceStopped && !this.live.has(id) || !!run &&
+      run.identity === migrationFenceIdentity(expected) && run.processId === expected.sourceProcessId &&
+      (!!run.stoppedAt && !this.live.has(id) || !!run.live && this.live.get(id) === run.live);
   }
   isLiveMigrationCompletionDurable(id: string, expected: LiveMigrationFence) {
     const current = this.records.get(id)?.liveMigrationFence;
@@ -991,6 +1054,7 @@ export class Machines extends EventEmitter {
           `tcp:127.0.0.1:${serialPort},server=on,wait=off`,
           ...(incoming ? ['-incoming', 'defer'] : []),
         ];
+        let nativeExited = false;
         live.done = withResourceContext({ ...lifetime.capture(), owner: `vm:${id}` }, () => this.engine
           .run(vm.architecture === 'aarch64' ? 'sakura-qemu-aarch64' : 'sakura-qemu', args, {
             owner: `vm:${id}`,
@@ -1000,13 +1064,14 @@ export class Machines extends EventEmitter {
             output: (b) => this.log(id, b),
           }))
           .then(
-            () => {},
+            () => { nativeExited = true; },
             async (error) => {
               live.error = String(error.message || error);
               if (this.live.get(id)?.abort === live.abort) this.live.get(id)!.error = live.error;
               vm.lastError = live.error;
               this.log(id, `\r\n${live.error}\r\n`);
               if (error instanceof AppError && error.status === 503) throw error;
+              nativeExited = true;
             },
           )
           .finally(async () => {
@@ -1025,6 +1090,15 @@ export class Machines extends EventEmitter {
             for (const client of live.clients) client.end();
             await live.bootDone;
             if (this.live.get(id)?.abort === live.abort) this.live.delete(id);
+            const run = this.migrationRuns.get(id), fence = vm.liveMigrationFence;
+            if (nativeExited && run?.live === live && fence &&
+                run.identity === migrationFenceIdentity(fence) && run.processId === fence.sourceProcessId) {
+              run.stoppedAt = new Date().toISOString();
+              delete run.live;
+              // Persist native exit while the host is still alive, including ordinary service shutdown.
+              vm.liveMigrationFence = liveMigrationFenceSchema.parse({ ...fence,
+                sourceStopped: { sourceProcessId: run.processId, stoppedAt: run.stoppedAt } });
+            }
             vm.lastUsedAt = new Date().toISOString();
             await this.save().catch((error) => this.log(id, `\r\n保存实例状态失败：${String(error)}\r\n`));
             this.emit('change');
@@ -1252,6 +1326,7 @@ export class Machines extends EventEmitter {
   }
   async suspend(id: string) {
     return this.transition(id, async () => {
+      this.requireMigrationRunAllowed(id);
       const live = this.live.get(id);
       if (!live || live.status !== 'running') throw new AppError('只有运行中的发行版可以暂停', 409);
       await qmp(live.qmpPort, 'stop');
@@ -1262,6 +1337,7 @@ export class Machines extends EventEmitter {
   }
   async resume(id: string) {
     return this.locked(id, async () => {
+      this.requireMigrationRunAllowed(id);
       this.requireSandboxLifetime(this.get(id));
       const live = this.live.get(id);
       if (!live || live.status !== 'paused') throw new AppError('只有已暂停的发行版可以恢复', 409);
@@ -1273,10 +1349,10 @@ export class Machines extends EventEmitter {
     });
   }
   private async stopInternal(id: string, force: boolean) {
-    this.get(id);
+    const vm = this.get(id);
     const live = this.live.get(id);
     if (!live) return this.view(id);
-    if (live.incoming) force = true;
+    if (live.incoming || vm.liveMigrationFence) force = true;
     // Guest poweroff can finish before status reaches "stopping". Notify
     // lifecycle observers before sending the graceful shutdown command.
     this.emit('stop-requested', id);
@@ -1296,6 +1372,14 @@ export class Machines extends EventEmitter {
     if (this.live.has(id)) live.abort.abort();
     await live.done;
     return this.view(id);
+  }
+  private requireMigrationRunAllowed(id: string) {
+    const vm = this.get(id);
+    if (vm.liveMigrationFence)
+      throw new AppError('来源实例已为在线迁移设置栅栏，不能改变客户机运行状态',
+        409, 'LIVE_MIGRATION_SOURCE_FENCED');
+    if (vm.liveMigrationOrigin?.status === 'prepared')
+      throw new AppError('迁移接收中的目标实例仍在等待客户机状态，不能改变客户机运行状态', 409);
   }
   async update(id: string, input: unknown | ((current: VMRecord) => unknown),
     guard?: (current: VMRecord) => void) {
@@ -1863,6 +1947,7 @@ export class Machines extends EventEmitter {
   }
   async memorySnapshot(id: string, name: string) {
     return this.transition(id, async () => {
+      this.requireMigrationRunAllowed(id);
       const vm = this.get(id);
       const live = this.live.get(id);
       if (!live || live.status !== 'running')
@@ -1880,6 +1965,7 @@ export class Machines extends EventEmitter {
   }
   async restoreMemory(id: string, snapshotId: string, backup = false) {
     return this.transition(id, async () => {
+      this.requireMigrationRunAllowed(id);
       const vm = this.get(id);
       const shot = vm.snapshots.find((item) => item.id === snapshotId);
       if (!shot || shot.consistency !== 'vmstate' || !shot.stateFingerprint)

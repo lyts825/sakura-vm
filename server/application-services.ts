@@ -1,4 +1,4 @@
-import type { BrowserIdeV1, ColdMigrationsV1, HaHostFailoverV1, HaLocalFailoversV1, HostPeersV1, NotebookEnvironmentsV1, ResourceScopeV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
+import type { BrowserIdeV1, ColdMigrationsV1, HaHostFailoverV1, HaLocalFailoversV1, HostPeersV1, NotebookEnvironmentsV1, RecoveryCatalogV1, ResourceScopeV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import { arch, cpus, freemem, hostname, loadavg, platform, totalmem } from 'node:os';
 import { AppError } from '../shared/errors.ts';
@@ -23,12 +23,12 @@ import { HaLocalFailovers } from './ha-local-failovers.ts';
 import { HaWitnessClient } from './ha-witness-client.ts';
 import { createHostImportReceiver } from './host-import-receiver.ts';
 import { HostMounts } from './host-mount.ts';
-import { HostPeers, type HostPeerDependencies } from './host-peers.ts';
+import { HostPeers, isAuthenticatedMigrationCompletion, type HostPeerDependencies } from './host-peers.ts';
 import { createLiveMigrationCompletionPort } from './live-migration-proof.ts';
 import { registerLiveMigrationCompletionPort } from './live-migration-runner.ts';
 import { JitPrivileges } from './jit-privileges.ts';
 import { Jobs } from './jobs.ts';
-import { LiveMigrationReceiver } from './live-migration-receiver.ts';
+import { LiveMigrationReceiver, registerLiveMigrationTargetPort } from './live-migration-receiver.ts';
 import { LocalAssistant } from './local-assistant.ts';
 import { LogRetention } from './log-retention.ts';
 import { Machines } from './machines.ts';
@@ -117,6 +117,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     hostRuntime.subscribeCleanup(refreshRecoveries),
     ClosePhase.audit - 2,
   );
+  plugins.system.ready('@pluginDirectory', plugins.directory);
   const connectionHooks = { terminate: () => {} };
   let token = randomBytes(32).toString('hex');
   let sessionChanged = (_locked: boolean, _transitioned: boolean) => {};
@@ -124,7 +125,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const session = await plugins.system.start({
     id: 'session',
     requires: [],
-    create: () => new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned)),
+    create: (dependencies) => new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned)),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
     disposePhase: 10,
@@ -132,7 +133,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const access = await plugins.system.start({
     id: 'access',
     requires: [],
-    create: () => new AccessControl(),
+    create: (dependencies) => new AccessControl(),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
     disposePhase: 20,
@@ -140,7 +141,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const passkeys = await plugins.system.start({
     id: 'passkeys',
     requires: ['access'],
-    create: () => new Passkeys(access, PORT),
+    create: (dependencies) => new Passkeys(dependencies.get('access'), PORT),
     initialize: () => {},
     dispose: (value) => value?.close(),
     disposePhase: 40,
@@ -148,8 +149,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const sso = await plugins.system.start({
     id: 'sso',
     requires: ['access'],
-    create: () =>
-      new SingleSignOn(access, PORT, undefined, undefined, undefined, undefined, () => {
+    create: (dependencies) => new SingleSignOn(dependencies.get('access'), PORT, undefined, undefined, undefined, undefined, () => {
         connectionHooks.terminate();
       }),
     initialize: (value) => value.init(),
@@ -165,7 +165,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   resources.defer('machines', () => machines.close(), ClosePhase.machines, ['audit', 'network', 'compute']);
   releaseRuntimeOwnership();
   await machines.init();
-  plugins.system.ready('@machines');
+  plugins.system.ready('@machines', machines);
   resources.defer(
     'plugin-directory-events',
     plugins.directory.subscribe(() => machines.emit('change')),
@@ -176,12 +176,11 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     requires: ['@machines'],
     lateRequires: ['projectTerminals'],
     disposeRequires: ['projectTerminals'],
-    create: () =>
-      new TerminalSharing(
-        plugins.system.vm('terminalSharing', machines),
+    create: (dependencies) => new TerminalSharing(
+        dependencies.vm(),
         undefined,
         undefined,
-        () => { requireAdmission(); return projectTerminals; },
+        () => { requireAdmission(); return dependencies.late('projectTerminals'); },
       ),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
@@ -190,7 +189,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const jitPrivileges = await plugins.system.start({
     id: 'jitPrivileges',
     requires: ['access', '@machines'],
-    create: () => new JitPrivileges(access, plugins.system.vm('jitPrivileges', machines)),
+    create: (dependencies) => new JitPrivileges(dependencies.get('access'), dependencies.vm()),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
     disposePhase: 80,
@@ -198,25 +197,24 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const browserExtensions = await plugins.system.start({
     id: 'browserExtensions',
     requires: ['access'],
-    create: () => new BrowserExtensions(access),
+    create: (dependencies) => new BrowserExtensions(dependencies.get('access')),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
     disposePhase: 120,
   });
   const audit = resources.own('audit', hostAudit(), ClosePhase.audit);
-  plugins.system.ready('@audit');
+  plugins.system.ready('@audit', audit);
   const remoteAudit = await plugins.system.start({
     id: 'remoteAudit',
     requires: ['@audit', 'session'],
     lateRequires: ['@plugins'],
-    create: () =>
-      new RemoteAuditLock(
-        audit,
+    create: (dependencies) => new RemoteAuditLock(
+        dependencies.get('@audit'),
         undefined,
         undefined,
         undefined,
         undefined,
-        () => acceptingRequests && !features?.migration?.blocked && !session.view().locked,
+        () => acceptingRequests && !dependencies.late('@plugins')?.migration?.blocked && !dependencies.get('session').view().locked,
       ),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
@@ -238,12 +236,11 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     requires: [],
     lateRequires: ['@plugins'],
     disposeRequires: ['@plugins'],
-    create: () =>
-      new FeatureRollouts(
+    create: (dependencies) => new FeatureRollouts(
         undefined,
-        () => !acceptingRequests || !!features?.migration?.blocked,
+        () => !acceptingRequests || !!dependencies.late('@plugins')?.migration?.blocked,
         (delta) => {
-          if (features) features.operations.change(delta);
+          if (dependencies.late('@plugins')) dependencies.late('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -253,11 +250,11 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   features = await plugins.start(machines, (id) => rollouts.decision(id).allowed);
   resources.defer('features', () => features.close(), ClosePhase.plugins,
     ['machines', 'audit', 'network', 'compute', 'scheduler']);
-  plugins.system.ready('@plugins');
+  plugins.system.ready('@plugins', features);
   const projectTerminals = await plugins.system.start({
     id: 'projectTerminals',
     requires: ['@plugins'],
-    create: () => features.terminalHandle(),
+    create: (dependencies) => dependencies.get('@plugins').terminalHandle(),
     initialize: () => {},
     dispose: (value) => value?.close(),
     disposePhase: 70,
@@ -265,8 +262,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const projectExecution = await plugins.system.start({
     id: 'projectExecution',
     requires: ['projectTerminals', '@machines'],
-    create: () =>
-      new ProjectExecution(plugins.system.vm('projectExecution', machines), projectTerminals.preparation),
+    create: (dependencies) => new ProjectExecution(dependencies.vm(), dependencies.get('projectTerminals').preparation),
     initialize: () => {},
     dispose: (value) => value?.close(),
     disposePhase: 60,
@@ -275,13 +271,12 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const usbHotplug = await plugins.system.start({
     id: 'usbHotplug',
     requires: ['@machines', '@plugins'],
-    create: () =>
-      new UsbHotplug(
-        plugins.system.vm('usbHotplug', machines),
+    create: (dependencies) => new UsbHotplug(
+        dependencies.vm(),
         undefined,
-        () => !!features.migration?.blocked,
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -291,13 +286,12 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const mediaDevices = await plugins.system.start({
     id: 'mediaDevices',
     requires: ['usbHotplug', '@machines', '@plugins'],
-    create: () =>
-      new MediaDevices(
-        plugins.system.vm('mediaDevices', machines),
-        usbHotplug,
-        () => !!features.migration?.blocked,
+    create: (dependencies) => new MediaDevices(
+        dependencies.vm(),
+        dependencies.get('usbHotplug'),
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: () => {},
@@ -308,13 +302,12 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const memoryReclaim = await plugins.system.start({
     id: 'memoryReclaim',
     requires: ['@machines', '@plugins'],
-    create: () =>
-      new MemoryReclaim(
-        plugins.system.vm('memoryReclaim', machines),
+    create: (dependencies) => new MemoryReclaim(
+        dependencies.vm(),
         undefined,
-        () => !!features.migration?.blocked,
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -324,12 +317,11 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const hostMounts = await plugins.system.start({
     id: 'hostMounts',
     requires: ['@machines', '@plugins'],
-    create: () =>
-      new HostMounts(
-        plugins.system.vm('hostMounts', machines),
-        () => !!features.migration?.blocked,
+    create: (dependencies) => new HostMounts(
+        dependencies.vm(),
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -340,12 +332,11 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const virtioFsShares = await plugins.system.start({
     id: 'virtioFsShares',
     requires: ['@machines', '@plugins'],
-    create: () =>
-      new VirtioFsShares(
-        plugins.system.vm('virtioFsShares', machines),
-        () => !!features.migration?.blocked,
+    create: (dependencies) => new VirtioFsShares(
+        dependencies.vm(),
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -356,12 +347,11 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const trustedBoot = await plugins.system.start({
     id: 'trustedBoot',
     requires: ['@machines', '@plugins'],
-    create: () =>
-      new TrustedBootService(
-        plugins.system.vm('trustedBoot', machines),
-        () => !!features.migration?.blocked,
+    create: (dependencies) => new TrustedBootService(
+        dependencies.vm(),
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -372,13 +362,12 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const gpuProfiles = await plugins.system.start({
     id: 'gpuProfiles',
     requires: ['@machines', '@plugins'],
-    create: () =>
-      new GpuProfiles(
-        plugins.system.vm('gpuProfiles', machines),
+    create: (dependencies) => new GpuProfiles(
+        dependencies.vm(),
         undefined,
-        () => !!features.migration?.blocked,
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -388,16 +377,15 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const buildFarm = await plugins.system.start({
     id: 'buildFarm',
     requires: ['projectTerminals', '@machines', '@plugins'],
-    create: () =>
-      new BuildFarm(
-        plugins.system.vm('buildFarm', machines),
+    create: (dependencies) => new BuildFarm(
+        dependencies.vm(),
         undefined,
-        () => !!features.migration?.blocked,
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
         undefined,
-        projectTerminals,
+        dependencies.get('projectTerminals'),
       ),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
@@ -406,8 +394,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const projectPermissions = await plugins.system.start({
     id: 'projectPermissions',
     requires: ['access', '@machines', '@plugins'],
-    create: () =>
-      new ProjectPermissions(access, plugins.system.vm('projectPermissions', machines), features.workspaces),
+    create: (dependencies) => new ProjectPermissions(dependencies.get('access'), dependencies.vm(), dependencies.get('@plugins').workspaces),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
     disposePhase: 90,
@@ -415,7 +402,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const policyBundles = await plugins.system.start({
     id: 'policyBundles',
     requires: ['projectPermissions'],
-    create: () => new PolicyBundles(projectPermissions),
+    create: (dependencies) => new PolicyBundles(dependencies.get('projectPermissions')),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
     disposePhase: 100,
@@ -424,7 +411,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     ? await plugins.system.start({
         id: 'changeApprovals',
         requires: ['projectPermissions', '@plugins'],
-        create: () => new ChangeApprovals(projectPermissions, features.workspaces),
+        create: (dependencies) => new ChangeApprovals(dependencies.get('projectPermissions'), dependencies.get('@plugins').workspaces),
         initialize: (value) => value.init(),
         dispose: () => {},
         disposePhase: ClosePhase.services,
@@ -434,10 +421,9 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const processInterop = await plugins.system.start({
     id: 'processInterop',
     requires: ['session', '@machines', '@plugins'],
-    create: () =>
-      new ProcessInterop(plugins.system.vm('processInterop', machines), PORT, () => {
-        session.requireUnlocked();
-        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+    create: (dependencies) => new ProcessInterop(dependencies.vm(), PORT, () => {
+        dependencies.get('session').requireUnlocked();
+        if (dependencies.get('@plugins').migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
       }),
     initialize: () => {},
     dispose: () => {},
@@ -448,10 +434,9 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     id: 'hostPeers',
     requires: ['rollouts', 'session', '@machines', '@plugins'],
     lateRequires: ['mobileCompanion', 'liveMigrationReceiver'],
-    create: () =>
-      new HostPeers(
+    create: (dependencies) => new HostPeers(
         async () => {
-          const vms = await machines.list();
+          const vms = await dependencies.get('@machines').list();
           return {
             platform: platform(),
             arch: arch(),
@@ -465,27 +450,27 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
         },
         undefined,
         hostname().slice(0, 128),
-        () => !acceptingRequests || !!features.migration?.blocked,
+        () => !acceptingRequests || !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
         undefined,
         (): HostPeerDependencies => ({
-          mobileHandler: (request, response) => { requireAdmission(); return mobileCompanion.handle(request, response); },
+          mobileHandler: (request, response) => { requireAdmission(); return dependencies.late('mobileCompanion').handle(request, response); },
           rolloutReceiver: {
-            view: () => { requireAdmission(); return { hostId: hostPeers.view().hostId, policies: rollouts.view().policies }; },
-            save: (input) => { requireAdmission(); return rollouts.configure(input); },
+            view: () => { requireAdmission(); return { hostId: dependencies.self().view().hostId, policies: dependencies.get('rollouts').view().policies }; },
+            save: (input) => { requireAdmission(); return dependencies.get('rollouts').configure(input); },
           },
           liveMigrationReceiver: {
-            prepare: (input) => { requireAdmission(); return liveMigrationReceiver.prepare(input); },
-            complete: (input) => { requireAdmission(); return liveMigrationReceiver.complete(input); },
-            abort: (input) => { requireAdmission(); return liveMigrationReceiver.abort(input); },
-            status: (input) => { requireAdmission(); return liveMigrationReceiver.verifiedStatus(input); },
+            prepare: (input) => { requireAdmission(); return dependencies.late('liveMigrationReceiver').prepare(input); },
+            complete: (input) => { requireAdmission(); return dependencies.late('liveMigrationReceiver').complete(input); },
+            abort: (input) => { requireAdmission(); return dependencies.late('liveMigrationReceiver').abort(input); },
+            status: (input) => { requireAdmission(); return dependencies.late('liveMigrationReceiver').verifiedStatus(input); },
           },
-          importReceiver: createHostImportReceiver(plugins.system.vm('hostPeers', machines), {
-            bundles: () => features.bundles,
-            requireSessionUnlocked: () => session.requireUnlocked(),
-            migrationBlocked: () => !!features.migration?.blocked,
+          importReceiver: createHostImportReceiver(dependencies.vm(), {
+            bundles: () => dependencies.get('@plugins').bundles,
+            requireSessionUnlocked: () => dependencies.get('session').requireUnlocked(),
+            migrationBlocked: () => !!dependencies.get('@plugins').migration?.blocked,
           }),
         }),
         () => acceptingRequests,
@@ -497,27 +482,31 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const migrationCompletion = createLiveMigrationCompletionPort(machines, () => hostPeers);
   resources.defer('live-migration-completion-port', registerLiveMigrationCompletionPort(machines, migrationCompletion),
     ClosePhase.services);
+  resources.defer('live-migration-target-port', registerLiveMigrationTargetPort(machines, {
+    bindSession: (id, receipt) => machines.bindIncomingSession(id, receipt),
+    recover: (id, sessionId) => machines.recoverIncoming(id, sessionId),
+    authenticated: isAuthenticatedMigrationCompletion,
+  }), ClosePhase.services);
   const mobileCompanion = await plugins.system.start({
     id: 'mobileCompanion',
     requires: ['access', 'session', '@machines', '@plugins'],
-    create: () =>
-      new MobileCompanion(
-        access,
+    create: (dependencies) => new MobileCompanion(
+        dependencies.get('access'),
         async () => {
-          const vms = await machines.list();
+          const vms = await dependencies.get('@machines').list();
           return {
             vms: vms.map(({ id, name, status }) => ({ id, name, status })),
-            alerts: (await features.suite?.alertEvents()) || [],
+            alerts: (await dependencies.get('@plugins').suite?.alertEvents()) || [],
           };
         },
         () => {
-          session.requireUnlocked();
-          if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+          dependencies.get('session').requireUnlocked();
+          if (dependencies.get('@plugins').migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
         },
         undefined,
         undefined,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -527,11 +516,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const liveMigrationReceiver = await plugins.system.start({
     id: 'liveMigrationReceiver',
     requires: ['hostPeers', 'session', '@machines', '@plugins'],
-    create: () =>
-      new LiveMigrationReceiver(plugins.system.vm('liveMigrationReceiver', machines), hostPeers, () => {
-        session.requireUnlocked();
-        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-        if (!features.next) throw new AppError('请先启用扩展功能插件', 503);
+    create: (dependencies) => new LiveMigrationReceiver(dependencies.vm(), dependencies.get('hostPeers'), () => {
+        dependencies.get('session').requireUnlocked();
+        if (dependencies.get('@plugins').migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+        if (!dependencies.get('@plugins').next) throw new AppError('请先启用扩展功能插件', 503);
       }),
     initialize: () => {},
     dispose: () => {},
@@ -540,13 +528,12 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const fleetRollouts = await plugins.system.start({
     id: 'fleetRollouts',
     requires: ['hostPeers', '@plugins'],
-    create: () =>
-      new FleetPolicyRollouts(
-        hostPeers,
+    create: (dependencies) => new FleetPolicyRollouts(
+        dependencies.get('hostPeers'),
         undefined,
-        () => !!features.migration?.blocked,
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -557,33 +544,32 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   await plugins.system.start({
     id: 'capabilityChecks',
     requires: ['access', 'session', 'remoteAudit', 'hostPeers', 'mobileCompanion', 'projectTerminals', '@machines', '@plugins'],
-    create: () =>
-      ({
+    create: (dependencies) => ({
         mutation: (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
-        acmeAllowed: () => !session.view().locked && !features.migration?.blocked,
+        acmeAllowed: () => !dependencies.get('session').view().locked && !dependencies.get('@plugins').migration?.blocked,
         mobileCheck: () => ({
           ready:
-            access.enabled &&
-            hostPeers.view().listener.active &&
-            hostPeers.view().listener.host === '0.0.0.0',
-          devices: access.enabled
-            ? mobileCompanion.view(access.users().find((item) => item.role === 'owner')!.id).devices.length
+            dependencies.get('access').enabled &&
+            dependencies.get('hostPeers').view().listener.active &&
+            dependencies.get('hostPeers').view().listener.host === '0.0.0.0',
+          devices: dependencies.get('access').enabled
+            ? dependencies.get('mobileCompanion').view(dependencies.get('access').users().find((item) => item.role === 'owner')!.id).devices.length
             : 0,
-          reason: !access.enabled
+          reason: !dependencies.get('access').enabled
             ? '请先启用账户模式。'
-            : !hostPeers.view().listener.active || hostPeers.view().listener.host !== '0.0.0.0'
+            : !dependencies.get('hostPeers').view().listener.active || dependencies.get('hostPeers').view().listener.host !== '0.0.0.0'
               ? '请启用局域网 HTTPS 同伴入口并重启服务。'
               : undefined,
         }),
-        scoreHosts: (input) => hostPeers.score(input),
+        scoreHosts: (input) => dependencies.get('hostPeers').score(input),
         sharedDesktopCheck: async (id) => {
-          if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
-          if (!features.socketEnabled('desktop'))
+          if (!dependencies.get('access').enabled) return { ready: false, reason: '请先启用账户模式。' };
+          if (!dependencies.get('@plugins').socketEnabled('desktop'))
             return { ready: false, reason: '请先启用桌面插件并重启 Sakura。' };
           try {
-            const desktop = await features.desktops.view(id, true);
+            const desktop = await dependencies.get('@plugins').desktops.view(id, true);
             return desktop.status === 'ready'
               ? { ready: true }
               : { ready: false, reason: '实例桌面尚未就绪。' };
@@ -592,13 +578,13 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           }
         },
         passkeyCheck: () => ({
-          ready: access.enabled,
-          registered: access.users().reduce((count, user) => count + access.passkeysFor(user.id).length, 0),
-          ...(!access.enabled ? { reason: '请先启用账户模式。' } : {}),
+          ready: dependencies.get('access').enabled,
+          registered: dependencies.get('access').users().reduce((count, user) => count + dependencies.get('access').passkeysFor(user.id).length, 0),
+          ...(!dependencies.get('access').enabled ? { reason: '请先启用账户模式。' } : {}),
         }),
-        accountModeReady: () => access.enabled,
+        accountModeReady: () => dependencies.get('access').enabled,
         remoteAuditCheck: async () => {
-          const status = await remoteAudit.status();
+          const status = await dependencies.get('remoteAudit').status();
           return {
             ready: Boolean(
               status.target &&
@@ -617,12 +603,12 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
           };
         },
         sharedTerminalCheck: async (id) => {
-          if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
-          if (!features.socketEnabled('terminal-session'))
+          if (!dependencies.get('access').enabled) return { ready: false, reason: '请先启用账户模式。' };
+          if (!dependencies.get('@plugins').socketEnabled('terminal-session'))
             return { ready: false, reason: '请先启用可恢复终端会话插件并重启 Sakura。' };
-          if (machines.state(id) !== 'running') return { ready: false, reason: '请先启动实例。' };
+          if (dependencies.get('@machines').state(id) !== 'running') return { ready: false, reason: '请先启动实例。' };
           try {
-            const result = await machines.exec(id, 'command -v tmux >/dev/null', 10000);
+            const result = await dependencies.get('@machines').exec(id, 'command -v tmux >/dev/null', 10000);
             return result.code === 0 ? { ready: true } : { ready: false, reason: '请先在客户机安装 tmux。' };
           } catch (error) {
             return { ready: false, reason: (error as Error).message };
@@ -643,8 +629,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     notebooks = await plugins.system.start({
       id: 'notebookEnvironments',
       requires: ['@plugins', '@machines'],
-      create: () =>
-        new NotebookEnvironments(plugins.system.vm('notebookEnvironments', machines), features.workspaces),
+      create: (dependencies) => new NotebookEnvironments(dependencies.vm(), dependencies.get('@plugins').workspaces),
       initialize: (value) => value.init(),
       dispose: (value) => value?.close(),
       disposePhase: 370,
@@ -653,7 +638,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     browserIde = await plugins.system.start({
       id: 'browserIde',
       requires: ['@plugins', '@machines'],
-      create: () => new BrowserIde(plugins.system.vm('browserIde', machines), features.workspaces),
+      create: (dependencies) => new BrowserIde(dependencies.vm(), dependencies.get('@plugins').workspaces),
       initialize: (value) => value.init(),
       dispose: (value) => value?.close(),
       disposePhase: 360,
@@ -663,8 +648,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     coldMigrations = await plugins.system.start({
       id: 'coldMigrations',
       requires: ['hostPeers', '@machines', '@plugins'],
-      create: () =>
-        new ColdMigrations(plugins.system.vm('coldMigrations', machines), features.bundles, hostPeers),
+      create: (dependencies) => new ColdMigrations(dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers')),
       initialize: (value) => value.init(),
       dispose: () => {},
       disposePhase: ClosePhase.services,
@@ -673,11 +657,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     snapshotReplications = await plugins.system.start({
       id: 'snapshotReplications',
       requires: ['hostPeers', '@machines', '@plugins'],
-      create: () =>
-        new SnapshotReplications(
-          plugins.system.vm('snapshotReplications', machines),
-          features.bundles,
-          hostPeers,
+      create: (dependencies) => new SnapshotReplications(
+          dependencies.vm(),
+          dependencies.get('@plugins').bundles,
+          dependencies.get('hostPeers'),
         ),
       initialize: (value) => value.init(),
       dispose: () => {},
@@ -691,12 +674,11 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     haHostFailover = await plugins.system.start({
       id: 'haHostFailover',
       requires: ['hostPeers', 'snapshotReplications', '@machines', '@plugins'],
-      create: () =>
-        new HaHostFailover(
-          plugins.system.vm('haHostFailover', machines),
-          hostPeers,
-          snapshotReplications!,
-          () => features.next!.haPolicies(),
+      create: (dependencies) => new HaHostFailover(
+          dependencies.vm(),
+          dependencies.get('hostPeers'),
+          dependencies.get('snapshotReplications')!,
+          () => dependencies.get('@plugins').next!.haPolicies(),
           witnessClient,
         ),
       initialize: (value) => value.init(),
@@ -707,15 +689,14 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     haLocalFailovers = await plugins.system.start({
       id: 'haLocalFailovers',
       requires: ['haHostFailover', 'snapshotReplications', 'hostPeers', '@machines', '@plugins'],
-      create: () =>
-        new HaLocalFailovers(
-          plugins.system.vm('haLocalFailovers', machines),
-          features.next.haFailureMonitor,
-          hostPeers,
-          snapshotReplications!,
-          () => features.next!.haPolicies(),
-          () => !features.migration?.blocked && !machines.closing,
-          { disarmWitness: (id, failureThreshold) => haHostFailover!.disarm(id, failureThreshold) },
+      create: (dependencies) => new HaLocalFailovers(
+          dependencies.vm(),
+          dependencies.get('@plugins').next.haFailureMonitor,
+          dependencies.get('hostPeers'),
+          dependencies.get('snapshotReplications')!,
+          () => dependencies.get('@plugins').next!.haPolicies(),
+          () => !dependencies.get('@plugins').migration?.blocked && !dependencies.get('@machines').closing,
+          { disarmWitness: (id, failureThreshold) => dependencies.get('haHostFailover')!.disarm(id, failureThreshold) },
         ),
       initialize: (value) => value.init(),
       dispose: (value) => value?.close(),
@@ -726,11 +707,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     await plugins.system.start({
       id: 'disasterRecovery',
       requires: ['@plugins', '@machines'],
-      create: () =>
-        new DisasterRecoveryDrill(
-          plugins.system.vm('disasterRecovery', machines),
-          features.backups,
-          features.bundles,
+      create: (dependencies) => new DisasterRecoveryDrill(
+          dependencies.vm(),
+          dependencies.get('@plugins').backups,
+          dependencies.get('@plugins').bundles,
         ),
       initialize: () => {},
       dispose: () => {},
@@ -739,19 +719,18 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const native = await plugins.system.start({
     id: 'native',
     requires: ['session', '@machines', '@plugins'],
-    create: () =>
-      new NativeIntegration(
-        () => nativeMappings(features),
+    create: (dependencies) => new NativeIntegration(
+        () => nativeMappings(dependencies.get('@plugins')),
         undefined,
         undefined,
         undefined,
         undefined,
         (id?: string) => {
-          session.requireUnlocked();
-          if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+          dependencies.get('session').requireUnlocked();
+          if (dependencies.get('@plugins').migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
           if (id) {
-            machines.get(id);
-            machines.requireUnlocked(id);
+            dependencies.get('@machines').get(id);
+            dependencies.get('@machines').requireUnlocked(id);
           }
         },
       ),
@@ -762,12 +741,11 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const nativeClipboard = await plugins.system.start({
     id: 'nativeClipboard',
     requires: ['session', '@plugins'],
-    create: () =>
-      new NativeClipboard({
-        guard: () => session.requireUnlocked(),
-        maintenance: () => !!features.migration?.blocked,
+    create: (dependencies) => new NativeClipboard({
+        guard: () => dependencies.get('session').requireUnlocked(),
+        maintenance: () => !!dependencies.get('@plugins').migration?.blocked,
         mutation: (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       }),
     initialize: (value) => value.init(),
@@ -777,25 +755,18 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const assistant = await plugins.system.start({
     id: 'assistant',
     requires: [],
-    create: () => new LocalAssistant(),
+    create: (dependencies) => new LocalAssistant(),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
     disposePhase: 150,
   });
-  const eventSource = async () =>
-    collectWebhookEvents(
-      machines,
-      features.jobStores().flatMap((store) => store.list()),
-      (await features.suite?.alertEvents()) || [],
-    );
   const communityPlugins = await plugins.system.start({
     id: 'communityPlugins',
-    requires: ['@machines', '@plugins'],
-    create: () =>
-      new CommunityPlugins(undefined, undefined, undefined, undefined, plugins.directory, {
-        events: eventSource,
-        blocked: () => !!features.migration?.blocked,
-        mutation: (delta) => features.operations.change(delta),
+    requires: ['@machines', '@plugins', '@pluginDirectory'],
+    create: (dependencies) => new CommunityPlugins(undefined, undefined, undefined, undefined, dependencies.get('@pluginDirectory'), {
+        events: async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
+        blocked: () => !!dependencies.get('@plugins').migration?.blocked,
+        mutation: (delta) => dependencies.get('@plugins').operations.change(delta),
       }),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
@@ -804,15 +775,14 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const webhooks = await plugins.system.start({
     id: 'webhooks',
     requires: ['@machines', '@plugins'],
-    create: () =>
-      new Webhooks(
-        eventSource,
+    create: (dependencies) => new Webhooks(
+        async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
         undefined,
         undefined,
         undefined,
-        () => !!features.migration?.blocked,
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -822,25 +792,24 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const automationRules = await plugins.system.start({
     id: 'automationRules',
     requires: ['@plugins', '@machines'],
-    create: () =>
-      new AutomationRules(
-        eventSource,
-        plugins.system.vm('automationRules', machines),
+    create: (dependencies) => new AutomationRules(
+        async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
+        dependencies.vm(),
         undefined,
         undefined,
-        () => !!features.migration?.blocked,
+        () => !!dependencies.get('@plugins').migration?.blocked,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
         async (id, steps, projectId, signal) => {
-          const owned = features.workspaces
+          const owned = dependencies.get('@plugins').workspaces
             ? undefined
-            : new Workspaces(plugins.system.vm('automationRules', machines));
-          const workspaces = features.workspaces || owned!;
+            : new Workspaces(dependencies.vm());
+          const workspaces = dependencies.get('@plugins').workspaces || owned!;
           try {
             return await workspaces.projects.with(id, projectId, () =>
               runEngineeringOperation(
-                plugins.system.vm('automationRules', machines),
+                dependencies.vm(),
                 workspaces,
                 id,
                 'runbooks',
@@ -860,14 +829,13 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const retention = await plugins.system.start({
     id: 'retention',
     requires: ['@machines', '@plugins'],
-    create: () =>
-      new LogRetention(
-        () => features.jobStores(),
+    create: (dependencies) => new LogRetention(
+        () => dependencies.get('@plugins').jobStores(),
         undefined,
-        () => !!features.migration?.blocked,
+        () => !!dependencies.get('@plugins').migration?.blocked,
         undefined,
         (delta) => {
-          features.operations.change(delta);
+          dependencies.get('@plugins').operations.change(delta);
         },
       ),
     initialize: (value) => value.init(),
@@ -877,7 +845,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const graph = await plugins.system.start({
     id: 'graph',
     requires: ['@plugins', '@machines'],
-    create: () => new GraphApi(async () => querySnapshot(machines, features.jobStores(), features.enabled)),
+    create: (dependencies) => new GraphApi(async () => querySnapshot(dependencies.get('@machines'), dependencies.get('@plugins').jobStores(), dependencies.get('@plugins').enabled)),
     initialize: () => {},
     dispose: (value) => value?.close(),
     disposePhase: 340,
@@ -899,6 +867,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   }));
   await recoveries.refresh();
 
+  const recoveryApi: RecoveryCatalogV1 = recoveries;
   return {
     access,
     assistant,
@@ -942,7 +911,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     plugins,
     connectionHooks,
     diagnostics,
-    recoveries,
+    recoveries: recoveryApi,
     acceptRequests() {
       plugins.assertReady();
       acceptingRequests = true;

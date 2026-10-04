@@ -442,7 +442,11 @@ for (const shutdown of [false, true]) {
       await farm.action({ operation: 'save-node', node: {
         vmId: f.vmId, projectId: f.alpha, slots: 1, labels: [], enabled: true } });
       await farm.action({ operation: 'submit', build: { name: 'cleanup', command: 'sleep 600', labels: [], timeoutSeconds: 30 } });
-      f.run(); await entered;
+      f.run();
+      // The scheduler deliberately uses unreferenced timers. Keep a bounded
+      // readiness check until it dispatches, rather than waiting on an idle promise.
+      await waitFor(() => f.machines.executions.length === 1);
+      await entered;
       if (shutdown) closing = farm.close();
       else await farm.action({ operation: 'cancel', id: farm.view().tasks[0].id });
       await cancelled;

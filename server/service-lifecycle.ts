@@ -1,5 +1,10 @@
 import { AppError } from '../shared/errors.ts';
 
+export type ServiceDependencyResolver = Readonly<{
+  get<T = unknown>(id: string): T;
+  late<T = unknown>(id: string): T;
+  self<T = unknown>(): T;
+}>;
 export type ServiceDefinition<T> = {
   id: string;
   requires: readonly string[];
@@ -7,9 +12,9 @@ export type ServiceDefinition<T> = {
   lateRequires?: readonly string[];
   /** Dependencies still used by already admitted work or its cleanup during drain. */
   disposeRequires?: readonly string[];
-  create: () => T | Promise<T>;
-  initialize: (value: T) => void | Promise<void>;
-  dispose: (value: T | undefined) => void | Promise<void>;
+  create: (dependencies: ServiceDependencyResolver) => T | Promise<T>;
+  initialize: (value: T, dependencies: ServiceDependencyResolver) => void | Promise<void>;
+  dispose: (value: T | undefined, dependencies: ServiceDependencyResolver) => void | Promise<void>;
   /** Orders independent services only; dependencies always outlive consumers. */
   disposePhase?: number;
 };
@@ -24,17 +29,17 @@ type Entry = {
 /** Explicit startup graph. A constructor returning is not a readiness signal. */
 export class ServiceLifecycle {
   private entries = new Map<string, Entry>();
-  private external = new Set<string>();
+  private external = new Map<string, unknown>();
   private closing?: Promise<void>;
   private draining = false;
   get accepting() {
     return !this.draining;
   }
 
-  ready(id: string) {
+  ready(id: string, value?: unknown) {
     if (this.draining || this.entries.has(id) || this.external.has(id))
       throw new AppError('重复或已关闭的外部就绪阶段：' + id, 409, 'SERVICE_STAGE_INVALID');
-    this.external.add(id);
+    this.external.set(id, value);
   }
   register<T>(definition: ServiceDefinition<T>) {
     if (this.draining || this.entries.has(definition.id) || this.external.has(definition.id))
@@ -78,6 +83,37 @@ export class ServiceLifecycle {
     };
     for (const id of this.entries.keys()) visit(id, []);
   }
+  /** Every lookup is tied to the frozen declaration and checks the live provider state. */
+  dependencies(id: string): ServiceDependencyResolver {
+    const entry = this.entries.get(id);
+    if (!entry) throw new AppError('未知服务：' + id, 404, 'SERVICE_UNKNOWN');
+    const resolve = (dependency: string, late: boolean) => {
+      const definition = entry.definition;
+      if (entry.state === 'registered' || entry.state === 'disposed')
+        throw new AppError('依赖消费者尚未就绪或已关闭：' + id, 503, 'SERVICE_NOT_READY');
+      const declared = late ? [...definition.requires, ...(definition.lateRequires || []),
+        ...(definition.disposeRequires || [])] : definition.requires;
+      if (!declared.includes(dependency))
+        throw new AppError('未声明服务依赖：' + id + ' → ' + dependency, 403, 'SERVICE_DEPENDENCY_DENIED');
+      if (late && entry.state !== 'ready' && entry.state !== 'disposing' && entry.state !== 'cleanup-pending')
+        throw new AppError('延迟服务依赖只能由已就绪服务使用：' + id, 503, 'SERVICE_NOT_READY');
+      if (this.draining && !definition.requires.includes(dependency) && !definition.disposeRequires?.includes(dependency))
+        throw new AppError('入站延迟依赖已关闭：' + id + ' → ' + dependency, 503, 'SERVICE_DRAINING');
+      if (this.external.has(dependency)) return this.external.get(dependency);
+      const provider = this.entries.get(dependency);
+      if (!provider || provider.state !== 'ready')
+        throw new AppError('服务依赖尚未就绪：' + id + ' → ' + dependency, 503, 'SERVICE_NOT_READY');
+      return provider.value;
+    };
+    return Object.freeze({
+      get: <T>(dependency: string) => resolve(dependency, false) as T,
+      late: <T>(dependency: string) => resolve(dependency, true) as T,
+      self: <T>() => {
+        if (entry.state !== 'ready') throw new AppError('服务尚未就绪：' + id, 503, 'SERVICE_NOT_READY');
+        return entry.value as T;
+      },
+    });
+  }
   async start<T>(id: string): Promise<T> {
     if (this.draining) throw new AppError('服务管理层正在关闭', 503, 'SERVICE_DRAINING');
     this.validate();
@@ -95,8 +131,9 @@ export class ServiceLifecycle {
       entry.state = 'initializing';
       entry.attempted = true;
       try {
-        entry.value = await entry.definition.create();
-        await entry.definition.initialize(entry.value);
+        const dependencies = this.dependencies(id);
+        entry.value = await entry.definition.create(dependencies);
+        await entry.definition.initialize(entry.value, dependencies);
         if (this.draining) throw new AppError('初始化期间服务已关闭', 503, 'SERVICE_DRAINING');
         entry.state = 'ready';
         return entry.value;
@@ -199,7 +236,7 @@ export class ServiceLifecycle {
         const entry = this.entries.get(next)!;
         entry.state = 'disposing';
         try {
-          await entry.definition.dispose(entry.value);
+          await entry.definition.dispose(entry.value, this.dependencies(next));
           entry.state = 'disposed';
           remaining.delete(next);
         } catch (error) {
