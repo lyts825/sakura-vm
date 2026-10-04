@@ -1,7 +1,9 @@
-import type { z } from 'zod';
+import { z } from 'zod';
+import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
 import contracts from '../docs/schemas/operations.json' with { type: 'json' };
 import { operationDeclarationSchema, type OperationDeclaration } from '../shared/contracts/operations.ts';
-import { coreOperations, coreRequestSchema } from './core-operations.ts';
+import { coreOperations, coreRequestSchema, coreResponseContracts } from './core-operations.ts';
+import { pluginRouteResponses } from '../shared/contracts/plugin-route-responses.ts';
 import { pluginHttpRoutes } from './plugins/registry.ts';
 
 export type OperationEntry = {
@@ -12,6 +14,7 @@ export type OperationEntry = {
   requestSchema?: z.ZodType;
   body?: Record<string, unknown>;
   response?: Record<string, unknown>;
+  responseContract?: HttpResponseContract;
   status: number;
   media?: string;
   inspect?: boolean;
@@ -189,23 +192,27 @@ export const operationEntries: readonly OperationEntry[] = [
     declaration: {
       id: 'core.' + item.id, owner: 'core', method: item.method as OperationDeclaration['method'],
       path: normalize(item.path), ...item.policy,
-      contract: item.response || item.status === 204 ? 'declared' : 'partial', enabled: true,
+      contract: coreResponseContracts[item.id] ? 'declared' : 'partial', enabled: true,
     },
     handler: 'core', title: item.title, requestSchema: coreRequestSchema(item.body) || undefined,
-    body: item.body, response: item.response, status: item.status || 200, media: item.media, inspect: item.inspect,
+    body: item.body, response: item.response, responseContract: coreResponseContracts[item.id],
+    status: item.status || 200, media: coreResponseContracts[item.id]?.media || item.media, inspect: item.inspect,
   })),
   ...pluginHttpRoutes().map((route): OperationEntry => {
     const id = route.owner + '.' + route.id;
-    const typed = (contracts as Record<string, { id: string; request?: Record<string, unknown> | null; response?: Record<string, unknown>; status: number }>)[id];
+    const responseContract = (pluginRouteResponses as Readonly<Record<string, HttpResponseContract>>)[id];
+    const typed = (contracts as Record<string, { id: string; request?: Record<string, unknown> | null; response?: Record<string, unknown> | null; status: number }>)[id];
     if (route.handler === 'operation' && !typed?.response)
       throw new Error('插件操作缺少响应契约：' + id);
     return {
       declaration: { id, owner: route.owner, method: route.method, path: normalize(route.path), ...route.policy,
-        contract: route.handler === 'operation' ? 'declared' : 'partial', enabled: false },
+        contract: responseContract ? 'declared' : 'partial', enabled: false },
       handler: route.handler === 'operation' ? 'plugin-operation' : 'plugin-route',
       title: typed ? route.owner + ' · ' + typed.id : route.owner + ' · ' + route.method + ' ' + route.path,
-      ...(typed?.request ? { body: typed.request } : {}), response: typed?.response,
-      status: route.status, inspect: id === 'metrics.sample',
+      ...(typed?.request ? { body: typed.request } : {}),
+      response: responseContract?.schema ? z.toJSONSchema(responseContract.schema) : undefined,
+      responseContract, media: responseContract?.media,
+      status: responseContract?.statuses[0] ?? route.status, inspect: id === 'metrics.sample',
     };
   }),
   ...socketEntries,
@@ -228,6 +235,20 @@ export function validateOperationEntries(entries: readonly OperationEntry[]) {
       throw new Error('操作项目范围与绑定策略不一致：' + declaration.id);
     if ((declaration.access === 'socket') !== (declaration.transport === 'websocket'))
       throw new Error('操作身份与传输声明不一致：' + declaration.id);
+    if (declaration.method !== 'UPGRADE') {
+      const contract = entry.responseContract;
+      if (!contract || declaration.contract !== 'declared')
+        throw new Error('HTTP 操作缺少响应契约，禁止发布：' + declaration.id);
+      if (!contract.statuses.length || entry.status < 200 || entry.status >= 300 || !contract.statuses.includes(entry.status) ||
+        contract.statuses.some(status => !Number.isInteger(status) || status < 200 || status > 599))
+        throw new Error('HTTP 响应状态声明无效：' + declaration.id);
+      if (contract.kind === 'json' && (!contract.schema || !entry.response))
+        throw new Error('JSON 响应缺少结构声明：' + declaration.id);
+      if (contract.kind !== 'empty' && !contract.media)
+        throw new Error('HTTP 响应缺少媒体类型：' + declaration.id);
+      if (contract.kind === 'empty' && contract.statuses.some(status => status !== 204 && status !== 205))
+        throw new Error('空响应状态声明无效：' + declaration.id);
+    }
     keys.add(key); ids.add(declaration.id);
   }
 }

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { VmAccess } from '../vm-access.ts';
 
 import { AppError } from '../../shared/errors.ts';
+import { sendJson } from '../http-response.ts';
 
 export async function route(
   this: Pick<import('../plugin-runtime.ts').PluginRuntime, 'jobStores' | 'retryHandler'> & { vm: Pick<VmAccess, 'requireUnlocked'> },
@@ -12,14 +13,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'jobs') {
     const stores = this.jobStores();
     if (parts.length === 4 && parts[3] === 'result' && req.method === 'GET') {

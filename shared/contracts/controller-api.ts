@@ -13,7 +13,7 @@ export const accessibleProjectSchema = z.object({ vmId: z.string(), vmName: z.st
   projectName: z.string(), roleId: z.string(), permissions: z.array(z.enum(['read', 'write', 'execute', 'approve'])),
   approvalRequired: z.boolean() }).strict();
 
-/** Only responses verified against their handlers are declared here. Remaining operations stay partial. */
+/** Account/session DTOs shared by the controller response catalog and client contracts. */
 export const controllerResponses: Readonly<Record<string, z.ZodType>> = {
   bootstrap: z.object({ token: z.string(), session: sessionViewSchema }).strict(),
   'access.status': z.object({ enabled: z.boolean(), session: sessionViewSchema }).strict(),

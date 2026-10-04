@@ -231,7 +231,11 @@ test('disconnect cancels an active import and permits a new import after cleanup
   assert.equal(signal?.aborted, true);
   await rejected;
   assert.equal(res.listenerCount('close'), 0);
-  features.serviceValue<import('../server/bundles.ts').Bundles>('bundles')!.importExternal = async () => ({ id: 'new-vm' }) as any;
+  features.serviceValue<import('../server/bundles.ts').Bundles>('bundles')!.importExternal = async () => ({
+    id: 'new-vm', name: 'retry', memoryMiB: 512, cpus: 1, diskGiB: 8,
+    accelerator: 'tcg', forwards: [], createdAt: new Date(0).toISOString(), snapshots: [],
+    status: 'stopped', poweredOn: false, diskBytes: 0,
+  });
   assert.equal(
     await routeThroughGateway(features, req, res, new URL('http://localhost/api/import?name=retry'), async () => ({})),
     true,

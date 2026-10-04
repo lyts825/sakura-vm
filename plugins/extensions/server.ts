@@ -1,3 +1,5 @@
+import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
+import { sendJson } from '../../server/http-response.ts';
 import { services as extensionsServices } from './services.ts';
 import { services as ideServices } from '../ide/services.ts';
 export { manifest } from './manifest.ts';
@@ -29,14 +31,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'extended-features' && parts.length === 2 && req.method === 'GET') {
     send(await this.extended.catalog());
     return true;
@@ -66,3 +61,6 @@ export const httpHandlers: Record<string, import('../../server/plugin-api.ts').P
   "legacy.get.vms.vmId.extended-features": route,
   "legacy.post.vms.vmId.extended-features": route,
 };
+
+/** Public response metadata is shared with publication, OpenAPI and runtime validation. */
+export const responseContracts = pluginResponseContracts("extensions");

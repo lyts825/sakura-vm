@@ -423,9 +423,10 @@ export class NetworkRuntime {
     this.draining = true;
   }
   snapshot() {
+    const { authorize: _authorize, ...limits } = this.options;
     return {
       state: this.closed ? 'closed' : this.draining ? 'draining' : 'running',
-      limits: { ...this.options, authorize: undefined },
+      limits,
       // Node workers and CPU-less backends share the host's global process/network budgets.
       maxChildProcesses: this.options.maxWorkers + 2 * this.options.maxVmWorkers,
       hostWorkers: this.host.snapshot(),

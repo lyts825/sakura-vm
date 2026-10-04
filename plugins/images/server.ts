@@ -1,3 +1,5 @@
+import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
+import { sendJson } from '../../server/http-response.ts';
 import { services as imagesServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -21,14 +23,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (url.pathname === '/api/image-import' && req.method === 'POST') {
     if (this.activity.importing) throw new AppError('另一个导入仍在进行', 409);
     const input = diskImportSchema.parse({
@@ -70,3 +65,6 @@ export const httpHandlers: Record<string, import('../../server/plugin-api.ts').P
   "legacy.post.images.imageId": route,
   "legacy.post.image-import": route,
 };
+
+/** Public response metadata is shared with publication, OpenAPI and runtime validation. */
+export const responseContracts = pluginResponseContracts("images");

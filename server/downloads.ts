@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { posix } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
+import { writeResponseHead } from './http-response.ts';
 import { guestPath } from '../shared/paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 
@@ -112,7 +113,7 @@ export class Downloads {
     };
     res.once('close', disconnected);
     const headers = (size?: number) =>
-      res.writeHead(200, {
+      writeResponseHead(res, 200, {
         'Content-Type': 'application/octet-stream',
         'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(target.name)}`,
         'Cache-Control': 'no-store',

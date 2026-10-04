@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { pluginManifestSchema, pluginPackSchema, pluginSelectionSchema } from '../shared/plugin-schema.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 import { loaders } from '../server/plugins/registry.ts';
+import { pluginRouteResponses } from '../shared/contracts/plugin-route-responses.ts';
+import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
 
 const folder = new URL('../docs/schemas/', import.meta.url);
 const checking = process.argv.includes('--check');
@@ -21,18 +23,32 @@ for (const [name, schema] of Object.entries({
 }
 const operations: Record<string, unknown> = {};
 for (const plugin of PLUGINS) {
-  if (!plugin.contributes.operations.length) continue;
+  if (!plugin.contributes.routes.length) continue;
   const module = await loaders[plugin.id]();
-  for (const declaration of plugin.contributes.operations) {
-    const implementation = module.operations?.[declaration.id];
-    if (!implementation) throw new Error(`Missing operation implementation: ${plugin.id}.${declaration.id}`);
-    operations[`${plugin.id}.${declaration.id}`] = {
+  for (const route of plugin.contributes.routes) {
+    const id = `${plugin.id}.${route.id}`;
+    const contract = (pluginRouteResponses as Record<string, HttpResponseContract>)[id];
+    if (!contract || contract.kind === 'json' && !contract.schema)
+      throw new Error(`Missing public response contract: ${id}`);
+    if (!contract.statuses.length || contract.statuses.some(status => !Number.isInteger(status) || status < 200 || status >= 400))
+      throw new Error(`Invalid successful response statuses: ${id}`);
+    const implementation = route.handler === 'operation' ? module.operations?.[route.id] : undefined;
+    if (route.handler === 'operation' ? !implementation : !module.httpHandlers?.[route.id])
+      throw new Error(`Missing operation implementation: ${id}`);
+    if (implementation && implementation.response !== contract.schema)
+      throw new Error(`Handler uses a different public response contract: ${id}`);
+    const declaration = plugin.contributes.operations.find(item => item.id === route.id) || route;
+    operations[id] = {
       ...declaration,
-      request: implementation.request ? z.toJSONSchema(implementation.request, { io: 'input' }) : null,
-      response: z.toJSONSchema(implementation.response),
+      status: contract.statuses[0], statuses: contract.statuses,
+      kind: contract.kind, media: contract.media,
+      request: implementation?.request ? z.toJSONSchema(implementation.request, { io: 'input' }) : null,
+      response: contract.schema ? z.toJSONSchema(contract.schema) : null,
     };
   }
 }
+for (const id of Object.keys(pluginRouteResponses))
+  if (!Object.hasOwn(operations, id)) throw new Error(`Response contract has no declared route: ${id}`);
 const operationsFile = new URL('operations.json', folder);
 const operationsText = JSON.stringify(operations, null, 2) + '\n';
 if (checking) {

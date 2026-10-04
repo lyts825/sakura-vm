@@ -46,6 +46,9 @@ import { PluginScope, withinDeadline } from '../server/plugin-scope.ts';
 import { loaders } from '../server/plugins/registry.ts';
 import { migratePlugins } from '../shared/plugin-selection.ts';
 import { featureReadiness } from '../src/feature-readiness.ts';
+import { parseMetrics } from '../server/metrics.ts';
+import { pluginRouteResponses } from '../shared/contracts/plugin-route-responses.ts';
+import type { PluginOperation } from '../server/plugin-api.ts';
 
 test('plugin activation timeout aborts registration and cleanup is bounded', async () => {
   const scope = new PluginScope();
@@ -68,19 +71,24 @@ test('plugin activation timeout aborts registration and cleanup is bounded', asy
 
 test('declared operations validate responses before writing to the client', async () => {
   const original = loaders.metrics;
+  const sample = parseMetrics('CPU\ncpu 10 0 10 100 0 0 0 0\ncpu 30 0 20 150 20 0 0 0\nMEMORY\nMemTotal: 1024 kB\nMemAvailable: 512 kB\nDISK\n/dev/vda1 1000 400 600 40% /\nNETWORK\n eth0: 10 0 0 0 0 0 0 0 20 0 0 0 0 0 0 0\nPROCESSES\n123 python3\nUPTIME\n120.5 10.0\n');
   let valid = false;
+  let operation!: PluginOperation;
+  const written: unknown[] = [];
   loaders.metrics = async () => {
     const module = await original();
+    operation = {
+      response: module.operations!.sample.response,
+      execute: () => valid ? sample : { ...sample, cpuPercent: 'broken' },
+    };
+    assert.equal(operation.response, pluginRouteResponses['metrics.sample'].schema);
     return {
       ...module,
       activate: async (host) => {
-        host.provide(metricsContract.metrics, { sample: async () => ({}), forget: () => {}, close: async () => {} } as any);
+        host.provide(metricsContract.metrics, { sample: async () => sample, forget: () => {}, close: async () => {} } as any);
       },
       operations: {
-        sample: {
-          response: z.object({ sample: z.number() }).strict(),
-          execute: () => (valid ? { sample: 1 } : { sample: 'broken' }),
-        },
+        sample: operation,
       },
     };
   };
@@ -98,9 +106,11 @@ test('declared operations validate responses before writing to the client', asyn
         status: 0,
         payload: '',
         writeHead(status: number) {
+          written.push(status);
           this.status = status;
         },
         end(data: string) {
+          written.push(data);
           this.payload = data;
           this.writableFinished = true;
         },
@@ -110,10 +120,18 @@ test('declared operations validate responses before writing to the client', asyn
     };
     try {
       await assert.rejects(invoke(), (error: any) => error.code === 'INVALID_PLUGIN_RESPONSE');
+      assert.deepEqual(written, []);
+      // A handler's local validator cannot replace the independently published response contract.
+      operation.response = z.object({ sample: z.number() }).strict();
+      operation.execute = () => ({ sample: 1 });
+      await assert.rejects(invoke(), (error: any) => error.code === 'INVALID_OPERATION_RESPONSE');
+      assert.deepEqual(written, []);
+      operation.response = pluginRouteResponses['metrics.sample'].schema;
+      operation.execute = () => valid ? sample : { ...sample, cpuPercent: 'broken' };
       valid = true;
       const res = await invoke();
       assert.equal(res.status, 200);
-      assert.deepEqual(JSON.parse(res.payload), { sample: 1 });
+      assert.deepEqual(JSON.parse(res.payload), sample);
     } finally {
       await host.close();
     }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { System } from '../../shared/contracts/controller.ts';
 import type { VMView } from '../../shared/contracts/vm.ts';
-import { api, controllerSession, RefreshQueue } from '../controller-session';
+import { controllerSession, RefreshQueue } from '../controller-session';
 import { watchController } from '../controller-watch';
 import { ResponseOrder } from '../request-order';
 import { pluginGeneration } from '../plugin-generation';
@@ -22,8 +22,8 @@ export function useControllerState(setSelectedRaw: Dispatch<SetStateAction<strin
         const signal = AbortSignal.any([refreshAbort.current.signal, AbortSignal.timeout(15000)]);
         try {
           const [data, sys] = await Promise.all([
-            api<VMView[]>('/vms', 'GET', undefined, signal),
-            api<System>('/system', 'GET', undefined, signal),
+            controllerSession.operation('core.vms.list', { signal }),
+            controllerSession.operation('core.system', { signal }),
           ]);
           if (!refreshOrder.current.accept(version)) return;
           setVms(data);

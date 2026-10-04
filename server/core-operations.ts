@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { OperationPolicy } from '../shared/contracts/operations.ts';
-import { controllerResponses, recoveryViewSchema } from '../shared/contracts/controller-api.ts';
+import { recoveryViewSchema } from '../shared/contracts/controller-api.ts';
+import { coreResponseContracts } from '../shared/contracts/core-responses.ts';
+import type { HttpResponseContract } from '../shared/contracts/http-response.ts';
+export { coreResponseContracts, coreResponseSchemas, coreResponseSchema } from '../shared/contracts/core-responses.ts';
 import { recoveryRequest } from '../shared/contracts/recovery.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { logRetentionRequest } from './log-retention.ts';
@@ -67,6 +70,7 @@ export const coreOperations: {
   title: string;
   body?: Record<string, unknown>;
   response?: Record<string, unknown>;
+  responses?: HttpResponseContract;
   status?: number;
   media?: string;
   inspect?: boolean;
@@ -787,6 +791,10 @@ export const coreOperations: {
 coreOperations.find((item) => item.id === 'host-runtime')!.response = z.toJSONSchema(hostRuntimeDiagnosticSchema);
 coreOperations.find((item) => item.id === 'network-runtime')!.response = z.toJSONSchema(networkRuntimeDiagnosticSchema);
 for (const operation of coreOperations) {
-  const response = controllerResponses[operation.id];
-  if (response) operation.response = z.toJSONSchema(response);
+  const contract = coreResponseContracts[operation.id];
+  if (!contract) throw new Error(`Core operation has no response contract: ${operation.id}`);
+  operation.responses = contract;
+  operation.status = contract.statuses[0];
+  operation.media = contract.media;
+  if (contract.schema) operation.response = z.toJSONSchema(contract.schema);
 }

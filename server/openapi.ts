@@ -37,6 +37,7 @@ export function apiDocument(active: Iterable<string>, port: number, catalogVersi
   for (const [index, entry] of operationEntries.entries()) {
     const policy = directory[index];
     if (policy.method === 'UPGRADE') continue;
+    const response = entry.responseContract;
     const parameters: ApiParameter[] = [...policy.path.matchAll(/\{([^}]+)\}/g)].map((match) => ({
       name: match[1],
       in: 'path',
@@ -95,16 +96,15 @@ export function apiDocument(active: Iterable<string>, port: number, catalogVersi
           }
         : {}),
       responses: {
-        [entry.status]: {
-          description: policy.contract === 'declared' ? '成功' : '成功；结构以实际响应为准。',
-          ...(entry.status === 204
-            ? {}
-            : entry.response ? {
-                content: {
-                  [entry.media || 'application/json']: { schema: entry.response },
-                },
-              } : {}),
-        },
+        ...Object.fromEntries((response?.statuses || [entry.status]).map(status => [status, {
+          description: status >= 400 ? '协议错误响应' : '成功',
+          ...(response?.kind === 'empty' ? {} : {
+            content: { [response?.media || entry.media || 'application/json']: {
+              schema: entry.response || { type: 'string',
+                ...(response?.kind === 'binary' ? { format: 'binary' } : {}) },
+            } },
+          }),
+        }])),
         default: { description: '参数、权限、维护状态、运行身份变化或运行失败。' },
       },
     };

@@ -30,10 +30,12 @@ import {
   haRetirementSchema,
   haWitnessEnrollmentSchema,
   liveMigrationFenceSchema,
+  liveMigrationFenceIdentitySchema,
   liveMigrationOriginSchema,
   organizationSchema,
   BOOT_TIMEOUT_MS,
   type HaPromotion,
+  type LiveMigrationFence,
   type MigrationFingerprint,
   type VMConfig,
   type VMRecord,
@@ -41,6 +43,10 @@ import {
   type VMView,
 } from '../shared/contracts/vm.ts';
 import { AppError } from '../shared/errors.ts';
+import { liveMigrationTargetStatusSchema, type LiveMigrationTargetStatus } from '../shared/contracts/live-migration.ts';
+import { captureRecoveryOrigin } from './recovery-origin.ts';
+import { captureOperationCheck } from './operation-context.ts';
+import { migrationDigest, migrationFenceIdentity } from './live-migration-proof.ts';
 import {
   audioArguments,
   deviceArguments,
@@ -112,6 +118,8 @@ export class Machines extends EventEmitter {
   private rescueControllers = new Set<AbortController>();
   private hostPortReservations = new Map<string, Set<number>>();
   private haStartGuards = new ManagedHooks<[string]>();
+  private migrationRuns = new Map<string, { identity: string; processId: string; live?: Live; stoppedAt?: string }>();
+  private migrationCompletions = new Map<string, string>();
   beforeHaStart(guard: (id: string) => Promise<void>) { return this.haStartGuards.register(guard); }
   reserveHostPorts(owner: string, ports: Iterable<number>) {
     const next = new Set(ports);
@@ -215,8 +223,11 @@ export class Machines extends EventEmitter {
           r.haRetirement = haRetirementSchema.parse(r.haRetirement);
         if (r.haWitnessEnrollment !== undefined)
           r.haWitnessEnrollment = haWitnessEnrollmentSchema.parse(r.haWitnessEnrollment);
-        if (r.liveMigrationFence !== undefined)
+        if (r.liveMigrationFence !== undefined) {
           r.liveMigrationFence = liveMigrationFenceSchema.parse(r.liveMigrationFence);
+          if (r.liveMigrationFence.completion && r.liveMigrationFence.completion.sourceVmId !== r.id)
+            throw new Error('在线迁移完成证明不属于此来源实例');
+        }
         if (r.liveMigrationOrigin !== undefined)
           r.liveMigrationOrigin = liveMigrationOriginSchema.parse(r.liveMigrationOrigin);
         if (r.rescueOf !== undefined) {
@@ -233,6 +244,8 @@ export class Machines extends EventEmitter {
         }
         this.storagePools.bind(r.id, r.storagePoolId);
         this.records.set(r.id, r);
+        if (r.liveMigrationFence?.completion)
+          this.migrationCompletions.set(r.id, migrationDigest(r.liveMigrationFence));
       }
     } catch (e: any) {
       if (e.code !== 'ENOENT') throw e;
@@ -386,7 +399,7 @@ export class Machines extends EventEmitter {
     return this.createInternal(input, sandbox);
   }
   async createIncomingTarget(input: unknown, identity: { key: string; seed: Buffer },
-    source: { sourceHostId: string; sourceVmId: string; transferId: string },
+    source: { sourceHostId: string; sourceVmId: string; transferId: string; completionProtocol?: 1 },
     projects?: LiveMigrationProjects, organization?: VMRecord['organization']) {
     if (typeof identity.key !== 'string' || identity.key.length < 100 ||
         identity.key.length > 16_000 || !Buffer.isBuffer(identity.seed) ||
@@ -396,7 +409,7 @@ export class Machines extends EventEmitter {
     try { createPrivateKey(identity.key); }
     catch { throw new AppError('在线迁移控制密钥无效'); }
     const sourceIds = z.object({ sourceHostId: z.uuid(), sourceVmId: z.uuid(),
-      transferId: z.uuid() }).strict().parse(source);
+      transferId: z.uuid(), completionProtocol: z.literal(1).optional() }).strict().parse(source);
     const config = createSchema.parse(input);
     if (config.firmware === 'uefi' || config.architecture === 'aarch64' ||
         config.hardware?.devices?.graphics === 'virgl')
@@ -407,7 +420,8 @@ export class Machines extends EventEmitter {
       throw new AppError('此在线迁移任务已创建目标实例', 409);
     const now = new Date().toISOString();
     return this.createInternal(config, undefined, undefined, { ...identity,
-      origin: { ...sourceIds, status: 'prepared', createdAt: now, updatedAt: now },
+      origin: { ...sourceIds, status: 'prepared', createdAt: now, updatedAt: now,
+        projectsDigest: migrationDigest(projects ? liveMigrationProjectsSchema.parse(projects) : null) },
       ...(projects ? { projects: liveMigrationProjectsSchema.parse(projects) } : {}),
       ...(organization ? { organization: organizationSchema.parse(organization) } : {}),
     });
@@ -576,8 +590,11 @@ export class Machines extends EventEmitter {
   async startIncoming(id: string) {
     return this.startInternal(id, undefined, true);
   }
-  async completeIncoming(id: string, query: typeof qmp = qmp) {
+  async completeIncoming(id: string, query: typeof qmp = qmp, sessionId?: string) {
+    if (sessionId !== undefined) z.uuid().parse(sessionId);
+    const check = captureOperationCheck();
     return this.locked(id, async () => {
+      await check();
       const live = this.live.get(id);
       if (!live?.incoming || live.status !== 'paused')
         throw new AppError('目标实例不在迁移接收状态', 409);
@@ -588,7 +605,9 @@ export class Machines extends EventEmitter {
         { status?: string; running?: boolean };
       if (state.running !== true || state.status !== 'running')
         throw new AppError('目标 QEMU 尚未完成迁移并运行', 409);
+      await check();
       vm.liveMigrationOrigin = liveMigrationOriginSchema.parse({ ...previous,
+        ...(sessionId ? { sessionId } : {}),
         status: 'received', updatedAt: new Date().toISOString() });
       try { await this.save(); }
       catch (error) { vm.liveMigrationOrigin = previous; throw error; }
@@ -603,13 +622,18 @@ export class Machines extends EventEmitter {
   }
   async fenceForLiveMigration(id: string, raw: unknown,
     query: typeof qmp = qmp) {
-    const identity = liveMigrationFenceSchema.omit({ fencedAt: true }).parse(raw);
+    const identity = liveMigrationFenceIdentitySchema.omit({ fencedAt: true, sourceProcessId: true, origin: true }).parse(raw);
+    const origin = captureRecoveryOrigin();
+    const check = captureOperationCheck();
     return this.locked(id, async () => {
+      await check();
       const vm = this.get(id);
       if (vm.liveMigrationFence) {
         if (vm.liveMigrationFence.transferId !== identity.transferId ||
             vm.liveMigrationFence.targetHostId !== identity.targetHostId ||
-            vm.liveMigrationFence.targetVmId !== identity.targetVmId)
+            vm.liveMigrationFence.targetVmId !== identity.targetVmId ||
+            ['peerId', 'sourceHostId', 'sessionId', 'projectsDigest'].some(key =>
+              vm.liveMigrationFence![key as keyof LiveMigrationFence] !== identity[key as keyof typeof identity]))
           throw new AppError('来源实例已有其他在线迁移栅栏', 409);
         return vm.liveMigrationFence;
       }
@@ -623,13 +647,110 @@ export class Machines extends EventEmitter {
       ]) as [{ running?: boolean }, { status?: string }];
       if (state.running !== false || migration.status !== 'pre-switchover')
         throw new AppError('来源 QEMU 尚未在迁移切换点暂停', 409);
+      await check();
+      if (this.live.get(id) !== live) throw new AppError('来源原进程已变化', 409);
       const fence = liveMigrationFenceSchema.parse({ ...identity,
+        ...(identity.sessionId ? { sourceProcessId: vmLifetime(id, live).vmProcessId } : {}),
+        ...(origin ? { origin } : {}),
         fencedAt: new Date().toISOString() });
       vm.liveMigrationFence = fence;
       try { await this.save(); }
       catch (error) { delete vm.liveMigrationFence; throw error; }
+      if (fence.sourceProcessId) this.migrationRuns.set(id, {
+        identity: migrationFenceIdentity(fence), processId: fence.sourceProcessId, live,
+      });
       this.emit('change');
       return fence;
+    });
+  }
+  /** Publish native exit evidence for this exact fenced process; a missing live entry is not evidence. */
+  async stopLiveMigrationSource(id: string, expected: LiveMigrationFence) {
+    const original = liveMigrationFenceSchema.parse(expected), identity = migrationFenceIdentity(original);
+    const check = captureOperationCheck();
+    await check();
+    const vm = this.get(id), run = this.migrationRuns.get(id);
+    if (!vm.liveMigrationFence || migrationDigest(vm.liveMigrationFence) !== migrationDigest(original))
+      throw new AppError('原在线迁移栅栏已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED');
+    if (original.sourceStopped) {
+      if (this.live.has(id)) throw new AppError('来源原进程尚未确认停止', 409);
+      return original;
+    }
+    if (!run || run.identity !== identity || run.processId !== original.sourceProcessId ||
+      (this.live.has(id) && this.live.get(id) !== run.live))
+      throw new AppError('原来源进程退出回执不可用，保持栅栏等待核验', 409, 'LIVE_MIGRATION_SOURCE_UNCONFIRMED');
+    if (!run.stoppedAt) {
+      if (!run.live) throw new AppError('来源原进程退出回执不可用', 409);
+      try {
+        await this.stop(id, true);
+        await run.live.done;
+      } catch (error) { this.migrationRuns.delete(id); throw error; }
+      if (this.live.has(id)) throw new AppError('来源原进程仍未退出', 409);
+      run.stoppedAt = new Date().toISOString();
+      delete run.live;
+    }
+    return this.locked(id, async () => {
+      await check();
+      const current = this.get(id).liveMigrationFence;
+      if (!current || migrationDigest(current) !== migrationDigest(original) || this.live.has(id))
+        throw new AppError('原在线迁移栅栏或来源进程已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED');
+      const next = liveMigrationFenceSchema.parse({ ...current,
+        sourceStopped: { sourceProcessId: run.processId, stoppedAt: run.stoppedAt } });
+      this.get(id).liveMigrationFence = next;
+      try { await this.save(); }
+      catch (error) { this.get(id).liveMigrationFence = current; throw error; }
+      this.emit('change');
+      return structuredClone(next);
+    });
+  }
+  /** The domain supplies an authenticated target query; this owner validates and atomically publishes its evidence. */
+  canConfirmLiveMigrationCompletion(id: string, expected: LiveMigrationFence) {
+    const current = this.records.get(id)?.liveMigrationFence, run = this.migrationRuns.get(id);
+    if (!current || this.live.has(id) || migrationDigest(current) !== migrationDigest(expected)) return false;
+    return !!current.sourceStopped || !!run?.stoppedAt && run.identity === migrationFenceIdentity(expected) &&
+      run.processId === expected.sourceProcessId;
+  }
+  isLiveMigrationCompletionDurable(id: string, expected: LiveMigrationFence) {
+    const current = this.records.get(id)?.liveMigrationFence;
+    return !!current?.completion && !this.live.has(id) &&
+      migrationDigest(current) === migrationDigest(expected) &&
+      this.migrationCompletions.get(id) === migrationDigest(expected);
+  }
+  async confirmLiveMigrationCompletion(id: string, expected: LiveMigrationFence,
+    inspect: () => Promise<LiveMigrationTargetStatus>) {
+    const original = liveMigrationFenceSchema.parse(expected), revision = migrationDigest(original);
+    const check = captureOperationCheck();
+    return this.locked(id, async () => {
+      await check();
+      const vm = this.get(id), current = vm.liveMigrationFence;
+      if (!current || migrationDigest(current) !== revision)
+        throw new AppError('原在线迁移栅栏已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED');
+      if (current.completion) return structuredClone(current);
+      if (!current.sourceStopped || !current.sourceHostId || !current.sessionId || !current.projectsDigest || !current.peerId)
+        throw new AppError('原迁移缺少来源退出或会话证明，保持栅栏等待核验', 409, 'LIVE_MIGRATION_SOURCE_UNCONFIRMED');
+      if (this.live.has(id)) throw new AppError('来源原进程尚未确认停止', 409);
+      const target = liveMigrationTargetStatusSchema.parse(await inspect());
+      await check();
+      if (vm.liveMigrationFence !== current || this.live.has(id))
+        throw new AppError('原在线迁移栅栏或来源进程已变化', 409, 'LIVE_MIGRATION_FENCE_CHANGED');
+      if (target.status !== 'running' || target.originStatus !== 'ready' || !target.targetVerifiedAt ||
+        target.targetVmId !== current.targetVmId || target.sourceVmId !== id ||
+        target.sourceHostId !== current.sourceHostId || target.transferId !== current.transferId ||
+        target.sessionId !== current.sessionId || target.projectsDigest !== current.projectsDigest)
+        throw new AppError('目标未以原迁移会话与项目身份确认运行', 409, 'LIVE_MIGRATION_TARGET_UNCONFIRMED');
+      const next = liveMigrationFenceSchema.parse({ ...current, completion: {
+        version: 1, sourceVmId: id, sourceHostId: current.sourceHostId, sourceProcessId: current.sourceProcessId,
+        targetHostId: current.targetHostId, targetVmId: current.targetVmId, transferId: current.transferId,
+        sessionId: current.sessionId, projectsDigest: current.projectsDigest,
+        sourceStoppedAt: current.sourceStopped.stoppedAt, targetVerifiedAt: target.targetVerifiedAt,
+        confirmedAt: new Date().toISOString(),
+      } });
+      vm.liveMigrationFence = next;
+      try { await this.save(); }
+      catch (error) { vm.liveMigrationFence = current; throw error; }
+      this.migrationCompletions.set(id, migrationDigest(next));
+      this.migrationRuns.delete(id);
+      this.emit('change');
+      return structuredClone(next);
     });
   }
   async fenceForHa(id: string, raw: HaPromotion, guard?: () => Promise<void> | void) {
@@ -1992,6 +2113,8 @@ export class Machines extends EventEmitter {
         this.logs.delete(id);
         await this.save();
         this.storagePools.unbind(id);
+        this.migrationRuns.delete(id);
+        this.migrationCompletions.delete(id);
       },
       allowIncident,
     ));
@@ -2279,6 +2402,8 @@ export class Machines extends EventEmitter {
         vmLifetime(id, live).barrier(() => this.stopInternal(id, false), true, true)));
       await this.saveQueue.catch(() => {});
       await this.engine.runtime.close();
+      this.migrationRuns.clear();
+      this.migrationCompletions.clear();
       const failures = stopped.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
       if (failures.length) throw new AppError('实例关闭清理尚未确认', 503, 'VM_CLEANUP_PENDING');
     })();

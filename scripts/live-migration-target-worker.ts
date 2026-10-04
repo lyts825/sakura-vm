@@ -48,7 +48,7 @@ try {
     prepare: (input) => receiver.prepare(input),
     complete: (input) => receiver.complete(input),
     abort: (input) => receiver.abort(input),
-    status: (input) => Promise.resolve(receiver.status(input)),
+    status: (input) => receiver.verifiedStatus(input),
   } });
   const code = await peers.configure({ operation: 'create-code' });
   if (!('pairing' in code) || !code.pairing) throw new Error('Pairing code unavailable');

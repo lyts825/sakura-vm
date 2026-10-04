@@ -1,3 +1,5 @@
+import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
+import { sendJson } from '../../server/http-response.ts';
 import { services as desktopServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -9,22 +11,18 @@ import { AppError } from '../../shared/errors.ts';
 
 import { Desktops } from '../../server/desktop.ts';
 import { singleAppClipboard, singleAppInput, singleAppProgram } from '../../server/single-app-windows.ts';
-import {
-  x11ClipboardRequest,
-  x11ClipboardViewSchema,
-  x11ClipboardActionResponse,
-} from '../../server/x11-clipboard.ts';
+import { x11ClipboardRequest } from '../../server/x11-clipboard.ts';
 
 export const operations: Record<string, PluginOperation> = {
-  'x11-clipboard-get': { response: x11ClipboardViewSchema, execute(url, _, signal) {
+  'x11-clipboard-get': { response: pluginRouteResponses["desktop.x11-clipboard-get"].schema, execute(url, _, signal) {
     return this.desktops.clipboard.view(url.pathname.split('/')[3], signal);
   } },
-  'x11-clipboard-action': { request: x11ClipboardRequest, response: x11ClipboardActionResponse,
+  'x11-clipboard-action': { request: x11ClipboardRequest, response: pluginRouteResponses["desktop.x11-clipboard-action"].schema,
     execute(url, input, signal) { return this.desktops.clipboard.action(url.pathname.split('/')[3], input, signal); } },
-  'wayland-clipboard-get': { response: x11ClipboardViewSchema, execute(url, _, signal) {
+  'wayland-clipboard-get': { response: pluginRouteResponses["desktop.wayland-clipboard-get"].schema, execute(url, _, signal) {
     return this.desktops.waylandClipboard.view(url.pathname.split('/')[3], signal);
   } },
-  'wayland-clipboard-action': { request: x11ClipboardRequest, response: x11ClipboardActionResponse,
+  'wayland-clipboard-action': { request: x11ClipboardRequest, response: pluginRouteResponses["desktop.wayland-clipboard-action"].schema,
     execute(url, input, signal) { return this.desktops.waylandClipboard.action(url.pathname.split('/')[3], input, signal); } },
 };
 
@@ -47,14 +45,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] !== 'vms' || !parts[2]) return false;
   const id = parts[2],
     action = parts[3];
@@ -159,3 +150,6 @@ export const httpHandlers: Record<string, import('../../server/plugin-api.ts').P
   "legacy.get.vms.vmId.ime": route,
   "legacy.post.vms.vmId.ime": route,
 };
+
+/** Public response metadata is shared with publication, OpenAPI and runtime validation. */
+export const responseContracts = pluginResponseContracts("desktop");

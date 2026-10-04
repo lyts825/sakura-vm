@@ -1,3 +1,5 @@
+import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
+import { sendJson } from '../../server/http-response.ts';
 import { services as backupsServices } from '../backups/services.ts';
 import { services as snapshotsServices } from '../snapshots/services.ts';
 import { services as secretsServices } from '../secrets/services.ts';
@@ -9,24 +11,23 @@ import type { PluginContext } from '../../server/plugin-api.ts';
 import { NextFeatures } from '../../server/next-features.ts';
 import { ObjectBackup } from '../../server/object-backup.ts';
 import { WireGuardOverlay } from '../../server/wireguard-overlay.ts';
-import type { Backups } from '../../server/backups.ts';
-import type { Bundles } from '../../server/bundles.ts';
-import type { Secrets } from '../../server/secrets.ts';
+
+
+
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../shared/errors.ts';
-import { z } from 'zod';
+
 import type { PluginOperation } from '../../server/plugin-api.ts';
 
 export const operations: Record<string, PluginOperation> = {
   'browser-ide-link': {
-    response: z.object({ url: z.url(), password: z.string().length(64),
-      expiresAt: z.iso.datetime() }).strict(),
+    response: pluginRouteResponses["platform.browser-ide-link"].schema,
     execute(url) {
       return this.next.browserIdeLink(url.pathname.split('/')[3]);
     },
   },
   'notebook-link': {
-    response: z.object({ provider: z.enum(['jupyter', 'marimo']), url: z.url() }).strict(),
+    response: pluginRouteResponses["platform.notebook-link"].schema,
     execute(url) {
       return this.next.notebookLink(url.pathname.split('/')[3]);
     },
@@ -61,14 +62,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'next-features' && parts.length === 2 && req.method === 'GET') {
     send(await this.next.catalog());
     return true;
@@ -98,3 +92,6 @@ export const httpHandlers: Record<string, import('../../server/plugin-api.ts').P
   "legacy.get.vms.vmId.next-features": route,
   "legacy.post.vms.vmId.next-features": route,
 };
+
+/** Public response metadata is shared with publication, OpenAPI and runtime validation. */
+export const responseContracts = pluginResponseContracts("platform");

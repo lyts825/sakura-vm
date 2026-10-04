@@ -30,30 +30,43 @@ const identity = z.object({ operationId: z.string(), owner: z.string(), actorId:
   pluginInstanceId: z.string().optional(), pluginGeneration: z.string().optional(), recoveryId: z.string().optional(),
   callerPluginInstanceId: z.string().optional(), callerPluginGeneration: z.string().optional(),
   jobId: z.string().optional(), vmProcessId: z.string().optional(), executionGeneration: z.string().optional(),
-  bootId: z.string().optional(), networkGeneration: z.string().optional(), traceId: z.string().optional(), spanId: z.string().optional() });
+  bootId: z.string().optional(), networkGeneration: z.string().optional(), traceId: z.string().optional(), spanId: z.string().optional() }).strict();
 const resource = z.object({ id: z.string(), owner: z.string(), kind: z.string(), label: z.string(),
   lane: z.enum(['interactive', 'background', 'control']), state: z.enum(['queued', 'active', 'cleanup-pending', 'released', 'rejected']),
   identity, cost: z.record(z.string(), z.number()), createdAt: z.string(), admittedAt: z.string().optional(),
   finishedAt: z.string().optional(), previousOwner: z.string().optional(), error: z.string().optional(),
-  timings: z.object({ queueMs: z.number(), executionMs: z.number(), cleanupMs: z.number() }).optional() });
+  timings: z.object({ queueMs: z.number(), executionMs: z.number(), cleanupMs: z.number() }).strict().optional() }).strict();
+export const scheduleDiagnosticSchema = z.object({ id: z.string(), owner: z.string(), label: z.string(), intervalMs: z.number(),
+  overlap: z.enum(['skip', 'coalesce']), catchUp: z.enum(['skip', 'once']),
+  state: z.enum(['scheduled', 'queued', 'running', 'cancelling', 'backoff', 'cleanup-pending', 'closed']),
+  nextAt: z.string().optional(), lastStartedAt: z.string().optional(), lastFinishedAt: z.string().optional(),
+  lastDurationMs: z.number().optional(), lastError: z.string().optional(), timedOutAt: z.string().optional(),
+  jobId: z.string().optional(), cleanupLeaseId: z.string().optional(), runs: z.number(), failures: z.number(), skipped: z.number(), coalesced: z.number(),
+}).strict();
 export const hostRuntimeDiagnosticSchema = z.object({ state: z.enum(['accepting', 'draining', 'closed']),
   diagnostics: z.object({ measuredForMs: z.number(), state: z.enum(['closed', 'measuring']),
-    eventLoop: z.object({ samples: z.number(), meanMs: z.number(), p99Ms: z.number(), maxMs: z.number(), utilization: z.number() }) }).optional(),
-  budgets: z.array(z.object({ key: z.string(), capacity: z.number(), reserved: z.number(), used: z.number() })),
+    eventLoop: z.object({ samples: z.number(), meanMs: z.number(), p99Ms: z.number(), maxMs: z.number(), utilization: z.number() }).strict() }).strict().optional(),
+  budgets: z.array(z.object({ key: z.string(), capacity: z.number(), reserved: z.number(), used: z.number() }).strict()),
   resources: z.array(resource), recent: z.array(resource), queued: z.number(),
-  totals: z.object({ admitted: z.number(), rejected: z.number(), cancelled: z.number(), released: z.number() }),
-  timings: z.object({ queue: z.object({ count: z.number(), totalMs: z.number(), maxMs: z.number() }),
-    execution: z.object({ count: z.number(), totalMs: z.number(), maxMs: z.number() }),
-    cleanup: z.object({ count: z.number(), totalMs: z.number(), maxMs: z.number() }) }).optional(),
-  schedules: z.array(z.record(z.string(), z.unknown())),
-  metadata: z.object({ limits: z.object({ perFile: z.number(), pending: z.number(), files: z.number() }),
-    pending: z.number(), files: z.array(z.object({ key: z.string(), pending: z.number(), unconfirmedWrite: z.boolean() })) }) });
+  totals: z.object({ admitted: z.number(), rejected: z.number(), cancelled: z.number(), released: z.number() }).strict(),
+  timings: z.object({ queue: z.object({ count: z.number(), totalMs: z.number(), maxMs: z.number() }).strict(),
+    execution: z.object({ count: z.number(), totalMs: z.number(), maxMs: z.number() }).strict(),
+    cleanup: z.object({ count: z.number(), totalMs: z.number(), maxMs: z.number() }).strict() }).strict().optional(),
+  schedules: z.array(scheduleDiagnosticSchema),
+  metadata: z.object({ limits: z.object({ perFile: z.number(), pending: z.number(), files: z.number() }).strict(),
+    pending: z.number(), files: z.array(z.object({ key: z.string(), pending: z.number(), unconfirmedWrite: z.boolean() }).strict()) }).strict() }).strict();
 const worker = z.object({ pid: z.number().optional(), backendPid: z.number().optional(), resourceId: z.string(),
   backendResourceId: z.string().optional(), state: z.enum(['active', 'closing', 'cleanup-pending']),
-  cleanupError: z.string().optional(), connections: z.number() });
+  cleanupError: z.string().optional(), connections: z.number() }).strict();
+const networkIdentitySchema = z.object({ owner: z.string(), purpose: z.string(), vmId: z.string().optional(), generation: z.string().optional(),
+  projectId: z.string().optional(), scopeId: z.string().optional() }).strict();
+export const networkLimitsSchema = z.object({ maxWorkers: z.number(), maxVmWorkers: z.number(), connectionsPerWorker: z.number(), scaleAt: z.number(),
+  idleMs: z.number(), maxOwnerConnections: z.number(), maxListeners: z.number(), maxInboundConnections: z.number() }).strict();
 export const networkRuntimeDiagnosticSchema = z.object({ state: z.enum(['running', 'draining', 'closed']),
-  limits: z.record(z.string(), z.unknown()), maxChildProcesses: z.number(), hostWorkers: z.array(worker),
-  vmWorkers: z.array(worker), vms: z.array(z.record(z.string(), z.unknown())),
-  managementListeners: z.array(z.record(z.string(), z.unknown())),
-  leases: z.array(z.object({ id: z.string(), owner: z.string(), purpose: z.string(), kind: z.string(), lane: z.string(),
-    startedAt: z.string(), vmId: z.string().optional(), projectId: z.string().optional(), generation: z.string().optional(), scopeId: z.string().optional() })) });
+  limits: networkLimitsSchema, maxChildProcesses: z.number(), hostWorkers: z.array(worker),
+  vmWorkers: z.array(worker), vms: z.array(z.object({ vmId: z.string(), generation: z.string(),
+    policy: z.object({ isolated: z.boolean(), ipv6: z.boolean(), forwards: z.array(z.object({ host: z.number(), guest: z.number() }).strict()) }).strict(),
+    connected: z.boolean(), resources: z.object({ worker: z.string(), backend: z.string().optional() }).strict().optional() }).strict()),
+  managementListeners: z.array(networkIdentitySchema.extend({ port: z.number() }).strict()),
+  leases: z.array(networkIdentitySchema.extend({ id: z.string(), kind: z.enum(['dial', 'listen', 'lookup', 'vm', 'accept', 'native']),
+    lane: z.enum(['data', 'management']), startedAt: z.string() }).strict()) }).strict();

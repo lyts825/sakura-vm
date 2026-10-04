@@ -1,3 +1,5 @@
+import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
+import { sendJson } from '../../server/http-response.ts';
 import { services as recipesServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -16,14 +18,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'recipes' && parts.length === 2 && req.method === 'POST') {
     const { name, recipe } = z
       .object({ name: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/), recipe: z.unknown() })
@@ -66,3 +61,6 @@ export const httpHandlers: Record<string, import('../../server/plugin-api.ts').P
   "legacy.put.vms.vmId.recipe": route,
   "legacy.post.vms.vmId.recipe": route,
 };
+
+/** Public response metadata is shared with publication, OpenAPI and runtime validation. */
+export const responseContracts = pluginResponseContracts("recipes");

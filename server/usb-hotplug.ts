@@ -155,11 +155,11 @@ export class UsbHotplug {
           { 'command-line': 'info usbhost' }));
       } catch (error) { hostError = String((error as Error).message || error); }
     }
+    const runtime = this.runtime.get(vmId);
     return { ready: this.machines.get(vmId).architecture !== 'aarch64' && live?.status === 'running',
       hostDevices, hostError,
       rules: this.state.rules.filter((rule) => rule.vmId === vmId),
-      configured: this.runtime.get(vmId)?.startedAt === live?.startedAt
-        ? this.runtime.get(vmId)!.devices : [],
+      configured: runtime && runtime.startedAt === live?.startedAt ? runtime.devices : [],
       events: this.state.events.filter((event) => event.vmId === vmId).slice(0, 40) };
   }
   async action(vmId: string, input: unknown) {

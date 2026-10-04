@@ -8337,27 +8337,13 @@ export interface HostPeersV1 {
     close: () => Promise<void>;
 }>;
   "targetMigrationQmp": (peerId: string, sessionId: string, command: string, args?: Record<string, unknown> | undefined, timeoutMs?: number) => Promise<unknown>;
-  "prepareLiveTarget": (peerId: string, raw: unknown) => Promise<{
-    targetVmId: string;
-    sessionId: string;
-    targetDiskNode: string;
-    diskPort: number;
-    statePort: number;
-}>;
-  "completeLiveTarget": (peerId: string, raw: unknown) => Promise<{
-    targetVmId: string;
-    status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping";
-    originStatus: "ready" | "prepared" | "received";
-}>;
+  "prepareLiveTarget": (peerId: string, raw: unknown) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationPrepareReceipt>;
+  "completeLiveTarget": (peerId: string, raw: unknown) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>;
   "abortLiveTarget": (peerId: string, raw: unknown) => Promise<{
     targetVmId: string;
     aborted: true;
 }>;
-  "inspectLiveTarget": (peerId: string, raw: unknown) => Promise<{
-    targetVmId: string;
-    status: "error" | "running" | "stopped" | "starting" | "paused" | "stopping";
-    originStatus: "ready" | "prepared" | "received";
-}>;
+  "inspectLiveTarget": (peerId: string, raw: unknown) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>;
   "rolloutStatus": (peerId: string) => Promise<{
     hostId: string;
     policies: {
@@ -8618,32 +8604,20 @@ export interface MobileCompanionV1 {
 }
 
 export interface LiveMigrationReceiverV1 {
-  "prepare": (input: PrepareInputV1) => Promise<{
-    targetVmId: string;
-    sessionId: string;
-    targetDiskNode: string;
-    diskPort: number;
-    statePort: number;
-}>;
+  "prepare": (input: PrepareInputV1) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationPrepareReceipt>;
   "status": (input: {
     requesterId: string;
     transferId: string;
     targetVmId: string;
-}) => {
-    targetVmId: string;
-    status: import("../../shared/contracts/vm.ts").VMStatus;
-    originStatus: "ready" | "prepared" | "received";
-};
+}) => import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus;
+  "verifiedStatus": (input: { requesterId: string; transferId: string; targetVmId: string }) =>
+    Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>;
   "complete": (input: {
     requesterId: string;
     transferId: string;
     targetVmId: string;
     sessionId: string;
-}) => Promise<{
-    targetVmId: string;
-    status: import("../../shared/contracts/vm.ts").VMStatus;
-    originStatus: "ready" | "prepared" | "received";
-}>;
+}) => Promise<import('../../shared/contracts/live-migration.ts').LiveMigrationTargetStatus>;
   "abort": (input: {
     requesterId: string;
     transferId: string;
@@ -10854,20 +10828,8 @@ export type SandboxViewV1 = {
         failureThreshold: number;
         registeredAt: string;
     } | undefined;
-    liveMigrationFence?: {
-        targetHostId: string;
-        targetVmId: string;
-        transferId: string;
-        fencedAt: string;
-    } | undefined;
-    liveMigrationOrigin?: {
-        sourceHostId: string;
-        sourceVmId: string;
-        transferId: string;
-        status: "ready" | "prepared" | "received";
-        createdAt: string;
-        updatedAt: string;
-    } | undefined;
+    liveMigrationFence?: import('../../shared/contracts/vm.ts').LiveMigrationFence | undefined;
+    liveMigrationOrigin?: import('../../shared/contracts/vm.ts').LiveMigrationOrigin | undefined;
     branchOrigin?: {
         sourceVmId: string;
         snapshotId: string;
@@ -11145,6 +11107,7 @@ export type PrepareInputV1 = {
     requesterId: string;
     transferId: string;
     sourceVmId: string;
+    completionProtocol?: 1;
     config: {
         name: string;
         memoryMiB: number;

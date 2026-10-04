@@ -8,10 +8,12 @@ import type { Machines } from '../server/machines.ts';
 import type { HostPeers } from '../server/host-peers.ts';
 import type { qmp } from '../server/qmp.ts';
 import type { migrateQemuWithMirroredDisk } from '../server/live-migration-transport.ts';
+import type { LiveMigrationFence } from '../shared/contracts/vm.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-live-runner-'));
 process.env.SAKURA_DATA_DIR = root;
 const { LiveMigrationRunner } = await import('../server/live-migration-runner.ts');
+const { createLiveMigrationCompletionPort } = await import('../server/live-migration-proof.ts');
 const { vmDir } = await import('../server/model.ts');
 after(async () => {
   const [resolved, temporary] = await Promise.all([realpath(root), realpath(tmpdir())]);
@@ -22,7 +24,7 @@ after(async () => {
 });
 
 async function fixture(mode: 'success' | 'before-fence' | 'after-fence') {
-  const vmId = randomUUID(), hostId = randomUUID(), targetVmId = randomUUID();
+  const vmId = randomUUID(), hostId = randomUUID(), targetVmId = randomUUID(), peerId = randomUUID(), sourceHostId = randomUUID();
   const dir = vmDir(vmId);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'id_rsa'), 'private key');
@@ -35,20 +37,31 @@ async function fixture(mode: 'success' | 'before-fence' | 'after-fence') {
   const vm = { id: vmId, name: 'source', memoryMiB: 512, cpus: 2,
     diskGiB: 8, accelerator: 'tcg', forwards: [], snapshots: [],
     organization: { group: 'engineering', tags: ['important'], favorite: true },
-    liveMigrationFence: undefined as { targetHostId: string; targetVmId: string;
-      transferId: string } | undefined };
+    liveMigrationFence: undefined as LiveMigrationFence | undefined };
   let stopped = 0, aborted = 0, closed = 0, prepared = 0, completed = 0;
   const live = { status: 'running', accelerator: 'tcg', qmpPort: 1234 };
   const machines = {
     get: (id: string) => { assert.equal(id, vmId); return vm; },
     live: new Map([[vmId, live]]),
     fenceForLiveMigration: async (_id: string, fence: typeof vm.liveMigrationFence) => {
-      vm.liveMigrationFence = fence;
+      vm.liveMigrationFence = { ...fence!, fencedAt: new Date().toISOString(), sourceProcessId: randomUUID() };
+      return vm.liveMigrationFence;
     },
     stop: async () => { stopped++; },
+    canConfirmLiveMigrationCompletion: () => true,
+    isLiveMigrationCompletionDurable: () => true,
+    stopLiveMigrationSource: async (_id: string, fence: LiveMigrationFence) => {
+      stopped++;
+      return vm.liveMigrationFence = { ...fence, sourceStopped: { sourceProcessId: fence.sourceProcessId!, stoppedAt: new Date().toISOString() } };
+    },
+    confirmLiveMigrationCompletion: async (_id: string, fence: LiveMigrationFence, inspect: () => Promise<unknown>) => {
+      assert.ok(await inspect());
+      assert.equal(fence.sourceStopped?.sourceProcessId, fence.sourceProcessId);
+      return fence;
+    },
   } as unknown as Machines;
   const peers = {
-    view: () => ({ outbound: [{ id: randomUUID(), remoteId: hostId, name: 'Target' }] }),
+    view: () => ({ hostId: sourceHostId, outbound: [{ id: peerId, remoteId: hostId, name: 'Target' }] }),
     score: async () => ({ candidates: [
       { source: 'local', status: { platform: 'win32', arch: 'x64' } },
       { source: 'peer', id: hostId, eligible: true, reasons: [],
@@ -66,13 +79,18 @@ async function fixture(mode: 'success' | 'before-fence' | 'after-fence') {
       assert.equal(input.projects?.configs.default?.command, 'printf migrated');
       assert.deepEqual(input.organization, vm.organization);
       return { targetVmId, sessionId: randomUUID(), targetDiskNode: '#target',
-        diskPort: 2345, statePort: 2346 };
+        diskPort: 2345, statePort: 2346, completionProtocol: 1 as const };
     },
     openMigrationForward: async () => ({ port: 3456,
       close: async () => { closed++; } }),
     targetMigrationQmp: async () => ({}),
     completeLiveTarget: async () => { completed++; return {
-      targetVmId, status: 'running', originStatus: 'ready' }; },
+      targetVmId, status: 'running', originStatus: 'ready', sourceVmId: vmId, sourceHostId,
+      sessionId: vm.liveMigrationFence!.sessionId, transferId: vm.liveMigrationFence!.transferId,
+      projectsDigest: vm.liveMigrationFence!.projectsDigest, targetVerifiedAt: new Date().toISOString() }; },
+    inspectLiveTarget: async () => ({ targetVmId, status: 'running', originStatus: 'ready', sourceVmId: vmId, sourceHostId,
+      sessionId: vm.liveMigrationFence!.sessionId, transferId: vm.liveMigrationFence!.transferId,
+      projectsDigest: vm.liveMigrationFence!.projectsDigest, targetVerifiedAt: new Date().toISOString() }),
     abortLiveTarget: async (_peer: string, request: { sourceRunning: boolean }) => {
       assert.equal(request.sourceRunning, true); aborted++;
       return { targetVmId, aborted: true };
@@ -94,7 +112,8 @@ async function fixture(mode: 'success' | 'before-fence' | 'after-fence') {
     if (mode === 'after-fence') throw new Error('injected cutover failure');
     return { sourceStopped: true, targetRunning: true, fenced: true } as const;
   }) as typeof migrateQemuWithMirroredDisk;
-  const runner = new LiveMigrationRunner(machines, peers, query, transport);
+  const runner = new LiveMigrationRunner(machines, peers, query, transport,
+    createLiveMigrationCompletionPort(machines, () => peers));
   return { runner, vmId, hostId, vm,
     counts: () => ({ prepared, completed, stopped, aborted, closed }) };
 }

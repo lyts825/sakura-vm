@@ -2,6 +2,20 @@ import type { SessionLockView } from '../shared/session-lock';
 import type { AccessPrincipal } from '../shared/access-control';
 import { resourceCache } from './resource-cache';
 import { pluginGeneration } from './plugin-generation';
+import { createOperationClient, type OperationTransport } from '../shared/api-client';
+
+/** Cancel this wait, while the shared bootstrap remains available to other request owners. */
+function waitForCredential(pending: Promise<string>, signal?: AbortSignal): Promise<string> {
+  if (!signal) return pending;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason || new Error('请求已取消'));
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    pending.then(value => { signal.removeEventListener('abort', abort); resolve(value); }, error => {
+      signal.removeEventListener('abort', abort); reject(error);
+    });
+  });
+}
 
 /** A controller credential belongs to one unlocked host session, not to the browser tab. */
 export class ControllerSession {
@@ -19,6 +33,12 @@ export class ControllerSession {
   private generation = 0;
   private accountMode = false;
   private principal?: AccessPrincipal;
+  private credentialAbort = new AbortController();
+
+  private invalidateRequests() {
+    this.credentialAbort.abort(new Error('会话状态已变化，请重新操作'));
+    this.credentialAbort = new AbortController();
+  }
 
   constructor(private fetcher: typeof fetch = (...args) => fetch(...args)) {}
 
@@ -38,6 +58,7 @@ export class ControllerSession {
     this.accountMode = true;
     this.principal = principal;
     this.token = token;
+    this.invalidateRequests();
     this.generation++;
     for (const listener of this.listeners) listener();
   };
@@ -45,6 +66,7 @@ export class ControllerSession {
     this.token = '';
     this.principal = undefined;
     this.pending = undefined;
+    this.invalidateRequests();
     this.generation++;
     for (const listener of this.listeners) listener();
   };
@@ -107,49 +129,82 @@ export class ControllerSession {
     return this.pending;
   }
 
-  request = async <T = unknown>(
+  /** Generated operation IDs bind request/response types and wire decoding together. */
+  operation = createOperationClient((path, options) => this.perform(
+    path.slice('/api'.length), options.method, options.body, options.signal, options,
+  ));
+
+  request = async <T = unknown>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> =>
+    await this.perform(path, method, body, signal) as T;
+
+  private perform = async (
     path: string,
     method = 'GET',
     body?: unknown,
     signal?: AbortSignal,
-  ): Promise<T> => {
+    options?: Parameters<OperationTransport>[1],
+  ): Promise<unknown> => {
     const pluginSignal = pluginGeneration.capture(path, method);
     if (pluginSignal) signal = signal ? AbortSignal.any([signal, pluginSignal]) : pluginSignal;
     signal?.throwIfAborted();
-    if (!this.token) await this.authenticate();
+    const authenticated = options?.authenticated ?? true;
+    if (authenticated && !this.token) await waitForCredential(this.authenticate(), signal);
     for (let attempt = 0; ; attempt++) {
       signal?.throwIfAborted();
-      if (this.session.locked) throw new Error('控制面已锁定，请先解锁');
+      if (authenticated && !options?.allowLocked && this.session.locked) throw new Error('控制面已锁定，请先解锁');
       const generation = this.generation;
       const credential = this.token;
+      const requestSignal = authenticated
+        ? signal ? AbortSignal.any([signal, this.credentialAbort.signal]) : this.credentialAbort.signal
+        : signal;
+      const payload = body !== undefined && options?.transport === 'form' &&
+        typeof body === 'object' && body !== null && !(body instanceof URLSearchParams)
+        ? new URLSearchParams(Object.entries(body).map(([key, value]) => {
+          if (typeof value !== 'string') throw new Error('表单字段必须是字符串');
+          return [key, value];
+        })) : body;
       const response = await this.fetcher(`/api${path}`, {
         method,
-        signal,
+        signal: requestSignal,
         headers: {
-          'X-Sakura-Token': credential,
-          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...options?.headers,
+          ...(authenticated ? { 'X-Sakura-Token': credential } : {}),
+          ...(body !== undefined && (!options || options.transport === 'json') ? { 'Content-Type': 'application/json' } : {}),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: payload === undefined ? undefined : !options || options.transport === 'json'
+          ? JSON.stringify(payload) : payload as BodyInit,
       });
-      if (generation !== this.generation) {
+      if (authenticated && generation !== this.generation) {
         await response.body?.cancel();
         throw new Error('会话状态已变化，请重新操作');
       }
       // The host rejects 401 before executing the operation. Never replay a
       // mutation after a network error or an ambiguous server response.
-      if (response.status === 401 && attempt === 0) {
+      if (authenticated && response.status === 401 && attempt === 0) {
         await response.body?.cancel();
         if (this.accountMode) {
           this.clearCredential();
           throw new Error('账户会话已过期，请重新登录');
         }
-        await this.authenticate(credential);
+        await waitForCredential(this.authenticate(credential), signal);
         continue;
+      }
+      if (response.ok && options && options.response !== 'json') {
+        signal?.throwIfAborted();
+        if (method !== 'GET' && method !== 'HEAD') resourceCache.mutation(path);
+        if (options.response === 'empty') { await response.body?.cancel(); return undefined; }
+        if (options.response === 'text') {
+          const text = await response.text();
+          signal?.throwIfAborted();
+          if (authenticated && generation !== this.generation) throw new Error('会话状态已变化，请重新操作');
+          return text;
+        }
+        return response;
       }
       const data = await response.json();
       signal?.throwIfAborted();
-      if (generation !== this.generation) throw new Error('会话状态已变化，请重新操作');
-      if (response.status === 423)
+      if (authenticated && generation !== this.generation) throw new Error('会话状态已变化，请重新操作');
+      if (authenticated && response.status === 423)
         this.updateSession(data.session || { ...this.session, enabled: true, locked: true });
       if (!response.ok)
         throw new Error(
@@ -164,7 +219,7 @@ export class ControllerSession {
             `请求失败（${response.status}）`,
         );
       if (method !== 'GET' && method !== 'HEAD') resourceCache.mutation(path);
-      return data as T;
+      return data;
     }
   };
 }

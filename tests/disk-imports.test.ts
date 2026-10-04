@@ -41,6 +41,7 @@ import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Machines } from '../server/machines.ts';
+import { createSchema, type VMView } from '../shared/contracts/vm.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-disk-imports-'));
 process.env.SAKURA_DATA_DIR = root;
@@ -71,7 +72,21 @@ const machines = {
         } } });
     },
   },
-  importDisk: async () => ({ id: `imported-${++adopted}` }),
+  importDisk: async (
+    config: unknown,
+    _disk: string,
+    options: Parameters<Machines['importDisk']>[2],
+  ): Promise<VMView> => ({
+    ...createSchema.parse(config),
+    id: `imported-${++adopted}`,
+    createdAt: new Date(0).toISOString(),
+    snapshots: [],
+    bootstrapped: false,
+    pendingResize: !!options?.pendingResize,
+    status: 'stopped',
+    poweredOn: false,
+    diskBytes: qcow.length,
+  }),
 } as unknown as Machines;
 const importer = new DiskImports(machines);
 const input = { name: 'other-linux', format: 'raw', distro: 'alpine', memoryMiB: 512, cpus: 1 };

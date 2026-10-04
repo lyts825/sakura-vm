@@ -1,3 +1,5 @@
+import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
+import { sendJson } from '../../server/http-response.ts';
 import { services as snapshotsServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -9,31 +11,14 @@ import { AppError } from '../../shared/errors.ts';
 import { importEncrypted } from '../../server/encrypted-backups.ts';
 import { Bundles } from '../../server/bundles.ts';
 import { GoldenImages } from '../../server/golden-images.ts';
-import { goldenActionSchema, goldenEntrySchema, goldenResultSchema } from '../../shared/golden-images.ts';
+import { goldenActionSchema } from '../../shared/golden-images.ts';
 import { Rescue } from '../../server/rescue.ts';
 import { SnapshotDiff } from '../../server/snapshot-diff.ts';
 import { SnapshotMerge } from '../../server/snapshot-merge.ts';
-import {
-  snapshotMergeInputSchema,
-  snapshotMergeJobSchema,
-  snapshotMergeViewSchema,
-} from '../../shared/snapshot-merge.ts';
-import {
-  snapshotDiffInputSchema,
-  snapshotDiffJobSchema,
-  snapshotDiffViewSchema,
-} from '../../shared/snapshot-diff.ts';
-import {
-  SignedBundles,
-  signedBundleActionSchema,
-  signedBundleViewSchema,
-} from '../../server/signed-bundles.ts';
-import {
-  rescueArtifactSchema,
-  rescueJobSchema,
-  rescueRunSchema,
-  rescueViewSchema,
-} from '../../shared/rescue.ts';
+import { snapshotMergeInputSchema } from '../../shared/snapshot-merge.ts';
+import { snapshotDiffInputSchema } from '../../shared/snapshot-diff.ts';
+import { SignedBundles, signedBundleActionSchema } from '../../server/signed-bundles.ts';
+import { rescueRunSchema } from '../../shared/rescue.ts';
 
 export async function activate(host: PluginContext) {
   const signatures = host.provide(snapshotsServices.signedBundles, new SignedBundles(host.capabilities.metadata.reference('signed-bundles')));
@@ -59,52 +44,52 @@ export async function activate(host: PluginContext) {
 }
 export const operations: Record<string, PluginOperation> = {
   'snapshot-merge-view': {
-    response: snapshotMergeViewSchema,
+    response: pluginRouteResponses["snapshots.snapshot-merge-view"].schema,
     execute(url) {
       return this.use(snapshotsServices.snapshotMerge).view(url.pathname.split('/')[3]);
     },
   },
   'snapshot-merge-run': {
     request: snapshotMergeInputSchema,
-    response: snapshotMergeJobSchema,
+    response: pluginRouteResponses["snapshots.snapshot-merge-run"].schema,
     execute(url, input) {
       return this.use(snapshotsServices.snapshotMerge).run(url.pathname.split('/')[3], input);
     },
   },
   'snapshot-diff-view': {
-    response: snapshotDiffViewSchema,
+    response: pluginRouteResponses["snapshots.snapshot-diff-view"].schema,
     execute(url) {
       return this.use(snapshotsServices.snapshotDiff).view(url.pathname.split('/')[3]);
     },
   },
   'snapshot-diff-run': {
     request: snapshotDiffInputSchema,
-    response: snapshotDiffJobSchema,
+    response: pluginRouteResponses["snapshots.snapshot-diff-run"].schema,
     execute(url, input) {
       return this.use(snapshotsServices.snapshotDiff).run(url.pathname.split('/')[3], input);
     },
   },
   'signed-bundles-view': {
-    response: signedBundleViewSchema,
+    response: pluginRouteResponses["snapshots.signed-bundles-view"].schema,
     execute() {
       return this.use(snapshotsServices.signedBundles).view();
     },
   },
   'signed-bundles-action': {
     request: signedBundleActionSchema,
-    response: signedBundleViewSchema,
+    response: pluginRouteResponses["snapshots.signed-bundles-action"].schema,
     execute(_url, input) {
       return this.use(snapshotsServices.signedBundles).action(input);
     },
   },
   'rescue-view': {
-    response: rescueViewSchema,
+    response: pluginRouteResponses["snapshots.rescue-view"].schema,
     execute(url) {
       return this.use(snapshotsServices.rescue).view(url.pathname.split('/')[3]);
     },
   },
   'rescue-artifact': {
-    response: rescueArtifactSchema,
+    response: pluginRouteResponses["snapshots.rescue-artifact"].schema,
     execute(url) {
       return this.use(snapshotsServices.rescue).artifact(
         url.pathname.split('/')[3],
@@ -115,31 +100,20 @@ export const operations: Record<string, PluginOperation> = {
   },
   'rescue-run': {
     request: rescueRunSchema,
-    response: rescueJobSchema,
+    response: pluginRouteResponses["snapshots.rescue-run"].schema,
     execute(url, input) {
       return this.use(snapshotsServices.rescue).run(url.pathname.split('/')[3], input);
     },
   },
   'golden-list': {
-    response: z
-      .object({
-        templates: z.array(goldenEntrySchema),
-        issues: z.array(z.object({ id: z.uuid(), error: z.string() }).strict()),
-        limits: z.object({ count: z.number(), bytes: z.number(), imageBytes: z.number() }).strict(),
-        job: z
-          .object({ status: z.string(), log: z.string(), startedAt: z.string() })
-          .passthrough()
-          .nullable(),
-        persistenceError: z.string().optional(),
-      })
-      .strict(),
+    response: pluginRouteResponses["snapshots.golden-list"].schema,
     execute() {
       return this.use(snapshotsServices.goldenImages).view();
     },
   },
   'golden-action': {
     request: goldenActionSchema,
-    response: goldenResultSchema,
+    response: pluginRouteResponses["snapshots.golden-action"].schema,
     execute(_url, input, signal) {
       return this.use(snapshotsServices.goldenImages).action(input, signal);
     },
@@ -154,14 +128,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'import' && parts.length === 2 && req.method === 'POST') {
     if (this.activity.importing) throw new AppError('另一个导入仍在进行', 409);
     const name = z
@@ -266,3 +233,6 @@ export const httpHandlers: Record<string, import('../../server/plugin-api.ts').P
   "legacy.get.vms.vmId.export": route,
   "legacy.post.vms.vmId.clone": route,
 };
+
+/** Public response metadata is shared with publication, OpenAPI and runtime validation. */
+export const responseContracts = pluginResponseContracts("snapshots");

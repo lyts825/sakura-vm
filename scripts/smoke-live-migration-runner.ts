@@ -15,6 +15,7 @@ const { Machines } = await import('../server/machines.ts');
 const { HostPeers } = await import('../server/host-peers.ts');
 const { LiveMigrationReceiver } = await import('../server/live-migration-receiver.ts');
 const { LiveMigrationRunner } = await import('../server/live-migration-runner.ts');
+const { createLiveMigrationCompletionPort } = await import('../server/live-migration-proof.ts');
 const { vmDir } = await import('../server/model.ts');
 const { freePort, qmp } = await import('../server/qmp.ts');
 let engine: Awaited<ReturnType<typeof createRuntime>> | undefined;
@@ -59,7 +60,7 @@ try {
     prepare: (input) => receiver.prepare(input),
     complete: (input) => receiver.complete(input),
     abort: (input) => receiver.abort(input),
-    status: (input) => Promise.resolve(receiver.status(input)),
+    status: (input) => receiver.verifiedStatus(input),
   } });
   const vm = await source.create({ name: 'migration-source', accelerator: 'tcg',
     memoryMiB: 256, cpus: 1, diskGiB: 2 });
@@ -96,7 +97,8 @@ try {
       throw error;
     }
   }) as typeof qmp;
-  const runner = new LiveMigrationRunner(source, sourcePeers, tracedQmp);
+  const runner = new LiveMigrationRunner(source, sourcePeers, tracedQmp, undefined,
+    createLiveMigrationCompletionPort(source, () => sourcePeers!));
   let result: Awaited<ReturnType<typeof runner.run>>;
   try {
     result = await runner.run(vm.id, {

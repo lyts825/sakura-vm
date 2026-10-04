@@ -17,6 +17,7 @@ const { createRuntime } = await import('../server/runtime.ts');
 const { Machines } = await import('../server/machines.ts');
 const { HostPeers } = await import('../server/host-peers.ts');
 const { LiveMigrationRunner } = await import('../server/live-migration-runner.ts');
+const { createLiveMigrationCompletionPort } = await import('../server/live-migration-proof.ts');
 const { vmDir } = await import('../server/model.ts');
 
 type Reply = { id?: number; type?: 'ready' | 'error'; ok?: boolean; error?: string;
@@ -110,7 +111,8 @@ try {
   await writeFile(join(vmDir(vmId), 'project.json'), JSON.stringify({
     directory: '/workspace', command: 'printf distributed-project',
   }));
-  const runner = new LiveMigrationRunner(machines, peers);
+  const runner = new LiveMigrationRunner(machines, peers, undefined, undefined,
+    createLiveMigrationCompletionPort(machines, () => peers!));
   const result = await runner.run(vmId, { targetHostId: outbound.remoteId,
     targetName: 'distributed-target' }, undefined, (line) => process.stdout.write(line));
   assert.equal(result.ready, true);

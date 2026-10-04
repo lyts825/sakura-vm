@@ -15,6 +15,8 @@ import { createSecureContext, type TLSSocket } from 'node:tls';
 import type { Duplex, Writable } from 'node:stream';
 import { generate } from 'selfsigned';
 import { z } from 'zod';
+import { liveMigrationTargetStatusSchema, liveMigrationPrepareReceiptSchema } from '../shared/contracts/live-migration.ts';
+import { captureOperationCheck } from './operation-context.ts';
 import { readJsonBody } from './http.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
@@ -165,17 +167,10 @@ const liveTargetPrepareInput = z
       .regex(/^[A-Za-z0-9+/]*={0,2}$/),
     projects: liveMigrationProjectsSchema.optional(),
     organization: organizationSchema.optional(),
+    completionProtocol: z.literal(1).optional(),
   })
   .strict();
-const liveTargetReceipt = z
-  .object({
-    targetVmId: z.uuid(),
-    sessionId: z.uuid(),
-    targetDiskNode: z.string().min(1).max(64),
-    diskPort: z.number().int().min(1024).max(65535),
-    statePort: z.number().int().min(1024).max(65535),
-  })
-  .strict();
+const liveTargetReceipt = liveMigrationPrepareReceiptSchema;
 const liveTargetCompleteInput = z
   .object({ targetVmId: z.uuid(), transferId: z.uuid(), sessionId: z.uuid() })
   .strict();
@@ -184,13 +179,7 @@ const liveTargetAbortInput = liveTargetCompleteInput.safeExtend({
 });
 const liveTargetAbortResult = z.object({ targetVmId: z.uuid(), aborted: z.literal(true) }).strict();
 const liveTargetStatusInput = liveTargetCompleteInput.omit({ sessionId: true });
-const liveTargetStatus = z
-  .object({
-    targetVmId: z.uuid(),
-    status: z.enum(['stopped', 'starting', 'running', 'paused', 'stopping', 'error']),
-    originStatus: z.enum(['prepared', 'received', 'ready']),
-  })
-  .strict();
+const liveTargetStatus = liveMigrationTargetStatusSchema;
 type ImportReceiver = {
   status: (identity: ImportIdentity) => Promise<ImportReceipt | null>;
   receive: (
@@ -398,6 +387,7 @@ export type HostPeerDependencies = {
       seed: Buffer;
       projects?: z.infer<typeof liveMigrationProjectsSchema>;
       organization?: z.infer<typeof organizationSchema>;
+      completionProtocol?: 1;
     }) => Promise<z.infer<typeof liveTargetReceipt>>;
     complete: (
       input: z.infer<typeof liveTargetCompleteInput> & { requesterId: string },
@@ -584,10 +574,13 @@ export class HostPeers {
   }
 
   async completeLiveTarget(peerId: string, raw: unknown) {
+    const check = captureOperationCheck();
+    await check();
     if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
     const peer = this.state.outbound.find((item) => item.id === peerId);
     if (!peer) throw new AppError('远端主机不存在', 404);
-    return liveTargetStatus.parse(
+    const identity = JSON.stringify([peer.remoteId, peer.url, peer.fingerprint, peer.token]);
+    const result = liveTargetStatus.parse(
       await requestPeer(
         peer.url,
         peer.fingerprint,
@@ -598,6 +591,11 @@ export class HostPeers {
         30_000,
       ),
     );
+    await check();
+    const current = this.state.outbound.find(item => item.id === peerId);
+    if (this.closed || this.blocked() || !current || JSON.stringify([current.remoteId, current.url, current.fingerprint, current.token]) !== identity)
+      throw new AppError('原在线迁移同伴身份已变化', 409);
+    return result;
   }
 
   async abortLiveTarget(peerId: string, raw: unknown) {
@@ -618,14 +616,22 @@ export class HostPeers {
   }
 
   async inspectLiveTarget(peerId: string, raw: unknown) {
+    const check = captureOperationCheck();
+    await check();
     if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
     const peer = this.state.outbound.find((item) => item.id === peerId);
     if (!peer) throw new AppError('远端主机不存在', 404);
     const input = liveTargetStatusInput.parse(raw);
     const path = `/peer/live-target-status?targetVmId=${input.targetVmId}&transferId=${input.transferId}`;
-    return liveTargetStatus.parse(
+    const identity = JSON.stringify([peer.remoteId, peer.url, peer.fingerprint, peer.token]);
+    const result = liveTargetStatus.parse(
       await requestPeer(peer.url, peer.fingerprint, path, 'GET', undefined, peer.token),
     );
+    await check();
+    const current = this.state.outbound.find(item => item.id === peerId);
+    if (this.closed || this.blocked() || !current || JSON.stringify([current.remoteId, current.url, current.fingerprint, current.token]) !== identity)
+      throw new AppError('原在线迁移同伴身份已变化', 409);
+    return result;
   }
 
   private async peerRoute(request: IncomingMessage, response: ServerResponse) {
@@ -726,6 +732,7 @@ export class HostPeers {
                 seed,
                 projects: input.projects,
                 organization: input.organization,
+                completionProtocol: input.completionProtocol,
               }),
             ),
           );
@@ -744,15 +751,13 @@ export class HostPeers {
             !this.state.incoming.some((item) => item.id === peer.id && item.allowImport && item.allowActivate)
           )
             throw new AppError('在线迁移接收权限已撤销', 403);
-          return this.send(
-            response,
-            liveTargetStatus.parse(
-              await this.liveMigrationReceiver.complete({
-                ...input,
-                requesterId: peer.requesterId,
-              }),
-            ),
-          );
+          const result = liveTargetStatus.parse(await this.liveMigrationReceiver.complete({
+            ...input, requesterId: peer.requesterId,
+          }));
+          const current = this.inbound(request);
+          if (current.id !== peer.id || !current.allowImport || !current.allowActivate)
+            throw new AppError('在线迁移接收权限已撤销', 403);
+          return this.send(response, result);
         } finally {
           this.mutation(-1);
         }
@@ -797,15 +802,11 @@ export class HostPeers {
           targetVmId: url.searchParams.get('targetVmId'),
           transferId: url.searchParams.get('transferId'),
         });
-        return this.send(
-          response,
-          liveTargetStatus.parse(
-            await this.liveMigrationReceiver.status({
-              ...input,
-              requesterId: peer.requesterId,
-            }),
-          ),
-        );
+        const result = liveTargetStatus.parse(await this.liveMigrationReceiver.status({ ...input, requesterId: peer.requesterId }));
+        const current = this.inbound(request);
+        if (current.id !== peer.id || !current.allowImport || !current.allowActivate)
+          throw new AppError('在线迁移接收权限已撤销', 403);
+        return this.send(response, result);
       }
       if (request.url === '/peer/rollouts' && ['GET', 'POST'].includes(request.method || '')) {
         const peer = this.inbound(request);

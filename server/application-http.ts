@@ -15,7 +15,8 @@ import { hostRuntime } from './host-runtime/index.ts';
 import { listenHttpServer } from './http-listener.ts';
 import { createMachineApi } from './http-machines.ts';
 import { coreHttpHandlers } from './core-http-handlers.ts';
-import { sendJson as send } from './http-response.ts';
+import { sendJson as send, sendDocumentJson, writeResponseHead } from './http-response.ts';
+import { DocumentResponseCache } from './document-response-cache.ts';
 import { readJsonBody, requestUrl } from './http.ts';
 import { assistantRequest } from './local-assistant.ts';
 import { logRetentionRequest } from './log-retention.ts';
@@ -206,6 +207,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
       socketAuthorization,
     }),
   });
+  const documentResponses = new DocumentResponseCache();
   const sendSsoPage = (
     res: ServerResponse,
     origin: string | null,
@@ -214,7 +216,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     error?: string,
   ) => {
     const { html, nonce } = ssoCallbackPage(origin, state, result, error);
-    res.writeHead(200, {
+    writeResponseHead(res, 200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
       'Referrer-Policy': 'no-referrer',
@@ -260,7 +262,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     );
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, { 'Cache-Control': 'no-store' });
+      writeResponseHead(res, 204, { 'Cache-Control': 'no-store' });
       res.end();
       return;
     }
@@ -878,12 +880,7 @@ export async function startApplicationHttp(services: ApplicationServices, resour
           await authorizedBody(req, graphqlLimits.requestBytes, abort.signal),
           abort.signal,
         );
-        res.writeHead(result.status, {
-          'Content-Type': 'application/graphql-response+json; charset=utf-8',
-          'Cache-Control': 'no-store',
-          'X-Content-Type-Options': 'nosniff',
-        });
-        return res.end(JSON.stringify(result.body));
+        return send(res, result.body, result.status, 'application/graphql-response+json');
       } finally {
         req.off('aborted', cancel);
         res.off('close', cancel);
@@ -891,13 +888,15 @@ export async function startApplicationHttp(services: ApplicationServices, resour
     }
     if (url.pathname === '/api/openapi' || url.pathname === '/api/sdk') {
       if (req.method !== 'GET') throw new AppError('文档接口仅支持读取', 405);
-      const specification = apiDocument(features.enabled, PORT, gateway.version);
-      return send(
-        res,
-        url.pathname === '/api/openapi'
+      const kind = url.pathname === '/api/openapi' ? 'openapi' : 'sdk';
+      const enabled = [...features.enabled], version = gateway.version;
+      const snapshot = documentResponses.get(kind, version, enabled, PORT, () => {
+        const specification = apiDocument(enabled, PORT, version);
+        return kind === 'openapi'
           ? specification
-          : { filename: 'sakura-client.mjs', mime: 'text/javascript', content: generateSdk(specification) },
-      );
+          : { filename: 'sakura-client.mjs', mime: 'text/javascript', content: generateSdk(specification) };
+      });
+      return sendDocumentJson(res, snapshot);
     }
     if (url.pathname === '/api/monitor') {
       if (req.method !== 'GET') throw new AppError('监控接口仅支持读取', 405);

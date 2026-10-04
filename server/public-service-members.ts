@@ -1354,13 +1354,15 @@ export const PUBLIC_SERVICE_CONTRACTS: Readonly<Record<string, ServiceContract<a
       "abort",
       "complete",
       "prepare",
-      "status"
+      "status",
+      "verifiedStatus"
     ],
     "methods": [
       "abort",
       "complete",
       "prepare",
-      "status"
+      "status",
+      "verifiedStatus"
     ]
   },
   "sakura.service.local-aliases.v1": {

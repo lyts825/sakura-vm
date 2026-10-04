@@ -292,10 +292,23 @@ test('file-lock route grants one lease and guards file mutations until release',
 test('snapshot and desktop routes use path segment lengths after extraction', async () => {
   const vm = machines(),
     host = await Features.create(vm, ['snapshots', 'desktop']);
-  vm.snapshot = async (_id, name) => ({ name }) as any;
-  vm.onlineSnapshot = async (_id, name) => ({ name, consistency: 'filesystem' }) as any;
-  vm.memorySnapshot = async (_id, name) => ({ name, consistency: 'vmstate' }) as any;
-  vm.restoreMemory = async (id, snapshotId, backup) => ({ id, snapshotId, backup }) as any;
+  const snapshot = (name: string, consistency: 'offline' | 'filesystem' | 'vmstate') => ({
+    id: '11111111-1111-4111-8111-111111111111' as const, name, createdAt: new Date(0).toISOString(),
+    diskGiB: 8, pendingResize: false, consistency,
+  });
+  vm.snapshot = async (_id, name) => snapshot(name, 'offline');
+  vm.onlineSnapshot = async (_id, name) => snapshot(name, 'filesystem');
+  vm.memorySnapshot = async (_id, name) => snapshot(name, 'vmstate');
+  const restoredVm: import('../shared/contracts/vm.ts').VMView = {
+    id: 'vm', name: 'example', memoryMiB: 512, cpus: 1, diskGiB: 8,
+    accelerator: 'tcg', forwards: [], createdAt: new Date(0).toISOString(), snapshots: [],
+    status: 'stopped', poweredOn: false, diskBytes: 0,
+  };
+  let restoreArguments: { id: string; snapshotId: string; backup: boolean | undefined } | undefined;
+  vm.restoreMemory = async (id, snapshotId, backup) => {
+    restoreArguments = { id, snapshotId, backup };
+    return restoredVm;
+  };
   (host.serviceValue('desktops') as import('../server/desktop.ts').Desktops).view = async () => ({ status: 'not-installed', log: '' });
   try {
     const first = request('POST');
@@ -330,8 +343,9 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
         async () => ({ backup: true, memory: true })),
       true,
     );
-    assert.deepEqual(restore.res.payload,
+    assert.deepEqual(restoreArguments,
       { id: 'vm', snapshotId: 'checkpoint', backup: true });
+    assert.deepEqual(restore.res.payload, restoredVm);
     const second = request();
     assert.equal(
       await routeThroughGateway(host,

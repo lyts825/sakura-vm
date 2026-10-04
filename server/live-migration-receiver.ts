@@ -8,12 +8,13 @@ import type { LiveMigrationProjects } from './live-migration-projects.ts';
 
 type PrepareInput = { requesterId: string; transferId: string; sourceVmId: string;
   config: VMConfig; key: string; seed: Buffer; projects?: LiveMigrationProjects;
+  completionProtocol?: 1;
   organization?: VMRecord['organization'] };
 
 export class LiveMigrationReceiver {
   private finalizing = new Set<string>();
   constructor(private machines: Machines, private peers: HostPeersV1,
-    private requireAvailable: () => void = () => {}) {}
+    private requireAvailable: () => void = () => {}, private query: typeof qmp = qmp) {}
 
   async prepare(input: PrepareInput) {
     this.requireAvailable();
@@ -21,6 +22,7 @@ export class LiveMigrationReceiver {
       { key: input.key, seed: input.seed }, {
         sourceHostId: input.requesterId, sourceVmId: input.sourceVmId,
         transferId: input.transferId,
+        ...(input.completionProtocol ? { completionProtocol: input.completionProtocol } : {}),
       }, input.projects, input.organization);
     let sessionId: string | undefined;
     try {
@@ -35,7 +37,7 @@ export class LiveMigrationReceiver {
         if (this.machines.live.get(created.id) !== live)
           throw new AppError('目标 QEMU 已退出', 502);
         try {
-          const state = await qmp(live.qmpPort, 'query-status', undefined, 1000) as
+          const state = await this.query(live.qmpPort, 'query-status', undefined, 1000) as
             { running?: boolean; status?: string };
           if (state.running !== false || !['inmigrate', 'prelaunch'].includes(state.status || ''))
             throw new AppError('目标 QEMU 未保持迁移等待状态', 502);
@@ -47,7 +49,7 @@ export class LiveMigrationReceiver {
         }
       }
       if (!ready) throw new AppError('目标 QMP 启动超时', 502);
-      const blocks = await qmp(live.qmpPort, 'query-block') as Array<{
+      const blocks = await this.query(live.qmpPort, 'query-block') as Array<{
         device?: string; inserted?: { ro?: boolean; 'node-name'?: string;
           image?: { 'virtual-size'?: number } } }>;
       if (!Array.isArray(blocks)) throw new AppError('目标 QEMU 未返回磁盘列表', 502);
@@ -66,7 +68,7 @@ export class LiveMigrationReceiver {
         targetVmId: created.id, transferId: input.transferId,
       });
       return { targetVmId: created.id, sessionId, targetDiskNode,
-        diskPort, statePort };
+        diskPort, statePort, ...(input.completionProtocol ? { completionProtocol: input.completionProtocol } : {}) };
     } catch (error) {
       if (sessionId) this.peers.closeMigrationSession(sessionId);
       await this.machines.stop(created.id, true).catch(() => {});
@@ -83,7 +85,27 @@ export class LiveMigrationReceiver {
         origin.transferId !== input.transferId)
       throw new AppError('在线迁移目标身份不匹配', 409);
     return { targetVmId: vm.id, status: this.machines.state(vm.id),
-      originStatus: origin.status };
+      originStatus: origin.status,
+      ...(origin.completionProtocol === 1 && origin.sessionId && origin.projectsDigest ? {
+        sourceHostId: origin.sourceHostId, sourceVmId: origin.sourceVmId, transferId: origin.transferId,
+        sessionId: origin.sessionId, projectsDigest: origin.projectsDigest,
+      } : {}) };
+  }
+
+  /** A running label alone is insufficient: verify this exact target QEMU and recheck origin after I/O. */
+  async verifiedStatus(input: { requesterId: string; transferId: string; targetVmId: string }) {
+    const before = this.status(input);
+    if (before.status !== 'running' || !before.sessionId) return before;
+    const live = this.machines.live.get(input.targetVmId);
+    if (!live) throw new AppError('目标原进程不可用', 409);
+    const state = await this.query(live.qmpPort, 'query-status') as { running?: boolean; status?: string };
+    this.requireAvailable();
+    const after = this.status(input);
+    if (this.machines.live.get(input.targetVmId) !== live || after.sessionId !== before.sessionId ||
+      after.sourceVmId !== before.sourceVmId || after.projectsDigest !== before.projectsDigest ||
+      state.running !== true || state.status !== 'running' || after.status !== 'running')
+      throw new AppError('目标原迁移进程尚未确认运行', 409);
+    return { ...after, targetVerifiedAt: new Date().toISOString() };
   }
 
   async complete(input: { requesterId: string; transferId: string;
@@ -94,13 +116,17 @@ export class LiveMigrationReceiver {
     this.finalizing.add(input.targetVmId);
     try {
       const before = this.status(input);
-      if (before.originStatus !== 'prepared') return before;
+      if (before.originStatus !== 'prepared') {
+        if (before.sessionId && before.sessionId !== input.sessionId)
+          throw new AppError('原在线迁移会话已变化', 409);
+        return this.verifiedStatus(input);
+      }
       if (!this.peers.matchesMigrationSession(input.sessionId, input.requesterId,
         input.targetVmId, input.transferId))
         throw new AppError('在线迁移会话与目标实例不匹配', 409);
-      await this.machines.completeIncoming(input.targetVmId);
+      await this.machines.completeIncoming(input.targetVmId, undefined, input.sessionId);
       this.peers.closeMigrationSession(input.sessionId);
-      return this.status(input);
+      return this.verifiedStatus(input);
     } finally { this.finalizing.delete(input.targetVmId); }
   }
 
@@ -122,7 +148,7 @@ export class LiveMigrationReceiver {
       this.peers.closeMigrationSession(input.sessionId);
       const live = this.machines.live.get(input.targetVmId);
       if (live) {
-        const state = await qmp(live.qmpPort, 'query-status') as { running?: boolean };
+        const state = await this.query(live.qmpPort, 'query-status') as { running?: boolean };
         if (state.running !== false)
           throw new AppError('目标 QEMU 状态不确定，保留目标实例', 409);
       }

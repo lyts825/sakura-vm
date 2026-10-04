@@ -57,7 +57,7 @@ try {
     prepare: (input) => receiver.prepare(input),
     complete: (input) => receiver.complete(input),
     abort: (input) => receiver.abort(input),
-    status: (input) => Promise.resolve(receiver.status(input)),
+    status: (input) => receiver.verifiedStatus(input),
   } });
   const key = createSshKey().privateText;
   const seed = seedIso({ 'meta-data': 'migration smoke', 'user-data': 'smoke setup' });

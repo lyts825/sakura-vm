@@ -1,3 +1,5 @@
+import { pluginRouteResponses, pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
+import { sendJson } from '../../server/http-response.ts';
 import { services as networkServices } from './services.ts';
 export { manifest } from './manifest.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -8,11 +10,11 @@ import { AppError } from '../../shared/errors.ts';
 
 import { NetworkProfiles } from '../../server/network-profiles.ts';
 import { HttpIngress } from '../../server/http-ingress.ts';
-import { ingressActionSchema, ingressViewSchema } from '../../shared/http-ingress.ts';
+import { ingressActionSchema } from '../../shared/http-ingress.ts';
 import { IngressCertificates } from '../../server/ingress-certificates.ts';
-import { certificateActionSchema, certificateViewSchema } from '../../shared/ingress-certificates.ts';
+import { certificateActionSchema } from '../../shared/ingress-certificates.ts';
 import { LocalAliases } from '../../server/local-aliases.ts';
-import { localAliasActionSchema, localAliasViewSchema } from '../../shared/local-aliases.ts';
+import { localAliasActionSchema } from '../../shared/local-aliases.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.vm;
@@ -29,28 +31,28 @@ export async function activate(host: PluginContext) {
 }
 export const operations: Record<string, PluginOperation> = {
   'ingress-certificate-view': {
-    response: certificateViewSchema,
+    response: pluginRouteResponses["network.ingress-certificate-view"].schema,
     execute() {
       return this.use(networkServices.certificates).view();
     },
   },
   'ingress-certificate-action': {
     request: certificateActionSchema,
-    response: certificateViewSchema,
+    response: pluginRouteResponses["network.ingress-certificate-action"].schema,
     execute(_url, input, signal) {
       return this.capabilities.metadata.run('certificates',
       async () => this.use(networkServices.certificates).action(input));
     },
   },
   'ingress-view': {
-    response: ingressViewSchema,
+    response: pluginRouteResponses["network.ingress-view"].schema,
     execute() {
       return this.use(networkServices.ingress).view();
     },
   },
   'ingress-action': {
     request: ingressActionSchema,
-    response: ingressViewSchema,
+    response: pluginRouteResponses["network.ingress-action"].schema,
     async execute(_url, input) {
       const view = await this.use(networkServices.ingress).action(input);
       await this.use(networkServices.localAliases).refresh();
@@ -58,14 +60,14 @@ export const operations: Record<string, PluginOperation> = {
     },
   },
   'local-aliases-view': {
-    response: localAliasViewSchema,
+    response: pluginRouteResponses["network.local-aliases-view"].schema,
     execute() {
       return this.use(networkServices.localAliases).view();
     },
   },
   'local-aliases-action': {
     request: localAliasActionSchema,
-    response: localAliasViewSchema,
+    response: pluginRouteResponses["network.local-aliases-action"].schema,
     execute(_url, input) {
       return this.use(networkServices.localAliases).action(input);
     },
@@ -80,14 +82,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'network-profiles') {
     if (parts.length === 2 && req.method === 'GET') return send(await this.network.profiles());
     if (parts.length === 2 && req.method === 'POST')
@@ -177,3 +172,6 @@ export const httpHandlers: Record<string, import('../../server/plugin-api.ts').P
   "legacy.get.vms.vmId.services": route,
   "legacy.patch.vms.vmId.services": route,
 };
+
+/** Public response metadata is shared with publication, OpenAPI and runtime validation. */
+export const responseContracts = pluginResponseContracts("network");

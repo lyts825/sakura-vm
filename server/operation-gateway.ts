@@ -9,6 +9,7 @@ import { captureOperationCheck, withOperationCheck } from './operation-context.t
 import { matchOperationPath } from './plugins/registry.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import { withPluginAuthority } from './plugin-authority.ts';
+import { guardOperationResponse, withOperationResponse } from './operation-response.ts';
 
 export type OperationBinding = {
   /** Captures credentials and target identity once; reads live authority on every invocation. */
@@ -65,6 +66,7 @@ export class OperationGateway {
     const handler = this.handlers.get(entry.declaration.id);
     if (!handler) throw new AppError('操作没有已登记处理器', 503, 'OPERATION_HANDLER_MISSING');
     const admission = await this.prepare(req, url);
+    guardOperationResponse(res, { id: entry.declaration.id, contract: entry.responseContract });
     return admission.run(() => handler(req, res, url, entry));
   }
   directory() { return operationDirectory(this.options.enabled()); }
@@ -112,7 +114,8 @@ export class OperationGateway {
           operationId: declaration.id,
           ...(instance ? { pluginInstanceId: instance.identity, pluginGeneration: instance.generation } : {}),
           ...(owner === 'core' ? {} : { pluginId: owner }), ...binding.identity },
-        () => withOperationCheck(check, () => current.run({ entry, binding }, work)));
+        () => withOperationCheck(check, () => current.run({ entry, binding }, () =>
+          withOperationResponse({ id: declaration.id, contract: entry.responseContract }, work))));
         return instance ? withPluginAuthority(instance, invoke, () => instance.check()) : invoke();
       },
     };

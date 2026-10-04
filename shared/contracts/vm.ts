@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { DesktopPreferences } from '../desktop-preferences.ts';
 import type { SandboxPolicy } from '../sandbox.ts';
 import { hardwareSchema, hardwareIssues } from '../hardware.ts';
+import { recoveryOriginSchema } from './domain-recovery.ts';
 export type DiskEncryptionConfig = { format: 'luks'; secretName: string };
 export const BOOT_TIMEOUT_MS = 270_000;
 export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
@@ -155,14 +156,40 @@ export const haRetirementSchema = z
   })
   .strict();
 export type HaRetirement = z.infer<typeof haRetirementSchema>;
-export const liveMigrationFenceSchema = z
+export const liveMigrationCompletionSchema = z.object({
+  version: z.literal(1),
+  sourceVmId: z.uuid(), sourceHostId: z.uuid(), sourceProcessId: z.uuid(),
+  targetHostId: z.uuid(), targetVmId: z.uuid(), transferId: z.uuid(), sessionId: z.uuid(),
+  projectsDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceStoppedAt: z.iso.datetime(), targetVerifiedAt: z.iso.datetime(), confirmedAt: z.iso.datetime(),
+}).strict();
+export const liveMigrationFenceIdentitySchema = z
   .object({
     targetHostId: z.uuid(),
     targetVmId: z.uuid(),
     transferId: z.uuid(),
     fencedAt: z.iso.datetime(),
+    // Optional for records written before durable completion verification was introduced.
+    peerId: z.uuid().optional(), sourceHostId: z.uuid().optional(), sessionId: z.uuid().optional(),
+    projectsDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), sourceProcessId: z.uuid().optional(),
+    origin: recoveryOriginSchema.optional(),
   })
   .strict();
+export const liveMigrationFenceSchema = liveMigrationFenceIdentitySchema.extend({
+  sourceStopped: z.object({ sourceProcessId: z.uuid(), stoppedAt: z.iso.datetime() }).strict().optional(),
+  completion: liveMigrationCompletionSchema.optional(),
+}).superRefine((fence, context) => {
+  if (fence.sourceStopped && fence.sourceStopped.sourceProcessId !== fence.sourceProcessId)
+    context.addIssue({ code: 'custom', path: ['sourceStopped'], message: '来源停止回执不属于原进程' });
+  if (fence.completion) {
+    const proof = fence.completion;
+    if (!fence.peerId || !fence.sourceStopped ||
+      proof.sourceStoppedAt !== fence.sourceStopped.stoppedAt ||
+      ['sourceHostId', 'sourceProcessId', 'targetHostId', 'targetVmId', 'transferId', 'sessionId', 'projectsDigest']
+        .some(key => proof[key as keyof typeof proof] !== fence[key as keyof typeof fence]))
+      context.addIssue({ code: 'custom', path: ['completion'], message: '完成证明与原迁移票据不匹配' });
+  }
+});
 export type LiveMigrationFence = z.infer<typeof liveMigrationFenceSchema>;
 export const liveMigrationOriginSchema = z
   .object({
@@ -170,6 +197,8 @@ export const liveMigrationOriginSchema = z
     sourceVmId: z.uuid(),
     transferId: z.uuid(),
     status: z.enum(['prepared', 'received', 'ready']),
+    completionProtocol: z.literal(1).optional(),
+    sessionId: z.uuid().optional(), projectsDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })

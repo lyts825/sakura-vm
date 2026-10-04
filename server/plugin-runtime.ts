@@ -13,6 +13,7 @@ import { AppError } from '../shared/errors.ts';
 import type { Machines } from './machines.ts';
 import { OperationTracker, requestScope } from './operation-scope.ts';
 import { currentOperation } from './operation-gateway.ts';
+import { sendJson } from './http-response.ts';
 import { withResourceContext } from './host-runtime/index.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 import { TerminalBackend, type TerminalService } from './terminal-backend.ts';
@@ -545,13 +546,7 @@ export class PluginRuntime {
                 if (!parsed.success)
                   throw new AppError(`插件 ${owner} 的响应不符合操作协议`, 502, 'INVALID_PLUGIN_RESPONSE');
                 const result = parsed.data;
-                res.writeHead(declaredOperation.status, {
-                  'Content-Type': 'application/json; charset=utf-8',
-                  'Cache-Control': 'no-store',
-                  'X-Content-Type-Options': 'nosniff',
-                });
-                res.end(JSON.stringify(result));
-                return true;
+                return sendJson(res, result, declaredOperation.status);
               })()
             : (handler as import('./plugin-api.ts').PluginRoute).call(
                 owner === 'tasks' ? (this as unknown as PluginContext) : this.contexts.get(owner)!,

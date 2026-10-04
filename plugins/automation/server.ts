@@ -1,3 +1,5 @@
+import { pluginResponseContracts } from '../../shared/contracts/plugin-route-responses.ts';
+import { sendJson } from '../../server/http-response.ts';
 import { services as serviceHealthServices } from '../service-health/services.ts';
 import { services as secretsServices } from '../secrets/services.ts';
 import { services as containersServices } from '../containers/services.ts';
@@ -11,9 +13,9 @@ import { FeatureSuite } from '../../server/feature-suite.ts';
 import { retryInProject, retryTarget } from '../../server/plugins/retry.ts';
 import { AppError } from '../../shared/errors.ts';
 import { z } from 'zod';
-import type { ServiceHealth } from '../../server/service-health.ts';
-import type { Secrets } from '../../server/secrets.ts';
-import type { Containers } from '../../server/containers.ts';
+
+
+
 
 export async function activate(host: PluginContext) {
   const m = host.vm;
@@ -81,14 +83,7 @@ export async function route(
   signal: AbortSignal,
 ): Promise<boolean> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const send = (data: unknown, status = 200) => {
-    res.writeHead(status, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    res.end(JSON.stringify(data));
-    return true;
-  };
+  const send = (data: unknown, status = 200) => sendJson(res, data, status);
   if (parts[1] === 'feature-suite' && parts.length === 2 && req.method === 'GET') {
     send(await this.suite.catalog());
     return true;
@@ -145,3 +140,6 @@ export const httpHandlers: Record<string, import('../../server/plugin-api.ts').P
   "legacy.post.vms.vmId.suspend": route,
   "legacy.post.vms.vmId.resume": route,
 };
+
+/** Public response metadata is shared with publication, OpenAPI and runtime validation. */
+export const responseContracts = pluginResponseContracts("automation");

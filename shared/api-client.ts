@@ -10,6 +10,9 @@ export type OperationOptions<Id extends OperationId> = {
 export type OperationTransport = (path: string, options: {
   method: string; body?: unknown; signal?: AbortSignal; headers?: Record<string, string>;
   transport: 'json' | 'binary' | 'form' | 'websocket';
+  response: 'json' | 'text' | 'binary' | 'event-stream' | 'empty';
+  authenticated: boolean;
+  allowLocked: boolean;
 }) => Promise<unknown>;
 
 /** Adapts an authenticated transport without replaying or changing its cancellation behavior. */
@@ -21,6 +24,7 @@ export function createOperationClient(request: OperationTransport) {
     const path = apiPath(route.path, (options?.path || {}) as Record<string, string>, options?.query);
     // The schema-generated assertion belongs at the adapter; application callers never default to any.
     return await request(path, { method: route.method, body: options?.body, signal: options?.signal,
-      headers: options?.headers, transport: route.transport }) as OperationResponse<Id>;
+      headers: options?.headers, transport: route.transport, response: route.response,
+      authenticated: route.access === 'controller', allowLocked: route.session === 'allow-locked' }) as OperationResponse<Id>;
   };
 }

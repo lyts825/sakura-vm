@@ -24,6 +24,8 @@ import { HaWitnessClient } from './ha-witness-client.ts';
 import { createHostImportReceiver } from './host-import-receiver.ts';
 import { HostMounts } from './host-mount.ts';
 import { HostPeers, type HostPeerDependencies } from './host-peers.ts';
+import { createLiveMigrationCompletionPort } from './live-migration-proof.ts';
+import { registerLiveMigrationCompletionPort } from './live-migration-runner.ts';
 import { JitPrivileges } from './jit-privileges.ts';
 import { Jobs } from './jobs.ts';
 import { LiveMigrationReceiver } from './live-migration-receiver.ts';
@@ -46,7 +48,7 @@ import { withoutPluginAuthority } from './plugin-authority.ts';
 import { RecoveryCatalog } from './recovery-catalog.ts';
 import { pluginRecoverySource, resourceRecoverySource } from './recovery-sources.ts';
 import { domainRecoverySources } from './domain-recovery-sources.ts';
-import { haPromotionRecoverySource } from './fence-recovery-sources.ts';
+import { haPromotionRecoverySource, liveMigrationRecoverySource } from './fence-recovery-sources.ts';
 import { PluginManager } from './plugin-manager.ts';
 import { validateRegistry } from './plugins/registry.ts';
 import { PolicyBundles } from './policy-bundles.ts';
@@ -478,7 +480,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
             prepare: (input) => { requireAdmission(); return liveMigrationReceiver.prepare(input); },
             complete: (input) => { requireAdmission(); return liveMigrationReceiver.complete(input); },
             abort: (input) => { requireAdmission(); return liveMigrationReceiver.abort(input); },
-            status: (input) => { requireAdmission(); return Promise.resolve(liveMigrationReceiver.status(input)); },
+            status: (input) => { requireAdmission(); return liveMigrationReceiver.verifiedStatus(input); },
           },
           importReceiver: createHostImportReceiver(plugins.system.vm('hostPeers', machines), {
             bundles: () => features.bundles,
@@ -492,6 +494,9 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 320,
   });
+  const migrationCompletion = createLiveMigrationCompletionPort(machines, () => hostPeers);
+  resources.defer('live-migration-completion-port', registerLiveMigrationCompletionPort(machines, migrationCompletion),
+    ClosePhase.services);
   const mobileCompanion = await plugins.system.start({
     id: 'mobileCompanion',
     requires: ['access', 'session', '@machines', '@plugins'],
@@ -885,6 +890,13 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     sync: () => features.enabled.has('sync') ? features.sync : undefined,
   })) recoveries.register(source);
   recoveries.register(haPromotionRecoverySource(() => [...machines.records.values()]));
+  recoveries.register(liveMigrationRecoverySource({
+    records: () => [...machines.records.values()],
+    peers: () => plugins.system.has('hostPeers') ? hostPeers : undefined,
+    confirm: (id, fence) => migrationCompletion.confirm(id, fence),
+    canConfirm: (id, fence) => migrationCompletion.canConfirm(id, fence),
+    confirmed: (id, fence) => migrationCompletion.confirmed(id, fence),
+  }));
   await recoveries.refresh();
 
   return {
