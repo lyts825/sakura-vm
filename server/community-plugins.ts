@@ -72,7 +72,7 @@ const catalog = z.object({ schemaVersion: z.literal(1), plugins: z.array(entry).
 const installed = entry
   .omit({ wasmUrl: true })
   .extend({ sourceId: z.uuid(), installedAt: z.number().int().positive(),
-    phase: z.enum(['running', 'draining', 'cleanup-pending']).optional() })
+    phase: z.enum(['running', 'draining', 'cleanup-pending']).optional(), generation: z.uuid().optional() })
   .strict();
 const subscribedTypes = z.array(z.enum(webhookTypes)).min(1).max(2)
   .refine((values) => new Set(values).size === values.length, '事件类型不能重复');
@@ -339,7 +339,8 @@ export class CommunityPlugins {
       if (publicKey(trusted.publicKey).fingerprint !== trusted.fingerprint)
         throw new AppError('第三方插件发布者指纹无效', 503);
     for (const item of this.state.installed) {
-      const instance = this.pluginDirectory.begin('community', item.id, item.version, item.sha256, ['compute']);
+      const instance = this.pluginDirectory.begin('community', item.id, item.version, item.sha256, ['compute'],
+        item.phase && item.phase !== 'running' ? item.generation : undefined);
       if (item.phase && item.phase !== 'running') instance.phase = 'cleanup-pending';
       else this.pluginDirectory.publish(instance);
       const bytes = await readFile(this.wasmFile(item)).catch(() => null);
@@ -367,11 +368,13 @@ export class CommunityPlugins {
     instance.revoke(); this.pluginDirectory.changed();
     const retiring = structuredClone(this.state);
     retiring.installed.find(current => current.id === item.id)!.phase = 'draining';
+    retiring.installed.find(current => current.id === item.id)!.generation = instance.generation;
     try {
       await this.save(retiring);
       const active = [...(this.running.get(item.id) || [])];
       for (const task of active) task.abort.abort(new DOMException('插件退出中', 'AbortError'));
       await confirmComputations(active.map(task => task.done));
+      await computeRuntime.recover(instance);
       await instance.scope.dispose();
       instance.phase = 'inactive'; this.pluginDirectory.changed();
     } catch (error) {
@@ -382,6 +385,13 @@ export class CommunityPlugins {
       await this.save(failed).catch(() => {});
       throw error;
     }
+  }
+  private async pendingCleanup(id: string, error: unknown) {
+    const instance = this.pluginDirectory.get('community', id)!;
+    instance.phase = 'cleanup-pending'; instance.error = String(error); this.pluginDirectory.changed();
+    const next = structuredClone(this.state), item = next.installed.find(item => item.id === id);
+    if (item) { item.phase = 'cleanup-pending'; item.generation = instance.generation; }
+    await this.save(next).catch(() => { this.state = next; });
   }
   private serial<T>(work: () => Promise<T>) {
     const task = this.writes
@@ -481,7 +491,7 @@ export class CommunityPlugins {
         const item = next.catalogs[input.sourceId]?.find((item) => item.id === input.pluginId);
         if (!source || !item) throw new AppError('请先刷新目录并选择插件', 404);
         const previous = next.installed.find(current => current.id === item.id);
-        if (previous && previous.phase && previous.phase !== 'running')
+        if (previous && (previous.phase && previous.phase !== 'running' || this.pluginDirectory.get('community', item.id)?.phase !== 'running'))
           throw new AppError('原插件清理尚未完成，请先重试卸载', 409, 'PLUGIN_CLEANUP_PENDING');
         const signer = next.publishers.find((trusted) => trusted.fingerprint === item.publisher);
         if (!signer) throw new AppError('发布者未受信任', 403);
@@ -512,9 +522,11 @@ export class CommunityPlugins {
           { ...signed, sourceId: source.id, installedAt: this.now() },
         ];
         if (next.installed.length > 64) throw new AppError('已安装插件数量已达上限', 409);
-        await this.save(next);
+        try {
+          if (old && this.wasmFile(old) !== target) await rm(this.wasmFile(old), { force: true });
+          await this.save(next);
+        } catch (error) { if (old) await this.pendingCleanup(old.id, error); throw error; }
         delete this.problems[item.id];
-        if (old && this.wasmFile(old) !== target) await rm(this.wasmFile(old), { force: true });
         const instance = this.pluginDirectory.begin('community', item.id, item.version, item.sha256, ['compute']);
         this.pluginDirectory.setDesired('community', next.installed.map(current => current.id));
         this.pluginDirectory.publish(instance);
@@ -532,8 +544,8 @@ export class CommunityPlugins {
             item.processedAt = this.now();
             item.error = '插件已卸载';
           }
-        await rm(this.wasmFile(old), { force: true });
-        await this.save(next);
+        try { await rm(this.wasmFile(old), { force: true }); await this.save(next); }
+        catch (error) { await this.pendingCleanup(old.id, error); throw error; }
         delete this.problems[input.pluginId];
         this.pluginDirectory.setDesired('community', next.installed.map(current => current.id));
         return this.view();

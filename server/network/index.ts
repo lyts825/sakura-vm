@@ -7,7 +7,7 @@ import { Agent as FetchAgent } from 'undici';
 import { WebSocket } from 'ws';
 import { networkRuntime, type NetworkIdentity, type NetworkRuntime } from './core.ts';
 import type { Destination } from './host-pool.ts';
-import { pluginAuthority } from '../plugin-authority.ts';
+import { withPluginAuthority, withPluginBackground, pluginAuthority } from '../plugin-authority.ts';
 import type { PluginInstance } from '../plugin-instance.ts';
 import { withResourceContext } from '../host-runtime/context.ts';
 export { networkRuntime, NetworkRuntime, networkDefaults } from './core.ts';
@@ -508,7 +508,15 @@ export function networkFor(owner: string, purpose = owner, signal?: AbortSignal)
       if (key === 'identity') return get()!.identity;
       return (...args: unknown[]) => {
         const scope = get()!;
-        return Reflect.apply(Reflect.get(scope, key, scope), scope, args);
+        const instance = origin || pluginAuthority();
+        const invoke = () => Reflect.apply(Reflect.get(scope, key, scope), scope, instance ? args.map(arg => typeof arg === 'function' ?
+          (...input: unknown[]) => {
+            if (instance.phase !== 'running' || instance.signal.aborted) return;
+            try {
+              return withPluginBackground(instance, () => { instance.check('network'); return Reflect.apply(arg, undefined, input); });
+            } catch (error) { if (instance.signal.aborted || instance.phase !== 'running') return; throw error; }
+          } : arg) : args);
+        return instance ? withPluginAuthority(instance, invoke, () => instance.check('network', true)) : invoke();
       };
     },
     set: () => false,

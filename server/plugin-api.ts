@@ -8,6 +8,7 @@ import type { PluginInstance } from './plugin-instance.ts';
 import { pluginCapabilities, type PluginCapabilities } from './plugin-capabilities.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 import { serviceRef, type ServiceRef } from './service-ref.ts';
+import type { HostServiceResolver } from './host-service-contracts.ts';
 
 export { SERVICE_KEYS } from './plugin-services.ts';
 export type ServiceKey = (typeof SERVICE_KEYS)[number];
@@ -19,6 +20,7 @@ export type PluginContext = Readonly<PluginServices> & {
   readonly signal: AbortSignal;
   readonly instance: Readonly<Pick<PluginInstance, 'identity' | 'generation' | 'version' | 'artifactDigest'>>;
   readonly vm: PluginCapabilities['vm'];
+  readonly system: HostServiceResolver;
   readonly activity: {
     readonly mutations: number;
     readonly importing: boolean;
@@ -33,8 +35,8 @@ export type PluginContext = Readonly<PluginServices> & {
   require(id: string): void;
   onDispose(disposer: () => void | Promise<void>): void;
   registerJobs(store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown): void;
-  jobStores(): Jobs[];
-  retryHandler(store: Jobs): ((job: JobView) => Promise<unknown>) | undefined;
+  jobViews(): readonly JobView[];
+  jobSources(): ReadonlyArray<Pick<Jobs, 'list' | 'flush'>>;
 };
 export type PluginRoute = (
   this: PluginContext, req: IncomingMessage, res: ServerResponse, url: URL,
@@ -70,6 +72,7 @@ export function pluginContext(host: PluginRuntime, manifest: PluginManifest,
     instance: Object.freeze({ identity: instance.identity, generation: instance.generation,
       version: instance.version, artifactDigest: instance.artifactDigest }),
     vm: capabilities.vm,
+    system: host.system.resolver(instance, manifest.systemDependencies),
     activity: Object.freeze({
       get mutations() { return host.operations.active; },
       get importing() { return host.importing; },
@@ -91,8 +94,15 @@ export function pluginContext(host: PluginRuntime, manifest: PluginManifest,
     registerJobs: (store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown) => {
       instance.check(undefined, true); host.registerPluginJobs(manifest.id, host.broker.unwrap(store), retry);
     },
-    jobStores: () => host.jobStores(),
-    retryHandler: (store: Jobs) => host.retryHandler(store),
+    jobViews: () => { instance.check('jobs', true); return structuredClone(host.jobStores().flatMap(store => store.list())); },
+    jobSources: () => {
+      instance.check('jobs', true);
+      const own = host.serviceValue('migration') as { jobs?: Jobs } | undefined;
+      return Object.freeze(host.jobStores().filter(store => store !== own?.jobs).map(store => Object.freeze({
+        list: () => { instance.check('jobs'); return structuredClone(store.list()); },
+        flush: () => scope.run(() => { instance.check('metadata'); return store.flush(); }),
+      })));
+    },
   };
   for (const key of SERVICE_KEYS) Object.defineProperty(context, key, {
     enumerable: true,
@@ -102,5 +112,6 @@ export function pluginContext(host: PluginRuntime, manifest: PluginManifest,
       return lookup(serviceRef(owner, key), undefined, true);
     },
   });
-  return Object.freeze(context) as PluginContext;
+  // Service descriptors above complete the statically known interface without copying provider objects.
+  return Object.freeze(context) as unknown as PluginContext;
 }

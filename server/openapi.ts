@@ -2,7 +2,7 @@ import { PLUGINS } from '../shared/plugins.ts';
 import type { ApiDocument, ApiParameter } from '../shared/api-document.ts';
 import { operationDirectory, operationEntries } from './operation-catalog.ts';
 
-export function apiDocument(active: Iterable<string>, port: number): ApiDocument {
+export function apiDocument(active: Iterable<string>, port: number, catalogVersion = 0): ApiDocument {
   const enabled = new Set(active);
   const directory = operationDirectory(enabled);
   const document: ApiDocument = {
@@ -20,6 +20,7 @@ export function apiDocument(active: Iterable<string>, port: number): ApiDocument
     } },
     paths: {},
     'x-sakura-operations': directory,
+    'x-sakura-catalog-version': catalogVersion,
     'x-sakura-route-prefixes': PLUGINS.flatMap(plugin => plugin.contributes.http.map(route => ({
       owner: plugin.id, ...route, enabled: enabled.has(plugin.id),
     }))),

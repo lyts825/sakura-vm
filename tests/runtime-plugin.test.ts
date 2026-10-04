@@ -21,7 +21,7 @@ function response() {
 test('runtime install route forwards only its strict installation body and rejects extra probe fields', async () => {
   const schema = z.object({ tool: z.enum(['node', 'python']), version: z.string() }).strict();
   const installed: unknown[] = [], host = {
-    machines: { get: () => ({}) },
+    vm: { get: () => ({}) },
     runtimes: { install: async (_id: string, input: unknown) => { installed.push(schema.parse(input)); return { status: 'running' }; } },
   } as unknown as PluginContext;
   const req = Object.assign(new EventEmitter(), { method: 'POST' }) as IncomingMessage;
@@ -47,7 +47,7 @@ for (const action of ['probe', 'select'] as const) {
       });
       return { unexpected: 'success' };
     };
-    const host = { machines: { get: () => ({}) }, runtimes: { [action]: wait } } as unknown as PluginContext;
+    const host = { vm: { get: () => ({}) }, runtimes: { [action]: wait } } as unknown as PluginContext;
     const req = Object.assign(new EventEmitter(), { method: 'POST' }) as IncomingMessage, res = response();
     const pending = route.call(host, req, res, new URL('http://localhost/api/vms/vm/runtimes'), async () => ({ action }), controller.signal);
     const rejected = assert.rejects(pending, { name: 'AbortError' });

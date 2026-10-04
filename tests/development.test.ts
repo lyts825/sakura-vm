@@ -606,6 +606,7 @@ test('health checks back off, enforce restart limits, preserve state after faile
   f.register(project);
   const projects = new Jobs('health-test-projects', root);
   const workspaces = {
+    beforeAction: () => () => {},
     config: async () => project,
     resolvedConfig: async () => project,
     jobs: projects,
@@ -641,7 +642,7 @@ for (const changed of ['run', 'missing', 'exited'] as const) {
     } }] });
     f.register(project);
     const projects = new Jobs('health-service-identity-' + changed, root);
-    const workspaces = { config: async () => project, resolvedConfig: async () => project, jobs: projects } as unknown as WorkspacesType;
+    const workspaces = { beforeAction: () => () => {}, config: async () => project, resolvedConfig: async () => project, jobs: projects } as unknown as WorkspacesType;
     const health = new ServiceHealth(f.emitter, workspaces);
     try {
       await runServices(f.emitter, id, project, 'start', () => {}, new AbortController().signal);
@@ -689,7 +690,7 @@ test('an unconfirmed service stop pauses the whole restart chain and retains own
   const f = managedHealthFixture(id, secret);
   f.register(project);
   const projects = new Jobs('health-service-cleanup-test', root);
-  const workspaces = { config: async () => project, resolvedConfig: async () => project, jobs: projects } as unknown as WorkspacesType;
+  const workspaces = { beforeAction: () => () => {}, config: async () => project, resolvedConfig: async () => project, jobs: projects } as unknown as WorkspacesType;
   const health = new ServiceHealth(f.emitter, workspaces);
   const signal = new AbortController().signal;
   try {
@@ -756,7 +757,7 @@ for (const invalid of ['missing-host-ticket', 'closed-guest-ticket', 'refused-be
     else f.emitter.execInput = async () => ({ code: 1, stderr: '',
       stdout: '{"ok":false,"code":"DIRECTORY_MIGRATION_IDENTITY","detail":null}' });
     const projects = new Jobs('health-invalid-identity', root);
-    const health = new ServiceHealth(f.emitter, { config: async () => project, resolvedConfig: async () => project,
+    const health = new ServiceHealth(f.emitter, { beforeAction: () => () => {}, config: async () => project, resolvedConfig: async () => project,
       jobs: projects } as unknown as WorkspacesType);
     try {
       (await health.expect(id, 'start'))(true); await health.tick(10000);
@@ -806,7 +807,7 @@ for (const failure of ['cleanup', 'scope'] as const) {
     };
     const projects = new Jobs('health-unconfirmed-test', root);
     const workspaces = {
-      config: async () => project, resolvedConfig: async () => project, jobs: projects,
+      beforeAction: () => () => {}, config: async () => project, resolvedConfig: async () => project, jobs: projects,
     } as unknown as WorkspacesType;
     const health = new ServiceHealth(emitter, workspaces);
     try {

@@ -7,7 +7,7 @@ export const manifest = definePlugin({
   category: 'development',
   requires: [pin('projects')],
   services: ['toolchains'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [http('/api/vms/:vmId/tools', ['GET', 'POST'], true)],
     tabs: ['development'],
     developmentSections: ['tools'],

@@ -6,5 +6,5 @@ export const manifest = definePlugin({
   description: '下载官方 Linux 云镜像，或校验并导入 RAW、VMDK、VHDX、OVA 镜像。',
   category: 'workspace',
   services: ['images', 'diskImports'],
-  contributes: { http: [http('/api/images', ['GET', 'POST']), http('/api/image-import', ['POST'])], pages: ['images'] },
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/images', ['GET', 'POST']), http('/api/image-import', ['POST'])], pages: ['images'] },
 });

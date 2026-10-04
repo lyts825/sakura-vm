@@ -25,12 +25,12 @@ const { Bundles } = await import('../server/bundles.ts');
 const engine = await createRuntime();
 const machines = new Machines(engine);
 const service = new TrustedBootService(machines);
-const bundles = new Bundles(machines);
+const bundles = new Bundles(machines, undefined, { optional: id => (id === 'trustedBoot' ? service : undefined) as never });
 let id = '', restoredId = '';
 try {
   await machines.init();
   await service.init();
-  bundles.setTrustedBoot(service);
+
   const vm = await machines.create({ name: `verify-trust-${distro}`, distro,
     firmware: 'uefi', memoryMiB: 1024, cpus: 1, diskGiB: 4,
     accelerator: 'tcg', forwards: [] });

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Machines } from '../server/machines.ts';
 import type { FeatureDevTaskOptions } from '../server/feature-suite-dev-task.ts';
+import { vmLiveView } from '../server/vm-reference.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-feature-lifecycle-'));
 process.env.SAKURA_DATA_DIR = root;
@@ -101,7 +102,7 @@ test('scoped feature endpoints hand the selected project through to views and jo
         const project = await features.workspaces.config(id);
         return { command: 'unused', projectId: scope, networkIsolation: project.networkIsolation || 'host',
           signal: signal!, terminalId: undefined,
-          captured: { project, configVersion: projectVersion(project), live: machines.live.get(id)! },
+          captured: { project, configVersion: projectVersion(project), live: vmLiveView(machines.live.get(id)!) },
           release: () => { ++releases; } };
       },
     },
@@ -114,7 +115,7 @@ test('scoped feature endpoints hand the selected project through to views and jo
       return { stdout: '', stderr: '', code: 0 };
     },
   };
-  Reflect.set(features.suite, 'devTaskOptions', devTaskOptions);
+  Reflect.set(features.serviceValue<import('../server/feature-suite.ts').FeatureSuite>('suite')!, 'devTaskOptions', devTaskOptions);
   const request = Object.assign(new EventEmitter(), { method: 'GET', headers: {} }) as IncomingMessage;
   const response = () =>
     Object.assign(new EventEmitter(), {
@@ -161,7 +162,7 @@ test('scoped feature endpoints hand the selected project through to views and jo
     assert.equal(jobResponse.payload.projectId, projectId);
     assert.equal(jobResponse.payload.key, `${id}:${projectId}:dev`);
     await features.suite.jobs.wait(jobResponse.payload.key);
-    assert.equal(features.suite.jobs.view(jobResponse.payload.key)?.status, 'done');
+    assert.equal(features.suite.jobs.view(jobResponse.payload.key)?.status, 'done', features.suite.jobs.view(jobResponse.payload.key)?.error);
     assert.deepEqual(executedProjects, [{ projectId, directory: '/workspace/selected' }]);
     assert.equal(releases, 1);
   } finally {
@@ -176,7 +177,7 @@ test('disconnect cancels an active import and permits a new import after cleanup
   const began = new Promise<void>((resolve) => {
     started = resolve;
   });
-  features.bundles.importExternal = async (_name, _source, currentSignal) => {
+  features.serviceValue<import('../server/bundles.ts').Bundles>('bundles')!.importExternal = async (_name, _source, currentSignal) => {
     signal = currentSignal;
     started();
     await new Promise<void>((resolve) => {
@@ -197,7 +198,7 @@ test('disconnect cancels an active import and permits a new import after cleanup
   assert.equal(signal?.aborted, true);
   await rejected;
   assert.equal(res.listenerCount('close'), 0);
-  features.bundles.importExternal = async () => ({ id: 'new-vm' }) as any;
+  features.serviceValue<import('../server/bundles.ts').Bundles>('bundles')!.importExternal = async () => ({ id: 'new-vm' }) as any;
   assert.equal(
     await features.route(req, res, new URL('http://localhost/api/import?name=retry'), async () => ({})),
     true,
@@ -213,7 +214,7 @@ test('shutdown waits for request cleanup and rejects new feature operations', as
   const began = new Promise<void>((resolve) => {
     started = resolve;
   });
-  features.bundles.clone = async (_id, _name, _snapshot, currentSignal) => {
+  features.serviceValue<import('../server/bundles.ts').Bundles>('bundles')!.clone = async (_id, _name, _snapshot, currentSignal) => {
     signal = currentSignal;
     started();
     await new Promise<void>((resolve) => {
@@ -252,7 +253,7 @@ test('shutdown also waits for in-flight read operations before releasing the run
   const began = new Promise<void>((resolve) => {
     started = resolve;
   });
-  features.workspaces.runtime = async () => {
+  features.serviceValue<import('../server/workspaces.ts').Workspaces>('workspaces')!.runtime = async () => {
     started();
     await new Promise<void>((resolve) => {
       release = resolve;

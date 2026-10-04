@@ -6,5 +6,6 @@ export const manifest = definePlugin({
   description: '按计划启停实例、定期采样与阈值告警。',
   category: 'operations',
   requires: [pin('automation')],
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'] },
   services: ['scheduler'],
 });

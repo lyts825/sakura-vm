@@ -106,6 +106,7 @@ export function vmAccess(machines: Machines, scope: PluginScope, instance?: Plug
   port.boot = (id: string) => invoke('vm', () => machines.live.get(id)?.startedAt);
   port.on = (event: string | symbol, listener: (...args: any[]) => void) => {
     check('events');
+    const removeContribution = instance?.contribute('event', 'vm:' + String(event));
     const byEvent = listeners.get(event) || new Map(); listeners.set(event, byEvent);
     if (byEvent.has(listener)) return port;
     const managed = (...args: any[]) => {
@@ -116,7 +117,7 @@ export function vmAccess(machines: Machines, scope: PluginScope, instance?: Plug
       if (result instanceof Promise) { scope.observe(result); void result.catch(() => {}); }
     };
     byEvent.set(listener, managed); machines.on(event, managed);
-    const unregister = () => { machines.off(event, managed); byEvent.delete(listener); scope.signal.removeEventListener('abort', unregister); };
+    const unregister = () => { machines.off(event, managed); byEvent.delete(listener); removeContribution?.(); scope.signal.removeEventListener('abort', unregister); };
     scope.signal.addEventListener('abort', unregister, { once: true }); scope.add(unregister);
     return port;
   };

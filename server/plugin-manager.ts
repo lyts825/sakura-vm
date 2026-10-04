@@ -14,6 +14,7 @@ import { migratePlugins, explainPlugins, resolvePlugins } from '../shared/plugin
 import { PluginDirectory } from './plugin-directory.ts';
 import { PluginRuntime } from './plugin-runtime.ts';
 import type { Machines } from './machines.ts';
+import { SystemServices } from './system-services.ts';
 
 const changeSchema = z
   .object({
@@ -26,6 +27,7 @@ const changeSchema = z
 /** The single management entry: persistent intent and live instance authority. */
 export class PluginManager {
   readonly directory = new PluginDirectory();
+  readonly system = new SystemServices(this.directory);
   private runtime?: PluginRuntime;
   private selection = emptySelection();
   private active: string[] = [];
@@ -49,11 +51,11 @@ export class PluginManager {
   }
   async start(machines: Machines, rolloutAllowed?: (id: string) => boolean) {
     if (this.runtime) throw new AppError('插件管理层已经启动', 409);
-    this.runtime = await PluginRuntime.create(machines, this.startupPlanned, rolloutAllowed, this.directory);
+    this.runtime = await PluginRuntime.create(machines, this.startupPlanned, rolloutAllowed, this.directory, this.system);
     return this.runtime;
   }
   async unload(id: string) { await this.runtime?.unload(id); }
-  async close() { await this.runtime?.close(); }
+  async close() { await this.runtime?.close(); await this.system.close(); }
   view(): PluginStatus {
     const planned = resolvePlugins(this.selection);
     return {

@@ -1,3 +1,4 @@
+import { scheduler } from './scheduler.ts';
 import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -49,7 +50,7 @@ export function advanceHaMonitor(previous: HaMonitorStatus | undefined, source: 
 
 export class HaFailureMonitor {
   private statuses: Record<string, HaMonitorStatus> = {};
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ReturnType<typeof scheduler.register>;
   private work = Promise.resolve();
   private closed = false;
   private initialized = false;
@@ -93,9 +94,8 @@ export class HaFailureMonitor {
     this.initialized = true;
     this.machines.on('change', this.change);
     this.machines.on('stop-requested', this.stopRequested);
-    this.timer = setInterval(() => void this.sample().catch((error) =>
-      console.error('HA 故障采样失败：', error)), INTERVAL_MS);
-    this.timer.unref();
+    this.timer = scheduler.register({ owner: 'core:ha-failure-monitor', label: 'HA 故障采样', intervalMs: INTERVAL_MS,
+      overlap: 'skip', run: async () => { await this.sample(); } });
   }
 
   private async scan(countFailure: boolean, observed?: Map<string, VMStatus>) {
@@ -136,7 +136,7 @@ export class HaFailureMonitor {
   async close() {
     if (this.closed) return;
     this.closed = true;
-    clearInterval(this.timer);
+    await this.timer?.close();
     this.machines.off('change', this.change);
     this.machines.off('stop-requested', this.stopRequested);
     await this.work.catch(() => {});

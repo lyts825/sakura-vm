@@ -262,7 +262,7 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
   vm.onlineSnapshot = async (_id, name) => ({ name, consistency: 'filesystem' }) as any;
   vm.memorySnapshot = async (_id, name) => ({ name, consistency: 'vmstate' }) as any;
   vm.restoreMemory = async (id, snapshotId, backup) => ({ id, snapshotId, backup }) as any;
-  host.desktops.view = async () => ({ status: 'not-installed', log: '' });
+  (host.serviceValue('desktops') as import('../server/desktop.ts').Desktops).view = async () => ({ status: 'not-installed', log: '' });
   try {
     const first = request('POST');
     assert.equal(

@@ -1,3 +1,5 @@
+import { PlatformDomainServices } from './platform-domain-services.ts';
+import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { arch, cpus, freemem, hostname, loadavg, platform, release, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -94,50 +96,45 @@ function compactProfileResult(result: Record<string, unknown>) {
 }
 
 export class NextFeatures {
+  private readonly domains: PlatformDomainServices;
   jobs = new Jobs('next-features');
-  storageTiering: StorageTiering;
-  serviceMesh: ServiceMesh;
-  vtpmEnrollment: VtpmEnrollment;
-  acmeRenewal: AcmeRenewal;
-  teamTemplates: TeamTemplates;
-  haFailureMonitor: HaFailureMonitor;
-  private haLocalFailovers?: HaLocalFailovers;
-  private haHostFailover?: HaHostFailover;
-  private scoreHosts?: (input: HostScoreInput) => ReturnType<HostPeers['score']>;
-  private hostPeers?: HostPeers;
-  private liveMigrationRunner?: LiveMigrationRunner;
-  private coldMigrations?: ColdMigrations;
-  private snapshotReplications?: SnapshotReplications;
-  private notebookEnvironments?: NotebookEnvironments;
-  private browserIde?: BrowserIde;
-  private disasterRecovery?: DisasterRecoveryDrill;
-  private objectBackup?: ObjectBackup;
-  private wireGuardOverlay?: WireGuardOverlay;
-  private processInterop?: ProcessInterop;
-  private mediaDevices?: MediaDevices;
-  private hostMounts?: HostMounts;
-  private virtioFsShares?: VirtioFsShares;
-  private snapshotMerge?: SnapshotMerge;
-  private communityPlugins?: CommunityPlugins;
-  private sharedDesktopCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
-  private sharedTerminalCheck?: (id: string) => Promise<{ ready: boolean; reason?: string }>;
-  private passkeyCheck?: () => { ready: boolean; registered: number; reason?: string };
-  private accountModeReady?: () => boolean;
-  private mobileCheck?: () => { ready: boolean; devices: number; reason?: string };
-  private remoteAuditCheck?: () => Promise<{ ready: boolean; configured: boolean;
-    anchoredSequence: number; reason?: string }>;
+  get storageTiering() { return this.domains.storageTiering; }
+  get serviceMesh() { return this.domains.serviceMesh; }
+  get vtpmEnrollment() { return this.domains.vtpmEnrollment; }
+  get acmeRenewal() { return this.domains.acmeRenewal; }
+  get teamTemplates() { return this.domains.teamTemplates; }
+  get haFailureMonitor() { return this.domains.haFailureMonitor; }
+  private get haLocalFailovers(): HaLocalFailovers | undefined { return this.dependencies.optional('haLocalFailovers'); }
+  private get haHostFailover(): HaHostFailover | undefined { return this.dependencies.optional('haHostFailover'); }
+  private get scoreHosts() { return this.dependencies.optional('capabilityChecks')?.scoreHosts; }
+  private get hostPeers(): HostPeers | undefined { return this.dependencies.optional('hostPeers'); }
+  private get liveMigrationRunner() { return this.hostPeers ? new LiveMigrationRunner(this.machines, this.hostPeers) : undefined; }
+  private get coldMigrations(): ColdMigrations | undefined { return this.dependencies.optional('coldMigrations'); }
+  private get snapshotReplications(): SnapshotReplications | undefined { return this.dependencies.optional('snapshotReplications'); }
+  private get notebookEnvironments(): NotebookEnvironments | undefined { return this.dependencies.optional('notebookEnvironments'); }
+  private get browserIde(): BrowserIde | undefined { return this.dependencies.optional('browserIde'); }
+  private get disasterRecovery(): DisasterRecoveryDrill | undefined { return this.dependencies.optional('disasterRecovery'); }
+  private get objectBackup() { return this.domains.optional.objectBackup; }
+  private get wireGuardOverlay() { return this.domains.optional.wireGuardOverlay; }
+  private get processInterop(): ProcessInterop | undefined { return this.dependencies.optional('processInterop'); }
+  private get mediaDevices(): MediaDevices | undefined { return this.dependencies.optional('mediaDevices'); }
+  private get hostMounts(): HostMounts | undefined { return this.dependencies.optional('hostMounts'); }
+  private get virtioFsShares(): VirtioFsShares | undefined { return this.dependencies.optional('virtioFsShares'); }
+  private get snapshotMerge() { return this.domains.optional.snapshotMerge?.(); }
+  private get communityPlugins(): CommunityPlugins | undefined { return this.dependencies.optional('communityPlugins'); }
+  private get sharedDesktopCheck() { return this.dependencies.optional('capabilityChecks')?.sharedDesktopCheck; }
+  private get sharedTerminalCheck() { return this.dependencies.optional('capabilityChecks')?.sharedTerminalCheck; }
+  private get passkeyCheck() { return this.dependencies.optional('capabilityChecks')?.passkeyCheck; }
+  private get accountModeReady() { return this.dependencies.optional('capabilityChecks')?.accountModeReady; }
+  private get mobileCheck() { return this.dependencies.optional('capabilityChecks')?.mobileCheck; }
+  private get remoteAuditCheck() { return this.dependencies.optional('capabilityChecks')?.remoteAuditCheck; }
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
-  ) {
-    this.storageTiering = new StorageTiering(machines);
-    this.serviceMesh = new ServiceMesh(machines, workspaces, undefined,
-      async (id) => (await this.state()).settings[id]?.['service-mesh']?.enabled !== false);
-    this.vtpmEnrollment = new VtpmEnrollment(machines);
-    this.acmeRenewal = new AcmeRenewal(machines);
-    this.teamTemplates = new TeamTemplates(machines, workspaces);
-    this.haFailureMonitor = new HaFailureMonitor(machines, () => this.haPolicies());
-  }
+    private dependencies: HostServiceResolver = noHostServices,
+    domains: { objectBackup?: ObjectBackup; wireGuardOverlay?: WireGuardOverlay; snapshotMerge?: () => SnapshotMerge | undefined } = {},
+  ) { this.domains = new PlatformDomainServices(machines, workspaces, dependencies, () => this.haPolicies(),
+      async id => (await this.state()).settings[id]?.['service-mesh']?.enabled !== false, domains); }
 
   async haPolicies() {
     const state = await this.state();
@@ -147,67 +144,32 @@ export class NextFeatures {
     }));
   }
 
-  setHaLocalFailovers(service: HaLocalFailovers) { this.haLocalFailovers = service; }
-  setHaHostFailover(service: HaHostFailover) { this.haHostFailover = service; }
+  
+  
 
-  async init() {
-    try {
-      await this.storageTiering.init();
-      await this.serviceMesh.init();
-      await this.vtpmEnrollment.init();
-      await this.acmeRenewal.init();
-      await this.haFailureMonitor.init();
-    } catch (error) {
-      await Promise.allSettled([this.storageTiering.close(), this.serviceMesh.close(),
-        this.vtpmEnrollment.close(),
-        this.acmeRenewal.close(), this.haFailureMonitor.close()]);
-      throw error;
-    }
-  }
+  init() { return this.domains.init(); }
 
-  setAcmeAllowed(check: () => boolean) { this.acmeRenewal.setAllowed(check); }
-  setAcmeMutationCounter(change: (delta: number) => void) {
-    this.acmeRenewal.setMutationCounter(change);
-  }
+  
+  
 
-  setResourceScheduler(score: (input: HostScoreInput) => ReturnType<HostPeers['score']>) {
-    this.scoreHosts = score;
-  }
-  setHostPeers(peers: HostPeers) {
-    this.hostPeers = peers;
-    this.liveMigrationRunner = new LiveMigrationRunner(this.machines, peers);
-  }
+  
+  
 
-  setSharedDesktopCheck(check: (id: string) => Promise<{ ready: boolean; reason?: string }>) {
-    this.sharedDesktopCheck = check;
-  }
+  
 
-  setSharedTerminalCheck(check: (id: string) => Promise<{ ready: boolean; reason?: string }>) {
-    this.sharedTerminalCheck = check;
-  }
+  
 
-  setPasskeyCheck(check: () => { ready: boolean; registered: number; reason?: string }) {
-    this.passkeyCheck = check;
-  }
+  
 
-  setAccountModeReady(check: () => boolean) { this.accountModeReady = check; }
-  setMobileCheck(check: () => { ready: boolean; devices: number; reason?: string }) {
-    this.mobileCheck = check;
-  }
-  setRemoteAuditCheck(check: () => Promise<{ ready: boolean; configured: boolean;
-    anchoredSequence: number; reason?: string }>) { this.remoteAuditCheck = check; }
+  
+  
+  
 
-  setColdMigrations(service: ColdMigrations) {
-    this.coldMigrations = service;
-  }
+  
 
-  setSnapshotReplications(service: SnapshotReplications) {
-    this.snapshotReplications = service;
-  }
+  
 
-  setNotebookEnvironments(service: NotebookEnvironments) {
-    this.notebookEnvironments = service;
-  }
+  
 
   notebookLink(id: string) {
     if (!this.notebookEnvironments) throw new AppError('Notebook 服务尚未启用', 503);
@@ -215,26 +177,18 @@ export class NextFeatures {
     return this.notebookEnvironments.link(id);
   }
 
-  setBrowserIde(service: BrowserIde) {
-    this.browserIde = service;
-  }
+  
 
-  setDisasterRecovery(service: DisasterRecoveryDrill) {
-    this.disasterRecovery = service;
-  }
+  
 
-  setObjectBackup(service: ObjectBackup) {
-    this.objectBackup = service;
-  }
-  setWireGuardOverlay(service: WireGuardOverlay) {
-    this.wireGuardOverlay = service;
-  }
-  setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
-  setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
-  setHostMounts(service: HostMounts) { this.hostMounts = service; }
-  setVirtioFsShares(service: VirtioFsShares) { this.virtioFsShares = service; }
-  setSnapshotMerge(service?: SnapshotMerge) { this.snapshotMerge = service; }
-  setCommunityPlugins(service: CommunityPlugins) { this.communityPlugins = service; }
+  
+  
+  
+  
+  
+  
+  
+  
 
   browserIdeLink(id: string) {
     if (!this.browserIde) throw new AppError('浏览器 IDE 服务尚未启用', 503);
@@ -1051,12 +1005,5 @@ export class NextFeatures {
     );
   }
 
-  async close() {
-    await Promise.all([this.jobs.close(), this.storageTiering.close(), this.serviceMesh.close(),
-      this.vtpmEnrollment.close(),
-      this.objectBackup?.close(),
-      this.wireGuardOverlay?.close(), this.acmeRenewal.close(),
-      this.haFailureMonitor.close()]);
-    await this.store().flush();
-  }
+  async close() { await Promise.all([this.jobs.close(), this.domains.close()]); await this.store().flush(); }
 }

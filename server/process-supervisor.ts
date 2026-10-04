@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { hostRuntime, resourceContext, type ResourceLease } from './host-runtime/index.ts';
 import { AppError } from '../shared/errors.ts';
+import { pluginAuthority, pluginCleanup } from './plugin-authority.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { captureOperationCheck } from './operation-context.ts';
 
@@ -74,6 +75,12 @@ export class ProcessSupervisor {
   ) {}
 
   private acquire(options: ProcessAdmission) {
+    const instance = pluginAuthority();
+    if (instance) {
+      if (pluginCleanup() !== instance) instance.check('process', true);
+      options = { ...options, owner: instance.owner, signal: pluginCleanup() === instance ? options.signal :
+        options.signal ? AbortSignal.any([options.signal, instance.signal]) : instance.signal };
+    }
     const mode = options.mode || 'direct';
     if (!['direct', 'native-owner'].includes(mode) || (mode === 'native-owner' && options.kind === 'helper'))
       throw new Error('Invalid process ownership mode');
@@ -85,6 +92,10 @@ export class ProcessSupervisor {
       signal: options.signal,
       timeoutMs: options.queueTimeoutMs,
       cost: { process: mode === 'native-owner' ? 2 : 1, ['process.' + options.kind]: 1 },
+    }).then(lease => {
+      try { if (instance && pluginCleanup() !== instance) instance.check('process', true); }
+      catch (error) { lease.release(); throw error; }
+      return lease;
     });
   }
 
@@ -95,6 +106,10 @@ export class ProcessSupervisor {
     options: Partial<Omit<ProcessAdmission, 'kind' | 'mode'>> = {},
   ) {
     if (!Object.hasOwn(hostProcessAdapters, adapter)) throw new Error('Unknown host process adapter');
+    const instance = pluginAuthority();
+    if (instance && pluginCleanup() !== instance) instance.check('process', true);
+    if (instance) options = { ...options, owner: instance.owner,
+      signal: pluginCleanup() === instance ? options.signal : options.signal ? AbortSignal.any([options.signal, instance.signal]) : instance.signal };
     const request = {
       owner: options.owner || resourceContext()?.owner || `core:${adapter}`,
       label: adapter,
@@ -114,6 +129,9 @@ export class ProcessSupervisor {
           })
         : await this.acquire(request);
     if (!lease) throw new AppError('宿主辅助进程已达到资源额度', 429, 'RESOURCE_CAPACITY');
+    if (instance && pluginCleanup() !== instance) {
+      try { instance.check('process', true); } catch (error) { lease.release(); throw error; }
+    }
     const admission: NonNullable<ReturnType<typeof nativeSpawnAdmission.getStore>> = {
       active: true,
       lease,

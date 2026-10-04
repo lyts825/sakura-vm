@@ -8,7 +8,7 @@ export const manifest = definePlugin({
   requires: [pin('projects'), pin('files')],
   optional: [pin('migration')],
   services: ['intelligence', 'languageServices', 'debugger'],
-  contributes: { http: [
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [
     http('/api/vms/:vmId/code-diagnostics', ['GET'], true),
     http('/api/vms/:vmId/language-service', ['GET', 'POST'], true),
     http('/api/vms/:vmId/debugger', ['GET', 'POST'], true),

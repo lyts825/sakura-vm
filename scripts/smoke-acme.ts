@@ -18,9 +18,9 @@ await machines.init();
 const workspaces = {
   projects: { current: () => 'default', key: (id: string) => id },
 } as unknown as Workspaces;
-const features = new NextFeatures(machines, workspaces);
+const features = new NextFeatures(machines, workspaces, { optional: id => (id === 'capabilityChecks' ? { acmeAllowed: () => true, mutation: () => {} } : undefined) as never });
 await features.init();
-features.setAcmeAllowed(() => true);
+
 try {
   const vm = await machines.create({ name: 'acme-smoke', memoryMiB: 512, cpus: 2, diskGiB: 4 });
   await machines.start(vm.id);

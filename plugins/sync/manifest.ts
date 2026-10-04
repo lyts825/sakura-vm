@@ -7,7 +7,7 @@ export const manifest = definePlugin({
   category: 'operations',
   requires: [pin('projects')],
   services: ['sync'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/vms/:vmId/sync', ['GET', 'PUT', 'POST'], true),
       http('/api/vms/:vmId/sync-preview', ['POST'], true),

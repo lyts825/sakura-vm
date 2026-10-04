@@ -38,7 +38,7 @@ import {
 export async function activate(host: PluginContext) {
   const signatures = host.provide(snapshotsServices.signedBundles, new SignedBundles(host.capabilities.metadata.reference('signed-bundles')));
   await signatures.init();
-  host.provide(snapshotsServices.bundles, new Bundles(host.vm, signatures));
+  host.provide(snapshotsServices.bundles, new Bundles(host.vm, signatures, host.system));
   const golden = host.provide(snapshotsServices.goldenImages, new GoldenImages(host.vm, host.bundles));
   host.registerJobs(golden.jobs, () => {
     throw new AppError('请先刷新黄金镜像库核对结果，再明确发起操作', 409);

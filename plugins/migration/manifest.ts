@@ -6,5 +6,5 @@ export const manifest = definePlugin({
   description: '停机复制、校验并切换主机数据目录。',
   category: 'operations',
   services: ['migration'],
-  contributes: { http: [http('/api/migration', ['GET', 'POST'])] },
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/migration', ['GET', 'POST'])] },
 });

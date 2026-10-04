@@ -8,7 +8,7 @@ export const manifest = definePlugin({
   requires: [pin('snapshots'), pin('secrets'), pin('transfers')],
   services: ['backups', 'backupRecovery'],
   lifecycle: { activateMs: 30000, closeMs: 180000 },
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/vms/:vmId/backups', ['GET', 'PUT', 'POST']),
       http('/api/vms/:vmId/backup-download', ['POST']),

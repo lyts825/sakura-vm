@@ -8,8 +8,9 @@ export const manifest = definePlugin({
   experimental: true,
   requires: [pin('projects')],
   optional: [pin('snapshots'), pin('backups'), pin('secrets')],
+  systemDependencies: ["communityPlugins","mediaDevices","hostMounts","virtioFsShares","processInterop","hostPeers","notebookEnvironments","browserIde","coldMigrations","snapshotReplications","haHostFailover","haLocalFailovers","disasterRecovery","capabilityChecks"],
   services: ['next'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [http('/api/next-features', ['GET']),
       http('/api/vms/:vmId/next-features', ['GET', 'POST'], true),
       http('/api/vms/:vmId/notebook-link', ['GET'], true),

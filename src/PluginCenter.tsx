@@ -57,6 +57,10 @@ const packOrder = [
 const categoryOrder = Object.keys(categories);
 
 function pluginState(status: PluginStatus, id: string) {
+  const instance = status.runtime?.instances.find(item => item.source === 'official' && item.pluginId === id);
+  if (instance?.phase === 'cleanup-pending') return { label: '清理待恢复', tone: 'error', icon: CircleAlert };
+  if (instance?.phase === 'draining') return { label: '排空中', tone: 'pending', icon: Clock3 };
+  if (instance?.phase === 'activating') return { label: '激活中', tone: 'pending', icon: Clock3 };
   const active = status.active.includes(id);
   const planned = status.planned.includes(id);
   if (status.errors[id] || ['failed', 'skipped'].includes(status.lifecycle?.[id]?.phase))

@@ -3,6 +3,7 @@ import type { SessionLockView } from '../session-lock.ts';
 export type System = {
   session?: SessionLockView;
   plugins: string[];
+  pluginRuntime?: { version: number; instances: import('./plugin-runtime.ts').PluginInstanceView[] };
   version: string;
   engine: string;
   posixloom: string;

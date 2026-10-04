@@ -7,8 +7,9 @@ export const manifest = definePlugin({
   category: 'experimental',
   experimental: true,
   requires: [pin('projects')],
+  systemDependencies: ["trustedBoot","projectTerminals"],
   services: ['extended'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/extended-features', ['GET']),
       http('/api/vms/:vmId/extended-features', ['GET', 'POST'], true),

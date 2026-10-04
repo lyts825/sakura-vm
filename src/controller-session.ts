@@ -1,6 +1,7 @@
 import type { SessionLockView } from '../shared/session-lock';
 import type { AccessPrincipal } from '../shared/access-control';
 import { resourceCache } from './resource-cache';
+import { pluginGeneration } from './plugin-generation';
 
 /** A controller credential belongs to one unlocked host session, not to the browser tab. */
 export class ControllerSession {
@@ -112,6 +113,8 @@ export class ControllerSession {
     body?: unknown,
     signal?: AbortSignal,
   ): Promise<T> => {
+    const pluginSignal = pluginGeneration.capture(path);
+    if (pluginSignal) signal = signal ? AbortSignal.any([signal, pluginSignal]) : pluginSignal;
     signal?.throwIfAborted();
     if (!this.token) await this.authenticate();
     for (let attempt = 0; ; attempt++) {
@@ -144,6 +147,7 @@ export class ControllerSession {
         continue;
       }
       const data = await response.json();
+      signal?.throwIfAborted();
       if (generation !== this.generation) throw new Error('会话状态已变化，请重新操作');
       if (response.status === 423)
         this.updateSession(data.session || { ...this.session, enabled: true, locked: true });

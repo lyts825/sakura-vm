@@ -466,11 +466,11 @@ test('UEFI firmware choice survives portable export, import, and clone', async (
 });
 
 test('portable backup, import, and clone retain TPM identity and secure NVRAM', async (t) => {
-  const { machines, id, bundles } = await resizeFixture(t);
+  const { machines, id } = await resizeFixture(t);
   const service = new TrustedBootService(machines);
   await service.init();
   t.after(() => service.close());
-  bundles.setTrustedBoot(service);
+  const bundles = new Bundles(machines, undefined, { optional: id => (id === 'trustedBoot' ? service : undefined) as never });
   const vars = randomBytes(340_000);
   const permanent = Buffer.from('persistent-tpm-identity');
   await service.restore(id, {
@@ -530,11 +530,11 @@ test('portable backup, import, and clone retain TPM identity and secure NVRAM', 
 });
 
 test('tampered TPM state is rejected before import and backup verification', async (t) => {
-  const { machines, id, bundles } = await resizeFixture(t);
+  const { machines, id } = await resizeFixture(t);
   const service = new TrustedBootService(machines);
   await service.init();
   t.after(() => service.close());
-  bundles.setTrustedBoot(service);
+  const bundles = new Bundles(machines, undefined, { optional: id => (id === 'trustedBoot' ? service : undefined) as never });
   await service.restore(id, {
     enabled: true,
     files: [{ name: 'tpm2/tpm2-00.permall', data: Buffer.from('secret') }],

@@ -38,7 +38,10 @@ export class AcmeRenewal {
   private mutation = (_delta: number) => {};
 
   constructor(private machines: Machines,
-    private file = join(DATA, 'acme-renewal.json'), private now = Date.now) {}
+    private file = join(DATA, 'acme-renewal.json'), private now = Date.now,
+    controls?: { allowed: () => boolean; mutation: (delta: number) => void }) {
+    if (controls) { this.allowed = controls.allowed; this.mutation = controls.mutation; }
+  }
 
   async init() {
     this.state = storeSchema.parse(await readStore(this.file, defaults));

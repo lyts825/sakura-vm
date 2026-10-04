@@ -90,6 +90,8 @@ const body = async (req: IncomingMessage, limit?: number, signal?: AbortSignal) 
 
 export async function startApplication() {
   const resources = new ResourceScope({ owner: 'core:application' });
+  const plugins = new PluginManager();
+  resources.defer('plugin-management', () => plugins.system.close(), ClosePhase.plugins + 1);
   let dataOwner: DataDirectoryOwner | undefined;
   const closeResources = async () => {
     const failures: unknown[] = [];
@@ -120,34 +122,34 @@ export async function startApplication() {
     let sessionChanged = (_locked: boolean, _transitioned: boolean) => {};
     const session = resources.own(
       'session',
-      new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned)),
+      plugins.system.construct('session', () => new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned))),
       10,
     );
     await session.init();
-    const access = resources.own('access', new AccessControl(), 20);
+    const access = resources.own('access', plugins.system.construct('access', () => new AccessControl()), 20);
     await access.init();
-    const passkeys = resources.own('passkeys', new Passkeys(access, PORT), 40);
-    const sso = resources.own('sso', new SingleSignOn(access, PORT), 30);
+    const passkeys = resources.own('passkeys', plugins.system.construct('passkeys', () => new Passkeys(access, PORT)), 40);
+    const sso = resources.own('sso', plugins.system.construct('sso', () => new SingleSignOn(access, PORT)), 30);
     await sso.init();
     const dev = process.argv.includes('--dev');
     validateRegistry();
-    const plugins = new PluginManager();
     const selectedPlugins = await plugins.init();
     const engine = await createRuntime();
     const releaseRuntimeOwnership = resources.defer('runtime', () => engine.runtime.close(), ClosePhase.engine);
     const machines = resources.own('machines', new Machines(engine), ClosePhase.machines);
     releaseRuntimeOwnership();
     await machines.init();
-    const terminalSharing = resources.own('terminalSharing', new TerminalSharing(machines), 50);
+    resources.defer('plugin-directory-events', plugins.directory.subscribe(() => machines.emit('change')), 1);
+    const terminalSharing = resources.own('terminalSharing', plugins.system.construct('terminalSharing', () => new TerminalSharing(plugins.system.vm('terminalSharing', machines))), 50);
     await terminalSharing.init();
-    const jitPrivileges = resources.own('jitPrivileges', new JitPrivileges(access, machines), 80);
+    const jitPrivileges = resources.own('jitPrivileges', plugins.system.construct('jitPrivileges', () => new JitPrivileges(access, plugins.system.vm('jitPrivileges', machines))), 80);
     await jitPrivileges.init();
-    const browserExtensions = resources.own('browserExtensions', new BrowserExtensions(access), 120);
+    const browserExtensions = resources.own('browserExtensions', plugins.system.construct('browserExtensions', () => new BrowserExtensions(access)), 120);
     await browserExtensions.init();
-    const communityPlugins = resources.own('communityPlugins', new CommunityPlugins(undefined, undefined, undefined, undefined, plugins.directory), 140);
+    const communityPlugins = resources.own('communityPlugins', plugins.system.construct('communityPlugins', () => new CommunityPlugins(undefined, undefined, undefined, undefined, plugins.directory)), 140);
     await communityPlugins.init();
     const audit = resources.own('audit', hostAudit(), ClosePhase.audit);
-    const remoteAudit = resources.own('remoteAudit', new RemoteAuditLock(audit), 350);
+    const remoteAudit = resources.own('remoteAudit', plugins.system.construct('remoteAudit', () => new RemoteAuditLock(audit)), 350);
     await remoteAudit.init();
     Jobs.instrument = (job, work) =>
       audit.span(
@@ -163,13 +165,13 @@ export async function startApplication() {
     let features: Features;
     const rollouts = resources.own(
       'rollouts',
-      new FeatureRollouts(
+      plugins.system.construct('rollouts', () => new FeatureRollouts(
         undefined,
         () => !!features?.migration?.blocked,
         (delta) => {
           if (features) features.operations.change(delta);
         },
-      ),
+      )),
       200,
     );
     await rollouts.init();
@@ -180,119 +182,117 @@ export async function startApplication() {
     );
     const projectTerminals = resources.own(
       'projectTerminals',
-      features.terminalHandle(),
+      plugins.system.construct('projectTerminals', () => features.terminalHandle()),
       70,
     );
     const projectExecution = resources.own(
       'projectExecution',
-      new ProjectExecution(machines, projectTerminals.preparation),
+      plugins.system.construct('projectExecution', () => new ProjectExecution(plugins.system.vm('projectExecution', machines), projectTerminals.preparation)),
       60,
     );
     terminalSharing.useProjectTerminals(projectTerminals);
-    features.suite?.setProjectTerminals(projectTerminals);
-    features.extended?.setProjectTerminals(projectTerminals);
-    features.next?.setCommunityPlugins(communityPlugins);
-    features.next?.setSnapshotMerge(
-      features.serviceValue('snapshotMerge') as import('./snapshot-merge.ts').SnapshotMerge | undefined,
-    );
+    
+    
+    
+    
     const usbHotplug = resources.own(
       'usbHotplug',
-      new UsbHotplug(
-        machines,
+      plugins.system.construct('usbHotplug', () => new UsbHotplug(
+        plugins.system.vm('usbHotplug', machines),
         undefined,
         () => !!features.migration?.blocked,
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       220,
     );
     await usbHotplug.init();
     const mediaDevices = resources.own(
       'mediaDevices',
-      new MediaDevices(
-        machines,
+      plugins.system.construct('mediaDevices', () => new MediaDevices(
+        plugins.system.vm('mediaDevices', machines),
         usbHotplug,
         () => !!features.migration?.blocked,
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       230,
     );
-    features.next?.setMediaDevices(mediaDevices);
-    features.suite?.setMediaDevices(mediaDevices);
+    
+    
     const memoryReclaim = resources.own(
       'memoryReclaim',
-      new MemoryReclaim(
-        machines,
+      plugins.system.construct('memoryReclaim', () => new MemoryReclaim(
+        plugins.system.vm('memoryReclaim', machines),
         undefined,
         () => !!features.migration?.blocked,
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       240,
     );
     await memoryReclaim.init();
     const hostMounts = resources.own(
       'hostMounts',
-      new HostMounts(
-        machines,
+      plugins.system.construct('hostMounts', () => new HostMounts(
+        plugins.system.vm('hostMounts', machines),
         () => !!features.migration?.blocked,
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       250,
     );
     await hostMounts.init();
-    features.next?.setHostMounts(hostMounts);
-    features.suite?.setHostMounts(hostMounts);
+    
+    
     const virtioFsShares = resources.own(
       'virtioFsShares',
-      new VirtioFsShares(
-        machines,
+      plugins.system.construct('virtioFsShares', () => new VirtioFsShares(
+        plugins.system.vm('virtioFsShares', machines),
         () => !!features.migration?.blocked,
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       260,
     );
     await virtioFsShares.init();
-    features.next?.setVirtioFsShares(virtioFsShares);
+    
     const trustedBoot = resources.own(
       'trustedBoot',
-      new TrustedBootService(
-        machines,
+      plugins.system.construct('trustedBoot', () => new TrustedBootService(
+        plugins.system.vm('trustedBoot', machines),
         () => !!features.migration?.blocked,
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       270,
     );
     await trustedBoot.init();
-    features.bundles?.setTrustedBoot(trustedBoot);
-    features.extended?.setTrustedBoot(trustedBoot);
+    
+    
     const gpuProfiles = resources.own(
       'gpuProfiles',
-      new GpuProfiles(
-        machines,
+      plugins.system.construct('gpuProfiles', () => new GpuProfiles(
+        plugins.system.vm('gpuProfiles', machines),
         undefined,
         () => !!features.migration?.blocked,
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       280,
     );
     await gpuProfiles.init();
     const buildFarm = resources.own(
       'buildFarm',
-      new BuildFarm(
-        machines,
+      plugins.system.construct('buildFarm', () => new BuildFarm(
+        plugins.system.vm('buildFarm', machines),
         undefined,
         () => !!features.migration?.blocked,
         (delta) => {
@@ -300,7 +300,7 @@ export async function startApplication() {
         },
         undefined,
         projectTerminals,
-      ),
+      )),
       290,
     );
     await buildFarm.init();
@@ -308,29 +308,27 @@ export async function startApplication() {
     remoteAudit.setBackgroundAllowed(() => !features.migration?.blocked && !session.view().locked);
     const projectPermissions = resources.own(
       'projectPermissions',
-      new ProjectPermissions(access, machines, features.workspaces),
+      plugins.system.construct('projectPermissions', () => new ProjectPermissions(access, plugins.system.vm('projectPermissions', machines), features.workspaces)),
       90,
     );
     await projectPermissions.init();
-    const policyBundles = resources.own('policyBundles', new PolicyBundles(projectPermissions), 100);
+    const policyBundles = resources.own('policyBundles', plugins.system.construct('policyBundles', () => new PolicyBundles(projectPermissions)), 100);
     await policyBundles.init();
     const changeApprovals = features.workspaces
-      ? new ChangeApprovals(projectPermissions, features.workspaces)
+      ? plugins.system.construct('changeApprovals', () => new ChangeApprovals(projectPermissions, features.workspaces))
       : undefined;
     await changeApprovals?.init();
-    features.next?.setAcmeMutationCounter((delta) => {
-      features.operations.change(delta);
-    });
-    features.next?.setAcmeAllowed(() => !session.view().locked && !features.migration?.blocked);
-    const processInterop = new ProcessInterop(machines, PORT, () => {
+    
+    
+    const processInterop = plugins.system.construct('processInterop', () => new ProcessInterop(plugins.system.vm('processInterop', machines), PORT, () => {
       session.requireUnlocked();
       if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-    });
-    features.next?.setProcessInterop(processInterop);
-    features.suite?.setProcessInterop(processInterop);
+    }));
+    
+    
     const hostPeers = resources.own(
       'hostPeers',
-      new HostPeers(
+      plugins.system.construct('hostPeers', () => new HostPeers(
         async () => {
           const vms = await machines.list();
           return {
@@ -350,13 +348,13 @@ export async function startApplication() {
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       320,
     );
     await hostPeers.init();
     const mobileCompanion = resources.own(
       'mobileCompanion',
-      new MobileCompanion(
+      plugins.system.construct('mobileCompanion', () => new MobileCompanion(
         access,
         async () => {
           const vms = await machines.list();
@@ -374,12 +372,53 @@ export async function startApplication() {
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       130,
     );
     await mobileCompanion.init();
     hostPeers.setMobileHandler((request, response) => mobileCompanion.handle(request, response));
-    features.next?.setMobileCheck(() => ({
+    
+    hostPeers.setRolloutReceiver({
+      view: () => ({ hostId: hostPeers.view().hostId, policies: rollouts.view().policies }),
+      save: (input) => rollouts.configure(input),
+    });
+    const liveMigrationReceiver = plugins.system.construct('liveMigrationReceiver', () => new LiveMigrationReceiver(plugins.system.vm('liveMigrationReceiver', machines), hostPeers, () => {
+      session.requireUnlocked();
+      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+      if (!features.next) throw new AppError('请先启用扩展功能插件', 503);
+    }));
+    hostPeers.setLiveMigrationReceiver({
+      prepare: (input) => liveMigrationReceiver.prepare(input),
+      complete: (input) => liveMigrationReceiver.complete(input),
+      abort: (input) => liveMigrationReceiver.abort(input),
+      status: (input) => Promise.resolve(liveMigrationReceiver.status(input)),
+    });
+    const fleetRollouts = resources.own(
+      'fleetRollouts',
+      plugins.system.construct('fleetRollouts', () => new FleetPolicyRollouts(
+        hostPeers,
+        undefined,
+        () => !!features.migration?.blocked,
+        (delta) => {
+          features.operations.change(delta);
+        },
+      )),
+      210,
+    );
+    await fleetRollouts.init();
+    
+    
+    
+    
+    
+    
+    
+    plugins.system.construct('capabilityChecks', () => ({
+      mutation: (delta) => {
+      features.operations.change(delta);
+    },
+      acmeAllowed: () => !session.view().locked && !features.migration?.blocked,
+      mobileCheck: () => ({
       ready:
         access.enabled && hostPeers.view().listener.active && hostPeers.view().listener.host === '0.0.0.0',
       devices: access.enabled
@@ -390,38 +429,9 @@ export async function startApplication() {
         : !hostPeers.view().listener.active || hostPeers.view().listener.host !== '0.0.0.0'
           ? '请启用局域网 HTTPS 同伴入口并重启服务。'
           : undefined,
-    }));
-    hostPeers.setRolloutReceiver({
-      view: () => ({ hostId: hostPeers.view().hostId, policies: rollouts.view().policies }),
-      save: (input) => rollouts.configure(input),
-    });
-    const liveMigrationReceiver = new LiveMigrationReceiver(machines, hostPeers, () => {
-      session.requireUnlocked();
-      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-      if (!features.next) throw new AppError('请先启用扩展功能插件', 503);
-    });
-    hostPeers.setLiveMigrationReceiver({
-      prepare: (input) => liveMigrationReceiver.prepare(input),
-      complete: (input) => liveMigrationReceiver.complete(input),
-      abort: (input) => liveMigrationReceiver.abort(input),
-      status: (input) => Promise.resolve(liveMigrationReceiver.status(input)),
-    });
-    const fleetRollouts = resources.own(
-      'fleetRollouts',
-      new FleetPolicyRollouts(
-        hostPeers,
-        undefined,
-        () => !!features.migration?.blocked,
-        (delta) => {
-          features.operations.change(delta);
-        },
-      ),
-      210,
-    );
-    await fleetRollouts.init();
-    features.next?.setResourceScheduler((input) => hostPeers.score(input));
-    features.next?.setHostPeers(hostPeers);
-    features.next?.setSharedDesktopCheck(async (id) => {
+    }),
+      scoreHosts: (input) => hostPeers.score(input),
+      sharedDesktopCheck: async (id) => {
       if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
       if (!features.socketEnabled('desktop'))
         return { ready: false, reason: '请先启用桌面插件并重启 Sakura。' };
@@ -431,14 +441,14 @@ export async function startApplication() {
       } catch (error) {
         return { ready: false, reason: (error as Error).message };
       }
-    });
-    features.next?.setPasskeyCheck(() => ({
+    },
+      passkeyCheck: () => ({
       ready: access.enabled,
       registered: access.users().reduce((count, user) => count + access.passkeysFor(user.id).length, 0),
       ...(!access.enabled ? { reason: '请先启用账户模式。' } : {}),
-    }));
-    features.next?.setAccountModeReady(() => access.enabled);
-    features.next?.setRemoteAuditCheck(async () => {
+    }),
+      accountModeReady: () => access.enabled,
+      remoteAuditCheck: async () => {
       const status = await remoteAudit.status();
       return {
         ready: Boolean(
@@ -456,8 +466,8 @@ export async function startApplication() {
           ? '请在系统设置中配置启用对象锁的远程审计桶。'
           : status.lastError || (!status.last ? '配置后请同步首个审计锚点。' : undefined),
       };
-    });
-    features.next?.setSharedTerminalCheck(async (id) => {
+    },
+      sharedTerminalCheck: async (id) => {
       if (!access.enabled) return { ready: false, reason: '请先启用账户模式。' };
       if (!features.socketEnabled('terminal-session'))
         return { ready: false, reason: '请先启用可恢复终端会话插件并重启 Sakura。' };
@@ -468,7 +478,8 @@ export async function startApplication() {
       } catch (error) {
         return { ready: false, reason: (error as Error).message };
       }
-    });
+    },
+    } satisfies import('./host-service-contracts.ts').HostServiceContracts['capabilityChecks']));
     hostPeers.setImportReceiver(
       createHostImportReceiver(machines, {
         bundles: () => features.bundles,
@@ -483,63 +494,61 @@ export async function startApplication() {
     let notebooks: NotebookEnvironments | undefined;
     let browserIde: BrowserIde | undefined;
     if (features.next) {
-      notebooks = resources.own('notebooks', new NotebookEnvironments(machines, features.workspaces), 370);
+      notebooks = resources.own('notebookEnvironments', plugins.system.construct('notebookEnvironments', () => new NotebookEnvironments(plugins.system.vm('notebookEnvironments', machines), features.workspaces)), 370);
       await notebooks.init();
-      features.next.setNotebookEnvironments(notebooks);
-      browserIde = resources.own('browserIde', new BrowserIde(machines, features.workspaces), 360);
+      
+      browserIde = resources.own('browserIde', plugins.system.construct('browserIde', () => new BrowserIde(plugins.system.vm('browserIde', machines), features.workspaces)), 360);
       await browserIde.init();
-      features.next.setBrowserIde(browserIde);
+      
     }
     if (features.next && features.bundles) {
-      coldMigrations = new ColdMigrations(machines, features.bundles, hostPeers);
+      coldMigrations = plugins.system.construct('coldMigrations', () => new ColdMigrations(plugins.system.vm('coldMigrations', machines), features.bundles, hostPeers));
       await coldMigrations.init();
-      features.next.setColdMigrations(coldMigrations);
-      snapshotReplications = new SnapshotReplications(machines, features.bundles, hostPeers);
+      
+      snapshotReplications = plugins.system.construct('snapshotReplications', () => new SnapshotReplications(plugins.system.vm('snapshotReplications', machines), features.bundles, hostPeers));
       await snapshotReplications.init();
-      features.next.setSnapshotReplications(snapshotReplications);
+      
       const witnessClient = await HaWitnessClient.fromEnv().catch((error) => {
         console.error('HA 见证配置不可用：', (error as Error).message);
         return null;
       });
       haHostFailover = resources.own(
         'haHostFailover',
-        new HaHostFailover(
-          machines,
+        plugins.system.construct('haHostFailover', () => new HaHostFailover(
+          plugins.system.vm('haHostFailover', machines),
           hostPeers,
-          snapshotReplications,
+          snapshotReplications!,
           () => features.next!.haPolicies(),
           witnessClient,
-        ),
+        )),
         310,
       );
       machines.setHaStartGuard((id) => haHostFailover!.authorizeStart(id));
-      features.next.setHaHostFailover(haHostFailover);
+      
       await haHostFailover.init();
       haLocalFailovers = resources.own(
         'haLocalFailovers',
-        new HaLocalFailovers(
-          machines,
+        plugins.system.construct('haLocalFailovers', () => new HaLocalFailovers(
+          plugins.system.vm('haLocalFailovers', machines),
           features.next.haFailureMonitor,
           hostPeers,
-          snapshotReplications,
+          snapshotReplications!,
           () => features.next!.haPolicies(),
           () => !features.migration?.blocked && !machines.closing,
-        ),
+        )),
         300,
       );
       haLocalFailovers.setWitnessDisarmGuard((id, failureThreshold) =>
         haHostFailover!.disarm(id, failureThreshold),
       );
-      features.next.setHaLocalFailovers(haLocalFailovers);
+      
       await haLocalFailovers.init();
     }
     if (features.next && features.backups && features.bundles)
-      features.next.setDisasterRecovery(
-        new DisasterRecoveryDrill(machines, features.backups, features.bundles),
-      );
+      plugins.system.construct('disasterRecovery', () => new DisasterRecoveryDrill(plugins.system.vm('disasterRecovery', machines), features.backups, features.bundles));
     const native = resources.own(
       'native',
-      new NativeIntegration(
+      plugins.system.construct('native', () => new NativeIntegration(
         () => nativeMappings(features),
         undefined,
         undefined,
@@ -553,23 +562,23 @@ export async function startApplication() {
             machines.requireUnlocked(id);
           }
         },
-      ),
+      )),
       160,
     );
     await native.init();
     const nativeClipboard = resources.own(
       'nativeClipboard',
-      new NativeClipboard({
+      plugins.system.construct('nativeClipboard', () => new NativeClipboard({
         guard: () => session.requireUnlocked(),
         maintenance: () => !!features.migration?.blocked,
         mutation: (delta) => {
           features.operations.change(delta);
         },
-      }),
+      })),
       170,
     );
     await nativeClipboard.init();
-    const assistant = resources.own('assistant', new LocalAssistant(), 150);
+    const assistant = resources.own('assistant', plugins.system.construct('assistant', () => new LocalAssistant()), 150);
     await assistant.init();
     const eventSource = async () =>
       collectWebhookEvents(
@@ -587,7 +596,7 @@ export async function startApplication() {
     );
     const webhooks = resources.own(
       'webhooks',
-      new Webhooks(
+      plugins.system.construct('webhooks', () => new Webhooks(
         eventSource,
         undefined,
         undefined,
@@ -596,15 +605,15 @@ export async function startApplication() {
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       180,
     );
     await webhooks.init();
     const automationRules = resources.own(
       'automationRules',
-      new AutomationRules(
+      plugins.system.construct('automationRules', () => new AutomationRules(
         eventSource,
-        machines,
+        plugins.system.vm('automationRules', machines),
         undefined,
         undefined,
         () => !!features.migration?.blocked,
@@ -613,7 +622,7 @@ export async function startApplication() {
         },
         async (id, steps, projectId, signal) => {
           const own = !features.workspaces;
-          const workspaces = features.workspaces || new Workspaces(machines);
+          const workspaces = features.workspaces || new Workspaces(plugins.system.vm('automationRules', machines));
           try {
             return await workspaces.projects.with(id, projectId, () =>
               runEngineeringOperation(machines, workspaces, id, 'runbooks', { steps }, signal),
@@ -622,13 +631,13 @@ export async function startApplication() {
             if (own) await workspaces.close();
           }
         },
-      ),
+      )),
       190,
     );
     await automationRules.init();
     const retention = resources.own(
       'retention',
-      new LogRetention(
+      plugins.system.construct('retention', () => new LogRetention(
         () => features.jobStores(),
         undefined,
         () => !!features.migration?.blocked,
@@ -636,13 +645,13 @@ export async function startApplication() {
         (delta) => {
           features.operations.change(delta);
         },
-      ),
+      )),
       330,
     );
     await retention.init();
     const graph = resources.own(
       'graph',
-      new GraphApi(async () => querySnapshot(machines, features.jobStores(), features.enabled)),
+      plugins.system.construct('graph', () => new GraphApi(async () => querySnapshot(machines, features.jobStores(), features.enabled))),
       340,
     );
     const ws = new WebSocketServer({ noServer: true, maxPayload: 65536 });
@@ -671,6 +680,7 @@ export async function startApplication() {
       machines.emit('change');
     };
     const socketVms = new WeakMap<WebSocket, string>();
+    const socketPlugins = new WeakMap<WebSocket, { identity: string; generation: string; accountId?: string; vmId?: string; projectId?: string }>();
     const socketAccounts = new WeakMap<WebSocket, string>();
     const socketCredentials = new WeakMap<WebSocket, string>();
     const socketTerminalGrants = new WeakMap<WebSocket, string>();
@@ -739,6 +749,11 @@ export async function startApplication() {
       return input;
     };
     const gateway = new OperationGateway({ enabled: () => features.enabled,
+      owner: (url, entry) => entry.transport === 'websocket' ?
+        /\/(desktop|desktop-view)$/.test(url.pathname) ? 'desktop' :
+        /\/(terminal|terminal-view)$/.test(url.pathname) && url.searchParams.has('session') ? 'terminal-workspace' : 'core' : entry.owner,
+      instance: owner => owner === 'core' ? plugins.system.caller : plugins.directory.get('official', owner),
+      catalogVersion: () => plugins.directory.view().version,
       bind: createOperationAuthority({ machines, features, access, session, projectPermissions,
         browserExtensions, equalToken, socketAuthorization }),
     });
@@ -841,6 +856,7 @@ export async function startApplication() {
     const machineApi = createMachineApi({
       machines,
       features,
+      pluginRuntime: () => plugins.directory.view(),
       engine,
       session,
       usbHotplug,
@@ -995,7 +1011,7 @@ export async function startApplication() {
       if (await features.downloads?.route(req, res, url)) return;
       const principal = authorized(req);
       const accountPrincipal = access.enabled ? access.authorize(req.headers['x-sakura-token']) : null;
-      if (url.pathname === '/api/operations') return send(res, { operations: gateway.directory() });
+      if (url.pathname === '/api/operations') return send(res, { version: gateway.version, operations: gateway.directory() });
       if (url.pathname === '/api/host-runtime') {
         if (req.method !== 'GET') throw new AppError('不支持此方法', 405);
         if (access.enabled && accountPrincipal?.role !== 'owner') throw new AppError('仅管理员可查看系统资源状态', 403);
@@ -1490,7 +1506,7 @@ export async function startApplication() {
       }
       if (url.pathname === '/api/openapi' || url.pathname === '/api/sdk') {
         if (req.method !== 'GET') throw new AppError('文档接口仅支持读取', 405);
-        const specification = apiDocument(features.enabled, PORT);
+        const specification = apiDocument(features.enabled, PORT, gateway.version);
         return send(
           res,
           url.pathname === '/api/openapi'
@@ -2003,6 +2019,16 @@ export async function startApplication() {
             client.once('close', () => clearTimeout(timer));
           }
           if (!events) socketVms.set(client, id);
+          if (admission.instance) {
+            const generation = admission.instance.generation;
+            const revoke = () => client.close(1008, 'Plugin generation revoked');
+            admission.instance.signal.addEventListener('abort', revoke, { once: true });
+            client.once('close', () => admission.instance?.signal.removeEventListener('abort', revoke));
+            socketPlugins.set(client, { identity: admission.instance.identity, generation,
+              accountId: 'id' in principal ? principal.id : undefined, vmId: events ? undefined : id,
+              projectId: terminalProject || undefined });
+            if (admission.instance.signal.aborted) { revoke(); return; }
+          }
           if (!events && mode !== 'logs' && machines.incidentLocked(id)) {
             client.close(1008, 'Incident lockdown');
             return;

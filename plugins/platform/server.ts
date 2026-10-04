@@ -35,14 +35,15 @@ export const operations: Record<string, PluginOperation> = {
 
 export async function activate(host: PluginContext) {
   const m = host.vm;
-  host.provide(platformServices.next, new NextFeatures(m, host.workspaces));
-  host.next.setObjectBackup(new ObjectBackup(m, () => ({
+  host.provide(platformServices.next, new NextFeatures(m, host.workspaces, host.system, {
+    objectBackup: new ObjectBackup(m, () => ({
     backups: host.optional(backupsServices.backups),
     bundles: host.optional(snapshotsServices.bundles),
     secrets: host.optional(secretsServices.secrets),
-  })));
-  host.next.setWireGuardOverlay(new WireGuardOverlay(m,
-    () => host.optional(secretsServices.secrets)));
+    })),
+    wireGuardOverlay: new WireGuardOverlay(m, () => host.optional(secretsServices.secrets)),
+    snapshotMerge: () => host.optional(snapshotsServices.snapshotMerge),
+  }));
   await host.next.init();
   host.registerJobs(host.next.jobs, (job) => {
     if (!job.action?.startsWith('next:')) throw new AppError('请回到原功能页面重新执行');

@@ -7,8 +7,9 @@ export const manifest = definePlugin({
   category: 'operations',
   requires: [pin('projects')],
   optional: [pin('automation-scheduler'), pin('service-health'), pin('secrets'), pin('containers')],
+  systemDependencies: ["mediaDevices","hostMounts","processInterop","projectTerminals"],
   services: ['suite'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/feature-suite', ['GET']),
       http('/api/vms/:vmId/advanced', ['GET', 'PUT', 'POST'], true),

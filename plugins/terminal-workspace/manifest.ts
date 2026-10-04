@@ -7,5 +7,5 @@ export const manifest = definePlugin({
   category: 'workspace',
   optional: [pin('projects')],
   services: ['terminals'],
-  contributes: { http: [http('/api/vms/:vmId/terminal-session', ['POST'], true)], sockets: ['terminal-session'] },
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/vms/:vmId/terminal-session', ['POST'], true)], sockets: ['terminal-session'] },
 });

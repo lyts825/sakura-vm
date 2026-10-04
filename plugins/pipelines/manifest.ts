@@ -7,7 +7,7 @@ export const manifest = definePlugin({
   category: 'development',
   requires: [pin('projects'), pin('files'), pin('transfers')],
   services: ['pipelines'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/vms/:vmId/pipelines', ['GET', 'PUT', 'DELETE', 'POST'], true),
       http('/api/vms/:vmId/pipeline-artifact', ['POST'], true),

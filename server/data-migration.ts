@@ -21,7 +21,7 @@ export class DataMigration {
   blocked = false;
   constructor(
     private machines: Machines,
-    private stores: () => Jobs[],
+    private stores: () => ReadonlyArray<Pick<Jobs, 'list' | 'flush'>>,
     private source = DATA,
   ) {}
   async view() {

@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PluginContext } from '../plugin-api.ts';
+import type { VmAccess } from '../vm-access.ts';
 
 import { AppError } from '../../shared/errors.ts';
 
 export async function route(
-  this: Pick<PluginContext, 'vm' | 'jobStores' | 'retryHandler'>,
+  this: Pick<import('../plugin-runtime.ts').PluginRuntime, 'jobStores' | 'retryHandler'> & { vm: Pick<VmAccess, 'requireUnlocked'> },
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,

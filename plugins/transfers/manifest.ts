@@ -7,5 +7,5 @@ export const manifest = definePlugin({
   category: 'foundation',
   optional: [pin('files'), pin('snapshots')],
   services: ['downloads'],
-  contributes: { http: [http('/api/vms/:vmId/download', ['POST'])] },
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/vms/:vmId/download', ['POST'])] },
 });

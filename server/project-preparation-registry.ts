@@ -13,5 +13,5 @@ export function preparationLeases(host: object) {
 }
 export function assertProjectPreparationIdle(host: object, vmId: string, projectId: string) {
   if ([...preparationLeases(host)].some(lease => lease.vmId === vmId && lease.projectId === projectId))
-    throw new AppError('请先关闭项目终端或命令，并等待原连接和准备资源释放', 409, 'PROJECT_DIRECTORY_RUNS_MUST_STOP');
+    throw new AppError('请先结束此项目的终端或命令，并等待原连接和准备资源释放', 409, 'PROJECT_DIRECTORY_RUNS_MUST_STOP');
 }

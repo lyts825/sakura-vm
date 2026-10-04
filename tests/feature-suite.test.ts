@@ -139,7 +139,7 @@ async function dispatchFixture() {
       captured: { project: clone(), configVersion: projectVersion(project), live },
       release: () => { events.push('release'); held = false; ++releases; } };
   } } as unknown as ProjectTerminals;
-  const suite = new FeatureSuite(machines, workspaces); suite.setProjectTerminals(terminals); suite.jobs = new Jobs();
+  const suite = new FeatureSuite(machines, workspaces, {}, {}, { optional: id => (id === 'projectTerminals' ? terminals : undefined) as never }); suite.jobs = new Jobs();
   const start = suite.jobs.start.bind(suite.jobs);
   suite.jobs.start = (key, work, meta) => start(key, async (log, signal, update, save) => {
     try { await work(log, signal, update, async value => {

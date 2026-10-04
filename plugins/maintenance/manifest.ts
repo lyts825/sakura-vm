@@ -6,7 +6,7 @@ export const manifest = definePlugin({
   description: '故障诊断、磁盘扩容、空间检查与 QCOW2 整理。',
   category: 'operations',
   services: ['maintenance'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/storage', ['GET']),
       http('/api/vms/:vmId/diagnostics', ['GET', 'POST']),

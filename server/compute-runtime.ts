@@ -1,12 +1,14 @@
 import { Worker, type WorkerOptions } from 'node:worker_threads';
 import { AppError } from '../shared/errors.ts';
 import { pluginAuthority, withPluginAuthority } from './plugin-authority.ts';
+import type { PluginInstance } from './plugin-instance.ts';
+import { withinDeadline } from './plugin-scope.ts';
 import { hostRuntime, type HostRuntime, type ResourceLease } from './host-runtime/index.ts';
 
 export type ComputeWork = { source: string | URL; options?: WorkerOptions };
 type ComputeOptions = { owner: string; label: string; memoryBytes: number; signal?: AbortSignal;
   timeoutMs?: number; partition?: { key: string; limit: number } };
-type Retiring = { worker: Worker; lease: ResourceLease; exit: Promise<void> };
+type Retiring = { worker: Worker; lease: ResourceLease; exit: Promise<void>; instance?: PluginInstance };
 
 /** Trusted adapters choose fixed code; callers supply data only. Workers are created
  * on demand and retire after one task, so idle capacity returns to the host. */
@@ -52,7 +54,7 @@ export class ComputeRuntime {
     const result = await new Promise<T>((resolve, reject) => {
       let complete = false, outcome: { result?: T; error?: unknown } | undefined;
       let ended!: () => void;
-      const retiring = { worker, lease, exit: new Promise<void>((done) => { ended = done; }) };
+      const retiring = { worker, lease, instance: pluginAuthority(), exit: new Promise<void>((done) => { ended = done; }) };
       this.retiring.add(retiring);
       const cleanListeners = () => { clearTimeout(timer); signal.removeEventListener('abort', aborted); };
       const settle = () => {
@@ -92,6 +94,12 @@ export class ComputeRuntime {
   }
 
   beginDrain() { this.abort.abort(new AppError('计算服务正在关闭', 503, 'RESOURCE_DRAINING')); }
+  async recover(instance: PluginInstance) {
+    const receipts = [...this.retiring].filter(entry => entry.instance?.identity === instance.identity &&
+      entry.instance.generation === instance.generation);
+    for (const { worker, exit } of receipts)
+      await withinDeadline(Promise.resolve(worker.terminate()).then(() => exit), 5000, '原计算线程清理');
+  }
   async close() {
     this.beginDrain();
     await Promise.allSettled([...this.tasks]);

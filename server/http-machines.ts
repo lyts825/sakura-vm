@@ -21,6 +21,7 @@ import { sendJson as send } from './http-response.ts';
 export type MachineApiContext = {
   machines: Machines;
   features: Pick<Features, 'enabled' | 'validateConfig'>;
+  pluginRuntime?: () => ReturnType<Features['directory']['view']>;
   engine: Engine;
   session: Pick<SessionLock, 'view'>;
   usbHotplug: UsbHotplug;
@@ -59,6 +60,7 @@ export function createMachineApi(context: MachineApiContext) {
         imageReady: existsSync(IMAGE),
         imageBytes: (await stat(IMAGE).catch(() => null))?.size || 0,
         plugins: [...features.enabled],
+        pluginRuntime: context.pluginRuntime?.(),
         session: session.view(),
       });
     if (route[1] === 'storage-pools' && route.length === 2) {

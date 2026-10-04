@@ -7,7 +7,7 @@ export const manifest = definePlugin({
   category: 'operations',
   optional: [pin('projects')],
   services: ['secrets'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/vms/:vmId/secrets', ['GET', 'PUT', 'DELETE'], true),
       http('/api/vms/:vmId/secret-rotation', ['GET', 'PATCH'], true),

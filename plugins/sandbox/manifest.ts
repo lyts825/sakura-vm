@@ -6,7 +6,7 @@ export const manifest = definePlugin({
   description: '隔离 Linux 环境、资源配额、限时命令与到期清理。',
   category: 'development',
   services: ['sandboxes'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     pages: ['sandbox'],
     http: [
       http('/api/sandboxes', ['GET', 'POST']),

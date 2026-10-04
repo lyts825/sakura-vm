@@ -31,6 +31,7 @@ export const pluginManifestSchema = z
     requires: z.array(dependency),
     optional: z.array(dependency),
     services: z.array(z.string().regex(/^[a-z][a-zA-Z0-9]*$/)),
+    systemDependencies: z.array(z.string().regex(/^[a-z][a-zA-Z0-9]*$/)).default([]),
     lifecycle: z.object({ activateMs: z.number().int().min(100).max(180000), closeMs: z.number().int().min(100).max(180000) }).strict(),
     contributes: z
       .object({
@@ -40,6 +41,7 @@ export const pluginManifestSchema = z
         pages: z.array(id),
         tabs: z.array(id),
         developmentSections: z.array(id),
+        managed: z.array(z.enum(['job-retry', 'jobs', 'schedule', 'event', 'interceptor'])).default([]),
       })
       .strict(),
   })

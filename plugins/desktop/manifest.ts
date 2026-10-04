@@ -9,7 +9,7 @@ export const manifest = definePlugin({
   lifecycle: { activateMs: 30000, closeMs: 120000 },
   requires: [pin('projects')],
   services: ['desktops', 'jobs', 'x11Clipboard', 'waylandClipboard'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [http('/api/vms/:vmId/desktop', ['GET', 'POST'], true),
       http('/api/vms/:vmId/single-app', ['GET', 'POST'], true),
       http('/api/vms/:vmId/x11-clipboard', ['GET', 'POST'], true),

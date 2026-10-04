@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { CommunityPlugins, signedPluginPayload, validatePluginWasm } from '../server/community-plugins.ts';
+import { computeRuntime } from '../server/compute-runtime.ts';
 
 const leb = (number: number) => {
   const bytes: number[] = [];
@@ -127,6 +128,16 @@ test('signed marketplace installs, runs, rejects tampering and unloads an isolat
     await damaged.init();
     assert.match(damaged.view().problems[base.id], /文件损坏/);
     await damaged.close();
+    const recovery = computeRuntime.recover;
+    computeRuntime.recover = async () => { throw new Error('original worker cleanup unconfirmed'); };
+    try {
+      await assert.rejects(service.action({ operation: 'uninstall', pluginId: base.id }), /unconfirmed/);
+      assert.equal(service.view().installed[0].phase, 'cleanup-pending');
+      assert.equal(service.view().runtime.instances.find(item => item.identity === 'community:' + base.id)?.phase, 'cleanup-pending');
+      await assert.rejects(service.action({ operation: 'run', pluginId: base.id, input: {} }), { code: 'PLUGIN_REVOKED' });
+      await assert.rejects(service.action({ operation: 'install', sourceId: source.id, pluginId: base.id }), { code: 'PLUGIN_CLEANUP_PENDING' });
+      assert.equal(JSON.parse(await readFile(file, 'utf8')).installed[0].sha256, base.sha256);
+    } finally { computeRuntime.recover = recovery; }
     await service.action({ operation: 'uninstall', pluginId: base.id });
     await assert.rejects(service.action({ operation: 'run', pluginId: base.id, input: {} }), /未安装/);
     await service.action({ operation: 'untrust', fingerprint });

@@ -29,14 +29,15 @@ test('HA policy enrollment and revocation follow witness acknowledgments', async
     id, createdAt: new Date().toISOString(), snapshots: [] });
   const workspaces = { beforeConfigChange: () => () => {},
     projects: { current: () => 'default', key: () => id } } as unknown as Workspaces;
-  const features = new NextFeatures(machines, workspaces);
+  let hostFailover: HaHostFailover | undefined;
+  const features = new NextFeatures(machines, workspaces, { optional: id => (id === 'haHostFailover' ? hostFailover : undefined) as never });
   const disarmed: string[] = [];
-  features.setHaHostFailover({
+  hostFailover = {
     configured: () => true,
     witnessStatus: async () => ({ configured: true, phase: 'source',
       targetHostId, failureThreshold: 3, armed: false }),
     disarm: async (_id: string, threshold: number) => { disarmed.push(`${_id}:${threshold}`); },
-  } as unknown as HaHostFailover);
+  } as unknown as HaHostFailover;
   try {
     await features.configure(id, { featureId: 'ha-failover', enabled: true,
       options: { targetHostId, failureThreshold: 3, autoHostFailover: true } });

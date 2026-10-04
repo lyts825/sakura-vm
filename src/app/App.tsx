@@ -175,7 +175,8 @@ export function App() {
     [requestedTab, setTabRaw] = useState(initialSession.tab);
   const { vms, system, loading, offline, refresh, invalidate, upsertVm, reconnect } =
     useControllerState(setSelectedRaw);
-  const enabled = system?.plugins || [];
+  const enabled = system?.pluginRuntime ? system.pluginRuntime.instances.filter(item =>
+    item.source === 'official' && item.phase === 'running').map(item => item.pluginId) : system?.plugins || [];
   const has = (id: string) => enabled.includes(id);
   const page = pluginSurfaceEnabled(enabled, 'pages', requestedPage) ? requestedPage : 'workspace';
   const tab = pluginSurfaceEnabled(enabled, 'tabs', requestedTab) ? requestedTab : 'terminal';

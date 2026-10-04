@@ -40,7 +40,7 @@ function fixture(t: TestContext) {
     state: () => live.get(id)?.status || 'stopped',
     exec: () => { throw new Error('The IME route must use the Desktop lifecycle'); },
   });
-  const host = { machines, workspaces, jobs, desktops: { installIme: async (_id: string, signal: AbortSignal,
+  const host = { vm: machines, workspaces, jobs, desktops: { installIme: async (_id: string, signal: AbortSignal,
     log: (text: string) => void) => {
       signal.throwIfAborted(); calls.push(workspaces.projects.current()); log('安装完成\n');
       return { code: 0, stdout: '', stderr: '' };

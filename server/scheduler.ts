@@ -63,6 +63,7 @@ export class Scheduler {
           (definition.backoff.factor ?? 2) < 1) throw new RangeError('Invalid schedule backoff');
     }
     const id = definition.id || randomUUID();
+    lifetime?.contribute('schedule', definition.label);
     if (this.entries.has(id)) throw new AppError('周期任务标识已存在', 409, 'SCHEDULE_EXISTS');
     if (this.entries.size >= 1024 || [...this.entries.values()].filter((entry) => entry.definition.owner === definition.owner).length >= 64)
       throw new AppError('周期任务登记已达到上限', 429, 'SCHEDULE_LIMIT');

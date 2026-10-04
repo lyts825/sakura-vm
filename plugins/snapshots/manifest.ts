@@ -7,9 +7,10 @@ export const manifest = definePlugin({
   category: 'workspace',
   requires: [pin('transfers')],
   optional: [pin('backups')],
+  systemDependencies: ["trustedBoot"],
   services: ['bundles', 'signedBundles', 'goldenImages', 'rescue', 'snapshotDiff', 'snapshotMerge'],
   lifecycle: { activateMs: 30000, closeMs: 180000 },
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/golden-images', ['GET', 'POST']),
       http('/api/vms/:vmId/rescue', ['GET', 'POST']),

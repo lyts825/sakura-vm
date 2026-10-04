@@ -7,7 +7,7 @@ export const manifest = definePlugin({
   category: 'development',
   requires: [pin('projects')],
   services: ['commands'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [http('/api/vms/:vmId/commands', ['GET', 'PUT', 'DELETE', 'POST'], true)],
     operations: [
       operation('list', 'GET', '/api/vms/:vmId/commands'),

@@ -32,6 +32,7 @@ export type ApiDocument = {
   components: Record<string, unknown>;
   paths: Record<string, Record<string, ApiOperation>>;
   'x-sakura-operations'?: OperationDeclaration[];
+  'x-sakura-catalog-version'?: number;
   'x-sakura-route-prefixes': {
     owner: string;
     path: string;

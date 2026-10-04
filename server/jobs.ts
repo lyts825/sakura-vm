@@ -97,6 +97,7 @@ export class Jobs {
     if (this.pluginLifetime) {
       const lifetime = this.pluginLifetime;
       lifetime.check('jobs', true);
+      lifetime.contribute('jobs', scope || 'volatile');
       const cancel = () => { for (const item of this.items.values()) item.abort.abort(lifetime.signal.reason); };
       lifetime.signal.addEventListener('abort', cancel, { once: true });
       lifetime.scope.add(async () => {

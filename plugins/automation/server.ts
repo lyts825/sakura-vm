@@ -17,7 +17,7 @@ import type { Containers } from '../../server/containers.ts';
 export async function activate(host: PluginContext) {
   const m = host.vm;
   host.provide(automationServices.suite, new FeatureSuite(m, host.workspaces, {
-    jobs: () => host.jobStores().flatMap((store) => store.list()),
+    jobs: () => [...host.jobViews()],
     services: (id) => host.optional(serviceHealthServices.health)?.observed(id) || [],
     secrets: async (id) => host.optional(secretsServices.secrets)?.rotation(id),
     privateDatabase: async (id, input, signal, log) => {
@@ -25,7 +25,7 @@ export async function activate(host: PluginContext) {
       if (!service) throw new AppError('私有数据库需要启用容器插件', 409);
       await service.privateDatabase(id, input, signal, log);
     },
-  }));
+  }, {}, host.system));
   host.registerJobs(host.suite.jobs, (job) => {
     const id = retryTarget(job);
     if (job.action?.startsWith('package:')) {

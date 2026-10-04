@@ -47,6 +47,7 @@ export function definePlugin(input: PluginInput): PluginManifest {
     requires: [],
     optional: [],
     services: [],
+    systemDependencies: [],
     lifecycle: { activateMs: 30000, closeMs: 10000 },
     ...input,
     contributes: {
@@ -56,6 +57,7 @@ export function definePlugin(input: PluginInput): PluginManifest {
       pages: [],
       tabs: [],
       developmentSections: [],
+      managed: [],
       ...input.contributes,
     },
   };

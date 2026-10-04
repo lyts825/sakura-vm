@@ -7,5 +7,5 @@ export const manifest = definePlugin({
   category: 'development',
   requires: [pin('projects')],
   services: ['git'],
-  contributes: { http: [http('/api/vms/:vmId/git', ['GET', 'POST'], true)], tabs: ['git'] },
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/vms/:vmId/git', ['GET', 'POST'], true)], tabs: ['git'] },
 });

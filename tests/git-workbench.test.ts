@@ -185,11 +185,11 @@ async function fixture(t: TestContext) {
     return job;
   };
   const host = {
-    machines,
+    vm: machines,
     git: service,
     jobStores: () => [service.jobs],
     retryHandler: () => undefined,
-  } as unknown as PluginContext;
+  } as unknown as PluginContext & Pick<import('../server/plugin-runtime.ts').PluginRuntime, 'jobStores' | 'retryHandler'>;
   return {
     directory,
     bare,

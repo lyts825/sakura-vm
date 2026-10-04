@@ -9,7 +9,7 @@ import { AppError } from '../../shared/errors.ts';
 
 export async function activate(host: PluginContext) {
   const m = host.vm;
-  host.provide(extensionsServices.extended, new ExtendedFeatures(m, host.workspaces));
+  host.provide(extensionsServices.extended, new ExtendedFeatures(m, host.workspaces, host.system));
   host.registerJobs(host.extended.jobs, (job) => {
     if (job.action?.startsWith('operation:'))
       throw new AppError('此工程操作包含参数，请回到能力中心重新执行');

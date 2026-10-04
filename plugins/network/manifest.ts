@@ -7,7 +7,7 @@ export const manifest = definePlugin({
   category: 'operations',
   optional: [pin('projects')],
   services: ['network', 'certificates', 'ingress', 'localAliases'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/network-profiles', ['GET', 'POST', 'DELETE']),
       http('/api/vms/:vmId/network', ['GET', 'POST'], true),

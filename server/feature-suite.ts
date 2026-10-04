@@ -1,3 +1,5 @@
+import { AutomationDomainServices } from './automation-domain-services.ts';
+import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -196,11 +198,12 @@ export class FeatureSuite {
   private lastSampleAt = new Map<string, number>();
   private ticking = false;
   private powerAbort = new AbortController();
-  private processInterop?: ProcessInterop;
-  private mediaDevices?: MediaDevices;
-  private hostMounts?: HostMounts;
-  private projectTerminals?: ProjectTerminals;
-  readonly packageWorkbench: PackageWorkbench;
+  private get processInterop(): ProcessInterop | undefined { return this.domains.processInterop; }
+  private get mediaDevices(): MediaDevices | undefined { return this.domains.mediaDevices; }
+  private get hostMounts(): HostMounts | undefined { return this.domains.hostMounts; }
+  private get projectTerminals(): ProjectTerminals | undefined { return this.domains.projectTerminals; }
+  private domains: AutomationDomainServices;
+  get packageWorkbench() { return this.domains.packageWorkbench; }
 
   constructor(
     private machines: Machines,
@@ -215,14 +218,15 @@ export class FeatureSuite {
         signal: AbortSignal, log: (text: string) => void) => Promise<void>;
     } = {},
     private devTaskOptions: FeatureDevTaskOptions = {},
+    private dependencies: HostServiceResolver = noHostServices,
   ) {
-    this.packageWorkbench = new PackageWorkbench(machines, (id, operation, name) =>
-      this.package(id, { operation, name }));
+    this.domains = new AutomationDomainServices(machines, (id, operation, name) =>
+      this.package(id, { operation, name }), dependencies);
   }
-  setProcessInterop(service: ProcessInterop) { this.processInterop = service; }
-  setMediaDevices(service: MediaDevices) { this.mediaDevices = service; }
-  setHostMounts(service: HostMounts) { this.hostMounts = service; }
-  setProjectTerminals(service: ProjectTerminals) { this.projectTerminals = service; }
+  
+  
+  
+  
   enableBackground() {
     if (this.powerAbort.signal.aborted) this.powerAbort = new AbortController();
     const controller = this.powerAbort;

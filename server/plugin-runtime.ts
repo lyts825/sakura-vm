@@ -14,6 +14,7 @@ import { withResourceContext } from './host-runtime/index.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 import { TerminalBackend, type TerminalService } from './terminal-backend.ts';
 import type { PluginInstance } from './plugin-instance.ts';
+import { SystemServices } from './system-services.ts';
 
 
 
@@ -74,14 +75,15 @@ export class PluginRuntime {
   private closing?: Promise<void>;
   private active = new Map<AbortController, Promise<boolean>>();
   private cleanupPending = new Set<string>();
+  private ownsSystem = false;
   private terminalBackend: TerminalBackend;
   private terminalInstance: PluginInstance;
   terminalHandle(): TerminalService { return this.terminalBackend.handle(); }
   pluginResources() {
     return [...this.scopes].map(([id, scope]) => ({ id, cleanupPending: this.cleanupPending.has(id), ...scope.diagnostics() }));
   }
-  private constructor(public machines: Machines, readonly directory = new PluginDirectory()) {
-    this.broker = new ServiceBroker(directory, PLUGINS);
+  private constructor(public machines: Machines, readonly directory = new PluginDirectory(), readonly system = new SystemServices(directory)) {
+    this.broker = system.broker;
     this.terminalInstance = directory.begin('system', 'terminal-backend', '1', 'builtin:terminal-backend');
     this.terminalBackend = new TerminalBackend(machines, this.terminalInstance, {
       get secrets() { return host.secrets; }, get network() { return host.network; },
@@ -90,12 +92,11 @@ export class PluginRuntime {
     directory.publish(this.terminalInstance);
     for (const key of SERVICE_KEYS) Object.defineProperty(this, key, {
       configurable: true, enumerable: true,
-      get: () => this.services.get(key),
-      set: (value: unknown) => this.provideService(key, value),
+      get: () => this.system.official(key),
     });
   }
-  serviceValue(key: string): unknown {
-    return this.services.get(key);
+  serviceValue<T = unknown>(key: string): T | undefined {
+    return this.services.get(key) as T | undefined;
   }
   provideService(key: string, value: unknown) {
     if (this.serviceValue(key) !== undefined) throw new Error(`插件服务已注册：${key}`);
@@ -112,6 +113,7 @@ export class PluginRuntime {
       throw new Error(`插件 ${owner} 只能注册自有任务存储`);
     if (this.pluginJobs.has(store)) throw new Error(`任务存储已注册：${owner}`);
     this.pluginJobs.set(store, { owner, retry });
+    this.directory.get('official', owner)?.contribute('job-retry', owner);
     const scope = this.scopes.get(owner);
     if (scope) {
       const cancel = () => { for (const job of store.list()) if (job.status === 'running') store.cancel(job.id!); };
@@ -135,15 +137,17 @@ export class PluginRuntime {
     });
   }
   static async create(machines: Machines, selected: string[] = [],
-    rolloutAllowed: (pluginId: string) => boolean = () => true, directory = new PluginDirectory()) {
+    rolloutAllowed: (pluginId: string) => boolean = () => true, directory = new PluginDirectory(), system?: SystemServices) {
     validateRegistry();
-    const host = new PluginRuntime(machines, directory);
+    const host = new PluginRuntime(machines, directory, system);
+    host.ownsSystem = !system;
     directory.setDesired('official', selected);
     for (const id of resolvePlugins({ ...emptySelection(), plugins: selected })) {
       const startedAt = performance.now();
       const manifest = PLUGINS.find((item) => item.id === id)!;
       const instance = directory.begin('official', id, manifest.version,
         createHash('sha256').update(JSON.stringify(manifest)).digest('hex'));
+      instance.declareManaged(manifest.contributes.managed);
       if (!rolloutAllowed(id)) {
         host.errors[id] = '当前主机未命中功能灰度策略；请在系统设置中调整并重启 Sakura 服务';
         host.lifecycle[id] = { phase: 'skipped', activationMs: 0 };
@@ -203,6 +207,12 @@ export class PluginRuntime {
           if (host.serviceValue(key) === undefined) throw new Error(`插件未注册声明的服务：${id}.${key}`);
         host.modules.set(id, module);
         host.enabled.add(id);
+        for (const [kind, targets] of Object.entries(manifest.contributes)) {
+          if (kind === 'managed') continue;
+          const name = ({ sockets: 'socket', pages: 'page', tabs: 'tab', developmentSections: 'developmentSection', operations: 'operation' } as Record<string, string>)[kind] || kind;
+          for (const target of targets) instance.contribute(name as import('../shared/contracts/plugin-runtime.ts').PluginContributionKind,
+            typeof target === 'string' ? target : 'path' in target ? target.path : String(target));
+        }
         directory.publish(instance);
         instance.activationMs = Math.round(performance.now() - startedAt);
         host.lifecycle[id] = { phase: 'active', activationMs: Math.round(performance.now() - startedAt) };
@@ -321,6 +331,9 @@ export class PluginRuntime {
           this.terminalInstance.phase = 'inactive';
         } catch (error) { this.terminalInstance.phase = 'cleanup-pending'; this.terminalInstance.error = String(error); errors.push(error); }
         this.directory.changed();
+        if (this.ownsSystem) {
+          try { await this.system.close(); } catch (error) { errors.push(error); }
+        }
         if (errors.length) throw new AggregateError(errors, '插件关闭失败');
       })();
     }

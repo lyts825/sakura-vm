@@ -7,6 +7,8 @@ import { operationDirectory, operationEntries, type OperationEntry } from './ope
 import { withResourceContext } from './host-runtime/context.ts';
 import { captureOperationCheck, withOperationCheck } from './operation-context.ts';
 import { matchOperationPath } from './plugins/registry.ts';
+import type { PluginInstance } from './plugin-instance.ts';
+import { withPluginAuthority } from './plugin-authority.ts';
 
 export type OperationBinding = {
   /** Captures credentials and target identity once; reads live authority on every invocation. */
@@ -16,6 +18,9 @@ export type OperationBinding = {
 };
 type GatewayOptions = {
   enabled(): Iterable<string>;
+  instance?(owner: string): PluginInstance | undefined;
+  catalogVersion?(): number;
+  owner?(url: URL, declaration: OperationEntry['declaration']): string;
   bind(req: IncomingMessage, url: URL, entry: OperationEntry,
     parameters: Readonly<Record<string, string>>, requireEnabled: () => void): Promise<OperationBinding>;
 };
@@ -34,6 +39,7 @@ export async function validateOperationInput(input: any) {
 export class OperationGateway {
   constructor(private options: GatewayOptions, private entries = operationEntries) {}
   directory() { return operationDirectory(this.options.enabled()); }
+  get version() { return this.options.catalogVersion?.() || 0; }
   resolve(method: string, path: string) {
     // A literal endpoint takes precedence over a variable endpoint, including when its method fails.
     const matches = this.entries.flatMap(entry => {
@@ -50,9 +56,16 @@ export class OperationGateway {
   async prepare(req: IncomingMessage, url: URL, method = req.method || 'GET') {
     const { entry, parameters } = this.resolve(method, url.pathname);
     const { declaration } = entry;
+    const owner = this.options.owner?.(url, declaration) || declaration.owner;
+    const instance = this.options.instance?.(owner);
     const enabled = () => {
-      if (declaration.owner !== 'core' && !new Set(this.options.enabled()).has(declaration.owner))
+      if (owner !== 'core' && !new Set(this.options.enabled()).has(owner))
         throw new AppError('请在插件中心启用插件「' + declaration.owner + '」，并重启 Sakura 服务', 403);
+      if (instance) {
+        instance.check();
+        if (this.options.instance?.(owner) !== instance)
+          throw new AppError('操作所属插件代次已变化', 403, 'PLUGIN_REVOKED');
+      }
     };
     // The authority checks availability after credentials, before reading target metadata.
     const binding = await this.options.bind(req, url, entry, Object.freeze(parameters), enabled);
@@ -64,11 +77,12 @@ export class OperationGateway {
     };
     await check();
     return {
-      declaration, check,
+      declaration, check, instance,
       run<T>(work: () => T): T {
-        return withResourceContext({ owner: declaration.owner === 'core' ? 'core:application' : `plugin:${declaration.owner}`,
+        const invoke = () => withResourceContext({ owner: declaration.owner === 'core' ? 'core:application' : `plugin:${declaration.owner}`,
           ...(declaration.owner === 'core' ? {} : { pluginId: declaration.owner }), ...binding.identity },
         () => withOperationCheck(check, () => current.run({ entry, binding }, work)));
+        return instance ? withPluginAuthority(instance, invoke, () => instance.check()) : invoke();
       },
     };
   }

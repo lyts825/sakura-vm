@@ -9,6 +9,7 @@ import { vmHostIdentity } from './vm-reference.ts';
 import { ExecutionScope } from './execution-scope.ts';
 import { resourceContext, withResourceContext } from './host-runtime/context.ts';
 import { AppError } from '../shared/errors.ts';
+import { cleanupReceipt } from './cleanup-receipt.ts';
 
 export type TerminalService = Pick<ProjectTerminals, keyof ProjectTerminals>;
 const backends = new WeakMap<object, TerminalBackend>();
@@ -40,11 +41,11 @@ export class TerminalBackend {
       consumer?.scope.observe(pending); this.instance.scope.observe(pending);
       const prepared = await pending;
       let closed = false;
-      const release = async () => {
+      const release = cleanupReceipt(async () => {
         if (closed) return;
         await withPluginCleanup(this.instance, () => prepared.release());
         closed = true; leases.delete(result);
-      };
+      });
       const result = Object.freeze({ ...prepared, release }); leases.add(result);
       if (signal.aborted) { await release(); signal.throwIfAborted(); }
       return result;

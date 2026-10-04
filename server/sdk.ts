@@ -12,6 +12,7 @@ export function generateSdk(document: ApiDocument) {
     ),
   );
   return (
+    `export const catalogVersion = ${document['x-sakura-catalog-version'] || 0};\n` +
     `// Generated Sakura ES module. Node.js 22+ or a modern browser. No dependencies.\n// import { SakuraClient } from './sakura-client.mjs';\n// const client = new SakuraClient();\n// const machines = await client.call('core.vms.list');\n// JSON responses are parsed; binary responses return a Response for streaming.\nexport const operations = ${JSON.stringify(operations, null, 2)};\nexport const operationDirectory = [...Object.values(operations).map(operation => operation.policy).filter(Boolean), ...${JSON.stringify(document['x-sakura-operations']?.filter(operation => operation.method === 'UPGRADE') || [])}];\n` +
     String.raw`
 export class SakuraApiError extends Error {

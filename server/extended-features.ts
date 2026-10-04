@@ -1,3 +1,5 @@
+import { EngineeringDomainServices } from './engineering-domain-services.ts';
+import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -81,17 +83,19 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
 
 export class ExtendedFeatures {
   jobs = new Jobs('extended-features');
-  private trustedBoot?: TrustedBootService;
-  private projectTerminals?: ProjectTerminals;
-  private tunnels: ReverseTunnels;
+  private get trustedBoot(): TrustedBootService | undefined { return this.domains.trustedBoot; }
+  private get projectTerminals(): ProjectTerminals | undefined { return this.domains.projectTerminals; }
+  private domains: EngineeringDomainServices;
+  private get tunnels() { return this.domains.tunnels; }
   constructor(
     private machines: Machines,
     private workspaces: Workspaces,
+    private dependencies: HostServiceResolver = noHostServices,
   ) {
-    this.tunnels = new ReverseTunnels(machines, workspaces);
+    this.domains = new EngineeringDomainServices(machines, workspaces, dependencies);
   }
-  setTrustedBoot(service: TrustedBootService) { this.trustedBoot = service; }
-  setProjectTerminals(service: ProjectTerminals) { this.projectTerminals = service; }
+  
+  
 
   private file() {
     return join(DATA, 'extended-features.json');

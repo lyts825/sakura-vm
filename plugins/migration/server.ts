@@ -11,7 +11,7 @@ import { DataMigration } from '../../server/data-migration.ts';
 export async function activate(host: PluginContext) {
   const m = host.vm;
   host.provide(migrationServices.migration, new DataMigration(m, () =>
-    host.jobStores().filter((store) => store !== host.migration?.jobs),
+    host.jobSources(),
   ));
 }
 export async function route(

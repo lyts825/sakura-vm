@@ -6,7 +6,7 @@ export const manifest = definePlugin({
   description: '独立采样客户机 CPU、内存、磁盘与进程，无需项目服务。',
   category: 'operations',
   services: ['metrics'],
-  contributes: {
+  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [http('/api/vms/:vmId/metrics', ['GET'])],
     operations: [operation('sample', 'GET', '/api/vms/:vmId/metrics')],
     tabs: ['metrics'],
