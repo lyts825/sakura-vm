@@ -250,9 +250,46 @@ class RepositoryTests(unittest.TestCase):
         for headers in ({"Authorization": TOKEN}, {"Content-Encoding": "gzip"}):
             with self.assertRaises(urllib.error.HTTPError):
                 self.request(mirror, "/info/refs?service=git-upload-pack", headers=headers)
-        with self.assertRaises(urllib.error.HTTPError):
-            self.request(mirror, "/git-upload-pack", b"owned", {"Content-Type": "text/plain"})
         self.assertEqual(Fixture.events, [])
+
+        # Use a fresh mirror so a previous rejection cannot supply this proof.
+        body_mirror = self.mirror(authentication=self.auth())
+        self.assertFalse(body_mirror.failed)
+        try:
+            response = self.request(body_mirror, "/git-upload-pack", b"owned", {"Content-Type": "text/plain"})
+        except urllib.error.HTTPError as error:
+            self.assertEqual(error.code, 502)
+            error.close()
+        except ConnectionAbortedError as error:
+            # The handler rejects these headers before reading the POST body.
+            # Windows may abort that unread-body connection before urllib can
+            # parse the 502 status. Only this exact transport outcome is allowed;
+            # the server-side rejection and lack of forwarding are still required.
+            if os.name != "nt" or getattr(error, "winerror", None) != 10053:
+                raise
+        else:
+            response.close()
+            self.fail("invalid upload-pack content type was accepted")
+        self.assertTrue(body_mirror.failed)
+        self.assertEqual(body_mirror.requests, 0)
+        self.assertEqual(body_mirror.total, 0)
+        self.assertEqual(Fixture.events, [])
+
+        # Rejection must leave the same listener alive and its independent
+        # client authentication intact, without forwarding unauthorized requests.
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request(body_mirror, "/info/refs?service=git-upload-pack",
+                         headers={"X-Sakura-Repository-Token": "wrong-local-token"})
+        self.assertEqual(caught.exception.code, 403)
+        caught.exception.close()
+        self.assertEqual(body_mirror.requests, 0)
+        self.assertEqual(Fixture.events, [])
+        with self.request(body_mirror, "/info/refs?service=git-upload-pack") as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get_content_type(), "application/x-git-upload-pack-advertisement")
+            self.assertTrue(response.read())
+        self.assertEqual(body_mirror.requests, 1)
+        self.assertEqual(Fixture.events, [("GET", "/private.git/info/refs?service=git-upload-pack", TOKEN)])
 
     def test_unknown_length_response_and_request_counts_are_bounded(self):
         mirror = self.mirror("oversized.git")
