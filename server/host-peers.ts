@@ -1,10 +1,15 @@
+import { PeerReplicaOperations } from './domains/peer-replica-operations.ts';
+import { peerActivationInput as activateInput, peerReplicaActivationInput as replicaActivateInput,
+  peerActivationResult as activateResult, peerActivationCheckResult as activateCheckResult,
+  peerRetirementResult as retireResult } from '../shared/contracts/peer-transfer.ts';
+import { PeerMigrationSessions, migrationQmpInput, type MigrationChannel } from './domains/peer-migration-sessions.ts';
+
 import { networkFor } from './network/index.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual, X509Certificate } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { type Server as HttpsServer } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { type Server as TcpServer, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { createSecureContext, type TLSSocket } from 'node:tls';
 import type { Duplex, Writable } from 'node:stream';
@@ -147,36 +152,6 @@ const importReceiptSchema = z
   .strict();
 type ImportReceipt = z.infer<typeof importReceiptSchema>;
 type ImportIdentity = { transferId: string; requesterId: string };
-type MigrationChannel = 'disk' | 'state';
-type MigrationSession = {
-  requesterId: string;
-  ports: Record<MigrationChannel, number>;
-  qmpPort?: number;
-  targetDiskNode?: string;
-  targetVmId?: string;
-  transferId?: string;
-  exportId?: string;
-  expiresAt: number;
-  active: Set<Duplex>;
-};
-type MigrationForward = { server: TcpServer; sockets: Set<Duplex> };
-const migrationQmpInput = z
-  .object({
-    sessionId: z.uuid(),
-    command: z.enum([
-      'query-status',
-      'query-version',
-      'query-hotpluggable-cpus',
-      'query-block',
-      'migrate-incoming',
-      'nbd-server-start',
-      'block-export-add',
-      'block-export-del',
-      'nbd-server-stop',
-    ]),
-    args: z.record(z.string(), z.unknown()).optional(),
-  })
-  .strict();
 const liveTargetPrepareInput = z
   .object({
     transferId: z.uuid(),
@@ -216,20 +191,6 @@ const liveTargetStatus = z
     originStatus: z.enum(['prepared', 'received', 'ready']),
   })
   .strict();
-const activateInput = z
-  .object({ transferId: z.uuid(), remoteVmId: z.uuid(), sha256: z.string().regex(/^[a-f0-9]{64}$/) })
-  .strict();
-const replicaActivateInput = activateInput.safeExtend({
-  sourceVmId: z.uuid(),
-  snapshotId: z.uuid(),
-});
-const activateResult = z
-  .object({ id: z.uuid(), status: z.enum(['stopped', 'starting', 'running', 'paused', 'stopping', 'error']) })
-  .strict();
-const activateCheckResult = z
-  .object({ ready: z.literal(true), id: z.uuid(), status: activateResult.shape.status })
-  .strict();
-const retireResult = z.object({ id: z.uuid(), retired: z.literal(true) }).strict();
 type ImportReceiver = {
   status: (identity: ImportIdentity) => Promise<ImportReceipt | null>;
   receive: (
@@ -477,8 +438,13 @@ export class HostPeers {
   }
   private activeImports = new Map<string, Set<AbortController>>();
   private transferIds = new Set<string>();
-  private migrationSessions = new Map<string, MigrationSession>();
-  private migrationForwards = new Map<string, Set<MigrationForward>>();
+  private readonly migration = new PeerMigrationSessions({
+    unavailable: () => this.closed || !this.ready() || this.blocked(), now: () => this.now(),
+    inbound: request => this.inbound(request),
+    canReceive: requesterId => this.state.incoming.some(peer => peer.requesterId === requesterId && peer.allowImport && peer.allowActivate),
+    outbound: peerId => this.state.outbound.find(peer => peer.id === peerId),
+    dial, createServer: createTcpServer, connectPinned: connectPinnedPeerStream, query: qmp,
+  });
   constructor(
     private snapshot: () => Promise<Omit<PeerStatus, 'version' | 'id' | 'name' | 'checkedAt'>>,
     private file = join(DATA, 'host-peers.json'),
@@ -487,6 +453,7 @@ export class HostPeers {
     private mutation: (delta: number) => void = () => {},
     private now = Date.now,
     private handlers: (peer: HostPeers) => HostPeerDependencies = () => ({}),
+    private ready: () => boolean = () => true,
   ) {}
 
   async init(schedule = true) {
@@ -564,184 +531,17 @@ export class HostPeers {
   }
 
   private async acceptMigrationStream(request: IncomingMessage, socket: Duplex, head: Buffer) {
-    socket.on('error', () => {});
-    const reject = (status: number) => {
-      socket.end(`HTTP/1.1 ${status} Rejected\r\nConnection: close\r\n\r\n`);
-    };
-    try {
-      if (this.closed || this.blocked()) return reject(503);
-      const peer = this.inbound(request);
-      if (!peer.allowImport || !peer.allowActivate) return reject(403);
-      const match = /^\/peer\/migration-stream\/([0-9a-f-]{36})\/(disk|state)$/.exec(request.url || '');
-      if (!match) return reject(404);
-      const session = this.migrationSessions.get(match[1]);
-      if (!session || session.requesterId !== peer.requesterId || session.expiresAt <= this.now())
-        return reject(404);
-      if (session.active.size >= 4) return reject(429);
-      socket.pause();
-      session.active.add(socket);
-      const abort = new AbortController();
-      socket.once('close', () => {
-        session.active.delete(socket);
-        abort.abort();
-      });
-      const upstream = await dial(
-        { host: '127.0.0.1', port: session.ports[match[2] as MigrationChannel] },
-        abort.signal,
-      );
-      if (
-        socket.destroyed ||
-        this.migrationSessions.get(match[1]) !== session ||
-        session.expiresAt <= this.now()
-      ) {
-        upstream.destroy();
-        return socket.destroy();
-      }
-      const cleanup = () => {
-        session.active.delete(socket);
-        upstream.destroy();
-      };
-      socket.once('close', cleanup);
-      socket.once('error', () => upstream.destroy());
-      upstream.once('error', () => socket.destroy());
-      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      if (head.length) upstream.write(head);
-      socket.pipe(upstream);
-      upstream.pipe(socket);
-      socket.resume();
-      upstream.resume();
-    } catch (error) {
-      reject(error instanceof AppError ? error.status : 400);
-    }
+    return this.migration.acceptMigrationStream(request, socket, head);
   }
-
-  /** Target-side, short-lived authority for QEMU ports already bound to loopback. */
-  registerMigrationSession(
-    requesterId: string,
-    ports: Record<MigrationChannel, number> & {
-      qmp?: number;
-      targetDiskNode?: string;
-      targetVmId?: string;
-      transferId?: string;
-    },
-  ) {
-    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
-    z.uuid().parse(requesterId);
-    const peer = this.state.incoming.find((item) => item.requesterId === requesterId);
-    if (!peer?.allowImport || !peer.allowActivate) throw new AppError('同伴没有在线迁移接收权限', 403);
-    for (const [id, session] of this.migrationSessions)
-      if (session.expiresAt <= this.now() && session.active.size === 0) this.closeMigrationSession(id);
-    if (this.migrationSessions.size >= 4) throw new AppError('迁移通道数量已达上限', 409);
-    for (const port of [ports.disk, ports.state, ...(ports.qmp === undefined ? [] : [ports.qmp])])
-      if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new AppError('迁移端口无效');
-    if (
-      (ports.qmp === undefined) !== (ports.targetDiskNode === undefined) ||
-      (ports.targetDiskNode !== undefined && !/^[#a-zA-Z0-9._-]{1,64}$/.test(ports.targetDiskNode))
-    )
-      throw new AppError('目标 QMP 与磁盘节点必须一起登记');
-    if ((ports.targetVmId === undefined) !== (ports.transferId === undefined))
-      throw new AppError('目标实例与迁移标识必须一起登记');
-    if (ports.targetVmId) z.uuid().parse(ports.targetVmId);
-    if (ports.transferId) z.uuid().parse(ports.transferId);
-    const id = randomUUID();
-    this.migrationSessions.set(id, {
-      requesterId,
-      ports: { ...ports },
-      qmpPort: ports.qmp,
-      targetDiskNode: ports.targetDiskNode,
-      targetVmId: ports.targetVmId,
-      transferId: ports.transferId,
-      expiresAt: this.now() + 30 * 60_000,
-      active: new Set(),
-    });
-    return id;
-  }
-
+  registerMigrationSession(requesterId: string, ports: Record<MigrationChannel, number> & {
+    qmp?: number; targetDiskNode?: string; targetVmId?: string; transferId?: string;
+  }) { return this.migration.registerMigrationSession(requesterId, ports); }
   matchesMigrationSession(id: string, requesterId: string, targetVmId: string, transferId: string) {
-    const session = this.migrationSessions.get(id);
-    return (
-      !!session &&
-      session.expiresAt > this.now() &&
-      session.requesterId === requesterId &&
-      session.targetVmId === targetVmId &&
-      session.transferId === transferId
-    );
+    return this.migration.matchesMigrationSession(id, requesterId, targetVmId, transferId);
   }
-
-  closeMigrationSession(id: string) {
-    const session = this.migrationSessions.get(id);
-    if (!session) return;
-    this.migrationSessions.delete(id);
-    for (const socket of session.active) socket.destroy();
-  }
-
-  private closeMigrationForwards(peerId: string) {
-    const forwards = this.migrationForwards.get(peerId);
-    if (!forwards) return;
-    this.migrationForwards.delete(peerId);
-    for (const forward of forwards) {
-      for (const socket of forward.sockets) socket.destroy();
-      forward.server.close();
-    }
-    forwards.clear();
-  }
-
-  /** Source-side local forward: QEMU only sees 127.0.0.1 while TLS carries the bytes. */
+  closeMigrationSession(id: string) { this.migration.closeMigrationSession(id); }
   async openMigrationForward(peerId: string, sessionId: string, channel: MigrationChannel) {
-    if (this.closed || this.blocked()) throw new AppError('服务不可用', 503);
-    z.uuid().parse(sessionId);
-    if (channel !== 'disk' && channel !== 'state') throw new AppError('迁移通道无效');
-    const peer = this.state.outbound.find((item) => item.id === peerId);
-    if (!peer) throw new AppError('远端主机不存在', 404);
-    if ((this.migrationForwards.get(peerId)?.size || 0) >= 4)
-      throw new AppError('本机迁移转发端口数量已达上限', 409);
-    const sockets = new Set<Duplex>();
-    const server = createTcpServer((local: Socket) => {
-      local.pause();
-      sockets.add(local);
-      local.once('close', () => sockets.delete(local));
-      void connectPinnedPeerStream(
-        peer.url,
-        peer.fingerprint,
-        `/peer/migration-stream/${sessionId}/${channel}`,
-        peer.token,
-      )
-        .then((remote) => {
-          if (local.destroyed) return remote.destroy();
-          sockets.add(remote);
-          remote.once('close', () => sockets.delete(remote));
-          local.once('error', () => remote.destroy());
-          remote.once('error', () => local.destroy());
-          local.once('close', () => remote.destroy());
-          remote.once('close', () => local.destroy());
-          local.pipe(remote);
-          remote.pipe(local);
-          local.resume();
-        })
-        .catch(() => local.destroy());
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(0, '127.0.0.1', () => {
-        server.off('error', reject);
-        resolve();
-      });
-    });
-    const entry = { server, sockets };
-    const active = this.migrationForwards.get(peerId) || new Set<MigrationForward>();
-    active.add(entry);
-    this.migrationForwards.set(peerId, active);
-    const address = server.address();
-    if (!address || typeof address === 'string') throw new Error('迁移转发端口无效');
-    return {
-      port: address.port,
-      close: async () => {
-        if (!active.delete(entry)) return;
-        if (!active.size) this.migrationForwards.delete(peerId);
-        for (const socket of sockets) socket.destroy();
-        await new Promise<void>((resolve) => server.close(() => resolve()));
-      },
-    };
+    return this.migration.openMigrationForward(peerId, sessionId, channel);
   }
 
   async targetMigrationQmp(
@@ -828,56 +628,10 @@ export class HostPeers {
     );
   }
 
-  private async executeMigrationQmp(peerId: string, input: z.infer<typeof migrationQmpInput>) {
-    const session = this.migrationSessions.get(input.sessionId);
-    if (
-      !session ||
-      session.requesterId !== peerId ||
-      session.expiresAt <= this.now() ||
-      !session.qmpPort ||
-      !session.targetDiskNode
-    )
-      throw new AppError('迁移会话不存在或已过期', 404);
-    const args = input.args || {};
-    const keys = Object.keys(args).sort().join(',');
-    if (input.command.startsWith('query-') || input.command === 'nbd-server-stop') {
-      if (keys) throw new AppError('QMP 查询或停止命令不能包含参数');
-    } else if (input.command === 'migrate-incoming') {
-      if (
-        keys !== 'exit-on-error,uri' ||
-        args.uri !== `tcp:127.0.0.1:${session.ports.state}` ||
-        args['exit-on-error'] !== false
-      )
-        throw new AppError('迁移接收端口与会话不一致');
-    } else if (input.command === 'nbd-server-start') {
-      const expected = { type: 'inet', data: { host: '127.0.0.1', port: String(session.ports.disk) } };
-      if (keys !== 'addr' || JSON.stringify(args.addr) !== JSON.stringify(expected))
-        throw new AppError('NBD 监听端口与会话不一致');
-    } else if (input.command === 'block-export-add') {
-      const id = args.id;
-      if (
-        keys !== 'id,name,node-name,type,writable' ||
-        typeof id !== 'string' ||
-        !/^sakura-export-[0-9a-f]{12}$/.test(id) ||
-        args.name !== id ||
-        args.type !== 'nbd' ||
-        args.writable !== true ||
-        args['node-name'] !== session.targetDiskNode ||
-        session.exportId
-      )
-        throw new AppError('NBD 导出与迁移会话不一致');
-    } else if (input.command === 'block-export-del') {
-      if (keys !== 'id' || args.id !== session.exportId) throw new AppError('NBD 导出标识与迁移会话不一致');
-    }
-    const result = await qmp(session.qmpPort, input.command, args, 10_000);
-    if (input.command === 'block-export-add') session.exportId = args.id as string;
-    if (input.command === 'block-export-del') session.exportId = undefined;
-    return result;
-  }
-
   private async peerRoute(request: IncomingMessage, response: ServerResponse) {
     try {
       if (this.closed) throw new AppError('服务正在关闭', 503);
+      if (!this.ready()) throw new AppError('服务装配尚未就绪', 503, 'SERVICE_NOT_READY');
       if (request.url === '/mobile' || request.url?.startsWith('/mobile/')) {
         if (!this.mobileHandler) throw new AppError('移动伴侣尚未启用', 503);
         return await this.mobileHandler(request, response);
@@ -942,7 +696,7 @@ export class HostPeers {
             !this.state.incoming.some((item) => item.id === peer.id && item.allowImport && item.allowActivate)
           )
             throw new AppError('在线迁移接收权限已撤销', 403);
-          return this.send(response, await this.executeMigrationQmp(peer.requesterId, input));
+          return this.send(response, await this.migration.executeMigrationQmp(peer.requesterId, input));
         } finally {
           this.mutation(-1);
         }
@@ -1267,6 +1021,7 @@ export class HostPeers {
   }
 
   private inbound(request: IncomingMessage) {
+    if (this.closed || !this.ready()) throw new AppError('服务尚未就绪或正在关闭', 503, 'SERVICE_NOT_READY');
     const credential = /^Bearer ([a-f0-9]{64})$/.exec(String(request.headers.authorization || ''))?.[1];
     const digest = credential ? Buffer.from(hash(credential), 'hex') : null;
     const peer =
@@ -1344,67 +1099,20 @@ export class HostPeers {
     return result;
   }
 
-  async checkReplicaActivation(peerId: string, input: unknown) {
-    if (this.closed) throw new AppError('服务正在关闭', 503);
-    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
-    const value = replicaActivateInput.parse(input);
-    const peer = this.state.outbound.find((item) => item.id === peerId);
-    if (!peer) throw new AppError('远端主机不存在', 404);
-    const result = activateCheckResult.parse(
-      await requestPeer(
-        peer.url,
-        peer.fingerprint,
-        '/peer/replica-activate-check',
-        'POST',
-        value,
-        peer.token,
-      ),
-    );
-    if (result.id !== value.remoteVmId) throw new AppError('远端故障副本身份已变化', 409);
-    return result;
-  }
-
-  async activateReplica(peerId: string, input: unknown) {
-    if (this.closed) throw new AppError('服务正在关闭', 503);
-    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
-    const value = replicaActivateInput.parse(input);
-    const peer = this.state.outbound.find((item) => item.id === peerId);
-    if (!peer) throw new AppError('远端主机不存在', 404);
-    const result = activateResult.parse(
-      await requestPeer(
-        peer.url,
-        peer.fingerprint,
-        '/peer/replica-activate',
-        'POST',
-        value,
-        peer.token,
-        30_000,
-      ),
-    );
-    if (result.id !== value.remoteVmId) throw new AppError('远端故障副本身份已变化', 409);
-    return result;
-  }
-
-  async retireReplica(peerId: string, input: unknown) {
-    if (this.closed) throw new AppError('服务正在关闭', 503);
-    if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
-    const value = replicaActivateInput.parse(input);
-    const peer = this.state.outbound.find((item) => item.id === peerId);
-    if (!peer) throw new AppError('远端主机不存在', 404);
-    const result = retireResult.parse(
-      await requestPeer(
-        peer.url,
-        peer.fingerprint,
-        '/peer/replica-retire',
-        'POST',
-        value,
-        peer.token,
-        30_000,
-      ),
-    );
-    if (result.id !== value.remoteVmId) throw new AppError('远端故障副本身份已变化', 409);
-    return result;
-  }
+  private readonly replicas = new PeerReplicaOperations({
+    requireAvailable: () => {
+      if (this.closed) throw new AppError('服务正在关闭', 503);
+      if (this.blocked()) throw new AppError('数据目录迁移维护中', 409);
+    },
+    request: (peerId, path, input, timeoutMs) => {
+      const peer = this.state.outbound.find(item => item.id === peerId);
+      if (!peer) throw new AppError('远端主机不存在', 404);
+      return requestPeer(peer.url, peer.fingerprint, path, 'POST', input, peer.token, timeoutMs);
+    },
+  });
+  async checkReplicaActivation(peerId: string, input: unknown) { return this.replicas.check(peerId, input); }
+  async activateReplica(peerId: string, input: unknown) { return this.replicas.activate(peerId, input); }
+  async retireReplica(peerId: string, input: unknown) { return this.replicas.retire(peerId, input); }
 
   private change<T>(edit: (next: Store) => T): Promise<T> {
     const work = this.writes
@@ -1736,7 +1444,7 @@ export class HostPeers {
         }
       });
       if (value.operation === 'remove-outbound') this.observations.delete(value.id);
-      if (value.operation === 'remove-outbound') this.closeMigrationForwards(value.id);
+      if (value.operation === 'remove-outbound') this.migration.closeMigrationForwards(value.id);
       if (value.operation === 'revoke-inbound' || (value.operation === 'allow-import' && !value.enabled))
         for (const controller of this.activeImports.get(value.id) || [])
           controller.abort(new AppError('导入权限已撤销', 403));
@@ -1744,13 +1452,7 @@ export class HostPeers {
         value.operation === 'revoke-inbound' ||
         ((value.operation === 'allow-import' || value.operation === 'allow-activate') && !value.enabled)
       ) {
-        for (const [id, session] of this.migrationSessions)
-          if (
-            !this.state.incoming.some(
-              (peer) => peer.requesterId === session.requesterId && peer.allowImport && peer.allowActivate,
-            )
-          )
-            this.closeMigrationSession(id);
+        this.migration.revokeUnauthorized();
       }
       return this.view();
     } finally {
@@ -1791,8 +1493,7 @@ export class HostPeers {
   async close() {
     this.closed = true;
     this.code = undefined;
-    for (const id of this.migrationSessions.keys()) this.closeMigrationSession(id);
-    for (const peerId of this.migrationForwards.keys()) this.closeMigrationForwards(peerId);
+    this.migration.close();
     for (const active of this.activeImports.values())
       for (const controller of active) controller.abort(new AppError('服务正在关闭', 503));
     await this.timer?.close();

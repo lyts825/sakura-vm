@@ -18,6 +18,7 @@ export type ResourceIdentity = {
   networkGeneration?: string;
   traceId?: string;
   spanId?: string;
+  recoveryId?: string;
 };
 export type ResourceView = {
   id: string;
@@ -33,6 +34,7 @@ export type ResourceView = {
   finishedAt?: string;
   previousOwner?: string;
   error?: string;
+  timings?: { queueMs: number; executionMs: number; cleanupMs: number };
 };
 export type HostRuntimeView = {
   state: 'accepting' | 'draining' | 'closed';
@@ -41,4 +43,5 @@ export type HostRuntimeView = {
   recent: ResourceView[];
   queued: number;
   totals: { admitted: number; rejected: number; cancelled: number; released: number };
+  timings?: Record<'queue' | 'execution' | 'cleanup', { count: number; totalMs: number; maxMs: number }>;
 };

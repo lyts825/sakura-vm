@@ -1,9 +1,9 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
 import { isUtf8 } from 'node:buffer';
 import type { FileEntry, SFTPWrapper } from 'ssh2';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import { AppError } from '../shared/errors.ts';
 
 const excluded = new Set([
@@ -44,7 +44,7 @@ async function textFile(ftp: SFTPWrapper, path: string, signal: AbortSignal) {
 export class ProjectFiles {
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
   ) {}
   async scan(id: string, query = '', content = false, signal?: AbortSignal) {
     if (query.length > 200) throw new AppError('搜索词最多 200 个字符');

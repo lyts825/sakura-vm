@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BundlesV1, SecretsV1, StorageRuntimeV1 } from './service-contracts/v1.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm, stat, open } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
@@ -9,7 +9,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { MAX_BUNDLE_MANIFEST, type Bundles } from './bundles.ts';
+import { MAX_BUNDLE_MANIFEST } from './bundles.ts';
 import { decodeTrustedBootArchive } from './trusted-boot-archive.ts';
 import { Jobs } from './jobs.ts';
 import { Secrets, secretName } from './secrets.ts';
@@ -20,8 +20,11 @@ import { encryptFile, withDecrypted, passwordSchema } from './encrypted-backups.
 import { inMaintenance } from './automation-policy.ts';
 import { backupBlocks } from './backup-blocks.ts';
 import { Writable } from 'node:stream';
-import { backupPublication } from './backup-journal.ts';
+import { backupPublication, backupPublicationSchema } from './backup-journal.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
+import { captureRecoveryOrigin, recoveryTicketRevision } from './recovery-origin.ts';
+import { readRecoveryJson, recoveryDirectories, invalidRecoveryTicket } from './domain-recovery-files.ts';
+import { domainRecoveryProofSchema, domainRecoveryTicketSchema, type DomainRecoveryProof, type DomainRecoveryTicket } from '../shared/contracts/domain-recovery.ts';
 
 export const backupPolicySchema = z
   .object({
@@ -63,7 +66,43 @@ export type BackupRecord = {
   retainUntil?: string;
   storage?: 'blocks';
 };
-type BackupState = { policy: BackupPolicy; items: BackupRecord[]; lastSuccess?: string };
+type BackupState = { policy: BackupPolicy; items: BackupRecord[]; lastSuccess?: string; recoveryReceipts?: DomainRecoveryProof[] };
+/** Publication journals survive process loss; discover them even when the backups plugin is disabled. */
+export async function discoverBackupRecoveryTickets(): Promise<DomainRecoveryTicket[]> {
+  const tickets: DomainRecoveryTicket[] = [];
+  let reads = 0;
+  const root = join(DATA, 'backups');
+  let ids: string[];
+  try { ids = await recoveryDirectories(root, value => z.uuid().safeParse(value).success); }
+  catch (error) { return [invalidRecoveryTicket(root, 'unknown', error)]; }
+  for (const vmId of ids) {
+    if ((reads += 3) > 4096 || tickets.length >= 3071)
+      return [...tickets, invalidRecoveryTicket(root, 'unknown', '备份恢复扫描超过累计上限')];
+    const publicationFile = join(root, vmId, 'publication.json'), indexFile = join(root, vmId, 'index.json');
+    try { await recoveryDirectories(join(root, vmId), () => false); }
+    catch (error) { tickets.push(invalidRecoveryTicket(join(root, vmId), vmId, error)); continue; }
+    try {
+      const raw = await readRecoveryJson(publicationFile);
+      if (raw !== undefined && raw !== null) {
+        const journal = backupPublicationSchema.parse(raw);
+        tickets.push({ id: journal.id, revision: recoveryTicketRevision(journal), vmId,
+          origin: journal.origin, state: 'pending', available: false });
+      }
+    } catch (error) { tickets.push(invalidRecoveryTicket(publicationFile, vmId, error)); }
+    try {
+      const index = await readRecoveryJson(indexFile);
+      const proofs = z.object({ recoveryReceipts: z.array(domainRecoveryProofSchema).max(256).optional() })
+        .passthrough().parse(index || {}).recoveryReceipts || [];
+      for (const proof of proofs) if (!tickets.some(ticket => ticket.vmId === vmId && ticket.id === proof.id)) {
+        if (tickets.length >= 3071)
+          return [...tickets, invalidRecoveryTicket(root, 'unknown', '备份恢复扫描超过累计上限')];
+        tickets.push({ id: proof.id, revision: proof.revision, vmId, origin: proof.origin,
+          state: 'resolved', available: false });
+      }
+    } catch (error) { tickets.push(invalidRecoveryTicket(indexFile, vmId, error)); }
+  }
+  return tickets;
+}
 export type BackupDownload =
   | { type: 'file'; path: string; name: string }
   | {
@@ -149,15 +188,42 @@ export class Backups {
   private recovery = new Map<string, Promise<void>>();
   private activePublication = new Set<string>();
   private cleanupErrors = new Map<string, unknown>();
+  async recoveryTickets(): Promise<DomainRecoveryTicket[]> {
+    return (await discoverBackupRecoveryTickets()).map(ticket => ({ ...ticket,
+      available: !ticket.error && ticket.state === 'pending' && !this.closed && this.machines.records.has(ticket.vmId) &&
+        !this.activePublication.has(ticket.vmId) && this.jobs.view(ticket.vmId)?.status !== 'running',
+    }));
+  }
+  async recoverTicket(raw: DomainRecoveryTicket): Promise<void> {
+    const ticket = domainRecoveryTicketSchema.parse(raw);
+    await this.machines.locked(`backups:${ticket.vmId}`, async () => {
+      if (this.closed || this.activePublication.has(ticket.vmId) || this.jobs.view(ticket.vmId)?.status === 'running')
+        throw new AppError('原备份发布流程仍在运行或正在关闭', 409, 'DOMAIN_RECOVERY_ACTIVE');
+      this.machines.get(ticket.vmId);
+      const journal = (await this.publication(ticket.vmId).read()).value;
+      if (!journal || journal.id !== ticket.id || recoveryTicketRevision(journal) !== ticket.revision)
+        throw new AppError('原备份发布票据已变化', 409, 'RECOVERY_STALE');
+      // A rejected cached attempt is not its cleanup authority. Retry the same verified domain journal.
+      await this.recovery.get(ticket.vmId)?.catch(() => {});
+      this.recovery.delete(ticket.vmId);
+      await this.reconcile(ticket.vmId, ticket.revision);
+      // Original storage leases are not reconstructed or released by this journal recovery.
+      // Their own cleanup receipt still governs any live pending budget.
+      const proof = (await this.metadata(ticket.vmId).read()).value.recoveryReceipts?.find(item =>
+        item.id === ticket.id && item.revision === ticket.revision);
+      if ((await this.publication(ticket.vmId).read()).value !== null || !proof)
+        throw new AppError('原备份领域尚未确认恢复', 503, 'RECOVERY_CLEANUP_PENDING');
+    });
+  }
   private failedCleanup(id: string, error: unknown): never {
     if ((error as { code?: string }).code === 'STORAGE_CLEANUP_PENDING') this.cleanupErrors.set(id, error);
     throw error;
   }
   constructor(
     private machines: Machines,
-    private bundles: ServiceInterface<Bundles>,
-    private secrets: ServiceInterface<Secrets> = new Secrets(machines),
-    private storage: StorageRuntime = storageRuntime,
+    private bundles: BundlesV1,
+    private secrets: SecretsV1 = new Secrets(machines),
+    private storage: StorageRuntimeV1 = storageRuntime,
   ) {
     this.schedule = scheduler.register({
       owner: 'core:backups',
@@ -307,13 +373,16 @@ export class Backups {
     return backupPublication(join(this.directory(id), 'publication.json'));
   }
   /** Reconcile only exact, previously verified identities; never replay an export. */
-  private reconcile(id: string): Promise<void> {
+  private reconcile(id: string, expectedRevision?: string): Promise<void> {
     const existing = this.recovery.get(id);
     if (existing) return existing;
     const task = (async () => {
       const journal = this.publication(id),
         entry = (await journal.read()).value;
       if (!entry) return;
+      const revision = recoveryTicketRevision(entry);
+      if (expectedRevision && expectedRevision !== revision)
+        throw new AppError('原备份发布票据已变化', 409, 'RECOVERY_STALE');
       const file = this.file(id, entry.id, entry.directory, entry.encrypted);
       await this.storage.run(
         {
@@ -403,6 +472,11 @@ export class Backups {
               lease.cleanupPending(failure.reason);
               throw failure.reason;
             }
+            await this.metadata(id).update(state => {
+              const receipts = (state.recoveryReceipts || []).filter(proof => proof.id !== entry.id);
+              receipts.push({ id: entry.id, revision, origin: entry.origin, confirmedAt: new Date().toISOString() });
+              state.recoveryReceipts = receipts.slice(-256);
+            });
             await journal.remove();
           } catch (error) {
             throw error;
@@ -544,6 +618,7 @@ export class Backups {
                       directory: state.policy.directory || undefined,
                       deduplicate: !!state.policy.deduplicate,
                       obsolete: [],
+                      origin: captureRecoveryOrigin([lease.id]),
                     });
                     try {
                       log('正在生成独立备份包…\n');

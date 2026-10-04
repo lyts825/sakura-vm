@@ -47,8 +47,33 @@ export class PluginManager {
     return this.runtime;
   }
   async unload(id: string) { await this.runtime?.unload(id); }
+  canRetryCleanup(identity: string, generation: string) {
+    const instance = this.directory.all().find(item => item.identity === identity && item.generation === generation);
+    if (!instance || instance.phase !== 'cleanup-pending' || this.system.caller.phase !== 'running') return false;
+    if (instance.source === 'official' || instance === this.directory.get('system', 'terminal-backend')) return !!this.runtime;
+    if (instance.source === 'system') return this.system.ownsInstance(instance);
+    return this.system.has('communityPlugins');
+  }
+  /** Recovery only targets the exact failed activation, never the replacement plugin. */
+  async retryCleanup(identity: string, generation: string) {
+    const instance = this.directory.all().find(item => item.identity === identity && item.generation === generation);
+    if (!instance || instance.phase !== 'cleanup-pending')
+      throw new AppError('原插件清理实例已变化', 409, 'RECOVERY_STALE');
+    if (instance.source === 'official' || instance === this.directory.get('system', 'terminal-backend'))
+      await this.runtime?.recoverProvider(instance.identity, instance.generation, instance.artifactDigest);
+    else if (instance.source === 'system') {
+      const dependent = this.system.lifecycle.view().find(entry =>
+        [...entry.requires, ...entry.disposeRequires].includes(instance.pluginId) && !['registered', 'disposed'].includes(entry.state));
+      if (dependent) throw new AppError('请先恢复依赖此服务的消费者：' + dependent.id, 409, 'SERVICE_DEPENDENTS_ACTIVE');
+      if (instance === this.system.caller) await this.system.close();
+      else await this.system.retire(instance.pluginId);
+    } else await this.community.recoverCleanup(instance.pluginId, generation);
+    if (this.directory.get(instance.source, instance.pluginId) !== instance || instance.view().phase !== 'inactive')
+      throw new AppError('原领域尚未确认清理', 503, 'RECOVERY_CLEANUP_PENDING');
+  }
   get community() { return this.system.resolver(this.system.caller, ['communityPlugins']).optional('communityPlugins')!; }
   assertReady() {
+    this.system.lifecycle.validateReady();
     for (const plugin of PLUGINS.filter(item => this.runtime?.enabled.has(item.id)))
       for (const dependency of plugin.systemDependencies) if (!this.system.has(dependency))
         throw new AppError(`插件 ${plugin.id} 缺少必需宿主服务：${dependency}`, 503, 'PLUGIN_SERVICE_UNAVAILABLE');

@@ -5,30 +5,10 @@ export { loaders } from './loaders.generated.ts';
 export type { PluginModule } from '../plugin-api.ts';
 /** Exact dispatch endpoints. Prefix declarations remain package ownership metadata only. */
 export function pluginHttpRoutes() {
-  return PLUGINS.flatMap((plugin) => {
-    const routes = plugin.contributes.http.flatMap((route) => {
-    const base = { ...route, owner: plugin.id };
-    if (plugin.id === 'images' && route.path === '/api/images') return [
-      { ...base, methods: ['GET'] as HttpContribution['methods'] },
-      { ...base, path: '/api/images/{imageId}', methods: ['POST'] as HttpContribution['methods'] },
-    ];
-    if (plugin.id === 'snapshots' && route.path.endsWith('/snapshots')) return [
-      { ...base, methods: ['POST'] as HttpContribution['methods'] },
-      { ...base, path: route.path + '/{snapshotId}', methods: ['PATCH', 'DELETE'] as HttpContribution['methods'] },
-      { ...base, path: route.path + '/{snapshotId}/restore', methods: ['POST'] as HttpContribution['methods'] },
-    ];
-    return [base];
-    });
-    const normalize = (path: string) => path.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
-    for (const operation of plugin.contributes.operations) {
-      if (routes.some(route => normalize(route.path) === normalize(operation.path) && route.methods.includes(operation.method))) continue;
-      const contribution = plugin.contributes.http.find(route => normalize(operation.path) === normalize(route.path) ||
-        normalize(operation.path).startsWith(normalize(route.path) + '/'));
-      if (!contribution) throw new Error(`插件操作没有路由归属：${plugin.id}.${operation.id}`);
-      routes.push({ ...contribution, owner: plugin.id, path: operation.path, methods: [operation.method] });
-    }
-    return routes;
-  });
+  return PLUGINS.flatMap((plugin) => plugin.contributes.routes.map((route) => ({
+    ...route, owner: plugin.id, methods: [route.method] as HttpContribution['methods'],
+    projectScoped: route.policy.projectScoped,
+  })));
 }
 export function matchOperationPath(pattern: string, path: string): Record<string, string> | undefined {
   const expected = pattern.replace(/:([a-zA-Z0-9_]+)/g, '{$1}').split('/');
@@ -66,7 +46,11 @@ export function routeContribution(path: string): (HttpContribution & { owner: st
       methods: parts.length === 4 && parts[3] !== 'result' ? ['POST'] : ['GET'],
       projectScoped: false,
     };
-  return pluginHttpRoutes().find((route) => matchOperationPath(route.path, path));
+  const matches = pluginHttpRoutes().filter((route) => matchOperationPath(route.path, path))
+    .sort((left, right) => (left.path.match(/[:{]/g)?.length || 0) - (right.path.match(/[:{]/g)?.length || 0));
+  const first = matches[0];
+  if (!first) return;
+  return { ...first, methods: matches.filter(route => route.path === first.path).flatMap(route => route.methods) };
 }
 export const routeOwner = (path: string) => routeContribution(path)?.owner;
 export function socketOwner(channel: 'desktop' | 'terminal-session') {

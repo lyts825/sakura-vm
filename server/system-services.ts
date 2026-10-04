@@ -1,4 +1,5 @@
 import { PLUGINS } from '../shared/plugins.ts';
+import { APP_VERSION } from '../shared/version.ts';
 import { AppError } from '../shared/errors.ts';
 import type { PluginDirectory } from './plugin-directory.ts';
 import { ServiceBroker } from './service-broker.ts';
@@ -13,6 +14,8 @@ import { ExecutionScope } from './execution-scope.ts';
 import { resourceContext } from './host-runtime/context.ts';
 import type { Jobs } from './jobs.ts';
 import { systemArtifactDigest } from './plugin-artifact.ts';
+import { ServiceLifecycle, type ServiceDefinition } from './service-lifecycle.ts';
+import type { SystemServiceContracts } from './service-contracts.ts';
 
 /** Required host providers share the same instance, broker and cleanup machinery. */
 export class SystemServices {
@@ -20,19 +23,20 @@ export class SystemServices {
   readonly caller: PluginInstance;
   private owned = new Map<string, { instance: PluginInstance; value: any }>();
   private vmPorts = new WeakMap<PluginInstance, ReturnType<typeof vmAccess>>();
+  readonly lifecycle = new ServiceLifecycle();
   constructor(readonly directory: PluginDirectory) {
     this.broker = new ServiceBroker(directory, PLUGINS);
     this.caller = directory.begin(
       'system',
       'operation-host',
-      '1.0.0',
+      APP_VERSION,
       systemArtifactDigest('operation-host'),
     );
     directory.publish(this.caller);
   }
   construct<T>(id: string, create: () => T): T {
     if (this.owned.has(id)) throw new AppError('系统服务已注册：' + id, 409);
-    const instance = this.directory.begin('system', id, '1.0.0', systemArtifactDigest(id));
+    const instance = this.directory.begin('system', id, APP_VERSION, systemArtifactDigest(id));
     let value: T;
     try {
       value = withPluginAuthority(instance, create);
@@ -58,6 +62,63 @@ export class SystemServices {
         throw new AppError('系统服务接口不可写', 403, 'PLUGIN_SERVICE_READONLY');
       },
     }) as T;
+  }
+  /** Startup-only API. Public handles are published after the initializer succeeds. */
+  register<T>(definition: ServiceDefinition<T>) {
+    this.lifecycle.register({
+      ...definition,
+      create: async () => {
+        if (this.owned.has(definition.id)) throw new AppError('系统服务已注册：' + definition.id, 409);
+        const instance = this.directory.begin(
+          'system',
+          definition.id,
+          APP_VERSION,
+          systemArtifactDigest(definition.id),
+        );
+        const entry: { instance: PluginInstance; value: T | undefined } = { instance, value: undefined };
+        this.owned.set(definition.id, entry);
+        instance.scope.add(() => Promise.resolve(definition.dispose(entry.value)));
+        try {
+          entry.value = await withPluginAuthority(instance, definition.create);
+          return entry.value;
+        } catch (error) {
+          instance.error = String(error);
+          instance.revoke();
+          instance.phase = 'cleanup-pending';
+          this.directory.changed();
+          throw error;
+        }
+      },
+      initialize: async (value) => {
+        const instance = this.owned.get(definition.id)!.instance;
+        const started = performance.now();
+        try {
+          await withPluginAuthority(instance, () => definition.initialize(value));
+          if (!this.lifecycle.accepting) throw new AppError('初始化期间服务已关闭', 503, 'SERVICE_DRAINING');
+          this.broker.registerSystem(instance, value);
+          instance.activationMs = performance.now() - started;
+          this.directory.publish(instance);
+        } catch (error) {
+          instance.error = String(error);
+          instance.revoke();
+          instance.phase = 'cleanup-pending';
+          this.directory.changed();
+          throw error;
+        }
+      },
+      dispose: () => this.retire(definition.id),
+    });
+  }
+  async start<K extends keyof SystemServiceContracts, T>(definition: ServiceDefinition<T> & { id: K }): Promise<SystemServiceContracts[K]> {
+    this.register(definition);
+    await this.lifecycle.start<T>(definition.id);
+    return this.broker.system<SystemServiceContracts[K]>(this.caller, definition.id, [definition.id])!;
+  }
+  ready(id: string) {
+    this.lifecycle.ready(id);
+  }
+  async startAll() {
+    await this.lifecycle.startAll();
   }
   vm(id: string, machines: Machines) {
     const instance = this.directory.get('system', id)!;
@@ -108,6 +169,9 @@ export class SystemServices {
   has(id: string) {
     return this.owned.get(id)?.instance.phase === 'running';
   }
+  ownsInstance(instance: PluginInstance) {
+    return instance === this.caller || this.owned.get(instance.pluginId)?.instance === instance;
+  }
   async retire(id: string) {
     const entry = this.owned.get(id);
     if (!entry) return;
@@ -119,6 +183,7 @@ export class SystemServices {
       instance.phase = 'inactive';
       this.broker.remove(instance);
       this.owned.delete(id);
+      this.lifecycle.confirmDisposed(id);
     } catch (error) {
       instance.phase = 'cleanup-pending';
       instance.error = String(error);
@@ -129,7 +194,13 @@ export class SystemServices {
   }
   async close() {
     const failures: unknown[] = [];
-    for (const id of [...this.owned.keys()].reverse()) {
+    try {
+      await this.lifecycle.close();
+    } catch (error) {
+      failures.push(error);
+    }
+    const managed = new Set(this.lifecycle.view().map((entry) => entry.id));
+    for (const id of [...this.owned.keys()].reverse().filter((id) => !managed.has(id))) {
       try {
         await this.retire(id);
       } catch (error) {
@@ -138,8 +209,12 @@ export class SystemServices {
     }
     if (failures.length) throw new AggregateError(failures, '系统服务清理未完成');
     this.caller.revoke();
-    await this.caller.scope.dispose();
-    this.caller.phase = 'inactive';
-    this.directory.changed();
+    try {
+      await this.caller.scope.dispose();
+      this.caller.phase = 'inactive';
+    } catch (error) {
+      this.caller.phase = 'cleanup-pending'; this.caller.error = String(error);
+      throw error;
+    } finally { this.directory.changed(); }
   }
 }

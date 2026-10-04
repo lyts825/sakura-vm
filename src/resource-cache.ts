@@ -1,8 +1,13 @@
-export type ResourceRequest = <T = any>(path: string, method?: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
+import { pluginGeneration } from './plugin-generation';
+
+export type ResourceRequest = <T = unknown>(path: string, method?: string, body?: unknown, signal?: AbortSignal) => Promise<T>;
+const requestScopes = new WeakMap<ResourceRequest, string>();
+export const setResourceRequestScope = (request: ResourceRequest, identity: string) => requestScopes.set(request, identity);
+export const resourceRequestScope = (request: ResourceRequest) => requestScopes.get(request);
 export type ResourceSnapshot<T = unknown> = { data: T | null; error: string; loading: boolean; updatedAt?: number };
 type Listener = (snapshot: ResourceSnapshot) => void;
 type Entry = {
-  key: string; path: string; request: ResourceRequest; snapshot: ResourceSnapshot;
+  key: string; path: string; request: ResourceRequest; snapshot: ResourceSnapshot; scopes: readonly string[];
   listeners: Map<Listener, number>; generation: number; dirty: boolean;
   pending?: Promise<void>; abort?: AbortController; timer?: ReturnType<typeof setTimeout>;
 };
@@ -39,8 +44,15 @@ export class ResourceCache {
   private entries = new Map<string, Entry>();
   private visible = true;
   private resetGeneration = 0;
+  private scopeGenerations = new Map<string, number>();
   constructor(private readonly limit = 256, private readonly retainedMs = 60000) {}
   get generation() { return this.resetGeneration; }
+  private scopes(request: ResourceRequest, path: string) {
+    return [...new Set([resourceRequestScope(request), pluginGeneration.identityFor(path)].filter((identity): identity is string => !!identity))];
+  }
+  generationFor(request: ResourceRequest, path: string) {
+    return `${this.resetGeneration}:${this.scopes(request, path).map(identity => `${identity}:${this.scopeGenerations.get(identity) || 0}`).join('|')}`;
+  }
   private key(request: ResourceRequest, path: string) {
     let id = this.identities.get(request);
     if (id === undefined) { id = ++this.sequence; this.identities.set(request, id); }
@@ -101,7 +113,7 @@ export class ResourceCache {
         if (!idle) throw new Error('活动资源订阅已达到上限');
         this.forget(idle);
       }
-      entry = { key, path, request, snapshot: { data: null, error: '', loading: false },
+      entry = { key, path, request, scopes: this.scopes(request, path), snapshot: { data: null, error: '', loading: false },
         generation: 0, dirty: true, listeners: new Map() };
       this.entries.set(key, entry);
     }
@@ -152,6 +164,16 @@ export class ResourceCache {
       this.arm(entry);
     }
   }
+  resetScopes(identities: readonly string[]) {
+    const scopes = new Set(identities);
+    for (const identity of scopes) this.scopeGenerations.set(identity, (this.scopeGenerations.get(identity) || 0) + 1);
+    for (const entry of this.entries.values()) {
+      if (!entry.scopes.some(identity => scopes.has(identity))) continue;
+      entry.generation++; entry.dirty = true; entry.abort?.abort();
+      this.emit(entry, { data: null, error: '', loading: false, updatedAt: undefined });
+      this.arm(entry);
+    }
+  }
   setVisible(visible: boolean) {
     if (this.visible === visible) return;
     this.visible = visible;
@@ -164,3 +186,4 @@ export class ResourceCache {
 }
 
 export const resourceCache = new ResourceCache();
+pluginGeneration.subscribe(identities => resourceCache.resetScopes(identities));

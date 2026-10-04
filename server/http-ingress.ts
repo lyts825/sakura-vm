@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { IngressCertificatesV1 } from './service-contracts/v1.ts';
 import { networkFor, type NetworkScope } from './network/index.ts';
 import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { randomUUID, X509Certificate } from 'node:crypto';
@@ -23,7 +23,6 @@ import { metadataPath, type PluginMetadata } from './plugin-metadata.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA, PORT } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { IngressCertificates } from './ingress-certificates.ts';
 
 const OWNER = 'http-ingress';
 const storedSchema = z.array(ingressEntrySchema).max(24);
@@ -147,7 +146,7 @@ export class HttpIngress {
   constructor(
     private machines: Machines,
     file: string | PluginMetadata = join(DATA, 'plugins', 'network', 'ingress.json'),
-    private certificates?: ServiceInterface<IngressCertificates>,
+    private certificates?: IngressCertificatesV1,
     private networking: NetworkScope = networkFor('core:http-ingress'),
   ) { this.file = metadataPath(file); }
 

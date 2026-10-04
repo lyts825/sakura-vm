@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
@@ -8,7 +8,7 @@ import { AppError } from '../shared/errors.ts';
 import { ROOT } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { vmLiveIdentity } from './vm-reference.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { projectVersion } from './project-config.ts';
 import { guestTask } from './guest-task.ts';
 import { quote } from './shell.ts';
@@ -114,7 +114,7 @@ export type EngineeringRunOptions = {
   onResult?: (result: EngineeringResult) => Promise<void>;
 };
 export async function runEngineeringOperation(
-  machines: Machines, workspaces: ServiceInterface<Workspaces>, id: string, operation: string,
+  machines: Machines, workspaces: WorkspacesV1, id: string, operation: string,
   parameters: Record<string, unknown>, signal: AbortSignal, options: EngineeringRunOptions = {},
 ): Promise<EngineeringResult> {
   // Choose the original scope/live synchronously, before any asynchronous read.

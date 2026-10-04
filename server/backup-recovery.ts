@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BackupsV1, BundlesV1 } from './service-contracts/v1.ts';
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -7,8 +7,7 @@ import type { SandboxExecution } from '../shared/sandbox.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Backups } from './backups.ts';
-import type { Bundles } from './bundles.ts';
+
 import { Jobs } from './jobs.ts';
 import { type JobView } from '../shared/contracts/jobs.ts';
 import { SandboxArtifacts } from './sandbox-artifacts.ts';
@@ -21,8 +20,8 @@ export class BackupRecovery {
   };
   constructor(
     private machines: Machines,
-    private backups: ServiceInterface<Backups>,
-    private bundles: ServiceInterface<Bundles>,
+    private backups: BackupsV1,
+    private bundles: BundlesV1,
     readonly jobs = new Jobs('backup-recovery'),
     private artifacts = new SandboxArtifacts(machines, join(DATA, 'plugins', 'backups', 'recovered-files')),
   ) {

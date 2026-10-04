@@ -16,8 +16,7 @@ const { Features } = await import('../server/features.ts');
 const machines = new Machines(await createRuntime());
 await machines.init();
 const features = await Features.create(machines, ['extensions', 'platform', 'git', 'commands']);
-features.system.construct('engineering-fixture', () => ({}));
-const projectVm = features.system.vm('engineering-fixture', machines);
+const projectVm = features.system.vm('operation-host', machines);
 let id: string | undefined;
 try {
   const vm = await machines.create({

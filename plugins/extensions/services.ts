@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { ExtendedFeatures } from '../../server/extended-features.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  extended: serviceRef<ServiceInterface<ExtendedFeatures>>('extensions', 'extended'),
+  extended: serviceRef('extensions', 'extended', serviceContracts.ExtendedFeatures),
 };

@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';
@@ -46,7 +46,6 @@ CLONE_NAMESPACE_FLAGS = (
     0x10000000, 0x20000000, 0x40000000,
 )
 
-
 def status():
     fields = {}
     with open('/proc/self/status', encoding='ascii') as source:
@@ -55,7 +54,6 @@ def status():
                 name, value = line.split(':', 1)
                 fields[name] = int(value.strip())
     return fields
-
 
 def apply(profile):
     if profile not in ('restricted', 'networkless'):
@@ -75,7 +73,6 @@ def apply(profile):
                       seccomp.Arg(0, seccomp.MASKED_EQ, flag, flag))
     filt.set_attr(seccomp.Attr.CTL_NNP, 1)
     filt.load()
-
 
 def self_test(profile):
     before = status()
@@ -98,7 +95,6 @@ def self_test(profile):
     print(json.dumps({'profile': profile, 'seccomp': after['Seccomp'],
                       'noNewPrivs': after['NoNewPrivs'],
                       'networkDenied': profile == 'networkless'}))
-
 
 def run(profile, seconds, argv):
     if not argv:
@@ -156,7 +152,6 @@ def run(profile, seconds, argv):
         kill_group()
         if not reaped:
             os.waitpid(pid, 0)
-
 
 if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == '--self-test':
@@ -229,7 +224,7 @@ export async function checkSyscallProfile(machines: Machines, id: string,
 }
 
 export async function runSyscallProfile(machines: Machines, id: string,
-  input: unknown, signal?: AbortSignal, workspaces?: ServiceInterface<Workspaces>, taskOptions: SyscallProjectTaskOptions = {}) {
+  input: unknown, signal?: AbortSignal, workspaces?: WorkspacesV1, taskOptions: SyscallProjectTaskOptions = {}) {
   const options = syscallProfileInput.parse(input);
   if (options.mode === 'status') {
     const status = await checkSyscallProfile(machines, id, signal);

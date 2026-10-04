@@ -1,3 +1,4 @@
+import type { StorageRuntimeV1 } from './service-contracts/v1.ts';
 import { realpath, stat, statfs, rm } from 'node:fs/promises';
 import { dirname, parse, resolve } from 'node:path';
 import { AppError } from '../shared/errors.ts';
@@ -312,7 +313,7 @@ export class StorageRuntime {
     }
   }
 }
-export type StorageLease = Awaited<ReturnType<StorageRuntime['acquire']>>;
+export type StorageLease = Awaited<ReturnType<StorageRuntimeV1['acquire']>>;
 export const storageRuntime = new StorageRuntime();
 
 /** A caller may explicitly lend its operation's lease. Never infer this from a VM

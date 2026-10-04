@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { FeatureScheduler } from '../../server/feature-scheduler.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  scheduler: serviceRef<ServiceInterface<FeatureScheduler>>('automation-scheduler', 'scheduler'),
+  scheduler: serviceRef('automation-scheduler', 'scheduler', serviceContracts.FeatureScheduler),
 };

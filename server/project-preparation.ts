@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
@@ -41,7 +41,7 @@ export type PreparedProject = {
 
 /** Shared configuration capture and admission lease for tasks and terminals. */
 export class ProjectPreparation {
-  readonly workspaces: ServiceInterface<Workspaces>;
+  readonly workspaces: WorkspacesV1;
   private ownedWorkspaces?: Workspaces;
   private leases = new Set<Lease>();
   private pending = new Map<string, Promise<unknown>>();
@@ -53,7 +53,7 @@ export class ProjectPreparation {
   }
   constructor(
     private machines: Machines,
-    workspaces?: ServiceInterface<Workspaces>,
+    workspaces?: WorkspacesV1,
     context?: ConstructorParameters<typeof Workspaces>[1],
     scopes?: Pick<ProjectRunScopes, 'assertAdmission'>,
   ) {

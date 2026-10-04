@@ -1,8 +1,8 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
@@ -135,7 +135,7 @@ export class Toolchains {
   private closing?: Promise<void>;
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
     private options: ToolchainsOptions = {},
   ) {}
   async view(id: string, signal?: AbortSignal) {

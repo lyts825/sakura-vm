@@ -1,3 +1,4 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import {
@@ -9,7 +10,7 @@ import {
 import { quote } from './shell.ts';
 import { Jobs } from './jobs.ts';
 import { type JobView } from '../shared/contracts/jobs.ts';
-import { BOOT_TIMEOUT_MS } from './machines.ts';
+import { BOOT_TIMEOUT_MS } from '../shared/contracts/vm.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema, type VMView } from '../shared/contracts/vm.ts';
@@ -57,7 +58,7 @@ export type SandboxView = VMView & { sandbox: SandboxPolicy; expired: boolean };
 export type SandboxOverview = { sandboxes: SandboxView[]; runs: JobView[]; persistenceError?: string };
 
 export class Sandboxes {
-  readonly jobs: Jobs;
+  readonly jobs: JobsV1;
   private busy = new Set<string>();
   private closed = false;
 

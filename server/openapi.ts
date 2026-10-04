@@ -65,7 +65,7 @@ export function apiDocument(active: Iterable<string>, port: number, catalogVersi
         ? undefined
         : policy.access === 'guest'
           ? [{ GuestToken: [] }]
-          : policy.id === 'core.extension.inventory'
+          : policy.extensionAuth === 'paired'
             ? [{ ExtensionToken: [] }]
             : [];
     (document.paths[policy.path] ||= {})[policy.method.toLowerCase()] = {
@@ -99,11 +99,11 @@ export function apiDocument(active: Iterable<string>, port: number, catalogVersi
           description: policy.contract === 'declared' ? '成功' : '成功；结构以实际响应为准。',
           ...(entry.status === 204
             ? {}
-            : {
+            : entry.response ? {
                 content: {
-                  [entry.media || 'application/json']: { schema: entry.response || {} },
+                  [entry.media || 'application/json']: { schema: entry.response },
                 },
-              }),
+              } : {}),
         },
         default: { description: '参数、权限、维护状态、运行身份变化或运行失败。' },
       },

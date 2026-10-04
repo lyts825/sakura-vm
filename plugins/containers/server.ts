@@ -51,3 +51,9 @@ export async function route(
   }
   return false;
 }
+
+/** Exact implemented HTTP operations; declarations alone never publish a handler. */
+export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+  "legacy.get.vms.vmId.containers": route,
+  "legacy.post.vms.vmId.containers": route,
+};

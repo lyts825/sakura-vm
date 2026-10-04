@@ -37,7 +37,7 @@ export function ProjectNavigator({
           return;
         }
         setBusy(true);
-        request(
+        request<NonNullable<typeof data>>(
           `/vms/${id}/project-files?q=${encodeURIComponent(query)}&content=${content ? 1 : 0}`,
           'GET',
           undefined,

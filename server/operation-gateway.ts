@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AppError } from '../shared/errors.ts';
 import type { OperationRole } from '../shared/contracts/operations.ts';
 import type { ResourceIdentity } from '../shared/contracts/host-runtime.ts';
-import { operationDirectory, operationEntries, type OperationEntry } from './operation-catalog.ts';
+import { operationDirectory, operationEntries, validateOperationEntries, type OperationEntry } from './operation-catalog.ts';
 import { withResourceContext } from './host-runtime/context.ts';
 import { captureOperationCheck, withOperationCheck } from './operation-context.ts';
 import { matchOperationPath } from './plugins/registry.ts';
@@ -25,6 +25,9 @@ type GatewayOptions = {
     parameters: Readonly<Record<string, string>>, requireEnabled: () => void): Promise<OperationBinding>;
 };
 const current = new AsyncLocalStorage<{ entry: OperationEntry; binding: OperationBinding }>();
+export const currentOperation = () => current.getStore()?.entry.declaration;
+export type HttpOperationHandler = (req: IncomingMessage, res: ServerResponse, url: URL,
+  entry: OperationEntry) => unknown | Promise<unknown>;
 
 /** Validate the already bounded JSON read without consuming streams or binary bodies twice. */
 export async function validateOperationInput(input: any) {
@@ -37,7 +40,33 @@ export async function validateOperationInput(input: any) {
 
 /** Shared, deny-by-default dispatch and execution authority for HTTP and WebSocket entry points. */
 export class OperationGateway {
-  constructor(private options: GatewayOptions, private entries = operationEntries) {}
+  private handlers = new Map<string, HttpOperationHandler>();
+  private sealed = false;
+  constructor(private options: GatewayOptions, private entries = operationEntries) {
+    validateOperationEntries(entries);
+  }
+  /** Registration binds this exact declaration and handler before publication. */
+  register(entry: OperationEntry, handler: HttpOperationHandler) {
+    if (this.sealed) throw new Error('操作处理器目录已经发布');
+    if (!this.entries.includes(entry) || entry.declaration.method === 'UPGRADE')
+      throw new Error('HTTP 处理器未绑定有效的操作声明');
+    if (this.handlers.has(entry.declaration.id)) throw new Error('重复操作处理器：' + entry.declaration.id);
+    this.handlers.set(entry.declaration.id, handler);
+  }
+  seal() {
+    const missing = this.entries.filter(entry => entry.declaration.method !== 'UPGRADE' &&
+      !this.handlers.has(entry.declaration.id));
+    if (missing.length) throw new Error('操作缺少处理器，禁止发布：' + missing.map(entry => entry.declaration.id).join(', '));
+    this.sealed = true;
+  }
+  async dispatch(req: IncomingMessage, res: ServerResponse, url: URL) {
+    if (!this.sealed) throw new AppError('操作处理器目录尚未就绪', 503, 'OPERATIONS_NOT_READY');
+    const { entry } = this.resolve(req.method || 'GET', url.pathname);
+    const handler = this.handlers.get(entry.declaration.id);
+    if (!handler) throw new AppError('操作没有已登记处理器', 503, 'OPERATION_HANDLER_MISSING');
+    const admission = await this.prepare(req, url);
+    return admission.run(() => handler(req, res, url, entry));
+  }
   directory() { return operationDirectory(this.options.enabled()); }
   get version() { return this.options.catalogVersion?.() || 0; }
   resolve(method: string, path: string) {
@@ -79,8 +108,10 @@ export class OperationGateway {
     return {
       declaration, check, instance,
       run<T>(work: () => T): T {
-        const invoke = () => withResourceContext({ owner: declaration.owner === 'core' ? 'core:application' : `plugin:${declaration.owner}`,
-          ...(declaration.owner === 'core' ? {} : { pluginId: declaration.owner }), ...binding.identity },
+        const invoke = () => withResourceContext({ owner: owner === 'core' ? 'core:application' : `plugin:${owner}`,
+          operationId: declaration.id,
+          ...(instance ? { pluginInstanceId: instance.identity, pluginGeneration: instance.generation } : {}),
+          ...(owner === 'core' ? {} : { pluginId: owner }), ...binding.identity },
         () => withOperationCheck(check, () => current.run({ entry, binding }, work)));
         return instance ? withPluginAuthority(instance, invoke, () => instance.check()) : invoke();
       },

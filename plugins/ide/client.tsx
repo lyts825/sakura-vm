@@ -48,7 +48,7 @@ export function IdeConnection({ vm, request }: FeatureProps) {
               disabled={action.busy || !ide.data.running}
               onClick={() =>
                 void action.run(async (signal) => {
-                  const result = await request(`/vms/${vm.id}/ide`, 'POST', undefined, signal);
+                  const result = await request<{ url: string }>(`/vms/${vm.id}/ide`, 'POST', undefined, signal);
                   setLink(result.url);
                   await ide.reload();
                 }, 'SSH 连接配置已更新')

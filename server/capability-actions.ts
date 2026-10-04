@@ -1,13 +1,11 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { IdeV1, ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
-import type { Ide } from './ide.ts';
-import { type TerminalService as ProjectTerminals } from './terminal-backend.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { Files, ftpStat } from './files.ts';
 import { runEngineeringOperation } from './engineering-runner.ts';
@@ -57,9 +55,9 @@ export function dependencyOrder(root: string, graph: Record<string, string[]>) {
 export class CapabilityActions {
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
-    private projectTerminals?: ProjectTerminals,
-    private editor?: Pick<Ide, 'profile'>,
+    private workspaces: WorkspacesV1,
+    private projectTerminals?: ProjectTerminalsV1,
+    private editor?: Pick<IdeV1, 'profile'>,
   ) {}
 
   async check(id: string, featureId: CapabilityId, signal?: AbortSignal) {

@@ -1,10 +1,10 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { posix } from 'node:path';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { AppError } from '../shared/errors.ts';
 import { projectSchema } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
+
 import type { VmAccess as Machines } from './vm-access.ts';
 
 export const recipeSchema = z
@@ -30,7 +30,7 @@ export type Recipe = z.infer<typeof recipeSchema>;
 export class Recipes {
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
   ) {}
   async export(id: string): Promise<Recipe> {
     const { cpus, memoryMiB, diskGiB, distro, accelerator, forwards, template } = this.machines.get(id);

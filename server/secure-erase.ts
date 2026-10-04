@@ -1,11 +1,10 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { readFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { ROOT } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
 
 const relativeFile = z.string().min(1).max(4096).refine((value) =>
   !value.startsWith('/') && !value.includes('\\') &&
@@ -25,7 +24,7 @@ function guestScript() {
     readFile(join(ROOT, '.sakura-server', 'assets', 'secure-erase.py'), 'utf8')));
 }
 
-export async function checkSecureErase(machines: Machines, workspaces: ServiceInterface<Workspaces>,
+export async function checkSecureErase(machines: Machines, workspaces: WorkspacesV1,
   id: string, signal?: AbortSignal) {
   if (machines.state(id) !== 'running')
     return { ready: false, executed: false, reason: '请先启动实例。' };
@@ -40,7 +39,7 @@ export async function checkSecureErase(machines: Machines, workspaces: ServiceIn
       : '客户机需要 Python 3。' };
 }
 
-export async function runSecureErase(machines: Machines, workspaces: ServiceInterface<Workspaces>,
+export async function runSecureErase(machines: Machines, workspaces: WorkspacesV1,
   id: string, input: unknown, signal?: AbortSignal) {
   const options = secureEraseInput.parse(input);
   machines.requireUnlocked(id);

@@ -1,11 +1,10 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { FilesV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { Writable } from 'node:stream';
 import { AppError } from '../shared/errors.ts';
-import type { Files } from './files.ts';
 
 export const DOWNLOAD_CHUNK_BYTES = 1024 ** 2;
-export async function downloadManifest(files: ServiceInterface<Files>, id: string, path: string, signal: AbortSignal) {
+export async function downloadManifest(files: FilesV1, id: string, path: string, signal: AbortSignal) {
   const whole = createHash('sha256'),
     chunks: string[] = [];
   let pending = Buffer.alloc(0),

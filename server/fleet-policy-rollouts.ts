@@ -1,10 +1,10 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { rolloutPolicyInput } from './feature-rollouts.ts';
-import type { HostPeers, PeerRolloutView } from './host-peers.ts';
+import type { PeerRolloutView } from './host-peers.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
@@ -38,7 +38,7 @@ export class FleetPolicyRollouts {
   private state: Store = initial();
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
-  constructor(private peers: ServiceInterface<HostPeers>,
+  constructor(private peers: HostPeersV1,
     private file = join(DATA, 'fleet-policy-rollouts.json'),
     private blocked: () => boolean = () => false,
     private mutation: (delta: number) => void = () => {}) {}

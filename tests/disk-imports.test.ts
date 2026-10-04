@@ -1,3 +1,36 @@
+type GatewayFixtureHost = import('../server/features.ts').Features;
+type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
+const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {
+  gateway: import('../server/operation-gateway.ts').OperationGateway;
+  bodies: WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>;
+}>();
+/** Preserve the fixture's data-directory setup before loading the real operation admission modules. */
+async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse, url: URL, body: GatewayFixtureBody) {
+  let fixture = admittedRouteFixtures.get(host);
+  if (!fixture) {
+    const [{ OperationGateway }, { operationEntries }] = await Promise.all([
+      import('../server/operation-gateway.ts'), import('../server/operation-catalog.ts'),
+    ]);
+    const bodies = new WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>();
+    const gateway = new OperationGateway({
+      enabled: () => host.enabled,
+      instance: owner => owner === 'core' ? undefined : host.directory.get('official', owner),
+      bind: async (_request, _url, _entry, _parameters, requireEnabled) => {
+        requireEnabled();
+        return { check: async () => 'owner' };
+      },
+    });
+    for (const entry of operationEntries)
+      if (entry.declaration.method !== 'UPGRADE')
+        gateway.register(entry, (request, response, target) => host.route(request, response, target, bodies.get(request)!));
+    gateway.seal();
+    fixture = { gateway, bodies };
+    admittedRouteFixtures.set(host, fixture);
+  }
+  fixture.bodies.set(req, body);
+  return await fixture.gateway.dispatch(req, res, url) as boolean;
+}
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
@@ -139,7 +172,7 @@ test('the images plugin accepts a binary upload and returns its published instan
   }) as unknown as ServerResponse & { status: number; payload: any };
   try {
     const url = new URL('http://localhost/api/image-import?name=via-api&format=raw&distro=alpine&memoryMiB=512&cpus=1');
-    assert.equal(await features.route(request, response, url, async () => undefined), true);
+    assert.equal(await routeThroughGateway(features, request, response, url, async () => undefined), true);
     assert.equal(response.status, 201);
     assert.match(response.payload.vm.id, /^imported-/);
     assert.equal(response.payload.source.format, 'raw');

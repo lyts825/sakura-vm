@@ -1,3 +1,6 @@
+import { VmDiskEncryption } from './domains/vm-disk-encryption.ts';
+import { SandboxLifetimes } from './domains/sandbox-lifetimes.ts';
+import { VmHaAuthority } from './domains/vm-ha-authority.ts';
 import { networkFor, networkRuntime, type NetworkRuntime } from './network/index.ts';
 import { isUtf8 } from 'node:buffer';
 import { createHash, createPrivateKey, randomUUID } from 'node:crypto';
@@ -5,10 +8,8 @@ import { EventEmitter } from 'node:events';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import {
   copyFile,
-  link,
   lstat,
   mkdir,
-  open,
   readFile,
   readdir,
   rename,
@@ -31,7 +32,9 @@ import {
   liveMigrationFenceSchema,
   liveMigrationOriginSchema,
   organizationSchema,
+  BOOT_TIMEOUT_MS,
   type HaPromotion,
+  type MigrationFingerprint,
   type VMConfig,
   type VMRecord,
   type VMStatus,
@@ -54,7 +57,6 @@ import {
   encryptedDriveOption,
   encryptedImageOptions,
   openDiskSecret,
-  plainImageOptions,
   qemuSecretObject,
   withDiskSecret,
 } from './disk-encryption.ts';
@@ -75,8 +77,7 @@ import { copyDirectoryVerified, writeIdentityFile } from './vm-storage.ts';
 import { storageRuntime, withStorageLease, type StorageLease } from './storage-runtime.ts';
 import { MachineTransport } from './vm-transport.ts';
 
-export const BOOT_TIMEOUT_MS = 270_000;
-export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
+export { BOOT_TIMEOUT_MS, type MigrationFingerprint } from '../shared/contracts/vm.ts';
 type DiskIdentity = { key: string; seed: Buffer; pending?: string };
 
 import type { Live } from './vm-state.ts';
@@ -104,8 +105,6 @@ export class Machines extends EventEmitter {
   private locks = new Set<string>();
   private operations = new Set<Promise<void>>();
   private closeTask?: Promise<void>;
-  private sandboxTimer?: ReturnType<typeof setInterval>;
-  private sandboxSweep?: Promise<void>;
   closing = false;
   maintenance = false;
   private incidentLocks = new Set<string>();
@@ -238,171 +237,41 @@ export class Machines extends EventEmitter {
     } catch (e: any) {
       if (e.code !== 'ENOENT') throw e;
     }
-    for (const vm of this.records.values()) await this.recoverDiskEncryption(vm);
+    for (const vm of this.records.values()) await this.disks.recover(vm);
     if ([...this.records.values()].some((vm) => vm.sandbox)) {
       await this.expireSandboxes();
       this.watchSandboxes();
     }
   }
-  private diskEncryptionPaths(id: string) {
-    const dir = vmDir(id);
-    return {
-      disk: join(dir, 'disk.qcow2'),
-      staged: join(dir, '.disk.encrypting.qcow2'),
-      backup: join(dir, '.disk.before-encrypt.qcow2'),
-      pending: join(dir, '.disk-encryption.pending.json'),
-    };
-  }
-  private async diskInfo(id: string) {
-    const output = await this.engine.run('sakura-img',
-      ['info', '-f', 'qcow2', '--output=json', this.diskEncryptionPaths(id).disk]);
-    return JSON.parse(output) as { format?: string; encrypted?: boolean; 'backing-filename'?: string };
-  }
-  private async recoverDiskEncryption(vm: VMRecord) {
-    const paths = this.diskEncryptionPaths(vm.id);
-    const pending = await readFile(paths.pending, 'utf8').catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return undefined;
-      throw error;
-    });
-    if (!pending && !vm.diskEncryption) return;
-    const info = await this.diskInfo(vm.id);
-    if (pending) {
-      const config = diskEncryptionSchema.parse(JSON.parse(pending));
-      if (info.encrypted) {
-        if (vm.diskEncryption && vm.diskEncryption.secretName !== config.secretName)
-          throw new AppError(`实例 ${vm.name} 的磁盘口令引用与待恢复事务不一致`, 409);
-        vm.diskEncryption = config;
-        await this.save();
-      } else if (vm.diskEncryption) {
-        throw new AppError(`实例 ${vm.name} 的加密标记与明文磁盘不一致，请先恢复磁盘`, 409);
-      }
-      // After a crash, only an encrypted current disk justifies deleting the plaintext hard link.
-      await rm(paths.staged, { force: true });
-      await rm(paths.backup, { force: true });
-      await rm(paths.pending, { force: true });
-    }
-    if (vm.diskEncryption && !info.encrypted)
-      throw new AppError(`实例 ${vm.name} 的加密标记与磁盘格式不一致`, 409);
-  }
+  private readonly disks = new VmDiskEncryption({
+    engine: () => this.engine,
+    get: id => this.get(id), running: id => this.live.has(id),
+    requireStopped: id => this.requireStopped(id),
+    locked: (id, work) => this.locked(id, work),
+    save: () => this.save(), changed: () => { this.emit('change'); },
+    openSecret: (id, name) => openDiskSecret(this, id, name),
+    secretNames: id => new Secrets(this).list(id),
+  });
+  private diskInfo(id: string) { return this.disks.info(id); }
   async withDiskSecret<T>(vm: VMRecord, action: (file: string) => Promise<T>) {
     return withDiskSecret(this, vm, action);
   }
-  async diskEncryptionStatus(id: string) {
-    const vm = this.get(id);
-    // QEMU owns the image while running; startup already verified its format.
-    const info = this.live.has(id) ? { encrypted: !!vm.diskEncryption } : await this.diskInfo(id);
-    const keyAvailable = vm.diskEncryption
-      ? (await new Secrets(this).list(id)).some((item) => item.name === vm.diskEncryption!.secretName)
-      : false;
-    return { enabled: !!vm.diskEncryption, encrypted: !!info.encrypted,
-      format: vm.diskEncryption?.format, secretName: vm.diskEncryption?.secretName,
-      keyAvailable, stopped: !this.live.has(id), snapshots: vm.snapshots.length };
-  }
+  async diskEncryptionStatus(id: string) { return this.disks.status(id); }
   async encryptDisk(id: string, secretName: string, signal?: AbortSignal) {
-    return this.locked(id, async () => {
-      const vm = this.get(id);
-      this.requireStopped(id);
-      if (vm.diskEncryption) throw new AppError('实例磁盘已经加密', 409);
-      if (vm.branchOrigin)
-        throw new AppError('快照分支保留明文合并基线，不能加密；请先合并或删除分支', 409);
-      if (vm.sandbox || vm.rescueOf) throw new AppError('临时实例不能加密磁盘', 409);
-      if (vm.snapshots.length) throw new AppError('请先删除或导出内部快照，再加密实例磁盘', 409);
-      const config = diskEncryptionSchema.parse({ format: 'luks', secretName });
-      const paths = this.diskEncryptionPaths(id);
-      for (const path of [paths.staged, paths.backup, paths.pending])
-        if (existsSync(path)) throw new AppError('存在未完成的磁盘加密文件，请先重启服务执行恢复', 409);
-      if ((await this.diskInfo(id)).encrypted) throw new AppError('磁盘已加密但缺少加密配置', 409);
-      const original = await lstat(paths.disk);
-      if (!original.isFile()) throw new AppError('实例磁盘必须是普通文件', 409);
-      const secret = await openDiskSecret(this, id, config.secretName);
-      let published = false;
-      try {
-        await writeFile(paths.pending, JSON.stringify(config), { flag: 'wx', mode: 0o600 });
-        signal?.throwIfAborted();
-        const object = ['--object', qemuSecretObject(secret.file)];
-        await this.engine.run('sakura-img', [
-          'convert', ...object, '-f', 'qcow2', '-O', 'qcow2',
-          '-o', 'encrypt.format=luks,encrypt.key-secret=sakura-disk-key',
-          paths.disk, paths.staged,
-        ], { signal, timeoutMs: 1800000 });
-        const stagedInfo = JSON.parse(await this.engine.run('sakura-img',
-          ['info', '-f', 'qcow2', '--output=json', paths.staged]));
-        if (stagedInfo.format !== 'qcow2' || stagedInfo.encrypted !== true ||
-            stagedInfo['backing-filename'])
-          throw new AppError('加密转换结果无效，原磁盘未修改', 409);
-        await this.engine.run('sakura-img', ['check', ...object, '--image-opts',
-          encryptedImageOptions(paths.staged)], { signal, timeoutMs: 1800000 });
-        await this.engine.run('sakura-img', ['compare', ...object, '--image-opts',
-          plainImageOptions(paths.disk), encryptedImageOptions(paths.staged)],
-        { signal, timeoutMs: 1800000 });
-        const handle = await open(paths.staged, 'r+');
-        try { await handle.sync(); } finally { await handle.close(); }
-        signal?.throwIfAborted();
-        await link(paths.disk, paths.backup);
-        await rename(paths.staged, paths.disk);
-        published = true;
-        vm.diskEncryption = config;
-        await this.save();
-        await rm(paths.backup, { force: true });
-        await rm(paths.pending, { force: true });
-        this.emit('change');
-        return this.diskEncryptionStatus(id);
-      } finally {
-        await secret.close();
-        if (!published) {
-          await rm(paths.staged, { force: true });
-          await rm(paths.backup, { force: true });
-          await rm(paths.pending, { force: true });
-        }
-      }
-    });
+    return this.disks.encrypt(id, secretName, signal);
   }
-  private watchSandboxes() {
-    if (this.sandboxTimer || this.closing) return;
-    this.sandboxTimer = setInterval(() => void this.expireSandboxes(), 1000);
-    this.sandboxTimer.unref();
-  }
-  // Host-side enforcement remains active even when the optional UI plugin is disabled.
-  expireSandboxes(now = Date.now()): Promise<void> {
-    if (this.sandboxSweep) return this.sandboxSweep;
-    this.sandboxSweep = (async () => {
-      const expired = [...this.records.values()].filter(
-        (vm) => vm.sandbox && sandboxExpired(vm.sandbox, now),
-      );
-      await Promise.all(
-        expired.map(async (vm) => {
-          if (this.closing) return;
-          try {
-            await this.terminateSandbox(vm.id);
-            if (vm.sandbox!.onExpire === 'delete' && !this.maintenance && !this.locks.has(vm.id))
-              await this.deleteInternal(vm.id, !!vm.rescueOf);
-          } catch (error) {
-            this.log(vm.id, '\r\n沙箱到期清理失败：' + String(error) + '\r\n');
-          }
-        }),
-      );
-    })().finally(() => {
-      this.sandboxSweep = undefined;
-    });
-    return this.sandboxSweep;
-  }
-  async terminateSandbox(id: string) {
-    if (!this.get(id).sandbox) throw new AppError('该实例不是沙箱', 409);
-    const live = this.live.get(id);
-    if (!live) return;
-    // Cancellation must not wait on a guest command or an unrelated instance lock.
-    live.bootAbort.abort();
-    live.abort.abort();
-    await live.done;
-  }
-  private requireSandboxLifetime(vm: VMRecord) {
-    if (vm.sandbox && sandboxExpired(vm.sandbox))
-      throw new AppError('沙箱已到期，请销毁后创建新沙箱', 409, 'SANDBOX_EXPIRED');
-  }
-  private requireMutableConfig(vm: VMRecord) {
-    if (vm.sandbox)
-      throw new AppError('沙箱资源和网络策略创建后不可修改，请创建新沙箱', 409, 'SANDBOX_POLICY_LOCKED');
-  }
+  private readonly sandboxes = new SandboxLifetimes({
+    records: () => this.records.values(), get: id => this.get(id),
+    live: id => this.live.get(id), closing: () => this.closing,
+    maintenance: () => this.maintenance, busy: id => this.locks.has(id),
+    remove: (id, allowIncident) => this.deleteInternal(id, allowIncident),
+    log: (id, data) => this.log(id, data),
+  });
+  private watchSandboxes() { this.sandboxes.watch(); }
+  expireSandboxes(now = Date.now()): Promise<void> { return this.sandboxes.expire(now); }
+  async terminateSandbox(id: string) { return this.sandboxes.terminate(id); }
+  private requireSandboxLifetime(vm: VMRecord) { this.sandboxes.requireLifetime(vm); }
+  private requireMutableConfig(vm: VMRecord) { this.sandboxes.requireMutable(vm); }
   private saveQueue = Promise.resolve();
   private async save() {
     // Capture nested record values when the save is admitted, before waiting
@@ -695,38 +564,15 @@ export class Machines extends EventEmitter {
     transferId: string; sourceVmId: string; snapshotId: string; sha256: string }) {
     return this.startInternal(id, undefined, false, identity);
   }
+  private readonly haAuthority = new VmHaAuthority({
+    get: id => this.get(id), requireStopped: id => this.requireStopped(id),
+    locked: (id, work) => this.locked(id, work), save: () => this.save(),
+    changed: () => { this.emit('change'); },
+  });
   async enrollHaWitness(id: string, targetHostId: string, failureThreshold: number) {
-    z.uuid().parse(targetHostId);
-    z.number().int().min(2).max(10).parse(failureThreshold);
-    return this.locked(id, async () => {
-      const vm = this.get(id);
-      this.requireStopped(id);
-      if (vm.haWitnessEnrollment) {
-        if (vm.haWitnessEnrollment.targetHostId !== targetHostId ||
-            vm.haWitnessEnrollment.failureThreshold !== failureThreshold)
-          throw new AppError('实例已登记其他 HA 见证目标，须先撤销', 409);
-        return vm.haWitnessEnrollment;
-      }
-      vm.haWitnessEnrollment = haWitnessEnrollmentSchema.parse({ targetHostId,
-        failureThreshold,
-        registeredAt: new Date().toISOString() });
-      try { await this.save(); }
-      catch (error) { delete vm.haWitnessEnrollment; throw error; }
-      this.emit('change');
-      return vm.haWitnessEnrollment;
-    });
+    return this.haAuthority.enrollHaWitness(id, targetHostId, failureThreshold);
   }
-  async releaseHaWitness(id: string, targetHostId: string) {
-    return this.locked(id, async () => {
-      const vm = this.get(id), previous = vm.haWitnessEnrollment;
-      if (!previous || previous.targetHostId !== targetHostId)
-        throw new AppError('实例见证登记已变化', 409);
-      delete vm.haWitnessEnrollment;
-      try { await this.save(); }
-      catch (error) { vm.haWitnessEnrollment = previous; throw error; }
-      this.emit('change');
-    });
-  }
+  async releaseHaWitness(id: string, targetHostId: string) { return this.haAuthority.releaseHaWitness(id, targetHostId); }
   async startIncoming(id: string) {
     return this.startInternal(id, undefined, true);
   }
@@ -786,71 +632,14 @@ export class Machines extends EventEmitter {
       return fence;
     });
   }
-  async fenceForHa(id: string, raw: HaPromotion,
-    guard?: () => Promise<void> | void) {
-    const promotion = haPromotionSchema.parse(raw);
-    return this.locked(id, async () => {
-      const vm = this.get(id);
-      this.requireStopped(id);
-      await guard?.();
-      if (vm.haPromotion) {
-        if (vm.haPromotion.transferId !== promotion.transferId)
-          throw new AppError('来源实例已有其他故障接管栅栏', 409);
-        return vm.haPromotion;
-      }
-      vm.haPromotion = promotion;
-      try { await this.save(); }
-      catch (error) { delete vm.haPromotion; throw error; }
-      this.emit('change');
-      return promotion;
-    });
+  async fenceForHa(id: string, raw: HaPromotion, guard?: () => Promise<void> | void) {
+    return this.haAuthority.fenceForHa(id, raw, guard);
   }
-  async updateHaPromotion(id: string, transferId: string,
-    patch: Pick<HaPromotion, 'status'> & { error?: string }) {
-    return this.locked(id, async () => {
-      const vm = this.get(id), previous = vm.haPromotion;
-      if (!previous || previous.transferId !== transferId)
-        throw new AppError('故障接管栅栏已变化', 409);
-      vm.haPromotion = haPromotionSchema.parse({ ...previous, ...patch,
-        updatedAt: new Date().toISOString() });
-      try { await this.save(); }
-      catch (error) { vm.haPromotion = previous; throw error; }
-      this.emit('change');
-      return vm.haPromotion;
-    });
+  async updateHaPromotion(id: string, transferId: string, patch: Pick<HaPromotion, 'status'> & { error?: string }) {
+    return this.haAuthority.updateHaPromotion(id, transferId, patch);
   }
-  async releaseHaPromotion(id: string, transferId: string) {
-    return this.locked(id, async () => {
-      const vm = this.get(id), previous = vm.haPromotion;
-      this.requireStopped(id);
-      if (!previous || previous.transferId !== transferId)
-        throw new AppError('故障接管栅栏已变化', 409);
-      delete vm.haPromotion;
-      try { await this.save(); }
-      catch (error) { vm.haPromotion = previous; throw error; }
-      this.emit('change');
-      return { released: true };
-    });
-  }
-  async retireHaReplica(id: string, raw: unknown) {
-    const identity = haRetirementSchema.omit({ retiredAt: true }).parse(raw);
-    return this.locked(id, async () => {
-      const vm = this.get(id);
-      this.requireStopped(id);
-      if (vm.migrationOrigin?.sourceHostId !== identity.sourceHostId ||
-          vm.migrationOrigin.transferId !== identity.transferId ||
-          vm.migrationOrigin.sourceVmId !== identity.sourceVmId ||
-          vm.migrationOrigin.snapshotId !== identity.snapshotId ||
-          vm.migrationOrigin.diskSha256 !== identity.sha256)
-        throw new AppError('故障副本身份与导入记录不一致', 409);
-      if (vm.haRetirement) return vm.haRetirement;
-      vm.haRetirement = { ...identity, retiredAt: new Date().toISOString() };
-      try { await this.save(); }
-      catch (error) { delete vm.haRetirement; throw error; }
-      this.emit('change');
-      return vm.haRetirement;
-    });
-  }
+  async releaseHaPromotion(id: string, transferId: string) { return this.haAuthority.releaseHaPromotion(id, transferId); }
+  async retireHaReplica(id: string, raw: unknown) { return this.haAuthority.retireHaReplica(id, raw); }
   private async startInternal(id: string, rescueOf?: string, incoming = false,
     haActivation?: { sourceHostId: string; transferId: string;
       sourceVmId: string; snapshotId: string; sha256: string }) {
@@ -2480,9 +2269,8 @@ export class Machines extends EventEmitter {
     if (this.closeTask) return this.closeTask;
     this.closing = true;
     for (const controller of this.rescueControllers) controller.abort();
-    clearInterval(this.sandboxTimer);
     this.closeTask = (async () => {
-      await this.sandboxSweep;
+      await this.sandboxes.close();
       await this.incidentWrites.catch(() => {});
       // Launch and disk operations admitted before shutdown must settle before
       // taking the final live-process snapshot or releasing their runtime.

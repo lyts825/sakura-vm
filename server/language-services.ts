@@ -1,10 +1,9 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { FileLocksV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { posix } from 'node:path';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
-import type { FileLocks } from './file-locks.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { guestPath } from '../shared/paths.ts';
 import { MAX_TEXT_BYTES, textVersion } from './files.ts';
@@ -80,7 +79,7 @@ function workspaceEdits(value: any) {
 export class LanguageServices {
   private previews = new Map<string, Preview>();
   private streams: Pick<ProjectProtocolStreams, 'open' | 'assertCapture' | 'recordsAll' | 'readonly' | 'recover' | 'stop' | 'close'>;
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private locks: ServiceInterface<FileLocks>,
+  constructor(private machines: Machines, private workspaces: WorkspacesV1, private locks: FileLocksV1,
     private options: { streams?: LanguageServices['streams']; adminTask?: typeof guestTask } = {}) {
     this.streams = options.streams || new ProjectProtocolStreams(machines, workspaces);
   }

@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { SecretsV1 } from './service-contracts/v1.ts';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { ROOT } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { secretName, type Secrets } from './secrets.ts';
+import { secretName } from './secrets.ts';
 import { quote } from './shell.ts';
 
 export const dependencyEndpoint = z
@@ -68,7 +68,7 @@ export type ResolvedDependencyAuthentication = {
 export async function resolveDependencyAuthentication(
   id: string,
   input: DependencyAuthentication,
-  secrets?: ServiceInterface<Secrets>,
+  secrets?: SecretsV1,
 ): Promise<ResolvedDependencyAuthentication> {
   const config = dependencyAuthentication.parse(input);
   if (!secrets) throw new AppError('认证依赖预取需要启用私密配置插件', 409);

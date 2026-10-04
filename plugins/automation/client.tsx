@@ -496,13 +496,15 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
   }, [next.data?.features, nextSearch]);
   const checkNext = (featureId: string) =>
     action.run(async () => {
-      const result = await request(`/vms/${active.id}/next-features`, 'POST', { action: 'check', featureId });
-      setHardwareReport(
-        featureId === 'hardware-compatibility' && result?.matrix ? (result as HardwareReport) : null,
-      );
-      setNextResult(
-        featureId === 'hardware-compatibility' && result?.matrix ? '' : JSON.stringify(result, null, 2),
-      );
+      if (featureId === 'hardware-compatibility') {
+        const result = await request<HardwareReport>(`/vms/${active.id}/next-features`, 'POST', { action: 'check', featureId });
+        setHardwareReport(result);
+        setNextResult('');
+      } else {
+        const result = await request(`/vms/${active.id}/next-features`, 'POST', { action: 'check', featureId });
+        setHardwareReport(null);
+        setNextResult(JSON.stringify(result, null, 2));
+      }
       next.reload();
     });
   const runNext = (featureId: string) =>
@@ -514,7 +516,7 @@ function ActiveFeatureSuitePanel({ request: baseRequest, vms, selected, onSelect
         return;
       }
       if (featureId === 'clipboard-policy') {
-        const result = await request(`/vms/${active.id}/next-features`, 'POST',
+        const result = await request<{ message?: string }>(`/vms/${active.id}/next-features`, 'POST',
           { action: 'check', featureId });
         setNextResult(typeof result?.message === 'string' ? result.message : JSON.stringify(result, null, 2));
         next.reload();

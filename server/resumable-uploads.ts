@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { FilesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, stat, statfs } from 'node:fs/promises';
@@ -10,7 +10,6 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { checkedId, guestPath } from '../shared/paths.ts';
 import { readStore, regularDirectory, writeStore } from './local-store.ts';
-import type { Files } from './files.ts';
 
 export const UPLOAD_CHUNK_BYTES = 1024 ** 2;
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -49,7 +48,7 @@ type Session = z.infer<typeof requestSchema> & {
 export class ResumableUploads {
   private active = new Set<string>();
   constructor(
-    private files: ServiceInterface<Files>,
+    private files: FilesV1,
     private root = join(DATA, 'uploads'),
   ) {}
   private folder(vmId: string, id: string) {

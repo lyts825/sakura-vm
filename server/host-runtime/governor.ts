@@ -27,6 +27,8 @@ export type ResourceRegistration = Pick<ResourceRequest, 'owner' | 'kind' | 'lab
 export type ResourceLease = {
   readonly id: string;
   release(): void;
+  /** Internal lifecycle instrumentation; does not change admission or resource ownership. */
+  beginCleanup?(): void;
   cleanupPending(error: unknown): void;
   transfer(owner: string): void;
   /** Atomically adjust held dimensions without waiting or adding another resource. */
@@ -84,6 +86,24 @@ export class HostRuntime {
   private lastOwner?: string;
   private pumping = false;
   private totals = { admitted: 0, rejected: 0, cancelled: 0, released: 0 };
+  private cleanupListeners = new Set<() => void>();
+  subscribeCleanup(listener: () => void) {
+    this.cleanupListeners.add(listener);
+    return () => { this.cleanupListeners.delete(listener); };
+  }
+  private clocks = new WeakMap<ResourceView, { created: number; admitted?: number; cleanup?: number }>();
+  private timings = {
+    queue: { count: 0, totalMs: 0, maxMs: 0 },
+    execution: { count: 0, totalMs: 0, maxMs: 0 },
+    cleanup: { count: 0, totalMs: 0, maxMs: 0 },
+  };
+  private elapsed(view: ResourceView) {
+    const clock = this.clocks.get(view)!;
+    const now = performance.now();
+    return { queueMs: Math.max(0, (clock.admitted ?? now) - clock.created),
+      executionMs: clock.admitted === undefined ? 0 : Math.max(0, (clock.cleanup ?? now) - clock.admitted),
+      cleanupMs: clock.cleanup === undefined ? 0 : Math.max(0, now - clock.cleanup) };
+  }
   private readonly queueLimit: number;
   private readonly ownerQueueLimit: number;
   private readonly controlQueueReserve: number;
@@ -137,6 +157,7 @@ export class HostRuntime {
       createdAt: new Date().toISOString(),
     };
     this.resources.set(view.id, view);
+    this.clocks.set(view, { created: performance.now(), ...(state === 'active' ? { admitted: performance.now() } : {}) });
     return view;
   }
 
@@ -307,6 +328,15 @@ export class HostRuntime {
     }
   }
   private finish(view: ResourceView, state: 'released' | 'rejected') {
+    view.timings = this.elapsed(view);
+    const clock = this.clocks.get(view)!;
+    for (const phase of ['queue', 'execution', 'cleanup'] as const) {
+      if (phase === 'execution' && clock.admitted === undefined || phase === 'cleanup' && clock.cleanup === undefined) continue;
+      const value = view.timings[`${phase}Ms`], aggregate = this.timings[phase];
+      aggregate.count++;
+      aggregate.totalMs += value;
+      aggregate.maxMs = Math.max(aggregate.maxMs, value);
+    }
     view.state = state;
     view.finishedAt = new Date().toISOString();
     this.resources.delete(view.id);
@@ -331,6 +361,7 @@ export class HostRuntime {
     for (const [key, amount] of request.dimensions) this.dimensions.get(key)!.used += amount;
     request.view.state = 'active';
     request.view.admittedAt = new Date().toISOString();
+    this.clocks.get(request.view)!.admitted = performance.now();
     this.lastOwner = request.view.owner;
     ++this.totals.admitted;
     request.resolve(this.lease(request.view, request.dimensions));
@@ -374,10 +405,16 @@ export class HostRuntime {
         ++this.totals.released;
         this.pump();
       },
+      beginCleanup: () => {
+        if (!released) this.clocks.get(view)!.cleanup ??= performance.now();
+      },
       cleanupPending: (error) => {
         if (released) return;
         view.state = 'cleanup-pending';
+        const clock = this.clocks.get(view)!;
+        clock.cleanup ??= performance.now();
         view.error = failure(error);
+        for (const listener of this.cleanupListeners) listener();
       },
       transfer: (owner) => {
         if (released) throw new AppError('已释放资源不能移交', 409, 'RESOURCE_RELEASED');
@@ -437,10 +474,11 @@ export class HostRuntime {
         reserved: value.reserved,
         used: value.used,
       })),
-      resources: [...this.resources.values()].map((view) => structuredClone(view)),
+      resources: [...this.resources.values()].map((view) => ({ ...structuredClone(view), timings: this.elapsed(view) })),
       recent: this.recent.map((view) => structuredClone(view)),
       queued: this.waiting.length,
       totals: { ...this.totals },
+      timings: structuredClone(this.timings),
     };
   }
 }

@@ -5,7 +5,6 @@ import { api, controllerSession, RefreshQueue } from '../controller-session';
 import { watchController } from '../controller-watch';
 import { ResponseOrder } from '../request-order';
 import { pluginGeneration } from '../plugin-generation';
-import { resourceCache } from '../resource-cache';
 
 export function useControllerState(setSelectedRaw: Dispatch<SetStateAction<string>>) {
   const [vms, setVms] = useState<VMView[]>([]),
@@ -28,7 +27,7 @@ export function useControllerState(setSelectedRaw: Dispatch<SetStateAction<strin
           ]);
           if (!refreshOrder.current.accept(version)) return;
           setVms(data);
-          if (pluginGeneration.update(sys.pluginRuntime)) resourceCache.reset();
+          pluginGeneration.update(sys.pluginRuntime);
           setSystem(sys);
           if (sys.session) controllerSession.updateSession(sys.session);
           setOffline('');

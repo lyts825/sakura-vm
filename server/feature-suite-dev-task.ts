@@ -1,9 +1,9 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
+
 import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
 import { projectIdentityPayload } from './project-identity.ts';
@@ -70,7 +70,7 @@ export function featureDevTaskCommand(project: Project, input: FeatureDevTaskInp
 }
 
 /** The original preparation lease covers execution, verification and result persistence. */
-export async function runFeatureDevTask(machines: Machines, workspaces: ServiceInterface<Workspaces>, id: string,
+export async function runFeatureDevTask(machines: Machines, workspaces: WorkspacesV1, id: string,
   input: FeatureDevTaskInput, signal: AbortSignal, log: (value: string) => void,
   onResult?: (result: FeatureDevTaskResult) => Promise<void>, options: FeatureDevTaskOptions = {}) {
   featureDevTaskOperation.parse(input.operation);

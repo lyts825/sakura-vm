@@ -1,5 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
-import type { FeatureSuite } from './feature-suite.ts';
+import type { FeatureSuiteV1 } from './service-contracts/v1.ts';
 import { scheduler, type Scheduler, type ScheduleHandle } from './scheduler.ts';
 
 /** The plugin owns its registration; the host scheduler owns periodic wakeups. */
@@ -7,7 +6,7 @@ export class FeatureScheduler {
   private registration: ScheduleHandle;
   private disable: () => void;
   private closeTask?: Promise<void>;
-  constructor(private suite: ServiceInterface<FeatureSuite>, schedules: Scheduler = scheduler) {
+  constructor(private suite: FeatureSuiteV1, schedules: Scheduler = scheduler) {
     this.disable = suite.enableBackground();
     try { this.registration = schedules.register({ owner: 'plugin:automation-scheduler', label: 'Feature suite background checks',
       intervalMs: 30_000, immediate: true, overlap: 'skip', catchUp: 'once', timeoutMs: 120_000,

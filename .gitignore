@@ -35,3 +35,17 @@ id_rsa
 id_ed25519
 *.key
 *.pem
+
+# Local verification added for the 2.0.0 contract iteration
+/tests/operation-policy.local.test.ts
+/tests/operation-baseline.local.json
+/tests/domain-recovery.local.test.ts
+/tests/service-lifecycle.local.test.ts
+/tests/recovery-catalog.local.test.ts
+/tests/frontend-plugin-isolation.local.*
+/tests/domain-boundaries.local.test.ts
+/tests/domain-owners.local.test.ts
+/tests/service-contracts.local.test.ts
+/tests/startup-review.local.test.ts
+/tests/recovery-panel.local.*
+/tests/fence-recovery-sources.local.test.ts

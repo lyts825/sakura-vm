@@ -264,6 +264,7 @@ export class ExecutionScope {
       throw error;
     } finally {
       scope.finished = true;
+      scope.lease.beginCleanup?.();
       await Promise.allSettled([...scope.children]);
       for (const cleanup of scope.cleanups)
         if (!cleanup.attempted) await scope.clean(cleanup).catch(() => {});

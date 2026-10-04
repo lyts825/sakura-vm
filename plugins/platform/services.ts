@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { NextFeatures } from '../../server/next-features.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  next: serviceRef<ServiceInterface<NextFeatures>>('platform', 'next'),
+  next: serviceRef('platform', 'next', serviceContracts.NextFeatures),
 };

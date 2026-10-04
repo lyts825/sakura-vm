@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -8,22 +8,14 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { quote } from './shell.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ProjectRunScopes, type ProjectTaskAdmissionOptions } from './project-run-scope.ts';
-import {
-  ProjectIdentities,
-  projectIdentitySchema,
-  projectIdentityRunSchema,
-  projectIdentityPayload,
-  type ProjectIdentity,
-  type ProjectIdentityExecution,
-  type ProjectIdentityRun,
-} from './project-identity.ts';
+import { ProjectIdentities, projectIdentitySchema, projectIdentityRunSchema, projectIdentityPayload, type ProjectIdentityExecution, type ProjectIdentityRun } from './project-identity.ts';
 import { guestTaskControlPlan, guestTaskControlPaths, cleanupGuestTaskPlan } from './guest-task.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { redactValues } from './secrets.ts';
@@ -208,7 +200,7 @@ export class ProjectProtocolStreams {
   private writes = new Map<string, Promise<unknown>>();
   private controller = new AbortController();
   private pending = new Set<Promise<unknown>>();
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private options: Options = {}) {
+  constructor(private machines: Machines, private workspaces: WorkspacesV1, private options: Options = {}) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);
     this.identities = options.identities || new ProjectIdentities(machines);
   }

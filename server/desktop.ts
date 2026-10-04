@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createWebSocketStream, WebSocket } from 'ws';
 import type { ClientChannel } from 'ssh2';
 import type { VmAccess as Machines } from './vm-access.ts';
@@ -14,7 +14,7 @@ import { desktopCommands, imeInstall } from './desktop-guest.ts';
 import { guestTask } from './guest-task.ts';
 import { ReadOnlyRfb } from './readonly-rfb.ts';
 import { SingleAppWindows } from './single-app-windows.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { DesktopBindings, desktopServiceStop, type DesktopBinding } from './desktop-binding.ts';
 import { redactValues } from './secrets.ts';
 import { uidCleanupScript } from './single-app-sandbox.ts';
@@ -44,7 +44,7 @@ export class Desktops {
   private watchers = new Map<string, { startedAt: string; listeners: Set<() => void> }>();
   private recovery = new Map<string, string>();
   private installed = new Set<string>();
-  constructor(private machines: Machines, private workspaces?: ServiceInterface<Workspaces>, options?: ConstructorParameters<typeof ProjectDesktops>[2]) {
+  constructor(private machines: Machines, private workspaces?: WorkspacesV1, options?: ConstructorParameters<typeof ProjectDesktops>[2]) {
     this.apps = new SingleAppWindows(machines, workspaces);
     this.bindings = new DesktopBindings(machines);
     this.projectDesktop = workspaces ? new ProjectDesktops(machines, workspaces, { ...options,

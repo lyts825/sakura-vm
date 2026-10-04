@@ -8,7 +8,7 @@ import { z, ZodError } from 'zod';
 import { DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { withResourceContext } from './host-runtime/context.ts';
+import { resourceContext, withResourceContext } from './host-runtime/context.ts';
 
 const hex = z.string().regex(/^[a-f0-9]{64}$/);
 const eventSchema = z
@@ -28,6 +28,12 @@ const eventSchema = z
     status: z.number().int().min(0).max(599).optional(),
     jobId: z.uuid().optional(),
     actorId: z.uuid().optional(),
+    pluginId: z.string().min(1).max(200).optional(),
+    pluginInstanceId: z.string().min(1).max(200).optional(),
+    pluginGeneration: z.string().min(1).max(200).optional(),
+    operationId: z.string().min(1).max(200).optional(),
+    recoveryId: z.string().min(1).max(200).optional(),
+    durationMs: z.number().nonnegative().optional(),
   })
   .strict();
 const recordSchema = z
@@ -200,11 +206,19 @@ export class AuditLog {
     });
   }
   async span<T>(
-    event: Pick<AuditEvent, 'kind' | 'name' | 'vmId' | 'projectId' | 'jobId' | 'actorId'>,
+    event: Pick<AuditEvent, 'kind' | 'name' | 'vmId' | 'projectId' | 'jobId' | 'actorId' |
+      'pluginId' | 'pluginInstanceId' | 'pluginGeneration' | 'operationId' | 'recoveryId'>,
     work: () => Promise<T>,
     status: () => number = () => 200,
   ) {
     const parent = context.getStore();
+    const identity = resourceContext();
+    event = {
+      pluginId: identity?.pluginId, pluginInstanceId: identity?.pluginInstanceId,
+      pluginGeneration: identity?.pluginGeneration, operationId: identity?.operationId,
+      recoveryId: identity?.recoveryId, ...event,
+    };
+    const started = performance.now();
     const span: TraceContext = {
       traceId: parent?.traceId || randomBytes(16).toString('hex'),
       spanId: randomBytes(8).toString('hex'),
@@ -231,7 +245,8 @@ export class AuditLog {
                 : 500;
         throw error;
       } finally {
-        await this.record({ ...event, ...span, time: new Date().toISOString(), phase: 'end', status: code });
+        await this.record({ ...event, ...span, time: new Date().toISOString(), phase: 'end', status: code,
+          durationMs: Math.max(0, performance.now() - started) });
       }
     });
   }
@@ -268,6 +283,8 @@ export function traceExport(records: AuditRecord[]) {
         { key: 'sakura.kind', value: { stringValue: event.kind } },
         ...(event.vmId ? [{ key: 'sakura.vm.id', value: { stringValue: event.vmId } }] : []),
         ...(event.jobId ? [{ key: 'sakura.job.id', value: { stringValue: event.jobId } }] : []),
+        ...(['projectId', 'pluginId', 'pluginInstanceId', 'pluginGeneration', 'operationId', 'recoveryId'] as const)
+          .flatMap(key => event[key] ? [{ key: 'sakura.' + key, value: { stringValue: event[key] } }] : []),
       ],
       status: { code: (event.status || 0) >= 400 ? 2 : 1 },
     });

@@ -1,10 +1,11 @@
+import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
-import type { AccessControl, Principal } from './access-control.ts';
+import type { Principal } from './access-control.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 
 const operation = z.enum(['start', 'stop']);
@@ -37,7 +38,7 @@ export class JitPrivileges {
   private pending = Promise.resolve();
   private closed = false;
 
-  constructor(private access: AccessControl, private machines: Machines,
+  constructor(private access: AccessControlV1, private machines: Machines,
     private file = join(DATA, 'jit-privileges.json'), private now = Date.now) {}
 
   async init() {

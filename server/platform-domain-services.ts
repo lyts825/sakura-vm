@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { SnapshotMergeV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { StorageTiering } from './storage-tiering.ts';
 import { ServiceMesh } from './service-mesh.ts';
 import { VtpmEnrollment } from './vtpm-enrollment.ts';
@@ -6,20 +6,19 @@ import { AcmeRenewal } from './acme-renewal.ts';
 import { TeamTemplates } from './team-templates.ts';
 import { HaFailureMonitor } from './ha-failure-monitor.ts';
 import type { VmAccess } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import type { HostServiceResolver } from './host-service-contracts.ts';
 import type { ObjectBackup } from './object-backup.ts';
 import type { WireGuardOverlay } from './wireguard-overlay.ts';
-import type { SnapshotMerge } from './snapshot-merge.ts';
 
 export type PlatformDomains = { objectBackup?: ObjectBackup; wireGuardOverlay?: WireGuardOverlay;
-  snapshotMerge?: () => ServiceInterface<SnapshotMerge> | undefined };
+  snapshotMerge?: () => SnapshotMergeV1 | undefined };
 /** Domain ownership is separate from the API/catalog composition facade. */
 export class PlatformDomainServices {
   readonly storageTiering: StorageTiering; readonly serviceMesh: ServiceMesh;
   readonly vtpmEnrollment: VtpmEnrollment; readonly acmeRenewal: AcmeRenewal;
   readonly teamTemplates: TeamTemplates; readonly haFailureMonitor: HaFailureMonitor;
-  constructor(machines: VmAccess, workspaces: ServiceInterface<Workspaces>, dependencies: HostServiceResolver,
+  constructor(machines: VmAccess, workspaces: WorkspacesV1, dependencies: HostServiceResolver,
     policy: ConstructorParameters<typeof HaFailureMonitor>[1], enabled: (id: string) => Promise<boolean>,
     readonly optional: PlatformDomains) {
     this.storageTiering = new StorageTiering(machines);

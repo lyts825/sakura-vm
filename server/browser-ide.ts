@@ -1,11 +1,11 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { quote } from './shell.ts';
@@ -43,12 +43,7 @@ import {
   projectIdentitySchema,
   type ProjectIdentityRun,
 } from './project-identity.ts';
-import {
-  ProjectBrowserIdeScope,
-  projectBrowserIdeRecordSchema,
-  type ProjectBrowserIdeRecord,
-  type ProjectScopeStatus,
-} from './project-service-scope.ts';
+import { ProjectBrowserIdeScope, projectBrowserIdeRecordSchema, type ProjectBrowserIdeRecord } from './project-service-scope.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -188,7 +183,7 @@ export class BrowserIde {
   private bridges: Pick<ProjectNetworkBridges, 'open' | 'stop' | 'close'>;
   private scopes: NonNullable<Options['scopes']>;
   private identities: NonNullable<Options['identities']>;
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
+  constructor(private machines: Machines, private workspaces: WorkspacesV1,
     private file = join(DATA, 'browser-ide.json'), private probeHttp: (session: Session) => Promise<boolean> = httpReady,
     private options: Options = {}) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);
@@ -495,6 +490,5 @@ test -x ${quote(binary)}`;
     this.installs.set(id, promise);
     try { await promise; } finally { this.installs.delete(id); }
   }
-
 
 }

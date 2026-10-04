@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -27,6 +27,17 @@ import type { Request } from './feature-shared';
 import { pageLabels, sectionLabels, tabLabels } from './plugin-navigation';
 import './plugins.css';
 import { CommunityPluginCenter } from './CommunityPluginCenter';
+import { PluginErrorBoundary } from './plugin-boundary';
+
+function DeferredRecoveryPanel({ request }: { request: Request }) {
+  const [attempt, retry] = useState(0);
+  const Panel = useMemo(() => lazy(() => import('./RecoveryPanel').then(module => ({ default: module.RecoveryPanel }))), [attempt]);
+  return <PluginErrorBoundary key={attempt} label="资源恢复" retryLabel="重试恢复面板" retry={() => retry(value => value + 1)}>
+    <Suspense fallback={<p role="status">正在加载恢复目录…</p>}>
+      <Panel request={request} />
+    </Suspense>
+  </PluginErrorBoundary>;
+}
 
 const categories = {
   foundation: { label: '基础配套', icon: Layers },
@@ -698,6 +709,7 @@ export function PluginCenter({ request }: { request: Request }) {
             <ShieldCheck size={14} />
             上方为随 Sakura 提供的内置插件。选择保存在本机，停用后数据仍保留。
           </p>
+          <DeferredRecoveryPanel request={request} />
           <CommunityPluginCenter request={request} />
         </>
       )}

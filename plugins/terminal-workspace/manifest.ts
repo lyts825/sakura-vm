@@ -7,5 +7,8 @@ export const manifest = definePlugin({
   category: 'workspace',
   optional: [pin('projects')],
   services: ['terminals'],
-  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/vms/:vmId/terminal-session', ['POST'], true)], sockets: ['terminal-session'] },
+  contributes: {
+    routes: [
+      {"id":"legacy.post.vms.vmId.terminal-session","method":"POST","path":"/api/vms/{vmId}/terminal-session","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"fixed-vm","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+    ], managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [http('/api/vms/:vmId/terminal-session', ['POST'], true)], sockets: ['terminal-session'] },
 });

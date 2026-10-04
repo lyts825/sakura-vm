@@ -46,6 +46,7 @@ test('manager reads live unload and cleanup state without an activation snapshot
     ...(await original()),
     activate: async (host) => {
       host.provide(metricsContract.metrics, {
+        sample: async () => ({}), forget: () => {},
         close: async () => {
           if (++attempt === 1) throw new Error('cleanup receipt');
         },

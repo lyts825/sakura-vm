@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BundlesV1, JobsV1 } from './service-contracts/v1.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readdir, lstat, readFile, rename, rm, rmdir } from 'node:fs/promises';
 import { once } from 'node:events';
@@ -17,16 +17,16 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { MAX_BUNDLE_MANIFEST, type Bundles } from './bundles.ts';
+import { MAX_BUNDLE_MANIFEST } from './bundles.ts';
 import { storageRuntime } from './storage-runtime.ts';
 import { Jobs } from './jobs.ts';
 import { fileHash, regularDirectory, writeStore } from './local-store.ts';
 
 export class GoldenImages {
-  readonly jobs: Jobs;
+  readonly jobs: JobsV1;
   constructor(
     private machines: Machines,
-    private bundles: ServiceInterface<Bundles>,
+    private bundles: BundlesV1,
     private root = join(DATA, 'golden-images'),
     jobs = new Jobs('golden-images'),
   ) {

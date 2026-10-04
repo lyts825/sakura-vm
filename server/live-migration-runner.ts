@@ -1,11 +1,10 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { HostPeers } from './host-peers.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { vmDir } from './paths.ts';
@@ -34,7 +33,7 @@ function sourceDiskNode(value: unknown) {
 /** Coordinates one source-side transfer; the durable fence remains on the VM if cutover is uncertain. */
 export class LiveMigrationRunner {
   private active = new Set<string>();
-  constructor(private machines: Machines, private peers: ServiceInterface<HostPeers>,
+  constructor(private machines: Machines, private peers: HostPeersV1,
     private query: Query = qmp, private transport: Transport = migrateQemuWithMirroredDisk) {}
 
   async run(id: string, raw: unknown, signal?: AbortSignal,
@@ -96,7 +95,7 @@ export class LiveMigrationRunner {
       organization: vm.organization,
     });
     log(`目标实例 ${prepared.targetVmId} 已暂停，迁移标识 ${transferId}。\n`);
-    const forwards: Array<Awaited<ReturnType<ServiceInterface<HostPeers>['openMigrationForward']>>> = [];
+    const forwards: Array<Awaited<ReturnType<HostPeersV1['openMigrationForward']>>> = [];
     let completed = false;
     try {
       signal?.throwIfAborted();

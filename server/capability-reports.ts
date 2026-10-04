@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { IdeV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { cpus, freemem, totalmem } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -8,9 +8,9 @@ import { DATA, vmDir } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import type { JobView } from '../shared/contracts/jobs.ts';
-import { editorConnectionProfile, type Ide } from './ide.ts';
+import { editorConnectionProfile } from './ide.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { capabilityViews, type CapabilityId } from './capability-definitions.ts';
 
@@ -181,12 +181,12 @@ export function baselineAnomalies(history: Point[], window: number, sigma: numbe
 
 export async function runReport(
   machines: Machines,
-  workspaces: ServiceInterface<Workspaces>,
+  workspaces: WorkspacesV1,
   id: string,
   featureId: CapabilityId,
   p: Record<string, unknown>,
   signal: AbortSignal,
-  editor?: Pick<Ide, 'profile'>,
+  editor?: Pick<IdeV1, 'profile'>,
 ): Promise<Record<string, unknown>> {
   signal.throwIfAborted();
   const projectId = workspaces.projects.current(id);

@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { Metrics } from '../../server/metrics.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  metrics: serviceRef<ServiceInterface<Metrics>>('metrics', 'metrics'),
+  metrics: serviceRef('metrics', 'metrics', serviceContracts.Metrics),
 };

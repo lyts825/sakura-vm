@@ -3,6 +3,8 @@ import type { DesktopPreferences } from '../desktop-preferences.ts';
 import type { SandboxPolicy } from '../sandbox.ts';
 import { hardwareSchema, hardwareIssues } from '../hardware.ts';
 export type DiskEncryptionConfig = { format: 'luks'; secretName: string };
+export const BOOT_TIMEOUT_MS = 270_000;
+export type MigrationFingerprint = { recordHash: string; diskSize: number; diskMtimeMs: number };
 
 export const createSchema = z
   .object({

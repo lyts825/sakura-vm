@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BundlesV1, FilesV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { posix } from 'node:path';
@@ -6,8 +6,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { guestPath } from '../shared/paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Files } from './files.ts';
-import type { Bundles } from './bundles.ts';
+
 import { Jobs } from './jobs.ts';
 import { lstat } from 'node:fs/promises';
 import type { Writable } from 'node:stream';
@@ -56,7 +55,7 @@ export class Downloads {
   private closed = false;
   constructor(
     private machines: Machines,
-    private providers: { files?: ServiceInterface<Files>; bundles?: ServiceInterface<Bundles> },
+    private providers: { files?: FilesV1; bundles?: BundlesV1 },
   ) {}
   private get files() {
     if (!this.providers.files) throw new AppError('文件插件未启用', 403);

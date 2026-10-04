@@ -159,6 +159,190 @@
             "additionalProperties": false
           }
         },
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-zA-Z0-9.-]*$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^\\/api\\/[a-zA-Z0-9{}:/.-]+$"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "PATCH",
+                  "DELETE"
+                ]
+              },
+              "policy": {
+                "type": "object",
+                "properties": {
+                  "access": {
+                    "type": "string",
+                    "enum": [
+                      "controller",
+                      "public",
+                      "download-ticket",
+                      "extension",
+                      "guest",
+                      "socket"
+                    ]
+                  },
+                  "roles": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "owner",
+                        "member",
+                        "viewer"
+                      ]
+                    }
+                  },
+                  "projectPermission": {
+                    "type": "string",
+                    "enum": [
+                      "read",
+                      "write",
+                      "execute",
+                      "approve"
+                    ]
+                  },
+                  "projectScoped": {
+                    "type": "boolean"
+                  },
+                  "identity": {
+                    "type": "string",
+                    "enum": [
+                      "host",
+                      "fixed-vm",
+                      "lifecycle"
+                    ]
+                  },
+                  "maintenance": {
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "block"
+                    ]
+                  },
+                  "transport": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "binary",
+                      "form",
+                      "websocket"
+                    ]
+                  },
+                  "mutating": {
+                    "type": "boolean"
+                  },
+                  "session": {
+                    "type": "string",
+                    "enum": [
+                      "required",
+                      "allow-locked"
+                    ]
+                  },
+                  "vmLock": {
+                    "type": "string",
+                    "enum": [
+                      "require-unlocked",
+                      "allow-locked"
+                    ]
+                  },
+                  "projectBinding": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "query",
+                      "input-scope",
+                      "legacy-terminal-grant"
+                    ]
+                  },
+                  "approval": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "project-change"
+                    ]
+                  },
+                  "extensionAuth": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "account",
+                      "paired",
+                      "preflight"
+                    ]
+                  },
+                  "socketChannel": {
+                    "type": "string",
+                    "enum": [
+                      "events",
+                      "terminal",
+                      "terminal-view",
+                      "logs",
+                      "desktop",
+                      "desktop-view"
+                    ]
+                  },
+                  "executionOwner": {
+                    "type": "string"
+                  },
+                  "sessionOwner": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "access",
+                  "roles",
+                  "projectScoped",
+                  "identity",
+                  "maintenance",
+                  "transport",
+                  "mutating",
+                  "session",
+                  "vmLock",
+                  "projectBinding",
+                  "approval",
+                  "extensionAuth"
+                ],
+                "additionalProperties": false
+              },
+              "handler": {
+                "type": "string",
+                "enum": [
+                  "route",
+                  "operation"
+                ]
+              },
+              "status": {
+                "type": "integer",
+                "minimum": 200,
+                "maximum": 299
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "method",
+              "policy",
+              "handler",
+              "status"
+            ],
+            "additionalProperties": false
+          }
+        },
         "operations": {
           "type": "array",
           "items": {
@@ -245,6 +429,7 @@
       },
       "required": [
         "http",
+        "routes",
         "operations",
         "sockets",
         "pages",

@@ -12,6 +12,11 @@ for (const plugin of PLUGINS) {
   assert.deepEqual(module.manifest, plugin, `${plugin.id}: manifest and entry point must agree`);
   assert.equal(typeof module.activate, 'function', `${plugin.id}: missing activate`);
   assert.equal(typeof module.route, 'function', `${plugin.id}: missing route`);
+  assert.deepEqual(Object.keys(module.httpHandlers || {}).sort(),
+    plugin.contributes.routes.filter(item => item.handler === 'route').map(item => item.id).sort(),
+    `${plugin.id}: exact HTTP handler registrations differ`);
+  for (const handler of Object.values(module.httpHandlers || {}))
+    assert.equal(typeof handler, 'function', `${plugin.id}: missing exact HTTP handler`);
   assert.deepEqual(
     Object.keys(module.operations || {}).sort(),
     plugin.contributes.operations.map((item) => item.id).sort(),

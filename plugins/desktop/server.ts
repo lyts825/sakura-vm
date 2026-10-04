@@ -149,3 +149,13 @@ export function installIme(this: PluginContext, id: string) {
     else await execute();
   }, { title: '安装中文输入法', vmId: id, projectId, action: 'install' });
 }
+
+/** Exact implemented HTTP operations; declarations alone never publish a handler. */
+export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+  "legacy.get.vms.vmId.desktop": route,
+  "legacy.post.vms.vmId.desktop": route,
+  "legacy.get.vms.vmId.single-app": route,
+  "legacy.post.vms.vmId.single-app": route,
+  "legacy.get.vms.vmId.ime": route,
+  "legacy.post.vms.vmId.ime": route,
+};

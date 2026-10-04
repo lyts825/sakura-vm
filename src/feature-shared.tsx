@@ -4,7 +4,7 @@ import type { VMView } from '../shared/contracts/vm.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import { resourceCache, type ResourceSnapshot } from './resource-cache';
 import { jobPresentation } from './job-presentation';
-export type Request = <T = any>(
+export type Request = <T = unknown>(
   path: string,
   method?: string,
   body?: unknown,
@@ -27,12 +27,12 @@ export const formatBytes = (value: number) =>
   value >= 1024 ** 3 ? `${formatNumber(value / 1024 ** 3, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} GiB`
     : `${formatNumber(value / 1024 ** 2, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MiB`;
 export function useRemote<T>(request: Request, path: string, enabled = true, interval = 5000) {
-  const [state, setState] = useState<{ request: Request; path: string; generation: number; snapshot: ResourceSnapshot<T> }>();
+  const [state, setState] = useState<{ request: Request; path: string; generation: string; snapshot: ResourceSnapshot<T> }>();
   useEffect(() => {
     if (!enabled) return;
-    return resourceCache.watch<T>(request, path, snapshot => setState({ request, path, generation: resourceCache.generation, snapshot }), interval);
+    return resourceCache.watch<T>(request, path, snapshot => setState({ request, path, generation: resourceCache.generationFor(request, path), snapshot }), interval);
   }, [request, path, enabled, interval]);
-  const current = enabled && state?.request === request && state.path === path && state.generation === resourceCache.generation ? state.snapshot : undefined;
+  const current = enabled && state?.request === request && state.path === path && state.generation === resourceCache.generationFor(request, path) ? state.snapshot : undefined;
   return { data: current?.data ?? null, error: current?.error || '',
     reload: useCallback(() => resourceCache.invalidate(request, path), [request, path]) };
 }

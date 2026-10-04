@@ -1,3 +1,4 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import { mkdir, readdir, lstat, statfs, copyFile, rename, rm, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, relative, dirname, resolve, basename, isAbsolute } from 'node:path';
@@ -21,7 +22,7 @@ export class DataMigration {
   blocked = false;
   constructor(
     private machines: Machines,
-    private stores: () => ReadonlyArray<Pick<Jobs, 'list' | 'flush'>>,
+    private stores: () => ReadonlyArray<Pick<JobsV1, 'list' | 'flush'>>,
     private source = DATA,
   ) {}
   async view() {

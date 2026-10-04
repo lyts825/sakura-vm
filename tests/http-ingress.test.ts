@@ -1,3 +1,36 @@
+type GatewayFixtureHost = import('../server/features.ts').Features;
+type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
+const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {
+  gateway: import('../server/operation-gateway.ts').OperationGateway;
+  bodies: WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>;
+}>();
+/** Preserve the fixture's data-directory setup before loading the real operation admission modules. */
+async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse, url: URL, body: GatewayFixtureBody) {
+  let fixture = admittedRouteFixtures.get(host);
+  if (!fixture) {
+    const [{ OperationGateway }, { operationEntries }] = await Promise.all([
+      import('../server/operation-gateway.ts'), import('../server/operation-catalog.ts'),
+    ]);
+    const bodies = new WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>();
+    const gateway = new OperationGateway({
+      enabled: () => host.enabled,
+      instance: owner => owner === 'core' ? undefined : host.directory.get('official', owner),
+      bind: async (_request, _url, _entry, _parameters, requireEnabled) => {
+        requireEnabled();
+        return { check: async () => 'owner' };
+      },
+    });
+    for (const entry of operationEntries)
+      if (entry.declaration.method !== 'UPGRADE')
+        gateway.register(entry, (request, response, target) => host.route(request, response, target, bodies.get(request)!));
+    gateway.seal();
+    fixture = { gateway, bodies };
+    admittedRouteFixtures.set(host, fixture);
+  }
+  fixture.bodies.set(req, body);
+  return await fixture.gateway.dispatch(req, res, url) as boolean;
+}
 import { fakeVmNetwork } from './support/fake-vm-network.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -565,7 +598,7 @@ test('network plugin exposes typed ingress operations and rejects unknown instan
         this.writableFinished = true;
       },
     }) as unknown as ServerResponse;
-    await features.route(req, res, new URL(`http://localhost${path}`), async () => input);
+    await routeThroughGateway(features, req, res, new URL(`http://localhost${path}`), async () => input);
     return { status, result };
   };
   try {

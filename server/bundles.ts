@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { SignedBundlesV1, StorageRuntimeV1, TrustedBootServiceV1 } from './service-contracts/v1.ts';
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, open, stat } from 'node:fs/promises';
@@ -16,14 +16,14 @@ import { projectSchema } from './project-config.ts';
 import { projectIdSchema, projectIndexSchema } from './project-catalog.ts';
 import ssh2 from 'ssh2';
 import { ByteRate } from './byte-rate.ts';
-import { bundleSignatureSchema, verifySignedManifest, type SignedBundles } from './signed-bundles.ts';
+import { bundleSignatureSchema, verifySignedManifest } from './signed-bundles.ts';
 import { diskEncryptionSchema, encryptedImageOptions, qemuSecretObject } from './disk-encryption.ts';
 import { Secrets } from './secrets.ts';
 import { DesktopBindings, desktopBindingSchema } from './desktop-binding.ts';
 import { x11ClipboardConfiguration } from './x11-clipboard.ts';
 import { writeStore } from './local-store.ts';
-import { storageRuntime, storageGrowth, type StorageRuntime, type StorageLease } from './storage-runtime.ts';
-import type { TrustedBootService } from './trusted-boot-service.ts';
+import { storageRuntime, storageGrowth, type StorageLease } from './storage-runtime.ts';
+
 import {
   decodeTrustedBootArchive,
   encodeTrustedBootArchive,
@@ -120,10 +120,10 @@ export function validateDiskHeader(header: Buffer, allowEncryption = false) {
   if (header.readBigUInt64BE(24) > 128n * 1024n ** 3n) throw new AppError('虚拟磁盘不能超过 128 GiB');
 }
 export class Bundles {
-  private get trustedBoot(): ServiceInterface<TrustedBootService> | undefined { return this.dependencies.optional('trustedBoot'); }
+  private get trustedBoot(): TrustedBootServiceV1 | undefined { return this.dependencies.optional('trustedBoot'); }
   constructor(
     private machines: Machines,
-    private signatures?: ServiceInterface<SignedBundles>,
+    private signatures?: SignedBundlesV1,
     private dependencies: HostServiceResolver = noHostServices,
   ) {}
   
@@ -228,7 +228,7 @@ export class Bundles {
         onCleanupError?: (error: unknown) => void,
       ) => Promise<string>,
     ) => Promise<T>,
-    storage: StorageRuntime = storageRuntime,
+    storage: StorageRuntimeV1 = storageRuntime,
     snapshotId?: string,
   ) {
     return this.machines.locked(id, async () => {

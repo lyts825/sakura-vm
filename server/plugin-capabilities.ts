@@ -1,3 +1,4 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import { ExecutionScope, type ExecutionOptions } from './execution-scope.ts';
@@ -45,7 +46,7 @@ class PluginJobs extends Jobs {
       lifetime.signal.removeEventListener('abort', cancel);
     });
   }
-  override start(key: string, work: Parameters<Jobs['start']>[1], meta: JobMeta = {}) {
+  override start(key: string, work: Parameters<JobsV1['start']>[1], meta: JobMeta = {}) {
     this.lifetime.signal.throwIfAborted();
     const view = withResourceContext({ owner: `plugin:${this.pluginId}`, pluginId: this.pluginId }, () =>
       super.start(key, work, { ...meta, owner: `plugin:${this.pluginId}` }),
@@ -158,7 +159,7 @@ export function pluginCapabilities(
       },
     }),
     jobs: Object.freeze({
-      create(name: string, options: JobOptions = {}): Jobs {
+      create(name: string, options: JobOptions = {}): JobsV1 {
         check('jobs');
         pluginDataFile(pluginId, name); // Same bounded identifier rules as plugin metadata.
         if (options.historyName) pluginDataFile(pluginId, options.historyName);

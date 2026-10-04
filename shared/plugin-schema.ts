@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { operationPolicySchema } from './contracts/operations.ts';
 
 const id = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 // Built-in packages use exact release pins; version ranges are deliberately unsupported.
@@ -15,6 +16,14 @@ export const operationContributionSchema = z.object({
   id,
   path: z.string().regex(/^\/api\/[a-z][a-z0-9-]*(?:\/(?:[a-z][a-z0-9-]*|:vmId))*$/),
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
+  status: z.number().int().min(200).max(299),
+}).strict();
+export const operationRouteSchema = z.object({
+  id: z.string().regex(/^[a-z][a-zA-Z0-9.-]*$/),
+  path: z.string().regex(/^\/api\/[a-zA-Z0-9{}:/.-]+$/),
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
+  policy: operationPolicySchema,
+  handler: z.enum(['route', 'operation']),
   status: z.number().int().min(200).max(299),
 }).strict();
 export const pluginManifestSchema = z
@@ -36,6 +45,7 @@ export const pluginManifestSchema = z
     contributes: z
       .object({
         http: z.array(httpContributionSchema),
+        routes: z.array(operationRouteSchema),
         operations: z.array(operationContributionSchema),
         sockets: z.array(z.enum(['desktop', 'terminal-session'])),
         pages: z.array(id),

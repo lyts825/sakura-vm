@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -11,12 +11,7 @@ import { projectTerminalsFor, type TerminalService as ProjectTerminals } from '.
 import { ProjectRunScopes } from './project-run-scope.ts';
 import { ProjectIdentities, projectIdentityPayload, projectIdentitySources } from './project-identity.ts';
 import { ProjectDesktopScope } from './project-service-scope.ts';
-import {
-  DesktopBindings,
-  bindingProject,
-  type ProjectDesktopBinding,
-  type DesktopBinding,
-} from './desktop-binding.ts';
+import { DesktopBindings, bindingProject, type ProjectDesktopBinding } from './desktop-binding.ts';
 import {
   desktopProjectEnvironment,
   desktopProjectPrepare,
@@ -61,7 +56,7 @@ export class ProjectDesktops {
   private scopes: ProjectRunScopes;
   private identities: ProjectIdentities;
   private pending: Map<string, PendingStart>;
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private options: {
+  constructor(private machines: Machines, private workspaces: WorkspacesV1, private options: {
     control?: Control; build?: () => Promise<string>; readyTimeoutMs?: number;
     beforeRetire?: (id: string, proof: DesktopControlProof) => Promise<void>;
   } = {}) {

@@ -1,3 +1,4 @@
+import type { UsbHotplugV1 } from './service-contracts/v1.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -9,7 +10,7 @@ import type { Machines } from './machines.ts';
 import type { Features } from './features.ts';
 import type { Engine } from './runtime.ts';
 import type { SessionLock } from './session-lock.ts';
-import type { UsbHotplug } from './usb-hotplug.ts';
+
 import type { ProjectPermissions } from './project-permissions.ts';
 import { guestExecutionInput, type ProjectExecution } from './project-execution.ts';
 import { storagePoolInput } from './storage-pools.ts';
@@ -25,7 +26,7 @@ export type MachineApiContext = {
   pluginRuntime?: () => ReturnType<Features['directory']['view']>;
   engine: Engine;
   session: Pick<SessionLock, 'view'>;
-  usbHotplug: UsbHotplug;
+  usbHotplug: UsbHotplugV1;
   projectPermissions: Pick<ProjectPermissions, 'revokeVm'>;
   projectExecution: Pick<ProjectExecution, 'run'>;
   authorizedBody: (req: IncomingMessage, limit?: number, signal?: AbortSignal) => Promise<any>;

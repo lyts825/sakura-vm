@@ -1,7 +1,8 @@
+import type { ProjectPreparationV1 } from '../server/service-contracts/v1.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ProjectExecution } from '../server/project-execution.ts';
-import type { ProjectPreparation } from '../server/project-preparation.ts';
+
 import { AppError } from '../server/model.ts';
 import { projectIdentityPayload } from '../server/project-identity.ts';
 import {
@@ -13,7 +14,7 @@ import {
 
 function setup() {
   const f = fixture();
-  const terminals = { workspaces: f.workspaces, prepareTask: (...[vm, project, signal, options]: Parameters<ProjectPreparation['prepareTask']>) =>
+  const terminals = { workspaces: f.workspaces, prepareTask: (...[vm, project, signal, options]: Parameters<ProjectPreparationV1['prepareTask']>) =>
     f.manager.prepare(vm, project, null, false, signal, undefined, { ...options, mode: 'task' }) };
   const service = new ProjectExecution(f.machines, terminals, (...args) => f.options.runProjectTask!(...args));
   const run = (command = 'UID_TEST_MARKER', requested = projectId, signal = f.abort.signal) =>

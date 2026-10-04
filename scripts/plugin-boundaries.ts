@@ -4,6 +4,7 @@ import { staticString } from './network-boundaries.ts';
 // Host adapters consume the implementation; domain services consume VmAccess.
 const hostAdapters = new Set([
   'server/application.ts',
+  'server/application-services.ts',
   'server/http-machines.ts',
   'server/plugin-capabilities.ts',
   'server/plugin-manager.ts',

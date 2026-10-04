@@ -1,10 +1,10 @@
+import type { JobsV1 } from '../server/service-contracts/v1.ts';
 import { PLUGINS } from '../shared/plugins.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, copyFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Jobs } from '../server/jobs';
 
 const root = await mkdtemp(join(tmpdir(), 'sakura-development-vm-'));
 const source = join(root, 'source'),
@@ -35,7 +35,7 @@ async function boot(id: string) {
     await delay(250);
   }
 }
-async function done(jobs: Jobs, id: string) {
+async function done(jobs: JobsV1, id: string) {
   await jobs.wait(id);
   const job = jobs.view(id)!;
   assert.equal(job.status, 'done', job.error + '\n' + job.log);

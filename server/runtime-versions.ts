@@ -1,9 +1,9 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
+
 import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
 import { randomUUID } from 'node:crypto';
@@ -43,7 +43,7 @@ export class RuntimeVersions {
   private closed = false;
   private closing?: Promise<void>;
   private unsubscribe: () => void;
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
+  constructor(private machines: Machines, private workspaces: WorkspacesV1,
     private options: { runTask?: typeof projectIdentityTask; runInstallTask?: typeof guestTask;
       now?: () => number } = {}) {
     this.unsubscribe = workspaces.onConfigChange(() => {

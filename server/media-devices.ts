@@ -1,9 +1,10 @@
+import type { UsbHotplugV1 } from './service-contracts/v1.ts';
 import { createHmac, randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { audioArguments, deviceProfileSchema, hardwareSchema } from '../shared/hardware.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { UsbHotplug } from './usb-hotplug.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { freePort, qmp } from './qmp.ts';
 
@@ -50,7 +51,7 @@ export class MediaDevices {
   private closed = false;
   private cache?: { expires: number; value: Record<'none' | 'dsound', AudioBackendSupport> };
   private supportTask?: Promise<Record<'none' | 'dsound', AudioBackendSupport>>;
-  constructor(private machines: Machines, private usb: UsbHotplug,
+  constructor(private machines: Machines, private usb: UsbHotplugV1,
     private blocked: () => boolean = () => false,
     private mutation: (delta: number) => void = () => {},
     private probe: typeof probeAudioBackend = probeAudioBackend) {}

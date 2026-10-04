@@ -166,3 +166,14 @@ export async function route(
   }
   return false;
 }
+
+/** Exact implemented HTTP operations; declarations alone never publish a handler. */
+export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+  "legacy.get.network-profiles": route,
+  "legacy.post.network-profiles": route,
+  "legacy.delete.network-profiles": route,
+  "legacy.get.vms.vmId.network": route,
+  "legacy.post.vms.vmId.network": route,
+  "legacy.get.vms.vmId.services": route,
+  "legacy.patch.vms.vmId.services": route,
+};

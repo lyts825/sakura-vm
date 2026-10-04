@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { IdeV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { mkdir, readFile, readdir, writeFile, rename, copyFile, lstat, rm } from 'node:fs/promises';
 import { join, resolve, isAbsolute, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -7,7 +7,7 @@ import { DATA, vmDir } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectSchema } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
+
 import { readStore, regularDirectory } from './local-store.ts';
 import { ProjectSsh } from './project-ssh.ts';
 import { secureSshPaths } from './ssh-files.ts';
@@ -51,11 +51,11 @@ function projectSshConfig(entry: {
 /** Exports use the live IDE owner so a returned project bridge remains alive. */
 export async function editorConnectionProfile(
   machines: Machines,
-  workspaces: ServiceInterface<Workspaces>,
+  workspaces: WorkspacesV1,
   id: string,
   signal?: AbortSignal,
   client: 'openssh' | 'jetbrains' = 'openssh',
-  service?: Pick<Ide, 'profile'>,
+  service?: Pick<IdeV1, 'profile'>,
 ) {
   signal?.throwIfAborted();
   if (service) return service.profile(id, signal, client);
@@ -75,7 +75,7 @@ export class Ide {
   };
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
     private sshDirectory = join(homedir(), '.ssh'),
   ) {
     machines.on('change', this.onChange);

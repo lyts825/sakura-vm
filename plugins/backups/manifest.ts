@@ -8,7 +8,16 @@ export const manifest = definePlugin({
   requires: [pin('snapshots'), pin('secrets'), pin('transfers')],
   services: ['backups', 'backupRecovery'],
   lifecycle: { activateMs: 30000, closeMs: 180000 },
-  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
+  contributes: {
+    routes: [
+      {"id":"legacy.get.vms.vmId.backups","method":"GET","path":"/api/vms/{vmId}/backups","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.put.vms.vmId.backups","method":"PUT","path":"/api/vms/{vmId}/backups","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.post.vms.vmId.backups","method":"POST","path":"/api/vms/{vmId}/backups","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.post.vms.vmId.backup-download","method":"POST","path":"/api/vms/{vmId}/backup-download","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"recovery-view","method":"GET","path":"/api/vms/{vmId}/backup-recovery","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+      {"id":"recovery-run","method":"POST","path":"/api/vms/{vmId}/backup-recovery","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":202},
+      {"id":"recovery-artifact","method":"GET","path":"/api/vms/{vmId}/backup-recovery/artifact","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+    ], managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [
       http('/api/vms/:vmId/backups', ['GET', 'PUT', 'POST']),
       http('/api/vms/:vmId/backup-download', ['POST']),

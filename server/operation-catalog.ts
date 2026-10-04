@@ -1,11 +1,13 @@
 import type { z } from 'zod';
 import contracts from '../docs/schemas/operations.json' with { type: 'json' };
-import type { OperationDeclaration, OperationRole } from '../shared/contracts/operations.ts';
+import { operationDeclarationSchema, type OperationDeclaration } from '../shared/contracts/operations.ts';
 import { coreOperations, coreRequestSchema } from './core-operations.ts';
 import { pluginHttpRoutes } from './plugins/registry.ts';
 
 export type OperationEntry = {
   declaration: OperationDeclaration;
+  /** Exact runtime registration target; security remains entirely in declaration. */
+  handler: 'core' | 'plugin-route' | 'plugin-operation' | 'websocket';
   title: string;
   requestSchema?: z.ZodType;
   body?: Record<string, unknown>;
@@ -14,80 +16,222 @@ export type OperationEntry = {
   media?: string;
   inspect?: boolean;
 };
-const allRoles: OperationRole[] = ['owner', 'member', 'viewer'];
-const roles: Record<string, OperationRole[]> = {
-  'access.ssoView': allRoles, 'access.ssoUnlink': allRoles,
-  'access.logout': allRoles, 'access.handoffCreate': allRoles, 'access.handoffCancel': allRoles,
-  'access.passkeys': allRoles, 'access.passkeyRegisterOptions': allRoles,
-  'access.passkeyRegisterVerify': allRoles, 'access.passkeyRemove': allRoles,
-  'access.view': ['owner', 'viewer'], 'access.projects': ['member'],
-  'access.terminalShares': ['owner', 'viewer'],
-  'access.jitList': ['owner', 'viewer'], 'access.jitCreate': ['viewer'], 'access.jitExecute': ['viewer'],
-  'access.changes': ['owner', 'member'], 'access.createChange': ['owner', 'member'],
-  'access.decideChange': ['owner', 'member'], 'access.applyChange': ['owner', 'member'],
-};
-// These are the existing explicitly granted project routes, independent of HTTP method safety.
-export const projectRoutePermissions: Record<string, Partial<Record<string, OperationDeclaration['projectPermission']>>> = {
-  project: { GET: 'read', PUT: 'write', POST: 'execute' }, 'project-runtime': { GET: 'read' },
-  'project-files': { GET: 'read' }, git: { GET: 'read', POST: 'execute' }, health: { GET: 'read' },
-};
 const normalize = (path: string) => path.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
-const lifecycle = (path: string) => /\/(?:start|stop|suspend|resume|restore|advanced|next-features|projects)$/.test(path);
-const binary = (path: string, method: string) => ['/api/import', '/api/image-import'].includes(path) ||
-  (path.endsWith('/transfer') && ['GET', 'PUT'].includes(method)) ||
-  (path.endsWith('/uploads') && method === 'PUT');
-function descriptor(id: string, owner: string, method: string, path: string, projectScoped: boolean,
-  declared: boolean, publicEndpoint = false): OperationDeclaration {
-  const permission = owner !== 'core' && projectScoped ? projectRoutePermissions[path.split('/').at(-1)!]?.[method] : undefined;
-  const access = id === 'core.download' ? 'download-ticket' : id.startsWith('core.extension.') ? 'extension' :
-    id === 'core.guest.interop' ? 'guest' : publicEndpoint ? 'public' : 'controller';
-  return {
-    id, owner, method: method as OperationDeclaration['method'], path: normalize(path), access,
-    roles: access !== 'controller' ? [] : permission ? ['owner', 'member'] :
-      owner === 'core' ? roles[id.slice(5)] || ['owner'] : ['owner'],
-    ...(permission ? { projectPermission: permission } : {}), projectScoped,
-    identity: !path.includes('vmId') ? 'host' : lifecycle(path) || !projectScoped ? 'lifecycle' : 'fixed-vm',
-    maintenance: method === 'GET' && !/(?:notebook-link|browser-ide-link|export)$/.test(path) ||
-      path === '/api/migration' || method === 'OPTIONS' || id === 'core.jobs.cancel' ||
-      ['core.session.status', 'core.session.unlock', 'core.session.passkeyOptions', 'core.session.passkeyVerify',
-        'core.access.status', 'core.access.login', 'core.access.handoffRedeem', 'core.access.passkeyLoginOptions',
-        'core.access.ssoOidcCallback', 'core.access.ssoSamlCallback'].includes(id) ||
-      ['core.session.lock', 'core.session.activity', 'core.access.logout'].includes(id) ? 'allow' : 'block',
-    transport: id === 'core.access.ssoSamlCallback' ? 'form' : access === 'download-ticket' || binary(path, method) ? 'binary' : 'json',
-    contract: declared ? 'declared' : 'partial', enabled: owner === 'core',
-  };
-}
+const socketEntries: OperationEntry[] = [
+  {
+    "declaration": {
+      "id": "core.socket.events",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/events",
+      "access": "socket",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "host",
+      "maintenance": "allow",
+      "transport": "websocket", "mutating": false,
+      "contract": "partial",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none",
+      "socketChannel": "events"
+    },
+    "status": 101,
+    "handler": "websocket",
+    "title": "WebSocket events"
+  },
+  {
+    "declaration": {
+      "id": "core.socket.terminal",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/terminal",
+      "access": "socket",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "websocket", "mutating": false,
+      "contract": "partial",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none",
+      "executionOwner": "core", "sessionOwner": "terminal-workspace", "socketChannel": "terminal"
+    },
+    "status": 101,
+    "handler": "websocket",
+    "title": "WebSocket terminal"
+  },
+  {
+    "declaration": {
+      "id": "core.socket.terminal-view",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/terminal-view",
+      "access": "socket",
+      "roles": [
+        "owner",
+        "viewer"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "websocket", "mutating": false,
+      "contract": "partial",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "legacy-terminal-grant",
+      "approval": "none",
+      "extensionAuth": "none",
+      "executionOwner": "core", "sessionOwner": "terminal-workspace", "socketChannel": "terminal-view"
+    },
+    "status": 101,
+    "handler": "websocket",
+    "title": "WebSocket terminal-view"
+  },
+  {
+    "declaration": {
+      "id": "core.socket.logs",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/logs",
+      "access": "socket",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": false,
+      "identity": "fixed-vm",
+      "maintenance": "allow",
+      "transport": "websocket", "mutating": false,
+      "contract": "partial",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "allow-locked",
+      "projectBinding": "none",
+      "approval": "none",
+      "extensionAuth": "none",
+      "socketChannel": "logs"
+    },
+    "status": 101,
+    "handler": "websocket",
+    "title": "WebSocket logs"
+  },
+  {
+    "declaration": {
+      "id": "core.socket.desktop",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/desktop",
+      "access": "socket",
+      "roles": [
+        "owner"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "websocket", "mutating": false,
+      "contract": "partial",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none",
+      "executionOwner": "desktop", "socketChannel": "desktop"
+    },
+    "status": 101,
+    "handler": "websocket",
+    "title": "WebSocket desktop"
+  },
+  {
+    "declaration": {
+      "id": "core.socket.desktop-view",
+      "owner": "core",
+      "method": "UPGRADE",
+      "path": "/ws/{vmId}/desktop-view",
+      "access": "socket",
+      "roles": [
+        "owner",
+        "viewer"
+      ],
+      "projectScoped": true,
+      "identity": "fixed-vm",
+      "maintenance": "block",
+      "transport": "websocket", "mutating": false,
+      "contract": "partial",
+      "enabled": true,
+      "session": "required",
+      "vmLock": "require-unlocked",
+      "projectBinding": "query",
+      "approval": "none",
+      "extensionAuth": "none",
+      "executionOwner": "desktop", "socketChannel": "desktop-view"
+    },
+    "status": 101,
+    "handler": "websocket",
+    "title": "WebSocket desktop-view"
+  }
+];
 
 export const operationEntries: readonly OperationEntry[] = [
   ...coreOperations.map((item): OperationEntry => ({
-    declaration: descriptor('core.' + item.id, 'core', item.method, item.path, !!item.projectScoped, !!item.response, !!item.public),
-    title: item.title, requestSchema: coreRequestSchema(item.body) || undefined,
+    declaration: {
+      id: 'core.' + item.id, owner: 'core', method: item.method as OperationDeclaration['method'],
+      path: normalize(item.path), ...item.policy,
+      contract: item.response || item.status === 204 ? 'declared' : 'partial', enabled: true,
+    },
+    handler: 'core', title: item.title, requestSchema: coreRequestSchema(item.body) || undefined,
     body: item.body, response: item.response, status: item.status || 200, media: item.media, inspect: item.inspect,
   })),
-  ...pluginHttpRoutes().flatMap((route) => route.methods.map((method): OperationEntry => {
-    const typed = Object.entries(contracts).find(([id, item]) => id.startsWith(route.owner + '.') &&
-      normalize(item.path) === normalize(route.path) && item.method === method);
-    const id = typed?.[0] || `${route.owner}.legacy.${method.toLowerCase()}.${normalize(route.path).replace(/^\/api\//, '').replace(/[{}]/g, '').replaceAll('/', '.')}`;
-    return { declaration: descriptor(id, route.owner, method, route.path, route.projectScoped, !!typed),
-      title: typed ? route.owner + ' · ' + typed[1].id : route.owner + ' · ' + method + ' ' + route.path,
-      ...(typed?.[1].request ? { body: typed[1].request } : {}), response: typed?.[1].response,
-      status: typed?.[1].status || 200, inspect: id === 'metrics.sample' };
-  })),
-  ...['events', '{vmId}/terminal', '{vmId}/terminal-view', '{vmId}/logs', '{vmId}/desktop', '{vmId}/desktop-view'].map((path): OperationEntry => ({
-    declaration: { id: 'core.socket.' + path.split('/').at(-1), owner: 'core', method: 'UPGRADE', path: '/ws/' + path,
-      access: 'socket', roles: path.endsWith('-view') ? ['owner', 'viewer'] : ['owner'],
-      projectScoped: /terminal|desktop/.test(path), identity: path === 'events' ? 'host' : 'fixed-vm',
-      maintenance: path === 'events' || path.endsWith('/logs') ? 'allow' : 'block',
-      transport: 'websocket', contract: 'partial', enabled: true }, title: 'WebSocket ' + path, status: 101,
-  })),
+  ...pluginHttpRoutes().map((route): OperationEntry => {
+    const id = route.owner + '.' + route.id;
+    const typed = (contracts as Record<string, { id: string; request?: Record<string, unknown> | null; response?: Record<string, unknown>; status: number }>)[id];
+    if (route.handler === 'operation' && !typed?.response)
+      throw new Error('插件操作缺少响应契约：' + id);
+    return {
+      declaration: { id, owner: route.owner, method: route.method, path: normalize(route.path), ...route.policy,
+        contract: route.handler === 'operation' ? 'declared' : 'partial', enabled: false },
+      handler: route.handler === 'operation' ? 'plugin-operation' : 'plugin-route',
+      title: typed ? route.owner + ' · ' + typed.id : route.owner + ' · ' + route.method + ' ' + route.path,
+      ...(typed?.request ? { body: typed.request } : {}), response: typed?.response,
+      status: route.status, inspect: id === 'metrics.sample',
+    };
+  }),
+  ...socketEntries,
 ];
 
-const keys = new Set<string>(), ids = new Set<string>();
-for (const { declaration } of operationEntries) {
-  const key = declaration.method + ' ' + declaration.path;
-  if (keys.has(key) || ids.has(declaration.id)) throw new Error('重复操作声明：' + key);
-  keys.add(key); ids.add(declaration.id);
+/** Fail publication before any listener starts, including incomplete policies supplied by plugins. */
+export function validateOperationEntries(entries: readonly OperationEntry[]) {
+  const keys = new Set<string>(), ids = new Set<string>();
+  for (const entry of entries) {
+    const declaration = operationDeclarationSchema.parse(entry.declaration);
+    const key = declaration.method + ' ' + declaration.path;
+    if (keys.has(key) || ids.has(declaration.id)) throw new Error('重复操作声明：' + key);
+    if (declaration.method === 'UPGRADE' ? entry.handler !== 'websocket' : entry.handler === 'websocket')
+      throw new Error('操作与传输处理器不一致：' + declaration.id);
+    if (declaration.transport === 'websocket' && !declaration.socketChannel)
+      throw new Error('WebSocket 操作缺少通道声明：' + declaration.id);
+    if (declaration.identity !== 'host' && !declaration.path.includes('{vmId}'))
+      throw new Error('VM 身份策略缺少明确路径参数：' + declaration.id);
+    if (declaration.projectScoped !== (declaration.projectBinding !== 'none'))
+      throw new Error('操作项目范围与绑定策略不一致：' + declaration.id);
+    if ((declaration.access === 'socket') !== (declaration.transport === 'websocket'))
+      throw new Error('操作身份与传输声明不一致：' + declaration.id);
+    keys.add(key); ids.add(declaration.id);
+  }
 }
+validateOperationEntries(operationEntries);
 
 export function operationDirectory(active: Iterable<string>) {
   const enabled = new Set(active);

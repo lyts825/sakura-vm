@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { ProjectFiles } from '../../server/project-files.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  projectFiles: serviceRef<ServiceInterface<ProjectFiles>>('project-search', 'projectFiles'),
+  projectFiles: serviceRef('project-search', 'projectFiles', serviceContracts.ProjectFiles),
 };

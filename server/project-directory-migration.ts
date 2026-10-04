@@ -1,5 +1,5 @@
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
-import type { ServiceInterface } from './service-interface.ts';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -19,7 +19,6 @@ import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
 import { terminalSessionPrefix } from '../shared/terminal-scope.ts';
 import { assertProjectPreparationIdle as assertProjectTerminalsStopped } from './project-preparation.ts';
 import { projectVersion, type Project } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/),
   decimal = z.string().regex(/^(0|[1-9][0-9]*)$/);
@@ -557,7 +556,7 @@ export class ProjectDirectoryMigrations {
   private identities: ProjectIdentities;
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
     private options: { scopes?: RunScopes; sourceDirectory?: string; rootDirectory?: string } = {},
   ) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);

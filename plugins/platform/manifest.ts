@@ -10,7 +10,14 @@ export const manifest = definePlugin({
   optional: [pin('snapshots'), pin('backups'), pin('secrets')],
   systemDependencies: ["communityPlugins","mediaDevices","hostMounts","virtioFsShares","processInterop","hostPeers","notebookEnvironments","browserIde","coldMigrations","snapshotReplications","haHostFailover","haLocalFailovers","disasterRecovery","capabilityChecks"],
   services: ['next'],
-  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
+  contributes: {
+    routes: [
+      {"id":"legacy.get.next-features","method":"GET","path":"/api/next-features","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"host","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.get.vms.vmId.next-features","method":"GET","path":"/api/vms/{vmId}/next-features","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"lifecycle","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.post.vms.vmId.next-features","method":"POST","path":"/api/vms/{vmId}/next-features","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"allow-locked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"notebook-link","method":"GET","path":"/api/vms/{vmId}/notebook-link","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"fixed-vm","maintenance":"block","transport":"json","mutating":false,"session":"required","vmLock":"require-unlocked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+      {"id":"browser-ide-link","method":"GET","path":"/api/vms/{vmId}/browser-ide-link","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"fixed-vm","maintenance":"block","transport":"json","mutating":false,"session":"required","vmLock":"require-unlocked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+    ], managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     http: [http('/api/next-features', ['GET']),
       http('/api/vms/:vmId/next-features', ['GET', 'POST'], true),
       http('/api/vms/:vmId/notebook-link', ['GET'], true),

@@ -1,3 +1,4 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import { arch, cpus, freemem, hostname, platform, totalmem } from 'node:os';
 import {
   buildSchema,
@@ -28,7 +29,7 @@ import {
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Jobs } from './jobs.ts';
+
 import { PLUGINS } from '../shared/plugins.ts';
 
 export const graphqlLimits = {
@@ -77,7 +78,7 @@ export const graphqlInfo = () => ({
 });
 export function querySnapshot(
   machines: Pick<Machines, 'records' | 'state'>,
-  stores: Pick<Jobs, 'list'>[],
+  stores: Pick<JobsV1, 'list'>[],
   active: Iterable<string>,
 ) {
   const vms = [...machines.records.values()].map((vm) => ({

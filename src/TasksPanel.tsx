@@ -150,7 +150,8 @@ export function TasksPanel({ request, vms }: { request: Request; vms: VMView[] }
                 onClick={() =>
                   void action.run(async () => {
                     const result = await request(`/jobs/${job.id}/retry`, 'POST');
-                    if (result?.url && /^\/api\/downloads\/[a-f0-9]{64}$/.test(result.url)) {
+                    if (result && typeof result === 'object' && 'url' in result && typeof result.url === 'string' &&
+                      /^\/api\/downloads\/[a-f0-9]{64}$/.test(result.url)) {
                       const link = document.createElement('a');
                       link.href = result.url;
                       link.download = '';

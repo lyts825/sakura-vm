@@ -1,6 +1,6 @@
 {
   "name": "sakura-vm",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "A WSL-inspired local Linux workspace, powered by PosixLoom and QEMU",
@@ -143,8 +143,8 @@
     "test:project-terminals:identity": "node --import tsx scripts/smoke-project-terminal-identity.ts",
     "test:reverse-tunnels": "tsx scripts/smoke-reverse-tunnels.ts",
     "test:development": "tsx scripts/smoke-development.ts",
-    "plugins:check": "tsx scripts/service-contracts.ts --check && tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check",
-    "plugins:schema": "tsx scripts/plugin-schema.ts",
+    "plugins:check": "tsx scripts/service-contracts.ts --check && tsx scripts/check-plugins.ts && tsx scripts/plugin-schema.ts --check && tsx scripts/api-contracts.ts --check",
+    "plugins:schema": "tsx scripts/plugin-schema.ts && tsx scripts/api-contracts.ts",
     "locales:build": "node scripts/generate-locale-pack.mjs",
     "locales:check": "node scripts/generate-locale-pack.mjs --check",
     "plugins:sync": "tsx scripts/sync-plugin-catalog.ts",

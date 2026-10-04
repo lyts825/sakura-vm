@@ -1,3 +1,4 @@
+import type { ProjectPermissionsV1 } from './service-contracts/v1.ts';
 import {
   createHash,
   createPrivateKey,
@@ -12,7 +13,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { projectPermissionDocument, type ProjectPermissions } from './project-permissions.ts';
+import { projectPermissionDocument } from './project-permissions.ts';
 
 const key = z.object({ name: z.string().trim().min(1).max(64),
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
@@ -79,7 +80,7 @@ export class PolicyBundles {
   private pending: Promise<unknown> = Promise.resolve();
   private closed = false;
 
-  constructor(private permissions: ProjectPermissions,
+  constructor(private permissions: ProjectPermissionsV1,
     private file = join(DATA, 'policy-bundles.json')) {}
 
   async init() {

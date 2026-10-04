@@ -74,7 +74,7 @@ export function RecipeConnection({
           disabled={action.busy || !recipe.trim()}
           onClick={() =>
             void action.run(async () => {
-              const result = await request(`/vms/${vm.id}/recipe`, 'PUT', JSON.parse(recipe));
+              const result = await request<{ project: Project }>(`/vms/${vm.id}/recipe`, 'PUT', JSON.parse(recipe));
               applied(result.project);
             }, '项目配置已应用，启动时生效')
           }

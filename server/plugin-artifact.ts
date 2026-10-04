@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PluginManifest } from '../shared/plugin-protocol.ts';
+import { APP_VERSION } from '../shared/version.ts';
 import { ROOT } from './paths.ts';
 
 let artifact: string | undefined;
@@ -33,7 +34,7 @@ export async function pluginArtifactDigest(manifest: PluginManifest) {
   artifact ??= fingerprint();
   return createHash('sha256').update(artifact).update(JSON.stringify(manifest)).digest('hex');
 }
-export function systemArtifactDigest(id: string, version = '1.0.0') {
+export function systemArtifactDigest(id: string, version = APP_VERSION) {
   artifact ??= fingerprint();
   return createHash('sha256')
     .update(artifact)

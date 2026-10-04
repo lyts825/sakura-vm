@@ -110,7 +110,7 @@ export function LibraryPanel({
   const chosen = vms.filter((v) => selected.includes(v.id));
   const batch = (kind: 'start' | 'stop') =>
     action.run(async () => {
-      const result = await request('/vms/batch', 'POST', { ids: chosen.map((v) => v.id), action: kind });
+      const result = await request<{ results: { id: string; ok: boolean; error?: string }[] }>('/vms/batch', 'POST', { ids: chosen.map((v) => v.id), action: kind });
       setResults(result.results);
       await refresh();
     });

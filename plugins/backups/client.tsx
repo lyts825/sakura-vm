@@ -190,7 +190,7 @@ export function BackupPanel({ vm, request, refresh }: FeatureProps) {
               disabled={busy}
               onClick={() =>
                 void action.run(async (signal) => {
-                  const { url } = await request(
+                  const { url } = await request<{ url: string }>(
                     `/vms/${vm.id}/backup-download`,
                     'POST',
                     { backupId: item.id },

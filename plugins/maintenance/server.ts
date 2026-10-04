@@ -88,3 +88,15 @@ export async function route(
   }
   return false;
 }
+
+/** Exact implemented HTTP operations; declarations alone never publish a handler. */
+export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+  "legacy.get.storage": route,
+  "legacy.get.vms.vmId.diagnostics": route,
+  "legacy.post.vms.vmId.diagnostics": route,
+  "legacy.post.vms.vmId.resize": route,
+  "legacy.post.vms.vmId.compact": route,
+  "legacy.get.vms.vmId.disk-maintenance": route,
+  "legacy.put.vms.vmId.disk-maintenance": route,
+  "legacy.post.vms.vmId.disk-maintenance": route,
+};

@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { ProjectSessionLifetime } from './project-session-lifetime.ts';
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectVersion, type Project } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
+
 import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { ProjectRunScopes } from './project-run-scope.ts';
 import {
@@ -133,7 +133,7 @@ export class SingleAppWindows {
   private scopes: Pick<ProjectRunScopes, 'identity'>;
   private identities: Pick<ProjectIdentities, 'install'>;
   private control: Pick<SingleAppControl, 'install' | 'call' | 'streamCommand' | 'recover' | 'legacy' | 'prepareRun'>;
-  constructor(private machines: Machines, private workspaces?: ServiceInterface<Workspaces>, private options: Options = {}) {
+  constructor(private machines: Machines, private workspaces?: WorkspacesV1, private options: Options = {}) {
     this.terminals = options.terminals || (workspaces ? projectTerminalsFor(machines, workspaces) : undefined);
     this.scopes = options.scopes || new ProjectRunScopes(machines);
     this.identities = options.identities || new ProjectIdentities(machines);

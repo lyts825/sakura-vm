@@ -1,3 +1,4 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
 import { Jobs } from './jobs.ts';
@@ -29,7 +30,7 @@ export type ScheduleView = {
 };
 export type ScheduleHandle = { id: string; trigger(): boolean; snapshot(): ScheduleView; close(): Promise<void>;
   resolveCleanup(jobId: string): Promise<void> };
-type Entry = { definition: ScheduleDefinition; view: ScheduleView; jobs: Jobs; lease: ResourceLease; nextAt: number;
+type Entry = { definition: ScheduleDefinition; view: ScheduleView; jobs: JobsV1; lease: ResourceLease; nextAt: number;
   lifetime?: PluginInstance;
   notBefore: number; queued: boolean; closed: boolean; abort?: AbortController;
   pending?: Promise<void>; closeTask?: Promise<void>; cleanupFailure?: unknown };

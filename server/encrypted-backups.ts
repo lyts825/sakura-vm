@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BundlesV1 } from './service-contracts/v1.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { appendFile, open, stat, mkdtemp, rm, rmdir } from 'node:fs/promises';
 import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'node:crypto';
@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { DATA } from './paths.ts';
 import { AppError } from '../shared/errors.ts';
 import { regularDirectory } from './local-store.ts';
-import type { Bundles } from './bundles.ts';
+
 import { storageRuntime, storageGrowth, type StorageLease } from './storage-runtime.ts';
 import { randomUUID } from 'node:crypto';
 
@@ -198,7 +198,7 @@ export async function withDecrypted<T>(
   }
 }
 export async function importEncrypted(
-  bundles: ServiceInterface<Bundles>,
+  bundles: BundlesV1,
   name: string,
   source: Readable,
   password: string,

@@ -1,10 +1,10 @@
+import type { ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
-import type { ServiceInterface } from './service-interface.ts';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
 import { envPrefix } from './project-services.ts';
 import { privateLog, redactValues } from './secrets.ts';
@@ -49,8 +49,8 @@ export class CommandPresets {
   private ownedTerminals?: ProjectTerminals;
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
-    private options: { terminals?: Pick<ProjectTerminals, 'prepare'>;
+    private workspaces: WorkspacesV1,
+    private options: { terminals?: Pick<ProjectTerminalsV1, 'prepare'>;
       runTask?: typeof projectIdentityTask } = {},
   ) {}
   async list(id: string) {

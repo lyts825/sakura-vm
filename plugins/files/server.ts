@@ -194,3 +194,23 @@ export async function route(
   }
   return false;
 }
+
+/** Exact implemented HTTP operations; declarations alone never publish a handler. */
+export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+  "legacy.get.vms.vmId.files": route,
+  "legacy.get.vms.vmId.file": route,
+  "legacy.put.vms.vmId.file": route,
+  "legacy.get.vms.vmId.file-lock": route,
+  "legacy.post.vms.vmId.file-lock": route,
+  "legacy.get.vms.vmId.history": route,
+  "legacy.post.vms.vmId.history": route,
+  "legacy.get.vms.vmId.transfer": route,
+  "legacy.put.vms.vmId.transfer": route,
+  "legacy.post.vms.vmId.file-operation": route,
+  "legacy.get.vms.vmId.uploads": route,
+  "legacy.post.vms.vmId.uploads": route,
+  "legacy.put.vms.vmId.uploads": route,
+  "legacy.delete.vms.vmId.uploads": route,
+  "legacy.get.vms.vmId.file-preview": route,
+  "legacy.get.vms.vmId.download-chunks": route,
+};

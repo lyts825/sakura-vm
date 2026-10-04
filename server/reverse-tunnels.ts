@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { writeStore } from './local-store.ts';
@@ -169,7 +169,7 @@ export class ReverseTunnels {
     for (const [key, tunnel] of this.tunnels) if (tunnel.session.vmId === id) this.automatic(key);
     for (const opening of this.opening.values()) if (opening.vmId === id) opening.abort.abort();
   };
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private options: ReverseTunnelOptions = {}) {
+  constructor(private machines: Machines, private workspaces: WorkspacesV1, private options: ReverseTunnelOptions = {}) {
     this.file = options.file || join(DATA, 'reverse-tunnels.json');
     try { this.records = storeSchema.parse(JSON.parse(readFileSync(this.file, 'utf8'))).sessions; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') this.records = [];

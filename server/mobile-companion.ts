@@ -1,3 +1,4 @@
+import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -7,7 +8,7 @@ import { readJsonBody } from './http.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
-import type { AccessControl } from './access-control.ts';
+
 import type { AlertEvent } from './feature-suite.ts';
 
 const kinds = ['cpu', 'memory', 'disk', 'service', 'backup', 'task', 'secret'] as const;
@@ -66,7 +67,7 @@ export class MobileCompanion {
   private writes = Promise.resolve();
   private closed = false;
 
-  constructor(private access: AccessControl, private feedSource: FeedSource,
+  constructor(private access: AccessControlV1, private feedSource: FeedSource,
     private allowed: () => void = () => {},
     private file = join(DATA, 'mobile-companion.json'), private now = Date.now,
     private mutation: (delta: number) => void = () => {}) {}

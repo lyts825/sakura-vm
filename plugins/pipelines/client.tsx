@@ -107,7 +107,7 @@ export function PipelinePanel({ vm, request }: FeatureProps) {
                 key={a.index}
                 onClick={() =>
                   void action.run(async (signal) => {
-                    const { url } = await request(
+                    const { url } = await request<{ url: string }>(
                       `/vms/${vm.id}/pipeline-artifact`,
                       'POST',
                       { runId: run.id, index: a.index },

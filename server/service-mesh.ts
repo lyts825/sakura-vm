@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,7 +9,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { writeStore } from './local-store.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
@@ -32,24 +32,7 @@ import {
   reverseTunnelListenerSchema,
   type ReverseTunnelListener,
 } from './reverse-tunnel-transport.ts';
-import {
-  meshBinarySchema,
-  meshConfigSchema,
-  meshHostStatusSchema,
-  meshConfigReplySchema,
-  meshConfigCleanSchema,
-  meshProcessReplySchema,
-  meshConfigPlan,
-  meshInspectInput,
-  meshConfigInput,
-  meshProcessInput,
-  meshEnvoyExecution,
-  meshControlCommand,
-  type MeshBinary,
-  type MeshConfig,
-  type MeshConfigPlan,
-  type MeshHostStatus,
-} from './service-mesh-identity.ts';
+import { meshBinarySchema, meshConfigSchema, meshHostStatusSchema, meshConfigReplySchema, meshConfigCleanSchema, meshProcessReplySchema, meshConfigPlan, meshInspectInput, meshConfigInput, meshProcessInput, meshEnvoyExecution, meshControlCommand, type MeshConfig, type MeshConfigPlan, type MeshHostStatus } from './service-mesh-identity.ts';
 import { redactValues } from './secrets.ts';
 
 const policySchema = z.object({
@@ -214,7 +197,6 @@ export function envoySidecarConfig(policy: z.infer<typeof serviceMeshPolicy>) {
   };
 }
 
-
 export class ServiceMesh {
   private store: Store = defaults();
   private writes: Promise<unknown> = Promise.resolve();
@@ -228,7 +210,7 @@ export class ServiceMesh {
   private unguard: () => void;
   private scopes: NonNullable<ServiceMeshOptions['scopes']>;
   private identities: NonNullable<ServiceMeshOptions['identities']>;
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
+  constructor(private machines: Machines, private workspaces: WorkspacesV1,
     private file = join(DATA, 'service-mesh.json'),
     private canStart: (id: string) => Promise<boolean> = async () => true,
     private options: ServiceMeshOptions = {}) {

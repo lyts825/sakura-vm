@@ -1,10 +1,10 @@
+import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
-import type { AccessControl } from './access-control.ts';
 
 const originSchema = z.string().regex(/^chrome-extension:\/\/[a-p]{32}$/);
 const grant = z.object({ id: z.uuid(), origin: originSchema, ownerId: z.uuid(),
@@ -30,7 +30,7 @@ export class BrowserExtensions {
   private writes = Promise.resolve();
   private closed = false;
 
-  constructor(private access: AccessControl,
+  constructor(private access: AccessControlV1,
     private file = join(DATA, 'browser-extensions.json'), private now = Date.now) {}
 
   async init() {

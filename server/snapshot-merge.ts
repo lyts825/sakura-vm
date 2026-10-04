@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BundlesV1 } from './service-contracts/v1.ts';
 import { copyFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { AppError } from '../shared/errors.ts';
@@ -10,7 +10,7 @@ import { quote } from './shell.ts';
 import { rescueSetup } from './rescue.ts';
 import { parseSnapshotManifest, snapshotManifestCommand } from './snapshot-diff.ts';
 import type { SnapshotDiffFile } from '../shared/snapshot-diff.ts';
-import { snapshotMergeInputSchema, type SnapshotMergeInput } from '../shared/snapshot-merge.ts';
+import { snapshotMergeInputSchema } from '../shared/snapshot-merge.ts';
 
 const SCAN_TIMEOUT_MS = 10 * 60_000;
 const MAX_CHANGES = 200;
@@ -75,7 +75,7 @@ function mergeFileCommand(path: string, file?: SnapshotDiffFile) {
 export class SnapshotMerge {
   readonly jobs = new Jobs('snapshot-merge');
   private closed = false;
-  constructor(private machines: Machines, private bundles: ServiceInterface<Bundles>) {}
+  constructor(private machines: Machines, private bundles: BundlesV1) {}
 
   view(id: string) {
     const vm = this.machines.get(id);

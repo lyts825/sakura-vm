@@ -1,9 +1,7 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { Images } from '../../server/images.ts';
-import type { DiskImports } from '../../server/disk-imports.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  images: serviceRef<ServiceInterface<Images>>('images', 'images'),
-  diskImports: serviceRef<ServiceInterface<DiskImports>>('images', 'diskImports'),
+  images: serviceRef('images', 'images', serviceContracts.Images),
+  diskImports: serviceRef('images', 'diskImports', serviceContracts.DiskImports),
 };

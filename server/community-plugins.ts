@@ -565,6 +565,21 @@ export class CommunityPlugins {
     });
   }
 
+  async recoverCleanup(id: string, generation: string): Promise<void> {
+    await this.serial(async () => {
+      const instance = this.pluginDirectory.get('community', id);
+      const item = this.state.installed.find(entry => entry.id === id);
+      if (!instance || !item || instance.generation !== generation || instance.phase !== 'cleanup-pending')
+        throw new AppError('原社区插件恢复票据已变化', 409, 'RECOVERY_STALE');
+      await this.retire(item);
+      const next = structuredClone(this.state);
+      const saved = next.installed.find(entry => entry.id === id)!;
+      delete saved.phase;
+      delete saved.generation;
+      await this.save(next);
+    });
+  }
+
   async action(raw: unknown) {
     const input = communityPluginRequest.parse(raw);
     if (input.operation === 'run') return this.run(input.pluginId, input.input);

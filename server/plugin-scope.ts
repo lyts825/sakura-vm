@@ -102,6 +102,7 @@ export class PluginScope {
     this.abort();
     if (this.closing) return this.closing;
     const closing = (async () => {
+      this.resource?.beginCleanup?.();
       const errors: unknown[] = [];
       // Cancellation is not completion: callers may bound this wait, but retain this scope on timeout.
       await this.settled();

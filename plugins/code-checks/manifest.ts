@@ -8,7 +8,14 @@ export const manifest = definePlugin({
   requires: [pin('projects'), pin('files')],
   optional: [pin('migration')],
   services: ['intelligence', 'languageServices', 'debugger'],
-  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [
+  contributes: {
+    routes: [
+      {"id":"legacy.get.vms.vmId.code-diagnostics","method":"GET","path":"/api/vms/{vmId}/code-diagnostics","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"fixed-vm","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.get.vms.vmId.language-service","method":"GET","path":"/api/vms/{vmId}/language-service","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"fixed-vm","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.post.vms.vmId.language-service","method":"POST","path":"/api/vms/{vmId}/language-service","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"fixed-vm","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.get.vms.vmId.debugger","method":"GET","path":"/api/vms/{vmId}/debugger","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"fixed-vm","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+      {"id":"legacy.post.vms.vmId.debugger","method":"POST","path":"/api/vms/{vmId}/debugger","policy":{"access":"controller","roles":["owner"],"projectScoped":true,"identity":"fixed-vm","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"query","approval":"none","extensionAuth":"none"},"handler":"route","status":200},
+    ], managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'], http: [
     http('/api/vms/:vmId/code-diagnostics', ['GET'], true),
     http('/api/vms/:vmId/language-service', ['GET', 'POST'], true),
     http('/api/vms/:vmId/debugger', ['GET', 'POST'], true),

@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -7,7 +7,7 @@ import { DATA } from './paths.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectSchema } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
+
 import type { VmAccess as Machines } from './vm-access.ts';
 
 const resourceSchema = z.object({
@@ -58,7 +58,7 @@ const defaults = (): State => ({ version: 1, templates: [] });
 export class TeamTemplates {
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
     private file = join(DATA, 'team-templates.json'),
   ) {}
 

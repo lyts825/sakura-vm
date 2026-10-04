@@ -1,9 +1,9 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import { hostname } from 'node:os';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Jobs } from './jobs.ts';
 
 /** Deliberately excludes job titles, logs, commands, results, paths and credentials. */
-export async function monitorSnapshot(machines: Pick<Machines, 'list'>, stores: Pick<Jobs, 'list'>[]) {
+export async function monitorSnapshot(machines: Pick<Machines, 'list'>, stores: Pick<JobsV1, 'list'>[]) {
   const vms = await machines.list();
   const jobs = stores
     .flatMap((store) => store.list())

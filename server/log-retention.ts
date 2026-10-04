@@ -1,9 +1,10 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
-import type { Jobs } from './jobs.ts';
+
 import type { JobView } from '../shared/contracts/jobs.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { LogRetentionPolicy, LogRetentionSummary, LogRetentionView } from '../shared/log-retention.ts';
@@ -42,7 +43,7 @@ const stateSchema = z
   .strict();
 
 // Only completed job log bodies are eligible. Results and audit evidence are separate stores.
-export function planLogRetention(stores: Jobs[], policy: LogRetentionPolicy, now = Date.now()) {
+export function planLogRetention(stores: JobsV1[], policy: LogRetentionPolicy, now = Date.now()) {
   const summary: LogRetentionSummary = {
     stores: stores.length,
     completedLogs: 0,
@@ -56,7 +57,7 @@ export function planLogRetention(stores: Jobs[], policy: LogRetentionPolicy, now
     remainingBytes: 0,
   };
   const candidates: {
-    store: Jobs;
+    store: JobsV1;
     job: JobView;
     bytes: number;
     at: number;
@@ -126,7 +127,7 @@ export class LogRetention {
   private closed = false;
   private scheduled = false;
   constructor(
-    private stores: () => Jobs[],
+    private stores: () => JobsV1[],
     private file = join(DATA, 'log-retention.json'),
     private blocked = () => false,
     private now = Date.now,

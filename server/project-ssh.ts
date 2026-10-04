@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,7 +8,7 @@ import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import type { Project } from './project-config.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import { quote } from './shell.ts';
 import { readStore, writeStore, regularDirectory } from './local-store.ts';
 import { projectIdSchema } from './project-catalog.ts';
@@ -465,7 +465,7 @@ export class ProjectSsh {
   private controller = new AbortController();
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
     options: {
       identities?: Pick<ProjectIdentities, 'publishSshSnapshot' | 'sshSessionCommand'>;
       scopes?: Pick<

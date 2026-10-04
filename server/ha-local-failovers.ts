@@ -1,10 +1,8 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { HaFailureMonitorV1, HostPeersV1, SnapshotReplicationsV1 } from './service-contracts/v1.ts';
 import { AppError } from '../shared/errors.ts';
 import { checkHaFailover, haFailoverOptions } from './ha-failover.ts';
-import type { HaFailureMonitor } from './ha-failure-monitor.ts';
-import type { HostPeers } from './host-peers.ts';
+
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { SnapshotReplications } from './snapshot-replications.ts';
 
 type Policy = { enabled: boolean; options: unknown };
 const INTERVAL_MS = 15_000;
@@ -22,9 +20,9 @@ export class HaLocalFailovers {
 
   constructor(
     private machines: Machines,
-    private monitor: HaFailureMonitor,
-    private peers: ServiceInterface<HostPeers>,
-    private replications: ServiceInterface<SnapshotReplications>,
+    private monitor: HaFailureMonitorV1,
+    private peers: HostPeersV1,
+    private replications: SnapshotReplicationsV1,
     private policies: () => Promise<Record<string, Policy>>,
     private allowed: () => boolean = () => true,
     private dependencies: { disarmWitness?: (id: string, failureThreshold: number) => Promise<void> } = {},

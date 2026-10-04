@@ -1,4 +1,6 @@
-export type WorkspaceRequest = <T = any>(
+import { resourceRequestScope, setResourceRequestScope } from './resource-cache';
+
+export type WorkspaceRequest = <T = unknown>(
   path: string,
   method?: string,
   body?: unknown,
@@ -21,6 +23,9 @@ export function workspacePath(path: string, projectId?: string) {
 
 export function workspaceRequest(request: WorkspaceRequest, projectId?: string): WorkspaceRequest {
   if (!projectId) return request;
-  return <T = any>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal) =>
+  const scoped: WorkspaceRequest = <T = unknown>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal) =>
     request<T>(workspacePath(path, projectId), method, body, signal);
+  const identity = resourceRequestScope(request);
+  if (identity) setResourceRequestScope(scoped, identity);
+  return scoped;
 }

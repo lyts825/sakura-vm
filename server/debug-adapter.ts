@@ -1,7 +1,7 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { guestPath } from '../shared/paths.ts';
 import { quote } from './shell.ts';
@@ -49,7 +49,7 @@ export class DebugAdapter {
   private sessions = new Map<string, Session>();
   private starting = new Set<string>();
   private streams: Pick<ProjectProtocolStreams, 'open' | 'recordsAll' | 'readonly' | 'stop' | 'close'>;
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
+  constructor(private machines: Machines, private workspaces: WorkspacesV1,
     private options: { streams?: DebugAdapter['streams']; adminTask?: typeof guestTask } = {}) {
     this.streams = options.streams || new ProjectProtocolStreams(machines, workspaces);
   }

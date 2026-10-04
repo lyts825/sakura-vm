@@ -1,3 +1,4 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { Readable } from 'node:stream';
@@ -169,7 +170,7 @@ export type LinuxClipboardOptions = { assets?: string; file?: (id: string) => st
 type RetainedApplication = { runId: string; release: () => Promise<void> };
 const retainedApplications = new WeakMap<Machines, Map<string, RetainedApplication>>();
 export class X11Clipboard {
-  readonly jobs: Jobs;
+  readonly jobs: JobsV1;
   private states = new Map<string, Promise<State>>();
   private closed = false;
   private retained: Map<string, RetainedApplication>;

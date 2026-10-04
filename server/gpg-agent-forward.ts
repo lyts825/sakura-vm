@@ -1,11 +1,11 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { hostExecFile } from './host-process.ts';
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, win32 } from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import { projectPrivateValues } from './workspaces.ts';
 import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
@@ -13,7 +13,6 @@ import { redactProjectOutput } from './project-execution.ts';
 import { redactValues } from './secrets.ts';
 import { GpgAgentScopes } from './gpg-agent-scope.ts';
 import { captureHostGpgSource, OwnedGpgForward, type GpgHostSnapshot } from './gpg-agent-host.ts';
-
 
 export const gpgAgentForwardInput = z.object({
   command: z.string().min(1).max(8192),
@@ -100,7 +99,7 @@ export class GpgAgentForwarder {
   private runTask: typeof projectIdentityTask;
   private scopes: GpgAgentScopes;
   private captureHost: (signal?: AbortSignal) => Promise<GpgHostSnapshot>;
-  constructor(private machines: Machines, options: { workspaces?: ServiceInterface<Workspaces>; terminals?: ProjectTerminals;
+  constructor(private machines: Machines, options: { workspaces?: WorkspacesV1; terminals?: ProjectTerminalsV1;
     runTask?: typeof projectIdentityTask; sourceDirectory?: string;
     captureHost?: (signal?: AbortSignal) => Promise<GpgHostSnapshot> } = {}) {
     this.ownTerminals = !options.terminals;
@@ -164,6 +163,6 @@ export class GpgAgentForwarder {
 }
 
 export async function runGpgAgentForward(machines: Machines, id: string, input: unknown,
-  signal?: AbortSignal, workspaces?: ServiceInterface<Workspaces>, terminals?: ProjectTerminals) {
+  signal?: AbortSignal, workspaces?: WorkspacesV1, terminals?: ProjectTerminalsV1) {
   return new GpgAgentForwarder(machines, { workspaces, terminals }).run(id, input, signal);
 }

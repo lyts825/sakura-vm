@@ -1,9 +1,9 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { quote } from './shell.ts';
@@ -62,7 +62,7 @@ function directoryAllowed(directory: string) {
 
 export async function projectQuota(
   machines: Machines,
-  workspaces: ServiceInterface<Workspaces>,
+  workspaces: WorkspacesV1,
   vmId: string,
   input: unknown,
   action: 'check' | 'run',

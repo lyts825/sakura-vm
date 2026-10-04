@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { AccessControlV1, ProjectCatalogV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { join, posix } from 'node:path';
 import { z } from 'zod';
@@ -6,9 +6,8 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectIdSchema, ProjectCatalog } from './project-catalog.ts';
-import type { AccessControl, Principal } from './access-control.ts';
+import type { Principal } from './access-control.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
 
 const permission = z.enum(['read', 'write', 'execute', 'approve']);
 const role = z.object({
@@ -60,10 +59,10 @@ export class ProjectPermissions {
   private scopes: Scope[] = [];
   private pending = Promise.resolve();
   private closed = false;
-  private catalog: ProjectCatalog;
+  private catalog: ProjectCatalogV1;
 
-  constructor(private access: AccessControl, private machines: Machines,
-    private workspaces?: ServiceInterface<Workspaces>,
+  constructor(private access: AccessControlV1, private machines: Machines,
+    private workspaces?: WorkspacesV1,
     private file = join(DATA, 'project-permissions.json')) {
     this.catalog = new ProjectCatalog(machines);
   }
@@ -91,7 +90,7 @@ export class ProjectPermissions {
   }
 
   private async requireIsolated(vmId: string, projectId: string,
-    index: Awaited<ReturnType<ProjectCatalog['list']>>, committed = false) {
+    index: Awaited<ReturnType<ProjectCatalogV1['list']>>, committed = false) {
     if (!this.workspaces) throw new AppError('项目工作区插件未启用', 403);
     const paths = await Promise.all(index.projects.map(async (item) => ({
       id: item.id,

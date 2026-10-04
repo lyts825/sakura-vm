@@ -1,6 +1,6 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { HostMountsV1, IdeV1, MediaDevicesV1, ProcessInteropV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { AutomationDomainServices } from './automation-domain-services.ts';
-import type { Ide } from './ide.ts';
+
 import { cleanupReceipt } from './cleanup-receipt.ts';
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { randomUUID } from 'node:crypto';
@@ -31,17 +31,17 @@ import {
 } from './feature-suite-dev-task.ts';
 import { firmwareSupport } from './firmware.ts';
 import { guestTask } from './guest-task.ts';
-import type { HostMounts } from './host-mount.ts';
+
 import { distroInfo } from './images.ts';
 import { Jobs } from './jobs.ts';
 import { metadataFile } from './metadata-store.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { MediaDevices } from './media-devices.ts';
+
 import { packageCacheOperations, packageCacheScript } from './package-cache.ts';
 import { PackageWorkbench } from './package-workbench.ts';
 import { DATA } from './paths.ts';
 import { hostPower, powerDecision, powerPolicy, type PowerSample } from './power-policy.ts';
-import { processInteropInput, type ProcessInterop } from './process-interop.ts';
+import { processInteropInput } from './process-interop.ts';
 import {
   dependencyManagerSchema,
   projectDependencyCachePlan,
@@ -59,7 +59,7 @@ import { privateLog, redactValues } from './secrets.ts';
 import { scanGuestVulnerabilities } from './security-vulnerabilities.ts';
 import type { HealthView } from './service-health.ts';
 import { quote } from './shell.ts';
-import type { Workspaces } from './workspaces.ts';
+
 export { featureCatalog,featureCatalogView,implementedFeatureCatalogView,resourcePresets,type FeatureCatalogItem,type FeatureId,type ResourcePreset,type ResourcePresetId } from '../shared/catalogs/automation.ts';
 
 const scheduleSchema = z
@@ -201,18 +201,18 @@ export class FeatureSuite {
   private lastSampleAt = new Map<string, number>();
   private ticking = false;
   private powerAbort = new AbortController();
-  private get processInterop(): ServiceInterface<ProcessInterop> | undefined { return this.domains.processInterop; }
-  private get mediaDevices(): ServiceInterface<MediaDevices> | undefined { return this.domains.mediaDevices; }
-  private get hostMounts(): ServiceInterface<HostMounts> | undefined { return this.domains.hostMounts; }
+  private get processInterop(): ProcessInteropV1 | undefined { return this.domains.processInterop; }
+  private get mediaDevices(): MediaDevicesV1 | undefined { return this.domains.mediaDevices; }
+  private get hostMounts(): HostMountsV1 | undefined { return this.domains.hostMounts; }
   private get projectTerminals(): ProjectTerminals | undefined { return this.domains.projectTerminals; }
   private domains: AutomationDomainServices;
   get packageWorkbench() { return this.domains.packageWorkbench; }
 
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
     private observations: {
-      editor?: () => Pick<Ide, 'profile'> | undefined;
+      editor?: () => Pick<IdeV1, 'profile'> | undefined;
       jobs?: () => JobView[];
       services?: (id: string) => Array<HealthView & { projectId: string }>;
       secrets?: (id: string) => Promise<SecretRotationItem[] | undefined>;

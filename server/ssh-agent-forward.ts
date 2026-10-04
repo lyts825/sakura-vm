@@ -1,10 +1,10 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
 
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Workspaces } from './workspaces.ts';
+
 import { projectPrivateValues } from './workspaces.ts';
 import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 import { projectIdentityTask } from './project-run-scope.ts';
@@ -71,7 +71,7 @@ export class SshAgentForwarder {
   private ownTerminals: boolean;
   private runTask: typeof projectIdentityTask;
   private scopes: SshAgentScopes;
-  constructor(private machines: Machines, options: { workspaces?: ServiceInterface<Workspaces>; terminals?: ProjectTerminals;
+  constructor(private machines: Machines, options: { workspaces?: WorkspacesV1; terminals?: ProjectTerminalsV1;
     runTask?: typeof projectIdentityTask; sourceDirectory?: string } = {}) {
     this.ownTerminals = !options.terminals;
     this.terminals = options.terminals || projectTerminalsFor(machines, options.workspaces);
@@ -128,6 +128,6 @@ export class SshAgentForwarder {
 }
 
 export async function runSshAgentForward(machines: Machines, id: string,
-  input: unknown, signal?: AbortSignal, workspaces?: ServiceInterface<Workspaces>, terminals?: ProjectTerminals) {
+  input: unknown, signal?: AbortSignal, workspaces?: WorkspacesV1, terminals?: ProjectTerminalsV1) {
   return new SshAgentForwarder(machines, { workspaces, terminals }).run(id, input, signal);
 }

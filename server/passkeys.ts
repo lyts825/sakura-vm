@@ -1,3 +1,4 @@
+import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import {
   generateAuthenticationOptions,
@@ -28,7 +29,7 @@ export class Passkeys {
   private ceremonies = new Map<string, Ceremony>();
   private readonly rpID = 'localhost';
   private readonly origin: string;
-  constructor(private access: AccessControl, port: number, private now = Date.now) {
+  constructor(private access: AccessControlV1, port: number, private now = Date.now) {
     this.origin = `http://localhost:${port}`;
   }
 

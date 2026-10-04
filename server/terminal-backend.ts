@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { ProjectTerminalsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import type { Machines } from './machines.ts';
 import { ProjectTerminals } from './project-terminals.ts';
 import type { PreparedProject } from './project-preparation.ts';
@@ -13,7 +13,7 @@ import { AppError } from '../shared/errors.ts';
 import { cleanupReceipt } from './cleanup-receipt.ts';
 import type { ServiceBroker } from './service-broker.ts';
 
-export type TerminalService = Pick<ProjectTerminals, keyof ProjectTerminals>;
+export type TerminalService = ProjectTerminalsV1;
 const backends = new WeakMap<object, TerminalBackend>();
 
 /** One provider owns native sessions; each consumer owns only its connection leases. */
@@ -61,14 +61,14 @@ export class TerminalBackend {
     return Object.freeze({
       get workspaces() { check(); return publicRoot.workspaces; },
       get preparation() { check(); return publicRoot.preparation; },
-      prepare: (...args: Parameters<ProjectTerminals['prepare']>) => invoke(() => {
+      prepare: (...args: Parameters<ProjectTerminalsV1['prepare']>) => invoke(() => {
         args[4] = args[4] ? AbortSignal.any([signal, args[4]]) : signal; return retain(root.prepare(...args));
       }),
-      prepareTask: (...args: Parameters<ProjectTerminals['prepareTask']>) => invoke(() => {
+      prepareTask: (...args: Parameters<ProjectTerminalsV1['prepareTask']>) => invoke(() => {
         args[2] = args[2] ? AbortSignal.any([signal, args[2]]) : signal; return retain(root.prepareTask(...args));
       }),
-      validate: (...args: Parameters<ProjectTerminals['validate']>) => invoke(() => root.validate(...args)),
-      stop: (...args: Parameters<ProjectTerminals['stop']>) => invoke(() => {
+      validate: (...args: Parameters<ProjectTerminalsV1['validate']>) => invoke(() => root.validate(...args)),
+      stop: (...args: Parameters<ProjectTerminalsV1['stop']>) => invoke(() => {
         if (consumer && consumer.pluginId !== 'terminal-workspace')
           throw new AppError('终端子句柄只能释放自己持有的连接', 403, 'PLUGIN_TERMINAL_OWNERSHIP');
         args[3] = args[3] ? AbortSignal.any([signal, args[3]]) : signal; return root.stop(...args);
@@ -78,7 +78,7 @@ export class TerminalBackend {
 }
 
 export function projectTerminalsFor(machines: ConstructorParameters<typeof ProjectTerminals>[0],
-  workspaces?: ServiceInterface<Workspaces>, context?: ConstructorParameters<typeof Workspaces>[1],
+  workspaces?: WorkspacesV1, context?: ConstructorParameters<typeof Workspaces>[1],
   options?: ConstructorParameters<typeof ProjectTerminals>[3]): TerminalService {
   const backend = backends.get(vmHostIdentity(machines));
   if (backend) return backend.handle();

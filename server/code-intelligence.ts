@@ -1,7 +1,7 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { repositoryPath } from './git-workbench.ts';
 import { quote } from './shell.ts';
@@ -38,7 +38,7 @@ function capturedProject(project: Project, projectId: string) {
 export class CodeIntelligence {
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
     private options: CodeIntelligenceOptions = {},
   ) {}
   async diagnose(id: string, path: string, signal?: AbortSignal) {

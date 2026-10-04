@@ -180,7 +180,7 @@ function NetworkEditor({ vm, request, refresh }: FeatureProps) {
   });
   const run = (kind: string) =>
     action.run(async (signal) => {
-      const value = await request(
+      const value = await request<NonNullable<typeof preview>>(
         `/vms/${vm.id}/network`,
         'POST',
         { action: kind, config: edited(), token: preview?.token },

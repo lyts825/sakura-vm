@@ -107,13 +107,13 @@ export class ControllerSession {
     return this.pending;
   }
 
-  request = async <T = any>(
+  request = async <T = unknown>(
     path: string,
     method = 'GET',
     body?: unknown,
     signal?: AbortSignal,
   ): Promise<T> => {
-    const pluginSignal = pluginGeneration.capture(path);
+    const pluginSignal = pluginGeneration.capture(path, method);
     if (pluginSignal) signal = signal ? AbortSignal.any([signal, pluginSignal]) : pluginSignal;
     signal?.throwIfAborted();
     if (!this.token) await this.authenticate();

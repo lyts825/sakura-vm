@@ -1,7 +1,6 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { HostPeers } from './host-peers.ts';
 import { qmp } from './qmp.ts';
 import { readLiveMigrationProjects } from './live-migration-projects.ts';
 
@@ -11,7 +10,7 @@ export const liveMigrationInput = z.object({
     .regex(/^[a-z][a-z0-9-]*$/).optional(),
 }).strict();
 
-type Score = Awaited<ReturnType<ServiceInterface<HostPeers>['score']>>;
+type Score = Awaited<ReturnType<HostPeersV1['score']>>;
 type Query = typeof qmp;
 
 export async function planLiveMigration(machines: Machines,

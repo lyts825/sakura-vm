@@ -1,3 +1,4 @@
+import type { ProjectCatalogV1 } from './service-contracts/v1.ts';
 import type { IncomingMessage } from 'node:http';
 import { AppError } from '../shared/errors.ts';
 import { ProjectCatalog, projectIdSchema } from './project-catalog.ts';
@@ -21,7 +22,7 @@ type AuthorityOptions = {
   equalToken(value: unknown): boolean;
   socketAuthorization(credential: string, mode: string, vmId: string, session?: string | null,
     project?: string | null): Principal | { role: 'owner' } | null;
-  projects?: Pick<ProjectCatalog, 'list' | 'readCommittedList'>;
+  projects?: Pick<ProjectCatalogV1, 'list' | 'readCommittedList'>;
 };
 
 /** Core and plugin requests share this policy; protocol-specific handlers keep their own proofs. */
@@ -37,17 +38,17 @@ export function createOperationAuthority(options: AuthorityOptions) {
     const credential = req.headers['x-sakura-token'];
     const socketCredential = url.searchParams.get('token') || '';
     const vmId = parameters.vmId;
-    const mode = policy.transport === 'websocket' ? url.pathname.split('/').at(-1)! : '';
+    const mode = policy.socketChannel || '';
     const terminalSession = url.searchParams.get('session');
     let projectId = url.searchParams.get('project');
-    let projectScoped = policy.projectScoped && policy.id !== 'core.vms.exec';
+    let projectScoped = policy.projectBinding === 'query' || policy.projectBinding === 'legacy-terminal-grant';
     // Pre-project terminal grants name the legacy session without a project; do not reinterpret them.
-    if (mode === 'terminal-view' && !projectId) projectScoped = false;
+    if (policy.projectBinding === 'legacy-terminal-grant' && !projectId) projectScoped = false;
     const initialLive = vmId && policy.identity === 'fixed-vm' ? machines.live.get(vmId) : undefined;
     const lifetime = initialLive && vmId ? vmLifetime(vmId, initialLive) : undefined;
     const identity = lifetime?.capture();
     const authenticate = () => {
-      session.requireUnlocked();
+      if (policy.session === 'required') session.requireUnlocked();
       if (policy.access === 'socket') {
         const principal = socketAuthorization(socketCredential, mode, vmId || 'events', terminalSession, projectId);
         if (!principal) throw new AppError('连接授权已撤销', 403);
@@ -81,12 +82,9 @@ export function createOperationAuthority(options: AuthorityOptions) {
     }
     const extensionCredential = req.headers['x-sakura-extension-token'];
     const extensionSource = req.headers.origin || req.headers['x-sakura-extension-origin'];
-    const publicWhileLocked = new Set(['core.access.status', 'core.session.status', 'core.session.unlock',
-      'core.session.passkeyOptions', 'core.session.passkeyVerify',
-      'core.access.ssoOidcCallback', 'core.access.ssoSamlCallback']);
     return {
       input: async (input: unknown) => {
-        if (policy.id !== 'core.vms.exec') return;
+        if (policy.projectBinding !== 'input-scope') return;
         projectScoped = (input as { scope?: string }).scope !== 'instance';
         if (projectScoped) await bindProject();
       },
@@ -94,19 +92,19 @@ export function createOperationAuthority(options: AuthorityOptions) {
         ...(vmId ? { vmId } : {}), ...(projectId ? { projectId } : {}), ...identity },
       check: async () => {
         const currentPrincipal = principal ? authenticate() : undefined;
-        if (!principal && policy.access !== 'guest' && req.method !== 'OPTIONS' && !publicWhileLocked.has(policy.id))
+        if (!principal && policy.session === 'required')
           session.requireUnlocked();
         requireEnabled();
         if (policy.maintenance === 'block' && features.migration?.blocked)
           throw new AppError('数据目录迁移维护中', 409, 'MAINTENANCE');
-        if (policy.access === 'extension' && req.method !== 'OPTIONS') {
+        if (policy.extensionAuth === 'account' || policy.extensionAuth === 'paired') {
           if (!access.enabled) throw new AppError('请先启用账户模式', 409);
-          if (policy.id === 'core.extension.inventory')
+          if (policy.extensionAuth === 'paired')
             browserExtensions.authorize(extensionOrigin(extensionSource), extensionCredential);
         }
         if (vmId) {
           if (policy.identity === 'fixed-vm') machines.get(vmId);
-          if (machines.records.has(vmId) && policy.maintenance === 'block' && !/\/(stop|next-features|lockdown)$/.test(policy.path)) machines.requireUnlocked(vmId);
+          if (machines.records.has(vmId) && policy.vmLock === 'require-unlocked') machines.requireUnlocked(vmId);
           if (policy.identity === 'fixed-vm' && machines.live.get(vmId) !== initialLive)
             throw new AppError('客户机运行身份已改变', 409, 'PROJECT_IDENTITY_HOST_CHANGED');
           if (identity) lifetime!.assert(identity);
@@ -119,7 +117,7 @@ export function createOperationAuthority(options: AuthorityOptions) {
             if (!policy.projectPermission) throw new AppError('未声明项目权限', 403);
             await projectPermissions.requireCommitted(currentPrincipal, vmId, projectId, policy.projectPermission);
           }
-          if (req.method === 'PUT' && policy.path.endsWith('/project') && projectPermissions.requiresApproval(vmId, projectId))
+          if (policy.approval === 'project-change' && projectPermissions.requiresApproval(vmId, projectId))
             throw new AppError('此项目的配置变更需要第二位账户审批', 409);
         }
         // Committed metadata reads can yield; authenticate again after they finish.

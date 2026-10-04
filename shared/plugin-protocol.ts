@@ -6,15 +6,17 @@ import type {
   pluginSelectionSchema,
   httpContributionSchema,
   operationContributionSchema,
+  operationRouteSchema,
 } from './plugin-schema.ts';
 
-export const PLUGIN_API_VERSION = 4;
-export const BUILTIN_PLUGIN_VERSION = '1.0.0';
+export const PLUGIN_API_VERSION = 5;
+export const BUILTIN_PLUGIN_VERSION = '2.0.0';
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginPack = z.infer<typeof pluginPackSchema>;
 export type PluginSelection = z.infer<typeof pluginSelectionSchema>;
 export type HttpContribution = z.infer<typeof httpContributionSchema>;
 export type OperationContribution = z.infer<typeof operationContributionSchema>;
+export type OperationRoute = z.infer<typeof operationRouteSchema>;
 export type PluginRoot = { kind: 'plugin' | 'pack'; id: string };
 export type PluginStatus = {
   selection: PluginSelection;
@@ -52,6 +54,7 @@ export function definePlugin(input: PluginInput): PluginManifest {
     ...input,
     contributes: {
       http: [],
+      routes: [],
       operations: [],
       sockets: [],
       pages: [],

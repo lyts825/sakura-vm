@@ -8,6 +8,8 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { writeStore, fileHash } from './local-store.ts';
 import { storageGrowth, type StorageLease } from './storage-runtime.ts';
+import { recoveryOriginSchema } from '../shared/contracts/domain-recovery.ts';
+import { captureRecoveryOrigin } from './recovery-origin.ts';
 
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
 const path = z
@@ -28,7 +30,7 @@ const meta = z
 const entrySchema = z
   .object({ side: z.enum(['host', 'guest']), path, before: meta.nullable(), after: sha.nullable() })
   .strict();
-const checkpointSchema = z
+export const syncCheckpointSchema = z
   .object({
     id: z.uuid(),
     createdAt: z.iso.datetime(),
@@ -42,9 +44,10 @@ const checkpointSchema = z
     base: sha.nullable(),
     afterState: sha.nullable().optional(),
     afterBase: sha.nullable().optional(),
+    origin: recoveryOriginSchema.optional(),
   })
   .strict();
-export type SyncCheckpoint = z.infer<typeof checkpointSchema>;
+export type SyncCheckpoint = z.infer<typeof syncCheckpointSchema>;
 export type SyncHistoryView = Pick<SyncCheckpoint, 'id' | 'createdAt' | 'status' | 'bytes' | 'error'> & {
   changes: number;
 };
@@ -77,7 +80,7 @@ export class SyncHistory {
   async read(id: string) {
     const file = join(this.directory(id), 'checkpoint.json');
     if ((await lstat(file)).size > 32 * 1024 ** 2) throw new AppError('同步回滚记录超过限制');
-    const point = checkpointSchema.parse(JSON.parse(await readFile(file, 'utf8')));
+    const point = syncCheckpointSchema.parse(JSON.parse(await readFile(file, 'utf8')));
     if (point.id !== id) throw new AppError('同步回滚标识不匹配');
     return point;
   }
@@ -148,6 +151,7 @@ export class SyncHistory {
       entries: [],
       state: null,
       base: null,
+      origin: captureRecoveryOrigin(lease ? [lease.id] : []),
     };
     const directory = this.directory(point.id);
     await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -242,7 +246,7 @@ export class SyncHistory {
     };
   }
   private save(point: SyncCheckpoint) {
-    return writeStore(join(this.directory(point.id), 'checkpoint.json'), checkpointSchema.parse(point));
+    return writeStore(join(this.directory(point.id), 'checkpoint.json'), syncCheckpointSchema.parse(point));
   }
   async restore(
     id: string,

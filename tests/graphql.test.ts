@@ -1,9 +1,9 @@
+import type { JobsV1 } from '../server/service-contracts/v1.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getIntrospectionQuery } from 'graphql';
 import { GraphApi, graphqlInfo, graphqlLimits, querySnapshot } from '../server/graphql-api.ts';
 import type { Machines } from '../server/machines.ts';
-import type { Jobs } from '../server/jobs.ts';
 
 const machines = {
   records: new Map(
@@ -28,7 +28,7 @@ const store = {
       result: { bytes: 5, sha256: 'EXCLUDED_JOB_RESULT' },
     },
   ],
-} as unknown as Jobs;
+} as unknown as JobsV1;
 const snapshot = () => querySnapshot(machines, [store], ['commands']);
 test('GraphQL executes aliases, variables, named operations, fragments and full inventory pagination with one snapshot', async (t) => {
   let reads = 0;

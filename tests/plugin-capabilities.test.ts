@@ -1,3 +1,36 @@
+type GatewayFixtureHost = import('../server/features.ts').Features;
+type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
+const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {
+  gateway: import('../server/operation-gateway.ts').OperationGateway;
+  bodies: WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>;
+}>();
+/** Preserve the fixture's data-directory setup before loading the real operation admission modules. */
+async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse, url: URL, body: GatewayFixtureBody) {
+  let fixture = admittedRouteFixtures.get(host);
+  if (!fixture) {
+    const [{ OperationGateway }, { operationEntries }] = await Promise.all([
+      import('../server/operation-gateway.ts'), import('../server/operation-catalog.ts'),
+    ]);
+    const bodies = new WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>();
+    const gateway = new OperationGateway({
+      enabled: () => host.enabled,
+      instance: owner => owner === 'core' ? undefined : host.directory.get('official', owner),
+      bind: async (_request, _url, _entry, _parameters, requireEnabled) => {
+        requireEnabled();
+        return { check: async () => 'owner' };
+      },
+    });
+    for (const entry of operationEntries)
+      if (entry.declaration.method !== 'UPGRADE')
+        gateway.register(entry, (request, response, target) => host.route(request, response, target, bodies.get(request)!));
+    gateway.seal();
+    fixture = { gateway, bodies };
+    admittedRouteFixtures.set(host, fixture);
+  }
+  fixture.bodies.set(req, body);
+  return await fixture.gateway.dispatch(req, res, url) as boolean;
+}
 import { services as metricsContract } from '../plugins/metrics/services.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -118,7 +151,7 @@ test('unload aborts active requests, blocks capabilities and retains failed serv
   const original = loaders.metrics, started = deferred(), cleanup = deferred(); let context!: PluginContext, closeCalls = 0;
   loaders.metrics = async () => ({ ...(await original()), activate: async (host) => {
     context = host;
-    host.provide(metricsContract.metrics, { close: async () => { if (++closeCalls === 1) throw new Error('retry cleanup'); } } as any);
+    host.provide(metricsContract.metrics, { sample: async () => ({}), forget: () => {}, close: async () => { if (++closeCalls === 1) throw new Error('retry cleanup'); } } as any);
   }, operations: { sample: { response: (await original()).operations!.sample.response,
     async execute(_url, _input, signal) { started.resolve(); await cleanup.promise; signal.throwIfAborted(); return {}; } } } });
   let host: Features | undefined;
@@ -126,12 +159,12 @@ test('unload aborts active requests, blocks capabilities and retains failed serv
     host = await Features.create(machines(), ['metrics']); assert.deepEqual(host.errors, {});
     const req = Object.assign(new EventEmitter(), { method: 'GET', headers: {} }) as IncomingMessage;
     const res = Object.assign(new EventEmitter(), { writableFinished: false }) as ServerResponse;
-    const active = host.route(req, res, new URL('http://localhost/api/vms/example/metrics'), async () => undefined);
+    const active = routeThroughGateway(host, req, res, new URL('http://localhost/api/vms/example/metrics'), async () => undefined);
     const cancelled = assert.rejects(active, { name: 'AbortError' }); await started.promise;
     const unloading = host.unload('metrics'); const failure = assert.rejects(unloading, /插件资源清理失败/);
     assert.equal(context.signal.aborted, true); assert.equal(host.enabled.has('metrics'), false);
     assert.throws(() => context.capabilities.jobs.create('late'));
-    await assert.rejects(host.route(req, res, new URL('http://localhost/api/vms/example/metrics'), async () => undefined));
+    await assert.rejects(routeThroughGateway(host, req, res, new URL('http://localhost/api/vms/example/metrics'), async () => undefined));
     assert.equal(closeCalls, 0); cleanup.resolve(); await cancelled; await failure;
     assert.ok(host.serviceValue('metrics')); assert.equal(host.pluginResources()[0].cleanupPending, true);
     await host.unload('metrics'); assert.equal(closeCalls, 2); assert.equal(host.serviceValue('metrics'), undefined);
@@ -172,7 +205,7 @@ test('plugin job retry cannot bypass unresolved cleanup with a forged view', asy
   let jobs!: ReturnType<PluginContext['capabilities']['jobs']['create']>, retried = 0;
   loaders.metrics = async () => ({ ...(await original()), activate: async (host) => {
     context = host; jobs = host.capabilities.jobs.create('retry', { persistent: false });
-    host.provide(metricsContract.metrics, { jobs } as any); host.registerJobs(jobs, () => { retried++; });
+    host.provide(metricsContract.metrics, { sample: async () => ({}), forget: () => {}, jobs } as any); host.registerJobs(jobs, () => { retried++; });
   } });
   let host: Features | undefined;
   try {

@@ -133,3 +133,15 @@ export async function route(
   }
   return false;
 }
+
+/** Exact implemented HTTP operations; declarations alone never publish a handler. */
+export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+  "legacy.get.feature-suite": route,
+  "legacy.get.vms.vmId.advanced": route,
+  "legacy.put.vms.vmId.advanced": route,
+  "legacy.post.vms.vmId.advanced": route,
+  "legacy.get.vms.vmId.packages": route,
+  "legacy.post.vms.vmId.packages": route,
+  "legacy.post.vms.vmId.suspend": route,
+  "legacy.post.vms.vmId.resume": route,
+};

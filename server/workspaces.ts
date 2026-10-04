@@ -1,5 +1,5 @@
+import type { JobsV1, NetworkProfilesV1, ProjectCatalogV1, SecretsV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
-import type { ServiceInterface } from './service-interface.ts';
 import { assertProjectPreparationIdle } from './project-preparation-registry.ts';
 import { createHash } from 'node:crypto';
 import { readCommittedStore, readStore } from './local-store.ts';
@@ -12,7 +12,7 @@ import { guestTask } from './guest-task.ts';
 import { Jobs } from './jobs.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { Metrics } from './metrics.ts';
-import type { NetworkProfiles } from './network-profiles.ts';
+
 import { privateDockerPaths, privateDockerStatus } from './private-docker.ts';
 import { ProjectCatalog } from './project-catalog.ts';
 import { projectSchema, projectVersion, type Project } from './project-config.ts';
@@ -27,7 +27,7 @@ import { runServices, serviceLog, type ProjectService } from './project-services
 import { projectSshBusyScript } from './project-ssh.ts';
 import { repositoryAuthorizationScope } from './repository-url.ts';
 import { runtimeEnvironment } from './runtime-config.ts';
-import { privateLog, redactValues, type Secrets } from './secrets.ts';
+import { privateLog, redactValues } from './secrets.ts';
 import { quote } from './shell.ts';
 export { metricsScript,parseMetrics } from './metrics.ts';
 
@@ -104,8 +104,8 @@ export function provisionScript(template: Project['template'], distro = 'alpine'
   return `set -eu\nsakura_attempt=0\nuntil (\nset -e\n${install}\n); do\n  sakura_attempt=$((sakura_attempt + 1))\n  [ "$sakura_attempt" -lt 3 ] || exit 1\n  echo '软件源暂时不可用，正在重试…'\n  sleep 2\ndone\nmkdir -p /etc/sakura /workspace\ntouch /etc/sakura/template-${template}\n`;
 }
 export class Workspaces {
-  jobs: Jobs;
-  projects: ProjectCatalog;
+  jobs: JobsV1;
+  projects: ProjectCatalogV1;
   private configListeners = new Set<() => Promise<void>>();
   private configGuards = new Set<(id: string, previous: Project, next: Project) => Promise<void>>();
   private observed = new Map<string, string>();
@@ -123,7 +123,7 @@ export class Workspaces {
   }
   constructor(
     private machines: Machines,
-    private context?: { secrets?: ServiceInterface<Secrets>; network?: ServiceInterface<NetworkProfiles> },
+    private context?: { secrets?: SecretsV1; network?: NetworkProfilesV1 },
     options: { background?: boolean } = {},
   ) {
     this.jobs = new Jobs(options.background === false ? undefined : 'projects');

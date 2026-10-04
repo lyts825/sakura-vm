@@ -5,10 +5,12 @@ const processes = new Set(['server/host-process.ts', 'server/process-supervisor.
 // These are protocol/authority deadlines, not ordinary periodic business jobs.
 const protocolTimers = new Set(['server/ha-host-failover.ts',
   'server/ha-local-failovers.ts', 'server/ha-witness-server.ts', 'server/machines.ts',
+  'server/domains/sandbox-lifetimes.ts',
   'server/network/host-pool.ts', 'server/session-lock.ts']);
 // Exclusive creation and domain recovery receipts have their own publication rules.
 const receipts = new Set(['server/ha-witness-drill.ts', 'server/ha-witness-core.ts',
   'server/ha-witness-lock.ts', 'server/ha-witness-maintenance.ts', 'server/machines.ts',
+  'server/domains/vm-disk-encryption.ts',
   'server/project-service-scope.ts', 'server/storage-pools.ts', 'server/trusted-boot-service.ts',
   'server/local-store.ts', 'server/metadata-store.ts']);
 const moduleName = (name: string) => name.replace(/^node:/, '');

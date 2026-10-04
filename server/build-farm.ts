@@ -1,3 +1,4 @@
+import type { JobsV1, ProjectTerminalsV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
@@ -53,7 +54,7 @@ export const buildFarmRequest = z.discriminatedUnion('operation', [
 
 /** Build commands run inside registered Linux instances; only queue metadata is stored here. */
 export class BuildFarm {
-  readonly jobs: Jobs;
+  readonly jobs: JobsV1;
   private state: Store = initial();
   private queue: Promise<unknown> = Promise.resolve();
   private timer?: ScheduleHandle;
@@ -66,7 +67,7 @@ export class BuildFarm {
     private file = join(DATA, 'build-farm.json'),
     private blocked: () => boolean = () => false,
     private mutation: (delta: number) => void = () => {},
-    jobs?: Jobs, terminals?: ProjectTerminals,
+    jobs?: JobsV1, terminals?: ProjectTerminalsV1,
     private runTask: typeof projectIdentityTask = projectIdentityTask) {
     this.jobs = jobs || new Jobs('build-farm');
     this.ownsTerminals = !terminals;

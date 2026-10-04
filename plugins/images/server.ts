@@ -63,3 +63,10 @@ export async function route(
   this.vm.get(id);
   return false;
 }
+
+/** Exact implemented HTTP operations; declarations alone never publish a handler. */
+export const httpHandlers: Record<string, import('../../server/plugin-api.ts').PluginRoute> = {
+  "legacy.get.images": route,
+  "legacy.post.images.imageId": route,
+  "legacy.post.image-import": route,
+};

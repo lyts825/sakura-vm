@@ -1,3 +1,4 @@
+import type { AccessControlV1 } from './service-contracts/v1.ts';
 import { createHash, randomBytes, randomUUID, X509Certificate } from 'node:crypto';
 import { join } from 'node:path';
 import { DOMParser } from '@xmldom/xmldom';
@@ -207,7 +208,7 @@ export class SingleSignOn {
   private saml?: SAML;
   private writes = Promise.resolve();
   constructor(
-    private access: AccessControl,
+    private access: AccessControlV1,
     private port: number,
     private file = join(DATA, 'sso.json'),
     private protect: Protector = dpapi,

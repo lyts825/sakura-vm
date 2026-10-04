@@ -1,7 +1,6 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { HostPeersV1 } from './service-contracts/v1.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { HostPeers } from './host-peers.ts';
 import { AppError } from '../shared/errors.ts';
 import { type VMConfig, type VMRecord } from '../shared/contracts/vm.ts';
 import { freePort, qmp } from './qmp.ts';
@@ -13,7 +12,7 @@ type PrepareInput = { requesterId: string; transferId: string; sourceVmId: strin
 
 export class LiveMigrationReceiver {
   private finalizing = new Set<string>();
-  constructor(private machines: Machines, private peers: ServiceInterface<HostPeers>,
+  constructor(private machines: Machines, private peers: HostPeersV1,
     private requireAvailable: () => void = () => {}) {}
 
   async prepare(input: PrepareInput) {

@@ -6,7 +6,16 @@ export const manifest = definePlugin({
   description: '隔离 Linux 环境、资源配额、限时命令与到期清理。',
   category: 'development',
   services: ['sandboxes'],
-  contributes: { managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
+  contributes: {
+    routes: [
+      {"id":"list","method":"GET","path":"/api/sandboxes","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"host","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+      {"id":"create","method":"POST","path":"/api/sandboxes","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"host","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":201},
+      {"id":"inspect","method":"GET","path":"/api/vms/{vmId}/sandbox","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+      {"id":"control","method":"POST","path":"/api/vms/{vmId}/sandbox","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+      {"id":"destroy","method":"DELETE","path":"/api/vms/{vmId}/sandbox","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+      {"id":"artifact","method":"GET","path":"/api/sandboxes/artifact","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"host","maintenance":"allow","transport":"json","mutating":false,"session":"required","vmLock":"allow-locked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":200},
+      {"id":"run","method":"POST","path":"/api/vms/{vmId}/sandbox/run","policy":{"access":"controller","roles":["owner"],"projectScoped":false,"identity":"lifecycle","maintenance":"block","transport":"json","mutating":true,"session":"required","vmLock":"require-unlocked","projectBinding":"none","approval":"none","extensionAuth":"none"},"handler":"operation","status":202},
+    ], managed: ['job-retry', 'jobs', 'schedule', 'event', 'interceptor'],
     pages: ['sandbox'],
     http: [
       http('/api/sandboxes', ['GET', 'POST']),

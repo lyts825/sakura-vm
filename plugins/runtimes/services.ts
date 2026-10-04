@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { RuntimeVersions } from '../../server/runtime-versions.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  runtimes: serviceRef<ServiceInterface<RuntimeVersions>>('runtimes', 'runtimes'),
+  runtimes: serviceRef('runtimes', 'runtimes', serviceContracts.RuntimeVersions),
 };

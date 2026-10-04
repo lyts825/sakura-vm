@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { networkFor } from './network/index.ts';
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectVersion, type Project } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { DATA, vmDir } from './paths.ts';
 import { quote } from './shell.ts';
@@ -188,7 +188,6 @@ print(json.dumps({'ready':found}))
   return '# SAKURA_NOTEBOOK_LISTENER\nenv -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LANG=C LC_ALL=C /usr/bin/python3 -I -S -c ' + quote(source);
 }
 
-
 /** System dependency preparation never loads project configuration, Python or hooks. */
 export function notebookToolsScript(distro: string, bootId: string) {
   z.uuid().parse(bootId);
@@ -215,7 +214,7 @@ export class NotebookEnvironments {
   private scopes: NonNullable<Options['scopes']>;
   private identities: NonNullable<Options['identities']>;
   private closed = false;
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>,
+  constructor(private machines: Machines, private workspaces: WorkspacesV1,
     private file = join(DATA, 'notebook-environments.json'), private probeHttp: (session: Session) => Promise<boolean> = httpReady,
     private options: Options = {}) {
     this.scopes = options.scopes || new ProjectRunScopes(machines);

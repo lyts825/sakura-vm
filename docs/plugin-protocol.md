@@ -40,15 +40,17 @@ scripts/
 | 字段                 | 当前值  | 含义                             |
 | -------------------- | ------- | -------------------------------- |
 | 声明 `schemaVersion` | `1`     | 插件和整合包数据结构版本         |
-| 插件 `apiVersion`    | `4`     | 宿主提供的生命周期和服务访问协议 |
-| 包 `version`         | `1.0.0` | 当前随源码交付的插件/整合包版本  |
+| 插件 `apiVersion`    | `5`     | 宿主提供的生命周期和服务访问协议 |
+| 包 `version`         | `2.0.0` | 当前随源码交付的插件/整合包版本  |
 | 选择 `schemaVersion` | `3`     | `plugins.json` 的用户选择格式    |
 
 这些版本分别校验。依赖使用完整的 `major.minor.patch` 精确版本；首版不解析范围、不下载包、不同时安装多个版本。声明里的 `version` 只表达当前内置版本，既有选择文件保存标识和用户意图，升级时依据当前发行版的目录重新解析。
 
+API 5 要求可信插件显式声明每个操作的策略及处理器，并为服务引用绑定独立契约；API 4 源码必须完成这两项迁移，不能只修改版本号。用户选择格式与第三方签名 WASM 协议保持原版本。
+
 ## 插件声明
 
-实际示例：[收藏命令插件](../plugins/commands/manifest.ts)。辅助函数补齐固定协议版本与空集合，生成的数据必须通过 `pluginManifestSchema`；未知字段被拒绝。
+完整示例：[收藏命令插件](../plugins/commands/manifest.ts)。下例展示一个只读操作；辅助函数补齐固定协议版本与空集合，生成的数据必须通过 `pluginManifestSchema`，未知字段被拒绝。
 
 ```ts
 import { definePlugin, pin, http, operation } from '../../shared/plugin-protocol.ts';
@@ -61,12 +63,20 @@ export const manifest = definePlugin({
   requires: [pin('projects')],
   services: ['commands'],
   contributes: {
-    http: [http('/api/vms/:vmId/commands', ['GET', 'PUT', 'DELETE', 'POST'], true)],
+    http: [http('/api/vms/:vmId/commands', ['GET'], true)],
+    routes: [{
+      id: 'list', method: 'GET', path: '/api/vms/{vmId}/commands',
+      handler: 'operation', status: 200,
+      policy: {
+        access: 'controller', roles: ['owner'], identity: 'fixed-vm',
+        projectScoped: true, projectBinding: 'query',
+        maintenance: 'allow', transport: 'json', mutating: false,
+        session: 'required', vmLock: 'allow-locked',
+        approval: 'none', extensionAuth: 'none',
+      },
+    }],
     operations: [
       operation('list', 'GET', '/api/vms/:vmId/commands'),
-      operation('save', 'PUT', '/api/vms/:vmId/commands'),
-      operation('remove', 'DELETE', '/api/vms/:vmId/commands'),
-      operation('run', 'POST', '/api/vms/:vmId/commands', 202),
     ],
     tabs: ['development'],
     developmentSections: ['commands'],
@@ -87,6 +97,7 @@ export const manifest = definePlugin({
 | `lifecycle.activateMs/closeMs`    | 激活与单步清理的最长等待时间                             |
 | `contributes.http`                | 所属 API 命名空间、允许方法、是否使用项目作用域          |
 | `contributes.operations`          | 逐操作声明 ID、方法、精确路径及成功状态                  |
+| `contributes.routes`              | 每个可发布操作的精确路由、完整准入策略与处理器种类       |
 | `contributes.sockets`             | 已支持的桌面或命名终端 WebSocket 入口                    |
 | `contributes.pages` / `tabs`      | 已支持的页面/实例标签入口                                |
 | `contributes.developmentSections` | 开发页中独立挂载的功能区                                 |
@@ -94,15 +105,17 @@ export const manifest = definePlugin({
 
 HTTP 声明拥有完整命名空间及其子路径，例如快照插件的 `/api/vms/:vmId/snapshots` 包括快照恢复子路径。宿主先检查插件是否激活和 HTTP 方法。声明了 `operations` 的请求还会按精确路径和方法匹配，使用同包 `server.ts` 的 Zod `request`/`response` Schema 验证载荷与返回值，并由宿主输出声明的成功状态。暂未迁移的路由仍由插件 `route` 验证具体子路径、载荷和状态。不允许两个插件共享同一命名空间，也不能覆盖核心入口。
 
+所有可发布 HTTP 方法还必须逐项提供精确 `contributes.routes`，包括完整 `policy` 和处理器种类；仅声明 HTTP 前缀不足以发布操作。策略显式包含访问来源、角色、身份、项目绑定、维护与会话行为、VM 锁、副作用和传输类型。路径更名只能影响路由匹配，不能改变这些准入字段；缺失字段或声明与实现不一致由门禁拒绝。`operations` 的响应 Schema 继续用于实际载荷验证，尚未完成响应契约的旧路由保持 `partial / unknown`。
+
 `projectScoped: true` 由宿主调用项目上下文包装器，避免每个处理器自行选择项目。它必须用于 VM 命名空间，并声明 `projects` 为必需或可选依赖；如果只是可选配套，未启用项目插件时仍按实例操作。文件历史、网络和私密配置使用这种可选集成。
 
 WebSocket 入口仍是宿主支持的固定通道。页面、标签和开发功能区使用受校验的标识：内置旧入口保持兼容，新入口从同包 `client.tsx` 的导出按需加载；目录检查会拒绝缺少浏览器入口的自定义声明。界面隐藏只是呈现逻辑，HTTP 与 WebSocket 均有服务端启用检查。
 
 ## 服务访问与生命周期
 
-内置插件通过同包 `services.ts` 导出 `ServiceRef<ServiceInterface<T>>`，使用 `host.provide(services.commands, value)` 和 `host.use(services.commands)` 注册与访问服务。`host.optional(ref)` 返回可选服务。宿主检查提供者、声明归属、直接依赖、接口版本与两端原代实例。字符串注册/读取 API 已删除，声明的上下文字段也返回同一 Broker 的公共句柄。详见 [架构与依赖边界](architecture.md)。
+内置插件通过同包 `services.ts` 导出绑定独立 V1 接口与契约 ID 的 `ServiceRef`，使用 `host.provide(services.commands, value)` 和 `host.use(services.commands)` 注册与访问服务。`host.optional(ref)` 返回可选服务。宿主检查提供者、声明归属、直接依赖、接口版本与两端原代实例。公共接口由 `server/service-contracts/v1.ts` 维护，运行时描述符从契约生成，不从实现类推导。字符串注册/读取 API 已删除，声明的上下文字段也返回同一 Broker 的公共句柄。详见 [架构与依赖边界](architecture.md)。
 
-`server.ts` 导出同包 `manifest`、`activate(context)`、`route(...)`，可选导出 `operations` 和 `deactivate(context)`。完整签名在 [plugin-api.ts](../server/plugin-api.ts)。新服务声明类型化引用，再通过 `provide(ref, value)` 注册，通过 `use(ref)` 或 `optional(ref)` 读取直接依赖提供的公共接口；消费者不能关闭提供者、取得实现对象或修改服务字段。
+`server.ts` 导出同包 `manifest`、`activate(context)`，按声明导出 `operations` 或以操作 ID 为键的 `httpHandlers`，可选导出 `deactivate(context)`。旧 `route(...)` 可作为适配器实现，但必须由 `httpHandlers` 逐项绑定；仅导出通用路由函数不能发布操作。完整签名在 [plugin-api.ts](../server/plugin-api.ts)。新服务声明类型化引用，再通过 `provide(ref, value)` 注册，通过 `use(ref)` 或 `optional(ref)` 读取直接依赖提供的公共接口；消费者不能关闭提供者、取得实现对象或修改服务字段。
 
 1. 初始化前校验完整目录：数据结构、未知依赖、必需/可选版本、重复服务、路由/WS 冲突、核心入口、项目作用域和循环。
 2. 按必需依赖顺序导入入口，验证入口声明与目录一致，然后提供 `PluginContext`。
@@ -163,7 +176,7 @@ npm run build
 npm run test:e2e
 ```
 
-`plugins:contracts` 从类的公共成员生成 Broker 接口目录；`plugins:check` 核对该目录、完整插件声明、所有可信入口与 JSON Schema，不激活服务。`plugins:schema` 从同一严格 Schema 生成文档文件，供编辑器和后续工具使用：
+`plugins:contracts` 仅从独立版本化接口生成 Broker 描述符；`plugins:check` 核对契约独立性、描述符、完整插件声明、所有可信入口、JSON Schema 和类型客户端，不激活服务。`plugins:schema` 从同一严格 Schema 生成文档和客户端类型，供编辑器和后续工具使用：
 
 - [插件 JSON Schema](schemas/plugin.schema.json)
 - [整合包 JSON Schema](schemas/pack.schema.json)

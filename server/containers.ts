@@ -1,10 +1,10 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { posix } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { Jobs } from './jobs.ts';
 import { guestTask } from './guest-task.ts';
 import { envPrefix } from './project-services.ts';
@@ -57,7 +57,7 @@ export class Containers {
   jobs = new Jobs('containers');
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
   ) {}
   private supported(id: string) {
     const vm = this.machines.get(id);
@@ -397,7 +397,7 @@ export class Containers {
             }
             const values =
               'secrets' in project
-                ? projectPrivateValues(project as Awaited<ReturnType<ServiceInterface<Workspaces>['resolvedConfig']>>)
+                ? projectPrivateValues(project as Awaited<ReturnType<WorkspacesV1['resolvedConfig']>>)
                 : [];
             const output = privateLog(log, values);
             try {

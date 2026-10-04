@@ -77,7 +77,11 @@ test('tryAcquire is atomic, preserves queued fairness and leaves no failed parti
     }),
     undefined,
   );
-  assert.deepEqual(runtime.snapshot(), before);
+  const after = runtime.snapshot();
+  // Diagnostic clocks advance without changing admission or partition ownership.
+  assert.deepEqual({ ...after, resources: after.resources.map(({ timings, ...resource }) => resource) },
+    { ...before, resources: before.resources.map(({ timings, ...resource }) => resource) });
+  assert.ok(after.resources[0].timings!.executionMs >= before.resources[0].timings!.executionMs);
   const queued = runtime.acquire({ owner: 'queued', kind: 'fixture', label: 'older', cost: { process: 1 } });
   assert.equal(
     runtime.tryAcquire({

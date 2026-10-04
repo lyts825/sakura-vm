@@ -1,6 +1,6 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BundlesV1 } from './service-contracts/v1.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Bundles } from './bundles.ts';
+
 import type { HostPeerDependencies } from './host-peers.ts';
 import { AppError } from '../shared/errors.ts';
 import { haWitnessReplicaInventorySchema } from './ha-witness-core.ts';
@@ -13,7 +13,7 @@ type ReplicaActivation = Parameters<NonNullable<Receiver['activateReplica']>>[0]
 export function createHostImportReceiver(
   machines: Machines,
   services: {
-    bundles: () => ServiceInterface<Bundles> | undefined;
+    bundles: () => BundlesV1 | undefined;
     requireSessionUnlocked: () => void;
     migrationBlocked: () => boolean;
   },

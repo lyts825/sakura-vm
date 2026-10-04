@@ -1,11 +1,10 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BackupsV1, BundlesV1 } from './service-contracts/v1.ts';
 import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { Backups } from './backups.ts';
-import type { Bundles } from './bundles.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { guestPath } from '../shared/paths.ts';
 
@@ -23,7 +22,7 @@ export const disasterRecoveryInput = z.object({
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
 export class DisasterRecoveryDrill {
-  constructor(private machines: Machines, private backups: ServiceInterface<Backups>, private bundles: ServiceInterface<Bundles>) {}
+  constructor(private machines: Machines, private backups: BackupsV1, private bundles: BundlesV1) {}
 
   async status(id: string) {
     const state = await this.backups.view(id);

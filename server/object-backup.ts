@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BackupsV1, BundlesV1, SecretsV1 } from './service-contracts/v1.ts';
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -15,9 +15,9 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { z } from 'zod';
-import type { Backups } from './backups.ts';
+
 import { backupLocked, verifyBackup } from './backups.ts';
-import type { Bundles } from './bundles.ts';
+
 import { withDecrypted } from './encrypted-backups.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { networkFor } from './network/index.ts';
@@ -27,7 +27,7 @@ import { createSchema } from '../shared/contracts/vm.ts';
 import { withoutOperationContext } from './operation-context.ts';
 import { metadataFile } from './metadata-store.ts';
 import { fileHash, readStore, writeStore } from './local-store.ts';
-import { secretName, type Secrets } from './secrets.ts';
+import { secretName } from './secrets.ts';
 import { storageRuntime, type StorageLease } from './storage-runtime.ts';
 import { uploadObjectFile, OBJECT_UPLOAD_BUFFERS } from './object-upload.ts';
 import { randomUUID } from 'node:crypto';
@@ -124,7 +124,7 @@ export class ObjectBackup {
   private automaticAbort = new AbortController();
   constructor(
     private machines: Machines,
-    private services: () => { backups?: ServiceInterface<Backups>; bundles?: ServiceInterface<Bundles>; secrets?: ServiceInterface<Secrets> },
+    private services: () => { backups?: BackupsV1; bundles?: BundlesV1; secrets?: SecretsV1 },
   ) {
     this.schedule = scheduler.register({
       owner: 'core:object-backup',
@@ -204,7 +204,7 @@ export class ObjectBackup {
       }
     }
   }
-  private async client(vmId: string, target: z.infer<typeof objectTargetSchema>, secrets: ServiceInterface<Secrets>) {
+  private async client(vmId: string, target: z.infer<typeof objectTargetSchema>, secrets: SecretsV1) {
     let credential: z.infer<typeof credentialSchema>;
     try {
       credential = credentialSchema.parse(JSON.parse(await secrets.value(vmId, target.credentialSecret)));

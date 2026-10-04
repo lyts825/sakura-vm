@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { Ide } from '../../server/ide.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  ide: serviceRef<ServiceInterface<Ide>>('ide', 'ide'),
+  ide: serviceRef('ide', 'ide', serviceContracts.Ide),
 };

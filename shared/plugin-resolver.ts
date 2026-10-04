@@ -150,6 +150,29 @@ export function validateCatalog(plugins: PluginManifest[], packs: PluginPack[]) 
         return route.methods.includes(operation.method) && prefix.length <= path.length &&
           prefix.every((part, index) => part === path[index]);
       })) throw new Error(`操作不属于插件 HTTP 命名空间：${plugin.id}.${operation.id}`);
+      const route = plugin.contributes.routes.find(item => item.id === operation.id && item.handler === 'operation');
+      const normalize = (value: string) => value.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
+      if (!route || route.method !== operation.method || normalize(route.path) !== normalize(operation.path) ||
+          route.status !== operation.status)
+        throw new Error(`类型化操作缺少一致的策略和处理器登记：${plugin.id}.${operation.id}`);
+    }
+    unique(plugin.contributes.routes.map(item => item.id), `${plugin.id} 的精确操作标识`);
+    unique(plugin.contributes.routes.map(item => item.method + ':' + item.path), `${plugin.id} 的精确操作路径`);
+    for (const route of plugin.contributes.routes) {
+      const normalize = (value: string) => value.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
+      if (!plugin.contributes.http.some(prefix => {
+        const base = normalize(prefix.path), path = normalize(route.path);
+        return (path === base || path.startsWith(base + '/')) && prefix.methods.includes(route.method);
+      })) throw new Error(`精确操作没有 HTTP 归属：${plugin.id}.${route.id}`);
+      if (route.handler === 'operation' && !plugin.contributes.operations.some(item => item.id === route.id))
+        throw new Error(`精确操作缺少类型化处理器：${plugin.id}.${route.id}`);
+    }
+    for (const prefix of plugin.contributes.http) {
+      const normalize = (value: string) => value.replace(/:([a-zA-Z0-9_]+)/g, '{$1}');
+      for (const method of prefix.methods)
+        if (!plugin.contributes.routes.some(route => route.method === method &&
+            (normalize(route.path) === normalize(prefix.path) || normalize(route.path).startsWith(normalize(prefix.path) + '/'))))
+          throw new Error(`HTTP 入口缺少显式操作策略：${plugin.id} ${method} ${prefix.path}`);
     }
   }
   for (const pack of packs) {

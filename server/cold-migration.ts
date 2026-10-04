@@ -1,15 +1,18 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BundlesV1, HostPeersV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { Bundles } from './bundles.ts';
-import type { HostPeers } from './host-peers.ts';
-import type { MigrationFingerprint } from './machines.ts';
+
+import type { MigrationFingerprint } from '../shared/contracts/vm.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { recoveryOriginSchema, domainRecoveryTicketSchema, type DomainRecoveryTicket } from '../shared/contracts/domain-recovery.ts';
+import { captureRecoveryOrigin, recoveryTicketRevision } from './recovery-origin.ts';
+import { readRecoveryJson, invalidRecoveryTicket } from './domain-recovery-files.ts';
+import { captureOperationCheck } from './operation-context.ts';
 
 export const coldMigrationInput = z.object({
   peerId: z.uuid(),
@@ -33,9 +36,25 @@ const queueEntry = z.object({
   status: z.enum(['queued', 'transferring', 'copied', 'moved', 'review']),
   remoteVmId: z.uuid().optional(), error: z.string().max(500).optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
+  origin: recoveryOriginSchema.optional(),
 }).strict();
-const queueSchema = z.object({ version: z.literal(1), entries: z.array(queueEntry).max(128) }).strict();
+const queueSchema = z.object({ version: z.literal(1), entries: z.array(queueEntry).max(128) }).strict()
+  .refine(queue => new Set(queue.entries.map(entry => entry.transferId)).size === queue.entries.length,
+    '冷迁移原传输票据重复');
 type Queue = z.infer<typeof queueSchema>;
+const recoveryTicket = (entry: Queue['entries'][number]): DomainRecoveryTicket => ({
+  id: entry.transferId + '@' + recoveryTicketRevision({ vmId: entry.vmId, peerId: entry.peerId,
+    targetName: entry.targetName, fingerprint: entry.fingerprint, origin: entry.origin }),
+  revision: recoveryTicketRevision(entry), vmId: entry.vmId, origin: entry.origin,
+  state: ['copied', 'moved'].includes(entry.status) && !entry.error ? 'resolved' : 'pending', available: false,
+  error: ['copied', 'moved'].includes(entry.status) ? entry.error : undefined,
+});
+export async function discoverColdMigrationRecoveryTickets(file = join(DATA, 'cold-migrations.json')): Promise<DomainRecoveryTicket[]> {
+  try {
+    const raw = await readRecoveryJson(file, 1024 * 1024);
+    return raw === undefined ? [] : queueSchema.parse(raw).entries.map(recoveryTicket);
+  } catch (error) { return [invalidRecoveryTicket(file, 'unknown', error)]; }
+}
 
 const sameFingerprint = (a: MigrationFingerprint, b: MigrationFingerprint) =>
   a.recordHash === b.recordHash && a.diskSize === b.diskSize && a.diskMtimeMs === b.diskMtimeMs;
@@ -45,7 +64,7 @@ export class ColdMigrations {
   private writes: Promise<unknown> = Promise.resolve();
   private activeRuns = new Set<string>();
   private draining = false;
-  constructor(private machines: Machines, private bundles: ServiceInterface<Bundles>, private peers: ServiceInterface<HostPeers>,
+  constructor(private machines: Machines, private bundles: BundlesV1, private peers: HostPeersV1,
     private file = join(DATA, 'cold-migrations.json')) {}
 
   async init() {
@@ -62,6 +81,34 @@ export class ColdMigrations {
 
   view() {
     return { enabled: true, entries: this.queue!.entries.slice(-128).reverse().map(({ fingerprint, ...entry }) => entry) };
+  }
+  async recoveryTickets(): Promise<DomainRecoveryTicket[]> {
+    return (this.queue?.entries || []).map(entry => ({ ...recoveryTicket(entry),
+      available: !this.activeRuns.has(entry.vmId) && !this.draining &&
+        this.machines.records.has(entry.vmId) && ['queued', 'review'].includes(entry.status),
+    }));
+  }
+  async recoverTicket(raw: DomainRecoveryTicket): Promise<void> {
+    const ticket = domainRecoveryTicketSchema.parse(raw);
+    const check = captureOperationCheck();
+    if (this.activeRuns.has(ticket.vmId) || this.draining)
+      throw new AppError('原迁移流程仍在运行', 409, 'DOMAIN_RECOVERY_ACTIVE');
+    this.activeRuns.add(ticket.vmId);
+    try {
+      await check();
+      const entry = this.queue?.entries.find(item => recoveryTicket(item).id === ticket.id);
+      if (!entry || entry.vmId !== ticket.vmId || recoveryTicketRevision(entry) !== ticket.revision ||
+          !['queued', 'review'].includes(entry.status))
+        throw new AppError('原冷迁移票据已变化', 409, 'RECOVERY_STALE');
+      // Reuse the original transfer/target receipt. Recovery never authorizes source deletion or target startup.
+      const result = await this.runOne(ticket.vmId, { peerId: entry.peerId, targetName: entry.targetName,
+        confirmSourceRemoval: false, startTarget: false }, new AbortController().signal,
+        { transferId: entry.transferId, revision: ticket.revision }, check);
+      const confirmed = this.queue!.entries.find(item => recoveryTicket(item).id === ticket.id);
+      if (result.sourceRemoved || !confirmed || confirmed.status !== 'copied' || !confirmed.remoteVmId ||
+          !this.machines.records.has(ticket.vmId))
+        throw new AppError('原冷迁移领域尚未确认保留源实例的复制', 503, 'RECOVERY_CLEANUP_PENDING');
+    } finally { this.activeRuns.delete(ticket.vmId); }
   }
 
   private async change<T>(edit: (queue: Queue) => T): Promise<T> {
@@ -151,8 +198,10 @@ export class ColdMigrations {
     finally { this.activeRuns.delete(id); }
   }
 
-  private async runOne(id: string, input: unknown, signal: AbortSignal) {
+  private async runOne(id: string, input: unknown, signal: AbortSignal,
+    expected?: { transferId: string; revision: string }, check = captureOperationCheck()) {
     const options = coldMigrationInput.parse(input);
+    await check();
     if (options.startTarget && !options.confirmSourceRemoval)
       throw new AppError('启动目标前必须明确确认移除源实例，避免两端同时写入', 409);
     signal.throwIfAborted();
@@ -160,12 +209,16 @@ export class ColdMigrations {
     const prior = this.queue!.entries.findLast((entry) => entry.vmId === id &&
       entry.peerId === options.peerId && entry.targetName === options.targetName &&
       entry.status !== 'moved');
+    if (expected && (!prior || prior.transferId !== expected.transferId ||
+        recoveryTicketRevision(prior) !== expected.revision))
+      throw new AppError('原冷迁移票据不再是此目标的当前传输', 409, 'RECOVERY_STALE');
     if (prior && !sameFingerprint(prior.fingerprint, fingerprint))
       throw new AppError('源实例与之前的迁移队列记录不同；请改用新的目标名称重新迁移', 409);
     const existing = await this.existingReceipt(prior, options.peerId, options.targetName);
     if (options.startTarget && !existing)
       throw new AppError('请先完成一次保留源实例的复制并复核目标，再请求启动目标', 409);
     const { peer } = await this.target(id, options, !existing || options.startTarget);
+    await check();
     const transferId = prior?.transferId || randomUUID();
     if (!prior) await this.change((queue) => {
       while (queue.entries.length >= 128) {
@@ -175,6 +228,7 @@ export class ColdMigrations {
       }
       queue.entries.push({ vmId: id, transferId, peerId: options.peerId,
         targetName: options.targetName, fingerprint, status: 'queued',
+        origin: captureRecoveryOrigin(),
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     });
     const update = (status: Queue['entries'][number]['status'], remoteVmId?: string,
@@ -191,6 +245,7 @@ export class ColdMigrations {
       const receipt = await this.peers.upload(options.peerId, transferId, options.targetName,
         (target, uploadSignal) => this.bundles.export(id, target, () => {}, uploadSignal), signal);
       signal.throwIfAborted();
+      await check();
       if (receipt.name !== options.targetName ||
           (prior?.remoteVmId && receipt.id !== prior.remoteVmId))
         throw new AppError('目标主机回执与迁移队列不一致，保留源实例', 409);
@@ -217,11 +272,12 @@ export class ColdMigrations {
         await this.peers.checkImportActivation(options.peerId, activation);
       }
       signal.throwIfAborted();
+      await check();
       await this.machines.delete(id, fingerprint);
       let queuePersisted = true;
       try { await update('moved', receipt.id); }
       catch { queuePersisted = false; }
-      let targetStart: Awaited<ReturnType<ServiceInterface<HostPeers>['activateImport']>> | undefined;
+      let targetStart: Awaited<ReturnType<HostPeersV1['activateImport']>> | undefined;
       if (activation) {
         try { targetStart = await this.peers.activateImport(options.peerId, activation); }
         catch (error) {

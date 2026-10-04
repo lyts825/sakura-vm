@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { Toolchains } from '../../server/toolchains.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  toolchains: serviceRef<ServiceInterface<Toolchains>>('toolchains', 'toolchains'),
+  toolchains: serviceRef('toolchains', 'toolchains', serviceContracts.Toolchains),
 };

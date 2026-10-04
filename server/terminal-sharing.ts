@@ -1,3 +1,4 @@
+import type { ProjectTerminalsV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -6,7 +7,6 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { type TerminalService as ProjectTerminals } from './terminal-backend.ts';
 
 const sessionId = z.string().regex(/^[a-z0-9-]{1,48}$/);
 const grant = z
@@ -47,7 +47,7 @@ export class TerminalSharing {
     private machines: Machines,
     private file = join(DATA, 'terminal-sharing.json'),
     private now = Date.now,
-    private resolveTerminals: () => ProjectTerminals | undefined = () => undefined,
+    private resolveTerminals: () => ProjectTerminalsV1 | undefined = () => undefined,
   ) {}
 
   async init() {

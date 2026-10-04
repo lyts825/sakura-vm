@@ -1,7 +1,6 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { Sandboxes } from '../../server/sandboxes.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  sandboxes: serviceRef<ServiceInterface<Sandboxes>>('sandbox', 'sandboxes'),
+  sandboxes: serviceRef('sandbox', 'sandboxes', serviceContracts.Sandboxes),
 };

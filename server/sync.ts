@@ -1,3 +1,4 @@
+import type { ProjectCatalogV1 } from './service-contracts/v1.ts';
 import { projectMetadataFile } from './project-catalog.ts';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { lstat, readdir, realpath, mkdir, rename, readFile, writeFile, rm, link } from 'node:fs/promises';
@@ -7,11 +8,14 @@ import { pipeline } from 'node:stream/promises';
 import { Readable, Writable } from 'node:stream';
 import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
-import { vmDir } from './paths.ts';
+import { vmDir, VM_ROOT } from './paths.ts';
 import { ftpStat, mutablePath, preserveFileMetadata } from './files.ts';
 import { Jobs } from './jobs.ts';
+import { domainRecoveryTicketSchema, type DomainRecoveryTicket } from '../shared/contracts/domain-recovery.ts';
+import { recoveryTicketRevision } from './recovery-origin.ts';
+import { readRecoveryJson, recoveryDirectories, invalidRecoveryTicket } from './domain-recovery-files.ts';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { ProjectCatalog } from './project-catalog.ts';
+
 import { threeWayMerge, resolvedMerge } from '../shared/three-way-merge.ts';
 import { inMaintenance, timeWindowSchema } from './automation-policy.ts';
 import { withinWindow } from '../shared/time-windows.ts';
@@ -28,7 +32,7 @@ import {
   pathPolicy,
   detectSyncRenames,
 } from '../shared/sync-policy.ts';
-import { SyncHistory, type SyncSide } from './sync-history.ts';
+import { SyncHistory, syncCheckpointSchema, type SyncSide, type SyncCheckpoint } from './sync-history.ts';
 import {
   storageRuntime,
   storageGrowth,
@@ -223,6 +227,48 @@ async function hash(stream: Readable, signal: AbortSignal) {
     if (signal.aborted) abort();
   });
 }
+const syncRecoveryTicket = (point: SyncCheckpoint, vmId: string, projectId: string): DomainRecoveryTicket => ({
+  id: point.id + '@' + recoveryTicketRevision({ host: point.host, guest: point.guest,
+    state: point.state, base: point.base, origin: point.origin }),
+  revision: recoveryTicketRevision(point), vmId, projectId, origin: point.origin,
+  state: ['pending', 'failed'].includes(point.status) ? 'pending' : 'resolved', available: false,
+});
+export async function discoverSyncRecoveryTickets(vmIds: readonly string[] = []): Promise<DomainRecoveryTicket[]> {
+  const tickets: DomainRecoveryTicket[] = [];
+  let reads = 0;
+  const capacity = () => [...tickets, invalidRecoveryTicket(VM_ROOT, 'unknown', '同步恢复扫描超过累计上限')];
+  let ids: string[];
+  try { ids = [...new Set([...vmIds, ...await recoveryDirectories(VM_ROOT, value => z.uuid().safeParse(value).success)])]; }
+  catch (error) { tickets.push(invalidRecoveryTicket(VM_ROOT, 'unknown', error)); ids = [...vmIds]; }
+  if (ids.length > 4096) return [...tickets, invalidRecoveryTicket(VM_ROOT, 'unknown', '同步恢复实例数超过上限')];
+  for (const vmId of ids) {
+    if (++reads > 4096 || tickets.length >= 3071) return capacity();
+    let roots: string[];
+    try { roots = await recoveryDirectories(vmDir(vmId), value => /^sync-history(?:-[a-f0-9]{16})?\.json\.d$/.test(value), 32); }
+    catch (error) { tickets.push(invalidRecoveryTicket(vmDir(vmId), vmId, error)); continue; }
+    for (const name of roots) {
+      if (++reads > 4096 || tickets.length >= 3071) return capacity();
+      const root = join(vmDir(vmId), name), projectId = /^sync-history-([a-f0-9]{16})/.exec(name)?.[1] || 'default';
+      let checkpoints: string[];
+      try { checkpoints = await recoveryDirectories(root, value => z.uuid().safeParse(value).success, 64); }
+      catch (error) { tickets.push(invalidRecoveryTicket(root, vmId, error, projectId)); continue; }
+      for (const id of checkpoints) {
+        if (++reads > 4096 || tickets.length >= 3071) return capacity();
+        const file = join(root, id, 'checkpoint.json');
+        try {
+          await recoveryDirectories(join(root, id), () => false);
+          const raw = await readRecoveryJson(file);
+          if (raw === undefined) continue; // Initial capture without a published checkpoint changed no files.
+          const point = syncCheckpointSchema.parse(raw);
+          if (point.id !== id) throw new AppError('同步恢复票据标识不匹配', 503, 'DOMAIN_RECOVERY_CORRUPT');
+          tickets.push(syncRecoveryTicket(point, vmId, projectId));
+        } catch (error) { tickets.push(invalidRecoveryTicket(file, vmId, error, projectId)); }
+      }
+    }
+  }
+  return tickets;
+}
+
 export class FolderSync {
   jobs = new Jobs('sync');
   private schedule: ScheduleHandle;
@@ -238,7 +284,7 @@ export class FolderSync {
   };
   constructor(
     private machines: Machines,
-    private projects?: ProjectCatalog,
+    private projects?: ProjectCatalogV1,
   ) {
     this.watchers = new SyncWatchers(machines, () => {
       if (this.closed || this.debounce) return;
@@ -276,6 +322,50 @@ export class FolderSync {
     const index = await this.projects.list(id);
     for (const project of index.projects)
       await this.projects.inScope(id, project.id, () => action(project.id));
+  }
+  private async recoveryProject<T>(id: string, projectId: string, work: () => Promise<T>): Promise<T> {
+    this.machines.get(id);
+    if (!this.projects) {
+      if (projectId !== 'default') throw new AppError('原同步项目服务不可用', 409, 'DOMAIN_RECOVERY_UNAVAILABLE');
+      return work();
+    }
+    const index = await this.projects.list(id);
+    if (!index.projects.some(project => project.id === projectId))
+      throw new AppError('原同步项目已变化', 409, 'RECOVERY_STALE');
+    return this.projects.inScope(id, projectId, work);
+  }
+  async recoveryTickets(): Promise<DomainRecoveryTicket[]> {
+    const tickets = await discoverSyncRecoveryTickets([...this.machines.records.keys()]);
+    const latest = new Map<string, string | undefined>();
+    for (const ticket of tickets) {
+      if (ticket.error || ticket.state !== 'pending' || this.closed || !this.machines.records.has(ticket.vmId) ||
+          this.machines.state(ticket.vmId) !== 'running') continue;
+      const project = ticket.projectId || 'default', key = ticket.vmId + ':' + project;
+      try {
+        await this.recoveryProject(ticket.vmId, project, async () => {
+          if (this.jobs.view(this.key(ticket.vmId))?.status === 'running') return;
+          if (!latest.has(key)) latest.set(key,
+            (await this.history(ticket.vmId).list()).find(point => point.status !== 'rolled-back')?.id);
+          ticket.available = latest.get(key) === ticket.id.split('@')[0];
+        });
+      } catch { ticket.available = false; }
+    }
+    return tickets;
+  }
+  async recoverTicket(raw: DomainRecoveryTicket): Promise<void> {
+    const ticket = domainRecoveryTicketSchema.parse(raw), checkpoint = ticket.id.split('@')[0];
+    await this.recoveryProject(ticket.vmId, ticket.projectId || 'default', async () => {
+      if (this.closed) throw new AppError('同步领域正在关闭', 503, 'DOMAIN_RECOVERY_UNAVAILABLE');
+      const point = await this.readHistory(ticket.vmId, () => this.history(ticket.vmId).read(checkpoint));
+      if (syncRecoveryTicket(point, ticket.vmId, ticket.projectId || 'default').id !== ticket.id)
+        throw new AppError('原同步恢复票据身份已变化', 409, 'RECOVERY_STALE');
+      const job = await this.rollback(ticket.vmId, checkpoint, ticket.revision);
+      await this.jobs.wait(this.key(ticket.vmId));
+      const confirmed = await this.readHistory(ticket.vmId, () => this.history(ticket.vmId).read(checkpoint));
+      if (this.jobs.get(job.id!)?.status !== 'done' || confirmed.status !== 'rolled-back' ||
+          syncRecoveryTicket(confirmed, ticket.vmId, ticket.projectId || 'default').id !== ticket.id)
+        throw new AppError('原同步领域尚未确认回滚', 503, 'RECOVERY_CLEANUP_PENDING');
+    });
   }
   async close() {
     this.closed = true;
@@ -527,14 +617,16 @@ export class FolderSync {
       this.runInternal(id, direction, token, decisions, merges),
     );
   }
-  async rollback(id: string, checkpoint: string) {
+  async rollback(id: string, checkpoint: string, expectedRevision?: string) {
     return this.machines.locked(`sync:${this.key(id)}`, async () => {
       const config = await this.config(id);
       if (!config) throw new AppError('请先保存同步目录');
       if (this.machines.state(id) !== 'running') throw new AppError('请先启动发行版');
       if (this.jobs.view(this.key(id))?.status === 'running') throw new AppError('请等待同步完成', 409);
       const history = this.history(id);
-      await this.readHistory(id, () => history.read(checkpoint));
+      const original = await this.readHistory(id, () => history.read(checkpoint));
+      if (expectedRevision && recoveryTicketRevision(original) !== expectedRevision)
+        throw new AppError('原同步恢复票据已变化', 409, 'RECOVERY_STALE');
       return this.jobs.start(
         this.key(id),
         async (log, signal) => {

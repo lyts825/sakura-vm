@@ -1,7 +1,7 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { ProjectPreparationV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { z } from 'zod';
 import type { VmAccess as Machines } from './vm-access.ts';
-import type { ProjectPreparation } from './project-preparation.ts';
+
 import { AppError } from '../shared/errors.ts';
 import { quote } from './shell.ts';
 import { envPrefix } from './project-services.ts';
@@ -46,7 +46,7 @@ export async function withProjectCommand<T>(
   machines: Machines,
   id: string,
   signal: AbortSignal | undefined,
-  workspaces: ServiceInterface<Workspaces> | undefined,
+  workspaces: WorkspacesV1 | undefined,
   action: (project: Project) => Promise<T>,
 ) {
   const owned = workspaces ? undefined : new Workspaces(machines);
@@ -112,7 +112,7 @@ export class ProjectExecution {
   private closing?: Promise<void>;
   constructor(
     private machines: Machines,
-    private preparation: Pick<ProjectPreparation, 'prepareTask' | 'workspaces'>,
+    private preparation: Pick<ProjectPreparationV1, 'prepareTask' | 'workspaces'>,
     private runProjectTask: typeof projectIdentityTask = projectIdentityTask,
   ) {}
 

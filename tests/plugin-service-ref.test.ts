@@ -17,7 +17,7 @@ const provider = definePlugin({ id: 'provider', name: 'Provider', description: '
   category: 'operations', services: ['example'] });
 const consumer = definePlugin({ id: 'consumer', name: 'Consumer', description: 'test',
   category: 'operations', requires: [pin('provider')] });
-const example = serviceRef<{ value: number; call(): number }>('provider', 'example');
+const example = serviceRef<{ value: number; call(): number }>('provider', 'example', { id: 'test.example.v1', version: 1, members: ['value', 'call'] });
 function checkTypes(context: PluginContext) {
   const value: number = context.use(example).value;
   // @ts-expect-error the reference requires a numeric value
@@ -66,7 +66,7 @@ test('revocation rechecks queued work and keeps provider ownership and caller id
   const { directory, owner, client, broker, manifest } = fixture();
   const runtime = new HostRuntime({ budgets: { work: { capacity: 1 } } });
   const block = await runtime.acquire({ owner: 'block', kind: 'test', label: 'block', cost: { work: 1 } });
-  const ref = serviceRef<{ run(): Promise<void> }>('provider', 'example');
+  const ref = serviceRef<{ run(): Promise<void> }>('provider', 'example', { id: 'test.example.v1', version: 1, members: ['run'] });
   let invoked = false;
   broker.register(owner, ref, { async run() {
     assert.equal(resourceContext()?.pluginGeneration, owner.generation);
@@ -85,7 +85,7 @@ test('revocation rechecks queued work and keeps provider ownership and caller id
 
 test('optional discovery does not pin an idle provider and retained nested handles revoke', async () => {
   const { directory, owner, client, broker, manifest } = fixture(true);
-  const ref = serviceRef<{ nested: { ping(): number } }>('provider', 'example');
+  const ref = serviceRef<{ nested: { ping(): number } }>('provider', 'example', { id: 'test.example.v1', version: 1, members: ['nested'], properties: { nested: { id: 'test.nested.v1', version: 1, members: ['ping'] } } });
   broker.register(owner, ref, { nested: { ping: () => 1 } }); directory.publish(owner);
   const nested = broker.lookup(client, manifest, ref)!.nested;
   assert.equal(broker.activeBorrows(owner), 0); assert.equal(nested.ping(), 1);
@@ -98,7 +98,7 @@ test('cached returned async callables retain both scopes until their original in
   const { directory, owner, client, broker, manifest } = fixture();
   let release!: () => void;
   const blocked = new Promise<void>((resolve) => { release = resolve; });
-  const ref = serviceRef<{ callable(): (callback: () => string | undefined) => Promise<void> }>('provider', 'example');
+  const ref = serviceRef<{ callable(): (callback: () => string | undefined) => Promise<void> }>('provider', 'example', { id: 'test.example.v1', version: 1, members: ['callable'] });
   broker.register(owner, ref, { callable: () => async (callback) => {
     assert.equal(pluginAuthority(), owner);
     assert.equal(resourceContext()?.callerPluginGeneration, client.generation);
@@ -132,7 +132,7 @@ test('nested calls through returned callables preserve the original caller and c
   const middle = directory.begin('official', 'consumer', consumer.version, 'b'.repeat(64));
   const original = directory.begin('official', 'original', originalManifest.version, 'c'.repeat(64));
   const broker = new ServiceBroker(directory, [provider, middleManifest, originalManifest]);
-  const ref = serviceRef<{ callable(): (callback: () => void) => void }>('provider', 'example');
+  const ref = serviceRef<{ callable(): (callback: () => void) => void }>('provider', 'example', { id: 'test.example.v1', version: 1, members: ['callable'] });
   broker.register(owner, ref, { callable: () => (callback) => {
     assert.equal(pluginAuthority(), owner);
     assert.equal(resourceContext()?.callerPluginGeneration, original.generation);
@@ -140,7 +140,7 @@ test('nested calls through returned callables preserve the original caller and c
   } });
   directory.publish(owner);
   const callable = broker.lookup(middle, middleManifest, ref)!.callable();
-  const middleRef = serviceRef<{ run(callback: () => void): void }>('consumer', 'example');
+  const middleRef = serviceRef<{ run(callback: () => void): void }>('consumer', 'example', { id: 'test.middle.v1', version: 1, members: ['run'] });
   broker.register(middle, middleRef, { run: (callback) => callable(callback) });
   directory.publish(middle); directory.publish(original);
   let called = false;

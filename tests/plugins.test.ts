@@ -1,3 +1,36 @@
+type GatewayFixtureHost = import('../server/features.ts').Features;
+type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
+const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {
+  gateway: import('../server/operation-gateway.ts').OperationGateway;
+  bodies: WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>;
+}>();
+/** Preserve the fixture's data-directory setup before loading the real operation admission modules. */
+async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse, url: URL, body: GatewayFixtureBody) {
+  let fixture = admittedRouteFixtures.get(host);
+  if (!fixture) {
+    const [{ OperationGateway }, { operationEntries }] = await Promise.all([
+      import('../server/operation-gateway.ts'), import('../server/operation-catalog.ts'),
+    ]);
+    const bodies = new WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>();
+    const gateway = new OperationGateway({
+      enabled: () => host.enabled,
+      instance: owner => owner === 'core' ? undefined : host.directory.get('official', owner),
+      bind: async (_request, _url, _entry, _parameters, requireEnabled) => {
+        requireEnabled();
+        return { check: async () => 'owner' };
+      },
+    });
+    for (const entry of operationEntries)
+      if (entry.declaration.method !== 'UPGRADE')
+        gateway.register(entry, (request, response, target) => host.route(request, response, target, bodies.get(request)!));
+    gateway.seal();
+    fixture = { gateway, bodies };
+    admittedRouteFixtures.set(host, fixture);
+  }
+  fixture.bodies.set(req, body);
+  return await fixture.gateway.dispatch(req, res, url) as boolean;
+}
 import { services as imagesContract } from '../plugins/images/services.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -174,24 +207,26 @@ test('disabled plugins reject API calls and creation options before touching the
   const host = await Features.create(vm);
   const { req, res } = request();
   try {
-    for (const path of [
-      '/api/images',
-      '/api/import',
-      '/api/migration',
-      '/api/vms/batch',
-      '/api/vms/vm/file',
-      '/api/vms/vm/desktop',
-      '/api/vms/vm/snapshots',
-      '/api/vms/vm/advanced',
-      '/api/vms/vm/suspend',
+    for (const [method, path] of [
+      ['GET', '/api/images'],
+      ['POST', '/api/import'],
+      ['GET', '/api/migration'],
+      ['POST', '/api/vms/batch'],
+      ['GET', '/api/vms/vm/file'],
+      ['GET', '/api/vms/vm/desktop'],
+      ['POST', '/api/vms/vm/snapshots'],
+      ['GET', '/api/vms/vm/advanced'],
+      ['POST', '/api/vms/vm/suspend'],
     ]) {
+      req.method = method;
       await assert.rejects(
-        host.route(req, res, new URL('http://localhost' + path), async () => ({})),
+        routeThroughGateway(host, req, res, new URL('http://localhost' + path), async () => ({})),
         (error: any) => error.status === 403,
         path,
       );
     }
-    assert.equal(await host.route(req, res, new URL('http://localhost/api/vms'), async () => ({})), false);
+    req.method = 'GET';
+    assert.equal(await routeThroughGateway(host, req, res, new URL('http://localhost/api/vms'), async () => ({})), false);
     assert.throws(() => host.validateConfig({ template: 'node' }), /projects/);
     assert.throws(() => host.validateConfig({ distro: 'ubuntu' }), /images/);
     assert.throws(() => host.validateConfig({ forwards: [{ host: 8080, guest: 80 }] }), /network/);
@@ -218,7 +253,7 @@ test('files activate only their declared services and cannot export through down
     assert.equal(Object.hasOwn(vm, 'fileBeforeReplace'), false);
     const { req, res } = request('POST');
     await assert.rejects(
-      host.route(req, res, new URL('http://localhost/api/vms/vm/download'), async () => ({ type: 'export' })),
+      routeThroughGateway(host, req, res, new URL('http://localhost/api/vms/vm/download'), async () => ({ type: 'export' })),
       /snapshots/,
     );
     assert.deepEqual(Object.keys(host.errors), []);
@@ -233,7 +268,7 @@ test('file-lock route grants one lease and guards file mutations until release',
   const endpoint = 'http://localhost/api/vms/vm/file-lock?path=%2Fworkspace%2Fnotes.txt';
   const call = async (method: string, url: string, input?: unknown) => {
     const { req, res } = request(method);
-    await host.route(req, res, new URL(url), async () => input);
+    await routeThroughGateway(host, req, res, new URL(url), async () => input);
     return res.payload;
   };
   try {
@@ -265,7 +300,7 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
   try {
     const first = request('POST');
     assert.equal(
-      await host.route(first.req, first.res, new URL('http://localhost/api/vms/vm/snapshots'), async () => ({
+      await routeThroughGateway(host, first.req, first.res, new URL('http://localhost/api/vms/vm/snapshots'), async () => ({
         name: 'checkpoint',
       })),
       true,
@@ -274,7 +309,7 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
     assert.equal(first.res.payload.name, 'checkpoint');
     const online = request('POST');
     assert.equal(
-      await host.route(online.req, online.res, new URL('http://localhost/api/vms/vm/snapshots'), async () => ({
+      await routeThroughGateway(host, online.req, online.res, new URL('http://localhost/api/vms/vm/snapshots'), async () => ({
         name: 'live', online: true,
       })),
       true,
@@ -282,7 +317,7 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
     assert.equal(online.res.payload.consistency, 'filesystem');
     const memory = request('POST');
     assert.equal(
-      await host.route(memory.req, memory.res, new URL('http://localhost/api/vms/vm/snapshots'),
+      await routeThroughGateway(host, memory.req, memory.res, new URL('http://localhost/api/vms/vm/snapshots'),
         async () => ({ name: 'process', online: true, memory: true })),
       true,
     );
@@ -290,7 +325,7 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
     const restore = request('POST');
     restore.req.headers['content-type'] = 'application/json';
     assert.equal(
-      await host.route(restore.req, restore.res,
+      await routeThroughGateway(host, restore.req, restore.res,
         new URL('http://localhost/api/vms/vm/snapshots/checkpoint/restore'),
         async () => ({ backup: true, memory: true })),
       true,
@@ -299,7 +334,7 @@ test('snapshot and desktop routes use path segment lengths after extraction', as
       { id: 'vm', snapshotId: 'checkpoint', backup: true });
     const second = request();
     assert.equal(
-      await host.route(
+      await routeThroughGateway(host,
         second.req,
         second.res,
         new URL('http://localhost/api/vms/vm/desktop'),
@@ -385,7 +420,7 @@ test('split packages activate only the services needed for the selected capabili
       if (id === 'extensions' || id === 'platform') {
         const { req, res } = request();
         await assert.rejects(
-          host.route(req, res, new URL('http://localhost/api/vms/vm/advanced'), async () => ({})),
+          routeThroughGateway(host, req, res, new URL('http://localhost/api/vms/vm/advanced'), async () => ({})),
           /automation/,
         );
       }
@@ -508,7 +543,10 @@ test('manifest schemas and catalog checks reject ambiguous or unsupported contra
     /不存在/,
   );
   const withHttp = (path: string, projectScoped = false) =>
-    change({ contributes: { ...files.contributes, http: [{ path, projectScoped, methods: ['GET'] }] } });
+    change({ contributes: { ...files.contributes,
+      http: [{ path, projectScoped, methods: ['GET'] }],
+      routes: [{ ...files.contributes.routes[0], path: path.replace(':vmId', '{vmId}') }],
+    } });
   assert.throws(() => validateCatalog(withHttp('/api/plugins'), PLUGIN_PACKS), /核心入口/);
   for (const path of ['/api/audit', '/api/monitor', '/api/openapi', '/api/sdk', '/api/log-retention', '/api/graphql', '/api/graphql-schema', '/api/vms/:vmId/lockdown'])
     assert.throws(() => validateCatalog(withHttp(path), PLUGIN_PACKS), /核心入口/);
@@ -550,7 +588,7 @@ test('HTTP ownership, methods, project scoping and socket gates come from declar
     assert.equal(host.socketEnabled('terminal-session'), false);
     const { req, res } = request('PATCH');
     await assert.rejects(
-      host.route(req, res, new URL('http://localhost/api/vms/vm/commands'), async () => ({})),
+      routeThroughGateway(host, req, res, new URL('http://localhost/api/vms/vm/commands'), async () => ({})),
       (error: any) => error.status === 405,
     );
   } finally {
@@ -593,6 +631,8 @@ test('service contracts reject undeclared reads and writes and await asynchronou
       activate: async (host) => {
         if (violation === 'missing') return;
         host.provide(imagesContract.images, {
+          ...Object.fromEntries(imagesContract.images.contract!.members.map((key) => [key, () => undefined])),
+          jobs: { list: () => [] },
           close: async () => {
             events.push('close');
           },

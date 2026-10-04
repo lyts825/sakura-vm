@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Request } from './feature-shared';
+import { useAction, type Request } from './feature-shared';
+import { PluginBoundary } from './plugin-boundary';
+import { pluginGeneration } from './plugin-generation';
 
 type Entry = {
   id: string;
@@ -44,8 +46,7 @@ function CommunityExtensionPanel({ pluginId, panel, request }: {
 }) {
   const [values, setValues] = useState<Record<string, string | boolean>>({});
   const [result, setResult] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { error, busy, run } = useAction();
   const invalid = panel.fields.some((field) => {
     const value = values[field.key];
     return field.required && value === undefined && field.type !== 'boolean' ||
@@ -53,11 +54,9 @@ function CommunityExtensionPanel({ pluginId, panel, request }: {
       field.type === 'number' && value !== undefined && value !== '' &&
         !Number.isFinite(Number(value));
   });
-  const submit = async () => {
-    if (busy || invalid) return;
-    setBusy(true);
-    setError('');
-    try {
+  const submit = () => {
+    if (invalid) return;
+    return run(async signal => {
       const body: Record<string, unknown> = {};
       for (const field of panel.fields) {
         const value = values[field.key];
@@ -66,13 +65,10 @@ function CommunityExtensionPanel({ pluginId, panel, request }: {
           body[field.key] = field.type === 'number' ? Number(value) : value;
       }
       const response = await request<unknown>(
-        `/community-plugins/extensions/${pluginId}/${panel.routeId}`, 'POST', body);
+        `/community-plugins/extensions/${pluginId}/${panel.routeId}`, 'POST', body, signal);
+      signal.throwIfAborted();
       setResult(JSON.stringify(response, null, 2));
-    } catch (failure) {
-      setError((failure as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
   return <section className="community-plugin-extension" aria-label={panel.title}>
     <h4>{panel.title}</h4>
@@ -111,6 +107,7 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
     async (signal?: AbortSignal) => {
       const data = await request<View>('/community-plugins', 'GET', undefined, signal);
       if (!validView(data)) throw new Error('第三方插件目录响应无效');
+      pluginGeneration.update(data.runtime);
       if (!signal?.aborted) setView(data);
     },
     [request],
@@ -128,10 +125,11 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
     setError('');
     setNotice('');
     try {
-      const response = await request<any>('/community-plugins', 'POST', operation);
+      const response = await request<unknown>('/community-plugins', 'POST', operation);
       if (operation.operation === 'run') setResult(JSON.stringify(response, null, 2));
       else {
         if (!validView(response)) throw new Error('第三方插件目录响应无效');
+        pluginGeneration.update(response.runtime);
         setView(response);
       }
       setNotice(success);
@@ -371,8 +369,9 @@ export function CommunityPluginCenter({ request }: { request: Request }) {
                   </div>
                 </div>
                 {item.extensions?.panels.map((panel) =>
-                  <CommunityExtensionPanel key={panel.id} pluginId={item.id} panel={panel}
-                    request={request} />)}
+                  <PluginBoundary key={panel.id} identity={`community:${item.id}`} request={request} label={panel.title}>
+                    {scoped => <CommunityExtensionPanel pluginId={item.id} panel={panel} request={scoped} />}
+                  </PluginBoundary>)}
                 </div>
               ))}
               {result && (

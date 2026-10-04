@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { ProjectPermissionsV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -7,9 +7,8 @@ import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import { projectIdSchema } from './project-catalog.ts';
 import { projectSchema, projectVersion } from './project-config.ts';
-import { type Workspaces } from './workspaces.ts';
+
 import type { Principal } from './access-control.ts';
-import type { ProjectPermissions } from './project-permissions.ts';
 
 const status = z.enum(['pending', 'approved', 'denied', 'claimed', 'applied', 'failed']);
 const change = z.object({
@@ -36,7 +35,7 @@ export class ChangeApprovals {
   private pending = Promise.resolve();
   private closed = false;
 
-  constructor(private permissions: ProjectPermissions, private workspaces: ServiceInterface<Workspaces>,
+  constructor(private permissions: ProjectPermissionsV1, private workspaces: WorkspacesV1,
     private file = join(DATA, 'change-approvals.json'), private now = Date.now) {}
 
   async init() {

@@ -1,4 +1,37 @@
 import { services as sandboxesContract } from '../plugins/sandbox/services.ts';
+type GatewayFixtureHost = import('../server/features.ts').Features;
+type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
+const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {
+  gateway: import('../server/operation-gateway.ts').OperationGateway;
+  bodies: WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>;
+}>();
+/** Preserve the fixture's data-directory setup before loading the real operation admission modules. */
+async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse, url: URL, body: GatewayFixtureBody) {
+  let fixture = admittedRouteFixtures.get(host);
+  if (!fixture) {
+    const [{ OperationGateway }, { operationEntries }] = await Promise.all([
+      import('../server/operation-gateway.ts'), import('../server/operation-catalog.ts'),
+    ]);
+    const bodies = new WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>();
+    const gateway = new OperationGateway({
+      enabled: () => host.enabled,
+      instance: owner => owner === 'core' ? undefined : host.directory.get('official', owner),
+      bind: async (_request, _url, _entry, _parameters, requireEnabled) => {
+        requireEnabled();
+        return { check: async () => 'owner' };
+      },
+    });
+    for (const entry of operationEntries)
+      if (entry.declaration.method !== 'UPGRADE')
+        gateway.register(entry, (request, response, target) => host.route(request, response, target, bodies.get(request)!));
+    gateway.seal();
+    fixture = { gateway, bodies };
+    admittedRouteFixtures.set(host, fixture);
+  }
+  fixture.bodies.set(req, body);
+  return await fixture.gateway.dispatch(req, res, url) as boolean;
+}
 import { services as metricsContract } from '../plugins/metrics/services.ts';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -41,7 +74,7 @@ test('declared operations validate responses before writing to the client', asyn
     return {
       ...module,
       activate: async (host) => {
-        host.provide(metricsContract.metrics, { close: async () => {} } as any);
+        host.provide(metricsContract.metrics, { sample: async () => ({}), forget: () => {}, close: async () => {} } as any);
       },
       operations: {
         sample: {
@@ -72,7 +105,7 @@ test('declared operations validate responses before writing to the client', asyn
           this.writableFinished = true;
         },
       }) as ServerResponse & { status: number; payload: string };
-      await host.route(req, res, new URL('http://127.0.0.1/api/vms/example/metrics'), async () => undefined);
+      await routeThroughGateway(host, req, res, new URL('http://127.0.0.1/api/vms/example/metrics'), async () => undefined);
       return res;
     };
     try {
@@ -114,7 +147,11 @@ test('bodyless declared DELETE works without a JSON header while write schemas r
     return {
       ...module,
       activate: async (host) => {
-        host.provide(sandboxesContract.sandboxes, { close: async () => {} } as any);
+        host.provide(sandboxesContract.sandboxes, {
+          ...Object.fromEntries(sandboxesContract.sandboxes.contract!.members.map((key) => [key, () => undefined])),
+          jobs: { list: () => [], close: async () => {} },
+          close: async () => {},
+        } as any);
       },
       operations: {
         ...module.operations,
@@ -132,8 +169,7 @@ test('bodyless declared DELETE works without a JSON header while write schemas r
   const machines = Object.assign(new EventEmitter(), { records: new Map() }) as unknown as Machines;
   let host: Features | undefined;
   const server = createServer((req, res) => {
-    void host!
-      .route(req, res, new URL(req.url!, 'http://127.0.0.1'), (request, signal) =>
+    void routeThroughGateway(host!, req, res, new URL(req.url!, 'http://127.0.0.1'), (request, signal) =>
         readJsonBody(request, undefined, signal),
       )
       .catch((error) => {

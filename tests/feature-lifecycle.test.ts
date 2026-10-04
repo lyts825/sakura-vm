@@ -1,3 +1,36 @@
+type GatewayFixtureHost = import('../server/features.ts').Features;
+type GatewayFixtureBody = Parameters<GatewayFixtureHost['route']>[3];
+const admittedRouteFixtures = new WeakMap<GatewayFixtureHost, {
+  gateway: import('../server/operation-gateway.ts').OperationGateway;
+  bodies: WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>;
+}>();
+/** Preserve the fixture's data-directory setup before loading the real operation admission modules. */
+async function routeThroughGateway(host: GatewayFixtureHost, req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse, url: URL, body: GatewayFixtureBody) {
+  let fixture = admittedRouteFixtures.get(host);
+  if (!fixture) {
+    const [{ OperationGateway }, { operationEntries }] = await Promise.all([
+      import('../server/operation-gateway.ts'), import('../server/operation-catalog.ts'),
+    ]);
+    const bodies = new WeakMap<import('node:http').IncomingMessage, GatewayFixtureBody>();
+    const gateway = new OperationGateway({
+      enabled: () => host.enabled,
+      instance: owner => owner === 'core' ? undefined : host.directory.get('official', owner),
+      bind: async (_request, _url, _entry, _parameters, requireEnabled) => {
+        requireEnabled();
+        return { check: async () => 'owner' };
+      },
+    });
+    for (const entry of operationEntries)
+      if (entry.declaration.method !== 'UPGRADE')
+        gateway.register(entry, (request, response, target) => host.route(request, response, target, bodies.get(request)!));
+    gateway.seal();
+    fixture = { gateway, bodies };
+    admittedRouteFixtures.set(host, fixture);
+  }
+  fixture.bodies.set(req, body);
+  return await fixture.gateway.dispatch(req, res, url) as boolean;
+}
 import { PLUGINS } from '../shared/plugins.ts';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,7 +82,7 @@ test('sync accepts manual text through the authorized body callback with its lar
   let limit: number | undefined;
   let signal: AbortSignal | undefined;
   try {
-    await assert.rejects(features.route(
+    await assert.rejects(routeThroughGateway(features,
       req, res,
       new URL('http://localhost/api/vms/22222222-2222-4222-8222-222222222222/sync'),
       async (_request, requestSignal, requestLimit) => {
@@ -136,7 +169,7 @@ test('scoped feature endpoints hand the selected project through to views and jo
   const viewResponse = response();
   try {
     assert.equal(
-      await features.route(
+      await routeThroughGateway(features,
         request,
         viewResponse,
         new URL(`http://localhost/api/vms/${id}/advanced?project=${projectId}`),
@@ -150,7 +183,7 @@ test('scoped feature endpoints hand the selected project through to views and jo
     request.method = 'POST';
     const jobResponse = response();
     assert.equal(
-      await features.route(
+      await routeThroughGateway(features,
         request,
         jobResponse,
         new URL(`http://localhost/api/vms/${id}/advanced?project=${projectId}`),
@@ -186,7 +219,7 @@ test('disconnect cancels an active import and permits a new import after cleanup
     currentSignal?.throwIfAborted();
     throw new Error('Expected cancellation');
   };
-  const pending = features.route(
+  const pending = routeThroughGateway(features,
     req,
     res,
     new URL('http://localhost/api/import?name=example'),
@@ -200,7 +233,7 @@ test('disconnect cancels an active import and permits a new import after cleanup
   assert.equal(res.listenerCount('close'), 0);
   features.serviceValue<import('../server/bundles.ts').Bundles>('bundles')!.importExternal = async () => ({ id: 'new-vm' }) as any;
   assert.equal(
-    await features.route(req, res, new URL('http://localhost/api/import?name=retry'), async () => ({})),
+    await routeThroughGateway(features, req, res, new URL('http://localhost/api/import?name=retry'), async () => ({})),
     true,
   );
   await features.close();
@@ -223,7 +256,7 @@ test('shutdown waits for request cleanup and rejects new feature operations', as
     currentSignal?.throwIfAborted();
     return {} as any;
   };
-  const pending = features.route(req, res, new URL('http://localhost/api/vms/vm/clone'), async () => ({
+  const pending = routeThroughGateway(features, req, res, new URL('http://localhost/api/vms/vm/clone'), async () => ({
     name: 'copy',
   }));
   const rejected = assert.rejects(pending, { name: 'AbortError' });
@@ -235,9 +268,10 @@ test('shutdown waits for request cleanup and rejects new feature operations', as
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(signal?.aborted, true);
   assert.equal(finished, false);
+  const readRequest = Object.assign(new EventEmitter(), { method: 'GET', headers: {} }) as IncomingMessage;
   await assert.rejects(
-    features.route(req, res, new URL('http://localhost/api/images'), async () => ({})),
-    /关闭/,
+    routeThroughGateway(features, readRequest, res, new URL('http://localhost/api/images'), async () => ({})),
+    { status: 403 },
   );
   release();
   await rejected;
@@ -260,7 +294,7 @@ test('shutdown also waits for in-flight read operations before releasing the run
     });
     return { status: 'running', log: '' };
   };
-  const pending = features.route(
+  const pending = routeThroughGateway(features,
     req,
     res,
     new URL('http://localhost/api/vms/vm/project-runtime'),

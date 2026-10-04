@@ -1,9 +1,10 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { z } from 'zod';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import type { PluginManifest } from '../shared/plugin-protocol.ts';
 import type { PluginRuntime } from './plugin-runtime.ts';
-import type { Jobs } from './jobs.ts';
+
 import type { PluginInstance } from './plugin-instance.ts';
 import { pluginCapabilities, type PluginCapabilities } from './plugin-capabilities.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
@@ -32,9 +33,9 @@ export type PluginContext = Readonly<PluginServices> & {
   optional<T>(service: ServiceRef<T>): T | undefined;
   require(id: string): void;
   onDispose(disposer: () => void | Promise<void>): void;
-  registerJobs(store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown): void;
+  registerJobs(store: JobsV1, retry: (job: JobView) => Promise<unknown> | unknown): void;
   jobViews(): readonly JobView[];
-  jobSources(): ReadonlyArray<Pick<Jobs, 'list' | 'flush'>>;
+  jobSources(): ReadonlyArray<Pick<JobsV1, 'list' | 'flush'>>;
 };
 export type PluginRoute = (
   this: PluginContext,
@@ -54,6 +55,8 @@ export type PluginModule = {
   activate(context: PluginContext): Promise<void>;
   deactivate?(context: PluginContext): void | Promise<void>;
   route: PluginRoute;
+  /** Explicit implemented operation IDs. New declarations cannot inherit a generic route handler. */
+  httpHandlers?: Record<string, PluginRoute>;
   operations?: Record<string, PluginOperation>;
 };
 
@@ -120,9 +123,9 @@ export function pluginContext(
       instance.check(undefined, true);
       scope.add(disposer);
     },
-    registerJobs: (store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown) => {
+    registerJobs: (store: JobsV1, retry: (job: JobView) => Promise<unknown> | unknown) => {
       instance.check(undefined, true);
-      host.registerPluginJobs(manifest.id, host.broker.unwrap(store), retry);
+      host.registerPluginJobs(manifest.id, host.broker.unwrap(store) as JobsV1, retry);
     },
     jobViews: () => {
       instance.check('jobs', true);
@@ -130,7 +133,7 @@ export function pluginContext(
     },
     jobSources: () => {
       instance.check('jobs', true);
-      const own = host.serviceValue('migration') as { jobs?: Jobs } | undefined;
+      const own = host.serviceValue('migration') as { jobs?: JobsV1 } | undefined;
       return Object.freeze(
         host
           .jobStores()

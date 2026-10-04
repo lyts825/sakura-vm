@@ -1,6 +1,6 @@
 import { AppError } from '../shared/errors.ts';
 import type { PluginManifest } from '../shared/plugin-protocol.ts';
-import type { ServiceRef } from './service-ref.ts';
+import type { ServiceContract, ServiceRef } from './service-ref.ts';
 import { serviceRef } from './service-ref.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import type { PluginDirectory } from './plugin-directory.ts';
@@ -8,14 +8,26 @@ import { withPluginAuthority, withPluginCleanup } from './plugin-authority.ts';
 import { resourceContext, withResourceContext } from './host-runtime/context.ts';
 import { isVmLiveView } from './vm-reference.ts';
 import { cleanupReceipt, isCleanupReceipt } from './cleanup-receipt.ts';
-import { PUBLIC_SERVICE_MEMBERS } from './public-service-members.ts';
+import { PUBLIC_SERVICE_CONTRACTS } from './public-service-members.ts';
+import { officialServiceContracts, systemServiceContracts } from './service-contracts.ts';
 
-type Registration = { instance: PluginInstance; version: number; value: unknown };
+type Registration = { instance: PluginInstance; version: number; contract: ServiceContract<any>; value: unknown };
 const serviceRefForSystem = <T>(id: string) => serviceRef<T>(id, 'service');
 const hidden = new Set(['constructor', '__proto__', 'prototype', 'machines', 'engine', 'options']);
 const lifecycle = new Set(['init', 'close', 'file', 'dataFile']);
 // A handle forwarded by another provider remains executable and keeps its original checks.
-const publicHandles = new WeakMap<object, readonly string[]>();
+const publicHandles = new WeakMap<object, ServiceContract<any>>();
+const descriptor = (value?: string | ServiceContract<any>) => typeof value === 'string' ? PUBLIC_SERVICE_CONTRACTS[value] : value;
+function snapshotContract<T>(contract: ServiceContract<T>, seen = new WeakMap<object, ServiceContract<any>>()): ServiceContract<T> {
+  if (seen.has(contract)) return seen.get(contract)!;
+  const snapshot: any = { id: contract.id, version: contract.version, members: Object.freeze([...contract.members]),
+    optional: contract.optional && Object.freeze([...contract.optional]), methods: contract.methods && Object.freeze([...contract.methods]) };
+  seen.set(contract, snapshot);
+  const nested = (values?: Readonly<Record<string, string | ServiceContract<any>>>) => values &&
+    Object.freeze(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, typeof value === 'string' ? value : snapshotContract(value, seen)])));
+  snapshot.properties = nested(contract.properties); snapshot.returns = nested(contract.returns);
+  return Object.freeze(snapshot);
+}
 function executable(value: any, seen = new WeakSet<object>()): boolean {
   if (typeof value === 'function') return true;
   if (!value || typeof value !== 'object' || seen.has(value)) return false;
@@ -36,10 +48,16 @@ export class ServiceBroker {
     private directory: PluginDirectory,
     private catalog: readonly PluginManifest[],
   ) {}
-  registerSystem<T>(instance: PluginInstance, value: T) {
+  registerSystem<T>(instance: PluginInstance, value: T, declared?: ServiceContract<T>) {
     instance.check(undefined, true);
     if (instance.source !== 'system') throw new Error('系统服务身份无效');
-    this.registrations.set(`${instance.identity}/service`, { instance, version: 1, value });
+    const expected = systemServiceContracts[instance.pluginId];
+    const contract = expected || declared;
+    if (!contract) throw new AppError('系统服务缺少公共契约：' + instance.pluginId, 500, 'PLUGIN_SERVICE_CONTRACT_MISSING');
+    if (expected && declared && (declared.id !== expected.id || declared.version !== expected.version))
+      throw new AppError('系统服务契约不兼容', 409, 'PLUGIN_SERVICE_CONTRACT');
+    this.assertContract(contract, value);
+    this.registrations.set(`${instance.identity}/service`, { instance, version: contract.version, contract: snapshotContract(contract), value });
   }
   system<T>(consumer: PluginInstance, id: string, allowed: readonly string[]): T | undefined {
     consumer.check('services', true);
@@ -57,10 +75,19 @@ export class ServiceBroker {
       throw new Error(`插件 ${instance.pluginId} 不能注册非自有服务：${key}`);
     const id = `${instance.identity}/${key}`;
     if (this.registrations.has(id)) throw new Error(`插件服务已注册：${key}`);
+    const expected = officialServiceContracts[`${instance.pluginId}/${key}`];
+    const contract = expected || reference.contract;
+    if (!contract) throw new AppError('插件服务缺少公共契约：' + key, 500, 'PLUGIN_SERVICE_CONTRACT_MISSING');
+    if (expected && reference.contract && reference.contract.id !== expected.id)
+      throw new AppError('插件服务契约不兼容', 409, 'PLUGIN_SERVICE_CONTRACT');
+    if (contract.version !== reference.version)
+      throw new AppError('插件服务版本不兼容', 409, 'PLUGIN_SERVICE_VERSION');
+    this.assertContract(contract, value);
     this.registrations.set(id, {
       instance,
       value: this.unwrap(value),
       version: reference.version,
+      contract: snapshotContract(contract),
     });
     return value;
   }
@@ -97,7 +124,7 @@ export class ServiceBroker {
         'PLUGIN_SERVICE_UNAVAILABLE',
       );
     }
-    if (entry.version !== reference.version || (dependencyVersion && dependencyVersion !== provider!.version))
+    if (entry.version !== reference.version || (reference.contractId && reference.contractId !== entry.contract.id) || (dependencyVersion && dependencyVersion !== provider!.version))
       throw new AppError('插件服务版本不兼容', 409, 'PLUGIN_SERVICE_VERSION');
     const check = () => {
       consumer.check('services', true);
@@ -111,7 +138,7 @@ export class ServiceBroker {
     let cache = this.handles.get(consumer);
     if (!cache) this.handles.set(consumer, (cache = new Map()));
     if (cache.has(entry)) return cache.get(entry) as T;
-    const wrappers = new WeakMap<object, any>(),
+    const wrappers = new WeakMap<object, Map<string, any>>(),
       promises = new WeakMap<Promise<unknown>, Promise<unknown>>(),
       receipts = new WeakMap<Function, () => void | Promise<void>>();
     const observe = <R>(operation: Promise<R>): Promise<R> => {
@@ -184,7 +211,7 @@ export class ServiceBroker {
       if (consumer.signal.aborted || provider!.signal.aborted) revoke();
       return unregister;
     };
-    const invoke = (callable: Function, receiver: unknown, args: unknown[]) => {
+    const invoke = (callable: Function, receiver: unknown, args: unknown[], resultContract?: string | ServiceContract<any>) => {
       check();
       const before = resourceContext();
       const forwarded = args.map((arg) =>
@@ -208,17 +235,17 @@ export class ServiceBroker {
               () => Reflect.apply(callable, receiver, forwarded),
             ),
           check,
-        ),
+        ), descriptor(resultContract),
       );
     };
-    const wrap = (value: any): any => {
+    const wrap = (value: any, declared?: ServiceContract<any>): any => {
       if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value;
       if (isCleanupReceipt(value)) return receipt(value);
       if (value instanceof Promise) {
-        if (!promises.has(value)) promises.set(value, observe(value.then(wrap)));
+        if (!promises.has(value)) promises.set(value, observe(value.then((result) => wrap(result, declared))));
         return promises.get(value);
       }
-      if (Array.isArray(value)) return value.map(wrap);
+      if (Array.isArray(value)) return value.map((item) => wrap(item, declared));
       if (
         value instanceof Date ||
         ArrayBuffer.isView(value) ||
@@ -230,7 +257,7 @@ export class ServiceBroker {
       // Data responses have no executable authority. Class instances and capability objects do.
       if (
         (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null) &&
-        !publicHandles.has(value) &&
+        !declared && !publicHandles.has(value) &&
         !executable(value)
       ) {
         const copy: Record<PropertyKey, unknown> = Object.create(Object.getPrototypeOf(value));
@@ -243,24 +270,24 @@ export class ServiceBroker {
           });
         return copy;
       }
-      if (wrappers.has(value)) return wrappers.get(value);
+      const contract = declared || publicHandles.get(value);
+      const shapeId = contract?.id || '';
+      let objectWrappers = wrappers.get(value);
+      if (!objectWrappers) wrappers.set(value, (objectWrappers = new Map()));
+      if (objectWrappers.has(shapeId)) return objectWrappers.get(shapeId);
       if (typeof value === 'function') {
         const callable = (...args: unknown[]) => invoke(value, undefined, args);
-        wrappers.set(value, callable);
+        objectWrappers.set(shapeId, callable);
         return callable;
       }
-      const prototype = Object.getPrototypeOf(value);
-      const publicKeys =
-        publicHandles.get(value) ||
-        (prototype === Object.prototype || prototype === null
-          ? Object.keys(value)
-          : PUBLIC_SERVICE_MEMBERS[prototype.constructor?.name] || []);
+      const publicKeys = contract?.members || [];
       const keys = new Set(publicKeys);
       const proxy = new Proxy(Object.create(null), {
+        has: (_target, key) => typeof key === 'string' && keys.has(key) && Reflect.has(value, key),
         get: (_target, key) => {
           if (key === 'then' && !keys.has('then')) return undefined;
           if (
-            typeof key === 'string' &&
+            typeof key !== 'string' ||
             (hidden.has(key) ||
               !keys.has(key) ||
               (lifecycle.has(key) && provider !== consumer && consumer.identity !== 'system:operation-host'))
@@ -269,8 +296,8 @@ export class ServiceBroker {
           const member = Reflect.get(value, key, value);
           if (isCleanupReceipt(member)) return member;
           check();
-          if (typeof member !== 'function') return wrap(member);
-          return (...args: unknown[]) => invoke(member, value, args);
+          if (typeof member !== 'function') return wrap(member, descriptor(contract?.properties?.[key]));
+          return (...args: unknown[]) => invoke(member, value, args, contract?.returns?.[String(key)]);
         },
         set: () => {
           throw new AppError('公共服务接口不可写', 403, 'PLUGIN_SERVICE_READONLY');
@@ -278,17 +305,32 @@ export class ServiceBroker {
         defineProperty: () => false,
         deleteProperty: () => false,
       });
-      wrappers.set(value, proxy);
-      publicHandles.set(proxy, publicKeys);
+      objectWrappers.set(shapeId, proxy);
+      if (contract) publicHandles.set(proxy, contract);
       this.originals.set(proxy, value);
       return proxy;
     };
-    const handle = wrap(entry.value) as T;
+    const handle = wrap(entry.value, entry.contract) as T;
     cache.set(entry, handle);
     return handle;
   }
   activeBorrows(instance: PluginInstance) {
     return this.borrows.get(instance) || 0;
+  }
+  private assertContract(contract: ServiceContract<any>, value: unknown) {
+    if (!contract.id || !Number.isInteger(contract.version) || contract.version < 1 || !Array.isArray(contract.members))
+      throw new AppError('服务公共契约声明无效', 500, 'PLUGIN_SERVICE_CONTRACT_MISSING');
+    if (!value || (typeof value !== 'object' && typeof value !== 'function'))
+      throw new AppError('服务公共契约必须绑定对象', 500, 'PLUGIN_SERVICE_CONTRACT');
+    // Optional contract slots may be absent. Runtime visibility comes only from this immutable snapshot.
+    if (new Set(contract.members).size !== contract.members.length || contract.members.some((key) => hidden.has(key) || key === 'init'))
+      throw new AppError('服务公共契约包含内部成员', 500, 'PLUGIN_SERVICE_CONTRACT');
+    for (const key of contract.members) {
+      if (!(key in value) && !contract.optional?.includes(key))
+        throw new AppError('服务缺少声明成员：' + key, 500, 'PLUGIN_SERVICE_CONTRACT');
+      if (key in value && contract.methods?.includes(key) && typeof Reflect.get(value, key) !== 'function')
+        throw new AppError('服务声明方法不可调用：' + key, 500, 'PLUGIN_SERVICE_CONTRACT');
+    }
   }
   unwrap<T>(value: T): T {
     return (

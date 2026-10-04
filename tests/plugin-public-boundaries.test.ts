@@ -8,6 +8,7 @@ import { PluginDirectory } from '../server/plugin-directory.ts';
 import { ServiceBroker } from '../server/service-broker.ts';
 import { Workspaces } from '../server/workspaces.ts';
 import { serviceRef } from '../server/service-ref.ts';
+import { serviceContracts } from '../server/service-contracts.ts';
 import { definePlugin, pin } from '../shared/plugin-protocol.ts';
 import { pluginAuthority, pluginCleanup, withPluginAuthority } from '../server/plugin-authority.ts';
 import { MetadataStore } from '../server/metadata-store.ts';
@@ -39,14 +40,14 @@ test('public service descriptors deny implementation fields and consumer lifecyc
   const broker = new ServiceBroker(directory, [provider, client]);
   const vm = Object.assign(new EventEmitter(), { records: new Map(), live: new Map() });
   const raw = new Workspaces(vm as never, undefined, { background: false });
-  const ref = serviceRef<Pick<Workspaces, keyof Workspaces>>('provider', 'workspace');
+  const ref = serviceRef('provider', 'workspace', serviceContracts.Workspaces);
   broker.register(owner, ref, raw);
   directory.publish(owner);
   directory.publish(consumer);
   const borrowed = broker.lookup(consumer, client, ref)!;
   assert.throws(() => Reflect.get(borrowed, 'configListeners'), { code: 'PLUGIN_SERVICE_PRIVATE' });
   assert.throws(() => Reflect.get(borrowed, 'machines'), { code: 'PLUGIN_SERVICE_PRIVATE' });
-  assert.throws(() => borrowed.close(), { code: 'PLUGIN_SERVICE_PRIVATE' });
+  assert.throws(() => Reflect.get(borrowed, 'close'), { code: 'PLUGIN_SERVICE_PRIVATE' });
   assert.throws(() => Reflect.get(borrowed.projects, 'context'), { code: 'PLUGIN_SERVICE_PRIVATE' });
   const unregister = borrowed.beforeConfigChange(async () => {});
   consumer.revoke();
@@ -111,7 +112,7 @@ test('broker data responses preserve null-prototype GraphQL records', async () =
   const instance = directory.begin('official', 'data', manifest.version, 'a'.repeat(64));
   const broker = new ServiceBroker(directory, [manifest]);
   const value = { query: () => ({ data: Object.assign(Object.create(null), { vms: [] }) }) };
-  const ref = serviceRef<typeof value>('data', 'query');
+  const ref = serviceRef<typeof value>('data', 'query', { id: 'test.query.v1', version: 1, members: ['query'] });
   broker.register(instance, ref, value);
   directory.publish(instance);
   assert.equal(JSON.stringify(broker.lookup(instance, manifest, ref)!.query()), '{"data":{"vms":[]}}');
@@ -144,7 +145,7 @@ test('failed async unregister receipts can retry after the consumer and provider
         if (++attempts < 3) throw new Error('original cleanup not confirmed');
       }),
   };
-  const ref = serviceRef<typeof api>('receipt', 'api');
+  const ref = serviceRef<typeof api>('receipt', 'api', { id: 'test.receipt.v1', version: 1, members: ['subscribe'] });
   broker.register(owner, ref, api);
   directory.publish(owner);
   directory.publish(consumer);
@@ -182,7 +183,7 @@ test('promised cleanup receipts arriving after revocation retain original cleanu
       if (!confirmed) throw failure;
     });
   } };
-  const ref = serviceRef<typeof api>('receipt', 'api');
+  const ref = serviceRef<typeof api>('receipt', 'api', { id: 'test.receipt.v1', version: 1, members: ['subscribe'] });
   broker.register(owner, ref, api);
   directory.publish(owner); directory.publish(consumer);
   const subscribing = broker.lookup(consumer, client, ref)!.subscribe();

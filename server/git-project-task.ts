@@ -1,7 +1,7 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { WorkspacesV1 } from './service-contracts/v1.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { VmAccess as Machines } from './vm-access.ts';
-import { projectPrivateValues, type Workspaces } from './workspaces.ts';
+import { projectPrivateValues } from './workspaces.ts';
 import { projectVersion, type Project } from './project-config.ts';
 import { AppError } from '../shared/errors.ts';
 import { projectTerminalsFor, type TerminalService as ProjectTerminals } from './terminal-backend.ts';
@@ -41,7 +41,7 @@ export class GitProjectTasks {
   private context = new AsyncLocalStorage<Context>();
   private controller = new AbortController();
   private pending = new Set<Promise<unknown>>();
-  constructor(private machines: Machines, private workspaces: ServiceInterface<Workspaces>, private options: GitWorkbenchOptions = {}) {}
+  constructor(private machines: Machines, private workspaces: WorkspacesV1, private options: GitWorkbenchOptions = {}) {}
 
   async capture(id: string, candidate?: Project): Promise<GitProjectCapture> {
     const projectId = this.workspaces.projects.current(id), live = this.machines.live.get(id);

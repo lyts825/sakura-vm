@@ -1,11 +1,8 @@
-import type { ServiceInterface } from '../../server/service-interface.ts';
 import { serviceRef } from '../../server/service-ref.ts';
-import type { CodeIntelligence } from '../../server/code-intelligence.ts';
-import type { LanguageServices } from '../../server/language-services.ts';
-import type { DebugAdapter } from '../../server/debug-adapter.ts';
+import { serviceContracts } from '../../server/service-contracts.ts';
 
 export const services = {
-  intelligence: serviceRef<ServiceInterface<CodeIntelligence>>('code-checks', 'intelligence'),
-  languageServices: serviceRef<ServiceInterface<LanguageServices>>('code-checks', 'languageServices'),
-  debugger: serviceRef<ServiceInterface<DebugAdapter>>('code-checks', 'debugger'),
+  intelligence: serviceRef('code-checks', 'intelligence', serviceContracts.CodeIntelligence),
+  languageServices: serviceRef('code-checks', 'languageServices', serviceContracts.LanguageServices),
+  debugger: serviceRef('code-checks', 'debugger', serviceContracts.DebugAdapter),
 };

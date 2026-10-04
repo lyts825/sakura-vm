@@ -1,3 +1,5 @@
+import type { JobsV1 } from './service-contracts/v1.ts';
+import { APP_VERSION } from '../shared/version.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
 import { pluginArtifactDigest, systemArtifactDigest } from './plugin-artifact.ts';
@@ -7,9 +9,10 @@ import { withPluginAuthority, withPluginCleanup } from './plugin-authority.ts';
 import type { JobView } from '../shared/contracts/jobs.ts';
 import { type VMConfig } from '../shared/contracts/vm.ts';
 import { AppError } from '../shared/errors.ts';
-import type { Jobs } from './jobs.ts';
+
 import type { Machines } from './machines.ts';
 import { OperationTracker, requestScope } from './operation-scope.ts';
+import { currentOperation } from './operation-gateway.ts';
 import { withResourceContext } from './host-runtime/index.ts';
 import { SERVICE_KEYS, type PluginServices } from './plugin-services.ts';
 import { TerminalBackend, type TerminalService } from './terminal-backend.ts';
@@ -22,22 +25,12 @@ import { pluginContext, type PluginContext } from './plugin-api.ts';
 import { PluginScope, withinDeadline } from './plugin-scope.ts';
 import {
   loaders,
+  matchOperationPath,
   routeContribution,
   socketOwner,
   validateRegistry,
   type PluginModule,
 } from './plugins/registry.ts';
-
-function matchesOperation(pattern: string, pathname: string) {
-  const declared = pattern.split('/').filter(Boolean),
-    actual = pathname.split('/').filter(Boolean);
-  return (
-    declared.length === actual.length &&
-    declared.every((part, index) =>
-      part === ':vmId' ? !!actual[index] && actual[index] !== 'batch' : part === actual[index],
-    )
-  );
-}
 
 /** Optional plugin host. No plugin services are constructed until explicitly selected. */
 export interface PluginRuntime extends PluginServices {}
@@ -78,7 +71,7 @@ export class PluginRuntime {
   private scopes = new Map<string, PluginScope>();
   private services = new Map<string, unknown>();
   private pluginJobs = new Map<
-    Jobs,
+    JobsV1,
     { owner: string; retry: (job: JobView) => Promise<unknown> | unknown }
   >();
   readonly operations = new OperationTracker();
@@ -114,6 +107,26 @@ export class PluginRuntime {
   terminalHandle(): TerminalService {
     return this.terminalBackend.handle();
   }
+  async recoverProvider(identity: string, generation: string, artifactDigest: string) {
+    const instance = this.directory.all().find(item => item.identity === identity && item.generation === generation && item.artifactDigest === artifactDigest);
+    if (!instance || instance.phase !== 'cleanup-pending' ||
+        !(instance === this.terminalInstance || instance.source === 'official'))
+      throw new AppError('原插件恢复实例不可用', 409, 'RECOVERY_STALE');
+    if (instance.source === 'official' && this.modules.has(instance.pluginId)) {
+      await this.unload(instance.pluginId);
+      return;
+    }
+    // Includes the original terminal scope and activation failures before module publication.
+    instance.revoke(); this.directory.changed();
+    try {
+      await instance.scope.dispose(dispose => Promise.resolve(withPluginCleanup(instance, dispose)));
+      this.broker.remove(instance);
+      instance.phase = 'inactive';
+    } catch (error) {
+      instance.phase = 'cleanup-pending'; instance.error = String(error);
+      throw error;
+    } finally { this.directory.changed(); }
+  }
   pluginResources() {
     return [...this.scopes].map(([id, scope]) => ({
       id,
@@ -130,7 +143,7 @@ export class PluginRuntime {
     this.terminalInstance = directory.begin(
       'system',
       'terminal-backend',
-      '1.0.0',
+      APP_VERSION,
       systemArtifactDigest('terminal-backend'),
     );
     this.terminalBackend = new TerminalBackend(
@@ -163,11 +176,11 @@ export class PluginRuntime {
     if (this.serviceValue(key) !== undefined) throw new Error(`插件服务已注册：${key}`);
     this.services.set(key, value);
   }
-  registerPluginJobs(owner: string, store: Jobs, retry: (job: JobView) => Promise<unknown> | unknown) {
+  registerPluginJobs(owner: string, store: JobsV1, retry: (job: JobView) => Promise<unknown> | unknown) {
     const manifest = PLUGINS.find((item) => item.id === owner);
     if (
       !manifest?.services.some((key) => {
-        const service = this.serviceValue(key) as { jobs?: Jobs } | undefined;
+        const service = this.serviceValue(key) as { jobs?: JobsV1 } | undefined;
         return service === store || service?.jobs === store;
       })
     )
@@ -189,7 +202,7 @@ export class PluginRuntime {
       });
     }
   }
-  retryHandler(store: Jobs) {
+  retryHandler(store: JobsV1) {
     const registration = this.pluginJobs.get(store);
     const instance = registration && this.directory.get('official', registration.owner);
     return (
@@ -256,8 +269,12 @@ export class PluginRuntime {
           throw new Error(`插件入口与声明不一致：${id}`);
         const declaredOperations = manifest.contributes.operations.map((item) => item.id).sort();
         const implementedOperations = Object.keys(module.operations || {}).sort();
+        const declaredHttpHandlers = manifest.contributes.routes.filter(item => item.handler === 'route').map(item => item.id).sort();
+        const implementedHttpHandlers = Object.keys(module.httpHandlers || {}).sort();
         if (
           !isDeepStrictEqual(declaredOperations, implementedOperations) ||
+          !isDeepStrictEqual(declaredHttpHandlers, implementedHttpHandlers) ||
+          implementedHttpHandlers.some(key => typeof module!.httpHandlers![key] !== 'function') ||
           implementedOperations.some(
             (key) =>
               typeof module!.operations![key].execute !== 'function' ||
@@ -272,7 +289,7 @@ export class PluginRuntime {
         for (const key of manifest.services)
           scope.add(async () => {
             const service = host.serviceValue(key) as
-              { close?: () => Promise<void> | void; jobs?: Jobs } | undefined;
+              { close?: () => Promise<void> | void; jobs?: JobsV1 } | undefined;
             if (!service || closedServices.has(service)) return;
             if (service.close) await service.close();
             else if (service.jobs) await service.jobs.close();
@@ -295,7 +312,7 @@ export class PluginRuntime {
           if (host.serviceValue(key) === undefined) throw new Error(`插件未注册声明的服务：${id}.${key}`);
         host.modules.set(id, module);
         for (const [kind, targets] of Object.entries(manifest.contributes)) {
-          if (kind === 'managed') continue;
+          if (kind === 'managed' || kind === 'operations') continue;
           const name =
             (
               {
@@ -304,6 +321,7 @@ export class PluginRuntime {
                 tabs: 'tab',
                 developmentSections: 'developmentSection',
                 operations: 'operation',
+                routes: 'operation',
               } as Record<string, string>
             )[kind] || kind;
           for (const target of targets)
@@ -355,12 +373,12 @@ export class PluginRuntime {
     if (value.forwards && JSON.stringify(value.forwards) !== JSON.stringify(previous?.forwards || []))
       this.require('network');
   }
-  jobStores(): Jobs[] {
-    const stores: Jobs[] = [...this.system.jobStores()];
+  jobStores(): JobsV1[] {
+    const stores: JobsV1[] = [...this.system.jobStores()];
     for (const module of this.modules.values())
       for (const key of module.manifest.services) {
-        const service = this.serviceValue(key) as { jobs?: Jobs } | undefined;
-        const store = key === 'jobs' ? this.serviceValue<Jobs>(key) : service?.jobs;
+        const service = this.serviceValue(key) as { jobs?: JobsV1 } | undefined;
+        const store = key === 'jobs' ? this.serviceValue<JobsV1>(key) : service?.jobs;
         if (store && !stores.includes(store)) stores.push(store);
       }
     return stores;
@@ -482,17 +500,20 @@ export class PluginRuntime {
     if (owner !== 'tasks') this.require(owner);
     if (!contribution.methods.some((method) => method === req.method))
       throw new AppError('不支持此方法', 405);
-    const handler =
-      owner === 'tasks' ? (await import('./plugins/tasks.ts')).route : this.modules.get(owner)!.route;
+    const policy = currentOperation();
+    if (!policy) throw new AppError('插件入口缺少已准入的操作声明', 403, 'OPERATION_NOT_ADMITTED');
+    const handler = owner === 'tasks' ? (await import('./plugins/tasks.ts')).route :
+      this.modules.get(owner)!.httpHandlers?.[policy.id.slice(owner.length + 1)];
     const module = owner === 'tasks' ? undefined : this.modules.get(owner)!;
     const declaredOperation = module?.manifest.contributes.operations.find(
-      (item) => item.method === req.method && matchesOperation(item.path, url.pathname),
+      (item) => owner + '.' + item.id === policy.id,
     );
     const operation = declaredOperation && module?.operations?.[declaredOperation.id];
     if (this.closed) throw new AppError('服务正在关闭', 503);
-    const mutation = req.method !== 'GET' && req.method !== 'HEAD' && url.pathname !== '/api/migration';
-    const targetVm = /^\/api\/vms\/([^/]+)/.exec(url.pathname)?.[1];
-    if (mutation && targetVm && !url.pathname.endsWith('/next-features'))
+    if (!operation && !handler) throw new AppError('操作没有原插件登记处理器', 503, 'OPERATION_HANDLER_MISSING');
+    const mutation = policy.mutating;
+    const targetVm = matchOperationPath(policy.path, url.pathname)?.vmId;
+    if (policy.vmLock === 'require-unlocked' && targetVm)
       this.machines.requireUnlocked?.(targetVm);
     const releaseMutation = mutation ? this.operations.enter() : () => {};
     const scope = requestScope(req, res),
@@ -504,7 +525,7 @@ export class PluginRuntime {
     const pending = Promise.resolve()
       .then(() => {
         abort.signal.throwIfAborted();
-        if (mutation && this.migration?.blocked && !url.pathname.endsWith('/cancel'))
+        if (policy.maintenance === 'block' && this.migration?.blocked)
           throw new AppError('数据目录迁移维护中', 409);
         const route = () =>
           operation && declaredOperation
@@ -539,16 +560,15 @@ export class PluginRuntime {
                 url,
                 async (request, signal, limit) => {
                   const value = await body(request, signal || abort.signal, limit);
-                  if (mutation && this.migration?.blocked && !url.pathname.endsWith('/cancel'))
+                  if (policy.maintenance === 'block' && this.migration?.blocked)
                     throw new AppError('数据目录迁移维护中', 409);
                   return value;
                 },
                 abort.signal,
               );
-        const vm = /^\/api\/vms\/([^/]+)\//.exec(url.pathname)?.[1];
         const dispatch = () =>
-          this.workspaces && vm && contribution.projectScoped && /^[0-9a-f-]{36}$/i.test(vm)
-            ? this.workspaces.projects.with(vm, url.searchParams.get('project'), route)
+          this.workspaces && targetVm && policy.projectScoped && /^[0-9a-f-]{36}$/i.test(targetVm)
+            ? this.workspaces.projects.with(targetVm, url.searchParams.get('project'), route)
             : route();
         return pluginScope
           ? pluginScope.run(() => withPluginAuthority(this.directory.get('official', owner)!, dispatch))

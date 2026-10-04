@@ -1,9 +1,8 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { BundlesV1, HostPeersV1 } from './service-contracts/v1.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { Bundles } from './bundles.ts';
-import type { HostPeers } from './host-peers.ts';
+
 import type { VmAccess as Machines } from './vm-access.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
@@ -25,13 +24,13 @@ const entrySchema = z.object({
 }).strict();
 const storeSchema = z.object({ version: z.literal(1), entries: z.array(entrySchema).max(128) }).strict();
 type Entry = z.infer<typeof entrySchema>;
-type Receipt = NonNullable<Awaited<ReturnType<ServiceInterface<HostPeers>['importStatus']>>>;
+type Receipt = NonNullable<Awaited<ReturnType<HostPeersV1['importStatus']>>>;
 
 export class SnapshotReplications {
   private state?: z.infer<typeof storeSchema>;
   private metadata: MetadataStore<z.infer<typeof storeSchema>>;
   private active = new Set<string>();
-  constructor(private machines: Machines, private bundles: ServiceInterface<Bundles>, private peers: ServiceInterface<HostPeers>,
+  constructor(private machines: Machines, private bundles: BundlesV1, private peers: HostPeersV1,
     private file = join(DATA, 'snapshot-replications.json')) {
     this.metadata = new MetadataStore(file, { fallback: () => ({ version: 1, entries: [] }),
       parse: (value) => storeSchema.parse(value) });

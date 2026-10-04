@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { networkBoundaryErrors, staticString } from './network-boundaries.ts';
 import { resourceBoundaryErrors } from './resource-boundaries.ts';
 import { pluginBoundaryErrors } from './plugin-boundaries.ts';
+import { domainBoundaryErrors } from './domain-boundaries.ts';
 
 // Check eager value dependencies. Type imports and lazy plugin loading do not
 // participate in module initialization and are deliberately excluded.
@@ -141,6 +142,7 @@ async function visitNetwork(file: string) {
   errors.push(...networkBoundaryErrors(label(file), source));
   errors.push(...resourceBoundaryErrors(label(file), source));
   errors.push(...pluginBoundaryErrors(label(file), source));
+  errors.push(...domainBoundaryErrors(label(file), source));
   const dependencies: string[] = [];
   function collect(node: ts.Node) {
     if (
@@ -215,5 +217,5 @@ packagedScripts(packageSource);
 for (const name of releaseScripts) await visitNetwork(resolve('scripts', name));
 if (errors.length) throw new Error(errors.join('\n'));
 console.log(
-  `Architecture verified: ${files.length} modules, no eager value dependency cycles, browser/server or managed-resource boundary violations.`,
+  `Architecture verified: ${files.length} modules, no eager value dependency cycles, browser/server, domain dependency or managed-resource boundary violations.`,
 );

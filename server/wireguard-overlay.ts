@@ -1,4 +1,4 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { SecretsV1 } from './service-contracts/v1.ts';
 import { createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { join } from 'node:path';
@@ -10,7 +10,7 @@ import { scheduler, type ScheduleHandle } from './scheduler.ts';
 import { AppError } from '../shared/errors.ts';
 import { vmDir } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
-import { redactValues, secretName, type Secrets } from './secrets.ts';
+import { redactValues, secretName } from './secrets.ts';
 
 const interfaceName = 'wg-sakura';
 const key = z.string().regex(/^[A-Za-z0-9+/]{43}=$/).refine((value) =>
@@ -88,7 +88,7 @@ export class WireGuardOverlay {
   private failures = new Map<string, { at: number; reason: string }>();
   private abort = new AbortController();
   private closed = false;
-  constructor(private machines: Machines, private secrets: () => ServiceInterface<Secrets> | undefined) {
+  constructor(private machines: Machines, private secrets: () => SecretsV1 | undefined) {
     this.timer = scheduler.register({ owner: 'plugin:network', label: 'WireGuard 状态校准', intervalMs: 30000,
       overlap: 'skip', run: async () => {
       if (!this.ticking) this.ticking = this.tick().finally(() => {

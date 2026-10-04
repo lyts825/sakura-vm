@@ -1,6 +1,6 @@
-import type { ServiceInterface } from './service-interface.ts';
+import type { IdeV1, TrustedBootServiceV1, WorkspacesV1 } from './service-contracts/v1.ts';
 import { EngineeringDomainServices } from './engineering-domain-services.ts';
-import type { Ide } from './ide.ts';
+
 import { noHostServices, type HostServiceResolver } from './host-service-contracts.ts';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -37,9 +37,9 @@ import { type TerminalService as ProjectTerminals } from './terminal-backend.ts'
 import { ReverseTunnels } from './reverse-tunnels.ts';
 import { secretName } from './secrets.ts';
 import { checkSecureErase, runSecureErase } from './secure-erase.ts';
-import type { TrustedBootService } from './trusted-boot-service.ts';
+
 import { inspectTrustedBoot } from './trusted-boot.ts';
-import { type Workspaces } from './workspaces.ts';
+
 export { extendedFeatureCatalog,type ExtendedFeature,type ExtendedFeatureId,type ExtendedFeatureState } from '../shared/catalogs/engineering.ts';
 
 const catalog: ExtendedFeature[] = extendedFeatureCatalog.map(
@@ -85,15 +85,15 @@ const adapterFor = (spec: ExtendedFeature): Record<string, unknown> => ({
 
 export class ExtendedFeatures {
   jobs = new Jobs('extended-features');
-  private get trustedBoot(): ServiceInterface<TrustedBootService> | undefined { return this.domains.trustedBoot; }
+  private get trustedBoot(): TrustedBootServiceV1 | undefined { return this.domains.trustedBoot; }
   private get projectTerminals(): ProjectTerminals | undefined { return this.domains.projectTerminals; }
   private domains: EngineeringDomainServices;
   private get tunnels() { return this.domains.tunnels; }
   constructor(
     private machines: Machines,
-    private workspaces: ServiceInterface<Workspaces>,
+    private workspaces: WorkspacesV1,
     private dependencies: HostServiceResolver = noHostServices,
-    private editor?: () => Pick<Ide, 'profile'> | undefined,
+    private editor?: () => Pick<IdeV1, 'profile'> | undefined,
   ) {
     this.domains = new EngineeringDomainServices(machines, workspaces, dependencies);
   }
