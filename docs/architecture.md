@@ -7,8 +7,9 @@ flowchart TD
   UI[React 应用与状态 hooks] --> HTTP[HTTP / WebSocket 接入]
   CLI[CLI] --> HTTP
   App[应用装配与资源生命周期] --> HTTP
-  HTTP --> Plugins[插件协议与服务存储]
-  HTTP --> Execution[项目命令与终端]
+  HTTP --> Gateway[操作契约与权限复核]
+  Gateway --> Plugins[插件协议与作用域能力]
+  Gateway --> Execution[项目命令与终端]
   Execution --> Preparation[项目准备与租约]
   Plugins --> Domain[业务服务]
   Preparation --> Machines[VM 生命周期与操作锁]
@@ -22,14 +23,16 @@ flowchart TD
   Contracts[共享契约与功能目录] -.-> UI
   Contracts -.-> HTTP
   Contracts -.-> Domain
-  HTTP --> Gateway[操作契约与权限复核]
   Domain --> Host[HostRuntime 原子预算与所有权]
   Plugins --> Host
   Network --> Host
   Storage --> Host
   Runtime --> Host
-  Host --> Jobs[Jobs 与普通周期 Scheduler]
-  Host --> Compute[有界计算工作线程]
+  Domain --> Jobs[Jobs 与普通周期 Scheduler]
+  Domain --> Compute[有界计算工作线程]
+  Jobs --> Host
+  Compute --> Host
+  Domain --> Metadata[按文件串行的 MetadataStore]
 ```
 
 ## 入口与生命周期
@@ -40,6 +43,14 @@ flowchart TD
 - `server/http-machines.ts` 处理基础实例 API，只能在宿主鉴权、授权、会话锁与维护检查之后调用。
 - `server/resource-scope.ts` 在资源构造后、异步初始化前登记清理。启动失败和正常退出使用同一登记表；清理顺序保留既有服务依赖，单项失败不会跳过其余资源。VM 管理器接管运行时后，撤销运行时的独立登记，避免重复关闭。
 - `server/operation-scope.ts` 提供操作计数和请求取消范围。进入操作取得可重复释放的凭证，请求结束在 `finally` 中释放；请求断开会取消工作并移除监听器。鉴权和业务准入仍在各自边界执行。
+
+## 操作入口
+
+`OperationGateway` 是核心、插件 HTTP 和 WebSocket 的共同准入入口。`core-operations.ts` 与插件贡献汇总为 302 个精确操作声明（其中 6 个 WebSocket），同一目录驱动运行路由检查、`/api/operations`、OpenAPI 和 SDK。未声明的路径与方法被拒绝，固定路径优先于参数路径；停用插件的操作无法通过准入。
+
+请求开始时捕获凭证、项目和原 VM 运行身份，在读取正文后以及任务、进程、存储等资源排队结束后重新核对权限、维护状态和身份。长连接沿用撤权关闭协议；启停等生命周期操作允许自身推进状态，不复用旧运行身份。权限复核读取最后原子发布的元数据，避免持有资源时反向等待自身的配置写队列。guest interop 保留专用认证，并在宿主进程获准后重验令牌、程序配置和 EXE 摘要。
+
+核心 JSON 正文通过声明的 schema 校验；二进制、流和 SAML 保留原协议解析。尚未提供完整响应 schema 的旧接口在目录中标记 `partial`，不将路由和权限统一等同于全部旧接口已有完整类型化响应。
 
 ## 契约与公共原语
 
@@ -70,6 +81,8 @@ const commands = host.use(services.commands);
 
 同一作用域提供 `execution`、`storage`、`jobs` 和诊断能力。宿主固定 owner 与插件身份，排队和活动任务都响应作用域撤销；卸载会停止新准入、按依赖关闭服务，并等待真实清理。清理失败时保留原作用域和资源，重试只处理未完成部分。兼容的服务引用继续经过宿主依赖检查。
 
+现有 `Machines`、`dataFile` 和 `ServiceRef` 兼容接口仍保留；底层资源适配器与源码边界检查约束这些调用。不能据此宣称所有插件都只接触新能力接口，或者可信进程内插件已经具备操作系统沙箱。
+
 ## 网络与传输边界
 
 `NetworkRuntime` 统一登记连接、监听、本地管理通道和 VM generation；`NetworkScope` 为服务提供 HTTP(S)、fetch、WebSocket、TCP、DNS 和 SDK 适配器。宿主原始 TCP/DNS 由有界 Node worker 池承载，HTTP/SSH 协议与 TLS 仍在主进程适配器执行。本地管理和原生适配器有独立的准入与取消登记；GPG relay 继续执行 peer PID、nonce 与回执验证。
@@ -86,7 +99,11 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 
 目录迁移门闩的只读准入检查位于 `project-admission.ts`，运行作用域不再导入整个目录迁移服务。固定 UID/GID、客户机运行记录、cgroup 和原生启动器的协议保持原有行为。
 
-`VmLifetime` 区分进程身份、执行代次、boot 与网络代次；附件和活动绑定原始 Live。`ExecutionScope` 将短任务的全局、VM 和项目额度一起取得，嵌套执行显式借用父作用域。`ProjectSessionLifetime` 为主进程、服务、SSH 和终端持有独立的常驻会话额度。VM 停止先阻止新准入，再取消并等待原作用域清理；失败不能由“VM 已退出”或任意资源 ID 直接核销，恢复必须拿原票据和原清理回调再次确认。
+`VmLifetime` 区分进程身份、执行代次、boot 与网络代次；附件和活动绑定原始 Live。`ExecutionScope` 将短任务的全局、VM 和项目额度一起取得，嵌套执行显式借用父作用域。`ProjectSessionLifetime` 为主进程、服务、SSH、终端、LSP/DAP 和单应用窗口持有独立的常驻会话额度。VM 停止先阻止新准入，再取消并等待原作用域清理；失败不能由“VM 已退出”或任意资源 ID 直接核销，恢复必须拿原票据和原清理回调再次确认。
+
+`ProcessSupervisor` 为 VM、工具和常驻 helper 统一登记进程额度。Windows 有限工具通过 Native Host Job Object 执行，确认所属进程树退出后释放；原生 GPG、剪贴板等长连接保留各自握手和退出回执。POSIX 的直接子进程观察仅用于固定工具探针与已有明确协议的 helper，不宣称单个 `close` 事件能证明任意后代退出。显式启动交给用户的桌面程序经过所有权移交。
+
+启动时已知的 Native Host 包装进程与目标进程原子预留两个总进程额度，以及一个 VM 或工具分类额度；直接 helper 占一个总额度。原生进程树未确认退出时保留完整预留。总额度用于已知启动参与者的并发准入，不能当作任意 EXE 后代数量的操作系统硬上限。
 
 ## 前端
 
@@ -94,7 +111,7 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 
 `useControllerState` 统一实例数据、控制面状态、事件刷新、请求去重和响应顺序保护。`useProjectSelection` 管理按 VM 保存的项目选择、加载取消与重试。会话凭证仍由 `controller-session.ts` 管理；插件界面保持懒加载。
 
-插件与管理页面的 `useRemote` 通过 `resource-cache.ts` 按请求能力和完整路径/查询参数共享读取、缓存与轮询。同一资源的订阅者共用正在进行的请求；最后一位订阅者离开才取消该请求。写操作按 VM 或接口前缀失效关联数据，事件和断线重连重新校准活动订阅；旧代响应不能覆盖刷新结果。账户切换和会话锁会立即清除缓存，后台页面暂停轮询，缓存数量与空闲保留时间都有上限。任务展示单独区分等待额度、执行、取消中、清理待确认和重启后待核对。
+插件与管理页面的 `useRemote` 通过 `resource-cache.ts` 按请求能力和完整路径/查询参数共享读取、缓存与轮询。同一资源的订阅者共用正在进行的请求；最后一位订阅者离开才取消该请求。写操作按 VM 或接口前缀失效关联数据，事件和断线重连重新校准活动订阅；旧代响应不能覆盖刷新结果。内容未变的 JSON 子树保留引用，避免刷新意外清空表单草稿或预览。账户切换和会话锁会立即清除缓存，后台页面暂停轮询，缓存数量与空闲保留时间都有上限。任务展示单独区分等待额度、执行、取消中、清理待确认和重启后待核对。
 
 ## 系统资源治理
 
@@ -102,7 +119,7 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 
 `ResourceScope` 登记服务所有权，支持子作用域、命名关闭阶段与显式重试失败清理；成功释放的资源不会重复清理。执行身份采用不可变异步上下文，现有审计 span 将 trace、调用者和项目身份带入资源登记。`GET /api/host-runtime` 在现有会话与账户权限之后提供管理员诊断，包含预算、等待、活动与近期资源，不收集执行参数或凭据。
 
-全系统迁移和完整验收范围记录在 [系统资源架构实施记录](system-runtime-plan.md)。基础治理接口存在并不表示所有领域路径已经迁移；该记录逐项说明接入和验证状态。
+全系统迁移范围、调用路径与验收结果记录在 [系统资源架构实施记录](system-runtime-plan.md)。
 
 普通周期工作通过 `Scheduler` 登记 owner、周期、重叠策略和失败退避，再由 `Jobs` 取得宿主预算。日志清理、维护、内存采样、共享目录校准、证书续期、服务与入口健康检查、构建调度、宿主状态刷新、Webhook、社区插件事件和远程审计均使用这条路径。调度器使用独立身份，不继承注册请求的账户、VM 或任务额度；构建队列派生的独立构建各自准入。协议超时和高可用心跳仍保留专用时限。应用先停止新调度并取消已派发工作，再按依赖顺序等待实际收尾；`/api/host-runtime` 同时提供周期任务状态。
 
@@ -114,7 +131,7 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 
 ## 持久化与验证
 
-本次调整保持 JSON、实例目录、增量磁盘以及插件选择格式不变。内存快照指纹新增 `networkBackend: 'sakura-managed-user-v1'`，旧后端的内存快照不能恢复，磁盘快照不受影响。`local-store.ts` 继续执行临时文件写入与原子替换；跨宿主文件和客户机状态的操作继续使用各自的运行记录、锁和恢复流程。
+本次调整保持 JSON、实例目录、增量磁盘以及插件选择格式不变。内存快照指纹新增 `networkBackend: 'sakura-managed-user-v1'`，旧后端的内存快照不能恢复，磁盘快照不受影响。`MetadataStore` 与旧 `readStore` / `writeStore` 共用按文件串行的有界队列，完整读改写、版本冲突检查和缓存发布各有明确顺序。应用关闭先等待领域资源，再 flush 元数据；真实写入失败未修复时保留目录归属。跨宿主文件和客户机状态的操作继续使用各自的运行记录、锁和恢复流程。
 
 应用在初始化业务存储前，由 `DataDirectoryOwner` 取得规范化数据目录的 OS 独占归属。Windows 使用命名管道，Linux 使用抽象 Unix socket；进程强制退出也会释放，无需根据可能复用的 PID 删除锁文件。其它平台采用固定回环端口，端口冲突会拒绝启动。归属端点经过同一网络层实现管理，但保留独立的最后关闭阶段；领域资源清理未确认时不提前交还目录。目录迁移可以在目标不存在时先取得归属，发布后仍保持同一个锁。此机制针对同一宿主 OS 命名空间，不是网络共享目录的分布式锁。
 
