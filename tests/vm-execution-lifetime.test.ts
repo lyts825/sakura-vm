@@ -343,6 +343,84 @@ test('siblings in one explicit operation borrow serially at full capacity and ch
   f.governor.close();
 });
 
+test('queued delegated execution rechecks authority and preserves the original cleanup capability', async (t) => {
+  const f = fixture(2),
+    started = deferred(),
+    release = deferred(),
+    denied = new AppError('authority revoked', 403, 'OPERATION_FORBIDDEN');
+  t.after(() => f.governor.close());
+  let revoked = false,
+    ran = false,
+    cleaned = 0,
+    cleanup!: () => Promise<void>;
+  await withOperationCheck(
+    async () => {
+      if (revoked) throw denied;
+    },
+    () => ExecutionScope.run({ ...f.options, delegate: true }, async () => {
+      const first = ExecutionScope.run(f.options, async (child) => {
+        cleanup = child.deferCleanup(async () => {
+          const lease = await f.governor.acquire({
+            owner: 'original-child-cleanup',
+            kind: 'cleanup',
+            label: 'original receipt',
+            cost: { execution: 1 },
+          });
+          try {
+            assert.equal(f.used(), 2);
+            cleaned++;
+          } finally {
+            lease.release();
+          }
+        });
+        started.resolve();
+        await release.promise;
+      });
+      await started.promise;
+      const second = ExecutionScope.run(f.options, async () => { ran = true; });
+      const refused = assert.rejects(second, (error) => error === denied);
+      revoked = true;
+      release.resolve();
+      await Promise.all([first, refused]);
+      assert.equal(ran, false);
+      assert.equal(f.used(), 1, 'refusing a borrower must retain the parent budget');
+      assert.equal(f.lifetime.active, 1);
+      await cleanup();
+      assert.equal(cleaned, 1, 'revocation must not prevent original resource cleanup');
+      assert.equal(f.used(), 1);
+    }),
+  );
+  assert.equal(f.used(), 0);
+  assert.equal(f.lifetime.active, 0);
+  assert.equal(f.governor.snapshot().resources.length, 0);
+  await cleanup();
+  assert.equal(cleaned, 1, 'confirmed cleanup remains idempotent');
+});
+
+test('delegated execution observes cancellation while its authorization check is pending', { timeout: 2000 }, async (t) => {
+  const f = fixture(1),
+    checking = deferred(),
+    release = deferred(),
+    abort = new AbortController();
+  t.after(() => f.governor.close());
+  await ExecutionScope.run({ ...f.options, delegate: true }, async () => {
+    const child = withOperationCheck(async () => {
+      checking.resolve();
+      await release.promise;
+    }, () => ExecutionScope.run({ ...f.options, signal: abort.signal }, async () => {
+      assert.fail('cancelled child entered');
+    }));
+    const refused = assert.rejects(child, { name: 'AbortError' });
+    await checking.promise;
+    abort.abort();
+    release.resolve();
+    await refused;
+    assert.equal(f.used(), 1);
+  });
+  assert.equal(f.used(), 0);
+  assert.equal(f.lifetime.active, 0);
+});
+
 test('undelegated and cross-project nesting fail immediately instead of waiting on their own occupied slot', async () => {
   const f = fixture(1);
   await ExecutionScope.run(f.options, async () => {

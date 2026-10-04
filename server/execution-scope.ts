@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../shared/errors.ts';
-import { withoutOperationContext } from './operation-context.ts';
+import { captureOperationCheck, withoutOperationContext } from './operation-context.ts';
 import {
   hostRuntime,
   withResourceContext,
@@ -188,10 +188,14 @@ export class ExecutionScope {
     if (this.children.size >= 64)
       throw new AppError('当前执行的子操作等待队列已满', 429, 'EXECUTION_QUEUE_FULL');
     const child = new ExecutionScope(options, this);
+    const check = captureOperationCheck();
     const task = this.childTail
       .catch(() => {})
       .then(async () => {
         try {
+          child.assert();
+          // Borrowers bypass HostRuntime admission, so recheck their original authority here.
+          await check();
           child.assert();
           return await child.invoke(work, !!options.delegate);
         } catch (error) {

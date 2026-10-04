@@ -93,6 +93,7 @@ test('backup file recovery selects encrypted backups, clears passwords, download
     } as any,
     new Jobs(),
     {
+      storagePaths: () => [directory],
       prune: async () => {},
       collect: async (
         _id: string,

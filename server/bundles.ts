@@ -2,6 +2,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, open, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline, finished } from 'node:stream/promises';
 import { z } from 'zod';
@@ -31,6 +32,41 @@ import {
 const MAGIC = Buffer.from('SAKURA01');
 const MAX_BUNDLE = 32 * 1024 ** 3;
 export const MAX_BUNDLE_MANIFEST = 8 * 1024 ** 2;
+
+/** A receiver with no bytes must not hold a device writer while its sender is
+ * queued behind another outbound transfer. Observe the paused source's existing
+ * buffer without consuming/copying a chunk; disk staging starts after admission. */
+async function incomingBundle<T>(
+  source: Readable,
+  signal: AbortSignal | undefined,
+  work: (active: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const transport = new AbortController();
+  const active = signal ? AbortSignal.any([signal, transport.signal]) : transport.signal;
+  const failed = (error: Error) => transport.abort(error);
+  const closed = () => {
+    if (!source.readableEnded) failed(new AppError('导入包输入流提前关闭', 400));
+  };
+  source.on('error', failed);
+  source.on('close', closed);
+  try {
+    active.throwIfAborted();
+    if (source.destroyed) throw source.errored || new AppError('导入包输入流已关闭', 400);
+    if (!source.readableLength && !source.readableEnded) await once(source, 'readable', { signal: active });
+    active.throwIfAborted();
+    if (!source.readableLength) throw new AppError('导入包不完整或磁盘校验失败');
+    return await work(active);
+  } catch (error) {
+    const failure = active.aborted ? active.reason : error;
+    source.destroy();
+    await finished(source, { cleanup: true }).catch(() => {});
+    throw failure;
+  } finally {
+    source.off('error', failed);
+    source.off('close', closed);
+  }
+}
+
 const manifestSchema = z
   .object({
     version: z.literal(1),
@@ -505,19 +541,21 @@ export class Bundles {
     lease?: StorageLease,
   ): Promise<T> {
     if (!lease)
-      return storageRuntime.run(
-        {
-          owner: 'core:bundle-import',
-          taskId: 'bundle-import:' + randomUUID(),
-          label: 'Validate and import VM bundle',
-          mode: 'write',
-          paths: [DATA],
-          dynamicTemporary: [DATA],
-          buffers: 20 * 1024 ** 2,
-          files: 8,
-          signal,
-        },
-        (owned) => this.withContents(source, signal, work, onCleanupError, owned),
+      return incomingBundle(source, signal, (active) =>
+        storageRuntime.run(
+          {
+            owner: 'core:bundle-import',
+            taskId: 'bundle-import:' + randomUUID(),
+            label: 'Validate and import VM bundle',
+            mode: 'write',
+            paths: [DATA],
+            dynamicTemporary: [DATA],
+            buffers: 20 * 1024 ** 2,
+            files: 8,
+            signal: active,
+          },
+          (owned) => this.withContents(source, active, work, onCleanupError, owned),
+        ),
       );
     lease.assertActive();
     signal?.throwIfAborted();

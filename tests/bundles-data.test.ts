@@ -13,6 +13,7 @@ import type { Engine } from '../server/runtime.ts';
 const root = await mkdtemp(join(tmpdir(), 'sakura-bundle-test-'));
 process.env.SAKURA_DATA_DIR = root;
 const { Bundles } = await import('../server/bundles.ts');
+const { storageRuntime } = await import('../server/storage-runtime.ts');
 const { Machines: MachineManager } = await import('../server/machines.ts');
 const { vmDir, createSchema } = await import('../server/model.ts');
 const { createSshKey, seedIso } = await import('../server/seed.ts');
@@ -85,7 +86,7 @@ test('import cancellation after disk inspection does not publish a VM', async ()
     },
   } as unknown as Machines;
   await assert.rejects(new Bundles(machines).import('copy', bundle(), abort.signal), { name: 'AbortError' });
-  assert.equal(signal, abort.signal);
+  assert.equal(signal?.aborted, true);
   assert.equal(adopted, false);
 });
 
@@ -169,7 +170,7 @@ async function resizeFixture(t: TestContext) {
     runtime: { close: async () => {} },
     run: async (_tool, args) => {
       if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
-    if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
+      if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
       return '{}';
     },
   } as Engine);
@@ -234,32 +235,48 @@ test('portable backup round trips persist pending filesystem growth across servi
 
 test('portable backups and clones retain the KDE recovery project without exporting its environment', async (t) => {
   const { machines, id, bundles } = await resizeFixture(t);
-  const binding = { version: 1, projectId: 'default', directory: '/workspace',
-    networkIsolation: 'private', launcherSha256: 'a'.repeat(64), enabled: true };
+  const binding = {
+    version: 1,
+    projectId: 'default',
+    directory: '/workspace',
+    networkIsolation: 'private',
+    launcherSha256: 'a'.repeat(64),
+    enabled: true,
+  };
   await writeFile(join(vmDir(id), 'desktop-binding.json'), JSON.stringify(binding));
   const chunks: Buffer[] = [];
-  await bundles.export(id, new Writable({ write(chunk, _encoding, done) {
-    chunks.push(Buffer.from(chunk)); done();
-  } }), () => {});
+  await bundles.export(
+    id,
+    new Writable({
+      write(chunk, _encoding, done) {
+        chunks.push(Buffer.from(chunk));
+        done();
+      },
+    }),
+    () => {},
+  );
   const payload = Buffer.concat(chunks);
   const length = payload.readUInt32BE(8);
   assert.deepEqual(JSON.parse(payload.subarray(12, 12 + length).toString()).desktopBinding, binding);
   const restored = await bundles.import('desktop-import', Readable.from([payload]));
   const cloned = await bundles.clone(id, 'desktop-clone');
   for (const copy of [restored, cloned])
-    assert.deepEqual(JSON.parse(await readFile(join(vmDir(copy.id), 'desktop-binding.json'), 'utf8')), binding);
+    assert.deepEqual(
+      JSON.parse(await readFile(join(vmDir(copy.id), 'desktop-binding.json'), 'utf8')),
+      binding,
+    );
 });
 
 test('peer bundle imports persist an origin that prevents duplicate transfer adoption', async (t) => {
   const { machines, bundles } = await resizeFixture(t);
-  const migrationOrigin = { sourceHostId: randomUUID(), transferId: randomUUID(),
-    targetName: 'migrated' };
+  const migrationOrigin = { sourceHostId: randomUUID(), transferId: randomUUID(), targetName: 'migrated' };
   const imported = await bundles.import('migrated', bundle(), undefined, undefined, migrationOrigin);
-  const persistedOrigin = { ...migrationOrigin,
-    diskSha256: createHash('sha256').update(disk).digest('hex') };
+  const persistedOrigin = { ...migrationOrigin, diskSha256: createHash('sha256').update(disk).digest('hex') };
   assert.deepEqual(imported.migrationOrigin, persistedOrigin);
-  await assert.rejects(bundles.import('duplicate', bundle(), undefined, undefined, migrationOrigin),
-    /已经导入/);
+  await assert.rejects(
+    bundles.import('duplicate', bundle(), undefined, undefined, migrationOrigin),
+    /已经导入/,
+  );
   const reopened = new MachineManager(machines.engine);
   await reopened.init();
   t.after(() => reopened.close());
@@ -268,27 +285,52 @@ test('peer bundle imports persist an origin that prevents duplicate transfer ado
 
 test('portable backups and clones retain X11/Wayland application identities, rules and controller ownership', async (t) => {
   const { id, bundles } = await resizeFixture(t);
-  const settings = { schemaVersion: 1, version: 4, owner: randomUUID(), applications: [{
-    image: '/usr/bin/konsole', sha256: 'c'.repeat(64),
-    rule: { copy: false, paste: true, files: false, sensitive: true, maxTextBytes: 4096 },
-  }] };
+  const settings = {
+    schemaVersion: 1,
+    version: 4,
+    owner: randomUUID(),
+    applications: [
+      {
+        image: '/usr/bin/konsole',
+        sha256: 'c'.repeat(64),
+        rule: { copy: false, paste: true, files: false, sensitive: true, maxTextBytes: 4096 },
+      },
+    ],
+  };
   await writeFile(join(vmDir(id), 'x11-clipboard.json'), JSON.stringify(settings));
   const wayland = { ...settings, owner: randomUUID(), version: 6 };
   await writeFile(join(vmDir(id), 'wayland-clipboard.json'), JSON.stringify(wayland));
   const chunks: Buffer[] = [];
-  await bundles.export(id, new Writable({ write(chunk, _encoding, done) {
-    chunks.push(Buffer.from(chunk)); done();
-  } }), () => {});
-  const payload = Buffer.concat(chunks), length = payload.readUInt32BE(8);
+  await bundles.export(
+    id,
+    new Writable({
+      write(chunk, _encoding, done) {
+        chunks.push(Buffer.from(chunk));
+        done();
+      },
+    }),
+    () => {},
+  );
+  const payload = Buffer.concat(chunks),
+    length = payload.readUInt32BE(8);
   assert.deepEqual(JSON.parse(payload.subarray(12, 12 + length).toString()).x11Clipboard, settings);
   assert.deepEqual(JSON.parse(payload.subarray(12, 12 + length).toString()).waylandClipboard, wayland);
   const imported = await bundles.import('clipboard-import', Readable.from([payload]));
   const cloned = await bundles.clone(id, 'clipboard-clone');
   for (const copy of [imported, cloned]) {
-    assert.deepEqual(JSON.parse(await readFile(join(vmDir(copy.id), 'x11-clipboard.json'), 'utf8')), settings);
-    assert.deepEqual(JSON.parse(await readFile(join(vmDir(copy.id), 'wayland-clipboard.json'), 'utf8')), wayland);
+    assert.deepEqual(
+      JSON.parse(await readFile(join(vmDir(copy.id), 'x11-clipboard.json'), 'utf8')),
+      settings,
+    );
+    assert.deepEqual(
+      JSON.parse(await readFile(join(vmDir(copy.id), 'wayland-clipboard.json'), 'utf8')),
+      wayland,
+    );
   }
-  await writeFile(join(vmDir(id), 'wayland-clipboard.json'), JSON.stringify({ ...wayland, owner: 'invalid' }));
+  await writeFile(
+    join(vmDir(id), 'wayland-clipboard.json'),
+    JSON.stringify({ ...wayland, owner: 'invalid' }),
+  );
   await assert.rejects(bundles.clone(id, 'wayland-clipboard-invalid'));
   await writeFile(join(vmDir(id), 'wayland-clipboard.json'), JSON.stringify(wayland));
   await writeFile(join(vmDir(id), 'x11-clipboard.json'), JSON.stringify({ ...settings, owner: 'invalid' }));
@@ -303,13 +345,22 @@ test('bundle export selects historical snapshot disk, identity, and resize state
   const olderKey = ssh2.utils.generateKeyPairSync('ed25519').private;
   const olderSeed = seedIso({ 'user-data': 'historical' });
   const vm = machines.get(id);
-  vm.snapshots.push({ id: snapshot, name: 'historical', createdAt: new Date().toISOString(),
-    diskGiB: 8, pendingResize: false });
+  vm.snapshots.push({
+    id: snapshot,
+    name: 'historical',
+    createdAt: new Date().toISOString(),
+    diskGiB: 8,
+    pendingResize: false,
+  });
   vm.diskGiB = 16;
   vm.pendingResize = true;
-  await writeFile(join(vmDir(id), `.snapshot-${snapshot}.json`), JSON.stringify({
-    key: olderKey, seed: olderSeed.toString('base64'),
-  }));
+  await writeFile(
+    join(vmDir(id), `.snapshot-${snapshot}.json`),
+    JSON.stringify({
+      key: olderKey,
+      seed: olderSeed.toString('base64'),
+    }),
+  );
   const calls: string[][] = [];
   machines.engine.run = async (_tool, args) => {
     calls.push(args);
@@ -318,9 +369,19 @@ test('bundle export selects historical snapshot disk, identity, and resize state
     return '{}';
   };
   const chunks: Buffer[] = [];
-  const sha256 = await bundles.export(id, new Writable({
-    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
-  }), () => {}, undefined, 0, snapshot);
+  const sha256 = await bundles.export(
+    id,
+    new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    }),
+    () => {},
+    undefined,
+    0,
+    snapshot,
+  );
   assert.equal(calls.find((call) => call[0] === 'measure')![7], snapshot);
   assert.deepEqual(calls.find((call) => call[0] === 'convert')!.slice(5, 7), ['-l', snapshot]);
   assert.equal(sha256, createHash('sha256').update(historicalDisk).digest('hex'));
@@ -359,7 +420,9 @@ test('UEFI firmware choice survives portable export, import, and clone', async (
   const id = randomUUID();
   const vm = {
     ...createSchema.parse({ name: 'firmware-source', firmware: 'uefi' }),
-    id, createdAt: new Date().toISOString(), snapshots: [],
+    id,
+    createdAt: new Date().toISOString(),
+    snapshots: [],
   };
   const adopted: unknown[] = [];
   const machines = {
@@ -368,18 +431,30 @@ test('UEFI firmware choice survives portable export, import, and clone', async (
     storagePools: { directory: (id: string) => join(root, 'machines', id) },
     get: () => vm,
     snapshotIdentity: async () => ({ key: key.privateText, seed }),
-    engine: { run: async (_tool: string, args: string[]) => {
-      if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
-    if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
-      return '{}';
-    } },
-    adopt: async (config: unknown) => { adopted.push(config); return { id: randomUUID() }; },
+    engine: {
+      run: async (_tool: string, args: string[]) => {
+        if (args[0] === 'measure') return JSON.stringify({ required: disk.length });
+        if (args[0] === 'convert') await writeFile(args.at(-1)!, disk);
+        return '{}';
+      },
+    },
+    adopt: async (config: unknown) => {
+      adopted.push(config);
+      return { id: randomUUID() };
+    },
   } as unknown as Machines;
   const bundles = new Bundles(machines);
   const chunks: Buffer[] = [];
-  await bundles.export(id, new Writable({
-    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
-  }), () => {});
+  await bundles.export(
+    id,
+    new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    }),
+    () => {},
+  );
   const contents = Buffer.concat(chunks);
   const length = contents.readUInt32BE(8);
   const manifest = JSON.parse(contents.subarray(12, 12 + length).toString('utf8'));
@@ -398,16 +473,26 @@ test('portable backup, import, and clone retain TPM identity and secure NVRAM', 
   bundles.setTrustedBoot(service);
   const vars = randomBytes(340_000);
   const permanent = Buffer.from('persistent-tpm-identity');
-  await service.restore(id, { enabled: true, files: [
-    { name: 'uefi-secure-vars.fd', data: vars },
-    { name: 'tpm2/tpm2-00.permall', data: permanent },
-  ] });
+  await service.restore(id, {
+    enabled: true,
+    files: [
+      { name: 'uefi-secure-vars.fd', data: vars },
+      { name: 'tpm2/tpm2-00.permall', data: permanent },
+    ],
+  });
   await writeFile(join(vmDir(id), 'tpm2', '.lock'), 'transient');
   const firstFingerprint = await machines.migrationFingerprint(id);
   const chunks: Buffer[] = [];
-  await bundles.export(id, new Writable({
-    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
-  }), () => {});
+  await bundles.export(
+    id,
+    new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    }),
+    () => {},
+  );
   const contents = Buffer.concat(chunks);
   const manifestLength = contents.readUInt32BE(8);
   assert.ok(manifestLength > 300_000);
@@ -425,11 +510,22 @@ test('portable backup, import, and clone retain TPM identity and secure NVRAM', 
   await writeFile(join(vmDir(id), 'tpm2', 'tpm2-00.permall'), 'changed');
   assert.notDeepEqual(await machines.migrationFingerprint(id), firstFingerprint);
   const snapshot = randomUUID();
-  machines.get(id).snapshots.push({ id: snapshot, name: 'older',
-    createdAt: new Date().toISOString() });
-  await assert.rejects(bundles.export(id, new Writable({ write(_chunk, _encoding, callback) {
-    callback();
-  } }), () => {}, undefined, 0, snapshot), /没有对应的 TPM\/NVRAM 状态/);
+  machines.get(id).snapshots.push({ id: snapshot, name: 'older', createdAt: new Date().toISOString() });
+  await assert.rejects(
+    bundles.export(
+      id,
+      new Writable({
+        write(_chunk, _encoding, callback) {
+          callback();
+        },
+      }),
+      () => {},
+      undefined,
+      0,
+      snapshot,
+    ),
+    /没有对应的 TPM\/NVRAM 状态/,
+  );
   await assert.rejects(bundles.clone(id, 'trusted-history', snapshot), /没有对应的 TPM\/NVRAM 状态/);
 });
 
@@ -439,13 +535,21 @@ test('tampered TPM state is rejected before import and backup verification', asy
   await service.init();
   t.after(() => service.close());
   bundles.setTrustedBoot(service);
-  await service.restore(id, { enabled: true, files: [
-    { name: 'tpm2/tpm2-00.permall', data: Buffer.from('secret') },
-  ] });
+  await service.restore(id, {
+    enabled: true,
+    files: [{ name: 'tpm2/tpm2-00.permall', data: Buffer.from('secret') }],
+  });
   const chunks: Buffer[] = [];
-  await bundles.export(id, new Writable({
-    write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback(); },
-  }), () => {});
+  await bundles.export(
+    id,
+    new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    }),
+    () => {},
+  );
   const contents = Buffer.concat(chunks);
   const length = contents.readUInt32BE(8);
   const manifest = JSON.parse(contents.subarray(12, 12 + length).toString('utf8'));
@@ -456,40 +560,163 @@ test('tampered TPM state is rejected before import and backup verification', asy
   prefix.writeUInt32BE(tamperedManifest.length, 8);
   const tampered = Buffer.concat([prefix, tamperedManifest, contents.subarray(12 + length)]);
   const count = machines.records.size;
-  await assert.rejects(bundles.import('tampered-tpm', Readable.from([tampered])),
-    /TPM 状态校验失败/);
+  await assert.rejects(bundles.import('tampered-tpm', Readable.from([tampered])), /TPM 状态校验失败/);
   assert.equal(machines.records.size, count);
   const file = join(root, `${id}-tampered.sakura`);
   await writeFile(file, tampered);
   await assert.rejects(verifyBackup(file, new AbortController().signal), /TPM 状态校验失败/);
 });
 
-
-test('two opposite bundle transfers sharing one host runtime leave admission for their inbound writes', { timeout: 10_000 }, async (t) => {
-  const a = await resizeFixture(t), b = await resizeFixture(t);
-  const payload = Buffer.alloc(2 * 1024 ** 2); disk.copy(payload);
-  let converted = 0;
-  for (const fixture of [a, b]) {
-    await writeFile(join(vmDir(fixture.id), 'disk.qcow2'), payload);
-    fixture.machines.engine.run = async (_tool, args) => {
-      if (args[0] === 'measure') return JSON.stringify({ required: payload.length });
-      if (args[0] === 'convert') {
-        converted++;
-        const slots = hostRuntime.snapshot().budgets.find((item) => item.key === 'partition:storage.outbound');
-        assert.equal(slots?.used, 1, 'Only one network export can consume the host outbound allowance');
-        await writeFile(args.at(-1)!, payload);
-      }
-      return '{}';
-    };
+test('idle, ended, failed and cancelled bundle sources never occupy a device writer or leave a staging directory', async () => {
+  const directories = await import('node:fs/promises');
+  const before = await directories.readdir(join(root, 'transfers')).catch(() => []);
+  const bundles = new Bundles({
+    adopt: () => {
+      throw new Error('must not adopt');
+    },
+  } as unknown as Machines);
+  for (const mode of ['abort', 'close', 'error', 'empty']) {
+    const input = new PassThrough(),
+      controller = new AbortController();
+    const task = bundles.import('idle', input, controller.signal);
+    const rejected = mode === 'error' ? assert.rejects(task, /transport failed/) : assert.rejects(task);
+    assert.equal(hostRuntime.snapshot().resources.filter((item) => item.kind === 'storage').length, 0);
+    if (mode === 'abort') controller.abort();
+    else if (mode === 'close') input.destroy();
+    else if (mode === 'error') input.destroy(new Error('transport failed'));
+    else input.end();
+    await rejected;
+    assert.equal(input.destroyed, true);
+    assert.equal(hostRuntime.snapshot().resources.filter((item) => item.kind === 'storage').length, 0);
   }
-  const ab = new PassThrough({ highWaterMark: 16 * 1024 }), ba = new PassThrough({ highWaterMark: 16 * 1024 });
-  const abort = AbortSignal.timeout(8000);
-  const [receivedB, receivedA] = await Promise.all([
-    b.bundles.import('received-a', ab, abort), a.bundles.import('received-b', ba, abort),
-    a.bundles.export(a.id, ab, () => {}, abort), b.bundles.export(b.id, ba, () => {}, abort),
-  ]);
-  assert.equal(converted, 2);
-  assert.deepEqual(await readFile(join(vmDir(receivedB.id), 'disk.qcow2')), payload);
-  assert.deepEqual(await readFile(join(vmDir(receivedA.id), 'disk.qcow2')), payload);
-  assert.equal(hostRuntime.snapshot().resources.filter((item) => item.kind === 'storage').length, 0);
+  assert.deepEqual(await directories.readdir(join(root, 'transfers')).catch(() => []), before);
 });
+
+test(
+  'two opposite bundle transfers sharing one host runtime leave admission for their inbound writes',
+  { timeout: 10_000 },
+  async (t) => {
+    const a = await resizeFixture(t),
+      b = await resizeFixture(t);
+    const payload = Buffer.alloc(2 * 1024 ** 2);
+    disk.copy(payload);
+    let converted = 0,
+      firstConversion!: () => void;
+    const entered = new Promise<void>((done) => {
+      firstConversion = done;
+    });
+    for (const fixture of [a, b]) {
+      await writeFile(join(vmDir(fixture.id), 'disk.qcow2'), payload);
+      fixture.machines.engine.run = async (_tool, args) => {
+        if (args[0] === 'measure') return JSON.stringify({ required: payload.length });
+        if (args[0] === 'convert') {
+          converted++;
+          const slots = hostRuntime
+            .snapshot()
+            .budgets.find((item) => item.key === 'partition:storage.outbound');
+          assert.equal(slots?.used, 1, 'Only one network export can consume the host outbound allowance');
+          firstConversion();
+          await writeFile(args.at(-1)!, payload);
+        }
+        return '{}';
+      };
+    }
+    const acquire = storageRuntime.acquire.bind(storageRuntime);
+    let receives = 0;
+    t.mock.method(storageRuntime, 'acquire', (request: Parameters<typeof acquire>[0]) => {
+      if (request.owner === 'core:bundle-import') receives++;
+      return acquire(request);
+    });
+    const ab = new PassThrough({ highWaterMark: 16 * 1024 }),
+      ba = new PassThrough({ highWaterMark: 16 * 1024 });
+    const controller = new AbortController();
+    const abort = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]);
+    const operations: Promise<unknown>[] = [];
+    const track = <T>(task: Promise<T>) => {
+      operations.push(task);
+      void task.catch(() => {});
+      return task;
+    };
+    try {
+      // Force the formerly deadlocking order: A waits for B before A's exporter
+      // owns the outbound channel. Neither empty receiver may reserve the writer.
+      const receivedA = track(a.bundles.import('received-b', ba, abort));
+      const receivedB = track(b.bundles.import('received-a', ab, abort));
+      assert.equal(receives, 0);
+      const sentA = track(a.bundles.export(a.id, ab, () => {}, abort));
+      await Promise.race([entered, sentA]);
+      const sentB = track(b.bundles.export(b.id, ba, () => {}, abort));
+      const [copyA, copyB] = await Promise.all([receivedA, receivedB, sentA, sentB]);
+      assert.equal(receives, 2);
+      assert.equal(converted, 2);
+      assert.deepEqual(await readFile(join(vmDir(copyA.id), 'disk.qcow2')), payload);
+      assert.deepEqual(await readFile(join(vmDir(copyB.id), 'disk.qcow2')), payload);
+      assert.equal(hostRuntime.snapshot().resources.filter((item) => item.kind === 'storage').length, 0);
+    } finally {
+      controller.abort();
+      ab.destroy();
+      ba.destroy();
+      await Promise.allSettled(operations);
+    }
+  },
+);
+
+test(
+  'readable bundle sources failing or cancelling while queued release their admission without staging',
+  { timeout: 5000 },
+  async (t) => {
+    const acquire = hostRuntime.acquire.bind(hostRuntime);
+    let queued!: () => void;
+    t.mock.method(hostRuntime, 'acquire', (request: Parameters<typeof acquire>[0]) =>
+      acquire(request.owner === 'core:bundle-import' ? { ...request, onQueued: () => queued() } : request),
+    );
+    const bundles = new Bundles({
+      adopt: () => {
+        throw new Error('must not adopt');
+      },
+    } as unknown as Machines);
+    for (const mode of ['error', 'abort']) {
+      const blocker = await storageRuntime.acquire({
+        owner: 'test:bundle-blocker',
+        taskId: 'bundle-blocker',
+        label: 'Hold destination writer',
+        mode: 'write',
+        paths: [root],
+        buffers: 1,
+        files: 1,
+      });
+      const source = new PassThrough(),
+        controller = new AbortController();
+      const waiting = new Promise<void>((done) => {
+        queued = done;
+      });
+      source.write('SAKURA01');
+      const task = bundles.import('queued', source, controller.signal);
+      const rejected = assert.rejects(task, /queued transport failed/);
+      try {
+        await waiting;
+        assert.ok(
+          hostRuntime
+            .snapshot()
+            .resources.some((item) => item.owner === 'core:bundle-import' && item.state === 'queued'),
+        );
+        const reason = new Error('queued transport failed');
+        if (mode === 'error') source.destroy(reason);
+        else controller.abort(reason);
+        await rejected;
+        assert.equal(source.destroyed, true);
+        assert.equal(
+          hostRuntime.snapshot().resources.filter((item) => item.owner === 'core:bundle-import').length,
+          0,
+        );
+        const directories = await import('node:fs/promises');
+        assert.deepEqual(await directories.readdir(join(root, 'transfers')), []);
+      } finally {
+        controller.abort();
+        source.destroy();
+        await task.catch(() => {});
+        blocker.release();
+      }
+    }
+  },
+);
