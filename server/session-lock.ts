@@ -5,6 +5,7 @@ import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
 import type { SessionLockView } from '../shared/session-lock.ts';
+import { rejectOperationBeforeEffect } from './operation-execution.ts';
 
 const password = z.string().max(256);
 export const sessionLockConfiguration = z
@@ -41,6 +42,11 @@ const derive = (text: string, salt: string) =>
       (error, key) => (error ? reject(error) : resolve(key)),
     ),
   );
+const rejectUnlock = (error: unknown): never => {
+  if (error !== null && typeof error === 'object')
+    rejectOperationBeforeEffect(error, ['core.session.unlock']);
+  throw error;
+};
 export class SessionLock {
   private state: State = { version: 1, enabled: false, idleMinutes: 15, failures: 0, blockedUntil: 0 };
   private locked = false;
@@ -186,7 +192,10 @@ export class SessionLock {
     });
   }
   unlock(input: unknown) {
-    const value = sessionUnlockRequest.parse(input);
+    let value: z.infer<typeof sessionUnlockRequest>;
+    try { value = sessionUnlockRequest.parse(input); }
+    catch (error) { rejectUnlock(error); }
+    let effectStarted = false;
     return this.exclusive(async () => {
       const generation = this.generation;
       await this.verify(value.password);
@@ -196,12 +205,18 @@ export class SessionLock {
       if (this.closed || generation !== this.generation)
         throw new AppError('会话状态已变化，请重新解锁', 409);
       const transitioned = this.locked;
+      // Failed proof/cooldown bookkeeping is auxiliary. The requested unlock
+      // starts here; callback/response failures after it remain unconfirmed.
+      effectStarted = true;
       this.locked = false;
       this.reason = undefined;
       this.lastActivity = this.now();
       if (transitioned) this.generation++;
       this.changed(false, transitioned);
       return this.view();
+    }).catch((error) => {
+      if (!effectStarted) rejectUnlock(error);
+      throw error;
     });
   }
   unlockWithPasskey(expectedGeneration: number) {

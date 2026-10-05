@@ -10,6 +10,7 @@ export const OPERATION_ARCHIVE_LIMITS = Object.freeze({
   maxRecords: 4096, maxBytes: 64 * 1024 * 1024, maxRecordBytes: 64 * 1024,
 });
 const envelopeBytes = OPERATION_ARCHIVE_LIMITS.maxRecordBytes * 2;
+const archiveTemporaryName = /^([a-f0-9-]{36})\.json\.([a-f0-9-]{36})\.tmp$/;
 const authoritySchema = z.discriminatedUnion('sessionKey', [
   z.object({ role: z.literal('owner'), sessionKey: z.literal('account'), actorId: z.uuid() }).strict(),
   z.object({ role: z.literal('owner'), sessionKey: z.literal('local-owner') }).strict(),
@@ -27,8 +28,9 @@ export const operationReceiptDigest = (raw: Buffer) => createHash('sha256').upda
 export const operationReceiptId = (id: string) => z.uuid().parse(id).toLowerCase();
 
 /** Archives are never expired automatically: a full archive is an operator-visible
- * storage boundary. A flushed envelope is the evidence for a subsequent unlink,
- * so interruption before unlink leaves both copies and can be retried explicitly. */
+ * storage boundary. Interrupted metadata temporaries remain untrusted evidence
+ * and reserve capacity even if incomplete. Only a committed, validated envelope
+ * permits a subsequent unlink, so interruption can be retried explicitly. */
 export class OperationResultArchiveStore {
   constructor(private directory: string) {}
   file(id: string) { return join(this.directory, operationReceiptId(id) + '.json'); }
@@ -59,12 +61,18 @@ export class OperationResultArchiveStore {
     } finally { await handle.close(); }
   }
   async diagnostics(): Promise<OperationResultDirectory['archive']> {
+    // Both committed archives and retained interrupted writes consume these
+    // limits; repeated interruptions cannot grow an unaccounted evidence pool.
     let recordCount = 0, bytes = 0;
     try {
       await regularDirectory(this.directory);
-      await mkdir(this.directory, { recursive: true, mode: 0o700 });
       const names: string[] = [];
-      for await (const entry of await opendir(this.directory)) {
+      const entries = await opendir(this.directory).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+        return undefined;
+      });
+      // Diagnostics never create storage before an archive's authority recheck.
+      if (entries) for await (const entry of entries) {
         if (++recordCount > OPERATION_ARCHIVE_LIMITS.maxRecords)
           return { recordCount, bytes, ...OPERATION_ARCHIVE_LIMITS, full: true,
             state: 'degraded' as const, code: 'OPERATION_ARCHIVES_FULL' };
@@ -73,11 +81,16 @@ export class OperationResultArchiveStore {
       for (let offset = 0; offset < names.length; offset += 32) {
         const inspected = await Promise.allSettled(names.slice(offset, offset + 32).map(async (name) => {
           const info = await lstat(join(this.directory, name));
-          if (!/^[a-f0-9-]{36}\.json$/.test(name) || !info.isFile() || info.isSymbolicLink())
+          const temporary = archiveTemporaryName.exec(name);
+          const isTemporary = !!temporary && z.uuid().safeParse(temporary[1]).success &&
+            z.uuid().safeParse(temporary[2]).success;
+          if ((!/^[a-f0-9-]{36}\.json$/.test(name) && !isTemporary) || !info.isFile() || info.isSymbolicLink())
             throw new AppError('档案目录项无效', 503, 'OPERATION_ARCHIVE_UNAVAILABLE');
           if (info.size > envelopeBytes)
             throw new AppError('档案记录超过容量', 503, 'OPERATION_ARCHIVES_FULL');
-          await this.read(name.slice(0, -5), true);
+          // A killed write may leave any prefix of an envelope. Keep and count
+          // these bytes; never publish or trust them, including on explicit retry.
+          if (!isTemporary) await this.read(name.slice(0, -5), true);
           return info.size;
         }));
         let code: string | undefined;
@@ -118,6 +131,7 @@ export class OperationResultArchiveStore {
       throw new AppError('操作结果档案容量不足，原证据已保留；请先导出保管并迁移旧档案', 503,
         inventory.code || 'OPERATION_ARCHIVES_FULL');
     await check();
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
     await writeStore(this.file(id), archived);
     return archived;
   }

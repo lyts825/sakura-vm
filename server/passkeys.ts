@@ -24,6 +24,11 @@ export const passkeyRemove = z.object({ password: z.string().max(256) }).strict(
 
 type Ceremony = { challenge: string; expiresAt: number; purpose: 'register' | 'login' | 'unlock';
   accountId?: string; name?: string; lockGeneration?: number };
+const optionsOperations = ['core.access.passkeyLoginOptions', 'core.session.passkeyOptions'];
+const rejectOptions = (error: unknown): never => {
+  if (error !== null && typeof error === 'object') rejectOperationBeforeEffect(error, optionsOperations);
+  throw error;
+};
 
 /** Short-lived, one-use WebAuthn ceremonies bound to this local service process. */
 export class Passkeys {
@@ -37,7 +42,8 @@ export class Passkeys {
   private remember(ceremony: Ceremony) {
     for (const [id, entry] of this.ceremonies)
       if (entry.expiresAt <= this.now()) this.ceremonies.delete(id);
-    if (this.ceremonies.size >= 128) throw new AppError('通行密钥请求过多，请稍后重试', 429);
+    if (this.ceremonies.size >= 128)
+      rejectOptions(new AppError('通行密钥请求过多，请稍后重试', 429));
     const id = randomBytes(32).toString('hex');
     this.ceremonies.set(id, ceremony);
     return id;
@@ -98,19 +104,21 @@ export class Passkeys {
   async beginAuthentication() {
     const options = await generateAuthenticationOptions({
       rpID: this.rpID, userVerification: 'required',
-    });
+    }).catch(rejectOptions);
     return { ceremonyId: this.remember({ challenge: options.challenge,
       expiresAt: this.now() + 5 * 60_000, purpose: 'login' }), options };
   }
 
   async beginUnlock(lockGeneration: number) {
-    const owner = this.access.users().find((item) => item.role === 'owner');
-    if (!owner || !this.access.registeredPasskeysFor(owner.id)
-      .some((item) => item.transports.includes('internal')))
-      throw new AppError('请先为管理员登记本机平台通行密钥', 409);
+    try {
+      const owner = this.access.users().find((item) => item.role === 'owner');
+      if (!owner || !this.access.registeredPasskeysFor(owner.id)
+        .some((item) => item.transports.includes('internal')))
+        throw new AppError('请先为管理员登记本机平台通行密钥', 409);
+    } catch (error) { rejectOptions(error); }
     const options = await generateAuthenticationOptions({
       rpID: this.rpID, userVerification: 'required',
-    });
+    }).catch(rejectOptions);
     return { ceremonyId: this.remember({ challenge: options.challenge,
       expiresAt: this.now() + 5 * 60_000, purpose: 'unlock', lockGeneration }), options };
   }

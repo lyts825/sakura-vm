@@ -52,10 +52,12 @@ export async function prepareOperationInput(req: IncomingMessage, entry: Operati
   return validateOperationInput(input);
 }
 
-/** Password login is reserved independently so normal/SSO failures cannot
- * prevent the owner from obtaining a session to review and archive receipts. */
+/** Unlock and complete password/passkey authentication share a bounded reserve
+ * so normal/SSO failures cannot block the owner from reviewing receipts. */
 export function operationResultPool(id: string): 'normal' | 'management' | 'authentication' {
-  if (id === 'core.access.login') return 'authentication';
+  if (['core.access.login', 'core.access.passkeyLoginOptions', 'core.access.passkeyLoginVerify',
+    'core.session.unlock', 'core.session.passkeyOptions', 'core.session.passkeyVerify'].includes(id))
+    return 'authentication';
   if (id === 'core.recoveries.rebuild' || id === 'core.recoveries.retry') return 'management';
   return 'normal';
 }

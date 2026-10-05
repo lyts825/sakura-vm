@@ -178,7 +178,6 @@ export function hostServiceHandlers(
     throw new AppError('处理器与操作路径不一致', 404, 'OPERATION_HANDLER_MISMATCH');
   };
   const nativeClipboardGetHandler: HttpOperationHandler = async (req, res, url) => {
-    const native = services.requireService('native');
     const nativeClipboard = services.requireService('nativeClipboard');
     if (url.pathname === '/api/native-clipboard') {
       if (req.method === 'GET') return send(res, nativeClipboard.view());

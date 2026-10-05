@@ -2,7 +2,7 @@
 
 Sakura 使用一个本机 Node.js 控制进程管理 QEMU 与原生辅助进程。React 和 CLI 通过 HTTP/WebSocket 使用同一控制面；业务能力按插件选择激活。
 
-基于应用 2.3.0 / 插件 API 5 的逐层接口、权限、资源归属、失败与验收要求见 [插件设计契约与统管层接口](plugin-design-contract.md)。
+基于应用 2.3.1 / 插件 API 5 的逐层接口、权限、资源归属、失败与验收要求见 [插件设计契约与统管层接口](plugin-design-contract.md)。
 
 ```mermaid
 flowchart TD
@@ -39,7 +39,7 @@ flowchart TD
 
 操作结果回执分别记录业务 outcome、是否进入业务、响应校验、审计和交付状态。响应或审计失败不覆盖原业务错误，也不证明业务没有执行；客户端可通过 `GET /api/operation-results/{correlationId}` 查询当前账户/会话的原结果后，再决定是否按领域协议重试。
 
-JSON 写操作在分配回执前有界读取、校验正文，处理器复用同一请求缓存并保留自身限额和取消检查。领域明确证明未发生目标副作用的认证拒绝记为 `failed / executed=false`，不能按所有 4xx 推断失败。普通、恢复管理和密码登录分别保留 2000、32、64 个在线位置；未知结果不自动淘汰。管理员通过 `GET /api/operation-results` 核对容量和原文摘要，再以 `POST /api/operation-results/archive` 明确归档；归档先持久保留原文、摘要、操作者和原因，再释放在线位置，重试不改变原 outcome。归档本身经过鉴权和审计，但不占用已满回执池。档案最多 4096 条、64 MiB，满额或损坏时保留原证据并要求管理员处理。
+JSON 写操作在分配回执前有界读取、校验正文，处理器复用同一请求缓存并保留自身限额和取消检查。领域明确证明未发生目标副作用的认证拒绝记为 `failed / executed=false`，不能按所有 4xx 推断失败。普通、恢复管理和认证分别保留 2000、32、64 个在线位置；认证池覆盖密码登录、会话解锁及登录/解锁所需的通行密钥步骤，未知结果不自动淘汰。管理员通过 `GET /api/operation-results` 核对容量和原文摘要，再以 `POST /api/operation-results/archive` 明确归档；归档先持久保留原文、摘要、操作者和原因，再释放在线位置，重试不改变原 outcome。归档本身经过鉴权和审计，但不占用已满回执池。档案及合法命名的中断临时文件合计最多 4096 条、64 MiB；临时文件原样保留且不作为已提交档案，显式重试仍核验在线原文。满额、非法目录项或已提交档案损坏时保留证据并要求管理员处理。
 
 恢复操作可通过管理员凭证调用以上接口：从诊断记录取得 `correlationId` 与 `digest`，在原业务领域核对后提交 `{ correlationId, digest, reason: 'checked-in-domain', acknowledgeUnknown: true }`；仅人工核对时 reason 为 `reviewed-manually`。`archiveAvailable: false` 的记录不能直接归档，活跃操作应等待结束。摘要冲突必须刷新再核对；归档不证明原业务成功，不授权盲目重放原操作。若账户授权相关附属服务不可用，改密或删除账户仍会拒绝执行，避免跳过旧授权的撤销。
 

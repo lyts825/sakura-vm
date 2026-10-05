@@ -7,6 +7,17 @@ import { noteOperationResultActor } from './operation-results.ts';
 import { publicApiFailure } from './api-errors.ts';
 import type { HttpOperationHandler } from './operation-gateway.ts';
 import type { CoreHttpContext, CoreHttpHandlers } from './http-core-context.ts';
+import { rejectOperationBeforeEffect } from './operation-execution.ts';
+
+/** Wrap only request admission, before any challenge, credential counter or
+ * session is issued. Post-effect failures must retain their unknown outcome. */
+async function authenticationInput<T>(operationId: string, prepare: () => T | Promise<T>) {
+  try { return await prepare(); }
+  catch (error) {
+    if (error !== null && typeof error === 'object') rejectOperationBeforeEffect(error, [operationId]);
+    throw error;
+  }
+}
 
 export function publicAccessHandlers(
   context: CoreHttpContext<'access' | 'session' | 'passkeys' | 'sso' | 'features' | 'token'>,
@@ -38,20 +49,23 @@ export function publicAccessHandlers(
   const sessionUnlockHandler: HttpOperationHandler = async (req, res, url) => {
     const { session } = services;
     if (url.pathname === '/api/session/unlock') {
-      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
-      return send(res, await session.unlock(await body(req, 4096)));
+      const input = await authenticationInput('core.session.unlock', async () => {
+        if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+        return body(req, 4096);
+      });
+      return send(res, await session.unlock(input));
     }
     throw new AppError('处理器与操作路径不一致', 404, 'OPERATION_HANDLER_MISMATCH');
   };
   const sessionPasskeyOptionsHandler: HttpOperationHandler = async (req, res, url) => {
     const { access, passkeys, session } = services;
     if (url.pathname === '/api/session/unlock/passkey/options') {
-      if (req.method !== 'POST' || !access.enabled || !session.view().locked)
-        throw new AppError('控制面未启用通行密钥解锁', 409);
-      requirePasskeyOrigin(req);
-      z.object({})
-        .strict()
-        .parse(await body(req, 4096));
+      await authenticationInput('core.session.passkeyOptions', async () => {
+        if (req.method !== 'POST' || !access.enabled || !session.view().locked)
+          throw new AppError('控制面未启用通行密钥解锁', 409);
+        requirePasskeyOrigin(req);
+        z.object({}).strict().parse(await body(req, 4096));
+      });
       return send(res, await passkeys.beginUnlock(session.getGeneration()));
     }
     throw new AppError('处理器与操作路径不一致', 404, 'OPERATION_HANDLER_MISMATCH');
@@ -59,10 +73,13 @@ export function publicAccessHandlers(
   const sessionPasskeyVerifyHandler: HttpOperationHandler = async (req, res, url) => {
     const { access, passkeys, session } = services;
     if (url.pathname === '/api/session/unlock/passkey/verify') {
-      if (req.method !== 'POST' || !access.enabled || !session.view().locked)
-        throw new AppError('控制面未启用通行密钥解锁', 409);
-      requirePasskeyOrigin(req);
-      const { login, lockGeneration } = await passkeys.finishUnlock(await body(req, 65536));
+      const input = await authenticationInput('core.session.passkeyVerify', async () => {
+        if (req.method !== 'POST' || !access.enabled || !session.view().locked)
+          throw new AppError('控制面未启用通行密钥解锁', 409);
+        requirePasskeyOrigin(req);
+        return body(req, 65536);
+      });
+      const { login, lockGeneration } = await passkeys.finishUnlock(input);
       noteOperationResultActor(login.principal.id);
       try {
         const unlocked = await session.unlockWithPasskey(lockGeneration!);
@@ -146,10 +163,13 @@ export function publicAccessHandlers(
   };
   const accessLoginHandler: HttpOperationHandler = async (req, res, url) => {
     const { access, session } = services;
-    session.requireUnlocked();
     if (url.pathname === '/api/access/login') {
-      if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
-      const login = await access.login(await body(req, 4096));
+      const input = await authenticationInput('core.access.login', async () => {
+        session.requireUnlocked();
+        if (req.method !== 'POST') throw new AppError('不支持此方法', 405);
+        return body(req, 4096);
+      });
+      const login = await access.login(input);
       noteOperationResultActor(login.principal.id);
       try {
         session.requireUnlocked();
@@ -181,25 +201,28 @@ export function publicAccessHandlers(
   };
   const accessPasskeyLoginOptionsHandler: HttpOperationHandler = async (req, res, url) => {
     const { access, passkeys, session } = services;
-    session.requireUnlocked();
     if (url.pathname === '/api/access/passkeys/login/options') {
-      if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
-      requirePasskeyOrigin(req);
-      z.object({})
-        .strict()
-        .parse(await body(req, 4096));
+      await authenticationInput('core.access.passkeyLoginOptions', async () => {
+        session.requireUnlocked();
+        if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
+        requirePasskeyOrigin(req);
+        z.object({}).strict().parse(await body(req, 4096));
+      });
       return send(res, await passkeys.beginAuthentication());
     }
     throw new AppError('处理器与操作路径不一致', 404, 'OPERATION_HANDLER_MISMATCH');
   };
   const accessPasskeyLoginVerifyHandler: HttpOperationHandler = async (req, res, url) => {
     const { access, features, passkeys, session } = services;
-    session.requireUnlocked();
     if (url.pathname === '/api/access/passkeys/login/verify') {
-      if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
-      requirePasskeyOrigin(req);
-      if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
-      const login = await passkeys.finishAuthentication(await body(req, 65536));
+      const input = await authenticationInput('core.access.passkeyLoginVerify', async () => {
+        session.requireUnlocked();
+        if (req.method !== 'POST' || !access.enabled) throw new AppError('不支持此方法', 405);
+        requirePasskeyOrigin(req);
+        if (features.migration?.blocked) throw new AppError('数据目录迁移维护中', 409);
+        return body(req, 65536);
+      });
+      const login = await passkeys.finishAuthentication(input);
       noteOperationResultActor(login.principal.id);
       try {
         session.requireUnlocked();
