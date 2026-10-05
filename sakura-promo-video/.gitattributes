@@ -1,0 +1,2 @@
+# Preserve upstream OFL bytes, including whitespace, verified by font checksums.
+public/brand/fonts/*-OFL.txt -text -whitespace

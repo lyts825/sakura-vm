@@ -1,0 +1,110 @@
+[
+  {
+    "family": "Sakura Sans",
+    "upstream": "Noto Sans SC",
+    "source": "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+    "sourceGitBlob": "fb0637bafbcd804fe32152370a1225990745b4bc",
+    "file": "sakura-sans-ui.woff2",
+    "bytes": 133388,
+    "glyphs": 645,
+    "weights": [
+      400,
+      700
+    ],
+    "sha256": "f995567cd818aee39beec0b59907eb2ba1e44f95093587230e913f9ba275aba3",
+    "subsetPurpose": "Sakura promo video: src/**/*.ts(x) + transcript.json",
+    "sourceSha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+    "licenseGitBlob": "1c9f43281b8f216c5461fe9ac729afbade7724e4",
+    "licenseSha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
+    "upstreamManifestSha256": "4b6fd2b2284f696e73fc38069e258e6d05be9526bf65b536cc2bc5febead5930",
+    "upstreamBuilderSha256": "3897ea6d3e8ca6872fcfdc34f0c469f038c80d2cc56387199f0c71b98c71284a",
+    "upstreamSubsetSha256": "2306e5c7a377a7fbc7a3802d7214acb37ba26b86d1ed554cda7caec34437216d",
+    "recipe": "scripts/fonts_generate.py",
+    "dependencies": {
+      "fonttools": "4.60.1",
+      "brotli": "1.1.0",
+      "zopfli": "0.4.3"
+    },
+    "corpusFilesSha256": {
+      "src/Captions.tsx": "70bc06f69835e240bb242071c2e664719be978fd307ac25e681d04de863dc048",
+      "src/components.tsx": "805b0eb598fa16fd0e466e608c10e2d53adabdfd6c1da58589a1252e44846687",
+      "src/Cover.tsx": "9a51873e1e80b684508487575009cac280dfd7aa1d85a3afcfe6f7ec56ab10a1",
+      "src/index.ts": "957e481dd33a29b4a55ae0e95dbf763b7e48c37c427ca4bd1275faf34bc07a74",
+      "src/Root.tsx": "05944d2c9e6b93a3bbb4a15bbd580b92d043e8c304820e4058d95a220c63b313",
+      "src/SakuraPromo.tsx": "968ee63dba696377a4b8a0a5c770033280bc607ebbb4d96e23513b53e31bb067",
+      "src/scenes/ClosingScene.tsx": "ffd38801336b016678f4395db9c60c72689a24a96cf6f3806a0a8c3d71b0f42c",
+      "src/scenes/KernelScene.tsx": "8790073b2546d4037959c3dde6b9b52a00214c86fea0cb78e1e679f8b03e253e",
+      "src/scenes/OpeningScene.tsx": "593f77a403cef92c572176a64ab5fcf06be5095afcb9a24a77b6f63f0909478b",
+      "src/scenes/PluginsScene.tsx": "01410b0d9bf04f4244d22ab1aeb4a8da8dee5f5007e2499b2df99dc9a43cd495",
+      "src/scenes/TerminalScene.tsx": "b19de098e229c77af468257be85f74344e4d741625054c1cae44638a271fee68",
+      "src/scenes/WorkflowScene.tsx": "f952839098e2b7a3a93ad2e878d5f2651e71de19fcf7157158da754bc4889ea2",
+      "src/theme.ts": "b80d7c4de3ab7565d673569768ed32549e4c9580bf5a2ae7cddedec650a99abe",
+      "public/audio/transcript.json": "b2b8181ea5931cf21ff75c80ef50dfa6bd1c21c03985ad4d19bbdf0cc6d48ae5"
+    },
+    "requiredHanzi": 148,
+    "unsupportedNonHanzi": [
+      "U+2304"
+    ]
+  },
+  {
+    "family": "Sakura Serif",
+    "upstream": "Noto Serif SC",
+    "source": "https://raw.githubusercontent.com/google/fonts/e44c4b011a820c2cbe2fd2cfa8052037d7edb571/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+    "sourceGitBlob": "eab063faf229160a52d3760f5555150e4eb9e5bf",
+    "file": "sakura-serif-ui.woff2",
+    "bytes": 176812,
+    "glyphs": 645,
+    "weights": [
+      400,
+      700
+    ],
+    "sha256": "4f4b0b029d5e9f6c0bb12517ed46d88ef9b5c0fd8cef981234dab75a1d4b3d98",
+    "subsetPurpose": "Sakura promo video: src/**/*.ts(x) + transcript.json",
+    "sourceSha256": "050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9",
+    "licenseGitBlob": "94d1bf7b52481343e2983fb7751e8b7abe1ea07b",
+    "licenseSha256": "5e0da210fb04058a8c0087985d2d456b931c2579811a49655721d3cf0c36b6d6",
+    "upstreamManifestSha256": "4b6fd2b2284f696e73fc38069e258e6d05be9526bf65b536cc2bc5febead5930",
+    "upstreamBuilderSha256": "3897ea6d3e8ca6872fcfdc34f0c469f038c80d2cc56387199f0c71b98c71284a",
+    "upstreamSubsetSha256": "76acf50681e0b9baf213818fd7ab23b1b52d05ad88e321ca846e267506453a1f",
+    "recipe": "scripts/fonts_generate.py",
+    "dependencies": {
+      "fonttools": "4.60.1",
+      "brotli": "1.1.0",
+      "zopfli": "0.4.3"
+    },
+    "corpusFilesSha256": {
+      "src/Captions.tsx": "70bc06f69835e240bb242071c2e664719be978fd307ac25e681d04de863dc048",
+      "src/components.tsx": "805b0eb598fa16fd0e466e608c10e2d53adabdfd6c1da58589a1252e44846687",
+      "src/Cover.tsx": "9a51873e1e80b684508487575009cac280dfd7aa1d85a3afcfe6f7ec56ab10a1",
+      "src/index.ts": "957e481dd33a29b4a55ae0e95dbf763b7e48c37c427ca4bd1275faf34bc07a74",
+      "src/Root.tsx": "05944d2c9e6b93a3bbb4a15bbd580b92d043e8c304820e4058d95a220c63b313",
+      "src/SakuraPromo.tsx": "968ee63dba696377a4b8a0a5c770033280bc607ebbb4d96e23513b53e31bb067",
+      "src/scenes/ClosingScene.tsx": "ffd38801336b016678f4395db9c60c72689a24a96cf6f3806a0a8c3d71b0f42c",
+      "src/scenes/KernelScene.tsx": "8790073b2546d4037959c3dde6b9b52a00214c86fea0cb78e1e679f8b03e253e",
+      "src/scenes/OpeningScene.tsx": "593f77a403cef92c572176a64ab5fcf06be5095afcb9a24a77b6f63f0909478b",
+      "src/scenes/PluginsScene.tsx": "01410b0d9bf04f4244d22ab1aeb4a8da8dee5f5007e2499b2df99dc9a43cd495",
+      "src/scenes/TerminalScene.tsx": "b19de098e229c77af468257be85f74344e4d741625054c1cae44638a271fee68",
+      "src/scenes/WorkflowScene.tsx": "f952839098e2b7a3a93ad2e878d5f2651e71de19fcf7157158da754bc4889ea2",
+      "src/theme.ts": "b80d7c4de3ab7565d673569768ed32549e4c9580bf5a2ae7cddedec650a99abe",
+      "public/audio/transcript.json": "b2b8181ea5931cf21ff75c80ef50dfa6bd1c21c03985ad4d19bbdf0cc6d48ae5"
+    },
+    "requiredHanzi": 148,
+    "unsupportedNonHanzi": [
+      "U+2304"
+    ]
+  },
+  {
+    "family": "Sakura Mono",
+    "upstream": "JetBrains Mono",
+    "source": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/19371302b95d218af43299bce79ddbddd0bc364d/fonts/variable/JetBrainsMono%5Bwght%5D.ttf",
+    "sourceGitBlob": "5b7a5266cbdcf79261e02b380dba890c5f38faf2",
+    "file": "sakura-mono.woff2",
+    "bytes": 76104,
+    "glyphs": 1372,
+    "weights": [
+      400,
+      700
+    ],
+    "sha256": "393bf9f95dfd840ebe6dab0e904cdb58e200ef124748e37d44179206fbced9fe"
+  }
+]

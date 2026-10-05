@@ -1,0 +1,14 @@
+/node_modules/
+/.venv/
+/.tools/
+/.cache/
+/build/
+/dist/
+/out/
+/previews/
+/.remotion/
+/remotion-cache/
+__pycache__/
+/.DS_Store
+/.env
+/*.log
