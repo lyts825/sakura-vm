@@ -28,11 +28,14 @@ const owners: Record<string, Domain> = {
   'server/domains/peer-migration-sessions': 'peer-sessions',
   'server/domains/peer-replica-operations': 'replication',
   'server/domains/vm-disk-encryption': 'storage',
+  'server/domains/vm-snapshots': 'storage',
+  'server/domains/vm-storage-placement': 'storage',
   'server/domains/sandbox-lifetimes': 'sandbox',
   'server/domains/vm-ha-authority': 'failover',
   'server/disk-encryption': 'storage',
   'server/disk-maintenance': 'storage',
   'server/storage-pools': 'storage',
+  'server/storage-runtime': 'storage',
   'server/vm-storage': 'storage',
   'server/bundles': 'storage',
   'server/disk-imports': 'storage',
@@ -76,7 +79,7 @@ export function domainBoundaryErrors(file: string, source: ts.SourceFile) {
     const targetOwner = domainOwner(target);
     if (!targetOwner) {
       if (file.startsWith('server/domains/') && target.startsWith('server/') &&
-        !/^server\/(?:paths|qmp|runtime|vm-access)(?:\.[cm]?[jt]sx?)?$/.test(target) && !target.startsWith('server/service-contracts/'))
+        !/^server\/(?:paths|qmp|runtime|vm-access|vm-ports|local-store)(?:\.[cm]?[jt]sx?)?$/.test(target) && !target.startsWith('server/service-contracts/'))
         report(node, `Domain resource owner dependency requires an explicit owner or foundation contract (${target})`);
       return;
     }

@@ -66,6 +66,12 @@ const packOrder = [
   'complete',
 ];
 const categoryOrder = Object.keys(categories);
+const systemServiceNames: Record<string, string> = {
+  terminalSharing: '共享终端', browserExtensions: '浏览器扩展', memoryReclaim: '内存回收',
+  gpuProfiles: 'GPU 配置', buildFarm: '构建任务', native: '原生集成', nativeClipboard: '原生剪贴板',
+  assistant: '本地助手', webhooks: 'Webhook', automationRules: '自动化规则', retention: '日志保留',
+  graph: 'GraphQL',
+};
 
 function pluginState(status: PluginStatus, id: string) {
   const instance = status.runtime?.instances.find(item => item.source === 'official' && item.pluginId === id);
@@ -188,6 +194,9 @@ export function PluginCenter({ request }: { request: Request }) {
     ...Object.keys(status?.errors || {}),
   ]);
   const failed = status?.plugins.filter((plugin) => pluginState(status, plugin.id).tone === 'error') || [];
+  const failedSystemServices = status?.runtime?.instances.filter(instance =>
+    instance.source === 'system' && (['failed', 'cleanup-pending'].includes(instance.phase) ||
+      (instance.phase === 'inactive' && !!instance.error))) || [];
   const needle = query.trim().toLocaleLowerCase();
   const matches = (values: string[]) => values.join(' ').toLocaleLowerCase().includes(needle);
   const plugins =
@@ -522,6 +531,28 @@ export function PluginCenter({ request }: { request: Request }) {
               </div>
             </div>
           </div>
+          {failedSystemServices.length > 0 && (
+            <div className="plugin-error-banner" role="alert">
+              <CircleAlert size={18} />
+              <div>
+                <h3>附属服务暂时不可用</h3>
+                <p>基础管理仍可使用。检查下列诊断，修复配置后用原启动命令重启 Sakura。</p>
+                <ul>
+                  {failedSystemServices.map(instance => (
+                    <li key={instance.identity}>
+                      <b>{systemServiceNames[instance.pluginId] || instance.pluginId}</b>（{instance.pluginId}）
+                      ：{instance.phase === 'cleanup-pending' ? '清理待确认' :
+                        instance.phase === 'inactive' ? '已清理，等待重启' : '启动失败'}
+                      {instance.error && <p>{instance.error}</p>}
+                    </li>
+                  ))}
+                </ul>
+                {failedSystemServices.some(instance => instance.phase === 'cleanup-pending') &&
+                  <p>清理待确认的服务保留原实例及依赖资源；请先在资源恢复面板处理清理，再重启。</p>}
+                <p>刷新浏览器不会重新加载服务。原配置文件保留，未自动重置。</p>
+              </div>
+            </div>
+          )}
           {status.restartRequired && (
             <div className="plugin-restart" role="status">
               <span className="plugin-restart-icon">

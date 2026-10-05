@@ -11,6 +11,7 @@ import {
 import { z } from 'zod';
 import { AccessControl, type Principal } from './access-control.ts';
 import { AppError } from '../shared/errors.ts';
+import { rejectOperationBeforeEffect } from './operation-execution.ts';
 
 const ceremonyId = z.string().regex(/^[a-f0-9]{64}$/);
 const browserCredential = z.object({ id: z.string().min(16).max(1024) }).passthrough();
@@ -115,16 +116,19 @@ export class Passkeys {
   }
 
   private async finish(input: unknown, purpose: 'login' | 'unlock') {
-    const value = passkeyFinish.parse(input);
-    const ceremony = this.take(value.ceremonyId, purpose);
-    const registered = this.access.getPasskey(value.response.id);
-    if (!registered) throw new AppError('通行密钥验证失败', 403);
-    if (purpose === 'unlock' &&
-        (registered.user.role !== 'owner' || !registered.key.transports.includes('internal')))
-      throw new AppError('需要管理员的本机平台通行密钥', 403);
-    let verified;
-    try {
-      verified = await verifyAuthenticationResponse({
+    // This stage consumes a one-use challenge but cannot write a credential
+    // counter or issue a session. Only its failures are confirmed refusals.
+    const admission = await (async () => {
+      try {
+        const value = passkeyFinish.parse(input);
+        const ceremony = this.take(value.ceremonyId, purpose);
+        const registered = this.access.getPasskey(value.response.id);
+        if (!registered) throw new AppError('通行密钥验证失败', 403);
+        if (purpose === 'unlock' &&
+            (registered.user.role !== 'owner' || !registered.key.transports.includes('internal')))
+          throw new AppError('需要管理员的本机平台通行密钥', 403);
+        let verified;
+        try { verified = await verifyAuthenticationResponse({
         response: value.response as unknown as AuthenticationResponseJSON,
         expectedChallenge: ceremony.challenge, expectedOrigin: this.origin,
         expectedRPID: this.rpID, requireUserVerification: true,
@@ -133,9 +137,16 @@ export class Passkeys {
           publicKey: new Uint8Array(Buffer.from(registered.key.publicKey, 'base64url')),
           counter: registered.key.counter, transports: registered.key.transports,
         },
-      });
-    } catch { throw new AppError('通行密钥验证失败', 403); }
-    if (!verified.verified) throw new AppError('通行密钥验证失败', 403);
+        }); } catch { throw new AppError('通行密钥验证失败', 403); }
+        if (!verified.verified) throw new AppError('通行密钥验证失败', 403);
+        return { ceremony, registered, verified };
+      } catch (error) {
+        if (error !== null && typeof error === 'object') rejectOperationBeforeEffect(error,
+          ['core.access.passkeyLoginVerify', 'core.session.passkeyVerify']);
+        throw error;
+      }
+    })();
+    const { ceremony, registered, verified } = admission;
     const login = await this.access.completePasskeyLogin(registered.user.id, registered.key.id,
       registered.key.counter, verified.authenticationInfo.newCounter);
     return { login, lockGeneration: ceremony.lockGeneration };

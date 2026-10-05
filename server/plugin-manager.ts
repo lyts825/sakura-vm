@@ -63,7 +63,8 @@ export class PluginManager {
       await this.runtime?.recoverProvider(instance.identity, instance.generation, instance.artifactDigest);
     else if (instance.source === 'system') {
       const dependent = this.system.lifecycle.view().find(entry =>
-        [...entry.requires, ...entry.disposeRequires].includes(instance.pluginId) && !['registered', 'disposed'].includes(entry.state));
+        entry.attempted && [...entry.requires, ...entry.disposeRequires].includes(instance.pluginId) &&
+        !['registered', 'disposed'].includes(entry.state));
       if (dependent) throw new AppError('请先恢复依赖此服务的消费者：' + dependent.id, 409, 'SERVICE_DEPENDENTS_ACTIVE');
       if (instance === this.system.caller) await this.system.close();
       else await this.system.retire(instance.pluginId);

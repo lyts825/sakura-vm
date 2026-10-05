@@ -68,6 +68,7 @@ import { VirtioFsShares } from './virtio-fs.ts';
 import { Webhooks, collectWebhookEvents } from './webhooks.ts';
 import { Workspaces } from './workspaces.ts';
 import { RuntimeDiagnostics } from './runtime-diagnostics.ts';
+import type { SystemServiceContracts } from './service-contracts.ts';
 
 export async function createApplicationServices(resources: ResourceScopeV1, plugins: PluginManager) {
   let acceptingRequests = false;
@@ -124,6 +125,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   let features: Features;
   const session = await plugins.system.start({
     id: 'session',
+    startup: 'required',
     requires: [],
     create: (dependencies) => new SessionLock((locked, transitioned) => sessionChanged(locked, transitioned)),
     initialize: (value) => value.init(),
@@ -132,6 +134,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const access = await plugins.system.start({
     id: 'access',
+    startup: 'required',
     requires: [],
     create: (dependencies) => new AccessControl(),
     initialize: (value) => value.init(),
@@ -140,6 +143,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const passkeys = await plugins.system.start({
     id: 'passkeys',
+    startup: 'required',
     requires: ['access'],
     create: (dependencies) => new Passkeys(dependencies.get('access'), PORT),
     initialize: () => {},
@@ -148,6 +152,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const sso = await plugins.system.start({
     id: 'sso',
+    startup: 'required',
     requires: ['access'],
     create: (dependencies) => new SingleSignOn(dependencies.get('access'), PORT, undefined, undefined, undefined, undefined, () => {
         connectionHooks.terminate();
@@ -171,8 +176,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     plugins.directory.subscribe(() => machines.emit('change')),
     1,
   );
-  const terminalSharing = await plugins.system.start({
+  const terminalSharing = await plugins.system.startDegradable({
     id: 'terminalSharing',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'terminal-sharing.json'),
     requires: ['@machines'],
     lateRequires: ['projectTerminals'],
     disposeRequires: ['projectTerminals'],
@@ -188,14 +195,17 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const jitPrivileges = await plugins.system.start({
     id: 'jitPrivileges',
+    startup: 'required',
     requires: ['access', '@machines'],
     create: (dependencies) => new JitPrivileges(dependencies.get('access'), dependencies.vm()),
     initialize: (value) => value.init(),
     dispose: (value) => value?.close(),
     disposePhase: 80,
   });
-  const browserExtensions = await plugins.system.start({
+  const browserExtensions = await plugins.system.startDegradable({
     id: 'browserExtensions',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'browser-extensions.json'),
     requires: ['access'],
     create: (dependencies) => new BrowserExtensions(dependencies.get('access')),
     initialize: (value) => value.init(),
@@ -206,6 +216,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   plugins.system.ready('@audit', audit);
   const remoteAudit = await plugins.system.start({
     id: 'remoteAudit',
+    startup: 'required',
     requires: ['@audit', 'session'],
     lateRequires: ['@plugins'],
     create: (dependencies) => new RemoteAuditLock(
@@ -233,6 +244,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     );
   const rollouts = await plugins.system.start({
     id: 'rollouts',
+    startup: 'required',
     requires: [],
     lateRequires: ['@plugins'],
     disposeRequires: ['@plugins'],
@@ -253,6 +265,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   plugins.system.ready('@plugins', features);
   const projectTerminals = await plugins.system.start({
     id: 'projectTerminals',
+    startup: 'required',
     requires: ['@plugins'],
     create: (dependencies) => dependencies.get('@plugins').terminalHandle(),
     initialize: () => {},
@@ -261,6 +274,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const projectExecution = await plugins.system.start({
     id: 'projectExecution',
+    startup: 'required',
     requires: ['projectTerminals', '@machines'],
     create: (dependencies) => new ProjectExecution(dependencies.vm(), dependencies.get('projectTerminals').preparation),
     initialize: () => {},
@@ -270,6 +284,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
   const usbHotplug = await plugins.system.start({
     id: 'usbHotplug',
+    startup: 'required',
     requires: ['@machines', '@plugins'],
     create: (dependencies) => new UsbHotplug(
         dependencies.vm(),
@@ -285,6 +300,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const mediaDevices = await plugins.system.start({
     id: 'mediaDevices',
+    startup: 'required',
     requires: ['usbHotplug', '@machines', '@plugins'],
     create: (dependencies) => new MediaDevices(
         dependencies.vm(),
@@ -299,8 +315,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     disposePhase: 230,
   });
 
-  const memoryReclaim = await plugins.system.start({
+  const memoryReclaim = await plugins.system.startDegradable({
     id: 'memoryReclaim',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'memory-reclaim.json'),
     requires: ['@machines', '@plugins'],
     create: (dependencies) => new MemoryReclaim(
         dependencies.vm(),
@@ -316,6 +334,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const hostMounts = await plugins.system.start({
     id: 'hostMounts',
+    startup: 'required',
     requires: ['@machines', '@plugins'],
     create: (dependencies) => new HostMounts(
         dependencies.vm(),
@@ -331,6 +350,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
   const virtioFsShares = await plugins.system.start({
     id: 'virtioFsShares',
+    startup: 'required',
     requires: ['@machines', '@plugins'],
     create: (dependencies) => new VirtioFsShares(
         dependencies.vm(),
@@ -346,6 +366,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
   const trustedBoot = await plugins.system.start({
     id: 'trustedBoot',
+    startup: 'required',
     requires: ['@machines', '@plugins'],
     create: (dependencies) => new TrustedBootService(
         dependencies.vm(),
@@ -359,8 +380,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     disposePhase: 270,
   });
 
-  const gpuProfiles = await plugins.system.start({
+  const gpuProfiles = await plugins.system.startDegradable({
     id: 'gpuProfiles',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'gpu-profiles.json'),
     requires: ['@machines', '@plugins'],
     create: (dependencies) => new GpuProfiles(
         dependencies.vm(),
@@ -374,8 +397,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 280,
   });
-  const buildFarm = await plugins.system.start({
+  const buildFarm = await plugins.system.startDegradable({
     id: 'buildFarm',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'build-farm.json'),
     requires: ['projectTerminals', '@machines', '@plugins'],
     create: (dependencies) => new BuildFarm(
         dependencies.vm(),
@@ -393,6 +418,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const projectPermissions = await plugins.system.start({
     id: 'projectPermissions',
+    startup: 'required',
     requires: ['access', '@machines', '@plugins'],
     create: (dependencies) => new ProjectPermissions(dependencies.get('access'), dependencies.vm(), dependencies.get('@plugins').workspaces),
     initialize: (value) => value.init(),
@@ -401,6 +427,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const policyBundles = await plugins.system.start({
     id: 'policyBundles',
+    startup: 'required',
     requires: ['projectPermissions'],
     create: (dependencies) => new PolicyBundles(dependencies.get('projectPermissions')),
     initialize: (value) => value.init(),
@@ -410,6 +437,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   const changeApprovals = features.workspaces
     ? await plugins.system.start({
         id: 'changeApprovals',
+        startup: 'required',
         requires: ['projectPermissions', '@plugins'],
         create: (dependencies) => new ChangeApprovals(dependencies.get('projectPermissions'), dependencies.get('@plugins').workspaces),
         initialize: (value) => value.init(),
@@ -420,6 +448,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
   const processInterop = await plugins.system.start({
     id: 'processInterop',
+    startup: 'required',
     requires: ['session', '@machines', '@plugins'],
     create: (dependencies) => new ProcessInterop(dependencies.vm(), PORT, () => {
         dependencies.get('session').requireUnlocked();
@@ -432,6 +461,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
   const hostPeers: HostPeersV1 = await plugins.system.start({
     id: 'hostPeers',
+    startup: 'required',
     requires: ['rollouts', 'session', '@machines', '@plugins'],
     lateRequires: ['mobileCompanion', 'liveMigrationReceiver'],
     create: (dependencies) => new HostPeers(
@@ -489,6 +519,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   }), ClosePhase.services);
   const mobileCompanion = await plugins.system.start({
     id: 'mobileCompanion',
+    startup: 'required',
     requires: ['access', 'session', '@machines', '@plugins'],
     create: (dependencies) => new MobileCompanion(
         dependencies.get('access'),
@@ -515,6 +546,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const liveMigrationReceiver = await plugins.system.start({
     id: 'liveMigrationReceiver',
+    startup: 'required',
     requires: ['hostPeers', 'session', '@machines', '@plugins'],
     create: (dependencies) => new LiveMigrationReceiver(dependencies.vm(), dependencies.get('hostPeers'), () => {
         dependencies.get('session').requireUnlocked();
@@ -527,6 +559,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const fleetRollouts = await plugins.system.start({
     id: 'fleetRollouts',
+    startup: 'required',
     requires: ['hostPeers', '@plugins'],
     create: (dependencies) => new FleetPolicyRollouts(
         dependencies.get('hostPeers'),
@@ -543,6 +576,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
   await plugins.system.start({
     id: 'capabilityChecks',
+    startup: 'required',
     requires: ['access', 'session', 'remoteAudit', 'hostPeers', 'mobileCompanion', 'projectTerminals', '@machines', '@plugins'],
     create: (dependencies) => ({
         mutation: (delta) => {
@@ -628,6 +662,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   if (features.next) {
     notebooks = await plugins.system.start({
       id: 'notebookEnvironments',
+      startup: 'required',
       requires: ['@plugins', '@machines'],
       create: (dependencies) => new NotebookEnvironments(dependencies.vm(), dependencies.get('@plugins').workspaces),
       initialize: (value) => value.init(),
@@ -637,6 +672,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
     browserIde = await plugins.system.start({
       id: 'browserIde',
+      startup: 'required',
       requires: ['@plugins', '@machines'],
       create: (dependencies) => new BrowserIde(dependencies.vm(), dependencies.get('@plugins').workspaces),
       initialize: (value) => value.init(),
@@ -647,6 +683,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   if (features.next && features.bundles) {
     coldMigrations = await plugins.system.start({
       id: 'coldMigrations',
+      startup: 'required',
       requires: ['hostPeers', '@machines', '@plugins'],
       create: (dependencies) => new ColdMigrations(dependencies.vm(), dependencies.get('@plugins').bundles, dependencies.get('hostPeers')),
       initialize: (value) => value.init(),
@@ -656,6 +693,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
     snapshotReplications = await plugins.system.start({
       id: 'snapshotReplications',
+      startup: 'required',
       requires: ['hostPeers', '@machines', '@plugins'],
       create: (dependencies) => new SnapshotReplications(
           dependencies.vm(),
@@ -673,6 +711,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     });
     haHostFailover = await plugins.system.start({
       id: 'haHostFailover',
+      startup: 'required',
       requires: ['hostPeers', 'snapshotReplications', '@machines', '@plugins'],
       create: (dependencies) => new HaHostFailover(
           dependencies.vm(),
@@ -688,6 +727,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
 
     haLocalFailovers = await plugins.system.start({
       id: 'haLocalFailovers',
+      startup: 'required',
       requires: ['haHostFailover', 'snapshotReplications', 'hostPeers', '@machines', '@plugins'],
       create: (dependencies) => new HaLocalFailovers(
           dependencies.vm(),
@@ -706,6 +746,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   if (features.next && features.backups && features.bundles)
     await plugins.system.start({
       id: 'disasterRecovery',
+      startup: 'required',
       requires: ['@plugins', '@machines'],
       create: (dependencies) => new DisasterRecoveryDrill(
           dependencies.vm(),
@@ -716,8 +757,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
       dispose: () => {},
       disposePhase: ClosePhase.services,
     });
-  const native = await plugins.system.start({
+  const native = await plugins.system.startDegradable({
     id: 'native',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'native-integration.json'),
     requires: ['session', '@machines', '@plugins'],
     create: (dependencies) => new NativeIntegration(
         () => nativeMappings(dependencies.get('@plugins')),
@@ -738,8 +781,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 160,
   });
-  const nativeClipboard = await plugins.system.start({
+  const nativeClipboard = await plugins.system.startDegradable({
     id: 'nativeClipboard',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'native-clipboard.json') + '，并确认原生剪贴板组件可用',
     requires: ['session', '@plugins'],
     create: (dependencies) => new NativeClipboard({
         guard: () => dependencies.get('session').requireUnlocked(),
@@ -752,8 +797,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 170,
   });
-  const assistant = await plugins.system.start({
+  const assistant = await plugins.system.startDegradable({
     id: 'assistant',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'local-assistant.json'),
     requires: [],
     create: (dependencies) => new LocalAssistant(),
     initialize: (value) => value.init(),
@@ -762,6 +809,7 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
   });
   const communityPlugins = await plugins.system.start({
     id: 'communityPlugins',
+    startup: 'required',
     requires: ['@machines', '@plugins', '@pluginDirectory'],
     create: (dependencies) => new CommunityPlugins(undefined, undefined, undefined, undefined, dependencies.get('@pluginDirectory'), {
         events: async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
@@ -772,8 +820,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 140,
   });
-  const webhooks = await plugins.system.start({
+  const webhooks = await plugins.system.startDegradable({
     id: 'webhooks',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'webhooks.json'),
     requires: ['@machines', '@plugins'],
     create: (dependencies) => new Webhooks(
         async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
@@ -789,8 +839,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 180,
   });
-  const automationRules = await plugins.system.start({
+  const automationRules = await plugins.system.startDegradable({
     id: 'automationRules',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'automation-rules.json'),
     requires: ['@plugins', '@machines'],
     create: (dependencies) => new AutomationRules(
         async () => collectWebhookEvents(dependencies.get('@machines'), dependencies.get('@plugins').jobStores().flatMap((store) => store.list()), (await dependencies.get('@plugins').suite?.alertEvents()) || []),
@@ -826,8 +878,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 190,
   });
-  const retention = await plugins.system.start({
+  const retention = await plugins.system.startDegradable({
     id: 'retention',
+    startup: 'degradable',
+    startupRecovery: '检查并修复 ' + join(DATA, 'log-retention.json'),
     requires: ['@machines', '@plugins'],
     create: (dependencies) => new LogRetention(
         () => dependencies.get('@plugins').jobStores(),
@@ -842,8 +896,10 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     dispose: (value) => value?.close(),
     disposePhase: 330,
   });
-  const graph = await plugins.system.start({
+  const graph = await plugins.system.startDegradable({
     id: 'graph',
+    startup: 'degradable',
+    startupRecovery: '检查 GraphQL 服务的启动诊断及依赖服务',
     requires: ['@plugins', '@machines'],
     create: (dependencies) => new GraphApi(async () => querySnapshot(dependencies.get('@machines'), dependencies.get('@plugins').jobStores(), dependencies.get('@plugins').enabled)),
     initialize: () => {},
@@ -909,6 +965,9 @@ export async function createApplicationServices(resources: ResourceScopeV1, plug
     webhooks,
     engine,
     plugins,
+    requireService<K extends keyof SystemServiceContracts>(id: K): SystemServiceContracts[K] {
+      return plugins.system.require(id);
+    },
     connectionHooks,
     diagnostics,
     recoveries: recoveryApi,

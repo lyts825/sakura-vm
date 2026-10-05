@@ -53,6 +53,7 @@ import { guestInteropRequest } from './process-interop.ts';
 import { virtioFsRequest } from './virtio-fs.ts';
 import { trustedBootRequest } from './trusted-boot-service.ts';
 import { hostRuntimeDiagnosticSchema, networkRuntimeDiagnosticSchema, operationDeclarationSchema } from '../shared/contracts/operations.ts';
+import { operationResultArchiveRequest } from '../shared/contracts/operation-results.ts';
 
 
 const validators = new WeakMap<object, z.ZodType>();
@@ -81,6 +82,15 @@ export const coreOperations: {
   { id: 'operation-results.get', method: 'GET', path: '/api/operation-results/{correlationId}', title: '查询当前账户操作的持久结果回执',
     policy: { access: 'controller', roles: ['owner', 'member', 'viewer'], projectScoped: false, identity: 'host', maintenance: 'allow',
       transport: 'json', mutating: false, session: 'required', vmLock: 'allow-locked', projectBinding: 'none',
+      approval: 'none', extensionAuth: 'none' } },
+  { id: 'operation-results.list', method: 'GET', path: '/api/operation-results', title: '管理员诊断在线回执容量与未确认操作', inspect: true,
+    policy: { access: 'controller', roles: ['owner'], projectScoped: false, identity: 'host', maintenance: 'allow',
+      transport: 'json', mutating: false, session: 'required', vmLock: 'allow-locked', projectBinding: 'none',
+      approval: 'none', extensionAuth: 'none' } },
+  { id: 'operation-results.archive', method: 'POST', path: '/api/operation-results/archive', title: '管理员按原文摘要确认并保留回执档案后释放在线容量',
+    body: request(operationResultArchiveRequest),
+    policy: { access: 'controller', roles: ['owner'], projectScoped: false, identity: 'host', maintenance: 'allow',
+      transport: 'json', mutating: true, session: 'required', vmLock: 'allow-locked', projectBinding: 'none',
       approval: 'none', extensionAuth: 'none' } },
   { id: 'recoveries.rebuild', method: 'POST', path: '/api/recoveries/rebuild', title: '按当前目录摘要隔离原目录并从领域权威重建恢复索引',
     body: request(recoveryRebuildRequest),

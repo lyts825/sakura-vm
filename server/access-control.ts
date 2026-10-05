@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AppError } from '../shared/errors.ts';
 import { DATA } from './paths.ts';
 import { readStore, writeStore } from './local-store.ts';
+import { rejectOperationBeforeEffect } from './operation-execution.ts';
 
 const password = z.string().min(12).max(256);
 const username = z.string().regex(/^[a-z][a-z0-9_-]{2,31}$/);
@@ -46,6 +47,7 @@ export const accessHandoffInput = z.object({ password: z.string().max(256) }).st
 export const accessHandoffRedeem = z.object({ code: z.string().regex(/^[A-Za-z0-9_-]{24}$/) }).strict();
 
 const defaults = (): State => ({ version: 1, enabled: false, accounts: [] });
+const rejectLogin = (error: object): never => rejectOperationBeforeEffect(error, ['core.access.login']);
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
 const derive = (text: string, salt: string) => new Promise<Buffer>((resolve, reject) =>
   scrypt(text, Buffer.from(salt, 'hex'), 64, { N: 131072, r: 8, p: 1, maxmem: 192 * 1024 ** 2 },
@@ -138,23 +140,31 @@ export class AccessControl {
   }
 
   async login(input: unknown) {
-    const value = accessLoginInput.parse(input);
+    let value: z.infer<typeof accessLoginInput>;
+    try { value = accessLoginInput.parse(input); }
+    catch (error) { rejectLogin(error as object); }
     return this.serial(async () => {
-      if (!this.state.enabled) throw new AppError('账户模式未启用', 409);
+      if (!this.state.enabled) rejectLogin(new AppError('账户模式未启用', 409));
       const failed = this.failures.get(value.username);
       if (failed && failed.blockedUntil > this.now())
-        throw new AppError('尝试过多，请一分钟后重试', 429);
+        rejectLogin(new AppError('尝试过多，请一分钟后重试', 429));
       const user = this.state.accounts.find((item) => item.username === value.username);
-      const valid = user && (!user.expiresAt || user.expiresAt > this.now()) &&
-        await matches(value.password, user.credential);
+      let valid: boolean | undefined;
+      try { valid = user && (!user.expiresAt || user.expiresAt > this.now()) &&
+        await matches(value.password, user.credential); }
+      catch (error) {
+        // Credential derivation precedes the only requested effect: session issuance.
+        if (error !== null && typeof error === 'object') rejectLogin(error);
+        throw error;
+      }
       if (!valid) {
         const count = (failed?.blockedUntil && failed.blockedUntil <= this.now() ? 0 : failed?.count || 0) + 1;
         this.failures.set(value.username, { count: Math.min(count, 5),
           blockedUntil: count >= 5 ? this.now() + 60_000 : 0 });
-        throw new AppError('账户或密码无效', 403);
+        rejectLogin(new AppError('账户或密码无效', 403));
       }
       this.failures.delete(value.username);
-      return this.issueSession(user);
+      return this.issueSession(user!);
     });
   }
 

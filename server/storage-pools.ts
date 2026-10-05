@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { lstat, mkdir, readdir, rm, rmdir, stat, statfs, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
-import type { VmAccess as Machines } from './vm-access.ts';
+import type { VmStoragePoolOwnerPort } from './vm-ports.ts';
 import { AppError } from '../shared/errors.ts';
 import { DATA, VM_ROOT, setVmStorageRoot, vmDir } from './paths.ts';
 import { checkedId } from '../shared/paths.ts';
@@ -63,7 +63,7 @@ export class StoragePools {
   private state?: z.infer<typeof storeSchema>;
   private metadata: MetadataStore<z.infer<typeof storeSchema>>;
   constructor(
-    private machines: Machines,
+    private machines: VmStoragePoolOwnerPort,
     private file = join(DATA, 'storage-pools.json'),
   ) {
     this.metadata = new MetadataStore(file, {

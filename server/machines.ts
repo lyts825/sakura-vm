@@ -1,4 +1,6 @@
 import { VmDiskEncryption } from './domains/vm-disk-encryption.ts';
+import { VmSnapshots } from './domains/vm-snapshots.ts';
+import { VmStoragePlacement } from './domains/vm-storage-placement.ts';
 import { SandboxLifetimes } from './domains/sandbox-lifetimes.ts';
 import { VmHaAuthority } from './domains/vm-ha-authority.ts';
 import { networkFor, networkRuntime, type NetworkRuntime } from './network/index.ts';
@@ -8,11 +10,9 @@ import { EventEmitter } from 'node:events';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import {
   copyFile,
-  lstat,
   mkdir,
   readFile,
   readdir,
-  rename,
   rm,
   stat,
   writeFile,
@@ -80,12 +80,11 @@ import type { Engine } from './runtime.ts';
 import { Secrets } from './secrets.ts';
 import { bootSetup, cloudNetwork, cloudUserData, createSshKey, metaData, seedIso, userData } from './seed.ts';
 import { StoragePools } from './storage-pools.ts';
-import { copyDirectoryVerified, writeIdentityFile } from './vm-storage.ts';
+import { writeIdentityFile } from './vm-storage.ts';
 import { storageRuntime, withStorageLease, type StorageLease } from './storage-runtime.ts';
 import { MachineTransport } from './vm-transport.ts';
 
 export { BOOT_TIMEOUT_MS, type MigrationFingerprint } from '../shared/contracts/vm.ts';
-type DiskIdentity = { key: string; seed: Buffer; pending?: string };
 
 import type { Live } from './vm-state.ts';
 import { VmLifetime, vmLifetime, vmBootProviders } from './vm-lifetime.ts';
@@ -260,7 +259,28 @@ export class Machines extends EventEmitter {
       this.watchSandboxes();
     }
   }
-  private readonly disks = new VmDiskEncryption({
+  private readonly snapshots: VmSnapshots = new VmSnapshots({
+    get: (id) => this.get(id),
+    locked: (id, action) => this.locked(id, action),
+    requireStopped: (id) => this.requireStopped(id),
+    withDiskSecret: (vm, action) => this.withDiskSecret(vm, action),
+    engine: () => this.engine,
+    trustedBoot: () => this.trustedBootSnapshot,
+    save: () => this.save(),
+    view: (id) => this.view(id),
+    changed: () => { this.emit('change'); },
+  });
+  private readonly storagePlacement: VmStoragePlacement = new VmStoragePlacement({
+    get: (id) => this.get(id),
+    locked: (id, action) => this.locked(id, action),
+    requireStopped: (id) => this.requireStopped(id),
+    requireMutableConfig: (vm) => this.requireMutableConfig(vm),
+    pools: () => this.storagePools,
+    save: () => this.save(),
+    view: (id) => this.view(id),
+    changed: () => { this.emit('change'); },
+  });
+  private readonly disks: VmDiskEncryption = new VmDiskEncryption({
     engine: () => this.engine,
     get: id => this.get(id), running: id => this.live.has(id),
     requireStopped: id => this.requireStopped(id),
@@ -270,7 +290,7 @@ export class Machines extends EventEmitter {
     secretNames: id => new Secrets(this).list(id),
   });
   private diskInfo(id: string) { return this.disks.info(id); }
-  async withDiskSecret<T>(vm: VMRecord, action: (file: string) => Promise<T>) {
+  async withDiskSecret<T>(vm: VMRecord, action: (file: string) => Promise<T>): Promise<T> {
     return withDiskSecret(this, vm, action);
   }
   async diskEncryptionStatus(id: string) { return this.disks.status(id); }
@@ -1794,42 +1814,8 @@ export class Machines extends EventEmitter {
       this.rescueControllers.delete(controller);
     }
   }
-  private snapshotIdentityFile(id: string, snapshotId: string) {
-    return join(vmDir(id), `.snapshot-${checkedId(snapshotId)}.json`);
-  }
-  private async diskIdentity(id: string, snapshotId?: string): Promise<DiskIdentity> {
-    const vm = this.get(id);
-    if (snapshotId) {
-      if (!vm.snapshots.some((shot) => shot.id === snapshotId)) throw new AppError('快照不存在', 404);
-      try {
-        const identity = JSON.parse(await readFile(this.snapshotIdentityFile(id, snapshotId), 'utf8'));
-        if (
-          typeof identity.key !== 'string' ||
-          typeof identity.seed !== 'string' ||
-          (identity.pending !== undefined && typeof identity.pending !== 'string')
-        )
-          throw new AppError('快照身份数据损坏');
-        return { key: identity.key, seed: Buffer.from(identity.seed, 'base64'), pending: identity.pending };
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        // Older snapshots predate identity metadata and retain their current key.
-      }
-    }
-    const dir = vmDir(id);
-    const [key, seed, pending] = await Promise.all([
-      readFile(join(dir, 'id_rsa'), 'utf8'),
-      readFile(join(dir, 'seed.iso')),
-      readFile(join(dir, 'identity.json'), 'utf8').catch((error) => {
-        if (error.code !== 'ENOENT') throw error;
-        return undefined;
-      }),
-    ]);
-    return { key, seed, pending };
-  }
-  async snapshotIdentity(id: string, snapshotId?: string): Promise<{ key: string; seed: Buffer }> {
-    const { key, seed } = await this.diskIdentity(id, snapshotId);
-    return { key, seed };
-  }
+  private async diskIdentity(id: string, snapshotId?: string) { return this.snapshots.identity(id, snapshotId); }
+  async snapshotIdentity(id: string, snapshotId?: string) { return this.snapshots.snapshotIdentity(id, snapshotId); }
   private async vmStateFingerprint(vm: VMRecord, qmpPort: number, accelerator: string) {
     // The command-line QMP listener serves one client at a time.
     const version = await qmp(qmpPort, 'query-version');
@@ -1845,59 +1831,10 @@ export class Machines extends EventEmitter {
       hardware: vm.hardware || null, cpuSlots, memorySize, memoryDevices,
     })).digest('hex');
   }
-  private async createSnapshot(vm: VMRecord, name: string, onlinePort?: number,
-    stateFingerprint?: string) {
-    const shot = {
-      id: randomUUID(),
-      name,
-      createdAt: new Date().toISOString(),
-      diskGiB: vm.diskGiB,
-      pendingResize: !!vm.pendingResize,
-      consistency: stateFingerprint ? 'vmstate' as const :
-        onlinePort === undefined ? 'offline' as const : 'filesystem' as const,
-      ...(stateFingerprint ? { stateFingerprint } : {}),
-    };
-    const identity = await this.diskIdentity(vm.id);
-    const file = this.snapshotIdentityFile(vm.id, shot.id);
-    await writeFile(file, JSON.stringify({ ...identity, seed: identity.seed.toString('base64') }), {
-      flag: 'wx',
-      mode: 0o600,
-    });
-    try {
-      if (onlinePort === undefined)
-        await this.trustedBootSnapshot?.capture(vm.id, shot.id);
-      else await this.trustedBootSnapshot?.ensureOnlineAllowed(vm.id);
-      if (onlinePort === undefined) {
-        if (vm.diskEncryption)
-          await this.withDiskSecret(vm, (secret) => this.engine.run('sakura-img', [
-            'snapshot', '--object', qemuSecretObject(secret), '--image-opts',
-            '-c', shot.id, encryptedImageOptions(join(vmDir(vm.id), 'disk.qcow2')),
-          ]));
-        else await this.engine.run('sakura-img',
-          ['snapshot', '-c', shot.id, join(vmDir(vm.id), 'disk.qcow2')]);
-      }
-      else if (stateFingerprint)
-        await qmpSnapshotJob(onlinePort, 'snapshot-save', shot.id);
-      else
-        await qmp(onlinePort, 'blockdev-snapshot-internal-sync',
-          { device: 'sakura-disk', name: shot.id }, 30000);
-    } catch (error) {
-      await rm(file, { force: true });
-      await this.trustedBootSnapshot?.remove(vm.id, shot.id);
-      throw error;
-    }
-    vm.snapshots.push(shot);
-    await this.save();
-    return shot;
+  private async createSnapshot(vm: VMRecord, name: string, onlinePort?: number, stateFingerprint?: string) {
+    return this.snapshots.capture(vm, name, onlinePort, stateFingerprint);
   }
-  async snapshot(id: string, name: string) {
-    return this.locked(id, async () => {
-      const vm = this.get(id);
-      this.requireStopped(id);
-      if (vm.snapshots.length >= 20) throw new AppError('最多保留 20 个磁盘快照');
-      return this.createSnapshot(vm, name);
-    });
-  }
+  async snapshot(id: string, name: string) { return this.snapshots.snapshot(id, name); }
   async onlineSnapshot(id: string, name: string) {
     return this.transition(id, async () => {
       const vm = this.get(id);
@@ -2036,42 +1973,7 @@ export class Machines extends EventEmitter {
       return this.view(id);
     });
   }
-  async restore(id: string, snapshotId: string, backup = false) {
-    return this.locked(id, async () => {
-      const vm = this.get(id);
-      this.requireStopped(id);
-      const selected = vm.snapshots.find((s) => s.id === snapshotId);
-      if (!selected) throw new AppError('快照不存在', 404);
-      if (selected.consistency === 'vmstate')
-        throw new AppError('此快照包含 RAM 状态，请启动实例并使用整机状态恢复', 409);
-      const identity = await this.diskIdentity(id, snapshotId);
-      const restoreTrusted = await this.trustedBootSnapshot?.prepareRestore(id, snapshotId);
-      if (backup) {
-        if (vm.snapshots.length >= 20) throw new AppError('请先删除一个旧快照，为恢复前备份留出位置');
-        await this.createSnapshot(vm, '恢复前自动备份');
-      }
-      if (vm.diskEncryption)
-        await this.withDiskSecret(vm, (secret) => this.engine.run('sakura-img', [
-          'snapshot', '--object', qemuSecretObject(secret), '--image-opts',
-          '-a', snapshotId, encryptedImageOptions(join(vmDir(id), 'disk.qcow2')),
-        ]));
-      else await this.engine.run('sakura-img',
-        ['snapshot', '-a', snapshotId, join(vmDir(id), 'disk.qcow2')]);
-      const restored = vm.snapshots.find((s) => s.id === snapshotId)!;
-      if (restored.diskGiB) vm.diskGiB = restored.diskGiB;
-      vm.pendingResize = !!restored.pendingResize;
-      const dir = vmDir(id);
-      await writeIdentityFile(join(dir, 'id_rsa'), identity.key);
-      await writeIdentityFile(join(dir, 'seed.iso'), identity.seed);
-      if (identity.pending !== undefined)
-        await writeIdentityFile(join(dir, 'identity.json'), identity.pending);
-      else await rm(join(dir, 'identity.json'), { force: true });
-      await restoreTrusted?.();
-      delete vm.lastError;
-      await this.save();
-      return this.view(id);
-    });
-  }
+  async restore(id: string, snapshotId: string, backup = false) { return this.snapshots.restore(id, snapshotId, backup); }
   private async fingerprint(id: string): Promise<MigrationFingerprint> {
     const dir = vmDir(id);
     const disk = await stat(join(dir, 'disk.qcow2'));
@@ -2095,81 +1997,8 @@ export class Machines extends EventEmitter {
       return this.fingerprint(id);
     });
   }
-  async moveStoragePool(id: string, targetPoolId: string, signal?: AbortSignal,
-    log: (text: string) => void = () => {}) {
-    return this.locked('storage-pools', () => this.locked(id, async () => {
-      const vm = this.get(id);
-      this.requireStopped(id);
-      this.requireMutableConfig(vm);
-      signal?.throwIfAborted();
-      const sourcePoolId = vm.storagePoolId || 'default';
-      if (this.storagePools.hasPendingCleanup(id))
-        throw new AppError('请先清理此前存储池迁移的旧副本', 409);
-      if (sourcePoolId === targetPoolId)
-        return { moved: false, from: sourcePoolId, to: targetPoolId, cleanupPending: false, vm: await this.view(id) };
-      const sourceRoot = await this.storagePools.ensure(sourcePoolId);
-      const targetRoot = await this.storagePools.ensure(targetPoolId);
-      const source = await regularDirectory(vmDir(id));
-      const target = this.storagePools.directory(id, targetPoolId);
-      const stage = join(targetRoot, `.move-${checkedId(id)}-${randomUUID()}`);
-      if (!within(sourceRoot, source) || !within(targetRoot, target) ||
-          !within(targetRoot, stage))
-        throw new AppError('存储池迁移路径超出受控目录', 409);
-      const existing = await lstat(target).catch((error) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-        throw error;
-      });
-      if (existing) throw new AppError('目标存储池中已有同标识目录，请先检查', 409);
-      return storageRuntime.run({ owner: 'core:storage-pool-move', taskId: 'pool-move:' + id,
-        label: 'Copy and verify VM storage', mode: 'write', paths: [source, targetRoot],
-        dynamicTemporary: [targetRoot], buffers: 1024 ** 2, files: 6, signal }, async (lease) => {
-      log('正在复制并校验实例目录…\n');
-      try {
-        await copyDirectoryVerified(source, stage, signal, log, lease);
-        signal?.throwIfAborted();
-        await rename(stage, target);
-      } catch (error) {
-        await regularDirectory(stage);
-        try { await rm(stage, { recursive: true, force: true }); }
-        catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }
-        throw error;
-      }
-      try {
-        await this.storagePools.registerCleanup(id, sourcePoolId, targetPoolId);
-      } catch (error) {
-        await regularDirectory(target);
-        try { await rm(target, { recursive: true, force: true }); }
-        catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }
-        throw error;
-      }
-      vm.storagePoolId = targetPoolId === 'default' ? undefined : targetPoolId;
-      this.storagePools.bind(id, targetPoolId);
-      try {
-        await this.save();
-      } catch (error) {
-        vm.storagePoolId = sourcePoolId === 'default' ? undefined : sourcePoolId;
-        this.storagePools.bind(id, sourcePoolId);
-        await regularDirectory(target);
-        try { await rm(target, { recursive: true, force: true }); }
-        catch (cleanup) { lease.cleanupPending(cleanup); throw cleanup; }
-        await this.storagePools.clearCleanup(id, sourcePoolId, targetPoolId);
-        throw error;
-      }
-      let cleanupPending = false;
-      try {
-        await regularDirectory(source);
-        await rm(source, { recursive: true, force: true });
-        await this.storagePools.clearCleanup(id, sourcePoolId, targetPoolId);
-      } catch (error) {
-        cleanupPending = true;
-        this.storagePools.retainCleanup(id, sourcePoolId, targetPoolId, lease, error);
-        log(`旧存储池目录待清理：${String((error as Error).message || error)}\n`);
-      }
-      this.emit('change');
-      return { moved: true, from: sourcePoolId, to: targetPoolId, cleanupPending,
-        vm: await this.view(id) };
-      });
-    }));
+  async moveStoragePool(id: string, targetPoolId: string, signal?: AbortSignal, log: (text: string) => void = () => {}) {
+    return this.storagePlacement.moveStoragePool(id, targetPoolId, signal, log);
   }
   async delete(id: string, expected?: MigrationFingerprint) {
     return this.deleteInternal(id, false, expected);
@@ -2206,28 +2035,7 @@ export class Machines extends EventEmitter {
     ));
   }
   async editSnapshot(id: string, snapshotId: string, patch: { name: string; note: string } | null) {
-    return this.locked(id, async () => {
-      this.requireStopped(id);
-      const vm = this.get(id);
-      const shot = vm.snapshots.find((s) => s.id === snapshotId);
-      if (!shot) throw new AppError('快照不存在', 404);
-      if (patch) Object.assign(shot, patch);
-      else {
-        if (vm.diskEncryption)
-          await this.withDiskSecret(vm, (secret) => this.engine.run('sakura-img', [
-            'snapshot', '--object', qemuSecretObject(secret), '--image-opts',
-            '-d', shot.id, encryptedImageOptions(join(vmDir(id), 'disk.qcow2')),
-          ]));
-        else await this.engine.run('sakura-img',
-          ['snapshot', '-d', shot.id, join(vmDir(id), 'disk.qcow2')]);
-        vm.snapshots = vm.snapshots.filter((s) => s !== shot);
-        await rm(this.snapshotIdentityFile(id, shot.id), { force: true });
-        await this.trustedBootSnapshot?.remove(id, shot.id);
-      }
-      await this.save();
-      this.emit('change');
-      return this.view(id);
-    });
+    return this.snapshots.editSnapshot(id, snapshotId, patch);
   }
   async setForwards(id: string, input: unknown, expected?: VMConfig['forwards']) {
     return this.locked('launch', () =>

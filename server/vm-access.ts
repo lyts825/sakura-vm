@@ -11,8 +11,13 @@ import { captureOperationCheck, withOperationCheck } from './operation-context.t
 import type { PluginScope } from './plugin-scope.ts';
 import { ManagedHooks } from './managed-hooks.ts';
 import { resourceContext, withResourceContext } from './host-runtime/context.ts';
-import { registerVmAccess, vmLiveView, type VmLive } from './vm-reference.ts';
+import { registerVmAccess, vmLiveView } from './vm-reference.ts';
 import { vmTransportPort } from './vm-transport-port.ts';
+import type {
+  VmCatalogPort, VmLockPort, VmEventPort, VmLifecyclePort, VmTransportPort,
+  VmGuestFilesPort, VmRescuePort, VmSnapshotPort, VmStoragePort, VmHardwarePort,
+  VmMigrationPort, VmHaPort, VmEnginePort, VmStoragePoolsPort,
+} from './vm-ports.ts';
 export { vmHostIdentity } from './vm-reference.ts';
 
 const methods = [
@@ -82,26 +87,12 @@ const methods = [
   'retireHaReplica',
   'startHaReplica',
   'terminateSandbox',
-] as const;
-type VmMethod = (typeof methods)[number];
-export type VmAccess = Pick<Machines, VmMethod> & {
-  readonly closing: boolean;
-  readonly records: ReadonlyMap<string, ReturnType<Machines['get']>>;
-  readonly live: ReadonlyMap<string, VmLive>;
-  readonly logs: ReadonlyMap<string, string>;
-  readonly engine: Pick<
-    Machines['engine'],
-    'run' | 'runStatus' | 'version' | 'aarch64Available' | 'whpxAvailable'
-  >;
-  readonly storagePools: Pick<
-    Machines['storagePools'],
-    'view' | 'directory' | 'conflictsWithDataTarget' | 'run' | 'hasPendingCleanup' | 'ensure'
-  >;
-  on(event: string | symbol, listener: (...args: any[]) => void): VmAccess;
-  off(event: string | symbol, listener: (...args: any[]) => void): VmAccess;
-  emit(event: string | symbol, ...args: any[]): boolean;
-  boot?(id: string): string | undefined;
-};
+] as const satisfies readonly (keyof VmAccess)[];
+export type VmAccess = VmCatalogPort & VmLockPort & VmEventPort & VmLifecyclePort &
+  VmTransportPort & VmGuestFilesPort & VmRescuePort & VmSnapshotPort & VmStoragePort &
+  VmHardwarePort & VmMigrationPort & VmHaPort & VmEnginePort & {
+    readonly storagePools: VmStoragePoolsPort;
+  };
 const native = new Set(['exec', 'execInput', 'connect', 'sftp']);
 const queries = new Set([
   'get',

@@ -9,7 +9,13 @@ import { requestUrl } from './http.ts';
 import { OperationGateway } from './operation-gateway.ts';
 import { PORT } from './paths.ts';
 import { projectIdSchema } from './project-catalog.ts';
-import { encodeSocketOutput, parseSocketInput, SOCKET_CLIENT_BYTES, SOCKET_SERVER_BYTES, type SocketChannel } from '../shared/contracts/websocket.ts';
+import {
+  encodeSocketOutput,
+  parseSocketInput,
+  SOCKET_CLIENT_BYTES,
+  SOCKET_SERVER_BYTES,
+  type SocketChannel,
+} from '../shared/contracts/websocket.ts';
 
 /** Only this explicit domain code has a public recovery instruction; never expose exception messages. */
 export function terminalConnectionFailure(error: unknown) {
@@ -123,14 +129,19 @@ export function attachApplicationWebSocket(context: SocketContext) {
         client.on('error', () => {});
         // Install before any asynchronous domain preparation. Read-only channels accept no app input.
         client.on('message', (raw, binary) => {
-          const bytes = Array.isArray(raw) ? raw.reduce((sum, part) => sum + part.byteLength, 0) : raw.byteLength;
+          const bytes = Array.isArray(raw)
+            ? raw.reduce((sum, part) => sum + part.byteLength, 0)
+            : raw.byteLength;
           const desktop = mode === 'desktop' || mode === 'desktop-view';
           if (bytes > SOCKET_CLIENT_BYTES) client.close(1009, 'Message too large');
           else if (desktop ? !binary : binary) client.close(1003, 'Unsupported message type');
           else if (!desktop && mode !== 'terminal') client.close(1008, 'Read-only channel');
           else if (!desktop) {
-            try { parseSocketInput(mode, raw.toString()); }
-            catch { client.close(1008, 'Invalid message'); }
+            try {
+              parseSocketInput(mode, raw.toString());
+            } catch {
+              client.close(1008, 'Invalid message');
+            }
           }
         });
         void admission
@@ -157,7 +168,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
               client.once('close', () => clearTimeout(timer));
             }
             if (mode === 'terminal-view' && 'id' in principal) {
-              const grant = terminalSharing.find(principal.id, id, terminalSession!, terminalProject);
+              const grant = terminalSharing?.find(principal.id, id, terminalSession!, terminalProject);
               if (!grant) {
                 client.terminate();
                 return;
@@ -196,9 +207,14 @@ export function attachApplicationWebSocket(context: SocketContext) {
                 }
                 try {
                   const payload = encodeSocketOutput(mode, { type, data });
-                  if (Buffer.byteLength(payload) > SOCKET_SERVER_BYTES) { client.close(1009, 'Message too large'); return; }
+                  if (Buffer.byteLength(payload) > SOCKET_SERVER_BYTES) {
+                    client.close(1009, 'Message too large');
+                    return;
+                  }
                   client.send(payload);
-                } catch { client.close(1011, 'Invalid server message'); }
+                } catch {
+                  client.close(1011, 'Invalid server message');
+                }
               }
             };
             if (mode === 'desktop' || mode === 'desktop-view') {
@@ -248,7 +264,7 @@ export function attachApplicationWebSocket(context: SocketContext) {
             try {
               const terminalGrant =
                 mode === 'terminal-view' && 'id' in principal
-                  ? terminalSharing.find(principal.id, id, terminalSession!, terminalProject)
+                  ? terminalSharing?.find(principal.id, id, terminalSession!, terminalProject)
                   : null;
               if (mode === 'terminal-view' && 'id' in principal && !terminalGrant?.terminalId)
                 throw new AppError('此共享授权未绑定运行会话，请让管理员重新共享终端', 409);

@@ -3,7 +3,7 @@ import * as dto from './core-dtos.ts';
 import { controllerResponses, sessionViewSchema } from './controller-api.ts';
 import { hostRuntimeDiagnosticSchema, networkRuntimeDiagnosticSchema, operationDeclarationSchema } from './operations.ts';
 import { recoveryViewSchema, recoveryListSchema } from './recovery.ts';
-import { operationResultSchema } from './operation-results.ts';
+import { operationResultSchema, operationResultDirectorySchema, operationResultArchiveSchema } from './operation-results.ts';
 import { jsonValueSchema } from './json-values.ts';
 import type { HttpResponseContract } from './http-response.ts';
 
@@ -185,6 +185,8 @@ export const coreResponseSchemas: Readonly<Record<string, z.ZodType>> = {
   'extension.connect': dto.extensionConnectedSchema, 'extension.inventory': z.object({ permissions: z.array(z.string()), expiresAt: z.number(), checkedAt: z.string(), vms: z.array(vmSummary) }).strict(),
   'guest.interop': dto.guestInteropSchema,
   'operation-results.get': operationResultSchema,
+  'operation-results.list': operationResultDirectorySchema,
+  'operation-results.archive': operationResultArchiveSchema,
   'recoveries.rebuild': recoveryListSchema,
   'recoveries.list': recoveryListSchema, 'recoveries.retry': recoveryViewSchema,
   operations: z.object({ version: z.number(), operations: z.array(operationDeclarationSchema) }).strict(),

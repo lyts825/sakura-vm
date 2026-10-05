@@ -2,7 +2,7 @@
 
 Sakura 使用一个本机 Node.js 控制进程管理 QEMU 与原生辅助进程。React 和 CLI 通过 HTTP/WebSocket 使用同一控制面；业务能力按插件选择激活。
 
-基于应用 2.2.1 / 插件 API 5 的逐层接口、权限、资源归属、失败与验收要求见 [插件设计契约与统管层接口](plugin-design-contract.md)。
+基于应用 2.3.0 / 插件 API 5 的逐层接口、权限、资源归属、失败与验收要求见 [插件设计契约与统管层接口](plugin-design-contract.md)。
 
 ```mermaid
 flowchart TD
@@ -24,18 +24,24 @@ flowchart TD
 - `ServiceLifecycle` 检查 `requires` 的缺失与循环，执行 `create → initialize`，初始化成功后 `SystemServices` 才向 Broker 和插件目录发布。`lateRequires` 声明仅在整体就绪后使用的回调依赖，开放入口前统一核验，排空后拒绝新的回调业务；`disposeRequires` 声明已准入工作在排空时仍需保留的依赖。关闭按真实生命周期依赖倒序；独立服务沿用排空阶段，失败消费者保留其依赖供原清理回执重试。协作宿主入口在整体装配就绪前拒绝业务请求。
 - `server/network/` 是始终启用的网络核心；启动时预检 worker，退出先 drain，待插件与 VM 清理后关闭连接和网络子进程。
 - `server/http-machines.ts` 处理基础实例 API，只能在宿主鉴权、授权、会话锁与维护检查之后调用。
+- 系统服务默认 `startup: 'required'`。安全、身份、策略及官方插件必需服务保持启动必需；明确标记的 12 项附属服务可降级，失败先清理原实例，未确认清理保留 `cleanup-pending` 与依赖。插件中心显示真实失败状态，相关 API 返回 `SERVICE_UNAVAILABLE`；缺失必需、延迟或清理依赖的消费者不能伪装就绪。
+- `core-http-handlers.ts` 组合公共登录、账户、项目、附属功能、系统诊断、宿主能力和插件管理处理器；领域处理器显式登记操作 ID，只声明所需服务端口。`application-http.ts` 负责传输、准入、审计与结果回执。未选官方插件只登记其禁用路由，不导入实现；启用模块在激活时验证处理器，CI 仍检查全部插件。
 - `server/resource-scope.ts` 在资源构造后、异步初始化前登记清理。启动失败和正常退出使用同一登记表；服务装配同时登记物理依赖，清理失败会保留其所需插件、VM、网络等资源，独立资源继续收尾。VM 管理器接管运行时后，撤销运行时的独立登记，避免重复关闭。
 - `server/operation-scope.ts` 提供操作计数和请求取消范围。进入操作取得可重复释放的凭证，请求结束在 `finally` 中释放；请求断开会取消工作并移除监听器。鉴权和业务准入仍在各自边界执行。
 
 ## 操作入口
 
-`OperationGateway` 是核心、插件 HTTP 和 WebSocket 的共同准入入口。`core-operations.ts` 与插件贡献汇总为 306 个精确操作声明（300 个 HTTP、6 个 WebSocket），同一目录驱动运行路由检查、`/api/operations`、OpenAPI 和 SDK。身份、角色、项目权限、会话锁、VM 锁、维护行为、副作用、审批与传输契约由各操作显式声明，不根据路径、HTTP 方法或 ID 推断。声明绑定处理器后才能封闭发布；缺少策略、处理器或精确路由声明会被拒绝。固定路径优先于参数路径；停用插件的操作无法通过准入。
+`OperationGateway` 是核心、插件 HTTP 和 WebSocket 的共同准入入口。`core-operations.ts` 与插件贡献汇总为 308 个精确操作声明（302 个 HTTP、6 个 WebSocket），同一目录驱动运行路由检查、`/api/operations`、OpenAPI 和 SDK。身份、角色、项目权限、会话锁、VM 锁、维护行为、副作用、审批与传输契约由各操作显式声明，不根据路径、HTTP 方法或 ID 推断。声明绑定处理器后才能封闭发布；缺少策略、处理器或精确路由声明会被拒绝。固定路径优先于参数路径；停用插件的操作无法通过准入。
 
 请求开始时捕获凭证、项目和原 VM 运行身份，在读取正文后以及任务、进程、存储等资源排队结束后重新核对权限、维护状态和身份。长连接沿用撤权关闭协议；启停等生命周期操作允许自身推进状态，不复用旧运行身份。权限复核读取最后原子发布的元数据，避免持有资源时反向等待自身的配置写队列。guest interop 保留专用认证，并在宿主进程获准后重验令牌、程序配置和 EXE 摘要。
 
-当前 300 个 HTTP 操作均声明无正文、JSON、表单或二进制请求传输，以及对应 query/header 和公开响应契约；SAML 等入口保留其原协议解析。响应写出前统一核对结构、状态和媒体，6 个 WebSocket 通道声明方向、编码和尺寸界限。`shared/contracts/api-client.generated.ts` 从同一目录生成请求、响应与路径类型，SDK 与类型客户端共用请求编码；动态扩展数据使用明确的 JSON 值类型。`shared/api-client.ts` 适配已有鉴权与取消传输，生成文件差异检查已纳入插件门禁。内部 unknown 参数与动态业务字段不代表已拥有固定领域结构。
+当前 302 个 HTTP 操作均声明无正文、JSON、表单或二进制请求传输，以及对应 query/header 和公开响应契约；SAML 等入口保留其原协议解析。响应写出前统一核对结构、状态和媒体，6 个 WebSocket 通道声明方向、编码和尺寸界限。`shared/contracts/api-client.generated.ts` 从同一目录生成请求、响应与路径类型，SDK 与类型客户端共用请求编码；动态扩展数据使用明确的 JSON 值类型。`shared/api-client.ts` 适配已有鉴权与取消传输，生成文件差异检查已纳入插件门禁。内部 unknown 参数与动态业务字段不代表已拥有固定领域结构。
 
 操作结果回执分别记录业务 outcome、是否进入业务、响应校验、审计和交付状态。响应或审计失败不覆盖原业务错误，也不证明业务没有执行；客户端可通过 `GET /api/operation-results/{correlationId}` 查询当前账户/会话的原结果后，再决定是否按领域协议重试。
+
+JSON 写操作在分配回执前有界读取、校验正文，处理器复用同一请求缓存并保留自身限额和取消检查。领域明确证明未发生目标副作用的认证拒绝记为 `failed / executed=false`，不能按所有 4xx 推断失败。普通、恢复管理和密码登录分别保留 2000、32、64 个在线位置；未知结果不自动淘汰。管理员通过 `GET /api/operation-results` 核对容量和原文摘要，再以 `POST /api/operation-results/archive` 明确归档；归档先持久保留原文、摘要、操作者和原因，再释放在线位置，重试不改变原 outcome。归档本身经过鉴权和审计，但不占用已满回执池。档案最多 4096 条、64 MiB，满额或损坏时保留原证据并要求管理员处理。
+
+恢复操作可通过管理员凭证调用以上接口：从诊断记录取得 `correlationId` 与 `digest`，在原业务领域核对后提交 `{ correlationId, digest, reason: 'checked-in-domain', acknowledgeUnknown: true }`；仅人工核对时 reason 为 `reviewed-manually`。`archiveAvailable: false` 的记录不能直接归档，活跃操作应等待结束。摘要冲突必须刷新再核对；归档不证明原业务成功，不授权盲目重放原操作。若账户授权相关附属服务不可用，改密或删除账户仍会拒绝执行，避免跳过旧授权的撤销。
 
 ## 契约与公共原语
 
@@ -83,6 +89,8 @@ VM 网络由另一组 Node worker 管理无客户机 CPU 的 QEMU user/slirp 后
 `Machines` 保留外部入口、VM 运行身份、操作锁和生命周期所有权；`MachineTransport` 承担 SSH、命令输入与 SFTP 传输，存储复制和身份文件写入使用独立模块。传输通过原宿主取得连接，保留替换运行身份检查、取消和客户端归属。
 
 磁盘加密事务与崩溃恢复由 `VmDiskEncryption` 持有，沙箱期限与停止由 `SandboxLifetimes` 持有，HA 见证与退役票据由 `VmHaAuthority` 持有。`HostPeers` 通过 `PeerMigrationSessions` 管理迁移会话、隧道及关闭回执，通过 `PeerReplicaOperations` 执行副本协议。资源所有者只接收所需端口，不反向导入协调入口。`scripts/domain-boundaries.ts` 声明领域依赖矩阵，架构门禁同时检查类型、静态与动态导入；新增领域模块必须明确所有权与允许依赖。
+
+`VmSnapshots` 持有快照身份文件、磁盘捕获及离线恢复/编辑；`VmStoragePlacement` 持有迁池复制、校验、提交、回滚和清理票据。`Machines` 继续持有 Live、操作锁、状态转换及 RAM 恢复。`vm-ports.ts` 独立声明内部 VM 能力端口，`VmAccess` 组合这些端口，不再从 `Machines` 推导签名；快照比较、合并、复制及存储池使用各自需要的窄接口。该拆分保持原资源所有权和 V1 公共服务兼容性。
 
 `ProjectPreparation` 负责项目配置捕获、准入检查、串行准备和准备租约。统一 `TerminalBackend` 持有终端后端，基础终端、插件终端和共享观看取得独立子句柄。退出只回收自身租约；任务取消不提前释放租约。配置变更、目录迁移和服务关闭按同一个宿主身份检查准确归属。文件替换、工作区配置和启动附件采用可注销的受管注册。
 

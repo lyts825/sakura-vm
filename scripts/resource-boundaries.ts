@@ -11,6 +11,7 @@ const protocolTimers = new Set(['server/ha-host-failover.ts',
 const receipts = new Set(['server/ha-witness-drill.ts', 'server/ha-witness-core.ts',
   'server/ha-witness-lock.ts', 'server/ha-witness-maintenance.ts', 'server/machines.ts',
   'server/domains/vm-disk-encryption.ts',
+  'server/domains/vm-snapshots.ts',
   'server/project-service-scope.ts', 'server/storage-pools.ts', 'server/trusted-boot-service.ts',
   'server/local-store.ts', 'server/metadata-store.ts']);
 const moduleName = (name: string) => name.replace(/^node:/, '');

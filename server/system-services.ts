@@ -3,7 +3,7 @@ import { APP_VERSION } from '../shared/version.ts';
 import { AppError } from '../shared/errors.ts';
 import type { PluginDirectory } from './plugin-directory.ts';
 import { ServiceBroker } from './service-broker.ts';
-import { withPluginAuthority, withPluginCleanup } from './plugin-authority.ts';
+import { pluginCleanup, withPluginAuthority, withPluginCleanup } from './plugin-authority.ts';
 import { serviceRef } from './service-ref.ts';
 import type { PluginInstance } from './plugin-instance.ts';
 import type { HostServiceResolver, HostServiceContracts } from './host-service-contracts.ts';
@@ -14,7 +14,8 @@ import { resourceContext } from './host-runtime/context.ts';
 import type { Jobs } from './jobs.ts';
 import { systemArtifactDigest } from './plugin-artifact.ts';
 import { ServiceLifecycle, type ServiceDefinition, type ServiceDependencyResolver } from './service-lifecycle.ts';
-import type { SystemServiceContracts } from './service-contracts.ts';
+import { systemServiceContracts, type SystemServiceContracts } from './service-contracts.ts';
+import { cleanupService } from './service-cleanup.ts';
 import type { Features } from './features.ts';
 import type { AuditLog } from './audit.ts';
 
@@ -26,6 +27,12 @@ export interface SystemExternalDependencies {
 }
 type DependencyContracts = SystemServiceContracts & SystemExternalDependencies;
 type DependencyId = keyof DependencyContracts;
+const startupDiagnostic = (error: unknown) => {
+  if (error instanceof SyntaxError) return '配置 JSON 无法解析（SyntaxError）';
+  if (error instanceof Error && error.name === 'ZodError') return '配置未通过格式校验（ZodError）';
+  const code = error instanceof AppError ? error.code : error instanceof Error ? error.name : undefined;
+  return '服务初始化未完成' + (code && /^[A-Za-z0-9_]+$/.test(code) ? `（${code}）` : '');
+};
 export type SystemFactoryResolver<K extends keyof SystemServiceContracts = keyof SystemServiceContracts,
   R extends readonly DependencyId[] = readonly DependencyId[], L extends readonly DependencyId[] = readonly DependencyId[],
   D extends readonly DependencyId[] = readonly DependencyId[]> = Readonly<{
@@ -38,17 +45,20 @@ type SystemDefinition<K extends keyof SystemServiceContracts, T extends SystemSe
   R extends readonly DependencyId[], L extends readonly DependencyId[], D extends readonly DependencyId[]> =
   Omit<ServiceDefinition<T>, 'id' | 'requires' | 'lateRequires' | 'disposeRequires' | 'create' | 'initialize' | 'dispose'> & {
     id: K; requires: R; lateRequires?: L; disposeRequires?: D;
+    /** Local diagnostic only; never included in a public missing-service response. */
+    startupRecovery?: string;
     create(dependencies: SystemFactoryResolver<K, R, L, D>): T | Promise<T>;
     initialize(value: T, dependencies: SystemFactoryResolver<K, R, L, D>): void | Promise<void>;
     dispose(value: T | undefined, dependencies: SystemFactoryResolver<K, R, L, D>): void | Promise<void>;
   };
 
-/** Required host providers share the same instance, broker and cleanup machinery. */
+/** Host providers share the same instance, broker and cleanup machinery. */
 export class SystemServices {
   readonly broker: ServiceBroker;
   readonly caller: PluginInstance;
   private owned = new Map<string, { instance: PluginInstance; value: any }>();
   private vmPorts = new WeakMap<PluginInstance, ReturnType<typeof vmAccess>>();
+  private startupRecovery = new Map<string, string>();
   readonly lifecycle = new ServiceLifecycle();
   constructor(readonly directory: PluginDirectory) {
     this.broker = new ServiceBroker(directory, PLUGINS);
@@ -65,10 +75,39 @@ export class SystemServices {
     const R extends readonly DependencyId[], const L extends readonly DependencyId[] = readonly [],
     const D extends readonly DependencyId[] = readonly []>(definition: SystemDefinition<K, T, R, L, D>) {
     definition = Object.freeze({ ...definition });
+    if (definition.startupRecovery) this.startupRecovery.set(definition.id, definition.startupRecovery);
     const resolver = (raw: ServiceDependencyResolver, instance: PluginInstance): SystemFactoryResolver<K, R, L, D> => {
+      const originals = new Map<string, PluginInstance>();
       const lookup = (id: DependencyId, late: boolean) => {
         const value = late ? raw.late(id) : raw.get(id);
-        return id.startsWith('@') ? value : this.broker.system(instance, id, [id]);
+        if (pluginCleanup() === instance) {
+          if (id.startsWith('@') || ![...definition.requires, ...(definition.disposeRequires || [])].includes(id))
+            throw new AppError('清理依赖未声明为原资源依赖：' + id, 403, 'SERVICE_DEPENDENCY_DENIED');
+          const provider = this.owned.get(id);
+          if (!provider || provider.value !== value)
+            throw new AppError('原清理依赖不可用：' + id, 503, 'SERVICE_NOT_READY');
+          if (!originals.has(id)) originals.set(id, provider.instance);
+          const original = originals.get(id)!;
+          const check = () => {
+            if (pluginCleanup() !== instance || !['draining', 'cleanup-pending'].includes(instance.phase) ||
+                this.directory.get('system', definition.id) !== instance ||
+                this.directory.get('system', id) !== original || this.owned.get(id)?.instance !== original)
+              throw new AppError('原服务清理上下文或代次已变化', 403, 'PLUGIN_REVOKED');
+            if ((late ? raw.late(id) : raw.get(id)) !== value)
+              throw new AppError('原清理依赖已变化：' + id, 403, 'PLUGIN_REVOKED');
+            original.check('services');
+          };
+          return cleanupService(value, systemServiceContracts[id], original, check);
+        }
+        if (id.startsWith('@')) return value;
+        const provider = this.directory.get('system', id);
+        if (provider) {
+          const original = originals.get(id);
+          if (original && original !== provider)
+            throw new AppError('服务依赖代次已变化：' + id, 403, 'PLUGIN_REVOKED');
+          originals.set(id, provider);
+        }
+        return this.broker.system(instance, id, [id]);
       };
       return Object.freeze({ get: (id: R[number]) => lookup(id, false),
         late: (id: R[number] | L[number] | D[number]) => lookup(id, true),
@@ -94,7 +133,7 @@ export class SystemServices {
           entry.value = await withPluginAuthority(instance, () => definition.create(dependencies));
           return entry.value;
         } catch (error) {
-          instance.error = String(error);
+          instance.error = definition.startup === 'degradable' ? startupDiagnostic(error) : String(error);
           instance.revoke();
           instance.phase = 'cleanup-pending';
           this.directory.changed();
@@ -111,7 +150,7 @@ export class SystemServices {
           instance.activationMs = performance.now() - started;
           this.directory.publish(instance);
         } catch (error) {
-          instance.error = String(error);
+          instance.error = definition.startup === 'degradable' ? startupDiagnostic(error) : String(error);
           instance.revoke();
           instance.phase = 'cleanup-pending';
           this.directory.changed();
@@ -128,11 +167,43 @@ export class SystemServices {
     await this.lifecycle.start<T>(definition.id);
     return this.broker.system<SystemServiceContracts[K]>(this.caller, definition.id, [definition.id])!;
   }
+  async startDegradable<K extends keyof SystemServiceContracts, T extends SystemServiceContracts[K],
+    const R extends readonly DependencyId[], const L extends readonly DependencyId[] = readonly [],
+    const D extends readonly DependencyId[] = readonly []>(
+    definition: SystemDefinition<K, T, R, L, D> & { startup: 'degradable' },
+  ): Promise<SystemServiceContracts[K] | undefined> {
+    this.register(definition);
+    const value = await this.lifecycle.startDegradable<T>(definition.id);
+    if (value !== undefined) return this.require(definition.id);
+    await this.recordUnavailable(definition.id);
+    return undefined;
+  }
+  private async recordUnavailable(id: string) {
+    const stage = this.lifecycle.view().find(entry => entry.id === id);
+    if (!stage?.unavailable) return;
+    let instance = this.directory.get('system', id);
+    if (!instance) {
+      instance = this.directory.begin('system', id, APP_VERSION, systemArtifactDigest(id));
+      instance.revoke();
+      await instance.scope.dispose();
+    }
+    const original = instance.error || stage.error || '依赖服务不可用';
+    instance.error = `${original}。${this.startupRecovery.get(id) || '检查本服务配置与启动诊断'}；修复后重启 Sakura。`;
+    if (instance.phase !== 'cleanup-pending') instance.phase = 'failed';
+    this.directory.changed();
+  }
+  require<K extends keyof SystemServiceContracts>(id: K): SystemServiceContracts[K] {
+    if (!this.has(id))
+      throw new AppError(`服务 ${id} 当前不可用；请查看插件管理中的启动诊断，修复后重启 Sakura。`,
+        503, 'SERVICE_UNAVAILABLE');
+    return this.broker.system<SystemServiceContracts[K]>(this.caller, id, [id])!;
+  }
   ready<K extends keyof SystemExternalDependencies>(id: K, value: SystemExternalDependencies[K]) {
     this.lifecycle.ready(id, value);
   }
   async startAll() {
     await this.lifecycle.startAll();
+    for (const entry of this.lifecycle.view()) if (entry.unavailable) await this.recordUnavailable(entry.id);
   }
   vm(id: string, machines: Machines) {
     const instance = this.directory.get('system', id)!;
@@ -178,7 +249,8 @@ export class SystemServices {
     );
   }
   jobStores(): Jobs[] {
-    return [...this.owned.values()].flatMap((entry) => (entry.value?.jobs ? [entry.value.jobs as Jobs] : []));
+    return [...this.owned.values()].flatMap(entry =>
+      entry.instance.phase === 'running' && entry.value?.jobs ? [entry.value.jobs as Jobs] : []);
   }
   has(id: string) {
     return this.owned.get(id)?.instance.phase === 'running';
@@ -190,6 +262,7 @@ export class SystemServices {
     const entry = this.owned.get(id);
     if (!entry) return;
     const { instance } = entry;
+    const originalError = instance.error;
     instance.revoke();
     this.directory.changed();
     try {
@@ -200,7 +273,7 @@ export class SystemServices {
       this.lifecycle.confirmDisposed(id);
     } catch (error) {
       instance.phase = 'cleanup-pending';
-      instance.error = String(error);
+      instance.error = originalError ? `${originalError}；清理待确认：${String(error)}` : String(error);
       throw error;
     } finally {
       this.directory.changed();

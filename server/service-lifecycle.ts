@@ -7,6 +7,8 @@ export type ServiceDependencyResolver = Readonly<{
 }>;
 export type ServiceDefinition<T> = {
   id: string;
+  /** Required providers gate admission; degradable providers may remain unavailable after cleanup. */
+  startup?: 'required' | 'degradable';
   requires: readonly string[];
   /** Callbacks used only while application admission is open; drained before disposal. */
   lateRequires?: readonly string[];
@@ -23,7 +25,10 @@ type Entry = {
   state: 'registered' | 'initializing' | 'ready' | 'failed' | 'disposing' | 'cleanup-pending' | 'disposed';
   value?: unknown;
   pending?: Promise<unknown>;
+  degradation?: Promise<unknown>;
   attempted: boolean;
+  unavailable?: boolean;
+  error?: unknown;
 };
 
 /** Explicit startup graph. A constructor returning is not a readiness signal. */
@@ -46,6 +51,7 @@ export class ServiceLifecycle {
       throw new AppError('重复或已关闭的服务声明：' + definition.id, 409, 'SERVICE_DECLARATION_INVALID');
     if (
       !definition.id ||
+      (definition.startup !== undefined && !['required', 'degradable'].includes(definition.startup)) ||
       !Array.isArray(definition.requires) ||
       (definition.lateRequires !== undefined && !Array.isArray(definition.lateRequires)) ||
       (definition.disposeRequires !== undefined && !Array.isArray(definition.disposeRequires)) ||
@@ -124,13 +130,13 @@ export class ServiceLifecycle {
     if (entry.state !== 'registered')
       throw new AppError('服务启动失败，需先确认清理：' + id, 503, 'SERVICE_NOT_READY');
     const pending = Promise.resolve().then(async () => {
-      for (const dependency of entry.definition.requires) {
-        if (!this.external.has(dependency)) await this.start(dependency);
-      }
-      if (this.draining) throw new AppError('服务管理层正在关闭', 503, 'SERVICE_DRAINING');
-      entry.state = 'initializing';
-      entry.attempted = true;
       try {
+        for (const dependency of entry.definition.requires) {
+          if (!this.external.has(dependency)) await this.start(dependency);
+        }
+        if (this.draining) throw new AppError('服务管理层正在关闭', 503, 'SERVICE_DRAINING');
+        entry.state = 'initializing';
+        entry.attempted = true;
         const dependencies = this.dependencies(id);
         entry.value = await entry.definition.create(dependencies);
         await entry.definition.initialize(entry.value, dependencies);
@@ -139,6 +145,7 @@ export class ServiceLifecycle {
         return entry.value;
       } catch (error) {
         entry.state = 'failed';
+        entry.error = error;
         throw error;
       }
     });
@@ -149,11 +156,50 @@ export class ServiceLifecycle {
       entry.pending = undefined;
     }
   }
-  /** Admission opens only after every early and deferred dependency is ready. */
+  /** Failed optional providers never publish readiness; their cleanup retains the original graph. */
+  async startDegradable<T>(id: string): Promise<T | undefined> {
+    if (this.draining) throw new AppError('服务管理层正在关闭', 503, 'SERVICE_DRAINING');
+    const entry = this.entries.get(id);
+    if (!entry || entry.definition.startup !== 'degradable')
+      throw new AppError('服务未声明可降级：' + id, 409, 'SERVICE_DECLARATION_INVALID');
+    if (entry.degradation) return entry.degradation as Promise<T | undefined>;
+    if (entry.unavailable) return undefined;
+    const pending = (async () => {
+      try {
+        return await this.start<T>(id);
+      } catch (error) {
+        if (this.draining || entry.state !== 'failed') throw error;
+        entry.unavailable = true;
+        if (entry.attempted) {
+          entry.state = 'disposing';
+          try {
+            await entry.definition.dispose(entry.value, this.dependencies(id));
+            entry.state = 'disposed';
+          } catch (cleanup) {
+            entry.state = 'cleanup-pending';
+            entry.error = new AggregateError([error, cleanup], '附属服务启动失败且清理待确认：' + id);
+          }
+        }
+        return undefined;
+      }
+    })();
+    entry.degradation = pending;
+    try { return await pending; }
+    finally { entry.degradation = undefined; }
+  }
+  /** Every admitted consumer still requires all of its declared providers to be ready. */
   validateReady() {
     if (this.draining) throw new AppError('服务管理层正在关闭', 503, 'SERVICE_DRAINING');
     this.validate();
     for (const [id, entry] of this.entries) {
+      if (entry.state !== 'ready' && entry.definition.startup === 'degradable' && entry.unavailable &&
+          ['failed', 'disposed', 'cleanup-pending'].includes(entry.state)) {
+        for (const dependency of [...entry.definition.requires, ...(entry.definition.lateRequires || []),
+          ...(entry.definition.disposeRequires || [])])
+          if (!this.external.has(dependency) && !this.entries.has(dependency))
+            throw new AppError('服务依赖未声明：' + id + ' → ' + dependency, 503, 'SERVICE_DEPENDENCY_MISSING');
+        continue;
+      }
       if (entry.state !== 'ready')
         throw new AppError('服务尚未就绪：' + id, 503, 'SERVICE_NOT_READY');
       for (const dependency of [...entry.definition.requires, ...(entry.definition.lateRequires || []),
@@ -175,7 +221,9 @@ export class ServiceLifecycle {
   async startAll() {
     this.validate();
     try {
-      for (const id of this.entries.keys()) await this.start(id);
+      for (const [id, entry] of this.entries)
+        if (entry.definition.startup === 'degradable') await this.startDegradable(id);
+        else await this.start(id);
       this.validateReady();
     } catch (error) {
       try {
@@ -190,6 +238,10 @@ export class ServiceLifecycle {
     return [...this.entries].map(([id, entry]) => ({
       id,
       state: entry.state,
+      attempted: entry.attempted,
+      startup: entry.definition.startup ?? 'required',
+      unavailable: !!entry.unavailable,
+      ...(entry.error !== undefined ? { error: String(entry.error) } : {}),
       requires: [...entry.definition.requires],
       lateRequires: [...(entry.definition.lateRequires || [])],
       disposeRequires: [...(entry.definition.disposeRequires || [])],
@@ -206,7 +258,8 @@ export class ServiceLifecycle {
     this.draining = true;
     const pending = Promise.resolve().then(async () => {
       await Promise.allSettled(
-        [...this.entries.values()].flatMap((entry) => (entry.pending ? [entry.pending] : [])),
+        [...this.entries.values()].flatMap(entry =>
+          [entry.pending, entry.degradation].filter((pending): pending is Promise<unknown> => !!pending)),
       );
       const remaining = new Set(
         [...this.entries]

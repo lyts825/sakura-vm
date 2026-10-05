@@ -1,8 +1,8 @@
 # 插件设计契约与统管层接口
 
-文档版本：**1.0.1**。核对日期：**2026-10-05**。当前实现：应用和内置包 **2.2.1**，宿主插件 API **5**，公共服务契约 **V1**。原 1.0.0 文档基线为应用 `2.2.0 / a8d3e8a`。
+文档版本：**1.1.0**。核对日期：**2026-10-05**。当前实现：应用和内置包 **2.3.0**，宿主插件 API **5**，公共服务契约 **V1**。原 1.0.0 文档基线为应用 `2.2.0 / a8d3e8a`。
 
-本契约将当前架构整理为插件开发、宿主扩展和评审可以共同使用的接口规范。2.2.1 按原契约对齐官方插件引用、前端传输类型、贡献与清理责任；兼容接口、HTTP 路径和数据格式保持原协议，具体实现与验收见 [项目状态](../PROJECT_STATUS.md)。文中的接口块是现有接口的摘录或明确标注的类型投影，省略导入与非相关成员；完整签名以链接的源码为准，不能把宿主内部接口当作插件 SDK。
+本契约将当前架构整理为插件开发、宿主扩展和评审可以共同使用的接口规范。2.3.0 增加回执容量恢复与明确的附属服务降级，收敛 HTTP 处理器和 VM 领域端口；既有公开接口、HTTP 路径和数据格式保持兼容，具体实现与验收见 [项目状态](../PROJECT_STATUS.md)。文中的接口块是现有接口的摘录或明确标注的类型投影，省略导入与非相关成员；完整签名以链接的源码为准，不能把宿主内部接口当作插件 SDK。
 
 阅读顺序：先核对第 1–3 节的边界与包协议，再按第 4–22 节查阅所需统管层，最后按第 23–25 节实施与验收。[插件与整合包协议](plugin-protocol.md)保留包结构、选择迁移和生成流程；[架构说明](architecture.md)说明整体调用关系；[交付记录](plugin-system.md)记录历次验收，不作为当前接口清单。
 
@@ -100,7 +100,7 @@ type ResourceIdentity = {
 
 | 版本对象 | 当前值 | 修改规则 |
 | --- | --- | --- |
-| 应用及内置插件/整合包 | `2.2.1` | 沿用应用发行版；兼容重构与修复 |
+| 应用及内置插件/整合包 | `2.3.0` | 沿用应用发行版；兼容功能与重构 |
 | manifest / pack `schemaVersion` | `1` | 声明数据结构版本 |
 | 可信插件 `apiVersion` | `5` | 生命周期、显式操作与服务引用协议 |
 | 用户选择 `schemaVersion` | `3` | 兼容读取选择 V1/V2，修改时写 V3 |
@@ -190,6 +190,7 @@ interface PluginDirectoryPort {
 ```ts
 type ServiceDefinition<T> = {
   id: string;
+  startup?: 'required' | 'degradable';
   requires: readonly string[];
   lateRequires?: readonly string[];
   disposeRequires?: readonly string[];
@@ -211,6 +212,7 @@ type ServiceDependencyResolver = Readonly<{
 | --- | --- |
 | `register(definition): void` | 冻结声明、登记 create/initialize/dispose；构造前先登记失败清理 |
 | `start(definition): Promise<SystemServiceContracts[K]>` | 登记并启动该服务，返回 Broker 句柄 |
+| `startDegradable(definition): Promise<SystemServiceContracts[K] \| undefined>` | 显式附属服务失败后清理原实例并保留诊断；不会伪造可用句柄 |
 | `ready(id, value): void` | 仅登记已存在的外部阶段和真实对象，不能只标记字符串“ready” |
 | `startAll(): Promise<void>` | 按必需依赖启动，初始化成功后才发布公共句柄 |
 | `lifecycle.validateReady(): void` | 开放应用入口前核对延迟依赖、清理依赖和就绪状态 |
@@ -218,6 +220,8 @@ type ServiceDependencyResolver = Readonly<{
 | `retire(id): Promise<void>` / `close(): Promise<void>` | 撤销原实例并执行依赖约束下的收尾，失败保留依赖 |
 
 三类依赖不得混用：`requires` 用于构造/初始化与关闭；`lateRequires` 用于整体就绪后的入站回调，排空后不能继续调用；`disposeRequires` 用于已准入任务及其清理仍会访问的提供者。`get()` 仅接受 requires，`late()` 接受声明的三类依赖但检查消费者阶段与提供者就绪，`self()` 仅在自身就绪后可用。`disposePhase` 仅排序无依赖的服务，不能越过真实依赖。
+
+`startup` 默认 required。应用显式区分 31 项必需服务与 12 项可降级附属服务；安全、身份与策略仍须成功初始化。就绪核验允许明确的附属失败，但所有消费者的必需、延迟与清理依赖仍需就绪；插件声明的 `systemDependencies` 不因降级而消失。附属失败在插件中心显示，相关入口通过 `requireService()` 返回 `SERVICE_UNAVAILABLE`。清理期只能访问声明的原代依赖数据和原资源清理回执，不能借保留依赖重新开展业务。
 
 插件通过下面的**实际公开接口**取得宿主服务，不获得 `SystemServices`：
 
@@ -368,7 +372,7 @@ type PluginOperation = {
 
 `OperationEntry` 组合 declaration、handler 种类、上述请求/响应合同及成功状态。manifest 是路由/策略来源；`server.ts` 的 `operations` 是实现；legacy route 还必须有逐 ID 的 `httpHandlers` 绑定。请求表与公开响应表见 [http-route-requests.ts](../server/http-route-requests.ts)、[plugin-route-responses.ts](../shared/contracts/plugin-route-responses.ts)，不能只在处理器内部增加私有 validator。
 
-当前基线有 **300 个 HTTP 操作和 6 个 WebSocket 操作**。HTTP 均有请求传输及响应契约；这里的完整指目录声明与对应运行边界，不表示动态业务 JSON 已经全部拥有固定领域字段。`PluginOperation.execute` 内部仍接受 unknown；扩展 JSON 仍使用明确的 JSON 值类型。
+当前基线有 **302 个 HTTP 操作和 6 个 WebSocket 操作**。HTTP 均有请求传输及响应契约；这里的完整指目录声明与对应运行边界，不表示动态业务 JSON 已经全部拥有固定领域字段。`PluginOperation.execute` 内部仍接受 unknown；扩展 JSON 仍使用明确的 JSON 值类型。
 
 | 边界 | 必须遵守的行为 |
 | --- | --- |
@@ -417,7 +421,7 @@ interface PluginContextPort extends PluginServicePort {
 
 `activity.exclusive(name, work)` 用于既有宿主互斥流程；它不能替代操作授权、VM 锁、执行作用域或 I/O 预算。`onDispose` 必须在资源存在后及时登记；清理要返回真实完成的 Promise。`capabilities.diagnostics()` 返回本插件作用域的诊断，而非其它插件的私有对象。
 
-`VmAccess` 是现有 `Machines` 方法白名单与受控视图，**当前不是独立于实现的 V1 VM SDK**。逐方法签名继承 [machines.ts](../server/machines.ts)，完整白名单以 [vm-access.ts](../server/vm-access.ts) 为准：
+`VmAccess` 由 [vm-ports.ts](../server/vm-ports.ts) 的独立内部领域端口组合，运行白名单与受控视图见 [vm-access.ts](../server/vm-access.ts)。签名不再从 `Machines` 推导；它仍是宿主内部能力边界，**不是单独版本化的 V1 VM SDK**：
 
 | 分组 | 主要接口 | 调用责任 |
 | --- | --- | --- |
@@ -1031,7 +1035,9 @@ type OperationResult = {
 };
 ```
 
-`executed` 表示是否进入业务，不证明全部副作用成功；`outcome`、responseValidated、auditRecorded、delivery 分开记录。发送失败、响应校验失败或审计失败都可能发生在业务已经执行之后；先查询原 correlationId，再按领域协议决定是否重试。本接口不是通用幂等键或自动回滚机制。持久回执只存结果元数据，不存请求正文、凭证或业务响应载荷。
+`executed` 表示已进入可能产生目标副作用的业务边界，不证明副作用已经成功；领域明确证明未执行时可记为 false。`outcome`、responseValidated、auditRecorded、delivery 分开记录。JSON 写请求在分配回执前有界读取并校验，读取失败不会占据未知结果位置；只有领域明确证明未执行的拒绝可以记为 failed，不能按 HTTP 4xx 统一推断。发送失败、响应校验失败或审计失败都可能发生在业务已经执行之后；先查询原 correlationId，再按领域协议决定是否重试。本接口不是通用幂等键或自动回滚机制。持久回执只存结果元数据，不存请求正文、凭证或业务响应载荷。
+
+普通、恢复管理、密码登录回执池分别最多 2000、32、64 条，完成记录可淘汰，未知结果保留。管理员归档需提交当前原文 digest、受限原因和 `acknowledgeUnknown: true`；先持久保存原文及操作者证据，再释放在线位置。归档经过 owner 准入和审计，不依赖新回执配额，原结果及账户查询权限保持不变。档案上限 4096 条 / 64 MiB，满额、损坏或原文变化时停止归档并保留原证据。
 
 | 管理入口 | 用途 |
 | --- | --- |
@@ -1041,6 +1047,8 @@ type OperationResult = {
 | `GET /api/host-runtime` | owner 的预算、等待、资源、调度、元数据及阶段耗时诊断 |
 | `GET /api/network-runtime` | owner 的网络 worker、VM generation 与受管连接状态 |
 | `GET /api/operation-results/{correlationId}` | 当前账户/会话可查询的原操作回执；不能查询别人的结果 |
+| `GET /api/operation-results` | owner 查看在线容量、损坏记录及可归档原文摘要 |
+| `POST /api/operation-results/archive` | owner 按当前摘要保留档案后释放在线容量；不把 unknown 改判成功 |
 
 上述入口各自仍按 `core-operations.ts` 的显式角色、会话和媒体策略执行，不因“诊断接口”统一设为公开。
 
@@ -1215,7 +1223,7 @@ npm run plugins:contracts:freeze -- --release <应用版本> --commit <已验收
 
 1. 官方选择修改仍需重启生效；内部 unload/recovery 不等于完整公开热更新 API。
 2. 源码插件共享宿主进程，静态门禁和公共代理不构成任意恶意 JavaScript 沙箱。
-3. `VmAccess` 的类型仍从 Machines 白名单映射；`JobsV1.result` 及部分内部边界仍有 any/unknown。它们没有因为文档整理就变成独立强类型 SDK。
+3. `VmAccess` 已有独立内部领域端口，但尚未单独版本化；`JobsV1.result` 及部分内部边界仍有 any/unknown。它们不是完整独立的强类型 SDK。
 4. 新网络协议、新 WS 通道、新宿主公共服务和新计算执行器仍需增加并审核适配器，不支持 manifest 任意注册。
 5. 元数据只有按文件串行与原子发布，没有跨文件/跨宿主事务；副作用恢复依赖原领域票据。
 6. 预算针对受管资源，不证明 OS 级任意进程后代、磁盘流量或总内存已被硬隔离。

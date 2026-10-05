@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-import type { VmAccess as Machines } from './vm-access.ts';
+import type { VmSnapshotReplicationPort } from './vm-ports.ts';
 import { AppError } from '../shared/errors.ts';
 import { createSchema } from '../shared/contracts/vm.ts';
 import { DATA } from './paths.ts';
@@ -30,7 +30,7 @@ export class SnapshotReplications {
   private state?: z.infer<typeof storeSchema>;
   private metadata: MetadataStore<z.infer<typeof storeSchema>>;
   private active = new Set<string>();
-  constructor(private machines: Machines, private bundles: BundlesV1, private peers: HostPeersV1,
+  constructor(private machines: VmSnapshotReplicationPort, private bundles: BundlesV1, private peers: HostPeersV1,
     private file = join(DATA, 'snapshot-replications.json')) {
     this.metadata = new MetadataStore(file, { fallback: () => ({ version: 1, entries: [] }),
       parse: (value) => storeSchema.parse(value) });

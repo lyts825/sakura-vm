@@ -31,12 +31,18 @@ export function publicApiFailure(error: unknown, correlationId: string, auditFai
     415: '请求媒体类型不符合契约',
     423: '控制面已锁定，请先解锁',
   };
-  const message =
+  const availabilityMessages: Record<string, string> = {
+    SERVICE_UNAVAILABLE: '此功能暂不可用，请查看插件中心的启动诊断，修复后重启',
+    OPERATION_RESULTS_FULL: '未确认操作已达上限，请管理员核对并归档操作回执后重试',
+    OPERATION_ARCHIVES_FULL: '操作结果档案已满，请管理员保管并迁移旧档案后重试',
+    OPERATION_ARCHIVE_UNAVAILABLE: '操作结果档案需要检查，原证据已保留',
+  };
+  const message = availabilityMessages[code] || (
     code === 'AUDIT_UNAVAILABLE'
       ? '审计记录暂不可用，请查询操作结果后再决定是否重试'
       : code === 'INVALID_OPERATION_RESPONSE'
         ? '操作响应校验失败，请查询操作结果后再决定是否重试'
-        : '服务操作失败';
+        : '服务操作失败');
   const dto: ApiErrorDto = {
     error: messages[status] || message,
     code,
