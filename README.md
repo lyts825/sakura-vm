@@ -189,6 +189,8 @@ npm run sakura -- help all
 
 模块边界、生命周期、项目执行与前端状态组织见 [架构与依赖边界](docs/architecture.md)。
 
+插件开发与宿主扩展的详细接口、权限、资源归属、退出恢复和验收规则见 [插件设计契约与统管层接口](docs/plugin-design-contract.md)。
+
 ```text
 src/                    React + xterm.js 控制台
 plugins/<id>/           同包维护 manifest.ts、server.ts 与可选 client.tsx

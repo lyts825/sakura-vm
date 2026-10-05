@@ -1,5 +1,7 @@
 # 插件与整合包协议
 
+本页说明包结构、声明和选择迁移。基于 2.2.0 / API 5 重新整理的职责、逐层接口签名、权限、资源归属、退出与恢复要求见 [插件设计契约与统管层接口](plugin-design-contract.md)。
+
 独立下载的第三方计算插件使用 [签名 WebAssembly 执行协议](community-plugins.md)，与官方插件共享管理状态、实例代次与清理责任；其执行适配器不开放可信 Node.js 服务上下文。
 
 Sakura 将可独立启用的运行服务作为插件，将功能组合声明为整合包。当前提供 32 个内置插件、9 个整合包。完整清单见 [架构与分包](plugin-architecture.md)。
@@ -41,7 +43,7 @@ scripts/
 | -------------------- | ------- | -------------------------------- |
 | 声明 `schemaVersion` | `1`     | 插件和整合包数据结构版本         |
 | 插件 `apiVersion`    | `5`     | 宿主提供的生命周期和服务访问协议 |
-| 包 `version`         | `2.0.0` | 当前随源码交付的插件/整合包版本  |
+| 包 `version`         | `2.2.0` | 当前随源码交付的插件/整合包版本  |
 | 选择 `schemaVersion` | `3`     | `plugins.json` 的用户选择格式    |
 
 这些版本分别校验。依赖使用完整的 `major.minor.patch` 精确版本；首版不解析范围、不下载包、不同时安装多个版本。声明里的 `version` 只表达当前内置版本，既有选择文件保存标识和用户意图，升级时依据当前发行版的目录重新解析。
@@ -103,9 +105,9 @@ export const manifest = definePlugin({
 | `contributes.developmentSections` | 开发页中独立挂载的功能区                                 |
 | `contributes.managed`             | Jobs、重试、调度、事件与拦截器等受管注册种类             |
 
-HTTP 声明拥有完整命名空间及其子路径，例如快照插件的 `/api/vms/:vmId/snapshots` 包括快照恢复子路径。宿主先检查插件是否激活和 HTTP 方法。声明了 `operations` 的请求还会按精确路径和方法匹配，使用同包 `server.ts` 的 Zod `request`/`response` Schema 验证载荷与返回值，并由宿主输出声明的成功状态。暂未迁移的路由仍由插件 `route` 验证具体子路径、载荷和状态。不允许两个插件共享同一命名空间，也不能覆盖核心入口。
+HTTP 声明拥有完整命名空间及其子路径，例如快照插件的 `/api/vms/:vmId/snapshots` 包括快照恢复子路径。命名空间用于归属，实际发布还必须逐操作匹配精确路径和方法。声明式 `operations` 使用同包 `server.ts` 的 Zod `request`/`response` Schema，宿主输出声明成功状态；legacy route 必须逐项绑定 `httpHandlers`，并接受共同的请求和公开响应契约检查。不允许两个插件共享同一命名空间，也不能覆盖核心入口。
 
-所有可发布 HTTP 方法还必须逐项提供精确 `contributes.routes`，包括完整 `policy` 和处理器种类；仅声明 HTTP 前缀不足以发布操作。策略显式包含访问来源、角色、身份、项目绑定、维护与会话行为、VM 锁、副作用和传输类型。路径更名只能影响路由匹配，不能改变这些准入字段；缺失字段或声明与实现不一致由门禁拒绝。`operations` 的响应 Schema 继续用于实际载荷验证，尚未完成响应契约的旧路由保持 `partial / unknown`。
+所有可发布 HTTP 方法还必须逐项提供精确 `contributes.routes`，包括完整 `policy` 和处理器种类；仅声明 HTTP 前缀不足以发布操作。策略显式包含访问来源、角色、身份、项目绑定、维护与会话行为、VM 锁、副作用和传输类型。路径更名只能影响路由匹配，不能改变这些准入字段；缺失字段或声明与实现不一致由门禁拒绝。当前 300 个 HTTP 操作均声明请求传输与公开响应契约，另 6 个 WebSocket 操作声明方向、编码和尺寸界限；动态扩展 JSON 与内部 unknown 参数不因此变成固定领域类型。
 
 `projectScoped: true` 由宿主调用项目上下文包装器，避免每个处理器自行选择项目。它必须用于 VM 命名空间，并声明 `projects` 为必需或可选依赖；如果只是可选配套，未启用项目插件时仍按实例操作。文件历史、网络和私密配置使用这种可选集成。
 
@@ -115,7 +117,7 @@ WebSocket 入口仍是宿主支持的固定通道。页面、标签和开发功�
 
 内置插件通过同包 `services.ts` 导出绑定独立 V1 接口与契约 ID 的 `ServiceRef`，使用 `host.provide(services.commands, value)` 和 `host.use(services.commands)` 注册与访问服务。`host.optional(ref)` 返回可选服务。宿主检查提供者、声明归属、直接依赖、接口版本与两端原代实例。公共接口由 `server/service-contracts/v1.ts` 维护，运行时描述符从契约生成，不从实现类推导。字符串注册/读取 API 已删除，声明的上下文字段也返回同一 Broker 的公共句柄。详见 [架构与依赖边界](architecture.md)。
 
-`server.ts` 导出同包 `manifest`、`activate(context)`，按声明导出 `operations` 或以操作 ID 为键的 `httpHandlers`，可选导出 `deactivate(context)`。旧 `route(...)` 可作为适配器实现，但必须由 `httpHandlers` 逐项绑定；仅导出通用路由函数不能发布操作。完整签名在 [plugin-api.ts](../server/plugin-api.ts)。新服务声明类型化引用，再通过 `provide(ref, value)` 注册，通过 `use(ref)` 或 `optional(ref)` 读取直接依赖提供的公共接口；消费者不能关闭提供者、取得实现对象或修改服务字段。
+`server.ts` 导出同包 `manifest`、`activate(context)` 和当前模块类型要求的 `route`，按声明导出 `operations` 或以操作 ID 为键的 `httpHandlers`，可选导出 `deactivate(context)`。纯声明式操作插件的 `route` 可以返回 false；legacy `route(...)` 作为适配器时必须由 `httpHandlers` 逐项绑定，仅导出通用路由函数不能发布操作。完整签名在 [plugin-api.ts](../server/plugin-api.ts)。新服务声明类型化引用，再通过 `provide(ref, value)` 注册，通过 `use(ref)` 或 `optional(ref)` 读取直接依赖提供的公共接口；消费者不能关闭提供者、取得实现对象或修改服务字段。
 
 1. 初始化前校验完整目录：数据结构、未知依赖、必需/可选版本、重复服务、路由/WS 冲突、核心入口、项目作用域和循环。
 2. 按必需依赖顺序导入入口，验证入口声明与目录一致，然后提供 `PluginContext`。
@@ -133,7 +135,7 @@ WebSocket 入口仍是宿主支持的固定通道。页面、标签和开发功�
 
 插件通过 `context.capabilities.metadata.reference('name', fallback)` 取得不透明回执，使用 `read()` 和 `replace()` 读写；回执不包含宿主路径。宿主领域构造器可以解析该回执以沿用原持久化实现。元数据排队与原子发布前复核原代权限；业务撤权后，清理只使用保留的原回执。已有数据格式与目录不变，版本化数据继续支持逐版迁移、未来版本拒绝和 `.v0.bak`。
 
-操作请求的 Schema 错误返回 HTTP 400 与 `INVALID_INPUT`；响应不符合声明返回 HTTP 502 与 `INVALID_PLUGIN_RESPONSE`。宿主统一返回机器可读的 `code` 和面向用户的 `error`。旧路由仍可在迁移期间保留，由插件自己的校验逻辑处理。
+操作请求的 Schema 错误返回 HTTP 400 与 `INVALID_INPUT`；插件声明式响应校验可返回 HTTP 502 与 `INVALID_PLUGIN_RESPONSE`，共同响应边界使用 `INVALID_OPERATION_RESPONSE`。宿主返回机器可读的 `code`、面向用户的 `error` 和 `correlationId`，必要时附带操作结果与审计副诊断。legacy 适配器仍须接受共同边界校验。响应、发送或审计失败不证明业务未执行；先查询原操作结果，再按领域协议决定是否重试。
 
 ## 整合包与选择迁移
 
